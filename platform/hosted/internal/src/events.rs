@@ -1,8 +1,9 @@
 use std::collections::BTreeMap;
-use std::fs::File;
-use std::io::{ErrorKind, Read};
-use std::path::Path;
-use std::sync::Mutex;
+use std::fs::{self, File, OpenOptions};
+use std::io::{ErrorKind, Read, Write};
+use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex, RwLock};
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
@@ -215,45 +216,391 @@ impl Store {
     }
 }
 
-/// Interval between reads of a credential map that names no principal yet.
+/// Interval between reads of the enrollment snapshot.
 pub const PRINCIPAL_POLL: Duration = Duration::from_secs(3);
+/// Version of the enrollment snapshot format.
+pub const ENROLLMENT_VERSION: u64 = 1;
+/// File under the state directory that holds the adopted enrollment state.
+pub const ENROLLMENT_STATE_FILE: &str = "enrollment.json";
+const MAX_ENROLLMENT_BYTES: usize = 1_048_576;
+const MAX_PRINCIPALS: usize = 10_000;
+const MAX_FINGERPRINTS: usize = 100_000;
+const MAX_STATE_BYTES: usize = 33_554_432;
 
-/// Reads the source principal set from the credential map at `path`, a JSON
-/// object of principal to credential file. Returns `None` while the map is
-/// absent or empty, so the caller waits instead of opening the source.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SnapshotFile {
+    version: u64,
+    generation: u64,
+    principals: Vec<SnapshotEntry>,
+    mac: String,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SnapshotEntry {
+    principal: String,
+    credential_file: String,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+struct Enrolled {
+    since: u64,
+    fingerprint: String,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+struct EnrollmentState {
+    generation: u64,
+    principals: BTreeMap<String, Enrolled>,
+    owners: BTreeMap<String, String>,
+}
+
+impl EnrollmentState {
+    fn valid(&self) -> bool {
+        self.principals.len() <= MAX_PRINCIPALS
+            && self.owners.len() <= MAX_FINGERPRINTS
+            && self.principals.iter().all(|(principal, enrolled)| {
+                valid_principal(principal)
+                    && enrolled.since <= self.generation
+                    && self.owners.get(&enrolled.fingerprint) == Some(principal)
+            })
+            && self.owners.iter().all(|(fingerprint, principal)| {
+                valid_hex(fingerprint, 32) && valid_principal(principal)
+            })
+    }
+}
+
+/// One adopted enrollment generation. Binding, readiness, observation and
+/// event reads of one request all use the generation captured at its start.
+pub struct Generation {
+    number: u64,
+    adopted: bool,
+    credentials: BTreeMap<String, Zeroizing<String>>,
+}
+
+impl Generation {
+    #[must_use]
+    pub const fn generation(&self) -> u64 {
+        self.number
+    }
+    #[must_use]
+    pub fn principals(&self) -> usize {
+        self.credentials.len()
+    }
+}
+
+/// A fully validated and authenticated snapshot that has not been adopted yet.
+pub struct Candidate {
+    generation: u64,
+    credentials: BTreeMap<String, Zeroizing<String>>,
+    fingerprints: BTreeMap<String, String>,
+    changed: Vec<String>,
+}
+
+/// Owner-only regular file of the service's effective user.
+fn protected(path: &Path) -> Result<bool, ErrorKind> {
+    let owner = fs::metadata("/proc/self")
+        .map_err(|error| error.kind())?
+        .uid();
+    let metadata = fs::symlink_metadata(path).map_err(|error| error.kind())?;
+    Ok(metadata.file_type().is_file()
+        && metadata.uid() == owner
+        && metadata.mode().trailing_zeros() >= 6)
+}
+
+/// Requires the file at `path` to be an owner-only regular file of the
+/// service's effective user.
 /// # Errors
-/// Refuses an unreadable, oversized or malformed map, an invalid principal and
-/// an unreadable credential.
-pub fn await_principals(
-    path: &Path,
-) -> Result<Option<BTreeMap<String, Zeroizing<String>>>, String> {
-    let mut bytes = Vec::new();
-    match File::open(path) {
-        Ok(file) => file
-            .take(1_048_577)
-            .read_to_end(&mut bytes)
-            .map_err(|error| error.to_string())?,
-        Err(error) if error.kind() == ErrorKind::NotFound => return Ok(None),
-        Err(error) => return Err(error.to_string()),
-    };
-    if bytes.len() > 1_048_576 {
-        return Err("credential map exceeds bound".to_owned());
+/// Refuses a missing, foreign-owned, group/other-accessible or linked file.
+pub fn require_protected(path: &Path) -> Result<(), String> {
+    match protected(path) {
+        Ok(true) => Ok(()),
+        _ => Err(format!(
+            "{} must be an owner-only file of the service user",
+            path.display()
+        )),
     }
-    let paths: BTreeMap<String, String> =
-        serde_json::from_slice(&bytes).map_err(|error| error.to_string())?;
-    if paths.is_empty() {
-        return Ok(None);
-    }
-    if paths.len() > 10_000 || paths.keys().any(|principal| !valid_principal(principal)) {
-        return Err("invalid source principal set".to_owned());
-    }
-    paths
-        .into_iter()
-        .map(|(principal, path)| {
-            read_secret_file(Path::new(&path)).map(|credential| (principal, credential))
+}
+
+/// The versioned principal enrollment of one source: the adopted generation,
+/// its persisted state and the authenticated snapshot it refreshes from.
+pub struct Enrollments {
+    kind: Kind,
+    snapshot: PathBuf,
+    state_path: PathBuf,
+    key: ring::hmac::Key,
+    state: Mutex<EnrollmentState>,
+    current: RwLock<Arc<Generation>>,
+    last_refusal: Mutex<Option<&'static str>>,
+}
+
+impl Enrollments {
+    /// Opens the enrollment of a source, replaying the persisted generation.
+    /// Nothing is enrolled until a snapshot is adopted.
+    /// # Errors
+    /// Refuses an unreadable or invalid persisted enrollment state.
+    pub fn open(kind: Kind, snapshot: &Path, key: &str, directory: &Path) -> Result<Self, String> {
+        fs::create_dir_all(directory).map_err(|error| format!("state directory: {error}"))?;
+        let state_path = directory.join(ENROLLMENT_STATE_FILE);
+        let state = match File::open(&state_path) {
+            Ok(file) => {
+                let mut bytes = Vec::new();
+                file.take(MAX_STATE_BYTES as u64 + 1)
+                    .read_to_end(&mut bytes)
+                    .map_err(|error| error.to_string())?;
+                serde_json::from_slice(&bytes)
+                    .ok()
+                    .filter(|state: &EnrollmentState| {
+                        bytes.len() <= MAX_STATE_BYTES && state.valid()
+                    })
+                    .ok_or_else(|| "invalid persisted enrollment state".to_owned())?
+            }
+            Err(error) if error.kind() == ErrorKind::NotFound => EnrollmentState::default(),
+            Err(error) => return Err(error.to_string()),
+        };
+        let current = Generation {
+            number: state.generation,
+            adopted: false,
+            credentials: BTreeMap::new(),
+        };
+        Ok(Self {
+            kind,
+            snapshot: snapshot.to_path_buf(),
+            state_path,
+            key: ring::hmac::Key::new(ring::hmac::HMAC_SHA256, key.as_bytes()),
+            state: Mutex::new(state),
+            current: RwLock::new(Arc::new(current)),
+            last_refusal: Mutex::new(None),
         })
-        .collect::<Result<_, _>>()
-        .map(Some)
+    }
+
+    /// The adopted generation, captured once per request.
+    #[must_use]
+    pub fn current(&self) -> Arc<Generation> {
+        self.current.read().map_or_else(
+            |_| {
+                Arc::new(Generation {
+                    number: 0,
+                    adopted: false,
+                    credentials: BTreeMap::new(),
+                })
+            },
+            |current| Arc::clone(&current),
+        )
+    }
+
+    /// The code of the most recent refused snapshot, cleared on adoption.
+    #[must_use]
+    pub fn last_refusal(&self) -> Option<&'static str> {
+        self.last_refusal.lock().ok().and_then(|refusal| *refusal)
+    }
+
+    fn fingerprint(&self, credential: &str) -> String {
+        let mut message = Zeroizing::new(b"layerx-credential-v1\n".to_vec());
+        message.extend_from_slice(credential.as_bytes());
+        hex(ring::hmac::sign(&self.key, &message).as_ref())
+    }
+
+    /// Reads, bounds, authenticates and validates the snapshot against the
+    /// adopted state without changing anything.
+    /// # Errors
+    /// Returns the refusal code of the first violated rule.
+    pub fn prepare(&self) -> Result<Option<Candidate>, &'static str> {
+        match protected(&self.snapshot) {
+            Ok(true) => {}
+            Ok(false) => return Err("enrollment_unprotected"),
+            Err(ErrorKind::NotFound) => return Ok(None),
+            Err(_) => return Err("enrollment_malformed"),
+        }
+        let mut bytes = Vec::new();
+        File::open(&self.snapshot)
+            .and_then(|file| {
+                file.take(MAX_ENROLLMENT_BYTES as u64 + 1)
+                    .read_to_end(&mut bytes)
+            })
+            .map_err(|_| "enrollment_malformed")?;
+        if bytes.len() > MAX_ENROLLMENT_BYTES {
+            return Err("enrollment_oversized");
+        }
+        let file: SnapshotFile =
+            serde_json::from_slice(&bytes).map_err(|_| "enrollment_malformed")?;
+        if file.version != ENROLLMENT_VERSION {
+            return Err("enrollment_malformed");
+        }
+        if file.principals.len() > MAX_PRINCIPALS {
+            return Err("enrollment_oversized");
+        }
+        let mac = unhex(&file.mac)
+            .filter(|mac| mac.len() == 32)
+            .ok_or("enrollment_malformed")?;
+        let mut message = format!(
+            "layerx-enrollment-v1\n{}s\n{}\n",
+            self.kind.singular(),
+            file.generation
+        );
+        let mut credentials = BTreeMap::new();
+        let mut fingerprints = BTreeMap::new();
+        let mut owners = BTreeMap::new();
+        for entry in &file.principals {
+            if !valid_principal(&entry.principal) {
+                return Err("enrollment_malformed");
+            }
+            if credentials.contains_key(&entry.principal) {
+                return Err("enrollment_duplicate");
+            }
+            let path = Path::new(&entry.credential_file);
+            match protected(path) {
+                Ok(true) => {}
+                Ok(false) => return Err("enrollment_unprotected"),
+                Err(_) => return Err("enrollment_credential_unreadable"),
+            }
+            let credential =
+                read_secret_file(path).map_err(|_| "enrollment_credential_unreadable")?;
+            let fingerprint = self.fingerprint(&credential);
+            if owners
+                .insert(fingerprint.clone(), entry.principal.clone())
+                .is_some()
+            {
+                return Err("enrollment_credential_reused");
+            }
+            message.push_str(&entry.principal);
+            message.push('\n');
+            message.push_str(&sha256_hex(credential.as_bytes()));
+            message.push('\n');
+            fingerprints.insert(entry.principal.clone(), fingerprint);
+            credentials.insert(entry.principal.clone(), credential);
+        }
+        ring::hmac::verify(&self.key, message.as_bytes(), &mac)
+            .map_err(|_| "enrollment_unauthenticated")?;
+        let state = self.state.lock().map_err(|_| "enrollment_unavailable")?;
+        let adopted: BTreeMap<&String, &String> = state
+            .principals
+            .iter()
+            .map(|(principal, enrolled)| (principal, &enrolled.fingerprint))
+            .collect();
+        let proposed: BTreeMap<&String, &String> = fingerprints.iter().collect();
+        if file.generation < state.generation {
+            return Err("enrollment_stale_generation");
+        }
+        if file.generation == state.generation && adopted != proposed {
+            return Err("enrollment_generation_conflict");
+        }
+        if owners.iter().any(|(fingerprint, principal)| {
+            state
+                .owners
+                .get(fingerprint)
+                .is_some_and(|owner| owner != principal)
+        }) {
+            return Err("enrollment_credential_reused");
+        }
+        let changed = fingerprints
+            .iter()
+            .filter(|(principal, fingerprint)| adopted.get(principal) != Some(fingerprint))
+            .map(|(principal, _)| principal.clone())
+            .collect();
+        Ok(Some(Candidate {
+            generation: file.generation,
+            credentials,
+            fingerprints,
+            changed,
+        }))
+    }
+
+    /// Persists and atomically installs a candidate whose changed principals
+    /// were verified upstream. Credentials of removed or rotated principals
+    /// lose authority the moment the new generation is installed.
+    /// Returns the generation when it differs from the one served before.
+    /// # Errors
+    /// Refuses a candidate that no longer follows the adopted state, an
+    /// exhausted fingerprint history or an unwritable state file.
+    pub fn adopt(&self, candidate: Candidate) -> Result<Option<u64>, &'static str> {
+        let mut state = self.state.lock().map_err(|_| "enrollment_unavailable")?;
+        if candidate.generation < state.generation {
+            return Err("enrollment_stale_generation");
+        }
+        let mut next = EnrollmentState {
+            generation: candidate.generation,
+            principals: BTreeMap::new(),
+            owners: state.owners.clone(),
+        };
+        for (principal, fingerprint) in candidate.fingerprints {
+            let since = state
+                .principals
+                .get(&principal)
+                .filter(|enrolled| enrolled.fingerprint == fingerprint)
+                .map_or(candidate.generation, |enrolled| enrolled.since);
+            if next
+                .owners
+                .insert(fingerprint.clone(), principal.clone())
+                .is_some_and(|owner| owner != principal)
+            {
+                return Err("enrollment_credential_reused");
+            }
+            next.principals
+                .insert(principal, Enrolled { since, fingerprint });
+        }
+        if next.owners.len() > MAX_FINGERPRINTS {
+            return Err("enrollment_oversized");
+        }
+        if next != *state {
+            persist(&self.state_path, &next).map_err(|_| "enrollment_unavailable")?;
+            *state = next;
+        }
+        let mut current = self.current.write().map_err(|_| "enrollment_unavailable")?;
+        let changed = !current.adopted || current.number != candidate.generation;
+        *current = Arc::new(Generation {
+            number: candidate.generation,
+            adopted: true,
+            credentials: candidate.credentials,
+        });
+        drop(current);
+        if let Ok(mut refusal) = self.last_refusal.lock() {
+            *refusal = None;
+        }
+        Ok(changed.then_some(candidate.generation))
+    }
+
+    fn refused(&self, code: &'static str) -> bool {
+        self.last_refusal.lock().is_ok_and(|mut refusal| {
+            let fresh = *refusal != Some(code);
+            *refusal = Some(code);
+            fresh
+        })
+    }
+}
+
+impl Candidate {
+    /// Principals whose credential is new or changed in this snapshot.
+    #[must_use]
+    pub fn changed(&self) -> &[String] {
+        &self.changed
+    }
+}
+
+fn persist(path: &Path, state: &EnrollmentState) -> Result<(), String> {
+    let bytes = serde_json::to_vec(state).map_err(|error| error.to_string())?;
+    let temporary = path.with_extension("json.new");
+    let mut file = OpenOptions::new()
+        .create(true)
+        .write(true)
+        .truncate(true)
+        .mode(0o600)
+        .open(&temporary)
+        .map_err(|error| error.to_string())?;
+    file.write_all(&bytes)
+        .and_then(|()| file.sync_all())
+        .map_err(|error| error.to_string())?;
+    drop(file);
+    fs::rename(&temporary, path).map_err(|error| error.to_string())?;
+    if let Some(directory) = path.parent() {
+        File::open(directory)
+            .and_then(|directory| directory.sync_all())
+            .map_err(|error| error.to_string())?;
+    }
+    Ok(())
 }
 
 /// Answers a source that is still waiting for its principal set: alive, not
@@ -275,7 +622,7 @@ pub fn waiting_principals(request: &Request) -> Response {
 pub struct Service {
     kind: Kind,
     upstream: Upstream,
-    credentials: BTreeMap<String, Zeroizing<String>>,
+    enrollments: Enrollments,
     token: Zeroizing<String>,
     producers: Vec<ProducerCredential>,
     store: Mutex<Store>,
@@ -289,32 +636,58 @@ struct Observe {
 }
 
 impl Service {
-    /// Opens a durable source for explicitly provisioned principal credentials.
+    /// Opens a durable source whose principals come from the authenticated
+    /// enrollment snapshot at `snapshot`; nothing is enrolled until
+    /// [`Service::refresh`] adopts one.
     /// # Errors
-    /// Refuses missing credentials, invalid principals, or an invalid journal.
+    /// Refuses an invalid journal or persisted enrollment state.
     pub fn open(
         kind: Kind,
         upstream: Upstream,
-        credentials: BTreeMap<String, Zeroizing<String>>,
+        snapshot: &Path,
+        enrollment_key: &str,
         token: Zeroizing<String>,
         directory: &Path,
     ) -> Result<Self, String> {
-        if credentials.is_empty()
-            || credentials.len() > 10_000
-            || credentials
-                .keys()
-                .any(|principal| !valid_principal(principal))
-        {
-            return Err("invalid source principal set".to_owned());
-        }
+        let store = Store::open(directory)?;
         Ok(Self {
             kind,
             upstream,
-            credentials,
+            enrollments: Enrollments::open(kind, snapshot, enrollment_key, directory)?,
             token,
             producers: Vec::new(),
-            store: Mutex::new(Store::open(directory)?),
+            store: Mutex::new(store),
         })
+    }
+    /// Re-reads the enrollment snapshot. A newer authenticated snapshot whose
+    /// new or rotated credentials all bind upstream replaces the served
+    /// generation atomically; any refusal leaves the last valid one intact.
+    /// Returns the adopted generation when it changed, and on refusal its code
+    /// together with whether it differs from the previous refusal.
+    /// # Errors
+    /// Returns the refusal code; it never names credential contents.
+    pub fn refresh(&self) -> Result<Option<u64>, (&'static str, bool)> {
+        let result = self.enrollments.prepare().and_then(|candidate| {
+            let Some(candidate) = candidate else {
+                return Ok(None);
+            };
+            for principal in candidate.changed() {
+                let credential = candidate
+                    .credentials
+                    .get(principal)
+                    .ok_or("enrollment_unavailable")?;
+                if !self.bind_with(principal, credential)? {
+                    return Err("enrollment_principal_mismatch");
+                }
+            }
+            self.enrollments.adopt(candidate)
+        });
+        result.map_err(|code| (code, self.enrollments.refused(code)))
+    }
+    /// The served enrollment generation.
+    #[must_use]
+    pub fn generation(&self) -> Arc<Generation> {
+        self.enrollments.current()
     }
     /// # Errors
     /// Refuses duplicate credentials and digest authority outside the payment source.
@@ -350,10 +723,11 @@ impl Service {
         if observation.kind != self.kind.singular() {
             return Err(403);
         }
+        let enrolled = self.enrollments.current();
         let principal = match (&observation.principal, &observation.principal_digest) {
             (Some(principal), None) => principal.clone(),
             (None, Some(digest)) if credential.allow_principal_digest => {
-                let mut matches = self
+                let mut matches = enrolled
                     .credentials
                     .keys()
                     .filter(|principal| principal_digest(principal) == *digest);
@@ -365,7 +739,7 @@ impl Service {
             }
             _ => return Err(403),
         };
-        self.bind(&principal).map_err(|_| 403_u16)?;
+        self.bind(&enrolled, &principal).map_err(|_| 403_u16)?;
         let record = observation.record(principal);
         self.store
             .lock()
@@ -373,59 +747,78 @@ impl Service {
             .append_produced(record, body)
     }
 
-    fn fetch(&self, principal: &str, path: &str) -> Result<Value, String> {
-        let credential = self
-            .credentials
-            .get(principal)
-            .ok_or_else(|| "unknown principal".to_owned())?;
+    fn fetch_with(&self, credential: &str, path: &str) -> Result<Value, &'static str> {
         let (header, value) = self.kind.credential(credential);
         let response = self
             .upstream
             .get_as(path, header, &value)
-            .map_err(|_| "upstream unavailable".to_owned())?;
+            .map_err(|_| "enrollment_upstream_unavailable")?;
         if response.status != 200 || !response.content_type.starts_with("application/json") {
-            return Err("upstream refused request".to_owned());
+            return Err("upstream refused request");
         }
-        let envelope: Value = serde_json::from_slice(&response.body)
-            .map_err(|_| "invalid upstream JSON".to_owned())?;
+        let envelope: Value =
+            serde_json::from_slice(&response.body).map_err(|_| "invalid upstream JSON")?;
         if envelope.get("ok") != Some(&Value::Bool(true)) {
-            return Err("upstream outcome unavailable".to_owned());
+            return Err("upstream outcome unavailable");
         }
         envelope
             .get("result")
             .cloned()
-            .ok_or_else(|| "upstream result missing".to_owned())
+            .ok_or("upstream result missing")
     }
-    fn bind(&self, principal: &str) -> Result<(), String> {
-        let identity = self.fetch(principal, "/internal/v1/principal")?;
-        let matches = principal_matches(self.kind, &identity, principal);
-        if matches {
+    /// Verifies upstream that `credential` is the credential of `principal`.
+    /// Ok(false) is an explicit identity mismatch or refusal; Err is an
+    /// unreachable upstream.
+    fn bind_with(&self, principal: &str, credential: &str) -> Result<bool, &'static str> {
+        match self.fetch_with(credential, "/internal/v1/principal") {
+            Ok(identity) => Ok(principal_matches(self.kind, &identity, principal)),
+            Err("enrollment_upstream_unavailable") => Err("enrollment_upstream_unavailable"),
+            Err(_) => Ok(false),
+        }
+    }
+    fn fetch(&self, enrolled: &Generation, principal: &str, path: &str) -> Result<Value, String> {
+        let credential = enrolled
+            .credentials
+            .get(principal)
+            .ok_or_else(|| "unknown principal".to_owned())?;
+        self.fetch_with(credential, path).map_err(str::to_owned)
+    }
+    fn bind(&self, enrolled: &Generation, principal: &str) -> Result<(), String> {
+        let credential = enrolled
+            .credentials
+            .get(principal)
+            .ok_or_else(|| "unknown principal".to_owned())?;
+        if self.bind_with(principal, credential)? {
             Ok(())
         } else {
             Err("credential principal mismatch".to_owned())
         }
     }
-    fn ready(&self) -> bool {
+    fn ready(&self, enrolled: &Generation) -> bool {
         self.upstream
             .get("/readyz")
             .is_ok_and(|response| response.status == 200)
-            && self
+            && enrolled
                 .credentials
                 .keys()
-                .all(|principal| self.bind(principal).is_ok())
+                .all(|principal| self.bind(enrolled, principal).is_ok())
             && self
                 .store
                 .lock()
                 .is_ok_and(|store| store.journal.probe_writable().is_ok())
     }
-    fn observe(&self, body: &[u8]) -> Result<Record, String> {
+    fn observe(&self, enrolled: &Generation, body: &[u8]) -> Result<Record, String> {
         let request: Observe =
             serde_json::from_slice(body).map_err(|_| "invalid observation".to_owned())?;
         if !valid_identifier(&request.resource, 128) {
             return Err("invalid resource".to_owned());
         }
-        self.bind(&request.principal)?;
-        let snapshot = self.fetch(&request.principal, &self.kind.route(&request.resource))?;
+        self.bind(enrolled, &request.principal)?;
+        let snapshot = self.fetch(
+            enrolled,
+            &request.principal,
+            &self.kind.route(&request.resource),
+        )?;
         let record = derive(self.kind, &request.principal, &request.resource, &snapshot)?;
         self.store
             .lock()
@@ -438,11 +831,22 @@ impl Service {
         if request.method == "GET" && request.path == "/livez" {
             return ok("{\"alive\":true}".to_owned());
         }
+        let enrolled = self.enrollments.current();
+        let last_refusal = self.enrollments.last_refusal();
+        if enrolled.credentials.is_empty() {
+            if request.method == "GET" && request.path == "/readyz" {
+                return json(
+                    503,
+                    &serde_json::json!({"ready":false,"state":"waiting-principals","generation":enrolled.number,"principals":0,"last_refusal":last_refusal}),
+                );
+            }
+            return waiting_principals(request);
+        }
         if request.method == "GET" && request.path == "/readyz" {
-            let ready = self.ready();
+            let ready = self.ready(&enrolled);
             return json(
                 if ready { 200 } else { 503 },
-                &serde_json::json!({"ready":ready}),
+                &serde_json::json!({"ready":ready,"generation":enrolled.number,"principals":enrolled.credentials.len(),"last_refusal":last_refusal}),
             );
         }
         if request.method == "POST"
@@ -470,7 +874,7 @@ impl Service {
         }
         if request.method == "POST" && request.path == "/internal/v1/observe" && request.json_body()
         {
-            return self.observe(&request.body).map_or_else(
+            return self.observe(&enrolled, &request.body).map_or_else(
                 |_| refusal(503, "source_unavailable", Some(5)),
                 |record| json(200, &record),
             );
@@ -486,16 +890,18 @@ impl Service {
                     .lock()
                     .ok()
                     .and_then(|store| store.records.get(id).cloned());
-                return record.map_or_else(
-                    || refusal(404, "event_not_found", None),
-                    |record| {
-                        if self.bind(&record.principal).is_err() {
-                            refusal(503, "source_unavailable", Some(5))
-                        } else {
-                            json(200, &record)
-                        }
-                    },
-                );
+                return record
+                    .filter(|record| enrolled.credentials.contains_key(&record.principal))
+                    .map_or_else(
+                        || refusal(404, "event_not_found", None),
+                        |record| {
+                            if self.bind(&enrolled, &record.principal).is_err() {
+                                refusal(503, "source_unavailable", Some(5))
+                            } else {
+                                json(200, &record)
+                            }
+                        },
+                    );
             }
         }
         refusal(404, "not_found", None)
@@ -723,58 +1129,373 @@ mod tests {
         std::fs::remove_dir_all(directory).unwrap_or_else(|error| panic!("{error}"));
     }
 
-    #[test]
-    fn principals_wait_until_the_credential_map_names_one() {
+    const KEY: &str = "0123456789abcdef0123456789abcdef";
+
+    fn owner_only(path: &Path, contents: &str) {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::write(path, contents).unwrap_or_else(|error| panic!("{error}"));
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))
+            .unwrap_or_else(|error| panic!("{error}"));
+    }
+
+    fn sign(kind: Kind, generation: u64, entries: &[(&str, &str)]) -> String {
+        let mut message = format!("layerx-enrollment-v1\n{}s\n{generation}\n", kind.singular());
+        for (principal, credential) in entries {
+            message.push_str(principal);
+            message.push('\n');
+            message.push_str(&sha256_hex(credential.as_bytes()));
+            message.push('\n');
+        }
+        let key = ring::hmac::Key::new(ring::hmac::HMAC_SHA256, KEY.as_bytes());
+        hex(ring::hmac::sign(&key, message.as_bytes()).as_ref())
+    }
+
+    /// Writes an owner-only snapshot naming one owner-only credential file per
+    /// principal, signed with `mac` or the enrollment key.
+    fn snapshot(
+        directory: &Path,
+        kind: Kind,
+        generation: u64,
+        entries: &[(&str, &str)],
+        mac: Option<String>,
+    ) {
+        let mut principals = Vec::new();
+        for (principal, credential) in entries {
+            let path = directory.join(format!("{principal}-{generation}.credential"));
+            owner_only(&path, &format!("{credential}\n"));
+            principals.push(serde_json::json!({
+                "principal": principal,
+                "credential_file": path.display().to_string(),
+            }));
+        }
+        let body = serde_json::json!({
+            "version": ENROLLMENT_VERSION,
+            "generation": generation,
+            "principals": principals,
+            "mac": mac.unwrap_or_else(|| sign(kind, generation, entries)),
+        });
+        owner_only(
+            &directory.join("enrollment-snapshot.json"),
+            &body.to_string(),
+        );
+    }
+
+    fn scratch(name: &str) -> PathBuf {
         let directory =
-            std::env::temp_dir().join(format!("layerx-principals-wait-{}", std::process::id()));
+            std::env::temp_dir().join(format!("layerx-enrollment-{name}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&directory);
         std::fs::create_dir_all(&directory).unwrap_or_else(|error| panic!("{error}"));
-        let map = directory.join("credentials.json");
-        assert_eq!(await_principals(&map), Ok(None));
-        std::fs::write(&map, "{}\n").unwrap_or_else(|error| panic!("{error}"));
-        assert_eq!(await_principals(&map), Ok(None));
-        let credential = directory.join("principal-one");
-        std::fs::write(&credential, "credential-one\n").unwrap_or_else(|error| panic!("{error}"));
-        std::fs::write(
-            &map,
-            serde_json::json!({ "principal-one": credential.display().to_string() }).to_string(),
+        directory
+    }
+
+    fn open(kind: Kind, directory: &Path) -> Enrollments {
+        Enrollments::open(
+            kind,
+            &directory.join("enrollment-snapshot.json"),
+            KEY,
+            &directory.join("state"),
         )
-        .unwrap_or_else(|error| panic!("{error}"));
-        let principals = await_principals(&map)
-            .unwrap_or_else(|error| panic!("{error}"))
-            .unwrap_or_else(|| panic!("principal set still waiting"));
-        assert_eq!(principals.len(), 1);
-        assert_eq!(principals["principal-one"].as_str(), "credential-one");
+        .unwrap_or_else(|error| panic!("{error}"))
+    }
+
+    fn refresh(enrollments: &Enrollments) -> Result<Option<u64>, &'static str> {
+        enrollments
+            .prepare()
+            .and_then(|candidate| {
+                candidate.map_or(Ok(None), |candidate| enrollments.adopt(candidate))
+            })
+            .inspect_err(|code| {
+                enrollments.refused(code);
+            })
+    }
+
+    fn credential(enrollments: &Enrollments, principal: &str) -> Option<String> {
+        enrollments
+            .current()
+            .credentials
+            .get(principal)
+            .map(|credential| credential.as_str().to_owned())
+    }
+
+    #[test]
+    fn empty_enrollment_is_live_but_waits_for_principals() {
+        let directory = scratch("empty");
+        let enrollments = open(Kind::Journey, &directory);
+        assert_eq!(refresh(&enrollments), Ok(None));
+        assert!(!enrollments.current().adopted);
+        snapshot(&directory, Kind::Journey, 0, &[], None);
+        assert_eq!(refresh(&enrollments), Ok(Some(0)));
+        assert_eq!(enrollments.current().principals(), 0);
+        assert_eq!(refresh(&enrollments), Ok(None));
+        let request = Request {
+            method: "GET".to_owned(),
+            path: "/readyz".to_owned(),
+            headers: BTreeMap::new(),
+            body: Vec::new(),
+            peer_verified: true,
+        };
+        assert_eq!(waiting_principals(&request).status, 503);
         std::fs::remove_dir_all(directory).unwrap_or_else(|error| panic!("{error}"));
     }
 
     #[test]
-    fn principals_refuse_a_malformed_credential_map() {
-        let directory =
-            std::env::temp_dir().join(format!("layerx-principals-refuse-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&directory);
-        std::fs::create_dir_all(&directory).unwrap_or_else(|error| panic!("{error}"));
-        let map = directory.join("credentials.json");
-        std::fs::write(&map, "{\"principal-one\":").unwrap_or_else(|error| panic!("{error}"));
-        assert!(await_principals(&map).is_err());
-        let credential = directory.join("principal-one");
-        std::fs::write(&credential, "credential-one\n").unwrap_or_else(|error| panic!("{error}"));
-        std::fs::write(
-            &map,
-            serde_json::json!({ "Principal One": credential.display().to_string() }).to_string(),
-        )
-        .unwrap_or_else(|error| panic!("{error}"));
-        assert_eq!(
-            await_principals(&map),
-            Err("invalid source principal set".to_owned())
+    fn every_source_role_rotates_one_principal_while_another_keeps_its_credential() {
+        for kind in [Kind::Journey, Kind::Approval, Kind::Payment, Kind::Program] {
+            let directory = scratch(kind.singular());
+            let enrollments = open(kind, &directory);
+            snapshot(
+                &directory,
+                kind,
+                1,
+                &[
+                    ("principal-one", "credential-one-a"),
+                    ("principal-two", "credential-two"),
+                ],
+                None,
+            );
+            let candidate = enrollments
+                .prepare()
+                .unwrap_or_else(|code| panic!("{code}"))
+                .unwrap_or_else(|| panic!("snapshot absent"));
+            assert_eq!(candidate.changed(), ["principal-one", "principal-two"]);
+            assert_eq!(enrollments.adopt(candidate), Ok(Some(1)));
+            let before = enrollments.current();
+            snapshot(
+                &directory,
+                kind,
+                2,
+                &[
+                    ("principal-one", "credential-one-b"),
+                    ("principal-two", "credential-two"),
+                ],
+                None,
+            );
+            let candidate = enrollments
+                .prepare()
+                .unwrap_or_else(|code| panic!("{code}"))
+                .unwrap_or_else(|| panic!("snapshot absent"));
+            assert_eq!(candidate.changed(), ["principal-one"]);
+            assert_eq!(enrollments.adopt(candidate), Ok(Some(2)));
+            assert_eq!(before.generation(), 1);
+            assert_eq!(
+                before.credentials["principal-one"].as_str(),
+                "credential-one-a"
+            );
+            assert_eq!(
+                credential(&enrollments, "principal-one").as_deref(),
+                Some("credential-one-b")
+            );
+            assert_eq!(
+                credential(&enrollments, "principal-two").as_deref(),
+                Some("credential-two")
+            );
+            let state = enrollments
+                .state
+                .lock()
+                .unwrap_or_else(|error| panic!("{error}"))
+                .clone();
+            assert_eq!(state.principals["principal-one"].since, 2);
+            assert_eq!(state.principals["principal-two"].since, 1);
+            let persisted =
+                std::fs::read_to_string(directory.join("state").join(ENROLLMENT_STATE_FILE))
+                    .unwrap_or_else(|error| panic!("{error}"));
+            assert!(!persisted.contains("credential-one"));
+            assert!(!persisted.contains("credential-two"));
+            std::fs::remove_dir_all(directory).unwrap_or_else(|error| panic!("{error}"));
+        }
+    }
+
+    fn adopted_generation_three(name: &str) -> (PathBuf, Enrollments) {
+        let directory = scratch(name);
+        let enrollments = open(Kind::Payment, &directory);
+        snapshot(
+            &directory,
+            Kind::Payment,
+            3,
+            &[("principal-one", "credential-one")],
+            None,
         );
-        std::fs::write(
-            &map,
-            serde_json::json!({ "principal-one": directory.join("absent").display().to_string() })
-                .to_string(),
+        assert_eq!(refresh(&enrollments), Ok(Some(3)));
+        (directory, enrollments)
+    }
+
+    fn unchanged(enrollments: &Enrollments) {
+        assert_eq!(enrollments.current().generation(), 3);
+        assert_eq!(
+            credential(enrollments, "principal-one").as_deref(),
+            Some("credential-one")
+        );
+    }
+
+    #[test]
+    fn refused_snapshots_leave_the_last_valid_generation_intact() {
+        let (directory, enrollments) = adopted_generation_three("refusals");
+        let path = directory.join("enrollment-snapshot.json");
+        owner_only(&path, "{\"version\":1,");
+        assert_eq!(refresh(&enrollments), Err("enrollment_malformed"));
+        unchanged(&enrollments);
+        owner_only(&path, "{}");
+        assert_eq!(refresh(&enrollments), Err("enrollment_malformed"));
+        owner_only(&path, &" ".repeat(MAX_ENROLLMENT_BYTES + 1));
+        assert_eq!(refresh(&enrollments), Err("enrollment_oversized"));
+        unchanged(&enrollments);
+        snapshot(
+            &directory,
+            Kind::Payment,
+            4,
+            &[("principal-one", "credential-one-b")],
+            Some("00".repeat(32)),
+        );
+        assert_eq!(refresh(&enrollments), Err("enrollment_unauthenticated"));
+        unchanged(&enrollments);
+        snapshot(
+            &directory,
+            Kind::Journey,
+            4,
+            &[("principal-one", "credential-one-b")],
+            Some(sign(
+                Kind::Journey,
+                4,
+                &[("principal-one", "credential-one-b")],
+            )),
+        );
+        assert_eq!(refresh(&enrollments), Err("enrollment_unauthenticated"));
+        let duplicate = serde_json::json!({
+            "version": 1,
+            "generation": 4,
+            "principals": [
+                {"principal": "principal-one", "credential_file": directory.join("principal-one-4.credential").display().to_string()},
+                {"principal": "principal-one", "credential_file": directory.join("principal-one-4.credential").display().to_string()},
+            ],
+            "mac": sign(Kind::Payment, 4, &[("principal-one", "credential-one-b"), ("principal-one", "credential-one-b")]),
+        });
+        owner_only(&path, &duplicate.to_string());
+        assert_eq!(refresh(&enrollments), Err("enrollment_duplicate"));
+        unchanged(&enrollments);
+        std::fs::remove_dir_all(directory).unwrap_or_else(|error| panic!("{error}"));
+    }
+
+    #[test]
+    fn credential_reuse_and_generation_rules_leave_the_last_valid_generation_intact() {
+        let (directory, enrollments) = adopted_generation_three("generations");
+        let path = directory.join("enrollment-snapshot.json");
+        snapshot(
+            &directory,
+            Kind::Payment,
+            4,
+            &[("principal-one", "shared"), ("principal-two", "shared")],
+            None,
+        );
+        assert_eq!(refresh(&enrollments), Err("enrollment_credential_reused"));
+        snapshot(
+            &directory,
+            Kind::Payment,
+            4,
+            &[("principal-two", "credential-one")],
+            None,
+        );
+        assert_eq!(refresh(&enrollments), Err("enrollment_credential_reused"));
+        snapshot(
+            &directory,
+            Kind::Payment,
+            2,
+            &[("principal-one", "credential-one")],
+            None,
+        );
+        assert_eq!(refresh(&enrollments), Err("enrollment_stale_generation"));
+        snapshot(
+            &directory,
+            Kind::Payment,
+            3,
+            &[("principal-one", "credential-one-b")],
+            None,
+        );
+        assert_eq!(refresh(&enrollments), Err("enrollment_generation_conflict"));
+        unchanged(&enrollments);
+        snapshot(
+            &directory,
+            Kind::Payment,
+            4,
+            &[("principal-one", "credential-one-b")],
+            None,
+        );
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644))
+                .unwrap_or_else(|error| panic!("{error}"));
+        }
+        assert_eq!(refresh(&enrollments), Err("enrollment_unprotected"));
+        assert_eq!(enrollments.last_refusal(), Some("enrollment_unprotected"));
+        assert!(!enrollments.refused("enrollment_unprotected"));
+        unchanged(&enrollments);
+        std::fs::remove_dir_all(directory).unwrap_or_else(|error| panic!("{error}"));
+    }
+
+    #[test]
+    fn removal_revokes_authority_and_generations_replay_after_restart() {
+        let directory = scratch("restart");
+        let enrollments = open(Kind::Program, &directory);
+        snapshot(
+            &directory,
+            Kind::Program,
+            1,
+            &[
+                ("principal-one", "credential-one"),
+                ("principal-two", "credential-two"),
+            ],
+            None,
+        );
+        assert_eq!(refresh(&enrollments), Ok(Some(1)));
+        snapshot(
+            &directory,
+            Kind::Program,
+            2,
+            &[("principal-two", "credential-two")],
+            None,
+        );
+        assert_eq!(refresh(&enrollments), Ok(Some(2)));
+        assert_eq!(credential(&enrollments, "principal-one"), None);
+        drop(enrollments);
+        let enrollments = open(Kind::Program, &directory);
+        assert!(!enrollments.current().adopted);
+        assert_eq!(enrollments.current().generation(), 2);
+        assert_eq!(refresh(&enrollments), Ok(Some(2)));
+        assert_eq!(
+            credential(&enrollments, "principal-two").as_deref(),
+            Some("credential-two")
+        );
+        assert_eq!(credential(&enrollments, "principal-one"), None);
+        snapshot(
+            &directory,
+            Kind::Program,
+            3,
+            &[("principal-two", "credential-one")],
+            None,
+        );
+        assert_eq!(refresh(&enrollments), Err("enrollment_credential_reused"));
+        drop(enrollments);
+        snapshot(
+            &directory,
+            Kind::Program,
+            1,
+            &[
+                ("principal-one", "credential-one"),
+                ("principal-two", "credential-two"),
+            ],
+            None,
+        );
+        let enrollments = open(Kind::Program, &directory);
+        assert_eq!(refresh(&enrollments), Err("enrollment_stale_generation"));
+        assert_eq!(enrollments.current().principals(), 0);
+        std::fs::write(directory.join("state").join(ENROLLMENT_STATE_FILE), "{")
+            .unwrap_or_else(|error| panic!("{error}"));
+        assert!(Enrollments::open(
+            Kind::Program,
+            &directory.join("enrollment-snapshot.json"),
+            KEY,
+            &directory.join("state")
         )
-        .unwrap_or_else(|error| panic!("{error}"));
-        assert!(await_principals(&map).is_err());
+        .is_err());
         std::fs::remove_dir_all(directory).unwrap_or_else(|error| panic!("{error}"));
     }
 }

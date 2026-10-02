@@ -2,9 +2,10 @@ use std::sync::{Arc, Mutex, OnceLock};
 
 use layerx_platform_internal::producer::{Health, Observation, Outbox, Pending, QueueState};
 
-use crate::store::{PrincipalScope, PrincipalStore, RowKey, StoreError, Table};
+use crate::store::{PrincipalId, PrincipalScope, PrincipalStore, RowKey, StoreError, Table};
 
 static HEALTH: OnceLock<Arc<Health>> = OnceLock::new();
+static CURSOR: Mutex<Option<PrincipalId>> = Mutex::new(None);
 
 pub(crate) fn health() -> Arc<Health> {
     Arc::clone(HEALTH.get_or_init(|| Arc::new(Health::default())))
@@ -72,14 +73,19 @@ impl HumanOutbox {
 impl Outbox for HumanOutbox {
     fn pending(&self) -> Result<Option<Pending>, String> {
         let mut store = self.store.lock().map_err(|_| "Human store unavailable")?;
-        for principal in store
+        let mut cursor = CURSOR.lock().map_err(|_| "Human cursor unavailable")?;
+        let principals = store
             .known_principals()
-            .map_err(|error| error.to_string())?
-        {
+            .map_err(|error| error.to_string())?;
+        let start = cursor
+            .as_ref()
+            .map_or(0, |last| principals.partition_point(|principal| principal <= last));
+        for principal in principals[start..].iter().chain(&principals[..start]) {
             let scope = store
-                .principal(&principal)
+                .principal(principal)
                 .map_err(|error| error.to_string())?;
             if let Some(pending) = state(&scope).map_err(|error| error.to_string())?.pending() {
+                *cursor = Some(principal.clone());
                 return Ok(Some(pending));
             }
         }
