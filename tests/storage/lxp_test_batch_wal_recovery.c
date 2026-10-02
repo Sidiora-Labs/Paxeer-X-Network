@@ -9,6 +9,7 @@
 #include "layerx/lxp_state_diff.h"
 
 #include <openssl/evp.h>
+#include <errno.h>
 #include <stdbool.h>
 #include <fcntl.h>
 #include <stdint.h>
@@ -18,18 +19,44 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-struct lxp_daemon_batch_wal_record {
-    lxp_daemon_batch_wal_state state;
-    lxp_daemon_batch_wal_input view;
-    lxp_byte_span activities[LXP_DAEMON_BATCH_WAL_MAX_ITEMS];
-    lxp_byte_span receipts[LXP_DAEMON_BATCH_WAL_MAX_ITEMS];
-    lxp_byte_span events[LXP_DAEMON_BATCH_WAL_MAX_ITEMS];
-    lxp_byte_span terminal_payloads[LXP_DAEMON_BATCH_WAL_MAX_ITEMS];
-    lxp_byte_span call_graphs[LXP_DAEMON_BATCH_WAL_MAX_ITEMS];
-    lxp_merkle_proof proofs[LXP_DAEMON_BATCH_WAL_MAX_ITEMS];
-    uint8_t *owned;
-    size_t owned_length;
-};
+static const char *diagnostic_case = "not_started";
+
+static lxp_result diagnostic_result(const char *function, unsigned line,
+                                    const char *expression, lxp_result result)
+{
+    int saved_errno = errno;
+    (void)fprintf(stderr,
+                  "batch-wal case=%s function=%s line=%u call=%s result=%d (%s)\n",
+                  diagnostic_case, function, line, expression, (int)result,
+                  lxp_result_name(result));
+    errno = saved_errno;
+    return result;
+}
+
+#define TRACE_RESULT(expression) \
+    diagnostic_result(__func__, __LINE__, #expression, (expression))
+
+static int diagnostic_failure(const char *function, unsigned line)
+{
+    int saved_errno = errno;
+    (void)fprintf(stderr,
+                  "batch-wal case=%s function=%s line=%u failure=1 errno=%d\n",
+                  diagnostic_case, function, line, saved_errno);
+    errno = saved_errno;
+    return 1;
+}
+
+static int diagnostic_run_case(const char *name, int (*run)(void))
+{
+    int result;
+    int saved_errno;
+    diagnostic_case = name;
+    result = run();
+    saved_errno = errno;
+    (void)fprintf(stderr, "batch-wal case=%s return=%d\n", name, result);
+    errno = saved_errno;
+    return result;
+}
 
 enum {
     TEST_NETWORK_ID = 42,
@@ -132,10 +159,10 @@ static int build_canonical_batch(canonical_batch_fixture *fixture,
     (void)memset(&receipt, 0, sizeof(receipt));
     (void)memset(&decoded_receipt, 0, sizeof(decoded_receipt));
     (void)memset(&header, 0, sizeof(header));
-    if (lxp_arena_init(&arena, arena_memory, sizeof(arena_memory)) != LXP_OK ||
+    if (TRACE_RESULT(lxp_arena_init(&arena, arena_memory, sizeof(arena_memory))) != LXP_OK ||
         raw_public_key(fixture->actor_private, actor_public) != 0 ||
         raw_public_key(fixture->sequencer_private, sequencer_public) != 0)
-        return 1;
+        return diagnostic_failure(__func__, __LINE__);
 
     activity.protocol_version = LXP_PROTOCOL_VERSION;
     activity.network_id = TEST_NETWORK_ID;
@@ -148,80 +175,80 @@ static int build_canonical_batch(canonical_batch_fixture *fixture,
     activity.idempotency_key[0] = 0x41U;
     activity.fee_limit = (lxp_u128){0U, 25U};
     activity.payload = (lxp_byte_span){payload, sizeof(payload)};
-    if (lxp_hash_payload(activity.payload.bytes, activity.payload.length,
-                         activity.payload_hash) != LXP_OK ||
-        lxp_activity_signing_preimage(&activity, activity_preimage) != LXP_OK ||
+    if (TRACE_RESULT(lxp_hash_payload(activity.payload.bytes, activity.payload.length,
+                         activity.payload_hash)) != LXP_OK ||
+        TRACE_RESULT(lxp_activity_signing_preimage(&activity, activity_preimage)) != LXP_OK ||
         raw_sign(fixture->actor_private, activity_preimage,
                  sizeof(activity_preimage), activity_signature) != 0)
-        return 1;
+        return diagnostic_failure(__func__, __LINE__);
     if (invalid_activity_signature) activity_signature[0] ^= 1U;
     activity.signature = (lxp_byte_span){activity_signature,
                                          sizeof(activity_signature)};
-    if (lxp_activity_encode(&activity, &arena, &encoded) != LXP_OK ||
+    if (TRACE_RESULT(lxp_activity_encode(&activity, &arena, &encoded)) != LXP_OK ||
         encoded.length > sizeof(fixture->canonical_activity))
-        return 1;
+        return diagnostic_failure(__func__, __LINE__);
     fixture->canonical_activity_length = encoded.length;
     (void)memcpy(fixture->canonical_activity, encoded.bytes, encoded.length);
-    if (lxp_arena_reset(&arena, 0U) != LXP_OK ||
-        lxp_activity_id(fixture->canonical_activity,
+    if (TRACE_RESULT(lxp_arena_reset(&arena, 0U)) != LXP_OK ||
+        TRACE_RESULT(lxp_activity_id(fixture->canonical_activity,
                         fixture->canonical_activity_length,
-                        activity_id) != LXP_OK)
-        return 1;
+                        activity_id)) != LXP_OK)
+        return diagnostic_failure(__func__, __LINE__);
     fixture->activities[0] = (lxp_byte_span){
         fixture->canonical_activity, fixture->canonical_activity_length};
 
     boundary(&fixture->input.base, 0x31U, TEST_FIRST_SEQUENCE);
     boundary(&fixture->input.settled, 0x41U, TEST_FIRST_SEQUENCE + 1U);
-    if (lxp_daemon_batch_bind_prefix(
+    if (TRACE_RESULT(lxp_daemon_batch_bind_prefix(
             fixture->activities, 1U,
             fixture->input.base.receipt_state_root,
             TEST_FIRST_SEQUENCE, TEST_BATCH_NUMBER, &arena,
-            &execution, &roots, batch_id) != LXP_OK ||
-        lxp_effect_buffer_init(&effects) != LXP_OK ||
-        lxp_receipt_build(
+            &execution, &roots, batch_id)) != LXP_OK ||
+        TRACE_RESULT(lxp_effect_buffer_init(&effects)) != LXP_OK ||
+        TRACE_RESULT(lxp_receipt_build(
             &receipt, activity_id, TEST_FIRST_SEQUENCE,
             fixture->input.base.receipt_state_root,
             fixture->input.settled.receipt_state_root,
             roots.activity_merkle_root, LXP_OK, &effects,
-            (lxp_u128){0U, 1U}, batch_id, 1U, 1U, 1U) != LXP_OK)
-        return 1;
+            (lxp_u128){0U, 1U}, batch_id, 1U, 1U, 1U)) != LXP_OK)
+        return diagnostic_failure(__func__, __LINE__);
     receipt.timestamp = TEST_TIMESTAMP_MS;
-    if (lxp_receipt_sign(&receipt, fixture->sequencer_private,
-                         &arena) != LXP_OK ||
-        lxp_receipt_encode(&receipt, true, &arena, &encoded) != LXP_OK ||
+    if (TRACE_RESULT(lxp_receipt_sign(&receipt, fixture->sequencer_private,
+                         &arena)) != LXP_OK ||
+        TRACE_RESULT(lxp_receipt_encode(&receipt, true, &arena, &encoded)) != LXP_OK ||
         encoded.length > sizeof(fixture->canonical_receipt))
-        return 1;
+        return diagnostic_failure(__func__, __LINE__);
     fixture->canonical_receipt_length = encoded.length;
     (void)memcpy(fixture->canonical_receipt, encoded.bytes, encoded.length);
-    if (lxp_arena_reset(&arena, 0U) != LXP_OK ||
-        lxp_receipt_decode(fixture->canonical_receipt,
+    if (TRACE_RESULT(lxp_arena_reset(&arena, 0U)) != LXP_OK ||
+        TRACE_RESULT(lxp_receipt_decode(fixture->canonical_receipt,
                            fixture->canonical_receipt_length, true,
-                           &decoded_receipt) != LXP_OK ||
-        lxp_programs_project_receipt_events(
-            &decoded_receipt, &arena, &projected_events) != LXP_OK ||
+                           &decoded_receipt)) != LXP_OK ||
+        TRACE_RESULT(lxp_programs_project_receipt_events(
+            &decoded_receipt, &arena, &projected_events)) != LXP_OK ||
         projected_events.length > sizeof(fixture->canonical_events))
-        return 1;
+        return diagnostic_failure(__func__, __LINE__);
     fixture->canonical_events_length = projected_events.length;
     (void)memcpy(fixture->canonical_events, projected_events.bytes,
                  projected_events.length);
-    if (lxp_arena_reset(&arena, 0U) != LXP_OK) return 1;
+    if (TRACE_RESULT(lxp_arena_reset(&arena, 0U)) != LXP_OK) return diagnostic_failure(__func__, __LINE__);
     fixture->receipts[0] = (lxp_byte_span){
         fixture->canonical_receipt, fixture->canonical_receipt_length};
     fixture->events[0] = (lxp_byte_span){
         fixture->canonical_events, fixture->canonical_events_length};
-    if (lxp_merkle_leaf_hash(fixture->canonical_receipt,
+    if (TRACE_RESULT(lxp_merkle_leaf_hash(fixture->canonical_receipt,
                              fixture->canonical_receipt_length,
-                             receipt_hashes[0]) != LXP_OK ||
-        lxp_merkle_proof_generate(
+                             receipt_hashes[0])) != LXP_OK ||
+        TRACE_RESULT(lxp_merkle_proof_generate(
             (const uint8_t (*)[32])receipt_hashes, 1U, 0U, &arena,
-            &fixture->receipt_proofs[0], receipt_root) != LXP_OK ||
-        lxp_batch_roots_compute(
+            &fixture->receipt_proofs[0], receipt_root)) != LXP_OK ||
+        TRACE_RESULT(lxp_batch_roots_compute(
             &(lxp_batch_root_inputs){
                 fixture->activities, 1U, fixture->receipts, 1U,
                 fixture->events, 1U, NULL, 0U, NULL, 0U},
-            &arena, &roots) != LXP_OK ||
+            &arena, &roots)) != LXP_OK ||
         lxp_ct_memcmp(receipt_root, roots.receipt_merkle_root, 32U) != 0)
-        return 1;
+        return diagnostic_failure(__func__, __LINE__);
 
     (void)memcpy(fixture->input.authorization.public_key,
                  sequencer_public, 32U);
@@ -257,16 +284,16 @@ static int build_canonical_batch(canonical_batch_fixture *fixture,
         uint64_t parameters = 1U;
         lxp_batch_body body = {0};
         lxp_byte_span diff, recovery;
-        if (lx_account_registry_init(&accounts) != LXP_OK ||
-            lxp_state_store_init(&state, TEST_FIRST_SEQUENCE + 1U) != LXP_OK ||
-            lxp_state_store_bind_accounts(&state, &accounts) != LXP_OK ||
-            lxp_kernel_create(&kernel, &state, &journal, &parameters, 3U) != LXP_OK ||
-            lxp_state_diff_encode(&accounts, &accounts, &arena, &diff) != LXP_OK ||
+        if (TRACE_RESULT(lx_account_registry_init(&accounts)) != LXP_OK ||
+            TRACE_RESULT(lxp_state_store_init(&state, TEST_FIRST_SEQUENCE + 1U)) != LXP_OK ||
+            TRACE_RESULT(lxp_state_store_bind_accounts(&state, &accounts)) != LXP_OK ||
+            TRACE_RESULT(lxp_kernel_create(&kernel, &state, &journal, &parameters, 3U)) != LXP_OK ||
+            TRACE_RESULT(lxp_state_diff_encode(&accounts, &accounts, &arena, &diff)) != LXP_OK ||
             diff.length != sizeof(fixture->state_diff) ||
-            lxp_da_recovery_from_kernel(&kernel, TEST_FIRST_SEQUENCE,
-                TEST_FIRST_SEQUENCE, &arena, &recovery) != LXP_OK ||
+            TRACE_RESULT(lxp_da_recovery_from_kernel(&kernel, TEST_FIRST_SEQUENCE,
+                TEST_FIRST_SEQUENCE, &arena, &recovery)) != LXP_OK ||
             recovery.length > sizeof(fixture->recovery_metadata))
-            return 1;
+            return diagnostic_failure(__func__, __LINE__);
         (void)memcpy(fixture->state_diff, diff.bytes, diff.length);
         (void)memcpy(fixture->recovery_metadata, recovery.bytes, recovery.length);
         fixture->input.state_diff = (lxp_byte_span){fixture->state_diff, diff.length};
@@ -274,24 +301,24 @@ static int build_canonical_batch(canonical_batch_fixture *fixture,
         body.header = header;
         body.state_diff = fixture->input.state_diff;
         body.recovery_metadata = fixture->input.recovery_metadata;
-        if (lxp_replay_section_encode(fixture->activities, 1U, &arena, &body.activities) != LXP_OK ||
-            lxp_da_receipt_section_encode(fixture->receipts, 1U, fixture->events, 1U,
-                &arena, &body.receipts) != LXP_OK ||
-            lxp_replay_section_encode(NULL, 0U, &arena, &body.oracle_inputs) != LXP_OK ||
-            lxp_batch_availability_root(&body, &arena, header.data_availability_root) != LXP_OK ||
-            lxp_state_store_destroy(&state) != LXP_OK)
-            return 1;
+        if (TRACE_RESULT(lxp_replay_section_encode(fixture->activities, 1U, &arena, &body.activities)) != LXP_OK ||
+            TRACE_RESULT(lxp_da_receipt_section_encode(fixture->receipts, 1U, fixture->events, 1U,
+                &arena, &body.receipts)) != LXP_OK ||
+            TRACE_RESULT(lxp_replay_section_encode(NULL, 0U, &arena, &body.oracle_inputs)) != LXP_OK ||
+            TRACE_RESULT(lxp_batch_availability_root(&body, &arena, header.data_availability_root)) != LXP_OK ||
+            TRACE_RESULT(lxp_state_store_destroy(&state)) != LXP_OK)
+            return diagnostic_failure(__func__, __LINE__);
     }
     header.timestamp_ms = TEST_TIMESTAMP_MS;
     (void)memcpy(header.sequencer_id,
                  fixture->input.authorization.sequencer_id, 32U);
-    if (lxp_arena_reset(&arena, 0U) != LXP_OK ||
-        lxp_batch_sign(&header, fixture->sequencer_private,
+    if (TRACE_RESULT(lxp_arena_reset(&arena, 0U)) != LXP_OK ||
+        TRACE_RESULT(lxp_batch_sign(&header, fixture->sequencer_private,
                        &fixture->input.authorization,
-                       fixture->input.header_signature, &arena) != LXP_OK ||
-        lxp_batch_header_encode(&header, &arena, &encoded) != LXP_OK ||
+                       fixture->input.header_signature, &arena)) != LXP_OK ||
+        TRACE_RESULT(lxp_batch_header_encode(&header, &arena, &encoded)) != LXP_OK ||
         encoded.length != sizeof(fixture->canonical_header))
-        return 1;
+        return diagnostic_failure(__func__, __LINE__);
     (void)memcpy(fixture->canonical_header, encoded.bytes, encoded.length);
 
     fixture->input.protocol_version = LXP_PROTOCOL_VERSION;
@@ -311,10 +338,10 @@ static int build_canonical_batch(canonical_batch_fixture *fixture,
     fixture->input.receipts = fixture->receipts;
     fixture->input.events = fixture->events;
     fixture->input.receipt_proofs = fixture->receipt_proofs;
-    return lxp_kernel_batch_publication_digest(
+    return TRACE_RESULT(lxp_kernel_batch_publication_digest(
         &fixture->input.base, &fixture->input.settled,
         fixture->activities, fixture->receipts, fixture->events, 1U,
-        fixture->input.publication_digest) == LXP_OK ? 0 : 1;
+        fixture->input.publication_digest)) == LXP_OK ? 0 : 1;
 }
 
 static int expect_classification(
@@ -323,7 +350,7 @@ static int expect_classification(
     lxp_daemon_batch_wal_recovery expected)
 {
     lxp_daemon_batch_wal_recovery actual = 0;
-    return lxp_daemon_batch_wal_classify(record, live, &actual) == LXP_OK &&
+    return TRACE_RESULT(lxp_daemon_batch_wal_classify(record, live, &actual)) == LXP_OK &&
         actual == expected ? 0 : 1;
 }
 
@@ -335,76 +362,93 @@ static int refuse_invalid_canonical_activity_signature(void)
     lxp_activity decoded_activity;
     uint8_t fsynced_digest[32];
     int path_length;
-    if (mkdtemp(directory) == NULL) return 1;
+    if (mkdtemp(directory) == NULL) return diagnostic_failure(__func__, __LINE__);
     path_length = snprintf(path, sizeof(path), "%s/prepared-batch.lxw",
                            directory);
     if (path_length < 0 || (size_t)path_length >= sizeof(path) ||
         build_canonical_batch(&fixture, false) != 0 ||
-        lxp_daemon_batch_wal_write_prepared(
-            directory, &fixture.input, fsynced_digest) != LXP_OK ||
+        TRACE_RESULT(lxp_daemon_batch_wal_write_prepared(
+            directory, &fixture.input, fsynced_digest)) != LXP_OK ||
         lxp_ct_memcmp(fsynced_digest, fixture.input.publication_digest,
                       sizeof(fsynced_digest)) != 0 ||
         unlink(path) != 0 ||
         build_canonical_batch(&fixture, true) != 0 ||
-        lxp_activity_decode(fixture.canonical_activity,
+        TRACE_RESULT(lxp_activity_decode(fixture.canonical_activity,
                             fixture.canonical_activity_length,
-                            &decoded_activity) != LXP_OK ||
-        lxp_activity_verify_signature(&decoded_activity) !=
+                            &decoded_activity)) != LXP_OK ||
+        TRACE_RESULT(lxp_activity_verify_signature(&decoded_activity)) !=
             LXP_ERR_BAD_SIGNATURE ||
-        lxp_daemon_batch_wal_write_prepared(
-            directory, &fixture.input, fsynced_digest) !=
+        TRACE_RESULT(lxp_daemon_batch_wal_write_prepared(
+            directory, &fixture.input, fsynced_digest)) !=
             LXP_ERR_BAD_SIGNATURE ||
         access(path, F_OK) == 0 || rmdir(directory) != 0)
-        return 1;
+        return diagnostic_failure(__func__, __LINE__);
     return 0;
 }
 
 static int classify_recovery_matrix(void)
 {
-    lxp_daemon_batch_wal_record record;
+    canonical_batch_fixture fixture;
+    lxp_daemon_batch_wal_record *record = NULL;
     lxp_kernel_batch_boundary unrelated;
     lxp_kernel_batch_boundary changed_root;
     lxp_daemon_batch_wal_recovery recovery;
-    (void)memset(&record, 0, sizeof(record));
-    boundary(&record.view.base, 0x11U, 8U);
-    boundary(&record.view.settled, 0x21U, 10U);
-    boundary(&unrelated, 0x31U, 12U);
-
-    record.state = LXP_DAEMON_BATCH_WAL_PREPARED;
-    if (expect_classification(&record, &record.view.base,
-                              LXP_DAEMON_BATCH_WAL_DISCARD_BASE) != 0 ||
-        expect_classification(&record, &record.view.settled,
-                              LXP_DAEMON_BATCH_WAL_FINALIZE_SETTLED) != 0)
-        return 1;
-    record.state = LXP_DAEMON_BATCH_WAL_ABORTED;
-    if (expect_classification(&record, &record.view.base,
-                              LXP_DAEMON_BATCH_WAL_ALREADY_ABORTED) != 0 ||
-        lxp_daemon_batch_wal_classify(&record, &record.view.settled,
-                                      &recovery) !=
-            LXP_FATAL_REPLAY_DIVERGENCE)
-        return 1;
-    record.state = LXP_DAEMON_BATCH_WAL_COMMITTED;
-    if (expect_classification(&record, &record.view.settled,
-                              LXP_DAEMON_BATCH_WAL_ALREADY_COMMITTED) != 0 ||
-        lxp_daemon_batch_wal_classify(&record, &record.view.base,
-                                      &recovery) !=
-            LXP_FATAL_REPLAY_DIVERGENCE ||
-        lxp_daemon_batch_wal_classify(&record, &unrelated, &recovery) !=
-            LXP_FATAL_REPLAY_DIVERGENCE)
-        return 1;
-    record.state = LXP_DAEMON_BATCH_WAL_PREPARED;
-    changed_root = record.view.base;
+    char directory[] = "/tmp/lxp-batch-wal-classify-XXXXXX";
+    uint8_t digest[32];
+    bool present = false;
+    if (build_canonical_batch(&fixture, false) != 0 ||
+        mkdtemp(directory) == NULL ||
+        TRACE_RESULT(lxp_daemon_batch_wal_write_prepared(
+            directory, &fixture.input, digest)) != LXP_OK ||
+        TRACE_RESULT(lxp_daemon_batch_wal_load(directory,
+            &fixture.input.authorization, &record, &present)) != LXP_OK ||
+        !present || record == NULL)
+        return diagnostic_failure(__func__, __LINE__);
+    boundary(&unrelated, 0x51U, TEST_FIRST_SEQUENCE + 2U);
+    changed_root = fixture.input.base;
     changed_root.receipt_state_root[31] = 1U;
-    if (lxp_daemon_batch_wal_classify(&record, &changed_root, &recovery) !=
-            LXP_FATAL_REPLAY_DIVERGENCE ||
-        lxp_daemon_batch_wal_classify(NULL, &record.view.base, &recovery) !=
-            LXP_ERR_NON_CANONICAL ||
-        lxp_daemon_batch_wal_classify(&record, NULL, &recovery) !=
-            LXP_ERR_NON_CANONICAL ||
-        lxp_daemon_batch_wal_classify(&record, &record.view.base, NULL) !=
-            LXP_ERR_NON_CANONICAL)
-        return 1;
-    return 0;
+    if (expect_classification(record, &fixture.input.base,
+                              LXP_DAEMON_BATCH_WAL_DISCARD_BASE) != 0 ||
+        expect_classification(record, &fixture.input.settled,
+                              LXP_DAEMON_BATCH_WAL_FINALIZE_SETTLED) != 0 ||
+        TRACE_RESULT(lxp_daemon_batch_wal_classify(record, &changed_root,
+            &recovery)) != LXP_FATAL_REPLAY_DIVERGENCE ||
+        TRACE_RESULT(lxp_daemon_batch_wal_classify(NULL, &fixture.input.base,
+            &recovery)) != LXP_ERR_NON_CANONICAL ||
+        TRACE_RESULT(lxp_daemon_batch_wal_classify(record, NULL,
+            &recovery)) != LXP_ERR_NON_CANONICAL ||
+        TRACE_RESULT(lxp_daemon_batch_wal_classify(record, &fixture.input.base,
+            NULL)) != LXP_ERR_NON_CANONICAL ||
+        TRACE_RESULT(lxp_daemon_batch_wal_transition(directory, record,
+            &fixture.input.base, LXP_DAEMON_BATCH_WAL_ABORTED)) != LXP_OK ||
+        expect_classification(record, &fixture.input.base,
+                              LXP_DAEMON_BATCH_WAL_ALREADY_ABORTED) != 0 ||
+        TRACE_RESULT(lxp_daemon_batch_wal_classify(record,
+            &fixture.input.settled, &recovery)) != LXP_FATAL_REPLAY_DIVERGENCE ||
+        TRACE_RESULT(lxp_daemon_batch_wal_retire(directory, record,
+            &fixture.input.base)) != LXP_OK)
+        return diagnostic_failure(__func__, __LINE__);
+    lxp_daemon_batch_wal_destroy(record);
+    record = NULL;
+    present = false;
+    if (TRACE_RESULT(lxp_daemon_batch_wal_write_prepared(directory,
+            &fixture.input, digest)) != LXP_OK ||
+        TRACE_RESULT(lxp_daemon_batch_wal_load(directory,
+            &fixture.input.authorization, &record, &present)) != LXP_OK ||
+        !present || record == NULL ||
+        TRACE_RESULT(lxp_daemon_batch_wal_transition(directory, record,
+            &fixture.input.settled, LXP_DAEMON_BATCH_WAL_COMMITTED)) != LXP_OK ||
+        expect_classification(record, &fixture.input.settled,
+                              LXP_DAEMON_BATCH_WAL_ALREADY_COMMITTED) != 0 ||
+        TRACE_RESULT(lxp_daemon_batch_wal_classify(record, &fixture.input.base,
+            &recovery)) != LXP_FATAL_REPLAY_DIVERGENCE ||
+        TRACE_RESULT(lxp_daemon_batch_wal_classify(record, &unrelated,
+            &recovery)) != LXP_FATAL_REPLAY_DIVERGENCE ||
+        TRACE_RESULT(lxp_daemon_batch_wal_retire(directory, record,
+            &fixture.input.settled)) != LXP_OK)
+        return diagnostic_failure(__func__, __LINE__);
+    lxp_daemon_batch_wal_destroy(record);
+    return rmdir(directory) != 0;
 }
 
 static int write_exact(int descriptor, const uint8_t *bytes, size_t length)
@@ -412,7 +456,7 @@ static int write_exact(int descriptor, const uint8_t *bytes, size_t length)
     size_t offset = 0U;
     while (offset < length) {
         ssize_t written = write(descriptor, bytes + offset, length - offset);
-        if (written <= 0) return 1;
+        if (written <= 0) return diagnostic_failure(__func__, __LINE__);
         offset += (size_t)written;
     }
     return 0;
@@ -432,25 +476,29 @@ static int write_legacy_fixture(const char *path, unsigned version,
     lxp_hash_context hash;
     int fd = open(path, O_RDWR | O_CLOEXEC);
     ssize_t count = fd < 0 ? -1 : read(fd, bytes, sizeof(bytes));
-    if (count <= 0 || (size_t)count <= length + 32U || bytes[9] != 4U ||
-        lxp_arena_init(&arena, storage, sizeof(storage)) != LXP_OK ||
-        lxp_batch_header_decode(bytes + header_offset,
-            LXP_BATCH_HEADER_ENCODED_SIZE, &header) != LXP_OK ||
-        lxp_merkle_leaf_hash(NULL, 0U, header.data_availability_root) != LXP_OK ||
-        lxp_batch_sign(&header, fixture->sequencer_private,
-            &fixture->input.authorization, bytes + 762U - 64U, &arena) != LXP_OK ||
-        lxp_batch_header_encode(&header, &arena, &encoded) != LXP_OK)
-        return 1;
+    if ((version != 1U && version != 2U) || count <= 0 ||
+        (size_t)count <= artifacts + 12U + 1033U + 32U ||
+        bytes[8] != 0U || bytes[9] != 5U ||
+        !lxp_ct_is_zero(bytes + artifacts, 12U) ||
+        TRACE_RESULT(lxp_arena_init(&arena, storage, sizeof(storage))) != LXP_OK ||
+        TRACE_RESULT(lxp_batch_header_decode(bytes + header_offset,
+            LXP_BATCH_HEADER_ENCODED_SIZE, &header)) != LXP_OK ||
+        TRACE_RESULT(lxp_merkle_leaf_hash(NULL, 0U, header.data_availability_root)) != LXP_OK ||
+        TRACE_RESULT(lxp_batch_sign(&header, fixture->sequencer_private,
+            &fixture->input.authorization, bytes + 762U - 64U, &arena)) != LXP_OK ||
+        TRACE_RESULT(lxp_batch_header_encode(&header, &arena, &encoded)) != LXP_OK)
+        return diagnostic_failure(__func__, __LINE__);
     memcpy(bytes + header_offset, encoded.bytes, encoded.length);
-    if (version == 1U) memmove(bytes + artifacts, bytes + artifacts + 8U, 1033U);
+    memmove(bytes + artifacts + (version == 2U ? 8U : 0U),
+            bytes + artifacts + 12U, 1033U);
     bytes[9] = (uint8_t)version;
     for (size_t i = 0U; i < 8U; ++i)
         bytes[12U + i] = (uint8_t)((uint64_t)(length + 32U) >> (56U - 8U * i));
     lxp_hash_init(&hash);
-    if (lxp_hash_update(&hash, (const uint8_t *)"layerx-prepared-batch-v1", 24U) != LXP_OK ||
-        lxp_hash_update(&hash, bytes, length) != LXP_OK ||
-        lxp_hash_final(&hash, digest) != LXP_OK)
-        return 1;
+    if (TRACE_RESULT(lxp_hash_update(&hash, (const uint8_t *)"layerx-prepared-batch-v1", 24U)) != LXP_OK ||
+        TRACE_RESULT(lxp_hash_update(&hash, bytes, length)) != LXP_OK ||
+        TRACE_RESULT(lxp_hash_final(&hash, digest)) != LXP_OK)
+        return diagnostic_failure(__func__, __LINE__);
     memcpy(bytes + length, digest, 32U);
     return lseek(fd, 0, SEEK_SET) != 0 || write_exact(fd, bytes, length + 32U) != 0 ||
         ftruncate(fd, (off_t)(length + 32U)) != 0 || fsync(fd) != 0 || close(fd) != 0;
@@ -466,7 +514,7 @@ static int recover_both_schemas(void)
     if (build_canonical_batch(&fixture, false) != 0 ||
         mkdtemp(directory) == NULL ||
         snprintf(path, sizeof(path), "%s/prepared-batch.lxw", directory) < 0)
-        return 1;
+        return diagnostic_failure(__func__, __LINE__);
     for (unsigned version = 1U; version <= 2U; ++version) {
         lxp_daemon_batch_wal_record *record = NULL;
         const lxp_daemon_batch_wal_input *view;
@@ -475,16 +523,16 @@ static int recover_both_schemas(void)
         int descriptor;
         if (version == 2U) {
             fixture.input.terminal_payloads = empty_artifacts;
-            if (lxp_daemon_batch_wal_write_prepared(directory, &fixture.input, digest) == LXP_OK)
-                return 1;
+            if (TRACE_RESULT(lxp_daemon_batch_wal_write_prepared(directory, &fixture.input, digest)) == LXP_OK)
+                return diagnostic_failure(__func__, __LINE__);
             fixture.input.call_graphs = empty_artifacts;
         }
-        if (lxp_daemon_batch_wal_write_prepared(directory, &fixture.input, digest) != LXP_OK ||
+        if (TRACE_RESULT(lxp_daemon_batch_wal_write_prepared(directory, &fixture.input, digest)) != LXP_OK ||
             write_legacy_fixture(path, version, &fixture) != 0 ||
-            lxp_daemon_batch_wal_load(directory, &fixture.input.authorization,
-                                      &record, &present) != LXP_OK ||
+            TRACE_RESULT(lxp_daemon_batch_wal_load(directory, &fixture.input.authorization,
+                                      &record, &present)) != LXP_OK ||
             !present || record == NULL)
-            return 1;
+            return diagnostic_failure(__func__, __LINE__);
         view = lxp_daemon_batch_wal_view(record);
         if (view == NULL ||
             view->activities[0].length != fixture.activities[0].length ||
@@ -497,7 +545,7 @@ static int recover_both_schemas(void)
             (version == 2U && (view->terminal_payloads == NULL || view->call_graphs == NULL ||
                               view->terminal_payloads[0].length != 0U ||
                               view->call_graphs[0].length != 0U)))
-            return 1;
+            return diagnostic_failure(__func__, __LINE__);
         {
             uint8_t storage[65536];
             lxp_arena arena;
@@ -507,41 +555,41 @@ static int recover_both_schemas(void)
             lxp_batch_header header;
             if (view->state_diff.bytes != NULL || view->state_diff.length != 0U ||
                 view->recovery_metadata.bytes != NULL || view->recovery_metadata.length != 0U ||
-                lxp_arena_init(&arena, storage, sizeof(storage)) != LXP_OK ||
-                lxp_daemon_batch_wal_body(view, &arena, &body) != LXP_ERR_NON_CANONICAL ||
-                lxp_daemon_batch_wal_write_prepared(directory, view, digest) != LXP_ERR_ROOT_MISMATCH ||
-                lxp_da_store_init(&store, directory) != LXP_OK ||
-                lxp_batch_header_decode(view->canonical_header.bytes,
-                    view->canonical_header.length, &header) != LXP_OK ||
-                lxp_da_store_read_verified(&store, view->batch_number,
-                    header.data_availability_root, &arena, &bundle) != LXP_ERR_DA_MISSING ||
-                lxp_daemon_batch_wal_transition(directory, record, &view->settled,
-                    LXP_DAEMON_BATCH_WAL_COMMITTED) != LXP_OK)
-                return 1;
+                TRACE_RESULT(lxp_arena_init(&arena, storage, sizeof(storage))) != LXP_OK ||
+                TRACE_RESULT(lxp_daemon_batch_wal_body(view, &arena, &body)) != LXP_ERR_NON_CANONICAL ||
+                TRACE_RESULT(lxp_daemon_batch_wal_write_prepared(directory, view, digest)) != LXP_ERR_ROOT_MISMATCH ||
+                TRACE_RESULT(lxp_da_store_init(&store, directory)) != LXP_OK ||
+                TRACE_RESULT(lxp_batch_header_decode(view->canonical_header.bytes,
+                    view->canonical_header.length, &header)) != LXP_OK ||
+                TRACE_RESULT(lxp_da_store_read_verified(&store, view->batch_number,
+                    header.data_availability_root, &arena, &bundle)) != LXP_ERR_DA_MISSING ||
+                TRACE_RESULT(lxp_daemon_batch_wal_transition(directory, record, &view->settled,
+                    LXP_DAEMON_BATCH_WAL_COMMITTED)) != LXP_OK)
+                return diagnostic_failure(__func__, __LINE__);
         }
         lxp_daemon_batch_wal_destroy(record);
         record = NULL;
         descriptor = open(path, O_RDWR | O_CLOEXEC);
         if (descriptor < 0 || read(descriptor, prefix, sizeof(prefix)) != (ssize_t)sizeof(prefix) ||
             prefix[8] != 0U || prefix[9] != version)
-            return 1;
+            return diagnostic_failure(__func__, __LINE__);
         if (version == 2U) {
             off_t length = lseek(descriptor, 0, SEEK_END);
             uint8_t last;
             uint8_t corrupt;
             if (length <= 1 || pread(descriptor, &last, 1U, length - 1) != 1)
-                return 1;
+                return diagnostic_failure(__func__, __LINE__);
             corrupt = (uint8_t)(last ^ 1U);
             if (pwrite(descriptor, &corrupt, 1U, length - 1) != 1 ||
-                lxp_daemon_batch_wal_load(directory, &fixture.input.authorization,
-                                          &record, &present) != LXP_ERR_LOG_CORRUPT ||
+                TRACE_RESULT(lxp_daemon_batch_wal_load(directory, &fixture.input.authorization,
+                                          &record, &present)) != LXP_ERR_LOG_CORRUPT ||
                 record != NULL || pwrite(descriptor, &last, 1U, length - 1) != 1 ||
                 ftruncate(descriptor, length - 1) != 0 ||
-                lxp_daemon_batch_wal_load(directory, &fixture.input.authorization,
-                                          &record, &present) == LXP_OK || record != NULL)
-                return 1;
+                TRACE_RESULT(lxp_daemon_batch_wal_load(directory, &fixture.input.authorization,
+                                          &record, &present)) == LXP_OK || record != NULL)
+                return diagnostic_failure(__func__, __LINE__);
         }
-        if (close(descriptor) != 0 || unlink(path) != 0) return 1;
+        if (close(descriptor) != 0 || unlink(path) != 0) return diagnostic_failure(__func__, __LINE__);
     }
     return rmdir(directory) != 0;
 }
@@ -554,7 +602,7 @@ static int retire_legacy_records(void)
     uint8_t digest[32];
     if (build_canonical_batch(&fixture, false) != 0 || mkdtemp(directory) == NULL ||
         snprintf(path, sizeof(path), "%s/prepared-batch.lxw", directory) < 0)
-        return 1;
+        return diagnostic_failure(__func__, __LINE__);
     for (unsigned version = 1U; version <= 2U; ++version) {
         for (unsigned settled = 0U; settled <= 1U; ++settled) {
             lxp_daemon_batch_wal_record *record = NULL, *reloaded = NULL;
@@ -562,21 +610,21 @@ static int retire_legacy_records(void)
                 &fixture.input.settled : &fixture.input.base;
             lxp_daemon_batch_wal_recovery recovery;
             bool present = false;
-            if (lxp_daemon_batch_wal_write_prepared(directory, &fixture.input, digest) != LXP_OK ||
+            if (TRACE_RESULT(lxp_daemon_batch_wal_write_prepared(directory, &fixture.input, digest)) != LXP_OK ||
                 write_legacy_fixture(path, version, &fixture) != 0 ||
-                lxp_daemon_batch_wal_load(directory, &fixture.input.authorization,
-                    &record, &present) != LXP_OK || !present ||
-                lxp_daemon_batch_wal_transition(directory, record, live,
-                    settled != 0U ? LXP_DAEMON_BATCH_WAL_COMMITTED : LXP_DAEMON_BATCH_WAL_ABORTED) != LXP_OK ||
-                lxp_daemon_batch_wal_load(directory, &fixture.input.authorization,
-                    &reloaded, &present) != LXP_OK || !present ||
+                TRACE_RESULT(lxp_daemon_batch_wal_load(directory, &fixture.input.authorization,
+                    &record, &present)) != LXP_OK || !present ||
+                TRACE_RESULT(lxp_daemon_batch_wal_transition(directory, record, live,
+                    settled != 0U ? LXP_DAEMON_BATCH_WAL_COMMITTED : LXP_DAEMON_BATCH_WAL_ABORTED)) != LXP_OK ||
+                TRACE_RESULT(lxp_daemon_batch_wal_load(directory, &fixture.input.authorization,
+                    &reloaded, &present)) != LXP_OK || !present ||
                 lxp_daemon_batch_wal_record_state(reloaded) != LXP_DAEMON_BATCH_WAL_PREPARED ||
-                lxp_daemon_batch_wal_classify(reloaded, live, &recovery) != LXP_OK ||
+                TRACE_RESULT(lxp_daemon_batch_wal_classify(reloaded, live, &recovery)) != LXP_OK ||
                 recovery != (settled != 0U ? LXP_DAEMON_BATCH_WAL_FINALIZE_SETTLED :
                                             LXP_DAEMON_BATCH_WAL_DISCARD_BASE) ||
-                lxp_daemon_batch_wal_retire(directory, record, live) != LXP_OK ||
+                TRACE_RESULT(lxp_daemon_batch_wal_retire(directory, record, live)) != LXP_OK ||
                 access(path, F_OK) == 0)
-                return 1;
+                return diagnostic_failure(__func__, __LINE__);
             lxp_daemon_batch_wal_destroy(reloaded);
             lxp_daemon_batch_wal_destroy(record);
         }
@@ -597,15 +645,15 @@ static int refuse_malformed_record(void)
     (void)memset(&authorization, 0, sizeof(authorization));
     if (mkdtemp(directory) == NULL ||
         snprintf(path, sizeof(path), "%s/prepared-batch.lxw", directory) < 0)
-        return 1;
+        return diagnostic_failure(__func__, __LINE__);
     descriptor = open(path, O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC, 0600);
     if (descriptor < 0 || write_exact(descriptor, bytes, sizeof(bytes)) != 0 ||
         fdatasync(descriptor) != 0 || close(descriptor) != 0 ||
-        lxp_daemon_batch_wal_load(directory, &authorization, &record,
-                                  &present) != LXP_ERR_LOG_CORRUPT ||
+        TRACE_RESULT(lxp_daemon_batch_wal_load(directory, &authorization, &record,
+                                  &present)) != LXP_ERR_LOG_CORRUPT ||
         record != NULL || present || unlink(path) != 0 ||
         rmdir(directory) != 0)
-        return 1;
+        return diagnostic_failure(__func__, __LINE__);
     return 0;
 }
 
@@ -622,15 +670,15 @@ static int sweep_interrupted_replacement(void)
     if (mkdtemp(directory) == NULL ||
         snprintf(path, sizeof(path), "%s/.prepared-batch.%llu.1.tmp",
                  directory, (unsigned long long)getpid()) < 0)
-        return 1;
+        return diagnostic_failure(__func__, __LINE__);
     descriptor = open(path, O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC, 0600);
     if (descriptor < 0 || write_exact(descriptor, &byte, sizeof(byte)) != 0 ||
         fdatasync(descriptor) != 0 || close(descriptor) != 0 ||
-        lxp_daemon_batch_wal_load(directory, &authorization, &record,
-                                  &present) != LXP_OK ||
+        TRACE_RESULT(lxp_daemon_batch_wal_load(directory, &authorization, &record,
+                                  &present)) != LXP_OK ||
         record != NULL || present || access(path, F_OK) == 0 ||
         rmdir(directory) != 0)
-        return 1;
+        return diagnostic_failure(__func__, __LINE__);
     return 0;
 }
 
@@ -653,47 +701,47 @@ static int rotate_grouped_commit_for_replay(void)
                  "%s/prepared-batch.group-0.lxw", directory) < 0 ||
         snprintf(paths[1], sizeof(paths[1]),
                  "%s/prepared-batch.group-1.lxw", directory) < 0 ||
-        lxp_daemon_batch_wal_initialize(directory) != LXP_OK ||
-        lxp_daemon_batch_wal_initialize(directory) != LXP_OK)
-        return 1;
+        TRACE_RESULT(lxp_daemon_batch_wal_initialize(directory)) != LXP_OK ||
+        TRACE_RESULT(lxp_daemon_batch_wal_initialize(directory)) != LXP_OK)
+        return diagnostic_failure(__func__, __LINE__);
     for (slot = 0U; slot < 2U; ++slot) {
         if (stat(paths[slot], &information) != 0 ||
             !S_ISREG(information.st_mode) || information.st_nlink != 1U ||
             (information.st_mode & 0777U) != 0600U ||
             information.st_size != 0)
-            return 1;
+            return diagnostic_failure(__func__, __LINE__);
     }
     slot = (unsigned)((fixture.input.batch_number - 1U) & 1U);
-    if (lxp_daemon_batch_wal_write_prepared(
-            directory, &fixture.input, digest) != LXP_OK ||
+    if (TRACE_RESULT(lxp_daemon_batch_wal_write_prepared(
+            directory, &fixture.input, digest)) != LXP_OK ||
         stat(paths[slot], &information) != 0 || information.st_size <= 0 ||
-        lxp_daemon_batch_wal_load(
+        TRACE_RESULT(lxp_daemon_batch_wal_load(
             directory, &fixture.input.authorization,
-            &record, &present) != LXP_OK || !present || record == NULL)
-        return 1;
+            &record, &present)) != LXP_OK || !present || record == NULL)
+        return diagnostic_failure(__func__, __LINE__);
     view = lxp_daemon_batch_wal_view(record);
     if (view == NULL || view->batch_number != fixture.input.batch_number ||
-        lxp_daemon_batch_wal_transition(
+        TRACE_RESULT(lxp_daemon_batch_wal_transition(
             directory, record, &view->settled,
-            LXP_DAEMON_BATCH_WAL_COMMITTED) != LXP_OK ||
-        lxp_daemon_batch_wal_load(
+            LXP_DAEMON_BATCH_WAL_COMMITTED)) != LXP_OK ||
+        TRACE_RESULT(lxp_daemon_batch_wal_load(
             directory, &fixture.input.authorization,
-            &reloaded, &present) != LXP_OK || !present || reloaded == NULL ||
+            &reloaded, &present)) != LXP_OK || !present || reloaded == NULL ||
         lxp_daemon_batch_wal_record_state(reloaded) !=
             LXP_DAEMON_BATCH_WAL_PREPARED ||
-        lxp_daemon_batch_wal_classify(
-            reloaded, &view->settled, &recovery) != LXP_OK ||
+        TRACE_RESULT(lxp_daemon_batch_wal_classify(
+            reloaded, &view->settled, &recovery)) != LXP_OK ||
         recovery != LXP_DAEMON_BATCH_WAL_FINALIZE_SETTLED ||
-        lxp_daemon_batch_wal_retire(
-            directory, record, &view->settled) != LXP_OK)
-        return 1;
+        TRACE_RESULT(lxp_daemon_batch_wal_retire(
+            directory, record, &view->settled)) != LXP_OK)
+        return diagnostic_failure(__func__, __LINE__);
     lxp_daemon_batch_wal_destroy(reloaded);
     reloaded = NULL;
-    if (lxp_daemon_batch_wal_load(
+    if (TRACE_RESULT(lxp_daemon_batch_wal_load(
             directory, &fixture.input.authorization,
-            &reloaded, &present) != LXP_OK || present || reloaded != NULL ||
+            &reloaded, &present)) != LXP_OK || present || reloaded != NULL ||
         stat(paths[slot], &information) != 0 || information.st_size != 0)
-        return 1;
+        return diagnostic_failure(__func__, __LINE__);
     lxp_daemon_batch_wal_destroy(record);
     return unlink(paths[0]) != 0 || unlink(paths[1]) != 0 ||
         rmdir(directory) != 0;
@@ -701,11 +749,11 @@ static int rotate_grouped_commit_for_replay(void)
 
 int main(void)
 {
-    return recover_both_schemas() != 0 ||
-        retire_legacy_records() != 0 ||
-        refuse_invalid_canonical_activity_signature() != 0 ||
-        classify_recovery_matrix() != 0 ||
-        refuse_malformed_record() != 0 ||
-        sweep_interrupted_replacement() != 0 ||
-        rotate_grouped_commit_for_replay() != 0 ? 1 : 0;
+    return diagnostic_run_case("recover_both_schemas", recover_both_schemas) != 0 ||
+        diagnostic_run_case("retire_legacy_records", retire_legacy_records) != 0 ||
+        diagnostic_run_case("refuse_invalid_canonical_activity_signature", refuse_invalid_canonical_activity_signature) != 0 ||
+        diagnostic_run_case("classify_recovery_matrix", classify_recovery_matrix) != 0 ||
+        diagnostic_run_case("refuse_malformed_record", refuse_malformed_record) != 0 ||
+        diagnostic_run_case("sweep_interrupted_replacement", sweep_interrupted_replacement) != 0 ||
+        diagnostic_run_case("rotate_grouped_commit_for_replay", rotate_grouped_commit_for_replay) != 0 ? 1 : 0;
 }

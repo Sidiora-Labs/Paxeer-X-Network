@@ -3951,22 +3951,12 @@ static lxp_result apply_canonical_batch(
     return status;
 }
 
-static lxp_result open_log(lxp_log *log, const char *environment,
-                           bool *opened)
-{
-    const char *path = required_environment(environment);
-    lxp_result status = path == NULL ? LXP_ERR_NON_CANONICAL :
-        lxp_log_open_or_create(log, path, UINT64_C(64) * 1024U * 1024U);
-    if (status == LXP_OK) *opened = true;
-    return status;
-}
-
 static lxp_result require_distinct_logs(lxp_log *const *logs, size_t count)
 {
-    struct stat identities[5];
+    struct stat identities[6];
     size_t i;
     size_t prior;
-    if (logs == NULL || count == 0U || count > 5U)
+    if (logs == NULL || count == 0U || count > 6U)
         return LXP_ERR_NON_CANONICAL;
     for (i = 0U; i < count; ++i) {
         if (logs[i] == NULL || logs[i]->descriptor < 0 ||
@@ -3979,6 +3969,32 @@ static lxp_result require_distinct_logs(lxp_log *const *logs, size_t count)
                 return LXP_ERR_CONTEXT_MISMATCH;
     }
     return LXP_OK;
+}
+
+static lxp_result require_distinct_process_logs(lxp_daemon_process *process)
+{
+    lxp_log *logs[6];
+    size_t count = 0U;
+    if (process->feed_open) logs[count++] = &process->feed_log;
+    if (process->canonical_open) logs[count++] = &process->canonical_log;
+    if (process->authority_open) logs[count++] = &process->authority_log;
+    if (process->batch_open) logs[count++] = &process->batch_log;
+    if (process->evidence_open) logs[count++] = &process->evidence_log;
+    if (process->availability_log_open) logs[count++] = &process->availability_log;
+    return require_distinct_logs(logs, count);
+}
+
+static lxp_result open_log(lxp_daemon_process *process, lxp_log *log,
+                           const char *environment, bool *opened)
+{
+    const char *path = required_environment(environment);
+    lxp_result status = path == NULL ? LXP_ERR_NON_CANONICAL :
+        lxp_log_open_or_create(log, path, UINT64_C(64) * 1024U * 1024U);
+    if (status == LXP_OK) {
+        *opened = true;
+        status = require_distinct_process_logs(process);
+    }
+    return status;
 }
 
 static void free_batch_spans(lxp_byte_span *spans, size_t count)
@@ -5573,10 +5589,10 @@ static lxp_result open_process(lxp_daemon_process *process,
     }
     if (status == LXP_OK) stage = "logs";
     if (status == LXP_OK) status = open_log(
-        &process->feed_log, "LAYERX_NODE_PROGRAM_FEED_LOG",
+        process, &process->feed_log, "LAYERX_NODE_PROGRAM_FEED_LOG",
         &process->feed_open);
     if (status == LXP_OK) status = open_log(
-        &process->canonical_log, "LAYERX_NODE_CANONICAL_LOG",
+        process, &process->canonical_log, "LAYERX_NODE_CANONICAL_LOG",
         &process->canonical_open);
     if (status == LXP_OK) {
         if (lxp_protocol_version_uses_occupancy(process->protocol_version))
@@ -5585,10 +5601,10 @@ static lxp_result open_process(lxp_daemon_process *process,
             status = lxp_log_recover(&process->canonical_log, NULL, NULL);
     }
     if (status == LXP_OK) status = open_log(
-        &process->authority_log, "LAYERX_NODE_RECEIPT_AUTHORITY_LOG",
+        process, &process->authority_log, "LAYERX_NODE_RECEIPT_AUTHORITY_LOG",
         &process->authority_open);
     if (status == LXP_OK) status = open_log(
-        &process->batch_log, "LAYERX_NODE_BATCH_LOG", &process->batch_open);
+        process, &process->batch_log, "LAYERX_NODE_BATCH_LOG", &process->batch_open);
     if (status == LXP_OK)
         status = lxp_log_recover_complete_records(
             &process->batch_log, NULL, NULL);
@@ -5596,12 +5612,15 @@ static lxp_result open_process(lxp_daemon_process *process,
         char path[LXP_DA_STORE_PATH_BYTES];
         int length = snprintf(path, sizeof(path), "%s/da-bodies.log", process->checkpoint_directory);
         if (length < 0 || (size_t)length >= sizeof(path)) status = LXP_ERR_LENGTH_LIMIT;
-        if (status == LXP_OK && !process->availability_log_open)
+        if (status == LXP_OK && !process->availability_log_open) {
             status = lxp_log_open_or_create(&process->availability_log, path,
                                             process->batch_log.capacity);
-        if (status == LXP_OK) {
-            process->availability_log_open = true;
-            status = lxp_log_recover_complete_records(&process->availability_log, NULL, NULL);
+            if (status == LXP_OK) {
+                process->availability_log_open = true;
+                status = require_distinct_process_logs(process);
+            }
+            if (status == LXP_OK)
+                status = lxp_log_recover_complete_records(&process->availability_log, NULL, NULL);
         }
     }
     if (status == LXP_OK)
@@ -5634,7 +5653,7 @@ static lxp_result open_process(lxp_daemon_process *process,
             &process->receipt_authority, &process->authority_log,
             &process->sequencer_authorization, process->handover_chain);
     if (status == LXP_OK) status = open_log(
-        &process->evidence_log, "LAYERX_NODE_EVIDENCE_LOG",
+        process, &process->evidence_log, "LAYERX_NODE_EVIDENCE_LOG",
         &process->evidence_open);
     if (status == LXP_OK) {
         lxp_log *logs[5] = {
@@ -5652,8 +5671,11 @@ static lxp_result open_process(lxp_daemon_process *process,
             &process->evidence_store, &process->evidence_log,
             process->network_id, &process->sequencer_authorization,
             genesis_settlement_anchor, true,
-            lxp_finality_authority_verify,
+            lxp_finality_authority_verify_history,
             &process->finality_authority, &process->owner_scratch, process->handover_chain);
+    if (status == LXP_OK &&
+        process->evidence_store.verify_finality_authority != NULL)
+        process->evidence_store.verify_finality_authority = lxp_finality_authority_verify;
     if (status == LXP_OK)
         process->evidence_store.availability_log = &process->availability_log;
     if (status == LXP_OK &&
