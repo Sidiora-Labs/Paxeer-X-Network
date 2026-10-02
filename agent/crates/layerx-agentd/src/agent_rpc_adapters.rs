@@ -15,6 +15,11 @@ use crate::human::{HumanOperationError, HumanOperations, HumanResponse};
 use crate::human_runtime::{HumanAuthorityBoundary, SharedAgentOwner};
 use crate::session_control::OperationPermit;
 use crate::tenant::Operation;
+use crate::agent_rpc_wire::Canonical;
+use crate::human::HumanRefusal;
+use layerx_agent_api::budget::{AuthorityResponse, BudgetRecord};
+use layerx_agent_api::read::Freshness;
+use sha2::{Digest, Sha256};
 
 pub(crate) fn sign<A: HumanAuthorityBoundary>(
     owner: &SharedAgentOwner<A>,
@@ -489,6 +494,9 @@ fn owner_error(request_id: RequestId, error: HumanOperationError) -> Rejection {
             },
         ),
 
+        HumanOperationError::Typed(refusal) => {
+            rejection(refusal.class(), request_id, refusal.reason())
+        }
         HumanOperationError::Unavailable => Rejection {
             class: ErrorClass::UnavailableCapability,
             retriability: Retriability::Retriable,
@@ -641,7 +649,10 @@ pub(crate) fn prepare<A: HumanAuthorityBoundary>(
     let envelope = crate::human::MutationEnvelope {
         request_id: id.0,
         key: mutation_key(ctx)?,
-        body_digest: crate::human_runtime::prepare_digest(&typed),
+        body_digest: crate::capability::binding::prepare_body_digest(
+            crate::human_runtime::prepare_digest(&typed),
+            typed.capability_id.as_ref(),
+        ),
         operation: typed,
     };
     let response = owner
@@ -1329,6 +1340,469 @@ fn capability_records_value(id: RequestId, payload: &[u8]) -> Result<Value, Reje
         out.insert("authority".into(), authority);
         out.insert("value".into(), Value::Object(value));
         Some(Value::Object(out))
+    })
+}
+
+/// Body digest of a budget mutation: a per-operation domain over the canonical JSON of the
+/// converted request, which binds every signed-authorization carrier field when present.
+fn budget_body_digest<T: Canonical>(domain: &[u8], typed: &T) -> [u8; 32] {
+    let mut digest = Sha256::new();
+    digest.update(domain);
+    digest.update(typed.canonical().to_string().as_bytes());
+    digest.finalize().into()
+}
+
+pub(crate) fn budget_create<A: HumanAuthorityBoundary>(
+    owner: &SharedAgentOwner<A>,
+    context: &RpcOwnerContext<'_>,
+    request: &Map<String, Value>,
+    ctx: &DispatchContext,
+) -> Result<Dispatched, Rejection> {
+    use crate::agent_rpc_dispatch::mutation_key;
+    use crate::agent_rpc_wire::{decode_wire, BudgetCreateWire};
+    let id = ctx.request_id;
+    let typed = decode_wire::<BudgetCreateWire>(request, id)?.into_request(id)?;
+    let envelope = crate::human::MutationEnvelope {
+        request_id: id.0,
+        key: mutation_key(ctx)?,
+        body_digest: budget_body_digest(b"LayerX/budget/create-body/v1\0", &typed),
+        operation: typed,
+    };
+    let response = owner
+        .lock()
+        .and_then(|mut guard| {
+            let control = guard.session_control.clone();
+            guard.budget_create(context, &control, envelope)
+        })
+        .map_err(|error| owner_error(id, error))?;
+    Ok(budget_record_value(&response))
+}
+
+pub(crate) fn budget_fund<A: HumanAuthorityBoundary>(
+    owner: &SharedAgentOwner<A>,
+    context: &RpcOwnerContext<'_>,
+    request: &Map<String, Value>,
+    ctx: &DispatchContext,
+) -> Result<Dispatched, Rejection> {
+    use crate::agent_rpc_dispatch::mutation_key;
+    use crate::agent_rpc_wire::{decode_wire, BudgetFundWire};
+    let id = ctx.request_id;
+    let typed = decode_wire::<BudgetFundWire>(request, id)?.into_request(id)?;
+    let envelope = crate::human::MutationEnvelope {
+        request_id: id.0,
+        key: mutation_key(ctx)?,
+        body_digest: budget_body_digest(b"LayerX/budget/fund-body/v1\0", &typed),
+        operation: typed,
+    };
+    let response = owner
+        .lock()
+        .and_then(|mut guard| {
+            let control = guard.session_control.clone();
+            guard.budget_fund(context, &control, envelope)
+        })
+        .map_err(|error| owner_error(id, error))?;
+    Ok(budget_record_value(&response))
+}
+
+pub(crate) fn budget_revoke<A: HumanAuthorityBoundary>(
+    owner: &SharedAgentOwner<A>,
+    context: &RpcOwnerContext<'_>,
+    request: &Map<String, Value>,
+    ctx: &DispatchContext,
+) -> Result<Dispatched, Rejection> {
+    use crate::agent_rpc_dispatch::mutation_key;
+    use crate::agent_rpc_wire::{decode_wire, BudgetTargetWire};
+    let id = ctx.request_id;
+    let typed = decode_wire::<BudgetTargetWire>(request, id)?.into_request(id)?;
+    let envelope = crate::human::MutationEnvelope {
+        request_id: id.0,
+        key: mutation_key(ctx)?,
+        body_digest: budget_body_digest(b"LayerX/budget/revoke-body/v1\0", &typed),
+        operation: typed,
+    };
+    let response = owner
+        .lock()
+        .and_then(|mut guard| {
+            let control = guard.session_control.clone();
+            guard.budget_revoke(context, &control, envelope)
+        })
+        .map_err(|error| owner_error(id, error))?;
+    Ok(budget_record_value(&response))
+}
+
+/// `AuthorityResponse<BudgetRecord>`: a protocol budget reports the level its state was proven
+/// at; a daemon limit reports no level and always carries its bypass notice.
+fn budget_record_value(response: &AuthorityResponse<crate::human::BudgetState>) -> Dispatched {
+    let state = &response.value;
+    let (value, verification) =
+        budget_record_wire(&state.record, state.proven_head, state.activity_id.as_ref());
+    Dispatched {
+        value: serde_json::json!({
+            "authority": authority_wire(&response.authority),
+            "value": value,
+        }),
+        verification,
+    }
+}
+
+fn authority_wire(authority: &layerx_agent_api::budget::AuthorityDescription) -> Value {
+    serde_json::json!({
+        "tenant": authority.tenant.as_str(),
+        "agent_did": authority.agent_did.as_str(),
+        "authority_ref": authority.authority_ref.as_str(),
+        "protocol_authority": hexv(&authority.protocol_authority),
+    })
+}
+
+/// The one `BudgetRecord` wire encoding and the verification it states.
+fn budget_record_wire(
+    record: &BudgetRecord,
+    head: u64,
+    activity_id: Option<&[u8; 32]>,
+) -> (Value, Option<VerificationStatus>) {
+    let level = crate::agent_rpc_dispatch::level_name;
+    let (mut value, verification) = match record {
+        BudgetRecord::Protocol(view) => (
+            serde_json::json!({
+                "enforcement": "ProtocolBudget",
+                "budget_id": hexv(&view.budget_id),
+                "owner": hexv(&view.owner),
+                "budget_account": hexv(&view.budget_account),
+                "asset_id": hexv(&view.asset_id),
+                "purpose_hash": hexv(&view.purpose_hash),
+                "per_period_limit": dec(view.per_period_limit.0),
+                "configured_period_limit": dec(view.configured_period_limit.0),
+                "carry_cap": dec(view.carry_cap.0),
+                "spent_this_period": dec(view.spent_this_period.0),
+                "carried": dec(view.carried.0),
+                "period_length_ms": dec(view.period_length_ms),
+                "period_start_ms": dec(view.period_start_ms),
+                "expiry_ms": dec(view.expiry_ms),
+                "revocation_counter": dec(view.revocation_counter),
+                "rollover_policy": dec(view.rollover_policy),
+                "closed": view.closed,
+                "revoked": view.revoked,
+                "delegates": view.delegates.iter().map(|delegate| hexv(delegate)).collect::<Vec<_>>(),
+                "source_account": view.source_account.as_ref().map(|account| hexv(account)),
+                "achieved_verification_level": level(view.achieved_verification_level),
+            }),
+            Some(VerificationStatus::Achieved(
+                view.achieved_verification_level,
+            )),
+        ),
+        BudgetRecord::Daemon(view) => (
+            serde_json::json!({
+                "enforcement": "DaemonLimit",
+                "budget_id": hexv(&view.budget_id),
+                "asset": hexv(&view.asset),
+                "ceiling": dec(view.ceiling.0),
+                "consumed": dec(view.consumed.0),
+                "expiry_ms": dec(view.expiry_ms),
+                "revoked": view.revoked,
+                "notice": view.notice(),
+            }),
+            None,
+        ),
+    };
+    if let Value::Object(fields) = &mut value {
+        fields.insert("head".into(), dec(head));
+        fields.insert(
+            "activity_id".into(),
+            activity_id.map_or(Value::Null, |id| hexv(id)),
+        );
+    }
+    (value, verification)
+}
+
+/// `budget.state`: the owner reads the budget through the authenticated session; the record
+/// keeps its own verification, and the state-proven balance, head and activity id are passed
+/// through as the owner proved them.
+pub(crate) fn budget_state<A: HumanAuthorityBoundary>(
+    owner: &SharedAgentOwner<A>,
+    context: &RpcOwnerContext<'_>,
+    request: &Map<String, Value>,
+    ctx: &DispatchContext,
+) -> Result<Dispatched, Rejection> {
+    let id = ctx.request_id;
+    let typed = crate::agent_rpc_wire::budget_state_request(request, id)?;
+    let response = owner
+        .lock()
+        .and_then(|mut guard| {
+            let control = guard.session_control.clone();
+            guard.budget_state(context, &control, typed)
+        })
+        .map_err(|error| owner_error(id, error))?;
+    let state = &response.value;
+    let (record, verification) =
+        budget_record_wire(&state.record, state.proven_head, state.activity_id.as_ref());
+    Ok(Dispatched {
+        value: serde_json::json!({
+            "authority": authority_wire(&response.authority),
+            "value": {
+                "record": record,
+                "balance": dec(state.balance),
+                "proven_head": dec(state.proven_head),
+                "activity_id": state.activity_id.as_ref().map_or(Value::Null, |id| hexv(id)),
+            },
+        }),
+        verification,
+    })
+}
+
+fn freshness_value(freshness: &Freshness) -> Value {
+    serde_json::json!({
+        "chain_head": dec(freshness.chain_head.0),
+        "latest_sealed_batch": freshness.latest_sealed_batch.as_str(),
+        "latest_finalised_checkpoint": freshness.latest_finalised_checkpoint.as_str(),
+        "value_sequence": dec(freshness.value_sequence.0),
+        "relative_to": match &freshness.relative_to {
+            layerx_agent_api::read::RelativeTo::Batch(batch) => serde_json::json!({"batch": batch.as_str()}),
+            layerx_agent_api::read::RelativeTo::Checkpoint(checkpoint) => {
+                serde_json::json!({"checkpoint": checkpoint.as_str()})
+            }
+        },
+    })
+}
+
+/// `export.offline`: the fact set is decoded through the shared fact grammar, the requested
+/// level is passed to the owner unchanged, and the response is accepted only when it states
+/// exactly the requested facts at or above the requested level.
+pub(crate) fn export_offline<A: HumanAuthorityBoundary>(
+    owner: &SharedAgentOwner<A>,
+    context: &RpcOwnerContext<'_>,
+    request: &Map<String, Value>,
+    ctx: &DispatchContext,
+) -> Result<Dispatched, Rejection> {
+    use crate::agent_rpc_wire::{decode_wire, ExportOfflineWire};
+    let id = ctx.request_id;
+    let typed = decode_wire::<ExportOfflineWire>(request, id)?.into_request(id)?;
+    let response = owner
+        .lock()
+        .and_then(|mut guard| guard.export_offline(context.peer(), typed.clone()))
+        .map_err(|error| owner_error(id, error))?;
+    layerx_agent_api::export::check_export_response(&typed, &response)
+        .map_err(|_| rejection(ErrorClass::InternalFault, id, "owner.response_malformed"))?;
+    let export = &response.value;
+    let buckets = |items: &[layerx_agent_api::prepare::CanonicalBytes]| {
+        items.iter().map(|item| hexv(item.as_bytes())).collect::<Vec<_>>()
+    };
+    Ok(Dispatched {
+        value: serde_json::json!({
+            "value": {
+                "facts": export.facts.iter().map(|fact| fact.as_str()).collect::<Vec<_>>(),
+                "receipts": buckets(&export.receipts),
+                "proofs": buckets(&export.proofs),
+                "certificates": buckets(&export.certificates),
+                "headers": buckets(&export.headers),
+            },
+            "achieved_verification_level": crate::agent_rpc_dispatch::level_name(
+                response.achieved_verification_level,
+            ),
+            "freshness": freshness_value(&response.freshness),
+        }),
+        verification: Some(VerificationStatus::Achieved(response.achieved_verification_level)),
+    })
+}
+
+/// `project` is the fee projection. The legacy policy payload (`context` +
+/// `canonical_intent`) is refused with its typed reason and never reinterpreted.
+pub(crate) fn project<A: HumanAuthorityBoundary>(
+    owner: &SharedAgentOwner<A>,
+    context: &RpcOwnerContext<'_>,
+    request: &Map<String, Value>,
+    ctx: &DispatchContext,
+) -> Result<Dispatched, Rejection> {
+    use crate::agent_rpc_wire::{decode_wire, FeeProjectionWire, LegacyProjectWire};
+    let id = ctx.request_id;
+    if decode_wire::<LegacyProjectWire>(request, id).is_ok() {
+        return Err(owner_error(
+            id,
+            HumanOperationError::Typed(HumanRefusal::Policy(
+                crate::policy::PolicyDryRunRefusal::LegacyProjectPayload,
+            )),
+        ));
+    }
+    let typed = decode_wire::<FeeProjectionWire>(request, id)?.into_request(id)?;
+    let response = owner
+        .lock()
+        .and_then(|mut guard| guard.fee_projection(context.peer(), typed))
+        .map_err(|error| owner_error(id, error))?;
+    let fee = &response.projected;
+    Ok(Dispatched {
+        value: serde_json::json!({
+            "projected": {
+                "request": {
+                    "protocol_activity_type": dec(fee.request.protocol_activity_type),
+                    "canonical_bytes": dec(fee.request.canonical_bytes),
+                    "execution_units": dec(fee.request.execution_units),
+                    "storage_units": dec(fee.request.storage_units),
+                },
+                "parameter_version": dec(fee.parameter_version),
+                "fee": dec(fee.fee.0),
+                "canonical_schedule": hexv(fee.canonical_schedule.as_bytes()),
+                "snapshot_sequence": dec(fee.snapshot_sequence.0),
+                "snapshot_state_root": hexv(&fee.snapshot_state_root),
+            },
+            "rationale": response.rationale,
+            "observed_freshness": freshness_value(&response.observed_freshness),
+        }),
+        verification: None,
+    })
+}
+
+/// `policy.dry_run`: a local restriction evaluated by the owner; the owner bytes are the
+/// policy explanation record, decoded strictly. Never a verification level.
+pub(crate) fn policy_dry_run<A: HumanAuthorityBoundary>(
+    owner: &SharedAgentOwner<A>,
+    context: &RpcOwnerContext<'_>,
+    request: &Map<String, Value>,
+    ctx: &DispatchContext,
+) -> Result<Dispatched, Rejection> {
+    use crate::agent_rpc_wire::PolicyDryRunShape;
+    use crate::policy::{DecisionReason, EvaluationMode, Explanation, Outcome};
+    use layerx_agent_api::policy::{PolicyDecisionReason, PolicyOutcome};
+    let id = ctx.request_id;
+    let malformed_response =
+        || rejection(ErrorClass::InternalFault, id, "owner.response_malformed");
+    let value = match crate::agent_rpc_wire::policy_dry_run_request(request, id)? {
+        PolicyDryRunShape::Typed(typed) => {
+            let response = owner
+                .lock()
+                .and_then(|mut guard| {
+                    let control = guard.session_control.clone();
+                    guard.policy_dry_run(context, &control, typed)
+                })
+                .map_err(|error| owner_error(id, error))?;
+            let explanation = Explanation::from_machine_bytes(response.bytes())
+                .map_err(|_| malformed_response())?;
+            if explanation.mode != EvaluationMode::DryRun {
+                return Err(malformed_response());
+            }
+            policy_dry_run_value(
+                match explanation.outcome {
+                    Outcome::Allow => "allow",
+                    Outcome::Deny => "deny",
+                },
+                &explanation.policy_version,
+                &explanation.matched_rules,
+                explanation.deciding_rule.as_deref(),
+                match explanation.reason {
+                    DecisionReason::PermittedByRule => "permitted_by_rule",
+                    DecisionReason::ExplicitDeny => "explicit_deny",
+                    DecisionReason::ApprovalRequired => "approval_required",
+                    DecisionReason::NoPermittingRule => "no_permitting_rule",
+                    DecisionReason::InvalidContext => "invalid_context",
+                    DecisionReason::EvaluationFailure => "evaluation_failure",
+                },
+                explanation.authority_statement,
+            )
+        }
+        PolicyDryRunShape::Legacy(legacy) => {
+            let response = owner
+                .lock()
+                .and_then(|mut guard| {
+                    let control = guard.session_control.clone();
+                    guard.policy_dry_run_legacy(context, &control, legacy)
+                })
+                .map_err(|error| owner_error(id, error))?;
+            let result = response
+                .value
+                .validate()
+                .map_err(|_| malformed_response())?;
+            policy_dry_run_value(
+                match result.outcome {
+                    PolicyOutcome::Allow => "allow",
+                    PolicyOutcome::Deny => "deny",
+                },
+                result.policy_version.as_str(),
+                &result.matched_rules,
+                result.deciding_rule.as_deref(),
+                match result.reason {
+                    PolicyDecisionReason::PermittedByRule => "permitted_by_rule",
+                    PolicyDecisionReason::ExplicitDeny => "explicit_deny",
+                    PolicyDecisionReason::ApprovalRequired => "approval_required",
+                    PolicyDecisionReason::NoPermittingRule => "no_permitting_rule",
+                    PolicyDecisionReason::InvalidContext => "invalid_context",
+                    PolicyDecisionReason::EvaluationFailure => "evaluation_failure",
+                },
+                &result.authority_statement,
+            )
+        }
+    };
+    Ok(Dispatched {
+        value,
+        verification: None,
+    })
+}
+
+/// The one seven-key `PolicyDryRunResult` wire encoding.
+fn policy_dry_run_value(
+    outcome: &str,
+    policy_version: &str,
+    matched_rules: &[String],
+    deciding_rule: Option<&str>,
+    reason: &str,
+    authority_statement: &str,
+) -> Value {
+    serde_json::json!({
+        "outcome": outcome,
+        "policy_version": policy_version,
+        "matched_rules": matched_rules,
+        "deciding_rule": deciding_rule,
+        "reason": reason,
+        "mode": "dry_run",
+        "authority_statement": authority_statement,
+    })
+}
+
+/// `program.discover`: the owner reads the registry entry against the authenticated current
+/// core time and returns the fixed big-endian discovery record.
+pub(crate) fn program_discover<A: HumanAuthorityBoundary>(
+    owner: &SharedAgentOwner<A>,
+    context: &RpcOwnerContext<'_>,
+    request: &Map<String, Value>,
+    ctx: &DispatchContext,
+) -> Result<Dispatched, Rejection> {
+    use crate::agent_rpc_wire::{decode_wire, ProgramDiscoverWire};
+    let id = ctx.request_id;
+    let program = decode_wire::<ProgramDiscoverWire>(request, id)?.into_request(id)?;
+    let response = owner
+        .lock()
+        .and_then(|mut guard| guard.rpc_program_discover(context, program));
+    owner_payload(id, response, |reader| {
+        if reader.fixed::<32>()? != program {
+            return None;
+        }
+        let lifecycle = match reader.u8()? {
+            0 => "active",
+            1 => "deprecated",
+            2 => "tombstoned",
+            _ => return None,
+        };
+        let observed_sequence = reader.u64()?;
+        let observed_at = reader.u64()?;
+        let valid_through = reader.u64()?;
+        let receipt_digest: [u8; 32] = reader.fixed()?;
+        let state_root: [u8; 32] = reader.fixed()?;
+        let version = reader.u32()?;
+        let abi_version = reader.u16()?;
+        let code_hash: [u8; 32] = reader.fixed()?;
+        Some((
+            serde_json::json!({
+                "program_id": hexv(&program),
+                "lifecycle": lifecycle,
+                "version": version,
+                "code_hash": hexv(&code_hash),
+                "abi_version": abi_version,
+                "receipt_digest": hexv(&receipt_digest),
+                "state_root": hexv(&state_root),
+                "observed_sequence": dec(observed_sequence),
+                "observed_at": dec(observed_at),
+                "valid_through": dec(valid_through),
+                "verification": "registry-receipt-and-current-head-verified",
+            }),
+            None,
+        ))
     })
 }
 

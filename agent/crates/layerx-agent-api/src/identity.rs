@@ -546,6 +546,161 @@ pub struct AuthorityResponse<T> {
     pub value: T,
 }
 
+/// Magic and version that open every explicit policy intent carrier.
+pub const POLICY_INTENT_MAGIC: [u8; 8] = [0x4c, 0x58, 0x50, 0x44, 0x00, 0x00, 0x00, 0x01];
+
+/// Largest accepted canonical intent, explicit or raw.
+pub const MAX_POLICY_INTENT_BYTES: usize = layerx_types::limits::MAX_PAYLOAD_BYTES;
+
+/// Session-context policy dry run carrying explicit or raw canonical intent bytes.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct LegacyPolicyDryRun {
+    pub context: SessionContext,
+    pub canonical_intent: Vec<u8>,
+}
+
+/// Explicit policy intent carrier refusal.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PolicyIntentError {
+    Empty(&'static str),
+    TooLarge,
+    Version,
+    Truncated,
+    TrailingBytes,
+    InvalidUtf8,
+}
+
+impl core::fmt::Display for PolicyIntentError {
+    fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::Empty(field) => write!(formatter, "{field} is empty"),
+            Self::TooLarge => formatter.write_str("policy intent exceeds its size bound"),
+            Self::Version => formatter.write_str("policy intent magic or version is not supported"),
+            Self::Truncated => formatter.write_str("policy intent is truncated"),
+            Self::TrailingBytes => formatter.write_str("policy intent has trailing bytes"),
+            Self::InvalidUtf8 => formatter.write_str("policy intent purpose is not UTF-8"),
+        }
+    }
+}
+
+impl std::error::Error for PolicyIntentError {}
+
+/// Versioned purpose text and canonical unsigned activity.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PolicyIntent {
+    purpose: String,
+    canonical_activity: Vec<u8>,
+}
+
+impl PolicyIntent {
+    /// Builds a carrier from a nonempty purpose and nonempty canonical unsigned activity.
+    ///
+    /// # Errors
+    /// Returns [`PolicyIntentError::Empty`] for an empty part and [`PolicyIntentError::TooLarge`] above the bound.
+    pub fn new(purpose: &str, canonical_activity: &[u8]) -> Result<Self, PolicyIntentError> {
+        if purpose.is_empty() {
+            return Err(PolicyIntentError::Empty("purpose"));
+        }
+        if canonical_activity.is_empty() {
+            return Err(PolicyIntentError::Empty("canonical_activity"));
+        }
+        let total = (POLICY_INTENT_MAGIC.len() + 8)
+            .checked_add(purpose.len())
+            .and_then(|length| length.checked_add(canonical_activity.len()))
+            .ok_or(PolicyIntentError::TooLarge)?;
+        if total > MAX_POLICY_INTENT_BYTES
+            || u32::try_from(purpose.len()).is_err()
+            || u32::try_from(canonical_activity.len()).is_err()
+        {
+            return Err(PolicyIntentError::TooLarge);
+        }
+        Ok(Self {
+            purpose: purpose.to_owned(),
+            canonical_activity: canonical_activity.to_vec(),
+        })
+    }
+
+    #[must_use]
+    pub fn purpose(&self) -> &str {
+        &self.purpose
+    }
+
+    #[must_use]
+    pub fn canonical_activity(&self) -> &[u8] {
+        &self.canonical_activity
+    }
+
+    #[must_use]
+    pub fn encode(&self) -> Vec<u8> {
+        let mut output = Vec::with_capacity(
+            POLICY_INTENT_MAGIC.len() + 8 + self.purpose.len() + self.canonical_activity.len(),
+        );
+        output.extend_from_slice(&POLICY_INTENT_MAGIC);
+        for part in [self.purpose.as_bytes(), self.canonical_activity.as_slice()] {
+            let length = part.len().to_be_bytes();
+            output.extend_from_slice(&length[length.len() - 4..]);
+            output.extend_from_slice(part);
+        }
+        output
+    }
+
+    /// Decodes exactly one carrier with no trailing bytes.
+    ///
+    /// # Errors
+    /// Returns the [`PolicyIntentError`] naming the first violated rule.
+    pub fn decode(bytes: &[u8]) -> Result<Self, PolicyIntentError> {
+        if bytes.len() > MAX_POLICY_INTENT_BYTES {
+            return Err(PolicyIntentError::TooLarge);
+        }
+        let rest = bytes
+            .strip_prefix(POLICY_INTENT_MAGIC.as_slice())
+            .ok_or(PolicyIntentError::Version)?;
+        let (purpose, rest) = split_intent_part(rest)?;
+        let (canonical_activity, rest) = split_intent_part(rest)?;
+        if !rest.is_empty() {
+            return Err(PolicyIntentError::TrailingBytes);
+        }
+        let purpose = core::str::from_utf8(purpose).map_err(|_| PolicyIntentError::InvalidUtf8)?;
+        Self::new(purpose, canonical_activity)
+    }
+}
+
+fn split_intent_part(bytes: &[u8]) -> Result<(&[u8], &[u8]), PolicyIntentError> {
+    let (length, rest) = bytes
+        .split_first_chunk::<4>()
+        .ok_or(PolicyIntentError::Truncated)?;
+    let length =
+        usize::try_from(u32::from_be_bytes(*length)).map_err(|_| PolicyIntentError::TooLarge)?;
+    rest.split_at_checked(length)
+        .ok_or(PolicyIntentError::Truncated)
+}
+
+/// Canonical intent bytes as either an explicit carrier or raw canonical unsigned activity.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum IntentCarrier<'a> {
+    Explicit(PolicyIntent),
+    Raw(&'a [u8]),
+}
+
+impl<'a> IntentCarrier<'a> {
+    /// Treats bytes opening with the carrier family tag as an explicit carrier and all others as raw.
+    ///
+    /// # Errors
+    /// Returns [`PolicyIntentError`] for empty or oversized bytes and for any malformed explicit carrier.
+    pub fn classify(bytes: &'a [u8]) -> Result<Self, PolicyIntentError> {
+        if bytes.is_empty() {
+            return Err(PolicyIntentError::Empty("canonical_intent"));
+        }
+        if bytes.len() > MAX_POLICY_INTENT_BYTES {
+            return Err(PolicyIntentError::TooLarge);
+        }
+        if bytes.starts_with(&POLICY_INTENT_MAGIC[..4]) {
+            return PolicyIntent::decode(bytes).map(Self::Explicit);
+        }
+        Ok(Self::Raw(bytes))
+    }
+}
+
 /// Hypothetical local policy evaluation; it creates no preparation, signature or submission.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PolicyDryRunRequest {
@@ -616,5 +771,108 @@ impl PolicyDryRunResult {
             return Err(ContractError::Empty("rule_id"));
         }
         Ok(self)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{IntentCarrier, PolicyIntent, PolicyIntentError, POLICY_INTENT_MAGIC};
+
+    const ACTIVITY: [u8; 3] = [0x10, 0x01, 0xaa];
+
+    fn carrier(version: u8, purpose: &[u8], activity: &[u8]) -> Vec<u8> {
+        let mut bytes = POLICY_INTENT_MAGIC.to_vec();
+        bytes[7] = version;
+        for part in [purpose, activity] {
+            let length = part.len().to_be_bytes();
+            bytes.extend_from_slice(&length[length.len() - 4..]);
+            bytes.extend_from_slice(part);
+        }
+        bytes
+    }
+
+    #[test]
+    fn explicit_intent_round_trips_exactly() -> Result<(), PolicyIntentError> {
+        let intent = PolicyIntent::new("rent", &ACTIVITY)?;
+        let encoded = intent.encode();
+        assert_eq!(
+            encoded,
+            [
+                0x4c, 0x58, 0x50, 0x44, 0, 0, 0, 1, 0, 0, 0, 4, b'r', b'e', b'n', b't', 0, 0, 0, 3,
+                0x10, 0x01, 0xaa
+            ]
+        );
+        assert_eq!(encoded, carrier(1, b"rent", &ACTIVITY));
+        let decoded = PolicyIntent::decode(&encoded)?;
+        assert_eq!(decoded, intent);
+        assert_eq!(decoded.purpose(), "rent");
+        assert_eq!(decoded.canonical_activity(), &ACTIVITY);
+        assert_eq!(decoded.encode(), encoded);
+        assert_eq!(
+            IntentCarrier::classify(&encoded)?,
+            IntentCarrier::Explicit(intent)
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn trailing_bytes_are_refused() {
+        let mut bytes = carrier(1, b"rent", &ACTIVITY);
+        bytes.push(0);
+        assert_eq!(
+            PolicyIntent::decode(&bytes),
+            Err(PolicyIntentError::TrailingBytes)
+        );
+        assert_eq!(
+            IntentCarrier::classify(&bytes),
+            Err(PolicyIntentError::TrailingBytes)
+        );
+    }
+
+    #[test]
+    fn empty_purpose_is_refused() {
+        assert_eq!(
+            PolicyIntent::new("", &ACTIVITY),
+            Err(PolicyIntentError::Empty("purpose"))
+        );
+        assert_eq!(
+            PolicyIntent::decode(&carrier(1, b"", &ACTIVITY)),
+            Err(PolicyIntentError::Empty("purpose"))
+        );
+        assert_eq!(
+            PolicyIntent::decode(&carrier(1, &[0xff], &ACTIVITY)),
+            Err(PolicyIntentError::InvalidUtf8)
+        );
+    }
+
+    #[test]
+    fn wrong_version_and_truncation_are_refused() {
+        let other = carrier(2, b"rent", &ACTIVITY);
+        assert_eq!(
+            PolicyIntent::decode(&other),
+            Err(PolicyIntentError::Version)
+        );
+        assert_eq!(
+            IntentCarrier::classify(&other),
+            Err(PolicyIntentError::Version)
+        );
+        let valid = carrier(1, b"rent", &ACTIVITY);
+        assert_eq!(
+            PolicyIntent::decode(&valid[..valid.len() - 1]),
+            Err(PolicyIntentError::Truncated)
+        );
+    }
+
+    #[test]
+    fn raw_activity_is_classified_raw() -> Result<(), PolicyIntentError> {
+        assert_eq!(
+            IntentCarrier::classify(&ACTIVITY)?,
+            IntentCarrier::Raw(&ACTIVITY)
+        );
+        assert_eq!(
+            IntentCarrier::classify(&[]),
+            Err(PolicyIntentError::Empty("canonical_intent"))
+        );
+        Ok(())
     }
 }

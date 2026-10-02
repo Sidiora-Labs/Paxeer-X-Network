@@ -32,6 +32,13 @@ use crate::agent_rpc::Rejection;
 use crate::agent_rpc_dispatch::{
     decimal_u128, decimal_u64, decode, hex32, hex_bytes, lower_hex, malformed, noncanonical,
 };
+use crate::human::HumanRefusal;
+use layerx_agent_api::budget::{BudgetAuthorization, SignedBudgetMutation};
+use layerx_agent_api::error::Retriability;
+use layerx_agent_api::export::{validate_export_request, FactRef};
+use layerx_agent_api::policy::PolicyDryRunRequest;
+use layerx_agent_api::read::{FeeProjectionRequest, ReadRequest};
+use layerx_agent_api::identity::{LegacyPolicyDryRun, MAX_POLICY_INTENT_BYTES};
 
 /// Decodes the operation `request` object into a wire struct with the dispatcher's strict
 /// decode error mapping (`envelope.unknown_field`, otherwise `envelope.malformed`).
@@ -165,20 +172,28 @@ pub(crate) struct BudgetCreateWire {
     limit: String,
     enforcement: String,
     expiry: String,
+    #[serde(default)]
+    authorization: Option<BudgetAuthorizationWire>,
 }
 
 impl BudgetCreateWire {
-    pub(crate) fn into_request(self, id: RequestId) -> Result<BudgetCreate, Rejection> {
-        BudgetCreate {
-            tenant: text(self.tenant, id, TenantId::new)?,
-            agent_did: text(self.agent_did, id, AgentDid::new)?,
-            asset: text(self.asset, id, Asset::new)?,
-            limit: BudgetLimit(decimal_u128(&self.limit, id)?),
-            enforcement: enforcement(&self.enforcement, id)?,
-            expiry: timestamp(&self.expiry, id)?,
+    pub(crate) fn into_request(
+        self,
+        id: RequestId,
+    ) -> Result<SignedBudgetMutation<BudgetCreate>, Rejection> {
+        SignedBudgetMutation {
+            request: BudgetCreate {
+                tenant: text(self.tenant, id, TenantId::new)?,
+                agent_did: text(self.agent_did, id, AgentDid::new)?,
+                asset: text(self.asset, id, Asset::new)?,
+                limit: BudgetLimit(decimal_u128(&self.limit, id)?),
+                enforcement: enforcement(&self.enforcement, id)?,
+                expiry: timestamp(&self.expiry, id)?,
+            },
+            authorization: budget_authorization(self.authorization, id)?,
         }
         .validate()
-        .map_err(contract(id))
+        .map_err(budget_contract(id))
     }
 }
 
@@ -203,19 +218,27 @@ pub(crate) struct BudgetFundWire {
     budget_id: String,
     amount: String,
     enforcement: String,
+    #[serde(default)]
+    authorization: Option<BudgetAuthorizationWire>,
 }
 
 impl BudgetFundWire {
-    pub(crate) fn into_request(self, id: RequestId) -> Result<BudgetFund, Rejection> {
-        BudgetFund {
-            tenant: text(self.tenant, id, TenantId::new)?,
-            agent_did: text(self.agent_did, id, AgentDid::new)?,
-            budget_id: text(self.budget_id, id, BudgetId::new)?,
-            amount: Amount(decimal_u128(&self.amount, id)?),
-            enforcement: enforcement(&self.enforcement, id)?,
+    pub(crate) fn into_request(
+        self,
+        id: RequestId,
+    ) -> Result<SignedBudgetMutation<BudgetFund>, Rejection> {
+        SignedBudgetMutation {
+            request: BudgetFund {
+                tenant: text(self.tenant, id, TenantId::new)?,
+                agent_did: text(self.agent_did, id, AgentDid::new)?,
+                budget_id: text(self.budget_id, id, BudgetId::new)?,
+                amount: Amount(decimal_u128(&self.amount, id)?),
+                enforcement: enforcement(&self.enforcement, id)?,
+            },
+            authorization: budget_authorization(self.authorization, id)?,
         }
         .validate()
-        .map_err(contract(id))
+        .map_err(budget_contract(id))
     }
 }
 
@@ -237,16 +260,39 @@ pub(crate) struct BudgetTargetWire {
     tenant: String,
     agent_did: String,
     budget_id: String,
+    #[serde(default)]
+    authorization: Option<BudgetAuthorizationWire>,
 }
 
 impl BudgetTargetWire {
-    pub(crate) fn into_request(self, id: RequestId) -> Result<BudgetTarget, Rejection> {
-        Ok(BudgetTarget {
-            tenant: text(self.tenant, id, TenantId::new)?,
-            agent_did: text(self.agent_did, id, AgentDid::new)?,
-            budget_id: text(self.budget_id, id, BudgetId::new)?,
+    /// `budget.revoke`: the owner checks the carrier against the enforcement of the
+    /// authenticated budget it looks up (`SignedBudgetMutation::require_for`).
+    pub(crate) fn into_request(
+        self,
+        id: RequestId,
+    ) -> Result<SignedBudgetMutation<BudgetTarget>, Rejection> {
+        Ok(SignedBudgetMutation {
+            request: BudgetTarget {
+                tenant: text(self.tenant, id, TenantId::new)?,
+                agent_did: text(self.agent_did, id, AgentDid::new)?,
+                budget_id: text(self.budget_id, id, BudgetId::new)?,
+            },
+            authorization: budget_authorization(self.authorization, id)?,
         })
     }
+}
+
+/// `budget.state`: the `BudgetTargetWire` request of a read; a signed-authorization carrier is
+/// never part of a read and is refused.
+pub(crate) fn budget_state_request(
+    request: &Map<String, Value>,
+    id: RequestId,
+) -> Result<BudgetTarget, Rejection> {
+    let target = decode_wire::<BudgetTargetWire>(request, id)?.into_request(id)?;
+    if target.authorization.is_some() {
+        return Err(malformed(id));
+    }
+    Ok(target.request)
 }
 
 impl Canonical for BudgetTarget {
@@ -338,6 +384,263 @@ impl CapabilityListWire {
             agent_did: text(self.agent_did, id, AgentDid::new)?,
         })
     }
+}
+
+/// Signed-authorization carrier of a budget mutation. The signature reuses the
+/// `sign` decoding (64 bytes, lowercase hex); the optional legacy signer key is only an
+/// equality assertion and is strict 64-digit lowercase hex when present.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct BudgetAuthorizationWire {
+    preparation_ref: String,
+    signature: String,
+    #[serde(default)]
+    signer_public_key: Option<String>,
+}
+
+fn budget_authorization(
+    wire: Option<BudgetAuthorizationWire>,
+    id: RequestId,
+) -> Result<Option<BudgetAuthorization>, Rejection> {
+    wire.map(|wire| {
+        let signed = SignRequestWire {
+            preparation_ref: wire.preparation_ref,
+            signature: wire.signature,
+        }
+        .into_request(id)?;
+        Ok(BudgetAuthorization {
+            preparation_ref: signed.preparation_ref,
+            signature: signed.signature,
+            signer_public_key: wire
+                .signer_public_key
+                .map(|key| hex32(&key, id))
+                .transpose()?,
+        })
+    })
+    .transpose()
+}
+
+/// Carrier refusals of `SignedBudgetMutation::validate` keep their typed budget reasons;
+/// every other contract failure is the malformed request it always was.
+fn budget_contract(id: RequestId) -> impl Fn(ContractError) -> Rejection {
+    move |error| {
+        let refusal = match error {
+            ContractError::Empty("budget_authorization") => {
+                HumanRefusal::BudgetAuthorizationRequired
+            }
+            ContractError::Mismatch("budget_authorization") => {
+                HumanRefusal::BudgetAuthorizationUnexpected
+            }
+            ContractError::DaemonLimitFunding => HumanRefusal::BudgetDaemonLimitFunding,
+            _ => return malformed(id),
+        };
+        Rejection {
+            class: refusal.class(),
+            retriability: Retriability::Terminal,
+            request_id: id,
+            reason: refusal.reason(),
+        }
+    }
+}
+
+/// Without a carrier the canonical bytes are exactly the unsigned request's, so existing
+/// daemon-limit idempotency records keep their digests; with one, every carrier field is bound.
+impl<T: Canonical> Canonical for SignedBudgetMutation<T> {
+    fn canonical(&self) -> Value {
+        match &self.authorization {
+            None => self.request.canonical(),
+            Some(authorization) => json!({
+                "request": self.request.canonical(),
+                "authorization": {
+                    "preparation_ref": authorization.preparation_ref.as_str(),
+                    "signature": lower_hex(authorization.signature.as_bytes()),
+                    "signer_public_key": authorization.signer_public_key.map(|key| lower_hex(&key)),
+                },
+            }),
+        }
+    }
+}
+
+/// `project` (fee projection): the four meter inputs as canonical decimals.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct FeeProjectionWire {
+    #[serde(default)]
+    tenant: Option<String>,
+    #[serde(default)]
+    agent: Option<String>,
+    protocol_activity_type: String,
+    canonical_bytes: String,
+    execution_units: String,
+    storage_units: String,
+}
+
+impl FeeProjectionWire {
+    pub(crate) fn into_request(self, id: RequestId) -> Result<FeeProjectionRequest, Rejection> {
+        let _ = (self.tenant, self.agent);
+        FeeProjectionRequest {
+            protocol_activity_type: u32::try_from(decimal_u64(&self.protocol_activity_type, id)?)
+                .map_err(|_| noncanonical(id))?,
+            canonical_bytes: decimal_u64(&self.canonical_bytes, id)?,
+            execution_units: decimal_u64(&self.execution_units, id)?,
+            storage_units: decimal_u64(&self.storage_units, id)?,
+        }
+        .validate()
+        .map_err(contract(id))
+    }
+}
+
+/// The legacy `project` policy payload (`context` + `canonical_intent`). It is recognised
+/// only to refuse it with its typed reason; it is never reinterpreted.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct LegacyProjectWire {
+    #[serde(rename = "context")]
+    _context: Value,
+    #[serde(rename = "canonical_intent")]
+    _canonical_intent: Value,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct PolicyDryRunWire {
+    tenant: String,
+    agent_did: String,
+    session_id: String,
+    capability_id: String,
+    activity_type: String,
+    counterparty: String,
+    asset: String,
+    amount: String,
+    purpose: String,
+    core_sequence: String,
+}
+
+impl PolicyDryRunWire {
+    fn into_request(self, id: RequestId) -> Result<PolicyDryRunRequest, Rejection> {
+        PolicyDryRunRequest {
+            tenant: text(self.tenant, id, TenantId::new)?,
+            agent_did: text(self.agent_did, id, AgentDid::new)?,
+            session_id: text(self.session_id, id, SessionId::new)?,
+            capability_id: text(self.capability_id, id, CapabilityId::new)?,
+            activity_type: activity_type(&self.activity_type, id)?,
+            counterparty: hex32(&self.counterparty, id)?,
+            asset: hex32(&self.asset, id)?,
+            amount: Amount(decimal_u128(&self.amount, id)?),
+            purpose: self.purpose,
+            core_sequence: Sequence(decimal_u64(&self.core_sequence, id)?),
+        }
+        .validate()
+        .map_err(contract(id))
+    }
+}
+
+/// The two disjoint `policy.dry_run` request shapes.
+pub(crate) enum PolicyDryRunShape {
+    Typed(PolicyDryRunRequest),
+    Legacy(LegacyPolicyDryRun),
+}
+
+const POLICY_DRY_RUN_TYPED_KEYS: [&str; 10] = [
+    "tenant",
+    "agent_did",
+    "session_id",
+    "capability_id",
+    "activity_type",
+    "counterparty",
+    "asset",
+    "amount",
+    "purpose",
+    "core_sequence",
+];
+
+const POLICY_DRY_RUN_LEGACY_KEYS: [&str; 2] = ["context", "canonical_intent"];
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct LegacyPolicyDryRunWire {
+    context: SessionContextWire,
+    canonical_intent: String,
+}
+
+impl LegacyPolicyDryRunWire {
+    fn into_request(self, id: RequestId) -> Result<LegacyPolicyDryRun, Rejection> {
+        if self.canonical_intent.is_empty()
+            || self.canonical_intent.len() > MAX_POLICY_INTENT_BYTES * 2
+        {
+            return Err(malformed(id));
+        }
+        Ok(LegacyPolicyDryRun {
+            context: self.context.into_context(id)?,
+            canonical_intent: hex_bytes(&self.canonical_intent, id)?,
+        })
+    }
+}
+
+/// The single decoder of the `policy.dry_run` request.
+pub(crate) fn policy_dry_run_request(
+    request: &Map<String, Value>,
+    id: RequestId,
+) -> Result<PolicyDryRunShape, Rejection> {
+    let within = |keys: &[&str]| request.keys().all(|key| keys.contains(&key.as_str()));
+    if within(&POLICY_DRY_RUN_TYPED_KEYS) {
+        decode_wire::<PolicyDryRunWire>(request, id)?
+            .into_request(id)
+            .map(PolicyDryRunShape::Typed)
+    } else if within(&POLICY_DRY_RUN_LEGACY_KEYS) {
+        decode_wire::<LegacyPolicyDryRunWire>(request, id)?
+            .into_request(id)
+            .map(PolicyDryRunShape::Legacy)
+    } else {
+        Err(malformed(id))
+    }
+}
+
+/// `export.offline`: the fact set is checked by the one shared fact grammar
+/// (`parse_fact_set`: 1..=16, unique, strict) and the requested level is kept as sent.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct ExportOfflineWire {
+    #[serde(default)]
+    tenant: Option<String>,
+    #[serde(default)]
+    agent: Option<String>,
+    fact_set: Vec<String>,
+    requested_verification_level: String,
+}
+
+impl ExportOfflineWire {
+    pub(crate) fn into_request(
+        self,
+        id: RequestId,
+    ) -> Result<ReadRequest<Vec<FactRef>>, Rejection> {
+        let _ = (self.tenant, self.agent);
+        validate_export_request(ReadRequest {
+            selector: self
+                .fact_set
+                .into_iter()
+                .map(|fact| text(fact, id, FactRef::new))
+                .collect::<Result<_, _>>()?,
+            requested_verification_level: export_level(&self.requested_verification_level, id)?,
+        })
+        .map_err(|_| malformed(id))
+    }
+}
+
+/// The export level spelling is the envelope's level name; any other text is malformed.
+fn export_level(text: &str, id: RequestId) -> Result<layerx_agent_api::error::Level, Rejection> {
+    use layerx_agent_api::error::Level;
+    [
+        Level::Unverified,
+        Level::SequencerSigned,
+        Level::BatchIncluded,
+        Level::StateProven,
+        Level::CheckpointFinalised,
+        Level::SettlementAnchored,
+    ]
+    .into_iter()
+    .find(|level| crate::agent_rpc_dispatch::level_name(*level) == text)
+    .ok_or_else(|| malformed(id))
 }
 
 fn dimensions_value(dimensions: &CapabilityDimensions) -> Value {

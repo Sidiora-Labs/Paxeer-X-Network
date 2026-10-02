@@ -157,6 +157,9 @@ fn owner_error(request_id: RequestId, error: HumanOperationError) -> Rejection {
             },
         ),
 
+        HumanOperationError::Typed(refusal) => {
+            rejection(refusal.class(), request_id, refusal.reason())
+        }
         HumanOperationError::Unavailable => Rejection {
             class: ErrorClass::UnavailableCapability,
             retriability: Retriability::Retriable,
@@ -248,7 +251,7 @@ fn level(value: u8) -> Option<Level> {
     })
 }
 
-fn level_name(value: Level) -> &'static str {
+pub(crate) fn level_name(value: Level) -> &'static str {
     match value {
         Level::Unverified => "Unverified",
         Level::SequencerSigned => "SequencerSigned",
@@ -692,6 +695,9 @@ pub(crate) struct PrepareRequest {
     fee_limit: String,
     payload: String,
     payload_hash: String,
+
+    #[serde(default)]
+    capability_id: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -724,6 +730,11 @@ pub(crate) fn human_prepare(
         fee_limit: decimal_u128(&request.fee_limit, request_id)?,
         payload: hex_bytes(&request.payload, request_id)?,
         payload_hash: hex32(&request.payload_hash, request_id)?,
+
+        capability_id: request
+            .capability_id
+            .map(|text| hex32(&text, request_id))
+            .transpose()?,
     })
 }
 
@@ -800,7 +811,14 @@ pub(crate) fn canonical_request_bytes(
         Operation::ApprovalApprove | Operation::ApprovalReject => {
             named(operation, &decode::<ApprovalDecisionRequest>(request, id)?, id)?
         }
-        Operation::Prepare => prepare_digest(&human_prepare(decode(request, id)?, id)?).to_vec(),
+        Operation::Prepare => {
+            let typed = human_prepare(decode(request, id)?, id)?;
+            crate::capability::binding::prepare_body_digest(
+                prepare_digest(&typed),
+                typed.capability_id.as_ref(),
+            )
+            .to_vec()
+        }
         Operation::Submit => submit_digest(&human_submit(decode(request, id)?, id)?).to_vec(),
         Operation::BudgetCreate => wire_bytes::<BudgetCreateWire, _>(operation, request, id, BudgetCreateWire::into_request)?,
         Operation::BudgetFund => wire_bytes::<BudgetFundWire, _>(operation, request, id, BudgetFundWire::into_request)?,
@@ -833,6 +851,10 @@ pub(crate) fn canonical_request_bytes(
         | Operation::ProgramInterface
         | Operation::ProgramSimulate
         | Operation::Project
+
+        | Operation::PolicyDryRun
+
+        | Operation::BudgetState
         | Operation::ReadBatch
         | Operation::ReadHistory
         | Operation::ReadModuleState
@@ -960,6 +982,10 @@ pub(crate) fn dispatch_operation<A: HumanAuthorityBoundary>(
         Operation::Wait => adapters::wait(shared, context, request, ctx),
         Operation::Sign => adapters::sign(shared, context, request, ctx),
         Operation::Project => adapters::project(shared, context, request, ctx),
+
+        Operation::PolicyDryRun => adapters::policy_dry_run(shared, context, request, ctx),
+
+        Operation::BudgetState => adapters::budget_state(shared, context, request, ctx),
         Operation::ProgramActivity => adapters::program_activity(shared, context, request, ctx),
         Operation::ProgramCall => adapters::program_call(shared, context, request, ctx),
         Operation::ProgramDeploy => adapters::program_deploy(shared, context, request, ctx),
@@ -1008,6 +1034,33 @@ fn capability_refusal_carries_its_dimension_to_the_typed_wire_refusal() {
 }
 
 #[test]
+fn typed_owner_refusals_keep_their_class_and_reason() {
+    let id = RequestId(11);
+    for refusal in [
+        crate::human::HumanRefusal::StalePinnedHead,
+        crate::human::HumanRefusal::ExportSettlementAnchoringUnavailable,
+        crate::human::HumanRefusal::BudgetAuthorizationRequired,
+        crate::human::HumanRefusal::Policy(
+            crate::policy::PolicyDryRunRefusal::LegacyProjectPayload,
+        ),
+    ] {
+        let rejection = owner_error(id, HumanOperationError::Typed(refusal));
+        assert_eq!(rejection.class, refusal.class());
+        assert_eq!(rejection.retriability, Retriability::Terminal);
+        assert_eq!(rejection.request_id, id);
+        assert_eq!(rejection.reason, refusal.reason());
+    }
+    let legacy = owner_error(
+        id,
+        HumanOperationError::Typed(crate::human::HumanRefusal::Policy(
+            crate::policy::PolicyDryRunRefusal::LegacyProjectPayload,
+        )),
+    );
+    assert_eq!(legacy.reason, "policy.legacy_project_payload");
+}
+
+#[test]
+
 fn canonical_decimals_and_hex_are_exact() {
     let id = RequestId(7);
     assert_eq!(decimal_u64("0", id).ok(), Some(0));
