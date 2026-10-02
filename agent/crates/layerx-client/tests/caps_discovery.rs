@@ -600,3 +600,271 @@ fn native_prestate_primitives_reject_omitted_mixed_and_malformed_proofs() {
     assert!(StateWitness::decode(&trailing).is_err());
     println!("CAPS_CASE prestate-primitives-missing-mixed-and-malformed-refusals");
 }
+
+struct ExecutionPrestateFixture {
+    inputs: Value,
+    history: SequencerHistory,
+}
+
+impl ExecutionPrestateFixture {
+    fn connect(inputs: &Value) -> (Uds, Handshake) {
+        use layerx_client::lni::schema::Capability;
+        let mut transport = Uds::connect(Path::new(string(inputs, "socket")), &ConnectionGate::new(4), Limits {
+            maximum_frame_bytes: 2 * 1024 * 1024, maximum_connections: 4, maximum_streams: 1,
+            maximum_queued_bytes: 4 * 1024 * 1024, deadline: Duration::from_secs(30),
+        }).expect("real execution-prestate UDS");
+        let accepted = handshake::perform(&mut transport, &HandshakeConfig {
+            built_interface_version: Version::V1_9, expected_protocol_version: 3, expected_network_id: 77,
+        }, None).expect("native execution-prestate handshake");
+        assert_eq!(accepted.node().interface_version, Version::V1_9);
+        assert_eq!(accepted.node().authorised_sequencer_key, bytes(inputs, "sequencer_public_key"));
+        assert!(accepted.capabilities().contains(Capability::CapsDiscovery));
+        assert!(accepted.capabilities().contains(Capability::ExecutionPrestate));
+        (transport, accepted)
+    }
+
+    fn load() -> Self {
+        let path = std::env::var("LAYERX_EXECUTION_PRESTATE_INPUTS")
+            .expect("required real execution-prestate fixture; no fixture fallback");
+        let inputs: Value = serde_json::from_slice(&read_file(&path)).expect("execution-prestate input manifest");
+        assert!(!read_file(string(&inputs, "genesis_manifest")).is_empty());
+        let descriptor = read_file(string(&inputs, "genesis_descriptor"));
+        assert_eq!(descriptor.len(), 105);
+        assert_eq!(&descriptor[..5], b"LXGD\x01");
+        assert_eq!(&descriptor[5..9], &77_u32.to_be_bytes());
+        let genesis_root = descriptor[41..73].try_into().expect("independent deployment genesis root");
+        let public = bytes(&inputs, "sequencer_public_key");
+        let id: [u8; 32] = Sha256::digest(format!("layerx-sequencer:{}", string(&inputs, "sequencer_public_key")).as_bytes()).into();
+        assert_eq!(id, bytes(&inputs, "sequencer_id"));
+        let trust = read_file(string(&inputs, "genesis_trust"));
+        let material = layerx_wire::handover::decode_genesis_trust(&trust).expect("real genesis trust artifact");
+        let governance = StateWitness::decode(material.governance_witness).expect("committed governance proof");
+        assert_eq!(governance.value, bytes(&inputs, "handover_authority_public_key"));
+        let mut history = SequencerHistory::from_genesis_artifact(&trust, 77, genesis_root, public)
+            .expect("independently pinned genuine genesis authority");
+        let (mut transport, accepted) = Self::connect(&inputs);
+        let head = accepted.node().latest_sealed_batch;
+        assert!(head > 0 && head < 4096, "bounded genuine execution history");
+        for batch in 1..=head {
+            history.fetch_next(&mut transport, Version::V1_9, 20_000 + batch * 3, RetrievalLimits {
+                maximum_bytes: 64 * 1024 * 1024, maximum_chunks: 4096, deadline: Duration::from_secs(30),
+            }).unwrap_or_else(|error| panic!("native execution history batch {batch}: {error:?}"));
+        }
+        let captures = inputs["execution_prestate_captures"].as_array().expect("real execution-prestate captures");
+        assert_eq!(captures.len(), 3);
+        let names: BTreeSet<_> = captures.iter().map(|capture| string(capture, "name")).collect();
+        assert_eq!(names, ["native-lifecycle", "intervening-native", "intervening-call"].into_iter().collect());
+        Self { inputs, history }
+    }
+
+    fn capture(&self, name: &str) -> &Value {
+        self.inputs["execution_prestate_captures"].as_array().expect("captures").iter()
+            .find(|capture| string(capture, "name") == name).expect("required native execution capture")
+    }
+
+    fn receipt(&self, capture: &Value) -> layerx_proof::receipt::VerifiedReceipt {
+        use layerx_proof::{inclusion::verify_receipt, merkle::decode_proof,
+            receipt::{verify_outcome_maintained_chain, AuthorizedBatch, MaintainedOutcomeEvidence}};
+        let receipt = read_file(string(capture, "receipt_path"));
+        let proof = decode_proof(&read_file(string(capture, "proof_path"))).expect("native receipt proof");
+        let header = read_file(string(capture, "header_path"));
+        let signature: [u8; 64] = read_file(string(capture, "header_signature_path")).try_into().expect("native header signature");
+        let checked_header = self.history.verify_header(&header, &signature).expect("maintained header in genuine history");
+        let signed = checked_header.header();
+        let authorization = self.history.authorization_for_batch(signed.batch_number()).expect("verified historical sequencer authority");
+        verify_receipt(&receipt, &proof, &header, &signature, &authorization).expect("selected receipt inclusion");
+        let maintenance = read_file(string(capture, "maintenance_path"));
+        let maintenance_proof = decode_proof(&read_file(string(capture, "maintenance_proof_path"))).expect("native maintenance proof");
+        verify_receipt(&maintenance, &maintenance_proof, &header, &signature, &authorization).expect("maintenance inclusion");
+        let record = layerx_wire::batch_maintenance::decode_maintenance(&maintenance).expect("real canonical maintenance");
+        record.verify_header(signed).expect("maintenance bound to signed header");
+        let decoded = layerx_wire::receipt::decode(&receipt).expect("canonical native receipt");
+        let protocol = decoded.protocol().expect("native receipt protocol");
+        assert_eq!(protocol.protocol_version(), 3);
+        assert_eq!(protocol.module_id(), 9);
+        assert_eq!(protocol.result_code(), 0);
+        let count = signed.last_sequence().checked_sub(signed.first_sequence()).and_then(|count| u32::try_from(count).ok())
+            .expect("bounded maintained activity count");
+        let batch_id = layerx_wire::hash::receipt_execution_batch_id_maintenance(protocol, signed, record.occupancy(), count)
+            .expect("authenticated native execution identity");
+        assert_eq!(protocol.batch_id(), batch_id);
+        let sealed = AuthorizedBatch::new(batch_id, protocol.asset(), signed.previous_state_root(),
+            signed.resulting_state_root(), authorization.public_key());
+        let paths = capture["receipts"].as_array().expect("complete ordered native receipt paths");
+        assert_eq!(paths.len(), usize::try_from(count).expect("activity count"));
+        assert!(!paths.is_empty() && paths.len() <= 64);
+        let receipts = paths.iter().map(|path| read_file(path.as_str().expect("absolute native receipt path"))).collect::<Vec<_>>();
+        let evidence = MaintainedOutcomeEvidence { header: &header, header_signature: &signature, activity_proof: &proof,
+            maintenance: &maintenance, maintenance_proof: &maintenance_proof, authorization: &authorization };
+        let verified = verify_outcome_maintained_chain(&receipt, &sealed, &evidence, &receipts)
+            .expect("genuine complete signed receipt root chain");
+        let mut missing = receipts.clone(); missing.pop();
+        assert!(verify_outcome_maintained_chain(&receipt, &sealed, &evidence, &missing).is_err());
+        let mut altered_maintenance = maintenance.clone();
+        let last = altered_maintenance.len() - 1; altered_maintenance[last] ^= 1;
+        let altered = MaintainedOutcomeEvidence { maintenance: &altered_maintenance, ..evidence };
+        assert!(verify_outcome_maintained_chain(&receipt, &sealed, &altered, &receipts).is_err());
+        verified
+    }
+}
+
+#[derive(Clone)]
+struct ExecutionPrestateObject {
+    identity: Vec<u8>,
+    roots: Vec<u8>,
+    universal: Range,
+    programs: Range,
+    accounts: Vec<StateWitness>,
+}
+
+impl ExecutionPrestateObject {
+    fn decode(bytes: &[u8]) -> Self {
+        let mut reader = Reader(bytes);
+        let identity = reader.take(78);
+        assert_eq!(&identity[..2], &1_u16.to_be_bytes());
+        let count = usize::from(reader.u16());
+        let roots = reader.take(count * 32);
+        let universal = reader.range(); assert_eq!(universal.id, 0);
+        let programs = reader.range(); assert_eq!(programs.id, 9);
+        let accounts = (0..reader.u32()).map(|_| reader.witness()).collect();
+        assert!(reader.0.is_empty());
+        let value = Self { identity, roots, universal, programs, accounts };
+        assert_eq!(value.encode(), bytes, "lossless native prestate decode");
+        value
+    }
+
+    fn encode(&self) -> Vec<u8> {
+        let mut bytes = self.identity.clone();
+        bytes.extend_from_slice(&u16::try_from(self.roots.len() / 32).expect("composite count").to_be_bytes());
+        bytes.extend_from_slice(&self.roots);
+        self.universal.encode(&mut bytes);
+        self.programs.encode(&mut bytes);
+        bytes.extend_from_slice(&u32::try_from(self.accounts.len()).expect("account count").to_be_bytes());
+        for witness in &self.accounts { vector(&mut bytes, &witness_bytes(witness)); }
+        bytes
+    }
+}
+
+#[test]
+fn execution_prestate_authenticated_native_objects() {
+    use layerx_client::evidence::{verify_execution_prestate_object, verify_native_execution_prestate_object};
+    use layerx_client::execution_prestate::{ExecutionPrestateError, NativeExecutionPrestateDiscovery, NativeExecutionPrestateProgress};
+    let fixture = ExecutionPrestateFixture::load();
+    let names = ["native-lifecycle", "intervening-native", "intervening-call"];
+    let anchors = names.iter().map(|name| fixture.receipt(fixture.capture(name))).collect::<Vec<_>>();
+    let sequences = anchors.iter().map(|anchor| anchor.receipt().protocol().expect("verified protocol").global_sequence()).collect::<Vec<_>>();
+    assert!(sequences[0] < sequences[1] && sequences[1] < sequences[2]);
+    assert!(sequences[0].checked_add(1).is_some_and(|next| next < sequences[2]));
+    assert_ne!(anchors[0].receipt().protocol().expect("native lifecycle").operation(), 3);
+    assert_eq!(anchors[1].receipt().protocol().expect("first call").operation(), 3);
+    assert_eq!(anchors[2].receipt().protocol().expect("second call").operation(), 3);
+    {
+        use layerx_client::lni::schema::Capability;
+        let (mut legacy, accepted) = Fixture::connect(&fixture.inputs);
+        assert_eq!(accepted.node().interface_version, Version::V1_8);
+        assert!(accepted.capabilities().contains(Capability::CapsDiscovery));
+        assert!(!accepted.capabilities().contains(Capability::ExecutionPrestate));
+        assert!(matches!(NativeExecutionPrestateDiscovery::begin(&mut legacy, accepted.capabilities(),
+            Version::V1_8, 77, 49_000, &anchors[0], 512, Duration::from_secs(30)),
+            Err(ExecutionPrestateError::Unavailable)));
+        let absent_text = b"did:layerx:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff";
+        let mut hash = Sha256::new(); hash.update(b"LXP/v1/did-id\0");
+        hash.update(u16::try_from(absent_text.len()).expect("bounded DID").to_be_bytes()); hash.update(absent_text);
+        let did: [u8; 32] = hash.finalize().into();
+        let node = accepted.node();
+        let context = ReadContext { interface_version: Version::V1_8, correlation_id: 49_001,
+            expected_protocol_version: 3, expected_network_id: 77, requested: Requested::new(VerificationLevel::STATE_PROVEN),
+            head: Head { chain_sequence: node.chain_head_sequence, sealed_batch: node.latest_sealed_batch,
+                finalised_checkpoint: node.latest_finalised_checkpoint },
+            sequencer_authorization: fixture.history.authorization_for_batch(node.latest_sealed_batch).expect("actual legacy head authority"),
+            handshake_sequencer_key: node.authorised_sequencer_key, root_selector: RootSelector::Latest };
+        let mut caps = CapsDiscovery::begin(&mut legacy, accepted.capabilities(), context, did, 512,
+            Duration::from_secs(30), Some(&fixture.history)).expect("unchanged native tags42/43 caps path");
+        let mut complete = false;
+        for _ in 0..131_072 {
+            match caps.advance() {
+                CapsProgress::Incomplete { received_bytes, total_bytes } => assert!(received_bytes > 0 && received_bytes < total_bytes),
+                CapsProgress::Complete(value) | CapsProgress::Empty(value) => {
+                    assert_eq!(value.did(), did);
+                    assert_eq!(value.freshness().global_sequence, node.chain_head_sequence);
+                    assert_eq!(value.level(), VerificationLevel::STATE_PROVEN);
+                    complete = true; break;
+                }
+                other => panic!("legacy42/43 discovery failed after newcap refusal: {other:?}"),
+            }
+        }
+        assert!(complete);
+        assert!(matches!(caps.advance(), CapsProgress::Refused(CapsError::Terminal)));
+        println!("EXECUTION_PRESTATE_CASE real-legacy18-handshake-and-caps42-43");
+    }
+    let raw = names.iter().map(|name| read_file(string(fixture.capture(name), "object_path"))).collect::<Vec<_>>();
+    let objects = raw.iter().map(|bytes| ExecutionPrestateObject::decode(bytes)).collect::<Vec<_>>();
+    for (index, ((name, anchor), raw)) in names.iter().zip(&anchors).zip(&raw).enumerate() {
+        let native = verify_native_execution_prestate_object(raw, anchor, 77).expect("real signed-receipt prestate proof");
+        assert_eq!(native.canonical_bytes(), raw);
+        assert_eq!(native.execution_sequence(), sequences[index]);
+        assert_eq!(native.state_root(), anchor.receipt().protocol().expect("receipt").previous_state_root());
+        assert_eq!(native.activity_id(), anchor.receipt().protocol().expect("receipt").activity_id());
+        assert_eq!(native.all_accounts().len(), objects[index].accounts.len());
+        assert_eq!(native.program_records().len(), objects[index].programs.leaves.len());
+        let unsigned = layerx_wire::receipt::encode_unsigned(anchor.receipt()).expect("native unsigned receipt");
+        assert_eq!(native.receipt_digest(), layerx_wire::hash::receipt_digest(&unsigned).expect("native receipt digest"));
+        assert_eq!(number(fixture.capture(name), "admission_sequence"), sequences[0]);
+        if index == 0 {
+            assert!(native.clone().for_program_call(anchor).is_err());
+            assert!(verify_execution_prestate_object(raw, anchor, 77).is_err());
+        } else {
+            let call = verify_execution_prestate_object(raw, anchor, 77).expect("actual Call schedule provenance");
+            let converted = native.clone().for_program_call(anchor).expect("same-receipt strict Call conversion");
+            assert_eq!(call.selected_fee_asset(), converted.selected_fee_asset());
+            assert_ne!(call.selected_fee_asset(), [0; 32]);
+            assert_eq!(call.selected_fee_schedule_version(), anchor.receipt().protocol().expect("receipt").program_outcome().expect("real Call outcome").fee_schedule_version());
+            assert!(native.clone().for_program_call(&anchors[0]).is_err());
+        }
+        let other = (index + 1) % names.len();
+        assert_ne!(native.state_root(), anchors[other].receipt().protocol().expect("other receipt").previous_state_root());
+        assert!(verify_native_execution_prestate_object(raw, &anchors[other], 77).is_err());
+        assert!(verify_native_execution_prestate_object(raw, anchor, 78).is_err());
+        assert!(verify_native_execution_prestate_object(&raw[..raw.len() - 1], anchor, 77).is_err());
+        let mut trailing = raw.clone(); trailing.push(0);
+        assert!(verify_native_execution_prestate_object(&trailing, anchor, 77).is_err());
+        let refuse = |bad: &ExecutionPrestateObject| {
+            assert!(verify_native_execution_prestate_object(&bad.encode(), anchor, 77).is_err(), "accepted altered complete prestate for {name}");
+        };
+        let original = &objects[index];
+        assert!(!original.programs.leaves.is_empty() && !original.universal.leaves.is_empty() && original.accounts.len() > 1);
+        for offset in [0, 2, 6, 38, 46] {
+            let mut bad = original.clone(); bad.identity[offset] ^= 1; refuse(&bad);
+        }
+        let mut bad = original.clone(); bad.roots.truncate(bad.roots.len() - 32); refuse(&bad);
+        let mut bad = original.clone(); bad.universal.leaves.remove(0); refuse(&bad);
+        let mut bad = original.clone(); bad.programs.leaves.remove(0); refuse(&bad);
+        let mut bad = original.clone(); bad.programs.leaves.insert(0, original.programs.leaves[0].clone()); refuse(&bad);
+        let mut bad = original.clone(); bad.programs.leaves[0].value.push(0); refuse(&bad);
+        let mut bad = original.clone(); bad.accounts.remove(0); refuse(&bad);
+        let mut bad = original.clone(); bad.accounts.insert(0, original.accounts[0].clone()); refuse(&bad);
+        let mut bad = original.clone(); bad.accounts.swap(0, 1); refuse(&bad);
+        let mut bad = original.clone(); bad.accounts[0].account_path.as_mut().expect("native account path").count += 1; refuse(&bad);
+        let mut bad = original.clone(); bad.accounts = objects[other].accounts.clone(); refuse(&bad);
+        let mut bad = original.clone(); bad.programs = objects[other].programs.clone(); refuse(&bad);
+        let mut bad = original.clone(); bad.universal = objects[other].universal.clone(); refuse(&bad);
+        let (mut transport, accepted) = ExecutionPrestateFixture::connect(&fixture.inputs);
+        let mut discovery = NativeExecutionPrestateDiscovery::begin(&mut transport, accepted.capabilities(), Version::V1_9,
+            77, 50_000 + index as u64, anchor, 512, Duration::from_secs(30)).expect("actual receipt-selected discovery");
+        let mut complete = false;
+        for _ in 0..131_072 {
+            match discovery.advance() {
+                NativeExecutionPrestateProgress::Incomplete { received_bytes, total_bytes } => assert!(received_bytes > 0 && received_bytes < total_bytes),
+                NativeExecutionPrestateProgress::Complete(value) => {
+                    assert_eq!(value.canonical_bytes(), raw);
+                    assert_eq!(value.receipt_digest(), native.receipt_digest()); complete = true; break;
+                }
+                other => panic!("real native prestate acquisition failed: {other:?}"),
+            }
+        }
+        assert!(complete);
+        assert!(matches!(discovery.advance(), NativeExecutionPrestateProgress::Refused(ExecutionPrestateError::Terminal)));
+        println!("EXECUTION_PRESTATE_CASE authenticated-{name}-complete-and-negative");
+    }
+    println!("EXECUTION_PRESTATE_CASE genuine-intervening-receipts");
+}

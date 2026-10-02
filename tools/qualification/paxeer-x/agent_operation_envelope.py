@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import hashlib
+import importlib.util
 import json
 import os
 from pathlib import Path
@@ -8,6 +9,7 @@ import shutil
 import socket
 import ssl
 import stat
+import struct
 import subprocess
 import sys
 import tempfile
@@ -115,7 +117,9 @@ SOURCES = ('agent/crates', 'agent/Cargo.toml', 'agent/Cargo.lock', 'agent/schema
            'agent/sdk/typescript/test', 'agent/sdk/typescript/package.json', 'agent/sdk/typescript/package-lock.json',
            'agent/sdk/typescript/tsconfig.json', 'agent/sdk/python', 'platform/hosted/gateway', 'platform/Cargo.toml',
            'platform/Cargo.lock', 'platform/sdk/go', 'platform/sdk/jvm', 'platform/sdk/swift', 'platform/sdk/dotnet',
-           'tools/paxeer-x/route-catalogue.json', 'tools/qualification/paxeer-x/agent_operation_envelope.py')
+           'tools/paxeer-x/route-catalogue.json', 'tools/qualification/paxeer-x/agent_operation_envelope.py',
+           'tests/daemon/lxp_test_runtime_fixture.c', 'tests/storage/lxp_test_maintenance_publication.c',
+           'tests/programs/test_call_activity.c', 'agent/schema/lni/v1.kvx')
 CASE_LINE = re.compile(r'^PAXEER_X_AGENT_ENVELOPE_CASE ([a-z0-9_.\-]+) passed$', re.M)
 COUNT_LINE = re.compile(r'^PAXEER_X_AGENT_ENVELOPE_CASES=(\d+)$', re.M)
 
@@ -239,6 +243,13 @@ def build(manifest):
     probe = step(['cargo', 'test', '--locked', '--release', '--manifest-path', 'agent/Cargo.toml', '-p', 'layerx-sdk',
                   '--test', 'agent_operation_envelope', '--no-run', '--message-format=json'])
     artifacts.update(cargo_executables(probe, {('agent_operation_envelope', 'test'): 'rust_probe'}))
+    prestate = step(['cargo', 'test', '--locked', '--release', '--manifest-path', 'agent/Cargo.toml', '-p', 'layerx-client',
+                     '--test', 'caps_discovery', '--no-run', '--message-format=json'])
+    artifacts.update(cargo_executables(prestate, {('caps_discovery', 'test'): 'prestate_probe'}))
+    native_build = bundle / 'native-prestate'
+    crash_target = native_build / 'tests/lxp_test_maintenance_publication'
+    step(['make', '--no-print-directory', '-j4', 'BUILD_DIR=' + str(native_build), str(crash_target)])
+    artifacts['prestate_crash'] = str(crash_target)
     gateway = step(['cargo', 'build', '--locked', '--release', '--manifest-path', 'platform/hosted/gateway/Cargo.toml',
                     '--bin', 'layerx-gateway', '--message-format=json'])
     artifacts.update(cargo_executables(gateway, {('layerx-gateway', 'bin'): 'gateway'}))
@@ -299,13 +310,13 @@ def load_manifest():
             and built['sources'] == identity['sources'] and built['operations'] == identity['operations'],
             'artifact manifest does not bind the candidate revision')
     for name in ('agentd', 'rust_probe', 'gateway', 'typescript_probe', 'go_probe', 'java_probe', 'kotlin_probe',
-                 'jvm_main_classes', 'jvm_classpath', 'swift_probe', 'csharp_probe', 'python_probe'):
+                 'jvm_main_classes', 'jvm_classpath', 'swift_probe', 'csharp_probe', 'python_probe', 'prestate_probe', 'prestate_crash'):
         row = built['artifacts'].get(name)
         require(row is not None, 'missing candidate artifact ' + name)
         target = Path(row['path'])
         require(target.is_absolute() and target.is_file() and not target.is_symlink() and digest(target) == row['sha256'],
                 'candidate artifact digest ' + name)
-    for name in ('agentd', 'rust_probe', 'gateway', 'go_probe'):
+    for name in ('agentd', 'rust_probe', 'gateway', 'go_probe', 'prestate_probe', 'prestate_crash'):
         require(os.access(built['artifacts'][name]['path'], os.X_OK), 'candidate artifact not executable ' + name)
     return built
 
@@ -2016,6 +2027,187 @@ class Qualification:
         write_private(self.d / 'operation-evidence.json', {'rows': self.operation_evidence_rows})
 
 
+def prestate_authority_records(path):
+    data, offset, rows = path.read_bytes(), 0, []
+    while offset + 32 <= len(data) and data[offset:offset + 4] != bytes(4):
+        require(data[offset:offset + 4] == b'LXPL', 'prestate authority log envelope')
+        size = int.from_bytes(data[offset + 16:offset + 20], 'big')
+        body = data[offset + 32:offset + 32 + size]
+        require(len(body) == size and len(body) >= 79 and body[:4] == b'LXBE', 'prestate authority record bounds')
+        header_size = int.from_bytes(body[77:79], 'big')
+        cursor = 79 + header_size
+        require(cursor + 73 <= len(body), 'prestate authority header bounds')
+        header, signature = body[79:cursor], body[cursor:cursor + 64]
+        cursor += 64
+        depth, index, count = struct.unpack_from('>BII', body, cursor)
+        cursor += 9
+        require(depth <= 32 and cursor + depth * 32 + 4 <= len(body), 'prestate authority proof bounds')
+        siblings = body[cursor:cursor + depth * 32]
+        cursor += len(siblings)
+        receipt_size = int.from_bytes(body[cursor:cursor + 4], 'big')
+        receipt = body[cursor + 4:cursor + 4 + receipt_size]
+        require(len(receipt) == receipt_size, 'prestate authority receipt bounds')
+        cursor += 4 + receipt_size
+        require(body[4] in (ord('1'), ord('2'), ord('3'), ord('4')), 'prestate authority record version')
+        for _ in range(2 if body[4] == ord('2') else 3 if body[4] == ord('4') else 0):
+            require(cursor + 4 <= len(body), 'prestate authority artifact bounds')
+            artifact_size = int.from_bytes(body[cursor:cursor + 4], 'big')
+            cursor += 4
+            require(artifact_size <= len(body) - cursor, 'prestate authority artifact length')
+            cursor += artifact_size
+        require(cursor == len(body), 'prestate authority trailing bytes')
+        proof = struct.pack('>HHIIBI', 1, 0x4d50, index, count, depth, len(siblings)) + siblings
+        rows.append(dict(version=body[4], digest=body[5:37], header=header, signature=signature,
+                         receipt=receipt, proof=proof, index=index, count=count))
+        offset += 32 + size
+    require(rows, 'prestate real authority log is empty')
+    return rows
+
+
+def qualify_execution_prestate(parent, built, bundle, client):
+    directory = Path(tempfile.mkdtemp(prefix='px-prestate-runtime-', dir='/var/tmp'))
+    directory.rmdir()
+    runtime = fixture.RuntimeFixture(directory, bundle, client)
+    runtime.env['LAYERX_EXECUTION_PRESTATE'] = '1'
+    outputs, results = [], []
+    def invoke(mode, payload, sequence, label, profile=None):
+        output = directory / label
+        output.mkdir(mode=0o700)
+        argv = [runtime.client['path'], runtime.manifest['node_socket'], str(profile or directory / 'salt'),
+                mode, str(sequence), 'wait', str(payload), 'receipt:0', str(output)]
+        environment = runtime.env | {'PAXEER_X_FIXTURE_KEYS': str(directory / 'keys'),
+                                     'PAXEER_X_PROGRAM_FEE_LIMIT': '1000000000'}
+        completed = subprocess.run(argv, cwd=ROOT, env=environment, capture_output=True, timeout=60)
+        (output / 'client.log').write_bytes(completed.stdout + completed.stderr)
+        require(completed.returncode == 0, 'real prestate ' + mode + ' failed: ' + str(output / 'client.log'))
+        rows = [json.loads(line) for line in completed.stdout.decode().splitlines() if line.startswith('{')]
+        require(len(rows) == 1 and rows[0]['stage'] == 'receipt' and rows[0]['result'] == 0, 'prestate real execution result')
+        row = rows[0]
+        row['directory'] = str(output)
+        return row
+    def export(row, label):
+        target = directory / label
+        target.mkdir(mode=0o700)
+        original = Path(row['directory'])
+        argv = [runtime.client['path'], runtime.manifest['node_socket'], 'unused', 'program-prestate',
+                str(original / 'activity.bin'), str(original / 'receipt.bin'), str(target)]
+        completed = subprocess.run(argv, cwd=ROOT, env=runtime.env | {'PAXEER_X_FIXTURE_KEYS': str(directory / 'keys')},
+                                   capture_output=True, timeout=60)
+        (target / 'client.log').write_bytes(completed.stdout + completed.stderr)
+        require(completed.returncode == 0, 'real prestate export failed: ' + str(target / 'client.log'))
+        require((target / 'execution-prestate.bin').is_file(), 'actual prestate exporter omitted object')
+        return target
+    try:
+        runtime.generate()
+        treasury = json.loads((directory / 'node/treasury.json').read_text())
+        owner = treasury['public_key']
+        require(treasury['network_id'] == fixture.NETWORK and treasury['asset'] == fixture.ASSET
+                and re.fullmatch('[0-9a-f]{64}', owner), 'prestate funding treasury identity')
+        account = ('agent:did:layerx:' + owner + ':main').encode()
+        beneficiary = hashlib.sha256(b'LX:ACCOUNT:v1' + len(account).to_bytes(4, 'big') + account).hexdigest()
+        amount, custody = 1000000000000, '0x0000000000000000000000000000000000001013'
+        deposit = subprocess.run([sys.executable, str(ROOT / 'platform/hosted/paxeer/evm.py'), 'send', '--rpc', runtime.rpc_url,
+            '--chain', '125', '--key-file', str(directory / 'keys/deployer.key'), '--value', str(amount * 10**12),
+            custody, 'deposit(bytes32)', '0x' + beneficiary], env=runtime.env, capture_output=True, timeout=150)
+        (directory / 'prestate-deposit.log').write_bytes(deposit.stdout + deposit.stderr)
+        require(deposit.returncode == 0, 'prestate real custody deposit failed')
+        deposits = [json.loads(line) for line in deposit.stdout.decode().splitlines() if line.startswith('{')]
+        require(len(deposits) == 1 and deposits[0]['status'] == '0x1', 'prestate custody transaction outcome')
+        module = importlib.util.spec_from_file_location('prestate_fixture_evm', ROOT / 'platform/hosted/paxeer/evm.py')
+        evm = importlib.util.module_from_spec(module)
+        module.loader.exec_module(evm)
+        topic = '0x' + evm.keccak(b'CustodyDeposit(bytes32,bytes32,address,bytes32,uint256,uint64)').hex()
+        events = [e for e in deposits[0]['logs'] if e['address'].lower() == custody and e['topics'] and e['topics'][0].lower() == topic]
+        require(len(events) == 1 and len(events[0]['topics']) == 4, 'prestate custody canonical event')
+        event, data = events[0], evm.unhex(events[0]['data'], 96)
+        require(event['topics'][2].lower() == '0x' + fixture.ASSET and data[:32].hex() == beneficiary
+                and int.from_bytes(data[32:64], 'big') == amount, 'prestate custody asset/owner/amount')
+        height = int(deposits[0]['blockNumber'], 16)
+        runtime.wait(lambda: int(runtime.rpc('status', comet=True)['sync_info']['latest_block_height']) >= height + 3)
+        credit = directory / 'prestate.credit'
+        command = [runtime.binary('layerx-custody-proof'), 'light-credit', '--rpc', 'http://127.0.0.1:' + str(runtime.ports[2]),
+                   '--profile', str(directory / 'custody.profile'), '--deposit-id', event['topics'][1], '--owner-key', owner,
+                   '--output', str(credit)]
+        completed = subprocess.run(command, env=runtime.env, capture_output=True, timeout=120)
+        (directory / 'prestate-credit.log').write_bytes(completed.stdout + completed.stderr)
+        require(completed.returncode == 0, 'prestate real custody proof producer')
+        invoke('funding-credit', credit, 0, 'funding', directory / 'custody.profile')
+        program = hashlib.sha256(b'paxeer-x/execution-prestate/real-fixture/v1' + bytes.fromhex(owner)).digest()
+        wasm = (b'\0asm\1\0\0\0' + bytes([1,12,2,0x60,1,0x7f,1,0x7f,0x60,2,0x7f,0x7f,1,0x7f])
+                + bytes([3,3,2,0,1,5,4,1,1,1,1,7,41,3,14]) + b'layerx_reserve' + bytes([0,0,11])
+                + b'layerx_call' + bytes([0,1,6]) + b'memory' + bytes([2,0,10,11,2,4,0,0x41,0,0x0b,4,0,0x41,0,0x0b]))
+        deploy = program + struct.pack('>HBB', 1, 0, 0) + bytes(32) + hashlib.sha256(wasm).digest() + struct.pack('>I', len(wasm)) + wasm
+        payload = directory / 'prestate-deploy.bin'
+        payload.write_bytes(deploy)
+        outputs.append(invoke('program-deploy', payload, 1, 'native-lifecycle'))
+        entry, caps, access = b'layerx_call', b'\0\0', b'LayerX/programs/access-declaration/v1\0\0'
+        call = program + struct.pack('>HHIHII7Q', 1, len(entry), 0, len(caps), len(access), 16,
+                                    1000000, 16777216, 1048576, 1048576, 64, 1048576, 4096) + entry + caps + access
+        payload = directory / 'prestate-call.bin'
+        payload.write_bytes(call)
+        outputs.append(invoke('program-call', payload, 2, 'intervening-native'))
+        outputs.append(invoke('program-call', payload, 3, 'intervening-call'))
+        require(outputs[0]['global_sequence'] < outputs[1]['global_sequence'] < outputs[2]['global_sequence'],
+                'prestate actual intervening signed execution sequence')
+        reports = runtime.catch_up([{'id': row['activity_id'], 'batch': row['batch_id'], 'digest': row['receipt_digest'],
+                                    'raw': (Path(row['directory']) / 'receipt.bin').read_bytes().hex()} for row in outputs])
+        authority = prestate_authority_records(directory / 'node/logs/receipt-authority.log')
+        captures = []
+        for row, report, name in zip(outputs, reports, ('native-lifecycle', 'intervening-native', 'intervening-call')):
+            target = export(row, 'export-' + name)
+            evidence = report['batch_evidence']
+            identity = evidence['batch_identity']
+            require(identity['kind'] == 'occupancy_maintenance_v2', 'prestate maintained batch authority')
+            material = {'header': evidence['header_hex'], 'header-signature': evidence['header_signature'],
+                        'proof': evidence['receipt_proof_hex'], 'maintenance': identity['receipt_hex'],
+                        'maintenance-proof': identity['receipt_proof_hex']}
+            for filename, value in material.items():
+                (target / filename).write_bytes(bytes.fromhex(value))
+            ordinary = sorted((r for r in authority if r['header'] == bytes.fromhex(evidence['header_hex'])), key=lambda r: r['index'])
+            require(ordinary and [r['index'] for r in ordinary] == list(range(ordinary[0]['count']))
+                    and all(r['count'] == len(ordinary) and r['signature'] == bytes.fromhex(evidence['header_signature']) for r in ordinary)
+                    and ordinary[-1]['receipt'] == bytes.fromhex(identity['receipt_hex']), 'prestate complete maintained native batch')
+            paths = []
+            for index, retained in enumerate(ordinary[:-1]):
+                path = target / ('ordinary-' + str(index) + '.receipt')
+                path.write_bytes(retained['receipt'])
+                paths.append(str(path))
+            captures.append(dict(name=name, object_path=str(target / 'execution-prestate.bin'), receipt_path=str(target / 'receipt.bin'),
+                proof_path=str(target / 'proof'), header_path=str(target / 'header'), header_signature_path=str(target / 'header-signature'),
+                maintenance_path=str(target / 'maintenance'), maintenance_proof_path=str(target / 'maintenance-proof'), receipts=paths,
+                admission_sequence=outputs[0]['global_sequence']))
+        runtime.restart(kill=True)
+        for row, captured in zip(outputs, captures):
+            restored = export(row, 'restored-' + captured['name'])
+            require((restored / 'receipt.bin').read_bytes() == Path(captured['receipt_path']).read_bytes()
+                    and (restored / 'execution-prestate.bin').read_bytes() == Path(captured['object_path']).read_bytes(),
+                    'prestate real process restart changed signed receipt or retained source proof')
+        node_env = dict(line.split('=', 1) for line in (directory / 'node/node.env').read_text().splitlines() if '=' in line)
+        inputs = dict(socket=runtime.manifest['node_socket'], sequencer_public_key=runtime.manifest['sequencer_public_key'],
+            sequencer_id=hashlib.sha256(('layerx-sequencer:' + runtime.manifest['sequencer_public_key']).encode()).hexdigest(),
+            genesis_descriptor=str(directory / 'node/genesis/paxeer-deployment-descriptor.lxgd'),
+            genesis_trust=str(directory / 'node/genesis/genesis-handover-trust.lxt'),
+            genesis_manifest=str(directory / 'node/genesis/genesis.manifest'),
+            handover_authority_public_key=node_env['LAYERX_NODE_HANDOVER_AUTHORITY_PUBLIC_KEY'], execution_prestate_captures=captures)
+        manifest = directory / 'execution-prestate-inputs.json'
+        write_private(manifest, inputs)
+        command = [built['artifacts']['prestate_probe']['path'], '--exact', 'execution_prestate_authenticated_native_objects', '--nocapture']
+        completed = subprocess.run(command, cwd=ROOT, env=runtime.env | {'LAYERX_EXECUTION_PRESTATE_INPUTS': str(manifest)},
+                                   capture_output=True, timeout=180)
+        (directory / 'prestate-proof.log').write_bytes(completed.stdout + completed.stderr)
+        require(completed.returncode == 0 and b'1 passed' in completed.stdout, 'prestate maintained Rust proof cases failed')
+        crash = subprocess.run([built['artifacts']['prestate_crash']['path'], '--execution-prestate'], cwd=ROOT, capture_output=True, timeout=180)
+        (directory / 'prestate-crash.log').write_bytes(crash.stdout + crash.stderr)
+        require(crash.returncode == 0, 'prestate real kernel/WAL crash boundary cases failed')
+        for case in ('prestate_real_intervening_program', 'prestate_maintained_proof', 'prestate_retention_restart', 'prestate_capture_crash_boundaries'):
+            results.append({'language': 'native', 'case': case, 'passed': True})
+        write_private(parent / 'execution-prestate-evidence.json', {'runtime_directory': str(directory), 'inputs': record(manifest),
+            'rust_log': record(directory / 'prestate-proof.log'), 'crash_log': record(directory / 'prestate-crash.log'), 'cases': results})
+        return results
+    finally:
+        runtime.cleanup()
+
+
 def worker(directory):
     built = load_manifest()
     config, credential = load_config()
@@ -2032,6 +2224,7 @@ def worker(directory):
         runtime.readiness()
         qualification = Qualification(runtime.directory, built, config, credential, runtime)
         qualification.run()
+        qualification.results.extend(qualify_execution_prestate(runtime.directory, built, bundle, client))
         expected = (len(DIRECT_CASES) + len(LANGUAGES) * len(LANGUAGE_CASES) + len(RUST_PRE_RESTART)
                     + len(built['operations']) + len(RUST_POST_RESTART)
                     + len(PYTHON_PRE_RESTART) + len(PYTHON_POST_RESTART) + len(LANGUAGES) * len(DECODE_CASES))
@@ -2051,6 +2244,7 @@ def worker(directory):
         expected += len(W8_CAPABILITY_DIRECT) + len(W8_CAPABILITY_REFUSALS)
         expected += len(SERVED_READ_DIRECT) + len(SERVED_READ_REFUSALS)
         expected += len(NATIVE_LANGUAGES) * (16 + len(NATIVE_REFUSALS))
+        expected += 4
         require(len(qualification.results) == expected, 'case count ' + str(len(qualification.results)) + ' != ' + str(expected))
         write_private(runtime.directory / 'case-results.json', qualification.results)
         print(f'PAXEER_X_GATE tests={len(qualification.results)} skipped=0', flush=True)

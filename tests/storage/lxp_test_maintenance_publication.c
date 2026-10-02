@@ -3,6 +3,7 @@
 #include "layerx/lxp_daemon.h"
 #include "layerx/lxp_genesis.h"
 #include "layerx/lxp_maintenance.h"
+#include "layerx/lxp_fault.h"
 #include "layerx/lx_asset.h"
 #include "layerx/lxp_bridge_credit.h"
 #include "layerx/lxp_module_ctx.h"
@@ -22,6 +23,8 @@ static const uint8_t maintenance_did[] = "did:lxp:maintenance-publication";
 typedef struct maintenance_fixture {
     const lxp_activity *input_activity;
     const char *evidence_directory;
+    bool execution_prestate_checks;
+    unsigned execution_prestate_crashes;
     lxp_kernel kernel;
     lxp_state_store state;
     lxp_state_journal journal;
@@ -209,6 +212,201 @@ static int maintenance_fixture_open(maintenance_fixture *f)
     f->fees.version = 1U;
     f->fees.multiplier_basis_points = 10000U;
     return maintenance_fixture_logs(f, 7U);
+}
+
+typedef struct prestate_crash_workload {
+    maintenance_fixture *fixture;
+    const lxp_kernel_prepared_batch *prepared;
+    const lxp_byte_span *activities;
+    const lxp_byte_span *receipts;
+    const lxp_merkle_proof *activity_proofs;
+    const lxp_merkle_proof *receipt_proofs;
+    lxp_byte_span header;
+    const uint8_t *signature;
+    size_t count;
+} prestate_crash_workload;
+
+typedef struct prestate_file_sink {
+    FILE *file;
+    size_t calls;
+    size_t bytes;
+} prestate_file_sink;
+
+static lxp_result prestate_file_consume(void *context, lxp_byte_span payload)
+{
+    prestate_file_sink *sink = context;
+    if (payload.bytes == NULL || payload.length == 0U ||
+        payload.length > LXP_KERNEL_MAX_BLOB_TOTAL_BYTES || sink->calls != 0U)
+        return LXP_ERR_NON_CANONICAL;
+    if (fwrite(payload.bytes, 1U, payload.length, sink->file) != payload.length)
+        return LXP_ERR_IO;
+    ++sink->calls;
+    sink->bytes = payload.length;
+    return LXP_OK;
+}
+
+static int prestate_readback(maintenance_fixture *f,
+    const lxp_receipt *receipt, lxp_byte_span expected, lxp_result result)
+{
+    uint8_t digest[32], bytes[4096];
+    size_t mark = lxp_arena_mark(&f->arena);
+    prestate_file_sink sink = {tmpfile(), 0U, 0U};
+    CHECK(sink.file != NULL);
+    CHECK(lxp_receipt_digest(receipt, &f->arena, digest) == LXP_OK);
+    CHECK(lxp_daemon_evidence_get_execution_prestate(&f->evidence, 7U,
+        receipt->activity_id, digest, &f->arena, prestate_file_consume, &sink) == result);
+    if (result != LXP_OK) {
+        CHECK(sink.calls == 0U && sink.bytes == 0U && ftell(sink.file) == 0L);
+    } else {
+        CHECK(sink.calls == 1U && sink.bytes == expected.length && expected.length >= 80U);
+        CHECK(fflush(sink.file) == 0 && fseek(sink.file, 0L, SEEK_SET) == 0);
+        for (size_t offset = 0U; offset < expected.length;) {
+            size_t length = expected.length - offset;
+            if (length > sizeof(bytes)) length = sizeof(bytes);
+            CHECK(fread(bytes, 1U, length, sink.file) == length &&
+                memcmp(bytes, expected.bytes + offset, length) == 0);
+            offset += length;
+        }
+        CHECK(fgetc(sink.file) == EOF && !ferror(sink.file));
+    }
+    CHECK(fclose(sink.file) == 0 && lxp_arena_reset(&f->arena, mark) == LXP_OK);
+    return 0;
+}
+
+static int prestate_reopen(maintenance_fixture *f)
+{
+    char path[160];
+    uint8_t anchor[32];
+    size_t mark = lxp_arena_mark(&f->arena);
+    memcpy(anchor, f->evidence.registry.finalisation.settlement_anchor, 32U);
+    CHECK(snprintf(path, sizeof(path), "%s/evidence.log", f->directory) > 0);
+    CHECK(lxp_log_close(&f->evidence_log) == LXP_OK);
+    CHECK(lxp_log_open(&f->evidence_log, path) == LXP_OK);
+    CHECK(lxp_daemon_evidence_open(&f->evidence, &f->evidence_log, 7U,
+        &f->authorization, anchor, true, NULL, NULL, &f->arena) == LXP_OK);
+    f->evidence.execution_prestate_enabled = true;
+    CHECK(lxp_daemon_evidence_execution_prestate_ready(&f->evidence));
+    CHECK(lxp_arena_reset(&f->arena, mark) == LXP_OK);
+    return 0;
+}
+
+static lxp_result prestate_retain_workload(void *context)
+{
+    prestate_crash_workload *workload = context;
+    return lxp_daemon_evidence_retain_execution_prestates(
+        &workload->fixture->evidence, workload->prepared);
+}
+
+static lxp_result prestate_publish_workload(void *context)
+{
+    prestate_crash_workload *workload = context;
+    maintenance_fixture *f = workload->fixture;
+    lxp_result status = LXP_OK;
+    for (size_t index = 0U; status == LXP_OK && index < workload->count; ++index)
+        status = lxp_daemon_activity_evidence_publish(&f->evidence,
+            workload->activities[index], &workload->activity_proofs[index],
+            workload->receipts[index], &workload->receipt_proofs[index],
+            &f->authorization, workload->header, workload->signature, &f->arena, NULL);
+    return status;
+}
+
+static int prestate_crash_retain(maintenance_fixture *f,
+    const lxp_kernel_prepared_batch *prepared, const lxp_receipt *receipts, size_t count)
+{
+    prestate_crash_workload workload = {.fixture = f, .prepared = prepared};
+    uint64_t before_records = f->evidence.record_count;
+    size_t before_bytes = f->evidence.execution_prestate_retained_bytes;
+    size_t captured_bytes = 0U;
+    uint8_t live_root[32];
+    int child_exit_status;
+    memcpy(live_root, f->kernel.current_state_root, 32U);
+    CHECK(count != 0U && count <= UINT32_MAX);
+    for (size_t index = 0U; index < count; ++index) {
+        lxp_byte_span capture = lxp_kernel_prepared_batch_execution_prestate(prepared, index);
+        uint8_t sequence[8];
+        write_u64(sequence, receipts[index].global_sequence);
+        CHECK(capture.bytes != NULL && capture.length >= 80U &&
+            memcmp(capture.bytes + 6U, receipts[index].activity_id, 32U) == 0 &&
+            memcmp(capture.bytes + 38U, sequence, sizeof(sequence)) == 0 &&
+            memcmp(capture.bytes + 46U, receipts[index].previous_state_root, 32U) == 0);
+        CHECK(capture.length <= LXP_KERNEL_MAX_BLOB_TOTAL_BYTES - captured_bytes);
+        captured_bytes += capture.length;
+        if (index == 0U) CHECK(memcmp(receipts[index].previous_state_root, live_root, 32U) == 0);
+        else {
+            CHECK(memcmp(receipts[index].previous_state_root, receipts[index - 1U].resulting_state_root, 32U) == 0);
+            CHECK(memcmp(receipts[index].previous_state_root, live_root, 32U) != 0);
+        }
+        CHECK(prestate_readback(f, &receipts[index], capture, LXP_ERR_UNKNOWN_ACTIVITY) == 0);
+    }
+    CHECK(lxp_fault_crash_at_boundary(LXP_FAULT_LOG_BODY_WRITTEN, 1U,
+        prestate_retain_workload, &workload, &child_exit_status) == LXP_OK);
+    ++f->execution_prestate_crashes;
+    CHECK(prestate_reopen(f) == 0 && f->evidence.record_count == before_records &&
+        f->evidence.execution_prestate_retained_bytes == before_bytes);
+    for (size_t index = 0U; index < count; ++index)
+        CHECK(prestate_readback(f, &receipts[index],
+            lxp_kernel_prepared_batch_execution_prestate(prepared, index), LXP_ERR_UNKNOWN_ACTIVITY) == 0);
+    CHECK(lxp_fault_crash_at_boundary(LXP_FAULT_LOG_SYNCED, (uint32_t)count,
+        prestate_retain_workload, &workload, &child_exit_status) == LXP_OK);
+    ++f->execution_prestate_crashes;
+    CHECK(prestate_reopen(f) == 0 && f->evidence.record_count == before_records + count &&
+        f->evidence.execution_prestate_retained_bytes == before_bytes + captured_bytes);
+    CHECK(memcmp(f->kernel.current_state_root, live_root, 32U) == 0 &&
+        f->state.next_sequence == receipts[0].global_sequence);
+    for (size_t index = 0U; index < count; ++index)
+        CHECK(prestate_readback(f, &receipts[index],
+            lxp_kernel_prepared_batch_execution_prestate(prepared, index), LXP_ERR_UNKNOWN_ACTIVITY) == 0);
+    CHECK(lxp_daemon_evidence_retain_execution_prestates(&f->evidence, prepared) == LXP_OK &&
+        f->evidence.record_count == before_records + count &&
+        f->evidence.execution_prestate_retained_bytes == before_bytes + captured_bytes);
+    return 0;
+}
+
+static int prestate_crash_publish(maintenance_fixture *f,
+    const lxp_kernel_prepared_batch *prepared, const lxp_daemon_batch_wal_input *input,
+    const lxp_receipt *receipts, const lxp_batch_header *header)
+{
+    uint8_t leaves[64][32], root[32];
+    lxp_merkle_proof activity_proofs[64];
+    uint64_t before_records = f->evidence.record_count;
+    size_t before_bytes = f->evidence.execution_prestate_retained_bytes;
+    size_t mark = lxp_arena_mark(&f->arena);
+    int child_exit_status;
+    prestate_crash_workload workload = {f, prepared, input->activities, input->receipts,
+        activity_proofs, input->receipt_proofs, input->canonical_header,
+        input->header_signature, input->count};
+    CHECK(input->count != 0U && input->count <= 64U);
+    CHECK(f->state.next_sequence == header->last_sequence + 1U &&
+        memcmp(f->kernel.current_state_root, header->resulting_state_root, 32U) == 0);
+    for (size_t index = 0U; index < input->count; ++index) {
+        CHECK(lxp_merkle_leaf_hash(input->activities[index].bytes,
+            input->activities[index].length, leaves[index]) == LXP_OK);
+        CHECK(prestate_readback(f, &receipts[index],
+            lxp_kernel_prepared_batch_execution_prestate(prepared, index), LXP_ERR_UNKNOWN_ACTIVITY) == 0);
+    }
+    for (size_t index = 0U; index < input->count; ++index) {
+        CHECK(lxp_merkle_proof_generate((const uint8_t (*)[32])leaves, input->count,
+            index, &f->arena, &activity_proofs[index], root) == LXP_OK);
+        CHECK(memcmp(root, header->activity_merkle_root, 32U) == 0);
+    }
+    CHECK(lxp_fault_crash_at_boundary(LXP_FAULT_LOG_BODY_WRITTEN, 1U,
+        prestate_publish_workload, &workload, &child_exit_status) == LXP_OK);
+    ++f->execution_prestate_crashes;
+    CHECK(prestate_reopen(f) == 0 && f->evidence.record_count == before_records &&
+        f->evidence.execution_prestate_retained_bytes == before_bytes);
+    for (size_t index = 0U; index < input->count; ++index)
+        CHECK(prestate_readback(f, &receipts[index],
+            lxp_kernel_prepared_batch_execution_prestate(prepared, index), LXP_ERR_UNKNOWN_ACTIVITY) == 0);
+    CHECK(lxp_fault_crash_at_boundary(LXP_FAULT_LOG_SYNCED, (uint32_t)input->count,
+        prestate_publish_workload, &workload, &child_exit_status) == LXP_OK);
+    ++f->execution_prestate_crashes;
+    CHECK(prestate_reopen(f) == 0 && f->evidence.record_count == before_records + input->count &&
+        f->evidence.execution_prestate_retained_bytes == before_bytes);
+    for (size_t index = 0U; index < input->count; ++index)
+        CHECK(prestate_readback(f, &receipts[index],
+            lxp_kernel_prepared_batch_execution_prestate(prepared, index), LXP_OK) == 0);
+    CHECK(lxp_arena_reset(&f->arena, mark) == LXP_OK);
+    return 0;
 }
 
 static int maintenance_publish(maintenance_fixture *f, uint32_t type,
@@ -415,6 +613,8 @@ static int maintenance_publish(maintenance_fixture *f, uint32_t type,
         CHECK(write_evidence_proof(f->evidence_directory, "maintenance.proof",
             &input.maintenance_proof) == 0);
     }
+    if (f->execution_prestate_checks)
+        CHECK(prestate_crash_retain(f, prepared, decoded, count) == 0);
     CHECK(lxp_daemon_batch_wal_write_prepared(f->directory, &input, durable) == LXP_OK);
     CHECK(lxp_daemon_batch_wal_load(f->directory, &f->authorization, &loaded, &present) == LXP_OK && present);
     CHECK(lxp_daemon_batch_wal_classify(loaded, &input.base, &recovery) == LXP_OK &&
@@ -481,6 +681,8 @@ static int maintenance_publish(maintenance_fixture *f, uint32_t type,
         CHECK(account.canonical_receipt.length == input.maintenance.length &&
             memcmp(account.canonical_receipt.bytes, input.maintenance.bytes, input.maintenance.length) == 0);
     }
+    if (f->execution_prestate_checks)
+        CHECK(prestate_crash_publish(f, prepared, &input, decoded, &header) == 0);
     CHECK(lxp_daemon_batch_wal_transition(f->directory, loaded, &live, LXP_DAEMON_BATCH_WAL_COMMITTED) == LXP_OK);
     CHECK(lxp_daemon_batch_wal_retire(f->directory, loaded, &live) == LXP_OK);
     CHECK(f->state.next_sequence == first_sequence + count + 1U);
@@ -688,8 +890,44 @@ static int maintenance_bridge(const char *manifest_path, const char *activity_pa
     return 0;
 }
 
+static int maintenance_execution_prestate(void)
+{
+    maintenance_fixture *f = calloc(1U, sizeof(*f));
+    static const uint8_t entry[] = {0x41U, 0U, 0x0bU};
+    uint8_t wasm[512], payload[2048], call[STAGED_CALL_FIXTURE_BYTES];
+    uint8_t program[32] = {0x31U}, code_hash[32];
+    size_t wasm_length = candidate_module(wasm, entry, sizeof(entry));
+    size_t length;
+    CHECK(f != NULL && maintenance_fixture_open(f) == 0);
+    f->execution_prestate_checks = true;
+    f->kernel.execution_prestate_capture_enabled = true;
+    f->evidence.execution_prestate_enabled = true;
+    length = deploy_payload(payload, program, f->authority.principal, wasm, wasm_length,
+        code_hash, LX_PROGRAMS_ABI_VERSION, INTERFACE_CAPABILITIES_NONE);
+    CHECK(maintenance_publish(f, LX_PROGRAMS_DEPLOY, payload, length, 1U, 1U) == 0);
+    length = staged_call_payload(call, program);
+    CHECK(length == sizeof(call));
+    CHECK(maintenance_publish(f, LX_PROGRAMS_CALL, call, length, 2U, 2U) == 0);
+    CHECK(f->execution_prestate_crashes == 8U && f->state.next_sequence == 6U &&
+        f->receipt_authority.last_global_sequence == 5U);
+    CHECK(lxp_history_close(&f->history) == LXP_OK);
+    CHECK(lxp_log_close(&f->feed_log) == LXP_OK);
+    CHECK(lxp_log_close(&f->canonical_log) == LXP_OK);
+    CHECK(lxp_log_close(&f->evidence_log) == LXP_OK);
+    CHECK(pthread_mutex_destroy(&f->feed_mutex) == 0);
+    CHECK(lxp_log_close(&f->authority_log) == LXP_OK);
+    while (f->kernel.blob_count != 0U) free(f->kernel.blobs[--f->kernel.blob_count].bytes);
+    CHECK(lxp_state_store_destroy(&f->state) == LXP_OK);
+    free(f->storage);
+    free(f);
+    puts("real maintained deploy and intervening ProgramCall prestates survive sidecar and receipt crash boundaries");
+    return 0;
+}
+
 int main(int argc, char **argv)
 {
+    if (argc == 2 && strcmp(argv[1], "--execution-prestate") == 0)
+        return maintenance_execution_prestate();
     if (argc == 3 || argc == 4) return maintenance_bridge(argv[1], argv[2], argc == 4 ? argv[3] : NULL);
     CHECK(argc == 1);
     maintenance_fixture *f = calloc(1U, sizeof(*f));

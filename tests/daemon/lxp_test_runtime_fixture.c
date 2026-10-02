@@ -450,8 +450,188 @@ static int program_fixture(int argc, char **argv)
     return 0;
 }
 
+static int execution_prestate_fixture(int argc, char **argv)
+{
+    static uint8_t activity_bytes[LXP_MAX_ACTIVITY_BYTES];
+    static uint8_t receipt_bytes[LXP_MAX_ACTIVITY_BYTES];
+    static uint8_t scratch[2U * LXP_MAX_ACTIVITY_BYTES];
+    uint8_t id[32], digest[32], object_digest[32], did[76];
+    uint8_t query[34] = {1U};
+    uint8_t request[177] = {0U};
+    uint8_t snapshot[32] = {0U};
+    uint8_t *object = NULL;
+    char digest_hex[65], id_hex[65], root_hex[65], manifest[1536];
+    size_t activity_length, receipt_length;
+    uint32_t offset = 0U, total = 0U;
+    uint64_t correlation = 3U;
+    int64_t started;
+    signer actor, sequencer;
+    lxp_activity activity;
+    lxp_receipt receipt;
+    lxp_arena arena;
+    wire_envelope response;
+    struct sockaddr_un address = {0};
+    bool caps = false, prestate = false;
+    REQUIRE(argc == 7 && strcmp(argv[3], "program-prestate") == 0);
+    REQUIRE(program_payload_read(argv[4], activity_bytes, sizeof(activity_bytes), &activity_length) == 0);
+    REQUIRE(program_payload_read(argv[5], receipt_bytes, sizeof(receipt_bytes), &receipt_length) == 0);
+    REQUIRE(fixture_signer(&actor, "treasury") == 0 && fixture_signer(&sequencer, "sequencer") == 0);
+    actor_did(&actor, did);
+    REQUIRE(lxp_activity_decode(activity_bytes, activity_length, &activity) == LXP_OK &&
+        lxp_activity_check_envelope(&activity, NETWORK_ID) == LXP_OK &&
+        lxp_activity_verify_payload_hash(&activity) == LXP_OK &&
+        lxp_activity_verify_signature(&activity) == LXP_OK &&
+        lxp_activity_id(activity_bytes, activity_length, id) == LXP_OK);
+    REQUIRE(activity.protocol_version == LXP_PROTOCOL_VERSION_STATE_COMMITMENT &&
+        lxp_activity_module_id(activity.activity_type) == LXP_MODULE_PROGRAMS &&
+        activity.actor_did.length == sizeof(did) - 1U &&
+        memcmp(activity.actor_did.bytes, did, sizeof(did) - 1U) == 0);
+    REQUIRE(lxp_arena_init(&arena, scratch, sizeof(scratch)) == LXP_OK &&
+        lxp_receipt_decode(receipt_bytes, receipt_length, true, &receipt) == LXP_OK &&
+        lxp_receipt_verify(&receipt, sequencer.public_key, &arena) == LXP_OK &&
+        lxp_receipt_digest(&receipt, &arena, digest) == LXP_OK);
+    REQUIRE(receipt.protocol_version == LXP_PROTOCOL_VERSION_STATE_COMMITMENT &&
+        receipt.module_id == LXP_MODULE_PROGRAMS && receipt.global_sequence != 0U &&
+        memcmp(receipt.activity_id, id, 32U) == 0);
+    REQUIRE(strlen(argv[1]) < sizeof(address.sun_path));
+    address.sun_family = AF_UNIX;
+    memcpy(address.sun_path, argv[1], strlen(argv[1]) + 1U);
+    int descriptor = socket(AF_UNIX, SOCK_STREAM, 0);
+    REQUIRE(descriptor >= 0 && connect(descriptor, (struct sockaddr *)&address, sizeof(address)) == 0);
+    REQUIRE(send_request(descriptor, 9U, NODE_INFO_REQUEST, 1U, NULL, 0U) == 0 &&
+        receive_envelope(descriptor, &response) == 0);
+    REQUIRE(response.major == LNI_MAJOR && response.minor == 9U &&
+        response.tag == NODE_INFO_RESPONSE && response.correlation_id == 1U &&
+        response.proof_length == 0U && response.payload_length >= 93U &&
+        load_u16(response.payload) == LNI_MAJOR && load_u16(response.payload + 2U) == 9U &&
+        load_u16(response.payload + 4U) == LXP_PROTOCOL_VERSION_STATE_COMMITMENT &&
+        load_u32(response.payload + 6U) == NETWORK_ID &&
+        load_u64(response.payload + 11U) >= receipt.global_sequence &&
+        memcmp(response.payload + 59U, sequencer.public_key, 32U) == 0);
+    {
+        size_t cursor = 93U;
+        uint16_t count = load_u16(response.payload + 91U);
+        const uint8_t *previous = NULL;
+        size_t previous_length = 0U;
+        for (uint16_t i = 0U; i < count; ++i) {
+            REQUIRE(response.payload_length - cursor >= 2U);
+            size_t length = load_u16(response.payload + cursor);
+            cursor += 2U;
+            REQUIRE(length != 0U && length <= response.payload_length - cursor);
+            if (previous != NULL) {
+                size_t common = length < previous_length ? length : previous_length;
+                int order = memcmp(previous, response.payload + cursor, common);
+                REQUIRE(order < 0 || (order == 0 && previous_length < length));
+            }
+            caps |= length == sizeof("caps_discovery") - 1U &&
+                memcmp(response.payload + cursor, "caps_discovery", length) == 0;
+            prestate |= length == sizeof("execution_prestate") - 1U &&
+                memcmp(response.payload + cursor, "execution_prestate", length) == 0;
+            previous = response.payload + cursor;
+            previous_length = length;
+            cursor += length;
+        }
+        REQUIRE(cursor == response.payload_length && caps && prestate);
+    }
+    REQUIRE(program_evidence_write(argv[6], "node-info.bin", response.owned, response.owned_length) == 0);
+    release_envelope(&response);
+    memcpy(query + 1U, id, 32U);
+    query[33] = 1U;
+    REQUIRE(send_request(descriptor, 9U, 5U, 2U, query, sizeof(query)) == 0 &&
+        receive_envelope(descriptor, &response) == 0);
+    REQUIRE(response.major == LNI_MAJOR && response.minor == 9U && response.tag == 6U &&
+        response.correlation_id == 2U && response.proof_length == 0U &&
+        response.payload_length == receipt_length &&
+        memcmp(response.payload, receipt_bytes, receipt_length) == 0);
+    REQUIRE(program_evidence_write(argv[6], "receipt-response.bin", response.owned, response.owned_length) == 0);
+    release_envelope(&response);
+    store_u16(request, 2U);
+    store_u32(request + 3U, NETWORK_ID);
+    memcpy(request + 7U, id, 32U);
+    memcpy(request + 39U, digest, 32U);
+    store_u32(request + 71U, 4096U);
+    started = monotonic_milliseconds();
+    REQUIRE(started >= 0);
+    for (;;) {
+        int64_t now = monotonic_milliseconds();
+        REQUIRE(now >= started && now - started < IO_DEADLINE_MILLISECONDS);
+        REQUIRE(send_request(descriptor, 9U, 44U, correlation, request, sizeof(request)) == 0 &&
+            receive_envelope(descriptor, &response) == 0);
+        REQUIRE(response.major == LNI_MAJOR && response.minor == 9U && response.tag == 45U &&
+            response.correlation_id == correlation && response.proof_length == 0U &&
+            response.payload_length >= 119U && load_u16(response.payload) == 2U &&
+            load_u32(response.payload + 34U) == NETWORK_ID &&
+            memcmp(response.payload + 38U, receipt.previous_state_root, 32U) == 0 &&
+            load_u32(response.payload + 70U) == offset && response.payload[82U] <= 1U);
+        uint32_t length = load_u32(response.payload + 115U);
+        uint32_t next = load_u32(response.payload + 78U);
+        uint32_t offered_total = load_u32(response.payload + 74U);
+        bool done = response.payload[82U] != 0U;
+        REQUIRE(length != 0U && length <= 4096U && response.payload_length == 119U + length &&
+            offered_total >= 80U && offered_total <= LXP_KERNEL_MAX_BLOB_TOTAL_BYTES &&
+            offset <= offered_total && length <= offered_total - offset && next == offset + length &&
+            done == (next == offered_total) &&
+            (done ? lxp_ct_is_zero(response.payload + 83U, 32U) :
+                !lxp_ct_is_zero(response.payload + 83U, 32U)));
+        if (offset == 0U) {
+            REQUIRE(!lxp_ct_is_zero(response.payload + 2U, 32U));
+            memcpy(snapshot, response.payload + 2U, 32U);
+            total = offered_total;
+            object = malloc(total);
+            REQUIRE(object != NULL);
+        } else {
+            REQUIRE(total == offered_total && memcmp(snapshot, response.payload + 2U, 32U) == 0);
+        }
+        memcpy(object + offset, response.payload + 119U, length);
+        offset = next;
+        if (!done) {
+            request[2U] = 1U;
+            memcpy(request + 75U, snapshot, 32U);
+            memcpy(request + 107U, receipt.previous_state_root, 32U);
+            store_u32(request + 139U, offset);
+            memcpy(request + 143U, response.payload + 83U, 32U);
+        }
+        release_envelope(&response);
+        if (done) break;
+        REQUIRE(correlation != UINT64_MAX);
+        ++correlation;
+    }
+    REQUIRE(offset == total && load_u16(object) == 1U && load_u32(object + 2U) == NETWORK_ID &&
+        memcmp(object + 6U, id, 32U) == 0 && load_u64(object + 38U) == receipt.global_sequence &&
+        memcmp(object + 46U, receipt.previous_state_root, 32U) == 0 &&
+        load_u16(object + 78U) > LXP_MODULE_PROGRAMS &&
+        load_u16(object + 78U) <= LXP_MODULE_RESERVED_COUNT + 1U &&
+        lxp_hash_sha256(object, total, object_digest) == LXP_OK);
+    REQUIRE(program_evidence_write(argv[6], "execution-prestate.bin", object, total) == 0 &&
+        program_evidence_write(argv[6], "activity.bin", activity_bytes, activity_length) == 0 &&
+        program_evidence_write(argv[6], "receipt.bin", receipt_bytes, receipt_length) == 0);
+    for (size_t i = 0U; i < 32U; ++i) {
+        REQUIRE(snprintf(digest_hex + i * 2U, 3U, "%02x", object_digest[i]) == 2);
+        REQUIRE(snprintf(id_hex + i * 2U, 3U, "%02x", id[i]) == 2);
+        REQUIRE(snprintf(root_hex + i * 2U, 3U, "%02x", receipt.previous_state_root[i]) == 2);
+    }
+    int manifest_length = snprintf(manifest, sizeof(manifest),
+        "{\"schema\":1,\"stage\":\"execution-prestate-export\",\"network_id\":%u,"
+        "\"activity_id\":\"%s\",\"execution_sequence\":%llu,\"previous_state_root\":\"%s\","
+        "\"object_path\":\"execution-prestate.bin\",\"object_sha256\":\"%s\",\"object_bytes\":%u,"
+        "\"activity_path\":\"activity.bin\",\"receipt_path\":\"receipt.bin\","
+        "\"node_info_path\":\"node-info.bin\",\"receipt_response_path\":\"receipt-response.bin\","
+        "\"maintained_inclusion_source\":\"separate authenticated replica header, signature and proof exports\"}\n",
+        (unsigned)NETWORK_ID, id_hex, (unsigned long long)receipt.global_sequence, root_hex,
+        digest_hex, (unsigned)total);
+    REQUIRE(manifest_length > 0 && (size_t)manifest_length < sizeof(manifest));
+    REQUIRE(program_evidence_write(argv[6], "prestate-manifest.json", (const uint8_t *)manifest,
+        (size_t)manifest_length) == 0);
+    REQUIRE(fwrite(manifest, 1U, (size_t)manifest_length, stdout) == (size_t)manifest_length);
+    free(object);
+    REQUIRE(close(descriptor) == 0);
+    return 0;
+}
+
 int main(int argc, char **argv)
 {
+    if (argc == 7 && strcmp(argv[3], "program-prestate") == 0)
+        return execution_prestate_fixture(argc, argv);
     if (argc == 9 && strcmp(argv[3], "program-envelope") == 0)
         return program_envelope_refusal(argv);
     if (argc == 9) return program_fixture(argc, argv);
