@@ -31953,7 +31953,9 @@ ac_5 = "One actual-process gate exercises the complete first-reset, real funded 
 
 [task.24.17]
 title = "Persist stable supervisor reset identities and original outcomes"
-status = "in_progress"
+status = "done"
+completion_basis = "implementation"
+qualification_status = "unverified"
 mode = "BUILD"
 wave = 3
 requires = ["0.2", "24.16"]
