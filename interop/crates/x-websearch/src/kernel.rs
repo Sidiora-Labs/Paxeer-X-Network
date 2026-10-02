@@ -32,6 +32,7 @@ use crate::content::{ContentStore, PEER_HEADER};
 use crate::fetch::{Fetcher, HttpClient, Url};
 use crate::index::WebIndex;
 use crate::payment::{hex, unhex, GatewayRpc, RpcAnswer, COMMITMENT};
+use crate::fetch::FetchError;
 use crate::search;
 use crate::server::{Response, RouteError, RouteTable};
 use crate::watch::{hex0x, keccak, unhex0x};
@@ -82,8 +83,15 @@ const PEER_CONNECT_TIMEOUT: Duration = Duration::from_secs(3);
 const PEER_TOTAL_TIMEOUT: Duration = Duration::from_secs(10);
 const DISCARD_LOG: &str = "program-discarded.jsonl";
 
+/// The relay journal under the watcher's state directory.
+pub const RELAY_JOURNAL_FILE: &str = "kernel-relay.json";
+
+/// The version tag every relay journal carries.
+pub const RELAY_JOURNAL_VERSION: &str = "PAXEERX_KERNEL_RELAY_V1";
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum KernelError {
+    Authorization,
     /// The gateway endpoint is not an http or https URL with a host.
     Endpoint,
     /// No well-formed answer arrived.
@@ -98,11 +106,15 @@ pub enum KernelError {
     Cursor,
     /// The observation or its activity could not be encoded.
     Encode,
+    /// The relay journal could not be read, is not this version or could
+    /// not be written.
+    Journal,
 }
 
 impl std::fmt::Display for KernelError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            Self::Authorization => f.write_str("kernel gateway authorization refused"),
             Self::Endpoint => f.write_str("gateway endpoint refused"),
             Self::Unavailable => f.write_str("gateway unavailable"),
             Self::Rejected { code } => write!(f, "gateway rejected the call with {code}"),
@@ -110,6 +122,7 @@ impl std::fmt::Display for KernelError {
             Self::Record => f.write_str("program web request record malformed"),
             Self::Cursor => f.write_str("kernel watch cursor unreadable or unwritable"),
             Self::Encode => f.write_str("observation activity could not be encoded"),
+            Self::Journal => f.write_str("kernel relay journal unreadable or unwritable"),
         }
     }
 }
@@ -268,6 +281,12 @@ impl KernelWatcher {
         })
     }
 
+    pub fn with_authorization_file(mut self, path: &Path) -> io::Result<Self> {
+        self.rpc = self.rpc.with_authorization_file(path)
+            .map_err(|_| io::Error::new(io::ErrorKind::PermissionDenied, "kernel gateway authorization refused"))?;
+        Ok(self)
+    }
+
     /// Watches `topics` instead of [`REQUEST_TOPIC`] alone.
     ///
     /// # Errors
@@ -343,6 +362,29 @@ impl KernelWatcher {
     /// Returns the gateway's error, a malformed answer or record and a
     /// cursor that could not be written.
     pub fn poll(&mut self) -> Result<Vec<ProgramRequest>, KernelError> {
+        let (next, found) = self.fetch()?;
+        if next != self.next_sequence {
+            self.resume_at(next)?;
+        }
+        Ok(found.into_iter().map(|(_, request)| request).collect())
+    }
+
+    /// Moves the cursor to `next` and writes it under the state directory.
+    ///
+    /// # Errors
+    /// Returns a cursor that could not be written.
+    pub fn resume_at(&mut self, next: u64) -> Result<(), KernelError> {
+        self.store_cursor(next)?;
+        self.next_sequence = next;
+        Ok(())
+    }
+
+    /// What [`KernelWatcher::poll`] reads, with the topic of each record and
+    /// the sequence the cursor would move to, without moving it.
+    ///
+    /// # Errors
+    /// Returns the gateway's error and a malformed answer or record.
+    pub fn fetch(&self) -> Result<(u64, Vec<(Vec<u8>, ProgramRequest)>), KernelError> {
         let from = self.next_sequence;
         let mut answers = Vec::with_capacity(self.topics.len());
         for topic in &self.topics {
@@ -367,20 +409,16 @@ impl KernelWatcher {
                 return Err(KernelError::Malformed);
             }
             decoded.retain(|request| request.sequence < next);
-            requests.extend(decoded);
+            requests.extend(decoded.into_iter().map(|request| (topic.to_vec(), request)));
         }
-        requests.sort_by_key(|request| request.sequence);
+        requests.sort_by_key(|(_, request)| request.sequence);
         if requests
             .windows(2)
-            .any(|pair| pair[0].sequence == pair[1].sequence)
+            .any(|pair| pair[0].1.sequence == pair[1].1.sequence)
         {
             return Err(KernelError::Malformed);
         }
-        if next != from {
-            self.store_cursor(next)?;
-            self.next_sequence = next;
-        }
-        Ok(requests)
+        Ok((next, requests))
     }
 }
 
@@ -494,6 +532,14 @@ pub fn observation_bytes(
     {
         return Err(KernelError::Encode);
     }
+    let digest = request.attestation(network_id, ready.content_digest, &ready.response, ready.full_length).digest();
+    if request.program_id == [0; 32] || !matches!(request.kind, 1 | 2)
+        || ready.digest != digest || ready.signers.len() != count
+        || ready.signers.windows(2).any(|pair| pair[0] >= pair[1])
+        || ready.signers.iter().zip(&ready.signatures)
+            .any(|(signer, signature)| recover_signer(&digest, signature).ok() != Some(*signer)) {
+        return Err(KernelError::Encode);
+    }
     let mut out = Vec::with_capacity(
         OBSERVATION_HEADER_BYTES + ready.response.len() + 1 + count * SIGNATURE_LENGTH,
     );
@@ -513,6 +559,25 @@ pub fn observation_bytes(
         out.extend_from_slice(signature);
     }
     Ok(out)
+}
+
+fn observation_signers(bytes: &[u8], digest: &[u8; 32])
+    -> Result<(Vec<[u8; 20]>, Vec<[u8; SIGNATURE_LENGTH]>), KernelError> {
+    if bytes.len() <= OBSERVATION_HEADER_BYTES { return Err(KernelError::Journal); }
+    let length = u32::from_be_bytes(bytes[142..146].try_into().map_err(|_| KernelError::Journal)?);
+    let offset = OBSERVATION_HEADER_BYTES.checked_add(length as usize).ok_or(KernelError::Journal)?;
+    let count = usize::from(*bytes.get(offset).ok_or(KernelError::Journal)?);
+    if count == 0 || count > MAX_OBSERVATION_SIGNATURES || bytes.len() != offset + 1 + count * SIGNATURE_LENGTH {
+        return Err(KernelError::Journal);
+    }
+    let mut signers = Vec::new();
+    let mut signatures = Vec::new();
+    for bytes in bytes[offset + 1..].chunks_exact(SIGNATURE_LENGTH) {
+        let signature = bytes.try_into().map_err(|_| KernelError::Journal)?;
+        signers.push(recover_signer(digest, &signature).map_err(|_| KernelError::Journal)?);
+        signatures.push(signature);
+    }
+    Ok((signers, signatures))
 }
 
 fn domain_hash(domain: Domain, bytes: &[u8]) -> [u8; 32] {
@@ -538,16 +603,17 @@ fn encode_envelope(
     authority: &[u8; 32],
     options: &ActivityOptions<'_>,
     signature: Option<&[u8; 64]>,
+    protocol_version: u16,
 ) -> Result<Vec<u8>, KernelError> {
     let mut encoder = Encoder::new(MAX_MESSAGE_BYTES);
-    encoder.structure_header_version(ACTIVITY_STRUCTURE, PROTOCOL_VERSION)?;
+    encoder.structure_header_version(ACTIVITY_STRUCTURE, protocol_version)?;
     encoder.u8(if signature.is_some() {
         ACTIVITY_FIELDS
     } else {
         UNSIGNED_ACTIVITY_FIELDS
     })?;
     encoder.tag(1, ACTIVITY_FIELDS)?;
-    encoder.u16(PROTOCOL_VERSION)?;
+    encoder.u16(protocol_version)?;
     encoder.tag(2, ACTIVITY_FIELDS)?;
     encoder.u32(options.network_id)?;
     encoder.tag(3, ACTIVITY_FIELDS)?;
@@ -589,6 +655,12 @@ pub fn encode_activity(
     submitter: &SubmitterKey,
     options: &ActivityOptions<'_>,
 ) -> Result<Vec<u8>, KernelError> {
+    encode_activity_version(observation, submitter, options, PROTOCOL_VERSION)
+}
+
+fn encode_activity_version(
+    observation: &[u8], submitter: &SubmitterKey, options: &ActivityOptions<'_>, protocol_version: u16,
+) -> Result<Vec<u8>, KernelError> {
     if options.actor_did.is_empty()
         || options.actor_did.len() > MAX_DID_BYTES
         || options.network_id == 0
@@ -598,10 +670,10 @@ pub fn encode_activity(
         return Err(KernelError::Encode);
     }
     let authority = submitter.verifying_key().to_bytes();
-    let unsigned = encode_envelope(observation, &authority, options, None)?;
+    let unsigned = encode_envelope(observation, &authority, options, None, protocol_version)?;
     let preimage = domain_hash(Domain::SignaturePreimage, &unsigned);
     let signature = submitter.sign(&preimage).to_bytes();
-    encode_envelope(observation, &authority, options, Some(&signature))
+    encode_envelope(observation, &authority, options, Some(&signature), protocol_version)
 }
 
 /// Posts observation activities through the gateway as the submitter DID.
@@ -611,6 +683,7 @@ pub struct ObservationSubmitter {
     did: String,
     network_id: u32,
     fee_limit: u128,
+    receipt_key: Option<[u8; 32]>,
 }
 
 impl ObservationSubmitter {
@@ -629,7 +702,44 @@ impl ObservationSubmitter {
             did,
             network_id,
             fee_limit,
+            receipt_key: None,
         })
+    }
+
+    pub fn with_authorization_file(mut self, path: &Path) -> Result<Self, KernelError> {
+        self.rpc = self.rpc.with_authorization_file(path).map_err(|_| KernelError::Authorization)?;
+        Ok(self)
+    }
+
+    #[must_use]
+    pub fn with_receipt_key(mut self, key: [u8; 32]) -> Self {
+        self.receipt_key = Some(key);
+        self
+    }
+
+    fn outcome(&self, answer: Option<RpcAnswer>, activity_id: &[u8; 32]) -> Outcome {
+        let Some(RpcAnswer::Result(value)) = answer else {
+            return Outcome::Open;
+        };
+        let Some(key) = self.receipt_key else { return Outcome::Open; };
+        if fixed::<32>(value.get("activity_id")) != Some(*activity_id) {
+            return Outcome::Open;
+        }
+        let Some(bytes) = value.get("receipt").and_then(Value::as_str).and_then(unhex) else {
+            return Outcome::Open;
+        };
+        let Ok(receipt) = layerx_proof::receipt::verify_sequencer_signature(&bytes, key) else {
+            return Outcome::Open;
+        };
+        let Some(facts) = receipt.protocol() else { return Outcome::Open; };
+        if facts.activity_id() != *activity_id || facts.module_id() != 11
+            || facts.operation() != 1 || facts.fee_charged() > self.fee_limit {
+            return Outcome::Open;
+        }
+        if facts.result_code() != 0 {
+            return Outcome::Rejected(i64::from(facts.result_code()), value);
+        }
+        Outcome::Completed(value)
     }
 
     fn next_sequence(&self) -> Result<u64, KernelError> {
@@ -655,24 +765,97 @@ impl ObservationSubmitter {
     /// Returns the gateway's error, a malformed sequence answer and an
     /// activity that could not be encoded.
     pub fn submit(&self, observation: &[u8], now_ms: u64) -> Result<Value, KernelError> {
-        let activity = encode_activity(
+        let signed = self.sign(observation, now_ms)?;
+        match self.send(&signed.activity) {
+            Some(RpcAnswer::Result(value)) => Ok(value),
+            Some(RpcAnswer::Error { code, .. }) => Err(KernelError::Rejected { code }),
+            None => Err(KernelError::Unavailable),
+        }
+    }
+
+    /// The submitter DID the activities are posted as.
+    #[must_use]
+    pub fn did(&self) -> &str {
+        &self.did
+    }
+
+    /// Signs the observation at the submitter's next identity sequence,
+    /// valid from one second before `now_ms` for [`ACTIVITY_VALIDITY_MS`],
+    /// without posting it.
+    ///
+    /// # Errors
+    /// Returns the gateway's error, a malformed sequence answer and an
+    /// activity that could not be encoded.
+    pub fn sign(&self, observation: &[u8], now_ms: u64) -> Result<Signed, KernelError> {
+        let account_sequence = self.next_sequence()?;
+        let not_after = now_ms.saturating_add(ACTIVITY_VALIDITY_MS);
+        let activity = encode_activity_version(
             observation,
             &self.key,
             &ActivityOptions {
                 network_id: self.network_id,
                 actor_did: &self.did,
-                account_sequence: self.next_sequence()?,
+                account_sequence,
                 fee_limit: self.fee_limit,
                 not_before: now_ms.saturating_sub(1_000),
-                not_after: now_ms.saturating_add(ACTIVITY_VALIDITY_MS),
+                not_after,
             },
+            layerx_wire::limits::STATE_COMMITMENT_PROTOCOL_VERSION,
         )?;
-        call(
-            &self.rpc,
-            "lx_sendActivity",
-            &json!([hex(&activity), COMMITMENT]),
-        )
+        Ok(Signed {
+            activity_id: domain_hash(Domain::ActivityId, &activity),
+            activity,
+            account_sequence,
+            not_after,
+        })
     }
+
+    /// Posts exact signed activity bytes with `lx_sendActivity`. `None` means
+    /// the outcome is unknown.
+    #[must_use]
+    pub fn send(&self, activity: &[u8]) -> Option<RpcAnswer> {
+        self.rpc
+            .call("lx_sendActivity", &json!([hex(activity), COMMITMENT]))
+    }
+
+    /// Reads the committed outcome of an activity: `lx_getActivityStatus`,
+    /// then `lx_getReceipt` when the status carries no receipt and is not
+    /// pending. `None` means the outcome is unknown.
+    #[must_use]
+    pub fn lookup(&self, activity_id: &[u8; 32]) -> Option<RpcAnswer> {
+        let id = hex(activity_id);
+        let status = self.rpc.call("lx_getActivityStatus", &json!([id]));
+        let needs_receipt = matches!(
+            &status,
+            Some(RpcAnswer::Result(value))
+                if value.get("receipt").is_none()
+                    && value.get("state").and_then(Value::as_str) != Some("pending")
+        );
+        if needs_receipt {
+            self.rpc.call("lx_getReceipt", &json!([id]))
+        } else {
+            status
+        }
+    }
+
+    /// Whether the submitter's identity sequence has moved past
+    /// `account_sequence`, so an activity signed at it can no longer be
+    /// admitted.
+    ///
+    /// # Errors
+    /// Returns the gateway's error and a malformed sequence answer.
+    pub fn consumed(&self, account_sequence: u64) -> Result<bool, KernelError> {
+        Ok(self.next_sequence()? > account_sequence)
+    }
+}
+
+/// One signed observation activity, kept exactly as it was signed.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Signed {
+    pub activity: Vec<u8>,
+    pub activity_id: [u8; 32],
+    pub account_sequence: u64,
+    pub not_after: u64,
 }
 
 /// The key every program answer is held under: the program id and the
@@ -763,6 +946,18 @@ struct Held {
     signatures: BTreeMap<[u8; 20], [u8; SIGNATURE_LENGTH]>,
 }
 
+fn held_value(held: &Held) -> Value {
+    json!({
+        "response": hex(&held.answer.response),
+        "content_digest": hex(&held.answer.attestation.content_digest),
+        "full_length": held.answer.attestation.full_length,
+        "signer": hex(&held.answer.signer),
+        "signature": hex(&held.answer.signature),
+        "signatures": held.signatures.iter().map(|(signer, signature)|
+            json!({"signer": hex(signer), "signature": hex(signature)})).collect::<Vec<_>>(),
+    })
+}
+
 /// Exchanges attestor signatures for program requests with the configured
 /// peer sidecars, holding every answer under its [`ProgramKey`].
 ///
@@ -806,6 +1001,40 @@ impl ProgramExchange {
             discarded: Mutex::new(Vec::new()),
             log_path: state_dir.join(DISCARD_LOG),
         })
+    }
+
+    fn snapshot(&self, key: ProgramKey) -> Option<Value> {
+        self.answers().get(&key).map(held_value)
+    }
+
+    fn restore(&self, request: &ProgramRequest, network_id: u32, value: &Value) -> Result<(), KernelError> {
+        let response = value.get("response").and_then(Value::as_str).and_then(unhex).ok_or(KernelError::Journal)?;
+        let full_length = value.get("full_length").and_then(Value::as_u64)
+            .and_then(|n| u32::try_from(n).ok()).ok_or(KernelError::Journal)?;
+        if response.len() > MAX_RESPONSE_BYTES || u64::from(full_length) < response.len() as u64 {
+            return Err(KernelError::Journal);
+        }
+        let attestation = request.attestation(network_id,
+            fixed(value.get("content_digest")).ok_or(KernelError::Journal)?, &response, full_length);
+        let digest = attestation.digest();
+        let signer = fixed(value.get("signer")).ok_or(KernelError::Journal)?;
+        let signature = fixed(value.get("signature")).ok_or(KernelError::Journal)?;
+        if recover_signer(&digest, &signature).ok() != Some(signer) { return Err(KernelError::Journal); }
+        let mut signatures = BTreeMap::new();
+        for row in value.get("signatures").and_then(Value::as_array).ok_or(KernelError::Journal)? {
+            let signer = fixed(row.get("signer")).ok_or(KernelError::Journal)?;
+            let signature = fixed(row.get("signature")).ok_or(KernelError::Journal)?;
+            if recover_signer(&digest, &signature).ok() != Some(signer)
+                || signatures.insert(signer, signature).is_some() { return Err(KernelError::Journal); }
+        }
+        if signatures.len() > MAX_OBSERVATION_SIGNATURES || signatures.get(&signer) != Some(&signature) {
+            return Err(KernelError::Journal);
+        }
+        self.answers().insert((request.program_id, request.request_id), Held {
+            answer: Answer { attestation, level: Level::Majority, response, callback_gas: 0,
+                timeout_height: u64::MAX, digest, signer, signature }, signatures,
+        });
+        Ok(())
     }
 
     /// The file every discarded signature is appended to.
@@ -999,6 +1228,8 @@ impl ProgramExchange {
             .map(|(signer, signature)| (*signer, *signature))
             .collect();
         let enough = set.threshold != 0
+            && usize::try_from(set.threshold).is_ok_and(|n| n > set.signers.len() / 2 && n <= set.signers.len())
+            && set.signers.iter().enumerate().all(|(i, signer)| !set.signers[..i].contains(signer))
             && u32::try_from(registered.len()).is_ok_and(|count| count >= set.threshold);
         if !enough {
             return None;
@@ -1040,16 +1271,272 @@ pub enum Step {
         request_id: u64,
         result: Value,
     },
-    /// The request could not be answered and was dropped.
+    /// The request could not be answered and is recorded as refused.
     Refused {
         program_id: [u8; 32],
         request_id: u64,
         reason: AttestError,
     },
+    /// A journalled observation was found committed by its receipt.
+    Committed {
+        program_id: [u8; 32],
+        request_id: u64,
+        activity_id: [u8; 32],
+        result: Value,
+    },
+    /// A journalled observation's outcome is not known yet; it stays queued.
+    Unknown {
+        program_id: [u8; 32],
+        request_id: u64,
+        activity_id: [u8; 32],
+    },
+    /// The gateway refused the observation; it is recorded as rejected.
+    Rejected {
+        program_id: [u8; 32],
+        request_id: u64,
+        code: i64,
+    },
+}
+
+/// Where one discovered request stands.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Stage {
+    /// Answered or not yet, waiting for the registered threshold.
+    AwaitingQuorum,
+    /// Signed and journalled; sent or about to be sent.
+    Submitting,
+    /// Sent with no committed outcome read back yet.
+    Unknown,
+    /// Committed; the receipt was read.
+    Completed,
+    /// The request cannot be answered.
+    Refused,
+    /// The gateway refused the observation.
+    Rejected,
+}
+
+impl Stage {
+    /// The stage as the journal names it.
+    #[must_use]
+    pub const fn code(self) -> &'static str {
+        match self {
+            Self::AwaitingQuorum => "awaiting_quorum",
+            Self::Submitting => "submitting",
+            Self::Unknown => "unknown",
+            Self::Completed => "completed",
+            Self::Refused => "refused",
+            Self::Rejected => "rejected",
+        }
+    }
+
+    fn parse(code: &str) -> Option<Self> {
+        [
+            Self::AwaitingQuorum,
+            Self::Submitting,
+            Self::Unknown,
+            Self::Completed,
+            Self::Refused,
+            Self::Rejected,
+        ]
+        .into_iter()
+        .find(|stage| stage.code() == code)
+    }
+
+    /// Whether the request is finished: completed, refused or rejected.
+    #[must_use]
+    pub const fn terminal(self) -> bool {
+        matches!(self, Self::Completed | Self::Refused | Self::Rejected)
+    }
+}
+
+/// One discovered request with its program, request and topic identity and
+/// its exact attestation and submission state.
+#[derive(Clone, Debug, PartialEq)]
+pub struct RelayEntry {
+    pub request: ProgramRequest,
+    pub topic: Vec<u8>,
+    pub stage: Stage,
+    /// The observation payload once the threshold agreed.
+    pub observation: Option<Vec<u8>>,
+    pub attestation: Option<Value>,
+    /// The signed activity, journalled before it is sent.
+    pub signed: Option<Signed>,
+    /// Why the request was refused or rejected.
+    pub reason: Option<String>,
+    pub last_error: Option<String>,
+    /// The committed result.
+    pub result: Option<Value>,
+}
+
+const ENTRY_KEYS: [&str; 17] = [
+    "program_id",
+    "request_id",
+    "sequence",
+    "topic",
+    "kind",
+    "payload",
+    "payload_hash",
+    "stage",
+    "observation",
+    "attestation",
+    "activity",
+    "activity_id",
+    "account_sequence",
+    "not_after",
+    "reason",
+    "last_error",
+    "result",
+];
+
+impl RelayEntry {
+    fn key(&self) -> ProgramKey {
+        (self.request.program_id, self.request.request_id)
+    }
+
+    fn value(&self) -> Value {
+        let signed = self.signed.as_ref();
+        json!({
+            "program_id": hex0x(&self.request.program_id),
+            "request_id": self.request.request_id,
+            "sequence": self.request.sequence,
+            "topic": hex(&self.topic),
+            "kind": self.request.kind,
+            "payload": hex(&self.request.payload),
+            "payload_hash": hex0x(&keccak(&self.request.payload)),
+            "stage": self.stage.code(),
+            "observation": self.observation.as_deref().map(hex),
+            "attestation": self.attestation,
+            "activity": signed.map(|signed| hex(&signed.activity)),
+            "activity_id": signed.map(|signed| hex0x(&signed.activity_id)),
+            "account_sequence": signed.map(|signed| signed.account_sequence),
+            "not_after": signed.map(|signed| signed.not_after),
+            "reason": self.reason,
+            "last_error": self.last_error,
+            "result": self.result,
+        })
+    }
+
+    fn parse(value: &Value) -> Option<Self> {
+        let object = value.as_object()?;
+        if object.len() != ENTRY_KEYS.len()
+            || object.keys().any(|key| !ENTRY_KEYS.contains(&key.as_str()))
+        {
+            return None;
+        }
+        let text = |key: &str| object.get(key).and_then(Value::as_str);
+        let optional = |key: &str| object.get(key).filter(|value| !value.is_null());
+        let request = ProgramRequest {
+            program_id: fixed0x(object.get("program_id"))?,
+            request_id: object.get("request_id")?.as_u64()?,
+            kind: u8::try_from(object.get("kind")?.as_u64()?).ok()?,
+            payload: unhex(text("payload")?)?,
+            sequence: object.get("sequence")?.as_u64()?,
+        };
+        if fixed0x::<32>(object.get("payload_hash"))? != keccak(&request.payload)
+            || !matches!(request.kind, 1 | 2)
+            || request.payload.is_empty()
+        {
+            return None;
+        }
+        let topic = unhex(text("topic")?)?;
+        if !request_topic(&topic) {
+            return None;
+        }
+        let stage = Stage::parse(text("stage")?)?;
+        let observation = match optional("observation") {
+            Some(value) => Some(unhex(value.as_str()?)?),
+            None => None,
+        };
+        let signed = match optional("activity") {
+            Some(activity) => {
+                let activity = unhex(activity.as_str()?)?;
+                let activity_id = fixed0x::<32>(optional("activity_id"))?;
+                if activity_id != domain_hash(Domain::ActivityId, &activity) {
+                    return None;
+                }
+                Some(Signed {
+                    activity,
+                    activity_id,
+                    account_sequence: optional("account_sequence")?.as_u64()?,
+                    not_after: optional("not_after")?.as_u64()?,
+                })
+            }
+            None if ["activity_id", "account_sequence", "not_after"]
+                .iter()
+                .any(|key| optional(key).is_some()) =>
+            {
+                return None;
+            }
+            None => None,
+        };
+        let sending = matches!(stage, Stage::Submitting | Stage::Unknown);
+        if (sending && (signed.is_none() || observation.is_none()))
+            || (signed.is_some() && (observation.is_none() || optional("attestation").is_none()))
+            || (matches!(stage, Stage::Completed | Stage::Rejected) && (signed.is_none() || optional("result").is_none()))
+            || (stage == Stage::AwaitingQuorum && signed.is_some())
+        {
+            return None;
+        }
+        let reason = match optional("reason") {
+            Some(reason) => Some(reason.as_str()?.to_owned()),
+            None => None,
+        };
+        if matches!(stage, Stage::Refused | Stage::Rejected) != reason.is_some() {
+            return None;
+        }
+        Some(Self {
+            request,
+            topic,
+            stage,
+            observation,
+            attestation: optional("attestation").cloned(),
+            signed,
+            reason,
+            last_error: match optional("last_error") {
+                Some(value) => Some(value.as_str()?.to_owned()),
+                None => None,
+            },
+            result: optional("result").cloned(),
+        })
+    }
+}
+
+/// Whether an attestation refusal may clear on a later try: an unreachable
+/// or failing origin, search, store or signer. Every other refusal is fixed
+/// by the request itself.
+fn retryable(reason: &AttestError) -> bool {
+    match reason {
+        AttestError::Fetch(error) => matches!(
+            error,
+            FetchError::Resolve
+                | FetchError::RobotsUnavailable
+                | FetchError::Connect
+                | FetchError::ConnectTimeout
+                | FetchError::Timeout
+                | FetchError::Tls
+                | FetchError::Transport
+        ) || matches!(error, FetchError::Status(status) if *status == 429 || *status >= 500),
+        AttestError::Search | AttestError::Store | AttestError::Sign(_) => true,
+        AttestError::UnknownKind(_)
+        | AttestError::Payload
+        | AttestError::TooLong
+        | AttestError::Api(_)
+        | AttestError::NotNamed(_) => false,
+    }
+}
+
+/// What a gateway answer about one activity settles.
+enum Outcome {
+    Completed(Value),
+    Open,
+    Rejected(i64, Value),
 }
 
 /// Ties the watcher, the attestor, the program signature exchange and the
-/// submitter together. Requests stay queued until their observation posts.
+/// submitter together. Every discovered request is journalled with its
+/// stage before the watcher's cursor moves past it, and every signed
+/// activity before it is sent, so a restart resumes each request where it
+/// stood and recovers a sent activity by its receipt before sending again.
 pub struct KernelRelay {
     pub watcher: KernelWatcher,
     pub attestor: KernelAttestor,
@@ -1058,9 +1545,13 @@ pub struct KernelRelay {
     pub submitter: ObservationSubmitter,
     network_id: u32,
     queue: Vec<ProgramRequest>,
+    entries: Vec<RelayEntry>,
+    journal: Option<PathBuf>,
+    _journal_lock: Option<std::fs::File>,
 }
 
 impl KernelRelay {
+    /// A relay that keeps its queue in memory only.
     #[must_use]
     pub fn new(
         watcher: KernelWatcher,
@@ -1077,63 +1568,343 @@ impl KernelRelay {
             set,
             submitter,
             queue: Vec::new(),
+            entries: Vec::new(),
+            journal: None,
+            _journal_lock: None,
         }
     }
 
-    /// The requests waiting for their observation to post, in sequence
+    /// A relay journalled in [`RELAY_JOURNAL_FILE`] under `state_dir`. A
+    /// journal already there wins over the watcher's cursor.
+    ///
+    /// # Errors
+    /// Refuses a journal that cannot be read, is not
+    /// [`RELAY_JOURNAL_VERSION`] or holds a malformed or repeated entry, and
+    /// returns a cursor that could not be written.
+    pub fn open(
+        watcher: KernelWatcher,
+        attestor: KernelAttestor,
+        exchange: Arc<ProgramExchange>,
+        set: AttestorSet,
+        submitter: ObservationSubmitter,
+        state_dir: &Path,
+    ) -> Result<Self, KernelError> {
+        std::fs::create_dir_all(state_dir).map_err(|_| KernelError::Journal)?;
+        let path = state_dir.join(RELAY_JOURNAL_FILE);
+        let lock = std::fs::OpenOptions::new().create(true).truncate(false).read(true).write(true)
+            .open(state_dir.join("kernel-relay.lock")).map_err(|_| KernelError::Journal)?;
+        lock.try_lock().map_err(|_| KernelError::Journal)?;
+        let mut relay = Self::new(watcher, attestor, exchange, set, submitter);
+        relay._journal_lock = Some(lock);
+        match std::fs::read(&path) {
+            Ok(bytes) => {
+                let (next, entries) = parse_journal(&bytes).ok_or(KernelError::Journal)?;
+                relay.entries = entries;
+                if next != relay.watcher.next_sequence() {
+                    relay.watcher.resume_at(next)?;
+                }
+            }
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {
+                relay.watcher.resume_at(0)?;
+            }
+            Err(_) => return Err(KernelError::Journal),
+        }
+        for entry in &relay.entries {
+            if let Some(value) = &entry.attestation {
+                relay.exchange.restore(&entry.request, relay.network_id, value)?;
+            }
+            if let Some(signed) = &entry.signed {
+                let observation = entry.observation.as_deref().ok_or(KernelError::Journal)?;
+                if signed.activity_id != domain_hash(Domain::ActivityId, &signed.activity) {
+                    return Err(KernelError::Journal);
+                }
+                let not_before = signed.not_after.checked_sub(ACTIVITY_VALIDITY_MS)
+                    .ok_or(KernelError::Journal)?.saturating_sub(1_000);
+                let expected = encode_activity_version(observation, &relay.submitter.key, &ActivityOptions {
+                    network_id: relay.network_id, actor_did: relay.submitter.did(),
+                    account_sequence: signed.account_sequence, fee_limit: relay.submitter.fee_limit,
+                    not_before, not_after: signed.not_after,
+                }, layerx_wire::limits::STATE_COMMITMENT_PROTOCOL_VERSION)?;
+                if signed.activity != expected || observation.len() < OBSERVATION_HEADER_BYTES {
+                    return Err(KernelError::Journal);
+                }
+                let held = relay.exchange.answers();
+                let held = held.get(&entry.key()).ok_or(KernelError::Journal)?;
+                let ready = Ready {
+                    request_id: entry.request.request_id, response: held.answer.response.clone(),
+                    content_digest: held.answer.attestation.content_digest,
+                    full_length: held.answer.attestation.full_length, callback_gas: 0,
+                    digest: held.answer.digest,
+                    signers: observation_signers(observation, &held.answer.digest)?.0,
+                    signatures: observation_signers(observation, &held.answer.digest)?.1,
+                };
+                if ready.signers.iter().zip(&ready.signatures)
+                    .any(|(signer, signature)| held.signatures.get(signer) != Some(signature))
+                    || observation_bytes(relay.network_id, &entry.request, &ready)? != observation {
+                    return Err(KernelError::Journal);
+                }
+                let terminal = relay.submitter.outcome(
+                    entry.result.clone().map(RpcAnswer::Result), &signed.activity_id);
+                if (entry.stage == Stage::Completed && !matches!(terminal, Outcome::Completed(_)))
+                    || (entry.stage == Stage::Rejected && !matches!(terminal, Outcome::Rejected(_, _))) {
+                    return Err(KernelError::Journal);
+                }
+            }
+        }
+        relay.journal = Some(path);
+        relay.requeue();
+        Ok(relay)
+    }
+
+    /// The requests waiting for their observation to commit, in sequence
     /// order.
     #[must_use]
     pub fn queued(&self) -> &[ProgramRequest] {
         &self.queue
     }
 
-    /// Polls the watcher once, answers every queued request this sidecar
-    /// has not answered yet, collects the peers' signatures and posts each
-    /// observation whose signatures reach the threshold. Every request is
-    /// held under its program id and request id together.
+    /// Every journalled request with its stage, in sequence order.
+    #[must_use]
+    pub fn entries(&self) -> &[RelayEntry] {
+        &self.entries
+    }
+
+    /// The journal file, or `None` for a relay kept in memory.
+    #[must_use]
+    pub fn journal_path(&self) -> Option<&Path> {
+        self.journal.as_deref()
+    }
+
+    fn requeue(&mut self) {
+        self.queue = self
+            .entries
+            .iter()
+            .filter(|entry| !entry.stage.terminal())
+            .map(|entry| entry.request.clone())
+            .collect();
+    }
+
+    fn store(&self, next: u64) -> Result<(), KernelError> {
+        let Some(path) = &self.journal else {
+            return Ok(());
+        };
+        let body = json!({
+            "version": RELAY_JOURNAL_VERSION,
+            "next_sequence": next,
+            "entries": self.entries.iter().map(RelayEntry::value).collect::<Vec<_>>(),
+        })
+        .to_string();
+        let temporary = path.with_extension("tmp");
+        std::fs::File::create(&temporary)
+            .and_then(|mut file| {
+                file.write_all(body.as_bytes())?;
+                file.sync_all()
+            })
+            .and_then(|()| std::fs::rename(&temporary, path))
+            .and_then(|()| match path.parent() {
+                Some(parent) => std::fs::File::open(parent)?.sync_all(),
+                None => Ok(()),
+            })
+            .map_err(|_| KernelError::Journal)
+    }
+
+    /// Polls the watcher once and journals every new request with the
+    /// cursor before the cursor moves, then advances each queued request:
+    /// answers it, collects the peers' signatures, signs and journals the
+    /// observation activity once the threshold agrees and sends it, and
+    /// reads a sent activity's receipt before sending it again.
     ///
     /// # Errors
-    /// Returns the watcher's error. A refused post keeps the request queued.
+    /// Returns the watcher's error and a journal that could not be written;
+    /// nothing is sent past an unwritten journal.
     pub fn step(&mut self, now_ms: u64) -> Result<Vec<Step>, KernelError> {
-        let polled = self.watcher.poll()?;
-        self.queue.extend(polled);
-        let mut steps = Vec::new();
-        let mut kept = Vec::new();
-        for request in std::mem::take(&mut self.queue) {
+        let (next, found) = self.watcher.fetch()?;
+        for (topic, request) in found {
             let key = (request.program_id, request.request_id);
+            if let Some(entry) = self.entries.iter().find(|entry| entry.key() == key) {
+                if entry.request != request || entry.topic != topic {
+                    return Err(KernelError::Journal);
+                }
+                continue;
+            }
+            self.entries.push(RelayEntry {
+                request,
+                topic,
+                stage: Stage::AwaitingQuorum,
+                observation: None,
+                attestation: None,
+                signed: None,
+                reason: None,
+                last_error: None,
+                result: None,
+            });
+        }
+        self.entries.sort_by_key(|entry| entry.request.sequence);
+        self.store(next)?;
+        if next != self.watcher.next_sequence() {
+            self.watcher.resume_at(next)?;
+        }
+        let mut steps = Vec::new();
+        for index in 0..self.entries.len() {
+            if !self.entries[index].stage.terminal() {
+                if let Some(step) = self.advance(index, next, now_ms)? {
+                    steps.push(step);
+                }
+            }
+        }
+        self.store(next)?;
+        self.requeue();
+        Ok(steps)
+    }
+
+    fn advance(
+        &mut self,
+        index: usize,
+        next: u64,
+        now_ms: u64,
+    ) -> Result<Option<Step>, KernelError> {
+        let request = self.entries[index].request.clone();
+        let key = self.entries[index].key();
+        if self.entries[index].stage == Stage::AwaitingQuorum {
             if self.exchange.answer(key).is_none() {
                 match self.attestor.attest(&request) {
-                    Ok(answer) => self.exchange.record(answer),
-                    Err(reason) => {
-                        steps.push(Step::Refused {
-                            program_id: request.program_id,
-                            request_id: request.request_id,
-                            reason,
+                    Ok(answer) => {
+                        let snapshot = held_value(&Held {
+                            signatures: BTreeMap::from([(answer.signer, answer.signature)]),
+                            answer: answer.clone(),
                         });
-                        continue;
+                        self.entries[index].attestation = Some(snapshot);
+                        self.entries[index].last_error = None;
+                        self.store(next)?;
+                        self.exchange.record(answer);
+                    },
+                    Err(reason) if retryable(&reason) => {
+                        self.entries[index].last_error = Some(reason.to_string());
+                        self.store(next)?;
+                        return Ok(None);
+                    },
+                    Err(reason) => {
+                        let entry = &mut self.entries[index];
+                        entry.stage = Stage::Refused;
+                        entry.reason = Some(reason.to_string());
+                        return Ok(Some(Step::Refused {
+                            program_id: key.0,
+                            request_id: key.1,
+                            reason,
+                        }));
                     }
                 }
             }
             let _ = self.exchange.collect(key, &self.set);
+            self.entries[index].attestation = self.exchange.snapshot(key);
+            self.store(next)?;
             let Some(ready) = self.exchange.ready(key, &self.set) else {
-                kept.push(request);
-                continue;
+                return Ok(None);
             };
-            let posted = observation_bytes(self.network_id, &request, &ready)
-                .and_then(|observation| self.submitter.submit(&observation, now_ms));
-            match posted {
-                Ok(result) => {
-                    self.exchange.forget(key);
-                    steps.push(Step::Posted {
-                        program_id: request.program_id,
-                        request_id: request.request_id,
+            let Ok(observation) = observation_bytes(self.network_id, &request, &ready) else {
+                let entry = &mut self.entries[index];
+                entry.stage = Stage::Refused;
+                entry.reason = Some("observation_encode".to_owned());
+                return Ok(None);
+            };
+            let Ok(signed) = self.submitter.sign(&observation, now_ms) else {
+                return Ok(None);
+            };
+            let entry = &mut self.entries[index];
+            entry.observation = Some(observation);
+            entry.signed = Some(signed.clone());
+            entry.stage = Stage::Submitting;
+            self.store(next)?;
+            let answer = self.submitter.send(&signed.activity);
+            let fresh = matches!(&answer, Some(RpcAnswer::Result(_)));
+            return Ok(Some(self.settle(index, self.submitter.outcome(answer, &signed.activity_id), fresh)));
+        }
+        let Some(signed) = self.entries[index].signed.clone() else {
+            return Err(KernelError::Journal);
+        };
+        let looked = self.submitter.outcome(self.submitter.lookup(&signed.activity_id), &signed.activity_id);
+        if !matches!(looked, Outcome::Open) {
+            return Ok(Some(self.settle(index, looked, false)));
+        }
+        if now_ms <= signed.not_after {
+            let answer = self.submitter.send(&signed.activity);
+            return Ok(Some(self.settle(index, self.submitter.outcome(answer, &signed.activity_id), false)));
+        }
+        Ok(Some(self.settle(index, Outcome::Open, false)))
+    }
+
+    fn settle(&mut self, index: usize, outcome: Outcome, fresh: bool) -> Step {
+        let entry = &mut self.entries[index];
+        let (program_id, request_id) = entry.key();
+        let activity_id = entry
+            .signed
+            .as_ref()
+            .map_or([0; 32], |signed| signed.activity_id);
+        match outcome {
+            Outcome::Completed(result) => {
+                entry.stage = Stage::Completed;
+                entry.result = Some(result.clone());
+                self.exchange.forget((program_id, request_id));
+                if fresh {
+                    Step::Posted {
+                        program_id,
+                        request_id,
                         result,
-                    });
+                    }
+                } else {
+                    Step::Committed {
+                        program_id,
+                        request_id,
+                        activity_id,
+                        result,
+                    }
                 }
-                Err(_) => kept.push(request),
+            }
+            Outcome::Open => {
+                entry.stage = Stage::Unknown;
+                Step::Unknown {
+                    program_id,
+                    request_id,
+                    activity_id,
+                }
+            }
+            Outcome::Rejected(code, result) => {
+                entry.stage = Stage::Rejected;
+                entry.reason = Some(format!("committed_refusal {code}"));
+                entry.result = Some(result);
+                self.exchange.forget((program_id, request_id));
+                Step::Rejected {
+                    program_id,
+                    request_id,
+                    code,
+                }
             }
         }
-        self.queue = kept;
-        Ok(steps)
     }
+}
+
+fn parse_journal(bytes: &[u8]) -> Option<(u64, Vec<RelayEntry>)> {
+    let value: Value = serde_json::from_slice(bytes).ok()?;
+    let object = value.as_object()?;
+    if object.len() != 3
+        || object.get("version")?.as_str()? != RELAY_JOURNAL_VERSION
+    {
+        return None;
+    }
+    let next = object.get("next_sequence")?.as_u64()?;
+    let entries = object
+        .get("entries")?
+        .as_array()?
+        .iter()
+        .map(RelayEntry::parse)
+        .collect::<Option<Vec<_>>>()?;
+    let ordered = entries.windows(2).all(|pair| {
+        pair[0].request.sequence < pair[1].request.sequence
+    });
+    let distinct = entries
+        .iter()
+        .enumerate()
+        .all(|(index, entry)| entries[..index].iter().all(|other| other.key() != entry.key()));
+    let behind = entries.iter().all(|entry| entry.request.sequence < next);
+    (ordered && distinct && behind).then_some((next, entries))
 }

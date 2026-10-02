@@ -22490,7 +22490,9 @@ fixture_policy = "Implement owned disposable fixtures using actual compiled serv
 
 [task.19.2]
 title = "Recover kernel web requests and submitted observations across restarts"
-status = "in_progress"
+status = "done"
+completion_basis = "implementation"
+qualification_status = "unverified"
 mode = "BUILD"
 wave = 2
 requires = ["0.2"]

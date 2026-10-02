@@ -119,9 +119,9 @@ def exchange(url, target, headers=None, body=None):
         conn.close()
 
 
-def rpc(url, method, params):
+def rpc(url, method, params, headers=None):
     body = json.dumps({'jsonrpc': '2.0', 'id': 1, 'method': method, 'params': params})
-    status, _, raw = exchange(url, url.path or '/', {'Content-Type': 'application/json'}, body)
+    status, _, raw = exchange(url, url.path or '/', {'Content-Type': 'application/json', **(headers or {})}, body)
     require(status == 200, 'real gateway read failed')
     response = json.loads(raw)
     require(response.get('id') == 1 and 'result' in response and 'error' not in response,
@@ -196,6 +196,7 @@ class Candidate:
         self.log = (self.h.evidence / ('process-' + str(self.h.launches) + '.log')).open('w')
         self.h.launches += 1
         env = {'PATH': '/usr/local/bin:/usr/bin:/bin', 'RUST_BACKTRACE': '0'}
+        env.update(getattr(self.h, "runtime_env", {}))
         if boundary:
             self.process = subprocess.Popen(['gdb', '--quiet', '--nx', '--interpreter=mi2', '--args'] + args,
                 cwd=self.h.isolated, env=env, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
@@ -203,6 +204,8 @@ class Candidate:
             self.reader = threading.Thread(target=self.read_debugger, daemon=True)
             self.reader.start()
             self.command('-gdb-set pagination off')
+            if getattr(self.h, 'debugger_nonstop', False):
+                self.command('-gdb-set non-stop on')
             self.command('-gdb-set breakpoint pending off')
             location = self.h.breakpoint(boundary)
             self.location = location
@@ -593,10 +596,475 @@ class Harness:
         print('PAXEER_X_GATE tests=' + str(self.count) + ' skipped=0', flush=True)
 
 
+class KernelHarness:
+    def __init__(self, manifest):
+        import importlib.util
+        from types import SimpleNamespace
+        sys.dont_write_bytecode = True
+        spec = importlib.util.spec_from_file_location('candidate_contract', ROOT / 'tools/paxeer-x/candidate.py')
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        self.loader = module.load_private
+        candidate = self.loader(manifest)
+        require(candidate['schema'] == 'paxeer-x.candidate.v1', 'kernel gate requires candidate manifest')
+        self.revision, source = source_identity()
+        require(candidate['source']['revision'] == self.revision and not candidate['source']['dirty'],
+                'candidate source revision mismatch')
+        services = [row for row in candidate['services'] if row['id'] == 'search-web']
+        require(len(services) == 1, 'one search-web service binding required')
+        bindings = services[0]['bindings']
+        self.m = self.reference(bindings['roles_ref'])
+        self.accounts = self.reference(bindings['funded_accounts_ref'])
+        require(self.m['schema'] == 'paxeer-x.kernel-web-recovery.v1'
+                and self.accounts['schema'] == 'paxeer-x.kernel-web-accounts.v1',
+                'kernel recovery consumer metadata absent')
+        require(self.m['source_revision'] == self.revision and self.m['source_digest'] == source
+                and self.accounts['source_revision'] == self.revision, 'kernel metadata source mismatch')
+        self.isolated = private(self.m['isolated_root'], True).resolve()
+        self.evidence = private(self.m['evidence_dir'], True).resolve()
+        require(self.evidence.is_relative_to(self.isolated), 'kernel evidence isolation')
+        self.gateway = endpoint(self.m['gateway']['endpoint'])
+        self.authorization_file = private(self.m['caller_authorization_file'])
+        self.binary = artifact(self.m['websearch'], self.revision, source)
+        for role in ('gateway', 'kernel'):
+            row = self.m[role]
+            binary = artifact(row['artifact'], self.revision, source)
+            proc = Path('/proc') / str(int(row['pid']))
+            require((proc / 'exe').resolve() == binary.resolve()
+                    and (proc / 'cwd').resolve().is_relative_to(self.isolated), 'real isolated runtime identity')
+        gateway_owner = SimpleNamespace(pid=int(self.m['gateway']['pid']), h=SimpleNamespace(url=self.gateway))
+        require(Candidate.listening(gateway_owner), 'gateway process does not own configured listener')
+        self.processes = []
+        self.configs = []
+        self.count = 0
+        self.journal = (self.evidence / 'kernel-assertions.jsonl').open('x')
+        for ordinal, row in enumerate(self.m['relays']):
+            config_path = private(row['config']['path'])
+            require(digest(config_path) == row['config']['sha256'], 'relay configuration binding')
+            config = self.loader(config_path)
+            private(config['gateway']['authorization_file'])
+            data = private(config['data_dir'], True).resolve()
+            require(data.is_relative_to(self.isolated) and data != self.isolated
+                    and not (data / 'kernel/kernel-relay.json').exists(), 'fresh isolated relay state required')
+            url = endpoint(row['endpoint'])
+            require(config['listen'] == '127.0.0.1:' + str(url.port), 'relay listener binding')
+            require(endpoint(config['kernel']['endpoint']) == self.gateway
+                    and endpoint(config['gateway']['endpoint']) == self.gateway, 'authenticated gateway route mismatch')
+            env = {name: str(private(value)) for name, value in row['key_files'].items()}
+            require(set(env) == {'X_WEBSEARCH_RECEIVER_KEY_FILE', 'X_WEBSEARCH_ATTESTOR_KEY_FILE'},
+                    'separate receiver and attestor key references required')
+            evidence = self.evidence / ('relay-' + str(ordinal))
+            evidence.mkdir(mode=0o700)
+            settings = SimpleNamespace(binary=self.binary, config_path=config_path, isolated=self.isolated,
+                evidence=evidence, launches=0, url=url, runtime_env=env, debugger_nonstop=ordinal != 0, breakpoint=self.breakpoint)
+            self.processes.append(Candidate(settings))
+            self.configs.append(config)
+        require(len({config['data_dir'] for config in self.configs}) == len(self.configs), 'relay data directories overlap')
+        require(len(self.processes) >= 2 and shutil.which('gdb'), 'real peer quorum and GDB required')
+        self.candidate = self.processes[0]
+        self.primary = self.configs[0]
+        self.state = Path(self.primary['data_dir']) / 'kernel/kernel-relay.json'
+        self.network = self.primary['kernel_network_id']
+        require(all(config['kernel_network_id'] == self.network for config in self.configs), 'relay network mismatch')
+        self.program = bytes.fromhex(self.accounts['program_id'])
+        self.request_id = int(self.accounts['request_id'])
+        self.payload = bytes.fromhex(self.accounts['payload'])
+        self.kind = int(self.accounts['kind'])
+        self.fee = int(self.accounts['fee'])
+        require(len(self.program) == 32 and self.payload and self.kind in (1, 2) and self.fee > 0,
+                'paid request bindings absent')
+        self.payouts = self.accounts['attestors']
+        signers = [row['signer'] for row in self.payouts]
+        require(signers == sorted(set(signers)) and len(signers) >= 2
+                and self.accounts['threshold'] > len(signers) // 2, 'registered majority bindings invalid')
+        self.balance_accounts = [self.accounts['program_account'], self.accounts['fee_account']]
+        self.balance_accounts += [row['payout_account'] for row in self.payouts]
+        require(len(set(self.balance_accounts)) == len(self.balance_accounts), 'fee accounts must be distinct')
+        require(set(self.m['calls']) == {'request', 'read', 'wrong-fee', 'absent-read'},
+                'reference program request/read/refusal inputs absent')
+        self.calls = {name: bytes.fromhex(row) for name, row in self.m['calls'].items()}
+        import struct
+        for name, call in self.calls.items():
+            require(len(call) >= 106 and call[:32] == self.program, 'real program call binding absent')
+            fields = struct.unpack('>32sHHIHII7Q', call[:106])
+            require(fields[1] == 4 and call[106:106 + fields[2]] == b'layerx_call', 'ABI4 reference call required')
+            require(len(call) == 106 + sum(fields[2:6]), 'canonical program call lengths')
+        request_input = self.call_input(self.calls['request'])
+        expected = b'\1\1' + self.request_id.to_bytes(8, 'big') + bytes([self.kind])
+        expected += bytes.fromhex(self.accounts['asset']) + bytes.fromhex(self.accounts['fee_account'])
+        expected += self.fee.to_bytes(16, 'big') + self.payload
+        require(request_input == expected, 'reference request does not pay bound fee')
+        wrong_fee = self.call_input(self.calls['wrong-fee'])
+        require(len(wrong_fee) == len(expected) and wrong_fee[:43] == expected[:43]
+                and wrong_fee[43:75] != expected[43:75] and wrong_fee[75:] == expected[75:],
+                'wrong-fee case must vary only the fee account')
+        require(self.calls['absent-read'] == self.calls['read'], 'absent-read must exercise the same reference read')
+        vector = ROOT / 'tests/fixtures/web/observation-activity.hex'
+        require(digest(vector) == self.m['adapter_vector_sha256'], 'existing adapter vector binding missing')
+        require(self.primary['kernel']['submitter_did'] != self.accounts['caller_did'], 'separate caller and relay sequence required')
+        self.signing_key = private(self.m['caller_key_file'])
+        self.caller = self.accounts['caller_did']
+        wasm = self.m['reference_program']
+        wasm_path = Path(wasm['path'])
+        require(wasm_path.is_absolute() and wasm_path.is_file() and not wasm_path.is_symlink()
+                and wasm['source_revision'] == self.revision and wasm['source_digest'] == source
+                and wasm['build_exit'] == 0 and digest(wasm_path) == wasm['sha256'],
+                'built reference program source binding absent')
+        self.wasm = wasm_path.read_bytes()
+        require(self.wasm.startswith(b'\0asm\1\0\0\0'), 'reference artifact is not wasm')
+        self.deployment = bytes.fromhex(self.m['deployment_activity'])
+
+
+    def headers(self):
+        path = private(self.authorization_file)
+        require(path.stat().st_nlink == 1 and path.stat().st_size <= 256, 'protected gateway credential bound')
+        value = path.read_text().removesuffix('\n').removesuffix('\r')
+        require(re.fullmatch(r'LayerX-Key [A-Za-z0-9_-]{1,64}:lxp_live_[0-9a-f]{64}', value),
+                'configured gateway authorization format refused')
+        return {'Authorization': value}
+
+    def reference(self, value):
+        require(isinstance(value, str) and value.startswith('private:/'), 'resolved private binding required')
+        path, mark, fragment = value[len('private:'):].partition('#')
+        record = self.loader(path)
+        if mark:
+            require(fragment and '/' not in fragment and fragment in record, 'binding fragment absent')
+            record = record[fragment]
+        require(isinstance(record, dict), 'binding metadata must be an object')
+        return record
+
+    def call_input(self, call):
+        import struct
+        fields = struct.unpack('>32sHHIHII7Q', call[:106])
+        return call[106 + fields[2]:106 + fields[2] + fields[3]]
+
+    def breakpoint(self, boundary):
+        needles = {'attestation-held': 'let _ = self.exchange.collect(key, &self.set);', 'ready-to-sign': 'let Ok(signed) = self.submitter.sign(&observation, now_ms) else {',
+                   'after-submit': 'let fresh = matches!(&answer, Some(RpcAnswer::Result(_)));'}
+        source = ROOT / 'interop/crates/x-websearch/src/kernel.rs'
+        lines = [i for i, line in enumerate(source.read_text().splitlines(), 1) if needles[boundary] in line]
+        require(len(lines) == 1, 'exact production crash boundary absent')
+        return str(source) + ':' + str(lines[0])
+
+    def record(self, name):
+        self.count += 1
+        self.journal.write(json.dumps({'revision': self.revision, 'case': name, 'passed': True}) + '\n')
+        self.journal.flush()
+        os.fsync(self.journal.fileno())
+
+    def entry(self):
+        if not self.state.exists():
+            return None
+        journal = self.loader(self.state)
+        require(journal['version'] == 'PAXEERX_KERNEL_RELAY_V1', 'production journal version')
+        rows = [row for row in journal['entries'] if row['program_id'] == '0x' + self.program.hex()
+                and row['request_id'] == self.request_id]
+        require(len(rows) <= 1, 'duplicate durable request')
+        if rows:
+            require(rows[0]['sequence'] < journal['next_sequence'], 'cursor advanced past non-durable request')
+            require(rows[0]['topic'] == b'PAXEERX_WEB_REQUEST_V1'.hex()
+                    and rows[0]['payload'] == self.payload.hex(), 'durable request binding')
+        return rows[0] if rows else None
+
+    def wait_entry(self, condition):
+        deadline = time.monotonic() + 45
+        while time.monotonic() < deadline:
+            row = self.entry()
+            if row is not None and condition(row):
+                return row
+            require(self.candidate.process.poll() is None, 'relay exited during recovery')
+            time.sleep(.05)
+        raise Refusal('required production journal transition absent')
+
+    def balances(self):
+        values = []
+        for account in self.balance_accounts:
+            row = rpc(self.gateway, 'lx_getBalance', [account], self.headers())
+            require(row['asset_id'] == self.accounts['asset'], 'fee account asset mismatch')
+            values.append(int(row['balance']))
+        return values
+
+    def signed(self, activity_type, payload, key_file, did):
+        import struct
+        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+        from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
+        raw = private(key_file).read_bytes().strip()
+        require(re.fullmatch(b'[0-9a-fA-F]{64}', raw), 'binary-compatible private signer key required')
+        key = Ed25519PrivateKey.from_private_bytes(bytes.fromhex(raw.decode()))
+        public = key.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw)
+        require(did == 'did:layerx:' + public.hex(), 'signer/DID binding mismatch')
+        blob = lambda value: len(value).to_bytes(4, 'big') + value
+        sequence = int(rpc(self.gateway, 'lx_getSequence', [did, 'identity'], self.headers())['next_sequence'])
+        now = time.time_ns() // 1000000
+        context = (hashlib.sha256(b'LXP/v1/context-hash\0' + payload).digest()
+                   if activity_type == 0x000B0001 else os.urandom(32))
+        fields = (b'\1\0\3\2' + self.network.to_bytes(4, 'big') + b'\3' + activity_type.to_bytes(4, 'big')
+                  + b'\4' + blob(did.encode()) + b'\5' + blob(public) + b'\6' + sequence.to_bytes(8, 'big')
+                  + b'\7' + struct.pack('>QQ', now - 1000, now + 60000) + b'\10' + blob(context)
+                  + b'\11' + int(self.m['activity_fee_limit']).to_bytes(16, 'big')
+                  + b'\12' + blob(hashlib.sha256(b'LXP/v1/payload-hash\0' + payload).digest())
+                  + b'\13' + blob(payload))
+        unsigned = b'\0\3\20\1\13' + fields
+        signature = key.sign(hashlib.sha256(b'LXP/v1/signature-preimage\0' + unsigned).digest())
+        return b'\0\3\20\1\14' + fields + b'\14' + blob(signature)
+
+    def receipt(self, activity, refused=False):
+        sys.path.insert(0, str(ROOT / 'agent/sdk/python'))
+        from layerx_sdk.verifier import _decode_protocol_receipt
+        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+        activity_id = hashlib.sha256(b'LXP/v1/activity-id\0' + activity).hexdigest()
+        deadline = time.monotonic() + 45
+        while time.monotonic() < deadline:
+            body = json.dumps({'jsonrpc': '2.0', 'id': 1, 'method': 'lx_getReceipt', 'params': [activity_id]})
+            status, _, raw = exchange(self.gateway, self.gateway.path or '/', {'Content-Type': 'application/json', **self.headers()}, body)
+            require(status == 200, 'canonical receipt transport absent')
+            row = json.loads(raw).get('result')
+            if row and row.get('receipt'):
+                require(row['activity_id'] == activity_id, 'foreign canonical receipt')
+                canonical = bytes.fromhex(row['receipt'])
+                facts, unsigned = _decode_protocol_receipt(canonical)
+                key = bytes.fromhex(self.primary['gateway']['sequencer_public_key'])
+                Ed25519PublicKey.from_public_bytes(key).verify(facts.sequencer_signature,
+                    hashlib.sha256(b'LXP/v1/receipt\0' + unsigned).digest())
+                require(facts.activity_id.hex() == activity_id and ((facts.result_code != 0) == refused),
+                        'canonical committed outcome mismatch')
+                return facts
+            time.sleep(.05)
+        raise Refusal('canonical committed receipt absent')
+
+    def send(self, activity):
+        body = json.dumps({'jsonrpc': '2.0', 'id': 1, 'method': 'lx_sendActivity',
+                           'params': [activity.hex(), 'executed']})
+        status, _, raw = exchange(self.gateway, self.gateway.path or '/', {'Content-Type': 'application/json', **self.headers()}, body)
+        require(status == 200 and json.loads(raw).get('id') == 1, 'real kernel submit transport refused')
+
+    def program_call(self, name, refused=False):
+        activity = self.signed(0x00090003, self.calls[name], self.signing_key, self.caller)
+        self.send(activity)
+        facts = self.receipt(activity, refused)
+        require(facts.module_id == 9 and facts.program_outcome is not None, 'reference program did not execute')
+        return activity
+
+    def send_call_input(self, calldata):
+        template = self.calls['request']
+        entry_length = int.from_bytes(template[34:36], 'big')
+        old_length = int.from_bytes(template[36:40], 'big')
+        header = bytearray(template[:106])
+        header[36:40] = len(calldata).to_bytes(4, 'big')
+        payload = bytes(header) + template[106:106 + entry_length] + calldata
+        payload += template[106 + entry_length + old_length:]
+        activity = self.signed(0x00090003, payload, self.signing_key, self.caller)
+        self.send(activity)
+        self.receipt(activity)
+
+    def adapter_vector(self):
+        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+        from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
+        raw = bytes.fromhex((ROOT / 'tests/fixtures/web/observation-activity.hex').read_text().strip())
+        require(raw[:5] == b'\0\2\20\1\14', 'legacy adapter envelope changed')
+        cursor = 5
+        fields = {}
+        sizes = {1: 2, 2: 4, 3: 4, 6: 8, 7: 16, 9: 16}
+        for tag in range(1, 13):
+            require(cursor < len(raw) and raw[cursor] == tag, 'canonical vector field order')
+            cursor += 1
+            length = sizes.get(tag)
+            if length is None:
+                require(cursor + 4 <= len(raw), 'vector field bound')
+                length = int.from_bytes(raw[cursor:cursor + 4], 'big')
+                cursor += 4
+            require(cursor + length <= len(raw), 'vector field truncated')
+            fields[tag] = raw[cursor:cursor + length]
+            cursor += length
+        require(cursor == len(raw) and fields[3] == (0x000B0001).to_bytes(4, 'big'), 'vector activity identity')
+        key = Ed25519PrivateKey.from_private_bytes(bytes([21]) + bytes(31))
+        require(fields[5] == key.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw), 'adapter vector authority')
+        require(fields[8] == hashlib.sha256(b'LXP/v1/context-hash\0' + fields[11]).digest()
+                and fields[10] == hashlib.sha256(b'LXP/v1/payload-hash\0' + fields[11]).digest(),
+                'adapter vector payload/idempotency binding')
+        unsigned = raw[:4] + b'\13' + raw[5:len(raw) - 69]
+        signature = key.sign(hashlib.sha256(b'LXP/v1/signature-preimage\0' + unsigned).digest())
+        require(signature == fields[12] and raw == unsigned[:4] + b'\14' + unsigned[5:]
+                + b'\14\0\0\0\100' + signature, 'adapter exact signed bytes differ')
+        self.record('adapter-encoding-vector')
+
+    def reference_deployment(self):
+        import struct
+        raw = self.deployment
+        require(raw[:5] == b'\0\3\20\1\14', 'reference deployment protocol mismatch')
+        cursor = 5
+        fields = {}
+        sizes = {1: 2, 2: 4, 3: 4, 6: 8, 7: 16, 9: 16}
+        for tag in range(1, 13):
+            require(cursor < len(raw) and raw[cursor] == tag, 'deployment field order')
+            cursor += 1
+            length = sizes.get(tag)
+            if length is None:
+                require(cursor + 4 <= len(raw), 'deployment field bound')
+                length = int.from_bytes(raw[cursor:cursor + 4], 'big')
+                cursor += 4
+            require(cursor + length <= len(raw), 'deployment field truncated')
+            fields[tag] = raw[cursor:cursor + length]
+            cursor += length
+        expected = self.program + struct.pack('>HBB', 4, 0, 0) + bytes(32)
+        expected += hashlib.sha256(self.wasm).digest() + len(self.wasm).to_bytes(4, 'big') + self.wasm
+        require(cursor == len(raw) and fields[11] == expected
+                and fields[2] == self.network.to_bytes(4, 'big')
+                and fields[3] == (0x00090001).to_bytes(4, 'big'), 'deployed program is not the bound reference artifact')
+        facts = self.receipt(raw)
+        require(facts.module_id == 9, 'reference deployment receipt module')
+        self.record('real-reference-deployment')
+
+    def run(self):
+        self.adapter_vector()
+        self.reference_deployment()
+        initial = self.balances()
+        require(initial[0] >= self.fee, 'program fee account not funded')
+        for name in ('wrong-fee', 'absent-read'):
+            self.program_call(name, True)
+            require(self.balances() == initial, 'refused reference program moved web fees')
+            self.record(name)
+        self.candidate.start()
+        self.program_call('request')
+        waiting = self.wait_entry(lambda row: row['stage'] == 'awaiting_quorum' and row['attestation'] is not None)
+        require(len(waiting['attestation']['signatures']) < self.accounts['threshold'], 'before-quorum case absent')
+        paid = self.balances()
+        require(paid == [initial[0] - self.fee, initial[1] + self.fee] + initial[2:], 'atomic request fee mismatch')
+        self.candidate.stop(crash=True)
+        self.candidate.start('ready-to-sign')
+        resumed = self.wait_entry(lambda row: row['attestation'] == waiting['attestation'])
+        require(resumed['payload_hash'] == waiting['payload_hash'], 'restart changed attestation preimage')
+        self.record('restart-before-quorum')
+        for peer in self.processes[1:]:
+            peer.start('attestation-held')
+            require(peer.stopped.wait(45), 'peer did not durably attest before its send')
+        require(self.candidate.stopped.wait(45), 'real quorum never reached')
+        row = self.entry()
+        require(row['stage'] == 'awaiting_quorum', 'negative cases require an unfulfilled paid request')
+        attestation = row['attestation']
+        signatures = [bytes.fromhex(item['signature']) for item in attestation['signatures']]
+        signers = [item['signer'] for item in attestation['signatures']]
+        registered = {item['signer'] for item in self.payouts}
+        require(signers == sorted(set(signers)) and set(signers).issubset(registered)
+                and len(signers) >= self.accounts['threshold'], 'registered quorum absent')
+        response = bytes.fromhex(attestation['response'])
+        observation = b'\2' + self.network.to_bytes(32, 'big') + self.program + self.request_id.to_bytes(8, 'big')
+        observation += bytes([self.kind]) + bytes.fromhex(row['payload_hash'][2:])
+        observation += bytes.fromhex(attestation['content_digest']) + int(attestation['full_length']).to_bytes(4, 'big')
+        observation += len(response).to_bytes(4, 'big') + response
+        offset = len(observation)
+        observation += bytes([len(signatures)]) + b''.join(signatures)
+        changed = bytearray(observation)
+        changed[74] ^= 1
+        wrong_program = bytearray(observation)
+        wrong_program[33] ^= 1
+        wrong_request = bytearray(observation)
+        wrong_request[65] ^= 1
+        wrong_origin = bytearray(observation)
+        wrong_origin[0] = 1
+        high_s = bytearray(signatures[0])
+        order = 0xfffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141
+        high_s[32:64] = (order - int.from_bytes(high_s[32:64], 'big')).to_bytes(32, 'big')
+        high_s[64] = 55 - high_s[64]
+        negative = {'payload-binding': bytes(changed), 'program-binding': bytes(wrong_program),
+                    'request-binding': bytes(wrong_request), 'origin2-binding': bytes(wrong_origin),
+                    'signer-order': observation[:offset] + bytes([len(signatures)]) + b''.join(reversed(signatures)),
+                    'low-s': observation[:offset] + bytes([len(signatures)]) + bytes(high_s) + b''.join(signatures[1:]),
+                    'minority': observation[:offset] + bytes([self.accounts['threshold'] - 1])
+                                + b''.join(signatures[:self.accounts['threshold'] - 1])}
+        for name, payload in negative.items():
+            activity = self.signed(0x000B0001, payload, self.signing_key, self.caller)
+            self.send(activity)
+            facts = self.receipt(activity, True)
+            require(facts.module_id == 11 and self.balances() == paid, 'refused observation changed fee state')
+            self.record(name)
+        self.candidate.command('-break-delete 1')
+        location = self.breakpoint('after-submit')
+        self.candidate.command('-break-insert ' + json.dumps(location))
+        self.candidate.stopped.clear()
+        self.candidate.command('-exec-continue')
+        require(self.candidate.stopped.wait(45), 'after-submit crash boundary absent')
+        submitted = self.entry()
+        require(submitted['stage'] == 'submitting' and submitted['activity'], 'signed bytes not durable before send')
+        activity = bytes.fromhex(submitted['activity'])
+        self.receipt(activity)
+        self.candidate.stop(crash=True)
+        self.candidate.start()
+        completed = self.wait_entry(lambda row: row['stage'] == 'completed')
+        require(completed['activity'] == submitted['activity'] and completed['activity_id'] == submitted['activity_id'],
+                'restart replaced signed activity identity')
+        self.record('restart-after-submit')
+        after = self.balances()
+        expected = initial.copy()
+        expected[0] -= self.fee
+        quotient, remainder = divmod(self.fee, len(signers))
+        for index, signer in enumerate(signers):
+            matches = [i for i, row in enumerate(self.payouts) if row['signer'] == signer]
+            require(len(matches) == 1, 'unregistered fee recipient')
+            expected[2 + matches[0]] += quotient + (remainder if index == 0 else 0)
+        require(after == expected, 'exactly-once fee split mismatch')
+        read_input = b'\1\2' + self.request_id.to_bytes(8, 'big') + bytes.fromhex(attestation['content_digest'])
+        read_input += int(attestation['full_length']).to_bytes(4, 'big') + response
+        require(self.call_input(self.calls['read']) == read_input, 'web_read must compare identical committed data')
+        self.program_call('read')
+        first_receipt = self.receipt(activity)
+        self.send(activity)
+        require(self.receipt(activity) == first_receipt, 'exact-byte retry produced a second committed receipt')
+        require(self.balances() == after, 'read or exact-byte retry charged web fee again')
+        self.candidate.stop(crash=True)
+        self.candidate.start()
+        require(self.wait_entry(lambda row: row['stage'] == 'completed')['activity'] == completed['activity'],
+                'completed observation changed across restart')
+        self.program_call('read')
+        require(self.balances() == after, 'second restart or read duplicated fee split')
+        self.record('one-observation-one-fee-web-read')
+        for peer in self.processes[1:]:
+            peer.stop()
+        original_id, original_payload = self.request_id, self.payload
+        content = Path(self.primary['data_dir']) / 'content'
+        held = content.with_name('content.kernel-recovery-held')
+        require(content.is_dir() and not held.exists(), 'real content store fault boundary absent')
+        content.rename(held)
+        try:
+            self.request_id = original_id + 1
+            calldata = bytearray(self.call_input(self.calls['request']))
+            calldata[2:10] = self.request_id.to_bytes(8, 'big')
+            self.send_call_input(bytes(calldata))
+            failed = self.wait_entry(lambda row: row['stage'] == 'awaiting_quorum' and row['attestation'] is None
+                and row['last_error'] == 'attestation refused: content store')
+            self.candidate.stop(crash=True)
+            require(self.entry() == failed, 'retryable attestation dropped at crash')
+        finally:
+            held.rename(content)
+        self.candidate.start()
+        self.wait_entry(lambda row: row['stage'] == 'awaiting_quorum' and row['attestation'] is not None)
+        self.record('retryable-attestation-restart')
+        self.request_id = original_id + 2
+        self.payload = b'\xff'
+        calldata = bytearray(self.call_input(self.calls['request']))
+        calldata[2:10] = self.request_id.to_bytes(8, 'big')
+        calldata = calldata[:91] + self.payload
+        self.send_call_input(bytes(calldata))
+        refused = self.wait_entry(lambda row: row['stage'] == 'refused' and bool(row['reason']))
+        self.candidate.stop(crash=True)
+        self.candidate.start()
+        require(self.wait_entry(lambda row: row['stage'] == 'refused') == refused,
+                'terminal attestation refusal disappeared across restart')
+        self.record('terminal-attestation-restart')
+        self.request_id, self.payload = original_id, original_payload
+        require(self.count == 16, 'required kernel cases absent')
+        print('PAXEER_X_GATE tests=' + str(self.count) + ' skipped=0', flush=True)
+
+    def close(self):
+        for process in reversed(self.processes):
+            process.stop()
+        self.journal.close()
+
+
 def main():
     os.umask(0o077)
     parser = argparse.ArgumentParser()
-    parser.add_argument('--case', required=True, choices=['paid-resource-delivery', 'evm-attestation-recovery'])
+    parser.add_argument('--case', required=True, choices=['paid-resource-delivery', 'evm-attestation-recovery', 'kernel-web-relay-recovery'])
     parser.add_argument('--candidate-manifest', required=True)
     args = parser.parse_args()
     if args.case == 'evm-attestation-recovery':
@@ -611,7 +1079,8 @@ def main():
     harness = None
     try:
         require(bool(args.candidate_manifest), 'candidate manifest absent')
-        harness = Harness(args.candidate_manifest)
+        harness = (KernelHarness(args.candidate_manifest) if args.case == "kernel-web-relay-recovery"
+                   else Harness(args.candidate_manifest))
         harness.run()
         return 0
     except (Refusal, OSError, ValueError, KeyError, TypeError, ImportError,
@@ -628,8 +1097,11 @@ def main():
         return 1
     finally:
         if harness is not None:
-            harness.candidate.stop()
-            harness.journal.close()
+            if isinstance(harness, KernelHarness):
+                harness.close()
+            else:
+                harness.candidate.stop()
+                harness.journal.close()
 
 
 if __name__ == '__main__':

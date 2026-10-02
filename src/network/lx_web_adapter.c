@@ -3,6 +3,7 @@
 #include "layerx/lxp_crypto.h"
 
 #include <openssl/evp.h>
+#include <stdlib.h>
 #include <string.h>
 
 static void put_u32(uint8_t bytes[4], uint32_t value)
@@ -101,7 +102,7 @@ static lxp_result submitter_sign(lxp_activity *activity,
     return status;
 }
 
-lxp_result lx_web_activity_encode(const lx_web_observation *observation,
+static lxp_result activity_encode_version(const lx_web_observation *observation,
                                   const uint8_t submitter_private_key[32],
                                   uint32_t network_id,
                                   const uint8_t *actor_did,
@@ -109,7 +110,8 @@ lxp_result lx_web_activity_encode(const lx_web_observation *observation,
                                   uint64_t account_sequence,
                                   lxp_u128 fee_limit,
                                   lxp_timestamp_bound timestamp_bound,
-                                  lxp_arena *arena, lxp_byte_span *encoded)
+                                  lxp_arena *arena, lxp_byte_span *encoded,
+                                  uint16_t protocol_version)
 {
     lxp_activity activity;
     uint8_t payload[LX_WEB_OBSERVATION_MAX_BYTES];
@@ -128,7 +130,7 @@ lxp_result lx_web_activity_encode(const lx_web_observation *observation,
                                        sizeof(payload), &payload_length);
     if (status != LXP_OK) return status;
     (void)memset(&activity, 0, sizeof(activity));
-    activity.protocol_version = LXP_PROTOCOL_VERSION;
+    activity.protocol_version = protocol_version;
     activity.network_id = network_id;
     activity.activity_type = LX_WEB_OBSERVATION_ACTIVITY;
     activity.actor_did.bytes = actor_did;
@@ -150,6 +152,22 @@ lxp_result lx_web_activity_encode(const lx_web_observation *observation,
     activity.signature.bytes = signature;
     activity.signature.length = 64U;
     return lxp_activity_encode(&activity, arena, encoded);
+}
+
+lxp_result lx_web_activity_encode(const lx_web_observation *observation,
+                                  const uint8_t submitter_private_key[32],
+                                  uint32_t network_id,
+                                  const uint8_t *actor_did,
+                                  size_t actor_did_length,
+                                  uint64_t account_sequence,
+                                  lxp_u128 fee_limit,
+                                  lxp_timestamp_bound timestamp_bound,
+                                  lxp_arena *arena, lxp_byte_span *encoded)
+{
+    return activity_encode_version(observation, submitter_private_key,
+                                    network_id, actor_did, actor_did_length,
+                                    account_sequence, fee_limit, timestamp_bound,
+                                    arena, encoded, LXP_PROTOCOL_VERSION);
 }
 
 lxp_result lx_web_adapter_run(lx_web_adapter_config *config,
@@ -187,6 +205,199 @@ lxp_result lx_web_adapter_run(lx_web_adapter_config *config,
                                               activity.length);
         if (status != LXP_OK) return status;
         ++config->next_account_sequence;
+        ++count;
+    }
+    *submitted = count;
+    return LXP_OK;
+}
+
+lxp_result lx_web_submission_prepare(const lx_web_adapter_config *config,
+                                     const lx_web_observation *observation,
+                                     uint64_t account_sequence,
+                                     lx_web_submission *submission)
+{
+    uint8_t arena_bytes[LXP_MAX_ACTIVITY_BYTES];
+    lxp_arena arena;
+    lxp_byte_span activity;
+    lxp_activity decoded;
+    lxp_result status;
+    if (config == NULL || observation == NULL || submission == NULL ||
+        config->actor_did == NULL || config->actor_did_length == 0U)
+        return LXP_ERR_NON_CANONICAL;
+    status = lxp_arena_init(&arena, arena_bytes, sizeof(arena_bytes));
+    if (status == LXP_OK)
+        status = activity_encode_version(
+            observation, config->submitter_private_key, config->network_id,
+            config->actor_did, config->actor_did_length, account_sequence,
+            config->fee_limit, config->timestamp_bound, &arena, &activity,
+            LXP_PROTOCOL_VERSION_STATE_COMMITMENT);
+    if (status != LXP_OK) return status;
+    if (activity.length > sizeof(submission->activity))
+        return LXP_ERR_LENGTH_LIMIT;
+    status = lxp_activity_decode(activity.bytes, activity.length, &decoded);
+    if (status != LXP_OK) return status;
+    (void)memset(submission, 0, sizeof(*submission));
+    (void)memcpy(submission->program_id, observation->program_id, 32U);
+    submission->request_id = observation->request_id;
+    (void)memcpy(submission->payload_hash, observation->payload_hash, 32U);
+    submission->account_sequence = account_sequence;
+    submission->not_after = decoded.timestamp_bound.not_after;
+    (void)memcpy(submission->idempotency_key, decoded.idempotency_key, 32U);
+    status = lxp_activity_id(activity.bytes, activity.length,
+                             submission->activity_id);
+    if (status != LXP_OK) return status;
+    (void)memcpy(submission->activity, activity.bytes, activity.length);
+    submission->activity_length = activity.length;
+    submission->state = LX_WEB_SUBMISSION_SUBMITTING;
+    return LXP_OK;
+}
+
+lxp_result lx_web_submission_check(const lx_web_submission *submission,
+                                   uint32_t network_id)
+{
+    lxp_activity activity;
+    lx_web_observation observation;
+    uint8_t identifier[32];
+    lxp_result status;
+    if (submission == NULL || network_id == 0U ||
+        submission->activity_length == 0U ||
+        submission->activity_length > sizeof(submission->activity) ||
+        submission->state < LX_WEB_SUBMISSION_SUBMITTING ||
+        submission->state > LX_WEB_SUBMISSION_REJECTED)
+        return LXP_ERR_NON_CANONICAL;
+    status = lxp_activity_decode(submission->activity,
+                                 submission->activity_length, &activity);
+    if (status != LXP_OK) return status;
+    if (activity.activity_type != LX_WEB_OBSERVATION_ACTIVITY ||
+        activity.network_id != network_id ||
+        activity.account_sequence != submission->account_sequence ||
+        activity.timestamp_bound.not_after != submission->not_after ||
+        memcmp(activity.idempotency_key, submission->idempotency_key,
+               32U) != 0)
+        return LXP_ERR_CONTEXT_MISMATCH;
+    status = lxp_activity_verify_payload_hash(&activity);
+    if (status != LXP_OK) return status;
+    status = lxp_activity_verify_signature(&activity);
+    if (status != LXP_OK) return status;
+    status = lxp_hash_context_value(activity.payload.bytes,
+                             activity.payload.length, identifier);
+    if (status != LXP_OK) return status;
+    if (memcmp(identifier, submission->idempotency_key, 32U) != 0)
+        return LXP_ERR_CONTEXT_MISMATCH;
+    status = lxp_activity_id(submission->activity,
+                             submission->activity_length, identifier);
+    if (status != LXP_OK) return status;
+    if (memcmp(identifier, submission->activity_id, 32U) != 0)
+        return LXP_ERR_CONTEXT_MISMATCH;
+    status = lx_web_observation_decode(activity.payload.bytes,
+                                       activity.payload.length,
+                                       &observation);
+    if (status != LXP_OK) return status;
+    if (observation.network_id != network_id ||
+        memcmp(observation.program_id, submission->program_id, 32U) != 0 ||
+        observation.request_id != submission->request_id ||
+        memcmp(observation.payload_hash, submission->payload_hash, 32U) != 0)
+        return LXP_ERR_CONTEXT_MISMATCH;
+    return LXP_OK;
+}
+
+static lxp_result submission_send(lx_web_adapter_config *config,
+                                  lx_web_submission *submission)
+{
+    lxp_result status = config->submit_activity(
+        config->submit_context, submission->activity,
+        submission->activity_length);
+    if (status != LXP_OK) return status;
+    submission->state = LX_WEB_SUBMISSION_UNKNOWN;
+    return config->record_submission(config->record_context, submission);
+}
+
+static bool durable_config_valid(const lx_web_adapter_config *config)
+{
+    return config != NULL && config->submit_activity != NULL &&
+           config->record_submission != NULL &&
+           config->lookup_receipt != NULL && config->network_id != 0U &&
+           config->actor_did != NULL && config->actor_did_length != 0U;
+}
+
+lxp_result lx_web_submission_recover(lx_web_adapter_config *config,
+                                     lx_web_submission *submission,
+                                     uint64_t now)
+{
+    uint8_t outcome = LX_WEB_RECEIPT_PENDING;
+    int32_t rejection = 0;
+    lxp_result status;
+    if (!durable_config_valid(config) || submission == NULL)
+        return LXP_ERR_NON_CANONICAL;
+    status = lx_web_submission_check(submission, config->network_id);
+    if (status != LXP_OK) return status;
+    if (submission->state != LX_WEB_SUBMISSION_SUBMITTING &&
+        submission->state != LX_WEB_SUBMISSION_UNKNOWN)
+        return LXP_OK;
+    status = config->lookup_receipt(config->receipt_context,
+                                    submission->activity_id,
+                                    submission->idempotency_key, &outcome,
+                                    &rejection);
+    if (status != LXP_OK) return status;
+    switch (outcome) {
+    case LX_WEB_RECEIPT_PENDING:
+        if (submission->state == LX_WEB_SUBMISSION_UNKNOWN) return LXP_OK;
+        submission->state = LX_WEB_SUBMISSION_UNKNOWN;
+        return config->record_submission(config->record_context,
+                                         submission);
+    case LX_WEB_RECEIPT_NOT_FOUND:
+        if (now <= submission->not_after)
+            return submission_send(config, submission);
+        submission->state = LX_WEB_SUBMISSION_UNKNOWN;
+        return config->record_submission(config->record_context, submission);
+    case LX_WEB_RECEIPT_REJECTED:
+        if (rejection == 0) return LXP_ERR_NON_CANONICAL;
+        submission->state = LX_WEB_SUBMISSION_REJECTED;
+        submission->rejection = rejection;
+        return config->record_submission(config->record_context,
+                                         submission);
+    case LX_WEB_RECEIPT_COMPLETED:
+        if (rejection != 0) return LXP_ERR_NON_CANONICAL;
+        submission->state = LX_WEB_SUBMISSION_COMPLETED;
+        return config->record_submission(config->record_context,
+                                         submission);
+    default:
+        return LXP_ERR_NON_CANONICAL;
+    }
+}
+
+lxp_result lx_web_adapter_run_durable(lx_web_adapter_config *config,
+                                      size_t *submitted)
+{
+    size_t count = 0U;
+    if (!durable_config_valid(config) || submitted == NULL ||
+        config->poll_observations == NULL || config->actor_did == NULL ||
+        config->actor_did_length == 0U || config->maximum_observations == 0U)
+        return LXP_ERR_NON_CANONICAL;
+    while (count < config->maximum_observations) {
+        lx_web_observation observation;
+        lx_web_submission *submission;
+        bool available = false;
+        lxp_result status;
+        if (config->next_account_sequence == UINT64_MAX)
+            return LXP_ERR_LENGTH_LIMIT;
+        (void)memset(&observation, 0, sizeof(observation));
+        status = config->poll_observations(config->poll_context,
+                                           &observation, &available);
+        if (status != LXP_OK) return status;
+        if (!available) break;
+        submission = malloc(sizeof(*submission));
+        if (submission == NULL) return LXP_ERR_LENGTH_LIMIT;
+        status = lx_web_submission_prepare(config, &observation,
+                                           config->next_account_sequence,
+                                           submission);
+        if (status == LXP_OK)
+            status = config->record_submission(config->record_context,
+                                               submission);
+        if (status == LXP_OK) ++config->next_account_sequence;
+        if (status == LXP_OK) status = submission_send(config, submission);
+        free(submission);
+        if (status != LXP_OK) return status;
         ++count;
     }
     *submitted = count;

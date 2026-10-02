@@ -155,6 +155,7 @@ pub struct SequencerTrust {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct GatewayConfig {
     pub endpoint: String,
+    pub authorization_file: Option<PathBuf>,
     pub sequencer: SequencerTrust,
 }
 
@@ -860,6 +861,15 @@ fn assets(root: &mut Object) -> Result<[AssetConfig; 4], ConfigError> {
 fn gateway(root: &mut Object) -> Result<GatewayConfig, ConfigError> {
     let mut object = root.object("gateway")?;
     let endpoint = endpoint(&mut object)?;
+    let authorization_file = object.optional("authorization_file")?.map(|(value, path)| {
+        let text = optional_text(value, &path)?;
+        let file = absolute_directory(&text).ok_or_else(|| ConfigError::new(&path, Refusal::Invalid))?;
+        if file.components().any(|part| part.as_os_str().to_str()
+            .is_some_and(|part| part == ".env" || part.starts_with(".env."))) {
+            return Err(ConfigError::new(path, Refusal::Invalid));
+        }
+        Ok(file)
+    }).transpose()?;
     let sequencer_id = hex32(&mut object, "sequencer_id")?;
     let key_path = object.field_path("sequencer_public_key");
     let public_key = hex32(&mut object, "sequencer_public_key")?;
@@ -871,6 +881,7 @@ fn gateway(root: &mut Object) -> Result<GatewayConfig, ConfigError> {
     object.finish()?;
     Ok(GatewayConfig {
         endpoint,
+        authorization_file,
         sequencer: SequencerTrust {
             sequencer_id,
             public_key,

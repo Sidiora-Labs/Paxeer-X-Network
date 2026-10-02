@@ -4,6 +4,7 @@
 #include "layerx/lxp_activity.h"
 #include "layerx/lxp_authority.h"
 #include "layerx/lxp_module.h"
+#include "layerx/lxp_protocol.h"
 #include "layerx/lxp_result.h"
 #include "layerx/lxp_u128.h"
 
@@ -134,6 +135,53 @@ typedef lxp_result (*lx_web_submit_fn)(void *context,
                                       const uint8_t *activity,
                                       size_t activity_length);
 
+/* Durable state of one observation submission, named as the kernel relay
+ * journal names its stages. SUBMITTING is recorded with the exact signed
+ * bytes before the first send; UNKNOWN after a send whose receipt is not yet
+ * known. COMPLETED and REJECTED are final and set only from a committed
+ * receipt lookup. */
+enum {
+    LX_WEB_SUBMISSION_SUBMITTING = 1,
+    LX_WEB_SUBMISSION_UNKNOWN = 2,
+    LX_WEB_SUBMISSION_COMPLETED = 3,
+    LX_WEB_SUBMISSION_REJECTED = 4
+};
+
+/* Result of looking an activity id up among committed receipts. PENDING
+ * means the lookup could not decide and nothing is resent on that answer;
+ * NOT_FOUND means the activity is neither committed nor pending. */
+enum {
+    LX_WEB_RECEIPT_PENDING = 0,
+    LX_WEB_RECEIPT_NOT_FOUND = 1,
+    LX_WEB_RECEIPT_COMPLETED = 2,
+    LX_WEB_RECEIPT_REJECTED = 3
+};
+
+/* One submission exactly as signed. The activity bytes are resent unchanged
+ * while their timestamp bound holds; the activity id and idempotency key are
+ * the identity used for receipt lookup. The record is large: callers keep it
+ * off the stack. */
+typedef struct lx_web_submission {
+    uint8_t program_id[32];
+    uint64_t request_id;
+    uint8_t payload_hash[32];
+    uint64_t account_sequence;
+    uint64_t not_after;
+    uint8_t idempotency_key[32];
+    uint8_t activity_id[32];
+    uint8_t activity[LXP_MAX_ACTIVITY_BYTES];
+    size_t activity_length;
+    uint8_t state;
+    int32_t rejection;
+} lx_web_submission;
+
+typedef lxp_result (*lx_web_record_fn)(void *context,
+                                      const lx_web_submission *submission);
+typedef lxp_result (*lx_web_receipt_fn)(void *context,
+                                       const uint8_t activity_id[32],
+                                       const uint8_t idempotency_key[32],
+                                       uint8_t *outcome, int32_t *rejection);
+
 typedef struct lx_web_adapter_config {
     lx_web_poll_fn poll_observations;
     void *poll_context;
@@ -147,6 +195,10 @@ typedef struct lx_web_adapter_config {
     lxp_u128 fee_limit;
     lxp_timestamp_bound timestamp_bound;
     size_t maximum_observations;
+    lx_web_record_fn record_submission;
+    void *record_context;
+    lx_web_receipt_fn lookup_receipt;
+    void *receipt_context;
 } lx_web_adapter_config;
 
 lxp_result lx_web_observation_encode(const lx_web_observation *observation,
@@ -163,6 +215,31 @@ lxp_result lx_web_activity_encode(const lx_web_observation *observation,
                                   lxp_arena *arena, lxp_byte_span *encoded);
 lxp_result lx_web_adapter_run(lx_web_adapter_config *config,
                               size_t *submitted);
+/* Signs one observation into a SUBMITTING submission at the given account
+ * sequence. Nothing is persisted or sent. */
+lxp_result lx_web_submission_prepare(const lx_web_adapter_config *config,
+                                     const lx_web_observation *observation,
+                                     uint64_t account_sequence,
+                                     lx_web_submission *submission);
+/* Checks that persisted submission bytes still decode to the recorded
+ * identity: idempotency key, activity id, account sequence and the
+ * program/request/payload-hash binding of the observation they carry. */
+lxp_result lx_web_submission_check(const lx_web_submission *submission,
+                                   uint32_t network_id);
+/* Resolves a SUBMITTING or UNKNOWN submission after restart. The receipt
+ * lookup always comes first: COMPLETED and REJECTED are recorded as final,
+ * PENDING leaves the record UNKNOWN, NOT_FOUND resends the exact bytes while
+ * now does not pass their timestamp bound; expired unresolved submissions
+ * retain their exact signed bytes and remain UNKNOWN. Final records are left as
+ * they are. */
+lxp_result lx_web_submission_recover(lx_web_adapter_config *config,
+                                     lx_web_submission *submission,
+                                     uint64_t now);
+/* As lx_web_adapter_run, but each submission is recorded SUBMITTING before
+ * it is sent and UNKNOWN after; record_submission and lookup_receipt are
+ * required. */
+lxp_result lx_web_adapter_run_durable(lx_web_adapter_config *config,
+                                      size_t *submitted);
 
 lxp_result lx_web_preimage_encode(uint8_t origin,
                                   const uint8_t network_id[32],
