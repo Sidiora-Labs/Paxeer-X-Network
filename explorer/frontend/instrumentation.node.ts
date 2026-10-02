@@ -45,8 +45,8 @@ const sdk = new NodeSDK({
             if (
               url.pathname.startsWith('/_next/static/') ||
               url.pathname.startsWith('/_next/data/') ||
-              url.pathname.startsWith('/assets/') ||
-              url.pathname.startsWith('/static/')
+              url.pathname.startsWith('/explorer/assets/') ||
+              url.pathname.startsWith('/explorer/static/')
             ) {
               return true;
             }

@@ -20,7 +20,7 @@ const scrollbar = {
   },
   'body *::-webkit-resizer': {
     // FIXME for dark mode we need to use a different image - /static/resizer_dark.png
-    backgroundImage: 'url(/static/resizer_light.png)',
+    backgroundImage: 'url(/explorer/static/resizer_light.png)',
     backgroundSize: '20px',
   },
   'body *': {

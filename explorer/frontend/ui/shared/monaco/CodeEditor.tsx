@@ -255,7 +255,7 @@ const CodeEditor = ({ data, remappings, libraries, language, mainFile, contractN
     },
     '& .main-contract-glyph': {
       zIndex: 1,
-      background: 'url(/static/contract_star.png) no-repeat center center',
+      background: 'url(/explorer/static/contract_star.png) no-repeat center center',
       backgroundSize: '12px',
       cursor: 'pointer',
     },

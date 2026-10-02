@@ -19,7 +19,7 @@ const handler = async(nextReq: NextApiRequest, nextRes: NextApiResponse) => {
   }
 
   const url = new URL(
-    nextReq.url.replace(/^\/node-api\/proxy/, ''),
+    nextReq.url.replace(/^\/(?:explorer\/)?node-api\/proxy(?=\/|$)/, ''),
     nextReq.headers['x-endpoint']?.toString() || appConfig.apis.general?.endpoint,
   );
   const apiRes = await fetchFactory(nextReq)(
@@ -45,7 +45,8 @@ const handler = async(nextReq: NextApiRequest, nextRes: NextApiResponse) => {
 
   const setCookie = apiRes.headers.raw()['set-cookie'];
   setCookie?.forEach((value) => {
-    nextRes.appendHeader('set-cookie', value);
+    const scoped = value.replace(/;\s*Domain=[^;]*/gi, '').replace(/;\s*Path=[^;]*/gi, '');
+    nextRes.appendHeader('set-cookie', `${ scoped }; Path=/explorer`);
   });
 
   nextRes.status(apiRes.status).send(apiRes.body);

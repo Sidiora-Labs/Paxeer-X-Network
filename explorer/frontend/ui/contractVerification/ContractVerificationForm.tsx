@@ -130,7 +130,7 @@ const ContractVerificationForm = ({ method: methodFromQuery, config, hash }: Pro
       { send_immediately: true },
     );
 
-    window.location.assign(route({ pathname: '/address/[hash]', query: { hash: address, tab: 'contract' } }));
+    window.location.assign('/explorer' + route({ pathname: '/address/[hash]', query: { hash: address, tab: 'contract' } }));
   }, [ setError, address, getValues ]);
 
   const handleSocketError = React.useCallback(() => {

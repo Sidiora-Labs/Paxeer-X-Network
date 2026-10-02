@@ -18,7 +18,7 @@ export default function buildUrl<R extends ResourceName>(
   const { api, resource } = getResourceParams(resourceFullName, chain);
   const baseUrl = !noProxy && isNeedProxy() ? config.app.baseUrl : api.endpoint;
   const basePath = api.basePath ?? '';
-  const path = !noProxy && isNeedProxy() ? '/node-api/proxy' + basePath + resource.path : basePath + resource.path;
+  const path = !noProxy && isNeedProxy() ? '/explorer/node-api/proxy' + basePath + resource.path : basePath + resource.path;
   const url = new URL(compile(path)(pathParams), baseUrl);
 
   queryParams && Object.entries(queryParams).forEach(([ key, value ]) => {

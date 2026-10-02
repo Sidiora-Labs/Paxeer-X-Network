@@ -188,7 +188,7 @@ const TxInterpretationElementByType = (
 };
 
 const TxInterpretation = ({ summary, isLoading, addressDataMap, className, chainData, isNoves, ...rest }: Props) => {
-  const novesLogoUrl = useColorModeValue('/static/noves-logo.svg', '/static/noves-logo-dark.svg');
+  const novesLogoUrl = useColorModeValue('/explorer/static/noves-logo.svg', '/explorer/static/noves-logo-dark.svg');
   if (!summary) {
     return null;
   }
