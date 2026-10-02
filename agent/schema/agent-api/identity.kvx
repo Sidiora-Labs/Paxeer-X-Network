@@ -102,7 +102,8 @@ DaemonLimit.guarantee = "daemon_enforced"
 DaemonLimit.notice = "Bypassing the daemon bypasses this limit. It is not equivalent to a protocol budget."
 
 [operation.budget.create]
-optional = ["authorization"]
+optional = ["authorization","purpose"]
+purpose = "TextV1 purpose label: nonempty UTF-8 text, any content including 64 hexadecimal characters, committed with purpose_commitment_v1 as SHA-256 of b\"layerx:purpose-commitment:v1\\0\" followed by the exact text bytes. When present the daemon refuses the create unless the commitment equals the purpose disclosed by the signed budget-create activity; the label is checked against that activity and is never a signing input. When absent the create is unchanged."
 authorization = "BudgetAuthorization: required when enforcement is ProtocolBudget, refused when enforcement is DaemonLimit"
 expiry_unit = "TimestampSeconds; the core expiry is expiry multiplied by 1000 with checked overflow and must equal the signed activity expiry in milliseconds exactly"
 required = ["tenant","agent_did","asset","limit","enforcement","expiry"]

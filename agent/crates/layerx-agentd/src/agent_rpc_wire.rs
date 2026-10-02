@@ -174,9 +174,16 @@ pub(crate) struct BudgetCreateWire {
     expiry: String,
     #[serde(default)]
     authorization: Option<BudgetAuthorizationWire>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    purpose: Option<String>,
 }
 
 impl BudgetCreateWire {
+    /// The optional `TextV1` purpose label. It is not part of the canonical body digest.
+    pub(crate) fn purpose(&self) -> Option<&str> {
+        self.purpose.as_deref()
+    }
+
     pub(crate) fn into_request(
         self,
         id: RequestId,
@@ -1189,5 +1196,56 @@ impl ProgramActivityWire {
     pub(crate) fn into_request(self, id: RequestId) -> Result<[u8; 32], Rejection> {
         requested_verification(&self.requested_verification_level, id)?;
         hex32(&self.activity_id, id)
+    }
+}
+
+#[cfg(test)]
+mod budget_create_wire_tests {
+    use super::{BudgetCreateWire, Canonical};
+    use layerx_agent_api::error::RequestId;
+    use serde_json::{json, Value};
+
+    fn body(purpose: Option<&str>) -> Value {
+        let mut body = json!({
+            "tenant": "tenant",
+            "agent_did": "did:layerx:alice",
+            "asset": "asset",
+            "limit": "10",
+            "enforcement": "DaemonLimit",
+            "expiry": "100",
+        });
+        if let (Some(purpose), Some(object)) = (purpose, body.as_object_mut()) {
+            object.insert("purpose".into(), Value::String(purpose.to_owned()));
+        }
+        body
+    }
+
+    #[test]
+    fn purpose_label_is_optional_and_outside_the_canonical_body() {
+        let hex_label = "ab".repeat(32);
+        let absent = serde_json::from_value::<BudgetCreateWire>(body(None));
+        let present = serde_json::from_value::<BudgetCreateWire>(body(Some(&hex_label)));
+        assert!(matches!(&absent, Ok(wire) if wire.purpose().is_none()));
+        assert!(matches!(&present, Ok(wire) if wire.purpose() == Some(hex_label.as_str())));
+        let (Ok(absent), Ok(present)) = (absent, present) else {
+            panic!("budget create wire did not decode");
+        };
+        let (Ok(absent), Ok(present)) = (
+            absent.into_request(RequestId(1)),
+            present.into_request(RequestId(1)),
+        ) else {
+            panic!("budget create wire did not convert");
+        };
+        assert_eq!(absent, present);
+        assert_eq!(absent.request.canonical(), present.request.canonical());
+    }
+
+    #[test]
+    fn unknown_budget_create_field_is_refused() {
+        let mut unknown = body(Some("rent"));
+        if let Some(object) = unknown.as_object_mut() {
+            object.insert("label".into(), Value::String("rent".into()));
+        }
+        assert!(serde_json::from_value::<BudgetCreateWire>(unknown).is_err());
     }
 }

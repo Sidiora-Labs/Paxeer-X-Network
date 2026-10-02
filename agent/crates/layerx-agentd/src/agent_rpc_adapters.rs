@@ -1361,7 +1361,9 @@ pub(crate) fn budget_create<A: HumanAuthorityBoundary>(
     use crate::agent_rpc_dispatch::mutation_key;
     use crate::agent_rpc_wire::{decode_wire, BudgetCreateWire};
     let id = ctx.request_id;
-    let typed = decode_wire::<BudgetCreateWire>(request, id)?.into_request(id)?;
+    let wire = decode_wire::<BudgetCreateWire>(request, id)?;
+    let purpose = wire.purpose().map(str::to_owned);
+    let typed = wire.into_request(id)?;
     let envelope = crate::human::MutationEnvelope {
         request_id: id.0,
         key: mutation_key(ctx)?,
@@ -1372,7 +1374,12 @@ pub(crate) fn budget_create<A: HumanAuthorityBoundary>(
         .lock()
         .and_then(|mut guard| {
             let control = guard.session_control.clone();
-            guard.budget_create(context, &control, envelope)
+            match purpose.as_deref() {
+                None => guard.budget_create(context, &control, envelope),
+                Some(purpose) => {
+                    guard.budget_create_with_purpose(context, &control, envelope, purpose)
+                }
+            }
         })
         .map_err(|error| owner_error(id, error))?;
     Ok(budget_record_value(&response))

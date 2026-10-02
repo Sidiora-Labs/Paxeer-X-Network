@@ -100,6 +100,26 @@ fn authorization_value(authorization: Option<&BudgetAuthorization>) -> Value {
     })
 }
 
+fn budget_create_body(
+    mutation: &SignedBudgetMutation<BudgetCreate>,
+    purpose: Option<&str>,
+) -> Value {
+    let request = &mutation.request;
+    let mut body = json!({
+        "tenant": request.tenant.as_str(),
+        "agent_did": request.agent_did.as_str(),
+        "asset": request.asset.as_str(),
+        "limit": request.limit.0.to_string(),
+        "enforcement": enforcement_wire(request.enforcement),
+        "expiry": request.expiry.0.to_string(),
+        "authorization": authorization_value(mutation.authorization.as_ref()),
+    });
+    if let (Some(purpose), Some(object)) = (purpose, body.as_object_mut()) {
+        object.insert("purpose".into(), Value::String(purpose.to_owned()));
+    }
+    body
+}
+
 fn flag(value: &Value, operation: Operation) -> Result<bool, EnvelopeError> {
     value.as_bool().ok_or_else(|| violation(operation))
 }
@@ -294,6 +314,38 @@ impl AgentEnvelopeTransport {
         credential: &EnvelopeCredential,
         mutation: &SignedBudgetMutation<BudgetCreate>,
     ) -> Result<AuthorityResponse<BudgetRecordEntry>, EnvelopeError> {
+        self.send_budget_create(request_id, key, credential, mutation, None)
+    }
+
+    /// Creates one budget exactly as [`Self::budget_create`] does and also sends the `TextV1`
+    /// purpose label. The body is identical plus `purpose`, and the canonical body digest is
+    /// unchanged. No local comparison is made: the daemon refuses the create unless the label
+    /// commits to the purpose disclosed by the signed budget-create activity, so the label is
+    /// an assertion checked against that activity, never a signing input.
+    ///
+    /// # Errors
+    ///
+    /// Returns every [`Self::budget_create`] error, including the daemon refusal of a label
+    /// that does not match the disclosed purpose.
+    pub fn budget_create_with_purpose(
+        &self,
+        request_id: RequestId,
+        key: Key,
+        credential: &EnvelopeCredential,
+        mutation: &SignedBudgetMutation<BudgetCreate>,
+        label: &crate::purpose::PurposeLabel,
+    ) -> Result<AuthorityResponse<BudgetRecordEntry>, EnvelopeError> {
+        self.send_budget_create(request_id, key, credential, mutation, Some(label.text()))
+    }
+
+    fn send_budget_create(
+        &self,
+        request_id: RequestId,
+        key: Key,
+        credential: &EnvelopeCredential,
+        mutation: &SignedBudgetMutation<BudgetCreate>,
+        purpose: Option<&str>,
+    ) -> Result<AuthorityResponse<BudgetRecordEntry>, EnvelopeError> {
         let operation = Operation::BudgetCreate;
         let mutation = mutation
             .clone()
@@ -305,15 +357,7 @@ impl AgentEnvelopeTransport {
             request_id,
             key,
             credential,
-            &json!({
-                "tenant": request.tenant.as_str(),
-                "agent_did": request.agent_did.as_str(),
-                "asset": request.asset.as_str(),
-                "limit": request.limit.0.to_string(),
-                "enforcement": enforcement_wire(request.enforcement),
-                "expiry": request.expiry.0.to_string(),
-                "authorization": authorization_value(mutation.authorization.as_ref()),
-            }),
+            &budget_create_body(&mutation, purpose),
             (&request.tenant, &request.agent_did),
         )?;
         let record = &response.value.record;
@@ -519,5 +563,47 @@ impl AgentEnvelopeTransport {
                 activity_id,
             },
         })
+    }
+}
+
+#[cfg(test)]
+mod budget_create_body_tests {
+    use layerx_agent_api::budget::{BudgetCreate, BudgetEnforcement, SignedBudgetMutation};
+    use layerx_agent_api::identity::{AgentDid, Asset, ContractError, TenantId};
+    use layerx_agent_api::{BudgetLimit, TimestampSeconds};
+    use serde_json::Value;
+
+    use super::budget_create_body;
+    use crate::purpose::PurposeLabel;
+
+    #[test]
+    fn purpose_label_is_sent_beside_the_unchanged_body() -> Result<(), ContractError> {
+        let mutation = SignedBudgetMutation {
+            request: BudgetCreate {
+                tenant: TenantId::new("tenant")?,
+                agent_did: AgentDid::new("did:layerx:alice")?,
+                asset: Asset::new("asset")?,
+                limit: BudgetLimit(10),
+                enforcement: BudgetEnforcement::DaemonLimit,
+                expiry: TimestampSeconds(100),
+            },
+            authorization: None,
+        };
+        let hex_label = "ab".repeat(32);
+        let Ok(label) = PurposeLabel::new(&hex_label) else {
+            panic!("a nonempty purpose label is valid");
+        };
+        let plain = budget_create_body(&mutation, None);
+        let mut labelled = budget_create_body(&mutation, Some(label.text()));
+        assert!(plain.get("purpose").is_none());
+        assert_eq!(
+            labelled.get("purpose"),
+            Some(&Value::String(hex_label.clone()))
+        );
+        if let Some(object) = labelled.as_object_mut() {
+            object.remove("purpose");
+        }
+        assert_eq!(labelled, plain);
+        Ok(())
     }
 }

@@ -2278,6 +2278,28 @@ impl<A: HumanAuthorityBoundary> UnifiedAgentOwner<A> {
         })
     }
 
+    /// Creates a budget whose signed budget-create activity must disclose the purpose committed
+    /// by the `TextV1` label `purpose`; the label is checked, never signed.
+    ///
+    /// # Errors
+    /// Returns every refusal of the unlabelled create, and `BudgetContextMismatch` when the
+    /// label does not match the disclosed purpose or is given for a daemon limit.
+    pub(crate) fn budget_create_with_purpose(
+        &mut self,
+        context: &crate::agent_rpc_peer::RpcOwnerContext<'_>,
+        control: &crate::session_control::SessionControl,
+        request: MutationEnvelope<
+            layerx_agent_api::budget::SignedBudgetMutation<layerx_agent_api::budget::BudgetCreate>,
+        >,
+        purpose: &str,
+    ) -> Result<
+        layerx_agent_api::budget::AuthorityResponse<crate::human::BudgetState>,
+        HumanOperationError,
+    > {
+        self.lock_operations()?
+            .budget_create_labelled(context, control, request, Some(purpose))
+    }
+
     fn lock_operations(
         &self,
     ) -> Result<MutexGuard<'_, ProductionHumanOperations<A>>, HumanOperationError> {
@@ -6515,6 +6537,252 @@ impl<A: HumanAuthorityBoundary> ProductionHumanOperations<A> {
 }
 
 impl<A: HumanAuthorityBoundary> ProductionHumanOperations<A> {
+    /// Creates a budget as the `HumanOperations` budget create does; a present `purpose`
+    /// label (`TextV1` profile) must commit to the purpose disclosed by the signed budget-create
+    /// activity. The label is checked against that activity and is never a signing input; a
+    /// daemon limit has no signed purpose, so a label on it is refused.
+    ///
+    /// # Errors
+    /// Returns every refusal of the unlabelled create, and `BudgetContextMismatch` when a label
+    /// is empty, does not match the disclosed purpose, or is given for a daemon limit.
+    pub(crate) fn budget_create_labelled(
+        &mut self,
+        context: &crate::agent_rpc_peer::RpcOwnerContext<'_>,
+        control: &crate::session_control::SessionControl,
+        request: MutationEnvelope<
+            layerx_agent_api::budget::SignedBudgetMutation<layerx_agent_api::budget::BudgetCreate>,
+        >,
+        purpose: Option<&str>,
+    ) -> Result<
+        layerx_agent_api::budget::AuthorityResponse<crate::human::BudgetState>,
+        HumanOperationError,
+    > {
+        use layerx_agent_api::budget::{BudgetEnforcement, BudgetRecord, ProtocolBudgetView};
+        let MutationEnvelope {
+            key,
+            body_digest,
+            operation,
+            ..
+        } = request;
+        let mutation = operation.validate().map_err(budget_contract_refusal)?;
+        let create = &mutation.request;
+        let (tenant, authority) = budget_authority(
+            context,
+            control,
+            create.tenant.as_str(),
+            create.agent_did.as_str(),
+        )?;
+        let expiry_ms = crate::budget::core_expiry_ms(create.expiry.0).map_err(budget_refusal)?;
+        let asset = digest_from_hex(create.asset.as_str())
+            .ok_or(HumanOperationError::Typed(crate::human::HumanRefusal::BudgetCodec))?;
+        let value = match create.enforcement {
+            BudgetEnforcement::DaemonLimit => {
+                if purpose.is_some() {
+                    return Err(HumanOperationError::Typed(
+                        crate::human::HumanRefusal::BudgetContextMismatch,
+                    ));
+                }
+                let limiter = self
+                    .budget_limiter
+                    .clone()
+                    .ok_or(HumanOperationError::Unavailable)?;
+                let snapshot = core_preparation_snapshot(
+                    &mut self.node,
+                    context.peer(),
+                    &context.principal().agent,
+                )?;
+                let now = snapshot.protocol_timestamp;
+                let budget_id = daemon_limit_budget_id(&tenant, create.agent_did.as_str(), &key);
+                let record = crate::budget::DaemonLimitRecord {
+                    tenant: tenant.clone(),
+                    budget_id,
+                    limit_id: crate::budget::daemon_limit_id(budget_id),
+                    agent_digest: daemon_limit_agent(create.agent_did.as_str()),
+                    asset,
+                    ceiling: create.limit.0,
+                    consumed: 0,
+                    expiry_ms,
+                    revoked: false,
+                    mutation_key: key,
+                    body_digest,
+                    revoke_key: [0; 32],
+                };
+                let store = &self.store;
+                let created = context
+                    .commit(control, |_| {
+                        let mut store = store
+                            .lock()
+                            .map_err(|_| crate::session_control::SessionControlError::Unavailable)?;
+                        crate::budget::create_daemon_limit(
+                            &mut store,
+                            &limiter,
+                            record,
+                            crate::budget::CoreTimestampMs(now),
+                        )
+                        .map_err(|error| {
+                            crate::session_control::SessionControlError::Human(
+                                daemon_limit_refusal(error),
+                            )
+                        })
+                    })
+                    .map_err(rpc_commit_error)?;
+                crate::human::BudgetState {
+                    record: BudgetRecord::Daemon(daemon_limit_view(&created)),
+                    balance: created
+                        .ceiling
+                        .checked_sub(created.consumed)
+                        .ok_or(HumanOperationError::Unavailable)?,
+                    proven_head: snapshot.observed_head_sequence,
+                    activity_id: None,
+                }
+            }
+            BudgetEnforcement::ProtocolBudget => {
+                let carrier = mutation.authorization.as_ref().ok_or(HumanOperationError::Typed(
+                    crate::human::HumanRefusal::BudgetAuthorizationRequired,
+                ))?;
+                let peer = context.peer();
+                let prepared_key = (
+                    peer.tenant.clone(),
+                    peer.principal.clone(),
+                    carrier.preparation_ref.as_str().to_owned(),
+                );
+                let cached = self
+                    .prepared
+                    .get(&prepared_key)
+                    .cloned()
+                    .ok_or(HumanOperationError::Refused)?;
+                let Some(layerx_crypto::disclosure::DisclosedNativeOperation::BudgetCreate(
+                    disclosed,
+                )) = cached.prepared.disclosure.native_operation.as_ref()
+                else {
+                    return Err(HumanOperationError::Typed(
+                        crate::human::HumanRefusal::BudgetCodec,
+                    ));
+                };
+                let agent = disclosed.budget_id;
+                let candidate = {
+                    let store = self
+                        .store
+                        .lock()
+                        .map_err(|_| HumanOperationError::Unavailable)?;
+                    managed_agent::budget_candidate(&store, &tenant, agent)?
+                };
+                if candidate.agent_did != create.agent_did.as_str() {
+                    return Err(HumanOperationError::Refused);
+                }
+                let (signature, signer) = owner_signature(&cached.prepared, carrier)?;
+                let signed = attach_external_signature(&cached.prepared, signature)
+                    .map_err(|_| HumanOperationError::Refused)?;
+                let submission =
+                    verify_before_submit(&signed, &cached.prepared, &signer, &cached.registry)
+                        .map_err(|_| HumanOperationError::Refused)?;
+                if submission.idempotency_key() != key {
+                    return Err(HumanOperationError::Refused);
+                }
+                let identity =
+                    crate::budget::budget_create_identity(submission.exact_bytes(), &cached.registry)
+                        .map_err(budget_refusal)?;
+                if identity.expiry_ms != expiry_ms
+                    || identity.asset != asset
+                    || identity.per_period_limit != create.limit.0
+                {
+                    return Err(HumanOperationError::Typed(
+                        crate::human::HumanRefusal::BudgetContextMismatch,
+                    ));
+                }
+                if let Some(purpose) = purpose {
+                    let commitment = layerx_crypto::purpose::purpose_commitment_v1(purpose)
+                        .map_err(|_| {
+                            HumanOperationError::Typed(
+                                crate::human::HumanRefusal::BudgetContextMismatch,
+                            )
+                        })?;
+                    if commitment != identity.purpose {
+                        return Err(HumanOperationError::Typed(
+                            crate::human::HumanRefusal::BudgetContextMismatch,
+                        ));
+                    }
+                }
+                let (preparation_id, head) = self.admit_budget_submit(
+                    context,
+                    control,
+                    &tenant,
+                    &cached,
+                    carrier.preparation_ref.as_str(),
+                    &submission,
+                )?;
+                let ceiling = create.limit.0;
+                let outcome = context
+                    .commit(control, |peer| {
+                        self.confirm_protocol_budget(
+                            peer,
+                            &tenant,
+                            &prepared_key,
+                            signature,
+                            signer,
+                            agent,
+                            asset,
+                            ceiling,
+                            expiry_ms,
+                        )
+                        .map_err(crate::session_control::SessionControlError::Human)
+                    })
+                    .map_err(rpc_commit_error)?;
+                let (release, sequence) = match &outcome {
+                    Ok(budget) => (
+                        crate::budget::ReleaseKind::Executed,
+                        budget.observed_head_sequence(),
+                    ),
+                    Err(BudgetCreationError::CoreRejected) => {
+                        (crate::budget::ReleaseKind::Failed, head)
+                    }
+                    Err(_) => (crate::budget::ReleaseKind::Unknown, head),
+                };
+                control
+                    .settle_write(&tenant, preparation_id, release, sequence)
+                    .map_err(rpc_commit_error)?;
+                let budget = outcome.map_err(budget_refusal)?;
+                let created = budget.record();
+                let peer = context.peer();
+                let registry = self.authority.registry(peer).map_err(map_core)?;
+                let (_, sequencer_key, authorization) = self.budget_read_parts(peer)?;
+                let mut pipeline = NodeBudgetPipeline {
+                    node: &mut self.node,
+                    registry: &registry,
+                    signer,
+                    correlation: boundary_correlation(
+                        peer,
+                        create.agent_did.as_str().as_bytes(),
+                        b"budget-create-balance",
+                    ),
+                    authorization,
+                    sequencer_key,
+                    receipt_poll: BUDGET_RECEIPT_POLL,
+                    receipt_attempts: BUDGET_RECEIPT_ATTEMPTS,
+                };
+                let balance = crate::budget::BudgetMutationPipeline::budget_balance(
+                    &mut pipeline,
+                    created.budget_account,
+                    created.asset_id,
+                )
+                .map_err(budget_refusal)?;
+                crate::human::BudgetState {
+                    record: BudgetRecord::Protocol(
+                        ProtocolBudgetView::from_proven(
+                            created,
+                            layerx_agent_api::verify::Level::StateProven,
+                        )
+                        .map_err(budget_contract_refusal)?,
+                    ),
+                    balance,
+                    proven_head: budget.observed_head_sequence(),
+                    activity_id: Some(submission.activity_id()),
+                }
+            }
+        };
+        Ok(layerx_agent_api::budget::AuthorityResponse { authority, value })
+    }
+
     fn authenticated_subscription_scope(
         context: &crate::agent_rpc_peer::RpcOwnerContext<'_>,
         scope: &layerx_agent_api::subscription::SubscriptionScope,
@@ -8347,212 +8615,7 @@ impl<A: HumanAuthorityBoundary> HumanOperations for ProductionHumanOperations<A>
         layerx_agent_api::budget::AuthorityResponse<crate::human::BudgetState>,
         HumanOperationError,
     > {
-        use layerx_agent_api::budget::{BudgetEnforcement, BudgetRecord, ProtocolBudgetView};
-        let MutationEnvelope {
-            key,
-            body_digest,
-            operation,
-            ..
-        } = request;
-        let mutation = operation.validate().map_err(budget_contract_refusal)?;
-        let create = &mutation.request;
-        let (tenant, authority) = budget_authority(
-            context,
-            control,
-            create.tenant.as_str(),
-            create.agent_did.as_str(),
-        )?;
-        let expiry_ms = crate::budget::core_expiry_ms(create.expiry.0).map_err(budget_refusal)?;
-        let asset = digest_from_hex(create.asset.as_str())
-            .ok_or(HumanOperationError::Typed(crate::human::HumanRefusal::BudgetCodec))?;
-        let value = match create.enforcement {
-            BudgetEnforcement::DaemonLimit => {
-                let limiter = self
-                    .budget_limiter
-                    .clone()
-                    .ok_or(HumanOperationError::Unavailable)?;
-                let snapshot = core_preparation_snapshot(
-                    &mut self.node,
-                    context.peer(),
-                    &context.principal().agent,
-                )?;
-                let now = snapshot.protocol_timestamp;
-                let budget_id = daemon_limit_budget_id(&tenant, create.agent_did.as_str(), &key);
-                let record = crate::budget::DaemonLimitRecord {
-                    tenant: tenant.clone(),
-                    budget_id,
-                    limit_id: crate::budget::daemon_limit_id(budget_id),
-                    agent_digest: daemon_limit_agent(create.agent_did.as_str()),
-                    asset,
-                    ceiling: create.limit.0,
-                    consumed: 0,
-                    expiry_ms,
-                    revoked: false,
-                    mutation_key: key,
-                    body_digest,
-                    revoke_key: [0; 32],
-                };
-                let store = &self.store;
-                let created = context
-                    .commit(control, |_| {
-                        let mut store = store
-                            .lock()
-                            .map_err(|_| crate::session_control::SessionControlError::Unavailable)?;
-                        crate::budget::create_daemon_limit(
-                            &mut store,
-                            &limiter,
-                            record,
-                            crate::budget::CoreTimestampMs(now),
-                        )
-                        .map_err(|error| {
-                            crate::session_control::SessionControlError::Human(
-                                daemon_limit_refusal(error),
-                            )
-                        })
-                    })
-                    .map_err(rpc_commit_error)?;
-                crate::human::BudgetState {
-                    record: BudgetRecord::Daemon(daemon_limit_view(&created)),
-                    balance: created
-                        .ceiling
-                        .checked_sub(created.consumed)
-                        .ok_or(HumanOperationError::Unavailable)?,
-                    proven_head: snapshot.observed_head_sequence,
-                    activity_id: None,
-                }
-            }
-            BudgetEnforcement::ProtocolBudget => {
-                let carrier = mutation.authorization.as_ref().ok_or(HumanOperationError::Typed(
-                    crate::human::HumanRefusal::BudgetAuthorizationRequired,
-                ))?;
-                let peer = context.peer();
-                let prepared_key = (
-                    peer.tenant.clone(),
-                    peer.principal.clone(),
-                    carrier.preparation_ref.as_str().to_owned(),
-                );
-                let cached = self
-                    .prepared
-                    .get(&prepared_key)
-                    .cloned()
-                    .ok_or(HumanOperationError::Refused)?;
-                let Some(layerx_crypto::disclosure::DisclosedNativeOperation::BudgetCreate(
-                    disclosed,
-                )) = cached.prepared.disclosure.native_operation.as_ref()
-                else {
-                    return Err(HumanOperationError::Typed(
-                        crate::human::HumanRefusal::BudgetCodec,
-                    ));
-                };
-                let agent = disclosed.budget_id;
-                let candidate = {
-                    let store = self
-                        .store
-                        .lock()
-                        .map_err(|_| HumanOperationError::Unavailable)?;
-                    managed_agent::budget_candidate(&store, &tenant, agent)?
-                };
-                if candidate.agent_did != create.agent_did.as_str() {
-                    return Err(HumanOperationError::Refused);
-                }
-                let (signature, signer) = owner_signature(&cached.prepared, carrier)?;
-                let signed = attach_external_signature(&cached.prepared, signature)
-                    .map_err(|_| HumanOperationError::Refused)?;
-                let submission =
-                    verify_before_submit(&signed, &cached.prepared, &signer, &cached.registry)
-                        .map_err(|_| HumanOperationError::Refused)?;
-                if submission.idempotency_key() != key {
-                    return Err(HumanOperationError::Refused);
-                }
-                let identity =
-                    crate::budget::budget_create_identity(submission.exact_bytes(), &cached.registry)
-                        .map_err(budget_refusal)?;
-                if identity.expiry_ms != expiry_ms
-                    || identity.asset != asset
-                    || identity.per_period_limit != create.limit.0
-                {
-                    return Err(HumanOperationError::Typed(
-                        crate::human::HumanRefusal::BudgetContextMismatch,
-                    ));
-                }
-                let (preparation_id, head) = self.admit_budget_submit(
-                    context,
-                    control,
-                    &tenant,
-                    &cached,
-                    carrier.preparation_ref.as_str(),
-                    &submission,
-                )?;
-                let ceiling = create.limit.0;
-                let outcome = context
-                    .commit(control, |peer| {
-                        self.confirm_protocol_budget(
-                            peer,
-                            &tenant,
-                            &prepared_key,
-                            signature,
-                            signer,
-                            agent,
-                            asset,
-                            ceiling,
-                            expiry_ms,
-                        )
-                        .map_err(crate::session_control::SessionControlError::Human)
-                    })
-                    .map_err(rpc_commit_error)?;
-                let (release, sequence) = match &outcome {
-                    Ok(budget) => (
-                        crate::budget::ReleaseKind::Executed,
-                        budget.observed_head_sequence(),
-                    ),
-                    Err(BudgetCreationError::CoreRejected) => {
-                        (crate::budget::ReleaseKind::Failed, head)
-                    }
-                    Err(_) => (crate::budget::ReleaseKind::Unknown, head),
-                };
-                control
-                    .settle_write(&tenant, preparation_id, release, sequence)
-                    .map_err(rpc_commit_error)?;
-                let budget = outcome.map_err(budget_refusal)?;
-                let created = budget.record();
-                let peer = context.peer();
-                let registry = self.authority.registry(peer).map_err(map_core)?;
-                let (_, sequencer_key, authorization) = self.budget_read_parts(peer)?;
-                let mut pipeline = NodeBudgetPipeline {
-                    node: &mut self.node,
-                    registry: &registry,
-                    signer,
-                    correlation: boundary_correlation(
-                        peer,
-                        create.agent_did.as_str().as_bytes(),
-                        b"budget-create-balance",
-                    ),
-                    authorization,
-                    sequencer_key,
-                    receipt_poll: BUDGET_RECEIPT_POLL,
-                    receipt_attempts: BUDGET_RECEIPT_ATTEMPTS,
-                };
-                let balance = crate::budget::BudgetMutationPipeline::budget_balance(
-                    &mut pipeline,
-                    created.budget_account,
-                    created.asset_id,
-                )
-                .map_err(budget_refusal)?;
-                crate::human::BudgetState {
-                    record: BudgetRecord::Protocol(
-                        ProtocolBudgetView::from_proven(
-                            created,
-                            layerx_agent_api::verify::Level::StateProven,
-                        )
-                        .map_err(budget_contract_refusal)?,
-                    ),
-                    balance,
-                    proven_head: budget.observed_head_sequence(),
-                    activity_id: Some(submission.activity_id()),
-                }
-            }
-        };
-        Ok(layerx_agent_api::budget::AuthorityResponse { authority, value })
+        self.budget_create_labelled(context, control, request, None)
     }
 
     fn budget_fund(
