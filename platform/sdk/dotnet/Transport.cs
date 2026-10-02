@@ -670,10 +670,10 @@ public sealed class AgentEnvelopeTransport : IPlatformTransport, IDisposable
     private const int MaximumResponseBytes = 8 * 1024 * 1024;
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
     private static readonly HashSet<string> BootstrapOperations = new(StringComparer.Ordinal) { "agent.register", "session.open" };
-    private static readonly HashSet<string> Levels = new(StringComparer.Ordinal)
-    {
+    private static readonly string[] Levels =
+    [
         "Unverified", "SequencerSigned", "BatchIncluded", "StateProven", "CheckpointFinalised", "SettlementAnchored",
-    };
+    ];
     private readonly Uri _endpoint;
     private readonly HttpClient _httpClient;
     private readonly AgentSessionCredential? _credential;
@@ -718,7 +718,8 @@ public sealed class AgentEnvelopeTransport : IPlatformTransport, IDisposable
     public async Task<JsonValue> SendAsync(TransportCall call, CancellationToken cancellationToken = default) =>
         (await SendEnvelopeAsync(call, cancellationToken).ConfigureAwait(false)).Value;
 
-    public async Task<AgentEnvelopeResult> SendEnvelopeAsync(TransportCall call, CancellationToken cancellationToken = default)
+    public async Task<AgentEnvelopeResult> SendEnvelopeAsync(TransportCall call, CancellationToken cancellationToken = default,
+        Action<int, byte[]>? observeResponse = null)
     {
         var descriptor = call.Operation.Descriptor();
         var mutating = descriptor.RequiresIdempotency;
@@ -738,7 +739,8 @@ public sealed class AgentEnvelopeTransport : IPlatformTransport, IDisposable
             try
             {
                 if (response.Content.Headers.ContentType?.MediaType is not string mediaType ||
-                    !string.Equals(mediaType, "application/json", StringComparison.OrdinalIgnoreCase)) throw Decode(requestId);
+                    !string.Equals(mediaType, "application/json", StringComparison.OrdinalIgnoreCase))
+                    throw mutating ? UnknownOutcome(requestId) : new PlatformSdkException(SdkErrorCode.TransportFailure, RetryClass.Safe, requestId);
                 encoded = await ReadBoundedAsync(response.Content, requestId, cancellationToken).ConfigureAwait(false);
             }
             catch (PlatformSdkException) when (mutating) { throw UnknownOutcome(requestId); }
@@ -746,6 +748,9 @@ public sealed class AgentEnvelopeTransport : IPlatformTransport, IDisposable
             catch when (mutating) { throw UnknownOutcome(requestId); }
             catch (OperationCanceledException) { throw new PlatformSdkException(SdkErrorCode.Deadline, RetryClass.Safe, requestId); }
             catch { throw new PlatformSdkException(SdkErrorCode.TransportFailure, RetryClass.Safe, requestId); }
+            observeResponse?.Invoke((int)response.StatusCode, encoded);
+            if ((int)response.StatusCode is 502 or 503 && IsEdgeReply(encoded))
+                throw mutating ? UnknownOutcome(requestId) : new PlatformSdkException(SdkErrorCode.TransportFailure, RetryClass.Safe, requestId);
             try { return DecodeResponse((int)response.StatusCode, encoded, requestId); }
             catch (PlatformSdkException error) when (mutating && error.Code is SdkErrorCode.DecodeFailure or SdkErrorCode.VerificationFailure)
             {
@@ -829,13 +834,15 @@ public sealed class AgentEnvelopeTransport : IPlatformTransport, IDisposable
         var status = map.Value;
         return TryText(status, "state") switch
         {
-            "achieved" => Exact(status, "state", "level") && Levels.Contains(TryText(status, "level") ?? ""),
+            "achieved" => Exact(status, "state", "level") && Level(TryText(status, "level")) >= 0,
             "unverified" => Exact(status, "state", "requested", "achieved", "reason") &&
-                Levels.Contains(TryText(status, "requested") ?? "") && Levels.Contains(TryText(status, "achieved") ?? "") &&
-                ValidReason(TryText(status, "reason")),
+                Level(TryText(status, "achieved")) is var achieved && achieved >= 0 &&
+                achieved < Level(TryText(status, "requested")) && ValidReason(TryText(status, "reason")),
             _ => false,
         };
     }
+
+    private static int Level(string? level) => level is null ? -1 : Array.IndexOf(Levels, level);
 
     private static PlatformSdkException ServiceError(IReadOnlyDictionary<string, JsonValue> envelope, string requestId)
     {
@@ -869,6 +876,18 @@ public sealed class AgentEnvelopeTransport : IPlatformTransport, IDisposable
             _ => throw Decode(requestId),
         };
         return new PlatformSdkException(code, retry, requestId, resultCode);
+    }
+
+    private static bool IsEdgeReply(byte[] encoded)
+    {
+        try
+        {
+            using var parsed = JsonDocument.Parse(encoded);
+            return parsed.RootElement.ValueKind == JsonValueKind.Object &&
+                parsed.RootElement.TryGetProperty("ok", out var ok) && ok.ValueKind == JsonValueKind.False &&
+                !parsed.RootElement.TryGetProperty("class", out _);
+        }
+        catch (JsonException) { return false; }
     }
 
     private static bool HasDuplicateKey(JsonElement element)

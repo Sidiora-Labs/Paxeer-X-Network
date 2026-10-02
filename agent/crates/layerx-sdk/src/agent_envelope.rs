@@ -305,6 +305,51 @@ impl AgentEnvelopeTransport {
         credential: Option<&EnvelopeCredential>,
         idempotency_key: Option<Key>,
     ) -> Result<ApiSuccess<Value>, EnvelopeError> {
+        let mut received = None;
+        self.exchange(
+            operation,
+            request_id,
+            request,
+            credential,
+            idempotency_key,
+            &mut received,
+        )
+    }
+
+    /// Same as [`Self::send_operation`], also returning the HTTP status and parsed JSON
+    /// body when a JSON response was received, for evidence retention.
+    pub fn send_operation_recorded(
+        &self,
+        operation: Operation,
+        request_id: RequestId,
+        request: &Value,
+        credential: Option<&EnvelopeCredential>,
+        idempotency_key: Option<Key>,
+    ) -> (
+        Option<(u16, Value)>,
+        Result<ApiSuccess<Value>, EnvelopeError>,
+    ) {
+        let mut received = None;
+        let outcome = self.exchange(
+            operation,
+            request_id,
+            request,
+            credential,
+            idempotency_key,
+            &mut received,
+        );
+        (received, outcome)
+    }
+
+    fn exchange(
+        &self,
+        operation: Operation,
+        request_id: RequestId,
+        request: &Value,
+        credential: Option<&EnvelopeCredential>,
+        idempotency_key: Option<Key>,
+        received: &mut Option<(u16, Value)>,
+    ) -> Result<ApiSuccess<Value>, EnvelopeError> {
         let envelope =
             encode_envelope(operation, request_id, request, credential, idempotency_key)?;
         let body = serde_json::to_vec(&envelope).map_err(|_| EnvelopeError::InvalidRequest)?;
@@ -364,6 +409,7 @@ impl AgentEnvelopeTransport {
             .read_to_vec()
             .map_err(|_| ambiguous())?;
         let document: Value = serde_json::from_slice(&encoded).map_err(|_| malformed())?;
+        *received = Some((status, document.clone()));
         let decoded = decode_response(status, &document).ok_or_else(malformed)?;
         let received = match &decoded {
             Ok(success) => success.request_id,

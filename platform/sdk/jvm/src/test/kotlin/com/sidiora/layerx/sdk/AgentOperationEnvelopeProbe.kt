@@ -14,86 +14,109 @@ import java.time.Duration
 import java.util.concurrent.CompletionException
 import javax.net.ssl.SSLContext
 import javax.net.ssl.TrustManagerFactory
-import org.junit.jupiter.api.Assertions.assertEquals
-import org.junit.jupiter.api.Assertions.assertInstanceOf
-import org.junit.jupiter.api.Assertions.assertNotNull
-import org.junit.jupiter.api.Assertions.assertThrows
-import org.junit.jupiter.api.Test
+import kotlin.system.exitProcess
 
-/** Kotlin probe of the real unified gateway and agent daemon envelope route; every input is required. */
-class KotlinAgentOperationEnvelopeProbe {
-    private val json = ObjectMapper()
-    private val node = json.constructType(JsonNode::class.java)
+private val json = ObjectMapper()
+private val node = json.constructType(JsonNode::class.java)
+private val operations = mapOf("read" to "read.account", "program_read" to "program.interface", "approval_list" to "approval.list")
 
-    private fun required(name: String): String =
-        System.getenv(name)?.takeIf { it.isNotEmpty() } ?: throw IllegalStateException("missing required probe input $name")
+private fun JsonNode.text(field: String): String =
+    get(field)?.takeIf { it.isTextual && it.textValue().isNotEmpty() }?.textValue()
+        ?: throw IllegalStateException("missing $field")
 
-    private fun client(): HttpClient {
-        val trust = KeyStore.getInstance(KeyStore.getDefaultType()).apply { load(null, null) }
-        val certificates = Files.newInputStream(Path.of(required("LAYERX_AGENT_PROBE_GATEWAY_CA"))).use {
-            CertificateFactory.getInstance("X.509").generateCertificates(it)
+private fun client(caPem: String): HttpClient {
+    val trust = KeyStore.getInstance(KeyStore.getDefaultType()).apply { load(null, null) }
+    val certificates = Files.newInputStream(Path.of(caPem)).use { CertificateFactory.getInstance("X.509").generateCertificates(it) }
+    check(certificates.isNotEmpty()) { "ca_pem holds no certificate" }
+    certificates.forEachIndexed { index, certificate -> trust.setCertificateEntry("ca$index", certificate) }
+    val factory = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm()).apply { init(trust) }
+    val tls = SSLContext.getInstance("TLS").apply { init(null, factory.trustManagers, null) }
+    return HttpClient.newBuilder().sslContext(tls).followRedirects(HttpClient.Redirect.NEVER)
+        .version(HttpClient.Version.HTTP_1_1).build()
+}
+
+private fun transport(config: JsonNode, credential: JsonNode, generation: String): HttpProductionTransport {
+    val endpoint = URI.create(config.text("endpoint"))
+    check(endpoint.scheme.equals("https", ignoreCase = true)) { "endpoint must be https" }
+    val key = Files.readString(Path.of(config.text("gateway_api_key_file")), Charsets.US_ASCII).trim()
+    val separator = key.indexOf(':')
+    check(separator > 0 && key.indexOf(':', separator + 1) < 0) { "gateway api key must be <id>:<secret>" }
+    val admission = HttpProductionTransport.LayerXKeyCredential(
+        key.substring(0, separator), SecretBytes(key.substring(separator + 1).toByteArray(Charsets.US_ASCII)))
+    val session = HttpProductionTransport.AgentSessionCredential(
+        credential.text("tenant"), credential.text("session_id"),
+        SecretBytes(credential.text("token_id").toByteArray(Charsets.US_ASCII)), generation)
+    return HttpProductionTransport(client(config.text("ca_pem")), json, endpoint, endpoint, Duration.ofSeconds(30), admission, session)
+}
+
+private fun request(requests: JsonNode, operation: String): ObjectNode =
+    requests.get(operation) as? ObjectNode ?: throw IllegalStateException("provisioned request lacks $operation")
+
+private fun read(transport: HttpProductionTransport, operation: String, request: ObjectNode): JsonNode =
+    transport.call<JsonNode>(ProductionTransport.Call(agentOperation(operation), request, null, null), node)
+        .toCompletableFuture().join()
+
+private fun refusal(transport: HttpProductionTransport, operation: String, request: ObjectNode): PlatformSdkException {
+    try {
+        read(transport, operation, request)
+    } catch (failure: CompletionException) {
+        return failure.cause as? PlatformSdkException
+            ?: throw IllegalStateException("$operation failed outside the SDK error contract")
+    }
+    throw IllegalStateException("$operation was not refused")
+}
+
+private fun run(): Int {
+    val caseFile = System.getenv("PAXEER_X_AGENT_ENVELOPE_CASE")?.takeIf { it.isNotEmpty() }
+        ?: throw IllegalStateException("missing PAXEER_X_AGENT_ENVELOPE_CASE")
+    val config = json.readTree(Files.readAllBytes(Path.of(caseFile)))
+    check(config != null && config.isObject) { "case file must be a JSON object" }
+    check(config.text("phase") == "read") { "the JVM probe implements only the read phase" }
+    val credential = json.readTree(Files.readAllBytes(Path.of(config.text("credential_file"))))
+    check(credential != null && credential.isObject && credential.size() == 4) { "credential coordinates" }
+    val generation = credential.text("generation")
+    val requests = config.get("requests")
+    check(requests != null && requests.isObject) { "requests must be a JSON object" }
+    val cases = config.get("cases")
+    check(cases != null && cases.isArray && !cases.isEmpty) { "cases must be a non-empty array" }
+    val responses = Path.of(config.text("response_dir"))
+    check(Files.isDirectory(responses)) { "response_dir must exist" }
+
+    val transport = transport(config, credential, generation)
+    val seen = linkedSetOf<String>()
+    for (entry in cases) {
+        check(entry.isTextual && seen.add(entry.textValue())) { "case ids must be unique strings" }
+        val id = entry.textValue()
+        val operation = operations[id] ?: throw IllegalStateException("unsupported case $id")
+        val value = read(transport, operation, request(requests, operation))
+        check(!value.isNull) { "case $id returned no value" }
+        Files.write(responses.resolve("$id.json"), json.writeValueAsBytes(value))
+        println("PAXEER_X_AGENT_ENVELOPE_CASE $id passed")
+    }
+
+    val current = BigInteger(generation)
+    check(current.signum() > 0) { "credential generation must exceed 0 for the stale case" }
+    val stale = refusal(transport(config, credential, current.subtract(BigInteger.ONE).toString()),
+        "read.account", request(requests, "read.account"))
+    check(stale.agentClass() == SchemaErrors.AgentClass.POLICY_REFUSAL) { "stale generation was not a policy refusal" }
+    val faucet = refusal(transport, "faucet.claim", json.createObjectNode())
+    check(faucet.agentClass() == SchemaErrors.AgentClass.UNAVAILABLE_CAPABILITY &&
+        faucet.agentRetriability() == SchemaErrors.AgentRetriability.TERMINAL) { "faucet.claim was not terminal unavailable" }
+    return seen.size
+}
+
+fun main() {
+    val passed = try {
+        run()
+    } catch (failure: Throwable) {
+        val detail = when (failure) {
+            is PlatformSdkException -> " ${failure.code()} ${failure.agentClass()}"
+            is IllegalStateException -> " ${failure.message}"
+            else -> ""
         }
-        check(certificates.isNotEmpty()) { "LAYERX_AGENT_PROBE_GATEWAY_CA holds no certificate" }
-        certificates.forEachIndexed { index, certificate -> trust.setCertificateEntry("ca$index", certificate) }
-        val factory = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm()).apply { init(trust) }
-        val tls = SSLContext.getInstance("TLS").apply { init(null, factory.trustManagers, null) }
-        return HttpClient.newBuilder().sslContext(tls).followRedirects(HttpClient.Redirect.NEVER)
-            .version(HttpClient.Version.HTTP_1_1).build()
+        System.err.println("agent envelope probe failed: ${failure.javaClass.name}$detail")
+        exitProcess(1)
     }
-
-    private fun transport(generation: String): HttpProductionTransport {
-        val gateway = URI.create(required("LAYERX_AGENT_PROBE_GATEWAY_URL"))
-        check(gateway.scheme.equals("https", ignoreCase = true)) { "LAYERX_AGENT_PROBE_GATEWAY_URL must be https" }
-        val admission = HttpProductionTransport.LayerXKeyCredential(
-            required("LAYERX_AGENT_PROBE_API_KEY_ID"),
-            SecretBytes(required("LAYERX_AGENT_PROBE_API_KEY").toByteArray(Charsets.US_ASCII)),
-        )
-        val session = HttpProductionTransport.AgentSessionCredential(
-            required("LAYERX_AGENT_PROBE_TENANT"),
-            required("LAYERX_AGENT_PROBE_SESSION_ID"),
-            SecretBytes(required("LAYERX_AGENT_PROBE_TOKEN_ID").toByteArray(Charsets.US_ASCII)),
-            generation,
-        )
-        return HttpProductionTransport(client(), json, gateway, gateway, Duration.ofSeconds(30), admission, session)
-    }
-
-    private fun request(name: String): ObjectNode =
-        json.readTree(required(name)) as? ObjectNode ?: throw IllegalStateException("$name must be a JSON object")
-
-    private fun read(transport: HttpProductionTransport, operation: String, input: String): JsonNode =
-        transport.call<JsonNode>(ProductionTransport.Call(agentOperation(operation), request(input), null, null), node)
-            .toCompletableFuture().join()
-
-    private fun refusal(transport: HttpProductionTransport, operation: String, input: String): PlatformSdkException {
-        val call = ProductionTransport.Call(agentOperation(operation), request(input), null, null)
-        val failure = assertThrows(CompletionException::class.java) {
-            transport.call<JsonNode>(call, node).toCompletableFuture().join()
-        }
-        return assertInstanceOf(PlatformSdkException::class.java, failure.cause)
-    }
-
-    @Test
-    fun authenticatedReadsProgramReadAndApprovalListUseTheEnvelopeRoute() {
-        val transport = transport(required("LAYERX_AGENT_PROBE_GENERATION"))
-        assertNotNull(read(transport, "read.account", "LAYERX_AGENT_PROBE_READ_ACCOUNT_REQUEST"))
-        assertNotNull(read(transport, "program.discover", "LAYERX_AGENT_PROBE_PROGRAM_DISCOVER_REQUEST"))
-        assertNotNull(read(transport, "approval.list", "LAYERX_AGENT_PROBE_APPROVAL_LIST_REQUEST"))
-    }
-
-    @Test
-    fun staleGenerationIsRefusedBySessionControl() {
-        val generation = BigInteger(required("LAYERX_AGENT_PROBE_GENERATION"))
-        check(generation.signum() > 0) { "LAYERX_AGENT_PROBE_GENERATION must exceed 0 for the stale case" }
-        val error = refusal(transport(generation.subtract(BigInteger.ONE).toString()), "read.account",
-            "LAYERX_AGENT_PROBE_READ_ACCOUNT_REQUEST")
-        assertEquals(SchemaErrors.AgentClass.POLICY_REFUSAL, error.agentClass())
-    }
-
-    @Test
-    fun retiredFaucetIsUnavailable() {
-        val error = refusal(transport(required("LAYERX_AGENT_PROBE_GENERATION")), "faucet.claim",
-            "LAYERX_AGENT_PROBE_FAUCET_CLAIM_REQUEST")
-        assertEquals(SchemaErrors.AgentClass.UNAVAILABLE_CAPABILITY, error.agentClass())
-        assertEquals(SchemaErrors.AgentRetriability.TERMINAL, error.agentRetriability())
-    }
+    println("PAXEER_X_AGENT_ENVELOPE_CASES=$passed")
+    System.out.flush()
 }

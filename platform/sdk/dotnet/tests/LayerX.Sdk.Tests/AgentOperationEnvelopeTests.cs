@@ -1,58 +1,130 @@
 using System.Security.Cryptography.X509Certificates;
+using System.Text;
 using System.Text.Json;
 using LayerX.Sdk;
 using Xunit;
+using Xunit.Abstractions;
 
 namespace LayerX.Sdk.Tests;
 
 [Trait("Category", "AgentOperationEnvelopeProbe")]
-public sealed class AgentOperationEnvelopeTests
+public sealed class AgentOperationEnvelopeTests(ITestOutputHelper output)
 {
     private static readonly Dictionary<string, string> NoPathParameters = new(StringComparer.Ordinal);
+    private static readonly Dictionary<string, PlatformOperation> AgentOperations =
+        Enum.GetValues<PlatformOperation>().Where(value => value.Descriptor().Plane == PlatformPlane.Agent)
+            .ToDictionary(value => value.Descriptor().Name, StringComparer.Ordinal);
 
-    private static string Required(string name) =>
-        Environment.GetEnvironmentVariable(name) is { Length: > 0 } value
-            ? value
-            : throw new InvalidOperationException($"required probe input {name} is absent");
-
-    private static byte[] Hex32(string name)
+    private sealed class CaseFile : IDisposable
     {
-        var value = Required(name);
-        if (value.Length != 64 || value.Any(character => !(character is >= '0' and <= '9' or >= 'a' and <= 'f')))
-            throw new InvalidOperationException($"probe input {name} is not 64 lowercase hex characters");
-        return Convert.FromHexString(value);
+        public required Uri Gateway { get; init; }
+        public required X509Certificate2 Root { get; init; }
+        public required string KeyId { get; init; }
+        public required byte[] KeySecret { get; init; }
+        public required string Tenant { get; init; }
+        public required byte[] SessionId { get; init; }
+        public required byte[] TokenId { get; init; }
+        public required ulong Generation { get; init; }
+        public required JsonElement Requests { get; init; }
+        public required string[] Cases { get; init; }
+        public required string Phase { get; init; }
+        public required string ResponseDirectory { get; init; }
+
+        public void Dispose()
+        {
+            Root.Dispose();
+            Array.Clear(KeySecret);
+            Array.Clear(TokenId);
+        }
     }
 
-    private static ulong Generation()
+    private static InvalidOperationException Refused(string reason) => new($"agent envelope probe input refused: {reason}");
+
+    private static string Text(JsonElement value, string field) =>
+        value.TryGetProperty(field, out var raw) && raw.ValueKind == JsonValueKind.String && raw.GetString() is { Length: > 0 } text
+            ? text : throw Refused(field);
+
+    private static byte[] Hex32(JsonElement value, string field)
     {
-        var value = Required("LAYERX_AGENT_ENVELOPE_GENERATION");
-        if ((value != "0" && value[0] == '0') || value.Any(character => character is < '0' or > '9') ||
-            !ulong.TryParse(value, out var generation))
-            throw new InvalidOperationException("probe input LAYERX_AGENT_ENVELOPE_GENERATION is not a canonical u64");
-        return generation;
+        var text = Text(value, field);
+        if (text.Length != 64 || text.Any(character => !(character is >= '0' and <= '9' or >= 'a' and <= 'f'))) throw Refused(field);
+        return Convert.FromHexString(text);
     }
 
-    private static JsonValue RequestFile(string name)
+    private static string AbsoluteFile(JsonElement value, string field)
     {
-        var request = JsonSerializer.Deserialize<JsonValue>(File.ReadAllBytes(Required(name)));
-        return request is JsonValue.ObjectValue
-            ? request
-            : throw new InvalidOperationException($"probe input {name} does not hold a JSON object request");
+        var path = Text(value, field);
+        return Path.IsPathRooted(path) && File.Exists(path) ? path : throw Refused(field);
     }
 
-    private static AgentSessionCredential Credential(ulong generation) =>
-        new(Required("LAYERX_AGENT_ENVELOPE_TENANT"), Hex32("LAYERX_AGENT_ENVELOPE_SESSION_ID"),
-            Hex32("LAYERX_AGENT_ENVELOPE_TOKEN_ID"), generation);
-
-    private static AgentEnvelopeTransport Transport(AgentSessionCredential? credential)
+    private static CaseFile Load()
     {
-        var endpoint = new Uri(Required("LAYERX_AGENT_ENVELOPE_ENDPOINT"), UriKind.Absolute);
-        using var root = X509Certificate2.CreateFromPemFile(Required("LAYERX_AGENT_ENVELOPE_CA_PEM"));
-        return new AgentEnvelopeTransport(endpoint, credential, trustedRoot: root);
+        var path = Environment.GetEnvironmentVariable("PAXEER_X_AGENT_ENVELOPE_CASE");
+        if (string.IsNullOrEmpty(path) || !Path.IsPathRooted(path) || !File.Exists(path)) throw Refused("PAXEER_X_AGENT_ENVELOPE_CASE");
+        using var document = JsonDocument.Parse(File.ReadAllBytes(path));
+        var root = document.RootElement;
+        if (root.ValueKind != JsonValueKind.Object) throw Refused("case file");
+
+        var endpoint = new Uri(Text(root, "endpoint"), UriKind.Absolute);
+        if (endpoint.Scheme != Uri.UriSchemeHttps || endpoint.AbsolutePath != AgentEnvelopeTransport.RoutePath ||
+            !string.IsNullOrEmpty(endpoint.Query) || !string.IsNullOrEmpty(endpoint.Fragment) ||
+            !string.Equals(endpoint.Host, Text(root, "server_name"), StringComparison.OrdinalIgnoreCase)) throw Refused("endpoint");
+
+        X509Certificate2 ca;
+        if (root.TryGetProperty("ca_pem", out _)) ca = X509Certificate2.CreateFromPemFile(AbsoluteFile(root, "ca_pem"));
+        else ca = new X509Certificate2(File.ReadAllBytes(AbsoluteFile(root, "ca_der")));
+
+        var key = File.ReadAllText(AbsoluteFile(root, "gateway_api_key_file"), new UTF8Encoding(false, true));
+        if (key.EndsWith('\n')) key = key[..^1];
+        var separator = key.IndexOf(':');
+        if (separator <= 0 || key.Contains('\n') || key.Contains('\r')) throw Refused("gateway_api_key_file");
+
+        using var credentialDocument = JsonDocument.Parse(File.ReadAllBytes(AbsoluteFile(root, "credential_file")));
+        var credential = credentialDocument.RootElement;
+        if (credential.ValueKind != JsonValueKind.Object || credential.EnumerateObject().Count() != 4) throw Refused("credential_file");
+        var generation = Text(credential, "generation");
+        if ((generation != "0" && generation[0] == '0') || generation.Any(character => character is < '0' or > '9') ||
+            !ulong.TryParse(generation, out var parsedGeneration)) throw Refused("credential_file generation");
+
+        if (!root.TryGetProperty("cases", out var cases) || cases.ValueKind != JsonValueKind.Array ||
+            !root.TryGetProperty("requests", out var requests) || requests.ValueKind != JsonValueKind.Object) throw Refused("cases/requests");
+        var directory = Text(root, "response_dir");
+        if (!Path.IsPathRooted(directory) || !Directory.Exists(directory)) throw Refused("response_dir");
+
+        return new CaseFile
+        {
+            Gateway = new Uri(endpoint.GetLeftPart(UriPartial.Authority) + "/"),
+            Root = ca,
+            KeyId = key[..separator],
+            KeySecret = Encoding.UTF8.GetBytes(key[(separator + 1)..]),
+            Tenant = Text(credential, "tenant"),
+            SessionId = Hex32(credential, "session_id"),
+            TokenId = Hex32(credential, "token_id"),
+            Generation = parsedGeneration,
+            Requests = requests.Clone(),
+            Cases = cases.EnumerateArray().Select(item => item.ValueKind == JsonValueKind.String ? item.GetString()! : throw Refused("cases")).ToArray(),
+            Phase = Text(root, "phase"),
+            ResponseDirectory = directory,
+        };
     }
 
-    private static TransportCall Read(PlatformOperation operation, JsonValue request) =>
-        new(operation, request, NoPathParameters, null);
+    private static AgentEnvelopeTransport Transport(CaseFile input, AgentSessionCredential? credential, LayerXKeyCredential key) =>
+        new(input.Gateway, credential, key, input.Root);
+
+    private static AgentSessionCredential Credential(CaseFile input, ulong generation) =>
+        new(input.Tenant, input.SessionId, input.TokenId, generation);
+
+    private static TransportCall Call(CaseFile input, string caseId)
+    {
+        if (!input.Requests.TryGetProperty(caseId, out var entry) || entry.ValueKind != JsonValueKind.Object) throw Refused($"requests.{caseId}");
+        var name = Text(entry, "operation");
+        if (!AgentOperations.TryGetValue(name, out var operation)) throw Refused($"requests.{caseId}.operation");
+        if (!entry.TryGetProperty("request", out var request) || request.ValueKind != JsonValueKind.Object) throw Refused($"requests.{caseId}.request");
+        IdempotencyKey? idempotency = entry.TryGetProperty("idempotency_key", out _)
+            ? new IdempotencyKey(Convert.ToHexString(Hex32(entry, "idempotency_key")).ToLowerInvariant()) : null;
+        var value = JsonSerializer.Deserialize<JsonValue>(request.GetRawText())!;
+        return new TransportCall(operation, value, NoPathParameters, idempotency);
+    }
 
     private static void AssertSuccess(AgentEnvelopeResult result)
     {
@@ -61,26 +133,56 @@ public sealed class AgentOperationEnvelopeTests
         Assert.IsNotType<JsonValue.NullValue>(result.Value);
     }
 
-    [Fact]
-    public async Task AuthenticatedReadProgramReadAndApprovalListReachTheDaemonThroughTheGateway()
+    private void Emit(string line)
     {
-        using var credential = Credential(Generation());
-        using var transport = Transport(credential);
-        AssertSuccess(await transport.SendEnvelopeAsync(Read(PlatformOperation.AgentReadAccount,
-            RequestFile("LAYERX_AGENT_ENVELOPE_READ_ACCOUNT_REQUEST"))));
-        AssertSuccess(await transport.SendEnvelopeAsync(Read(PlatformOperation.AgentProgramDiscover,
-            RequestFile("LAYERX_AGENT_ENVELOPE_PROGRAM_READ_REQUEST"))));
-        AssertSuccess(await transport.SendEnvelopeAsync(Read(PlatformOperation.AgentApprovalList,
-            RequestFile("LAYERX_AGENT_ENVELOPE_APPROVAL_LIST_REQUEST"))));
+        Console.Out.WriteLine(line);
+        Console.Out.Flush();
+        output.WriteLine(line);
+    }
+
+    [Fact]
+    public async Task ProcessCasesReachTheDaemonThroughTheGateway()
+    {
+        using var input = Load();
+        Assert.Equal("read", input.Phase);
+        string[] expected = ["read", "program_read", "approval_list"];
+        Assert.Equal(expected, input.Cases);
+        string[] operations = ["read.account", "program.interface", "approval.list"];
+        using var key = new LayerXKeyCredential(input.KeyId, input.KeySecret);
+        using var credential = Credential(input, input.Generation);
+        using var transport = Transport(input, credential, key);
+        var passed = 0;
+        for (var index = 0; index < input.Cases.Length; index++)
+        {
+            var caseId = input.Cases[index];
+            var call = Call(input, caseId);
+            Assert.Equal(operations[index], call.Operation.Descriptor().Name);
+            int? status = null; byte[]? body = null;
+            var result = await transport.SendEnvelopeAsync(call, observeResponse: (code, bytes) => { status = code; body = bytes; });
+            Assert.Equal(200, status);
+            using (var parsed = JsonDocument.Parse(body!))
+            {
+                var record = new Dictionary<string, object> { ["status"] = status!.Value, ["body"] = parsed.RootElement };
+                await File.WriteAllBytesAsync(Path.Combine(input.ResponseDirectory, caseId + ".json"),
+                    JsonSerializer.SerializeToUtf8Bytes(record));
+            }
+            AssertSuccess(result);
+            passed++;
+            Emit($"PAXEER_X_AGENT_ENVELOPE_CASE {caseId} passed");
+        }
+        Assert.Equal(expected.Length, passed);
+        Emit($"PAXEER_X_AGENT_ENVELOPE_CASES={passed}");
     }
 
     [Fact]
     public async Task RetiredFaucetClaimReturnsTerminalUnavailableCapability()
     {
-        using var credential = Credential(Generation());
-        using var transport = Transport(credential);
+        using var input = Load();
+        using var key = new LayerXKeyCredential(input.KeyId, input.KeySecret);
+        using var credential = Credential(input, input.Generation);
+        using var transport = Transport(input, credential, key);
         var error = await Assert.ThrowsAsync<PlatformSdkException>(() =>
-            transport.SendEnvelopeAsync(Read(PlatformOperation.AgentFaucetClaim, JsonValue.EmptyObject)));
+            transport.SendEnvelopeAsync(new TransportCall(PlatformOperation.AgentFaucetClaim, JsonValue.EmptyObject, NoPathParameters, null)));
         Assert.Equal(SdkErrorCode.UnavailableCapability, error.Code);
         Assert.Equal(RetryClass.Never, error.Retry);
         Assert.False(string.IsNullOrEmpty(error.RequestId));
@@ -89,12 +191,11 @@ public sealed class AgentOperationEnvelopeTests
     [Fact]
     public async Task WrongGenerationIsRefusedByTheDaemonSessionAuthority()
     {
-        var generation = Generation();
-        using var credential = Credential(generation == ulong.MaxValue ? generation - 1 : generation + 1);
-        using var transport = Transport(credential);
-        var error = await Assert.ThrowsAsync<PlatformSdkException>(() =>
-            transport.SendEnvelopeAsync(Read(PlatformOperation.AgentReadAccount,
-                RequestFile("LAYERX_AGENT_ENVELOPE_READ_ACCOUNT_REQUEST"))));
+        using var input = Load();
+        using var key = new LayerXKeyCredential(input.KeyId, input.KeySecret);
+        using var credential = Credential(input, input.Generation == ulong.MaxValue ? input.Generation - 1 : input.Generation + 1);
+        using var transport = Transport(input, credential, key);
+        var error = await Assert.ThrowsAsync<PlatformSdkException>(() => transport.SendEnvelopeAsync(Call(input, "read")));
         Assert.Equal(SdkErrorCode.PolicyRefusal, error.Code);
         Assert.Equal(RetryClass.Never, error.Retry);
     }
@@ -102,20 +203,22 @@ public sealed class AgentOperationEnvelopeTests
     [Fact]
     public async Task CatalogueReadWithoutSessionCredentialIsRefusedBeforeSending()
     {
-        using var transport = Transport(null);
-        var error = await Assert.ThrowsAsync<PlatformSdkException>(() =>
-            transport.SendEnvelopeAsync(Read(PlatformOperation.AgentReadAccount,
-                RequestFile("LAYERX_AGENT_ENVELOPE_READ_ACCOUNT_REQUEST"))));
+        using var input = Load();
+        using var key = new LayerXKeyCredential(input.KeyId, input.KeySecret);
+        using var transport = Transport(input, null, key);
+        var error = await Assert.ThrowsAsync<PlatformSdkException>(() => transport.SendEnvelopeAsync(Call(input, "read")));
         Assert.Equal(SdkErrorCode.CapabilityRefusal, error.Code);
     }
 
     [Fact]
     public async Task MutationWithoutIdempotencyKeyIsRefusedBeforeSending()
     {
-        using var credential = Credential(Generation());
-        using var transport = Transport(credential);
+        using var input = Load();
+        using var key = new LayerXKeyCredential(input.KeyId, input.KeySecret);
+        using var credential = Credential(input, input.Generation);
+        using var transport = Transport(input, credential, key);
         var error = await Assert.ThrowsAsync<PlatformSdkException>(() =>
-            transport.SendEnvelopeAsync(Read(PlatformOperation.AgentBudgetCreate, JsonValue.EmptyObject)));
+            transport.SendEnvelopeAsync(new TransportCall(PlatformOperation.AgentBudgetCreate, JsonValue.EmptyObject, NoPathParameters, null)));
         Assert.Equal(SdkErrorCode.IdempotencyRequired, error.Code);
     }
 }

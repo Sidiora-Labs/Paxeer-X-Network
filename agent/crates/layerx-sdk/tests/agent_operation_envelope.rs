@@ -1,45 +1,52 @@
 //! Process probe for the version 1 Agent operation envelope through a real unified
-//! gateway and full-mode daemon. Inputs are provisioned by
-//! `tools/qualification/paxeer-x/agent_operation_envelope.py`; every input is required and
-//! the probe fails when any is absent. It never starts a local server.
+//! gateway and full-mode daemon, driven by
+//! `tools/qualification/paxeer-x/agent_operation_envelope.py`. The case file named by
+//! `PAXEER_X_AGENT_ENVELOPE_CASE` is required; every listed case runs and is reported, and
+//! any absent input or failed case fails the probe. It never starts a local server.
 
+use std::cell::RefCell;
+use std::collections::BTreeSet;
+use std::io::Write as _;
+use std::net::TcpStream;
+use std::sync::Arc;
 use std::path::{Path, PathBuf};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use layerx_agent_api::error::{ErrorClass, Level, RequestId, Retriability, VerificationStatus};
+use layerx_agent_api::error::{
+    ApiSuccess, ErrorClass, Key, Level, RequestId, Retriability, VerificationStatus,
+};
 use layerx_sdk::agent_envelope::{
-    canonical_u64, AgentEnvelopeTransport, EnvelopeCredential, EnvelopeError,
+    canonical_u64, decode_response, AgentEnvelopeTransport, EnvelopeCredential, EnvelopeError,
+    AGENT_RPC_ROUTE,
 };
 use layerx_sdk::production::SecretBytes;
 use layerx_sdk::programs::LayerXKeyCredential;
 use layerx_sdk::Operation;
-use serde_json::Value;
+use serde_json::{json, Value};
+use sha2::{Digest, Sha256};
 
-const GATEWAY: &str = "LAYERX_AGENT_ENVELOPE_GATEWAY";
-const TRUST_ANCHORS: &str = "LAYERX_AGENT_ENVELOPE_TRUST_ANCHORS";
-const CASES: &str = "LAYERX_AGENT_ENVELOPE_CASES";
+const CASE_FILE: &str = "PAXEER_X_AGENT_ENVELOPE_CASE";
+const PRE_RESTART: &str = "pre-restart";
+const POST_RESTART: &str = "post-restart";
+const READ_PHASE: &str = "read";
 
-type Probe = Result<(), Box<dyn std::error::Error>>;
+type Failure = Box<dyn std::error::Error>;
+type Outcome = Result<ApiSuccess<Value>, EnvelopeError>;
 
-fn required_env(name: &str) -> Result<String, Box<dyn std::error::Error>> {
-    match std::env::var(name) {
-        Ok(value) if !value.is_empty() => Ok(value),
-        _ => Err(format!("required probe input {name} is absent").into()),
-    }
-}
-
-fn field<'a>(value: &'a Value, name: &str) -> Result<&'a Value, Box<dyn std::error::Error>> {
+fn field<'a>(value: &'a Value, name: &str) -> Result<&'a Value, Failure> {
     value
         .get(name)
-        .ok_or_else(|| format!("cases file is missing {name}").into())
+        .ok_or_else(|| format!("case file is missing {name}").into())
 }
 
-fn text<'a>(value: &'a Value, name: &str) -> Result<&'a str, Box<dyn std::error::Error>> {
+fn text<'a>(value: &'a Value, name: &str) -> Result<&'a str, Failure> {
     field(value, name)?
         .as_str()
-        .ok_or_else(|| format!("cases field {name} is not a string").into())
+        .filter(|text| !text.is_empty())
+        .ok_or_else(|| format!("case field {name} is not a non-empty string").into())
 }
 
-fn bytes32(value: &str) -> Result<[u8; 32], Box<dyn std::error::Error>> {
+fn bytes32(value: &str) -> Result<[u8; 32], Failure> {
     if value.len() != 64
         || !value
             .bytes()
@@ -54,41 +61,11 @@ fn bytes32(value: &str) -> Result<[u8; 32], Box<dyn std::error::Error>> {
     Ok(out)
 }
 
-struct Inputs {
-    transport: AgentEnvelopeTransport,
-    credential: EnvelopeCredential,
-    cases: Value,
+fn hex(bytes: &[u8]) -> String {
+    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
 }
 
-fn inputs() -> Result<Inputs, Box<dyn std::error::Error>> {
-    let gateway = required_env(GATEWAY)?;
-    let anchors = PathBuf::from(required_env(TRUST_ANCHORS)?);
-    let cases_path = PathBuf::from(required_env(CASES)?);
-    let cases: Value = serde_json::from_slice(&std::fs::read(&cases_path)?)?;
-    let coordinates = field(&cases, "credential")?;
-    let credential = EnvelopeCredential::new(
-        text(coordinates, "tenant")?,
-        bytes32(text(coordinates, "session_id")?)?,
-        bytes32(text(coordinates, "token_id")?)?,
-        canonical_u64(text(coordinates, "generation")?)
-            .ok_or("generation is not a canonical decimal u64")?,
-    )
-    .map_err(|error| format!("credential refused: {error:?}"))?;
-    let key = field(&cases, "gateway_key")?;
-    let secret = std::fs::read(Path::new(text(key, "secret_file")?))?;
-    let secret = SecretBytes::new(&secret).map_err(|_| "gateway key secret is empty")?;
-    let gateway_key = LayerXKeyCredential::new(text(key, "key_id")?, secret)
-        .map_err(|_| "gateway key identifier refused")?;
-    let transport = AgentEnvelopeTransport::connect(&gateway, Some(gateway_key), Some(&anchors))
-        .map_err(|error| format!("gateway transport refused: {error:?}"))?;
-    Ok(Inputs {
-        transport,
-        credential,
-        cases,
-    })
-}
-
-fn catalogued(name: &str) -> Result<Operation, Box<dyn std::error::Error>> {
+fn catalogued(name: &str) -> Result<Operation, Failure> {
     Operation::ALL
         .iter()
         .copied()
@@ -96,111 +73,754 @@ fn catalogued(name: &str) -> Result<Operation, Box<dyn std::error::Error>> {
         .ok_or_else(|| format!("operation {name} is not catalogued").into())
 }
 
-fn send_case(
-    inputs: &Inputs,
-    case: &str,
-    expected_operation: Option<&str>,
-) -> Result<
-    (
-        Operation,
-        Result<layerx_agent_api::error::ApiSuccess<Value>, EnvelopeError>,
-    ),
-    Box<dyn std::error::Error>,
-> {
-    let entry = field(field(&inputs.cases, "cases")?, case)?;
-    let name = text(entry, "operation")?;
-    if let Some(expected) = expected_operation {
-        if name != expected {
-            return Err(format!("case {case} must exercise {expected}, not {name}").into());
-        }
-    }
-    let operation = catalogued(name)?;
-    if operation.mutating() {
-        return Err(format!("case {case} must be a non-mutating operation").into());
-    }
-    let request_id = RequestId(
-        canonical_u64(text(entry, "request_id")?).ok_or("request_id is not canonical")?,
-    );
-    let result = inputs.transport.send_operation(
-        operation,
-        request_id,
-        field(entry, "request")?,
-        Some(&inputs.credential),
-        None,
-    );
-    Ok((operation, result))
+struct Probe {
+    transport: AgentEnvelopeTransport,
+    route: String,
+    ca_pem: PathBuf,
+    authorization: String,
+    coordinates: Coordinates,
+    credential: EnvelopeCredential,
+    requests: Value,
+    operations: Vec<String>,
+    phase: String,
+    state_file: PathBuf,
+    response_dir: PathBuf,
+    server_name: String,
+    last: RefCell<Option<(u16, Value)>>,
+    next_request_id: u64,
 }
 
-fn report(case: &str, operation: Operation) {
-    println!(
-        "{}",
-        serde_json::json!({"case": case, "language": "rust", "operation": operation.name(), "result": "pass"})
-    );
+#[derive(Clone)]
+struct Coordinates {
+    tenant: String,
+    session_id: [u8; 32],
+    token_id: [u8; 32],
+    generation: u64,
+}
+
+impl Coordinates {
+    fn credential(&self) -> Result<EnvelopeCredential, Failure> {
+        EnvelopeCredential::new(
+            self.tenant.clone(),
+            self.session_id,
+            self.token_id,
+            self.generation,
+        )
+        .map_err(|error| format!("credential refused: {error:?}").into())
+    }
+}
+
+fn load() -> Result<(Probe, Vec<String>), Failure> {
+    let path = match std::env::var(CASE_FILE) {
+        Ok(value) if !value.is_empty() => PathBuf::from(value),
+        _ => return Err(format!("required probe input {CASE_FILE} is absent").into()),
+    };
+    let case: Value = serde_json::from_slice(&std::fs::read(&path)?)?;
+    let endpoint = text(&case, "endpoint")?;
+    let base = endpoint
+        .strip_suffix(AGENT_RPC_ROUTE)
+        .ok_or("endpoint does not name the agent RPC route")?;
+    let ca_pem = PathBuf::from(text(&case, "ca_pem")?);
+    let server_name = text(&case, "server_name")?.to_owned();
+    if url::Url::parse(endpoint)?.host_str() != Some(server_name.as_str()) {
+        return Err("endpoint host differs from server_name; the SDK verifies the URL host".into());
+    }
+    let credential_document: Value =
+        serde_json::from_slice(&std::fs::read(text(&case, "credential_file")?)?)?;
+    let document = credential_document
+        .as_object()
+        .ok_or("credential file is not an object")?;
+    let expected: BTreeSet<&str> = ["tenant", "session_id", "token_id", "generation"].into();
+    if document.keys().map(String::as_str).collect::<BTreeSet<_>>() != expected {
+        return Err("credential file does not carry exactly the session coordinates".into());
+    }
+    let coordinates = Coordinates {
+        tenant: text(&credential_document, "tenant")?.to_owned(),
+        session_id: bytes32(text(&credential_document, "session_id")?)?,
+        token_id: bytes32(text(&credential_document, "token_id")?)?,
+        generation: canonical_u64(text(&credential_document, "generation")?)
+            .ok_or("generation is not a canonical decimal u64")?,
+    };
+    let credential = coordinates.credential()?;
+    let key_text = std::fs::read_to_string(text(&case, "gateway_api_key_file")?)?;
+    let (key_id, secret) = key_text
+        .trim()
+        .split_once(':')
+        .ok_or("gateway API key file is not <id>:<secret>")?;
+    let authorization = format!("LayerX-Key {key_id}:{secret}");
+    let secret = SecretBytes::new(secret.as_bytes()).map_err(|_| "gateway key secret is empty")?;
+    let gateway_key =
+        LayerXKeyCredential::new(key_id, secret).map_err(|_| "gateway key identifier refused")?;
+    if !Path::new(text(&case, "program_bearer_file")?).is_file() {
+        return Err("program bearer file is absent".into());
+    }
+    let transport = AgentEnvelopeTransport::connect(base, Some(gateway_key), Some(&ca_pem))
+        .map_err(|error| format!("gateway transport refused: {error:?}"))?;
+    let operations = field(&case, "operations")?
+        .as_array()
+        .ok_or("operations is not an array")?
+        .iter()
+        .map(|name| {
+            name.as_str()
+                .map(str::to_owned)
+                .ok_or_else(|| Failure::from("operation name is not a string"))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let catalogue: Vec<&str> = Operation::ALL.iter().map(|operation| operation.name()).collect();
+    if operations.len() != catalogue.len()
+        || operations
+            .iter()
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .map(String::as_str)
+            .ne(catalogue.iter().copied().collect::<BTreeSet<_>>())
+    {
+        return Err("operations do not equal the generated catalogue".into());
+    }
+    let cases = field(&case, "cases")?
+        .as_array()
+        .ok_or("cases is not an array")?
+        .iter()
+        .map(|id| {
+            id.as_str()
+                .map(str::to_owned)
+                .ok_or_else(|| Failure::from("case id is not a string"))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    if cases.is_empty() || cases.iter().collect::<BTreeSet<_>>().len() != cases.len() {
+        return Err("cases must be a non-empty list of distinct ids".into());
+    }
+    let phase = text(&case, "phase")?.to_owned();
+    if ![READ_PHASE, PRE_RESTART, POST_RESTART].contains(&phase.as_str()) {
+        return Err(format!("unknown phase {phase}").into());
+    }
+    let response_dir = PathBuf::from(text(&case, "response_dir")?);
+    if !response_dir.is_dir() {
+        return Err("response_dir is absent".into());
+    }
+    let first_request_id = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or(Duration::ZERO)
+        .as_micros();
+    Ok((
+        Probe {
+            transport,
+            route: endpoint.to_owned(),
+            ca_pem,
+            authorization,
+            coordinates,
+            credential,
+            requests: field(&case, "requests")?.clone(),
+            operations,
+            phase,
+            state_file: PathBuf::from(text(&case, "state_file")?),
+            response_dir,
+            server_name,
+            last: RefCell::new(None),
+            next_request_id: u64::try_from(first_request_id % u128::from(u32::MAX))? + 1,
+        },
+        cases,
+    ))
+}
+
+fn verification_json(status: &VerificationStatus) -> Value {
+    match status {
+        VerificationStatus::Achieved(level) => {
+            json!({"state": "achieved", "level": format!("{level:?}")})
+        }
+        VerificationStatus::Unverified {
+            requested,
+            achieved,
+            reason,
+        } => json!({
+            "state": "unverified",
+            "requested": format!("{requested:?}"),
+            "achieved": format!("{achieved:?}"),
+            "reason": reason.as_str(),
+        }),
+    }
+}
+
+fn outcome_json(outcome: &Outcome) -> Value {
+    match outcome {
+        Ok(success) => json!({
+            "result": "success",
+            "request_id": success.request_id.0.to_string(),
+            "value": success.value,
+            "verification_status": verification_json(&success.verification_status),
+        }),
+        Err(EnvelopeError::Refused(error)) => json!({
+            "result": "error",
+            "class": format!("{:?}", error.class),
+            "protocol_result_code": error.protocol_result_code.map(|code| code.raw()),
+            "retriability": format!("{:?}", error.retriability),
+            "request_id": error.request_id.0.to_string(),
+            "reason": error.reason.as_str(),
+        }),
+        Err(EnvelopeError::Unknown { operation }) => {
+            json!({"result": "unknown", "operation": operation.name()})
+        }
+        Err(other) => json!({"result": "client_refusal", "error": format!("{other:?}")}),
+    }
+}
+
+impl Probe {
+    fn request_id(&mut self) -> RequestId {
+        let id = RequestId(self.next_request_id);
+        self.next_request_id += 1;
+        id
+    }
+
+    fn fresh_key(&self, case: &str, request_id: RequestId) -> Result<Key, Failure> {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or(Duration::ZERO)
+            .as_nanos();
+        let digest = Sha256::new()
+            .chain_update(b"paxeer-x/rust-probe/idempotency\0")
+            .chain_update(nanos.to_be_bytes())
+            .chain_update(std::process::id().to_be_bytes())
+            .chain_update(request_id.0.to_be_bytes())
+            .chain_update(case.as_bytes())
+            .finalize();
+        let mut bytes = [0_u8; 32];
+        bytes.copy_from_slice(&digest);
+        Key::new(bytes).map_err(|_| "derived idempotency key is reserved".into())
+    }
+
+    fn provisioned_key(&self, case: &str) -> Result<Key, Failure> {
+        match field(&self.requests, case)?.get("idempotency_key") {
+            Some(Value::String(text)) => {
+                Key::new(bytes32(text)?).map_err(|_| "provisioned idempotency key is reserved".into())
+            }
+            _ => Err(format!("requests.{case} lacks its idempotency_key").into()),
+        }
+    }
+
+    fn mutation(&self, name: &str) -> Result<(Operation, Value), Failure> {
+        let entry = field(&self.requests, name)?;
+        let operation = catalogued(text(entry, "operation")?)?;
+        if !operation.mutating() {
+            return Err(format!("provisioned {name} is not a mutating operation").into());
+        }
+        let request = field(entry, "request")?.clone();
+        if !request.is_object() {
+            return Err(format!("provisioned {name} request is not an object").into());
+        }
+        Ok((operation, request))
+    }
+
+    fn send(
+        &self,
+        operation: Operation,
+        request_id: RequestId,
+        request: &Value,
+        credential: Option<&EnvelopeCredential>,
+        key: Option<Key>,
+    ) -> Outcome {
+        let (received, outcome) = self
+            .transport
+            .send_operation_recorded(operation, request_id, request, credential, key);
+        *self.last.borrow_mut() = received;
+        outcome
+    }
+
+    fn record(&self, case: &str, operation: Operation, outcome: &Outcome) -> Result<(), Failure> {
+        let _ = (operation, outcome_json(outcome));
+        let document = match self.last.borrow_mut().take() {
+            Some((status, body)) => json!({"status": status, "body": body}),
+            None => json!({"status": null, "body": null}),
+        };
+        std::fs::write(
+            self.response_dir.join(format!("{case}.json")),
+            serde_json::to_vec_pretty(&document)?,
+        )?;
+        Ok(())
+    }
+
+    /// Posts an envelope that the SDK refuses to build, to prove the daemon refuses it too.
+    fn raw(&self, envelope: &Value) -> Result<(u16, Value), Failure> {
+        let pem = std::fs::read(&self.ca_pem)?;
+        let mut roots = Vec::new();
+        for item in ureq::tls::parse_pem(&pem) {
+            if let ureq::tls::PemItem::Certificate(certificate) = item? {
+                roots.push(certificate.to_owned());
+            }
+        }
+        if roots.is_empty() {
+            return Err("ca_pem carries no certificate".into());
+        }
+        let agent: ureq::Agent = ureq::Agent::config_builder()
+            .tls_config(
+                ureq::tls::TlsConfig::builder()
+                    .provider(ureq::tls::TlsProvider::Rustls)
+                    .root_certs(ureq::tls::RootCerts::new_with_certs(&roots))
+                    .build(),
+            )
+            .timeout_global(Some(Duration::from_secs(30)))
+            .http_status_as_error(false)
+            .max_redirects(0)
+            .build()
+            .into();
+        let mut response = agent
+            .post(self.route.as_str())
+            .header("Accept", "application/json")
+            .header("Content-Type", "application/json")
+            .header("Authorization", self.authorization.as_str())
+            .send(serde_json::to_vec(envelope)?.as_slice())?;
+        let status = response.status().as_u16();
+        let body = response
+            .body_mut()
+            .with_config()
+            .limit(1_048_576)
+            .read_to_vec()?;
+        Ok((status, serde_json::from_slice(&body)?))
+    }
+
+    fn query_case(
+        &mut self,
+        case: &str,
+        operation_name: &str,
+    ) -> Result<(Operation, Outcome), Failure> {
+        let entry = field(&self.requests, case)?;
+        if text(entry, "operation")? != operation_name {
+            return Err(format!("requests.{case} must name {operation_name}").into());
+        }
+        let operation = catalogued(operation_name)?;
+        let request = field(entry, "request")?.clone();
+        if !request.is_object() {
+            return Err(format!("requests.{case} request is not an object").into());
+        }
+        let request_id = self.request_id();
+        let outcome = self.send(operation, request_id, &request, Some(&self.credential), None);
+        self.record(case, operation, &outcome)?;
+        Ok((operation, outcome))
+    }
+
+    fn run(&mut self, case: &str) -> Result<(), Failure> {
+        let phase = self.phase.clone();
+        match (phase.as_str(), case) {
+            (READ_PHASE, "read") => self.read(),
+            (READ_PHASE, "program_read") => self.program_read(),
+            (READ_PHASE, "approval_list") => {
+                let (_, outcome) = self.query_case(case, "approval.list")?;
+                outcome.map_err(|error| format!("approval_list failed: {error:?}"))?;
+                Ok(())
+            }
+            (PRE_RESTART, "allowed_mutation") => self.allowed_mutation(),
+            (PRE_RESTART, "mutation_duplicate_same_result") => self.duplicate(),
+            (PRE_RESTART, "changed_body_same_key") => self.changed_body(),
+            (PRE_RESTART, "missing_idempotency_key") => self.missing_key(),
+            (PRE_RESTART, "wrong_scope") => self.wrong_scope(),
+            (PRE_RESTART, "wrong_tenant") => {
+                let mut coordinates = self.coordinates.clone();
+                if coordinates.tenant.len() < 255 {
+                    coordinates.tenant.push('x');
+                } else {
+                    coordinates.tenant.pop();
+                }
+                self.refused_credential(case, &coordinates)
+            }
+            (PRE_RESTART, "wrong_generation") => {
+                let mut coordinates = self.coordinates.clone();
+                coordinates.generation = coordinates
+                    .generation
+                    .checked_add(1)
+                    .unwrap_or(coordinates.generation - 1);
+                self.refused_credential(case, &coordinates)
+            }
+            (PRE_RESTART, "wrong_session") => {
+                let mut coordinates = self.coordinates.clone();
+                coordinates.session_id[31] ^= 0x01;
+                self.refused_credential(case, &coordinates)
+            }
+            (PRE_RESTART, "wrong_token") => {
+                let mut coordinates = self.coordinates.clone();
+                coordinates.token_id[31] ^= 0x01;
+                self.refused_credential(case, &coordinates)
+            }
+            (PRE_RESTART, "revoked_session") => self.revoked_session(),
+            (PRE_RESTART, "restart_unknown_pending") => self.restart_pending(),
+            (POST_RESTART, "restart_unknown_reconcile") => self.restart_reconcile(),
+            (PRE_RESTART, operation_case) if operation_case.starts_with("operation.") => {
+                self.operation_case(operation_case)
+            }
+            _ => Err(format!("case {case} is not defined for phase {phase}").into()),
+        }
+    }
+
+    fn read(&mut self) -> Result<(), Failure> {
+        let (_, outcome) = self.query_case("read", "read.account")?;
+        let success = outcome.map_err(|error| format!("read failed: {error:?}"))?;
+        match success.verification_status {
+            VerificationStatus::Achieved(level) if level > Level::Unverified => {}
+            status => return Err(format!("read verification not achieved: {status:?}").into()),
+        }
+        let read = catalogued("read.account")?;
+        match self.send(read, RequestId(1), &json!({}), None, None) {
+            Err(EnvelopeError::CredentialPresence { .. }) => {}
+            other => return Err(format!("missing credential was not refused: {other:?}").into()),
+        }
+        let mutation = catalogued("session.close")?;
+        match self.send(mutation, RequestId(1), &json!({}), Some(&self.credential), None) {
+            Err(EnvelopeError::IdempotencyKeyPresence { .. }) => Ok(()),
+            other => Err(format!("mutation without key was not refused: {other:?}").into()),
+        }
+    }
+
+    fn program_read(&mut self) -> Result<(), Failure> {
+        let (_, outcome) = self.query_case("program_read", "program.interface")?;
+        let success = outcome.map_err(|error| format!("program_read failed: {error:?}"))?;
+        match &success.verification_status {
+            VerificationStatus::Achieved(level) if *level > Level::Unverified => Ok(()),
+            VerificationStatus::Unverified { reason, .. }
+                if reason.as_str() == "server_side_receipt_verification_only" =>
+            {
+                Ok(())
+            }
+            status => Err(format!("program_read verification invalid: {status:?}").into()),
+        }
+    }
+
+    fn allowed_mutation(&mut self) -> Result<(), Failure> {
+        let (operation, request) = self.mutation("allowed_mutation")?;
+        let request_id = self.request_id();
+        let key = match field(&self.requests, "allowed_mutation")?.get("idempotency_key") {
+            Some(Value::String(text)) => {
+                Key::new(bytes32(text)?).map_err(|_| "provisioned idempotency key is reserved")?
+            }
+            Some(_) => return Err("provisioned idempotency key is not a string".into()),
+            None => return Err("requests.allowed_mutation lacks its idempotency_key".into()),
+        };
+        let outcome = self.send(operation, request_id, &request, Some(&self.credential), Some(key));
+        self.record("allowed_mutation", operation, &outcome)?;
+        outcome.map_err(|error| format!("allowed_mutation failed: {error:?}"))?;
+        Ok(())
+    }
+
+    fn duplicate(&mut self) -> Result<(), Failure> {
+        let (operation, request) = self.mutation("allowed_mutation")?;
+        let request_id = self.request_id();
+        let key = self.fresh_key("mutation_duplicate_same_result", request_id)?;
+        let first = self
+            .send(operation, request_id, &request, Some(&self.credential), Some(key))
+            .map_err(|error| format!("duplicate first send failed: {error:?}"))?;
+        let repeated = self.send(operation, request_id, &request, Some(&self.credential), Some(key));
+        self.record("mutation_duplicate_same_result", operation, &repeated)?;
+        let repeated = repeated.map_err(|error| format!("duplicate repeat failed: {error:?}"))?;
+        if repeated != first {
+            return Err("same key and same body did not return the identical outcome".into());
+        }
+        Ok(())
+    }
+
+    fn changed_body(&mut self) -> Result<(), Failure> {
+        let (operation, request) = self.mutation("allowed_mutation")?;
+        let (changed_operation, changed) = self.mutation("changed_body")?;
+        if changed_operation != operation || changed == request {
+            return Err("requests.changed_body must be the same operation with a changed body".into());
+        }
+        let request_id = self.request_id();
+        let key = self.fresh_key("changed_body_same_key", request_id)?;
+        self.send(operation, request_id, &request, Some(&self.credential), Some(key))
+            .map_err(|error| format!("changed_body first send failed: {error:?}"))?;
+        let second_id = self.request_id();
+        let outcome = self.send(operation, second_id, &changed, Some(&self.credential), Some(key));
+        self.record("changed_body_same_key", operation, &outcome)?;
+        match outcome {
+            Err(EnvelopeError::Refused(error))
+                if error.class == ErrorClass::IdempotencyConflict
+                    && error.reason.as_str() == "idempotency.body_changed" =>
+            {
+                Ok(())
+            }
+            other => Err(format!("changed body under the same key was not refused: {other:?}").into()),
+        }
+    }
+
+    fn missing_key(&mut self) -> Result<(), Failure> {
+        let (operation, request) = self.mutation("allowed_mutation")?;
+        let request_id = self.request_id();
+        let envelope = json!({
+            "version": 1,
+            "request_id": request_id.0.to_string(),
+            "operation": operation.name(),
+            "request": request,
+            "credential": {
+                "tenant": self.coordinates.tenant,
+                "session_id": hex(&self.coordinates.session_id),
+                "token_id": hex(&self.coordinates.token_id),
+                "generation": self.coordinates.generation.to_string(),
+            },
+            "idempotency_key": null,
+        });
+        let (status, document) = self.raw(&envelope)?;
+        let decoded = decode_response(status, &document)
+            .ok_or("missing_idempotency_key response is not a valid envelope")?;
+        let outcome: Outcome = decoded.map_err(EnvelopeError::Refused);
+        self.record("missing_idempotency_key", operation, &outcome)?;
+        match outcome {
+            Err(EnvelopeError::Refused(error))
+                if status == 409
+                    && error.class == ErrorClass::IdempotencyConflict
+                    && error.reason.as_str() == "envelope.idempotency_key"
+                    && error.request_id == request_id =>
+            {
+                Ok(())
+            }
+            other => Err(format!("mutation without key was not refused by the daemon: {other:?}").into()),
+        }
+    }
+
+    fn wrong_scope(&mut self) -> Result<(), Failure> {
+        let (operation, request) = self.mutation("wrong_scope")?;
+        let request_id = self.request_id();
+        let key = self.provisioned_key("wrong_scope")?;
+        let outcome = self.send(operation, request_id, &request, Some(&self.credential), Some(key));
+        self.record("wrong_scope", operation, &outcome)?;
+        match outcome {
+            Err(EnvelopeError::Refused(error))
+                if error.class == ErrorClass::PolicyRefusal =>
+            {
+                Ok(())
+            }
+            other => Err(format!("out-of-scope mutation was not refused: {other:?}").into()),
+        }
+    }
+
+    fn refused_credential(&mut self, case: &str, coordinates: &Coordinates) -> Result<(), Failure> {
+        let credential = coordinates.credential()?;
+        let (operation, request) = self.mutation("allowed_mutation")?;
+        let request_id = self.request_id();
+        let key = self.fresh_key(case, request_id)?;
+        let outcome = self.send(operation, request_id, &request, Some(&credential), Some(key));
+        self.record(case, operation, &outcome)?;
+        match outcome {
+            Err(EnvelopeError::Refused(error)) if error.class == ErrorClass::PolicyRefusal => Ok(()),
+            other => Err(format!("{case} credential was not refused: {other:?}").into()),
+        }
+    }
+
+    fn revoked_session(&mut self) -> Result<(), Failure> {
+        let entry = field(&self.requests, "revoked_session")?;
+        let document: Value =
+            serde_json::from_slice(&std::fs::read(text(entry, "credential_file")?)?)?;
+        let coordinates = Coordinates {
+            tenant: text(&document, "tenant")?.to_owned(),
+            session_id: bytes32(text(&document, "session_id")?)?,
+            token_id: bytes32(text(&document, "token_id")?)?,
+            generation: canonical_u64(text(&document, "generation")?)
+                .ok_or("revoked generation is not canonical")?,
+        };
+        let credential = coordinates.credential()?;
+        let entry = field(&self.requests, "read")?;
+        let operation = catalogued(text(entry, "operation")?)?;
+        if operation != Operation::ReadAccount {
+            return Err("requests.read must name read.account".into());
+        }
+        let request = field(entry, "request")?.clone();
+        let request_id = self.request_id();
+        let outcome = self.send(operation, request_id, &request, Some(&credential), None);
+        let status = self.last.borrow().as_ref().map(|(status, _)| *status);
+        self.record("revoked_session", operation, &outcome)?;
+        match outcome {
+            Err(EnvelopeError::Refused(error))
+                if error.class == ErrorClass::PolicyRefusal && status == Some(403) =>
+            {
+                Ok(())
+            }
+            other => Err(format!("revoked session was not refused with 403: {other:?}").into()),
+        }
+    }
+
+    fn restart_pending(&mut self) -> Result<(), Failure> {
+        let (operation, request) = self.mutation("allowed_mutation")?;
+        let request_id = self.request_id();
+        let key = self.fresh_key("restart_unknown_pending", request_id)?;
+        let envelope = json!({
+            "version": 1,
+            "request_id": request_id.0.to_string(),
+            "operation": operation.name(),
+            "request": request,
+            "credential": self.wire_credential(),
+            "idempotency_key": hex(&key.bytes()),
+        });
+        let state = json!({
+            "request_id": request_id.0.to_string(),
+            "idempotency_key": hex(&key.bytes()),
+            "operation": operation.name(),
+            "request": request,
+        });
+        std::fs::write(&self.state_file, serde_json::to_vec_pretty(&state)?)?;
+        self.send_dropping_acknowledgement(&envelope)?;
+        let outcome: Outcome = Err(EnvelopeError::Unknown { operation });
+        self.record("restart_unknown_pending", operation, &outcome)
+    }
+
+    fn wire_credential(&self) -> Value {
+        json!({
+            "tenant": self.coordinates.tenant,
+            "session_id": hex(&self.coordinates.session_id),
+            "token_id": hex(&self.coordinates.token_id),
+            "generation": self.coordinates.generation.to_string(),
+        })
+    }
+
+    /// Writes one complete envelope over verified TLS and closes the connection before
+    /// reading any response, so the acknowledgement is lost by construction.
+    fn send_dropping_acknowledgement(&self, envelope: &Value) -> Result<(), Failure> {
+        let pem = std::fs::read(&self.ca_pem)?;
+        let mut roots = rustls::RootCertStore::empty();
+        for item in ureq::tls::parse_pem(&pem) {
+            if let ureq::tls::PemItem::Certificate(certificate) = item? {
+                roots.add(rustls::pki_types::CertificateDer::from(certificate.der().to_vec()))?;
+            }
+        }
+        if roots.is_empty() {
+            return Err("ca_pem carries no certificate".into());
+        }
+        let config = rustls::ClientConfig::builder_with_provider(Arc::new(
+            rustls::crypto::ring::default_provider(),
+        ))
+        .with_safe_default_protocol_versions()?
+        .with_root_certificates(roots)
+        .with_no_client_auth();
+        let name = rustls::pki_types::ServerName::try_from(self.server_name.clone())?;
+        let connection = rustls::ClientConnection::new(Arc::new(config), name)?;
+        let url = url::Url::parse(&self.route)?;
+        let port = url.port_or_known_default().ok_or("endpoint has no port")?;
+        let socket = TcpStream::connect((self.server_name.as_str(), port))?;
+        let mut stream = rustls::StreamOwned::new(connection, socket);
+        let body = serde_json::to_vec(envelope)?;
+        let head = format!(
+            "POST {} HTTP/1.1\r\nHost: {}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nAuthorization: {}\r\nConnection: close\r\n\r\n",
+            url.path(),
+            self.server_name,
+            body.len(),
+            self.authorization
+        );
+        stream.write_all(head.as_bytes())?;
+        stream.write_all(&body)?;
+        stream.flush()?;
+        stream.conn.send_close_notify();
+        stream.flush()?;
+        Ok(())
+    }
+
+    fn restart_reconcile(&mut self) -> Result<(), Failure> {
+        let state: Value = serde_json::from_slice(&std::fs::read(&self.state_file)?)?;
+        let operation = catalogued(text(&state, "operation")?)?;
+        let request_id = RequestId(
+            canonical_u64(text(&state, "request_id")?).ok_or("recorded request_id is not canonical")?,
+        );
+        let key = Key::new(bytes32(text(&state, "idempotency_key")?)?)
+            .map_err(|_| "recorded idempotency key is reserved")?;
+        let request = field(&state, "request")?.clone();
+        let outcome = self.send(operation, request_id, &request, Some(&self.credential), Some(key));
+        self.record("restart_unknown_reconcile", operation, &outcome)?;
+        match outcome {
+            Ok(_) => Ok(()),
+            Err(EnvelopeError::Refused(error))
+                if !matches!(
+                    error.class,
+                    ErrorClass::IdempotencyConflict
+                        | ErrorClass::ProtocolIncompatibility
+                        | ErrorClass::InternalFault
+                ) =>
+            {
+                Ok(())
+            }
+            other => Err(format!("restart did not report the stored outcome: {other:?}").into()),
+        }
+    }
+
+    fn operation_case(&mut self, case: &str) -> Result<(), Failure> {
+        let name = &case["operation.".len()..];
+        if !self.operations.iter().any(|operation| operation == name) {
+            return Err(format!("{case} is not in the provisioned operations").into());
+        }
+        let operation = catalogued(name)?;
+        let entry = field(&self.requests, case)?;
+        if text(entry, "operation")? != name {
+            return Err(format!("requests.{case} names a different operation").into());
+        }
+        let request = field(entry, "request")?.clone();
+        if !request.is_object() {
+            return Err(format!("requests.{case} request is not an object").into());
+        }
+        let provisioned_key = match entry.get("idempotency_key") {
+            Some(Value::String(text)) => Some(
+                Key::new(bytes32(text)?).map_err(|_| "provisioned idempotency key is reserved")?,
+            ),
+            None | Some(Value::Null) => None,
+            Some(_) => return Err("provisioned idempotency key is not a string".into()),
+        };
+        let request_id = self.request_id();
+        let key = match (operation.mutating(), provisioned_key) {
+            (true, Some(key)) => Some(key),
+            (true, None) => Some(self.fresh_key(case, request_id)?),
+            (false, None) => None,
+            (false, Some(_)) => return Err(format!("{case} is not mutating but carries a key").into()),
+        };
+        let bootstrap = matches!(operation, Operation::AgentRegister | Operation::SessionOpen);
+        let credential = (!bootstrap).then_some(&self.credential);
+        let outcome = self.send(operation, request_id, &request, credential, key);
+        self.record(case, operation, &outcome)?;
+        if operation == Operation::FaucetClaim {
+            return match outcome {
+                Err(EnvelopeError::Refused(error))
+                    if error.class == ErrorClass::UnavailableCapability
+                        && error.retriability == Retriability::Terminal
+                        && error.protocol_result_code.is_none()
+                        && error.reason.as_str() == "unavailable_capability.faucet.claim" =>
+                {
+                    Ok(())
+                }
+                other => Err(format!("faucet.claim was not retired: {other:?}").into()),
+            };
+        }
+        match outcome {
+            Ok(_) => Ok(()),
+            Err(EnvelopeError::Refused(error))
+                if matches!(
+                    error.class,
+                    ErrorClass::UnavailableCapability
+                        | ErrorClass::ProtocolIncompatibility
+                        | ErrorClass::InternalFault
+                ) =>
+            {
+                Err(format!(
+                    "{case} was not dispatched by its owner: {:?} {}",
+                    error.class,
+                    error.reason.as_str()
+                )
+                .into())
+            }
+            Err(EnvelopeError::Refused(_)) => Ok(()),
+            Err(other) => Err(format!("{case} failed: {other:?}").into()),
+        }
+    }
 }
 
 #[test]
-#[ignore = "process probe: run only by tools/qualification/paxeer-x/agent_operation_envelope.py"]
-fn sdk_rust_read() -> Probe {
-    let inputs = inputs()?;
-
-    let (operation, result) = send_case(&inputs, "read_account", Some("read.account"))?;
-    let success = result.map_err(|error| format!("read_account failed: {error:?}"))?;
-    match success.verification_status {
-        VerificationStatus::Achieved(level) if level > Level::Unverified => {}
-        status => return Err(format!("read_account verification not achieved: {status:?}").into()),
+#[ignore = "process probe: run only by tools/qualification/paxeer-x/agent_operation_envelope.py with --ignored"]
+fn agent_operation_envelope_process_cases() -> Result<(), Failure> {
+    let (mut probe, cases) = load()?;
+    let mut passed = 0_usize;
+    let mut failures = Vec::new();
+    for case in &cases {
+        match probe.run(case) {
+            Ok(()) => {
+                println!("PAXEER_X_AGENT_ENVELOPE_CASE {case} passed");
+                passed += 1;
+            }
+            Err(error) => failures.push(format!("{case}: {error}")),
+        }
     }
-    report("read_account", operation);
-
-    let (operation, result) = send_case(&inputs, "program_read", None)?;
-    if !operation.name().starts_with("program.") {
-        return Err("program_read must exercise a program read operation".into());
+    println!("PAXEER_X_AGENT_ENVELOPE_CASES={passed}");
+    if failures.is_empty() {
+        Ok(())
+    } else {
+        Err(failures.join("; ").into())
     }
-    let success = result.map_err(|error| format!("program_read failed: {error:?}"))?;
-    match &success.verification_status {
-        VerificationStatus::Achieved(level) if *level > Level::Unverified => {}
-        VerificationStatus::Unverified { reason, .. }
-            if reason.as_str() == "server_side_receipt_verification_only" => {}
-        status => return Err(format!("program_read verification invalid: {status:?}").into()),
-    }
-    report("program_read", operation);
-
-    let (operation, result) = send_case(&inputs, "approval_list", Some("approval.list"))?;
-    result.map_err(|error| format!("approval_list failed: {error:?}"))?;
-    report("approval_list", operation);
-
-    let (operation, result) = send_case(&inputs, "faucet_retired", Some("faucet.claim"))?;
-    match result {
-        Err(EnvelopeError::Refused(error))
-            if error.class == ErrorClass::UnavailableCapability
-                && error.retriability == Retriability::Terminal
-                && error.protocol_result_code.is_none()
-                && error.reason.as_str() == "unavailable_capability.faucet.claim" => {}
-        other => return Err(format!("faucet.claim was not retired: {other:?}").into()),
-    }
-    report("faucet_retired", operation);
-
-    let read = operation_by_case(&inputs, "read_account")?;
-    match inputs
-        .transport
-        .send_operation(read, RequestId(1), &serde_json::json!({}), None, None)
-    {
-        Err(EnvelopeError::CredentialPresence { .. }) => {}
-        other => return Err(format!("missing credential was not refused: {other:?}").into()),
-    }
-    let mutation = catalogued("session.close")?;
-    match inputs.transport.send_operation(
-        mutation,
-        RequestId(1),
-        &serde_json::json!({}),
-        Some(&inputs.credential),
-        None,
-    ) {
-        Err(EnvelopeError::IdempotencyKeyPresence { .. }) => {}
-        other => return Err(format!("mutation without key was not refused: {other:?}").into()),
-    }
-    Ok(())
-}
-
-fn operation_by_case(inputs: &Inputs, case: &str) -> Result<Operation, Box<dyn std::error::Error>> {
-    catalogued(text(field(field(&inputs.cases, "cases")?, case)?, "operation")?)
 }

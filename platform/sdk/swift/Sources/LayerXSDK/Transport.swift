@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(Security)
+import Security
+#endif
 #if canImport(FoundationNetworking)
 import FoundationNetworking
 #endif
@@ -734,9 +737,10 @@ public final class AgentEnvelopeTransport: PlatformTransport, @unchecked Sendabl
     private let session: URLSession
     private let gatewayKey: LayerXKeyCredential
     private let credential: AgentSessionCredential?
+    private let delegate: AgentEnvelopeTaskDelegate
 
     public init(baseURL: URL, gatewayKey: LayerXKeyCredential, credential: AgentSessionCredential?,
-                session: URLSession = .shared) throws {
+                certificateAuthority: AgentCertificateAuthority? = nil, session: URLSession = .shared) throws {
         guard baseURL.user == nil, baseURL.password == nil, baseURL.host != nil, baseURL.scheme == "https",
               baseURL.query == nil, baseURL.fragment == nil,
               var components = URLComponents(url: baseURL, resolvingAgainstBaseURL: false) else {
@@ -744,10 +748,22 @@ public final class AgentEnvelopeTransport: PlatformTransport, @unchecked Sendabl
         }
         components.path = Self.routePath
         guard let endpoint = components.url else { throw PlatformSDKError(code: .invalidArgument, retry: .never) }
+        #if canImport(FoundationNetworking)
+        if let certificateAuthority {
+            let name = "URLSessionCertificateAuthorityInfoFile"
+            let path = certificateAuthority.pemFile.path
+            if let configured = ProcessInfo.processInfo.environment[name] {
+                guard configured == path else { throw PlatformSDKError(code: .invalidArgument, retry: .never) }
+            } else {
+                guard setenv(name, path, 0) == 0 else { throw PlatformSDKError(code: .invalidArgument, retry: .never) }
+            }
+        }
+        #endif
         self.endpoint = endpoint
         self.session = session
         self.gatewayKey = gatewayKey
         self.credential = credential
+        self.delegate = AgentEnvelopeTaskDelegate(certificateAuthority)
     }
 
     public func send(_ call: TransportCall) async throws -> JSONValue {
@@ -755,6 +771,17 @@ public final class AgentEnvelopeTransport: PlatformTransport, @unchecked Sendabl
     }
 
     public func sendEnvelope(_ call: TransportCall) async throws -> AgentEnvelopeResult {
+        let mutating = call.operation.descriptor.requiresIdempotency
+        let exchanged = try await exchange(call)
+        do {
+            return try Self.decodeResponse(status: exchanged.status, data: exchanged.body, requestID: exchanged.requestID)
+        } catch let error as PlatformSDKError {
+            if mutating, error.code == .decodeFailure || error.code == .verificationFailure { throw Self.unknownOutcome() }
+            throw error
+        }
+    }
+
+    func exchange(_ call: TransportCall) async throws -> (requestID: String, status: Int, body: Data) {
         let descriptor = call.operation.descriptor
         guard descriptor.plane == .agent else { throw PlatformSDKError(code: .unavailableCapability, retry: .never) }
         let mutating = descriptor.requiresIdempotency
@@ -763,21 +790,16 @@ public final class AgentEnvelopeTransport: PlatformTransport, @unchecked Sendabl
         let data: Data
         let response: URLResponse
         do {
-            (data, response) = try await session.data(for: request, delegate: NoRedirectDelegate.shared)
+            (data, response) = try await session.data(for: request, delegate: delegate)
         } catch {
             throw mutating ? Self.unknownOutcome() : PlatformSDKError(code: .transportFailure, retry: .safe)
         }
-        do {
-            guard data.count <= maximumHTTPResponseBytes, let http = response as? HTTPURLResponse,
-                  http.value(forHTTPHeaderField: "Content-Type")?.split(separator: ";", maxSplits: 1).first?
-                    .trimmingCharacters(in: .whitespaces).lowercased() == "application/json" else {
-                throw Self.decode()
-            }
-            return try Self.decodeResponse(status: http.statusCode, data: data, requestID: requestID)
-        } catch let error as PlatformSDKError {
-            if mutating, error.code == .decodeFailure || error.code == .verificationFailure { throw Self.unknownOutcome() }
-            throw error
+        guard data.count <= maximumHTTPResponseBytes, let http = response as? HTTPURLResponse,
+              http.value(forHTTPHeaderField: "Content-Type")?.split(separator: ";", maxSplits: 1).first?
+                .trimmingCharacters(in: .whitespaces).lowercased() == "application/json" else {
+            throw mutating ? Self.unknownOutcome() : Self.decode()
         }
+        return (requestID, http.statusCode, data)
     }
 
     func envelopeRequest(_ descriptor: OperationDescriptor, call: TransportCall, requestID: String) throws -> URLRequest {
@@ -879,4 +901,57 @@ public final class AgentEnvelopeTransport: PlatformTransport, @unchecked Sendabl
     }
 
     private static func unknownOutcome() -> PlatformSDKError { .init(code: .unknownOutcome, retry: .unknownOutcome) }
+}
+
+public struct AgentCertificateAuthority: Sendable {
+    public let pemFile: URL
+    public let der: Data
+
+    public init(pemFile: URL) throws {
+        guard pemFile.isFileURL, let text = try? String(contentsOf: pemFile, encoding: .utf8) else {
+            throw PlatformSDKError(code: .invalidArgument, retry: .never)
+        }
+        let lines = text.split(whereSeparator: { $0 == "\n" || $0 == "\r" }).map(String.init)
+        guard lines.first == "-----BEGIN CERTIFICATE-----", lines.last == "-----END CERTIFICATE-----",
+              lines.filter({ $0.hasPrefix("-----") }).count == 2,
+              let der = Data(base64Encoded: lines.dropFirst().dropLast().joined()), !der.isEmpty else {
+            throw PlatformSDKError(code: .invalidArgument, retry: .never)
+        }
+        self.pemFile = pemFile
+        self.der = der
+    }
+}
+
+private final class AgentEnvelopeTaskDelegate: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
+    private let certificateAuthority: AgentCertificateAuthority?
+
+    init(_ certificateAuthority: AgentCertificateAuthority?) { self.certificateAuthority = certificateAuthority }
+
+    func urlSession(_ session: URLSession, task: URLSessionTask,
+                    willPerformHTTPRedirection response: HTTPURLResponse,
+                    newRequest request: URLRequest,
+                    completionHandler: @escaping (URLRequest?) -> Void) {
+        completionHandler(nil)
+    }
+
+    #if canImport(Security)
+    func urlSession(_ session: URLSession, task: URLSessionTask, didReceive challenge: URLAuthenticationChallenge,
+                    completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void) {
+        guard let certificateAuthority,
+              challenge.protectionSpace.authenticationMethod == NSURLAuthenticationMethodServerTrust else {
+            completionHandler(.performDefaultHandling, nil)
+            return
+        }
+        guard let trust = challenge.protectionSpace.serverTrust,
+              let anchor = SecCertificateCreateWithData(nil, certificateAuthority.der as CFData),
+              SecTrustSetPolicies(trust, SecPolicyCreateSSL(true, challenge.protectionSpace.host as CFString)) == errSecSuccess,
+              SecTrustSetAnchorCertificates(trust, [anchor] as CFArray) == errSecSuccess,
+              SecTrustSetAnchorCertificatesOnly(trust, true) == errSecSuccess,
+              SecTrustEvaluateWithError(trust, nil) else {
+            completionHandler(.cancelAuthenticationChallenge, nil)
+            return
+        }
+        completionHandler(.useCredential, URLCredential(trust: trust))
+    }
+    #endif
 }

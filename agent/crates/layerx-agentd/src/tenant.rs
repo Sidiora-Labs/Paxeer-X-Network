@@ -463,6 +463,27 @@ pub fn resolve(
     })
 }
 
+/// The tenant-gate surface an Agent HTTP envelope operation is resolved on.
+#[must_use]
+pub(crate) const fn surface_for(operation: Operation) -> Surface {
+    match OperationClass::for_operation(operation) {
+        Some(OperationClass::Subscribe) => Surface::Subscription,
+        Some(OperationClass::Export) => Surface::Export,
+        _ => Surface::Contract,
+    }
+}
+
+/// The trusted owner of the object an Agent HTTP envelope operation addresses. The envelope
+/// path loads no target object, so no owner is supplied here; ownership of an addressed object
+/// is decided by the owner method for the authenticated peer.
+#[must_use]
+pub(crate) const fn target_owner(
+    _operation: Operation,
+    _request: &serde_json::Map<String, serde_json::Value>,
+) -> Option<ObjectOwner> {
+    None
+}
+
 /// Rejects any caller-supplied tenant coordinate that differs from the authenticated tenant.
 /// Supplied coordinates are only compared, never used as authority.
 ///

@@ -155,6 +155,16 @@ impl Registry {
             {
                 return Err("route health identity predicate invalid".into());
             }
+            if id == AGENT_RPC_SERVICE && binding.network_value != json!(network) {
+                return Err(format!(
+                    "route binding {id} network_value must equal the gateway network {network}"
+                ));
+            }
+            if binding.version_value != json!(wire) {
+                return Err(format!(
+                    "route binding {id} version_value differs from the gateway wire version {wire}"
+                ));
+            }
             if let Some(path) = &binding.health_authorization_file {
                 let _ = protected(path)?;
             }

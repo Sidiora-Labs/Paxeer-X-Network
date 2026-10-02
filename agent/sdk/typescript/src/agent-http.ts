@@ -375,7 +375,8 @@ const BOOTSTRAP_OPERATIONS: ReadonlySet<string> = new Set<AgentOperation>(["agen
 const VERIFICATION_LEVELS: ReadonlySet<string> = new Set([
   "Unverified", "SequencerSigned", "BatchIncluded", "StateProven", "CheckpointFinalised", "SettlementAnchored",
 ]);
-const AGENT_ENVELOPE_OPERATIONS: ReadonlySet<string> = new Set<AgentOperation>([
+/** The 50 catalogue names (Operation::name()), sorted ascending. */
+export const AGENT_ENVELOPE_OPERATION_NAMES: readonly AgentOperation[] = Object.freeze<AgentOperation[]>([
   "agent.register", "approval.approve", "approval.get", "approval.list", "approval.reject", "availability.fetch",
   "budget.create", "budget.fund", "budget.list", "budget.reconciliation", "budget.revoke",
   "capability.attenuate", "capability.create", "capability.list", "capability.revoke", "export.offline", "faucet.claim",
@@ -386,6 +387,7 @@ const AGENT_ENVELOPE_OPERATIONS: ReadonlySet<string> = new Set<AgentOperation>([
   "subscription.acknowledge", "subscription.create", "subscription.delete", "subscription.health", "subscription.list",
   "subscription.pause", "subscription.resume", "track", "wait",
 ]);
+const AGENT_ENVELOPE_OPERATIONS: ReadonlySet<string> = new Set<string>(AGENT_ENVELOPE_OPERATION_NAMES);
 const ENVELOPE_MUTATIONS: ReadonlySet<string> = new Set<AgentOperation>([
   "agent.register", "approval.approve", "approval.reject", "budget.create", "budget.fund", "budget.revoke",
   "capability.attenuate", "capability.create", "capability.revoke", "prepare", "program.call", "program.deploy",
@@ -440,6 +442,8 @@ export interface AgentEnvelopeTransportOptions {
   readonly trustedCa?: string | Buffer;
   readonly timeoutMs?: number;
   readonly maximumResponseBytes?: number;
+  /** Observes the HTTP status and bounded raw response body before decoding; never receives request credentials. */
+  readonly onResponse?: (status: number, body: Buffer) => void;
 }
 
 export interface AgentEnvelopeSuccess<TValue = unknown> {
@@ -456,6 +460,7 @@ export class AgentEnvelopeTransport implements ProductionTransport {
   readonly #trustedCa: string | Buffer | undefined;
   readonly #timeoutMs: number;
   readonly #maximumResponseBytes: number;
+  readonly #onResponse: ((status: number, body: Buffer) => void) | undefined;
 
   public constructor(options: AgentEnvelopeTransportOptions) {
     if (options.session !== undefined && !(options.session instanceof AgentSessionCredential)) throw invalidArgument();
@@ -464,6 +469,7 @@ export class AgentEnvelopeTransport implements ProductionTransport {
     this.#gatewayCredential = options.gatewayCredential;
     if (options.trustedCa !== undefined && (this.#endpoint.protocol !== "https:" || options.trustedCa.length === 0)) throw invalidArgument();
     this.#trustedCa = options.trustedCa;
+    this.#onResponse = options.onResponse;
     this.#timeoutMs = exactPositive(options.timeoutMs ?? DEFAULT_TIMEOUT_MS);
     this.#maximumResponseBytes = exactPositive(options.maximumResponseBytes ?? MAX_RESPONSE_BYTES);
     if (this.#maximumResponseBytes > MAX_RESPONSE_BYTES) throw invalidArgument();
@@ -522,6 +528,7 @@ export class AgentEnvelopeTransport implements ProductionTransport {
           if (settled) return;
           try {
             const status = response.statusCode ?? 0;
+            this.#onResponse?.(status, Buffer.concat(chunks));
             if (status >= 300 && status < 400) throw mutation ? ambiguous() : decodeFailure();
             if (response.headers["content-type"] !== "application/json") throw mutation ? ambiguous() : decodeFailure();
             finish(resolve, decodeAgentEnvelopeResponse(status, Buffer.concat(chunks), mutation, requestId) as TResponse);

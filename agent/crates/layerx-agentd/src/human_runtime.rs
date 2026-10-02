@@ -893,25 +893,142 @@ pub struct UnifiedAgentOwner<A> {
 /// The one process-wide agent owner shared by the Human Unix listener and the
 /// agent RPC listener, so sessions, budgets, approvals and the outbox keep a
 /// single authority.
-pub struct SharedAgentOwner<A>(Arc<Mutex<UnifiedAgentOwner<A>>>);
+pub struct SharedAgentOwner<A> {
+    owner: Arc<Mutex<UnifiedAgentOwner<A>>>,
+    peers: Arc<BTreeMap<u32, (String, String)>>,
+    idempotency: Option<Arc<RpcIdempotency>>,
+}
+
+/// Durable per-tenant idempotency records for agent RPC mutations.
+struct RpcIdempotency {
+    root: std::path::PathBuf,
+    daemon_sequences: u64,
+    protocol_sequences: u64,
+    stores: Mutex<BTreeMap<String, Arc<crate::idempotency::Store>>>,
+}
 
 impl<A> Clone for SharedAgentOwner<A> {
     fn clone(&self) -> Self {
-        Self(Arc::clone(&self.0))
+        Self {
+            owner: Arc::clone(&self.owner),
+            peers: Arc::clone(&self.peers),
+            idempotency: self.idempotency.clone(),
+        }
     }
 }
 
 impl<A: HumanAuthorityBoundary> SharedAgentOwner<A> {
+    /// Shares one owner together with the configured Human peer table it was built from.
     #[must_use]
-    pub fn new(owner: UnifiedAgentOwner<A>) -> Self {
-        Self(Arc::new(Mutex::new(owner)))
+    pub fn new(owner: UnifiedAgentOwner<A>, peers: &BTreeMap<u32, (String, String)>) -> Self {
+        Self {
+            owner: Arc::new(Mutex::new(owner)),
+            peers: Arc::new(peers.clone()),
+            idempotency: None,
+        }
+    }
+
+    /// Attaches the durable agent RPC idempotency root and retention windows.
+    ///
+    /// # Errors
+    /// Returns `HumanOperationError::Refused` for a relative root or an invalid retention
+    /// window.
+    pub fn with_idempotency(
+        mut self,
+        root: std::path::PathBuf,
+        daemon_sequences: u64,
+        protocol_sequences: u64,
+    ) -> Result<Self, HumanOperationError> {
+        if !root.is_absolute()
+            || crate::idempotency::RetentionPolicy::new(daemon_sequences, protocol_sequences)
+                .is_err()
+        {
+            return Err(HumanOperationError::Refused);
+        }
+        self.idempotency = Some(Arc::new(RpcIdempotency {
+            root,
+            daemon_sequences,
+            protocol_sequences,
+            stores: Mutex::new(BTreeMap::new()),
+        }));
+        Ok(self)
     }
 
     /// # Errors
     /// Returns `HumanOperationError::Unavailable` when a previous holder panicked while
     /// holding the owner.
     pub fn lock(&self) -> Result<MutexGuard<'_, UnifiedAgentOwner<A>>, HumanOperationError> {
-        self.0.lock().map_err(|_| HumanOperationError::Unavailable)
+        self.owner.lock().map_err(|_| HumanOperationError::Unavailable)
+    }
+
+    /// Returns the tenant's durable idempotency store, opening it on first use.
+    ///
+    /// # Errors
+    /// Returns `Unavailable` when no idempotency root is configured, a lock is poisoned or
+    /// the store cannot be opened.
+    pub(crate) fn idempotency(
+        &self,
+        tenant: &TenantId,
+    ) -> Result<Arc<crate::idempotency::Store>, HumanOperationError> {
+        let config = self
+            .idempotency
+            .as_ref()
+            .ok_or(HumanOperationError::Unavailable)?;
+        let mut stores = config
+            .stores
+            .lock()
+            .map_err(|_| HumanOperationError::Unavailable)?;
+        if let Some(store) = stores.get(tenant.as_str()) {
+            return Ok(Arc::clone(store));
+        }
+        let directory: String = tenant
+            .as_str()
+            .bytes()
+            .map(|byte| format!("{byte:02x}"))
+            .collect();
+        let retention =
+            crate::idempotency::RetentionPolicy::new(config.daemon_sequences, config.protocol_sequences)
+                .map_err(|_| HumanOperationError::Unavailable)?;
+        let store = Arc::new(
+            crate::idempotency::Store::open(config.root.join(directory), tenant.clone(), retention)
+                .map_err(|_| HumanOperationError::Unavailable)?,
+        );
+        stores.insert(tenant.as_str().to_owned(), Arc::clone(&store));
+        Ok(store)
+    }
+
+    /// Returns the live core chain sequence from the shared owner's node head.
+    ///
+    /// # Errors
+    /// Returns `HumanOperationError::Unavailable` when an owner lock is poisoned.
+    pub(crate) fn current_core_sequence(&self) -> Result<u64, HumanOperationError> {
+        let owner = self.lock()?;
+        let operations = owner.lock_operations()?;
+        Ok(operations.node.head().chain_sequence)
+    }
+
+    /// Maps an authenticated agent principal to its configured Human peer.
+    ///
+    /// # Errors
+    /// Returns `HumanOperationError::Refused` when no configured peer carries exactly this
+    /// tenant and agent.
+    pub(crate) fn rpc_peer(
+        &self,
+        principal: &crate::tenant::ResolvedPrincipal,
+    ) -> Result<HumanPeer, HumanOperationError> {
+        self.peers
+            .iter()
+            .find(|(_, (agent, tenant))| {
+                tenant.as_str() == principal.tenant.as_str()
+                    && agent.as_bytes() == principal.agent.as_bytes()
+            })
+            .map(|(uid, (agent, tenant))| HumanPeer {
+                subject: None,
+                uid: *uid,
+                principal: agent.clone(),
+                tenant: tenant.clone(),
+            })
+            .ok_or(HumanOperationError::Refused)
     }
 }
 
@@ -1265,6 +1382,21 @@ impl<A: HumanAuthorityBoundary> UnifiedAgentOwner<A> {
         self.operations
             .lock()
             .map_err(|_| HumanOperationError::Unavailable)
+    }
+
+    /// Reports whether the owner is healthy, with the network id and protocol version the
+    /// node negotiated at handshake.
+    ///
+    /// # Errors
+    /// Returns `HumanOperationError::Unavailable` when the operation owner is poisoned.
+    pub fn rpc_health(&self) -> Result<(bool, u32, u16), HumanOperationError> {
+        let operations = self.lock_operations()?;
+        let node = operations.node.handshake().node();
+        Ok((
+            self.degraded.status().mode == crate::degraded::Mode::Healthy,
+            node.network_id,
+            node.protocol_version,
+        ))
     }
 }
 
@@ -5096,7 +5228,7 @@ fn query(value: &str) -> String {
         })
         .collect()
 }
-fn prepare_digest(request: &HumanPrepare) -> [u8; 32] {
+pub(crate) fn prepare_digest(request: &HumanPrepare) -> [u8; 32] {
     let mut digest = Sha256::new();
     digest.update(b"layerx-human-journey-prepare/v1");
     digest.update(request.activity_type.to_be_bytes());
@@ -5111,7 +5243,7 @@ fn prepare_digest(request: &HumanPrepare) -> [u8; 32] {
     digest.update(Sha256::digest(&request.payload));
     digest.finalize().into()
 }
-fn submit_digest(request: &HumanSubmit) -> [u8; 32] {
+pub(crate) fn submit_digest(request: &HumanSubmit) -> [u8; 32] {
     let mut digest = Sha256::new();
     digest.update(b"layerx-human-journey-submit/v1");
     hash_text(&mut digest, request.preparation_ref.as_bytes());
