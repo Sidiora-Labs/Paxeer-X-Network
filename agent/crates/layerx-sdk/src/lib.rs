@@ -40,6 +40,8 @@ pub mod native_capabilities;
 pub mod production;
 pub mod program_lifecycle;
 pub mod programs;
+
+pub mod purpose;
 mod receipt_generated;
 pub mod register;
 pub mod rpc;

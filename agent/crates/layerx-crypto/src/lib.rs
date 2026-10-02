@@ -18,6 +18,8 @@ pub mod local;
 pub mod onboarding;
 #[cfg(feature = "custody")]
 pub mod payments;
+
+pub mod purpose;
 #[cfg(feature = "custody")]
 pub mod redact;
 #[cfg(feature = "custody")]
