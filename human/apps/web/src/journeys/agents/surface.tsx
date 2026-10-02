@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { copyEntry } from "../../../copy/runtime.ts";
 import { useActiveAccountId } from "../../auth/use-active-account.ts";
@@ -58,11 +58,22 @@ function AgentList({
 export function AgentsSurface({
   ownerAccount,
 }: Readonly<{ ownerAccount?: string }> = {}) {
+  const activeAccountId = useActiveAccountId(ownerAccount);
+  const accountId = ownerAccount ?? activeAccountId;
+  return (
+    <AgentsContent
+      key={JSON.stringify([accountId])}
+      {...(accountId === undefined ? {} : { ownerAccount: accountId })}
+    />
+  );
+}
+
+function AgentsContent({ ownerAccount: accountId }: Readonly<{ ownerAccount?: string }>) {
   const router = useRouter();
   const shell = useAgentsShell();
   const layout = agentsLayout(shell);
   const agents = useMemo(() => new Agents(), []);
-  const accountId = useActiveAccountId(ownerAccount);
+  const request = useRef(0);
   const [items, setItems] = useState<readonly AgentListItemView[] | undefined>(undefined);
   const [selected, setSelected] = useState<string | undefined>(undefined);
   const [loadError, setLoadError] = useState<unknown>(undefined);
@@ -70,11 +81,15 @@ export function AgentsSurface({
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
+    const current = ++request.current;
     setLoading(true);
     setLoadError(undefined);
     setOffline(false);
     try {
       const nextItems = agentListItems(await agents.overview(), AGENT_LOCALE);
+      if (current !== request.current) {
+        return;
+      }
       setItems(nextItems);
       setSelected((current) => (
         current !== undefined && nextItems.some((item) => item.agentId === current)
@@ -82,18 +97,26 @@ export function AgentsSurface({
           : nextItems[0]?.agentId
       ));
     } catch (error) {
+      if (current !== request.current) {
+        return;
+      }
       if (!navigator.onLine) {
         setOffline(true);
       } else {
         setLoadError(error);
       }
     } finally {
-      setLoading(false);
+      if (current === request.current) {
+        setLoading(false);
+      }
     }
   }, [agents]);
 
   useEffect(() => {
     void load();
+    return () => {
+      request.current += 1;
+    };
   }, [load]);
 
   if (loading && items === undefined) {
@@ -139,7 +162,7 @@ export function AgentsSurface({
       <AgentList
         items={items}
         onSelect={(agentId) => {
-          router.push(`/app/agents/${agentId}`);
+          router.push(`/app/agents/${encodeURIComponent(agentId)}`);
         }}
       />
     );
@@ -176,6 +199,23 @@ export function AgentsSurface({
         <InlineNotice tone="warning" role="status">
           {copyEntry("agent.state.unverified").message}
         </InlineNotice>
+      ) : null}
+      {offline ? (
+        <InlineNotice tone="warning" role="status">
+          {copyEntry("state.offline.body").message}
+        </InlineNotice>
+      ) : null}
+      {loadError === undefined ? null : (
+        <InlineNotice tone="danger" role="alert">
+          {copyEntry("state.error.body").message}
+        </InlineNotice>
+      )}
+      {offline || loadError !== undefined ? (
+        <div className="flex">
+          <KitButton variant="secondary" loading={loading} onClick={() => { void load(); }}>
+            {copyEntry("agent.create.check").message}
+          </KitButton>
+        </div>
       ) : null}
       {body}
     </ScreenCard>

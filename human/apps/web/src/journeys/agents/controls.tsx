@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { copyEntry } from "../../../copy/runtime.ts";
 import type { Agent, MoveQuote } from "../../api/index.ts";
@@ -16,6 +16,7 @@ import {
   Agents,
   apiErrorCode,
   apiErrorSentence,
+  archiveDispositionReady,
   controlsFor,
   journeyProgress,
   keyChallengePresentation,
@@ -42,11 +43,13 @@ function AmountField({
   labelKey,
   value,
   onChange,
-}: Readonly<{ labelKey: string; value: string; onChange: (value: string) => void }>) {
+  disabled,
+}: Readonly<{ labelKey: string; value: string; onChange: (value: string) => void; disabled: boolean }>) {
   return (
     <KitTextField
       label={copyEntry(labelKey).message}
       value={value}
+      disabled={disabled}
       onChange={(event) => {
         onChange(event.target.value);
       }}
@@ -57,21 +60,39 @@ function AmountField({
   );
 }
 
-export function AgentControls({
-  shell,
-  agent,
-  agents,
-  ownerAccount,
-  onAgent,
-  onChanged,
-}: Readonly<{
+type AgentControlsProps = Readonly<{
   shell: AgentsShell;
   agent: Agent;
   agents: Agents;
   ownerAccount?: string;
   onAgent: (agent: Agent) => void;
   onChanged: () => void;
-}>) {
+}>;
+
+export function AgentControls(props: AgentControlsProps) {
+  return (
+    <BoundAgentControls
+      key={JSON.stringify([props.agent.agent_id, props.ownerAccount])}
+      {...props}
+    />
+  );
+}
+
+function BoundAgentControls({
+  shell,
+  agent,
+  agents,
+  ownerAccount,
+  onAgent,
+  onChanged,
+}: AgentControlsProps) {
+  const busyRef = useRef(false);
+  const lifecycle = useRef(0);
+
+  useEffect(() => () => {
+    lifecycle.current += 1;
+  }, []);
+
   const [open, setOpen] = useState<OpenControl | undefined>(undefined);
   const [busy, setBusy] = useState(false);
   const [errorSentence, setErrorSentence] = useState<string | undefined>(undefined);
@@ -83,9 +104,10 @@ export function AgentControls({
   const Confirmation = shell === "mobile" ? MobileConfirmation : DesktopConfirmation;
   const journeyPending = lastJourney !== undefined
     && !lastJourney.complete
+    && lastJourney.statusKey !== "refused"
     && lastJourney.refusalSentence === undefined;
   const outcomeUnknown = unknownControl !== undefined;
-  const controlsLocked = journeyPending || outcomeUnknown;
+  const controlsLocked = busy || journeyPending || outcomeUnknown;
 
   useEffect(() => {
     if (!journeyPending) {
@@ -127,11 +149,24 @@ export function AgentControls({
     if (unknownControl === undefined) {
       return "resolved";
     }
+    if (busyRef.current) {
+      return "pending";
+    }
+    busyRef.current = true;
+    setBusy(true);
+    const generation = lifecycle.current;
+    const currentResult = async <T,>(operation: Promise<T>): Promise<T> => {
+      const result = await operation;
+      if (generation !== lifecycle.current) {
+        throw new Error("Agent selection changed");
+      }
+      return result;
+    };
     try {
       if (unknownControl.id === "pause") {
-        onAgent(await agents.pause(agent.agent_id));
+        onAgent(await currentResult(agents.pause(agent.agent_id)));
       } else if (unknownControl.id === "resume") {
-        onAgent(await agents.resume(agent.agent_id));
+        onAgent(await currentResult(agents.resume(agent.agent_id)));
       } else if (unknownControl.id === "limit") {
         const money = parseMonthlyLimit(unknownControl.input, AGENT_CURRENCY);
         if (money === undefined) {
@@ -139,7 +174,7 @@ export function AgentControls({
           setUnknownControl(undefined);
           return "resolved";
         }
-        onAgent(await agents.changeLimit(agent.agent_id, money));
+        onAgent(await currentResult(agents.changeLimit(agent.agent_id, money)));
       } else if (unknownControl.id === "reclaim") {
         const money = parseMonthlyLimit(unknownControl.input, AGENT_CURRENCY);
         if (money === undefined) {
@@ -147,7 +182,7 @@ export function AgentControls({
           setUnknownControl(undefined);
           return "resolved";
         }
-        setLastJourney(journeyProgress(await agents.reclaim(agent.agent_id, money)));
+        setLastJourney(journeyProgress(await currentResult(agents.reclaim(agent.agent_id, money))));
         onChanged();
       } else if (unknownControl.id === "fund") {
         if (unknownControl.quote === undefined) {
@@ -155,7 +190,7 @@ export function AgentControls({
           setUnknownControl(undefined);
           return "resolved";
         }
-        setLastJourney(journeyProgress(await agents.fundCommit(unknownControl.quote.quote_id)));
+        setLastJourney(journeyProgress(await currentResult(agents.fundCommit(unknownControl.quote.quote_id))));
         onChanged();
       } else if (unknownControl.id === "archive") {
         if (unknownControl.phase !== "confirm") {
@@ -164,7 +199,7 @@ export function AgentControls({
           return "resolved";
         }
         setLastJourney(journeyProgress(
-          await agents.archive(agent.agent_id, unknownControl.typed),
+          await currentResult(agents.archive(agent.agent_id, unknownControl.typed)),
         ));
         onChanged();
       } else if (unknownControl.id === "rotate") {
@@ -174,20 +209,28 @@ export function AgentControls({
           setUnknownControl(undefined);
           return "resolved";
         }
-        setChallenge(keyChallengePresentation(await agents.startRotation(agent.agent_id, timing), AGENT_LOCALE));
+        setChallenge(keyChallengePresentation(await currentResult(agents.startRotation(agent.agent_id, timing)), AGENT_LOCALE));
       } else {
-        setChallenge(keyChallengePresentation(await agents.recover(agent.agent_id), AGENT_LOCALE));
+        setChallenge(keyChallengePresentation(await currentResult(agents.recover(agent.agent_id)), AGENT_LOCALE));
       }
       setUnknownControl(undefined);
       setErrorSentence(undefined);
       return "resolved";
     } catch (error) {
+      if (generation !== lifecycle.current) {
+        return "resolved";
+      }
       if (mutationOutcomeUnknown(error)) {
         return "pending";
       }
       setUnknownControl(undefined);
       setErrorSentence(apiErrorSentence(error));
       return "resolved";
+    } finally {
+      busyRef.current = false;
+      if (generation === lifecycle.current) {
+        setBusy(false);
+      }
     }
   }, [agent.agent_id, agents, onAgent, onChanged, unknownControl]);
 
@@ -204,13 +247,19 @@ export function AgentControls({
     return null;
   }
 
-  const close = () => {
+  const close = (completed = false) => {
+    if (!completed && (busyRef.current || controlsLocked)) {
+      return;
+    }
     setOpen(undefined);
     setErrorSentence(undefined);
     setUnknownControl(undefined);
   };
 
   const openControl = (control: AgentControl) => {
+    if (busyRef.current || controlsLocked || !control.enabled) {
+      return;
+    }
     setErrorSentence(undefined);
     if (control.id === "limit" || control.id === "reclaim" || control.id === "fund") {
       setOpen({ id: control.id, input: "" });
@@ -224,34 +273,45 @@ export function AgentControls({
   };
 
   const confirm = async () => {
-    if (open === undefined || busy) {
+    if (open === undefined || busyRef.current || controlsLocked
+      || !controls.some((control) => control.id === open.id && control.enabled)) {
       return;
     }
+    busyRef.current = true;
     setBusy(true);
+    const generation = lifecycle.current;
+    const currentResult = async <T,>(operation: Promise<T>): Promise<T> => {
+      const result = await operation;
+      if (generation !== lifecycle.current) {
+        throw new Error("Agent selection changed");
+      }
+      return result;
+    };
+    let archiveReadPending = false;
     setErrorSentence(undefined);
     try {
       setUnknownControl(undefined);
       if (open.id === "pause") {
-        onAgent(await agents.pause(agent.agent_id));
-        close();
+        onAgent(await currentResult(agents.pause(agent.agent_id)));
+        close(true);
       } else if (open.id === "resume") {
-        onAgent(await agents.resume(agent.agent_id));
-        close();
+        onAgent(await currentResult(agents.resume(agent.agent_id)));
+        close(true);
       } else if (open.id === "limit") {
         const money = parseMonthlyLimit(open.input, AGENT_CURRENCY);
         if (money === undefined) {
           setErrorSentence(copyEntry("error.agent.limit-invalid").message);
         } else {
-          onAgent(await agents.changeLimit(agent.agent_id, money));
-          close();
+          onAgent(await currentResult(agents.changeLimit(agent.agent_id, money)));
+          close(true);
         }
       } else if (open.id === "reclaim") {
         const money = parseMonthlyLimit(open.input, AGENT_CURRENCY);
         if (money === undefined) {
           setErrorSentence(copyEntry("error.agent.limit-invalid").message);
         } else {
-          setLastJourney(journeyProgress(await agents.reclaim(agent.agent_id, money)));
-          close();
+          setLastJourney(journeyProgress(await currentResult(agents.reclaim(agent.agent_id, money))));
+          close(true);
           onChanged();
         }
       } else if (open.id === "fund") {
@@ -262,20 +322,38 @@ export function AgentControls({
           if (money === undefined) {
             setErrorSentence(copyEntry("error.agent.limit-invalid").message);
           } else {
-            const quote = await agents.fundQuote(ownerAccount, agent.agent_id, money);
+            const quote = await currentResult(agents.fundQuote(ownerAccount, agent.agent_id, money));
             setOpen({ id: "fund", input: open.input, quote });
           }
         } else {
-          setLastJourney(journeyProgress(await agents.fundCommit(open.quote.quote_id)));
-          close();
+          setLastJourney(journeyProgress(await currentResult(agents.fundCommit(open.quote.quote_id))));
+          close(true);
           onChanged();
         }
       } else if (open.id === "archive") {
+        archiveReadPending = true;
+        const currentAgent = await currentResult(agents.agent(agent.agent_id));
+        if (!archiveDispositionReady(currentAgent)) {
+          setOpen({ id: "archive", phase: "disposition", typed: "" });
+          setErrorSentence(copyEntry("error.agent.archive-needs-disposition").message);
+          return;
+        }
+        if (currentAgent.agent_id !== agent.agent_id
+          || !controlsFor(currentAgent).some((control) => control.id === "archive" && control.enabled)) {
+          setErrorSentence(copyEntry("agent.state.unverified").message);
+          return;
+        }
+        onAgent(currentAgent);
         if (open.phase === "disposition") {
           setOpen({ id: "archive", phase: "confirm", typed: "" });
         } else {
-          setLastJourney(journeyProgress(await agents.archive(agent.agent_id, open.typed)));
-          close();
+          if (open.typed !== currentAgent.name) {
+            setErrorSentence(copyEntry("error.agent.confirmation-mismatch").message);
+            return;
+          }
+          archiveReadPending = false;
+          setLastJourney(journeyProgress(await currentResult(agents.archive(agent.agent_id, open.typed))));
+          close(true);
           onChanged();
         }
       } else if (open.id === "rotate") {
@@ -283,16 +361,19 @@ export function AgentControls({
         if (timing === undefined) {
           setErrorSentence(copyEntry("error.agent.rotation-timing").message);
         } else {
-          setChallenge(keyChallengePresentation(await agents.startRotation(agent.agent_id, timing), AGENT_LOCALE));
-          close();
+          setChallenge(keyChallengePresentation(await currentResult(agents.startRotation(agent.agent_id, timing)), AGENT_LOCALE));
+          close(true);
         }
       } else {
-        setChallenge(keyChallengePresentation(await agents.recover(agent.agent_id), AGENT_LOCALE));
-        close();
+        setChallenge(keyChallengePresentation(await currentResult(agents.recover(agent.agent_id)), AGENT_LOCALE));
+        close(true);
       }
     } catch (error) {
+      if (generation !== lifecycle.current) {
+        return;
+      }
       const quoteReadFailed = open.id === "fund" && open.quote === undefined;
-      if (mutationOutcomeUnknown(error) && !quoteReadFailed) {
+      if (mutationOutcomeUnknown(error) && !quoteReadFailed && !archiveReadPending) {
         setOpen(undefined);
         setUnknownControl(open);
         setErrorSentence(copyEntry("state.still_checking.body").message);
@@ -303,7 +384,10 @@ export function AgentControls({
       }
       setErrorSentence(apiErrorSentence(error));
     } finally {
-      setBusy(false);
+      busyRef.current = false;
+      if (generation === lifecycle.current) {
+        setBusy(false);
+      }
     }
   };
 
@@ -353,7 +437,7 @@ export function AgentControls({
           </div>
           <KitSectionHeader title={copyEntry("agent.detail.keys").message} />
           <div className="flex flex-wrap gap-2">
-            {keyControls.map((control) => controlsLocked ? (
+            {keyControls.map((control) => controlsLocked || !control.enabled ? (
               <KitButton
                 key={control.id}
                 variant="secondary"
@@ -423,7 +507,9 @@ export function AgentControls({
             expectedValue: agent.name,
             value: open.typed,
             onValueChange: (value) => {
-              setOpen({ id: "archive", phase: "confirm", typed: value });
+              if (!busyRef.current) {
+                setOpen({ id: "archive", phase: "confirm", typed: value });
+              }
             },
           }}
         >
@@ -451,41 +537,52 @@ export function AgentControls({
               <>
                 <p className="text-sm text-foreground-secondary">{copyEntry("agent.keys.rotation-timing.body").message}</p>
                 <AmountField
+                  disabled={busy}
                   labelKey="agent.keys.rotation-delay.label"
                   value={open.delay}
-                  onChange={(value) => { setOpen({ ...open, delay: value }); }}
+                  onChange={(value) => { if (!busyRef.current) { setOpen({ ...open, delay: value }); } }}
                 />
                 <AmountField
+                  disabled={busy}
                   labelKey="agent.keys.rotation-window.label"
                   value={open.window}
-                  onChange={(value) => { setOpen({ ...open, window: value }); }}
+                  onChange={(value) => { if (!busyRef.current) { setOpen({ ...open, window: value }); } }}
                 />
               </>
             ) : null}
             {open.id === "limit" ? (
               <AmountField
+                disabled={busy}
                 labelKey="agent.limit.amount.label"
                 value={open.input}
                 onChange={(value) => {
-                  setOpen({ id: "limit", input: value });
+                  if (!busyRef.current) {
+                    setOpen({ id: "limit", input: value });
+                  }
                 }}
               />
             ) : null}
             {open.id === "reclaim" ? (
               <AmountField
+                disabled={busy}
                 labelKey="agent.reclaim.amount.label"
                 value={open.input}
                 onChange={(value) => {
-                  setOpen({ id: "reclaim", input: value });
+                  if (!busyRef.current) {
+                    setOpen({ id: "reclaim", input: value });
+                  }
                 }}
               />
             ) : null}
             {open.id === "fund" && open.quote === undefined ? (
               <AmountField
+                disabled={busy}
                 labelKey="agent.fund.amount.label"
                 value={open.input}
                 onChange={(value) => {
-                  setOpen({ id: "fund", input: value });
+                  if (!busyRef.current) {
+                    setOpen({ id: "fund", input: value });
+                  }
                 }}
               />
             ) : null}
@@ -495,8 +592,11 @@ export function AgentControls({
             {open.id === "archive" ? (
               <KitButton
                 variant="secondary"
+                {...(busy ? { disabled: true as const, disabledReason: copyEntry("state.still_checking.locked").message } : {})}
                 onClick={() => {
-                  setOpen({ id: "reclaim", input: "" });
+                  if (!busyRef.current) {
+                    setOpen({ id: "reclaim", input: "" });
+                  }
                 }}
               >
                 {copyEntry("agent.control.reclaim").message}

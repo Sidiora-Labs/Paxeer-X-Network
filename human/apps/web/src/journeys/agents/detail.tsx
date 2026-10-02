@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { copyEntry } from "../../../copy/runtime.ts";
 import type { Agent } from "../../api/index.ts";
@@ -56,6 +56,11 @@ function SpendSection({ agent }: Readonly<{ agent: Agent }>) {
       <InlineNotice tone={spend.protocolBacked ? "neutral" : "warning"} role="status">
         {spend.enforcementSentence}
       </InlineNotice>
+      <p className="text-sm text-muted-foreground">
+        <time dateTime={agent.spend.period_start}>{spend.periodStart}</time>
+        {" – "}
+        <time dateTime={agent.spend.period_end}>{spend.periodEnd}</time>
+      </p>
       <p className="text-sm text-muted-foreground">{spend.verificationSentence}</p>
       {spend.reconciliationSentence === undefined ? null : (
         <InlineNotice tone="warning" role="status">
@@ -66,21 +71,35 @@ function SpendSection({ agent }: Readonly<{ agent: Agent }>) {
   );
 }
 
-export function AgentDetailScreen({
-  agentId,
-  ownerAccount,
-  embedded = false,
-  onChanged,
-}: Readonly<{
+type AgentDetailProps = Readonly<{
   agentId: string;
   ownerAccount?: string;
   embedded?: boolean;
   onChanged?: () => void;
-}>) {
+}>;
+
+export function AgentDetailScreen(props: AgentDetailProps) {
+  const activeAccountId = useActiveAccountId(props.ownerAccount);
+  const accountId = props.ownerAccount ?? activeAccountId;
+  return (
+    <AgentDetailContent
+      key={JSON.stringify([props.agentId, accountId])}
+      {...props}
+      {...(accountId === undefined ? {} : { ownerAccount: accountId })}
+    />
+  );
+}
+
+function AgentDetailContent({
+  agentId,
+  ownerAccount: accountId,
+  embedded = false,
+  onChanged,
+}: AgentDetailProps) {
   const router = useRouter();
   const shell = useAgentsShell();
   const agents = useMemo(() => new Agents(), []);
-  const accountId = useActiveAccountId(ownerAccount);
+  const request = useRef(0);
   const [agent, setAgent] = useState<Agent | undefined>(undefined);
   const [creation, setCreation] = useState<JourneyProgress | undefined>(undefined);
   const [loadError, setLoadError] = useState<unknown>(undefined);
@@ -88,34 +107,48 @@ export function AgentDetailScreen({
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
+    const current = ++request.current;
     setLoading(true);
     setLoadError(undefined);
     setOffline(false);
     try {
       const loaded = await agents.agent(agentId);
-      setAgent(loaded);
-      if (loaded.state === "creating" && loaded.creation_journey_id !== undefined) {
-        setCreation(journeyProgress(await agents.journey(loaded.creation_journey_id)));
-      } else {
-        setCreation(undefined);
+      if (current !== request.current) {
+        return;
       }
+      const progress = loaded.state === "creating" && loaded.creation_journey_id !== undefined
+        ? journeyProgress(await agents.journey(loaded.creation_journey_id))
+        : undefined;
+      if (current !== request.current) {
+        return;
+      }
+      setAgent(loaded);
+      setCreation(progress);
     } catch (error) {
+      if (current !== request.current) {
+        return;
+      }
       if (!navigator.onLine) {
         setOffline(true);
       } else {
         setLoadError(error);
       }
     } finally {
-      setLoading(false);
+      if (current === request.current) {
+        setLoading(false);
+      }
     }
   }, [agentId, agents]);
 
   useEffect(() => {
     void load();
+    return () => {
+      request.current += 1;
+    };
   }, [load]);
 
   useEffect(() => {
-    if (creation === undefined || creation.complete || creation.refusalSentence !== undefined) {
+    if (creation === undefined || creation.complete || creation.statusKey === "refused" || creation.refusalSentence !== undefined) {
       return;
     }
     const timer = setTimeout(() => {
@@ -188,7 +221,7 @@ export function AgentDetailScreen({
             {copyEntry(creationHeadlineKey(creation)).message}
           </p>
           <JourneyStages progress={creation} />
-          {creation.complete || creation.refusalSentence !== undefined ? null : (
+          {creation.complete || creation.statusKey === "refused" || creation.refusalSentence !== undefined ? null : (
             <div className="flex">
               <KitButton
                 variant="secondary"
@@ -208,6 +241,8 @@ export function AgentDetailScreen({
         agents={agents}
         {...(accountId === undefined ? {} : { ownerAccount: accountId })}
         onAgent={(updated) => {
+          request.current += 1;
+          setLoading(false);
           setAgent(updated);
           onChanged?.();
         }}

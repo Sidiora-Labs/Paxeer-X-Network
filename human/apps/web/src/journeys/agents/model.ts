@@ -206,7 +206,8 @@ export function journeyProgress(journey: Journey): JourneyProgress {
     kind: journey.kind,
     statusKey: journeyStatusKey(journey.state),
     stages,
-    complete: settled && stages.length > 0 && stages.every((stage) => stage.receiptVerified),
+    complete: settled && journey.refusal === undefined
+      && stages.length > 0 && stages.every((stage) => stage.receiptVerified),
   };
   if (journey.refusal !== undefined) {
     progress.refusalSentence = catalogSentence(journey.refusal.copy_key);
@@ -246,6 +247,12 @@ export interface AgentPresentation {
 
 export function agentStateVerified(agent: Agent): boolean {
   return evidenceReceiptVerified(agent.evidence);
+}
+
+export function archiveDispositionReady(agent: Agent): boolean {
+  return agentStateVerified(agent)
+    && RECEIPT_LEVELS.includes(agent.spend.verification)
+    && agent.spend.remaining.amount === 0n;
 }
 
 export function agentPresentation(agent: Agent): AgentPresentation {
@@ -300,6 +307,8 @@ export interface SpendPresentation {
   readonly limit: string;
   readonly summary: string;
   readonly percentSpent: number;
+  readonly periodStart: string;
+  readonly periodEnd: string;
   readonly enforcement: LimitEnforcement;
   readonly protocolBacked: boolean;
   readonly enforcementSentence: string;
@@ -330,6 +339,8 @@ export function spendPresentation(agent: Agent, locale: string): SpendPresentati
     limit: string;
     summary: string;
     percentSpent: number;
+    periodStart: string;
+    periodEnd: string;
     enforcement: LimitEnforcement;
     protocolBacked: boolean;
     enforcementSentence: string;
@@ -341,6 +352,8 @@ export function spendPresentation(agent: Agent, locale: string): SpendPresentati
     limit,
     summary: formatCopy("agent.spend.of_limit", { spent, limit }),
     percentSpent: Math.min(100, Math.max(0, percent)),
+    periodStart: formatPlainTimestamp(agent.spend.period_start, locale),
+    periodEnd: formatPlainTimestamp(agent.spend.period_end, locale),
     enforcement: agent.limit.enforcement,
     protocolBacked: agent.limit.enforcement === "protocol",
     enforcementSentence: copyEntry(enforcementCopyKey).message,
