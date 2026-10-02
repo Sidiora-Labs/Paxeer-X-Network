@@ -37,6 +37,7 @@ struct LimitState {
     config: LimitConfig,
     held: BTreeMap<[u8; 32], Hold>,
     retired: bool,
+    successor: Option<LimitId>,
 }
 
 /// One held amount with its head-sequence bound and, for time-bounded
@@ -84,6 +85,7 @@ impl BudgetLimiter {
                         config,
                         held: BTreeMap::new(),
                         retired: false,
+                        successor: None,
                     },
                 )
                 .is_some()
@@ -125,8 +127,64 @@ impl BudgetLimiter {
                 config,
                 held: BTreeMap::new(),
                 retired: false,
+                successor: None,
             },
         );
+        Ok(())
+    }
+
+    /// Records that `predecessor` was renewed into `successor`. Outstanding holds still keyed to
+    /// the predecessor then count against the successor's ceiling, and their executed amounts
+    /// also charge the successor; the holds themselves are never moved or redigested.
+    ///
+    /// # Errors
+    ///
+    /// Returns `UnknownLimit` for an unconfigured identifier, `InvalidConfiguration` for a self
+    /// link, a scope change, a predecessor already linked to another successor or a link that
+    /// would close a cycle, or `Poisoned`.
+    pub fn link_successor(
+        &self,
+        predecessor: LimitId,
+        successor: LimitId,
+    ) -> Result<(), LimitRefusal> {
+        let mut limits = self.limits.lock().map_err(|_| LimitRefusal::Poisoned)?;
+        let scope = limits
+            .get(&successor)
+            .ok_or(LimitRefusal::UnknownLimit(successor))?
+            .config
+            .scope;
+        let limit = limits
+            .get(&predecessor)
+            .ok_or(LimitRefusal::UnknownLimit(predecessor))?;
+        if predecessor == successor
+            || limit.config.scope != scope
+            || limit.successor.is_some_and(|current| current != successor)
+            || live_head(&limits, successor)? == predecessor
+        {
+            return Err(LimitRefusal::InvalidConfiguration);
+        }
+        if let Some(limit) = limits.get_mut(&predecessor) {
+            limit.successor = Some(successor);
+        }
+        Ok(())
+    }
+
+    /// Raises one limit's cached consumed total to a refreshed persisted total. A lower persisted
+    /// total keeps the cached one: a settled execution is persisted before it is released.
+    ///
+    /// # Errors
+    ///
+    /// Returns `UnknownLimit` for an unconfigured identifier, `InvalidConfiguration` when the
+    /// refreshed total passes the ceiling, or `Poisoned`.
+    pub fn refresh_consumed(&self, id: LimitId, consumed: u128) -> Result<(), LimitRefusal> {
+        let mut limits = self.limits.lock().map_err(|_| LimitRefusal::Poisoned)?;
+        let limit = limits.get_mut(&id).ok_or(LimitRefusal::UnknownLimit(id))?;
+        if consumed > limit.config.ceiling {
+            return Err(LimitRefusal::InvalidConfiguration);
+        }
+        if consumed > limit.config.consumed {
+            limit.config.consumed = consumed;
+        }
         Ok(())
     }
 
@@ -296,7 +354,7 @@ fn reserve_bounded(
         if limit.held.contains_key(&request.id) {
             return Err(LimitRefusal::InvalidRequest);
         }
-        let held = held_total(limit)?;
+        let held = lineage_held(&limits, *id)?;
         let projected = limit
             .config
             .consumed
@@ -417,8 +475,10 @@ pub(crate) fn release_all(
         return Ok(false);
     }
     let mut limits = limiter.limits.lock().map_err(|_| LimitRefusal::Poisoned)?;
+    let mut released = limits.clone();
+    let mut successor_charges = Vec::new();
     let mut found = false;
-    for limit in limits.values_mut() {
+    for (id, limit) in &mut released {
         let Some(hold) = limit.held.get(&reservation_id).copied() else {
             continue;
         };
@@ -432,9 +492,24 @@ pub(crate) fn release_all(
                 .consumed
                 .checked_add(hold.amount)
                 .ok_or(LimitRefusal::Arithmetic)?;
+            if limit.successor.is_some() {
+                successor_charges.push((*id, hold.amount));
+            }
         }
         found = true;
     }
+    for (id, amount) in successor_charges {
+        let head = live_head(&released, id)?;
+        let limit = released
+            .get_mut(&head)
+            .ok_or(LimitRefusal::UnknownLimit(head))?;
+        limit.config.consumed = limit
+            .config
+            .consumed
+            .checked_add(amount)
+            .ok_or(LimitRefusal::Arithmetic)?;
+    }
+    *limits = released;
     Ok(found)
 }
 
@@ -459,6 +534,35 @@ pub(crate) fn release_core_expired(
         }
     }
     Ok(found)
+}
+
+/// Follows a renewal chain to the identity that currently admits reservations.
+fn live_head(limits: &BTreeMap<LimitId, LimitState>, id: LimitId) -> Result<LimitId, LimitRefusal> {
+    let mut current = id;
+    for _ in 0..=limits.len() {
+        let limit = limits
+            .get(&current)
+            .ok_or(LimitRefusal::UnknownLimit(current))?;
+        match limit.successor {
+            Some(next) => current = next,
+            None => return Ok(current),
+        }
+    }
+    Err(LimitRefusal::InvalidConfiguration)
+}
+
+/// Sums the holds of one identity and of every predecessor whose renewal chain ends at it.
+fn lineage_held(limits: &BTreeMap<LimitId, LimitState>, id: LimitId) -> Result<u128, LimitRefusal> {
+    let mut total = 0_u128;
+    for (key, limit) in limits {
+        if *key != id && (limit.successor.is_none() || live_head(limits, *key)? != id) {
+            continue;
+        }
+        total = total
+            .checked_add(held_total(limit)?)
+            .ok_or(LimitRefusal::Arithmetic)?;
+    }
+    Ok(total)
 }
 
 fn held_total(limit: &LimitState) -> Result<u128, LimitRefusal> {

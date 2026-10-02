@@ -332,7 +332,7 @@ fn install_once(
     record: &EnrolmentLimitRecord,
 ) -> Result<(), DaemonLimitError> {
     match limiter.consumed(record.limit_id) {
-        Ok(_) => Ok(()),
+        Ok(_) => Ok(limiter.refresh_consumed(record.limit_id, record.consumed)?),
         Err(LimitRefusal::UnknownLimit(_)) => Ok(limiter.install(record.config())?),
         Err(refusal) => Err(refusal.into()),
     }
@@ -488,8 +488,9 @@ fn declare_enrolment(
 /// Re-declaring a scope under a new `LimitConfig.id` renews it: the successor is created with
 /// the predecessor's consumed total (or the declared one, whichever is larger) and the
 /// predecessor is marked retired with a pointer to its successor in one store batch. The
-/// predecessor is retired in the limiter only after the successor is installed, and keeps its
-/// held reservations so they still resolve against it.
+/// predecessor is linked to its successor and retired in the limiter only after the successor is
+/// installed; it keeps its held reservations, which count against the successor's ceiling. An
+/// identity already in the limiter takes the refreshed persisted consumed total.
 ///
 /// # Errors
 /// Returns `Invalid` for a zero ceiling or consumed above it, `Conflict` for a stored record whose ceiling differs, two verified limits with one scope, a renewal whose carried consumed passes the new ceiling or that re-declares an already stored identity, and a scope with another live record but no lineage, `IdCollision` for a truncated-identifier collision, `Corrupt` for a malformed record, index or lineage, and store or limiter failures.
@@ -514,6 +515,7 @@ pub fn install_enrolment_limits(
         install_once(limiter, &record)?;
         if let Some(previous) = previous {
             install_once(limiter, &previous)?;
+            limiter.link_successor(previous.limit_id, record.limit_id)?;
             limiter.retire(previous.limit_id)?;
         }
         installed.push(record);
@@ -536,6 +538,11 @@ pub fn install_enrolment_limits(
         install_once(limiter, &record)?;
         limiter.retire(record.limit_id)?;
         installed.push(record);
+    }
+    for record in &installed {
+        if let Some(successor) = record.successor {
+            limiter.link_successor(record.limit_id, daemon_limit_id(successor))?;
+        }
     }
     Ok(installed)
 }
@@ -816,10 +823,10 @@ mod tests {
 
     use super::{
         daemon_limit_id, enrolment_index_key, enrolment_key, enrolment_limit_id,
-        install_enrolment_limits, reserve, restore, scope_bytes, scope_from, stored_enrolment,
-        stored_lineage, BudgetLimiter, DaemonLimitError, EnrolmentLimitRecord, LimitConfig,
-        LimitId, LimitRefusal, LimitScope, ReservationRequest, ENROLMENT_BYTES,
-        ENROLMENT_RETIRED_BYTES, ENROLMENT_RETIRED_VERSION, ENROLMENT_VERSION,
+        install_enrolment_limits, release, reserve, restore, scope_bytes, scope_from,
+        stored_enrolment, stored_lineage, BudgetLimiter, DaemonLimitError, EnrolmentLimitRecord,
+        LimitConfig, LimitId, LimitRefusal, LimitScope, ReleaseKind, ReservationRequest,
+        ENROLMENT_BYTES, ENROLMENT_RETIRED_BYTES, ENROLMENT_RETIRED_VERSION, ENROLMENT_VERSION,
     };
     use crate::store::{Store, TenantId};
 
@@ -1273,5 +1280,146 @@ mod tests {
             Some(first.stable_id)
         );
         assert_eq!(limiter.is_retired(first.limit_id), Ok(false));
+    }
+
+    #[test]
+    fn predecessor_holds_count_against_the_successor_ceiling() {
+        let root = Root::new("lineage-held");
+        let mut store = text(Store::open(&root.0), "store");
+        let limiter = text(BudgetLimiter::new(Vec::new()), "limiter");
+        let tenant = tenant_id("tenant-a");
+        let first = text(
+            install(
+                &mut store,
+                &limiter,
+                &tenant,
+                declared(1, SCOPE, CEILING, 10),
+            ),
+            "first",
+        );
+        let hold = text(
+            reserve(&limiter, &request(5, 20, first.limit_id)),
+            "old hold",
+        );
+        let renewed = text(
+            install(
+                &mut store,
+                &limiter,
+                &tenant,
+                declared(2, SCOPE, CEILING, 0),
+            ),
+            "renewal",
+        );
+        assert!(matches!(
+            reserve(&limiter, &request(6, 71, renewed.limit_id)),
+            Err(LimitRefusal::Exceeded {
+                ceiling: 100,
+                consumed: 10,
+                held: 20,
+                requested: 71,
+                ..
+            })
+        ));
+        assert!(reserve(&limiter, &request(7, 70, renewed.limit_id)).is_ok());
+
+        let restarted = text(BudgetLimiter::new(Vec::new()), "restarted limiter");
+        text(
+            install_enrolment_limits(
+                &mut store,
+                &restarted,
+                &tenant,
+                &[declared(2, SCOPE, CEILING, 0)],
+            ),
+            "restart install",
+        );
+        text(restore(&restarted, &hold.durable), "restore");
+        assert!(matches!(
+            reserve(&restarted, &request(6, 71, renewed.limit_id)),
+            Err(LimitRefusal::Exceeded { held: 20, .. })
+        ));
+        assert!(reserve(&restarted, &request(7, 70, renewed.limit_id)).is_ok());
+    }
+
+    #[test]
+    fn settling_a_predecessor_hold_charges_the_successor_in_store_and_cache() {
+        let root = Root::new("lineage-settle");
+        let mut store = text(Store::open(&root.0), "store");
+        let limiter = text(BudgetLimiter::new(Vec::new()), "limiter");
+        let tenant = tenant_id("tenant-a");
+        let first = text(
+            install(
+                &mut store,
+                &limiter,
+                &tenant,
+                declared(1, SCOPE, CEILING, 10),
+            ),
+            "first",
+        );
+        let hold = text(
+            reserve(&limiter, &request(5, 20, first.limit_id)),
+            "old hold",
+        );
+        let held_bytes = hold.durable.clone();
+        let renewed = text(
+            install(
+                &mut store,
+                &limiter,
+                &tenant,
+                declared(2, SCOPE, CEILING, 0),
+            ),
+            "renewal",
+        );
+        let stale = text(BudgetLimiter::new(Vec::new()), "stale limiter");
+        text(
+            install_enrolment_limits(
+                &mut store,
+                &stale,
+                &tenant,
+                &[declared(2, SCOPE, CEILING, 0)],
+            ),
+            "stale install",
+        );
+        assert_eq!(stale.consumed(renewed.limit_id), Ok(10));
+
+        let updates = text(
+            super::consumption_updates(&store, &tenant, &hold.durable),
+            "consumption",
+        );
+        text(store.update_local_batch(updates), "settlement write");
+        assert_eq!(
+            release(&limiter, [5; 32], ReleaseKind::Executed, 2),
+            Ok(true)
+        );
+        assert_eq!(stored(&store, &tenant, renewed.stable_id).consumed, 30);
+        assert_eq!(limiter.consumed(renewed.limit_id), Ok(30));
+        assert_eq!(stored(&store, &tenant, first.stable_id).consumed, 30);
+        assert_eq!(limiter.consumed(first.limit_id), Ok(30));
+        assert_eq!(limiter.held_reservations(), Ok(0));
+        assert!(matches!(
+            reserve(&limiter, &request(6, 71, renewed.limit_id)),
+            Err(LimitRefusal::Exceeded {
+                consumed: 30,
+                held: 0,
+                ..
+            })
+        ));
+        assert!(reserve(&limiter, &request(7, 70, renewed.limit_id)).is_ok());
+
+        assert_eq!(hold.durable, held_bytes);
+        assert_eq!(hold.durable.len(), 1);
+        assert_eq!(hold.durable[0].limit_id, first.limit_id);
+        assert_eq!(hold.durable[0].digest, hold.durable[0].canonical_digest());
+
+        text(
+            install_enrolment_limits(
+                &mut store,
+                &stale,
+                &tenant,
+                &[declared(2, SCOPE, CEILING, 0)],
+            ),
+            "refresh install",
+        );
+        assert_eq!(stale.consumed(renewed.limit_id), Ok(30));
+        assert_eq!(stale.consumed(first.limit_id), Ok(30));
     }
 }
