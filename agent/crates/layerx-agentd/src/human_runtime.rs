@@ -2436,7 +2436,7 @@ impl<A: HumanAuthorityBoundary> UnifiedAgentOwner<A> {
                 let refuse =
                     |error: BindingError| SessionControlError::Human(binding_refusal(&error));
                 let (extension, updates, companions) = match capability_id {
-                    Some(_) => {
+                    Some(selected) => {
                         let semantic = crate::capability::derive_effects(
                             disclosure,
                             &crate::capability::VerifiedInputs {
@@ -2444,15 +2444,18 @@ impl<A: HumanAuthorityBoundary> UnifiedAgentOwner<A> {
                             },
                         )
                         .map_err(|_| SessionControlError::Human(HumanOperationError::Refused))?;
-                        let (counterparty, asset, amount) = capability_intent_value(&semantic)
-                            .map_err(SessionControlError::Human)?;
-                        let intent = binding::TimedIntent {
-                            activity: disclosure.activity_type.value(),
-                            counterparty,
-                            asset,
-                            amount,
-                            purpose: capability_purpose(None, disclosure).map_err(refuse)?,
-                        };
+                        let record =
+                            crate::capability::timed::restore(store, &planner_tenant, &selected)
+                                .map_err(|error| {
+                                    SessionControlError::Human(capability_refusal(&error))
+                                })?
+                                .filter(|record| record.agent == planner_agent)
+                                .ok_or_else(|| refuse(BindingError::Unbound))?;
+                        let intent = binding::PlanIntent::new(
+                            disclosure.activity_type.value(),
+                            &semantic,
+                            capability_purpose(&record, disclosure).map_err(refuse)?,
+                        );
                         let disclosure_digest = disclosure
                             .audit_digest()
                             .map_err(|_| SessionControlError::Unavailable)?;
@@ -10186,53 +10189,38 @@ fn verified_revoke_balance(disclosure: &layerx_crypto::disclosure::Disclosure) -
 }
 
 fn capability_purpose(
-    asserted: Option<&str>,
+    record: &crate::capability::timed::TimedCapability,
     disclosure: &layerx_crypto::disclosure::Disclosure,
 ) -> Result<crate::capability::binding::PurposeBinding, crate::capability::binding::BindingError> {
-    use crate::capability::binding::{self, BindingError};
+    use crate::capability::binding;
     use layerx_crypto::disclosure::DisclosedNativeOperation;
-    let asserted = asserted.ok_or(BindingError::PurposeCommitmentMissing)?;
-    match &disclosure.native_operation {
-        Some(DisclosedNativeOperation::BudgetFund(fund)) => {
-            binding::purpose_from_commitment(asserted, Some(fund.context.purpose_hash))
-        }
-        Some(DisclosedNativeOperation::BudgetDefund(defund)) => {
-            binding::purpose_from_commitment(asserted, Some(defund.context.purpose_hash))
-        }
-        Some(DisclosedNativeOperation::BudgetRevoke(revoke)) => {
-            binding::purpose_from_commitment(asserted, Some(revoke.context.purpose_hash))
-        }
-        _ if binding::purpose_commitment(disclosure).is_some() => {
-            binding::bind_purpose(asserted, disclosure)
-        }
-        _ => binding::purpose_from_commitment(asserted, None),
+    let purposes = record_purposes(record)?;
+    let context_commitment = match &disclosure.native_operation {
+        Some(DisclosedNativeOperation::BudgetFund(fund)) => Some(fund.context.purpose_hash),
+        Some(DisclosedNativeOperation::BudgetDefund(defund)) => Some(defund.context.purpose_hash),
+        Some(DisclosedNativeOperation::BudgetRevoke(revoke)) => Some(revoke.context.purpose_hash),
+        _ => None,
+    };
+    match context_commitment {
+        Some(commitment) => binding::purpose_from_set(&purposes, Some(commitment)),
+        None => binding::bind_purpose_from_set(
+            &layerx_agent_api::identity::ExplicitSet::allow(purposes),
+            disclosure,
+        ),
     }
 }
 
-fn capability_intent_value(
-    semantic: &crate::capability::SemanticPlan,
-) -> Result<([u8; 32], [u8; 32], u128), HumanOperationError> {
-    use crate::capability::Effect;
-    let mut values = semantic.effects().iter().filter_map(|effect| match effect {
-        Effect::Transfer {
-            to, asset, amount, ..
-        } => Some((*to, *asset, *amount)),
-        Effect::Issuance {
-            account,
-            asset,
-            amount,
-        }
-        | Effect::Destruction {
-            account,
-            asset,
-            amount,
-        } => Some((*account, *asset, *amount)),
-        Effect::Authorization { .. } => None,
-    });
-    match (values.next(), values.next()) {
-        (Some(value), None) => Ok(value),
-        _ => Err(HumanOperationError::Refused),
-    }
+fn record_purposes(
+    record: &crate::capability::timed::TimedCapability,
+) -> Result<Vec<layerx_agent_api::identity::Purpose>, crate::capability::binding::BindingError> {
+    record
+        .purposes
+        .iter()
+        .map(|value| {
+            layerx_agent_api::identity::Purpose::new(value.as_str())
+                .map_err(|_| crate::capability::binding::BindingError::Corrupt)
+        })
+        .collect()
 }
 
 fn consume_refusal(error: &crate::capability::ConsumeError) -> HumanOperationError {
