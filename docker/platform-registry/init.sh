@@ -21,10 +21,24 @@
 #   /data/tokens               request and publication tokens made here
 #   /data/builds               slot-<n>.ext4 images mounted at slot-<n>
 #   /data/state, /data/journal the registry's state and deployment journal
+#
+# Stage order of the deployment: material (ca.sh issue registry and
+# registry-event-client from the one internal CA, the Fly secrets below, the
+# builder environment and the kernel material) -> registry-bootstrap (this
+# script) -> router-activation (human/wallet/deploy/endpoint.toml) ->
+# routed-proof. This stage consumes only material: nothing here waits on,
+# probes or names the router, so the registry comes up ready before the router
+# is activated. Every consumed prerequisite is refused by name when absent,
+# one line per item: "fail registry-bootstrap missing=<prerequisite>
+# producer=<producer>", exit 1. A restart resumes with the volume as left;
+# nothing here regenerates a CA, a client identity or a token another stage
+# already holds.
 set -eu
 umask 077
 
 log() { printf 'registry-init: %s\n' "$*" >&2; }
+# missing <prerequisite> <producer>: the named refusal line of one item.
+missing() { printf 'fail registry-bootstrap missing=%s producer=%s\n' "$1" "$2" >&2; }
 
 run=/run/layerx
 builder=$(dirname "$LAYERX_REGISTRY_BUILDER_ENVIRONMENT_ROOT")
@@ -45,22 +59,43 @@ mountpoint -q "$run" || mount -t tmpfs -o nosuid,nodev,mode=0755 tmpfs "$run"
 install -d -o 4030 -g 4030 -m 0700 "$run/secrets"
 mkdir -p "$builder" "$kernel" "$tokens" "$quota" "$LAYERX_REGISTRY_STATE" "$LAYERX_REGISTRY_JOURNAL"
 
-# fresh <file>: writes 32 random bytes as hex to the file unless it holds one.
+retained_tokens=0
+if [ -e "$tokens/.initialized" ] || [ -e "$LAYERX_REGISTRY_REQUEST_TOKEN_FILE" ] ||
+	[ -e "$LAYERX_REGISTRY_PUBLICATION_TOKEN_FILE" ] ||
+	[ -e "$LAYERX_REGISTRY_REQUEST_TOKEN_FILE.new" ] ||
+	[ -e "$LAYERX_REGISTRY_PUBLICATION_TOKEN_FILE.new" ] ||
+	[ -n "$(ls -A "$LAYERX_REGISTRY_STATE")" ] ||
+	[ -n "$(ls -A "$LAYERX_REGISTRY_JOURNAL")" ]; then
+	retained_tokens=1
+fi
+
 fresh() {
+	if [ -L "$1" ] || [ -L "$1.new" ] || { [ -e "$1" ] && [ ! -f "$1" ]; }; then
+		missing "$1" "the-retained-registry-volume"
+		log "the retained token must be a regular file"
+		exit 1
+	fi
+	if [ ! -s "$1" ] && [ "$retained_tokens" = 1 ]; then
+		missing "$1" "the-retained-registry-volume"
+		log "registry material already exists; restore the original token pair from the retained volume"
+		exit 1
+	fi
 	[ -s "$1" ] || { openssl rand -hex 32 >"$1.new" && mv "$1.new" "$1"; }
 }
 fresh "$LAYERX_REGISTRY_REQUEST_TOKEN_FILE"
 fresh "$LAYERX_REGISTRY_PUBLICATION_TOKEN_FILE"
 if cmp -s "$LAYERX_REGISTRY_REQUEST_TOKEN_FILE" "$LAYERX_REGISTRY_PUBLICATION_TOKEN_FILE"; then
-	log "the request and publication tokens are equal; remove one to regenerate it"
+	log "the request and publication tokens are equal; restore the distinct original token pair"
 	exit 1
 fi
+[ -e "$tokens/.initialized" ] || : >"$tokens/.initialized"
 
 # secret <variable> <file>: writes the Fly secret the variable carries to the
 # file for uid 4030 and drops it from the environment the registry inherits.
 secret() {
 	eval "value=\${$1:-}"
 	if [ -z "$value" ]; then
+		missing "$1" "fly-secrets-import-of-the-registry-app"
 		log "the Fly secret $1 is unset; import it as the deploy step says"
 		exit 1
 	fi
@@ -72,26 +107,62 @@ secret() {
 secret REGISTRY_IDENTITY_TOKEN "$LAYERX_REGISTRY_IDENTITY_TOKEN_FILE"
 secret REGISTRY_PROGRAM_EVENTS_TOKEN "$LAYERX_EVENTS_PROGRAM_UPSTREAM_TOKEN_FILE"
 secret REGISTRY_WEBHOOKS_EVENTS_TOKEN "$LAYERX_EVENTS_WEBHOOKS_UPSTREAM_TOKEN_FILE"
-: "${LAYERX_REGISTRY_NODE_AUTHORIZATION:?the node bearer is a Fly secret of this app and of the kernel app}"
-: "${LAYERX_REGISTRY_RECEIPT_AUTHORITY_AUTHORIZATION:?the receipt authority bearer is a Fly secret of this app and of the kernel app}"
+# bearer <variable>: the bearer the kernel app holds as well; refused by name
+# when unset, never printed.
+bearer() {
+	eval "value=\${$1:-}"
+	if [ -z "$value" ]; then
+		missing "$1" "fly-secrets-import-of-the-registry-app-and-the-kernel-app"
+		log "$2"
+		exit 1
+	fi
+	unset value
+}
+bearer LAYERX_REGISTRY_NODE_AUTHORIZATION "the node bearer is a Fly secret of this app and of the kernel app"
+bearer LAYERX_REGISTRY_RECEIPT_AUTHORITY_AUTHORIZATION "the receipt authority bearer is a Fly secret of this app and of the kernel app"
 
-# wait_for <what> <files...>: blocks until every file is non-empty.
+# wait_for <producer> <files...>: blocks until every file is non-empty or the
+# material deadline passes; at the deadline every file still empty is refused
+# by name with its producer and the script exits 1. A restart waits again with
+# whatever the volume already holds.
+material_deadline=$(($(date +%s) + 1800))
 wait_for() {
 	what=$1
 	shift
 	for file in "$@"; do
 		if [ ! -s "$file" ]; then
 			log "waiting for $file from $what"
-			until [ -s "$file" ]; do sleep 5; done
+			until [ -s "$file" ] || [ "$(date +%s)" -ge "$material_deadline" ]; do sleep 5; done
 		fi
 	done
+	absent=0
+	for file in "$@"; do
+		[ -s "$file" ] || {
+			missing "$file" "$(printf '%s' "$what" | tr ' ' '-')"
+			absent=1
+		}
+	done
+	[ "$absent" = 0 ] || exit 1
 }
 tls_dir=$(dirname "$LAYERX_REGISTRY_TLS_CERT_DER")
 client_dir=$(dirname "$LAYERX_REGISTRY_IDENTITY_CLIENT_IDENTITY_PKCS12")
 wait_for "tools/bringup/ca.sh issue registry" "$LAYERX_REGISTRY_TLS_CERT_DER" "$LAYERX_REGISTRY_TLS_KEY_DER" "$LAYERX_REGISTRY_CLIENT_CA_DER"
-wait_for "tools/bringup/ca.sh issue registry-event-client" "$LAYERX_REGISTRY_IDENTITY_CLIENT_IDENTITY_PKCS12" "$LAYERX_REGISTRY_IDENTITY_CLIENT_IDENTITY_PASSWORD_FILE"
+wait_for "tools/bringup/ca.sh issue registry-event-client" "$LAYERX_REGISTRY_IDENTITY_CLIENT_IDENTITY_PKCS12" "$LAYERX_REGISTRY_IDENTITY_CLIENT_IDENTITY_PASSWORD_FILE" "$client_dir/ca.der"
 wait_for "the builder environment step of the deploy" "$builder/environment-tree-digest" "$LAYERX_REGISTRY_BUILDER_ENVIRONMENT_ROOT$LAYERX_REGISTRY_BUILDER_ENTRYPOINT"
 wait_for "the kernel material step of the deploy" "$kernel/replica-id" "$LAYERX_REGISTRY_SEQUENCER_TRUST_HISTORY"
+
+# One internal CA for every identity this app serves or presents: the CA every
+# trust variable names and the root the event client identity was issued
+# under are the CA of the registry identity. A different root means one of
+# them came from another authority; it is refused, never replaced.
+for trust in "$LAYERX_REGISTRY_OUTBOUND_CA_DER" "$LAYERX_REGISTRY_IDENTITY_CA_DER" \
+	"$LAYERX_EVENTS_PROGRAM_UPSTREAM_CA_DER" "$LAYERX_EVENTS_WEBHOOKS_UPSTREAM_CA_DER" "$client_dir/ca.der"; do
+	cmp -s "$trust" "$LAYERX_REGISTRY_CLIENT_CA_DER" || {
+		missing "$trust=$LAYERX_REGISTRY_CLIENT_CA_DER" "tools/bringup/ca.sh-issue-from-the-one-internal-CA"
+		log "$trust is not the internal CA of $LAYERX_REGISTRY_CLIENT_CA_DER"
+		exit 1
+	}
+done
 
 replica=$(tr -d ' \r\n' <"$kernel/replica-id")
 case "$replica" in

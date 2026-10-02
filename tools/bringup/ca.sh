@@ -8,7 +8,8 @@ set -euo pipefail
 
 usage() {
 	cat <<'EOF'
-usage: tools/bringup/ca.sh init | issue <service> | services
+usage: tools/bringup/ca.sh init | inventory [<service>] | issue <service> | services
+       tools/bringup/ca.sh issue-local <local service> --output-dir <dir> | local-services
 
 The internal CA of the Paxeer X Network bring-up. Runs on the edge host, the
 operator host that holds the CA key and the Fly login.
@@ -17,8 +18,36 @@ init      generates the CA key and certificate under LAYERX_CA_DIR with mode
           0600 and prints nothing but the certificate's SHA-256 fingerprint.
           Refuses to touch a directory that already holds a CA.
 
+inventory [<service>]
+          inventories the identity material already retained for every row
+          (or the one service) before any deployment action, and changes
+          nothing: for a volume row the presence of cert.pem, key.der,
+          cert.der, ca.der, identity.p12 and password under
+          LAYERX_FLY_TLS_DIR/<service> on a machine of the app, and whether
+          the retained certificate chains to the row's CA; for a secrets row
+          the presence of the eight PREFIX_* names in flyctl secrets list
+          and verification of the deployed public PREFIX_CERT against the
+          same CA through its declared [[files]] guest path.
+          Only names, fingerprints and day counts are read; no key, password
+          or secret value is read or printed. One line per row:
+          "inventory <service> app=<app> custody=volume|secrets
+          state=present|absent|partial|incompatible|foreign|unreadable
+          [fingerprint=<sha256> expires_in=<days>d]
+          producer=tools/bringup/ca.sh issue <service>".
+          A volume row whose CA directory is not readable here (an
+          attestor row without LAYERX_ATTESTOR_CA_DIR) is unreadable.
+          Exits 1 when any row is unreadable or foreign.
+
 issue <service>
-          issues the certificate of one service for the Fly app whose toml
+          inventories the service first. Retained material that is present,
+          chains to the row's CA and expires in more than
+          LAYERX_CA_RENEW_DAYS days is reused and never regenerated: prints
+          "reused <service> app=<app> custody=volume|secrets
+          fingerprint=<sha256> expires_in=<days>d". A retained
+          same-CA certificate missing its required role or service name is renewed
+          under that CA. A certificate that does not chain to the row's CA, or material that
+          cannot be inventoried, is refused, so no second, incompatible
+          authority is ever issued beside it. Otherwise it issues the certificate of one service for the Fly app whose toml
           the service's row names, with the row's SAN list and <app> read as
           the app name from the toml's app line. For a volume row, a machine
           of the app (of the row's process group when it names one)
@@ -38,11 +67,32 @@ issue <service>
           Prints one line:
           "issued <service> app=<app> custody=volume|secrets
           fingerprint=<sha256> expires_in=<days>d".
+          A missing CA or app is also reported on stdout as
+          "fail material missing=<prerequisite> producer=<producer>".
 
 services  prints the service list, one per line: service, Fly app toml,
           process group ("-" for the whole app), custody ("volume" or the
           secret prefix), common name, extended key usage, SAN list ("-" for
           a client identity).
+
+issue-local <local service> --output-dir <dir>
+          issues one fixed local identity of local-services on this host,
+          never through Fly: the identity, role, extended key usage and SAN
+          list are the row's and nothing else is accepted. <dir> is an
+          absolute path that must not exist, whose components are no
+          symbolic links, whose parent is a directory owned by the caller
+          or root and writable by neither group nor others, and which
+          neither lies in LAYERX_CA_DIR nor contains it. The key, the
+          request and the derived files are made in a mode 0700 staging
+          directory beside <dir>, verified against the CA, and the staging
+          directory is renamed to <dir> without replacing anything, with
+          mode 0700 and every file 0600. No key is printed. Prints one line:
+          "issued <service> custody=local fingerprint=<sha256>
+          expires_in=<days>d".
+
+local-services
+          prints the local identity list in the columns of services, with
+          "-" for the toml and the process group and "local" for custody.
 
 Environment:
   CHECK_LIVE_TIMEOUT   seconds per flyctl call, default 30
@@ -55,15 +105,19 @@ Environment:
                        under it and never under the internal CA
   LAYERX_FLY_TLS_DIR   the certificate directory root on the volume of a Fly
                        app, default /data/tls
+  LAYERX_CA_RENEW_DAYS days of remaining validity below which issue renews
+                       a retained certificate under the same CA, default 30
 
 Exits 1 when the CA is missing, already present on init, a toml names no
-app, or a Fly step fails; 2 on a usage error or an unknown service.
+app, retained material is foreign or cannot be inventoried, or a Fly step
+fails; 2 on a usage error or an unknown service.
 EOF
 }
 
 subject_org="Paxeer X Network"
 ca_days=3650
 cert_days=397
+renew_days="${LAYERX_CA_RENEW_DAYS:-30}"
 
 # ca_services: every certificate the bring-up issues, after the issue_cert
 # calls of platform/hosted/tests/beta-cluster.sh: service, Fly app toml,
@@ -74,21 +128,21 @@ cert_days=397
 # passthrough surfaces.
 ca_services() {
 	cat <<'EOF'
-pending-core human/wallet/deploy/human.toml - volume layerx-pending-core serverAuth DNS:layerx-pending-core,DNS:<app>.internal,DNS:localhost,IP:127.0.0.1
-pending-core-admin human/wallet/deploy/human.toml - volume layerx-pending-core-admin serverAuth DNS:layerx-pending-core-admin,DNS:<app>.internal
-receipt-authority human/wallet/deploy/human.toml - volume layerx-receipt-authority serverAuth DNS:layerx-receipt-authority,DNS:authority,DNS:<app>.internal,DNS:localhost,IP:127.0.0.1
-agent-boundary human/wallet/deploy/human.toml - volume layerx-agent-boundary serverAuth DNS:layerx-agent-boundary,DNS:component,DNS:<app>.internal,DNS:localhost,IP:127.0.0.1
+pending-core platform/hosted/node/fly.toml - volume layerx-pending-core serverAuth DNS:layerx-pending-core,DNS:<app>.internal,DNS:localhost,IP:127.0.0.1
+pending-core-admin platform/hosted/node/fly.toml - volume layerx-pending-core-admin serverAuth DNS:layerx-pending-core-admin,DNS:<app>.internal
+receipt-authority platform/hosted/node/fly.toml - volume layerx-receipt-authority serverAuth DNS:layerx-receipt-authority,DNS:authority,DNS:<app>.internal,DNS:localhost,IP:127.0.0.1
+agent-boundary platform/hosted/node/fly.toml - volume layerx-agent-boundary serverAuth DNS:layerx-agent-boundary,DNS:component,DNS:<app>.internal,DNS:localhost,IP:127.0.0.1
 agentd human/wallet/deploy/human.toml - volume layerx-agentd serverAuth DNS:layerx-agentd,DNS:machine.paxeer.network,DNS:<app>.internal,DNS:localhost,IP:127.0.0.1
 agentd-client human/wallet/deploy/human.toml - volume layerx-agentd-client clientAuth -
 paxeer-boundary-loopback human/wallet/deploy/human.toml - volume paxeer-boundary serverAuth DNS:paxeer-boundary,DNS:paxeer-boundary-loopback,DNS:<app>.internal,DNS:localhost,IP:127.0.0.1
 paxeer-boundary-public human/wallet/deploy/human.toml - volume paxeer-observer-boundary serverAuth DNS:paxeer-observer-boundary,DNS:paxeer-boundary-public,DNS:<app>.internal,DNS:localhost,IP:127.0.0.1
 guarantor human/wallet/deploy/human.toml - volume layerx-guarantor serverAuth,clientAuth DNS:<app>.internal,DNS:localhost,IP:127.0.0.1
 human human/wallet/deploy/human.toml - volume layerx-human serverAuth DNS:layerx-human,DNS:<app>.internal,DNS:localhost,IP:127.0.0.1
-human-event-client human/wallet/deploy/human.toml - volume layerx-human-events clientAuth -
+human-event-client human/wallet/deploy/human.toml - volume layerx-human-events clientAuth URI:urn:layerx:webhooks:role:producer
 human-attestor-client human/wallet/deploy/human.toml - volume layerx-human-components clientAuth -
 relay-archive human/wallet/deploy/human.toml - volume layerx-relay-archive serverAuth DNS:layerx-relay-archive,DNS:<app>.internal,DNS:localhost,IP:127.0.0.1
 gateway-redis human/wallet/deploy/redis.toml - REDIS_TLS layerx-gateway-redis serverAuth DNS:layerx-gateway-redis,DNS:<app>.internal,DNS:localhost,IP:127.0.0.1
-gateway-client human/wallet/deploy/endpoint.toml - ENDPOINT_CLIENT layerx-gateway clientAuth -
+gateway-client human/wallet/deploy/endpoint.toml - ENDPOINT_CLIENT layerx-gateway clientAuth URI:urn:layerx:webhooks:role:producer
 identity platform/hosted/identity/fly.toml - volume layerx-identity serverAuth DNS:layerx-identity,DNS:identity,DNS:<app>.internal,DNS:localhost,IP:127.0.0.1
 internal-kms platform/hosted/internal/fly.toml kms volume kms serverAuth DNS:kms,DNS:kms.process.<app>.internal,DNS:localhost,IP:127.0.0.1
 internal-journeys platform/hosted/internal/fly.toml journeys volume journeys serverAuth DNS:journeys,DNS:journeys.process.<app>.internal,DNS:localhost,IP:127.0.0.1
@@ -97,13 +151,22 @@ internal-approvals platform/hosted/internal/fly.toml approvals volume approvals 
 internal-programs platform/hosted/internal/fly.toml programs volume programs serverAuth DNS:programs,DNS:programs.process.<app>.internal,DNS:localhost,IP:127.0.0.1
 internal-redis platform/hosted/internal/redis.toml - REDIS_TLS redis serverAuth DNS:redis,DNS:<app>.internal,DNS:localhost,IP:127.0.0.1
 registry platform/hosted/registry/fly.toml - volume layerx-program-registry serverAuth DNS:layerx-program-registry,DNS:index.paxeer.network,DNS:<app>.internal,DNS:localhost,IP:127.0.0.1
-registry-event-client platform/hosted/registry/fly.toml - volume layerx-registry-events clientAuth -
+registry-event-client platform/hosted/registry/fly.toml - volume layerx-registry-events clientAuth URI:urn:layerx:webhooks:role:producer
 indexer platform/hosted/indexer/fly.toml - volume layerx-indexer serverAuth DNS:layerx-indexer,DNS:<app>.internal,DNS:localhost,IP:127.0.0.1
 interop-client platform/hosted/interop/fly.toml - INTEROP_CLIENT layerx-interop-gateway clientAuth -
-developer platform/hosted/webhooks/fly.toml ingress WEBHOOKS_INGRESS_TLS layerx-developer serverAuth DNS:layerx-webhooks,DNS:ingress.process.<app>.internal,DNS:localhost,IP:127.0.0.1
+developer platform/hosted/webhooks/fly.toml ingress WEBHOOKS_INGRESS_TLS layerx-developer serverAuth DNS:layerx-webhooks,DNS:ingress.process.<app>.internal,DNS:public.process.<app>.internal,DNS:localhost,IP:127.0.0.1
 developer-client platform/hosted/webhooks/fly.toml - WEBHOOKS_CLIENT layerx-developer clientAuth -
 dashboard-client platform/hosted/dashboard/fly.toml - DASHBOARD_CLIENT layerx-dashboard clientAuth -
 ramp-client platform/ramps/fly.toml - RAMP_CLIENT layerx-reference-ramp clientAuth DNS:<app>.internal
+EOF
+}
+
+# local_services: identities issue-local makes on the operator host for an
+# operator holding them by hand; they are never part of a Fly app, so they
+# stay out of ca_services and every Fly mount.
+local_services() {
+	cat <<'EOF'
+webhook-operator-client - - local layerx-webhooks-operator clientAuth URI:urn:layerx:webhooks:role:operator
 EOF
 }
 
@@ -195,29 +258,206 @@ issue_secrets() {
 	}
 }
 
-ca_issue() {
-	local service="$1" line toml group custody cn eku sans app
-	line="$(ca_services | awk -v s="$service" '$1 == s')"
+# service_row <service>: the row of the service; exits 2 when there is none.
+service_row() {
+	local line
+	line="$(ca_services | awk -v s="$1" '$1 == s')"
 	if [ -z "$line" ]; then
-		echo "ca: unknown service $service; see tools/bringup/ca.sh services" >&2
+		echo "ca: unknown service $1; see tools/bringup/ca.sh services" >&2
 		exit 2
 	fi
+	printf '%s' "$line"
+}
+
+# row_ca_dir <service>: prints the directory of the CA that signs the
+# service; status 1 when it is the attestors' gateway CA and
+# LAYERX_ATTESTOR_CA_DIR is unset.
+row_ca_dir() {
+	if [[ " $attestor_services " == *" $1 "* ]]; then
+		[ -n "${LAYERX_ATTESTOR_CA_DIR:-}" ] || return 1
+		printf '%s' "$LAYERX_ATTESTOR_CA_DIR"
+	else
+		printf '%s' "$ca_dir"
+	fi
+}
+
+certificate_usage_matches() {
+	local service="$1" cert="$2" row_ca="$3" app="$4" roles
+	case "$service" in
+	human-event-client | gateway-client | registry-event-client)
+		roles="$(openssl x509 -noout -ext subjectAltName <<<"$cert" 2>/dev/null |
+			tr ',' '\n' | sed 's/^[[:space:]]*//' | grep '^URI:urn:layerx:webhooks:role:' || true)"
+		[ "$roles" = URI:urn:layerx:webhooks:role:producer ] &&
+			openssl verify -purpose sslclient -CAfile "$row_ca/ca.pem" <<<"$cert" >/dev/null 2>&1
+		;;
+	developer)
+		openssl verify -purpose sslserver -verify_hostname "public.process.$app.internal" \
+			-CAfile "$row_ca/ca.pem" <<<"$cert" >/dev/null 2>&1
+		;;
+	*) return 0 ;;
+	esac
+}
+
+# inventory_row <service> <app> <group> <custody> <row ca dir>: prints
+# "<state> <fingerprint> <days>" for the material the service already has,
+# state one of present, absent, partial, incompatible, foreign or unreadable. It reads
+# file names and the public certificate only.
+inventory_row() {
+	local service="$1" app="$2" group="$3" custody="$4" row_ca="$5" dir="$fly_tls_dir/$1" answer missing cert listed file name toml path fingerprint days have=0 want=0
+	if [ "$custody" != volume ]; then
+		listed="$(timeout "$timeout" flyctl secrets list --app "$app" --json </dev/null 2>/dev/null | python3 -c 'import json, sys; print(" ".join(s.get("Name") or s.get("name") or "" for s in json.load(sys.stdin) or []))' 2>/dev/null)" || {
+			echo "unreadable - -"
+			return
+		}
+		for file in $identity_files; do
+			name="${custody}_${file#*:}"
+			want=$((want + 1))
+			[[ " $listed " != *" $name "* ]] || have=$((have + 1))
+		done
+		if [ "$have" -eq "$want" ]; then
+			read -r _ toml _ <<<"$(service_row "$service")"
+			if ! path="$(fly_guest_path "$toml" "${custody}_CERT")" ||
+				! cert="$(fly_ssh "$app" "$group" "cat $path" </dev/null)" ||
+				[ -z "$row_ca" ] || [ ! -r "$row_ca/ca.pem" ]; then
+				echo "unreadable - -"
+				return
+			fi
+			if ! fingerprint="$(openssl x509 -noout -fingerprint -sha256 <<<"$cert" 2>/dev/null | cut -d= -f2)" ||
+				! days="$(days_left <<<"$cert" 2>/dev/null)"; then
+				echo "unreadable - -"
+				return
+			fi
+			if openssl verify -CAfile "$row_ca/ca.pem" <<<"$cert" >/dev/null 2>&1; then
+				if certificate_usage_matches "$service" "$cert" "$row_ca" "$app"; then
+					echo "present $fingerprint $days"
+				else
+					echo "incompatible $fingerprint $days"
+				fi
+			else
+				echo "foreign $fingerprint $days"
+			fi
+		elif [ "$have" -eq 0 ]; then
+			echo "absent - -"
+		else
+			echo "partial - -"
+		fi
+		return
+	fi
+	answer="$(fly_ssh "$app" "$group" "if [ -d $dir ]; then cd $dir && for f in key.der cert.der ca.der identity.p12 password; do [ -s \$f ] || echo missing=\$f; done && if [ -s cert.pem ]; then cat cert.pem; else echo missing=cert.pem; fi; else echo directory=absent; fi; echo inventory=done" </dev/null)" || answer=""
+	if [[ "$answer" != *inventory=done* ]]; then
+		echo "unreadable - -"
+		return
+	fi
+	if [[ "$answer" == *directory=absent* ]]; then
+		echo "absent - -"
+		return
+	fi
+	missing="$(grep -c '^missing=' <<<"$answer" || true)"
+	cert="$(sed -n '/-----BEGIN CERTIFICATE-----/,/-----END CERTIFICATE-----/p' <<<"$answer")"
+	if [ -z "$cert" ]; then
+		[ "$missing" -ge 6 ] && echo "absent - -" || echo "partial - -"
+		return
+	fi
+	if [ -z "$row_ca" ] || [ ! -r "$row_ca/ca.pem" ]; then
+		echo "unreadable - -"
+		return
+	fi
+	if ! openssl verify -CAfile "$row_ca/ca.pem" <(printf '%s\n' "$cert") >/dev/null 2>&1; then
+		echo "foreign $(openssl x509 -noout -fingerprint -sha256 <<<"$cert" | cut -d= -f2) $(days_left <<<"$cert")"
+		return
+	fi
+	if ! certificate_usage_matches "$service" "$cert" "$row_ca" "$app"; then
+		echo "incompatible $(openssl x509 -noout -fingerprint -sha256 <<<"$cert" | cut -d= -f2) $(days_left <<<"$cert")"
+	elif [ "$missing" -gt 0 ]; then
+		echo "partial $(openssl x509 -noout -fingerprint -sha256 <<<"$cert" | cut -d= -f2) $(days_left <<<"$cert")"
+	else
+		echo "present $(openssl x509 -noout -fingerprint -sha256 <<<"$cert" | cut -d= -f2) $(days_left <<<"$cert")"
+	fi
+}
+
+# ca_inventory [<service>]: one inventory line per row; exits 1 when any row
+# is unreadable or foreign, so a deployment action never starts on material
+# nobody has accounted for.
+ca_inventory() {
+	local service line toml group custody app row_ca state fingerprint days failures=0 rows
+	if [ -n "${1:-}" ]; then
+		rows="$(service_row "$1")"
+	else
+		rows="$(ca_services)"
+	fi
+	while read -r service toml group custody _; do
+		if ! app="$(fly_app "$toml")"; then
+			echo "fail material missing=$toml producer=the app line of $toml"
+			failures=$((failures + 1))
+			continue
+		fi
+		row_ca="$(row_ca_dir "$service")" || row_ca=""
+		read -r state fingerprint days <<<"$(inventory_row "$service" "$app" "$group" "$custody" "$row_ca")"
+		[ "$custody" = volume ] || custody=secrets
+		if [ "$fingerprint" != - ]; then
+			days="${days}d"
+			echo "inventory $service app=$app custody=$custody state=$state fingerprint=$fingerprint expires_in=$days producer=tools/bringup/ca.sh issue $service"
+		else
+			echo "inventory $service app=$app custody=$custody state=$state producer=tools/bringup/ca.sh issue $service"
+		fi
+		case "$state" in unreadable | foreign) failures=$((failures + 1)) ;; esac
+	done <<<"$rows"
+	[ "$failures" -eq 0 ] || exit 1
+}
+
+ca_issue() {
+	local service="$1" line toml group custody cn eku sans app state fingerprint days
+	line="$(service_row "$service")"
 	read -r _ toml group custody cn eku sans <<<"$line"
 	if [[ " $attestor_services " == *" $service "* ]]; then
 		ca_dir="${LAYERX_ATTESTOR_CA_DIR:-}"
 		if [ -z "$ca_dir" ]; then
+			echo "fail material missing=LAYERX_ATTESTOR_CA_DIR producer=the attestors' gateway CA"
 			echo "ca: $service is issued under the attestors' gateway CA; set LAYERX_ATTESTOR_CA_DIR" >&2
 			exit 1
 		fi
 	fi
 	if [ ! -r "$ca_dir/ca.key" ] || [ ! -r "$ca_dir/ca.pem" ]; then
+		echo "fail material missing=$ca_dir/ca.pem producer=tools/bringup/ca.sh init"
 		echo "ca: no CA under $ca_dir; run tools/bringup/ca.sh init on the edge host" >&2
 		exit 1
 	fi
 	if ! app="$(fly_app "$toml")"; then
+		echo "fail material missing=$toml producer=the app line of $toml"
 		echo "ca: $service: $toml names no app" >&2
 		exit 1
 	fi
+	umask 077
+	exec {ca_issue_lock_fd}>"$ca_dir/issue.lock"
+	flock -x -w "$timeout" "$ca_issue_lock_fd" || {
+		echo "ca: the established authority issuer is busy" >&2
+		exit 1
+	}
+	read -r state fingerprint days <<<"$(inventory_row "$service" "$app" "$group" "$custody" "$ca_dir")"
+	case "$state" in
+	unreadable)
+		echo "ca: $service on $app: the retained material cannot be inventoried; nothing is issued before it is" >&2
+		exit 1
+		;;
+	foreign)
+		echo "ca: $service on $app: the retained certificate $fingerprint does not chain to $ca_dir/ca.pem; issuing beside it would make a second, incompatible authority, so remove it deliberately first" >&2
+		exit 1
+		;;
+	partial)
+		if [ "$custody" != volume ]; then
+			echo "ca: $service on $app: retained secret material is partial; restore the original identity before issuing" >&2
+			exit 1
+		fi
+		;;
+	present)
+		if [ "$days" -gt "$renew_days" ]; then
+			[ "$custody" = volume ] || custody=secrets
+			days="${days}d"
+			echo "reused $service app=$app custody=$custody fingerprint=$fingerprint expires_in=$days"
+			return
+		fi
+		;;
+	esac
 	if [ "$(stat -f -c %T /dev/shm 2>/dev/null)" != tmpfs ]; then
 		echo "ca: /dev/shm is not a tmpfs; signing material is only ever written to memory here" >&2
 		exit 1
@@ -234,14 +474,136 @@ ca_issue() {
 	echo "issued $service app=$app custody=$custody fingerprint=$(openssl x509 -in "$work/cert.pem" -noout -fingerprint -sha256 | cut -d= -f2) expires_in=$(days_left <"$work/cert.pem")d"
 }
 
+# local_refuse <message>: refuses an issue-local destination or bundle.
+local_refuse() {
+	echo "ca: issue-local: $1" >&2
+	exit 1
+}
+
+# local_destination <dir>: checks the issue-local destination before anything
+# is generated and prints its parent.
+local_destination() {
+	local dir="$1" component prefix="" parent mode owner ca_real components
+	case "$dir" in
+	/*) ;;
+	*) local_refuse "the output directory must be an absolute path" ;;
+	esac
+	IFS=/ read -r -a components <<<"${dir#/}"
+	[ "${#components[@]}" -gt 0 ] || local_refuse "the output directory must not be /"
+	for component in "${components[@]}"; do
+		case "$component" in
+		"" | . | ..) local_refuse "the output directory must be a normalized path" ;;
+		esac
+		prefix="$prefix/$component"
+		if [ -L "$prefix" ]; then
+			local_refuse "$prefix is a symbolic link"
+		fi
+	done
+	[ "$prefix" = "$dir" ] || local_refuse "the output directory must be a normalized path"
+	if [ -e "$dir" ]; then
+		local_refuse "$dir already exists"
+	fi
+	parent="${dir%/*}"
+	parent="${parent:-/}"
+	[ -d "$parent" ] || local_refuse "the parent $parent is not a directory"
+	owner="$(stat -c %u "$parent")"
+	mode="$(stat -c %a "$parent")"
+	if [ "$owner" != 0 ] && [ "$owner" != "$(id -u)" ]; then
+		local_refuse "the parent $parent is owned by uid $owner"
+	fi
+	if (((8#$mode & 8#022) != 0)); then
+		local_refuse "the parent $parent has mode $mode, writable by group or others"
+	fi
+	ca_real="$(realpath -m -- "$ca_dir")"
+	case "$dir/" in
+	"$ca_real"/*) local_refuse "$dir lies in the CA directory" ;;
+	esac
+	case "$ca_real/" in
+	"$dir"/*) local_refuse "$dir contains the CA directory" ;;
+	esac
+	printf '%s' "$parent"
+}
+
+ca_issue_local() {
+	local service="$1" dir="$2" line cn eku sans parent file count
+	line="$(local_services | awk -v s="$service" '$1 == s')"
+	if [ -z "$line" ]; then
+		echo "ca: unknown local service $service; see tools/bringup/ca.sh local-services" >&2
+		exit 2
+	fi
+	read -r _ _ _ _ cn eku sans <<<"$line"
+	if [ ! -r "$ca_dir/ca.key" ] || [ ! -r "$ca_dir/ca.pem" ]; then
+		echo "ca: no CA under $ca_dir; run tools/bringup/ca.sh init on the edge host" >&2
+		exit 1
+	fi
+	umask 077
+	exec {ca_issue_lock_fd}>"$ca_dir/issue.lock"
+	flock -x -w "$timeout" "$ca_issue_lock_fd" || {
+		echo "ca: the established authority issuer is busy" >&2
+		exit 1
+	}
+	parent="$(local_destination "$dir")"
+	work="$(umask 077 && mktemp -d -p "$parent" ".ca-issue-local.XXXXXXXX")"
+	trap 'rm -rf "$work"' EXIT
+	chmod 0700 "$work"
+	(
+		umask 077
+		cd "$work"
+		openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256 -out key.pem 2>/dev/null
+		openssl req -new -key key.pem -subj "/O=$subject_org/CN=$cn" -out csr.pem
+	)
+	sign "$service" "$eku" "$sans"
+	(
+		umask 077
+		cd "$work"
+		cp "$ca_dir/ca.pem" ca.pem
+		sh -c "$(derive_cmd "$cn")"
+		rm -f csr.pem ext.cnf
+	)
+	openssl verify -purpose sslclient -CAfile "$work/ca.pem" "$work/cert.pem" >/dev/null 2>&1 ||
+		local_refuse "the issued certificate does not verify against the CA"
+	[ "$(openssl x509 -in "$work/cert.pem" -noout -pubkey)" = "$(openssl pkey -in "$work/key.pem" -pubout 2>/dev/null)" ] ||
+		local_refuse "the issued certificate does not match its key"
+	[ "$(openssl x509 -in "$work/cert.pem" -noout -ext subjectAltName 2>/dev/null | tail -n +2 | sed 's/^ *//')" = "$sans" ] ||
+		local_refuse "the issued certificate does not carry exactly $sans"
+	count=0
+	for file in $identity_files; do
+		{ [ -f "$work/${file%%:*}" ] && [ ! -L "$work/${file%%:*}" ]; } ||
+			local_refuse "the bundle lacks ${file%%:*}"
+		chmod 0600 "$work/${file%%:*}"
+		count=$((count + 1))
+	done
+	[ "$(find "$work" -mindepth 1 | wc -l)" -eq "$count" ] ||
+		local_refuse "the bundle holds files beyond the identity"
+	chmod 0700 "$work"
+	{ [ ! -e "$dir" ] && [ ! -L "$dir" ]; } || local_refuse "$dir appeared during issuance"
+	# A rename replaces at most an empty directory, so no material is ever
+	# overwritten.
+	mv -T -- "$work" "$dir" || local_refuse "the bundle could not be published to $dir"
+	trap - EXIT
+	echo "issued $service custody=local fingerprint=$(openssl x509 -in "$dir/cert.pem" -noout -fingerprint -sha256 | cut -d= -f2) expires_in=$(days_left <"$dir/cert.pem")d"
+}
+
 mode="${1:-}"
 case "$mode" in
 -h | --help)
 	usage
 	exit 0
 	;;
-init | services)
+inventory)
+	[ "$#" -le 2 ] || {
+		usage >&2
+		exit 2
+	}
+	;;
+init | services | local-services)
 	[ "$#" -eq 1 ] || {
+		usage >&2
+		exit 2
+	}
+	;;
+issue-local)
+	{ [ "$#" -eq 4 ] && [ "$3" = --output-dir ]; } || {
 		usage >&2
 		exit 2
 	}
@@ -259,7 +621,9 @@ issue)
 esac
 
 tools=(openssl awk)
-[ "$mode" != issue ] || tools+=(timeout flyctl base64)
+[ "$mode" != issue-local ] || tools+=(stat realpath mktemp find flock)
+[ "$mode" != issue ] || tools+=(timeout flyctl base64 python3 flock)
+[ "$mode" != inventory ] || tools+=(timeout flyctl python3)
 for tool in "${tools[@]}"; do
 	if ! command -v "$tool" >/dev/null 2>&1; then
 		echo "ca: $tool is required" >&2
@@ -270,5 +634,8 @@ done
 case "$mode" in
 init) ca_init ;;
 services) ca_services ;;
+local-services) local_services ;;
+inventory) ca_inventory "${2:-}" ;;
 issue) ca_issue "$2" ;;
+issue-local) ca_issue_local "$2" "$4" ;;
 esac

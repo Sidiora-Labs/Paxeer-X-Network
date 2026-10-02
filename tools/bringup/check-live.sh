@@ -178,6 +178,26 @@ kernel-value-loop pipes tools/bringup/value-loop.sh into a machine of the
           default 600; the whole run is bounded by
           CHECK_LIVE_VALUE_LOOP_TIMEOUT, default 840.
 
+registry-plan  prints the registry/router bring-up order from this checkout's
+          tomls, no network, no host map, exactly four lines in order:
+  stage   "stage <n> <name> requires=<previous stage|-> needs=<prerequisite>,...
+          producers=<prerequisite>:<producer>,..." for material,
+          registry-bootstrap, router-activation and routed-proof, a producer
+          being ca.sh:<service>, fly-secret:<NAME>, init.sh:<file>,
+          deploy:<step> or stage:<name>; "fail registry-plan toml=absent
+          <path>" and exit 1 when a toml line it reads is absent.
+
+registry-bootstrap  the machines, dedicated-ipv4 and healthz checks of
+          registry, which ask no router; registry adds program-events and
+          router-readyz read through the router.
+
+router    first reads CHECK_LIVE_STAGE_DIR/registry-bootstrap.json and, unless
+          its outcome is passed, prints "fail router-activation
+          missing=registry-bootstrap producer=stage:registry-bootstrap" and
+          exits 1 before any request; its readyz line also fails with
+          missing=program_registry when the router's program_registry backend
+          is absent or not configured.
+
 Environment:
   BRINGUP_HOSTS_FILE   private env file assigning EDGE_HOST, ARCHIVE_HOST,
                        VALIDATOR_HOSTS, RPC_HOSTS and OLD_WALLET_HOST;
@@ -197,6 +217,8 @@ Environment:
                        paxscan copy source; never printed
   CHECK_LIVE_GATEWAY_TOKEN  access token of a provisioned test identity of
                        the wallet gateway, required by wallet; never printed
+  CHECK_LIVE_STAGE_DIR the operator's stage records, <stage>.json each,
+                       required by router
   CHECK_LIVE_TIMEOUT   seconds per request, ssh or flyctl call, default 30
   LAYERX_CA_DIR        the internal CA directory on this host, default
                        /etc/layerx/ca
@@ -2425,6 +2447,7 @@ check_wallet() {
 check_router() {
 	local url=https://api-mainnet-beta.paxeer.network account="${CHECK_LIVE_ROUTER_ACCOUNT:-}"
 	local app wallet method params body answer machines region id code failures=0
+	router_prerequisite
 	if ! command -v flyctl >/dev/null 2>&1; then
 		echo "check-live: flyctl is required" >&2
 		exit 2
@@ -2505,9 +2528,11 @@ except (ValueError, AttributeError):
 configured = sorted(n for n, b in backends.items() if (b or {}).get("reason") != "not_configured")
 unready = [n for n in configured if (backends[n] or {}).get("state") != "ready"]
 store = (backends.get("durable_store") or {}).get("state", "absent")
-ok = code == "200" and not unready and store == "ready"
+registry = (backends.get("program_registry") or {}).get("reason", "absent")
+missing = registry in ("absent", "not_configured")
+ok = code == "200" and not unready and store == "ready" and not missing
 line = "http=%s durable_store=%s configured=%d/%d" % (code or "none", store, len(configured) - len(unready), len(configured))
-print(("pass " if ok else "fail ") + line + (" unready=" + ",".join(unready) if unready else ""))
+print(("pass " if ok else "fail ") + line + (" unready=" + ",".join(unready) if unready else "") + (" missing=program_registry" if missing else ""))
 ' "$code" <<<"${body%$'\n'*}")"
 		echo "${answer%% *} readyz app=$app region=$region ${answer#* }"
 		[ "${answer%% *}" = pass ] || failures=$((failures + 1))
@@ -3593,7 +3618,7 @@ check_search() {
 # program_registry ready. The router is CHECK_LIVE_ROUTER_URL, default
 # https://api-mainnet-beta.paxeer.network. One line per check.
 check_registry() {
-	local toml=platform/hosted/registry/fly.toml url=https://index.paxeer.network/healthz
+	local toml=platform/hosted/registry/fly.toml url ingress
 	local router="${CHECK_LIVE_ROUTER_URL:-https://api-mainnet-beta.paxeer.network}"
 	local topic=6c782e7265662e657363726f772e637573746f6479 program="${CHECK_LIVE_REGISTRY_PROGRAM_ID:-}"
 	local app kernel answer reply line status code body anonymous from page failures=0
@@ -3628,11 +3653,24 @@ print(len(ms), len(started), len(mounts))
 		failures=$((failures + 1))
 	fi
 
-	answer="$(timeout "$timeout" flyctl ips list --app "$app" --json 2>/dev/null | python3 -c 'import json, sys; print(sum(1 for ip in json.load(sys.stdin) or [] if ip.get("Type") == "v4"))' 2>/dev/null)" || answer=none
-	if [ "$answer" = 1 ]; then
-		echo "pass dedicated-ipv4 app=$app count=1"
+	if ! answer="$(python3 - "$repo_root/$toml" <<'PYCONFIG'
+import sys, tomllib
+with open(sys.argv[1], 'rb') as source:
+    config = tomllib.load(source)
+port = int(config['env']['LAYERX_REGISTRY_LISTEN'].rsplit(':', 1)[1])
+assert 1 <= port <= 65535
+private = not config.get('http_service') and not any(row.get('ports') for row in config.get('services', []))
+print('https://' + config['app'] + '.internal:' + str(port) + '/healthz', 'private' if private else 'public')
+PYCONFIG
+)"; then
+		echo "fail private-ingress app=$app configuration=invalid"
+		finish 1
+	fi
+	read -r url ingress <<<"$answer"
+	if [ "$ingress" = private ]; then
+		echo "pass private-ingress app=$app url=$url"
 	else
-		echo "fail dedicated-ipv4 app=$app count=${answer:-none}"
+		echo "fail private-ingress app=$app public-service=present"
 		failures=$((failures + 1))
 	fi
 
@@ -3646,6 +3684,10 @@ print(len(ms), len(started), len(mounts))
 		[ "${anonymous:-none}" != 0 ] || anonymous=admitted
 		echo "fail healthz url=$url from=$kernel curl=${status:-none} http=${code:-none} anonymous=${anonymous:-none}"
 		failures=$((failures + 1))
+	fi
+
+	if [ "${registry_stage:-full}" = bootstrap ]; then
+		finish "$failures"
 	fi
 
 	if [[ ! "$program" =~ ^[0-9a-f]{64}$ ]]; then
@@ -3698,6 +3740,59 @@ else:
 		failures=$((failures + 1))
 	fi
 	finish "$failures"
+}
+
+# check_registry_bootstrap: the registry checks that need no router gate.
+check_registry_bootstrap() {
+	registry_stage=bootstrap
+	check_registry
+}
+
+# check_registry_plan: prints the four stages of the registry/router bring-up
+# in order, each with the stage it requires, its prerequisites and the
+# producer of each: material is issued once (ca.sh rows and Fly secrets) and
+# reused by every later stage; the registry bootstrap needs only material and
+# no router gate; router activation needs the registry bootstrap; the routed
+# proof reads a signed registry receipt through the public unified interface.
+# Reads only the repository's tomls; no network, no flyctl.
+check_registry_plan() {
+	local registry=platform/hosted/registry/fly.toml endpoint=human/wallet/deploy/endpoint.toml path
+	for path in "$registry" "$endpoint"; do
+		if ! grep -qE '^app = "[a-z0-9-]+"$' "$repo_root/$path" 2>/dev/null; then
+			echo "fail registry-plan toml=absent $path"
+			exit 1
+		fi
+	done
+	if ! grep -q '^  LAYERX_REGISTRY_REQUEST_TOKEN_FILE = ' "$repo_root/$registry" ||
+		! grep -q '^  LAYERX_REGISTRY_PUBLICATION_TOKEN_FILE = ' "$repo_root/$registry"; then
+		echo "fail registry-plan toml=absent $registry"
+		exit 1
+	fi
+	if ! grep -q '^  LAYERX_GATEWAY_PROGRAM_REGISTRY_URL = ' "$repo_root/$endpoint" ||
+		! grep -q '^  LAYERX_GATEWAY_PROGRAM_REGISTRY_TOKEN_FILE = ' "$repo_root/$endpoint"; then
+		echo "fail registry-plan toml=absent $endpoint"
+		exit 1
+	fi
+	echo "stage 1 material requires=- needs=gateway-client,registry,registry-event-client,REGISTRY_IDENTITY_TOKEN,REGISTRY_PROGRAM_EVENTS_TOKEN,REGISTRY_WEBHOOKS_EVENTS_TOKEN,LAYERX_REGISTRY_NODE_AUTHORIZATION,LAYERX_REGISTRY_RECEIPT_AUTHORITY_AUTHORIZATION,builder-rootfs,environment-tree-digest,replica-id,trust-history producers=gateway-client:ca.sh:gateway-client,registry:ca.sh:registry,registry-event-client:ca.sh:registry-event-client,REGISTRY_IDENTITY_TOKEN:fly-secret:REGISTRY_IDENTITY_TOKEN,REGISTRY_PROGRAM_EVENTS_TOKEN:fly-secret:REGISTRY_PROGRAM_EVENTS_TOKEN,REGISTRY_WEBHOOKS_EVENTS_TOKEN:fly-secret:REGISTRY_WEBHOOKS_EVENTS_TOKEN,LAYERX_REGISTRY_NODE_AUTHORIZATION:fly-secret:LAYERX_REGISTRY_NODE_AUTHORIZATION,LAYERX_REGISTRY_RECEIPT_AUTHORITY_AUTHORIZATION:fly-secret:LAYERX_REGISTRY_RECEIPT_AUTHORITY_AUTHORIZATION,builder-rootfs:deploy:builder-environment,environment-tree-digest:deploy:builder-environment,replica-id:deploy:kernel-material,trust-history:deploy:kernel-material"
+	echo "stage 2 registry-bootstrap requires=material needs=request-token,publication-token producers=request-token:init.sh:/data/tokens/request,publication-token:init.sh:/data/tokens/publication"
+	echo "stage 3 router-activation requires=registry-bootstrap needs=registry-bootstrap,program-registry-token,client-identity,client-password producers=registry-bootstrap:stage:registry-bootstrap,program-registry-token:fly-secret:ENDPOINT_PROGRAM_REGISTRY_TOKEN,client-identity:fly-secret:ENDPOINT_CLIENT_P12,client-password:fly-secret:ENDPOINT_CLIENT_PASSWORD"
+	echo "stage 4 routed-proof requires=router-activation needs=router-activation,registry-receipt producers=router-activation:stage:router-activation,registry-receipt:deploy:routed-proof"
+	exit 0
+}
+
+# router_prerequisite: router activation requires a passed registry bootstrap,
+# the record CHECK_LIVE_STAGE_DIR/registry-bootstrap.json with outcome passed;
+# without it the router check names the missing stage and asks nothing.
+router_prerequisite() {
+	if [ -z "${CHECK_LIVE_STAGE_DIR:-}" ]; then
+		echo "check-live: CHECK_LIVE_STAGE_DIR is unset" >&2
+		exit 2
+	fi
+	if ! python3 -c 'import json, sys; record=json.load(open(sys.argv[1])); sys.exit(0 if record.get("stage") == "registry-bootstrap" and record.get("outcome") == "passed" else 1)' \
+		"$CHECK_LIVE_STAGE_DIR/registry-bootstrap.json" 2>/dev/null; then
+		echo "fail router-activation missing=registry-bootstrap producer=stage:registry-bootstrap"
+		exit 1
+	fi
 }
 
 # check_interop_adapters: three conformance legs of the AP2, Visa TAP and fiat
@@ -4077,6 +4172,8 @@ developers) ;;
 router) ;;
 search) ;;
 registry) ;;
+registry-bootstrap) ;;
+registry-plan) ;;
 interop-adapters) ;;
 xweb-attestors) ;;
 kernel-boundaries) ;;
@@ -4098,6 +4195,7 @@ tools=(ssh timeout curl python3 openssl sha256sum)
 [ "$mode" != ca ] || tools+=(flyctl)
 [ "$mode" != gas ] || tools+=(flyctl cast)
 [ "$mode" != interop-adapters ] || tools+=(make)
+[ "$mode" != registry-plan ] || tools=(grep)
 for tool in "${tools[@]}"; do
 	if ! command -v "$tool" >/dev/null 2>&1; then
 		echo "check-live: $tool is required" >&2
@@ -4105,5 +4203,5 @@ for tool in "${tools[@]}"; do
 	fi
 done
 
-[ "$mode" = explorer ] || load_hosts
+case "$mode" in explorer | registry-plan) ;; *) load_hosts ;; esac
 "check_${mode//-/_}"

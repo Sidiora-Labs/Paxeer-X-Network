@@ -1,3 +1,4 @@
+ARG REGISTRY_RUNTIME_BASE=base
 FROM rust:1.91.1-alpine3.22 AS build
 WORKDIR /src
 RUN apk add --no-cache musl-dev openssl-dev openssl-libs-static pkgconfig
@@ -9,7 +10,7 @@ RUN apk add --no-cache bubblewrap ca-certificates libgcc openssl && addgroup -g 
 COPY --from=build /src/platform/target/release/layerx-program-registry /usr/local/bin/layerx-program-registry
 COPY --from=build /src/platform/target/release/layerx-cgroup-exec /usr/bin/layerx-cgroup-exec
 
-FROM base AS fly
+FROM ${REGISTRY_RUNTIME_BASE} AS fly
 RUN apk add --no-cache curl e2fsprogs util-linux
 COPY --chmod=0555 docker/platform-registry/init.sh /usr/local/bin/registry-fly-init
 ENTRYPOINT ["/usr/local/bin/registry-fly-init"]

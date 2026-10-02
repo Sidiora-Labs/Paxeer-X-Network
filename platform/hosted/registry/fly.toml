@@ -19,6 +19,23 @@ kill_timeout = "30s"
 # LAYERX_REGISTRY_RECEIPT_AUTHORITY_AUTHORIZATION (the bearers the kernel app
 # holds as well), REGISTRY_IDENTITY_TOKEN, REGISTRY_PROGRAM_EVENTS_TOKEN and
 # REGISTRY_WEBHOOKS_EVENTS_TOKEN.
+#
+# Deployment stages, in this order and without a cycle: material ->
+# registry-bootstrap -> router-activation -> routed-proof. Material and its
+# producers: the registry and registry-event-client identities of
+# tools/bringup/ca.sh issue, both from the one internal CA and placed on the
+# volume under /data/tls; the five Fly secrets above; the builder rootfs and
+# environment-tree-digest of
+# platform/hosted/registry/builder-environment/build-env.sh under
+# /data/builder; and the replica id and sequencer trust history of the kernel
+# app under /data/kernel. The request and publication tokens are made by
+# init.sh once on an empty volume and kept; the router's
+# ENDPOINT_PROGRAM_REGISTRY_TOKEN (human/wallet/deploy/endpoint.toml) is the
+# request token copied from here after this stage. This app never depends on
+# the router: init.sh refuses each absent prerequisite by name and starts the
+# registry ready before router-activation begins. The existing app, image,
+# retained registry_data volume and secrets are inventoried before any deploy
+# action and reused; none is recreated and no key material is printed.
 [env]
   LAYERX_REGISTRY_LISTEN = "[::]:9420"
   LAYERX_REGISTRY_TLS_CERT_DER = "/data/tls/registry/cert.der"
@@ -44,8 +61,8 @@ kill_timeout = "30s"
   LAYERX_REGISTRY_BUILD_TIMEOUT_SECONDS = "1800"
   LAYERX_REGISTRY_MAX_CONNECTIONS = "128"
   LAYERX_REGISTRY_MAX_BUILDS = "4"
-  LAYERX_REGISTRY_NODE_ENDPOINT = "https://paxeer-human-service.internal:9446"
-  LAYERX_REGISTRY_RECEIPT_AUTHORITY_ENDPOINT = "https://paxeer-human-service.internal:9445"
+  LAYERX_REGISTRY_NODE_ENDPOINT = "https://paxeer-x-core.internal:9446"
+  LAYERX_REGISTRY_RECEIPT_AUTHORITY_ENDPOINT = "https://paxeer-x-core.internal:9445"
   LAYERX_REGISTRY_SEQUENCER_TRUST_HISTORY = "/data/kernel/trust-history"
   LAYERX_REGISTRY_IDENTITY_URL = "https://paxeer-identity.internal:9443"
   LAYERX_REGISTRY_IDENTITY_CA_DER = "/data/tls/registry/ca.der"
@@ -69,18 +86,14 @@ kill_timeout = "30s"
   initial_size = "50gb"
   snapshot_retention = 14
 
-# The ingress on the private network is <app>.internal:9420; the public name
-# index.paxeer.network reaches the same listener through the edge's SNI
-# stream passthrough to port 443 of the app's dedicated IPv4, TLS untouched.
+# The router reaches the mTLS listener at <app>.internal:9420.
+# The public unified interface stays https://api-mainnet-beta.paxeer.network.
 [[services]]
   protocol = "tcp"
   internal_port = 9420
   auto_stop_machines = "off"
   auto_start_machines = false
   min_machines_running = 1
-
-  [[services.ports]]
-    port = 443
 
   [[services.tcp_checks]]
     interval = "15s"
