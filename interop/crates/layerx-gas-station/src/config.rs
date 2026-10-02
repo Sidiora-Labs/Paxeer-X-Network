@@ -221,9 +221,123 @@ impl ServiceConfig {
     }
 }
 
+/// Whether a rate publication cadence leaves the governed rate fresh: a
+/// publication is due every `cadence_seconds` and may then wait up to
+/// `cadence_seconds` more for its receipt before it is retried, so twice the
+/// cadence must stay strictly below the station's `max_rate_age`.
+#[must_use]
+pub const fn cadence_within_rate_age(cadence_seconds: u64, max_rate_age: u64) -> bool {
+    match cadence_seconds.checked_mul(2) {
+        Some(window) => cadence_seconds > 0 && window < max_rate_age,
+        None => false,
+    }
+}
+
+/// Whether two key sources are distinct: different env variable names that
+/// do not hold the same key, compared without the `0x` prefix and case.
+#[must_use]
+pub fn distinct_key_sources(sponsor_env: &str, owner_env: &str) -> bool {
+    if sponsor_env == owner_env {
+        return false;
+    }
+    let normalized = |name: &str| {
+        std::env::var(name).ok().map(|value| {
+            let value = value.trim();
+            value
+                .strip_prefix("0x")
+                .unwrap_or(value)
+                .to_ascii_lowercase()
+        })
+    };
+    match (normalized(sponsor_env), normalized(owner_env)) {
+        (Some(sponsor), Some(owner)) => sponsor != owner,
+        _ => true,
+    }
+}
+
+/// Refuses a journal path that is relative, a symlink, not a regular file, or
+/// readable or writable beyond its owner, or whose directory is missing,
+/// a symlink, or writable by group or others.
+///
+/// # Errors
+/// Returns `journal_path` for every refusal.
+#[cfg(unix)]
+pub fn protected_journal(path: &Path) -> Result<(), ConfigError> {
+    use std::os::unix::fs::PermissionsExt;
+    let refused = ConfigError {
+        field: "journal_path",
+    };
+    let directory = path
+        .parent()
+        .filter(|parent| path.is_absolute() && !parent.as_os_str().is_empty())
+        .ok_or_else(|| refused.clone())?;
+    let directory = std::fs::symlink_metadata(directory).map_err(|_| refused.clone())?;
+    if !directory.is_dir() || directory.permissions().mode() & 0o022 != 0 {
+        return Err(refused);
+    }
+    match std::fs::symlink_metadata(path) {
+        Ok(file) if file.is_file() && file.permissions().mode() & 0o077 == 0 => Ok(()),
+        Ok(_) => Err(refused),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(_) => Err(refused),
+    }
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
+
+    #[test]
+    fn cadence_leaves_confirmation_allowance_below_rate_age() {
+        assert!(cadence_within_rate_age(120, 300));
+        assert!(cadence_within_rate_age(149, 300));
+        assert!(!cadence_within_rate_age(150, 300));
+        assert!(!cadence_within_rate_age(0, 300));
+        assert!(!cadence_within_rate_age(u64::MAX, u64::MAX));
+    }
+
+    #[test]
+    fn key_sources_must_differ_by_name() {
+        assert!(!distinct_key_sources(
+            "PAXEER_RELAYER_KEY",
+            "PAXEER_RELAYER_KEY"
+        ));
+        assert!(distinct_key_sources(
+            "GAS_STATION_CONFIG_TEST_UNSET_SPONSOR",
+            "GAS_STATION_CONFIG_TEST_UNSET_OWNER"
+        ));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn journal_paths_must_be_absolute_and_owner_only() -> Result<(), Box<dyn std::error::Error>> {
+        use std::os::unix::fs::PermissionsExt;
+        let refused = Err(ConfigError {
+            field: "journal_path",
+        });
+        let directory =
+            std::env::temp_dir().join(format!("gas-station-journal-{}", std::process::id()));
+        std::fs::create_dir_all(&directory)?;
+        std::fs::set_permissions(&directory, std::fs::Permissions::from_mode(0o700))?;
+        let journal = directory.join("rate.jsonl");
+        let absent = protected_journal(&journal);
+        std::fs::write(&journal, b"")?;
+        std::fs::set_permissions(&journal, std::fs::Permissions::from_mode(0o600))?;
+        let owner_only = protected_journal(&journal);
+        std::fs::set_permissions(&journal, std::fs::Permissions::from_mode(0o644))?;
+        let readable = protected_journal(&journal);
+        std::fs::set_permissions(&journal, std::fs::Permissions::from_mode(0o600))?;
+        std::fs::set_permissions(&directory, std::fs::Permissions::from_mode(0o777))?;
+        let shared_directory = protected_journal(&journal);
+        std::fs::remove_dir_all(&directory)?;
+        assert_eq!(absent, Ok(()));
+        assert_eq!(owner_only, Ok(()));
+        assert_eq!(readable, refused);
+        assert_eq!(shared_directory, refused);
+        assert_eq!(protected_journal(Path::new("rate.jsonl")), refused);
+        assert_eq!(protected_journal(&directory.join("rate.jsonl")), refused);
+        Ok(())
+    }
 
     pub(crate) fn config() -> StationConfig {
         StationConfig {

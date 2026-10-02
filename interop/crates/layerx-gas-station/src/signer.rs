@@ -1,4 +1,5 @@
 use crate::config::StationConfig;
+use crate::rate::PublisherConfig;
 use crate::quote::{keccak, Address, Word};
 use k256::ecdsa::SigningKey;
 use zeroize::Zeroizing;
@@ -32,6 +33,16 @@ impl LocalSigner {
     pub fn from_config(config: &StationConfig) -> Result<Self, SignerError> {
         config.validate().map_err(|_| SignerError::KeySource)?;
         Self::from_env(&config.relayer_key_env)
+    }
+
+    /// The paymaster owner's signer of the rate publisher, read from its own
+    /// named key source, which is never the sponsor's.
+    /// # Errors
+    /// Refuses an invalid configuration, an owner key source that is the
+    /// sponsor's, and an absent or invalid key.
+    pub fn from_publisher(config: &PublisherConfig) -> Result<Self, SignerError> {
+        config.validate().map_err(|_| SignerError::KeySource)?;
+        Self::from_env(&config.owner_key_env)
     }
 
     /// # Errors
@@ -126,6 +137,25 @@ pub(crate) mod tests {
         config.relayer_key_env.clear();
         assert!(matches!(
             LocalSigner::from_config(&config),
+            Err(SignerError::KeySource)
+        ));
+    }
+    #[test]
+    fn owner_key_source_is_never_the_sponsors() {
+        let station = crate::config::tests::config();
+        let mut publisher = PublisherConfig {
+            owner_key_env: format!("{}_OWNER", station.relayer_key_env),
+            station,
+            cadence_seconds: 1,
+            gas_budget_per_day: u128::from(crate::rate::RATE_GAS_LIMIT),
+            balance_floor: 1,
+            max_priority_fee_per_gas: 1,
+            max_fee_per_gas: 2,
+        };
+        assert!(publisher.validate().is_ok());
+        publisher.owner_key_env = publisher.station.relayer_key_env.clone();
+        assert!(matches!(
+            LocalSigner::from_publisher(&publisher),
             Err(SignerError::KeySource)
         ));
     }

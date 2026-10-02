@@ -16,9 +16,12 @@
 # [env] below; the init refuses to start while any is missing. The machine runs two processes over the one
 # volume: the station, unchanged, and the rate publisher
 # (paxeer-gas-station rate), which signs setRate from the owner key every
-# GAS_STATION_RATE_CADENCE_SECONDS, strictly below max_rate_age, from the
+# GAS_STATION_RATE_CADENCE_SECONDS, twice which (the cadence plus as long
+# again for the receipt before a retry) stays strictly below max_rate_age, from the
 # owner's rate file /data/gas-station/rate.toml and journals each
-# publication in /data/gas-station/rate.jsonl. They share the volume and the
+# publication in /data/gas-station/rate.jsonl. The sponsor and owner keys
+# must be different keys; /data must be the volume below and both journals
+# stay owner-only on it, so a restart resumes from them. They share the volume and the
 # single writer of each journal, so they run under the init of the one
 # machine rather than as Fly process groups, which each get their own machines
 # and volumes. The image is built from the

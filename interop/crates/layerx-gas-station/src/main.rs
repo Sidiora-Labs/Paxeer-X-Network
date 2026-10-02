@@ -1,5 +1,7 @@
-use layerx_gas_station::config::ServiceConfig;
-use layerx_gas_station::journal::Journal;
+use layerx_gas_station::config::{
+    cadence_within_rate_age, distinct_key_sources, protected_journal, ServiceConfig,
+};
+use layerx_gas_station::journal::{Journal, Publication, State};
 use layerx_gas_station::price::PaymasterRateSource;
 use layerx_gas_station::rate::{PublisherConfig, RatePublisher, RateRefusal, DAY_SECONDS};
 use layerx_gas_station::rpc::{ConfiguredRpc, HttpsExchange};
@@ -63,6 +65,18 @@ fn run_rate(arguments: &RateArguments) -> ExitCode {
             return ExitCode::from(2);
         }
     };
+    if !distinct_key_sources(&config.station.relayer_key_env, &config.owner_key_env) {
+        eprintln!("rate publisher refused: the paymaster owner key source must differ from the sponsor key source");
+        return ExitCode::from(2);
+    }
+    if !cadence_within_rate_age(config.cadence_seconds, config.station.max_rate_age) {
+        eprintln!("rate publisher refused: twice the cadence must stay below the station max_rate_age");
+        return ExitCode::from(2);
+    }
+    if let Err(error) = protected_journal(&arguments.journal) {
+        eprintln!("{error}");
+        return ExitCode::from(2);
+    }
     let signer = match LocalSigner::from_env(&config.owner_key_env) {
         Ok(signer) => signer,
         Err(error) => {
@@ -84,6 +98,7 @@ fn run_rate(arguments: &RateArguments) -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
+    report_recovery(journal.state());
     let daily_wei = config.daily_wei_ceiling().unwrap_or(u128::MAX);
     let mut publisher =
         match RatePublisher::new(config, signer, rpc, journal, Duration::from_secs(2)) {
@@ -107,11 +122,7 @@ fn run_rate(arguments: &RateArguments) -> ExitCode {
                     publication.nonce,
                     layerx_gas_station::rpc::hex(&publication.hash),
                     u128::from_be_bytes(publication.rate[16..].try_into().unwrap_or([0; 16])),
-                    state
-                        .publications
-                        .get(&publication.hash)
-                        .and_then(|(_, settled)| *settled)
-                        .map_or(0, |settled| settled.cost_wei),
+                    settled_cost(state, &publication),
                     state.publication_wei(day),
                     state.publication_gas(day),
                     state.reserved_wei(),
@@ -119,7 +130,7 @@ fn run_rate(arguments: &RateArguments) -> ExitCode {
                 cadence
             }
             Err(RateRefusal::Unchanged { age }) => cadence.saturating_sub(age).max(1),
-            Err(error @ RateRefusal::Journal(_)) => {
+            Err(error @ (RateRefusal::Journal(_) | RateRefusal::IdentityChanged { .. })) => {
                 eprintln!("{error}");
                 return ExitCode::FAILURE;
             }
@@ -130,6 +141,44 @@ fn run_rate(arguments: &RateArguments) -> ExitCode {
         };
         std::thread::sleep(Duration::from_secs(wait));
     }
+}
+
+/// Names every publication the journal still has to resolve before the
+/// publisher may construct another one.
+fn report_recovery(state: &State) {
+    for family in state.families.values().filter(|f| f.finalized.is_none()) {
+        let latest = &family.latest().publication;
+        println!(
+            "rate publisher recovering hash={} nonce={} signed={} broadcast={}",
+            layerx_gas_station::rpc::hex(&latest.hash),
+            latest.nonce,
+            family.hashes().len(),
+            family.broadcast.len(),
+        );
+    }
+    for legacy in state.legacy_unresolved() {
+        println!(
+            "rate publisher recovering legacy hash={} nonce={}",
+            layerx_gas_station::rpc::hex(&legacy.hash),
+            legacy.nonce,
+        );
+    }
+}
+
+/// The wei the publication's finalized outcome cost, zero while unsettled.
+fn settled_cost(state: &State, publication: &Publication) -> u128 {
+    state
+        .publications
+        .get(&publication.hash)
+        .and_then(|(_, settled)| *settled)
+        .or_else(|| {
+            state
+                .families
+                .get(&(publication.owner, publication.nonce))
+                .and_then(|family| family.finalized)
+                .map(|(_, settled)| settled)
+        })
+        .map_or(0, |settled| settled.cost_wei)
 }
 
 fn unix_time() -> Option<u64> {
@@ -162,6 +211,10 @@ fn main() -> ExitCode {
             return ExitCode::from(2);
         }
     };
+    if let Err(error) = protected_journal(&arguments.journal) {
+        eprintln!("{error}");
+        return ExitCode::from(2);
+    }
     let signer = match LocalSigner::from_config(&config.station) {
         Ok(signer) => signer,
         Err(error) => {
