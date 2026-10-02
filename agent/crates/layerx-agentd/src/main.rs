@@ -8,7 +8,7 @@ use std::net::{TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
 use std::sync::{mpsc, Arc, Mutex};
 use std::thread;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use layerx_agentd::audit::Redacted;
 use layerx_agentd::budget::{LimitConfig, LimitId, LimitScope};
@@ -49,6 +49,170 @@ mod human_owner_mode;
 mod human_peer_config;
 
 const HEADER_LIMIT: usize = 16 * 1024;
+const BODY_LIMIT: usize = 0;
+const PROGRAM_WORKERS: usize = 8;
+const PROGRAM_QUEUE: usize = 16;
+const REQUEST_DEADLINE: Duration = Duration::from_secs(5);
+const IO_CEILING: Duration = Duration::from_secs(10);
+const SUPERVISION_INTERVAL: Duration = Duration::from_millis(25);
+
+struct DeadlineStream {
+    socket: TcpStream,
+    expires: Instant,
+}
+
+impl DeadlineStream {
+    fn new(socket: TcpStream) -> Self {
+        Self { socket, expires: Instant::now() + REQUEST_DEADLINE }
+    }
+
+    fn remaining(&self) -> std::io::Result<Duration> {
+        let remaining = self.expires.saturating_duration_since(Instant::now());
+        if remaining.is_zero() {
+            Err(std::io::Error::new(std::io::ErrorKind::TimedOut, "request deadline elapsed"))
+        } else {
+            Ok(remaining.min(IO_CEILING))
+        }
+    }
+}
+
+impl Read for DeadlineStream {
+    fn read(&mut self, bytes: &mut [u8]) -> std::io::Result<usize> {
+        self.socket.set_read_timeout(Some(self.remaining()?))?;
+        self.socket.read(bytes)
+    }
+}
+
+impl Write for DeadlineStream {
+    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+        self.socket.set_write_timeout(Some(self.remaining()?))?;
+        self.socket.write(bytes)
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        self.socket.set_write_timeout(Some(self.remaining()?))?;
+        self.socket.flush()
+    }
+}
+
+struct HttpAdmissions {
+    stopping: bool,
+    busy: Vec<bool>,
+    pending: Vec<Option<DeadlineStream>>,
+    active: Vec<Option<TcpStream>>,
+    queue: std::collections::VecDeque<DeadlineStream>,
+}
+
+struct HttpPool {
+    admissions: Arc<(Mutex<HttpAdmissions>, std::sync::Condvar)>,
+    threads: Vec<thread::JoinHandle<()>>,
+}
+
+impl HttpPool {
+    fn start<F>(listener: TcpListener, handle: F) -> Result<Self, String>
+    where F: Fn(DeadlineStream) + Send + Sync + 'static {
+        listener.set_nonblocking(true).map_err(|error| error.to_string())?;
+        let handle = Arc::new(handle);
+        let mut pool = Self {
+            admissions: Arc::new((Mutex::new(HttpAdmissions {
+                stopping: false,
+                busy: vec![false; PROGRAM_WORKERS],
+                pending: (0..PROGRAM_WORKERS).map(|_| None).collect(),
+                active: (0..PROGRAM_WORKERS).map(|_| None).collect(),
+                queue: std::collections::VecDeque::with_capacity(PROGRAM_QUEUE),
+            }), std::sync::Condvar::new())),
+            threads: Vec::with_capacity(PROGRAM_WORKERS + 1),
+        };
+        for index in 0..PROGRAM_WORKERS {
+            let admissions = Arc::clone(&pool.admissions);
+            let handle = Arc::clone(&handle);
+            let worker = thread::Builder::new().name(format!("layerx-http-{index}")).spawn(move || {
+                loop {
+                    let stream = {
+                        let Ok(mut state) = admissions.0.lock() else { return; };
+                        while state.pending[index].is_none() && !state.stopping {
+                            state = match admissions.1.wait(state) {
+                                Ok(state) => state,
+                                Err(_) => return,
+                            };
+                        }
+                        if state.stopping { return; }
+                        let Some(stream) = state.pending[index].take() else { return; };
+                        match stream.socket.try_clone() {
+                            Ok(socket) => state.active[index] = Some(socket),
+                            Err(_) => {
+                                state.pending[index] = state.queue.pop_front();
+                                state.busy[index] = state.pending[index].is_some();
+                                continue;
+                            }
+                        }
+                        stream
+                    };
+                    if stream.remaining().is_ok() {
+                        handle(stream);
+                    }
+                    let Ok(mut state) = admissions.0.lock() else { return; };
+                    state.active[index] = None;
+                    state.pending[index] = state.queue.pop_front();
+                    state.busy[index] = state.pending[index].is_some();
+                }
+            }).map_err(|error| format!("HTTP worker failed: {error}"))?;
+            pool.threads.push(worker);
+        }
+        let admissions = Arc::clone(&pool.admissions);
+        pool.threads.push(thread::Builder::new().name("layerx-http-accept".to_owned()).spawn(move || {
+            loop {
+                {
+                    let Ok(mut state) = admissions.0.lock() else { return; };
+                    if state.stopping { return; }
+                    state.queue.retain(|stream| stream.remaining().is_ok());
+                }
+                match listener.accept() {
+                    Ok((socket, _)) => {
+                        let stream = DeadlineStream::new(socket);
+                        let Ok(mut state) = admissions.0.lock() else { return; };
+                        if state.stopping { return; }
+                        if let Some(index) = state.busy.iter().position(|busy| !busy) {
+                            state.busy[index] = true;
+                            state.pending[index] = Some(stream);
+                            admissions.1.notify_all();
+                        } else if state.queue.len() < PROGRAM_QUEUE {
+                            state.queue.push_back(stream);
+                        }
+                    }
+                    Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => thread::sleep(SUPERVISION_INTERVAL),
+                    Err(error) if error.kind() == std::io::ErrorKind::Interrupted => {},
+                    Err(_) => return,
+                }
+            }
+        }).map_err(|error| format!("HTTP accept thread failed: {error}"))?);
+        Ok(pool)
+    }
+
+    fn check(&self) -> Result<(), String> {
+        if self.threads.iter().any(thread::JoinHandle::is_finished) {
+            Err("HTTP listener or worker terminated".to_owned())
+        } else {
+            Ok(())
+        }
+    }
+}
+
+impl Drop for HttpPool {
+    fn drop(&mut self) {
+        if let Ok(mut state) = self.admissions.0.lock() {
+            state.stopping = true;
+            state.queue.clear();
+            for stream in &mut state.pending {
+                *stream = None;
+            }
+            for socket in state.active.iter().flatten() {
+                let _ = socket.shutdown(std::net::Shutdown::Both);
+            }
+            self.admissions.1.notify_all();
+        }
+    }
+}
 
 struct Config {
     listen: String,
@@ -63,6 +227,7 @@ struct Config {
     staleness_ms: u64,
     deployment_journal: String,
     probe_program: ProgramId,
+    policy_sources: BTreeMap<TenantId, PathBuf>,
 }
 
 fn optional(name: &str) -> Option<String> {
@@ -688,10 +853,9 @@ fn start_shared_owner(
 /// configured. A configured listener without its complete TLS material refuses boot.
 fn start_agent_rpc(
     owner: SharedAgentOwner<RemoteHumanAuthority>,
-    status: mpsc::SyncSender<Result<(), String>>,
-) -> Result<(), String> {
+) -> Result<Option<HttpPool>, String> {
     let Some(listen) = optional("LAYERX_AGENTD_RPC_LISTEN") else {
-        return Ok(());
+        return Ok(None);
     };
     let owner = owner
         .with_idempotency(
@@ -719,41 +883,13 @@ fn start_agent_rpc(
 
     let listener = TcpListener::bind(&listen)
         .map_err(|error| format!("agent rpc listener failed: {error}"))?;
-    thread::Builder::new()
-        .name("layerx-agent-rpc".to_owned())
-        .spawn(move || {
-            let _ = status.send(serve_agent_rpc(&listener, &tls, &network, &owner));
-        })
-        .map_err(|error| format!("agent rpc listener thread failed: {error}"))?;
-    Ok(())
-}
-
-// ponytail: one connection at a time, like the program listener; per-connection
-// threads if agent RPC concurrency matters.
-fn serve_agent_rpc(
-    listener: &TcpListener,
-    tls: &AgentRpcTls,
-    network: &str,
-    owner: &SharedAgentOwner<RemoteHumanAuthority>,
-) -> Result<(), String> {
-    loop {
-        let (stream, _) = listener
-            .accept()
-            .map_err(|error| format!("agent rpc accept failed: {error}"))?;
-        stream
-            .set_read_timeout(Some(Duration::from_secs(10)))
-            .and_then(|()| stream.set_write_timeout(Some(Duration::from_secs(10))))
-            .map_err(|error| format!("agent rpc timeout setup failed: {error}"))?;
-        // An unverified client certificate or a peer other than the configured gateway
-        // closes the connection during the handshake; there is no plaintext path.
-        let Ok(mut stream) = tls.accept(stream) else {
-            continue;
-        };
-        let response = agent_rpc_exchange(&mut stream, network, owner);
+    HttpPool::start(listener, move |stream| {
+        let Ok(mut stream) = tls.accept(stream) else { return; };
+        let response = agent_rpc_exchange(&mut stream, &network, &owner);
         let _ = write_rpc_response(&mut stream, &response);
         stream.conn.send_close_notify();
         let _ = stream.flush();
-    }
+    }).map(Some)
 }
 
 fn agent_rpc_exchange<S: Read>(
@@ -893,8 +1029,19 @@ fn config() -> Result<Config, String> {
     if staleness_ms == 0 {
         return Err("agent staleness bound is non-canonical".to_owned());
     }
+    let tenants = human_peers()?
+        .values()
+        .map(|(_, tenant)| TenantId::new(tenant.clone()))
+        .collect::<Result<BTreeSet<_>, _>>()
+        .map_err(|error| format!("human policy tenant is invalid: {error:?}"))?;
+    let policy_sources = layerx_agentd::config::parse_policy_sources(
+        &required("LAYERX_POLICY_SOURCES")?,
+        &tenants,
+    )
+    .map_err(|error| format!("human policy sources are invalid: {error}"))?;
     Ok(Config {
         listen,
+        policy_sources,
         bearer,
         node_endpoint: required("LAYERX_AGENT_NODE_ENDPOINT")?,
         node_bearer,
@@ -1002,7 +1149,7 @@ fn balance_json(read: &ProgramBalanceRead) -> String {
     )
 }
 
-fn response(stream: &mut TcpStream, status: u16, body: &str) -> Result<(), String> {
+fn response<S: Write>(stream: &mut S, status: u16, body: &str) -> Result<(), String> {
     let reason = if status < 300 { "OK" } else { "Refused" };
     let header = format!(
         "HTTP/1.1 {status} {reason}\r\nContent-Type: application/json\r\nCache-Control: no-store\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
@@ -1031,93 +1178,142 @@ fn refresh_program_authority(
     Ok(())
 }
 
-fn serve_connection(
-    stream: &mut TcpStream,
-    bearer: &str,
-    probe_program: ProgramId,
-    route: &mut ProgramBalanceReadRoute,
-    native: &mut Option<NativeReadRoute>,
-) -> Result<(), String> {
+enum Parsed {
+    Admitted(String),
+    Refused(u16, &'static str),
+    Closed,
+}
+
+fn declared_body(request: &str) -> Result<usize, ()> {
+    let mut length = None;
+    for header in request.split("\r\n").skip(1) {
+        let (name, value) = header.split_once(':').ok_or(())?;
+        if name.eq_ignore_ascii_case("transfer-encoding") { return Err(()); }
+        if name.eq_ignore_ascii_case("content-length") {
+            let value = value.trim();
+            if length.is_some() || value.is_empty() || !value.bytes().all(|byte| byte.is_ascii_digit()) {
+                return Err(());
+            }
+            length = Some(value.parse().map_err(|_| ())?);
+        }
+    }
+    Ok(length.unwrap_or(BODY_LIMIT))
+}
+
+/// Reads one request head under a single absolute deadline. Every read is also capped by the
+/// per-I/O ceiling, so neither a silent peer nor a peer trickling partial bytes can hold a
+/// connection worker beyond `REQUEST_DEADLINE`.
+fn parse_request(stream: &mut DeadlineStream, bearer: &str) -> Parsed {
+    let deadline = stream.expires;
     let mut bytes = [0_u8; HEADER_LIMIT];
     let mut length = 0_usize;
     while length < bytes.len() && !bytes[..length].windows(4).any(|value| value == b"\r\n\r\n") {
-        let count = stream
-            .read(&mut bytes[length..])
-            .map_err(|error| format!("agent request failed: {error}"))?;
-        if count == 0 {
-            return Err("agent request ended before its headers".to_owned());
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        if remaining.is_zero() {
+            return Parsed::Refused(408, "{\"error\":\"request_timeout\"}");
         }
-        length += count;
+        match stream.read(&mut bytes[length..]) {
+            Ok(0) => return Parsed::Closed,
+            Ok(count) => length += count,
+            Err(error)
+                if matches!(
+                    error.kind(),
+                    std::io::ErrorKind::WouldBlock
+                        | std::io::ErrorKind::TimedOut
+                        | std::io::ErrorKind::Interrupted
+                ) => {}
+            Err(_) => return Parsed::Closed,
+        }
     }
-    if !bytes[..length].windows(4).any(|value| value == b"\r\n\r\n") {
-        return response(stream, 431, "{\"error\":\"headers_too_large\"}");
-    }
-    let request = std::str::from_utf8(&bytes[..length])
-        .map_err(|_| "agent request headers are not UTF-8".to_owned())?;
-    let line = request
-        .lines()
-        .next()
-        .ok_or_else(|| "agent request omitted its request line".to_owned())?;
+    let Some(end) = bytes[..length]
+        .windows(4)
+        .position(|value| value == b"\r\n\r\n")
+    else {
+        return Parsed::Refused(431, "{\"error\":\"headers_too_large\"}");
+    };
+    let Ok(request) = std::str::from_utf8(&bytes[..end]) else {
+        return Parsed::Refused(400, "{\"error\":\"invalid_request\"}");
+    };
+    let line = request.lines().next().unwrap_or_default();
     let mut parts = line.split_ascii_whitespace();
     let method = parts.next().unwrap_or_default();
     let path = parts.next().unwrap_or_default();
     if parts.next() != Some("HTTP/1.1") || parts.next().is_some() || method != "GET" {
-        return response(stream, 400, "{\"error\":\"invalid_request\"}");
+        return Parsed::Refused(400, "{\"error\":\"invalid_request\"}");
     }
-    let authorized = request
-        .lines()
-        .any(|header| header.strip_prefix("Authorization: Bearer ") == Some(bearer));
+    match declared_body(request) {
+        Ok(BODY_LIMIT) => {}
+        Ok(_) => return Parsed::Refused(413, "{\"error\":\"body_too_large\"}"),
+        Err(()) => return Parsed::Refused(400, "{\"error\":\"invalid_request\"}"),
+    }
+    if length != end + 4 {
+        return Parsed::Refused(413, "{\"error\":\"body_too_large\"}");
+    }
+    let mut credentials = request.lines().filter_map(|header| {
+        let (name, value) = header.split_once(':')?;
+        name.eq_ignore_ascii_case("authorization").then_some(value.trim())
+    });
+    let authorized = credentials.next().and_then(|value| value.strip_prefix("Bearer ")) == Some(bearer)
+        && credentials.next().is_none();
     if !authorized {
-        return response(stream, 401, "{\"error\":\"unauthorized\"}");
+        return Parsed::Refused(401, "{\"error\":\"unauthorized\"}");
     }
+    Parsed::Admitted(path.to_owned())
+}
+
+fn route_request(
+    path: &str,
+    probe_program: ProgramId,
+    route: &mut ProgramBalanceReadRoute,
+    native: &mut Option<NativeReadRoute>,
+) -> (u16, String) {
+    let reply = |status: u16, body: &str| (status, body.to_owned());
     if path == "/healthz" {
         if refresh_program_authority(route, native).is_err() {
-            return response(stream, 503, "{\"ready\":false}");
+            return reply(503, "{\"ready\":false}");
         }
-        return match route.read(probe_program, now_ms()?) {
-            Ok(_) => response(stream, 200, "{\"ready\":true}"),
-            Err(_) => response(stream, 503, "{\"ready\":false}"),
+        return match now_ms().map(|now| route.read(probe_program, now)) {
+            Ok(Ok(_)) => reply(200, "{\"ready\":true}"),
+            _ => reply(503, "{\"ready\":false}"),
         };
     }
     if path.starts_with("/v1/reads/") {
         let Some(reader) = native.as_mut() else {
-            return response(stream, 404, "{\"error\":\"not_found\"}");
+            return reply(404, "{\"error\":\"not_found\"}");
         };
         return match reader.read(path) {
-            Ok(value) => response(stream, 200, &value.to_string()),
+            Ok(value) => (200, value.to_string()),
             Err(
                 layerx_agentd::read::NativeReadError::InvalidRequest
                 | layerx_agentd::read::NativeReadError::CursorMismatch,
-            ) => response(stream, 400, "{\"error\":\"invalid_read\"}"),
+            ) => reply(400, "{\"error\":\"invalid_read\"}"),
             Err(layerx_agentd::read::NativeReadError::ResultTooLarge) => {
-                response(stream, 413, "{\"error\":\"read_too_large\"}")
+                reply(413, "{\"error\":\"read_too_large\"}")
             }
-            Err(_) => response(stream, 503, "{\"error\":\"verified_read_unavailable\"}"),
+            Err(_) => reply(503, "{\"error\":\"verified_read_unavailable\"}"),
         };
     }
     let Some(program_text) = path
         .strip_prefix("/v1/programs/")
         .and_then(|value| value.strip_suffix("/balances"))
     else {
-        return response(stream, 404, "{\"error\":\"not_found\"}");
+        return reply(404, "{\"error\":\"not_found\"}");
     };
     let program = hex::decode_digest(program_text)
         .ok()
         .and_then(|bytes| ProgramId::new(bytes).ok());
     let Some(program) = program else {
-        return response(stream, 400, "{\"error\":\"invalid_program\"}");
+        return reply(400, "{\"error\":\"invalid_program\"}");
     };
     if refresh_program_authority(route, native).is_err() {
-        return response(stream, 503, "{\"error\":\"program_state_unavailable\"}");
+        return reply(503, "{\"error\":\"program_state_unavailable\"}");
     }
-    let read = route
-        .read(program, now_ms()?)
-        .map_err(|error| format!("current program state is unavailable: {error:?}"));
-    match read {
-        Ok(read) => response(stream, 200, &balance_json(&read)),
-        Err(_) => response(stream, 503, "{\"error\":\"program_state_unavailable\"}"),
+    match now_ms().map(|now| route.read(program, now)) {
+        Ok(Ok(read)) => (200, balance_json(&read)),
+        _ => reply(503, "{\"error\":\"program_state_unavailable\"}"),
     }
 }
+
 
 fn native_handover_sources() -> Result<Option<(PathBuf, PathBuf)>, String> {
     let genesis_trust = match std::env::var("LAYERX_AGENT_GENESIS_TRUST") {
@@ -1279,42 +1475,43 @@ fn serve(config: Config) -> Result<(), String> {
             Some(&config.policy_sources),
             runtime_clock,
         )?;
-    start_agent_rpc(owner, status)?;
+    let rpc = start_agent_rpc(owner)?;
+    drop(status);
     route
         .read(config.probe_program, now_ms()?)
         .map_err(|error| format!("agent protocol reader is not ready: {error:?}"))?;
     let listener = TcpListener::bind(&config.listen)
         .map_err(|error| format!("agent program listener failed: {error}"))?;
-    listener
-        .set_nonblocking(true)
-        .map_err(|error| format!("agent program listener nonblocking setup failed: {error}"))?;
+    let shared_reads = Arc::new(Mutex::new((route, native)));
+    let program = HttpPool::start(listener, move |mut stream| {
+        let answer = match parse_request(&mut stream, &config.bearer) {
+            Parsed::Closed => return,
+            Parsed::Refused(status, body) => (status, body.to_owned()),
+            Parsed::Admitted(path) => {
+                loop {
+                    if stream.remaining().is_err() { return; }
+                    match shared_reads.try_lock() {
+                        Ok(mut reads) => {
+                            let (route, native) = &mut *reads;
+                            break route_request(&path, config.probe_program, route, native);
+                        }
+                        Err(std::sync::TryLockError::WouldBlock) => thread::sleep(SUPERVISION_INTERVAL),
+                        Err(std::sync::TryLockError::Poisoned(_)) => return,
+                    }
+                }
+            }
+        };
+        let _ = response(&mut stream, answer.0, &answer.1);
+    })?;
     loop {
         match human.try_recv() {
             Ok(result) => return result,
-            Err(mpsc::TryRecvError::Disconnected) => {
-                return Err("human listener terminated without status".to_owned())
-            }
-            Err(mpsc::TryRecvError::Empty) => {}
+            Err(mpsc::TryRecvError::Disconnected) => return Err("human listener terminated without status".to_owned()),
+            Err(mpsc::TryRecvError::Empty) => {},
         }
-        let mut stream = match listener.accept() {
-            Ok((stream, _)) => stream,
-            Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
-                thread::sleep(Duration::from_millis(25));
-                continue;
-            }
-            Err(error) => return Err(format!("agent accept failed: {error}")),
-        };
-        stream
-            .set_read_timeout(Some(Duration::from_secs(10)))
-            .and_then(|()| stream.set_write_timeout(Some(Duration::from_secs(10))))
-            .map_err(|error| format!("agent connection timeout setup failed: {error}"))?;
-        let _ = serve_connection(
-            &mut stream,
-            &config.bearer,
-            config.probe_program,
-            &mut route,
-            &mut native,
-        );
+        program.check()?;
+        if let Some(rpc) = &rpc { rpc.check()?; }
+        thread::sleep(SUPERVISION_INTERVAL);
     }
 }
 

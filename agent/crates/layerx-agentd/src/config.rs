@@ -407,6 +407,13 @@ fn parse_tenants(value: &str) -> Result<BTreeSet<TenantId>, ConfigError> {
     }
 }
 
+pub fn parse_policy_sources(
+    value: &str,
+    tenants: &BTreeSet<TenantId>,
+) -> Result<BTreeMap<TenantId, PathBuf>, ConfigError> {
+    parse_tenant_paths(value, "policy_sources", tenants)
+}
+
 fn parse_tenant_paths(
     value: &str,
     setting: &'static str,

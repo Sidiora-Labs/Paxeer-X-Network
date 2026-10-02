@@ -1,5 +1,5 @@
 use std::fmt;
-use std::net::TcpStream;
+use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -106,10 +106,10 @@ impl AgentRpcTls {
         })
     }
 
-    pub fn accept(
+    pub fn accept<S: Read + Write>(
         &self,
-        mut stream: TcpStream,
-    ) -> Result<StreamOwned<ServerConnection, TcpStream>, AgentRpcTlsError> {
+        mut stream: S,
+    ) -> Result<StreamOwned<ServerConnection, S>, AgentRpcTlsError> {
         let mut connection = ServerConnection::new(Arc::clone(&self.config))
             .map_err(|error| AgentRpcTlsError::Config(error.to_string()))?;
         while connection.is_handshaking() {
