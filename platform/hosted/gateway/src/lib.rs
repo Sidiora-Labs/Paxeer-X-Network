@@ -4,6 +4,7 @@ pub use layerx_proof::inclusion::SequencerAuthorization;
 
 pub mod authority_evidence;
 pub mod evm;
+pub mod explorer_target;
 pub mod http;
 pub mod store;
 

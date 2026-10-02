@@ -1064,6 +1064,30 @@ fn configured_kernel() -> Result<Option<(Kernel, Identity)>, String> {
     Ok(Some((kernel, identity)))
 }
 
+fn configured_service_identity(kernel_configured: bool) -> Result<Option<Identity>, String> {
+    const IDENTITY: &str = "LAYERX_GATEWAY_SERVICE_CLIENT_IDENTITY_PKCS12";
+    const PASSWORD: &str = "LAYERX_GATEWAY_SERVICE_CLIENT_IDENTITY_PASSWORD_FILE";
+    let identity_configured = env::var_os(IDENTITY).is_some();
+    let password_configured = env::var_os(PASSWORD).is_some();
+    if !identity_configured && !password_configured {
+        return Ok(None);
+    }
+    if kernel_configured {
+        return Err("service client identity conflicts with the configured kernel client identity"
+            .to_owned());
+    }
+    if !identity_configured || !password_configured {
+        return Err(format!("{IDENTITY} and {PASSWORD} must be configured together"));
+    }
+    let path = env::var(IDENTITY)
+        .map_err(|_| "gateway service client identity path is invalid".to_owned())?;
+    let password = read_secret(PASSWORD)?;
+    let encoded = Zeroizing::new(fs::read(path).map_err(|error| error.to_string())?);
+    Identity::from_pkcs12(encoded.as_slice(), password.as_str())
+        .map(Some)
+        .map_err(|error| error.to_string())
+}
+
 fn config(event_producer: bool) -> Result<Config, String> {
     let ca = Certificate::from_der(
         &fs::read(
@@ -1073,9 +1097,14 @@ fn config(event_producer: bool) -> Result<Config, String> {
         .map_err(|error| error.to_string())?,
     )
     .map_err(|error| error.to_string())?;
-    let (client, kernel, client_identity) = match configured_kernel()? {
+    let kernel = configured_kernel()?;
+    let service_identity = configured_service_identity(kernel.is_some())?;
+    let (client, kernel, client_identity) = match kernel {
         Some((kernel, identity)) => (Client::new(ca.clone(), identity), Some(kernel), true),
-        None => (Client::without_identity(ca.clone()), None, false),
+        None => match service_identity {
+            Some(identity) => (Client::new(ca.clone(), identity), None, true),
+            None => (Client::without_identity(ca.clone()), None, false),
+        },
     };
     let idempotency_seconds = env::var("LAYERX_GATEWAY_IDEMPOTENCY_SECONDS")
         .unwrap_or_else(|_| "604800".to_owned())

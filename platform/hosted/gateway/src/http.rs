@@ -799,8 +799,8 @@ pub fn read_request(stream: &mut impl Read, maximum: usize) -> Result<IncomingRe
         .ok_or_else(|| "request target is missing".to_owned())?;
     if parts.next() != Some("HTTP/1.1")
         || parts.next().is_some()
-        || (if crate::explorer_proxy::owns_target(path) {
-            crate::explorer_proxy::split_target(path).is_err()
+        || (if crate::explorer_target::owns_target(path) {
+            crate::explorer_target::split_target(path).is_err()
         } else {
             if ui_owns_target(path) { ui_split_target(path).is_err() } else { split_target(path).is_err() }
         })
@@ -1431,7 +1431,7 @@ pub fn explorer_request(
     request: &OutboundRequest<'_>,
     forwarded: &[(&str, &str)],
 ) -> Result<UpstreamResponse, String> {
-    crate::explorer_proxy::split_target(request.path)?;
+    crate::explorer_target::split_target(request.path)?;
     if !matches!(request.method, "GET" | "POST" | "PUT" | "PATCH" | "DELETE")
         || request.body.len() > MAX_RESPONSE
         || request.content_type.len() > 256
