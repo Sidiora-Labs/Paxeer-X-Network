@@ -54,7 +54,7 @@ RUN yarn --frozen-lockfile --network-timeout 100000
 ### ESSENTIAL DAPPS CHAINS CONFIG GENERATOR
 # Install dependencies
 WORKDIR /essential-dapps-chains-config-generator
-COPY explorer/frontend/deploy/tools/essential-dapps-chains-config-generator/package.json ./
+COPY explorer/frontend/deploy/tools/essential-dapps-chains-config-generator/package.json explorer/frontend/deploy/tools/essential-dapps-chains-config-generator/yarn.lock ./
 RUN yarn --frozen-lockfile --network-timeout 100000
 
 ### llms.txt GENERATOR
