@@ -2157,10 +2157,10 @@ impl<A: HumanAuthorityBoundary> UnifiedAgentOwner<A> {
             .map(|limit| limit.ceiling)
             .min()
             .ok_or(HumanOperationError::Refused)?;
-        let verified = verified_limits.clone();
+        let verified = verified_limits;
         let approvals = Arc::new(ApprovalRegistry::with_store(Arc::clone(&shared_store)));
         let budgets = Arc::new(
-            BudgetLimiter::new(verified_limits).map_err(|_| HumanOperationError::Refused)?,
+            BudgetLimiter::new(Vec::new()).map_err(|_| HumanOperationError::Refused)?,
         );
         let approval_queue = Arc::new(ApprovalSubmissionQueue::default());
 

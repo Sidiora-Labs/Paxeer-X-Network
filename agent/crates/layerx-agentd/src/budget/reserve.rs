@@ -228,6 +228,81 @@ impl BudgetLimiter {
             .collect())
     }
 
+    /// Every outstanding hold that counts against `id`: its own and those of every predecessor
+    /// whose lineage ends at it.
+    ///
+    /// # Errors
+    ///
+    /// Returns `UnknownLimit`, `Arithmetic`, or `Poisoned`.
+    pub fn held_exposure(&self, id: LimitId) -> Result<u128, LimitRefusal> {
+        let limits = self.limits.lock().map_err(|_| LimitRefusal::Poisoned)?;
+        if !limits.contains_key(&id) {
+            return Err(LimitRefusal::UnknownLimit(id));
+        }
+        lineage_held(&limits, id)
+    }
+
+    /// Computes one settlement's limiter effect without publishing it. `Executed` charges each
+    /// released hold to its own limit and to the live head of that limit's lineage.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Arithmetic` on overflow, `UnknownLimit` for a broken lineage, or `Poisoned`.
+    pub fn stage_release(
+        &self,
+        reservation_id: [u8; 32],
+        kind: ReleaseKind,
+        current_sequence: u64,
+    ) -> Result<StagedRelease<'_>, LimitRefusal> {
+        let limits = self.limits.lock().map_err(|_| LimitRefusal::Poisoned)?;
+        if kind == ReleaseKind::Unknown {
+            return Ok(StagedRelease {
+                limits,
+                released: None,
+                found: false,
+            });
+        }
+        let mut released = limits.clone();
+        let mut successor_charges = Vec::new();
+        let mut found = false;
+        for (id, limit) in &mut released {
+            let Some(hold) = limit.held.get(&reservation_id).copied() else {
+                continue;
+            };
+            if kind == ReleaseKind::Expired && current_sequence < hold.expiry_sequence {
+                continue;
+            }
+            limit.held.remove(&reservation_id);
+            if kind == ReleaseKind::Executed {
+                limit.config.consumed = limit
+                    .config
+                    .consumed
+                    .checked_add(hold.amount)
+                    .ok_or(LimitRefusal::Arithmetic)?;
+                if limit.successor.is_some() {
+                    successor_charges.push((*id, hold.amount));
+                }
+            }
+            found = true;
+        }
+        for (id, amount) in successor_charges {
+            let head = live_head(&released, id)?;
+            let limit = released
+                .get_mut(&head)
+                .ok_or(LimitRefusal::UnknownLimit(head))?;
+            limit.config.consumed = limit
+                .config
+                .consumed
+                .checked_add(amount)
+                .ok_or(LimitRefusal::Arithmetic)?;
+        }
+        Ok(StagedRelease {
+            limits,
+            released: Some(released),
+            found,
+        })
+    }
+
     /// Returns the amount already consumed against one limit.
     ///
     /// # Errors
@@ -471,46 +546,34 @@ pub(crate) fn release_all(
     kind: ReleaseKind,
     current_sequence: u64,
 ) -> Result<bool, LimitRefusal> {
-    if kind == ReleaseKind::Unknown {
-        return Ok(false);
+    Ok(limiter
+        .stage_release(reservation_id, kind, current_sequence)?
+        .publish())
+}
+
+/// One settlement's limiter effect, computed in full while the limiter lock is held. Admission
+/// stays excluded until it is published; dropping it leaves the limiter unchanged.
+pub struct StagedRelease<'a> {
+    limits: std::sync::MutexGuard<'a, BTreeMap<LimitId, LimitState>>,
+    released: Option<BTreeMap<LimitId, LimitState>>,
+    found: bool,
+}
+
+impl StagedRelease<'_> {
+    /// Whether the settlement releases at least one hold.
+    #[must_use]
+    pub fn found(&self) -> bool {
+        self.found
     }
-    let mut limits = limiter.limits.lock().map_err(|_| LimitRefusal::Poisoned)?;
-    let mut released = limits.clone();
-    let mut successor_charges = Vec::new();
-    let mut found = false;
-    for (id, limit) in &mut released {
-        let Some(hold) = limit.held.get(&reservation_id).copied() else {
-            continue;
-        };
-        if kind == ReleaseKind::Expired && current_sequence < hold.expiry_sequence {
-            continue;
+
+    /// Publishes the staged release into the limiter; this cannot fail.
+    #[must_use]
+    pub fn publish(mut self) -> bool {
+        if let Some(released) = self.released.take() {
+            *self.limits = released;
         }
-        limit.held.remove(&reservation_id);
-        if kind == ReleaseKind::Executed {
-            limit.config.consumed = limit
-                .config
-                .consumed
-                .checked_add(hold.amount)
-                .ok_or(LimitRefusal::Arithmetic)?;
-            if limit.successor.is_some() {
-                successor_charges.push((*id, hold.amount));
-            }
-        }
-        found = true;
+        self.found
     }
-    for (id, amount) in successor_charges {
-        let head = live_head(&released, id)?;
-        let limit = released
-            .get_mut(&head)
-            .ok_or(LimitRefusal::UnknownLimit(head))?;
-        limit.config.consumed = limit
-            .config
-            .consumed
-            .checked_add(amount)
-            .ok_or(LimitRefusal::Arithmetic)?;
-    }
-    *limits = released;
-    Ok(found)
 }
 
 /// Releases a time-bounded hold whose core deadline has been reached; equality is expired,

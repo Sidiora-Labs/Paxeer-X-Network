@@ -35,21 +35,17 @@ pub use recovery::{
 };
 pub use reservations::{
     BudgetLimiter, BudgetReservation, CoreTimestampMs, DurableBudgetReservation, LimitConfig,
-    LimitId, LimitRefusal, LimitScope, ReleaseKind, ReservationRequest,
+    LimitId, LimitRefusal, LimitScope, ReleaseKind, ReservationRequest, StagedRelease,
 };
 
 const ENROLMENT_PREFIX: &[u8] = b"budget/enrolment/limit/";
 const ENROLMENT_INDEX_PREFIX: &[u8] = b"budget/daemon/limit-id/";
-const ENROLMENT_LINEAGE_PREFIX: &[u8] = b"budget/enrolment/lineage/";
 const ENROLMENT_ID_DOMAIN: &[u8] = b"layerx:budget-enrolment-limit-id:v1\0";
 const ENROLMENT_MAGIC: &[u8; 4] = b"LXEL";
 const ENROLMENT_VERSION: u8 = 1;
 const ENROLMENT_RETIRED_VERSION: u8 = 2;
 const ENROLMENT_BYTES: usize = 4 + 1 + 32 + 16 + 1 + 32 + 16 + 16 + 16;
 const ENROLMENT_RETIRED_BYTES: usize = ENROLMENT_BYTES + 32;
-const LINEAGE_MAGIC: &[u8; 4] = b"LXEN";
-const LINEAGE_VERSION: u8 = 1;
-const LINEAGE_BYTES: usize = 4 + 1 + 1 + 32 + 32;
 
 /// One durable enrolment limit. A live record has no successor; a record retired by a renewal
 /// names the stable identity that carried its consumed total forward.
@@ -225,52 +221,6 @@ fn enrolment_index_key(
     )?)
 }
 
-fn lineage_key(
-    tenant: &crate::store::TenantId,
-    scope: LimitScope,
-) -> Result<crate::store::TenantKey, DaemonLimitError> {
-    Ok(crate::store::TenantKey::new(
-        tenant.clone(),
-        crate::store::ObjectKind::Configuration,
-        [ENROLMENT_LINEAGE_PREFIX, &scope_bytes(scope)].concat(),
-    )?)
-}
-
-fn encode_lineage(scope: LimitScope, current: [u8; 32]) -> Result<Vec<u8>, DaemonLimitError> {
-    let mut encoder = layerx_wire::encode::Encoder::new(LINEAGE_BYTES);
-    let corrupt = |_| DaemonLimitError::Corrupt;
-    encoder.fixed(LINEAGE_MAGIC).map_err(corrupt)?;
-    encoder.u8(LINEAGE_VERSION).map_err(corrupt)?;
-    encoder.fixed(&scope_bytes(scope)).map_err(corrupt)?;
-    encoder.fixed(&current).map_err(corrupt)?;
-    Ok(encoder.finish())
-}
-
-fn stored_lineage(
-    store: &crate::store::Store,
-    tenant: &crate::store::TenantId,
-    scope: LimitScope,
-) -> Result<Option<[u8; 32]>, DaemonLimitError> {
-    let Some(value) = store.get(&lineage_key(tenant, scope)?) else {
-        return Ok(None);
-    };
-    let corrupt = |_| DaemonLimitError::Corrupt;
-    let mut decoder = layerx_wire::decode::Decoder::new(value.bytes(), 0);
-    if decoder.fixed(4).map_err(corrupt)? != LINEAGE_MAGIC
-        || decoder.u8().map_err(corrupt)? != LINEAGE_VERSION
-    {
-        return Err(DaemonLimitError::Corrupt);
-    }
-    let tag = decoder.u8().map_err(corrupt)?;
-    let stored_scope = scope_from(tag, enrolment_fixed::<32>(&mut decoder)?)?;
-    let current = enrolment_fixed::<32>(&mut decoder)?;
-    decoder.finish().map_err(corrupt)?;
-    if stored_scope != scope || current == [0; 32] {
-        return Err(DaemonLimitError::Corrupt);
-    }
-    Ok(Some(current))
-}
-
 fn stored_enrolment(
     store: &crate::store::Store,
     tenant: &crate::store::TenantId,
@@ -291,28 +241,6 @@ fn enrolment_indexed(
     Ok(store
         .get(&enrolment_index_key(tenant, limit_id)?)
         .is_some_and(|value| value.bytes() == stable_id.as_slice()))
-}
-
-fn scope_has_other_live(
-    store: &crate::store::Store,
-    tenant: &crate::store::TenantId,
-    scope: LimitScope,
-    stable_id: [u8; 32],
-) -> Result<bool, DaemonLimitError> {
-    for object_id in store.list_object_ids(tenant, crate::store::ObjectKind::Configuration) {
-        let Some(other) = object_id.strip_prefix(ENROLMENT_PREFIX) else {
-            continue;
-        };
-        let other: [u8; 32] = other.try_into().map_err(|_| DaemonLimitError::Corrupt)?;
-        if other == stable_id {
-            continue;
-        }
-        let record = stored_enrolment(store, tenant, other)?.ok_or(DaemonLimitError::Corrupt)?;
-        if record.scope == scope && record.successor.is_none() {
-            return Ok(true);
-        }
-    }
-    Ok(false)
 }
 
 fn refuse_index_taken(
@@ -342,49 +270,23 @@ fn reinstall_enrolment(
     store: &mut crate::store::Store,
     tenant: &crate::store::TenantId,
     config: &LimitConfig,
-    lineaged: bool,
 ) -> Result<EnrolmentLimitRecord, DaemonLimitError> {
     let stable_id = enrolment_limit_id(tenant, &config.scope, &config.id);
     let limit_id = daemon_limit_id(stable_id);
     let key = enrolment_key(tenant, stable_id)?;
-    let lineage = if lineaged {
-        None
-    } else {
-        if scope_has_other_live(store, tenant, config.scope, stable_id)? {
-            return Err(DaemonLimitError::Conflict);
-        }
-        Some((
-            lineage_key(tenant, config.scope)?,
-            encode_lineage(config.scope, stable_id)?,
-        ))
-    };
     if let Some(mut existing) = stored_enrolment(store, tenant, stable_id)? {
-        if existing.successor.is_some() {
-            return Err(DaemonLimitError::Corrupt);
-        }
-        if existing.ceiling != config.ceiling {
+        if existing.successor.is_some() || existing.ceiling != config.ceiling {
             return Err(DaemonLimitError::Conflict);
         }
         if !enrolment_indexed(store, tenant, limit_id, stable_id)? {
             return Err(DaemonLimitError::Corrupt);
         }
-        let mut updates = Vec::new();
         if config.consumed > existing.consumed {
             existing.consumed = config.consumed;
-            updates.push((key, existing.encode()?));
-        }
-        match lineage {
-            Some(companion) if !updates.is_empty() => {
-                store.update_local_batch_with_companions(updates, vec![companion])?;
-            }
-            Some((lineage_key, bytes)) => store.put_local(lineage_key, bytes)?,
-            None => store.update_local_batch(updates)?,
+            store.update_local_batch(vec![(key, existing.encode()?)])?;
         }
         return Ok(existing);
     }
-    let Some((lineage_key, lineage_bytes)) = lineage else {
-        return Err(DaemonLimitError::Corrupt);
-    };
     let index = enrolment_index_key(tenant, limit_id)?;
     refuse_index_taken(store, &index, stable_id)?;
     let record = EnrolmentLimitRecord {
@@ -399,12 +301,7 @@ fn reinstall_enrolment(
     };
     let bytes = record.encode()?;
     store.put_local(index.clone(), stable_id.to_vec())?;
-    if let Err(error) = store.put_local(key.clone(), bytes) {
-        store.remove_local(&index)?;
-        return Err(error.into());
-    }
-    if let Err(error) = store.put_local(lineage_key, lineage_bytes) {
-        store.remove_local(&key)?;
+    if let Err(error) = store.put_local(key, bytes) {
         store.remove_local(&index)?;
         return Err(error.into());
     }
@@ -413,27 +310,41 @@ fn reinstall_enrolment(
 
 fn renew_enrolment(
     store: &mut crate::store::Store,
+    limiter: &BudgetLimiter,
     tenant: &crate::store::TenantId,
     config: &LimitConfig,
-    current: [u8; 32],
-) -> Result<(EnrolmentLimitRecord, EnrolmentLimitRecord), DaemonLimitError> {
-    let mut previous =
-        stored_enrolment(store, tenant, current)?.ok_or(DaemonLimitError::Corrupt)?;
-    if previous.successor.is_some()
-        || previous.scope != config.scope
-        || !enrolment_indexed(store, tenant, previous.limit_id, current)?
-    {
-        return Err(DaemonLimitError::Corrupt);
-    }
+    predecessor: LimitId,
+) -> Result<(EnrolmentLimitRecord, Option<EnrolmentLimitRecord>), DaemonLimitError> {
     let stable_id = enrolment_limit_id(tenant, &config.scope, &config.id);
-    let limit_id = daemon_limit_id(stable_id);
+    let current = enrolment_limit_id(tenant, &config.scope, &predecessor);
+    let mut previous =
+        stored_enrolment(store, tenant, current)?.ok_or(DaemonLimitError::Conflict)?;
     if stored_enrolment(store, tenant, stable_id)?.is_some() {
+        if previous.successor != Some(stable_id) {
+            return Err(DaemonLimitError::Conflict);
+        }
+        return Ok((reinstall_enrolment(store, tenant, config)?, None));
+    }
+    if previous.successor.is_some() {
         return Err(DaemonLimitError::Conflict);
     }
+    if !enrolment_indexed(store, tenant, previous.limit_id, current)? {
+        return Err(DaemonLimitError::Corrupt);
+    }
+    let limit_id = daemon_limit_id(stable_id);
     let index = enrolment_index_key(tenant, limit_id)?;
     refuse_index_taken(store, &index, stable_id)?;
     let consumed = previous.consumed.max(config.consumed);
-    if consumed > config.ceiling {
+    let held = match limiter.held_exposure(previous.limit_id) {
+        Ok(held) => held,
+        Err(LimitRefusal::UnknownLimit(_)) => 0,
+        Err(refusal) => return Err(refusal.into()),
+    };
+    if consumed
+        .checked_add(held)
+        .ok_or(DaemonLimitError::Arithmetic)?
+        > config.ceiling
+    {
         return Err(DaemonLimitError::Conflict);
     }
     let record = EnrolmentLimitRecord {
@@ -448,70 +359,76 @@ fn renew_enrolment(
     };
     previous.successor = Some(stable_id);
     store.update_local_batch_with_companions(
-        vec![
-            (enrolment_key(tenant, current)?, previous.encode()?),
-            (
-                lineage_key(tenant, config.scope)?,
-                encode_lineage(config.scope, stable_id)?,
-            ),
-        ],
+        vec![(enrolment_key(tenant, current)?, previous.encode()?)],
         vec![
             (index, stable_id.to_vec()),
             (enrolment_key(tenant, stable_id)?, record.encode()?),
         ],
     )?;
-    Ok((record, previous))
+    Ok((record, Some(previous)))
 }
 
-fn declare_enrolment(
-    store: &mut crate::store::Store,
-    tenant: &crate::store::TenantId,
-    config: &LimitConfig,
-) -> Result<(EnrolmentLimitRecord, Option<EnrolmentLimitRecord>), DaemonLimitError> {
-    let stable_id = enrolment_limit_id(tenant, &config.scope, &config.id);
-    match stored_lineage(store, tenant, config.scope)? {
-        Some(current) if current != stable_id => {
-            let (record, previous) = renew_enrolment(store, tenant, config, current)?;
-            Ok((record, Some(previous)))
-        }
-        lineage => Ok((
-            reinstall_enrolment(store, tenant, config, lineage.is_some())?,
-            None,
-        )),
-    }
+/// An authenticated renewal of one verified enrolment limit: the verified limit declared as
+/// `successor` replaces the live limit declared as `predecessor` for the same tenant and scope.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct EnrolmentPredecessor {
+    pub successor: LimitId,
+    pub predecessor: LimitId,
 }
 
-/// Installs every verified enrolment limit and every stored one, retiring the stored ones that
-/// are no longer verified.
-///
-/// A durable lineage per tenant and complete canonical scope names the current stable identity.
-/// Re-declaring a scope under a new `LimitConfig.id` renews it: the successor is created with
-/// the predecessor's consumed total (or the declared one, whichever is larger) and the
-/// predecessor is marked retired with a pointer to its successor in one store batch. The
-/// predecessor is linked to its successor and retired in the limiter only after the successor is
-/// installed; it keeps its held reservations, which count against the successor's ceiling. An
-/// identity already in the limiter takes the refreshed persisted consumed total.
+/// Installs every verified enrolment limit as an independent limit and every stored one,
+/// retiring the stored ones that are no longer verified.
 ///
 /// # Errors
-/// Returns `Invalid` for a zero ceiling or consumed above it, `Conflict` for a stored record whose ceiling differs, two verified limits with one scope, a renewal whose carried consumed passes the new ceiling or that re-declares an already stored identity, and a scope with another live record but no lineage, `IdCollision` for a truncated-identifier collision, `Corrupt` for a malformed record, index or lineage, and store or limiter failures.
+/// Returns every error of `install_enrolment_renewals`.
 pub fn install_enrolment_limits(
     store: &mut crate::store::Store,
     limiter: &BudgetLimiter,
     tenant: &crate::store::TenantId,
     verified: &[LimitConfig],
 ) -> Result<Vec<EnrolmentLimitRecord>, DaemonLimitError> {
+    install_enrolment_renewals(store, limiter, tenant, verified, &[])
+}
+
+/// Installs every verified enrolment limit and every stored one, retiring the stored ones that
+/// are no longer verified.
+///
+/// Limits sharing one scope are independent constraints. A renewal exists only when
+/// `predecessors` names, for a verified limit, the declared identifier of the live limit it
+/// replaces. The successor is created with the predecessor's consumed total (or the declared
+/// one, whichever is larger) after the full exposure, consumed plus every outstanding hold of
+/// the predecessor lineage, is checked against the new ceiling. The predecessor is marked retired
+/// with a pointer to its successor in one store batch, then linked and retired in the limiter
+/// after the successor is installed; its holds keep their identifiers and count against the
+/// successor. An identity already in the limiter takes the refreshed persisted consumed total.
+///
+/// # Errors
+/// Returns `Invalid` for a zero ceiling, consumed above it, a self renewal or two renewals of one verified limit, `Conflict` for a stored record whose ceiling differs, a retired limit declared again, a renewal whose predecessor is not a live limit of the same scope or whose full exposure passes the new ceiling, `IdCollision` for a truncated-identifier collision, `Corrupt` for a malformed record or index, and store or limiter failures.
+pub fn install_enrolment_renewals(
+    store: &mut crate::store::Store,
+    limiter: &BudgetLimiter,
+    tenant: &crate::store::TenantId,
+    verified: &[LimitConfig],
+    predecessors: &[EnrolmentPredecessor],
+) -> Result<Vec<EnrolmentLimitRecord>, DaemonLimitError> {
     let mut installed = Vec::new();
-    for (position, config) in verified.iter().enumerate() {
+    for config in verified {
         if config.ceiling == 0 || config.consumed > config.ceiling {
             return Err(DaemonLimitError::Invalid);
         }
-        if verified[..position]
+        let mut named = predecessors
             .iter()
-            .any(|other| other.scope == config.scope)
+            .filter(|renewal| renewal.successor == config.id);
+        let renewal = named.next();
+        if named.next().is_some()
+            || renewal.is_some_and(|renewal| renewal.predecessor == renewal.successor)
         {
-            return Err(DaemonLimitError::Conflict);
+            return Err(DaemonLimitError::Invalid);
         }
-        let (record, previous) = declare_enrolment(store, tenant, config)?;
+        let (record, previous) = match renewal {
+            Some(renewal) => renew_enrolment(store, limiter, tenant, config, renewal.predecessor)?,
+            None => (reinstall_enrolment(store, tenant, config)?, None),
+        };
         install_once(limiter, &record)?;
         if let Some(previous) = previous {
             install_once(limiter, &previous)?;
@@ -548,7 +465,7 @@ pub fn install_enrolment_limits(
 }
 
 /// # Errors
-/// Returns `Unknown` when a hit verified limit has no durable enrolment record, `Corrupt` for a record or index that disagrees with the verified limit or is retired, and store failures.
+/// Returns `Unknown` when a hit verified limit has no durable enrolment record, `Corrupt` for a record or index that disagrees with the verified limit or is retired, and store failures. Each hit verified limit yields exactly its one canonical enrolment identity.
 pub fn enrolment_charge_limits(
     store: &crate::store::Store,
     tenant: &crate::store::TenantId,
@@ -575,7 +492,6 @@ pub fn enrolment_charge_limits(
         {
             return Err(DaemonLimitError::Corrupt);
         }
-        limits.push(config.id);
         limits.push(record.limit_id);
     }
     Ok(limits)
@@ -761,6 +677,22 @@ pub fn release(
     reservations::release_all(limiter, reservation_id, kind, current_sequence)
 }
 
+/// Stages the limiter side of one settlement before the store write. The returned stage holds
+/// the limiter lock, so admission is excluded until it is published or dropped; dropping it
+/// after a failed store write leaves the cache unchanged.
+///
+/// # Errors
+///
+/// Returns `Arithmetic` when an `Executed` release overflows a consumed total, or `Poisoned`.
+pub fn stage_release(
+    limiter: &BudgetLimiter,
+    reservation_id: [u8; 32],
+    kind: ReleaseKind,
+    current_sequence: u64,
+) -> Result<StagedRelease<'_>, LimitRefusal> {
+    limiter.stage_release(reservation_id, kind, current_sequence)
+}
+
 /// Restores canonical durable reservations before the limiter is made ready.
 ///
 /// # Errors
@@ -823,10 +755,11 @@ mod tests {
 
     use super::{
         daemon_limit_id, enrolment_index_key, enrolment_key, enrolment_limit_id,
-        install_enrolment_limits, release, reserve, restore, scope_bytes, scope_from,
-        stored_enrolment, stored_lineage, BudgetLimiter, DaemonLimitError, EnrolmentLimitRecord,
-        LimitConfig, LimitId, LimitRefusal, LimitScope, ReleaseKind, ReservationRequest,
-        ENROLMENT_BYTES, ENROLMENT_RETIRED_BYTES, ENROLMENT_RETIRED_VERSION, ENROLMENT_VERSION,
+        install_enrolment_limits, install_enrolment_renewals, release, reserve, restore,
+        scope_bytes, scope_from, stage_release, stored_enrolment, BudgetLimiter, DaemonLimitError,
+        EnrolmentLimitRecord, EnrolmentPredecessor, LimitConfig, LimitId, LimitRefusal, LimitScope,
+        ReleaseKind, ReservationRequest, ENROLMENT_BYTES, ENROLMENT_RETIRED_BYTES,
+        ENROLMENT_RETIRED_VERSION, ENROLMENT_VERSION,
     };
     use crate::store::{Store, TenantId};
 
@@ -882,6 +815,25 @@ mod tests {
     ) -> Result<EnrolmentLimitRecord, DaemonLimitError> {
         let stable_id = enrolment_limit_id(tenant, &config.scope, &config.id);
         let installed = install_enrolment_limits(store, limiter, tenant, &[config])?;
+        installed
+            .into_iter()
+            .find(|record| record.stable_id == stable_id)
+            .ok_or(DaemonLimitError::Unknown)
+    }
+
+    fn renew(
+        store: &mut Store,
+        limiter: &BudgetLimiter,
+        tenant: &TenantId,
+        config: LimitConfig,
+        predecessor: u8,
+    ) -> Result<EnrolmentLimitRecord, DaemonLimitError> {
+        let stable_id = enrolment_limit_id(tenant, &config.scope, &config.id);
+        let renewal = EnrolmentPredecessor {
+            successor: config.id,
+            predecessor: LimitId([predecessor; 16]),
+        };
+        let installed = install_enrolment_renewals(store, limiter, tenant, &[config], &[renewal])?;
         installed
             .into_iter()
             .find(|record| record.stable_id == stable_id)
@@ -965,11 +917,12 @@ mod tests {
             "first",
         );
         let renewed = text(
-            install(
+            renew(
                 &mut store,
                 &limiter,
                 &tenant,
                 declared(2, SCOPE, CEILING, 0),
+                1,
             ),
             "renewal",
         );
@@ -978,10 +931,6 @@ mod tests {
         assert_eq!(limiter.consumed(renewed.limit_id), Ok(40));
         assert_eq!(limiter.is_retired(first.limit_id), Ok(true));
         assert_eq!(limiter.is_retired(renewed.limit_id), Ok(false));
-        assert_eq!(
-            text(stored_lineage(&store, &tenant, SCOPE), "lineage"),
-            Some(renewed.stable_id)
-        );
         assert_eq!(
             stored(&store, &tenant, first.stable_id).successor,
             Some(renewed.stable_id)
@@ -1008,35 +957,20 @@ mod tests {
         let lowered = declared(3, SCOPE, 30, 0);
         let lowered_id = enrolment_limit_id(&tenant, &SCOPE, &lowered.id);
         assert!(matches!(
-            install(&mut store, &limiter, &tenant, lowered),
+            renew(&mut store, &limiter, &tenant, lowered, 2),
             Err(DaemonLimitError::Conflict)
         ));
         assert_eq!(
             text(stored_enrolment(&store, &tenant, lowered_id), "absent"),
             None
         );
-        assert_eq!(
-            text(stored_lineage(&store, &tenant, SCOPE), "lineage"),
-            Some(renewed.stable_id)
-        );
+        assert_eq!(limiter.is_retired(renewed.limit_id), Ok(false));
         assert!(matches!(
             install(
                 &mut store,
                 &limiter,
                 &tenant,
                 declared(1, SCOPE, CEILING, 0)
-            ),
-            Err(DaemonLimitError::Conflict)
-        ));
-        assert!(matches!(
-            install_enrolment_limits(
-                &mut store,
-                &limiter,
-                &tenant,
-                &[
-                    declared(2, SCOPE, CEILING, 0),
-                    declared(4, SCOPE, CEILING, 0)
-                ],
             ),
             Err(DaemonLimitError::Conflict)
         ));
@@ -1059,11 +993,12 @@ mod tests {
         );
         let reservation = text(reserve(&limiter, &request(5, 20, first.limit_id)), "hold");
         let renewed = text(
-            install(
+            renew(
                 &mut store,
                 &limiter,
                 &tenant,
                 declared(2, SCOPE, CEILING, 0),
+                1,
             ),
             "renewal",
         );
@@ -1143,14 +1078,10 @@ mod tests {
             "foreign index",
         );
         assert!(matches!(
-            install(&mut store, &limiter, &tenant, renewal),
+            renew(&mut store, &limiter, &tenant, renewal, 2),
             Err(DaemonLimitError::IdCollision)
         ));
         assert_eq!(stored(&store, &tenant, first.stable_id).successor, None);
-        assert_eq!(
-            text(stored_lineage(&store, &tenant, scope), "lineage"),
-            Some(first.stable_id)
-        );
         assert_eq!(limiter.is_retired(first.limit_id), Ok(false));
     }
 
@@ -1173,11 +1104,12 @@ mod tests {
         assert_eq!(live.len(), ENROLMENT_BYTES);
         assert_eq!(live[4], ENROLMENT_VERSION);
         let renewed = text(
-            install(
+            renew(
                 &mut store,
                 &limiter,
                 &tenant,
                 declared(2, SCOPE, CEILING, 0),
+                1,
             ),
             "renewal",
         );
@@ -1275,10 +1207,6 @@ mod tests {
         );
         assert_eq!(lowered.consumed, 8);
         assert_eq!(stored(&store, &tenant, first.stable_id).consumed, 8);
-        assert_eq!(
-            text(stored_lineage(&store, &tenant, SCOPE), "lineage"),
-            Some(first.stable_id)
-        );
         assert_eq!(limiter.is_retired(first.limit_id), Ok(false));
     }
 
@@ -1302,11 +1230,12 @@ mod tests {
             "old hold",
         );
         let renewed = text(
-            install(
+            renew(
                 &mut store,
                 &limiter,
                 &tenant,
                 declared(2, SCOPE, CEILING, 0),
+                1,
             ),
             "renewal",
         );
@@ -1361,11 +1290,12 @@ mod tests {
         );
         let held_bytes = hold.durable.clone();
         let renewed = text(
-            install(
+            renew(
                 &mut store,
                 &limiter,
                 &tenant,
                 declared(2, SCOPE, CEILING, 0),
+                1,
             ),
             "renewal",
         );
@@ -1421,5 +1351,191 @@ mod tests {
         );
         assert_eq!(stale.consumed(renewed.limit_id), Ok(30));
         assert_eq!(stale.consumed(first.limit_id), Ok(30));
+    }
+
+    #[test]
+    fn renewal_above_full_exposure_is_refused() {
+        let root = Root::new("exposure");
+        let mut store = text(Store::open(&root.0), "store");
+        let limiter = text(BudgetLimiter::new(Vec::new()), "limiter");
+        let tenant = tenant_id("tenant-a");
+        let first = text(
+            install(
+                &mut store,
+                &limiter,
+                &tenant,
+                declared(1, SCOPE, CEILING, 10),
+            ),
+            "first",
+        );
+        text(reserve(&limiter, &request(5, 20, first.limit_id)), "hold");
+        let tight = declared(2, SCOPE, 29, 0);
+        let tight_id = enrolment_limit_id(&tenant, &SCOPE, &tight.id);
+        assert!(matches!(
+            renew(&mut store, &limiter, &tenant, tight, 1),
+            Err(DaemonLimitError::Conflict)
+        ));
+        assert_eq!(
+            text(stored_enrolment(&store, &tenant, tight_id), "absent"),
+            None
+        );
+        assert_eq!(stored(&store, &tenant, first.stable_id).successor, None);
+        assert_eq!(limiter.is_retired(first.limit_id), Ok(false));
+        let renewed = text(
+            renew(&mut store, &limiter, &tenant, declared(3, SCOPE, 30, 0), 1),
+            "exact exposure",
+        );
+        assert_eq!(renewed.consumed, 10);
+        assert_eq!(limiter.held_exposure(renewed.limit_id), Ok(20));
+        assert!(matches!(
+            reserve(&limiter, &request(6, 1, renewed.limit_id)),
+            Err(LimitRefusal::Exceeded { .. })
+        ));
+    }
+
+    #[test]
+    fn renewal_requires_a_live_predecessor_of_the_same_scope() {
+        let root = Root::new("predecessor");
+        let mut store = text(Store::open(&root.0), "store");
+        let limiter = text(BudgetLimiter::new(Vec::new()), "limiter");
+        let tenant = tenant_id("tenant-a");
+        assert!(matches!(
+            renew(
+                &mut store,
+                &limiter,
+                &tenant,
+                declared(2, SCOPE, CEILING, 0),
+                9
+            ),
+            Err(DaemonLimitError::Conflict)
+        ));
+        let other = LimitScope::Session([0x31; 32]);
+        text(
+            install(
+                &mut store,
+                &limiter,
+                &tenant,
+                declared(1, other, CEILING, 0),
+            ),
+            "other scope",
+        );
+        assert!(matches!(
+            renew(
+                &mut store,
+                &limiter,
+                &tenant,
+                declared(2, SCOPE, CEILING, 0),
+                1
+            ),
+            Err(DaemonLimitError::Conflict)
+        ));
+        assert!(matches!(
+            renew(
+                &mut store,
+                &limiter,
+                &tenant,
+                declared(2, SCOPE, CEILING, 0),
+                2
+            ),
+            Err(DaemonLimitError::Invalid)
+        ));
+    }
+
+    #[test]
+    fn same_scope_limits_without_a_predecessor_are_independent_and_both_charged() {
+        let root = Root::new("independent");
+        let mut store = text(Store::open(&root.0), "store");
+        let limiter = text(BudgetLimiter::new(Vec::new()), "limiter");
+        let tenant = tenant_id("tenant-a");
+        let installed = text(
+            install_enrolment_limits(
+                &mut store,
+                &limiter,
+                &tenant,
+                &[declared(1, SCOPE, CEILING, 0), declared(2, SCOPE, 50, 0)],
+            ),
+            "both",
+        );
+        assert_eq!(installed.len(), 2);
+        let wide = installed[0].clone();
+        let narrow = installed[1].clone();
+        assert_ne!(wide.limit_id, narrow.limit_id);
+        assert_eq!(wide.successor, None);
+        assert_eq!(narrow.successor, None);
+        assert_eq!(limiter.is_retired(wide.limit_id), Ok(false));
+        assert_eq!(limiter.is_retired(narrow.limit_id), Ok(false));
+        let both = |id: u8, amount: u128| ReservationRequest {
+            applicable_limits: vec![wide.limit_id, narrow.limit_id],
+            ..request(id, amount, wide.limit_id)
+        };
+        assert!(matches!(
+            reserve(&limiter, &both(5, 51)),
+            Err(LimitRefusal::Exceeded { .. })
+        ));
+        let hold = text(reserve(&limiter, &both(6, 50)), "hold");
+        assert_eq!(hold.durable.len(), 2);
+        let updates = text(
+            super::consumption_updates(&store, &tenant, &hold.durable),
+            "consumption",
+        );
+        assert_eq!(updates.len(), 2);
+        text(store.update_local_batch(updates), "settlement write");
+        assert_eq!(
+            release(&limiter, [6; 32], ReleaseKind::Executed, 2),
+            Ok(true)
+        );
+        assert_eq!(stored(&store, &tenant, wide.stable_id).consumed, 50);
+        assert_eq!(stored(&store, &tenant, narrow.stable_id).consumed, 50);
+        assert_eq!(limiter.consumed(wide.limit_id), Ok(50));
+        assert_eq!(limiter.consumed(narrow.limit_id), Ok(50));
+    }
+
+    #[test]
+    fn failed_store_write_leaves_the_cache_unchanged() {
+        let root = Root::new("failed-write");
+        let mut store = text(Store::open(&root.0), "store");
+        let limiter = text(BudgetLimiter::new(Vec::new()), "limiter");
+        let tenant = tenant_id("tenant-a");
+        let first = text(
+            install(
+                &mut store,
+                &limiter,
+                &tenant,
+                declared(1, SCOPE, CEILING, 10),
+            ),
+            "first",
+        );
+        let hold = text(reserve(&limiter, &request(5, 20, first.limit_id)), "hold");
+        let absent = text(enrolment_key(&tenant, [0x5a; 32]), "absent key");
+        let staged = text(
+            stage_release(&limiter, [5; 32], ReleaseKind::Executed, 2),
+            "stage",
+        );
+        assert!(staged.found());
+        assert!(store.update_local_batch(vec![(absent, vec![1])]).is_err());
+        drop(staged);
+        assert_eq!(limiter.consumed(first.limit_id), Ok(10));
+        assert_eq!(limiter.held_limits([5; 32]), Ok(vec![first.limit_id]));
+        assert_eq!(stored(&store, &tenant, first.stable_id).consumed, 10);
+
+        let staged = text(
+            stage_release(&limiter, [5; 32], ReleaseKind::Executed, 2),
+            "stage again",
+        );
+        let updates = text(
+            super::consumption_updates(&store, &tenant, &hold.durable),
+            "consumption",
+        );
+        text(store.update_local_batch(updates), "settlement write");
+        assert!(staged.publish());
+        assert_eq!(limiter.consumed(first.limit_id), Ok(30));
+        assert_eq!(limiter.held_reservations(), Ok(0));
+        assert_eq!(stored(&store, &tenant, first.stable_id).consumed, 30);
+        let replay = text(
+            stage_release(&limiter, [5; 32], ReleaseKind::Executed, 3),
+            "replay",
+        );
+        assert!(!replay.publish());
+        assert_eq!(limiter.consumed(first.limit_id), Ok(30));
     }
 }
