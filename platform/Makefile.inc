@@ -4,7 +4,7 @@ PLATFORM_BETA_CLUSTER_ENV ?= build/beta-cluster/env
 
 .PHONY: platform-js-install platform-build platform-build-all platform-lint platform-test platform-sdk-check \
 	platform-sdk-generate platform-receipt-fixture platform-verify-sdks platform-test-sdks platform-release-check platform-release-plan platform-release-test \
-	platform-test-tooling platform-emulator-conformance platform-test-middleware \
+	platform-test-tooling platform-emulator-conformance platform-test-middleware platform-test-ten-line-benchmark \
 	platform-test-cli-production-credential-refusal platform-test-registry platform-test-node \
 	platform-test-core platform-test-authority platform-test-agent-boundary platform-test-identity platform-test-paxeer-boundary \
 	platform-test-trusted-boundary platform-test-plain-listeners \
@@ -291,7 +291,14 @@ platform-release-plan:
 platform-release-test:
 	sh $(CURDIR)/tools/runtime/run-with-clock.sh $(PLATFORM_CARGO) test --manifest-path $(PLATFORM_MANIFEST) --locked -p layerx-platform-release
 
-platform-test-middleware: platform-sample-dependencies-ready
+PLATFORM_BENCHMARK_OUT ?= $(CURDIR)/build/benchmark/ten-line-benchmark.json
+
+platform-test-ten-line-benchmark:
+	$(PLATFORM_CARGO) build --manifest-path $(PLATFORM_MANIFEST) --locked --release -p layerx-platform-benchmark
+	out="$${PAXEER_X_BENCHMARK_OUT:-$(PLATFORM_BENCHMARK_OUT)}"; mkdir -p "$$(dirname "$$out")" && \
+		"$${CARGO_TARGET_DIR:-$(CURDIR)/platform/target}/release/layerx-platform-benchmark" --repo-root "$(CURDIR)" --out "$$out"
+
+platform-test-middleware: platform-sample-dependencies-ready platform-test-ten-line-benchmark
 	npm run build --workspace @sidiora/layerx-seller-middleware
 	npm run build --workspace @sidiora/layerx-buyer-middleware
 	npm run build --workspace @sidiora/layerx-merchant-middleware

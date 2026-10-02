@@ -23,6 +23,9 @@ jobs:
   build-lint-test:
     runs-on: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) && 'ubuntu-24.04' || vars.CI_LINUX_RUNNER || 'ubuntu-24.04' }}
     timeout-minutes: 45
+    permissions:
+      contents: read
+      actions: read
     steps:
       - name: Check out source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -67,8 +70,64 @@ jobs:
         run: make platform-verify-sdks
       - name: Exercise the developer CLI end to end against the emulator
         run: make platform-test-tooling
+      - name: Require the pinned release run that holds the published package snapshot
+        env:
+          LAYERX_PUBLISHED_PACKAGE_SNAPSHOT_RUN_ID: ${{ vars.LAYERX_PUBLISHED_PACKAGE_SNAPSHOT_RUN_ID }}
+        run: |
+          test -n "$LAYERX_PUBLISHED_PACKAGE_SNAPSHOT_RUN_ID"
+          printf '%s\n' "$LAYERX_PUBLISHED_PACKAGE_SNAPSHOT_RUN_ID" | grep -Eqx '[0-9]+'
+      - name: Download the release source digest from the pinned release run
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: release-pipeline
+          path: ${{ runner.temp }}/published-package-release-pipeline
+          run-id: ${{ vars.LAYERX_PUBLISHED_PACKAGE_SNAPSHOT_RUN_ID }}
+          github-token: ${{ github.token }}
+      - name: Download the verified artifact manifest from the pinned release run
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: release-artifact-manifest
+          path: ${{ runner.temp }}/published-package-snapshot
+          run-id: ${{ vars.LAYERX_PUBLISHED_PACKAGE_SNAPSHOT_RUN_ID }}
+          github-token: ${{ github.token }}
+      - name: Download the registry-fetched npm snapshot from the pinned release run
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: npm-registry-snapshot
+          path: ${{ runner.temp }}/published-package-snapshot/npm
+          run-id: ${{ vars.LAYERX_PUBLISHED_PACKAGE_SNAPSHOT_RUN_ID }}
+          github-token: ${{ github.token }}
+      - name: Hand off published package snapshot
+        env:
+          LAYERX_RELEASE_NPM_REGISTRY: ${{ vars.LAYERX_RELEASE_NPM_REGISTRY }}
+        run: |
+          snapshot=$RUNNER_TEMP/published-package-snapshot
+          for file in artifact-manifest.json npm/publication.txt npm/digests.txt npm/install/package-lock.json; do
+            test -s "$snapshot/$file"
+          done
+          ls "$snapshot"/npm/install/registry/*.tgz > /dev/null
+          grep -qx 'registry=npm' "$snapshot/npm/publication.txt"
+          grep -qx 'published=true' "$snapshot/npm/publication.txt"
+          grep -qx 'install_check=pass' "$snapshot/npm/publication.txt"
+          digest=$(cut -d ' ' -f 1 "$RUNNER_TEMP/published-package-release-pipeline/source-digest.txt")
+          printf '%s\n' "$digest" | grep -Eqx '[0-9a-f]{64}'
+          mkdir -p "$GITHUB_WORKSPACE/build/benchmark"
+          {
+            echo "PAXEER_X_REPO_ROOT=$GITHUB_WORKSPACE"
+            echo "PAXEER_X_PACKAGE_SNAPSHOT=$snapshot"
+            echo "PAXEER_X_RELEASE_SOURCE_DIGEST=$digest"
+            echo "PAXEER_X_NPM_REGISTRY=${LAYERX_RELEASE_NPM_REGISTRY:-https://registry.npmjs.org}"
+            echo "PAXEER_X_BENCHMARK_OUT=$GITHUB_WORKSPACE/build/benchmark/ten-line-benchmark.json"
+          } >> "$GITHUB_ENV"
       - name: Build the framework integrations and scan client bundles for secrets
         run: make platform-test-middleware
+      - name: Upload ten-line benchmark counts
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: ten-line-benchmark-counts
+          path: ${{ env.PAXEER_X_BENCHMARK_OUT }}
+          if-no-files-found: error
       - name: Gate the four cloneable reference application launch profiles
         run: make platform-test-reference-apps
       - name: Build the documentation site and gate its executable samples
@@ -726,6 +785,18 @@ jobs:
           cd registry
           sha256sum --check ../../digests.txt
           echo install_check=pass >> ../../publication.txt
+      - name: Retain the registry-fetched npm snapshot for the ten-line benchmark
+        if: startsWith(github.ref, 'refs/tags/sdk-v')
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: npm-registry-snapshot
+          path: |
+            build/release/npm/publication.txt
+            build/release/npm/digests.txt
+            build/release/npm/install/package.json
+            build/release/npm/install/package-lock.json
+            build/release/npm/install/registry
+          if-no-files-found: error
       - name: Retain the tarballs, digests, SBOMs, signatures, artifact records and publication record
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
