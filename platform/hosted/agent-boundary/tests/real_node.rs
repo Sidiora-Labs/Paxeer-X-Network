@@ -364,7 +364,7 @@ fn registration(receipt_state_root: &[u8; 32]) -> Vec<u8> {
 
 fn node_config(role: &str) -> String {
     format!(
-        "role={role}\nnetwork_id={NETWORK_ID}\nstart_sequence=0\nverify_workers=0\nnetwork_workers=0\nprojection_workers=0\ncheckpoint_workers=0\nserial_execution=true\n"
+        "config_version=2\nrole={role}\nnetwork_id={NETWORK_ID}\nstart_sequence=0\nverify_workers=0\nserial_execution=true\n"
     )
 }
 
