@@ -15,6 +15,8 @@ use sha2::{Digest, Sha256};
 
 const ARCHIVE_MAGIC: &[u8; 8] = b"LXMIRROR";
 const ARCHIVE_VERSION: u16 = 2;
+const NATIVE_ARCHIVE_VERSION: u16 = 3;
+const NATIVE_CERTIFICATE_MAGIC: &[u8; 8] = b"LXCPAUTH";
 const ARCHIVE_DOMAIN: &[u8] = b"LXP/mirror/archive/v2\0";
 const MAX_ARCHIVE_BYTES: usize = 64 * 1024 * 1024;
 const MAX_ARCHIVE_CHUNKS: usize = 65_536;
@@ -200,7 +202,8 @@ impl ArchiveData {
         if reader.take(ARCHIVE_MAGIC.len())? != ARCHIVE_MAGIC {
             return Err(ArchiveError::Format);
         }
-        if reader.u16()? != ARCHIVE_VERSION {
+        let archive_version = reader.u16()?;
+        if archive_version != ARCHIVE_VERSION && archive_version != NATIVE_ARCHIVE_VERSION {
             return Err(ArchiveError::Version);
         }
         let protocol_version = reader.u16()?;
@@ -283,7 +286,12 @@ impl ArchiveData {
                     checkpoint_id: reader.array()?,
                 };
                 let canonical_certificate = reader.bytes(MAX_FIELD_BYTES)?;
-                let certificate = decode_checkpoint(&canonical_certificate)
+                let native = canonical_certificate.starts_with(NATIVE_CERTIFICATE_MAGIC);
+                if native != (archive_version == NATIVE_ARCHIVE_VERSION) {
+                    return Err(ArchiveError::Version);
+                }
+                let projection = checkpoint_certificate_projection(&canonical_certificate)?;
+                let certificate = decode_checkpoint(&projection)
                     .map_err(|_| ArchiveError::Checkpoint)?;
                 let reproduced =
                     encode_checkpoint(&certificate).map_err(|_| ArchiveError::Checkpoint)?;
@@ -294,7 +302,7 @@ impl ArchiveData {
                     certificate.validity_proof(),
                 )
                 .map_err(|_| ArchiveError::Checkpoint)?;
-                if reproduced != canonical_certificate
+                if reproduced != projection
                     || certificate_header.protocol_version() != protocol_version
                     || certificate_header.network_id() != network_id
                     || certificate_header.batch_number() != coordinate.batch_number
@@ -309,6 +317,9 @@ impl ArchiveData {
             }
             _ => return Err(ArchiveError::Format),
         };
+        if archive_version == NATIVE_ARCHIVE_VERSION && checkpoint.is_none() {
+            return Err(ArchiveError::Checkpoint);
+        }
         reader.finish()?;
         Ok(Self {
             protocol_version,
@@ -327,7 +338,10 @@ impl ArchiveData {
     fn encode(&self) -> Result<Vec<u8>, ArchiveError> {
         let mut writer = Writer::new();
         writer.raw(ARCHIVE_MAGIC)?;
-        writer.u16(ARCHIVE_VERSION)?;
+        writer.u16(if self.checkpoint.as_ref().is_some_and(|checkpoint|
+            checkpoint.canonical_certificate.starts_with(NATIVE_CERTIFICATE_MAGIC)) {
+            NATIVE_ARCHIVE_VERSION
+        } else { ARCHIVE_VERSION })?;
         writer.u16(self.protocol_version)?;
         writer.u32(self.network_id)?;
         writer.u64(self.batch_number)?;
@@ -509,6 +523,53 @@ impl Archive {
     }
 }
 
+pub(crate) fn wrap_native_certificate(
+    projection: &[u8], checkpoint: &[u8], context: &[u8],
+) -> Result<Vec<u8>, ArchiveError> {
+    let mut writer = Writer::new();
+    writer.raw(NATIVE_CERTIFICATE_MAGIC)?;
+    writer.u16(1)?;
+    writer.bytes(projection)?;
+    writer.bytes(checkpoint)?;
+    writer.bytes(context)?;
+    writer.finish()
+}
+
+pub(crate) fn native_archive_candidate(
+    bytes: &[u8],
+) -> Result<layerx_client::evidence::FinalityEvidenceCandidate, ArchiveError> {
+    let mut reader = Reader::new(bytes);
+    if reader.take(8)? != NATIVE_CERTIFICATE_MAGIC || reader.u16()? != 1 {
+        return Err(ArchiveError::Version);
+    }
+    let projection = reader.bytes(MAX_FIELD_BYTES)?;
+    let checkpoint = reader.bytes(MAX_FIELD_BYTES)?;
+    let context = reader.bytes(MAX_FIELD_BYTES)?;
+    reader.finish()?;
+    if checkpoint.get(..2) != Some(&[0, 1]) || context.get(..2) != Some(&[0, 2]) {
+        return Err(ArchiveError::Version);
+    }
+    let certificate = decode_checkpoint(&projection).map_err(|_| ArchiveError::Checkpoint)?;
+    let candidate = layerx_client::evidence::FinalityEvidenceCandidate::from_exact_bytes(
+        checkpoint, context, certificate.header().protocol_version(), certificate.header().network_id(),
+    ).map_err(|_| ArchiveError::Checkpoint)?;
+    if candidate.observed_block_hash().map_err(|_| ArchiveError::Checkpoint)?.is_none()
+        || crate::node::native_certificate_projection(&candidate.certificate().map_err(|_| ArchiveError::Checkpoint)?)
+            .map_err(|_| ArchiveError::Checkpoint)? != projection {
+        return Err(ArchiveError::Checkpoint);
+    }
+    Ok(candidate)
+}
+
+fn checkpoint_certificate_projection(bytes: &[u8]) -> Result<Vec<u8>, ArchiveError> {
+    if !bytes.starts_with(NATIVE_CERTIFICATE_MAGIC) {
+        return Ok(bytes.to_vec());
+    }
+    let candidate = native_archive_candidate(bytes)?;
+    crate::node::native_certificate_projection(&candidate.certificate().map_err(|_| ArchiveError::Checkpoint)?)
+        .map_err(|_| ArchiveError::Checkpoint)
+}
+
 fn verify_batch_authorization(
     header: &layerx_wire::receipt::BatchHeader,
     canonical_header: &[u8],
@@ -542,8 +603,10 @@ fn verify_node_checkpoint(
         return Err(SourceError::CheckpointVerificationLevel);
     }
     let certificate_bytes = material.read.value.0.as_bytes().to_vec();
+    let projection = checkpoint_certificate_projection(&certificate_bytes)
+        .map_err(|_| SourceError::CheckpointCertificate)?;
     let certificate =
-        decode_checkpoint(&certificate_bytes).map_err(|_| SourceError::CheckpointCertificate)?;
+        decode_checkpoint(&projection).map_err(|_| SourceError::CheckpointCertificate)?;
     let reproduced =
         encode_checkpoint(&certificate).map_err(|_| SourceError::CheckpointCertificate)?;
     let certificate_header = certificate.header();
@@ -558,7 +621,7 @@ fn verify_node_checkpoint(
         event: certificate_header.event_merkle_root(),
         oracle: certificate_header.oracle_root(),
     };
-    if reproduced != certificate_bytes
+    if reproduced != projection
         || certificate_header.network_id() != network_id
         || material.verification.protocol_version() != certificate_header.protocol_version()
         || material.verification.network_id() != certificate_header.network_id()
@@ -1739,6 +1802,8 @@ pub struct DurablePublicationReport {
 pub struct Publisher {
     ethereum: crate::ethereum::EthereumArchiveClient,
     solana: crate::solana::SolanaArchiveClient,
+    ethereum_gate: ProgressGate,
+    solana_gate: ProgressGate,
 }
 
 pub type MirrorRetrieval<E> = Result<Option<Vec<u8>>, E>;
@@ -1749,7 +1814,12 @@ impl Publisher {
         ethereum: crate::ethereum::EthereumArchiveClient,
         solana: crate::solana::SolanaArchiveClient,
     ) -> Self {
-        Self { ethereum, solana }
+        Self {
+            ethereum,
+            solana,
+            ethereum_gate: ProgressGate::new(),
+            solana_gate: ProgressGate::new(),
+        }
     }
 
     /// Advances both durable lanes without converting either failure into the
@@ -1770,17 +1840,26 @@ impl Publisher {
                     .unwrap_or(Err(crate::solana::SolanaError::WorkerTerminated)),
             )
         });
+        let (ethereum_progress, solana_progress) = self.progress(std::slice::from_ref(archive));
+        let ethereum_result = ethereum_result.and_then(|progress| {
+            if ethereum_progress.refusal.is_some() { Err(crate::ethereum::EthereumError::Retrieval) }
+            else { Ok(progress) }
+        });
+        let solana_result = solana_result.and_then(|progress| {
+            if solana_progress.refusal.is_some() { Err(crate::solana::SolanaError::Retrieval) }
+            else { Ok(progress) }
+        });
         let ethereum = match ethereum_result {
             Ok(progress) => EthereumLaneState::Progress {
                 stage: progress.stage,
                 phase: progress.phase,
                 transaction_hash: progress.transaction_hash,
                 position: progress.position,
-                freshness: MirrorFreshness::new(progress.cursor, archive.node_head()),
+                freshness: MirrorFreshness::new(ethereum_progress.mirrored, archive.node_head()),
             },
             Err(error) => EthereumLaneState::Degraded {
                 error,
-                freshness: MirrorFreshness::new(self.ethereum.cursor(), archive.node_head()),
+                freshness: MirrorFreshness::new(ethereum_progress.mirrored, archive.node_head()),
             },
         };
         let solana = match solana_result {
@@ -1789,11 +1868,11 @@ impl Publisher {
                 phase: progress.phase,
                 signature: progress.signature,
                 position: progress.position,
-                freshness: MirrorFreshness::new(progress.cursor, archive.node_head()),
+                freshness: MirrorFreshness::new(solana_progress.mirrored, archive.node_head()),
             },
             Err(error) => SolanaLaneState::Degraded {
                 error,
-                freshness: MirrorFreshness::new(self.solana.cursor(), archive.node_head()),
+                freshness: MirrorFreshness::new(solana_progress.mirrored, archive.node_head()),
             },
         };
         DurablePublicationReport {
@@ -1803,14 +1882,33 @@ impl Publisher {
         }
     }
 
+    /// Reconciles each lane's durable journal against its own chain and
+    /// returns verified and acknowledged mirrored progress per chain. A lane
+    /// refusal never changes the other lane's progress.
+    #[must_use]
+    pub fn progress(&mut self, archives: &[Archive]) -> (ChainProgress, ChainProgress) {
+        let ethereum_client = &self.ethereum;
+        let solana_client = &self.solana;
+        (
+            self.ethereum_gate
+                .acknowledge(ethereum_client.cursor(), archives, |commitment| {
+                    ethereum_client.retrieve_finalized(commitment)
+                }),
+            self.solana_gate
+                .acknowledge(solana_client.cursor(), archives, |commitment| {
+                    solana_client.retrieve_finalized(commitment)
+                }),
+        )
+    }
+
     #[must_use]
     pub fn ethereum_cursor(&self) -> MirrorCursor {
-        self.ethereum.cursor()
+        self.ethereum_gate.acknowledged.unwrap_or_default()
     }
 
     #[must_use]
     pub fn solana_cursor(&self) -> MirrorCursor {
-        self.solana.cursor()
+        self.solana_gate.acknowledged.unwrap_or_default()
     }
 
     pub fn retrieve(
@@ -1824,5 +1922,259 @@ impl Publisher {
             self.ethereum.retrieve(commitment),
             self.solana.retrieve(commitment),
         )
+    }
+}
+
+/// Per-chain checkpoint progress. `verified` is derived only from spooled
+/// archives, each re-verified by `Archive::from_spool` against the node
+/// evidence it was acquired with. `mirrored` is the lane journal's
+/// retrieved-and-verified prefix, reported only once its latest checkpoint
+/// archive has been re-read from the chain itself.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct ChainProgress {
+    pub verified: MirrorCursor,
+    pub mirrored: MirrorCursor,
+    pub refusal: Option<ReconcileRefusal>,
+}
+
+/// Typed reason journal progress is withheld after a canonical chain read.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ReconcileRefusal {
+    ArchiveUnavailable,
+    ChainUnavailable,
+    Missing,
+    CommitmentMismatch,
+    Malformed,
+    CheckpointMismatch,
+}
+
+impl ReconcileRefusal {
+    #[must_use]
+    pub const fn code(self) -> &'static str {
+        match self {
+            Self::ArchiveUnavailable => "checkpoint_mirror_archive_unavailable",
+            Self::ChainUnavailable => "checkpoint_mirror_chain_unavailable",
+            Self::Missing => "checkpoint_mirror_missing",
+            Self::CommitmentMismatch => "checkpoint_mirror_commitment_mismatch",
+            Self::Malformed => "checkpoint_mirror_malformed",
+            Self::CheckpointMismatch => "checkpoint_mirror_mismatch",
+        }
+    }
+}
+
+/// Acknowledgement gate for one lane. A fresh gate (every process start)
+/// acknowledges nothing until the chain confirms the journal's latest
+/// mirrored checkpoint; each observation repeats canonical readback.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct ProgressGate {
+    acknowledged: Option<MirrorCursor>,
+}
+
+impl ProgressGate {
+    #[must_use]
+    pub const fn new() -> Self {
+        Self { acknowledged: None }
+    }
+
+    /// Returns progress whose mirrored cursor is either the reconciled
+    /// journal cursor or the last acknowledged one, with the typed refusal
+    /// that withheld the newer journal state.
+    pub fn acknowledge<E>(
+        &mut self,
+        journal: MirrorCursor,
+        archives: &[Archive],
+        retrieve: impl FnOnce(ArchiveCommitment) -> MirrorRetrieval<E>,
+    ) -> ChainProgress {
+        let verified = verified_cursor(archives);
+        match reconcile_journal(journal, archives, retrieve) {
+            Ok(()) => {
+                self.acknowledged = Some(journal);
+                ChainProgress {
+                    verified,
+                    mirrored: journal,
+                    refusal: None,
+                }
+            }
+            Err(refusal) => ChainProgress {
+                verified,
+                mirrored: self.acknowledged.unwrap_or_default(),
+                refusal: Some(refusal),
+            },
+        }
+    }
+}
+
+/// Latest batch and latest checkpoint carried by any verified spooled archive.
+/// Batches without checkpoint evidence never move the checkpoint coordinate.
+#[must_use]
+pub fn verified_cursor(archives: &[Archive]) -> MirrorCursor {
+    MirrorCursor {
+        latest_batch: archives
+            .iter()
+            .map(|archive| archive.data.batch_number)
+            .max(),
+        latest_checkpoint: archives
+            .iter()
+            .filter_map(|archive| archive.data.checkpoint.as_ref())
+            .map(|checkpoint| checkpoint.coordinate)
+            .max_by_key(|coordinate| coordinate.batch_number),
+    }
+}
+
+/// Re-reads the archive that carries the journal's latest mirrored checkpoint
+/// and accepts the journal cursor only when the chain returns exactly it.
+///
+/// # Errors
+/// Returns a typed refusal when the archive is not spooled, the chain read
+/// fails, or the chain copy is absent, different, malformed or carries a
+/// different checkpoint coordinate.
+pub fn reconcile_journal<E>(
+    journal: MirrorCursor,
+    archives: &[Archive],
+    retrieve: impl FnOnce(ArchiveCommitment) -> MirrorRetrieval<E>,
+) -> Result<(), ReconcileRefusal> {
+    let Some(expected) = journal.latest_checkpoint else {
+        return Ok(());
+    };
+    let latest_batch = journal
+        .latest_batch
+        .ok_or(ReconcileRefusal::ArchiveUnavailable)?;
+    let archive = archives
+        .iter()
+        .filter(|archive| {
+            archive.data.batch_number <= latest_batch
+                && archive
+                    .data
+                    .checkpoint
+                    .as_ref()
+                    .is_some_and(|checkpoint| checkpoint.coordinate == expected)
+        })
+        .max_by_key(|archive| archive.data.batch_number)
+        .ok_or(ReconcileRefusal::ArchiveUnavailable)?;
+    let retrieved = retrieve(archive.commitment())
+        .map_err(|_| ReconcileRefusal::ChainUnavailable)?
+        .ok_or(ReconcileRefusal::Missing)?;
+    verify_reconciled(archive.commitment(), archive.bytes(), expected, &retrieved)
+}
+
+fn verify_reconciled(
+    commitment: ArchiveCommitment,
+    expected_bytes: &[u8],
+    expected: CheckpointCoordinate,
+    retrieved: &[u8],
+) -> Result<(), ReconcileRefusal> {
+    if archive_commitment(retrieved) != commitment || retrieved != expected_bytes {
+        return Err(ReconcileRefusal::CommitmentMismatch);
+    }
+    let decoded = ArchiveData::decode(retrieved).map_err(|_| ReconcileRefusal::Malformed)?;
+    if decoded.checkpoint.map(|checkpoint| checkpoint.coordinate) == Some(expected) {
+        Ok(())
+    } else {
+        Err(ReconcileRefusal::CheckpointMismatch)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        archive_commitment, reconcile_journal, verified_cursor, verify_reconciled,
+        CheckpointCoordinate, MirrorCursor, MirrorRetrieval, ProgressGate, ReconcileRefusal,
+    };
+
+    const CHECKPOINT: CheckpointCoordinate = CheckpointCoordinate {
+        batch_number: 4,
+        checkpoint_id: [7; 32],
+    };
+
+    fn journal() -> MirrorCursor {
+        MirrorCursor {
+            latest_batch: Some(5),
+            latest_checkpoint: Some(CHECKPOINT),
+        }
+    }
+
+    fn unreachable_chain(_: super::ArchiveCommitment) -> MirrorRetrieval<()> {
+        Err(())
+    }
+
+    #[test]
+    fn a_journal_without_checkpoint_needs_no_chain_read() {
+        let journal = MirrorCursor {
+            latest_batch: Some(3),
+            latest_checkpoint: None,
+        };
+        assert_eq!(reconcile_journal(journal, &[], unreachable_chain), Ok(()));
+    }
+
+    #[test]
+    fn a_mirrored_checkpoint_without_its_verified_archive_is_refused() {
+        assert_eq!(
+            reconcile_journal(journal(), &[], unreachable_chain),
+            Err(ReconcileRefusal::ArchiveUnavailable)
+        );
+        let no_batch = MirrorCursor {
+            latest_batch: None,
+            latest_checkpoint: Some(CHECKPOINT),
+        };
+        assert_eq!(
+            reconcile_journal(no_batch, &[], unreachable_chain),
+            Err(ReconcileRefusal::ArchiveUnavailable)
+        );
+    }
+
+    #[test]
+    fn a_fresh_gate_withholds_unreconciled_journal_progress() {
+        let mut gate = ProgressGate::new();
+        let progress = gate.acknowledge(journal(), &[], unreachable_chain);
+        assert_eq!(progress.mirrored, MirrorCursor::default());
+        assert_eq!(progress.verified, MirrorCursor::default());
+        assert_eq!(progress.refusal, Some(ReconcileRefusal::ArchiveUnavailable));
+        assert_eq!(
+            progress.refusal.map(ReconcileRefusal::code),
+            Some("checkpoint_mirror_archive_unavailable")
+        );
+        let unchanged = gate.acknowledge(journal(), &[], unreachable_chain);
+        assert_eq!(
+            unchanged.refusal,
+            Some(ReconcileRefusal::ArchiveUnavailable)
+        );
+    }
+
+    #[test]
+    fn a_gate_acknowledges_checkpointless_progress_and_keeps_it_on_refusal() {
+        let mut gate = ProgressGate::new();
+        let plain = MirrorCursor {
+            latest_batch: Some(3),
+            latest_checkpoint: None,
+        };
+        let progress = gate.acknowledge(plain, &[], unreachable_chain);
+        assert_eq!(progress.mirrored, plain);
+        assert_eq!(progress.refusal, None);
+        let refused = gate.acknowledge(journal(), &[], unreachable_chain);
+        assert_eq!(refused.mirrored, plain);
+        assert_eq!(refused.refusal, Some(ReconcileRefusal::ArchiveUnavailable));
+    }
+
+    #[test]
+    fn chain_copies_that_differ_from_the_spooled_archive_are_refused() {
+        let expected = b"spooled archive bytes".to_vec();
+        let commitment = archive_commitment(&expected);
+        assert_eq!(
+            verify_reconciled(commitment, &expected, CHECKPOINT, b"other bytes"),
+            Err(ReconcileRefusal::CommitmentMismatch)
+        );
+        assert_eq!(
+            verify_reconciled(commitment, b"different spool", CHECKPOINT, &expected),
+            Err(ReconcileRefusal::CommitmentMismatch)
+        );
+        assert_eq!(
+            verify_reconciled(commitment, &expected, CHECKPOINT, &expected),
+            Err(ReconcileRefusal::Malformed)
+        );
+    }
+
+    #[test]
+    fn an_empty_spool_has_no_verified_progress() {
+        assert_eq!(verified_cursor(&[]), MirrorCursor::default());
     }
 }

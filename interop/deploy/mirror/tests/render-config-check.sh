@@ -29,7 +29,7 @@ PUBLISHER="$CARGO_TARGET_DIR/debug/layerx-mirror-publisher"
 openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj '/O=LayerX mirror check/CN=mirror-rpc' \
     -keyout "$WORK/rpc.key" -out "$WORK/rpc.pem" 2>/dev/null
 openssl x509 -in "$WORK/rpc.pem" -outform DER -out "$WORK/rpc.der"
-for name in ethereum-a ethereum-b solana-a solana-b; do
+for name in ethereum-a ethereum-b solana-a solana-b paxeer-a paxeer-b; do
     (umask 077; openssl rand -hex 32 > "$WORK/$name.token")
 done
 
@@ -70,6 +70,11 @@ render_ethereum_only() {
         --first-batch-number 1 \
         --status-listen "127.0.0.1:$STATUS_PORT" \
         --lni-socket /run/layerx/node/layerxd.lni.sock \
+        --paxeer-endpoint "https://paxeer-a.invalid:9443/rpc,paxeer-a,$WORK/rpc.der,$WORK/paxeer-a.token" \
+        --paxeer-endpoint "https://paxeer-b.invalid:9443/rpc,paxeer-b,$WORK/rpc.der,$WORK/paxeer-b.token" \
+        --paxeer-chain-id 125 --paxeer-confirmations 2 \
+        --paxeer-genesis-hash "$(printf 'paxeer-genesis' | sha256sum | cut -d ' ' -f 1)" \
+        --sequencer-public-key "$(printf 'sequencer' | sha256sum | cut -d ' ' -f 1)" \
         --network-id 1 \
         --protocol-version 3 \
         --ethereum-endpoint "https://ethereum-a.invalid:9443/rpc,ethereum-a,$WORK/rpc.der,$WORK/ethereum-a.token" \
@@ -156,7 +161,12 @@ render_output=$(render "$WORK/never.json" 2>&1) || status=$?
 status=0
 render_output=$(python3 "$RENDERER" --output "$WORK/never.json" --state-directory relative \
     --first-batch-number 1 --status-listen 127.0.0.1:1 --lni-socket /run/s --network-id 1 \
-    --protocol-version 3 --ethereum-chain-id 125 --ethereum-genesis-hash 00 \
+    --protocol-version 3 --paxeer-chain-id 125 --paxeer-confirmations 2 \
+    --paxeer-genesis-hash "$(printf '11%.0s' {1..32})" \
+    --sequencer-public-key "$(printf '22%.0s' {1..32})" \
+    --paxeer-endpoint "https://paxeer-a.invalid/rpc,paxeer-a,$WORK/rpc.der,$WORK/paxeer-a.token" \
+    --paxeer-endpoint "https://paxeer-b.invalid/rpc,paxeer-b,$WORK/rpc.der,$WORK/paxeer-b.token" \
+    --ethereum-chain-id 125 --ethereum-genesis-hash 00 \
     --ethereum-archive-contract 00 --ethereum-archive-code-hash 00 \
     --ethereum-signer-key-handle owner/ethereum --ethereum-signer-public-key "$ETHEREUM_PUBLIC" \
     --ethereum-signer-socket /s --solana-genesis-hash "$PROGRAM" \

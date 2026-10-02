@@ -433,6 +433,24 @@ impl SolanaArchiveClient {
         Ok(Some(archive))
     }
 
+    /// Retrieves an archive at independently confirmed canonical chain finality.
+    ///
+    /// # Errors
+    /// Refuses identity, RPC, archive, and canonical-coordinate failures.
+    pub fn retrieve_finalized(&self, commitment: ArchiveCommitment) -> Result<Option<Vec<u8>>, SolanaError> {
+        let reader = SolanaMirrorReader::open(SolanaMirrorReadConfig {
+            rpc: self.config.rpc.clone(), genesis_hash: self.config.genesis_hash,
+            archive_program: self.config.archive_program, upgradeable_loader: self.config.upgradeable_loader,
+            program_data_account: self.config.program_data_account, program_code_hash: self.config.program_code_hash,
+            publisher: self.payer,
+        })?;
+        match reader.retrieve(commitment)? {
+            Some(observed) if reader.is_coordinate_canonical(observed.rooted_slot, observed.rooted_blockhash)? => Ok(Some(observed.archive)),
+            Some(_) => Err(SolanaError::Reorg),
+            None => Ok(None),
+        }
+    }
+
     #[must_use]
     pub fn cursor(&self) -> MirrorCursor {
         self.journal.cursor()

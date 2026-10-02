@@ -14,12 +14,12 @@ use serde::{Deserialize, Serialize};
 use crate::ethereum::{
     EthereumArchiveClient, EthereumError, EthereumProductionConfig, EthereumProgress,
 };
-use crate::node::{LniArchiveSource, NodeSourceConfig};
+use crate::node::{CheckpointAcquisition, LniArchiveSource, NodeSourceConfig};
 use crate::rpc::{RpcCluster, RpcQuorumConfig};
 use crate::signer::{RemoteChainSigner, RemoteSignerConfig, SignerEndpoint, SigningAlgorithm};
 use crate::solana::{SolanaArchiveClient, SolanaError, SolanaProductionConfig, SolanaProgress};
 use crate::store::{ArchiveSpool, PublicationPhase};
-use crate::{Archive, ArchiveCommitment};
+use crate::{Archive, ArchiveCommitment, ChainProgress, ProgressGate};
 
 const MAX_CONFIG_BYTES: usize = 1024 * 1024;
 const MAX_STATUS_REQUEST_BYTES: usize = 4096;
@@ -30,6 +30,9 @@ pub struct RuntimeConfig {
     pub state_directory: PathBuf,
     pub first_batch_number: u64,
     pub poll_interval_ms: u64,
+    /// Largest number of batches a chain's mirrored checkpoint may trail the
+    /// latest certificate-verified checkpoint while that chain reports ready.
+    pub checkpoint_freshness_budget_batches: u64,
     pub status_listen: SocketAddr,
     pub node: NodeFileConfig,
     pub ethereum: EthereumFileConfig,
@@ -52,6 +55,7 @@ pub struct NodeFileConfig {
     pub deadline_ms: u64,
     pub maximum_archive_bytes: usize,
     pub maximum_archive_chunks: usize,
+    pub checkpoint_policy: crate::node::NativeCheckpointPolicy,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -114,8 +118,15 @@ pub enum SignerTransportFileConfig {
 struct ComponentStatus {
     ready: bool,
     latest_batch_mirrored: Option<u64>,
+    latest_batch_observed: Option<u64>,
     latest_checkpoint_batch_mirrored: Option<u64>,
     latest_checkpoint_id_mirrored: Option<String>,
+    latest_batch_verified: Option<u64>,
+    latest_checkpoint_batch_verified: Option<u64>,
+    checkpoint_batch_lag: Option<u64>,
+    freshness_budget_batches: u64,
+    freshness: Option<&'static str>,
+    checkpoint_within_budget: bool,
     phase: Option<&'static str>,
     error_class: Option<&'static str>,
     reorgs_observed: u64,
@@ -128,6 +139,10 @@ struct RuntimeStatus {
     solana: Option<ComponentStatus>,
     checkpoint_proof_boundary_ready: bool,
     checkpoint_identifier_observed: bool,
+    latest_verified_checkpoint_batch: Option<u64>,
+    latest_verified_checkpoint_id: Option<String>,
+    checkpoint_refusal: Option<&'static str>,
+    checkpoint_freshness_budget_batches: u64,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -168,6 +183,7 @@ pub fn run(config_path: &Path) -> Result<(), RuntimeError> {
         recover_next_batch(&spool, config.first_batch_number).map_err(|_| RuntimeError::State)?;
     let status = Arc::new(Mutex::new(RuntimeStatus {
         solana: config.solana.as_ref().map(|_| ComponentStatus::default()),
+        checkpoint_freshness_budget_batches: config.checkpoint_freshness_budget_batches,
         ..RuntimeStatus::default()
     }));
     let poll = Duration::from_millis(config.poll_interval_ms);
@@ -202,11 +218,27 @@ fn spawn_node(
         loop {
             match source.acquire(next_batch) {
                 Ok(acquired) => {
-                    let checkpoint_observed = acquired.uncoordinated_checkpoint_id.is_some();
+                    update_status(&status, |value| {
+                        value.node.latest_batch_observed = Some(acquired.head.latest_sealed_batch);
+                        record_checkpoint(value, &acquired.checkpoint);
+                    });
+                    if !acquired.checkpoint.coordinate().is_some_and(|checkpoint| checkpoint.batch_number >= next_batch) {
+                        update_status(&status, |value| {
+                            value.node.ready = false;
+                            value.node.phase = Some("awaiting_verified_checkpoint");
+                        });
+                        thread::sleep(poll);
+                        continue;
+                    }
+                    let material = match &acquired.checkpoint {
+                        CheckpointAcquisition::Verified(verified) => Some(verified.material()),
+                        CheckpointAcquisition::NodeHasNoCheckpoint
+                        | CheckpointAcquisition::Refused { .. } => None,
+                    };
                     match Archive::from_node(
                         &acquired.batch,
                         &acquired.availability,
-                        None,
+                        material,
                         acquired.head,
                     )
                     .and_then(|archive| {
@@ -226,12 +258,7 @@ fn spawn_node(
                                 value.node.latest_batch_mirrored = Some(next_batch);
                                 value.node.error_class = None;
                                 value.node.phase = Some("spooled_verified_batch");
-                                if checkpoint_observed {
-                                    value.checkpoint_identifier_observed = true;
-                                    value.checkpoint_proof_boundary_ready = false;
-                                } else if !value.checkpoint_identifier_observed {
-                                    value.checkpoint_proof_boundary_ready = true;
-                                }
+                                record_checkpoint(value, &acquired.checkpoint);
                             });
                             let Some(incremented) = next_batch.checked_add(1) else {
                                 update_status(&status, |value| {
@@ -248,10 +275,23 @@ fn spawn_node(
                         }),
                     }
                 }
-                Err(error) => update_status(&status, |value| {
-                    value.node.ready = false;
-                    value.node.error_class = Some(node_error_class(&error));
-                }),
+                Err(error) => {
+                    match source.observe_checkpoint() {
+                        Ok((head, checkpoint)) if head.latest_sealed_batch.checked_add(1) == Some(next_batch) => {
+                            update_status(&status, |value| {
+                                value.node.latest_batch_observed = Some(head.latest_sealed_batch);
+                                record_checkpoint(value, &checkpoint);
+                                value.node.ready = matches!(checkpoint, CheckpointAcquisition::Verified(_));
+                                value.node.error_class = None;
+                                value.node.phase = Some("head_reconciled");
+                            });
+                        }
+                        _ => update_status(&status, |value| {
+                            value.node.ready = false;
+                            value.node.error_class = Some(node_error_class(&error));
+                        }),
+                    }
+                }
             }
             thread::sleep(poll);
         }
@@ -276,10 +316,12 @@ fn spawn_ethereum(
                 }
             }
         };
+        let mut gate = ProgressGate::new();
         loop {
-            for archive in ordered_archives(&spool) {
+            let ordered = ordered_archives(&spool);
+            for archive in &ordered {
                 match archive {
-                    Ok(archive) => match client.advance(&archive) {
+                    Ok(archive) => match client.advance(archive) {
                         Ok(progress) => update_ethereum(&status, progress),
                         Err(error) => update_status(&status, |value| {
                             value.ethereum.ready = false;
@@ -292,6 +334,11 @@ fn spawn_ethereum(
                     }),
                 }
             }
+            let archives = ordered.into_iter().flatten().collect::<Vec<_>>();
+            let progress = gate.acknowledge(client.cursor(), &archives, |commitment| {
+                client.retrieve_finalized(commitment)
+            });
+            apply_ethereum_progress(&status, progress);
             thread::sleep(poll);
         }
     });
@@ -316,10 +363,12 @@ fn spawn_solana(
                 }
             }
         };
+        let mut gate = ProgressGate::new();
         loop {
-            for archive in ordered_archives(&spool) {
+            let ordered = ordered_archives(&spool);
+            for archive in &ordered {
                 match archive {
-                    Ok(archive) => match client.advance(&archive) {
+                    Ok(archive) => match client.advance(archive) {
                         Ok(progress) => update_solana(&status, progress),
                         Err(error) => update_solana_status(&status, |value| {
                             value.ready = false;
@@ -332,6 +381,11 @@ fn spawn_solana(
                     }),
                 }
             }
+            let archives = ordered.into_iter().flatten().collect::<Vec<_>>();
+            let progress = gate.acknowledge(client.cursor(), &archives, |commitment| {
+                client.retrieve_finalized(commitment)
+            });
+            apply_solana_progress(&status, progress);
             thread::sleep(poll);
         }
     });
@@ -531,6 +585,7 @@ impl From<SignerErrorShim> for SolanaError {
 fn node_config(config: &NodeFileConfig) -> NodeSourceConfig {
     NodeSourceConfig {
         socket: config.socket.clone(),
+        checkpoint_policy: config.checkpoint_policy.clone(),
         handshake: layerx_client::lni::handshake::HandshakeConfig {
             built_interface_version: layerx_client::lni::schema::Version::V1_0,
             expected_protocol_version: config.expected_protocol_version,
@@ -587,7 +642,11 @@ fn serve_status(
     let snapshot = status.lock().map_err(|_| RuntimeError::Status)?.clone();
     let ready = snapshot.node.ready
         && snapshot.ethereum.ready
-        && snapshot.solana.as_ref().is_none_or(|solana| solana.ready)
+        && snapshot.ethereum.checkpoint_within_budget
+        && snapshot
+            .solana
+            .as_ref()
+            .is_none_or(|solana| solana.ready && solana.checkpoint_within_budget)
         && snapshot.checkpoint_proof_boundary_ready;
     let (code, reason, body) = match first {
         "GET /status HTTP/1.1" | "GET /status HTTP/1.0" => (
@@ -613,36 +672,139 @@ fn serve_status(
     .map_err(|_| RuntimeError::Status)
 }
 
+/// A verified certificate restores checkpoint readiness; a refusal latches it
+/// off, and batches observed without checkpoint evidence never clear a refusal.
+fn record_checkpoint(status: &mut RuntimeStatus, checkpoint: &CheckpointAcquisition) {
+    match checkpoint {
+        CheckpointAcquisition::NodeHasNoCheckpoint => {
+            if !status.checkpoint_identifier_observed {
+                status.checkpoint_proof_boundary_ready = true;
+            }
+        }
+        CheckpointAcquisition::Verified(verified) => {
+            let coordinate = verified.coordinate();
+            status.checkpoint_identifier_observed = true;
+            status.checkpoint_proof_boundary_ready = true;
+            status.checkpoint_refusal = None;
+            status.latest_verified_checkpoint_batch = Some(coordinate.batch_number);
+            status.latest_verified_checkpoint_id = Some(hex_bytes(&coordinate.checkpoint_id));
+        }
+        CheckpointAcquisition::Refused { refusal, .. } => {
+            status.checkpoint_identifier_observed = true;
+            status.checkpoint_proof_boundary_ready = false;
+            status.checkpoint_refusal = Some(refusal.code());
+        }
+    }
+    let progress = VerifiedProgress::of(status);
+    progress.apply(&mut status.ethereum);
+    if let Some(solana) = status.solana.as_mut() {
+        progress.apply(solana);
+    }
+}
+
+/// Latest certificate-verified coordinates every chain is measured against.
+#[derive(Clone, Copy)]
+struct VerifiedProgress {
+    batch: Option<u64>,
+    checkpoint_batch: Option<u64>,
+    budget: u64,
+}
+
+impl VerifiedProgress {
+    fn of(status: &RuntimeStatus) -> Self {
+        Self {
+            batch: status.node.latest_batch_mirrored,
+            checkpoint_batch: status.latest_verified_checkpoint_batch,
+            budget: status.checkpoint_freshness_budget_batches,
+        }
+    }
+
+    fn apply(self, status: &mut ComponentStatus) {
+        status.latest_batch_verified = self.batch;
+        status.latest_checkpoint_batch_verified = self.checkpoint_batch;
+        status.freshness_budget_batches = self.budget;
+        status.checkpoint_batch_lag = self.checkpoint_batch.map(|target| {
+            target.saturating_sub(status.latest_checkpoint_batch_mirrored.unwrap_or(0))
+        });
+        status.checkpoint_within_budget = status
+            .checkpoint_batch_lag
+            .is_none_or(|lag| lag <= self.budget);
+        status.freshness = Some(match status.checkpoint_batch_lag {
+            None => "node_has_no_verified_checkpoint",
+            Some(0) => "current",
+            Some(lag) if lag <= self.budget => "within_budget",
+            Some(_) => "beyond_budget",
+        });
+    }
+}
+
 fn update_ethereum(status: &Arc<Mutex<RuntimeStatus>>, progress: EthereumProgress) {
     update_status(status, |value| {
         if progress.phase == PublicationPhase::Reorged {
             value.ethereum.reorgs_observed = value.ethereum.reorgs_observed.saturating_add(1);
         }
-        value.ethereum.ready = !matches!(
+        value.ethereum.ready = value.ethereum.ready && !matches!(
             progress.phase,
             PublicationPhase::PermanentRefusal | PublicationPhase::Reorged
         );
-        value.ethereum.latest_batch_mirrored = progress.cursor.latest_batch;
-        set_checkpoint_status(&mut value.ethereum, progress.cursor.latest_checkpoint);
+        VerifiedProgress::of(value).apply(&mut value.ethereum);
         value.ethereum.phase = Some(phase_name(progress.phase));
         value.ethereum.error_class = None;
     });
 }
 
 fn update_solana(status: &Arc<Mutex<RuntimeStatus>>, progress: SolanaProgress) {
+    let Some(verified) = status.lock().ok().map(|value| VerifiedProgress::of(&value)) else {
+        return;
+    };
     update_solana_status(status, |value| {
         if progress.phase == PublicationPhase::Reorged {
             value.reorgs_observed = value.reorgs_observed.saturating_add(1);
         }
-        value.ready = !matches!(
+        value.ready = value.ready && !matches!(
             progress.phase,
             PublicationPhase::PermanentRefusal | PublicationPhase::Reorged
         );
-        value.latest_batch_mirrored = progress.cursor.latest_batch;
-        set_checkpoint_status(value, progress.cursor.latest_checkpoint);
+        verified.apply(value);
         value.phase = Some(phase_name(progress.phase));
         value.error_class = None;
     });
+}
+
+/// Reports only gate-acknowledged mirrored coordinates. A reconcile refusal
+/// holds the lane unready under its typed code.
+fn apply_ethereum_progress(status: &Arc<Mutex<RuntimeStatus>>, progress: ChainProgress) {
+    update_status(status, |value| {
+        let verified = VerifiedProgress::of(value);
+        apply_progress(&mut value.ethereum, verified, progress);
+    });
+}
+
+fn apply_solana_progress(status: &Arc<Mutex<RuntimeStatus>>, progress: ChainProgress) {
+    update_status(status, |value| {
+        let verified = VerifiedProgress::of(value);
+        if let Some(solana) = value.solana.as_mut() {
+            apply_progress(solana, verified, progress);
+        }
+    });
+}
+
+fn apply_progress(
+    status: &mut ComponentStatus,
+    verified: VerifiedProgress,
+    progress: ChainProgress,
+) {
+    status.latest_batch_mirrored = progress.mirrored.latest_batch;
+    set_checkpoint_status(status, progress.mirrored.latest_checkpoint);
+    verified.apply(status);
+    if let Some(refusal) = progress.refusal {
+        status.ready = false;
+        status.error_class = Some(refusal.code());
+    } else {
+        status.ready = progress.mirrored.latest_checkpoint.is_some()
+            && !matches!(status.phase, Some("permanent_refusal" | "reorged"));
+        status.error_class = None;
+    }
 }
 
 /// Updates the Solana component of a runtime that has one. The Solana worker is
@@ -736,10 +898,19 @@ fn solana_error_class(error: &SolanaError) -> &'static str {
 }
 
 fn validate_runtime(config: &RuntimeConfig) -> Result<(), RuntimeError> {
+    let checkpoint_policy = &config.node.checkpoint_policy;
+    if checkpoint_policy.chain_id == 0 || checkpoint_policy.confirmations == 0
+        || fixed_hex::<32>(&checkpoint_policy.genesis_hash_hex).map_err(|_| RuntimeError::Configuration)? == [0; 32]
+        || fixed_hex::<32>(&checkpoint_policy.sequencer_public_key_hex).map_err(|_| RuntimeError::Configuration)? == [0; 32]
+    {
+        return Err(RuntimeError::Configuration);
+    }
+    RpcCluster::new(&checkpoint_policy.rpc).map_err(|_| RuntimeError::Configuration)?;
     if !config.state_directory.is_absolute()
         || !config.node.socket.is_absolute()
         || config.first_batch_number == 0
         || !(100..=60_000).contains(&config.poll_interval_ms)
+        || !(1..=1_000_000).contains(&config.checkpoint_freshness_budget_batches)
         || !matches!(config.status_listen.ip(), IpAddr::V4(_) | IpAddr::V6(_))
         || !config.status_listen.ip().is_loopback()
         || config.status_listen.port() == 0
@@ -857,11 +1028,14 @@ mod tests {
     use std::sync::atomic::{AtomicU64, Ordering};
 
     use super::{
-        hex_bytes, recover_batch_sequence, recover_next_batch, recover_spool, RuntimeConfig,
-        SpoolRecoveryError,
+        hex_bytes, record_checkpoint, recover_batch_sequence, recover_next_batch, recover_spool,
+        ComponentStatus, RuntimeConfig, RuntimeStatus, SpoolRecoveryError,
     };
+    use crate::node::{CheckpointAcquisition, CheckpointRefusal};
     use crate::store::{ArchiveSpool, StoreError};
     use crate::{archive_commitment, ArchiveCommitment, NodeHead};
+    use layerx_client::evidence::EvidenceError;
+    use layerx_proof::checkpoint::CheckpointError;
 
     static NEXT_DIRECTORY: AtomicU64 = AtomicU64::new(0);
 
@@ -964,6 +1138,7 @@ mod tests {
               "state_directory": "/var/lib/layerx-mirror",
               "first_batch_number": 1,
               "poll_interval_ms": 5000,
+              "checkpoint_freshness_budget_batches": 64,
               "status_listen": "127.0.0.1:9091",
               "node": {{
                 "socket": "/run/layerx/node/layerxd.lni.sock",
@@ -975,10 +1150,14 @@ mod tests {
                 "maximum_queued_bytes": 67108864,
                 "deadline_ms": 30000,
                 "maximum_archive_bytes": 67108864,
-                "maximum_archive_chunks": 65536
+                "maximum_archive_chunks": 65536,
+                "checkpoint_policy": {}
               }},
               {}
             }}"#,
+            serde_json::to_string(&serde_json::from_str::<serde_json::Value>(include_str!("../../../deploy/mirror/config.example.json"))
+                .unwrap_or_else(|error| panic!("portable config: {error:?}"))["node"]["checkpoint_policy"])
+                .unwrap_or_else(|error| panic!("portable policy: {error:?}")),
             sections.join(",\n")
         )
     }
@@ -1140,6 +1319,68 @@ mod tests {
             ))
             .unwrap_or_else(|error| panic!("recover empty spool: {error:?}")),
             41
+        );
+    }
+
+    #[test]
+    fn checkpoint_refusal_latches_until_verified_evidence() {
+        let mut status = RuntimeStatus {
+            solana: Some(ComponentStatus::default()),
+            checkpoint_freshness_budget_batches: 4,
+            ..RuntimeStatus::default()
+        };
+        record_checkpoint(&mut status, &CheckpointAcquisition::NodeHasNoCheckpoint);
+        assert!(status.checkpoint_proof_boundary_ready);
+        assert!(status.ethereum.checkpoint_within_budget);
+        assert_eq!(
+            status.ethereum.freshness,
+            Some("node_has_no_verified_checkpoint")
+        );
+        assert_eq!(status.ethereum.freshness_budget_batches, 4);
+
+        for error in [
+            EvidenceError::Checkpoint(CheckpointError::SignerMembership([7; 32])),
+            EvidenceError::Checkpoint(CheckpointError::Threshold {
+                achieved: 1,
+                required: 2,
+            }),
+            EvidenceError::SelectorMismatch,
+            EvidenceError::NetworkMismatch,
+            EvidenceError::Unavailable,
+        ] {
+            let refusal = CheckpointRefusal::from_evidence(&error);
+            record_checkpoint(
+                &mut status,
+                &CheckpointAcquisition::Refused {
+                    checkpoint_id: [9; 32],
+                    refusal,
+                },
+            );
+            assert!(!status.checkpoint_proof_boundary_ready);
+            assert_eq!(status.checkpoint_refusal, Some(refusal.code()));
+            assert_eq!(status.latest_verified_checkpoint_batch, None);
+            record_checkpoint(&mut status, &CheckpointAcquisition::NodeHasNoCheckpoint);
+            assert!(!status.checkpoint_proof_boundary_ready);
+            assert_eq!(status.checkpoint_refusal, Some(refusal.code()));
+        }
+        assert_eq!(
+            CheckpointRefusal::from_evidence(&EvidenceError::Checkpoint(
+                CheckpointError::SignerMembership([7; 32])
+            )),
+            CheckpointRefusal::SignerMembership
+        );
+        assert_eq!(
+            CheckpointRefusal::from_evidence(&EvidenceError::Checkpoint(
+                CheckpointError::Threshold {
+                    achieved: 1,
+                    required: 2
+                }
+            )),
+            CheckpointRefusal::Threshold
+        );
+        assert_eq!(
+            CheckpointRefusal::from_evidence(&EvidenceError::NetworkMismatch),
+            CheckpointRefusal::DomainMismatch
         );
     }
 }

@@ -148,6 +148,24 @@ pub struct MirrorVerifier {
 }
 
 impl MirrorVerifier {
+    /// Verifies a retained native certificate through independently configured Paxeer authority.
+    ///
+    /// # Errors
+    /// Refuses legacy archives, invalid native evidence, wrong authority, non-FINAL state or reorgs.
+    pub fn checkpoint_with_native_authority(
+        &self, policy: &crate::node::NativeCheckpointPolicy,
+    ) -> Result<CheckpointCoordinate, MirrorVerifyError> {
+        let archived = self.archive.checkpoint.as_ref().ok_or(MirrorVerifyError::CheckpointTrustUnavailable)?;
+        let candidate = crate::publisher::native_archive_candidate(&archived.canonical_certificate)
+            .map_err(MirrorVerifyError::Archive)?;
+        crate::node::native_candidate_publication(&candidate, policy, self.trust.sequencer_public_key)
+            .map_err(|_| MirrorVerifyError::CheckpointTrustUnavailable)?;
+        if candidate.checkpoint_id() != archived.coordinate.checkpoint_id {
+            return Err(MirrorVerifyError::CheckpointTrustUnavailable);
+        }
+        Ok(archived.coordinate)
+    }
+
     /// Admits one sealed source observation. Archive, chain identity,
     /// canonical position and freshness remain one indivisible source fact.
     ///
@@ -378,7 +396,7 @@ impl MirrorVerifier {
     /// checkpoint verifier. It must never be promoted to checkpoint level.
     ///
     /// # Errors
-    /// Always returns `MirrorVerifyError::CheckpointTrustUnavailable` because attestation timestamps are absent.
+    /// Returns `MirrorVerifyError::CheckpointTrustUnavailable` without independent authority; use `checkpoint_with_native_authority` for retained native evidence.
     pub const fn checkpoint_level() -> Result<(), MirrorVerifyError> {
         Err(MirrorVerifyError::CheckpointTrustUnavailable)
     }

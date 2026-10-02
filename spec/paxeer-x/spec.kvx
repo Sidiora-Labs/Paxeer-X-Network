@@ -22396,7 +22396,9 @@ build_cmd = "cargo build --locked --manifest-path human/Cargo.toml -p layerx-hum
 
 [task.18.2]
 title = "Acquire and publish independently verified checkpoint proofs to both archive mirrors"
-status = "in_progress"
+status = "done"
+completion_basis = "implementation"
+qualification_status = "unverified"
 mode = "BUILD"
 wave = 2
 requires = ["0.2"]

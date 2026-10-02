@@ -393,6 +393,23 @@ impl EthereumArchiveClient {
         Ok(Some(archive))
     }
 
+    /// Retrieves an archive at independently confirmed canonical chain finality.
+    ///
+    /// # Errors
+    /// Refuses identity, RPC, archive, and canonical-coordinate failures.
+    pub fn retrieve_finalized(&self, commitment: ArchiveCommitment) -> Result<Option<Vec<u8>>, EthereumError> {
+        let reader = EthereumMirrorReader::open(EthereumMirrorReadConfig {
+            rpc: self.config.rpc.clone(), chain_id: self.config.chain_id,
+            genesis_hash: self.config.genesis_hash, archive_contract: self.config.archive_contract,
+            archive_code_hash: self.config.archive_code_hash, publisher: self.signer_address,
+        })?;
+        match reader.retrieve(commitment)? {
+            Some(observed) if reader.is_canonical(&observed)? => Ok(Some(observed.archive)),
+            Some(_) => Err(EthereumError::Reorg),
+            None => Ok(None),
+        }
+    }
+
     #[must_use]
     pub fn cursor(&self) -> MirrorCursor {
         self.journal.cursor()

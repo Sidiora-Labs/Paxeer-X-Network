@@ -5,7 +5,7 @@
   "status_listen": "127.0.0.1:9091",
   "node": {
     "socket": "/run/layerx/lni.sock",
-    "expected_protocol_version": 1,
+    "expected_protocol_version": 3,
     "expected_network_id": 1,
     "maximum_frame_bytes": 67108864,
     "maximum_connections": 2,
@@ -13,14 +13,61 @@
     "maximum_queued_bytes": 67108864,
     "deadline_ms": 30000,
     "maximum_archive_bytes": 67108864,
-    "maximum_archive_chunks": 65536
+    "maximum_archive_chunks": 65536,
+    "checkpoint_policy": {
+      "rpc": {
+        "endpoints": [
+          {
+            "url": "https://paxeer-a.example/rpc",
+            "ca_certificate_der": "/run/secrets/paxeer-a.ca.der",
+            "bearer_token_file": "/run/secrets/paxeer-a.token",
+            "independent_backend": "paxeer-a"
+          },
+          {
+            "url": "https://paxeer-b.example/rpc",
+            "ca_certificate_der": "/run/secrets/paxeer-b.ca.der",
+            "bearer_token_file": "/run/secrets/paxeer-b.token",
+            "independent_backend": "paxeer-b"
+          },
+          {
+            "url": "https://paxeer-c.example/rpc",
+            "ca_certificate_der": "/run/secrets/paxeer-c.ca.der",
+            "bearer_token_file": "/run/secrets/paxeer-c.token",
+            "independent_backend": "paxeer-c"
+          }
+        ],
+        "quorum": 2,
+        "connect_timeout_ms": 3000,
+        "request_timeout_ms": 15000,
+        "maximum_response_bytes": 16777216
+      },
+      "chain_id": 125,
+      "genesis_hash_hex": "0000000000000000000000000000000000000000000000000000000000000001",
+      "sequencer_public_key_hex": "0000000000000000000000000000000000000000000000000000000000000001",
+      "confirmations": 12
+    }
   },
   "ethereum": {
     "rpc": {
       "endpoints": [
-        {"url":"https://ethereum-a.example/rpc","ca_certificate_der":"/run/secrets/ethereum-a.ca.der","bearer_token_file":"/run/secrets/ethereum-a.token","independent_backend":"ethereum-a"},
-        {"url":"https://ethereum-b.example/rpc","ca_certificate_der":"/run/secrets/ethereum-b.ca.der","bearer_token_file":"/run/secrets/ethereum-b.token","independent_backend":"ethereum-b"},
-        {"url":"https://ethereum-c.example/rpc","ca_certificate_der":"/run/secrets/ethereum-c.ca.der","bearer_token_file":"/run/secrets/ethereum-c.token","independent_backend":"ethereum-c"}
+        {
+          "url": "https://ethereum-a.example/rpc",
+          "ca_certificate_der": "/run/secrets/ethereum-a.ca.der",
+          "bearer_token_file": "/run/secrets/ethereum-a.token",
+          "independent_backend": "ethereum-a"
+        },
+        {
+          "url": "https://ethereum-b.example/rpc",
+          "ca_certificate_der": "/run/secrets/ethereum-b.ca.der",
+          "bearer_token_file": "/run/secrets/ethereum-b.token",
+          "independent_backend": "ethereum-b"
+        },
+        {
+          "url": "https://ethereum-c.example/rpc",
+          "ca_certificate_der": "/run/secrets/ethereum-c.ca.der",
+          "bearer_token_file": "/run/secrets/ethereum-c.token",
+          "independent_backend": "ethereum-c"
+        }
       ],
       "quorum": 2,
       "connect_timeout_ms": 3000,
@@ -41,15 +88,33 @@
       "key_handle": "mirror/ethereum/testnet",
       "public_key": "02aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
       "timeout_ms": 5000,
-      "transport": {"kind":"uds","socket":"/run/signers/ethereum.sock"}
+      "transport": {
+        "kind": "uds",
+        "socket": "/run/signers/ethereum.sock"
+      }
     }
   },
   "solana": {
     "rpc": {
       "endpoints": [
-        {"url":"https://solana-a.example/rpc","ca_certificate_der":"/run/secrets/solana-a.ca.der","bearer_token_file":"/run/secrets/solana-a.token","independent_backend":"solana-a"},
-        {"url":"https://solana-b.example/rpc","ca_certificate_der":"/run/secrets/solana-b.ca.der","bearer_token_file":"/run/secrets/solana-b.token","independent_backend":"solana-b"},
-        {"url":"https://solana-c.example/rpc","ca_certificate_der":"/run/secrets/solana-c.ca.der","bearer_token_file":"/run/secrets/solana-c.token","independent_backend":"solana-c"}
+        {
+          "url": "https://solana-a.example/rpc",
+          "ca_certificate_der": "/run/secrets/solana-a.ca.der",
+          "bearer_token_file": "/run/secrets/solana-a.token",
+          "independent_backend": "solana-a"
+        },
+        {
+          "url": "https://solana-b.example/rpc",
+          "ca_certificate_der": "/run/secrets/solana-b.ca.der",
+          "bearer_token_file": "/run/secrets/solana-b.token",
+          "independent_backend": "solana-b"
+        },
+        {
+          "url": "https://solana-c.example/rpc",
+          "ca_certificate_der": "/run/secrets/solana-c.ca.der",
+          "bearer_token_file": "/run/secrets/solana-c.token",
+          "independent_backend": "solana-c"
+        }
       ],
       "quorum": 2,
       "connect_timeout_ms": 3000,
@@ -68,7 +133,15 @@
       "key_handle": "mirror/solana/testnet",
       "public_key": "11111111111111111111111111111115",
       "timeout_ms": 5000,
-      "transport": {"kind":"mutual_tls","endpoint":"signer.example:9443","server_name":"signer.example","trust_anchor":"/run/secrets/signer.ca.pem","client_certificate":"/run/secrets/signer.client.pem","client_private_key":"/run/secrets/signer.client-key.pem"}
+      "transport": {
+        "kind": "mutual_tls",
+        "endpoint": "signer.example:9443",
+        "server_name": "signer.example",
+        "trust_anchor": "/run/secrets/signer.ca.pem",
+        "client_certificate": "/run/secrets/signer.client.pem",
+        "client_private_key": "/run/secrets/signer.client-key.pem"
+      }
     }
-  }
+  },
+  "checkpoint_freshness_budget_batches": 64
 }

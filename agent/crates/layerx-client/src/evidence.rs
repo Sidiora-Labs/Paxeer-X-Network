@@ -365,6 +365,11 @@ pub struct FinalityEvidenceCandidate {
 }
 
 impl FinalityEvidenceCandidate {
+    #[must_use]
+    pub fn checkpoint_bytes(&self) -> &[u8] { &self.checkpoint_bytes }
+    #[must_use]
+    pub fn context_bytes(&self) -> &[u8] { &self.context_bytes }
+
     pub fn observed_block_hash(&self) -> Result<Option<[u8; 32]>, EvidenceError> {
         Ok(decode_checkpoint_context(&self.context_bytes)?.observed_block_hash)
     }

@@ -37,6 +37,7 @@ SIGNER_SOCKET = "/run/mirror-signer/signer.sock"
 ETHEREUM_KEY_HANDLE = "mirror/ethereum/beta"
 SOLANA_KEY_HANDLE = "mirror/solana/beta"
 POLL_INTERVAL_MS = 5000
+CHECKPOINT_FRESHNESS_BUDGET_BATCHES = 64
 FRAME_BYTES = 67108864
 ARCHIVE_CHUNKS = 65536
 
@@ -144,6 +145,11 @@ def main(argv):
     parser.add_argument("--first-batch-number", type=int, required=True)
     parser.add_argument("--status-listen", required=True)
     parser.add_argument("--lni-socket", required=True)
+    parser.add_argument("--paxeer-endpoint", action="append", default=[])
+    parser.add_argument("--paxeer-chain-id", type=int, required=True)
+    parser.add_argument("--paxeer-genesis-hash", required=True)
+    parser.add_argument("--paxeer-confirmations", type=int, required=True)
+    parser.add_argument("--sequencer-public-key", required=True)
     parser.add_argument("--network-id", type=int, required=True)
     parser.add_argument("--protocol-version", type=int, required=True)
     parser.add_argument("--ethereum-endpoint", action="append", default=[])
@@ -165,6 +171,8 @@ def main(argv):
     parser.add_argument("--solana-signer-socket", default=SIGNER_SOCKET)
     arguments = parser.parse_args(argv)
 
+    if not 0 < arguments.paxeer_chain_id < 2 ** 64 or not 0 < arguments.paxeer_confirmations < 2 ** 64:
+        refuse("Paxeer chain identity and confirmations must be positive uint64 values")
     if arguments.first_batch_number < 1:
         refuse("--first-batch-number must be at least 1")
     if arguments.network_id < 1:
@@ -202,9 +210,17 @@ def main(argv):
         "state_directory": absolute(arguments.state_directory, "--state-directory"),
         "first_batch_number": arguments.first_batch_number,
         "poll_interval_ms": POLL_INTERVAL_MS,
+        "checkpoint_freshness_budget_batches": CHECKPOINT_FRESHNESS_BUDGET_BATCHES,
         "status_listen": arguments.status_listen,
         "node": {
             "socket": absolute(arguments.lni_socket, "--lni-socket"),
+            "checkpoint_policy": {
+                "rpc": endpoints(arguments.paxeer_endpoint, "--paxeer-endpoint"),
+                "chain_id": arguments.paxeer_chain_id,
+                "genesis_hash_hex": hexadecimal(arguments.paxeer_genesis_hash, "--paxeer-genesis-hash", 32),
+                "sequencer_public_key_hex": hexadecimal(arguments.sequencer_public_key, "--sequencer-public-key", 32),
+                "confirmations": arguments.paxeer_confirmations,
+            },
             "expected_protocol_version": arguments.protocol_version,
             "expected_network_id": arguments.network_id,
             "maximum_frame_bytes": FRAME_BYTES,
@@ -267,6 +283,19 @@ def main(argv):
                 "solana",
             ),
         }
+        ethereum_rpc = config["ethereum"]["rpc"]["endpoints"]
+        solana_rpc = config["solana"]["rpc"]["endpoints"]
+        shared_backends = {item["independent_backend"] for item in ethereum_rpc} & {
+            item["independent_backend"] for item in solana_rpc
+        }
+        shared_origins = {item["url"].split("/", 3)[2].lower() for item in ethereum_rpc} & {
+            item["url"].split("/", 3)[2].lower() for item in solana_rpc
+        }
+        if shared_backends or shared_origins:
+            refuse(
+                "the Ethereum and Solana mirrors need independent RPC trust; shared %s"
+                % ", ".join(sorted(shared_backends | shared_origins))
+            )
     output = pathlib.Path(arguments.output)
     output.parent.mkdir(parents=True, exist_ok=True)
     with open(output, "w", encoding="utf-8") as handle:
