@@ -34,7 +34,7 @@ pub(super) fn verify_wind_down_debits(
         || layerx_wire::hash::activity_id(&activity).map_err(|_| ProgramSettlementError::Preparation)? != submission.activity_id()
     { return Err(ProgramSettlementError::Preparation); }
     if activity.protocol_version() != 3 || activity.activity_type().module() != ModuleId::Programs
-        || activity.activity_type().ordinal() != 4
+        || activity.activity_type().ordinal() != 7
     { return Err(ProgramSettlementError::UnsupportedOperation); }
     let wind_down = NativeProgramWindDown::decode(activity.payload()).map_err(|_| ProgramSettlementError::UnsupportedOperation)?;
     let (account, maximum) = match wind_down.operation {

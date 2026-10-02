@@ -1997,7 +1997,7 @@ fn settle_retained_native_program_call(
         .map_err(|_| refused())?;
     let lifecycle_exit = signed_activity.protocol_version() == 3
         && signed_activity.activity_type().module() == layerx_types::payload::ModuleId::Programs
-        && signed_activity.activity_type().ordinal() == 4
+        && signed_activity.activity_type().ordinal() == 7
         && matches!(layerx_types::program_lifecycle::NativeProgramWindDown::decode(signed_activity.payload()),
             Ok(layerx_types::program_lifecycle::NativeProgramWindDown {
                 operation: layerx_types::program_lifecycle::ProgramWindDownOperation::Exit { .. }
