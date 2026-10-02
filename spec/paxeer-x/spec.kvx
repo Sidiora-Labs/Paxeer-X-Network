@@ -24601,8 +24601,8 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.108.1.10]
 title = "Give the custody module a governance proposal type, handler and submit-proposal command so the asset map and the deposit root authority can be set on chain 125"
-status = "pending"
-mode = "QUALIFY"
+status = "in_progress"
+mode = "BUILD"
 wave = 2
 requires = ["0.2"]
 reqs = ["447"]
@@ -24610,10 +24610,10 @@ do_1 = "Reconcile the retained capability against the current candidate and expl
 do_2 = "Follow the layerxbridge pattern: CustodyProposal (title, description, messages as Any) in the custody proto package generated through the repository's buf template, registered as governance content, with NewProposalHandler executing MsgUpdateParams, MsgSetAsset, MsgRegisterCheckpoint, MsgSetEmergency and MsgCancelClaim through the keeper's Msg service; ValidateBasic refuses an empty list, a non-custody message and an authority other than the governance module account."
 do_3 = "paxd tx layerxcustody submit-proposal custody <file.json> reads title, description, deposit and messages and is signed by the proposer; the handler is on the governance router beside the bridge handler and the plan v6.11 gates the new content and messages, its height an owner input named in the deploy handoff."
 do_4 = "Provide this task selector in tools/paxeer-x/gates and execute the full scoped acceptance contract using real production paths. Preserve the retained verification command coverage; move aggregate matrices to release scope and refuse an unknown or unimplemented selector."
-touches = ["api/layerxcustody/proposal.proto", "modules/layerxcustody/types/proposal.pb.go", "modules/layerxcustody/types/proposal.go", "modules/layerxcustody/types/codec.go", "modules/layerxcustody/handler.go", "modules/layerxcustody/handler_test.go", "modules/layerxcustody/client/cli/tx.go", "modules/layerxcustody/module.go", "node/app.go", "node/upgrades.go", "tools/paxeer-x/gates/108.1.10.sh"]
+touches = ["api/layerxcustody/proposal.proto", "modules/layerxcustody/types/proposal.pb.go", "modules/layerxcustody/types/proposal.go", "modules/layerxcustody/types/codec.go", "modules/layerxcustody/handler.go", "modules/layerxcustody/handler_test.go", "modules/layerxcustody/client/cli/tx.go", "modules/layerxcustody/module.go", "node/app.go", "node/upgrades.go", "tools/paxeer-x/gates/108.1.10.sh", "tools/qualification/paxeer-x/custody_governance.py", "tools/paxeer-x/build/108.1.10.mk", "modules/layerxcustody/types/proposal_test.go", "modules/layerxcustody/client/cli/tx_test.go", "modules/layerxcustody/types/expected_keepers.go", "modules/layerxcustody/types/governance_activation.go", "modules/layerxcustody/types/errors.go", "modules/layerxcustody/keeper/keeper.go", "modules/layerxcustody/keeper/keeper_test.go", "node/gov_custody_test.go", "node/upgrades_v611_test.go"]
 verify_cmd = "timeout 30m tools/paxeer-x/verify-task.sh 108.1.10"
 gate_kind = "planned-adapter"
-max_builds = 0
+max_builds = 1
 max_verify_runs = 1
 max_repair_cycles = 2
 time_limit_minutes = 30
