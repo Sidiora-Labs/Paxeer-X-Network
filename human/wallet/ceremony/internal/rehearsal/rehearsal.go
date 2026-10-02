@@ -63,6 +63,9 @@ type Options struct {
 	MasterKey     []byte
 	ArchivePath   string
 	Passphrase    []byte
+ CountsOnly bool
+ CeremonyOptions *migrate.Options
+ AttestorConfig *attestor.Config
 }
 
 type Report struct {
@@ -90,7 +93,7 @@ func (r Report) Full() string {
 func LoadOptions(getenv func(string) string) (Options, error) {
 	get := func(name string) string { return strings.TrimSpace(getenv(name)) }
 	o := Options{SourceURL: get(EnvSourceURL), MigrationsDir: get(EnvGatewayMigrationsDir), AdminURL: get(EnvAdminURL), AttestorBin: get(EnvAttestorBin)}
-	for name, v := range map[string]string{EnvSourceURL: o.SourceURL, EnvGatewayMigrationsDir: o.MigrationsDir, EnvAdminURL: o.AdminURL, EnvAttestorBin: o.AttestorBin} {
+	for name, v := range map[string]string{EnvSourceURL: o.SourceURL, EnvGatewayMigrationsDir: o.MigrationsDir, EnvAdminURL: o.AdminURL} {
 		if v == "" {
 			return Options{}, fmt.Errorf("%w: %s is not set", ErrConfig, name)
 		}
@@ -106,17 +109,20 @@ func LoadOptions(getenv func(string) string) (Options, error) {
 		zero(o.Passphrase)
 		return Options{}, err
 	}
-	return o, nil
+ config,err:=attestor.LoadConfig(getenv);if err!=nil{zero(o.MasterKey);zero(o.Passphrase);return Options{},err};o.AttestorConfig=&config
+ ceremony,err:=migrate.LoadOptions(getenv);if err!=nil{zero(o.MasterKey);zero(o.Passphrase);return Options{},err};ceremony.Rehearsal=true;o.CeremonyOptions=&ceremony
+ return o, nil
 }
 
 func (o Options) Wipe() {
+ if o.CeremonyOptions!=nil{zero(o.CeremonyOptions.JournalKey)}
 	zero(o.MasterKey)
 	zero(o.Passphrase)
 }
 
 func Rehearse(ctx context.Context, o Options) (Report, error) {
 	var r Report
-	if o.SourceURL == "" || o.MigrationsDir == "" || o.AdminURL == "" || o.AttestorBin == "" || o.ArchivePath == "" || len(o.MasterKey) == 0 {
+	if o.SourceURL == "" || o.MigrationsDir == "" || o.AdminURL == "" || o.ArchivePath == "" || len(o.MasterKey) == 0 {
 		return r, ErrConfig
 	}
 	dbURL, drop, err := temporaryDatabase(ctx, o.AdminURL)
@@ -145,26 +151,21 @@ func Rehearse(ctx context.Context, o Options) (Report, error) {
 	}
 	r.FundedArchived = archived.Rows
 
-	cluster, err := StartNodes(ctx, o.AttestorBin)
-	if err != nil {
-		return r, err
-	}
-	defer cluster.Stop()
-	client, err := attestor.New(cluster.Config)
-	if err != nil {
-		return r, err
-	}
-	defer client.Close()
-	client.SetTokenSource(cluster.Tokens)
-
-	r.Report, err = migrate.Deliver(ctx, db, client, o.MasterKey, plan)
+ var config attestor.Config
+ if o.AttestorConfig!=nil{config=*o.AttestorConfig}else{config,err=attestor.LoadConfig(os.Getenv);if err!=nil{return r,err}}
+ client,err:=attestor.New(config);if err!=nil{return r,err};defer client.Close()
+ var ceremony migrate.Options
+ if o.CeremonyOptions!=nil{ceremony=*o.CeremonyOptions}else{ceremony,err=migrate.LoadOptions(os.Getenv);if err!=nil{return r,err};defer func(){for i:=range ceremony.JournalKey{ceremony.JournalKey[i]=0}}()}
+ ceremony.Rehearsal=true
+	r.Report, err = migrate.Deliver(ctx, db, client, o.MasterKey, plan,ceremony)
 	if err != nil {
 		return r, err
 	}
 	if r.Matched != r.Eligible {
 		return r, fmt.Errorf("%w: matched %d of %d", ErrUnmatched, r.Matched, r.Eligible)
 	}
-	return r, nil
+	if o.CountsOnly{if err=migrate.WriteRehearsalReceipt(ceremony,plan,client,r.Report);err!=nil{return r,err}}
+ return r,nil
 }
 
 func temporaryDatabase(ctx context.Context, adminURL string) (string, func(), error) {

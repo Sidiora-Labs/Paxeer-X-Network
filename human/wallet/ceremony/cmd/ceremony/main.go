@@ -132,7 +132,8 @@ func runDeliver(ctx context.Context, getenv func(string) string, stdout io.Write
 	if err != nil {
 		return err
 	}
-	report, err := migrate.Deliver(ctx, db, client, masterKey, plan)
+	options,err:=migrate.LoadOptions(getenv);if err!=nil{return err};defer zero(options.JournalKey)
+ report, err := migrate.Deliver(ctx, db, client, masterKey, plan,options)
 	fmt.Fprintf(stdout, "eligible=%d funded_archived=%d read=%d verified=%d imported=%d refreshed=%d test_signed=%d matched=%d\n",
 		len(plan.Eligible), verified.Rows, report.Read, report.Verified, report.Imported, report.Refreshed, report.TestSigned, report.Matched)
 	if err != nil {
@@ -173,7 +174,8 @@ func runRehearse(ctx context.Context, getenv func(string) string, stdout io.Writ
 		return err
 	}
 	defer opts.Wipe()
-	report, err := rehearsal.Rehearse(ctx, opts)
+	opts.CountsOnly=counts
+ report, err := rehearsal.Rehearse(ctx, opts)
 	if counts {
 		fmt.Fprintln(stdout, report.Counts())
 	} else {

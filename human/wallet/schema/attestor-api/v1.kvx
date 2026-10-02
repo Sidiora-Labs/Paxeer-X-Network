@@ -56,12 +56,17 @@ method       = "POST"
 path         = "/v1/keys/import"
 auth         = "operator certificate and the node's ceremony flag"
 participants = "local; the body carries this node's share only"
-summary      = "Stores a dealer-split share after validating it against the published partial public keys."
+summary      = "Durably binds the operator-authorized ceremony, import session, original public identity, exact sealed share, owner, account, epoch and approved five-member roster. An exact authenticated retry reconciles the original receipt; conflicting data is refused and no retry replaces a share."
 response     = "key_response"
 errors       = ["operator_required", "session_bad_request", "key_not_found", "key_exists", "key_curve_mismatch", "key_invalid_share", "key_import_disabled", "quorum_too_few_signers", "quorum_self_missing", "session_open_failed", "session_failed", "session_timeout", "store_failed", "store_audit_failed"]
 
 [op.keys.import.request]
-session_id = "string"
+ceremony_id = "string: stable operator-authorized ceremony identity, 1 to 128 characters"
+epoch = "uint64: 0 for the original imported share; an exact replay retains this value after refresh"
+public_key = "hex: original public identity matching the validated share and approved inventory"
+participants = "array of string: sorted exact five approved member IDs"
+threshold = "uint32: exactly 3"
+session_id = "string: stable original import session retained across retries and process restarts"
 key_id = "string"
 owner = "string"
 account = "string optional: required for ed25519"
@@ -77,8 +82,13 @@ response     = "key_response"
 errors       = ["operator_required", "session_bad_request", "key_not_found", "key_exists", "key_curve_mismatch", "key_invalid_share", "key_import_disabled", "quorum_too_few_signers", "quorum_self_missing", "session_open_failed", "session_failed", "session_timeout", "store_failed", "store_audit_failed"]
 
 [op.keys.refresh.request]
-session_id = "string"
+recovery_session_id = "string optional: exact prior refresh attempt; a new session may proceed only after its original coordinator provides an authenticated durable abort decision"
+existing_key = "bool optional: true only for refresh of an already-held original key; it never creates an import receipt or an operator verification grant"
+session_id = "string: retained refresh operation identity; an exact completed retry returns its durable result"
 key_id = "string"
+ceremony_id = "string required for imported ceremony keys: the original ceremony"
+import_session_id = "string required for imported ceremony keys: the original import session; omitted for existing_key"
+expected_epoch = "uint64 required with ceremony_id: committed base epoch; retry preserves it even after this refresh commits"
 
 [op.keys.addshare]
 method       = "POST"
@@ -114,6 +124,13 @@ session_id = "string"
 key_id = "string"
 
 [type.describe_response]
+ceremony_id = "string optional: durable operator-authorized import ceremony"
+import_session_id = "string optional: original durable import session"
+import_digest = "hex optional: digest binding original import metadata and exact share payload; no secret material"
+verification_session_id = "string optional: last durable one-shot verification attempt"
+verification_state = "string optional: signing, failed, signed_pending_audit or complete"
+refresh_session_id = "string optional: retained ceremony refresh operation"
+refresh_state = "string optional: prepared, running, staged, complete or aborted"
 node_id        = "string"
 key_id         = "string"
 curve          = "string: secp256k1 or ed25519"
@@ -167,16 +184,20 @@ path         = "/v1/sign"
 kind         = "operator_verification"
 auth         = "client certificate issued by the operator CA; no Authorization header and no agent headers; a gateway certificate is refused with operator_required"
 participants = "the listed signers; every signer receives the identical body"
-window       = "granted only by a node running with the ceremony flag, for a key that node accepted through keys.import in its current process, under the import session named in the request"
+window       = "granted only by a node running with the ceremony flag, for the exact authenticated durable keys.import receipt, ceremony, import session, approved roster and committed epoch; daemon restart preserves the receipt but does not create a new grant"
 message      = "LX:PAXEER-CEREMONY-VERIFY:v1 followed by the key id, the public key bytes (65-byte uncompressed secp256k1 or 32-byte ed25519, as in key_response public_key) and the import session id, each as a 2-byte big-endian length and the field bytes; the node builds it from its own import record, never from the request"
 signing      = "secp256k1 signs keccak256 of the message and needs a refreshed share; ed25519 signs the message bytes"
-limit        = "one grant per imported key and node; a second request is refused with verification_used"
+limit        = "one successful grant per imported key and node, consumed only after the exact signature and successful audit reference are durable. An exact completed request returns its cached response without signing again. A different request after completion is refused with verification_used. A failed or interrupted signing attempt requires a new session naming recovery_session_id; a signed pending-audit attempt finishes its durable evidence without signing again"
 isolation    = "no other kind signs a payload carrying the verification domain or the verification message of an imported key; such requests are refused with policy_denied and policy_code verification_isolated"
-audit        = "every grant is a ceremony.verification record with decision allowed and every refusal a ceremony.verification record with decision denied or failed, distinct from sign records"
+audit        = "successful signing is reported only after a durable ceremony.verification allowed record and retained response; failures remain explicit recoverable states with denied or failed records. Audit failure cannot consume or report success, and retry finishes retained signature evidence instead of repeating signing"
 response     = "sign_response with message"
 errors       = ["operator_required", "session_bad_request", "session_unsupported_kind", "verification_outside_window", "verification_not_imported", "verification_used", "key_not_found", "key_curve_mismatch", "key_not_refreshed", "key_invalid_share", "quorum_too_few_signers", "quorum_not_member", "quorum_self_missing", "policy_denied", "session_open_failed", "session_failed", "session_timeout", "store_failed", "store_audit_failed"]
 
 [op.sign.operator_verification.request]
+recovery_evidence = "sign_response optional: exact completed peer evidence for the same verification session; canonical bytes, original public key, epoch and signer scope are independently checked before local durable evidence and audit, without authorizing a second signature"
+ceremony_id = "string: exact durable import ceremony"
+expected_epoch = "uint64: exact committed refreshed epoch admitted by current operator inventory"
+recovery_session_id = "string optional: explicitly names the prior failed or interrupted verification attempt; never authorizes a second successful grant"
 session_id        = "string"
 key_id            = "string"
 kind              = "string: operator_verification"
@@ -313,7 +334,7 @@ meaning  = "operator_verification is refused by a node running without the cerem
 [error.verification_not_imported]
 category = "key"
 status   = "409"
-meaning  = "The key was not accepted through keys.import in this node's ceremony window under the named import session; a generated key is never eligible."
+meaning  = "The key has no matching durable operator-authorized import receipt for the named ceremony and import session; a generated key is never eligible."
 
 [error.verification_used]
 category = "key"

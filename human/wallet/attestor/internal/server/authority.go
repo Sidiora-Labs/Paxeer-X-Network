@@ -102,6 +102,7 @@ func (s *Server) HandleAuthority(w http.ResponseWriter,r *http.Request){
 
 func (s *Server) inventoryRoute(operation string,next http.HandlerFunc)http.HandlerFunc{
     return func(w http.ResponseWriter,r *http.Request){
+        if operation=="import"||operation=="refresh" {next(w,r);return}
         body,e:=readBody(r);if e!=nil{writeError(w,e);return}
         var request struct { KeyID string `json:"key_id"`; Owner string `json:"owner"`; Curve string `json:"curve"` }
         if json.Unmarshal(body,&request)!=nil{writeError(w,newError(CodeSessionBadRequest,"invalid key operation"));return}
