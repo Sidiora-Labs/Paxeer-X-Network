@@ -36,7 +36,10 @@ enum {
         LXP_DAEMON_FINALITY_REGISTER_MAX_BYTES + 64 * 1024,
     LXP_DAEMON_LNI_SOCKET_PATH_BYTES = 108,
     LXP_DAEMON_LNI_ADMISSION_PATH_BYTES = 4096,
-    LXP_DAEMON_LNI_MAX_OBSERVED_PEERS = 64
+    LXP_DAEMON_LNI_MAX_OBSERVED_PEERS = 64,
+    LXP_DAEMON_CONFIG_VERSION = 2,
+    LXP_DAEMON_CONFIG_VERSION_LEGACY = 1,
+    LXP_DAEMON_MAX_VERIFY_WORKERS = LXP_DAEMON_MAX_WORKERS
 };
 
 typedef enum lxp_daemon_evidence_kind {
@@ -547,10 +550,8 @@ typedef struct lxp_daemon_configuration {
     uint32_t network_id;
     uint64_t start_sequence;
     size_t verify_workers;
-    size_t network_workers;
-    size_t projection_workers;
-    size_t checkpoint_workers;
     bool serial_execution;
+    uint32_t config_version;
 } lxp_daemon_configuration;
 
 typedef struct lxp_daemon_activity {
@@ -586,8 +587,6 @@ struct lxp_daemon {
     void *apply_context;
     lxp_daemon_protocol_owner *protocol_owner;
     pthread_t executor_thread;
-    pthread_t workers[LXP_DAEMON_MAX_WORKERS * 4U];
-    size_t worker_count;
     pthread_mutex_t mutex;
     pthread_cond_t queue_changed;
     lxp_daemon_activity queue[LXP_DAEMON_QUEUE_CAPACITY];
@@ -599,6 +598,7 @@ struct lxp_daemon {
     lxp_result (*persist_maintenance_reservation)(void *context);
     size_t reserved_batch_count;
     uint64_t next_sequence;
+    uint64_t executed_count;
     lxp_result failure;
     bool accepting;
     bool stop_requested;
@@ -613,6 +613,10 @@ lxp_result lxp_daemon_config(
 lxp_result lxp_daemon_role(
     const lxp_daemon_configuration *config,
     lxp_daemon_role_kind *role);
+lxp_result lxp_daemon_effective_verify_workers(
+    const lxp_daemon_configuration *config, uint32_t *workers);
+lxp_result lxp_daemon_concurrency_report(
+    const lxp_daemon_configuration *config, char *line, size_t capacity);
 lxp_result lxp_daemon_start(
     lxp_daemon *daemon, const lxp_daemon_configuration *config,
     lxp_daemon_apply_fn apply, void *apply_context);

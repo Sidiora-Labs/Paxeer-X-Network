@@ -7,11 +7,15 @@
 
 #include <arpa/inet.h>
 #include <netinet/in.h>
+#include <errno.h>
+#include <fcntl.h>
 #include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/resource.h>
 #include <sys/socket.h>
+#include <sys/wait.h>
 #include <time.h>
 #include <unistd.h>
 
@@ -49,9 +53,7 @@ static lxp_result apply_activity(
     return LXP_OK;
 }
 
-static int write_config(
-    char path[64], const char *role, uint64_t start_sequence,
-    size_t workers, bool serial_execution)
+static int write_text(char path[64], const char *text)
 {
     int descriptor = mkstemp(path);
     FILE *file;
@@ -62,44 +64,248 @@ static int write_config(
         (void)close(descriptor);
         return 1;
     }
-    result = fprintf(
-        file,
+    result = fputs(text, file);
+    return result < 0 || fclose(file) != 0;
+}
+
+static int write_config(
+    char path[64], const char *role, uint64_t start_sequence,
+    size_t workers, bool serial_execution)
+{
+    char text[512];
+    int written = snprintf(
+        text, sizeof(text),
+        "config_version=2\n"
         "role=%s\n"
         "network_id=42\n"
         "start_sequence=%llu\n"
+        "verify_workers=%zu\n"
+        "serial_execution=%s\n",
+        role, (unsigned long long)start_sequence, workers,
+        serial_execution ? "true" : "false");
+    if (written < 0 || (size_t)written >= sizeof(text)) return 1;
+    return write_text(path, text);
+}
+
+static int write_negative_sequence_config(char path[64])
+{
+    return write_text(
+        path,
+        "config_version=2\n"
+        "role=sequencer\n"
+        "network_id=42\n"
+        "start_sequence=-1\n"
+        "verify_workers=0\n"
+        "serial_execution=true\n");
+}
+
+static int write_legacy_config(
+    char path[64], size_t verify, size_t network, size_t projection,
+    size_t checkpoint, bool serial_execution)
+{
+    char text[512];
+    int written = snprintf(
+        text, sizeof(text),
+        "role=sequencer\n"
+        "network_id=42\n"
+        "start_sequence=0\n"
         "verify_workers=%zu\n"
         "network_workers=%zu\n"
         "projection_workers=%zu\n"
         "checkpoint_workers=%zu\n"
         "serial_execution=%s\n",
-        role, (unsigned long long)start_sequence,
-        workers, workers, workers, workers,
+        verify, network, projection, checkpoint,
         serial_execution ? "true" : "false");
-    return result < 0 || fclose(file) != 0;
+    if (written < 0 || (size_t)written >= sizeof(text)) return 1;
+    return write_text(path, text);
 }
 
-static int write_negative_sequence_config(char path[64])
+typedef struct config_case {
+    const char *name;
+    const char *text;
+    lxp_result expected;
+    uint32_t version;
+    size_t verify_workers;
+    bool serial_execution;
+} config_case;
+
+static const config_case CONFIG_CASES[] = {
+    {"v2 parallel",
+     "config_version=2\nrole=sequencer\nnetwork_id=42\nstart_sequence=0\n"
+     "verify_workers=2\nserial_execution=false\n",
+     LXP_OK, LXP_DAEMON_CONFIG_VERSION, 2U, false},
+    {"v2 zero workers",
+     "config_version=2\nrole=replica\nnetwork_id=42\nstart_sequence=7\n"
+     "verify_workers=0\nserial_execution=false\n",
+     LXP_OK, LXP_DAEMON_CONFIG_VERSION, 0U, false},
+    {"v2 maximum workers",
+     "config_version=2\nrole=guarantor\nnetwork_id=42\nstart_sequence=0\n"
+     "verify_workers=16\nserial_execution=false\n",
+     LXP_OK, LXP_DAEMON_CONFIG_VERSION, 16U, false},
+    {"v2 serial",
+     "config_version=2\nrole=sequencer\nnetwork_id=42\nstart_sequence=0\n"
+     "verify_workers=0\nserial_execution=true\n",
+     LXP_OK, LXP_DAEMON_CONFIG_VERSION, 0U, true},
+    {"v2 over limit",
+     "config_version=2\nrole=sequencer\nnetwork_id=42\nstart_sequence=0\n"
+     "verify_workers=17\nserial_execution=false\n",
+     LXP_ERR_LENGTH_LIMIT, 0U, 0U, false},
+    {"v2 serial with workers",
+     "config_version=2\nrole=sequencer\nnetwork_id=42\nstart_sequence=0\n"
+     "verify_workers=1\nserial_execution=true\n",
+     LXP_ERR_NON_CANONICAL, 0U, 0U, false},
+    {"v2 network pool key",
+     "config_version=2\nrole=sequencer\nnetwork_id=42\nstart_sequence=0\n"
+     "verify_workers=2\nnetwork_workers=0\nserial_execution=false\n",
+     LXP_ERR_UNKNOWN_FIELD, 0U, 0U, false},
+    {"v2 projection pool key",
+     "config_version=2\nrole=sequencer\nnetwork_id=42\nstart_sequence=0\n"
+     "verify_workers=2\nprojection_workers=2\nserial_execution=false\n",
+     LXP_ERR_UNKNOWN_FIELD, 0U, 0U, false},
+    {"v2 checkpoint pool key",
+     "config_version=2\nrole=sequencer\nnetwork_id=42\nstart_sequence=0\n"
+     "verify_workers=2\nserial_execution=false\ncheckpoint_workers=1\n",
+     LXP_ERR_UNKNOWN_FIELD, 0U, 0U, false},
+    {"v2 unknown key",
+     "config_version=2\nrole=sequencer\nnetwork_id=42\nstart_sequence=0\n"
+     "verify_workers=2\nserial_execution=false\nexecutor_threads=4\n",
+     LXP_ERR_UNKNOWN_FIELD, 0U, 0U, false},
+    {"unsupported version",
+     "config_version=3\nrole=sequencer\nnetwork_id=42\nstart_sequence=0\n"
+     "verify_workers=2\nserial_execution=false\n",
+     LXP_ERR_VERSION_UNSUPPORTED, 0U, 0U, false},
+    {"legacy zero pools deprecated",
+     "role=sequencer\nnetwork_id=42\nstart_sequence=0\nverify_workers=4\n"
+     "network_workers=0\nprojection_workers=0\ncheckpoint_workers=0\n"
+     "serial_execution=false\n",
+     LXP_OK, LXP_DAEMON_CONFIG_VERSION_LEGACY, 4U, false},
+    {"legacy serial deprecated",
+     "role=sequencer\nnetwork_id=42\nstart_sequence=0\nverify_workers=0\n"
+     "network_workers=0\nprojection_workers=0\ncheckpoint_workers=0\n"
+     "serial_execution=true\n",
+     LXP_OK, LXP_DAEMON_CONFIG_VERSION_LEGACY, 0U, true},
+    {"legacy network pool",
+     "role=sequencer\nnetwork_id=42\nstart_sequence=0\nverify_workers=2\n"
+     "network_workers=2\nprojection_workers=0\ncheckpoint_workers=0\n"
+     "serial_execution=false\n",
+     LXP_ERR_VERSION_UNSUPPORTED, 0U, 0U, false},
+    {"legacy projection pool",
+     "role=sequencer\nnetwork_id=42\nstart_sequence=0\nverify_workers=2\n"
+     "network_workers=0\nprojection_workers=2\ncheckpoint_workers=0\n"
+     "serial_execution=false\n",
+     LXP_ERR_VERSION_UNSUPPORTED, 0U, 0U, false},
+    {"legacy checkpoint pool",
+     "role=sequencer\nnetwork_id=42\nstart_sequence=0\nverify_workers=2\n"
+     "network_workers=0\nprojection_workers=0\ncheckpoint_workers=1\n"
+     "serial_execution=false\n",
+     LXP_ERR_VERSION_UNSUPPORTED, 0U, 0U, false},
+    {"legacy pool over old bound",
+     "role=sequencer\nnetwork_id=42\nstart_sequence=0\nverify_workers=2\n"
+     "network_workers=17\nprojection_workers=0\ncheckpoint_workers=0\n"
+     "serial_execution=false\n",
+     LXP_ERR_LENGTH_LIMIT, 0U, 0U, false},
+    {"legacy verify over limit",
+     "role=sequencer\nnetwork_id=42\nstart_sequence=0\nverify_workers=17\n"
+     "network_workers=0\nprojection_workers=0\ncheckpoint_workers=0\n"
+     "serial_execution=false\n",
+     LXP_ERR_LENGTH_LIMIT, 0U, 0U, false},
+    {"legacy serial with workers",
+     "role=sequencer\nnetwork_id=42\nstart_sequence=0\nverify_workers=3\n"
+     "network_workers=0\nprojection_workers=0\ncheckpoint_workers=0\n"
+     "serial_execution=true\n",
+     LXP_ERR_NON_CANONICAL, 0U, 0U, false}};
+
+static int config_cases(void)
 {
-    int descriptor = mkstemp(path);
-    FILE *file;
-    int result;
-    if (descriptor < 0) return 1;
-    file = fdopen(descriptor, "wb");
-    if (file == NULL) {
-        (void)close(descriptor);
+    size_t i;
+    for (i = 0U; i < sizeof(CONFIG_CASES) / sizeof(CONFIG_CASES[0]); ++i) {
+        const config_case *item = &CONFIG_CASES[i];
+        char path[64] = "/tmp/layerxd-case-XXXXXX";
+        lxp_daemon_configuration config;
+        lxp_result status;
+        if (write_text(path, item->text) != 0) return 1;
+        (void)memset(&config, 0, sizeof(config));
+        status = lxp_daemon_config_load(path, &config);
+        if (unlink(path) != 0) return 1;
+        if (status != item->expected) {
+            (void)fprintf(
+                stderr, "test_layerxd: config case %s: %d expected %d\n",
+                item->name, status, item->expected);
+            return 1;
+        }
+        if (status == LXP_OK &&
+            (config.config_version != item->version ||
+             config.verify_workers != item->verify_workers ||
+             config.serial_execution != item->serial_execution ||
+             config.network_id != 42U)) {
+            (void)fprintf(
+                stderr, "test_layerxd: config case %s: fields\n", item->name);
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static int effective_worker_cases(void)
+{
+    lxp_daemon_configuration config;
+    uint32_t workers = 0U;
+    char line[256];
+    char small[16];
+    static const char expected_parallel[] =
+        "concurrency config_version=2 verify_workers=4 "
+        "effective_program_workers=4 serial_execution=false "
+        "owner=programs-kernel-prepare daemon_threads=executor";
+    static const char expected_serial[] =
+        "concurrency config_version=2 verify_workers=0 "
+        "effective_program_workers=1 serial_execution=true "
+        "owner=programs-kernel-prepare daemon_threads=executor";
+    (void)memset(&config, 0, sizeof(config));
+    config.role = LXP_DAEMON_SEQUENCER;
+    config.network_id = 42U;
+    config.config_version = LXP_DAEMON_CONFIG_VERSION;
+    if (lxp_daemon_effective_verify_workers(NULL, &workers) !=
+        LXP_ERR_NON_CANONICAL)
+        return 1;
+    config.verify_workers = 0U;
+    if (lxp_daemon_effective_verify_workers(&config, &workers) != LXP_OK ||
+        workers != 1U)
+        return 1;
+    config.verify_workers = LXP_DAEMON_MAX_VERIFY_WORKERS;
+    if (lxp_daemon_effective_verify_workers(&config, &workers) != LXP_OK ||
+        workers != LXP_DAEMON_MAX_VERIFY_WORKERS)
+        return 1;
+    config.verify_workers = LXP_DAEMON_MAX_VERIFY_WORKERS + 1U;
+    if (lxp_daemon_effective_verify_workers(&config, &workers) !=
+        LXP_ERR_LENGTH_LIMIT)
+        return 1;
+    config.verify_workers = 2U;
+    config.serial_execution = true;
+    if (lxp_daemon_effective_verify_workers(&config, &workers) !=
+        LXP_ERR_NON_CANONICAL)
+        return 1;
+    config.verify_workers = 0U;
+    if (lxp_daemon_effective_verify_workers(&config, &workers) != LXP_OK ||
+        workers != 1U)
+        return 1;
+    if (lxp_daemon_concurrency_report(&config, line, sizeof(line)) !=
+            LXP_OK ||
+        strcmp(line, expected_serial) != 0) {
+        (void)fprintf(stderr, "test_layerxd: report serial: %s\n", line);
         return 1;
     }
-    result = fprintf(
-        file,
-        "role=sequencer\n"
-        "network_id=42\n"
-        "start_sequence=-1\n"
-        "verify_workers=0\n"
-        "network_workers=0\n"
-        "projection_workers=0\n"
-        "checkpoint_workers=0\n"
-        "serial_execution=true\n");
-    return result < 0 || fclose(file) != 0;
+    config.serial_execution = false;
+    config.verify_workers = 4U;
+    if (lxp_daemon_concurrency_report(&config, line, sizeof(line)) !=
+            LXP_OK ||
+        strcmp(line, expected_parallel) != 0) {
+        (void)fprintf(stderr, "test_layerxd: report parallel: %s\n", line);
+        return 1;
+    }
+    if (lxp_daemon_concurrency_report(&config, small, sizeof(small)) !=
+        LXP_ERR_LENGTH_LIMIT)
+        return 1;
+    return 0;
 }
 
 static int submit_range(
@@ -158,7 +364,7 @@ static int await_sequence(lxp_daemon *daemon, uint64_t expected)
 
 static int run_window(
     const lxp_daemon_configuration *config,
-    uint64_t count, uint8_t root[32])
+    uint64_t count, uint8_t root[32], bool await_all)
 {
     static lxp_daemon daemon;
     apply_state state;
@@ -174,7 +380,7 @@ static int run_window(
         (void)fprintf(stderr, "test_layerxd: window submit\n");
         return 1;
     }
-    if (await_sequence(&daemon, config->start_sequence + count) != 0)
+    if (await_all && await_sequence(&daemon, config->start_sequence + count) != 0)
         return 1;
     status = lxp_daemon_shutdown(&daemon);
     if (status != LXP_OK) {
@@ -182,11 +388,105 @@ static int run_window(
         return 1;
     }
     if (state.expected_sequence != config->start_sequence + count ||
-        daemon.next_sequence != state.expected_sequence) {
+        daemon.next_sequence != state.expected_sequence ||
+        daemon.executed_count != count) {
         (void)fprintf(stderr, "test_layerxd: window sequence\n");
         return 1;
     }
     (void)memcpy(root, state.root, 32U);
+    return 0;
+}
+
+static int start_refusals(void)
+{
+    static lxp_daemon daemon;
+    lxp_daemon_configuration config;
+    apply_state state;
+    (void)memset(&config, 0, sizeof(config));
+    (void)memset(&state, 0, sizeof(state));
+    config.role = LXP_DAEMON_SEQUENCER;
+    config.network_id = 42U;
+    config.config_version = LXP_DAEMON_CONFIG_VERSION;
+    config.verify_workers = LXP_DAEMON_MAX_VERIFY_WORKERS + 1U;
+    if (lxp_daemon_start(&daemon, &config, apply_activity, &state) !=
+            LXP_ERR_LENGTH_LIMIT ||
+        daemon.primitives_initialized)
+        return 1;
+    config.verify_workers = 1U;
+    config.serial_execution = true;
+    if (lxp_daemon_start(&daemon, &config, apply_activity, &state) !=
+            LXP_ERR_NON_CANONICAL ||
+        daemon.primitives_initialized)
+        return 1;
+    config.verify_workers = 0U;
+    config.network_id = 0U;
+    if (lxp_daemon_start(&daemon, &config, apply_activity, &state) !=
+            LXP_ERR_NON_CANONICAL ||
+        daemon.primitives_initialized)
+        return 1;
+    config.network_id = 42U;
+    if (lxp_daemon_start(&daemon, &config, apply_activity, &state) !=
+            LXP_OK ||
+        submit_range(&daemon, 0U, 64U) != 0 ||
+        await_sequence(&daemon, 64U) != 0 ||
+        lxp_daemon_shutdown(&daemon) != LXP_OK ||
+        daemon.executed_count != 64U || state.expected_sequence != 64U)
+        return 1;
+    return lxp_daemon_shutdown(&daemon) != LXP_ERR_NON_CANONICAL;
+}
+
+static int startup_thread_failure_child(int resource)
+{
+    static lxp_daemon daemon;
+    lxp_daemon_configuration config;
+    apply_state state;
+    struct rlimit original, limit;
+    lxp_result status;
+    if (geteuid() == 0 && (setgid(65534) != 0 || setuid(65534) != 0))
+        return 3;
+    if (getrlimit(resource, &original) != 0) return 4;
+    limit = original;
+    limit.rlim_cur = 0;
+    if (setrlimit(resource, &limit) != 0) return 4;
+    (void)memset(&config, 0, sizeof(config));
+    (void)memset(&state, 0, sizeof(state));
+    config.role = LXP_DAEMON_SEQUENCER;
+    config.network_id = 42U;
+    config.config_version = LXP_DAEMON_CONFIG_VERSION;
+    config.verify_workers = 4U;
+    status = lxp_daemon_start(&daemon, &config, apply_activity, &state);
+    if (status != LXP_ERR_IO) return 5;
+    if (daemon.primitives_initialized || daemon.executor_started ||
+        daemon.executed_count != 0U)
+        return 6;
+    if (lxp_daemon_shutdown(&daemon) != LXP_ERR_NON_CANONICAL) return 7;
+    if (setrlimit(resource, &original) != 0) return 8;
+    if (lxp_daemon_start(&daemon, &config, apply_activity, &state) != LXP_OK)
+        return 9;
+    if (lxp_daemon_shutdown(&daemon) != LXP_OK ||
+        daemon.executor_started || daemon.primitives_initialized)
+        return 10;
+    return 0;
+}
+
+static int startup_thread_failure(int resource)
+{
+    pid_t child = fork();
+    int wait_status = 0;
+    if (child < 0) return 1;
+    if (child == 0) {
+        (void)execl("/proc/self/exe", "test_layerxd", "--startup-failure",
+                    resource == RLIMIT_AS ? "allocation" : "thread", (char *)NULL);
+        _exit(11);
+    }
+    while (waitpid(child, &wait_status, 0) < 0)
+        if (errno != EINTR) return 1;
+    if (!WIFEXITED(wait_status) || WEXITSTATUS(wait_status) != 0) {
+        (void)fprintf(stderr,
+                      "test_layerxd: startup resource %d child status %d\n",
+                      resource, wait_status);
+        return 1;
+    }
     return 0;
 }
 
@@ -487,12 +787,15 @@ static int finality_rpc_malformed_chunked(void)
         LXP_DAEMON_ANCHOR_INSTANT);
 }
 
-int main(void)
+int main(int argc, char **argv)
 {
     char parallel_path[64] = "/tmp/layerxd-parallel-XXXXXX";
     char serial_path[64] = "/tmp/layerxd-serial-XXXXXX";
     char invalid_path[64] = "/tmp/layerxd-invalid-XXXXXX";
     char negative_path[64] = "/tmp/layerxd-negative-XXXXXX";
+    char legacy_path[64] = "/tmp/layerxd-legacy-XXXXXX";
+    char obsolete_path[64] = "/tmp/layerxd-obsolete-XXXXXX";
+    lxp_daemon_configuration legacy;
     lxp_daemon_configuration parallel;
     lxp_daemon_configuration serial;
     lxp_daemon_configuration invalid;
@@ -501,7 +804,17 @@ int main(void)
     apply_state durable;
     uint8_t parallel_root[32];
     uint8_t serial_root[32];
+    uint8_t drained_root[32];
     uint64_t restart_sequence;
+
+    if (argc == 3 && strcmp(argv[1], "--startup-failure") == 0) {
+        if (strcmp(argv[2], "allocation") == 0)
+            return startup_thread_failure_child(RLIMIT_AS);
+        if (strcmp(argv[2], "thread") == 0)
+            return startup_thread_failure_child(RLIMIT_NPROC);
+        return 2;
+    }
+    REQUIRE(argc == 1, "arguments");
 
     REQUIRE(http_parse_cases() == 0, "http response cases");
     REQUIRE(http_oversize_header() == 0, "http header bound");
@@ -509,6 +822,11 @@ int main(void)
     REQUIRE(finality_rpc_chunked() == 0, "chunked finality rpc");
     REQUIRE(finality_rpc_malformed_chunked() == 0,
             "malformed chunked finality rpc");
+    REQUIRE(config_cases() == 0, "configuration cases");
+    REQUIRE(effective_worker_cases() == 0, "effective program workers");
+    REQUIRE(start_refusals() == 0, "start refusals");
+    REQUIRE(startup_thread_failure(RLIMIT_NPROC) == 0, "startup thread failure");
+    REQUIRE(startup_thread_failure(RLIMIT_AS) == 0, "startup allocation failure");
 
     REQUIRE(write_config(
         parallel_path, "sequencer", 0U, 2U, false) == 0,
@@ -525,6 +843,23 @@ int main(void)
             "load parallel config");
     REQUIRE(lxp_daemon_config_load(serial_path, &serial) == LXP_OK,
             "load serial config");
+    REQUIRE(parallel.config_version == LXP_DAEMON_CONFIG_VERSION &&
+            serial.config_version == LXP_DAEMON_CONFIG_VERSION &&
+            parallel.verify_workers == 2U && serial.verify_workers == 0U,
+            "supported configuration fields");
+    REQUIRE(write_legacy_config(
+        legacy_path, 2U, 0U, 0U, 0U, false) == 0,
+        "write legacy config");
+    REQUIRE(lxp_daemon_config_load(legacy_path, &legacy) == LXP_OK &&
+            legacy.config_version == LXP_DAEMON_CONFIG_VERSION_LEGACY &&
+            legacy.verify_workers == 2U,
+            "deprecated legacy config");
+    REQUIRE(write_legacy_config(
+        obsolete_path, 2U, 2U, 2U, 1U, false) == 0,
+        "write obsolete config");
+    REQUIRE(lxp_daemon_config_load(obsolete_path, &invalid) ==
+                LXP_ERR_VERSION_UNSUPPORTED,
+            "reject obsolete pools");
     REQUIRE(lxp_daemon_role(&parallel, &role) == LXP_OK,
             "resolve role");
     REQUIRE(role == LXP_DAEMON_SEQUENCER &&
@@ -538,12 +873,21 @@ int main(void)
     REQUIRE(lxp_daemon_config_load(negative_path, &invalid) ==
                 LXP_ERR_NON_CANONICAL,
             "reject negative sequence");
-    REQUIRE(run_window(&parallel, 5000U, parallel_root) == 0,
+    REQUIRE(run_window(&parallel, 5000U, parallel_root, true) == 0,
             "parallel window");
-    REQUIRE(run_window(&serial, 5000U, serial_root) == 0,
+    REQUIRE(run_window(&serial, 5000U, serial_root, true) == 0,
             "serial window");
     REQUIRE(memcmp(parallel_root, serial_root, 32U) == 0,
             "deterministic root");
+    invalid = parallel;
+    invalid.verify_workers = LXP_DAEMON_MAX_VERIFY_WORKERS;
+    REQUIRE(run_window(&invalid, 5000U, drained_root, false) == 0 &&
+            memcmp(drained_root, parallel_root, 32U) == 0,
+            "maximum setting orderly stop drains admitted work");
+    invalid.verify_workers = 0U;
+    REQUIRE(run_window(&invalid, 5000U, drained_root, false) == 0 &&
+            memcmp(drained_root, parallel_root, 32U) == 0,
+            "zero setting orderly stop drains admitted work");
 
     (void)memset(&durable, 0, sizeof(durable));
     REQUIRE(lxp_daemon_start(
@@ -555,7 +899,8 @@ int main(void)
             "durable await");
     REQUIRE(lxp_daemon_shutdown(&daemon) == LXP_OK,
             "durable shutdown");
-    REQUIRE(durable.expected_sequence == 6000U,
+    REQUIRE(durable.expected_sequence == 6000U &&
+            daemon.executed_count == 6000U,
             "durable sequence");
     restart_sequence = daemon.next_sequence;
     parallel.start_sequence = restart_sequence;
@@ -570,10 +915,12 @@ int main(void)
     REQUIRE(lxp_daemon_shutdown(&daemon) == LXP_OK,
             "restart shutdown");
     REQUIRE(durable.expected_sequence == 10000U &&
-            daemon.next_sequence == 10000U,
+            daemon.next_sequence == 10000U &&
+            daemon.executed_count == 4000U,
             "restart completion");
     REQUIRE(unlink(parallel_path) == 0 && unlink(serial_path) == 0 &&
-            unlink(invalid_path) == 0 && unlink(negative_path) == 0,
+            unlink(invalid_path) == 0 && unlink(negative_path) == 0 &&
+            unlink(legacy_path) == 0 && unlink(obsolete_path) == 0,
             "cleanup");
     return 0;
 }

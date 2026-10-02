@@ -21481,7 +21481,9 @@ fixture_policy = "Implement owned disposable fixtures using actual compiled serv
 
 [task.2.3]
 title = "Expose only effective bounded daemon concurrency settings"
-status = "in_progress"
+status = "done"
+completion_basis = "implementation"
+qualification_status = "unverified"
 mode = "BUILD"
 wave = 2
 requires = ["0.2"]

@@ -58,6 +58,18 @@ done:
 static void release_queue_locked(lxp_daemon *daemon)
 {
     size_t index;
+    size_t durable = 0U;
+    for (index = 0U; index < daemon->queue_count; ++index)
+        if (daemon->queue[(daemon->queue_head + index) %
+                          LXP_DAEMON_QUEUE_CAPACITY].durable_admission)
+            ++durable;
+    if (daemon->queue_count != 0U)
+        (void)fprintf(stderr,
+                      "layerxd: execution stopped outstanding=%zu durable=%zu "
+                      "first_sequence=%llu result=%d\n",
+                      daemon->queue_count, durable,
+                      (unsigned long long)daemon->next_sequence,
+                      (int)daemon->failure);
     for (index = 0U; index < daemon->queue_count; ++index) {
         size_t at = (daemon->queue_head + index) % LXP_DAEMON_QUEUE_CAPACITY;
         if (daemon->queue[at].bytes != NULL) {
@@ -164,11 +176,12 @@ static void *executor_run(void *argument)
                 LXP_DAEMON_QUEUE_CAPACITY;
             daemon->queue_count -= consumed_count;
             daemon->next_sequence += consumed_count;
+            daemon->executed_count += consumed_count;
             if (daemon->reserved_batch_count != 0U) {
                 ++daemon->next_sequence;
                 daemon->reserved_batch_count = 0U;
             }
-            if (!daemon->accepting) {
+            if (!daemon->accepting && daemon->failure != LXP_OK) {
                 daemon->stop_requested = true;
                 release_queue_locked(daemon);
             }
@@ -179,14 +192,41 @@ static void *executor_run(void *argument)
     return NULL;
 }
 
-static void *worker_run(void *argument)
+lxp_result lxp_daemon_effective_verify_workers(
+    const lxp_daemon_configuration *config, uint32_t *workers)
 {
-    lxp_daemon *daemon = (lxp_daemon *)argument;
-    (void)pthread_mutex_lock(&daemon->mutex);
-    while (!daemon->stop_requested)
-        (void)pthread_cond_wait(&daemon->queue_changed, &daemon->mutex);
-    (void)pthread_mutex_unlock(&daemon->mutex);
-    return NULL;
+    if (config == NULL || workers == NULL) return LXP_ERR_NON_CANONICAL;
+    if (config->verify_workers > LXP_DAEMON_MAX_VERIFY_WORKERS)
+        return LXP_ERR_LENGTH_LIMIT;
+    if (config->serial_execution && config->verify_workers != 0U)
+        return LXP_ERR_NON_CANONICAL;
+    *workers = config->serial_execution || config->verify_workers == 0U ?
+        1U : (uint32_t)config->verify_workers;
+    return LXP_OK;
+}
+
+lxp_result lxp_daemon_concurrency_report(
+    const lxp_daemon_configuration *config, char *line, size_t capacity)
+{
+    uint32_t effective;
+    int written;
+    lxp_result status;
+    if (line == NULL || capacity == 0U) return LXP_ERR_NON_CANONICAL;
+    status = lxp_daemon_effective_verify_workers(config, &effective);
+    if (status != LXP_OK) return status;
+    written = snprintf(
+        line, capacity,
+        "concurrency config_version=%u verify_workers=%zu "
+        "effective_program_workers=%u serial_execution=%s "
+        "owner=programs-kernel-prepare daemon_threads=executor",
+        (unsigned)config->config_version, config->verify_workers,
+        (unsigned)effective, config->serial_execution ? "true" : "false");
+    if (written < 0) return LXP_ERR_IO;
+    if ((size_t)written >= capacity) {
+        line[0] = '\0';
+        return LXP_ERR_LENGTH_LIMIT;
+    }
+    return LXP_OK;
 }
 
 static lxp_result daemon_start(
@@ -194,18 +234,15 @@ static lxp_result daemon_start(
     lxp_daemon_apply_fn apply, lxp_daemon_apply_batch_fn apply_batch,
     void *apply_context)
 {
-    size_t requested_workers;
-    size_t i;
+    uint32_t effective_workers;
+    lxp_result status;
     if (daemon == NULL || config == NULL ||
         (apply == NULL) == (apply_batch == NULL) ||
         config->role < LXP_DAEMON_SEQUENCER ||
         config->role > LXP_DAEMON_GUARANTOR || config->network_id == 0U)
         return LXP_ERR_NON_CANONICAL;
-    requested_workers = config->verify_workers + config->network_workers +
-        config->projection_workers + config->checkpoint_workers;
-    if (requested_workers > LXP_DAEMON_MAX_WORKERS * 4U ||
-        (config->serial_execution && requested_workers != 0U))
-        return LXP_ERR_LENGTH_LIMIT;
+    status = lxp_daemon_effective_verify_workers(config, &effective_workers);
+    if (status != LXP_OK) return status;
     (void)memset(daemon, 0, sizeof(*daemon));
     daemon->config = *config;
     daemon->apply = apply;
@@ -213,9 +250,12 @@ static lxp_result daemon_start(
     daemon->apply_context = apply_context;
     daemon->next_sequence = config->start_sequence;
     daemon->failure = LXP_OK;
-    if (pthread_mutex_init(&daemon->mutex, NULL) != 0 ||
-        pthread_cond_init(&daemon->queue_changed, NULL) != 0)
+    if (pthread_mutex_init(&daemon->mutex, NULL) != 0)
         return LXP_ERR_IO;
+    if (pthread_cond_init(&daemon->queue_changed, NULL) != 0) {
+        (void)pthread_mutex_destroy(&daemon->mutex);
+        return LXP_ERR_IO;
+    }
     daemon->primitives_initialized = true;
     daemon->accepting = true;
     if (pthread_create(
@@ -224,14 +264,6 @@ static lxp_result daemon_start(
         return LXP_ERR_IO;
     }
     daemon->executor_started = true;
-    for (i = 0U; i < requested_workers; ++i) {
-        if (pthread_create(
-                &daemon->workers[i], NULL, worker_run, daemon) != 0) {
-            (void)lxp_daemon_shutdown(daemon);
-            return LXP_ERR_IO;
-        }
-        ++daemon->worker_count;
-    }
     return LXP_OK;
 }
 
