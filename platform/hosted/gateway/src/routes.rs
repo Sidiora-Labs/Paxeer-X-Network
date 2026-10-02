@@ -21,6 +21,8 @@ struct BindingFile {
     wire_version: String,
     allowed_origins: Vec<String>,
     services: BTreeMap<String, Binding>,
+    #[serde(default)]
+    upstreams: BTreeMap<String, RouteBinding>,
     passthrough: Vec<Passthrough>,
 }
 
@@ -42,6 +44,13 @@ struct Binding {
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
+struct RouteBinding {
+    service: String,
+    binding: Binding,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct Passthrough {
     service: String,
     listen: std::net::SocketAddr,
@@ -50,6 +59,7 @@ struct Passthrough {
 
 pub(super) struct Registry {
     bindings: BTreeMap<String, Binding>,
+    upstreams: BTreeMap<String, RouteBinding>,
     allowed_origins: BTreeSet<String>,
     passthrough: Vec<Passthrough>,
 }
@@ -95,6 +105,7 @@ impl Registry {
         let Some(path) = std::env::var_os("LAYERX_GATEWAY_ROUTE_BINDINGS_FILE") else {
             return Ok(Self {
                 bindings: BTreeMap::new(),
+                upstreams: BTreeMap::new(),
                 allowed_origins: BTreeSet::new(),
                 passthrough: Vec::new(),
             });
@@ -107,6 +118,7 @@ impl Registry {
             || file.network_id != network
             || file.wire_version != wire
             || file.services.len() > 31
+            || file.upstreams.len() > 64
         {
             return Err("route bindings network or version mismatch".into());
         }
@@ -120,7 +132,27 @@ impl Registry {
                 return Err("route CORS origin invalid or duplicate".into());
             }
         }
-        for (id, binding) in &file.services {
+        for (name, upstream) in &file.upstreams {
+            if name.is_empty()
+                || name.len() > 64
+                || !name.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-')
+                || private(&upstream.service)
+                || !catalogue()["routes"].as_array().is_some_and(|routes| {
+                    routes.iter().any(|route| {
+                        route["proxy"] == true
+                            && route["service"] == upstream.service
+                            && route["upstream"] == *name
+                    })
+                })
+            {
+                return Err("unknown route upstream or service binding".into());
+            }
+        }
+        for (id, binding) in file.services.iter().chain(
+            file.upstreams
+                .values()
+                .map(|value| (&value.service, &value.binding)),
+        ) {
             if service(id).is_none() {
                 return Err("unknown route service".into());
             }
@@ -180,6 +212,7 @@ impl Registry {
         }
         Ok(Self {
             bindings: file.services,
+            upstreams: file.upstreams,
             allowed_origins,
             passthrough: file.passthrough,
         })
@@ -253,8 +286,35 @@ impl Registry {
             .map(String::as_str)
     }
 
+    fn binding(&self, service: &str, upstream: &str) -> Option<&Binding> {
+        if upstream == service {
+            self.bindings.get(service)
+        } else {
+            self.upstreams
+                .get(upstream)
+                .filter(|value| value.service == service)
+                .map(|value| &value.binding)
+        }
+    }
+
     fn health(&self, config: &Config, id: &str) -> Result<(), &'static str> {
-        let binding = self.bindings.get(id).ok_or("not_configured")?;
+        let upstreams: BTreeSet<_> = catalogue()["routes"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter(|route| route["service"] == id && route["proxy"] == true)
+            .filter_map(|route| route["upstream"].as_str())
+            .collect();
+        if upstreams.is_empty() {
+            return self.health_binding(config, self.bindings.get(id).ok_or("not_configured")?);
+        }
+        for upstream in upstreams {
+            self.health_binding(config, self.binding(id, upstream).ok_or("not_configured")?)?;
+        }
+        Ok(())
+    }
+
+    fn health_binding(&self, config: &Config, binding: &Binding) -> Result<(), &'static str> {
         let endpoint = http::Endpoint::parse(&binding.url).map_err(|_| "invalid_upstream")?;
         let auth = match &binding.health_authorization_file {
             Some(path) => Zeroizing::new(
@@ -441,13 +501,27 @@ pub(super) fn route(config: &Config, request: &IncomingRequest) -> Option<Outgoi
     {
         return Some(response(401, "authentication_required", None));
     }
-    if let Err(reason) = config.routes.health(config, id) {
+    if id == "agentd" {
+        if request.body.len() > 1024 * 1024 {
+            return Some(response(413, "request_too_large", None));
+        }
+        if let Err(refusal) = authenticate_key(config, request) {
+            return Some(refusal);
+        }
+    }
+    let upstream = entry["upstream"].as_str().unwrap_or(id);
+    let Some(binding) = config.routes.binding(id, upstream) else {
+        return Some(json_response(
+            503,
+            &json!({"error":{"code":"route_unavailable","service":id,"reason":"not_configured"}}),
+        ));
+    };
+    if let Err(reason) = config.routes.health_binding(config, binding) {
         return Some(json_response(
             503,
             &json!({"error":{"code":"route_unavailable","service":id,"reason":reason}}),
         ));
     }
-    let binding = config.routes.bindings.get(id)?;
     let endpoint = match http::Endpoint::parse(&binding.url) {
         Ok(endpoint) => endpoint,
         Err(_) => return Some(response(503, "invalid_upstream", None)),
@@ -651,6 +725,7 @@ fn response_header(service: &str, name: &str) -> bool {
         }
         "last-event-id" => service == "human",
         "content-disposition" => matches!(service, "human" | "search-web"),
+        "etag" | "x-content-sha256" | "x-layerx-batch" => service == "archive",
         "retry-after" | "www-authenticate" => true,
         _ => false,
     }

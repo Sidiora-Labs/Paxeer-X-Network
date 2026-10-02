@@ -29,6 +29,14 @@ FILE_VARIABLES = (
     "LAYERX_GATEWAY_REDIS_PASSWORD_FILE",
     "LAYERX_GATEWAY_IDENTITY_PROVISIONING_TOKEN_FILE",
     "LAYERX_GATEWAY_FAUCET_SERVICE_TOKEN_FILE",
+    "LAYERX_EVENTS_PAYMENT_UPSTREAM_CA_DER",
+    "LAYERX_EVENTS_PAYMENT_UPSTREAM_TOKEN_FILE",
+    "LAYERX_EVENTS_PAYMENT_UPSTREAM_CLIENT_IDENTITY_PKCS12",
+    "LAYERX_EVENTS_PAYMENT_UPSTREAM_CLIENT_IDENTITY_PASSWORD_FILE",
+    "LAYERX_EVENTS_WEBHOOKS_UPSTREAM_CA_DER",
+    "LAYERX_EVENTS_WEBHOOKS_UPSTREAM_TOKEN_FILE",
+    "LAYERX_EVENTS_WEBHOOKS_UPSTREAM_CLIENT_IDENTITY_PKCS12",
+    "LAYERX_EVENTS_WEBHOOKS_UPSTREAM_CLIENT_IDENTITY_PASSWORD_FILE",
 )
 BINDINGS_VARIABLE = "LAYERX_GATEWAY_ROUTE_BINDINGS_FILE"
 created = []
@@ -118,7 +126,13 @@ try:
                               object_pairs_hook=unique_object,
                               parse_constant=invalid_constant)
         require(isinstance(bindings, dict) and isinstance(bindings.get("services"), dict))
-        for binding in bindings["services"].values():
+        upstreams = bindings.get("upstreams", {})
+        require(isinstance(upstreams, dict))
+        binding_records = list(bindings["services"].values())
+        for upstream in upstreams.values():
+            require(isinstance(upstream, dict) and isinstance(upstream.get("binding"), dict))
+            binding_records.append(upstream["binding"])
+        for binding in binding_records:
             require(isinstance(binding, dict))
             authorization = binding.get("health_authorization_file")
             if authorization is not None:
