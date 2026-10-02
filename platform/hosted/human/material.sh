@@ -54,12 +54,21 @@ human_secrets_apply() {
 
 human_policy_publish() {
     local evidence="$WORK_DIR/human-evidence"
-    LAYERX_BETA_HUMAN_POLICY_FILE="$WORK_DIR/human-policy.json"
+    LAYERX_BETA_HUMAN_POLICY_FILE="$WORK_DIR/human-policy/policy.json"
+    install -d -m 0700 "$WORK_DIR/human-policy"
     python3 "$REPO_ROOT/platform/hosted/human/history_material.py" "$WORK_DIR/genesis" \
         "$WORK_DIR/paxeer/deployment.json" "$evidence" "$SECRETS_DIR/human" "$CA_DIR/ca.der" "$NODE_SEQUENCER_PUBLIC_KEY"
     python3 "$REPO_ROOT/platform/hosted/human/material.py" --assemble \
         "$evidence" "$WORK_DIR/paxeer/deployment.json" "$SECRETS_DIR/module-registry.json" \
         "$LAYERX_BETA_HUMAN_POLICY_FILE" "$NODE_NETWORK_ID" "$PAXEER_CHAIN_ID"
+    python3 "$REPO_ROOT/platform/hosted/human/material.py" --verify-bundle \
+        "$WORK_DIR/human-policy" "$NODE_NETWORK_ID" "$PAXEER_CHAIN_ID" > /dev/null
+    local bundle=(--from-file="policy.json=$WORK_DIR/human-policy/policy.json"
+        --from-file="bundle-manifest.json=$WORK_DIR/human-policy/bundle-manifest.json") record
+    for record in "$WORK_DIR"/human-policy/journal/*; do
+        bundle+=(--from-file="journal.${record##*/}=$record")
+    done
+    apply_secret "$TESTNET_NAMESPACE" layerx-human-policy "${bundle[@]}"
     python3 "$REPO_ROOT/platform/hosted/human/material.py" "$SECRETS_DIR/human" \
         "$NODE_NETWORK_ID" "$PAXEER_CHAIN_ID" "$LAYERX_BETA_HUMAN_POLICY_FILE" "${HUMAN_WEB_URL:-}"
     human_secrets_apply

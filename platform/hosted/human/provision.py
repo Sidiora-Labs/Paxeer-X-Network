@@ -11,6 +11,7 @@ from pathlib import Path
 import re
 import stat
 import struct
+import sys
 import unicodedata
 import time
 
@@ -205,12 +206,16 @@ def purpose_catalog(template_path, registry_path, treasury_path, sequencer_path,
     return result
 
 
+def encode_json(value):
+    return (json.dumps(value, separators=(',', ':'), allow_nan=False) + '\n').encode()
+
+
 def write_json(path, value):
     path = Path(path)
     require(path.is_absolute() and path.resolve() == path, path, 'canonical absolute output')
-    encoded = json.dumps(value, separators=(',', ':'), allow_nan=False) + '\n'
+    encoded = encode_json(value)
     fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
-    with os.fdopen(fd, 'w') as output:
+    with os.fdopen(fd, 'wb') as output:
         output.write(encoded)
         output.flush()
         os.fsync(output.fileno())
@@ -475,11 +480,163 @@ def evidence_inputs(work_dir, registry_path, journal_path):
     journal_records(journal_path)
 
 
+def retained_evidence(destination, files, records):
+    info = destination.lstat()
+    require(stat.S_ISDIR(info.st_mode) and info.st_uid == os.geteuid() and stat.S_IMODE(info.st_mode) == 0o700,
+            destination, 'retained evidence directory; reconciliation required')
+    expected = dict(files)
+    expected.update({'journal/' + name: data for name, data in records.items()})
+    retained = {}
+    try:
+        for path in destination.iterdir():
+            if path.name == 'journal' and not path.is_symlink() and path.is_dir():
+                retained.update({'journal/' + record.name: protected_bytes(record, 524288) for record in path.iterdir()})
+            else:
+                retained[path.name] = protected_bytes(path)
+    except (OSError, Refused) as error:
+        raise Refused(f'{destination}: retained evidence unreadable; reconciliation required, '
+                      'protected bindings not overwritten') from error
+    changed = sorted((set(expected) ^ set(retained)) | {n for n in expected.keys() & retained.keys() if expected[n] != retained[n]})
+    require(not changed, destination,
+            f'retained evidence differs in {", ".join(changed)}; reconciliation required, protected bindings not overwritten')
+
+
+PRODUCER_MANIFEST_SCHEMA = 'layerx.human.owner-producers.v1'
+
+
+def producer_manifest(work_dir, registry_path, journal_path, output):
+    work_dir = Path(work_dir)
+    require(work_dir.is_absolute() and work_dir.resolve() == work_dir, work_dir, 'canonical work directory')
+    inputs = work_dir / 'human-evidence-input'
+    binding_path = work_dir / 'identity/source-binding.json'
+    result_path = work_dir / 'human-owner-result.json'
+    registration_path = inputs / 'owner-registration.json'
+    owner = {}
+
+    def file_digest(path):
+        return hashlib.sha256(protected_bytes(path)).hexdigest()
+
+    def owner_identity():
+        peer_binding(protected_json(binding_path), binding_path)
+        return file_digest(binding_path)
+
+    def owner_result_input():
+        owner.update(owner_result(work_dir, result_path))
+        return file_digest(result_path)
+
+    def catalog():
+        template_path = Path(__file__).with_name('beta-purpose-catalog.json')
+        template = json.loads(template_path.read_text(), object_pairs_hook=strict_pairs)
+        fields(template, 'version presets', template_path, 'catalog template')
+        accounts = []
+        for path in (inputs / 'treasury.json', inputs / 'sequencer.json'):
+            account = protected_json(path)
+            require(type(account) is dict, path, 'account output')
+            h32(account.get('account'), path, 'account')
+            require(account['account'] not in accounts, path, 'distinct protocol account')
+            accounts.append(account['account'])
+        return file_digest(inputs / 'treasury.json')
+
+    def authority():
+        binding = protected_json(binding_path)
+        peer_binding(binding, binding_path)
+        owner_policy()
+        return file_digest(binding_path)
+
+    def principal():
+        registration = owner_registration(work_dir)
+        entry = registration['identity']
+        references = [entry['evidence'], entry['rotation']['evidence'], entry['recovery']['evidence']]
+        references.extend(c['evidence'] for c in entry['capabilities'])
+        identity(entry, registration_path, sorted({r['activity_id'] for r in references}))
+        return file_digest(registration_path)
+
+    def recovery():
+        path = inputs / 'recovery-policy.json'
+        recovery_policy(protected_json(path), path)
+        return file_digest(path)
+
+    def movement():
+        path = inputs / 'movement-source.json'
+        value = protected_json(path)
+        fields(value, 'CUSTODY_REFERENCE PAXEER_CHECKPOINT_AUTHORITY', path, 'movement source')
+        for key, item in value.items():
+            require(type(item) is str and re.fullmatch(r'0x[0-9a-fA-F]{64}', item) is not None
+                    and int(item, 16) != 0, path, key)
+        return file_digest(path)
+
+    def registry():
+        require(registry_path is not None, 'LAYERX_MODULE_REGISTRY', 'module registry absent')
+        value = protected_json(registry_path)
+        require(type(value) is dict and value.get('schema_version') == 2, registry_path, 'version 2 module registry')
+        array(value.get('assets'), registry_path, 'assets')
+        array(value.get('modules'), registry_path, 'modules')
+        require(bool(value['assets']) and bool(value['modules']), registry_path, 'deployed assets and modules')
+        return file_digest(registry_path)
+
+    def journal(suffix):
+        records = journal_records(journal_path)
+        digest = hashlib.sha256()
+        for name in sorted(records):
+            if name.endswith(suffix):
+                digest.update(name.encode() + b'\n' + hashlib.sha256(records[name]).digest())
+        return digest.hexdigest()
+
+    def native_registration():
+        require(bool(owner), result_path, 'LXIP owner result required before native owner registration')
+        owner_registration(work_dir, owner_did=owner['did'])
+        return file_digest(registration_path)
+
+    def naming():
+        path = work_dir / 'naming-deployment-result.json'
+        value = protected_json(path)
+        require(type(value) is dict and value.get('state') == 'deployed', path, 'deployed naming program')
+        h32(value.get('receipt_digest'), path, 'naming receipt_digest')
+        return file_digest(path)
+
+    def relative(path):
+        if path is None:
+            return None
+        path = Path(path)
+        try:
+            return str(path.relative_to(work_dir))
+        except ValueError:
+            return None
+
+    checks = [
+        ('owner-identity', 'human_owner_provision', relative(binding_path), owner_identity),
+        ('owner-result', 'human_owner_provision', relative(result_path), owner_result_input),
+        ('purpose-catalog', 'human_owner_provision', relative(inputs / 'treasury.json'), catalog),
+        ('authority', 'human_owner_provision', relative(binding_path), authority),
+        ('principal-policy', 'human_native_provision', relative(registration_path), principal),
+        ('recovery-policy', 'human_owner_provision', relative(inputs / 'recovery-policy.json'), recovery),
+        ('movement-policy', 'human_native_owner_prepare', relative(inputs / 'movement-source.json'), movement),
+        ('module-registry', 'registry_deployment_produce', 'secrets:module-registry.json', registry),
+        ('admission-journal', 'human_journal_deploy', relative(journal_path), lambda: journal('.admission')),
+        ('deployment-journal', 'human_journal_deploy', relative(journal_path), lambda: journal('.deployment')),
+        ('native-owner-registration', 'human_native_provision', relative(registration_path), native_registration),
+        ('naming-evidence', 'naming_program_deploy', relative(work_dir / 'naming-deployment-result.json'), naming),
+    ]
+    entries = []
+    for name, producer, path, check in checks:
+        entry = {'input': name, 'producer': producer, 'path': path, 'status': 'blocked', 'sha256': None, 'reason': None}
+        try:
+            require(path is not None, work_dir, 'producer output absent or outside the work directory')
+            entry.update(status='present', sha256=check())
+        except (Refused, OSError, ValueError, KeyError, TypeError) as error:
+            entry['reason'] = str(error) or type(error).__name__
+        entries.append(entry)
+    write_json(output, {'schema': PRODUCER_MANIFEST_SCHEMA, 'inputs': entries})
+    blocked = [entry for entry in entries if entry['status'] == 'blocked']
+    for entry in blocked:
+        print(f"blocked: {entry['input']}: {entry['reason']}", file=sys.stderr)
+    return not blocked
+
+
 def assemble(work_dir, registry_path, asset, journal_path):
     work_dir = Path(work_dir)
     require(work_dir.is_absolute() and work_dir.resolve() == work_dir, work_dir, 'canonical work directory')
     destination = work_dir / 'human-evidence'
-    require(not destination.exists() and not destination.is_symlink(), destination, 'existing evidence requires reconciliation')
     inputs = work_dir / 'human-evidence-input'
     owner = owner_result(work_dir, work_dir / 'human-owner-result.json')
     registration = owner_registration(work_dir, owner_did=owner['did'])
@@ -538,7 +695,9 @@ def assemble(work_dir, registry_path, asset, journal_path):
         raise Refused(f'{lock}: publication already active or interrupted') from error
     pending = None
     try:
-        require(not destination.exists() and not destination.is_symlink(), destination, 'existing evidence')
+        if destination.exists() or destination.is_symlink():
+            retained_evidence(destination, {name: encode_json(value) for name, value in files.items()}, records)
+            return
         pending = Path(tempfile.mkdtemp(prefix='.human-evidence-', dir=work_dir))
         for name, value in files.items():
             write_json(pending / name, value)
@@ -753,6 +912,7 @@ def main():
     mode.add_argument('--prepare-owner-admission', action='store_true')
     mode.add_argument('--catalog', action='store_true')
     mode.add_argument('--assemble', action='store_true')
+    mode.add_argument('--producer-manifest', action='store_true')
     mode.add_argument('--movement-source', action='store_true')
     mode.add_argument('--qualify-generated-set', action='store_true')
     mode.add_argument('--account-requests', action='store_true')
@@ -799,6 +959,10 @@ def main():
     elif args.assemble:
         require(all((args.registry, args.asset)), args.work_dir, 'registry and asset arguments')
         assemble(args.work_dir, args.registry, args.asset, args.journal)
+    elif args.producer_manifest:
+        require(args.output is not None, args.work_dir, 'producer manifest output')
+        if not producer_manifest(args.work_dir, args.registry, args.journal, args.output):
+            raise SystemExit(3)
     elif args.account_requests:
         account_requests(args.work_dir)
     elif args.validate_job_input:

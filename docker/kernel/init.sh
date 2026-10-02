@@ -632,24 +632,51 @@ service agent-boundary 4021 \
 # the network and chain ids above and https://paxportwallet.com as the web
 # origin, so the passkey relying party id is paxportwallet.com. Its policy is
 # the one material.py --assemble writes from the deploy's evidence, placed at
-# $keys/human-policy/policy.json; the receipt authority replica id is the
-# genesis replica id. The output is kept under $human_state/material and never
-# regenerated.
+# $keys/human-policy/policy.json beside its bundle-manifest.json and journal/;
+# material.py --verify-bundle validates every declared producer output before
+# use; the receipt authority replica id is the genesis replica id. The output
+# is kept under $human_state/material and never regenerated: a restart whose
+# bundle binding or genesis differs from the retained one is refused as a
+# reconciliation requirement.
 human_policy=$keys/human-policy/policy.json
 human_out=$human_state/material/human
 
+human_policy_bundle_install() {
+	local bundle=$1 f
+	install -d -o 0 -g 0 -m 0700 "$bundle" "$bundle/journal"
+	install -o 0 -g 0 -m 0600 "$human_policy" "$bundle/policy.json"
+	install -o 0 -g 0 -m 0600 "${human_policy%/*}/bundle-manifest.json" "$bundle/bundle-manifest.json"
+	for f in "${human_policy%/*}"/journal/*; do
+		[ -f "$f" ] && [ ! -L "$f" ] || return 1
+		install -o 0 -g 0 -m 0600 "$f" "$bundle/journal/"
+	done
+	python3 /usr/local/lib/layerx-human/material.py --verify-bundle "$bundle" \
+		"$LAYERX_NODE_NETWORK_ID" "$LAYERX_NODE_PAXEER_CHAIN_ID"
+}
+
 human_material_generate() {
-	local work=$human_state/material.new d
-	[ -d "$human_state/material" ] && return 0
+	local work=$human_state/material.new check=$human_state/material.check d
+	if [ -d "$human_state/material" ]; then
+		rm -rf "$check"
+		install -d -o 0 -g 0 -m 0700 "$check"
+		human_policy_bundle_install "$check/policy-bundle" >"$check/bundle-binding" || return 1
+		if ! cmp -s "$check/bundle-binding" "$human_state/material/bundle-binding" ||
+			! cmp -s "$genesis/replica-id" "$human_state/material/receipt-authority-replica-id"; then
+			echo 'human owner bundle: reconciliation required' >&2
+			return 1
+		fi
+		rm -rf "$check"
+		return 0
+	fi
 	rm -rf "$work"
 	install -d -o 0 -g 0 -m 0700 "$work" "$work/human"
 	for d in components kms config agent-config movement-config authority-config authority identity; do
 		install -d -o 0 -g 0 -m 0700 "$work/human/$d"
 	done
 	install -o 0 -g 0 -m 0600 "$genesis/replica-id" "$work/receipt-authority-replica-id"
-	install -o 0 -g 0 -m 0600 "$human_policy" "$work/policy.json"
+	human_policy_bundle_install "$work/policy-bundle" >"$work/bundle-binding" || return 1
 	python3 /usr/local/lib/layerx-human/material.py "$work/human" "$LAYERX_NODE_NETWORK_ID" \
-		"$LAYERX_NODE_PAXEER_CHAIN_ID" "$work/policy.json" https://paxportwallet.com || return 1
+		"$LAYERX_NODE_PAXEER_CHAIN_ID" "$work/policy-bundle/policy.json" https://paxportwallet.com || return 1
 	mv "$work" "$human_state/material"
 }
 

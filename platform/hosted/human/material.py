@@ -1,12 +1,15 @@
 #!/usr/bin/env python3
 import base64
+import hashlib
 import json
 import os
 from pathlib import Path
 import re
 import secrets
+import shutil
 import stat
 import sys
+import tempfile
 import unicodedata
 from urllib.parse import urlsplit
 
@@ -33,23 +36,117 @@ def protected_json(path):
     return json.loads(path.read_text())
 
 
+BUNDLE_SCHEMA = 'layerx.human.owner-bundle.v1'
+BUNDLE_REFUSED = 'Human owner bundle refused: '
+EVIDENCE_INPUTS = {
+    'components': 'components.json', 'agent': 'agent.json',
+    'purpose_catalog': 'purpose-catalog.json', 'authority': 'authority.json',
+    'principal_policy': 'principal-policy.json', 'recovery_policy': 'recovery-policy.json',
+    'movement': 'movement-policy.json',
+}
+JOURNAL_RECORD = re.compile(r'[0-9a-f]{64}\.(admission|deployment)')
+
+
+def refuse(detail):
+    raise ValueError(BUNDLE_REFUSED + detail)
+
+
+def digest(data):
+    return hashlib.sha256(data).hexdigest()
+
+
+def entry(name, data):
+    return {'name': name, 'sha256': digest(data), 'size': len(data)}
+
+
+def protected_file(path, mode):
+    path = Path(path)
+    try:
+        info = path.lstat()
+    except OSError:
+        refuse('missing ' + path.name)
+    if (not path.is_absolute() or path.resolve() != path or info.st_uid != os.geteuid()
+            or stat.S_IMODE(info.st_mode) != mode
+            or not (stat.S_ISDIR(info.st_mode) if mode == 0o700 else stat.S_ISREG(info.st_mode) and info.st_nlink == 1)):
+        refuse('ownership, type or mode of ' + path.name)
+
+
+def journal_records(directory):
+    directory = Path(directory)
+    info = directory.lstat()
+    if (not directory.is_absolute() or directory.resolve() != directory or not stat.S_ISDIR(info.st_mode)
+            or info.st_uid != os.geteuid() or info.st_mode & 0o022):
+        refuse('journal directory ownership or type')
+    records = sorted(directory.iterdir())
+    if not 1 <= len(records) <= 128:
+        refuse('journal record count')
+    names = {record.name for record in records}
+    result = {}
+    total = 0
+    for record in records:
+        if not JOURNAL_RECORD.fullmatch(record.name):
+            refuse('journal filename ' + record.name)
+        if not {record.stem + '.admission', record.stem + '.deployment'} <= names:
+            refuse('unpaired journal record ' + record.name)
+        fd = os.open(record, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        with os.fdopen(fd, 'rb') as source:
+            info = os.fstat(source.fileno())
+            if not stat.S_ISREG(info.st_mode) or info.st_uid != os.geteuid() or info.st_mode & 0o022:
+                refuse('journal file ownership or type ' + record.name)
+            data = source.read(524289)
+        total += len(data)
+        if not data or len(data) != info.st_size or total > 524288:
+            refuse('journal size')
+        result[record.name] = data
+    return result
+
+
+def owner_evidence(evidence):
+    policy = {}
+    for key, filename in EVIDENCE_INPUTS.items():
+        try:
+            policy[key] = protected_json(evidence / filename)
+        except (ValueError, OSError):
+            refuse('protected owner evidence ' + filename)
+        if type(policy[key]) is not dict or not policy[key]:
+            refuse('empty owner evidence ' + filename)
+    authority = policy['authority']
+    if (set(authority) != {'tenant', 'principal', 'core-clock-horizon'}
+            or type(authority['tenant']) is not str
+            or not re.fullmatch(r'[A-Za-z0-9_-]{1,128}', authority['tenant'])
+            or type(authority['principal']) is not str
+            or not re.fullmatch(r'did:[a-z0-9]+:[^;,\s]+', authority['principal'])
+            or type(authority['core-clock-horizon']) is not int or authority['core-clock-horizon'] <= 0):
+        refuse('owner authority evidence')
+    principals = policy['principal_policy'].get('principals')
+    if (type(principals) is not list or not principals
+            or sum(1 for p in principals if type(p) is dict and p.get('tenant') == authority['tenant']
+                   and p.get('principal') == authority['principal']) != 1):
+        refuse('owner principal policy evidence')
+    return policy
+
+
 def assemble_policy(evidence, deployment, registry_path, output, network, chain):
     evidence = Path(evidence)
-    deployment = json.loads(Path(deployment).read_text())
-    registry = json.loads(Path(registry_path).read_text())
+    output = Path(output)
+    deployment_bytes = Path(deployment).read_bytes()
+    registry_bytes = Path(registry_path).read_bytes()
+    deployment = json.loads(deployment_bytes)
+    registry = json.loads(registry_bytes)
     if int(deployment['network_id']) != network or int(deployment['chain_id']) != chain:
-        raise ValueError('Human deployment network mismatch')
+        refuse('deployment network or chain mismatch')
     if registry.get('schema_version') != 2 or not registry.get('assets'):
-        raise ValueError('Human requires the rendered version 2 module registry')
-    policy = {key: protected_json(evidence / filename) for key, filename in {
-        'components': 'components.json', 'agent': 'agent.json',
-        'purpose_catalog': 'purpose-catalog.json', 'authority': 'authority.json',
-        'principal_policy': 'principal-policy.json', 'recovery_policy': 'recovery-policy.json',
-        'movement': 'movement-policy.json',
-    }.items()}
+        refuse('module registry is not the rendered version 2 registry')
+    policy = owner_evidence(evidence)
+    inputs = {filename: (evidence / filename).read_bytes() for filename in EVIDENCE_INPUTS.values()}
     onboarding = evidence / 'onboarding-configuration.json'
-    if onboarding.exists():
-        policy['onboarding_configuration'] = protected_json(onboarding)
+    if onboarding.exists() or onboarding.is_symlink():
+        try:
+            policy['onboarding_configuration'] = protected_json(onboarding)
+        except (ValueError, OSError):
+            refuse('protected owner evidence onboarding-configuration.json')
+        inputs['onboarding-configuration.json'] = onboarding.read_bytes()
+    inputs.update({'deployment.json': deployment_bytes, 'module-registry.json': registry_bytes})
     addresses = deployment['addresses']
     policy['components'].update({
         'PAXEER_EXIT_CONTRACT': CUSTODY_PRECOMPILE,
@@ -65,8 +162,92 @@ def assemble_policy(evidence, deployment, registry_path, output, network, chain)
         {'module_id': module['module'], 'activity_types': [
             (module['module'] << 16) | ordinal for ordinal in module['ordinals']]}
         for module in registry['modules']]}
-    policy['journal_directory'] = str(evidence / 'journal')
-    write(Path(output).parent, Path(output).name, json.dumps(policy))
+    policy['journal_directory'] = 'journal'
+    records = journal_records(evidence / 'journal')
+    policy_bytes = json.dumps(policy).encode()
+    manifest = {
+        'schema': BUNDLE_SCHEMA, 'network_id': network, 'chain_id': chain,
+        'authority_sha256': digest(json.dumps(policy['authority'], sort_keys=True, separators=(',', ':')).encode()),
+        'policy_sha256': digest(policy_bytes),
+        'inputs': [entry(name, data) for name, data in inputs.items()],
+        'journal': [entry(name, data) for name, data in sorted(records.items())],
+    }
+    manifest_bytes = json.dumps(manifest, sort_keys=True).encode()
+    directory = output.parent
+    journal = directory / 'journal'
+    retained = directory / 'bundle-manifest.json'
+    if retained.exists() or retained.is_symlink():
+        # A bundle is never overwritten: the same result is a no-op, anything else is reconciled.
+        try:
+            previous = protected_json(retained)
+        except (ValueError, OSError):
+            refuse('reconciliation required: retained bundle manifest unreadable')
+        if (retained.read_bytes() == manifest_bytes and output.read_bytes() == policy_bytes
+                and journal_records(journal) == records):
+            return
+        changed = [k for k in ('authority_sha256', 'network_id', 'chain_id') if previous.get(k) != manifest[k]]
+        refuse('reconciliation required: ' + ', '.join(changed or ['bundle contents']))
+    if (output.exists() or output.is_symlink()) and output.read_bytes() != policy_bytes:
+        refuse('reconciliation required: partial bundle policy differs')
+    if journal.exists() or journal.is_symlink():
+        if journal_records(journal) != records:
+            refuse('reconciliation required: partial bundle journal differs')
+    else:
+        pending = Path(tempfile.mkdtemp(prefix='.journal-', dir=directory))
+        try:
+            for name, data in records.items():
+                fd = os.open(pending / name, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+                with os.fdopen(fd, 'wb') as target:
+                    target.write(data)
+                    target.flush()
+                    os.fsync(target.fileno())
+            if journal_records(pending) != records:
+                refuse('relocated journal bytes differ')
+            os.rename(pending, journal)
+            pending = None
+        finally:
+            if pending is not None:
+                shutil.rmtree(pending)
+    if not output.exists():
+        write(directory, output.name, policy_bytes.decode())
+    write(directory, retained.name, manifest_bytes.decode())
+
+
+def verify_bundle(directory, network, chain):
+    directory = Path(directory)
+    protected_file(directory, 0o700)
+    protected_file(directory / 'policy.json', 0o600)
+    protected_file(directory / 'bundle-manifest.json', 0o600)
+    protected_file(directory / 'journal', 0o700)
+    manifest = protected_json(directory / 'bundle-manifest.json')
+    if (type(manifest) is not dict or set(manifest) != {'schema', 'network_id', 'chain_id', 'authority_sha256',
+                                                         'policy_sha256', 'inputs', 'journal'}
+            or manifest['schema'] != BUNDLE_SCHEMA):
+        refuse('bundle manifest schema or keys')
+    if manifest['network_id'] != network or manifest['chain_id'] != chain:
+        refuse('bundle network or chain mismatch')
+    for name in ('authority_sha256', 'policy_sha256'):
+        if type(manifest[name]) is not str or not re.fullmatch(r'[0-9a-f]{64}', manifest[name]):
+            refuse('bundle manifest ' + name)
+    for value in (manifest['inputs'], manifest['journal']):
+        if type(value) is not list or any(type(e) is not dict or set(e) != {'name', 'sha256', 'size'} for e in value):
+            refuse('bundle manifest entries')
+    policy_bytes = (directory / 'policy.json').read_bytes()
+    if digest(policy_bytes) != manifest['policy_sha256']:
+        refuse('policy digest differs from the bundle manifest')
+    policy = json.loads(policy_bytes)
+    if type(policy) is not dict or policy.get('journal_directory') != 'journal':
+        refuse('producer-local journal path')
+    if type(policy.get('authority')) is not dict or digest(json.dumps(
+            policy['authority'], sort_keys=True, separators=(',', ':')).encode()) != manifest['authority_sha256']:
+        refuse('authority digest differs from the bundle manifest')
+    for path in (directory / 'journal').iterdir():
+        protected_file(path, 0o600)
+    records = journal_records(directory / 'journal')
+    if [entry(name, data) for name, data in sorted(records.items())] != manifest['journal']:
+        refuse('journal differs from the bundle manifest')
+    return {'network_id': network, 'chain_id': chain, 'authority_sha256': manifest['authority_sha256'],
+            'policy_sha256': manifest['policy_sha256'], 'records': len(records)}
 
 
 def passkey_relying_party(web_origin):
@@ -118,6 +299,10 @@ def main():
     network, chain = int(sys.argv[2]), int(sys.argv[3])
     config = component_defaults(network, chain, sys.argv[5] if len(sys.argv) > 5 else '')
     policy = protected_json(sys.argv[4]) if sys.argv[4] else None
+    if policy is not None:
+        if Path(policy.get('journal_directory', '')).is_absolute():
+            refuse('producer-local journal path')
+        verify_bundle(Path(sys.argv[4]).parent, network, chain)
     onboarding = policy.get('onboarding_configuration') if policy else None
     if onboarding is not None:
         directory = Path(onboarding['directory'])
@@ -298,27 +483,9 @@ def main():
             write(root / 'kms', 'registry.json', json.dumps(policy['registry']))
         elif protected_json(root / 'kms/registry.json') != policy['registry']:
             raise ValueError('retained KMS registry changed')
-        source = Path(policy['journal_directory'])
-        if not source.is_absolute() or source.is_symlink() or not source.is_dir():
-            raise ValueError('Human deployment journal directory refused')
-        records = sorted(source.iterdir())
-        if not records or len(records) > 128:
-            raise ValueError('Human deployment journal record count refused')
-        total = 0
-        names = {record.name for record in records}
-        for record in records:
-            if not re.fullmatch(r'[0-9a-f]{64}\.(admission|deployment)', record.name):
-                raise ValueError('Human deployment journal filename refused')
-            if not {record.stem + '.admission', record.stem + '.deployment'} <= names:
-                raise ValueError('Human deployment journal pair missing')
-            info = record.lstat()
-            if not stat.S_ISREG(info.st_mode) or info.st_uid != os.geteuid() or info.st_mode & 0o022:
-                raise ValueError('Human deployment journal file refused')
-            total += info.st_size
-            if not info.st_size or total > 524288:
-                raise ValueError('Human deployment journal size refused')
-            destination = journal / record.name
-            destination.write_bytes(record.read_bytes())
+        for name, data in journal_records(Path(sys.argv[4]).parent / policy['journal_directory']).items():
+            destination = journal / name
+            destination.write_bytes(data)
             destination.chmod(0o600)
     for key, value in config.items():
         write(root / 'config', 'LAYERX_HUMAN_' + key, value)
@@ -338,7 +505,13 @@ if __name__ == '__main__':
     try:
         if len(sys.argv) > 1 and sys.argv[1] == '--assemble':
             assemble_policy(*sys.argv[2:6], int(sys.argv[6]), int(sys.argv[7]))
+        elif len(sys.argv) > 1 and sys.argv[1] == '--verify-bundle':
+            print(json.dumps(verify_bundle(sys.argv[2], int(sys.argv[3]), int(sys.argv[4])), sort_keys=True))
         else:
             main()
-    except (ValueError, OSError, KeyError, TypeError):
+    except ValueError as error:
+        if str(error).startswith(BUNDLE_REFUSED):
+            raise SystemExit(str(error))
+        raise SystemExit('Human material refused: check policy fields, file ownership and bounds')
+    except (OSError, KeyError, TypeError):
         raise SystemExit('Human material refused: check policy fields, file ownership and bounds')
