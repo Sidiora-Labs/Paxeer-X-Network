@@ -5,6 +5,7 @@
 #include "layerx/lxp_ledger.h"
 #include "layerx/lxp_batch.h"
 #include "layerx/lxp_merkle.h"
+#include "layerx/lxp_bridge_credit.h"
 
 static int fixture_signer(signer *key, const char *name)
 {
@@ -177,8 +178,283 @@ static int verify_replica(const char *directory)
     return 0;
 }
 
+
+static int program_evidence_write(const char *directory, const char *name,
+    const uint8_t *bytes, size_t length)
+{
+    char path[PATH_MAX];
+    struct stat info;
+    REQUIRE(stat(directory, &info) == 0 && S_ISDIR(info.st_mode));
+    REQUIRE((info.st_mode & 077U) == 0U);
+    int count = snprintf(path, sizeof(path), "%s/%s", directory, name);
+    REQUIRE(count > 0 && (size_t)count < sizeof(path));
+    int file = open(path, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW, 0600);
+    REQUIRE(file >= 0);
+    int status = descriptor_write_all(file, bytes, length);
+    if (status == 0 && fsync(file) != 0) status = 1;
+    if (close(file) != 0) status = 1;
+    REQUIRE(status == 0);
+    return 0;
+}
+
+static int program_payload_read(const char *path, uint8_t *bytes,
+    size_t capacity, size_t *length)
+{
+    int file = open(path, O_RDONLY | O_NOFOLLOW);
+    struct stat info;
+    REQUIRE(file >= 0 && fstat(file, &info) == 0 && S_ISREG(info.st_mode));
+    REQUIRE(info.st_size > 0 && (uint64_t)info.st_size <= capacity);
+    *length = (size_t)info.st_size;
+    size_t offset = 0U;
+    while (offset < *length) {
+        ssize_t count = read(file, bytes + offset, *length - offset);
+        if (count < 0 && errno == EINTR) continue;
+        REQUIRE(count > 0);
+        offset += (size_t)count;
+    }
+    uint8_t tail;
+    REQUIRE(read(file, &tail, 1U) == 0 && close(file) == 0);
+    return 0;
+}
+
+
+static int program_envelope_refusal(char **argv)
+{
+    static uint8_t payload[2U * LXP_MAX_ACTIVITY_BYTES];
+    static uint8_t scratch[LXP_MAX_ACTIVITY_BYTES];
+    signer actor;
+    uint8_t did[76], digest[32], preimage[32];
+    size_t length;
+    lxp_activity activity = {0};
+    lxp_arena arena;
+    lxp_byte_span encoded;
+    REQUIRE(strcmp(argv[5], "wait") == 0 && strcmp(argv[7], "encoding:-105") == 0);
+    REQUIRE(program_payload_read(argv[6], payload, sizeof(payload), &length) == 0);
+    REQUIRE(length > LXP_MAX_PAYLOAD_BYTES);
+    REQUIRE(fixture_signer(&actor, "treasury") == 0);
+    actor_did(&actor, did);
+    activity.protocol_version = LXP_PROTOCOL_VERSION_STATE_COMMITMENT;
+    activity.network_id = NETWORK_ID;
+    activity.activity_type = LX_PROGRAMS_DEPLOY;
+    activity.actor_did = (lxp_byte_span){did, sizeof(did) - 1U};
+    activity.authority = (lxp_byte_span){actor.public_key, sizeof(actor.public_key)};
+    activity.payload = (lxp_byte_span){payload, length};
+    REQUIRE(lxp_hash_payload(payload, length, activity.payload_hash) == LXP_OK &&
+        lxp_hash_sha256(payload, length, digest) == LXP_OK);
+    REQUIRE(lxp_arena_init(&arena, scratch, sizeof(scratch)) == LXP_OK);
+    lxp_result status = lxp_activity_encode(&activity, &arena, &encoded);
+    REQUIRE(status == LXP_ERR_MALFORMED_ENVELOPE);
+    REQUIRE(lxp_activity_signing_preimage(&activity, preimage) == status);
+    REQUIRE(program_evidence_write(argv[8], "payload.bin", payload, length) == 0);
+    printf("{\"stage\":\"encoding\",\"result\":%d,\"payload_digest\":\"", (int)status);
+    print_hex(digest, sizeof(digest));
+    printf("\",\"payload_path\":\"payload.bin\"}\n");
+    return 0;
+}
+
+static int program_fixture(int argc, char **argv)
+{
+    static uint8_t payload[LXP_MAX_ACTIVITY_BYTES];
+    static uint8_t encoded[LXP_MAX_ACTIVITY_BYTES];
+    static uint8_t scratch[2U * LXP_MAX_ACTIVITY_BYTES];
+    signer actor, sequencer;
+    uint8_t did[76], id[32], query[34] = {1U};
+    size_t payload_length, encoded_length;
+    struct sockaddr_un address = {0};
+    wire_envelope response;
+    lxp_activity activity;
+    lxp_arena arena;
+    lxp_byte_span canonical;
+    char *end;
+    uint64_t sequence;
+    int expected;
+    unsigned refusal_class = 0U;
+    bool admission = false;
+    bool replay = strcmp(argv[3], "program-replay") == 0;
+    bool funding = strcmp(argv[3], "funding-credit") == 0;
+    uint32_t activity_type = funding ? LXP_BRIDGE_CREDIT :
+        strcmp(argv[3], "program-deploy") == 0 ? LX_PROGRAMS_DEPLOY : LX_PROGRAMS_CALL;
+    REQUIRE(argc == 9 && (replay || funding || strcmp(argv[3], "program-deploy") == 0 ||
+        strcmp(argv[3], "program-call") == 0));
+    REQUIRE(strcmp(argv[5], "wait") == 0 && argv[4][0] >= '0' && argv[4][0] <= '9');
+    errno = 0;
+    sequence = strtoull(argv[4], &end, 10);
+    REQUIRE(errno == 0 && *end == '\0' && sequence != UINT64_MAX);
+    if (strncmp(argv[7], "admission:", 10U) == 0) {
+        admission = true;
+        REQUIRE(!replay && argv[7][10] >= '0' && argv[7][10] <= '9');
+        errno = 0;
+        unsigned long parsed_class = strtoul(argv[7] + 10U, &end, 10);
+        REQUIRE(errno == 0 && *end == ':' && parsed_class > 0U &&
+            parsed_class <= UINT8_MAX);
+        refusal_class = (unsigned)parsed_class;
+        const char *number = end + 1U;
+        errno = 0;
+        long result = strtol(number, &end, 10);
+        REQUIRE(errno == 0 && end != number && *end == '\0' &&
+            result >= INT32_MIN && result < 0);
+        expected = (int)result;
+    } else {
+        const char *number = strncmp(argv[7], "receipt:", 8U) == 0 ?
+            argv[7] + 8U : argv[7];
+        errno = 0;
+        long result = strtol(number, &end, 10);
+        REQUIRE(errno == 0 && end != number && *end == '\0' &&
+            result >= INT32_MIN && result <= 0);
+        expected = (int)result;
+    }
+    REQUIRE(fixture_signer(&actor, "treasury") == 0 &&
+        fixture_signer(&sequencer, "sequencer") == 0);
+    actor_did(&actor, did);
+    memcpy(REGISTERED_DID, did, sizeof(did));
+    if (replay) {
+        REQUIRE(program_payload_read(argv[6], encoded, sizeof(encoded),
+            &encoded_length) == 0);
+    } else {
+        REQUIRE(program_payload_read(argv[6], payload, sizeof(payload),
+            &payload_length) == 0);
+        REQUIRE(build_activity(&actor, sequence, activity_type, 0U,
+            payload, payload_length, encoded, sizeof(encoded), &encoded_length) == 0);
+    }
+    REQUIRE(lxp_activity_decode(encoded, encoded_length, &activity) == LXP_OK);
+    if (!replay) {
+        uint8_t preimage[32], signature[64];
+        if (funding) {
+            lxp_bridge_profile profile;
+            lxp_bridge_credit credit;
+            uint8_t name[LX_ACCOUNT_NAME_MAX], beneficiary[32];
+            size_t profile_length;
+            REQUIRE(program_payload_read(argv[2], profile.bytes, sizeof(profile.bytes),
+                &profile_length) == 0 && profile_length == sizeof(profile.bytes));
+            REQUIRE(lxp_bridge_credit_parse(payload, payload_length, &credit) == LXP_OK &&
+                lxp_bridge_profile_validate(&profile) == LXP_OK && credit.proof_length >= 37U);
+            REQUIRE(memcmp(actor.public_key, credit.bytes + 139U, 32U) == 0 &&
+                load_u32(credit.bytes + 37U) == NETWORK_ID);
+            memcpy(name, "agent:", 6U);
+            memcpy(name + 6U, did, sizeof(did) - 1U);
+            memcpy(name + 6U + sizeof(did) - 1U, ":main", 5U);
+            REQUIRE(lx_account_id_from_string(name, 6U + sizeof(did) - 1U + 5U,
+                beneficiary) == LXP_OK && memcmp(beneficiary, credit.bytes + 107U, 32U) == 0);
+            uint64_t header_seconds = load_u64(credit.proof + 29U);
+            REQUIRE(header_seconds <= UINT64_MAX / 1000U &&
+                lxp_bridge_credit_verify(&profile, &credit, NETWORK_ID,
+                    LXP_PROTOCOL_VERSION_STATE_COMMITMENT, NULL, header_seconds * 1000U,
+                    activity.idempotency_key, NULL) == LXP_OK);
+        } else {
+            const char *fee = getenv("PAXEER_X_PROGRAM_FEE_LIMIT");
+            REQUIRE(fee != NULL && fee[0] >= '0' && fee[0] <= '9');
+            errno = 0;
+            uint64_t fee_limit = strtoull(fee, &end, 10);
+            REQUIRE(errno == 0 && *end == '\0');
+            activity.fee_limit = (lxp_u128){0U, fee_limit};
+        }
+        REQUIRE(lxp_activity_signing_preimage(&activity, preimage) == LXP_OK &&
+            sign_raw(&actor, preimage, sizeof(preimage), signature) == 0);
+        activity.signature = (lxp_byte_span){signature, sizeof(signature)};
+        REQUIRE(lxp_arena_init(&arena, scratch, sizeof(scratch)) == LXP_OK &&
+            lxp_activity_encode(&activity, &arena, &canonical) == LXP_OK &&
+            canonical.length <= sizeof(encoded));
+        memcpy(encoded, canonical.bytes, canonical.length);
+        encoded_length = canonical.length;
+        REQUIRE(lxp_activity_decode(encoded, encoded_length, &activity) == LXP_OK);
+    }
+    REQUIRE(activity.protocol_version == LXP_PROTOCOL_VERSION_STATE_COMMITMENT &&
+        activity.network_id == NETWORK_ID && activity.account_sequence == sequence);
+    REQUIRE(activity.activity_type == LX_PROGRAMS_DEPLOY || activity.activity_type == LX_PROGRAMS_CALL ||
+        ((funding || replay) && activity.activity_type == LXP_BRIDGE_CREDIT));
+    REQUIRE(activity.actor_did.length == sizeof(did) - 1U &&
+        memcmp(activity.actor_did.bytes, did, sizeof(did) - 1U) == 0);
+    REQUIRE(lxp_activity_verify_payload_hash(&activity) == LXP_OK &&
+        lxp_activity_verify_signature(&activity) == LXP_OK &&
+        lxp_activity_id(encoded, encoded_length, id) == LXP_OK);
+    REQUIRE(program_evidence_write(argv[8], "activity.bin", encoded, encoded_length) == 0);
+    REQUIRE(strlen(argv[1]) < sizeof(address.sun_path));
+    address.sun_family = AF_UNIX;
+    memcpy(address.sun_path, argv[1], strlen(argv[1]) + 1U);
+    int descriptor = socket(AF_UNIX, SOCK_STREAM, 0);
+    REQUIRE(descriptor >= 0 && connect(descriptor, (struct sockaddr *)&address, sizeof(address)) == 0);
+    REQUIRE(send_request(descriptor, 0U, NODE_INFO_REQUEST, 0U, NULL, 0U) == 0);
+    REQUIRE(receive_envelope(descriptor, &response) == 0);
+    REQUIRE(response.major == LNI_MAJOR && response.minor == LNI_MINOR &&
+        response.tag == NODE_INFO_RESPONSE && response.correlation_id == 0U);
+    release_envelope(&response);
+    if (!replay) {
+        REQUIRE(send_request(descriptor, LNI_MINOR, SUBMIT_REQUEST, sequence + 1U,
+            encoded, encoded_length) == 0);
+        REQUIRE(receive_envelope(descriptor, &response) == 0);
+        REQUIRE(response.major == LNI_MAJOR && response.minor == LNI_MINOR &&
+            response.correlation_id == sequence + 1U);
+        if (admission) {
+            REQUIRE(response.tag == ERROR_RESPONSE && response.payload_length == 5U &&
+                response.proof_length == 0U && response.payload[0] == refusal_class &&
+                (int32_t)load_u32(response.payload + 1U) == expected);
+            REQUIRE(program_evidence_write(argv[8], "refusal.bin", response.owned,
+                response.owned_length) == 0);
+            printf("{\"stage\":\"admission\",\"result\":%d,\"class\":%u,\"activity_id\":\"", expected, refusal_class);
+            print_hex(id, sizeof(id));
+            printf("\",\"activity_path\":\"activity.bin\",\"refusal_path\":\"refusal.bin\"}\n");
+            release_envelope(&response);
+            REQUIRE(close(descriptor) == 0);
+            return 0;
+        }
+        REQUIRE(response.tag == SUBMIT_RESPONSE && response.payload_length == encoded_length &&
+            memcmp(response.payload, encoded, encoded_length) == 0 &&
+            response.proof_length == sizeof(id) && memcmp(response.proof, id, sizeof(id)) == 0);
+        release_envelope(&response);
+    }
+    memcpy(query + 1U, id, sizeof(id));
+    query[33] = 1U;
+    REQUIRE(send_request(descriptor, LNI_MINOR, 5U, sequence + 1U, query, sizeof(query)) == 0);
+    REQUIRE(receive_envelope(descriptor, &response) == 0);
+    REQUIRE(response.major == LNI_MAJOR && response.minor == LNI_MINOR && response.tag == 6U &&
+        response.correlation_id == sequence + 1U && response.payload_length != 0U);
+    lxp_receipt receipt;
+    REQUIRE(lxp_arena_init(&arena, scratch, sizeof(scratch)) == LXP_OK);
+    REQUIRE(lxp_receipt_decode(response.payload, response.payload_length, true, &receipt) == LXP_OK);
+    REQUIRE(receipt.protocol_version == LXP_PROTOCOL_VERSION_STATE_COMMITMENT &&
+        receipt.module_id == lxp_activity_module_id(activity.activity_type) && receipt.result_code == expected &&
+        memcmp(receipt.activity_id, id, sizeof(id)) == 0);
+    REQUIRE(lxp_receipt_verify(&receipt, sequencer.public_key, &arena) == LXP_OK);
+    if (activity.activity_type == LX_PROGRAMS_CALL && expected == LXP_OK) {
+        REQUIRE(activity.payload.length >= 34U && receipt.operation == 3U &&
+            receipt.program_outcome.present &&
+            receipt.program_outcome.terminal_kind == LXP_PROGRAM_TERMINAL_SUCCESS &&
+            receipt.program_outcome.result_code == LXP_OK &&
+            receipt.program_outcome.abi_version == load_u16(activity.payload.bytes + 32U) &&
+            receipt.program_outcome.runtime_version != 0U &&
+            receipt.program_outcome.metering_schedule_version != 0U &&
+            lxp_program_outcome_validate_for_protocol(&receipt.program_outcome,
+                receipt.protocol_version) == LXP_OK);
+    }
+    REQUIRE(expected == LXP_OK || receipt.effects.count == 0U);
+    REQUIRE(lxp_arena_reset(&arena, 0U) == LXP_OK &&
+        lxp_receipt_encode(&receipt, true, &arena, &canonical) == LXP_OK);
+    REQUIRE(canonical.length == response.payload_length &&
+        memcmp(canonical.bytes, response.payload, canonical.length) == 0);
+    REQUIRE(program_evidence_write(argv[8], "receipt.bin", response.payload,
+        response.payload_length) == 0);
+    uint8_t receipt_digest[32];
+    REQUIRE(lxp_arena_reset(&arena, 0U) == LXP_OK &&
+        lxp_receipt_digest(&receipt, &arena, receipt_digest) == LXP_OK);
+    printf("{\"stage\":\"receipt\",\"result\":%d,\"class\":0,\"activity_id\":\"", expected);
+    print_hex(id, sizeof(id));
+    printf("\",\"batch_id\":\"");
+    print_hex(receipt.batch_id, sizeof(receipt.batch_id));
+    printf("\",\"receipt_digest\":\"");
+    print_hex(receipt_digest, sizeof(receipt_digest));
+    printf("\",\"global_sequence\":%llu,\"module_id\":%u,\"module_version\":%u,\"activity_path\":\"activity.bin\",\"receipt_path\":\"receipt.bin\"}\n",
+        (unsigned long long)receipt.global_sequence, (unsigned)receipt.module_id,
+        (unsigned)receipt.module_version);
+    release_envelope(&response);
+    REQUIRE(close(descriptor) == 0);
+    return 0;
+}
+
 int main(int argc, char **argv)
 {
+    if (argc == 9 && strcmp(argv[3], "program-envelope") == 0)
+        return program_envelope_refusal(argv);
+    if (argc == 9) return program_fixture(argc, argv);
     signer alice, bob;
     uint8_t alice_did[76], bob_did[76], issuer[32], salt[32], asset[32], from[32], to[32];
     uint8_t payload[1024] = {0U}, message[512], digest[32];

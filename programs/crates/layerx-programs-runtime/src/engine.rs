@@ -182,6 +182,23 @@ impl WasmEngine {
         validate::validate_module_metered(self, wasm, revision, schedule)
     }
 
+    /// Applies deployment bounds after deterministic validation under the recorded ABI.
+    ///
+    /// # Errors
+    ///
+    /// Returns the existing typed validation refusal for invalid modules or
+    /// statically excessive frame footprints and finite direct call chains.
+    pub fn validate_deployment_versioned_metered(
+        &self,
+        abi_version: u16,
+        wasm: &[u8],
+        schedule: crate::FuelSchedule,
+    ) -> Result<ValidatedModule, ValidationRefusal> {
+        let module = self.validate_versioned_metered(abi_version, wasm, schedule)?;
+        validate_deployment_bounds(module.meter_injection().instrumented_wasm(), self.limits)?;
+        Ok(module)
+    }
+
     /// Returns the declared validation limits of this engine.
     #[must_use]
     pub const fn limits(&self) -> ValidationLimits {
@@ -215,4 +232,188 @@ fn construct_host_linker(engine: &Engine) -> Result<Arc<HostLinker>, EngineRefus
         .map_err(|error| EngineRefusal::HostLinkerConstruction {
             reason: error.to_string(),
         })
+}
+
+fn deployment_bound_refusal(reason: &str) -> ValidationRefusal {
+    ValidationRefusal::RejectedByEngine {
+        reason: reason.to_owned(),
+    }
+}
+
+fn deployment_parse_refusal(error: wasmparser_nostd::BinaryReaderError) -> ValidationRefusal {
+    ValidationRefusal::MalformedModule {
+        reason: error.to_string(),
+    }
+}
+
+fn validate_deployment_bounds(
+    wasm: &[u8],
+    limits: ValidationLimits,
+) -> Result<(), ValidationRefusal> {
+    use std::collections::{BTreeMap, BTreeSet, VecDeque};
+    use wasmparser_nostd::{Operator, Parser, ValidPayload, Validator};
+
+    let mut validator = Validator::new();
+    let mut allocations = wasmparser_nostd::FuncValidatorAllocations::default();
+    let mut calls = BTreeMap::<u32, BTreeSet<u32>>::new();
+    for payload in Parser::new(0).parse_all(wasm) {
+        let payload = payload.map_err(deployment_parse_refusal)?;
+        if let ValidPayload::Func(function, body) =
+            validator.payload(&payload).map_err(deployment_parse_refusal)?
+        {
+            let index = function.index;
+            let mut function = function.into_validator(allocations);
+            let mut reader = body.get_binary_reader();
+            function.read_locals(&mut reader).map_err(deployment_parse_refusal)?;
+            if function.len_locals() > limits.max_value_stack_height() {
+                return Err(deployment_bound_refusal("declared value stack height exceeded"));
+            }
+            let outgoing = calls.entry(index).or_default();
+            while !reader.eof() {
+                let offset = reader.original_position();
+                let operator = reader.read_operator().map_err(deployment_parse_refusal)?;
+                function.op(offset, &operator).map_err(deployment_parse_refusal)?;
+                let footprint = u64::from(function.len_locals())
+                    + u64::from(function.operand_stack_height());
+                if footprint > u64::from(limits.max_value_stack_height()) {
+                    return Err(deployment_bound_refusal("declared value stack height exceeded"));
+                }
+                if let Operator::Call { function_index } = operator {
+                    outgoing.insert(function_index);
+                }
+            }
+            function.finish(reader.original_position()).map_err(deployment_parse_refusal)?;
+            allocations = function.into_allocations();
+        }
+    }
+    let mut remaining = BTreeMap::<u32, usize>::new();
+    let mut parents = BTreeMap::<u32, Vec<u32>>::new();
+    let mut depths = BTreeMap::<u32, u32>::new();
+    let mut ready = VecDeque::new();
+    for (&index, outgoing) in &calls {
+        let mut count = 0;
+        for target in outgoing.iter().filter(|target| calls.contains_key(*target)) {
+            parents.entry(*target).or_default().push(index);
+            count += 1;
+        }
+        remaining.insert(index, count);
+        depths.insert(index, 1);
+        if count == 0 {
+            ready.push_back(index);
+        }
+    }
+    while let Some(index) = ready.pop_front() {
+        let depth = depths[&index];
+        if depth > limits.max_call_depth() {
+            return Err(deployment_bound_refusal("declared direct call depth exceeded"));
+        }
+        if let Some(callers) = parents.get(&index) {
+            for caller in callers {
+                if let Some(parent_depth) = depths.get_mut(caller) {
+                    *parent_depth = (*parent_depth).max(depth.saturating_add(1));
+                }
+                if let Some(count) = remaining.get_mut(caller) {
+                    *count -= 1;
+                    if *count == 0 {
+                        ready.push_back(*caller);
+                    }
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod deployment_admission_tests {
+    use super::WasmEngine;
+    use crate::test_support::{
+        code_section, export_section, func_body, function_section, module,
+        type_section, unsigned_leb, OP_CALL, OP_END, TYPE_I32,
+    };
+    use crate::{ExecutionError, ExecutionFault, Executor, FuelSchedule, ValidationLimits};
+
+    #[test]
+    fn deployment_admission_calls_recorded_abis() -> Result<(), Box<dyn std::error::Error>> {
+        let wasm = [
+            0,97,115,109,1,0,0,0,1,12,2,96,2,127,127,1,127,96,1,127,1,127,
+            3,3,2,0,1,5,3,1,0,1,7,41,3,
+            11,b'l',b'a',b'y',b'e',b'r',b'x',b'_',b'c',b'a',b'l',b'l',0,0,
+            14,b'l',b'a',b'y',b'e',b'r',b'x',b'_',b'r',b'e',b's',b'e',b'r',b'v',b'e',0,1,
+            6,b'm',b'e',b'm',b'o',b'r',b'y',2,0,10,11,2,4,0,65,0,11,4,0,65,0,11,
+        ];
+        let engine = WasmEngine::declared()?;
+        for abi in 1..=4 {
+            let admitted = engine.validate_deployment_versioned_metered(
+                abi, &wasm, FuelSchedule::WASMI_0_31_2,
+            )?;
+            assert!(admitted.supports_interface_entrypoint("layerx_call"));
+            let mut instance = admitted.instantiate()?;
+            assert_eq!(crate::entrypoint::invoke(&mut instance, "layerx_call", &[0; 4])?, 0);
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn deployment_admission_bounds_and_recursive_runtime_guard(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let limits = ValidationLimits::new(1_048_576, 4096, 64, 8)?;
+        let engine = WasmEngine::new(limits)?;
+        let mut bodies = Vec::new();
+        for index in 0..9_u32 {
+            let instructions = if index == 8 {
+                vec![OP_END]
+            } else {
+                let mut instructions = vec![OP_CALL];
+                instructions.extend(unsigned_leb(u64::from(index + 1)));
+                instructions.push(OP_END);
+                instructions
+            };
+            bodies.push(func_body(&[], &instructions));
+        }
+        let deep = module(&[
+            type_section(&[(&[], &[])]), function_section(&[0; 9]),
+            code_section(&bodies),
+        ]);
+        assert!(engine.validate(&deep).is_ok());
+        assert!(matches!(
+            engine.validate_deployment_versioned_metered(1, &deep, FuelSchedule::WASMI_0_31_2),
+            Err(crate::ValidationRefusal::RejectedByEngine { .. })
+        ));
+        let locals = module(&[
+            type_section(&[(&[], &[])]), function_section(&[0]),
+            code_section(&[func_body(&[(65, TYPE_I32)], &[OP_END])]),
+        ]);
+        assert!(matches!(
+            engine.validate_deployment_versioned_metered(1, &locals, FuelSchedule::WASMI_0_31_2),
+            Err(crate::ValidationRefusal::RejectedByEngine { .. })
+        ));
+        let mut operands = Vec::new();
+        for _ in 0..65 {
+            operands.extend([0x41, 0]);
+        }
+        operands.extend([0x1a; 65]);
+        operands.push(OP_END);
+        let stack = module(&[
+            type_section(&[(&[], &[])]), function_section(&[0]),
+            code_section(&[func_body(&[], &operands)]),
+        ]);
+        assert!(matches!(
+            engine.validate_deployment_versioned_metered(1, &stack, FuelSchedule::WASMI_0_31_2),
+            Err(crate::ValidationRefusal::RejectedByEngine { .. })
+        ));
+        let recursive = module(&[
+            type_section(&[(&[], &[])]), function_section(&[0]),
+            export_section(&[("recurse", 0)]),
+            code_section(&[func_body(&[], &[OP_CALL, 0, OP_END])]),
+        ]);
+        let admitted = engine.validate_deployment_versioned_metered(
+            1, &recursive, FuelSchedule::WASMI_0_31_2,
+        )?;
+        assert!(matches!(
+            Executor::declared().execute(&admitted, "recurse", &[]),
+            Err(ExecutionError::Fault(ExecutionFault::StackExhausted))
+        ));
+        Ok(())
+    }
 }

@@ -651,6 +651,13 @@ lxp_result layerx_programs_migration_activity_byte(uint64_t token,
 lxp_result layerx_programs_interface_activity_byte(uint64_t token,
                                                    uint16_t section,
                                                    uint32_t offset);
+lxp_result layerx_programs_deployment_validate(
+    uint64_t token, uint32_t wasm_length, uint16_t abi_version,
+    uint32_t metering_schedule_version,
+    uint64_t meter_base, uint64_t meter_entity, uint64_t meter_load,
+    uint64_t meter_store, uint64_t meter_call,
+    uint64_t meter_branch_kept_per_fuel, uint64_t meter_func_locals_per_fuel,
+    uint64_t meter_memory_bytes_per_fuel, uint64_t meter_table_elements_per_fuel);
 lxp_result layerx_programs_interface_validate(
     uint64_t token, uint32_t wasm_length, uint32_t interface_length,
     uint32_t prior_interface_length, uint16_t abi_version, uint8_t breaking,

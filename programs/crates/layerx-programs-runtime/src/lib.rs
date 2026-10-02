@@ -60,6 +60,7 @@ mod ffi_transfer;
 pub fn retain_host_ffi_exports() {
     let exports = [
         ffi::layerx_programs_migration_execute_activity as *const (),
+        ffi::layerx_programs_deployment_validate as *const (),
         ffi_call::layerx_programs_schedule_plan as *const (),
         ffi_call::layerx_programs_module_cache_invalidate_upgrade as *const (),
         ffi_call::layerx_programs_module_cache_invalidate_runtime as *const (),

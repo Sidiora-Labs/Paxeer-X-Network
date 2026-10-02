@@ -21772,7 +21772,9 @@ do_5 = "Use one core-only policy in the existing no_std SDK, re-exported by the 
 
 [task.6.5]
 title = "Validate all deployment forms before persisting executable programs"
-status = "in_progress"
+status = "done"
+completion_basis = "implementation"
+qualification_status = "unverified"
 mode = "BUILD"
 wave = 2
 requires = ["0.2"]

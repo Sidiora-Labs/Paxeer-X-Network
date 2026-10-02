@@ -3,9 +3,12 @@
 #include "layerx/lxp_genesis.h"
 #include "layerx/lxp_hash.h"
 #include "layerx/lxp_kernel.h"
+#include "layerx/lxp_snapshot.h"
 
 #include <openssl/evp.h>
 #include <string.h>
+#include <stdio.h>
+#include <stdlib.h>
 
 static int public_key_for(const uint8_t private_key[32], uint8_t public_key[32])
 {
@@ -227,7 +230,7 @@ static int dispatch(lxp_kernel *kernel, lxp_state_journal *journal,
     return 0;
 }
 
-int main(void)
+static int original_lifecycle(void)
 {
     static const uint8_t wasm[] = {
         0,97,115,109,1,0,0,0,1,12,2,96,2,127,127,1,127,96,1,127,1,127,
@@ -393,6 +396,7 @@ int main(void)
     if (lxp_state_store_init(&sandbox_store, 0U) != LXP_OK ||
         lxp_kernel_create(&sandbox_kernel, &sandbox_store, &sandbox_journal,
                           &parameters, 0U) != LXP_OK ||
+        project_metering_genesis(&sandbox_kernel) != 0 ||
         lxp_kernel_register_module(&sandbox_kernel,
                                    programs_module_registration_v3()) !=
             LXP_OK ||
@@ -401,4 +405,381 @@ int main(void)
         lxp_state_store_destroy(&sandbox_store) != LXP_OK)
         return 1;
     return lxp_state_store_destroy(&store) == LXP_OK ? 0 : 1;
+}
+
+
+enum { ADMISSION_BUFFER_BYTES = 2U * 1048576U };
+
+typedef struct admission_bytes {
+    uint8_t *bytes;
+    size_t length;
+} admission_bytes;
+
+static void admission_byte(admission_bytes *out, uint8_t value)
+{
+    if (out->length >= ADMISSION_BUFFER_BYTES) abort();
+    out->bytes[out->length++] = value;
+}
+
+static void admission_leb(admission_bytes *out, uint32_t value)
+{
+    do {
+        uint8_t byte = (uint8_t)(value & 127U);
+        value >>= 7U;
+        admission_byte(out, (uint8_t)(byte | (value != 0U ? 128U : 0U)));
+    } while (value != 0U);
+}
+
+static void admission_section(admission_bytes *out, uint8_t id,
+                               const admission_bytes *section)
+{
+    admission_byte(out, id);
+    admission_leb(out, (uint32_t)section->length);
+    if (section->length > ADMISSION_BUFFER_BYTES - out->length) abort();
+    (void)memcpy(out->bytes + out->length, section->bytes, section->length);
+    out->length += section->length;
+}
+
+static size_t admission_functions(uint8_t *out, uint32_t count,
+                                  uint32_t locals, uint32_t operands,
+                                  int chain)
+{
+    static uint8_t section_storage[ADMISSION_BUFFER_BYTES];
+    static uint8_t body_storage[ADMISSION_BUFFER_BYTES];
+    static const uint8_t header[] = {0,97,115,109,1,0,0,0};
+    admission_bytes module = {out, sizeof(header)};
+    admission_bytes section = {section_storage, 0U};
+    (void)memcpy(out, header, sizeof(header));
+    admission_byte(&section, 1U);
+    admission_byte(&section, 0x60U);
+    admission_byte(&section, 0U);
+    admission_byte(&section, 0U);
+    admission_section(&module, 1U, &section);
+    section.length = 0U;
+    admission_leb(&section, count);
+    for (uint32_t index = 0U; index < count; ++index)
+        admission_byte(&section, 0U);
+    admission_section(&module, 3U, &section);
+    section.length = 0U;
+    admission_leb(&section, count);
+    for (uint32_t index = 0U; index < count; ++index) {
+        admission_bytes body = {body_storage, 0U};
+        admission_byte(&body, locals == 0U ? 0U : 1U);
+        if (locals != 0U) {
+            admission_leb(&body, locals);
+            admission_byte(&body, 0x7fU);
+        }
+        for (uint32_t operand = 0U; operand < operands; ++operand) {
+            admission_byte(&body, 0x41U);
+            admission_byte(&body, 0U);
+        }
+        for (uint32_t operand = 0U; operand < operands; ++operand)
+            admission_byte(&body, 0x1aU);
+        if (chain && index + 1U < count) {
+            admission_byte(&body, 0x10U);
+            admission_leb(&body, index + 1U);
+        }
+        admission_byte(&body, 0x0bU);
+        admission_leb(&section, (uint32_t)body.length);
+        if (body.length > ADMISSION_BUFFER_BYTES - section.length) abort();
+        (void)memcpy(section.bytes + section.length, body.bytes, body.length);
+        section.length += body.length;
+    }
+    admission_section(&module, 10U, &section);
+    return module.length;
+}
+
+static int admission_record_present(const lxp_kernel *kernel,
+                                     const uint8_t program[32])
+{
+    static const uint8_t prefix[] = "program";
+    for (size_t index = 0U; index < kernel->module_kv_count; ++index) {
+        const lxp_module_kv_entry *item = &kernel->module_kv[index];
+        if (item->module_id == LXP_MODULE_PROGRAMS &&
+            item->key_length == sizeof(prefix) + 32U &&
+            memcmp(item->key, prefix, sizeof(prefix)) == 0 &&
+            memcmp(item->key + sizeof(prefix), program, 32U) == 0)
+            return 1;
+    }
+    return 0;
+}
+
+static int admission_blob_present(const lxp_kernel *kernel,
+                                   const uint8_t hash[32])
+{
+    for (size_t index = 0U; index < kernel->blob_count; ++index)
+        if (kernel->blobs[index].module_id == LXP_MODULE_PROGRAMS &&
+            memcmp(kernel->blobs[index].key, hash, 32U) == 0)
+            return 1;
+    return 0;
+}
+
+static int admission_case(lxp_kernel *kernel, lxp_authority_resolved *authority,
+                           const char *name, int framed, uint16_t abi,
+                           const uint8_t *wasm, size_t wasm_length,
+                           int invalid_capability, lxp_result expected,
+                           unsigned int serial, const char *phase)
+{
+    static uint8_t payload[ADMISSION_BUFFER_BYTES];
+    uint8_t arena_bytes[4096];
+    uint8_t hash[32], before_root[32], after_root[32];
+    lxp_arena arena;
+    lxp_module_ctx ctx;
+    lxp_effect_buffer effects;
+    lxp_activity activity = {0};
+    const lxp_module_registration *registration;
+    lxp_result result = LXP_OK;
+    lxp_result status;
+    size_t interface_length = 0U;
+    size_t offset = framed ? 108U : 104U;
+    size_t kv_before = kernel->module_kv_count;
+    size_t blobs_before = kernel->blob_count;
+    size_t blob_bytes_before = kernel->blob_total_bytes;
+    (void)memset(payload, 0, 108U);
+    payload[0] = 0xa5U;
+    write_u32(payload + 28U, serial);
+    write_u16(payload + 32U, abi);
+    payload[34] = 1U;
+    (void)memcpy(payload + 36U, authority->principal, 32U);
+    if (lxp_hash_sha256(wasm, wasm_length, hash) != LXP_OK ||
+        lxp_state_root(kernel, before_root) != LXP_OK)
+        return 1;
+    (void)memcpy(payload + 68U, hash, 32U);
+    write_u32(payload + 100U, (uint32_t)wasm_length);
+    if (framed) {
+        interface_length = interface_payload(payload + offset, hash);
+        write_u16(payload + offset + 60U, abi);
+        if (abi == 3U || abi == 4U)
+            payload[offset + 26U] = (uint8_t)('0' + abi);
+        if (invalid_capability) {
+            size_t capabilities = offset + interface_length - 6U;
+            write_u16(payload + capabilities, 1U);
+            (void)memmove(payload + capabilities + 3U,
+                           payload + capabilities + 2U, 4U);
+            payload[capabilities + 2U] = 0xffU;
+            ++interface_length;
+        }
+        write_u32(payload + 104U, (uint32_t)interface_length);
+        offset += interface_length;
+    }
+    if (wasm_length > sizeof(payload) - offset) return 1;
+    (void)memcpy(payload + offset, wasm, wasm_length);
+    activity.activity_type = LX_PROGRAMS_DEPLOY;
+    activity.payload = (lxp_byte_span){payload, offset + wasm_length};
+    {
+        const char *directory = getenv("PAXEER_X_PROGRAM_VALIDATION_INPUTS");
+        if (directory != NULL) {
+            char path[4096];
+            FILE *file;
+            int written = snprintf(path, sizeof(path), "%s/%s.%s.%s.abi%u.bin",
+                directory, phase, name, framed ? "framed" : "legacy", (unsigned)abi);
+            if (written < 0 || (size_t)written >= sizeof(path)) return 1;
+            file = fopen(path, "wb");
+            if (file == NULL) return 1;
+            if (fwrite(payload, 1U, activity.payload.length, file) != activity.payload.length) {
+                (void)fclose(file);
+                return 1;
+            }
+            if (fclose(file) != 0) return 1;
+        }
+    }
+    if (lxp_arena_init(&arena, arena_bytes, sizeof(arena_bytes)) != LXP_OK ||
+        lxp_kernel_module_for_activity(kernel, activity.activity_type, 0U,
+                                       &registration) != LXP_OK ||
+        lxp_module_ctx_init(&ctx, kernel, LXP_MODULE_PROGRAMS, 1U, 0U,
+                            serial, 4000000U, &arena, false) != LXP_OK ||
+        lxp_effect_buffer_init(&effects) != LXP_OK ||
+        lxp_module_ctx_bind_effects(&ctx, &effects) != LXP_OK)
+        return 1;
+    ctx.protocol_version = LXP_PROTOCOL_VERSION_STATE_COMMITMENT;
+    ctx.batch_number = 1U;
+    status = lxp_kernel_dispatch(registration, &ctx, &activity, authority,
+                                 &effects, &result);
+    if (status != LXP_OK || result != expected) {
+        (void)fprintf(stderr, "Admission %s/%s/%s abi=%u status=%d result=%d expected=%d\n",
+            name, framed ? "framed" : "legacy", phase, (unsigned)abi,
+            (int)status, (int)result, (int)expected);
+        lxp_module_ctx_rollback(&ctx);
+        return 1;
+    }
+    if (expected != LXP_OK &&
+        (ctx.staged_count != 0U || ctx.staged_blob_count != 0U ||
+         ctx.staged_account_count != 0U || effects.count != 0U)) {
+        lxp_module_ctx_rollback(&ctx);
+        return 1;
+    }
+    if (expected == LXP_OK) {
+        if (lxp_module_ctx_commit(&ctx) != LXP_OK) return 1;
+    } else {
+        lxp_module_ctx_rollback(&ctx);
+        if (lxp_state_root(kernel, after_root) != LXP_OK ||
+            memcmp(before_root, after_root, sizeof(before_root)) != 0 ||
+            kernel->module_kv_count != kv_before ||
+            kernel->blob_count != blobs_before ||
+            kernel->blob_total_bytes != blob_bytes_before ||
+            admission_record_present(kernel, payload) ||
+            interface_state_absent(kernel, payload) != 0)
+            return 1;
+    }
+    if (expected == LXP_OK) {
+        int found = 0;
+        for (size_t index = 0U; index < kernel->module_kv_count; ++index) {
+            const lxp_module_kv_entry *item = &kernel->module_kv[index];
+            if (item->module_id == LXP_MODULE_PROGRAMS &&
+                item->key_length == 40U &&
+                memcmp(item->key, "program", 8U) == 0 &&
+                memcmp(item->key + 8U, payload, 32U) == 0) {
+                found = item->value_length == 71U &&
+                    item->value[65] == (uint8_t)(abi >> 8U) &&
+                    item->value[66] == (uint8_t)abi &&
+                    memcmp(item->value + 33U, hash, 32U) == 0;
+            }
+        }
+        if (!found || !admission_blob_present(kernel, hash)) return 1;
+    }
+    if (printf("ALL_FORM_CASE {\"name\":\"%s\",\"form\":\"%s\",\"phase\":\"%s\",\"abi\":%u,\"result\":%d,\"expected\":%d,\"artifact_present\":%s,\"lifecycle_present\":%s,\"new_artifacts\":%zu,\"staged\":%zu,\"effects\":%zu,\"state_unchanged\":%s}\n",
+        name, framed ? "framed" : "legacy", phase, (unsigned)abi,
+        (int)result, (int)expected,
+        admission_blob_present(kernel, hash) ? "true" : "false",
+        admission_record_present(kernel, payload) ? "true" : "false",
+        kernel->blob_count - blobs_before, ctx.staged_count + ctx.staged_blob_count +
+            ctx.staged_account_count, (size_t)effects.count,
+        expected != LXP_OK ? "true" : "false") < 0)
+        return 1;
+    return 0;
+}
+
+static int all_form_validation(void)
+{
+    static const uint8_t valid[] = {
+        0,97,115,109,1,0,0,0,1,12,2,96,2,127,127,1,127,96,1,127,1,127,
+        3,3,2,0,1,5,3,1,0,1,7,41,3,
+        11,'l','a','y','e','r','x','_','c','a','l','l',0,0,
+        14,'l','a','y','e','r','x','_','r','e','s','e','r','v','e',0,1,
+        6,'m','e','m','o','r','y',2,0,10,11,2,4,0,65,0,11,4,0,65,0,11
+    };
+    static const uint8_t malformed[] = {0,97,115,109,1,0,0,0,10,2,1,4};
+    static const uint8_t float_type[] = {0,97,115,109,1,0,0,0,1,5,1,96,0,1,125};
+    static const uint8_t ambient[] = {
+        0,97,115,109,1,0,0,0,1,4,1,96,0,0,2,13,1,
+        3,'e','n','v',5,'c','l','o','c','k',0,0
+    };
+    static uint8_t generated[ADMISSION_BUFFER_BYTES];
+    static uint8_t snapshot_storage[ADMISSION_BUFFER_BYTES];
+    static lxp_kernel kernel, restored;
+    lxp_state_store store, restored_store;
+    lxp_state_journal journal, restored_journal;
+    lxp_authority_resolved authority = {0};
+    lxp_arena snapshot_arena;
+    lxp_byte_span snapshot;
+    lxp_snapshot_manifest_record manifest;
+    uint8_t root[32];
+    uint64_t parameters = 1U;
+    unsigned int serial = 1U, cases = 0U;
+    int failed = 0;
+    (void)memset(authority.principal, 0x42, sizeof(authority.principal));
+    if (lxp_state_store_init(&store, 1U) != LXP_OK ||
+        lxp_kernel_create(&kernel, &store, &journal, &parameters, 0U) != LXP_OK ||
+        project_metering_genesis(&kernel) != 0 ||
+        lxp_kernel_register_module(&kernel, programs_module_registration_v4()) != LXP_OK)
+        return 1;
+    for (int phase = 0; phase < 2 && !failed; ++phase) {
+        lxp_kernel *active = phase == 0 ? &kernel : &restored;
+        const char *phase_name = phase == 0 ? "initial" : "snapshot_replay";
+        for (int form = 0; form < 2 && !failed; ++form) {
+            for (uint16_t abi = 1U; abi <= 4U && !failed; ++abi) {
+                const struct {
+                    const char *name;
+                    const uint8_t *bytes;
+                    size_t length;
+                } invalid[] = {
+                    {"malformed_body", malformed, sizeof(malformed)},
+                    {"float_type", float_type, sizeof(float_type)},
+                    {"ambient_import", ambient, sizeof(ambient)}
+                };
+                for (size_t index = 0U; index < sizeof(invalid) / sizeof(invalid[0]); ++index) {
+                    failed = admission_case(active, &authority, invalid[index].name,
+                        form, abi, invalid[index].bytes, invalid[index].length,
+                        0, LXP_ERR_NON_CANONICAL, serial++, phase_name);
+                    if (failed) break;
+                    ++cases;
+                }
+            }
+            if (failed) break;
+            failed = admission_case(active, &authority, "unsupported_abi", form,
+                5U, valid, sizeof(valid), 0, LXP_ERR_VERSION_UNSUPPORTED,
+                serial++, phase_name);
+            if (failed) break;
+            ++cases;
+            for (unsigned int bound = 0U; bound < 5U && !failed; ++bound) {
+                static const char *names[] = {"module_bytes", "function_count",
+                    "local_stack", "operand_stack", "call_depth"};
+                size_t length;
+                if (bound == 0U) {
+                    admission_bytes module = {generated, sizeof(valid)};
+                    (void)memcpy(generated, valid, sizeof(valid));
+                    admission_byte(&module, 0U);
+                    admission_leb(&module, 1048576U);
+                    (void)memset(generated + module.length, 0, 1048576U);
+                    length = module.length + 1048576U;
+                } else {
+                    length = admission_functions(generated,
+                        bound == 1U ? 4097U : bound == 4U ? 513U : 1U,
+                        bound == 2U ? 65537U : 0U,
+                        bound == 3U ? 65537U : 0U, bound == 4U);
+                }
+                failed = admission_case(active, &authority, names[bound], form,
+                    1U, generated, length, 0, LXP_ERR_NON_CANONICAL,
+                    serial++, phase_name);
+                if (!failed) ++cases;
+            }
+            if (failed) break;
+            if (form) {
+                failed = admission_case(active, &authority, "invalid_capability", form,
+                    1U, valid, sizeof(valid), 1, LXP_ERR_NON_CANONICAL,
+                    serial++, phase_name);
+                if (failed) break;
+                ++cases;
+            }
+            for (uint16_t abi = 1U; abi <= 4U && !failed; ++abi) {
+                failed = admission_case(active, &authority, "valid", form, abi,
+                    valid, sizeof(valid), 0, LXP_OK, serial++, phase_name);
+                if (!failed) ++cases;
+            }
+        }
+        if (phase == 0 && !failed) {
+            if (lxp_arena_init(&snapshot_arena, snapshot_storage,
+                               sizeof(snapshot_storage)) != LXP_OK ||
+                lxp_state_root(&kernel, root) != LXP_OK ||
+                lxp_snapshot_write(&kernel, 0U, &snapshot_arena, &snapshot) != LXP_OK ||
+                lxp_snapshot_manifest_build(snapshot.bytes, snapshot.length, 0U,
+                    root, kernel.current_state_root, &manifest) != LXP_OK ||
+                lxp_state_store_init(&restored_store, 1U) != LXP_OK ||
+                lxp_kernel_create(&restored, &restored_store, &restored_journal,
+                                  &parameters, 0U) != LXP_OK ||
+                lxp_kernel_register_module(&restored,
+                    programs_module_registration_v4()) != LXP_OK ||
+                lxp_snapshot_load(snapshot.bytes, snapshot.length, &manifest,
+                                  &restored) != LXP_OK ||
+                lxp_snapshot_verify_root(&restored, &manifest) != LXP_OK ||
+                restored.module_kv_count != kernel.module_kv_count ||
+                restored.blob_count != kernel.blob_count)
+                failed = 1;
+        }
+    }
+    while (kernel.blob_count != 0U) free(kernel.blobs[--kernel.blob_count].bytes);
+    while (restored.blob_count != 0U) free(restored.blobs[--restored.blob_count].bytes);
+    if (lxp_state_store_destroy(&store) != LXP_OK) failed = 1;
+    if (!failed && lxp_state_store_destroy(&restored_store) != LXP_OK) failed = 1;
+    if (!failed && printf("ALL_FORM_VALIDATION cases=%u skipped=0\n", cases) < 0)
+        failed = 1;
+    return failed;
+}
+
+int main(int argc, char **argv)
+{
+    if (argc == 2 && strcmp(argv[1], "--all-form-validation") == 0)
+        return all_form_validation();
+    if (argc != 1) return 2;
+    return original_lifecycle();
 }

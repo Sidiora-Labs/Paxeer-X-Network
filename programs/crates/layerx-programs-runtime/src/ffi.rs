@@ -143,3 +143,58 @@ pub extern "C" fn layerx_programs_migration_execute_activity(
         Err(_) => RESULT_NON_CANONICAL,
     }
 }
+
+#[no_mangle]
+pub extern "C" fn layerx_programs_deployment_validate(
+    token: u64,
+    wasm_length: u32,
+    abi_version: u16,
+    metering_schedule_version: u32,
+    meter_base: u64,
+    meter_entity: u64,
+    meter_load: u64,
+    meter_store: u64,
+    meter_call: u64,
+    meter_branch_kept_per_fuel: u64,
+    meter_func_locals_per_fuel: u64,
+    meter_memory_bytes_per_fuel: u64,
+    meter_table_elements_per_fuel: u64,
+) -> i32 {
+    if token == 0 || wasm_length == 0 || wasm_length as usize > MAX_MODULE_BYTES {
+        return RESULT_NON_CANONICAL;
+    }
+    let wasm = match activity_bytes(token, WASM_SECTION, wasm_length as usize) {
+        Ok(wasm) => wasm,
+        Err(refusal) => return refusal,
+    };
+    let mut schedule_bytes = [0_u8; 76];
+    schedule_bytes[..4].copy_from_slice(&metering_schedule_version.to_be_bytes());
+    for (index, coefficient) in [
+        meter_base,
+        meter_entity,
+        meter_load,
+        meter_store,
+        meter_call,
+        meter_branch_kept_per_fuel,
+        meter_func_locals_per_fuel,
+        meter_memory_bytes_per_fuel,
+        meter_table_elements_per_fuel,
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let start = 4 + index * 8;
+        schedule_bytes[start..start + 8].copy_from_slice(&coefficient.to_be_bytes());
+    }
+    let Ok(schedule) = crate::FuelSchedule::from_protocol_bytes(&schedule_bytes) else {
+        return RESULT_NON_CANONICAL;
+    };
+    let Ok(engine) = crate::WasmEngine::declared() else {
+        return RESULT_FATAL_INVARIANT;
+    };
+    match engine.validate_deployment_versioned_metered(abi_version, &wasm, schedule) {
+        Ok(_) => RESULT_OK,
+        Err(crate::ValidationRefusal::UnsupportedAbiVersion { .. }) => -101,
+        Err(_) => RESULT_NON_CANONICAL,
+    }
+}

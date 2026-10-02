@@ -105,20 +105,37 @@ static void program_interface_key(const uint8_t program_id[32], uint8_t key[42])
     (void)memcpy(key + PROGRAM_INTERFACE_KEY_PREFIX_LENGTH, program_id, 32U);
 }
 
-static lxp_result validate_wasm(const programs_lifecycle_decoded *value)
+static lxp_result validate_wasm(lxp_module_ctx *ctx,
+                                 const programs_lifecycle_decoded *value)
 {
     static const uint8_t wasm_header[8] = {
         0x00U, 0x61U, 0x73U, 0x6dU, 0x01U, 0x00U, 0x00U, 0x00U
     };
     uint8_t digest[32];
+    lx_programs_metering_schedule metering_schedule;
     lxp_result status;
     if (value->wasm_length < sizeof(wasm_header) ||
         memcmp(value->wasm, wasm_header, sizeof(wasm_header)) != 0)
         return LXP_ERR_NON_CANONICAL;
     status = lxp_hash_sha256(value->wasm, value->wasm_length, digest);
     if (status != LXP_OK) return status;
-    return lxp_ct_memcmp(digest, value->new_hash, sizeof(digest)) == 0 ?
-        LXP_OK : LXP_ERR_PAYLOAD_HASH_MISMATCH;
+    if (lxp_ct_memcmp(digest, value->new_hash, sizeof(digest)) != 0)
+        return LXP_ERR_PAYLOAD_HASH_MISMATCH;
+    status = lxp_programs_metering_schedule_current(
+        ctx->kernel, lxp_ctx_batch_number(ctx), &metering_schedule);
+    if (status != LXP_OK) return status;
+    return layerx_programs_deployment_validate(
+        (uint64_t)(uintptr_t)value, value->wasm_length, value->abi_version,
+        metering_schedule.version,
+        metering_schedule.coefficients[0],
+        metering_schedule.coefficients[1],
+        metering_schedule.coefficients[2],
+        metering_schedule.coefficients[3],
+        metering_schedule.coefficients[4],
+        metering_schedule.coefficients[5],
+        metering_schedule.coefficients[6],
+        metering_schedule.coefficients[7],
+        metering_schedule.coefficients[8]);
 }
 
 static lxp_result validate_interface(lxp_module_ctx *ctx,
@@ -352,7 +369,7 @@ lxp_result lxp_programs_lifecycle_validate(
             read_u16(current + 65U), value->abi_version);
     }
     if (status != LXP_OK) return status;
-    status = validate_wasm(value);
+    status = validate_wasm(ctx, value);
     if (status != LXP_OK) return status;
     status = validate_interface(ctx, (programs_lifecycle_decoded *)value);
     if (status != LXP_OK) return status;
