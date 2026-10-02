@@ -140,8 +140,20 @@ export interface AgentReceiptEvidence {
   readonly authorizedBatch: AuthorizedReceiptBatch;
 }
 
+export interface AgentReceiptContext {
+  readonly idempotencyKey: string;
+  readonly activityId: string;
+}
+
+export interface AgentReceiptRecording extends AgentReceiptContext {
+  readonly receiptDigest: string;
+  readonly receiptRef?: string;
+}
+
 export interface AgentReceiptResolver {
   resolve(receiptRef: string): Promise<AgentReceiptEvidence>;
+  resolveFor?(receiptRef: string, context: AgentReceiptContext): Promise<AgentReceiptEvidence>;
+  retainVerified?(record: AgentReceiptRecording): Promise<void>;
 }
 
 export interface ApprovalHold {
@@ -355,7 +367,11 @@ export class AgentMiddleware {
     }
     let evidence: AgentReceiptEvidence;
     try {
-      evidence = submission.receiptEvidence ?? await this.#receipts.resolve(receiptRef);
+      evidence = submission.receiptEvidence ?? (this.#receipts.resolveFor === undefined
+        ? await this.#receipts.resolve(receiptRef)
+        : await this.#receipts.resolveFor(receiptRef, {
+          idempotencyKey: request.preparation.idempotency_key, activityId: expectedActivityId,
+        }));
     } catch {
       return { kind: "pending", submission, reservation };
     }
@@ -376,6 +392,10 @@ export class AgentMiddleware {
     const receiptDigest = toHex(verification.receiptDigest);
     let committed: BudgetReservation;
     try {
+      await this.#receipts.retainVerified?.({
+        idempotencyKey: request.preparation.idempotency_key, activityId: expectedActivityId,
+        receiptDigest, receiptRef,
+      });
       committed = validateBudgetReservation(
         await this.#budgets.commit({
           reservationId: reservation.reservationId,
@@ -799,6 +819,9 @@ export class AgentGrantMiddleware implements GrantDrawExecution {
     if (outcome.kind !== "settled") return outcome;
     const verification = await verifyPaymentReceipt(outcome, requirements, this.config.commitments, this.#protocol);
     const receiptDigest = toHex(verification.receiptDigest);
+    await this.config.receipts.retainVerified?.({
+      idempotencyKey: request.idempotencyKey, activityId: toHex(verification.receipt.activityId), receiptDigest,
+    });
     const committed = validateBudgetReservation(await this.config.budgets.commit({ reservationId: reservation.reservationId, ...facts, receiptDigest }), facts, reservation.reservationId);
     if (committed.state !== "committed" || committed.receiptDigest !== receiptDigest) throw new AgentMiddlewareError("budget-conflict");
     return outcome;
