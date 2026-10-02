@@ -93,8 +93,16 @@ fn contains_term(message: &str, term: &str) -> bool {
             .chars()
             .filter(|character| character.is_alphabetic())
             .all(char::is_uppercase);
-    let message = if acronym { message.to_owned() } else { message.to_lowercase() };
-    let term = if acronym { term.to_owned() } else { term.to_lowercase() };
+    let message = if acronym {
+        message.to_owned()
+    } else {
+        message.to_lowercase()
+    };
+    let term = if acronym {
+        term.to_owned()
+    } else {
+        term.to_lowercase()
+    };
     let mut offset = 0;
     while let Some(found) = message[offset..].find(&term) {
         let start = offset + found;
@@ -315,6 +323,15 @@ fn jsx_text_runs(line: &str) -> Vec<String> {
     runs
 }
 
+fn ramp_key_in_default_source(path: &Path, line: &str) -> bool {
+    if path.components().any(|part| part.as_os_str() == "ramp") {
+        return false;
+    }
+    literals(line)
+        .iter()
+        .any(|literal| line[literal.start + 1..literal.end].starts_with("ramp."))
+}
+
 fn visit_sources(root: &Path, files: &mut Vec<PathBuf>) -> Result<(), String> {
     for entry in
         fs::read_dir(root).map_err(|error| format!("cannot read {}: {error}", root.display()))?
@@ -353,6 +370,13 @@ fn source_violations(source_root: &Path) -> Vec<String> {
             if concatenates_prose(line) {
                 violations.push(format!(
                     "runtime-copy-concatenation:{}:{}",
+                    path.display(),
+                    number + 1
+                ));
+            }
+            if ramp_key_in_default_source(&path, line) {
+                violations.push(format!(
+                    "ramp-copy-in-default-source:{}:{}",
                     path.display(),
                     number + 1
                 ));
@@ -415,8 +439,10 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::{
-        catalog_violations, concatenates_prose, contains_term, entries, jsx_text_runs, sentence_case,
+        catalog_violations, concatenates_prose, contains_term, entries, jsx_text_runs,
+        ramp_key_in_default_source, sentence_case,
     };
+    use std::path::Path;
 
     #[test]
     fn parses_catalog_entries() {
@@ -463,7 +489,9 @@ mod tests {
         assert!(concatenates_prose(
             "throw new Error(\"the request is missing the \" + name);"
         ));
-        assert!(concatenates_prose("const line = greeting + \" and welcome\";"));
+        assert!(concatenates_prose(
+            "const line = greeting + \" and welcome\";"
+        ));
         assert!(!concatenates_prose(
             "await execute(\"POST\", \"/v1/deposits/\" + encodeURIComponent(id), body);"
         ));
@@ -487,7 +515,9 @@ mod tests {
             "  {state === \"approved\" ? <ReleasedActivitySection entry={released} /> : null}"
         )
         .is_empty());
-        assert!(jsx_text_runs("  const resolved = value > 0 ? \"inbound\" : \"other\";").is_empty());
+        assert!(
+            jsx_text_runs("  const resolved = value > 0 ? \"inbound\" : \"other\";").is_empty()
+        );
     }
 
     #[test]
@@ -540,5 +570,31 @@ mod tests {
         assert!(catalog_violations(&source)
             .iter()
             .any(|value| value == "ambiguous-ramp-balance-claim:ramp.balance"));
+    }
+
+    #[test]
+    fn ramp_keys_are_refused_outside_ramp_surface_sources() {
+        let usage =
+            "  <InlineNotice>{copyEntry(\"ramp.external_custody.label\").message}</InlineNotice>";
+        assert!(ramp_key_in_default_source(
+            Path::new("human/apps/web/src/app/home/page.tsx"),
+            usage,
+        ));
+        assert!(ramp_key_in_default_source(
+            Path::new("human/apps/web/src/lib/activity.ts"),
+            "const status = formatCopy('ramp.status.done', {});",
+        ));
+        assert!(!ramp_key_in_default_source(
+            Path::new("human/apps/web/src/ramp/panel.tsx"),
+            usage,
+        ));
+        assert!(!ramp_key_in_default_source(
+            Path::new("human/apps/web/src/app/home/page.tsx"),
+            "  <InlineNotice>{copyEntry(\"move.status.done\").message}</InlineNotice>",
+        ));
+        assert!(!ramp_key_in_default_source(
+            Path::new("human/apps/web/src/app/home/page.tsx"),
+            "const label = copyEntry(\"ramps.unrelated\");",
+        ));
     }
 }
