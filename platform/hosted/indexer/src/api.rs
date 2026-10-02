@@ -9,7 +9,7 @@ use std::time::Duration;
 
 use layerx_platform_internal::http::{json, read_http_message, refusal, write_response, Response};
 use rustls::{ServerConfig, ServerConnection, StreamOwned};
-use serde_json::json;
+use serde_json::{json, Value};
 
 use crate::codec::percent_decode;
 use crate::store::{Page, Store};
@@ -113,6 +113,75 @@ fn identifier(segment: &str) -> Result<String, Response> {
 /// Answers one request `method` `target` (path plus optional query).
 #[must_use]
 pub fn route(store: &Store, method: &str, target: &str) -> Response {
+    route_with(store, &Readiness::default(), method, target)
+}
+
+/// The ingestion sources readiness is judged on.
+#[derive(Clone, Debug, Default)]
+pub struct Readiness {
+    pub sources: Vec<&'static str>,
+    pub stall_after_secs: u64,
+    /// Process start (Unix seconds): only observations after it count.
+    pub started_at: u64,
+}
+
+const FAILING_AFTER: u64 = 3;
+
+fn unix_now() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |elapsed| elapsed.as_secs())
+}
+
+/// The typed readiness document: database liveness plus the state of every
+/// required ingestion source.
+///
+/// # Errors
+/// Returns [`IndexError::Store`] when the database cannot answer.
+pub fn readiness_document(store: &Store, readiness: &Readiness) -> Result<Value, IndexError> {
+    store.ping()?;
+    let current = unix_now();
+    let mut worst = 0_usize;
+    let mut sources = Vec::new();
+    for &source in &readiness.sources {
+        let observation = store.source_observation(source)?;
+        let cursor = store.cursor(source)?;
+        let success = observation.as_ref().and_then(|o| o.last_success_at);
+        let failures = observation.as_ref().map_or(0, |o| o.consecutive_failures);
+        let (state, rank) = match success {
+            Some(at) if at < readiness.started_at => ("starting", 2),
+            None => ("starting", 2),
+            Some(at) if current.saturating_sub(at) > readiness.stall_after_secs => ("stalled", 2),
+            Some(_) if failures >= FAILING_AFTER => ("failing", 1),
+            Some(_) => ("ready", 0),
+        };
+        worst = worst.max(rank);
+        sources.push(json!({
+            "source": source,
+            "state": state,
+            "last_success_at": success,
+            "freshness_secs": success.map(|at| current.saturating_sub(at)),
+            "last_error": observation.as_ref().and_then(|o| o.last_error.clone()),
+            "last_error_at": observation.as_ref().and_then(|o| o.last_error_at),
+            "consecutive_failures": failures,
+            "source_head": observation.as_ref().and_then(|o| o.source_head),
+            "indexed_cursor": cursor.as_ref().map(|c| c.position),
+            "finalized_cursor": cursor.as_ref().and_then(|c| c.finalized_position),
+        }));
+    }
+    let status = ["ready", "degraded", "unavailable"][worst];
+    Ok(json!({
+        "version": 1,
+        "status": status,
+        "database": "ok",
+        "started_at": readiness.started_at,
+        "sources": sources,
+    }))
+}
+
+/// Answers one request, judging `/readyz` on `readiness`.
+#[must_use]
+pub fn route_with(store: &Store, readiness: &Readiness, method: &str, target: &str) -> Response {
     if method != "GET" {
         return refusal(405, "method_not_allowed", None);
     }
@@ -123,6 +192,18 @@ pub fn route(store: &Store, method: &str, target: &str) -> Response {
         return match store.ping() {
             Ok(()) => json(200, &json!({ "status": "ok" })),
             Err(error) => failure(&error),
+        };
+    }
+    if path == "/readyz" {
+        return match readiness_document(store, readiness) {
+            Ok(document) => {
+                let code = if document["status"] == "ready" { 200 } else { 503 };
+                json(code, &document)
+            }
+            Err(error) => json(
+                503,
+                &json!({ "version": 1, "status": "unavailable", "database": "error", "error": error.to_string(), "sources": [] }),
+            ),
         };
     }
     if path == "/v1/assets" {
@@ -165,7 +246,11 @@ pub fn route(store: &Store, method: &str, target: &str) -> Response {
     refusal(404, "not_found", None)
 }
 
-fn answer<S: std::io::Read + std::io::Write>(store: &Store, stream: &mut S) -> Result<(), String> {
+fn answer<S: std::io::Read + std::io::Write>(
+    store: &Store,
+    readiness: &Readiness,
+    stream: &mut S,
+) -> Result<(), String> {
     let response = match read_http_message(stream, MAXIMUM_REQUEST_BYTES) {
         Ok(request) => {
             let start = request.headers.get("").cloned().unwrap_or_default();
@@ -174,7 +259,7 @@ fn answer<S: std::io::Read + std::io::Write>(store: &Store, stream: &mut S) -> R
                 (Some(method), Some(target), Some("HTTP/1.1"), None)
                     if target.starts_with('/') && request.headers.contains_key("host") =>
                 {
-                    route(store, method, target)
+                    route_with(store, readiness, method, target)
                 }
                 _ => refusal(400, "invalid_request", None),
             }
@@ -187,6 +272,7 @@ fn answer<S: std::io::Read + std::io::Write>(store: &Store, stream: &mut S) -> R
 
 fn connection(
     store: &Store,
+    readiness: &Readiness,
     tls: Option<&Arc<ServerConfig>>,
     tcp: TcpStream,
 ) -> Result<(), String> {
@@ -197,13 +283,13 @@ fn connection(
     match tls {
         None => {
             let mut tcp = tcp;
-            answer(store, &mut tcp)
+            answer(store, readiness, &mut tcp)
         }
         Some(config) => {
             let server =
                 ServerConnection::new(Arc::clone(config)).map_err(|error| error.to_string())?;
             let mut stream = StreamOwned::new(server, tcp);
-            answer(store, &mut stream)?;
+            answer(store, readiness, &mut stream)?;
             stream.conn.send_close_notify();
             let _ = stream.conn.write_tls(&mut stream.sock);
             Ok(())
@@ -226,6 +312,16 @@ pub fn bind(listen: SocketAddr, tls: bool) -> Result<TcpListener, IndexError> {
 
 /// Serves the API on `listener` until it fails.
 pub fn serve(listener: &TcpListener, store: &Arc<Store>, tls: Option<&Arc<ServerConfig>>) {
+    serve_with(listener, store, &Arc::new(Readiness::default()), tls);
+}
+
+/// Serves the API on `listener`, judging `/readyz` on `readiness`.
+pub fn serve_with(
+    listener: &TcpListener,
+    store: &Arc<Store>,
+    readiness: &Arc<Readiness>,
+    tls: Option<&Arc<ServerConfig>>,
+) {
     for incoming in listener.incoming() {
         let tcp = match incoming {
             Ok(tcp) => tcp,
@@ -243,9 +339,10 @@ pub fn serve(listener: &TcpListener, store: &Arc<Store>, tls: Option<&Arc<Server
             continue;
         }
         let store = Arc::clone(store);
+        let readiness = Arc::clone(readiness);
         let tls = tls.cloned();
         thread::spawn(move || {
-            if let Err(error) = connection(&store, tls.as_ref(), tcp) {
+            if let Err(error) = connection(&store, &readiness, tls.as_ref(), tcp) {
                 eprintln!("layerx-indexer connection failed: {error}");
             }
             ACTIVE.fetch_sub(1, Ordering::AcqRel);

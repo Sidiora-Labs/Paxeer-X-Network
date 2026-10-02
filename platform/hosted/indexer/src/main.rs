@@ -19,7 +19,18 @@ where
     F: Fn(&Store) -> Result<StepOutcome, IndexError> + Send + 'static,
 {
     thread::spawn(move || loop {
-        match step(&store) {
+        let outcome = step(&store);
+        let recorded = match &outcome {
+            Ok(_) => store.cursor(name).and_then(|cursor| {
+                let position = cursor.map(|cursor| cursor.position);
+                store.record_source_success(name, position.unwrap_or(0), position)
+            }),
+            Err(error) => store.record_source_failure(name, &error.to_string()),
+        };
+        if let Err(error) = recorded {
+            eprintln!("layerx-indexer {name} observation not recorded: {error}");
+        }
+        match outcome {
             Ok(StepOutcome::Advanced { .. } | StepOutcome::RolledBack { .. }) => {}
             Ok(StepOutcome::Idle) => thread::sleep(poll),
             Err(error @ (IndexError::ReorgBeyondFinality { .. } | IndexError::Integrity(_))) => {
@@ -95,8 +106,22 @@ fn run() -> Result<(), IndexError> {
         None
     };
     let listener = api::bind(config.listen, config.tls)?;
+    let stall_after_secs = match std::env::var("LAYERX_INDEXER_STALL_SECS") {
+        Ok(text) => text.parse::<u64>().map_err(|_| {
+            IndexError::Config(format!("LAYERX_INDEXER_STALL_SECS {text} is not a number"))
+        })?,
+        Err(_) => 30,
+    };
+    let mut readiness = api::Readiness {
+        sources: Vec::new(),
+        stall_after_secs,
+        started_at: std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |elapsed| elapsed.as_secs()),
+    };
     if let Some(source) = config.layerx.clone() {
         let ingester = LayerXIngester::new(source.relay, source.policy, source.start_batch);
+        readiness.sources.push("layerx");
         follow("layerx", Arc::clone(&store), config.poll, move |store| {
             ingester.step(store)
         });
@@ -112,6 +137,7 @@ fn run() -> Result<(), IndexError> {
             source.chain_id,
             source.encoding,
         );
+        readiness.sources.push("paxeer");
         follow("paxeer", Arc::clone(&store), config.poll, move |store| {
             ingester.step(store)
         });
@@ -121,7 +147,7 @@ fn run() -> Result<(), IndexError> {
         config.listen,
         if config.tls { " with TLS" } else { "" }
     );
-    api::serve(&listener, &store, tls.as_ref());
+    api::serve_with(&listener, &store, &Arc::new(readiness), tls.as_ref());
     Ok(())
 }
 

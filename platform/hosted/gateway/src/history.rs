@@ -491,8 +491,14 @@ pub(super) fn status(config: &Config) -> &'static str {
         indexer,
         client: Some(&config.client),
     };
-    match source.get("/healthz", "") {
-        Ok((200, _)) => "available",
+    // HTTP 200 alone is not availability: the indexer's typed readiness
+    // document decides, and a degraded source stays degraded here.
+    match source.get("/readyz", "") {
+        Ok((200 | 503, body)) => match body["status"].as_str() {
+            Some("ready") => "available",
+            Some("degraded") => "degraded",
+            _ => "unavailable",
+        },
         _ => "unavailable",
     }
 }
