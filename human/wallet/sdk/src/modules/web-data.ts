@@ -1,3 +1,4 @@
+import { readWalletCaps, type WalletCapsSnapshot } from '../kernel.js';
 import {
   XWEB_KIND_API,
   XWEB_PRECOMPILE,
@@ -80,6 +81,7 @@ export interface WebDataModule {
   buildApiRequest(call: XWebApiCall, attestors: XWebAttestorSet, options?: XWebApiBuildOptions): XWebApiRequest;
   refund(requestId: bigint): ModuleTransaction;
   fee(): Promise<bigint>;
+  caps(address: string): Promise<WalletCapsSnapshot>;
   attestors(): Promise<XWebAttestorSet>;
   send(from: string, tx: ModuleTransaction): Promise<string>;
   decodeEvent(log: ModuleLog): DecodedModuleEvent;
@@ -111,6 +113,7 @@ export function webData(provider: ModuleProvider, address: string = XWEB_PRECOMP
     retarget(requestCall(kind, payload, callbackGas, fee), target);
   return {
     address: target,
+    caps: (address) => readWalletCaps(provider, address),
     events: WEB_DATA_EVENTS,
     request,
     fetch: (url, callbackGas, fee) => request(WEB_DATA_KIND_FETCH, url, callbackGas, fee),

@@ -22160,7 +22160,9 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.14.4]
 title = "Display verified account-bound 402 budgets and allowance caps"
-status = "in_progress"
+status = "done"
+completion_basis = "implementation"
+qualification_status = "unverified"
 mode = "BUILD"
 wave = 2
 requires = ["0.2"]

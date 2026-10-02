@@ -62,6 +62,7 @@ enum Listener {
 }
 
 struct Config {
+    wallet_caps: Option<WalletCaps>,
     routes: routes::Registry,
     listen: SocketAddr,
     listener: Listener,
@@ -1115,6 +1116,7 @@ fn config(event_producer: bool) -> Result<Config, String> {
     }
     let protocol = configured_protocol()?;
     Ok(Config {
+        wallet_caps: configured_wallet_caps()?,
         routes: routes::Registry::configured(&protocol.network_id, &protocol.wire_version)?,
         listen: env::var("LAYERX_GATEWAY_LISTEN")
             .unwrap_or_else(|_| "0.0.0.0:9443".to_owned())
@@ -6306,4 +6308,149 @@ mod authority_lni_compatibility_tests {
         assert_eq!(decode(&unexpected), Err(AuthorityUnready::InvalidSchema));
         println!("PAXEER_X_LNI_CASES=3");
     }
+}
+
+
+struct WalletCaps {
+    bridge: Endpoint,
+    issuer_socket: std::path::PathBuf,
+    peer_uid: u32,
+    peer_gid: u32,
+    tenant: String,
+    chain_id: u64,
+    bindings: layerx_identity_binding::Client,
+    clock: Arc<layerx_client::runtime_clock::RuntimeClock>,
+}
+
+fn configured_wallet_caps() -> Result<Option<WalletCaps>, String> {
+    const NAMES: [&str; 7] = ["LAYERX_GATEWAY_WALLET_IDENTITY_URL", "LAYERX_GATEWAY_WALLET_ISSUER_SOCKET",
+        "LAYERX_GATEWAY_WALLET_BINDING_SOCKET", "LAYERX_GATEWAY_WALLET_IDENTITY_UID",
+        "LAYERX_GATEWAY_WALLET_IDENTITY_GID", "LAYERX_GATEWAY_WALLET_TENANT", "LAYERX_GATEWAY_WALLET_CHAIN_ID"];
+    if NAMES.iter().all(|name| env::var_os(name).is_none()) { return Ok(None); }
+    let values = NAMES.iter().map(|name| env::var(name).map_err(|_| "incomplete wallet caps configuration".to_owned())).collect::<Result<Vec<_>, _>>()?;
+    let peer_uid = values[3].parse().map_err(|_| "invalid wallet identity uid")?;
+    let peer_gid = values[4].parse().map_err(|_| "invalid wallet identity gid")?;
+    let chain_id = values[6].parse::<u64>().map_err(|_| "invalid wallet chain id")?;
+    if chain_id == 0 || values[5].is_empty() || values[5].len() > 255 || values[5].chars().any(char::is_control) {
+        return Err("invalid wallet caps binding".to_owned());
+    }
+    let clock = layerx_client::runtime_clock::RuntimeClock::from_environment().map_err(|_| "wallet identity clock unavailable")?;
+    let bindings = layerx_identity_binding::Client::new(layerx_identity_binding::Config {
+        socket: values[2].clone().into(), tenant: values[5].clone(), peer_uid, peer_gid, deadline: Duration::from_secs(3),
+    }, clock.clone()).map_err(|_| "invalid wallet identity binding configuration")?;
+    let issuer_socket = std::path::PathBuf::from(&values[1]);
+    if !issuer_socket.is_absolute() { return Err("wallet issuer requires a same-host protected absolute socket".to_owned()); }
+    Ok(Some(WalletCaps { bridge: Endpoint::parse(&values[0])?, issuer_socket, peer_uid, peer_gid,
+        tenant: values[5].clone(), chain_id, bindings, clock }))
+}
+
+fn wallet_assertion(caps: &WalletCaps, assertion: &str, binding: &str) -> Result<(String, String), u16> {
+    use std::io::{Read, Write};
+    use std::os::unix::fs::{FileTypeExt, MetadataExt};
+    use std::os::unix::net::UnixStream;
+    let path = &caps.issuer_socket;
+    let parent = path.parent().ok_or(502_u16)?;
+    let directory = fs::symlink_metadata(parent).map_err(|_| 503_u16)?;
+    let before = fs::symlink_metadata(path).map_err(|_| 503_u16)?;
+    if fs::canonicalize(path).map_err(|_| 503_u16)? != *path || !directory.is_dir()
+        || directory.uid() != caps.peer_uid || directory.mode() & 0o022 != 0
+        || !before.file_type().is_socket() || before.uid() != caps.peer_uid || before.gid() != caps.peer_gid
+        || before.mode() & 0o007 != 0 || assertion.len() > 16384 || binding.len() > 16384 { return Err(403); }
+    let started = Instant::now();
+    let descriptor = rustix::net::socket_with(rustix::net::AddressFamily::UNIX, rustix::net::SocketType::STREAM,
+        rustix::net::SocketFlags::CLOEXEC | rustix::net::SocketFlags::NONBLOCK, None).map_err(|_| 503_u16)?;
+    rustix::net::connect(&descriptor, &rustix::net::SocketAddrUnix::new(path).map_err(|_| 503_u16)?).map_err(|_| 503_u16)?;
+    let mut stream = UnixStream::from(descriptor);
+    let peer = rustix::net::sockopt::socket_peercred(&stream).map_err(|_| 503_u16)?;
+    let after = fs::symlink_metadata(path).map_err(|_| 503_u16)?;
+    if peer.uid.as_raw() != caps.peer_uid || peer.gid.as_raw() != caps.peer_gid
+        || before.dev() != after.dev() || before.ino() != after.ino() { return Err(403); }
+    stream.set_nonblocking(false).map_err(|_| 503_u16)?;
+    let mut body = Zeroizing::new(b"LXIP\x01\x04".to_vec());
+    body.extend_from_slice(&2_u32.to_be_bytes());
+    for field in [assertion, binding] { body.extend_from_slice(&(field.len() as u32).to_be_bytes()); body.extend_from_slice(field.as_bytes()); }
+    let mut frame = Zeroizing::new((body.len() as u32).to_be_bytes().to_vec()); frame.extend_from_slice(&body);
+    let mut pending = frame.as_slice();
+    while !pending.is_empty() {
+        let left = Duration::from_secs(3).checked_sub(started.elapsed()).filter(|v| !v.is_zero()).ok_or(502_u16)?;
+        stream.set_write_timeout(Some(left)).map_err(|_| 503_u16)?;
+        let sent = stream.write(pending).map_err(|_| 503_u16)?; if sent == 0 { return Err(403); } pending = &pending[sent..];
+    }
+    let mut read = |out: &mut [u8]| -> Result<(), u16> {
+        let mut offset = 0;
+        while offset < out.len() {
+            let left = Duration::from_secs(3).checked_sub(started.elapsed()).filter(|v| !v.is_zero()).ok_or(502_u16)?;
+            stream.set_read_timeout(Some(left)).map_err(|_| 503_u16)?;
+            let count = stream.read(&mut out[offset..]).map_err(|_| 503_u16)?; if count == 0 { return Err(403); } offset += count;
+        }
+        Ok(())
+    };
+    let mut length = [0; 4]; read(&mut length)?;
+    let length = u32::from_be_bytes(length) as usize;
+    if !(10..=2048).contains(&length) { return Err(403); }
+    let mut response = Zeroizing::new(vec![0; length]); read(&mut response)?;
+    if &response[..5] != b"LXIP\x01" { return Err(502); }
+    if response[5] == 4 { return Err(503); }
+    if response[5] != 0 { return Err(403); }
+    if response[6..10] != 2_u32.to_be_bytes() { return Err(403); }
+    let mut remaining = &response[10..];
+    let mut fields = Vec::new();
+    for _ in 0..2 {
+        let size = u32::from_be_bytes(remaining.get(..4).ok_or(502_u16)?.try_into().map_err(|_| 503_u16)?) as usize;
+        if size == 0 || size > 255 { return Err(403); }
+        fields.push(std::str::from_utf8(remaining.get(4..4 + size).ok_or(502_u16)?).map_err(|_| 503_u16)?.to_owned());
+        remaining = remaining.get(4 + size..).ok_or(502_u16)?;
+    }
+    if !remaining.is_empty() || PrincipalId::new(&fields[0]).is_err() { return Err(403); }
+    Ok((fields.remove(0), fields.remove(0)))
+}
+
+fn wallet_caps(config: &Config, request: &IncomingRequest, params: Option<&serde_json::Value>) -> OutgoingResponse {
+    use layerx_types::clock::Clock;
+    let Some(caps) = &config.wallet_caps else { return response(503, "caps_not_configured", Some(5)); };
+    let Some(token) = request.headers.get("authorization").and_then(|v| v.strip_prefix("Bearer "))
+        .filter(|v| !v.is_empty() && v.len() <= 16384 && !v.chars().any(char::is_control)) else { return response(401, "caps_session_required", None); };
+    let Some(args) = params.and_then(serde_json::Value::as_array).filter(|v| v.len() == 1) else { return response(400, "invalid_caps_request", None); };
+    let Some(wanted) = args[0].as_object().filter(|v| v.len() == 2) else { return response(400, "invalid_caps_request", None); };
+    let Some(address) = wanted.get("address").and_then(serde_json::Value::as_str) else { return response(400, "invalid_caps_request", None); };
+    if wanted.get("chain_id").and_then(serde_json::Value::as_u64) != Some(caps.chain_id) { return response(403, "caps_network_refused", None); }
+    let Ok(upstream) = config.client.request(&caps.bridge, token, &http::OutboundRequest {
+        method: "GET", path: "/v1/wallet/me", idempotency: None, content_type: "application/json", body: &[],
+    }) else { return response(503, "caps_identity_unavailable", Some(5)); };
+    if matches!(upstream.status, 401 | 403) { return response(403, "caps_session_refused", None); }
+    if upstream.status != 200 || upstream.content_type != "application/json" { return response(503, "caps_identity_unavailable", Some(5)); }
+    let Ok(bridge) = serde_json::from_slice::<serde_json::Value>(&upstream.body) else { return response(502, "caps_identity_evidence", None); };
+    let Some(context) = bridge.get("capsContext").and_then(serde_json::Value::as_object) else { return response(503, "caps_binding_unavailable", Some(5)); };
+    let text = |key: &str| context.get(key).and_then(serde_json::Value::as_str);
+    let Some(binding) = bridge.get("identityBinding").and_then(serde_json::Value::as_str) else { return response(503, "caps_binding_unavailable", Some(5)); };
+    let mut hash = Sha256::new(); hash.update(b"LXP/wallet-caps/session/v1\0"); hash.update(token.as_bytes());
+    let session_id = hex(&hash.finalize());
+    let expires = text("expires_at").and_then(|v| v.parse::<u64>().ok());
+    let Ok(observed) = caps.clock.sample(Duration::from_secs(1)) else { return response(503, "caps_clock_unavailable", Some(5)); };
+    if text("tenant") != Some(caps.tenant.as_str()) || text("session_id") != Some(session_id.as_str())
+        || text("address") != Some(address) || context.get("chain_id").and_then(serde_json::Value::as_u64) != Some(caps.chain_id)
+        || expires.is_none_or(|v| v <= observed.unix_seconds()) { return response(403, "caps_binding_refused", None); }
+    let (principal, did) = match wallet_assertion(caps, token, binding) {
+        Ok(value) => value,
+        Err(503) => return response(503, "caps_issuer_unavailable", Some(5)),
+        Err(_) => return response(403, "caps_assertion_refused", None),
+    };
+    let Ok(recorded) = caps.bindings.lookup(&principal) else { return response(403, "caps_principal_refused", None); };
+    if recorded.did().as_bytes() != did.as_bytes() || text("did") != Some(did.as_str()) { return response(403, "caps_principal_refused", None); }
+    let Some(account) = text("account_id").filter(|v| parse_hex32(v).is_ok()) else { return response(403, "caps_account_refused", None); };
+    let body = serde_json::json!({"did": did, "account_id": account, "network_id": config.protocol_network_id}).to_string();
+    let mut result = public_reads::request(config, "POST", "/internal/v1/wallet-caps", body.as_bytes());
+    if result.status != 200 { return result; }
+    let Ok(mut value) = serde_json::from_slice::<serde_json::Value>(&result.body) else { return response(502, "caps_evidence_refused", None); };
+    let Some(snapshot) = value.get_mut("result").and_then(serde_json::Value::as_object_mut) else { return response(502, "caps_evidence_refused", None); };
+    if snapshot.get("did").and_then(serde_json::Value::as_str) != Some(did.as_str())
+        || snapshot.get("account_id").and_then(serde_json::Value::as_str) != Some(account)
+        || snapshot.get("network_id").and_then(serde_json::Value::as_u64) != Some(u64::from(config.protocol_network_id)) { return response(502, "caps_evidence_refused", None); }
+    let Ok(completed) = caps.clock.sample(Duration::from_secs(1)) else { return response(503, "caps_clock_unavailable", Some(5)); };
+    if expires.is_none_or(|v| v <= completed.unix_seconds()) { return response(403, "caps_session_expired", None); }
+    snapshot.insert("context".to_owned(), serde_json::json!({"principal": principal, "session_id": session_id,
+        "address": address, "chain_id": caps.chain_id, "expires_at": expires.map(|v| v.to_string())}));
+    result.body = value.to_string().into_bytes();
+    result.headers.push(("Cache-Control".to_owned(), "no-store".to_owned()));
+    result
 }

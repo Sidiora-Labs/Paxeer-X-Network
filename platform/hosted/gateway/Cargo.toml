@@ -10,6 +10,9 @@ name = "layerx-gateway"
 path = "src/main.rs"
 
 [dependencies]
+layerx-client.workspace = true
+layerx-identity-binding.workspace = true
+rustix = { workspace = true, features = ["net"] }
 layerx-platform-internal.workspace = true
 ed25519-dalek.workspace = true
 getrandom.workspace = true

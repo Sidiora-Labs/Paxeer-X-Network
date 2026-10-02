@@ -1,5 +1,7 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { readFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { verifyAccessToken } from '../auth/jwt.js';
 import { privateKeyToAccount } from 'viem/accounts';
 import { requireAuth } from '../middleware/auth.js';
 import {
@@ -12,7 +14,7 @@ import { getPool } from '../db/pool.js';
 import { env } from '../env.js';
 import { sharedRpcPool } from '../rpc/pool.js';
 import { sharedNonceStore } from '../nonce/store.js';
-import { AttestorRefusal, AttestorUnavailable, attestorDaemonFromConfig, readKernelAvailability } from '../provision/bind.js';
+import { AttestorRefusal, AttestorUnavailable, attestorDaemonFromConfig, mainAccountId, readKernelAvailability } from '../provision/bind.js';
 import { ProvisionError, ProvisionRefusedError, provisionAccount, produceIdentityBinding, type ProvisionDeps } from '../provision/state.js';
 
 export interface WalletRoutesOptions {
@@ -138,7 +140,25 @@ export async function walletRoutes(app: FastifyInstance, opts: WalletRoutesOptio
     const unified = await unifiedColumns(wallet.id);
     const provision = deps();
     const kernel = await readKernelAvailability(provision ? provision.rpc : sharedRpcPool());
-    return reply.send({
+    let identityBinding: string | null = null;
+    let capsContext: Record<string, unknown> | null = null;
+    if (provision?.identityBinding && unified.binding_state === 'bound' && unified.did &&
+        unified.main_account_id === mainAccountId(unified.did)) {
+      identityBinding = await produceIdentityBinding(provision, userId, {
+        state: 'active', awaiting: null, walletId: wallet.id, address: wallet.address as `0x${string}`,
+        did: unified.did, mainAccountId: unified.main_account_id, bindMessage: null,
+      });
+      const assertion = bearerToken(req);
+      const claims = await verifyAccessToken(assertion);
+      if (identityBinding && claims.sub === userId && Number.isSafeInteger(claims.exp) && claims.exp > Math.floor(Date.now() / 1000)) {
+        capsContext = { subject: userId, did: unified.did, account_id: unified.main_account_id,
+          address: wallet.address.toLowerCase(), chain_id: wallet.chain_id,
+          tenant: provision.identityBinding.tenant, expires_at: String(claims.exp),
+          session_id: createHash('sha256').update('LXP/wallet-caps/session/v1\0').update(assertion).digest('hex') };
+      }
+    }
+    return reply.header('Cache-Control', 'no-store').send({
+      identityBinding, capsContext,
       wallet: {
         id: wallet.id,
         address: wallet.address,

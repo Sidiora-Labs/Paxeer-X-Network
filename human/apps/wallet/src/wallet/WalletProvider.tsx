@@ -240,6 +240,8 @@ export function WalletProvider({ children, config: configProp, identity: identit
     useEffect(() => {
         if (!identity) return undefined;
         return identity.onChange((event) => {
+            const provider = connectionRef.current.wallet?.provider;
+            if (provider instanceof PaxeerProvider) provider.invalidateCapsSession();
             if (event !== 'SIGNED_OUT') return;
             const current = connectionRef.current;
             if (current.mode !== 'embedded') return;

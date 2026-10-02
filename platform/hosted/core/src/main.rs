@@ -1,3 +1,4 @@
+mod caps_reads;
 mod program_accounts;
 mod program_lifecycle;
 mod public_reads;
@@ -84,6 +85,7 @@ struct Config {
     node: NodeEndpoint,
     node_token: Zeroizing<String>,
     receipt_events_token: Option<Zeroizing<String>>,
+    wallet_caps_token: Option<Zeroizing<String>>,
     replica: NodeEndpoint,
     replica_token: Zeroizing<String>,
     admin_token: Zeroizing<String>,
@@ -345,6 +347,9 @@ fn config() -> Result<Config, String> {
         network_id,
         node: parse_node_url(&required("LAYERX_CORE_NODE_URL")?)?,
         node_token: read_secret("LAYERX_CORE_NODE_BEARER_TOKEN_FILE")?,
+        wallet_caps_token: env::var_os("LAYERX_CORE_WALLET_CAPS_TOKEN_FILE")
+            .map(|_| read_secret("LAYERX_CORE_WALLET_CAPS_TOKEN_FILE"))
+            .transpose()?,
         receipt_events_token: env::var_os("LAYERX_CORE_RECEIPT_EVENTS_TOKEN_FILE")
             .map(|_| read_secret("LAYERX_CORE_RECEIPT_EVENTS_TOKEN_FILE"))
             .transpose()?,

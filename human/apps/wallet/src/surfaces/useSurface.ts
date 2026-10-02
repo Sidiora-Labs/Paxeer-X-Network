@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
     SIDIORA_FEE_DENOM,
+    webData,
+    type WalletCapsState,
     feeToken,
     type FeeChoiceId,
     type ModuleProvider,
@@ -205,4 +207,71 @@ export function useFeeSelection(provider: ModuleProvider | null, address: string
     }, [surfaceModule, provider, address, choice, read]);
 
     return { choice, setChoice, feeDenom, denomError, updating, blocked: feeBlocked(choice, feeDenom), applyPreference };
+}
+
+
+export function useWebDataCaps(): { readonly caps: WalletCapsState; readonly refreshCaps: () => void } {
+    const connection = useWallet();
+    const { provider, address } = useSurfaceWallet();
+    const [revision, setRevision] = useState(0);
+    const key = useMemo(() => ({}), [provider, address, connection.identity?.id, connection.status, revision]);
+    const [retained, setRetained] = useState<{ key: object; value: WalletCapsState } | null>(null);
+    const refreshCaps = useCallback(() => setRevision((value) => value + 1), []);
+    useEffect(() => {
+        let alive = true, generation = 0, inFlight = false;
+        const loading = () => setRetained({ key, value: { state: 'loading' } });
+        const read = async () => {
+            if (inFlight) return;
+            if (!provider || !address) {
+                setRetained({ key, value: { state: 'refused', reason: 'Connect an authenticated wallet to read its caps.' } });
+                return;
+            }
+            inFlight = true;
+            const request = ++generation;
+            loading();
+            try {
+                const value = await webData(provider).caps(address);
+                if (alive && request === generation) setRetained({ key, value });
+            } catch (cause) {
+                const code = isRecord(cause) && typeof cause.code === 'number' ? cause.code : null;
+                const refused = cause instanceof TypeError || code === 4100 || code === 4200 || code === -32002 || code === -32603;
+                if (alive && request === generation) setRetained({ key, value: { state: refused ? 'refused' : 'unavailable',
+                    reason: refused ? 'The account or its evidence was refused.' : 'Verified caps are currently unavailable.' } });
+            } finally { inFlight = false; }
+        };
+        const invalidate = () => {
+            ++generation;
+            loading();
+            refreshCaps();
+        };
+        const message = (...args: unknown[]) => {
+            if (isRecord(args[0]) && args[0].type === 'wallet_caps_invalidated') invalidate();
+        };
+        const wallet = connection.wallet;
+        wallet?.on('accountsChanged', invalidate);
+        wallet?.on('chainChanged', invalidate);
+        wallet?.on('disconnect', invalidate);
+        wallet?.on('message', message);
+        window.addEventListener('focus', invalidate);
+        void read();
+        const timer = window.setInterval(() => { void read(); }, 5_000);
+        return () => {
+            alive = false;
+            ++generation;
+            window.clearInterval(timer);
+            window.removeEventListener('focus', invalidate);
+            wallet?.off('accountsChanged', invalidate);
+            wallet?.off('chainChanged', invalidate);
+            wallet?.off('disconnect', invalidate);
+            wallet?.off('message', message);
+        };
+    }, [key, provider, address, connection.wallet, refreshCaps]);
+    const caps: WalletCapsState = retained?.key === key ? retained.value : { state: 'loading' };
+    useEffect(() => {
+        if (caps.state !== 'ready' && caps.state !== 'empty') return undefined;
+        const delay = Math.max(0, Math.min(60_000, Number(BigInt(caps.context.expires_at) * 1000n - BigInt(Date.now()))));
+        const timer = window.setTimeout(refreshCaps, delay);
+        return () => window.clearTimeout(timer);
+    }, [caps, refreshCaps]);
+    return { caps, refreshCaps };
 }

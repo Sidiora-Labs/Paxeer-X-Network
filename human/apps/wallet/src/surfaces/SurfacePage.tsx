@@ -13,6 +13,7 @@ import { FeesView } from './FeeChoice';
 import { LaunchpadView } from './LaunchpadView';
 import { SURFACE_ROUTES, type SurfaceId } from './routes';
 import { WebDataView } from './WebDataView';
+import { useWebDataCaps } from './useSurface';
 
 export function useKernelState(): KernelAvailabilityState | null {
     const [state, setState] = useState<KernelAvailabilityState | null>(null);
@@ -42,8 +43,8 @@ export function useKernelState(): KernelAvailabilityState | null {
 }
 
 function WebDataSurface({ sidRate }: { sidRate: string | null }) {
-    const kernel = useKernelState();
-    return <WebDataView sidRate={sidRate} kernel={kernel} grants={[]} budget={null} />;
+    const { caps, refreshCaps } = useWebDataCaps();
+    return <WebDataView sidRate={sidRate} caps={caps} refreshCaps={refreshCaps} />;
 }
 
 function SurfaceView({ surface, sidRate }: { surface: SurfaceId; sidRate: string | null }) {

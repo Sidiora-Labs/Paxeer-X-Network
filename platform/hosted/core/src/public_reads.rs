@@ -304,6 +304,9 @@ fn asset_route(config: &Config, request: &Request) -> Response {
 }
 
 pub(super) fn route(config: &Config, request: &Request) -> Option<Response> {
+    if request.path == "/internal/v1/wallet-caps" {
+        return Some(super::caps_reads::read(config, request));
+    }
     if request.path == "/v1/assets" || request.path.starts_with("/v1/assets/") {
         return Some(asset_route(config, request));
     }

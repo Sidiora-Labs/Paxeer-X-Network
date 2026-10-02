@@ -102,6 +102,8 @@ export class PaxeerProvider implements Eip1193Provider {
   private chainId: number;
   private connected = false;
   private rpcId = 0;
+  private capsGeneration = 0;
+  private readonly capsRequests = new Set<AbortController>();
 
   constructor(config: PaxeerProviderConfig) {
     if (!config.gatewayUrl) throw new Error('PaxeerProvider: gatewayUrl required');
@@ -134,7 +136,15 @@ export class PaxeerProvider implements Eip1193Provider {
     return this.connected;
   }
 
+  invalidateCapsSession(): void {
+    this.capsGeneration += 1;
+    for (const pending of this.capsRequests) pending.abort();
+    this.capsRequests.clear();
+    this.emit('message', { type: 'wallet_caps_invalidated' });
+  }
+
   disconnect(): void {
+    this.invalidateCapsSession();
     const hadAccounts = this.accounts.length > 0;
     this.accounts = [];
     this.connected = false;
@@ -154,6 +164,9 @@ export class PaxeerProvider implements Eip1193Provider {
       if (!approved) throw new UserRejectedRequestError();
     }
     switch (method) {
+      case 'lx_getWalletCaps':
+        if (params.length !== 0) throw new InvalidParamsError('params', 'caps use the connected account');
+        return this.walletCaps();
       case 'eth_requestAccounts':
         return this.requestAccounts();
       case 'eth_accounts':
@@ -202,6 +215,7 @@ export class PaxeerProvider implements Eip1193Provider {
     const wasConnected = this.connected;
     const accountsChanged = this.accounts.length !== 1 || this.accounts[0]?.toLowerCase() !== address.toLowerCase();
     const chainChanged = chainId !== this.chainId;
+    if (accountsChanged || chainChanged) this.invalidateCapsSession();
     this.accounts = [address];
     this.chainId = chainId;
     this.connected = true;
@@ -346,6 +360,59 @@ export class PaxeerProvider implements Eip1193Provider {
       custody: custody.toLowerCase(),
     });
     return response.signature;
+  }
+
+  private async walletCaps(): Promise<unknown> {
+    const address = this.accounts[0]?.toLowerCase();
+    const chainId = this.chainId;
+    const generation = this.capsGeneration;
+    if (!this.connected || !address) throw new UnauthorizedError('no_account', 'connect a wallet first');
+    const token = await this.token();
+    if (!token) throw new UnauthorizedError('no_token', 'no signed-in session');
+    if (generation !== this.capsGeneration) throw new UnauthorizedError('session_changed', 'the wallet session changed');
+    const digest = await globalThis.crypto.subtle.digest('SHA-256', new TextEncoder().encode('LXP/wallet-caps/session/v1\0' + token));
+    const sessionId = Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('');
+    if (generation !== this.capsGeneration) throw new UnauthorizedError('session_changed', 'the wallet session changed');
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 15_000);
+    this.capsRequests.add(controller);
+    const id = ++this.rpcId;
+    try {
+      const response = await this.fetchImpl(this.rpcUrl, {
+        method: 'POST', signal: controller.signal, cache: 'no-store',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ jsonrpc: '2.0', id, method: 'lx_getWalletCaps', params: [{ address, chain_id: chainId }] }),
+      });
+      const reader = response.body?.getReader();
+      if (!reader) throw new RpcResponseError(-32603, 'caps response has no body');
+      const decoder = new TextDecoder('utf-8', { fatal: true });
+      let text = '', bytes = 0;
+      try {
+        for (;;) {
+          const chunk = await reader.read();
+          if (chunk.done) break;
+          bytes += chunk.value.byteLength;
+          if (bytes > 4 * 1024 * 1024) { await reader.cancel(); throw new RpcResponseError(-32603, 'caps response exceeds its bound'); }
+          text += decoder.decode(chunk.value, { stream: true });
+        }
+        text += decoder.decode();
+      } finally { reader.releaseLock(); }
+      const payload: unknown = JSON.parse(text);
+      if (generation !== this.capsGeneration || token !== await this.token() || address !== this.accounts[0]?.toLowerCase() || chainId !== this.chainId) {
+        throw new UnauthorizedError('session_changed', 'the wallet session changed');
+      }
+      if (!isRecord(payload) || payload.jsonrpc !== '2.0' || payload.id !== id) throw new RpcResponseError(-32603, 'invalid caps response');
+      if (isRecord(payload.error)) throw new RpcResponseError(typeof payload.error.code === 'number' ? payload.error.code : -32603,
+        typeof payload.error.message === 'string' ? payload.error.message : 'caps refused', payload.error.data);
+      if (!response.ok || !('result' in payload)) throw new RpcResponseError(-32001, 'caps unavailable');
+      if (!isRecord(payload.result) || !isRecord(payload.result.context) || payload.result.context.session_id !== sessionId) {
+        throw new UnauthorizedError('session_changed', 'caps evidence belongs to another session');
+      }
+      return payload.result;
+    } finally {
+      clearTimeout(timeout);
+      this.capsRequests.delete(controller);
+    }
   }
 
   private async proxy(method: string, params: RequestArguments['params']): Promise<unknown> {
