@@ -1,14 +1,16 @@
-FROM rust:1.91.1-bookworm AS build
+FROM rust@sha256:c1e5f19e773b7878c3f7a805dd00a495e747acbdc76fb2337a4ebf0418896b33 AS build
 RUN apt-get update \
     && apt-get install --yes --no-install-recommends libssl-dev pkg-config \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /src
-ENV CARGO_BUILD_JOBS=4 CARGO_TARGET_DIR=/src/.lane-target
+ENV CARGO_BUILD_JOBS=2 CARGO_TARGET_DIR=/src/.lane-target
+ENV PATH=/usr/local/rustup/toolchains/1.91.1-x86_64-unknown-linux-gnu/bin:/usr/local/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+ENV RUSTC=/usr/local/rustup/toolchains/1.91.1-x86_64-unknown-linux-gnu/bin/rustc
 COPY . .
 RUN cargo build --locked --manifest-path interop/Cargo.toml --release --package layerx-bridge-relayer --bin layerx-bridge-relayer --bin layerx-bridge-cosign
 RUN cargo build --locked --manifest-path interop/Cargo.toml --release --package layerx-mirror-signer --bin layerx-mirror-signer
 
-FROM debian:bookworm-slim
+FROM debian@sha256:88200866dfff7ea7f5cbcb6ec7c8a701889efe6fe859fe64d6990e4b07ea4171
 RUN apt-get update \
     && apt-get install --yes --no-install-recommends ca-certificates libssl3 \
     && rm -rf /var/lib/apt/lists/* \
