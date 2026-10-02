@@ -9,6 +9,11 @@ mod attenuation;
 #[path = "consume.rs"]
 mod consumption;
 mod narrowing;
+
+mod effects;
+pub use effects::{
+    derive as derive_effects, AuthorizationKind, Effect, EffectsError, SemanticPlan, VerifiedInputs,
+};
 pub mod timed;
 
 pub mod binding;

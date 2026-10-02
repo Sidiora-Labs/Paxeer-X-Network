@@ -1,17 +1,19 @@
 //! Pure, bounded policy evaluation.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::panic::{catch_unwind, AssertUnwindSafe};
+use std::sync::Arc;
 
 use layerx_types::ids::Did;
 
 use crate::budget::ReconciliationState;
-use crate::capability::{self, Capability, CapabilityId, PreparedIntent};
+use crate::capability::timed::TimedCapability;
+use crate::capability::{Capability, CapabilityId, Dimension, RateCeiling};
 use crate::protocol_evidence::AuthenticatedCumulativeUse;
 use crate::session::{SessionId, SessionRecord};
 use crate::store::TenantId;
 
-use super::{Decision, DecisionReason, Outcome};
+use super::{Decision, DecisionReason, Outcome, VerifiedPolicyContext};
 
 /// Current activity intent fields consumed by policy evaluation.
 ///
@@ -25,6 +27,208 @@ pub struct PolicyRequest {
     pub amount: u128,
     pub purpose: String,
     pub core_sequence: u64,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Effect {
+    pub activity_type: u16,
+    pub counterparty: [u8; 32],
+    pub asset: [u8; 32],
+    pub amount: u128,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PurposeText(String);
+
+impl PurposeText {
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct EmptyPurpose;
+
+impl TryFrom<String> for PurposeText {
+    type Error = EmptyPurpose;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        if value.is_empty() {
+            Err(EmptyPurpose)
+        } else {
+            Ok(Self(value))
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum Purpose {
+    None,
+    Text(PurposeText),
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PolicyIntentRequest {
+    pub effects: Vec<Effect>,
+    pub purpose: Purpose,
+    pub core_sequence: u64,
+}
+
+impl From<&PolicyRequest> for PolicyIntentRequest {
+    fn from(request: &PolicyRequest) -> Self {
+        Self {
+            effects: vec![Effect {
+                activity_type: request.activity_type,
+                counterparty: request.counterparty,
+                asset: request.asset,
+                amount: request.amount,
+            }],
+            purpose: PurposeText::try_from(request.purpose.clone())
+                .map_or(Purpose::None, Purpose::Text),
+            core_sequence: request.core_sequence,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum AmountBound {
+    Uniform(u128),
+    PerAsset(BTreeMap<[u8; 32], u128>),
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum RateBound {
+    Sequences(RateCeiling),
+    Seconds(BTreeMap<u64, u64>),
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ExpiryBound {
+    Sequence(u64),
+    CoreTimeMs(u128),
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CapabilityViewRefusal {
+    Revoked,
+    Malformed(Dimension),
+    Unhonoured(Dimension),
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CapabilityView {
+    id: CapabilityId,
+    tenant: TenantId,
+    activity_types: BTreeSet<u16>,
+    counterparties: BTreeSet<[u8; 32]>,
+    assets: BTreeSet<[u8; 32]>,
+    amount: AmountBound,
+    rate: RateBound,
+    purposes: BTreeSet<String>,
+    expiry: ExpiryBound,
+}
+
+impl CapabilityView {
+    #[must_use]
+    pub const fn id(&self) -> CapabilityId {
+        self.id
+    }
+
+    #[must_use]
+    pub const fn tenant(&self) -> &TenantId {
+        &self.tenant
+    }
+
+    #[must_use]
+    pub const fn amount(&self) -> &AmountBound {
+        &self.amount
+    }
+
+    #[must_use]
+    pub const fn rate(&self) -> &RateBound {
+        &self.rate
+    }
+
+    #[must_use]
+    pub const fn expiry(&self) -> ExpiryBound {
+        self.expiry
+    }
+
+    #[must_use]
+    pub const fn purposes(&self) -> &BTreeSet<String> {
+        &self.purposes
+    }
+
+    /// # Errors
+    ///
+    /// Returns `Unhonoured` naming the first dimension the sequence-coordinate evaluator cannot apply.
+    pub fn evaluable(&self) -> Result<(), CapabilityViewRefusal> {
+        self.sequence_bounds()
+            .map(|_| ())
+            .map_err(CapabilityViewRefusal::Unhonoured)
+    }
+
+    fn sequence_bounds(&self) -> Result<(u64, RateCeiling), Dimension> {
+        let ExpiryBound::Sequence(expiry) = self.expiry else {
+            return Err(Dimension::Expiry);
+        };
+        let RateBound::Sequences(rate) = self.rate else {
+            return Err(Dimension::Rate);
+        };
+        Ok((expiry, rate))
+    }
+}
+
+impl From<&Capability> for CapabilityView {
+    fn from(capability: &Capability) -> Self {
+        let dimensions = &capability.dimensions;
+        Self {
+            id: capability.id,
+            tenant: capability.tenant.clone(),
+            activity_types: dimensions.activity_types.clone(),
+            counterparties: dimensions.counterparties.clone(),
+            assets: dimensions.assets.clone(),
+            amount: AmountBound::Uniform(dimensions.amount_ceiling),
+            rate: RateBound::Sequences(dimensions.rate_ceiling),
+            purposes: dimensions.purposes.clone(),
+            expiry: ExpiryBound::Sequence(dimensions.expiry_sequence),
+        }
+    }
+}
+
+impl TryFrom<&TimedCapability> for CapabilityView {
+    type Error = CapabilityViewRefusal;
+
+    fn try_from(record: &TimedCapability) -> Result<Self, Self::Error> {
+        if record.revoked.is_some() {
+            return Err(CapabilityViewRefusal::Revoked);
+        }
+        if record.purposes.iter().any(String::is_empty) {
+            return Err(CapabilityViewRefusal::Malformed(Dimension::Purpose));
+        }
+        if record.rate_ceilings.contains_key(&0) {
+            return Err(CapabilityViewRefusal::Malformed(Dimension::Rate));
+        }
+        if record
+            .amount_ceilings
+            .keys()
+            .any(|asset| !record.assets.contains(asset))
+        {
+            return Err(CapabilityViewRefusal::Malformed(Dimension::Amount));
+        }
+        Ok(Self {
+            id: CapabilityId(record.id),
+            tenant: record.tenant.clone(),
+            activity_types: record.activity_types.clone(),
+            counterparties: record.counterparties.clone(),
+            assets: record.assets.clone(),
+            amount: AmountBound::PerAsset(record.amount_ceilings.clone()),
+            rate: RateBound::Seconds(record.rate_ceilings.clone()),
+            purposes: record.purposes.clone(),
+            expiry: ExpiryBound::CoreTimeMs(record.not_after_ms()),
+        })
+    }
 }
 
 /// Inclusive deterministic protocol-sequence window.
@@ -81,17 +285,12 @@ pub struct PolicySet {
 /// by protocol reconciliation or complete authenticated activity/receipt
 /// windows; arbitrary caller-provided totals are not accepted.
 pub struct EvaluationInput<'a> {
-    pub request: &'a PolicyRequest,
-    pub session: &'a SessionRecord,
-    pub capability: &'a Capability,
-    cumulative: CumulativeContext<'a>,
-}
-
-#[derive(Clone, Copy)]
-enum CumulativeContext<'a> {
-    Unavailable,
-    ProtocolBudget(&'a ReconciliationState),
-    Authenticated(&'a AuthenticatedCumulativeUse),
+    intent: Arc<PolicyIntentRequest>,
+    session: &'a SessionRecord,
+    capability: Arc<CapabilityView>,
+    context: VerifiedPolicyContext<'a>,
+    aggregate: Option<u128>,
+    focus: Option<usize>,
 }
 
 impl<'a> EvaluationInput<'a> {
@@ -99,73 +298,116 @@ impl<'a> EvaluationInput<'a> {
     ///
     /// Evaluation of this input always denies with `InvalidContext`.
     #[must_use]
-    pub const fn without_protocol_budget(
+    pub fn without_protocol_budget(
         request: &'a PolicyRequest,
         session: &'a SessionRecord,
         capability: &'a Capability,
     ) -> Self {
-        Self {
-            request,
+        Self::for_intent(
+            request.into(),
             session,
-            capability,
-            cumulative: CumulativeContext::Unavailable,
-        }
+            capability.into(),
+            VerifiedPolicyContext::Unavailable,
+        )
     }
 
     /// Binds an opaque result issued only by protocol-budget reconciliation.
     /// Cumulative count and approval evidence remain unavailable, so this input
     /// cannot currently yield an allow decision.
     #[must_use]
-    pub const fn with_verified_protocol_budget(
+    pub fn with_verified_protocol_budget(
         request: &'a PolicyRequest,
         session: &'a SessionRecord,
         capability: &'a Capability,
         budget: &'a ReconciliationState,
     ) -> Self {
-        Self {
-            request,
+        Self::for_intent(
+            request.into(),
             session,
-            capability,
-            cumulative: CumulativeContext::ProtocolBudget(budget),
-        }
+            capability.into(),
+            VerifiedPolicyContext::ProtocolBudget(budget),
+        )
     }
 
     /// Binds cumulative amount and count issued from a complete authenticated
     /// protocol-sequence window.
     #[must_use]
-    pub const fn with_authenticated_cumulative_use(
+    pub fn with_authenticated_cumulative_use(
         request: &'a PolicyRequest,
         session: &'a SessionRecord,
         capability: &'a Capability,
         cumulative: &'a AuthenticatedCumulativeUse,
     ) -> Self {
-        Self {
-            request,
+        Self::for_intent(
+            request.into(),
             session,
-            capability,
-            cumulative: CumulativeContext::Authenticated(cumulative),
+            capability.into(),
+            VerifiedPolicyContext::Authenticated(cumulative),
+        )
+    }
+
+    #[must_use]
+    pub fn for_intent(
+        intent: PolicyIntentRequest,
+        session: &'a SessionRecord,
+        capability: CapabilityView,
+        context: VerifiedPolicyContext<'a>,
+    ) -> Self {
+        let aggregate = intent
+            .effects
+            .iter()
+            .try_fold(0_u128, |total, effect| total.checked_add(effect.amount));
+        Self {
+            intent: Arc::new(intent),
+            session,
+            capability: Arc::new(capability),
+            context,
+            aggregate,
+            focus: None,
+        }
+    }
+
+    fn focused(&self, index: usize) -> Self {
+        Self {
+            intent: Arc::clone(&self.intent),
+            session: self.session,
+            capability: Arc::clone(&self.capability),
+            context: self.context,
+            aggregate: self.aggregate,
+            focus: Some(index),
+        }
+    }
+
+    fn effects(&self) -> &[Effect] {
+        match self.focus {
+            Some(index) => self
+                .intent
+                .effects
+                .get(index)
+                .map_or(&[][..], std::slice::from_ref),
+            None => &self.intent.effects,
         }
     }
 
     const fn authenticated_cumulative_amount(&self) -> Option<u128> {
-        match self.cumulative {
-            CumulativeContext::Authenticated(cumulative) => Some(cumulative.amount()),
-            CumulativeContext::ProtocolBudget(budget) => Some(budget.protocol_consumed()),
-            CumulativeContext::Unavailable => None,
+        match self.context {
+            VerifiedPolicyContext::Authenticated(cumulative) => Some(cumulative.amount()),
+            VerifiedPolicyContext::ProtocolBudget(budget) => Some(budget.protocol_consumed()),
+            VerifiedPolicyContext::Unavailable => None,
         }
     }
 
     const fn authenticated_cumulative_count(&self) -> Option<u64> {
-        match self.cumulative {
-            CumulativeContext::Authenticated(cumulative) => Some(cumulative.count()),
-            CumulativeContext::ProtocolBudget(_) | CumulativeContext::Unavailable => None,
+        match self.context {
+            VerifiedPolicyContext::Authenticated(cumulative) => Some(cumulative.count()),
+            VerifiedPolicyContext::ProtocolBudget(_) | VerifiedPolicyContext::Unavailable => None,
         }
     }
 
     const fn authenticated_window(&self) -> Option<&AuthenticatedCumulativeUse> {
-        match self.cumulative {
-            CumulativeContext::Authenticated(cumulative) => Some(cumulative),
-            CumulativeContext::ProtocolBudget(_) | CumulativeContext::Unavailable => None,
+        match self.context {
+            VerifiedPolicyContext::Authenticated(cumulative) => Some(cumulative),
+            VerifiedPolicyContext::ProtocolBudget(_) | VerifiedPolicyContext::Unavailable => None,
         }
     }
 }
@@ -178,6 +420,7 @@ pub enum EvaluationFailure {
     CumulativeCountUnavailable,
     StepLimitExceeded,
     Internal,
+    UnhonouredDimension(Dimension),
 }
 
 /// Rule-matching boundary used by the fail-closed evaluator.
@@ -197,7 +440,7 @@ struct DeterministicMatcher;
 impl RuleMatcher for DeterministicMatcher {
     fn matches(&self, rule: &Rule, input: &EvaluationInput<'_>) -> Result<bool, EvaluationFailure> {
         let constraints = &rule.constraints;
-        let request = input.request;
+        let intent = &input.intent;
         let session = &input.session.request;
         if rule.id.is_empty() {
             return Err(EvaluationFailure::InvalidRule);
@@ -210,17 +453,15 @@ impl RuleMatcher for DeterministicMatcher {
         {
             return Err(EvaluationFailure::CumulativeCountUnavailable);
         }
-        Ok((constraints.activity_types.is_empty()
-            || constraints.activity_types.contains(&request.activity_type))
-            && (constraints.counterparties.is_empty()
-                || constraints.counterparties.contains(&request.counterparty))
-            && (constraints.assets.is_empty() || constraints.assets.contains(&request.asset))
-            && constraints
-                .maximum_amount
-                .is_none_or(|maximum| request.amount <= maximum)
+        let effects = input.effects();
+        Ok(!effects.is_empty()
+            && effects
+                .iter()
+                .all(|effect| effect_admitted(constraints, effect))
             && constraints.maximum_cumulative_amount.is_none_or(|maximum| {
-                cumulative_amount
-                    .checked_add(request.amount)
+                input
+                    .aggregate
+                    .and_then(|total| cumulative_amount.checked_add(total))
                     .is_some_and(|projected| projected <= maximum)
             })
             && constraints.maximum_cumulative_count.is_none_or(|maximum| {
@@ -229,7 +470,8 @@ impl RuleMatcher for DeterministicMatcher {
                     .and_then(|count| count.checked_add(1))
                     .is_some_and(|projected| projected <= maximum)
             })
-            && (constraints.purposes.is_empty() || constraints.purposes.contains(&request.purpose))
+            && (constraints.purposes.is_empty()
+                || purpose_listed(&constraints.purposes, &intent.purpose))
             && (constraints.capability_ids.is_empty()
                 || constraints.capability_ids.contains(&input.capability.id))
             && (constraints.session_ids.is_empty()
@@ -237,8 +479,26 @@ impl RuleMatcher for DeterministicMatcher {
             && (constraints.agents.is_empty() || constraints.agents.contains(&session.agent))
             && (constraints.tenants.is_empty() || constraints.tenants.contains(&session.tenant))
             && constraints.sequence_window.is_none_or(|window| {
-                request.core_sequence >= window.first && request.core_sequence <= window.last
+                intent.core_sequence >= window.first && intent.core_sequence <= window.last
             }))
+    }
+}
+
+fn effect_admitted(constraints: &RuleConstraints, effect: &Effect) -> bool {
+    (constraints.activity_types.is_empty()
+        || constraints.activity_types.contains(&effect.activity_type))
+        && (constraints.counterparties.is_empty()
+            || constraints.counterparties.contains(&effect.counterparty))
+        && (constraints.assets.is_empty() || constraints.assets.contains(&effect.asset))
+        && constraints
+            .maximum_amount
+            .is_none_or(|maximum| effect.amount <= maximum)
+}
+
+fn purpose_listed(purposes: &BTreeSet<String>, purpose: &Purpose) -> bool {
+    match purpose {
+        Purpose::Text(text) => purposes.contains(text.as_str()),
+        Purpose::None => false,
     }
 }
 
@@ -262,25 +522,54 @@ fn evaluate_inner(
     input: &EvaluationInput<'_>,
     matcher: &dyn RuleMatcher,
 ) -> Result<Decision, EvaluationFailure> {
-    if !valid_context(policy, input) {
+    if !valid_context(policy, input)? {
         return Ok(Decision::deny(
             &policy.version,
             DecisionReason::InvalidContext,
         ));
     }
+    decide(policy, input.intent.effects.len(), &mut |rule, index| {
+        matcher.matches(rule, &input.focused(index))
+    })
+}
 
+fn decide(
+    policy: &PolicySet,
+    effect_count: usize,
+    matches: &mut dyn FnMut(&Rule, usize) -> Result<bool, EvaluationFailure>,
+) -> Result<Decision, EvaluationFailure> {
+    if effect_count == 0 {
+        return Ok(Decision::deny(
+            &policy.version,
+            DecisionReason::InvalidContext,
+        ));
+    }
+    let width = u64::try_from(effect_count).map_err(|_| EvaluationFailure::StepLimitExceeded)?;
     let mut ordered: Vec<&Rule> = policy.rules.iter().collect();
     ordered.sort_by(|left, right| left.id.cmp(&right.id));
     let mut matched_rules = Vec::new();
     let mut permitted = Vec::new();
     let mut denied = Vec::new();
     let mut approval_missing = Vec::new();
+    let mut covered = vec![false; effect_count];
     for (index, rule) in ordered.into_iter().enumerate() {
-        let steps = u64::try_from(index + 1).map_err(|_| EvaluationFailure::StepLimitExceeded)?;
+        let steps = u64::try_from(index + 1)
+            .ok()
+            .and_then(|rules| rules.checked_mul(width))
+            .ok_or(EvaluationFailure::StepLimitExceeded)?;
         if steps > policy.evaluation_step_limit {
             return Err(EvaluationFailure::StepLimitExceeded);
         }
-        if !matcher.matches(rule, input)? {
+        let mut hit = false;
+        for (effect, slot) in covered.iter_mut().enumerate() {
+            if matches(rule, effect)? {
+                hit = true;
+                if rule.effect == RuleEffect::Permit && !rule.constraints.required_approval {
+                    *slot = true;
+                }
+            }
+        }
+        if !hit {
             continue;
         }
         matched_rules.push(rule.id.clone());
@@ -305,7 +594,10 @@ fn evaluate_inner(
             Some(rule.clone()),
             DecisionReason::ApprovalRequired,
         )
-    } else if let Some(rule) = permitted.first() {
+    } else if let Some(rule) = permitted
+        .first()
+        .filter(|_| covered.iter().all(|slot| *slot))
+    {
         (
             Outcome::Allow,
             Some(rule.clone()),
@@ -323,31 +615,39 @@ fn evaluate_inner(
     })
 }
 
-fn valid_context(policy: &PolicySet, input: &EvaluationInput<'_>) -> bool {
+fn valid_context(
+    policy: &PolicySet,
+    input: &EvaluationInput<'_>,
+) -> Result<bool, EvaluationFailure> {
     let Some(cumulative) = input.authenticated_window() else {
-        return false;
+        return Ok(false);
     };
     let Some(cumulative_count) = input.authenticated_cumulative_count() else {
-        return false;
+        return Ok(false);
     };
     let session = &input.session.request;
-    if policy.version.is_empty()
+    if input.intent.effects.is_empty()
+        || policy.version.is_empty()
         || policy.version != session.policy_version
         || !input.session.open
         || session.tenant != input.capability.tenant
         || cumulative.actor() != &session.agent
     {
-        return false;
+        return Ok(false);
     }
-    let Some(expected_last) = input.request.core_sequence.checked_sub(1) else {
-        return false;
+    let (expiry, rate) = input
+        .capability
+        .sequence_bounds()
+        .map_err(EvaluationFailure::UnhonouredDimension)?;
+    let Some(expected_last) = input.intent.core_sequence.checked_sub(1) else {
+        return Ok(false);
     };
     let Some(expected_first) = input
-        .request
+        .intent
         .core_sequence
-        .checked_sub(input.capability.dimensions.rate_ceiling.window_sequences)
+        .checked_sub(rate.window_sequences)
     else {
-        return false;
+        return Ok(false);
     };
     if cumulative.window()
         != (crate::protocol_evidence::CumulativeUseWindow {
@@ -355,16 +655,284 @@ fn valid_context(policy: &PolicySet, input: &EvaluationInput<'_>) -> bool {
             last: expected_last,
         })
     {
+        return Ok(false);
+    }
+    Ok(capability_admits(
+        &input.capability,
+        &input.intent,
+        expiry,
+        rate,
+        cumulative_count,
+    ))
+}
+
+fn capability_admits(
+    capability: &CapabilityView,
+    intent: &PolicyIntentRequest,
+    expiry: u64,
+    rate: RateCeiling,
+    uses_in_window: u64,
+) -> bool {
+    if intent.core_sequence >= expiry {
         return false;
     }
-    let intent = PreparedIntent {
-        activity_type: input.request.activity_type,
-        counterparty: input.request.counterparty,
-        asset: input.request.asset,
-        amount: input.request.amount,
-        purpose: input.request.purpose.clone(),
-        core_sequence: input.request.core_sequence,
-        uses_in_window: cumulative_count,
+    let mut per_asset: BTreeMap<[u8; 32], u128> = BTreeMap::new();
+    for effect in &intent.effects {
+        if !capability.activity_types.contains(&effect.activity_type)
+            || !capability.counterparties.contains(&effect.counterparty)
+            || !capability.assets.contains(&effect.asset)
+        {
+            return false;
+        }
+        let Some(total) = per_asset
+            .get(&effect.asset)
+            .copied()
+            .unwrap_or(0)
+            .checked_add(effect.amount)
+        else {
+            return false;
+        };
+        per_asset.insert(effect.asset, total);
+    }
+    per_asset
+        .iter()
+        .all(|(asset, total)| match &capability.amount {
+            AmountBound::Uniform(ceiling) => total <= ceiling,
+            AmountBound::PerAsset(ceilings) => {
+                ceilings.get(asset).is_some_and(|ceiling| total <= ceiling)
+            }
+        })
+        && uses_in_window < rate.maximum_uses
+        && purpose_listed(&capability.purposes, &intent.purpose)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::{BTreeMap, BTreeSet};
+    use std::fmt::Debug;
+
+    use crate::capability::timed::TimedCapability;
+    use crate::capability::{
+        Capability, CapabilityDimensions, CapabilityId, Dimension, RateCeiling,
     };
-    capability::evaluate(input.capability, &intent) == capability::Decision::Allow
+    use crate::identity::ProtocolAuthority;
+    use crate::store::TenantId;
+
+    use super::{
+        capability_admits, decide, effect_admitted, purpose_listed, AmountBound, CapabilityView,
+        CapabilityViewRefusal, DecisionReason, Effect, EmptyPurpose, ExpiryBound, Outcome,
+        PolicyIntentRequest, PolicyRequest, PolicySet, Purpose, PurposeText, RateBound, Rule,
+        RuleConstraints, RuleEffect,
+    };
+
+    fn must<T, E: Debug>(value: Result<T, E>) -> T {
+        match value {
+            Ok(value) => value,
+            Err(error) => panic!("{error:?}"),
+        }
+    }
+
+    fn tenant() -> TenantId {
+        must(TenantId::new("tenant-a"))
+    }
+
+    fn effect(asset: u8, amount: u128) -> Effect {
+        Effect {
+            activity_type: 7,
+            counterparty: [8; 32],
+            asset: [asset; 32],
+            amount,
+        }
+    }
+
+    fn rule(id: &str, effect: RuleEffect, constraints: RuleConstraints) -> Rule {
+        Rule {
+            id: id.to_owned(),
+            effect,
+            constraints,
+        }
+    }
+
+    fn policy(rules: Vec<Rule>) -> PolicySet {
+        PolicySet {
+            version: "policy-v1".to_owned(),
+            rules,
+            evaluation_step_limit: 100,
+        }
+    }
+
+    fn decide_over(policy: &PolicySet, effects: &[Effect]) -> super::Decision {
+        must(decide(policy, effects.len(), &mut |rule, index| {
+            Ok(effects
+                .get(index)
+                .is_some_and(|effect| effect_admitted(&rule.constraints, effect)))
+        }))
+    }
+
+    fn legacy_capability(activity_types: BTreeSet<u16>) -> Capability {
+        Capability {
+            id: CapabilityId([4; 32]),
+            tenant: tenant(),
+            dimensions: CapabilityDimensions {
+                activity_types,
+                counterparties: BTreeSet::from([[8; 32]]),
+                assets: BTreeSet::from([[9; 32], [10; 32]]),
+                amount_ceiling: 500,
+                rate_ceiling: RateCeiling {
+                    maximum_uses: 10,
+                    window_sequences: 100,
+                },
+                purposes: BTreeSet::from(["research".to_owned()]),
+                expiry_sequence: 200,
+            },
+        }
+    }
+
+    fn intent(effects: Vec<Effect>, purpose: Purpose) -> PolicyIntentRequest {
+        PolicyIntentRequest {
+            effects,
+            purpose,
+            core_sequence: 120,
+        }
+    }
+
+    fn research() -> Purpose {
+        Purpose::Text(must(PurposeText::try_from("research".to_owned())))
+    }
+
+    #[test]
+    fn deny_on_any_effect_takes_precedence_over_permits() {
+        let effects = [effect(9, 10), effect(10, 20)];
+        let permit_all = rule("a-permit", RuleEffect::Permit, RuleConstraints::default());
+        let deny_second = rule(
+            "b-deny",
+            RuleEffect::Deny,
+            RuleConstraints {
+                assets: BTreeSet::from([[10; 32]]),
+                ..RuleConstraints::default()
+            },
+        );
+        let decision = decide_over(&policy(vec![deny_second, permit_all.clone()]), &effects);
+        assert_eq!(decision.outcome, Outcome::Deny);
+        assert_eq!(decision.reason, DecisionReason::ExplicitDeny);
+        assert_eq!(decision.deciding_rule.as_deref(), Some("b-deny"));
+        assert_eq!(decision.matched_rules, vec!["a-permit", "b-deny"]);
+
+        let first_only = rule(
+            "a-permit",
+            RuleEffect::Permit,
+            RuleConstraints {
+                assets: BTreeSet::from([[9; 32]]),
+                ..RuleConstraints::default()
+            },
+        );
+        let partial = decide_over(&policy(vec![first_only]), &effects);
+        assert_eq!(partial.outcome, Outcome::Deny);
+        assert_eq!(partial.reason, DecisionReason::NoPermittingRule);
+
+        let allowed = decide_over(&policy(vec![permit_all]), &effects);
+        assert_eq!(allowed.outcome, Outcome::Allow);
+        assert_eq!(allowed.deciding_rule.as_deref(), Some("a-permit"));
+    }
+
+    #[test]
+    fn empty_effect_set_and_empty_permitted_set_deny() {
+        let permit_all = rule("a-permit", RuleEffect::Permit, RuleConstraints::default());
+        let empty = decide_over(&policy(vec![permit_all]), &[]);
+        assert_eq!(empty.outcome, Outcome::Deny);
+        assert_eq!(empty.reason, DecisionReason::InvalidContext);
+
+        let no_rules = decide_over(&policy(Vec::new()), &[effect(9, 10)]);
+        assert_eq!(no_rules.outcome, Outcome::Deny);
+        assert_eq!(no_rules.reason, DecisionReason::NoPermittingRule);
+
+        let rate = RateCeiling {
+            maximum_uses: 10,
+            window_sequences: 100,
+        };
+        let open = CapabilityView::from(&legacy_capability(BTreeSet::from([7])));
+        let closed = CapabilityView::from(&legacy_capability(BTreeSet::new()));
+        let request = intent(vec![effect(9, 300), effect(10, 300)], research());
+        assert!(capability_admits(&open, &request, 200, rate, 0));
+        assert!(!capability_admits(&closed, &request, 200, rate, 0));
+        let over = intent(vec![effect(9, 300), effect(9, 300)], research());
+        assert!(!capability_admits(&open, &over, 200, rate, 0));
+    }
+
+    #[test]
+    fn timed_capability_converts_losslessly() {
+        let mut record = TimedCapability {
+            id: [4; 32],
+            parent: None,
+            tenant: tenant(),
+            agent: "did:layerx:policy-agent".to_owned(),
+            authority: ProtocolAuthority::SessionKey([1; 32]),
+            activity_types: BTreeSet::from([7]),
+            counterparties: BTreeSet::from([[8; 32]]),
+            assets: BTreeSet::from([[9; 32], [10; 32]]),
+            amount_ceilings: BTreeMap::from([([9; 32], 500)]),
+            rate_ceilings: BTreeMap::from([(60, 3), (3_600, 20)]),
+            purposes: BTreeSet::from(["research".to_owned()]),
+            expiry_seconds: 2_000,
+            grant_not_after_ms: 1_500_000,
+            created_at_ms: 1_000,
+            created_at_sequence: 5,
+            revoked: None,
+        };
+        let view = must(CapabilityView::try_from(&record));
+        assert_eq!(view.id(), CapabilityId([4; 32]));
+        assert_eq!(view.tenant(), &tenant());
+        assert_eq!(
+            view.amount(),
+            &AmountBound::PerAsset(BTreeMap::from([([9; 32], 500)]))
+        );
+        assert_eq!(
+            view.rate(),
+            &RateBound::Seconds(BTreeMap::from([(60, 3), (3_600, 20)]))
+        );
+        assert_eq!(view.expiry(), ExpiryBound::CoreTimeMs(1_500_000));
+        assert_eq!(view.purposes(), &record.purposes);
+        assert_eq!(
+            view.evaluable(),
+            Err(CapabilityViewRefusal::Unhonoured(Dimension::Expiry))
+        );
+
+        record.purposes.insert(String::new());
+        assert_eq!(
+            CapabilityView::try_from(&record),
+            Err(CapabilityViewRefusal::Malformed(Dimension::Purpose))
+        );
+        record.purposes.remove("");
+        record.revoked = Some((7, 9));
+        assert_eq!(
+            CapabilityView::try_from(&record),
+            Err(CapabilityViewRefusal::Revoked)
+        );
+    }
+
+    #[test]
+    fn no_purpose_never_matches_purpose_allow_list() {
+        assert_eq!(PurposeText::try_from(String::new()), Err(EmptyPurpose));
+        let allow_list = BTreeSet::from(["research".to_owned()]);
+        assert!(!purpose_listed(&allow_list, &Purpose::None));
+        assert!(purpose_listed(&allow_list, &research()));
+
+        let legacy = PolicyIntentRequest::from(&PolicyRequest {
+            activity_type: 7,
+            counterparty: [8; 32],
+            asset: [9; 32],
+            amount: 100,
+            purpose: String::new(),
+            core_sequence: 120,
+        });
+        assert_eq!(legacy.purpose, Purpose::None);
+        assert_eq!(legacy.effects, vec![effect(9, 100)]);
+
+        let rate = RateCeiling {
+            maximum_uses: 10,
+            window_sequences: 100,
+        };
+        let capability = CapabilityView::from(&legacy_capability(BTreeSet::from([7])));
+        assert!(!capability_admits(&capability, &legacy, 200, rate, 0));
+    }
 }

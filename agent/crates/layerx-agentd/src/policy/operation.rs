@@ -8,17 +8,20 @@ use std::path::PathBuf;
 use sha2::{Digest as _, Sha256};
 
 use crate::budget::ReconciliationState;
-use crate::capability::{Capability, CapabilityId};
+use crate::capability::CapabilityId;
 use crate::protocol_evidence::AuthenticatedCumulativeUse;
 use crate::session::{SessionId, SessionRecord};
 use crate::store::TenantId;
 
+use super::eval::{CapabilityView, PolicyIntentRequest, Purpose};
 use super::{
     dry_run, load_policy_source, DryRunResult, EvaluationInput, PolicyRegistry, PolicyRequest,
     PolicySourceError, PolicyValidationError, MAX_POLICY_SOURCE_BYTES,
 };
 
 const REQUEST_ID_DOMAIN: &[u8] = b"layerx-agentd/policy-dry-run/v1\0";
+
+const INTENT_REQUEST_ID_DOMAIN: &[u8] = b"layerx-agentd/policy-dry-run/v2\0";
 
 /// One active policy registry per configured tenant.
 pub type TenantPolicyRegistries = BTreeMap<TenantId, PolicyRegistry>;
@@ -137,6 +140,43 @@ pub fn dry_run_request_id(
     hasher.finalize().into()
 }
 
+/// Deterministic audit key for one multi-effect dry-run evaluation against one policy generation.
+#[must_use]
+pub fn dry_run_intent_request_id(
+    tenant: &TenantId,
+    session_id: SessionId,
+    capability_id: CapabilityId,
+    generation: u64,
+    intent: &PolicyIntentRequest,
+) -> [u8; 32] {
+    let mut hasher = Sha256::new();
+    hasher.update(INTENT_REQUEST_ID_DOMAIN);
+    update_bytes(&mut hasher, tenant.as_str().as_bytes());
+    hasher.update(session_id.0);
+    hasher.update(capability_id.0);
+    hasher.update(generation.to_be_bytes());
+    hasher.update(
+        u64::try_from(intent.effects.len())
+            .unwrap_or(u64::MAX)
+            .to_be_bytes(),
+    );
+    for effect in &intent.effects {
+        hasher.update(effect.activity_type.to_be_bytes());
+        hasher.update(effect.counterparty);
+        hasher.update(effect.asset);
+        hasher.update(effect.amount.to_be_bytes());
+    }
+    match &intent.purpose {
+        Purpose::None => hasher.update([0]),
+        Purpose::Text(text) => {
+            hasher.update([1]);
+            update_bytes(&mut hasher, text.as_str().as_bytes());
+        }
+    }
+    hasher.update(intent.core_sequence.to_be_bytes());
+    hasher.finalize().into()
+}
+
 fn update_bytes(hasher: &mut Sha256, bytes: &[u8]) {
     hasher.update(u64::try_from(bytes.len()).unwrap_or(u64::MAX).to_be_bytes());
     hasher.update(bytes);
@@ -151,22 +191,31 @@ pub fn dry_run_with_context(
     request_id: [u8; 32],
     request: &PolicyRequest,
     session: &SessionRecord,
-    capability: &Capability,
+    capability: impl Into<CapabilityView>,
+    context: VerifiedPolicyContext<'_>,
+) -> DryRunResult {
+    dry_run_intent_with_context(
+        registry,
+        request_id,
+        &PolicyIntentRequest::from(request),
+        session,
+        capability.into(),
+        context,
+    )
+}
+
+/// Evaluates every effect of one intent against the registry's active policy, captured once
+/// before evaluation, and records the decision in the registry audit; nothing is prepared,
+/// reserved, signed or submitted.
+pub fn dry_run_intent_with_context(
+    registry: &mut PolicyRegistry,
+    request_id: [u8; 32],
+    intent: &PolicyIntentRequest,
+    session: &SessionRecord,
+    capability: CapabilityView,
     context: VerifiedPolicyContext<'_>,
 ) -> DryRunResult {
     let snapshot = registry.begin_request();
-    let input = match context {
-        VerifiedPolicyContext::Unavailable => {
-            EvaluationInput::without_protocol_budget(request, session, capability)
-        }
-        VerifiedPolicyContext::ProtocolBudget(budget) => {
-            EvaluationInput::with_verified_protocol_budget(request, session, capability, budget)
-        }
-        VerifiedPolicyContext::Authenticated(cumulative) => {
-            EvaluationInput::with_authenticated_cumulative_use(
-                request, session, capability, cumulative,
-            )
-        }
-    };
+    let input = EvaluationInput::for_intent(intent.clone(), session, capability, context);
     dry_run(registry, request_id, snapshot.policy(), &input)
 }
