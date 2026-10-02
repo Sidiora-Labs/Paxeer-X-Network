@@ -3,7 +3,7 @@ use layerx_gas_station::journal::Journal;
 use layerx_gas_station::price::PaymasterRateSource;
 use layerx_gas_station::rate::{PublisherConfig, RatePublisher, RateRefusal, DAY_SECONDS};
 use layerx_gas_station::rpc::{ConfiguredRpc, HttpsExchange};
-use layerx_gas_station::service::{serve, Limits, Service};
+use layerx_gas_station::service::{drive, Limits, Schedule, Service};
 use layerx_gas_station::signer::LocalSigner;
 use layerx_gas_station::station::{GasStation, StationError};
 use std::ffi::OsString;
@@ -200,16 +200,29 @@ fn main() -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
+    let unresolved = station.unresolved().len();
+    let mut service = Service::new(&config, station, unix_time, Limits::default());
+    let schedule = Schedule::default();
+    let recovery = match service.recover(schedule.budget) {
+        Ok(recovery) => recovery,
+        Err(error) => {
+            eprintln!("startup recovery {error}");
+            return ExitCode::FAILURE;
+        }
+    };
+    println!(
+        "startup recovery unresolved={unresolved} completed={} pending={} unreachable={} deferred={}",
+        recovery.completed, recovery.pending, recovery.unreachable, recovery.deferred
+    );
     let Ok(listener) = TcpListener::bind(config.listen) else {
         eprintln!("listen address unavailable");
         return ExitCode::FAILURE;
     };
-    let mut service = Service::new(&config, station, unix_time, Limits::default());
     if let Err(error) = report_listening(io::stdout().lock(), config.listen) {
         eprintln!("{error}");
         return ExitCode::FAILURE;
     }
-    match serve(&listener, &mut service, &mut io::stderr().lock()) {
+    match drive(&listener, &mut service, schedule, &mut io::stderr().lock()) {
         Ok(never) => match never {},
         Err(error) => {
             eprintln!("{error}");
@@ -221,7 +234,7 @@ fn main() -> ExitCode {
 fn report_listening(mut output: impl Write, listen: SocketAddr) -> io::Result<()> {
     writeln!(
         output,
-        "Paxeer X Network gas station serving POST /quote and POST /submit on {listen}"
+        "Paxeer X Network gas station ready, serving POST /quote, /submit, /status and /retry on {listen}"
     )?;
     output.flush()
 }
@@ -236,7 +249,7 @@ mod tests {
         report_listening(&mut output, SocketAddr::from(([127, 0, 0, 1], 8545)))?;
         assert_eq!(
             output,
-            b"Paxeer X Network gas station serving POST /quote and POST /submit on 127.0.0.1:8545\n"
+            b"Paxeer X Network gas station ready, serving POST /quote, /submit, /status and /retry on 127.0.0.1:8545\n"
         );
         let mut full = [];
         assert_eq!(

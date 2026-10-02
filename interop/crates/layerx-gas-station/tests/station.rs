@@ -14,7 +14,7 @@ use layerx_gas_station::rpc::{
 };
 use layerx_gas_station::signer::{LocalSigner, QuoteSigner, SignerError};
 use layerx_gas_station::station::{
-    GasStation, Progress, QuoteOutcome, StationError, SubmitRequest,
+    GasStation, Progress, QuoteOutcome, Recovery, StationError, Status, SubmitRequest,
 };
 use layerx_gas_station::tx::{
     authorization_digest, batch_digest, Authorization, Call, Fees, CANCELLATION_GAS,
@@ -617,6 +617,146 @@ fn expired_quote_is_never_rebroadcast_and_its_nonce_is_cancelled() -> TestResult
     assert!(station.journal().state().items[&key].replacement.is_some());
     drop(station);
     replacement_resumes_and_cancels(&lane, key, 1020)?;
+    lane.finish()
+}
+
+/// The recovery driver's pass reaches a submission no client asks about
+/// again: after a restart past the quote deadline it fills the sponsor nonce
+/// with the journalled replacement, status and retry answer by identity after
+/// the deadline without new signing, and the finalized replacement completes
+/// the identity and leaves nothing unresolved.
+#[test]
+fn recovery_pass_resumes_unresolved_submissions_without_a_client_request() -> TestResult {
+    let lane = Lane::new("RECOVERY")?;
+    let (mut station, submit) = lane.submitted()?;
+    let key = submit.key;
+    assert_eq!(station.submit(&submit, 1000)?, Progress::Pending);
+    let relayer: [u8; 65] = station.journal().state().items[&key]
+        .quote
+        .as_ref()
+        .map(|q| q.signature.clone())
+        .ok_or("quote missing")?
+        .as_slice()
+        .try_into()?;
+    let submission = station.journal().state().items[&key]
+        .submission
+        .clone()
+        .ok_or("submission missing")?;
+    drop(station);
+    lane.phase("expired");
+    let mut station = lane.start()?;
+    assert!(matches!(
+        Journal::open(&lane.path),
+        Err(layerx_gas_station::journal::JournalError::Locked)
+    ));
+    assert_eq!(station.unresolved(), vec![key]);
+    assert_eq!(
+        station.recover(1020, std::time::Duration::ZERO)?,
+        Recovery {
+            deferred: 1,
+            ..Recovery::default()
+        }
+    );
+    assert!(station.journal().state().items[&key].replacement.is_none());
+    assert_eq!(
+        station.recover(1020, std::time::Duration::from_secs(5))?,
+        Recovery {
+            pending: 1,
+            ..Recovery::default()
+        }
+    );
+    assert_eq!(lane.sent_originals(), 1);
+    let replacement = station.journal().state().items[&key]
+        .replacement
+        .clone()
+        .ok_or("replacement missing")?;
+    assert_eq!(replacement.nonce, submission.nonce);
+    assert!(matches!(
+        station.status(key, submit.account, &[0; 65]),
+        Err(StationError::Missing)
+    ));
+    assert!(matches!(
+        station.status(key, [0x99; 20], &relayer),
+        Err(StationError::Missing)
+    ));
+    assert_eq!(
+        station.status(key, submit.account, &relayer)?,
+        Status {
+            deadline: 1019,
+            submission: Some((submission.nonce, submission.hash)),
+            replacement: Some((replacement.nonce, replacement.hash)),
+            completion: None,
+        }
+    );
+    let signed = lane.count.get();
+    lane.phase("replacement_pending");
+    assert_eq!(
+        station.retry(key, submit.account, &relayer, 1030)?,
+        Progress::Pending
+    );
+    assert_eq!(lane.count.get(), signed);
+    assert_eq!(lane.sent_originals(), 1);
+    assert_eq!(lane.recorded.sent.borrow().last(), Some(&replacement.raw));
+    drop(station);
+    lane.phase("cancelled");
+    let mut station = lane.start()?;
+    assert_eq!(
+        station.recover(1040, std::time::Duration::from_secs(5))?,
+        Recovery {
+            completed: 1,
+            ..Recovery::default()
+        }
+    );
+    let cancelled = Completion::Cancelled {
+        hash: replacement.hash,
+        block_number: 17,
+    };
+    assert!(station.unresolved().is_empty());
+    assert_eq!(
+        station.status(key, submit.account, &relayer)?.completion,
+        Some(cancelled)
+    );
+    assert_eq!(
+        station.retry(key, submit.account, &relayer, 1050)?,
+        Progress::Completed(cancelled)
+    );
+    assert_eq!(lane.count.get(), signed);
+    assert_eq!(lane.sent_originals(), 1);
+    drop(station);
+    lane.finish()
+}
+
+/// An identity that was quoted but never submitted cannot be retried after
+/// its quote expired: the expired authorization is refused, not signed.
+#[test]
+fn expired_unsubmitted_identity_is_refused_on_retry() -> TestResult {
+    let lane = Lane::new("UNSUBMITTED")?;
+    let (mut station, submit) = lane.submitted()?;
+    let key = submit.key;
+    let relayer: [u8; 65] = station.journal().state().items[&key]
+        .quote
+        .as_ref()
+        .map(|q| q.signature.clone())
+        .ok_or("quote missing")?
+        .as_slice()
+        .try_into()?;
+    let signed = lane.count.get();
+    assert!(station.unresolved().is_empty());
+    assert_eq!(
+        station.status(key, submit.account, &relayer)?.submission,
+        None
+    );
+    assert!(matches!(
+        station.retry(key, submit.account, &relayer, 1020),
+        Err(StationError::Invalid)
+    ));
+    assert!(matches!(
+        station.submit(&submit, 1020),
+        Err(StationError::Invalid)
+    ));
+    assert_eq!(lane.count.get(), signed);
+    assert!(lane.recorded.sent.borrow().is_empty());
+    drop(station);
     lane.finish()
 }
 
