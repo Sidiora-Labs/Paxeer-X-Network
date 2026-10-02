@@ -180,7 +180,7 @@ static size_t passed_cases;
 static int report_case(const char *name, int failed)
 {
     if (failed != 0) {
-        (void)printf("CASE %s FAILED\n", name);
+        (void)printf("CASE %s FAILED result=%d\n", name, failed);
         return 1;
     }
     (void)printf("CASE %s ok\n", name);

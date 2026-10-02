@@ -52,6 +52,7 @@ GUEST = [
     "real_wasm_budgeted_preparation_seals_transfer_or_zero_transfer_without_kernel",
     "real_wasm_program_leg_from_underivable_account_is_refused",
     "real_wasm_mixed_principal_and_program_legs_seal_one_canonical_set",
+    "real_wasm_program_leg_staged_by_callee_frame_is_refused",
 ]
 NATIVE = [
     "mixed_source_kernel_law",
