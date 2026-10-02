@@ -225,7 +225,7 @@ fn unknown_outbox(root: &std::path::Path, id: u8) -> (Store, Outbox, Vec<u8>) {
     let mut store = Store::open(root).unwrap_or_else(|error| panic!("store: {error}"));
     let mut outbox = Outbox::default();
     outbox
-        .enqueue(&mut store, tenant(), [id; 32], verified, None)
+        .enqueue(&mut store, tenant(), [id; 32], verified)
         .unwrap_or_else(|error| panic!("enqueue: {error:?}"));
     outbox
         .transition(

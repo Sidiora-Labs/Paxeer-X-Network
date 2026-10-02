@@ -605,6 +605,8 @@ change = "Marks the Agent HTTP operations that the daemon dispatcher now routes 
 classification = "additive_only"
 baseline = "golden/v1.kvx@1.5"
 change = "Marks budget.list, read.batch, read.history, read.module_state, session.close, session.refresh, wait, sign, subscription.create, subscription.list, subscription.pause, subscription.resume, subscription.delete, subscription.health and subscription.acknowledge as served_adapter_arm: the daemon dispatcher routes each to a named owner adapter arm. Source compatibility statement only."
+owner_body_incomplete = ["sign","subscription.create","subscription.list","subscription.health","read.history"]
+adapter_arm_scope = "served_adapter_arm asserts only that a dispatch arm and adapter exist; it does not assert a completed real owner, working behaviour or qualification."
 
 [compatibility.feature.agent_http_operations]
 introduced_contract = "1.4"

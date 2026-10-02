@@ -41,7 +41,7 @@ fn enqueue(outbox: &mut Outbox, store: &mut Store, id: u8) -> Vec<u8> {
     let verified = verified_submission(id);
     let exact = verified.exact_bytes().to_vec();
     outbox
-        .enqueue(store, tenant(), [id; 32], verified, None)
+        .enqueue(store, tenant(), [id; 32], verified)
         .unwrap_or_else(|error| panic!("enqueue {id}: {error:?}"));
     exact
 }

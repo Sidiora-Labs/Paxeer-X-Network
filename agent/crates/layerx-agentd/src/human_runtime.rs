@@ -63,7 +63,7 @@ impl<A: HumanAuthorityBoundary> UnifiedAgentOwner<A> {
     pub(crate) fn rpc_sign(
         &mut self,
         context: &crate::agent_rpc_peer::RpcOwnerContext<'_>,
-        request: layerx_agent_api::write::SignRequest,
+        request: layerx_agent_api::submit::SignRequest,
     ) -> Result<HumanResponse, HumanOperationError> {
         let control = self.session_control.clone();
         let peer = context.peer();
@@ -852,6 +852,10 @@ pub struct ProductionHumanOperations<A> {
     last_verified_receipt: Option<([u8; 32], i32, u64)>,
     unified_owner_active: bool,
     write_admission: BTreeMap<String, Result<(), RecoveryRefusal>>,
+
+    clock: Arc<dyn layerx_types::clock::Clock>,
+    subscriptions: BTreeMap<TenantId, crate::events::subscription::Store>,
+    session_control: Option<SessionControl>,
 }
 
 /// Why one tenant stays read-only after startup recovery.
@@ -4289,7 +4293,7 @@ impl<A: HumanAuthorityBoundary> ProductionHumanOperations<A> {
         self.outboxes
             .entry(peer.tenant.clone())
             .or_default()
-            .enqueue(&mut store, tenant, submission_id, verified, origin)
+            .enqueue_with_origin(&mut store, tenant, submission_id, verified, origin)
             .map_err(|_| HumanOperationError::Unavailable)?;
         self.prepared.remove(&prepared_key);
         self.submissions.insert(
@@ -4634,6 +4638,8 @@ impl<A: HumanAuthorityBoundary> ProductionHumanOperations<A> {
         peers: &BTreeMap<u32, (String, String)>,
         maximum_payload_bytes: usize,
         timestamp_span: u64,
+
+        clock: Arc<dyn layerx_types::clock::Clock>,
     ) -> Result<Self, HumanOperationError> {
         if maximum_payload_bytes == 0 || timestamp_span == 0 {
             return Err(HumanOperationError::Refused);
@@ -4673,6 +4679,8 @@ impl<A: HumanAuthorityBoundary> ProductionHumanOperations<A> {
             }
         }
         drop(durable);
+
+        let subscriptions = restored_subscriptions(&store)?;
         Ok(Self {
             authority,
             node,
@@ -4685,7 +4693,15 @@ impl<A: HumanAuthorityBoundary> ProductionHumanOperations<A> {
             last_verified_receipt: None,
             unified_owner_active: false,
             write_admission: BTreeMap::new(),
+
+            clock,
+            subscriptions,
+            session_control: None,
         })
+    }
+
+    pub(crate) fn attach_session_control(&mut self, control: SessionControl) {
+        self.session_control = Some(control);
     }
 
     /// Returns the startup write-admission decision for `tenant`.
@@ -5854,18 +5870,11 @@ impl<A: HumanAuthorityBoundary> HumanOperations for ProductionHumanOperations<A>
         let deadline_elapsed = if achieved >= requested {
             false
         } else {
-            let registry = self.authority.registry(peer).map_err(map_core)?;
-            let signed = self.retained_activity(peer, id)?;
-            let activity = layerx_wire::activity::decode_signed(&signed, &registry)
-                .map_err(|_| HumanOperationError::Refused)?;
-            let actor = Did::new(activity.actor_did()).map_err(|_| HumanOperationError::Refused)?;
-            let correlation = boundary_correlation(peer, actor.as_bytes(), b"wait-clock");
-            let mut boundary = ProductionCorePreparationBoundary::new(&mut self.node, correlation)
-                .map_err(map_core)?;
-            let state =
-                crate::prepare::CorePreparationBoundary::preparation_state(&mut boundary, &actor)
-                    .map_err(map_core)?;
-            state.protocol_timestamp >= deadline_ms
+            let reading = self
+                .clock
+                .sample(Duration::from_secs(1))
+                .map_err(|_| HumanOperationError::Unavailable)?;
+            reading.unix_milliseconds >= deadline_ms
         };
         let mut out = Encoder::new();
         out.u8(u8::from(deadline_elapsed));

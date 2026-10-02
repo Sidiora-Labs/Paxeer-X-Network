@@ -132,6 +132,22 @@ impl Outbox {
         tenant: TenantId,
         submission_id: [u8; 32],
         verified: VerifiedSubmission,
+    ) -> Result<(), OutboxError> {
+        self.enqueue_with_origin(store, tenant, submission_id, verified, None)
+    }
+
+    /// Durably queues exact verified bytes together with the preparation authorization that
+    /// admitted them, so recovery can classify a queued record that carries no authority.
+    ///
+    /// # Errors
+    ///
+    /// Returns the same errors as [`Outbox::enqueue`].
+    pub(crate) fn enqueue_with_origin(
+        &mut self,
+        store: &mut Store,
+        tenant: TenantId,
+        submission_id: [u8; 32],
+        verified: VerifiedSubmission,
         origin: Option<PreparationAuthorization>,
     ) -> Result<(), OutboxError> {
         if self.records.contains_key(&submission_id) {
