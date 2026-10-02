@@ -22717,7 +22717,9 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.21.4]
 title = "Provide the approved bridge attestor quorum with durable share delivery"
-status = "in_progress"
+status = "done"
+completion_basis = "implementation"
+qualification_status = "unverified"
 mode = "BUILD"
 wave = 2
 requires = ["0.2"]

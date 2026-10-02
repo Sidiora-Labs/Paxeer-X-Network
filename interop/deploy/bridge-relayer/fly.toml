@@ -8,6 +8,8 @@ kill_timeout = "30s"
 
 [env]
   LAYERX_BRIDGE_COSIGN_TRANSPORT_CONFIG = "/run/secrets/bridge/cosign/transport.json"
+  LAYERX_BRIDGE_OPERATOR_INVENTORY = "/run/secrets/bridge/cosign/operators.json"
+  LAYERX_BRIDGE_RELAYER_CONFIG = "/run/secrets/bridge/relayer.json"
 
 [[files]]
   guest_path = "/run/secrets/bridge/relayer.json"
@@ -76,6 +78,14 @@ kill_timeout = "30s"
 [[files]]
   guest_path = "/run/secrets/bridge/cosign/private-key.pem"
   secret_name = "BRIDGE_COSIGN_PRIVATE_KEY"
+
+[[files]]
+  guest_path = "/run/secrets/bridge/cosign/operators.json"
+  secret_name = "BRIDGE_OPERATOR_INVENTORY"
+
+[[files]]
+  guest_path = "/run/secrets/bridge/cosign/membership.json"
+  secret_name = "BRIDGE_APPROVED_MEMBERSHIP"
 
 [[mounts]]
   source = "bridge_relayer_data"

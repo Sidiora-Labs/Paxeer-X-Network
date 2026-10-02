@@ -7,6 +7,8 @@
 set -eu
 secrets=/run/secrets/bridge
 signer_socket=/run/bridge-signer/signer.sock
+export LAYERX_BRIDGE_RELAYER_CONFIG="$secrets/relayer.json"
+umask 077
 
 for key in "$secrets"/signer/*; do
 	chown 4101:4100 "$key"
@@ -43,6 +45,10 @@ if [ -n "${LAYERX_BRIDGE_COSIGN_TRANSPORT_CONFIG+set}" ]; then
 		echo "bridge-relayer-entrypoint: LAYERX_BRIDGE_COSIGN_TRANSPORT_CONFIG is set but '$LAYERX_BRIDGE_COSIGN_TRANSPORT_CONFIG' is missing or unreadable" >&2
 		exit 1
 	fi
+	if [ -z "${LAYERX_BRIDGE_OPERATOR_INVENTORY:-}" ] || [ ! -f "$LAYERX_BRIDGE_OPERATOR_INVENTORY" ] || [ ! -r "$LAYERX_BRIDGE_OPERATOR_INVENTORY" ]; then
+		echo "bridge-relayer-entrypoint: approved bridge operator inventory is missing or unreadable" >&2
+		exit 1
+	fi
 	install -d -o 4102 -g 4102 -m 0700 /data/cosign-delivery
 	for file in "$secrets"/cosign/*; do
 		chown 4102:4102 "$file"
@@ -68,7 +74,7 @@ if [ ! -S "$signer_socket" ]; then
 fi
 
 setpriv --reuid=4102 --regid=4102 --groups=4100 \
-	/usr/local/bin/layerx-bridge-relayer --config "$secrets/relayer.json" &
+	/usr/local/bin/layerx-bridge-relayer --config "$LAYERX_BRIDGE_RELAYER_CONFIG" &
 relayer_pid=$!
 
 if [ -n "${LAYERX_BRIDGE_COSIGN_TRANSPORT_CONFIG+set}" ]; then
