@@ -670,6 +670,14 @@ impl DeliveryResponse {
         if self.body_digest != hex(&sha256(&[&self.body])) || !(100..=599).contains(&self.status) {
             return Err(io::ErrorKind::InvalidData.into());
         }
+        let digests: Vec<_> = self.headers.iter()
+            .filter(|(name, _)| name.eq_ignore_ascii_case("Content-Digest")).collect();
+        if digests.len() != 1
+            || digests[0].1 != format!("sha-256=:{}:", STANDARD.encode(sha256(&[&self.body])))
+            || self.content_type != "application/json"
+        {
+            return Err(io::ErrorKind::InvalidData.into());
+        }
         match (&self.canonical_content, &self.canonical_digest) {
             (Some(bytes), Some(digest)) => {
                 if *digest != hex(&crate::canonical::content_digest(bytes)) {
@@ -735,6 +743,10 @@ struct DeliveryRecord {
     receipt_digest: String,
     state: DeliveryState,
     response: Option<DeliveryResponse>,
+    #[serde(default)]
+    failures: u32,
+    #[serde(default)]
+    retry_after_ms: u64,
 }
 
 impl DeliveryRecord {
@@ -747,6 +759,8 @@ impl DeliveryRecord {
             receipt_digest: hex(receipt_digest),
             state: DeliveryState::Pending,
             response: None,
+            failures: 0,
+            retry_after_ms: 0,
         }
     }
 
@@ -1026,6 +1040,7 @@ pub struct PaymentGate {
     clock: Clock,
     gateway: Mutex<GatewayCore>,
     delivery_lock: Mutex<()>,
+    _lease: fs::File,
 }
 
 impl PaymentGate {
@@ -1069,6 +1084,10 @@ impl PaymentGate {
             None => rpc,
         };
         let store = PaymentStore::open(&config.data_dir).map_err(GateError::Store)?;
+        let lease = fs::OpenOptions::new().read(true).write(true).create(true)
+            .truncate(false).mode(0o600).custom_flags(0x20000)
+            .open(store.root.join("writer.lock")).map_err(GateError::Store)?;
+        lease.try_lock().map_err(|_| GateError::Store(io::Error::other("payment journal already open")))?;
         let public_key = receiver.verifying_key().to_bytes();
         let did = receiver_did(&public_key);
         let mut accounts = [[0; 32]; 4];
@@ -1099,6 +1118,7 @@ impl PaymentGate {
             clock,
             gateway: Mutex::new(gateway),
             delivery_lock: Mutex::new(()),
+            _lease: lease,
         })
     }
 
@@ -1351,8 +1371,15 @@ impl PaymentGate {
                 .ok_or(io::ErrorKind::InvalidData)?
                 .response();
         }
+        if delivery.state == DeliveryState::Failed && (self.clock)() < delivery.retry_after_ms {
+            let remaining = delivery.retry_after_ms.saturating_sub((self.clock)()).div_ceil(1_000);
+            let mut response = delivery.response.as_ref().ok_or(io::ErrorKind::InvalidData)?.response()?;
+            response.headers.retain(|(name, _)| !name.eq_ignore_ascii_case("Retry-After"));
+            return Ok(response.with_header("Retry-After", &remaining.max(1).to_string()));
+        }
         delivery.state = DeliveryState::Computing;
         delivery.response = None;
+        delivery.retry_after_ms = 0;
         self.store.save_json(DELIVERIES, key, &delivery)?;
         let mut response =
             std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| handler(request)))
@@ -1400,8 +1427,15 @@ impl PaymentGate {
             .with_header(PAYMENT_RESPONSE, &payment_header)
             .with_header("Content-Digest", &format!("sha-256=:{digest}:"));
         delivery.state = if (200..300).contains(&response.status) {
+            delivery.failures = 0;
+            delivery.retry_after_ms = 0;
             DeliveryState::Ready
         } else {
+            delivery.failures = delivery.failures.saturating_add(1);
+            let delay = (1_u64 << delivery.failures.saturating_sub(1).min(6)).min(60);
+            delivery.retry_after_ms = (self.clock)().saturating_add(delay * 1_000);
+            response.headers.retain(|(name, _)| !name.eq_ignore_ascii_case("Retry-After"));
+            response = response.with_header("Retry-After", &delay.to_string());
             DeliveryState::Failed
         };
         delivery.response = Some(DeliveryResponse::from_response(response, canonical_content));

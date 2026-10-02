@@ -37,8 +37,9 @@ def require(ok, message):
 
 def private(path, directory=False):
     path = Path(path)
-    require(path.is_absolute() and not path.is_symlink() and path.name != '.env'
-            and not path.name.startswith('.env.'), 'private absolute non-environment path required')
+    require(path.is_absolute() and path.resolve() == path
+            and not any(part == '.env' or part.startswith('.env.') for part in path.parts),
+            'private absolute non-environment path required')
     info = path.stat()
     require(info.st_uid == os.geteuid() and info.st_mode & 0o077 == 0,
             'private material ownership or permissions')
@@ -263,9 +264,23 @@ class Candidate:
 
 class Harness:
     def __init__(self, manifest):
-        self.m = load(manifest)
-        require(self.m['schema'] == 'paxeer-x-paid-resource-delivery-v1', 'unsupported manifest schema')
+        import importlib.util
+        sys.dont_write_bytecode = True
+        spec = importlib.util.spec_from_file_location('candidate_contract', ROOT / 'tools/paxeer-x/candidate.py')
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        self.loader = module.load_private
+        candidate = self.loader(manifest)
+        require(candidate['schema'] == 'paxeer-x.candidate.v1', 'paid gate requires candidate manifest')
         self.revision, source = source_identity()
+        require(candidate['source']['revision'] == self.revision and not candidate['source']['dirty'],
+                'candidate source revision mismatch')
+        services = [row for row in candidate['services'] if row['id'] == 'search-web']
+        require(len(services) == 1, 'one search-web service binding required')
+        self.m = self.reference(services[0]['bindings']['roles_ref'])
+        if self.m.get('schema') != 'paxeer-x-paid-resource-delivery-v1':
+            self.m = self.reference(self.m['paid_resource_delivery_ref'])
+        require(self.m['schema'] == 'paxeer-x-paid-resource-delivery-v1', 'unsupported paid metadata schema')
         require(self.m['source_revision'] == self.revision and self.m['source_digest'] == source,
                 'manifest source identity mismatch')
         self.binary = artifact(self.m['artifacts']['websearch'], self.revision, source)
@@ -275,6 +290,14 @@ class Harness:
         self.config_path = private(self.m['config']['path'])
         require(digest(self.config_path) == self.m['config']['sha256'], 'configuration binding mismatch')
         self.config = load(self.config_path)
+        self.runtime_env = {name: str(private(value)) for name, value in self.m['key_files'].items()}
+        require(set(self.runtime_env) == {'X_WEBSEARCH_RECEIVER_KEY_FILE'},
+                'paid resource candidate requires protected receiver key reference')
+        require(self.config.get('kernel') is None,
+                'paid delivery candidate must isolate unrelated signing loops')
+        private(self.config['gateway']['authorization_file'])
+        self.authorization_file = private(self.m['caller_authorization_file'])
+        self.gateway_headers()
         self.data = Path(self.config['data_dir']).resolve()
         require(self.data.is_relative_to(self.isolated) and self.data != self.isolated,
                 'candidate data directory escapes isolation')
@@ -286,10 +309,14 @@ class Harness:
         self.runtime = self.m['gateway_process']
         gateway_binary = artifact(self.runtime['artifact'], self.revision, source)
         pid = int(self.runtime['pid'])
+        self.gateway_pid, self.gateway_binary = pid, gateway_binary
         require(Path('/proc/' + str(pid) + '/exe').resolve() == gateway_binary.resolve()
                 and Path('/proc/' + str(pid) + '/cwd').resolve().is_relative_to(self.isolated),
                 'real isolated gateway process binding absent')
         require(self.runtime['endpoint'] == self.config['gateway']['endpoint'], 'gateway endpoint mismatch')
+        from types import SimpleNamespace
+        owner = SimpleNamespace(pid=pid, h=SimpleNamespace(url=self.gateway))
+        require(Candidate.listening(owner), 'gateway process does not own configured listener')
         require(self.m['sequence_probes'] and all(isinstance(row['params'], list)
                 for row in self.m['sequence_probes']), 'real charge observation probes missing')
         self.cases = self.m['cases']
@@ -318,16 +345,41 @@ class Harness:
         require(len(set(self.headers.values())) == len(self.headers), 'cases require independent real payments')
         require(self.cases['during-compute']['route'] == 'search', 'compute crash requires real search execution')
         require(self.cases['foreign-receipt']['scheme'] == 'exact', 'foreign receipt requires exact evidence')
+        require(self.cases['pending-payment']['scheme'] == 'metered', 'pending recovery requires real signed draw')
         from Crypto.Hash import keccak
         require(keccak.new(digest_bits=256).digest_size == 32, 'Keccak unavailable')
         self.launches = 0
         self.count = 0
+        self.refusals = []
         self.candidate = Candidate(self)
         self.journal = (self.evidence / 'assertions.jsonl').open('x')
 
+    def reference(self, value):
+        require(isinstance(value, str) and value.startswith('private:/'), 'resolved private paid binding required')
+        path, mark, fragment = value[len('private:'):].partition('#')
+        record = self.loader(path)
+        if mark:
+            require(fragment and '/' not in fragment and fragment in record, 'paid binding fragment absent')
+            record = record[fragment]
+        require(isinstance(record, dict), 'paid binding metadata must be an object')
+        return record
+
+    def gateway_headers(self):
+        path = private(self.authorization_file)
+        require(path.stat().st_nlink == 1 and path.stat().st_size <= 256, 'protected gateway credential bound')
+        value = path.read_text().removesuffix('\n').removesuffix('\r')
+        require(re.fullmatch(r'LayerX-Key [A-Za-z0-9_-]{1,64}:lxp_live_[0-9a-f]{64}', value),
+                'configured gateway authorization format refused')
+        return {'Authorization': value}
+
+    def call(self, method, params):
+        return rpc(self.gateway, method, params, self.gateway_headers())
+
     def record(self, name):
         self.count += 1
-        self.journal.write(json.dumps({'revision': self.revision, 'case': name, 'passed': True}) + '\n')
+        self.journal.write(json.dumps({'revision': self.revision, 'case': name, 'passed': True,
+                                       'refusals': self.refusals}) + '\n')
+        self.refusals = []
         self.journal.flush()
         os.fsync(self.journal.fileno())
         print('PAXEER_X_PROGRESS cases=' + str(self.count), flush=True)
@@ -335,7 +387,7 @@ class Harness:
     def sequences(self):
         values = []
         for probe in self.m['sequence_probes']:
-            result = rpc(self.gateway, 'lx_getSequence', probe['params'])
+            result = self.call('lx_getSequence', probe['params'])
             value = result['next_sequence']
             require(isinstance(value, str) and re.fullmatch(r'0|[1-9][0-9]*', value),
                     'noncanonical real sequence observation')
@@ -392,7 +444,25 @@ class Harness:
                 and payment['offer']['amount'] == case['amount'], 'scheme or base units changed')
         canonical_receipt = base64.b64decode(layerx['receipt'], validate=True)
         require(canonical_receipt.hex() == payment['receipt'], 'response receipt differs from verified persistence')
-        evidence = rpc(self.gateway, 'lx_getReceipt', [payment['activity_id']])
+        sys.path.insert(0, str(ROOT / 'agent/sdk/python'))
+        from layerx_sdk.verifier import _decode_protocol_receipt
+        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+        from cryptography.exceptions import InvalidSignature
+        facts, unsigned = _decode_protocol_receipt(canonical_receipt)
+        try:
+            Ed25519PublicKey.from_public_bytes(bytes.fromhex(self.config['gateway']['sequencer_public_key'])).verify(
+                facts.sequencer_signature, hashlib.sha256(b'LXP/v1/receipt\0' + unsigned).digest())
+        except InvalidSignature:
+            raise Refusal('paid receipt sequencer signature invalid') from None
+        require(hashlib.sha256(b'LXP/v1/merkle-leaf\0' + canonical_receipt).hexdigest() == receipt
+                and facts.result_code == 0 and facts.module_id == 1
+                and facts.operation == (6 if case['scheme'] == 'metered' else 5)
+                and facts.asset.hex() == case['asset_id'] and facts.amount == int(case['amount'])
+                and facts.activity_id.hex() == payment['activity_id']
+                and facts.from_account.hex() == payment['payer']
+                and facts.to_account.hex() == payment['offer']['payTo'],
+                'canonical signed receipt does not authorize actual paid result')
+        evidence = self.call('lx_getReceipt', [payment['activity_id']])
         require(evidence['receipt'] == payment['receipt'] and evidence['activity_id'] == payment['activity_id']
                 and evidence.get('state', 'completed') == 'completed', 'real executed receipt unavailable')
         require(delivery['state'] == 'ready' and bytes(delivery['response']['body']) == body
@@ -414,6 +484,7 @@ class Harness:
         code, headers, body = response
         require(code in allowed, 'refusal HTTP status mismatch')
         value = json.loads(body)
+        self.refusals.append({'http_status': code, 'error': value.get('error')})
         require('error' in value and not any(key in value for key in ('results', 'text', 'digest')),
                 'refused request released content')
         if 'payment-response' in headers:
@@ -421,11 +492,20 @@ class Harness:
             require(allow_settled or value.get('success') is not True, 'refusal advertised successful delivery')
 
     def breakpoint(self, boundary):
+        if boundary == 'pending-payment':
+            source = ROOT / 'interop/crates/x-websearch/src/payment.rs'
+            lines = source.read_text().splitlines()
+            begin = next(i for i, line in enumerate(lines) if line.strip() == 'fn submit(')
+            end = next(i for i, line in enumerate(lines) if i > begin and line.strip() == 'fn recover(')
+            points = [i + 1 for i in range(begin, end)
+                      if 'self.conclude(key, record, answer, asset, pay_to)' in lines[i]]
+            require(len(points) == 1, 'real submission outcome boundary absent')
+            return str(source) + ':' + str(points[0])
         row = self.m['boundaries'][boundary]
         source = ROOT / row['file']
         allowed = {'after-settlement': ('payment.rs', 'self.deliver('),
                    'during-compute': ('search.rs', 'let hits = searcher.search(&query,'),
-                   'after-persistence': ('payment.rs', 'delivery.response.as_ref().ok_or(io::ErrorKind::InvalidData)?.response()'),
+                   'after-persistence': ('payment.rs', 'delivery'),
                    'before-response-ack': ('server.rs', '.write_all(&bytes)')}
         filename, needle = allowed[boundary]
         require(row['file'] == 'interop/crates/x-websearch/src/' + filename,
@@ -435,12 +515,81 @@ class Harness:
         require(0 < line <= len(lines) and needle in lines[line - 1]
                 and digest(source) == row['sha256'], 'boundary source anchor mismatch')
         if boundary == 'after-persistence':
-            require('self.store.save_json(DELIVERIES, key, &delivery)?;' in lines[line - 2],
+            require(lines[line - 1].strip() == 'delivery'
+                    and 'self.store.save_json(DELIVERIES, key, &delivery)?;' in lines[line - 2],
                     'after-persistence breakpoint is not after durable result write')
         return str(source) + ':' + str(line)
 
+    def pending_delivery(self):
+        name = 'pending-payment'
+        self.candidate.stop()
+        before_records = set(self.records())
+        self.candidate.start(name)
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+            request = executor.submit(self.request, name)
+            require(self.candidate.stopped.wait(30), 'real payment submission boundary not executed')
+            source, line = self.candidate.location.rsplit(':', 1)
+            require('fullname=' + json.dumps(source) in self.candidate.frame
+                    and 'line=' + json.dumps(line) in self.candidate.frame,
+                    'pending recovery stopped at foreign source boundary')
+            created = set(self.records()) - before_records
+            require(len(created) == 1, 'pending recovery lacks one actual signed payment')
+            key = created.pop()
+            payment = self.records()[key]
+            require(payment['attempted'] and payment['activity'] and payment['activity_id']
+                    and payment['receipt'] is None and payment['receipt_digest'] is None,
+                    'pending recovery did not interrupt before receipt persistence')
+            evidence = self.call('lx_getReceipt', [payment['activity_id']])
+            require(evidence['activity_id'] == payment['activity_id'] and evidence['receipt']
+                    and evidence.get('state', 'completed') == 'completed',
+                    'pending recovery lacks genuine upstream execution')
+            after = self.sequences()
+            self.candidate.stop(crash=True)
+            try:
+                response = request.result(timeout=30)
+                require(response[0] != 200, 'unknown local settlement acknowledged content')
+            except (OSError, http.client.HTTPException):
+                pass
+        proc = Path('/proc') / str(self.gateway_pid)
+        require((proc / 'exe').resolve() == self.gateway_binary.resolve()
+                and (proc / 'cwd').resolve().is_relative_to(self.isolated),
+                'refuse pausing foreign gateway process')
+        os.kill(self.gateway_pid, signal.SIGSTOP)
+        try:
+            deadline = time.monotonic() + 5
+            while not re.search(r'^State:\s+T', (proc / 'status').read_text(), re.M):
+                require(time.monotonic() < deadline, 'owned gateway did not pause')
+                time.sleep(.02)
+            self.candidate.start()
+            response = self.request(name)
+            self.no_content(response, {503})
+            require(json.loads(response[2]).get('error') == 'payment_pending',
+                    'unresolved real settlement did not expose explicit pending state')
+            pending = self.records()[key]
+            require(pending == payment and not (self.data / 'payments/deliveries' / key).exists(),
+                    'pending settlement mutated signed payment or exposed delivery')
+        finally:
+            require((proc / 'exe').resolve() == self.gateway_binary.resolve(),
+                    'refuse resuming foreign gateway process')
+            os.kill(self.gateway_pid, signal.SIGCONT)
+        self.success(name, self.request(name))
+        require(self.records()[key]['activity'] == payment['activity'] and self.sequences() == after,
+                'pending recovery resigned or charged a second payment')
+        self.record(name)
+
     def run(self):
         self.candidate.start()
+        before, state = self.sequences(), self.snapshot()
+        with (self.evidence / 'payment-owner-refusal.log').open('x') as log:
+            duplicate = subprocess.run([str(self.binary), '--config', str(self.config_path)],
+                cwd=self.isolated, env={'PATH': '/usr/local/bin:/usr/bin:/bin', **self.runtime_env},
+                stdout=log, stderr=subprocess.STDOUT, timeout=30)
+        require(duplicate.returncode == 2 and b'payment journal already open' in
+                (self.evidence / 'payment-owner-refusal.log').read_bytes(),
+                'second process did not refuse shared payment journal ownership')
+        require(self.sequences() == before and self.snapshot() == state,
+                'refused second writer changed payment state')
+        self.record('exclusive-payment-journal')
         valid = 'search-SID-metered'
         before, state = self.sequences(), self.snapshot()
         status, headers, _ = exchange(self.url, self.cases[valid]['target'],
@@ -459,13 +608,27 @@ class Harness:
                    '/search?q=a&other=%GG', '/search?q=a&unexpected=b', '/search?q=' + '+'.join('term' + str(n) for n in range(33)), '/search?q=' + 'a' * 513, '/search?q=%21%21',
                    '/fetch', '/fetch?url=', '/fetch?url=https%3A%2F%2Fexample.invalid%2F&',
                    '/fetch?url=a&%75rl=b', '/fetch?url=a&other=%GG', '/fetch?url=a&url=b', '/fetch?url=%GG',
-                   '/fetch?url=file%3A%2F%2Fetc%2Fpasswd', '/fetch?url=not-a-url']
+                   '/fetch?url=file%3A%2F%2Fetc%2Fpasswd', '/fetch?url=not-a-url',
+                   '/fetch?url=https%3A%2F%2Fexample.invalid%2F%25GG',
+                   '/fetch?url=https%3A%2F%2Fexample.invalid%2F%25',
+                   '/fetch?url=https%3A%2F%2Fexample.invalid%2F%7Bbad%7D']
         for target in invalid:
             before, state = self.sequences(), self.snapshot()
             self.no_content(self.request(valid, target), {400, 403, 422})
             require(self.sequences() == before and self.snapshot() == state,
                     'invalid syntax charged or consumed receipt')
             self.record('syntax-' + str(self.count))
+        unverified = 'search-SID-exact'
+        payload = json.loads(base64.b64decode(self.headers[unverified], validate=True))
+        original = base64.b64decode(payload['payload']['receipt'], validate=True)
+        require(original, 'real exact receipt unavailable for signature refusal')
+        payload['payload']['receipt'] = base64.b64encode(original[:-1] + bytes([original[-1] ^ 1])).decode()
+        corrupted = base64.b64encode(json.dumps(payload, separators=(',', ':')).encode()).decode()
+        before, state = self.sequences(), self.snapshot()
+        self.no_content(self.request(unverified, header=corrupted), {400, 402, 403, 409, 503})
+        require(self.sequences() == before and self.snapshot() == state,
+                'unverified signature consumed an entitlement or charged')
+        self.record('unverified-canonical-receipt')
         for route in ('search', 'fetch'):
             for asset in ASSETS:
                 for scheme in SCHEMES:
@@ -475,6 +638,15 @@ class Harness:
                     after = self.sequences()
                     require(self.success(name, self.request(name)) == body and self.sequences() == after,
                             'same request retry changed content or charged again')
+                    parameter = 'q' if route == 'search' else 'url'
+                    decoded = parse_qs(urlsplit(self.cases[name]['target']).query, strict_parsing=True)[parameter][0]
+                    equivalent = '/' + route + '?' + ''.join('%' + format(ord(c), '02X') for c in parameter)
+                    equivalent += '=' + quote(decoded, safe='-._~')
+                    require(self.success(name, self.request(name, equivalent)) == body and self.sequences() == after,
+                            'canonical equivalent retry recomputed result or charged')
+                    altered = '/' + route + '?' + parameter + '=' + quote(decoded + (' changed' if route == 'search' else '?changed=1'), safe='-._~')
+                    self.no_content(self.request(name, altered), {400, 402, 403, 409, 503})
+                    require(self.sequences() == after, 'changed request caused another charge')
                     changed = '/search?q=foreign-resource' if route == 'fetch' else '/fetch?url=https%3A%2F%2Fexample.invalid%2F'
                     self.no_content(self.request(name, changed), {400, 402, 403, 409, 503})
                     require(self.sequences() == after, 'changed resource caused another charge')
@@ -485,21 +657,17 @@ class Harness:
                     require(self.success(name, self.request(name)) == body and self.sequences() == after,
                             'restart retry changed content or charged again')
                     self.record(name)
-        for name in ('foreign-receipt', 'pending-payment'):
-            case = self.cases[name]
-            if name == 'pending-payment':
-                state = rpc(self.gateway, 'lx_getActivityStatus', [case['activity_id']])
-                require(state['state'] == 'pending' and state.get('receipt') is None,
-                        'pending case lacks genuine pending gateway activity')
-            else:
-                payload = json.loads(base64.b64decode(self.headers[name], validate=True))
-                receipt = base64.b64decode(payload['payload']['receipt'], validate=True).hex()
-                state = rpc(self.gateway, 'lx_getReceipt', [case['activity_id']])
-                require(state['receipt'] == receipt, 'foreign receipt is not genuine gateway evidence')
-            before = self.sequences()
-            self.no_content(self.request(name), {400, 402, 403, 409, 503})
-            require(self.sequences() == before, 'unverified or foreign receipt caused charge')
-            self.record(name)
+        name = 'foreign-receipt'
+        case = self.cases[name]
+        payload = json.loads(base64.b64decode(self.headers[name], validate=True))
+        receipt = base64.b64decode(payload['payload']['receipt'], validate=True).hex()
+        state = self.call('lx_getReceipt', [case['activity_id']])
+        require(state['receipt'] == receipt, 'foreign receipt is not genuine gateway evidence')
+        before = self.sequences()
+        self.no_content(self.request(name), {400, 402, 403, 409, 503})
+        require(self.sequences() == before, 'foreign receipt caused charge')
+        self.record(name)
+        self.pending_delivery()
         for route in ('search', 'fetch'):
             name = 'store-recovery-' + route
             directory = self.data / 'content'
@@ -524,11 +692,24 @@ class Harness:
                         and bytes(delivery['response']['body']) == response[2],
                         'handler failure lost recoverable entitlement')
                 after = self.sequences()
+                failures = delivery['failures']
+                require(failures >= 1 and delivery['retry_after_ms'] > 0
+                        and 1 <= int(response[1]['retry-after']) <= 60,
+                        'failed delivery lacks durable bounded retry schedule')
             finally:
                 held.rename(directory)
             self.candidate.stop()
             self.candidate.start()
-            self.success(name, self.request(name))
+            deadline = time.monotonic() + 65
+            while True:
+                resumed = self.request(name)
+                if resumed[0] == 200:
+                    self.success(name, resumed)
+                    break
+                self.no_content(resumed, {500, 503}, allow_settled=True)
+                require(time.monotonic() < deadline, 'paid delivery retry failed to resume within bound')
+                require(self.sequences() == after, 'failed delivery backoff charged again')
+                time.sleep(min(1, max(0, deadline - time.monotonic())))
             require(self.sequences() == after, 'failed handler retry charged twice')
             self.record(name)
         self.candidate.stop()
@@ -547,10 +728,13 @@ class Harness:
                 require(len(new) == 1, 'crash boundary lacks exactly one paid association')
                 payment = self.records()[new.pop()]
                 require(payment['receipt'] and payment['receipt_digest'], 'crash occurred before verified settlement')
+                persisted = None
                 if boundary != 'after-settlement':
                     _, delivery = self.association(payment['receipt_digest'])
                     expected = 'computing' if boundary == 'during-compute' else 'ready'
                     require(delivery['state'] == expected, 'crash observed at wrong durable state')
+                    if expected == 'ready':
+                        persisted = delivery['response']
                 after = self.sequences()
                 self.candidate.stop(crash=True)
                 try:
@@ -568,7 +752,7 @@ class Harness:
                         block.write('qualification-owned unavailable index\n')
                     with (self.evidence / 'index-unavailable.log').open('w') as log:
                         failed = subprocess.run([str(self.binary), '--config', str(self.config_path)],
-                            cwd=self.isolated, env={'PATH': '/usr/local/bin:/usr/bin:/bin'},
+                            cwd=self.isolated, env={'PATH': '/usr/local/bin:/usr/bin:/bin', **self.runtime_env},
                             stdout=log, stderr=subprocess.STDOUT, timeout=30)
                     require(failed.returncode == 2, 'unavailable index did not refuse startup with exit 2')
                     with socket.socket() as probe:
@@ -589,10 +773,18 @@ class Harness:
             self.candidate.start()
             _, recovered = self.association(payment['receipt_digest'])
             require(recovered['state'] in ('pending', 'ready'), 'restart did not expose recoverable delivery')
-            self.success(boundary, self.request(boundary))
+            resumed = self.request(boundary)
+            self.success(boundary, resumed)
+            if persisted is not None:
+                require(bytes(persisted['body']) == resumed[2]
+                        and dict((key.lower(), value) for key, value in persisted['headers'])['payment-response']
+                            == resumed[1]['payment-response'],
+                        'committed result or payment association changed after crash')
             require(self.sequences() == after, 'crash recovery made a second charge')
             self.record(boundary)
             self.candidate.stop()
+        require(self.count == 1 + 1 + len(invalid) + 1 + 16 + 2 + 2 + 1 + len(BOUNDARIES),
+                'required paid delivery cases were not executed')
         print('PAXEER_X_GATE tests=' + str(self.count) + ' skipped=0', flush=True)
 
 

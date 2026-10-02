@@ -254,6 +254,18 @@ fn validate_fetch_request(request: &Request) -> Result<(), Response> {
             Err(_) => return Err(Response::error(400, "malformed_query")),
         }
     }
+    let mut bytes = url.bytes();
+    while let Some(byte) = bytes.next() {
+        if byte == b'%' {
+            if !bytes.next().is_some_and(|byte| byte.is_ascii_hexdigit())
+                || !bytes.next().is_some_and(|byte| byte.is_ascii_hexdigit())
+            {
+                return Err(Response::error(400, "invalid_url"));
+            }
+        } else if !byte.is_ascii_alphanumeric() && !b"-._~:/?#[]@!$&'()*+,;=".contains(&byte) {
+            return Err(Response::error(400, "invalid_url"));
+        }
+    }
     Url::parse(&url)
         .map(|_| ())
         .map_err(|error| Response::error(error.status(), error.code()))
