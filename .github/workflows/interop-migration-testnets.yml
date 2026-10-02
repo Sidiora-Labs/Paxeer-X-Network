@@ -33,10 +33,12 @@ jobs:
           ETHEREUM_OWNERSHIP_EVIDENCE_B64: ${{ secrets.ETHEREUM_OWNERSHIP_EVIDENCE_B64 }}
           ETHEREUM_ASSET_EVIDENCE_B64: ${{ secrets.ETHEREUM_ASSET_EVIDENCE_B64 }}
           ETHEREUM_HISTORY_EVIDENCE_B64: ${{ secrets.ETHEREUM_HISTORY_EVIDENCE_B64 }}
+          ETHEREUM_HISTORY_STORE_CONFIG_B64: ${{ secrets.ETHEREUM_HISTORY_STORE_CONFIG_B64 }}
           SOLANA_CONFIG_B64: ${{ secrets.SOLANA_CONFIG_B64 }}
           SOLANA_OWNERSHIP_EVIDENCE_B64: ${{ secrets.SOLANA_OWNERSHIP_EVIDENCE_B64 }}
           SOLANA_ASSET_EVIDENCE_B64: ${{ secrets.SOLANA_ASSET_EVIDENCE_B64 }}
           SOLANA_HISTORY_EVIDENCE_B64: ${{ secrets.SOLANA_HISTORY_EVIDENCE_B64 }}
+          SOLANA_HISTORY_STORE_CONFIG_B64: ${{ secrets.SOLANA_HISTORY_STORE_CONFIG_B64 }}
           MIGRATION_CA_DER_B64: ${{ secrets.MIGRATION_CA_DER_B64 }}
           ETHEREUM_RPC_A_TOKEN: ${{ secrets.ETHEREUM_RPC_A_TOKEN }}
           ETHEREUM_RPC_B_TOKEN: ${{ secrets.ETHEREUM_RPC_B_TOKEN }}
@@ -54,10 +56,12 @@ jobs:
           printf '%s' "${ETHEREUM_OWNERSHIP_EVIDENCE_B64}" | base64 --decode > "${secret_dir}/ethereum-ownership.evidence"
           printf '%s' "${ETHEREUM_ASSET_EVIDENCE_B64}" | base64 --decode > "${secret_dir}/ethereum-asset.evidence"
           printf '%s' "${ETHEREUM_HISTORY_EVIDENCE_B64}" | base64 --decode > "${secret_dir}/ethereum-history.evidence"
+          printf '%s' "${ETHEREUM_HISTORY_STORE_CONFIG_B64}" | base64 --decode > "${secret_dir}/ethereum-history-store.json"
           printf '%s' "${SOLANA_CONFIG_B64}" | base64 --decode > "${secret_dir}/solana.json"
           printf '%s' "${SOLANA_OWNERSHIP_EVIDENCE_B64}" | base64 --decode > "${secret_dir}/solana-ownership.evidence"
           printf '%s' "${SOLANA_ASSET_EVIDENCE_B64}" | base64 --decode > "${secret_dir}/solana-asset.evidence"
           printf '%s' "${SOLANA_HISTORY_EVIDENCE_B64}" | base64 --decode > "${secret_dir}/solana-history.evidence"
+          printf '%s' "${SOLANA_HISTORY_STORE_CONFIG_B64}" | base64 --decode > "${secret_dir}/solana-history-store.json"
           printf '%s' "${MIGRATION_CA_DER_B64}" | base64 --decode > "${secret_dir}/rpc-ca.der"
           printf '%s' "${ETHEREUM_RPC_A_TOKEN}" > "${secret_dir}/ethereum-rpc-a.token"
           printf '%s' "${ETHEREUM_RPC_B_TOKEN}" > "${secret_dir}/ethereum-rpc-b.token"
@@ -74,8 +78,10 @@ jobs:
           LAYERX_ETHEREUM_OWNERSHIP_EVIDENCE: ${{ runner.temp }}/layerx-migration-testnets/ethereum-ownership.evidence
           LAYERX_ETHEREUM_ASSET_EVIDENCE: ${{ runner.temp }}/layerx-migration-testnets/ethereum-asset.evidence
           LAYERX_ETHEREUM_HISTORY_EVIDENCE: ${{ runner.temp }}/layerx-migration-testnets/ethereum-history.evidence
+          LAYERX_ETHEREUM_HISTORY_STORE_CONFIG: ${{ runner.temp }}/layerx-migration-testnets/ethereum-history-store.json
           LAYERX_SOLANA_CONFIG: ${{ runner.temp }}/layerx-migration-testnets/solana.json
           LAYERX_SOLANA_OWNERSHIP_EVIDENCE: ${{ runner.temp }}/layerx-migration-testnets/solana-ownership.evidence
           LAYERX_SOLANA_ASSET_EVIDENCE: ${{ runner.temp }}/layerx-migration-testnets/solana-asset.evidence
           LAYERX_SOLANA_HISTORY_EVIDENCE: ${{ runner.temp }}/layerx-migration-testnets/solana-history.evidence
+          LAYERX_SOLANA_HISTORY_STORE_CONFIG: ${{ runner.temp }}/layerx-migration-testnets/solana-history-store.json
         run: make interop-test-migration-testnets INTEROP_CARGO="cargo +1.91.1"

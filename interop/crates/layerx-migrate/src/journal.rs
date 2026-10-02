@@ -13,10 +13,12 @@ use serde_json::{json, Value};
 use sha2::{Digest as _, Sha256};
 use subtle::ConstantTimeEq;
 use zeroize::{Zeroize, Zeroizing};
+use layerx_interop_gateway::principal::PrincipalId;
 
+use crate::history::{decode as decode_history, record_key, ExternalHistoryPage};
 use crate::rpc::{RpcCluster, RpcQuorumConfig};
 use crate::source_codec::{decode_fixed_hex, hex};
-use crate::MigrationError;
+use crate::{ExternalHistoryRecord, MigrationError, HISTORY_PAGE_LIMIT};
 
 const JOURNAL_DOMAIN: &[u8] = b"LayerX/interop/migration/journal/v1\0";
 const HEAD_DOMAIN: &[u8] = b"LayerX/interop/migration/journal-head/v1\0";
@@ -92,6 +94,11 @@ enum Update {
         key: String,
         claim_digest: [u8; 32],
     },
+    ExternalHistory {
+        principal: String,
+        evidence_digest: [u8; 32],
+        records: Vec<String>,
+    },
 }
 
 #[derive(Serialize, Deserialize)]
@@ -128,6 +135,8 @@ struct State {
     histories: BTreeMap<String, HistoryCheckpoint>,
     ownership: BTreeMap<String, [u8; 32]>,
     custody_references: BTreeMap<String, [u8; 32]>,
+    external_history: BTreeMap<String, BTreeMap<[u8; 32], ExternalHistoryRecord>>,
+    external_records: usize,
 }
 
 pub(crate) struct Journal {
@@ -380,6 +389,51 @@ impl Journal {
 
     pub(crate) fn cursor(&self, context: &[u8]) -> [u8; 32] {
         hmac(self.key.as_slice(), CURSOR_DOMAIN, context)
+    }
+
+    pub(crate) fn store_external_history(
+        &self,
+        principal: &PrincipalId,
+        evidence_digest: [u8; 32],
+        records: Vec<String>,
+    ) -> Result<(), MigrationError> {
+        self.append(&Update::ExternalHistory {
+            principal: principal.as_str().to_owned(),
+            evidence_digest,
+            records,
+        })
+    }
+
+    pub(crate) fn external_history(
+        &self,
+        principal: &PrincipalId,
+        after: Option<[u8; 32]>,
+        limit: usize,
+    ) -> Result<ExternalHistoryPage, MigrationError> {
+        if limit == 0 || limit > HISTORY_PAGE_LIMIT {
+            return Err(MigrationError::InvalidHistory);
+        }
+        let state = self.load()?;
+        let Some(rows) = state.external_history.get(principal.as_str()) else {
+            return if after.is_some() {
+                Err(MigrationError::CheckpointConflict)
+            } else {
+                Ok(ExternalHistoryPage { records: Vec::new(), next_cursor: None })
+            };
+        };
+        if after.is_some_and(|key| !rows.contains_key(&key)) {
+            return Err(MigrationError::CheckpointConflict);
+        }
+        let start = after.map_or(std::ops::Bound::Unbounded, std::ops::Bound::Excluded);
+        let mut remaining = rows.range((start, std::ops::Bound::Unbounded));
+        let mut records = Vec::with_capacity(limit);
+        let mut last = None;
+        for (key, record) in remaining.by_ref().take(limit) {
+            last = Some(*key);
+            records.push(*record);
+        }
+        let next_cursor = if remaining.next().is_some() { last } else { None };
+        Ok(ExternalHistoryPage { records, next_cursor })
     }
 
     fn append(&self, update: &Update) -> Result<(), MigrationError> {
@@ -769,6 +823,38 @@ fn apply(state: &mut State, update: &Update) -> Result<Apply, MigrationError> {
                 Ok(Apply::Applied)
             }
         },
+        Update::ExternalHistory { principal, evidence_digest, records } => {
+            PrincipalId::new(principal.clone()).map_err(|_| MigrationError::CheckpointIntegrity)?;
+            if records.len() > HISTORY_PAGE_LIMIT || *evidence_digest == [0; 32] {
+                return Err(MigrationError::CheckpointIntegrity);
+            }
+            let mut incoming = BTreeMap::new();
+            for encoded in records {
+                let record = decode_history(encoded)?;
+                let key = record_key(&record);
+                if incoming.insert(key, record).is_some_and(|prior| prior != record) {
+                    return Err(MigrationError::CheckpointConflict);
+                }
+            }
+            let current = state.external_history.get(principal);
+            let mut added = 0_usize;
+            for (key, record) in &incoming {
+                match current.and_then(|rows| rows.get(key)) {
+                    Some(prior) if prior != record => return Err(MigrationError::CheckpointConflict),
+                    Some(_) => {}
+                    None => added += 1,
+                }
+            }
+            if added == 0 {
+                return Ok(Apply::Already);
+            }
+            let total = state.external_records.checked_add(added)
+                .filter(|total| *total <= MAX_RECORDS)
+                .ok_or(MigrationError::CheckpointIntegrity)?;
+            state.external_history.entry(principal.clone()).or_default().extend(incoming);
+            state.external_records = total;
+            Ok(Apply::Applied)
+        }
     }
 }
 

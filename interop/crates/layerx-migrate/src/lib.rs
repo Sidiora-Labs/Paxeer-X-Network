@@ -1,6 +1,7 @@
 #![forbid(unsafe_code)]
 
 pub mod ethereum;
+pub mod history;
 mod journal;
 mod rpc;
 pub mod solana;
