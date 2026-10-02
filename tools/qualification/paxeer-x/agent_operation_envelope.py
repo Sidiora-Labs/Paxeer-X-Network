@@ -65,6 +65,25 @@ W8_CAPABILITY_RECORD = ('capability_id', 'parent_id', 'tenant', 'agent_did', 'di
                         'created_at_sequence', 'revoked_at_ms', 'revoked_at_sequence')
 W8_DIMENSIONS = ('activity_types', 'counterparties', 'assets', 'amount_ceilings', 'rate_ceilings', 'purpose_constraints', 'expiry')
 W8_DECIMAL = '(0|[1-9][0-9]{0,38})'
+SERVED_READ_DIRECT = ('project_fee_projection', 'policy_dry_run_explained', 'export_offline_bounded', 'program_discover_registry')
+SERVED_READ_REFUSALS = ('project_refuse_over_bound', 'project_refuse_legacy_payload', 'policy_dry_run_refuse_unknown_capability',
+                        'export_refuse_seventeen_facts', 'export_refuse_duplicate_fact', 'export_refuse_uppercase_fact',
+                        'export_refuse_settlement_anchored', 'prepare_refuse_uppercase_capability_id')
+PROJECT_REQUEST = ('protocol_activity_type', 'canonical_bytes', 'execution_units', 'storage_units')
+PROJECTED = ('request', 'parameter_version', 'fee', 'canonical_schedule', 'snapshot_sequence', 'snapshot_state_root')
+POLICY_DRY_RUN_REQUEST = ('tenant', 'agent_did', 'session_id', 'capability_id', 'activity_type', 'counterparty', 'asset',
+                          'amount', 'purpose', 'core_sequence')
+POLICY_DRY_RUN_RESULT = ('outcome', 'policy_version', 'matched_rules', 'deciding_rule', 'reason', 'mode', 'authority_statement')
+POLICY_REASONS = ('permitted_by_rule', 'explicit_deny', 'approval_required', 'no_permitting_rule', 'invalid_context',
+                  'evaluation_failure')
+FRESHNESS = ('chain_head', 'latest_sealed_batch', 'latest_finalised_checkpoint', 'value_sequence', 'relative_to')
+EXPORT_BUCKETS = ('receipts', 'proofs', 'certificates', 'headers')
+NONZERO_HEX32 = '(?!0{64})[0-9a-f]{64}'
+FACT_REF = '(receipt|activity):' + NONZERO_HEX32 + '|state:' + NONZERO_HEX32 + ':' + NONZERO_HEX32 + '|checkpoint:' + NONZERO_HEX32 + ':[1-9][0-9]{0,19}'
+MAX_FACTS = 16
+DISCOVERY = ('program_id', 'lifecycle', 'version', 'code_hash', 'abi_version', 'receipt_digest', 'state_root',
+             'observed_sequence', 'observed_at', 'valid_through', 'verification')
+DECIMAL_U64 = '(0|[1-9][0-9]{0,19})'
 W7_SUBMITTED_STATES = ('Queued', 'Submitted', 'Acknowledged', 'Executed')
 W20_SUBSCRIPTION_RECORD = ('subscription_id', 'scope', 'filter', 'start', 'last_acknowledged', 'delivery_target', 'paused')
 PYTHON_PRE_RESTART = ('allowed_mutation', 'mutation_duplicate_same_result', 'restart_unknown_pending', 'restart_retry_same_result')
@@ -145,8 +164,9 @@ def operations():
     body = text[text.index('pub const fn name(self)'):]
     body = body[:body.index('\n    }\n')]
     names = re.findall(r'=> "([a-z_.\-]+)"', body)
-    require(len(names) == 50 and len(set(names)) == 50, 'generated catalogue must name exactly 50 operations')
+    require(len(names) == 51 and len(set(names)) == 51, 'generated catalogue must name exactly 51 operations')
     require('faucet.claim' in names, 'generated catalogue lost faucet.claim')
+    require('policy.dry_run' in names, 'generated catalogue lacks policy.dry_run')
     return sorted(names)
 
 
@@ -359,6 +379,35 @@ def load_config():
             and len({r['window_seconds'] for r in dims['rate_ceilings']}) == len(dims['rate_ceilings'])
             and isinstance(dims['expiry'], str) and re.fullmatch('[1-9][0-9]{0,19}', dims['expiry']),
             'provisioned operation.capability.create needs non-empty lowercase-hex assets, amount_ceilings within assets and non-zero rate windows')
+    row = config['requests']['operation.project']
+    req = row['request']
+    require(set(PROJECT_REQUEST) <= set(req) <= set(PROJECT_REQUEST) | {'tenant', 'agent'}
+            and all(isinstance(req[k], str) and req[k] for k in req)
+            and all(re.fullmatch(DECIMAL_U64, req[k]) and int(req[k]) < 2**64 for k in PROJECT_REQUEST)
+            and int(req['protocol_activity_type']) < 2**32 and int(req['canonical_bytes']) <= MAX_BODY,
+            'provisioned operation.project needs the four canonical fee projection decimals within their bounds')
+    row = config['requests']['operation.policy.dry_run']
+    req = row['request']
+    require(set(req) == set(POLICY_DRY_RUN_REQUEST) and all(isinstance(req[k], str) for k in req)
+            and req['tenant'] == load_private(config['credential_file'], 'credential_file')['tenant'] and req['agent_did']
+            and all(re.fullmatch('[0-9a-f]{64}', req[k]) for k in ('session_id', 'capability_id', 'counterparty', 'asset'))
+            and re.fullmatch(DECIMAL_U64, req['activity_type']) and int(req['activity_type']) < 2**16
+            and re.fullmatch(W8_DECIMAL, req['amount']) and int(req['amount']) < 2**128
+            and re.fullmatch(DECIMAL_U64, req['core_sequence']) and int(req['core_sequence']) < 2**64,
+            'provisioned operation.policy.dry_run needs the ten typed dry-run fields for the provisioned tenant')
+    row = config['requests']['operation.export.offline']
+    req = row['request']
+    facts = req.get('fact_set')
+    require({'fact_set', 'requested_verification_level'} <= set(req) <= {'tenant', 'agent', 'fact_set', 'requested_verification_level'}
+            and isinstance(facts, list) and 1 <= len(facts) <= MAX_FACTS and len(set(map(str, facts))) == len(facts)
+            and all(isinstance(f, str) and len(f) <= 135 and re.fullmatch(FACT_REF, f) for f in facts)
+            and req['requested_verification_level'] in LEVELS[:-1],
+            'provisioned operation.export.offline needs 1..16 unique strict fact references below SettlementAnchored')
+    row = config['requests']['operation.program.discover']
+    req = row['request']
+    require(set(req) == {'program_id', 'requested_verification_level'} and isinstance(req['program_id'], str)
+            and re.fullmatch(NONZERO_HEX32, req['program_id']) and req['requested_verification_level'] == 'sequencer-signed',
+            'provisioned operation.program.discover needs a non-zero lowercase program_id at sequencer-signed')
     row = config['requests']['operation.session.list']
     require(set(row['request']) == {'context'} and isinstance(row['request']['context'], dict)
             and row['request']['context'].get('tenant') == load_private(config['credential_file'], 'credential_file')['tenant']
@@ -1540,6 +1589,139 @@ class Qualification:
                     case + ': subtree not revoked at one instant')
         self.passed(case, self.d / 'responses' / (case + '.list.http'))
 
+    def served_freshness(self, value, case):
+        require(isinstance(value, dict) and set(value) == set(FRESHNESS), case + ': freshness fields')
+        require(all(isinstance(value[k], str) and re.fullmatch(DECIMAL_U64, value[k]) for k in ('chain_head', 'value_sequence'))
+                and all(isinstance(value[k], str) and value[k] for k in ('latest_sealed_batch', 'latest_finalised_checkpoint')),
+                case + ': freshness coordinates')
+        relative = value['relative_to']
+        require(isinstance(relative, dict) and len(relative) == 1 and set(relative) <= {'batch', 'checkpoint'}
+                and all(isinstance(v, str) and v for v in relative.values()), case + ': relative_to is not one batch or checkpoint')
+        return value
+
+    def served_unverified(self, response, case):
+        require(response['verification_status'] == {'state': 'achieved', 'level': 'Unverified'},
+                case + ': response claims a verification level')
+        return response['value']
+
+    def served_read_refused(self, case, operation, request, http_status, klass, reason):
+        value, status, body = self.call(case, operation, request)
+        error = self.refusal(status, body, http_status, klass, reason, case, value['request_id'])
+        require(error['retriability'] == 'Terminal' and error['protocol_result_code'] is None, case + ': refusal not terminal')
+        self.passed(case, self.d / 'responses' / (case + '.http'))
+
+    def served_read_cases(self):
+        req = self.config['requests']
+        project = req['operation.project']['request']
+        case = SERVED_READ_DIRECT[0]
+        sent = dict(project, canonical_bytes=str(MAX_BODY))
+        value, status, body = self.call(case, 'project', sent)
+        result = self.served_unverified(self.success(status, body, value['request_id'], case), case)
+        require(isinstance(result, dict) and set(result) == {'projected', 'rationale', 'observed_freshness'},
+                case + ': ProjectionResult fields')
+        projected = result['projected']
+        require(isinstance(projected, dict) and set(projected) == set(PROJECTED), case + ': FeeProjection fields')
+        require(projected['request'] == {k: sent[k] for k in PROJECT_REQUEST}, case + ': projected request not echoed exactly')
+        require(isinstance(projected['parameter_version'], str) and re.fullmatch('[1-9][0-9]{0,9}', projected['parameter_version'])
+                and int(projected['parameter_version']) < 2**32, case + ': parameter_version')
+        require(isinstance(projected['fee'], str) and re.fullmatch(W8_DECIMAL, projected['fee']) and int(projected['fee']) < 2**128,
+                case + ': fee')
+        require(isinstance(projected['canonical_schedule'], str) and re.fullmatch('([0-9a-f]{2})+', projected['canonical_schedule']),
+                case + ': canonical_schedule')
+        require(isinstance(projected['snapshot_state_root'], str) and re.fullmatch(NONZERO_HEX32, projected['snapshot_state_root']),
+                case + ': snapshot_state_root')
+        require(isinstance(result['rationale'], str) and result['rationale'], case + ': rationale')
+        freshness = self.served_freshness(result['observed_freshness'], case)
+        require(projected['snapshot_sequence'] == freshness['chain_head'] == freshness['value_sequence'],
+                case + ': snapshot_sequence differs from the observed head')
+        self.passed(case, self.d / 'responses' / (case + '.http'))
+        self.served_read_refused(SERVED_READ_REFUSALS[0], 'project', dict(project, canonical_bytes=str(MAX_BODY + 1)),
+                                 400, 'ProtocolIncompatibility', 'envelope.malformed')
+        self.served_read_refused(SERVED_READ_REFUSALS[1], 'project',
+                                 {'context': req['operation.session.list']['request']['context'], 'canonical_intent': '00' * 32},
+                                 403, 'PolicyRefusal', 'policy.legacy_project_payload')
+
+        dry = req['operation.policy.dry_run']['request']
+        case = SERVED_READ_DIRECT[1]
+        value, status, body = self.call(case, 'policy.dry_run', dry)
+        result = self.served_unverified(self.success(status, body, value['request_id'], case), case)
+        require(isinstance(result, dict) and set(result) == set(POLICY_DRY_RUN_RESULT), case + ': dry-run result fields')
+        require(result['mode'] == 'dry_run' and result['outcome'] in ('allow', 'deny') and result['reason'] in POLICY_REASONS,
+                case + ': mode, outcome or reason')
+        require(isinstance(result['policy_version'], str) and result['policy_version']
+                and isinstance(result['authority_statement'], str) and result['authority_statement'],
+                case + ': policy_version or authority_statement')
+        require(isinstance(result['matched_rules'], list) and all(isinstance(r, str) and r for r in result['matched_rules'])
+                and (result['deciding_rule'] is None or isinstance(result['deciding_rule'], str) and result['deciding_rule']),
+                case + ': matched_rules or deciding_rule')
+        self.passed(case, self.d / 'responses' / (case + '.http'))
+        unknown = hashlib.sha256(self.key_nonce + b'policy.dry_run.unknown_capability').hexdigest()
+        require(unknown != dry['capability_id'], 'derived capability id equals the provisioned one')
+        self.served_read_refused(SERVED_READ_REFUSALS[2], 'policy.dry_run', dict(dry, capability_id=unknown),
+                                 403, 'PolicyRefusal', 'policy.unknown_capability')
+
+        export = req['operation.export.offline']['request']
+        case = SERVED_READ_DIRECT[2]
+        value, status, body = self.call(case, 'export.offline', export)
+        response = self.success(status, body, value['request_id'], case)
+        result = response['value']
+        require(isinstance(result, dict) and set(result) == {'value', 'achieved_verification_level', 'freshness'},
+                case + ': VerifiedRead fields')
+        level = result['achieved_verification_level']
+        require(level in LEVELS and LEVELS.index(level) >= LEVELS.index(export['requested_verification_level']),
+                case + ': achieved level below the requested level')
+        require(response['verification_status'] == {'state': 'achieved', 'level': level}, case + ': envelope level differs')
+        offline = result['value']
+        require(isinstance(offline, dict) and set(offline) == {'facts', *EXPORT_BUCKETS}, case + ': OfflineExport fields')
+        require(offline['facts'] == export['fact_set'], case + ': facts are not exactly the requested references in order')
+        require(all(isinstance(offline[b], list) and all(isinstance(r, str) and re.fullmatch('([0-9a-f]{2})+', r) for r in offline[b])
+                    for b in EXPORT_BUCKETS), case + ': record buckets are not lowercase hex')
+        self.served_freshness(result['freshness'], case)
+        require(len(body) <= MAX_BODY, case + ': export exceeds the transport body bound')
+        self.passed(case, self.d / 'responses' / (case + '.http'))
+        fact = export['fact_set'][0]
+        seventeen = ['receipt:' + hashlib.sha256(self.key_nonce + bytes([i])).hexdigest() for i in range(MAX_FACTS + 1)]
+        require(len(set(seventeen)) == MAX_FACTS + 1 and all(re.fullmatch(FACT_REF, f) for f in seventeen),
+                'derived fact references are not distinct strict references')
+        self.served_read_refused(SERVED_READ_REFUSALS[3], 'export.offline', dict(export, fact_set=seventeen),
+                                 400, 'ProtocolIncompatibility', 'envelope.malformed')
+        self.served_read_refused(SERVED_READ_REFUSALS[4], 'export.offline', dict(export, fact_set=[fact, fact]),
+                                 400, 'ProtocolIncompatibility', 'envelope.malformed')
+        kind, _, rest = fact.partition(':')
+        require(rest.upper() != rest, 'provisioned fact reference has no hex letter to uppercase')
+        self.served_read_refused(SERVED_READ_REFUSALS[5], 'export.offline', dict(export, fact_set=[kind + ':' + rest.upper()]),
+                                 400, 'ProtocolIncompatibility', 'envelope.malformed')
+        self.served_read_refused(SERVED_READ_REFUSALS[6], 'export.offline',
+                                 dict(export, requested_verification_level='SettlementAnchored'),
+                                 503, 'UnavailableCapability', 'export.settlement_anchoring_unavailable')
+
+        discover = req['operation.program.discover']['request']
+        case = SERVED_READ_DIRECT[3]
+        value, status, body = self.call(case, 'program.discover', discover)
+        response = self.success(status, body, value['request_id'], case)
+        vs = response['verification_status']
+        require((vs['level'] if vs['state'] == 'achieved' else vs['achieved']) == 'Unverified', case + ': discovery claims a level')
+        result = response['value']
+        require(isinstance(result, dict) and set(result) == set(DISCOVERY), case + ': discovery fields')
+        require(result['program_id'] == discover['program_id'], case + ': discovery names another program')
+        require(result['lifecycle'] in ('active', 'deprecated', 'tombstoned')
+                and result['verification'] == 'registry-receipt-and-current-head-verified', case + ': lifecycle or verification')
+        require(all(isinstance(result[k], int) and not isinstance(result[k], bool) for k in ('version', 'abi_version'))
+                and 0 <= result['version'] < 2**32 and 0 <= result['abi_version'] < 2**16, case + ': version or abi_version')
+        require(all(isinstance(result[k], str) and re.fullmatch('[0-9a-f]{64}', result[k])
+                    for k in ('code_hash', 'receipt_digest', 'state_root')), case + ': digests')
+        require(all(isinstance(result[k], str) and re.fullmatch(DECIMAL_U64, result[k]) and int(result[k]) < 2**64
+                    for k in ('observed_sequence', 'observed_at', 'valid_through'))
+                and int(result['observed_at']) <= int(result['valid_through']), case + ': observation window')
+        self.passed(case, self.d / 'responses' / (case + '.http'))
+
+        case = SERVED_READ_REFUSALS[7]
+        prepare = req[W7_SIGN_DIRECT[0]]['prepare']['request']
+        bound = hashlib.sha256(self.key_nonce + b'prepare.capability_id').hexdigest()
+        require(bound.upper() != bound, case + ': derived capability id has no hex letter to uppercase')
+        self.w8_capability_refused(case, 'prepare', dict(prepare, capability_id=bound.upper()),
+                                   400, 'ProtocolIncompatibility', 'envelope.malformed')
+
     def run(self):
         (self.d / 'responses').mkdir(mode=0o700)
         (self.d / 'probes').mkdir(mode=0o700)
@@ -1571,6 +1753,7 @@ class Qualification:
         self.w7_availability_fetch()
         self.w20_subscription_lifecycle()
         self.w8_capability_cases()
+        self.served_read_cases()
 
         self.w7_sign_cases()
         python_state = self.d / 'probes/python-mutation.state'
@@ -1630,6 +1813,7 @@ def worker(directory):
         expected += len(W20_COMPLETED_DIRECT) + len(W7_SIGN_DIRECT) + len(W7_SIGN_NEGATIVE)
 
         expected += len(W8_CAPABILITY_DIRECT) + len(W8_CAPABILITY_REFUSALS)
+        expected += len(SERVED_READ_DIRECT) + len(SERVED_READ_REFUSALS)
         require(len(qualification.results) == expected, 'case count ' + str(len(qualification.results)) + ' != ' + str(expected))
         write_private(runtime.directory / 'case-results.json', qualification.results)
         print(f'PAXEER_X_GATE tests={len(qualification.results)} skipped=0', flush=True)
