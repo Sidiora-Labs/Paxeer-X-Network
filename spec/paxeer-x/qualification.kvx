@@ -1,0 +1,6 @@
+[qualification.104.38.1]
+command = "timeout 30m tools/paxeer-x/verify-task.sh 104.38.1"
+focused = "test-storage-order, lxp_test_recovery, lxp_test_log_durability, lxp_test_batch_wal_recovery from prebuilt artifacts of the same revision"
+release = "make test-storage at release scope: test-log, test-projection with symbol allowlist, test-rebuild, test-finality-evidence"
+crash = "still required: real layerxd restart with checkpointed canonical and existing batch logs under authenticated history, authority and feed state"
+evidence = "access-controlled task evidence store; revision, exit codes and logs recorded there"
