@@ -369,13 +369,19 @@ const fn level_name(level: Level) -> &'static str {
     }
 }
 
-const LEVELS: [Level; 6] = [
-    Level::Unverified,
-    Level::SequencerSigned,
-    Level::BatchIncluded,
-    Level::StateProven,
-    Level::CheckpointFinalised,
-    Level::SettlementAnchored,
+const LEVELS: [(&str, Level); 12] = [
+    ("Unverified", Level::Unverified),
+    ("SequencerSigned", Level::SequencerSigned),
+    ("BatchIncluded", Level::BatchIncluded),
+    ("StateProven", Level::StateProven),
+    ("CheckpointFinalised", Level::CheckpointFinalised),
+    ("SettlementAnchored", Level::SettlementAnchored),
+    ("unverified", Level::Unverified),
+    ("sequencer-signed", Level::SequencerSigned),
+    ("batch-included", Level::BatchIncluded),
+    ("state-proven", Level::StateProven),
+    ("checkpoint-finalised", Level::CheckpointFinalised),
+    ("settlement-anchored", Level::SettlementAnchored),
 ];
 
 /// `None` when the request declares no level; `Some(None)` when the declared level is not a
@@ -385,7 +391,9 @@ fn requested_level(
 ) -> Option<Option<Level>> {
     let value = request.get("requested_verification_level")?;
     Some(value.as_str().and_then(|name| {
-        LEVELS.into_iter().find(|level| level_name(*level) == name)
+        LEVELS
+            .into_iter()
+            .find_map(|(spelling, level)| (spelling == name).then_some(level))
     }))
 }
 
@@ -652,4 +660,71 @@ pub fn handle_rpc<A: HumanAuthorityBoundary>(
         }
         Err(error) => rejected(&idempotency_refusal(request_id, error)),
     }
+}
+
+#[cfg(test)]
+fn level_request(name: &str) -> serde_json::Map<String, serde_json::Value> {
+    let mut request = serde_json::Map::new();
+    request.insert(
+        String::from("requested_verification_level"),
+        serde_json::Value::String(String::from(name)),
+    );
+    request
+}
+
+#[test]
+fn requested_level_accepts_each_declared_kebab_case_spelling() {
+    for (name, level) in [
+        ("unverified", Level::Unverified),
+        ("sequencer-signed", Level::SequencerSigned),
+        ("batch-included", Level::BatchIncluded),
+        ("state-proven", Level::StateProven),
+        ("checkpoint-finalised", Level::CheckpointFinalised),
+        ("settlement-anchored", Level::SettlementAnchored),
+    ] {
+        assert_eq!(requested_level(&level_request(name)), Some(Some(level)));
+    }
+}
+
+#[test]
+fn requested_level_keeps_each_camel_case_spelling() {
+    for (name, level) in [
+        ("Unverified", Level::Unverified),
+        ("SequencerSigned", Level::SequencerSigned),
+        ("BatchIncluded", Level::BatchIncluded),
+        ("StateProven", Level::StateProven),
+        ("CheckpointFinalised", Level::CheckpointFinalised),
+        ("SettlementAnchored", Level::SettlementAnchored),
+    ] {
+        assert_eq!(requested_level(&level_request(name)), Some(Some(level)));
+    }
+}
+
+#[test]
+fn requested_level_refuses_an_unknown_spelling() {
+    for name in [
+        "Sequencer-Signed",
+        "SEQUENCER-SIGNED",
+        "sequencer_signed",
+        "sequencersigned",
+        " sequencer-signed",
+        "sequencer-signed ",
+        "checkpoint-finalized",
+        "",
+    ] {
+        let requested = requested_level(&level_request(name));
+        assert_eq!(requested, Some(None));
+        let refusal = verification_json(RequestId(3), None, requested)
+            .expect_err("an unknown requested level is refused");
+        assert_eq!(refusal.class, ErrorClass::VerificationFailure);
+        assert_eq!(refusal.reason, "verification.inconsistent");
+    }
+}
+
+#[test]
+fn requested_level_parses_the_program_activity_default() {
+    assert_eq!(
+        requested_level(&level_request("sequencer-signed")),
+        Some(Some(Level::SequencerSigned))
+    );
 }
