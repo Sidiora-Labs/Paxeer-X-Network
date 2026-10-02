@@ -9,7 +9,8 @@ use layerx_agent_api::capability::{
 };
 use layerx_agent_api::idempotency::IdempotentMutation;
 use layerx_agent_api::identity::{
-    AgentRegistration, SessionClose, SessionContext, SessionList, SessionOpen, SessionRefresh,
+    AgentRegistration, PolicyIntent, SessionClose, SessionContext, SessionList, SessionOpen,
+    SessionRefresh,
 };
 use layerx_agent_api::prepare::{PrepareRequest, Prepared};
 use layerx_agent_api::read::{
@@ -177,6 +178,16 @@ impl<T> Call<T> {
 pub struct PolicyDryRun {
     pub context: SessionContext,
     pub canonical_intent: Vec<u8>,
+}
+
+impl PolicyDryRun {
+    #[must_use]
+    pub fn with_intent(context: SessionContext, intent: &PolicyIntent) -> Self {
+        Self {
+            context,
+            canonical_intent: intent.encode(),
+        }
+    }
 }
 
 struct DirectBackend {
@@ -421,7 +432,9 @@ impl Client {
         capability_list: CapabilityList => CapabilityList,
         budget_list: BudgetList => BudgetList,
         budget_reconciliation: BudgetTarget => BudgetReconciliation,
-        policy_dry_run: PolicyDryRun => Project,
+
+        budget_state: BudgetTarget => BudgetState,
+        policy_dry_run: PolicyDryRun => PolicyDryRun,
 
         project_fee: FeeProjectionRequest => Project,
         track: TrackRequest => Track,

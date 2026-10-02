@@ -11,7 +11,7 @@ use crate::agent_envelope::{AgentEnvelopeTransport, EnvelopeCredential, Envelope
 use crate::rpc::encode_hex;
 use crate::rpc_projection::require_unverified_status;
 use crate::rpc_subscription::{object, text, violation};
-use crate::Operation;
+use crate::{Call, Operation, PolicyDryRun};
 
 fn request_value(request: &PolicyDryRunRequest) -> Value {
     json!({
@@ -25,6 +25,28 @@ fn request_value(request: &PolicyDryRunRequest) -> Value {
         "amount": request.amount.0.to_string(),
         "purpose": request.purpose,
         "core_sequence": request.core_sequence.0.to_string(),
+    })
+}
+
+fn legacy_request_value(request: &PolicyDryRun) -> Value {
+    let context = &request.context;
+    let permitted_activity_types = context
+        .permitted_activity_types
+        .values()
+        .iter()
+        .map(|activity_type| activity_type.0.to_string())
+        .collect::<Vec<_>>();
+    json!({
+        "context": {
+            "tenant": context.tenant.as_str(),
+            "agent_did": context.agent_did.as_str(),
+            "authority_ref": context.authority_ref.as_str(),
+            "permitted_activity_types": permitted_activity_types,
+            "expiry": context.expiry.0.to_string(),
+            "client": context.client.as_str(),
+            "policy_version": context.policy_version.as_str(),
+        },
+        "canonical_intent": encode_hex(&request.canonical_intent),
     })
 }
 
@@ -118,5 +140,104 @@ impl AgentEnvelopeTransport {
         )?;
         require_unverified_status(&success.verification_status, operation)?;
         decode_result(&success.value, operation)
+    }
+
+    /// # Errors
+    ///
+    /// Returns the established error envelope, `Transport`, or `Decode` for any other answer.
+    pub fn policy_dry_run_call(
+        &self,
+        request_id: RequestId,
+        credential: &EnvelopeCredential,
+        call: &Call<PolicyDryRun>,
+    ) -> Result<PolicyDryRunResult, EnvelopeError> {
+        let operation = call.operation();
+        let success = self.send_operation(
+            operation,
+            request_id,
+            &legacy_request_value(call.request()),
+            Some(credential),
+            None,
+        )?;
+        require_unverified_status(&success.verification_status, operation)?;
+        decode_result(&success.value, operation)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use layerx_agent_api::identity::{
+        ActivityType, AgentDid, AuthorityRef, ClientId, ExplicitSet, PolicyVersion, SessionContext,
+        TenantId,
+    };
+    use layerx_agent_api::policy::{PolicyDecisionReason, PolicyDryRunResult, PolicyOutcome};
+    use layerx_agent_api::TimestampSeconds;
+    use serde_json::json;
+
+    use super::{decode_result, legacy_request_value};
+    use crate::{Operation, PolicyDryRun};
+
+    fn must<T, E: std::fmt::Debug>(value: Result<T, E>) -> T {
+        value.unwrap_or_else(|error| panic!("sdk policy dry run: {error:?}"))
+    }
+
+    #[test]
+    fn legacy_dry_run_body_and_result_are_exact() {
+        let request = PolicyDryRun {
+            context: must(SessionContext::new(
+                must(TenantId::new("tenant-a")),
+                must(AgentDid::new("did:layerx:alice")),
+                must(AuthorityRef::new("authority-a")),
+                ExplicitSet::allow(vec![ActivityType(1), ActivityType(513)]),
+                TimestampSeconds(1_900_000_000),
+                must(ClientId::new("client-a")),
+                must(PolicyVersion::new("policy-1")),
+            )),
+            canonical_intent: vec![0x00, 0xab, 0xcd, 0xef],
+        };
+        let body = legacy_request_value(&request);
+        assert_eq!(
+            body,
+            json!({
+                "context": {
+                    "tenant": "tenant-a",
+                    "agent_did": "did:layerx:alice",
+                    "authority_ref": "authority-a",
+                    "permitted_activity_types": ["1", "513"],
+                    "expiry": "1900000000",
+                    "client": "client-a",
+                    "policy_version": "policy-1",
+                },
+                "canonical_intent": "00abcdef",
+            })
+        );
+        assert_eq!(body["canonical_intent"].as_str(), Some("00abcdef"));
+
+        let operation = Operation::PolicyDryRun;
+        let mut answer = json!({
+            "outcome": "deny",
+            "policy_version": "policy-1",
+            "matched_rules": ["rule-a"],
+            "deciding_rule": "rule-a",
+            "reason": "explicit_deny",
+            "mode": "dry_run",
+            "authority_statement": "local restriction only",
+        });
+        assert_eq!(
+            must(decode_result(&answer, operation)),
+            PolicyDryRunResult {
+                outcome: PolicyOutcome::Deny,
+                policy_version: must(PolicyVersion::new("policy-1")),
+                matched_rules: vec!["rule-a".to_owned()],
+                deciding_rule: Some("rule-a".to_owned()),
+                reason: PolicyDecisionReason::ExplicitDeny,
+                authority_statement: "local restriction only".to_owned(),
+            }
+        );
+        answer["mode"] = json!("live");
+        assert!(decode_result(&answer, operation).is_err());
+        answer["mode"] = json!("dry_run");
+        answer["explanation"] = json!("unexpected");
+        assert!(decode_result(&answer, operation).is_err());
     }
 }
