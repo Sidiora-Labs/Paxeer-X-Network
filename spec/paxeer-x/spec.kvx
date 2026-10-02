@@ -24605,7 +24605,7 @@ status = "pending"
 mode = "QUALIFY"
 wave = 2
 requires = ["0.2"]
-reqs = ["1162.2"]
+reqs = ["447"]
 do_1 = "Reconcile the retained capability against the current candidate and explicit resolution sections. Reuse conforming implementation; complete only unmet criteria. Resolve historical paths against the current source without narrowing the capability or repeating operational transitions already completed."
 do_2 = "Follow the layerxbridge pattern: CustodyProposal (title, description, messages as Any) in the custody proto package generated through the repository's buf template, registered as governance content, with NewProposalHandler executing MsgUpdateParams, MsgSetAsset, MsgRegisterCheckpoint, MsgSetEmergency and MsgCancelClaim through the keeper's Msg service; ValidateBasic refuses an empty list, a non-custody message and an authority other than the governance module account."
 do_3 = "paxd tx layerxcustody submit-proposal custody <file.json> reads title, description, deposit and messages and is signed by the proposer; the handler is on the governance router beside the bridge handler and the plan v6.11 gates the new content and messages, its height an owner input named in the deploy handoff."
@@ -28093,7 +28093,7 @@ title = "Generate the genesis manifest and the sequencer key inside the kernel m
 status = "pending"
 mode = "RELEASE"
 wave = 5
-requires = ["0.2", "108.1.5", "108.1.7"]
+requires = ["0.2", "108.1.5", "108.1.7", "108.1.10"]
 reqs = ["1162.2", "1162.3"]
 do_1 = "Reconcile the retained capability against the current candidate and explicit resolution sections. Reuse conforming implementation; complete only unmet criteria. Resolve historical paths against the current source without narrowing the capability or repeating operational transitions already completed."
 do_2 = "Write tools/bringup/kernel-genesis.sh that runs inside the kernel app's machine through flyctl ssh console: build the genesis manifest with layerx-genesis-build from platform/hosted/node/genesis-modules.conf and genesis-module-fees.json with the anchor point read from the chain through the pod's paxeer relay and an LXGB v2 genesis metadata file passed as --genesis-metadata that carries one canonical Asset record for each asset of the custody precompile's asset map on chain 125, SID, PAX, USDC and USDL among them, read from the chain at run time, generate the sequencer key through the pod's signer material contract, write everything under /data/layerx/node on the app's volume with mode 0600 owned by the node user, and print only the genesis digest, the sequencer public key and the registered asset ids."
@@ -31831,6 +31831,15 @@ ac_2 = "The dedicated token authorizes only GET per-receipt authority evidence. 
 ac_3 = "Real sequencer, independent replica and TLS authority processes prove allowed evidence equality, all prohibited routes, missing and malformed inputs, unavailable replica and actual startup refusals for token collisions, weak permissions, symlinks and invalid token lengths. No mock replies or fabricated authority documents are permitted."
 ac_4 = "Kubernetes source provisioning mints a separate explorer token, copies it to a protected authority-owned file and supplies only that token to the explorer. The registry retains its existing token. Credentials remain outside source and logs; source qualification is distinct from deployment."
 ac_5 = "Kernel provisioning must mint and install the same scoped credential contract before runtime closure in task24.1. Authority-only qualification cannot establish kernel provisioning or the complete explorer ingestion lifecycle."
+
+[req.447]
+title = "Execute custody governance through registered typed proposals"
+ac_1 = "CustodyProposal is generated from the custody protobuf definition through the existing repository template, registered as governance content, and carries a nonempty list of custody messages. Empty content, non-custody messages and message authority other than the governance module account are refused."
+ac_2 = "The registered governance handler dispatches MsgUpdateParams, MsgSetAsset, MsgRegisterCheckpoint, MsgSetEmergency and MsgCancelClaim through the real custody Msg service. Valid governed operations commit their intended changes; invalid or unauthorized operations preserve prior state and existing refusal checks."
+ac_3 = "The custody submit-proposal command reads title, description, deposit and typed messages from its input file and constructs the real governance proposal with the proposer as signer. Malformed files, invalid deposits, unsupported message types and incorrect authorities are refused."
+ac_4 = "The application governance router registers custody beside the bridge handler, and the v6.11 software-upgrade plan gates the new content and messages. Source qualification covers the actual registration and upgrade paths; activation height remains an explicit deployment input and no live upgrade is inferred from component tests."
+ac_5 = "The full scoped custody test coverage and task-specific CLI, router and upgrade cases use real production types and keep every existing negative assertion. Kernel genesis, signer provisioning and runtime asset-map evidence remain required in full by req1162.ac_2 and task108.1.4; custody component qualification does not replace that runtime evidence."
+
 
 [task.22.8]
 title = "Restrict explorer evidence credentials to per-receipt authority reads"
