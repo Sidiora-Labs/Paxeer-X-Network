@@ -101,7 +101,10 @@ fn assemble(config: &Config, keys: &Keys) -> Result<Assembled, String> {
 
 /// The kernel relay when the `kernel` settings are present, with the program
 /// signature-exchange route registered; none without them. The relay signs
-/// with the attestor key and posts as the receiver key.
+/// with the attestor key and posts as the receiver key. Its journal under
+/// `<data_dir>/kernel` is loaded before any new work, so requests awaiting
+/// quorum, submissions with their exact signed bytes and recorded refusals
+/// survive a restart; a journal that cannot be read refuses startup.
 fn relay(
     config: &Config,
     keys: &Keys,
@@ -144,14 +147,17 @@ fn relay(
         settings.fee_limit,
     )
     .map_err(|error| format!("kernel.endpoint: {error}"))?;
+    let relay = KernelRelay::open(
+        watcher,
+        attestor,
+        exchange,
+        attest::AttestorSet::default(),
+        submitter,
+        &config.data_dir.join("kernel"),
+    )
+    .map_err(|error| format!("kernel journal: {error}"))?;
     Ok(Some(RelayLoop {
-        relay: KernelRelay::new(
-            watcher,
-            attestor,
-            exchange,
-            attest::AttestorSet::default(),
-            submitter,
-        ),
+        relay,
         rpc,
         interval: settings.poll_interval(),
     }))
@@ -344,6 +350,33 @@ fn relay_round(relay: &mut RelayLoop) {
                         "x-websearch could not answer program {} request {request_id}: {reason}",
                         x_websearch::payment::hex(&program_id)
                     ),
+                    Step::Committed {
+                        program_id,
+                        request_id,
+                        activity_id,
+                        ..
+                    } => eprintln!(
+                        "x-websearch committed the observation of program {} request {request_id} as activity {}",
+                        x_websearch::payment::hex(&program_id),
+                        x_websearch::payment::hex(&activity_id)
+                    ),
+                    Step::Unknown {
+                        program_id,
+                        request_id,
+                        activity_id,
+                    } => eprintln!(
+                        "x-websearch observation of program {} request {request_id} awaits its receipt (activity {})",
+                        x_websearch::payment::hex(&program_id),
+                        x_websearch::payment::hex(&activity_id)
+                    ),
+                    Step::Rejected {
+                        program_id,
+                        request_id,
+                        code,
+                    } => eprintln!(
+                        "x-websearch gateway refused the observation of program {} request {request_id} with {code}",
+                        x_websearch::payment::hex(&program_id)
+                    ),
                 }
             }
         }
@@ -352,14 +385,21 @@ fn relay_round(relay: &mut RelayLoop) {
 }
 
 /// Runs a relay step every interval on its own thread until `stop` is
-/// raised.
+/// raised. The journalled requests and submissions were loaded when the
+/// relay opened, before this loop takes any new work.
 fn start_relay(mut relay: RelayLoop, stop: StopSignal) -> std::io::Result<JoinHandle<()>> {
     thread::Builder::new()
         .name("x-websearch-kernel-relay".to_owned())
         .spawn(move || {
             eprintln!(
-                "x-websearch kernel relay started from sequence {}",
-                relay.relay.watcher.next_sequence()
+                "x-websearch kernel relay started from sequence {} with {} journalled requests in {}",
+                relay.relay.watcher.next_sequence(),
+                relay.relay.entries().len(),
+                relay
+                    .relay
+                    .journal_path()
+                    .unwrap_or_else(|| std::path::Path::new(""))
+                    .display()
             );
             while !stop.is_raised() {
                 let started = Instant::now();
