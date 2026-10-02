@@ -120,7 +120,8 @@ impl<A: HumanAuthorityBoundary> UnifiedAgentOwner<A> {
                 },
             )
             .map_err(rpc_commit_error)?;
-        recheck_stored_binding(
+        recheck_submit_binding(
+            &prepared.disclosure,
             &control,
             &tenant,
             &agent,
@@ -425,6 +426,8 @@ pub struct CoreCapabilityScope {
 
     pub not_before_ms: u64,
     pub not_after_ms: u64,
+
+    pub module_mask: u64,
     pub observed_sequence: u64,
     pub verification: u8,
     pub evidence_digest: [u8; 32],
@@ -910,6 +913,8 @@ impl HumanAuthorityBoundary for RemoteHumanAuthority {
                 enforceable_dimensions,
             },
             observed_sequence: u64_field(&value, "observed_sequence")?,
+            module_mask: crate::capability::binding::lxgs2_module_mask(&summary)
+                .map_err(|error| binding_refusal(&error))?,
 
             not_before_ms,
             not_after_ms,
@@ -2136,6 +2141,12 @@ impl<A: HumanAuthorityBoundary> UnifiedAgentOwner<A> {
             .tenant_ids_for_kind(ObjectKind::Capability);
         for tenant in &cleanup_tenants {
             sweep_capability_cleanups(&session_control, &preparation_lifecycle, tenant)?;
+
+            let store = shared_store
+                .lock()
+                .map_err(|_| HumanOperationError::Unavailable)?;
+            crate::capability::restore_chain_reservations(&store, tenant)
+                .map_err(|error| consume_refusal(&error))?;
         }
 
         operations.attach_session_control(session_control.clone());
@@ -2374,13 +2385,6 @@ impl<A: HumanAuthorityBoundary> UnifiedAgentOwner<A> {
         let (tenant, agent) = binding_coordinates(context)?;
         let body_digest = request.body_digest;
         let capability_id = request.operation.capability_id;
-        let purpose = match capability_id {
-            Some(_) => Some(
-                binding::prepare_purpose(&request.operation)
-                    .map_err(|error| binding_refusal(&error))?,
-            ),
-            None => None,
-        };
         let mut operations = self.lock_operations()?;
         let before: std::collections::BTreeSet<String> = operations
             .prepared
@@ -2424,33 +2428,74 @@ impl<A: HumanAuthorityBoundary> UnifiedAgentOwner<A> {
                     .replay(&body_digest, capability_id.as_ref())
                     .map_err(|error| binding_refusal(&error));
             }
-            let intent = match purpose {
-                Some(purpose) => Some(
-                    binding::prepare_intent(&prepared.disclosure, purpose)
-                        .map_err(|error| binding_refusal(&error))?,
-                ),
-                None => None,
-            };
             let planner_tenant = tenant.clone();
             let planner_agent = agent.clone();
+            let disclosure = &prepared.disclosure;
+            let observed_head_sequence = snapshot.observed_head_sequence;
             let planner: AdmissionPlanner<'_> = Box::new(move |store: &Store| {
                 let refuse =
                     |error: BindingError| SessionControlError::Human(binding_refusal(&error));
-                let (extension, updates, companions) = match intent {
-                    Some(intent) => {
-                        let Admission::Bound { extension, plan } = binding::admit(
+                let (extension, updates, companions) = match capability_id {
+                    Some(_) => {
+                        let semantic = crate::capability::derive_effects(
+                            disclosure,
+                            &crate::capability::VerifiedInputs {
+                                revoke_balance: verified_revoke_balance(disclosure),
+                            },
+                        )
+                        .map_err(|_| SessionControlError::Human(HumanOperationError::Refused))?;
+                        let (counterparty, asset, amount) = capability_intent_value(&semantic)
+                            .map_err(SessionControlError::Human)?;
+                        let intent = binding::TimedIntent {
+                            activity: disclosure.activity_type.value(),
+                            counterparty,
+                            asset,
+                            amount,
+                            purpose: capability_purpose(None, disclosure).map_err(refuse)?,
+                        };
+                        let disclosure_digest = disclosure
+                            .audit_digest()
+                            .map_err(|_| SessionControlError::Unavailable)?;
+                        let Admission::Bound {
+                            extension,
+                            mut plan,
+                        } = binding::admit(
                             store,
                             &planner_tenant,
                             &planner_agent,
                             capability_id,
                             preparation_id,
                             &intent,
+                            disclosure_digest,
                             now_ms,
                         )
                         .map_err(refuse)?
                         else {
                             return Err(SessionControlError::Unavailable);
                         };
+                        let chain = extension
+                            .chain
+                            .iter()
+                            .map(|id| {
+                                crate::capability::timed::restore(store, &planner_tenant, id)
+                                    .map_err(|error| {
+                                        SessionControlError::Human(capability_refusal(&error))
+                                    })?
+                                    .ok_or(SessionControlError::Unavailable)
+                            })
+                            .collect::<Result<Vec<_>, _>>()?;
+                        let reservation = crate::capability::plan_chain(
+                            store,
+                            &planner_tenant,
+                            preparation_id,
+                            &chain,
+                            &semantic,
+                            observed_head_sequence,
+                        )
+                        .map_err(|error| SessionControlError::Human(consume_refusal(&error)))?;
+                        if let Some(companion) = reservation.companion {
+                            plan.companions.push(companion);
+                        }
                         (Some(extension), plan.updates, plan.companions)
                     }
                     None => {
@@ -2658,7 +2703,8 @@ impl<A: HumanAuthorityBoundary> UnifiedAgentOwner<A> {
                     },
                 )
                 .map_err(rpc_commit_error)?;
-            recheck_stored_binding(
+            recheck_submit_binding(
+                &cached.prepared.disclosure,
                 &control,
                 &tenant,
                 &agent,
@@ -4321,6 +4367,7 @@ impl<A: HumanAuthorityBoundary> UnifiedAgentOwner<A> {
                 .collect(),
             scopes: request.operation.scopes.iter().cloned().collect(),
             expiry_sequence: validated.1,
+            expiry_seconds: None,
             opening_client: request.operation.opening_client,
             policy_version: request.operation.policy_version,
         };
@@ -5644,6 +5691,16 @@ impl<A: HumanAuthorityBoundary> ProductionHumanOperations<A> {
                     .signed_header()
                     .batch_number()
                     .map_err(|_| HumanOperationError::Refused)?;
+                let capability_preparation = self
+                    .session_control
+                    .as_ref()
+                    .map(|control| {
+                        control.preparation_for_idempotency_key(&tenant, idempotency_key)
+                    })
+                    .transpose()
+                    .map_err(rpc_commit_error)?
+                    .flatten();
+
                 let checkpoint = match self.node.checkpoint_evidence(
                     CheckpointSelector::Batch(evidence_batch),
                     correlation
@@ -5681,6 +5738,10 @@ impl<A: HumanAuthorityBoundary> ProductionHumanOperations<A> {
                         }
                         _ => HumanOperationError::Refused,
                     })?;
+                    if let Some(preparation_id) = capability_preparation {
+                        settle_capability_chain(&mut store, &tenant, preparation_id, &terminal)?;
+                    }
+
                     served = crate::receipt::serve(
                         &store,
                         tenant,
@@ -7773,9 +7834,16 @@ impl<A: HumanAuthorityBoundary> HumanOperations for ProductionHumanOperations<A>
                 let mut store = shared
                     .lock()
                     .map_err(|_| crate::session_control::SessionControlError::Unavailable)?;
-                crate::capability::binding::issue(&mut store, record, now_ms, head).map_err(
-                    |error| crate::session_control::SessionControlError::Human(binding_refusal(&error)),
+                crate::capability::binding::issue(
+                    &mut store,
+                    record,
+                    now_ms,
+                    head,
+                    observed.module_mask,
                 )
+                .map_err(|error| {
+                    crate::session_control::SessionControlError::Human(binding_refusal(&error))
+                })
             })
             .map_err(rpc_commit_error)?;
         let stored = match stored {
@@ -7868,6 +7936,7 @@ impl<A: HumanAuthorityBoundary> HumanOperations for ProductionHumanOperations<A>
                     child,
                     now_ms,
                     snapshot.observed_head_sequence,
+                    observed.module_mask,
                 )
                 .map_err(|error| {
                     crate::session_control::SessionControlError::Human(binding_refusal(&error))
@@ -10105,6 +10174,133 @@ fn binding_coordinates(
         std::str::from_utf8(principal.agent.as_bytes()).map_err(|_| HumanOperationError::Refused)?;
     let (tenant, _, agent) = capability_coordinates(context, principal.tenant.as_str(), agent)?;
     Ok((tenant, agent))
+}
+
+fn verified_revoke_balance(disclosure: &layerx_crypto::disclosure::Disclosure) -> Option<u128> {
+    match &disclosure.native_operation {
+        Some(layerx_crypto::disclosure::DisclosedNativeOperation::BudgetRevoke(revoke)) => {
+            Some(revoke.context.balance)
+        }
+        _ => None,
+    }
+}
+
+fn capability_purpose(
+    asserted: Option<&str>,
+    disclosure: &layerx_crypto::disclosure::Disclosure,
+) -> Result<crate::capability::binding::PurposeBinding, crate::capability::binding::BindingError> {
+    use crate::capability::binding::{self, BindingError};
+    use layerx_crypto::disclosure::DisclosedNativeOperation;
+    let asserted = asserted.ok_or(BindingError::PurposeCommitmentMissing)?;
+    match &disclosure.native_operation {
+        Some(DisclosedNativeOperation::BudgetFund(fund)) => {
+            binding::purpose_from_commitment(asserted, Some(fund.context.purpose_hash))
+        }
+        Some(DisclosedNativeOperation::BudgetDefund(defund)) => {
+            binding::purpose_from_commitment(asserted, Some(defund.context.purpose_hash))
+        }
+        Some(DisclosedNativeOperation::BudgetRevoke(revoke)) => {
+            binding::purpose_from_commitment(asserted, Some(revoke.context.purpose_hash))
+        }
+        _ if binding::purpose_commitment(disclosure).is_some() => {
+            binding::bind_purpose(asserted, disclosure)
+        }
+        _ => binding::purpose_from_commitment(asserted, None),
+    }
+}
+
+fn capability_intent_value(
+    semantic: &crate::capability::SemanticPlan,
+) -> Result<([u8; 32], [u8; 32], u128), HumanOperationError> {
+    use crate::capability::Effect;
+    let mut values = semantic.effects().iter().filter_map(|effect| match effect {
+        Effect::Transfer {
+            to, asset, amount, ..
+        } => Some((*to, *asset, *amount)),
+        Effect::Issuance {
+            account,
+            asset,
+            amount,
+        }
+        | Effect::Destruction {
+            account,
+            asset,
+            amount,
+        } => Some((*account, *asset, *amount)),
+        Effect::Authorization { .. } => None,
+    });
+    match (values.next(), values.next()) {
+        (Some(value), None) => Ok(value),
+        _ => Err(HumanOperationError::Refused),
+    }
+}
+
+fn consume_refusal(error: &crate::capability::ConsumeError) -> HumanOperationError {
+    use crate::capability::ConsumeError;
+    match error {
+        ConsumeError::Refused { dimension, .. } => {
+            HumanOperationError::CapabilityRefused(*dimension)
+        }
+        ConsumeError::MissingReservation
+        | ConsumeError::Corrupt
+        | ConsumeError::SizeOverflow
+        | ConsumeError::Store(_) => HumanOperationError::Unavailable,
+        ConsumeError::InvalidIdentity
+        | ConsumeError::EmptyChain
+        | ConsumeError::Conflict
+        | ConsumeError::Indeterminate
+        | ConsumeError::Overflow => HumanOperationError::Refused,
+    }
+}
+
+fn settle_capability_chain(
+    store: &mut Store,
+    tenant: &TenantId,
+    preparation_id: [u8; 32],
+    terminal: &crate::protocol_evidence::VerifiedReceiptEvidence,
+) -> Result<(), HumanOperationError> {
+    if crate::capability::binding::preparation_binding(store, tenant, &preparation_id)
+        .map_err(|error| binding_refusal(&error))?
+        .is_none()
+    {
+        return Ok(());
+    }
+    crate::capability::settle_chain(
+        store,
+        tenant,
+        preparation_id,
+        crate::capability::SettleOutcome::Verified(terminal),
+    )
+    .map_err(|error| consume_refusal(&error))
+}
+
+fn recheck_submit_binding(
+    disclosure: &layerx_crypto::disclosure::Disclosure,
+    control: &SessionControl,
+    tenant: &TenantId,
+    agent: &str,
+    record: &crate::prepare::DurablePreparation,
+    now_ms: u64,
+) -> Result<(), HumanOperationError> {
+    recheck_stored_binding(control, tenant, agent, record, now_ms)?;
+    let (Some(extension), _) = stored_binding(record)? else {
+        return Ok(());
+    };
+    let digest = disclosure
+        .audit_digest()
+        .map_err(|_| HumanOperationError::Unavailable)?;
+    let shared = control.store();
+    let store = shared
+        .lock()
+        .map_err(|_| HumanOperationError::Unavailable)?;
+    crate::capability::binding::recheck_on_submit(
+        &store,
+        tenant,
+        &record.preparation_id,
+        &digest,
+        &extension.capability_id,
+    )
+    .map_err(|error| binding_refusal(&error))
 }
 
 /// Owner surface of a binding failure; a chain failure keeps the timed dimension mapping.
