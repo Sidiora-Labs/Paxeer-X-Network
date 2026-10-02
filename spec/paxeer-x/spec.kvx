@@ -21464,7 +21464,7 @@ fixture_policy = "Implement owned disposable fixtures using actual compiled serv
 
 [task.2.3]
 title = "Expose only effective bounded daemon concurrency settings"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 2
 requires = ["0.2"]
@@ -21672,7 +21672,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.5.3]
 title = "Resume submitted checkpoints durably until challenge-window finality"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 2
 requires = ["0.2"]
@@ -21747,7 +21747,7 @@ do_5 = "Use one core-only policy in the existing no_std SDK, re-exported by the 
 
 [task.6.5]
 title = "Validate all deployment forms before persisting executable programs"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 2
 requires = ["0.2"]
@@ -21771,7 +21771,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.7.1]
 title = "Bind reproducible source verification to the verified deployment ABI"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 2
 requires = ["0.2"]
@@ -21820,7 +21820,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.8.2]
 title = "Publish executable MCP bindings with protected listener and peer admission"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 2
 requires = ["0.2"]
@@ -22461,7 +22461,7 @@ fixture_policy = "Implement owned disposable fixtures using actual compiled serv
 
 [task.19.2]
 title = "Recover kernel web requests and submitted observations across restarts"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 2
 requires = ["0.2"]
@@ -22563,7 +22563,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.20.4]
 title = "Resume governed-rate publications from exact durable signed transactions"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 2
 requires = ["0.2"]
