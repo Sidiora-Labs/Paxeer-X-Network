@@ -198,10 +198,15 @@ fn config() -> Result<Config, String> {
     let ingress = ingress_role()?;
     let listener = listener_config(ingress)?;
     let role = if ingress {
+        let source_trigger = SourceTrigger::from_environment()?;
+        let operator_trigger = SourceTrigger::operator_from_environment()?;
+        if source_trigger.shares_secret(&operator_trigger) {
+            return Err("source and operator trigger credentials must be distinct".to_owned());
+        }
         Role::Ingress {
             sources: TrustedSources::from_environment()?,
-            source_trigger: SourceTrigger::from_environment()?,
-            operator_trigger: SourceTrigger::operator_from_environment()?,
+            source_trigger,
+            operator_trigger,
         }
     } else {
         Role::Public {

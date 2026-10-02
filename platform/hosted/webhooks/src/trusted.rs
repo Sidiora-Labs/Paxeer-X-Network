@@ -517,6 +517,11 @@ impl DeveloperIdentity {
 }
 
 impl SourceTrigger {
+    #[must_use]
+    pub fn shares_secret(&self, other: &Self) -> bool {
+        self.token.as_bytes().ct_eq(other.token.as_bytes()).unwrap_u8() == 1
+    }
+
     /// # Errors
     /// Refuses missing or invalid configuration, secret files, endpoints or TLS material.
     pub fn from_environment() -> Result<Self, String> {

@@ -22318,7 +22318,9 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.17.1]
 title = "Separate public webhook APIs from authenticated private producer ingress"
-status = "in_progress"
+status = "done"
+completion_basis = "implementation"
+qualification_status = "unverified"
 mode = "BUILD"
 wave = 2
 requires = ["0.2"]

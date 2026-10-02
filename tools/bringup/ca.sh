@@ -591,9 +591,35 @@ ca_issue_local() {
 		local_refuse "the bundle holds files beyond the identity"
 	chmod 0700 "$work"
 	{ [ ! -e "$dir" ] && [ ! -L "$dir" ]; } || local_refuse "$dir appeared during issuance"
-	# A rename replaces at most an empty directory, so no material is ever
-	# overwritten.
-	mv -T -- "$work" "$dir" || local_refuse "the bundle could not be published to $dir"
+	python3 - "$work" "$dir" <<'ATOMIC_LOCAL_BUNDLE' || local_refuse "the bundle could not be published without overwrite"
+import ctypes, os, sys
+source, destination = sys.argv[1:]
+parent = os.path.dirname(destination)
+if os.path.dirname(source) != parent:
+    raise SystemExit("local bundle staging is outside the destination parent")
+fd = os.open(parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+try:
+    staging = os.open(os.path.basename(source), os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=fd)
+    try:
+        for name in os.listdir(staging):
+            item = os.open(name, os.O_RDONLY | os.O_NOFOLLOW, dir_fd=staging)
+            try:
+                os.fsync(item)
+            finally:
+                os.close(item)
+        os.fsync(staging)
+    finally:
+        os.close(staging)
+    libc = ctypes.CDLL(None, use_errno=True)
+    rename = libc.renameat2
+    rename.argtypes = [ctypes.c_int, ctypes.c_char_p, ctypes.c_int, ctypes.c_char_p, ctypes.c_uint]
+    rename.restype = ctypes.c_int
+    if rename(fd, os.fsencode(os.path.basename(source)), fd, os.fsencode(os.path.basename(destination)), 1):
+        raise OSError(ctypes.get_errno(), "atomic local bundle publication refused")
+    os.fsync(fd)
+finally:
+    os.close(fd)
+ATOMIC_LOCAL_BUNDLE
 	trap - EXIT
 	echo "issued $service custody=local fingerprint=$(openssl x509 -in "$dir/cert.pem" -noout -fingerprint -sha256 | cut -d= -f2) expires_in=$(days_left <"$dir/cert.pem")d"
 }
