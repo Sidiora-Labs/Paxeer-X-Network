@@ -139,6 +139,7 @@ typedef struct lxp_daemon_settlement_registration_evidence {
     uint8_t transaction_id[32];
     uint64_t observed_block_number;
     uint64_t observed_at_ms;
+    uint8_t observed_block_hash[32];
 } lxp_daemon_settlement_registration_evidence;
 
 lxp_result lxp_daemon_evidence_open_history(

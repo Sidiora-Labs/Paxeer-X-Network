@@ -434,7 +434,7 @@ static int anchor_ladder_decode(const json_token *result, lxp_daemon_anchor_ladd
     *ladder = (lxp_daemon_anchor_ladder)value;
     return 0;
 }
-static int anchor_checkpoint_matches(const json_token *result, const lxp_guarantor_cert *certificate, const uint8_t checkpoint_id[32], lxp_daemon_anchor_ladder ladder, uint64_t *submitted_height, uint64_t *finalized_height)
+static int anchor_checkpoint_matches(const json_token *result, const lxp_guarantor_cert *certificate, const uint8_t checkpoint_id[32], const uint8_t header_digest[32], lxp_daemon_anchor_ladder ladder, uint64_t *submitted_height, uint64_t *finalized_height)
 {
     static uint8_t record[ANCHOR_CHECKPOINT_BYTES];
     const lxp_batch_header *header = &certificate->checkpoint.header;
@@ -447,7 +447,7 @@ static int anchor_checkpoint_matches(const json_token *result, const lxp_guarant
         abi_word_u64(record + 480U, &challenges) != 0 || abi_word_u64(record + 512U, submitted_height) != 0 ||
         abi_word_u64(record + 544U, finalized_height) != 0) return 0;
     return batch == header->batch_number && lxp_ct_memcmp(record + 32U, checkpoint_id, 32U) == 0 &&
-        !lxp_ct_is_zero(record + 64U, 32U) && epoch == header->epoch && first == header->first_sequence &&
+        lxp_ct_memcmp(record + 64U, header_digest, 32U) == 0 && epoch == header->epoch && first == header->first_sequence &&
         last == header->last_sequence && lxp_ct_memcmp(record + 192U, header->previous_state_root, 32U) == 0 &&
         lxp_ct_memcmp(record + 224U, header->resulting_state_root, 32U) == 0 &&
         lxp_ct_memcmp(record + 256U, header->receipt_merkle_root, 32U) == 0 &&
@@ -563,7 +563,7 @@ lxp_result lxp_finality_authority_bind(lxp_daemon_finality_authority *authority,
         status = anchor_call(authority, LXP_DAEMON_ANCHOR_CHECKPOINT_GUARANTORS, batch, response, &doc, &result);
         if (status == LXP_OK && (result_words(result, words, 2U + LXP_MAX_GUARANTOR_ATTESTATIONS, &count) != 0 || count < 2U ||
             abi_word_u64(words, &value) != 0 || value != 32U || abi_word_u64(words + 32U, &length) != 0 ||
-            length != count - 2U || length < authority->threshold)) status = LXP_ERR_ATTESTATION_THRESHOLD;
+            length != count - 2U || length == 0U || length > LXP_MAX_GUARANTOR_ATTESTATIONS)) status = LXP_ERR_ATTESTATION_THRESHOLD;
         for (i = 0U; status == LXP_OK && i < length; ++i)
             status = anchor_guarantor(authority, words + (2U + i) * 32U, NULL, response, &doc);
     }
@@ -592,6 +592,11 @@ lxp_result lxp_daemon_finality_authority_ladder(const lxp_daemon_finality_author
     free(doc.tokens); free(response);
     return status;
 }
+static lxp_result anchor_history_bound(const lxp_daemon_finality_authority *authority,
+    const lxp_guarantor_cert *certificate, const lxp_guarantor_set *bonded_set,
+    const lxp_daemon_settlement_registration_evidence *registration,
+    char *response, json_document *doc);
+
 lxp_result lxp_daemon_finality_authority_verify_explicit(
     const lxp_daemon_finality_authority *authority,
     const lxp_finalisation_state *trusted_finalisation,
@@ -605,7 +610,7 @@ lxp_result lxp_daemon_finality_authority_verify_explicit(
     const json_token *result = NULL;
     lxp_arena arena;
     lxp_finalisation_state finalisation;
-    uint8_t checkpoint_id[32];
+    uint8_t checkpoint_id[32], header_digest[32];
     char transaction[67], params[192];
     uint64_t value, submitted_height = 0U, finalized_height = 0U;
     lxp_daemon_anchor_ladder ladder = LXP_DAEMON_ANCHOR_INSTANT;
@@ -613,7 +618,9 @@ lxp_result lxp_daemon_finality_authority_verify_explicit(
     lxp_result status;
     size_t i;
     if (authority == NULL || trusted_finalisation == NULL || authority->rpc_port == 0U || certificate == NULL || bonded_set == NULL || requirements == NULL || registration == NULL || certificate->attestation_count == 0U || certificate->attestation_count > LXP_MAX_GUARANTOR_ATTESTATIONS) return LXP_ERR_NON_CANONICAL;
-    if (registration->paxeer_chain_id != authority->paxeer_chain_id || lxp_ct_memcmp(registration->settlement_contract, authority->settlement_contract, 20U) != 0 || lxp_ct_is_zero(registration->transaction_id, 32U) || registration->observed_block_number == 0U) return LXP_ERR_CONTEXT_MISMATCH;
+    if (lxp_ct_memcmp(authority->checkpoint_registry, lxp_paxeer_anchor_address, 20U) != 0 ||
+        lxp_ct_memcmp(authority->settlement_contract, lxp_paxeer_anchor_address, 20U) != 0 ||
+        registration->paxeer_chain_id != authority->paxeer_chain_id || lxp_ct_memcmp(registration->settlement_contract, authority->settlement_contract, 20U) != 0 || lxp_ct_is_zero(registration->transaction_id, 32U) || registration->observed_block_number == 0U) return LXP_ERR_CONTEXT_MISMATCH;
     for (i = 0U; i < certificate->attestation_count; ++i) {
         if (certificate->attestations[i].paxeer_chain_id != authority->paxeer_chain_id || lxp_ct_memcmp(certificate->attestations[i].paxeer_settlement_contract, authority->settlement_contract, 20U) != 0) return LXP_ERR_CONTEXT_MISMATCH;
     }
@@ -624,6 +631,7 @@ lxp_result lxp_daemon_finality_authority_verify_explicit(
     status = lxp_arena_init(&arena, memory, LXP_MAX_VALIDITY_PROOF_BYTES + 1024U * 1024U);
     if (status == LXP_OK) status = lxp_checkpoint_certificate_hash(&certificate->checkpoint, &arena, checkpoint_id);
     if (status == LXP_OK && lxp_ct_memcmp(checkpoint_id, registration->checkpoint_id, 32U) != 0) status = LXP_ERR_CONTEXT_MISMATCH;
+    if (status == LXP_OK) status = lxp_batch_header_hash(&certificate->checkpoint.header, &arena, header_digest);
     finalisation = *trusted_finalisation;
     if (status == LXP_OK) status = lxp_checkpoint_finalisable(&finalisation, certificate, bonded_set, requirements, &arena, &finalisable);
     if (status == LXP_OK && !finalisable) status = LXP_ERR_ATTESTATION_THRESHOLD;
@@ -633,7 +641,7 @@ lxp_result lxp_daemon_finality_authority_verify_explicit(
     if (status == LXP_OK && anchor_ladder_decode(result, &ladder) != 0) status = LXP_ERR_CONTEXT_MISMATCH;
     if (status == LXP_OK && ladder != LXP_DAEMON_ANCHOR_FINAL) status = LXP_ERR_CONTEXT_MISMATCH;
     if (status == LXP_OK) status = anchor_call(authority, LXP_DAEMON_ANCHOR_CHECKPOINT, certificate->checkpoint.header.batch_number, response, &doc, &result);
-    if (status == LXP_OK && !anchor_checkpoint_matches(result, certificate, registration->checkpoint_id, ladder, &submitted_height, &finalized_height)) status = LXP_ERR_CONTEXT_MISMATCH;
+    if (status == LXP_OK && (!anchor_checkpoint_matches(result, certificate, registration->checkpoint_id, header_digest, ladder, &submitted_height, &finalized_height) || submitted_height != registration->observed_block_number)) status = LXP_ERR_CONTEXT_MISMATCH;
     encode_hex(registration->transaction_id, 32U, transaction);
     (void)snprintf(params, sizeof(params), "[\"%s\"]", transaction);
     if (status == LXP_OK) status = rpc(authority, "eth_getTransactionReceipt", params, response, &doc, &result);
@@ -645,6 +653,7 @@ lxp_result lxp_daemon_finality_authority_verify_explicit(
         !submitted_event(&doc, result, certificate, registration))) status = LXP_ERR_CONTEXT_MISMATCH;
     if (status == LXP_OK) status = rpc(authority, "eth_blockNumber", "[]", response, &doc, &result);
     if (status == LXP_OK && (quantity(result, &value) != 0 || value < registration->observed_block_number || value < finalized_height)) status = LXP_ERR_CONTEXT_MISMATCH;
+    if (status == LXP_OK) status = anchor_history_bound(authority, certificate, bonded_set, registration, response, &doc);
     free(doc.tokens); free(response); free(memory);
     return status;
 }
@@ -661,6 +670,155 @@ lxp_result lxp_daemon_finality_authority_verify(void *context,
         requirements, registration);
 }
 
+enum { MEMBERSHIP_EVENT_COUNT = 5, MEMBERSHIP_LOG_SPAN = 256 };
+static const char *const membership_events[MEMBERSHIP_EVENT_COUNT] = {
+    "GuarantorRegistered(bytes32,address,address,uint256,uint8)", "GuarantorActivated(bytes32)",
+    "BondIncreased(bytes32,uint256,uint256)", "UnbondBegun(bytes32,uint256,uint64)",
+    "GuarantorSlashed(bytes32,uint8,uint64,uint256,address,uint256)"};
+/* The submitting transaction must carry exactly the canonical submitCheckpoint
+ * calldata of this certificate: header, header signature and the full v1
+ * certificate wire including every attestation and the declared threshold. */
+static lxp_result canonical_submission(const json_token *input, const lxp_guarantor_cert *certificate)
+{
+    const size_t header_padded = (LXP_BATCH_HEADER_ENCODED_SIZE + 31U) / 32U * 32U;
+    const size_t signature_offset = 3U * 32U + 32U + header_padded;
+    uint8_t *bytes, *memory;
+    size_t length;
+    uint64_t offset = 0U, size = 0U;
+    lxp_arena arena;
+    lxp_byte_span expected;
+    lxp_result status = LXP_ERR_CONTEXT_MISMATCH;
+    if (input == NULL || input->kind != '"' || input->length < 2U || (input->length - 2U) % 2U != 0U) return LXP_ERR_CONTEXT_MISMATCH;
+    length = (input->length - 2U) / 2U;
+    if (length < 4U + signature_offset + 32U + 64U) return LXP_ERR_CONTEXT_MISMATCH;
+    bytes = malloc(length);
+    memory = malloc(2U * LXP_MAX_VALIDITY_PROOF_BYTES + 65536U);
+    if (bytes == NULL || memory == NULL) { free(bytes); free(memory); return LXP_ERR_IO; }
+    if (hex_bytes(input->text, input->length, bytes, length) == 0 &&
+        abi_word_u64(bytes + 4U + 32U, &offset) == 0 && offset == signature_offset &&
+        abi_word_u64(bytes + 4U + offset, &size) == 0 && size == 64U &&
+        lxp_arena_init(&arena, memory, 2U * LXP_MAX_VALIDITY_PROOF_BYTES + 65536U) == LXP_OK &&
+        lxp_checkpoint_submit_calldata(certificate, bytes + 4U + offset + 32U, &arena, &expected) == LXP_OK &&
+        expected.length == length && lxp_ct_memcmp(expected.bytes, bytes, length) == 0) status = LXP_OK;
+    free(memory); free(bytes);
+    return status;
+}
+/* Membership is authenticated from the anchor's own membership event history up
+ * to the registration block: the persisted set version must equal the version
+ * the producer derives (one plus every membership event through that block), and
+ * every certificate guarantor must have been registered with its attesting
+ * signer by then. History the endpoint no longer serves is a refusal. */
+static lxp_result membership_history(const lxp_daemon_finality_authority *authority,
+    const lxp_guarantor_cert *certificate, const lxp_guarantor_set *bonded_set,
+    const lxp_daemon_settlement_registration_evidence *registration,
+    char *response, json_document *doc)
+{
+    char topics[MEMBERSHIP_EVENT_COUNT][67], address[43], params[256];
+    bool registered[LXP_MAX_GUARANTOR_ATTESTATIONS] = {false};
+    const json_token *result = NULL;
+    uint64_t begin, last, count = 0U, block;
+    size_t i, k;
+    lxp_result status = LXP_OK;
+    for (k = 0U; status == LXP_OK && k < MEMBERSHIP_EVENT_COUNT; ++k) status = event_topic(membership_events[k], topics[k]);
+    if (status != LXP_OK) return status;
+    encode_hex(lxp_paxeer_anchor_address, 20U, address);
+    status = rpc(authority, "eth_getBlockByNumber", "[\"earliest\",false]", response, doc, &result);
+    if (status != LXP_OK) return status;
+    if (result->kind != '{' || quantity(field(doc, result, "number"), &begin) != 0 || begin > registration->observed_block_number) return LXP_ERR_CONTEXT_MISMATCH;
+    for (; begin <= registration->observed_block_number; begin = last + 1U) {
+        last = registration->observed_block_number - begin < MEMBERSHIP_LOG_SPAN - 1U ? registration->observed_block_number : begin + MEMBERSHIP_LOG_SPAN - 1U;
+        (void)snprintf(params, sizeof(params), "[{\"address\":\"%s\",\"fromBlock\":\"0x%llx\",\"toBlock\":\"0x%llx\"}]", address, (unsigned long long)begin, (unsigned long long)last);
+        status = rpc(authority, "eth_getLogs", params, response, doc, &result);
+        if (status != LXP_OK) return status;
+        if (result->kind != '[') return LXP_ERR_CONTEXT_MISMATCH;
+        for (i = (size_t)(result - doc->tokens) + 1U; i < result->end; i = doc->tokens[i].end) {
+            const json_token *log = &doc->tokens[i];
+            const json_token *list = field(doc, log, "topics");
+            const json_token *removed = field(doc, log, "removed");
+            size_t topic_count;
+            if (list == NULL || list->kind != '[' || !token_bytes(field(doc, log, "address"), lxp_paxeer_anchor_address, 20U) ||
+                removed == NULL || !equal(removed, "false") || quantity(field(doc, log, "blockNumber"), &block) != 0 ||
+                block < begin || block > last) return LXP_ERR_CONTEXT_MISMATCH;
+            topic_count = list->end - (size_t)(list - doc->tokens) - 1U;
+            if (topic_count == 0U || list[1].kind != '"' || list[1].length != 66U) continue;
+            for (k = 0U; k < MEMBERSHIP_EVENT_COUNT && strncasecmp(list[1].text, topics[k], 66U) != 0; ++k) {}
+            if (k == MEMBERSHIP_EVENT_COUNT) continue;
+            if (count == UINT64_MAX - 1U) return LXP_ERR_LENGTH_LIMIT;
+            ++count;
+            if (k != 0U) continue;
+            if (topic_count != 3U) return LXP_ERR_CONTEXT_MISMATCH;
+            for (size_t a = 0U; a < certificate->attestation_count; ++a) {
+                uint8_t signer[32] = {0};
+                (void)memcpy(signer + 12U, certificate->attestations[a].signer, 20U);
+                if (token_bytes(list + 2, certificate->attestations[a].guarantor_id, 32U) &&
+                    token_bytes(list + 3, signer, 32U)) registered[a] = true;
+            }
+        }
+        if (last == registration->observed_block_number) break;
+    }
+    if (bonded_set->version != count + 1U) return LXP_ERR_CONTEXT_MISMATCH;
+    for (i = 0U; i < certificate->attestation_count; ++i)
+        if (!registered[i]) return LXP_ERR_CONTEXT_MISMATCH;
+    return LXP_OK;
+}
+/* The historical proof binds the certificate to the anchor's immutable record:
+ * the exact ordered guarantor list, the canonical submission calldata, one
+ * canonical block hash shared by transaction, receipt and block, and the
+ * membership history that authenticates the persisted set version. */
+static lxp_result anchor_history_bound(const lxp_daemon_finality_authority *authority,
+    const lxp_guarantor_cert *certificate, const lxp_guarantor_set *bonded_set,
+    const lxp_daemon_settlement_registration_evidence *registration,
+    char *response, json_document *doc)
+{
+    uint8_t words[(2U + LXP_MAX_GUARANTOR_ATTESTATIONS) * 32U], block_hash[32];
+    const json_token *result = NULL, *hash;
+    char transaction[67], params[192];
+    uint64_t value, length = 0U;
+    size_t count = 0U, i;
+    lxp_result status = anchor_call(authority, LXP_DAEMON_ANCHOR_CHECKPOINT_GUARANTORS,
+        certificate->checkpoint.header.batch_number, response, doc, &result);
+    if (status != LXP_OK) return status;
+    if (result_words(result, words, 2U + LXP_MAX_GUARANTOR_ATTESTATIONS, &count) != 0 || count < 2U ||
+        abi_word_u64(words, &value) != 0 || value != 32U || abi_word_u64(words + 32U, &length) != 0 ||
+        length != count - 2U || length != certificate->attestation_count) return LXP_ERR_CONTEXT_MISMATCH;
+    for (i = 0U; i < certificate->attestation_count; ++i)
+        if (lxp_ct_memcmp(words + (2U + i) * 32U, certificate->attestations[i].guarantor_id, 32U) != 0) return LXP_ERR_CONTEXT_MISMATCH;
+    encode_hex(registration->transaction_id, 32U, transaction);
+    (void)snprintf(params, sizeof(params), "[\"%s\"]", transaction);
+    status = rpc(authority, "eth_getTransactionByHash", params, response, doc, &result);
+    if (status != LXP_OK) return status;
+    hash = field(doc, result, "blockHash");
+    if (result->kind != '{' || quantity(field(doc, result, "blockNumber"), &value) != 0 ||
+        value != registration->observed_block_number ||
+        !token_bytes(field(doc, result, "hash"), registration->transaction_id, 32U) ||
+        !token_bytes(field(doc, result, "to"), lxp_paxeer_anchor_address, 20U) ||
+        hash == NULL || hash->kind != '"' || hex_bytes(hash->text, hash->length, block_hash, 32U) != 0 ||
+        lxp_ct_is_zero(block_hash, 32U) ||
+        (!lxp_ct_is_zero(registration->observed_block_hash, 32U) &&
+         lxp_ct_memcmp(registration->observed_block_hash, block_hash, 32U) != 0)) return LXP_ERR_CONTEXT_MISMATCH;
+    status = canonical_submission(field(doc, result, "input"), certificate);
+    if (status != LXP_OK) return status;
+    status = rpc(authority, "eth_getTransactionReceipt", params, response, doc, &result);
+    if (status != LXP_OK) return status;
+    if (result->kind != '{' || !token_bytes(field(doc, result, "blockHash"), block_hash, 32U)) return LXP_ERR_CONTEXT_MISMATCH;
+    (void)snprintf(params, sizeof(params), "[\"0x%llx\",false]", (unsigned long long)registration->observed_block_number);
+    status = rpc(authority, "eth_getBlockByNumber", params, response, doc, &result);
+    if (status != LXP_OK) return status;
+    if (result->kind != '{' || quantity(field(doc, result, "number"), &value) != 0 ||
+        value != registration->observed_block_number ||
+        !token_bytes(field(doc, result, "hash"), block_hash, 32U)) return LXP_ERR_CONTEXT_MISMATCH;
+    return membership_history(authority, certificate, bonded_set, registration, response, doc);
+}
+
+lxp_result lxp_finality_authority_verify_history(void *context,
+    const lxp_guarantor_cert *certificate, const lxp_guarantor_set *bonded_set,
+    const lxp_finalisation_requirements *requirements,
+    const lxp_daemon_settlement_registration_evidence *registration)
+{
+    return lxp_daemon_finality_authority_verify(context, certificate, bonded_set,
+        requirements, registration);
+}
+
 lxp_result lxp_finality_authority_verify(void *context,
     const lxp_guarantor_cert *certificate, const lxp_guarantor_set *bonded_set,
     const lxp_finalisation_requirements *requirements,
@@ -670,14 +828,24 @@ lxp_result lxp_finality_authority_verify(void *context,
     char *response;
     json_document doc;
     lxp_result status;
-    size_t i;
+    const json_token *result = NULL;
+    uint8_t threshold_word[32];
+    uint64_t threshold;
+    size_t words = 0U, i;
     if (authority == NULL || authority->store == NULL || authority->threshold == 0U || certificate == NULL) return LXP_ERR_NON_CANONICAL;
-    if (certificate->attestation_count < authority->threshold) return LXP_ERR_ATTESTATION_THRESHOLD;
-    status = lxp_daemon_finality_authority_verify(context, certificate, bonded_set, requirements, registration);
+    if (certificate->attestation_count == 0U || certificate->threshold == 0U ||
+        certificate->attestation_count < certificate->threshold) return LXP_ERR_ATTESTATION_THRESHOLD;
+    if (registration == NULL || lxp_ct_is_zero(registration->observed_block_hash, 32U)) return LXP_ERR_CONTEXT_MISMATCH;
+    status = lxp_finality_authority_verify_history(context, certificate, bonded_set, requirements, registration);
     if (status != LXP_OK) return status;
     response = malloc(RPC_CAPACITY);
     doc.tokens = calloc(TOKEN_CAPACITY, sizeof(*doc.tokens));
     if (response == NULL || doc.tokens == NULL) status = LXP_ERR_IO;
+    if (status == LXP_OK) status = anchor_read(authority, LXP_DAEMON_ANCHOR_THRESHOLD, NULL, response, &doc, &result);
+    if (status == LXP_OK && (result_words(result, threshold_word, 1U, &words) != 0 || words != 1U ||
+        abi_word_u64(threshold_word, &threshold) != 0 || threshold == 0U ||
+        threshold > LXP_MAX_GUARANTOR_ATTESTATIONS || certificate->threshold != threshold ||
+        certificate->attestation_count < threshold)) status = LXP_ERR_ATTESTATION_THRESHOLD;
     for (i = 0U; status == LXP_OK && i < certificate->attestation_count; ++i)
         status = anchor_guarantor(authority, certificate->attestations[i].guarantor_id,
             certificate->attestations[i].signer, response, &doc);

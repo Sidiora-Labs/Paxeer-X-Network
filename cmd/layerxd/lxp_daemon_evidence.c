@@ -17,6 +17,7 @@ enum {
     EVIDENCE_RECORD_FIXED_BYTES = 60,
     EVIDENCE_RECORD_DIGEST_BYTES = 32,
     EVIDENCE_WIRE_VERSION = 1,
+    FINALITY_PROOF_VERSION = 2,
     FINALITY_SETTLEMENT_REFERENCE_BYTES = 110,
     FINALITY_ATTESTATION_BYTES = 274
 };
@@ -1251,7 +1252,7 @@ static lxp_result decode_finality_proof(
     (void)memset(&decoded->bonded_set, 0, sizeof(decoded->bonded_set));
     (void)memset(&decoded->requirements, 0, sizeof(decoded->requirements));
     status = reader_u16(&reader, &version);
-    if (status == LXP_OK && version != EVIDENCE_WIRE_VERSION)
+    if (status == LXP_OK && version != EVIDENCE_WIRE_VERSION && version != FINALITY_PROOF_VERSION)
         status = LXP_ERR_VERSION_UNSUPPORTED;
     if (status == LXP_OK)
         status = reader_u64(&reader, &decoded->expected_registration_count);
@@ -1322,6 +1323,11 @@ static lxp_result decode_finality_proof(
     if (status == LXP_OK)
         decoded->registered_reference =
             (lxp_byte_span){reference, reference_length};
+    if (status == LXP_OK && version == FINALITY_PROOF_VERSION)
+        status = reader_copy(&reader, decoded->settlement_registration.observed_block_hash, 32U);
+    if (status == LXP_OK && version == FINALITY_PROOF_VERSION &&
+        lxp_ct_is_zero(decoded->settlement_registration.observed_block_hash, 32U))
+        status = LXP_ERR_NON_CANONICAL;
     if (status == LXP_OK) status = reader_finish(&reader);
     lxp_secure_zero(amount, sizeof(amount));
     return status;
@@ -1506,6 +1512,7 @@ lxp_result lxp_daemon_finality_evidence_encode(
     size_t order[LXP_MAX_GUARANTOR_ATTESTATIONS];
     size_t payload_length;
     size_t proof_length;
+    bool historical_context;
     size_t index;
     void *payload_memory = NULL;
     void *proof_memory = NULL;
@@ -1536,7 +1543,8 @@ lxp_result lxp_daemon_finality_evidence_encode(
         certificate->checkpoint.validity_proof.length + 1U +
         certificate->attestation_count * FINALITY_ATTESTATION_BYTES +
         1U + 2U + sizeof(reference);
-    proof_length = finality_proof_length(bonded_set);
+    historical_context = !lxp_ct_is_zero(registration->observed_block_hash, 32U);
+    proof_length = finality_proof_length(bonded_set) + (historical_context ? 32U : 0U);
     if (status == LXP_OK &&
         (payload_length > LXP_DAEMON_FINALITY_REGISTER_MAX_BYTES ||
          proof_length > LXP_DAEMON_FINALITY_REGISTER_MAX_BYTES ||
@@ -1574,7 +1582,7 @@ lxp_result lxp_daemon_finality_evidence_encode(
         }
         order[position] = selected;
     }
-    if (status == LXP_OK) status = writer_u16(&proof_writer, EVIDENCE_WIRE_VERSION);
+    if (status == LXP_OK) status = writer_u16(&proof_writer, historical_context ? FINALITY_PROOF_VERSION : EVIDENCE_WIRE_VERSION);
     if (status == LXP_OK) status = writer_u64(&proof_writer, expected_registration_count);
     if (status == LXP_OK) status = writer_u64(&proof_writer, bonded_set->version);
     if (status == LXP_OK) status = writer_u64(&proof_writer, bonded_set->last_governance_sequence);
@@ -1601,6 +1609,8 @@ lxp_result lxp_daemon_finality_evidence_encode(
                               registration->settlement_contract, 20U);
     if (status == LXP_OK) status = writer_u16(&proof_writer, sizeof(reference));
     if (status == LXP_OK) status = writer_bytes(&proof_writer, reference, sizeof(reference));
+    if (status == LXP_OK && historical_context)
+        status = writer_bytes(&proof_writer, registration->observed_block_hash, 32U);
     if (status == LXP_OK &&
         (payload_writer.cursor != payload_length ||
          proof_writer.cursor != proof_length))

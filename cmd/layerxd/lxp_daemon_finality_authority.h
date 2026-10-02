@@ -56,6 +56,10 @@ lxp_result lxp_daemon_finality_authority_init_pins(
 lxp_result lxp_finality_authority_bind(
     lxp_daemon_finality_authority *authority,
     lxp_daemon_evidence_store *store);
+lxp_result lxp_finality_authority_verify_history(void *context,
+    const lxp_guarantor_cert *certificate, const lxp_guarantor_set *bonded_set,
+    const lxp_finalisation_requirements *requirements,
+    const lxp_daemon_settlement_registration_evidence *registration);
 lxp_result lxp_finality_authority_verify(
     void *context, const lxp_guarantor_cert *certificate,
     const lxp_guarantor_set *bonded_set,
