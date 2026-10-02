@@ -13,7 +13,7 @@ use zeroize::Zeroizing;
 use crate::http::{json, ok, refusal, Request, Response};
 use crate::journal::Journal;
 use crate::secret::{
-    hex, read_secret_file, sha256_hex, unhex, unix_seconds, valid_hex, valid_identifier,
+    hex, sha256_hex, unhex, unix_seconds, valid_hex, valid_identifier,
     valid_principal,
 };
 use crate::tls::Upstream;
@@ -294,35 +294,84 @@ impl Generation {
 
 /// A fully validated and authenticated snapshot that has not been adopted yet.
 pub struct Candidate {
+    prepared_from: EnrollmentState,
     generation: u64,
     credentials: BTreeMap<String, Zeroizing<String>>,
     fingerprints: BTreeMap<String, String>,
     changed: Vec<String>,
 }
 
-/// Owner-only regular file of the service's effective user.
-fn protected(path: &Path) -> Result<bool, ErrorKind> {
-    let owner = fs::metadata("/proc/self")
-        .map_err(|error| error.kind())?
-        .uid();
-    let metadata = fs::symlink_metadata(path).map_err(|error| error.kind())?;
-    Ok(metadata.file_type().is_file()
-        && metadata.uid() == owner
-        && metadata.mode().trailing_zeros() >= 6)
+fn protected_open(path: &Path) -> std::io::Result<File> {
+    let owner = fs::metadata("/proc/self")?.uid();
+    let before = fs::symlink_metadata(path)?;
+    if !path.is_absolute() || !before.is_file() || before.uid() != owner
+        || before.mode() & 0o077 != 0 || before.nlink() != 1
+    {
+        return Err(ErrorKind::PermissionDenied.into());
+    }
+    let mut options = OpenOptions::new();
+    options.read(true);
+    #[cfg(target_os = "linux")]
+    options.custom_flags(0x20000 | 0x800);
+    let file = options.open(path)?;
+    let metadata = file.metadata()?;
+    if !metadata.is_file() || metadata.uid() != owner || metadata.mode() & 0o077 != 0
+        || metadata.nlink() != 1 || metadata.dev() != before.dev() || metadata.ino() != before.ino()
+    {
+        return Err(ErrorKind::PermissionDenied.into());
+    }
+    Ok(file)
 }
 
-/// Requires the file at `path` to be an owner-only regular file of the
-/// service's effective user.
+/// Requires an owner-only regular file belonging to the effective user.
 /// # Errors
-/// Refuses a missing, foreign-owned, group/other-accessible or linked file.
+/// Refuses links, foreign ownership and group or other access.
 pub fn require_protected(path: &Path) -> Result<(), String> {
-    match protected(path) {
-        Ok(true) => Ok(()),
-        _ => Err(format!(
-            "{} must be an owner-only file of the service user",
-            path.display()
-        )),
+    protected_open(path).map(|_| ()).map_err(|_| "protected file required".to_owned())
+}
+
+fn read_protected_secret(path: &Path) -> Result<Zeroizing<String>, &'static str> {
+    let file = protected_open(path).map_err(|error| {
+        if error.kind() == ErrorKind::PermissionDenied {
+            "enrollment_unprotected"
+        } else {
+            "enrollment_credential_unreadable"
+        }
+    })?;
+    let mut value = Zeroizing::new(String::new());
+    file.take(crate::secret::MAX_SECRET_BYTES as u64 + 3)
+        .read_to_string(&mut value)
+        .map_err(|_| "enrollment_credential_unreadable")?;
+    if value.len() > crate::secret::MAX_SECRET_BYTES + 2 {
+        return Err("enrollment_credential_unreadable");
     }
+    while matches!(value.as_bytes().last(), Some(b'\n' | b'\r')) {
+        value.pop();
+    }
+    if value.is_empty() || value.len() > crate::secret::MAX_SECRET_BYTES
+        || value.bytes().any(|byte| byte.is_ascii_control())
+    {
+        return Err("enrollment_credential_unreadable");
+    }
+    Ok(value)
+}
+
+/// Reads the enrollment key through its checked descriptor.
+/// # Errors
+/// Refuses an unprotected, unreadable or short key.
+pub fn enrollment_key(path: &Path) -> Result<Zeroizing<String>, String> {
+    let key = read_protected_secret(path).map_err(str::to_owned)?;
+    if key.len() < crate::secret::MIN_TOKEN_BYTES {
+        return Err("enrollment key is too short".to_owned());
+    }
+    Ok(key)
+}
+
+/// Signs an empty generation zero without exposing the key in process arguments.
+#[must_use]
+pub fn empty_enrollment_mac(kind: Kind, key: &str) -> String {
+    let key = ring::hmac::Key::new(ring::hmac::HMAC_SHA256, key.as_bytes());
+    hex(ring::hmac::sign(&key, format!("layerx-enrollment-v1\n{}s\n0\n", kind.singular()).as_bytes()).as_ref())
 }
 
 /// The versioned principal enrollment of one source: the adopted generation,
@@ -345,7 +394,7 @@ impl Enrollments {
     pub fn open(kind: Kind, snapshot: &Path, key: &str, directory: &Path) -> Result<Self, String> {
         fs::create_dir_all(directory).map_err(|error| format!("state directory: {error}"))?;
         let state_path = directory.join(ENROLLMENT_STATE_FILE);
-        let state = match File::open(&state_path) {
+        let state = match protected_open(&state_path) {
             Ok(file) => {
                 let mut bytes = Vec::new();
                 file.take(MAX_STATE_BYTES as u64 + 1)
@@ -409,18 +458,15 @@ impl Enrollments {
     /// # Errors
     /// Returns the refusal code of the first violated rule.
     pub fn prepare(&self) -> Result<Option<Candidate>, &'static str> {
-        match protected(&self.snapshot) {
-            Ok(true) => {}
-            Ok(false) => return Err("enrollment_unprotected"),
-            Err(ErrorKind::NotFound) => return Ok(None),
+        let file = match protected_open(&self.snapshot) {
+            Ok(file) => file,
+            Err(error) if error.kind() == ErrorKind::NotFound => return Ok(None),
+            Err(error) if error.kind() == ErrorKind::PermissionDenied => return Err("enrollment_unprotected"),
             Err(_) => return Err("enrollment_malformed"),
-        }
-        let mut bytes = Vec::new();
-        File::open(&self.snapshot)
-            .and_then(|file| {
-                file.take(MAX_ENROLLMENT_BYTES as u64 + 1)
-                    .read_to_end(&mut bytes)
-            })
+        };
+        let mut bytes = Zeroizing::new(Vec::new());
+        file.take(MAX_ENROLLMENT_BYTES as u64 + 1)
+            .read_to_end(&mut bytes)
             .map_err(|_| "enrollment_malformed")?;
         if bytes.len() > MAX_ENROLLMENT_BYTES {
             return Err("enrollment_oversized");
@@ -452,13 +498,7 @@ impl Enrollments {
                 return Err("enrollment_duplicate");
             }
             let path = Path::new(&entry.credential_file);
-            match protected(path) {
-                Ok(true) => {}
-                Ok(false) => return Err("enrollment_unprotected"),
-                Err(_) => return Err("enrollment_credential_unreadable"),
-            }
-            let credential =
-                read_secret_file(path).map_err(|_| "enrollment_credential_unreadable")?;
+            let credential = read_protected_secret(path)?;
             let fingerprint = self.fingerprint(&credential);
             if owners
                 .insert(fingerprint.clone(), entry.principal.clone())
@@ -496,12 +536,14 @@ impl Enrollments {
         }) {
             return Err("enrollment_credential_reused");
         }
+        let replay = !self.current.read().map_err(|_| "enrollment_unavailable")?.adopted;
         let changed = fingerprints
             .iter()
-            .filter(|(principal, fingerprint)| adopted.get(principal) != Some(fingerprint))
+            .filter(|(principal, fingerprint)| replay || adopted.get(principal) != Some(fingerprint))
             .map(|(principal, _)| principal.clone())
             .collect();
         Ok(Some(Candidate {
+            prepared_from: state.clone(),
             generation: file.generation,
             credentials,
             fingerprints,
@@ -520,6 +562,25 @@ impl Enrollments {
         let mut state = self.state.lock().map_err(|_| "enrollment_unavailable")?;
         if candidate.generation < state.generation {
             return Err("enrollment_stale_generation");
+        }
+        if candidate.generation == state.generation
+            && (candidate.fingerprints.len() != state.principals.len()
+                || candidate.fingerprints.iter().any(|(principal, fingerprint)| {
+                    state.principals.get(principal).map(|enrolled| &enrolled.fingerprint)
+                        != Some(fingerprint)
+                }))
+        {
+            return Err("enrollment_generation_conflict");
+        }
+        let mut current = self.current.write().map_err(|_| "enrollment_unavailable")?;
+        if current.adopted && candidate.generation == state.generation {
+            if let Ok(mut refusal) = self.last_refusal.lock() {
+                *refusal = None;
+            }
+            return Ok(None);
+        }
+        if candidate.prepared_from != *state {
+            return Err("enrollment_generation_conflict");
         }
         let mut next = EnrollmentState {
             generation: candidate.generation,
@@ -549,7 +610,6 @@ impl Enrollments {
             persist(&self.state_path, &next).map_err(|_| "enrollment_unavailable")?;
             *state = next;
         }
-        let mut current = self.current.write().map_err(|_| "enrollment_unavailable")?;
         let changed = !current.adopted || current.number != candidate.generation;
         *current = Arc::new(Generation {
             number: candidate.generation,
@@ -582,25 +642,34 @@ impl Candidate {
 
 fn persist(path: &Path, state: &EnrollmentState) -> Result<(), String> {
     let bytes = serde_json::to_vec(state).map_err(|error| error.to_string())?;
-    let temporary = path.with_extension("json.new");
+    if bytes.len() > MAX_STATE_BYTES {
+        return Err("enrollment state exceeds bound".to_owned());
+    }
+    let suffix = crate::secret::random_hex(16)?;
+    let temporary = path.with_extension(format!("json.{}.new", suffix.as_str()));
     let mut file = OpenOptions::new()
-        .create(true)
+        .create_new(true)
         .write(true)
-        .truncate(true)
         .mode(0o600)
         .open(&temporary)
         .map_err(|error| error.to_string())?;
-    file.write_all(&bytes)
-        .and_then(|()| file.sync_all())
-        .map_err(|error| error.to_string())?;
-    drop(file);
-    fs::rename(&temporary, path).map_err(|error| error.to_string())?;
-    if let Some(directory) = path.parent() {
-        File::open(directory)
-            .and_then(|directory| directory.sync_all())
+    let result = (|| {
+        file.write_all(&bytes)
+            .and_then(|()| file.sync_all())
             .map_err(|error| error.to_string())?;
+        drop(file);
+        fs::rename(&temporary, path).map_err(|error| error.to_string())?;
+        if let Some(directory) = path.parent() {
+            File::open(directory)
+                .and_then(|directory| directory.sync_all())
+                .map_err(|error| error.to_string())?;
+        }
+        Ok(())
+    })();
+    if result.is_err() {
+        let _ = fs::remove_file(&temporary);
     }
-    Ok(())
+    result
 }
 
 /// Answers a source that is still waiting for its principal set: alive, not
@@ -711,6 +780,7 @@ impl Service {
 
     fn observe_produced(
         &self,
+        enrolled: &Generation,
         body: &[u8],
         credential: &ProducerCredential,
     ) -> Result<Record, u16> {
@@ -723,7 +793,6 @@ impl Service {
         if observation.kind != self.kind.singular() {
             return Err(403);
         }
-        let enrolled = self.enrollments.current();
         let principal = match (&observation.principal, &observation.principal_digest) {
             (Some(principal), None) => principal.clone(),
             (None, Some(digest)) if credential.allow_principal_digest => {
@@ -739,7 +808,7 @@ impl Service {
             }
             _ => return Err(403),
         };
-        self.bind(&enrolled, &principal).map_err(|_| 403_u16)?;
+        self.bind(enrolled, &principal).map_err(|_| 403_u16)?;
         let record = observation.record(principal);
         self.store
             .lock()
@@ -860,7 +929,7 @@ impl Service {
                 .find(|credential| request.bearer_matches(&credential.token))
             {
                 return self
-                    .observe_produced(&request.body, credential)
+                    .observe_produced(&enrolled, &request.body, credential)
                     .map_or_else(
                         |status| {
                             refusal(status, "observation_refused", (status == 503).then_some(5))
@@ -1498,4 +1567,65 @@ mod tests {
         .is_err());
         std::fs::remove_dir_all(directory).unwrap_or_else(|error| panic!("{error}"));
     }
+    #[test]
+    fn conflicting_prepared_candidates_cannot_replace_an_adopted_generation() {
+        let (directory, enrollments) = adopted_generation_three("prepared-conflict");
+        snapshot(&directory, Kind::Payment, 4,
+            &[("principal-one", "credential-one-a")], None);
+        let first = enrollments.prepare().unwrap_or_else(|error| panic!("{error:?}")).unwrap_or_else(|| panic!("snapshot absent"));
+        let identical = enrollments.prepare().unwrap_or_else(|error| panic!("{error:?}")).unwrap_or_else(|| panic!("snapshot absent"));
+        snapshot(&directory, Kind::Payment, 4,
+            &[("principal-one", "credential-one-b")], None);
+        let second = enrollments.prepare().unwrap_or_else(|error| panic!("{error:?}")).unwrap_or_else(|| panic!("snapshot absent"));
+        assert_eq!(enrollments.adopt(first), Ok(Some(4)));
+        assert_eq!(enrollments.adopt(identical), Ok(None));
+        let persisted = fs::read(directory.join("state").join(ENROLLMENT_STATE_FILE)).unwrap_or_else(|error| panic!("{error:?}"));
+        assert_eq!(enrollments.adopt(second), Err("enrollment_generation_conflict"));
+        assert_eq!(credential(&enrollments, "principal-one").as_deref(), Some("credential-one-a"));
+        assert_eq!(fs::read(directory.join("state").join(ENROLLMENT_STATE_FILE)).unwrap_or_else(|error| panic!("{error:?}")), persisted);
+        fs::remove_dir_all(directory).unwrap_or_else(|error| panic!("{error:?}"));
+    }
+
+    #[test]
+    fn restart_revalidates_every_persisted_principal_before_adoption() {
+        for kind in [Kind::Journey, Kind::Approval, Kind::Payment, Kind::Program] {
+            let directory = scratch(&format!("revalidate-{}", kind.singular()));
+            let enrollments = open(kind, &directory);
+            snapshot(&directory, kind, 1, &[
+                ("principal-one", "credential-one"), ("principal-two", "credential-two")], None);
+            assert_eq!(refresh(&enrollments), Ok(Some(1)));
+            drop(enrollments);
+            let enrollments = open(kind, &directory);
+            let replay = enrollments.prepare().unwrap_or_else(|error| panic!("{error:?}")).unwrap_or_else(|| panic!("snapshot absent"));
+            assert_eq!(replay.changed(), ["principal-one", "principal-two"]);
+            assert!(!enrollments.current().adopted);
+            assert_eq!(enrollments.current().principals(), 0);
+            assert_eq!(enrollments.adopt(replay), Ok(Some(1)));
+            assert!(enrollments.prepare().unwrap_or_else(|error| panic!("{error:?}")).unwrap_or_else(|| panic!("snapshot absent")).changed().is_empty());
+            fs::remove_dir_all(directory).unwrap_or_else(|error| panic!("{error:?}"));
+        }
+    }
+
+    #[test]
+    fn protected_reads_refuse_links_and_preserve_the_opened_file_identity() {
+        let directory = scratch("protected-reader");
+        let path = directory.join("credential");
+        owner_only(&path, "credential-one");
+        let opened = protected_open(&path).unwrap_or_else(|error| panic!("{error:?}"));
+        let next = directory.join("replacement");
+        owner_only(&next, "credential-two");
+        fs::rename(&next, &path).unwrap_or_else(|error| panic!("{error:?}"));
+        let mut contents = String::new();
+        opened.take(4096).read_to_string(&mut contents).unwrap_or_else(|error| panic!("{error:?}"));
+        assert_eq!(contents, "credential-one");
+        let link = directory.join("symbolic");
+        std::os::unix::fs::symlink(&path, &link).unwrap_or_else(|error| panic!("{error:?}"));
+        assert!(protected_open(&link).is_err());
+        let hard = directory.join("hard");
+        fs::hard_link(&path, &hard).unwrap_or_else(|error| panic!("{error:?}"));
+        assert!(protected_open(&path).is_err());
+        assert!(protected_open(&hard).is_err());
+        fs::remove_dir_all(directory).unwrap_or_else(|error| panic!("{error:?}"));
+    }
+
 }

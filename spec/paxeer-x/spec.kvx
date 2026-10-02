@@ -22318,7 +22318,9 @@ upstream_fixture_policy = "Run the real event source and receipt-authority servi
 
 [task.17.2]
 title = "Refresh enrolled principal credentials atomically while event sources run"
-status = "in_progress"
+status = "done"
+completion_basis = "implementation"
+qualification_status = "unverified"
 mode = "BUILD"
 wave = 2
 requires = ["0.2"]

@@ -47,7 +47,8 @@ journeys | approvals | payments | programs)
 	# re-reads while it runs; start from the signed empty generation 0 and
 	# replace a pre-versioned empty map.
 	if [ ! -s "$run_dir/credentials.json" ] || [ "$(tr -d ' \n' <"$run_dir/credentials.json")" = '{}' ]; then
-		mac=$(printf 'layerx-enrollment-v1\n%s\n0\n' "$group" | openssl dgst -sha256 -mac HMAC -macopt "key:$(cat "$run_dir/enrollment-key")" -r | cut -d' ' -f1)
+		chown 4020:4020 "$run_dir" "$run_dir/enrollment-key"
+		mac=$(LAYERX_EVENTS_KIND="$group" LAYERX_EVENTS_ENROLLMENT_KEY_FILE="$run_dir/enrollment-key" setpriv --reuid=4020 --regid=4020 --clear-groups --no-new-privs /usr/local/bin/layerx-event-source --empty-enrollment-mac)
 		printf '{"version":1,"generation":0,"principals":[],"mac":"%s"}\n' "$mac" >"$run_dir/credentials.json.new"
 		mv "$run_dir/credentials.json.new" "$run_dir/credentials.json"
 	fi

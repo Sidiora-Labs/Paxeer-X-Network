@@ -39,6 +39,17 @@ fn producers() -> Result<Vec<events::ProducerCredential>, String> {
 }
 
 fn run() -> Result<(), String> {
+    let arguments: Vec<_> = std::env::args().skip(1).collect();
+    if arguments.as_slice() == ["--empty-enrollment-mac"] {
+        let kind = events::Kind::parse(&secret::required_env("LAYERX_EVENTS_KIND")?)?;
+        let path = secret::required_env("LAYERX_EVENTS_ENROLLMENT_KEY_FILE")?;
+        let key = events::enrollment_key(Path::new(&path))?;
+        println!("{}", events::empty_enrollment_mac(kind, &key));
+        return Ok(());
+    }
+    if !arguments.is_empty() {
+        return Err("unexpected event source arguments".to_owned());
+    }
     let prefix = "LAYERX_EVENTS";
     let listen = secret::required_env("LAYERX_EVENTS_LISTEN")?
         .parse()
@@ -50,8 +61,7 @@ fn run() -> Result<(), String> {
     let credentials = secret::required_env("LAYERX_EVENTS_CREDENTIALS_FILE")?;
     let state = secret::required_env("LAYERX_EVENTS_STATE_DIR")?;
     let key_file = secret::required_env("LAYERX_EVENTS_ENROLLMENT_KEY_FILE")?;
-    events::require_protected(Path::new(&key_file))?;
-    let key = secret::read_token("LAYERX_EVENTS_ENROLLMENT_KEY_FILE")?;
+    let key = events::enrollment_key(Path::new(&key_file))?;
     let upstream = tls::Upstream::from_environment(prefix)?;
     let token = secret::read_token("LAYERX_EVENTS_TOKEN_FILE")?;
     let producers = producers()?;
