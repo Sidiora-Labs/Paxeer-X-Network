@@ -590,15 +590,377 @@ PY_CHECK
         self.assertIn('root initialization required', result.stderr)
 
 
+class ExportRecovery(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        if os.geteuid() != 0:
+            raise RuntimeError('export recovery requires root and private Linux namespaces')
+        for executable in ('unshare', 'mount', 'chroot', 'bash', 'python3', 'tar', 'sha256sum'):
+            if shutil.which(executable) is None:
+                raise RuntimeError('missing export recovery prerequisite: ' + executable)
+        supplied = os.environ.get('LAYERX_TEST_RUNTIME_CLOCK_BIN', '')
+        if not supplied:
+            raise RuntimeError('LAYERX_TEST_RUNTIME_CLOCK_BIN must name the actual built runtime-clock service')
+        cls.clock = Path(supplied).resolve(strict=True)
+        with cls.clock.open('rb') as source:
+            if source.read(4) != b'\x7fELF':
+                raise RuntimeError('runtime-clock prerequisite is not an actual ELF service executable')
+        if not os.access(cls.clock, os.X_OK):
+            raise RuntimeError('runtime-clock prerequisite is not executable')
+        cls.namespace = os.readlink('/proc/self/ns/mnt')
+        cls.pid_namespace = os.readlink('/proc/self/ns/pid')
+        print('export recovery clock_sha256=' + hashlib.sha256(cls.clock.read_bytes()).hexdigest(), flush=True)
+
+    def namespace_case(self, scenario):
+        import shlex
+        with tempfile.TemporaryDirectory(prefix='paxeer-x-export-recovery-') as temporary:
+            scratch = Path(temporary)
+            os.chmod(scratch, 0o700)
+            root = scratch / 'root'
+            root.mkdir()
+            fixture = scratch / 'fixture'
+            fixture.mkdir(mode=0o700)
+            shutil.copy2(self.clock, fixture / 'layerx-runtime-clock')
+            (fixture / 'case.py').write_text(self.case_source)
+            script = '''set -euo pipefail
+root=ROOT_PATH
+fixture=FIXTURE_PATH
+[ "$(readlink /proc/self/ns/mnt)" != ORIGINAL_MOUNT ]
+[ "$(readlink /proc/self/ns/pid)" != ORIGINAL_PID ]
+mount --make-rprivate /
+mount -t tmpfs -o mode=0755,nosuid tmpfs "$root"
+for directory in usr bin sbin lib lib64; do
+    [ ! -d "/$directory" ] || {
+        mkdir -p "$root/$directory"
+        mount --bind "/$directory" "$root/$directory"
+        mount -o remount,bind,ro "$root/$directory"
+    }
+done
+mount -t tmpfs -o mode=0755,nosuid tmpfs "$root/usr/local"
+mkdir -p "$root/usr/local/bin" "$root/proc" "$root/dev" "$root/run" "$root/data" "$root/etc" "$root/var/lib/layerx/human" "$root/source" "$root/fixture"
+mkdir -m1777 "$root/tmp"
+cp "$fixture/layerx-runtime-clock" "$root/usr/local/bin/layerx-runtime-clock"
+for device in null zero urandom full; do
+    touch "$root/dev/$device"
+    mount --bind "/dev/$device" "$root/dev/$device"
+done
+mount -t proc -o nosuid,nodev,noexec proc "$root/proc"
+mount --bind "$fixture" "$root/fixture"
+mount -o remount,bind,ro "$root/fixture"
+mount --bind SOURCE_PATH "$root/source"
+mount -o remount,bind,ro "$root/source"
+exec chroot "$root" /usr/bin/python3 /fixture/case.py SCENARIO
+'''
+            for name, value in (('ROOT_PATH', str(root)), ('FIXTURE_PATH', str(fixture)),
+                                ('SOURCE_PATH', str(ROOT)), ('ORIGINAL_MOUNT', self.namespace),
+                                ('ORIGINAL_PID', self.pid_namespace), ('SCENARIO', scenario)):
+                script = script.replace(name, shlex.quote(value))
+            result = subprocess.run(
+                ['unshare', '--mount', '--pid', '--fork', '--kill-child=KILL', '--net',
+                 '--ipc', '--uts', '--propagation', 'private', '--mount-proc', '/bin/bash', '-se'],
+                input=script, capture_output=True, text=True, timeout=90,
+                env={'PATH': '/usr/sbin:/usr/bin:/sbin:/bin', 'LC_ALL': 'C'})
+            self.assertEqual(os.readlink('/proc/self/ns/mnt'), self.namespace)
+            self.assertEqual(os.readlink('/proc/self/ns/pid'), self.pid_namespace)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn('export-recovery passed ' + scenario, result.stdout)
+
+    def test_01_success_stays_quiesced_and_resume_preserves_prior_stop(self):
+        self.namespace_case('success')
+
+    def test_02_empty_manifest_refuses_with_source_intact(self):
+        self.namespace_case('empty')
+
+    def test_03_failed_archive_stream_refuses_with_source_intact(self):
+        self.namespace_case('stream')
+
+    def test_04_archive_manifest_mismatch_refuses_with_source_intact(self):
+        self.namespace_case('mismatch')
+
+    def test_05_interruption_records_explicit_idempotent_recovery(self):
+        self.namespace_case('interruption')
+
+    def test_06_pid_reuse_and_other_identity_mismatches_refuse_all_resumption(self):
+        self.namespace_case('identity')
+
+    def test_07_exited_recorded_process_does_not_resume_another_process(self):
+        self.namespace_case('exited')
+
+    case_source = r'''
+import errno
+import hashlib
+import json
+import os
+from pathlib import Path
+import resource
+import select
+import signal
+import stat
+import subprocess
+import sys
+import time
+
+os.umask(0o077)
+scenario = sys.argv[1]
+source = Path('/var/lib/layerx/human')
+destination = Path('/tmp/export')
+exporter = ['/bin/bash', '/source/tools/bringup/human-state-preserve.sh']
+processes = []
+export_process = None
+
+
+def wait_for(predicate, description, seconds=15):
+    deadline = time.monotonic() + seconds
+    while time.monotonic() < deadline:
+        value = predicate()
+        if value:
+            return value
+        time.sleep(0.002)
+    raise AssertionError('deadline waiting for ' + description)
+
+
+def process_state(pid):
+    return Path('/proc/' + str(pid) + '/stat').read_text().rsplit(')', 1)[1].split()[0]
+
+
+def stopped(pid):
+    return process_state(pid) in ('T', 't')
+
+
+def snapshot():
+    return {str(path.relative_to(source)): [path.lstat().st_uid, path.lstat().st_gid,
+            stat.S_IMODE(path.lstat().st_mode), path.lstat().st_ino,
+            hashlib.sha256(path.read_bytes()).hexdigest() if path.is_file() else None]
+            for path in sorted(source.rglob('*'))}
+
+
+def invoke(operation, expected=0):
+    result = subprocess.run(exporter + [operation, str(destination)], capture_output=True,
+                            text=True, timeout=20)
+    if expected == 0:
+        assert result.returncode == 0, result.stdout + result.stderr
+    else:
+        assert result.returncode != 0, result.stdout + result.stderr
+        assert 'pass export' not in result.stdout, result.stdout
+    return result
+
+
+def record():
+    try:
+        return json.loads((destination / 'quiescence.json').read_text())
+    except (FileNotFoundError, json.JSONDecodeError):
+        return None
+
+
+def save_record(value):
+    temporary = destination / 'record-replacement'
+    with temporary.open('w') as stream:
+        json.dump(value, stream)
+        stream.flush()
+        os.fsync(stream.fileno())
+    temporary.replace(destination / 'quiescence.json')
+
+
+def start_clock(index):
+    directory = Path('/tmp/clock-' + str(index))
+    directory.mkdir(mode=0o700)
+    child = subprocess.Popen(['/usr/local/bin/layerx-runtime-clock', '--runtime-dir', str(directory),
+                              '--', '/usr/bin/python3', '-c', 'import sys; sys.stdin.buffer.read()'],
+                             stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+    processes.append(child)
+    wait_for(lambda: list(directory.glob('lxc-*/clock.sock')), 'actual runtime-clock socket')
+    assert child.poll() is None, child.stderr.read().decode()
+    assert os.readlink('/proc/' + str(child.pid) + '/exe') == '/usr/local/bin/layerx-runtime-clock'
+    return child
+
+
+def resume_and_check(active, prior):
+    invoke('local-resume')
+    wait_for(lambda: not stopped(active.pid), 'previously running service resumed')
+    assert stopped(prior.pid), 'resume changed a service which was already stopped'
+    invoke('local-resume')
+    assert not stopped(active.pid), 'repeated resume stopped a service'
+    assert stopped(prior.pid), 'repeated resume changed the prior stopped service'
+
+
+try:
+    if scenario != 'empty':
+        (source / 'a-state').write_bytes(b'actual disposable durable state\n')
+        (source / 'a-state').chmod(0o600)
+    if scenario in ('stream', 'mismatch', 'interruption'):
+        with (source / 'b-large-state').open('wb') as stream:
+            for _ in range(64):
+                stream.write(b'preserved-state!' * 65536)
+        (source / 'z-state').write_bytes(b'before concurrent owner write\n')
+    active = start_clock(1)
+    prior = start_clock(2)
+    os.kill(prior.pid, signal.SIGSTOP)
+    wait_for(lambda: stopped(prior.pid), 'prior stopped service')
+    baseline = snapshot()
+    final_expected = baseline
+
+    if scenario == 'stream':
+        def file_limit():
+            resource.setrlimit(resource.RLIMIT_FSIZE, (256 * 1024, 256 * 1024))
+        result = subprocess.run(exporter + ['local-export', str(destination)], capture_output=True,
+                                text=True, timeout=30, preexec_fn=file_limit)
+        assert result.returncode != 0, result.stdout + result.stderr
+        assert 'pass export' not in result.stdout
+        assert 'local-resume' in result.stderr, result.stderr
+        assert snapshot() == baseline, 'failed archive stream changed source state'
+        assert record() is not None, 'failed archive stream lost recovery record'
+        assert stopped(active.pid) and stopped(prior.pid)
+        resume_and_check(active, prior)
+    elif scenario in ('mismatch', 'interruption'):
+        export_process = subprocess.Popen(exporter + ['local-export', str(destination)],
+                                          stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                          text=True, start_new_session=True,
+                                          env={**os.environ, 'TAR_OPTIONS': '--sort=name'})
+        wait_for(record, 'durable quiescence record')
+        archive = destination / 'state.tar'
+        os.mkfifo(archive, 0o600)
+        wait_for(lambda: (destination / 'manifest.sha256').exists() and
+                 (destination / 'manifest.sha256').stat().st_size > 0 and stopped(active.pid),
+                 'manifest and stopped service')
+        if scenario == 'interruption':
+            os.killpg(export_process.pid, signal.SIGTERM)
+            stdout, stderr = export_process.communicate(timeout=20)
+            assert export_process.returncode != 0, stdout + stderr
+            assert 'pass export' not in stdout
+            assert 'local-resume' in stderr, stderr
+            assert snapshot() == baseline, 'interrupted export changed source state'
+            assert record() is not None, 'interrupted export lost recovery record'
+            assert stopped(active.pid) and stopped(prior.pid)
+            resume_and_check(active, prior)
+        else:
+            descriptor = os.open(archive, os.O_RDONLY | os.O_NONBLOCK)
+            try:
+                def first_archive_bytes():
+                    try:
+                        return os.read(descriptor, 65536)
+                    except BlockingIOError:
+                        return None
+                first = wait_for(first_archive_bytes, 'real tar stream entering FIFO')
+                os.kill(export_process.pid, signal.SIGSTOP)
+                wait_for(lambda: stopped(export_process.pid), 'export supervisor paused')
+                replacement = b'after concurrent owner write\n'
+                (source / 'z-state').write_bytes(replacement)
+                expected = snapshot()
+                final_expected = expected
+                archive.unlink()
+                with archive.open('wb', buffering=0) as output:
+                    output.write(first)
+                    deadline = time.monotonic() + 25
+                    while True:
+                        assert time.monotonic() < deadline, 'archive FIFO did not finish'
+                        ready, _, _ = select.select([descriptor], [], [], 0.2)
+                        if not ready:
+                            continue
+                        data = os.read(descriptor, 65536)
+                        if not data:
+                            break
+                        output.write(data)
+                    os.fsync(output.fileno())
+                os.kill(export_process.pid, signal.SIGCONT)
+                stdout, stderr = export_process.communicate(timeout=20)
+                assert export_process.returncode != 0, stdout + stderr
+                assert 'pass export' not in stdout
+                assert 'local-resume' in stderr, stderr
+                assert ('mismatch' in stderr.lower() or 'manifest' in stderr.lower()), stderr
+                assert snapshot() == expected, 'archive mismatch changed the owner-written source'
+                assert stopped(active.pid) and stopped(prior.pid)
+                resume_and_check(active, prior)
+            finally:
+                os.close(descriptor)
+    else:
+        result = invoke('local-export', expected=1 if scenario == 'empty' else 0)
+        assert snapshot() == baseline, 'export changed source bytes or metadata'
+        value = record()
+        assert value is not None, 'missing durable recovery record'
+        assert stat.S_IMODE((destination / 'quiescence.json').stat().st_mode) == 0o600
+        assert stat.S_IMODE(destination.stat().st_mode) == 0o700
+        entries = value['processes']
+        assert {entry['pid'] for entry in entries} == {active.pid, prior.pid}, entries
+        required = {'pid', 'starttime', 'exe', 'device', 'inode', 'uid', 'boot_id',
+                    'pid_namespace', 'prior_state', 'resume_required', 'state'}
+        for entry in entries:
+            assert required.issubset(entry), entry
+            assert entry['exe'] == '/usr/local/bin/layerx-runtime-clock'
+            assert entry['starttime'] and entry['inode'] and entry['boot_id'] and entry['pid_namespace']
+            assert entry['resume_required'] == (entry['pid'] == active.pid)
+            assert (entry['prior_state'] in ('T', 't')) == (entry['pid'] == prior.pid)
+        assert stopped(active.pid) and stopped(prior.pid), 'export failed to preserve quiescence'
+        if scenario == 'empty':
+            assert 'local-resume' in result.stderr, result.stderr
+            assert 'empty' in (result.stdout + result.stderr).lower()
+            resume_and_check(active, prior)
+        elif scenario == 'identity':
+            for key in ('starttime', 'exe', 'device', 'inode', 'uid', 'boot_id', 'pid_namespace'):
+                changed = json.loads(json.dumps(value))
+                entry = next(item for item in changed['processes'] if item['pid'] == active.pid)
+                original = entry[key]
+                entry[key] = original + 1 if isinstance(original, int) else str(original) + '-wrong'
+                save_record(changed)
+                invoke('local-resume', expected=1)
+                assert stopped(active.pid) and stopped(prior.pid), 'identity refusal partially resumed services'
+                assert snapshot() == baseline, 'identity refusal changed source state'
+                save_record(value)
+            resume_and_check(active, prior)
+        elif scenario == 'exited':
+            os.kill(active.pid, signal.SIGKILL)
+            active.wait(timeout=5)
+            another = start_clock(3)
+            os.kill(another.pid, signal.SIGSTOP)
+            wait_for(lambda: stopped(another.pid), 'unrecorded stopped service')
+            invoke('local-resume', expected=1)
+            assert stopped(another.pid) and stopped(prior.pid), 'resume signalled an unrecorded service'
+            assert snapshot() == baseline, 'exited identity refusal changed source state'
+        else:
+            assert value['state'] == 'exported', value
+            assert (destination / 'manifest.sha256').stat().st_size > 0
+            assert (destination / 'state.tar').stat().st_size > 0
+            extracted = Path('/tmp/extracted')
+            extracted.mkdir(mode=0o700)
+            subprocess.run(['tar', '-C', str(extracted), '-xf', str(destination / 'state.tar')], check=True)
+            subprocess.run(['sha256sum', '--quiet', '-c', str(destination / 'manifest.sha256')],
+                           cwd=extracted, check=True)
+            resume_and_check(active, prior)
+    assert snapshot() == final_expected, 'export or recovery changed source state'
+    print('export-recovery passed ' + scenario, flush=True)
+finally:
+    if export_process is not None and export_process.poll() is None:
+        try:
+            os.killpg(export_process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        export_process.wait(timeout=5)
+    for process in processes:
+        if process.poll() is None:
+            try:
+                os.kill(process.pid, signal.SIGCONT)
+                process.terminate()
+                process.wait(timeout=7)
+            except (ProcessLookupError, subprocess.TimeoutExpired):
+                process.kill()
+                process.wait(timeout=5)
+        if process.stdin is not None:
+            process.stdin.close()
+        if process.stderr is not None:
+            process.stderr.close()
+'''
+
+
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--case', required=True, choices=['role-directories', 'role-directory-prerequisite'])
+    parser.add_argument('--case', required=True, choices=['role-directories', 'role-directory-prerequisite', 'export-recovery'])
     arguments = parser.parse_args()
     os.umask(0o077)
     if arguments.case == 'role-directories':
         suite = unittest.defaultTestLoader.loadTestsFromTestCase(RoleDirectories)
-    else:
+    elif arguments.case == 'role-directory-prerequisite':
         suite = unittest.defaultTestLoader.loadTestsFromTestCase(DirectoryPrerequisite)
+    else:
+        suite = unittest.defaultTestLoader.loadTestsFromTestCase(ExportRecovery)
     result = unittest.TextTestRunner(verbosity=2).run(suite)
     print('PAXEER_X_GATE tests=' + str(result.testsRun) + ' skipped=' + str(len(result.skipped)), flush=True)
     return 0 if result.wasSuccessful() and result.testsRun > 0 and not result.skipped else 1
