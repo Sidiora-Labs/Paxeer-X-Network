@@ -189,7 +189,7 @@ genesis_step() {
 	fi
 	[ "$pax" = "$(asset_id PAX)" ] ||
 		fail "the PAX asset id 0x$pax is not sha256(\"layerx-asset:125:PAX\") 0x$(asset_id PAX)"
-	records+=("$pax:PAX:18")
+	records+=("$pax:PAX:6")
 
 	# The PAX custody profile of the opening credit: a light-client profile
 	# trusting the Comet header one below the latest, built from the chain.
