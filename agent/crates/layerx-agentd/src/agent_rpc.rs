@@ -497,7 +497,10 @@ fn authorized<A: HumanAuthorityBoundary>(
             reason: "owner.degraded",
         });
     }
-    let target = tenant::load_target_owner(&*guard, envelope.operation, &envelope.request)
+    let credential = envelope.credential.as_ref().ok_or_else(|| {
+        Rejection::new(ErrorClass::ProtocolIncompatibility, request_id, "envelope.credential")
+    })?;
+    let target = tenant::load_target_owner(&*guard, envelope.operation, &envelope.request, credential.tenant())
         .map_err(|_| Rejection::new(ErrorClass::PolicyRefusal, request_id, "session.not_authorized"))?;
     let permit = authorize(&guard.session_control, envelope, surface, core_sequence, target)?;
     drop(guard);

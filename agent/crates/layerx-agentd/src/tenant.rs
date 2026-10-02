@@ -558,9 +558,10 @@ pub(crate) fn load_target_owner<A: HumanAuthorityBoundary>(
     owner: &UnifiedAgentOwner<A>,
     operation: Operation,
     request: &serde_json::Map<String, serde_json::Value>,
+    tenant: &TenantId,
 ) -> Result<Option<ObjectOwner>, AuthorizationError> {
     owner
-        .target_object_owner(operation, request)
+        .target_object_owner(operation, request, tenant)
         .map_err(|_| AuthorizationError::NotAuthorized)
 }
 
