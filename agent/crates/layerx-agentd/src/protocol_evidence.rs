@@ -356,6 +356,20 @@ impl ProtocolEvidenceVerifier {
         &self,
         raw: &RawReceiptEvidence,
     ) -> Result<VerifiedReceiptEvidence, ReceiptEvidenceError> {
+        self.verify_receipt_retaining(raw)
+            .map(|(verified, _)| verified)
+    }
+
+    /// Verifies raw receipt ingress and retains the authorised batch exactly
+    /// where this verifier establishes it.
+    ///
+    /// # Errors
+    ///
+    /// Refuses exactly what [`Self::verify_receipt`] refuses.
+    fn verify_receipt_retaining(
+        &self,
+        raw: &RawReceiptEvidence,
+    ) -> Result<(VerifiedReceiptEvidence, AuthorizedBatch), ReceiptEvidenceError> {
         let (selected_header, authorization) = self
             .authorization_for(&raw.canonical_header)
             .map_err(ReceiptEvidenceError::Policy)?;
@@ -407,17 +421,20 @@ impl ProtocolEvidenceVerifier {
                 check: ReceiptCheck::ReceiptShape,
             }))?;
         let receipt_ref = Sha256::digest(verified.canonical_bytes()).into();
-        Ok(VerifiedReceiptEvidence {
-            receipt_ref,
-            activity_id: protocol.activity_id(),
-            global_sequence: protocol.global_sequence(),
-            result_code: protocol.result_code(),
-            amount: protocol.amount(),
-            module_id: protocol.module_id(),
-            operation: protocol.operation(),
-            verified,
-            inclusion,
-        })
+        Ok((
+            VerifiedReceiptEvidence {
+                receipt_ref,
+                activity_id: protocol.activity_id(),
+                global_sequence: protocol.global_sequence(),
+                result_code: protocol.result_code(),
+                amount: protocol.amount(),
+                module_id: protocol.module_id(),
+                operation: protocol.operation(),
+                verified,
+                inclusion,
+            },
+            authorised,
+        ))
     }
 
     fn verify_signed_receipt_inclusion(
@@ -603,6 +620,24 @@ impl EvidenceAuthority {
         raw: &RawReceiptEvidence,
     ) -> Result<VerifiedReceiptEvidence, ReceiptEvidenceError> {
         self.verifier.verify_receipt(raw)
+    }
+
+    /// Verifies raw receipt ingress for offline export and retains the
+    /// authorised batch, inclusion proof and signed header it was verified under.
+    ///
+    /// # Errors
+    ///
+    /// Refuses every policy, signature, inclusion, sequence, or batch-identity mismatch.
+    pub fn verify_receipt_for_export(
+        &self,
+        raw: &RawReceiptEvidence,
+    ) -> Result<ExportReceiptEvidence, ReceiptEvidenceError> {
+        let (verified, authorised) = self.verifier.verify_receipt_retaining(raw)?;
+        Ok(ExportReceiptEvidence {
+            verified,
+            authorised,
+            raw: raw.clone(),
+        })
     }
 
     /// Verifies raw state ingress under the daemon's accepted startup authority.
@@ -1196,6 +1231,50 @@ impl VerifiedReceiptEvidence {
     #[must_use]
     pub const fn operation(&self) -> u8 {
         self.operation
+    }
+}
+
+/// Receipt evidence verified under daemon authority with the exact material
+/// an offline export carries: the authorised batch established by the
+/// verifier, the receipt inclusion proof and the authenticated signed header.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ExportReceiptEvidence {
+    verified: VerifiedReceiptEvidence,
+    authorised: AuthorizedBatch,
+    raw: RawReceiptEvidence,
+}
+
+impl ExportReceiptEvidence {
+    #[must_use]
+    pub const fn verified(&self) -> &VerifiedReceiptEvidence {
+        &self.verified
+    }
+
+    #[must_use]
+    pub const fn authorized_batch(&self) -> &AuthorizedBatch {
+        &self.authorised
+    }
+
+    #[must_use]
+    pub const fn raw(&self) -> &RawReceiptEvidence {
+        &self.raw
+    }
+
+    /// Returns the outcome digest of the verified receipt, absent for a receipt
+    /// whose verified evidence names none.
+    #[must_use]
+    pub const fn receipt_digest(&self) -> Option<[u8; 32]> {
+        self.verified.verified.evidence().receipt_digest()
+    }
+
+    /// Returns the resulting state root committed by the verified receipt.
+    #[must_use]
+    pub fn resulting_state_root(&self) -> Option<[u8; 32]> {
+        self.verified
+            .verified
+            .receipt()
+            .protocol()
+            .map(|protocol| protocol.resulting_state_root())
     }
 }
 

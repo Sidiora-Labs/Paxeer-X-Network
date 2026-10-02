@@ -496,17 +496,36 @@ fn connect_human_authority(
     Ok(authority)
 }
 
+/// Selects export trust only from explicit deployment configuration and the
+/// genesis-anchored signed authority history; nothing in a request selects it.
+fn export_trust_source(
+    history: layerx_proof::signed_authority::SignedAuthorityHistory,
+) -> Result<layerx_agentd::export::ExportTrustSource, String> {
+    let domain = layerx_proof::settlement::declared_domain(&required(
+        "LAYERX_AGENT_HUMAN_EXPORT_SETTLEMENT_DOMAIN",
+    )?)
+    .map_err(|error| format!("export settlement domain is invalid: {error:?}"))?;
+    layerx_agentd::export::ExportTrustSource::new(
+        history,
+        domain,
+        parse_u64("LAYERX_AGENT_HUMAN_EXPORT_SET_VERSION")?,
+    )
+    .map_err(|error| format!("export trust is invalid: {error:?}"))
+}
+
 type OwnerStatus = mpsc::Receiver<Result<(), String>>;
 
 fn start_human_owner(mcp: Option<McpBoot>) -> Result<OwnerStatus, String> {
     let runtime_clock = layerx_client::runtime_clock::RuntimeClock::from_environment()
         .map_err(|error| format!("runtime clock unavailable: {error}"))?;
-    start_shared_owner(mcp, None, runtime_clock).map(|(receiver, _, _)| receiver)
+    start_shared_owner(mcp, None, None, runtime_clock).map(|(receiver, _, _)| receiver)
 }
 
 fn start_shared_owner(
     mcp: Option<McpBoot>,
     programs: Option<ProgramOperations>,
+
+    export_trust: Option<layerx_agentd::export::ExportTrustSource>,
 
     clock: Arc<dyn layerx_types::clock::Clock>,
 ) -> Result<
@@ -549,7 +568,7 @@ fn start_shared_owner(
     if let Some(boot) = mcp {
         publish_mcp_binding(&mut authority, &peers, &shared_store, &store_path, boot)?;
     }
-    let operations = ProductionHumanOperations::new(
+    let mut operations = ProductionHumanOperations::new(
         authority,
         node,
         Arc::clone(&shared_store),
@@ -562,6 +581,10 @@ fn start_shared_owner(
         clock,
     )
     .map_err(|error| format!("human operations are invalid: {error:?}"))?;
+    if let Some(source) = export_trust {
+        operations.install_export_trust(source);
+    }
+
     let socket_uid = required("LAYERX_AGENT_HUMAN_SOCKET_UID")?
         .parse()
         .map_err(|_| "human socket uid is invalid")?;
@@ -1203,7 +1226,9 @@ fn serve(config: Config) -> Result<(), String> {
         registry,
         signed_history.as_ref(),
     )?);
-    let (human, owner, status) = start_shared_owner(mcp, Some(programs), runtime_clock)?;
+    let export_trust = signed_history.map(export_trust_source).transpose()?;
+    let (human, owner, status) =
+        start_shared_owner(mcp, Some(programs), export_trust, runtime_clock)?;
     start_agent_rpc(owner, status)?;
     route
         .read(config.probe_program, now_ms()?)

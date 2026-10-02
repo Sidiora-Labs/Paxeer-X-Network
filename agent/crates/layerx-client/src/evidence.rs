@@ -336,6 +336,16 @@ impl VerifiedCheckpoint {
     pub const fn registration_count(&self) -> u64 {
         self.resulting_registration_count
     }
+
+    /// Returns the checkpoint-relative bonded keys and the timely eligible
+    /// attestation count, re-read from the retained context by the verifying decoder.
+    ///
+    /// # Errors
+    /// Refuses certificate or context bytes the original bounded decoders refuse.
+    pub fn bonded_keys(&self) -> Result<(Vec<GuarantorKey>, usize), EvidenceError> {
+        let certificate = self.certificate()?;
+        Ok(decode_checkpoint_context(&self.context_bytes)?.bonded_keys(&certificate))
+    }
 }
 
 /// Exact finality bytes that passed local structural and cryptographic checks,
@@ -434,6 +444,8 @@ pub enum VerifiedProofBundle {
         proof_material: Vec<u8>,
         activity_id: [u8; 32],
         activity_receipt: Vec<u8>,
+
+        activity_receipt_proof: Proof,
         verified: Box<VerifiedMaintenanceAccountState>,
         signed_header: SignedHeader,
     },
@@ -474,6 +486,103 @@ impl VerifiedProofBundle {
             } => canonical_bytes,
         }
     }
+
+    /// Returns the typed nested-account proof of a verified account bundle.
+    ///
+    /// # Errors
+    /// Refuses a non-account bundle, a decode or domain failure, a selector,
+    /// account, header or activity that differs from the verified bundle.
+    pub fn account_proof(
+        &self,
+        account_id: [u8; 32],
+        expected_protocol_version: u16,
+        expected_network_id: u32,
+    ) -> Result<AccountProofExport, EvidenceError> {
+        let (proof_material, activity_id, signed_header) = match self {
+            Self::Account {
+                proof_material,
+                activity_id,
+                signed_header,
+                ..
+            }
+            | Self::MaintainedAccount {
+                proof_material,
+                activity_id,
+                signed_header,
+                ..
+            } => (proof_material, *activity_id, signed_header),
+            Self::Activity { .. } | Self::Receipt { .. } => return Err(EvidenceError::Malformed),
+        };
+        let decoded = decode_nested_evidence(
+            proof_material,
+            expected_protocol_version,
+            expected_network_id,
+        )?;
+        if decoded.selector != RootSelector::Latest
+            || decoded.proof.account_id != account_id
+            || decoded.signed_header != *signed_header
+        {
+            return Err(EvidenceError::SelectorMismatch);
+        }
+        let variant = match (self, decoded.kind) {
+            (Self::Account { verified, .. }, AccountEvidenceKind::Activity) => {
+                if verified.receipt_activity_id() != activity_id {
+                    return Err(EvidenceError::SelectorMismatch);
+                }
+                AccountProofVariant::Activity
+            }
+            (
+                Self::MaintainedAccount {
+                    activity_receipt,
+                    activity_receipt_proof,
+                    ..
+                },
+                AccountEvidenceKind::Maintenance { parameter_version },
+            ) => {
+                let activity_count = decoded
+                    .proof
+                    .receipt_proof
+                    .leaf_count()
+                    .checked_sub(1)
+                    .ok_or(EvidenceError::Malformed)?;
+                AccountProofVariant::Maintenance {
+                    activity_count,
+                    parameter_version,
+                    activity_receipt: activity_receipt.clone(),
+                    activity_receipt_proof: activity_receipt_proof.clone(),
+                }
+            }
+            _ => return Err(EvidenceError::SelectorMismatch),
+        };
+        Ok(AccountProofExport {
+            variant,
+            proof: decoded.proof,
+            activity_id,
+        })
+    }
+}
+
+/// Nested account proof material re-read from a verified account bundle by the
+/// same bounded decoder that verified it, bound to the bundle's selector,
+/// account, signed header and receipt activity.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AccountProofExport {
+    pub variant: AccountProofVariant,
+    pub proof: NestedAccountProof,
+    pub activity_id: [u8; 32],
+}
+
+/// Distinct nested-account proof paths; maintenance carries its rechecked
+/// activity-receipt link with the receipt's retained inclusion proof.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum AccountProofVariant {
+    Activity,
+    Maintenance {
+        activity_count: u32,
+        parameter_version: u32,
+        activity_receipt: Vec<u8>,
+        activity_receipt_proof: Proof,
+    },
 }
 
 /// Exact signed-header authority block carried by proof responses.
@@ -989,7 +1098,7 @@ fn account_proof_bundle(
             registry,
             history,
         )?;
-        let (activity_receipt, activity_id) = maintained_activity_link(
+        let (activity_receipt, activity_receipt_proof, activity_id) = maintained_activity_link(
             receipt_bundle,
             &decoded,
             target_activity_id,
@@ -1000,6 +1109,8 @@ fn account_proof_bundle(
             proof_material: response.proof,
             activity_id,
             activity_receipt,
+
+            activity_receipt_proof,
             verified: Box::new(verified),
             signed_header: decoded.signed_header,
         });
@@ -1029,12 +1140,14 @@ fn maintained_activity_link(
     decoded: &DecodedNestedEvidence,
     target_activity_id: [u8; 32],
     sequencer_public_key: [u8; 32],
-) -> Result<(Vec<u8>, [u8; 32]), EvidenceError> {
+) -> Result<(Vec<u8>, Proof, [u8; 32]), EvidenceError> {
     let record = layerx_wire::batch_maintenance::decode_maintenance(&decoded.proof.receipt_bytes)
         .map_err(|_| EvidenceError::Receipt)?;
     let maintenance = record.occupancy();
     let VerifiedProofBundle::Receipt {
         canonical_bytes: activity_receipt,
+
+        proof: activity_receipt_proof,
         activity_id,
         signed_header,
         ..
@@ -1056,7 +1169,7 @@ fn maintained_activity_link(
     {
         return Err(EvidenceError::SelectorMismatch);
     }
-    Ok((activity_receipt, activity_id))
+    Ok((activity_receipt, activity_receipt_proof, activity_id))
 }
 
 /// Verifies account evidence with a key and term derived from authenticated genesis history.

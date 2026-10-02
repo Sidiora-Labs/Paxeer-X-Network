@@ -211,6 +211,21 @@ impl GuarantorKey {
             bonded,
         }
     }
+
+    #[must_use]
+    pub const fn guarantor_id(&self) -> [u8; 32] {
+        self.guarantor_id
+    }
+
+    #[must_use]
+    pub const fn public_key(&self) -> [u8; 33] {
+        self.public_key
+    }
+
+    #[must_use]
+    pub const fn bonded(&self) -> bool {
+        self.bonded
+    }
 }
 
 /// A checkpoint certificate plus its optional registered settlement reference.

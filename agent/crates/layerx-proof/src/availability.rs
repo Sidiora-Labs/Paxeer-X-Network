@@ -62,6 +62,7 @@ pub struct VerifiedChunk {
     chunk: Chunk,
     data_availability_root: [u8; 32],
     leaf_count: u32,
+    proof: Proof,
 }
 
 impl VerifiedChunk {
@@ -75,6 +76,12 @@ impl VerifiedChunk {
     #[must_use]
     pub const fn data_availability_root(&self) -> [u8; 32] {
         self.data_availability_root
+    }
+
+    /// Borrows the exact inclusion proof this chunk passed under.
+    #[must_use]
+    pub const fn proof(&self) -> &Proof {
+        &self.proof
     }
 }
 
@@ -307,6 +314,7 @@ pub fn verify_chunk(
         chunk,
         data_availability_root: *data_availability_root,
         leaf_count: proof.leaf_count(),
+        proof: proof.clone(),
     })
 }
 
