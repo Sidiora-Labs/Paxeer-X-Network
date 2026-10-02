@@ -5,6 +5,8 @@ import hashlib
 import http.client
 import json
 import os
+import stat
+import tempfile
 from pathlib import Path
 import sys
 import struct
@@ -44,10 +46,20 @@ EQUIVOCATION_KIND = 1
 MEMBERSHIP_EVENTS = [REGISTERED_EVENT, ACTIVATED_EVENT, BOND_EVENT, UNBOND_EVENT, SLASHED_EVENT]
 GUARANTOR_ACTIVE = 2
 STATUS_UNKNOWN, STATUS_SUBMITTED, STATUS_FINAL = 0, 1, 2
+PROGRESS_PENDING, PROGRESS_FINAL, PROGRESS_CHALLENGED, PROGRESS_ERROR = 1, 2, 3, 4
+CHECKPOINT_TIMEOUT_MS = 86_400_000
 # A checkpoint whose publication authorization has not arrived yet is not a refused checkpoint: the
 # registration stands and the producer asks again. settlement.c maps this exit status to
 # LXP_ERR_NOT_YET_VALID so the guarantor waits instead of terminating.
 AUTHORIZATION_PENDING_EXIT = 75
+
+
+class RPCUnavailable(Exception):
+    pass
+
+
+class RPCRejected(ValueError):
+    pass
 
 
 class AuthorizationPending(Exception):
@@ -131,6 +143,7 @@ class RPC:
         require(self.url.scheme == 'https' or self.url.hostname == '127.0.0.1', 'plain RPC must use local relay')
         self.counter = 0
         self.timings = {}
+        self.deadline = None
 
     def report_timing(self, stage, started):
         if os.environ.get('LAYERX_GUARANTOR_TIMING') == '1':
@@ -141,10 +154,15 @@ class RPC:
         started = time.monotonic()
         self.counter += 1
         cls = http.client.HTTPSConnection if self.url.scheme == 'https' else http.client.HTTPConnection
-        conn = cls(self.url.hostname, self.url.port, timeout=30)
+        remaining = 30 if self.deadline is None else min(30, self.deadline - started)
+        if remaining <= 0:
+            raise RPCUnavailable('checkpoint observation budget exhausted')
+        conn = cls(self.url.hostname, self.url.port, timeout=remaining)
         try:
             conn.request('POST', self.url.path or '/', json.dumps({'jsonrpc': '2.0', 'id': self.counter, 'method': method, 'params': params}), {'Content-Type': 'application/json'})
             response = conn.getresponse()
+            if response.status == 429 or 500 <= response.status <= 599:
+                raise RPCUnavailable('RPC HTTP temporarily unavailable')
             require(response.status == 200, 'RPC HTTP failure')
             body = response.read(4_000_001)
             require(len(body) <= 4_000_000, 'RPC response too large')
@@ -159,8 +177,16 @@ class RPC:
                     character in '0123456789abcdefABCDEF' for character in data[2:10]
                 ):
                     refusal += ' selector=' + data[:10]
-            require(result.get('jsonrpc') == '2.0' and result.get('id') == self.counter and 'error' not in result and 'result' in result, refusal)
+            require(result.get('jsonrpc') == '2.0' and result.get('id') == self.counter, 'RPC envelope mismatch')
+            if error is not None:
+                if isinstance(error, dict) and error.get('code') in (-32000, -32002, -32603) and not (
+                        isinstance(error.get('data'), str) and error['data'].startswith('0x')) and 'revert' not in str(error.get('message', '')).lower():
+                    raise RPCUnavailable(refusal)
+                raise RPCRejected(refusal)
+            require('error' not in result and 'result' in result, refusal)
             return result['result']
+        except (OSError, http.client.HTTPException) as error:
+            raise RPCUnavailable('RPC transport unavailable') from error
         finally:
             conn.close()
             count, elapsed = self.timings.get(method, (0, 0.0))
@@ -189,6 +215,8 @@ def anchor_domain(request):
 
 def canonical_block(rpc, number):
     block = rpc.call('eth_getBlockByNumber', [hex(number), False])
+    if block is None:
+        raise RPCUnavailable('canonical block temporarily unavailable')
     require(isinstance(block, dict) and int(block['number'], 16) == number and any(raw(block['hash'], 32)), 'block unavailable')
     return block
 
@@ -273,6 +301,7 @@ def require_checkpoint(record, digest, header, signers):
     require(record is not None and record[1] == digest and record[3] == header[2] and record[4] == header[4] and record[5] == header[5]
             and record[6] == header[6] and record[7] == header[7] and record[8] == header[9] and record[9] == header[11]
             and record[10] == header[14] and record[11] == header[13] and record[13] == signers, 'anchor checkpoint differs')
+    require(record[2] == hashlib.sha256(b'LXP/v1/batch-header\0' + header_encode(header)).digest(), 'anchor header digest differs')
 
 
 def validate_receipt(receipt, transaction, digest, header, signers):
@@ -318,6 +347,8 @@ def registered_transaction(rpc, record, digest):
     require(height > 0, 'anchor submission height invalid')
     topics = [SUBMITTED_EVENT, '0x' + encode(['uint64'], [record[0]]).hex(), '0x' + digest.hex()]
     logs = rpc.call('eth_getLogs', [{'address': ANCHOR, 'fromBlock': hex(height), 'toBlock': hex(height), 'topics': topics}])
+    if logs == []:
+        raise RPCUnavailable('existing registration event temporarily unavailable')
     require(isinstance(logs, list) and len(logs) >= 1, 'existing registration event count mismatch')
     log = logs[-1]
     require(log['removed'] is False and log['topics'] == topics and int(log['blockNumber'], 16) == height, 'existing registration event mismatch')
@@ -334,11 +365,15 @@ def submitter(request):
         raise ValueError('submitter key invalid') from None
 
 
-def send(rpc, request, data, value=0):
+def sign_transaction(rpc, request, data, value=0):
     account = submitter(request)
     tx = {'chainId': request['chain_id'], 'nonce': int(rpc.call('eth_getTransactionCount', [account.address, 'pending']), 16), 'to': to_checksum_address(ANCHOR), 'data': data, 'value': value, 'gasPrice': int(rpc.call('eth_gasPrice', []), 16)}
     tx['gas'] = int(rpc.call('eth_estimateGas', [dict(tx, **{'from': account.address, 'nonce': hex(tx['nonce']), 'value': hex(value), 'gasPrice': hex(tx['gasPrice']), 'chainId': hex(tx['chainId'])})]), 16)
-    signed = account.sign_transaction(tx)
+    return account.sign_transaction(tx)
+
+
+def send(rpc, request, data, value=0):
+    signed = sign_transaction(rpc, request, data, value)
     transaction = rpc.call('eth_sendRawTransaction', ['0x' + bytes(signed.raw_transaction).hex()])
     require(raw(transaction, 32) == bytes(signed.hash), 'submitted transaction hash mismatch')
     return transaction
@@ -362,6 +397,238 @@ def anchor_receipt(rpc, transaction, refusal):
     return receipt, block
 
 
+def progress_save(path, progress):
+    descriptor, temporary = tempfile.mkstemp(prefix=path.name + '.', suffix='.tmp', dir=path.parent)
+    try:
+        with os.fdopen(descriptor, 'w') as stream:
+            json.dump(progress, stream, sort_keys=True)
+            stream.write('\n')
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, path)
+        parent = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+        try:
+            os.fsync(parent)
+        finally:
+            os.close(parent)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
+
+
+def progress_load(path, binding, timeout_ms):
+    try:
+        descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    except FileNotFoundError:
+        now = time.time_ns() // 1_000_000
+        progress = dict(binding, schema='layerx/checkpoint-progress/1', created_at_ms=now,
+                        deadline_ms=now + timeout_ms, next_poll_ms=0, backoff_ms=500,
+                        progress_status=PROGRESS_PENDING, anchor_status=STATUS_UNKNOWN,
+                        phase='prepared', already_registered=False, progress_error='')
+        progress_save(path, progress)
+        return progress
+    with os.fdopen(descriptor, 'r') as stream:
+        metadata = os.fstat(stream.fileno())
+        require(stat.S_ISREG(metadata.st_mode) and metadata.st_nlink == 1 and
+                metadata.st_uid == os.geteuid() and metadata.st_mode & 0o077 == 0 and
+                metadata.st_size <= 4_000_000, 'checkpoint progress file is not private regular state')
+        progress = json.load(stream)
+    require(progress.get('schema') == 'layerx/checkpoint-progress/1' and
+            all(progress.get(key) == value for key, value in binding.items()), 'checkpoint progress binding differs')
+    require(progress.get('progress_status') in (PROGRESS_PENDING, PROGRESS_FINAL, PROGRESS_CHALLENGED, PROGRESS_ERROR),
+            'checkpoint progress status invalid')
+    require(all(isinstance(progress.get(key), int) and not isinstance(progress[key], bool) and
+                0 <= progress[key] < 2 ** 64 for key in ('created_at_ms', 'deadline_ms', 'next_poll_ms', 'backoff_ms')) and
+            500 <= progress['backoff_ms'] <= 10_000 and progress['created_at_ms'] < progress['deadline_ms'],
+            'checkpoint progress bounds invalid')
+    return progress
+
+
+def progress_result(request, progress):
+    return {'already_registered': progress['already_registered'], 'checkpoint_id': progress['checkpoint_id'],
+            'transaction_id': progress.get('submit', {}).get('transaction_id', '0x' + bytes(32).hex()),
+            'observed_block_number': progress.get('observed_block_number', 0),
+            'observed_at_ms': progress.get('observed_at_ms', 0), 'set_version': progress.get('set_version', 0),
+            'observed_block_hash': progress.get('observed_block_hash', '0x' + bytes(32).hex()),
+            'paxeer_chain_id': request['chain_id'], 'settlement_contract': ANCHOR,
+            'members': progress.get('members', []), 'anchor_status': progress['anchor_status'],
+            'finalize_transaction': progress.get('finalize', {}).get('transaction_id'),
+            'progress_status': progress['progress_status'], 'progress_error': progress['progress_error'],
+            'phase': progress['phase'], 'deadline_ms': progress['deadline_ms'], 'next_poll_ms': progress['next_poll_ms']}
+
+
+def progress_pending(path, progress, reason):
+    now = time.time_ns() // 1_000_000
+    if now >= progress['deadline_ms']:
+        progress.update(progress_status=PROGRESS_ERROR, phase='deadline', progress_error='checkpoint finality deadline exceeded', next_poll_ms=0)
+    else:
+        progress.update(progress_status=PROGRESS_PENDING, progress_error=reason,
+                        next_poll_ms=min(now + progress['backoff_ms'], progress['deadline_ms']),
+                        backoff_ms=min(progress['backoff_ms'] * 2, 10_000))
+    progress_save(path, progress)
+
+
+def shared_checkpoint_transaction(rpc, request, progress, kind, data):
+    account = submitter(request)
+    lock_name = request.get('submitter_lock_file', request['submitter_key_file'] + '.lock')
+    path = Path(lock_name + '.checkpoint-' + raw(progress['checkpoint_id'], 32).hex() + '-' + kind + '.json')
+    binding = {'schema': 'layerx/checkpoint-transaction/1', 'checkpoint_id': progress['checkpoint_id'],
+               'chain_id': request['chain_id'], 'signer': account.address,
+               'calldata_hash': hashlib.sha256(raw(data)).hexdigest(), 'kind': kind}
+    descriptor = os.open(str(path) + '.lock', os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
+    with os.fdopen(descriptor, 'r+') as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        try:
+            descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        except FileNotFoundError:
+            signed = sign_transaction(rpc, request, data)
+            saved = dict(binding, transaction_id='0x' + bytes(signed.hash).hex(),
+                         raw_transaction='0x' + bytes(signed.raw_transaction).hex())
+            progress_save(path, saved)
+        else:
+            with os.fdopen(descriptor, 'r') as stream:
+                metadata = os.fstat(stream.fileno())
+                require(stat.S_ISREG(metadata.st_mode) and metadata.st_nlink == 1 and
+                        metadata.st_uid == os.geteuid() and metadata.st_mode & 0o077 == 0 and
+                        metadata.st_size <= 4_000_000, 'signed checkpoint transaction is not private regular state')
+                saved = json.load(stream)
+            require(all(saved.get(key) == value for key, value in binding.items()),
+                    'shared checkpoint transaction binding differs')
+        encoded = raw(saved['raw_transaction'])
+        require(keccak(encoded) == raw(saved['transaction_id'], 32) and
+                Account.recover_transaction(encoded).lower() == account.address.lower(),
+                'shared checkpoint transaction signature differs')
+        return {'transaction_id': saved['transaction_id'], 'raw_transaction': saved['raw_transaction']}
+
+
+def checkpoint_transaction(rpc, request, path, progress, kind, data):
+    transaction = progress.get(kind)
+    if transaction is None:
+        transaction = shared_checkpoint_transaction(rpc, request, progress, kind, data)
+        progress[kind] = transaction
+        progress['phase'] = kind + '-signed'
+        progress_save(path, progress)
+    digest = raw(transaction['transaction_id'], 32)
+    encoded = raw(transaction['raw_transaction'])
+    require(keccak(encoded) == digest, 'durable transaction hash mismatch')
+    receipt = rpc.call('eth_getTransactionReceipt', [transaction['transaction_id']])
+    if receipt is not None:
+        return receipt
+    observed = rpc.call('eth_getTransactionByHash', [transaction['transaction_id']])
+    if observed is not None:
+        require(raw(observed['hash'], 32) == digest and observed['to'].lower() == ANCHOR and
+                raw(observed['input']) == raw(data), 'pending transaction binding differs')
+    else:
+        try:
+            broadcast = rpc.call('eth_sendRawTransaction', [transaction['raw_transaction']])
+            require(raw(broadcast, 32) == digest, 'submitted transaction hash mismatch')
+        except RPCRejected as error:
+            raise RPCUnavailable('durable broadcast awaits reconciliation') from error
+    progress['phase'] = kind + '-broadcast'
+    progress_save(path, progress)
+    return None
+
+
+def require_finalize_receipt(rpc, receipt, transaction, digest, header):
+    require(int(receipt['status'], 16) == 1, 'finalization transaction failed')
+    require(receipt['to'].lower() == ANCHOR and raw(receipt['transactionHash'], 32) == raw(transaction, 32),
+            'finalization receipt transaction mismatch')
+    block = int(receipt['blockNumber'], 16)
+    block_hash = raw(receipt['blockHash'], 32)
+    require(block > 0 and raw(canonical_block(rpc, block)['hash'], 32) == block_hash,
+            'finalization block is not canonical')
+    topics = [FINALIZED_EVENT, '0x' + encode(['uint64'], [header[3]]).hex(), '0x' + digest.hex()]
+    logs = [log for log in receipt['logs'] if log['address'].lower() == ANCHOR and log['topics'] == topics]
+    require(len(logs) == 1, 'finalization event count mismatch')
+    log = logs[0]
+    require(log['removed'] is False and raw(log['data']) == encode(['bytes32', 'bytes32'], [header[7], header[9]]) and
+            raw(log['transactionHash'], 32) == raw(transaction, 32) and raw(log['blockHash'], 32) == block_hash and
+            int(log['blockNumber'], 16) == block, 'finalization event receipt mismatch')
+    return block
+
+
+def register_pass(rpc, request, path, progress, h, attestations, proof, digest, data):
+    status, record = anchor_checkpoint(rpc, h[3])
+    progress['anchor_status'] = status
+    if status != STATUS_UNKNOWN:
+        require_checkpoint(record, digest, h, len(attestations))
+        guarantors = rpc.view(ANCHOR, 'checkpointGuarantors(uint64)', ('uint64',), (h[3],), ('bytes32[]',))[0]
+        require(tuple(guarantors) == tuple(a[7] for a in attestations), 'anchor certificate guarantors differ')
+        if record[15] != 0:
+            progress.update(progress_status=PROGRESS_CHALLENGED, phase='challenged', progress_error='checkpoint has an unresolved challenge')
+            progress_save(path, progress)
+            return
+    if status == STATUS_UNKNOWN and progress.get('observed_block_number', 0):
+        progress.update(progress_status=PROGRESS_CHALLENGED, phase='cancelled', progress_error='submitted checkpoint removed')
+        progress_save(path, progress)
+        return
+    query = dict(request, epoch=h[2], guarantors=[{'guarantor_id': '0x' + a[7].hex(), 'signer': a[14]} for a in attestations])
+    state = membership(rpc, query)
+    require(request['threshold'] == state['threshold'] and request['threshold'] <= len(attestations) <= 32, 'attestation threshold mismatch')
+    previous = bytes(32)
+    for attestation in attestations:
+        require(attestation[7] > previous, 'guarantor ids not strictly ascending')
+        validate_attestation(attestation, h, digest, request['chain_id'], ANCHOR, state['maximum_attestation_delay_ms'])
+        previous = attestation[7]
+    if status != STATUS_UNKNOWN and 'submit' not in progress:
+        progress['submit'] = {'transaction_id': registered_transaction(rpc, record, digest)}
+        progress['already_registered'] = True
+        progress_save(path, progress)
+    if status == STATUS_UNKNOWN and ('submit' not in progress or 'raw_transaction' in progress['submit']):
+        receipt = checkpoint_transaction(rpc, request, path, progress, 'submit', data)
+    else:
+        receipt = rpc.call('eth_getTransactionReceipt', [progress['submit']['transaction_id']])
+    if receipt is None:
+        progress_pending(path, progress, 'submission receipt pending')
+        return
+    transaction = progress['submit']['transaction_id']
+    block, finalized = validate_receipt(receipt, transaction, digest, h, len(attestations))
+    chain_block = canonical_block(rpc, block)
+    require(raw(chain_block['hash'], 32) == raw(receipt['blockHash'], 32), 'receipt block is not canonical')
+    observation = membership(rpc, query, hex(block))
+    observed_at_ms = int(chain_block['timestamp'], 16) * 1000
+    require(observed_at_ms > 0, 'receipt block timestamp invalid')
+    progress.update(observed_block_number=block, observed_block_hash=receipt['blockHash'], observed_at_ms=observed_at_ms,
+                    set_version=observation['version'], members=observation['members'], phase='submitted')
+    progress_save(path, progress)
+    status, record = anchor_checkpoint(rpc, h[3])
+    progress['anchor_status'] = status
+    if status == STATUS_UNKNOWN or (record is not None and record[15] != 0):
+        progress.update(progress_status=PROGRESS_CHALLENGED, phase='challenged', progress_error='submitted checkpoint challenged or removed')
+        progress_save(path, progress)
+        return
+    require_checkpoint(record, digest, h, len(attestations))
+    require(record[16] == block and (not finalized or status == STATUS_FINAL), 'anchor checkpoint height mismatch')
+    guarantors = rpc.view(ANCHOR, 'checkpointGuarantors(uint64)', ('uint64',), (h[3],), ('bytes32[]',))[0]
+    require(tuple(guarantors) == tuple(a[7] for a in attestations), 'anchor certificate guarantors differ')
+    if 'finalize' in progress:
+        finalize_data = calldata('finalize(uint64)', ('uint64',), (h[3],))
+        final_receipt = checkpoint_transaction(rpc, request, path, progress, 'finalize', finalize_data)
+        if final_receipt is None:
+            progress_pending(path, progress, 'finalization receipt pending')
+            return
+        final_block = require_finalize_receipt(rpc, final_receipt, progress['finalize']['transaction_id'], digest, h)
+        status, record = anchor_checkpoint(rpc, h[3])
+        progress['anchor_status'] = status
+        require_checkpoint(record, digest, h, len(attestations))
+        require(status == STATUS_FINAL and record[15] == 0 and record[17] == final_block, 'finalized transaction has no final checkpoint')
+    elif status == STATUS_SUBMITTED:
+        finalize_data = calldata('finalize(uint64)', ('uint64',), (h[3],))
+        try:
+            rpc.call('eth_call', [{'from': submitter(request).address, 'to': ANCHOR, 'data': finalize_data}, 'latest'])
+        except RPCRejected:
+            progress_pending(path, progress, 'anchor finalization not yet allowed')
+            return
+        final_receipt = checkpoint_transaction(rpc, request, path, progress, 'finalize', finalize_data)
+        if final_receipt is not None:
+            require_finalize_receipt(rpc, final_receipt, progress['finalize']['transaction_id'], digest, h)
+        progress_pending(path, progress, 'finalization observation pending')
+        return
+    require(status == STATUS_FINAL and record[17] >= block, 'anchor checkpoint is not final')
+    progress.update(progress_status=PROGRESS_FINAL, phase='final', progress_error='', next_poll_ms=0)
+    progress_save(path, progress)
+
+
 def register(rpc, request):
     h = values(HEADER_TYPES, request['header'])
     attestations = [values(ATTESTATION_TYPES, a) for a in request['attestations']]
@@ -371,46 +638,45 @@ def register(rpc, request):
     require_anchor(request)
     threshold = request['threshold']
     require(isinstance(threshold, int) and not isinstance(threshold, bool), 'certificate threshold invalid')
-    query = dict(request, epoch=h[2], guarantors=[{'guarantor_id': '0x' + a[7].hex(), 'signer': a[14]} for a in attestations])
-    state = membership(rpc, query)
-    require(threshold == state['threshold'] and threshold <= len(attestations) <= 32, 'attestation threshold mismatch')
-    previous = bytes(32)
-    for a in attestations:
-        require(a[7] > previous, 'guarantor ids not strictly ascending')
-        validate_attestation(a, h, digest, request['chain_id'], ANCHOR, state['maximum_attestation_delay_ms'])
-        previous = a[7]
     data = submit_calldata(h, raw(request['header_signature'], 64), proof, attestations, threshold)
     require(raw(request['submit_calldata']) == raw(data), 'native submit calldata differs')
-    status, record = anchor_checkpoint(rpc, h[3])
-    registered = status != STATUS_UNKNOWN and record[1] == digest
-    if registered:
-        transaction = registered_transaction(rpc, record, digest)
-    else:
-        transaction = send(rpc, request, data)
-    receipt = wait_receipt(rpc, transaction, 'registration receipt timeout')
-    block, finalized = validate_receipt(receipt, transaction, digest, h, len(attestations))
-    chain_block = canonical_block(rpc, block)
-    require(raw(chain_block['hash'], 32) == raw(receipt['blockHash'], 32), 'receipt block is not canonical')
-    observed_at_ms = int(chain_block['timestamp'], 16) * 1000
-    status, record = anchor_checkpoint(rpc, h[3])
-    require_checkpoint(record, digest, h, len(attestations))
-    require(record[16] == block and (not finalized or status == STATUS_FINAL), 'anchor checkpoint height mismatch')
-    finalize_transaction = None
-    if status == STATUS_SUBMITTED:
-        finalize_data = calldata('finalize(uint64)', ('uint64',), (h[3],))
+    require(isinstance(request.get('state_dir'), str), 'durable checkpoint state directory required')
+    directory = Path(request['state_dir'])
+    require(directory.is_dir() and not directory.is_symlink(), 'checkpoint state directory invalid')
+    timeout_ms = request.get('checkpoint_timeout_ms', CHECKPOINT_TIMEOUT_MS)
+    require(isinstance(timeout_ms, int) and not isinstance(timeout_ms, bool) and 1 <= timeout_ms <= 604_800_000,
+            'checkpoint deadline policy invalid')
+    path = directory / ('checkpoint-progress-' + digest.hex() + '.json')
+    binding = {'checkpoint_id': '0x' + digest.hex(), 'chain_id': request['chain_id'],
+               'settlement_contract': ANCHOR, 'batch_number': h[3], 'submit_calldata_hash': hashlib.sha256(raw(data)).hexdigest()}
+    descriptor = os.open(str(path) + '.lock', os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
+    with os.fdopen(descriptor, 'r+') as lock:
         try:
-            rpc.call('eth_call', [{'from': submitter(request).address, 'to': ANCHOR, 'data': finalize_data}, 'latest'])
-            finalizable = True
-        except ValueError as refusal:
-            require(str(refusal).startswith('RPC rejected eth_call'), str(refusal))
-            finalizable = False
-        if finalizable:
-            finalize_transaction = send(rpc, request, finalize_data)
-            anchor_receipt(rpc, finalize_transaction, 'finalization')
-            status, record = anchor_checkpoint(rpc, h[3])
-            require_checkpoint(record, digest, h, len(attestations))
-    state = membership(rpc, query, hex(block))
-    return {'already_registered': registered, 'checkpoint_id': '0x' + digest.hex(), 'transaction_id': transaction, 'observed_block_number': block, 'paxeer_chain_id': request['chain_id'], 'settlement_contract': ANCHOR, 'set_version': state['version'], 'observed_at_ms': observed_at_ms, 'members': state['members'], 'anchor_status': status, 'finalize_transaction': finalize_transaction}
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as error:
+            raise AuthorizationPending('checkpoint progress is in use') from error
+        progress = progress_load(path, binding, timeout_ms)
+        if progress['progress_status'] in (PROGRESS_CHALLENGED, PROGRESS_ERROR):
+            return progress_result(request, progress)
+        now = time.time_ns() // 1_000_000
+        if progress['progress_status'] != PROGRESS_FINAL and now >= progress['deadline_ms']:
+            progress_pending(path, progress, 'checkpoint finality deadline exceeded')
+            return progress_result(request, progress)
+        if progress['progress_status'] != PROGRESS_FINAL and now < progress['next_poll_ms']:
+            return progress_result(request, progress)
+        prior_deadline = rpc.deadline
+        remaining_ms = 120_000 if progress['progress_status'] == PROGRESS_FINAL else min(120_000, progress['deadline_ms'] - now)
+        rpc.deadline = time.monotonic() + remaining_ms / 1000
+        try:
+            register_pass(rpc, request, path, progress, h, attestations, proof, digest, data)
+        except RPCUnavailable as error:
+            progress_pending(path, progress, str(error))
+        except ValueError as error:
+            progress.update(progress_status=PROGRESS_ERROR, phase='error', progress_error=str(error), next_poll_ms=0)
+            progress_save(path, progress)
+        finally:
+            rpc.deadline = prior_deadline
+        return progress_result(request, progress)
 
 
 def deposit(rpc, request):
@@ -524,7 +790,10 @@ def wire_encode(mode, result):
             output += raw(member['guarantor_id'], 32) + raw(member['public_key'], 33)
         return output
     if mode == 'register':
-        return bytes([int(result['already_registered'])]) + raw(result['transaction_id'], 32) + struct.pack('>QQQ', result['observed_block_number'], result['observed_at_ms'], result['set_version'])
+        require(result['progress_status'] in (PROGRESS_PENDING, PROGRESS_FINAL, PROGRESS_CHALLENGED, PROGRESS_ERROR), 'checkpoint wire status invalid')
+        block_hash = raw(result['observed_block_hash'], 32)
+        require(result['progress_status'] != PROGRESS_FINAL or any(block_hash), 'final checkpoint block hash missing')
+        return bytes([int(result['already_registered'])]) + raw(result['transaction_id'], 32) + struct.pack('>QQQ', result['observed_block_number'], result['observed_at_ms'], result['set_version']) + block_hash + bytes([result['progress_status']]) + raw(result['checkpoint_id'], 32)
     if mode in ('deposit', 'register-guarantor', 'increase-bond'):
         return raw(result['guarantor_id'], 32) + raw(result['transaction_id'], 32) + struct.pack('>QQQ', result['observed_block_number'], result['observed_at_ms'], result['membership_version']) + result['amount'].to_bytes(16, 'big') + result['total_bond'].to_bytes(16, 'big')
     output = struct.pack('>QIQI', result['version'], result['threshold'], result['maximum_attestation_delay_ms'], len(result['members'])) + result['minimum_bond'].to_bytes(16, 'big') + struct.pack('>QQ', result['block_number'], result['governance_sequence']) + result['custodied_value'].to_bytes(16, 'big') + struct.pack('>I', result['minimum_bond_bps'])
@@ -534,13 +803,7 @@ def wire_encode(mode, result):
 
 
 def register_with_race_recovery(rpc, request):
-    try:
-        return register(rpc, request)
-    except ValueError:
-        status, record = anchor_checkpoint(rpc, values(HEADER_TYPES, request['header'])[3])
-        if status == STATUS_UNKNOWN or record[1] != raw(request['checkpoint_id'], 32):
-            raise
-        return register(rpc, request)
+    return register(rpc, request)
 
 
 def configuration(request):
@@ -598,15 +861,22 @@ def main():
         lock_fd = os.open(lock_path, os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o660)
         with os.fdopen(lock_fd, 'r+') as lock:
             rpc = RPC(request['rpc_url'])
-            fcntl.flock(lock, fcntl.LOCK_EX)
+            try:
+                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError as error:
+                raise AuthorizationPending('checkpoint submitter is in use') from error
             rpc.report_timing('submitter-lock', started)
             started = time.monotonic()
             result = register_with_race_recovery(rpc, request)
             rpc.report_timing('register', started)
-            if 'native_facts' in request:
+            if result['progress_status'] == PROGRESS_FINAL and 'native_facts' in request:
                 rpc = RPC(request['rpc_url'])
                 started = time.monotonic()
-                result['publication'] = publish_native(rpc, request)
+                rpc.deadline = time.monotonic() + 120
+                try:
+                    result['publication'] = publish_native(rpc, request)
+                except RPCUnavailable as error:
+                    raise AuthorizationPending('checkpoint publication temporarily unavailable') from error
                 rpc.report_timing('publication', started)
     if 'wire_output' in request and sys.argv[1] not in ('equivocation', 'challenge'):
         descriptor = os.open(request['wire_output'], os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)

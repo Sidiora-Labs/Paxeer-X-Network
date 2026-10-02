@@ -1,5 +1,6 @@
 #define _POSIX_C_SOURCE 200809L
 #include "settlement.h"
+#include "producer.h"
 #include "layerx/lxp_crypto.h"
 #include <errno.h>
 #include <fcntl.h>
@@ -15,7 +16,7 @@ enum {
     GP_SETTLEMENT_PATH = 4096,
     GP_MEMBERSHIP_RECORD = 85,
     GP_MEMBERSHIP_PREFIX = 76,
-    GP_REGISTRATION_WIRE = 57,
+    GP_REGISTRATION_WIRE = 122,
     GP_DEPOSIT_WIRE = 120,
     /* settlement.py exits with this status when the owner and checkpoint-authority signatures for
        the registered checkpoint have not been delivered yet. Nothing was published and the
@@ -478,11 +479,12 @@ static void attestation_json(FILE *file, const lxp_guarantor_attestation *a)
     hex(file, a->signature + 32U, 32U);
     (void)fprintf(file, ",%u]", (unsigned)a->signature_v);
 }
-lxp_result gp_settlement_register(const gp_settlement_config *config,
+lxp_result gp_settlement_register_progress(const gp_settlement_config *config,
                                   const lxp_guarantor_cert *certificate,
                                   const uint8_t header_signature[64], gp_runtime *runtime,
                                   lxp_daemon_settlement_registration_evidence *registration,
-                                  bool *already_registered, uint64_t *registered_set_version)
+                                  bool *already_registered, uint64_t *registered_set_version,
+                                  gp_checkpoint_status *progress)
 {
     gp_files files;
     FILE *input;
@@ -495,7 +497,7 @@ lxp_result gp_settlement_register(const gp_settlement_config *config,
     lxp_result status;
     lxp_daemon_settlement_registration_evidence result;
     if (certificate == NULL || header_signature == NULL || registration == NULL || already_registered == NULL ||
-        registered_set_version == NULL || certificate->attestation_count == 0U ||
+        registered_set_version == NULL || progress == NULL || certificate->attestation_count == 0U ||
         certificate->attestation_count > LXP_MAX_GUARANTOR_ATTESTATIONS)
         return LXP_ERR_NON_CANONICAL;
     memory = malloc(4U * LXP_MAX_VALIDITY_PROOF_BYTES + 65536U);
@@ -527,6 +529,9 @@ lxp_result gp_settlement_register(const gp_settlement_config *config,
         free(submit);
         return status;
     }
+    if (config->checkpoint_timeout_ms != 0U)
+        (void)fprintf(input, ",\"checkpoint_timeout_ms\":%" PRIu64,
+                      config->checkpoint_timeout_ms);
     (void)fputs(",\"header_signature\":", input);
     hex(input, header_signature, 64U);
     (void)fprintf(input, ",\"threshold\":%zu", certificate->threshold);
@@ -562,21 +567,57 @@ lxp_result gp_settlement_register(const gp_settlement_config *config,
     cleanup(&files);
     if (status != LXP_OK)
         return status;
-    if (length != GP_REGISTRATION_WIRE || wire[0] > 1U || lxp_ct_is_zero(wire + 1U, 32U) ||
-        read64(wire + 33U) == 0U || read64(wire + 41U) == 0U || read64(wire + 49U) == 0U)
+    if (length != GP_REGISTRATION_WIRE || wire[89] < GP_CHECKPOINT_PENDING ||
+        wire[89] > GP_CHECKPOINT_ERROR || wire[0] > 1U ||
+        memcmp(wire + 90U, checkpoint_id, 32U) != 0)
         return LXP_ERR_CONTEXT_MISMATCH;
+    if (wire[89] == GP_CHECKPOINT_FINAL &&
+        (lxp_ct_is_zero(wire + 1U, 32U) || read64(wire + 33U) == 0U ||
+         read64(wire + 41U) == 0U || read64(wire + 49U) == 0U ||
+         lxp_ct_is_zero(wire + 57U, 32U)))
+        return LXP_ERR_CONTEXT_MISMATCH;
+    {
+        char path[GP_SETTLEMENT_PATH], id[65];
+        int written;
+        for (i = 0U; i < 32U; ++i)
+            (void)snprintf(id + 2U * i, 3U, "%02x", checkpoint_id[i]);
+        written = snprintf(path, sizeof(path), "%s/%s.progress", config->state_dir, id);
+        if (written < 0 || (size_t)written >= sizeof(path))
+            return LXP_ERR_LENGTH_LIMIT;
+        status = gp_file_write(path, wire, length);
+        if (status != LXP_OK)
+            return status;
+    }
     (void)memset(&result, 0, sizeof(result));
     result.paxeer_chain_id = config->chain_id;
     (void)memcpy(result.settlement_contract, config->settlement_contract, 20U);
     (void)memcpy(result.checkpoint_id, checkpoint_id, 32U);
     (void)memcpy(result.transaction_id, wire + 1U, 32U);
+    (void)memcpy(result.observed_block_hash, wire + 57U, 32U);
     result.observed_block_number = read64(wire + 33U);
     result.observed_at_ms = read64(wire + 41U);
     *registration = result;
     *already_registered = wire[0] != 0U;
     *registered_set_version = read64(wire + 49U);
+    *progress = (gp_checkpoint_status)wire[89];
     return LXP_OK;
 }
+lxp_result gp_settlement_register(const gp_settlement_config *config,
+                                  const lxp_guarantor_cert *certificate,
+                                  const uint8_t header_signature[64], gp_runtime *runtime,
+                                  lxp_daemon_settlement_registration_evidence *registration,
+                                  bool *already_registered, uint64_t *registered_set_version)
+{
+    gp_checkpoint_status progress = GP_CHECKPOINT_ERROR;
+    lxp_result status = gp_settlement_register_progress(config, certificate, header_signature,
+        runtime, registration, already_registered, registered_set_version, &progress);
+    if (status != LXP_OK)
+        return status;
+    if (progress == GP_CHECKPOINT_PENDING)
+        return LXP_ERR_NOT_YET_VALID;
+    return progress == GP_CHECKPOINT_FINAL ? LXP_OK : LXP_ERR_CONTEXT_MISMATCH;
+}
+
 lxp_result gp_settlement_config_from_env(gp_settlement_config *config, const char *state_dir)
 {
     const char *file = getenv("LAYERX_GUARANTOR_SETTLEMENT_FILE");
@@ -600,6 +641,23 @@ lxp_result gp_settlement_config_from_env(gp_settlement_config *config, const cha
         return LXP_ERR_NON_CANONICAL;
     (void)memset(config, 0, sizeof(*config));
     config->state_dir = state_dir;
+    {
+        const char *timeout = getenv("LAYERX_GUARANTOR_CHECKPOINT_TIMEOUT_MS");
+        if (timeout != NULL) {
+            uint64_t value = 0U;
+            if (*timeout == '\0')
+                return LXP_ERR_NON_CANONICAL;
+            for (; *timeout != '\0'; ++timeout) {
+                unsigned digit = (unsigned)(*timeout - '0');
+                if (digit > 9U || value > (UINT64_C(86400000) - digit) / 10U)
+                    return LXP_ERR_NON_CANONICAL;
+                value = value * 10U + digit;
+            }
+            if (value < 1000U || value > 86400000U)
+                return LXP_ERR_NON_CANONICAL;
+            config->checkpoint_timeout_ms = value;
+        }
+    }
     config->python = getenv("LAYERX_GUARANTOR_PYTHON");
     config->helper = getenv("LAYERX_GUARANTOR_SETTLEMENT_HELPER");
     config->submitter_key_file = getenv("LAYERX_GUARANTOR_SUBMITTER_KEY_FILE");

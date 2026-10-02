@@ -155,9 +155,9 @@ class SettlementTests(unittest.TestCase):
 
     def test_anchor_checkpoint_record_comparison(self):
         h = self.header
-        record = (h[3], self.digest, bytes(32), h[2], h[4], h[5], h[6], h[7], h[9], h[11], h[14], h[13], 2, 3, 31, 0, 9, 9)
+        record = (h[3], self.digest, s.hashlib.sha256(b'LXP/v1/batch-header\0' + s.header_encode(h)).digest(), h[2], h[4], h[5], h[6], h[7], h[9], h[11], h[14], h[13], 2, 3, 31, 0, 9, 9)
         s.require_checkpoint(record, self.digest, h, 3)
-        for index in (1, 3, 4, 5, 6, 7, 8, 9, 10, 11, 13):
+        for index in (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 13):
             changed = list(record)
             changed[index] = bytes([1]) * 32 if isinstance(changed[index], bytes) else changed[index] + 1
             with self.subTest(index=index), self.assertRaises(ValueError):
@@ -183,9 +183,13 @@ class SettlementTests(unittest.TestCase):
         self.assertEqual(struct.unpack('>I', wire[72:76])[0], 100)
         self.assertEqual(wire[76:108], self.attestations[0][7])
         self.assertEqual(int.from_bytes(wire[129:145], 'big'), 1000)
-        registration = s.wire_encode('register', {'already_registered': True, 'transaction_id': '0x' + '12' * 32, 'observed_block_number': 5, 'observed_at_ms': 1000000, 'set_version': 4})
-        self.assertEqual(len(registration), 57)
-        self.assertEqual(struct.unpack('>QQQ', registration[33:]), (5, 1000000, 4))
+        registration = s.wire_encode('register', {'already_registered': True, 'transaction_id': '0x' + '12' * 32, 'observed_block_number': 5, 'observed_at_ms': 1000000, 'set_version': 4, 'progress_status': s.PROGRESS_FINAL, 'checkpoint_id': '0x' + self.digest.hex(), 'observed_block_hash': '0x' + 'ab' * 32})
+        self.assertEqual(len(registration), 122)
+        self.assertEqual(len(registration[:57]), 57)
+        self.assertEqual(registration[57:89], bytes.fromhex('ab' * 32))
+        self.assertEqual(registration[89], s.PROGRESS_FINAL)
+        self.assertEqual(registration[90:], self.digest)
+        self.assertEqual(struct.unpack('>QQQ', registration[33:57]), (5, 1000000, 4))
         funding = s.wire_encode('deposit', {'guarantor_id': '0x' + self.attestations[0][7].hex(), 'transaction_id': '0x' + '34' * 32, 'observed_block_number': 4097, 'observed_at_ms': 1700000000000, 'membership_version': 5, 'amount': 250, 'total_bond': 1250})
         self.assertEqual(len(funding), 120)
         self.assertEqual(funding[:32], self.attestations[0][7])
@@ -193,6 +197,55 @@ class SettlementTests(unittest.TestCase):
         self.assertEqual(struct.unpack('>QQQ', funding[64:88]), (4097, 1700000000000, 5))
         self.assertEqual(int.from_bytes(funding[88:104], 'big'), 250)
         self.assertEqual(int.from_bytes(funding[104:120], 'big'), 1250)
+
+    def test_checkpoint_progress_durable_deadline_and_binding(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'progress.json'
+            binding = {'checkpoint_id': '0x' + self.digest.hex(), 'chain_id': 31337,
+                       'settlement_contract': s.ANCHOR, 'batch_number': self.header[3],
+                       'submit_calldata_hash': s.hashlib.sha256(b'checkpoint').hexdigest()}
+            progress = s.progress_load(path, binding, 60_000)
+            deadline = progress['deadline_ms']
+            self.assertEqual(path.stat().st_mode & 0o777, 0o600)
+            resumed = s.progress_load(path, binding, 120_000)
+            self.assertEqual(resumed, progress)
+            self.assertEqual(resumed['deadline_ms'], deadline)
+            s.progress_pending(path, resumed, 'temporary observation unavailable')
+            restored = s.progress_load(path, binding, 120_000)
+            self.assertEqual(restored['deadline_ms'], deadline)
+            self.assertEqual(restored['progress_status'], s.PROGRESS_PENDING)
+            self.assertEqual(restored['backoff_ms'], 1000)
+            self.assertLessEqual(restored['next_poll_ms'], deadline)
+            with self.assertRaises(ValueError):
+                s.progress_load(path, dict(binding, chain_id=125), 60_000)
+            restored.update(created_at_ms=1, deadline_ms=2)
+            s.progress_save(path, restored)
+            s.progress_pending(path, restored, 'still unavailable')
+            expired = s.progress_load(path, binding, 60_000)
+            self.assertEqual(expired['progress_status'], s.PROGRESS_ERROR)
+            self.assertEqual(expired['phase'], 'deadline')
+            self.assertEqual(expired['checkpoint_id'], binding['checkpoint_id'])
+            self.assertEqual(expired['deadline_ms'], 2)
+            link = Path(directory) / 'alias.json'
+            link.symlink_to(path)
+            with self.assertRaises(OSError):
+                s.progress_load(link, binding, 60_000)
+
+    def test_checkpoint_wire_all_progress_states(self):
+        result = {'already_registered': False, 'transaction_id': '0x' + '12' * 32,
+                  'observed_block_number': 5, 'observed_at_ms': 1000000, 'set_version': 4,
+                  'checkpoint_id': '0x' + self.digest.hex(), 'observed_block_hash': '0x' + 'ab' * 32}
+        for status in (s.PROGRESS_PENDING, s.PROGRESS_FINAL, s.PROGRESS_CHALLENGED, s.PROGRESS_ERROR):
+            wire = s.wire_encode('register', dict(result, progress_status=status))
+            self.assertEqual(len(wire), 122)
+            self.assertEqual(wire[89], status)
+            self.assertEqual(wire[90:], self.digest)
+            self.assertEqual(wire[57:89], bytes.fromhex('ab' * 32))
+        with self.assertRaises(ValueError):
+            s.wire_encode('register', dict(result, progress_status=0))
+        with self.assertRaises(ValueError):
+            s.wire_encode('register', dict(result, progress_status=s.PROGRESS_FINAL,
+                                          observed_block_hash='0x' + '00' * 32))
 
     def test_configuration_real_vector_public_keys_and_environment(self):
         document = json.loads((ROOT / 'contracts/config/checkpoint-settlement.json').read_text())

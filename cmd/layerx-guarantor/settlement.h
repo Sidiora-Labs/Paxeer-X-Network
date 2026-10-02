@@ -17,6 +17,7 @@ typedef struct gp_settlement_config {
     char rpc_url_storage[128];
     uint32_t network_id;
     uint64_t chain_id;
+    uint64_t checkpoint_timeout_ms;
     uint8_t settlement_contract[20];
     uint8_t checkpoint_registry[20];
     size_t member_count;
@@ -46,6 +47,16 @@ lxp_result gp_settlement_bond_restore(const gp_settlement_config *, const lxp_pa
 lxp_result gp_settlement_bond_deposit(const gp_settlement_config *, const uint8_t *,
                                       const uint8_t *, lxp_paxeer_bond_state *,
                                       lxp_paxeer_bond_deposit_record *);
+typedef enum gp_checkpoint_status {
+    GP_CHECKPOINT_PENDING = 1,
+    GP_CHECKPOINT_FINAL = 2,
+    GP_CHECKPOINT_CHALLENGED = 3,
+    GP_CHECKPOINT_ERROR = 4
+} gp_checkpoint_status;
+lxp_result gp_settlement_register_progress(const gp_settlement_config *, const lxp_guarantor_cert *,
+                                  const uint8_t[64], gp_runtime *,
+                                  lxp_daemon_settlement_registration_evidence *, bool *,
+                                  uint64_t *, gp_checkpoint_status *);
 lxp_result gp_settlement_register(const gp_settlement_config *, const lxp_guarantor_cert *,
                                   const uint8_t[64], gp_runtime *,
                                   lxp_daemon_settlement_registration_evidence *, bool *,

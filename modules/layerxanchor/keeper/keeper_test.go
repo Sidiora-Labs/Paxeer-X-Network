@@ -2,6 +2,11 @@ package keeper_test
 
 import (
 	"bytes"
+	"context"
+	"fmt"
+	"os"
+	"os/exec"
+	"strconv"
 	"github.com/gogo/protobuf/jsonpb"
 	"github.com/gogo/protobuf/proto"
 	moduleimpl "github.com/sidiora-labs/paxeer-network/modules/layerxanchor"
@@ -14,12 +19,17 @@ import (
 	"testing"
 	"time"
 
+	abci "github.com/sidiora-labs/paxeer-network/consensus/abci/types"
+	tmproto "github.com/sidiora-labs/paxeer-network/consensus/proto/tendermint/types"
+	proofcodec "github.com/sidiora-labs/paxeer-network/layerxproof/codec"
 	"github.com/sidiora-labs/paxeer-network/layerxproof/testvectors"
 	"github.com/sidiora-labs/paxeer-network/modules/layerxanchor/keeper"
 	"github.com/sidiora-labs/paxeer-network/modules/layerxanchor/types"
 	app "github.com/sidiora-labs/paxeer-network/node"
 	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
+	"github.com/sidiora-labs/paxeer-network/wasm/x/wasm"
 	"github.com/stretchr/testify/require"
+	dbm "github.com/tendermint/tm-db"
 )
 
 const (
@@ -62,8 +72,13 @@ func (s *suite) balance(of sdk.AccAddress) sdk.Int {
 func newSuite(t *testing.T, mutate func(*types.Params)) *suite {
 	t.Helper()
 	testApp := app.Setup(t, false, false, false)
-	s := &suite{t: t, app: testApp, k: testApp.LayerXAnchorKeeper, authority: account(0xa1), reporter: account(0xa2)}
-	s.ctx = testApp.GetContextForDeliverTx([]byte{}).WithBlockHeight(8).WithBlockTime(time.Unix(1_800_000_000, 0))
+	ctx := testApp.GetContextForDeliverTx([]byte{}).WithBlockHeight(8).WithBlockTime(time.Unix(1_800_000_000, 0))
+	return initializeSuite(t, testApp, ctx, mutate)
+}
+
+func initializeSuite(t *testing.T, testApp *app.App, ctx sdk.Context, mutate func(*types.Params)) *suite {
+	t.Helper()
+	s := &suite{t: t, app: testApp, ctx: ctx, k: testApp.LayerXAnchorKeeper, authority: account(0xa1), reporter: account(0xa2)}
 	fixture, err := testvectors.LoadAnchor()
 	require.NoError(t, err)
 	s.fixture = fixture
@@ -752,4 +767,240 @@ func TestMsgUpdateParamsRefusals(t *testing.T) {
 	_, err := keeper.NewMsgServerImpl(k).UpdateParams(sdk.WrapSDKContext(ctx), nil)
 	require.Error(t, err)
 	require.Equal(t, before, k.GetParams(ctx))
+}
+
+func (s *suite) assertRetryCheckpoint(name string, status uint8) types.Checkpoint {
+	s.t.Helper()
+	v := s.vector("checkpoints", name)
+	encoded, err := v.Bytes("certificate")
+	require.NoError(s.t, err)
+	certificate, err := proofcodec.DecodeCheckpointCertificate(encoded)
+	require.NoError(s.t, err)
+	id, err := v.Array32("checkpoint_id")
+	require.NoError(s.t, err)
+	checkpoint, found := s.k.CheckpointByID(s.ctx, id)
+	require.True(s.t, found)
+	require.Equal(s.t, types.Hash32(id), checkpoint.CheckpointID)
+	require.Equal(s.t, certificate.Header.BatchNumber, checkpoint.BatchNumber)
+	require.Equal(s.t, types.Hash32(certificate.Header.ResultingStateRoot), checkpoint.StateRoot)
+	require.Equal(s.t, types.Hash32(certificate.Header.ReceiptMerkleRoot), checkpoint.ReceiptRoot)
+	require.Equal(s.t, types.Hash32(certificate.Header.DataAvailabilityRoot), checkpoint.DataAvailabilityRoot)
+	require.Equal(s.t, certificate.Threshold, checkpoint.DeclaredThreshold)
+	require.Len(s.t, checkpoint.Guarantors, len(certificate.Attestations))
+	for i, attestation := range certificate.Attestations {
+		require.Equal(s.t, types.Hash32(attestation.GuarantorID), checkpoint.Guarantors[i])
+	}
+	require.Equal(s.t, status, checkpoint.Status)
+	require.Equal(s.t, status, s.k.StatusOf(s.ctx, checkpoint.BatchNumber))
+	state, finalized := s.k.FinalizedStateRoot(s.ctx, checkpoint.BatchNumber)
+	require.Equal(s.t, status == types.CheckpointFinal, finalized)
+	receipts, receiptsFinalized := s.k.FinalizedReceiptRoot(s.ctx, checkpoint.BatchNumber)
+	require.Equal(s.t, finalized, receiptsFinalized)
+	latest, hasFinal := s.k.LatestFinalizedBatch(s.ctx)
+	require.Equal(s.t, finalized, hasFinal)
+	if finalized {
+		require.Equal(s.t, [32]byte(checkpoint.StateRoot), state)
+		require.Equal(s.t, [32]byte(checkpoint.ReceiptRoot), receipts)
+		require.Equal(s.t, checkpoint.BatchNumber, latest)
+	} else {
+		require.Zero(s.t, checkpoint.FinalizedHeight)
+		require.Zero(s.t, checkpoint.FinalizedTime)
+	}
+	return checkpoint
+}
+
+func TestCheckpointRetryDurableRestart(t *testing.T) {
+	phase := os.Getenv("PAXEER_X_CHECKPOINT_RETRY_PHASE")
+	if phase == "" {
+		for _, window := range []uint64{0, 50} {
+			t.Run(strconv.FormatUint(window, 10), func(t *testing.T) {
+				home, dir := t.TempDir(), t.TempDir()
+				phases := []string{"submit", "observe-final"}
+				if window != 0 {
+					phases = []string{"submit", "pending", "uncommitted-final", "finalize", "observe-final"}
+				}
+				for _, phase := range phases {
+					ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+					child := exec.CommandContext(ctx, os.Args[0], "-test.run", "^TestCheckpointRetryDurableRestart$", "-test.count=1", "-test.v")
+					child.Env = append(os.Environ(), "PAXEER_X_CHECKPOINT_RETRY_PHASE="+phase,
+						"PAXEER_X_CHECKPOINT_RETRY_HOME="+home, "PAXEER_X_CHECKPOINT_RETRY_DB="+dir,
+						"PAXEER_X_CHECKPOINT_RETRY_WINDOW="+strconv.FormatUint(window, 10))
+					output, err := child.CombinedOutput()
+					cancel()
+					if phase == "uncommitted-final" {
+						var exit *exec.ExitError
+						require.ErrorAs(t, err, &exit, string(output))
+						require.Equal(t, 86, exit.ExitCode(), string(output))
+						require.Contains(t, string(output), "checkpoint-final-before-commit")
+					} else {
+						require.NoError(t, err, "%s: %s", phase, output)
+						require.Contains(t, string(output), "--- PASS: TestCheckpointRetryDurableRestart")
+					}
+				}
+			})
+		}
+		return
+	}
+	window, err := strconv.ParseUint(os.Getenv("PAXEER_X_CHECKPOINT_RETRY_WINDOW"), 10, 64)
+	require.NoError(t, err)
+	require.Contains(t, []uint64{0, 50}, window)
+	home, dir := os.Getenv("PAXEER_X_CHECKPOINT_RETRY_HOME"), os.Getenv("PAXEER_X_CHECKPOINT_RETRY_DB")
+	require.NotEmpty(t, home)
+	require.NotEmpty(t, dir)
+	database, err := dbm.NewGoLevelDB("application", dir)
+	require.NoError(t, err)
+	a := app.New(database, nil, true, map[int64]bool{}, home, 1, true, nil, app.MakeEncodingConfig(),
+		wasm.EnableAllProposals, app.TestAppOpts{}, app.EmptyWasmOpts, nil)
+	defer func() { require.NoError(t, a.Close()) }()
+	start := time.Unix(1_800_000_000, 0).UTC()
+	if phase == "submit" {
+		require.Zero(t, a.LastBlockHeight())
+		genesis, err := json.Marshal(app.NewDefaultGenesisState(app.MakeEncodingConfig().Marshaler))
+		require.NoError(t, err)
+		_, err = a.InitChain(context.Background(), &abci.RequestInitChain{Time: start,
+			ConsensusParams: app.DefaultConsensusParams, ChainId: "pax-test", AppStateBytes: genesis})
+		require.NoError(t, err)
+	} else {
+		require.Positive(t, a.LastBlockHeight())
+	}
+	at := start.Add(time.Duration(window) * time.Second)
+	if phase == "submit" {
+		at = start
+	} else if phase == "pending" {
+		require.Positive(t, window)
+		at = at.Add(-time.Second)
+	} else if phase == "observe-final" {
+		at = at.Add(time.Second)
+	}
+	height := a.LastBlockHeight() + 1
+	_, err = a.FinalizeBlock(context.Background(), &abci.RequestFinalizeBlock{
+		Header: &tmproto.Header{ChainID: "pax-test", Height: height, Time: at}})
+	require.NoError(t, err)
+	ctx := a.GetContextForDeliverTx([]byte{}).WithBlockTime(at).WithBlockHeight(height)
+	ctx = ctx.WithGasMeter(sdk.NewInfiniteGasMeterWithMultiplier(ctx)).WithEventManager(sdk.NewEventManager())
+	fixture, err := testvectors.LoadAnchor()
+	require.NoError(t, err)
+	s := &suite{t: t, app: a, ctx: ctx, k: a.LayerXAnchorKeeper, fixture: fixture, authority: account(0xa1), reporter: account(0xa2)}
+	if phase == "submit" {
+		s = initializeSuite(t, a, ctx, func(p *types.Params) { p.ChallengeWindowSeconds = window })
+		s.bondAll()
+		_, err = s.submit("batch_1_quorum")
+		require.NoError(t, err)
+	}
+	require.Equal(t, window, s.k.GetParams(ctx).ChallengeWindowSeconds)
+	wantStatus := types.CheckpointSubmitted
+	if window == 0 || phase == "observe-final" {
+		wantStatus = types.CheckpointFinal
+	}
+	before := s.assertRetryCheckpoint("batch_1_quorum", wantStatus)
+	require.Equal(t, int64(1), before.SubmittedHeight)
+	require.Equal(t, start.Unix(), before.SubmittedTime)
+	switch phase {
+	case "submit":
+	case "pending":
+		_, err = s.k.Finalize(ctx, 1)
+		require.ErrorIs(t, err, types.ErrNotFinalizable)
+		require.Equal(t, before, s.assertRetryCheckpoint("batch_1_quorum", types.CheckpointSubmitted))
+	case "uncommitted-final", "finalize":
+		final, err := s.k.Finalize(ctx, 1)
+		require.NoError(t, err)
+		require.Equal(t, before.CheckpointID, final.CheckpointID)
+		require.Equal(t, before.SubmittedHeight, final.SubmittedHeight)
+		require.Equal(t, before.SubmittedTime, final.SubmittedTime)
+		require.Equal(t, at.Unix(), final.FinalizedTime)
+		s.assertRetryCheckpoint("batch_1_quorum", types.CheckpointFinal)
+		if phase == "uncommitted-final" {
+			fmt.Fprintln(os.Stdout, "checkpoint-final-before-commit")
+			os.Exit(86)
+		}
+	case "observe-final":
+		_, err = s.k.Finalize(ctx, 1)
+		require.ErrorIs(t, err, types.ErrNotFinalizable)
+		_, err = s.submit("batch_1_quorum")
+		require.ErrorIs(t, err, types.ErrCheckpointFinal)
+		require.Equal(t, before, s.assertRetryCheckpoint("batch_1_quorum", types.CheckpointFinal))
+	default:
+		t.Fatalf("unknown checkpoint retry phase %q", phase)
+	}
+	finalEvents := 0
+	for _, event := range ctx.EventManager().Events() {
+		if event.Type == types.EventCheckpointFinalized {
+			finalEvents++
+		}
+	}
+	wantEvents := 0
+	if phase == "finalize" || (phase == "submit" && window == 0) {
+		wantEvents = 1
+	}
+	require.Equal(t, wantEvents, finalEvents)
+	require.Len(t, s.k.GetCheckpoints(ctx), 1)
+	s.invariant()
+	a.SetDeliverStateToCommit()
+	_, err = a.Commit(context.Background())
+	require.NoError(t, err)
+}
+
+func TestCheckpointRetryChallengeResolution(t *testing.T) {
+	for _, upheld := range []bool{false, true} {
+		t.Run(strconv.FormatBool(upheld), func(t *testing.T) {
+			s := newSuite(t, func(p *types.Params) { p.ChallengeWindowSeconds = 50 })
+			s.bondAll()
+			checkpoint, err := s.submit("batch_1_quorum")
+			require.NoError(t, err)
+			s.fund(s.reporter, 1_000_000)
+			challenge, err := s.k.OpenChallenge(s.ctx, s.reporter, 1, types.ChallengeFraud, [32]byte{1}, sdk.NewInt(1_000_000))
+			require.NoError(t, err)
+			s.advance(50)
+			before := s.k.ExportGenesis(s.ctx)
+			_, err = s.k.Finalize(s.ctx, 1)
+			require.ErrorIs(t, err, types.ErrNotFinalizable)
+			_, err = s.submit("batch_1_quorum")
+			require.ErrorIs(t, err, types.ErrChallenge)
+			require.Equal(t, before, s.k.ExportGenesis(s.ctx))
+			s.assertRetryCheckpoint("batch_1_quorum", types.CheckpointSubmitted)
+			resolved, _, err := s.k.ResolveChallenge(s.ctx, s.authority, challenge.ID, upheld)
+			require.NoError(t, err)
+			if upheld {
+				require.Equal(t, types.ChallengeUpheld, resolved.Status)
+				_, err = s.k.Finalize(s.ctx, 1)
+				require.ErrorIs(t, err, types.ErrCheckpointUnknown)
+				_, found := s.k.CheckpointByID(s.ctx, checkpoint.CheckpointID)
+				require.False(t, found)
+				_, final := s.k.LatestFinalizedBatch(s.ctx)
+				require.False(t, final)
+				require.Empty(t, s.k.GetAvailability(s.ctx))
+			} else {
+				require.Equal(t, types.ChallengeRejected, resolved.Status)
+				final, err := s.k.Finalize(s.ctx, 1)
+				require.NoError(t, err)
+				require.Equal(t, checkpoint.CheckpointID, final.CheckpointID)
+				s.assertRetryCheckpoint("batch_1_quorum", types.CheckpointFinal)
+			}
+			s.invariant()
+		})
+	}
+}
+
+func TestCheckpointRetryMembershipAndBindings(t *testing.T) {
+	s := newSuite(t, func(p *types.Params) { p.ChallengeWindowSeconds = 50 })
+	s.bondAll()
+	checkpoint, err := s.submit("batch_1_pair")
+	require.NoError(t, err)
+	before := s.k.ExportGenesis(s.ctx)
+	otherID := [32]byte(checkpoint.CheckpointID)
+	otherID[0] ^= 1
+	_, found := s.k.CheckpointByID(s.ctx, otherID)
+	require.False(t, found)
+	_, _, err = s.k.SubmitAvailabilityAttestation(s.ctx, s.attestation("batch_1_conflicting_attestation_2"))
+	require.ErrorIs(t, err, types.ErrAvailability)
+	require.Equal(t, before, s.k.ExportGenesis(s.ctx))
+	_, err = s.k.SubmitEquivocation(s.ctx, s.reporter, s.attestation("batch_1_attestation_0"), s.attestation("batch_1_conflicting_attestation_0"))
+	require.NoError(t, err)
+	s.advance(50)
+	before = s.k.ExportGenesis(s.ctx)
+	_, err = s.k.Finalize(s.ctx, 1)
+	require.ErrorIs(t, err, types.ErrNotFinalizable)
+	require.Equal(t, before, s.k.ExportGenesis(s.ctx))
+	s.assertRetryCheckpoint("batch_1_pair", types.CheckpointSubmitted)
+	s.invariant()
 }

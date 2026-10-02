@@ -161,6 +161,83 @@ static int read_bytes(const char *path, uint8_t *bytes, size_t capacity, size_t 
     *length = used;
     return close(fd);
 }
+static uint64_t progress_read64(const uint8_t *bytes)
+{
+    uint64_t value = 0U;
+    for (size_t i = 0U; i < 8U; ++i)
+        value = (value << 8U) | bytes[i];
+    return value;
+}
+static void progress_write64(uint8_t *bytes, uint64_t value)
+{
+    for (size_t i = 8U; i != 0U; --i) {
+        bytes[i - 1U] = (uint8_t)value;
+        value >>= 8U;
+    }
+}
+static lxp_result submission_restore(struct producer *p, const uint8_t id[32],
+                                      lxp_guarantor_cert *certificate, bool *present,
+                                      lxp_arena *arena)
+{
+    uint8_t bytes[16U + GP_ATTESTATION_BYTES * LXP_MAX_GUARANTOR_ATTESTATIONS];
+    lxp_guarantor_attestation attestations[LXP_MAX_GUARANTOR_ATTESTATIONS];
+    char path[4096];
+    size_t length = 0U, count;
+    uint64_t threshold;
+    lxp_result status;
+    *present = false;
+    if (id_path(path, p->state, id, "submission") != 0)
+        return LXP_ERR_LENGTH_LIMIT;
+    if (access(path, F_OK) != 0)
+        return errno == ENOENT ? LXP_OK : LXP_ERR_IO;
+    if (read_bytes(path, bytes, sizeof(bytes), &length) != 0 || length <= 16U ||
+        memcmp(bytes, "GPCERT01", 8U) != 0 ||
+        (length - 16U) % GP_ATTESTATION_BYTES != 0U)
+        return LXP_ERR_IO;
+    count = (length - 16U) / GP_ATTESTATION_BYTES;
+    threshold = progress_read64(bytes + 8U);
+    if (threshold == 0U || threshold > count || threshold != p->threshold)
+        return LXP_ERR_ATTESTATION_THRESHOLD;
+    for (size_t i = 0U; i < count; ++i) {
+        status = gp_attestation_decode(bytes + 16U + i * GP_ATTESTATION_BYTES,
+                                        GP_ATTESTATION_BYTES, &attestations[i]);
+        if (status == LXP_OK && memcmp(attestations[i].checkpoint_id, id, 32U) != 0)
+            status = LXP_ERR_CONTEXT_MISMATCH;
+        if (status == LXP_OK)
+            status = gp_attestation_accept(&p->checkpoint, p->settlement.chain_id,
+                p->settlement.settlement_contract, &p->bonds.guarantors,
+                &attestations[i], attestations, i, p->evidence, arena);
+        if (status != LXP_OK)
+            return status;
+    }
+    status = lxp_guarantor_cert_assemble(&p->checkpoint, attestations, count,
+                                         (size_t)threshold, certificate);
+    if (status == LXP_OK)
+        *present = true;
+    return status;
+}
+static lxp_result submission_store(const struct producer *p, const uint8_t id[32],
+                                    const lxp_guarantor_cert *certificate)
+{
+    uint8_t bytes[16U + GP_ATTESTATION_BYTES * LXP_MAX_GUARANTOR_ATTESTATIONS];
+    char path[4096];
+    lxp_result status = LXP_OK;
+    if (certificate->attestation_count == 0U ||
+        certificate->attestation_count > LXP_MAX_GUARANTOR_ATTESTATIONS ||
+        certificate->threshold == 0U || certificate->threshold > certificate->attestation_count)
+        return LXP_ERR_NON_CANONICAL;
+    if (id_path(path, p->state, id, "submission") != 0)
+        return LXP_ERR_LENGTH_LIMIT;
+    memcpy(bytes, "GPCERT01", 8U);
+    progress_write64(bytes + 8U, certificate->threshold);
+    for (size_t i = 0U; status == LXP_OK && i < certificate->attestation_count; ++i)
+        status = gp_attestation_encode(&certificate->attestations[i],
+                                        bytes + 16U + i * GP_ATTESTATION_BYTES);
+    if (status == LXP_OK)
+        status = gp_file_write(path, bytes,
+                                16U + certificate->attestation_count * GP_ATTESTATION_BYTES);
+    return status;
+}
 static int historical(struct producer *p, const uint8_t id[32], uint8_t *out, size_t capacity,
                       size_t *length)
 {
@@ -438,6 +515,15 @@ static int peer_url(const char *url, char host[256], uint16_t *port)
     *port = (uint16_t)n;
     return 0;
 }
+static void checkpoint_pause(const char *boundary)
+{
+    static bool paused;
+    const char *selected = getenv("LAYERX_GUARANTOR_CHECKPOINT_PAUSE_AT");
+    if (!paused && selected != NULL && strcmp(selected, boundary) == 0) {
+        paused = true;
+        (void)raise(SIGSTOP);
+    }
+}
 static lxp_result feedback(lxp_guarantor_lni *client, const char *socket_path,
                            struct producer *p,
                            const lxp_guarantor_cert *certificate,
@@ -445,37 +531,105 @@ static lxp_result feedback(lxp_guarantor_lni *client, const char *socket_path,
                            lxp_arena *arena)
 {
     lxp_finalisation_requirements requirements = {0};
-    lxp_byte_span payload, proof;
-    char path[4096];
+    lxp_byte_span payload = {0}, proof = {0};
+    char path[4096], durable_path[4096], done_path[4096];
+    uint8_t done_id[32];
+    uint8_t *durable = NULL;
+    size_t length = 0U;
     int n;
+    lxp_result status = LXP_OK;
     if (certificate->checkpoint.header.batch_number < p->authority.first_batch_number)
         return LXP_ERR_BATCH_GAP;
-    lxp_result status =
-        gp_checkpoint_requirements(&certificate->checkpoint.header, registration->observed_at_ms,
-                                   p->threshold, p->bonds.minimum_bond, &requirements);
-    if (status == LXP_OK)
-        status = lxp_daemon_finality_evidence_encode(certificate, &p->bonds.guarantors,
-                                                     &requirements,
-                                                     certificate->checkpoint.header.batch_number -
-                                                         p->authority.first_batch_number,
-                                                     registration, arena, &payload, &proof);
+    if (id_path(durable_path, p->state, registration->checkpoint_id, "feedback") != 0 ||
+        id_path(done_path, p->state, registration->checkpoint_id, "feedback-done") != 0)
+        return LXP_ERR_LENGTH_LIMIT;
+    if (access(done_path, F_OK) == 0) {
+        if (read_bytes(done_path, done_id, sizeof(done_id), &length) != 0 ||
+            length != sizeof(done_id) || memcmp(done_id, registration->checkpoint_id, 32U) != 0)
+            return LXP_ERR_CONTEXT_MISMATCH;
+        return LXP_OK;
+    }
+    if (errno != ENOENT)
+        return LXP_ERR_IO;
+    durable = malloc(56U + LXP_DAEMON_FINALITY_REGISTER_MAX_BYTES);
+    if (durable == NULL)
+        return LXP_ERR_IO;
+    if (access(durable_path, F_OK) == 0) {
+        uint64_t payload_length, proof_length;
+        if (read_bytes(durable_path, durable, 56U + LXP_DAEMON_FINALITY_REGISTER_MAX_BYTES,
+                       &length) != 0 || length <= 56U ||
+            memcmp(durable, "GPFEED01", 8U) != 0 ||
+            memcmp(durable + 8U, registration->checkpoint_id, 32U) != 0) {
+            status = LXP_ERR_CONTEXT_MISMATCH;
+            goto finish;
+        }
+        payload_length = progress_read64(durable + 40U);
+        proof_length = progress_read64(durable + 48U);
+        if (payload_length == 0U || proof_length == 0U ||
+            payload_length > LXP_DAEMON_FINALITY_REGISTER_MAX_BYTES ||
+            proof_length > LXP_DAEMON_FINALITY_REGISTER_MAX_BYTES - payload_length ||
+            payload_length + proof_length != length - 56U) {
+            status = LXP_ERR_CONTEXT_MISMATCH;
+            goto finish;
+        }
+        payload = (lxp_byte_span){durable + 56U, (size_t)payload_length};
+        proof = (lxp_byte_span){durable + 56U + payload_length, (size_t)proof_length};
+    } else {
+        if (errno != ENOENT) {
+            status = LXP_ERR_IO;
+            goto finish;
+        }
+        status = gp_checkpoint_requirements(&certificate->checkpoint.header,
+            registration->observed_at_ms, p->threshold, p->bonds.minimum_bond, &requirements);
+        if (status == LXP_OK)
+            status = lxp_daemon_finality_evidence_encode(certificate, &p->bonds.guarantors,
+                &requirements, certificate->checkpoint.header.batch_number -
+                    p->authority.first_batch_number, registration, arena, &payload, &proof);
+        if (status != LXP_OK)
+            goto finish;
+        if (payload.length > LXP_DAEMON_FINALITY_REGISTER_MAX_BYTES ||
+            proof.length > LXP_DAEMON_FINALITY_REGISTER_MAX_BYTES - payload.length) {
+            status = LXP_ERR_LENGTH_LIMIT;
+            goto finish;
+        }
+        memcpy(durable, "GPFEED01", 8U);
+        memcpy(durable + 8U, registration->checkpoint_id, 32U);
+        progress_write64(durable + 40U, payload.length);
+        progress_write64(durable + 48U, proof.length);
+        memcpy(durable + 56U, payload.bytes, payload.length);
+        memcpy(durable + 56U + payload.length, proof.bytes, proof.length);
+        status = gp_file_write(durable_path, durable, 56U + payload.length + proof.length);
+        if (status != LXP_OK)
+            goto finish;
+    }
+    checkpoint_pause("before-feedback");
     n = snprintf(path, sizeof(path), "%s/%020llu.checkpoint", p->state,
                  (unsigned long long)certificate->checkpoint.header.batch_number);
-    if (n < 0 || (size_t)n >= sizeof(path))
-        return LXP_ERR_LENGTH_LIMIT;
-    if (status == LXP_OK)
-        status = gp_file_write(path, payload.bytes, payload.length);
+    if (n < 0 || (size_t)n >= sizeof(path)) {
+        status = LXP_ERR_LENGTH_LIMIT;
+        goto finish;
+    }
+    status = gp_file_write(path, payload.bytes, payload.length);
     n = snprintf(path, sizeof(path), "%s/%020llu.finality", p->state,
                  (unsigned long long)certificate->checkpoint.header.batch_number);
-    if (n < 0 || (size_t)n >= sizeof(path))
-        return LXP_ERR_LENGTH_LIMIT;
+    if (n < 0 || (size_t)n >= sizeof(path)) {
+        status = LXP_ERR_LENGTH_LIMIT;
+        goto finish;
+    }
     if (status == LXP_OK)
         status = gp_file_write(path, proof.bytes, proof.length);
     if (status == LXP_OK)
         status = lxp_guarantor_lni_feedback_confirmed(client, socket_path,
             certificate->checkpoint.header.batch_number, payload, proof, arena, 30000U);
+    if (status == LXP_OK) {
+        checkpoint_pause("after-feedback-before-done");
+        status = gp_file_write(done_path, registration->checkpoint_id, 32U);
+    }
+finish:
+    free(durable);
     return status;
 }
+
 static lxp_result remember_replay(struct producer *producer, const lxp_batch_header *header,
     const lxp_sequencer_authorization *authorization)
 {
@@ -765,56 +919,77 @@ int main(int argc, char **argv)
         (void)fflush(stdout);
         uint64_t peer_deadline = milliseconds() + 30000U;
         uint64_t authorization_deadline = 0U;
+        uint64_t pending_delay_ms = 500U;
+        lxp_guarantor_cert certificate;
+        bool submitted = false;
+        (void)pthread_mutex_lock(&p->mutex);
+        status = submission_restore(p, own.checkpoint_id, &certificate, &submitted, &arena);
+        (void)pthread_mutex_unlock(&p->mutex);
+        if (status != LXP_OK)
+            goto batch_failed;
         while (!stopped) {
             uint8_t remote[GP_EXCHANGE_MAX_BODY];
             size_t length = 0U, count;
-            lxp_guarantor_cert certificate;
             lxp_daemon_settlement_registration_evidence registration;
             bool already = false;
             uint64_t registered_version = 0U;
-            (void)gp_exchange_peer(&p->tls, host, peer_port, NULL, encoded, sizeof(encoded), remote,
-                                   sizeof(remote), &length);
-            if (gp_exchange_peer(&p->tls, host, peer_port, own.checkpoint_id, NULL, 0U, remote,
-                                 sizeof(remote), &length) == 0 &&
-                length % GP_ATTESTATION_BYTES == 0U) {
-                for (size_t offset = 0U; offset < length; offset += GP_ATTESTATION_BYTES)
-                    (void)receive_attestation(p, remote + offset, GP_ATTESTATION_BYTES);
+            gp_checkpoint_status progress = GP_CHECKPOINT_ERROR;
+            if (!submitted) {
+                (void)gp_exchange_peer(&p->tls, host, peer_port, NULL, encoded, sizeof(encoded), remote,
+                                       sizeof(remote), &length);
+                if (gp_exchange_peer(&p->tls, host, peer_port, own.checkpoint_id, NULL, 0U, remote,
+                                     sizeof(remote), &length) == 0 &&
+                    length % GP_ATTESTATION_BYTES == 0U) {
+                    for (size_t offset = 0U; offset < length; offset += GP_ATTESTATION_BYTES)
+                        (void)receive_attestation(p, remote + offset, GP_ATTESTATION_BYTES);
+                }
+                (void)pthread_mutex_lock(&p->mutex);
+                count = p->count;
+                status = count >= p->threshold
+                             ? lxp_guarantor_cert_assemble(&p->checkpoint, p->attestations, count,
+                                                           p->threshold, &certificate)
+                             : LXP_ERR_ATTESTATION_THRESHOLD;
+                (void)pthread_mutex_unlock(&p->mutex);
+                if (status == LXP_OK) {
+                    status = submission_store(p, own.checkpoint_id, &certificate);
+                    if (status != LXP_OK)
+                        goto batch_failed;
+                    submitted = true;
+                }
             }
-            (void)pthread_mutex_lock(&p->mutex);
-            count = p->count;
-            status = count >= p->threshold
-                         ? lxp_guarantor_cert_assemble(&p->checkpoint, p->attestations, count,
-                                                       p->threshold, &certificate)
-                         : LXP_ERR_ATTESTATION_THRESHOLD;
-            (void)pthread_mutex_unlock(&p->mutex);
-            if (status == LXP_OK) {
+            if (submitted) {
                 field = "checkpoint registration";
                 (void)pthread_mutex_lock(&p->mutex);
-                status = gp_settlement_register(&p->settlement, &certificate, signature, runtime, &registration,
-                                                &already, &registered_version);
-                if (status == LXP_ERR_NOT_YET_VALID) {
-                    /* The checkpoint is registered and nothing was published: the owner and
-                       checkpoint-authority signatures for it have not been delivered into
-                       LAYERX_GUARANTOR_PUBLICATION_INPUTS_DIR yet. Wait for them and ask again
-                       rather than terminate; a single-batch run still gives up on its deadline. */
+                status = gp_settlement_register_progress(&p->settlement, &certificate, signature,
+                    runtime, &registration, &already, &registered_version, &progress);
+                if (status == LXP_ERR_NOT_YET_VALID ||
+                    (status == LXP_OK && progress == GP_CHECKPOINT_PENDING)) {
+                    bool authorization_pending = status == LXP_ERR_NOT_YET_VALID;
                     (void)pthread_mutex_unlock(&p->mutex);
-                    if (authorization_deadline == 0U) {
+                    if (authorization_pending && authorization_deadline == 0U)
                         authorization_deadline = milliseconds() + 300000U;
-                        fprintf(stderr,
-                                "waiting batch=%llu field=publication authorization: owner and "
-                                "checkpoint-authority signatures not delivered yet\n",
-                                (unsigned long long)batch);
-                        (void)fflush(stderr);
-                    }
-                    if (once && milliseconds() >= authorization_deadline) {
-                        field = "publication authorization";
+                    if (authorization_pending && milliseconds() >= authorization_deadline) {
+                        field = "publication authorization deadline";
                         goto batch_failed;
                     }
-                    struct timespec pending = {1, 0};
+                    status = LXP_ERR_NOT_YET_VALID;
+                    field = authorization_pending ? "publication authorization" :
+                                                    "checkpoint pending finality";
+                    fprintf(stderr, "waiting batch=%llu field=%s\n",
+                            (unsigned long long)batch, field);
+                    struct timespec pending = {(time_t)(pending_delay_ms / 1000U),
+                                                (long)((pending_delay_ms % 1000U) * 1000000U)};
                     (void)nanosleep(&pending, NULL);
+                    if (pending_delay_ms < 10000U)
+                        pending_delay_ms = pending_delay_ms > 5000U ? 10000U :
+                                                                         pending_delay_ms * 2U;
                     continue;
                 }
-                if (status != LXP_OK) {
+                if (status != LXP_OK || progress != GP_CHECKPOINT_FINAL) {
+                    if (status == LXP_OK)
+                        status = LXP_ERR_CONTEXT_MISMATCH;
+                    field = progress == GP_CHECKPOINT_CHALLENGED ? "checkpoint challenged" :
+                                                                 "checkpoint registration error";
                     (void)pthread_mutex_unlock(&p->mutex);
                     goto batch_failed;
                 }
