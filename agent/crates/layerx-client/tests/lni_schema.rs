@@ -143,3 +143,28 @@ fn additive_read_tags_are_complete_and_unknown_tags_still_refuse() {
         );
     }
 }
+
+#[test]
+fn caps_discovery_revision_declares_tags_42_and_43() {
+    let schema = lni_schema_v1();
+    assert_eq!(Version::V1_8, Version { major: 1, minor: 8 });
+    assert!(LNI_V1_SOURCE.contains("minor = 8"));
+    assert!(LNI_V1_SOURCE.contains("caps_discovery"));
+    assert_eq!(Capability::CapsDiscovery.name(), "caps_discovery");
+    assert!(schema.capabilities.contains(&Capability::CapsDiscovery));
+    for (tag, name) in [(42, "CapsDiscoveryRequest"), (43, "CapsDiscoveryResponse")] {
+        let message = schema
+            .messages
+            .iter()
+            .find(|message| message.tag == tag)
+            .expect("caps discovery tag declared");
+        assert_eq!(message.name, name);
+        assert_eq!(message.capability, Capability::CapsDiscovery);
+        assert!(!message.carries_proof_material);
+        let golden = lni_golden_vectors()
+            .iter()
+            .find(|golden| golden.message == name)
+            .expect("caps discovery golden");
+        assert_eq!(golden.version(), Version::V1_8);
+    }
+}
