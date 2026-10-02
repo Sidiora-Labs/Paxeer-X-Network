@@ -23423,7 +23423,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.104.13.6]
 title = "Serve human-api through a production service boundary"
-status = "pending"
+status = "in_progress"
 mode = "QUALIFY"
 wave = 2
 requires = ["0.2"]
@@ -23578,7 +23578,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.104.16.2]
 title = "Build the merchant and agent middleware"
-status = "pending"
+status = "in_progress"
 mode = "QUALIFY"
 wave = 2
 requires = ["0.2"]
@@ -23737,7 +23737,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.104.24.1]
 title = "Build the Ethereum and Solana migration tooling"
-status = "pending"
+status = "in_progress"
 mode = "QUALIFY"
 wave = 2
 requires = ["0.2"]
