@@ -213,12 +213,12 @@ disposition = "not_served_no_arm"
 owner_request = "MutationEnvelope<SignedBudgetMutation<BudgetCreate>>"
 response = "AuthorityResponse<BudgetRecord>"
 phase_b_dependency = "Served only once the dispatcher arm, the adapter decoding the signed-authorization carrier and the owner create method over the versioned core budget codecs and the durable daemon limit registry exist."
-request = "The request object of this catalogue operation; the daemon declares no typed decoder for it in this contract revision."
+request = "BudgetCreateWire, deny_unknown_fields: tenant, agent_did, asset, limit (decimal_string u128), enforcement (ProtocolBudget or DaemonLimit), expiry (decimal_string u64 seconds), optional purpose (TextV1 text label, checked by equality against the signed identity purpose by the owner budget_create), and optional authorization, the signed-authorization carrier {preparation_ref, signature, optional signer_public_key}."
 access = "mutation"
 operation_class = "Write"
 surface = "Contract"
 idempotency_key = "required"
-disposition = "not_served_no_arm"
+disposition = "served_adapter_arm"
 
 [transport.agent_http.operation.budget.fund]
 
