@@ -366,10 +366,50 @@ const fn level_name(level: Level) -> &'static str {
     }
 }
 
+const LEVELS: [Level; 6] = [
+    Level::Unverified,
+    Level::SequencerSigned,
+    Level::BatchIncluded,
+    Level::StateProven,
+    Level::CheckpointFinalised,
+    Level::SettlementAnchored,
+];
+
+/// `None` when the request declares no level; `Some(None)` when the declared level is not a
+/// level name.
+fn requested_level(
+    request: &serde_json::Map<String, serde_json::Value>,
+) -> Option<Option<Level>> {
+    let value = request.get("requested_verification_level")?;
+    Some(value.as_str().and_then(|name| {
+        LEVELS.into_iter().find(|level| level_name(*level) == name)
+    }))
+}
+
 fn verification_json(
     request_id: RequestId,
-    status: &VerificationStatus,
+    status: Option<&VerificationStatus>,
+    requested: Option<Option<Level>>,
 ) -> Result<serde_json::Value, Rejection> {
+    let Some(status) = status else {
+        return match requested {
+            None => Ok(serde_json::json!({
+                "state": "achieved",
+                "level": level_name(Level::Unverified),
+            })),
+            Some(Some(requested)) if requested > Level::Unverified => Ok(serde_json::json!({
+                "state": "unverified",
+                "requested": level_name(requested),
+                "achieved": level_name(Level::Unverified),
+                "reason": "owner_payload_carries_no_level",
+            })),
+            Some(_) => Err(Rejection::new(
+                ErrorClass::VerificationFailure,
+                request_id,
+                "verification.inconsistent",
+            )),
+        };
+    };
     match status {
         VerificationStatus::Achieved(level) => Ok(serde_json::json!({
             "state": "achieved",
@@ -411,8 +451,10 @@ fn rejected(rejection: &Rejection) -> AgentRpcResponse {
 pub fn success_body(
     request_id: RequestId,
     dispatched: &Dispatched,
+    requested: Option<Option<Level>>,
 ) -> Result<AgentRpcResponse, Rejection> {
-    let verification_status = verification_json(request_id, &dispatched.verification)?;
+    let verification_status =
+        verification_json(request_id, dispatched.verification.as_ref(), requested)?;
     Ok(AgentRpcResponse {
         status: 200,
         body: serde_json::json!({
@@ -458,8 +500,12 @@ fn authorized<A: HumanAuthorityBoundary>(
     Ok((permit, core_sequence))
 }
 
-fn respond(request_id: RequestId, result: Result<Dispatched, Rejection>) -> AgentRpcResponse {
-    match result.and_then(|dispatched| success_body(request_id, &dispatched)) {
+fn respond(
+    request_id: RequestId,
+    requested: Option<Option<Level>>,
+    result: Result<Dispatched, Rejection>,
+) -> AgentRpcResponse {
+    match result.and_then(|dispatched| success_body(request_id, &dispatched, requested)) {
         Ok(response) => response,
         Err(rejection) => rejected(&rejection),
     }
@@ -541,7 +587,7 @@ pub fn handle_rpc<A: HumanAuthorityBoundary>(
     let journey = matches!(envelope.operation, Operation::Prepare | Operation::Submit);
     let Some(key) = envelope.idempotency_key.filter(|_| !journey) else {
         let result = dispatch_operation(owner, &permit, envelope.operation, &envelope.request, &context);
-        let response = respond(request_id, result);
+        let response = respond(request_id, requested_level(&envelope.request), result);
         drop(permit);
         return response;
     };
@@ -567,7 +613,9 @@ pub fn handle_rpc<A: HumanAuthorityBoundary>(
             return Err(String::from("outcome.unknown"));
         }
         let result = dispatch_operation(owner, &permit, envelope.operation, &envelope.request, &context)
-            .and_then(|dispatched| success_body(request_id, &dispatched));
+            .and_then(|dispatched| {
+                success_body(request_id, &dispatched, requested_level(&envelope.request))
+            });
         let response = match result {
             Ok(response) => response,
             Err(rejection) if is_fault(rejection.class) => {

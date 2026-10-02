@@ -11,8 +11,11 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
 use crate::agent_rpc::Rejection;
-use crate::human::{HumanOperationError, HumanOperations, HumanPeer, HumanResponse};
-use crate::human_runtime::{HumanAuthorityBoundary, SharedAgentOwner};
+use crate::human::{
+    HumanOperationError, HumanOperations, HumanPeer, HumanPrepare, HumanResponse, HumanSubmit,
+    MutationEnvelope,
+};
+use crate::human_runtime::{prepare_digest, submit_digest, HumanAuthorityBoundary, SharedAgentOwner};
 use crate::session_control::OperationPermit;
 use crate::tenant::Operation;
 
@@ -80,6 +83,22 @@ fn hex32(text: &str, request_id: RequestId) -> Result<[u8; 32], Rejection> {
     Ok(out)
 }
 
+fn hex_bytes(text: &str, request_id: RequestId) -> Result<Vec<u8>, Rejection> {
+    let bytes = text.as_bytes();
+    if bytes.len() % 2 != 0 || !bytes.iter().all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'f')) {
+        return Err(malformed(request_id));
+    }
+    bytes
+        .chunks_exact(2)
+        .map(|pair| {
+            std::str::from_utf8(pair)
+                .ok()
+                .and_then(|text| u8::from_str_radix(text, 16).ok())
+                .ok_or_else(|| malformed(request_id))
+        })
+        .collect()
+}
+
 fn lower_hex(bytes: &[u8]) -> String {
     const DIGITS: &[u8; 16] = b"0123456789abcdef";
     let mut out = String::with_capacity(bytes.len() * 2);
@@ -104,6 +123,16 @@ fn decode<T: for<'de> Deserialize<'de>>(
         } else {
             malformed(request_id)
         }
+    })
+}
+
+fn mutation_key(ctx: &DispatchContext) -> Result<[u8; 32], Rejection> {
+    ctx.idempotency_key.ok_or_else(|| {
+        rejection(
+            ErrorClass::IdempotencyConflict,
+            ctx.request_id,
+            "envelope.idempotency_key",
+        )
     })
 }
 
@@ -337,6 +366,126 @@ fn decode_tracked(reader: &mut Reader<'_>) -> Option<(Value, Option<Level>)> {
     Some((Value::Object(out), Some(achieved)))
 }
 
+fn decode_observation(reader: &mut Reader<'_>) -> Option<(Value, Option<Level>)> {
+    let activity_id = reader.fixed::<32>()?;
+    if activity_id == [0; 32] {
+        return None;
+    }
+    let (submission, achieved) = decode_tracked(reader)?;
+    let executed = submission.get("state") == Some(&Value::String("Executed".into()));
+    let receipt = match reader.u8()? {
+        0 => None,
+        1 => Some(decode_receipt(reader)?.0),
+        _ => return None,
+    };
+    if executed != receipt.is_some() {
+        return None;
+    }
+    let mut out = Map::new();
+    out.insert("activity_id".into(), hexv(&activity_id));
+    out.insert("submission".into(), submission);
+    out.insert("receipt".into(), receipt.unwrap_or(Value::Null));
+    Some((Value::Object(out), achieved))
+}
+
+fn decode_receipt(reader: &mut Reader<'_>) -> Option<(Value, Option<Level>)> {
+    let mut out = Map::new();
+    out.insert("canonical_bytes".into(), hexv(reader.bytes()?));
+    let mut batch = Map::new();
+    for name in [
+        "batch_id",
+        "asset",
+        "previous_state_root",
+        "resulting_state_root",
+        "sequencer_public_key",
+    ] {
+        batch.insert(name.into(), hexv(&reader.fixed::<32>()?));
+    }
+    out.insert("authorised_batch".into(), Value::Object(batch));
+    let achieved = match reader.u8()? {
+        0 => return None,
+        value => level(value)?,
+    };
+    out.insert("verification_level".into(), Value::String(level_name(achieved).into()));
+    Some((Value::Object(out), Some(achieved)))
+}
+
+fn decode_receipt_lookup(reader: &mut Reader<'_>) -> Option<(Value, Option<Level>)> {
+    match reader.u8()? {
+        0 => {
+            let mut out = Map::new();
+            out.insert("found".into(), Value::Bool(false));
+            Some((Value::Object(out), None))
+        }
+        1 => {
+            let (receipt, achieved) = decode_receipt(reader)?;
+            let mut out = Map::new();
+            out.insert("found".into(), Value::Bool(true));
+            out.insert("receipt".into(), receipt);
+            Some((Value::Object(out), achieved))
+        }
+        _ => None,
+    }
+}
+
+/// Mirrors the client prepare reader. The client additionally re-binds the disclosure against
+/// its activity registry; that registry check is not repeated here.
+fn decode_preparation(reader: &mut Reader<'_>) -> Option<(Value, Option<Level>)> {
+    let mut out = Map::new();
+    out.insert("preparation_ref".into(), Value::String(reader.text()?));
+    out.insert("unsigned_canonical_bytes".into(), hexv(reader.bytes()?));
+    out.insert("signing_preimage".into(), hexv(reader.bytes()?));
+    out.insert("activity_type".into(), dec(reader.u32()?));
+    out.insert("actor".into(), Value::String(reader.text()?));
+    out.insert("authority".into(), Value::String(reader.text()?));
+    out.insert("account_sequence".into(), dec(reader.u64()?));
+    out.insert("not_before".into(), dec(reader.u64()?));
+    out.insert("not_after".into(), dec(reader.u64()?));
+    out.insert("fee_limit".into(), dec(reader.u128()?));
+    out.insert("payload".into(), hexv(reader.bytes()?));
+    out.insert("payload_hash".into(), hexv(&reader.fixed::<32>()?));
+    out.insert("idempotency_key".into(), hexv(&reader.fixed::<32>()?));
+    Some((Value::Object(out), None))
+}
+
+fn decode_decision(reader: &mut Reader<'_>) -> Option<(Value, Option<Level>)> {
+    let outcome = reader.u8()?;
+    let submission_ref = match reader.u8()? {
+        0 => None,
+        1 => Some(reader.fixed::<32>()?),
+        _ => return None,
+    };
+    let winning = match reader.u8()? {
+        0 => None,
+        1 => Some(reader.u8()?),
+        _ => return None,
+    };
+    let already = matches!(outcome, 4 | 5);
+    let effective = if already { winning? } else { outcome };
+    let status = match effective {
+        0 => "Approved",
+        1 => "Rejected",
+        2 => "Expired",
+        3 => "Defective",
+        _ => return None,
+    };
+    let mut out = Map::new();
+    out.insert("status".into(), Value::String(status.into()));
+    out.insert(
+        "submission_ref".into(),
+        if effective == 0 {
+            submission_ref.map_or(Value::Null, |reference| hexv(&reference))
+        } else {
+            Value::Null
+        },
+    );
+    out.insert(
+        "resolution".into(),
+        Value::String(if already { "AlreadyDecided" } else { "Applied" }.into()),
+    );
+    Some((Value::Object(out), None))
+}
+
 fn decode_approval(reader: &mut Reader<'_>) -> Option<Value> {
     let mut out = Map::new();
     out.insert("approval_id".into(), hexv(&reader.fixed::<32>()?));
@@ -487,6 +636,94 @@ struct ApprovalGetRequest {
     current_sequence: String,
 }
 
+#[derive(Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct ActivityLookupRequest {
+    #[serde(default, skip_serializing)]
+    tenant: Option<String>,
+    #[serde(default, skip_serializing)]
+    agent: Option<String>,
+    idempotency_key: String,
+    expected_activity_id: String,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct ApprovalDecisionRequest {
+    #[serde(default, skip_serializing)]
+    tenant: Option<String>,
+    #[serde(default, skip_serializing)]
+    agent: Option<String>,
+    approval_id: String,
+    held_digest: String,
+    current_sequence: String,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct PrepareRequest {
+    #[serde(default)]
+    tenant: Option<String>,
+    #[serde(default)]
+    agent: Option<String>,
+    activity_type: String,
+    actor: String,
+    authority: String,
+    account_sequence: String,
+    not_before: String,
+    not_after: String,
+    idempotency_key: String,
+    fee_limit: String,
+    payload: String,
+    payload_hash: String,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SubmitRequest {
+    #[serde(default)]
+    tenant: Option<String>,
+    #[serde(default)]
+    agent: Option<String>,
+    preparation_ref: String,
+    signature: String,
+    signer_public_key: String,
+    approval_release_ref: Option<String>,
+}
+
+fn human_prepare(
+    request: PrepareRequest,
+    request_id: RequestId,
+) -> Result<HumanPrepare, Rejection> {
+    let _ = (request.tenant, request.agent);
+    Ok(HumanPrepare {
+        activity_type: u32::try_from(decimal_u64(&request.activity_type, request_id)?)
+            .map_err(|_| noncanonical(request_id))?,
+        actor: request.actor,
+        authority: request.authority,
+        account_sequence: decimal_u64(&request.account_sequence, request_id)?,
+        not_before: decimal_u64(&request.not_before, request_id)?,
+        not_after: decimal_u64(&request.not_after, request_id)?,
+        idempotency_key: request.idempotency_key,
+        fee_limit: decimal_u128(&request.fee_limit, request_id)?,
+        payload: hex_bytes(&request.payload, request_id)?,
+        payload_hash: hex32(&request.payload_hash, request_id)?,
+    })
+}
+
+fn human_submit(request: SubmitRequest, request_id: RequestId) -> Result<HumanSubmit, Rejection> {
+    let _ = (request.tenant, request.agent);
+    Ok(HumanSubmit {
+        preparation_ref: request.preparation_ref,
+        signature: hex_bytes(&request.signature, request_id)?,
+        signer_public_key: hex32(&request.signer_public_key, request_id)?,
+        approval_release_ref: request
+            .approval_release_ref
+            .map(|text| hex32(&text, request_id))
+            .transpose()?,
+    })
+}
+
 fn named<T: Serialize>(
     operation: Operation,
     typed: &T,
@@ -500,7 +737,8 @@ fn named<T: Serialize>(
 
 /// Canonical bytes of the strictly decoded owner typed request, used by `agent_rpc` as the
 /// `idempotency::Store::execute` request bytes (the store applies the `LXP/agent/request/v1`
-/// domain). Every matched operation uses the operation name,
+/// domain). Prepare and submit use the owner's own journey digest, so the existing Human
+/// prepare and submit digests are unchanged. Every other matched operation uses the operation name,
 /// one NUL byte and the fixed-order JSON of the typed request after canonical validation
 /// (coordinate fields excluded). Decoding rejects non-canonical decimals and non-lowercase hex,
 /// so two requests with the same meaning always produce the same bytes. `None` for an
@@ -528,6 +766,14 @@ pub(crate) fn canonical_request_bytes(
         Operation::ApprovalGet => {
             named(operation, &decode::<ApprovalGetRequest>(request, id)?, id)?
         }
+        Operation::ProgramReceipt => {
+            named(operation, &decode::<ActivityLookupRequest>(request, id)?, id)?
+        }
+        Operation::ApprovalApprove | Operation::ApprovalReject => {
+            named(operation, &decode::<ApprovalDecisionRequest>(request, id)?, id)?
+        }
+        Operation::Prepare => prepare_digest(&human_prepare(decode(request, id)?, id)?).to_vec(),
+        Operation::Submit => submit_digest(&human_submit(decode(request, id)?, id)?).to_vec(),
         _ => return Ok(None),
     }))
 }
@@ -572,7 +818,7 @@ pub(crate) fn dispatch_operation<A: HumanAuthorityBoundary>(
         Operation::Track => {
             let request: TrackRequest = decode(request, id)?;
             let _ = (request.tenant, request.agent);
-            dispatched(id, owner.track(peer, &request.submission_ref), decode_tracked)
+            dispatched(id, owner.track(peer, &request.submission_ref), decode_observation)
         }
         Operation::ApprovalList => {
             let request: ApprovalListRequest = decode(request, id)?;
@@ -597,6 +843,51 @@ pub(crate) fn dispatch_operation<A: HumanAuthorityBoundary>(
                 owner.approval_get(peer, approval_id, current_sequence),
                 decode_approval_get,
             )
+        }
+        Operation::ProgramReceipt => {
+            let request: ActivityLookupRequest = decode(request, id)?;
+            let _ = (request.tenant, request.agent);
+            let key = hex32(&request.idempotency_key, id)?;
+            let activity = hex32(&request.expected_activity_id, id)?;
+            dispatched(
+                id,
+                owner.receipt_by_idempotency_key(peer, key, activity),
+                decode_receipt_lookup,
+            )
+        }
+        Operation::ApprovalApprove | Operation::ApprovalReject => {
+            let request: ApprovalDecisionRequest = decode(request, id)?;
+            let _ = (request.tenant, request.agent);
+            let approval_id = hex32(&request.approval_id, id)?;
+            let held_digest = hex32(&request.held_digest, id)?;
+            let current_sequence = decimal_u64(&request.current_sequence, id)?;
+            let key = lower_hex(&mutation_key(ctx)?);
+            let response = if operation == Operation::ApprovalApprove {
+                owner.approval_approve(peer, approval_id, held_digest, &key, current_sequence)
+            } else {
+                owner.approval_reject(peer, approval_id, held_digest, &key, current_sequence)
+            };
+            dispatched(id, response, decode_decision)
+        }
+        Operation::Prepare => {
+            let typed = human_prepare(decode(request, id)?, id)?;
+            let envelope = MutationEnvelope {
+                request_id: id.0,
+                key: mutation_key(ctx)?,
+                body_digest: prepare_digest(&typed),
+                operation: typed,
+            };
+            dispatched(id, owner.prepare(peer, envelope), decode_preparation)
+        }
+        Operation::Submit => {
+            let typed = human_submit(decode(request, id)?, id)?;
+            let envelope = MutationEnvelope {
+                request_id: id.0,
+                key: mutation_key(ctx)?,
+                body_digest: submit_digest(&typed),
+                operation: typed,
+            };
+            dispatched(id, owner.submit_external(peer, envelope), decode_observation)
         }
     }
 }

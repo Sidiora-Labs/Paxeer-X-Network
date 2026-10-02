@@ -895,7 +895,6 @@ pub struct UnifiedAgentOwner<A> {
 /// single authority.
 pub struct SharedAgentOwner<A> {
     owner: Arc<Mutex<UnifiedAgentOwner<A>>>,
-    peers: Arc<BTreeMap<u32, (String, String)>>,
     idempotency: Option<Arc<RpcIdempotency>>,
 }
 
@@ -911,19 +910,17 @@ impl<A> Clone for SharedAgentOwner<A> {
     fn clone(&self) -> Self {
         Self {
             owner: Arc::clone(&self.owner),
-            peers: Arc::clone(&self.peers),
             idempotency: self.idempotency.clone(),
         }
     }
 }
 
 impl<A: HumanAuthorityBoundary> SharedAgentOwner<A> {
-    /// Shares one owner together with the configured Human peer table it was built from.
+    /// Shares one owner between the Human Unix listener and the agent RPC listener.
     #[must_use]
-    pub fn new(owner: UnifiedAgentOwner<A>, peers: &BTreeMap<u32, (String, String)>) -> Self {
+    pub fn new(owner: UnifiedAgentOwner<A>) -> Self {
         Self {
             owner: Arc::new(Mutex::new(owner)),
-            peers: Arc::new(peers.clone()),
             idempotency: None,
         }
     }
@@ -1007,28 +1004,19 @@ impl<A: HumanAuthorityBoundary> SharedAgentOwner<A> {
         Ok(operations.node.head().chain_sequence)
     }
 
-    /// Maps an authenticated agent principal to its configured Human peer.
+    /// Maps a session-authenticated agent principal to a Human peer.
+    ///
+    /// A Human peer carries Unix-authenticated uid semantics and verified subject bindings;
+    /// no session-authorized adapter over the retained subject bindings exists yet, so every
+    /// principal is refused rather than admitted without a subject-owner check.
     ///
     /// # Errors
-    /// Returns `HumanOperationError::Refused` when no configured peer carries exactly this
-    /// tenant and agent.
+    /// Always returns `HumanOperationError::Refused`.
     pub(crate) fn rpc_peer(
         &self,
-        principal: &crate::tenant::ResolvedPrincipal,
+        _principal: &crate::tenant::ResolvedPrincipal,
     ) -> Result<HumanPeer, HumanOperationError> {
-        self.peers
-            .iter()
-            .find(|(_, (agent, tenant))| {
-                tenant.as_str() == principal.tenant.as_str()
-                    && agent.as_bytes() == principal.agent.as_bytes()
-            })
-            .map(|(uid, (agent, tenant))| HumanPeer {
-                subject: None,
-                uid: *uid,
-                principal: agent.clone(),
-                tenant: tenant.clone(),
-            })
-            .ok_or(HumanOperationError::Refused)
+        Err(HumanOperationError::Refused)
     }
 }
 
