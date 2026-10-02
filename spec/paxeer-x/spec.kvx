@@ -24016,7 +24016,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.104.32.1]
 title = "Cache validated and compiled modules by code hash"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 2
 requires = ["0.2"]

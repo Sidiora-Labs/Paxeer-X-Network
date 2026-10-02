@@ -414,6 +414,9 @@ pub struct ModuleCache {
     limits: Option<ModuleCacheLimits>,
     entries: BTreeMap<ModuleCacheKey, Arc<CompiledModule>>,
     accounted_bytes: u64,
+    observations: [u64; 5],
+    observed_hash: Option<CodeHash>,
+    selected_observations: [u64; 3],
 }
 
 impl ModuleCache {
@@ -423,6 +426,9 @@ impl ModuleCache {
             limits: Some(limits),
             entries: BTreeMap::new(),
             accounted_bytes: 0,
+            observations: [0; 5],
+            observed_hash: None,
+            selected_observations: [0; 3],
         }
     }
 
@@ -440,6 +446,9 @@ impl ModuleCache {
             limits: None,
             entries: BTreeMap::new(),
             accounted_bytes: 0,
+            observations: [0; 5],
+            observed_hash: None,
+            selected_observations: [0; 3],
         }
     }
 
@@ -488,10 +497,19 @@ impl ModuleCache {
         wasm: &[u8],
     ) -> Result<Arc<CompiledModule>, CompiledModuleRefusal> {
         let expected_revision = key.verify_wasm(wasm)?;
+        let selected = self.observed_hash == Some(key.code_hash);
         if let Some(cached) = self.entries.get(&key) {
             if cached.validation_limits == engine.limits() {
+                self.observations[0] = self.observations[0].saturating_add(1);
+                if selected {
+                    self.selected_observations[0] = self.selected_observations[0].saturating_add(1);
+                }
                 return Ok(Arc::clone(cached));
             }
+        }
+        self.observations[1] = self.observations[1].saturating_add(1);
+        if selected {
+            self.selected_observations[1] = self.selected_observations[1].saturating_add(1);
         }
         let compiled = Arc::new(CompiledModule::compile_verified(
             engine,
@@ -499,6 +517,10 @@ impl ModuleCache {
             wasm,
             expected_revision,
         )?);
+        self.observations[2] = self.observations[2].saturating_add(1);
+        if selected {
+            self.selected_observations[2] = self.selected_observations[2].saturating_add(1);
+        }
         self.admit(Arc::clone(&compiled));
         Ok(compiled)
     }
@@ -520,6 +542,7 @@ impl ModuleCache {
     }
 
     pub fn clear(&mut self) {
+        self.observations[4] = self.observations[4].saturating_add(self.entries.len() as u64);
         self.entries.clear();
         self.accounted_bytes = 0;
     }
@@ -528,6 +551,7 @@ impl ModuleCache {
         let Some(limits) = self.limits else {
             return;
         };
+        let previous: Vec<_> = self.entries.keys().copied().collect();
         self.entries.insert(compiled.key, compiled);
 
         let mut retained = BTreeMap::new();
@@ -549,6 +573,11 @@ impl ModuleCache {
             retained.insert(key, artifact);
             retained_bytes = next_bytes;
         }
+        let evicted = previous
+            .iter()
+            .filter(|key| !retained.contains_key(key))
+            .count();
+        self.observations[3] = self.observations[3].saturating_add(evicted as u64);
         self.entries = retained;
         self.accounted_bytes = retained_bytes;
     }
@@ -565,7 +594,9 @@ impl ModuleCache {
             }
         });
         self.accounted_bytes -= removed_bytes;
-        before - self.entries.len()
+        let removed = before - self.entries.len();
+        self.observations[4] = self.observations[4].saturating_add(removed as u64);
+        removed
     }
 }
 
@@ -717,6 +748,84 @@ pub(crate) fn initialized_runtime_artifacts(
         Some(Err(refusal)) => Err(RuntimeArtifactOwnerRefusal::Initialization(refusal.clone())),
         None => Ok(None),
     }
+}
+
+#[cfg(feature = "host-ffi")]
+#[allow(unsafe_code)]
+#[no_mangle]
+pub extern "C" fn layerx_programs_cache_configure(max_entries: u64, max_bytes: u64) -> i32 {
+    let replacement = match (max_entries, max_bytes) {
+        (0, 0) => ModuleCache::disabled(),
+        (entries, bytes)
+            if entries <= DEFAULT_MAX_CACHED_MODULES as u64
+                && bytes <= DEFAULT_MAX_CACHED_MODULE_BYTES =>
+        {
+            let Ok(entries) = usize::try_from(entries) else {
+                return -1;
+            };
+            let Ok(limits) = ModuleCacheLimits::new(entries, bytes) else {
+                return -1;
+            };
+            ModuleCache::new(limits)
+        }
+        _ => return -1,
+    };
+    let Ok(owner) = runtime_artifacts() else {
+        return -1;
+    };
+    let Ok(mut cache) = owner.cache.lock() else {
+        return -1;
+    };
+    *cache = replacement;
+    0
+}
+
+#[cfg(feature = "host-ffi")]
+#[allow(unsafe_code)]
+#[no_mangle]
+pub extern "C" fn layerx_programs_cache_observe(field: u32) -> u64 {
+    let Ok(owner) = runtime_artifacts() else {
+        return u64::MAX;
+    };
+    let Ok(cache) = owner.cache.lock() else {
+        return u64::MAX;
+    };
+    match field {
+        0..=4 => cache.observations[field as usize],
+        5 => cache.entries.len() as u64,
+        6 => cache.accounted_bytes,
+        8..=10 => cache.selected_observations[(field - 8) as usize],
+        11 => cache
+            .entries
+            .keys()
+            .filter(|key| Some(key.code_hash) == cache.observed_hash)
+            .count() as u64,
+        _ => u64::MAX,
+    }
+}
+
+#[cfg(feature = "host-ffi")]
+#[allow(unsafe_code)]
+#[no_mangle]
+pub extern "C" fn layerx_programs_cache_select_observation(
+    h0: u64,
+    h1: u64,
+    h2: u64,
+    h3: u64,
+) -> i32 {
+    let Ok(owner) = runtime_artifacts() else {
+        return -1;
+    };
+    let Ok(mut cache) = owner.cache.lock() else {
+        return -1;
+    };
+    let mut hash = [0; 32];
+    for (chunk, word) in hash.chunks_exact_mut(8).zip([h0, h1, h2, h3]) {
+        chunk.copy_from_slice(&word.to_be_bytes());
+    }
+    cache.observed_hash = Some(hash);
+    cache.selected_observations = [0; 3];
+    0
 }
 
 #[cfg(test)]
