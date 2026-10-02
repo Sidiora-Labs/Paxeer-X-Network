@@ -408,7 +408,7 @@ impl CapabilitySet {
             if matches!(
                 request,
                 Capability::ProgramSpend { owner_program, .. }
-                    if Some(*owner_program) == originating_program
+                    if Some(*owner_program) == originating_program && !self.has_program_spend()
             ) {
                 continue;
             }
@@ -535,7 +535,7 @@ impl CapabilitySet {
             if matches!(
                 request,
                 Capability::ProgramSpend { owner_program, .. }
-                    if Some(*owner_program) == originating_program
+                    if Some(*owner_program) == originating_program && !self.has_program_spend()
             ) {
                 return true;
             }
@@ -1003,4 +1003,70 @@ mod tests {
         assert!(effects.calls.is_empty());
         assert!(effects.transfers.is_empty());
     }
+
+    #[test]
+    fn owner_origin_cannot_replace_an_inherited_program_spend_limit() {
+        let owner = program(40);
+        let seed = b"owner/inherited";
+        let asset = [41; 32];
+        let to = [42; 32];
+        let parent = CapabilitySet::new([program_spend(owner, seed, asset, to, 100)])
+            .unwrap_or_else(|error| panic!("parent: {error}"));
+        for requested in [
+            program_spend(owner, seed, asset, to, 101),
+            program_spend(owner, seed, [43; 32], to, 100),
+            program_spend(owner, seed, asset, [44; 32], 100),
+            program_spend(owner, b"owner/other", asset, to, 100),
+        ] {
+            let encoded = CapabilitySet::new([requested.clone()])
+                .unwrap_or_else(|error| panic!("requested: {error}"));
+            assert_eq!(
+                parent.narrow_for_program_edge(owner, [requested]),
+                Err(AbiError::CapabilityEscalation)
+            );
+            assert!(!parent.contains_narrowed_for_program_edge(owner, &encoded));
+        }
+        for maximum in [1, 99, 100] {
+            let narrowed = parent
+                .narrow_for_program_edge(owner, [program_spend(owner, seed, asset, to, maximum)])
+                .unwrap_or_else(|error| panic!("downward: {error}"));
+            assert!(parent.contains_narrowed_for_program_edge(owner, &narrowed));
+        }
+        let originated = CapabilitySet::empty()
+            .narrow_for_program_edge(owner, [program_spend(owner, seed, asset, to, 100)])
+            .unwrap_or_else(|error| panic!("original owner authority: {error}"));
+        assert!(CapabilitySet::empty().contains_narrowed_for_program_edge(owner, &originated));
+    }
+
+    #[test]
+    fn owner_escalation_never_stages_an_edge_or_transfer() {
+        let owner = program(50);
+        let child = program(51);
+        let actor = principal(52);
+        let seed = b"owner/atomic";
+        let asset = [53; 32];
+        let to = [54; 32];
+        let grants = CapabilitySet::new([
+            Capability::Call { program: child },
+            program_spend(owner, seed, asset, to, 100),
+        ]).unwrap_or_else(|error| panic!("grants: {error}"));
+        let mut root = Abi::new(
+            ABI_VERSION, owner, AuthorizationContext::new(actor, grants),
+            Storage::new(), &super::super::UnavailableReceiptOracle,
+        ).unwrap_or_else(|error| panic!("root: {error}"));
+        let frame = CallFrameId::root().child(1)
+            .unwrap_or_else(|error| panic!("frame: {error}"));
+        for requested in [
+            program_spend(owner, seed, asset, to, 101),
+            program_spend(owner, seed, [55; 32], to, 100),
+            program_spend(owner, seed, asset, [56; 32], 100),
+        ] {
+            assert_eq!(root.stage_call(child, b"", vec![requested], frame),
+                Err(AbiError::CapabilityEscalation));
+        }
+        let effects = root.commit().effects;
+        assert!(effects.calls.is_empty());
+        assert!(effects.transfers.is_empty());
+    }
+
 }
