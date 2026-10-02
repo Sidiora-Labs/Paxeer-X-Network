@@ -2,7 +2,7 @@ use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine as _;
 use layerx_human_identity_provider::{AssertionConfig, AssertionVerifier, Policy, Server, State};
 use layerx_human_service::server::production_auth::{
-    authorize_bearer_execution, AuthDiscoveryIndex, AuthorizationDisclosure, IndexAuthenticationKey,
+    authorize_bearer_execution, consume_context, AuthDiscoveryIndex, AuthorizationDisclosure, IndexAuthenticationKey,
 };
 use layerx_human_service::server::schema::ApiSchema;
 use layerx_human_service::server::{
@@ -568,11 +568,68 @@ fn assertion_subject_resolves_one_durable_wallet_principal_and_tenant_across_res
     assert_eq!(capability.principal(), &alice.principal);
     assert_eq!(capability.tenant().as_str(), binding.agent_tenant());
     assert_eq!(capability.operation(), "intent.plan");
-    let context = capability
-        .into_context()
+    let mut context = capability
+        .into_bearer_context(&alice_token, WALLET_DID)
         .map_err(|_| "capability context refused")?;
     assert_eq!(context.principal, alice.principal);
     assert_eq!(context.tenant.as_str(), binding.agent_tenant());
+    assert_eq!(context.assertion(), Some(alice_token.as_str()));
+    let changed_body = json!({"amount": "2"});
+    assert!(consume_context(&index, &context, AuthorizationDisclosure {
+        body: &changed_body,
+        ..disclosure()
+    }, now).is_err());
+    assert!(consume_context(&index, &context, AuthorizationDisclosure {
+        destination: "/v1/intents/other",
+        ..disclosure()
+    }, now).is_err());
+    let changed_operation = schema.operation("intent.submit").ok_or("intent.submit missing")?;
+    assert!(consume_context(&index, &context, AuthorizationDisclosure {
+        operation: changed_operation,
+        ..disclosure()
+    }, now).is_err());
+    context.principal = bob.principal.clone();
+    assert!(consume_context(&index, &context, disclosure(), now).is_err());
+    context.principal = alice.principal.clone();
+    context.tenant = AgentTenantId::new("other-tenant")?;
+    assert!(consume_context(&index, &context, disclosure(), now).is_err());
+    context.tenant = AgentTenantId::new(binding.agent_tenant())?;
+    let session = context.session_id.clone();
+    context.session_id = layerx_human_service::server::production_auth::bearer_session_id(&bob_token);
+    assert!(consume_context(&index, &context, disclosure(), now).is_err());
+    context.session_id = session;
+    assert!(consume_context(&index, &context, disclosure(), now + 31).is_err());
+    drop(index);
+    let index = AuthDiscoveryIndex::open(
+        root.join("auth-index"),
+        IndexAuthenticationKey::new([0x5a; 32]).map_err(|_| "index key refused")?,
+    ).map_err(|_| "index reopen refused")?;
+    consume_context(&index, &context, disclosure(), now)
+        .map_err(|_| "persisted capability refused")?;
+    assert!(consume_context(&index, &context, disclosure(), now).is_err());
+    let unsigned_context = authorize_bearer_execution(
+        &mut store, &index, &alice.principal, &alice_token, disclosure(), now, 30,
+    ).map_err(|_| "bearer capability refused")?
+        .into_context().map_err(|_| "capability context refused")?;
+    assert!(consume_context(&index, &unsigned_context, disclosure(), now).is_err());
+    let replaced_assertion = authorize_bearer_execution(
+        &mut store, &index, &alice.principal, &alice_token, disclosure(), now, 30,
+    ).map_err(|_| "bearer capability refused")?;
+    assert!(replaced_assertion.into_bearer_context(&bob_token, OTHER_DID).is_err());
+    let carol_did = String::from_utf8(client.lookup(carol.as_str())?.did().as_bytes().to_vec())?;
+    assert!(refused(identity.resolve_assertion_with_binding(
+        &supabase.assertion("supabase-user-e", now),
+        Some(&producer.binding("supabase-user-e", &carol_did, TENANT)),
+    )));
+    let mut wrong_gid = Config {
+        socket: root.join("binding.sock"), tenant: TENANT.into(),
+        peer_uid: rustix::process::geteuid().as_raw(), peer_gid: egid.wrapping_add(1),
+        deadline: Duration::from_secs(1),
+    };
+    assert!(Client::new(wrong_gid.clone(), layerx_client::runtime_clock::RuntimeClock::from_environment()?)?
+        .lookup(alice.principal.as_str()).is_err());
+    wrong_gid.peer_uid = wrong_gid.peer_uid.wrapping_add(1);
+    assert!(Client::new(wrong_gid, layerx_client::runtime_clock::RuntimeClock::from_environment()?).is_err());
     let dave = identity.resolve_assertion(&supabase.assertion("supabase-user-d", now))?;
     assert!(dave.binding_pending());
     assert!(authorize_bearer_execution(
@@ -617,6 +674,80 @@ fn assertion_subject_resolves_one_durable_wallet_principal_and_tenant_across_res
         binding.agent_tenant()
     );
     assert!(store.principal(&dave.principal).is_err());
+    running.stop()?;
+    Ok(())
+}
+
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct AttestorAdmissionFixture {
+    nodes: Vec<(String, SocketAddr)>,
+    root_certificate: String,
+    client_certificate: String,
+    client_private_key: String,
+    jwks_url: String,
+    assertion: String,
+    subject: String,
+}
+
+#[test]
+fn assertion_capability_reaches_existing_attestor_admission() -> Result {
+    use layerx_human_service::server::production_components::{AttestorCustodyConfig, AttestorKms};
+    let path = std::env::var("PAXEER_X_IDENTITY_ATTESTOR_FIXTURE")
+        .map_err(|_| "missing isolated attestor admission fixture")?;
+    let fixture: AttestorAdmissionFixture = serde_json::from_slice(&fs::read(path)?)?;
+    if fixture.nodes.len() < 3 || fixture.nodes.iter().any(|(_, address)| !address.ip().is_loopback()) {
+        return Err("attestor admission requires an isolated local quorum".into());
+    }
+    let config = AttestorCustodyConfig::new(
+        fixture.nodes.clone(), fixture.nodes.iter().map(|(id, _)| id.clone()).collect(),
+        fs::read(&fixture.root_certificate)?, fs::read(&fixture.client_certificate)?,
+        fs::read(&fixture.client_private_key)?, Duration::from_secs(5),
+    ).map_err(|_| "attestor configuration refused")?;
+    let kms = AttestorKms::connect(config).map_err(|_| "actual attestor quorum unavailable")?;
+    let directory = tempfile::Builder::new()
+        .permissions(fs::Permissions::from_mode(0o700)).tempdir()?;
+    let root = directory.path();
+    let producer = Signer::generate()?;
+    let verifier = AssertionVerifier::new(AssertionConfig {
+        jwks_url: fixture.jwks_url,
+        issuer: ISSUER.to_owned(), audience: AUDIENCE.to_owned(),
+        clock_skew_seconds: 30, refresh_interval_seconds: 300,
+    })?.with_binding_producer_key(&producer.sec1_hex())?;
+    let running = Running::start_with(root, Some(verifier))?;
+    let identity = identity(root, rustix::process::getegid().as_raw())?;
+    let account = identity.resolve_assertion_with_binding(
+        &fixture.assertion, Some(&producer.binding(&fixture.subject, WALLET_DID, TENANT)),
+    )?;
+    let store_root = root.join("store");
+    let digest = TenancyMap::new([])?.install(&store_root)?;
+    let mut store = open(&store_root, digest, client(root)?)?;
+    let index = AuthDiscoveryIndex::open(
+        root.join("auth-index"), IndexAuthenticationKey::new([0x6b; 32])
+            .map_err(|_| "index key refused")?,
+    ).map_err(|_| "index refused")?;
+    let schema = ApiSchema::v1().map_err(|_| "schema refused")?;
+    let operation = schema.operation("intent.plan").ok_or("intent.plan missing")?;
+    let body = json!({"amount": "1"});
+    let parameters = BTreeMap::new();
+    let disclosure = AuthorizationDisclosure {
+        operation, destination: "/v1/intents/plan", path_parameters: &parameters,
+        body: &body, idempotency_key: None, trace: "trace-attestor-admission",
+    };
+    let now = authority_now()?;
+    let capability = authorize_bearer_execution(
+        &mut store, &index, &account.principal, &fixture.assertion, disclosure, now, 30,
+    ).map_err(|_| "bearer capability refused")?;
+    let mut context = capability.into_bearer_context(
+        &fixture.assertion, account.did.as_deref().ok_or("binding pending")?,
+    ).map_err(|_| "bearer context refused")?;
+    consume_context(&index, &context, disclosure, now)
+        .map_err(|_| "bearer capability consumption refused")?;
+    assert_eq!(context.assertion(), Some(fixture.assertion.as_str()));
+    kms.admit_context_assertion(&context).map_err(|_| "attestor admission refused")?;
+    assert!(kms.admit_assertion("different-subject", &fixture.assertion).is_err());
+    context.session_id = "different-session".to_owned();
+    assert!(kms.admit_context_assertion(&context).is_err());
     running.stop()?;
     Ok(())
 }

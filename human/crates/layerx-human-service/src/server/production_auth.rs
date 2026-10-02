@@ -404,6 +404,19 @@ impl ExecutionCapability {
     pub const fn expires_at(&self) -> u64 {
         self.expires_at
     }
+    pub fn into_bearer_context(
+        self,
+        assertion: &str,
+        did: &str,
+    ) -> Result<PrincipalContext, ApiFailure> {
+        if self.session.session_id != bearer_session_id(assertion) {
+            return Err(ApiFailure::forbidden());
+        }
+        self.into_context()?
+            .with_assertion(assertion.to_owned())?
+            .with_did(did.to_owned())
+    }
+
     /// # Errors
     ///
     /// Refuses inconsistent principal, tenant, session, or capability disclosure.
@@ -784,6 +797,11 @@ pub fn consume_context(
     d: AuthorizationDisclosure<'_>,
     now: u64,
 ) -> Result<(), ProductionAuthError> {
+    match context.assertion() {
+        Some(assertion) if context.session_id == bearer_session_id(assertion) => (),
+        None if !context.session_id.starts_with("bearer-") => (),
+        _ => return Err(ProductionAuthError::CapabilityRefused),
+    }
     let nonce_bytes = URL_SAFE_NO_PAD
         .decode(context.capability())
         .map_err(|_| ProductionAuthError::CapabilityRefused)?;

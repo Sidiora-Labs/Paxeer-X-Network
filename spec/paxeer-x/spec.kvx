@@ -21893,7 +21893,9 @@ fixture_policy = "Implement owned disposable fixtures using actual compiled serv
 
 [task.11.1]
 title = "Resolve verified Supabase subjects to durable wallet principals and tenant authority"
-status = "in_progress"
+status = "done"
+completion_basis = "implementation"
+qualification_status = "unverified"
 mode = "BUILD"
 wave = 2
 requires = ["0.2"]

@@ -761,10 +761,7 @@ impl HumanApiComponents for ProductionComponents {
         {
             return Err(ApiFailure::forbidden());
         }
-        capability
-            .into_context()?
-            .with_assertion(credentials.assertion.to_owned())?
-            .with_did(did)
+        capability.into_bearer_context(credentials.assertion, &did)
     }
 
     fn execute(&self, request: ScopedRequest<'_>) -> Result<BackendResponse, ApiFailure> {
@@ -795,6 +792,12 @@ impl HumanApiComponents for ProductionComponents {
             self.now()?,
         )
         .map_err(|error| auth_failure(&error))?;
+        if context.assertion().is_some() {
+            if let Some(attestor) = self.attestor_custody() {
+                attestor.admit_context_assertion(context)
+                    .map_err(|_| ApiFailure::forbidden())?;
+            }
+        }
         let principal = context.principal.clone();
         let session_id = context.session_id.clone();
         if request.operation.name == "onboarding.resume" {
@@ -6220,6 +6223,17 @@ impl AttestorKms {
         Ok(kms)
     }
 
+    pub fn admit_context_assertion(&self, context: &PrincipalContext) -> Result<(), CustodyError> {
+        let assertion = context.assertion()
+            .ok_or(CustodyError::Kms(KmsError::Authentication))?;
+        if context.session_id != super::production_auth::bearer_session_id(assertion) {
+            return Err(CustodyError::Kms(KmsError::Authentication));
+        }
+        let subject = assertion_subject(assertion)
+            .map_err(|_| CustodyError::Kms(KmsError::Authentication))?;
+        self.admit_assertion(&subject, assertion)
+    }
+
     /// Records the identity assertion that authorizes signing for `subject`.
     ///
     /// # Errors
@@ -6227,7 +6241,9 @@ impl AttestorKms {
     /// Refuses an invalid subject or an empty assertion as an authentication failure, and
     /// reports the KMS unavailable when the assertion store cannot be locked.
     pub fn admit_assertion(&self, subject: &str, assertion: &str) -> Result<(), CustodyError> {
-        if !attestor_owner_valid(subject) || assertion.is_empty() {
+        if !attestor_owner_valid(subject)
+            || assertion_subject(assertion).ok().as_deref() != Some(subject)
+        {
             return Err(CustodyError::Kms(KmsError::Authentication));
         }
         self.inner

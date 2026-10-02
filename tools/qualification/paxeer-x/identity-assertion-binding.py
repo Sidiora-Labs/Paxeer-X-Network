@@ -1,11 +1,16 @@
 #!/usr/bin/env python3
+import atexit
 import base64
+import hashlib
+import ssl
+import urllib.request
 import http.server
 import json
 import os
 from pathlib import Path
 import re
 import shutil
+import signal
 import socket
 import stat
 import struct
@@ -148,6 +153,20 @@ def login(path, token, binding=None):
     status, values = lxip(path, 4, fields)
     return status, [value.decode() for value in values]
 
+def stop_process(process):
+    if process.poll() is None:
+        process.terminate()
+        try:
+            process.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.wait(timeout=5)
+
+
+def terminate(signum, frame):
+    raise TimeoutError('qualification interrupted')
+
+
 class Provider:
     starts = 0
 
@@ -155,8 +174,10 @@ class Provider:
         Provider.starts += 1
         runtime = state / ('clock-%d' % Provider.starts)
         runtime.mkdir(mode=0o700)
-        self.process = subprocess.Popen([str(clock), '--runtime-dir', str(runtime), '--', str(binary), 'serve'],
-                                        env=env, stdout=subprocess.DEVNULL, stderr=open(state / 'provider.log', 'ab'))
+        with open(state / 'provider.log', 'ab') as log:
+            self.process = subprocess.Popen([str(clock), '--runtime-dir', str(runtime), '--', str(binary), 'serve'],
+                                            env=env, stdout=subprocess.DEVNULL, stderr=log)
+        atexit.register(stop_process, self.process)
         deadline = time.monotonic() + 10
         while True:
             try:
@@ -172,7 +193,121 @@ class Provider:
         self.process.terminate()
         require(self.process.wait(timeout=10) == 0, 'provider did not stop cleanly')
 
+class Attestors:
+    def __init__(self, binary, directory, jwks_url, assertion):
+        self.children = []
+        atexit.register(self.stop)
+        directory.mkdir(mode=0o700)
+        def run(*args):
+            return subprocess.run(['openssl', *args], cwd=directory, check=True,
+                                  capture_output=True, timeout=15).stdout
+        def authority(name):
+            run('req', '-x509', '-newkey', 'ec', '-pkeyopt', 'ec_paramgen_curve:prime256v1',
+                '-nodes', '-keyout', name + '.key', '-out', name + '.pem', '-days', '1',
+                '-subj', '/CN=' + name, '-addext', 'basicConstraints=critical,CA:TRUE')
+        def leaf(ca, name, serial, server):
+            run('req', '-new', '-newkey', 'ec', '-pkeyopt', 'ec_paramgen_curve:prime256v1',
+                '-nodes', '-keyout', name + '.key', '-out', name + '.csr', '-subj', '/CN=' + name)
+            extension = 'basicConstraints=CA:FALSE\nkeyUsage=critical,digitalSignature\n'
+            extension += ('extendedKeyUsage=serverAuth,clientAuth\nsubjectAltName=IP:127.0.0.1\n'
+                          if server else 'extendedKeyUsage=clientAuth\n')
+            (directory / (name + '.ext')).write_text(extension)
+            run('x509', '-req', '-in', name + '.csr', '-CA', ca + '.pem', '-CAkey', ca + '.key',
+                '-set_serial', str(serial), '-days', '1', '-sha256', '-extfile', name + '.ext',
+                '-out', name + '.pem')
+            os.chmod(directory / (name + '.key'), 0o600)
+        for name in ['node-ca', 'gateway-ca', 'operator-ca']:
+            authority(name)
+            os.chmod(directory / (name + '.key'), 0o600)
+        leaf('gateway-ca', 'gateway', 1, False)
+        ids = ['node-%d' % number for number in range(1, 6)]
+        pins = []
+        for number, node in enumerate(ids, 2):
+            leaf('node-ca', node, number, True)
+            run('x509', '-in', node + '.pem', '-noout', '-pubkey', '-out', node + '.pub')
+            spki = run('pkey', '-pubin', '-in', node + '.pub', '-outform', 'DER')
+            pins.append(hashlib.sha256(spki).hexdigest())
+        (directory / 'api-ca.pem').write_bytes((directory / 'node-ca.pem').read_bytes()
+                                              + (directory / 'gateway-ca.pem').read_bytes())
+        for name in ['node-ca', 'gateway']:
+            run('x509', '-in', name + '.pem', '-outform', 'DER', '-out', name + '.der')
+        run('pkcs8', '-topk8', '-nocrypt', '-in', 'gateway.key', '-outform', 'DER', '-out', 'gateway.pk8')
+        os.chmod(directory / 'gateway.pk8', 0o600)
+        reservations = []
+        addresses = []
+        try:
+            for _ in range(10):
+                reservation = socket.socket()
+                reservation.bind(('127.0.0.1', 0))
+                reservations.append(reservation)
+                addresses.append('127.0.0.1:%d' % reservation.getsockname()[1])
+            for index, node in enumerate(ids):
+                key = directory / (node + '.node-key')
+                with os.fdopen(os.open(key, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), 'w') as handle:
+                    handle.write(os.urandom(32).hex())
+                others = [i for i in range(5) if i != index]
+                env = {
+                    'ATTESTOR_NODE_ID': node, 'ATTESTOR_REGION': 'local',
+                    'ATTESTOR_LISTEN_ADDR': addresses[index],
+                    'ATTESTOR_PEER_LISTEN_ADDR': addresses[index + 5],
+                    'ATTESTOR_PEERS': ','.join(ids[i] + '=' + addresses[i + 5] for i in others),
+                    'ATTESTOR_PEER_PINS': ','.join(ids[i] + '=' + pins[i] for i in others),
+                    'ATTESTOR_NODE_KEY_FILE': str(key),
+                    'ATTESTOR_DATA_DIR': str(directory / (node + '.data')),
+                    'ATTESTOR_CHAIN_ID': '125', 'ATTESTOR_JWKS_URL': jwks_url,
+                    'ATTESTOR_JWT_ISSUER': ISSUER, 'ATTESTOR_JWT_AUDIENCE': AUDIENCE,
+                    'ATTESTOR_TLS_CERT_FILE': str(directory / (node + '.pem')),
+                    'ATTESTOR_TLS_KEY_FILE': str(directory / (node + '.key')),
+                    'ATTESTOR_TLS_CA_FILE': str(directory / 'api-ca.pem'),
+                    'ATTESTOR_OPERATOR_CA_FILE': str(directory / 'operator-ca.pem'),
+                }
+                reservations[index].close()
+                reservations[index + 5].close()
+                with open(directory / (node + '.log'), 'wb') as log:
+                    self.children.append(subprocess.Popen([str(binary)], env=env, stdin=subprocess.DEVNULL,
+                                                          stdout=log, stderr=subprocess.STDOUT))
+        finally:
+            for reservation in reservations:
+                reservation.close()
+        context = ssl.create_default_context(cafile=str(directory / 'node-ca.pem'))
+        context.load_cert_chain(str(directory / 'gateway.pem'), str(directory / 'gateway.key'))
+        deadline = time.monotonic() + 30
+        pending = set(range(5))
+        while pending:
+            require(all(child.poll() is None for child in self.children), 'attestor exited; inspect retained node logs')
+            require(time.monotonic() < deadline, 'actual local attestor quorum did not become ready')
+            for index in list(pending):
+                try:
+                    with urllib.request.urlopen('https://' + addresses[index] + '/health', context=context, timeout=1) as response:
+                        report = json.load(response)
+                    if report.get('ready') is True and report.get('reachable_peers') == 4:
+                        pending.remove(index)
+                except (OSError, ValueError):
+                    pass
+            if pending:
+                time.sleep(0.05)
+        self.fixture = directory / 'admission.json'
+        with os.fdopen(os.open(self.fixture, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), 'w') as handle:
+            json.dump({'nodes': list(zip(ids, addresses[:5])),
+                       'root_certificate': str(directory / 'node-ca.der'),
+                       'client_certificate': str(directory / 'gateway.der'),
+                       'client_private_key': str(directory / 'gateway.pk8'),
+                       'jwks_url': jwks_url, 'assertion': assertion, 'subject': 'supabase-user-a'}, handle)
+
+    def stop(self):
+        for child in self.children:
+            if child.poll() is None:
+                child.terminate()
+        for child in self.children:
+            try:
+                child.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                child.kill()
+                child.wait(timeout=5)
+
 def run():
+    os.umask(0o077)
+    attestor = executable('PAXEER_X_ATTESTOR_BIN')
     provider = executable('PAXEER_X_IDENTITY_PROVIDER_BIN')
     principal_store = executable('PAXEER_X_PRINCIPAL_STORE_TEST_BIN')
     clock = executable('LAYERX_RUNTIME_CLOCK_BIN')
@@ -190,12 +325,12 @@ def run():
     keys.mkdir(mode=0o700)
     supabase, producer, forger = Key(keys, 'issuer'), Key(keys, 'producer'), Key(keys, 'forger')
     jwks, jwks_url = serve_keys([supabase.jwk('supabase-1')])
+    atexit.register(jwks.shutdown)
     policy = state / 'policy.json'
     with os.fdopen(os.open(policy, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), 'w') as handle:
         json.dump({'root': [0x43] * 32, 'threshold': 1, 'delay_seconds': 86400}, handle)
     uid = str(os.geteuid())
-    env = {k: v for k, v in os.environ.items() if not k.startswith('LAYERX_HUMAN_IDENTITY_PROVIDER_')}
-    env.pop('LAYERX_RUNTIME_CLOCK_SOCKET', None)
+    env = {k: v for k, v in os.environ.items() if not k.startswith(('LAYERX_', 'ATTESTOR_'))}
     env.update({
         'LAYERX_HUMAN_IDENTITY_PROVIDER_STATE_ROOT': str(state / 'identity'),
         'LAYERX_HUMAN_IDENTITY_PROVIDER_SOCKET': str(state / 'identity.sock'),
@@ -248,10 +383,11 @@ def run():
     finally:
         running.process.terminate()
         running.process.wait(timeout=10)
-        jwks.shutdown()
+    attestors = Attestors(attestor, state / 'attestors', jwks_url, alice)
     test_log = state / 'principal_store.log'
-    test_env = {k: v for k, v in os.environ.items() if k != 'LAYERX_RUNTIME_CLOCK_SOCKET'}
+    test_env = {k: v for k, v in os.environ.items() if not k.startswith(('LAYERX_', 'ATTESTOR_'))}
     test_env['TMPDIR'] = str(state)
+    test_env['PAXEER_X_IDENTITY_ATTESTOR_FIXTURE'] = str(attestors.fixture)
     (state / 'test-clock').mkdir(mode=0o700)
     with open(test_log, 'wb') as handle:
         result = subprocess.run([str(clock), '--runtime-dir', str(state / 'test-clock'), '--', str(principal_store), '--test-threads=1'],
@@ -260,14 +396,23 @@ def run():
     summary = re.search(r'test result: ok\. (\d+) passed; (\d+) failed; (\d+) ignored', output)
     require(result.returncode == 0 and summary and summary.group(2) == '0' and summary.group(3) == '0',
             'principal_store integration failed (exit %d), log %s' % (result.returncode, test_log))
-    for name in re.findall(r'^test (\S+) \.\.\. ok$', output, re.M):
+    passed = set(re.findall(r'^test (\S+) \.\.\. ok$', output, re.M))
+    required_tests = {
+        'actual_provider_binding_preserves_dynamic_store_isolation_and_restart',
+        'actual_provider_refuses_static_conflicts_and_durable_binding_replacement',
+        'assertion_subject_resolves_one_durable_wallet_principal_and_tenant_across_restart',
+        'assertion_capability_reaches_existing_attestor_admission',
+    }
+    require(required_tests <= passed, 'principal_store integration corpus incomplete')
+    for name in sorted(required_tests):
         case('principal_store::' + name, True)
-    require(int(summary.group(1)) >= 3, 'principal_store integration corpus incomplete')
-    shutil.rmtree(keys)
+    attestors.stop()
+    jwks.shutdown()
     record = state / 'evidence.json'
     with os.fdopen(os.open(record, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), 'w') as handle:
         json.dump({'schema': 'paxeer-x.identity-assertion-binding.v1', 'revision': revision,
                    'provider': str(provider), 'principal_store': str(principal_store), 'clock': str(clock),
+                   'attestor': str(attestor),
                    'cases': CASES, 'tests': COUNT, 'skipped': 0}, handle, indent=2)
     print('revision ' + revision)
     print('command timeout 15m python3 tools/qualification/paxeer-x/identity-assertion-binding.py')
@@ -276,6 +421,7 @@ def run():
     print('PAXEER_X_GATE tests=%d skipped=0' % COUNT)
 
 if __name__ == '__main__':
+    signal.signal(signal.SIGTERM, terminate)
     try:
         run()
     except Exception as error:
