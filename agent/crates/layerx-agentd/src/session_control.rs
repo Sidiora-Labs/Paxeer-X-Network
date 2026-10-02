@@ -736,6 +736,23 @@ impl SessionControl {
         }
         Ok(report)
     }
+
+    /// Fails the not-yet-submitted preparations bound to a revoked capability; submitted and
+    /// unknown work is preserved. The durable cleanup record is removed by the caller only after
+    /// this succeeds, so a failure is retried from that record after restart.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if preparation invalidation or reservation release fails.
+    pub fn invalidate_preparation_ids(
+        &self,
+        preparation_ids: &BTreeSet<[u8; 32]>,
+        current_sequence: u64,
+    ) -> Result<PreparationInvalidationReport, SessionControlError> {
+        self.lifecycle
+            .invalidate_preparations(preparation_ids, current_sequence, &self.budgets)
+            .map_err(SessionControlError::Lifecycle)
+    }
 }
 
 /// Exact-generation authorization retained across a bounded daemon operation.

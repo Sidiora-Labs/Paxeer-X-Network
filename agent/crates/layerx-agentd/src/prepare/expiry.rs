@@ -138,18 +138,45 @@ impl PreparationLifecycle {
         current_sequence: u64,
         limiter: &BudgetLimiter,
     ) -> Result<PreparationInvalidationReport, LifecycleError> {
+        self.invalidate_selected(current_sequence, limiter, |_, record| {
+            record.authorization.as_ref().is_some_and(|authorization| {
+                invalidated.iter().any(|(session, generation)| {
+                    &authorization.session == session && authorization.generation == *generation
+                })
+            })
+        })
+    }
+
+    /// Fails every not-yet-submitted preparation named by id (capability revocation) while
+    /// preserving submitted/unknown work for honest receipt resolution.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if preparation invalidation or reservation release fails.
+    pub fn invalidate_preparations(
+        &self,
+        preparation_ids: &std::collections::BTreeSet<[u8; 32]>,
+        current_sequence: u64,
+        limiter: &BudgetLimiter,
+    ) -> Result<PreparationInvalidationReport, LifecycleError> {
+        self.invalidate_selected(current_sequence, limiter, |preparation_id, _| {
+            preparation_ids.contains(preparation_id)
+        })
+    }
+
+    fn invalidate_selected(
+        &self,
+        current_sequence: u64,
+        limiter: &BudgetLimiter,
+        selected: impl Fn(&[u8; 32], &RetainedPreparation) -> bool,
+    ) -> Result<PreparationInvalidationReport, LifecycleError> {
         let mut records = self
             .records
             .lock()
             .map_err(|_| LifecycleError::Unavailable)?;
         let mut report = PreparationInvalidationReport::default();
-        for record in records.values_mut() {
-            let selected = record.authorization.as_ref().is_some_and(|authorization| {
-                invalidated.iter().any(|(session, generation)| {
-                    &authorization.session == session && authorization.generation == *generation
-                })
-            });
-            if !selected {
+        for (preparation_id, record) in records.iter_mut() {
+            if !selected(preparation_id, &*record) {
                 continue;
             }
             match record.state {

@@ -10,6 +10,8 @@ mod attenuation;
 mod consumption;
 mod narrowing;
 pub mod timed;
+
+pub mod binding;
 #[path = "report.rs"]
 mod reporting;
 
