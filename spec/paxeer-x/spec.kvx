@@ -23842,8 +23842,8 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.104.30.2]
 title = "Authorise transfer legs under program authority"
-status = "pending"
-mode = "QUALIFY"
+status = "in_progress"
+mode = "BUILD"
 wave = 2
 requires = ["0.2"]
 reqs = ["1100.2", "1100.3"]
@@ -23854,10 +23854,10 @@ do_4 = "Keep the kernel transfer primitive the only balance mutation and add no 
 do_5 = "Carry both authorization roots into one atomic transfer set with one canonical encoding and one receipt, so a mixed activity settles whole or not at all."
 do_6 = "Test the law against programs attempting to spend from an account they cannot derive, from a callee frame, and past the total of legs the set conserves."
 do_7 = "Provide this task selector in tools/paxeer-x/gates and execute the full scoped acceptance contract using real production paths. Preserve the retained verification command coverage; move aggregate matrices to release scope and refuse an unknown or unimplemented selector."
-touches = ["programs/crates/layerx-programs-runtime/src/transfer.rs", "programs/crates/layerx-programs-runtime/tests/monetary_law.rs", "tools/paxeer-x/gates/104.30.2.sh"]
+touches = ["programs/crates/layerx-programs-runtime/src/transfer.rs", "programs/crates/layerx-programs-runtime/tests/monetary_law.rs", "tools/paxeer-x/gates/104.30.2.sh", "tools/qualification/paxeer-x/program_transfer_authority.py", "tools/paxeer-x/build/104.30.2.mk", "tests/programs/test_monetary_law.c"]
 verify_cmd = "timeout 30m tools/paxeer-x/verify-task.sh 104.30.2"
 gate_kind = "planned-adapter"
-max_builds = 0
+max_builds = 1
 max_verify_runs = 1
 max_repair_cycles = 2
 time_limit_minutes = 30
@@ -23867,9 +23867,13 @@ reference_verify_cmd = "make programs-test"
 reference_tests = []
 deployment_profile = "product"
 completion_policy = "Existing implementation is preserved; current candidate qualification and applicable runtime evidence remain required."
-planned_paths = ["tools/paxeer-x/gates/104.30.2.sh"]
+planned_paths = ["tools/paxeer-x/gates/104.30.2.sh", "tools/qualification/paxeer-x/program_transfer_authority.py", "tools/paxeer-x/build/104.30.2.mk"]
 path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
 evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+build_cmd = "timeout 30m make -f Makefile -f tools/paxeer-x/build/104.30.2.mk paxeer-x-build-104.30.2"
+build_targets = ["Native programs_monetary_law linked to current $(TEST_LIBRARY) and host-ffi sandbox staticlib with LXP_TESTING as existing target", "Rust runtime transfer unit-test executable", "Rust monetary_law integration executable including actual Wasm guest preparation cases"]
+producer_contract = "Compile all declared real fixtures, native libraries and Rust executables in one explicit scoped build stage after implementation. Gate consumes source/toolchain-bound artifact manifest without hidden compilation; no phony programs-build/workspace build. Record source revision, inputs, exact binaries and features."
+release_gate_policy = "Retain complete make programs-test once per merged wave or release candidate, never per-task; scoped gate is not an aggregate-equivalence claim."
 
 [task.104.30.3]
 title = "Wire program-owned accounts into the kernel account registry"
@@ -24051,8 +24055,8 @@ conditional_write_scope = "Production cache enable/disable control and observati
 
 [task.104.32.4]
 title = "Move the fee schedule into governed protocol state"
-status = "pending"
-mode = "QUALIFY"
+status = "in_progress"
+mode = "BUILD"
 wave = 2
 requires = ["0.2"]
 reqs = ["1102.4"]
@@ -24063,10 +24067,10 @@ do_4 = "Change the schedule only through a governed activity that is itself rece
 do_5 = "Add a demand-responsive component adjusting a base price per unit of the scarce resource by a deterministic rule over recent batch occupancy, computed from protocol state alone with no node-local input."
 do_6 = "Prove monotonic bounds on the adjustment so the price cannot move more than a declared fraction per batch, and prove replay of a multi-schedule history reprices every activity correctly."
 do_7 = "Provide this task selector in tools/paxeer-x/gates and execute the full scoped acceptance contract using real production paths. Preserve the retained verification command coverage; move aggregate matrices to release scope and refuse an unknown or unimplemented selector."
-touches = ["programs/crates/layerx-programs-runtime/src/meter.rs", "src/modules/programs/fees.c", "tools/paxeer-x/gates/104.32.4.sh"]
+touches = ["programs/crates/layerx-programs-runtime/src/meter.rs", "src/modules/programs/fees.c", "tools/paxeer-x/gates/104.32.4.sh", "tools/qualification/paxeer-x/program_fee_governance.py", "tools/paxeer-x/build/104.32.4.mk", "tests/programs/test_fee_governance.c", "programs/crates/layerx-programs-runtime/tests/fee_governance.rs"]
 verify_cmd = "timeout 30m tools/paxeer-x/verify-task.sh 104.32.4"
 gate_kind = "planned-adapter"
-max_builds = 0
+max_builds = 1
 max_verify_runs = 1
 max_repair_cycles = 2
 time_limit_minutes = 30
@@ -24076,9 +24080,13 @@ reference_verify_cmd = "make programs-test"
 reference_tests = []
 deployment_profile = "product"
 completion_policy = "Existing implementation is preserved; current candidate qualification and applicable runtime evidence remain required."
-planned_paths = ["tools/paxeer-x/gates/104.32.4.sh"]
+planned_paths = ["tools/paxeer-x/gates/104.32.4.sh", "tools/qualification/paxeer-x/program_fee_governance.py", "tools/paxeer-x/build/104.32.4.mk", "programs/crates/layerx-programs-runtime/tests/fee_governance.rs"]
 path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
 evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+build_cmd = "timeout 30m make -f Makefile -f tools/paxeer-x/build/104.32.4.mk paxeer-x-build-104.32.4"
+build_targets = ["Native programs_fee_governance linked to current $(LIBRARY) and host-ffi sandbox staticlib", "Rust runtime fee_governance test executable (new focused real schedule/history cases)", "Rust existing replay test executable; run only genuinely applicable named fee/history cases, preserve complete aggregate at release"]
+producer_contract = "Compile all declared real fixtures, native libraries and Rust executables in one explicit scoped build stage after implementation. Gate consumes source/toolchain-bound artifact manifest without hidden compilation; no phony programs-build/workspace build. Record source revision, inputs, exact binaries and features."
+release_gate_policy = "Retain complete make programs-test once per merged wave or release candidate, never per-task; scoped gate is not an aggregate-equivalence claim."
 
 [task.104.33.1]
 title = "Publish program interfaces as protocol state"
