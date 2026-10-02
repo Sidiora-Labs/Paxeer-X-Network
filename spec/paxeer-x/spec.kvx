@@ -23297,7 +23297,9 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.104.5.8]
 title = "Replace the mounted root secret with a production KMS boundary"
-status = "in_progress"
+status = "done"
+completion_basis = "implementation"
+qualification_status = "unverified"
 mode = "BUILD"
 wave = 2
 requires = ["0.2"]
