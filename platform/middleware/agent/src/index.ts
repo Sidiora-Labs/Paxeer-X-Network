@@ -1,3 +1,6 @@
+import { validateDaemonSpend, decodeDaemonPrepared, decodeDaemonSubmission, daemonApprovalHold, signedActivityId, type DaemonPreparation } from "./daemon.js";
+export { decodeDaemonSubmission } from "./daemon.js";
+export type { DaemonPreparation, DaemonPrepareRequest } from "./daemon.js";
 import { paymentCommitment, protocolSelection, requireProtocolVersion, verifyPaymentReceipt, type GrantDrawExecution, type SellerSettlementOutcome } from "@sidiora/layerx-seller-middleware";
 import { verifyPaymentCommitment, type PaymentCommitment, type PaymentCommitmentResolver } from "@sidiora/layerx-seller-middleware";
 import {
@@ -25,14 +28,13 @@ const POST_SUBMIT_UNCERTAIN_CODES: ReadonlySet<SdkErrorCode> = new Set([
 export interface AgentSpendRequest {
   readonly commitment?: { readonly network: string; readonly level: PaymentCommitment };
   readonly tenant: string;
-  readonly actor: string;
-  readonly authority: string;
-  readonly accountSequence: string;
-  readonly timestampBound: string;
-  readonly idempotencyKey: string;
-  readonly feeLimit: string;
-  readonly payloadBase64: string;
-  readonly payloadHash: string;
+  readonly preparation: DaemonPreparation;
+  readonly networkId: string;
+  readonly authorityHex: string;
+  readonly signerPublicKey: string;
+  readonly submitIdempotencyKey: string;
+  readonly approvalCurrentSequence: string;
+  readonly approvalReleaseRef?: string;
   readonly asset: string;
   readonly amount: string;
   readonly recipient: string;
@@ -115,6 +117,7 @@ export interface PreparedActivity {
   readonly signing_preimage: string;
   readonly disclosure: Readonly<Record<string, unknown>>;
   readonly expiry: string;
+  readonly approval?: ApprovalHold;
 }
 
 export interface AgentSigner {
@@ -125,7 +128,10 @@ export interface Submission {
   readonly submission_ref: string;
   readonly state: string | Readonly<Record<string, unknown>>;
   readonly evidence?: readonly unknown[];
-  readonly verification_level?: number;
+  readonly verification_level?: string;
+  readonly activity_id?: string;
+  readonly receipt_ref?: string;
+  readonly receiptEvidence?: AgentReceiptEvidence;
   readonly transitions?: readonly unknown[];
 }
 
@@ -209,18 +215,18 @@ export class AgentMiddleware {
     return this.#protocolVersion;
   }
 
-  public async spend(request: AgentSpendRequest): Promise<AgentSpendResult> {
+  public async spend(input: AgentSpendRequest): Promise<AgentSpendResult> {
+    let request: AgentSpendRequest;
+    try { request = freezeRequest(JSON.parse(JSON.stringify(input))) as AgentSpendRequest; }
+    catch { throw new AgentMiddlewareError("invalid-request"); }
     validateSpend(request);
     if (request.commitment !== undefined && request.commitment.level !== "executed" && this.#commitments === undefined) throw new AgentMiddlewareError("invalid-request");
-    if (!await payloadHashMatches(request.payloadBase64, request.payloadHash)) {
-      throw new AgentMiddlewareError("invalid-request");
-    }
     const amount = protocolAmount(request.amount).toString();
-    const mutationKey = idempotencyKey(request.idempotencyKey);
+    const mutationKey = idempotencyKey(request.preparation.idempotency_key);
     const requestDigest = await digestSpend(request);
     const reserved = await this.#budgets.reserve({
       tenant: request.tenant,
-      idempotencyKey: request.idempotencyKey,
+      idempotencyKey: request.preparation.idempotency_key,
       requestDigest,
       amount,
       asset: request.asset,
@@ -259,18 +265,13 @@ export class AgentMiddleware {
     }
     let prepared: PreparedActivity;
     try {
-      prepared = parsePrepared(await this.#client.agent("prepare", {
-        actor: request.actor,
-        authority: request.authority,
-        account_sequence: request.accountSequence,
-        timestamp_bound: request.timestampBound,
-        idempotency_key: request.idempotencyKey,
-        fee_limit: request.feeLimit,
-        payload: request.payloadBase64,
-        payload_hash: request.payloadHash,
-      }, { idempotencyKey: mutationKey }));
+      prepared = decodeDaemonPrepared(await this.#client.agent("prepare", request.preparation,
+        { idempotencyKey: mutationKey }), request, this.#protocolVersion);
     } catch (error) {
       return this.#sdkFailure(error, reservation, budget, false);
+    }
+    if (prepared.approval !== undefined) {
+      return this.#hold(prepared.approval, reservation, budget);
     }
     let signature: string;
     try {
@@ -278,55 +279,30 @@ export class AgentMiddleware {
     } catch (error) {
       return this.#sdkFailure(error, reservation, budget, false);
     }
-    if (signature.length === 0 || signature.length > 16_384 || signature.includes("\0")) {
-      const refusal: AgentRefusal = { code: "decode-failure", retry: "never" };
-      try {
-        const released = await this.#release(reservation, budget, refusal);
-        return { kind: "refused", reservation: released, ...refusal };
-      } catch {
-        return { kind: "unknown", reservation };
-      }
+    let expectedActivityId: string;
+    try {
+      expectedActivityId = signedActivityId(prepared, signature, request.signerPublicKey);
+    } catch (error) {
+      return this.#sdkFailure(error, reservation, budget, false);
     }
     let submission: Submission;
     try {
-      submission = parseSubmission(await this.#client.agent("submit", {
+      submission = decodeDaemonSubmission(await this.#client.agent("submit", {
         preparation_ref: prepared.preparation_ref,
         signature,
-      }, { idempotencyKey: mutationKey }));
+        signer_public_key: request.signerPublicKey,
+        approval_release_ref: request.approvalReleaseRef ?? null,
+      }, { idempotencyKey: idempotencyKey(request.submitIdempotencyKey) }), expectedActivityId);
     } catch (error) {
       if (error instanceof PlatformSdkError && (error.code === "policy-refusal" || error.code === "budget-refusal")) {
         let approval: ApprovalHold | undefined;
         try {
-          approval = await this.#approvalHold(request.tenant, prepared);
+          approval = await daemonApprovalHold(this.#client, request, prepared);
         } catch {
           return { kind: "unknown", reservation };
         }
         if (approval !== undefined) {
-          let held: BudgetReservation;
-          try {
-            held = validateBudgetReservation(
-              await this.#budgets.hold({
-                reservationId: reservation.reservationId,
-                requestDigest,
-                amount,
-                asset: request.asset,
-                approvalId: approval.approvalId,
-                canonicalBytesDigest: approval.canonicalBytesDigest,
-              }),
-              budget,
-              reservation.reservationId,
-            );
-          } catch {
-            return { kind: "unknown", reservation };
-          }
-          if (
-            held.state !== "held"
-            || held.approvalId !== approval.approvalId
-            || held.canonicalBytesDigest !== approval.canonicalBytesDigest
-          ) {
-            throw new AgentMiddlewareError("budget-conflict");
-          }
-          return { kind: "approval-hold", approval, reservation: held };
+          return this.#hold(approval, reservation, budget);
         }
       }
       return this.#sdkFailure(error, reservation, budget, true);
@@ -340,9 +316,9 @@ export class AgentMiddleware {
     for (let poll = 0; poll < this.#maximumTrackPolls && state === "Pending"; poll += 1) {
       await this.#wait(Math.min((poll + 1) * 250, 2_500));
       try {
-        submission = parseSubmission(await this.#client.agent("track", {
+        submission = decodeDaemonSubmission(await this.#client.agent("track", {
           submission_ref: submission.submission_ref,
-        }));
+        }), expectedActivityId, submission.submission_ref);
         state = submissionState(submission);
       } catch (error) {
         if (error instanceof PlatformSdkError && error.retry === "unknown-outcome") {
@@ -379,7 +355,7 @@ export class AgentMiddleware {
     }
     let evidence: AgentReceiptEvidence;
     try {
-      evidence = await this.#receipts.resolve(receiptRef);
+      evidence = submission.receiptEvidence ?? await this.#receipts.resolve(receiptRef);
     } catch {
       return { kind: "pending", submission, reservation };
     }
@@ -390,7 +366,8 @@ export class AgentMiddleware {
       return { kind: "unknown", reservation, submission };
     }
     if (
-      verification.receipt.amount !== BigInt(amount)
+      !constantTimeHex(verification.receipt.activityId, expectedActivityId)
+      || verification.receipt.amount !== BigInt(amount)
       || !constantTimeHex(verification.receipt.asset, request.asset)
       || !constantTimeHex(verification.receipt.to, request.recipient)
     ) {
@@ -483,33 +460,21 @@ export class AgentMiddleware {
     return released;
   }
 
-  async #approvalHold(tenant: string, prepared: PreparedActivity): Promise<ApprovalHold | undefined> {
-    const response = await this.#client.agent<
-      { readonly tenant: string; readonly cursor: null; readonly page_limit: number },
-      unknown
-    >("approval.list", { tenant, cursor: null, page_limit: 100 });
-    if (response === null || typeof response !== "object" || Array.isArray(response)) return undefined;
-    const approvals = (response as Record<string, unknown>)["approvals"];
-    if (!Array.isArray(approvals)) return undefined;
-    const digest = disclosureDigest(prepared);
-    for (const candidate of approvals) {
-      if (candidate === null || typeof candidate !== "object" || Array.isArray(candidate)) continue;
-      const object = candidate as Record<string, unknown>;
-      if (
-        object["state"] === "Held"
-        && normalizeDigest(object["canonical_bytes_digest"]) === digest
-        && typeof object["approval_id"] === "string"
-      ) {
-        return {
-          approvalId: object["approval_id"],
-          state: "Held",
-          canonicalBytesDigest: digest,
-          enforcement: "daemon_enforced",
-        };
-      }
+  async #hold(approval: ApprovalHold, reservation: BudgetReservation, budget: BudgetFacts): Promise<AgentSpendResult> {
+    let held: BudgetReservation;
+    try {
+      held = validateBudgetReservation(await this.#budgets.hold({
+        reservationId: reservation.reservationId, ...budget,
+        approvalId: approval.approvalId, canonicalBytesDigest: approval.canonicalBytesDigest,
+      }), budget, reservation.reservationId);
+    } catch {
+      return { kind: "unknown", reservation };
     }
-    return undefined;
+    if (held.state !== "held" || held.approvalId !== approval.approvalId
+      || held.canonicalBytesDigest !== approval.canonicalBytesDigest) throw new AgentMiddlewareError("budget-conflict");
+    return { kind: "approval-hold", approval, reservation: held };
   }
+
 }
 
 export type AgentMiddlewareErrorCode =
@@ -652,48 +617,12 @@ function sameRefusal(left: AgentRefusal, right: AgentRefusal): boolean {
 }
 
 function validateSpend(request: AgentSpendRequest): void {
+  try { validateDaemonSpend(request); } catch { throw new AgentMiddlewareError("invalid-request"); }
+  if (typeof request.tenant !== "string" || request.tenant.length === 0 || request.tenant.length > 255 || request.tenant.includes("\0")) throw new AgentMiddlewareError("invalid-request");
   if (request.commitment !== undefined && (!/^layerx:[A-Za-z0-9._-]{1,64}$/u.test(request.commitment.network)
     || !["executed", "batched", "finalised"].includes(request.commitment.level))) throw new AgentMiddlewareError("invalid-request");
-  for (const value of [request.tenant, request.actor, request.authority, request.idempotencyKey]) {
-    if (value.length === 0 || value.length > 512 || value.includes("\0")) {
-      throw new AgentMiddlewareError("invalid-request");
-    }
-  }
   protocolAmount(request.amount);
-  protocolAmount(request.feeLimit);
-  if (!/^(0|[1-9][0-9]*)$/u.test(request.accountSequence)
-    || !/^(0|[1-9][0-9]*)$/u.test(request.timestampBound)
-    || !/^[0-9a-f]{64}$/u.test(request.payloadHash)
-    || !/^[0-9a-f]{64}$/u.test(request.asset)
-    || !/^[0-9a-f]{64}$/u.test(request.recipient)
-    || request.payloadBase64.length === 0
-    || request.payloadBase64.length > 1_398_104
-    || !isCanonicalBase64(request.payloadBase64)) {
-    throw new AgentMiddlewareError("invalid-request");
-  }
-}
-
-function parsePrepared(value: unknown): PreparedActivity {
-  const object = record(value);
-  const prepared = {
-    preparation_ref: text(object["preparation_ref"], 512),
-    unsigned_canonical_bytes: text(object["unsigned_canonical_bytes"], 1_398_104),
-    signing_preimage: text(object["signing_preimage"], 1_398_104),
-    disclosure: record(object["disclosure"]),
-    expiry: text(object["expiry"], 64),
-  };
-  return prepared;
-}
-
-function parseSubmission(value: unknown): Submission {
-  const object = record(value);
-  return {
-    submission_ref: text(object["submission_ref"], 512),
-    state: typeof object["state"] === "string" ? object["state"] : record(object["state"]),
-    ...(Array.isArray(object["evidence"]) ? { evidence: object["evidence"] } : {}),
-    ...(typeof object["verification_level"] === "number" ? { verification_level: object["verification_level"] } : {}),
-    ...(Array.isArray(object["transitions"]) ? { transitions: object["transitions"] } : {}),
-  };
+  if (!/^[0-9a-f]{64}$/u.test(request.asset) || !/^[0-9a-f]{64}$/u.test(request.recipient)) throw new AgentMiddlewareError("invalid-request");
 }
 
 function submissionState(submission: Submission): "Pending" | "Unknown" | "Executed" | "Failed" | "Expired" {
@@ -711,6 +640,7 @@ function submissionState(submission: Submission): "Pending" | "Unknown" | "Execu
 }
 
 function executedReceiptRef(submission: Submission): string | undefined {
+  if (submission.state === "Executed" && submission.receipt_ref !== undefined) return submission.receipt_ref;
   if (typeof submission.state === "object") {
     const executed = submission.state["Executed"];
     if (executed !== null && typeof executed === "object" && !Array.isArray(executed)) {
@@ -742,29 +672,17 @@ function disclosureDigest(prepared: PreparedActivity): string {
 }
 
 async function digestSpend(request: AgentSpendRequest): Promise<string> {
-  const canonical = JSON.stringify({
-    tenant: request.tenant,
-    actor: request.actor,
-    authority: request.authority,
-    accountSequence: request.accountSequence,
-    timestampBound: request.timestampBound,
-    idempotencyKey: request.idempotencyKey,
-    feeLimit: request.feeLimit,
-    payloadHash: request.payloadHash,
-    asset: request.asset,
-    amount: request.amount,
-    recipient: request.recipient,
-    ...(request.commitment === undefined ? {} : { commitment: request.commitment }),
-  });
-  const digest = new Uint8Array(await globalThis.crypto.subtle.digest("SHA-256", new TextEncoder().encode(canonical)));
-  return toHex(digest);
+  const canonical = JSON.stringify(canonicalObject(request));
+  return toHex(new Uint8Array(await globalThis.crypto.subtle.digest("SHA-256", new TextEncoder().encode(canonical))));
 }
-
-async function payloadHashMatches(payloadBase64: string, expected: string): Promise<boolean> {
-  const binary = globalThis.atob(payloadBase64);
-  const payload = Uint8Array.from(binary, (character) => character.charCodeAt(0));
-  const digest = new Uint8Array(await globalThis.crypto.subtle.digest("SHA-256", payload));
-  return constantTimeHex(digest, expected);
+function freezeRequest(value: unknown): unknown {
+  if (value !== null && typeof value === "object") { for (const child of Object.values(value)) freezeRequest(child); Object.freeze(value); }
+  return value;
+}
+function canonicalObject(value: unknown): unknown {
+  if (value === null || typeof value !== "object") return value;
+  if (Array.isArray(value)) return value.map(canonicalObject);
+  return Object.fromEntries(Object.keys(value).sort().map((key) => [key, canonicalObject((value as Record<string, unknown>)[key])]));
 }
 
 function constantTimeHex(actual: Uint8Array, expected: string): boolean {

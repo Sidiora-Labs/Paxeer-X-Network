@@ -3,6 +3,7 @@ export {
   DECLARED_KEYS,
   assertServerRuntime,
   parseHex32,
+  authenticatedAgentTransport,
   readDeclaredConfig,
   readServiceToken,
   readWebhookListener,
@@ -73,3 +74,6 @@ export type {
   WebhookRequestHeaders,
 } from "@sidiora/layerx-seller-middleware";
 export { PlatformSdkError, ProductionClient, SecretBytes } from "@sidiora/layerx-sdk";
+
+export { loadAgentServiceProviders } from "./service-providers.js";
+export type { AgentServiceProviders } from "./service-providers.js";

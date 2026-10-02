@@ -1,7 +1,17 @@
-import { isSelectableProtocolVersion, SecretBytes, type SelectableProtocolVersion } from "@sidiora/layerx-sdk";
+import { AgentEnvelopeTransport, AgentSessionCredential, LayerXKeyCredential, isSelectableProtocolVersion, SecretBytes, type SelectableProtocolVersion } from "@sidiora/layerx-sdk";
 
 export const DECLARED_KEYS = [
   "LAYERX_AGENT_RPC_URL",
+  "LAYERX_AGENT_SURFACE",
+  "LAYERX_AGENT_SERVICES_MODULE",
+  "LAYERX_SESSION_ID",
+  "LAYERX_SESSION_TOKEN",
+  "LAYERX_SESSION_GENERATION",
+  "LAYERX_GATEWAY_KEY_ID",
+  "LAYERX_GATEWAY_KEY",
+  "LAYERX_CLIENT_CERTIFICATE_PEM",
+  "LAYERX_CLIENT_KEY_PEM",
+  "LAYERX_TRUSTED_CA_PEM",
   "LAYERX_PROTOCOL_VERSION",
   "LAYERX_BUDGET_SERVICE_URL",
   "LAYERX_SIGNER_SERVICE_URL",
@@ -58,9 +68,9 @@ export interface WebhookListener {
 export interface AgentDeclaredConfig {
   readonly agentRpcUrl: string;
   readonly protocolVersion: SelectableProtocolVersion;
-  readonly budgetServiceUrl: string;
-  readonly signerServiceUrl: string;
-  readonly receiptServiceUrl: string;
+  readonly budgetServiceUrl?: string;
+  readonly signerServiceUrl?: string;
+  readonly receiptServiceUrl?: string;
   readonly tenant: string;
   readonly actor: string;
   readonly authority: string;
@@ -83,9 +93,9 @@ export function readDeclaredConfig(environment: Environment): AgentDeclaredConfi
   return {
     agentRpcUrl: endpoint(required(environment, "LAYERX_AGENT_RPC_URL")),
     protocolVersion: declaredProtocolVersion(required(environment, "LAYERX_PROTOCOL_VERSION")),
-    budgetServiceUrl: endpoint(required(environment, "LAYERX_BUDGET_SERVICE_URL")),
-    signerServiceUrl: endpoint(required(environment, "LAYERX_SIGNER_SERVICE_URL")),
-    receiptServiceUrl: endpoint(required(environment, "LAYERX_RECEIPT_SERVICE_URL")),
+    ...(optional(environment, "LAYERX_BUDGET_SERVICE_URL") === undefined ? {} : { budgetServiceUrl: endpoint(required(environment, "LAYERX_BUDGET_SERVICE_URL")) }),
+    ...(optional(environment, "LAYERX_SIGNER_SERVICE_URL") === undefined ? {} : { signerServiceUrl: endpoint(required(environment, "LAYERX_SIGNER_SERVICE_URL")) }),
+    ...(optional(environment, "LAYERX_RECEIPT_SERVICE_URL") === undefined ? {} : { receiptServiceUrl: endpoint(required(environment, "LAYERX_RECEIPT_SERVICE_URL")) }),
     tenant: bounded(required(environment, "LAYERX_TENANT"), 512),
     actor: bounded(required(environment, "LAYERX_ACTOR"), 512),
     authority: bounded(required(environment, "LAYERX_AUTHORITY"), 512),
@@ -222,4 +232,29 @@ function parseWebhookKeys(value: string): Readonly<Record<string, Uint8Array>> {
     throw new AgentIntegrationError("invalid-declared-key");
   }
   return Object.freeze(keys);
+}
+
+export function authenticatedAgentTransport(environment: Environment, config: Pick<AgentDeclaredConfig, "agentRpcUrl" | "tenant" | "requestTimeoutMs">): { transport: AgentEnvelopeTransport; destroy(): void } {
+  const secrets: SecretBytes[] = [];
+  const secret = (value: Uint8Array): SecretBytes => { const result = new SecretBytes(value); secrets.push(result); return result; };
+  try {
+    const token = secret(parseHex32(required(environment, "LAYERX_SESSION_TOKEN")));
+    const session = new AgentSessionCredential(config.tenant, required(environment, "LAYERX_SESSION_ID"), token, required(environment, "LAYERX_SESSION_GENERATION"));
+    const surface = required(environment, "LAYERX_AGENT_SURFACE");
+    const trustedCa = optional(environment, "LAYERX_TRUSTED_CA_PEM");
+    const common = { endpoint: config.agentRpcUrl, timeoutMs: config.requestTimeoutMs, session,
+      ...(trustedCa === undefined ? {} : { trustedCa }) };
+    let transport: AgentEnvelopeTransport;
+    if (surface === "gateway") {
+      if (optional(environment, "LAYERX_CLIENT_CERTIFICATE_PEM") !== undefined || optional(environment, "LAYERX_CLIENT_KEY_PEM") !== undefined) throw new AgentIntegrationError("invalid-declared-key");
+      const key = secret(new TextEncoder().encode(required(environment, "LAYERX_GATEWAY_KEY")));
+      transport = new AgentEnvelopeTransport({ ...common, surface, gatewayCredential: new LayerXKeyCredential(required(environment, "LAYERX_GATEWAY_KEY_ID"), key) });
+    } else if (surface === "daemon") {
+      if (optional(environment, "LAYERX_GATEWAY_KEY") !== undefined || optional(environment, "LAYERX_GATEWAY_KEY_ID") !== undefined) throw new AgentIntegrationError("invalid-declared-key");
+      transport = new AgentEnvelopeTransport({ ...common, surface,
+        clientCertificate: secret(new TextEncoder().encode(required(environment, "LAYERX_CLIENT_CERTIFICATE_PEM"))),
+        clientKey: secret(new TextEncoder().encode(required(environment, "LAYERX_CLIENT_KEY_PEM"))) });
+    } else throw new AgentIntegrationError("invalid-declared-key");
+    return { transport, destroy: () => { for (const value of secrets) value.destroy(); } };
+  } catch (error) { for (const value of secrets) value.destroy(); throw error; }
 }

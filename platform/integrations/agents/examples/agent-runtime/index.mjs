@@ -1,5 +1,5 @@
 import { readFile } from "node:fs/promises";
-import { AGENT_FRAMEWORKS } from "@sidiora/layerx-agent-integrations";
+import { AGENT_FRAMEWORKS, loadAgentServiceProviders } from "@sidiora/layerx-agent-integrations";
 import { createAnthropicIntegration } from "@sidiora/layerx-agent-integrations/anthropic";
 import { createLangChainIntegration } from "@sidiora/layerx-agent-integrations/langchain";
 import { createOpenAiIntegration } from "@sidiora/layerx-agent-integrations/openai";
@@ -23,7 +23,8 @@ if (!AGENT_FRAMEWORKS.includes(framework)) {
   throw new Error("unsupported_framework");
 }
 
-const options = { environment: process.env };
+const providers = await loadAgentServiceProviders(process.env);
+const options = { environment: process.env, ...providers };
 const integrations = {
   mcp: () => {
     const integration = createMcpIntegration(options);
@@ -160,4 +161,5 @@ try {
 } finally {
   if (framework === "mcp") await runtime.integration.closeMcp();
   runtime.integration.destroy();
+  await providers.destroy?.();
 }

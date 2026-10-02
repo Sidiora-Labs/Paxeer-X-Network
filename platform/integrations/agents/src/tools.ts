@@ -1,5 +1,6 @@
 import {
   AgentMiddlewareError,
+  decodeDaemonSubmission,
   type AgentMiddleware,
   type AgentReceiptResolver,
   type AgentSpendRequest,
@@ -45,20 +46,238 @@ export const SPEND_TOOL: ToolDefinition = {
   inputSchema: {
     type: "object",
     additionalProperties: false,
-    required: ["asset", "amount", "recipient", "payloadBase64", "payloadHash", "accountSequence", "timestampBound", "idempotencyKey"],
+    required: ["asset", "amount", "recipient", "preparation", "networkId", "authorityHex", "signerPublicKey", "submitIdempotencyKey", "approvalCurrentSequence"],
     properties: {
-      asset: { type: "string", pattern: HEX32_PATTERN, description: "Asset identifier as 64 lowercase hex characters." },
-      amount: { type: "string", pattern: AMOUNT_PATTERN, description: "Amount in protocol base units, integer only." },
-      recipient: { type: "string", pattern: HEX32_PATTERN, description: "Recipient account as 64 lowercase hex characters." },
-      payloadBase64: { type: "string", minLength: 1, maxLength: 1_398_104, description: "Canonical activity payload, base64." },
-      payloadHash: { type: "string", pattern: HEX32_PATTERN, description: "SHA-256 of the canonical payload." },
-      accountSequence: { type: "string", pattern: AMOUNT_PATTERN, description: "Expected account sequence." },
-      timestampBound: { type: "string", pattern: AMOUNT_PATTERN, description: "Upper timestamp bound in milliseconds." },
-      idempotencyKey: { type: "string", minLength: 1, maxLength: 255, description: "Replay-safe key for this spend." },
-      feeLimit: { type: "string", pattern: AMOUNT_PATTERN, description: "Optional fee ceiling; defaults to the declared limit." },
-      tenant: { type: "string", minLength: 1, maxLength: 512, description: "Optional tenant override." },
-      actor: { type: "string", minLength: 1, maxLength: 512, description: "Optional actor override." },
-      authority: { type: "string", minLength: 1, maxLength: 512, description: "Optional authority override." },
+      asset: { type: "string", pattern: HEX32_PATTERN },
+      amount: { type: "string", pattern: AMOUNT_PATTERN },
+      recipient: { type: "string", pattern: HEX32_PATTERN },
+      preparation: {
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "actor",
+    "authority",
+    "account_sequence",
+    "not_before",
+    "not_after",
+    "idempotency_key",
+    "fee_limit",
+    "payload",
+    "payload_hash"
+  ],
+  "properties": {
+    "actor": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 255
+    },
+    "authority": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 524288
+    },
+    "account_sequence": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)$",
+      "maxLength": 39
+    },
+    "not_before": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)$",
+      "maxLength": 39
+    },
+    "not_after": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)$",
+      "maxLength": 39
+    },
+    "idempotency_key": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "fee_limit": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)$",
+      "maxLength": 39
+    },
+    "payload": {
+      "type": "string",
+      "pattern": "^(?:[0-9a-f]{2})+$",
+      "maxLength": 1048576
+    },
+    "payload_hash": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "capability_id": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "activity_type": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)$",
+      "maxLength": 39
+    },
+    "variant": {
+      "type": "string",
+      "pattern": "^native_v1$"
+    },
+    "activity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "version",
+        "module",
+        "ordinal"
+      ],
+      "properties": {
+        "version": {
+          "type": "string",
+          "pattern": "^1$"
+        },
+        "module": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]*)$",
+          "maxLength": 39
+        },
+        "ordinal": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]*)$",
+          "maxLength": 39
+        }
+      }
+    },
+    "purpose": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "purpose",
+        "owner_public_key",
+        "signature"
+      ],
+      "properties": {
+        "purpose": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "version",
+            "tenant",
+            "agent_did",
+            "session_id",
+            "generation",
+            "expires_at_ms",
+            "capability_id",
+            "preparation_id",
+            "canonical_digest",
+            "commitment"
+          ],
+          "properties": {
+            "version": {
+              "type": "string",
+              "pattern": "^1$"
+            },
+            "tenant": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 255
+            },
+            "agent_did": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 255
+            },
+            "session_id": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "generation": {
+              "type": "string",
+              "pattern": "^(0|[1-9][0-9]*)$",
+              "maxLength": 39
+            },
+            "expires_at_ms": {
+              "type": "string",
+              "pattern": "^(0|[1-9][0-9]*)$",
+              "maxLength": 39
+            },
+            "capability_id": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "preparation_id": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "canonical_digest": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "commitment": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            }
+          }
+        },
+        "owner_public_key": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "signature": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{128}$"
+        }
+      }
+    },
+    "local_grant": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "version",
+        "capability",
+        "session_scope",
+        "expires_at_ms",
+        "owner_public_key",
+        "signature"
+      ],
+      "properties": {
+        "version": {
+          "type": "string",
+          "pattern": "^1$"
+        },
+        "capability": {
+          "type": "string",
+          "pattern": "^(?:[0-9a-f]{2})+$",
+          "maxLength": 2097152
+        },
+        "session_scope": {
+          "type": "string",
+          "pattern": "^(?:[0-9a-f]{2})+$",
+          "maxLength": 2097152
+        },
+        "expires_at_ms": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]*)$",
+          "maxLength": 39
+        },
+        "owner_public_key": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "signature": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{128}$"
+        }
+      }
+    }
+  },
+  "description": "Exact daemon body. Supply activity_type for legacy, or variant native_v1 with activity, capability_id and signed purpose."
+},
+      networkId: { type: "string", pattern: AMOUNT_PATTERN },
+      authorityHex: { type: "string", pattern: "^(?:[0-9a-f]{2})+$" },
+      signerPublicKey: { type: "string", pattern: HEX32_PATTERN },
+      submitIdempotencyKey: { type: "string", pattern: HEX32_PATTERN },
+      approvalCurrentSequence: { type: "string", pattern: AMOUNT_PATTERN },
+      approvalReleaseRef: { type: "string", pattern: HEX32_PATTERN },
     },
   },
 };
@@ -145,16 +364,19 @@ export class AgentToolExecutor {
 
   #spendRequest(input: unknown): AgentSpendRequest {
     const object = asObject(input);
+    const preparation = asObject(object["preparation"]);
+    if (preparation["actor"] !== this.#config.actor || preparation["authority"] !== this.#config.authority
+      || typeof preparation["fee_limit"] !== "string" || preparation["fee_limit"].length > 39 || !/^(0|[1-9][0-9]*)$/u.test(preparation["fee_limit"])
+      || BigInt(preparation["fee_limit"]) > BigInt(this.#config.feeLimit)) throw new AgentIntegrationError("invalid-tool-input");
     return {
-      tenant: optionalText(object, "tenant", 512) ?? this.#config.tenant,
-      actor: optionalText(object, "actor", 512) ?? this.#config.actor,
-      authority: optionalText(object, "authority", 512) ?? this.#config.authority,
-      accountSequence: canonicalInteger(object, "accountSequence"),
-      timestampBound: canonicalInteger(object, "timestampBound"),
-      idempotencyKey: text(object, "idempotencyKey", 255),
-      feeLimit: optionalCanonicalInteger(object, "feeLimit") ?? this.#config.feeLimit,
-      payloadBase64: text(object, "payloadBase64", 1_398_104),
-      payloadHash: hex32(object, "payloadHash"),
+      tenant: this.#config.tenant,
+      preparation: asObject(object["preparation"]) as unknown as AgentSpendRequest["preparation"],
+      networkId: canonicalInteger(object, "networkId"),
+      authorityHex: text(object, "authorityHex", 1048576),
+      signerPublicKey: hex32(object, "signerPublicKey"),
+      submitIdempotencyKey: hex32(object, "submitIdempotencyKey"),
+      approvalCurrentSequence: canonicalInteger(object, "approvalCurrentSequence"),
+      ...(object["approvalReleaseRef"] === undefined ? {} : { approvalReleaseRef: hex32(object, "approvalReleaseRef") }),
       asset: hex32(object, "asset"),
       amount: canonicalInteger(object, "amount"),
       recipient: hex32(object, "recipient"),
@@ -168,13 +390,22 @@ export class AgentToolExecutor {
       "track",
       { submission_ref: submissionRef },
     );
-    const submission = asObject(response);
+    const submission = decodeDaemonSubmission(response, undefined, submissionRef);
     const output: Record<string, ToolJson> = {
       submissionRef,
       state: jsonValue(submission["state"]),
     };
-    if (submission["verification_level"] !== undefined) {
-      output["verificationLevel"] = jsonValue(submission["verification_level"]);
+    if (submission.state === "Executed") {
+      const evidence = submission.receiptEvidence;
+      if (evidence === undefined || submission.activity_id === undefined) throw new AgentMiddlewareError("verification-failure");
+      try {
+        const verified = await verifyReceipt(evidence.canonicalReceipt, evidence.authorizedBatch, { protocolVersion: this.#config.protocolVersion });
+        if (toHex(verified.receipt.activityId) !== submission.activity_id) throw new AgentMiddlewareError("verification-failure");
+        output["receiptDigest"] = toHex(verified.receiptDigest);
+        output["verificationLevel"] = verified.level;
+      } catch { throw new AgentMiddlewareError("verification-failure"); }
+    } else if (submission.verification_level !== undefined) {
+      output["verificationLevel"] = submission.verification_level;
     }
     return output;
   }

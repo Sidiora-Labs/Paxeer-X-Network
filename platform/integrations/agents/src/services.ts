@@ -15,6 +15,9 @@ import type {
   ReleasedBudgetReservation,
 } from "@sidiora/layerx-agent-middleware";
 import {
+  AgentEnvelopeTransport,
+  type AgentEnvelopeSuccess,
+  type NativePrepareRequestV1,
   PlatformSdkError,
   SDK_ERROR_CODES,
   type ProductionTransport,
@@ -80,24 +83,18 @@ export class LayerXServiceEndpoint {
 }
 
 export class LayerXAgentTransport implements ProductionTransport {
-  readonly #endpoint: LayerXServiceEndpoint;
-
-  public constructor(endpoint: LayerXServiceEndpoint) {
-    this.#endpoint = endpoint;
-  }
+  public constructor(private readonly transport: AgentEnvelopeTransport) {}
 
   public async call<TRequest, TResponse>(call: TransportCall<TRequest>): Promise<TResponse> {
-    if (call.plane !== "agent") {
-      throw new PlatformSdkError({ code: "unavailable-capability", retry: "never" });
+    if (call.plane !== "agent") throw new PlatformSdkError({ code: "unavailable-capability", retry: "never" });
+    const request = asObject(call.request);
+    if (call.operation === "prepare" && request["variant"] === "native_v1") {
+      if (call.idempotencyKey === undefined) throw new PlatformSdkError({ code: "invalid-argument", retry: "never" });
+      const response = await this.transport.prepareNative(request as unknown as NativePrepareRequestV1, call.idempotencyKey);
+      return response.value as TResponse;
     }
-    const envelope = asObject(await this.#endpoint.call(
-      { operation: call.operation, request: call.request },
-      call.idempotencyKey,
-    ));
-    if (envelope["ok"] !== true || envelope["result"] === undefined) {
-      throw new PlatformSdkError({ code: "decode-failure", retry: "never" });
-    }
-    return envelope["result"] as TResponse;
+    const response = await this.transport.call<TRequest, AgentEnvelopeSuccess<TResponse>>(call);
+    return response.value;
   }
 }
 

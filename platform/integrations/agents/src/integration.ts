@@ -1,18 +1,15 @@
-import { AgentMiddleware } from "@sidiora/layerx-agent-middleware";
-import { ProductionClient, type SecretBytes } from "@sidiora/layerx-sdk";
+import { AgentMiddleware, type AgentBudgetLedger, type AgentSigner, type AgentReceiptResolver } from "@sidiora/layerx-agent-middleware";
+import { ProductionClient } from "@sidiora/layerx-sdk";
 import type { WebhookDeliveryStore } from "@sidiora/layerx-seller-middleware";
 import {
+  AgentIntegrationError,
   readDeclaredConfig,
-  readServiceToken,
+  authenticatedAgentTransport,
   type AgentDeclaredConfig,
   type Environment,
 } from "./config.js";
 import {
   LayerXAgentTransport,
-  LayerXBudgetLedger,
-  LayerXReceiptResolver,
-  LayerXRemoteSigner,
-  LayerXServiceEndpoint,
 } from "./services.js";
 import { AgentToolExecutor } from "./tools.js";
 import { AgentWebhookGateway } from "./webhooks.js";
@@ -23,6 +20,9 @@ export type AgentFramework = (typeof AGENT_FRAMEWORKS)[number];
 
 export interface AgentIntegrationOptions {
   readonly environment: Environment;
+  readonly budgets: AgentBudgetLedger;
+  readonly signer: AgentSigner;
+  readonly receipts: AgentReceiptResolver;
   readonly deliveries?: WebhookDeliveryStore;
   readonly now?: () => number;
   readonly fetch?: typeof globalThis.fetch;
@@ -40,20 +40,16 @@ export interface LayerXAgentIntegration {
 
 export function createAgentIntegration(options: AgentIntegrationOptions): LayerXAgentIntegration {
   const config = readDeclaredConfig(options.environment);
-  const token: SecretBytes = readServiceToken(options.environment);
-  const endpoint = (url: string): LayerXServiceEndpoint => new LayerXServiceEndpoint({
-    url,
-    token,
-    timeoutMs: config.requestTimeoutMs,
-    ...(options.fetch === undefined ? {} : { fetch: options.fetch }),
-  });
-  const client = new ProductionClient(new LayerXAgentTransport(endpoint(config.agentRpcUrl)));
-  const receipts = new LayerXReceiptResolver(endpoint(config.receiptServiceUrl));
+  if (options.budgets === undefined || options.signer === undefined || options.receipts === undefined) throw new AgentIntegrationError("missing-declared-key");
+  const authenticated = authenticatedAgentTransport(options.environment, config);
+  try {
+  const client = new ProductionClient(new LayerXAgentTransport(authenticated.transport));
+  const receipts = options.receipts;
   const middleware = new AgentMiddleware({
     client,
     protocolVersion: config.protocolVersion,
-    budgets: new LayerXBudgetLedger(endpoint(config.budgetServiceUrl)),
-    signer: new LayerXRemoteSigner(endpoint(config.signerServiceUrl)),
+    budgets: options.budgets,
+    signer: options.signer,
     receipts,
     maximumTrackPolls: config.maximumTrackPolls,
     ...(options.wait === undefined ? {} : { wait: options.wait }),
@@ -71,9 +67,10 @@ export function createAgentIntegration(options: AgentIntegrationOptions): LayerX
     tools: new AgentToolExecutor({ middleware, client, receipts, config }),
     webhooks,
     destroy: () => {
-      token.destroy();
+      authenticated.destroy();
     },
   };
+  } catch (error) { authenticated.destroy(); throw error; }
 }
 
 export function platform_int_agent_frameworks(): "receipt-verified-agent-framework-integrations" {
