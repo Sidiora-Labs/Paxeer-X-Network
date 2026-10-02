@@ -4,6 +4,7 @@ kill_signal = "SIGTERM"
 kill_timeout = "30s"
 
 [env]
+  LAYERX_KERNEL_PROFILE = "native"
   LAYERX_NODE_NETWORK_ID = "125"
 
 [[mounts]]

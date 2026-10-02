@@ -25,11 +25,33 @@
 set -euo pipefail
 umask 077
 
+kernel_profile=${LAYERX_KERNEL_PROFILE:-full}
+case "$kernel_profile" in
+    full|native) ;;
+    *) printf 'kernel-init: LAYERX_KERNEL_PROFILE must be full or native\n' >&2; exit 1 ;;
+esac
+if [ "$kernel_profile" = native ]; then
+    for variable in LAYERX_AUTHORITY_HUMAN_AGENT_TOKEN_FILE LAYERX_AUTHORITY_HUMAN_AGENT_TENANT \
+        LAYERX_AUTHORITY_HUMAN_AGENT_PRINCIPAL LAYERX_AUTHORITY_PRINCIPAL_POLICY_FILE \
+        LAYERX_AUTHORITY_MODULE_REGISTRY_FILE LAYERX_AUTHORITY_CORE_CLOCK_HORIZON \
+        LAYERX_AUTHORITY_STATE_ROOT LAYERX_AUTHORITY_IDENTITY_BINDING_SOCKET \
+        LAYERX_AUTHORITY_IDENTITY_BINDING_UID LAYERX_AUTHORITY_IDENTITY_BINDING_GID; do
+        if [[ -v "$variable" ]]; then
+            printf 'kernel-init: native profile refuses configured %s\n' "$variable" >&2
+            exit 1
+        fi
+    done
+fi
+
 layerx=/data/layerx
 node_data=$layerx/node
 keys=$layerx/keys
 genesis=$layerx/genesis
 human_state=/data/human-state
+trust_history_file=$human_state/trust-history
+if [ "$kernel_profile" = native ]; then
+    trust_history_file=$layerx/trust/history
+fi
 tls=${LAYERX_FLY_TLS_DIR:-/data/tls}
 run=/run/layerx
 status=$run/init
@@ -119,11 +141,13 @@ mirror_inputs() {
 
 memory "$run" 0755
 memory /run/authority-private 0700
+if [ "$kernel_profile" = full ]; then
 if [ -e /run/human-private ] && [ "$(stat -c '%u:%g:%a' /run/human-private)" != 0:0:755 ]; then
 	log "private runtime directory refused: /run/human-private owner or mode"
 	exit 1
 fi
 memory /run/human-private 0755
+fi
 memory /run/mirror-signer 0700
 memory "$mirror_material" 0700
 memory "$mirror_run" 0700
@@ -138,8 +162,23 @@ chmod 0755 "$status"
 echo "$$" >"$status/pid"
 
 install -d -o 0 -g 4020 -m 2775 "$layerx" "$genesis" "$layerx/settlement"
+if [ "$kernel_profile" = native ]; then
+    chmod 3775 "$layerx"
+    if [ -L "$layerx/trust" ] || { [ -e "$layerx/trust" ] && [ ! -d "$layerx/trust" ]; }; then
+        log "native trust history directory refused"
+        exit 1
+    fi
+    if [ -d "$layerx/trust" ] && [ "$(stat -c '%u:%g:%a' "$layerx/trust")" != 0:4020:750 ]; then
+        log "native trust history directory owner or mode refused"
+        exit 1
+    fi
+    install -d -o 0 -g 4020 -m 0750 "$layerx/trust"
+fi
 install -d -o 0 -g 4020 -m 0750 "$keys" "$keys/tokens"
-install -d -o 0 -g 0 -m 0700 "$keys/checkpoint-authority" "$keys/publication" "$keys/human-authority"
+install -d -o 0 -g 0 -m 0700 "$keys/checkpoint-authority" "$keys/publication"
+if [ "$kernel_profile" = full ]; then
+    install -d -o 0 -g 0 -m 0700 "$keys/human-authority"
+fi
 install -d -o 4021 -g 4020 -m 0750 "$keys/checkpoint-submitter"
 install -d -o 4021 -g 4020 -m 0700 "$layerx/mirror"
 install -d -o 0 -g 4020 -m 0711 "$tls"
@@ -195,6 +234,7 @@ except (OSError, ValueError) as error:
 PY_PRIVATE
 }
 
+if [ "$kernel_profile" = full ]; then
 private_runtime_directories
 export LAYERX_HUMAN_SERVICE_PRIVATE_DIR=/run/human-private/service
 install -d -o 4020 -g 4020 -m 0750 "$run/human"
@@ -211,6 +251,7 @@ human_material=$run/human-material
 install -d -o 0 -g 4020 -m 0751 "$human_material"
 install -d -m 0755 /run/human-material /var/lib/layerx/human
 install -d -o 0 -g 0 -m 0700 "$keys/human-policy"
+fi
 
 # The trust root of the [[files]] entry, where the pod mounted it.
 install -d -m 0755 "$run/trust"
@@ -229,7 +270,9 @@ fresh "$keys/tokens/replica-token" 4020:4020 0440 openssl rand -hex 32
 for token in backend-admin gateway-component gateway-authority webhooks-component webhooks-authority; do
 	fresh "$keys/tokens/$token" 4020:4020 0440 openssl rand -hex 32
 done
-fresh "$keys/human-authority/authority-token" 0:0 0600 openssl rand -hex 32
+if [ "$kernel_profile" = full ]; then
+    fresh "$keys/human-authority/authority-token" 0:0 0600 openssl rand -hex 32
+fi
 install -d -o 4021 -g 4020 -m 0700 "$layerx/core" "$layerx/agent-boundary"
 fresh "$keys/checkpoint-submitter/key" 4021:4020 0400 evm_key
 
@@ -240,10 +283,45 @@ fresh "$keys/checkpoint-submitter/key" 4021:4020 0400 evm_key
 # mounted the layerx-program-registry-node-client and
 # layerx-program-registry-authority-client secrets. Neither reaches a service's
 # environment.
+native_registry_bearer() {
+    local name=$1 source=$keys/tokens/$1 directory=$run/$1
+    python3 - "$source" <<'PY_REGISTRY_TOKEN'
+import os
+import secrets
+import stat
+import sys
+
+path = sys.argv[1]
+try:
+    descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+except FileExistsError:
+    pass
+else:
+    with os.fdopen(descriptor, "wb") as output:
+        output.write(secrets.token_hex(32).encode("ascii"))
+        output.flush()
+        os.fsync(output.fileno())
+with os.fdopen(os.open(path, os.O_RDONLY | os.O_NOFOLLOW), "rb") as source:
+    info = os.fstat(source.fileno())
+    if (not stat.S_ISREG(info.st_mode) or info.st_uid != 0 or info.st_gid != 0
+            or stat.S_IMODE(info.st_mode) != 0o600 or info.st_nlink != 1 or info.st_size != 64):
+        raise SystemExit("native registry token file is not protected")
+    value = source.read(65)
+    if len(value) != 64 or any(byte not in b"0123456789abcdef" for byte in value):
+        raise SystemExit("native registry token file is invalid")
+PY_REGISTRY_TOKEN
+    install -d -o 4021 -g 4020 -m 0750 "$directory"
+    install -o 4021 -g 4020 -m 0440 "$source" "$directory/token"
+}
+
 registry_bearer() {
 	local variable=$1 directory=$run/$2
 	if [ -z "${!variable:-}" ]; then
-		log "$variable is unset; the program registry cannot authenticate until its deploy step imports it"
+        if [ "$kernel_profile" = native ]; then
+            native_registry_bearer "$2"
+        else
+		    log "$variable is unset; the program registry cannot authenticate until its deploy step imports it"
+        fi
 	else
 		install -d -o 4021 -g 4020 -m 0750 "$directory"
 		printf '%s' "${!variable}" >"$directory/token"
@@ -535,6 +613,27 @@ receipt_authority_prepare() {
 	mv "$run/node/sequencer-public-key.new" "$run/node/sequencer-public-key"
 }
 
+receipt_authority_native_prepare() {
+    receipt_authority_prepare || return 1
+    install -d -o 4021 -g 4020 -m 0700 "$run/authority-clock" || return 1
+    if [ -e "$node_data/genesis/genesis-handover-trust.lxt" ]; then
+        [ -n "${LAYERX_AUTHORITY_HANDOVER_FINALITY:-}" ] && [ -f "$LAYERX_AUTHORITY_HANDOVER_FINALITY" ] || {
+            log "native handover genesis requires an independent finality policy"
+            return 1
+        }
+        if [ -n "${LAYERX_AUTHORITY_GENESIS_TRUST:-}" ]; then
+            cmp -s "$node_data/genesis/genesis-handover-trust.lxt" "$LAYERX_AUTHORITY_GENESIS_TRUST" || return 1
+        fi
+        install -d -o 4021 -g 4020 -m 0700 "$authority_material" || return 1
+        install -o 4021 -g 4020 -m 0600 "$node_data/genesis/genesis-handover-trust.lxt" "$authority_material/genesis-handover-trust.lxt" || return 1
+        if [ "$LAYERX_AUTHORITY_HANDOVER_FINALITY" != "$authority_material/handover-finality.conf" ]; then
+            install -o 4021 -g 4020 -m 0600 "$LAYERX_AUTHORITY_HANDOVER_FINALITY" "$authority_material/handover-finality.conf" || return 1
+        fi
+        export LAYERX_AUTHORITY_GENESIS_TRUST="$authority_material/genesis-handover-trust.lxt"
+        export LAYERX_AUTHORITY_HANDOVER_FINALITY="$authority_material/handover-finality.conf"
+    fi
+}
+
 agent_boundary_prepare() {
 	network_name && tls_for agent-boundary 4021
 }
@@ -569,6 +668,7 @@ exec /usr/local/bin/layerx-core-boundary'
 
 # The receipt authority enters the runtime clock itself, as its container did.
 # shellcheck disable=SC2016 # core.env and the material are read when the service starts
+if [ "$kernel_profile" = full ]; then
 service receipt-authority 4021 \
 	"$genesis_files $run/node/core.env $run/node/layerxd.lni.sock $tls/receipt-authority/cert.der $tls/receipt-authority/key.der $tls/receipt-authority/ca.der $run/registry-authority/token $authority_material/human-agent.token $authority_material/principal-policy.json $authority_material/registry.json $authority_material/authority.json" \
 	receipt_authority_prepare - -- \
@@ -607,6 +707,31 @@ if [ -e "$m/genesis-handover-trust.lxt" ]; then
 	export LAYERX_AUTHORITY_GENESIS_TRUST="$m/genesis-handover-trust.lxt" LAYERX_AUTHORITY_HANDOVER_FINALITY="$m/handover-finality.conf"
 fi
 exec /usr/local/bin/layerx-runtime-clock --runtime-dir '"$run"'/human/authority-clock -- /usr/local/bin/layerx-receipt-authority'
+else
+service receipt-authority 4021 \
+	"$genesis_files $run/node/core.env $run/node/layerxd.lni.sock $tls/receipt-authority/cert.der $tls/receipt-authority/key.der $tls/receipt-authority/ca.der $run/registry-authority/token" \
+	receipt_authority_native_prepare - -- \
+	env \
+	"LAYERX_AUTHORITY_LISTEN=[::]:9445" \
+	LAYERX_AUTHORITY_PROTOCOL_NETWORK_ID="$LAYERX_NODE_NETWORK_ID" \
+	LAYERX_AUTHORITY_TLS_CERT_DER="$tls/receipt-authority/cert.der" \
+	LAYERX_AUTHORITY_TLS_KEY_DER="$tls/receipt-authority/key.der" \
+	LAYERX_AUTHORITY_CLIENT_CA_DER="$tls/receipt-authority/ca.der" \
+	LAYERX_AUTHORITY_TOKEN_FILES="$keys/tokens/gateway-authority:$run/registry-authority/token:$keys/tokens/webhooks-authority" \
+	LAYERX_AUTHORITY_REPLICA_URL=http://127.0.0.1:9402 \
+	LAYERX_AUTHORITY_REPLICA_BEARER_TOKEN_FILE="$keys/tokens/replica-token" \
+	LAYERX_AUTHORITY_LNI_SOCKET="$run/node/layerxd.lni.sock" \
+	LAYERX_AUTHORITY_FIRST_BATCH=1 \
+	LAYERX_AUTHORITY_LAST_BATCH=18446744073709551615 \
+	/bin/sh -ec 'set -a; . '"$run"'/node/core.env; set +a
+: "${LAYERX_CORE_SEQUENCER_ID:?generated sequencer identity is required}"
+LAYERX_AUTHORITY_NETWORK_ID=$LAYERX_NODE_NETWORK_NAME
+LAYERX_AUTHORITY_SEQUENCER_ID=$LAYERX_CORE_SEQUENCER_ID
+LAYERX_AUTHORITY_SEQUENCER_PUBLIC_KEY=$(tr -d "\r\n" <'"$run"'/node/sequencer-public-key)
+LAYERX_AUTHORITY_REPLICA_ID=$(cat '"$genesis"'/replica-id)
+export LAYERX_AUTHORITY_NETWORK_ID LAYERX_AUTHORITY_SEQUENCER_ID LAYERX_AUTHORITY_SEQUENCER_PUBLIC_KEY LAYERX_AUTHORITY_REPLICA_ID
+exec /usr/local/bin/layerx-runtime-clock --runtime-dir '"$run"'/authority-clock -- /usr/local/bin/layerx-receipt-authority'
+fi
 
 # shellcheck disable=SC2016 # the network name is read when the service starts
 service agent-boundary 4021 \
@@ -736,7 +861,7 @@ human_identity_prepare() {
 # publishes in core.env and the public key receipt_authority_prepare derives
 # from the sequencer seed. Written once; an existing history is never rewritten.
 trust_history() {
-	local history=$human_state/trust-history id key
+	local history=$trust_history_file id key
 	while missing "$run/node/core.env" "$run/node/sequencer-public-key" >/dev/null; do
 		sleep 5
 	done
@@ -772,7 +897,9 @@ human_movement_prepare() {
 
 # The owner's session operator secret, made once on the volume like the
 # other bearers.
-fresh "$keys/human-authority/session-operator" 0:0 0600 openssl rand -hex 32
+if [ "$kernel_profile" = full ]; then
+    fresh "$keys/human-authority/session-operator" 0:0 0600 openssl rand -hex 32
+fi
 
 human_owner_prepare() {
 	human_project human-owner 4021 "$human_out/agent-config:env" "$tls/receipt-authority/ca.der:ca.der" \
@@ -784,6 +911,7 @@ human_tls_prepare() {
 	tls_for human 4020
 }
 
+if [ "$kernel_profile" = full ]; then
 human_root=$human_state/components service human-components 4020 \
 	"$genesis_files $human_policy $human_paxeer_ca $tls/human-event-client/identity.p12 $tls/human-attestor-client/ca.der $tls/human-attestor-client/cert.der $tls/human-attestor-client/key.der /run/secrets/events-journey-token /run/secrets/events-approval-token /run/secrets/events-webhooks-token" \
 	human_components_prepare - -- \
@@ -864,6 +992,8 @@ service human-tls 4020 "$tls/human/cert.der $tls/human/key.der" human_tls_prepar
 	LAYERX_HUMAN_TLS_KEY_DER="$tls/human/key.der" \
 	/usr/local/bin/human-entrypoint service
 
+fi
+
 # The mirror-signer and mirror-publisher containers: the signer serves both
 # publisher keys on its socket, and the publisher reads the LNI socket and
 # answers /readyz and /status on 127.0.0.1:9456, the status_listen the
@@ -915,7 +1045,9 @@ service relay-archive 4020 \
     relay_archive_prepare - -- \
     python3 /opt/layerx/relay_archive/runtime.py --config "$run/relay-archive/config.json"
 
-human_authority_ready &
+if [ "$kernel_profile" = full ]; then
+    human_authority_ready &
+fi
 trust_history &
 
 wait
