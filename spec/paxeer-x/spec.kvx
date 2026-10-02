@@ -22873,7 +22873,7 @@ do_6 = "Integrate the scoped evidence-read credential from22.8: mint a separate 
 
 [task.24.6]
 title = "Recover precisely quiesced Human processes after export refusal"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 2
 requires = ["0.2"]

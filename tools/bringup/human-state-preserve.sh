@@ -9,6 +9,8 @@ usage() {
 	cat <<'EOF'
 usage: tools/bringup/human-state-preserve.sh export <dir> | import <dir> | verify <dir>
        tools/bringup/human-state-preserve.sh restore <dir> <machine>
+       tools/bringup/human-state-preserve.sh resume <dir>
+       tools/bringup/human-state-preserve.sh local-export <dir> | local-resume <dir>
 
 Carries the retained state and its matching cryptographic material from the
 writable root of the volumeless machine of the kernel app
@@ -41,6 +43,12 @@ export <dir>  on the only started machine, the old one (refused when /data is a
               <dir>/state.tar through flyctl ssh console and checks the tar
               against the manifest. Refuses when <dir> already holds an export
               or nothing is carried.
+resume <dir>  explicitly resumes only previously running processes recorded by
+              export, after checking boot, namespace and exact process identity.
+              Safe to repeat; previously stopped processes stay stopped. Every
+              failed or interrupted export retains the same recovery operation.
+local-export/local-resume run these same operations directly on the source host
+              as root; successful export remains stopped until explicit resume.
 import <dir>  on the only started machine, the new one with /data, before the
               kernel init first runs: refuses when any carried file already
               exists there, unpacks the tar under /data, sets the owners above,
@@ -75,31 +83,198 @@ EOF
 
 toml=human/wallet/deploy/human.toml
 
-# shellcheck disable=SC2016
-quiesce_cmd='mountpoint -q /data/ && exit 3
-s=/var/lib/layerx/human
-for d in /proc/[0-9]*; do
-	case "$(readlink "$d/exe" 2>/dev/null)" in
-	/usr/local/bin/layerx-human-service | /usr/local/bin/layerx-runtime-clock)
-		for r in $(tr "\000" "\n" <"$d/environ" | sed -n "s/^LAYERX_HUMAN_\(STORE\|CUSTODY\|AUTH_INDEX\)_ROOT=//p"); do
-			case "$r/" in "$s"/*) ;; *) exit 4 ;; esac
-		done
-		;;
-	esac
-done
-n=0
-for d in /proc/[0-9]*; do
-	case "$(readlink "$d/exe" 2>/dev/null)" in
-	/usr/local/bin/layerx-human-service | /usr/local/bin/layerx-runtime-clock)
-		kill -STOP "${d#/proc/}" && n=$((n + 1))
-		;;
-	esac
-done
-echo "@@quiesced $n"
+worker_code=$(cat <<'PY'
+import fcntl
+import json
+import os
+import pathlib
+import signal
+import stat
+import subprocess
+import sys
+import time
+
+operation, filename = sys.argv[1:]
+record = pathlib.Path(filename)
+executables = {"/usr/local/bin/layerx-human-service", "/usr/local/bin/layerx-runtime-clock"}
+boot = pathlib.Path("/proc/sys/kernel/random/boot_id").read_text().strip()
+namespace = os.readlink("/proc/self/ns/pid")
+
+def identity(pid):
+    root = pathlib.Path("/proc") / str(pid)
+    value = (root / "stat").read_text().rsplit(")", 1)[1].split()
+    target = os.readlink(root / "exe")
+    metadata = (root / "exe").stat()
+    return dict(pid=pid, starttime=value[19], exe=target,
+                device=metadata.st_dev, inode=metadata.st_ino,
+                uid=root.stat().st_uid, boot_id=boot,
+                pid_namespace=os.readlink(root / "ns/pid")), value[0]
+
+def save(doc):
+    temporary = record.with_name(record.name + ".new")
+    fd = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW, 0o600)
+    with os.fdopen(fd, "w") as stream:
+        json.dump(doc, stream, sort_keys=True)
+        stream.write("\n")
+        stream.flush()
+        os.fsync(stream.fileno())
+    os.replace(temporary, record)
+    fd = os.open(record.parent, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+
+def discover():
+    found = []
+    for entry in pathlib.Path("/proc").iterdir():
+        if not entry.name.isdecimal():
+            continue
+        try:
+            if os.readlink(entry / "exe") in executables:
+                found.append(identity(int(entry.name)))
+        except FileNotFoundError:
+            continue
+    return found
+
+def checked(entry):
+    fd = os.pidfd_open(entry["pid"])
+    try:
+        current, state = identity(entry["pid"])
+        if any(current[key] != entry[key] for key in current):
+            raise RuntimeError("recorded process identity changed; no signal sent")
+        return fd, state
+    except BaseException:
+        os.close(fd)
+        raise
+
+def wait_state(entry, stopped):
+    deadline = time.monotonic() + 5
+    while time.monotonic() < deadline:
+        fd, state = checked(entry)
+        os.close(fd)
+        if (state in ("T", "t")) == stopped:
+            return
+        time.sleep(0.01)
+    raise RuntimeError("recorded process did not reach requested state")
+
+try:
+    if not hasattr(os, "pidfd_open") or not hasattr(signal, "pidfd_send_signal"):
+        raise RuntimeError("Linux pidfd support is required before quiescence")
+    if record.parent.is_symlink():
+        raise RuntimeError("recovery directory must not be a symlink")
+    record.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    metadata = record.parent.stat()
+    if metadata.st_uid != os.geteuid() or stat.S_IMODE(metadata.st_mode) & 0o077:
+        raise RuntimeError("recovery directory must be private and owned by the operator")
+    lock = os.open(str(record) + ".lock", os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
+    fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    if operation == "quiesce":
+        if record.exists() or record.is_symlink():
+            raise RuntimeError("recovery record already exists")
+        if subprocess.run(["mountpoint", "-q", "/data/"]).returncode == 0:
+            raise RuntimeError("export source has a volume at /data")
+        processes = []
+        for entry, state in discover():
+            for item in pathlib.Path("/proc", str(entry["pid"]), "environ").read_bytes().split(b"\0"):
+                key, _, value = item.partition(b"=")
+                if key in (b"LAYERX_HUMAN_STORE_ROOT", b"LAYERX_HUMAN_CUSTODY_ROOT", b"LAYERX_HUMAN_AUTH_INDEX_ROOT"):
+                    root = pathlib.Path(os.fsdecode(value)).resolve()
+                    if not root.is_relative_to("/var/lib/layerx/human"):
+                        raise RuntimeError("human state root lies outside /var/lib/layerx/human")
+            entry.update(prior_state=state, resume_required=state not in ("T", "t"), state="recorded")
+            processes.append(entry)
+        doc = dict(version=1, boot_id=boot, pid_namespace=namespace, state="prepared", processes=processes)
+        save(doc)
+        for entry in processes:
+            fd, state = checked(entry)
+            try:
+                if entry["resume_required"]:
+                    entry["state"] = "stopping"
+                    save(doc)
+                    signal.pidfd_send_signal(fd, signal.SIGSTOP)
+                wait_state(entry, True)
+                entry["state"] = "quiesced"
+                save(doc)
+            finally:
+                os.close(fd)
+        doc["state"] = "quiesced"
+        save(doc)
+        print("@@quiesced", len(processes))
+    else:
+        fd = os.open(record, os.O_RDONLY | os.O_NOFOLLOW)
+        with os.fdopen(fd) as stream:
+            metadata = os.fstat(stream.fileno())
+            if metadata.st_uid != os.geteuid() or stat.S_IMODE(metadata.st_mode) != 0o600:
+                raise RuntimeError("recovery record ownership or permissions changed")
+            doc = json.load(stream)
+        if doc.get("version") != 1 or doc["boot_id"] != boot or doc["pid_namespace"] != namespace:
+            raise RuntimeError("recovery machine or PID namespace changed; no signal sent")
+        if operation == "resume":
+            handles = []
+            try:
+                for entry in doc["processes"]:
+                    if entry["resume_required"] and entry["state"] in ("stopping", "quiesced", "resuming"):
+                        fd, state = checked(entry)
+                        handles.append((entry, fd))
+                for entry, fd in handles:
+                    entry["state"] = "resuming"
+                    save(doc)
+                    signal.pidfd_send_signal(fd, signal.SIGCONT)
+                    wait_state(entry, False)
+                    entry["state"] = "resumed"
+                    save(doc)
+                doc["state"] = "resumed"
+                save(doc)
+            finally:
+                for _, fd in handles:
+                    os.close(fd)
+            print("pass resume recorded-processes-only")
+        elif operation in ("check", "exported"):
+            if doc["state"] not in ("quiesced", "exported"):
+                raise RuntimeError("export is not quiesced")
+            current = {entry["pid"] for entry, _ in discover()}
+            if current != {entry["pid"] for entry in doc["processes"]}:
+                raise RuntimeError("export process set changed")
+            for entry in doc["processes"]:
+                fd, state = checked(entry)
+                os.close(fd)
+                if state not in ("T", "t"):
+                    raise RuntimeError("export process is no longer stopped")
+            if operation == "exported":
+                doc["state"] = "exported"
+                save(doc)
+        else:
+            raise RuntimeError("unknown recovery operation")
+except (OSError, ValueError, KeyError, RuntimeError) as error:
+    print("human-state-preserve recovery refused: " + str(error), file=sys.stderr)
+    sys.exit(1)
+PY
+)
+
+manifest_cmd='s=/var/lib/layerx/human
 sums() { find "$@" -type f -print0 | xargs -0 -r sha256sum; }
 ! test -d "$s" || (cd /var/lib/layerx/ && sums human) | sed "s,  human/,  human-state/components/,"
 for m in human-state layerx tls; do ! test -d "/data/$m" || (cd /data/ && sums "$m"); done
 ! test -d /run/human-material || (cd /run/human-material/.. && sums human-material) | sed "s,  human-material/,  layerx/keys/human-material/,"'
+
+recovery_worker() {
+    local operation=$1 encoded
+    if [ "$transport" = local ]; then
+        python3 -c "$worker_code" "$operation" "$recovery_record"
+    else
+        encoded=$(printf '%s' "$worker_code" | base64 -w0)
+        fly_ssh "$app" - "python3 -c \"exec(__import__(\\\"base64\\\").b64decode(\\\"$encoded\\\"))\" $operation $recovery_record"
+    fi
+}
+
+export_command() {
+    if [ "$transport" = local ]; then
+        bash -euo pipefail -c "$1"
+    else
+        fly_ssh "$app" - "bash -euo pipefail -c \"$(printf '%s' "$1" | base64 -w0 | sed 's/.*/$(echo & | base64 -d)/')\""
+    fi
+}
 
 # shellcheck disable=SC2016
 tar_cmd='set --
@@ -187,38 +362,88 @@ check_tar() {
 	return "$rc"
 }
 
-do_export() {
-	local dir=$1 app out rc=0 files stopped
-	if [ -e "$dir/manifest.sha256" ] || [ -e "$dir/state.tar" ]; then
-		refuse "$dir already holds an export"
-	fi
-	app="$(fly_app "$toml")" || refuse "$toml names no app"
-	mkdir -p "$dir"
-	chmod 0700 "$dir"
-	out="$(fly_ssh "$app" - "$quiesce_cmd" </dev/null)" || rc=$?
-	case "$rc" in
-	0) ;;
-	3) refuse "the started machine of $app has a volume at /data; export runs on the old machine" ;;
-	4) refuse "a human state root on $app lies outside /var/lib/layerx/human" ;;
-	*) refuse "quiesce on $app failed with status $rc" ;;
-	esac
-	stopped="$(sed -n '1s/^@@quiesced \([0-9][0-9]*\)$/\1/p' <<<"$out")"
-	[ -n "$stopped" ] || refuse "quiesce on $app gave no process count"
-	echo "pass quiesce app=$app stopped=$stopped"
-	sed '1d' <<<"$out" >"$dir/manifest.sha256"
-	chmod 0600 "$dir/manifest.sha256"
-	files="$(grep -c . "$dir/manifest.sha256" || true)"
-	if [ "$files" -eq 0 ]; then
-		rm -f "$dir/manifest.sha256"
-		refuse "no carried path on $app holds a file; nothing to preserve"
-	fi
-	(umask 077 && fly_ssh "$app" - "$tar_cmd" </dev/null >"$dir/state.tar") || {
-		rm -f "$dir/state.tar"
-		refuse "streaming the state of $app failed"
-	}
-	check_tar "$dir" || refuse "$dir/state.tar does not match $dir/manifest.sha256"
-	echo "pass export app=$app files=$files manifest=match"
+recovery_hint() {
+    printf 'human-state-preserve: source remains quiesced; recover with: %q %q %q\n' "$0" "${resume_operation:-resume}" "$dir" >&2
 }
+
+do_export() {
+    local dir=$1 app transport=${export_transport:-fly} recovery_record out files resume_operation=resume
+    if [ -e "$dir/manifest.sha256" ] || [ -e "$dir/state.tar" ] || [ -e "$dir/recovery.json" ] || [ -e "$dir/quiescence.json" ]; then
+        refuse "$dir already holds an export or recovery record"
+    fi
+    mkdir -p "$dir"
+    chmod 0700 "$dir"
+    if [ "$transport" = local ]; then
+        [ "$(id -u)" = 0 ] || refuse "local export requires root"
+        app=local
+        resume_operation=local-resume
+        recovery_record="$dir/quiescence.json"
+    else
+        app="$(fly_app "$toml")" || refuse "$toml names no app"
+        recovery_record="/var/lib/layerx/human-export-recovery/$(cat /proc/sys/kernel/random/uuid).json"
+    fi
+    (umask 077; python3 - "$dir/recovery.json" "$app" "$transport" "$recovery_record" <<'PY'
+import json, os, sys
+with open(sys.argv[1], "x") as stream:
+    json.dump(dict(app=sys.argv[2], transport=sys.argv[3], record=sys.argv[4]), stream)
+    stream.flush()
+    os.fsync(stream.fileno())
+fd = os.open(os.path.dirname(sys.argv[1]), os.O_RDONLY | os.O_DIRECTORY)
+os.fsync(fd)
+os.close(fd)
+PY
+    ) || refuse "cannot persist recovery location"
+    trap 'recovery_hint' EXIT
+    trap 'exit 130' INT
+    trap 'exit 143' TERM HUP
+    out=$(recovery_worker quiesce) || refuse "quiescence failed; recovery record retained"
+    [[ "$out" =~ ^@@quiesced\ [0-9]+$ ]] || refuse "quiescence returned no process count"
+    echo "pass quiesce app=$app stopped=${out#* }"
+    (umask 077; export_command "$manifest_cmd" >"$dir/manifest.sha256") || refuse "manifest generation failed"
+    files=$(grep -c . "$dir/manifest.sha256" || true)
+    [ "$files" -gt 0 ] || refuse "empty manifest: no carried path holds a file; nothing to preserve"
+    recovery_worker check || refuse "source quiescence changed before streaming"
+    (umask 077; export_command "$tar_cmd" >"$dir/state.tar") || refuse "streaming state failed"
+    recovery_worker check || refuse "source quiescence changed while streaming"
+    check_tar "$dir" || refuse "$dir/state.tar does not match $dir/manifest.sha256"
+    recovery_worker exported || refuse "source quiescence changed before completion"
+    trap - EXIT INT TERM HUP
+    echo "pass export app=$app files=$files manifest=match disposition=quiesced"
+    recovery_hint
+}
+
+do_local-export() { export_transport=local do_export "$1"; }
+
+do_resume() {
+    local dir=$1 app transport recovery_record descriptor
+    descriptor=$(python3 - "$dir/recovery.json" <<'PY'
+import json, sys
+with open(sys.argv[1]) as stream:
+    doc = json.load(stream)
+for key in ("app", "transport", "record"):
+    value = doc[key]
+    if not isinstance(value, str) or "\n" in value:
+        raise SystemExit("invalid recovery descriptor")
+    print(value)
+PY
+    ) || refuse "cannot read recovery location"
+    mapfile -t fields <<<"$descriptor"
+    app=${fields[0]}
+    transport=${fields[1]}
+    recovery_record=${fields[2]}
+    if [ "$transport" = local ]; then
+        [ "$(id -u)" = 0 ] || refuse "local resume requires root"
+        [ "$recovery_record" = "$dir/quiescence.json" ] || refuse "recovery record location changed"
+    elif [ "$transport" = fly ]; then
+        [[ "$app" =~ ^[a-zA-Z0-9-]+$ ]] || refuse "invalid recovery app"
+        [[ "$recovery_record" =~ ^/var/lib/layerx/human-export-recovery/[a-f0-9-]+.json$ ]] || refuse "invalid recovery record"
+    else
+        refuse "unknown recovery transport"
+    fi
+    recovery_worker resume || refuse "recorded process recovery failed; no other process may be resumed"
+}
+
+do_local-resume() { do_resume "$1"; }
 
 do_verify() {
 	local dir=$1 app rc=0 files
@@ -322,20 +547,22 @@ do_import() {
 }
 
 case "$#:${1:-}" in
-2:export | 2:import | 2:verify | 3:restore) ;;
+2:export | 2:resume | 2:local-export | 2:local-resume | 2:import | 2:verify | 3:restore) ;;
 *)
 	usage >&2
 	exit 2
 	;;
 esac
-for tool in timeout flyctl tar sha256sum; do
+required_tools=(timeout tar sha256sum python3 base64)
+case "$1" in local-*) ;; *) required_tools+=(flyctl) ;; esac
+for tool in "${required_tools[@]}"; do
 	command -v "$tool" >/dev/null 2>&1 || {
 		echo "human-state-preserve: $tool is required" >&2
 		exit 2
 	}
 done
 dir="$(realpath -m "$2")"
-if [ "$1" != export ]; then
+if [[ "$1" != *export && "$1" != *resume ]]; then
 	if [ ! -s "$dir/manifest.sha256" ] || [ ! -s "$dir/state.tar" ]; then
 		refuse "$dir holds no export"
 	fi
