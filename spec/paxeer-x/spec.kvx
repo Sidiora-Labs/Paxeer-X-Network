@@ -21795,7 +21795,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.8.1]
 title = "Serve the authenticated agent operation envelope through the unified route and daemon"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 2
 requires = ["0.2"]
@@ -21805,7 +21805,7 @@ do_2 = "Connect actual SDK envelope transports and the unified gateway agent rou
 do_3 = "Author real full-mode process cases for read/program-read/approval list, allowed mutation, wrong scope/tenant/generation, malformed body, retired faucet and restart retry."
 do_4 = "Author the new focused harness tools/qualification/paxeer-x/agent_operation_envelope.py to exercise these acceptance cases against real production implementations and types. It must fail on missing candidate artifacts, missing authority/configuration, skipped cases or unverifiable receipts; retain the exact candidate revision, command, case results and evidence paths. Use disposable qualification state and provisioned authority without printing secret values; no mocks, synthetic success or substitution of a library-only model for a named process boundary."
 do_5 = "Implement the declared focused gate through the real production types and paths; exercise every acceptance criterion including refusal, restart or boundary cases specified by this requirement. The command is a planned deliverable, not an already-run gate."
-touches = ["agent/crates/layerx-agentd/src/main.rs", "agent/crates/layerx-agentd/src/tenant.rs", "agent/crates/layerx-agent-api/src/operation_generated.rs", "platform/sdk/jvm/src/main/java/com/sidiora/layerx/sdk/HttpProductionTransport.java", "agent/crates/layerx-sdk/src/lib.rs", "agent/sdk/typescript/src/agent-http.ts", "agent/sdk/python/layerx_sdk/agent_http.py", "platform/hosted/gateway/src/main.rs", "tools/qualification/paxeer-x/agent_operation_envelope.py"]
+touches = ["agent/crates/layerx-agentd/src/main.rs", "agent/crates/layerx-agentd/src/tenant.rs", "agent/crates/layerx-agent-api/src/operation_generated.rs", "platform/sdk/jvm/src/main/java/com/sidiora/layerx/sdk/HttpProductionTransport.java", "agent/crates/layerx-sdk/src/lib.rs", "agent/sdk/typescript/src/agent-http.ts", "agent/sdk/python/layerx_sdk/agent_http.py", "platform/hosted/gateway/src/main.rs", "tools/qualification/paxeer-x/agent_operation_envelope.py", "agent/schema/agent-api/v1.kvx", "agent/crates/layerx-agentd/src/agent_rpc.rs", "agent/crates/layerx-agentd/src/human_runtime.rs", "platform/hosted/gateway/src/routes.rs", "tools/paxeer-x/route-catalogue.json", "agent/crates/layerx-sdk/src/agent_envelope.rs", "platform/sdk/go/http.go", "platform/sdk/swift/Sources/LayerXSDK/Transport.swift", "platform/sdk/dotnet/Transport.cs", "agent/crates/layerx-sdk/tests/agent_operation_envelope.rs", "agent/sdk/typescript/test/agent-operation-envelope.test.ts", "agent/sdk/python/tests/test_agent_operation_envelope.py", "platform/sdk/go/agent_operation_envelope_test.go", "platform/sdk/jvm/src/test/java/com/sidiora/layerx/sdk/AgentOperationEnvelopeProbe.java", "platform/sdk/jvm/src/test/kotlin/com/sidiora/layerx/sdk/AgentOperationEnvelopeProbe.kt", "platform/sdk/swift/Tests/LayerXSDKTests/AgentOperationEnvelopeTests.swift", "platform/sdk/dotnet/tests/LayerX.Sdk.Tests/AgentOperationEnvelopeTests.cs", "agent/crates/layerx-agentd/src/lib.rs", "agent/crates/layerx-agentd/src/human.rs", "agent/crates/layerx-agentd/src/agent_rpc_tls.rs", "agent/crates/layerx-agentd/Cargo.toml", "agent/Cargo.lock"]
 verify_cmd = "timeout 30m python3 tools/qualification/paxeer-x/agent_operation_envelope.py"
 gate_kind = "planned"
 max_builds = 1
@@ -24238,8 +24238,8 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.104.38.1]
 title = "Recover canonical and batch logs before daemon reconciliation"
-status = "pending"
-mode = "QUALIFY"
+status = "in_progress"
+mode = "BUILD"
 wave = 2
 requires = ["0.2"]
 reqs = ["1109.1"]
@@ -24250,10 +24250,10 @@ do_4 = "Propagate torn-tail, corrupt-chain and IO failures without resetting dur
 do_5 = "Write restart regression cases covering a checkpointed canonical log and an existing batch log without executing them during implementation."
 do_6 = "Record the exact crash and qualification matrix still required in the feature qualification log."
 do_7 = "Provide this task selector in tools/paxeer-x/gates and execute the full scoped acceptance contract using real production paths. Preserve the retained verification command coverage; move aggregate matrices to release scope and refuse an unknown or unimplemented selector."
-touches = ["cmd/layerxd/lxp_daemon_process.c", "tests/storage", "spec/paxeer-x/qualification.kvx", "tools/paxeer-x/gates/104.38.1.sh"]
+touches = ["cmd/layerxd/lxp_daemon_process.c", "tests/storage/check_daemon_recovery_order.sh", "tests/storage/lxp_test_recovery.c", "tests/storage/lxp_test_log_durability.c", "tests/storage/lxp_test_batch_wal_recovery.c", "tools/paxeer-x/gates/104.38.1.sh", "tools/qualification/paxeer-x/storage-recovery-producer.py", "tools/qualification/paxeer-x/storage-recovery.py", "spec/paxeer-x/qualification.kvx"]
 verify_cmd = "timeout 30m tools/paxeer-x/verify-task.sh 104.38.1"
 gate_kind = "planned-adapter"
-max_builds = 0
+max_builds = 1
 max_verify_runs = 1
 max_repair_cycles = 2
 time_limit_minutes = 30
