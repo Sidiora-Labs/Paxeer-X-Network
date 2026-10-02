@@ -518,7 +518,7 @@ type OwnerStatus = mpsc::Receiver<Result<(), String>>;
 fn start_human_owner(mcp: Option<McpBoot>) -> Result<OwnerStatus, String> {
     let runtime_clock = layerx_client::runtime_clock::RuntimeClock::from_environment()
         .map_err(|error| format!("runtime clock unavailable: {error}"))?;
-    start_shared_owner(mcp, None, None, runtime_clock).map(|(receiver, _, _)| receiver)
+    start_shared_owner(mcp, None, None, None, runtime_clock).map(|(receiver, _, _)| receiver)
 }
 
 fn start_shared_owner(
@@ -526,6 +526,8 @@ fn start_shared_owner(
     programs: Option<ProgramOperations>,
 
     export_trust: Option<layerx_agentd::export::ExportTrustSource>,
+
+    policy_sources: Option<&BTreeMap<TenantId, PathBuf>>,
 
     clock: Arc<dyn layerx_types::clock::Clock>,
 ) -> Result<
@@ -582,7 +584,13 @@ fn start_shared_owner(
     )
     .map_err(|error| format!("human operations are invalid: {error:?}"))?;
     if let Some(source) = export_trust {
-        operations.install_export_trust(source);
+        operations.install_export_trust(source, deadline);
+    }
+
+    if let Some(sources) = policy_sources {
+        operations
+            .attach_policies(sources)
+            .map_err(|error| format!("tenant policies are invalid: {error:?}"))?;
     }
 
     let socket_uid = required("LAYERX_AGENT_HUMAN_SOCKET_UID")?
@@ -1228,7 +1236,13 @@ fn serve(config: Config) -> Result<(), String> {
     )?);
     let export_trust = signed_history.map(export_trust_source).transpose()?;
     let (human, owner, status) =
-        start_shared_owner(mcp, Some(programs), export_trust, runtime_clock)?;
+        start_shared_owner(
+            mcp,
+            Some(programs),
+            export_trust,
+            Some(&config.policy_sources),
+            runtime_clock,
+        )?;
     start_agent_rpc(owner, status)?;
     route
         .read(config.probe_program, now_ms()?)
