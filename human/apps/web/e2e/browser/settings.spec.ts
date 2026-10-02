@@ -2,7 +2,7 @@ import { expect, test } from "@playwright/test";
 
 import { copyEntry } from "../../copy/catalog.ts";
 import { formatCopy } from "../../copy/format.ts";
-import { APP_SESSION_COOKIE } from "../../src/auth/session.ts";
+import { establishPublicSession } from "../public-session.ts";
 
 function requiredEnvironment(name: string): string {
   const value = process.env[name]?.trim();
@@ -14,14 +14,7 @@ function requiredEnvironment(name: string): string {
 
 test.beforeEach(async ({ context }) => {
   const baseUrl = new URL(requiredEnvironment("HUMAN_E2E_BASE_URL"));
-  await context.addCookies([{
-    name: APP_SESSION_COOKIE,
-    value: requiredEnvironment("HUMAN_E2E_SESSION_COOKIE"),
-    url: baseUrl.origin,
-    httpOnly: true,
-    secure: true,
-    sameSite: "Strict",
-  }]);
+  await establishPublicSession(context, baseUrl.origin);
 });
 
 test("@settings settings preferences persist and privacy masks every figure", async ({ page }) => {
@@ -114,5 +107,129 @@ test("@settings settings preferences persist and privacy masks every figure", as
     await page.getByRole("switch", {
       name: formatCopy("settings.notifications.channel.toggle", { channel: pushLabel }),
     }).click();
+  }
+});
+
+
+test("@settings profile and notification detail changes apply and persist", async ({ page }) => {
+  await page.goto("/app/settings", { waitUntil: "networkidle" });
+  await page.getByText(copyEntry("settings.profile.display_name").message, { exact: true }).click();
+  const name = "Settings profile qualification";
+  await page.getByRole("textbox", { name: copyEntry("settings.profile.display_name").message }).fill(name);
+  const profileSaved = page.waitForResponse((response) =>
+    response.request().method() === "PATCH"
+      && new URL(response.url()).pathname === "/v1/profile"
+  );
+  await page.getByRole("button", { name: copyEntry("settings.action.save").message }).click();
+  await expect((await profileSaved).ok()).toBe(true);
+  await expect(page.getByText(name, { exact: true })).toBeVisible();
+  await page.reload({ waitUntil: "networkidle" });
+  await expect(page.getByText(name, { exact: true })).toBeVisible();
+
+  for (const detail of ["full", "minimal", "summary"] as const) {
+    const choice = page.getByRole("tab", {
+      name: copyEntry(`settings.notifications.detail.${detail}`).message,
+      exact: true,
+    });
+    const detailSaved = page.waitForResponse((response) =>
+      response.request().method() === "POST"
+        && new URL(response.url()).pathname === "/v1/notifications/preferences"
+    );
+    await choice.click();
+    const response = await detailSaved;
+    await expect(response.ok()).toBe(true);
+    expect((await response.json()).detail).toBe(detail);
+    await expect(choice).toHaveAttribute("aria-selected", "true");
+    await page.reload({ waitUntil: "networkidle" });
+    await expect(choice).toHaveAttribute("aria-selected", "true");
+  }
+});
+
+test("@settings privacy synchronizes tabs and remains scoped to the authenticated user", async ({ page, context }) => {
+  await page.goto("/app/settings", { waitUntil: "networkidle" });
+  const privacyName = copyEntry("settings.privacy.toggle").message;
+  const privacyToggle = page.getByRole("switch", { name: privacyName });
+  await expect(privacyToggle).not.toBeChecked();
+  await privacyToggle.click();
+  await expect(privacyToggle).toBeChecked();
+  await page.reload({ waitUntil: "networkidle" });
+  await expect(privacyToggle).toBeChecked();
+
+  const otherTab = await context.newPage();
+  await otherTab.goto("/app/settings", { waitUntil: "networkidle" });
+  const otherToggle = otherTab.getByRole("switch", { name: privacyName });
+  await expect(otherToggle).toBeChecked();
+  await privacyToggle.click();
+  await expect(privacyToggle).not.toBeChecked();
+  await expect(otherToggle).not.toBeChecked();
+  await otherToggle.click();
+  await expect(privacyToggle).toBeChecked();
+  await expect(otherToggle).toBeChecked();
+  await otherTab.close();
+
+  await page.goto("about:blank");
+  await context.clearCookies();
+  const baseUrl = new URL(requiredEnvironment("HUMAN_E2E_BASE_URL"));
+  await establishPublicSession(context, baseUrl.origin);
+  await page.goto("/app/settings", { waitUntil: "networkidle" });
+  await expect(privacyToggle).not.toBeChecked();
+});
+
+test("@settings mandatory recovery and wallet rebinding keep an active delivery channel", async ({ page }) => {
+  await page.goto("/app/settings", { waitUntil: "networkidle" });
+  const channelToggle = (channel: "push" | "email" | "in_app") => page.getByRole("switch", {
+    name: formatCopy("settings.notifications.channel.toggle", {
+      channel: copyEntry(`settings.notifications.channel.${channel}`).message,
+    }),
+  });
+  const criticalToggle = (event: "security_recovery" | "security_wallet_rebinding") => page.getByRole("switch", {
+    name: formatCopy("settings.notifications.class.toggle", {
+      notification: copyEntry(`settings.notifications.class.${event}`).message,
+      channel: copyEntry("settings.notifications.channel.push").message,
+    }),
+  });
+  const saveResponse = () => page.waitForResponse((response) =>
+    response.request().method() === "POST"
+      && new URL(response.url()).pathname === "/v1/notifications/preferences"
+  );
+  const push = channelToggle("push");
+  if (!(await push.isChecked())) {
+    const saved = saveResponse();
+    await push.click();
+    expect((await saved).ok()).toBe(true);
+    await expect(push).toBeChecked();
+  }
+  for (const event of ["security_recovery", "security_wallet_rebinding"] as const) {
+    const critical = criticalToggle(event);
+    if (!(await critical.isChecked())) {
+      const saved = saveResponse();
+      await critical.click();
+      expect((await saved).ok()).toBe(true);
+      await expect(critical).toBeChecked();
+    }
+  }
+  for (const channel of ["email", "in_app"] as const) {
+    const toggle = channelToggle(channel);
+    if (await toggle.isChecked()) {
+      const saved = saveResponse();
+      await toggle.click();
+      expect((await saved).ok()).toBe(true);
+      await expect(toggle).not.toBeChecked();
+    }
+  }
+  await push.click();
+  await expect(push).toBeChecked();
+  await expect(page.getByText(copyEntry("settings.notifications.non_suppressible").message, { exact: true })).toBeVisible();
+  for (const event of ["security_recovery", "security_wallet_rebinding"] as const) {
+    await criticalToggle(event).click();
+    await expect(criticalToggle(event)).toBeChecked();
+    await expect(page.getByText(copyEntry("settings.notifications.non_suppressible").message, { exact: true })).toBeVisible();
+  }
+  await page.reload({ waitUntil: "networkidle" });
+  await expect(push).toBeChecked();
+  await expect(channelToggle("email")).not.toBeChecked();
+  await expect(channelToggle("in_app")).not.toBeChecked();
+  for (const event of ["security_recovery", "security_wallet_rebinding"] as const) {
+    await expect(criticalToggle(event)).toBeChecked();
   }
 });

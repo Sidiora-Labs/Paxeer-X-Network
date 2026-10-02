@@ -13,6 +13,12 @@ import {
 import { copyEntry } from "../../copy/runtime";
 
 const STORAGE_PREFIX = "layerx.privacy-mode.v1";
+const CHANGE_EVENT = "layerx:privacy-mode-change";
+
+interface PrivacyModeState {
+  readonly key: string;
+  readonly masked: boolean;
+}
 
 interface PrivacyModeContextValue {
   readonly masked: boolean;
@@ -30,30 +36,57 @@ export function PrivacyModeProvider({
   children,
 }: Readonly<{ principalScope: string; children: ReactNode }>) {
   const key = useMemo(() => storageKey(principalScope), [principalScope]);
-  const [masked, setMaskedState] = useState(false);
+  const [state, setMaskedState] = useState<PrivacyModeState>(() => ({ key, masked: true }));
+  const masked = state.key === key ? state.masked : true;
 
   useEffect(() => {
-    try {
-      setMaskedState(window.localStorage.getItem(key) === "masked");
-    } catch {
-      setMaskedState(false);
-    }
+    const readPreference = () => {
+      try {
+        const stored = window.localStorage.getItem(key);
+        setMaskedState({ key, masked: stored !== null && stored !== "visible" });
+      } catch {
+        setMaskedState({ key, masked: true });
+      }
+    };
     const sync = (event: StorageEvent) => {
-      if (event.key === key) {
-        setMaskedState(event.newValue === "masked");
+      if (event.key !== key && event.key !== null) return;
+      try {
+        if (event.storageArea !== window.localStorage) return;
+      } catch {
+        setMaskedState({ key, masked: true });
+        return;
+      }
+      readPreference();
+    };
+    const syncLocal = (event: Event) => {
+      if (!(event instanceof CustomEvent)) return;
+      const detail: unknown = event.detail;
+      if (
+        typeof detail === "object" && detail !== null &&
+        "key" in detail && detail.key === key &&
+        "masked" in detail && typeof detail.masked === "boolean"
+      ) {
+        setMaskedState({ key, masked: detail.masked });
       }
     };
     window.addEventListener("storage", sync);
-    return () => { window.removeEventListener("storage", sync); };
+    window.addEventListener(CHANGE_EVENT, syncLocal);
+    readPreference();
+    return () => {
+      window.removeEventListener("storage", sync);
+      window.removeEventListener(CHANGE_EVENT, syncLocal);
+    };
   }, [key]);
 
   const setMasked = useCallback((next: boolean) => {
-    setMaskedState(next);
+    const nextState = { key, masked: next };
+    setMaskedState(nextState);
     try {
       window.localStorage.setItem(key, next ? "masked" : "visible");
     } catch {
-      setMaskedState(next);
+      setMaskedState(nextState);
     }
+    window.dispatchEvent(new CustomEvent<PrivacyModeState>(CHANGE_EVENT, { detail: nextState }));
   }, [key]);
 
   const value = useMemo(() => ({ masked, setMasked }), [masked, setMasked]);

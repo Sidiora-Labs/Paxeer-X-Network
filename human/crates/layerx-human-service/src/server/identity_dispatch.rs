@@ -379,7 +379,11 @@ fn digest(value: OperationDigest) -> String {
 }
 
 fn profile_json(value: &StoredProfile) -> Value {
-    json!({"display_name": value.display_name, "avatar_url": value.avatar_url})
+    let mut profile = json!({"display_name": value.display_name});
+    if let Some(avatar_url) = &value.avatar_url {
+        profile["avatar_url"] = json!(avatar_url);
+    }
+    profile
 }
 
 fn stage_state(value: StageState) -> &'static str {
@@ -481,5 +485,43 @@ impl std::error::Error for IdentityDispatchError {
             Self::Store(error) => Some(error),
             _ => None,
         }
+    }
+}
+
+#[cfg(test)]
+mod profile_tests {
+    use super::{profile_json, StoredProfile};
+    use serde_json::json;
+
+    #[test]
+    fn settings_profile_omits_absent_optional_avatar() {
+        let profile = StoredProfile {
+            display_name: "Local profile".to_owned(),
+            avatar_url: None,
+        };
+
+        let response = profile_json(&profile);
+
+        assert_eq!(response, json!({"display_name": "Local profile"}));
+        assert!(response.get("avatar_url").is_none());
+    }
+
+    #[test]
+    fn settings_profile_preserves_present_avatar_and_display_name() {
+        let profile = StoredProfile {
+            display_name: "Local profile".to_owned(),
+            avatar_url: Some("https://example.com/avatar.png".to_owned()),
+        };
+
+        let response = profile_json(&profile);
+
+        assert_eq!(
+            response,
+            json!({
+                "display_name": "Local profile",
+                "avatar_url": "https://example.com/avatar.png",
+            })
+        );
+        assert!(response.get("avatar_url").is_some_and(|value| value.is_string()));
     }
 }

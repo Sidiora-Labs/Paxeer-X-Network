@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useState, type SyntheticEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type SyntheticEvent } from "react";
 
 import { copyEntry } from "../../copy/runtime";
 import { formatCopy } from "../../copy/format";
@@ -34,6 +34,8 @@ interface SettingsSnapshot {
   readonly profile: Profile;
   readonly notifications: NotificationPreferences;
   readonly binding: WalletBinding;
+  readonly passkeyCount: number;
+  readonly sessionCount: number;
 }
 
 type LoadState =
@@ -169,6 +171,8 @@ export function SettingsScreen({
   const [loadState, setLoadState] = useState<LoadState>({ state: "loading" });
   const [savingProfile, setSavingProfile] = useState(false);
   const [savingNotifications, setSavingNotifications] = useState(false);
+  const profileSavePending = useRef(false);
+  const notificationSavePending = useRef(false);
   const [notice, setNotice] = useState<string | undefined>(undefined);
   const [profileOpen, setProfileOpen] = useState(false);
   const [displayName, setDisplayName] = useState("");
@@ -178,14 +182,25 @@ export function SettingsScreen({
     setLoadState({ state: "loading" });
     setNotice(undefined);
     try {
-      const [profile, notifications, binding] = await Promise.all([
+      const [profile, notifications, binding, passkeys, sessions] = await Promise.all([
         client.profileGet(),
         client.notificationPreferencesGet(),
         client.bindingStatus(),
+        client.securityPasskeyList(),
+        client.sessionList(),
       ]);
       setDisplayName(profile.display_name);
       setAvatarUrl(profile.avatar_url ?? "");
-      setLoadState({ state: "ready", snapshot: { profile, notifications, binding } });
+      setLoadState({
+        state: "ready",
+        snapshot: {
+          profile,
+          notifications,
+          binding,
+          passkeyCount: passkeys.passkeys.length,
+          sessionCount: sessions.sessions.length,
+        },
+      });
     } catch (error) {
       setLoadState(navigator.onLine ? { state: "error", error } : { state: "offline" });
     }
@@ -200,40 +215,52 @@ export function SettingsScreen({
   const privacyValue = copyEntry(masked ? "settings.privacy.on" : "settings.privacy.off").message;
 
   const saveNotifications = async (candidate: NotificationPreferences) => {
-    if (snapshot === undefined || savingNotifications) {
+    if (snapshot === undefined || notificationSavePending.current) {
       return;
     }
+    notificationSavePending.current = true;
     setSavingNotifications(true);
     setNotice(undefined);
     try {
       const notifications = await client.notificationPreferencesSet(candidate);
-      setLoadState({ state: "ready", snapshot: { ...snapshot, notifications } });
+      setLoadState((current) => current.state === "ready"
+        ? { state: "ready", snapshot: { ...current.snapshot, notifications } }
+        : current);
       setNotice(copyEntry("settings.save.saved").message);
     } catch (error) {
       setNotice(mutationFailure(error));
     } finally {
+      notificationSavePending.current = false;
       setSavingNotifications(false);
     }
   };
 
   const saveProfile = async (event: SyntheticEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (snapshot === undefined || savingProfile || displayName.trim().length === 0) {
+    if (snapshot === undefined || profileSavePending.current || displayName.trim().length === 0) {
       return;
     }
+    profileSavePending.current = true;
     setSavingProfile(true);
     setNotice(undefined);
     try {
       const profile = await client.profileUpdate({
         display_name: displayName.trim(),
-        avatar_url: avatarUrl.trim(),
+        ...(avatarUrl.trim() !== (snapshot.profile.avatar_url ?? "")
+          ? { avatar_url: avatarUrl.trim() }
+          : {}),
       });
-      setLoadState({ state: "ready", snapshot: { ...snapshot, profile } });
+      setLoadState((current) => current.state === "ready"
+        ? { state: "ready", snapshot: { ...current.snapshot, profile } }
+        : current);
+      setDisplayName(profile.display_name);
+      setAvatarUrl(profile.avatar_url ?? "");
       setProfileOpen(false);
       setNotice(copyEntry("settings.save.saved").message);
     } catch (error) {
       setNotice(mutationFailure(error));
     } finally {
+      profileSavePending.current = false;
       setSavingProfile(false);
     }
   };
@@ -276,7 +303,16 @@ export function SettingsScreen({
             subtitle={profileValue}
             trailing={copyEntry("settings.action.edit").message}
             navigates
-            onClick={() => { setProfileOpen((current) => !current); }}
+            onClick={() => {
+              if (profileSavePending.current) {
+                return;
+              }
+              if (!profileOpen) {
+                setDisplayName(loadState.snapshot.profile.display_name);
+                setAvatarUrl(loadState.snapshot.profile.avatar_url ?? "");
+              }
+              setProfileOpen((current) => !current);
+            }}
           />
           {profileOpen ? (
             <form className="flex flex-col gap-3 py-3" onSubmit={(event) => { void saveProfile(event); }}>
@@ -284,6 +320,7 @@ export function SettingsScreen({
                 {copyEntry("settings.profile.display_name").message}
                 <SettingsTextInput
                   value={displayName}
+                  disabled={savingProfile}
                   maxLength={128}
                   autoComplete="name"
                   onChange={(event) => { setDisplayName(event.target.value); }}
@@ -293,6 +330,7 @@ export function SettingsScreen({
                 {copyEntry("settings.profile.avatar").message}
                 <SettingsTextInput
                   value={avatarUrl}
+                  disabled={savingProfile}
                   type="url"
                   inputMode="url"
                   maxLength={2048}
@@ -323,6 +361,18 @@ export function SettingsScreen({
             navigates
             onClick={() => { router.push("/app/settings/security"); }}
           />
+          <SettingsRow
+            title={copyEntry("security.passkeys.title").message}
+            trailing={loadState.snapshot.passkeyCount}
+            navigates
+            onClick={() => { router.push("/app/settings/security"); }}
+          />
+          <SettingsRow
+            title={copyEntry("security.sessions.title").message}
+            trailing={loadState.snapshot.sessionCount}
+            navigates
+            onClick={() => { router.push("/app/settings/security"); }}
+          />
         </SettingsSection>
 
         <SettingsSection title={copyEntry("settings.section.wallet").message}>
@@ -340,7 +390,7 @@ export function SettingsScreen({
             subtitle={copyEntry("settings.notifications.detail.body").message}
             trailing={copyEntry(`settings.notifications.detail.${loadState.snapshot.notifications.detail}`).message}
           />
-          <div className="py-3">
+          <fieldset className="min-w-0 py-3" disabled={savingNotifications}>
             <SettingsSegmentedControl
               aria-label={copyEntry("settings.notifications.detail.title").message}
               value={loadState.snapshot.notifications.detail}
@@ -352,7 +402,7 @@ export function SettingsScreen({
                 ));
               }}
             />
-          </div>
+          </fieldset>
         </SettingsSection>
 
         {NOTIFICATION_CHANNELS.map((channel) => (

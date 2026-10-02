@@ -5,7 +5,9 @@ import test from "node:test";
 import { copyEntry } from "../copy/catalog.ts";
 import {
   classEnabled,
+  cloneNotificationPreferences,
   fullySuppressesSecurityClass,
+  normalizedNotificationClasses,
   NON_SUPPRESSIBLE_NOTIFICATION_CLASSES,
   NOTIFICATION_CHANNELS,
   withChannelEnabled,
@@ -284,4 +286,86 @@ test("privacy masking copy declares behavior across both shells", () => {
   assert.ok(privacyBody.message.includes("balances"));
   assert.ok(privacyBody.message.includes("everywhere"));
   assert.equal(privacyBody.moneyAdjacent, true);
+});
+
+test("notification preference mutations preserve the original and unrelated channels", () => {
+  const original = structuredClone(baseNotificationPreferences);
+  for (const channel of NOTIFICATION_CHANNELS) {
+    const disabled = withChannelEnabled(baseNotificationPreferences, channel, false);
+    assert.ok(disabled !== undefined);
+    assert.equal(disabled[channel].enabled, false);
+    assert.deepEqual(disabled[channel].classes, original[channel].classes);
+    for (const other of NOTIFICATION_CHANNELS) {
+      if (other !== channel) {
+        assert.deepEqual(disabled[other], original[other]);
+      }
+      assert.notEqual(disabled[other], baseNotificationPreferences[other]);
+      assert.notEqual(disabled[other].classes, baseNotificationPreferences[other].classes);
+    }
+    for (const entry of original[channel].classes) {
+      const changed = withClassEnabled(baseNotificationPreferences, channel, entry.class, !entry.enabled);
+      assert.ok(changed !== undefined);
+      assert.equal(classEnabled(changed, channel, entry.class), !entry.enabled);
+      for (const retained of original[channel].classes) {
+        if (retained.class !== entry.class) {
+          assert.equal(classEnabled(changed, channel, retained.class), retained.enabled);
+        }
+      }
+    }
+  }
+  assert.deepEqual(baseNotificationPreferences, original);
+});
+
+test("every security class retains an enabled delivery channel after preference changes", () => {
+  for (const channel of NOTIFICATION_CHANNELS) {
+    for (const securityClass of NON_SUPPRESSIBLE_NOTIFICATION_CLASSES) {
+      const preferences = cloneNotificationPreferences(baseNotificationPreferences);
+      for (const other of NOTIFICATION_CHANNELS) {
+        if (other !== channel) {
+          preferences[other].enabled = false;
+        }
+      }
+      assert.equal(fullySuppressesSecurityClass(preferences), false);
+      const original = structuredClone(preferences);
+      assert.equal(withChannelEnabled(preferences, channel, false), undefined);
+      assert.equal(withClassEnabled(preferences, channel, securityClass, false), undefined);
+      assert.deepEqual(preferences, original);
+      for (const detail of ["minimal", "summary", "full"] as const) {
+        const updated = withDetailLevel(preferences, detail);
+        assert.equal(updated.detail, detail);
+        assert.equal(fullySuppressesSecurityClass(updated), false);
+      }
+    }
+  }
+});
+
+test("ordinary event classes can be disabled across all delivery channels", () => {
+  for (const entry of baseNotificationPreferences.push.classes) {
+    if (NON_SUPPRESSIBLE_NOTIFICATION_CLASSES.has(entry.class)) {
+      continue;
+    }
+    let preferences = cloneNotificationPreferences(baseNotificationPreferences);
+    for (const channel of NOTIFICATION_CHANNELS) {
+      const updated = withClassEnabled(preferences, channel, entry.class, false);
+      assert.ok(updated !== undefined);
+      preferences = updated;
+    }
+    for (const channel of NOTIFICATION_CHANNELS) {
+      assert.equal(classEnabled(preferences, channel, entry.class), false);
+    }
+    assert.equal(fullySuppressesSecurityClass(preferences), false);
+  }
+});
+
+test("missing class preferences are disabled and explicit updates insert one class", () => {
+  const preferences = cloneNotificationPreferences(baseNotificationPreferences);
+  preferences.email.classes = preferences.email.classes.filter((entry) => entry.class !== "claim-ready");
+  assert.equal(classEnabled(preferences, "email", "claim-ready"), false);
+  const normalized = normalizedNotificationClasses(preferences.email);
+  assert.equal(normalized.find((entry) => entry.class === "claim-ready")?.enabled, false);
+  const updated = withClassEnabled(preferences, "email", "claim-ready", true);
+  assert.ok(updated !== undefined);
+  assert.equal(classEnabled(updated, "email", "claim-ready"), true);
+  assert.equal(updated.email.classes.filter((entry) => entry.class === "claim-ready").length, 1);
+  assert.equal(preferences.email.classes.some((entry) => entry.class === "claim-ready"), false);
 });

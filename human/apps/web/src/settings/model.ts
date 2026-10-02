@@ -4,7 +4,7 @@ import {
   type NotificationClass,
   type NotificationDetailLevel,
   type NotificationPreferences,
-} from "../api";
+} from "../api/generated/index.ts";
 
 export const NOTIFICATION_CHANNELS = ["push", "email", "in_app"] as const;
 export type NotificationChannel = (typeof NOTIFICATION_CHANNELS)[number];
