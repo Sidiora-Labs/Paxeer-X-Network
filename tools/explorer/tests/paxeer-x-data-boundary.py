@@ -34,18 +34,71 @@ def require(condition, message):
         raise AssertionError(message)
 
 
+KERNEL_ROOT = Path(__file__).resolve().parents[3]
+KERNEL_BUILD = Path(os.environ.get("LAYERX_BUILD_DIR", KERNEL_ROOT / "build")).resolve()
+
+
+def kernel_relay_fixture(relay_module):
+    import urllib.parse
+    fixture_path = Path(os.environ["LAYERX_KERNEL_RECEIPT_RELAY_FIXTURE"]).resolve()
+    fixture = json.loads(fixture_path.read_text())
+    require(fixture.get("network_id") == 77, "kernel receipt fixture must use dedicated network 77")
+    for name in ("genesis_sha256", "sequencer_id", "sequencer_public_key", "sequencer_first_batch", "sequencer_last_batch"):
+        require(name in fixture, "real kernel fixture lacks " + name)
+    require(fixture["sequencer_first_batch"] == 1, "kernel fixture must expose public history from batch 1")
+    for name in ("upstreams", "submission_upstreams"):
+        values = fixture.get(name)
+        require(isinstance(values, list) and len(values) >= 2, "kernel fixture needs two genuine " + name)
+        for origin in values:
+            parsed = urllib.parse.urlparse(origin)
+            require(parsed.scheme in ("http", "https") and parsed.hostname in ("localhost", "127.0.0.1", "::1")
+                    and parsed.username is None and parsed.password is None, "kernel fixture must use isolated loopback sources")
+
+    class Relay(relay_module.Scenario):
+        def setup(self):
+            self.work.chmod(0o700)
+            self.bin = KERNEL_BUILD / "bin"
+            self.runtime = KERNEL_ROOT / "platform/relay_archive"
+            names = ("network_id", "genesis_sha256", "sequencer_id", "sequencer_public_key",
+                     "sequencer_first_batch", "sequencer_last_batch", "ca_file")
+            self.pins = {name: fixture[name] for name in names if name in fixture}
+            if self.pins.get("ca_file"):
+                self.pins["ca_file"] = str((fixture_path.parent / self.pins["ca_file"]).resolve())
+            self.pins.update(allow_loopback_dev=True, poll_interval_seconds=0.1,
+                             codec=str(self.bin / "layerx-archive-codec"))
+            self.origin1, self.origin2 = fixture["upstreams"][:2]
+            self.headers = {"Content-Type": "application/octet-stream"}
+            credential = os.environ.get("LAYERX_KERNEL_RECEIPT_SUBMISSION_AUTHORIZATION")
+            if credential:
+                require("\r" not in credential and "\n" not in credential and len(credential) <= 8192,
+                        "invalid isolated fixture submission authorization")
+                self.headers["Authorization"] = credential
+            self.submissions = Path(os.environ["LAYERX_KERNEL_RECEIPT_SUBMISSIONS_DIR"]).resolve()
+
+        def relay_config(self, name, upstreams):
+            config = super().relay_config(name, upstreams)
+            config["submission_upstreams"] = fixture["submission_upstreams"]
+            return config
+
+    return Relay()
+
+
 def prerequisites():
     missing = []
     for tool in ("docker", "openssl"):
         if shutil.which(tool) is None:
             missing.append(tool)
-    for name in ("bin/layerxd", "bin/layerx-genesis-build", "bin/layerx-archive-codec", "tests/relay-archive-sign"):
-        if not (BUILD / name).is_file():
-            missing.append(f"{BUILD / name} (make relay-archive-build)")
+    for name in ("bin/layerxd", "bin/layerx-archive-codec"):
+        if not (KERNEL_BUILD / name).is_file():
+            missing.append(f"{KERNEL_BUILD / name} (make relay-archive-build)")
     if importlib.util.find_spec("cryptography") is None:
         missing.append("python3 cryptography")
-    if os.geteuid() != 0:
-        missing.append("root (relay archive LNI UID isolation)")
+    for name in ("LAYERX_KERNEL_RECEIPT_RELAY_FIXTURE", "LAYERX_KERNEL_RECEIPT_SUBMISSIONS_DIR"):
+        if not os.environ.get(name) or not Path(os.environ[name]).exists():
+            missing.append(name + " (dedicated genuine kernel/relay fixture)")
+    for name in ("deps", "_build"):
+        if not (KERNEL_ROOT / "explorer/backend" / name).is_dir():
+            missing.append("prebuilt explorer/backend/" + name)
     if shutil.which("docker"):
         for image in (TOOLCHAIN_IMAGE, POSTGRES_IMAGE):
             if subprocess.run(["docker", "image", "inspect", image], stdout=subprocess.DEVNULL,
@@ -66,9 +119,9 @@ def prerequisites():
 
 def load_relay_scenario():
     saved = sys.argv
-    sys.argv = [str(ROOT / "tests/relay-archive/e2e.py"), str(BUILD)]
+    sys.argv = [str(KERNEL_ROOT / "tests/relay-archive/e2e.py"), str(KERNEL_BUILD)]
     try:
-        spec = importlib.util.spec_from_file_location("relay_archive_e2e", ROOT / "tests/relay-archive/e2e.py")
+        spec = importlib.util.spec_from_file_location("relay_archive_e2e", KERNEL_ROOT / "tests/relay-archive/e2e.py")
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
     finally:
@@ -128,6 +181,35 @@ class TamperProxy:
             document = json.loads(body)
             document["sequencer_public_key"] = "00" * 32
             return json.dumps(document).encode()
+        if self.mode == "authority_range" and route == "/v1/sync/network":
+            document = json.loads(body)
+            document["first_batch"] = "0"
+            return json.dumps(document).encode()
+        if self.mode in ("receipt_rehashed", "activity_binding") and route == f"/v1/history/batches/{self.target_batch}":
+            document = json.loads(body)
+            require(document["activities"], "tamper case requires a real receipt")
+            activity = document["activities"][0]
+            if self.mode == "receipt_rehashed":
+                damaged = bytearray.fromhex(activity["receipt_hex"])
+                damaged[-1] ^= 1
+                activity["receipt_hex"] = damaged.hex()
+                activity["receipt_sha256"] = hashlib.sha256(damaged).hexdigest()
+            else:
+                activity["result_code"] = activity["result_code"] ^ 1
+            return json.dumps(document).encode()
+        if self.mode == "signature_rehashed" and route in (
+                f"/v1/history/batches/{self.target_batch}", f"/v1/sync/batches/{self.target_batch}"):
+            with urllib.request.urlopen(self.upstream + f"/v1/history/batches/{self.target_batch}", timeout=10) as response:
+                document = json.load(response)
+            with urllib.request.urlopen(self.upstream + f"/v1/sync/batches/{self.target_batch}", timeout=10) as response:
+                raw = bytearray(response.read())
+            signature = bytes.fromhex(document["signature_hex"])
+            offset = raw.find(signature)
+            require(offset >= 0, "real batch signature is absent from canonical bytes")
+            raw[offset] ^= 1
+            document["signature_hex"] = bytes(raw[offset:offset + len(signature)]).hex()
+            document["raw_sha256"] = hashlib.sha256(raw).hexdigest()
+            return bytes(raw) if route.startswith("/v1/sync/") else json.dumps(document).encode()
         if self.mode == "receipt_digest" and route.startswith("/v1/history/batches"):
             document = json.loads(body)
             for batch in document.get("items", [document]):
@@ -149,7 +231,7 @@ class TamperProxy:
 
 class KernelReceipts:
     def __init__(self, relay_module):
-        self.relay = relay_module.Scenario()
+        self.relay = kernel_relay_fixture(relay_module)
         self.require = relay_module.require
         self.unused_port = relay_module.unused_port
         self.execute = relay_module.execute
@@ -197,6 +279,10 @@ class KernelReceipts:
             "INDEXER_PAXEER_X_KERNEL_RECEIPTS_RELAY_URL": relay_url,
             "INDEXER_PAXEER_X_KERNEL_RECEIPTS_NETWORK_ID": str(network_id),
             "INDEXER_PAXEER_X_KERNEL_RECEIPTS_SEQUENCER_PUBLIC_KEY": sequencer_key,
+            "INDEXER_PAXEER_X_KERNEL_RECEIPTS_SEQUENCER_ID": self.relay.pins["sequencer_id"],
+            "INDEXER_PAXEER_X_KERNEL_RECEIPTS_FIRST_BATCH": str(self.relay.pins["sequencer_first_batch"]),
+            "INDEXER_PAXEER_X_KERNEL_RECEIPTS_LAST_BATCH": str(self.relay.pins["sequencer_last_batch"]),
+            "INDEXER_PAXEER_X_KERNEL_RECEIPTS_CODEC": "/kernel-build/bin/layerx-archive-codec",
             "INDEXER_PAXEER_X_KERNEL_RECEIPTS_INTERVAL_MS": "300",
         }
 
@@ -214,9 +300,8 @@ class KernelReceipts:
         self.relay.until(lambda: self.sql("select 1", check=False).returncode == 0, "postgresql ready", 60)
 
     def migrate(self, env):
-        script = "mix local.hex --force --if-missing >/dev/null && mix local.rebar --force --if-missing >/dev/null && " \
-                 "{ [ -d deps ] || mix deps.get; } && mix ecto.migrate"
-        output = self.docker("run", "--rm", "--network", "host", "-v", f"{ROOT}:/app", "-w", "/app/explorer/backend",
+        script = "mix ecto.migrate --no-compile"
+        output = self.docker("run", "--rm", "--network", "host", "-v", f"{KERNEL_ROOT}:/app", "-v", f"{KERNEL_BUILD}:/kernel-build:ro", "-w", "/app/explorer/backend",
                              *self.env_args(env), TOOLCHAIN_IMAGE, "sh", "-c", script)
         (self.log_dir / "task22-1-migrate.log").write_text(output)
         for table in ("lx_receipts", "lx_kernel_receipt_cursors"):
@@ -234,9 +319,9 @@ class KernelReceipts:
     def start_api(self, env):
         self.stop_api()
         self.api_starts += 1
-        self.docker("run", "-d", "--name", API_CONTAINER, "--network", "host", "-v", f"{ROOT}:/app",
+        self.docker("run", "-d", "--name", API_CONTAINER, "--network", "host", "-v", f"{KERNEL_ROOT}:/app", "-v", f"{KERNEL_BUILD}:/kernel-build:ro",
                     "-w", "/app/explorer/backend", *self.env_args(env), TOOLCHAIN_IMAGE,
-                    "sh", "-c", "mix phx.server")
+                    "sh", "-c", "mix phx.server --no-compile")
         self.relay.until(lambda: self.api_ready(), "explorer API start", 900)
 
     def api_ready(self):
@@ -276,7 +361,10 @@ class KernelReceipts:
         return int(last), code or None, int(refused) if refused else None
 
     def submit(self, index):
-        activity = self.execute([self.relay.bin / "sign", str(index)]).stdout
+        path = self.relay.submissions / f"{index}.activity"
+        if not path.is_file():
+            raise MissingPrerequisite(f"genuine signed activity input {index}.activity")
+        activity = path.read_bytes()
         ack = self.relay.request(self.relay_url, "/v1/activities", data=activity, headers=self.relay.headers)
         self.require(ack["state"] == "acknowledged", "relay forwarding did not acknowledge")
         return ack["activity_id"]
@@ -313,7 +401,7 @@ class KernelReceipts:
             self.require(item is not None, f"list route omitted kernel receipt {activity_id}")
             self.require(item["origin"] == "kernel" and item["verification"] == "sequencer_verified",
                          "kernel receipt lacks kernel origin or verified label")
-            provenance = item["provenance"]
+            provenance = item["provenance"]["kernel"]
             self.require(str(provenance["batch_number"]) == str(number), "batch provenance wrong")
             self.require(str(provenance["sequence"]) == str(activity["sequence"]), "sequence provenance wrong")
             self.require(provenance["activity_id"].lower().removeprefix("0x") ==
@@ -330,19 +418,20 @@ class KernelReceipts:
             self.require(provenance["batch_raw_sha256"].lower().removeprefix("0x") == hashlib.sha256(raw).hexdigest(),
                          "raw batch digest provenance differs from the canonical batch bytes")
             detail = self.api("/api/v2/paxeer-x/receipts/" + item["id"])
-            self.require(detail["provenance"] == provenance and detail["origin"] == "kernel",
+            self.require(detail["provenance"]["kernel"] == provenance and detail["origin"] == "kernel",
                          "detail route disagrees with list route")
             self.require(detail["transaction_hash"] is None, "kernel receipt detail carries an EVM transaction")
         self.passed("real relay receipts reach PostgreSQL and list/detail routes with batch, sequence, activity "
                     "and proof provenance")
 
         self.require(self.scalar("select count(*) from lx_receipts where origin='kernel' and (transaction_hash is not null "
-                                 "or log_index is not null or block_hash is not null or block_number is not null)") == "0",
+                                 "or log_index is not null or block_hash is not null or block_number is not null or block_consensus is not null)") == "0",
                      "kernel rows carry fabricated EVM fields")
         for item in listing["items"]:
             if item["origin"] == "kernel":
-                self.require("transaction_hash" not in item["provenance"] and "block_hash" not in item["provenance"],
+                self.require("transaction_hash" not in item["provenance"]["kernel"] and "block_hash" not in item["provenance"]["kernel"],
                              "kernel provenance exposes EVM fields")
+                self.require(item["block_number"] is None, "kernel receipt carries an EVM block number")
         refused = self.sql("insert into lx_receipts (receipt_id, status, origin, inserted_at, updated_at) values "
                            "(decode(repeat('ab',32),'hex'), 'unverified', 'evm', now(), now())", check=False)
         self.require(refused.returncode != 0, "database admitted an EVM receipt without EVM provenance")
@@ -352,10 +441,23 @@ class KernelReceipts:
                            "999, 1, decode(repeat('cd',32),'hex'), decode(repeat('cd',32),'hex'), "
                            "decode(repeat('cd',32),'hex'), '{}'::jsonb, now(), now())", check=False)
         self.require(refused.returncode != 0, "database admitted a kernel receipt without a verified label")
+        proof_columns = ("receipt_id", "status", "origin", "kernel_batch_number", "kernel_sequence",
+                         "kernel_activity_id", "kernel_batch_id", "kernel_result_code", "kernel_receipt_sha256",
+                         "kernel_canonical_sha256", "kernel_batch_raw_sha256", "kernel_state_root", "kernel_proof",
+                         "kernel_verification", "inserted_at", "updated_at")
+        selected = ["999" if field == "kernel_batch_number" else
+                    "NULL" if field == "kernel_verification" else field for field in proof_columns]
+        refused = self.sql("insert into lx_receipts (" + ",".join(proof_columns) + ") select " +
+                           ",".join(selected) + " from lx_receipts where origin='kernel' limit 1", check=False)
+        self.require(refused.returncode != 0, "database admitted real provenance with a null verified label")
         self.passed("kernel rows hold no EVM fields; each provenance class is enforced by the schema")
 
         for mode, code in (("receipt_digest", "receipt_digest_mismatch"), ("raw_bytes", "raw_digest_mismatch"),
-                           ("sequencer_key", "sequencer_key_mismatch")):
+                           ("sequencer_key", "sequencer_key_mismatch"),
+                           ("signature_rehashed", "native_verification_failed"),
+                           ("receipt_rehashed", "authenticated_projection_mismatch"),
+                           ("activity_binding", "authenticated_projection_mismatch"),
+                           ("authority_range", "batch_unauthorized")):
             target = self.head() + 1
             self.proxy.mode, self.proxy.target_batch = mode, target
             self.submit(target)
@@ -363,7 +465,7 @@ class KernelReceipts:
             relay.until(lambda: (self.cursor() or (0, None, None))[1] == code, f"worker refusal {code}", 60)
             last, _, refused_batch = self.cursor()
             self.require(last == target - 1, f"cursor advanced past refused batch under {mode}")
-            self.require(code == "sequencer_key_mismatch" or refused_batch == target,
+            self.require(code in ("sequencer_key_mismatch", "batch_unauthorized") or refused_batch == target,
                          f"refused batch not recorded under {mode}")
             self.require(self.kernel_rows(target) == 0, f"refused batch {target} acquired rows under {mode}")
             self.api(f"/api/v2/paxeer-x/receipts?id=0x{'ff' * 32}")
@@ -371,7 +473,7 @@ class KernelReceipts:
             relay.until(lambda: (self.cursor() or (0,))[0] >= target, f"batch {target} import after tamper ends", 60)
             self.require(self.cursor()[1] is None, "refusal not cleared after an honest batch")
             self.require(self.kernel_rows(target) >= 1, f"honest batch {target} not imported")
-        self.passed("tampered receipt digest, raw batch bytes and sequencer key are refused without a verified label")
+        self.passed("tampered receipts, signatures, authority ranges and activity bindings are refused without a verified label")
 
         disallowed = [(method, path) for method, path in self.proxy.paths
                       if method != "GET" or not path.split("?", 1)[0].startswith(PUBLIC_ROUTES)]
@@ -419,7 +521,9 @@ class KernelReceipts:
         self.api_status("/api/v2/paxeer-x/receipts/not-a-receipt")
         for item in self.api("/api/v2/paxeer-x/receipts")["items"]:
             for private in ("email", "profile", "user", "canonical_hex", "receipt_hex", "data_dir", "token"):
-                self.require(private not in item and private not in item.get("provenance", {}),
+                self.require(private not in item and private not in item.get("provenance", {}) and
+                             private not in item.get("provenance", {}).get("kernel", {}) and
+                             private not in item.get("provenance", {}).get("evm", {}),
                              f"receipt route exposes {private}")
         self.passed("unknown receipts answer 404 and routes expose no private node or profile data")
 

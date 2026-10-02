@@ -86,7 +86,7 @@ static int usage(void)
 {
     (void)fprintf(stderr,
         "usage: layerx-archive-codec export LOG BATCH\n"
-        "       layerx-archive-codec verify NETWORK SEQUENCER_ID PUBLIC_KEY FIRST_BATCH LAST_BATCH\n"
+        "       layerx-archive-codec verify NETWORK SEQUENCER_ID PUBLIC_KEY FIRST_BATCH LAST_BATCH [INPUT_FILE]\n"
         "       layerx-archive-codec genesis NETWORK PUBLIC_KEY MANIFEST SNAPSHOT\n"
         "       layerx-archive-codec activity\n"
         "       layerx-archive-codec submit SOCKET\n");
@@ -766,14 +766,17 @@ static int command_verify(int argc, char **argv)
     uint8_t *arena_memory = NULL;
     lxp_arena arena;
     lxp_result status;
-    if (argc != 7 || !parse_u32(argv[2], &network_id) || network_id == 0U ||
+    if ((argc != 7 && argc != 8) || !parse_u32(argv[2], &network_id) || network_id == 0U ||
         !parse_hex32(argv[3], sequencer_id) ||
         !parse_hex32(argv[4], public_key) ||
         !parse_u64(argv[5], &first_batch) || first_batch == 0U ||
         !parse_u64(argv[6], &last_batch) || last_batch < first_batch)
         return usage();
-    status = read_stdin_bounded(LXP_MAX_BATCH_BODY_BYTES,
-                                &canonical, &canonical_length);
+    status = argc == 8
+        ? read_file_bounded(argv[7], LXP_MAX_BATCH_BODY_BYTES,
+                            &canonical, &canonical_length)
+        : read_stdin_bounded(LXP_MAX_BATCH_BODY_BYTES,
+                             &canonical, &canonical_length);
     if (status == LXP_OK) {
         arena_memory = (uint8_t *)malloc(CODEC_VERIFY_ARENA_BYTES);
         if (arena_memory == NULL) status = LXP_ERR_IO;

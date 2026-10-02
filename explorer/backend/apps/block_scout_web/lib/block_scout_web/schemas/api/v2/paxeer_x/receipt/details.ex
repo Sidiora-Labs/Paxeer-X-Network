@@ -18,8 +18,8 @@ defmodule BlockScoutWeb.Schemas.API.V2.PaxeerX.Receipt.Details do
       properties: %{
         verification_status: VerificationStatus,
         payload_hash: General.FullHashNullable,
-        transaction_hash: General.FullHash,
-        timestamp: General.Timestamp
+        transaction_hash: General.FullHashNullable,
+        timestamp: %OpenApiSpex.Schema{type: :string, format: :"date-time", nullable: true}
       },
       required: [:verification_status, :payload_hash, :transaction_hash, :timestamp]
     )
