@@ -8,6 +8,7 @@ import { errorMessage, useAsync } from './hooks';
 
 const RUNG_LABELS: Readonly<Record<LadderRung, string>> = { instant: 'Instant', sealed: 'Sealed', final: 'Final' };
 const SOURCE_LABELS: Readonly<Record<LadderSource, string>> = {
+    receipt: 'receipt',
     explorer: 'explorer',
     journey: 'journey',
     anchor: 'anchor',
@@ -22,13 +23,16 @@ export function StatusLadder({ steps }: { steps: readonly LadderStep[] }) {
         <ol aria-label="Status" className="flex gap-2">
             {LADDER_RUNGS.map((rung) => {
                 const reached = steps.filter((step) => rank(step.rung) >= rank(rung));
-                const source = reached.length > 0 ? (statusLadder.highest(reached) as LadderStep).source : null;
+                const evidence = reached.find((step) => step.rung === rung) ?? statusLadder.highest(reached);
+                const source = evidence?.source ?? null;
                 return (
                     <li
                         key={rung}
                         data-rung={rung}
                         data-reached={source !== null}
                         data-source={source ?? undefined}
+                        data-evidence={evidence?.state}
+                        title={evidence?.state}
                         className={cn(
                             'flex-1 rounded-xl px-3 py-2 text-center text-xs',
                             source !== null ? 'bg-pax-accent/20 text-pax-light' : 'bg-white/[0.04] text-pax-muted',

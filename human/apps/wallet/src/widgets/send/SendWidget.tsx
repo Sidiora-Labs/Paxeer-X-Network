@@ -129,16 +129,21 @@ export function SendWidget({ onBack, preSelectTokenAddress, onPaxscan }: SendWid
     }, [selectedToken, activeAccount?.address, form.to, form.amount]);
 
     // ── Success view ─────────────────────────────────────────────────────
-    if (form.txHash) {
+    if (form.transfer) {
         return (
             <TransferSuccess
+                key={`${form.transfer.chainId}:${form.transfer.hash}`}
                 fromLabel={activeAccount ? activeAccount.name || 'Account' : 'Your wallet'}
-                fromAmount={form.amount}
-                fromSymbol={selectedToken?.symbol || 'PAX'}
-                toLabel={`${form.to.slice(0, 6)}...${form.to.slice(-4)}`}
-                txHash={form.txHash}
+                fromAmount={form.transfer.amount}
+                fromSymbol={form.transfer.symbol}
+                toLabel={`${form.transfer.recipient.slice(0, 6)}...${form.transfer.recipient.slice(-4)}`}
+                transfer={form.transfer}
+                submissionWarning={form.error}
                 onExplorerView={() => onPaxscan?.(`/tx/${form.txHash}`)}
-                onDone={onBack}
+                onDone={(terminal) => {
+                    if (terminal) form.clearTransfer();
+                    onBack();
+                }}
             />
         );
     }

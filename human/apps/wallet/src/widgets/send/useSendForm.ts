@@ -9,8 +9,10 @@
  * portfolio screen can subtract immediately on the next mount.
  */
 
-import { useCallback, useState } from 'react';
-import { useWalletActions } from '@/providers/WalletProvider';
+import { useCallback, useEffect, useState } from 'react';
+import { submittedTransfer, type TransferIdentity } from '@paxeer/wallet';
+import { PAXEER_CONFIG } from '@/lib/constants';
+import { useWalletActions, useWalletState } from '@/providers/WalletProvider';
 import { storePendingSend } from '@/lib/optimistic';
 import { saveRecentRecipient } from '@/lib/recentRecipients';
 import {
@@ -20,12 +22,22 @@ import {
 } from '@/lib/txValidation';
 import type { SendableToken } from './useSendableTokens';
 
+export interface SubmittedTransfer extends TransferIdentity {
+    sender: string;
+    symbol: string;
+    decimals: number;
+    recipient: string;
+    amount: string;
+}
+
 export interface UseSendFormResult {
     to: string;
     amount: string;
     loading: boolean;
     error: string;
     txHash: string;
+    transfer: SubmittedTransfer | null;
+    clearTransfer: () => void;
     confirmOpen: boolean;
 
     setTo: (value: string) => void;
@@ -56,14 +68,59 @@ const computePortion = (
     }
 };
 
+export const SUBMITTED_TRANSFER_KEY = 'paxeer.wallet.submittedTransfer';
+
+function readSubmittedTransfer(sender: string): SubmittedTransfer | null {
+    try {
+        const raw = window.localStorage.getItem(`${SUBMITTED_TRANSFER_KEY}:${PAXEER_CONFIG.chainId}:${sender.toLowerCase()}`);
+        if (!raw) return null;
+        const value = JSON.parse(raw) as Partial<SubmittedTransfer>;
+        if (typeof value.hash !== 'string' || typeof value.chainId !== 'number' ||
+            typeof value.sender !== 'string' || value.sender.toLowerCase() !== sender.toLowerCase() ||
+            typeof value.symbol !== 'string' || !value.symbol || typeof value.decimals !== 'number' ||
+            !Number.isInteger(value.decimals) || value.decimals < 0 || value.decimals > 36 || typeof value.recipient !== 'string' ||
+            typeof value.amount !== 'string' || !value.intent || value.intent.sender?.toLowerCase() !== sender.toLowerCase() ||
+            value.intent.recipient?.toLowerCase() !== value.recipient.toLowerCase()) return null;
+        const identity = submittedTransfer({ hash: value.hash, chainId: value.chainId, intent: value.intent }).identity;
+        if (identity.chainId !== PAXEER_CONFIG.chainId) return null;
+        validateEvmAddress(value.recipient);
+        if (validateTokenAmount(value.amount, value.decimals).toString() !== value.intent.amountRaw) return null;
+        return { ...identity, sender: value.sender, symbol: value.symbol, decimals: value.decimals, recipient: value.recipient, amount: value.amount };
+    } catch {
+        return null;
+    }
+}
+
 export function useSendForm(): UseSendFormResult {
     const { send } = useWalletActions();
+    const { activeAccount } = useWalletState();
+    const sender = activeAccount?.address;
 
     const [to, setTo] = useState('');
     const [amount, setAmount] = useState('');
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
-    const [txHash, setTxHash] = useState('');
+    const [transfer, setTransfer] = useState<SubmittedTransfer | null>(null);
+    const activeTransfer = transfer?.sender.toLowerCase() === sender?.toLowerCase() ? transfer : null;
+    const txHash = activeTransfer?.hash ?? '';
+
+    useEffect(() => {
+        const recovered = sender ? readSubmittedTransfer(sender) : null;
+        setTransfer(recovered);
+        if (recovered) {
+            setTo(recovered.recipient);
+            setAmount(recovered.amount);
+        }
+    }, [sender]);
+
+    const clearTransfer = useCallback(() => {
+        try {
+            if (sender) window.localStorage.removeItem(`${SUBMITTED_TRANSFER_KEY}:${PAXEER_CONFIG.chainId}:${sender.toLowerCase()}`);
+        } catch {
+            // storage unavailable: the in-memory identity is still cleared
+        }
+        setTransfer(null);
+    }, [sender]);
     const [confirmOpen, setConfirmOpen] = useState(false);
 
     const applyPercentage = useCallback((pct: number, token: SendableToken | null) => {
@@ -103,7 +160,7 @@ export function useSendForm(): UseSendFormResult {
 
     const submit = useCallback(
         async (token: SendableToken | null) => {
-            if (!to || !amount || !token) return;
+            if (!to || !amount || !token || !sender) return;
             setLoading(true);
             setError('');
             try {
@@ -116,7 +173,18 @@ export function useSendForm(): UseSendFormResult {
                     tokenAddress: token.address,
                     decimals: token.decimals,
                 });
-                setTxHash(hash);
+                const identity: SubmittedTransfer = {
+                    ...submittedTransfer({ hash, chainId: PAXEER_CONFIG.chainId, intent: {
+                        sender, recipient, amountRaw: amountRaw.toString(), tokenAddress: token.address,
+                    } }).identity,
+                    sender, recipient, amount, symbol: token.symbol, decimals: token.decimals,
+                };
+                try {
+                    window.localStorage.setItem(`${SUBMITTED_TRANSFER_KEY}:${identity.chainId}:${sender.toLowerCase()}`, JSON.stringify(identity));
+                } catch {
+                    setError('Transfer submitted. This browser could not save its identity for reload.');
+                }
+                setTransfer(identity);
                 saveRecentRecipient(recipient);
                 storePendingSend({
                     tokenAddress: token.address,
@@ -133,7 +201,7 @@ export function useSendForm(): UseSendFormResult {
                 setLoading(false);
             }
         },
-        [to, amount, send],
+        [to, amount, send, sender],
     );
 
     return {
@@ -142,6 +210,8 @@ export function useSendForm(): UseSendFormResult {
         loading,
         error,
         txHash,
+        transfer: activeTransfer,
+        clearTransfer,
         confirmOpen,
         setTo,
         setAmount,
