@@ -1973,7 +1973,233 @@ fn budget_creation_response(
     out.finish()
 }
 
+pub(crate) struct RpcProgramSimulation {
+    pub(crate) program_id: [u8; 32],
+    pub(crate) guest_abi_version: u16,
+    pub(crate) sequencer_public_key: [u8; 32],
+    pub(crate) execution: crate::ops::program::ProgramExecution,
+    pub(crate) terminal_payload: Vec<u8>,
+    pub(crate) evidence: crate::ops::program::ProgramSimulationEvidence,
+    pub(crate) evidence_signature: [u8; 64],
+}
+
+pub(crate) enum RpcProgramActivity {
+    Unknown {
+        idempotency_key: [u8; 32],
+        signed_activity: Vec<u8>,
+    },
+    Verified {
+        idempotency_key: [u8; 32],
+        signed_activity: Vec<u8>,
+        authority: AuthorizedBatch,
+        execution: crate::ops::program::ProgramActivityExecution,
+    },
+}
+
+struct RpcSimulationCapture<'a> {
+    transport: crate::ops::program::NodeProgramSimulationTransport<'a>,
+    captured: &'a mut Option<(Vec<u8>, crate::ops::program::ProgramSimulationEvidence, [u8; 64])>,
+}
+
+impl RpcSimulationCapture<'_> {
+    fn retain(&mut self, raw: &crate::ops::program::RawProgramSimulation) {
+        *self.captured = Some((
+            raw.terminal_payload.clone(),
+            raw.evidence.clone(),
+            raw.evidence_signature,
+        ));
+    }
+}
+
+impl crate::ops::program::ProgramSimulationTransport for RpcSimulationCapture<'_> {
+    fn simulate_exact(
+        &mut self,
+        call: &layerx_types::intent::ProgramCall,
+        signed_activity: &[u8],
+    ) -> Result<crate::ops::program::RawProgramSimulation, crate::ops::program::ProgramOperationError> {
+        let raw = crate::ops::program::ProgramSimulationTransport::simulate_exact(
+            &mut self.transport, call, signed_activity,
+        )?;
+        self.retain(&raw);
+        Ok(raw)
+    }
+}
+
+impl crate::ops::program::NativeProgramSimulationTransport for RpcSimulationCapture<'_> {
+    fn simulate_native_exact(
+        &mut self,
+        call: layerx_types::program_call::NativeProgramCall<'_>,
+        fee_limit: u128,
+        signed_activity: &[u8],
+    ) -> Result<crate::ops::program::RawProgramSimulation, crate::ops::program::ProgramOperationError> {
+        let raw = crate::ops::program::NativeProgramSimulationTransport::simulate_native_exact(
+            &mut self.transport, call, fee_limit, signed_activity,
+        )?;
+        self.retain(&raw);
+        Ok(raw)
+    }
+}
+
 impl<A: HumanAuthorityBoundary> UnifiedAgentOwner<A> {
+    pub(crate) fn rpc_program_activity(
+        &mut self,
+        context: &crate::agent_rpc_peer::RpcOwnerContext<'_>,
+        activity_id: [u8; 32],
+    ) -> Result<RpcProgramActivity, HumanOperationError> {
+        if context.permit().operation() != crate::tenant::Operation::ProgramActivity {
+            return Err(HumanOperationError::Refused);
+        }
+        context.permit().boundary(&self.session_control).map_err(rpc_commit_error)?;
+        let tenant = &context.principal().tenant;
+        let indexed = self.owned_submission_for_activity(tenant, activity_id)?;
+        if indexed.principal != context.peer().principal {
+            return Err(HumanOperationError::Refused);
+        }
+        let (signed_activity, origin) = {
+            let store = self.store.lock().map_err(|_| HumanOperationError::Unavailable)?;
+            let mut outbox = Outbox::default();
+            outbox.restore(&store, tenant.clone(), indexed.idempotency_key)
+                .map_err(|_| HumanOperationError::Unavailable)?;
+            let signed = outbox.exact_signed_bytes(indexed.idempotency_key)
+                .map_err(|_| HumanOperationError::Unavailable)?.to_vec();
+            let origin = outbox.origin(indexed.idempotency_key)
+                .map_err(|_| HumanOperationError::Unavailable)?
+                .ok_or(HumanOperationError::Refused)?;
+            (signed, origin)
+        };
+        if origin.session.tenant != *tenant {
+            return Err(HumanOperationError::Refused);
+        }
+        let origin_owner = self.session_owner(tenant, origin.session.session_id)?;
+        if origin_owner.tenant != *tenant
+            || origin_owner.agent.as_ref() != Some(&context.principal().agent)
+        {
+            return Err(HumanOperationError::Refused);
+        }
+        let mut operations = self.operations.lock().map_err(|_| HumanOperationError::Unavailable)?;
+        let registry = operations.authority.registry(context.peer()).map_err(map_core)?;
+        let activity = layerx_wire::activity::decode_signed(&signed_activity, &registry)
+            .map_err(|_| HumanOperationError::Refused)?;
+        if activity.actor_did() != context.principal().agent.as_bytes()
+            || activity.network_id() != operations.node.handshake().node().network_id
+            || activity.protocol_version() != operations.node.handshake().node().protocol_version
+            || activity.idempotency_key() != indexed.idempotency_key
+            || layerx_wire::hash::activity_id(&activity).map_err(|_| HumanOperationError::Refused)? != activity_id
+            || activity.activity_type().module() != layerx_types::payload::ModuleId::Programs
+            || activity.activity_type().ordinal() != 3
+        {
+            return Err(HumanOperationError::Refused);
+        }
+        let correlation = boundary_correlation(context.peer(), &activity_id, b"program-activity");
+        let lookup = operations.node.lookup_authenticated_receipt(
+            activity_id, correlation, layerx_client::receipt::ReceiptWaitMode::Immediate,
+        ).map_err(native_receipt::map_lookup_error)?;
+        let response = match lookup {
+            layerx_client::receipt::AuthenticatedLookup::Absent => RpcProgramActivity::Unknown {
+                idempotency_key: indexed.idempotency_key,
+                signed_activity,
+            },
+            layerx_client::receipt::AuthenticatedLookup::TimedOut => {
+                return Err(HumanOperationError::Unavailable);
+            }
+            layerx_client::receipt::AuthenticatedLookup::Verified(receipt) => {
+                let proof_peer = subject::for_activity(
+                    &operations.store, context.peer(), &signed_activity, &registry,
+                )?;
+                let authority = operations.authority.authorized_activity(&proof_peer, &signed_activity, activity_id)?;
+                let execution = self.programs.as_ref().ok_or(HumanOperationError::Unavailable)?
+                    .activity_execution(&registry, &signed_activity, receipt.canonical_bytes(), authority)
+                    .map_err(program_operation_error)?;
+                RpcProgramActivity::Verified {
+                    idempotency_key: indexed.idempotency_key,
+                    signed_activity,
+                    authority,
+                    execution,
+                }
+            }
+        };
+        context.permit().boundary(&self.session_control).map_err(rpc_commit_error)?;
+        Ok(response)
+    }
+
+    pub(crate) fn rpc_program_simulate(
+        &mut self,
+        context: &crate::agent_rpc_peer::RpcOwnerContext<'_>,
+        request: crate::agent_rpc_wire::ProgramSimulationRequest,
+    ) -> Result<RpcProgramSimulation, HumanOperationError> {
+        use crate::agent_rpc_wire::ProgramSimulationRequest;
+        use crate::ops::program::{NodeProgramSimulationTransport, ReceiptVerifiedProgramSimulator};
+        use layerx_types::intent::{CallBudget, Calldata, ProgramCall, RequestedCapabilities};
+        if context.permit().operation() != crate::tenant::Operation::ProgramSimulate {
+            return Err(HumanOperationError::Refused);
+        }
+        context.permit().boundary(&self.session_control).map_err(rpc_commit_error)?;
+        let (program_id, signed) = match &request {
+            ProgramSimulationRequest::Legacy(call) => (call.program_id, call.signed_activity.as_slice()),
+            ProgramSimulationRequest::Native { program_id, signed_activity, .. } => {
+                (*program_id, signed_activity.as_slice())
+            }
+        };
+        let program = layerx_programs::ProgramId::new(program_id)
+            .map_err(|_| HumanOperationError::Refused)?;
+        let mut operations = self.operations.lock().map_err(|_| HumanOperationError::Unavailable)?;
+        let registry = operations.authority.registry(context.peer()).map_err(map_core)?;
+        let activity = layerx_wire::activity::decode_signed(signed, &registry)
+            .map_err(|_| HumanOperationError::Refused)?;
+        if activity.actor_did() != context.principal().agent.as_bytes()
+            || activity.network_id() != operations.node.handshake().node().network_id
+            || activity.protocol_version() != operations.node.handshake().node().protocol_version
+            || activity.activity_type().module() != layerx_types::payload::ModuleId::Programs
+            || activity.activity_type().ordinal() != 3
+        {
+            return Err(HumanOperationError::Refused);
+        }
+        let programs = self.programs.as_mut().ok_or(HumanOperationError::Unavailable)?;
+        let (now, bound) = current_program_bundle(programs, &mut operations.node, context, program)?;
+        let guest_abi_version = bound.program_head().abi_version();
+        let sequencer_public_key = bound.chain_head().sequencer_public_key();
+        let correlation = boundary_correlation(context.peer(), &program_id, b"program-simulate");
+        let mut captured = None;
+        let execution = {
+            let transport = RpcSimulationCapture {
+                transport: NodeProgramSimulationTransport::new(&mut operations.node, registry.clone(), correlation),
+                captured: &mut captured,
+            };
+            let mut simulator = ReceiptVerifiedProgramSimulator::new(transport, registry, &bound)
+                .map_err(program_operation_error)?;
+            match &request {
+                ProgramSimulationRequest::Legacy(call) => {
+                    let call = ProgramCall::new(
+                        layerx_types::intent::ProgramId::new(call.program_id),
+                        Calldata::new(&call.calldata).map_err(|_| HumanOperationError::Refused)?,
+                        CallBudget::new(call.fuel, layerx_types::amount::Amount::from_u128(call.fee_limit))
+                            .map_err(|_| HumanOperationError::Refused)?,
+                        RequestedCapabilities::new(&call.capabilities)
+                            .map_err(|_| HumanOperationError::Refused)?,
+                    );
+                    programs.simulate(&mut simulator, &call, signed, now, &bound)
+                }
+                ProgramSimulationRequest::Native { payload, fee_limit, .. } => {
+                    let call = layerx_types::program_call::NativeProgramCall::decode(payload)
+                        .map_err(|_| HumanOperationError::Refused)?;
+                    programs.simulate_native(&mut simulator, call, *fee_limit, signed, now, &bound)
+                }
+            }.map_err(program_operation_error)?
+        };
+        let (terminal_payload, evidence, evidence_signature) =
+            captured.ok_or(HumanOperationError::Unavailable)?;
+        context.permit().boundary(&self.session_control).map_err(rpc_commit_error)?;
+        Ok(RpcProgramSimulation {
+            program_id,
+            guest_abi_version,
+            sequencer_public_key,
+            execution,
+            terminal_payload,
+            evidence,
+            evidence_signature,
+        })
+    }
+
     pub(crate) fn rpc_session_refresh(
         &mut self,
         context: &crate::agent_rpc_peer::RpcOwnerContext<'_>,

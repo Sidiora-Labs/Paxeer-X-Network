@@ -74,7 +74,60 @@ pub struct ProgramAuthority<'a> {
     pub ca_der: &'a [u8],
 }
 
+pub(crate) struct ProgramArtifacts {
+    pub(crate) terminal_payload: Vec<u8>,
+    pub(crate) call_graph: Vec<u8>,
+}
+
+pub(crate) enum ProgramArtifactsError {
+    Unavailable,
+    Malformed,
+}
+
+impl ProgramArtifactsError {
+    pub(crate) fn is_unavailable(&self) -> bool {
+        matches!(self, Self::Unavailable)
+    }
+}
+
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ProgramArtifactsWire {
+    activity_id: String,
+    receipt_digest: String,
+    terminal_payload: String,
+    call_graph: String,
+}
+
 impl LayerxdProgramBalanceReader {
+    pub(crate) fn read_program_artifacts(
+        &self,
+        activity_id: [u8; 32],
+        receipt_digest: [u8; 32],
+    ) -> Result<ProgramArtifacts, ProgramArtifactsError> {
+        let url = format!(
+            "{}/v1/programs/activities/{}/artifacts?receipt_digest={}",
+            self.endpoint, hex::encode(&activity_id), hex::encode(&receipt_digest),
+        );
+        let mut response = self.agent.get(&url)
+            .header("Authorization", &format!("Bearer {}", self.authorization))
+            .call().map_err(|_| ProgramArtifactsError::Unavailable)?;
+        if !response.status().is_success() {
+            return Err(ProgramArtifactsError::Unavailable);
+        }
+        let body = response.body_mut().with_config().limit(4_194_560).read_to_string()
+            .map_err(|_| ProgramArtifactsError::Malformed)?;
+        let wire: ProgramArtifactsWire = serde_json::from_str(&body)
+            .map_err(|_| ProgramArtifactsError::Malformed)?;
+        if wire.activity_id != hex::encode(&activity_id) || wire.receipt_digest != hex::encode(&receipt_digest) {
+            return Err(ProgramArtifactsError::Malformed);
+        }
+        Ok(ProgramArtifacts {
+            terminal_payload: program_artifact_hex(&wire.terminal_payload)?,
+            call_graph: program_artifact_hex(&wire.call_graph)?,
+        })
+    }
+
     /// Connects the running agent route to the production node pair.
     ///
     /// # Errors
@@ -406,6 +459,18 @@ impl LayerxdProgramBalanceReader {
             .map_err(|_| ProtocolAdapterError::NonCanonicalView)?;
         serde_json::from_str(&body).map_err(|_| ProtocolAdapterError::NonCanonicalView)
     }
+}
+
+fn program_artifact_hex(text: &str) -> Result<Vec<u8>, ProgramArtifactsError> {
+    if text.len() > 2_097_152 || text.len() % 2 != 0
+        || !text.bytes().all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'f'))
+    {
+        return Err(ProgramArtifactsError::Malformed);
+    }
+    text.as_bytes().chunks_exact(2).map(|pair| {
+        let pair = std::str::from_utf8(pair).map_err(|_| ProgramArtifactsError::Malformed)?;
+        u8::from_str_radix(pair, 16).map_err(|_| ProgramArtifactsError::Malformed)
+    }).collect()
 }
 
 /// Agent service route that always refreshes from layerxd at request time.

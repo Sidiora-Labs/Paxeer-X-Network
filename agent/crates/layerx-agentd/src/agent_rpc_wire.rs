@@ -1148,6 +1148,82 @@ impl Canonical for ProgramCallRequest {
 /// `program.simulate` carries the same SDK `wire_call` body as `program.call`.
 pub(crate) type ProgramSimulateWire = ProgramCallWire;
 
+pub(crate) enum ProgramSimulationRequest {
+    Legacy(ProgramCallRequest),
+    Native {
+        program_id: [u8; 32],
+        payload: Vec<u8>,
+        fee_limit: u128,
+        signed_activity: Vec<u8>,
+    },
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct NativeProgramSimulationWire {
+    payload_encoding: String,
+    program_id: String,
+    calldata: String,
+    budget: ProgramBudgetWire,
+    signed_activity: String,
+    native_call: NativeProgramCallWire,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct NativeProgramCallWire {
+    guest_abi: u16,
+    entrypoint: String,
+    capabilities_hex: String,
+    access_declaration_hex: String,
+    response_capacity: u32,
+    resources: [String; 7],
+}
+
+pub(crate) fn program_simulation_request(
+    request: &Map<String, Value>,
+    id: RequestId,
+) -> Result<ProgramSimulationRequest, Rejection> {
+    if !request.contains_key("payload_encoding") && !request.contains_key("native_call") {
+        return Ok(ProgramSimulationRequest::Legacy(
+            decode_wire::<ProgramSimulateWire>(request, id)?.into_request(id)?,
+        ));
+    }
+    let wire = decode_wire::<NativeProgramSimulationWire>(request, id)?;
+    if wire.payload_encoding != "native-v1" {
+        return Err(malformed(id));
+    }
+    let program_id = hex32(&wire.program_id, id)?;
+    let calldata = hex_bytes(&wire.calldata, id)?;
+    let capabilities = hex_bytes(&wire.native_call.capabilities_hex, id)?;
+    let access_declaration = hex_bytes(&wire.native_call.access_declaration_hex, id)?;
+    let mut resources = [0_u64; 7];
+    for (value, text) in resources.iter_mut().zip(&wire.native_call.resources) {
+        *value = decimal_u64(text, id)?;
+    }
+    if decimal_u64(&wire.budget.fuel, id)? != resources[0] {
+        return Err(malformed(id));
+    }
+    let payload = layerx_types::program_call::NativeProgramCall {
+        program_id: layerx_types::intent::ProgramId::new(program_id),
+        guest_abi: wire.native_call.guest_abi,
+        entrypoint: wire.native_call.entrypoint.as_bytes(),
+        calldata: &calldata,
+        capabilities: &capabilities,
+        access_declaration: &access_declaration,
+        response_capacity: wire.native_call.response_capacity,
+        resources: layerx_types::program_call::Resources(resources),
+    }
+    .encode()
+    .map_err(|_| malformed(id))?;
+    Ok(ProgramSimulationRequest::Native {
+        program_id,
+        payload,
+        fee_limit: decimal_u128(&wire.budget.fee_limit, id)?,
+        signed_activity: signed_activity(&wire.signed_activity, id)?,
+    })
+}
+
 /// Converted lifecycle request (`program.deploy`, `program.upgrade`, `program.wind-down`):
 /// the SDK sends only the signed lifecycle activity; ordinal and payload checks run in
 /// `ops::program::validate_*_activity` against the module registry.

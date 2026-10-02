@@ -863,7 +863,103 @@ pub struct ProgramOperations {
     reader: LayerxdProgramBalanceReader,
 }
 
+pub(crate) struct ProgramActivityExecution {
+    pub(crate) program_id: [u8; 32],
+    pub(crate) guest_abi_version: u16,
+    pub(crate) execution: ProgramExecution,
+    pub(crate) terminal_payload: Vec<u8>,
+}
+
 impl ProgramOperations {
+    pub(crate) fn activity_execution(
+        &self,
+        registry: &ModuleRegistry,
+        signed_activity: &[u8],
+        receipt: &[u8],
+        authority: layerx_proof::receipt::AuthorizedBatch,
+    ) -> Result<ProgramActivityExecution, ProgramOperationError> {
+        use layerx_proof::program::{
+            verify_authorized_program_execution_with_payers, AuthorizedProgramExecutionExpectation,
+        };
+        let activity = decode_signed(signed_activity, registry)
+            .map_err(|_| ProgramOperationError::InvalidRequest)?;
+        if activity.activity_type().module() != ModuleId::Programs
+            || activity.activity_type().ordinal() != 3
+        {
+            return Err(ProgramOperationError::InvalidRequest);
+        }
+        let decoded = layerx_wire::receipt::decode(receipt)
+            .map_err(|_| ProgramOperationError::UnverifiedReceipt)?;
+        let protocol = decoded.protocol().ok_or(ProgramOperationError::UnverifiedReceipt)?;
+        if protocol.protocol_version() != activity.protocol_version() {
+            return Err(ProgramOperationError::UnverifiedReceipt);
+        }
+        let (program_id, guest_abi_version) = if activity.payload()
+            .starts_with(layerx_types::intent::PROGRAM_CALL_PAYLOAD_DOMAIN)
+        {
+            let call = ProgramCall::from_canonical_payload(activity.payload())
+                .map_err(|_| ProgramOperationError::InvalidRequest)?;
+            (call.callee().bytes(), protocol.program_outcome()
+                .ok_or(ProgramOperationError::UnverifiedReceipt)?.abi_version())
+        } else {
+            if activity.protocol_version() != 3 {
+                return Err(ProgramOperationError::InvalidRequest);
+            }
+            let call = NativeProgramCall::decode(activity.payload())
+                .map_err(|_| ProgramOperationError::InvalidRequest)?;
+            (call.program_id.bytes(), call.guest_abi)
+        };
+        let activity_id = activity_id(&activity).map_err(|_| ProgramOperationError::InvalidRequest)?;
+        let unsigned = layerx_wire::receipt::encode_unsigned(&decoded)
+            .map_err(|_| ProgramOperationError::UnverifiedReceipt)?;
+        let receipt_digest = layerx_wire::hash::receipt_digest(&unsigned)
+            .map_err(|_| ProgramOperationError::UnverifiedReceipt)?;
+        let artifacts = self.reader.read_program_artifacts(activity_id, receipt_digest)
+            .map_err(|error| if error.is_unavailable() {
+                ProgramOperationError::Unavailable
+            } else {
+                ProgramOperationError::UnverifiedReceipt
+            })?;
+        let verified = verify_authorized_program_execution_with_payers(
+            receipt,
+            &artifacts.terminal_payload,
+            &artifacts.call_graph,
+            &AuthorizedProgramExecutionExpectation {
+                authority,
+                activity_id,
+                payload_hash: layerx_wire::hash::payload_hash(&activity)
+                    .map_err(|_| ProgramOperationError::InvalidRequest)?,
+                program_id,
+                guest_abi_version,
+            },
+            &[OccupancyPayer { did: activity.actor_did(), account: None }],
+        ).map_err(|_| ProgramOperationError::UnverifiedReceipt)?;
+        Ok(ProgramActivityExecution {
+            program_id,
+            guest_abi_version,
+            execution: ProgramExecution {
+                committed: true,
+                result_code: verified.result_code(),
+                metered_cost: verified.fee_units(),
+                fee_units: verified.fee_units(),
+                terminal_payload_root: verified.terminal_payload_root(),
+                cpu_fuel: verified.cpu_fuel(),
+                memory_bytes: verified.memory_bytes(),
+                storage_read_bytes: verified.storage_read_bytes(),
+                storage_write_bytes: verified.storage_write_bytes(),
+                output_values: verified.output_values(),
+                output_bytes: verified.output_bytes(),
+                outcome: Some(verified.outcome().clone()),
+                authenticated_failure: verified.authenticated_failure().cloned(),
+                authenticated_resource: verified.authenticated_resource().copied(),
+                terminal: verified.terminal().clone(),
+                call_graph: verified.call_graph().to_vec(),
+                receipt: verified.receipt().canonical_bytes().to_vec(),
+            },
+            terminal_payload: artifacts.terminal_payload,
+        })
+    }
+
     #[must_use]
     pub const fn new(reader: LayerxdProgramBalanceReader) -> Self {
         Self { reader }

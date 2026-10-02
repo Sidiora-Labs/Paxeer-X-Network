@@ -1823,6 +1823,195 @@ pub(crate) fn program_discover<A: HumanAuthorityBoundary>(
     })
 }
 
+pub(crate) fn program_activity<A: HumanAuthorityBoundary>(
+    owner: &SharedAgentOwner<A>,
+    context: &RpcOwnerContext<'_>,
+    request: &Map<String, Value>,
+    ctx: &DispatchContext,
+) -> Result<Dispatched, Rejection> {
+    use crate::agent_rpc_wire::{decode_wire, ProgramActivityWire};
+    use crate::human_runtime::RpcProgramActivity;
+    let id = ctx.request_id;
+    let activity_id = decode_wire::<ProgramActivityWire>(request, id)?.into_request(id)?;
+    let response = owner.lock()
+        .and_then(|mut guard| guard.rpc_program_activity(context, activity_id))
+        .map_err(|error| owner_error(id, error))?;
+    match response {
+        RpcProgramActivity::Unknown { idempotency_key, signed_activity } => Ok(Dispatched {
+            value: serde_json::json!({
+                "state": "unknown",
+                "activity_id": hexv(&activity_id),
+                "idempotency_key": hexv(&idempotency_key),
+                "retained_signed_activity": hexv(&signed_activity),
+            }),
+            verification: Some(VerificationStatus::Unverified {
+                requested: Level::SequencerSigned,
+                achieved: Level::Unverified,
+                reason: layerx_agent_api::error::ReasonCode::new("receipt_pending")
+                    .map_err(|_| rejection(ErrorClass::InternalFault, id, "owner.response_malformed"))?,
+            }),
+        }),
+        RpcProgramActivity::Verified { idempotency_key, signed_activity, authority, execution: result } => {
+            let malformed_response = || rejection(ErrorClass::InternalFault, id, "owner.response_malformed");
+            let execution = &result.execution;
+            let receipt = layerx_wire::receipt::decode(execution.receipt()).map_err(|_| malformed_response())?;
+            let protocol = receipt.protocol().ok_or_else(malformed_response)?;
+            let unsigned = layerx_wire::receipt::encode_unsigned(&receipt).map_err(|_| malformed_response())?;
+            let receipt_digest = layerx_wire::hash::receipt_digest(&unsigned).map_err(|_| malformed_response())?;
+            let outcome = execution.outcome().ok_or_else(malformed_response)?;
+            if !execution.committed() || protocol.activity_id() != activity_id {
+                return Err(malformed_response());
+            }
+            Ok(Dispatched {
+                value: serde_json::json!({
+                    "state": if outcome.is_completed() { "executed" } else { "refused" },
+                    "activity_id": hexv(&activity_id),
+                    "idempotency_key": hexv(&idempotency_key),
+                    "retained_signed_activity": hexv(&signed_activity),
+                    "program_id": hexv(&result.program_id),
+                    "guest_abi_version": result.guest_abi_version,
+                    "module_version": protocol.module_version(),
+                    "batch_id": hexv(&protocol.batch_id()),
+                    "global_sequence": dec(protocol.global_sequence()),
+                    "result_code": execution.result_code(),
+                    "state_root": hexv(&protocol.resulting_state_root()),
+                    "receipt": hexv(execution.receipt()),
+                    "receipt_digest": hexv(&receipt_digest),
+                    "terminal_payload": hexv(&result.terminal_payload),
+                    "call_graph": hexv(execution.call_graph()),
+                    "authority": {
+                        "batch_id": hexv(&authority.batch_id()),
+                        "asset": hexv(&authority.asset()),
+                        "previous_state_root": hexv(&authority.previous_state_root()),
+                        "resulting_state_root": hexv(&authority.resulting_state_root()),
+                        "sequencer_public_key": hexv(&authority.sequencer_public_key()),
+                    },
+                    "usage": {
+                        "cpu_fuel": dec(execution.cpu_fuel()),
+                        "memory_bytes": dec(execution.memory_bytes()),
+                        "storage_read_bytes": dec(execution.storage_read_bytes()),
+                        "storage_write_bytes": dec(execution.storage_write_bytes()),
+                        "output_values": execution.output_values(),
+                        "output_bytes": dec(execution.output_bytes()),
+                        "fee_units": dec(execution.fee_units()),
+                    },
+                    "outcome": program_outcome_value(outcome),
+                    "verification": "receipt-terminal-and-call-graph-verified",
+                }),
+                verification: Some(VerificationStatus::Achieved(Level::SequencerSigned)),
+            })
+        }
+    }
+}
+
+pub(crate) fn program_simulate<A: HumanAuthorityBoundary>(
+    owner: &SharedAgentOwner<A>,
+    context: &RpcOwnerContext<'_>,
+    request: &Map<String, Value>,
+    ctx: &DispatchContext,
+) -> Result<Dispatched, Rejection> {
+    let id = ctx.request_id;
+    let typed = crate::agent_rpc_wire::program_simulation_request(request, id)?;
+    let response = owner
+        .lock()
+        .and_then(|mut guard| guard.rpc_program_simulate(context, typed))
+        .map_err(|error| owner_error(id, error))?;
+    let malformed_response = || rejection(ErrorClass::InternalFault, id, "owner.response_malformed");
+    let execution = &response.execution;
+    let receipt = layerx_wire::receipt::decode(execution.receipt()).map_err(|_| malformed_response())?;
+    let protocol = receipt.protocol().ok_or_else(malformed_response)?;
+    let unsigned = layerx_wire::receipt::encode_unsigned(&receipt).map_err(|_| malformed_response())?;
+    let receipt_digest = layerx_wire::hash::receipt_digest(&unsigned).map_err(|_| malformed_response())?;
+    let outcome = execution.outcome().ok_or_else(malformed_response)?;
+    if execution.committed() || response.evidence.committed {
+        return Err(malformed_response());
+    }
+    Ok(Dispatched {
+        value: serde_json::json!({
+            "committed": false,
+            "execution": {
+                "state": "simulated",
+                "activity_id": hexv(&protocol.activity_id()),
+                "program_id": hexv(&response.program_id),
+                "guest_abi_version": response.guest_abi_version,
+                "module_version": protocol.module_version(),
+                "batch_id": hexv(&protocol.batch_id()),
+                "global_sequence": dec(protocol.global_sequence()),
+                "result_code": execution.result_code(),
+                "state_root": hexv(&protocol.resulting_state_root()),
+                "receipt": hexv(execution.receipt()),
+                "receipt_digest": hexv(&receipt_digest),
+                "terminal_payload": hexv(&response.terminal_payload),
+                "call_graph": hexv(execution.call_graph()),
+                "authority": {
+                    "batch_id": hexv(&protocol.batch_id()),
+                    "asset": hexv(&protocol.asset()),
+                    "previous_state_root": hexv(&protocol.previous_state_root()),
+                    "resulting_state_root": hexv(&protocol.resulting_state_root()),
+                    "sequencer_public_key": hexv(&response.sequencer_public_key),
+                },
+                "usage": {
+                    "cpu_fuel": dec(execution.cpu_fuel()),
+                    "memory_bytes": dec(execution.memory_bytes()),
+                    "storage_read_bytes": dec(execution.storage_read_bytes()),
+                    "storage_write_bytes": dec(execution.storage_write_bytes()),
+                    "output_values": execution.output_values(),
+                    "output_bytes": dec(execution.output_bytes()),
+                    "fee_units": dec(execution.fee_units()),
+                },
+                "outcome": program_outcome_value(outcome),
+                "verification": "receipt-terminal-and-call-graph-verified",
+            },
+            "simulation_evidence": {
+                "boundary_id": hexv(&response.evidence.boundary_id),
+                "activity_id": hexv(&response.evidence.activity_id),
+                "previous_state_root": hexv(&response.evidence.previous_state_root),
+                "hypothetical_state_root": hexv(&response.evidence.hypothetical_state_root),
+                "observed_sequence": dec(response.evidence.observed_sequence),
+                "observed_at": dec(response.evidence.observed_at),
+                "public_key": hexv(&response.sequencer_public_key),
+                "signature": hexv(&response.evidence_signature),
+                "committed": false,
+            },
+        }),
+        verification: Some(VerificationStatus::Achieved(Level::SequencerSigned)),
+    })
+}
+
+fn program_outcome_value(outcome: &layerx_types::intent::ProgramCallOutcome) -> Value {
+    use layerx_types::intent::{ProgramCallFailure, ProgramCallOutcome, ProgramLegacyValue};
+    match outcome {
+        ProgramCallOutcome::Completed(response) => serde_json::json!({
+            "kind": "completed", "code": response.code(), "response": hexv(response.body()),
+        }),
+        ProgramCallOutcome::LegacyCompleted(response) => serde_json::json!({
+            "kind": "legacy_completed", "code": response.code(),
+            "values": response.values().iter().map(|value| match value {
+                ProgramLegacyValue::I32(value) => serde_json::json!({"type": "i32", "value": value}),
+                ProgramLegacyValue::I64(value) => serde_json::json!({"type": "i64", "value": value.to_string()}),
+            }).collect::<Vec<_>>(),
+        }),
+        ProgramCallOutcome::Refused(failure) => {
+            let failure = match *failure {
+                ProgramCallFailure::UnknownProgram => serde_json::json!({"kind": "unknown_program"}),
+                ProgramCallFailure::Reentrancy => serde_json::json!({"kind": "reentrancy"}),
+                ProgramCallFailure::DepthExceeded { limit, attempted } => {
+                    serde_json::json!({"kind": "depth_exceeded", "limit": limit, "attempted": attempted})
+                }
+                ProgramCallFailure::FanoutExceeded { limit, attempted } => {
+                    serde_json::json!({"kind": "fanout_exceeded", "limit": limit, "attempted": attempted})
+                }
+                ProgramCallFailure::GuestRefused { code } => serde_json::json!({"kind": "guest_refused", "code": code}),
+                ProgramCallFailure::Authority => serde_json::json!({"kind": "authority"}),
+                ProgramCallFailure::Resource => serde_json::json!({"kind": "resource"}),
+                ProgramCallFailure::Response => serde_json::json!({"kind": "response"}),
+                ProgramCallFailure::Fault => serde_json::json!({"kind": "fault"}),
+            };
+            serde_json::json!({"kind": "refused", "failure": failure})
+        }
+    }
+}
+
 pub(crate) fn read_batch<A: HumanAuthorityBoundary>(
     owner: &SharedAgentOwner<A>,
     context: &RpcOwnerContext<'_>,
