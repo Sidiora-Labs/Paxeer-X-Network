@@ -54,5 +54,19 @@ int main(void)
         lxp_activity_check_envelope(&decoded, 9U) != LXP_OK ||
         lx_oracle_adapter_isolation_check() != LXP_OK)
         return 1;
+    lx_oracle_adapter_config config = {0};
+    memcpy(config.oracle_private_key, seed, 32U);
+    config.network_id = 9U; config.protocol_version = 3U; config.transport_version = 1U;
+    config.actor_did = actor; config.actor_did_length = sizeof(actor) - 1U;
+    config.next_account_sequence = 7U; config.fee_limit.lo = 100U;
+    config.not_before = 1000U; config.not_after = 2000U;
+    if (lxp_arena_reset(&arena, 0U) != LXP_OK ||
+        lx_oracle_activity_encode_signed(&observation, &config, &arena, &encoded) != LXP_OK ||
+        lxp_activity_decode(encoded.bytes, encoded.length, &decoded) != LXP_OK ||
+        decoded.protocol_version != 3U || decoded.payload.length != 137U ||
+        memcmp(decoded.payload.bytes + 1U, payload, 72U) != 0 ||
+        memcmp(decoded.payload.bytes + 73U, observation.signature, 64U) != 0 ||
+        memcmp(decoded.signature.bytes, observation.signature, 64U) == 0 ||
+        lxp_activity_verify_signature(&decoded) != LXP_OK) return 1;
     return 0;
 }

@@ -483,7 +483,8 @@ static lxp_result oracle_command_bind(const perps_decoded *value,
         return LXP_ERR_UNAUTHORIZED_ORACLE;
     *command = value->typed->oracle;
     (void)memcpy(command->oracle_public_key, activity->authority.bytes, 32U);
-    (void)memcpy(command->signature, activity->signature.bytes, 64U);
+    if (command->transport_version == 0U)
+        (void)memcpy(command->signature, activity->signature.bytes, 64U);
     return LXP_OK;
 }
 
@@ -513,8 +514,9 @@ static lxp_result oracle_admission_check(lxp_module_ctx *ctx,
     (void)memcpy(observation.oracle_public_key, command->oracle_public_key,
                  32U);
     (void)memcpy(observation.signature, command->signature, 64U);
-    status = lx_oracle_key_set_check(&projected, &observation, value->payload,
-                                     value->payload_length);
+    status = lx_oracle_key_set_check(&projected, &observation,
+        command->transport_version == 1U ? value->payload + 1U : value->payload,
+        command->transport_version == 1U ? LX_PERPS_ORACLE_PAYLOAD_BYTES : value->payload_length);
     if (status == LXP_OK)
         status = lx_oracle_staleness_check(&projected, &observation,
                                            lxp_ctx_batch_timestamp_ms(ctx));
@@ -1758,9 +1760,9 @@ static lxp_result module_genesis(lxp_module_ctx *ctx, const uint8_t *manifest,
     return lxp_ctx_charge_gas(ctx, manifest_length);
 }
 
-static lxp_result module_decode(lxp_module_ctx *ctx, uint16_t ordinal,
+static lxp_result module_decode_selected(lxp_module_ctx *ctx, uint16_t ordinal,
                                 const uint8_t *payload, size_t payload_length,
-                                void **decoded)
+                                void **decoded, bool oracle_transport)
 {
     perps_decoded *value;
     void *memory = NULL;
@@ -1791,8 +1793,11 @@ static lxp_result module_decode(lxp_module_ctx *ctx, uint16_t ordinal,
                                               &value->typed->halt);
         break;
     case 3U:
-        status = lx_perps_oracle_command_decode(payload, payload_length,
-                                                &value->typed->oracle);
+        if (oracle_transport && ctx->protocol_version != LXP_PROTOCOL_VERSION_STATE_COMMITMENT)
+            return LXP_ERR_VERSION_UNSUPPORTED;
+        status = oracle_transport ?
+            lx_perps_oracle_transport_decode(payload, payload_length, &value->typed->oracle) :
+            lx_perps_oracle_command_decode(payload, payload_length, &value->typed->oracle);
         break;
     case 4U:
         status = lx_perps_order_command_decode(payload, payload_length,
@@ -1830,6 +1835,18 @@ static lxp_result module_decode(lxp_module_ctx *ctx, uint16_t ordinal,
     if (status != LXP_OK) return status;
     *decoded = value;
     return LXP_OK;
+}
+
+static lxp_result module_decode(lxp_module_ctx *ctx, uint16_t ordinal,
+    const uint8_t *payload, size_t length, void **decoded)
+{
+    return module_decode_selected(ctx, ordinal, payload, length, decoded, false);
+}
+
+static lxp_result module_decode_transport(lxp_module_ctx *ctx, uint16_t ordinal,
+    const uint8_t *payload, size_t length, void **decoded)
+{
+    return module_decode_selected(ctx, ordinal, payload, length, decoded, true);
 }
 
 static lxp_result module_validate(lxp_module_ctx *ctx,
@@ -1939,6 +1956,17 @@ const lxp_module_iface *lx_perps_module_iface(void)
         LXP_MODULE_PERPS, 1U, "perps", activity_types,
         sizeof(activity_types) / sizeof(activity_types[0]),
         module_genesis, module_decode, module_validate, module_execute,
+        module_epoch, module_epoch, module_state_root, NULL
+    };
+    return &iface;
+}
+
+const lxp_module_iface *lx_perps_oracle_transport_module_iface(void)
+{
+    static const lxp_module_iface iface = {
+        LXP_MODULE_PERPS, 2U, "perps", activity_types,
+        sizeof(activity_types) / sizeof(activity_types[0]),
+        module_genesis, module_decode_transport, module_validate, module_execute,
         module_epoch, module_epoch, module_state_root, NULL
     };
     return &iface;

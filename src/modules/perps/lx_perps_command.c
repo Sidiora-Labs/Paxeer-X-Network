@@ -109,6 +109,19 @@ lxp_result lx_perps_oracle_command_decode(const uint8_t *bytes, size_t length,
                                                    LXP_ERR_NON_CANONICAL;
 }
 
+lxp_result lx_perps_oracle_transport_decode(const uint8_t *bytes, size_t length,
+    lx_perps_oracle_command *command)
+{
+    if (bytes == NULL || command == NULL || length != LX_ORACLE_TRANSPORT_BYTES ||
+        bytes[0] != LX_ORACLE_TRANSPORT_VERSION) return LXP_ERR_NON_CANONICAL;
+    lxp_result status = lx_perps_oracle_command_decode(bytes + 1U,
+        LX_ORACLE_OBSERVATION_BYTES, command);
+    if (status != LXP_OK) return status;
+    command->transport_version = LX_ORACLE_TRANSPORT_VERSION;
+    memcpy(command->signature, bytes + 73U, 64U);
+    return LXP_OK;
+}
+
 lxp_result lx_perps_oracle_command_sign(lx_perps_oracle_command *command,
                                         const uint8_t private_key[32])
 {

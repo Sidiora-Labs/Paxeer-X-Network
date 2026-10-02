@@ -12,6 +12,8 @@
 enum {
     LX_ORACLE_PUSH_ACTIVITY = 0x00060003,
     LX_ORACLE_OBSERVATION_BYTES = 72,
+    LX_ORACLE_TRANSPORT_BYTES = 137,
+    LX_ORACLE_TRANSPORT_VERSION = 1,
     LX_ORACLE_MAX_MARKETS = 128,
     LX_ORACLE_MAX_KEYS = 8,
     LX_ORACLE_STORE_CAPACITY = 512,
@@ -47,6 +49,10 @@ typedef struct lx_oracle_adapter_config {
     uint64_t next_account_sequence;
     lxp_u128 fee_limit;
     size_t maximum_observations;
+    uint16_t protocol_version;
+    uint8_t transport_version;
+    uint64_t not_before;
+    uint64_t not_after;
 } lx_oracle_adapter_config;
 
 typedef struct lx_oracle_market {
@@ -114,6 +120,10 @@ lxp_result lx_oracle_activity_encode(
     const uint8_t *actor_did, size_t actor_did_length,
     uint64_t account_sequence, lxp_u128 fee_limit, lxp_arena *arena,
     lxp_byte_span *encoded);
+lxp_result lx_oracle_transport_encode(const lx_oracle_observation *observation,
+    uint8_t bytes[LX_ORACLE_TRANSPORT_BYTES]);
+lxp_result lx_oracle_activity_encode_signed(const lx_oracle_observation *observation,
+    const lx_oracle_adapter_config *config, lxp_arena *arena, lxp_byte_span *encoded);
 lxp_result lx_oracle_adapter_run(lx_oracle_adapter_config *config,
                                  size_t *submitted);
 lxp_result lx_oracle_adapter_isolation_check(void);

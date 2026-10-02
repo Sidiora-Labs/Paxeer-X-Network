@@ -31811,7 +31811,9 @@ ac_23 = "Task4.2 retains its full original acceptance and component assertions; 
 
 [task.4.4]
 title = "Authenticate oracle observation transport with separate envelope and observation signatures"
-status = "in_progress"
+status = "done"
+completion_basis = "implementation"
+qualification_status = "unverified"
 mode = "BUILD"
 wave = 2
 requires = ["0.2", "24.14"]
