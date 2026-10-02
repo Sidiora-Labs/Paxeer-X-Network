@@ -156,7 +156,11 @@ impl<'a> AttesterSet<'a> {
     #[must_use]
     pub fn ready_for_settlement(&self) -> bool {
         self.sealed_at.is_some()
-            && self.committed_inputs > 0
+            && (self.committed_inputs > 0
+                || (self.last_committed_input == [0; 32]
+                    && self.last_admitted_input == [0; 32]
+                    && self.committed_root == [0; 32]
+                    && self.admitted_root == [0; 32]))
             && self.admitted_inputs == self.committed_inputs
             && self.settlement_commitment.is_some()
     }
@@ -294,13 +298,13 @@ pub fn commit_input(
 }
 
 /// # Errors
-/// Returns an error for invalid authority, an already sealed policy or no committed inputs.
+/// Returns an error for invalid authority or an already sealed policy.
 pub fn seal_inputs(
     policy: &mut AttesterSet<'_>,
     principal: AccountId,
     height: u64,
 ) -> Result<(), ProgramError> {
-    if principal != policy.tenant || policy.sealed_at.is_some() || policy.committed_inputs == 0 {
+    if principal != policy.tenant || policy.sealed_at.is_some() {
         return Err(malformed());
     }
     policy.sealed_at = Some(height);
@@ -724,11 +728,14 @@ fn accumulate(prior: [u8; 32], leaf: [u8; 32]) -> Result<[u8; 32], ProgramError>
 #[cfg(target_arch = "wasm32")]
 fn freeze_settlement_commitment(policy: &AttesterSet<'_>) -> Result<[u8; 32], ProgramError> {
     if policy.sealed_at.is_none()
-        || policy.committed_inputs == 0
         || policy.admitted_inputs != policy.committed_inputs
         || policy.last_admitted_input != policy.last_committed_input
-        || policy.committed_root == [0; 32]
-        || policy.admitted_root == [0; 32]
+        || (policy.committed_inputs == 0
+            && (policy.last_committed_input != [0; 32]
+                || policy.committed_root != [0; 32]
+                || policy.admitted_root != [0; 32]))
+        || (policy.committed_inputs > 0
+            && (policy.committed_root == [0; 32] || policy.admitted_root == [0; 32]))
     {
         return Err(malformed());
     }
@@ -812,6 +819,9 @@ pub fn seal(lease_id: LeaseId, principal: AccountId, height: u64) -> Result<(), 
     let length = read(POLICY_PREFIX, lease_id, None, &mut bytes)?;
     let mut policy = decode_policy(&bytes[..length])?;
     seal_inputs(&mut policy, principal, height)?;
+    if policy.committed_inputs == 0 {
+        policy.settlement_commitment = Some(freeze_settlement_commitment(&policy)?);
+    }
     let mut output = [0; ATTESTER_SET_CAPACITY];
     let written = encode_policy(&policy, &mut output)?;
     write(POLICY_PREFIX, lease_id, None, &output[..written])
@@ -1097,4 +1107,224 @@ mod tests {
         assert_eq!(policy.settlement_input_commitment(), Ok([23; 32]));
         assert_ne!(policy.settlement_input_commitment(), Ok([24; 32]));
     }
+
+    #[test]
+    fn statement_binds_every_input_and_policy_field() {
+        let mut baseline = [0; ATTESTATION_STATEMENT_CAPACITY];
+        let baseline_length = statement_bytes(
+            [21; 32], 5, weather(), 1_205, b"weather-oracle.eu", &mut baseline,
+        ).unwrap_or_else(|error| panic!("statement: {error}"));
+        assert!(baseline[..baseline_length].starts_with(STATEMENT_DOMAIN));
+        for index in 0..10 {
+            let mut root = [21; 32];
+            let mut revision = 5;
+            let mut input = weather();
+            let mut observed_at = 1_205;
+            let mut name: &[u8] = b"weather-oracle.eu";
+            match index {
+                0 => root[0] ^= 1,
+                1 => revision += 1,
+                2 => input.lease_id[0] ^= 1,
+                3 => input.input_id[0] ^= 1,
+                4 => input.payload_digest[0] ^= 1,
+                5 => input.payload_length += 1,
+                6 => input.source = ExternalInputSource::HardwareSensor,
+                7 => input.source_locator_digest[0] ^= 1,
+                8 => observed_at += 1,
+                9 => name = b"weather-oracle.us",
+                _ => unreachable!(),
+            }
+            let mut changed = [0; ATTESTATION_STATEMENT_CAPACITY];
+            let length = statement_bytes(root, revision, input, observed_at, name, &mut changed)
+                .unwrap_or_else(|error| panic!("changed statement: {error}"));
+            assert_ne!(&baseline[..baseline_length], &changed[..length], "field {index}");
+        }
+    }
+
+    #[test]
+    fn policy_commitment_binds_tenant_lease_revision_and_named_keys() {
+        let mut allowed = entries(b"weather-oracle.eu", [11; 32]);
+        allowed[1] = Some(Attester { name: b"factory-meter-17", ed25519_key: [12; 32] });
+        let policy = AttesterSet::new([7; 32], account(3), 5, &allowed)
+            .unwrap_or_else(|error| panic!("policy: {error}"));
+        let mut baseline = [0; ATTESTER_SET_CAPACITY];
+        let baseline_length = encode_policy_commitment(&policy, &mut baseline)
+            .unwrap_or_else(|error| panic!("policy encoding: {error}"));
+        assert!(baseline[..baseline_length].starts_with(POLICY_DOMAIN));
+        assert_ne!(POLICY_DOMAIN, STATEMENT_DOMAIN);
+        for index in 0..6 {
+            let mut changed = policy;
+            match index {
+                0 => changed.tenant = account(4),
+                1 => changed.lease_id[0] ^= 1,
+                2 => changed.revision += 1,
+                3 => changed.entries[0] = Some(Attester {
+                    name: b"weather-oracle.us", ed25519_key: [11; 32],
+                }),
+                4 => changed.entries[0] = Some(Attester {
+                    name: b"weather-oracle.eu", ed25519_key: [13; 32],
+                }),
+                5 => changed.entries.swap(0, 1),
+                _ => unreachable!(),
+            }
+            let mut output = [0; ATTESTER_SET_CAPACITY];
+            let length = encode_policy_commitment(&changed, &mut output)
+                .unwrap_or_else(|error| panic!("changed policy: {error}"));
+            assert_ne!(&baseline[..baseline_length], &output[..length], "field {index}");
+        }
+    }
+
+    #[test]
+    fn attestation_wire_rejects_every_truncation_trailing_and_invalid_source() {
+        let attestation = Attestation {
+            input: weather(), observed_at: 1_205, attester_name: b"weather-oracle.eu",
+            signature: [44; ATTESTATION_SIGNATURE_BYTES],
+        };
+        let mut wire = [0; ATTESTATION_REQUEST_CAPACITY + 1];
+        let length = encode_attestation(attestation, &mut wire)
+            .unwrap_or_else(|error| panic!("wire: {error}"));
+        for end in 0..length {
+            assert!(decode_attestation(&wire[..end]).is_err(), "truncation {end}");
+        }
+        assert!(decode_attestation(&wire[..length + 1]).is_err());
+        for source in [0, 5, 255] {
+            let mut changed = wire;
+            changed[104] = source;
+            assert!(decode_attestation(&changed[..length]).is_err());
+        }
+        for name_length in [0, 33, 255] {
+            let mut changed = wire;
+            changed[145] = name_length;
+            assert!(decode_attestation(&changed[..length]).is_err());
+        }
+        let mut changed = wire;
+        changed[146] = b'W';
+        assert!(decode_attestation(&changed[..length]).is_err());
+    }
+
+    #[test]
+    fn named_policy_rejects_duplicate_sparse_empty_and_zero_key_entries() {
+        let mut allowed = entries(b"weather-oracle.eu", [11; 32]);
+        allowed[1] = allowed[0];
+        assert_eq!(AttesterSet::new([7; 32], account(3), 1, &allowed),
+            Err(ProgramError::value(Field::CallInput, Reason::Duplicate)));
+        allowed[1] = None;
+        allowed.swap(0, 1);
+        assert!(AttesterSet::new([7; 32], account(3), 1, &allowed).is_err());
+        assert!(AttesterSet::new([7; 32], account(3), 1, &[None; MAX_ATTESTERS]).is_err());
+        assert!(AttesterSet::new([7; 32], account(3), 1,
+            &entries(b"weather-oracle.eu", [0; 32])).is_err());
+        assert!(AttesterSet::new([7; 32], account(3), 1,
+            &entries(&[b'a'; MAX_ATTESTER_NAME_BYTES + 1], [11; 32])).is_err());
+    }
+
+    #[test]
+    fn refused_input_commitments_leave_policy_unchanged() {
+        let tenant = account(3);
+        let original = AttesterSet::new([7; 32], tenant, 5,
+            &entries(b"weather-oracle.eu", [11; 32]))
+            .unwrap_or_else(|error| panic!("policy: {error}"));
+        for index in 0..6 {
+            let mut policy = original;
+            let mut input = weather();
+            let mut principal = tenant;
+            match index {
+                0 => input.lease_id[0] ^= 1,
+                1 => input.input_id = [0; 32],
+                2 => input.payload_digest = [0; 32],
+                3 => input.payload_length = 0,
+                4 => input.source_locator_digest = [0; 32],
+                5 => principal = account(4),
+                _ => unreachable!(),
+            }
+            assert!(commit_input(&mut policy, input, principal).is_err());
+            assert_eq!(policy, original, "refusal {index}");
+        }
+    }
+
+
+    #[test]
+    fn input_limit_rejects_overflow_after_canonical_commit_sequence() {
+        let tenant = account(3);
+        let mut policy = AttesterSet::new([7; 32], tenant, 5,
+            &entries(b"weather-oracle.eu", [11; 32]))
+            .unwrap_or_else(|error| panic!("policy: {error}"));
+        for ordinal in 1..=MAX_INPUTS_PER_LEASE {
+            let mut input = weather();
+            input.input_id = [0; 32];
+            input.input_id[28..].copy_from_slice(&ordinal.to_be_bytes());
+            commit_input(&mut policy, input, tenant)
+                .unwrap_or_else(|error| panic!("commit {ordinal}: {error}"));
+        }
+        let full = policy;
+        let mut overflow = weather();
+        overflow.input_id = [0; 32];
+        overflow.input_id[28..].copy_from_slice(&(MAX_INPUTS_PER_LEASE + 1).to_be_bytes());
+        assert!(commit_input(&mut policy, overflow, tenant).is_err());
+        assert_eq!(policy, full);
+        assert_eq!(policy.committed_inputs, MAX_INPUTS_PER_LEASE);
+        seal_inputs(&mut policy, tenant, 1_205)
+            .unwrap_or_else(|error| panic!("seal: {error}"));
+        assert!(policy.settlement_input_commitment().is_err());
+    }
+
+    #[test]
+    fn input_decoder_refuses_verified_execution_relabelling() {
+        let tenant = account(3);
+        let mut policy = AttesterSet::new([7; 32], tenant, 5,
+            &entries(b"weather-oracle.eu", [11; 32]))
+            .unwrap_or_else(|error| panic!("policy: {error}"));
+        let input = commit_input(&mut policy, weather(), tenant)
+            .unwrap_or_else(|error| panic!("input: {error}"));
+        let mut wire = [0; ATTESTED_INPUT_CAPACITY];
+        let length = encode_input(input, &mut wire)
+            .unwrap_or_else(|error| panic!("encode: {error}"));
+        assert_eq!(decode_input(&wire[..length]), Ok(input));
+        wire[2] = EvidenceClass::VerifiedExecution as u8;
+        assert!(decode_input(&wire[..length]).is_err());
+    }
+
+    #[test]
+    fn empty_input_plan_seal_preserves_zero_commitments() {
+        let tenant = account(3);
+        let mut policy = AttesterSet::new([7; 32], tenant, 5,
+            &entries(b"weather-oracle.eu", [11; 32]))
+            .unwrap_or_else(|error| panic!("policy: {error}"));
+        assert!(!policy.ready_for_settlement());
+        seal_inputs(&mut policy, tenant, 1_205)
+            .unwrap_or_else(|error| panic!("seal: {error}"));
+        assert_eq!(policy.sealed_at, Some(1_205));
+        assert_eq!(policy.committed_inputs, 0);
+        assert_eq!(policy.admitted_inputs, 0);
+        assert_eq!(policy.last_committed_input, [0; 32]);
+        assert_eq!(policy.last_admitted_input, [0; 32]);
+        assert_eq!(policy.committed_root, [0; 32]);
+        assert_eq!(policy.admitted_root, [0; 32]);
+        assert_eq!(policy.settlement_commitment, None);
+        assert!(!policy.ready_for_settlement());
+        assert!(policy.settlement_input_commitment().is_err());
+        let mut wire = [0; ATTESTER_SET_CAPACITY];
+        let length = encode_policy(&policy, &mut wire)
+            .unwrap_or_else(|error| panic!("encode: {error}"));
+        assert_eq!(decode_policy(&wire[..length]), Ok(policy));
+    }
+
+    #[test]
+    fn empty_input_plan_refuses_wrong_tenant_reseal_and_late_input() {
+        let tenant = account(3);
+        let original = AttesterSet::new([7; 32], tenant, 5,
+            &entries(b"weather-oracle.eu", [11; 32]))
+            .unwrap_or_else(|error| panic!("policy: {error}"));
+        let mut policy = original;
+        assert!(seal_inputs(&mut policy, account(4), 1_205).is_err());
+        assert_eq!(policy, original);
+        seal_inputs(&mut policy, tenant, 1_205)
+            .unwrap_or_else(|error| panic!("seal: {error}"));
+        let sealed = policy;
+        assert!(seal_inputs(&mut policy, tenant, 1_206).is_err());
+        assert_eq!(policy, sealed);
+        assert!(commit_input(&mut policy, weather(), tenant).is_err());
+        assert_eq!(policy, sealed);
+    }
+
 }

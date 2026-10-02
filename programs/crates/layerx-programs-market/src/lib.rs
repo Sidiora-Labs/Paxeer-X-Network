@@ -667,8 +667,7 @@ fn invoke(input: &[u8]) -> Result<CallResult, ProgramError> {
             )?)?;
             let mut offer_bytes = [0; OFFER_CAPACITY];
             let offer = decode_offer(read_state(OFFER_PREFIX, lease.offer_id, &mut offer_bytes)?)?;
-            if lease.verification == VerificationModel::Attested
-                && attest::require_ready_commitment(lease.id)? != commitment.input_commitment
+            if attest::require_ready_commitment(lease.id)? != commitment.input_commitment
             {
                 return Err(malformed());
             }
@@ -853,7 +852,6 @@ fn invoke(input: &[u8]) -> Result<CallResult, ProgramError> {
             let mut lease_bytes = [0; LEASE_CAPACITY];
             let lease = decode_lease(read_state(LEASE_PREFIX, lease_id, &mut lease_bytes)?)?;
             if lease.tenant != caller
-                || lease.verification != VerificationModel::Attested
                 || lease.status != LeaseStatus::Funded
             {
                 return Err(malformed());
@@ -885,7 +883,6 @@ fn invoke(input: &[u8]) -> Result<CallResult, ProgramError> {
                 &mut lease_bytes,
             )?)?;
             if lease.tenant != caller
-                || lease.verification != VerificationModel::Attested
                 || lease.status != LeaseStatus::Funded
             {
                 return Err(malformed());
@@ -899,7 +896,6 @@ fn invoke(input: &[u8]) -> Result<CallResult, ProgramError> {
             let mut lease_bytes = [0; LEASE_CAPACITY];
             let lease = decode_lease(read_state(LEASE_PREFIX, lease_id, &mut lease_bytes)?)?;
             if lease.tenant != caller
-                || lease.verification != VerificationModel::Attested
                 || lease.status != LeaseStatus::Funded
             {
                 return Err(malformed());
@@ -916,7 +912,6 @@ fn invoke(input: &[u8]) -> Result<CallResult, ProgramError> {
                 &mut lease_bytes,
             )?)?;
             if lease.provider != caller
-                || lease.verification != VerificationModel::Attested
                 || lease.status != LeaseStatus::Funded
             {
                 return Err(malformed());
