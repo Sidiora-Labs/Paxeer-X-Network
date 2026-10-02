@@ -2449,7 +2449,9 @@ fn hosted_ready(config: &Config) -> bool {
         && document.protocol_network_id == config.protocol_network_id
         && document.observed_at_ms <= observed_now
         && document.valid_until_ms > observed_now
-        && document.valid_until_ms.checked_sub(document.observed_at_ms)
+        && document
+            .valid_until_ms
+            .checked_sub(document.observed_at_ms)
             .is_some_and(|lifetime| lifetime > 0 && lifetime <= 30_000)
         && [
             "durable_store",
@@ -2458,10 +2460,14 @@ fn hosted_ready(config: &Config) -> bool {
         ]
         .iter()
         .all(|name| {
-            document.components.get(*name).is_some_and(|state| state == "ready")
-                && document.backends.get(*name).is_some_and(|backend| {
-                    backend.state == "ready" && backend.reason == "ready"
-                })
+            document
+                .components
+                .get(*name)
+                .is_some_and(|state| state == "ready")
+                && document
+                    .backends
+                    .get(*name)
+                    .is_some_and(|backend| backend.state == "ready" && backend.reason == "ready")
         })
 }
 
