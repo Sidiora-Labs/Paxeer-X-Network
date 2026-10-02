@@ -6,8 +6,7 @@ use std::rc::Rc;
 use layerx_programs_runtime::{
     admit_abi_upgrade, admit_abi_version, AbiRevision, ActivityBudgetBinding, CompositionContext,
     CompositionRefusal, CompositionRules, EngineRefusal, ProgramId, ProgramResolver,
-    ValidatedModule, ValidationRefusal, WasmEngine, ABI_V1_VERSION, ABI_V2_VERSION, ABI_V3_VERSION,
-    ABI_V4_VERSION,
+    ValidatedModule, ValidationRefusal, WasmEngine,
 };
 
 use crate::{ProgramLifecycle, ReadFreshness, VerifiedDeploymentEvidence, VerifiedProgramHead};
@@ -46,6 +45,7 @@ pub enum ExecutableAdmissionError {
         program: ProgramId,
     },
     Validation(ValidationRefusal),
+    Interface(crate::InterfaceRefusal),
 }
 
 impl Display for ExecutableAdmissionError {
@@ -88,6 +88,7 @@ impl Display for ExecutableAdmissionError {
                 formatter.write_str("current program evidence has expired")
             }
             Self::Validation(refusal) => write!(formatter, "module validation refusal: {refusal}"),
+            Self::Interface(refusal) => write!(formatter, "typed interface refusal: {refusal}"),
         }
     }
 }
@@ -96,6 +97,7 @@ impl std::error::Error for ExecutableAdmissionError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             Self::Validation(refusal) => Some(refusal),
+            Self::Interface(refusal) => Some(refusal),
             Self::InactiveLifecycle { .. }
             | Self::NonIncreasingVersion { .. }
             | Self::FreshnessRegression { .. }
@@ -179,6 +181,10 @@ impl VerifiedProgramCatalog {
             admit_abi_version(evidence.abi_version())
                 .map_err(ExecutableAdmissionError::AbiVersion)?;
         }
+        if let Some(interface) = evidence.interface() {
+            interface.require_module(evidence.module(), evidence.abi_version())
+                .map_err(ExecutableAdmissionError::Interface)?;
+        }
         let module = validate_deployment_module(
             &self.engine,
             evidence.module(),
@@ -199,6 +205,16 @@ impl VerifiedProgramCatalog {
             },
         );
         Ok(())
+    }
+
+    pub fn admit_typed(
+        &mut self,
+        evidence: VerifiedDeploymentEvidence,
+    ) -> Result<(), ExecutableAdmissionError> {
+        if !evidence.interface_present() {
+            return Err(ExecutableAdmissionError::Interface(crate::InterfaceRefusal::InterfaceAbsent));
+        }
+        self.admit(evidence)
     }
 
     /// Returns the number of evidence-backed executable programs.
@@ -323,19 +339,8 @@ pub(crate) fn validate_deployment_module(
     wasm: &[u8],
     abi_version: u16,
 ) -> Result<ValidatedModule, ExecutableAdmissionError> {
-    let expected_revision = match abi_version {
-        ABI_V1_VERSION => AbiRevision::V1,
-        ABI_V2_VERSION => AbiRevision::V2,
-        ABI_V3_VERSION => AbiRevision::V3,
-        ABI_V4_VERSION => AbiRevision::V4,
-        declared => {
-            return Err(ExecutableAdmissionError::AbiVersion(
-                layerx_programs_runtime::AbiVersionRefusal::Unsupported {
-                    requested: declared,
-                },
-            ))
-        }
-    };
+    let expected_revision = layerx_programs_runtime::abi_policy::abi_revision(abi_version)
+        .map_err(ExecutableAdmissionError::AbiVersion)?;
     let module = engine.validate_versioned(abi_version, wasm)
         .map_err(ExecutableAdmissionError::Validation)?;
     if module.abi_revision() != expected_revision {

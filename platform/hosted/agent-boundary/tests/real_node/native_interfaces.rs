@@ -603,3 +603,76 @@ fn canonical_native_interfaces_across_supported_abis() {
             &format!("abi{abi}-restart-call"), &evidence);
     }
 }
+
+fn typed_echo_guest(abi: u16, distinct: u8) -> Vec<u8> {
+    let mut imports = Vec::new();
+    if abi >= 2 { imports.push(("layerx_v2", "response_write", 0)); }
+    if abi == 3 { imports.push(("layerx_v3", "oracle_read", 1)); }
+    if abi == 4 { imports.push(("layerx_v4", "web_read", 1)); }
+    let n = imports.len() as u64;
+    let mut exports = unsigned_leb(3);
+    for (name, kind, index) in [("layerx_reserve", 0_u8, n), ("call", 0, n + 1), ("memory", 2, 0)] {
+        exports.extend(unsigned_leb(name.len() as u64)); exports.extend(name.as_bytes());
+        exports.push(kind); exports.extend(unsigned_leb(index));
+    }
+    let mut body = Vec::new();
+    for _ in 0..distinct { body.extend([OP_I32_CONST, 0, OP_DROP]); }
+    if abi >= 3 {
+        body.extend([OP_I32_CONST, 0, 0x04, 0x40]);
+        for _ in 0..4 { body.extend([OP_I32_CONST, 0]); }
+        body.extend([OP_CALL, 1, OP_DROP, OP_END]);
+    }
+    if abi >= 2 {
+        body.extend([OP_I32_CONST, 0, 0x20, 0, OP_I32_CONST, 4, 0x6a,
+            0x20, 1, OP_I32_CONST, 4, 0x6b, OP_CALL, 0, OP_DROP]);
+    }
+    body.extend([OP_I32_CONST, 0, OP_END]);
+    module(&[type_section(&[(&[TYPE_I32; 3], &[TYPE_I32]), (&[TYPE_I32; 4], &[TYPE_I32]),
+        (&[TYPE_I32], &[TYPE_I32]), (&[TYPE_I32; 2], &[TYPE_I32])]),
+        import_section(&imports), function_section(&[2, 3]), raw_section(5, &[1, 1, 1, 1]),
+        raw_section(7, &exports), code_section(&[func_body(&[], &[OP_I32_CONST, 0, OP_END]), func_body(&[], &body)])])
+}
+
+fn typed_echo_interface(wasm: &[u8], abi: u16, capability: u8, bound: u32) -> ProgramInterface {
+    let original = interface(wasm, abi, capability, bound);
+    let mut entries = original.entries().to_vec();
+    entries[0].failures.push(layerx_programs::TypedFailure { code: 7, name: "denied".into(),
+        detail: ValueSchema::layerx(ValueType::U8) });
+    must(ProgramInterface::bind(wasm, abi, entries), "typed echo interface")
+}
+
+#[test]
+fn emit_typed_interface_inputs() {
+    let evidence = PathBuf::from(std::env::var_os("PAXEER_X_TYPED_INTERFACE_INPUTS")
+        .unwrap_or_else(|| panic!("private typed-interface input directory required")));
+    assert!(evidence.is_dir());
+    for abi in 1..=4 {
+        let directory = evidence.join(format!("abi{abi}"));
+        make_dir(&directory, 0o700);
+        write(&directory.join("LayerX.toml"), format!("abi_version = {abi}\n").as_bytes(), 0o600);
+        let capability = if abi == 3 { 3 } else if abi == 4 { 4 } else { 0 };
+        let wasm = typed_echo_guest(abi, 0);
+        let published = typed_echo_interface(&wasm, abi, capability, 64);
+        write(&directory.join("module.wasm"), &wasm, 0o600);
+        write(&directory.join("interface.bin"), published.canonical_encoding(), 0o600);
+        let upgraded = typed_echo_guest(abi, 1);
+        let wider = typed_echo_interface(&upgraded, abi, capability, 128);
+        let narrower = typed_echo_interface(&upgraded, abi, capability, 32);
+        write(&directory.join("upgrade.wasm"), &upgraded, 0o600);
+        write(&directory.join("upgrade.bin"), wider.canonical_encoding(), 0o600);
+        write(&directory.join("narrow.bin"), narrower.canonical_encoding(), 0o600);
+        for (name, offset, replacement) in [("wrong-hash", DOMAIN_BYTES, 0_u8),
+            ("unknown-abi", DOMAIN_BYTES + 33, 5_u8),
+            ("wrong-schema", DOMAIN_BYTES + 2 + 32 + 2 + 2 + 4 + 4, 0xff_u8)] {
+            let mut bytes = published.canonical_encoding().to_vec();
+            if name == "wrong-hash" { bytes[offset] ^= 1; } else { bytes[offset] = replacement; }
+            write(&directory.join(format!("{name}.bin")), &bytes, 0o600);
+        }
+        let other = guest(if capability == 0 { 1 } else { 0 }, 0);
+        let mut undeclared = interface(&other, abi, if capability == 0 { 1 } else { 0 }, 64)
+            .canonical_encoding().to_vec();
+        undeclared[DOMAIN_BYTES..DOMAIN_BYTES+32].copy_from_slice(&published.code_hash());
+        write(&directory.join("wrong-capability.bin"), &undeclared, 0o600);
+        println!("TYPED_INTERFACE_INPUT abi{abi}");
+    }
+}

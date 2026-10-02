@@ -133,6 +133,7 @@ pub fn program_bindings(request: &BindingRequest<'_>) -> Result<Value, String> {
         "interface_digest": hex_encode(&digest),
         "code_hash": hex_encode(&code_hash),
         "abi_version": deployment.abi_version(),
+        "capability_descriptors": generator.capability_descriptors(),
         "program_id": hex_encode(&deployment.program().bytes()),
         "program_version": deployment.version(),
         "receipt_digest": hex_encode(&deployment.receipt_digest()),
@@ -342,6 +343,7 @@ pub fn deploy(
     .map_err(|error| format!("invalid native deployment: {error:?}"))?;
     let mut result = submit_lifecycle(client, request, 1, &payload, previous_state_root)?;
     result["artifact"] = inspected;
+    result["typed_interface"] = json!(interface.is_some());
     Ok(result)
 }
 
@@ -428,6 +430,8 @@ fn validate_interface(interface: Option<&[u8]>, wasm: &[u8], abi: u16) -> Result
         if interface.code_hash() != code_hash || interface.abi_version() != abi {
             return Err("interface is bound to another code hash or guest ABI".into());
         }
+        interface.require_module(wasm, abi)
+            .map_err(|error| format!("interface module admission refused: {error}"))?;
     }
     Ok(())
 }
@@ -820,6 +824,10 @@ fn interface_program_document(response: &Value) -> Result<Value, String> {
             .as_str()
             .ok_or_else(|| "interface read omitted its code hash".to_owned())?,
     )?;
+    let abi = canonical_u64(&value, "abi_version")?;
+    if abi != u64::from(interface.abi_version()) {
+        return Err("interface ABI differs from the verified deployed ABI".to_owned());
+    }
     if interface.digest().into_bytes() != expected || interface.code_hash() != code_hash {
         return Err("interface bytes disagree with their receipt-bound digest".to_owned());
     }
@@ -1962,9 +1970,8 @@ fn verify_call_head(
         .and_then(Value::as_u64)
         .and_then(|value| u16::try_from(value).ok())
         .ok_or_else(|| "program discovery omitted ABI version".to_owned())?;
-    if !matches!(abi, 1 | 2) {
-        return Err("program discovery returned unsupported ABI".to_owned());
-    }
+    layerx_program_sdk::abi_policy::admit_abi_version(abi)
+        .map_err(|_| "program discovery returned unsupported ABI".to_owned())?;
     let observed_sequence = canonical_u64(result, "observed_sequence")?;
     let version = result
         .get("version")

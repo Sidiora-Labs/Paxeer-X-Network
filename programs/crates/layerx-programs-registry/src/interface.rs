@@ -281,6 +281,21 @@ impl ProgramInterface {
         Self::from_parts(code_hash, abi_version, entries)
     }
 
+    pub fn require_module(&self, module: &[u8], abi_version: u16) -> Result<(), InterfaceRefusal> {
+        admit_abi_version(abi_version).map_err(InterfaceRefusal::AbiVersion)?;
+        if self.code_hash != sha256(module) {
+            return Err(InterfaceRefusal::CodeHashMismatch);
+        }
+        if self.abi_version != abi_version {
+            return Err(InterfaceRefusal::VersionMismatch);
+        }
+        let bound = Self::bind(module, abi_version, self.entries.clone())?;
+        if bound.encoding != self.encoding {
+            return Err(InterfaceRefusal::NonCanonical);
+        }
+        Ok(())
+    }
+
     /// # Errors
     ///
     /// Refuses invalid module interfaces or an unauthorized narrowing or ABI upgrade.
@@ -1597,6 +1612,23 @@ mod conformance_vectors {
                 dynamic.capabilities.push(dynamic.capabilities[0].clone());
                 assert!(ProgramInterface::from_parts([1; 32], abi, vec![dynamic]).is_err());
             }
+        }
+    }
+
+    #[test]
+    fn typed_interfaces_require_the_exact_module_abi_and_capabilities() {
+        for abi in 1..=4 {
+            let published = ProgramInterface::bind(CALLABLE_MODULE, abi, vec![entry(64)])
+                .unwrap_or_else(|error| panic!("binding: {error}"));
+            assert_eq!(published.require_module(CALLABLE_MODULE, abi), Ok(()));
+            assert_eq!(published.require_module(CALL_ONLY_MODULE, abi), Err(InterfaceRefusal::CodeHashMismatch));
+            assert_eq!(published.require_module(CALLABLE_MODULE, if abi == 4 { 3 } else { abi + 1 }),
+                Err(InterfaceRefusal::VersionMismatch));
+            let mut declared = entry(64);
+            declared.capabilities = vec![InterfaceCapability::StorageRead];
+            let mismatched = ProgramInterface::from_parts(sha256(CALLABLE_MODULE), abi, vec![declared])
+                .unwrap_or_else(|error| panic!("canonical description: {error}"));
+            assert_eq!(mismatched.require_module(CALLABLE_MODULE, abi), Err(InterfaceRefusal::Invalid));
         }
     }
 
