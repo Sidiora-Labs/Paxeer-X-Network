@@ -3548,6 +3548,11 @@ static lxp_result commit_prepared_batch_wal(
             handover_trust_finality, process, &process->execution_arena);
         if (status != LXP_OK) { free(prospective); return status; }
     }
+    if (process->kernel.execution_prestate_capture_enabled) {
+        status = lxp_daemon_evidence_retain_execution_prestates(
+            &process->evidence_store, owned_prepared);
+        if (status != LXP_OK) { free(prospective); return status; }
+    }
     availability_job = (availability_store_job){
         process, &process->prepared_availability_body, LXP_OK, 0U, 0U};
     *wal_prepare_us = pay_timing_us() - started_us;
@@ -4158,6 +4163,9 @@ static lxp_result redo_prepared_batch_wal(
          lxp_ct_memcmp(lxp_kernel_prepared_batch_publication_digest(prepared),
              view->publication_digest, 32U) != 0))
         status = LXP_FATAL_REPLAY_DIVERGENCE;
+    if (status == LXP_OK && process->kernel.execution_prestate_capture_enabled)
+        status = lxp_daemon_evidence_retain_execution_prestates(
+            &process->evidence_store, prepared);
     if (status == LXP_OK)
         status = lxp_kernel_commit_prepared_batch(&process->kernel,
             &process->identities, prepared, view->publication_digest);
@@ -5715,6 +5723,19 @@ static lxp_result open_process(lxp_daemon_process *process,
         process->evidence_store.verify_finality_authority = lxp_finality_authority_verify;
     if (status == LXP_OK)
         process->evidence_store.availability_log = &process->availability_log;
+    if (status == LXP_OK) {
+        const char *prestate = getenv("LAYERX_EXECUTION_PRESTATE");
+        if (prestate != NULL && strcmp(prestate, "0") != 0 && strcmp(prestate, "1") != 0)
+            status = LXP_ERR_NON_CANONICAL;
+        else if (prestate != NULL && strcmp(prestate, "1") == 0) {
+            if (process->protocol_version != LXP_PROTOCOL_VERSION_STATE_COMMITMENT)
+                status = LXP_ERR_VERSION_UNSUPPORTED;
+            else {
+                process->evidence_store.execution_prestate_enabled = true;
+                process->kernel.execution_prestate_capture_enabled = true;
+            }
+        }
+    }
     if (status == LXP_OK &&
         process->evidence_store.verify_finality_authority == NULL)
         status = LXP_ERR_MODULE_DISABLED;

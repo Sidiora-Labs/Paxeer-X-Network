@@ -634,16 +634,22 @@ fn human_lni_limits(deadline: Duration) -> Result<Limits, String> {
 }
 
 fn connect_human_node(node_path: PathBuf, node_limits: Limits) -> Result<Client, String> {
+    let execution_prestate = match env::var("LAYERX_AGENT_EXECUTION_PRESTATE") {
+        Err(env::VarError::NotPresent) => false,
+        Ok(value) if value == "0" => false,
+        Ok(value) if value == "1" => true,
+        _ => return Err("LAYERX_AGENT_EXECUTION_PRESTATE must be 0 or 1".to_owned()),
+    };
     let human_protocol_version = required("LAYERX_AGENT_HUMAN_PROTOCOL_VERSION")?
         .parse()
         .map_err(|_| "human protocol version is invalid")?;
     if !layerx_wire::limits::protocol_version_uses_occupancy(human_protocol_version) {
         return Err("human protocol version is not the current beta protocol".to_owned());
     }
-    Client::connect(ClientConfig {
+    let node = Client::connect(ClientConfig {
         endpoint: node_path,
         handshake: HandshakeConfig {
-            built_interface_version: Version::V1_3,
+            built_interface_version: if execution_prestate { Version::V1_9 } else { Version::V1_3 },
             expected_protocol_version: human_protocol_version,
             expected_network_id: required("LAYERX_AGENT_HUMAN_NETWORK_ID")?
                 .parse()
@@ -661,7 +667,18 @@ fn connect_human_node(node_path: PathBuf, node_limits: Limits) -> Result<Client,
                 .map_err(|_| "human reconnect jitter is invalid")?,
         },
     })
-    .map_err(|error| format!("human node LNI is unavailable: {error:?}"))
+    .map_err(|error| format!("human node LNI is unavailable: {error:?}"))?;
+    if execution_prestate {
+        let handshake = node.handshake();
+        let version = handshake.node().interface_version;
+        if version.major != 1 || version.minor < 9
+            || !handshake.capabilities().contains(layerx_client::lni::schema::Capability::CapsDiscovery)
+            || !handshake.capabilities().contains(layerx_client::lni::schema::Capability::ExecutionPrestate)
+        {
+            return Err("LAYERX_AGENT_EXECUTION_PRESTATE requires negotiated LNI1.9 and execution_prestate capability".to_owned());
+        }
+    }
+    Ok(node)
 }
 
 fn connect_human_authority(

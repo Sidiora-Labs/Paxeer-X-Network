@@ -132,7 +132,7 @@ pub fn perform<T: FrameTransport>(
     let request = encode_envelope(Envelope {
         version: Version {
             major: config.built_interface_version.major,
-            minor: 0,
+            minor: if config.built_interface_version.minor >= 9 { 9 } else { 0 },
         },
         message_tag: NODE_INFO_REQUEST_TAG,
         correlation_id: 0,

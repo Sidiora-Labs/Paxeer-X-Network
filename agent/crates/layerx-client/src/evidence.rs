@@ -1,6 +1,8 @@
 //! Production finality-evidence reads and authenticated registration.
 
 mod caps;
+mod execution_prestate;
+pub use execution_prestate::{verify_execution_prestate_object, verify_native_execution_prestate_object, ExecutionPrestateEvidenceError, VerifiedExecutionPrestate, VerifiedNativeExecutionPrestate};
 pub use caps::{verify_caps_object, CapsEvidenceError, VerifiedCaps};
 
 mod module_state;

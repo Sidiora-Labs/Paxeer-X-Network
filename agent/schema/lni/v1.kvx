@@ -1,7 +1,7 @@
 [schema]
 name = "LayerX Node Interface"
 major = 1
-minor = 8
+minor = 9
 encoding = "major:u16be minor:u16be message_tag:u16be correlation_id:u64be canonical_payload:bytes32 proof_material:bytes32"
 compatibility = "Within major version 1, minor releases may add only new message tags, optional trailing fields, and capabilities; removal, reuse, reordering, or changed meaning requires a new major version."
 protocol_payload = "Any protocol datum is opaque canonical LayerX bytes. It is never expanded into an LNI-specific activity, receipt, state, batch, checkpoint, proof, or event layout."
@@ -9,7 +9,7 @@ transport = "Length-prefixed canonical frames over Unix sockets by default, mutu
 handshake = "NodeInfo is the first exchange and carries LNI version, protocol version, network id, node role, chain head, latest sealed batch, latest finalised checkpoint, authorised sequencer key, and capabilities."
 
 [capabilities]
-values = ["node_info","submit","authenticated_durable_submit","receipt_lookup","account_read","history_range","batch_header","checkpoint","proof_bundle","availability_fetch","event_subscribe","historical_proofs","preparation_state","finality_evidence_register","simulate","asset_read","fee_estimate","session_fee_state","program_read","program_head_attest","caps_discovery"]
+values = ["node_info","submit","authenticated_durable_submit","receipt_lookup","account_read","history_range","batch_header","checkpoint","proof_bundle","availability_fetch","event_subscribe","historical_proofs","preparation_state","finality_evidence_register","simulate","asset_read","fee_estimate","session_fee_state","program_read","program_head_attest","caps_discovery","execution_prestate"]
 
 [message.1]
 name = "NodeInfoRequest"
@@ -355,3 +355,34 @@ canonical_payload = "version:u16be=1 snapshot_id:bytes32 network_id:u32be state_
 proof_material = "empty; concatenated immutable object: version:u16be=1 anchor_value:bytes32-length-prefixed anchor_proof:bytes32-length-prefixed(existing module0 sequence key module evidence including exact signed header, selector and optional finality); composite_count:u16be followed by subtree_roots:bytes32[composite_count] in implicit module-id order0..count-1, independently reconstruct the complete composite tree using distinct canonical module-id leaf keys to authenticate count; universal_module:the same module witness format below with id0 and up to1058leaves to bind sequence and account-tree geometry; module_count:u8=2; modules ordered3(Budget),1(Asset), each module_id:u16be subtree_root:bytes32 composite_path:(index:u32be count:u32be depth:u8 siblings:bytes32[depth]) leaf_count:u32be witnesses:bytes32-length-prefixed[leaf_count]; every module KV/blob leaf appears exactly once in strict key order with existing StateWitnessv2, preserving complete budget:/grant: prefix boundaries; empty-module subtree root must be composite-authenticated; account_count:u32be followed by account StateWitnessv2 bytes32-length-prefixed for the complete account tree ordered by canonical account id, independently reconstructed against the universal account-tree leaf; every Budget.owner,budget_account,v2source_account and Grant.from,recipient must be present; all witnesses bind the anchor root and existing authority/rank checks; no partial page proves complete or absent"
 retention = "At most4active snapshots and64MiB total retained buffers; each object<=64MiB, Budget/Asset modules<=1024leaves each, universal module<=1058leaves, accounts<=4096; limits derive from native module/blob limits. One object per credentialed connection, immutable after capture under the existing read lock; capture completes and lock releases before first page. Lifetime is the initial request deadline and never slides; expiry, error, disconnect, shutdown, completed traversal and restart discard objects. Explicit begin captures anew. Complete unique ordered full-module reconstruction authenticates both prefix edges and rejects count/duplicate-padding ambiguity without changing root construction."
 golden = "00010008002b0000000000000000000000012b00000000"
+
+[execution_prestate]
+capability = "execution_prestate"
+minimum_minor = 9
+requires = ["caps_discovery","execution_prestate"]
+negotiation = "Clients built for minor9 request NodeInfo at minor9; clients built through minor8 preserve their original minor0 request. A node advertises execution_prestate only at negotiated minor9 when ordered capture and protected durable retention are enabled. Every response uses the negotiated connection minor. Capability absence or minor below9 refuses body2 without falling back to current-head caps."
+request_tag = 44
+response_tag = 45
+request_body = "version:u16be=2 mode:u8(0=begin,1=continue) network_id:u32be activity_id:bytes32 receipt_digest:bytes32 page_bytes:u32be snapshot_id:bytes32 previous_state_root:bytes32 next_offset:u32be cursor:bytes32 reserved:u16be=0; exactly177bytes; digest is canonical unsigned native receipt digest, never SHA256 of the signed receipt; begin requires zero snapshot/root/offset/cursor; continuation repeats exact immutable selection and page bound and the previous snapshot/root/next/cursor"
+response_body = "version:u16be=2 followed by original caps119byte-header layout and bounded chunk; root is selected actual receipt.previous_state_root; exact negotiated envelope version and correlation, network, root, snapshot, total, strict positive contiguous offsets, deadline and terminal cursor rules are retained"
+proof_object = "version:u16be=1 network_id:u32be activity_id:bytes32 execution_sequence:u64be previous_state_root:bytes32 composite_count:u16be roots:bytes32[composite_count]; complete module0 range then complete module9 range using original caps ModuleRangeWitness encoding with no module-count byte; account_count:u32be then complete strictly account-id-ordered canonical StateWitness objects as u32-length-prefixed bytes; reject trailing bytes"
+authority = "Object has no independent signing authority. Verify it against an existing authentic maintained native Programs module9 protocol3 receipt including signed previous_state_root, activity_id and global_sequence; network comes from existing trusted receipt/batch authority. Verify complete composite roots and all original module/count/index/sibling checks, module0 sequence equals execution_sequence, and reconstruct complete account tree. No generic RootSelector extension or forged sealed-head freshness."
+native_state = "Generic opaque VerifiedNativeExecutionPrestate conveys only complete authenticated state facts and makes no selected fee claims. ProgramCall conversion additionally requires operation3 and outcome4 at the exact same receipt digest, root, activity and sequence; lifecycle fee provenance must be independently derived from actual authenticated native state. No caller-selected fee or constructor bypass."
+fee_asset = "For the strict ProgramCall token only, select module9 key progfee/history/v1/ followed by BE32 signed ProgramOutcome.fee_schedule_version. Decode exact217byte LXFR1 record, preserve all native record validation, compare all7 signed outcome prices, and take occupancy_asset_id bytes65..97. Nonzero signed occupancy_asset_id must agree. No current schedule substitution and no caller asset selector."
+bounds = "Unchanged64MiB maximum object,1MiB maximum page,4096 maximum accounts,1058 universal leaves,1024 Program leaves, original StateWitness bounds and nonsliding initial deadline. Old body1 bytes and minor8 refusal behavior remain unchanged. Unknown or unretained receipt evidence refuses explicitly."
+
+[message.44]
+name = "ExecutionPrestateRequest"
+kind = "request"
+capability = "execution_prestate"
+canonical_payload = "Execution-prestate request_body version2 as declared in execution_prestate; exactly177bytes; requires negotiated minor9 and both caps_discovery and execution_prestate. Existing CapsDiscoveryRequest tag42 remains unchanged and never accepts this selection."
+proof_material = "empty; authenticated maintained receipt identity selects independently verified retained prestate evidence; unknown or unavailable receipt refuses"
+golden = "00010009002c0000000000000000000000012c00000000"
+
+[message.45]
+name = "ExecutionPrestateResponse"
+kind = "response"
+capability = "execution_prestate"
+canonical_payload = "Execution-prestate response_body version2 as declared in execution_prestate;119byte bounded header followed by contiguous immutable proof-object chunk. Existing CapsDiscoveryResponse tag43 remains unchanged."
+proof_material = "empty; full assembled canonical object is verified against the existing authentic receipt previous_state_root with complete module0/module9/account-tree reconstruction"
+golden = "00010009002d0000000000000000000000012d00000000"

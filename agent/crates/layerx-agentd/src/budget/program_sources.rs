@@ -343,6 +343,125 @@ fn program_source(
     Ok(())
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(super) struct VerifiedExecutionProgramSources {
+    actor: [u8; 32],
+    state_root: [u8; 32],
+    execution_sequence: u64,
+    preparation_digest: [u8; 32],
+    receipt_ref: [u8; 32],
+    charges: Vec<ResolvedProgramCharge>,
+}
+
+impl VerifiedExecutionProgramSources {
+    pub(super) fn charges(&self) -> &[ResolvedProgramCharge] { &self.charges }
+    pub(super) fn matches(&self, prepared: &Prepared, receipt: &crate::protocol_evidence::VerifiedReceiptEvidence) -> bool {
+        self.preparation_digest == <[u8; 32]>::from(Sha256::digest(&prepared.canonical_bytes))
+            && self.execution_sequence == receipt.global_sequence()
+            && self.receipt_ref == receipt.receipt_ref()
+            && did_id_for_protocol(prepared.envelope.actor_did(), 3).ok() == Some(self.actor)
+            && layerx_wire::receipt::decode(receipt.canonical_receipt()).ok()
+                .and_then(|value| value.protocol().map(|protocol| protocol.previous_state_root())) == Some(self.state_root)
+    }
+}
+
+pub(super) fn execution_program_sources(
+    prepared: &Prepared,
+    submission: &crate::sign::VerifiedSubmission,
+    receipt: &crate::protocol_evidence::VerifiedReceiptEvidence,
+    prestate: &layerx_client::evidence::VerifiedExecutionPrestate,
+) -> Result<VerifiedExecutionProgramSources, ProgramSourceError> {
+    validate_prepared(prepared)?;
+    let decoded = layerx_wire::receipt::decode(receipt.canonical_receipt()).map_err(|_| ProgramSourceError::Preparation)?;
+    let protocol = decoded.protocol().ok_or(ProgramSourceError::Preparation)?;
+    let unsigned_receipt = layerx_wire::receipt::encode_unsigned(&decoded).map_err(|_| ProgramSourceError::Preparation)?;
+    let receipt_digest = layerx_wire::hash::receipt_digest(&unsigned_receipt).map_err(|_| ProgramSourceError::Preparation)?;
+    let outcome = protocol.program_outcome().ok_or(ProgramSourceError::Unsupported)?;
+    if protocol.protocol_version() != 3 || prepared.envelope.protocol_version() != 3
+        || receipt.level() < layerx_types::verify::VerificationLevel::BATCH_INCLUDED
+        || submission.activity_id() != receipt.activity_id()
+        || prestate.network_id() != prepared.envelope.network_id()
+        || prestate.activity_id() != receipt.activity_id() || prestate.receipt_digest() != receipt_digest
+        || prestate.execution_sequence() != receipt.global_sequence()
+        || prestate.state_root() != protocol.previous_state_root()
+        || prestate.selected_fee_schedule_version() != outcome.fee_schedule_version()
+        || prestate.execution_sequence() <= prepared.observed_head_sequence
+    { return Err(ProgramSourceError::Snapshot); }
+    let plan = derive_effects(&prepared.disclosure, &VerifiedInputs::default())
+        .map_err(|_| ProgramSourceError::Preparation)?;
+    let mut charges = Vec::new();
+    let mut gross = BTreeMap::new();
+    for bound in plan.program_spend_bounds() {
+        if bound.asset == [0; 32] || bound.destination == [0; 32] || bound.maximum_amount == 0 {
+            return Err(ProgramSourceError::Preparation);
+        }
+        let source = match &bound.source {
+            ProgramValueSource::Principal => ResolvedProgramSource::Principal {
+                account: principal_source(prestate.all_accounts(), prepared.envelope.actor_did(), 3, bound.asset)?,
+            },
+            ProgramValueSource::Program { owner_program, seed, source_account } => {
+                execution_program_binding(prestate, *owner_program, seed, *source_account, bound.asset)?;
+                ResolvedProgramSource::Program { owner_program: *owner_program, seed: seed.clone(), account: *source_account }
+            }
+        };
+        let total = gross.entry(bound.asset).or_insert(0_u128);
+        *total = total.checked_add(bound.maximum_amount).ok_or(ProgramSourceError::Arithmetic)?;
+        charges.push(ResolvedProgramCharge { source, asset: bound.asset,
+            destination: Some(bound.destination), maximum_amount: bound.maximum_amount });
+    }
+    if &gross != plan.gross_per_asset() { return Err(ProgramSourceError::Preparation); }
+    let maximum_fee = prepared.envelope.fee_limit().value();
+    if maximum_fee != 0 {
+        let asset = prestate.selected_fee_asset();
+        let account = principal_source(prestate.all_accounts(), prepared.envelope.actor_did(), 3, asset)?;
+        charges.push(ResolvedProgramCharge { source: ResolvedProgramSource::Fee { account }, asset,
+            destination: None, maximum_amount: maximum_fee });
+    }
+    Ok(VerifiedExecutionProgramSources {
+        actor: did_id_for_protocol(prepared.envelope.actor_did(), 3).map_err(|_| ProgramSourceError::Preparation)?,
+        state_root: prestate.state_root(), execution_sequence: prestate.execution_sequence(),
+        preparation_digest: Sha256::digest(&prepared.canonical_bytes).into(), receipt_ref: receipt.receipt_ref(), charges,
+    })
+}
+
+fn execution_program_binding(
+    prestate: &layerx_client::evidence::VerifiedExecutionPrestate,
+    owner: [u8; 32], seed: &[u8], source: [u8; 32], asset: [u8; 32],
+) -> Result<(), ProgramSourceError> {
+    let mut primary_key = b"program-account\0p".to_vec();
+    primary_key.extend_from_slice(&owner);
+    primary_key.extend_from_slice(&Sha256::digest(seed));
+    let value = prestate.program_records().get(&primary_key).ok_or(ProgramSourceError::ProgramBinding)?;
+    if value.len() < 139 || value[0] != 2 { return Err(ProgramSourceError::ProgramBinding); }
+    let number = |range: std::ops::Range<usize>| -> Result<[u8; 32], ProgramSourceError> {
+        value.get(range).ok_or(ProgramSourceError::ProgramBinding)?.try_into().map_err(|_| ProgramSourceError::ProgramBinding)
+    };
+    let seed_length = usize::from(u16::from_be_bytes(value[97..99].try_into().map_err(|_| ProgramSourceError::ProgramBinding)?));
+    if value.len() != 139_usize.checked_add(seed_length).ok_or(ProgramSourceError::Arithmetic)? {
+        return Err(ProgramSourceError::ProgramBinding);
+    }
+    let binding = layerx_programs::ProgramValueAccountBinding {
+        record_version: value[0],
+        program: ProgramId::new(number(1..33)?).map_err(|_| ProgramSourceError::ProgramBinding)?,
+        account_id: number(33..65)?, asset_id: number(65..97)?,
+        registered_sequence: u64::from_be_bytes(value[99..107].try_into().map_err(|_| ProgramSourceError::ProgramBinding)?),
+        registration_event_digest: number(107..139)?, seed: value[139..].to_vec(),
+    };
+    if binding.program.bytes() != owner || binding.seed != seed || binding.account_id != source
+        || binding.asset_id != asset || binding.registered_sequence >= prestate.execution_sequence()
+        || binding.primary_key() != primary_key
+        || binding.primary_value().map_err(|_| ProgramSourceError::ProgramBinding)? != *value {
+        return Err(ProgramSourceError::ProgramBinding);
+    }
+    let mut reverse_key = b"program-account\0r".to_vec(); reverse_key.extend_from_slice(&source);
+    if prestate.program_records().get(&reverse_key) != Some(value) { return Err(ProgramSourceError::ProgramBinding); }
+    let account = prestate.all_accounts().get(&source).ok_or(ProgramSourceError::MissingSource)?;
+    if account.kind != 13 || account.authority_key.is_some() { return Err(ProgramSourceError::SourceOwnership); }
+    if !account.has_asset() || account.asset_id() != asset { return Err(ProgramSourceError::SourceAsset); }
+    if account.frozen { return Err(ProgramSourceError::FrozenSource); }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -106,6 +106,70 @@ static int authority_resolution_matches_the_node(lxp_arena *arena)
     return 0;
 }
 
+static lxp_result execution_prestate_write_file(void *context, lxp_byte_span payload)
+{
+    FILE *file = context;
+    if (payload.bytes == NULL || payload.length == 0U)
+        return LXP_ERR_NON_CANONICAL;
+    return fwrite(payload.bytes, 1U, payload.length, file) == payload.length ?
+        LXP_OK : LXP_ERR_IO;
+}
+
+static int execution_prestate_refusal_boundaries(lxp_daemon_evidence_store *store,
+                                                  lxp_byte_span canonical_receipt,
+                                                  bool published, lxp_arena *arena)
+{
+    lxp_daemon_activity_evidence evidence;
+    lxp_receipt selected;
+    uint8_t digest[32];
+    uint8_t wrong_digest[32];
+    uint8_t unknown_activity[32];
+    size_t mark = lxp_arena_mark(arena);
+    FILE *output = tmpfile();
+    CHECK(output != NULL);
+    CHECK(lxp_receipt_decode(canonical_receipt.bytes, canonical_receipt.length,
+                             true, &selected) == LXP_OK);
+    CHECK(lxp_receipt_digest(&selected, arena, digest) == LXP_OK);
+    CHECK(selected.module_id != LXP_MODULE_PROGRAMS);
+    CHECK(lxp_daemon_activity_evidence_lookup(store, selected.activity_id,
+        arena, &evidence) == (published ? LXP_OK : LXP_ERR_UNKNOWN_ACTIVITY));
+    if (published) {
+        CHECK(memcmp(evidence.receipt_digest, digest, 32U) == 0);
+        CHECK(evidence.canonical_receipt.length == canonical_receipt.length);
+        CHECK(memcmp(evidence.canonical_receipt.bytes, canonical_receipt.bytes,
+                     canonical_receipt.length) == 0);
+    }
+    CHECK(!store->execution_prestate_enabled);
+    CHECK(!lxp_daemon_evidence_execution_prestate_ready(store));
+    CHECK(lxp_daemon_evidence_get_execution_prestate(store, TEST_NETWORK_ID,
+        selected.activity_id, digest, arena, execution_prestate_write_file,
+        output) == LXP_ERR_NON_CANONICAL);
+    store->execution_prestate_enabled = true;
+    CHECK(lxp_daemon_evidence_execution_prestate_ready(store));
+    CHECK(lxp_daemon_evidence_get_execution_prestate(store, TEST_NETWORK_ID + 1U,
+        selected.activity_id, digest, arena, execution_prestate_write_file,
+        output) == LXP_ERR_NON_CANONICAL);
+    memcpy(unknown_activity, selected.activity_id, 32U);
+    unknown_activity[0] ^= 1U;
+    CHECK(lxp_daemon_evidence_get_execution_prestate(store, TEST_NETWORK_ID,
+        unknown_activity, digest, arena, execution_prestate_write_file,
+        output) == LXP_ERR_UNKNOWN_ACTIVITY);
+    memcpy(wrong_digest, digest, 32U);
+    wrong_digest[0] ^= 1U;
+    CHECK(lxp_daemon_evidence_get_execution_prestate(store, TEST_NETWORK_ID,
+        selected.activity_id, wrong_digest, arena, execution_prestate_write_file,
+        output) == (published ? LXP_ERR_CONTEXT_MISMATCH : LXP_ERR_UNKNOWN_ACTIVITY));
+    CHECK(lxp_daemon_evidence_get_execution_prestate(store, TEST_NETWORK_ID,
+        selected.activity_id, digest, arena, execution_prestate_write_file,
+        output) == (published ? LXP_ERR_CONTEXT_MISMATCH : LXP_ERR_UNKNOWN_ACTIVITY));
+    CHECK(fflush(output) == 0 && ftell(output) == 0L);
+    store->execution_prestate_enabled = false;
+    CHECK(!lxp_daemon_evidence_execution_prestate_ready(store));
+    CHECK(fclose(output) == 0);
+    CHECK(lxp_arena_reset(arena, mark) == LXP_OK);
+    return 0;
+}
+
 int main(void)
 {
     lxp_arena arena;
@@ -142,6 +206,9 @@ int main(void)
             fixture.canonical_receipt_length[i], fixture.canonical_header,
             sizeof(fixture.canonical_header), fixture.header_signature,
             &fixture.receipt_proof[i], &arena) == LXP_OK);
+    CHECK(execution_prestate_refusal_boundaries(&store,
+        (lxp_byte_span){fixture.canonical_receipt[1], fixture.canonical_receipt_length[1]},
+        false, &arena) == 0);
     CHECK(latest_account_evidence(&owner, fixture.account_id, fixture.asset_id,
         fixture.activity_id[1], &arena, &account) == LXP_OK);
     CHECK(account.format_version == 1U && account.canonical_receipt.length == fixture.canonical_receipt_length[1]);
@@ -196,6 +263,7 @@ int main(void)
     CHECK(lxp_daemon_activity_evidence_publish(&store,
         (lxp_byte_span){fixture.canonical_activity[1], fixture.canonical_activity_length[1]},
         &activity_proof, ordinary, &receipt_proofs[0], &fixture.authorization, encoded_header, signature, &arena, NULL) == LXP_OK);
+    CHECK(execution_prestate_refusal_boundaries(&store, ordinary, true, &arena) == 0);
     CHECK(latest_account_evidence(&owner, fixture.account_id, fixture.asset_id,
         fixture.activity_id[1], &arena, &account) == LXP_OK);
     CHECK(account.format_version == 2U && account.canonical_receipt.length == maintained.length);

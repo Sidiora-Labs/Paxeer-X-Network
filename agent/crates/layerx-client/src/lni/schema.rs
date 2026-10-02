@@ -38,6 +38,8 @@ impl Version {
 
     pub const V1_8: Self = Self { major: 1, minor: 8 };
 
+    pub const V1_9: Self = Self { major: 1, minor: 9 };
+
     /// Returns whether the two peers can interpret the same stable message set.
     #[must_use]
     pub const fn is_compatible_with(self, peer: Self) -> bool {
@@ -80,6 +82,7 @@ pub enum Capability {
     ProgramRead,
     ProgramHeadAttest,
     CapsDiscovery,
+    ExecutionPrestate,
 }
 
 impl Capability {
@@ -108,6 +111,7 @@ impl Capability {
             Self::ProgramRead => "program_read",
             Self::ProgramHeadAttest => "program_head_attest",
             Self::CapsDiscovery => "caps_discovery",
+            Self::ExecutionPrestate => "execution_prestate",
         }
     }
 }
@@ -131,7 +135,7 @@ pub struct Schema {
     pub capabilities: &'static [Capability],
 }
 
-const CAPABILITIES: [Capability; 21] = [
+const CAPABILITIES: [Capability; 22] = [
     Capability::NodeInfo,
     Capability::Submit,
     Capability::AuthenticatedDurableSubmit,
@@ -153,6 +157,7 @@ const CAPABILITIES: [Capability; 21] = [
     Capability::ProgramRead,
     Capability::ProgramHeadAttest,
     Capability::CapsDiscovery,
+    Capability::ExecutionPrestate,
 ];
 
 const fn message(
@@ -173,7 +178,7 @@ const fn message(
     }
 }
 
-const MESSAGES: [MessageDescriptor; 43] = [
+const MESSAGES: [MessageDescriptor; 45] = [
     message(
         "NodeInfoRequest",
         1,
@@ -504,10 +509,12 @@ const MESSAGES: [MessageDescriptor; 43] = [
     ),
     message("CapsDiscoveryRequest", 42, MessageKind::Request, Capability::CapsDiscovery, true, false),
     message("CapsDiscoveryResponse", 43, MessageKind::Response, Capability::CapsDiscovery, true, true),
+    message("ExecutionPrestateRequest", 44, MessageKind::Request, Capability::ExecutionPrestate, true, false),
+    message("ExecutionPrestateResponse", 45, MessageKind::Response, Capability::ExecutionPrestate, true, true),
 ];
 
 const SCHEMA: Schema = Schema {
-    version: Version::V1_8,
+    version: Version::V1_9,
     messages: &MESSAGES,
     capabilities: &CAPABILITIES,
 };
@@ -530,7 +537,7 @@ pub struct GoldenVector {
 const NO_PROOF: &[u8] = &[];
 const PROOF: &[u8] = &[0xa5];
 
-const GOLDENS: [GoldenVector; 43] = [
+const GOLDENS: [GoldenVector; 45] = [
     GoldenVector {
         message: "NodeInfoRequest",
         payload: &[1],
@@ -781,13 +788,19 @@ const GOLDENS: [GoldenVector; 43] = [
         encoded_hex: "00010008002a0000000000000000000000012a00000000" },
     GoldenVector { message: "CapsDiscoveryResponse", payload: &[43], proof_material: NO_PROOF,
         encoded_hex: "00010008002b0000000000000000000000012b00000000" },
+    GoldenVector { message: "ExecutionPrestateRequest", payload: &[44], proof_material: NO_PROOF,
+        encoded_hex: "00010009002c0000000000000000000000012c00000000" },
+    GoldenVector { message: "ExecutionPrestateResponse", payload: &[45], proof_material: NO_PROOF,
+        encoded_hex: "00010009002d0000000000000000000000012d00000000" },
 ];
 
 impl GoldenVector {
     /// Interface revision frozen into this literal vector.
     #[must_use]
     pub const fn version(self) -> Version {
-        if self.payload[0] >= 42 {
+        if self.payload[0] >= 44 {
+            Version::V1_9
+        } else if self.payload[0] >= 42 {
             Version::V1_8
         } else if self.payload[0] >= 40 {
             Version::V1_7

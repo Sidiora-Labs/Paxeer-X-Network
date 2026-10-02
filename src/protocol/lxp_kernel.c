@@ -11,6 +11,7 @@
 #include "layerx/lxp_maintenance.h"
 #include "layerx/lxp_crypto.h"
 #include "layerx/lxp_hash.h"
+#include "layerx/lxp_state_proof.h"
 #include "layerx/programs.h"
 
 #include "../modules/programs/event.h"
@@ -67,6 +68,7 @@ struct lxp_kernel_prepared_batch {
     lxp_byte_span *events;
     uint8_t **event_bytes;
     uint8_t **artifact_bytes;
+    lxp_byte_span *execution_prestates;
     uint8_t publication_digest[32];
     uint8_t *maintenance_storage;
     lxp_byte_span maintenance;
@@ -3517,12 +3519,326 @@ static lxp_result kernel_settlement_refusal(
     return status;
 }
 
-lxp_result lxp_kernel_snapshot_apply_prepared(
+enum {
+    PRESTATE_MAX_ITEMS = LXP_KERNEL_MAX_MODULE_KV + LXP_KERNEL_MAX_BLOBS,
+    PRESTATE_MAX_UNIVERSAL = LXP_STATE_MAX_CELLS + LXP_STATE_MAX_IDEMPOTENCY +
+        LXP_KERNEL_MAX_MODULE_REGISTRATIONS + 2,
+    PRESTATE_MAX_ACCOUNTS = 8 * LXP_KERNEL_MAX_MODULE_KV,
+    PRESTATE_MAX_BYTES = LXP_KERNEL_MAX_BLOB_TOTAL_BYTES
+};
+
+typedef struct prestate_snapshot {
+    uint8_t root[32];
+    uint8_t *bytes;
+    size_t length;
+    size_t capacity;
+    size_t maximum;
+} prestate_snapshot;
+
+typedef struct prestate_key {
+    uint8_t bytes[LXP_STATE_WITNESS_MAX_KEY];
+    size_t length;
+} prestate_key;
+
+static void prestate_store_u16(uint8_t *bytes, uint16_t value)
+{
+    bytes[0] = (uint8_t)(value >> 8U);
+    bytes[1] = (uint8_t)value;
+}
+
+static void prestate_store_u32(uint8_t *bytes, uint32_t value)
+{
+    bytes[0] = (uint8_t)(value >> 24U);
+    bytes[1] = (uint8_t)(value >> 16U);
+    bytes[2] = (uint8_t)(value >> 8U);
+    bytes[3] = (uint8_t)value;
+}
+
+static lxp_result prestate_append(prestate_snapshot *snapshot,
+                                  const void *bytes, size_t length)
+{
+    size_t required;
+    size_t capacity;
+    uint8_t *allocation;
+    if (snapshot->length > snapshot->maximum ||
+        length > snapshot->maximum - snapshot->length)
+        return LXP_ERR_LENGTH_LIMIT;
+    required = snapshot->length + length;
+    if (required > snapshot->capacity) {
+        capacity = snapshot->capacity == 0U ? 16384U : snapshot->capacity;
+        if (capacity > snapshot->maximum) capacity = snapshot->maximum;
+        while (capacity < required) {
+            if (capacity > snapshot->maximum / 2U) {
+                capacity = snapshot->maximum;
+                break;
+            }
+            capacity *= 2U;
+        }
+        allocation = realloc(snapshot->bytes, capacity);
+        if (allocation == NULL) return LXP_ERR_ARENA_EXHAUSTED;
+        snapshot->bytes = allocation;
+        snapshot->capacity = capacity;
+    }
+    if (length != 0U) memcpy(snapshot->bytes + snapshot->length, bytes, length);
+    snapshot->length = required;
+    return LXP_OK;
+}
+
+static lxp_result prestate_integer(prestate_snapshot *snapshot,
+                                    uint64_t value, size_t width)
+{
+    uint8_t bytes[8];
+    size_t index;
+    for (index = 0U; index < width; ++index)
+        bytes[index] = (uint8_t)(value >> ((width - index - 1U) * 8U));
+    return prestate_append(snapshot, bytes, width);
+}
+
+static lxp_result prestate_blob(prestate_snapshot *snapshot,
+                                 const uint8_t *bytes, size_t length)
+{
+    lxp_result status;
+    if (length > UINT32_MAX) return LXP_ERR_LENGTH_LIMIT;
+    status = prestate_integer(snapshot, length, 4U);
+    return status == LXP_OK ? prestate_append(snapshot, bytes, length) : status;
+}
+
+static int prestate_key_compare(const void *left, const void *right)
+{
+    const prestate_key *a = left;
+    const prestate_key *b = right;
+    size_t length = a->length < b->length ? a->length : b->length;
+    int order = memcmp(a->bytes, b->bytes, length);
+    if (order != 0) return order;
+    return a->length < b->length ? -1 : a->length > b->length ? 1 : 0;
+}
+
+static int prestate_account_compare(const void *left, const void *right)
+{
+    return memcmp(left, right, 32U);
+}
+
+static lxp_result prestate_witness(prestate_snapshot *snapshot,
+                                    const lxp_kernel *kernel, uint16_t module,
+                                    const prestate_key *key, uint32_t position,
+                                    uint32_t count, bool module_leaf,
+                                    lxp_state_witness *witness, uint8_t *wire)
+{
+    size_t length = 0U;
+    lxp_result status = lxp_state_proof_build(kernel, module,
+        (lxp_byte_span){key->bytes, key->length}, witness);
+    if (status == LXP_OK) status = lxp_state_proof_verify(witness, snapshot->root);
+    if (status == LXP_OK && module_leaf &&
+        (witness->layer_a.leaf_index != position || witness->layer_a.leaf_count != count))
+        status = LXP_ERR_CONTEXT_MISMATCH;
+    if (status == LXP_OK && !module_leaf &&
+        (witness->account_path.leaf_index != position || witness->account_path.leaf_count != count))
+        status = LXP_ERR_CONTEXT_MISMATCH;
+    if (status == LXP_OK)
+        status = lxp_state_proof_encode(witness, wire, LXP_STATE_WITNESS_MAX_BYTES, &length);
+    return status == LXP_OK ? prestate_blob(snapshot, wire, length) : status;
+}
+
+static lxp_result prestate_module(prestate_snapshot *snapshot,
+                                   const lxp_kernel *kernel, uint16_t module,
+                                   lxp_state_witness *witness, uint8_t *wire)
+{
+    prestate_key *keys;
+    lxp_state_proof composite;
+    uint8_t root[32];
+    uint8_t subtree[32];
+    size_t count = 0U;
+    size_t index;
+    lxp_result status = LXP_OK;
+    keys = calloc(PRESTATE_MAX_UNIVERSAL, sizeof(*keys));
+    if (keys == NULL) return LXP_ERR_ARENA_EXHAUSTED;
+    if (kernel->module_kv_count > LXP_KERNEL_MAX_MODULE_KV ||
+        kernel->blob_count > LXP_KERNEL_MAX_BLOBS ||
+        kernel->module_count > LXP_KERNEL_MAX_MODULE_REGISTRATIONS ||
+        kernel->state->count > LXP_STATE_MAX_CELLS ||
+        kernel->state->idempotency_count > LXP_STATE_MAX_IDEMPOTENCY)
+        status = LXP_ERR_LENGTH_LIMIT;
+    if (status == LXP_OK && module == 0U) {
+        for (index = 0U; index < kernel->state->count; ++index) {
+            keys[count].length = 33U;
+            keys[count].bytes[0] = 1U;
+            memcpy(keys[count++].bytes + 1U, kernel->state->cells[index].key, 32U);
+        }
+        for (index = 0U; index < kernel->state->idempotency_count; ++index) {
+            keys[count].length = 33U;
+            keys[count].bytes[0] = 2U;
+            memcpy(keys[count++].bytes + 1U, kernel->state->idempotency[index].key_hash, 32U);
+        }
+        for (index = 0U; index < kernel->module_count; ++index) {
+            keys[count].length = 7U;
+            keys[count].bytes[0] = 3U;
+            prestate_store_u16(keys[count].bytes + 1U, kernel->modules[index].module_id);
+            prestate_store_u32(keys[count++].bytes + 3U, kernel->modules[index].abi_version);
+        }
+        if (kernel->state->account_root_required) {
+            keys[count].length = 12U;
+            memcpy(keys[count++].bytes, "account-tree", 12U);
+        }
+        keys[count].length = 8U;
+        memcpy(keys[count++].bytes, "sequence", 8U);
+    }
+    for (index = 0U; module != 0U && status == LXP_OK && index < kernel->module_kv_count; ++index) {
+        const lxp_module_kv_entry *entry = &kernel->module_kv[index];
+        if (entry->module_id != module) continue;
+        if (entry->key_length == 0U || entry->key_length > LXP_MODULE_MAX_KEY_BYTES ||
+            entry->value_length > LXP_MODULE_MAX_VALUE_BYTES || count == PRESTATE_MAX_ITEMS) {
+            status = LXP_ERR_NON_CANONICAL;
+            break;
+        }
+        keys[count].length = entry->key_length;
+        memcpy(keys[count++].bytes, entry->key, entry->key_length);
+    }
+    for (index = 0U; module != 0U && status == LXP_OK && index < kernel->blob_count; ++index) {
+        const lxp_module_blob *blob = &kernel->blobs[index];
+        if (blob->module_id != module) continue;
+        if (count == PRESTATE_MAX_ITEMS) { status = LXP_ERR_LENGTH_LIMIT; break; }
+        keys[count].length = LXP_STATE_WITNESS_MAX_KEY;
+        keys[count].bytes[0] = 0xffU;
+        memcpy(keys[count].bytes + LXP_STATE_WITNESS_MAX_KEY - 32U, blob->key, 32U);
+        ++count;
+    }
+    if (status == LXP_OK) {
+        qsort(keys, count, sizeof(*keys), prestate_key_compare);
+        for (index = 1U; index < count; ++index)
+            if (prestate_key_compare(&keys[index - 1U], &keys[index]) >= 0)
+                status = LXP_ERR_NON_CANONICAL;
+    }
+    if (status == LXP_OK) status = lxp_state_subtree_root(kernel, module, subtree);
+    if (status == LXP_OK) status = lxp_state_root_proof(kernel, module, root, &composite);
+    if (status == LXP_OK && (memcmp(root, snapshot->root, 32U) != 0 ||
+        composite.leaf_index != module || composite.depth > LXP_STATE_PROOF_MAX_DEPTH))
+        status = LXP_ERR_CONTEXT_MISMATCH;
+    if (status == LXP_OK) status = prestate_integer(snapshot, module, 2U);
+    if (status == LXP_OK) status = prestate_append(snapshot, subtree, sizeof(subtree));
+    if (status == LXP_OK) status = prestate_integer(snapshot, composite.leaf_index, 4U);
+    if (status == LXP_OK) status = prestate_integer(snapshot, composite.leaf_count, 4U);
+    if (status == LXP_OK) status = prestate_integer(snapshot, composite.depth, 1U);
+    if (status == LXP_OK) status = prestate_append(snapshot, composite.siblings, 32U * composite.depth);
+    if (status == LXP_OK) status = prestate_integer(snapshot, count, 4U);
+    for (index = 0U; status == LXP_OK && index < count; ++index)
+        status = prestate_witness(snapshot, kernel, module, &keys[index],
+            (uint32_t)index, (uint32_t)count, true, witness, wire);
+    free(keys);
+    return status;
+}
+
+static lxp_result kernel_execution_prestate_capture(
+    const lxp_kernel *kernel, const lxp_activity *activity,
+    const lxp_kernel_execution *execution, size_t maximum,
+    lxp_byte_span *capture)
+{
+    prestate_snapshot snapshot = {{0}, NULL, 0U, 0U, maximum};
+    lxp_state_proof composite;
+    lxp_state_witness *witness = NULL;
+    uint8_t *wire = NULL;
+    uint8_t (*accounts)[32] = NULL;
+    uint8_t root[32];
+    uint8_t subtree[32];
+    uint8_t activity_id[32];
+    lxp_byte_span canonical;
+    size_t account_count;
+    size_t index;
+    size_t mark;
+    lxp_result status;
+    *capture = (lxp_byte_span){NULL, 0U};
+    if (maximum > PRESTATE_MAX_BYTES || kernel->state == NULL ||
+        kernel->state->accounts == NULL || !kernel->state->account_root_required ||
+        kernel->state->next_sequence != execution->global_sequence ||
+        execution->network_id == 0U || execution->global_sequence == 0U)
+        return LXP_ERR_CONTEXT_MISMATCH;
+    account_count = kernel->state->accounts->count;
+    if (account_count > PRESTATE_MAX_ACCOUNTS) return LXP_ERR_LENGTH_LIMIT;
+    mark = lxp_arena_mark(execution->arena);
+    status = lxp_activity_encode(activity, execution->arena, &canonical);
+    if (status == LXP_OK)
+        status = lxp_activity_id(canonical.bytes, canonical.length, activity_id);
+    if (lxp_arena_reset(execution->arena, mark) != LXP_OK)
+        return LXP_FATAL_INVARIANT;
+    if (status == LXP_OK) status = lxp_state_root(kernel, snapshot.root);
+    if (status == LXP_OK && memcmp(snapshot.root, kernel->current_state_root, 32U) != 0)
+        status = LXP_ERR_CONTEXT_MISMATCH;
+    if (status == LXP_OK) status = prestate_integer(&snapshot, 1U, 2U);
+    if (status == LXP_OK) status = prestate_integer(&snapshot, execution->network_id, 4U);
+    if (status == LXP_OK) status = prestate_append(&snapshot, activity_id, 32U);
+    if (status == LXP_OK) status = prestate_integer(&snapshot, execution->global_sequence, 8U);
+    if (status == LXP_OK) status = prestate_append(&snapshot, snapshot.root, 32U);
+    if (status == LXP_OK) status = lxp_state_root_proof(kernel, 0U, root, &composite);
+    if (status == LXP_OK && (memcmp(root, snapshot.root, 32U) != 0 ||
+        composite.leaf_count > LXP_MODULE_RESERVED_COUNT + 1U ||
+        composite.leaf_count <= LXP_MODULE_PROGRAMS))
+        status = LXP_ERR_CONTEXT_MISMATCH;
+    if (status == LXP_OK) status = prestate_integer(&snapshot, composite.leaf_count, 2U);
+    for (index = 0U; status == LXP_OK && index < composite.leaf_count; ++index) {
+        status = lxp_state_subtree_root(kernel, (uint16_t)index, subtree);
+        if (status == LXP_OK) status = prestate_append(&snapshot, subtree, 32U);
+    }
+    if (status == LXP_OK) {
+        witness = malloc(sizeof(*witness));
+        wire = malloc(LXP_STATE_WITNESS_MAX_BYTES);
+        accounts = calloc(PRESTATE_MAX_ACCOUNTS, 32U);
+        if (witness == NULL || wire == NULL || accounts == NULL)
+            status = LXP_ERR_ARENA_EXHAUSTED;
+    }
+    if (status == LXP_OK) status = prestate_module(&snapshot, kernel, 0U, witness, wire);
+    if (status == LXP_OK) status = prestate_module(&snapshot, kernel,
+        LXP_MODULE_PROGRAMS, witness, wire);
+    if (status == LXP_OK) {
+        for (index = 0U; index < account_count; ++index)
+            memcpy(accounts[index], kernel->state->accounts->accounts[index].id, 32U);
+        qsort(accounts, account_count, 32U, prestate_account_compare);
+        for (index = 1U; index < account_count; ++index)
+            if (memcmp(accounts[index - 1U], accounts[index], 32U) >= 0)
+                status = LXP_ERR_NON_CANONICAL;
+    }
+    if (status == LXP_OK) status = prestate_integer(&snapshot, account_count, 4U);
+    for (index = 0U; status == LXP_OK && index < account_count; ++index) {
+        prestate_key key;
+        key.length = 33U;
+        key.bytes[0] = 4U;
+        memcpy(key.bytes + 1U, accounts[index], 32U);
+        status = prestate_witness(&snapshot, kernel, 0U, &key,
+            (uint32_t)index, (uint32_t)account_count, false, witness, wire);
+    }
+    free(accounts);
+    free(wire);
+    free(witness);
+    if (status == LXP_OK && snapshot.capacity != snapshot.length) {
+        uint8_t *owned = realloc(snapshot.bytes, snapshot.length);
+        if (owned == NULL) status = LXP_ERR_ARENA_EXHAUSTED;
+        else snapshot.bytes = owned;
+    }
+    if (status == LXP_OK) {
+        *capture = (lxp_byte_span){snapshot.bytes, snapshot.length};
+    } else free(snapshot.bytes);
+    return status;
+}
+
+static bool kernel_execution_prestate_matches(lxp_byte_span capture,
+                                               const lxp_receipt *receipt)
+{
+    uint8_t sequence[8];
+    size_t index;
+    for (index = 0U; index < 8U; ++index)
+        sequence[index] = (uint8_t)(receipt->global_sequence >> (56U - 8U * index));
+    return capture.bytes != NULL && capture.length >= 80U &&
+        memcmp(capture.bytes + 6U, receipt->activity_id, 32U) == 0 &&
+        memcmp(capture.bytes + 38U, sequence, 8U) == 0 &&
+        memcmp(capture.bytes + 46U, receipt->previous_state_root, 32U) == 0;
+}
+
+static lxp_result kernel_snapshot_apply_prepared_with_capture(
     lxp_kernel_batch_snapshot *snapshot, const lxp_activity *activity,
     const lxp_kernel_execution *execution,
     const lxp_prepared_transition *prepared, lxp_receipt *receipt,
-    lxp_byte_span *canonical_events)
+    lxp_byte_span *canonical_events, lxp_byte_span *prestate,
+    size_t *captured_bytes)
 {
+    lxp_byte_span captured = {NULL, 0U};
     lxp_kernel_batch_snapshot *candidate = NULL;
     lxp_kernel_execution private_execution;
     kernel_private_allowance private_allowance;
@@ -3575,6 +3891,15 @@ lxp_result lxp_kernel_snapshot_apply_prepared(
         if (status == LXP_OK &&
             lxp_ct_memcmp(activity_id, prepared->activity_id, 32U) != 0)
             status = LXP_ERR_CONTEXT_MISMATCH;
+    }
+    if (status == LXP_OK && prestate != NULL) {
+        if (captured_bytes == NULL || *captured_bytes > PRESTATE_MAX_BYTES)
+            status = LXP_ERR_IO;
+        else if (activity->protocol_version == LXP_PROTOCOL_VERSION_STATE_COMMITMENT) {
+            status = kernel_execution_prestate_capture(&snapshot->kernel, activity,
+                execution, PRESTATE_MAX_BYTES - *captured_bytes, &captured);
+            if (status != LXP_OK) status = LXP_ERR_IO;
+        }
     }
     if (status == LXP_OK)
         status = lxp_kernel_batch_snapshot_clone(snapshot, &candidate);
@@ -3707,6 +4032,9 @@ lxp_result lxp_kernel_snapshot_apply_prepared(
         status = receipt_state_root(
             &candidate->kernel, module_ctx_initialized ? &module_ctx : NULL,
             activity, receipt, execution->arena, receipt->resulting_state_root);
+    if (status == LXP_OK && captured.bytes != NULL &&
+        !kernel_execution_prestate_matches(captured, receipt))
+        status = LXP_ERR_IO;
     if (status == LXP_OK) status = receipt_execution_signature(receipt, execution);
     if (status == LXP_OK)
         status = receipt_store(candidate->kernel.journal, activity, receipt);
@@ -3740,7 +4068,21 @@ lxp_result lxp_kernel_snapshot_apply_prepared(
     if (candidate != NULL && candidate->journal.open)
         (void)lxp_state_journal_rollback(&candidate->journal);
     lxp_kernel_batch_snapshot_destroy(candidate);
+    if (status == LXP_OK && captured.bytes != NULL) {
+        *prestate = captured;
+        *captured_bytes += captured.length;
+    } else free((void *)captured.bytes);
     return status;
+}
+
+lxp_result lxp_kernel_snapshot_apply_prepared(
+    lxp_kernel_batch_snapshot *snapshot, const lxp_activity *activity,
+    const lxp_kernel_execution *execution,
+    const lxp_prepared_transition *prepared, lxp_receipt *receipt,
+    lxp_byte_span *canonical_events)
+{
+    return kernel_snapshot_apply_prepared_with_capture(snapshot, activity,
+        execution, prepared, receipt, canonical_events, NULL, NULL);
 }
 
 static bool kernel_snapshot_matches_live(
@@ -4258,11 +4600,23 @@ lxp_result lxp_kernel_prepare_serial_activity_batch(
     batch->settled->programs_runtime.state_feed = runtime->state_feed;
     batch->settled->kernel.observe_commit = kernel_stage_commit;
     batch->settled->kernel.commit_observer_context = &record;
+    if (kernel->execution_prestate_capture_enabled &&
+        activity->protocol_version == LXP_PROTOCOL_VERSION_STATE_COMMITMENT &&
+        lxp_activity_module_id(activity->activity_type) == LXP_MODULE_PROGRAMS) {
+        batch->execution_prestates = calloc(1U, sizeof(*batch->execution_prestates));
+        status = batch->execution_prestates == NULL ? LXP_ERR_IO :
+            kernel_execution_prestate_capture(&batch->settled->kernel, activity,
+                &private_execution, PRESTATE_MAX_BYTES, &batch->execution_prestates[0]);
+        if (status != LXP_OK) { status = LXP_ERR_IO; goto done; }
+    }
     status = lxp_kernel_execute_activity(&batch->settled->kernel, activity,
                                          &private_execution, &batch->receipts[0]);
     if (status == LXP_OK && activity->activity_type == LXP_GOVERNANCE_HANDOVER &&
         batch->receipts[0].result_code != LXP_OK)
         status = (lxp_result)batch->receipts[0].result_code;
+    if (status == LXP_OK && batch->execution_prestates != NULL &&
+        !kernel_execution_prestate_matches(batch->execution_prestates[0], &batch->receipts[0]))
+        status = LXP_ERR_IO;
     batch->settled->kernel.observe_commit = NULL;
     batch->settled->kernel.commit_observer_context = NULL;
     batch->settled->programs_runtime.state_feed = NULL;
@@ -4736,6 +5090,8 @@ lxp_result lxp_kernel_prepare_activity_batch(
     lxp_kernel_execution *normalized = NULL;
     lxp_receipt *staged_receipts = NULL;
     lxp_byte_span *staged_events = NULL;
+    lxp_byte_span *staged_prestates = NULL;
+    size_t captured_bytes = 0U;
     lxp_arena *coordinator_arenas = NULL;
     uint8_t **coordinator_bytes = NULL;
     lxp_prepared_transition *prepared[
@@ -4776,11 +5132,14 @@ lxp_result lxp_kernel_prepare_activity_batch(
     normalized = (lxp_kernel_execution *)calloc(count, sizeof(*normalized));
     staged_receipts = (lxp_receipt *)calloc(count, sizeof(*staged_receipts));
     staged_events = (lxp_byte_span *)calloc(count, sizeof(*staged_events));
+    if (kernel->execution_prestate_capture_enabled)
+        staged_prestates = calloc(count, sizeof(*staged_prestates));
     coordinator_arenas = (lxp_arena *)calloc(count,
                                              sizeof(*coordinator_arenas));
     coordinator_bytes = (uint8_t **)calloc(count,
                                            sizeof(*coordinator_bytes));
-    if (items == NULL || normalized == NULL || staged_receipts == NULL ||
+    if ((kernel->execution_prestate_capture_enabled && staged_prestates == NULL) ||
+        items == NULL || normalized == NULL || staged_receipts == NULL ||
         staged_events == NULL || coordinator_arenas == NULL ||
         coordinator_bytes == NULL) {
         status = LXP_ERR_ARENA_EXHAUSTED;
@@ -4860,9 +5219,10 @@ lxp_result lxp_kernel_prepare_activity_batch(
         if (status == LXP_OK)
             status = lxp_arena_reset(normalized[0].arena, 0U);
         if (status == LXP_OK) {
-            status = lxp_kernel_snapshot_apply_prepared(
+            status = kernel_snapshot_apply_prepared_with_capture(
                 settled, &activities[0], &normalized[0], prepared[0],
-                &staged_receipts[0], &staged_events[0]);
+                &staged_receipts[0], &staged_events[0],
+                staged_prestates == NULL ? NULL : &staged_prestates[0], &captured_bytes);
         }
         if (status == LXP_OK &&
             (staged_receipts[0].result_code == LXP_OK ||
@@ -4971,10 +5331,11 @@ lxp_result lxp_kernel_prepare_activity_batch(
                     status = LXP_FATAL_INVARIANT;
                     break;
                 }
-                status = lxp_kernel_snapshot_apply_prepared(
+                status = kernel_snapshot_apply_prepared_with_capture(
                     settled, &activities[index], &normalized[index],
                     prepared[index], &staged_receipts[index],
-                    &staged_events[index]);
+                    &staged_events[index],
+                    staged_prestates == NULL ? NULL : &staged_prestates[index], &captured_bytes);
                 if (status != LXP_OK)
                     status_is_semantic =
                         !lxp_result_is_fatal(status) &&
@@ -5060,6 +5421,8 @@ assemble_batch:
         settled = NULL;
         batch->receipts = staged_receipts;
         staged_receipts = NULL;
+        batch->execution_prestates = staged_prestates;
+        staged_prestates = NULL;
         batch->events = staged_events;
         staged_events = NULL;
         batch->count = count;
@@ -5078,6 +5441,10 @@ done:
     free(items);
     free(staged_events);
     free(staged_receipts);
+    if (staged_prestates != NULL)
+        for (index = 0U; index < planned_count; ++index)
+            free((void *)staged_prestates[index].bytes);
+    free(staged_prestates);
     if (coordinator_bytes != NULL)
         for (index = 0U; index < planned_count; ++index)
             free(coordinator_bytes[index]);
@@ -5586,6 +5953,15 @@ uint32_t lxp_kernel_batch_publication_next_index(const lxp_kernel *kernel)
         kernel->pending_batch_publication_index : 0U;
 }
 
+lxp_byte_span lxp_kernel_prepared_batch_execution_prestate(
+    const lxp_kernel_prepared_batch *batch, size_t receipt_index)
+{
+    if (batch == NULL || batch->simulation || receipt_index >= batch->count ||
+        batch->execution_prestates == NULL)
+        return (lxp_byte_span){NULL, 0U};
+    return batch->execution_prestates[receipt_index];
+}
+
 void lxp_kernel_prepared_batch_destroy(lxp_kernel_prepared_batch *batch)
 {
     size_t index;
@@ -5597,6 +5973,10 @@ void lxp_kernel_prepared_batch_destroy(lxp_kernel_prepared_batch *batch)
         for (index = 0U;
              index < batch->count * KERNEL_OUTCOME_ARTIFACTS; ++index)
             free(batch->artifact_bytes[index]);
+    if (batch->execution_prestates != NULL)
+        for (index = 0U; index < batch->count; ++index)
+            free((void *)batch->execution_prestates[index].bytes);
+    free(batch->execution_prestates);
     free(batch->maintenance_storage);
     free(batch->artifact_bytes);
     free(batch->event_bytes);
@@ -6358,9 +6738,21 @@ lxp_result lxp_kernel_prepare_terminal_rejection(
     batch->settled->programs_runtime.state_feed = runtime->state_feed;
     batch->settled->kernel.observe_commit = kernel_stage_commit;
     batch->settled->kernel.commit_observer_context = &record;
+    if (kernel->execution_prestate_capture_enabled &&
+        activity->protocol_version == LXP_PROTOCOL_VERSION_STATE_COMMITMENT &&
+        lxp_activity_module_id(activity->activity_type) == LXP_MODULE_PROGRAMS) {
+        batch->execution_prestates = calloc(1U, sizeof(*batch->execution_prestates));
+        status = batch->execution_prestates == NULL ? LXP_ERR_IO :
+            kernel_execution_prestate_capture(&batch->settled->kernel, activity,
+                &private_execution, PRESTATE_MAX_BYTES, &batch->execution_prestates[0]);
+        if (status != LXP_OK) { status = LXP_ERR_IO; goto done; }
+    }
     status = lxp_kernel_terminal_rejection(&batch->settled->kernel, activity,
                                            &private_execution, refusal,
                                            &batch->receipts[0]);
+    if (status == LXP_OK && batch->execution_prestates != NULL &&
+        !kernel_execution_prestate_matches(batch->execution_prestates[0], &batch->receipts[0]))
+        status = LXP_ERR_IO;
     batch->settled->kernel.observe_commit = NULL;
     batch->settled->kernel.commit_observer_context = NULL;
     batch->settled->programs_runtime.state_feed = NULL;

@@ -1959,6 +1959,7 @@ fn native_settlement_preparation(
 }
 
 fn settle_retained_native_program_call(
+    node: &mut layerx_client::Client,
     programs: &crate::ops::program::ProgramOperations,
     registry: &layerx_types::payload::ModuleRegistry,
     budgets: &BudgetLimiter,
@@ -1992,9 +1993,20 @@ fn settle_retained_native_program_call(
     let public_key: [u8; 32] = public_key.as_ref().try_into().map_err(|_| refused())?;
     let signed = durable.signed_bytes().map_err(|_| refused())?.ok_or_else(refused)?;
     let submission = crate::sign::verify_before_submit(&signed, &prepared, &public_key, registry).map_err(|_| refused())?;
-    let (reservation, witness) = crate::budget::program_settlement::read_retained_program_debit_settlement(
+    let (reservation, witness) = match crate::budget::program_settlement::read_retained_program_debit_settlement(
         programs, registry, &prepared, &submission, terminal, authority, store, tenant,
-    ).map_err(|_| refused())?;
+    ) {
+        Ok(value) => value,
+        Err(crate::budget::program_settlement::ProgramSettlementError::SourceSnapshot) => {
+            let correlation = u64::from_be_bytes(preparation_id[..8].try_into().map_err(|_| refused())?) | 1;
+            let prestate = node.execution_prestate(terminal.execution_receipt(), correlation)
+                .map_err(|_| HumanOperationError::Unavailable)?;
+            crate::budget::program_settlement::read_retained_program_debit_settlement_at_execution(
+                programs, registry, &prepared, &submission, terminal, authority, store, tenant, &prestate,
+            ).map_err(|_| refused())?
+        }
+        Err(_) => return Err(refused()),
+    };
     if witness.reservation_id() != preparation_id || witness.activity_id() != terminal.activity_id()
         || witness.terminal_receipt() != terminal.receipt_ref() {
         return Err(refused());
@@ -7291,6 +7303,7 @@ impl<A: HumanAuthorityBoundary> ProductionHumanOperations<A> {
                     if let Some(preparation_id) = native_preparation {
                         let settlement = settlement.ok_or(HumanOperationError::Unavailable)?;
                         settle_retained_native_program_call(
+                            &mut self.node,
                             settlement.programs.ok_or(HumanOperationError::Unavailable)?,
                             &registry,
                             settlement.budgets,

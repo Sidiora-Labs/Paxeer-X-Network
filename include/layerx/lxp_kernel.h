@@ -211,6 +211,7 @@ typedef struct lxp_kernel {
     lxp_result (*observe_maintenance)(void *context, const struct lxp_kernel *kernel,
         lxp_byte_span maintenance, uint64_t timestamp_ms);
     void *commit_observer_context;
+    bool execution_prestate_capture_enabled;
     bool publication_poisoned;
     uint64_t poisoned_sequence;
     uint8_t poisoned_activity_id[32];
@@ -474,6 +475,8 @@ const lxp_identity_store *lxp_kernel_prepared_batch_settled_identities(
     const lxp_kernel_prepared_batch *batch);
 const lxp_receipt *lxp_kernel_prepared_batch_receipts(
     const lxp_kernel_prepared_batch *batch);
+lxp_byte_span lxp_kernel_prepared_batch_execution_prestate(
+    const lxp_kernel_prepared_batch *batch, size_t receipt_index);
 const lxp_byte_span *lxp_kernel_prepared_batch_events(
     const lxp_kernel_prepared_batch *batch);
 uint32_t lxp_kernel_prepared_batch_fee_schedule_version(const lxp_kernel_prepared_batch *batch);

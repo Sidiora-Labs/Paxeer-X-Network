@@ -1337,6 +1337,8 @@ pub struct VerifiedReceiptEvidence {
 }
 
 impl VerifiedReceiptEvidence {
+    pub(crate) const fn execution_receipt(&self) -> &ProofVerifiedReceipt { &self.verified }
+
     /// Verifies an outcome against the complete authenticated native batch transition.
     ///
     /// # Errors

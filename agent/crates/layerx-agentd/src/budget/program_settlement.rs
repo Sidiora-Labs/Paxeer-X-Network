@@ -88,7 +88,7 @@ pub fn read_program_debit_settlement(
         add(&mut expected, (row.asset, row.source.account(), row.source.kind(), row.destination), row.maximum_amount)?;
     }
     if retained_allocations(reservation)? != expected { return Err(ProgramSettlementError::Allocation); }
-    verify_program_debit_settlement(programs, registry, prepared, submission, receipt, authority, reservation)
+    verify_program_debit_settlement(programs, registry, prepared, submission, receipt, authority, reservation, None)
 }
 
 pub fn read_retained_program_debit_settlement(
@@ -100,6 +100,36 @@ pub fn read_retained_program_debit_settlement(
     authority: &AuthorizedBatch,
     store: &Store,
     tenant: &TenantId,
+) -> Result<(ProgramBudgetReservation, VerifiedProgramDebitSettlement), ProgramSettlementError> {
+    read_retained_program_debit_settlement_inner(programs, registry, prepared, submission, receipt, authority, store, tenant, None)
+}
+
+pub fn read_retained_program_debit_settlement_at_execution(
+    programs: &ProgramOperations,
+    registry: &ModuleRegistry,
+    prepared: &Prepared,
+    submission: &VerifiedSubmission,
+    receipt: &VerifiedReceiptEvidence,
+    authority: &AuthorizedBatch,
+    store: &Store,
+    tenant: &TenantId,
+    prestate: &layerx_client::evidence::VerifiedExecutionPrestate,
+) -> Result<(ProgramBudgetReservation, VerifiedProgramDebitSettlement), ProgramSettlementError> {
+    let sources = super::program_sources::execution_program_sources(prepared, submission, receipt, prestate)
+        .map_err(|_| ProgramSettlementError::SourceSnapshot)?;
+    read_retained_program_debit_settlement_inner(programs, registry, prepared, submission, receipt, authority, store, tenant, Some(&sources))
+}
+
+fn read_retained_program_debit_settlement_inner(
+    programs: &ProgramOperations,
+    registry: &ModuleRegistry,
+    prepared: &Prepared,
+    submission: &VerifiedSubmission,
+    receipt: &VerifiedReceiptEvidence,
+    authority: &AuthorizedBatch,
+    store: &Store,
+    tenant: &TenantId,
+    execution_sources: Option<&super::program_sources::VerifiedExecutionProgramSources>,
 ) -> Result<(ProgramBudgetReservation, VerifiedProgramDebitSettlement), ProgramSettlementError> {
     use crate::prepare::{DurablePreparation, LifecycleState};
     let id: [u8; 32] = Sha256::digest(&prepared.canonical_bytes).into();
@@ -127,7 +157,7 @@ pub fn read_retained_program_debit_settlement(
         || restored.envelope.authority() != prepared.envelope.authority()
         || carrier.budget().map_err(|_| ProgramSettlementError::Allocation)? != reservation
     { return Err(ProgramSettlementError::Preparation); }
-    let witness = verify_program_debit_settlement(programs, registry, prepared, submission, receipt, authority, &reservation)?;
+    let witness = verify_program_debit_settlement(programs, registry, prepared, submission, receipt, authority, &reservation, execution_sources)?;
     Ok((reservation, witness))
 }
 
@@ -147,6 +177,7 @@ fn verify_program_debit_settlement(
     receipt: &VerifiedReceiptEvidence,
     authority: &AuthorizedBatch,
     reservation: &ProgramBudgetReservation,
+    execution_sources: Option<&super::program_sources::VerifiedExecutionProgramSources>,
 ) -> Result<VerifiedProgramDebitSettlement, ProgramSettlementError> {
     verify_disclosure_binding(prepared).map_err(|_| ProgramSettlementError::Preparation)?;
     if !matches!(prepared.envelope.authority(), Authority::Owner(_)) {
@@ -179,13 +210,22 @@ fn verify_program_debit_settlement(
     reservation.validate().map_err(|_| ProgramSettlementError::Allocation)?;
     let preparation_digest: [u8; 32] = Sha256::digest(&prepared.canonical_bytes).into();
     if reservation.id != preparation_digest
-        || reservation.allocation_state_root() != Some(protocol.previous_state_root())
         || reservation.allocation_sequence() != Some(prepared.observed_head_sequence)
-        || prepared.observed_head_sequence.checked_add(1) != Some(protocol.global_sequence())
         || reservation.allocation_actor() != Some(actor)
         || reservation.allocation_preparation_digest() != Some(preparation_digest)
     { return Err(ProgramSettlementError::SourceSnapshot); }
     let expected = retained_allocations(reservation)?;
+    if let Some(sources) = execution_sources {
+        if !sources.matches(prepared, receipt) { return Err(ProgramSettlementError::SourceSnapshot); }
+        let mut executed_sources = BTreeMap::<DebitKey, u128>::new();
+        for row in sources.charges() {
+            add(&mut executed_sources, (row.asset, row.source.account(), row.source.kind(), row.destination), row.maximum_amount)?;
+        }
+        if executed_sources != expected { return Err(ProgramSettlementError::UnreservedDebit); }
+    } else if reservation.allocation_state_root() != Some(protocol.previous_state_root())
+        || prepared.observed_head_sequence.checked_add(1) != Some(protocol.global_sequence()) {
+        return Err(ProgramSettlementError::SourceSnapshot);
+    }
     let outcome = protocol.program_outcome().ok_or(ProgramSettlementError::Terminal)?;
     if outcome.encoding_version() != 4 { return Err(ProgramSettlementError::Terminal); }
     let artifacts = programs.activity_execution(registry, submission.exact_bytes(), canonical_receipt,

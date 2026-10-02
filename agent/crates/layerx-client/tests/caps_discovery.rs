@@ -488,3 +488,115 @@ fn source_record_attacks(f: &Fixture) {
     assert!(verify_caps_object(&object.encode(), bytes(finality, "did"), bytes(finality, "root"), context, Some(&f.history)).is_err());
     println!("CAPS_CASE finality-selector-substitution");
 }
+
+#[test]
+fn execution_prestate_schema_keeps_caps_tags_and_vectors() {
+    use layerx_client::lni::schema::{lni_golden_vectors, lni_schema_v1, Capability};
+    let schema = lni_schema_v1();
+    assert_eq!(schema.version, Version::V1_9);
+    for (tag, name, capability, literal) in [
+        (42, "CapsDiscoveryRequest", Capability::CapsDiscovery, "00010008002a0000000000000000000000012a00000000"),
+        (43, "CapsDiscoveryResponse", Capability::CapsDiscovery, "00010008002b0000000000000000000000012b00000000"),
+        (44, "ExecutionPrestateRequest", Capability::ExecutionPrestate, "00010009002c0000000000000000000000012c00000000"),
+        (45, "ExecutionPrestateResponse", Capability::ExecutionPrestate, "00010009002d0000000000000000000000012d00000000"),
+    ] {
+        let descriptor = schema.messages.iter().find(|message| message.tag == tag).expect("distinct additive message");
+        assert_eq!(descriptor.name, name);
+        assert_eq!(descriptor.capability, capability);
+        let golden = lni_golden_vectors().iter().find(|vector| vector.message == name).expect("canonical vector");
+        assert_eq!(golden.encoded_hex, literal);
+        assert_eq!(golden.version(), if tag < 44 { Version::V1_8 } else { Version::V1_9 });
+        let encoded = encode_envelope(Envelope { version: golden.version(), message_tag: tag, correlation_id: 0,
+            canonical_payload: golden.payload, proof_material: golden.proof_material }).expect("real canonical encoder");
+        let actual_hex: String = encoded.iter().map(|byte| format!("{byte:02x}")).collect();
+        assert_eq!(actual_hex, literal);
+        let decoded = decode_envelope(&encoded).expect("canonical decoder");
+        assert_eq!(decoded.message_tag, tag);
+        for length in 0..encoded.len() { assert!(decode_envelope(&encoded[..length]).is_err()); }
+        let mut trailing = encoded.clone(); trailing.push(0);
+        assert!(decode_envelope(&trailing).is_err());
+    }
+    let old = Capabilities::negotiate(&["caps_discovery".to_owned()]);
+    assert!(old.contains(Capability::CapsDiscovery));
+    assert!(!old.contains(Capability::ExecutionPrestate));
+    let current = Capabilities::negotiate(&["caps_discovery".to_owned(), "execution_prestate".to_owned()]);
+    assert!(current.contains(Capability::CapsDiscovery) && current.contains(Capability::ExecutionPrestate));
+    println!("CAPS_CASE execution-prestate-additive-tags-and-legacy-vectors");
+}
+
+#[test]
+fn native_legacy_caps_connection_refuses_execution_prestate_routing() {
+    use layerx_client::lni::{refusal::decode_core_refusal, schema::Capability};
+    let f = fixture();
+    for (tag, request_version) in [(42, Version::V1_8), (44, Version::V1_8), (44, Version::V1_9)] {
+        let (mut transport, accepted) = Fixture::connect(&f.inputs);
+        assert_eq!(accepted.node().interface_version, Version::V1_8);
+        assert!(!accepted.capabilities().contains(Capability::ExecutionPrestate));
+        let mut selection = [0_u8; 177];
+        selection[..2].copy_from_slice(&2_u16.to_be_bytes());
+        selection[3..7].copy_from_slice(&77_u32.to_be_bytes());
+        selection[71..75].copy_from_slice(&512_u32.to_be_bytes());
+        transport.send(&encode_envelope(Envelope { version: request_version, message_tag: tag,
+            correlation_id: 18_001, canonical_payload: &selection, proof_material: &[] })
+            .expect("bounded malformed selection")).expect("real native request");
+        let frame = transport.receive().expect("explicit native refusal");
+        let response = decode_envelope(&frame).expect("canonical refusal envelope");
+        assert_eq!(response.version, Version::V1_8);
+        assert_eq!(response.message_tag, 25);
+        assert_eq!(response.correlation_id, 18_001);
+        assert!(response.proof_material.is_empty());
+        assert!(decode_core_refusal(response.canonical_payload).is_some());
+    }
+    println!("CAPS_CASE legacy-connection-refuses-new-prestate-routing");
+}
+
+fn prestate_module_primitive(range: &Range) -> layerx_proof::state_range::ModuleRangeWitness {
+    layerx_proof::state_range::ModuleRangeWitness {
+        module_id: range.id,
+        subtree_root: range.root.as_slice().try_into().expect("native root"),
+        composite_index: range.index,
+        composite_count: range.count,
+        composite_siblings: range.siblings.chunks_exact(32).map(|bytes| bytes.try_into().expect("sibling")).collect(),
+        leaves: range.leaves.clone(),
+    }
+}
+
+#[test]
+fn native_prestate_primitives_reject_omitted_mixed_and_malformed_proofs() {
+    use layerx_proof::state_range::{verify_account_tree, verify_composite_roots};
+    let f = fixture();
+    let capture = f.capture("retained-before-mutation");
+    let bytes = read_file(string(capture, "path"));
+    let verified = f.verify(capture, &bytes);
+    let object = Object::decode(&bytes);
+    let root = verified.state_root();
+    let universal = prestate_module_primitive(&object.universal);
+    let roots: Vec<[u8; 32]> = object.roots.chunks_exact(32).map(|bytes| bytes.try_into().expect("native composite root")).collect();
+    verify_composite_roots(&roots, root).expect("actual complete composite proof");
+    universal.verify_prefix(root, b"sequence").expect("actual complete universal proof");
+    verify_account_tree(&object.accounts, &universal, root).expect("actual complete account proof");
+    let mut omitted = roots.clone(); omitted.pop();
+    assert!(verify_composite_roots(&omitted, root).is_err());
+    let mut bad_universal = universal.clone(); bad_universal.leaves.remove(0);
+    assert!(bad_universal.verify_prefix(root, b"sequence").is_err());
+    let mut accounts = object.accounts.clone(); accounts.remove(0);
+    assert!(verify_account_tree(&accounts, &universal, root).is_err());
+    let mut accounts = object.accounts.clone(); accounts.insert(0, object.accounts[0].clone());
+    assert!(verify_account_tree(&accounts, &universal, root).is_err());
+    let mut accounts = object.accounts.clone();
+    accounts[0].account_path.as_mut().expect("real account path").count += 1;
+    assert!(verify_account_tree(&accounts, &universal, root).is_err());
+    let fresh_capture = f.capture("fresh-after-mutation");
+    let fresh_bytes = read_file(string(fresh_capture, "path"));
+    let fresh_verified = f.verify(fresh_capture, &fresh_bytes);
+    assert_ne!(fresh_verified.state_root(), root);
+    let fresh = Object::decode(&fresh_bytes);
+    assert!(verify_account_tree(&fresh.accounts, &universal, root).is_err());
+    assert!(verify_account_tree(&object.accounts, &prestate_module_primitive(&fresh.universal), root).is_err());
+    let encoded = witness_bytes(&object.accounts[0]);
+    StateWitness::decode(&encoded).expect("canonical genuine account witness");
+    assert!(StateWitness::decode(&encoded[..encoded.len() - 1]).is_err());
+    let mut trailing = encoded; trailing.push(0);
+    assert!(StateWitness::decode(&trailing).is_err());
+    println!("CAPS_CASE prestate-primitives-missing-mixed-and-malformed-refusals");
+}
