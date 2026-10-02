@@ -47,7 +47,7 @@ static uint64_t pay_timing_us(void)
 
 enum {
     LNI_VERSION_MAJOR = 1,
-    LNI_VERSION_MINOR = 7,
+    LNI_VERSION_MINOR = 8,
     LNI_NODE_INFO_REQUEST = 1,
     LNI_NODE_INFO_RESPONSE = 2,
     LNI_SUBMIT_REQUEST = 3,
@@ -85,6 +85,8 @@ enum {
     LNI_PROGRAM_READ_RESPONSE = 39,
     LNI_PROGRAM_HEAD_ATTEST_REQUEST = 40,
     LNI_PROGRAM_HEAD_ATTEST_RESPONSE = 41,
+    LNI_CAPS_DISCOVERY_REQUEST = 42,
+    LNI_CAPS_DISCOVERY_RESPONSE = 43,
     LNI_ENVELOPE_FIXED_BYTES = 22,
     LNI_NODE_INFO_FIXED_BYTES = 93,
     LNI_PREPARATION_STATE_MAX_BYTES = 4096,
@@ -1433,7 +1435,7 @@ static lxp_result send_node_info(lxp_daemon_lni_server *server,
                                   sequencer_capabilities) :
             (evidence_available ? evidence_reader_capabilities :
                                   reader_capabilities);
-    const char *capabilities[20];
+    const char *capabilities[21];
     uint8_t payload[512];
     lxp_sequencer_authorization authorization;
     uint64_t head;
@@ -1459,7 +1461,7 @@ static lxp_result send_node_info(lxp_daemon_lni_server *server,
     bool program_head_attest = program_read;
     bool simulate = program_read;
     lxp_result status = LXP_OK;
-    if (base_count + 4U > sizeof(capabilities) / sizeof(capabilities[0]))
+    if (base_count + 5U > sizeof(capabilities) / sizeof(capabilities[0]))
         return LXP_ERR_LENGTH_LIMIT;
     for (index = 0U; index < base_count; ++index) {
         if (server->owner->protocol_version !=
@@ -1495,6 +1497,16 @@ static lxp_result send_node_info(lxp_daemon_lni_server *server,
             --at;
         }
         capabilities[at] = "availability_fetch";
+        ++capability_count;
+    }
+    if (evidence_available &&
+        server->owner->protocol_version == LXP_PROTOCOL_VERSION_STATE_COMMITMENT) {
+        size_t at = capability_count;
+        while (at != 0U && strcmp(capabilities[at - 1U], "caps_discovery") > 0) {
+            capabilities[at] = capabilities[at - 1U];
+            --at;
+        }
+        capabilities[at] = "caps_discovery";
         ++capability_count;
     }
     for (index = 0U; index < capability_count; ++index) {
@@ -3665,6 +3677,7 @@ static lxp_result evidence_refusal(
 }
 
 #include "lxp_daemon_lni_module.h"
+#include "lxp_daemon_lni_caps.h"
 
 static lxp_result parse_account_read_request(
     const lni_envelope *request, uint8_t *kind,
@@ -4318,9 +4331,10 @@ static lxp_result configure_connection(lxp_daemon_lni_server *server,
                                   connection_generation);
 }
 
-static lxp_result serve_connection(lxp_daemon_lni_server *server,
-                                   int descriptor,
-                                   const struct ucred *credential)
+static lxp_result serve_connection_frames(lxp_daemon_lni_server *server,
+                                          int descriptor,
+                                          const struct ucred *credential,
+                                          lni_caps_connection *caps)
 {
     bool handshaken = false;
     for (;;) {
@@ -4403,6 +4417,9 @@ static lxp_result serve_connection(lxp_daemon_lni_server *server,
         } else if (request.tag == LNI_PROGRAM_HEAD_ATTEST_REQUEST) {
             status = send_program_head_attest(
                 server, descriptor, &request, deadline);
+        } else if (request.tag == LNI_CAPS_DISCOVERY_REQUEST) {
+            status = send_caps_discovery(
+                server, caps, descriptor, &request, deadline);
         } else {
             status = send_refusal(descriptor, server->frame_bytes,
                                   request.correlation_id, 3U,
@@ -4412,6 +4429,23 @@ static lxp_result serve_connection(lxp_daemon_lni_server *server,
         free(frame);
         if (status != LXP_OK) return status;
     }
+}
+
+/* Every exit from a connection, including errors, disconnects and server
+ * shutdown, destroys the connection's retained caps snapshots. */
+static lxp_result serve_connection(lxp_daemon_lni_server *server,
+                                   int descriptor,
+                                   const struct ucred *credential)
+{
+    lni_caps_connection *caps = malloc(sizeof(*caps));
+    lxp_result status;
+    if (caps == NULL) return LXP_ERR_IO;
+    status = lni_caps_connection_init(caps);
+    if (status == LXP_OK)
+        status = serve_connection_frames(server, descriptor, credential, caps);
+    lni_caps_connection_release(caps);
+    free(caps);
+    return status;
 }
 
 lxp_result lxp_daemon_lni_serve_connected(

@@ -4,6 +4,7 @@ pub mod account_binding;
 pub mod availability;
 pub mod batch;
 pub mod budget;
+pub mod caps;
 pub mod client;
 pub mod evidence;
 pub mod grants;

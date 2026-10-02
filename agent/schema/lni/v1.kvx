@@ -1,7 +1,7 @@
 [schema]
 name = "LayerX Node Interface"
 major = 1
-minor = 7
+minor = 8
 encoding = "major:u16be minor:u16be message_tag:u16be correlation_id:u64be canonical_payload:bytes32 proof_material:bytes32"
 compatibility = "Within major version 1, minor releases may add only new message tags, optional trailing fields, and capabilities; removal, reuse, reordering, or changed meaning requires a new major version."
 protocol_payload = "Any protocol datum is opaque canonical LayerX bytes. It is never expanded into an LNI-specific activity, receipt, state, batch, checkpoint, proof, or event layout."
@@ -9,7 +9,7 @@ transport = "Length-prefixed canonical frames over Unix sockets by default, mutu
 handshake = "NodeInfo is the first exchange and carries LNI version, protocol version, network id, node role, chain head, latest sealed batch, latest finalised checkpoint, authorised sequencer key, and capabilities."
 
 [capabilities]
-values = ["node_info","submit","authenticated_durable_submit","receipt_lookup","account_read","history_range","batch_header","checkpoint","proof_bundle","availability_fetch","event_subscribe","historical_proofs","preparation_state","finality_evidence_register","simulate","asset_read","fee_estimate","session_fee_state","program_read","program_head_attest"]
+values = ["node_info","submit","authenticated_durable_submit","receipt_lookup","account_read","history_range","batch_header","checkpoint","proof_bundle","availability_fetch","event_subscribe","historical_proofs","preparation_state","finality_evidence_register","simulate","asset_read","fee_estimate","session_fee_state","program_read","program_head_attest","caps_discovery"]
 
 [message.1]
 name = "NodeInfoRequest"
@@ -338,3 +338,19 @@ capability = "program_head_attest"
 canonical_payload = "version:u16be=1 program_id:bytes32 program_version:u32be code_hash:bytes32 abi_version:u16be observed_sequence:u64be observed_at:u64be valid_through:u64be state_root:bytes32 head_receipt_digest:bytes32; exactly 160 bytes; the current head the node serves as its current account-state head (observed_sequence is the scanned-through global sequence, observed_at is the head receipt timestamp, valid_through is observed_at plus the requested staleness_ms, state_root is the committed state root at that head) and the registered program record at that head"
 proof_material = "sequencer_public_key:bytes32 signature:bytes64; exactly 96 bytes; Ed25519 signature under the current authorised sequencer key over the 32-byte SHA-256 digest of the 34-byte NUL-terminated domain 'LayerX/program-discovery-proof/v1' || program_id || 0x01 || program_version:u32be || code_hash || abi_version:u16be || observed_sequence:u64be || observed_at:u64be || valid_through:u64be || state_root, the program discovery proof the CLI verifies"
 golden = "0001000700290000000000000000000000012900000001a5"
+
+[message.42]
+name = "CapsDiscoveryRequest"
+kind = "request"
+capability = "caps_discovery"
+canonical_payload = "CDQ1: version:u16be=1 op:u8; op 1 open: network_id:u32be selector_account:bytes32 (nonzero canonical ACCOUNT id, a selector and never an authenticated wallet principal) requested_rank:u8(0..4) max_items:u16be(1..64) max_bytes:u32be(4096..frame limit), exactly 44 bytes; op 2 page: cursor:CUR1 max_items:u16be max_bytes:u32be, exactly 116 bytes; op 3 release: snapshot_id:bytes32, exactly 35 bytes; CUR1 is version:u16be=1 snapshot_id:bytes32 network_id:u32be state_root:bytes32 selection_digest:bytes32 prefix:u8(1 budget: in Budget, 2 grant: in Asset) next_position:u32be, exactly 107 bytes; selection_digest is SHA-256 of the 25-byte NUL-terminated domain 'LayerX/caps-selection/v1' || network_id:u32be || selector_account; trailing bytes, zero identities, skipped, duplicate, cross-root, wrong-selection and foreign-connection cursors are refused"
+proof_material = "empty"
+golden = "00010008002a0000000000000000000000012a00000000"
+
+[message.43]
+name = "CapsDiscoveryResponse"
+kind = "response"
+capability = "caps_discovery"
+canonical_payload = "CDR1: version:u16be=1 op:u8; op 1 opened: snapshot_id:bytes32 network_id:u32be state_root:bytes32 observed_sequence:u64be expires_at_ms:u64be selection_digest:bytes32 requested_rank:u8 account_value_length:u32be account_value account_evidence_length:u32be account_evidence (exact AccountRead module evidence proof material for module 0 key 04||selector_account, latest selector, requested rank) budget MOD1 grant MOD1 first CUR1; MOD1 is module_id:u16be module_leaf_count:u32be prefix_first:u32be prefix_count:u32be (hints authenticated only by page witnesses); op 2 page: cursor_echo:CUR1 item_count:u16be items:(witness_length:u32be StateWitness v2)[] lower:BOUND upper:BOUND exhausted:u8 [next CUR1 iff exhausted=0]; BOUND is flag:u8 0 none, 1 tree edge, 2 adjacent witness_length:u32be StateWitness v2, 3 EMR1 module_id:u16be composite_leaf_count:u32be sibling_count:u8 siblings:bytes32[] for composite inclusion of the canonical empty module root; op 3 released: snapshot_id:bytes32; every page is served from one immutable snapshot captured under the read lock at one committed root"
+proof_material = "empty; every page is authenticated only by StateWitness geometry against the state root of the opened account module evidence"
+golden = "00010008002b0000000000000000000000012b00000000"

@@ -1,5 +1,6 @@
 //! Production finality-evidence reads and authenticated registration.
 
+pub mod caps;
 mod module_state;
 pub use module_state::{
     verify_module_evidence, verify_module_evidence_with_history, VerifiedModuleEvidence,
