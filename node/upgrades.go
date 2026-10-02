@@ -102,7 +102,7 @@ const V610Upgrade = "v6.10"
 // and parameters, the deposit root authority among them. It runs the module
 // migrations only, adds, deletes and renames no store and carries no entry in
 // the embedded tag list.
-const V611Upgrade = "v6.11"
+const V611Upgrade = layerxcustodytypes.GovernanceActivationUpgrade
 
 // The governance voting periods the v6.10 plan writes. Every other governance
 // parameter, the deposit and the tally parameters among them, is left as the

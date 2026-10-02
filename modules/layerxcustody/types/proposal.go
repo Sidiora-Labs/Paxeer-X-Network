@@ -146,21 +146,43 @@ func (p CustodyProposal) String() string {
 }
 
 // governanceMessage returns the authority of one of the module's
-// authority-gated messages and refuses every other message.
+// authority-gated messages and refuses every other message, including a nil
+// message and a nil pointer of an authority-gated message type.
 func governanceMessage(msg sdk.Msg) (string, error) {
 	switch m := msg.(type) {
+	case nil:
+		return "", sdkerrors.Wrap(govtypes.ErrInvalidProposalContent, "message is nil")
 	case *MsgUpdateParams:
+		if m == nil {
+			return "", nilMessage(msg)
+		}
 		return m.Authority, nil
 	case *MsgSetAsset:
+		if m == nil {
+			return "", nilMessage(msg)
+		}
 		return m.Authority, nil
 	case *MsgRegisterCheckpoint:
+		if m == nil {
+			return "", nilMessage(msg)
+		}
 		return m.Authority, nil
 	case *MsgSetEmergency:
+		if m == nil {
+			return "", nilMessage(msg)
+		}
 		return m.Authority, nil
 	case *MsgCancelClaim:
+		if m == nil {
+			return "", nilMessage(msg)
+		}
 		return m.Authority, nil
 	default:
 		return "", sdkerrors.Wrapf(govtypes.ErrInvalidProposalContent,
 			"%T is not a %s governance message", msg, ModuleName)
 	}
+}
+
+func nilMessage(msg sdk.Msg) error {
+	return sdkerrors.Wrapf(govtypes.ErrInvalidProposalContent, "%T message is nil", msg)
 }

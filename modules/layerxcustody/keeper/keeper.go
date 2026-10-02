@@ -22,13 +22,27 @@ type Keeper struct {
 	accountKeeper types.AccountKeeper
 	bankKeeper    types.BankKeeper
 	evmKeeper     types.EVMKeeper
+	upgrade       types.UpgradeActivationReader
 
 	anchor types.AnchorReader
 }
 
 func NewKeeper(cdc codec.BinaryCodec, storeKey sdk.StoreKey, accountKeeper types.AccountKeeper,
-	bankKeeper types.BankKeeper, evmKeeper types.EVMKeeper) *Keeper {
-	return &Keeper{storeKey: storeKey, cdc: cdc, accountKeeper: accountKeeper, bankKeeper: bankKeeper, evmKeeper: evmKeeper}
+	bankKeeper types.BankKeeper, evmKeeper types.EVMKeeper, upgradeKeeper types.UpgradeActivationReader) *Keeper {
+	return &Keeper{storeKey: storeKey, cdc: cdc, accountKeeper: accountKeeper, bankKeeper: bankKeeper,
+		evmKeeper: evmKeeper, upgrade: upgradeKeeper}
+}
+
+// GovernanceExecutionActive reports whether custody governance content may
+// execute at ctx.BlockHeight(). It fails closed without a bound reader.
+func (k Keeper) GovernanceExecutionActive(ctx sdk.Context) error {
+	if k.upgrade == nil {
+		return sdkerrors.Wrap(types.ErrGovernanceNotActive, "no upgrade activation reader bound")
+	}
+	if !k.upgrade.IsUpgradeActiveAtHeight(ctx, types.GovernanceActivationUpgrade, ctx.BlockHeight()) {
+		return sdkerrors.Wrapf(types.ErrGovernanceNotActive, "%s not active at height %d", types.GovernanceActivationUpgrade, ctx.BlockHeight())
+	}
+	return nil
 }
 
 // SetAnchorReader replaces the authority-set anchor material with the anchor

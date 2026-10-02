@@ -15,7 +15,9 @@ import (
 // module account is the authority a proposal executes with, so a proposal
 // carrying a message for any other authority, or a malformed proposal, is
 // refused before any message runs. The messages execute together: if one
-// fails, none of them changes the state.
+// fails, none of them changes the state. Proposal content executes only from
+// the recorded v6.11 activation height on; before it the handler refuses
+// without touching state.
 func NewProposalHandler(k *keeper.Keeper) govtypes.Handler {
 	msgServer := keeper.NewMsgServerImpl(k)
 	return func(ctx sdk.Context, content govtypes.Content) error {
@@ -28,6 +30,9 @@ func NewProposalHandler(k *keeper.Keeper) govtypes.Handler {
 		}
 		msgs, err := proposal.GetMessages()
 		if err != nil {
+			return err
+		}
+		if err := k.GovernanceExecutionActive(ctx); err != nil {
 			return err
 		}
 		cacheCtx, write := ctx.CacheContext()

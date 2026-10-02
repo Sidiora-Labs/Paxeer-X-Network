@@ -28,4 +28,5 @@ var (
 	ErrInvalidDepositRoot  = sdkerrors.Register(ModuleName, 22, "invalid deposit root registration")
 	ErrDepositRootProposer = sdkerrors.Register(ModuleName, 23, "deposit root registration is for the checkpoint proposer only")
 	ErrDepositRootExists   = sdkerrors.Register(ModuleName, 24, "deposit root already registered")
+	ErrGovernanceNotActive = sdkerrors.Register(ModuleName, 25, "custody governance execution is not active")
 )

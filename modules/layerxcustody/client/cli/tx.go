@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 
 	"github.com/spf13/cobra"
@@ -87,7 +88,8 @@ func NewSubmitCustodyProposalCmd() *cobra.Command {
 
 // NewSubmitCustodyProposalMsg decodes a custody proposal file into the
 // MsgSubmitProposal that carries it. It refuses a file with an unknown field,
-// a message that is not one of the module's authority-gated messages, a
+// a file carrying anything but whitespace after the proposal, a message that
+// is not one of the module's authority-gated messages, a
 // proposal the governance route would refuse, a missing or zero deposit and a
 // missing proposer.
 func NewSubmitCustodyProposalMsg(cdc codec.JSONCodec, body []byte, proposer sdk.AccAddress) (*govtypes.MsgSubmitProposal, error) {
@@ -96,6 +98,9 @@ func NewSubmitCustodyProposalMsg(cdc codec.JSONCodec, body []byte, proposer sdk.
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&file); err != nil {
 		return nil, fmt.Errorf("decode the proposal: %w", err)
+	}
+	if err := decoder.Decode(&json.RawMessage{}); err != io.EOF {
+		return nil, fmt.Errorf("decode the proposal: the file carries more than one JSON value")
 	}
 	msgs := make([]sdk.Msg, 0, len(file.Messages))
 	for i, raw := range file.Messages {
