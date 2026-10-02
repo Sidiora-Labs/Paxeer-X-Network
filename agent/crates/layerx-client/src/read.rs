@@ -174,6 +174,21 @@ impl HistoryCursor {
     pub const fn next_sequence(self) -> u64 {
         self.next_sequence
     }
+
+    #[must_use]
+    pub const fn end_sequence(self) -> u64 {
+        self.end_sequence
+    }
+
+    #[must_use]
+    pub const fn head_sequence(self) -> u64 {
+        self.head_sequence
+    }
+
+    #[must_use]
+    pub const fn checkpoint(self) -> [u8; 32] {
+        self.checkpoint
+    }
 }
 
 /// Exact core history record class.

@@ -18,6 +18,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT / 'tests/daemon'))
 import paxeer_x_runtime_fixture as fixture
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 
 SCHEMA = 'paxeer-x.agent-envelope-artifacts.v1'
 CONFIG_SCHEMA = 'paxeer-x.agent-envelope-qualification.v1'
@@ -45,7 +47,15 @@ W20_IDEMPOTENCY_POST = ('restart_replay_idempotent',)
 W20_ROTATION_PRE = ('session_refresh_credential',)
 W20_SESSION_FIELDS = ('tenant', 'session_id', 'token_id', 'generation')
 
+W7_OWNER_DIRECT = ('session_list_provisioned', 'availability_fetch_provisioned')
+W7_AVAILABILITY_SECONDS = 60
+W7_REQUEST_LEVELS = ('unverified', 'sequencer-signed', 'batch-included', 'state-proven', 'checkpoint-finalised', 'settlement-anchored')
+W7_AVAILABILITY_CLASSES = ('activities', 'receipts', 'oracle', 'state_diff', 'recovery')
+
 W20_COMPLETED_DIRECT = ('history_cursor_round_trip', 'subscription_lifecycle')
+
+W7_SIGN_DIRECT = ('sign_signed_unverified', 'sign_submit_composite')
+W7_SUBMITTED_STATES = ('Queued', 'Submitted', 'Acknowledged', 'Executed')
 W20_SUBSCRIPTION_RECORD = ('subscription_id', 'scope', 'filter', 'start', 'last_acknowledged', 'delivery_target', 'paused')
 PYTHON_PRE_RESTART = ('allowed_mutation', 'mutation_duplicate_same_result', 'restart_unknown_pending', 'restart_retry_same_result')
 PYTHON_POST_RESTART = ('restart_unknown_reconcile', 'restart_retry_same_result')
@@ -270,7 +280,7 @@ def load_config():
     require(config.get('schema') == CONFIG_SCHEMA, 'qualification configuration schema')
     for key in ('agentd_env', 'gateway_env', 'requests', 'credential_file', 'gateway_api_key_file',
                 'program_bearer_file', 'gateway_peer_identity', 'program_route', 'native_rpc_body',
-                'gateway_network_id', 'wire_version', 'route_bindings', 'agentd_binding_pointer'):
+                'gateway_network_id', 'wire_version', 'route_bindings', 'agentd_binding_pointer', 'signer_key_file'):
         require(key in config, 'qualification configuration lacks ' + key)
     require(isinstance(config['gateway_network_id'], str) and config['gateway_network_id']
             and isinstance(config['wire_version'], str) and config['wire_version'], 'health identity values must be strings')
@@ -301,6 +311,30 @@ def load_config():
             and re.fullmatch('(0|[1-9][0-9]{0,19})', revoked['generation']) and int(revoked['generation']) < 2**64,
             'revoked_session credential encoding')
     require(all('idempotency_key' not in row for row in config['requests'].values()), 'harness owns idempotency keys')
+
+    require(isinstance(config['signer_key_file'], str) and Path(config['signer_key_file']).is_absolute(),
+            'signer_key_file must be an absolute path')
+    for case in W7_SIGN_DIRECT:
+        row = config['requests'].get(case)
+        require(isinstance(row, dict) and set(row) == {'prepare'} and isinstance(row['prepare'], dict)
+                and set(row['prepare']) == {'operation', 'request'} and row['prepare']['operation'] == 'prepare'
+                and isinstance(row['prepare']['request'], dict), 'provisioned request lacks ' + case)
+    require(config['requests'][W7_SIGN_DIRECT[0]]['prepare']['request'] != config['requests'][W7_SIGN_DIRECT[1]]['prepare']['request'],
+            'sign cases must prepare distinct activities')
+
+    row = config['requests']['operation.availability.fetch']
+    require(set(row['request']) <= {'tenant', 'agent', 'selector', 'requested_verification_level', 'maximum_bytes', 'maximum_chunks'}
+            and {'selector', 'requested_verification_level', 'maximum_bytes', 'maximum_chunks'} <= set(row['request'])
+            and row['request']['requested_verification_level'] in W7_REQUEST_LEVELS
+            and W7_REQUEST_LEVELS.index(row['request']['requested_verification_level']) <= W7_REQUEST_LEVELS.index('batch-included')
+            and all(isinstance(row['request'][k], str) and re.fullmatch('[1-9][0-9]{0,19}', row['request'][k])
+                    for k in ('selector', 'maximum_bytes', 'maximum_chunks')),
+            'provisioned request lacks operation.availability.fetch (harness owns the deadline)')
+    row = config['requests']['operation.session.list']
+    require(set(row['request']) == {'context'} and isinstance(row['request']['context'], dict)
+            and row['request']['context'].get('tenant') == load_private(config['credential_file'], 'credential_file')['tenant']
+            and isinstance(row['request']['context'].get('agent_did'), str) and row['request']['context']['agent_did'],
+            'provisioned request lacks operation.session.list for the provisioned tenant')
 
     row = config['requests'].get('wait_bounded')
     require(isinstance(row, dict) and set(row) == {'operation', 'request'} and row['operation'] == 'wait'
@@ -1160,6 +1194,77 @@ class Qualification:
                 and re.fullmatch('(0|[1-9][0-9]{0,19})', value['last_acknowledged'])), case + ': last_acknowledged')
         return value
 
+    def w7_session_list(self):
+        case = 'session_list_provisioned'
+        row = self.config['requests']['operation.session.list']
+        value, status, body = self.call(case, row['operation'], row['request'])
+        listed = self.success(status, body, value['request_id'], case)['value']
+        require(isinstance(listed, dict) and set(listed) == {'sessions'} and isinstance(listed['sessions'], list),
+                case + ': response is not {sessions: [...]}')
+        fields = {'session_id', 'token_id', 'agent_did', 'generation', 'open', 'expiry_sequence', 'sequence'}
+        previous = None
+        for record in listed['sessions']:
+            require(isinstance(record, dict) and set(record) == fields, case + ': session record fields')
+            require(isinstance(record['session_id'], str) and re.fullmatch('[0-9a-f]{64}', record['session_id'])
+                    and isinstance(record['token_id'], str) and re.fullmatch('[0-9a-f]{64}', record['token_id']),
+                    case + ': session_id/token_id encoding')
+            require(isinstance(record['agent_did'], str) and record['agent_did'], case + ': agent_did')
+            require(isinstance(record['open'], bool), case + ': open')
+            require(all(isinstance(record[k], str) and re.fullmatch('(0|[1-9][0-9]{0,19})', record[k]) and int(record[k]) < 2**64
+                        for k in ('generation', 'expiry_sequence', 'sequence')), case + ': canonical u64 decimals')
+            require(previous is None or previous < record['session_id'], case + ': sessions not strictly ordered by session_id')
+            previous = record['session_id']
+        own = [s for s in listed['sessions'] if s['session_id'] == self.credential['session_id']]
+        require(len(own) == 1, case + ': provisioned session not listed exactly once')
+        require(own[0]['open'] is True and own[0]['token_id'] == self.credential['token_id']
+                and own[0]['generation'] == self.credential['generation']
+                and own[0]['agent_did'] == row['request']['context']['agent_did'],
+                case + ': provisioned session record does not match the provisioned credential')
+        closed = load_private(self.config['requests']['session_close_revocation']['credential_file'], 'session_close_revocation credential_file')
+        require(all(s['open'] is False for s in listed['sessions'] if s['session_id'] == closed['session_id']),
+                case + ': closed session still listed open')
+        self.passed(case, self.d / 'responses' / (case + '.http'))
+
+    def w7_availability_class(self, item, case):
+        require(isinstance(item, dict) and set(item) == {'class', 'complete', 'verified_chunks', 'verified_bytes', 'failure'}
+                and item['class'] in W7_AVAILABILITY_CLASSES and isinstance(item['complete'], bool)
+                and all(isinstance(item[k], str) and re.fullmatch('(0|[1-9][0-9]{0,19})', item[k]) for k in ('verified_chunks', 'verified_bytes'))
+                and (item['failure'] is None or (isinstance(item['failure'], str) and item['failure'])), case + ': class record')
+        return item
+
+    def w7_availability_fetch(self):
+        case = 'availability_fetch_provisioned'
+        row = self.config['requests']['operation.availability.fetch']
+        request = dict(row['request'], deadline=str(int(time.time()) + W7_AVAILABILITY_SECONDS))
+        value, status, body = self.call(case, row['operation'], request)
+        envelope = self.success(status, body, value['request_id'], case)
+        fetched = envelope['value']
+        require(isinstance(fetched, dict) and set(fetched) == {'completion', 'classes', 'providers'}, case + ': availability fields')
+        completion = fetched['completion']
+        require(isinstance(completion, dict) and completion == {'state': 'complete', 'provider': completion.get('provider')}
+                and isinstance(completion['provider'], str) and completion['provider'], case + ': provisioned batch not completely retrieved')
+        require(envelope['verification_status'] == {'state': 'achieved', 'level': 'BatchIncluded'},
+                case + ': complete retrieval not verified against the sequencer-signed batch header')
+        require(isinstance(fetched['classes'], list) and fetched['classes'], case + ': classes')
+        classes = [self.w7_availability_class(item, case) for item in fetched['classes']]
+        require(len({item['class'] for item in classes}) == len(classes), case + ': class reported twice')
+        for item in classes:
+            require((item['complete'] and item['failure'] is None) or (not item['complete'] and item['failure'] == 'missing_class'),
+                    case + ': class completion and failure disagree')
+        obtained = [item for item in classes if item['complete']]
+        require(obtained and all(int(item['verified_chunks']) > 0 and int(item['verified_bytes']) > 0 for item in obtained),
+                case + ': no verified chunk retrieved')
+        require(sum(int(item['verified_bytes']) for item in classes) <= int(request['maximum_bytes'])
+                and sum(int(item['verified_chunks']) for item in classes) <= int(request['maximum_chunks']),
+                case + ': retrieval exceeded the requested limits')
+        providers = fetched['providers']
+        require(isinstance(providers, list) and len(providers) == 1 and isinstance(providers[0], dict)
+                and set(providers[0]) == {'provider', 'classes', 'failure'} and providers[0]['provider'] == completion['provider']
+                and providers[0]['failure'] is None and isinstance(providers[0]['classes'], list)
+                and [self.w7_availability_class(item, case) for item in providers[0]['classes']] == classes,
+                case + ': complete provider record')
+        self.passed(case, self.d / 'responses' / (case + '.http'))
+
     def w20_history_cursor(self):
         case = 'history_cursor_round_trip'
         row = self.config['requests']['operation.read.history']
@@ -1176,6 +1281,58 @@ class Qualification:
                 isinstance(page['cursor'], str) and len(page['cursor']) == 112 and re.fullmatch('[0-9a-f]{112}', page['cursor']))),
                 case + ': continued cursor is not 112 lowercase hex or null')
         self.passed(case, self.d / 'responses' / (case + '.next.http'))
+
+    def w7_signer(self, case, authority):
+        try:
+            fd = os.open(self.config['signer_key_file'], os.O_RDONLY | os.O_NOFOLLOW)
+        except OSError:
+            fd = None
+        require(fd is not None, case + ': signer_key_file is absent or unreadable')
+        with os.fdopen(fd, 'rb') as stream:
+            info = os.fstat(stream.fileno())
+            require(stat.S_ISREG(info.st_mode) and info.st_uid == os.geteuid() and not info.st_mode & 0o077,
+                    case + ': signer_key_file must be a private regular file')
+            seed = stream.read(33)
+        require(len(seed) == 32, case + ': signer_key_file is not a 32-byte Ed25519 seed')
+        signer = Ed25519PrivateKey.from_private_bytes(seed)
+        public = signer.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw).hex()
+        require(isinstance(authority, str) and authority.removeprefix('did:layerx:') == public,
+                case + ': signer key does not match the provisioned Owner authority')
+        return signer, public
+
+    def w7_prepare_sign(self, case):
+        row = self.config['requests'][case]['prepare']
+        prepared = self.w20_completed_mutation(case + '.prepare', row['operation'], row['request'])['value']
+        require(isinstance(prepared, dict) and isinstance(prepared.get('preparation_ref'), str) and prepared['preparation_ref']
+                and isinstance(prepared.get('signing_preimage'), str) and re.fullmatch('[0-9a-f]{64}', prepared['signing_preimage']),
+                case + '.prepare: preparation_ref and signing_preimage')
+        signer, public = self.w7_signer(case, prepared.get('authority'))
+        signature = signer.sign(bytes.fromhex(prepared['signing_preimage'])).hex()
+        signed = self.w20_completed_mutation(case + '.sign', 'sign',
+                                             {'preparation_ref': prepared['preparation_ref'], 'signature': signature})
+        value = signed['value']
+        require(isinstance(value, dict) and set(value) == {'activity_id', 'submission', 'receipt'}
+                and isinstance(value['activity_id'], str) and re.fullmatch('[0-9a-f]{64}', value['activity_id'])
+                and value['activity_id'] != '0' * 64 and isinstance(value['submission'], dict)
+                and value['submission'].get('state') == 'Signed' and value['receipt'] is None,
+                case + '.sign: retained Signed observation without receipt')
+        vs = signed['verification_status']
+        require((vs['level'] if vs['state'] == 'achieved' else vs['achieved']) == 'Unverified', case + '.sign: not Unverified')
+        return prepared, signature, public, value
+
+    def w7_sign_cases(self):
+        case = W7_SIGN_DIRECT[0]
+        self.w7_prepare_sign(case)
+        self.passed(case, self.d / 'responses' / (case + '.sign.http'))
+        case = W7_SIGN_DIRECT[1]
+        prepared, signature, public, signed = self.w7_prepare_sign(case)
+        submitted = self.w20_completed_mutation(case + '.submit', 'submit', {
+            'preparation_ref': prepared['preparation_ref'], 'signature': signature, 'signer_public_key': public,
+            'approval_release_ref': None})['value']
+        require(isinstance(submitted, dict) and submitted.get('activity_id') == signed['activity_id']
+                and isinstance(submitted.get('submission'), dict) and submitted['submission'].get('state') in W7_SUBMITTED_STATES,
+                case + '.submit: submit did not carry the signed activity forward')
+        self.passed(case, self.d / 'responses' / (case + '.submit.http'))
 
     def w20_subscription_lifecycle(self):
         case = 'subscription_lifecycle'
@@ -1245,7 +1402,12 @@ class Qualification:
         self.w20_rotation()
 
         self.w20_history_cursor()
+
+        self.w7_session_list()
+        self.w7_availability_fetch()
         self.w20_subscription_lifecycle()
+
+        self.w7_sign_cases()
         python_state = self.d / 'probes/python-mutation.state'
         python_retry = self.d / 'probes/python-retry.state'
         python_requests = self.probe_requests('python')
@@ -1298,9 +1460,9 @@ def worker(directory):
 
         expected += len(W20_IDEMPOTENCY_PRE) + len(W20_IDEMPOTENCY_POST)
 
-        expected += len(W20_ROTATION_PRE)
+        expected += len(W20_ROTATION_PRE) + len(W7_OWNER_DIRECT)
 
-        expected += len(W20_COMPLETED_DIRECT)
+        expected += len(W20_COMPLETED_DIRECT) + len(W7_SIGN_DIRECT)
         require(len(qualification.results) == expected, 'case count ' + str(len(qualification.results)) + ' != ' + str(expected))
         write_private(runtime.directory / 'case-results.json', qualification.results)
         print(f'PAXEER_X_GATE tests={len(qualification.results)} skipped=0', flush=True)

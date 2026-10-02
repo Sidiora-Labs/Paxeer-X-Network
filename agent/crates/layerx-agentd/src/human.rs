@@ -836,13 +836,14 @@ pub trait HumanOperations {
         &mut self,
         context: &crate::agent_rpc_peer::RpcOwnerContext<'_>,
         control: &crate::session_control::SessionControl,
-        request: layerx_agent_api::subscription::SubscriptionCreate,
+        request: MutationEnvelope<layerx_agent_api::subscription::SubscriptionCreate>,
     ) -> Result<HumanResponse, HumanOperationError>;
     /// # Errors
     /// Returns an error if authorization or operation validation fails, or required state is unavailable.
     fn subscription_list(
         &mut self,
-        peer: &HumanPeer,
+        context: &crate::agent_rpc_peer::RpcOwnerContext<'_>,
+        control: &crate::session_control::SessionControl,
         request: layerx_agent_api::subscription::SubscriptionList,
     ) -> Result<HumanResponse, HumanOperationError>;
     /// # Errors
@@ -873,7 +874,8 @@ pub trait HumanOperations {
     /// Returns an error if authorization or operation validation fails, or required state is unavailable.
     fn subscription_health(
         &mut self,
-        peer: &HumanPeer,
+        context: &crate::agent_rpc_peer::RpcOwnerContext<'_>,
+        control: &crate::session_control::SessionControl,
         request: layerx_agent_api::subscription::SubscriptionTarget,
     ) -> Result<HumanResponse, HumanOperationError>;
     /// # Errors

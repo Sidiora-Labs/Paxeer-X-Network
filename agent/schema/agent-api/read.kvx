@@ -25,6 +25,11 @@ response = "VerifiedRead<ModuleStateValue>"
 [operation.read.history]
 request_required = ["range","cursor","page_limit","requested_verification_level"]
 response = "VerifiedRead<HistoryValue>"
+cursor_text = "112 lowercase hex characters: big-endian next_sequence, end_sequence and observed head_sequence u64 values followed by the 32-byte observed checkpoint; any other text is refused as malformed."
+page_limit_encoding = "canonical_decimal_string"
+page_limit_bound = "A page_limit above 65535 is refused as malformed; it is never clamped."
+response_required = ["items","cursor"]
+response_cursor = "112-hex cursor text or null; its head sequence and checkpoint come from the returned page cursor, never from a second head read."
 
 [operation.read.batch]
 request_required = ["batch","requested_verification_level"]
@@ -55,3 +60,14 @@ verification_environment = "layerx-proof_without_daemon_or_network"
 response = "ProjectionResult"
 forbidden_response = "VerifiedRead"
 semantics = "An estimate is never core-produced, never receipt-shaped and never an executed outcome."
+
+[type.HistoryItem]
+required = ["global_sequence","kind","achieved_verification_level","canonical","proof"]
+global_sequence = "decimal_string"
+canonical = "lowercase_hex"
+proof = "lowercase hex or null"
+
+[type.HistoryKind]
+variants = ["Activity","Receipt","Event"]
+wire_byte = ["Activity:1","Receipt:2","Event:3"]
+exhaustive = "Any other kind byte is refused; there is no default kind."

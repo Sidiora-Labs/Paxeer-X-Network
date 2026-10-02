@@ -438,6 +438,25 @@ impl Store {
         self.get_inner(target)
     }
 
+    /// Reads one session-bound subscription and its durable continuity after reauthorizing its
+    /// exact credential.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if authorization fails or the subscription cannot be read.
+    pub fn health_continuity_authorized(
+        &self,
+        sessions: &SessionRegistry,
+        token: &Token,
+        observability: &mut TenantObservability,
+        core_sequence: u64,
+        target: &SubscriptionTarget,
+    ) -> Result<(SubscriptionRecord, Continuity), SubscriptionError> {
+        let record =
+            self.health_authorized(sessions, token, observability, core_sequence, target)?;
+        Ok((record, self.continuity_inner(target)?))
+    }
+
     pub(super) fn get_inner(
         &self,
         target: &SubscriptionTarget,

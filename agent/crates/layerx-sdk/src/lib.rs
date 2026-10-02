@@ -40,6 +40,8 @@ pub mod programs;
 mod receipt_generated;
 pub mod register;
 pub mod rpc;
+pub mod rpc_history;
+pub mod rpc_sign;
 pub mod rpc_verification;
 mod tls;
 pub mod wallet;
@@ -456,4 +458,4 @@ const fn validate_contract(contract: ContractVersion) -> Result<(), SdkError> {
     }
 }
 
-mod rpc_subscription;
+pub mod rpc_subscription;

@@ -14,12 +14,25 @@ semantics = "Every filter is a restriction. It cannot name an object outside the
 [operation.subscription.create]
 required = ["scope","filter","start","delivery_target"]
 durability = "Persist the definition and last acknowledged cursor; restore from that cursor after restart."
+idempotency_key = "required"
+owner_request = "MutationEnvelope<SubscriptionCreate>"
+keyless = "A create without an idempotency key is refused before the owner is called."
+identity = "Lowercase hex SHA-256 of UTF-8 LayerX/subscription/create/v1, one NUL byte, the u32 big-endian length-prefixed authenticated tenant, agent and capability UTF-8, then the exact 32-byte idempotency key."
+scope_rule = "scope equals the authenticated owner coordinates and the capability visibility of the session."
+replay = "Same key with the same request returns the original record; same key with a changed request is refused; an existing subscription is never overwritten."
+response = "SubscriptionRecord"
 
 [operation.subscription.list]
 required = ["scope"]
+authority = "operation_permit"
+permit_rule = "Listed only through the session operation permit of the authenticated owner; session-bound records are included for their owning session."
+response = "SubscriptionRecord[]"
 
 [operation.subscription.health]
 required = ["scope","subscription_id"]
+authority = "operation_permit"
+permit_rule = "Read only through the session operation permit of the authenticated owner."
+response = "SubscriptionHealth"
 
 [operation.subscription.acknowledge]
 required = ["scope","subscription_id","cursor"]
@@ -52,3 +65,21 @@ barrier = "No later event may be delivered before successful backfill or an expl
 
 [type.TruncationNotice]
 required = ["requested_first","oldest_available","resume_cursor"]
+
+[type.SubscriptionRecord]
+required = ["subscription_id","scope","filter","start","last_acknowledged","delivery_target","paused"]
+cursor_encoding = "canonical_decimal_string"
+
+[type.SubscriptionHealthTarget]
+required = ["scope","subscription_id"]
+
+[type.SubscriptionHealth]
+required = ["target","last_acknowledged","last_delivery_at","pending_backfill"]
+last_delivery_at = "TimestampSeconds decimal string or null"
+pending_backfill = "GapNotice or null; a truncated continuity is reported as a GapNotice over the record's own coordinates."
+
+[type.GapNotice.encoding]
+missing_first = "decimal_string"
+missing_last = "decimal_string"
+backfill_cursor = "decimal_string"
+backfill_attempted = "boolean"

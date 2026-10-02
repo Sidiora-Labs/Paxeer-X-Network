@@ -640,12 +640,22 @@ fn start_agent_rpc(
         peer: required("LAYERX_AGENTD_RPC_PEER")?,
     })
     .map_err(|error| format!("agent rpc tls is invalid: {error:?}"))?;
+    let network = required("LAYERX_NODE_NETWORK_NAME")?;
+    if network.is_empty()
+        || network.len() > 64
+        || !network
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
+    {
+        return Err("agent rpc network name is invalid".to_owned());
+    }
+
     let listener = TcpListener::bind(&listen)
         .map_err(|error| format!("agent rpc listener failed: {error}"))?;
     thread::Builder::new()
         .name("layerx-agent-rpc".to_owned())
         .spawn(move || {
-            let _ = status.send(serve_agent_rpc(&listener, &tls, &owner));
+            let _ = status.send(serve_agent_rpc(&listener, &tls, &network, &owner));
         })
         .map_err(|error| format!("agent rpc listener thread failed: {error}"))?;
     Ok(())
@@ -656,6 +666,7 @@ fn start_agent_rpc(
 fn serve_agent_rpc(
     listener: &TcpListener,
     tls: &AgentRpcTls,
+    network: &str,
     owner: &SharedAgentOwner<RemoteHumanAuthority>,
 ) -> Result<(), String> {
     loop {
@@ -671,7 +682,7 @@ fn serve_agent_rpc(
         let Ok(mut stream) = tls.accept(stream) else {
             continue;
         };
-        let response = agent_rpc_exchange(&mut stream, owner);
+        let response = agent_rpc_exchange(&mut stream, network, owner);
         let _ = write_rpc_response(&mut stream, &response);
         stream.conn.send_close_notify();
         let _ = stream.flush();
@@ -680,6 +691,7 @@ fn serve_agent_rpc(
 
 fn agent_rpc_exchange<S: Read>(
     stream: &mut S,
+    network: &str,
     owner: &SharedAgentOwner<RemoteHumanAuthority>,
 ) -> AgentRpcResponse {
     let malformed = || agent_rpc::refusal(400, ErrorClass::ProtocolIncompatibility, "envelope.malformed");
@@ -743,7 +755,7 @@ fn agent_rpc_exchange<S: Read>(
         if content_length.unwrap_or(0) != 0 || length != head_end {
             return malformed();
         }
-        return agent_rpc_health(owner);
+        return agent_rpc_health(owner, network);
     }
     let Some(content_length) = content_length else {
         return malformed();
@@ -764,13 +776,16 @@ fn agent_rpc_exchange<S: Read>(
 }
 
 /// Readiness and negotiated node identity for the gateway's binding health check.
-fn agent_rpc_health(owner: &SharedAgentOwner<RemoteHumanAuthority>) -> AgentRpcResponse {
+fn agent_rpc_health(
+    owner: &SharedAgentOwner<RemoteHumanAuthority>,
+    network: &str,
+) -> AgentRpcResponse {
     let health = owner.lock().and_then(|guard| guard.rpc_health());
     match health {
-        Ok((ready, network_id, protocol_version)) => AgentRpcResponse {
+        Ok((ready, _, protocol_version)) => AgentRpcResponse {
             status: 200,
             body: format!(
-                "{{\"ready\":{ready},\"network_id\":\"{network_id}\",\"wire_version\":\"{protocol_version}\"}}"
+                "{{\"ready\":{ready},\"network_id\":\"{network}\",\"wire_version\":\"{protocol_version}\"}}"
             )
             .into_bytes(),
         },

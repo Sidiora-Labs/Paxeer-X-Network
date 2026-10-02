@@ -17,6 +17,12 @@ origin = "decoded_from_unsigned_canonical_bytes"
 request = "SignRequest"
 required = ["preparation_ref","signature"]
 response = "Signed"
+idempotency_key = "required"
+signature_encoding = "128 lowercase hex characters, 64 bytes"
+response_required = ["activity_id","submission","receipt"]
+activity_id = "lowercase_hex"
+receipt = "Receipt object only when the submission state is Executed, otherwise null"
+expiry_time_source = "core_batch_time_ms is the protocol timestamp of one fresh core preparation snapshot for the prepared actor; expiry holds when core_batch_time_ms is greater than not_after. Never wall clock and never a sequence."
 
 [operation.submit]
 request = "SubmitRequest"

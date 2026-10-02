@@ -39,12 +39,19 @@ pub(crate) fn subscription_create<A: HumanAuthorityBoundary>(
     request: &Map<String, Value>,
     ctx: &DispatchContext,
 ) -> Result<Dispatched, Rejection> {
+    use crate::agent_rpc_dispatch::mutation_key;
     let id = ctx.request_id;
     let wire: crate::agent_rpc_wire::SubscriptionCreateWire = decode(request, id)?;
     let typed = wire.into_request(id)?;
+    let envelope = crate::human::MutationEnvelope {
+        request_id: id.0,
+        key: mutation_key(ctx)?,
+        body_digest: crate::human_runtime::subscription_create_digest(&typed),
+        operation: typed,
+    };
     let response = owner
         .lock()
-        .and_then(|mut guard| guard.rpc_subscription_create(context, typed))
+        .and_then(|mut guard| guard.rpc_subscription_create(context, envelope))
         .map_err(|error| owner_error(id, error))?;
     Ok(Dispatched {
         value: subscription_record_value(id, response.bytes())?,
@@ -63,7 +70,7 @@ pub(crate) fn subscription_list<A: HumanAuthorityBoundary>(
     let typed = wire.into_request(id)?;
     let response = owner
         .lock()
-        .and_then(|mut guard| guard.subscription_list(context.peer(), typed))
+        .and_then(|mut guard| guard.rpc_subscription_list(context, typed))
         .map_err(|error| owner_error(id, error))?;
     Ok(Dispatched {
         value: subscription_list_value(id, response.bytes())?,
@@ -139,7 +146,7 @@ pub(crate) fn subscription_health<A: HumanAuthorityBoundary>(
     let typed = wire.into_request(id)?;
     let response = owner
         .lock()
-        .and_then(|mut guard| guard.subscription_health(context.peer(), typed))
+        .and_then(|mut guard| guard.rpc_subscription_health(context, typed))
         .map_err(|error| owner_error(id, error))?;
     Ok(Dispatched {
         value: subscription_health_value(id, response.bytes())?,
@@ -900,6 +907,124 @@ pub(crate) fn read_history<A: HumanAuthorityBoundary>(
     })
 }
 
+pub(crate) fn availability_fetch<A: HumanAuthorityBoundary>(
+    owner: &SharedAgentOwner<A>,
+    context: &RpcOwnerContext<'_>,
+    request: &Map<String, Value>,
+    ctx: &DispatchContext,
+) -> Result<Dispatched, Rejection> {
+    fn classes(reader: &mut Reader<'_>) -> Option<Value> {
+        let count = reader.u16()?;
+        let mut items = Vec::with_capacity(usize::from(count));
+        for _ in 0..count {
+            let class = match reader.u8()? {
+                1 => "activities",
+                2 => "receipts",
+                3 => "oracle",
+                4 => "state_diff",
+                5 => "recovery",
+                _ => return None,
+            };
+            let complete = match reader.u8()? {
+                0 => false,
+                1 => true,
+                _ => return None,
+            };
+            let verified_chunks = reader.u32()?;
+            let verified_bytes = reader.u64()?;
+            let failure = reader.opt_bytes()?;
+            if complete != failure.is_empty() {
+                return None;
+            }
+            let mut item = Map::new();
+            item.insert("class".into(), Value::String(class.into()));
+            item.insert("complete".into(), Value::Bool(complete));
+            item.insert("verified_chunks".into(), dec(verified_chunks));
+            item.insert("verified_bytes".into(), dec(verified_bytes));
+            item.insert(
+                "failure".into(),
+                if failure.is_empty() {
+                    Value::Null
+                } else {
+                    Value::String(std::str::from_utf8(failure).ok()?.to_owned())
+                },
+            );
+            items.push(Value::Object(item));
+        }
+        Some(Value::Array(items))
+    }
+    let id = ctx.request_id;
+    let request: AvailabilityWire = decode(request, id)?;
+    let _ = (request.tenant, request.agent);
+    let requested = requested_level(&request.requested_verification_level, id)?;
+    let typed = layerx_agent_api::availability::AvailabilityRequest {
+        selector: request.selector,
+        requested_verification_level: requested,
+        maximum_bytes: request
+            .maximum_bytes
+            .parse::<u64>()
+            .ok()
+            .filter(|value| value.to_string() == request.maximum_bytes)
+            .ok_or_else(|| malformed(id))?,
+        maximum_chunks: request
+            .maximum_chunks
+            .parse::<u32>()
+            .ok()
+            .filter(|value| value.to_string() == request.maximum_chunks)
+            .ok_or_else(|| malformed(id))?,
+        deadline: layerx_agent_api::generated::TimestampSeconds::parse_decimal(&request.deadline)
+            .ok()
+            .filter(|value| value.get().to_string() == request.deadline)
+            .ok_or_else(|| malformed(id))?,
+    }
+    .validate()
+    .map_err(|_| malformed(id))?;
+    let mut guard = owner.lock().map_err(|error| owner_error(id, error))?;
+    let response = guard.availability_fetch(context.peer(), typed);
+    owner_payload(id, response, |reader| {
+        let achieved = level(reader.u8()?)?;
+        if achieved < requested {
+            return None;
+        }
+        let mut completion = Map::new();
+        match reader.u8()? {
+            0 => {
+                completion.insert("state".into(), Value::String("partial".into()));
+            }
+            1 => {
+                completion.insert("state".into(), Value::String("complete".into()));
+                completion.insert("provider".into(), Value::String(reader.text()?));
+            }
+            _ => return None,
+        }
+        let top = classes(reader)?;
+        let count = reader.u16()?;
+        let mut providers = Vec::with_capacity(usize::from(count));
+        for _ in 0..count {
+            let provider = reader.text()?;
+            let provider_classes = classes(reader)?;
+            let failure = reader.opt_bytes()?;
+            let mut item = Map::new();
+            item.insert("provider".into(), Value::String(provider));
+            item.insert("classes".into(), provider_classes);
+            item.insert(
+                "failure".into(),
+                if failure.is_empty() {
+                    Value::Null
+                } else {
+                    Value::String(std::str::from_utf8(failure).ok()?.to_owned())
+                },
+            );
+            providers.push(Value::Object(item));
+        }
+        let mut out = Map::new();
+        out.insert("completion".into(), Value::Object(completion));
+        out.insert("classes".into(), top);
+        out.insert("providers".into(), Value::Array(providers));
+        Some((Value::Object(out), Some(achieved)))
+    })
+}
+
 pub(crate) fn read_batch<A: HumanAuthorityBoundary>(
     owner: &SharedAgentOwner<A>,
     context: &RpcOwnerContext<'_>,
@@ -1005,6 +1130,21 @@ struct HistoryWire {
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
+struct AvailabilityWire {
+    #[serde(default)]
+    tenant: Option<String>,
+    #[serde(default)]
+    agent: Option<String>,
+    selector: String,
+    requested_verification_level: String,
+    maximum_bytes: String,
+    maximum_chunks: String,
+    deadline: String,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+
 struct BatchWire {
     #[serde(default)]
     tenant: Option<String>,

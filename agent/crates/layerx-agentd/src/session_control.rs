@@ -706,7 +706,7 @@ impl OperationPermit {
         &self,
         control: &SessionControl,
         preparation_id: [u8; 32],
-        core_batch_time: u64,
+        core_batch_time_ms: u64,
     ) -> Result<(), SessionControlError> {
         self.require_operation(Operation::Submit)?;
         let registry = control
@@ -718,7 +718,33 @@ impl OperationPermit {
             .lifecycle
             .admit_submission_authorized(
                 preparation_id,
-                core_batch_time,
+                core_batch_time_ms,
+                &self.preparation_authorization(),
+            )
+            .map_err(SessionControlError::Lifecycle)
+    }
+
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if session authorization, durable state, or preparation expiry fails.
+    pub fn admit_signing(
+        &self,
+        control: &SessionControl,
+        preparation_id: [u8; 32],
+        core_batch_time_ms: u64,
+    ) -> Result<(), SessionControlError> {
+        self.require_operation(Operation::Sign)?;
+        let registry = control
+            .registry
+            .read()
+            .map_err(|_| SessionControlError::Unavailable)?;
+        self.resolve(control, &registry)?;
+        control
+            .lifecycle
+            .check_unexpired_authorized(
+                preparation_id,
+                core_batch_time_ms,
                 &self.preparation_authorization(),
             )
             .map_err(SessionControlError::Lifecycle)
@@ -783,7 +809,8 @@ impl OperationPermit {
         preparation_id: [u8; 32],
         signed_bytes: Vec<u8>,
         activity_id: [u8; 32],
-        core_batch_time: u64,
+        current_sequence: u64,
+        core_batch_time_ms: u64,
     ) -> Result<(), SessionControlError> {
         self.require_operation(Operation::Submit)?;
         let registry = control
@@ -792,6 +819,10 @@ impl OperationPermit {
             .map_err(|_| SessionControlError::Unavailable)?;
         self.resolve(control, &registry)?;
         let authorization = self.preparation_authorization();
+        control
+            .lifecycle
+            .check_unexpired_authorized(preparation_id, core_batch_time_ms, &authorization)
+            .map_err(SessionControlError::Lifecycle)?;
         match control
             .lifecycle
             .state(preparation_id)
@@ -803,7 +834,7 @@ impl OperationPermit {
                     .transition_authorized(
                         preparation_id,
                         LifecycleState::Signing,
-                        core_batch_time,
+                        current_sequence,
                         &authorization,
                     )
                     .map_err(SessionControlError::Lifecycle)?;
@@ -850,7 +881,7 @@ impl OperationPermit {
         }
         control
             .lifecycle
-            .admit_submission_authorized(preparation_id, core_batch_time, &authorization)
+            .admit_submission_authorized(preparation_id, core_batch_time_ms, &authorization)
             .map_err(SessionControlError::Lifecycle)
     }
 

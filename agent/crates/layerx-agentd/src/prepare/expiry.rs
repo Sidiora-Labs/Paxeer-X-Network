@@ -334,9 +334,7 @@ impl PreparationLifecycle {
             .get(&preparation_id)
             .ok_or(LifecycleError::NotFound)?;
         require_authorization(record, authorization)?;
-        if core_batch_time > record.not_after || record.state == LifecycleState::Expired {
-            return Err(LifecycleError::PreparationExpired);
-        }
+        require_unexpired(record, core_batch_time)?;
         if record.state != LifecycleState::Signed {
             return Err(LifecycleError::InvalidTransition {
                 from: record.state,
@@ -344,6 +342,47 @@ impl PreparationLifecycle {
             });
         }
         Ok(())
+    }
+
+    /// Checks that a preparation has not expired at the authoritative core batch time.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Unavailable` when the record lock is poisoned, `NotFound` for an unregistered
+    /// preparation, or `PreparationExpired` past `not_after` or once already `Expired`.
+    pub fn check_unexpired(
+        &self,
+        preparation_id: [u8; 32],
+        core_batch_time_ms: u64,
+    ) -> Result<(), LifecycleError> {
+        self.check_unexpired_inner(preparation_id, core_batch_time_ms, None)
+    }
+
+    /// Checks expiry only for the exact owning session generation of a token-bound preparation.
+    pub(crate) fn check_unexpired_authorized(
+        &self,
+        preparation_id: [u8; 32],
+        core_batch_time_ms: u64,
+        authorization: &PreparationAuthorization,
+    ) -> Result<(), LifecycleError> {
+        self.check_unexpired_inner(preparation_id, core_batch_time_ms, Some(authorization))
+    }
+
+    fn check_unexpired_inner(
+        &self,
+        preparation_id: [u8; 32],
+        core_batch_time_ms: u64,
+        authorization: Option<&PreparationAuthorization>,
+    ) -> Result<(), LifecycleError> {
+        let records = self
+            .records
+            .lock()
+            .map_err(|_| LifecycleError::Unavailable)?;
+        let record = records
+            .get(&preparation_id)
+            .ok_or(LifecycleError::NotFound)?;
+        require_authorization(record, authorization)?;
+        require_unexpired(record, core_batch_time_ms)
     }
 
     /// Returns the current lifecycle state of one preparation.
@@ -502,6 +541,16 @@ pub enum LifecycleError {
         to: LifecycleState,
     },
     Reservation(LimitRefusal),
+}
+
+fn require_unexpired(
+    record: &RetainedPreparation,
+    core_batch_time_ms: u64,
+) -> Result<(), LifecycleError> {
+    if core_batch_time_ms > record.not_after || record.state == LifecycleState::Expired {
+        return Err(LifecycleError::PreparationExpired);
+    }
+    Ok(())
 }
 
 fn require_authorization(

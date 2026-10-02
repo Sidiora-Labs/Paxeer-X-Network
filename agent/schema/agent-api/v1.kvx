@@ -1,7 +1,7 @@
 [schema]
 name = "LayerX Agent API"
 major = 1
-minor = 6
+minor = 7
 node_interface_major = 1
 source_of_truth = "This schema and the schema files it includes define the daemon contract and every SDK surface. Generated output is never authoritative."
 compatibility = "Within one major version a release may only add sections or keys. Removing or changing an existing declaration requires a new major version."
@@ -423,6 +423,8 @@ operation_class = "Read"
 surface = "Contract"
 idempotency_key = "absent"
 disposition = "served_adapter_arm"
+cursor_text = "112 lowercase hex characters"
+page_limit_bound = "65535"
 
 [transport.agent_http.operation.read.module_state]
 request = "The request object of this catalogue operation; the daemon declares no typed decoder for it in this contract revision."
@@ -479,6 +481,7 @@ operation_class = "Write"
 surface = "Contract"
 idempotency_key = "required"
 disposition = "served_adapter_arm"
+response = "Signed"
 
 [transport.agent_http.operation.submit]
 request = "owner typed Human submit request"
@@ -503,6 +506,8 @@ operation_class = "Subscribe"
 surface = "Subscription"
 idempotency_key = "required"
 disposition = "served_adapter_arm"
+owner_request = "MutationEnvelope<SubscriptionCreate>"
+body_digest = "subscription_create_digest over the canonical SubscriptionCreate"
 
 [transport.agent_http.operation.subscription.delete]
 request = "The request object of this catalogue operation; the daemon declares no typed decoder for it in this contract revision."
@@ -519,6 +524,7 @@ operation_class = "Subscribe"
 surface = "Subscription"
 idempotency_key = "absent"
 disposition = "served_adapter_arm"
+authority = "operation_permit"
 
 [transport.agent_http.operation.subscription.list]
 request = "The request object of this catalogue operation; the daemon declares no typed decoder for it in this contract revision."
@@ -527,6 +533,7 @@ operation_class = "Subscribe"
 surface = "Subscription"
 idempotency_key = "absent"
 disposition = "served_adapter_arm"
+authority = "operation_permit"
 
 [transport.agent_http.operation.subscription.pause]
 request = "The request object of this catalogue operation; the daemon declares no typed decoder for it in this contract revision."
@@ -607,6 +614,11 @@ baseline = "golden/v1.kvx@1.5"
 change = "Marks budget.list, read.batch, read.history, read.module_state, session.close, session.refresh, wait, sign, subscription.create, subscription.list, subscription.pause, subscription.resume, subscription.delete, subscription.health and subscription.acknowledge as served_adapter_arm: the daemon dispatcher routes each to a named owner adapter arm. Source compatibility statement only."
 owner_body_incomplete = ["sign","subscription.create","subscription.list","subscription.health","read.history"]
 adapter_arm_scope = "served_adapter_arm asserts only that a dispatch arm and adapter exist; it does not assert a completed real owner, working behaviour or qualification."
+
+[compatibility.history.1_7]
+classification = "additive_only"
+baseline = "golden/v1.kvx@1.6"
+change = "Declares the subscription.create mutation envelope and creation identity, permit-bound subscription.list and subscription.health, the read.history cursor text, page limit bound and kind byte table, and the sign response shape. Adds keys only; no existing declaration or disposition changes. Source compatibility statement only."
 
 [compatibility.feature.agent_http_operations]
 introduced_contract = "1.4"

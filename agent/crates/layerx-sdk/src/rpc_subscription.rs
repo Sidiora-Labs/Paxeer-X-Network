@@ -403,6 +403,473 @@ fn notification(value: &Value, id: &str) -> Result<(Value, u64), RpcError> {
     Ok((value["params"]["result"].clone(), cursor))
 }
 
+pub use agent::{
+    GapNotice, SubscriptionFilter, SubscriptionHealth, SubscriptionRecord, SubscriptionScope,
+    TenantValue,
+};
+
+mod agent {
+    use layerx_agent_api::error::{Key, RequestId};
+    use serde_json::{json, Map, Value};
+
+    use crate::agent_envelope::{
+        canonical_u64, AgentEnvelopeTransport, EnvelopeCredential, EnvelopeError,
+    };
+    use crate::Operation;
+
+    #[derive(Clone, Debug, Eq, PartialEq)]
+    pub struct SubscriptionScope {
+        pub tenant: String,
+        pub agent: String,
+        pub capability: String,
+    }
+
+    #[derive(Clone, Debug, Eq, PartialEq)]
+    pub struct TenantValue {
+        pub tenant: String,
+        pub value: String,
+    }
+
+    #[derive(Clone, Debug, Eq, PartialEq)]
+    pub struct SubscriptionFilter {
+        pub agents: Vec<TenantValue>,
+        pub accounts: Vec<TenantValue>,
+        pub activity_types: Vec<u16>,
+        pub modules: Vec<TenantValue>,
+        pub assets: Vec<TenantValue>,
+        pub counterparties: Vec<TenantValue>,
+        pub result_classes: Vec<i32>,
+    }
+
+    #[derive(Clone, Debug, Eq, PartialEq)]
+    pub struct SubscriptionRecord {
+        pub subscription_id: String,
+        pub scope: SubscriptionScope,
+        pub filter: SubscriptionFilter,
+        pub start: u64,
+        pub last_acknowledged: u64,
+        pub delivery_target: String,
+        pub paused: bool,
+    }
+
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    pub struct GapNotice {
+        pub missing_first: u64,
+        pub missing_last: u64,
+        pub backfill_cursor: u64,
+        pub backfill_attempted: bool,
+    }
+
+    #[derive(Clone, Debug, Eq, PartialEq)]
+    pub struct SubscriptionHealth {
+        pub scope: SubscriptionScope,
+        pub subscription_id: String,
+        pub last_acknowledged: u64,
+        pub last_delivery_at: Option<u64>,
+        pub pending_backfill: Option<GapNotice>,
+    }
+
+    pub(crate) fn object<'a>(
+        value: &'a Value,
+        fields: &[&str],
+        operation: Operation,
+    ) -> Result<&'a Map<String, Value>, EnvelopeError> {
+        value
+            .as_object()
+            .filter(|object| {
+                object.len() == fields.len() && fields.iter().all(|field| object.contains_key(*field))
+            })
+            .ok_or_else(|| violation(operation))
+    }
+
+    pub(crate) fn violation(operation: Operation) -> EnvelopeError {
+        if operation.mutating() {
+            EnvelopeError::Unknown { operation }
+        } else {
+            EnvelopeError::Decode { operation }
+        }
+    }
+
+    pub(crate) fn text(value: &Value, operation: Operation) -> Result<String, EnvelopeError> {
+        value
+            .as_str()
+            .filter(|text| !text.is_empty())
+            .map(str::to_owned)
+            .ok_or_else(|| violation(operation))
+    }
+
+    pub(crate) fn decimal(value: &Value, operation: Operation) -> Result<u64, EnvelopeError> {
+        value
+            .as_str()
+            .and_then(canonical_u64)
+            .ok_or_else(|| violation(operation))
+    }
+
+    fn scope_value(scope: &SubscriptionScope) -> Value {
+        json!({"tenant": scope.tenant, "agent": scope.agent, "capability": scope.capability})
+    }
+
+    fn tenant_values(values: &[TenantValue]) -> Value {
+        Value::Array(
+            values
+                .iter()
+                .map(|item| json!({"tenant": item.tenant, "value": item.value}))
+                .collect(),
+        )
+    }
+
+    fn filter_value(filter: &SubscriptionFilter) -> Value {
+        json!({
+            "agents": tenant_values(&filter.agents),
+            "accounts": tenant_values(&filter.accounts),
+            "activity_types": filter.activity_types.iter().map(u16::to_string).collect::<Vec<_>>(),
+            "modules": tenant_values(&filter.modules),
+            "assets": tenant_values(&filter.assets),
+            "counterparties": tenant_values(&filter.counterparties),
+            "result_classes": filter.result_classes,
+        })
+    }
+
+    fn target_value(scope: &SubscriptionScope, subscription_id: &str) -> Value {
+        json!({"scope": scope_value(scope), "subscription_id": subscription_id})
+    }
+
+    fn decode_scope(value: &Value, operation: Operation) -> Result<SubscriptionScope, EnvelopeError> {
+        let scope = object(value, &["tenant", "agent", "capability"], operation)?;
+        Ok(SubscriptionScope {
+            tenant: text(&scope["tenant"], operation)?,
+            agent: text(&scope["agent"], operation)?,
+            capability: text(&scope["capability"], operation)?,
+        })
+    }
+
+    fn decode_tenant_values(
+        value: &Value,
+        operation: Operation,
+    ) -> Result<Vec<TenantValue>, EnvelopeError> {
+        value
+            .as_array()
+            .ok_or_else(|| violation(operation))?
+            .iter()
+            .map(|item| {
+                let item = object(item, &["tenant", "value"], operation)?;
+                Ok(TenantValue {
+                    tenant: text(&item["tenant"], operation)?,
+                    value: text(&item["value"], operation)?,
+                })
+            })
+            .collect()
+    }
+
+    fn decode_filter(value: &Value, operation: Operation) -> Result<SubscriptionFilter, EnvelopeError> {
+        let filter = object(
+            value,
+            &[
+                "agents",
+                "accounts",
+                "activity_types",
+                "modules",
+                "assets",
+                "counterparties",
+                "result_classes",
+            ],
+            operation,
+        )?;
+        let activity_types = filter["activity_types"]
+            .as_array()
+            .ok_or_else(|| violation(operation))?
+            .iter()
+            .map(|item| {
+                u16::try_from(decimal(item, operation)?).map_err(|_| violation(operation))
+            })
+            .collect::<Result<_, _>>()?;
+        let result_classes = filter["result_classes"]
+            .as_array()
+            .ok_or_else(|| violation(operation))?
+            .iter()
+            .map(|item| {
+                item.as_i64()
+                    .and_then(|number| i32::try_from(number).ok())
+                    .ok_or_else(|| violation(operation))
+            })
+            .collect::<Result<_, _>>()?;
+        Ok(SubscriptionFilter {
+            agents: decode_tenant_values(&filter["agents"], operation)?,
+            accounts: decode_tenant_values(&filter["accounts"], operation)?,
+            activity_types,
+            modules: decode_tenant_values(&filter["modules"], operation)?,
+            assets: decode_tenant_values(&filter["assets"], operation)?,
+            counterparties: decode_tenant_values(&filter["counterparties"], operation)?,
+            result_classes,
+        })
+    }
+
+    fn decode_record(value: &Value, operation: Operation) -> Result<SubscriptionRecord, EnvelopeError> {
+        let record = object(
+            value,
+            &[
+                "subscription_id",
+                "scope",
+                "filter",
+                "start",
+                "last_acknowledged",
+                "delivery_target",
+                "paused",
+            ],
+            operation,
+        )?;
+        Ok(SubscriptionRecord {
+            subscription_id: text(&record["subscription_id"], operation)?,
+            scope: decode_scope(&record["scope"], operation)?,
+            filter: decode_filter(&record["filter"], operation)?,
+            start: decimal(&record["start"], operation)?,
+            last_acknowledged: decimal(&record["last_acknowledged"], operation)?,
+            delivery_target: text(&record["delivery_target"], operation)?,
+            paused: record["paused"].as_bool().ok_or_else(|| violation(operation))?,
+        })
+    }
+
+    fn decode_gap(value: &Value, operation: Operation) -> Result<GapNotice, EnvelopeError> {
+        let gap = object(
+            value,
+            &["missing_first", "missing_last", "backfill_cursor", "backfill_attempted"],
+            operation,
+        )?;
+        let notice = GapNotice {
+            missing_first: decimal(&gap["missing_first"], operation)?,
+            missing_last: decimal(&gap["missing_last"], operation)?,
+            backfill_cursor: decimal(&gap["backfill_cursor"], operation)?,
+            backfill_attempted: gap["backfill_attempted"]
+                .as_bool()
+                .ok_or_else(|| violation(operation))?,
+        };
+        if notice.missing_first > notice.missing_last {
+            return Err(violation(operation));
+        }
+        Ok(notice)
+    }
+
+    fn decode_health(value: &Value, operation: Operation) -> Result<SubscriptionHealth, EnvelopeError> {
+        let health = object(
+            value,
+            &["target", "last_acknowledged", "last_delivery_at", "pending_backfill"],
+            operation,
+        )?;
+        let target = object(&health["target"], &["scope", "subscription_id"], operation)?;
+        Ok(SubscriptionHealth {
+            scope: decode_scope(&target["scope"], operation)?,
+            subscription_id: text(&target["subscription_id"], operation)?,
+            last_acknowledged: decimal(&health["last_acknowledged"], operation)?,
+            last_delivery_at: match &health["last_delivery_at"] {
+                Value::Null => None,
+                value => Some(decimal(value, operation)?),
+            },
+            pending_backfill: match &health["pending_backfill"] {
+                Value::Null => None,
+                value => Some(decode_gap(value, operation)?),
+            },
+        })
+    }
+
+    impl AgentEnvelopeTransport {
+        fn subscription_record(
+            &self,
+            operation: Operation,
+            request_id: RequestId,
+            key: Key,
+            request: &Value,
+            credential: &EnvelopeCredential,
+        ) -> Result<SubscriptionRecord, EnvelopeError> {
+            let success =
+                self.send_operation(operation, request_id, request, Some(credential), Some(key))?;
+            decode_record(&success.value, operation)
+        }
+
+        /// Creates one durable subscription bound to the authenticated owner scope.
+        ///
+        /// # Errors
+        ///
+        /// Returns the established error envelope, or `Unknown` when the outcome cannot be
+        /// established; reconcile with the same idempotency key.
+        #[allow(clippy::too_many_arguments)]
+        pub fn subscription_create(
+            &self,
+            request_id: RequestId,
+            key: Key,
+            credential: &EnvelopeCredential,
+            scope: &SubscriptionScope,
+            filter: &SubscriptionFilter,
+            start: u64,
+            delivery_target: &str,
+        ) -> Result<SubscriptionRecord, EnvelopeError> {
+            self.subscription_record(
+                Operation::SubscriptionCreate,
+                request_id,
+                key,
+                &json!({
+                    "scope": scope_value(scope),
+                    "filter": filter_value(filter),
+                    "start": start.to_string(),
+                    "delivery_target": delivery_target,
+                }),
+                credential,
+            )
+        }
+
+        /// Lists the subscriptions visible to the authenticated owner scope.
+        ///
+        /// # Errors
+        ///
+        /// Returns the established error envelope, `Transport` or `Decode`.
+        pub fn subscription_list(
+            &self,
+            request_id: RequestId,
+            credential: &EnvelopeCredential,
+            scope: &SubscriptionScope,
+        ) -> Result<Vec<SubscriptionRecord>, EnvelopeError> {
+            let operation = Operation::SubscriptionList;
+            let success = self.send_operation(
+                operation,
+                request_id,
+                &json!({"scope": scope_value(scope)}),
+                Some(credential),
+                None,
+            )?;
+            success
+                .value
+                .as_array()
+                .ok_or_else(|| violation(operation))?
+                .iter()
+                .map(|record| decode_record(record, operation))
+                .collect()
+        }
+
+        /// Pauses one subscription.
+        ///
+        /// # Errors
+        ///
+        /// See [`Self::subscription_create`].
+        pub fn subscription_pause(
+            &self,
+            request_id: RequestId,
+            key: Key,
+            credential: &EnvelopeCredential,
+            scope: &SubscriptionScope,
+            subscription_id: &str,
+        ) -> Result<SubscriptionRecord, EnvelopeError> {
+            self.subscription_record(
+                Operation::SubscriptionPause,
+                request_id,
+                key,
+                &target_value(scope, subscription_id),
+                credential,
+            )
+        }
+
+        /// Resumes one subscription.
+        ///
+        /// # Errors
+        ///
+        /// See [`Self::subscription_create`].
+        pub fn subscription_resume(
+            &self,
+            request_id: RequestId,
+            key: Key,
+            credential: &EnvelopeCredential,
+            scope: &SubscriptionScope,
+            subscription_id: &str,
+        ) -> Result<SubscriptionRecord, EnvelopeError> {
+            self.subscription_record(
+                Operation::SubscriptionResume,
+                request_id,
+                key,
+                &target_value(scope, subscription_id),
+                credential,
+            )
+        }
+
+        /// Deletes one subscription; success is the daemon's JSON null after durable deletion.
+        ///
+        /// # Errors
+        ///
+        /// See [`Self::subscription_create`].
+        pub fn subscription_delete(
+            &self,
+            request_id: RequestId,
+            key: Key,
+            credential: &EnvelopeCredential,
+            scope: &SubscriptionScope,
+            subscription_id: &str,
+        ) -> Result<(), EnvelopeError> {
+            let operation = Operation::SubscriptionDelete;
+            let success = self.send_operation(
+                operation,
+                request_id,
+                &target_value(scope, subscription_id),
+                Some(credential),
+                Some(key),
+            )?;
+            if success.value.is_null() {
+                Ok(())
+            } else {
+                Err(violation(operation))
+            }
+        }
+
+        /// Reports delivery health for one subscription.
+        ///
+        /// # Errors
+        ///
+        /// Returns the established error envelope, `Transport` or `Decode`.
+        pub fn subscription_health(
+            &self,
+            request_id: RequestId,
+            credential: &EnvelopeCredential,
+            scope: &SubscriptionScope,
+            subscription_id: &str,
+        ) -> Result<SubscriptionHealth, EnvelopeError> {
+            let operation = Operation::SubscriptionHealth;
+            let success = self.send_operation(
+                operation,
+                request_id,
+                &target_value(scope, subscription_id),
+                Some(credential),
+                None,
+            )?;
+            decode_health(&success.value, operation)
+        }
+
+        /// Acknowledges delivery through `cursor`.
+        ///
+        /// # Errors
+        ///
+        /// See [`Self::subscription_create`].
+        pub fn subscription_acknowledge(
+            &self,
+            request_id: RequestId,
+            key: Key,
+            credential: &EnvelopeCredential,
+            scope: &SubscriptionScope,
+            subscription_id: &str,
+            cursor: u64,
+        ) -> Result<SubscriptionRecord, EnvelopeError> {
+            self.subscription_record(
+                Operation::SubscriptionAcknowledge,
+                request_id,
+                key,
+                &json!({
+                    "scope": scope_value(scope),
+                    "subscription_id": subscription_id,
+                    "cursor": cursor.to_string(),
+                }),
+                credential,
+            )
+        }
+    }
+}
+
+pub(crate) use agent::{decimal, object, text, violation};
+
 #[cfg(test)]
 mod tests {
     use super::*;
