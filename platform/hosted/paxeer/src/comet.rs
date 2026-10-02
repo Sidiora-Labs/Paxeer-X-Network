@@ -56,6 +56,8 @@ struct RpcReply<'a> {
 
 #[derive(Debug, PartialEq)]
 enum Method {
+    Status,
+    CustodyQuery(u64),
     Commit(Option<u64>),
     Validators { height: u64, page: u64 },
     Query(u64),
@@ -97,10 +99,18 @@ fn validate(body: &[u8]) -> Result<Validated, Response> {
         return Err(rpc_error(&Value::Null, -32600, "invalid Comet request"));
     }
     let invalid = || rpc_error(&id, -32602, "invalid Comet parameters");
-    if !request.params.get().starts_with('{') {
+    if !request.params.get().starts_with('{')
+        && !(request.method == "status" && request.params.get() == "null")
+    {
         return Err(invalid());
     }
     let method = match request.method {
+        "status" => {
+            if request.params.get() != "null" {
+                serde_json::from_str::<EmptyParams>(request.params.get()).map_err(|_| invalid())?;
+            }
+            Method::Status
+        }
         "commit" => {
             if serde_json::from_str::<EmptyParams>(request.params.get()).is_ok() {
                 Method::Commit(None)
@@ -126,19 +136,35 @@ fn validate(body: &[u8]) -> Result<Validated, Response> {
             let height = decimal(params.height)
                 .filter(|height| *height < i64::MAX as u64)
                 .ok_or_else(invalid)?;
-            let digits = params.data.strip_prefix("0x").ok_or_else(invalid)?;
-            if params.path != "/store/evm/key"
-                || !params.prove
-                || digits.is_empty()
-                || digits.len() > 256
-                || !digits.len().is_multiple_of(2)
-                || !digits
-                    .bytes()
-                    .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
-            {
-                return Err(invalid());
+            if params.path == "/store/layerxcustody/key" {
+                let digits = params.data;
+                let admitted_key = digits == "01"
+                    || (digits.len() == 66
+                        && (digits.starts_with("10") || digits.starts_with("20")));
+                if !params.prove
+                    || !admitted_key
+                    || !digits
+                        .bytes()
+                        .all(|byte| byte.is_ascii_digit() || (b'A'..=b'F').contains(&byte))
+                {
+                    return Err(invalid());
+                }
+                Method::CustodyQuery(height)
+            } else {
+                let digits = params.data.strip_prefix("0x").ok_or_else(invalid)?;
+                if params.path != "/store/evm/key"
+                    || !params.prove
+                    || digits.is_empty()
+                    || digits.len() > 256
+                    || !digits.len().is_multiple_of(2)
+                    || !digits
+                        .bytes()
+                        .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+                {
+                    return Err(invalid());
+                }
+                Method::Query(height)
             }
-            Method::Query(height)
         }
         _ => {
             return Err(rpc_error(
@@ -251,6 +277,26 @@ fn committed_height(
 
 fn validate_result(method: &Method, result: &Value) -> Result<(), Failure> {
     match method {
+        Method::Status => {
+            if result.pointer("/node_info/network").and_then(Value::as_str)
+                != Some("hyperpax_125-1")
+                || result
+                    .pointer("/sync_info/catching_up")
+                    .and_then(Value::as_bool)
+                    != Some(false)
+                || result
+                    .pointer("/sync_info/latest_block_height")
+                    .and_then(Value::as_str)
+                    .and_then(decimal)
+                    .is_none()
+                || result
+                    .pointer("/sync_info/latest_block_time")
+                    .and_then(Value::as_str)
+                    .is_none_or(str::is_empty)
+            {
+                return Err(NodeFailure::Invalid.into());
+            }
+        }
         Method::Commit(expected) => {
             let height = commit_height(result, expected.is_some())?;
             if expected.is_some_and(|expected| expected != height) {
@@ -286,7 +332,7 @@ fn validate_result(method: &Method, result: &Value) -> Result<(), Failure> {
                 return Err(NodeFailure::Invalid.into());
             }
         }
-        Method::Query(height) => {
+        Method::Query(height) | Method::CustodyQuery(height) => {
             let query = result.get("response").ok_or(NodeFailure::Invalid)?;
             if query
                 .get("height")
@@ -328,7 +374,7 @@ fn validate_result(method: &Method, result: &Value) -> Result<(), Failure> {
 
 fn fetch(node: &NodeEndpoint, request: &Validated) -> Result<Vec<u8>, Failure> {
     let deadline = Instant::now() + NODE_IO_TIMEOUT;
-    if let Method::Query(height) = request.method {
+    if let Method::Query(height) | Method::CustodyQuery(height) = request.method {
         if committed_height(node, &request.id, None, deadline)? < height + 1 {
             return Err(Failure::Unavailable);
         }
@@ -388,6 +434,43 @@ mod tests {
     }
 
     #[test]
+    fn status_and_canonical_custody_proofs_are_admitted() {
+        for params in ["{}", "null"] {
+            let body = format!(r#"{{"jsonrpc":"2.0","id":1,"method":"status","params":{params}}}"#);
+            let request = validate(body.as_bytes()).unwrap_or_else(|_| panic!("status refused"));
+            assert_eq!(request.method, Method::Status);
+        }
+        for data in [
+            "01".to_owned(),
+            format!("10{}", "AB".repeat(32)),
+            format!("20{}", "AB".repeat(32)),
+        ] {
+            let body = serde_json::json!({"jsonrpc":"2.0","id":1,"method":"abci_query","params":{"path":"/store/layerxcustody/key","data":data,"height":"17","prove":true}}).to_string();
+            let request =
+                validate(body.as_bytes()).unwrap_or_else(|_| panic!("custody proof refused"));
+            assert_eq!(request.method, Method::CustodyQuery(17));
+            let upstream: serde_json::Value = serde_json::from_slice(&request.body).unwrap();
+            assert_eq!(upstream["params"]["data"], data);
+        }
+        for params in ["[]", r#"{"extra":1}"#, r#"{"height":"1"}"#] {
+            let body = format!(r#"{{"jsonrpc":"2.0","id":1,"method":"status","params":{params}}}"#);
+            assert!(validate(body.as_bytes()).is_err());
+        }
+        for data in [
+            "0x01".to_owned(),
+            "02".to_owned(),
+            format!("20{}", "ab".repeat(32)),
+            format!("21{}", "AB".repeat(32)),
+            format!("20{}", "AB".repeat(31)),
+        ] {
+            let body = serde_json::json!({"jsonrpc":"2.0","id":1,"method":"abci_query","params":{"path":"/store/layerxcustody/key","data":data,"height":"17","prove":true}}).to_string();
+            assert!(validate(body.as_bytes()).is_err());
+        }
+        let unproved = br#"{"jsonrpc":"2.0","id":1,"method":"abci_query","params":{"path":"/store/layerxcustody/key","data":"01","height":"17","prove":false}}"#;
+        assert!(validate(unproved).is_err());
+    }
+
+    #[test]
     fn ambiguous_envelopes_and_notifications_are_refused() {
         for body in [
             r#"{"jsonrpc":"2.0","id":1,"id":2,"method":"commit","params":{}}"#,
@@ -414,7 +497,7 @@ mod tests {
             "broadcast_evidence",
             "unsafe_flush_mempool",
             "abci_info",
-            "status",
+            "lag_status",
             "genesis",
         ] {
             let body =
