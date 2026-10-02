@@ -10,7 +10,7 @@ response = "Prepared"
 response_required = ["preparation_ref","unsigned_canonical_bytes","signing_preimage","disclosure","expiry"]
 optional = ["capability_id"]
 capability_id = "64 lowercase hex characters naming a capability record of the authenticated tenant and agent. When present the request is the nine preserved prepare fields plus capability_id at the same level; the preserved nine-field request is unchanged."
-capability_binding = "The daemon does not bind a preparation to a capability in this contract revision: a prepare carrying capability_id is refused as envelope.unknown_field until that binding is declared."
+capability_binding = "The optional capability_id is decoded and bound to the prepared activity by the daemon capability binding; it is refused only when the capability is unknown, expired, revoked or purpose-mismatched. When absent the nine-field request is served unchanged."
 
 [type.Disclosure]
 required = ["canonical_digest","activity_type","actor","authority","counterparties","amounts","asset","fee_limit","expiry","idempotency_key"]

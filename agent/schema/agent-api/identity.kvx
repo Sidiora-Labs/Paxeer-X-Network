@@ -130,6 +130,11 @@ authorization = "BudgetAuthorization: required when the authenticated budget loo
 required = ["tenant","agent_did","budget_id"]
 response = "AuthorityResponse<BudgetRecord>"
 
+[operation.budget.state]
+required = ["tenant","agent_did","budget_id"]
+response = "AuthorityResponse<BudgetState>"
+refusals = "budget.not_found, BudgetRefusal Terminal, when the authenticated budget lookup names no budget of this tenant and agent. activity_id is null in the answer and its record; no activity_id is invented."
+
 [type.AuthorityResponse]
 required = ["authority","value"]
 authority_description = "Every response names the tenant, agent DID, authority reference and exact protocol authority actually used."
@@ -157,7 +162,7 @@ required = ["enforcement","budget_id","head","activity_id"]
 enforcement = "BudgetEnforcement; selects the field set"
 budget_id = "64 lowercase hex characters"
 head = "decimal_string: observed head sequence of the snapshot the record was read from"
-activity_id = "64 lowercase hex characters of the core activity whose verified receipt produced this ProtocolBudget state in a create, fund or revoke response; null in list responses and for every DaemonLimit record"
+activity_id = "64 lowercase hex characters of the core activity whose verified receipt produced this ProtocolBudget state in a create, fund or revoke response; null in list responses, for every DaemonLimit record, and in budget.state responses, which prove current state rather than one producing activity"
 ProtocolBudget.required = ["owner","budget_account","asset_id","purpose_hash","per_period_limit","configured_period_limit","carry_cap","spent_this_period","carried","period_length_ms","period_start_ms","expiry_ms","revocation_counter","rollover_policy","closed","revoked","delegates","source_account","achieved_verification_level"]
 ProtocolBudget.source = "Projected from the decoded core budget record whose state was proven."
 ProtocolBudget.units = "Amounts are decimal_string u128; period_length_ms, period_start_ms and expiry_ms are decimal_string milliseconds of core protocol time; revocation_counter is a decimal_string counter and never a time; rollover_policy is a decimal_string u8; account and asset fields are 64 lowercase hex; source_account is 64 lowercase hex or null; delegates is an array of 64 lowercase hex."
@@ -170,6 +175,13 @@ DaemonLimit.notice = "Exactly the BudgetEnforcement DaemonLimit notice. A Daemon
 [type.BudgetRecords]
 required = ["budgets"]
 budgets = "BudgetRecord[] in ascending budget_id order"
+
+[type.BudgetState]
+required = ["record","balance","proven_head","activity_id"]
+record = "BudgetRecord of the enforcement in force, with its own head and activity_id keys and the same level strings as create, fund and revoke. verification_status is achieved at achieved_verification_level for a ProtocolBudget and at Unverified for a DaemonLimit."
+balance = "decimal_string u128 of the state-proven budget account balance of the budget asset at proven_head"
+proven_head = "decimal_string u64: the head sequence the budget state was proven at, equal to record.head"
+activity_id = "64 lowercase hex characters or null, equal to record.activity_id; null for a budget.state read, which proves current state rather than one producing activity"
 
 [operation.policy.dry_run]
 required = ["tenant","agent_did","session_id","capability_id","activity_type","counterparty","asset","amount","purpose","core_sequence"]
@@ -185,7 +197,11 @@ core_sequence = "decimal_string u64: the caller-stated sequence the hypothetical
 semantics = "Evaluates the tenant policy against the hypothetical activity under the real session and capability. It creates no preparation, signature or submission and is a local restriction, never protocol authorisation."
 context = "Where protocol budget, cumulative use or approval evidence is unavailable the result is the existing invalid_context deny; no evidence is invented."
 verification_status = "Always achieved at Unverified; the result carries no freshness, no observed sequence and no state root."
-legacy_payload = "The earlier policy_dry_run payload, context and canonical_intent, has no defined intent grammar and is refused; it is never reinterpreted."
+legacy_payload = "The earlier policy_dry_run payload is the second accepted request shape LegacyPolicyDryRun, read only through the PolicyIntent grammar; it is never reinterpreted."
+legacy_shape = "LegacyPolicyDryRun: exactly the keys context and canonical_intent. Its key set is disjoint from the typed request; a body mixing keys of both shapes or carrying any unknown key is malformed."
+legacy_context = "context is exactly tenant, agent_did, authority_ref, permitted_activity_types, expiry, client and policy_version. permitted_activity_types is an array of decimal_string u16, and an empty array denies; expiry is a decimal_string of seconds. All seven fields are assertions checked against server-owned verified session data, never sources of authority."
+legacy_intent = "canonical_intent is lowercase hex of the bounded PolicyIntent bytes. Raw canonical unsigned activity bytes without the PolicyIntent magic are accepted only when their complete typed semantics and a genuinely retained purpose binding exist; otherwise they are refused as policy.intent_binding_missing."
+legacy_response = "Unchanged: the seven-key PolicyDryRunResult, mode dry_run, verification_status achieved at Unverified."
 
 [type.PolicyDryRunResult]
 required = ["outcome","policy_version","matched_rules","deciding_rule","reason","mode","authority_statement"]
@@ -196,3 +212,21 @@ deciding_rule = "non-empty rule identifier or null"
 reason = ["permitted_by_rule","explicit_deny","approval_required","no_permitting_rule","invalid_context","evaluation_failure"]
 mode = "dry_run"
 authority_statement = "non-empty local-restriction notice for the outcome"
+
+[type.LegacyPolicyDryRun]
+required = ["context","canonical_intent"]
+context = "object with exactly tenant, agent_did, authority_ref, permitted_activity_types, expiry, client and policy_version; each an assertion against server-owned verified session data"
+permitted_activity_types = "array of decimal_string u16; empty denies"
+expiry = "decimal_string seconds"
+canonical_intent = "even-length lowercase hex of 1 to 524288 bytes (MAX_PAYLOAD_BYTES): PolicyIntent bytes, or raw canonical unsigned activity bytes"
+context_type = "SessionContext"
+
+[type.PolicyIntent]
+magic_version = "8 bytes 4c58504400000001"
+purpose_length = "u32 big-endian byte length of purpose"
+purpose = "non-empty UTF-8 of purpose_length bytes"
+activity_length = "u32 big-endian byte length of activity"
+activity = "non-empty canonical unsigned activity bytes of activity_length bytes"
+trailing = "none; any byte after activity is malformed"
+bound = "encoded length at most 524288 bytes (MAX_PAYLOAD_BYTES)"
+family_tag = "bytes beginning with 4c585044 are read only as PolicyIntent; any decode failure, including another version, is malformed and never read as raw activity"
