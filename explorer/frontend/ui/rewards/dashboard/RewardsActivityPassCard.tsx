@@ -9,7 +9,7 @@ import { Link } from 'toolkit/chakra/link';
 
 export default function RewardsActivityPassCard() {
   const { rewardsConfigQuery } = useRewardsContext();
-  const backgroundImage = useColorModeValue('/static/merits/cells.svg', '/static/merits/cells_dark.svg');
+  const backgroundImage = useColorModeValue('/explorer/static/merits/cells.svg', '/explorer/static/merits/cells_dark.svg');
 
   const activityPassUrl = config.apis.rewards ?
     // eslint-disable-next-line max-len
@@ -65,7 +65,7 @@ export default function RewardsActivityPassCard() {
           left={{ base: 'calc(50% - 134px)', md: '-8px' }}
         />
         <Image
-          src="/static/merits/activity_pass.svg"
+          src="/explorer/static/merits/activity_pass.svg"
           alt="Activity pass"
           width="79px"
           height="86px"

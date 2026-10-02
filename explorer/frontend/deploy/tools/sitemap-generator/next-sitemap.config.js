@@ -34,7 +34,7 @@ const siteUrl = [
   '://',
   process.env.NEXT_PUBLIC_APP_HOST,
   process.env.NEXT_PUBLIC_APP_PORT && ':' + process.env.NEXT_PUBLIC_APP_PORT,
-].filter(Boolean).join('');
+].filter(Boolean).join('') + '/explorer';
 
 const apiUrl = (() => {
   const baseUrl = [
@@ -58,8 +58,8 @@ module.exports = {
     policies: [
       {
         userAgent: '*',
-        allow: '/',
-        disallow: ['/auth/*', '/login', '/chakra', '/sprite', '/account/*', '/csv-export'],
+        allow: '/explorer/',
+        disallow: ['/explorer/auth/*', '/explorer/login', '/explorer/chakra', '/explorer/sprite', '/explorer/account/*', '/explorer/csv-export'],
       },
     ],
   },

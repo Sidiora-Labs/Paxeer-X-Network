@@ -81,7 +81,7 @@ const Puzzle15 = () => {
 
   useEffect(() => {
     const img = new Image();
-    img.src = '/static/4x4-easter-game-cut.png';
+    img.src = '/explorer/static/4x4-easter-game-cut.png';
     img.onload = () => setImage(img);
   }, []);
 

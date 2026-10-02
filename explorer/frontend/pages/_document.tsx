@@ -45,27 +45,27 @@ class MyDocument extends Document {
           />
 
           { /* eslint-disable-next-line @next/next/no-sync-scripts */ }
-          <script src="/assets/envs.js"/>
+          <script src="/explorer/assets/envs.js"/>
           { config.features.multichain.isEnabled && (
             <>
               { /* eslint-disable-next-line @next/next/no-sync-scripts */ }
-              <script src="/assets/multichain/config.js"/>
+              <script src="/explorer/assets/multichain/config.js"/>
             </>
           ) }
           { marketplaceFeature.isEnabled && marketplaceFeature.essentialDapps && (
             <>
               { /* eslint-disable-next-line @next/next/no-sync-scripts */ }
-              <script src="/assets/essential-dapps/chains.js"/>
+              <script src="/explorer/assets/essential-dapps/chains.js"/>
             </>
           ) }
 
           { /* FAVICON */ }
-          <link rel="icon" type="image/png" sizes="16x16" href="/assets/favicon/favicon-16x16.png"/>
-          <link rel="icon" type="image/png" sizes="32x32" href="/assets/favicon/favicon-32x32.png"/>
-          <link rel="icon" type="image/png" sizes="48x48" href="/assets/favicon/favicon-48x48.png"/>
-          <link rel="shortcut icon" href="/assets/favicon/favicon.ico"/>
-          <link rel="apple-touch-icon" sizes="180x180" href="/assets/favicon/apple-touch-icon-180x180.png"/>
-          <link rel="icon" type="image/png" sizes="192x192" href="/assets/favicon/android-chrome-192x192.png"/>
+          <link rel="icon" type="image/png" sizes="16x16" href="/explorer/assets/favicon/favicon-16x16.png"/>
+          <link rel="icon" type="image/png" sizes="32x32" href="/explorer/assets/favicon/favicon-32x32.png"/>
+          <link rel="icon" type="image/png" sizes="48x48" href="/explorer/assets/favicon/favicon-48x48.png"/>
+          <link rel="shortcut icon" href="/explorer/assets/favicon/favicon.ico"/>
+          <link rel="apple-touch-icon" sizes="180x180" href="/explorer/assets/favicon/apple-touch-icon-180x180.png"/>
+          <link rel="icon" type="image/png" sizes="192x192" href="/explorer/assets/favicon/android-chrome-192x192.png"/>
           <link rel="preload" as="image" href={ svgSprite.href }/>
         </Head>
         <body>

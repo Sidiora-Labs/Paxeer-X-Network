@@ -83,7 +83,7 @@ async function getMediaType(data: TokenInstance, field: Params['field']): Promis
   try {
     const mediaTypeResourceUrl = route({
       // eslint-disable-next-line max-len
-      pathname: '/node-api/tokens/[hash]/instances/[id]/media-type' as DynamicRoute<'/api/tokens/[hash]/instances/[id]/media-type', { hash: string; id: string }>['pathname'],
+      pathname: '/explorer/node-api/tokens/[hash]/instances/[id]/media-type' as DynamicRoute<'/api/tokens/[hash]/instances/[id]/media-type', { hash: string; id: string }>['pathname'],
       query: {
         hash: data.token.address_hash,
         id: data.id,

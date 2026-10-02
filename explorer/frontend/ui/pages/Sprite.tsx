@@ -60,7 +60,7 @@ const Sprite = () => {
   const { data, isFetching, isError } = useQuery({
     queryKey: [ 'sprite' ],
     queryFn: () => {
-      return fetch<Array<IconInfo>, unknown>('/icons/registry.json');
+      return fetch<Array<IconInfo>, unknown>('/explorer/icons/registry.json');
     },
   });
 

@@ -18,9 +18,9 @@ async function fetchConfig() {
   // When in Docker, use the internal hostname
   const baseUrl = isRunningInDocker() ?
     `http://${ process.env.HOSTNAME }:${ config.app.port || 3000 }` :
-    config.app.baseUrl;
+    config.app.origin;
 
-  const url = baseUrl + '/assets/essential-dapps/chains.json';
+  const url = baseUrl + '/explorer/assets/essential-dapps/chains.json';
   const response = await fetch(url);
   if (response.ok) {
     const contentType = response.headers.get('content-type');

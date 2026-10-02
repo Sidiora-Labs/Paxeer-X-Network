@@ -44,7 +44,7 @@ export const buildExternalAssetFilePath = (name: string, value: string) => {
     if (!fileExtension) {
       throw new Error('Cannot get file path');
     }
-    return `/assets/configs/${ fileName }.${ fileExtension }`;
+    return `/explorer/assets/configs/${ fileName }.${ fileExtension }`;
   } catch (error) {
     return;
   }

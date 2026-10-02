@@ -6,7 +6,7 @@ import React from 'react';
 import config from 'configs/app';
 import { Skeleton } from 'toolkit/chakra/skeleton';
 
-export const href = config.app.spriteHash ? `/icons/sprite.${ config.app.spriteHash }.svg` : '/icons/sprite.svg';
+export const href = config.app.spriteHash ? `/explorer/icons/sprite.${ config.app.spriteHash }.svg` : '/explorer/icons/sprite.svg';
 
 export { IconName };
 

@@ -15,7 +15,7 @@ export default function useRedirectForInvalidAuthToken() {
 
       if (apiToken) {
         cookies.remove(cookies.NAMES.API_TOKEN);
-        window.location.assign('/');
+        window.location.assign('/explorer');
       }
     }
   }, [ errorStatus, rollbar ]);

@@ -246,7 +246,7 @@ const Chart = () => {
             shareButton :
             (
               <CopyToClipboard
-                text={ config.app.baseUrl + router.asPath }
+                text={ config.app.origin + router.basePath + router.asPath }
                 type="link"
                 ml={ 0 }
                 borderRadius="base"

@@ -14,7 +14,7 @@ export default function getPoolLinks(pool?: Pool): Array<PoolLink> {
   return [
     {
       url: pool.coin_gecko_terminal_url,
-      image: '/static/gecko_terminal.png',
+      image: '/explorer/static/gecko_terminal.png',
       title: 'GeckoTerminal',
     },
   ].filter(link => Boolean(link.url));

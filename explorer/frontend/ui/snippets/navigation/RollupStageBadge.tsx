@@ -39,7 +39,7 @@ const RollupStageBadge = ({ chainConfig = config, isLoading, ...props }: Props) 
       return (
         <Tooltip content={ tooltipContent } interactive>
           <Image
-            src={ feature.stageIndex === '1' ? '/static/labels/stage-1.svg' : '/static/labels/stage-2.svg' }
+            src={ feature.stageIndex === '1' ? '/explorer/static/labels/stage-1.svg' : '/explorer/static/labels/stage-2.svg' }
             h="14px"
             w="42px"
             { ...props }

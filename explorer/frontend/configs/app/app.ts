@@ -5,12 +5,13 @@ import { getEnvValue } from './utils';
 const appPort = getEnvValue('NEXT_PUBLIC_APP_PORT');
 const appSchema = getEnvValue('NEXT_PUBLIC_APP_PROTOCOL');
 const appHost = getEnvValue('NEXT_PUBLIC_APP_HOST');
-const baseUrl = [
+const origin = [
   appSchema || 'https',
   '://',
   appHost,
   appPort && ':' + appPort,
 ].filter(Boolean).join('');
+const baseUrl = origin + '/explorer';
 const isDev = getEnvValue('NEXT_PUBLIC_APP_ENV') === 'development';
 const isReview = getEnvValue('NEXT_PUBLIC_APP_ENV') === 'review';
 const isPw = getEnvValue('NEXT_PUBLIC_APP_INSTANCE') === 'pw';
@@ -25,6 +26,8 @@ const app = Object.freeze({
   host: appHost,
   port: appPort,
   baseUrl,
+  origin,
+  basePath: '/explorer',
   useProxy: getEnvValue('NEXT_PUBLIC_USE_NEXT_JS_PROXY') === 'true',
   spriteHash,
   isPrivateMode,

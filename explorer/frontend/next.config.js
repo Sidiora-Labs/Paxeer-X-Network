@@ -16,6 +16,7 @@ const moduleExports = {
     'react-syntax-highlighter',
   ],
   reactStrictMode: true,
+  basePath: '/explorer',
   webpack(config) {
     config.module.rules.push(
       {

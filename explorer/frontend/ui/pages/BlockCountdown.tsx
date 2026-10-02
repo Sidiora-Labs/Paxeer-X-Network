@@ -52,7 +52,8 @@ const BlockCountdown = ({ hideCapybaraRunner }: Props) => {
   }, [ data?.result?.EstimateTimeInSec, height, multichainContext ]);
 
   const handleTimerFinish = React.useCallback(() => {
-    window.location.assign(route({ pathname: '/block/[height_or_hash]', query: { height_or_hash: height } }, multichainContext));
+    const target = route({ pathname: '/block/[height_or_hash]', query: { height_or_hash: height } }, multichainContext);
+    window.location.assign(target.startsWith('/') ? '/explorer' + target : target);
   }, [ height, multichainContext ]);
 
   React.useEffect(() => {
@@ -92,7 +93,7 @@ const BlockCountdown = ({ hideCapybaraRunner }: Props) => {
                 display="inline-flex"
                 href={ createGoogleCalendarLink({ blockHeight: height, timeFromNow: Number(data.result.EstimateTimeInSec), multichainContext }) }
               >
-                <Image src="/static/google_calendar.svg" alt="Google calendar logo" boxSize={ 5 } mr={ 2 }/>
+                <Image src="/explorer/static/google_calendar.svg" alt="Google calendar logo" boxSize={ 5 } mr={ 2 }/>
                 <span>Google</span>
               </Link>
               <Button
@@ -106,7 +107,7 @@ const BlockCountdown = ({ hideCapybaraRunner }: Props) => {
                 display="inline-flex"
                 onClick={ handleAddToAppleCalClick }
               >
-                <Image src="/static/apple_calendar.svg" alt="Apple calendar logo" boxSize={ 5 }/>
+                <Image src="/explorer/static/apple_calendar.svg" alt="Apple calendar logo" boxSize={ 5 }/>
                 <span>Apple</span>
               </Button>
             </Flex>

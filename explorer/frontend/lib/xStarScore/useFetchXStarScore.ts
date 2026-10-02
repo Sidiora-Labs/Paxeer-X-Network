@@ -37,7 +37,7 @@ export default function useFetchXStarScore({ hash }: Params) {
 
   React.useEffect(() => {
     if (errorMessage === ERROR_NAME) {
-      fetch('/node-api/monitoring/invalid-api-schema', {
+      fetch('/explorer/node-api/monitoring/invalid-api-schema', {
         method: 'POST',
         body: JSON.stringify({
           resource: RESOURCE_NAME,

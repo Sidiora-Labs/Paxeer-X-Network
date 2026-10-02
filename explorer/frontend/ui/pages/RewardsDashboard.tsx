@@ -34,7 +34,7 @@ const RewardsDashboard = () => {
 
   useEffect(() => {
     if (!config.features.rewards.isEnabled || (isInitialized && !isAuth)) {
-      window.location.assign('/');
+      window.location.assign('/explorer');
     }
   }, [ isInitialized, isAuth ]);
 

@@ -6,6 +6,7 @@ import type { RequestInit, Response } from 'node-fetch';
 import nodeFetch from 'node-fetch';
 
 import { httpLogger } from 'nextjs/utils/logger';
+import { NAMES } from 'lib/cookies';
 
 export default function fetchFactory(
   _req: NextApiRequest | (IncomingMessage & { cookies: NextApiRequestCookies }),
@@ -13,7 +14,9 @@ export default function fetchFactory(
   // first arg can be only a string
   // FIXME migrate to RequestInfo later if needed
   return function fetch(url: string, init?: RequestInit): Promise<Response> {
+    const names = new Set<string>(Object.values(NAMES));
     const cookie = Object.entries(_req.cookies)
+      .filter(([ key ]) => names.has(key))
       .map(([ key, value ]) => `${ key }=${ value }`)
       .join('; ');
 

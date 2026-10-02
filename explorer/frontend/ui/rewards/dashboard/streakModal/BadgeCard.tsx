@@ -9,15 +9,15 @@ import { Progress } from 'toolkit/chakra/progress';
 const BADGE_BG_COLORS = [ '#DFE8F5', '#D2E5FE', '#EFE1FF' ];
 
 const BADGES = [
-  '/static/merits/streak_30.png',
-  '/static/merits/streak_90.png',
-  '/static/merits/streak_180.png',
+  '/explorer/static/merits/streak_30.png',
+  '/explorer/static/merits/streak_90.png',
+  '/explorer/static/merits/streak_180.png',
 ] as const;
 
 const GHOST_BADGES = [
-  '/static/merits/streak_30_ghost.png',
-  '/static/merits/streak_90_ghost.png',
-  '/static/merits/streak_180_ghost.png',
+  '/explorer/static/merits/streak_30_ghost.png',
+  '/explorer/static/merits/streak_90_ghost.png',
+  '/explorer/static/merits/streak_180_ghost.png',
 ] as const;
 
 type Props = {

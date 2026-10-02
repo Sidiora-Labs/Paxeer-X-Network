@@ -42,7 +42,7 @@ export const PRIVATE_MODE_DISALLOWED: ReadonlyArray<NAMES> = [
 ];
 
 export const getDefaultAttributes = () => ({
-  path: '/',
+  path: '/explorer',
   secure: config.app.protocol === 'https',
 });
 
@@ -87,4 +87,9 @@ export function remove(name: NAMES, attributes: Cookies.CookieAttributes = {}) {
 
 export function getFromCookieString(cookieString: string, name?: NAMES | undefined | null) {
   return cookieString.split(`${ name }=`)[1]?.split(';')[0];
+}
+
+export function onlyExplorerCookies(header: string): string {
+  const names = new Set<string>(Object.values(NAMES));
+  return header.split(';').map((entry) => entry.trim()).filter((entry) => names.has(entry.split('=', 1)[0])).join('; ');
 }
