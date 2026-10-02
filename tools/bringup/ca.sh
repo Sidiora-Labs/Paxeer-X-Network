@@ -8,7 +8,7 @@ set -euo pipefail
 
 usage() {
 	cat <<'EOF'
-usage: tools/bringup/ca.sh init | issue <service> | services
+usage: tools/bringup/ca.sh init | inventory [<service>] | issue <service> | services
 
 The internal CA of the Paxeer X Network bring-up. Runs on the edge host, the
 operator host that holds the CA key and the Fly login.
@@ -17,8 +17,34 @@ init      generates the CA key and certificate under LAYERX_CA_DIR with mode
           0600 and prints nothing but the certificate's SHA-256 fingerprint.
           Refuses to touch a directory that already holds a CA.
 
+inventory [<service>]
+          inventories the identity material already retained for every row
+          (or the one service) before any deployment action, and changes
+          nothing: for a volume row the presence of cert.pem, key.der,
+          cert.der, ca.der, identity.p12 and password under
+          LAYERX_FLY_TLS_DIR/<service> on a machine of the app, and whether
+          the retained certificate chains to the row's CA; for a secrets row
+          the presence of the eight PREFIX_* names in flyctl secrets list.
+          Only names, fingerprints and day counts are read; no key, password
+          or secret value is read or printed. One line per row:
+          "inventory <service> app=<app> custody=volume|secrets
+          state=present|absent|partial|foreign|unreadable
+          [fingerprint=<sha256>|sealed expires_in=<days>d|sealed]
+          producer=tools/bringup/ca.sh issue <service>".
+          A volume row whose CA directory is not readable here (an
+          attestor row without LAYERX_ATTESTOR_CA_DIR) is unreadable.
+          Exits 1 when any row is unreadable or foreign.
+
 issue <service>
-          issues the certificate of one service for the Fly app whose toml
+          inventories the service first. Retained material that is present,
+          chains to the row's CA and expires in more than
+          LAYERX_CA_RENEW_DAYS days, or a secrets row whose eight names are
+          all listed, is reused and never regenerated: prints
+          "reused <service> app=<app> custody=volume|secrets
+          fingerprint=<sha256>|sealed expires_in=<days>d|sealed". A retained
+          certificate that does not chain to the row's CA, or material that
+          cannot be inventoried, is refused, so no second, incompatible
+          authority is ever issued beside it. Otherwise it issues the certificate of one service for the Fly app whose toml
           the service's row names, with the row's SAN list and <app> read as
           the app name from the toml's app line. For a volume row, a machine
           of the app (of the row's process group when it names one)
@@ -38,6 +64,8 @@ issue <service>
           Prints one line:
           "issued <service> app=<app> custody=volume|secrets
           fingerprint=<sha256> expires_in=<days>d".
+          A missing CA or app is also reported on stdout as
+          "fail material missing=<prerequisite> producer=<producer>".
 
 services  prints the service list, one per line: service, Fly app toml,
           process group ("-" for the whole app), custody ("volume" or the
@@ -55,15 +83,19 @@ Environment:
                        under it and never under the internal CA
   LAYERX_FLY_TLS_DIR   the certificate directory root on the volume of a Fly
                        app, default /data/tls
+  LAYERX_CA_RENEW_DAYS days of remaining validity below which issue renews
+                       a retained certificate under the same CA, default 30
 
 Exits 1 when the CA is missing, already present on init, a toml names no
-app, or a Fly step fails; 2 on a usage error or an unknown service.
+app, retained material is foreign or cannot be inventoried, or a Fly step
+fails; 2 on a usage error or an unknown service.
 EOF
 }
 
 subject_org="Paxeer X Network"
 ca_days=3650
 cert_days=397
+renew_days="${LAYERX_CA_RENEW_DAYS:-30}"
 
 # ca_services: every certificate the bring-up issues, after the issue_cert
 # calls of platform/hosted/tests/beta-cluster.sh: service, Fly app toml,
@@ -195,29 +227,155 @@ issue_secrets() {
 	}
 }
 
-ca_issue() {
-	local service="$1" line toml group custody cn eku sans app
-	line="$(ca_services | awk -v s="$service" '$1 == s')"
+# service_row <service>: the row of the service; exits 2 when there is none.
+service_row() {
+	local line
+	line="$(ca_services | awk -v s="$1" '$1 == s')"
 	if [ -z "$line" ]; then
-		echo "ca: unknown service $service; see tools/bringup/ca.sh services" >&2
+		echo "ca: unknown service $1; see tools/bringup/ca.sh services" >&2
 		exit 2
 	fi
+	printf '%s' "$line"
+}
+
+# row_ca_dir <service>: prints the directory of the CA that signs the
+# service; status 1 when it is the attestors' gateway CA and
+# LAYERX_ATTESTOR_CA_DIR is unset.
+row_ca_dir() {
+	if [[ " $attestor_services " == *" $1 "* ]]; then
+		[ -n "${LAYERX_ATTESTOR_CA_DIR:-}" ] || return 1
+		printf '%s' "$LAYERX_ATTESTOR_CA_DIR"
+	else
+		printf '%s' "$ca_dir"
+	fi
+}
+
+# inventory_row <service> <app> <group> <custody> <row ca dir>: prints
+# "<state> <fingerprint> <days>" for the material the service already has,
+# state one of present, absent, partial, foreign or unreadable. It reads
+# file names and the public certificate only.
+inventory_row() {
+	local service="$1" app="$2" group="$3" custody="$4" row_ca="$5" dir="$fly_tls_dir/$1" answer missing cert listed file name have=0 want=0
+	if [ "$custody" != volume ]; then
+		listed="$(timeout "$timeout" flyctl secrets list --app "$app" --json </dev/null 2>/dev/null | python3 -c 'import json, sys; print(" ".join(s.get("Name") or s.get("name") or "" for s in json.load(sys.stdin) or []))' 2>/dev/null)" || {
+			echo "unreadable - -"
+			return
+		}
+		for file in $identity_files; do
+			name="${custody}_${file#*:}"
+			want=$((want + 1))
+			[[ " $listed " != *" $name "* ]] || have=$((have + 1))
+		done
+		if [ "$have" -eq "$want" ]; then
+			echo "present sealed sealed"
+		elif [ "$have" -eq 0 ]; then
+			echo "absent - -"
+		else
+			echo "partial sealed sealed"
+		fi
+		return
+	fi
+	answer="$(fly_ssh "$app" "$group" "if [ -d $dir ]; then cd $dir && for f in key.der cert.der ca.der identity.p12 password; do [ -s \$f ] || echo missing=\$f; done && if [ -s cert.pem ]; then cat cert.pem; else echo missing=cert.pem; fi; else echo directory=absent; fi; echo inventory=done" </dev/null)" || answer=""
+	if [[ "$answer" != *inventory=done* ]]; then
+		echo "unreadable - -"
+		return
+	fi
+	if [[ "$answer" == *directory=absent* ]]; then
+		echo "absent - -"
+		return
+	fi
+	missing="$(grep -c '^missing=' <<<"$answer" || true)"
+	cert="$(sed -n '/-----BEGIN CERTIFICATE-----/,/-----END CERTIFICATE-----/p' <<<"$answer")"
+	if [ -z "$cert" ]; then
+		[ "$missing" -ge 6 ] && echo "absent - -" || echo "partial - -"
+		return
+	fi
+	if [ -z "$row_ca" ] || [ ! -r "$row_ca/ca.pem" ]; then
+		echo "unreadable - -"
+		return
+	fi
+	if ! openssl verify -CAfile "$row_ca/ca.pem" <(printf '%s\n' "$cert") >/dev/null 2>&1; then
+		echo "foreign $(openssl x509 -noout -fingerprint -sha256 <<<"$cert" | cut -d= -f2) $(days_left <<<"$cert")"
+		return
+	fi
+	if [ "$missing" -gt 0 ]; then
+		echo "partial $(openssl x509 -noout -fingerprint -sha256 <<<"$cert" | cut -d= -f2) $(days_left <<<"$cert")"
+	else
+		echo "present $(openssl x509 -noout -fingerprint -sha256 <<<"$cert" | cut -d= -f2) $(days_left <<<"$cert")"
+	fi
+}
+
+# ca_inventory [<service>]: one inventory line per row; exits 1 when any row
+# is unreadable or foreign, so a deployment action never starts on material
+# nobody has accounted for.
+ca_inventory() {
+	local service line toml group custody app row_ca state fingerprint days failures=0 rows
+	if [ -n "${1:-}" ]; then
+		rows="$(service_row "$1")"
+	else
+		rows="$(ca_services)"
+	fi
+	while read -r service toml group custody _; do
+		if ! app="$(fly_app "$toml")"; then
+			echo "fail material missing=$toml producer=the app line of $toml"
+			failures=$((failures + 1))
+			continue
+		fi
+		row_ca="$(row_ca_dir "$service")" || row_ca=""
+		read -r state fingerprint days <<<"$(inventory_row "$service" "$app" "$group" "$custody" "$row_ca")"
+		[ "$custody" = volume ] || custody=secrets
+		if [ "$fingerprint" != - ]; then
+			[ "$days" = sealed ] || days="${days}d"
+			echo "inventory $service app=$app custody=$custody state=$state fingerprint=$fingerprint expires_in=$days producer=tools/bringup/ca.sh issue $service"
+		else
+			echo "inventory $service app=$app custody=$custody state=$state producer=tools/bringup/ca.sh issue $service"
+		fi
+		case "$state" in unreadable | foreign) failures=$((failures + 1)) ;; esac
+	done <<<"$rows"
+	[ "$failures" -eq 0 ] || exit 1
+}
+
+ca_issue() {
+	local service="$1" line toml group custody cn eku sans app state fingerprint days
+	line="$(service_row "$service")"
 	read -r _ toml group custody cn eku sans <<<"$line"
 	if [[ " $attestor_services " == *" $service "* ]]; then
 		ca_dir="${LAYERX_ATTESTOR_CA_DIR:-}"
 		if [ -z "$ca_dir" ]; then
+			echo "fail material missing=LAYERX_ATTESTOR_CA_DIR producer=the attestors' gateway CA"
 			echo "ca: $service is issued under the attestors' gateway CA; set LAYERX_ATTESTOR_CA_DIR" >&2
 			exit 1
 		fi
 	fi
 	if [ ! -r "$ca_dir/ca.key" ] || [ ! -r "$ca_dir/ca.pem" ]; then
+		echo "fail material missing=$ca_dir/ca.pem producer=tools/bringup/ca.sh init"
 		echo "ca: no CA under $ca_dir; run tools/bringup/ca.sh init on the edge host" >&2
 		exit 1
 	fi
 	if ! app="$(fly_app "$toml")"; then
+		echo "fail material missing=$toml producer=the app line of $toml"
 		echo "ca: $service: $toml names no app" >&2
 		exit 1
 	fi
+	read -r state fingerprint days <<<"$(inventory_row "$service" "$app" "$group" "$custody" "$ca_dir")"
+	case "$state" in
+	unreadable)
+		echo "ca: $service on $app: the retained material cannot be inventoried; nothing is issued before it is" >&2
+		exit 1
+		;;
+	foreign)
+		echo "ca: $service on $app: the retained certificate $fingerprint does not chain to $ca_dir/ca.pem; issuing beside it would make a second, incompatible authority, so remove it deliberately first" >&2
+		exit 1
+		;;
+	present)
+		if [ "$days" = sealed ] || [ "$days" -gt "$renew_days" ]; then
+			[ "$custody" = volume ] || custody=secrets
+			[ "$days" = sealed ] || days="${days}d"
+			echo "reused $service app=$app custody=$custody fingerprint=$fingerprint expires_in=$days"
+			return
+		fi
+		;;
+	esac
 	if [ "$(stat -f -c %T /dev/shm 2>/dev/null)" != tmpfs ]; then
 		echo "ca: /dev/shm is not a tmpfs; signing material is only ever written to memory here" >&2
 		exit 1
@@ -240,6 +398,12 @@ case "$mode" in
 	usage
 	exit 0
 	;;
+inventory)
+	[ "$#" -le 2 ] || {
+		usage >&2
+		exit 2
+	}
+	;;
 init | services)
 	[ "$#" -eq 1 ] || {
 		usage >&2
@@ -259,7 +423,8 @@ issue)
 esac
 
 tools=(openssl awk)
-[ "$mode" != issue ] || tools+=(timeout flyctl base64)
+[ "$mode" != issue ] || tools+=(timeout flyctl base64 python3)
+[ "$mode" != inventory ] || tools+=(timeout flyctl python3)
 for tool in "${tools[@]}"; do
 	if ! command -v "$tool" >/dev/null 2>&1; then
 		echo "ca: $tool is required" >&2
@@ -270,5 +435,6 @@ done
 case "$mode" in
 init) ca_init ;;
 services) ca_services ;;
+inventory) ca_inventory "${2:-}" ;;
 issue) ca_issue "$2" ;;
 esac

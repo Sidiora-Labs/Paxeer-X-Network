@@ -1,3 +1,20 @@
+# The router of the unified interface. https://api-mainnet-beta.paxeer.network
+# is the one public interface and stays so; this app's fly.dev name and its
+# .internal name are edge upstreams only and are never published as routes.
+#
+# Deploy order, without a cycle:
+#   1. material: tools/bringup/ca.sh inventory, then ca.sh issue
+#      gateway-client (the ENDPOINT_CLIENT_* secrets below), ca.sh issue
+#      registry and registry-event-client, and the registry's token secrets;
+#      retained material is reused and never regenerated.
+#   2. registry bootstrap: platform/hosted/registry/fly.toml with
+#      docker/platform-registry/init.sh, which needs only stage 1.
+#   3. router activation: this app in kernel mode, which requires the
+#      registry of LAYERX_GATEWAY_PROGRAM_REGISTRY_URL ready and its token.
+#   4. routed proof: a signed registry receipt read through the public
+#      interface.
+# Every [[files]] secret names its producer; a missing one stops activation
+# as "fail router-activation missing=<secret> producer=<producer>".
 app = "paxeer-shared-endpoint"
 primary_region = "ams"
 kill_signal = "SIGTERM"
@@ -74,6 +91,11 @@ kill_timeout = "30s"
   guest_path = "/run/secrets/events-webhooks-token"
   secret_name = "ENDPOINT_EVENTS_WEBHOOKS_TOKEN"
 
+# The gateway-client identity of stage 1: tools/bringup/ca.sh issue
+# gateway-client imports ENDPOINT_CLIENT_CERT, ENDPOINT_CLIENT_P12 and
+# ENDPOINT_CLIENT_PASSWORD with the rest of the ENDPOINT_CLIENT_* set, under
+# the internal CA whose root is ENDPOINT_OUTBOUND_CA. The registry admits
+# this client against the same root, so no other authority is involved.
 [[files]]
   guest_path = "/run/secrets/client.crt"
   secret_name = "ENDPOINT_CLIENT_CERT"
@@ -102,6 +124,10 @@ kill_timeout = "30s"
   guest_path = "/run/secrets/identity-provisioning-token"
   secret_name = "ENDPOINT_IDENTITY_PROVISIONING_TOKEN"
 
+# The bearer of LAYERX_GATEWAY_PROGRAM_REGISTRY_URL: the request token the
+# registry's init writes once on its volume (LAYERX_REGISTRY_REQUEST_TOKEN_FILE
+# of platform/hosted/registry/fly.toml) and the deploy step imports here
+# unchanged; it is never generated for this app.
 [[files]]
   guest_path = "/run/secrets/program-registry-token"
   secret_name = "ENDPOINT_PROGRAM_REGISTRY_TOKEN"
