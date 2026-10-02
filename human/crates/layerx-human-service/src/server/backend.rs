@@ -327,6 +327,7 @@ pub fn valid_bearer_assertion(value: &str) -> bool {
 #[derive(Clone, Copy)]
 pub struct BearerCredentials<'a> {
     pub assertion: &'a str,
+    pub wallet_binding: Option<&'a str>,
     pub intended_destination: &'a str,
     pub request_digest: [u8; 32],
     pub disclosure_digest: [u8; 32],
@@ -600,6 +601,7 @@ impl HumanApiComponents for UnixComponents {
             "kind": "session.bearer",
             "operation": operation.name.as_str(),
             "assertion": credentials.assertion,
+            "wallet_binding": credentials.wallet_binding,
             "intended_destination": credentials.intended_destination,
             "request_digest": hex(&credentials.request_digest),
             "disclosure_digest": hex(&credentials.disclosure_digest),

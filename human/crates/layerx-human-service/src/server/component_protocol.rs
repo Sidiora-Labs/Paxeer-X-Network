@@ -44,6 +44,7 @@ pub(super) enum ComponentRequest {
         version: u64,
         operation: String,
         assertion: String,
+        wallet_binding: Option<String>,
         intended_destination: String,
         request_digest: String,
         disclosure_digest: String,
@@ -135,6 +136,7 @@ impl ComponentRequest {
                 version,
                 operation,
                 assertion,
+                wallet_binding,
                 intended_destination,
                 request_digest,
                 disclosure_digest,
@@ -145,6 +147,9 @@ impl ComponentRequest {
             } => {
                 valid_version(*version)?;
                 valid_operation(operation)?;
+                if wallet_binding.as_deref().is_some_and(|value| !valid_bearer_assertion(value)) {
+                    return Err(ApiFailure::unauthenticated());
+                }
                 if !valid_bearer_assertion(assertion) {
                     return Err(ApiFailure::unauthenticated());
                 }
@@ -243,6 +248,7 @@ impl ComponentRequest {
             Self::Bearer {
                 operation,
                 assertion,
+                wallet_binding,
                 intended_destination,
                 request_digest,
                 disclosure_digest,
@@ -254,6 +260,7 @@ impl ComponentRequest {
             } => {
                 operation.zeroize();
                 assertion.zeroize();
+                if let Some(value) = wallet_binding { value.zeroize(); }
                 intended_destination.zeroize();
                 request_digest.zeroize();
                 disclosure_digest.zeroize();

@@ -365,6 +365,7 @@ impl Dispatcher {
             ComponentRequest::Bearer {
                 operation,
                 assertion,
+                wallet_binding,
                 intended_destination,
                 request_digest,
                 disclosure_digest,
@@ -397,6 +398,7 @@ impl Dispatcher {
                     operation,
                     BearerCredentials {
                         assertion,
+                        wallet_binding: wallet_binding.as_deref(),
                         intended_destination,
                         request_digest,
                         disclosure_digest,

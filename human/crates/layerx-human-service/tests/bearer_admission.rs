@@ -504,6 +504,7 @@ fn bearer_assertion_is_admitted_through_operation_four_and_carried_on_the_contex
             operation,
             BearerCredentials {
                 assertion: &token,
+                wallet_binding: None,
                 intended_destination: "/v1/intents/plan",
                 request_digest,
                 disclosure_digest,

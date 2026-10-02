@@ -327,18 +327,39 @@ impl State {
         }
     }
 
+    pub(crate) fn binding_tenant(&self) -> Option<&str> {
+        self.snapshot.binding_tenant.as_deref()
+    }
+
+    /// Resolves a principal from either durable account collection to its DID under
+    /// the pinned tenant; an assertion account whose wallet binding is still pending
+    /// has no DID and is refused like an unknown principal.
     pub(crate) fn principal_binding(&self, tenant: &str, principal: &str) -> io::Result<String> {
+        self.ready()?;
         if self.snapshot.binding_tenant.as_deref() != Some(tenant) {
             return Err(invalid("identity tenant differs"));
         }
         let principal = PrincipalId::new(principal).map_err(|_| invalid("invalid principal"))?;
-        let account = self
+        if let Some(account) = self
             .snapshot
             .accounts
             .iter()
             .find(|account| account.principal == principal.as_str())
+        {
+            return String::from_utf8(account.did.clone()).map_err(|_| invalid("invalid DID"));
+        }
+        let account = self
+            .snapshot
+            .assertion_accounts
+            .iter()
+            .find(|account| account.principal == principal.as_str())
             .ok_or_else(|| invalid("unknown principal"))?;
-        String::from_utf8(account.did.clone()).map_err(|_| invalid("invalid DID"))
+        let did = account
+            .did
+            .clone()
+            .ok_or_else(|| invalid("wallet binding pending"))?;
+        validate_wallet_did(&did)?;
+        Ok(did)
     }
 
     /// Acquires exclusive ownership, replays the last atomic snapshot and cleans
@@ -502,7 +523,7 @@ impl State {
         {
             return Err(invalid("email already bound"));
         }
-        if self.snapshot.accounts.len() >= MAX_ACCOUNTS {
+        if self.snapshot.accounts.len() + self.snapshot.assertion_accounts.len() >= MAX_ACCOUNTS {
             return Err(invalid("account capacity exhausted"));
         }
         let mut entropy = [0u8; 32];
@@ -514,6 +535,11 @@ impl State {
             .accounts
             .iter()
             .any(|item| item.principal == principal.as_str())
+            || self
+                .snapshot
+                .assertion_accounts
+                .iter()
+                .any(|item| item.principal == principal.as_str())
         {
             return Err(io::Error::other("principal collision"));
         }

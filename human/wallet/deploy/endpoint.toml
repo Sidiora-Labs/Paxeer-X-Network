@@ -11,6 +11,7 @@ kill_timeout = "30s"
   LAYERX_GATEWAY_LXP_WIRE_VERSION = "3"
   LAYERX_GATEWAY_IDEMPOTENCY_SECONDS = "604800"
   LAYERX_GATEWAY_LISTENER = "plain"
+  LAYERX_GATEWAY_ROUTE_BINDINGS_FILE = "/run/secrets/route-bindings.json"
   LAYERX_GATEWAY_OUTBOUND_CA_DER = "/run/secrets/ca.crt.der"
   LAYERX_GATEWAY_REDIS_USERNAME_FILE = "/run/secrets/redis-username"
   LAYERX_GATEWAY_REDIS_PASSWORD_FILE = "/run/secrets/redis-password"
@@ -42,6 +43,11 @@ kill_timeout = "30s"
   LAYERX_GATEWAY_SEQUENCER_LAST_BATCH_FILE = "/run/secrets/sequencer-last-batch"
   LAYERX_GATEWAY_KEY_PROVISIONING_KEY_FILE = "/run/secrets/key-provisioning-key"
   LAYERX_GATEWAY_MODULE_REGISTRY_FILE = "/run/secrets/module-registry.json"
+
+[[files]]
+  guest_path = "/run/secrets/route-bindings.json"
+  secret_name = "ENDPOINT_ROUTE_BINDINGS"
+  mode = 384
 
 [[files]]
   guest_path = "/run/secrets/ca.crt.der"

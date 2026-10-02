@@ -45,11 +45,20 @@ pub struct ProvisionedAccount {
     pub onboarding: OnboardingStart,
 }
 
-/// The account the identity provider resolved for a wallet bearer assertion.
+/// The account the identity provider resolved for a wallet bearer assertion. A
+/// missing DID is the provider's explicit pending-binding answer: the subject has no
+/// producer-verified wallet binding yet and holds no tenant authority.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AssertionAccount {
     pub principal: PrincipalId,
     pub did: Option<String>,
+}
+
+impl AssertionAccount {
+    #[must_use]
+    pub const fn binding_pending(&self) -> bool {
+        self.did.is_none()
+    }
 }
 
 impl RemoteIdentityProvider {
@@ -128,10 +137,30 @@ impl RemoteIdentityProvider {
         &self,
         assertion: &str,
     ) -> Result<AssertionAccount, IdentityDispatchError> {
-        if assertion.is_empty() {
+        self.resolve_assertion_with_binding(assertion, None)
+    }
+
+    /// Resolves a wallet bearer assertion through LXIP operation 4 and, on first login,
+    /// offers the wallet provisioning producer's signed binding so the provider records
+    /// the producer-verified wallet DID. Without a binding the provider answers with
+    /// the recorded DID or the pending-binding state.
+    ///
+    /// # Errors
+    ///
+    /// As [`Self::resolve_assertion`]; a forged, cross-subject, cross-tenant or
+    /// conflicting binding is `ProviderRefused`.
+    pub fn resolve_assertion_with_binding(
+        &self,
+        assertion: &str,
+        binding: Option<&str>,
+    ) -> Result<AssertionAccount, IdentityDispatchError> {
+        if assertion.is_empty() || binding.is_some_and(str::is_empty) {
             return Err(IdentityDispatchError::InvalidInput);
         }
-        let fields = self.call(4, &[assertion.as_bytes()])?;
+        let fields = match binding {
+            Some(binding) => self.call(4, &[assertion.as_bytes(), binding.as_bytes()])?,
+            None => self.call(4, &[assertion.as_bytes()])?,
+        };
         if !matches!(fields.len(), 1 | 2) {
             return Err(IdentityDispatchError::ProviderEvidence);
         }

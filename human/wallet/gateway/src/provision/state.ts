@@ -1,3 +1,6 @@
+import { createPrivateKey, sign } from 'node:crypto';
+import { closeSync, constants, fstatSync, openSync, readFileSync } from 'node:fs';
+import { isAbsolute } from 'node:path';
 import type { Pool } from 'pg';
 import { bytesToHex, getAddress, type Hex, type LocalAccount, type TransactionSerializableEIP1559 } from 'viem';
 import { RpcPool } from '../rpc/pool.js';
@@ -53,6 +56,7 @@ export interface ProvisionDeps {
   gasCapWei: bigint;
   receiptTimeoutMs: number;
   receiptPollMs: number;
+  identityBinding?: { issuer: string; tenant: string; privateKeyFile: string };
 }
 
 export interface ProvisionResult {
@@ -513,5 +517,64 @@ export async function provisionAccount(deps: ProvisionDeps, subject: ProvisionSu
     return result(row, wallet);
   } finally {
     await unlock();
+  }
+}
+
+export async function produceIdentityBinding(
+  deps: ProvisionDeps,
+  userId: string,
+  provision: ProvisionResult,
+): Promise<string | null> {
+  const config = deps.identityBinding;
+  if (!config || provision.state !== 'active') return null;
+  if (!provision.did || !/^did:layerx:[0-9a-f]{64}$/.test(provision.did)
+    || provision.did === `did:layerx:${'0'.repeat(64)}`) {
+    throw new ProvisionError('identity_binding_unavailable', 503, 'active wallet has no valid LayerX identity');
+  }
+  const { rows } = await deps.pool.query<{ ed_public_key: string }>(
+    `select p.ed_public_key from account_provisioning p join wallets w on w.id = p.wallet_id
+      where p.user_id = $1 and p.kind = 'standard' and p.wallet_id = $2
+        and p.state = 'active' and p.did = $3 and w.user_id = $1 and w.kind = 'standard'
+        and w.did = p.did and w.binding_state = 'bound' and w.archived_at is null
+        and w.is_disabled = false and lower(w.address) = lower($4)`,
+    [userId, provision.walletId, provision.did, provision.address],
+  );
+  const publicKey = rows[0]?.ed_public_key;
+  if (rows.length !== 1 || !publicKey || didFromPublicKey(publicKey) !== provision.did) {
+    throw new ProvisionError('identity_binding_refused', 409, 'wallet identity is not active for this user');
+  }
+  const bound = await readUnifiedAccount(deps.rpc, provision.address);
+  if (bound.didPublicKey !== publicKey) {
+    throw new ProvisionError('identity_binding_refused', 409, 'wallet identity differs from its on-chain binding');
+  }
+  let descriptor: number | undefined;
+  try {
+    if (!isAbsolute(config.privateKeyFile)) throw new Error('invalid key path');
+    descriptor = openSync(config.privateKeyFile, constants.O_RDONLY | constants.O_NOFOLLOW);
+    const metadata = fstatSync(descriptor);
+    if (!metadata.isFile() || metadata.nlink !== 1 || (metadata.mode & 0o777) !== 0o600
+      || metadata.uid !== process.getuid?.() || metadata.size < 1 || metadata.size > 16_384) {
+      throw new Error('invalid key file');
+    }
+    const key = createPrivateKey(readFileSync(descriptor));
+    if (key.asymmetricKeyType !== 'ec' || key.asymmetricKeyDetails?.namedCurve !== 'prime256v1') {
+      throw new Error('invalid producer key');
+    }
+    const header = Buffer.from(JSON.stringify({ alg: 'ES256', typ: 'layerx-wallet-binding+jwt' })).toString('base64url');
+    const payload = Buffer.from(JSON.stringify({
+      iss: config.issuer,
+      sub: userId,
+      did: provision.did,
+      tenant: config.tenant,
+    })).toString('base64url');
+    const input = `${header}.${payload}`;
+    if (input.length + 87 > 4096) throw new Error('identity binding exceeds protocol bound');
+    const signature = sign('sha256', Buffer.from(input, 'ascii'), { key, dsaEncoding: 'ieee-p1363' });
+    if (signature.length !== 64) throw new Error('invalid producer signature');
+    return `${input}.${signature.toString('base64url')}`;
+  } catch {
+    throw new ProvisionError('identity_binding_unavailable', 503, 'wallet identity binding signer is unavailable');
+  } finally {
+    if (descriptor !== undefined) closeSync(descriptor);
   }
 }

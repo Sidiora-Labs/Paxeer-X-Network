@@ -23,7 +23,7 @@ const REFRESH_COOKIE: &str = "__Host-layerx_refresh";
 const CSRF_COOKIE: &str = "__Host-layerx_csrf";
 const PREFLIGHT_ALLOW_METHODS: &str = "DELETE, GET, PATCH, POST, PUT";
 const PREFLIGHT_ALLOW_HEADERS: &str =
-    "authorization, content-type, idempotency-key, x-layerx-trace, x-layerx-csrf";
+    "authorization, content-type, idempotency-key, x-layerx-trace, x-layerx-csrf, x-layerx-wallet-binding";
 const PREFLIGHT_MAX_AGE: &str = "600";
 const EXPOSED_HEADERS: &str = "X-LayerX-Trace";
 
@@ -346,6 +346,9 @@ impl<B: HumanApiComponents> Router<B> {
                 operation,
                 BearerCredentials {
                     assertion: assertion?,
+                    wallet_binding: request.header("x-layerx-wallet-binding").map(|binding| {
+                        if valid_bearer_assertion(binding) { Ok(binding) } else { Err(ApiFailure::unauthenticated()) }
+                    }).transpose()?,
                     intended_destination: &request.path,
                     request_digest,
                     disclosure_digest,

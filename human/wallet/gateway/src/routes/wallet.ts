@@ -13,7 +13,7 @@ import { env } from '../env.js';
 import { sharedRpcPool } from '../rpc/pool.js';
 import { sharedNonceStore } from '../nonce/store.js';
 import { AttestorRefusal, AttestorUnavailable, attestorDaemonFromConfig, readKernelAvailability } from '../provision/bind.js';
-import { ProvisionError, ProvisionRefusedError, provisionAccount, type ProvisionDeps } from '../provision/state.js';
+import { ProvisionError, ProvisionRefusedError, provisionAccount, produceIdentityBinding, type ProvisionDeps } from '../provision/state.js';
 
 export interface WalletRoutesOptions {
   provision?: ProvisionDeps | null;
@@ -41,6 +41,13 @@ export function provisionDepsFromEnv(): ProvisionDeps | null {
     gasCapWei: env.ACCOUNT_SETUP_GAS_CAP_WEI,
     receiptTimeoutMs: 60_000,
     receiptPollMs: 250,
+    ...(env.WALLET_IDENTITY_BINDING_TENANT && env.WALLET_IDENTITY_BINDING_PRIVATE_KEY_FILE ? {
+      identityBinding: {
+        issuer: `${env.SUPABASE_URL.replace(/\/$/, '')}/auth/v1`,
+        tenant: env.WALLET_IDENTITY_BINDING_TENANT,
+        privateKeyFile: env.WALLET_IDENTITY_BINDING_PRIVATE_KEY_FILE,
+      },
+    } : {}),
   };
   return sharedDeps;
 }
@@ -71,12 +78,17 @@ export async function walletRoutes(app: FastifyInstance, opts: WalletRoutesOptio
     const provision = deps();
     try {
       if (!provision) {
+        if (env.WALLET_IDENTITY_BINDING_TENANT) {
+          throw new ProvisionError('attestors_unconfigured', 503, 'identity provisioning requires configured attestors');
+        }
         const { wallet } = await provisionWalletForUser(userId, 'standard');
-        return reply.send({ wallet });
+        return reply.send({ wallet, identityBinding: null });
       }
       const out = await provisionAccount(provision, { kind: 'standard', userId, token: bearerToken(req) });
       const wallet = await findWalletByUserId(userId);
+      const identityBinding = await produceIdentityBinding(provision, userId, out);
       return reply.send({
+        identityBinding,
         wallet: {
           id: out.walletId,
           address: out.address,

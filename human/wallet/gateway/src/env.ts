@@ -29,6 +29,8 @@ const Env = z.object({
   // If Supabase is down, already-issued tokens keep working until they expire
   // (~1h). Cached JWKS keeps signature verification working through outages.
   SUPABASE_URL: z.string().url(),
+  WALLET_IDENTITY_BINDING_TENANT: z.string().min(1).max(1024).optional(),
+  WALLET_IDENTITY_BINDING_PRIVATE_KEY_FILE: z.string().min(1).optional(),
 
   // Postgres we own. Wallet rows and signature audit live here.
   // Connection string with credentials, supplied only through the environment.
@@ -49,7 +51,7 @@ const Env = z.object({
   WALLET_MASTER_KEY_VERSION: z.coerce.number().int().positive().default(1),
 
   HYPERPAXEER_CHAIN_ID: z.coerce.number().int().positive().default(125),
-  HYPERPAXEER_RPC_URL: z.string().url(),
+  HYPERPAXEER_RPC_URL: z.string().url().default('https://api-mainnet-beta.paxeer.network'),
   HYPERPAXEER_EXPLORER_URL: z.string().url().optional(),
 
   POLICY_MAX_TX_VALUE_WEI: z.coerce.bigint().nonnegative().default(1_000_000_000_000_000_000n),
@@ -179,7 +181,7 @@ const Env = z.object({
   RPC_URLS: z
     .string()
     .default(
-      Array.from({ length: 16 }, (_, i) => `https://api${i + 1}.mainnet-beta.paxeer.network`).join(','),
+      'https://api-mainnet-beta.paxeer.network',
     )
     .transform((s) =>
       s
@@ -201,6 +203,13 @@ const Env = z.object({
   RATE_LIMIT_CLIENT_PER_MINUTE: z.coerce.number().int().positive().default(120),
   RATE_LIMIT_ACCOUNT_PER_MINUTE: z.coerce.number().int().positive().default(60),
 }).superRefine((v, ctx) => {
+  if (Boolean(v.WALLET_IDENTITY_BINDING_TENANT) !== Boolean(v.WALLET_IDENTITY_BINDING_PRIVATE_KEY_FILE)) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['WALLET_IDENTITY_BINDING_PRIVATE_KEY_FILE'],
+      message: 'wallet identity binding tenant and private key file must be configured together',
+    });
+  }
   if (v.ATTESTOR_ENDPOINTS.length === 0) return;
   for (const key of ['ATTESTOR_CLIENT_CERT_FILE', 'ATTESTOR_CLIENT_KEY_FILE', 'ATTESTOR_CA_FILE'] as const) {
     if (!v[key]) {

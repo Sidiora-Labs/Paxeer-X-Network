@@ -22,6 +22,8 @@ import type {
   UnifiedAccountDocument,
 } from './types.js';
 
+export const DEFAULT_ENDPOINT_URL = 'https://api-mainnet-beta.paxeer.network';
+
 export const ERC20_BALANCE_OF_SELECTOR = '0x70a08231';
 
 const KERNEL_REASONS: readonly KernelReason[] = ['available', 'not_configured', 'unreachable', 'no_finalised_checkpoint'];
@@ -35,8 +37,10 @@ const HISTORY_KIND = /^[a-z0-9_]{1,64}$/;
 export class EndpointClient {
   readonly rpc: JsonRpcClient;
 
-  constructor(options: JsonRpcClientOptions | JsonRpcClient) {
-    this.rpc = options instanceof JsonRpcClient ? options : new JsonRpcClient(options);
+  constructor(options: (Omit<JsonRpcClientOptions, 'url'> & { url?: string }) | JsonRpcClient = {}) {
+    this.rpc = options instanceof JsonRpcClient
+      ? options
+      : new JsonRpcClient({ ...options, url: options.url ?? DEFAULT_ENDPOINT_URL });
   }
 
   batch(calls: readonly JsonRpcCall[]): Promise<JsonRpcOutcome[]> {

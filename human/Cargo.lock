@@ -964,6 +964,7 @@ dependencies = [
  "layerx-intents",
  "layerx-mirror",
  "layerx-network-gateway",
+ "layerx-paxeer-verifier",
  "layerx-platform-authority",
  "layerx-program-sdk",
  "layerx-programs-protocol-adapter",

@@ -25,6 +25,10 @@ const ISSUER: &str = "LAYERX_HUMAN_IDENTITY_PROVIDER_ASSERTION_ISSUER";
 const AUDIENCE: &str = "LAYERX_HUMAN_IDENTITY_PROVIDER_ASSERTION_AUDIENCE";
 const CLOCK_SKEW: &str = "LAYERX_HUMAN_IDENTITY_PROVIDER_ASSERTION_CLOCK_SKEW_SECONDS";
 const REFRESH_INTERVAL: &str = "LAYERX_HUMAN_IDENTITY_PROVIDER_ASSERTION_REFRESH_INTERVAL_SECONDS";
+const BINDING_PRODUCER_KEY: &str = "LAYERX_HUMAN_IDENTITY_PROVIDER_ASSERTION_BINDING_PRODUCER_KEY";
+/// The JOSE `typ` of a wallet binding issued by the wallet provisioning producer.
+const WALLET_BINDING_TYPE: &str = "layerx-wallet-binding+jwt";
+const MAX_BINDING_BYTES: usize = 4096;
 
 /// The optional assertion login section; absent unless its variables are set.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -100,6 +104,85 @@ impl AssertionConfig {
             return Err(invalid("invalid assertion time bounds"));
         }
         Ok(())
+    }
+}
+
+/// The wallet provisioning producer's ES256 public key. A wallet DID is recorded for
+/// an assertion subject only from a compact JWS of type [`WALLET_BINDING_TYPE`] signed
+/// by this key whose claims are exactly `iss`, `sub`, `did` and `tenant`, where `iss`
+/// and `sub` equal the verified assertion's and `tenant` equals the pinned binding tenant.
+#[derive(Clone)]
+struct BindingProducer {
+    key: DecodingKey,
+}
+
+impl std::fmt::Debug for BindingProducer {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("BindingProducer")
+            .finish_non_exhaustive()
+    }
+}
+
+impl BindingProducer {
+    /// Loads an uncompressed SEC1 P-256 public key (65 bytes, lowercase hex).
+    fn from_sec1_hex(value: &str) -> io::Result<Self> {
+        let refused = || invalid("invalid wallet binding producer key");
+        if value.len() != 130 || !value.starts_with("04") {
+            return Err(refused());
+        }
+        let mut point = Vec::with_capacity(65);
+        for pair in value.as_bytes().chunks(2) {
+            let digits = std::str::from_utf8(pair).map_err(|_| refused())?;
+            if digits.bytes().any(|b| b.is_ascii_uppercase()) {
+                return Err(refused());
+            }
+            point.push(u8::from_str_radix(digits, 16).map_err(|_| refused())?);
+        }
+        Ok(Self {
+            key: DecodingKey::from_ec_der(&point),
+        })
+    }
+
+    fn from_environment() -> io::Result<Option<Self>> {
+        match std::env::var(BINDING_PRODUCER_KEY) {
+            Ok(value) => Self::from_sec1_hex(&value).map(Some),
+            Err(std::env::VarError::NotPresent) => Ok(None),
+            Err(std::env::VarError::NotUnicode(_)) => {
+                Err(invalid("invalid wallet binding producer key"))
+            }
+        }
+    }
+
+    fn verify(
+        &self,
+        token: &str,
+        verified: &VerifiedAssertion,
+        tenant: &str,
+    ) -> Result<String, AssertionRefusal> {
+        if token.len() > MAX_BINDING_BYTES {
+            return Err(AssertionRefusal::Identity);
+        }
+        let header = jsonwebtoken::decode_header(token).map_err(|_| AssertionRefusal::Identity)?;
+        if header.alg != Algorithm::ES256 || header.typ.as_deref() != Some(WALLET_BINDING_TYPE) {
+            return Err(AssertionRefusal::Identity);
+        }
+        let mut validation = Validation::new(Algorithm::ES256);
+        validation.validate_exp = false;
+        validation.validate_nbf = false;
+        validation.validate_aud = false;
+        validation.required_spec_claims.clear();
+        let claims = jsonwebtoken::decode::<BindingClaims>(token, &self.key, &validation)
+            .map_err(|_| AssertionRefusal::Identity)?
+            .claims;
+        if claims.iss != verified.issuer
+            || claims.sub != verified.subject
+            || claims.tenant != tenant
+        {
+            return Err(AssertionRefusal::Identity);
+        }
+        validate_wallet_did(&claims.did).map_err(|_| AssertionRefusal::Identity)?;
+        Ok(claims.did)
     }
 }
 
@@ -257,13 +340,16 @@ pub struct AssertionVerifier {
     config: AssertionConfig,
     agent: ureq::Agent,
     cache: Mutex<KeyCache>,
+    producer: Option<BindingProducer>,
 }
 
 impl AssertionVerifier {
-    /// Builds a verifier; the key set is fetched on first use.
+    /// Builds a verifier; the key set is fetched on first use. The wallet binding
+    /// producer key is read from `LAYERX_HUMAN_IDENTITY_PROVIDER_ASSERTION_BINDING_PRODUCER_KEY`
+    /// when set; without it every offered wallet binding is refused as unavailable.
     ///
     /// # Errors
-    /// Refuses invalid configuration and unavailable trust roots for HTTPS.
+    /// Refuses invalid configuration, an invalid producer key and unavailable trust roots.
     pub fn new(config: AssertionConfig) -> io::Result<Self> {
         config.validate()?;
         let agent: ureq::Agent = ureq::Agent::config_builder()
@@ -282,7 +368,36 @@ impl AssertionVerifier {
             config,
             agent,
             cache: Mutex::new(KeyCache::default()),
+            producer: BindingProducer::from_environment()?,
         })
+    }
+
+    /// Replaces the wallet binding producer key with an uncompressed SEC1 P-256
+    /// public key in lowercase hex.
+    ///
+    /// # Errors
+    /// Refuses any other key encoding.
+    pub fn with_binding_producer_key(mut self, sec1_hex: &str) -> io::Result<Self> {
+        self.producer = Some(BindingProducer::from_sec1_hex(sec1_hex)?);
+        Ok(self)
+    }
+
+    /// Verifies a producer-signed wallet binding for an already verified assertion
+    /// and returns the bound wallet DID.
+    ///
+    /// # Errors
+    /// Returns `Unavailable` without a producer key or binding tenant and `Identity`
+    /// for a forged, malformed, cross-subject or cross-tenant binding.
+    pub fn verify_binding(
+        &self,
+        token: &str,
+        verified: &VerifiedAssertion,
+        tenant: Option<&str>,
+    ) -> Result<String, AssertionRefusal> {
+        let (Some(producer), Some(tenant)) = (&self.producer, tenant) else {
+            return Err(AssertionRefusal::Unavailable);
+        };
+        producer.verify(token, verified, tenant)
     }
 
     #[must_use]
@@ -416,7 +531,7 @@ impl State {
     }
 
     /// Verifies a bearer assertion and opens or creates the account mapped to its
-    /// issuer and subject, recording the wallet's DID when supplied.
+    /// issuer and subject, recording only a producer-verified wallet binding.
     ///
     /// # Errors
     /// Refuses a disabled principal, a refused token, an invalid or conflicting DID,
@@ -424,15 +539,16 @@ impl State {
     pub fn open_or_create_by_assertion(
         &mut self,
         token: &str,
-        did: Option<&str>,
+        binding: Option<&str>,
         now: u64,
     ) -> io::Result<(AssertionPrincipal, bool)> {
         self.ready()?;
-        if let Some(did) = did {
-            validate_wallet_did(did)?;
-        }
-        let verified = self.assertion_verifier()?.verify(token, now)?;
-        self.record_assertion(&verified.issuer, &verified.subject, did, now)
+        let verifier = self.assertion_verifier()?;
+        let verified = verifier.verify(token, now)?;
+        let did = binding
+            .map(|binding| verifier.verify_binding(binding, &verified, self.binding_tenant()))
+            .transpose()?;
+        self.record_assertion(&verified.issuer, &verified.subject, did.as_deref(), now)
     }
 
     /// Resolves a bearer assertion to its existing account and DID without creating one.
@@ -440,20 +556,25 @@ impl State {
     /// # Errors
     /// Refuses a disabled principal, a refused token and an unknown subject.
     pub fn resolve_assertion(&self, token: &str, now: u64) -> io::Result<AssertionPrincipal> {
+        self.ready()?;
         let verified = self.assertion_verifier()?.verify(token, now)?;
         self.assertion_principal(&verified.issuer, &verified.subject)
             .ok_or_else(|| invalid("unknown assertion principal"))
     }
 
+    /// LXIP operation 4: `[assertion]` or `[assertion, wallet binding]`. The optional
+    /// second field is a producer-signed wallet binding, never caller-selected DID text.
+    /// Success answers `[principal, did]` once a binding is recorded and `[principal]`
+    /// while the account's wallet binding is pending.
     pub(crate) fn assertion(
         &mut self,
         fields: &[Vec<u8>],
         now: u64,
     ) -> io::Result<(u8, Vec<Vec<u8>>)> {
         let token = std::str::from_utf8(&fields[0]).map_err(|_| invalid("invalid UTF-8"))?;
-        let did = fields.get(1).map(|field| text(field)).transpose()?;
-        if let Some(did) = did {
-            validate_wallet_did(did)?;
+        let binding = fields.get(1).map(|field| text(field)).transpose()?;
+        if binding.is_some_and(|binding| binding.split('.').count() != 3) {
+            return Err(invalid("wallet binding is not a producer token"));
         }
         let Ok(verifier) = self.assertion_verifier() else {
             return Ok(refused(AssertionRefusal::Unavailable));
@@ -465,7 +586,14 @@ impl State {
             }
             Err(_) => return Ok(refused(AssertionRefusal::Unavailable)),
         };
-        match self.record_assertion(&verified.issuer, &verified.subject, did, now) {
+        let did = match binding
+            .map(|binding| verifier.verify_binding(binding, &verified, self.binding_tenant()))
+            .transpose()
+        {
+            Ok(did) => did,
+            Err(refusal) => return Ok(refused(refusal)),
+        };
+        match self.record_assertion(&verified.issuer, &verified.subject, did.as_deref(), now) {
             Ok((principal, _)) => Ok((
                 0,
                 std::iter::once(principal.principal())
@@ -503,6 +631,15 @@ pub(crate) fn validate_wallet_did(did: &str) -> io::Result<()> {
     }
     layerx_types::ids::Did::new(did.as_bytes()).map_err(|_| invalid("invalid wallet DID"))?;
     Ok(())
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct BindingClaims {
+    iss: String,
+    sub: String,
+    did: String,
+    tenant: String,
 }
 
 #[derive(Deserialize)]
