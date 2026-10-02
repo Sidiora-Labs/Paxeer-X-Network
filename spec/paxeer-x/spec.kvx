@@ -23148,7 +23148,9 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.103.6.1]
 title = "Build the layerx-node image and the genesis-bootstrapped node pod"
-status = "in_progress"
+status = "done"
+completion_basis = "implementation"
+qualification_status = "unverified"
 mode = "BUILD"
 wave = 2
 requires = ["0.2"]

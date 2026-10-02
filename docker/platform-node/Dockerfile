@@ -1,3 +1,4 @@
+ARG LXP_REVISION
 FROM rust:1.91.1-bookworm@sha256:c1e5f19e773b7878c3f7a805dd00a495e747acbdc76fb2337a4ebf0418896b33 AS build
 WORKDIR /src
 ENV CARGO_BUILD_JOBS=4 MAKEFLAGS=-j4
@@ -5,13 +6,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         build-essential libssl-dev libsqlite3-dev pkg-config \
     && rm -rf /var/lib/apt/lists/*
 COPY . .
-ARG LXP_REVISION=unknown
-RUN rustup show active-toolchain \
+ARG LXP_REVISION
+RUN printf '%s\n' "$LXP_REVISION" | grep -Eq '^[0-9a-f]{40}$' \
+    && rustup show active-toolchain \
     && make LXP_REVISION="$LXP_REVISION" layerxd layerx-genesis-build layerx-handover layerxctl layerx-guarantor layerx-module-registry \
     && test -x build/bin/layerx-guarantor && test -x build/bin/layerxd && test -x build/bin/layerx-genesis-build \
     && test -x build/bin/layerx-handover && test -x build/bin/layerxctl && test -x build/bin/layerx-module-registry
 
 FROM debian:bookworm-slim@sha256:88200866dfff7ea7f5cbcb6ec7c8a701889efe6fe859fe64d6990e4b07ea4171
+ARG LXP_REVISION
+LABEL org.opencontainers.image.revision="$LXP_REVISION"
 RUN apt-get update && apt-get install -y --no-install-recommends \
         ca-certificates libssl3 libsqlite3-0 openssl socat bash coreutils jq python3 python3-venv \
     && rm -rf /var/lib/apt/lists/* \

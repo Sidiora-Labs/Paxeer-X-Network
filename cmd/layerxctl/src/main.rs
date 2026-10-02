@@ -13,7 +13,7 @@ use layerx_client::lni::schema::Version;
 use layerx_client::lni::transport::Limits;
 use layerx_client::submit::Submission;
 use layerx_types::ids::Did;
-use layerx_wire::limits::{MAX_MESSAGE_BYTES, PROTOCOL_VERSION};
+use layerx_wire::limits::{MAX_MESSAGE_BYTES, STATE_COMMITMENT_PROTOCOL_VERSION};
 
 const FRAME_BYTES: usize = 1_212_416;
 const USAGE: &str = "usage: layerxctl read-state --socket PATH --network-id N --actor DID [--protocol-version N]\n       layerxctl submit --socket PATH --network-id N --actor DID --public-key HEX64 --activity FILE [--protocol-version N]";
@@ -109,7 +109,9 @@ fn run(arguments: &[String]) -> Result<(String, ExitCode), String> {
     }
     let protocol_version = parsed
         .get("--protocol-version")
-        .map_or(Ok(PROTOCOL_VERSION), |value| value.parse::<u16>())
+        .map_or(Ok(STATE_COMMITMENT_PROTOCOL_VERSION), |value| {
+            value.parse::<u16>()
+        })
         .map_err(|error| format!("protocol version: {error}"))?;
     if !layerx_wire::limits::protocol_version_supported(protocol_version) {
         return Err("unsupported protocol version".to_owned());

@@ -107,6 +107,7 @@ RUN="$WORK/run"
 SEQUENCER_PID=""
 REPLICA_PID=""
 RELAY_PID=""
+DROP_PID=""
 KEEP=1
 
 cleanup() {
@@ -121,6 +122,10 @@ cleanup() {
     done
     pkill -TERM -f "$LAYERXD --serve $DATA/" 2>/dev/null || true
     pkill -TERM -f "$LAYERXD --authority-replica $DATA/" 2>/dev/null || true
+    if [ -n "$DROP_PID" ]; then
+        kill -TERM "$DROP_PID" 2>/dev/null || true
+        wait "$DROP_PID" 2>/dev/null || true
+    fi
     if [ -n "$RELAY_PID" ]; then
         kill -TERM "$RELAY_PID" 2>/dev/null || true
         wait "$RELAY_PID" 2>/dev/null || true
@@ -359,10 +364,16 @@ done
 
 log "operator state read over the real LNI"
 OPERATOR_STATE=$(as_client "$WORK/layerxctl" read-state --socket "$LAYERX_NODE_LNI_SOCKET" \
-    --network-id "$NETWORK_ID" --protocol-version 3 --actor "$LAYERX_NODE_TREASURY_DID")
+    --network-id "$NETWORK_ID" --actor "$LAYERX_NODE_TREASURY_DID")
 expect_contains "$OPERATOR_STATE" "\"network_id\":$NETWORK_ID"
 expect_contains "$OPERATOR_STATE" '"global_sequence":0'
 expect_contains "$OPERATOR_STATE" '"evidence":"authenticated_node_snapshot"'
+expect_contains "$OPERATOR_STATE" '"protocol_version":3'
+if as_client "$WORK/layerxctl" read-state --socket "$LAYERX_NODE_LNI_SOCKET" \
+    --network-id "$NETWORK_ID" --protocol-version 2 --actor "$LAYERX_NODE_TREASURY_DID" \
+    > "$WORK/wrong-protocol.log" 2>&1; then
+    fail "operator accepted the wrong protocol version"
+fi
 
 log "treasury balance read: the main account opens on its first credit, so a fresh genesis refuses the read"
 expect_treasury_unopened
@@ -416,6 +427,32 @@ REPEATED_ADMISSION=$(as_client "$WORK/layerxctl" submit --socket "$LAYERX_NODE_L
     --network-id "$NETWORK_ID" --protocol-version 3 --actor "$LAYERX_NODE_TREASURY_DID" \
     --public-key "$LAYERX_NODE_TREASURY_PUBLIC_KEY" --activity "$WORK/operator/send.bin")
 [ "$ADMISSION" = "$REPEATED_ADMISSION" ] || fail "repeated canonical submission changed identity"
+
+log "lost real admission acknowledgement remains unknown without resubmission"
+cp "$NODE_DIR/tests/lni-drop-ack.py" "$WORK/lni-drop-ack.py"
+chmod 0644 "$WORK/lni-drop-ack.py"
+as_client python3 "$WORK/lni-drop-ack.py" "$WORK/operator/drop.sock" "$LAYERX_NODE_LNI_SOCKET" \
+    "$WORK/operator/drop.json" > "$WORK/drop.log" 2>&1 &
+DROP_PID=$!
+wait_for "$WORK/operator/drop.sock" 10
+UNKNOWN_STATUS=0
+UNKNOWN=$(as_client "$WORK/layerxctl" submit --socket "$WORK/operator/drop.sock" \
+    --network-id "$NETWORK_ID" --actor "$LAYERX_NODE_TREASURY_DID" \
+    --public-key "$LAYERX_NODE_TREASURY_PUBLIC_KEY" --activity "$WORK/operator/send.bin") || UNKNOWN_STATUS=$?
+[ "$UNKNOWN_STATUS" -eq 3 ] || fail "lost acknowledgement did not exit with explicit unknown status"
+wait "$DROP_PID" || fail "real admission relay failed"
+DROP_PID=""
+python3 - "$ADMISSION" "$UNKNOWN" "$WORK/operator/drop.json" <<'UNKNOWN_RESULT' || fail "unknown result lost identity or retried admission"
+import json, sys
+admitted, unknown = map(json.loads, sys.argv[1:3])
+with open(sys.argv[3]) as stream:
+    relay = json.load(stream)
+assert set(admitted) == set(unknown) == {'state', 'activity_id', 'idempotency_key'}
+assert admitted['state'] == 'acknowledged' and unknown['state'] == 'unknown'
+assert admitted['activity_id'] == unknown['activity_id']
+assert admitted['idempotency_key'] == unknown['idempotency_key']
+assert relay == {'submits': 1, 'response_tag': 4, 'reconnections': 0}
+UNKNOWN_RESULT
 
 log "supervisor status"
 STATUS=$(as_client "$WORK/probe" supervisor --socket "$LAYERX_NODE_SUPERVISOR_SOCKET" --request status)

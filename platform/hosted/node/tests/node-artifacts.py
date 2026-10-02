@@ -11,7 +11,8 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[4]
 SOURCE_PATHS = ('Makefile', 'rust-toolchain.toml', 'src', 'include', 'cmd', 'programs',
-                'agent', 'platform/Cargo.toml', 'platform/Cargo.lock',
+                'agent', 'platform/Cargo.toml', 'platform/Cargo.lock', 'platform/Makefile.inc',
+                'tools/build', 'contracts/config/checkpoint-settlement.json',
                 'platform/hosted/core', 'platform/hosted/internal',
                 'platform/hosted/node/tests/probe')
 IMAGE_PATHS = SOURCE_PATHS + ('platform/hosted/node', 'platform/hosted/human',
@@ -84,6 +85,23 @@ def image(reference):
     if not re.fullmatch('sha256:[0-9a-f]{64}', row['Id']):
         raise ValueError('node image identifier is not immutable')
     return {'id': row['Id'], 'source_revision': revision}
+
+
+def image_runtime(record):
+    command(['docker', 'run', '--rm', '--pull=never', '--network=none', '--read-only',
+             '--cap-drop=ALL', '--security-opt=no-new-privileges', '--pids-limit=32',
+             '--memory=128m', '--entrypoint=/bin/sh', record['id'], '-ec',
+             '\n'.join((
+                 'test "$(id -u):$(id -g)" = 4020:4020',
+                 'for binary in layerxd layerx-genesis-build layerx-handover layerxctl layerx-guarantor layerx-module-registry; do test -x /usr/local/bin/$binary; done',
+                 'for file in bootstrap.sh supervisor.sh reset_state.py data_directory.py genesis_fees.py genesis-modules.conf genesis-module-fees.json checkpoint-settlement.json signer/client.py migrations/0007_history_index.sql; do test -r /opt/layerx/$file; done',
+                 'libraries=$(ldd /usr/local/bin/layerxd)',
+                 'printf "%s\\n" "$libraries"',
+                 '! printf "%s\\n" "$libraries" | grep -q "not found"',
+                 'printf "%s\\n" "$libraries" | grep -q "libcrypto.so.3"',
+                 'printf "%s\\n" "$libraries" | grep -q "libsqlite3.so.0"',
+                 '/usr/local/bin/layerxctl --help',
+             ))], timeout=60)
 
 
 def private_file(path):
@@ -178,7 +196,9 @@ def run_tests(args):
     environment = dict(os.environ, LAYERX_TEST_NATIVE_BIN_DIR=directories.pop(),
                        LAYERX_NODE_TEST_PROBE_BIN=value['probe']['path'])
     environment['PATH'] = environment['LAYERX_TEST_NATIVE_BIN_DIR'] + os.pathsep + environment.get('PATH', '')
-    count = 0
+    image_runtime(value['image'])
+    count = 1
+    cli_count = 0
     for row in value['cli_tests']:
         completed = command([row['path'], '--test-threads=1'], stdout=subprocess.PIPE,
                             stderr=subprocess.STDOUT, text=True, env=environment)
@@ -186,15 +206,16 @@ def run_tests(args):
         summaries = re.findall(r'test result: ok\. (\d+) passed; (\d+) failed; (\d+) ignored;', completed.stdout)
         if len(summaries) != 1 or any(int(n) for n in summaries[0][1:]):
             raise ValueError('CLI corpus failed, skipped or uncounted')
-        count += int(summaries[0][0])
-    if count == 0:
+        cli_count += int(summaries[0][0])
+    if cli_count == 0:
         raise ValueError('empty CLI corpus')
+    count += cli_count
     command(['bash', '-n', 'platform/hosted/node/bootstrap.sh',
              'platform/hosted/node/supervisor.sh', 'platform/hosted/node/sequencer-env.sh',
              'platform/hosted/node/tests/node-test.sh'])
     command(['bash', 'platform/hosted/node/tests/node-test.sh'], env=environment)
     count += 1
-    for script in ('sequencer-seed-test.py', 'bootstrap-test.py'):
+    for script in ('sequencer-seed-test.py', 'bootstrap-test.py', 'node-topology-test.py'):
         completed = command([sys.executable, 'platform/hosted/node/tests/' + script],
                             env=environment, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
         print(completed.stdout, end='', flush=True)
