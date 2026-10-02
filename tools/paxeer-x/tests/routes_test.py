@@ -271,6 +271,19 @@ def run():
             require(route_id in route_index and route_matches(route_index[route_id],case),
                     'route coverage claim does not match the executed request')
             if case['kind'] == 'positive':
+                route = route_index[route_id]
+                if route.get('response_integrity') == 'sha256':
+                    require('response_sha256' in case,
+                            'archive byte route requires an exact response digest')
+                    headers = {name.lower(): value for name, value in case.get('response_headers', {}).items()}
+                    require(all(name.lower() in headers for name in route['required_response_headers']),
+                            'archive integrity header assertions absent')
+                    require(headers['x-content-sha256'] == case['response_sha256']
+                            and headers['etag'] == '"' + case['response_sha256'] + '"',
+                            'archive integrity assertions disagree')
+                    if 'x-layerx-batch' in headers:
+                        require(headers['x-layerx-batch'] == request_path(case).rsplit('/', 1)[-1],
+                                'archive batch assertion does not match requested batch')
                 covered_routes.add(route_id)
                 if route_index[route_id]['path'] != 'px_getRouteCatalogue':
                     functional_services.add(case['service'])

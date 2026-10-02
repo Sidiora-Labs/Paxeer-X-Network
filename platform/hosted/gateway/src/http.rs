@@ -848,6 +848,9 @@ fn response_header_is_forwardable(name: &str) -> bool {
             | "www-authenticate"
             | "content-disposition"
             | "last-event-id"
+            | "etag"
+            | "x-content-sha256"
+            | "x-layerx-batch"
     )
 }
 
@@ -1212,7 +1215,7 @@ pub fn write_response_connection_with_origin(
     origin: Option<&str>,
 ) -> Result<(), String> {
     let cors = match origin {
-        Some(origin) if origin.bytes().all(|b| b.is_ascii_graphic()) => format!("Access-Control-Allow-Origin: {origin}\r\nVary: Origin\r\nAccess-Control-Allow-Credentials: true\r\nAccess-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS\r\nAccess-Control-Allow-Headers: Content-Type, Authorization, Idempotency-Key, X-Agent-Key, X-Agent-Nonce, X-Agent-Expires, X-Agent-Signature, X-Trace-Id, X-CSRF-Token, X-LayerX-CSRF, X-LayerX-Trace, LayerX-Payer-DID, X-LayerX-Wallet-Binding, Payment-Signature, X-Payment, Last-Event-ID\r\nAccess-Control-Expose-Headers: Payment-Required, Payment-Response, X-Payment-Response, Retry-After, Content-Disposition\r\n"),
+        Some(origin) if origin.bytes().all(|b| b.is_ascii_graphic()) => format!("Access-Control-Allow-Origin: {origin}\r\nVary: Origin\r\nAccess-Control-Allow-Credentials: true\r\nAccess-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS\r\nAccess-Control-Allow-Headers: Content-Type, Authorization, Idempotency-Key, X-Agent-Key, X-Agent-Nonce, X-Agent-Expires, X-Agent-Signature, X-Trace-Id, X-CSRF-Token, X-LayerX-CSRF, X-LayerX-Trace, LayerX-Payer-DID, X-LayerX-Wallet-Binding, Payment-Signature, X-Payment, Last-Event-ID\r\nAccess-Control-Expose-Headers: Payment-Required, Payment-Response, X-Payment-Response, Retry-After, Content-Disposition, ETag, X-Content-SHA256, X-LayerX-Batch\r\n"),
         Some(_) => return Err("invalid CORS origin".to_owned()),
         None => String::new(),
     };
