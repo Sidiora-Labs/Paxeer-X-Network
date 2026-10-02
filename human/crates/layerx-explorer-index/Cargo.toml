@@ -6,6 +6,7 @@ rust-version.workspace = true
 license.workspace = true
 
 [dependencies]
+layerx-paxeer-verifier = { path = "../../../agent/crates/layerx-paxeer-verifier" }
 layerx-types.workspace = true
 layerx-crypto.workspace = true
 layerx-proof.workspace = true
