@@ -16,8 +16,8 @@ use layerx_agent_api::error::{
     ApiSuccess, ErrorClass, Key, Level, RequestId, Retriability, VerificationStatus,
 };
 use layerx_sdk::agent_envelope::{
-    canonical_u64, decode_response, AgentEnvelopeTransport, EnvelopeCredential, EnvelopeError,
-    AGENT_RPC_ROUTE,
+    canonical_u64, decode_response, AgentEnvelopeTransport, ClientRetriability,
+    EnvelopeCredential, EnvelopeError, AGENT_RPC_ROUTE,
 };
 use layerx_sdk::production::SecretBytes;
 use layerx_sdk::programs::LayerXKeyCredential;
@@ -29,6 +29,8 @@ const CASE_FILE: &str = "PAXEER_X_AGENT_ENVELOPE_CASE";
 const PRE_RESTART: &str = "pre-restart";
 const POST_RESTART: &str = "post-restart";
 const READ_PHASE: &str = "read";
+const LANGUAGE: &str = "rust";
+const KEY_DOMAIN: &[u8] = b"paxeer-x/agent-envelope/idempotency\0";
 
 type Failure = Box<dyn std::error::Error>;
 type Outcome = Result<ApiSuccess<Value>, EnvelopeError>;
@@ -78,6 +80,7 @@ struct Probe {
     route: String,
     ca_pem: PathBuf,
     authorization: String,
+    gateway_key: (String, String),
     coordinates: Coordinates,
     credential: EnvelopeCredential,
     requests: Value,
@@ -148,6 +151,7 @@ fn load() -> Result<(Probe, Vec<String>), Failure> {
         .split_once(':')
         .ok_or("gateway API key file is not <id>:<secret>")?;
     let authorization = format!("LayerX-Key {key_id}:{secret}");
+    let secret_text = secret.to_owned();
     let secret = SecretBytes::new(secret.as_bytes()).map_err(|_| "gateway key secret is empty")?;
     let gateway_key =
         LayerXKeyCredential::new(key_id, secret).map_err(|_| "gateway key identifier refused")?;
@@ -208,6 +212,7 @@ fn load() -> Result<(Probe, Vec<String>), Failure> {
             route: endpoint.to_owned(),
             ca_pem,
             authorization,
+            gateway_key: (key_id.to_owned(), secret_text),
             coordinates,
             credential,
             requests: field(&case, "requests")?.clone(),
@@ -271,16 +276,15 @@ impl Probe {
         id
     }
 
-    fn fresh_key(&self, case: &str, request_id: RequestId) -> Result<Key, Failure> {
-        let nanos = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or(Duration::ZERO)
-            .as_nanos();
+    /// SHA-256(KEY_DOMAIN || run nonce (32 bytes of requests.allowed_mutation.idempotency_key)
+    /// || "rust" || NUL || case id): distinct per language and case, verifiable by the harness.
+    fn fresh_key(&self, case: &str, _request_id: RequestId) -> Result<Key, Failure> {
+        let nonce = self.provisioned_key("allowed_mutation")?;
         let digest = Sha256::new()
-            .chain_update(b"paxeer-x/rust-probe/idempotency\0")
-            .chain_update(nanos.to_be_bytes())
-            .chain_update(std::process::id().to_be_bytes())
-            .chain_update(request_id.0.to_be_bytes())
+            .chain_update(KEY_DOMAIN)
+            .chain_update(nonce.bytes())
+            .chain_update(LANGUAGE.as_bytes())
+            .chain_update([0_u8])
             .chain_update(case.as_bytes())
             .finalize();
         let mut bytes = [0_u8; 32];
@@ -407,6 +411,8 @@ impl Probe {
                 outcome.map_err(|error| format!("approval_list failed: {error:?}"))?;
                 Ok(())
             }
+            (_, "read_decode_failure") => self.read_decode_failure(),
+            (_, "mutation_decode_unknown") => self.mutation_decode_unknown(),
             (PRE_RESTART, "allowed_mutation") => self.allowed_mutation(),
             (PRE_RESTART, "mutation_duplicate_same_result") => self.duplicate(),
             (PRE_RESTART, "changed_body_same_key") => self.changed_body(),
@@ -479,6 +485,97 @@ impl Probe {
                 Ok(())
             }
             status => Err(format!("program_read verification invalid: {status:?}").into()),
+        }
+    }
+
+    /// Transport for a decode case: `requests.<case>.endpoint` (the harness origin that
+    /// serves the schema-violating body) when present, else the gateway endpoint.
+    fn case_transport(&self, case: &str) -> Result<Option<AgentEnvelopeTransport>, Failure> {
+        let Some(endpoint) = field(&self.requests, case)?.get("endpoint") else {
+            return Ok(None);
+        };
+        let endpoint = endpoint.as_str().ok_or("case endpoint is not a string")?;
+        let base = endpoint
+            .strip_suffix(AGENT_RPC_ROUTE)
+            .ok_or("case endpoint does not name the agent RPC route")?;
+        let secret = SecretBytes::new(self.gateway_key.1.as_bytes())
+            .map_err(|_| "gateway key secret is empty")?;
+        let key = LayerXKeyCredential::new(&self.gateway_key.0, secret)
+            .map_err(|_| "gateway key identifier refused")?;
+        AgentEnvelopeTransport::connect(base, Some(key), Some(&self.ca_pem))
+            .map(Some)
+            .map_err(|error| format!("{case} transport refused: {error:?}").into())
+    }
+
+    fn send_case(
+        &self,
+        case: &str,
+        operation: Operation,
+        request_id: RequestId,
+        request: &Value,
+        key: Option<Key>,
+    ) -> Result<Outcome, Failure> {
+        let transport = self.case_transport(case)?;
+        let (received, outcome) = transport.as_ref().unwrap_or(&self.transport).send_operation_recorded(
+            operation,
+            request_id,
+            request,
+            Some(&self.credential),
+            key,
+        );
+        *self.last.borrow_mut() = received;
+        Ok(outcome)
+    }
+
+    fn read_decode_failure(&mut self) -> Result<(), Failure> {
+        let entry = field(&self.requests, "read_decode_failure")?;
+        let operation = catalogued(text(entry, "operation")?)?;
+        if operation.mutating() {
+            return Err("requests.read_decode_failure must name a read".into());
+        }
+        let request = field(entry, "request")?.clone();
+        let request_id = self.request_id();
+        let outcome = self.send_case("read_decode_failure", operation, request_id, &request, None)?;
+        let received = self.last.borrow().clone();
+        self.record("read_decode_failure", operation, &outcome)?;
+        match (&received, &outcome) {
+            (Some((_, body)), Err(error @ EnvelopeError::Decode { operation: decoded }))
+                if body.is_object()
+                    && *decoded == operation
+                    && error.client_retriability() == ClientRetriability::Never =>
+            {
+                Ok(())
+            }
+            _ => Err(format!(
+                "schema-violating read was not a non-retriable DecodeFailure: {outcome:?}"
+            )
+            .into()),
+        }
+    }
+
+    fn mutation_decode_unknown(&mut self) -> Result<(), Failure> {
+        let (operation, request) = self.mutation("mutation_decode_unknown")?;
+        let request_id = self.request_id();
+        let key = match field(&self.requests, "mutation_decode_unknown")?.get("idempotency_key") {
+            Some(Value::String(text)) => {
+                Key::new(bytes32(text)?).map_err(|_| "provisioned idempotency key is reserved")?
+            }
+            None | Some(Value::Null) => self.fresh_key("mutation_decode_unknown", request_id)?,
+            Some(_) => return Err("provisioned idempotency key is not a string".into()),
+        };
+        let outcome =
+            self.send_case("mutation_decode_unknown", operation, request_id, &request, Some(key))?;
+        let received = self.last.borrow().clone();
+        self.record("mutation_decode_unknown", operation, &outcome)?;
+        match (&received, &outcome) {
+            (Some((_, body)), Err(error @ EnvelopeError::Unknown { operation: unknown }))
+                if body.is_object()
+                    && *unknown == operation
+                    && error.client_retriability() == ClientRetriability::Never =>
+            {
+                Ok(())
+            }
+            _ => Err(format!("schema-violating mutation reply was not Unknown: {outcome:?}").into()),
         }
     }
 

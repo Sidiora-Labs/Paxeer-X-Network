@@ -1,3 +1,4 @@
+using System.Net.Security;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Text.Json;
@@ -15,7 +16,7 @@ public sealed class AgentOperationEnvelopeTests(ITestOutputHelper output)
         Enum.GetValues<PlatformOperation>().Where(value => value.Descriptor().Plane == PlatformPlane.Agent)
             .ToDictionary(value => value.Descriptor().Name, StringComparer.Ordinal);
 
-    private sealed class CaseFile : IDisposable
+    internal sealed class CaseFile : IDisposable
     {
         public required Uri Gateway { get; init; }
         public required X509Certificate2 Root { get; init; }
@@ -29,6 +30,10 @@ public sealed class AgentOperationEnvelopeTests(ITestOutputHelper output)
         public required string[] Cases { get; init; }
         public required string Phase { get; init; }
         public required string ResponseDirectory { get; init; }
+        public Uri? DaemonEndpoint { get; init; }
+        public string? ClientCertFile { get; init; }
+        public string? ClientKeyFile { get; init; }
+        public string? ServerCaFile { get; init; }
 
         public void Dispose()
         {
@@ -38,7 +43,7 @@ public sealed class AgentOperationEnvelopeTests(ITestOutputHelper output)
         }
     }
 
-    private static InvalidOperationException Refused(string reason) => new($"agent envelope probe input refused: {reason}");
+    internal static InvalidOperationException Refused(string reason) => new($"agent envelope probe input refused: {reason}");
 
     private static string Text(JsonElement value, string field) =>
         value.TryGetProperty(field, out var raw) && raw.ValueKind == JsonValueKind.String && raw.GetString() is { Length: > 0 } text
@@ -57,7 +62,7 @@ public sealed class AgentOperationEnvelopeTests(ITestOutputHelper output)
         return Path.IsPathRooted(path) && File.Exists(path) ? path : throw Refused(field);
     }
 
-    private static CaseFile Load()
+    internal static CaseFile Load()
     {
         var path = Environment.GetEnvironmentVariable("PAXEER_X_AGENT_ENVELOPE_CASE");
         if (string.IsNullOrEmpty(path) || !Path.IsPathRooted(path) || !File.Exists(path)) throw Refused("PAXEER_X_AGENT_ENVELOPE_CASE");
@@ -91,6 +96,18 @@ public sealed class AgentOperationEnvelopeTests(ITestOutputHelper output)
         var directory = Text(root, "response_dir");
         if (!Path.IsPathRooted(directory) || !Directory.Exists(directory)) throw Refused("response_dir");
 
+        string[] daemonFields = ["daemon_endpoint", "client_cert_file", "client_key_file", "server_ca_file"];
+        var daemonPresent = daemonFields.Count(field => root.TryGetProperty(field, out _));
+        if (daemonPresent is not 0 and not 4) throw Refused("daemon surface fields");
+        Uri? daemon = null;
+        if (daemonPresent == 4)
+        {
+            daemon = new Uri(Text(root, "daemon_endpoint"), UriKind.Absolute);
+            if (daemon.Scheme != Uri.UriSchemeHttps || daemon.AbsolutePath != AgentEnvelopeTransport.DaemonRoutePath ||
+                !string.IsNullOrEmpty(daemon.UserInfo) || !string.IsNullOrEmpty(daemon.Query) || !string.IsNullOrEmpty(daemon.Fragment))
+                throw Refused("daemon_endpoint");
+        }
+
         return new CaseFile
         {
             Gateway = new Uri(endpoint.GetLeftPart(UriPartial.Authority) + "/"),
@@ -105,16 +122,20 @@ public sealed class AgentOperationEnvelopeTests(ITestOutputHelper output)
             Cases = cases.EnumerateArray().Select(item => item.ValueKind == JsonValueKind.String ? item.GetString()! : throw Refused("cases")).ToArray(),
             Phase = Text(root, "phase"),
             ResponseDirectory = directory,
+            DaemonEndpoint = daemon is null ? null : new Uri(daemon.GetLeftPart(UriPartial.Authority) + "/"),
+            ClientCertFile = daemon is null ? null : AbsoluteFile(root, "client_cert_file"),
+            ClientKeyFile = daemon is null ? null : AbsoluteFile(root, "client_key_file"),
+            ServerCaFile = daemon is null ? null : AbsoluteFile(root, "server_ca_file"),
         };
     }
 
-    private static AgentEnvelopeTransport Transport(CaseFile input, AgentSessionCredential? credential, LayerXKeyCredential key) =>
+    internal static AgentEnvelopeTransport Transport(CaseFile input, AgentSessionCredential? credential, LayerXKeyCredential key) =>
         new(input.Gateway, credential, key, input.Root);
 
-    private static AgentSessionCredential Credential(CaseFile input, ulong generation) =>
+    internal static AgentSessionCredential Credential(CaseFile input, ulong generation) =>
         new(input.Tenant, input.SessionId, input.TokenId, generation);
 
-    private static TransportCall Call(CaseFile input, string caseId)
+    internal static TransportCall Call(CaseFile input, string caseId)
     {
         if (!input.Requests.TryGetProperty(caseId, out var entry) || entry.ValueKind != JsonValueKind.Object) throw Refused($"requests.{caseId}");
         var name = Text(entry, "operation");
@@ -239,6 +260,106 @@ public sealed class AgentOperationEnvelopeTests(ITestOutputHelper output)
             var redirect = Assert.Throws<PlatformSdkException>(() =>
                 AgentEnvelopeTransport.ForDaemon(new Uri("https://localhost/"), null, redirecting));
             Assert.Equal(SdkErrorCode.InvalidArgument, redirect.Code);
+        }
+    }
+}
+
+[Trait("Category", "AgentOperationEnvelopeDecodeProbe")]
+public sealed class AgentOperationEnvelopeDecodeTests(ITestOutputHelper output)
+{
+    private static readonly string[] DecodeCases = ["read_decode_failure", "mutation_decode_unknown"];
+
+    private void Emit(string line)
+    {
+        Console.Out.WriteLine(line);
+        Console.Out.Flush();
+        output.WriteLine(line);
+    }
+
+    private static bool TrustedDaemon(X509Certificate2 root, X509Certificate2? certificate, X509Chain? presented, SslPolicyErrors errors)
+    {
+        if (certificate is null || (errors & ~SslPolicyErrors.RemoteCertificateChainErrors) != SslPolicyErrors.None) return false;
+        using var chain = new X509Chain();
+        chain.ChainPolicy.TrustMode = X509ChainTrustMode.CustomRootTrust;
+        chain.ChainPolicy.RevocationMode = X509RevocationMode.NoCheck;
+        chain.ChainPolicy.CustomTrustStore.Add(root);
+        if (presented is not null)
+            foreach (var element in presented.ChainElements) chain.ChainPolicy.ExtraStore.Add(element.Certificate);
+        return chain.Build(certificate);
+    }
+
+    [Fact]
+    public async Task WellFormedSchemaViolationIsReadDecodeFailureAndMutationUnknown()
+    {
+        using var input = AgentOperationEnvelopeTests.Load();
+        Assert.NotEmpty(input.Cases);
+        Assert.Equal(input.Cases.Length, input.Cases.Distinct(StringComparer.Ordinal).Count());
+        Assert.All(input.Cases, caseId => Assert.Contains(caseId, DecodeCases));
+        using var key = new LayerXKeyCredential(input.KeyId, input.KeySecret);
+        using var credential = AgentOperationEnvelopeTests.Credential(input, input.Generation);
+        using var gateway = AgentOperationEnvelopeTests.Transport(input, credential, key);
+        X509Certificate2? serverCa = null, client = null;
+        HttpClientHandler? handler = null;
+        AgentEnvelopeTransport? daemon = null;
+        try
+        {
+            if (input.DaemonEndpoint is not null)
+            {
+                var trusted = X509Certificate2.CreateFromPemFile(input.ServerCaFile!);
+                serverCa = trusted;
+                client = X509Certificate2.CreateFromPemFile(input.ClientCertFile!, input.ClientKeyFile!);
+                handler = new HttpClientHandler
+                {
+                    AllowAutoRedirect = false, UseCookies = false, UseProxy = false,
+                    ClientCertificateOptions = ClientCertificateOption.Manual,
+                    ServerCertificateCustomValidationCallback = (_, certificate, presented, errors) =>
+                        TrustedDaemon(trusted, certificate, presented, errors),
+                };
+                handler.ClientCertificates.Add(client);
+                daemon = AgentEnvelopeTransport.ForDaemon(input.DaemonEndpoint, credential, handler);
+            }
+            var passed = 0;
+            foreach (var caseId in input.Cases)
+            {
+                var call = AgentOperationEnvelopeTests.Call(input, caseId);
+                var mutating = call.Operation.Descriptor().RequiresIdempotency;
+                Assert.Equal(caseId == "mutation_decode_unknown", mutating);
+                if (mutating) Assert.NotNull(call.IdempotencyKey);
+                else Assert.Null(call.IdempotencyKey);
+                var transport = !mutating && daemon is not null ? daemon : gateway;
+                var replies = 0; int? status = null; byte[]? body = null;
+                var error = await Assert.ThrowsAsync<PlatformSdkException>(() => transport.SendEnvelopeAsync(call,
+                    observeResponse: (code, bytes) => { replies++; status = code; body = bytes; }));
+                Assert.Equal(1, replies);
+                using (var parsed = JsonDocument.Parse(body!))
+                {
+                    var record = new Dictionary<string, object> { ["status"] = status!.Value, ["body"] = parsed.RootElement };
+                    await File.WriteAllBytesAsync(Path.Combine(input.ResponseDirectory, caseId + ".json"),
+                        JsonSerializer.SerializeToUtf8Bytes(record));
+                }
+                Assert.False(string.IsNullOrEmpty(error.RequestId));
+                if (mutating)
+                {
+                    Assert.Equal(SdkErrorCode.UnknownOutcome, error.Code);
+                    Assert.Equal(RetryClass.UnknownOutcome, error.Retry);
+                }
+                else
+                {
+                    Assert.Equal(SdkErrorCode.DecodeFailure, error.Code);
+                    Assert.Equal(RetryClass.Never, error.Retry);
+                }
+                passed++;
+                Emit($"PAXEER_X_AGENT_ENVELOPE_CASE {caseId} passed");
+            }
+            Assert.Equal(input.Cases.Length, passed);
+            Emit($"PAXEER_X_AGENT_ENVELOPE_CASES={passed}");
+        }
+        finally
+        {
+            daemon?.Dispose();
+            handler?.Dispose();
+            client?.Dispose();
+            serverCa?.Dispose();
         }
     }
 }

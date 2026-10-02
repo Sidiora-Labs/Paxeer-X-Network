@@ -2,6 +2,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import {
+  AGENT_DAEMON_RPC_PATH,
   AGENT_ENVELOPE_OPERATION_NAMES,
   AGENT_ENVELOPE_PATH,
   AgentEnvelopeTransport,
@@ -124,12 +125,13 @@ if (cases.length === 0) refuse("cases is empty");
 
 const session = new AgentSessionCredential(text(credentialInput, "tenant"), text(credentialInput, "session_id"), tokenId, generation);
 let lastResponse: { status: number; body: Buffer } | undefined;
-const transportFor = (credential: AgentSessionCredential): AgentEnvelopeTransport => new AgentEnvelopeTransport({
-  endpoint: gatewayBase,
+let responseCount = 0;
+const transportFor = (credential: AgentSessionCredential, endpoint: URL = gatewayBase): AgentEnvelopeTransport => new AgentEnvelopeTransport({
+  endpoint,
   session: credential,
   gatewayCredential: gatewayKey,
   trustedCa,
-  onResponse: (status, body) => { lastResponse = { status, body: Buffer.from(body) }; },
+  onResponse: (status, body) => { responseCount += 1; lastResponse = { status, body: Buffer.from(body) }; },
 });
 const transport = transportFor(session);
 function observed(): { status: number; body: Buffer } | undefined { return lastResponse; }
@@ -142,6 +144,14 @@ const EXPECTED_OPERATION: Readonly<Record<string, Operation>> = Object.freeze({
 
 const results: { case: string; outcome: "pass" | "fail"; detail: string }[] = [];
 
+// Harness case ids served outside the plain read set. Mutation idempotency keys are the harness-issued per-probe keys
+// in requests.<id>.idempotency_key (fresh per language run), used verbatim and never derived or defaulted here.
+const SPECIAL_CASES: Readonly<Record<string, (name: string) => Promise<string>>> = Object.freeze({
+  read_decode_failure: (name: string) => expectDecodeOutcome(name, false),
+  mutation_decode_unknown: (name: string) => expectDecodeOutcome(name, true),
+  read_daemon: (name: string) => readDaemon(name),
+});
+
 function recordResponse(name: string): void {
   if (lastResponse === undefined) throw new Error(`${name}: no HTTP response was received`);
   let body: unknown;
@@ -152,6 +162,16 @@ function recordResponse(name: string): void {
 
 async function runCase(name: string): Promise<void> {
   lastResponse = undefined;
+  responseCount = 0;
+  const special = SPECIAL_CASES[name];
+  if (special !== undefined) {
+    try {
+      results.push({ case: name, outcome: "pass", detail: await special(name) });
+    } catch (error) {
+      results.push({ case: name, outcome: "fail", detail: describe(error) });
+    }
+    return;
+  }
   try {
     const expected = EXPECTED_OPERATION[name];
     if (expected === undefined) throw new Error(`${name}: case is not implemented by the TypeScript probe`);
@@ -196,6 +216,89 @@ async function expectRefusal(name: string, run: () => Promise<unknown>, code: st
 function describe(error: unknown): string {
   return error instanceof PlatformSdkError ? JSON.stringify(error.toJSON())
     : error instanceof Error ? error.message : "non-error";
+}
+
+// A case entry may carry its own gateway "endpoint" (same https host and route as the case file endpoint) when the
+// harness serves the schema-violating reply from a distinct listener; otherwise the case file endpoint is used.
+function caseEndpoint(name: string, entry: Readonly<Record<string, unknown>>): URL {
+  if (!("endpoint" in entry)) return gatewayBase;
+  let url: URL;
+  try { url = new URL(text(entry, "endpoint")); } catch { throw new Error(`${name}: endpoint is not a URL`); }
+  if (url.protocol !== "https:" || url.pathname !== AGENT_ENVELOPE_PATH || url.search !== "" || url.hash !== ""
+    || url.hostname !== endpointUrl.hostname) throw new Error(`${name}: endpoint is not an https ${AGENT_ENVELOPE_PATH} URL on server_name`);
+  url.pathname = "/";
+  return url;
+}
+
+// Writes {status, body}; body is the parsed JSON, or the raw UTF-8 text when the reply is deliberately undecodable.
+function recordRawResponse(name: string): void {
+  if (lastResponse === undefined) return;
+  const raw = lastResponse.body.toString("utf8");
+  let body: unknown;
+  try { body = JSON.parse(raw) as unknown; } catch { body = raw; }
+  writeFileSync(join(responseDir, `${name}.json`), `${JSON.stringify({ status: lastResponse.status, body })}\n`, { mode: 0o600 });
+}
+
+async function expectDecodeOutcome(name: string, mutation: boolean): Promise<string> {
+  const entry = object(requests, name);
+  const operation = text(entry, "operation") as Operation;
+  const request = object(entry, "request");
+  const key = "idempotency_key" in entry ? text(entry, "idempotency_key") : undefined;
+  if (mutation && key === undefined) throw new Error(`${name}: requests.${name} carries no idempotency_key`);
+  if (!mutation && key !== undefined) throw new Error(`${name}: a read case carries an idempotency_key`);
+  const caseTransport = transportFor(session, caseEndpoint(name, entry));
+  let refusal: unknown;
+  try {
+    await caseTransport.call({ plane: "agent", operation, request, ...(key === undefined ? {} : { idempotencyKey: idempotencyKey(key) }) });
+  } catch (error) {
+    refusal = error;
+  } finally {
+    recordRawResponse(name);
+  }
+  if (refusal === undefined) throw new Error(`${name}: succeeded where ${mutation ? "unknown-outcome" : "decode-failure"} was required`);
+  if (!(refusal instanceof PlatformSdkError)) throw refusal;
+  const [code, retry] = mutation ? ["unknown-outcome", "unknown-outcome"] : ["decode-failure", "never"];
+  assert(refusal.code === code && refusal.retry === retry, `${name}: expected ${code}/${retry}, got ${describe(refusal)}`);
+  assert(responseCount <= 1, `${name}: the SDK sent the envelope more than once`);
+  if (!mutation) assert(lastResponse !== undefined, `${name}: no HTTP response was received`);
+  return `${code} ${retry}, ${responseCount} response`;
+}
+
+// Daemon-surface read: only the four case-file paths daemon_endpoint, client_cert_file, client_key_file, server_ca_file are read.
+async function readDaemon(name: string): Promise<string> {
+  let daemonUrl: URL;
+  try { daemonUrl = new URL(text(input, "daemon_endpoint")); } catch { throw new Error(`${name}: daemon_endpoint is not a URL`); }
+  if (daemonUrl.protocol !== "https:" || daemonUrl.pathname !== AGENT_DAEMON_RPC_PATH || daemonUrl.search !== "" || daemonUrl.hash !== "") {
+    throw new Error(`${name}: daemon_endpoint is not an https ${AGENT_DAEMON_RPC_PATH} URL`);
+  }
+  daemonUrl.pathname = "/";
+  const readFile = (field: string): Buffer => {
+    try { return readFileSync(text(input, field)); } catch { throw new Error(`${name}: ${field} is unreadable`); }
+  };
+  const certificate = readFile("client_cert_file");
+  const privateKey = readFile("client_key_file");
+  const daemon = new AgentEnvelopeTransport({
+    endpoint: daemonUrl,
+    surface: "daemon",
+    session,
+    clientCertificate: new SecretBytes(new Uint8Array(certificate)),
+    clientKey: new SecretBytes(new Uint8Array(privateKey)),
+    trustedCa: readFile("server_ca_file"),
+    onResponse: (status, body) => { responseCount += 1; lastResponse = { status, body: Buffer.from(body) }; },
+  });
+  certificate.fill(0);
+  privateKey.fill(0);
+  const entry = object(requests, "read");
+  if (text(entry, "operation") !== "read.account") throw new Error(`${name}: requests.read.operation is not read.account`);
+  let success: AgentEnvelopeSuccess;
+  try {
+    success = await daemon.call<unknown, AgentEnvelopeSuccess>({ plane: "agent", operation: "read.account", request: object(entry, "request") });
+  } finally {
+    if (lastResponse !== undefined) recordResponse(name);
+  }
+  assert(/^(?:0|[1-9][0-9]*)$/u.test(success.request_id), `${name}: request_id is not canonical decimal`);
+  assert(lastResponse?.status === 200, `${name}: status was not 200`);
+  return `verification ${String((success.verification_status as Readonly<Record<string, unknown>>).state)}`;
 }
 
 for (const name of cases) await runCase(name);

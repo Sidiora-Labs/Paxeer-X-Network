@@ -14,6 +14,7 @@ from urllib.request import HTTPSHandler, Request, build_opener
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from layerx_sdk.agent_http import (  # noqa: E402
+    AgentDaemonEnvelopeTransport,
     AgentEnvelopeSuccess,
     AgentEnvelopeTransport,
     AgentSessionCredential,
@@ -32,8 +33,9 @@ _ROUTE = "/v1/agent/rpc"
 _KEYS = frozenset({
     "endpoint", "server_name", "ca_pem", "ca_der", "gateway_api_key_file", "program_bearer_file",
     "credential_file", "requests", "operations", "cases", "phase", "state_file", "response_dir",
-    "retry_state_file",
+    "retry_state_file", "daemon_endpoint", "client_cert_file", "client_key_file", "server_ca_file",
 })
+_DAEMON_KEYS = frozenset({"daemon_endpoint", "client_cert_file", "client_key_file", "server_ca_file"})
 _PHASES = frozenset({"read", "pre-restart", "post-restart"})
 _REFUSALS = frozenset({
     SdkErrorCode.POLICY_REFUSAL,
@@ -64,7 +66,7 @@ class Probe:
         self.assertRaises = checker.assertRaises
         with open(case_path, "rb") as source:
             case = json.loads(source.read().decode("utf-8"))
-        if not isinstance(case, dict) or not set(case) <= _KEYS or not _KEYS - {"state_file", "retry_state_file"} <= set(case):
+        if not isinstance(case, dict) or not set(case) <= _KEYS or not _KEYS - {"state_file", "retry_state_file"} - _DAEMON_KEYS <= set(case):
             raise ProbeRefused("case file keys do not match the frozen protocol")
         if case["phase"] not in _PHASES:
             raise ProbeRefused("unknown phase")
@@ -109,6 +111,21 @@ class Probe:
         if retry_state_file is not None and (not isinstance(retry_state_file, str) or not os.path.isabs(retry_state_file)):
             raise ProbeRefused("retry_state_file must name an absolute path")
         self.retry_state_file = None if retry_state_file is None else Path(retry_state_file)
+        present = _DAEMON_KEYS & set(case)
+        if present and present != _DAEMON_KEYS:
+            raise ProbeRefused("daemon_endpoint, client_cert_file, client_key_file and server_ca_file must be given together")
+        if present:
+            daemon_endpoint = case["daemon_endpoint"]
+            if not isinstance(daemon_endpoint, str) or not daemon_endpoint.startswith("https://"):
+                raise ProbeRefused("daemon_endpoint must be an https base")
+            self.daemon: tuple[str, str, str, str] | None = (
+                daemon_endpoint,
+                str(_absolute_file(case, "client_cert_file")),
+                str(_absolute_file(case, "client_key_file")),
+                str(_absolute_file(case, "server_ca_file")),
+            )
+        else:
+            self.daemon = None
 
     def _key(self) -> LayerXKeyCredential:
         return LayerXKeyCredential(self.key_id, SecretBytes(self.secret))
@@ -131,6 +148,14 @@ class Probe:
             ca_file=self.ca_pem,
         ))
 
+    def _daemon_client(self) -> ProductionClient:
+        if self.daemon is None:
+            raise ProbeRefused("daemon-surface cases need daemon_endpoint, client_cert_file, client_key_file and server_ca_file")
+        endpoint, cert_file, key_file, ca_file = self.daemon
+        context = ssl.create_default_context(cafile=ca_file)
+        context.load_cert_chain(cert_file, key_file)
+        return ProductionClient(AgentDaemonEnvelopeTransport(endpoint, ssl_context=context, session=self._session()))
+
     def _request(self, case_id: str) -> dict[str, object]:
         request = self.requests.get(case_id)
         if not isinstance(request, dict) or not {"operation", "request"} <= set(request) <= {"operation", "request", "idempotency_key"}:
@@ -142,10 +167,10 @@ class Probe:
     def _record(self, case_id: str, status: int, body: object) -> None:
         (self.response_dir / f"{case_id}.json").write_text(json.dumps({"status": status, "body": body}))
 
-    def _success(self, case_id: str, entry: str | None = None) -> AgentEnvelopeSuccess:
+    def _success(self, case_id: str, entry: str | None = None, client: ProductionClient | None = None) -> AgentEnvelopeSuccess:
         request = self._request(entry or case_id)
         key = request.get("idempotency_key")
-        result = self._client().agent(
+        result = (client or self._client()).agent(
             request["operation"],  # type: ignore[arg-type]
             request["request"],
             idempotency_key=None if key is None else IdempotencyKey(str(key)),
@@ -222,6 +247,30 @@ class Probe:
 
     def case_approval_list(self) -> None:
         self._success("approval_list")
+
+    def case_daemon_read(self) -> None:
+        self._success("daemon_read", "read", self._daemon_client())
+
+    def case_read_decode_failure(self) -> None:
+        request = self._request("read_decode_failure")
+        if "idempotency_key" in request:
+            raise ProbeRefused("read_decode_failure must be a non-mutating request")
+        with self.assertRaises(PlatformSdkError) as raised:
+            self._client().agent(request["operation"], request["request"])  # type: ignore[arg-type]
+        self.assertEqual(raised.exception.code, SdkErrorCode.DECODE_FAILURE)
+        self.assertEqual(raised.exception.retry, "never")
+        self._record("read_decode_failure", 0, raised.exception.to_dict())
+
+    def case_mutation_decode_unknown(self) -> None:
+        request = self._request("mutation_decode_unknown")
+        key = request.get("idempotency_key")
+        if not isinstance(key, str):
+            raise ProbeRefused("mutation_decode_unknown carries no idempotency_key")
+        with self.assertRaises(PlatformSdkError) as raised:
+            self._client().agent(request["operation"], request["request"], idempotency_key=IdempotencyKey(key))  # type: ignore[arg-type]
+        self.assertEqual(raised.exception.code, SdkErrorCode.UNKNOWN_OUTCOME)
+        self.assertEqual(raised.exception.retry, "unknown-outcome")
+        self._record("mutation_decode_unknown", 0, raised.exception.to_dict())
 
     def case_allowed_mutation(self) -> None:
         self._success("allowed_mutation")

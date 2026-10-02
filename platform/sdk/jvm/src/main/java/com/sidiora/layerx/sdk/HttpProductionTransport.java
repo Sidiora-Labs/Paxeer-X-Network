@@ -260,15 +260,19 @@ public final class HttpProductionTransport implements ProductionTransport {
             if (failure != null) throw new CompletionException(agentTransportFailure(mutating));
             try (var body = response.body()) {
                 byte[] encoded = body.readNBytes(MAXIMUM_RESPONSE_BYTES + 1);
-                if (encoded.length > MAXIMUM_RESPONSE_BYTES || !jsonContentType(response)) throw decodeFailure(null);
-                return decodeAgentReply(response.statusCode(), encoded, requestId);
-            } catch (IOException error) {
-                throw new CompletionException(agentTransportFailure(mutating));
-            } catch (PlatformSdkException error) {
-                if (error.code() == PlatformSdkException.Code.DECODE_FAILURE) {
+                if (encoded.length > MAXIMUM_RESPONSE_BYTES || !jsonContentType(response)) {
                     throw new CompletionException(agentTransportFailure(mutating));
                 }
-                throw error;
+                try {
+                    return decodeAgentReply(response.statusCode(), encoded, requestId);
+                } catch (PlatformSdkException error) {
+                    if (error.code() == PlatformSdkException.Code.DECODE_FAILURE) {
+                        throw new CompletionException(agentUndecodable(response.statusCode(), encoded, mutating));
+                    }
+                    throw error;
+                }
+            } catch (IOException error) {
+                throw new CompletionException(agentTransportFailure(mutating));
             }
         });
     }
@@ -868,6 +872,21 @@ public final class HttpProductionTransport implements ProductionTransport {
     private static PlatformSdkException agentTransportFailure(boolean mutating) {
         return mutating ? unknownOutcome() : new PlatformSdkException(
             PlatformSdkException.Code.TRANSPORT_FAILURE, PlatformSdkException.Retry.SAFE, null, null, null);
+    }
+    private PlatformSdkException agentUndecodable(int status, byte[] encoded, boolean mutating) {
+        if (mutating || status == 502 || status == 503) return agentTransportFailure(mutating);
+        final JsonNode parsed;
+        try {
+            parsed = mapper.readTree(encoded);
+        } catch (IOException error) {
+            return agentTransportFailure(false);
+        }
+        if (parsed == null || parsed.isMissingNode()) return agentTransportFailure(false);
+        if (exactFields(parsed, "ok", "error") && parsed.get("ok").isBoolean() && !parsed.get("ok").booleanValue()
+                && parsed.get("error").isObject() && parsed.get("error").path("code").isTextual()) {
+            return agentTransportFailure(false);
+        }
+        return decodeFailure(null);
     }
     private static PlatformSdkException programDecodeFailure(String operation, String requestId) {
         return new PlatformSdkException(PlatformSdkException.Code.DECODE_FAILURE,

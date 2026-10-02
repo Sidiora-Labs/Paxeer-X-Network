@@ -16,6 +16,7 @@ import java.security.cert.CertificateFactory;
 import java.time.Duration;
 import java.util.LinkedHashSet;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.CompletionException;
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.TrustManagerFactory;
@@ -26,6 +27,7 @@ public final class AgentOperationEnvelopeProbe {
     private static final JavaType NODE = JSON.constructType(JsonNode.class);
     private static final Map<String, String> OPERATIONS = Map.of(
         "read", "read.account", "program_read", "program.interface", "approval_list", "approval.list");
+    private static final Set<String> DECODE_CASES = Set.of("read_decode_failure", "mutation_decode_unknown");
 
     private AgentOperationEnvelopeProbe() {}
 
@@ -63,6 +65,11 @@ public final class AgentOperationEnvelopeProbe {
         for (JsonNode entry : cases) {
             check(entry.isTextual() && seen.add(entry.textValue()), "case ids must be unique strings");
             String id = entry.textValue();
+            if (DECODE_CASES.contains(id)) {
+                decodeCase(config, credential, generation, requests, id, responses);
+                System.out.println("PAXEER_X_AGENT_ENVELOPE_CASE " + id + " passed");
+                continue;
+            }
             String operation = OPERATIONS.get(id);
             check(operation != null, "unsupported case " + id);
             JsonNode provisioned = requests.get(id);
@@ -102,8 +109,53 @@ public final class AgentOperationEnvelopeProbe {
         return seen.size();
     }
 
+    static void decodeCase(JsonNode config, JsonNode credential, String generation, JsonNode requests, String id,
+                           Path responses) throws Exception {
+        JsonNode provisioned = requests.get(id);
+        check(provisioned != null && provisioned.isObject(), "provisioned request lacks case " + id);
+        var operation = OperationCatalog.agent(text(provisioned, "operation"));
+        boolean mutating = OperationCatalog.requiresIdempotency(operation);
+        check(mutating == "mutation_decode_unknown".equals(id), "case " + id + " operation mutability");
+        IdempotencyKey key = null;
+        if (mutating) {
+            String value = text(provisioned, "idempotency_key");
+            check(value.matches("[0-9a-f]{64}"), "case " + id + " idempotency_key must be 64 lowercase hex");
+            key = new IdempotencyKey(value);
+        } else {
+            check(provisioned.get("idempotency_key") == null || provisioned.get("idempotency_key").isNull(),
+                "case " + id + " is non-mutating and carries no idempotency_key");
+        }
+        String endpoint = provisioned.has("endpoint") ? text(provisioned, "endpoint") : text(config, "endpoint");
+        var target = transport(config, endpoint, credential, generation);
+        var call = new ProductionTransport.Call(operation, request(provisioned, "request"), null, key);
+        PlatformSdkException error = null;
+        try {
+            target.callAgentReply(call).toCompletableFuture().join();
+        } catch (CompletionException failure) {
+            check(failure.getCause() instanceof PlatformSdkException, "case " + id + " failed outside the SDK error contract");
+            error = (PlatformSdkException) failure.getCause();
+        }
+        check(error != null, "case " + id + " decoded a reply");
+        if (mutating) {
+            check(error.code() == PlatformSdkException.Code.UNKNOWN_OUTCOME
+                && error.retry() == PlatformSdkException.Retry.UNKNOWN_OUTCOME, "case " + id + " was not an unknown outcome");
+        } else {
+            check(error.code() == PlatformSdkException.Code.DECODE_FAILURE
+                && error.retry() == PlatformSdkException.Retry.NEVER, "case " + id + " was not a never-retry decode failure");
+        }
+        ObjectNode record = JSON.createObjectNode();
+        record.put("sdk_error", error.code().wire());
+        record.put("retry", error.retry().wire());
+        Files.write(responses.resolve(id + ".json"), JSON.writeValueAsBytes(record));
+    }
+
     static HttpProductionTransport transport(JsonNode config, JsonNode credential, String generation) throws Exception {
-        URI endpoint = URI.create(text(config, "endpoint"));
+        return transport(config, text(config, "endpoint"), credential, generation);
+    }
+
+    static HttpProductionTransport transport(JsonNode config, String target, JsonNode credential, String generation)
+            throws Exception {
+        URI endpoint = URI.create(target);
         check("https".equalsIgnoreCase(endpoint.getScheme()), "endpoint must be https");
         String key = Files.readString(Path.of(text(config, "gateway_api_key_file")), StandardCharsets.US_ASCII).strip();
         int separator = key.indexOf(':');

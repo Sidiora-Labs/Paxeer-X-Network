@@ -34,6 +34,10 @@ type agentEnvelopeCaseFile struct {
 	Phase              *string                                 `json:"phase"`
 	StateFile          *string                                 `json:"state_file"`
 	ResponseDir        *string                                 `json:"response_dir"`
+	DaemonEndpoint     *string                                 `json:"daemon_endpoint"`
+	ClientCertFile     *string                                 `json:"client_cert_file"`
+	ClientKeyFile      *string                                 `json:"client_key_file"`
+	ServerCAFile       *string                                 `json:"server_ca_file"`
 }
 
 type agentEnvelopeCaseRequest struct {
@@ -55,6 +59,11 @@ var agentEnvelopeGoCases = map[string]AgentOperation{
 	"approval_list": AgentOperationApprovalList,
 }
 
+// Cases whose operation comes from the case file entry and whose outcome is a fail-closed classification.
+const agentEnvelopeReadDecodeFailureCase = "read_decode_failure"
+const agentEnvelopeMutationDecodeUnknownCase = "mutation_decode_unknown"
+const agentEnvelopeDaemonReadCase = "daemon_read"
+
 type agentEnvelopeRecordedResponse struct {
 	status int
 	body   []byte
@@ -65,9 +74,13 @@ type agentEnvelopeRecorder struct {
 	next     http.RoundTripper
 	mutex    sync.Mutex
 	recorded *agentEnvelopeRecordedResponse
+	attempts int
 }
 
 func (recorder *agentEnvelopeRecorder) RoundTrip(request *http.Request) (*http.Response, error) {
+	recorder.mutex.Lock()
+	recorder.attempts++
+	recorder.mutex.Unlock()
 	response, err := recorder.next.RoundTrip(request)
 	if err != nil {
 		return nil, err
@@ -90,6 +103,14 @@ func (recorder *agentEnvelopeRecorder) take() *agentEnvelopeRecordedResponse {
 	recorded := recorder.recorded
 	recorder.recorded = nil
 	return recorded
+}
+
+func (recorder *agentEnvelopeRecorder) takeAttempts() int {
+	recorder.mutex.Lock()
+	defer recorder.mutex.Unlock()
+	attempts := recorder.attempts
+	recorder.attempts = 0
+	return attempts
 }
 
 func requiredAgentEnvelopePath(t *testing.T, name string, value *string) string {
@@ -225,6 +246,57 @@ func writeAgentEnvelopeCaseResponse(t *testing.T, directory string, caseID strin
 	}
 }
 
+// agentEnvelopeDaemonClient builds the daemon-surface client from exactly the case-file daemon paths, or nil when none is carried.
+func agentEnvelopeDaemonClient(t *testing.T, caseFile agentEnvelopeCaseFile, credential *AgentSessionCredential) (*Client, *agentEnvelopeRecorder) {
+	t.Helper()
+	if caseFile.DaemonEndpoint == nil && caseFile.ClientCertFile == nil && caseFile.ClientKeyFile == nil && caseFile.ServerCAFile == nil {
+		return nil, nil
+	}
+	if caseFile.DaemonEndpoint == nil || !strings.HasPrefix(*caseFile.DaemonEndpoint, "https://") {
+		t.Fatal("agent envelope probe refused: daemon_endpoint must be an https URL when daemon paths are carried")
+	}
+	authority, err := os.ReadFile(requiredAgentEnvelopePath(t, "server_ca_file", caseFile.ServerCAFile))
+	roots := x509.NewCertPool()
+	if err != nil || !roots.AppendCertsFromPEM(authority) {
+		t.Fatal("agent envelope probe refused: server_ca_file holds no readable certificate")
+	}
+	certificate, err := tls.LoadX509KeyPair(requiredAgentEnvelopePath(t, "client_cert_file", caseFile.ClientCertFile), requiredAgentEnvelopePath(t, "client_key_file", caseFile.ClientKeyFile))
+	if err != nil {
+		t.Fatal("agent envelope probe refused: client_cert_file and client_key_file are not a usable client identity")
+	}
+	recorder := &agentEnvelopeRecorder{next: &http.Transport{TLSClientConfig: &tls.Config{
+		RootCAs: roots, Certificates: []tls.Certificate{certificate}, ServerName: *caseFile.ServerName, MinVersion: tls.VersionTLS12,
+	}}}
+	transport, err := NewAgentDaemonEnvelopeHTTPTransport(*caseFile.DaemonEndpoint, &http.Client{Timeout: 30 * time.Second, Transport: recorder}, credential)
+	if err != nil {
+		t.Fatal("agent envelope probe refused: the daemon endpoint is invalid")
+	}
+	client, err := NewClient(transport, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return client, recorder
+}
+
+func writeAgentEnvelopeOutcomeRecord(t *testing.T, directory string, caseID string, recorded *agentEnvelopeRecordedResponse) {
+	t.Helper()
+	if recorded != nil && json.Valid(recorded.body) {
+		writeAgentEnvelopeCaseResponse(t, directory, caseID, recorded)
+		return
+	}
+	status := 0
+	if recorded != nil {
+		status = recorded.status
+	}
+	encoded, err := json.Marshal(struct {
+		Status int             `json:"status"`
+		Body   json.RawMessage `json:"body"`
+	}{Status: status, Body: json.RawMessage("null")})
+	if err != nil || os.WriteFile(filepath.Join(directory, caseID+".json"), encoded, 0o600) != nil {
+		t.Fatalf("case %s: the response record could not be written", caseID)
+	}
+}
+
 func TestAgentOperationEnvelopeProcessCases(t *testing.T) {
 	passed := 0
 	defer func() { fmt.Printf("PAXEER_X_AGENT_ENVELOPE_CASES=%d\n", passed) }()
@@ -237,8 +309,9 @@ func TestAgentOperationEnvelopeProcessCases(t *testing.T) {
 	recorder := &agentEnvelopeRecorder{next: &http.Transport{TLSClientConfig: &tls.Config{
 		RootCAs: agentEnvelopeGatewayRoots(t, caseFile), ServerName: *caseFile.ServerName, MinVersion: tls.VersionTLS12,
 	}}}
+	sessionCredential := agentEnvelopeSessionCredential(t, *caseFile.CredentialFile)
 	transport, err := NewAgentEnvelopeHTTPTransport(baseURL, &http.Client{Timeout: 30 * time.Second, Transport: recorder},
-		agentEnvelopeGatewayAuthorizer(t, *caseFile.GatewayAPIKeyFile), agentEnvelopeSessionCredential(t, *caseFile.CredentialFile))
+		agentEnvelopeGatewayAuthorizer(t, *caseFile.GatewayAPIKeyFile), sessionCredential)
 	if err != nil {
 		t.Fatal("agent envelope probe refused: the gateway endpoint is invalid")
 	}
@@ -249,11 +322,14 @@ func TestAgentOperationEnvelopeProcessCases(t *testing.T) {
 	if len(caseFile.Cases) == 0 {
 		t.Fatal("agent envelope probe refused: the case file lists no cases")
 	}
+	daemonClient, daemonRecorder := agentEnvelopeDaemonClient(t, caseFile, sessionCredential)
+	usedKeys := map[string]bool{}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 	for _, caseID := range caseFile.Cases {
 		operation, supported := agentEnvelopeGoCases[caseID]
-		if !supported {
+		classified := caseID == agentEnvelopeReadDecodeFailureCase || caseID == agentEnvelopeMutationDecodeUnknownCase
+		if !supported && !classified && caseID != agentEnvelopeDaemonReadCase {
 			t.Fatalf("case %s is not a Go read-phase case", caseID)
 		}
 		encoded, present := caseFile.Requests[caseID]
@@ -262,12 +338,63 @@ func TestAgentOperationEnvelopeProcessCases(t *testing.T) {
 		if !present || decodeStrict(encoded, &caseRequest) != nil || decodeStrict(caseRequest.Request, &fields) != nil || fields == nil {
 			t.Fatalf("case %s: the request entry does not match the frozen shape", caseID)
 		}
-		if caseRequest.Operation != string(operation) || caseRequest.IdempotencyKey != nil {
+		if !supported {
+			operation = AgentOperation(caseRequest.Operation)
+			if !operation.Valid() || operation.RequiresIdempotency() != (caseID == agentEnvelopeMutationDecodeUnknownCase) {
+				t.Fatalf("case %s: the request entry operation %q has the wrong mutability for this case", caseID, caseRequest.Operation)
+			}
+		}
+		options := CallOptions{}
+		if caseID == agentEnvelopeMutationDecodeUnknownCase {
+			if caseRequest.IdempotencyKey == nil || usedKeys[*caseRequest.IdempotencyKey] {
+				t.Fatalf("case %s: the mutation must carry a fresh harness idempotency key", caseID)
+			}
+			key, err := NewIdempotencyKey(*caseRequest.IdempotencyKey)
+			if err != nil {
+				t.Fatalf("case %s: the harness idempotency key is not 64 lowercase hex", caseID)
+			}
+			usedKeys[*caseRequest.IdempotencyKey] = true
+			options.IdempotencyKey = key
+		} else if caseRequest.Operation != string(operation) || caseRequest.IdempotencyKey != nil {
 			t.Fatalf("case %s: the request entry must be the non-mutating operation %s", caseID, operation)
 		}
+		caseClient, caseRecorder := client, recorder
+		if caseID == agentEnvelopeDaemonReadCase {
+			if daemonClient == nil {
+				t.Fatalf("case %s: the case file carries no daemon_endpoint, client_cert_file, client_key_file and server_ca_file", caseID)
+			}
+			caseClient, caseRecorder = daemonClient, daemonRecorder
+		}
 		var value json.RawMessage
-		callErr := client.Agent(ctx, operation, caseRequest.Request, &value, CallOptions{})
-		recorded := recorder.take()
+		callErr := caseClient.Agent(ctx, operation, caseRequest.Request, &value, options)
+		recorded := caseRecorder.take()
+		attempts := caseRecorder.takeAttempts()
+		if classified {
+			var sdkError *SDKError
+			if !errors.As(callErr, &sdkError) {
+				t.Fatalf("case %s: expected a typed SDK error, got %v", caseID, callErr)
+			}
+			if attempts != 1 {
+				t.Fatalf("case %s: the client sent %d requests; a fail-closed outcome is never retried or resent", caseID, attempts)
+			}
+			if caseID == agentEnvelopeReadDecodeFailureCase {
+				if recorded == nil || !json.Valid(recorded.body) {
+					t.Fatalf("case %s: the reply must be a well-formed JSON body: %v", caseID, callErr)
+				}
+				writeAgentEnvelopeCaseResponse(t, *caseFile.ResponseDir, caseID, recorded)
+				if sdkError.Code != ErrorDecodeFailure || sdkError.Retry != RetryNever {
+					t.Fatalf("case %s: a schema-violating JSON reply must be DecodeFailure/Never, got %s/%s", caseID, sdkError.Code, sdkError.Retry)
+				}
+			} else {
+				writeAgentEnvelopeOutcomeRecord(t, *caseFile.ResponseDir, caseID, recorded)
+				if sdkError.Code != ErrorUnknownOutcome || sdkError.Retry != RetryUnknownOutcome {
+					t.Fatalf("case %s: an undecodable mutation reply must be Unknown, got %s/%s", caseID, sdkError.Code, sdkError.Retry)
+				}
+			}
+			passed++
+			fmt.Printf("PAXEER_X_AGENT_ENVELOPE_CASE %s passed\n", caseID)
+			continue
+		}
 		if recorded == nil {
 			t.Fatalf("case %s: no gateway response was received: %v", caseID, callErr)
 		}
@@ -391,6 +518,21 @@ func TestAgentOperationEnvelopeClientEncoding(t *testing.T) {
 	daemonRequest, err := daemon.request(context.Background(), []byte(`{}`))
 	if err != nil || daemonRequest.URL.Path != "/rpc" || len(daemonRequest.Header.Values("Authorization")) != 0 {
 		t.Fatalf("the daemon envelope surface must POST /rpc with no Authorization header: %v", err)
+	}
+	if _, err := decodeAgentEnvelopeResponse(http.StatusOK, []byte(`not json`), "8"); err == nil || err.Code != ErrorTransportFailure || err.Retry != RetrySafe {
+		t.Fatalf("a non-JSON reply must be a safe transport failure: %v", err)
+	}
+	if _, err := decodeAgentEnvelopeResponse(http.StatusOK, []byte(`{"request_id":"8","value":1}`), "8"); err == nil || err.Code != ErrorDecodeFailure || err.Retry != RetryNever {
+		t.Fatalf("well-formed JSON outside the ApiSuccess schema must be DecodeFailure/Never: %v", err)
+	}
+	if _, err := decodeAgentEnvelopeResponse(http.StatusForbidden, []byte(`{"class":"PolicyRefusal","protocol_result_code":null,"retriability":"Terminal","request_id":"8"}`), "8"); err == nil || err.Code != ErrorDecodeFailure || err.Retry != RetryNever {
+		t.Fatalf("well-formed JSON outside the ApiError schema must be DecodeFailure/Never: %v", err)
+	}
+	if _, err := decodeAgentEnvelopeResponse(http.StatusUnauthorized, []byte(`{"ok":false,"error":{"code":"api_key_required"}}`), "8"); err == nil || err.Code != ErrorDecodeFailure || err.Retry != RetryNever {
+		t.Fatalf("a non-ambiguous gateway refusal outside the ApiError schema must be DecodeFailure/Never: %v", err)
+	}
+	if _, err := decodeAgentEnvelopeResponse(http.StatusServiceUnavailable, []byte(`{"ok":false,"error":{"code":"route_unavailable"}}`), "8"); err == nil || err.Code != ErrorTransportFailure || err.Retry != RetrySafe || err.RequestID != "" {
+		t.Fatalf("an edge 503 without a typed ApiError is a safe transport failure: %v", err)
 	}
 	if _, err := decodeAgentEnvelopeResponse(http.StatusServiceUnavailable, []byte(`{"class":"UnavailableCapability","protocol_result_code":null,"retriability":"Terminal","request_id":"8","reason":"unavailable_capability.faucet.claim"}`), "8"); err == nil || err.Code != ErrorUnavailableCapability || err.Retry != RetryNever || err.ServiceCode != "unavailable_capability.faucet.claim" {
 		t.Fatalf("the retired faucet refusal must decode as a terminal unavailable capability: %v", err)

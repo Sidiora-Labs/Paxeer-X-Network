@@ -774,6 +774,8 @@ public sealed class AgentEnvelopeTransport : IPlatformTransport, IDisposable
             observeResponse?.Invoke((int)response.StatusCode, encoded);
             if ((int)response.StatusCode is 502 or 503 && IsEdgeReply(encoded))
                 throw mutating ? UnknownOutcome(requestId) : new PlatformSdkException(SdkErrorCode.TransportFailure, RetryClass.Safe, requestId);
+            if (!WellFormedJson(encoded))
+                throw mutating ? UnknownOutcome(requestId) : new PlatformSdkException(SdkErrorCode.TransportFailure, RetryClass.Safe, requestId);
             try { return DecodeResponse((int)response.StatusCode, encoded, requestId); }
             catch (PlatformSdkException error) when (mutating && error.Code is SdkErrorCode.DecodeFailure or SdkErrorCode.VerificationFailure)
             {
@@ -825,6 +827,7 @@ public sealed class AgentEnvelopeTransport : IPlatformTransport, IDisposable
 
     internal static AgentEnvelopeResult DecodeResponse(int status, byte[] encoded, string requestId)
     {
+        if (!WellFormedJson(encoded)) throw new PlatformSdkException(SdkErrorCode.TransportFailure, RetryClass.Safe, requestId);
         JsonValue? document;
         try
         {
@@ -913,6 +916,18 @@ public sealed class AgentEnvelopeTransport : IPlatformTransport, IDisposable
         catch (JsonException) { return false; }
     }
 
+    private static bool WellFormedJson(byte[] encoded)
+    {
+        if (encoded.Length == 0) return false;
+        var reader = new Utf8JsonReader(new ReadOnlySpan<byte>(encoded), new JsonReaderOptions { MaxDepth = int.MaxValue });
+        try
+        {
+            while (reader.Read()) { }
+            return true;
+        }
+        catch (JsonException) { return false; }
+    }
+
     private static bool HasDuplicateKey(JsonElement element)
     {
         switch (element.ValueKind)
@@ -940,7 +955,8 @@ public sealed class AgentEnvelopeTransport : IPlatformTransport, IDisposable
         {
             var count = await stream.ReadAsync(buffer.AsMemory(), cancellationToken).ConfigureAwait(false);
             if (count == 0) return output.ToArray();
-            if (output.Length + count > MaximumResponseBytes) throw Decode(requestId);
+            if (output.Length + count > MaximumResponseBytes)
+                throw new PlatformSdkException(SdkErrorCode.TransportFailure, RetryClass.Safe, requestId);
             output.Write(buffer, 0, count);
         }
     }

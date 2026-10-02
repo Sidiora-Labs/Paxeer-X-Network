@@ -1034,6 +1034,70 @@ impl<A: HumanAuthorityBoundary> SharedAgentOwner<A> {
 }
 
 impl<A: HumanAuthorityBoundary> HumanOperations for SharedAgentOwner<A> {
+    fn session_refresh(&mut self, peer: &HumanPeer, request: layerx_agent_api::identity::SessionRefresh) -> Result<HumanResponse, HumanOperationError> {
+        self.lock()?.session_refresh(peer, request)
+    }
+
+    fn session_close(&mut self, peer: &HumanPeer, request: layerx_agent_api::identity::SessionClose) -> Result<HumanResponse, HumanOperationError> {
+        self.lock()?.session_close(peer, request)
+    }
+
+    fn session_list(&mut self, peer: &HumanPeer, request: layerx_agent_api::identity::SessionList) -> Result<HumanResponse, HumanOperationError> {
+        self.lock()?.session_list(peer, request)
+    }
+
+    fn read_module_state(&mut self, peer: &HumanPeer, request: layerx_agent_api::read::ReadRequest<layerx_agent_api::read::ModuleStateSelector>) -> Result<HumanResponse, HumanOperationError> {
+        self.lock()?.read_module_state(peer, request)
+    }
+
+    fn read_history(&mut self, peer: &HumanPeer, request: layerx_agent_api::read::ReadRequest<layerx_agent_api::read::HistorySelector>) -> Result<HumanResponse, HumanOperationError> {
+        self.lock()?.read_history(peer, request)
+    }
+
+    fn read_batch(&mut self, peer: &HumanPeer, request: layerx_agent_api::read::ReadRequest<layerx_agent_api::read::BatchRef>) -> Result<HumanResponse, HumanOperationError> {
+        self.lock()?.read_batch(peer, request)
+    }
+
+    fn wait(&mut self, peer: &HumanPeer, request: layerx_agent_api::track::WaitRequest) -> Result<HumanResponse, HumanOperationError> {
+        self.lock()?.wait(peer, request)
+    }
+
+    fn budget_create(&mut self, peer: &HumanPeer, request: layerx_agent_api::budget::BudgetCreate) -> Result<HumanResponse, HumanOperationError> {
+        self.lock()?.budget_create(peer, request)
+    }
+
+    fn budget_fund(&mut self, peer: &HumanPeer, request: layerx_agent_api::budget::BudgetFund) -> Result<HumanResponse, HumanOperationError> {
+        self.lock()?.budget_fund(peer, request)
+    }
+
+    fn budget_list(&mut self, peer: &HumanPeer, request: layerx_agent_api::budget::BudgetList) -> Result<HumanResponse, HumanOperationError> {
+        self.lock()?.budget_list(peer, request)
+    }
+
+    fn budget_revoke(&mut self, peer: &HumanPeer, request: layerx_agent_api::budget::BudgetTarget) -> Result<HumanResponse, HumanOperationError> {
+        self.lock()?.budget_revoke(peer, request)
+    }
+
+    fn budget_reconciliation(&mut self, peer: &HumanPeer, request: layerx_agent_api::budget::BudgetTarget) -> Result<HumanResponse, HumanOperationError> {
+        self.lock()?.budget_reconciliation(peer, request)
+    }
+
+    fn capability_create(&mut self, peer: &HumanPeer, request: layerx_agent_api::capability::CapabilityCreate) -> Result<HumanResponse, HumanOperationError> {
+        self.lock()?.capability_create(peer, request)
+    }
+
+    fn capability_attenuate(&mut self, peer: &HumanPeer, request: layerx_agent_api::capability::CapabilityAttenuate) -> Result<HumanResponse, HumanOperationError> {
+        self.lock()?.capability_attenuate(peer, request)
+    }
+
+    fn capability_list(&mut self, peer: &HumanPeer, request: layerx_agent_api::capability::CapabilityList) -> Result<HumanResponse, HumanOperationError> {
+        self.lock()?.capability_list(peer, request)
+    }
+
+    fn capability_revoke(&mut self, peer: &HumanPeer, request: layerx_agent_api::capability::CapabilityRevoke) -> Result<HumanResponse, HumanOperationError> {
+        self.lock()?.capability_revoke(peer, request)
+    }
+
     fn authorize_subject(&mut self, peer: &HumanPeer) -> Result<(), HumanOperationError> {
         self.lock()?.authorize_subject(peer)
     }
@@ -1284,6 +1348,110 @@ fn budget_creation_response(
 }
 
 impl<A: HumanAuthorityBoundary> UnifiedAgentOwner<A> {
+    pub(crate) fn rpc_session_refresh(
+        &mut self,
+        context: &crate::agent_rpc_peer::RpcOwnerContext<'_>,
+        request: layerx_agent_api::identity::SessionRefresh,
+    ) -> Result<HumanResponse, HumanOperationError> {
+        if request.context.tenant.as_str() != context.peer().tenant.as_str() {
+            return Err(HumanOperationError::Refused);
+        }
+        let target =
+            session_id_hex(request.session_id.as_str()).ok_or(HumanOperationError::Refused)?;
+        let current_sequence = self.lock_operations()?.node.head().chain_sequence;
+        self.session_control
+            .refresh_session_authorized(context.permit(), SessionId(target), current_sequence)
+            .map_err(Self::session_writer_error)?;
+        self.session_record_response(context.peer(), target)
+    }
+    pub(crate) fn rpc_session_close(
+        &mut self,
+        context: &crate::agent_rpc_peer::RpcOwnerContext<'_>,
+        request: layerx_agent_api::identity::SessionClose,
+    ) -> Result<HumanResponse, HumanOperationError> {
+        if request.context.tenant.as_str() != context.peer().tenant.as_str() {
+            return Err(HumanOperationError::Refused);
+        }
+        let target =
+            session_id_hex(request.session_id.as_str()).ok_or(HumanOperationError::Refused)?;
+        let current_sequence = self.lock_operations()?.node.head().chain_sequence;
+        self.session_control
+            .close_session_authorized(context.permit(), SessionId(target), current_sequence)
+            .map_err(Self::session_writer_error)?;
+        self.session_record_response(context.peer(), target)
+    }
+    fn session_writer_error(
+        error: crate::session_control::SessionControlError,
+    ) -> HumanOperationError {
+        use crate::session_control::SessionControlError;
+        match error {
+            SessionControlError::Human(error) => error,
+            SessionControlError::Authorization(_) | SessionControlError::Session(_) => {
+                HumanOperationError::Refused
+            }
+            SessionControlError::Lifecycle(_) | SessionControlError::Unavailable => {
+                HumanOperationError::Unavailable
+            }
+        }
+    }
+    fn session_record_response(
+        &self,
+        peer: &HumanPeer,
+        target: [u8; 32],
+    ) -> Result<HumanResponse, HumanOperationError> {
+        let tenant =
+            TenantId::new(peer.tenant.clone()).map_err(|_| HumanOperationError::Refused)?;
+        let sessions = self
+            .sessions
+            .read()
+            .map_err(|_| HumanOperationError::Unavailable)?;
+        let record = sessions
+            .get(&tenant, SessionId(target))
+            .ok_or(HumanOperationError::Unavailable)?;
+        let mut out = Encoder::new();
+        Self::encode_session_record(&mut out, record)?;
+        out.finish()
+    }
+    fn encode_session_record(
+        out: &mut Encoder,
+        record: &session::SessionRecord,
+    ) -> Result<(), HumanOperationError> {
+        out.fixed(&record.request.session_id.0);
+        out.fixed(&record.request.token_id);
+        out.text(
+            std::str::from_utf8(record.request.agent.as_bytes())
+                .map_err(|_| HumanOperationError::Refused)?,
+        )?;
+        out.u64(record.generation);
+        out.u8(u8::from(record.open));
+        out.u64(record.request.expiry_sequence);
+        out.u64(record.sequence);
+        Ok(())
+    }
+    pub(crate) fn rpc_budget_reconciliation(
+        &mut self,
+        context: &crate::agent_rpc_peer::RpcOwnerContext<'_>,
+        request: layerx_agent_api::budget::BudgetTarget,
+    ) -> Result<HumanResponse, HumanOperationError> {
+        let control = self.session_control.clone();
+        if request.tenant.as_str() != context.peer().tenant {
+            return Err(HumanOperationError::Refused);
+        }
+        let budget_id =
+            digest_from_hex(request.budget_id.as_str()).ok_or(HumanOperationError::Refused)?;
+        context
+            .commit(&control, |peer| {
+                self.agent_budget_state(peer, budget_id)
+                    .map_err(crate::session_control::SessionControlError::Human)
+            })
+            .map_err(|error| match error {
+                crate::session_control::SessionControlError::Human(error) => error,
+                crate::session_control::SessionControlError::Unavailable => {
+                    HumanOperationError::Unavailable
+                }
+                _ => HumanOperationError::Refused,
+            })
+    }
     /// # Errors
     /// Returns an error when the request is invalid, authority is refused, or required state is unavailable.
     pub fn new(
@@ -1520,7 +1688,251 @@ impl<A: HumanAuthorityBoundary> UnifiedAgentOwner<A> {
     }
 }
 
+fn rpc_commit_error(error: crate::session_control::SessionControlError) -> HumanOperationError {
+    match error {
+        crate::session_control::SessionControlError::Human(error) => error,
+        crate::session_control::SessionControlError::Unavailable => HumanOperationError::Unavailable,
+        _ => HumanOperationError::Refused,
+    }
+}
+
+impl<A: HumanAuthorityBoundary> UnifiedAgentOwner<A> {
+    pub(crate) fn rpc_approval_approve(
+        &mut self,
+        context: &crate::agent_rpc_peer::RpcOwnerContext<'_>,
+        approval_id: [u8; 32],
+        held_digest: [u8; 32],
+        idempotency_key: &str,
+        current_sequence: u64,
+    ) -> Result<HumanResponse, HumanOperationError> {
+        let control = self.session_control.clone();
+        self.approval_decide(
+            context.peer(),
+            approval_id,
+            held_digest,
+            idempotency_key,
+            current_sequence,
+            true,
+            Some((context, &control)),
+        )
+    }
+
+    pub(crate) fn rpc_approval_reject(
+        &mut self,
+        context: &crate::agent_rpc_peer::RpcOwnerContext<'_>,
+        approval_id: [u8; 32],
+        held_digest: [u8; 32],
+        idempotency_key: &str,
+        current_sequence: u64,
+    ) -> Result<HumanResponse, HumanOperationError> {
+        let control = self.session_control.clone();
+        self.approval_decide(
+            context.peer(),
+            approval_id,
+            held_digest,
+            idempotency_key,
+            current_sequence,
+            false,
+            Some((context, &control)),
+        )
+    }
+
+    pub(crate) fn rpc_prepare(
+        &mut self,
+        context: &crate::agent_rpc_peer::RpcOwnerContext<'_>,
+        request: MutationEnvelope<HumanPrepare>,
+    ) -> Result<HumanResponse, HumanOperationError> {
+        let control = self.session_control.clone();
+        self.lock_operations()?
+            .prepare_gated(context.peer(), request, Some((context, &control)))
+    }
+
+    /// Enqueue and transmit run inside one permit read interval, so a session close cannot
+    /// land between the durable outbox enqueue and node submission.
+    pub(crate) fn rpc_submit_external(
+        &mut self,
+        context: &crate::agent_rpc_peer::RpcOwnerContext<'_>,
+        request: MutationEnvelope<HumanSubmit>,
+    ) -> Result<HumanResponse, HumanOperationError> {
+        let control = self.session_control.clone();
+        self.authorize_external_submit(context.peer(), &request)?;
+        let mut operations = self.lock_operations()?;
+        context
+            .commit(&control, |peer| {
+                operations
+                    .submit_external(peer, request)
+                    .map_err(crate::session_control::SessionControlError::Human)
+            })
+            .map_err(rpc_commit_error)
+    }
+
+    fn authorize_external_submit(
+        &self,
+        peer: &HumanPeer,
+        request: &MutationEnvelope<HumanSubmit>,
+    ) -> Result<(), HumanOperationError> {
+        let prepared_key = (
+            peer.tenant.clone(),
+            peer.principal.clone(),
+            request.operation.preparation_ref.clone(),
+        );
+        let prepared = self
+            .lock_operations()?
+            .prepared
+            .get(&prepared_key)
+            .cloned()
+            .ok_or(HumanOperationError::Refused)?;
+        let tenant =
+            TenantId::new(peer.tenant.clone()).map_err(|_| HumanOperationError::Refused)?;
+        self.approval_queue
+            .authorize_submit(
+                &tenant,
+                &request.operation.preparation_ref,
+                &prepared.prepared.canonical_bytes,
+                request.operation.approval_release_ref,
+            )
+            .map_err(|_| HumanOperationError::Refused)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn approval_decide(
+        &mut self,
+        peer: &HumanPeer,
+        approval_id: [u8; 32],
+        held_digest: [u8; 32],
+        idempotency_key: &str,
+        current_sequence: u64,
+        approve: bool,
+        gate: Option<(
+            &crate::agent_rpc_peer::RpcOwnerContext<'_>,
+            &crate::session_control::SessionControl,
+        )>,
+    ) -> Result<HumanResponse, HumanOperationError> {
+        let tenant =
+            TenantId::new(peer.tenant.clone()).map_err(|_| HumanOperationError::Refused)?;
+        let key = DecisionKey::new(idempotency_key).map_err(|_| HumanOperationError::Refused)?;
+        if approve {
+            if let Some(decision) = self
+                .approval_expiry
+                .repeated(&tenant, approval_id, &key)
+                .map_err(|_| HumanOperationError::Unavailable)?
+            {
+                if decision.outcome == ApprovalOutcome::Granted {
+                    let reference = decision
+                        .submission_ref
+                        .ok_or(HumanOperationError::Refused)?;
+                    if !self
+                        .approval_queue
+                        .matches_released_decision(&tenant, approval_id, reference, held_digest)
+                        .map_err(|_| HumanOperationError::Unavailable)?
+                    {
+                        return Err(HumanOperationError::Refused);
+                    }
+                }
+                return encode_decision(&decision);
+            }
+        }
+        let snapshot = self
+            .approvals
+            .get_scoped(&tenant, approval_id, current_sequence)
+            .map_err(|_| HumanOperationError::Refused)?;
+        if snapshot.prepared.disclosure.canonical_digest != held_digest {
+            return Err(HumanOperationError::Refused);
+        }
+        let request = DecisionRequest {
+            tenant: &tenant,
+            approval_id,
+            idempotency_key: &key,
+            approver: ApproverId::new(peer.principal.clone())
+                .map_err(|_| HumanOperationError::Refused)?,
+            current_sequence,
+        };
+        let service = ApprovalService::new(&self.approvals, &self.budgets, &self.approval_expiry);
+        let queue = &self.approval_queue;
+        let effect = move || {
+            let decision = if approve {
+                service.approve(request, &snapshot.prepared, queue)
+            } else {
+                service.reject(request)
+            };
+            decision.map_err(|_| HumanOperationError::Unavailable)
+        };
+        let decision = match gate {
+            None => effect()?,
+            Some((context, control)) => context
+                .commit(control, |_| {
+                    effect().map_err(crate::session_control::SessionControlError::Human)
+                })
+                .map_err(rpc_commit_error)?,
+        };
+        encode_decision(&decision)
+    }
+}
+
 impl<A: HumanAuthorityBoundary> HumanOperations for UnifiedAgentOwner<A> {
+    fn session_list(
+        &mut self,
+        peer: &HumanPeer,
+        request: layerx_agent_api::identity::SessionList,
+    ) -> Result<HumanResponse, HumanOperationError> {
+        if request.0.tenant.as_str() != peer.tenant.as_str() {
+            return Err(HumanOperationError::Refused);
+        }
+        let tenant =
+            TenantId::new(peer.tenant.clone()).map_err(|_| HumanOperationError::Refused)?;
+        let sessions = self
+            .sessions
+            .read()
+            .map_err(|_| HumanOperationError::Unavailable)?;
+        let mut records: Vec<&session::SessionRecord> = sessions.tenant_sessions(&tenant).collect();
+        records.sort_by_key(|record| record.request.session_id.0);
+        let mut out = Encoder::new();
+        out.u16(records.len())?;
+        for record in records {
+            Self::encode_session_record(&mut out, record)?;
+        }
+        out.finish()
+    }
+    fn read_module_state(
+        &mut self,
+        peer: &HumanPeer,
+        request: layerx_agent_api::read::ReadRequest<layerx_agent_api::read::ModuleStateSelector>,
+    ) -> Result<HumanResponse, HumanOperationError> {
+        self.lock_operations()?.read_module_state(peer, request)
+    }
+    fn read_history(
+        &mut self,
+        peer: &HumanPeer,
+        request: layerx_agent_api::read::ReadRequest<layerx_agent_api::read::HistorySelector>,
+    ) -> Result<HumanResponse, HumanOperationError> {
+        self.lock_operations()?.read_history(peer, request)
+    }
+    fn read_batch(
+        &mut self,
+        peer: &HumanPeer,
+        request: layerx_agent_api::read::ReadRequest<layerx_agent_api::read::BatchRef>,
+    ) -> Result<HumanResponse, HumanOperationError> {
+        self.lock_operations()?.read_batch(peer, request)
+    }
+    fn wait(
+        &mut self,
+        peer: &HumanPeer,
+        request: layerx_agent_api::track::WaitRequest,
+    ) -> Result<HumanResponse, HumanOperationError> {
+        self.lock_operations()?.wait(peer, request)
+    }
+    fn budget_reconciliation(
+        &mut self,
+        peer: &HumanPeer,
+        request: layerx_agent_api::budget::BudgetTarget,
+    ) -> Result<HumanResponse, HumanOperationError> {
+        if request.tenant.as_str() != peer.tenant {
+            return Err(HumanOperationError::Refused);
+        }
+        let budget_id =
+            digest_from_hex(request.budget_id.as_str()).ok_or(HumanOperationError::Refused)?;
+        self.agent_budget_state(peer, budget_id)
+    }
     fn authorize_subject(&mut self, peer: &HumanPeer) -> Result<(), HumanOperationError> {
         self.lock_operations()?.authorize_subject(peer)
     }
@@ -1556,27 +1968,7 @@ impl<A: HumanAuthorityBoundary> HumanOperations for UnifiedAgentOwner<A> {
         peer: &HumanPeer,
         request: MutationEnvelope<HumanSubmit>,
     ) -> Result<HumanResponse, HumanOperationError> {
-        let prepared_key = (
-            peer.tenant.clone(),
-            peer.principal.clone(),
-            request.operation.preparation_ref.clone(),
-        );
-        let prepared = self
-            .lock_operations()?
-            .prepared
-            .get(&prepared_key)
-            .cloned()
-            .ok_or(HumanOperationError::Refused)?;
-        let tenant =
-            TenantId::new(peer.tenant.clone()).map_err(|_| HumanOperationError::Refused)?;
-        self.approval_queue
-            .authorize_submit(
-                &tenant,
-                &request.operation.preparation_ref,
-                &prepared.prepared.canonical_bytes,
-                request.operation.approval_release_ref,
-            )
-            .map_err(|_| HumanOperationError::Refused)?;
+        self.authorize_external_submit(peer, &request)?;
         self.lock_operations()?.submit_external(peer, request)
     }
     fn track(
@@ -1684,50 +2076,15 @@ impl<A: HumanAuthorityBoundary> HumanOperations for UnifiedAgentOwner<A> {
         idempotency_key: &str,
         current_sequence: u64,
     ) -> Result<HumanResponse, HumanOperationError> {
-        let tenant =
-            TenantId::new(peer.tenant.clone()).map_err(|_| HumanOperationError::Refused)?;
-        let key = DecisionKey::new(idempotency_key).map_err(|_| HumanOperationError::Refused)?;
-        if let Some(decision) = self
-            .approval_expiry
-            .repeated(&tenant, approval_id, &key)
-            .map_err(|_| HumanOperationError::Unavailable)?
-        {
-            if decision.outcome == ApprovalOutcome::Granted {
-                let reference = decision
-                    .submission_ref
-                    .ok_or(HumanOperationError::Refused)?;
-                if !self
-                    .approval_queue
-                    .matches_released_decision(&tenant, approval_id, reference, held_digest)
-                    .map_err(|_| HumanOperationError::Unavailable)?
-                {
-                    return Err(HumanOperationError::Refused);
-                }
-            }
-            return encode_decision(&decision);
-        }
-        let snapshot = self
-            .approvals
-            .get_scoped(&tenant, approval_id, current_sequence)
-            .map_err(|_| HumanOperationError::Refused)?;
-        if snapshot.prepared.disclosure.canonical_digest != held_digest {
-            return Err(HumanOperationError::Refused);
-        }
-        let decision = ApprovalService::new(&self.approvals, &self.budgets, &self.approval_expiry)
-            .approve(
-                DecisionRequest {
-                    tenant: &tenant,
-                    approval_id,
-                    idempotency_key: &key,
-                    approver: ApproverId::new(peer.principal.clone())
-                        .map_err(|_| HumanOperationError::Refused)?,
-                    current_sequence,
-                },
-                &snapshot.prepared,
-                &self.approval_queue,
-            )
-            .map_err(|_| HumanOperationError::Unavailable)?;
-        encode_decision(&decision)
+        self.approval_decide(
+            peer,
+            approval_id,
+            held_digest,
+            idempotency_key,
+            current_sequence,
+            true,
+            None,
+        )
     }
     fn approval_reject(
         &mut self,
@@ -1737,27 +2094,15 @@ impl<A: HumanAuthorityBoundary> HumanOperations for UnifiedAgentOwner<A> {
         idempotency_key: &str,
         current_sequence: u64,
     ) -> Result<HumanResponse, HumanOperationError> {
-        let tenant =
-            TenantId::new(peer.tenant.clone()).map_err(|_| HumanOperationError::Refused)?;
-        let snapshot = self
-            .approvals
-            .get_scoped(&tenant, approval_id, current_sequence)
-            .map_err(|_| HumanOperationError::Refused)?;
-        if snapshot.prepared.disclosure.canonical_digest != held_digest {
-            return Err(HumanOperationError::Refused);
-        }
-        let key = DecisionKey::new(idempotency_key).map_err(|_| HumanOperationError::Refused)?;
-        let decision = ApprovalService::new(&self.approvals, &self.budgets, &self.approval_expiry)
-            .reject(DecisionRequest {
-                tenant: &tenant,
-                approval_id,
-                idempotency_key: &key,
-                approver: ApproverId::new(peer.principal.clone())
-                    .map_err(|_| HumanOperationError::Refused)?,
-                current_sequence,
-            })
-            .map_err(|_| HumanOperationError::Unavailable)?;
-        encode_decision(&decision)
+        self.approval_decide(
+            peer,
+            approval_id,
+            held_digest,
+            idempotency_key,
+            current_sequence,
+            false,
+            None,
+        )
     }
     fn balance(&mut self, peer: &HumanPeer) -> Result<HumanResponse, HumanOperationError> {
         self.lock_operations()?.balance(peer)
@@ -4124,7 +4469,129 @@ impl<A: HumanAuthorityBoundary> ProductionHumanOperations<A> {
     }
 }
 
+impl<A: HumanAuthorityBoundary> ProductionHumanOperations<A> {
+    fn prepare_gated(
+        &mut self,
+        peer: &HumanPeer,
+        request: MutationEnvelope<HumanPrepare>,
+        gate: Option<(
+            &crate::agent_rpc_peer::RpcOwnerContext<'_>,
+            &crate::session_control::SessionControl,
+        )>,
+    ) -> Result<HumanResponse, HumanOperationError> {
+        if !self.unified_owner_active {
+            return Err(HumanOperationError::Unavailable);
+        }
+        self.require_write_admission(&peer.tenant)?;
+        if prepare_digest(&request.operation) != request.body_digest {
+            return Err(HumanOperationError::Refused);
+        }
+        let activity_type = ActivityType::from_u32(request.operation.activity_type)
+            .map_err(|_| HumanOperationError::Refused)?;
+        let actor = Did::new(request.operation.actor.as_bytes())
+            .map_err(|_| HumanOperationError::Refused)?;
+        let authority = decode_owner_authority(&request.operation.authority)
+            .map_err(|_| HumanOperationError::Refused)?;
+        self.subject_owner(peer, &actor, &authority)?;
+        let timestamp =
+            TimestampBound::new(request.operation.not_before, request.operation.not_after)
+                .map_err(|_| HumanOperationError::Refused)?;
+        let protocol_version = self.node.handshake().node().protocol_version;
+        let mut boundary =
+            ProductionCorePreparationBoundary::new(&mut self.node, request.request_id)
+                .map_err(map_core)?;
+        let prepared = prepare_activity_for_protocol(
+            &mut boundary,
+            PreparationDefaults {
+                timestamp_span: self.timestamp_span,
+                fee_limit: Amount::from_u128(request.operation.fee_limit),
+                maximum_payload_bytes: self.maximum_payload_bytes,
+            },
+            PrepareRequest {
+                actor,
+                authority,
+                activity_type,
+                expected_account_sequence: Some(request.operation.account_sequence),
+                timestamp_bound: Some(timestamp),
+                fee_limit: Some(Amount::from_u128(request.operation.fee_limit)),
+                idempotency_key: IdempotencyKey::new(
+                    digest_from_hex(&request.operation.idempotency_key)
+                        .ok_or(HumanOperationError::Refused)?,
+                ),
+                payload: request.operation.payload,
+                declared_payload_limit: self.maximum_payload_bytes,
+            },
+            protocol_version,
+        )
+        .map_err(|_| HumanOperationError::Refused)?;
+        let registry = boundary
+            .last_state()
+            .ok_or(HumanOperationError::Unavailable)?
+            .module_registry
+            .clone();
+        if prepared.envelope.payload_hash() != request.operation.payload_hash {
+            return Err(HumanOperationError::Refused);
+        }
+        let reference = hex(&Sha256::digest(&prepared.canonical_bytes));
+        let cached_key = (
+            peer.tenant.clone(),
+            peer.principal.clone(),
+            reference.clone(),
+        );
+        let cached = CachedPreparation {
+            prepared: prepared.clone(),
+            registry,
+        };
+        let cache = &mut self.prepared;
+        let effect = move || {
+            if cache.insert(cached_key, cached).is_some() {
+                Err(HumanOperationError::Refused)
+            } else {
+                Ok(())
+            }
+        };
+        match gate {
+            None => effect()?,
+            Some((context, control)) => context
+                .commit(control, |_| {
+                    effect().map_err(crate::session_control::SessionControlError::Human)
+                })
+                .map_err(rpc_commit_error)?,
+        }
+        let mut out = Encoder::new();
+        out.text(&reference)?;
+        out.bytes(&prepared.canonical_bytes)?;
+        out.bytes(&prepared.signing_preimage)?;
+        out.u32(prepared.envelope.activity_type().value());
+        out.text(
+            std::str::from_utf8(prepared.envelope.actor_did().as_bytes())
+                .map_err(|_| HumanOperationError::Refused)?,
+        )?;
+        out.text(&request.operation.authority)?;
+        out.u64(prepared.envelope.account_sequence());
+        out.u64(prepared.envelope.timestamp_bound().not_before());
+        out.u64(prepared.envelope.timestamp_bound().not_after());
+        out.u128(prepared.envelope.fee_limit().value());
+        out.bytes(prepared.envelope.payload().as_bytes())?;
+        out.fixed(&prepared.envelope.payload_hash());
+        out.fixed(&prepared.envelope.idempotency_key().bytes());
+        out.finish()
+    }
+}
+
 impl<A: HumanAuthorityBoundary> HumanOperations for ProductionHumanOperations<A> {
+    fn budget_reconciliation(
+        &mut self,
+        peer: &HumanPeer,
+        request: layerx_agent_api::budget::BudgetTarget,
+    ) -> Result<HumanResponse, HumanOperationError> {
+        if request.tenant.as_str() != peer.tenant {
+            return Err(HumanOperationError::Refused);
+        }
+        let budget_id =
+            digest_from_hex(request.budget_id.as_str()).ok_or(HumanOperationError::Refused)?;
+        self.agent_budget_state(peer, budget_id)
+    }
     fn operator_command(
         &mut self,
         peer: &HumanPeer,
@@ -4220,95 +4687,7 @@ impl<A: HumanAuthorityBoundary> HumanOperations for ProductionHumanOperations<A>
         peer: &HumanPeer,
         request: MutationEnvelope<HumanPrepare>,
     ) -> Result<HumanResponse, HumanOperationError> {
-        if !self.unified_owner_active {
-            return Err(HumanOperationError::Unavailable);
-        }
-        self.require_write_admission(&peer.tenant)?;
-        if prepare_digest(&request.operation) != request.body_digest {
-            return Err(HumanOperationError::Refused);
-        }
-        let activity_type = ActivityType::from_u32(request.operation.activity_type)
-            .map_err(|_| HumanOperationError::Refused)?;
-        let actor = Did::new(request.operation.actor.as_bytes())
-            .map_err(|_| HumanOperationError::Refused)?;
-        let authority = decode_owner_authority(&request.operation.authority)
-            .map_err(|_| HumanOperationError::Refused)?;
-        self.subject_owner(peer, &actor, &authority)?;
-        let timestamp =
-            TimestampBound::new(request.operation.not_before, request.operation.not_after)
-                .map_err(|_| HumanOperationError::Refused)?;
-        let protocol_version = self.node.handshake().node().protocol_version;
-        let mut boundary =
-            ProductionCorePreparationBoundary::new(&mut self.node, request.request_id)
-                .map_err(map_core)?;
-        let prepared = prepare_activity_for_protocol(
-            &mut boundary,
-            PreparationDefaults {
-                timestamp_span: self.timestamp_span,
-                fee_limit: Amount::from_u128(request.operation.fee_limit),
-                maximum_payload_bytes: self.maximum_payload_bytes,
-            },
-            PrepareRequest {
-                actor,
-                authority,
-                activity_type,
-                expected_account_sequence: Some(request.operation.account_sequence),
-                timestamp_bound: Some(timestamp),
-                fee_limit: Some(Amount::from_u128(request.operation.fee_limit)),
-                idempotency_key: IdempotencyKey::new(
-                    digest_from_hex(&request.operation.idempotency_key)
-                        .ok_or(HumanOperationError::Refused)?,
-                ),
-                payload: request.operation.payload,
-                declared_payload_limit: self.maximum_payload_bytes,
-            },
-            protocol_version,
-        )
-        .map_err(|_| HumanOperationError::Refused)?;
-        let registry = boundary
-            .last_state()
-            .ok_or(HumanOperationError::Unavailable)?
-            .module_registry
-            .clone();
-        if prepared.envelope.payload_hash() != request.operation.payload_hash {
-            return Err(HumanOperationError::Refused);
-        }
-        let reference = hex(&Sha256::digest(&prepared.canonical_bytes));
-        if self
-            .prepared
-            .insert(
-                (
-                    peer.tenant.clone(),
-                    peer.principal.clone(),
-                    reference.clone(),
-                ),
-                CachedPreparation {
-                    prepared: prepared.clone(),
-                    registry,
-                },
-            )
-            .is_some()
-        {
-            return Err(HumanOperationError::Refused);
-        }
-        let mut out = Encoder::new();
-        out.text(&reference)?;
-        out.bytes(&prepared.canonical_bytes)?;
-        out.bytes(&prepared.signing_preimage)?;
-        out.u32(prepared.envelope.activity_type().value());
-        out.text(
-            std::str::from_utf8(prepared.envelope.actor_did().as_bytes())
-                .map_err(|_| HumanOperationError::Refused)?,
-        )?;
-        out.text(&request.operation.authority)?;
-        out.u64(prepared.envelope.account_sequence());
-        out.u64(prepared.envelope.timestamp_bound().not_before());
-        out.u64(prepared.envelope.timestamp_bound().not_after());
-        out.u128(prepared.envelope.fee_limit().value());
-        out.bytes(prepared.envelope.payload().as_bytes())?;
-        out.fixed(&prepared.envelope.payload_hash());
-        out.fixed(&prepared.envelope.idempotency_key().bytes());
-        out.finish()
+        self.prepare_gated(peer, request, None)
     }
 
     fn submit_external(

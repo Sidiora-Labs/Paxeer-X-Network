@@ -387,14 +387,17 @@ def _envelope_reply(status: int, content_type: str | None, encoded: bytes, reque
             raise
         if mutating:
             raise PlatformSdkError(SdkErrorCode.UNKNOWN_OUTCOME, "unknown-outcome", request_id=error.request_id) from None
-        if content_type != "application/json":
+        if content_type != "application/json" or status in {502, 503} or not _well_formed_json(encoded):
             raise PlatformSdkError(SdkErrorCode.TRANSPORT_FAILURE, "safe") from None
         raise
 
 
 def _envelope_read(response: object, maximum: int, mutating: bool) -> bytes:
     if not mutating:
-        return _bounded_read(response, maximum)
+        try:
+            return _bounded_read(response, maximum)
+        except PlatformSdkError:
+            raise PlatformSdkError(SdkErrorCode.TRANSPORT_FAILURE, "safe") from None
     reader = getattr(response, "read", None)
     if not callable(reader):
         raise _decode_failure()
@@ -430,6 +433,14 @@ def _decode_agent_envelope_response(status: int, encoded: bytes, sent_request_id
     if not _valid_verification_status(verification):
         raise PlatformSdkError(SdkErrorCode.VERIFICATION_FAILURE, "never", request_id=request_id)
     return AgentEnvelopeSuccess(request_id, envelope["value"], verification)
+
+
+def _well_formed_json(encoded: bytes) -> bool:
+    try:
+        json.loads(encoded.decode("utf-8"), parse_constant=_reject_constant, object_pairs_hook=_unique_object)
+    except (UnicodeDecodeError, json.JSONDecodeError, ValueError, RecursionError):
+        return False
+    return True
 
 
 def _unique_object(pairs: list[tuple[str, object]]) -> dict[str, object]:

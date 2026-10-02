@@ -11,7 +11,9 @@ import stat
 import subprocess
 import sys
 import tempfile
+import threading
 import time
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT / 'tests/daemon'))
@@ -29,6 +31,7 @@ RUST_PRE_RESTART = ('allowed_mutation', 'mutation_duplicate_same_result', 'wrong
 RUST_POST_RESTART = ('restart_unknown_reconcile',)
 PYTHON_PRE_RESTART = ('allowed_mutation', 'mutation_duplicate_same_result', 'restart_unknown_pending', 'restart_retry_same_result')
 PYTHON_POST_RESTART = ('restart_unknown_reconcile', 'restart_retry_same_result')
+DECODE_CASES = ('read_decode_failure', 'mutation_decode_unknown')
 DIRECT_CASES = ('read_account', 'program_read', 'approval_list', 'program_bearer_alone', 'gateway_key_alone_write',
                 'forged_principal_header', 'malformed_body', 'truncated_body', 'oversized_body', 'unknown_operation',
                 'unknown_field', 'bad_version', 'noncanonical_integer', 'faucet_retired', 'mtls_no_client_cert',
@@ -340,6 +343,26 @@ class Qualification:
         self.agentd = self.gateway = None
         self.results = []
         self.request_id = 1000
+        self.key_nonce = os.urandom(32)
+        self.effects = []
+        self.probe_tls = self.export_probe_tls()
+
+    def export_probe_tls(self):
+        evidence = private_dir(os.environ.get('PAXEER_X_EVIDENCE_DIR'), 'PAXEER_X_EVIDENCE_DIR')
+        target = Path(tempfile.mkdtemp(prefix='probe-tls-', dir=evidence))
+        files = {'client_cert_file': 'gateway-client.pem', 'client_key_file': 'gateway-client.key', 'server_ca_file': 'ca.pem'}
+        out = {}
+        for key, name in files.items():
+            shutil.copyfile(self.tls / name, target / name)
+            os.chmod(target / name, 0o600)
+            out[key] = str(target / name)
+        return out
+
+    def key(self, language, case):
+        return hashlib.sha256(self.key_nonce + language.encode() + b'\0' + case.encode()).hexdigest()
+
+    def effect(self, language, case, operation, key):
+        self.effects.append({'language': language, 'case': case, 'operation': operation, 'idempotency_key': key})
 
     def substitute(self, env, extra=None):
         values = {'tls_dir': str(self.tls), 'state_dir': str(self.d / 'agent-state'), 'runtime_dir': str(self.runtime.directory),
@@ -644,19 +667,21 @@ class Qualification:
         self.start_gateway()
         self.passed('no_plaintext_fallback', self.d / 'agentd.log')
 
-    def probe_requests(self):
+    def probe_requests(self, language):
         mutating = mutating_operations()
         requests = json.loads(json.dumps(self.config['requests']))
-        requests['allowed_mutation']['idempotency_key'] = os.urandom(32).hex()
-        requests['wrong_scope']['idempotency_key'] = os.urandom(32).hex()
-        for name in self.built['operations']:
-            if name in mutating:
-                requests['operation.' + name]['idempotency_key'] = os.urandom(32).hex()
+        requests['read_decode_failure'] = json.loads(json.dumps(requests['read']))
+        requests['mutation_decode_unknown'] = json.loads(json.dumps(requests['allowed_mutation']))
+        cases = ['allowed_mutation', 'wrong_scope', 'mutation_decode_unknown']
+        cases += ['operation.' + name for name in self.built['operations'] if name in mutating]
+        for case in cases:
+            requests[case]['idempotency_key'] = self.key(language, case)
         return requests
 
     def idempotency_cases(self):
         req = self.config['requests']
-        key = os.urandom(32).hex()
+        key = self.key('harness', 'idempotent_replay_same_body')
+        self.effect('harness', 'idempotent_replay_same_body', req['allowed_mutation']['operation'], key)
         first = self.envelope(req['allowed_mutation']['operation'], req['allowed_mutation']['request'], idempotency=key)
         status, body = self.http(self.encode(first), headers=self.api_key(), case='idempotent_first')
         first_value = self.success(status, body, first['request_id'], 'idempotent_first')
@@ -731,19 +756,91 @@ class Qualification:
         self.bindings()
         self.start_gateway()
 
-    def probe(self, language, cases, phase, state, requests=None, retry_state=None, prefix=False):
-        case_file = self.d / 'probes' / (language + '-' + phase + '.json')
+    def decode_server(self):
+        observed = []
+        mutating = mutating_operations()
+        class Handler(BaseHTTPRequestHandler):
+            def do_POST(handler):
+                body = handler.rfile.read(int(handler.headers.get('Content-Length', '0')))
+                value = json.loads(body)
+                observed.append({'operation': value.get('operation'), 'request_id': value.get('request_id'),
+                                 'idempotency_key': value.get('idempotency_key')})
+                if value.get('operation') in mutating:
+                    reply = {'request_id': value.get('request_id'), 'value': {}}
+                else:
+                    reply = {'request_id': 'mismatch-' + str(value.get('request_id')), 'value': {},
+                             'verification_status': {'state': 'achieved', 'level': LEVELS[0]}}
+                data = json.dumps(reply, separators=(',', ':')).encode()
+                handler.send_response(200)
+                handler.send_header('Content-Type', 'application/json')
+                handler.send_header('Content-Length', str(len(data)))
+                handler.send_header('Connection', 'close')
+                handler.end_headers()
+                handler.wfile.write(data)
+            def log_message(handler, *args):
+                pass
+        server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
+        ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        ctx.minimum_version = ssl.TLSVersion.TLSv1_2
+        ctx.load_cert_chain(str(self.tls / 'gateway.pem'), str(self.tls / 'gateway.key'))
+        server.socket = ctx.wrap_socket(server.socket, server_side=True)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        return server, observed
+
+    def read_cases(self, language):
+        server, observed = self.decode_server()
+        requests = self.probe_requests(language)
+        endpoint = 'https://localhost:' + str(server.server_address[1]) + ROUTE
+        for case in DECODE_CASES:
+            requests[case]['endpoint'] = endpoint
+        state = self.d / 'probes' / (language + '.state')
+        try:
+            if language == 'csharp':
+                self.probe(language, LANGUAGE_CASES, 'read', state, requests)
+                self.probe(language, DECODE_CASES, 'read', state, requests, decode_endpoint=endpoint,
+                           run='read-decode', csharp_class='AgentOperationEnvelopeDecodeTests')
+            else:
+                self.probe(language, LANGUAGE_CASES + DECODE_CASES, 'read', state, requests, decode_endpoint=endpoint)
+        finally:
+            server.shutdown()
+            server.server_close()
+        read_op = requests['read_decode_failure']['operation']
+        mutation = requests['mutation_decode_unknown']
+        reads = [row for row in observed if row['operation'] == read_op]
+        writes = [row for row in observed if row['operation'] == mutation['operation']]
+        require(len(observed) == 2 and len(reads) == 1, language + ' read_decode_failure retried a DecodeFailure')
+        require(len(writes) == 1 and writes[0]['idempotency_key'] == mutation['idempotency_key'],
+                language + ' mutation_decode_unknown resent an Unknown mutation')
+        self.effect(language, 'mutation_decode_unknown', mutation['operation'], mutation['idempotency_key'])
+        self.decode_observed.append({'language': language, 'observed_requests': observed})
+
+    def record_effects(self, language, cases, requests):
+        for case in cases:
+            row = requests.get(case)
+            if case in DECODE_CASES or not row or 'idempotency_key' not in row:
+                continue
+            if any(e['language'] == language and e['case'] == case for e in self.effects):
+                continue
+            self.effect(language, case, row['operation'], row['idempotency_key'])
+
+    def probe(self, language, cases, phase, state, requests=None, retry_state=None, prefix=False, decode_endpoint=None,
+              run=None, csharp_class='AgentOperationEnvelopeTests'):
+        run = phase if run is None else run
+        case_file = self.d / 'probes' / (language + '-' + run + '.json')
+        requests = self.probe_requests(language) if requests is None else requests
         fixture.write_json(case_file, {
             'endpoint': 'https://localhost:' + str(self.gateway_port) + ROUTE, 'server_name': 'localhost',
             'ca_pem': str(self.tls / 'ca.pem'), 'ca_der': str(self.tls / 'ca.der'),
             'gateway_api_key_file': self.config['gateway_api_key_file'],
             'program_bearer_file': self.config['program_bearer_file'],
             'credential_file': self.config['credential_file'],
-            'requests': self.probe_requests() if requests is None else requests,
+            'requests': requests,
+            'daemon_endpoint': 'https://localhost:' + str(self.agent_port) + '/rpc', **self.probe_tls,
+            **({} if decode_endpoint is None else {'decode_endpoint': decode_endpoint}),
             'operations': self.built['operations'], 'cases': list(cases), 'phase': phase,
-            'state_file': str(state), 'response_dir': str(self.d / 'probes' / (language + '-' + phase)),
+            'state_file': str(state), 'response_dir': str(self.d / 'probes' / (language + '-' + run)),
             **({} if retry_state is None else {'retry_state_file': str(retry_state)})})
-        (self.d / 'probes' / (language + '-' + phase)).mkdir(mode=0o700)
+        (self.d / 'probes' / (language + '-' + run)).mkdir(mode=0o700)
         art = self.built['artifacts']
         env = dict(self.runtime.env, PAXEER_X_AGENT_ENVELOPE_CASE=str(case_file))
         jvm_classpath = ':'.join([str(Path(art['jvm_main_classes']['path']).parents[4]),
@@ -759,16 +856,17 @@ class Qualification:
             'swift': ['swift', 'test', '--skip-build', '--package-path', str(ROOT / 'platform/sdk/swift'),
                       '--filter', 'AgentOperationEnvelopeTests'],
             'csharp': ['dotnet', 'test', art['csharp_probe']['path'], '--no-build', '--filter',
-                       'FullyQualifiedName~AgentOperationEnvelopeTests', '--logger', 'console;verbosity=detailed'],
+                       'FullyQualifiedName~' + csharp_class, '--logger', 'console;verbosity=detailed'],
         }[language]
         result = subprocess.run([str(a) for a in argv], env=env, cwd=ROOT, capture_output=True, text=True, timeout=300)
-        log = self.d / 'probes' / (language + '-' + phase + '.log')
+        log = self.d / 'probes' / (language + '-' + run + '.log')
         log.write_text(result.stdout + result.stderr)
         require(result.returncode == 0, language + ' probe failed in ' + phase + '; inspect private probe log')
         reported = CASE_LINE.findall(result.stdout)
         counts = COUNT_LINE.findall(result.stdout)
         require(len(counts) == 1 and int(counts[0]) == len(reported) == len(set(reported)), language + ' probe case accounting')
         require(set(reported) == set(cases), language + ' probe reported ' + str(sorted(set(cases) ^ set(reported))))
+        self.record_effects(language, cases, requests)
         for case in cases:
             self.passed(case if phase != 'read' and not prefix else 'sdk_' + language + '_' + case
                         + ('_post_restart' if prefix and phase == 'post-restart' and case in PYTHON_PRE_RESTART else ''), log)
@@ -783,14 +881,15 @@ class Qualification:
         self.direct_cases()
         self.idempotency_cases()
         self.mtls_cases()
+        self.decode_observed = []
         for language in LANGUAGES:
-            self.probe(language, LANGUAGE_CASES, 'read', self.d / 'probes' / (language + '.state'))
+            self.read_cases(language)
         state = self.d / 'probes/rust-mutation.state'
         operation_cases = tuple('operation.' + name for name in self.built['operations'])
         self.probe('rust', RUST_PRE_RESTART + operation_cases, 'pre-restart', state)
         python_state = self.d / 'probes/python-mutation.state'
         python_retry = self.d / 'probes/python-retry.state'
-        python_requests = self.probe_requests()
+        python_requests = self.probe_requests('python')
         self.probe('python', PYTHON_PRE_RESTART, 'pre-restart', python_state, python_requests, python_retry, True)
         old = self.agentd.pid
         self.agentd.kill()
@@ -799,6 +898,11 @@ class Qualification:
         require(self.agentd.pid != old, 'agentd restart reused the process')
         self.probe('rust', RUST_POST_RESTART, 'post-restart', state)
         self.probe('python', PYTHON_POST_RESTART, 'post-restart', python_state, python_requests, python_retry, True)
+        keys = [row['idempotency_key'] for row in self.effects]
+        require(len(keys) == len(set(keys)), 'idempotency keys collide across languages or cases')
+        write_private(self.d / 'effect-manifest.json', {
+            'key_derivation': 'sha256(run_nonce || language || NUL || case_id)', 'effects': self.effects,
+            'effect_count': len(self.effects), 'decode_requests': self.decode_observed})
 
 
 def worker(directory):
@@ -819,7 +923,7 @@ def worker(directory):
         qualification.run()
         expected = (len(DIRECT_CASES) + len(LANGUAGES) * len(LANGUAGE_CASES) + len(RUST_PRE_RESTART)
                     + len(built['operations']) + len(RUST_POST_RESTART)
-                    + len(PYTHON_PRE_RESTART) + len(PYTHON_POST_RESTART))
+                    + len(PYTHON_PRE_RESTART) + len(PYTHON_POST_RESTART) + len(LANGUAGES) * len(DECODE_CASES))
         require(len(qualification.results) == expected, 'case count ' + str(len(qualification.results)) + ' != ' + str(expected))
         write_private(runtime.directory / 'case-results.json', qualification.results)
         print(f'PAXEER_X_GATE tests={len(qualification.results)} skipped=0', flush=True)
@@ -864,7 +968,8 @@ def main():
         'candidate_revision': revision, 'command': command, 'started_utc': started,
         'finished_utc': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()), 'exit_code': result.returncode,
         'cases_passed': count, 'gate_marker': len(markers) == 1, 'worker_log': str(log_path),
-        'runtime_directory': str(directory), 'case_results': str(directory / 'case-results.json')})
+        'runtime_directory': str(directory), 'case_results': str(directory / 'case-results.json'),
+        'effect_manifest': str(directory / 'effect-manifest.json')})
     print(f'PAXEER_X_GATE tests={count} skipped=0' if len(markers) == 1 else
           f'PAXEER_X_GATE tests={count} skipped=0 incomplete=1', flush=True)
     require(result.returncode == 0 and len(markers) == 1 and count > 0, 'worker failed; inspect private worker.log')

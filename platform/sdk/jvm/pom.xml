@@ -62,12 +62,32 @@
             <goals><goal>compile</goal></goals>
             <configuration><jvmTarget>21</jvmTarget></configuration>
           </execution>
+          <execution>
+            <id>test-compile-kotlin</id>
+            <phase>test-compile</phase>
+            <goals><goal>test-compile</goal></goals>
+            <configuration>
+              <jvmTarget>21</jvmTarget>
+              <sourceDirs><sourceDir>${project.basedir}/src/test/kotlin</sourceDir></sourceDirs>
+            </configuration>
+          </execution>
         </executions>
       </plugin>
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-compiler-plugin</artifactId>
         <version>3.13.0</version>
+        <executions>
+          <execution>
+            <id>default-testCompile</id>
+            <phase>none</phase>
+          </execution>
+          <execution>
+            <id>java-test-compile</id>
+            <phase>test-compile</phase>
+            <goals><goal>testCompile</goal></goals>
+          </execution>
+        </executions>
       </plugin>
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>

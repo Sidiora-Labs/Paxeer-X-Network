@@ -794,13 +794,28 @@ public final class AgentEnvelopeTransport: PlatformTransport, @unchecked Sendabl
     public func sendEnvelope(_ call: TransportCall) async throws -> AgentEnvelopeResult {
         let mutating = call.operation.descriptor.requiresIdempotency
         let exchanged = try await exchange(call)
+        return try Self.classifyResponse(mutating: mutating, status: exchanged.status, data: exchanged.body,
+            requestID: exchanged.requestID)
+    }
+
+    static func classifyResponse(mutating: Bool, status: Int, data: Data, requestID: String) throws
+        -> AgentEnvelopeResult {
+        guard let document = try? JSONDecoder().decode(JSONValue.self, from: data), !edgeAmbiguity(status, document) else {
+            throw mutating ? Self.unknownOutcome() : PlatformSDKError(code: .transportFailure, retry: .safe)
+        }
         do {
-            return try Self.decodeResponse(status: exchanged.status, data: exchanged.body, requestID: exchanged.requestID)
+            return try Self.decodeResponse(status: status, data: data, requestID: requestID)
         } catch let error as PlatformSDKError {
             if mutating, error.code == .decodeFailure || error.code == .verificationFailure { throw Self.unknownOutcome() }
-            if error.code == .decodeFailure { throw PlatformSDKError(code: .transportFailure, retry: .safe) }
             throw error
         }
+    }
+
+    private static func edgeAmbiguity(_ status: Int, _ document: JSONValue) -> Bool {
+        guard status == 502 || status == 503, let object = document.objectValue, exact(object, ["ok", "error"]),
+              object["ok"] == .boolean(false), let error = object["error"]?.objectValue, exact(error, ["code"]),
+              error["code"]?.stringValue != nil else { return false }
+        return true
     }
 
     func exchange(_ call: TransportCall) async throws -> (requestID: String, status: Int, body: Data) {

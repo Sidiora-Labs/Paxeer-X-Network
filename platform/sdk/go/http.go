@@ -723,7 +723,7 @@ func (transport *AgentEnvelopeHTTPTransport) Call(ctx context.Context, call Tran
 		return nil, ambiguous(newSDKError(ErrorDecodeFailure, RetryNever))
 	}
 	value, decodeError := decodeAgentEnvelopeResponse(response.StatusCode, encoded, requestID)
-	if decodeError != nil && (decodeError.Code == ErrorDecodeFailure || decodeError.Code == ErrorVerificationFailure) {
+	if decodeError != nil && (decodeError.Code == ErrorDecodeFailure || decodeError.Code == ErrorVerificationFailure || decodeError.Code == ErrorTransportFailure && decodeError.RequestID == "") {
 		return nil, ambiguous(decodeError)
 	}
 	if decodeError != nil {
@@ -738,8 +738,16 @@ var agentEnvelopeLevels = map[string]int{
 }
 
 func decodeAgentEnvelopeResponse(status int, encoded []byte, requestID string) (json.RawMessage, *SDKError) {
+	// A non-JSON body or an edge 502/503 without a typed ApiError is transport ambiguity; well-formed JSON outside the schema is a decode failure.
+	if !utf8.Valid(encoded) || !json.Valid(encoded) {
+		return nil, newSDKError(ErrorTransportFailure, RetrySafe)
+	}
 	var fields map[string]json.RawMessage
-	if !utf8.Valid(encoded) || decodeStrict(encoded, &fields) != nil || fields == nil {
+	strictErr := decodeStrict(encoded, &fields)
+	if _, typed := fields["class"]; (status == http.StatusBadGateway || status == http.StatusServiceUnavailable) && (strictErr != nil || !typed) {
+		return nil, newSDKError(ErrorTransportFailure, RetrySafe)
+	}
+	if strictErr != nil || fields == nil {
 		return nil, newSDKError(ErrorDecodeFailure, RetryNever)
 	}
 	var echoed string

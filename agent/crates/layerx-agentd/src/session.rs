@@ -396,6 +396,17 @@ impl SessionRegistry {
         Ok(mint(record))
     }
 
+    /// Records of one tenant only, open and closed; never crosses tenants.
+    pub fn tenant_sessions<'a>(
+        &'a self,
+        tenant: &'a TenantId,
+    ) -> impl Iterator<Item = &'a SessionRecord> + 'a {
+        self.records
+            .iter()
+            .filter(move |(session, _)| &session.tenant == tenant)
+            .map(|(_, record)| record)
+    }
+
     #[must_use]
     pub fn open_count(&self) -> usize {
         self.records.values().filter(|record| record.open).count()

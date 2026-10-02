@@ -1,3 +1,6 @@
+import ssl
+from collections.abc import Mapping
+
 from .production import IdempotencyKey, PlatformPlane, ProductionTransport, SecretBytes
 
 class LayerXKeyCredential:
@@ -7,3 +10,20 @@ class LayerXKeyCredential:
 class AgentHttpTransport(ProductionTransport):
     def __init__(self, endpoint: str, *, credential: LayerXKeyCredential | None = ..., timeout: float = ..., maximum_response_bytes: int = ...) -> None: ...
     def call(self, plane: PlatformPlane, operation: object, request: object, idempotency_key: IdempotencyKey | None) -> object: ...
+
+class AgentSessionCredential:
+    def __init__(self, tenant: str, session_id: str, token_id: str, generation: int) -> None: ...
+    def coordinates(self) -> dict[str, str]: ...
+
+class AgentEnvelopeSuccess:
+    request_id: str
+    value: object
+    verification_status: Mapping[str, object]
+    def __init__(self, request_id: str, value: object, verification_status: Mapping[str, object]) -> None: ...
+
+class AgentEnvelopeTransport(ProductionTransport):
+    def __init__(self, endpoint: str, *, gateway_key: LayerXKeyCredential, session: AgentSessionCredential | None, ca_file: str | None = ..., timeout: float = ..., maximum_response_bytes: int = ...) -> None: ...
+    def call(self, plane: PlatformPlane, operation: object, request: object, idempotency_key: IdempotencyKey | None) -> AgentEnvelopeSuccess: ...
+
+class AgentDaemonEnvelopeTransport(AgentEnvelopeTransport):
+    def __init__(self, endpoint: str, *, ssl_context: ssl.SSLContext, session: AgentSessionCredential | None, timeout: float = ..., maximum_response_bytes: int = ...) -> None: ...

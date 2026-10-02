@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 import XCTest
 @testable import LayerXSDK
 
@@ -13,12 +16,20 @@ final class AgentOperationEnvelopeTests: XCTestCase {
         let cases: [String]
         let phase: String
         let responseDir: URL
+        let daemon: [String: URL]
     }
 
     private static let fileKeys: Set<String> = [
         "endpoint", "server_name", "ca_pem", "ca_der", "gateway_api_key_file", "program_bearer_file",
         "credential_file", "requests", "operations", "cases", "phase", "state_file", "response_dir",
     ]
+    private static let optionalFileKeys: Set<String> = [
+        "retry_state_file", "daemon_endpoint", "client_cert_file", "client_key_file", "server_ca_file",
+    ]
+    private static let daemonFileKeys: Set<String> = [
+        "daemon_endpoint", "client_cert_file", "client_key_file", "server_ca_file",
+    ]
+    private static let decodeCases = ["read_decode_failure", "mutation_decode_unknown"]
     private static let readCases = ["read": "read.account", "program_read": "program.interface",
                                     "approval_list": "approval.list"]
 
@@ -44,7 +55,20 @@ final class AgentOperationEnvelopeTests: XCTestCase {
             throw Self.refused("PAXEER_X_AGENT_ENVELOPE_CASE is absent")
         }
         let file = try Self.object(Data(contentsOf: URL(fileURLWithPath: raw)), "case file")
-        guard Set(file.keys) == Self.fileKeys else { throw Self.refused("case file keys") }
+        guard Self.fileKeys.isSubset(of: Set(file.keys)),
+              Set(file.keys).isSubset(of: Self.fileKeys.union(Self.optionalFileKeys)) else {
+            throw Self.refused("case file keys")
+        }
+        let daemonKeys = Set(file.keys).intersection(Self.daemonFileKeys)
+        guard daemonKeys.isEmpty || daemonKeys == Self.daemonFileKeys else { throw Self.refused("daemon case file keys") }
+        var daemon: [String: URL] = [:]
+        for key in daemonKeys where key != "daemon_endpoint" { daemon[key] = try Self.path(file, key) }
+        if daemonKeys.contains("daemon_endpoint") {
+            guard let text = file["daemon_endpoint"]?.stringValue, let url = URL(string: text), url.scheme == "https" else {
+                throw Self.refused("daemon_endpoint is not an https URL")
+            }
+            daemon["daemon_endpoint"] = url
+        }
         guard let endpointText = file["endpoint"]?.stringValue, let endpoint = URL(string: endpointText),
               endpoint.scheme == "https", endpoint.path == AgentEnvelopeTransport.routePath,
               file["server_name"]?.stringValue == endpoint.host else {
@@ -73,7 +97,7 @@ final class AgentOperationEnvelopeTests: XCTestCase {
         return CaseFile(
             endpoint: endpoint, certificateAuthority: authority, gatewayKeyID: String(key[0]),
             gatewayKey: Data(key[1].utf8), credential: credential, requests: requests, cases: cases, phase: phase,
-            responseDir: try Self.path(file, "response_dir"))
+            responseDir: try Self.path(file, "response_dir"), daemon: daemon)
     }
 
     private func transport(_ file: CaseFile, generation: UInt64? = nil, withCredential: Bool = true) throws
@@ -101,6 +125,7 @@ final class AgentOperationEnvelopeTests: XCTestCase {
     }
 
     private func runCase(_ id: String, _ file: CaseFile, _ agent: AgentEnvelopeTransport) async throws {
+        if Self.decodeCases.contains(id) { return try runDecodeCase(id) }
         guard let expected = Self.readCases[id], let entry = file.requests[id]?.objectValue,
               entry["operation"]?.stringValue == expected,
               Set(entry.keys) == ["operation", "request"] || Set(entry.keys) == ["operation", "request", "idempotency_key"],
@@ -131,7 +156,12 @@ final class AgentOperationEnvelopeTests: XCTestCase {
             fflush(stdout)
         }
         let file = try caseFile()
-        guard file.phase == "read", file.cases == ["read", "program_read", "approval_list"] else {
+        let decodeExtras = Array(file.cases.dropFirst(3))
+        guard decodeExtras.allSatisfy(Self.decodeCases.contains),
+              decodeExtras == Self.decodeCases.filter(decodeExtras.contains) else {
+            throw Self.refused("swift probe serves only the read phase cases")
+        }
+        guard file.phase == "read", Array(file.cases.prefix(3)) == ["read", "program_read", "approval_list"] else {
             throw Self.refused("swift probe serves only the read phase cases")
         }
         let agent = try transport(file)
@@ -182,6 +212,67 @@ final class AgentOperationEnvelopeTests: XCTestCase {
         } catch let error as PlatformSDKError {
             XCTAssertEqual(error.code, .capabilityRefusal)
         }
+    }
+
+    private func expectClassified(_ operation: PlatformOperation, status: Int, body: String,
+                                  code: SDKErrorCode, retry: RetryClass, _ label: String) {
+        let requestID = "7"
+        do {
+            _ = try AgentEnvelopeTransport.classifyResponse(mutating: operation.descriptor.requiresIdempotency,
+                status: status, data: Data(body.utf8), requestID: requestID)
+            XCTFail(label + " was accepted")
+        } catch let error as PlatformSDKError {
+            XCTAssertEqual(error.code, code, label)
+            XCTAssertEqual(error.retry, retry, label)
+        } catch {
+            XCTFail(label + " raised a non-SDK error: \(error)")
+        }
+    }
+
+    private func runDecodeCase(_ id: String) throws {
+        let violating = [
+            (200, #"{"request_id":"7","value":{}}"#),
+            (200, #"{"request_id":"7","value":{},"verification_status":{"state":"achieved","level":"Unverified"},"extra":1}"#),
+            (403, #"{"class":"PolicyRefusal","protocol_result_code":null,"retriability":"Terminal","request_id":"7"}"#),
+            (200, #"[1]"#),
+        ]
+        let undecodable = [(200, "not json"), (502, "<html></html>"), (503, #"{"ok":false,"error":{"code":"route_unavailable"}}"#)]
+        if id == "read_decode_failure" {
+            let read = PlatformOperation.agentReadAccount
+            XCTAssertFalse(read.descriptor.requiresIdempotency)
+            for (status, body) in violating {
+                expectClassified(read, status: status, body: body, code: .decodeFailure, retry: .never, "read " + body)
+            }
+            for (status, body) in undecodable {
+                expectClassified(read, status: status, body: body, code: .transportFailure, retry: .safe, "read " + body)
+            }
+        } else {
+            let mutation = PlatformOperation.agentApprovalApprove
+            XCTAssertTrue(mutation.descriptor.requiresIdempotency)
+            for (status, body) in violating + undecodable {
+                expectClassified(mutation, status: status, body: body, code: .unknownOutcome, retry: .unknownOutcome,
+                    "mutation " + body)
+            }
+        }
+    }
+
+    func testSdkSwiftDaemonTransportFailsClosedWithoutClientIdentity() throws {
+        let file = try caseFile()
+        let endpoint = file.daemon["daemon_endpoint"] ?? file.endpoint
+        let authority = try file.daemon["server_ca_file"].map { try AgentCertificateAuthority(pemFile: $0) }
+            ?? file.certificateAuthority
+        #if canImport(Security)
+        guard file.daemon.isEmpty else {
+            throw Self.refused("client_cert_file/client_key_file PEM identity loading is not implemented on this platform")
+        }
+        XCTAssertThrowsError(try AgentEnvelopeTransport.daemon(baseURL: endpoint, credential: nil,
+            certificateAuthority: authority, clientIdentity: URLCredential(user: "", password: "", persistence: .none)))
+        #else
+        XCTAssertThrowsError(try AgentEnvelopeTransport.daemon(baseURL: endpoint, credential: nil,
+            certificateAuthority: authority, clientIdentity: URLCredential(user: "", password: "", persistence: .none))) {
+            XCTAssertEqual($0 as? PlatformSDKError, PlatformSDKError(code: .unavailableCapability, retry: .never))
+        }
+        #endif
     }
 
     private static func hexBytes(_ text: String) -> Data? {

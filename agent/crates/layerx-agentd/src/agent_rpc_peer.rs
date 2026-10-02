@@ -62,7 +62,7 @@ impl RpcOwnerContext<'_> {
     ///
     /// Returns an error if the session no longer authorizes the operation or the effect fails.
     pub fn commit<T>(
-        self,
+        &self,
         control: &SessionControl,
         effect: impl FnOnce(&HumanPeer) -> Result<T, SessionControlError>,
     ) -> Result<T, SessionControlError> {

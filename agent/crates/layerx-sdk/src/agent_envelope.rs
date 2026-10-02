@@ -59,15 +59,34 @@ pub enum EnvelopeError {
     GatewayAuthentication,
     /// The daemon or gateway answered with the established error envelope.
     Refused(ApiError),
-    /// A read failed in transport; it had no effect and may be re-issued by the caller.
+    /// A read failed in transport (no response, non-JSON body, or an edge/gateway
+    /// answer); it had no effect and may be re-issued by the caller.
     Transport { operation: Operation },
-    /// A read returned a body that is not a valid version 1 response.
+    /// A read returned a well-formed JSON body that violates the exact version 1
+    /// success/error schema or names another request. Never re-issued.
     Decode { operation: Operation },
     /// A mutation may or may not have taken effect. Reconcile through `track` with the
     /// same idempotency key; never resend automatically.
     Unknown { operation: Operation },
-    /// The response is bound to a different request than the one sent.
-    RequestIdMismatch { sent: RequestId, received: RequestId },
+}
+
+/// Whether the caller may re-issue an exchange that ended in an [`EnvelopeError`].
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ClientRetriability {
+    Safe,
+    Never,
+}
+
+impl EnvelopeError {
+    /// `Safe` only for a read transport failure; every other outcome, including
+    /// [`EnvelopeError::Decode`] and [`EnvelopeError::Unknown`], is `Never`.
+    #[must_use]
+    pub const fn client_retriability(&self) -> ClientRetriability {
+        match self {
+            Self::Transport { .. } => ClientRetriability::Safe,
+            _ => ClientRetriability::Never,
+        }
+    }
 }
 
 /// Session coordinates carried in the envelope `credential` object.
@@ -447,7 +466,18 @@ impl AgentEnvelopeTransport {
             .map_err(|_| ambiguous())?;
         let document: Value = serde_json::from_slice(&encoded).map_err(|_| malformed())?;
         *received = Some((status, document.clone()));
-        let decoded = decode_response(status, &document).ok_or_else(malformed)?;
+        let edge = matches!(status, 502..=504)
+            || document.as_object().is_some_and(|object| object.contains_key("ok"));
+        let schema_violation = || {
+            if operation.mutating() {
+                EnvelopeError::Unknown { operation }
+            } else if edge {
+                EnvelopeError::Transport { operation }
+            } else {
+                EnvelopeError::Decode { operation }
+            }
+        };
+        let decoded = decode_response(status, &document).ok_or_else(schema_violation)?;
         let received = match &decoded {
             Ok(success) => success.request_id,
             // "0" is the daemon's request_id for an envelope it could not parse.
@@ -455,9 +485,10 @@ impl AgentEnvelopeTransport {
             Err(error) => error.request_id,
         };
         if received != request_id {
-            return Err(EnvelopeError::RequestIdMismatch {
-                sent: request_id,
-                received,
+            return Err(if operation.mutating() {
+                EnvelopeError::Unknown { operation }
+            } else {
+                EnvelopeError::Decode { operation }
             });
         }
         decoded.map_err(EnvelopeError::Refused)

@@ -544,7 +544,7 @@ export class AgentEnvelopeTransport implements ProductionTransport {
           received += chunk.length;
           if (received > this.#maximumResponseBytes) {
             response.destroy();
-            finish(reject, mutation ? ambiguous() : decodeFailure());
+            finish(reject, ambiguous());
             return;
           }
           chunks.push(Buffer.from(chunk));
@@ -554,8 +554,8 @@ export class AgentEnvelopeTransport implements ProductionTransport {
           try {
             const status = response.statusCode ?? 0;
             this.#onResponse?.(status, Buffer.concat(chunks));
-            if (status >= 300 && status < 400) throw mutation ? ambiguous() : decodeFailure();
-            if (response.headers["content-type"] !== "application/json") throw mutation ? ambiguous() : decodeFailure();
+            if (status >= 300 && status < 400) throw ambiguous();
+            if (response.headers["content-type"] !== "application/json") throw ambiguous();
             finish(resolve, decodeAgentEnvelopeResponse(status, Buffer.concat(chunks), mutation, requestId) as TResponse);
           } catch (error) {
             finish(reject, error);
@@ -636,19 +636,30 @@ function canonicalRequest(value: unknown, depth: number): unknown {
   throw invalidArgument();
 }
 
-/** Decodes ApiSuccess or the established ApiError; an ambiguous mutation reply is unknown-outcome, never safe. */
+/**
+ * Decodes ApiSuccess or the established ApiError; an ambiguous mutation reply is unknown-outcome, never safe.
+ * Reads: a non-JSON body or a gateway edge reply is transport-failure (safe); well-formed JSON that violates the
+ * exact ApiSuccess / ApiError schema (missing or extra field, wrong type, request_id mismatch) is decode-failure (never).
+ */
 export function decodeAgentEnvelopeResponse(status: number, encoded: Buffer, mutation: boolean, sentRequestId: string): AgentEnvelopeSuccess {
   const ambiguous = (requestId?: string): PlatformSdkError => mutation
     ? new PlatformSdkError({ code: "unknown-outcome", retry: "unknown-outcome", ...(requestId === undefined ? {} : { requestId }) })
     : decodeFailure(requestId);
   let envelope: Readonly<Record<string, unknown>>;
+  let wellFormed = false;
   try {
     const parsed = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(encoded), (_key, value: unknown) => {
-      if (typeof value === "number" && !Number.isSafeInteger(value)) throw invalidArgument();
+      if (typeof value === "number" && !Number.isSafeInteger(value)) {
+        wellFormed = true;
+        throw invalidArgument();
+      }
       return value;
     }) as unknown;
+    wellFormed = true;
     envelope = record(parsed);
-  } catch { throw ambiguous(); }
+  } catch {
+    throw mutation || wellFormed ? ambiguous() : new PlatformSdkError({ code: "transport-failure", retry: "safe" });
+  }
   if (!mutation && envelope.ok === false && "error" in envelope && Object.keys(envelope).length === 2) {
     throw new PlatformSdkError({ code: "transport-failure", retry: "safe" });
   }

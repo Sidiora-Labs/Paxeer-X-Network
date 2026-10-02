@@ -19,6 +19,7 @@ import kotlin.system.exitProcess
 private val json = ObjectMapper()
 private val node = json.constructType(JsonNode::class.java)
 private val operations = mapOf("read" to "read.account", "program_read" to "program.interface", "approval_list" to "approval.list")
+private val decodeCases = setOf("read_decode_failure", "mutation_decode_unknown")
 
 private fun JsonNode.text(field: String): String =
     get(field)?.takeIf { it.isTextual && it.textValue().isNotEmpty() }?.textValue()
@@ -35,8 +36,11 @@ private fun client(caPem: String): HttpClient {
         .version(HttpClient.Version.HTTP_1_1).build()
 }
 
-private fun transport(config: JsonNode, credential: JsonNode, generation: String): HttpProductionTransport {
-    val endpoint = URI.create(config.text("endpoint"))
+private fun transport(config: JsonNode, credential: JsonNode, generation: String): HttpProductionTransport =
+    transport(config, config.text("endpoint"), credential, generation)
+
+private fun transport(config: JsonNode, target: String, credential: JsonNode, generation: String): HttpProductionTransport {
+    val endpoint = URI.create(target)
     check(endpoint.scheme.equals("https", ignoreCase = true)) { "endpoint must be https" }
     val key = Files.readString(Path.of(config.text("gateway_api_key_file")), Charsets.US_ASCII).trim()
     val separator = key.indexOf(':')
@@ -70,6 +74,41 @@ private fun refusal(transport: HttpProductionTransport, operation: String, reque
     throw IllegalStateException("$operation was not refused")
 }
 
+private fun decodeCase(config: JsonNode, credential: JsonNode, generation: String, requests: JsonNode, id: String, responses: Path) {
+    val provisioned = requests.get(id)?.takeIf { it.isObject } ?: throw IllegalStateException("provisioned request lacks case $id")
+    val operation = agentOperation(provisioned.text("operation"))
+    val mutating = OperationCatalog.requiresIdempotency(operation)
+    check(mutating == (id == "mutation_decode_unknown")) { "case $id operation mutability" }
+    val key = if (mutating) {
+        val value = provisioned.text("idempotency_key")
+        check(Regex("[0-9a-f]{64}").matches(value)) { "case $id idempotency_key must be 64 lowercase hex" }
+        IdempotencyKey(value)
+    } else {
+        check(provisioned.get("idempotency_key")?.isNull ?: true) { "case $id is non-mutating and carries no idempotency_key" }
+        null
+    }
+    val endpoint = if (provisioned.has("endpoint")) provisioned.text("endpoint") else config.text("endpoint")
+    val target = transport(config, endpoint, credential, generation)
+    val call = ProductionTransport.Call(operation, request(provisioned, "request"), null, key)
+    val error = try {
+        target.callAgentReply(call).toCompletableFuture().join()
+        null
+    } catch (failure: CompletionException) {
+        failure.cause as? PlatformSdkException ?: throw IllegalStateException("case $id failed outside the SDK error contract")
+    } ?: throw IllegalStateException("case $id decoded a reply")
+    if (mutating) {
+        check(error.code() == PlatformSdkException.Code.UNKNOWN_OUTCOME &&
+            error.retry() == PlatformSdkException.Retry.UNKNOWN_OUTCOME) { "case $id was not an unknown outcome" }
+    } else {
+        check(error.code() == PlatformSdkException.Code.DECODE_FAILURE &&
+            error.retry() == PlatformSdkException.Retry.NEVER) { "case $id was not a never-retry decode failure" }
+    }
+    val record = json.createObjectNode()
+    record.put("sdk_error", error.code().wire())
+    record.put("retry", error.retry().wire())
+    Files.write(responses.resolve("$id.json"), json.writeValueAsBytes(record))
+}
+
 private fun run(): Int {
     val caseFile = System.getenv("PAXEER_X_AGENT_ENVELOPE_CASE")?.takeIf { it.isNotEmpty() }
         ?: throw IllegalStateException("missing PAXEER_X_AGENT_ENVELOPE_CASE")
@@ -91,6 +130,11 @@ private fun run(): Int {
     for (entry in cases) {
         check(entry.isTextual && seen.add(entry.textValue())) { "case ids must be unique strings" }
         val id = entry.textValue()
+        if (id in decodeCases) {
+            decodeCase(config, credential, generation, requests, id, responses)
+            println("PAXEER_X_AGENT_ENVELOPE_CASE $id passed")
+            continue
+        }
         val operation = operations[id] ?: throw IllegalStateException("unsupported case $id")
         val provisioned = requests.get(id)?.takeIf { it.isObject } ?: throw IllegalStateException("provisioned request lacks case $id")
         check(provisioned.text("operation") == operation) { "case $id operation must be $operation" }

@@ -10,12 +10,17 @@ use layerx_agent_api::error::{ErrorClass, Level, RequestId, Retriability, Verifi
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
+use layerx_agent_api::budget::{BudgetCreate, BudgetFund, BudgetTarget};
+use layerx_agent_api::capability::{CapabilityAttenuate, CapabilityCreate, CapabilityRevoke};
+use layerx_agent_api::identity::{SessionClose, SessionRefresh};
+use layerx_agent_api::submit::SignRequest;
+use layerx_agent_api::subscription::{CursorAcknowledgement, SubscriptionCreate, SubscriptionTarget};
+
 use crate::agent_rpc::Rejection;
-use crate::agent_rpc_adapters::dispatch_extended;
+use crate::agent_rpc_adapters as adapters;
 use crate::agent_rpc_peer::RpcOwnerContext;
 use crate::human::{
     HumanOperationError, HumanOperations, HumanPeer, HumanPrepare, HumanResponse, HumanSubmit,
-    MutationEnvelope,
 };
 use crate::human_runtime::{prepare_digest, submit_digest, HumanAuthorityBoundary, SharedAgentOwner};
 use crate::session_control::OperationPermit;
@@ -55,7 +60,7 @@ fn noncanonical(request_id: RequestId) -> Rejection {
     )
 }
 
-fn decimal_u64(text: &str, request_id: RequestId) -> Result<u64, Rejection> {
+pub(crate) fn decimal_u64(text: &str, request_id: RequestId) -> Result<u64, Rejection> {
     decimal_u128(text, request_id)?
         .try_into()
         .map_err(|_| noncanonical(request_id))
@@ -101,7 +106,7 @@ fn hex_bytes(text: &str, request_id: RequestId) -> Result<Vec<u8>, Rejection> {
         .collect()
 }
 
-fn lower_hex(bytes: &[u8]) -> String {
+pub(crate) fn lower_hex(bytes: &[u8]) -> String {
     const DIGITS: &[u8; 16] = b"0123456789abcdef";
     let mut out = String::with_capacity(bytes.len() * 2);
     for byte in bytes {
@@ -128,7 +133,7 @@ fn decode<T: for<'de> Deserialize<'de>>(
     })
 }
 
-fn mutation_key(ctx: &DispatchContext) -> Result<[u8; 32], Rejection> {
+pub(crate) fn mutation_key(ctx: &DispatchContext) -> Result<[u8; 32], Rejection> {
     ctx.idempotency_key.ok_or_else(|| {
         rejection(
             ErrorClass::IdempotencyConflict,
@@ -162,9 +167,9 @@ const MAX_DISCLOSED: usize = 64;
 /// Bounded reader over the owner payload (the bytes after the Human frame magic and status),
 /// mirroring the production Human client reader: big-endian integers, u32-length-prefixed
 /// non-empty byte strings, UTF-8 text of at most 255 bytes, and an exact end.
-struct Reader<'a> {
-    bytes: &'a [u8],
-    offset: usize,
+pub(crate) struct Reader<'a> {
+    pub(crate) bytes: &'a [u8],
+    pub(crate) offset: usize,
 }
 
 impl<'a> Reader<'a> {
@@ -209,7 +214,7 @@ impl<'a> Reader<'a> {
         }
         String::from_utf8(bytes.to_vec()).ok()
     }
-    fn finish(&self) -> Option<()> {
+    pub(crate) fn finish(&self) -> Option<()> {
         (self.offset == self.bytes.len()).then_some(())
     }
 }
@@ -368,7 +373,7 @@ fn decode_tracked(reader: &mut Reader<'_>) -> Option<(Value, Option<Level>)> {
     Some((Value::Object(out), Some(achieved)))
 }
 
-fn decode_observation(reader: &mut Reader<'_>) -> Option<(Value, Option<Level>)> {
+pub(crate) fn decode_observation(reader: &mut Reader<'_>) -> Option<(Value, Option<Level>)> {
     let activity_id = reader.fixed::<32>()?;
     if activity_id == [0; 32] {
         return None;
@@ -432,7 +437,7 @@ fn decode_receipt_lookup(reader: &mut Reader<'_>) -> Option<(Value, Option<Level
 
 /// Mirrors the client prepare reader. The client additionally re-binds the disclosure against
 /// its activity registry; that registry check is not repeated here.
-fn decode_preparation(reader: &mut Reader<'_>) -> Option<(Value, Option<Level>)> {
+pub(crate) fn decode_preparation(reader: &mut Reader<'_>) -> Option<(Value, Option<Level>)> {
     let mut out = Map::new();
     out.insert("preparation_ref".into(), Value::String(reader.text()?));
     out.insert("unsigned_canonical_bytes".into(), hexv(reader.bytes()?));
@@ -450,7 +455,7 @@ fn decode_preparation(reader: &mut Reader<'_>) -> Option<(Value, Option<Level>)>
     Some((Value::Object(out), None))
 }
 
-fn decode_decision(reader: &mut Reader<'_>) -> Option<(Value, Option<Level>)> {
+pub(crate) fn decode_decision(reader: &mut Reader<'_>) -> Option<(Value, Option<Level>)> {
     let outcome = reader.u8()?;
     let submission_ref = match reader.u8()? {
         0 => None,
@@ -566,7 +571,7 @@ fn decode_approval_get(reader: &mut Reader<'_>) -> Option<(Value, Option<Level>)
 
 /// Decodes the owner payload with the operation's bounded decoder. A payload that does not
 /// decode completely is an owner fault, never a partial value.
-fn dispatched(
+pub(crate) fn dispatched(
     request_id: RequestId,
     response: Result<HumanResponse, HumanOperationError>,
     decoder: impl FnOnce(&mut Reader<'_>) -> Option<(Value, Option<Level>)>,
@@ -651,19 +656,19 @@ struct ActivityLookupRequest {
 
 #[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
-struct ApprovalDecisionRequest {
+pub(crate) struct ApprovalDecisionRequest {
     #[serde(default, skip_serializing)]
-    tenant: Option<String>,
+    pub(crate) tenant: Option<String>,
     #[serde(default, skip_serializing)]
-    agent: Option<String>,
-    approval_id: String,
-    held_digest: String,
-    current_sequence: String,
+    pub(crate) agent: Option<String>,
+    pub(crate) approval_id: String,
+    pub(crate) held_digest: String,
+    pub(crate) current_sequence: String,
 }
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-struct PrepareRequest {
+pub(crate) struct PrepareRequest {
     #[serde(default)]
     tenant: Option<String>,
     #[serde(default)]
@@ -682,7 +687,7 @@ struct PrepareRequest {
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-struct SubmitRequest {
+pub(crate) struct SubmitRequest {
     #[serde(default)]
     tenant: Option<String>,
     #[serde(default)]
@@ -693,7 +698,7 @@ struct SubmitRequest {
     approval_release_ref: Option<String>,
 }
 
-fn human_prepare(
+pub(crate) fn human_prepare(
     request: PrepareRequest,
     request_id: RequestId,
 ) -> Result<HumanPrepare, Rejection> {
@@ -713,7 +718,7 @@ fn human_prepare(
     })
 }
 
-fn human_submit(request: SubmitRequest, request_id: RequestId) -> Result<HumanSubmit, Rejection> {
+pub(crate) fn human_submit(request: SubmitRequest, request_id: RequestId) -> Result<HumanSubmit, Rejection> {
     let _ = (request.tenant, request.agent);
     Ok(HumanSubmit {
         preparation_ref: request.preparation_ref,
@@ -776,7 +781,57 @@ pub(crate) fn canonical_request_bytes(
         }
         Operation::Prepare => prepare_digest(&human_prepare(decode(request, id)?, id)?).to_vec(),
         Operation::Submit => submit_digest(&human_submit(decode(request, id)?, id)?).to_vec(),
-        _ => return Ok(None),
+        Operation::BudgetCreate => named(operation, &decode::<BudgetCreate>(request, id)?, id)?,
+        Operation::BudgetFund => named(operation, &decode::<BudgetFund>(request, id)?, id)?,
+        Operation::BudgetRevoke => named(operation, &decode::<BudgetTarget>(request, id)?, id)?,
+        Operation::CapabilityCreate => {
+            named(operation, &decode::<CapabilityCreate>(request, id)?, id)?
+        }
+        Operation::CapabilityAttenuate => {
+            named(operation, &decode::<CapabilityAttenuate>(request, id)?, id)?
+        }
+        Operation::CapabilityRevoke => {
+            named(operation, &decode::<CapabilityRevoke>(request, id)?, id)?
+        }
+        Operation::SessionRefresh => named(operation, &decode::<SessionRefresh>(request, id)?, id)?,
+        Operation::SessionClose => named(operation, &decode::<SessionClose>(request, id)?, id)?,
+        Operation::SubscriptionCreate => {
+            named(operation, &decode::<SubscriptionCreate>(request, id)?, id)?
+        }
+        Operation::SubscriptionPause
+        | Operation::SubscriptionResume
+        | Operation::SubscriptionDelete => {
+            named(operation, &decode::<SubscriptionTarget>(request, id)?, id)?
+        }
+        Operation::SubscriptionAcknowledge => {
+            named(operation, &decode::<CursorAcknowledgement>(request, id)?, id)?
+        }
+        Operation::Sign => named(operation, &decode::<SignRequest>(request, id)?, id)?,
+        Operation::ProgramCall
+        | Operation::ProgramDeploy
+        | Operation::ProgramUpgrade
+        | Operation::ProgramWindDown => named(operation, request, id)?,
+        Operation::AgentRegister
+        | Operation::SessionOpen
+        | Operation::AvailabilityFetch
+        | Operation::BudgetList
+        | Operation::BudgetReconciliation
+        | Operation::CapabilityList
+        | Operation::ExportOffline
+        | Operation::FaucetClaim
+        | Operation::ProgramActivity
+        | Operation::ProgramDiscover
+        | Operation::ProgramInterface
+        | Operation::ProgramSimulate
+        | Operation::Project
+        | Operation::ReadBatch
+        | Operation::ReadHistory
+        | Operation::ReadModuleState
+        | Operation::ReadProofBundle
+        | Operation::SessionList
+        | Operation::SubscriptionHealth
+        | Operation::SubscriptionList
+        | Operation::Wait => return Ok(None),
     }))
 }
 
@@ -795,6 +850,7 @@ pub(crate) fn dispatch_operation<A: HumanAuthorityBoundary>(
     request: &Map<String, Value>,
     ctx: &DispatchContext,
 ) -> Result<Dispatched, Rejection> {
+    let _ = permit;
     let id = ctx.request_id;
     let context = peer;
     let peer = &ctx.peer;
@@ -859,52 +915,60 @@ pub(crate) fn dispatch_operation<A: HumanAuthorityBoundary>(
                 decode_receipt_lookup,
             )
         }
-        Operation::ApprovalApprove | Operation::ApprovalReject => {
-            let request: ApprovalDecisionRequest = decode(request, id)?;
-            let _ = (request.tenant, request.agent);
-            let approval_id = hex32(&request.approval_id, id)?;
-            let held_digest = hex32(&request.held_digest, id)?;
-            let current_sequence = decimal_u64(&request.current_sequence, id)?;
-            let key = lower_hex(&mutation_key(ctx)?);
-            let response = if operation == Operation::ApprovalApprove {
-                owner.approval_approve(peer, approval_id, held_digest, &key, current_sequence)
-            } else {
-                owner.approval_reject(peer, approval_id, held_digest, &key, current_sequence)
-            };
-            dispatched(id, response, decode_decision)
-        }
-        Operation::Prepare => {
-            let typed = human_prepare(decode(request, id)?, id)?;
-            let envelope = MutationEnvelope {
-                request_id: id.0,
-                key: mutation_key(ctx)?,
-                body_digest: prepare_digest(&typed),
-                operation: typed,
-            };
-            dispatched(id, owner.prepare(peer, envelope), decode_preparation)
-        }
-        Operation::Submit => {
-            let typed = human_submit(decode(request, id)?, id)?;
-            let envelope = MutationEnvelope {
-                request_id: id.0,
-                key: mutation_key(ctx)?,
-                body_digest: submit_digest(&typed),
-                operation: typed,
-            };
-            dispatched(id, owner.submit_external(peer, envelope), decode_observation)
-        }
+        Operation::ApprovalApprove => adapters::approval_approve(shared, context, request, ctx),
+        Operation::ApprovalReject => adapters::approval_reject(shared, context, request, ctx),
+        Operation::Prepare => adapters::prepare(shared, context, request, ctx),
+        Operation::Submit => adapters::submit(shared, context, request, ctx),
         Operation::FaucetClaim => Err(rejection(
             ErrorClass::UnavailableCapability,
             id,
             "unavailable_capability.faucet.claim",
         )),
-        _ => dispatch_extended(shared, permit, context, operation, request, ctx)
-            .unwrap_or_else(|| Err(unmatched(id))),
+        Operation::BudgetCreate => adapters::budget_create(shared, context, request, ctx),
+        Operation::BudgetFund => adapters::budget_fund(shared, context, request, ctx),
+        Operation::BudgetList => adapters::budget_list(shared, context, request, ctx),
+        Operation::BudgetRevoke => adapters::budget_revoke(shared, context, request, ctx),
+        Operation::BudgetReconciliation => adapters::budget_reconciliation(shared, context, request, ctx),
+        Operation::CapabilityCreate => adapters::capability_create(shared, context, request, ctx),
+        Operation::CapabilityAttenuate => adapters::capability_attenuate(shared, context, request, ctx),
+        Operation::CapabilityList => adapters::capability_list(shared, context, request, ctx),
+        Operation::CapabilityRevoke => adapters::capability_revoke(shared, context, request, ctx),
+        Operation::SessionRefresh => adapters::session_refresh(shared, context, request, ctx),
+        Operation::SessionClose => adapters::session_close(shared, context, request, ctx),
+        Operation::SessionList => adapters::session_list(shared, context, request, ctx),
+        Operation::SubscriptionCreate => adapters::subscription_create(shared, context, request, ctx),
+        Operation::SubscriptionList => adapters::subscription_list(shared, context, request, ctx),
+        Operation::SubscriptionPause => adapters::subscription_pause(shared, context, request, ctx),
+        Operation::SubscriptionResume => adapters::subscription_resume(shared, context, request, ctx),
+        Operation::SubscriptionDelete => adapters::subscription_delete(shared, context, request, ctx),
+        Operation::SubscriptionHealth => adapters::subscription_health(shared, context, request, ctx),
+        Operation::SubscriptionAcknowledge => adapters::subscription_acknowledge(shared, context, request, ctx),
+        Operation::AvailabilityFetch => adapters::availability_fetch(shared, context, request, ctx),
+        Operation::ReadModuleState => adapters::read_module_state(shared, context, request, ctx),
+        Operation::ReadHistory => adapters::read_history(shared, context, request, ctx),
+        Operation::ReadBatch => adapters::read_batch(shared, context, request, ctx),
+        Operation::ExportOffline => adapters::export_offline(shared, context, request, ctx),
+        Operation::Wait => adapters::wait(shared, context, request, ctx),
+        Operation::Sign => adapters::sign(shared, context, request, ctx),
+        Operation::Project => adapters::project(shared, context, request, ctx),
+        Operation::ProgramActivity => adapters::program_activity(shared, context, request, ctx),
+        Operation::ProgramCall => adapters::program_call(shared, context, request, ctx),
+        Operation::ProgramDeploy => adapters::program_deploy(shared, context, request, ctx),
+        Operation::ProgramDiscover => adapters::program_discover(shared, context, request, ctx),
+        Operation::ProgramSimulate => adapters::program_simulate(shared, context, request, ctx),
+        Operation::ProgramUpgrade => adapters::program_upgrade(shared, context, request, ctx),
+        Operation::ProgramWindDown => adapters::program_wind_down(shared, context, request, ctx),
+        Operation::AgentRegister | Operation::SessionOpen => Err(rejection(
+            ErrorClass::PolicyRefusal,
+            id,
+            "refused_pending_bootstrap_artifact",
+        )),
+        Operation::ProgramInterface | Operation::ReadProofBundle => Err(rejection(
+            ErrorClass::UnavailableCapability,
+            id,
+            "unmatched_by_ruling",
+        )),
     }
-}
-
-fn unmatched(request_id: RequestId) -> Rejection {
-    rejection(ErrorClass::UnavailableCapability, request_id, "operation.unmatched")
 }
 
 #[test]

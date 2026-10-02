@@ -1,7 +1,7 @@
 //! Shared ordering authority for session-gated daemon effects.
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::sync::{Arc, Mutex, RwLock, RwLockReadGuard};
+use std::sync::{Arc, Mutex, RwLock};
 
 use crate::budget::BudgetLimiter;
 use crate::events::outbound::StopSignal;
@@ -408,6 +408,123 @@ impl SessionControl {
         }
     }
 
+    /// Closes the caller's or another session of the same tenant and agent under one registry
+    /// write guard. The permit is resolved and the target authorized before any durable
+    /// mutation; a successful self-close returns the durable close result and fires the
+    /// permit's own exact-generation stop.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if permit resolution, target authorization, durable state, or
+    /// preparation invalidation fails.
+    pub(crate) fn close_session_authorized(
+        &self,
+        permit: &OperationPermit,
+        target: SessionId,
+        current_sequence: u64,
+    ) -> Result<PreparationInvalidationReport, SessionControlError> {
+        permit.require_operation(Operation::SessionClose)?;
+        let mut registry = self
+            .registry
+            .write()
+            .map_err(|_| SessionControlError::Unavailable)?;
+        let (tenant, generation) = permit.authorize_target(self, &registry, target)?;
+        let mut store = self
+            .store
+            .lock()
+            .map_err(|_| SessionControlError::Unavailable)?;
+        session::close(&mut store, &mut registry, &tenant, target)
+            .map_err(SessionControlError::Session)?;
+        self.invalidate_preparations(
+            &[(session::SessionRef::new(tenant, target), generation)],
+            current_sequence,
+        )
+    }
+
+    /// Rotates the bearer of a session owned by the permit's tenant and agent, keeping its
+    /// scopes and activity types. The replacement bearer is generated inside the daemon.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if permit resolution, target authorization, durable state, or
+    /// preparation invalidation fails.
+    pub(crate) fn refresh_session_authorized(
+        &self,
+        permit: &OperationPermit,
+        target: SessionId,
+        current_sequence: u64,
+    ) -> Result<(Token, PreparationInvalidationReport), SessionControlError> {
+        permit.require_operation(Operation::SessionRefresh)?;
+        self.rotate_authorized(permit, target, None, current_sequence)
+    }
+
+    /// Narrows and rotates a session owned by the permit's tenant and agent.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if permit resolution, target authorization, durable state, or
+    /// preparation invalidation fails.
+    pub(crate) fn restrict_session_authorized(
+        &self,
+        permit: &OperationPermit,
+        target: SessionId,
+        scopes: BTreeSet<String>,
+        permitted_activity_types: BTreeSet<u16>,
+        current_sequence: u64,
+    ) -> Result<(Token, PreparationInvalidationReport), SessionControlError> {
+        permit.require_operation(Operation::SessionRefresh)?;
+        self.rotate_authorized(
+            permit,
+            target,
+            Some((scopes, permitted_activity_types)),
+            current_sequence,
+        )
+    }
+
+    fn rotate_authorized(
+        &self,
+        permit: &OperationPermit,
+        target: SessionId,
+        narrowed: Option<(BTreeSet<String>, BTreeSet<u16>)>,
+        current_sequence: u64,
+    ) -> Result<(Token, PreparationInvalidationReport), SessionControlError> {
+        let mut registry = self
+            .registry
+            .write()
+            .map_err(|_| SessionControlError::Unavailable)?;
+        let (tenant, generation) = permit.authorize_target(self, &registry, target)?;
+        let record = registry
+            .get(&tenant, target)
+            .cloned()
+            .ok_or(SessionControlError::Session(SessionError::NotFound))?;
+        let (_, replacement_token) = replacement_bearer(&record, record.request.token_id)?;
+        let (scopes, permitted_activity_types) = narrowed.unwrap_or_else(|| {
+            (
+                record.request.scopes.clone(),
+                record.request.permitted_activity_types.clone(),
+            )
+        });
+        let mut store = self
+            .store
+            .lock()
+            .map_err(|_| SessionControlError::Unavailable)?;
+        let token = session::restrict_scope(
+            &mut store,
+            &mut registry,
+            &tenant,
+            target,
+            replacement_token,
+            scopes,
+            permitted_activity_types,
+        )
+        .map_err(SessionControlError::Session)?;
+        let preparations = self.invalidate_preparations(
+            &[(session::SessionRef::new(tenant, target), generation)],
+            current_sequence,
+        )?;
+        Ok((token, preparations))
+    }
+
     fn invalidate_preparations(
         &self,
         invalidated: &[(session::SessionRef, u64)],
@@ -682,10 +799,42 @@ impl OperationPermit {
         Ok(value)
     }
 
-    fn resolve<'a>(
+    /// Resolves this permit against the held registry and authorizes one target session of the
+    /// same tenant owned by the same agent, returning the target's current exact generation.
+    fn authorize_target(
         &self,
         control: &SessionControl,
-        registry: &'a RwLockReadGuard<'a, SessionRegistry>,
+        registry: &SessionRegistry,
+        target: SessionId,
+    ) -> Result<(TenantId, u64), SessionControlError> {
+        let principal = self.resolve(control, registry)?;
+        let tenant = self.token.tenant().clone();
+        if principal.tenant != tenant || &principal.agent != self.token.agent() {
+            return Err(SessionControlError::Authorization(
+                AuthorizationError::CoordinateMismatch,
+            ));
+        }
+        let record = registry
+            .get(&tenant, target)
+            .ok_or(SessionControlError::Session(SessionError::NotFound))?;
+        if record.request.tenant != tenant {
+            return Err(SessionControlError::Session(SessionError::IdentityMismatch));
+        }
+        if record.request.agent != principal.agent {
+            return Err(SessionControlError::Authorization(
+                AuthorizationError::NotAuthorized,
+            ));
+        }
+        if !record.open {
+            return Err(SessionControlError::Session(SessionError::AlreadyClosed));
+        }
+        Ok((tenant, record.generation))
+    }
+
+    fn resolve(
+        &self,
+        control: &SessionControl,
+        registry: &SessionRegistry,
     ) -> Result<ResolvedPrincipal, SessionControlError> {
         if self.stop.reason() == Some(Termination::SessionRevoked) {
             return Err(SessionControlError::Authorization(
