@@ -848,10 +848,17 @@ human_components_prepare() {
 }
 
 human_identity_prepare() {
-	human_project human-identity 4020 "$human_out/identity/recovery-policy.json:recovery-policy.json" &&
-		install -d -o 4020 -g 4020 -m 0500 "$human_material/human-identity/env" &&
-		install -o 0 -g 4020 -m 0440 "$human_out/authority-config/tenant" \
-			"$human_material/human-identity/env/LAYERX_HUMAN_IDENTITY_PROVIDER_BINDING_TENANT"
+    local canonical_tenant
+    human_project human-identity 4020 "$human_out/identity/recovery-policy.json:recovery-policy.json" || return 1
+    canonical_tenant=$(cat "$human_out/authority-config/tenant") || return 1
+    if [ "${LAYERX_HUMAN_IDENTITY_PROVIDER_BINDING_TENANT+x}" = x ] && \
+            [ "$LAYERX_HUMAN_IDENTITY_PROVIDER_BINDING_TENANT" != "$canonical_tenant" ]; then
+        log "identity provider tenant differs from admitted Human material"
+        return 1
+    fi
+    install -d -o 4020 -g 4020 -m 0500 "$human_material/human-identity/env" &&
+        install -o 0 -g 4020 -m 0440 "$human_out/authority-config/tenant" \
+            "$human_material/human-identity/env/LAYERX_HUMAN_IDENTITY_PROVIDER_BINDING_TENANT"
 }
 
 # trust_history: the sequencer trust history the security provider and the
