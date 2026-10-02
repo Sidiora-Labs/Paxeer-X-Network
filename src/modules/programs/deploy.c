@@ -82,20 +82,14 @@ static void write_u32(uint8_t *bytes, uint32_t value)
     bytes[3] = (uint8_t)value;
 }
 
+int32_t layerx_programs_abi_transition_admit(uint16_t current,
+                                             uint16_t requested);
+
 lxp_result lxp_programs_abi_transition_validate(uint16_t current,
                                                 uint16_t requested)
 {
-    if ((current != 0U && current != LX_PROGRAMS_ABI_VERSION &&
-         current != LX_PROGRAMS_ACCOUNT_ABI_VERSION &&
-         current != LX_PROGRAMS_SANDBOX_ABI_VERSION &&
-         current != LX_PROGRAMS_GUEST_ABI_V4_VERSION) ||
-        (requested != LX_PROGRAMS_ABI_VERSION &&
-         requested != LX_PROGRAMS_ACCOUNT_ABI_VERSION &&
-         requested != LX_PROGRAMS_SANDBOX_ABI_VERSION &&
-         requested != LX_PROGRAMS_GUEST_ABI_V4_VERSION) ||
-        (current != 0U && requested < current))
-        return LXP_ERR_VERSION_UNSUPPORTED;
-    return LXP_OK;
+    return layerx_programs_abi_transition_admit(current, requested) == 0 ?
+        LXP_OK : LXP_ERR_VERSION_UNSUPPORTED;
 }
 
 static void program_key(const uint8_t program_id[32], uint8_t key[40])

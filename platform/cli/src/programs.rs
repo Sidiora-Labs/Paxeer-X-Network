@@ -351,6 +351,7 @@ pub struct UpgradeRequest<'a> {
     pub migration_hook: Option<&'a Path>,
     pub interface: Option<&'a Path>,
     pub clear_interface: bool,
+    pub allow_breaking_interface: bool,
 }
 
 pub fn upgrade(
@@ -363,6 +364,11 @@ pub fn upgrade(
     gate_artifact(upgrade.artifact)?;
     if upgrade.clear_interface && upgrade.interface.is_some() {
         return Err("--clear-interface conflicts with --interface".into());
+    }
+    if upgrade.allow_breaking_interface
+        && (upgrade.clear_interface || upgrade.interface.is_none())
+    {
+        return Err("--allow-breaking-interface requires --interface and conflicts with --clear-interface".into());
     }
     let wasm = read_program_file(upgrade.artifact)?;
     let hook = upgrade
@@ -381,7 +387,7 @@ pub fn upgrade(
         old_hash: fixed_hex("old code hash", upgrade.old_hash)?,
         new_hash: Sha256::digest(&wasm).into(),
         migration_hook: &hook,
-        clear_interface: upgrade.clear_interface,
+        clear_interface: upgrade.clear_interface || upgrade.allow_breaking_interface,
         interface: if upgrade.clear_interface {
             Some(&[])
         } else {
@@ -475,9 +481,8 @@ fn artifact_abi(path: &Path) -> Result<u16, String> {
 }
 
 fn merge_abi(declared: &mut Option<u16>, abi: u16) -> Result<(), String> {
-    if !matches!(abi, 1 | 2) {
-        return Err(format!("unsupported guest ABI {abi}"));
-    }
+    layerx_program_sdk::abi_policy::admit_abi_version(abi)
+        .map_err(|_| format!("unsupported guest ABI {abi}"))?;
     if declared.is_some_and(|previous| previous != abi) {
         return Err("program manifests declare conflicting ABI versions".into());
     }

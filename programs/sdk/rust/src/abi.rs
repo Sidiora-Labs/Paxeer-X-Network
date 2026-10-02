@@ -9,7 +9,7 @@ pub const ABI_MODULE: &str = "layerx_v1";
 
 /// Current ABI version frozen by the runtime. Version-one imports remain
 /// available through `ABI_MODULE` for historical modules.
-pub const ABI_VERSION: u16 = 4;
+pub const ABI_VERSION: u16 = crate::abi_policy::ABI_V4_VERSION;
 
 /// Canonical export name the runtime invokes on a program.
 pub const ENTRYPOINT: &str = "layerx_main";

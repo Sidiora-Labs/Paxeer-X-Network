@@ -43,6 +43,9 @@ const CUSTODY_PROFILE_BYTES: usize = 223;
 #[path = "real_node/lifecycle.rs"]
 mod lifecycle;
 
+#[path = "real_node/native_interfaces.rs"]
+mod native_interfaces;
+
 #[path = "real_node/custody.rs"]
 mod custody;
 

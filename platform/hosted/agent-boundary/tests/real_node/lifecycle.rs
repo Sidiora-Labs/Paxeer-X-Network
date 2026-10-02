@@ -398,7 +398,7 @@ fn verify_lifecycle_receipt(
     );
 }
 
-fn verify_lifecycle_batch(
+pub(super) fn verify_lifecycle_batch(
     cluster: &Cluster,
     receipt: &layerx_wire::receipt::Receipt,
     bytes: &[u8],

@@ -2,10 +2,9 @@
 
 use super::{AbiValueType, HostFunction, HostFunctionType};
 
-pub const ABI_V1_VERSION: u16 = 1;
-pub const ABI_V2_VERSION: u16 = 2;
-pub const ABI_V3_VERSION: u16 = 3;
-pub const ABI_V4_VERSION: u16 = crate::ABI_VERSION;
+pub use layerx_program_sdk::abi_policy::{
+    ABI_V1_VERSION, ABI_V2_VERSION, ABI_V3_VERSION, ABI_V4_VERSION,
+};
 pub const ABI_V1_MODULE: &str = "layerx_v1";
 pub const ABI_V2_MODULE: &str = "layerx_v2";
 pub const ABI_V3_MODULE: &str = "layerx_v3";

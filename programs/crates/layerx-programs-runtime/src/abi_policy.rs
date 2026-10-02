@@ -1,81 +1,26 @@
-//! Frozen ABI transition policy shared by consensus-derived projections.
+//! Runtime adapters over the canonical ABI version policy the program SDK owns.
 
-use core::fmt::{self, Display};
+pub use layerx_program_sdk::abi_policy::{
+    admit_abi_upgrade, admit_abi_version, capability_encoding, AbiVersionRefusal,
+    CapabilityEncoding, ABI_V1_VERSION, ABI_V2_VERSION, ABI_V3_VERSION, ABI_V4_VERSION,
+};
 
-use crate::{AbiRevision, ABI_V1_VERSION, ABI_V2_VERSION, ABI_V3_VERSION, ABI_V4_VERSION};
+use crate::AbiRevision;
 
-/// The sole typed refusal for an invalid ABI version transition.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum AbiVersionRefusal {
-    Unsupported { requested: u16 },
-    Downgrade { current: u16, requested: u16 },
-}
-
-impl Display for AbiVersionRefusal {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Unsupported { requested } => {
-                write!(formatter, "unsupported program ABI version {requested}")
-            }
-            Self::Downgrade { current, requested } => write!(
-                formatter,
-                "program ABI version {requested} downgrades current version {current}"
-            ),
-        }
-    }
-}
-
-impl std::error::Error for AbiVersionRefusal {}
-
-/// Accepts an ABI version for a new deployment or historical replay.
+/// Selects the version-specific validator revision for an admitted ABI version.
+///
+/// Every module validation route, including interface admission, resolves its
+/// import validator through this binding instead of a local version switch.
 ///
 /// # Errors
 ///
 /// Returns a version refusal when the requested ABI is not admitted.
-pub const fn admit_abi_version(requested: u16) -> Result<(), AbiVersionRefusal> {
+pub const fn abi_revision(requested: u16) -> Result<AbiRevision, AbiVersionRefusal> {
     match requested {
-        ABI_V1_VERSION | ABI_V2_VERSION | ABI_V3_VERSION | ABI_V4_VERSION => Ok(()),
-        _ => Err(AbiVersionRefusal::Unsupported { requested }),
-    }
-}
-
-/// Freezes upgrades as monotonic transitions across supported ABI versions.
-///
-/// # Errors
-///
-/// Returns a version refusal when either ABI or the requested transition is unsupported.
-pub const fn admit_abi_upgrade(current: u16, requested: u16) -> Result<(), AbiVersionRefusal> {
-    match (admit_abi_version(current), admit_abi_version(requested)) {
-        (Err(refusal), _) | (_, Err(refusal)) => Err(refusal),
-        (Ok(()), Ok(())) if requested < current => {
-            Err(AbiVersionRefusal::Downgrade { current, requested })
-        }
-        (Ok(()), Ok(())) => Ok(()),
-    }
-}
-
-/// The capability encoding an admitted program ABI version carries.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum CapabilityEncoding {
-    /// The ABI-one canonical grant encoding.
-    V1,
-    /// The ABI-two canonical grant encoding every later admitted ABI carries.
-    V2,
-}
-
-/// Binds an ABI version to the capability encoding its grants are written in.
-///
-/// Every projection that decodes the grants of one call - the CALL scheduling
-/// projection as much as the execution that follows it - reads this binding, so
-/// a call cannot be planned against one encoding and executed against another.
-///
-/// # Errors
-///
-/// Returns a version refusal when the requested ABI is not admitted.
-pub const fn capability_encoding(requested: u16) -> Result<CapabilityEncoding, AbiVersionRefusal> {
-    match requested {
-        ABI_V1_VERSION => Ok(CapabilityEncoding::V1),
-        ABI_V2_VERSION | ABI_V3_VERSION | ABI_V4_VERSION => Ok(CapabilityEncoding::V2),
+        ABI_V1_VERSION => Ok(AbiRevision::V1),
+        ABI_V2_VERSION => Ok(AbiRevision::V2),
+        ABI_V3_VERSION => Ok(AbiRevision::V3),
+        ABI_V4_VERSION => Ok(AbiRevision::V4),
         _ => Err(AbiVersionRefusal::Unsupported { requested }),
     }
 }
@@ -94,7 +39,8 @@ pub const fn abi_version(revision: AbiRevision) -> u16 {
 #[cfg(test)]
 mod tests {
     use super::{
-        abi_version, admit_abi_version, capability_encoding, AbiVersionRefusal, CapabilityEncoding,
+        abi_revision, abi_version, admit_abi_version, capability_encoding, AbiVersionRefusal,
+        CapabilityEncoding,
     };
     use crate::AbiRevision;
 
@@ -115,6 +61,13 @@ mod tests {
             capability_encoding(5),
             Err(AbiVersionRefusal::Unsupported { requested: 5 })
         );
+        for requested in 0..=u16::from(u8::MAX) {
+            assert_eq!(
+                admit_abi_version(requested).is_ok(),
+                abi_revision(requested).is_ok(),
+                "ABI {requested} admission and validator revision disagree"
+            );
+        }
     }
 
     #[test]
@@ -127,6 +80,7 @@ mod tests {
         ] {
             let recorded = abi_version(revision);
             assert!(admit_abi_version(recorded).is_ok());
+            assert_eq!(abi_revision(recorded), Ok(revision));
             assert_eq!(
                 capability_encoding(recorded),
                 Ok(if matches!(revision, AbiRevision::V1) {

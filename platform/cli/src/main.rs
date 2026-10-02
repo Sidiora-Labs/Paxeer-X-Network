@@ -344,6 +344,8 @@ enum ProgramCommand {
         interface: Option<PathBuf>,
         #[arg(long)]
         clear_interface: bool,
+        #[arg(long, requires = "interface", conflicts_with = "clear_interface")]
+        allow_breaking_interface: bool,
         #[command(flatten)]
         signing: ProgramLifecycleArgs,
     },
@@ -1180,6 +1182,7 @@ fn program(
             migration_hook,
             interface,
             clear_interface,
+            allow_breaking_interface,
             signing,
         } => execute_program_lifecycle(&signing, rpc, gateway, |client, request| {
             programs::upgrade(
@@ -1191,6 +1194,7 @@ fn program(
                     migration_hook: migration_hook.as_deref(),
                     interface: interface.as_deref(),
                     clear_interface,
+                    allow_breaking_interface,
                 },
                 &signing.previous_state_root,
             )
@@ -1650,6 +1654,22 @@ mod program_arguments_tests {
             arguments.extend(signing());
             assert!(Cli::try_parse_from(&arguments).is_ok());
         }
+    }
+
+    #[test]
+    fn breaking_interface_upgrade_requires_explicit_interface_and_signing() {
+        let mut arguments = vec!["layerx", "program", "upgrade", "program.wasm",
+            "--old-hash", "33", "--allow-breaking-interface"];
+        arguments.extend(signing());
+        assert!(Cli::try_parse_from(&arguments).is_err());
+        arguments.extend(["--interface", "interface.bin"]);
+        let parsed = Cli::try_parse_from(&arguments)
+            .unwrap_or_else(|error| panic!("explicit breaking upgrade: {error}"));
+        assert!(matches!(parsed.command, Command::Program(ProgramCommand::Upgrade {
+            allow_breaking_interface: true, clear_interface: false, ..
+        })));
+        arguments.push("--clear-interface");
+        assert!(Cli::try_parse_from(arguments).is_err());
     }
 
     #[test]

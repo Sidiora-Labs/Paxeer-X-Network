@@ -1,3 +1,4 @@
+use layerx_program_sdk::abi_policy::{admit_abi_version, capability_encoding, CapabilityEncoding};
 use core::fmt::{self, Display};
 use std::collections::BTreeSet;
 
@@ -258,20 +259,10 @@ impl ProgramInterface {
     ) -> Result<Self, InterfaceRefusal> {
         let code_hash = sha256(module);
         let engine = WasmEngine::declared().map_err(|_| InterfaceRefusal::ModuleRejected)?;
-        let validated = match abi_version {
-            ABI_V1_VERSION => engine.validate(module),
-            ABI_V2_VERSION => engine.validate_v2(module),
-            ABI_V3_VERSION => engine.validate_v3(module),
-            ABI_V4_VERSION => engine.validate_v4(module),
-            _ => {
-                return Err(InterfaceRefusal::AbiVersion(
-                    AbiVersionRefusal::Unsupported {
-                        requested: abi_version,
-                    },
-                ))
-            }
-        }
-        .map_err(|_| InterfaceRefusal::ModuleRejected)?;
+        admit_abi_version(abi_version).map_err(InterfaceRefusal::AbiVersion)?;
+        let validated = engine
+            .validate_versioned(abi_version, module)
+            .map_err(|_| InterfaceRefusal::ModuleRejected)?;
         validate_entries(&entries)?;
         if entries
             .iter()
@@ -311,10 +302,7 @@ impl ProgramInterface {
         entries: Vec<InterfaceEntryPoint>,
     ) -> Result<Self, InterfaceRefusal> {
         if code_hash == [0; 32]
-            || !matches!(
-                abi_version,
-                ABI_V1_VERSION | ABI_V2_VERSION | ABI_V3_VERSION | ABI_V4_VERSION
-            )
+            || admit_abi_version(abi_version).is_err()
         {
             return Err(InterfaceRefusal::Invalid);
         }
@@ -323,10 +311,7 @@ impl ProgramInterface {
             .iter()
             .flat_map(|entry| &entry.capabilities)
             .any(|capability| match capability {
-                InterfaceCapability::CallerAuthorizedSpend { .. } => !matches!(
-                    abi_version,
-                    ABI_V2_VERSION | ABI_V3_VERSION | ABI_V4_VERSION
-                ),
+                InterfaceCapability::CallerAuthorizedSpend { .. } => capability_encoding(abi_version) != Ok(CapabilityEncoding::V2),
                 InterfaceCapability::OracleRead => {
                     !matches!(abi_version, ABI_V3_VERSION | ABI_V4_VERSION)
                 }
@@ -472,7 +457,7 @@ impl ProgramInterface {
 
     #[must_use]
     pub fn is_widening_of(&self, prior: &Self) -> bool {
-        self.abi_version == prior.abi_version
+        admit_abi_upgrade(prior.abi_version, self.abi_version).is_ok()
             && prior.entries.iter().all(|old| {
                 self.entries
                     .iter()
@@ -1481,4 +1466,138 @@ mod conformance_vectors {
         );
         assert_eq!(decoded.entries()[0].response, ValueSchema::evm_head_only());
     }
+    #[test]
+    fn central_abi_policy_admits_every_supported_version_and_refuses_unknown() {
+        let mut dynamic = entry(80);
+        dynamic.capabilities = vec![InterfaceCapability::CallerAuthorizedSpend {
+            asset: [2; 32],
+            maximum_amount: 100,
+            recipient_offset: 10,
+            amount_offset: 42,
+        }];
+        for abi in [
+            ABI_V1_VERSION,
+            ABI_V2_VERSION,
+            ABI_V3_VERSION,
+            ABI_V4_VERSION,
+        ] {
+            let plain = ProgramInterface::from_parts([1; 32], abi, vec![entry(64)])
+                .unwrap_or_else(|error| panic!("admit ABI {abi}: {error}"));
+            assert!(plain.canonical_encoding().starts_with(match abi {
+                ABI_V3_VERSION => DOMAIN_V3,
+                ABI_V4_VERSION => DOMAIN_V4,
+                _ => DOMAIN,
+            }));
+            assert_eq!(plain.abi_version(), abi);
+            assert_eq!(
+                ProgramInterface::decode(plain.canonical_encoding()),
+                Ok(plain.clone())
+            );
+            assert_eq!(
+                ProgramInterface::from_parts([0; 32], abi, vec![entry(64)]),
+                Err(InterfaceRefusal::Invalid)
+            );
+        }
+        for abi in [ABI_V2_VERSION, ABI_V3_VERSION, ABI_V4_VERSION] {
+            let interface = ProgramInterface::from_parts([1; 32], abi, vec![dynamic.clone()])
+                .unwrap_or_else(|error| panic!("admit dynamic ABI {abi}: {error}"));
+            assert!(interface.canonical_encoding().starts_with(match abi {
+                ABI_V3_VERSION => DOMAIN_V3,
+                ABI_V4_VERSION => DOMAIN_V4,
+                _ => DOMAIN_V2,
+            }));
+            assert_eq!(
+                ProgramInterface::decode(interface.canonical_encoding()),
+                Ok(interface.clone())
+            );
+        }
+        for abi in [0, 5, u16::MAX] {
+            assert_eq!(
+                ProgramInterface::from_parts([1; 32], abi, vec![entry(64)]),
+                Err(InterfaceRefusal::Invalid)
+            );
+            assert_eq!(
+                ProgramInterface::bind(CALLABLE_MODULE, abi, vec![entry(64)]),
+                Err(InterfaceRefusal::AbiVersion(
+                    AbiVersionRefusal::Unsupported { requested: abi }
+                ))
+            );
+        }
+    }
+
+    #[test]
+    fn upgrade_is_monotonic_across_supported_abi_versions() {
+        let prior = ProgramInterface::from_parts([1; 32], ABI_V1_VERSION, vec![entry(64)])
+            .unwrap_or_else(|error| panic!("prior: {error}"));
+        let wider = ProgramInterface::from_parts([3; 32], ABI_V3_VERSION, vec![entry(128)])
+            .unwrap_or_else(|error| panic!("wider: {error}"));
+        let narrower = ProgramInterface::from_parts([4; 32], ABI_V4_VERSION, vec![entry(32)])
+            .unwrap_or_else(|error| panic!("narrower: {error}"));
+        assert!(wider.is_widening_of(&prior));
+        assert_eq!(wider.authorize_upgrade(&prior, false), Ok(()));
+        assert!(!narrower.is_widening_of(&prior));
+        assert_eq!(
+            narrower.authorize_upgrade(&prior, false),
+            Err(InterfaceRefusal::NarrowingUpgrade)
+        );
+        assert_eq!(narrower.authorize_upgrade(&prior, true), Ok(()));
+        assert!(!prior.is_widening_of(&wider));
+        assert_eq!(
+            prior.authorize_upgrade(&wider, true),
+            Err(InterfaceRefusal::AbiVersion(AbiVersionRefusal::Downgrade {
+                current: ABI_V3_VERSION,
+                requested: ABI_V1_VERSION,
+            }))
+        );
+    }
+    #[test]
+    fn every_abi_refuses_substituted_domains_and_noncanonical_capabilities() {
+        for abi in [ABI_V1_VERSION, ABI_V2_VERSION, ABI_V3_VERSION, ABI_V4_VERSION] {
+            let plain = ProgramInterface::from_parts([1; 32], abi, vec![entry(80)])
+                .unwrap_or_else(|error| panic!("plain interface: {error}"));
+            for domain in [DOMAIN, DOMAIN_V2, DOMAIN_V3, DOMAIN_V4] {
+                if !plain.canonical_encoding().starts_with(domain) {
+                    let mut substituted = plain.canonical_encoding().to_vec();
+                    substituted[..domain.len()].copy_from_slice(domain);
+                    assert!(ProgramInterface::decode(&substituted).is_err());
+                }
+            }
+            let mut trailing = plain.canonical_encoding().to_vec();
+            trailing.push(0);
+            assert!(ProgramInterface::decode(&trailing).is_err());
+            for capability in [InterfaceCapability::OracleRead, InterfaceCapability::WebRead] {
+                let mut declared = entry(80);
+                declared.capabilities = vec![capability.clone()];
+                let admitted = match capability {
+                    InterfaceCapability::OracleRead => abi >= ABI_V3_VERSION,
+                    InterfaceCapability::WebRead => abi == ABI_V4_VERSION,
+                    _ => unreachable!(),
+                };
+                assert_eq!(
+                    ProgramInterface::from_parts([1; 32], abi, vec![declared]).is_ok(),
+                    admitted,
+                );
+            }
+            for (asset, maximum_amount, recipient_offset, amount_offset, valid) in [
+                ([2; 32], 100, 10, 42, true),
+                ([0; 32], 100, 10, 42, false),
+                ([2; 32], 0, 10, 42, false),
+                ([2; 32], 100, u32::MAX, 42, false),
+                ([2; 32], 100, 10, u32::MAX, false),
+            ] {
+                let mut dynamic = entry(80);
+                dynamic.capabilities = vec![InterfaceCapability::CallerAuthorizedSpend {
+                    asset, maximum_amount, recipient_offset, amount_offset,
+                }];
+                let admitted = ProgramInterface::from_parts([1; 32], abi, vec![dynamic.clone()]);
+                assert_eq!(admitted.is_ok(), valid && abi != ABI_V1_VERSION);
+                if let Ok(interface) = admitted {
+                    assert_eq!(ProgramInterface::decode(interface.canonical_encoding()), Ok(interface));
+                }
+                dynamic.capabilities.push(dynamic.capabilities[0].clone());
+                assert!(ProgramInterface::from_parts([1; 32], abi, vec![dynamic]).is_err());
+            }
+        }
+    }
+
 }
