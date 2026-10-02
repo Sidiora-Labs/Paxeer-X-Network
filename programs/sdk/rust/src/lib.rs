@@ -34,11 +34,22 @@ extern crate alloc;
 extern crate std;
 
 pub mod abi;
+pub mod abi_policy;
 pub mod access;
 pub mod amount;
 pub mod balance;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod bindgen;
+#[cfg(not(target_arch = "wasm32"))]
+mod bindgen_go;
+#[cfg(not(target_arch = "wasm32"))]
+mod bindgen_jvm;
+#[cfg(not(target_arch = "wasm32"))]
+mod bindgen_python;
+#[cfg(not(target_arch = "wasm32"))]
+mod bindgen_swift;
+#[cfg(not(target_arch = "wasm32"))]
+mod bindgen_dotnet;
 pub mod buffer;
 pub mod call;
 pub mod capability;

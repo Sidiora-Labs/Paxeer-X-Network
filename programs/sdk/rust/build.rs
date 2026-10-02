@@ -1,7 +1,20 @@
 extern crate alloc;
 
+#[path = "src/abi_policy.rs"]
+mod abi_policy;
+
 #[path = "src/bindgen.rs"]
 mod bindgen;
+#[path = "src/bindgen_go.rs"]
+mod bindgen_go;
+#[path = "src/bindgen_jvm.rs"]
+mod bindgen_jvm;
+#[path = "src/bindgen_python.rs"]
+mod bindgen_python;
+#[path = "src/bindgen_swift.rs"]
+mod bindgen_swift;
+#[path = "src/bindgen_dotnet.rs"]
+mod bindgen_dotnet;
 
 use bindgen::BindingGenerator;
 use std::env;
@@ -60,6 +73,16 @@ fn main() {
         generated.typescript.as_bytes(),
     );
     write(&output.join("layerx_guest.rs"), generated.guest.as_bytes());
+    for (filename, contents) in [
+        ("client.go", generated.go.as_str()),
+        ("ProgramBindings.java", generated.java.as_str()),
+        ("client.kt", generated.kotlin.as_str()),
+        ("client.py", generated.python.as_str()),
+        ("client.swift", generated.swift.as_str()),
+        ("Client.cs", generated.csharp.as_str()),
+    ] {
+        write(&output.join(filename), contents.as_bytes());
+    }
 
     println!(
         "cargo:rustc-env=LAYERX_RUST_BINDINGS={}",

@@ -8,7 +8,12 @@ use alloc::vec::Vec;
 use core::fmt::{self, Display, Write};
 use sha2::{Digest, Sha256};
 
+use crate::abi_policy::admit_abi_version;
+
 const DOMAIN: &[u8] = b"LayerX/program-interface/v1\0";
+const DOMAIN_V2: &[u8] = b"LayerX/program-interface/v2\0";
+const DOMAIN_V3: &[u8] = b"LayerX/program-interface/v3\0";
+const DOMAIN_V4: &[u8] = b"LayerX/program-interface/v4\0";
 const MAX_INTERFACE_BYTES: usize = 952;
 const MAX_FIELDS: usize = 256;
 const MAX_DEPTH: usize = 16;
@@ -50,7 +55,7 @@ impl Display for BindgenError {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-enum Type {
+pub(crate) enum Type {
     U8,
     U16,
     U32,
@@ -71,25 +76,25 @@ enum Type {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-struct Variant {
-    tag: u32,
-    value: Type,
+pub(crate) struct Variant {
+    pub(crate) tag: u32,
+    pub(crate) value: Type,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-struct Failure {
-    code: u32,
-    name: String,
-    detail: Type,
+pub(crate) struct Failure {
+    pub(crate) code: u32,
+    pub(crate) name: String,
+    pub(crate) detail: Type,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-struct Entry {
-    name: String,
-    discriminator: [u8; 4],
-    input: Type,
-    output: Type,
-    failures: Vec<Failure>,
+pub(crate) struct Entry {
+    pub(crate) name: String,
+    pub(crate) discriminator: [u8; 4],
+    pub(crate) input: Type,
+    pub(crate) output: Type,
+    pub(crate) failures: Vec<Failure>,
 }
 
 /// All deterministic artifacts generated from one digest-bound interface.
@@ -98,15 +103,21 @@ pub struct GeneratedBindings {
     pub rust: String,
     pub typescript: String,
     pub guest: String,
+    pub go: String,
+    pub java: String,
+    pub kotlin: String,
+    pub python: String,
+    pub swift: String,
+    pub csharp: String,
     pub interface_digest: [u8; 32],
 }
 
 /// Parsed canonical interface used by the CLI and build integration.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct BindingGenerator {
-    digest: [u8; 32],
-    code_hash: [u8; 32],
-    entries: Vec<Entry>,
+    pub(crate) digest: [u8; 32],
+    pub(crate) code_hash: [u8; 32],
+    pub(crate) entries: Vec<Entry>,
 }
 
 impl BindingGenerator {
@@ -114,7 +125,9 @@ impl BindingGenerator {
     ///
     /// Refuses noncanonical bytes, unsupported ABI or encoding conventions, and invalid schemas.
     pub fn from_interface(bytes: &[u8]) -> Result<Self, BindgenError> {
-        if bytes.len() > MAX_INTERFACE_BYTES || bytes.get(..DOMAIN.len()) != Some(DOMAIN) {
+        if bytes.len() > MAX_INTERFACE_BYTES
+            || !matches!(bytes.get(..DOMAIN.len()), Some(prefix) if prefix == DOMAIN || prefix == DOMAIN_V2 || prefix == DOMAIN_V3 || prefix == DOMAIN_V4)
+        {
             return Err(BindgenError::NonCanonical);
         }
         let mut cursor = DOMAIN.len();
@@ -123,16 +136,26 @@ impl BindingGenerator {
             return Err(BindgenError::InvalidSchema);
         }
         let abi = u16::from_be_bytes(take::<2>(bytes, &mut cursor)?);
-        if !matches!(abi, 1 | 2) {
-            return Err(BindgenError::UnsupportedAbi);
-        }
+        admit_abi_version(abi).map_err(|_| BindgenError::UnsupportedAbi)?;
         let count = count(bytes, &mut cursor)?;
         if count == 0 {
             return Err(BindgenError::InvalidSchema);
         }
         let mut entries = Vec::with_capacity(count);
+        let mut dynamic_spend = false;
         for _ in 0..count {
-            entries.push(parse_entry(bytes, &mut cursor)?);
+            entries.push(parse_entry(bytes, &mut cursor, abi, &mut dynamic_spend)?);
+        }
+        let canonical_domain = match abi {
+            1 => DOMAIN,
+            2 if dynamic_spend => DOMAIN_V2,
+            2 => DOMAIN,
+            3 => DOMAIN_V3,
+            4 => DOMAIN_V4,
+            _ => return Err(BindgenError::UnsupportedAbi),
+        };
+        if bytes.get(..DOMAIN.len()) != Some(canonical_domain) {
+            return Err(BindgenError::NonCanonical);
         }
         let mut discriminators = BTreeSet::new();
         if cursor != bytes.len()
@@ -194,6 +217,12 @@ impl BindingGenerator {
             rust: self.generate_rust(),
             typescript: self.generate_typescript(),
             guest: self.generate_guest(),
+            go: self.generate_go(),
+            java: self.generate_java(),
+            kotlin: self.generate_kotlin(),
+            python: self.generate_python(),
+            swift: self.generate_swift(),
+            csharp: self.generate_csharp(),
             interface_digest: self.digest,
         }
     }
@@ -305,7 +334,7 @@ function finish<T>(reader:Reader,value:T):T{reader.done();return value;}
     }
 }
 
-fn parse_entry(bytes: &[u8], cursor: &mut usize) -> Result<Entry, BindgenError> {
+fn parse_entry(bytes: &[u8], cursor: &mut usize, abi: u16, dynamic_spend: &mut bool) -> Result<Entry, BindgenError> {
     let name = text(bytes, cursor)?;
     valid_name(&name)?;
     let discriminator = take::<4>(bytes, cursor)?;
@@ -314,7 +343,8 @@ fn parse_entry(bytes: &[u8], cursor: &mut usize) -> Result<Entry, BindgenError> 
     let mut prior_capability: Option<&[u8]> = None;
     for _ in 0..count(bytes, cursor)? {
         let start = *cursor;
-        skip_capability(bytes, cursor)?;
+        let tag = skip_capability(bytes, cursor, abi)?;
+        *dynamic_spend |= tag == 10;
         let encoded = bytes
             .get(start..*cursor)
             .ok_or(BindgenError::NonCanonical)?;
@@ -423,8 +453,9 @@ fn value_type(bytes: &[u8], cursor: &mut usize, depth: usize) -> Result<Type, Bi
     })
 }
 
-fn skip_capability(bytes: &[u8], cursor: &mut usize) -> Result<(), BindgenError> {
-    match take::<1>(bytes, cursor)?[0] {
+fn skip_capability(bytes: &[u8], cursor: &mut usize, abi: u16) -> Result<u8, BindgenError> {
+    let tag = take::<1>(bytes, cursor)?[0];
+    match tag {
         0..=4 => {}
         5 | 8 => {
             if take::<32>(bytes, cursor)? == [0; 32] {
@@ -464,9 +495,28 @@ fn skip_capability(bytes: &[u8], cursor: &mut usize) -> Result<(), BindgenError>
                 return Err(BindgenError::InvalidSchema);
             }
         }
+        10 => {
+            if abi < 2 {
+                return Err(BindgenError::InvalidSchema);
+            }
+            let asset = take::<32>(bytes, cursor)?;
+            let maximum_amount = u128::from_be_bytes(take::<16>(bytes, cursor)?);
+            let recipient_offset = u32::from_be_bytes(take::<4>(bytes, cursor)?);
+            let amount_offset = u32::from_be_bytes(take::<4>(bytes, cursor)?);
+            if asset == [0; 32]
+                || maximum_amount == 0
+                || recipient_offset.checked_add(32).is_none()
+                || amount_offset.checked_add(16).is_none()
+            {
+                return Err(BindgenError::InvalidSchema);
+            }
+        }
+        11 if abi >= 3 => {}
+        12 if abi == 4 => {}
+        11 | 12 => return Err(BindgenError::InvalidSchema),
         _ => return Err(BindgenError::NonCanonical),
     }
-    Ok(())
+    Ok(tag)
 }
 fn valid_name(name: &str) -> Result<(), BindgenError> {
     if name.is_empty()
@@ -541,6 +591,9 @@ fn ts_type(t: &Type) -> String {
         Type::Bytes(n) => format!("BoundedBytes<{n}>"),
         Type::Fixed(v, n) => format!("FixedArray<{}, {n}>", ts_type(v)),
         Type::Variable(v, n) => format!("VariableArray<{}, {n}>", ts_type(v)),
+        Type::Option(v) if matches!(v.as_ref(), Type::Option(_)) => {
+            format!("{{readonly some: {}}} | null", ts_type(v))
+        }
         Type::Option(v) => format!("{} | null", ts_type(v)),
         Type::Union(v) => v
             .iter()
@@ -696,6 +749,7 @@ fn ts_encode(t: &Type, value: &str) -> String {
     Type::Bytes(n)=>format!("(()=>{{const v=boundedBytes({n},{value});return concat(Uint8Array.of(0x20),u32(v.length),v);}})()"),
     Type::Fixed(v,n)=>format!("(()=>{{const v=fixedArray({n},{value});return concat(Uint8Array.of(0x30),u32(v.length),...v.map(item=>{}));}})()",ts_encode(v,"item")),
     Type::Variable(v,n)=>format!("(()=>{{const v=variableArray({n},{value});return concat(Uint8Array.of(0x31),u32(v.length),...v.map(item=>{}));}})()",ts_encode(v,"item")),
+    Type::Option(v) if matches!(v.as_ref(), Type::Option(_))=>format!("((present:{})=>{{if(present===null)return Uint8Array.of(0x40,0);if(typeof present!=='object'||!Object.prototype.hasOwnProperty.call(present,'some'))return refuse('INVALID_VALUE','nested option requires an explicit some field');return concat(Uint8Array.of(0x40,1),{});}})({value})",ts_type(t),ts_encode(v,"present.some")),
     Type::Option(v)=>format!("{value}===null?Uint8Array.of(0x40,0):concat(Uint8Array.of(0x40,1),{})",ts_encode(v,value)),
     Type::Union(v)=>{let mut arms=String::new();for x in v { let _=write!(arms,"case {}:return concat(Uint8Array.of(0x50),u32({}),{});",x.tag,x.tag,ts_encode(&x.value,"value.value")); }format!("((value:any)=>{{switch(value.tag){{{arms}default:return refuse('INVALID_VALUE','unknown union tag');}}}})({value})")},
     Type::EvmHead=>format!("evmHead({value})"),
@@ -708,6 +762,7 @@ fn ts_decode(t: &Type, reader: &str) -> String {
     Type::Bytes(n)=>format!("(()=>{{tag({reader},0x20);const n={reader}.u32();checkedLength(n,{n},'byte string');return boundedBytes({n},{reader}.take(n));}})()"),
     Type::Fixed(v,n)=>format!("(()=>{{tag({reader},0x30);const n={reader}.u32();if(n!=={n})refuse('NON_CANONICAL','fixed array count does not match schema');const v=[] as Array<{}>;for(let i=0;i<n;i++)v.push({});return fixedArray({n},v);}})()",ts_type(v),ts_decode(v,reader)),
     Type::Variable(v,n)=>format!("(()=>{{tag({reader},0x31);const n={reader}.u32();checkedLength(n,{n},'variable array');const v=[] as Array<{}>;for(let i=0;i<n;i++)v.push({});return variableArray({n},v);}})()",ts_type(v),ts_decode(v,reader)),
+    Type::Option(v) if matches!(v.as_ref(), Type::Option(_))=>format!("(()=>{{tag({reader},0x40);const present={reader}.byte();if(present===0)return null;if(present!==1)refuse('NON_CANONICAL','invalid option discriminator');return {{some:{}}};}})()",ts_decode(v,reader)),
     Type::Option(v)=>format!("(()=>{{tag({reader},0x40);const present={reader}.byte();if(present===0)return null;if(present!==1)refuse('NON_CANONICAL','invalid option discriminator');return {};}})()",ts_decode(v,reader)),
     Type::Union(v)=>{let mut arms=String::new();for x in v { let _=write!(arms,"case {}:return {{tag:{},value:{}}};",x.tag,x.tag,ts_decode(&x.value,reader)); }format!("(()=>{{tag({reader},0x50);const variant={reader}.u32();switch(variant){{{arms}default:return refuse('NON_CANONICAL','unknown union tag');}}}})()")},
     Type::EvmHead=>format!("(()=>{{const value={reader}.rest();if(value.length%32!==0)refuse('NON_CANONICAL','EVM head length is not a multiple of 32 bytes');return evmHead(value);}})()"),
@@ -816,7 +871,7 @@ fn emit_guest_entry(out: &mut String, e: &Entry, entries: &[Entry]) {
     };
     let _=writeln!(out,"pub(super) fn dispatch<P:Program>(p:&mut P,b:&[u8])->Result<Vec<u8>,DispatchFailure>{{let input=decode_message::<Input>(b,{input_convention}).map_err(DispatchFailure::Decode)?;match p.{n}(input){{Ok(v)=>{{let mut o=vec![{output_convention}];v.encode(&mut o).map_err(DispatchFailure::Encode)?;if o.len()>MAX_CALLDATA_BYTES{{return Err(DispatchFailure::Encode(CodecError::TooLong))}}Ok(o)}},Err(e)=>{{let(code,detail)=encode_failure(e).map_err(DispatchFailure::Encode)?;Err(DispatchFailure::Typed{{code,detail}})}}}}}}}}");
 }
-fn frozen_vectors() -> [(&'static str, &'static [u8]); 19] {
+pub(crate) fn frozen_vectors() -> [(&'static str, &'static [u8]); 19] {
     [
         ("u8", &[0x10, 0x7f]),
         ("u16", &[0x11, 0x12, 0x34]),
@@ -877,7 +932,7 @@ fn emit_ts_frozen_vectors(out: &mut String) {
     }
     out.push_str("] as const;\n");
 }
-fn rust_ident(s: &str) -> String {
+pub(crate) fn rust_ident(s: &str) -> String {
     let mut o = s.to_ascii_lowercase();
     if o.as_bytes().first().is_some_and(u8::is_ascii_digit) {
         o.insert_str(0, "n_");
@@ -887,7 +942,7 @@ fn rust_ident(s: &str) -> String {
     }
     o
 }
-fn pascal(s: &str) -> String {
+pub(crate) fn pascal(s: &str) -> String {
     let mut o = String::new();
     let mut upper = true;
     for c in s.chars() {
@@ -966,7 +1021,7 @@ fn rust_keyword(s: &str) -> bool {
             | "raw"
     )
 }
-fn entry_ident(entry: &Entry, entries: &[Entry], typescript: bool) -> String {
+pub(crate) fn entry_ident(entry: &Entry, entries: &[Entry], typescript: bool) -> String {
     let base_of = |item: &Entry| {
         if typescript {
             pascal(&item.name)
@@ -1000,7 +1055,7 @@ fn entry_ident(entry: &Entry, entries: &[Entry], typescript: bool) -> String {
     }
     unreachable!()
 }
-fn failure_ident(failure: &Failure, failures: &[Failure]) -> String {
+pub(crate) fn failure_ident(failure: &Failure, failures: &[Failure]) -> String {
     let reserved: BTreeSet<String> = failures.iter().map(|item| pascal(&item.name)).collect();
     let mut used = BTreeSet::new();
     for item in failures {
@@ -1025,20 +1080,20 @@ fn failure_ident(failure: &Failure, failures: &[Failure]) -> String {
     }
     unreachable!()
 }
-fn generated_header(language: &str, digest: [u8; 32]) -> String {
+pub(crate) fn generated_header(language: &str, digest: [u8; 32]) -> String {
     format!(
         "// Generated {language} binding. Interface SHA-256: {}. Do not edit.\n",
         hex(&digest)
     )
 }
-fn hex(bytes: &[u8]) -> String {
+pub(crate) fn hex(bytes: &[u8]) -> String {
     let mut out = String::new();
     for b in bytes {
         let _ = write!(out, "{b:02x}");
     }
     out
 }
-fn hex_array(out: &mut String, bytes: &[u8]) {
+pub(crate) fn hex_array(out: &mut String, bytes: &[u8]) {
     for b in bytes {
         let _ = write!(out, "0x{b:02x},");
     }

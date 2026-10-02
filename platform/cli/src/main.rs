@@ -300,17 +300,26 @@ enum ProgramCommand {
         #[arg(long)]
         artifact: Option<PathBuf>,
     },
-    /// Generate digest-bound Rust, TypeScript, and guest bindings from a published interface.
+    /// Generate typed SDK and guest bindings from a verified published interface.
     Bindings {
         /// Canonical interface bytes obtained through the receipt-verified registry read.
         #[arg(long)]
         interface: PathBuf,
-        /// Receipt-verified interface digest; generation refuses a stale or substituted file.
+        /// Expected interface digest, checked against the verified deployment.
         #[arg(long)]
         digest: String,
-        /// Receipt-verified deployed code hash; generation refuses interface drift.
+        /// Expected code hash, checked against the verified deployment.
         #[arg(long)]
         code_hash: String,
+        /// Canonically encoded signed deployment proof from the registry.
+        #[arg(long)]
+        deployment_proof: PathBuf,
+        /// Independently configured private sequencer trust history.
+        #[arg(long)]
+        trust_history: PathBuf,
+        /// Verify historical deployment evidence without claiming a current head.
+        #[arg(long)]
+        historical: bool,
         /// Directory that receives the generated binding artifacts.
         #[arg(long, default_value = "bindings")]
         output: PathBuf,
@@ -1131,11 +1140,22 @@ fn program(
             interface,
             digest,
             code_hash,
+            deployment_proof,
+            trust_history,
+            historical,
             output,
         } => Ok(CommandOutput::new(
             "program.bindings_generated",
             "Generated digest-bound program bindings",
-            programs::program_bindings(&interface, &digest, &code_hash, &output)?,
+            programs::program_bindings(&programs::BindingRequest {
+                interface: &interface,
+                expected_digest: &digest,
+                expected_code_hash: &code_hash,
+                deployment_proof: &deployment_proof,
+                trust_history: &trust_history,
+                historical,
+                output: &output,
+            })?,
         )),
         ProgramCommand::Deploy {
             artifact,

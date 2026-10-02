@@ -13,6 +13,9 @@ doctest = false
 [dependencies]
 sha2.workspace = true
 
+[dev-dependencies]
+serde_json = "=1.0.151"
+
 [build-dependencies]
 sha2.workspace = true
 

@@ -43,27 +43,66 @@ const DESCRIPTOR: &str = "layerx-program.json";
 const SIMULATION_EVIDENCE_DOMAIN: &[u8] = b"LayerX/agent/program-simulation-evidence/v1\0";
 const EMULATOR_BOUNDARY_DOMAIN: &[u8] = b"LayerX/emulator/simulation-boundary/v1\0";
 
-pub fn program_bindings(
-    interface_path: &Path,
-    expected_digest: &str,
-    expected_code_hash: &str,
-    output: &Path,
-) -> Result<Value, String> {
-    let interface_path = interface_path.canonicalize().map_err(|error| {
+pub struct BindingRequest<'a> {
+    pub interface: &'a Path,
+    pub expected_digest: &'a str,
+    pub expected_code_hash: &'a str,
+    pub deployment_proof: &'a Path,
+    pub trust_history: &'a Path,
+    pub historical: bool,
+    pub output: &'a Path,
+}
+
+pub fn program_bindings(request: &BindingRequest<'_>) -> Result<Value, String> {
+    let interface_path = request.interface.canonicalize().map_err(|error| {
         format!(
             "could not resolve published interface {}: {error}",
-            interface_path.display()
+            request.interface.display()
         )
     })?;
-    let interface = fs::read(&interface_path).map_err(|error| {
-        format!(
-            "could not read published interface {}: {error}",
-            interface_path.display()
-        )
-    })?;
-    let digest: [u8; 32] = fixed_hex("published interface digest", expected_digest)?;
-    let code_hash: [u8; 32] = fixed_hex("deployed program code hash", expected_code_hash)?;
-    let generator = layerx_program_sdk::BindingGenerator::from_interface(&interface)
+    let interface = read_program_file(&interface_path)?;
+    let proof_bytes = read_program_file(request.deployment_proof)?;
+    let proof = layerx_programs::DeploymentProof::decode(&proof_bytes)
+        .map_err(|error| format!("deployment proof is not canonical: {error}"))?;
+    let verifier = layerx_programs::ProtocolDeploymentVerifier::from_protected_history(
+        request.trust_history,
+        1_000,
+    )
+    .map_err(|error| format!("deployment trust history is unavailable or invalid: {error}"))?;
+    let deployment = if request.historical {
+        verifier.verify_historical_deployment(&proof)
+    } else {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_err(|error| format!("system clock is unavailable: {error}"))?;
+        let now_ms = u64::try_from(now.as_millis())
+            .map_err(|error| format!("system clock exceeds the protocol range: {error}"))?;
+        verifier.verify_deployment(&proof, now_ms)
+    }
+    .map_err(|error| format!("deployment proof verification refused: {error}"))?;
+    let published = deployment
+        .interface()
+        .ok_or("verified deployment does not publish an interface")?;
+    if interface.as_slice() != published.canonical_encoding() {
+        return Err("interface differs from the interface in the verified deployment".into());
+    }
+    let bound = layerx_programs::ProgramInterface::bind_deployment(
+        &deployment,
+        published.entries().to_vec(),
+    )
+    .map_err(|error| format!("published interface is not bound to the deployed module: {error}"))?;
+    if bound != *published {
+        return Err("deployed module binding differs from the published interface".into());
+    }
+    let digest = bound.digest().into_bytes();
+    let code_hash = deployment.code_hash();
+    if digest != fixed_hex::<32>("expected interface digest", request.expected_digest)? {
+        return Err("published interface digest is stale".into());
+    }
+    if code_hash != fixed_hex::<32>("expected deployed code hash", request.expected_code_hash)? {
+        return Err("published interface is bound to different deployed code".into());
+    }
+    let generator = layerx_program_sdk::BindingGenerator::from_interface(bound.canonical_encoding())
         .map_err(|error| format!("published interface is not canonical: {error}"))?;
     generator
         .require_digest(digest)
@@ -71,33 +110,55 @@ pub fn program_bindings(
     generator
         .require_code_hash(code_hash)
         .map_err(|error| format!("published interface is bound to different code: {error}"))?;
-
-    fs::create_dir_all(output).map_err(|error| {
-        format!(
-            "could not create binding directory {}: {error}",
-            output.display()
-        )
-    })?;
-    let rust = generator.generate_rust();
-    let typescript = generator.generate_typescript();
-    let guest = generator.generate_guest();
-    write_binding(output, "client.rs", rust.as_bytes())?;
-    write_binding(output, "client.ts", typescript.as_bytes())?;
-    write_binding(output, "guest.rs", guest.as_bytes())?;
-    let manifest = serde_json::to_vec_pretty(&json!({
+    let generated = generator.generate_all();
+    let artifacts = [
+        ("client.rs", generated.rust.as_bytes()),
+        ("client.ts", generated.typescript.as_bytes()),
+        ("guest.rs", generated.guest.as_bytes()),
+        ("client.go", generated.go.as_bytes()),
+        ("ProgramBindings.java", generated.java.as_bytes()),
+        ("client.kt", generated.kotlin.as_bytes()),
+        ("client.py", generated.python.as_bytes()),
+        ("client.swift", generated.swift.as_bytes()),
+        ("Client.cs", generated.csharp.as_bytes()),
+    ];
+    let evidence_scope = if request.historical {
+        "historical-deployment"
+    } else {
+        "recent-deployment-receipt"
+    };
+    let names: Vec<_> = artifacts.iter().map(|(name, _)| *name).collect();
+    let manifest = json!({
         "source": interface_path.display().to_string(),
         "interface_digest": hex_encode(&digest),
         "code_hash": hex_encode(&code_hash),
-        "artifacts": ["client.rs", "client.ts", "guest.rs"],
-    }))
-    .map_err(|error| format!("could not encode binding manifest: {error}"))?;
-    write_binding(output, "bindings.json", &manifest)?;
+        "abi_version": deployment.abi_version(),
+        "program_id": hex_encode(&deployment.program().bytes()),
+        "program_version": deployment.version(),
+        "receipt_digest": hex_encode(&deployment.receipt_digest()),
+        "state_root": hex_encode(&deployment.state_root()),
+        "deployment_proof_sha256": hex_encode(&Sha256::digest(&proof_bytes)),
+        "evidence_scope": evidence_scope,
+        "artifacts": names,
+    });
+    let manifest_bytes = serde_json::to_vec_pretty(&manifest)
+        .map_err(|error| format!("could not encode binding manifest: {error}"))?;
+    fs::create_dir_all(request.output).map_err(|error| {
+        format!("could not create binding directory {}: {error}", request.output.display())
+    })?;
+    for (name, contents) in artifacts {
+        write_binding(request.output, name, contents)?;
+    }
+    write_binding(request.output, "bindings.json", &manifest_bytes)?;
     Ok(json!({
-        "output": output.display().to_string(),
+        "output": request.output.display().to_string(),
         "interface_digest": hex_encode(&digest),
         "code_hash": hex_encode(&code_hash),
-        "artifacts": ["client.rs", "client.ts", "guest.rs", "bindings.json"],
-        "binding": "receipt-verified digest and deployed code hash required before generation and at generated call time",
+        "receipt_digest": hex_encode(&deployment.receipt_digest()),
+        "evidence_scope": evidence_scope,
+        "artifacts": ["client.rs", "client.ts", "guest.rs", "client.go", "ProgramBindings.java",
+            "client.kt", "client.py", "client.swift", "Client.cs", "bindings.json"],
+        "binding": "verified signed deployment interface and module; generated calls require matching interface digest",
     }))
 }
 
