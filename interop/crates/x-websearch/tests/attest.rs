@@ -23,7 +23,7 @@ use x_websearch::keys::{KeyFiles, KeyRefusal, KeyRole};
 use x_websearch::search::{self, SearchResult};
 use x_websearch::watch::{
     decode_requested, hex0x, keccak, requested_topic, unhex0x, EvmError, EvmRpc, RequestWatcher,
-    WebRequest, XWEB_PRECOMPILE,
+    WebRequest, MAX_ATTEMPTS, XWEB_PRECOMPILE,
 };
 use x_websearch::{Limits, RouteTable, RunningServer, Server};
 
@@ -282,6 +282,50 @@ fn the_watcher_follows_requested_logs_to_the_confirmation_depth() -> Outcome {
     assert!(reopened.poll()?.is_empty());
     assert_eq!(node.calls("eth_getLogs"), 1);
     assert_eq!(node.calls("eth_blockNumber"), 3);
+    Ok(())
+}
+
+#[test]
+fn scanned_requests_stay_journalled_across_restart_until_retired() -> Outcome {
+    let scratch = Scratch::new("watch-journal")?;
+    let node = Node::start(&["watch.json"])?;
+    let state = scratch.0.join("watch");
+    let mut watcher = RequestWatcher::open(node.rpc()?, 2, &state, Some(0x19))?;
+    assert_eq!(watcher.poll()?.len(), 2);
+    assert!(state.join("pending.json").is_file());
+    let ids = |requests: Vec<WebRequest>| -> Vec<u64> {
+        requests.iter().map(|request| request.request_id).collect()
+    };
+    assert_eq!(ids(watcher.work()), vec![7, 8]);
+
+    // A retryable failure keeps the request; a terminal one refuses it
+    // durably without dropping it from the journal.
+    assert!(!watcher.fail(7, false, "fetch unavailable")?);
+    assert!(watcher.fail(8, true, "unknown kind")?);
+    assert_eq!(ids(watcher.work()), vec![7]);
+
+    // The cursor moved past both, yet a restart restores both.
+    let mut reopened = RequestWatcher::open(node.rpc()?, 2, &state, Some(0))?;
+    assert_eq!(reopened.next_block(), Some(0x1f));
+    let journal = reopened.journal();
+    assert_eq!(journal.len(), 2);
+    assert_eq!(journal[0].attempts, 1);
+    assert_eq!(journal[0].refused, None);
+    assert_eq!(journal[1].refused.as_deref(), Some("unknown kind"));
+    assert_eq!(ids(reopened.work()), vec![7]);
+
+    // Retries are bounded: the last allowed attempt refuses durably.
+    for _ in 1..MAX_ATTEMPTS - 1 {
+        assert!(!reopened.fail(7, false, "fetch unavailable")?);
+    }
+    assert!(reopened.fail(7, false, "fetch unavailable")?);
+    assert!(reopened.work().is_empty());
+
+    // Only retirement removes a request.
+    reopened.retire(7)?;
+    reopened.retire(8)?;
+    let emptied = RequestWatcher::open(node.rpc()?, 2, &state, None)?;
+    assert!(emptied.journal().is_empty());
     Ok(())
 }
 
@@ -909,6 +953,59 @@ fn a_peer_record_is_taken_only_for_a_registered_signer_it_recovers_to() -> Outco
     assert_eq!(exchange.ready(7, &unregistered), None);
     exchange.forget(7);
     assert_eq!(exchange.ready(7, &set), None);
+    Ok(())
+}
+
+#[test]
+fn the_exchange_restores_answers_and_peer_signatures_across_restart() -> Outcome {
+    let scratch = Scratch::new("exchange-restart")?;
+    let set = three_attestors()?;
+    let exchange = SignatureExchange::open(&scratch.0, &[])?;
+    exchange.record(vector_answer(1, b"Paxeer X Network")?);
+    let honest = vector_answer(3, b"Paxeer X Network")?.record();
+    assert_eq!(
+        exchange.accept("peer", 7, &honest, &set),
+        Ok(Some(signer_address(&attestor_key(3)?)))
+    );
+    let before = exchange
+        .ready(7, &set)
+        .ok_or_else(|| fail("threshold not reached"))?;
+    drop(exchange);
+
+    // A restart restores the own answer and the peer signature over the
+    // same digest, so the quorum binding is unchanged.
+    let reopened = SignatureExchange::open(&scratch.0, &[])?;
+    assert_eq!(reopened.pending(), vec![7]);
+    assert_eq!(
+        reopened.answer(7),
+        Some(vector_answer(1, b"Paxeer X Network")?)
+    );
+    assert_eq!(reopened.ready(7, &set), Some(before));
+    // A fresh answer for the same request never replaces the retained one.
+    reopened.record(vector_answer(1, b"other content")?);
+    assert_eq!(
+        reopened.answer(7).map(|answer| answer.response),
+        Some(b"Paxeer X Network".to_vec())
+    );
+    drop(reopened);
+
+    // A retained answer whose fields no longer derive its signed digest
+    // refuses the restore rather than serving a rebound signature.
+    let path = scratch.0.join("answers/7.json");
+    let original = std::fs::read(&path)?;
+    let mut tampered = read_json(&path)?;
+    tampered["content_digest"] = json!(hex0x(&[0x23; 32]));
+    std::fs::write(&path, tampered.to_string())?;
+    assert!(SignatureExchange::open(&scratch.0, &[]).is_err());
+
+    // Forgetting a settled request releases what was retained.
+    std::fs::write(&path, original)?;
+    let restored = SignatureExchange::open(&scratch.0, &[])?;
+    restored.forget(7);
+    assert!(!path.exists());
+    assert!(SignatureExchange::open(&scratch.0, &[])?
+        .pending()
+        .is_empty());
     Ok(())
 }
 

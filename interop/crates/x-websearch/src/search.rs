@@ -14,7 +14,7 @@ use crate::canonical::{self, CanonicalError, ContentKind};
 use crate::content::ContentStore;
 use crate::index::{IndexError, WebIndex};
 use crate::payment::PaymentGate;
-use crate::server::{QueryError, Request, Response, Route, RouteError, RouteTable};
+use crate::server::{Request, Response, Route, RouteError, RouteTable};
 
 /// The most results a search returns.
 pub const MAX_RESULTS: usize = 10;
@@ -239,15 +239,65 @@ pub fn search_canonical_bytes(
     )
 }
 
+fn decode_query_component(value: &str) -> Result<String, Response> {
+    let mut decoded = Vec::with_capacity(value.len());
+    let mut bytes = value.bytes();
+    while let Some(byte) = bytes.next() {
+        match byte {
+            b'%' => {
+                let high = bytes.next().and_then(|byte| char::from(byte).to_digit(16));
+                let low = bytes.next().and_then(|byte| char::from(byte).to_digit(16));
+                let (Some(high), Some(low)) = (high, low) else {
+                    return Err(Response::error(400, "malformed_query"));
+                };
+                decoded.push(((high << 4) | low) as u8);
+            }
+            b'+' => decoded.push(b' '),
+            byte => decoded.push(byte),
+        }
+    }
+    String::from_utf8(decoded).map_err(|_| Response::error(400, "malformed_query"))
+}
+
+pub(crate) fn search_query(request: &Request) -> Result<String, Response> {
+    let raw = request
+        .query
+        .as_deref()
+        .filter(|query| !query.is_empty())
+        .ok_or_else(|| Response::error(400, "missing_query"))?;
+    let mut query = None;
+    for pair in raw.split('&') {
+        let (key, value) = pair
+            .split_once('=')
+            .ok_or_else(|| Response::error(400, "malformed_query"))?;
+        let key = decode_query_component(key)?;
+        let value = decode_query_component(value)?;
+        if key != "q" {
+            return Err(Response::error(400, "unknown_query_parameter"));
+        }
+        if query.replace(value).is_some() {
+            return Err(Response::error(400, "duplicate_query"));
+        }
+    }
+    query
+        .filter(|query| !query.is_empty())
+        .ok_or_else(|| Response::error(400, "missing_query"))
+}
+
+fn validate_search_request(index: &WebIndex, request: &Request) -> Result<(), Response> {
+    let query = search_query(request)?;
+    query_terms(index, &query)
+        .map(|_| ())
+        .map_err(|error| Response::error(error.status(), error.code()))
+}
+
 /// The `GET /search?q=` resource: searches the index, writes the canonical
 /// bytes to the content store and answers with the results and their digest.
 #[must_use]
 pub fn search_route(index: &WebIndex, store: &ContentStore, request: &Request) -> Response {
-    let query = match request.query_param("q") {
-        Ok(Some(query)) if !query.is_empty() => query,
-        Ok(_) => return Response::error(400, "missing_query"),
-        Err(QueryError::Duplicate) => return Response::error(400, "duplicate_query"),
-        Err(QueryError::Malformed) => return Response::error(400, "malformed_query"),
+    let query = match search_query(request) {
+        Ok(query) => query,
+        Err(response) => return response,
     };
     let results: Vec<SearchResult> = match search(index, &query) {
         Ok(results) => results.into_iter().map(|scored| scored.result).collect(),
@@ -283,8 +333,13 @@ pub fn register(
     index: &Arc<WebIndex>,
     store: &Arc<ContentStore>,
 ) -> Result<(), RouteError> {
+    let validation_index = Arc::clone(index);
     let (index, store) = (Arc::clone(index), Arc::clone(store));
-    PaymentGate::install(gate, routes, Route::Search, move |request: &Request| {
-        search_route(&index, &store, request)
-    })
+    PaymentGate::install_validated(
+        gate,
+        routes,
+        Route::Search,
+        move |request: &Request| validate_search_request(&validation_index, request),
+        move |request: &Request| search_route(&index, &store, request),
+    )
 }

@@ -574,6 +574,7 @@ pub struct Submitter {
     address: [u8; 20],
     chain_id: u64,
     journal: Journal,
+    confirmations: u64,
 }
 
 impl Submitter {
@@ -591,7 +592,16 @@ impl Submitter {
             key,
             chain_id,
             journal: Journal::open(journal_dir)?,
+            confirmations: 0,
         })
+    }
+
+    /// Records a fulfil as settled only once its receipt's block is
+    /// `confirmations` blocks deep, the depth the request watcher follows.
+    #[must_use]
+    pub const fn with_confirmations(mut self, confirmations: u64) -> Self {
+        self.confirmations = confirmations;
+        self
     }
 
     /// The address the submitter pays gas from.
@@ -771,6 +781,17 @@ impl Submitter {
         }
         match receipt.get("status").and_then(Value::as_str) {
             Some("0x1") => {
+                if self.confirmations > 0 {
+                    let mined = receipt
+                        .get("blockNumber")
+                        .and_then(Value::as_str)
+                        .and_then(parse_quantity)
+                        .and_then(|number| u64::try_from(number).ok())
+                        .ok_or(EvmError::Malformed)?;
+                    if self.rpc.block_number()? < mined.saturating_add(self.confirmations) {
+                        return Ok(None);
+                    }
+                }
                 self.journal.store(&JournalEntry {
                     request_id,
                     state: JournalState::Fulfilled,

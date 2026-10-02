@@ -572,18 +572,244 @@ pub struct PaymentStore {
 const REQUESTS: &str = "requests";
 const RECEIVE_KEYS: &str = "receive-keys";
 const RECEIPTS: &str = "receipts";
+const DELIVERIES: &str = "deliveries";
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum DeliveryState {
+    Pending,
+    Computing,
+    Failed,
+    Ready,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct DeliveryResponse {
+    status: u16,
+    content_type: String,
+    headers: Vec<(String, String)>,
+    body: Vec<u8>,
+    body_digest: String,
+    canonical_digest: Option<String>,
+    canonical_content: Option<Vec<u8>>,
+}
+
+impl DeliveryResponse {
+    fn from_response(response: Response, canonical_content: Option<Vec<u8>>) -> Self {
+        Self {
+            canonical_digest: canonical_content
+                .as_ref()
+                .map(|bytes| hex(&crate::canonical::content_digest(bytes))),
+            canonical_content,
+            body_digest: hex(&sha256(&[&response.body])),
+            status: response.status,
+            content_type: response.content_type,
+            headers: response.headers,
+            body: response.body,
+        }
+    }
+
+    fn response(&self) -> io::Result<Response> {
+        if self.body_digest != hex(&sha256(&[&self.body])) || !(100..=599).contains(&self.status) {
+            return Err(io::ErrorKind::InvalidData.into());
+        }
+        match (&self.canonical_content, &self.canonical_digest) {
+            (Some(bytes), Some(digest)) => {
+                if *digest != hex(&crate::canonical::content_digest(bytes)) {
+                    return Err(io::ErrorKind::InvalidData.into());
+                }
+                validate_canonical_response(&self.body, bytes)?;
+            }
+            (None, None) if self.status >= 400 => {}
+            _ => return Err(io::ErrorKind::InvalidData.into()),
+        }
+        Ok(Response {
+            status: self.status,
+            content_type: self.content_type.clone(),
+            headers: self.headers.clone(),
+            body: self.body.clone(),
+        })
+    }
+}
+
+fn validate_canonical_response(body: &[u8], bytes: &[u8]) -> io::Result<()> {
+    let content = crate::canonical::CanonicalContent::parse(bytes)
+        .map_err(|_| io::Error::from(io::ErrorKind::InvalidData))?;
+    let value: Value =
+        serde_json::from_slice(body).map_err(|_| io::Error::from(io::ErrorKind::InvalidData))?;
+    if value.get("digest").and_then(Value::as_str)
+        != Some(hex(&crate::canonical::content_digest(bytes)).as_str())
+        || value.get("media_type").and_then(Value::as_str) != Some(content.media_type.as_str())
+    {
+        return Err(io::ErrorKind::InvalidData.into());
+    }
+    let matches = match content.kind {
+        crate::canonical::ContentKind::Search => {
+            value
+                .get("query")
+                .and_then(Value::as_str)
+                .map(str::as_bytes)
+                == Some(content.payload.as_slice())
+                && serde_json::from_str::<Value>(&content.text).ok().as_ref()
+                    == value.get("results")
+        }
+        crate::canonical::ContentKind::Fetch => {
+            value.get("url").and_then(Value::as_str).map(str::as_bytes)
+                == Some(content.payload.as_slice())
+                && value.get("text").and_then(Value::as_str) == Some(content.text.as_str())
+                && value.get("length").and_then(Value::as_u64) == Some(content.text.len() as u64)
+        }
+        crate::canonical::ContentKind::Api => false,
+    };
+    if matches {
+        Ok(())
+    } else {
+        Err(io::ErrorKind::InvalidData.into())
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct DeliveryRecord {
+    version: u8,
+    principal: String,
+    request_digest: String,
+    resource: String,
+    receipt_digest: String,
+    state: DeliveryState,
+    response: Option<DeliveryResponse>,
+}
+
+impl DeliveryRecord {
+    fn pending(payment: &PaymentRecord, receipt_digest: &[u8; 32]) -> Self {
+        Self {
+            version: 1,
+            principal: payment.principal.clone(),
+            request_digest: payment.request_digest.clone(),
+            resource: payment.resource.clone(),
+            receipt_digest: hex(receipt_digest),
+            state: DeliveryState::Pending,
+            response: None,
+        }
+    }
+
+    fn validate(&self, payment: &PaymentRecord) -> io::Result<()> {
+        if self.version != 1
+            || self.principal != payment.principal
+            || self.request_digest != payment.request_digest
+            || self.resource != payment.resource
+            || payment.receipt.is_none()
+            || payment.receipt_digest.as_deref() != Some(self.receipt_digest.as_str())
+            || unhex32(&self.receipt_digest).is_none()
+        {
+            return Err(io::ErrorKind::InvalidData.into());
+        }
+        if let Some(response) = &self.response {
+            let headers: Vec<_> = response
+                .headers
+                .iter()
+                .filter(|(name, _)| name.eq_ignore_ascii_case(PAYMENT_RESPONSE))
+                .collect();
+            if headers.len() != 1 {
+                return Err(io::ErrorKind::InvalidData.into());
+            }
+            let settlement: layerx_x402::model::SettlementResponse = serde_json::from_slice(
+                &STANDARD
+                    .decode(&headers[0].1)
+                    .map_err(|_| io::Error::from(io::ErrorKind::InvalidData))?,
+            )
+            .map_err(|_| io::Error::from(io::ErrorKind::InvalidData))?;
+            settlement
+                .validate_wire()
+                .map_err(|_| io::Error::from(io::ErrorKind::InvalidData))?;
+            let binding = settlement
+                .extensions
+                .get("x-websearch")
+                .ok_or(io::ErrorKind::InvalidData)?;
+            let evidence = settlement
+                .extensions
+                .get("layerx")
+                .ok_or(io::ErrorKind::InvalidData)?;
+            let receipt = evidence
+                .get("receipt")
+                .and_then(Value::as_str)
+                .and_then(|receipt| STANDARD.decode(receipt).ok())
+                .ok_or(io::ErrorKind::InvalidData)?;
+            if !settlement.success
+                || settlement.transaction != format!("lxp:{}", self.receipt_digest)
+                || settlement.payer.as_deref() != payment.payer.as_deref()
+                || payment.offer.get("network").and_then(Value::as_str)
+                    != Some(settlement.network.as_str())
+                || settlement
+                    .amount
+                    .map(|amount| amount.value().to_string())
+                    .as_deref()
+                    != payment.offer.get("amount").and_then(Value::as_str)
+                || evidence.get("receiptDigest").and_then(Value::as_str)
+                    != Some(self.receipt_digest.as_str())
+                || evidence.get("verificationLevel").and_then(Value::as_str)
+                    != Some("sequencer-signed")
+                || payment.receipt.as_deref() != Some(hex(&receipt).as_str())
+                || binding.get("resource").and_then(Value::as_str) != Some(self.resource.as_str())
+                || binding.get("receiptDigest").and_then(Value::as_str)
+                    != Some(self.receipt_digest.as_str())
+                || binding.get("responseDigest").and_then(Value::as_str)
+                    != Some(response.body_digest.as_str())
+                || binding.get("contentDigest").and_then(Value::as_str)
+                    != response.canonical_digest.as_deref()
+                || binding.get("delivery").and_then(Value::as_str)
+                    != Some(if self.state == DeliveryState::Ready {
+                        "ready"
+                    } else {
+                        "failed"
+                    })
+            {
+                return Err(io::ErrorKind::InvalidData.into());
+            }
+            if let Some(bytes) = &response.canonical_content {
+                let content = crate::canonical::CanonicalContent::parse(bytes)
+                    .map_err(|_| io::Error::from(io::ErrorKind::InvalidData))?;
+                let prefix = match content.kind {
+                    crate::canonical::ContentKind::Search => "GET /search?q=",
+                    crate::canonical::ContentKind::Fetch => "GET /fetch?url=",
+                    crate::canonical::ContentKind::Api => {
+                        return Err(io::ErrorKind::InvalidData.into())
+                    }
+                };
+                let payload = std::str::from_utf8(&content.payload)
+                    .map_err(|_| io::Error::from(io::ErrorKind::InvalidData))?;
+                if self.resource != format!("{prefix}{}", encode_query_value(payload)) {
+                    return Err(io::ErrorKind::InvalidData.into());
+                }
+            }
+        }
+        match (&self.state, &self.response) {
+            (DeliveryState::Pending | DeliveryState::Computing, None) => Ok(()),
+            (DeliveryState::Failed, Some(response)) if response.status >= 400 => {
+                response.response().map(|_| ())
+            }
+            (DeliveryState::Ready, Some(response)) if (200..300).contains(&response.status) => {
+                response.response().map(|_| ())
+            }
+            _ => Err(io::ErrorKind::InvalidData.into()),
+        }
+    }
+}
 
 impl PaymentStore {
     /// # Errors
     /// Returns the I/O error that prevented creating the store directories.
     pub fn open(data_dir: &Path) -> io::Result<Self> {
         let root = data_dir.join("payments");
-        for index in [REQUESTS, RECEIVE_KEYS, RECEIPTS] {
+        for index in [REQUESTS, RECEIVE_KEYS, RECEIPTS, DELIVERIES] {
             fs::DirBuilder::new()
                 .recursive(true)
                 .mode(0o700)
                 .create(root.join(index))?;
         }
+        fs::File::open(&root)?.sync_all()?;
+        fs::File::open(data_dir)?.sync_all()?;
         Ok(Self { root })
     }
 
@@ -604,10 +830,14 @@ impl PaymentStore {
     }
 
     fn save(&self, key: &[u8; 32], record: &PaymentRecord) -> io::Result<()> {
+        self.save_json(REQUESTS, key, record)
+    }
+
+    fn save_json(&self, index: &str, key: &[u8; 32], record: &impl Serialize) -> io::Result<()> {
         let bytes =
             serde_json::to_vec(record).map_err(|_| io::Error::from(io::ErrorKind::InvalidData))?;
-        let path = self.path(REQUESTS, &hex(key));
-        let staging = self.path(REQUESTS, &format!("{}.staging", hex(key)));
+        let path = self.path(index, &hex(key));
+        let staging = self.path(index, &format!("{}.staging", hex(key)));
         let mut file = fs::OpenOptions::new()
             .write(true)
             .create(true)
@@ -617,29 +847,47 @@ impl PaymentStore {
         file.write_all(&bytes)?;
         file.sync_all()?;
         fs::rename(&staging, &path)?;
-        fs::File::open(self.root.join(REQUESTS))?.sync_all()
+        fs::File::open(self.root.join(index))?.sync_all()
+    }
+
+    fn delivery(&self, key: &[u8; 32]) -> io::Result<Option<DeliveryRecord>> {
+        match fs::read(self.path(DELIVERIES, &hex(key))) {
+            Ok(bytes) => serde_json::from_slice(&bytes)
+                .map(Some)
+                .map_err(|_| io::Error::from(io::ErrorKind::InvalidData)),
+            Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(None),
+            Err(error) => Err(error),
+        }
     }
 
     /// Binds `name` in `index` to `owner` once. Returns whether `owner` holds it.
     fn claim(&self, index: &str, name: &str, owner: &[u8; 32]) -> io::Result<bool> {
         let path = self.path(index, name);
-        match fs::OpenOptions::new()
+        let staging = self.path(index, &format!("{name}.{}.staging", hex(owner)));
+        match fs::remove_file(&staging) {
+            Ok(()) => {}
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+            Err(error) => return Err(error),
+        }
+        let mut file = fs::OpenOptions::new()
             .write(true)
             .create_new(true)
             .mode(0o600)
-            .open(&path)
-        {
-            Ok(mut file) => {
-                file.write_all(hex(owner).as_bytes())?;
-                file.sync_all()?;
+            .open(&staging)?;
+        file.write_all(hex(owner).as_bytes())?;
+        file.sync_all()?;
+        let claimed = match fs::hard_link(&staging, &path) {
+            Ok(()) => {
                 fs::File::open(self.root.join(index))?.sync_all()?;
-                Ok(true)
+                true
             }
             Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {
-                Ok(fs::read(&path)? == hex(owner).as_bytes())
+                fs::read(&path)? == hex(owner).as_bytes()
             }
-            Err(error) => Err(error),
-        }
+            Err(error) => return Err(error),
+        };
+        fs::remove_file(staging)?;
+        Ok(claimed)
     }
 
     fn holder(&self, index: &str, name: &str) -> io::Result<Option<Vec<u8>>> {
@@ -719,6 +967,7 @@ pub struct PaymentGate {
     store: PaymentStore,
     clock: Clock,
     gateway: Mutex<GatewayCore>,
+    delivery_lock: Mutex<()>,
 }
 
 impl PaymentGate {
@@ -787,6 +1036,7 @@ impl PaymentGate {
             store,
             clock,
             gateway: Mutex::new(gateway),
+            delivery_lock: Mutex::new(()),
         })
     }
 
@@ -881,10 +1131,7 @@ impl PaymentGate {
                         .all(|byte| byte.is_ascii_alphanumeric() || b".-:[]".contains(&byte))
             })
             .ok_or_else(|| Response::error(400, "missing_host"))?;
-        let query = request
-            .query
-            .as_deref()
-            .map_or_else(String::new, |query| format!("?{query}"));
+        let target = canonical_target(request)?;
         let mut accepts = Vec::with_capacity(8);
         for asset in self.assets.all() {
             if payer.is_some() {
@@ -896,7 +1143,7 @@ impl PaymentGate {
             x402_version: X402_VERSION,
             error: None,
             resource: ResourceInfo {
-                url: format!("http://{host}{}{query}", request.path),
+                url: format!("http://{host}{target}"),
                 description: Some(describe(request.route).to_owned()),
                 mime_type: Some("application/json".to_owned()),
                 service_name: Some("x-websearch".to_owned()),
@@ -924,6 +1171,23 @@ impl PaymentGate {
     /// after a verified receipt that has released no other request. Without
     /// a payment it answers 402 with `PAYMENT-REQUIRED`.
     pub fn settle(&self, request: &Request, release: &dyn Fn(&Request) -> Response) -> Response {
+        self.settle_request(request, release, false)
+    }
+
+    fn settle_request(
+        &self,
+        request: &Request,
+        release: &dyn Fn(&Request) -> Response,
+        resumable: bool,
+    ) -> Response {
+        let _delivery = self
+            .delivery_lock
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        let resource = match resource_binding(request) {
+            Ok(resource) => resource,
+            Err(response) => return response,
+        };
         let payer = match payer_did(request, self.payer.as_deref()) {
             Ok(payer) => payer,
             Err(response) => return response,
@@ -940,7 +1204,6 @@ impl PaymentGate {
         };
         let principal = principal(payer);
         let trace = TraceId::mint(trace_entropy(header));
-        let resource = resource_binding(request);
         let now_ms = (self.clock)();
         let mut plane = Plane {
             gate: self,
@@ -948,6 +1211,7 @@ impl PaymentGate {
             payer,
             now_ms,
             key: None,
+            refusal: None,
         };
         let outcome = {
             let mut gateway = self.gateway.lock().unwrap_or_else(PoisonError::into_inner);
@@ -961,7 +1225,7 @@ impl PaymentGate {
             )
         };
         match outcome {
-            Err(_) => Self::challenge(&seller, "payment_invalid"),
+            Err(_) => Self::challenge(&seller, plane.refusal.unwrap_or("payment_invalid")),
             Ok(SellerOutcome::Pending) => {
                 Response::error(503, "payment_pending").with_header("Retry-After", "1")
             }
@@ -977,13 +1241,292 @@ impl PaymentGate {
                 let Some(key) = plane.key else {
                     return Self::challenge(&seller, "payment_invalid");
                 };
-                match self.store.release(&key, &receipt_digest) {
-                    Ok(true) => release(request).with_header(PAYMENT_RESPONSE, &header),
-                    Ok(false) => Self::challenge(&seller, "receipt_consumed"),
-                    Err(_) => Response::error(503, "payment_store_unavailable"),
+                if resumable {
+                    self.deliver(&key, &receipt_digest, &header, request, release)
+                        .unwrap_or_else(|_| Response::error(503, "payment_store_unavailable"))
+                } else {
+                    match self.store.release(&key, &receipt_digest) {
+                        Ok(true) => release(request).with_header(PAYMENT_RESPONSE, &header),
+                        Ok(false) => Self::challenge(&seller, "receipt_consumed"),
+                        Err(_) => Response::error(503, "payment_store_unavailable"),
+                    }
                 }
             }
         }
+    }
+
+    fn deliver(
+        &self,
+        key: &[u8; 32],
+        receipt_digest: &[u8; 32],
+        payment_header: &str,
+        request: &Request,
+        handler: &dyn Fn(&Request) -> Response,
+    ) -> io::Result<Response> {
+        let payment = self.store.load(key)?.ok_or(io::ErrorKind::InvalidData)?;
+        if payment.receipt.is_none()
+            || payment.receipt_digest.as_deref() != Some(hex(receipt_digest).as_str())
+            || !self.store.claim(RECEIPTS, &hex(receipt_digest), key)?
+        {
+            return Err(io::ErrorKind::InvalidData.into());
+        }
+        let mut delivery = match self.store.delivery(key)? {
+            Some(delivery) => delivery,
+            None => {
+                if payment.released {
+                    return Ok(Response::error(409, "receipt_consumed"));
+                }
+                let delivery = DeliveryRecord::pending(&payment, receipt_digest);
+                self.store.save_json(DELIVERIES, key, &delivery)?;
+                delivery
+            }
+        };
+        delivery.validate(&payment)?;
+        if delivery.state == DeliveryState::Ready {
+            return delivery
+                .response
+                .as_ref()
+                .ok_or(io::ErrorKind::InvalidData)?
+                .response();
+        }
+        delivery.state = DeliveryState::Computing;
+        delivery.response = None;
+        self.store.save_json(DELIVERIES, key, &delivery)?;
+        let mut response =
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| handler(request)))
+                .unwrap_or_else(|_| Response::error(500, "delivery_failed"));
+        if !(200..300).contains(&response.status) && response.status < 400 {
+            response = Response::error(502, "delivery_failed");
+        }
+        let canonical_content = if (200..300).contains(&response.status) {
+            match self.canonical_result(request, &response) {
+                Ok(bytes) => Some(bytes),
+                Err(_) => {
+                    response = Response::error(500, "delivery_result_invalid");
+                    None
+                }
+            }
+        } else {
+            None
+        };
+        let mut settlement: layerx_x402::model::SettlementResponse = serde_json::from_slice(
+            &STANDARD
+                .decode(payment_header)
+                .map_err(|_| io::Error::from(io::ErrorKind::InvalidData))?,
+        )
+        .map_err(|_| io::Error::from(io::ErrorKind::InvalidData))?;
+        settlement.extensions.insert("x-websearch".to_owned(), json!({
+            "resource": payment.resource,
+            "receiptDigest": hex(receipt_digest),
+            "delivery": if canonical_content.is_some() { "ready" } else { "failed" },
+            "contentDigest": canonical_content.as_ref().map(|bytes| hex(&crate::canonical::content_digest(bytes))),
+            "responseDigest": hex(&sha256(&[&response.body])),
+        }));
+        settlement
+            .validate_wire()
+            .map_err(|_| io::Error::from(io::ErrorKind::InvalidData))?;
+        let payment_header = STANDARD.encode(
+            serde_json::to_vec(&settlement)
+                .map_err(|_| io::Error::from(io::ErrorKind::InvalidData))?,
+        );
+        response.headers.retain(|(name, _)| {
+            !name.eq_ignore_ascii_case(PAYMENT_RESPONSE)
+                && !name.eq_ignore_ascii_case("Content-Digest")
+        });
+        let digest = STANDARD.encode(sha256(&[&response.body]));
+        response = response
+            .with_header(PAYMENT_RESPONSE, &payment_header)
+            .with_header("Content-Digest", &format!("sha-256=:{digest}:"));
+        delivery.state = if (200..300).contains(&response.status) {
+            DeliveryState::Ready
+        } else {
+            DeliveryState::Failed
+        };
+        delivery.response = Some(DeliveryResponse::from_response(response, canonical_content));
+        delivery.validate(&payment)?;
+        self.store.save_json(DELIVERIES, key, &delivery)?;
+        delivery
+            .response
+            .as_ref()
+            .ok_or(io::ErrorKind::InvalidData)?
+            .response()
+    }
+
+    fn canonical_result(&self, request: &Request, response: &Response) -> io::Result<Vec<u8>> {
+        let value: Value = serde_json::from_slice(&response.body)
+            .map_err(|_| io::Error::from(io::ErrorKind::InvalidData))?;
+        let digest = value
+            .get("digest")
+            .and_then(Value::as_str)
+            .and_then(unhex32)
+            .ok_or(io::ErrorKind::InvalidData)?;
+        let path = self
+            .store
+            .root
+            .parent()
+            .ok_or(io::ErrorKind::InvalidData)?
+            .join("content")
+            .join(hex(&digest));
+        let mut bytes = Vec::new();
+        fs::File::open(path)?
+            .take((crate::content::MAX_CONTENT_BYTES as u64) + 1)
+            .read_to_end(&mut bytes)?;
+        if bytes.len() > crate::content::MAX_CONTENT_BYTES
+            || crate::canonical::content_digest(&bytes) != digest
+        {
+            return Err(io::ErrorKind::InvalidData.into());
+        }
+        validate_canonical_response(&response.body, &bytes)?;
+        let content = crate::canonical::CanonicalContent::parse(&bytes)
+            .map_err(|_| io::Error::from(io::ErrorKind::InvalidData))?;
+        let parameter = match request.route {
+            Route::Search => "q",
+            Route::Fetch => "url",
+            _ => return Err(io::ErrorKind::InvalidData.into()),
+        };
+        if request
+            .query_param(parameter)
+            .ok()
+            .flatten()
+            .as_deref()
+            .map(str::as_bytes)
+            != Some(content.payload.as_slice())
+        {
+            return Err(io::ErrorKind::InvalidData.into());
+        }
+        Ok(bytes)
+    }
+
+    pub fn recover_pending_deliveries(&self) -> io::Result<()> {
+        let _delivery = self
+            .delivery_lock
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        for entry in fs::read_dir(self.store.root.join(REQUESTS))? {
+            let entry = entry?;
+            let name = entry.file_name();
+            let name = name.to_str().ok_or(io::ErrorKind::InvalidData)?;
+            if name.ends_with(".staging") {
+                continue;
+            }
+            let key = unhex32(name).ok_or(io::ErrorKind::InvalidData)?;
+            let payment = self.store.load(&key)?.ok_or(io::ErrorKind::InvalidData)?;
+            if unhex32(&payment.request_digest).is_none() || payment.resource.is_empty() {
+                return Err(io::ErrorKind::InvalidData.into());
+            }
+            let Some(receipt) = payment.receipt.as_deref() else {
+                if payment.receipt_digest.is_some() || self.store.delivery(&key)?.is_some() {
+                    return Err(io::ErrorKind::InvalidData.into());
+                }
+                continue;
+            };
+            let bytes = unhex(receipt).ok_or(io::ErrorKind::InvalidData)?;
+            let asset = payment
+                .offer
+                .get("asset")
+                .and_then(Value::as_str)
+                .and_then(unhex32)
+                .and_then(|id| self.assets.by_id(&id))
+                .ok_or(io::ErrorKind::InvalidData)?;
+            let metered = payment.receive_key.is_some();
+            let scheme = if metered { METERED } else { EXACT };
+            if payment.offer.get("scheme").and_then(Value::as_str) != Some(scheme)
+                || payment.offer.get("network").and_then(Value::as_str)
+                    != Some(self.network.as_str())
+                || payment.offer.get("amount").and_then(Value::as_str)
+                    != Some(asset.price.to_string().as_str())
+                || payment.offer.get("payTo").and_then(Value::as_str)
+                    != Some(hex(&self.payee(asset)).as_str())
+            {
+                return Err(io::ErrorKind::InvalidData.into());
+            }
+            let expected = Expected {
+                operation: if metered {
+                    RECEIVE_OPERATION
+                } else {
+                    SEND_OPERATION
+                },
+                fee_limit: metered.then_some(self.draw_fee_limit),
+                activity_id: Some(
+                    payment
+                        .activity_id
+                        .as_deref()
+                        .and_then(unhex32)
+                        .ok_or(io::ErrorKind::InvalidData)?,
+                ),
+                from: Some(
+                    payment
+                        .payer
+                        .as_deref()
+                        .and_then(unhex32)
+                        .ok_or(io::ErrorKind::InvalidData)?,
+                ),
+                to: self.payee(asset),
+                asset: asset.asset_id,
+                amount: asset.price,
+            };
+            let plane = Plane {
+                gate: self,
+                resource: &payment.resource,
+                payer: self.payer.as_deref(),
+                now_ms: (self.clock)(),
+                key: None,
+                refusal: None,
+            };
+            let (_, digest) = plane
+                .verify_receipt(&bytes, &expected)
+                .map_err(|_| io::Error::from(io::ErrorKind::InvalidData))?;
+            if payment.receipt_digest.as_deref() != Some(hex(&digest).as_str())
+                || !self.store.claim(RECEIPTS, &hex(&digest), &key)?
+            {
+                return Err(io::ErrorKind::InvalidData.into());
+            }
+            let mut delivery = match self.store.delivery(&key)? {
+                Some(delivery) => delivery,
+                None if payment.released => continue,
+                None => DeliveryRecord::pending(&payment, &digest),
+            };
+            delivery.validate(&payment)?;
+            if delivery.state == DeliveryState::Computing {
+                delivery.state = DeliveryState::Pending;
+            }
+            self.store.save_json(DELIVERIES, &key, &delivery)?;
+        }
+        for entry in fs::read_dir(self.store.root.join(DELIVERIES))? {
+            let entry = entry?;
+            let name = entry.file_name();
+            let name = name.to_str().ok_or(io::ErrorKind::InvalidData)?;
+            if name.ends_with(".staging") {
+                continue;
+            }
+            let key = unhex32(name).ok_or(io::ErrorKind::InvalidData)?;
+            let payment = self.store.load(&key)?.ok_or(io::ErrorKind::InvalidData)?;
+            self.store
+                .delivery(&key)?
+                .ok_or(io::ErrorKind::InvalidData)?
+                .validate(&payment)?;
+        }
+        Ok(())
+    }
+
+    pub fn install_validated(
+        gate: &Arc<Self>,
+        routes: &mut RouteTable,
+        route: Route,
+        validate: impl Fn(&Request) -> Result<(), Response> + Send + Sync + 'static,
+        handler: impl Fn(&Request) -> Response + Send + Sync + 'static,
+    ) -> Result<(), RouteError> {
+        let gate = Arc::clone(gate);
+        routes.set(route, move |request: &Request| {
+            if let Err(response) = validate(request) {
+                return response;
+            }
+            if request.route.is_paid() {
+                gate.settle_request(request, &handler, true)
+            } else {
+                handler(request)
+            }
+        })
     }
 
     /// Wraps a paid route's handler so it runs only after settlement.
@@ -1095,12 +1638,46 @@ fn trace_entropy(header: &str) -> [u8; 16] {
     entropy
 }
 
-fn resource_binding(request: &Request) -> String {
-    let query = request
-        .query
-        .as_deref()
-        .map_or_else(String::new, |query| format!("?{query}"));
-    format!("{} {}{query}", request.method, request.path)
+fn canonical_target(request: &Request) -> Result<String, Response> {
+    let (path, parameter) = match request.route {
+        Route::Search => ("/search", Some("q")),
+        Route::Fetch => ("/fetch", Some("url")),
+        Route::Content => {
+            let digest = request
+                .digest
+                .ok_or_else(|| Response::error(400, "malformed_digest"))?;
+            return Ok(format!("/content/{}", hex(&digest)));
+        }
+        Route::Health => ("/health", None),
+    };
+    let Some(parameter) = parameter else {
+        return Ok(path.to_owned());
+    };
+    let value = request
+        .query_param(parameter)
+        .map_err(|_| Response::error(400, "malformed_query"))?
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| Response::error(400, "missing_query"))?;
+    Ok(format!("{path}?{parameter}={}", encode_query_value(&value)))
+}
+
+fn encode_query_value(value: &str) -> String {
+    let mut encoded = String::new();
+    const DIGITS: &[u8; 16] = b"0123456789ABCDEF";
+    for byte in value.bytes() {
+        if byte.is_ascii_alphanumeric() || b"-._~".contains(&byte) {
+            encoded.push(char::from(byte));
+        } else {
+            encoded.push('%');
+            encoded.push(char::from(DIGITS[usize::from(byte >> 4)]));
+            encoded.push(char::from(DIGITS[usize::from(byte & 15)]));
+        }
+    }
+    encoded
+}
+
+fn resource_binding(request: &Request) -> Result<String, Response> {
+    Ok(format!("{} {}", request.method, canonical_target(request)?))
 }
 
 type Settled = Result<PlanePaymentOutcome, &'static str>;
@@ -1114,6 +1691,7 @@ struct Plane<'a> {
     payer: Option<&'a str>,
     now_ms: u64,
     key: Option<[u8; 32]>,
+    refusal: Option<&'static str>,
 }
 
 impl PaymentPlane for Plane<'_> {
@@ -1123,9 +1701,17 @@ impl PaymentPlane for Plane<'_> {
         _trace: &TraceId,
     ) -> Result<PlanePaymentOutcome, layerx_x402::model::X402Error> {
         self.key = Some(request.idempotency_key);
-        Ok(self
-            .run(&request)
-            .unwrap_or_else(|reason| PlanePaymentOutcome::Refused { reason }))
+        match self.run(&request) {
+            Ok(outcome) => Ok(outcome),
+            Err(reason) => {
+                self.refusal = Some(reason);
+                if reason == "request_mismatch" {
+                    Err(layerx_x402::model::X402Error::RequirementsMismatch)
+                } else {
+                    Ok(PlanePaymentOutcome::Refused { reason })
+                }
+            }
+        }
     }
 }
 
@@ -1387,16 +1973,17 @@ impl Plane<'_> {
             },
             fee_limit: metered.then_some(self.gate.draw_fee_limit),
             activity_id: record.activity_id.as_deref().and_then(unhex32),
-            from: record
-                .payer
-                .as_deref()
-                .filter(|_| metered)
-                .and_then(unhex32),
+            from: record.payer.as_deref().and_then(unhex32),
             to: pay_to,
             asset: asset.asset_id,
             amount: asset.price,
         };
         let (batch, digest) = self.verify_receipt(&bytes, &expected)?;
+        match self.gate.store.claim(RECEIPTS, &hex(&digest), key) {
+            Ok(true) => {}
+            Ok(false) => return Err("receipt_consumed"),
+            Err(_) => return Ok(PlanePaymentOutcome::Pending),
+        }
         if record.receipt.is_none() {
             record.receipt = Some(hex(&bytes));
             record.receipt_digest = Some(hex(&digest));
@@ -1465,7 +2052,10 @@ impl Plane<'_> {
             operation: SEND_OPERATION,
             fee_limit: None,
             activity_id: None,
-            from: None,
+            from: self
+                .payer
+                .map(|payer| account_id(&wallet_account(payer, asset)).ok_or("payer_mismatch"))
+                .transpose()?,
             to: pay_to,
             asset: asset.asset_id,
             amount: asset.price,

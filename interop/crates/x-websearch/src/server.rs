@@ -236,6 +236,7 @@ impl std::error::Error for RouteError {}
 /// 404 until an attestor sets their handlers.
 #[derive(Default)]
 pub struct RouteTable {
+    health: Option<Handler>,
     handlers: BTreeMap<Route, Handler>,
     attestations: Option<AttestationHandler>,
     program_attestations: Option<ProgramAttestationHandler>,
@@ -261,6 +262,17 @@ impl RouteTable {
             return Err(RouteError::AlreadySet);
         }
         self.handlers.insert(route, Box::new(handler));
+        Ok(())
+    }
+
+    pub fn set_health(
+        &mut self,
+        handler: impl Fn(&Request) -> Response + Send + Sync + 'static,
+    ) -> Result<(), RouteError> {
+        if self.health.is_some() {
+            return Err(RouteError::AlreadySet);
+        }
+        self.health = Some(Box::new(handler));
         Ok(())
     }
 
@@ -314,6 +326,10 @@ impl RouteTable {
     #[must_use]
     pub fn dispatch(&self, request: &Request) -> Response {
         if request.route == Route::Health {
+            if let Some(handler) = &self.health {
+                return catch_unwind(AssertUnwindSafe(|| handler(request)))
+                    .unwrap_or_else(|_| Response::error(500, "internal_error"));
+            }
             return Response::json(200, b"{\"status\":\"ok\"}".to_vec());
         }
         let Some(handler) = self.handlers.get(&request.route) else {
@@ -643,7 +659,7 @@ fn header_value(text: &str) -> bool {
 
 fn route_of(path: &str) -> Result<(Route, Option<[u8; 32]>), Response> {
     match path {
-        "/health" => Ok((Route::Health, None)),
+        "/health" | "/xweb/health" => Ok((Route::Health, None)),
         "/search" => Ok((Route::Search, None)),
         "/fetch" => Ok((Route::Fetch, None)),
         _ => {

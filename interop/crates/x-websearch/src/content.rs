@@ -1,4 +1,4 @@
-use std::io::{self, ErrorKind};
+use std::io::{self, ErrorKind, Read as _, Write as _};
 use std::net::{SocketAddr, ToSocketAddrs as _};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -8,7 +8,7 @@ use std::time::{Duration, Instant};
 use crate::canonical;
 use crate::fetch::{self, Fetcher, HttpClient, Url};
 use crate::payment::PaymentGate;
-use crate::server::{Request, Response, Route, RouteError, RouteTable};
+use crate::server::{QueryError, Request, Response, Route, RouteError, RouteTable};
 
 /// The largest canonical encoding the store keeps or accepts from a peer.
 pub const MAX_CONTENT_BYTES: usize = 8_388_608;
@@ -50,6 +50,7 @@ impl ContentStore {
             .collect::<io::Result<Vec<_>>>()?;
         let directory = data_dir.join("content");
         std::fs::create_dir_all(&directory)?;
+        std::fs::File::open(data_dir)?.sync_all()?;
         let client = HttpClient::new(PEER_CONNECT_TIMEOUT)
             .map_err(|error| io::Error::other(error.code()))?;
         Ok(Self {
@@ -82,8 +83,23 @@ impl ContentStore {
         canonical::check(bytes).map_err(|_| invalid("not canonical content"))?;
         let digest = canonical::content_digest(bytes);
         let path = self.path_of(&digest);
-        if path.is_file() {
-            return Ok(digest);
+        match std::fs::File::open(&path) {
+            Ok(file) => {
+                let mut existing = Vec::new();
+                (&file)
+                    .take(MAX_CONTENT_BYTES as u64 + 1)
+                    .read_to_end(&mut existing)?;
+                if existing.len() > MAX_CONTENT_BYTES
+                    || canonical::content_digest(&existing) != digest
+                {
+                    return Err(invalid("stored content digest mismatch"));
+                }
+                file.sync_all()?;
+                std::fs::File::open(&self.directory)?.sync_all()?;
+                return Ok(digest);
+            }
+            Err(error) if error.kind() == ErrorKind::NotFound => {}
+            Err(error) => return Err(error),
         }
         let temporary = self.directory.join(format!(
             ".{}.{}.{}.tmp",
@@ -91,8 +107,16 @@ impl ContentStore {
             std::process::id(),
             self.sequence.fetch_add(1, Ordering::Relaxed)
         ));
-        let written =
-            std::fs::write(&temporary, bytes).and_then(|()| std::fs::rename(&temporary, &path));
+        let mut file = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&temporary)?;
+        let written = (|| -> io::Result<()> {
+            file.write_all(bytes)?;
+            file.sync_all()?;
+            std::fs::rename(&temporary, &path)?;
+            std::fs::File::open(&self.directory)?.sync_all()
+        })();
         if written.is_err() {
             let _ = std::fs::remove_file(&temporary);
         }
@@ -198,11 +222,39 @@ pub fn register(
     store: &Arc<ContentStore>,
 ) -> Result<(), RouteError> {
     let (fetch_fetcher, fetch_store) = (Arc::clone(fetcher), Arc::clone(store));
-    PaymentGate::install(gate, routes, Route::Fetch, move |request: &Request| {
-        fetch::fetch_route(&fetch_fetcher, &fetch_store, request)
-    })?;
+    PaymentGate::install_validated(
+        gate,
+        routes,
+        Route::Fetch,
+        validate_fetch_request,
+        move |request: &Request| fetch::fetch_route(&fetch_fetcher, &fetch_store, request),
+    )?;
     let content_store = Arc::clone(store);
     routes.set(Route::Content, move |request: &Request| {
         content_store.handle(request)
     })
+}
+
+fn validate_fetch_request(request: &Request) -> Result<(), Response> {
+    let url = match request.query_param("url") {
+        Ok(Some(url)) if !url.is_empty() => url,
+        Ok(_) => return Err(Response::error(400, "missing_url")),
+        Err(QueryError::Duplicate) => return Err(Response::error(400, "duplicate_url")),
+        Err(QueryError::Malformed) => return Err(Response::error(400, "malformed_query")),
+    };
+    for pair in request.query.as_deref().unwrap_or_default().split('&') {
+        if pair.is_empty() || !pair.contains('=') {
+            return Err(Response::error(400, "malformed_query"));
+        }
+        let mut parameter = request.clone();
+        parameter.query = Some(pair.to_owned());
+        match parameter.query_param("url") {
+            Ok(Some(_)) => {}
+            Ok(None) => return Err(Response::error(400, "unknown_query_parameter")),
+            Err(_) => return Err(Response::error(400, "malformed_query")),
+        }
+    }
+    Url::parse(&url)
+        .map(|_| ())
+        .map_err(|error| Response::error(error.status(), error.code()))
 }
