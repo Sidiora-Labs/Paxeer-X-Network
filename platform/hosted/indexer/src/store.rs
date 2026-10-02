@@ -98,6 +98,20 @@ CREATE TABLE IF NOT EXISTS cursors(
     finalized_boundary INTEGER,
     updated_at INTEGER NOT NULL
 );
+CREATE TABLE IF NOT EXISTS source_observations(
+    chain TEXT PRIMARY KEY,
+    source_head INTEGER,
+    source_head_at INTEGER,
+    indexed_position INTEGER,
+    last_success_at INTEGER,
+    last_error TEXT,
+    last_error_at INTEGER,
+    consecutive_failures INTEGER NOT NULL DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS source_sessions(
+    chain TEXT PRIMARY KEY,
+    reconciled INTEGER NOT NULL DEFAULT 0
+);
 CREATE TABLE IF NOT EXISTS backfill_cursors(
     chain TEXT PRIMARY KEY,
     position INTEGER NOT NULL,
@@ -114,6 +128,16 @@ CREATE TABLE IF NOT EXISTS chain_links(
     PRIMARY KEY(chain, position)
 );
 ";
+
+/// Evidence source of the published local stability level: the configured
+/// reorg depth below the indexed head. It never implies LayerX settlement.
+pub const STABILITY_SOURCE: &str = "local_finality_depth";
+/// Settlement level published when no receipt-bound checkpoint or anchor
+/// evidence has been verified for a row.
+pub const SETTLEMENT_UNVERIFIED: &str = "unverified";
+/// Why settlement is unverified: the index holds no verified checkpoint or
+/// anchor evidence bound to the receipt.
+pub const SETTLEMENT_UNAVAILABLE_REASON: &str = "no_verified_checkpoint_evidence";
 
 /// One decoded transfer leg.
 #[derive(Clone, Debug, PartialEq)]
@@ -200,6 +224,19 @@ pub struct BackfillCursor {
     pub hash: String,
 }
 
+/// A source's durable observation state: the last successful head
+/// observation and the most recent failure, kept across restarts.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SourceObservation {
+    pub reconciled: bool,
+    pub source_head: Option<u64>,
+    pub indexed_position: Option<u64>,
+    pub last_success_at: Option<u64>,
+    pub last_error: Option<String>,
+    pub last_error_at: Option<u64>,
+    pub consecutive_failures: u64,
+}
+
 /// One page of API items.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Page {
@@ -256,6 +293,13 @@ impl Store {
         connection.pragma_update(None, "foreign_keys", "ON")?;
         connection.execute_batch(SCHEMA)?;
         Self::migrate_projections(&mut connection)?;
+        let observed_at_column: i64 = connection.query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('source_observations') WHERE name = 'source_head_at'",
+            [], |row| row.get(0),
+        )?;
+        if observed_at_column == 0 {
+            connection.execute_batch("ALTER TABLE source_observations ADD COLUMN source_head_at INTEGER")?;
+        }
         Ok(Self {
             connection: Mutex::new(connection),
         })
@@ -955,11 +999,11 @@ impl Store {
         let id: i64 = row.get(0).unwrap_or_default();
         let position: i64 = row.get(1).unwrap_or_default();
         let chain: String = row.get(2).unwrap_or_default();
-        let final_row = finality
+        let boundary = finality
             .iter()
             .find(|(name, _)| *name == chain)
-            .and_then(|(_, boundary)| *boundary)
-            .is_some_and(|boundary| position <= boundary);
+            .and_then(|(_, boundary)| *boundary);
+        let final_row = boundary.is_some_and(|boundary| position <= boundary);
         let decoded: String = row.get(11).unwrap_or_default();
         (
             id,
@@ -976,6 +1020,17 @@ impl Store {
                 "tx_id": row.get::<_, String>(9).unwrap_or_default(),
                 "ordinal": row.get::<_, i64>(10).unwrap_or_default().to_string(),
                 "final": final_row,
+                "final_basis": STABILITY_SOURCE,
+                "stability": {
+                    "level": if final_row { "depth_stable" } else { "reversible" },
+                    "source": STABILITY_SOURCE,
+                    "finalized_boundary": boundary.map(|boundary| boundary.to_string()),
+                },
+                "settlement": {
+                    "level": SETTLEMENT_UNVERIFIED,
+                    "source": Value::Null,
+                    "reason": SETTLEMENT_UNAVAILABLE_REASON,
+                },
                 "decoded": parse_json(&decoded),
             }),
         )
@@ -1166,6 +1221,115 @@ impl Store {
             object.insert("transfer_legs".to_owned(), Value::String(count.to_string()));
         }
         Ok(Some(document))
+    }
+
+    pub fn start_source(&self, chain: &str) -> Result<(), IndexError> {
+        self.lock()?.execute(
+            "INSERT INTO source_sessions(chain, reconciled) VALUES (?1, 0)
+             ON CONFLICT(chain) DO UPDATE SET reconciled = 0",
+            params![chain],
+        )?;
+        Ok(())
+    }
+
+    pub fn record_source_head(&self, chain: &str, head: Option<u64>) -> Result<(), IndexError> {
+        self.lock()?.execute(
+            "INSERT INTO source_observations(chain, source_head, source_head_at) VALUES (?1, ?2, ?3)
+             ON CONFLICT(chain) DO UPDATE SET source_head = excluded.source_head, source_head_at = excluded.source_head_at",
+            params![chain, head.map(signed).transpose()?, now()],
+        )?;
+        Ok(())
+    }
+
+    /// Records a successful head observation of `chain`'s source together with
+    /// the indexed cursor position at that moment, clearing the failure streak.
+    ///
+    /// # Errors
+    /// Returns [`IndexError::Store`] on SQLite failure.
+    pub fn record_source_success(
+        &self,
+        chain: &str,
+        source_head: Option<u64>,
+        indexed_position: Option<u64>,
+    ) -> Result<(), IndexError> {
+        let mut connection = self.lock()?;
+        let connection = connection.transaction()?;
+        let observed_at: i64 = connection.query_row(
+            "SELECT source_head_at FROM source_observations WHERE chain = ?1", params![chain],
+            |row| row.get(0),
+        )?;
+        connection.execute(
+            "INSERT INTO source_observations(chain, source_head, indexed_position, last_success_at, consecutive_failures)
+             VALUES (?1, ?2, ?3, ?4, 0)
+             ON CONFLICT(chain) DO UPDATE SET source_head = excluded.source_head,
+                 indexed_position = excluded.indexed_position,
+                 last_success_at = excluded.last_success_at,
+                 consecutive_failures = 0",
+            params![chain, source_head.map(signed).transpose()?, indexed_position.map(signed).transpose()?, observed_at],
+        )?;
+        connection.execute("UPDATE source_sessions SET reconciled = 1 WHERE chain = ?1", params![chain])?;
+        connection.commit()?;
+        Ok(())
+    }
+
+    /// Records a failed observation of `chain`'s source, keeping the last
+    /// successful observation and extending the failure streak.
+    ///
+    /// # Errors
+    /// Returns [`IndexError::Store`] on SQLite failure.
+    pub fn record_source_failure(&self, chain: &str, error: &str) -> Result<(), IndexError> {
+        let connection = self.lock()?;
+        connection.execute(
+            "INSERT INTO source_observations(chain, last_error, last_error_at, consecutive_failures)
+             VALUES (?1, ?2, ?3, 1)
+             ON CONFLICT(chain) DO UPDATE SET last_error = excluded.last_error,
+                 last_error_at = excluded.last_error_at,
+                 consecutive_failures = consecutive_failures + 1",
+            params![chain, error, now()],
+        )?;
+        Ok(())
+    }
+
+    /// The durable observation state of `chain`'s source, when any was recorded.
+    /// Timestamps are Unix seconds; a caller compares `last_success_at` with its
+    /// own start time to tell a fresh observation from one persisted before a
+    /// restart.
+    ///
+    /// # Errors
+    /// Returns [`IndexError::Store`] on SQLite failure.
+    pub fn source_observation(&self, chain: &str) -> Result<Option<SourceObservation>, IndexError> {
+        let connection = self.lock()?;
+        let row = connection
+            .query_row(
+                "SELECT source_head, indexed_position, last_success_at, last_error, last_error_at, consecutive_failures,
+                        COALESCE((SELECT reconciled FROM source_sessions WHERE chain = ?1), 0)
+                 FROM source_observations WHERE chain = ?1",
+                params![chain],
+                |row| {
+                    Ok((
+                        row.get::<_, Option<i64>>(0)?,
+                        row.get::<_, Option<i64>>(1)?,
+                        row.get::<_, Option<i64>>(2)?,
+                        row.get::<_, Option<String>>(3)?,
+                        row.get::<_, Option<i64>>(4)?,
+                        row.get::<_, i64>(5)?,
+                        row.get::<_, bool>(6)?,
+                    ))
+                },
+            )
+            .optional()?;
+        row.map(|(head, indexed, success, error, error_at, failures, reconciled)| {
+            Ok(SourceObservation {
+                reconciled,
+                source_head: head.map(unsigned).transpose()?,
+                indexed_position: indexed.map(unsigned).transpose()?,
+                last_success_at: success.map(unsigned).transpose()?,
+                last_error: error,
+                last_error_at: error_at.map(unsigned).transpose()?,
+                consecutive_failures: unsigned(failures)?,
+            })
+        })
+        .transpose()
     }
 
     /// A cheap liveness probe of the database.

@@ -924,10 +924,248 @@ def case_standalone_receipts(args=None):
 
 
 
+def history_readiness():
+    import re
+    import sqlite3
+    import socket
+    import urllib.parse
+
+    repo = Path(__file__).resolve().parents[3]
+    build = Path(os.environ.get("LAYERX_BUILD_DIR", repo / "build")).resolve()
+    binaries = {}
+    for key, name in (("LAYERX_INDEXER_BIN", "layerx-indexer"),
+                      ("LAYERX_GATEWAY_BIN", "layerx-gateway")):
+        path = Path(os.environ.get(key, repo / "platform/target/debug" / name)).resolve()
+        if not path.is_file() or not os.access(path, os.X_OK):
+            raise MissingPrerequisite(f"{key}: prebuilt {name} required")
+        binaries[name] = path
+    for name in ("bin/layerxd", "bin/layerx-archive-codec"):
+        if not (build / name).is_file():
+            raise MissingPrerequisite(f"prebuilt {name} required")
+    for tool in ("openssl", "redis-server"):
+        if shutil.which(tool) is None:
+            raise MissingPrerequisite(tool)
+    if importlib.util.find_spec("cryptography") is None:
+        raise MissingPrerequisite("Python cryptography required")
+    fixture_path = os.environ.get("LAYERX_HISTORY_RELAY_FIXTURE_CONFIG")
+    if not fixture_path or not Path(fixture_path).is_file():
+        raise MissingPrerequisite("LAYERX_HISTORY_RELAY_FIXTURE_CONFIG: dedicated real relay trust pins and idle loopback upstreams required")
+    fixture = json.loads(Path(fixture_path).read_text())
+    for field in ("network_id", "genesis_sha256", "sequencer_id", "sequencer_public_key", "sequencer_first_batch"):
+        require(field in fixture, "real relay fixture is missing " + field)
+    upstreams = fixture.get("upstreams")
+    require(isinstance(upstreams, list) and upstreams, "real relay fixture has no upstreams")
+    for origin in upstreams:
+        parsed = urllib.parse.urlparse(origin)
+        require(parsed.scheme in ("http", "https") and parsed.hostname in ("localhost", "127.0.0.1", "::1")
+                and parsed.username is None and parsed.password is None,
+                "history-readiness requires isolated loopback relay upstreams")
+    saved = sys.argv
+    sys.argv = [str(repo / "tests/relay-archive/e2e.py"), str(build)]
+    try:
+        spec = importlib.util.spec_from_file_location("history_relay_e2e", repo / "tests/relay-archive/e2e.py")
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+    finally:
+        sys.argv = saved
+    relay = module.Scenario()
+    checks = 0
+    reservations = []
+    try:
+        relay.work.chmod(0o700)
+        relay.bin = build / "bin"
+        relay.runtime = repo / "platform/relay_archive"
+        relay_port = module.unused_port()
+        allowed = ("network_id", "genesis_sha256", "sequencer_id", "sequencer_public_key",
+                   "sequencer_first_batch", "sequencer_last_batch", "upstreams", "ca_file")
+        settings = {key: value for key, value in fixture.items() if key in allowed}
+        if settings.get("ca_file"):
+            settings["ca_file"] = str((Path(fixture_path).resolve().parent / settings["ca_file"]).resolve())
+        settings.update(data_dir=str(relay.work / "history-relay-data"),
+                        listen=f"127.0.0.1:{relay_port}", public_url=f"http://127.0.0.1:{relay_port}",
+                        codec=str(relay.bin / "layerx-archive-codec"), allow_loopback_dev=True,
+                        poll_interval_seconds=0.1)
+        config_path = relay.work / "history-relay.json"
+        module.write_json(config_path, settings)
+
+        def start_relay(name):
+            process = relay.start(name, [relay.bin / "layerxd", "--relay-archive", config_path],
+                                  env=dict(os.environ, LAYERX_RELAY_ARCHIVE_RUNTIME=str(relay.runtime / "runtime.py")))
+            relay.until(lambda: relay.request(settings["public_url"], "/v1/sync/head").get("head_batch"),
+                        "real relay source head", 90)
+            return process
+
+        source = start_relay("history-relay")
+        module.execute(["openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes",
+                        "-keyout", relay.work / "tls.key", "-out", relay.work / "tls.crt",
+                        "-days", "1", "-subj", "/CN=localhost",
+                        "-addext", "subjectAltName=IP:127.0.0.1,DNS:localhost"])
+        (relay.work / "tls.key").chmod(0o600)
+        for _ in range(3):
+            sock = socket.socket()
+            sock.bind(("127.0.0.1", 0))
+            reservations.append(sock)
+        indexer_port, gateway_port, redis_port = [s.getsockname()[1] for s in reservations]
+        indexer_url = f"http://127.0.0.1:{indexer_port}"
+        gateway_url = f"http://127.0.0.1:{gateway_port}"
+        env = {key: value for key, value in os.environ.items()
+               if not key.startswith(("LAYERX_INDEXER_", "LAYERX_GATEWAY_", "LAYERX_EVENTS_"))}
+        database = relay.work / "history.sqlite"
+        indexer_env = dict(env, LAYERX_INDEXER_DB=str(database),
+                           LAYERX_INDEXER_LISTEN=f"127.0.0.1:{indexer_port}",
+                           LAYERX_INDEXER_RELAY_URL=settings["public_url"],
+                           LAYERX_INDEXER_POLL_MS="100", LAYERX_INDEXER_TIMEOUT_MS="400",
+                           LAYERX_INDEXER_STALL_SECS="5", LAYERX_INDEXER_MAX_UNITS_PER_STEP="1")
+        reservations[0].close()
+        indexer = relay.start("history-indexer", [binaries["layerx-indexer"]], env=indexer_env)
+        ca = relay.work / "gateway-ca.der"
+        module.execute(["openssl", "x509", "-in", relay.work / "tls.crt", "-outform", "DER", "-out", ca])
+        username = relay.work / "redis-username"
+        password = relay.work / "redis-password"
+        username.write_text("default")
+        password.write_text(os.urandom(24).hex())
+        username.chmod(0o600)
+        password.chmod(0o600)
+        redis_config = relay.work / "redis.conf"
+        redis_config.write_text(f"bind 127.0.0.1\nport 0\ntls-port {redis_port}\n"
+                               f"tls-cert-file {relay.work / 'tls.crt'}\n"
+                               f"tls-key-file {relay.work / 'tls.key'}\n"
+                               f"tls-ca-cert-file {relay.work / 'tls.crt'}\n"
+                               "tls-auth-clients no\nsave \"\"\nappendonly no\n"
+                               f"requirepass {password.read_text()}\n")
+        redis_config.chmod(0o600)
+        reservations[2].close()
+        redis = relay.start("history-redis", ["redis-server", redis_config])
+        protocol_source = (repo / "agent/crates/layerx-wire/src/limits.rs").read_text()
+        protocol = re.search(r"STATE_COMMITMENT_PROTOCOL_VERSION: u16 = (\d+);", protocol_source)
+        require(protocol is not None, "current wire protocol is missing")
+        gateway_env = dict(env, LAYERX_GATEWAY_LISTEN=f"127.0.0.1:{gateway_port}",
+                           LAYERX_GATEWAY_LISTENER="plain", LAYERX_GATEWAY_OUTBOUND_CA_DER=str(ca),
+                           LAYERX_GATEWAY_REDIS_URL=f"rediss://localhost:{redis_port}",
+                           LAYERX_GATEWAY_REDIS_USERNAME_FILE=str(username),
+                           LAYERX_GATEWAY_REDIS_PASSWORD_FILE=str(password),
+                           LAYERX_GATEWAY_NETWORK_ID="history-readiness",
+                           LAYERX_GATEWAY_PROTOCOL_NETWORK_ID=str(fixture["network_id"]),
+                           LAYERX_GATEWAY_LXP_WIRE_VERSION=protocol.group(1),
+                           LAYERX_GATEWAY_INDEXER_URL=indexer_url)
+        reservations[1].close()
+        gateway = relay.start("history-gateway", [binaries["layerx-gateway"]], env=gateway_env)
+
+        def get(base, path):
+            for child in (indexer, gateway, redis):
+                require(child.poll() is None, f"required child exited: {child.returncode}; {relay.work}")
+            try:
+                response = urllib.request.urlopen(base + path, timeout=5)
+            except urllib.error.HTTPError as error:
+                response = error
+            with response:
+                return response.status, json.loads(response.read())
+
+        def ready(state):
+            status, doc = get(indexer_url, "/readyz")
+            require(doc.get("version") == 1 and doc.get("database") == "ok", "readiness lacks database liveness")
+            sources = doc.get("sources")
+            require(isinstance(sources, list) and len(sources) == 1 and sources[0]["source"] == "layerx",
+                    "readiness omitted required LayerX source")
+            if doc["status"] != state:
+                return None
+            require(status == (200 if state == "ready" else 503), "readiness HTTP status contradicts document")
+            return sources[0]
+
+        def gateway_state(state):
+            status, doc = get(gateway_url, "/v1/status")
+            return status == 200 and doc.get("services", {}).get("indexer") == state
+
+        first = relay.until(lambda: ready("ready"), "fresh source ready")
+        head = module.Scenario.request(relay, settings["public_url"], "/v1/sync/head")["head_batch"]
+        require(first["reconciled"] and first["source_head"] == int(head)
+                and first["indexed_cursor"] == int(head), "source head and persisted cursor differ")
+        relay.until(lambda: gateway_state("available"), "gateway preserves available readiness")
+        checks += 1
+        idle = relay.until(lambda: (s if (s := ready("ready")) and
+                                    s["last_success_at"] > first["last_success_at"] else None), "idle head observed")
+        require(idle["indexed_cursor"] == first["indexed_cursor"] and idle["source_head"] == first["source_head"],
+                "idle proof unexpectedly advanced the source")
+        checks += 1
+        with sqlite3.connect(database) as connection:
+            before = connection.execute("SELECT chain, position, hash FROM cursors ORDER BY chain").fetchall()
+            rows_before = connection.execute("SELECT count(*) FROM transfers").fetchone()[0]
+            require(rows_before > 0, "real relay fixture requires at least one transfer receipt")
+            events_before = connection.execute("SELECT count(*) FROM events").fetchone()[0]
+            require(events_before > 0, "real relay produced no indexed receipt rows")
+        relay.stop(source)
+        failed = relay.until(lambda: (s if (s := ready("degraded")) and s["consecutive_failures"] >= 3 else None),
+                             "repeated source failure")
+        require(failed["last_error"] == "source_unavailable", "missing typed source failure")
+        relay.until(lambda: gateway_state("degraded"), "gateway preserves degraded readiness")
+        require(get(indexer_url, "/healthz")[0] == 200, "database liveness fell with disconnected source")
+        checks += 1
+        stalled = relay.until(lambda: ready("unavailable"), "stalled source unavailable")
+        require(stalled["state"] == "stalled" and stalled["freshness_secs"] > 5,
+                "stalled source lacks stale freshness")
+        relay.until(lambda: gateway_state("unavailable"), "gateway preserves stalled readiness")
+        checks += 1
+        with sqlite3.connect(database) as connection:
+            account = connection.execute("SELECT account FROM transfers ORDER BY id LIMIT 1").fetchone()
+        require(account is not None, "real relay fixture has no history account")
+        account = account[0]
+        status, page = get(indexer_url, "/v1/history/" + account)
+        require(status == 200 and page["items"] and page["freshness"]["status"] == "unavailable",
+                "stale rows lack source freshness")
+        checks += 1
+        relay.stop(indexer)
+        indexer = relay.start("history-indexer-restarted", [binaries["layerx-indexer"]], env=indexer_env)
+        starting = relay.until(lambda: ready("unavailable"), "restart refuses persisted-only readiness")
+        require(starting["state"] == "starting" and not starting["reconciled"]
+                and starting["indexed_cursor"] == first["indexed_cursor"]
+                and starting["last_success_at"] == stalled["last_success_at"],
+                "restart reused persisted observation as fresh authority")
+        require(get(indexer_url, "/healthz")[0] == 200, "restarted database is not live")
+        with sqlite3.connect(database) as connection:
+            require(connection.execute("SELECT chain, position, hash FROM cursors ORDER BY chain").fetchall() == before,
+                    "restart changed persisted cursor")
+            require(connection.execute("SELECT count(*) FROM transfers").fetchone()[0] == rows_before,
+                    "disconnected restart changed persisted rows")
+            require(connection.execute("SELECT count(*) FROM events").fetchone()[0] == events_before,
+                    "disconnected restart changed indexed receipt rows")
+        checks += 1
+        source = start_relay("history-relay-restarted")
+        recovered = relay.until(lambda: ready("ready"), "fresh source reconciles restart")
+        require(recovered["reconciled"] and recovered["consecutive_failures"] == 0
+                and recovered["source_head"] == first["source_head"]
+                and recovered["last_success_at"] > starting["last_success_at"], "reconnect was not freshly observed")
+        relay.until(lambda: gateway_state("available"), "gateway recovers after fresh observation")
+        checks += 1
+        relay.stop(indexer)
+        empty_env = {key: value for key, value in indexer_env.items() if key != "LAYERX_INDEXER_RELAY_URL"}
+        indexer = relay.start("history-indexer-unconfigured", [binaries["layerx-indexer"]], env=empty_env)
+        relay.until(lambda: indexer.poll() is not None, "missing ingestion source refused at startup")
+        require(indexer.returncode != 0, "missing ingestion source was accepted")
+        doc = relay.request(gateway_url, "/v1/status")
+        require(doc["services"]["indexer"] == "unavailable", "gateway accepted missing indexer source")
+        checks += 1
+        return checks
+    finally:
+        for reservation in reservations:
+            reservation.close()
+        relay.close()
+
+
 def main():
     parser = argparse.ArgumentParser(description="Paxeer X explorer data-boundary gates")
     parser.add_argument("--case", required=True, choices=CASES)
     args = parser.parse_args()
+    if args.case == "history-readiness":
+        try:
+            tests = history_readiness()
+        except MissingPrerequisite as error:
+            print("missing prerequisite: " + str(error), file=sys.stderr)
+            return 3
+        except AssertionError as error:
+            print("FAIL " + str(error), file=sys.stderr)
+            return 1
+        print(f"PAXEER_X_GATE tests={tests} skipped=0", flush=True)
+        return 0
     if args.case == "standalone-receipts":
         tests, failures = case_standalone_receipts()
         print(f"PAXEER_X_GATE tests={tests} skipped=0", flush=True)

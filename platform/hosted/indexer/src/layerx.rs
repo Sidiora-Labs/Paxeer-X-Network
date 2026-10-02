@@ -422,12 +422,16 @@ impl LayerXIngester {
     /// [`IndexError::ReorgBeyondFinality`].
     pub fn step(&self, store: &Store) -> Result<StepOutcome, IndexError> {
         let head = self.relay.get_json("/v1/sync/head")?;
-        let Some(head_batch) = head
-            .get("head_batch")
-            .filter(|value| !value.is_null())
-            .map(|_| decimal(&head, "head_batch"))
-            .transpose()?
-        else {
+        let head_batch = match head.get("head_batch") {
+            Some(Value::Null) => None,
+            Some(_) => Some(decimal(&head, "head_batch")?),
+            None => return Err(IndexError::Decode("head_batch is missing".to_owned())),
+        };
+        store.record_source_head(CHAIN, head_batch)?;
+        let Some(head_batch) = head_batch else {
+            if store.cursor(CHAIN)?.is_some() {
+                return Err(IndexError::Source("source head is empty behind persisted cursor".to_owned()));
+            }
             return Ok(StepOutcome::Idle);
         };
         let start = self.start()?;

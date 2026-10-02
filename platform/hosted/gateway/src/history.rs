@@ -256,6 +256,8 @@ fn page(source: &Source<'_>, account: &str, query: &Query) -> Result<Page, Failu
         }
         items.push((id, row.clone()));
     }
+    body.get("freshness").filter(|value| readiness_status(value).is_some())
+        .ok_or_else(invalid)?;
     Ok(Page { items, next_cursor })
 }
 
@@ -455,7 +457,12 @@ fn answer(config: &Config, method: &str, id: &Value, params: Option<&Value>) -> 
             return refusal(id, -32001, "History unavailable", json!({"code": code}))
         }
     };
+    let freshness = match source.get("/readyz", "") {
+        Ok((200 | 503, body)) if readiness_status(&body).is_some() => body,
+        _ => return refusal(id, -32001, "History unavailable", json!({"code": "invalid_indexer_readiness"})),
+    };
     if let Some(object) = result.as_object_mut() {
+        object.insert("freshness".to_owned(), freshness);
         object.insert("account".to_owned(), document);
         if method == "px_getUnifiedHistory" {
             let sides: Vec<Value> = accounts
@@ -482,6 +489,50 @@ pub(super) fn dispatch(
     .then(|| answer(config, method, id, params))
 }
 
+fn readiness_status(body: &Value) -> Option<&'static str> {
+    if body.get("version")?.as_u64()? != 1 || body.get("database")?.as_str()? != "ok" {
+        return None;
+    }
+    let sources = body.get("sources")?.as_array()?;
+    let mut rank = if sources.is_empty() { 2 } else { 0 };
+    let mut names = Vec::new();
+    for source in sources {
+        let name = source.get("source")?.as_str()?;
+        if !matches!(name, "layerx" | "paxeer" | "comet") || names.contains(&name) { return None; }
+        names.push(name);
+        for field in ["source_head", "indexed_cursor", "finalized_cursor", "last_success_at",
+                      "freshness_secs", "last_error_at"] {
+            let value = source.get(field)?;
+            if !value.is_null() && value.as_u64().is_none() { return None; }
+        }
+        source.get("reconciled")?.as_bool()?;
+        source.get("consecutive_failures")?.as_u64()?;
+        let state = source.get("state")?.as_str()?;
+        let source_rank = match state {
+            "ready" => {
+                if !source.get("reconciled")?.as_bool()?
+                    || source.get("last_success_at")?.as_u64().is_none()
+                    || source.get("freshness_secs")?.as_u64().is_none()
+                    || source.get("consecutive_failures")?.as_u64()? != 0
+                    || source.get("source_head")? != source.get("indexed_cursor")? {
+                    return None;
+                }
+                0
+            }
+            "catching_up" | "retrying" | "failing" => 1,
+            "starting" | "stalled" => 2,
+            _ => return None,
+        };
+        rank = rank.max(source_rank);
+    }
+    match (body.get("status")?.as_str()?, rank) {
+        ("ready", 0) => Some("available"),
+        ("degraded", 1) => Some("degraded"),
+        ("unavailable", 2) => Some("unavailable"),
+        _ => None,
+    }
+}
+
 /// The indexer's state for the gateway's own status document.
 pub(super) fn status(config: &Config) -> &'static str {
     let Some(indexer) = &config.indexer else {
@@ -491,8 +542,12 @@ pub(super) fn status(config: &Config) -> &'static str {
         indexer,
         client: Some(&config.client),
     };
-    match source.get("/healthz", "") {
-        Ok((200, _)) => "available",
+    match source.get("/readyz", "") {
+        Ok((200, body)) => readiness_status(&body).unwrap_or("unavailable"),
+        Ok((503, body)) => match readiness_status(&body) {
+            Some("degraded") => "degraded",
+            _ => "unavailable",
+        },
         _ => "unavailable",
     }
 }

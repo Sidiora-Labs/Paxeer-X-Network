@@ -19,7 +19,29 @@ where
     F: Fn(&Store) -> Result<StepOutcome, IndexError> + Send + 'static,
 {
     thread::spawn(move || loop {
-        match step(&store) {
+        let outcome = step(&store);
+        let recorded = match &outcome {
+            Ok(_) => store.cursor(name).and_then(|cursor| {
+                let position = cursor.map(|cursor| cursor.position);
+                let head = store.source_observation(name)?
+                    .ok_or_else(|| IndexError::Store("source step did not observe a head".to_owned()))?
+                    .source_head;
+                store.record_source_success(name, head, position)
+            }),
+            Err(error) => store.record_source_failure(name, match error {
+                IndexError::Source(_) => "source_unavailable",
+                IndexError::Decode(_) => "source_decode_failed",
+                IndexError::Store(_) => "store_unavailable",
+                IndexError::Config(_) => "source_configuration_invalid",
+                IndexError::Integrity(_) => "source_integrity_failed",
+                IndexError::ReorgBeyondFinality { .. } => "reorg_beyond_finality",
+            }),
+        };
+        if let Err(error) = recorded {
+            eprintln!("layerx-indexer {name} observation not recorded: {error}");
+            std::process::exit(2);
+        }
+        match outcome {
             Ok(StepOutcome::Advanced { .. } | StepOutcome::RolledBack { .. }) => {}
             Ok(StepOutcome::Idle) => thread::sleep(poll),
             Err(error @ (IndexError::ReorgBeyondFinality { .. } | IndexError::Integrity(_))) => {
@@ -95,13 +117,32 @@ fn run() -> Result<(), IndexError> {
         None
     };
     let listener = api::bind(config.listen, config.tls)?;
+    let stall_after_secs = match std::env::var("LAYERX_INDEXER_STALL_SECS") {
+        Ok(text) => text.parse::<u64>().ok().filter(|seconds| *seconds > 0).ok_or_else(|| {
+            IndexError::Config(format!("LAYERX_INDEXER_STALL_SECS {text} is not a number"))
+        })?,
+        Err(_) => 30,
+    };
+    let mut readiness = api::Readiness {
+        sources: Vec::new(),
+        stall_after_secs,
+        started_at: std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |elapsed| elapsed.as_secs()),
+    };
     if let Some(source) = config.layerx.clone() {
         let ingester = LayerXIngester::new(source.relay, source.policy, source.start_batch);
+        readiness.sources.push("layerx");
+        store.start_source("layerx")?;
         follow("layerx", Arc::clone(&store), config.poll, move |store| {
             ingester.step(store)
         });
     }
     if let Some(source) = config.paxeer.clone() {
+        if source.comet.is_some() {
+            readiness.sources.push("comet");
+            store.start_source("comet")?;
+        }
         let registry = load_registry(&config)?;
         let ingester = PaxeerIngester::new(
             source.evm,
@@ -112,7 +153,10 @@ fn run() -> Result<(), IndexError> {
             source.chain_id,
             source.encoding,
         );
+        readiness.sources.push("paxeer");
+        store.start_source("paxeer")?;
         follow("paxeer", Arc::clone(&store), config.poll, move |store| {
+            ingester.observe_comet(store)?;
             ingester.step(store)
         });
     }
@@ -121,7 +165,7 @@ fn run() -> Result<(), IndexError> {
         config.listen,
         if config.tls { " with TLS" } else { "" }
     );
-    api::serve(&listener, &store, tls.as_ref());
+    api::serve_with(&listener, &store, &Arc::new(readiness), tls.as_ref());
     Ok(())
 }
 

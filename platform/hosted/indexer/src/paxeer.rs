@@ -860,6 +860,31 @@ impl PaxeerIngester {
         group_by_height(&collected)
     }
 
+    pub fn observe_comet(&self, store: &Store) -> Result<(), IndexError> {
+        let Some(comet) = &self.comet else { return Ok(()); };
+        let observation = (|| {
+            let status = comet.rpc("status", &json!({}))?;
+            if status.pointer("/node_info/other/tx_index").and_then(Value::as_str) != Some("on") {
+                return Err(IndexError::Source("Comet transaction indexing is unavailable".to_owned()));
+            }
+            let sync = status.get("sync_info")
+                .ok_or_else(|| IndexError::Decode("Comet status has no sync_info".to_owned()))?;
+            let head = sync.get("latest_block_height").and_then(Value::as_str)
+                .and_then(|value| value.parse::<u64>().ok())
+                .ok_or_else(|| IndexError::Decode("Comet status has no block height".to_owned()))?;
+            store.record_source_head("comet", Some(head))?;
+            if sync.get("catching_up").and_then(Value::as_bool) != Some(false) {
+                return Err(IndexError::Source("Comet source is catching up".to_owned()));
+            }
+            let indexed = store.cursor(CHAIN)?.map(|cursor| cursor.position);
+            store.record_source_success("comet", Some(head), indexed)
+        })();
+        if observation.is_err() {
+            store.record_source_failure("comet", "source_observation_failed")?;
+        }
+        observation
+    }
+
     /// Runs one bounded step: confirms the durable head block is still
     /// canonical, then commits up to `max_units_per_step` new blocks.
     ///
@@ -870,6 +895,7 @@ impl PaxeerIngester {
         self.check_chain_id()?;
         let head_value = self.evm.rpc("eth_blockNumber", &json!([]))?;
         let head = quantity_u64(head_value.as_str().unwrap_or_default())?;
+        store.record_source_head(CHAIN, Some(head))?;
         let cursor = store.cursor(CHAIN)?;
         if let Some(cursor) = &cursor {
             if self.block_hash(cursor.position)?.as_deref() != Some(cursor.hash.as_str()) {
