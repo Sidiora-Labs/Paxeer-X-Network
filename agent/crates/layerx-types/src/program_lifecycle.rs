@@ -51,6 +51,10 @@ pub enum ProgramWindDownOperation<'a> {
     Exit {
         account: [u8; 32],
     },
+    BoundedExit {
+        account: [u8; 32],
+        maximum_exit_amount: u128,
+    },
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -311,6 +315,17 @@ impl<'a> NativeProgramWindDown<'a> {
                 bytes.push(4);
                 bytes.extend_from_slice(&account);
             }
+            ProgramWindDownOperation::BoundedExit {
+                account,
+                maximum_exit_amount,
+            } => {
+                if maximum_exit_amount == 0 {
+                    return Err(InvalidNativeLifecycle);
+                }
+                bytes.push(5);
+                bytes.extend_from_slice(&account);
+                bytes.extend_from_slice(&maximum_exit_amount.to_be_bytes());
+            }
         }
         Ok(bytes)
     }
@@ -347,6 +362,17 @@ impl<'a> NativeProgramWindDown<'a> {
             [4] => ProgramWindDownOperation::Exit {
                 account: take(&mut remaining)?,
             },
+            [5] => {
+                let account = take(&mut remaining)?;
+                let maximum_exit_amount = u128::from_be_bytes(take(&mut remaining)?);
+                if maximum_exit_amount == 0 {
+                    return Err(InvalidNativeLifecycle);
+                }
+                ProgramWindDownOperation::BoundedExit {
+                    account,
+                    maximum_exit_amount,
+                }
+            }
             _ => return Err(InvalidNativeLifecycle),
         };
         if !remaining.is_empty() {
@@ -607,6 +633,103 @@ mod tests {
             },
         };
         assert!(oversized.encode().is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn bounded_exit_roundtrip_and_legacy_wire_are_distinct() -> Result<(), InvalidNativeLifecycle> {
+        let program_id = ProgramId::new([1; 32]);
+        let account = [2; 32];
+        let legacy = NativeProgramWindDown {
+            program_id,
+            operation: ProgramWindDownOperation::Exit { account },
+        };
+        let legacy_bytes = legacy.encode()?;
+        let mut expected_legacy = vec![1; 32];
+        expected_legacy.push(4);
+        expected_legacy.extend_from_slice(&account);
+        assert_eq!(legacy_bytes, expected_legacy);
+        assert_eq!(legacy_bytes.len(), 65);
+        assert_eq!(NativeProgramWindDown::decode(&legacy_bytes)?, legacy);
+
+        for maximum_exit_amount in [1, 0x0102_0304_0506_0708_090a_0b0c_0d0e_0f10, u128::MAX] {
+            let bounded = NativeProgramWindDown {
+                program_id,
+                operation: ProgramWindDownOperation::BoundedExit {
+                    account,
+                    maximum_exit_amount,
+                },
+            };
+            let bytes = bounded.encode()?;
+            let mut expected = vec![1; 32];
+            expected.push(5);
+            expected.extend_from_slice(&account);
+            expected.extend_from_slice(&maximum_exit_amount.to_be_bytes());
+            assert_eq!(bytes, expected);
+            assert_eq!(bytes.len(), 81);
+            if maximum_exit_amount == 0x0102_0304_0506_0708_090a_0b0c_0d0e_0f10 {
+                assert_eq!(&bytes[65..], &[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]);
+            }
+            assert_eq!(NativeProgramWindDown::decode(&bytes)?, bounded);
+            assert_eq!(NativeProgramWindDown::decode(&bytes)?.encode()?, bytes);
+            for prefix in 0..bytes.len() {
+                assert!(NativeProgramWindDown::decode(&bytes[..prefix]).is_err());
+            }
+            for trailing in [vec![0], vec![0; 16]] {
+                let mut extended = bytes.clone();
+                extended.extend_from_slice(&trailing);
+                assert!(NativeProgramWindDown::decode(&extended).is_err());
+            }
+            let mut wrong_legacy_length = bytes;
+            wrong_legacy_length[32] = 4;
+            assert!(NativeProgramWindDown::decode(&wrong_legacy_length).is_err());
+        }
+        let mut missing_bound = legacy_bytes;
+        missing_bound[32] = 5;
+        assert!(NativeProgramWindDown::decode(&missing_bound).is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn bounded_exit_zero_bound_and_unknown_operation_refusals() -> Result<(), InvalidNativeLifecycle> {
+        let zero_bound = NativeProgramWindDown {
+            program_id: ProgramId::new([1; 32]),
+            operation: ProgramWindDownOperation::BoundedExit {
+                account: [2; 32],
+                maximum_exit_amount: 0,
+            },
+        };
+        assert!(zero_bound.encode().is_err());
+        let mut zero_bound_bytes = vec![1; 32];
+        zero_bound_bytes.push(5);
+        zero_bound_bytes.extend_from_slice(&[2; 32]);
+        zero_bound_bytes.extend_from_slice(&[0; 16]);
+        assert_eq!(zero_bound_bytes.len(), 81);
+        assert!(NativeProgramWindDown::decode(&zero_bound_bytes).is_err());
+
+        let bounded = NativeProgramWindDown {
+            operation: ProgramWindDownOperation::BoundedExit {
+                account: [2; 32],
+                maximum_exit_amount: 1,
+            },
+            ..zero_bound
+        };
+        let bytes = bounded.encode()?;
+        let reserved_program = NativeProgramWindDown {
+            program_id: ProgramId::new([0; 32]),
+            ..bounded
+        };
+        assert!(reserved_program.encode().is_err());
+        let mut reserved_program_bytes = bytes.clone();
+        reserved_program_bytes[..32].fill(0);
+        assert!(NativeProgramWindDown::decode(&reserved_program_bytes).is_err());
+        for opcode in [0, 6, 127, 255] {
+            for length in [33, 65, 81] {
+                let mut unknown = bytes[..length].to_vec();
+                unknown[32] = opcode;
+                assert!(NativeProgramWindDown::decode(&unknown).is_err());
+            }
+        }
         Ok(())
     }
 }

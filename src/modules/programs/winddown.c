@@ -12,6 +12,7 @@ enum {
     WIND_DOWN_DEPRECATE = 2,
     WIND_DOWN_TOMBSTONE = 3,
     WIND_DOWN_EXIT = 4,
+    WIND_DOWN_BOUNDED_EXIT = 5,
     PROGRAM_RECORD_BYTES = 71,
     PROGRAM_OWNER_RECORD_BYTES = 33,
     WIND_DOWN_STATUS_BYTES = 54,
@@ -33,6 +34,7 @@ typedef struct programs_wind_down_activity {
     uint8_t destination[32];
     uint8_t exit_program[32];
     uint64_t deadline;
+    lxp_u128 maximum_exit_amount;
     const uint8_t *seed;
     uint16_t seed_length;
 } programs_wind_down_activity;
@@ -51,6 +53,8 @@ typedef struct wind_down_settlement {
     lx_account *destination;
     uint64_t account_sequence;
     uint64_t program_spend_token;
+    lxp_u128 maximum_exit_amount;
+    bool bounded_exit;
     uint16_t seed_written;
     bool begun;
     bool applied;
@@ -481,6 +485,13 @@ lxp_result lxp_programs_wind_down_decode(lxp_module_ctx *ctx,
     } else if (value->operation == WIND_DOWN_EXIT) {
         if (payload_length != 65U) return LXP_ERR_NON_CANONICAL;
         (void)memcpy(value->account_id, payload + 33U, 32U);
+    } else if (value->operation == WIND_DOWN_BOUNDED_EXIT) {
+        if (payload_length != 81U) return LXP_ERR_NON_CANONICAL;
+        (void)memcpy(value->account_id, payload + 33U, 32U);
+        status = lxp_u128_from_be(payload + 65U, &value->maximum_exit_amount);
+        if (status != LXP_OK) return status;
+        if (lxp_u128_is_zero(value->maximum_exit_amount))
+            return LXP_ERR_NON_CANONICAL;
     } else {
         return LXP_ERR_UNKNOWN_FIELD;
     }
@@ -563,7 +574,8 @@ lxp_result lxp_programs_wind_down_validate(
         status = owner_authorized(ctx, value->program_id, authority->principal);
         if (status == LXP_OK)
             status = inventory_read(ctx, value->program_id, &inventory);
-    } else if (value->operation == WIND_DOWN_EXIT) {
+    } else if (value->operation == WIND_DOWN_EXIT ||
+               value->operation == WIND_DOWN_BOUNDED_EXIT) {
         lx_programs_exit_route_view route;
         lx_account *source;
         lx_account *destination;
@@ -576,6 +588,9 @@ lxp_result lxp_programs_wind_down_validate(
         if (status == LXP_OK)
             status = exit_accounts(ctx, value, &route, &source,
                                    &destination);
+        if (status == LXP_OK && value->operation == WIND_DOWN_BOUNDED_EXIT &&
+            lxp_u128_cmp(source->balance, value->maximum_exit_amount) > 0)
+            status = LXP_ERR_PROGRAM_REFUSED;
     } else {
         status = LXP_ERR_UNKNOWN_FIELD;
     }
@@ -720,6 +735,11 @@ lxp_result layerx_programs_wind_down_transfer_begin(
         settlement->source->balance.lo != amount_lo ||
         lxp_u128_is_zero(settlement->source->balance))
         return LXP_ERR_AUTH_SCOPE;
+    if (settlement->bounded_exit &&
+        (lxp_u128_is_zero(settlement->maximum_exit_amount) ||
+         lxp_u128_cmp(settlement->source->balance,
+                      settlement->maximum_exit_amount) > 0))
+        return LXP_ERR_PROGRAM_REFUSED;
     settlement->program_spend_token = program_spend_token;
     settlement->begun = true;
     settlement->seed_written = 0U;
@@ -752,6 +772,11 @@ lxp_result layerx_programs_wind_down_transfer_apply(uint64_t token)
     if (settlement == NULL || !settlement->begun || settlement->applied ||
         settlement->seed_written != settlement->route.seed_length)
         return LXP_ERR_AUTH_SCOPE;
+    if (settlement->bounded_exit &&
+        (lxp_u128_is_zero(settlement->maximum_exit_amount) ||
+         lxp_u128_cmp(settlement->source->balance,
+                      settlement->maximum_exit_amount) > 0))
+        return LXP_ERR_PROGRAM_REFUSED;
     runtime = (lx_programs_transfer_runtime *)
         lxp_ctx_module_runtime(settlement->ctx);
     if (runtime == NULL || runtime->accounts == NULL ||
@@ -838,7 +863,13 @@ static lxp_result exit_execute(lxp_module_ctx *ctx, const lxp_activity *activity
     lxp_result status = exit_accounts(ctx, value, &route, &source,
                                       &destination);
     if (status != LXP_OK) return status;
+    if (value->operation == WIND_DOWN_BOUNDED_EXIT &&
+        (lxp_u128_is_zero(value->maximum_exit_amount) ||
+         lxp_u128_cmp(source->balance, value->maximum_exit_amount) > 0))
+        return LXP_ERR_PROGRAM_REFUSED;
     (void)memset(&settlement, 0, sizeof(settlement));
+    settlement.bounded_exit = value->operation == WIND_DOWN_BOUNDED_EXIT;
+    settlement.maximum_exit_amount = value->maximum_exit_amount;
     settlement.ctx = ctx;
     settlement.authority = authority;
     settlement.route = route;
@@ -904,7 +935,8 @@ lxp_result lxp_programs_wind_down_execute(
                              LX_PROGRAMS_LIFECYCLE_TOMBSTONED,
                              current.exit_program, current.deadline) : status;
     }
-    if (value->operation == WIND_DOWN_EXIT)
+    if (value->operation == WIND_DOWN_EXIT ||
+        value->operation == WIND_DOWN_BOUNDED_EXIT)
         return exit_execute(ctx, activity, authority, value);
     return LXP_ERR_UNKNOWN_FIELD;
 }

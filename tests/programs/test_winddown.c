@@ -3,6 +3,9 @@
 #include "layerx/lxp_crypto.h"
 #include "layerx/lxp_kernel.h"
 
+#include <openssl/evp.h>
+#include "layerx/lxp_hash.h"
+
 #include <string.h>
 #include <stdio.h>
 
@@ -611,7 +614,459 @@ static int wind_down_lifecycle(bool separate_counters)
     return 0;
 }
 
+static int bounded_exit_signature(
+    EVP_PKEY *key, lxp_activity *activity, uint8_t public_key[32],
+    uint8_t signature[64], const uint8_t *payload, size_t payload_length,
+    uint16_t protocol_version, uint64_t account_sequence)
+{
+    uint8_t preimage[32];
+    size_t public_length = 32U, signature_length = 64U;
+    EVP_MD_CTX *context = EVP_MD_CTX_new();
+    int ok;
+    (void)memset(activity, 0, sizeof(*activity));
+    activity->protocol_version = protocol_version;
+    activity->network_id = 1U;
+    activity->activity_type = LX_PROGRAMS_WIND_DOWN;
+    activity->actor_did = (lxp_byte_span){
+        (const uint8_t *)"did:lxp:wind-owner",
+        sizeof("did:lxp:wind-owner") - 1U};
+    activity->authority = (lxp_byte_span){public_key, 32U};
+    activity->account_sequence = account_sequence;
+    activity->timestamp_bound.not_before = 1U;
+    activity->timestamp_bound.not_after = UINT64_MAX;
+    activity->fee_limit = (lxp_u128){0U, 100000U};
+    activity->payload = (lxp_byte_span){payload, payload_length};
+    activity->signature = (lxp_byte_span){signature, 64U};
+    ok = key != NULL && context != NULL &&
+        EVP_PKEY_get_raw_public_key(key, public_key, &public_length) == 1 &&
+        public_length == 32U &&
+        lxp_hash_payload(payload, payload_length, activity->payload_hash) == LXP_OK;
+    if (ok) (void)memcpy(activity->idempotency_key, activity->payload_hash, 32U);
+    ok = ok && lxp_activity_signing_preimage(activity, preimage) == LXP_OK &&
+        EVP_DigestSignInit(context, NULL, NULL, NULL, key) == 1 &&
+        EVP_DigestSign(context, signature, &signature_length,
+                       preimage, sizeof(preimage)) == 1 &&
+        signature_length == 64U &&
+        lxp_activity_verify_payload_hash(activity) == LXP_OK &&
+        lxp_activity_verify_signature(activity) == LXP_OK;
+    EVP_MD_CTX_free(context);
+    return ok ? 0 : wind_down_failure(__LINE__);
+}
+
+static int bounded_exit_dispatch(
+    lxp_kernel *kernel, const lxp_authority_resolved *authority,
+    const lxp_activity *activity, lx_account *sequence_account,
+    lx_account *source, lx_account *destination, lxp_result expected)
+{
+    static uint8_t arena_bytes[LXP_MAX_ACTIVITY_BYTES + 65536U];
+    lxp_arena arena;
+    lxp_module_ctx ctx;
+    lxp_effect_buffer effects;
+    const lxp_module_registration *registration;
+    lx_programs_transfer_runtime *runtime =
+        (lx_programs_transfer_runtime *)kernel->module_runtime[LXP_MODULE_PROGRAMS];
+    lxp_byte_span encoded;
+    lxp_result module_result = LXP_OK;
+    uint8_t root_before[32], root_after[32];
+    uint64_t sequence = kernel->state->next_sequence;
+    uint64_t ledger_before = sequence_account->next_sequence;
+    lxp_u128 source_before = source->balance;
+    lxp_u128 destination_before = destination->balance;
+    lxp_u128 destination_after;
+    if (lxp_activity_verify_payload_hash(activity) != LXP_OK ||
+        lxp_activity_verify_signature(activity) != LXP_OK || runtime == NULL ||
+        lx_account_registry_root(runtime->accounts, root_before) != LXP_OK ||
+        lxp_state_journal_open(kernel->state, sequence, kernel->journal) != LXP_OK ||
+        lxp_arena_init(&arena, arena_bytes, sizeof(arena_bytes)) != LXP_OK ||
+        lxp_module_ctx_init(&ctx, kernel, LXP_MODULE_PROGRAMS, sequence, 1U,
+                            sequence, 100000U, &arena, true) != LXP_OK ||
+        lxp_effect_buffer_init(&effects) != LXP_OK ||
+        lxp_module_ctx_bind_effects(&ctx, &effects) != LXP_OK ||
+        lxp_kernel_module_for_activity(kernel, LX_PROGRAMS_WIND_DOWN, 1U,
+                                       &registration) != LXP_OK ||
+        lxp_activity_encode(activity, &arena, &encoded) != LXP_OK ||
+        lxp_activity_id(encoded.bytes, encoded.length, ctx.activity_id) != LXP_OK)
+        return wind_down_failure(__LINE__);
+    ctx.protocol_version = activity->protocol_version;
+    if (lxp_kernel_bind_ledger_admission(&ctx, authority,
+                                        activity->activity_type) != LXP_OK ||
+        lxp_kernel_dispatch(registration, &ctx, activity, authority,
+                            &effects, &module_result) != LXP_OK ||
+        module_result != expected)
+        return wind_down_failure(__LINE__);
+    if (expected != LXP_OK) {
+        if (effects.count != 0U || sequence_account->next_sequence != ledger_before ||
+            lx_account_registry_root(runtime->accounts, root_after) != LXP_OK ||
+            memcmp(root_before, root_after, 32U) != 0 ||
+            lxp_u128_cmp(source->balance, source_before) != 0 ||
+            lxp_u128_cmp(destination->balance, destination_before) != 0)
+            return wind_down_failure(__LINE__);
+        lxp_module_ctx_rollback(&ctx);
+        if (lxp_state_journal_rollback(kernel->journal) != LXP_OK ||
+            kernel->state->next_sequence != sequence)
+            return wind_down_failure(__LINE__);
+        return 0;
+    }
+    if (lxp_u128_add(destination_before, source_before, &destination_after) != LXP_OK ||
+        !lxp_u128_is_zero(source->balance) ||
+        lxp_u128_cmp(destination->balance, destination_after) != 0 ||
+        sequence_account->next_sequence != ledger_before + 1U ||
+        effects.count != 1U ||
+        effects.effects[0].event_type != LX_PROGRAMS_EVENT_VALUE_EXITED ||
+        lxp_module_ctx_prepare_commit(&ctx) != LXP_OK ||
+        lxp_state_journal_commit(kernel->journal) != LXP_OK ||
+        lxp_module_ctx_commit(&ctx) != LXP_OK)
+        return wind_down_failure(__LINE__);
+    return 0;
+}
+
+static int bounded_exit_credit(
+    lx_account *donor, lx_account *source,
+    const lxp_transfer_asset_state *assets, lxp_u128 amount)
+{
+    lxp_transfer_leg leg;
+    lxp_transfer_context context;
+    lxp_transfer_result result;
+    lxp_u128 source_after, donor_after;
+    uint64_t donor_sequence = donor->next_sequence;
+    (void)memset(&leg, 0, sizeof(leg));
+    (void)memset(&context, 0, sizeof(context));
+    leg.from = donor;
+    leg.to = source;
+    (void)memcpy(leg.asset_id, source->asset_id, 32U);
+    leg.amount = amount;
+    leg.reason = LXP_REASON_PAYMENT;
+    leg.supply_mode = LXP_TRANSFER_CONSERVED;
+    context.assets = assets;
+    context.asset_count = 2U;
+    (void)memcpy(context.authorized_from, donor->id, 32U);
+    context.actor_sequence = donor_sequence;
+    context.debit_authority_kind = LXP_AUTH_OWNER;
+    if (lxp_u128_add(source->balance, amount, &source_after) != LXP_OK ||
+        lxp_u128_sub(donor->balance, amount, &donor_after) != LXP_OK ||
+        lxp_apply_transfer(&leg, &context, &result) != LXP_OK ||
+        lxp_u128_cmp(source->balance, source_after) != 0 ||
+        lxp_u128_cmp(donor->balance, donor_after) != 0 ||
+        donor->next_sequence != donor_sequence + 1U)
+        return wind_down_failure(__LINE__);
+    return 0;
+}
+
+static int bounded_exit_payload(
+    uint8_t payload[82], const uint8_t program[32],
+    const uint8_t account[32], lxp_u128 maximum_exit_amount)
+{
+    (void)memset(payload, 0, 82U);
+    (void)memcpy(payload, program, 32U);
+    payload[32] = 5U;
+    (void)memcpy(payload + 33U, account, 32U);
+    return lxp_u128_to_be(maximum_exit_amount, payload + 65U) == LXP_OK ?
+               0 : wind_down_failure(__LINE__);
+}
+
+static int bounded_wind_down_lifecycle(bool separate_counters)
+{
+    static const uint8_t program_prefix[] = "program\0";
+    static const uint8_t owner_prefix[] = "program-owner\0";
+    static const char *names[4] = {
+        "agent:did:lxp:wind-owner:main",
+        "agent:did:lxp:wind-one:main",
+        "agent:did:lxp:wind-two:main",
+        "agent:did:lxp:wind-donor:main"
+    };
+    static const uint8_t seeds[2][3] = {{'o','n','e'}, {'t','w','o'}};
+    uint8_t program[32], ids[4][32], program_accounts[2][32];
+    uint8_t program_key[sizeof(program_prefix) - 1U + 32U];
+    uint8_t owner_key[sizeof(owner_prefix) - 1U + 32U];
+    uint8_t program_record[71], owner_record[33];
+    uint8_t route[259], transition[73];
+    lx_account_registry accounts;
+    lx_account *opened[4], *program_account;
+    lxp_transfer_asset_state assets[2];
+    lx_programs_transfer_runtime runtime;
+    lxp_state_store state;
+    lxp_state_journal journal;
+    lxp_kernel kernel;
+    lxp_module_ctx ctx;
+    lxp_effect_buffer effects;
+    lxp_arena arena;
+    uint8_t arena_bytes[65536];
+    lxp_authority_resolved authority;
+    lx_programs_wind_down_view status_view;
+    bool created;
+    uint64_t parameters = 1U;
+    uint64_t deadline;
+    size_t index;
+
+    (void)memset(program, 0x31, sizeof(program));
+    (void)memset(program_record, 0, sizeof(program_record));
+    (void)memset(owner_record, 0, sizeof(owner_record));
+    (void)memset(assets, 0, sizeof(assets));
+    (void)memset(&runtime, 0, sizeof(runtime));
+    (void)memset(&authority, 0, sizeof(authority));
+    (void)memset(assets[0].asset_id, 0x21, 32U);
+    (void)memset(assets[1].asset_id, 0x22, 32U);
+    assets[0].registered = true;
+    assets[1].registered = true;
+    if (lx_account_registry_init(&accounts) != LXP_OK) return wind_down_failure(__LINE__);
+    for (index = 0U; index < 4U; ++index)
+        if (lx_account_id_from_string((const uint8_t *)names[index],
+                                      strlen(names[index]), ids[index]) !=
+                LXP_OK ||
+            lx_account_open(&accounts, (const uint8_t *)names[index],
+                            strlen(names[index]), ids[index], 7U,
+                            LX_ACCOUNT_OPEN_CREDIT, NULL, &opened[index]) !=
+                LXP_OK)
+            return wind_down_failure(__LINE__);
+    if (lxp_ledger_bootstrap_balance(opened[0], assets[0].asset_id,
+                                     (lxp_u128){0U, 0U}, 7U) != LXP_OK ||
+        lxp_ledger_bootstrap_balance(opened[1], assets[0].asset_id,
+                                     (lxp_u128){0U, 0U}, 0U) != LXP_OK ||
+        lxp_ledger_bootstrap_balance(opened[2], assets[1].asset_id,
+                                     (lxp_u128){UINT64_MAX, UINT64_MAX}, 0U) != LXP_OK ||
+        lxp_ledger_bootstrap_balance(opened[3], assets[0].asset_id,
+                                     (lxp_u128){2U, 100U}, 0U) != LXP_OK)
+        return wind_down_failure(__LINE__);
+    runtime.accounts = &accounts;
+    (void)memcpy(runtime.occupancy_asset_id, assets[0].asset_id, 32U);
+    runtime.assets = assets;
+    runtime.asset_count = 2U;
+    if (lxp_state_store_init(&state, 7U) != LXP_OK ||
+        lxp_kernel_create(&kernel, &state, &journal, &parameters, 0U) !=
+            LXP_OK ||
+        lxp_kernel_register_module(&kernel, programs_module_registration()) !=
+            LXP_OK ||
+        lxp_kernel_set_epoch(&kernel, 1U) != LXP_OK ||
+        lxp_kernel_register_module(&kernel,
+                                   separate_counters ? programs_module_registration_v4() :
+                                   programs_module_registration_v2()) !=
+            LXP_OK ||
+        lxp_kernel_bind_module_runtime(&kernel, LXP_MODULE_PROGRAMS,
+                                       &runtime) != LXP_OK ||
+        lxp_kernel_set_capabilities(
+            &kernel, NULL, lxp_kernel_canonical_ledger_apply) != LXP_OK)
+        return wind_down_failure(__LINE__);
+    if (separate_counters) {
+        if (lxp_did_id_derive((const uint8_t *)"did:lxp:wind-owner",
+                sizeof("did:lxp:wind-owner") - 1U, authority.principal) != LXP_OK)
+            return wind_down_failure(__LINE__);
+    } else {
+        (void)memcpy(authority.principal, ids[0], 32U);
+    }
+    (void)memset(authority.authority_hash, 0x51, 32U);
+    (void)memcpy(program_key, program_prefix, sizeof(program_prefix) - 1U);
+    (void)memcpy(program_key + sizeof(program_prefix) - 1U, program, 32U);
+    (void)memcpy(owner_key, owner_prefix, sizeof(owner_prefix) - 1U);
+    (void)memcpy(owner_key + sizeof(owner_prefix) - 1U, program, 32U);
+    program_record[0] = 1U;
+    (void)memcpy(program_record + 1U, authority.principal, 32U);
+    (void)memset(program_record + 33U, 0x61, 32U);
+    program_record[66] = 2U;
+    program_record[68] = 1U;
+    program_record[70] = 1U;
+    owner_record[0] = 1U;
+    (void)memcpy(owner_record + 1U, authority.principal, 32U);
+    if (lxp_state_journal_open(&state, 7U, &journal) != LXP_OK ||
+        lxp_arena_init(&arena, arena_bytes, sizeof(arena_bytes)) != LXP_OK ||
+        lxp_module_ctx_init(&ctx, &kernel, LXP_MODULE_PROGRAMS, 7U, 1U, 7U,
+                            100000U, &arena, true) != LXP_OK ||
+        lxp_ctx_kv_put(&ctx, program_key, sizeof(program_key), program_record,
+                       sizeof(program_record)) != LXP_OK ||
+        lxp_ctx_kv_put(&ctx, owner_key, sizeof(owner_key), owner_record,
+                       sizeof(owner_record)) != LXP_OK ||
+        lxp_state_journal_commit(&journal) != LXP_OK ||
+        lxp_module_ctx_commit(&ctx) != LXP_OK)
+        return wind_down_failure(__LINE__);
+
+    if (lxp_state_journal_open(&state, 8U, &journal) != LXP_OK ||
+        lxp_arena_init(&arena, arena_bytes, sizeof(arena_bytes)) != LXP_OK ||
+        lxp_module_ctx_init(&ctx, &kernel, LXP_MODULE_PROGRAMS, 8U, 1U, 8U,
+                            100000U, &arena, true) != LXP_OK ||
+        lxp_effect_buffer_init(&effects) != LXP_OK ||
+        lxp_module_ctx_bind_effects(&ctx, &effects) != LXP_OK)
+        return wind_down_failure(__LINE__);
+    ctx.protocol_version = separate_counters ? LXP_PROTOCOL_VERSION_STATE_COMMITMENT :
+                                             LXP_PROTOCOL_VERSION_OCCUPANCY;
+    for (index = 0U; index < 2U; ++index)
+        if (lxp_programs_account_register(
+                &ctx, program, seeds[index], sizeof(seeds[index]),
+                assets[index].asset_id, &program_account, &created) != LXP_OK ||
+            !created ||
+            lxp_programs_account_derive(program, seeds[index],
+                                        sizeof(seeds[index]),
+                                        program_accounts[index]) != LXP_OK)
+            return wind_down_failure(__LINE__);
+    if (lxp_module_ctx_prepare_commit(&ctx) != LXP_OK ||
+        lxp_state_journal_commit(&journal) != LXP_OK ||
+        lxp_module_ctx_commit(&ctx) != LXP_OK)
+        return wind_down_failure(__LINE__);
+    program_account = account_by_id(&accounts, program_accounts[0]);
+    if (program_account == NULL ||
+        lxp_ledger_bootstrap_balance(program_account, assets[0].asset_id,
+                                     (lxp_u128){0U, 40U}, 0U) != LXP_OK ||
+        (program_account = account_by_id(&accounts, program_accounts[1])) ==
+            NULL ||
+        lxp_ledger_bootstrap_balance(program_account, assets[1].asset_id,
+                                     (lxp_u128){0U, 60U}, 0U) != LXP_OK)
+        return wind_down_failure(__LINE__);
+    program_account = account_by_id(&accounts, program_accounts[0]);
+    if (program_account == NULL ||
+        forged_program_spend_refused(opened[0], program_account, opened[1],
+                                     assets, 2U) != 0 ||
+        malformed_program_spend_tables_refused(
+            &kernel, opened[0], program_account, opened[1],
+            assets, 2U) != 0)
+        return wind_down_failure(__LINE__);
+
+    if (activity_dispatch(
+            &kernel, &authority,
+            route, route_payload(route, program, program_accounts[0],
+                                 assets[0].asset_id, ids[1], seeds[0],
+                                 (uint16_t)sizeof(seeds[0])),
+            LXP_OK, LX_PROGRAMS_EVENT_EXIT_ROUTE) != 0)
+        return wind_down_failure(__LINE__);
+    deadline = state.next_sequence + 1U;
+    if (activity_dispatch(
+            &kernel, &authority, transition,
+            transition_payload(transition, program, DEPRECATE_OPERATION,
+                               deadline),
+            LXP_ERR_UNKNOWN_FIELD, 0U) != 0 ||
+        lxp_programs_wind_down_read(&ctx, program, &status_view) == LXP_OK)
+        return wind_down_failure(__LINE__);
+    if (activity_dispatch(
+            &kernel, &authority,
+            route, route_payload(route, program, program_accounts[1],
+                                 assets[1].asset_id, ids[2], seeds[1],
+                                 (uint16_t)sizeof(seeds[1])),
+            LXP_OK, LX_PROGRAMS_EVENT_EXIT_ROUTE) != 0)
+        return wind_down_failure(__LINE__);
+    deadline = state.next_sequence + 1U;
+    if (activity_dispatch(
+            &kernel, &authority, transition,
+            transition_payload(transition, program, DEPRECATE_OPERATION,
+                               deadline),
+            LXP_OK, LX_PROGRAMS_EVENT_DEPRECATED) != 0)
+        return wind_down_failure(__LINE__);
+
+    {
+        EVP_PKEY_CTX *key_context = EVP_PKEY_CTX_new_id(EVP_PKEY_ED25519, NULL);
+        EVP_PKEY *key = NULL;
+        lxp_activity activity;
+        uint8_t bound[82], signed_payload[82], public_key[32], signature[64];
+        uint8_t signed_signature[64];
+        uint16_t protocol_version = separate_counters ?
+            LXP_PROTOCOL_VERSION_STATE_COMMITMENT : LXP_PROTOCOL_VERSION_OCCUPANCY;
+        lx_account *source = account_by_id(&accounts, program_accounts[0]);
+        lx_account *overflow_source = account_by_id(&accounts, program_accounts[1]);
+        uint64_t owner_sequence = opened[0]->next_sequence;
+        if (key_context == NULL || EVP_PKEY_keygen_init(key_context) != 1 ||
+            EVP_PKEY_keygen(key_context, &key) != 1 || source == NULL ||
+            overflow_source == NULL)
+            return wind_down_failure(__LINE__);
+        EVP_PKEY_CTX_free(key_context);
+        if (bounded_exit_payload(bound, program, program_accounts[0],
+                                  (lxp_u128){0U, 40U}) != 0 ||
+            bounded_exit_signature(key, &activity, public_key, signature,
+                bound, 81U, protocol_version, owner_sequence) != 0)
+            return wind_down_failure(__LINE__);
+        (void)memcpy(signed_payload, bound, sizeof(bound));
+        (void)memcpy(signed_signature, signature, sizeof(signature));
+        authority.kind = LXP_AUTHORITY_OWNER;
+        (void)memcpy(authority.verified_key, public_key, 32U);
+        if (lxp_did_id_derive(activity.actor_did.bytes,
+                              activity.actor_did.length, authority.actor) != LXP_OK ||
+            bounded_exit_credit(opened[3], source, assets,
+                                 (lxp_u128){0U, 1U}) != 0 ||
+            opened[0]->next_sequence != owner_sequence ||
+            source->balance.hi != 0U || source->balance.lo != 41U ||
+            memcmp(signed_payload, bound, sizeof(bound)) != 0 ||
+            memcmp(signed_signature, signature, sizeof(signature)) != 0 ||
+            bounded_exit_dispatch(&kernel, &authority, &activity, opened[0],
+                source, opened[1], LXP_ERR_PROGRAM_REFUSED) != 0)
+            return wind_down_failure(__LINE__);
+        for (size_t length = 0U; length < 81U; ++length) {
+            if (bounded_exit_signature(key, &activity, public_key, signature,
+                    bound, length, protocol_version, owner_sequence) != 0 ||
+                bounded_exit_dispatch(&kernel, &authority, &activity, opened[0],
+                    source, opened[1], length < 33U ? LXP_ERR_TRUNCATED :
+                                                     LXP_ERR_NON_CANONICAL) != 0)
+                return wind_down_failure(__LINE__);
+        }
+        if (bounded_exit_signature(key, &activity, public_key, signature,
+                bound, 82U, protocol_version, owner_sequence) != 0 ||
+            bounded_exit_dispatch(&kernel, &authority, &activity, opened[0],
+                source, opened[1], LXP_ERR_NON_CANONICAL) != 0 ||
+            bounded_exit_payload(bound, program, program_accounts[0],
+                                  (lxp_u128){0U, 0U}) != 0 ||
+            bounded_exit_signature(key, &activity, public_key, signature,
+                bound, 81U, protocol_version, owner_sequence) != 0 ||
+            bounded_exit_dispatch(&kernel, &authority, &activity, opened[0],
+                source, opened[1], LXP_ERR_NON_CANONICAL) != 0)
+            return wind_down_failure(__LINE__);
+        bound[32] = EXIT_OPERATION;
+        if (bounded_exit_signature(key, &activity, public_key, signature,
+                bound, 81U, protocol_version, owner_sequence) != 0 ||
+            bounded_exit_dispatch(&kernel, &authority, &activity, opened[0],
+                source, opened[1], LXP_ERR_NON_CANONICAL) != 0)
+            return wind_down_failure(__LINE__);
+        bound[32] = 255U;
+        if (bounded_exit_signature(key, &activity, public_key, signature,
+                bound, 81U, protocol_version, owner_sequence) != 0 ||
+            bounded_exit_dispatch(&kernel, &authority, &activity, opened[0],
+                source, opened[1], LXP_ERR_UNKNOWN_FIELD) != 0 ||
+            bounded_exit_credit(opened[3], source, assets,
+                                 (lxp_u128){1U, 0U}) != 0 ||
+            bounded_exit_payload(bound, program, program_accounts[0],
+                                  (lxp_u128){0U, UINT64_MAX}) != 0 ||
+            bounded_exit_signature(key, &activity, public_key, signature,
+                bound, 81U, protocol_version, owner_sequence) != 0 ||
+            bounded_exit_dispatch(&kernel, &authority, &activity, opened[0],
+                source, opened[1], LXP_ERR_PROGRAM_REFUSED) != 0 ||
+            bounded_exit_payload(bound, program, program_accounts[0],
+                                  (lxp_u128){1U, 40U}) != 0 ||
+            bounded_exit_signature(key, &activity, public_key, signature,
+                bound, 81U, protocol_version, owner_sequence) != 0 ||
+            bounded_exit_dispatch(&kernel, &authority, &activity, opened[0],
+                source, opened[1], LXP_ERR_PROGRAM_REFUSED) != 0)
+            return wind_down_failure(__LINE__);
+        if (bounded_exit_payload(bound, program, program_accounts[0],
+                                  (lxp_u128){UINT64_MAX, UINT64_MAX}) != 0 ||
+            bounded_exit_signature(key, &activity, public_key, signature,
+                bound, 81U, protocol_version, owner_sequence) != 0 ||
+            bounded_exit_dispatch(&kernel, &authority, &activity, opened[0],
+                source, opened[1], LXP_OK) != 0 ||
+            opened[1]->balance.hi != 1U || opened[1]->balance.lo != 41U ||
+            bounded_exit_credit(opened[3], source, assets,
+                                 (lxp_u128){0U, 7U}) != 0 ||
+            bounded_exit_payload(bound, program, program_accounts[0],
+                                  (lxp_u128){0U, 7U}) != 0 ||
+            bounded_exit_signature(key, &activity, public_key, signature,
+                bound, 81U, protocol_version, opened[0]->next_sequence) != 0 ||
+            bounded_exit_dispatch(&kernel, &authority, &activity, opened[0],
+                source, opened[1], LXP_OK) != 0 ||
+            opened[1]->balance.hi != 1U || opened[1]->balance.lo != 48U ||
+            bounded_exit_signature(key, &activity, public_key, signature,
+                bound, 81U, protocol_version, opened[0]->next_sequence) != 0 ||
+            bounded_exit_dispatch(&kernel, &authority, &activity, opened[0],
+                source, opened[1], LXP_ERR_ZERO_AMOUNT) != 0)
+            return wind_down_failure(__LINE__);
+        if (bounded_exit_payload(bound, program, program_accounts[1],
+                                  (lxp_u128){UINT64_MAX, UINT64_MAX}) != 0 ||
+            bounded_exit_signature(key, &activity, public_key, signature,
+                bound, 81U, protocol_version, opened[0]->next_sequence) != 0 ||
+            bounded_exit_dispatch(&kernel, &authority, &activity, opened[0],
+                overflow_source, opened[2], LXP_ERR_NON_CANONICAL) != 0)
+            return wind_down_failure(__LINE__);
+        EVP_PKEY_free(key);
+    }
+    if (lxp_state_store_destroy(&state) != LXP_OK)
+        return wind_down_failure(__LINE__);
+    return 0;
+}
+
 int main(void)
 {
-    return wind_down_lifecycle(false) != 0 || wind_down_lifecycle(true) != 0;
+    return wind_down_lifecycle(false) != 0 || wind_down_lifecycle(true) != 0 ||
+           bounded_wind_down_lifecycle(false) != 0 ||
+           bounded_wind_down_lifecycle(true) != 0;
 }
