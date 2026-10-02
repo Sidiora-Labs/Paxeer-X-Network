@@ -211,6 +211,8 @@ fn document_for(
 fn write_document(root: &Path, body: &str) -> PathBuf {
     let path = root.join("binding.json");
     fs::write(&path, body).unwrap_or_else(|error| panic!("binding: {error}"));
+    fs::set_permissions(&path, fs::Permissions::from_mode(0o600))
+        .unwrap_or_else(|error| panic!("binding mode: {error}"));
     path
 }
 
