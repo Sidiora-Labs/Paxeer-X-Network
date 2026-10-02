@@ -2003,11 +2003,31 @@ fn settle_retained_native_program_call(
                 operation: layerx_types::program_lifecycle::ProgramWindDownOperation::Exit { .. }
                     | layerx_types::program_lifecycle::ProgramWindDownOperation::BoundedExit { .. }, ..
             }));
+    let remaining_lifecycle = signed_activity.protocol_version() == 3
+        && signed_activity.activity_type().module() == layerx_types::payload::ModuleId::Programs
+        && match signed_activity.activity_type().ordinal() {
+            1 => layerx_types::program_lifecycle::NativeProgramDeploy::decode(signed_activity.payload()).is_ok(),
+            2 => layerx_types::program_lifecycle::NativeProgramUpgrade::decode(signed_activity.payload()).is_ok(),
+            7 => matches!(layerx_types::program_lifecycle::NativeProgramWindDown::decode(signed_activity.payload()),
+                Ok(layerx_types::program_lifecycle::NativeProgramWindDown {
+                    operation: layerx_types::program_lifecycle::ProgramWindDownOperation::Route { .. }
+                        | layerx_types::program_lifecycle::ProgramWindDownOperation::Deprecate { .. }
+                        | layerx_types::program_lifecycle::ProgramWindDownOperation::Tombstone, ..
+                })),
+            _ => false,
+        };
     let (reservation, witness) = if lifecycle_exit {
         let correlation = u64::from_be_bytes(preparation_id[..8].try_into().map_err(|_| refused())?) | 1;
         let prestate = node.native_execution_prestate(terminal.execution_receipt(), correlation)
             .map_err(|_| HumanOperationError::Unavailable)?;
         crate::budget::program_settlement::read_retained_wind_down_debit_settlement_at_execution(
+            registry, &prepared, &submission, terminal, store, tenant, &prestate,
+        ).map_err(|_| refused())?
+    } else if remaining_lifecycle {
+        let correlation = u64::from_be_bytes(preparation_id[..8].try_into().map_err(|_| refused())?) | 1;
+        let prestate = node.native_execution_prestate(terminal.execution_receipt(), correlation)
+            .map_err(|_| HumanOperationError::Unavailable)?;
+        crate::budget::program_settlement::read_retained_lifecycle_debit_settlement_at_execution(
             registry, &prepared, &submission, terminal, store, tenant, &prestate,
         ).map_err(|_| refused())?
     } else {

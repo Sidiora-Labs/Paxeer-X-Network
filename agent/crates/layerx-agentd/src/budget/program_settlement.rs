@@ -168,6 +168,51 @@ pub fn read_retained_wind_down_debit_settlement_at_execution(
     Ok((reservation, witness))
 }
 
+pub fn read_retained_lifecycle_debit_settlement_at_execution(
+    registry: &ModuleRegistry,
+    prepared: &Prepared,
+    submission: &VerifiedSubmission,
+    receipt: &VerifiedReceiptEvidence,
+    store: &Store,
+    tenant: &TenantId,
+    prestate: &layerx_client::evidence::VerifiedNativeExecutionPrestate,
+) -> Result<(ProgramBudgetReservation, VerifiedProgramDebitSettlement), ProgramSettlementError> {
+    use crate::prepare::{DurablePreparation, LifecycleState};
+    let id: [u8; 32] = Sha256::digest(&prepared.canonical_bytes).into();
+    let key = DurablePreparation::store_key(tenant, id).map_err(|_| ProgramSettlementError::Preparation)?;
+    let stored = store.get(&key).ok_or(ProgramSettlementError::MissingAllocation)?;
+    if stored.class() != crate::store::StorageClass::LocalOnly { return Err(ProgramSettlementError::Preparation); }
+    let durable = DurablePreparation::decode(tenant.clone(), stored.bytes())
+        .map_err(|_| ProgramSettlementError::Preparation)?;
+    if durable.preparation_id != id || durable.payload_hash != prepared.envelope.payload_hash()
+        || durable.activity_id != Some(submission.activity_id()) || !durable.holds.is_empty()
+        || !matches!(durable.state, LifecycleState::Signed | LifecycleState::Submitted
+            | LifecycleState::Acknowledged | LifecycleState::Unknown)
+        || durable.signed_bytes().map_err(|_| ProgramSettlementError::Preparation)?.as_deref()
+            != Some(submission.exact_bytes())
+    { return Err(ProgramSettlementError::Preparation); }
+    let encoded = durable.extensions.get(&6).ok_or(ProgramSettlementError::MissingAllocation)?;
+    let reservation = ProgramBudgetReservation::decode(encoded).map_err(|_| ProgramSettlementError::Allocation)?;
+    if reservation.id != id { return Err(ProgramSettlementError::Allocation); }
+    let carrier = crate::approval::native_program::NativeProgramApprovalCarrier::retained_for_tenant(store, tenant)
+        .map_err(|_| ProgramSettlementError::Preparation)?.into_iter()
+        .find(|carrier| carrier.preparation_id() == id).ok_or(ProgramSettlementError::Preparation)?;
+    let restored = carrier.restore_prepared(registry).map_err(|_| ProgramSettlementError::Preparation)?;
+    if restored.canonical_bytes != prepared.canonical_bytes
+        || restored.observed_head_sequence != prepared.observed_head_sequence
+        || restored.envelope.authority() != prepared.envelope.authority()
+        || carrier.budget().map_err(|_| ProgramSettlementError::Allocation)? != reservation
+    { return Err(ProgramSettlementError::Preparation); }
+    let debits = lifecycle::verify_remaining_lifecycle_debits(prepared, submission, receipt, registry, prestate, &reservation)?;
+    let witness = VerifiedProgramDebitSettlement {
+        reservation_id: reservation.id,
+        reservation_digest: reservation.settlement_binding().map_err(|_| ProgramSettlementError::Allocation)?,
+        terminal_receipt: Sha256::digest(receipt.canonical_receipt()).into(),
+        activity_id: submission.activity_id(), global_sequence: receipt.global_sequence(), debits,
+    };
+    Ok((reservation, witness))
+}
+
 fn read_retained_program_debit_settlement_inner(
     programs: &ProgramOperations,
     registry: &ModuleRegistry,
