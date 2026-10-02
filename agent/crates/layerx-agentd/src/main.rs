@@ -577,7 +577,6 @@ fn start_shared_owner(
             session_keys,
         )
         .map_err(|error| format!("human owner is invalid: {error:?}"))?,
-        &peers,
     );
     let server = HumanUnixServer::bind(
         HumanListenerConfig {
