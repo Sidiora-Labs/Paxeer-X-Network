@@ -23,6 +23,7 @@ serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
 subtle.workspace = true
+x509-cert = { version = "0.2.5", default-features = false }
 zeroize.workspace = true
 
 [lints]

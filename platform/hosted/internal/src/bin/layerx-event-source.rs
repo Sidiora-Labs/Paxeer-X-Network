@@ -2,7 +2,7 @@ use std::fs::File;
 use std::io::Read;
 use std::path::Path;
 use std::process::ExitCode;
-use std::sync::{Arc, OnceLock};
+use std::sync::Arc;
 use std::thread;
 
 use layerx_platform_internal::{events, http, secret, tls};
@@ -49,40 +49,42 @@ fn run() -> Result<(), String> {
     }
     let credentials = secret::required_env("LAYERX_EVENTS_CREDENTIALS_FILE")?;
     let state = secret::required_env("LAYERX_EVENTS_STATE_DIR")?;
+    let key_file = secret::required_env("LAYERX_EVENTS_ENROLLMENT_KEY_FILE")?;
+    events::require_protected(Path::new(&key_file))?;
+    let key = secret::read_token("LAYERX_EVENTS_ENROLLMENT_KEY_FILE")?;
     let upstream = tls::Upstream::from_environment(prefix)?;
     let token = secret::read_token("LAYERX_EVENTS_TOKEN_FILE")?;
     let producers = producers()?;
     let server = tls::server_config(prefix)?;
-    let source = Arc::new(OnceLock::new());
-    let opened = Arc::clone(&source);
-    thread::spawn(move || {
-        let result = (|| -> Result<(), String> {
-            loop {
-                if let Some(principals) = events::await_principals(Path::new(&credentials))? {
-                    let service = events::Service::open(
-                        kind,
-                        upstream,
-                        principals,
-                        token,
-                        Path::new(&state),
-                    )?
-                    .with_producers(producers)?;
-                    let _ = opened.set(service);
-                    return Ok(());
-                }
-                thread::sleep(events::PRINCIPAL_POLL);
-            }
-        })();
-        if let Err(error) = result {
-            eprintln!("layerx-event-source: {error}");
-            std::process::exit(1);
+    let source = Arc::new(
+        events::Service::open(
+            kind,
+            upstream,
+            Path::new(&credentials),
+            &key,
+            token,
+            Path::new(&state),
+        )?
+        .with_producers(producers)?,
+    );
+    drop(key);
+    let refreshed = Arc::clone(&source);
+    thread::spawn(move || loop {
+        match refreshed.refresh() {
+            Ok(Some(generation)) => eprintln!(
+                "layerx-event-source: enrollment generation {generation} adopted with {} principals",
+                refreshed.generation().principals()
+            ),
+            Ok(None) | Err((_, false)) => {}
+            Err((code, true)) => eprintln!(
+                "layerx-event-source: enrollment generation {} kept, snapshot refused: {code}",
+                refreshed.generation().generation()
+            ),
         }
+        thread::sleep(events::PRINCIPAL_POLL);
     });
     http::serve("layerx-event-source", listen, &server, move |request| {
-        source.get().map_or_else(
-            || events::waiting_principals(request),
-            |service: &events::Service| service.route(request),
-        )
+        source.route(request)
     })
 }
 

@@ -7,6 +7,10 @@ use std::collections::BTreeMap;
 use std::env;
 use std::fs;
 use subtle::ConstantTimeEq;
+use x509_cert::der::asn1::ObjectIdentifier;
+use x509_cert::der::Decode;
+use x509_cert::ext::pkix::name::GeneralName;
+use x509_cert::ext::pkix::{ExtendedKeyUsage, SubjectAltName};
 use zeroize::{Zeroize, Zeroizing};
 
 use crate::boundary::{Client, ClientIdentity, Endpoint, OutboundRequest};
@@ -18,6 +22,80 @@ use crate::events::{
 };
 
 const MAX_SOURCE_FACTS: usize = 32;
+
+/// The URI SAN that marks an internal client leaf as an event producer.
+pub const PRODUCER_ROLE: &str = "urn:layerx:webhooks:role:producer";
+/// The URI SAN that marks an internal client leaf as a delivery operator.
+pub const OPERATOR_ROLE: &str = "urn:layerx:webhooks:role:operator";
+const ROLE_MARKER_PREFIX: &str = "urn:layerx:webhooks:role";
+const SUBJECT_ALT_NAME: ObjectIdentifier = ObjectIdentifier::new_unwrap("2.5.29.17");
+const EXTENDED_KEY_USAGE: ObjectIdentifier = ObjectIdentifier::new_unwrap("2.5.29.37");
+const CLIENT_AUTH: ObjectIdentifier = ObjectIdentifier::new_unwrap("1.3.6.1.5.5.7.3.2");
+
+/// The role a verified internal client leaf holds on the private ingress.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum IngressRole {
+    Producer,
+    Operator,
+}
+
+impl IngressRole {
+    /// Reads the role of a client leaf the TLS layer already verified against
+    /// the internal CA. The leaf must carry the clientAuth extended key usage
+    /// and exactly one recognized role URI SAN; the subject, headers and CA
+    /// membership never imply a role.
+    ///
+    /// # Errors
+    /// Refuses malformed leaves, a missing clientAuth usage, and missing,
+    /// duplicate, contradictory, unknown or malformed role markers.
+    pub fn from_certificate(leaf: &[u8]) -> Result<Self, WebhookError> {
+        let certificate =
+            x509_cert::Certificate::from_der(leaf).map_err(|_| WebhookError::InvalidRequest)?;
+        let mut usage = None;
+        let mut names = None;
+        for extension in certificate.tbs_certificate.extensions.iter().flatten() {
+            let value = extension.extn_value.as_bytes();
+            if extension.extn_id == EXTENDED_KEY_USAGE {
+                let parsed =
+                    ExtendedKeyUsage::from_der(value).map_err(|_| WebhookError::InvalidRequest)?;
+                if usage.replace(parsed).is_some() {
+                    return Err(WebhookError::InvalidRequest);
+                }
+            } else if extension.extn_id == SUBJECT_ALT_NAME {
+                let parsed =
+                    SubjectAltName::from_der(value).map_err(|_| WebhookError::InvalidRequest)?;
+                if names.replace(parsed).is_some() {
+                    return Err(WebhookError::InvalidRequest);
+                }
+            }
+        }
+        if !usage.is_some_and(|usage| usage.0.contains(&CLIENT_AUTH)) {
+            return Err(WebhookError::InvalidRequest);
+        }
+        let mut role = None;
+        for name in names.iter().flat_map(|names| names.0.iter()) {
+            let GeneralName::UniformResourceIdentifier(uri) = name else {
+                continue;
+            };
+            let uri = uri.to_string();
+            let marker = uri
+                .get(..ROLE_MARKER_PREFIX.len())
+                .is_some_and(|prefix| prefix.eq_ignore_ascii_case(ROLE_MARKER_PREFIX));
+            if !marker {
+                continue;
+            }
+            let parsed = match uri.as_str() {
+                PRODUCER_ROLE => Self::Producer,
+                OPERATOR_ROLE => Self::Operator,
+                _ => return Err(WebhookError::InvalidRequest),
+            };
+            if role.replace(parsed).is_some() {
+                return Err(WebhookError::InvalidRequest);
+            }
+        }
+        role.ok_or(WebhookError::InvalidRequest)
+    }
+}
 
 pub struct TrustedEvent(ProtocolEvent);
 
