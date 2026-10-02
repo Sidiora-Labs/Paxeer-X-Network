@@ -10,12 +10,18 @@ kill_timeout = "30s"
   NODE_ENV = "production"
   PORT = "8080"
   HYPERPAXEER_CHAIN_ID = "125"
+  WALLET_IDENTITY_BINDING_PRIVATE_KEY_FILE = "/run/secrets/wallet_identity_binding_key"
   SPONSOR_PRIVATE_KEY_FILE = "/run/secrets/sponsor_private_key"
   ATTESTOR_ENDPOINTS = "https://paxeer-attestor-1.internal:8443,https://paxeer-attestor-2.internal:8443,https://paxeer-attestor-3.internal:8443,https://paxeer-attestor-4.internal:8443,https://paxeer-attestor-5.internal:8443"
   ATTESTOR_CLIENT_CERT_FILE = "/run/secrets/attestor_client.crt"
   ATTESTOR_CLIENT_KEY_FILE = "/run/secrets/attestor_client.key"
   ATTESTOR_CA_FILE = "/run/secrets/attestor_ca.crt"
   ATTESTOR_QUORUM = "3"
+
+[[files]]
+  guest_path = "/run/secrets/wallet_identity_binding_key"
+  secret_name = "WALLET_IDENTITY_BINDING_KEY"
+  mode = 384
 
 [[files]]
   guest_path = "/run/secrets/sponsor_private_key"

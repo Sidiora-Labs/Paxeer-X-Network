@@ -103,6 +103,57 @@ case "$role" in
         exec /usr/local/bin/layerx-runtime-clock --runtime-dir "$private" -- /usr/local/bin/layerx-agentd "$@"
         ;;
     identity)
+        python3 - <<'PY_BINDING'
+import os
+from pathlib import Path
+import re
+import stat
+import unicodedata
+
+prefix = 'LAYERX_HUMAN_IDENTITY_PROVIDER_'
+producer_name = prefix + 'ASSERTION_BINDING_PRODUCER_KEY'
+tenant_name = prefix + 'BINDING_TENANT'
+
+def retained(name, required):
+    path = Path('/run/human-material/env') / name
+    try:
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    except FileNotFoundError:
+        if not required:
+            return None
+        raise ValueError('canonical identity tenant material is required')
+    with os.fdopen(fd, 'rb') as source:
+        info = os.fstat(source.fileno())
+        if (path.resolve() != path or not stat.S_ISREG(info.st_mode)
+                or info.st_uid not in (0, os.geteuid()) or info.st_nlink != 1
+                or stat.S_IMODE(info.st_mode) not in (0o400, 0o440, 0o600)
+                or info.st_size > 1024):
+            raise ValueError('identity binding material ownership or bounds refused')
+        value = source.read(1025)
+        if len(value) > 1024:
+            raise ValueError('identity binding material grew beyond its bound')
+        return value.decode('utf-8')
+
+try:
+    producer = os.environ.get(producer_name)
+    if producer is not None:
+        if not re.fullmatch(r'04[0-9a-f]{128}', producer):
+            raise ValueError('identity producer public key is invalid')
+        for suffix in ('ASSERTION_JWKS_URL', 'ASSERTION_ISSUER', 'ASSERTION_AUDIENCE',
+                       'BINDING_SOCKET', 'BINDING_ALLOWED_UIDS'):
+            if not os.environ.get(prefix + suffix):
+                raise ValueError('signed identity binding configuration is incomplete')
+        tenant = os.environ.get(tenant_name, '')
+        if (not tenant or len(tenant.encode()) > 255
+                or any(unicodedata.category(c) == 'Cc' for c in tenant)
+                or tenant != retained(tenant_name, True)):
+            raise ValueError('identity tenant differs from canonical material')
+        recorded_producer = retained(producer_name, False)
+        if recorded_producer is not None and recorded_producer != producer:
+            raise ValueError('identity producer public key differs from retained material')
+except (OSError, ValueError):
+    raise SystemExit('identity binding deployment material refused')
+PY_BINDING
         copy_material recovery-policy.json
         exec /usr/local/bin/layerx-runtime-clock --runtime-dir "$private" -- /usr/local/bin/layerx-human-identity-provider "$@"
         ;;
