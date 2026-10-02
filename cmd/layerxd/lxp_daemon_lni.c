@@ -4066,7 +4066,7 @@ static lxp_result send_proof_bundle(
     if (request->minor < 2U || request->correlation_id == 0U ||
         request->proof_length != 0U ||
         (request->payload_length != 35U &&
-         request->payload_length != 67U) ||
+         request->payload_length != 67U && request->payload_length != 107U) ||
         load_u16(request->payload) != 1U)
         return send_refusal(
             descriptor, server->frame_bytes, request->correlation_id, 1U,
@@ -4077,13 +4077,16 @@ static lxp_result send_proof_bundle(
     target_activity_id = request->payload + 3U;
     if (((kind == 1U || kind == 3U || kind == 4U) && request->payload_length != 35U) ||
         (kind == 2U && request->payload_length != 67U) ||
-        (kind != 1U && kind != 2U && kind != 3U && kind != 4U) ||
+        (kind == 5U && request->payload_length != 107U) ||
+        (kind != 1U && kind != 2U && kind != 3U && kind != 4U && kind != 5U) ||
         lxp_ct_is_zero(target_activity_id, 32U) ||
         (kind == 2U && lxp_ct_is_zero(request->payload + 35U, 32U)))
         return send_refusal(descriptor, server->frame_bytes,
                             request->correlation_id, 1U,
                             LXP_ERR_MALFORMED_ENVELOPE, deadline);
-    if (server->owner->evidence_store == NULL ||
+    if (server->owner->scratch == NULL || server->owner->kernel == NULL ||
+        (kind == 5U && server->owner->receipt_authority == NULL) ||
+        (kind != 5U && server->owner->evidence_store == NULL) ||
         (kind == 2U && server->owner->protocol_version !=
                            LXP_PROTOCOL_VERSION_STATE_COMMITMENT))
         return send_refusal(descriptor, server->frame_bytes,
@@ -4092,7 +4095,22 @@ static lxp_result send_proof_bundle(
     status = lni_read_lock(server->owner);
     if (status != LXP_OK) return status;
     mark = lxp_arena_mark(server->owner->scratch);
-    if (kind == 2U) {
+    if (kind == 5U) {
+        lxp_daemon_protocol_owner *owner = server->owner;
+        uint64_t sequence = load_u64(request->payload + 35U);
+        const uint8_t *digest = request->payload + 43U;
+        const uint8_t *root = request->payload + 75U;
+        status = sequence != 0U && sequence == owner->feed_store.scanned_through_sequence &&
+            lxp_ct_memcmp(digest, owner->feed_store.head_receipt_digest, 32U) == 0 &&
+            lxp_ct_memcmp(root, owner->feed_store.head_state_root, 32U) == 0 &&
+            lxp_ct_memcmp(root, owner->kernel->current_state_root, 32U) == 0 ?
+            LXP_OK : LXP_ERR_PROJECTION_STALE;
+        if (status == LXP_OK)
+            status = lxp_daemon_program_state_encode(owner->kernel,
+                owner->receipt_authority, owner->network_id, target_activity_id,
+                sequence, digest, root, owner->scratch, &canonical_value);
+        proof_material = (lxp_byte_span){NULL, 0U};
+    } else if (kind == 2U) {
         status = latest_account_evidence(
             server->owner, request->payload + 35U, NULL,
             target_activity_id, server->owner->scratch, &account);

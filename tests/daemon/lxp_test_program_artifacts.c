@@ -2,11 +2,19 @@
 #define _POSIX_C_SOURCE 200809L
 #include "layerx/lxp_daemon.h"
 #include "layerx/lxp_crypto.h"
+#include "../../cmd/layerxd/lxp_daemon_deployment.h"
 #include <openssl/evp.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+
+static unsigned program_state_observer_calls;
+static int program_state_store_observer(const lxp_kernel *kernel,
+    const uint8_t program_id[32], const lxp_sequencer_authorization *authorization,
+    const lxp_batch_header *header, const lxp_byte_span receipts[2],
+    lxp_byte_span canonical_header, const uint8_t signature[64]);
+#define LXP_TEST_PROGRAM_STATE_OBSERVER program_state_store_observer
 
 static unsigned artifact_observer_calls;
 static unsigned web_request_observer_calls;
@@ -20,6 +28,7 @@ int web_program_path_main(int argc, char **argv);
 #undef LXP_TEST_WEB_PROGRAM_PATH_MAIN
 #undef LXP_TEST_WEB_REQUEST_OBSERVER
 #undef LXP_TEST_PROGRAM_ARTIFACT_OBSERVER
+#undef LXP_TEST_PROGRAM_STATE_OBSERVER
 
 static void artifact_hex(const uint8_t *bytes, size_t length, char *text)
 {
@@ -493,6 +502,170 @@ done:
     return result;
 }
 
+
+static int program_state_store_observer(const lxp_kernel *kernel,
+    const uint8_t program_id[32], const lxp_sequencer_authorization *authorization,
+    const lxp_batch_header *header, const lxp_byte_span receipts[2],
+    lxp_byte_span canonical_header, const uint8_t signature[64])
+{
+    char directory[] = "/tmp/lxp-program-state-proof-XXXXXX";
+    char path[256] = {0};
+    uint8_t *storage = NULL;
+    uint8_t leaves[2][32], merkle_root[32], digest[32];
+    lxp_arena arena;
+    lxp_merkle_proof proofs[2];
+    lxp_log log = {.descriptor = -1};
+    lxp_daemon_receipt_authority_store store, reopened;
+    lxp_programs_occupancy_receipt receipt;
+    lxp_daemon_receipt_evidence evidence;
+    lxp_byte_span canonical_receipt = receipts[1];
+    size_t mark;
+    bool directory_ready = false;
+    int result = 1;
+#define REQUIRE(expression) do { if (!(expression)) { \
+    (void)fprintf(stderr, "program state proof check failed at line %d\n", __LINE__); \
+    goto done; } } while (0)
+    storage = malloc(16U * LXP_MAX_ACTIVITY_BYTES);
+    REQUIRE(storage != NULL);
+    REQUIRE(lxp_arena_init(&arena, storage, 16U * LXP_MAX_ACTIVITY_BYTES) == LXP_OK);
+    REQUIRE(header->protocol_version == LXP_PROTOCOL_VERSION_STATE_COMMITMENT);
+    REQUIRE(lxp_batch_maintenance_occupancy_decode(canonical_receipt.bytes,
+        canonical_receipt.length, &receipt) == LXP_OK);
+    REQUIRE(receipt.global_sequence == header->last_sequence &&
+        memcmp(receipt.resulting_state_root, kernel->current_state_root, 32U) == 0);
+    for (size_t index = 0U; index < 2U; ++index)
+        REQUIRE(lxp_merkle_leaf_hash(receipts[index].bytes,
+            receipts[index].length, leaves[index]) == LXP_OK);
+    for (size_t index = 0U; index < 2U; ++index) {
+        REQUIRE(lxp_merkle_proof_generate((const uint8_t (*)[32])leaves, 2U,
+            index, &arena, &proofs[index], merkle_root) == LXP_OK);
+        REQUIRE(memcmp(merkle_root, header->receipt_merkle_root, 32U) == 0);
+    }
+    REQUIRE(mkdtemp(directory) != NULL);
+    directory_ready = true;
+    REQUIRE(snprintf(path, sizeof(path), "%s/authority.log", directory) > 0);
+    REQUIRE(lxp_log_open_or_create(&log, path, 16U * LXP_MAX_ACTIVITY_BYTES) == LXP_OK);
+    REQUIRE(lxp_daemon_receipt_authority_open(&store, &log, authorization) == LXP_OK);
+    REQUIRE(lxp_daemon_receipt_authority_append(&store,
+        receipts[0].bytes, receipts[0].length, canonical_header.bytes,
+        canonical_header.length, signature, &proofs[0], &arena) == LXP_OK);
+    REQUIRE(lxp_daemon_receipt_authority_append_maintenance(&store,
+        canonical_receipt.bytes, canonical_receipt.length, canonical_header.bytes,
+        canonical_header.length, signature, &proofs[1], &arena) == LXP_OK);
+    REQUIRE(lxp_log_close(&log) == LXP_OK);
+    REQUIRE(lxp_log_open(&log, path) == LXP_OK);
+    REQUIRE(lxp_daemon_receipt_authority_open(&reopened, &log, authorization) == LXP_OK);
+    REQUIRE(lxp_hash_sha256(canonical_receipt.bytes, canonical_receipt.length, digest) == LXP_OK);
+    mark = lxp_arena_mark(&arena);
+    REQUIRE(lxp_daemon_receipt_authority_lookup(&reopened, digest, &arena, &evidence) == LXP_OK);
+    REQUIRE(evidence.format_version == 3U && evidence.global_sequence == receipt.global_sequence &&
+        evidence.canonical_receipt.length == canonical_receipt.length &&
+        memcmp(evidence.canonical_receipt.bytes, canonical_receipt.bytes, canonical_receipt.length) == 0);
+    REQUIRE(lxp_arena_reset(&arena, mark) == LXP_OK);
+    static const uint8_t domain[] = "LayerX/programs/state-proof/v1";
+    lxp_byte_span current;
+    uint8_t other[32], root[32], programs_root[32];
+    lxp_state_proof root_proof;
+    size_t cursor, count;
+    const uint8_t *keys[4], *values[4];
+    size_t key_lengths[4], value_lengths[4];
+    REQUIRE(lxp_daemon_program_state_encode(kernel, &reopened, header->network_id,
+        program_id, receipt.global_sequence, digest, receipt.resulting_state_root,
+        &arena, &current) == LXP_OK);
+    REQUIRE(current.length > sizeof(domain) &&
+        memcmp(current.bytes, domain, sizeof(domain)) == 0 && current.bytes[sizeof(domain)] == 1U);
+    cursor = sizeof(domain) + 1U;
+    for (count = 0U; count < 3U; ++count) {
+        size_t length;
+        REQUIRE(current.length - cursor >= 4U);
+        length = path_read_u32(current.bytes + cursor);
+        cursor += 4U;
+        REQUIRE(length <= current.length - cursor);
+        if (count == 0U) REQUIRE(length == canonical_receipt.length &&
+            memcmp(current.bytes + cursor, canonical_receipt.bytes, length) == 0);
+        if (count == 2U) REQUIRE(length == canonical_header.length &&
+            memcmp(current.bytes + cursor, canonical_header.bytes, length) == 0);
+        cursor += length;
+    }
+    REQUIRE(current.length - cursor >= 64U + 32U + 9U);
+    REQUIRE(memcmp(current.bytes + cursor, signature, 64U) == 0);
+    cursor += 64U;
+    REQUIRE(lxp_state_subtree_root(kernel, 9U, programs_root) == LXP_OK);
+    REQUIRE(memcmp(current.bytes + cursor, programs_root, 32U) == 0);
+    cursor += 32U;
+    REQUIRE(lxp_state_root_proof(kernel, 9U, root, &root_proof) == LXP_OK);
+    REQUIRE(memcmp(root, receipt.resulting_state_root, 32U) == 0);
+    REQUIRE(path_read_u32(current.bytes + cursor) == root_proof.leaf_index &&
+        path_read_u32(current.bytes + cursor + 4U) == root_proof.leaf_count &&
+        current.bytes[cursor + 8U] == root_proof.depth);
+    cursor += 9U;
+    REQUIRE(current.length - cursor >= 32U * root_proof.depth &&
+        memcmp(current.bytes + cursor, root_proof.siblings, 32U * root_proof.depth) == 0);
+    cursor += 32U * root_proof.depth;
+    count = 0U;
+    for (size_t field = 0U; field < 4U; ++field) {
+        lxp_state_proof leaf_proof;
+        if (field == 1U) {
+            REQUIRE(current.length > cursor && current.bytes[cursor++] == 0U);
+        }
+        if (field == 1U || field == 2U) {
+            REQUIRE(current.length > cursor && current.bytes[cursor] <= 1U);
+            if (current.bytes[cursor++] == 0U) continue;
+        }
+        REQUIRE(current.length - cursor >= 4U);
+        key_lengths[count] = path_read_u32(current.bytes + cursor); cursor += 4U;
+        REQUIRE(key_lengths[count] <= current.length - cursor);
+        keys[count] = current.bytes + cursor; cursor += key_lengths[count];
+        REQUIRE(current.length - cursor >= 4U);
+        value_lengths[count] = path_read_u32(current.bytes + cursor); cursor += 4U;
+        REQUIRE(value_lengths[count] <= current.length - cursor);
+        values[count] = current.bytes + cursor; cursor += value_lengths[count];
+        REQUIRE(lxp_state_subtree_proof(kernel, 9U, keys[count], key_lengths[count], root, &leaf_proof) == LXP_OK);
+        REQUIRE(memcmp(root, programs_root, 32U) == 0 && current.length - cursor >= 9U);
+        REQUIRE(path_read_u32(current.bytes + cursor) == leaf_proof.leaf_index &&
+            path_read_u32(current.bytes + cursor + 4U) == leaf_proof.leaf_count &&
+            current.bytes[cursor + 8U] == leaf_proof.depth);
+        cursor += 9U;
+        REQUIRE(current.length - cursor >= 32U * leaf_proof.depth &&
+            memcmp(current.bytes + cursor, leaf_proof.siblings, 32U * leaf_proof.depth) == 0);
+        cursor += 32U * leaf_proof.depth;
+        ++count;
+    }
+    REQUIRE(cursor == current.length && count >= 3U &&
+        key_lengths[0] == 40U && memcmp(keys[0] + 8U, program_id, 32U) == 0 &&
+        value_lengths[0] == 71U && key_lengths[count - 1U] == 42U &&
+        memcmp(keys[count - 1U] + 10U, program_id, 32U) == 0 &&
+        value_lengths[count - 1U] >= 134U &&
+        memcmp(values[count - 1U], program_id, 32U) == 0);
+    REQUIRE(lxp_arena_reset(&arena, mark) == LXP_OK);
+    memcpy(other, receipt.resulting_state_root, 32U); other[0] ^= 1U;
+    REQUIRE(lxp_daemon_program_state_encode(kernel, &reopened, header->network_id,
+        program_id, receipt.global_sequence, digest, other, &arena, &current) == LXP_ERR_PROJECTION_STALE);
+    REQUIRE(lxp_arena_reset(&arena, mark) == LXP_OK);
+    REQUIRE(lxp_daemon_program_state_encode(kernel, &reopened, header->network_id,
+        program_id, receipt.global_sequence + 1U, digest, receipt.resulting_state_root,
+        &arena, &current) == LXP_ERR_CONTEXT_MISMATCH);
+    REQUIRE(lxp_arena_reset(&arena, mark) == LXP_OK);
+    memcpy(other, program_id, 32U); other[0] ^= 1U;
+    REQUIRE(lxp_daemon_program_state_encode(kernel, &reopened, header->network_id,
+        other, receipt.global_sequence, digest, receipt.resulting_state_root,
+        &arena, &current) == LXP_ERR_UNKNOWN_FIELD);
+    REQUIRE(lxp_arena_reset(&arena, mark) == LXP_OK);
+    REQUIRE(lxp_daemon_program_state_encode(kernel, &reopened, header->network_id + 1U,
+        program_id, receipt.global_sequence, digest, receipt.resulting_state_root,
+        &arena, &current) == LXP_ERR_CONTEXT_MISMATCH);
+    REQUIRE(lxp_arena_reset(&arena, mark) == LXP_OK);
+
+    ++program_state_observer_calls;
+    result = 0;
+done:
+    if (log.descriptor >= 0) (void)lxp_log_close(&log);
+    if (directory_ready) { (void)unlink(path); (void)rmdir(directory); }
+    free(storage);
+#undef REQUIRE
+    return result;
+}
+
 int main(int argc, char **argv)
 {
     if (argc != 2) {
@@ -502,6 +675,11 @@ int main(int argc, char **argv)
     if (deploy_and_upgrade_persist_exact_artifacts() != 0) return 1;
     if (deploy_and_upgrade_persist_exact_artifacts_version(
             LXP_PROTOCOL_VERSION_STATE_COMMITMENT) != 0) return 1;
+    post_upgrade_batch_regression = true;
+    if (deploy_and_upgrade_persist_exact_artifacts_version(
+            LXP_PROTOCOL_VERSION_STATE_COMMITMENT) != 0) return 1;
+    post_upgrade_batch_regression = false;
+    if (program_state_observer_calls != 4U) return 1;
     if (web_program_path_main(argc, argv) != 0) return 1;
     return artifact_observer_calls == 2U && web_request_observer_calls == 2U ? 0 : 1;
 }

@@ -1200,6 +1200,12 @@ static lxp_result publish_artifact_fixture_batch(
             }
         }
     }
+#ifdef LXP_TEST_PROGRAM_STATE_OBSERVER
+    if (status == LXP_OK && LXP_TEST_PROGRAM_STATE_OBSERVER(kernel,
+        activity->payload.bytes, &authorization, &header, receipts,
+        header_bytes, header_signature) != 0)
+        status = LXP_FATAL_INVARIANT;
+#endif
     if (publication != NULL && fclose(publication) != 0) status = LXP_FATAL_INVARIANT;
     lxp_kernel_prepared_batch_destroy(prepared);
     if (status != LXP_OK || receipt->result_code != LXP_OK)
