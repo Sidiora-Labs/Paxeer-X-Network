@@ -147,7 +147,10 @@ impl ComponentRequest {
             } => {
                 valid_version(*version)?;
                 valid_operation(operation)?;
-                if wallet_binding.as_deref().is_some_and(|value| !valid_bearer_assertion(value)) {
+                if wallet_binding
+                    .as_deref()
+                    .is_some_and(|value| !valid_bearer_assertion(value))
+                {
                     return Err(ApiFailure::unauthenticated());
                 }
                 if !valid_bearer_assertion(assertion) {
@@ -260,7 +263,9 @@ impl ComponentRequest {
             } => {
                 operation.zeroize();
                 assertion.zeroize();
-                if let Some(value) = wallet_binding { value.zeroize(); }
+                if let Some(value) = wallet_binding {
+                    value.zeroize();
+                }
                 intended_destination.zeroize();
                 request_digest.zeroize();
                 disclosure_digest.zeroize();

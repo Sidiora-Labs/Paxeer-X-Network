@@ -346,9 +346,16 @@ impl<B: HumanApiComponents> Router<B> {
                 operation,
                 BearerCredentials {
                     assertion: assertion?,
-                    wallet_binding: request.header("x-layerx-wallet-binding").map(|binding| {
-                        if valid_bearer_assertion(binding) { Ok(binding) } else { Err(ApiFailure::unauthenticated()) }
-                    }).transpose()?,
+                    wallet_binding: request
+                        .header("x-layerx-wallet-binding")
+                        .map(|binding| {
+                            if valid_bearer_assertion(binding) {
+                                Ok(binding)
+                            } else {
+                                Err(ApiFailure::unauthenticated())
+                            }
+                        })
+                        .transpose()?,
                     intended_destination: &request.path,
                     request_digest,
                     disclosure_digest,
