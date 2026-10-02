@@ -31835,7 +31835,7 @@ do_3 = "Package the helper in the canonical node image and select a protected du
 do_4 = "Run the single focused gate against prebuilt actual native processes and the unchanged canonical bootstrap. When the protected bootstrap producer is unavailable, implement all source and retain a concrete unqualified prerequisite; do not alter it or replace it with a fixture."
 touches = ["platform/hosted/node/supervisor.sh", "platform/hosted/node/reset_state.py", "platform/hosted/node/tests/test_reset_state.py", "platform/hosted/node/tests/reset_recovery.py", "docker/platform-node/Dockerfile", "tools/paxeer-x/gates/24.17.sh"]
 planned_paths = ["platform/hosted/node/reset_state.py", "platform/hosted/node/tests/test_reset_state.py", "platform/hosted/node/tests/reset_recovery.py", "tools/paxeer-x/gates/24.17.sh"]
-build_cmd = "make -j5 LXP_REVISION=\"$REVISION\" PAXEER_GO_JOBS=5 layerxd layerx-genesis-build layerx-handover && bash tools/paxeer-x/gates/24.16.sh build"
+build_cmd = "make -j5 LXP_REVISION=\"$REVISION\" PAXEER_GO_JOBS=5 layerxd layerx-genesis-build layerx-handover && bash tools/paxeer-x/gates/24.16.sh build && python3 platform/hosted/node/tests/reset_recovery.py --record-native \"${LAYERX_RESET_NATIVE_ARTIFACT_MANIFEST:?private native manifest output required}\""
 verify_cmd = "timeout 15m python3 platform/hosted/node/tests/reset_recovery.py"
 gate_kind = "planned-prerequisite"
 max_builds = 1
@@ -31859,7 +31859,7 @@ do_2 = "Archive and fsync every required authoritative outcome before invoking a
 do_3 = "Preserve every existing test and response assertion. Add actual funded SEND/reset/replay and real archive storage-failure cases using the genuine source-bound custody/native fixture. Do not change supervisor or bootstrap; the current private reset transport is consumed unchanged until24.19 integrates the new protocol."
 touches = ["platform/hosted/core/src/main.rs", "platform/hosted/core/tests/boundary.rs", "platform/hosted/core/tests/core_chain.py", "platform/hosted/core/tests/receipt_retention.py", "tools/paxeer-x/gates/24.18.sh"]
 planned_paths = ["platform/hosted/core/tests/receipt_retention.py", "tools/paxeer-x/gates/24.18.sh"]
-build_cmd = "cargo test --locked --manifest-path platform/Cargo.toml -p layerx-platform-core --no-run --message-format=json && make -j5 LXP_REVISION=\"$REVISION\" PAXEER_GO_JOBS=5 layerxd layerx-genesis-build layerx-handover && bash tools/paxeer-x/gates/24.16.sh build"
+build_cmd = "bash tools/paxeer-x/gates/24.18.sh build"
 verify_cmd = "timeout 15m python3 platform/hosted/core/tests/receipt_retention.py"
 gate_kind = "planned-prerequisite"
 max_builds = 1
