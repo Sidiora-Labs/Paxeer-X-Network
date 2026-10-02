@@ -5,6 +5,7 @@
 #include "layerx/lxp_hash.h"
 #include "layerx/lxp_crypto.h"
 
+#include <stdio.h>
 #include <string.h>
 
 static size_t charged_fees;
@@ -174,6 +175,263 @@ static int mixed_source_kernel_law(
     return 0;
 }
 
+static size_t passed_cases;
+
+static int report_case(const char *name, int failed)
+{
+    if (failed != 0) {
+        (void)printf("CASE %s FAILED\n", name);
+        return 1;
+    }
+    (void)printf("CASE %s ok\n", name);
+    ++passed_cases;
+    return 0;
+}
+
+/* The ledger context a redeemed program-spend permit hands the kernel's
+ * canonical applier: the principal leg under its owner root and the
+ * program-derived account under the root the kernel rebinds after
+ * redemption. */
+static void program_set(lxp_transfer_leg legs[2],
+                        lxp_transfer_source_authority authorities[2],
+                        lxp_transfer_context *context,
+                        lx_account *first, lx_account *second,
+                        lx_account *recipient,
+                        const lxp_transfer_asset_state *asset,
+                        uint64_t first_amount, uint64_t second_amount)
+{
+    size_t index;
+    (void)memset(legs, 0, 2U * sizeof(legs[0]));
+    (void)memset(authorities, 0, 2U * sizeof(authorities[0]));
+    for (index = 0U; index < 2U; ++index) {
+        legs[index].from = index == 0U ? first : second;
+        legs[index].to = recipient;
+        (void)memcpy(legs[index].asset_id, asset->asset_id, 32U);
+        legs[index].amount =
+            (lxp_u128){0U, index == 0U ? first_amount : second_amount};
+        legs[index].reason = LXP_REASON_PAYMENT;
+        legs[index].supply_mode = LXP_TRANSFER_CONSERVED;
+        (void)memcpy(authorities[index].authorized_from,
+                     legs[index].from->id, 32U);
+        authorities[index].debit_authority_kind = LXP_AUTH_OWNER;
+    }
+    (void)memset(context, 0, sizeof(*context));
+    context->assets = asset;
+    context->asset_count = 1U;
+    context->actor_sequence = first->next_sequence;
+    context->sequence_account = first;
+    context->debit_authority_kind = LXP_AUTH_OWNER;
+    context->source_authorities = authorities;
+    context->source_authority_count = first == second ? 1U : 2U;
+    context->origin_module_id = LXP_MODULE_PROGRAMS;
+}
+
+static int program_leg_atomic_rollback_after_first_leg(
+    lx_account *principal, lx_account *program_account, lx_account *recipient,
+    const lxp_transfer_asset_state *asset)
+{
+    lxp_transfer_leg legs[2];
+    lxp_transfer_source_authority authorities[2];
+    lxp_transfer_context context;
+    lxp_transfer_set_result result;
+    uint64_t principal_before = principal->balance.lo;
+    uint64_t program_before = program_account->balance.lo;
+    uint64_t recipient_before = recipient->balance.lo;
+    uint64_t sequence_before = principal->next_sequence;
+    program_set(legs, authorities, &context, principal, program_account,
+                recipient, asset, 3U, 4U);
+    context.inject_failure = true;
+    context.failure_after_leg = 1U;
+    if (lxp_apply_transfer_set(legs, 2U, &context, &result) != LXP_ERR_IO ||
+        principal->balance.lo != principal_before ||
+        program_account->balance.lo != program_before ||
+        recipient->balance.lo != recipient_before ||
+        principal->next_sequence != sequence_before ||
+        program_account->next_sequence != 0U)
+        return 1;
+    return 0;
+}
+
+static int program_leg_insufficient_balance_refusal(
+    lx_account *principal, lx_account *program_account, lx_account *recipient,
+    const lxp_transfer_asset_state *asset)
+{
+    lxp_transfer_leg legs[2];
+    lxp_transfer_source_authority authorities[2];
+    lxp_transfer_context context;
+    lxp_transfer_set_result result;
+    uint64_t principal_before = principal->balance.lo;
+    uint64_t program_before = program_account->balance.lo;
+    uint64_t recipient_before = recipient->balance.lo;
+    uint64_t sequence_before = principal->next_sequence;
+    program_set(legs, authorities, &context, principal, program_account,
+                recipient, asset, 1U, program_before + 1U);
+    if (lxp_apply_transfer_set(legs, 2U, &context, &result) !=
+            LXP_ERR_INSUFFICIENT_BALANCE ||
+        principal->balance.lo != principal_before ||
+        program_account->balance.lo != program_before ||
+        recipient->balance.lo != recipient_before ||
+        principal->next_sequence != sequence_before ||
+        program_account->next_sequence != 0U)
+        return 1;
+    return 0;
+}
+
+static int program_leg_cumulative_bound_refusal(
+    lx_account *principal, lx_account *program_account, lx_account *recipient,
+    const lxp_transfer_asset_state *asset)
+{
+    lxp_transfer_leg legs[2];
+    lxp_transfer_source_authority authorities[2];
+    lxp_transfer_context context;
+    lxp_transfer_set_result result;
+    uint64_t principal_before = principal->balance.lo;
+    uint64_t program_before = program_account->balance.lo;
+    uint64_t recipient_before = recipient->balance.lo;
+    uint64_t sequence_before = principal->next_sequence;
+    /* Each leg alone fits the program account; together they exceed it. */
+    if (program_before < 2U) return 1;
+    program_set(legs, authorities, &context, program_account,
+                program_account, recipient, asset, program_before - 1U,
+                program_before - 1U);
+    if (lxp_apply_transfer_set(legs, 2U, &context, &result) !=
+            LXP_ERR_INSUFFICIENT_BALANCE ||
+        principal->balance.lo != principal_before ||
+        program_account->balance.lo != program_before ||
+        recipient->balance.lo != recipient_before ||
+        principal->next_sequence != sequence_before ||
+        program_account->next_sequence != 0U)
+        return 1;
+    return 0;
+}
+
+static int balances_hold(const lx_account *a, uint64_t a_lo,
+                         const lx_account *b, uint64_t b_lo,
+                         const lx_account *c, uint64_t c_lo)
+{
+    return a->balance.lo == a_lo && b->balance.lo == b_lo &&
+           c->balance.lo == c_lo;
+}
+
+static int program_spend_kernel_law(
+    lxp_kernel *kernel, lx_account *principal, lx_account *program_account,
+    lx_account *recipient, const lxp_transfer_asset_state *asset)
+{
+    lxp_transfer_leg legs[2];
+    lxp_transfer_source_authority authorities[2];
+    lxp_transfer_set set;
+    lxp_receipt receipt;
+    uint64_t principal_before = principal->balance.lo;
+    uint64_t program_before = program_account->balance.lo;
+    uint64_t recipient_before = recipient->balance.lo;
+    uint64_t sequence_before = principal->next_sequence;
+    size_t index;
+    (void)memset(legs, 0, sizeof(legs));
+    (void)memset(authorities, 0, sizeof(authorities));
+    for (index = 0U; index < 2U; ++index) {
+        legs[index].from = index == 0U ? principal : program_account;
+        legs[index].to = recipient;
+        (void)memcpy(legs[index].asset_id, asset->asset_id, 32U);
+        legs[index].amount = (lxp_u128){0U, index == 0U ? 1U : 2U};
+        legs[index].reason = LXP_REASON_PAYMENT;
+        legs[index].supply_mode = LXP_TRANSFER_CONSERVED;
+        (void)memcpy(authorities[index].authorized_from,
+                     legs[index].from->id, 32U);
+        authorities[index].debit_authority_kind =
+            index == 0U ? LXP_AUTH_OWNER : LXP_AUTH_PROGRAM_SPEND;
+    }
+    (void)memset(&set, 0, sizeof(set));
+    (void)memcpy(set.legs, legs, sizeof(legs));
+    set.leg_count = 2U;
+    set.context.assets = asset;
+    set.context.asset_count = 1U;
+    set.context.actor_sequence = sequence_before;
+    set.context.sequence_account = principal;
+    set.context.debit_authority_kind = LXP_AUTH_OWNER;
+    set.context.source_authorities = authorities;
+    set.context.source_authority_count = 2U;
+    set.context.origin_module_id = LXP_MODULE_PROGRAMS;
+    set.context.program_spend_token = 0x5eedU;
+
+    /* A program-authorised leg never reaches a balance writer other than the
+     * kernel's canonical ledger primitive. */
+    (void)memset(&receipt, 0, sizeof(receipt));
+    if (lxp_kernel_apply_transfer_set(kernel, &set, &receipt) !=
+            LXP_ERR_BALANCE_BYPASS ||
+        !balances_hold(principal, principal_before, program_account,
+                       program_before, recipient, recipient_before) ||
+        principal->next_sequence != sequence_before)
+        return 1;
+    if (lxp_kernel_set_capabilities(kernel, NULL,
+                                    lxp_kernel_canonical_ledger_apply) != LXP_OK)
+        return 1;
+
+    /* The ledger itself refuses a program-spend authority presented without
+     * the kernel's redeemed permit. */
+    {
+        lxp_transfer_set_result result;
+        lxp_transfer_context context = set.context;
+        if (lxp_apply_transfer_set(legs, 2U, &context, &result) !=
+                LXP_ERR_UNAUTHORIZED_DEBIT ||
+            !balances_hold(principal, principal_before, program_account,
+                           program_before, recipient, recipient_before) ||
+            principal->next_sequence != sequence_before)
+            return 1;
+    }
+
+    /* A forged permit the deriving program never staged is refused for the
+     * whole mixed set: the principal leg settles neither. */
+    if (lxp_kernel_apply_transfer_set(kernel, &set, &receipt) !=
+            LXP_ERR_UNAUTHORIZED_DEBIT ||
+        !balances_hold(principal, principal_before, program_account,
+                       program_before, recipient, recipient_before) ||
+        principal->next_sequence != sequence_before ||
+        program_account->next_sequence != 0U)
+        return 1;
+
+    /* No permit at all. */
+    set.context.program_spend_token = 0U;
+    if (lxp_kernel_apply_transfer_set(kernel, &set, &receipt) !=
+            LXP_ERR_UNAUTHORIZED_DEBIT ||
+        !balances_hold(principal, principal_before, program_account,
+                       program_before, recipient, recipient_before))
+        return 1;
+
+    /* A program-spend leg staged on behalf of any module other than
+     * Programs is refused. */
+    set.context.program_spend_token = 0x5eedU;
+    set.context.origin_module_id = (uint16_t)(LXP_MODULE_PROGRAMS + 1U);
+    if (lxp_kernel_apply_transfer_set(kernel, &set, &receipt) !=
+            LXP_ERR_UNAUTHORIZED_DEBIT ||
+        !balances_hold(principal, principal_before, program_account,
+                       program_before, recipient, recipient_before))
+        return 1;
+    set.context.origin_module_id = LXP_MODULE_PROGRAMS;
+
+    /* One account cannot be bound to two authorization roots. */
+    (void)memcpy(authorities[1].authorized_from, principal->id, 32U);
+    if (lxp_kernel_apply_transfer_set(kernel, &set, &receipt) !=
+            LXP_ERR_UNAUTHORIZED_DEBIT ||
+        !balances_hold(principal, principal_before, program_account,
+                       program_before, recipient, recipient_before))
+        return 1;
+    (void)memcpy(authorities[1].authorized_from, program_account->id, 32U);
+
+    /* A program-spend authority must name a staged source leg. */
+    set.leg_count = 1U;
+    set.context.source_authority_count = 1U;
+    authorities[0].debit_authority_kind = LXP_AUTH_PROGRAM_SPEND;
+    (void)memcpy(authorities[0].authorized_from, program_account->id, 32U);
+    if (lxp_kernel_apply_transfer_set(kernel, &set, &receipt) !=
+            LXP_ERR_UNAUTHORIZED_DEBIT ||
+        !balances_hold(principal, principal_before, program_account,
+                       program_before, recipient, recipient_before) ||
+        principal->next_sequence != sequence_before)
+        return 1;
+    return lxp_kernel_set_capabilities(kernel, NULL, apply_transfer_set) ==
+                   LXP_OK ? 0 : 1;
+}
+
 int main(void)
 {
     static const uint8_t actor_did[] = "did:lxp:program-transfer";
@@ -327,7 +585,23 @@ int main(void)
     if (dispatch(&kernel, &authority, payload, sizeof(payload), 1U,
                  LXP_ERR_AUTH_SCOPE) != 0 || opened[0]->balance.lo != 50U)
         return 1;
-    if (mixed_source_kernel_law(opened[0], opened[1], opened[2], &asset) != 0)
+    if (report_case("program_leg_insufficient_balance_refusal_receipt_fees_sequence",
+                    program_leg_insufficient_balance_refusal(
+                        opened[0], opened[1], opened[2], &asset)) != 0 ||
+        report_case("mixed_source_kernel_law",
+                    mixed_source_kernel_law(opened[0], opened[1], opened[2],
+                                            &asset)) != 0 ||
+        report_case("program_leg_atomic_rollback_after_first_leg",
+                    program_leg_atomic_rollback_after_first_leg(
+                        opened[0], opened[1], opened[2], &asset)) != 0 ||
+        report_case("program_leg_cumulative_bound_refusal",
+                    program_leg_cumulative_bound_refusal(
+                        opened[0], opened[1], opened[2], &asset)) != 0 ||
+        report_case("kernel_primitive_sole_balance_mutation",
+                    program_spend_kernel_law(&kernel, opened[0], opened[1],
+                                             opened[2], &asset)) != 0)
         return 1;
-    return lxp_state_store_destroy(&state) == LXP_OK ? 0 : 1;
+    if (lxp_state_store_destroy(&state) != LXP_OK) return 1;
+    (void)printf("PASSED %zu\n", passed_cases);
+    return 0;
 }

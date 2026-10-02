@@ -345,6 +345,199 @@ fn candidate_program_transfer_host_issues_exact_owner_frame_authority() {
 }
 
 #[test]
+fn real_wasm_program_leg_from_underivable_account_is_refused() {
+    let program = ProgramId::new([41; 32]).unwrap_or_else(|error| panic!("program: {error}"));
+    let foreign = ProgramId::new([45; 32]).unwrap_or_else(|error| panic!("foreign: {error}"));
+    let payer = PrincipalId::new([42; 32]).unwrap_or_else(|error| panic!("payer: {error}"));
+    let seed = b"merchant/settlement";
+    let foreign_source = layerx_programs_runtime::derive_program_account(foreign, seed)
+        .unwrap_or_else(|error| panic!("foreign source: {error}"))
+        .bytes();
+    let asset = [43; 32];
+    let recipient = [44; 32];
+    let grants = CapabilitySet::new([Capability::ProgramSpend {
+        owner_program: foreign,
+        seed: seed.to_vec(),
+        source_account: foreign_source,
+        asset,
+        to: recipient,
+        maximum_amount: 5,
+    }])
+    .unwrap_or_else(|error| panic!("grants: {error}"));
+    let module = WasmEngine::declared()
+        .unwrap_or_else(|error| panic!("engine: {error}"))
+        .validate_candidate_v2(&candidate_program_transfer_module(
+            seed,
+            foreign_source,
+            asset,
+            recipient,
+        ))
+        .unwrap_or_else(|error| panic!("module: {error}"));
+    let mut storage = Storage::default();
+    let refused = Executor::declared().execute_authorized_candidate(
+        &mut storage,
+        AuthorizedExecutionRequest {
+            module: &module,
+            program,
+            authorization: AuthorizationContext::new(payer, grants),
+            receipts: &NoReceipts,
+            entrypoint: CALL_ENTRY_EXPORT,
+            calldata: &[],
+            composition: CompositionContext::isolated(),
+            response_capacity: 0,
+        },
+    );
+    assert!(
+        refused.is_err(),
+        "a guest leg from an account its program cannot derive must never seal"
+    );
+}
+
+fn candidate_mixed_transfer_module(
+    seed: &[u8],
+    source: [u8; 32],
+    asset: [u8; 32],
+    recipient: [u8; 32],
+) -> Vec<u8> {
+    const SOURCE_OFFSET: u32 = 128;
+    const ASSET_OFFSET: u32 = 160;
+    const RECIPIENT_OFFSET: u32 = 192;
+    let mut entries = unsigned_leb(3);
+    for (name, kind, index) in [
+        ("layerx_reserve", 0_u8, 2_u8),
+        (CALL_ENTRY_EXPORT, 0, 3),
+        ("memory", 2, 0),
+    ] {
+        entries.extend(unsigned_leb(name.len() as u64));
+        entries.extend_from_slice(name.as_bytes());
+        entries.extend_from_slice(&[kind, index]);
+    }
+    let mut entry = vec![0x42, 0, 0x42, 3];
+    for value in [ASSET_OFFSET, 32, RECIPIENT_OFFSET, 32] {
+        entry.push(OP_I32_CONST);
+        entry.extend(unsigned_leb(u64::from(value)));
+    }
+    entry.extend([OP_CALL, 0, 0x1a]);
+    entry.extend([0x42, 0, 0x42, 5, OP_I32_CONST, 0, OP_I32_CONST]);
+    entry.extend(unsigned_leb(seed.len() as u64));
+    for value in [SOURCE_OFFSET, 32, ASSET_OFFSET, 32, RECIPIENT_OFFSET, 32] {
+        entry.push(OP_I32_CONST);
+        entry.extend(unsigned_leb(u64::from(value)));
+    }
+    entry.extend([OP_CALL, 1, OP_END]);
+    module(&[
+        type_section(&[
+            (
+                &[TYPE_I64, TYPE_I64, TYPE_I32, TYPE_I32, TYPE_I32, TYPE_I32],
+                &[TYPE_I32],
+            ),
+            (
+                &[
+                    TYPE_I64, TYPE_I64, TYPE_I32, TYPE_I32, TYPE_I32, TYPE_I32, TYPE_I32, TYPE_I32,
+                    TYPE_I32, TYPE_I32,
+                ],
+                &[TYPE_I32],
+            ),
+            (&[TYPE_I32], &[TYPE_I32]),
+            (&[TYPE_I32, TYPE_I32], &[TYPE_I32]),
+        ]),
+        import_section(&[
+            (ABI_MODULE, "transfer_402", 0),
+            (CANDIDATE_ABI_MODULE, "transfer_program_402", 1),
+        ]),
+        function_section(&[2, 3]),
+        section(5, &[1, 1, 1, 1]),
+        section(7, &entries),
+        code_section(&[
+            func_body(&[], &[OP_I32_CONST, 0, OP_END]),
+            func_body(&[], &entry),
+        ]),
+        data_section(&[
+            (0, seed),
+            (SOURCE_OFFSET, &source),
+            (ASSET_OFFSET, &asset),
+            (RECIPIENT_OFFSET, &recipient),
+        ]),
+    ])
+}
+
+#[test]
+fn real_wasm_mixed_principal_and_program_legs_seal_one_canonical_set() {
+    let program = ProgramId::new([51; 32]).unwrap_or_else(|error| panic!("program: {error}"));
+    let payer = PrincipalId::new([52; 32]).unwrap_or_else(|error| panic!("payer: {error}"));
+    let seed = b"merchant/settlement";
+    let source = layerx_programs_runtime::derive_program_account(program, seed)
+        .unwrap_or_else(|error| panic!("source: {error}"))
+        .bytes();
+    let asset = [53; 32];
+    let recipient = [54; 32];
+    let grants = CapabilitySet::new([
+        Capability::Transfer402 {
+            asset,
+            to: recipient,
+            maximum_amount: 3,
+        },
+        Capability::ProgramSpend {
+            owner_program: program,
+            seed: seed.to_vec(),
+            source_account: source,
+            asset,
+            to: recipient,
+            maximum_amount: 5,
+        },
+    ])
+    .unwrap_or_else(|error| panic!("grants: {error}"));
+    let module = WasmEngine::declared()
+        .unwrap_or_else(|error| panic!("engine: {error}"))
+        .validate_candidate_v2(&candidate_mixed_transfer_module(
+            seed, source, asset, recipient,
+        ))
+        .unwrap_or_else(|error| panic!("module: {error}"));
+    let execute = || {
+        Executor::declared()
+            .execute_authorized_candidate(
+                &mut Storage::default(),
+                AuthorizedExecutionRequest {
+                    module: &module,
+                    program,
+                    authorization: AuthorizationContext::new(payer, grants.clone()),
+                    receipts: &NoReceipts,
+                    entrypoint: CALL_ENTRY_EXPORT,
+                    calldata: &[],
+                    composition: CompositionContext::isolated(),
+                    response_capacity: 0,
+                },
+            )
+            .unwrap_or_else(|error| panic!("mixed candidate execution: {error}"))
+    };
+    let record = execute();
+    let effects = record
+        .effects()
+        .unwrap_or_else(|| panic!("mixed candidate effects missing"));
+    assert_eq!(effects.transfers.len(), 2);
+    let principal_leg = &effects.transfers[0];
+    assert_eq!(principal_leg.program, program);
+    assert_eq!(principal_leg.principal, payer);
+    assert_eq!(principal_leg.frame, CallFrameId::root());
+    assert_eq!(principal_leg.amount, 3);
+    assert_eq!(principal_leg.source(), &TransferSource::Principal(payer));
+    let program_leg = &effects.transfers[1];
+    assert_eq!(program_leg.program, program);
+    assert_eq!(program_leg.principal, payer);
+    assert_eq!(program_leg.frame, CallFrameId::root());
+    assert_eq!(program_leg.amount, 5);
+    let TransferSource::Program(authority) = program_leg.source() else {
+        panic!("second leg must carry program authority")
+    };
+    assert_eq!(authority.owner_program(), program);
+    assert_eq!(authority.seed(), seed);
+    assert_eq!(authority.source_account(), source);
+    assert_eq!(authority.staging_frame(), CallFrameId::root());
+    let replay = execute();
+    assert_eq!(record.receipt_projection(), replay.receipt_projection());
+}
+
+#[test]
 fn real_wasm_budgeted_preparation_retains_failure_and_resource_diagnostics() {
     let executor = Executor::declared();
     let payer = PrincipalId::new([2; 32]).unwrap_or_else(|error| panic!("payer: {error}"));

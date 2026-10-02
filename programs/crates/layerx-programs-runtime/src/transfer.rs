@@ -2449,6 +2449,201 @@ mod tests {
     }
 
     #[test]
+    fn program_authority_refuses_wrong_seed_program_and_source_typed() {
+        let owner = program_id(1);
+        let principal = principal_id(2);
+        let seed = b"pool";
+        let source = derive_program_account(owner, seed)
+            .unwrap_or_else(|error| panic!("source: {error}"))
+            .bytes();
+        let capability = program_capability(owner, principal, seed, source, 10);
+
+        let mut wrong_seed = program_request(owner, principal, seed, source, 5);
+        let TransferSource::Program(authority) = &mut wrong_seed.source else {
+            panic!("program source")
+        };
+        authority.seed = b"other".to_vec();
+        assert_eq!(
+            capability.authorize(&AbiEffects {
+                transfers: vec![wrong_seed],
+                ..AbiEffects::default()
+            }),
+            Err(TransferLawError::InvalidProgramAuthority)
+        );
+
+        let foreign_source = derive_program_account(program_id(9), seed)
+            .unwrap_or_else(|error| panic!("foreign source: {error}"))
+            .bytes();
+        let mut wrong_source = program_request(owner, principal, seed, source, 5);
+        let TransferSource::Program(authority) = &mut wrong_source.source else {
+            panic!("program source")
+        };
+        authority.source_account = foreign_source;
+        assert_eq!(
+            capability.authorize(&AbiEffects {
+                transfers: vec![wrong_source],
+                ..AbiEffects::default()
+            }),
+            Err(TransferLawError::InvalidProgramAuthority)
+        );
+
+        let foreign_authority = ProgramAuthority::issue(
+            program_id(9),
+            seed,
+            foreign_source,
+            CallFrameId::root(),
+            [3; 32],
+            [4; 32],
+            5,
+        )
+        .unwrap_or_else(|error| panic!("foreign authority: {error}"));
+        let foreign_request = TransferRequest {
+            program: owner,
+            principal,
+            frame: CallFrameId::root(),
+            source: TransferSource::Program(foreign_authority),
+            asset: [3; 32],
+            to: [4; 32],
+            amount: 5,
+        };
+        assert_eq!(
+            capability.authorize(&AbiEffects {
+                transfers: vec![foreign_request],
+                ..AbiEffects::default()
+            }),
+            Err(TransferLawError::InvalidProgramAuthority)
+        );
+
+        let mut forged_amount = program_request(owner, principal, seed, source, 5);
+        forged_amount.amount = 6;
+        assert_eq!(
+            capability.authorize(&AbiEffects {
+                transfers: vec![forged_amount],
+                ..AbiEffects::default()
+            }),
+            Err(TransferLawError::InvalidProgramAuthority)
+        );
+    }
+
+    #[test]
+    fn program_authority_refuses_callee_frame_and_ungranted_authority_and_keeps_program_spend_grants() {
+        let owner = program_id(1);
+        let principal = principal_id(2);
+        let seed = b"pool";
+        let source = derive_program_account(owner, seed)
+            .unwrap_or_else(|error| panic!("source: {error}"))
+            .bytes();
+        let capability = program_capability(owner, principal, seed, source, 10);
+
+        let mut callee_staged = program_request(owner, principal, seed, source, 5);
+        let callee_frame = CallFrameId::root()
+            .child(1)
+            .unwrap_or_else(|error| panic!("frame: {error}"));
+        let TransferSource::Program(authority) = &mut callee_staged.source else {
+            panic!("program source")
+        };
+        authority.staging_frame = callee_frame;
+        assert_eq!(
+            capability.authorize(&AbiEffects {
+                transfers: vec![callee_staged],
+                ..AbiEffects::default()
+            }),
+            Err(TransferLawError::InvalidProgramAuthority)
+        );
+
+        let ungranted_source = derive_program_account(owner, b"other")
+            .unwrap_or_else(|error| panic!("ungranted source: {error}"))
+            .bytes();
+        assert_eq!(
+            capability.authorize(&AbiEffects {
+                transfers: vec![program_request(
+                    owner,
+                    principal,
+                    b"other",
+                    ungranted_source,
+                    5
+                )],
+                ..AbiEffects::default()
+            }),
+            Err(TransferLawError::CapabilityEscalation)
+        );
+
+        assert!(capability
+            .authorize(&AbiEffects {
+                transfers: vec![program_request(owner, principal, seed, source, 5)],
+                ..AbiEffects::default()
+            })
+            .is_ok());
+    }
+
+    #[test]
+    fn program_authority_cumulative_bound_refuses_without_partial_set() {
+        let owner = program_id(1);
+        let principal = principal_id(2);
+        let seed = b"pool";
+        let source = derive_program_account(owner, seed)
+            .unwrap_or_else(|error| panic!("source: {error}"))
+            .bytes();
+        let capability = program_capability(owner, principal, seed, source, 10);
+        let over_bound = AbiEffects {
+            transfers: vec![
+                program_request(owner, principal, seed, source, 4),
+                program_request(owner, principal, seed, source, 4),
+                program_request(owner, principal, seed, source, 3),
+            ],
+            ..AbiEffects::default()
+        };
+        assert_eq!(
+            capability.authorize(&over_bound),
+            Err(TransferLawError::CapabilityEscalation)
+        );
+        let at_bound = capability
+            .authorize(&AbiEffects {
+                transfers: vec![
+                    program_request(owner, principal, seed, source, 4),
+                    program_request(owner, principal, seed, source, 6),
+                ],
+                ..AbiEffects::default()
+            })
+            .unwrap_or_else(|error| panic!("at bound: {error}"));
+        assert_eq!(at_bound.legs().len(), 2);
+        assert_eq!(at_bound.total_amount(), 10);
+    }
+
+    #[test]
+    fn program_authority_canonical_encoding_rejects_trailing_and_malleable_bytes() {
+        let owner = program_id(1);
+        let principal = principal_id(2);
+        let seed = b"pool";
+        let source = derive_program_account(owner, seed)
+            .unwrap_or_else(|error| panic!("source: {error}"))
+            .bytes();
+        let set = program_capability(owner, principal, seed, source, 10)
+            .authorize(&AbiEffects {
+                transfers: vec![
+                    request(owner, principal, 3),
+                    program_request(owner, principal, seed, source, 5),
+                ],
+                ..AbiEffects::default()
+            })
+            .unwrap_or_else(|error| panic!("set: {error}"));
+        let decoded = AtomicTransferSet::canonical_decode(set.canonical())
+            .unwrap_or_else(|error| panic!("decode: {error}"));
+        assert_eq!(decoded.canonical(), set.canonical());
+        assert_eq!(decoded.kernel_root(), set.kernel_root());
+
+        let mut trailing = set.canonical().to_vec();
+        trailing.push(0);
+        assert_eq!(
+            AtomicTransferSet::canonical_decode(&trailing),
+            Err(TransferLawError::InvalidTransferSet)
+        );
+
+        let truncated = &set.canonical()[..set.canonical().len() - 1];
+        assert!(AtomicTransferSet::canonical_decode(truncated).is_err());
+    }
+
+    #[test]
     fn sandbox_escrow_charge_is_host_sealed_without_guest_program_spend() {
         let host = program_id(1);
         let principal = principal_id(2);
