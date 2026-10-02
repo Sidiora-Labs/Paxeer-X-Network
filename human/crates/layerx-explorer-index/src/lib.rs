@@ -13,11 +13,14 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use layerx_agentd::read::LayerxdProgramBalanceReader;
 use layerx_client::availability::AvailabilityResult;
+use layerx_client::evidence::VerifiedCheckpoint;
 use layerx_client::head::Head;
+use layerx_platform_authority::AuthorityFacts;
 use layerx_programs_protocol_adapter::ProtocolAdapterError;
 use layerx_proof::availability::RootCommitments;
 use layerx_proof::checkpoint::{
-    verify_certificate, Certificate, CheckpointError, GuarantorKey, SettlementDomain,
+    checkpoint_id, verify_certificate, Certificate, CheckpointError, GuarantorKey,
+    SettlementDomain, ThresholdReport,
 };
 use layerx_proof::receipt::{verify_outcome, AuthorizedBatch, ReceiptCheck};
 use layerx_types::verify::VerificationLevel;
@@ -25,7 +28,7 @@ use sha2::{Digest as _, Sha256};
 
 pub use freshness::{Freshness, Indexed};
 use programs::{ExplorerProgram, ExplorerProgramReadError};
-pub use query::{Page, PublicExplorer, QueryError, QueryFailure, VerificationFailure};
+pub use query::{Page, PublicExplorer, QueryError, QueryFailure, Readiness, VerificationFailure};
 
 /// Stable identity of the rebuildable public projection.
 pub const CRATE_IDENTITY: &str = "layerx-explorer-index";
@@ -136,6 +139,11 @@ pub enum IngestOutcome {
     AlreadyPresent,
 }
 
+enum BatchAuthority<'a> {
+    Shared(&'a AuthorizedBatch),
+    PerReceipt(&'a BTreeMap<RecordId, AuthorityFacts>),
+}
+
 /// Fail-closed refusal for boundary regression, mismatched evidence or replay.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum IndexError {
@@ -149,6 +157,7 @@ pub enum IndexError {
         actual: [u8; 32],
     },
     Checkpoint(CheckpointError),
+    CheckpointEvidence,
     ConflictingCheckpoint {
         batch: u64,
     },
@@ -167,6 +176,12 @@ pub enum IndexError {
     ReceiptVerification {
         id: RecordId,
         check: ReceiptCheck,
+    },
+    ReceiptAuthorityMissing {
+        id: RecordId,
+    },
+    ReceiptAuthorityMismatch {
+        id: RecordId,
     },
     RecordCountOverflow,
     ProgramRead(ExplorerProgramReadError),
@@ -290,6 +305,38 @@ impl Indexer {
             registered_settlement_reference,
         )
         .map_err(IndexError::Checkpoint)?;
+        self.insert_checkpoint(certificate, &report, registered_checkpoint_id)
+    }
+
+    /// Indexes one checkpoint that `layerx-client` retrieved over the node
+    /// boundary and already rechecked against its bonded set, settlement
+    /// registration and protocol domain. The record path is the same as
+    /// [`Indexer::ingest_checkpoint`].
+    ///
+    /// # Errors
+    ///
+    /// Refuses undecodable evidence, head-inconsistent latest checkpoints,
+    /// conflicting batch certificates and mismatched availability evidence.
+    pub fn ingest_verified_checkpoint(
+        &mut self,
+        checkpoint: &VerifiedCheckpoint,
+    ) -> Result<IngestOutcome, IndexError> {
+        let certificate = checkpoint
+            .certificate()
+            .map_err(|_| IndexError::CheckpointEvidence)?;
+        let identifier = checkpoint_id(certificate.checkpoint()).map_err(IndexError::Checkpoint)?;
+        if checkpoint.report().evidence().checkpoint_id() != Some(identifier) {
+            return Err(IndexError::CheckpointEvidence);
+        }
+        self.insert_checkpoint(&certificate, checkpoint.report(), identifier)
+    }
+
+    fn insert_checkpoint(
+        &mut self,
+        certificate: &Certificate,
+        report: &ThresholdReport,
+        registered_checkpoint_id: [u8; 32],
+    ) -> Result<IngestOutcome, IndexError> {
         let batch_number = report.batch_number();
         self.require_not_ahead(batch_number)?;
         if batch_number == self.observed_head.sealed_batch
@@ -431,6 +478,32 @@ impl Indexer {
         batch_number: u64,
         authorised: &AuthorizedBatch,
     ) -> Result<IngestOutcome, IndexError> {
+        self.ingest_authority(batch_number, &BatchAuthority::Shared(authorised))
+    }
+
+    /// Verifies every canonical receipt in one indexed batch against its own
+    /// independently verified authority facts (one value per receipt, so
+    /// mixed-asset and maintained batches are checked receipt by receipt),
+    /// then materialises the account activity view atomically.
+    ///
+    /// # Errors
+    ///
+    /// Refuses an unknown batch, any receipt without its own facts, facts for
+    /// another batch, sequence or activity, and the first failed receipt
+    /// check. Nothing is inserted on failure.
+    pub fn ingest_receipt_authority_facts(
+        &mut self,
+        batch_number: u64,
+        facts: &BTreeMap<RecordId, AuthorityFacts>,
+    ) -> Result<IngestOutcome, IndexError> {
+        self.ingest_authority(batch_number, &BatchAuthority::PerReceipt(facts))
+    }
+
+    fn ingest_authority(
+        &mut self,
+        batch_number: u64,
+        authority: &BatchAuthority<'_>,
+    ) -> Result<IngestOutcome, IndexError> {
         let batch = self
             .batches
             .get(&batch_number)
@@ -443,8 +516,29 @@ impl Indexer {
                 .receipts
                 .get(identifier)
                 .ok_or(IndexError::ReplayedPublicRecord { id: *identifier })?;
+            let receipt_facts = match authority {
+                BatchAuthority::Shared(_) => None,
+                BatchAuthority::PerReceipt(facts) => Some(
+                    facts
+                        .get(identifier)
+                        .ok_or(IndexError::ReceiptAuthorityMissing { id: *identifier })?,
+                ),
+            };
+            let authorised = match (authority, receipt_facts) {
+                (BatchAuthority::Shared(authorised), _) => **authorised,
+                (BatchAuthority::PerReceipt(_), Some(facts)) => AuthorizedBatch::new(
+                    facts.batch_id,
+                    facts.asset,
+                    facts.previous_state_root,
+                    facts.resulting_state_root,
+                    facts.sequencer_public_key,
+                ),
+                (BatchAuthority::PerReceipt(_), None) => {
+                    return Err(IndexError::ReceiptAuthorityMissing { id: *identifier })
+                }
+            };
             let verified =
-                verify_outcome(&record.canonical_bytes, authorised).map_err(|failure| {
+                verify_outcome(&record.canonical_bytes, &authorised).map_err(|failure| {
                     IndexError::ReceiptVerification {
                         id: *identifier,
                         check: failure.check,
@@ -457,6 +551,13 @@ impl Indexer {
                     id: *identifier,
                     check: ReceiptCheck::ReceiptShape,
                 })?;
+            if receipt_facts.is_some_and(|facts| {
+                facts.batch_number != batch_number
+                    || facts.global_sequence != receipt.global_sequence()
+                    || facts.activity_id != receipt.activity_id()
+            }) {
+                return Err(IndexError::ReceiptAuthorityMismatch { id: *identifier });
+            }
             let receipt_digest =
                 verified
                     .evidence()
@@ -522,6 +623,51 @@ impl Indexer {
             .extend(staged.into_iter().map(|record| (record.receipt_id, record)));
         self.receipt_authority_batches.insert(batch_number);
         Ok(IngestOutcome::Inserted)
+    }
+
+    /// Authoritative node-boundary head this projection is measured against.
+    #[must_use]
+    pub const fn observed_head(&self) -> Head {
+        self.observed_head
+    }
+
+    /// Whether a checkpoint for `batch_number` is indexed.
+    #[must_use]
+    pub fn has_checkpoint(&self, batch_number: u64) -> bool {
+        self.checkpoints_by_batch.contains_key(&batch_number)
+    }
+
+    /// Whether availability data for `batch_number` is indexed.
+    #[must_use]
+    pub fn has_batch(&self, batch_number: u64) -> bool {
+        self.batches.contains_key(&batch_number)
+    }
+
+    /// Whether every receipt of `batch_number` verified against its authority.
+    #[must_use]
+    pub fn is_receipt_verified(&self, batch_number: u64) -> bool {
+        self.receipt_authority_batches.contains(&batch_number)
+    }
+
+    /// Number of receipt-verified account activity rows.
+    #[must_use]
+    pub fn account_activity_count(&self) -> usize {
+        self.account_activities.len()
+    }
+
+    /// Canonical receipt bytes of one indexed batch, in batch order.
+    #[must_use]
+    pub fn batch_receipts(&self, batch_number: u64) -> Option<Vec<(RecordId, Vec<u8>)>> {
+        let batch = self.batches.get(&batch_number)?;
+        batch
+            .receipt_ids
+            .iter()
+            .map(|identifier| {
+                self.receipts
+                    .get(identifier)
+                    .map(|record| (*identifier, record.canonical_bytes.clone()))
+            })
+            .collect()
     }
 
     #[must_use]

@@ -1,29 +1,42 @@
 #![forbid(unsafe_code)]
 
 use layerx_types::clock::Clock;
+use std::collections::BTreeMap;
 use std::env;
 use std::fmt;
 use std::fs;
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex, MutexGuard};
+use std::thread;
 use std::time::Duration;
 
 use layerx_agentd::read::{LayerxdProgramBalanceReader, ProgramAuthority};
-use layerx_client::head::Head;
+use layerx_client::availability::{
+    AvailabilitySelector, FetchContext, FetchOutcome, RetrievalLimits,
+};
+use layerx_client::client::{Client, ClientConfig, ReconnectPolicy};
+use layerx_client::evidence::{CheckpointSelector, EvidenceError};
+use layerx_client::handover::SequencerHistory;
+use layerx_client::lni::handshake::HandshakeConfig;
+use layerx_client::lni::schema::Version;
+use layerx_client::lni::transport::Limits;
 use layerx_explorer_index::programs::{ExplorerProgram, VerifiedProgramInterfaceMetadata};
 use layerx_explorer_index::reads::{
     self, ReadEndpoint, ReadPrincipal, ReadScope, ResolveFailure, ResolveOutcome,
 };
+use layerx_explorer_index::receipt_authority::{ReadOutcome, ReceiptAuthorityReader};
 use layerx_explorer_index::unified::{
     unified_account_json, AccountIdentifier, ActivityWindow, GatewayEndpoint, UnifiedAccountReader,
 };
-use layerx_explorer_index::{Indexer, ProtocolProgramIngestor};
+use layerx_explorer_index::{Indexer, ProtocolProgramIngestor, QueryError, RecordId};
 use layerx_programs::{
     hex, BuildPlan, DeploymentJournal, DeploymentProof, DeploymentRecord, JournalReadAuthority,
     ObservedHead, ProgramId, ProgramLifecycle, ProtocolDeploymentVerifier, Registry, RegistryError,
     ReproducibleBuild, SourceStatus, UpgradePolicy,
 };
+use layerx_proof::availability::RootCommitments;
 use serde_json::Value;
 
 const HEADER_LIMIT: usize = 16 * 1024;
@@ -31,6 +44,14 @@ const CA_LIMIT: u64 = 64 * 1024;
 const KEY_FILE_LIMIT: u64 = 256;
 const IDENTIFIER_LIMIT: usize = 128;
 const DEFAULT_ACTIVITY_LIMIT: usize = 25;
+const GENESIS_TRUST_LIMIT: u64 = 1024 * 1024;
+const CURSOR_DOMAIN: &str = "layerx-explorer-cursor/v1";
+const RETRY_BASE: Duration = Duration::from_millis(500);
+const RETRY_MAX: Duration = Duration::from_secs(30);
+const AVAILABILITY_BYTES: usize = 64 * 1024 * 1024;
+const AVAILABILITY_CHUNKS: usize = 256;
+const HISTORY_BYTES: usize = 64 * 1024 * 1024;
+const BOUNDARY_DEADLINE: Duration = Duration::from_secs(10);
 
 /// The bounded recent window the unified account page reads Paxeer-side
 /// custody and binding activity from. There is no full-chain EVM index.
@@ -87,8 +108,6 @@ struct Config {
     journal: FileJournal,
     verified_source_store: PathBuf,
     probe_program: ProgramId,
-    observed_sealed_batch: u64,
-    finalised_checkpoint: [u8; 32],
     name_reads: NameReads,
     gateway: GatewayEndpoint,
 }
@@ -186,6 +205,79 @@ fn name_reads() -> Result<NameReads, String> {
     })
 }
 
+/// Receipt ingestion lifecycle bound to the node LNI boundary and the
+/// independent receipt authority.
+struct IngestionConfig {
+    socket: PathBuf,
+    network_id: u32,
+    protocol_version: u16,
+    genesis_trust: Vec<u8>,
+    finality: layerx_paxeer_verifier::PaxeerCheckpointVerifier,
+    cursor: PathBuf,
+    interval: Duration,
+    reader: ReceiptAuthorityReader,
+}
+
+fn read_genesis_trust(name: &str) -> Result<Vec<u8>, String> {
+    layerx_agentd::config::read_protected_source(
+        &PathBuf::from(required(name)?),
+        GENESIS_TRUST_LIMIT as usize,
+    )
+    .map_err(|_| format!("{name} is not a protected bounded regular file"))
+}
+
+fn ingestion_config(config: &Config) -> Result<IngestionConfig, String> {
+    let network_id = required("LAYERX_EXPLORER_NETWORK_ID")?
+        .parse::<u32>()
+        .ok()
+        .filter(|value| *value != 0)
+        .ok_or_else(|| "LAYERX_EXPLORER_NETWORK_ID is invalid".to_owned())?;
+    let protocol_version = required("LAYERX_EXPLORER_PROTOCOL_VERSION")?
+        .parse::<u16>()
+        .ok()
+        .filter(|value| layerx_wire::limits::protocol_version_uses_occupancy(*value))
+        .ok_or_else(|| "LAYERX_EXPLORER_PROTOCOL_VERSION is not the current protocol".to_owned())?;
+    let interval_ms = parse_u64("LAYERX_EXPLORER_INGEST_INTERVAL_MS")?;
+    if !(100..=60_000).contains(&interval_ms) {
+        return Err("LAYERX_EXPLORER_INGEST_INTERVAL_MS is outside 100..=60000".to_owned());
+    }
+    let genesis_trust = read_genesis_trust("LAYERX_EXPLORER_GENESIS_TRUST")?;
+    let pins = layerx_wire::handover::decode_genesis_trust(&genesis_trust)
+        .map_err(|_| "LAYERX_EXPLORER_GENESIS_TRUST is not canonical genesis trust".to_owned())?;
+    if pins.network_id != network_id {
+        return Err("LAYERX_EXPLORER_GENESIS_TRUST names another network".to_owned());
+    }
+    let finality_bytes = read_genesis_trust("LAYERX_EXPLORER_FINALITY_POLICY")?;
+    let policy = layerx_client::handover::decode_finality_policy(&finality_bytes)
+        .map_err(|_| "LAYERX_EXPLORER_FINALITY_POLICY is invalid".to_owned())?;
+    if policy.network_id != network_id
+        || policy.protocol_version != protocol_version
+        || policy.canonical_genesis_root != pins.canonical_state_root
+    {
+        return Err("explorer finality policy does not match genesis trust".to_owned());
+    }
+    let finality = layerx_paxeer_verifier::PaxeerCheckpointVerifier::new(policy)
+        .map_err(|_| "explorer finality verifier configuration failed".to_owned())?;
+    let reader = ReceiptAuthorityReader::new(
+        &config.authority_endpoint,
+        &config.node_endpoint,
+        config.authority_bearer.clone(),
+        config.authority_replica_id,
+        &config.authority_ca_der,
+    )
+    .map_err(|error| format!("explorer receipt authority configuration failed: {error:?}"))?;
+    Ok(IngestionConfig {
+        socket: PathBuf::from(required("LAYERX_EXPLORER_LNI_SOCKET")?),
+        network_id,
+        protocol_version,
+        genesis_trust,
+        finality,
+        cursor: PathBuf::from(required("LAYERX_EXPLORER_INGEST_CURSOR")?),
+        interval: Duration::from_millis(interval_ms),
+        reader,
+    })
+}
+
 fn config() -> Result<Config, String> {
     let listen = required("LAYERX_EXPLORER_PROGRAM_LISTEN")?;
     let bearer = required("LAYERX_EXPLORER_PROGRAM_BEARER_TOKEN")?;
@@ -223,8 +315,6 @@ fn config() -> Result<Config, String> {
         verified_source_store: PathBuf::from(required("LAYERX_EXPLORER_VERIFIED_SOURCE_STORE")?),
         probe_program: ProgramId::new(parse_digest("LAYERX_EXPLORER_PROGRAM_PROBE_ID")?)
             .map_err(|error| format!("LAYERX_EXPLORER_PROGRAM_PROBE_ID is invalid: {error}"))?,
-        observed_sealed_batch: parse_u64("LAYERX_EXPLORER_OBSERVED_SEALED_BATCH")?,
-        finalised_checkpoint: parse_digest("LAYERX_EXPLORER_FINALISED_CHECKPOINT")?,
         name_reads: name_reads()?,
         gateway: network_gateway()?,
     })
@@ -232,8 +322,7 @@ fn config() -> Result<Config, String> {
 
 fn network_gateway() -> Result<GatewayEndpoint, String> {
     let name = "LAYERX_NETWORK_GATEWAY_ENDPOINT";
-    GatewayEndpoint::parse(&required(name)?)
-        .map_err(|error| format!("{name} is invalid: {error}"))
+    GatewayEndpoint::parse(&required(name)?).map_err(|error| format!("{name} is invalid: {error}"))
 }
 
 struct LoadedRegistry {
@@ -548,18 +637,6 @@ fn refresh_program(
     if !loaded.registry.program_ids().contains(&program) {
         return Err(ProgramRefreshError::UnknownProgram);
     }
-    let head = config.journal.observed_head().map_err(|error| {
-        ProgramRefreshError::Unavailable(format!("explorer head is unavailable: {error}"))
-    })?;
-    index
-        .refresh_head(Head {
-            chain_sequence: head.sequence,
-            sealed_batch: config.observed_sealed_batch,
-            finalised_checkpoint: config.finalised_checkpoint,
-        })
-        .map_err(|error| {
-            ProgramRefreshError::Unavailable(format!("explorer head refresh failed: {error:?}"))
-        })?;
     let authority =
         JournalReadAuthority::new(&config.journal, now, config.staleness_ms).map_err(|error| {
             ProgramRefreshError::Unavailable(format!("registry authority is unavailable: {error}"))
@@ -801,10 +878,388 @@ fn serve_unified_account(
     };
     match index.unified_account(join, before_sequence, limit) {
         Ok(view) => {
-            let body = unified_account_json(&view.value.join, view.freshness);
-            response(stream, 200, &body)
+            let mut body: Value = serde_json::from_str(&unified_account_json(&view.value.join, view.freshness))
+                .map_err(|_| "unified account serialization failed".to_owned())?;
+            body["layerx_activity"] = serde_json::json!({
+                "items": view.value.layerx_activity.items.iter().map(|record| serde_json::json!({
+                    "receipt_id": hex::encode(&record.receipt_id.bytes()),
+                    "receipt_digest": hex::encode(&record.receipt_digest),
+                    "batch_number": record.batch_number.to_string(),
+                    "global_sequence": record.global_sequence.to_string(),
+                    "activity_id": hex::encode(&record.activity_id),
+                    "operation": record.operation,
+                    "result_code": record.result_code,
+                    "asset": hex::encode(&record.asset),
+                    "amount": record.amount.to_string(),
+                    "from": hex::encode(&record.from),
+                    "to": hex::encode(&record.to),
+                    "verification": record.verification_level.wire_rank(),
+                })).collect::<Vec<_>>(),
+                "next_before": view.value.layerx_activity.next_before.map(|sequence| sequence.to_string()),
+            });
+            response(stream, 200, &body.to_string())
         }
-        Err(_) => response(stream, 503, "{\"error\":\"account_view_unavailable\"}"),
+        Err(failure) => match failure.error {
+            QueryError::IncompleteFromHead {
+                source_sealed_batch,
+                indexed_through,
+            } => response(
+                stream,
+                503,
+                &format!(
+                    "{{\"error\":\"incomplete_from_head\",\"source_sealed_batch\":{source_sealed_batch},\"indexed_through\":{indexed_through}}}"
+                ),
+            ),
+            QueryError::AccountIndexIncomplete { .. } => {
+                let readiness = index.readiness();
+                response(stream, 503, &serde_json::json!({
+                    "error": "incomplete_from_head",
+                    "source_sealed_batch": readiness.source_sealed_batch,
+                    "indexed_through": readiness.indexed_through,
+                }).to_string())
+            }
+            _ => response(stream, 503, "{\"error\":\"account_view_unavailable\"}"),
+        },
+    }
+}
+
+fn readiness_json(index: &Indexer) -> String {
+    let readiness = index.readiness();
+    let ranges = readiness
+        .incomplete_ranges
+        .iter()
+        .map(|(first, last)| format!("[{first},{last}]"))
+        .collect::<Vec<_>>()
+        .join(",");
+    format!(
+        "{{\"source_chain_sequence\":{},\"source_sealed_batch\":{},\"indexed_through\":{},\"incomplete_ranges\":[{ranges}],\"complete\":{},\"verified_activity_rows\":{}}}",
+        readiness.source_chain_sequence,
+        readiness.source_sealed_batch,
+        readiness.indexed_through,
+        readiness.complete,
+        index.account_activity_count()
+    )
+}
+
+fn lock(index: &Mutex<Indexer>) -> MutexGuard<'_, Indexer> {
+    index.lock().unwrap_or_else(|_| {
+        eprintln!("explorer index state poisoned");
+        std::process::exit(2);
+    })
+}
+
+fn read_cursor(path: &Path) -> Result<u64, String> {
+    let file = match fs::File::open(path) {
+        Ok(file) => file,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(0),
+        Err(error) => return Err(format!("explorer cursor is unreadable: {error}")),
+    };
+    let metadata = file
+        .metadata()
+        .map_err(|error| format!("explorer cursor metadata failed: {error}"))?;
+    if !metadata.is_file() || metadata.len() > 128 {
+        return Err("explorer cursor is not a bounded regular file".to_owned());
+    }
+    let mut text = String::new();
+    file.take(129)
+        .read_to_string(&mut text)
+        .map_err(|error| format!("explorer cursor is unreadable: {error}"))?;
+    if text.len() > 128 {
+        return Err("explorer cursor exceeds its size limit".to_owned());
+    }
+    let mut fields = text.trim_end_matches('\n').split(' ');
+    match (fields.next(), fields.next(), fields.next(), fields.next()) {
+        (Some(CURSOR_DOMAIN), Some(through), Some(sealed), None) => {
+            let through: u64 = through
+                .parse()
+                .map_err(|_| "explorer cursor is malformed".to_owned())?;
+            let sealed: u64 = sealed
+                .parse()
+                .map_err(|_| "explorer cursor is malformed".to_owned())?;
+            if through > sealed {
+                return Err("explorer cursor coverage exceeds its recorded head".to_owned());
+            }
+            Ok(through)
+        }
+        _ => Err("explorer cursor is malformed".to_owned()),
+    }
+}
+
+fn write_cursor(path: &Path, indexed_through: u64, sealed_batch: u64) -> Result<(), String> {
+    let temporary = path.with_extension("tmp");
+    let mut file = fs::File::create(&temporary)
+        .map_err(|error| format!("explorer cursor write failed: {error}"))?;
+    file.write_all(format!("{CURSOR_DOMAIN} {indexed_through} {sealed_batch}\n").as_bytes())
+        .and_then(|()| file.sync_all())
+        .map_err(|error| format!("explorer cursor write failed: {error}"))?;
+    fs::rename(&temporary, path)
+        .map_err(|error| format!("explorer cursor write failed: {error}"))?;
+    let parent = path
+        .parent()
+        .ok_or_else(|| "explorer cursor has no parent".to_owned())?;
+    fs::File::open(parent)
+        .and_then(|directory| directory.sync_all())
+        .map_err(|error| format!("explorer cursor directory sync failed: {error}"))
+}
+
+struct Boundary {
+    client: Client,
+    history: SequencerHistory,
+}
+
+enum BatchOutcome {
+    Verified,
+    Incomplete(String),
+}
+
+fn connect_boundary(ingestion: &IngestionConfig) -> Result<Boundary, String> {
+    let pins = layerx_wire::handover::decode_genesis_trust(&ingestion.genesis_trust)
+        .map_err(|_| "genesis trust is not canonical".to_owned())?;
+    let history = SequencerHistory::from_genesis_artifact(
+        &ingestion.genesis_trust,
+        pins.network_id,
+        pins.canonical_state_root,
+        pins.initial_sequencer_key,
+    )
+    .map_err(|error| format!("genesis history refused: {error:?}"))?;
+    let client = Client::connect(ClientConfig {
+        endpoint: ingestion.socket.clone(),
+        handshake: HandshakeConfig {
+            built_interface_version: Version::V1_3,
+            expected_protocol_version: ingestion.protocol_version,
+            expected_network_id: ingestion.network_id,
+        },
+        limits: Limits {
+            maximum_frame_bytes: 1_212_416,
+            maximum_connections: 1,
+            maximum_streams: 4,
+            maximum_queued_bytes: 4_849_664,
+            deadline: BOUNDARY_DEADLINE,
+        },
+        reconnect: ReconnectPolicy {
+            maximum_attempts: 3,
+            base_delay: Duration::from_millis(100),
+            maximum_delay: Duration::from_secs(2),
+            jitter_percent: 20,
+        },
+    })
+    .map_err(|error| format!("node boundary unavailable: {error:?}"))?;
+    Ok(Boundary { client, history })
+}
+
+fn ingest_batch(
+    ingestion: &IngestionConfig,
+    boundary: &mut Boundary,
+    index: &Mutex<Indexer>,
+    batch: u64,
+    correlation: &mut u64,
+) -> Result<BatchOutcome, String> {
+    let mut next = || -> Result<u64, String> {
+        *correlation = correlation
+            .checked_add(4)
+            .ok_or_else(|| "explorer correlation space exhausted".to_owned())?;
+        Ok(*correlation)
+    };
+    while boundary
+        .history
+        .verified_head()
+        .map_or(0, |head| head.header().batch_number())
+        < batch
+    {
+        let id = next()?;
+        boundary
+            .client
+            .advance_sequencer_history_with_finality(
+                &mut boundary.history,
+                id,
+                RetrievalLimits {
+                    maximum_bytes: HISTORY_BYTES,
+                    maximum_chunks: 4096,
+                    deadline: BOUNDARY_DEADLINE,
+                },
+                Some(&ingestion.finality),
+            )
+            .map_err(|error| format!("sequencer history unavailable: {error:?}"))?;
+    }
+    if !lock(index).has_checkpoint(batch) {
+        let id = next()?;
+        match boundary
+            .client
+            .checkpoint_evidence(CheckpointSelector::Batch(batch), id)
+        {
+            Ok(checkpoint) => {
+                let certificate = checkpoint
+                    .certificate()
+                    .map_err(|error| format!("checkpoint certificate refused: {error:?}"))?;
+                ingestion
+                    .finality
+                    .verify(&certificate, checkpoint.set_version())
+                    .map_err(|_| "checkpoint publication verification refused".to_owned())?;
+                lock(index)
+                    .ingest_verified_checkpoint(&checkpoint)
+                    .map_err(|error| format!("checkpoint refused: {error:?}"))?;
+            }
+            Err(EvidenceError::Unavailable) => {}
+            Err(error) => return Err(format!("checkpoint refused: {error:?}")),
+        }
+    }
+    if !lock(index).has_batch(batch) {
+        let id = next()?;
+        let signed = boundary
+            .client
+            .batch_header_with_history(batch, id, &boundary.history)
+            .map_err(|error| format!("batch header unavailable: {error:?}"))?;
+        let header = &signed.header;
+        let id = next()?;
+        let outcome = boundary
+            .client
+            .fetch_availability(
+                AvailabilitySelector::Batch(batch),
+                FetchContext {
+                    interface_version: boundary.client.handshake().node().interface_version,
+                    correlation_id: id,
+                    expected_batch_number: batch,
+                    data_availability_root: header.data_availability_root(),
+                    record_roots: RootCommitments {
+                        activity: header.activity_merkle_root(),
+                        receipt: header.receipt_merkle_root(),
+                        event: header.event_merkle_root(),
+                        oracle: header.oracle_root(),
+                    },
+                    limits: RetrievalLimits {
+                        maximum_bytes: AVAILABILITY_BYTES,
+                        maximum_chunks: AVAILABILITY_CHUNKS,
+                        deadline: BOUNDARY_DEADLINE,
+                    },
+                },
+                |_| {},
+            )
+            .map_err(|error| format!("availability unavailable: {error:?}"))?;
+        let FetchOutcome::Complete(result) = outcome else {
+            return Ok(BatchOutcome::Incomplete("availability_partial".to_owned()));
+        };
+        lock(index)
+            .ingest_availability(&result)
+            .map_err(|error| format!("availability refused: {error:?}"))?;
+    }
+    if lock(index).is_receipt_verified(batch) {
+        return Ok(BatchOutcome::Verified);
+    }
+    let receipts = lock(index)
+        .batch_receipts(batch)
+        .ok_or_else(|| "indexed batch lost its receipts".to_owned())?;
+    let mut facts = BTreeMap::<RecordId, _>::new();
+    for (identifier, bytes) in receipts {
+        match ingestion.reader.read(&bytes, &boundary.history) {
+            ReadOutcome::Verified(value) => {
+                facts.insert(identifier, value);
+            }
+            ReadOutcome::NotYetAuthorised => {
+                return Ok(BatchOutcome::Incomplete(
+                    "authority_not_yet_authorised".to_owned(),
+                ))
+            }
+            ReadOutcome::Unavailable => {
+                return Ok(BatchOutcome::Incomplete("authority_unavailable".to_owned()))
+            }
+            ReadOutcome::Malformed => {
+                return Ok(BatchOutcome::Incomplete("authority_malformed".to_owned()))
+            }
+            ReadOutcome::Refused(refusal) => {
+                return Ok(BatchOutcome::Incomplete(format!(
+                    "authority_refused:{refusal:?}"
+                )))
+            }
+        }
+    }
+    lock(index)
+        .ingest_receipt_authority_facts(batch, &facts)
+        .map_err(|error| format!("receipt authority refused: {error:?}"))?;
+    Ok(BatchOutcome::Verified)
+}
+
+/// One pass: refresh the authoritative head from the node handshake, then
+/// ingest contiguously from the first batch not yet receipt-verified.
+fn ingest_cycle(
+    ingestion: &IngestionConfig,
+    boundary: &mut Option<Boundary>,
+    index: &Mutex<Indexer>,
+    correlation: &mut u64,
+) -> Result<bool, String> {
+    if let Some(active) = boundary.as_mut() {
+        active
+            .client
+            .reconnect()
+            .map_err(|error| format!("node boundary unavailable: {error:?}"))?;
+    } else {
+        *boundary = Some(connect_boundary(ingestion)?);
+    }
+    let active = boundary
+        .as_mut()
+        .ok_or_else(|| "node boundary unavailable".to_owned())?;
+    let head = active.client.head();
+    lock(index)
+        .refresh_head(head)
+        .map_err(|error| format!("node head refused: {error:?}"))?;
+    let mut batch = 1;
+    while batch <= head.sealed_batch {
+        let covered = {
+            let state = lock(index);
+            state.is_receipt_verified(batch) && state.has_checkpoint(batch)
+        };
+        if !covered {
+            break;
+        }
+        let Some(next) = batch.checked_add(1) else {
+            return Ok(true);
+        };
+        batch = next;
+    }
+    while batch <= head.sealed_batch {
+        match ingest_batch(ingestion, active, index, batch, correlation)? {
+            BatchOutcome::Verified => {
+                eprintln!("explorer-ingest batch={batch} outcome=verified");
+                if batch > read_cursor(&ingestion.cursor)? {
+                    write_cursor(&ingestion.cursor, batch, head.sealed_batch)?;
+                }
+                let Some(next) = batch.checked_add(1) else {
+                    return Ok(true);
+                };
+                batch = next;
+            }
+            BatchOutcome::Incomplete(reason) => {
+                eprintln!("explorer-ingest batch={batch} outcome=incomplete:{reason}");
+                return Ok(false);
+            }
+        }
+    }
+    Ok(true)
+}
+
+/// Runs receipt ingestion beside program refresh. Failures back off
+/// exponentially from 500 ms to 30 s; coverage only advances contiguously and
+/// the projection is rebuilt from the boundary after every restart.
+fn ingest_lifecycle(ingestion: &IngestionConfig, index: &Mutex<Indexer>, initial: Boundary) {
+    let mut boundary = Some(initial);
+    let mut correlation = 0_u64;
+    let mut delay = RETRY_BASE;
+    loop {
+        match ingest_cycle(ingestion, &mut boundary, index, &mut correlation) {
+            Ok(true) => {
+                delay = RETRY_BASE;
+                thread::sleep(ingestion.interval);
+            }
+            Ok(false) => {
+                thread::sleep(delay);
+                delay = (delay * 2).min(RETRY_MAX);
+            }
+            Err(error) => {
+                eprintln!("explorer-ingest outcome=unavailable:{error}");
+                boundary = None;
+                thread::sleep(delay);
+                delay = (delay * 2).min(RETRY_MAX);
+            }
+        }
     }
 }
 
@@ -858,6 +1313,11 @@ fn serve_connection(
             response(stream, 503, "{\"ready\":false}")
         };
     }
+    if path == "/v1/readiness" {
+        let readiness = index.readiness();
+        let status = if readiness.complete { 200 } else { 503 };
+        return response(stream, status, &readiness_json(index));
+    }
     if let Some(remainder) = path.strip_prefix("/v1/accounts/") {
         let (route, query) = remainder.split_once('?').unwrap_or((remainder, ""));
         let Some(identifier) = route.strip_suffix("/unified") else {
@@ -893,16 +1353,14 @@ fn serve_connection(
     }
 }
 
-fn serve(config: &Config, clock: &dyn Clock) -> Result<(), String> {
-    let head = config
-        .journal
-        .observed_head()
-        .map_err(|error| format!("explorer head is unavailable: {error}"))?;
-    let mut index = Indexer::new(Head {
-        chain_sequence: head.sequence,
-        sealed_batch: config.observed_sealed_batch,
-        finalised_checkpoint: config.finalised_checkpoint,
-    });
+fn serve(config: &Config, ingestion: IngestionConfig, clock: &dyn Clock) -> Result<(), String> {
+    let boundary = connect_boundary(&ingestion)?;
+    let head = boundary.client.head();
+    let restored_through = read_cursor(&ingestion.cursor)?;
+    if restored_through > head.sealed_batch {
+        return Err("explorer cursor is ahead of the authoritative source head".to_owned());
+    }
+    let mut index = Indexer::new(head);
     let now = now_ms(clock)?;
     refresh_program(config, &mut index, config.probe_program, now)
         .map_err(|error| format!("explorer protocol probe failed: {error}"))?;
@@ -910,13 +1368,20 @@ fn serve(config: &Config, clock: &dyn Clock) -> Result<(), String> {
         .map_err(|error| format!("explorer name read probe failed: {error}"))?;
     let listener = TcpListener::bind(&config.listen)
         .map_err(|error| format!("explorer program listener failed: {error}"))?;
+    eprintln!("explorer-ingest restored_cursor={restored_through} rebuilding_from=1");
+    let index = Arc::new(Mutex::new(index));
+    let shared = Arc::clone(&index);
+    thread::Builder::new()
+        .name("explorer-ingest".to_owned())
+        .spawn(move || ingest_lifecycle(&ingestion, &shared, boundary))
+        .map_err(|error| format!("explorer ingestion thread failed: {error}"))?;
     for incoming in listener.incoming() {
         let mut stream = incoming.map_err(|error| format!("explorer accept failed: {error}"))?;
         stream
             .set_read_timeout(Some(Duration::from_secs(10)))
             .and_then(|()| stream.set_write_timeout(Some(Duration::from_secs(10))))
             .map_err(|error| format!("explorer connection timeout setup failed: {error}"))?;
-        let _ = serve_connection(&mut stream, config, &mut index, clock);
+        let _ = serve_connection(&mut stream, config, &mut lock(&index), clock);
     }
     Ok(())
 }
@@ -925,7 +1390,8 @@ fn main() {
     if let Err(error) = config().and_then(|config| {
         let clock = layerx_client::runtime_clock::RuntimeClock::from_environment()
             .map_err(|error| error.to_string())?;
-        serve(&config, clock.as_ref())
+        let ingestion = ingestion_config(&config)?;
+        serve(&config, ingestion, clock.as_ref())
     }) {
         eprintln!("layerx-explorer-index: {error}");
         std::process::exit(2);
