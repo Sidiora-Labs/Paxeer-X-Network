@@ -7,12 +7,14 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
-use layerx_agentd::budget::{BudgetLimiter, LimitConfig, LimitId, LimitScope};
+use layerx_agentd::budget::{
+    reserve, BudgetLimiter, LimitConfig, LimitId, LimitScope, ReservationRequest,
+};
 use layerx_agentd::identity::{
     register, CoreIdentity, IdentityError, IdentityResolver, ProtocolAuthority,
 };
 use layerx_agentd::prepare::{
-    prepare_activity, retention_sweep, CorePreparationBoundary, CorePreparationState,
+    expire, prepare_activity, retention_sweep, CorePreparationBoundary, CorePreparationState,
     CoreStateError, LifecycleError, LifecycleState, PreparationDefaults, PreparationLifecycle,
     PrepareRequest, Prepared,
 };
@@ -423,4 +425,64 @@ fn external_submission_checks_time_before_mutation_and_keeps_sequences_as_sequen
     );
     assert_eq!(due.discarded_terminal_signed_bytes, 1);
     assert_eq!(harness.lifecycle.has_signed_bytes([5; 32]), Ok(false));
+}
+
+#[test]
+fn expiry_sweep_decides_on_milliseconds_and_records_only_sequences() {
+    const CURRENT_SEQUENCE: u64 = 5_000;
+    let limiter = limiter();
+    text(
+        reserve(
+            &limiter,
+            &ReservationRequest {
+                id: [6; 32],
+                amount: 100,
+                expiry_sequence: 3_000,
+                current_sequence: 2_000,
+                applicable_limits: vec![LimitId([1; 16])],
+            },
+        ),
+        "reserve",
+    );
+    let lifecycle = PreparationLifecycle::default();
+    text(lifecycle.register([6; 32], &prepared(), vec![[6; 32]]), "register");
+    text(
+        lifecycle.transition([6; 32], LifecycleState::Signing, CURRENT_SEQUENCE - 10),
+        "signing",
+    );
+    text(
+        lifecycle.retain_signed_bytes([6; 32], vec![7; 64], [0x44; 32]),
+        "signed",
+    );
+
+    let unexpired = text(
+        expire(&lifecycle, &limiter, NOT_AFTER_MS, CURRENT_SEQUENCE),
+        "equality sweep",
+    );
+    assert!(unexpired.expired_preparations.is_empty());
+    assert!(unexpired.released_reservations.is_empty());
+    assert_eq!(lifecycle.state([6; 32]), Ok(LifecycleState::Signed));
+    assert_eq!(limiter.held_reservations(), Ok(1));
+
+    let expired = text(
+        expire(&lifecycle, &limiter, NOT_AFTER_MS + 1, CURRENT_SEQUENCE),
+        "elapsed sweep",
+    );
+    assert_eq!(expired.expired_preparations, vec![[6; 32]]);
+    assert_eq!(expired.released_reservations, vec![[6; 32]]);
+    assert_eq!(limiter.held_reservations(), Ok(0));
+    assert_eq!(lifecycle.state([6; 32]), Ok(LifecycleState::Expired));
+
+    let early = text(
+        retention_sweep(&lifecycle, CURRENT_SEQUENCE + 4, 5),
+        "early sweep",
+    );
+    assert_eq!(early.discarded_terminal_signed_bytes, 0);
+    assert_eq!(lifecycle.has_signed_bytes([6; 32]), Ok(true));
+    let due = text(
+        retention_sweep(&lifecycle, CURRENT_SEQUENCE + 5, 5),
+        "due sweep",
+    );
+    assert_eq!(due.discarded_terminal_signed_bytes, 1);
+    assert_eq!(lifecycle.has_signed_bytes([6; 32]), Ok(false));
 }

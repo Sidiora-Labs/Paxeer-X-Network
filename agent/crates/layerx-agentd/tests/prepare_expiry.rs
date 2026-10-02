@@ -177,7 +177,8 @@ fn expiry_during_and_after_signing_releases_every_reservation() {
         .unwrap_or_else(|error| panic!("signed: {error:?}"));
 
     let report =
-        expire(&lifecycle, &limiter, 1_011).unwrap_or_else(|error| panic!("expire: {error:?}"));
+        expire(&lifecycle, &limiter, 1_011, 1_011)
+            .unwrap_or_else(|error| panic!("expire: {error:?}"));
     assert_eq!(report.expired_preparations, vec![[11; 32], [12; 32]]);
     assert_eq!(report.released_reservations, vec![[1; 32], [2; 32]]);
     assert_eq!(limiter.held_reservations(), Ok(0));

@@ -568,7 +568,8 @@ fn require_authorization(
 pub(crate) fn expire_elapsed(
     lifecycle: &PreparationLifecycle,
     limiter: &BudgetLimiter,
-    core_batch_time: u64,
+    core_batch_time_ms: u64,
+    current_sequence: u64,
 ) -> Result<ExpirationReport, LifecycleError> {
     let mut records = lifecycle
         .records
@@ -580,7 +581,7 @@ pub(crate) fn expire_elapsed(
             matches!(
                 record.state,
                 LifecycleState::Prepared | LifecycleState::Signing | LifecycleState::Signed
-            ) && core_batch_time > record.not_after
+            ) && core_batch_time_ms > record.not_after
         })
         .map(|(id, record)| (*id, record.reservation_ids.clone()))
         .collect();
@@ -594,7 +595,7 @@ pub(crate) fn expire_elapsed(
                 limiter,
                 reservation_id,
                 ReleaseKind::Expired,
-                core_batch_time,
+                current_sequence,
             )
             .map_err(LifecycleError::Reservation)?
             {
@@ -603,7 +604,7 @@ pub(crate) fn expire_elapsed(
         }
         if let Some(record) = records.get_mut(&preparation_id) {
             record.state = LifecycleState::Expired;
-            record.terminal_at_sequence = Some(core_batch_time);
+            record.terminal_at_sequence = Some(current_sequence);
         }
         report.expired_preparations.push(preparation_id);
     }

@@ -226,9 +226,10 @@ pub fn verify_disclosure_binding(prepared: &Prepared) -> Result<(), DisclosureBi
 pub fn expire(
     lifecycle: &PreparationLifecycle,
     limiter: &crate::budget::BudgetLimiter,
-    core_batch_time: u64,
+    core_batch_time_ms: u64,
+    current_sequence: u64,
 ) -> Result<ExpirationReport, LifecycleError> {
-    lifecycle::expire_elapsed(lifecycle, limiter, core_batch_time)
+    lifecycle::expire_elapsed(lifecycle, limiter, core_batch_time_ms, current_sequence)
 }
 
 /// Discards terminal signed bytes while preserving every unresolved submission.
