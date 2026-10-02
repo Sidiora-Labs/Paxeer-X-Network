@@ -25,6 +25,8 @@ use layerx_wire::receipt::{decode, decode_batch_header, BatchHeader};
 use sha2::{Digest, Sha256};
 
 use crate::config::{read_protected_source, ProtectedSourceError, StartupConfig};
+use crate::human::HumanOperationError;
+use layerx_client::Client;
 mod native_owner;
 
 const MAX_AUTHORITY_SOURCE_BYTES: usize = 65_536;
@@ -1442,3 +1444,116 @@ impl VerifiedStateEvidence {
 #[cfg(test)]
 #[path = "protocol_evidence_native_tests.rs"]
 mod native_terminal_tests;
+
+const PROGRAM_OWNER_PREFIX: &[u8; 14] = b"program-owner\0";
+
+pub(crate) fn program_owner_key(program_id: &[u8; 32]) -> [u8; 46] {
+    let mut key = [0_u8; 46];
+    key[..14].copy_from_slice(PROGRAM_OWNER_PREFIX);
+    key[14..].copy_from_slice(program_id);
+    key
+}
+
+pub(crate) fn decode_program_owner(value: &[u8]) -> Result<[u8; 32], HumanOperationError> {
+    let [1, owner @ ..] = value else {
+        return Err(HumanOperationError::Refused);
+    };
+    let owner: [u8; 32] = owner.try_into().map_err(|_| HumanOperationError::Refused)?;
+    if owner == [0_u8; 32] {
+        return Err(HumanOperationError::Refused);
+    }
+    Ok(owner)
+}
+
+pub(crate) fn verified_program_owner(
+    node: &mut Client,
+    verifier: &EvidenceAuthority,
+    sequencer_key: [u8; 32],
+    correlation_id: u64,
+    authorization: SequencerAuthorization,
+    program_id: &[u8; 32],
+) -> Result<[u8; 32], HumanOperationError> {
+    let module_id = ModuleId::Programs as u16;
+    let key = program_owner_key(program_id);
+    let value = node
+        .module_state(
+            module_id,
+            &key,
+            VerificationLevel::STATE_PROVEN,
+            correlation_id,
+            authorization,
+        )
+        .map_err(|_| HumanOperationError::Refused)?;
+    let evidence = RawStateEvidence::module_witness(
+        value.canonical_bytes().to_vec(),
+        module_id,
+        key.to_vec(),
+        value.proof_material().to_vec(),
+        RootSelector::Latest,
+        sequencer_key,
+    );
+    let verified = verifier
+        .verify_state(&evidence)
+        .map_err(|_| HumanOperationError::Refused)?;
+    decode_program_owner(verified.canonical_state())
+}
+
+#[cfg(test)]
+mod program_owner_tests {
+    use super::{decode_program_owner, program_owner_key};
+    use crate::human::HumanOperationError;
+
+    fn record(version: u8, owner: [u8; 32]) -> Vec<u8> {
+        let mut value = vec![version];
+        value.extend_from_slice(&owner);
+        value
+    }
+
+    #[test]
+    fn program_owner_key_is_prefix_nul_and_program_id() {
+        let program_id = [0xa7_u8; 32];
+        let key = program_owner_key(&program_id);
+        let mut expected = b"program-owner".to_vec();
+        expected.push(0);
+        expected.extend_from_slice(&program_id);
+        assert_eq!(expected.len(), 46);
+        assert_eq!(key.to_vec(), expected);
+    }
+
+    #[test]
+    fn decode_program_owner_accepts_versioned_nonzero_owner() {
+        let owner = [0x3c_u8; 32];
+        assert_eq!(decode_program_owner(&record(1, owner)), Ok(owner));
+    }
+
+    #[test]
+    fn decode_program_owner_refuses_wrong_length() {
+        let mut long = record(1, [0x3c; 32]);
+        long.push(0);
+        let short = &record(1, [0x3c; 32])[..32];
+        for value in [&long[..], short, &[1_u8][..], &[][..]] {
+            assert_eq!(
+                decode_program_owner(value),
+                Err(HumanOperationError::Refused)
+            );
+        }
+    }
+
+    #[test]
+    fn decode_program_owner_refuses_wrong_version() {
+        for version in [0_u8, 2, 0xff] {
+            assert_eq!(
+                decode_program_owner(&record(version, [0x3c; 32])),
+                Err(HumanOperationError::Refused)
+            );
+        }
+    }
+
+    #[test]
+    fn decode_program_owner_refuses_zero_owner() {
+        assert_eq!(
+            decode_program_owner(&record(1, [0; 32])),
+            Err(HumanOperationError::Refused)
+        );
+    }
+}
