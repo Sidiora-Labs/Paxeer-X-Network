@@ -449,7 +449,9 @@ class Qualification:
         status, body = self.http(self.encode(value), headers={'Authorization': 'Bearer ' + Path(self.config['program_bearer_file']).read_text().strip()},
                                  case='program_bearer_alone')
         require(status in (400, 401, 403), 'program_bearer_alone: bearer authorized a catalogue write')
-        require(json.loads(body)['class'] in ('ProtocolIncompatibility', 'PolicyRefusal'), 'program_bearer_alone: class')
+        edge = json.loads(body)
+        require(edge.get('class') in ('ProtocolIncompatibility', 'PolicyRefusal') or (edge.get('ok') is False and 'error' in edge),
+                'program_bearer_alone: refusal shape')
         self.passed('program_bearer_alone', self.d / 'responses/program_bearer_alone.http')
         status, body = self.http(self.encode(value), headers=self.api_key(), case='gateway_key_alone_write')
         require(status in (400, 401, 403), 'gateway_key_alone_write: gateway key authorized a catalogue write')

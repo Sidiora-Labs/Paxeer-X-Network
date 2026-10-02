@@ -327,13 +327,13 @@ class AgentEnvelopeTransport(ProductionTransport):
         outbound = Request(_route_endpoint(self._endpoint, _ENVELOPE_PATH), data=body, headers=headers, method="POST")
         try:
             with self._opener.open(outbound, timeout=self._timeout) as response:
-                encoded = _bounded_read(response, self._maximum_response_bytes)
+                encoded = _envelope_read(response, self._maximum_response_bytes, mutating)
                 if response.headers.get("Content-Type") != "application/json":
                     raise _decode_failure()
                 return _decode_agent_envelope_response(response.status, encoded, request_id)
         except HTTPError as error:
             try:
-                encoded = _bounded_read(error, self._maximum_response_bytes)
+                encoded = _envelope_read(error, self._maximum_response_bytes, mutating)
                 if error.headers.get("Content-Type") != "application/json":
                     raise _decode_failure()
                 return _decode_agent_envelope_response(error.code, encoded, request_id)
@@ -345,6 +345,21 @@ class AgentEnvelopeTransport(ProductionTransport):
             if mutating:
                 raise PlatformSdkError(SdkErrorCode.UNKNOWN_OUTCOME, "unknown-outcome") from None
             raise PlatformSdkError(SdkErrorCode.TRANSPORT_FAILURE, "safe") from None
+
+
+def _envelope_read(response: object, maximum: int, mutating: bool) -> bytes:
+    if not mutating:
+        return _bounded_read(response, maximum)
+    reader = getattr(response, "read", None)
+    if not callable(reader):
+        raise _decode_failure()
+    try:
+        encoded = cast(bytes, reader(maximum + 1))
+    except (TimeoutError, OSError, HTTPException):
+        raise PlatformSdkError(SdkErrorCode.UNKNOWN_OUTCOME, "unknown-outcome") from None
+    if len(encoded) > maximum:
+        raise _decode_failure()
+    return encoded
 
 
 def _decode_agent_envelope_response(status: int, encoded: bytes, sent_request_id: str) -> AgentEnvelopeSuccess:

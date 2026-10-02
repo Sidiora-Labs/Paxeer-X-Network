@@ -1,7 +1,7 @@
 [schema]
 name = "LayerX Agent API"
 major = 1
-minor = 2
+minor = 3
 node_interface_major = 1
 source_of_truth = "This schema and the schema files it includes define the daemon contract and every SDK surface. Generated output is never authoritative."
 compatibility = "Within one major version a release may only add sections or keys. Removing or changing an existing declaration requires a new major version."
@@ -134,3 +134,14 @@ request_id = "The envelope request_id when it was parsed, otherwise 0."
 [transport.agent_http.semantics]
 retired = "faucet.claim returns UnavailableCapability with reason unavailable_capability.faucet.claim and Terminal retriability."
 ambiguity = "A mutating request whose outcome is not known to the client is Unknown and is never resent automatically; a repeat with the same idempotency key and body returns the original result, a different body under the same key is IdempotencyConflict."
+
+body_digest = "Internal and derived server side only: for operations executed through the durable store it is SHA-256 over the domain LXP/agent/request/v1 followed by one NUL byte and the exact canonical request bytes of the selected owner typed operation. It is never supplied by the caller, never a raw JSON hash, and token_id and request_id are not inputs. The public envelope carries only idempotency_key. Existing Human prepare, submit and owner-install digests are unchanged. Same key with the same digest replays the recorded outcome; same key with a different digest is IdempotencyConflict."
+
+[compatibility.history.1_3]
+classification = "additive_only"
+baseline = "golden/v1.kvx@1.2"
+change = "Adds the version 1 Agent HTTP operation envelope transport and its session credential binding without changing any contract 1.2 declaration."
+
+[compatibility.feature.agent_http]
+introduced_contract = "1.3"
+classification = "additive_only"
