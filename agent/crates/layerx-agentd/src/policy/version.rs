@@ -47,19 +47,30 @@ pub struct Activation {
 /// Immutable policy selection captured when a request is received.
 #[derive(Clone, Debug)]
 pub struct PolicySnapshot {
-    policy: Arc<PolicySet>,
+    retained: Arc<RetainedPolicy>,
     generation: u64,
+}
+
+#[derive(Debug)]
+struct RetainedPolicy {
+    policy: PolicySet,
+    source: Option<Arc<[u8]>>,
 }
 
 impl PolicySnapshot {
     #[must_use]
     pub fn policy(&self) -> &PolicySet {
-        &self.policy
+        &self.retained.policy
     }
 
     #[must_use]
     pub fn version(&self) -> &str {
-        &self.policy.version
+        &self.retained.policy.version
+    }
+
+    #[must_use]
+    pub fn source(&self) -> Option<&[u8]> {
+        self.retained.source.as_deref()
     }
 
     #[must_use]
@@ -79,7 +90,7 @@ pub struct PolicyAuditEntry {
 pub struct PolicyRegistry {
     active_version: String,
     generation: u64,
-    versions: BTreeMap<String, Arc<PolicySet>>,
+    versions: BTreeMap<String, Arc<RetainedPolicy>>,
     audit: BTreeMap<[u8; 32], PolicyAuditEntry>,
 }
 
@@ -92,26 +103,38 @@ impl PolicyRegistry {
     /// `EmptyRuleId`, `DuplicateRuleId`, `EmptyPurpose` or `InvalidSequenceWindow`.
     pub fn new(initial: PolicySet) -> Result<Self, PolicyValidationError> {
         validate_policy(&initial)?;
+        Ok(Self::initial(initial, None))
+    }
+
+    pub fn from_source(source: &[u8]) -> Result<Self, PolicySourceError> {
+        let policy = load_policy_source(source)?;
+        Ok(Self::initial(policy, Some(Arc::from(source))))
+    }
+
+    fn initial(initial: PolicySet, source: Option<Arc<[u8]>>) -> Self {
         let active_version = initial.version.clone();
-        let versions = BTreeMap::from([(active_version.clone(), Arc::new(initial))]);
-        Ok(Self {
+        let versions = BTreeMap::from([(
+            active_version.clone(),
+            Arc::new(RetainedPolicy { policy: initial, source }),
+        )]);
+        Self {
             active_version,
             generation: 1,
             versions,
             audit: BTreeMap::new(),
-        })
+        }
     }
 
     /// Captures the policy that applies before request processing begins.
     #[must_use]
     pub fn begin_request(&self) -> PolicySnapshot {
-        let policy = self
+        let retained = self
             .versions
             .get(&self.active_version)
             .cloned()
             .unwrap_or_else(|| unreachable!("active policy is retained"));
         PolicySnapshot {
-            policy,
+            retained,
             generation: self.generation,
         }
     }
@@ -123,7 +146,7 @@ impl PolicyRegistry {
 
     #[must_use]
     pub fn retained(&self, version: &str) -> Option<&PolicySet> {
-        self.versions.get(version).map(Arc::as_ref)
+        self.versions.get(version).map(|retained| &retained.policy)
     }
 
     pub fn record_decision(&mut self, request_id: [u8; 32], decision: Decision) {
@@ -179,6 +202,23 @@ pub(crate) fn activate_policy(
     registry: &mut PolicyRegistry,
     policy: PolicySet,
 ) -> Result<Activation, PolicyValidationError> {
+    activate_retained(registry, policy, None)
+}
+
+pub(crate) fn activate_policy_source(
+    registry: &mut PolicyRegistry,
+    source: &[u8],
+) -> Result<Activation, PolicySourceError> {
+    let policy = load_policy_source(source)?;
+    activate_retained(registry, policy, Some(Arc::from(source)))
+        .map_err(PolicySourceError::Validation)
+}
+
+fn activate_retained(
+    registry: &mut PolicyRegistry,
+    policy: PolicySet,
+    source: Option<Arc<[u8]>>,
+) -> Result<Activation, PolicyValidationError> {
     validate_policy(&policy)?;
     if registry.versions.contains_key(&policy.version) {
         return Err(PolicyValidationError::VersionAlreadyRetained(
@@ -190,7 +230,7 @@ pub(crate) fn activate_policy(
     let generation = registry.generation.saturating_add(1);
     registry
         .versions
-        .insert(active_version.clone(), Arc::new(policy));
+        .insert(active_version.clone(), Arc::new(RetainedPolicy { policy, source }));
     registry.active_version.clone_from(&active_version);
     registry.generation = generation;
     Ok(Activation {

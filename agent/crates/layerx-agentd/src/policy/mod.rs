@@ -138,6 +138,13 @@ pub fn activate(
     versioning::activate_policy(registry, policy)
 }
 
+pub fn activate_source(
+    registry: &mut PolicyRegistry,
+    source: &[u8],
+) -> Result<Activation, PolicySourceError> {
+    versioning::activate_policy_source(registry, source)
+}
+
 /// Evaluates without creating a preparation, signature or submission.
 pub fn dry_run(
     registry: &mut PolicyRegistry,

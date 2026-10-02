@@ -15,7 +15,7 @@ use crate::store::TenantId;
 
 use super::eval::{CapabilityView, PolicyIntentRequest, Purpose};
 use super::{
-    dry_run, load_policy_source, DryRunResult, EvaluationInput, PolicyRegistry, PolicyRequest,
+    dry_run, DryRunResult, EvaluationInput, PolicyRegistry, PolicyRequest,
     PolicySourceError, PolicyValidationError, MAX_POLICY_SOURCE_BYTES,
 };
 
@@ -66,11 +66,7 @@ pub fn load_tenant_registries(
             .take(limit)
             .read_to_end(&mut source)
             .map_err(read)?;
-        let policy = load_policy_source(&source).map_err(|error| PolicyLoadError::Source {
-            tenant: tenant.clone(),
-            error,
-        })?;
-        let registry = PolicyRegistry::new(policy).map_err(|error| PolicyLoadError::Registry {
+        let registry = PolicyRegistry::from_source(&source).map_err(|error| PolicyLoadError::Source {
             tenant: tenant.clone(),
             error,
         })?;
