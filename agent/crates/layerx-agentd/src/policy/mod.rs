@@ -4,13 +4,18 @@ pub mod approval;
 #[path = "dry_run.rs"]
 mod dry_run_evaluation;
 mod eval;
+mod operation;
 #[path = "version.rs"]
 mod versioning;
 
-pub use dry_run_evaluation::{DryRunResult, EvaluationMode};
+pub use dry_run_evaluation::{DryRunResult, EvaluationMode, ExplanationDecodeError};
 pub use eval::{
     EvaluationFailure, EvaluationInput, PolicyRequest, PolicySet, Rule, RuleConstraints,
     RuleEffect, RuleMatcher, SequenceWindow,
+};
+pub use operation::{
+    dry_run_request_id, dry_run_with_context, load_tenant_registries, PolicyDryRunRefusal,
+    PolicyLoadError, TenantPolicyRegistries, VerifiedPolicyContext,
 };
 pub use versioning::{
     load_policy_source, Activation, PolicyAuditEntry, PolicyRegistry, PolicySnapshot,
@@ -63,6 +68,18 @@ impl Explanation {
     #[must_use]
     pub fn machine_bytes(&self) -> Vec<u8> {
         dry_run_evaluation::encode_explanation(self)
+    }
+
+    /// Strictly decodes the record produced by [`Explanation::machine_bytes`].
+    ///
+    /// # Errors
+    ///
+    /// Returns `Malformed` for a missing, reordered or truncated field, a non-decimal length or
+    /// trailing bytes, `UnknownValue` for an unknown schema, mode, outcome or reason or an authority
+    /// statement that is not the notice for the outcome, and `NonCanonical` when re-encoding the
+    /// decoded explanation does not reproduce the input exactly.
+    pub fn from_machine_bytes(bytes: &[u8]) -> Result<Self, ExplanationDecodeError> {
+        dry_run_evaluation::decode_explanation(bytes)
     }
 }
 

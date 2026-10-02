@@ -1,5 +1,7 @@
 //! Side-effect-bounded dry-run evaluation and stable explanations.
 
+use std::str;
+
 use super::{
     evaluate, Decision, DecisionReason, EvaluationInput, Explanation, Outcome, PolicyRegistry,
     PolicySet,
@@ -15,6 +17,14 @@ pub const LOCAL_DENY_NOTICE: &str =
 pub enum EvaluationMode {
     Live,
     DryRun,
+}
+
+/// Refusal while decoding an explanation record.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ExplanationDecodeError {
+    Malformed,
+    UnknownValue,
+    NonCanonical,
 }
 
 /// Dry-run output; the audit insertion is its only mutable effect.
@@ -99,6 +109,102 @@ pub(crate) fn encode_explanation(explanation: &Explanation) -> Vec<u8> {
         explanation.authority_statement,
     );
     output
+}
+
+pub(crate) fn decode_explanation(bytes: &[u8]) -> Result<Explanation, ExplanationDecodeError> {
+    let mut cursor = bytes;
+    let schema_version = match read_line(&mut cursor, "schema")? {
+        "1" => 1,
+        _ => return Err(ExplanationDecodeError::UnknownValue),
+    };
+    let mode = match read_line(&mut cursor, "mode")? {
+        "live" => EvaluationMode::Live,
+        "dry_run" => EvaluationMode::DryRun,
+        _ => return Err(ExplanationDecodeError::UnknownValue),
+    };
+    let outcome = match read_line(&mut cursor, "outcome")? {
+        "allow" => Outcome::Allow,
+        "deny" => Outcome::Deny,
+        _ => return Err(ExplanationDecodeError::UnknownValue),
+    };
+    let policy_version = read_line(&mut cursor, "policy_version")?.to_owned();
+    let matched_count: usize = parse_decimal(read_line(&mut cursor, "matched_count")?)?;
+    let mut matched_rules = Vec::new();
+    for index in 0..matched_count {
+        matched_rules.push(read_line(&mut cursor, &format!("matched_{index}"))?.to_owned());
+    }
+    let deciding_rule = match read_line(&mut cursor, "deciding_rule")? {
+        "" => None,
+        rule => Some(rule.to_owned()),
+    };
+    let reason = match read_line(&mut cursor, "reason")? {
+        "permitted_by_rule" => DecisionReason::PermittedByRule,
+        "explicit_deny" => DecisionReason::ExplicitDeny,
+        "approval_required" => DecisionReason::ApprovalRequired,
+        "no_permitting_rule" => DecisionReason::NoPermittingRule,
+        "invalid_context" => DecisionReason::InvalidContext,
+        "evaluation_failure" => DecisionReason::EvaluationFailure,
+        _ => return Err(ExplanationDecodeError::UnknownValue),
+    };
+    let authority_statement = match outcome {
+        Outcome::Allow => LOCAL_ALLOW_NOTICE,
+        Outcome::Deny => LOCAL_DENY_NOTICE,
+    };
+    if read_line(&mut cursor, "authority_statement")? != authority_statement {
+        return Err(ExplanationDecodeError::UnknownValue);
+    }
+    if !cursor.is_empty() {
+        return Err(ExplanationDecodeError::Malformed);
+    }
+    let explanation = Explanation {
+        schema_version,
+        mode,
+        outcome,
+        policy_version,
+        matched_rules,
+        deciding_rule,
+        reason,
+        authority_statement,
+    };
+    if encode_explanation(&explanation) != bytes {
+        return Err(ExplanationDecodeError::NonCanonical);
+    }
+    Ok(explanation)
+}
+
+fn read_line<'a>(cursor: &mut &'a [u8], key: &str) -> Result<&'a str, ExplanationDecodeError> {
+    let rest = cursor
+        .strip_prefix(key.as_bytes())
+        .and_then(|rest| rest.strip_prefix(b"="))
+        .ok_or(ExplanationDecodeError::Malformed)?;
+    let colon = rest
+        .iter()
+        .position(|byte| *byte == b':')
+        .ok_or(ExplanationDecodeError::Malformed)?;
+    let length_text =
+        str::from_utf8(&rest[..colon]).map_err(|_| ExplanationDecodeError::Malformed)?;
+    let length: usize = parse_decimal(length_text)?;
+    let value_start = colon + 1;
+    let value_end = value_start
+        .checked_add(length)
+        .ok_or(ExplanationDecodeError::Malformed)?;
+    if rest.get(value_end) != Some(&b'\n') {
+        return Err(ExplanationDecodeError::Malformed);
+    }
+    let value = str::from_utf8(&rest[value_start..value_end])
+        .map_err(|_| ExplanationDecodeError::Malformed)?;
+    *cursor = &rest[value_end + 1..];
+    Ok(value)
+}
+
+fn parse_decimal<T: str::FromStr>(text: &str) -> Result<T, ExplanationDecodeError> {
+    if text.is_empty()
+        || !text.bytes().all(|byte| byte.is_ascii_digit())
+        || (text.len() > 1 && text.starts_with('0'))
+    {
+        return Err(ExplanationDecodeError::Malformed);
+    }
+    text.parse().map_err(|_| ExplanationDecodeError::Malformed)
 }
 
 fn push_line(output: &mut Vec<u8>, key: &str, value: &str) {
