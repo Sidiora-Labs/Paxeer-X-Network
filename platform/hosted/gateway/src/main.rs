@@ -201,6 +201,8 @@ impl KernelUnavailable {
 impl From<KernelUnavailable> for OutgoingResponse {
     fn from(unavailable: KernelUnavailable) -> Self {
         Self {
+            content_type: "application/json".to_owned(),
+            headers: Vec::new(),
             status: 503,
             body: serde_json::json!({ "ok": false, "error": unavailable.data() })
                 .to_string()
