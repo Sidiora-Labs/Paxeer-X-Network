@@ -195,6 +195,7 @@ fn context(native_source: bool) -> BudgetStateContext {
         balance: 700,
         state_digest: [0x5d; 32],
         observed_head_sequence: 88,
+        purpose_hash: PURPOSE,
     }
 }
 
@@ -645,4 +646,68 @@ fn close_ordinal_is_not_decoded_as_a_defund() {
     let defund_shaped = fund_payload(1, BUDGET_ID, 250, None);
     assert!(refused(CLOSE, &defund_shaped));
     assert!(mutation_refused(CLOSE, &defund_shaped, &context(false)));
+}
+
+#[test]
+fn context_from_a_decoded_create_record_carries_purpose_budget_and_observed_head() {
+    let created = checked(bind(&canonical(CREATE, &Create::v1().bytes()), &registry()));
+    let Some(DisclosedNativeOperation::BudgetCreate(record)) = &created.native_operation else {
+        panic!("a core v1 create must disclose as a native budget create");
+    };
+    let context = BudgetStateContext {
+        budget_id: record.budget_id,
+        owner: main_account(),
+        budget_account: record.budget_account,
+        asset: record.asset,
+        source_account: record.source_account,
+        native_source: false,
+        revocation_sequence: record.revocation_sequence,
+        balance: record.initial_amount,
+        state_digest: [0x5d; 32],
+        observed_head_sequence: 88,
+        purpose_hash: record.purpose,
+    };
+    let canonical = canonical(FUND, &fund_payload(1, BUDGET_ID, 250, None));
+    let disclosure = checked(bind_budget_mutation(&canonical, &registry(), &context));
+    let Some(DisclosedNativeOperation::BudgetFund(fund)) = &disclosure.native_operation else {
+        panic!("a core v1 fund must disclose as a native budget fund");
+    };
+    assert_eq!(fund.context.purpose_hash, PURPOSE);
+    assert_eq!(fund.context.budget_id, BUDGET_ID);
+    assert_eq!(fund.context.observed_head_sequence, 88);
+    assert!(fund.context.purpose_matches(&PURPOSE));
+    assert!(!fund.context.purpose_matches(&[0x55; 32]));
+    assert!(disclosure.audit_digest().is_ok());
+}
+
+#[test]
+fn mutation_with_a_different_budget_id_is_refused_by_name() {
+    let mismatched = BudgetStateContext {
+        budget_id: [0x0c; 32],
+        ..context(false)
+    };
+    for (activity_type, payload) in [
+        (FUND, fund_payload(1, BUDGET_ID, 250, None)),
+        (REVOKE, revoke_payload(1, BUDGET_ID, REVOCATION_COUNTER + 1)),
+    ] {
+        assert_eq!(
+            bind_budget_mutation(
+                &canonical(activity_type, &payload),
+                &registry(),
+                &mismatched
+            )
+            .err(),
+            Some(DisclosureError::FieldMismatch("budget_id"))
+        );
+    }
+}
+
+#[test]
+fn purpose_matches_is_exact_equality_with_the_proven_commitment() {
+    let context = context(false);
+    assert!(context.purpose_matches(&PURPOSE));
+    let mut near = PURPOSE;
+    near[31] ^= 1;
+    assert!(!context.purpose_matches(&near));
+    assert!(!context.purpose_matches(&[0; 32]));
 }

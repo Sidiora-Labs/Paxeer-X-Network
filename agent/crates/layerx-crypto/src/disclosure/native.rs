@@ -68,6 +68,7 @@ pub struct BudgetStateContext {
     pub balance: u128,
     pub state_digest: [u8; 32],
     pub observed_head_sequence: u64,
+    pub purpose_hash: [u8; 32],
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -93,7 +94,17 @@ pub struct DisclosedNativeBudgetRevoke {
     pub context: BudgetStateContext,
 }
 
-fn encode_context(encoder: &mut Encoder, context: &BudgetStateContext) -> Result<(), DisclosureError> {
+impl BudgetStateContext {
+    #[must_use]
+    pub fn purpose_matches(&self, supplied: &[u8; 32]) -> bool {
+        crate::ct::eq_fixed(&self.purpose_hash, supplied)
+    }
+}
+
+fn encode_context(
+    encoder: &mut Encoder,
+    context: &BudgetStateContext,
+) -> Result<(), DisclosureError> {
     encoder.fixed(&context.budget_id)?;
     encoder.fixed(&context.owner)?;
     encoder.fixed(&context.budget_account)?;
@@ -104,6 +115,7 @@ fn encode_context(encoder: &mut Encoder, context: &BudgetStateContext) -> Result
     encoder.u128(context.balance)?;
     encoder.fixed(&context.state_digest)?;
     encoder.u64(context.observed_head_sequence)?;
+    encoder.fixed(&context.purpose_hash)?;
     Ok(())
 }
 
@@ -319,13 +331,15 @@ fn bound_context(
     context: &BudgetStateContext,
     budget_id: [u8; 32],
 ) -> Result<(), DisclosureError> {
+    if budget_id != context.budget_id {
+        return Err(DisclosureError::FieldMismatch("budget_id"));
+    }
     let malformed = || DisclosureError::MalformedPayload;
     let actor = std::str::from_utf8(activity.actor_did()).map_err(|_| malformed())?;
     let main = account_id(&format!("agent:{actor}:main"))?;
     let per_asset = account_id(&format!("agent:{actor}:asset:{}", hex(&context.asset)))?;
     let expected_budget = account_id(&format!("agent:{actor}:budget:{}", hex(&budget_id)))?;
     if budget_id == [0; 32]
-        || context.budget_id != budget_id
         || context.owner != main
         || context.budget_account != expected_budget
         || context.asset == [0; 32]
