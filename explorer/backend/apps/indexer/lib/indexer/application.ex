@@ -13,6 +13,7 @@ defmodule Indexer.Application do
   alias Indexer.Fetcher.OnDemand.TokenBalance, as: TokenBalanceOnDemand
   alias Indexer.Fetcher.OnDemand.TokenInstanceMetadataRefetch, as: TokenInstanceMetadataRefetchOnDemand
   alias Indexer.Fetcher.OnDemand.TokenTotalSupply, as: TokenTotalSupplyOnDemand
+  alias Indexer.Fetcher.PaxeerXKernelReceipts
   alias Indexer.Fetcher.TokenInstance.Refetch, as: TokenInstanceRefetch
 
   alias Indexer.Memory
@@ -71,6 +72,8 @@ defmodule Indexer.Application do
         base_children
       end
 
+    children = children ++ paxeer_x_kernel_receipts_children()
+
     opts = [
       # If the `Memory.Monitor` dies, it needs all the `Shrinkable`s to re-register, so restart them.
       strategy: :rest_for_one,
@@ -81,6 +84,15 @@ defmodule Indexer.Application do
       Supervisor.start_link([], opts)
     else
       Supervisor.start_link(children, opts)
+    end
+  end
+
+  defp paxeer_x_kernel_receipts_children do
+    with true <- Explorer.mode() in [:indexer, :all],
+         %{} = config <- PaxeerXKernelReceipts.config_from_env() do
+      [{PaxeerXKernelReceipts, [config]}]
+    else
+      _ -> []
     end
   end
 
