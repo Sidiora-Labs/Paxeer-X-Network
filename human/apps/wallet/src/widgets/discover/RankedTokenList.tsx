@@ -39,7 +39,7 @@ export function RankedTokenList({ ranked, loading, onTokenTrade }: RankedTokenLi
                         className="col-span-2 bg-pax-surface rounded-[20px] px-[18px] py-4 flex items-center gap-3.5 text-left press-scale"
                     >
                         <div className="relative w-10 h-10 rounded-full bg-[var(--color-surface-control)] overflow-hidden shrink-0">
-                            <Image src={token.logoUrl || '/default_icon.webp'} alt={token.symbol} fill sizes="40px" className="w-full h-full object-cover rounded-full" onError={(e) => { (e.target as HTMLImageElement).src = '/default_icon.webp'; }} />
+                            <Image src={token.logoUrl || '/wallet/default_icon.webp'} alt={token.symbol} fill sizes="40px" className="w-full h-full object-cover rounded-full" onError={(e) => { (e.target as HTMLImageElement).src = '/wallet/default_icon.webp'; }} />
                         </div>
                         <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-1.5">
@@ -69,7 +69,7 @@ export function RankedTokenList({ ranked, loading, onTokenTrade }: RankedTokenLi
                     >
                         <div className="flex items-center gap-2.5">
                             <div className="relative w-[30px] h-[30px] rounded-full bg-[var(--color-surface-control)] overflow-hidden shrink-0">
-                                <Image src={token.logoUrl || '/default_icon.webp'} alt={token.symbol} fill sizes="40px" className="w-full h-full object-cover rounded-full" onError={(e) => { (e.target as HTMLImageElement).src = '/default_icon.webp'; }} />
+                                <Image src={token.logoUrl || '/wallet/default_icon.webp'} alt={token.symbol} fill sizes="40px" className="w-full h-full object-cover rounded-full" onError={(e) => { (e.target as HTMLImageElement).src = '/wallet/default_icon.webp'; }} />
                             </div>
                             <div className="min-w-0">
                                 <p className="text-[13px] font-bold truncate">{token.symbol}</p>
@@ -97,7 +97,7 @@ export function RankedTokenList({ ranked, loading, onTokenTrade }: RankedTokenLi
                                 className="w-full flex items-center gap-3 px-4 py-3 press-scale text-left"
                             >
                                 <div className="relative w-8 h-8 rounded-full bg-[var(--color-surface-control)] overflow-hidden shrink-0">
-                                    <Image src={token.logoUrl || '/default_icon.webp'} alt={token.symbol} fill sizes="40px" className="w-full h-full object-cover rounded-full" onError={(e) => { (e.target as HTMLImageElement).src = '/default_icon.webp'; }} />
+                                    <Image src={token.logoUrl || '/wallet/default_icon.webp'} alt={token.symbol} fill sizes="40px" className="w-full h-full object-cover rounded-full" onError={(e) => { (e.target as HTMLImageElement).src = '/wallet/default_icon.webp'; }} />
                                 </div>
                                 <div className="flex-1 min-w-0">
                                     <div className="flex items-center gap-1.5">

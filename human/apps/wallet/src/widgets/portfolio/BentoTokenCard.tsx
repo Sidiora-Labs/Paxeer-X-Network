@@ -39,7 +39,7 @@ export function BentoTokenTall({
         >
             <div className="flex flex-col gap-3">
                 <div className="relative w-[42px] h-[42px] rounded-full bg-[var(--color-surface-control)] overflow-hidden shrink-0">
-                    <Image src={iconUrl || '/default_icon.webp'} alt={symbol} fill sizes="40px" className="w-full h-full object-cover" />
+                    <Image src={iconUrl || '/wallet/default_icon.webp'} alt={symbol} fill sizes="40px" className="w-full h-full object-cover" />
                 </div>
                 <div>
                     <p className="text-base font-extrabold leading-tight">{name}</p>
@@ -77,7 +77,7 @@ export function BentoTokenCompact({
         >
             <div className="flex items-center gap-2.5">
                 <div className="relative w-[30px] h-[30px] rounded-full bg-[var(--color-surface-control)] overflow-hidden shrink-0">
-                    <Image src={iconUrl || '/default_icon.webp'} alt={symbol} fill sizes="40px" className="w-full h-full object-cover" />
+                    <Image src={iconUrl || '/wallet/default_icon.webp'} alt={symbol} fill sizes="40px" className="w-full h-full object-cover" />
                 </div>
                 <div>
                     <p className="text-[13px] font-bold">{symbol}</p>
@@ -108,7 +108,7 @@ export function BentoTokenWide({
             className="col-span-2 bg-pax-surface rounded-[20px] px-[18px] py-4 flex items-center gap-3.5 text-left press-scale"
         >
             <div className="relative w-10 h-10 rounded-full bg-[var(--color-surface-control)] overflow-hidden shrink-0">
-                <Image src={iconUrl || '/default_icon.webp'} alt={symbol} fill sizes="40px" className="w-full h-full object-cover" />
+                <Image src={iconUrl || '/wallet/default_icon.webp'} alt={symbol} fill sizes="40px" className="w-full h-full object-cover" />
             </div>
             <div className="flex-1 min-w-0">
                 <p className="text-sm font-bold">{name}</p>

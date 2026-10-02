@@ -11,7 +11,7 @@ import { cacheGet, cacheSet, cacheAge } from '@/lib/metaCache';
 import { rewriteLogoUrl } from '@/lib/mediaProxy';
 import type { SwapToken } from './constants';
 
-const SIDIORA_METADATA_API = '/api/sidiora/metadata';
+const SIDIORA_METADATA_API = '/wallet/api/sidiora/metadata';
 
 const METADATA_BATCH_SIZE = 40;
 const META_TTL = 24 * 60 * 60_000; // 24 h — logos/names are static
@@ -66,7 +66,7 @@ async function enrichWithSidioraMetadata(tokens: SwapToken[]): Promise<SwapToken
     });
 }
 
-// Same-origin proxy. The Next route handler at `/api/wallet/[...path]`
+// Same-origin proxy. The Next route handler at `/wallet/api/wallet/[...path]`
 // forwards to BLOCKSCOUT_UPSTREAM_BASE on the server, so the upstream host
 // never ships in the client bundle.
 const WALLET_API_BASE = PAXEER_CONFIG.blockscoutApiBase;

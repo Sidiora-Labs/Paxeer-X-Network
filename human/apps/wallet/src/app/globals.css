@@ -5,42 +5,42 @@
 /* ── Paxeer Sans Rounded (PP Pangram Sans Rounded) ──────────────────────── */
 @font-face {
   font-family: 'Paxeer Sans Rounded';
-  src: url('/Paxeer_Sans_Rounded/PPPangramSansRounded-Thin.otf') format('opentype');
+  src: url('/wallet/Paxeer_Sans_Rounded/PPPangramSansRounded-Thin.otf') format('opentype');
   font-weight: 100;
   font-style: normal;
   font-display: swap;
 }
 @font-face {
   font-family: 'Paxeer Sans Rounded';
-  src: url('/Paxeer_Sans_Rounded/PPPangramSansRounded-Light.otf') format('opentype');
+  src: url('/wallet/Paxeer_Sans_Rounded/PPPangramSansRounded-Light.otf') format('opentype');
   font-weight: 300;
   font-style: normal;
   font-display: swap;
 }
 @font-face {
   font-family: 'Paxeer Sans Rounded';
-  src: url('/Paxeer_Sans_Rounded/PPPangramSansRounded-Medium.otf') format('opentype');
+  src: url('/wallet/Paxeer_Sans_Rounded/PPPangramSansRounded-Medium.otf') format('opentype');
   font-weight: 500;
   font-style: normal;
   font-display: swap;
 }
 @font-face {
   font-family: 'Paxeer Sans Rounded';
-  src: url('/Paxeer_Sans_Rounded/PPPangramSansRounded-Semibold.otf') format('opentype');
+  src: url('/wallet/Paxeer_Sans_Rounded/PPPangramSansRounded-Semibold.otf') format('opentype');
   font-weight: 600;
   font-style: normal;
   font-display: swap;
 }
 @font-face {
   font-family: 'Paxeer Sans Rounded';
-  src: url('/Paxeer_Sans_Rounded/PPPangramSansRounded-Bold.otf') format('opentype');
+  src: url('/wallet/Paxeer_Sans_Rounded/PPPangramSansRounded-Bold.otf') format('opentype');
   font-weight: 700;
   font-style: normal;
   font-display: swap;
 }
 @font-face {
   font-family: 'Paxeer Sans Rounded';
-  src: url('/Paxeer_Sans_Rounded/PPPangramSansRounded-ExtraboldItalic.otf') format('opentype');
+  src: url('/wallet/Paxeer_Sans_Rounded/PPPangramSansRounded-ExtraboldItalic.otf') format('opentype');
   font-weight: 800;
   font-style: italic;
   font-display: swap;

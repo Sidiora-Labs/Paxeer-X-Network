@@ -19,7 +19,7 @@ export function TokenBadge({ token, size = 'md' }: TokenBadgeProps) {
             className={`relative ${dim} rounded-full bg-[var(--color-surface-control)] flex items-center justify-center shrink-0 overflow-hidden`}
         >
             <Image
-                src={token.iconUrl || '/default_icon.webp'}
+                src={token.iconUrl || '/wallet/default_icon.webp'}
                 alt={token.symbol}
                 className="w-full h-full object-cover rounded-full"
                 fill

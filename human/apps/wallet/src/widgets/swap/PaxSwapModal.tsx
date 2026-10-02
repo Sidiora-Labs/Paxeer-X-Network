@@ -20,7 +20,7 @@ import { formatUsd } from '@/lib/format';
 function TokenIcon({ token }: { token: SwapToken }) {
     return (
         <div className="relative size-8 rounded-full bg-[var(--color-surface-control)] flex items-center justify-center overflow-hidden shrink-0">
-            <Image src={token.iconUrl || '/default_icon.webp'} alt={token.symbol} className="w-full h-full object-cover rounded-full" fill sizes="32px" />
+            <Image src={token.iconUrl || '/wallet/default_icon.webp'} alt={token.symbol} className="w-full h-full object-cover rounded-full" fill sizes="32px" />
         </div>
     );
 }

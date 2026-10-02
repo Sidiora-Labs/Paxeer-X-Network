@@ -55,7 +55,7 @@ export function Onboarding({ initialStep }: OnboardingProps = {}) {
             <div className="flex flex-col items-center gap-6 max-w-sm w-full">
                 <div className="w-20 h-20 rounded-3xl bg-pax-accent/10 flex items-center justify-center">
                     <Image
-                        src="/paxport_wallet.png"
+                        src="/wallet/paxport_wallet.png"
                         alt="shield"
                         width={48}
                         height={48}
@@ -87,7 +87,7 @@ export function Onboarding({ initialStep }: OnboardingProps = {}) {
                         <div className="flex items-center gap-3">
                             <div className="w-10 h-10 rounded-xl bg-pax-accent/10 flex items-center justify-center shrink-0 overflow-hidden">
                                 <Image
-                                    src="/paxport_wallet.png"
+                                    src="/wallet/paxport_wallet.png"
                                     alt=""
                                     width={32}
                                     height={32}

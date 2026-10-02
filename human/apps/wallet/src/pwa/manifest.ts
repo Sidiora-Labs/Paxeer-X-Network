@@ -1,6 +1,6 @@
 import { DEFAULT_THEME_COLOR } from '@/theme/catalogue';
 
-export const MANIFEST_URL = '/manifest.json';
+export const MANIFEST_URL = '/wallet/manifest.json';
 
 export type IconPurpose = 'any' | 'maskable';
 
@@ -30,7 +30,7 @@ export interface WebAppManifest {
 }
 
 function icon(file: string, size: number, purpose: IconPurpose): ManifestIcon {
-    return { src: `/icons/app/${file}`, sizes: `${size}x${size}`, type: 'image/png', purpose };
+    return { src: `/wallet/icons/app/${file}`, sizes: `${size}x${size}`, type: 'image/png', purpose };
 }
 
 export const MANIFEST_ICONS: readonly ManifestIcon[] = [
@@ -40,9 +40,9 @@ export const MANIFEST_ICONS: readonly ManifestIcon[] = [
     icon('maskable-512.png', 512, 'maskable'),
 ];
 
-export const APPLE_TOUCH_ICON = { src: '/icons/app/apple-touch-icon-180.png', sizes: '180x180' } as const;
+export const APPLE_TOUCH_ICON = { src: '/wallet/icons/app/apple-touch-icon-180.png', sizes: '180x180' } as const;
 
-export const FAVICON_ICON = { src: '/icons/app/favicon-32.png', sizes: '32x32' } as const;
+export const FAVICON_ICON = { src: '/wallet/icons/app/favicon-32.png', sizes: '32x32' } as const;
 
 export const ICON_FILES: readonly { readonly src: string; readonly size: number }[] = [
     ...MANIFEST_ICONS.map((entry) => ({ src: entry.src, size: Number(entry.sizes.split('x')[0]) })),
@@ -52,12 +52,12 @@ export const ICON_FILES: readonly { readonly src: string; readonly size: number 
 
 export function buildManifest(): WebAppManifest {
     return {
-        id: '/',
+        id: '/wallet/',
         name: 'Paxeer Wallet',
         short_name: 'Paxeer',
         description: 'The Paxeer X Network wallet: one account across the chain and the kernel.',
-        start_url: '/',
-        scope: '/',
+        start_url: '/wallet/',
+        scope: '/wallet/',
         display: 'standalone',
         orientation: 'portrait',
         background_color: DEFAULT_THEME_COLOR,

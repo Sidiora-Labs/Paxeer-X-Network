@@ -46,7 +46,7 @@ export async function POST(request: NextRequest) {
     const body = raw as Record<string, unknown>;
     const campaign = parseCampaign({
       ...body,
-      url: body.url ?? '/',
+      url: body.url ?? '/wallet/',
     });
     if (campaign.url && (!campaign.url.startsWith('/') || campaign.url.startsWith('//'))) {
       throw new HttpBoundaryError(400, 'CAMPAIGN_INVALID', 'Campaign is invalid');

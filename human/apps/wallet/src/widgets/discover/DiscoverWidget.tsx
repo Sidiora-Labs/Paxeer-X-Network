@@ -5,7 +5,7 @@ import Image from 'next/image';
 import { Flame, Zap, Sparkles, BarChart3, Activity, RefreshCw } from 'lucide-react';
 import { useRankingsQuery, type RankingCategory } from '@/lib/queries/rankings';
 import type { AppRoute } from '@/widgets/shell/useAppRoute';
-import { openExternalUrl } from '@/lib/security/navigation';
+import { openExternalUrl, openExplorerPath } from '@/lib/security/navigation';
 import { DiscoverRankingSkeleton } from '@/components/ui/Skeletons';
 import { RankedTokenList } from './RankedTokenList';
 import { DiscoverCarousel } from './DiscoverCarousel';
@@ -13,8 +13,8 @@ import Link from 'next/link';
 import { SURFACE_ROUTES } from '@/surfaces/routes';
 
 const BANNER_SLIDES = [
-  { src: '/1c56896f-202b-4da0-a145-5e469abf0f85.png', alt: 'Paxeer Banner 1' },
-  { src: '/6751fc7c-8b71-48f5-b454-c34299955eb3.png', alt: 'Paxeer Banner 2' },
+  { src: '/wallet/1c56896f-202b-4da0-a145-5e469abf0f85.png', alt: 'Paxeer Banner 1' },
+  { src: '/wallet/6751fc7c-8b71-48f5-b454-c34299955eb3.png', alt: 'Paxeer Banner 2' },
 ];
 
 interface DiscoverWidgetProps {
@@ -44,7 +44,7 @@ export function DiscoverWidget({ onNavigate, onTokenTrade }: DiscoverWidgetProps
 
       <button onClick={() => openExternalUrl('https://www.kindlelaunch.com')} className="row-span-2 bg-pax-surface rounded-[20px] p-4 flex flex-col justify-between text-left press-scale min-h-[200px]">
         <div className="w-[48px] h-[48px] rounded-2xl overflow-hidden shrink-0">
-          <Image src="/Kindle-Launch-logo-dark.webp" alt="Sidiora.Fun" width={48} height={48} className="w-full h-full object-contain" />
+          <Image src="/wallet/Kindle-Launch-logo-dark.webp" alt="Sidiora.Fun" width={48} height={48} className="w-full h-full object-contain" />
         </div>
         <div className="mt-auto pt-3">
           <p className="text-base font-extrabold leading-tight">KindleLaunch</p>
@@ -52,16 +52,16 @@ export function DiscoverWidget({ onNavigate, onTokenTrade }: DiscoverWidgetProps
         </div>
       </button>
 
-      <button onClick={() => openExternalUrl('https://paxscan.io')} className="bg-pax-surface rounded-[20px] p-4 flex flex-col justify-between text-left press-scale min-h-[95px]">
+      <button onClick={() => openExplorerPath()} className="bg-pax-surface rounded-[20px] p-4 flex flex-col justify-between text-left press-scale min-h-[95px]">
         <div className="w-[36px] h-[36px] rounded-xl overflow-hidden shrink-0">
-          <Image src="/paxscan.svg" alt="PaxScan" width={36} height={36} className="w-full h-full object-contain" />
+          <Image src="/wallet/paxscan.svg" alt="PaxScan" width={36} height={36} className="w-full h-full object-contain" />
         </div>
         <div className="mt-auto pt-2"><p className="text-[13px] font-bold">PaxScan</p></div>
       </button>
 
       <button onClick={() => onNavigate('pns')} className="bg-pax-surface rounded-[20px] p-4 flex flex-col justify-between text-left press-scale min-h-[95px]">
         <div className="w-[36px] h-[36px] rounded-xl overflow-hidden shrink-0">
-          <Image src="/pns.svg" alt="PNS" width={36} height={36} className="w-full h-full object-contain" />
+          <Image src="/wallet/pns.svg" alt="PNS" width={36} height={36} className="w-full h-full object-contain" />
         </div>
         <div className="mt-auto pt-2"><p className="text-[13px] font-bold">PNS</p></div>
       </button>

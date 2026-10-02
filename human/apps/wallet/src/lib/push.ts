@@ -3,7 +3,7 @@
 // To send push from your backend, use the subscription object with web-push lib.
 
 const VAPID_PUBLIC_KEY = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY || '';
-const PUSH_API_BASE = '/api/push';
+const PUSH_API_BASE = '/wallet/api/push';
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -43,8 +43,8 @@ export function getNotificationPermission(): NotificationPermission | 'unsupport
 export async function getServiceWorkerRegistration(): Promise<ServiceWorkerRegistration | null> {
   if (!('serviceWorker' in navigator)) return null;
   try {
-    const existing = await navigator.serviceWorker.getRegistration('/');
-    const registration = existing || await navigator.serviceWorker.register('/sw.js');
+    const existing = await navigator.serviceWorker.getRegistration('/wallet/');
+    const registration = existing || await navigator.serviceWorker.register('/wallet/sw.js', { scope: '/wallet/' });
     if (registration.active) return registration;
     return await navigator.serviceWorker.ready;
   } catch {
@@ -127,8 +127,8 @@ export async function showLocalNotification(
   if (!registration) return;
 
   await registration.showNotification(title, {
-    icon: '/icons/android/launchericon-192x192.png',
-    badge: '/icons/android/launchericon-96x96.png',
+    icon: '/wallet/icons/android/launchericon-192x192.png',
+    badge: '/wallet/icons/android/launchericon-96x96.png',
     ...options,
   } as NotificationOptions & Record<string, unknown>);
 }

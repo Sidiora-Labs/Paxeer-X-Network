@@ -20,12 +20,14 @@ export function isAllowedMediaContentType(contentType: string | null): boolean {
 }
 
 export function safeMediaPath(source: string | null | undefined): string {
-  if (!source) return '/default_icon.webp';
-  if (source.startsWith('/') && !source.startsWith('//')) return source;
+  if (!source) return '/wallet/default_icon.webp';
+  if (source.startsWith('/') && !source.startsWith('//')) {
+    return source === '/wallet' || source.startsWith('/wallet/') ? source : `/wallet${source}`;
+  }
   const parsed = parseHttpsUrl(source, {
     allowedOrigins: ALLOWED_MEDIA_ORIGINS,
     maxLength: 2048,
   });
-  if (!parsed.ok) return '/default_icon.webp';
-  return `/api/media?url=${encodeURIComponent(parsed.value.toString())}`;
+  if (!parsed.ok) return '/wallet/default_icon.webp';
+  return `/wallet/api/media?url=${encodeURIComponent(parsed.value.toString())}`;
 }

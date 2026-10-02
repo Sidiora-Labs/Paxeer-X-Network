@@ -29,3 +29,13 @@ export function openExternalUrl(input: string): boolean {
   if (opened) opened.opener = null;
   return opened !== null;
 }
+
+export function openExplorerPath(path = ''): boolean {
+  if (typeof window === 'undefined') return false;
+  if (path && (!path.startsWith('/') || path.startsWith('//'))) return false;
+  const url = new URL(`/explorer${path}`, window.location.origin);
+  if (url.origin !== window.location.origin || (url.pathname !== '/explorer' && !url.pathname.startsWith('/explorer/'))) return false;
+  const opened = window.open(url.toString(), '_blank', 'noopener,noreferrer');
+  if (opened) opened.opener = null;
+  return opened !== null;
+}

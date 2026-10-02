@@ -12,6 +12,8 @@ const layerxSdkDir = path.resolve(appDir, '../../../agent/sdk/typescript');
 /** @type {import('next').NextConfig} */
 const nextConfig = {
     output: 'standalone',
+    basePath: '/wallet',
+    trailingSlash: true,
     outputFileTracingRoot: path.resolve(appDir, '../../..'),
     reactStrictMode: true,
     transpilePackages: ['three', '@react-three/fiber', '@react-three/drei'],
@@ -44,7 +46,7 @@ const nextConfig = {
                 source: '/sw.js',
                 headers: [
                     { key: 'Cache-Control', value: 'public, max-age=0, must-revalidate' },
-                    { key: 'Service-Worker-Allowed', value: '/' },
+                    { key: 'Service-Worker-Allowed', value: '/wallet/' },
                 ],
             },
             {

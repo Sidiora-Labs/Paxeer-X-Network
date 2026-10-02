@@ -34,7 +34,7 @@ export function SplashScreen({ children }: SplashScreenProps) {
                     >
                         {/* Full-bleed brand image */}
                         <motion.img
-                            src="/PAXPORT.png"
+                            src="/wallet/PAXPORT.png"
                             alt="Paxport"
                             className="absolute inset-0 w-full h-full object-cover"
                             initial={{ opacity: 0, scale: 1.04 }}
