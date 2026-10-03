@@ -25533,7 +25533,11 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.13.4]
 title = "Serve authenticated wallet custody, constrained signing and sponsored submission adapters"
-status = "in_progress"
+status = "done"
+completion_basis = "implementation"
+qualification_status = "unverified"
+implemented_revision = "9913377e3"
+build_status = "passed"
 completion_basis = "implementation"
 qualification_status = "unverified"
 mode = "BUILD"
