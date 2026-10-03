@@ -376,3 +376,9 @@ impl Abi {
         Ok(out)
     }
 }
+
+impl Abi {
+    pub(crate) fn replay_storage_witness(&self, code_hash: [u8; 32], baseline: &Storage, maximum: usize) -> Result<crate::replay::StorageReplayWitnessV1, crate::replay::ReplayWitnessError> {
+        crate::replay::StorageReplayWitnessV1::capture(code_hash, baseline, &self.storage, maximum)
+    }
+}

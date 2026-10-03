@@ -257,3 +257,166 @@ mod tests {
         assert_eq!(state.replay_host_witness([7; 32], maximum + 1), Err(ReplayWitnessError::Bounds));
     }
 }
+
+const STORAGE_PAIR_DOMAIN: &[u8] = b"LayerX/programs/replay-storage-witness/v1\0";
+
+pub struct UntrustedStorageReplayPair {
+    pub baseline: crate::storage::Storage,
+    pub current: crate::storage::Storage,
+    pub storage_overlay: Vec<(Vec<u8>, Option<Vec<u8>>)>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StorageReplayWitnessV1 {
+    code_hash: [u8; 32],
+    baseline: Vec<u8>,
+    current: Vec<u8>,
+    overlay: Vec<u8>,
+}
+
+fn storage_overlay_bytes(entries: &[(Vec<u8>, Option<Vec<u8>>)], maximum: usize) -> Result<Vec<u8>, ReplayWitnessError> {
+    let mut out = Vec::new();
+    append(&mut out, &u32::try_from(entries.len()).map_err(|_| ReplayWitnessError::Bounds)?.to_be_bytes(), maximum)?;
+    for (key, value) in entries {
+        match value {
+            Some(value) => { append(&mut out, &[0], maximum)?; field(&mut out, key, maximum)?; field(&mut out, value, maximum)?; }
+            None => { append(&mut out, &[1], maximum)?; field(&mut out, key, maximum)?; }
+        }
+    }
+    Ok(out)
+}
+
+impl StorageReplayWitnessV1 {
+    pub(crate) fn capture(code_hash: [u8; 32], baseline: &crate::storage::Storage, current: &crate::storage::Storage, maximum: usize) -> Result<Self, ReplayWitnessError> {
+        maximum_bytes(maximum)?;
+        if code_hash == [0; 32] { return Err(ReplayWitnessError::Binding); }
+        let mut remaining = maximum.checked_sub(STORAGE_PAIR_DOMAIN.len() + 32 + 12).ok_or(ReplayWitnessError::Bounds)?;
+        let baseline_bytes = baseline.replay_state_bytes(remaining)?;
+        remaining = remaining.checked_sub(baseline_bytes.len()).ok_or(ReplayWitnessError::Bounds)?;
+        let current_bytes = current.replay_state_bytes(remaining)?;
+        remaining = remaining.checked_sub(current_bytes.len()).ok_or(ReplayWitnessError::Bounds)?;
+        let entries = current.bounded_replay_overlay(baseline, remaining)?;
+        let overlay = storage_overlay_bytes(&entries, remaining)?;
+        Ok(Self { code_hash, baseline: baseline_bytes, current: current_bytes, overlay })
+    }
+    fn encoded_len(&self) -> Result<usize, ReplayWitnessError> {
+        (STORAGE_PAIR_DOMAIN.len() + 32 + 12).checked_add(self.baseline.len())
+            .and_then(|n| n.checked_add(self.current.len())).and_then(|n| n.checked_add(self.overlay.len())).ok_or(ReplayWitnessError::Bounds)
+    }
+    pub fn canonical_bytes(&self, maximum: usize) -> Result<Vec<u8>, ReplayWitnessError> {
+        maximum_bytes(maximum)?;
+        if self.encoded_len()? > maximum { return Err(ReplayWitnessError::Bounds); }
+        let mut out = Vec::new();
+        append(&mut out, STORAGE_PAIR_DOMAIN, maximum)?;
+        append(&mut out, &self.code_hash, maximum)?;
+        field(&mut out, &self.baseline, maximum)?;
+        field(&mut out, &self.current, maximum)?;
+        field(&mut out, &self.overlay, maximum)?;
+        Ok(out)
+    }
+    pub fn decode(bytes: &[u8], maximum: usize) -> Result<Self, ReplayWitnessError> {
+        maximum_bytes(maximum)?;
+        if bytes.len() > maximum { return Err(ReplayWitnessError::Bounds); }
+        let mut cursor = ReplayCursor::new(bytes);
+        if cursor.take(STORAGE_PAIR_DOMAIN.len())? != STORAGE_PAIR_DOMAIN { return Err(ReplayWitnessError::Encoding); }
+        let code_hash = cursor.take(32)?.try_into().map_err(|_| ReplayWitnessError::Encoding)?;
+        if code_hash == [0; 32] { return Err(ReplayWitnessError::Binding); }
+        let baseline = cursor.field()?;
+        let current = cursor.field()?;
+        let overlay = cursor.field()?;
+        if !cursor.done() { return Err(ReplayWitnessError::Encoding); }
+        let restored_baseline = crate::storage::Storage::decode_untrusted_replay_state(baseline, maximum)?;
+        let restored_current = crate::storage::Storage::decode_untrusted_replay_state(current, maximum)?;
+        let actual_overlay = restored_current.bounded_replay_overlay(&restored_baseline, overlay.len())?;
+        if storage_overlay_bytes(&actual_overlay, overlay.len())?.as_slice() != overlay { return Err(ReplayWitnessError::Binding); }
+        Ok(Self { code_hash, baseline: copy(baseline)?, current: copy(current)?, overlay: copy(overlay)? })
+    }
+    pub fn decode_untrusted_storage_pair(&self, maximum: usize) -> Result<UntrustedStorageReplayPair, ReplayWitnessError> {
+        maximum_bytes(maximum)?;
+        if self.encoded_len()? > maximum { return Err(ReplayWitnessError::Bounds); }
+        let baseline = crate::storage::Storage::decode_untrusted_replay_state(&self.baseline, maximum)?;
+        let current = crate::storage::Storage::decode_untrusted_replay_state(&self.current, maximum)?;
+        let storage_overlay = current.bounded_replay_overlay(&baseline, self.overlay.len())?;
+        if storage_overlay_bytes(&storage_overlay, self.overlay.len())? != self.overlay { return Err(ReplayWitnessError::Binding); }
+        Ok(UntrustedStorageReplayPair { baseline, current, storage_overlay })
+    }
+    pub fn proposal_digest(&self, maximum: usize) -> Result<[u8; 32], ReplayWitnessError> {
+        Ok(Sha256::digest(self.canonical_bytes(maximum)?).into())
+    }
+    pub fn compare_host_witness_baseline(&self, host: &ReplayHostWitnessV1, maximum: usize) -> Result<(), ReplayWitnessError> {
+        if self.code_hash != host.code_hash || host.abi.is_none() { return Err(ReplayWitnessError::Binding); }
+        let pair = self.decode_untrusted_storage_pair(maximum)?;
+        let mut legacy = Vec::new();
+        append(&mut legacy, STORAGE_DOMAIN, host.storage_baseline.len())?;
+        pair.baseline.try_for_each_commitment_entry(|key, value| {
+            field(&mut legacy, &key, host.storage_baseline.len())?;
+            field(&mut legacy, value, host.storage_baseline.len())
+        })?;
+        if legacy != host.storage_baseline { return Err(ReplayWitnessError::Binding); }
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod storage_pair_tests {
+    use super::*;
+    use crate::abi::{Abi, AuthorizationContext, Capability, CapabilitySet, UnavailableReceiptOracle};
+    use crate::host::RuntimeState;
+    use crate::storage::{PrincipalId, ProgramId, Storage, StorageNamespace};
+
+    #[test]
+    fn actual_abi_pair_restores_exact_current_baseline_and_observed_delta() {
+        let maximum = crate::MAX_TRACE_STATE_BYTES as usize;
+        let program = ProgramId::new([11; 32]).unwrap_or_else(|error| panic!("program: {error}"));
+        let principal = PrincipalId::new([12; 32]).unwrap_or_else(|error| panic!("principal: {error}"));
+        let namespace = StorageNamespace::principal(program, principal);
+        let mut storage = Storage::new();
+        storage.write(namespace, b"a", b"old").unwrap_or_else(|error| panic!("write: {error}"));
+        storage.write(namespace, b"b", b"delete").unwrap_or_else(|error| panic!("write: {error}"));
+        let baseline = storage.clone();
+        let grants = CapabilitySet::new([Capability::StorageRead, Capability::StorageWrite]).unwrap_or_else(|error| panic!("capabilities: {error}"));
+        let abi = Abi::new(2, program, AuthorizationContext::new(principal, grants), storage, &UnavailableReceiptOracle)
+            .unwrap_or_else(|error| panic!("abi: {error}"));
+        let mut state = RuntimeState::sandbox(crate::Meter::declared(), abi);
+        state.with_abi(|abi, meter| {
+            abi.storage_write(meter, b"a", b"new")?;
+            abi.storage_delete(meter, b"b")?;
+            abi.storage_write(meter, b"c", b"added")
+        }).unwrap_or_else(|error| panic!("actual ABI mutation: {error}"));
+        let witness = state.replay_storage_witness([13; 32], maximum).unwrap_or_else(|error| panic!("storage witness: {error:?}"));
+        let host = state.replay_host_witness([13; 32], maximum).unwrap_or_else(|error| panic!("host witness: {error:?}"));
+        assert_eq!(witness.compare_host_witness_baseline(&host, maximum), Ok(()));
+        let restored = witness.decode_untrusted_storage_pair(maximum).unwrap_or_else(|error| panic!("restore: {error:?}"));
+        assert_eq!(restored.baseline.replay_state_bytes(maximum), baseline.replay_state_bytes(maximum));
+        let actual_abi = state.authorization_abi().unwrap_or_else(|| panic!("abi missing"));
+        assert_eq!(restored.current.replay_state_bytes(maximum), actual_abi.storage_snapshot().replay_state_bytes(maximum));
+        let mut observed = Vec::new();
+        actual_abi.for_each_storage_commitment_delta(&baseline, |key, value| observed.push((key, value.map(<[u8]>::to_vec))));
+        observed.sort_by(|left, right| left.0.cmp(&right.0));
+        assert_eq!(restored.storage_overlay, observed);
+        assert_eq!(observed.len(), 3);
+        let encoded = witness.canonical_bytes(maximum).unwrap_or_else(|error| panic!("encode: {error:?}"));
+        assert_eq!(StorageReplayWitnessV1::decode(&encoded, encoded.len()), Ok(witness.clone()));
+        assert_eq!(witness.canonical_bytes(encoded.len() - 1), Err(ReplayWitnessError::Bounds));
+        let mut forged = witness.clone();
+        *forged.overlay.last_mut().unwrap_or_else(|| panic!("overlay missing")) ^= 1;
+        let forged = forged.canonical_bytes(maximum).unwrap_or_else(|error| panic!("forge encoding: {error:?}"));
+        assert!(StorageReplayWitnessV1::decode(&forged, maximum).is_err());
+        let mut trailing = encoded.clone(); trailing.push(0);
+        assert_eq!(StorageReplayWitnessV1::decode(&trailing, maximum), Err(ReplayWitnessError::Encoding));
+        for length in 0..encoded.len() { assert!(StorageReplayWitnessV1::decode(&encoded[..length], maximum).is_err()); }
+        let new_namespace = StorageNamespace::shared(program);
+        assert_eq!(restored.current.read(new_namespace, b"missing"), Ok(None));
+        let changed = StorageReplayWitnessV1::capture([13; 32], &restored.baseline, &restored.current, maximum)
+            .unwrap_or_else(|error| panic!("access history: {error:?}"));
+        assert_eq!(changed.overlay, witness.overlay);
+        assert_eq!(changed.compare_host_witness_baseline(&host, maximum), Ok(()));
+        assert_ne!(changed.proposal_digest(maximum), witness.proposal_digest(maximum));
+    }
+
+    #[test]
+    fn absent_actual_storage_is_not_replaced_with_empty_storage() {
+        let state = RuntimeState::isolated(crate::Meter::declared());
+        assert_eq!(state.replay_storage_witness([14; 32], crate::MAX_TRACE_STATE_BYTES as usize), Err(ReplayWitnessError::StateUnavailable));
+    }
+}

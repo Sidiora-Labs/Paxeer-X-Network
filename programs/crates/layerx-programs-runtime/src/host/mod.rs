@@ -1223,3 +1223,10 @@ impl RuntimeState {
         Ok(witness)
     }
 }
+
+impl RuntimeState {
+    pub(crate) fn replay_storage_witness(&self, code_hash: [u8; 32], maximum: usize) -> Result<crate::replay::StorageReplayWitnessV1, crate::replay::ReplayWitnessError> {
+        self.abi.as_ref().ok_or(crate::replay::ReplayWitnessError::StateUnavailable)?
+            .replay_storage_witness(code_hash, &self.trace_storage_baseline, maximum)
+    }
+}
