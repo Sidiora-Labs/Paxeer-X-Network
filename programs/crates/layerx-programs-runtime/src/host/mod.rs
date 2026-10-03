@@ -1230,3 +1230,10 @@ impl RuntimeState {
             .replay_storage_witness(code_hash, &self.trace_storage_baseline, maximum)
     }
 }
+
+
+impl RuntimeState {
+    pub(crate) fn replay_composition_witness(&self, code_hash: [u8; 32], maximum: usize) -> Result<crate::replay::CompositionReplayWitnessV1, crate::replay::ReplayWitnessError> {
+        crate::replay::CompositionReplayWitnessV1::capture(code_hash, self.composition.as_ref(), self.failure_graph.as_ref(), maximum)
+    }
+}

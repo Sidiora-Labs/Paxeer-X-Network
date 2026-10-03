@@ -420,3 +420,188 @@ mod storage_pair_tests {
         assert_eq!(state.replay_storage_witness([14; 32], crate::MAX_TRACE_STATE_BYTES as usize), Err(ReplayWitnessError::StateUnavailable));
     }
 }
+
+
+const COMPOSITION_DOMAIN: &[u8] = b"LayerX/programs/replay-composition-witness/v1\0";
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CompositionReplayWitnessV1 {
+    code_hash: [u8; 32],
+    composition: Option<(crate::AbiRevision, Vec<u8>)>,
+    failure_graph: Option<Vec<u8>>,
+}
+
+pub struct UntrustedCompositionReplayState {
+    pub composition: Option<(crate::AbiRevision, crate::CallGraph)>,
+    pub failure_graph: Option<crate::CallGraph>,
+}
+
+impl CompositionReplayWitnessV1 {
+    pub(crate) fn capture(code_hash: [u8; 32], composition: Option<&crate::calls::Composition>, failure_graph: Option<&crate::CallGraph>, maximum: usize) -> Result<Self, ReplayWitnessError> {
+        maximum_bytes(maximum)?;
+        if code_hash == [0; 32] { return Err(ReplayWitnessError::Binding); }
+        let overhead = COMPOSITION_DOMAIN.len() + 32 + 2
+            + if composition.is_some() { 5 } else { 0 }
+            + if failure_graph.is_some() { 4 } else { 0 };
+        let mut remaining = maximum.checked_sub(overhead).ok_or(ReplayWitnessError::Bounds)?;
+        let composition = composition.map(|composition| {
+            let graph = composition.graph().replay_state_bytes(remaining)?;
+            remaining = remaining.checked_sub(graph.len()).ok_or(ReplayWitnessError::Bounds)?;
+            Ok::<_, ReplayWitnessError>((composition.revision(), graph))
+        }).transpose()?;
+        let failure_graph = failure_graph.map(|graph| graph.replay_state_bytes(remaining)).transpose()?;
+        Ok(Self { code_hash, composition, failure_graph })
+    }
+
+    pub fn code_hash(&self) -> [u8; 32] { self.code_hash }
+
+    pub fn canonical_bytes(&self, maximum: usize) -> Result<Vec<u8>, ReplayWitnessError> {
+        maximum_bytes(maximum)?;
+        let mut length = COMPOSITION_DOMAIN.len() + 32 + 2;
+        if let Some((_, graph)) = &self.composition {
+            length = length.checked_add(5).and_then(|n| n.checked_add(graph.len())).ok_or(ReplayWitnessError::Bounds)?;
+        }
+        if let Some(graph) = &self.failure_graph {
+            length = length.checked_add(4).and_then(|n| n.checked_add(graph.len())).ok_or(ReplayWitnessError::Bounds)?;
+        }
+        if length > maximum { return Err(ReplayWitnessError::Bounds); }
+        let mut out = Vec::new();
+        out.try_reserve_exact(length).map_err(|_| ReplayWitnessError::Allocation)?;
+        append(&mut out, COMPOSITION_DOMAIN, maximum)?;
+        append(&mut out, &self.code_hash, maximum)?;
+        match &self.composition {
+            None => append(&mut out, &[0], maximum)?,
+            Some((revision, graph)) => {
+                let version = match revision { crate::AbiRevision::V1 => 1, crate::AbiRevision::V2 => 2, crate::AbiRevision::V3 => 3, crate::AbiRevision::V4 => 4 };
+                append(&mut out, &[1, version], maximum)?;
+                field(&mut out, graph, maximum)?;
+            }
+        }
+        match &self.failure_graph {
+            None => append(&mut out, &[0], maximum)?,
+            Some(graph) => { append(&mut out, &[1], maximum)?; field(&mut out, graph, maximum)?; }
+        }
+        Ok(out)
+    }
+
+    pub fn decode(encoded: &[u8], maximum: usize) -> Result<Self, ReplayWitnessError> {
+        maximum_bytes(maximum)?;
+        if encoded.len() > maximum { return Err(ReplayWitnessError::Bounds); }
+        let mut cursor = ReplayCursor::new(encoded);
+        if cursor.take(COMPOSITION_DOMAIN.len())? != COMPOSITION_DOMAIN { return Err(ReplayWitnessError::Encoding); }
+        let code_hash = cursor.take(32)?.try_into().map_err(|_| ReplayWitnessError::Encoding)?;
+        if code_hash == [0; 32] { return Err(ReplayWitnessError::Binding); }
+        let composition = match cursor.u8()? {
+            0 => None,
+            1 => {
+                let revision = match cursor.u8()? { 1 => crate::AbiRevision::V1, 2 => crate::AbiRevision::V2, 3 => crate::AbiRevision::V3, 4 => crate::AbiRevision::V4, _ => return Err(ReplayWitnessError::Encoding) };
+                let bytes = cursor.field()?;
+                crate::CallGraph::decode_untrusted_replay_state(bytes, maximum)?;
+                Some((revision, copy(bytes)?))
+            }
+            _ => return Err(ReplayWitnessError::Encoding),
+        };
+        let failure_graph = match cursor.u8()? {
+            0 => None,
+            1 => {
+                let bytes = cursor.field()?;
+                crate::CallGraph::decode_untrusted_replay_state(bytes, maximum)?;
+                Some(copy(bytes)?)
+            }
+            _ => return Err(ReplayWitnessError::Encoding),
+        };
+        if !cursor.done() { return Err(ReplayWitnessError::Encoding); }
+        Ok(Self { code_hash, composition, failure_graph })
+    }
+
+    pub fn decode_untrusted_state(&self, maximum: usize) -> Result<UntrustedCompositionReplayState, ReplayWitnessError> {
+        self.canonical_bytes(maximum)?;
+        Ok(UntrustedCompositionReplayState {
+            composition: self.composition.as_ref().map(|(revision, graph)| {
+                crate::CallGraph::decode_untrusted_replay_state(graph, maximum).map(|graph| (*revision, graph))
+            }).transpose()?,
+            failure_graph: self.failure_graph.as_ref().map(|graph| crate::CallGraph::decode_untrusted_replay_state(graph, maximum)).transpose()?,
+        })
+    }
+
+    pub fn proposal_digest(&self, maximum: usize) -> Result<[u8; 32], ReplayWitnessError> {
+        Ok(Sha256::digest(self.canonical_bytes(maximum)?).into())
+    }
+}
+
+
+#[cfg(test)]
+mod composition_replay_tests {
+    use super::*;
+
+    #[test]
+    fn real_live_graph_restoration_retains_admission_history_and_refusals() {
+        let root = crate::ProgramId::new([1; 32]).unwrap_or_else(|error| panic!("root: {error}"));
+        let middle = crate::ProgramId::new([2; 32]).unwrap_or_else(|error| panic!("middle: {error}"));
+        let leaf = crate::ProgramId::new([3; 32]).unwrap_or_else(|error| panic!("leaf: {error}"));
+        let principal = crate::PrincipalId::new([4; 32]).unwrap_or_else(|error| panic!("principal: {error}"));
+        let rules = crate::CompositionRules::new(2, 5, 2, 2).unwrap_or_else(|error| panic!("rules: {error}"));
+        let mut graph = crate::CallGraph::root(rules, root, principal);
+        let maximum = 4096;
+        for (callee, leave) in [(middle, false), (leaf, true), (leaf, false)] {
+            graph.enter(callee).unwrap_or_else(|error| panic!("enter: {error}"));
+            let encoded = graph.replay_state_bytes(maximum).unwrap_or_else(|error| panic!("encode: {error:?}"));
+            let restored = crate::CallGraph::decode_untrusted_replay_state(&encoded, maximum).unwrap_or_else(|error| panic!("restore: {error:?}"));
+            assert_eq!(restored, graph);
+            let mut actual_refusal = graph.clone();
+            let mut restored_refusal = restored.clone();
+            assert_eq!(actual_refusal.enter(root), restored_refusal.enter(root));
+            assert_eq!(actual_refusal.enter(middle), restored_refusal.enter(middle));
+            if leave { graph.leave(); }
+        }
+        graph.leave(); graph.leave();
+        graph.enter(middle).unwrap_or_else(|error| panic!("repeat: {error}"));
+        let composition = crate::calls::Composition::new(
+            std::rc::Rc::new(crate::ProgramCatalog::new()), graph.clone(), crate::AbiRevision::V4,
+        );
+        let witness = CompositionReplayWitnessV1::capture([5; 32], Some(&composition), Some(&graph), maximum)
+            .unwrap_or_else(|error| panic!("capture: {error:?}"));
+        let encoded = witness.canonical_bytes(maximum).unwrap_or_else(|error| panic!("encode: {error:?}"));
+        assert_eq!(CompositionReplayWitnessV1::decode(&encoded, maximum), Ok(witness.clone()));
+        let restored = witness.decode_untrusted_state(maximum).unwrap_or_else(|error| panic!("decode: {error:?}"));
+        assert_eq!(restored.composition, Some((crate::AbiRevision::V4, graph.clone())));
+        assert_eq!(restored.failure_graph, Some(graph.clone()));
+        let mut restored = crate::CallGraph::decode_untrusted_replay_state(
+            &graph.replay_state_bytes(maximum).unwrap_or_else(|error| panic!("graph: {error:?}")), maximum,
+        ).unwrap_or_else(|error| panic!("graph restore: {error:?}"));
+        assert_eq!(restored.enter(leaf), graph.enter(leaf));
+        assert_eq!(restored, graph);
+    }
+
+    #[test]
+    fn graph_replay_refuses_forged_frames_visits_edges_and_bounds() {
+        let root = crate::ProgramId::new([1; 32]).unwrap_or_else(|error| panic!("root: {error}"));
+        let callee = crate::ProgramId::new([2; 32]).unwrap_or_else(|error| panic!("callee: {error}"));
+        let principal = crate::PrincipalId::new([3; 32]).unwrap_or_else(|error| panic!("principal: {error}"));
+        let mut graph = crate::CallGraph::root(crate::CompositionRules::declared(), root, principal);
+        graph.enter(callee).unwrap_or_else(|error| panic!("enter: {error}"));
+        let encoded = graph.replay_state_bytes(4096).unwrap_or_else(|error| panic!("encode: {error:?}"));
+        assert_eq!(graph.replay_state_bytes(encoded.len() - 1), Err(ReplayWitnessError::Bounds));
+        assert_eq!(crate::CallGraph::decode_untrusted_replay_state(&encoded, encoded.len() - 1), Err(ReplayWitnessError::Bounds));
+        for length in 0..encoded.len() {
+            assert!(crate::CallGraph::decode_untrusted_replay_state(&encoded[..length], 4096).is_err());
+        }
+        let mut forged = encoded.clone();
+        let last = forged.len() - 1;
+        forged[last] ^= 1;
+        assert!(crate::CallGraph::decode_untrusted_replay_state(&forged, 4096).is_err());
+        let edge_offset = b"LayerX/programs/replay-call-graph/v1\0".len() + 16 + 64 + 4;
+        let mut forged = encoded.clone(); forged[edge_offset] = 1;
+        assert!(crate::CallGraph::decode_untrusted_replay_state(&forged, 4096).is_err());
+        let frame_offset = edge_offset + 118 + 4;
+        let mut forged = encoded.clone(); forged[frame_offset] = 1;
+        assert!(crate::CallGraph::decode_untrusted_replay_state(&forged, 4096).is_err());
+        let mut surplus = encoded; surplus.push(0);
+        assert!(crate::CallGraph::decode_untrusted_replay_state(&surplus, 4096).is_err());
+        let isolated = CompositionReplayWitnessV1::capture([9; 32], None, None, 4096)
+            .unwrap_or_else(|error| panic!("isolated: {error:?}"));
+        let bytes = isolated.canonical_bytes(4096).unwrap_or_else(|error| panic!("isolated encode: {error:?}"));
+        assert_eq!(CompositionReplayWitnessV1::decode(&bytes, 4096), Ok(isolated));
+        assert_eq!(CompositionReplayWitnessV1::capture([0; 32], None, None, 4096), Err(ReplayWitnessError::Binding));
+    }
+}

@@ -450,6 +450,114 @@ impl CallGraph {
     }
 }
 
+const REPLAY_GRAPH_DOMAIN: &[u8] = b"LayerX/programs/replay-call-graph/v1\0";
+
+impl CallGraph {
+    pub fn replay_state_bytes(&self, maximum: usize) -> Result<Vec<u8>, crate::replay::ReplayWitnessError> {
+        use crate::replay::{append, maximum_bytes, ReplayWitnessError as E};
+        maximum_bytes(maximum)?;
+        let root = self.frames.first().ok_or(E::StateUnavailable)?;
+        let length = (REPLAY_GRAPH_DOMAIN.len() + 16 + 64 + 12)
+            .checked_add(self.edges.len().checked_mul(118).ok_or(E::Bounds)?)
+            .and_then(|n| n.checked_add(self.frames.len().checked_mul(81)?))
+            .and_then(|n| n.checked_add(self.entered.len().checked_mul(36)?))
+            .ok_or(E::Bounds)?;
+        if length > maximum { return Err(E::Bounds); }
+        let mut out = Vec::new();
+        out.try_reserve_exact(length).map_err(|_| E::Allocation)?;
+        append(&mut out, REPLAY_GRAPH_DOMAIN, maximum)?;
+        for value in [self.rules.depth, self.rules.edges, self.rules.fanout, self.rules.visits] {
+            append(&mut out, &value.to_be_bytes(), maximum)?;
+        }
+        append(&mut out, &self.principal.bytes(), maximum)?;
+        append(&mut out, &root.program.bytes(), maximum)?;
+        append(&mut out, &u32::try_from(self.edges.len()).map_err(|_| E::Bounds)?.to_be_bytes(), maximum)?;
+        for edge in &self.edges {
+            for frame in [edge.caller_frame, edge.callee_frame] {
+                let (path, depth) = frame.canonical_bytes();
+                append(&mut out, &path, maximum)?;
+                append(&mut out, &[depth], maximum)?;
+            }
+            for program in [edge.caller.bytes(), edge.callee.bytes(), edge.principal.bytes()] {
+                append(&mut out, &program, maximum)?;
+            }
+            append(&mut out, &edge.depth.to_be_bytes(), maximum)?;
+        }
+        append(&mut out, &u32::try_from(self.frames.len()).map_err(|_| E::Bounds)?.to_be_bytes(), maximum)?;
+        for frame in &self.frames {
+            let (path, depth) = frame.id.canonical_bytes();
+            append(&mut out, &path, maximum)?;
+            append(&mut out, &[depth], maximum)?;
+            append(&mut out, &frame.program.bytes(), maximum)?;
+            append(&mut out, &frame.principal.bytes(), maximum)?;
+            append(&mut out, &frame.depth.to_be_bytes(), maximum)?;
+            append(&mut out, &frame.calls.to_be_bytes(), maximum)?;
+        }
+        append(&mut out, &u32::try_from(self.entered.len()).map_err(|_| E::Bounds)?.to_be_bytes(), maximum)?;
+        for (program, visits) in &self.entered {
+            append(&mut out, &program.bytes(), maximum)?;
+            append(&mut out, &visits.to_be_bytes(), maximum)?;
+        }
+        Ok(out)
+    }
+
+    pub fn decode_untrusted_replay_state(encoded: &[u8], maximum: usize) -> Result<Self, crate::replay::ReplayWitnessError> {
+        use crate::replay::{maximum_bytes, ReplayCursor, ReplayWitnessError as E};
+        maximum_bytes(maximum)?;
+        if encoded.len() > maximum { return Err(E::Bounds); }
+        fn program(cursor: &mut ReplayCursor<'_>) -> Result<ProgramId, E> {
+            ProgramId::new(cursor.take(32)?.try_into().map_err(|_| E::Encoding)?).map_err(|_| E::Encoding)
+        }
+        fn principal(cursor: &mut ReplayCursor<'_>) -> Result<PrincipalId, E> {
+            PrincipalId::new(cursor.take(32)?.try_into().map_err(|_| E::Encoding)?).map_err(|_| E::Encoding)
+        }
+        fn frame(cursor: &mut ReplayCursor<'_>) -> Result<CallFrameId, E> {
+            let path = cursor.take(8)?.try_into().map_err(|_| E::Encoding)?;
+            CallFrameId::from_canonical(path, cursor.u8()?).map_err(|_| E::Encoding)
+        }
+        let mut cursor = ReplayCursor::new(encoded);
+        if cursor.take(REPLAY_GRAPH_DOMAIN.len())? != REPLAY_GRAPH_DOMAIN { return Err(E::Encoding); }
+        let rules = CompositionRules::new(cursor.u32()?, cursor.u32()?, cursor.u32()?, cursor.u32()?).map_err(|_| E::Encoding)?;
+        let owner = principal(&mut cursor)?;
+        let root = program(&mut cursor)?;
+        let count = cursor.u32()?;
+        if count > rules.edges || u64::from(count) > encoded.len() as u64 / 118 { return Err(E::Bounds); }
+        let mut graph = Self::root(rules, root, owner);
+        graph.edges.try_reserve_exact(count as usize).map_err(|_| E::Allocation)?;
+        graph.frames.try_reserve_exact(8).map_err(|_| E::Allocation)?;
+        for _ in 0..count {
+            let expected = CallEdge {
+                caller_frame: frame(&mut cursor)?, callee_frame: frame(&mut cursor)?,
+                caller: program(&mut cursor)?, callee: program(&mut cursor)?,
+                principal: principal(&mut cursor)?, depth: cursor.u32()?,
+            };
+            while graph.current().is_some_and(|current| current.id != expected.caller_frame) {
+                if graph.frames.len() <= 1 { return Err(E::Binding); }
+                graph.leave();
+            }
+            graph.enter(expected.callee).map_err(|_| E::Binding)?;
+            if graph.edges.last() != Some(&expected) { return Err(E::Binding); }
+        }
+        let frame_count = cursor.u32()? as usize;
+        if frame_count == 0 || frame_count > graph.frames.len() { return Err(E::Binding); }
+        while graph.frames.len() > frame_count { graph.leave(); }
+        for expected in &graph.frames {
+            let actual = CallFrame {
+                id: frame(&mut cursor)?, program: program(&mut cursor)?,
+                principal: principal(&mut cursor)?, depth: cursor.u32()?, calls: cursor.u32()?,
+            };
+            if &actual != expected { return Err(E::Binding); }
+        }
+        let entered_count = cursor.u32()? as usize;
+        if entered_count != graph.entered.len() { return Err(E::Binding); }
+        for (expected_program, expected_visits) in &graph.entered {
+            if program(&mut cursor)? != *expected_program || cursor.u32()? != *expected_visits { return Err(E::Binding); }
+        }
+        if !cursor.done() || graph.replay_state_bytes(maximum)?.as_slice() != encoded { return Err(E::Encoding); }
+        Ok(graph)
+    }
+}
+
 /// Deployed-code boundary consulted to enter a callee. It hands out validated
 /// modules only; it carries no authority of its own.
 pub trait ProgramResolver: fmt::Debug {
