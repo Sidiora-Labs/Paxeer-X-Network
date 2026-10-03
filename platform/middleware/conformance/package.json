@@ -8,10 +8,12 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "conformance": "node run.mjs",
+    "conformance:connected": "node connected.mjs",
     "test": "npm run build && node --test test/*.test.mjs",
     "test:payments": "node --test pay6/*.test.mjs"
   },
   "dependencies": {
+    "@sidiora/layerx-agent-integrations": "0.1.0",
     "@sidiora/layerx-agent-middleware": "0.1.0",
     "@sidiora/layerx-buyer-middleware": "0.1.0",
     "@sidiora/layerx-merchant-middleware": "0.1.0",

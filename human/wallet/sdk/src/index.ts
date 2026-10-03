@@ -384,6 +384,7 @@ export class PaxeerWallet {
       if (artifact.id !== approvalId) throw lxError('LX_REVIEW_MISMATCH', 'Approval ID changed');
       return freezeLx(artifact);
     });
+  }
 
   private lxOptions(): LxActivityOptions {
     if (!this.lxActivity) throw lxError('LX_ACTIVITY_CONFIGURATION', 'Configure explicit confirmation and durable storage');

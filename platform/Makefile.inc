@@ -295,6 +295,21 @@ platform-release-plan:
 platform-release-test:
 	sh $(CURDIR)/tools/runtime/run-with-clock.sh $(PLATFORM_CARGO) test --manifest-path $(PLATFORM_MANIFEST) --locked -p layerx-platform-release
 
+.PHONY: platform-build-connected-middleware platform-test-connected-middleware
+
+platform-build-connected-middleware:
+	npm run build --workspace @sidiora/layerx-sdk
+	npm run build --workspace @sidiora/layerx-seller-middleware
+	npm run build --workspace @sidiora/layerx-buyer-middleware
+	npm run build --workspace @sidiora/layerx-merchant-middleware
+	npm run build --workspace @sidiora/layerx-agent-middleware
+	npm run build --workspace @sidiora/layerx-agent-integrations
+	npm run build --workspace @sidiora/layerx-middleware-conformance
+	cd human/wallet/sdk && ./node_modules/.bin/tsc --project tsconfig.json
+
+platform-test-connected-middleware:
+	tools/paxeer-x/gates/104.16.2.sh
+
 platform-test-middleware: platform-sample-dependencies-ready
 	npm run build --workspace @sidiora/layerx-seller-middleware
 	npm run build --workspace @sidiora/layerx-buyer-middleware

@@ -127,6 +127,66 @@ jobs:
           swift run --package-path platform/integrations/ios layerx-ios-secret-scan \
             platform/integrations/ios/.derived/Build/Products/Release-iphonesimulator/LayerXWallet.app
 
+  connected-middleware:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ${{ vars.CI_LINUX_RUNNER }}
+    timeout-minutes: 30
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Install Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install locked middleware and wallet dependencies
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund
+          npm exec --yes --package=pnpm@9.15.9 -- pnpm --dir human/wallet install --frozen-lockfile --ignore-scripts --filter @paxeer/wallet
+      - name: Build connected middleware and original-wallet consumer
+        run: make platform-build-connected-middleware
+      - name: Exercise original-wallet consent and receipt-backed merchant settlement
+        env:
+          LAYERX_CONNECTED_MIDDLEWARE_FIXTURE: ${{ vars.LAYERX_CONNECTED_MIDDLEWARE_FIXTURE }}
+          LAYERX_AGENT_RPC_URL: ${{ vars.LAYERX_SCHEDULED_AGENT_RPC_URL }}
+          LAYERX_PROTOCOL_VERSION: ${{ vars.LAYERX_SCHEDULED_PROTOCOL_VERSION }}
+          LAYERX_TENANT: ${{ vars.LAYERX_SCHEDULED_AGENT_TENANT }}
+          LAYERX_ACTOR: ${{ vars.LAYERX_SCHEDULED_AGENT_ACTOR }}
+          LAYERX_SESSION_ID: ${{ vars.LAYERX_SCHEDULED_AGENT_SESSION_ID }}
+          LAYERX_AGENT_SURFACE: ${{ vars.LAYERX_SCHEDULED_AGENT_SURFACE }}
+          LAYERX_SESSION_TOKEN: ${{ secrets.LAYERX_SCHEDULED_AGENT_SESSION_TOKEN }}
+          LAYERX_SESSION_GENERATION: ${{ vars.LAYERX_SCHEDULED_AGENT_SESSION_GENERATION }}
+          LAYERX_GATEWAY_KEY_ID: ${{ vars.LAYERX_GATEWAY_KEY_ID }}
+          LAYERX_GATEWAY_KEY: ${{ secrets.LAYERX_GATEWAY_KEY }}
+          LAYERX_CLIENT_CERTIFICATE_PEM: ${{ secrets.LAYERX_CLIENT_CERTIFICATE_PEM }}
+          LAYERX_CLIENT_KEY_PEM: ${{ secrets.LAYERX_CLIENT_KEY_PEM }}
+          LAYERX_TRUSTED_CA_PEM: ${{ secrets.LAYERX_TRUSTED_CA_PEM }}
+          LAYERX_DAEMON_RECEIPT_STORE_PATH: ${{ vars.LAYERX_DAEMON_RECEIPT_STORE_PATH }}
+          LAYERX_DAEMON_PREPARATION_STORE_PATH: ${{ vars.LAYERX_DAEMON_PREPARATION_STORE_PATH }}
+          LAYERX_WALLET_PRINCIPAL: ${{ vars.LAYERX_WALLET_PRINCIPAL }}
+          LAYERX_WALLET_API_URL: ${{ vars.LAYERX_WALLET_API_URL }}
+          LAYERX_WALLET_SUPABASE_URL: ${{ vars.LAYERX_WALLET_SUPABASE_URL }}
+          LAYERX_WALLET_SUPABASE_ANON_KEY: ${{ secrets.LAYERX_WALLET_SUPABASE_ANON_KEY }}
+          LAYERX_WALLET_SESSION_FILE: ${{ vars.LAYERX_WALLET_SESSION_FILE }}
+          LAYERX_WALLET_STORE_PATH: ${{ vars.LAYERX_WALLET_STORE_PATH }}
+          LAYERX_EMULATOR_TOKEN: ${{ secrets.LAYERX_EMULATOR_TOKEN }}
+          LAYERX_EMULATOR_WEBHOOK_PUBLIC_KEYS_JSON: ${{ vars.LAYERX_EMULATOR_WEBHOOK_PUBLIC_KEYS_JSON }}
+          LAYERX_EMULATOR_ASSET: ${{ vars.LAYERX_EMULATOR_ASSET }}
+          LAYERX_EMULATOR_MERCHANT: ${{ vars.LAYERX_EMULATOR_MERCHANT }}
+          LAYERX_EMULATOR_MERCHANT_ACCOUNT: ${{ vars.LAYERX_EMULATOR_MERCHANT_ACCOUNT }}
+          LAYERX_EMULATOR_CURRENCY: ${{ vars.LAYERX_EMULATOR_CURRENCY }}
+          LAYERX_EMULATOR_PRICE: ${{ vars.LAYERX_EMULATOR_PRICE }}
+          LAYERX_TESTNET_TOKEN: ${{ secrets.LAYERX_TESTNET_TOKEN }}
+          LAYERX_TESTNET_WEBHOOK_PUBLIC_KEYS_JSON: ${{ vars.LAYERX_TESTNET_WEBHOOK_PUBLIC_KEYS_JSON }}
+          LAYERX_TESTNET_ASSET: ${{ vars.LAYERX_TESTNET_ASSET }}
+          LAYERX_TESTNET_MERCHANT: ${{ vars.LAYERX_TESTNET_MERCHANT }}
+          LAYERX_TESTNET_MERCHANT_ACCOUNT: ${{ vars.LAYERX_TESTNET_MERCHANT_ACCOUNT }}
+          LAYERX_TESTNET_CURRENCY: ${{ vars.LAYERX_TESTNET_CURRENCY }}
+          LAYERX_TESTNET_PRICE: ${{ vars.LAYERX_TESTNET_PRICE }}
+        run: make platform-test-connected-middleware
+
   real-agent-framework-journeys:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) && 'ubuntu-24.04' || vars.CI_LINUX_RUNNER || 'ubuntu-24.04' }}

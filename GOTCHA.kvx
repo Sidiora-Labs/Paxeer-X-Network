@@ -1972,3 +1972,15 @@ do = "Map ownership to the actual changed producer and transport modules while r
 area = "events"
 symptom = "Producer readiness harness used a webhook upstream variable group differing from the served producer."
 do = "Use the exact events webhook upstream group while retaining real delivery and readiness assertions."
+
+[gotcha.599]
+area = "node"
+symptom = "Wallet SDK has no standalone npm lockfile and belongs to a pnpm workspace."
+do = "Use the locked wallet workspace and build the SDK directly without recursively rebuilding the root SDK."
+
+
+[gotcha.600]
+area = "node"
+symptom = "Connected conformance imports the agent integration package outside its original declared dependencies."
+do = "Declare the workspace dependency and update the matching lockfile entry without changing package versions."
+
