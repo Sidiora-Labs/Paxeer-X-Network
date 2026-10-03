@@ -44951,6 +44951,28 @@
       ],
       "source": "agent/crates/layerx-mcp/src/stdio.rs",
       "proxy": false
+    },
+    {
+      "id": "ramp:GET:/readyz:unified",
+      "service": "ramp",
+      "method": "GET",
+      "path": "/v1/ramp/readyz",
+      "transport": "http",
+      "authentication": "provider-or-customer-authority",
+      "upstream": "ramp",
+      "timeout_seconds": 8,
+      "retries": 0,
+      "health_predicate": "service-ready-and-network-version-bound",
+      "version": "1",
+      "consumers": [
+        "wallet",
+        "developer"
+      ],
+      "source": "platform/ramps/reference/src/main.rs",
+      "proxy": true,
+      "timeout_scope": "per-io",
+      "connect_timeout_seconds": 3,
+      "upstream_path": "/readyz"
     }
   ],
   "denied_surfaces": [

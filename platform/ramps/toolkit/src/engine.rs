@@ -2,8 +2,8 @@ use layerx_paxeer_client::{FinalityReport, FinalityTracker, TransactionHash};
 use layerx_types::payload::ModuleRegistry;
 
 use crate::clients::{
-    callback_evidence_digest, ComplianceClient, ComplianceOutcome, LayerxClient, LayerxSubmission,
-    PaxeerCustodyClient, ProviderCallback, ProviderClient, ProviderResult, ProviderState,
+    ComplianceClient, ComplianceOutcome, LayerxClient, LayerxSubmission, PaxeerCustodyClient,
+    ProviderCallback, ProviderClient, ProviderResult, ProviderState, callback_evidence_digest,
 };
 use crate::journal::{
     Journal, OrderSnapshot, PaxeerObservation, ProviderCallbackWrite, TransitionEvidence,
@@ -214,9 +214,15 @@ impl RampEngine<'_> {
         let order = snapshot.order;
         let prepared = match canonical_payload {
             Some(payload) => self.layerx.prepare_native_receive(
-                &order, payload, account_sequence, now, self.registry,
+                &order,
+                payload,
+                account_sequence,
+                now,
+                self.registry,
             )?,
-            None => self.layerx.prepare_payment(&order, account_sequence, now, self.registry)?,
+            None => self
+                .layerx
+                .prepare_payment(&order, account_sequence, now, self.registry)?,
         };
         let mut planned = TransitionEvidence::empty();
         planned.activity_id = Some(prepared.activity_id());
@@ -403,7 +409,7 @@ pub struct InventoryRebalancer<'a> {
 
 impl InventoryRebalancer<'_> {
     /// # Errors
-    /// Returns [`RampError::Conflict`] when the idempotency key is already planned,
+    /// Returns [`RampError::Conflict`] when the idempotency key has different terms,
     /// [`RampError::Paxeer`] when custody broadcast fails, and
     /// [`RampError::Journal`] when the durable append cannot complete.
     pub fn submit(
@@ -413,8 +419,14 @@ impl InventoryRebalancer<'_> {
         idempotency_key: [u8; 32],
         now: u64,
     ) -> Result<(String, TransactionHash), RampError> {
-        if self.journal.paxeer(&idempotency_key).is_some() {
-            return Err(RampError::Conflict);
+        if !self.journal.health().ready {
+            return Err(RampError::Journal);
+        }
+        if let Some(snapshot) = self.journal.paxeer(&idempotency_key) {
+            if snapshot.asset != asset || snapshot.amount != amount {
+                return Err(RampError::Conflict);
+            }
+            return self.reconcile(idempotency_key, now);
         }
         self.journal
             .plan_paxeer(idempotency_key, asset, amount, now)?;
@@ -437,20 +449,27 @@ impl InventoryRebalancer<'_> {
 
     /// # Errors
     /// Returns [`RampError::Paxeer`] when the planned transfer is absent or custody status fails,
-    /// [`RampError::Conflict`] when an operation is already recorded, and
+    /// [`RampError::Paxeer`] when retained operation identifiers are incomplete, and
     /// [`RampError::Journal`] when the durable append cannot complete.
     pub fn reconcile(
         &mut self,
         idempotency_key: [u8; 32],
         now: u64,
     ) -> Result<(String, TransactionHash), RampError> {
+        if !self.journal.health().ready {
+            return Err(RampError::Journal);
+        }
         let snapshot = self
             .journal
             .paxeer(&idempotency_key)
             .cloned()
             .ok_or(RampError::Paxeer)?;
-        if snapshot.operation_id.is_some() {
-            return Err(RampError::Conflict);
+        match (&snapshot.operation_id, snapshot.transaction_hash) {
+            (Some(operation), Some(transaction)) => {
+                return Ok((operation.clone(), TransactionHash::new(transaction)));
+            }
+            (None, None) => {}
+            _ => return Err(RampError::Paxeer),
         }
         let submission =
             self.custody

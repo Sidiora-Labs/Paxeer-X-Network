@@ -205,6 +205,10 @@ try:
     require(report['schema_version'] == 1 and report['source_revision'] == revision
             and report['deployment_profile'] == 'private-network' and report['qualified'] is True
             and report['runtime_source_bound'] is True, 'genuine candidate-bound testnet journey required')
+    if os.environ.get('LAYERX_RAMP_PUBLIC_PATH_PREFIX') == '/v1/ramp':
+        require(report.get('public_path_prefix') == '/v1/ramp'
+                and report.get('unified_endpoint_exercised') is True,
+                'declared unified endpoint journey required')
     require(report['on'].get('maintained_receipt') is True and report['off'].get('maintained_receipt') is True,
             'both real maintained receipt paths must execute')
     require(set(report['cases']) == CASES and all(value is True for value in report['cases'].values()),

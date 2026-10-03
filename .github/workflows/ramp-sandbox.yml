@@ -41,7 +41,8 @@ jobs:
           PAXEER_X_EVIDENCE_DIR: ${{ runner.temp }}/ramp-build-${{ github.run_id }}-${{ github.run_attempt }}
           PAXEER_X_RAMP_BUILD_MANIFEST: ${{ runner.temp }}/ramp-build-${{ github.run_id }}-${{ github.run_attempt }}/artifacts.json
           PAXEER_X_CANDIDATE_MANIFEST: ${{ vars.RAMP_CANDIDATE_MANIFEST_FILE }}
-          LAYERX_RAMP_URL: ${{ vars.RAMP_URL }}
+          LAYERX_RAMP_URL: ${{ vars.RAMP_UNIFIED_URL }}
+          LAYERX_RAMP_PUBLIC_PATH_PREFIX: /v1/ramp
           LAYERX_RAMP_OPERATOR_URL: ${{ vars.RAMP_OPERATOR_URL }}
           LAYERX_RAMP_AUTHORITY_URL: ${{ vars.RAMP_AUTHORITY_URL }}
           LAYERX_RAMP_CA_PEM: ${{ vars.RAMP_CA_PEM_FILE }}

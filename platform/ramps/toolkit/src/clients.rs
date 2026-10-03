@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use ed25519_dalek::{Signature as Ed25519Signature, VerifyingKey};
-use layerx_crypto::{ed25519, SignatureMessage};
+use layerx_crypto::{SignatureMessage, ed25519};
 use layerx_proof::receipt::AuthorizedBatch;
 use layerx_types::activity::{
     Authority, EnvelopeBuilder, Signature, TimestampBound, UnsignedEnvelope,
@@ -14,16 +14,16 @@ use layerx_types::activity::{
 use layerx_types::amount::Amount;
 use layerx_types::ids::{Did, IdempotencyKey};
 use layerx_wire::activity::{encode_signed_envelope, encode_unsigned_envelope};
-use layerx_wire::hash::{activity_id, Domain};
+use layerx_wire::hash::{Domain, activity_id};
 use native_tls::{Certificate, Identity, TlsConnector};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest as _, Sha256};
 
 use crate::{
-    compile_operator_send, compile_payer_grant_draw, operator_send_authorization_message,
-    verify_order_receipt, AuthenticatedPrincipal, RampDirection, RampError, RampOrder,
-    ReceiptEvidence, VerifiedLayerxLeg, COMPLIANCE_CONTRACT_VERSION, PAXEER_CONTRACT_VERSION,
-    PROVIDER_CONTRACT_VERSION,
+    AuthenticatedPrincipal, COMPLIANCE_CONTRACT_VERSION, PAXEER_CONTRACT_VERSION,
+    PROVIDER_CONTRACT_VERSION, RampDirection, RampError, RampOrder, ReceiptEvidence,
+    VerifiedLayerxLeg, compile_operator_send, compile_payer_grant_draw,
+    operator_send_authorization_message, verify_order_receipt,
 };
 
 const MAX_SECRET_BYTES: usize = 64 * 1024;
@@ -817,20 +817,30 @@ impl ActivityConfig {
         {
             return Err(RampError::InvalidOrder);
         }
-        let actor = std::str::from_utf8(&self.actor_did)
-            .map_err(|_| RampError::InvalidPrincipal)?;
+        let actor =
+            std::str::from_utf8(&self.actor_did).map_err(|_| RampError::InvalidPrincipal)?;
         if order.operator.account != format!("agent:{actor}:main") {
             return Err(RampError::InvalidPrincipal);
         }
         let layerx_crypto::payments::Payment::Receive {
-            from, to, asset, amount, grant, sequence, idempotency_key, context_hash,
-            receiver_authorization, payer_grant,
+            from,
+            to,
+            asset,
+            amount,
+            grant,
+            sequence,
+            idempotency_key,
+            context_hash,
+            receiver_authorization,
+            payer_grant,
         } = layerx_crypto::payments::Payment::decode(
             layerx_types::payload::ModuleId::Asset,
             6,
             canonical_payload,
             &self.actor_did,
-        ).map_err(|_| RampError::PayerGrantRequired)? else {
+        )
+        .map_err(|_| RampError::PayerGrantRequired)?
+        else {
             return Err(RampError::PayerGrantRequired);
         };
         let account = |name: &str| {
@@ -847,7 +857,8 @@ impl ActivityConfig {
             || sequence != account_sequence
             || idempotency_key != order.order_digest
             || context_hash != order.context
-            || receiver_authorization.kind != layerx_types::intent::SendAuthorizationKind::Owner as u8
+            || receiver_authorization.kind
+                != layerx_types::intent::SendAuthorizationKind::Owner as u8
             || receiver_authorization.public_key != self.signer_public_key
             || receiver_authorization.network_id != self.network_id
             || receiver_authorization.protocol_version != self.protocol_version
@@ -880,54 +891,59 @@ pub struct LayerxConfig {
     pub sequencer_last_batch: String,
 }
 
-
 impl LayerxConfig {
     pub fn build(&self, http: MutualTlsClient) -> Result<LayerxClient, String> {
-    let config = self;
-    let sequencer_authorization = configured_sequencer(
-        &config.sequencer_id,
-        &config.sequencer_public_key,
-        &config.sequencer_first_batch,
-        &config.sequencer_last_batch,
-    )
-    .map_err(|field| format!("invalid LayerX {field}"))?;
-    Ok(LayerxClient {
-        sequencer_authorization,
-        http,
-        gateway: Endpoint::parse(&config.gateway_endpoint)
-            .map_err(|_| "gateway endpoint rejected".to_owned())?,
-        receipt_authority: Endpoint::parse(&config.receipt_authority_endpoint)
-            .map_err(|_| "receipt authority endpoint rejected".to_owned())?,
-        signer: Endpoint::parse(&config.signer_endpoint)
-            .map_err(|_| "signer endpoint rejected".to_owned())?,
-        gateway_key: receipt_secret_text(&config.gateway_key_file)?,
-        authority_token: receipt_secret_text(&config.authority_token_file)?,
-        signer_token: receipt_secret_text(&config.signer_token_file)?,
-        activity: ActivityConfig {
-            actor_did: config.actor_did.as_bytes().to_vec(),
-            protocol_version: config.protocol_version,
-            network_id: config.network_id,
-            fee_limit: config.fee_limit,
-            signer_public_key: receipt_public_key(&config.signer_public_key)?,
-        },
-    })
-}
-
+        let config = self;
+        let sequencer_authorization = configured_sequencer(
+            &config.sequencer_id,
+            &config.sequencer_public_key,
+            &config.sequencer_first_batch,
+            &config.sequencer_last_batch,
+        )
+        .map_err(|field| format!("invalid LayerX {field}"))?;
+        Ok(LayerxClient {
+            sequencer_authorization,
+            http,
+            gateway: Endpoint::parse(&config.gateway_endpoint)
+                .map_err(|_| "gateway endpoint rejected".to_owned())?,
+            receipt_authority: Endpoint::parse(&config.receipt_authority_endpoint)
+                .map_err(|_| "receipt authority endpoint rejected".to_owned())?,
+            signer: Endpoint::parse(&config.signer_endpoint)
+                .map_err(|_| "signer endpoint rejected".to_owned())?,
+            gateway_key: receipt_secret_text(&config.gateway_key_file)?,
+            authority_token: receipt_secret_text(&config.authority_token_file)?,
+            signer_token: receipt_secret_text(&config.signer_token_file)?,
+            activity: ActivityConfig {
+                actor_did: config.actor_did.as_bytes().to_vec(),
+                protocol_version: config.protocol_version,
+                network_id: config.network_id,
+                fee_limit: config.fee_limit,
+                signer_public_key: receipt_public_key(&config.signer_public_key)?,
+            },
+        })
+    }
 }
 
 fn receipt_public_key(value: &str) -> Result<[u8; 32], String> {
     let key = parse_hex32(value).map_err(|_| "invalid signer public key")?;
-    if key == [0; 32] { return Err("invalid signer public key".to_owned()); }
+    if key == [0; 32] {
+        return Err("invalid signer public key".to_owned());
+    }
     Ok(key)
 }
 
 fn receipt_secret_text(path: &PathBuf) -> Result<String, String> {
-    let bytes = SecretFile::new(path).and_then(|file| file.read())
+    let bytes = SecretFile::new(path)
+        .and_then(|file| file.read())
         .map_err(|_| "protected client credential unavailable")?;
-    let value = std::str::from_utf8(&bytes).map_err(|_| "invalid client credential")?
-        .trim_end_matches(['\r', '\n']).to_owned();
-    if value.is_empty() || value.len() > 4096
-        || value.bytes().any(|byte| matches!(byte, 0 | b'\r' | b'\n')) {
+    let value = std::str::from_utf8(&bytes)
+        .map_err(|_| "invalid client credential")?
+        .trim_end_matches(['\r', '\n'])
+        .to_owned();
+    if value.is_empty()
+        || value.len() > 4096
+        || value.bytes().any(|byte| matches!(byte, 0 | b'\r' | b'\n'))
+    {
         return Err("invalid client credential".to_owned());
     }
     Ok(value)
@@ -1014,7 +1030,9 @@ impl LayerxClient {
                 )?
             }
             RampDirection::OffRamp => {
-                if self.activity.protocol_version == layerx_wire::limits::STATE_COMMITMENT_PROTOCOL_VERSION {
+                if self.activity.protocol_version
+                    == layerx_wire::limits::STATE_COMMITMENT_PROTOCOL_VERSION
+                {
                     return Err(RampError::PayerGrantRequired);
                 }
                 compile_payer_grant_draw(order, account_sequence, registry)?
@@ -1032,13 +1050,16 @@ impl LayerxClient {
         now: u64,
         registry: &layerx_types::payload::ModuleRegistry,
     ) -> Result<PreparedLayerx, RampError> {
-        self.activity.validate_native_receive(order, canonical_payload, account_sequence, now)?;
-        let activity_type = layerx_types::payload::ActivityType::new(
-            layerx_types::payload::ModuleId::Asset, 6,
-        ).map_err(|_| RampError::Layerx)?;
-        let payload = layerx_types::payload::Payload::new(registry, activity_type, canonical_payload)
-            .map_err(|_| RampError::Layerx)?;
-        let unsigned = self.unsigned_payload(order, account_sequence, now, activity_type, payload)?;
+        self.activity
+            .validate_native_receive(order, canonical_payload, account_sequence, now)?;
+        let activity_type =
+            layerx_types::payload::ActivityType::new(layerx_types::payload::ModuleId::Asset, 6)
+                .map_err(|_| RampError::Layerx)?;
+        let payload =
+            layerx_types::payload::Payload::new(registry, activity_type, canonical_payload)
+                .map_err(|_| RampError::Layerx)?;
+        let unsigned =
+            self.unsigned_payload(order, account_sequence, now, activity_type, payload)?;
         self.prepare_unsigned(order, unsigned, registry)
     }
 
@@ -1131,7 +1152,8 @@ impl LayerxClient {
         order: &RampOrder,
         activity: [u8; 32],
     ) -> Result<LayerxSubmission, RampError> {
-        self.resolve_with_evidence(order, activity).map(|(submission, _, _)| submission)
+        self.resolve_with_evidence(order, activity)
+            .map(|(submission, _, _)| submission)
     }
 
     pub fn resolve_with_evidence(
@@ -1155,16 +1177,24 @@ impl LayerxClient {
             None,
         )?;
         if response.status == 404 {
-            return Ok((LayerxSubmission::Pending {
-                activity_id: activity,
-                canonical_activity: None,
-            }, None, false));
+            return Ok((
+                LayerxSubmission::Pending {
+                    activity_id: activity,
+                    canonical_activity: None,
+                },
+                None,
+                false,
+            ));
         }
         if response.status != 200 {
-            return Ok((LayerxSubmission::Unknown {
-                activity_id: activity,
-                canonical_activity: None,
-            }, None, false));
+            return Ok((
+                LayerxSubmission::Unknown {
+                    activity_id: activity,
+                    canonical_activity: None,
+                },
+                None,
+                false,
+            ));
         }
         let envelope: GatewayReceiptEnvelope =
             serde_json::from_slice(&response.body).map_err(|_| RampError::Layerx)?;
@@ -1220,10 +1250,16 @@ impl LayerxClient {
         if evidence.authorized_batch != gateway_authority {
             return Err(RampError::Layerx);
         }
-        verify_order_receipt(order, &evidence).map(|leg| (LayerxSubmission::Verified {
-            leg,
-            canonical_activity: None,
-        }, Some(evidence), maintained_batch))
+        verify_order_receipt(order, &evidence).map(|leg| {
+            (
+                LayerxSubmission::Verified {
+                    leg,
+                    canonical_activity: None,
+                },
+                Some(evidence),
+                maintained_batch,
+            )
+        })
     }
 
     fn unsigned(
@@ -1233,7 +1269,13 @@ impl LayerxClient {
         now: u64,
         compiled: crate::CompiledPayment,
     ) -> Result<UnsignedEnvelope, RampError> {
-        self.unsigned_payload(order, sequence, now, compiled.activity_type, compiled.payload)
+        self.unsigned_payload(
+            order,
+            sequence,
+            now,
+            compiled.activity_type,
+            compiled.payload,
+        )
     }
 
     fn unsigned_payload(
@@ -1244,8 +1286,8 @@ impl LayerxClient {
         activity_type: layerx_types::payload::ActivityType,
         payload: layerx_types::payload::Payload,
     ) -> Result<UnsignedEnvelope, RampError> {
-        let payload_hash = layerx_wire::hash::payload_hash_for(&payload)
-            .map_err(|_| RampError::Layerx)?;
+        let payload_hash =
+            layerx_wire::hash::payload_hash_for(&payload).map_err(|_| RampError::Layerx)?;
         if now >= order.quote.expires_at {
             return Err(RampError::InvalidOrder);
         }
@@ -1813,7 +1855,7 @@ impl AuthorityBody {
 #[cfg(test)]
 mod maintained_consumer_tests {
     use super::*;
-    use layerx_proof::receipt::{verify_outcome, verify_program_state, AuthorizedBatch};
+    use layerx_proof::receipt::{AuthorizedBatch, verify_outcome, verify_program_state};
     use std::path::PathBuf;
 
     fn required<T, E: std::fmt::Debug>(value: Result<T, E>) -> T {
@@ -1949,9 +1991,11 @@ mod maintained_consumer_tests {
         let document: MaintainedBatchDocument = required(serde_json::from_value(
             capture["authority"]["batch_evidence"].clone(),
         ));
-        assert!(document
-            .authorize(&receipt, &historical_facts, &pins(&capture))
-            .is_err());
+        assert!(
+            document
+                .authorize(&receipt, &historical_facts, &pins(&capture))
+                .is_err()
+        );
     }
 }
 
@@ -2013,23 +2057,31 @@ mod authority_shape_tests {
             .unwrap_or_else(|error| panic!("protocol: {error}"));
         let key = parse_hex32(&facts.sequencer_public_key)
             .unwrap_or_else(|error| panic!("key: {error:?}"));
-        assert!(facts
-            .validate_context(&activity, network, protocol, key)
-            .is_ok());
+        assert!(
+            facts
+                .validate_context(&activity, network, protocol, key)
+                .is_ok()
+        );
         facts.protocol_network_id = network
             .checked_add(1)
             .unwrap_or_else(|| panic!("network exhausted"));
-        assert!(facts
-            .validate_context(&activity, network, protocol, key)
-            .is_err());
+        assert!(
+            facts
+                .validate_context(&activity, network, protocol, key)
+                .is_err()
+        );
         facts.protocol_network_id = network;
-        assert!(facts
-            .validate_context(&"00".repeat(32), network, protocol, key)
-            .is_err());
+        assert!(
+            facts
+                .validate_context(&"00".repeat(32), network, protocol, key)
+                .is_err()
+        );
         assert!(facts.validate_context(&activity, network, 0, key).is_err());
-        assert!(facts
-            .validate_context(&activity, network, protocol, [0; 32])
-            .is_err());
+        assert!(
+            facts
+                .validate_context(&activity, network, protocol, [0; 32])
+                .is_err()
+        );
         assert!(serde_json::from_value::<AuthorityBody>(document.clone()).is_ok());
         let mut historical = document.clone();
         historical
@@ -2151,11 +2203,13 @@ mod gateway_receipt_envelope_tests {
         let document = envelope(&capture);
         assert!(read(&document["result"], &activity).is_err());
         let mut without_authority = document.clone();
-        assert!(without_authority["result"]
-            .as_object_mut()
-            .unwrap_or_else(|| panic!("result object"))
-            .remove("authority")
-            .is_some());
+        assert!(
+            without_authority["result"]
+                .as_object_mut()
+                .unwrap_or_else(|| panic!("result object"))
+                .remove("authority")
+                .is_some()
+        );
         assert!(read(&without_authority, &activity).is_err());
         let mut unknown = document.clone();
         unknown["result"]["unexpected"] = serde_json::json!(true);
@@ -2312,7 +2366,6 @@ mod ca_bundle_tests {
     }
 }
 
-
 pub fn verify_recovery_settlement(
     projection: &crate::journal::Projection,
     operator: &crate::OperatorIdentity,
@@ -2329,7 +2382,9 @@ pub fn verify_recovery_settlement(
         let client = PaxeerClient::new(vec![endpoint.clone()]).map_err(|_| RampError::Paxeer)?;
         let chain = client.chain_id().map_err(|_| RampError::Paxeer)?;
         let height = client.head_number().map_err(|_| RampError::Paxeer)?;
-        let head = client.block_by_number(height).map_err(|_| RampError::Paxeer)?
+        let head = client
+            .block_by_number(height)
+            .map_err(|_| RampError::Paxeer)?
             .ok_or(RampError::Paxeer)?;
         if chain != endpoint.expected_chain_id {
             return Err(RampError::Paxeer);
@@ -2338,7 +2393,9 @@ pub fn verify_recovery_settlement(
     }
     if tracker_config.minimum_endpoint_agreement < 2
         || observations.len() < tracker_config.minimum_endpoint_agreement
-        || observations.iter().any(|value| Some(value) != observations.first())
+        || observations
+            .iter()
+            .any(|value| Some(value) != observations.first())
     {
         return Err(RampError::Paxeer);
     }
@@ -2348,34 +2405,58 @@ pub fn verify_recovery_settlement(
             return Err(RampError::OrderBinding);
         }
         if snapshot.evidence.provider_operation_id.is_some()
-            || matches!(snapshot.stage, WorkflowStage::ProviderSubmissionPlanned
-                | WorkflowStage::ProviderSubmittedUnknown | WorkflowStage::ProviderPending
-                | WorkflowStage::ProviderSettled | WorkflowStage::ProviderReversed
-                | WorkflowStage::Done | WorkflowStage::ReversalPending | WorkflowStage::Reversed)
+            || matches!(
+                snapshot.stage,
+                WorkflowStage::ProviderSubmissionPlanned
+                    | WorkflowStage::ProviderSubmittedUnknown
+                    | WorkflowStage::ProviderPending
+                    | WorkflowStage::ProviderSettled
+                    | WorkflowStage::ProviderReversed
+                    | WorkflowStage::Done
+                    | WorkflowStage::ReversalPending
+                    | WorkflowStage::Reversed
+            )
         {
             let key = format!("idempotency:{}", hex(&snapshot.order.order_digest));
-            let id = snapshot.evidence.provider_operation_id.as_deref().unwrap_or(&key);
+            let id = snapshot
+                .evidence
+                .provider_operation_id
+                .as_deref()
+                .unwrap_or(&key);
             let result = provider.reconcile(&snapshot.order, id)?;
-            if snapshot.evidence.provider_operation_id.as_deref()
+            if snapshot
+                .evidence
+                .provider_operation_id
+                .as_deref()
                 .is_some_and(|id| !id.starts_with("idempotency:") && id != result.operation_id)
                 || matches!(result.state, ProviderState::SubmittedUnknown)
-                || snapshot.stage == WorkflowStage::ProviderPending && result.state != ProviderState::Pending
+                || snapshot.stage == WorkflowStage::ProviderPending
+                    && result.state != ProviderState::Pending
                 || snapshot.stage == WorkflowStage::ProviderRefused
                     && (result.state != ProviderState::Refused
                         || result.refusal_code != snapshot.evidence.refusal_code)
                 || snapshot.stage == WorkflowStage::ManualReview
                     && (result.state != ProviderState::ManualReview
                         || result.refusal_code != snapshot.evidence.refusal_code)
-                || matches!(snapshot.stage, WorkflowStage::Done | WorkflowStage::ProviderSettled)
-                    && (result.state != ProviderState::Settled
-                        || result.evidence_digest != snapshot.evidence.provider_evidence_digest)
-                || matches!(snapshot.stage, WorkflowStage::ProviderReversed
-                    | WorkflowStage::ReversalPending | WorkflowStage::Reversed)
-                    && (result.state != ProviderState::Reversed
-                        || result.evidence_digest != snapshot.evidence.provider_evidence_digest)
+                || matches!(
+                    snapshot.stage,
+                    WorkflowStage::Done | WorkflowStage::ProviderSettled
+                ) && (result.state != ProviderState::Settled
+                    || result.evidence_digest != snapshot.evidence.provider_evidence_digest)
+                || matches!(
+                    snapshot.stage,
+                    WorkflowStage::ProviderReversed
+                        | WorkflowStage::ReversalPending
+                        | WorkflowStage::Reversed
+                ) && (result.state != ProviderState::Reversed
+                    || result.evidence_digest != snapshot.evidence.provider_evidence_digest)
                 || matches!(result.state, ProviderState::Reversed)
-                    && !matches!(snapshot.stage, WorkflowStage::ProviderReversed
-                        | WorkflowStage::ReversalPending | WorkflowStage::Reversed)
+                    && !matches!(
+                        snapshot.stage,
+                        WorkflowStage::ProviderReversed
+                            | WorkflowStage::ReversalPending
+                            | WorkflowStage::Reversed
+                    )
             {
                 return Err(RampError::Provider);
             }
@@ -2384,36 +2465,55 @@ pub fn verify_recovery_settlement(
             match layerx.resolve(&snapshot.order, activity)? {
                 LayerxSubmission::Verified { leg, .. } => {
                     if leg.activity_id != activity
-                        || snapshot.evidence.receipt_digest.is_some_and(|digest| digest != leg.receipt_digest)
+                        || snapshot
+                            .evidence
+                            .receipt_digest
+                            .is_some_and(|digest| digest != leg.receipt_digest)
                     {
                         return Err(RampError::Layerx);
                     }
                 }
-                LayerxSubmission::Pending { .. } if snapshot.evidence.receipt_digest.is_none()
-                    && snapshot.stage != WorkflowStage::Done => {}
-                LayerxSubmission::Refused { .. } if snapshot.stage == WorkflowStage::LayerxRefused => {}
+                LayerxSubmission::Pending { .. }
+                    if snapshot.evidence.receipt_digest.is_none()
+                        && snapshot.stage != WorkflowStage::Done => {}
+                LayerxSubmission::Refused { .. }
+                    if snapshot.stage == WorkflowStage::LayerxRefused => {}
                 _ => return Err(RampError::Layerx),
             }
-        } else if matches!(snapshot.stage, WorkflowStage::Done | WorkflowStage::LayerxVerified) {
+        } else if matches!(
+            snapshot.stage,
+            WorkflowStage::Done | WorkflowStage::LayerxVerified
+        ) {
             return Err(RampError::Layerx);
         }
     }
     for snapshot in projection.paxeer_transfers() {
-        let current = custody.reconcile(snapshot.asset, snapshot.amount, snapshot.idempotency_key)?;
-        let transaction = TransactionHash::from_hex(&current.transaction_hash)
-            .map_err(|_| RampError::Paxeer)?;
-        if snapshot.operation_id.as_ref().is_some_and(|id| id != &current.operation_id)
-            || snapshot.transaction_hash.is_some_and(|hash| hash != transaction.bytes())
+        let current =
+            custody.reconcile(snapshot.asset, snapshot.amount, snapshot.idempotency_key)?;
+        let transaction =
+            TransactionHash::from_hex(&current.transaction_hash).map_err(|_| RampError::Paxeer)?;
+        if snapshot
+            .operation_id
+            .as_ref()
+            .is_some_and(|id| id != &current.operation_id)
+            || snapshot
+                .transaction_hash
+                .is_some_and(|hash| hash != transaction.bytes())
         {
             return Err(RampError::Paxeer);
         }
         let mut tracker = FinalityTracker::new(tracker_config.clone(), transaction)
             .map_err(|_| RampError::Paxeer)?;
         let report = tracker.poll();
-        if !matches!(report.endpoint(), layerx_paxeer_client::EndpointSignal::Serving)
-            || !matches!(report.stage(), FinalityStage::Pooled { .. }
-                | FinalityStage::Confirming { .. } | FinalityStage::Final { .. })
-        {
+        if !matches!(
+            report.endpoint(),
+            layerx_paxeer_client::EndpointSignal::Serving
+        ) || !matches!(
+            report.stage(),
+            FinalityStage::Pooled { .. }
+                | FinalityStage::Confirming { .. }
+                | FinalityStage::Final { .. }
+        ) {
             return Err(RampError::Paxeer);
         }
         if snapshot.stage == "final" {

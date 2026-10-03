@@ -2068,3 +2068,8 @@ do = "Use an existing authenticated read with a genuine nonzero selector to prov
 area = "codify"
 symptom = "A low-level task lease can be registered without changing the task status in the feature source."
 do = "Reconcile the owned task status explicitly while keeping unqualified work in_progress."
+
+[gotcha.627]
+title = "Ramp responses and replay must match actual durable rebalance semantics"
+observed = "The retained sandbox required own-account Paxeer domain and custody labels plus original-key replay; reference responses omitted these fields and duplicate keys always conflicted."
+rule = "Preserve original identifiers and reject changed terms; uncertain transfers reconcile without rebroadcast."

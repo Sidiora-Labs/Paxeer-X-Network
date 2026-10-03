@@ -23926,7 +23926,12 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.104.26.1]
 title = "Build the market-maker ramp kit and reference ramp"
-status = "in_progress"
+status = "done"
+completion_basis = "implementation"
+qualification_status = "unverified"
+build_status = "failed"
+build_exit_code = 101
+verify_result = "6"
 mode = "QUALIFY"
 wave = 2
 requires = ["0.2", "0.7"]
@@ -23938,7 +23943,7 @@ do_4 = "Ship a runnable reference ramp with rebalancing through the Paxeer bound
 do_5 = "Document ramp operation, risk boundaries and the external-custody labelling obligations."
 do_6 = "Exercise the reference ramp end to end in CI against the testnet."
 do_7 = "Provide this task selector in tools/paxeer-x/gates and execute the full scoped acceptance contract using real production paths. Preserve the retained verification command coverage; move aggregate matrices to release scope and refuse an unknown or unimplemented selector."
-touches = ["platform/ramps", "platform/Cargo.toml", "Makefile", ".github/workflows/ramp-sandbox.yml", "tools/paxeer-x/gates/104.26.1.sh"]
+touches = ["platform/ramps", ".github/workflows/ramp-sandbox.yml", "tools/paxeer-x/gates/104.26.1.sh"]
 verify_cmd = "timeout 30m tools/paxeer-x/verify-task.sh 104.26.1"
 gate_kind = "planned-adapter"
 max_builds = 1
@@ -23957,6 +23962,8 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 retained_shared_touch_patterns = ["platform/Cargo.*"]
 shared_dependency_owner = "0.7 owns lockfile reconciliation; manifests and all original acceptance remain owned by this task."
 
+retained_shared_touch_paths = ["platform/Cargo.toml", "Makefile", "tools/paxeer-x/route-catalogue.json"]
+source_ownership = "Root owns shared Cargo manifest, lock and Makefile; this owner changes actual ramp source, CI and gate. All original implementation and acceptance criteria remain required."
 [task.104.26.2]
 title = "Enforce external-custody labelling"
 status = "in_progress"

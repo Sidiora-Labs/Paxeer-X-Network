@@ -123,6 +123,12 @@ def request(endpoint, actor, method, path, body=None, statuses=(200,), error=Non
     global sequence
     require(time.monotonic() < deadline, "journey_deadline")
     require(path.startswith("/") and not any(character in path for character in "\r\n?#"), "request_path")
+    if endpoint == "customer" and public_prefix == "/v1/ramp":
+        if path == "/readyz":
+            path = "/v1/ramp/readyz"
+        else:
+            require(path.startswith("/v1/orders"), "unified_ramp_route")
+            path = public_prefix + path[len("/v1"):]
     parsed, pinned = origins[endpoint]
     connection = http.client.HTTPSConnection(parsed.hostname, parsed.port or 443,
                                             timeout=20, context=context)
@@ -295,6 +301,9 @@ def create(terms, grant, body_extra=None, statuses=(201,), error=None):
 
 
 try:
+    public_prefix = os.environ.get("LAYERX_RAMP_PUBLIC_PATH_PREFIX", "/v1")
+    require(public_prefix in ("/v1", "/v1/ramp"), "declared_public_route_profile")
+    report["public_path_prefix"] = public_prefix
     require(env("LAYERX_DEPLOYMENT_PROFILE") == "private-network", "private_profile_required")
     report["deployment_profile"] = "private-network"
     evidence_path = Path(env("PAXEER_X_EVIDENCE_DIR"))
@@ -363,6 +372,7 @@ try:
         for contract in ("provider", "compliance", "paxeer"):
             require(ready.get(contract + "_contract") == "layerx-ramp-" + contract + "-v1", "runtime_contract")
     report["runtime_source_bound"] = True
+    report["unified_endpoint_exercised"] = public_prefix == "/v1/ramp"
     report["runtime_source_digest"] = expected_digest
     current_step = "authorization_refusals"
     invalid_off = dict(inputs["off"], order_id=inputs["off"]["order_id"] + "-missing-grant")
