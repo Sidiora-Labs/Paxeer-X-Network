@@ -4159,3 +4159,5 @@ $(BUILD_DIR)/bin/layerx-archive-codec: $(ARCHIVE_CODEC_OBJECTS) $(LIBRARY) \
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(ARCHIVE_CODEC_OBJECTS) $(LIBRARY) \
 		$(PROGRAMS_RUNTIME_LIB) $(LIBRARY) $(EXTRA_LDFLAGS) \
 		-lcrypto -pthread -ldl -lm -o $@
+
+include tools/paxeer-x/build/104.35.11.mk

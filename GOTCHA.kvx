@@ -2093,3 +2093,28 @@ rule = "Use separate standalone generator targets and record lock waits separate
 title = "Standalone explorer readiness needs live source availability and real trust files"
 observed = "Retained completeness could survive a lost node; startup required an unavailable authority probe, and the fixture supplied unused head values instead of actual genesis/finality trust."
 rule = "Bind authenticated serving after genuine node handshake, preserve authority refusals, and clear completeness on source loss."
+
+[gotcha.625]
+title = "Codify migrated graph inspection needs known commands and bounded projections"
+observed = "spec_claim_status is absent and cg spec start --help treats help as a task; cg state emitted a large migrated snapshot. Lease timestamps were read from the existing graph attempts and leases tables without modifying the rebuilding graph."
+rule = "Discover tools with cg tool list and inspect only task-specific state; do not infer active ownership from broad historical reservations or restart the owner graph."
+
+[gotcha.626]
+title = "Native replay prerequisite has a historical shared kernel reservation"
+observed = "Task104.35.11 normal claim hit task1.3's broad kernel touch declaration despite no live kernel lease or source edits; explicit source start used --force with exclusive new ownership."
+rule = "Root serializes the kernel paths for the admitted additive replay producer. This is source admission, never force qualification or completion."
+
+[gotcha.632]
+title = "Explicit-path Rust formatting must control child modules"
+observed = "Formatting lib.rs or main.rs recursively reached initially clean child modules in Human, boundary, Agent and ramp packages."
+rule = "Use skip_children=true for exclusive-path formatting; record and preserve any already produced scoped module formatting."
+
+[gotcha.633]
+title = "Native evidence fixtures must initialize the complete genesis before anchoring state"
+observed = "The new replay fixture initially registered Web state after its genesis feed anchor, so publication correctly refused continuity; moving genuine initialization before the anchor preserved every assertion."
+rule = "Produce and anchor the actual complete genesis before any signed publication or replay fixture."
+
+[gotcha.634]
+title = "Native maintained receipt shape still blocks closed client replay verification"
+observed = "The bounded replay build and real native capture fixture passed, but all four client cases rejected the maintained receipt with ReceiptShape before the new v2 verifier executed; the second repair limit was reached."
+rule = "Preserve native and client assertions. Resolve the actual receipt contract in a separate bounded prerequisite; never claim client verification or repeat the unchanged failed gate."

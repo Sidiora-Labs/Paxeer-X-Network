@@ -1,9 +1,17 @@
 //! Production finality-evidence reads and authenticated registration.
 
+mod arbiter_prestate;
 mod caps;
 mod execution_prestate;
-pub use execution_prestate::{verify_execution_prestate_object, verify_native_execution_prestate_object, ExecutionPrestateEvidenceError, VerifiedExecutionPrestate, VerifiedNativeExecutionPrestate};
+pub use arbiter_prestate::{
+    verify_arbiter_prestate_v2, verify_arbiter_prestate_v2_bounded, ArbiterPrestateEvidenceError,
+    VerifiedArbiterPrestate, MAX_ARBITER_PRESTATE_BYTES,
+};
 pub use caps::{verify_caps_object, CapsEvidenceError, VerifiedCaps};
+pub use execution_prestate::{
+    verify_execution_prestate_object, verify_native_execution_prestate_object,
+    ExecutionPrestateEvidenceError, VerifiedExecutionPrestate, VerifiedNativeExecutionPrestate,
+};
 
 mod module_state;
 pub use module_state::{
@@ -279,7 +287,9 @@ pub struct VerifiedCheckpoint {
 
 impl VerifiedCheckpoint {
     #[must_use]
-    pub const fn observed_block_hash(&self) -> Option<[u8; 32]> { self.observed_block_hash }
+    pub const fn observed_block_hash(&self) -> Option<[u8; 32]> {
+        self.observed_block_hash
+    }
 
     /// Binds exact locally checked finality material to independently verified chain publication.
     ///
@@ -295,7 +305,9 @@ impl VerifiedCheckpoint {
             publication.protocol_version(),
             publication.network_id(),
         )?;
-        if verified.observed_block_hash.is_some_and(|hash| hash != publication.registration().hash)
+        if verified
+            .observed_block_hash
+            .is_some_and(|hash| hash != publication.registration().hash)
             || verified.canonical_header() != publication.canonical_header()
             || verified.set_version() != publication.set_version()
             || verified.report().evidence().checkpoint_id() != Some(publication.checkpoint_id())
@@ -371,9 +383,13 @@ pub struct FinalityEvidenceCandidate {
 
 impl FinalityEvidenceCandidate {
     #[must_use]
-    pub fn checkpoint_bytes(&self) -> &[u8] { &self.checkpoint_bytes }
+    pub fn checkpoint_bytes(&self) -> &[u8] {
+        &self.checkpoint_bytes
+    }
     #[must_use]
-    pub fn context_bytes(&self) -> &[u8] { &self.context_bytes }
+    pub fn context_bytes(&self) -> &[u8] {
+        &self.context_bytes
+    }
 
     pub fn observed_block_hash(&self) -> Result<Option<[u8; 32]>, EvidenceError> {
         Ok(decode_checkpoint_context(&self.context_bytes)?.observed_block_hash)
@@ -1916,9 +1932,13 @@ fn decode_checkpoint_context(bytes: &[u8]) -> Result<CheckpointContextMaterial, 
         .to_vec();
     let observed_block_hash = if version == 2 {
         let hash = reader.array()?;
-        if hash == [0; 32] { return Err(EvidenceError::Settlement); }
+        if hash == [0; 32] {
+            return Err(EvidenceError::Settlement);
+        }
         Some(hash)
-    } else { None };
+    } else {
+        None
+    };
     reader.finish()?;
     if reference.len() != SETTLEMENT_REFERENCE_BYTES {
         return Err(EvidenceError::Settlement);
@@ -2406,17 +2426,25 @@ mod tests {
     #[test]
     fn checkpoint_context_v2_requires_exact_nonzero_block_hash() {
         let legacy = checkpoint_context(&[(GENERATOR_KEY, 1, 0, 1)], 0);
-        assert_eq!(decode_checkpoint_context(&legacy).map(|value| value.observed_block_hash), Ok(None));
+        assert_eq!(
+            decode_checkpoint_context(&legacy).map(|value| value.observed_block_hash),
+            Ok(None)
+        );
         let mut current = legacy.clone();
         current[..2].copy_from_slice(&2_u16.to_be_bytes());
         assert!(decode_checkpoint_context(&current).is_err());
         current.extend_from_slice(&[7; 32]);
-        assert_eq!(decode_checkpoint_context(&current).map(|value| value.observed_block_hash), Ok(Some([7; 32])));
-        for length in 1..32 { assert!(decode_checkpoint_context(&current[..current.len()-length]).is_err()); }
+        assert_eq!(
+            decode_checkpoint_context(&current).map(|value| value.observed_block_hash),
+            Ok(Some([7; 32]))
+        );
+        for length in 1..32 {
+            assert!(decode_checkpoint_context(&current[..current.len() - length]).is_err());
+        }
         current.push(1);
         assert!(decode_checkpoint_context(&current).is_err());
         current.pop();
-        let offset = current.len()-32;
+        let offset = current.len() - 32;
         current[offset..].fill(0);
         assert!(decode_checkpoint_context(&current).is_err());
         let mut legacy_trailing = legacy;

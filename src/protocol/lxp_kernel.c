@@ -69,6 +69,7 @@ struct lxp_kernel_prepared_batch {
     uint8_t **event_bytes;
     uint8_t **artifact_bytes;
     lxp_byte_span *execution_prestates;
+    lxp_byte_span *arbiter_prestates;
     uint8_t publication_digest[32];
     uint8_t *maintenance_storage;
     lxp_byte_span maintenance;
@@ -3818,6 +3819,55 @@ static lxp_result kernel_execution_prestate_capture(
     return status;
 }
 
+lxp_result lxp_kernel_encode_arbiter_prestate(
+    const lxp_kernel_batch_snapshot *snapshot, const lxp_activity *activity,
+    const lxp_kernel_execution *execution, size_t maximum_bytes,
+    lxp_byte_span *owned_capture)
+{
+    prestate_snapshot output = {{0}, NULL, 0U, 0U, maximum_bytes};
+    lxp_byte_span legacy = {NULL, 0U};
+    lxp_state_witness *witness = NULL;
+    uint8_t *wire = NULL;
+    lxp_result status;
+    if (owned_capture == NULL) return LXP_ERR_NON_CANONICAL;
+    *owned_capture = (lxp_byte_span){NULL, 0U};
+    if (snapshot == NULL || activity == NULL || execution == NULL ||
+        execution->arena == NULL || maximum_bytes == 0U ||
+        maximum_bytes > PRESTATE_MAX_BYTES)
+        return LXP_ERR_NON_CANONICAL;
+    if (activity->protocol_version != LXP_PROTOCOL_VERSION_STATE_COMMITMENT ||
+        lxp_activity_module_id(activity->activity_type) != LXP_MODULE_PROGRAMS)
+        return LXP_ERR_CONTEXT_MISMATCH;
+    status = kernel_execution_prestate_capture(&snapshot->kernel, activity,
+        execution, maximum_bytes, &legacy);
+    if (status == LXP_OK) {
+        memcpy(output.root, legacy.bytes + 46U, 32U);
+        witness = malloc(sizeof(*witness));
+        wire = malloc(LXP_STATE_WITNESS_MAX_BYTES);
+        if (witness == NULL || wire == NULL) status = LXP_ERR_ARENA_EXHAUSTED;
+    }
+    if (status == LXP_OK) status = prestate_integer(&output, 2U, 2U);
+    if (status == LXP_OK) status = prestate_blob(&output, legacy.bytes, legacy.length);
+    if (status == LXP_OK) status = prestate_integer(&output, 2U, 2U);
+    if (status == LXP_OK) status = prestate_module(&output, &snapshot->kernel,
+        LXP_MODULE_PERPS, witness, wire);
+    if (status == LXP_OK) status = prestate_module(&output, &snapshot->kernel,
+        LXP_MODULE_WEB, witness, wire);
+    free((void *)legacy.bytes);
+    free(wire);
+    free(witness);
+    if (status == LXP_OK) *owned_capture = (lxp_byte_span){output.bytes, output.length};
+    else free(output.bytes);
+    return status;
+}
+
+void lxp_kernel_arbiter_prestate_destroy(lxp_byte_span *owned_capture)
+{
+    if (owned_capture == NULL) return;
+    free((void *)owned_capture->bytes);
+    *owned_capture = (lxp_byte_span){NULL, 0U};
+}
+
 static bool kernel_execution_prestate_matches(lxp_byte_span capture,
                                                const lxp_receipt *receipt)
 {
@@ -3831,14 +3881,29 @@ static bool kernel_execution_prestate_matches(lxp_byte_span capture,
         memcmp(capture.bytes + 46U, receipt->previous_state_root, 32U) == 0;
 }
 
+static bool kernel_arbiter_prestate_matches(lxp_byte_span capture,
+                                            const lxp_receipt *receipt)
+{
+    size_t length;
+    if (capture.bytes == NULL || capture.length < 8U ||
+        capture.bytes[0] != 0U || capture.bytes[1] != 2U) return false;
+    length = ((size_t)capture.bytes[2] << 24U) |
+        ((size_t)capture.bytes[3] << 16U) |
+        ((size_t)capture.bytes[4] << 8U) | capture.bytes[5];
+    return length <= capture.length - 8U &&
+        kernel_execution_prestate_matches((lxp_byte_span){capture.bytes + 6U, length}, receipt);
+}
+
 static lxp_result kernel_snapshot_apply_prepared_with_capture(
     lxp_kernel_batch_snapshot *snapshot, const lxp_activity *activity,
     const lxp_kernel_execution *execution,
     const lxp_prepared_transition *prepared, lxp_receipt *receipt,
     lxp_byte_span *canonical_events, lxp_byte_span *prestate,
-    size_t *captured_bytes)
+    size_t *captured_bytes, lxp_byte_span *arbiter_prestate,
+    size_t *arbiter_captured_bytes, size_t arbiter_maximum)
 {
     lxp_byte_span captured = {NULL, 0U};
+    lxp_byte_span arbiter_captured = {NULL, 0U};
     lxp_kernel_batch_snapshot *candidate = NULL;
     lxp_kernel_execution private_execution;
     kernel_private_allowance private_allowance;
@@ -3898,6 +3963,15 @@ static lxp_result kernel_snapshot_apply_prepared_with_capture(
         else if (activity->protocol_version == LXP_PROTOCOL_VERSION_STATE_COMMITMENT) {
             status = kernel_execution_prestate_capture(&snapshot->kernel, activity,
                 execution, PRESTATE_MAX_BYTES - *captured_bytes, &captured);
+            if (status != LXP_OK) status = LXP_ERR_IO;
+        }
+    }
+    if (status == LXP_OK && arbiter_prestate != NULL) {
+        if (arbiter_captured_bytes == NULL || *arbiter_captured_bytes > arbiter_maximum)
+            status = LXP_ERR_IO;
+        else {
+            status = lxp_kernel_encode_arbiter_prestate(snapshot, activity,
+                execution, arbiter_maximum - *arbiter_captured_bytes, &arbiter_captured);
             if (status != LXP_OK) status = LXP_ERR_IO;
         }
     }
@@ -4035,6 +4109,9 @@ static lxp_result kernel_snapshot_apply_prepared_with_capture(
     if (status == LXP_OK && captured.bytes != NULL &&
         !kernel_execution_prestate_matches(captured, receipt))
         status = LXP_ERR_IO;
+    if (status == LXP_OK && arbiter_captured.bytes != NULL &&
+        !kernel_arbiter_prestate_matches(arbiter_captured, receipt))
+        status = LXP_ERR_IO;
     if (status == LXP_OK) status = receipt_execution_signature(receipt, execution);
     if (status == LXP_OK)
         status = receipt_store(candidate->kernel.journal, activity, receipt);
@@ -4072,6 +4149,10 @@ static lxp_result kernel_snapshot_apply_prepared_with_capture(
         *prestate = captured;
         *captured_bytes += captured.length;
     } else free((void *)captured.bytes);
+    if (status == LXP_OK && arbiter_captured.bytes != NULL) {
+        *arbiter_prestate = arbiter_captured;
+        *arbiter_captured_bytes += arbiter_captured.length;
+    } else free((void *)arbiter_captured.bytes);
     return status;
 }
 
@@ -4082,7 +4163,7 @@ lxp_result lxp_kernel_snapshot_apply_prepared(
     lxp_byte_span *canonical_events)
 {
     return kernel_snapshot_apply_prepared_with_capture(snapshot, activity,
-        execution, prepared, receipt, canonical_events, NULL, NULL);
+        execution, prepared, receipt, canonical_events, NULL, NULL, NULL, NULL, 0U);
 }
 
 static bool kernel_snapshot_matches_live(
@@ -4527,9 +4608,10 @@ static lxp_result kernel_stage_commit(
     return status;
 }
 
-lxp_result lxp_kernel_prepare_serial_activity_batch(
+static lxp_result kernel_prepare_serial_activity_batch(
     lxp_kernel *kernel, const lxp_activity *activity,
-    const lxp_kernel_execution *execution, lxp_kernel_prepared_batch **batch_out)
+    const lxp_kernel_execution *execution, size_t arbiter_maximum,
+    lxp_kernel_prepared_batch **batch_out)
 {
     lxp_kernel_prepared_batch *batch = NULL;
     lxp_kernel_execution private_execution;
@@ -4609,6 +4691,15 @@ lxp_result lxp_kernel_prepare_serial_activity_batch(
                 &private_execution, PRESTATE_MAX_BYTES, &batch->execution_prestates[0]);
         if (status != LXP_OK) { status = LXP_ERR_IO; goto done; }
     }
+    if (arbiter_maximum != 0U &&
+        activity->protocol_version == LXP_PROTOCOL_VERSION_STATE_COMMITMENT &&
+        lxp_activity_module_id(activity->activity_type) == LXP_MODULE_PROGRAMS) {
+        batch->arbiter_prestates = calloc(1U, sizeof(*batch->arbiter_prestates));
+        status = batch->arbiter_prestates == NULL ? LXP_ERR_IO :
+            lxp_kernel_encode_arbiter_prestate(batch->settled, activity,
+                &private_execution, arbiter_maximum, &batch->arbiter_prestates[0]);
+        if (status != LXP_OK) { status = LXP_ERR_IO; goto done; }
+    }
     status = lxp_kernel_execute_activity(&batch->settled->kernel, activity,
                                          &private_execution, &batch->receipts[0]);
     if (status == LXP_OK && activity->activity_type == LXP_GOVERNANCE_HANDOVER &&
@@ -4616,6 +4707,9 @@ lxp_result lxp_kernel_prepare_serial_activity_batch(
         status = (lxp_result)batch->receipts[0].result_code;
     if (status == LXP_OK && batch->execution_prestates != NULL &&
         !kernel_execution_prestate_matches(batch->execution_prestates[0], &batch->receipts[0]))
+        status = LXP_ERR_IO;
+    if (status == LXP_OK && batch->arbiter_prestates != NULL &&
+        !kernel_arbiter_prestate_matches(batch->arbiter_prestates[0], &batch->receipts[0]))
         status = LXP_ERR_IO;
     batch->settled->kernel.observe_commit = NULL;
     batch->settled->kernel.commit_observer_context = NULL;
@@ -5078,10 +5172,11 @@ static bool program_planning_refusal(lxp_result status)
     }
 }
 
-lxp_result lxp_kernel_prepare_activity_batch(
+static lxp_result kernel_prepare_activity_batch(
     lxp_kernel *kernel, const lxp_activity *activities,
     const lxp_kernel_execution *executions, size_t offered_count,
-    uint32_t maximum_workers, lxp_kernel_prepared_batch **batch_out,
+    uint32_t maximum_workers, size_t arbiter_maximum,
+    lxp_kernel_prepared_batch **batch_out,
     size_t *retry_prefix_count)
 {
     lxp_kernel_batch_snapshot *base = NULL;
@@ -5092,6 +5187,8 @@ lxp_result lxp_kernel_prepare_activity_batch(
     lxp_byte_span *staged_events = NULL;
     lxp_byte_span *staged_prestates = NULL;
     size_t captured_bytes = 0U;
+    lxp_byte_span *staged_arbiter_prestates = NULL;
+    size_t arbiter_captured_bytes = 0U;
     lxp_arena *coordinator_arenas = NULL;
     uint8_t **coordinator_bytes = NULL;
     lxp_prepared_transition *prepared[
@@ -5134,11 +5231,14 @@ lxp_result lxp_kernel_prepare_activity_batch(
     staged_events = (lxp_byte_span *)calloc(count, sizeof(*staged_events));
     if (kernel->execution_prestate_capture_enabled)
         staged_prestates = calloc(count, sizeof(*staged_prestates));
+    if (arbiter_maximum != 0U)
+        staged_arbiter_prestates = calloc(count, sizeof(*staged_arbiter_prestates));
     coordinator_arenas = (lxp_arena *)calloc(count,
                                              sizeof(*coordinator_arenas));
     coordinator_bytes = (uint8_t **)calloc(count,
                                            sizeof(*coordinator_bytes));
-    if ((kernel->execution_prestate_capture_enabled && staged_prestates == NULL) ||
+    if ((arbiter_maximum != 0U && staged_arbiter_prestates == NULL) ||
+        (kernel->execution_prestate_capture_enabled && staged_prestates == NULL) ||
         items == NULL || normalized == NULL || staged_receipts == NULL ||
         staged_events == NULL || coordinator_arenas == NULL ||
         coordinator_bytes == NULL) {
@@ -5222,7 +5322,9 @@ lxp_result lxp_kernel_prepare_activity_batch(
             status = kernel_snapshot_apply_prepared_with_capture(
                 settled, &activities[0], &normalized[0], prepared[0],
                 &staged_receipts[0], &staged_events[0],
-                staged_prestates == NULL ? NULL : &staged_prestates[0], &captured_bytes);
+                staged_prestates == NULL ? NULL : &staged_prestates[0], &captured_bytes,
+                    staged_arbiter_prestates == NULL ? NULL : &staged_arbiter_prestates[0],
+                    &arbiter_captured_bytes, arbiter_maximum);
         }
         if (status == LXP_OK &&
             (staged_receipts[0].result_code == LXP_OK ||
@@ -5335,7 +5437,9 @@ lxp_result lxp_kernel_prepare_activity_batch(
                     settled, &activities[index], &normalized[index],
                     prepared[index], &staged_receipts[index],
                     &staged_events[index],
-                    staged_prestates == NULL ? NULL : &staged_prestates[index], &captured_bytes);
+                    staged_prestates == NULL ? NULL : &staged_prestates[index], &captured_bytes,
+                    staged_arbiter_prestates == NULL ? NULL : &staged_arbiter_prestates[index],
+                    &arbiter_captured_bytes, arbiter_maximum);
                 if (status != LXP_OK)
                     status_is_semantic =
                         !lxp_result_is_fatal(status) &&
@@ -5423,6 +5527,11 @@ assemble_batch:
         staged_receipts = NULL;
         batch->execution_prestates = staged_prestates;
         staged_prestates = NULL;
+        if (staged_arbiter_prestates != NULL)
+            for (index = count; index < planned_count; ++index)
+                lxp_kernel_arbiter_prestate_destroy(&staged_arbiter_prestates[index]);
+        batch->arbiter_prestates = staged_arbiter_prestates;
+        staged_arbiter_prestates = NULL;
         batch->events = staged_events;
         staged_events = NULL;
         batch->count = count;
@@ -5445,6 +5554,10 @@ done:
         for (index = 0U; index < planned_count; ++index)
             free((void *)staged_prestates[index].bytes);
     free(staged_prestates);
+    if (staged_arbiter_prestates != NULL)
+        for (index = 0U; index < planned_count; ++index)
+            free((void *)staged_arbiter_prestates[index].bytes);
+    free(staged_arbiter_prestates);
     if (coordinator_bytes != NULL)
         for (index = 0U; index < planned_count; ++index)
             free(coordinator_bytes[index]);
@@ -5977,6 +6090,10 @@ void lxp_kernel_prepared_batch_destroy(lxp_kernel_prepared_batch *batch)
         for (index = 0U; index < batch->count; ++index)
             free((void *)batch->execution_prestates[index].bytes);
     free(batch->execution_prestates);
+    if (batch->arbiter_prestates != NULL)
+        for (index = 0U; index < batch->count; ++index)
+            free((void *)batch->arbiter_prestates[index].bytes);
+    free(batch->arbiter_prestates);
     free(batch->maintenance_storage);
     free(batch->artifact_bytes);
     free(batch->event_bytes);
@@ -6677,10 +6794,10 @@ lxp_result lxp_kernel_terminal_rejection(lxp_kernel *kernel,
     return LXP_OK;
 }
 
-lxp_result lxp_kernel_prepare_terminal_rejection(
+static lxp_result kernel_prepare_terminal_rejection(
     lxp_kernel *kernel, const lxp_activity *activity,
     const lxp_kernel_execution *execution, lxp_result refusal,
-    lxp_kernel_prepared_batch **batch_out)
+    size_t arbiter_maximum, lxp_kernel_prepared_batch **batch_out)
 {
     lxp_kernel_prepared_batch *batch = NULL;
     lxp_kernel_execution private_execution;
@@ -6747,11 +6864,23 @@ lxp_result lxp_kernel_prepare_terminal_rejection(
                 &private_execution, PRESTATE_MAX_BYTES, &batch->execution_prestates[0]);
         if (status != LXP_OK) { status = LXP_ERR_IO; goto done; }
     }
+    if (arbiter_maximum != 0U &&
+        activity->protocol_version == LXP_PROTOCOL_VERSION_STATE_COMMITMENT &&
+        lxp_activity_module_id(activity->activity_type) == LXP_MODULE_PROGRAMS) {
+        batch->arbiter_prestates = calloc(1U, sizeof(*batch->arbiter_prestates));
+        status = batch->arbiter_prestates == NULL ? LXP_ERR_IO :
+            lxp_kernel_encode_arbiter_prestate(batch->settled, activity,
+                &private_execution, arbiter_maximum, &batch->arbiter_prestates[0]);
+        if (status != LXP_OK) { status = LXP_ERR_IO; goto done; }
+    }
     status = lxp_kernel_terminal_rejection(&batch->settled->kernel, activity,
                                            &private_execution, refusal,
                                            &batch->receipts[0]);
     if (status == LXP_OK && batch->execution_prestates != NULL &&
         !kernel_execution_prestate_matches(batch->execution_prestates[0], &batch->receipts[0]))
+        status = LXP_ERR_IO;
+    if (status == LXP_OK && batch->arbiter_prestates != NULL &&
+        !kernel_arbiter_prestate_matches(batch->arbiter_prestates[0], &batch->receipts[0]))
         status = LXP_ERR_IO;
     batch->settled->kernel.observe_commit = NULL;
     batch->settled->kernel.commit_observer_context = NULL;
@@ -6799,4 +6928,81 @@ uint8_t lxp_kernel_step_order(size_t index)
     static const uint8_t order[] = { 1U, 2U, 3U, 4U, 5U, 6U,
                                      7U, 8U, 9U, 10U, 11U, 12U };
     return index < sizeof(order) ? order[index] : 0U;
+}
+
+lxp_result lxp_kernel_prepare_serial_activity_batch(
+    lxp_kernel *kernel, const lxp_activity *activity,
+    const lxp_kernel_execution *execution, lxp_kernel_prepared_batch **batch_out)
+{
+    return kernel_prepare_serial_activity_batch(kernel, activity, execution, 0U, batch_out);
+}
+
+lxp_result lxp_kernel_prepare_serial_activity_batch_with_arbiter_prestate(
+    lxp_kernel *kernel, const lxp_activity *activity,
+    const lxp_kernel_execution *execution, size_t maximum_bytes,
+    lxp_kernel_prepared_batch **batch_out)
+{
+    if (batch_out != NULL) *batch_out = NULL;
+    if (maximum_bytes == 0U || maximum_bytes > PRESTATE_MAX_BYTES)
+        return LXP_ERR_LENGTH_LIMIT;
+    if (activity == NULL ||
+        activity->protocol_version != LXP_PROTOCOL_VERSION_STATE_COMMITMENT ||
+        lxp_activity_module_id(activity->activity_type) != LXP_MODULE_PROGRAMS)
+        return LXP_ERR_CONTEXT_MISMATCH;
+    return kernel_prepare_serial_activity_batch(kernel, activity, execution, maximum_bytes, batch_out);
+}
+
+lxp_result lxp_kernel_prepare_activity_batch(
+    lxp_kernel *kernel, const lxp_activity *activities,
+    const lxp_kernel_execution *executions, size_t offered_count,
+    uint32_t maximum_workers, lxp_kernel_prepared_batch **batch_out,
+    size_t *retry_prefix_count)
+{
+    return kernel_prepare_activity_batch(kernel, activities, executions, offered_count,
+        maximum_workers, 0U, batch_out, retry_prefix_count);
+}
+
+lxp_result lxp_kernel_prepare_activity_batch_with_arbiter_prestate(
+    lxp_kernel *kernel, const lxp_activity *activities,
+    const lxp_kernel_execution *executions, size_t offered_count,
+    uint32_t maximum_workers, size_t maximum_bytes, lxp_kernel_prepared_batch **batch_out,
+    size_t *retry_prefix_count)
+{
+    if (batch_out != NULL) *batch_out = NULL;
+    if (retry_prefix_count != NULL) *retry_prefix_count = 0U;
+    if (maximum_bytes == 0U || maximum_bytes > PRESTATE_MAX_BYTES)
+        return LXP_ERR_LENGTH_LIMIT;
+    return kernel_prepare_activity_batch(kernel, activities, executions, offered_count,
+        maximum_workers, maximum_bytes, batch_out, retry_prefix_count);
+}
+
+lxp_result lxp_kernel_prepare_terminal_rejection(
+    lxp_kernel *kernel, const lxp_activity *activity,
+    const lxp_kernel_execution *execution, lxp_result refusal,
+    lxp_kernel_prepared_batch **batch_out)
+{
+    return kernel_prepare_terminal_rejection(kernel, activity, execution, refusal, 0U, batch_out);
+}
+
+lxp_result lxp_kernel_prepare_terminal_rejection_with_arbiter_prestate(
+    lxp_kernel *kernel, const lxp_activity *activity,
+    const lxp_kernel_execution *execution, lxp_result refusal, size_t maximum_bytes,
+    lxp_kernel_prepared_batch **batch_out)
+{
+    if (batch_out != NULL) *batch_out = NULL;
+    if (maximum_bytes == 0U || maximum_bytes > PRESTATE_MAX_BYTES)
+        return LXP_ERR_LENGTH_LIMIT;
+    if (activity == NULL ||
+        activity->protocol_version != LXP_PROTOCOL_VERSION_STATE_COMMITMENT ||
+        lxp_activity_module_id(activity->activity_type) != LXP_MODULE_PROGRAMS)
+        return LXP_ERR_CONTEXT_MISMATCH;
+    return kernel_prepare_terminal_rejection(kernel, activity, execution, refusal, maximum_bytes, batch_out);
+}
+
+lxp_byte_span lxp_kernel_prepared_batch_arbiter_prestate(
+    const lxp_kernel_prepared_batch *batch, size_t receipt_index)
+{
+    if (batch == NULL || batch->simulation || receipt_index >= batch->count ||
+        batch->arbiter_prestates == NULL) return (lxp_byte_span){NULL, 0U};
+    return batch->arbiter_prestates[receipt_index];
 }
