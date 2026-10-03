@@ -1217,6 +1217,40 @@ pub enum MigrationError {
     Gateway(GatewayError),
 }
 
+impl MigrationError {
+    #[must_use]
+    pub const fn code(self) -> &'static str {
+        match self {
+            Self::Configuration => "configuration_invalid",
+            Self::InvalidNetwork => "invalid_network",
+            Self::InvalidAddress => "invalid_address",
+            Self::AddressChainMismatch => "address_chain_mismatch",
+            Self::InvalidTransaction => "invalid_transaction",
+            Self::InvalidEvidence => "invalid_evidence",
+            Self::EvidenceMismatch => "evidence_mismatch",
+            Self::SourcePending => "source_pending",
+            Self::SourceReverted => "source_reverted",
+            Self::SourceDisplaced => "source_displaced",
+            Self::FinalityWindowExceeded => "finality_window_exceeded",
+            Self::RpcUnavailable => "rpc_unavailable",
+            Self::RpcRateLimited { .. } => "rpc_rate_limited",
+            Self::RpcDivergence => "rpc_divergence",
+            Self::RpcResponseMismatch => "rpc_response_mismatch",
+            Self::CustodyEventMismatch => "custody_event_mismatch",
+            Self::CustodyProgramMismatch => "custody_program_mismatch",
+            Self::OwnershipSignatureMismatch => "ownership_signature_mismatch",
+            Self::CheckpointIntegrity => "checkpoint_integrity",
+            Self::CheckpointConflict => "checkpoint_conflict",
+            Self::InvalidHistory => "invalid_history",
+            Self::StorageRefused => "storage_refused",
+            Self::PlaneRefused => "plane_refused",
+            Self::ReceiptRequired => "receipt_required",
+            Self::ReceiptMismatch => "receipt_mismatch",
+            Self::Gateway(_) => "gateway_refused",
+        }
+    }
+}
+
 impl Display for MigrationError {
     fn fmt(&self, formatter: &mut Formatter<'_>) -> std::fmt::Result {
         match self {

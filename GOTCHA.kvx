@@ -2118,3 +2118,8 @@ rule = "Produce and anchor the actual complete genesis before any signed publica
 title = "Native maintained receipt shape still blocks closed client replay verification"
 observed = "The bounded replay build and real native capture fixture passed, but all four client cases rejected the maintained receipt with ReceiptShape before the new v2 verifier executed; the second repair limit was reached."
 rule = "Preserve native and client assertions. Resolve the actual receipt contract in a separate bounded prerequisite; never claim client verification or repeat the unchanged failed gate."
+
+[gotcha.631]
+title = "Migration requires a genuine binding and funded custody producer"
+observed = "The retained v1 migration receipt policy expects an external claim in canonical protocol ContextHash but no real producer implements that contract; the selector was absent."
+rule = "Preserve old checks and ContextHash; source verification alone never proves account binding or asset credit."

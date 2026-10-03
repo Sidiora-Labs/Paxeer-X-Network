@@ -13,6 +13,7 @@ concurrency:
 env:
   LC_ALL: C
   TZ: UTC
+  RUSTUP_TOOLCHAIN: 1.91.1
 
 jobs:
   live-source-verification:

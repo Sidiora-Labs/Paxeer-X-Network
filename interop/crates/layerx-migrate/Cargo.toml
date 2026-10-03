@@ -5,6 +5,10 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 
+[[bin]]
+name = "layerx-migrate"
+path = "src/main.rs"
+
 [dependencies]
 base64.workspace = true
 ed25519-dalek.workspace = true
