@@ -4,7 +4,8 @@ import type { Pool, PoolClient } from 'pg';
 import { z } from 'zod';
 import { hashMessage, keccak256, recoverAddress, recoverMessageAddress, serializeSignature, serializeTransaction, type Hex, type TransactionSerializableEIP1559, type TypedDataDefinition } from 'viem';
 import { requireAuth } from '../middleware/auth.js';
-import { CustodyAuthorityError } from '../agent/authority.js';
+import { CustodyAuthorityError, requireInventoryKey } from '../agent/authority.js';
+import { didFromPublicKey, mainAccountId, verifyEd25519 as verifyLxSignature } from '../provision/bind.js';
 import {
   archivedWalletGuard,
   getMigrationAwareSigningAccountForRow,
@@ -25,6 +26,9 @@ import {
   type AttestorClient,
   type NodeAudit,
   type SignResult,
+  type ActivityDisclosureWire,
+  type ActivityApprovalWire,
+  lxSigningPreimage,
 } from '../attestor/client.js';
 import { RpcPool, RpcResponseError, sharedRpcPool } from '../rpc/pool.js';
 import { NonceStore, sharedNonceStore } from '../nonce/store.js';
@@ -175,6 +179,7 @@ export async function signRoutes(app: FastifyInstance, opts: SignRoutesOptions =
       accountPerMinute: env.RATE_LIMIT_ACCOUNT_PER_MINUTE,
     });
   const attestors = opts.attestors !== undefined ? opts.attestors : defaultAttestors();
+  await lxApprovalRoutes(app, pool, attestors, limiter);
 
   function requireQuorumWallet(sw:SigningWallet):asserts sw is SigningWallet & {attestorKeyId:string} {
     if(!attestors||!sw.attestorKeyId||!usesAttestorCustody({migratedAt:sw.migratedAt,hasEnvelope:sw.row.encrypted_private_key!==null})) throw new AttestorQuorumError('attestor_custody_required','this operation requires the original wallet attestor key');
@@ -697,3 +702,140 @@ export const SignCustodyBody=z.object({custody:WireBytes.min(4)}).strict();
 const CustodyProof=z.object({bytes:WireBytes.min(4),signature:z.string().regex(/^0x[0-9a-fA-F]{130}$/)}).strict();
 const SendCustodyBody=SendTxBody.extend({custody:CustodyProof.optional()}).strict();
 interface CustodySubmission { id:string;user_id:string;wallet_id:string;address:string;chain_id:string|number;nonce:string|number;custody:string;signature:string;unsigned_tx:string;raw_tx:Hex|null;tx_hash:Hex|null;state:'pending'|'confirmed'|'reverted' }
+
+interface OriginalLxWallet {
+  id: string; address: string; chain_id: number; did: string; main_account_id: string;
+  layerx_key_id: string; is_disabled: boolean; archived_at: unknown; binding_state: string;
+}
+interface LxArtifact {
+  kind: 'lx_activity'|'lx_send_authorization';
+  id: string; activity: string; signing_preimage: string; public_key: string; key_id: string;
+  principal: string; did: string; account_id: string; epoch: number; participants: string[];
+  network_id: number; protocol_version: number; session_id: string;
+  disclosure: ActivityDisclosureWire; expires_at: string;
+}
+interface LxApprovalRow {
+  id: string; wallet_id: string; principal: string; state: 'reviewed'|'approved'|'signing_unknown'|'signed';
+  artifact: LxArtifact; approval: ActivityApprovalWire|null;
+  evidence: {signature:string;attestor_audit:NodeAudit[]}|null;
+}
+function stableLx(value: unknown): string {
+  if (Array.isArray(value)) return '[' + value.map(stableLx).join(',') + ']';
+  if (value !== null && typeof value === 'object') return '{' + Object.entries(value).sort(([a],[b]) => a.localeCompare(b)).map(([key,item]) => JSON.stringify(key) + ':' + stableLx(item)).join(',') + '}';
+  const encoded=JSON.stringify(value);if(encoded===undefined)throw new Error('non-JSON LX artifact');return encoded;
+}
+async function lxApprovalRoutes(app:FastifyInstance,pool:Pool,attestors:AttestorClient|null,limiter:RateLimiter):Promise<void> {
+  const idSchema=z.string().uuid();
+  const bareBytes=z.string().max(2_097_152).regex(/^(?:[0-9a-f]{2})+$/);
+  const reviewSchema=z.object({activity:bareBytes,kind:z.enum(['lx_activity','lx_send_authorization']).default('lx_activity')}).strict();
+  const approveSchema=z.object({review_id:idSchema,activity:bareBytes,signing_preimage:z.string().regex(/^[0-9a-f]{64}$/),
+    disclosure:z.unknown(),expires_at:z.string().regex(/^(0|[1-9][0-9]{0,19})$/),decision:z.literal('approve')}).strict();
+  const signSchema=z.object({approval_id:idSchema}).strict();
+  const response=(row:LxApprovalRow)=>({...row.artifact,state:row.state,...(row.approval?{approval:row.approval}:{}),...(row.evidence??{})});
+  const refusal=(status:number,code:string):never=>{throw new RouteRefusal(status,code,{error:code});};
+  async function original(client:PoolClient,subject:string):Promise<OriginalLxWallet> {
+    const found=await client.query<OriginalLxWallet>(`select id,address,chain_id,did,main_account_id,layerx_key_id,is_disabled,archived_at,binding_state
+      from wallets where user_id=$1 and kind='standard' for update`,[subject]);
+    const wallet=found.rows[0];
+    if(!wallet||wallet.is_disabled||wallet.archived_at!==null||wallet.binding_state!=='bound'||!wallet.layerx_key_id||!wallet.did||!wallet.main_account_id) return refusal(403,'original_lx_identity_unavailable');
+    const key=requireInventoryKey(wallet.layerx_key_id,'sign',subject);
+    if(key.curve!=='ed25519'||didFromPublicKey(key.public_key)!==wallet.did||mainAccountId(wallet.did)!==wallet.main_account_id) return refusal(403,'original_lx_identity_mismatch');
+    return wallet;
+  }
+  async function retained(client:PoolClient,subject:string,id:string,wallet:OriginalLxWallet):Promise<LxApprovalRow> {
+    const found=await client.query<LxApprovalRow>('select * from wallet_lx_approvals where id=$1 and principal=$2 for update',[id,subject]);
+    const row=found.rows[0];if(!row||row.wallet_id!==wallet.id)return refusal(404,'lx_approval_not_found');
+    const a=row.artifact;const key=requireInventoryKey(wallet.layerx_key_id,'sign',subject);
+    if(a.id!==row.id||a.principal!==subject||a.key_id!==wallet.layerx_key_id||a.did!==wallet.did||a.account_id!==wallet.main_account_id||a.public_key!==key.public_key||a.epoch!==key.epoch||a.network_id!==wallet.chain_id) return refusal(409,'lx_approval_identity_changed');
+    return row;
+  }
+  async function transaction<T>(work:(client:PoolClient)=>Promise<T>):Promise<T> {
+    const client=await pool.connect();try{await client.query('begin');const result=await work(client);await client.query('commit');return result;}
+    catch(error){await client.query('rollback').catch(()=>undefined);throw error;}finally{client.release();}
+  }
+  async function guarded(reply:FastifyReply,work:()=>Promise<unknown>):Promise<FastifyReply> {
+    try{return reply.send(await work());}catch(error){
+      if(error instanceof RouteRefusal)return reply.code(error.status).send(error.body);
+      if(error instanceof AttestorError)return reply.code(attestorErrorStatus(error)).send(attestorErrorBody(error));
+      if(error instanceof CustodyAuthorityError)return reply.code(503).send({error:error.code});
+      if(error instanceof RateLimitedError)return reply.code(429).send(rateLimitBody(error));
+      return reply.code(503).send({error:'lx_producer_unavailable'});
+    }
+  }
+  app.post('/v1/wallet/lx/review',{preHandler:requireAuth,bodyLimit:2_400_000},async(req,reply)=>{
+    const parsed=reviewSchema.safeParse(req.body);if(!parsed.success)return reply.code(400).send({error:'invalid_lx_review'});
+    return guarded(reply,async()=>{
+      await limiter.consume('client',req.user!.id);
+      if(!attestors)return refusal(503,'attestor_custody_required');
+      const activity=parsed.data.activity;const kind=parsed.data.kind;const raw=Buffer.from(activity,'hex');
+      if(raw.length<5||raw.readUInt16BE(0)<1||raw.readUInt16BE(0)>3)return refusal(409,'lx_protocol_unsupported');
+      if(raw.readUInt16BE(2)!==0x1001||raw[4]!==11)return refusal(400,'lx_unsigned_canonical_required');
+      return transaction(async client=>{
+        const wallet=await original(client,req.user!.id);await limiter.consume('account',wallet.address);
+        await client.query("delete from wallet_lx_approvals where principal=$1 and state in ('reviewed','approved') and expires_at<=now()",[req.user!.id]);
+        const count=await client.query<{count:string}>("select count(*)::text as count from wallet_lx_approvals where principal=$1 and state in ('reviewed','approved','signing_unknown')",[req.user!.id]);
+        if(!count.rows[0]||BigInt(count.rows[0].count)>=256n)return refusal(429,'lx_approval_capacity');
+        const id=randomUUID();const session=randomUUID();
+        const review=await attestors.reviewLxActivity({keyId:wallet.layerx_key_id,sessionId:session,activity,kind,owner:req.user!.id,token:bearerToken(req)});
+        const digest=lxSigningPreimage(activity,kind);
+        if(review.signing_preimage!==digest||review.network_id!==wallet.chain_id||review.network_id!==env.HYPERPAXEER_CHAIN_ID||review.disclosure.account!==wallet.main_account_id)return refusal(403,'lx_review_binding_mismatch');
+        const now=BigInt(Math.floor(Date.now()/1000));const until=BigInt(review.not_after);const expiry=until<now+600n?until:now+600n;
+        if(expiry<=now||BigInt(review.disclosure.not_before)>now)return refusal(403,'lx_activity_outside_validity');
+        const artifact:LxArtifact={id,kind,activity,signing_preimage:digest,public_key:review.public_key,key_id:wallet.layerx_key_id,
+          principal:req.user!.id,did:wallet.did,account_id:wallet.main_account_id,epoch:review.epoch,participants:review.participants,
+          network_id:review.network_id,protocol_version:review.protocol_version,session_id:session,disclosure:review.disclosure,expires_at:expiry.toString()};
+        await client.query(`insert into wallet_lx_approvals(id,wallet_id,principal,session_id,state,artifact,expires_at,review_evidence) values($1,$2,$3,$4,'reviewed',$5::jsonb,to_timestamp($6::double precision),$7::jsonb)`,[id,wallet.id,req.user!.id,session,JSON.stringify(artifact),artifact.expires_at,JSON.stringify(review.audit)]);
+        return {...artifact,state:'reviewed'};
+      });
+    });
+  });
+  app.post('/v1/wallet/lx/approve',{preHandler:requireAuth,bodyLimit:2_400_000},async(req,reply)=>{
+    const parsed=approveSchema.safeParse(req.body);if(!parsed.success)return reply.code(400).send({error:'explicit_lx_approval_required'});
+    return guarded(reply,()=>transaction(async client=>{
+      await limiter.consume('client',req.user!.id);const wallet=await original(client,req.user!.id);const row=await retained(client,req.user!.id,parsed.data.review_id,wallet);const a=row.artifact;
+      if(parsed.data.activity!==a.activity||parsed.data.signing_preimage!==a.signing_preimage||parsed.data.expires_at!==a.expires_at||stableLx(parsed.data.disclosure)!==stableLx(a.disclosure))return refusal(409,'lx_review_changed');
+      if(row.state!=='reviewed')return response(row);
+      if(BigInt(a.expires_at)<=BigInt(Math.floor(Date.now()/1000)))return refusal(403,'lx_approval_expired');
+      const approval:ActivityApprovalWire={version:1,principal:a.principal,key_id:a.key_id,network_id:a.network_id,protocol_version:a.protocol_version,
+        session_id:a.session_id,activity_digest:a.signing_preimage,expires_at:a.expires_at};
+      await client.query("update wallet_lx_approvals set state='approved',approval=$2::jsonb,approved_at=now() where id=$1",[row.id,JSON.stringify(approval)]);
+      return response({...row,state:'approved',approval});
+    }));
+  });
+  app.get('/v1/wallet/lx/approvals/:id',{preHandler:requireAuth},async(req,reply)=>{
+    const id=idSchema.safeParse((req.params as {id:unknown}).id);if(!id.success)return reply.code(400).send({error:'invalid_lx_approval_id'});
+    return guarded(reply,()=>transaction(async client=>response(await retained(client,req.user!.id,id.data,await original(client,req.user!.id)))));
+  });
+  app.post('/v1/wallet/lx/sign',{preHandler:requireAuth},async(req,reply)=>{
+    const parsed=signSchema.safeParse(req.body);if(!parsed.success)return reply.code(400).send({error:'retained_lx_approval_required'});
+    return guarded(reply,async()=>{
+      await limiter.consume('client',req.user!.id);if(!attestors)return refusal(503,'attestor_custody_required');
+      const staged=await transaction(async client=>{
+        const wallet=await original(client,req.user!.id);const row=await retained(client,req.user!.id,parsed.data.approval_id,wallet);
+        if(row.state==='signed'||row.state==='signing_unknown')return {row,attempt:false};
+        if(row.state!=='approved'||!row.approval)return refusal(403,'explicit_lx_approval_required');
+        if(BigInt(row.artifact.expires_at)<=BigInt(Math.floor(Date.now()/1000)))return refusal(403,'lx_approval_expired');
+        await client.query("update wallet_lx_approvals set state='signing_unknown',attempted_at=now() where id=$1",[row.id]);
+        return {row:{...row,state:'signing_unknown' as const},attempt:true};
+      });
+      if(!staged.attempt){if(staged.row.state==='signing_unknown')reply.code(202);return response(staged.row);}
+      const row=staged.row;const a=row.artifact;
+      try{
+        const signed=await attestors.sign({keyId:a.key_id,participants:a.participants,
+          payload:{kind:a.kind,activity:`0x${a.activity}`,disclosure:a.disclosure,approval:row.approval!},authorisation:{scheme:'supabase_jwt',token:bearerToken(req)}});
+        const signature=signed.signature.slice(2);
+        if(signed.sessionId!==a.session_id||signed.signedBytes!==`0x${a.signing_preimage}`||signed.kind!==a.kind||signed.recoveryId!==null
+          ||stableLx(signed.participants)!==stableLx(a.participants)||!verifyLxSignature(a.public_key,Buffer.from(a.signing_preimage,'hex'),signature))return refusal(502,'lx_signature_evidence_mismatch');
+        const evidence={signature,attestor_audit:signed.audit};
+        return await transaction(async client=>{
+          const current=await retained(client,req.user!.id,row.id,await original(client,req.user!.id));
+          if(current.state!=='signing_unknown'||stableLx(current.artifact)!==stableLx(a)||stableLx(current.approval)!==stableLx(row.approval))return refusal(409,'lx_signing_state_changed');
+          await client.query("update wallet_lx_approvals set state='signed',evidence=$2::jsonb,completed_at=now() where id=$1",[row.id,JSON.stringify(evidence)]);
+          return response({...current,state:'signed',evidence});
+        });
+      }catch{
+        reply.code(202);return response(row);
+      }
+    });
+  });
+}

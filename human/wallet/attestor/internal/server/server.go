@@ -35,6 +35,7 @@ const (
 	PathAddShare = "/v1/keys/addshare"
 	PathDescribe = "/v1/keys/describe"
 	PathSign     = "/v1/sign"
+	PathLXReview = "/v1/lx/review"
 	PathHealth   = "/health"
 
 	DefaultProtocolTimeout = 5 * time.Minute
@@ -136,6 +137,7 @@ func New(opts Options) (*Server, error) {
 	s.mux.HandleFunc(PathDescribe, s.post(s.operatorOnly("keys.describe", s.HandleDescribe)))
 	s.mux.HandleFunc(PathAuthority, s.post(s.gatewayOnly("custody.authority", s.HandleAuthority)))
 	s.mux.HandleFunc(PathSign, s.post(s.signRoute()))
+	s.mux.HandleFunc(PathLXReview, s.post(s.gatewayOnly("lx.review", s.HandleLXReview)))
 	s.mux.HandleFunc(PathHealth, s.HandleHealth)
 	return s, nil
 }

@@ -51,6 +51,7 @@ export type SignKind =
   | 'personal_message'
   | 'eth_sign_digest'
   | 'lx_activity'
+  | 'lx_send_authorization'
   | 'lx_bind'
   | 'lx_grant';
 
@@ -63,6 +64,7 @@ export const KIND_CURVES: Record<SignKind, Curve> = {
   personal_message: 'secp256k1',
   eth_sign_digest: 'secp256k1',
   lx_activity: 'ed25519',
+  lx_send_authorization: 'ed25519',
   lx_bind: 'ed25519',
   lx_grant: 'ed25519',
 };
@@ -150,7 +152,7 @@ export type SignPayload =
   | { kind: 'eip712'; typedData: string }
   | { kind: 'personal_message'; message: Hex }
   | { kind: 'eth_sign_digest'; digest: Hex; construction: ConstructionWire }
-  | { kind: 'lx_activity'; activity: Hex; disclosure: ActivityDisclosureWire; approval: ActivityApprovalWire }
+  | { kind: 'lx_activity' | 'lx_send_authorization'; activity: Hex; disclosure: ActivityDisclosureWire; approval: ActivityApprovalWire }
   | { kind: 'lx_bind'; message: Hex }
   | { kind: 'lx_grant'; grant: GrantWire };
 
@@ -405,6 +407,7 @@ export interface AttestorClientOptions {
 }
 
 export interface SignInput {
+  participants?: string[];
   keyId: string;
   payload: SignPayload;
   authorisation: Authorisation;
@@ -471,6 +474,7 @@ export function signRequestBody(sessionId: string, keyId: string, signers: strin
       return { ...base, message: bareHex(payload.message) };
     case 'eth_sign_digest':
       return { ...base, digest: bareHex(payload.digest), construction: payload.construction };
+    case 'lx_send_authorization':
     case 'lx_activity':
       if (payload.approval.session_id !== sessionId || payload.approval.key_id !== keyId) {
         throw new AttestorSessionError('session_bad_request', 'the approval binding names another session or key');
@@ -600,6 +604,29 @@ export class AttestorClient {
     }
   }
 
+  async reviewLxActivity(input: { keyId: string; sessionId: string; activity: string; kind: 'lx_activity'|'lx_send_authorization'; owner: string; token: string }): Promise<LxReviewResult> {
+    const key = requireInventoryKey(input.keyId, 'sign', input.owner);
+    if (key.curve !== 'ed25519') throw new AttestorKeyError('key_curve_mismatch', 'LX review requires the original Ed25519 key');
+    const sequence = await publishCustodyAuthority(this, 3);
+    let members: QuorumMember[];
+    try { members = selectQuorum(this.nodes.filter(node => node.nodeId !== null && this.authorityAcks.get(node.nodeId) === sequence), this.opts.quorum); }
+    catch { throw new AttestorQuorumError('quorum_unavailable', 'the original LX review quorum is unavailable'); }
+    const body = JSON.stringify({ session_id: input.sessionId, key_id: input.keyId, activity: input.activity, kind: input.kind });
+    const headers = authorisationHeaders({ scheme: 'supabase_jwt', token: input.token });
+    const settled = await Promise.allSettled(members.map(member => this.post(member, '/v1/lx/review', body,
+      { ...headers, 'X-Custody-Sequence': sequence }, value => parseLxReview(value, member.nodeId))));
+    const refusal = firstRefusal(settled, members, (endpoint, reason) => this.markDown(endpoint, reason));
+    if (refusal) throw refusal;
+    const answers = settled.map(answer => (answer as PromiseFulfilledResult<LxReviewWire>).value);
+    const first = answers[0]!;
+    const semantic = (answer: LxReviewWire) => JSON.stringify({ kind: answer.kind, key_id: answer.key_id, public_key: answer.public_key,
+      activity: answer.activity, signing_preimage: answer.signing_preimage, network_id: answer.network_id,
+      protocol_version: answer.protocol_version, disclosure: answer.disclosure, not_after: answer.not_after, epoch: answer.epoch });
+    if (first.kind !== input.kind || first.key_id !== input.keyId || first.public_key !== key.public_key || first.epoch !== key.epoch || first.activity !== input.activity
+      || answers.some(answer => semantic(answer) !== semantic(first))) throw new AttestorSessionError('lx_review_disagreement', 'original key or canonical disclosure differs across the real quorum');
+    return { ...first, participants: members.map(member => member.nodeId), audit: answers.map(answer => ({node_id:answer.node_id,audit_sequence:answer.audit_sequence})) };
+  }
+
   async sign(input: SignInput): Promise<SignResult> {
     requireInventoryKey(input.keyId, 'sign');
     const authoritySequence = await publishCustodyAuthority(this, 3);
@@ -612,9 +639,19 @@ export class AttestorClient {
       }
       throw err;
     }
+    if (input.participants !== undefined) {
+      if (!['lx_activity','lx_send_authorization'].includes(input.payload.kind) || input.participants.length !== this.opts.quorum || new Set(input.participants).size !== this.opts.quorum) {
+        throw new AttestorSessionError('participant_mismatch', 'only an original approved LX quorum may be pinned');
+      }
+      members = input.participants.map(id => {
+        const node = this.nodes.find(candidate => candidate.nodeId === id && isHealthy(candidate, this.opts.quorum) && this.authorityAcks.get(id) === authoritySequence);
+        if (!node || node.latencyMs === null) throw new AttestorQuorumError('participant_unavailable', 'an originally reviewed LX participant is unavailable');
+        return {endpoint:node.endpoint,nodeId:id,latencyMs:node.latencyMs};
+      });
+    }
     const kind = input.payload.kind;
     const curve = KIND_CURVES[kind];
-    let sessionId = input.payload.kind === 'lx_activity' ? input.payload.approval.session_id : randomUUID();
+    let sessionId = input.payload.kind === 'lx_activity' || input.payload.kind === 'lx_send_authorization' ? input.payload.approval.session_id : randomUUID();
     let participants = members.map((m) => m.nodeId);
     let authorisation = input.authorisation;
     let origin: AgentOriginalRequest | undefined;
@@ -1105,4 +1142,53 @@ export function constructionDigest(construction:ConstructionWire):Hex {
     [construction.calls!.map(call=>({to:call.to as Hex,value:BigInt(call.value),data:call.data as Hex}))]));
   return hashMessage({raw:keccak256(encodeAbiParameters([{type:'bytes32'},{type:'uint256'},{type:'bytes32'},{type:'bytes32'}],
     [keccak256(stringToHex('SponsoredBatch(uint256 nonce,bytes32 callsHash,bytes32 quoteDigest)')),BigInt(construction.nonce),calls,sponsorQuoteDigest(construction)]))});
+}
+
+export interface LxReviewWire {
+  kind: 'lx_activity'|'lx_send_authorization';
+  node_id: string; key_id: string; public_key: string; activity: string; signing_preimage: string;
+  network_id: number; protocol_version: number; disclosure: ActivityDisclosureWire;
+  not_after: string; epoch: number; audit_sequence: number;
+}
+export interface LxReviewResult extends LxReviewWire { participants: string[]; audit: NodeAudit[]; }
+function parseLxReview(value: unknown, nodeId: string): LxReviewWire {
+  const answer = value as LxReviewWire | null;
+  if (!answer || typeof answer !== 'object' || !['lx_activity','lx_send_authorization'].includes(answer.kind) || answer.node_id !== nodeId || typeof answer.key_id !== 'string'
+    || !/^[0-9a-f]{64}$/.test(answer.public_key) || !/^[0-9a-f]{64}$/.test(answer.signing_preimage)
+    || typeof answer.activity !== 'string' || !/^(?:[0-9a-f]{2})+$/.test(answer.activity) || answer.activity.length > 2_097_152
+    || !Number.isSafeInteger(answer.network_id) || answer.network_id < 0 || answer.network_id > 0xffffffff
+    || ![1,2,3].includes(answer.protocol_version) || !Number.isSafeInteger(answer.epoch) || answer.epoch < 0
+    || !Number.isSafeInteger(answer.audit_sequence) || answer.audit_sequence < 1) throw new AttestorSessionError('lx_review_invalid', 'invalid authenticated LX review evidence');
+  checkDecimal('review.not_after', answer.not_after, 64);
+  const d = answer.disclosure;
+  if (!d || !/^[0-9a-f]{64}$/.test(d.account) || typeof d.module !== 'string' || !Number.isInteger(d.operation) || d.operation <= 0 || d.operation > 65535
+    || !Array.isArray(d.amounts) || d.amounts.length > 1024 || !Array.isArray(d.destinations) || d.destinations.length > 1024
+    || d.amounts.some(amount => !/^[0-9a-f]{64}$/.test(amount.asset)) || d.destinations.some(destination => !/^[0-9a-f]{64}$/.test(destination))) throw new AttestorSessionError('lx_review_invalid', 'invalid independently decoded LX disclosure');
+  d.amounts.forEach(amount => checkDecimal('review.amount', amount.amount, 128));
+  for (const field of ['sequence','not_before','not_after'] as const) checkDecimal('review.' + field, d[field], 64);
+  if (d.not_after !== answer.not_after) throw new AttestorSessionError('lx_review_invalid', 'disclosure validity differs');
+  return answer;
+}
+
+export function lxSigningPreimage(activity:string,kind:'lx_activity'|'lx_send_authorization'):string {
+  if(!/^(?:[0-9a-f]{2})+$/.test(activity)||activity.length>2_097_152)throw new AttestorSessionError('lx_canonical_invalid','invalid canonical activity bytes');
+  const raw=Buffer.from(activity,'hex');let offset=0;
+  const take=(count:number):Buffer=>{if(count<0||offset+count>raw.length)throw new AttestorSessionError('lx_canonical_invalid','truncated canonical activity');const bytes=raw.subarray(offset,offset+count);offset+=count;return bytes;};
+  const u8=()=>take(1).readUInt8();const u16=()=>take(2).readUInt16BE();const u32=()=>take(4).readUInt32BE();
+  const tag=(field:number)=>{if(u8()!==field)throw new AttestorSessionError('lx_canonical_invalid','noncanonical activity field');};
+  const bytes=(max:number)=>{const size=u32();if(size>max)throw new AttestorSessionError('lx_canonical_invalid','activity field exceeds bound');return take(size);};
+  const version=u16();if(![1,2,3].includes(version)||u16()!==0x1001||u8()!==11)throw new AttestorSessionError('lx_protocol_unsupported','only existing unsigned protocol1-3 activity is admitted');
+  tag(1);if(u16()!==version)throw new AttestorSessionError('lx_canonical_invalid','activity versions differ');
+  tag(2);const network=u32();tag(3);const operation=u32();tag(4);bytes(255);tag(5);bytes(524288);
+  tag(6);take(8);tag(7);take(16);tag(8);if(bytes(32).length!==32)throw new AttestorSessionError('lx_canonical_invalid','invalid activity idempotency');
+  tag(9);take(16);tag(10);const payloadHash=bytes(32);tag(11);const payload=bytes(524288);
+  if(offset!==raw.length||payloadHash.length!==32||!createHash('sha256').update('LXP/v1/payload-hash\0').update(payload).digest().equals(payloadHash))throw new AttestorSessionError('lx_canonical_invalid','canonical payload hash or trailing bytes differ');
+  if(kind==='lx_activity')return createHash('sha256').update('LXP/v1/signature-preimage\0').update(raw).digest('hex');
+  if(operation!==0x10001||payload.length<364||payload.length>512||payload.readUInt16BE(0)!==0x5301||payload.readUInt16BE(2)!==10)throw new AttestorSessionError('lx_send_authorization_invalid','owner send authorization layout required');
+  const count=payload[196]!;const end=197+count*9;
+  if(count>8||payload.length!==end+167||payload[end]!==1||payload.subarray(end+65,end+129).some(byte=>byte!==0)
+    ||payload.readUInt32BE(end+161)!==network||payload.readUInt16BE(end+165)!==version)throw new AttestorSessionError('lx_send_authorization_invalid','send authorization signature or scope differs');
+  for(let index=0;index<count;index++)if(![1,2].includes(payload[197+index*9]!))throw new AttestorSessionError('lx_send_authorization_invalid','invalid send condition');
+  const message=Buffer.concat([payload.subarray(0,2),payload.subarray(4,end),payload.subarray(end,end+33),payload.subarray(end+129)]);
+  return createHash('sha256').update('LXP/v1/signature-preimage\0').update(message).digest('hex');
 }

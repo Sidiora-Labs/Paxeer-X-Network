@@ -299,6 +299,10 @@ func (s *Server) HandleSign(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) authenticate(r *http.Request, keyID string, body []byte, owner string) (string, *Error) {
+	return s.authenticateAt(r, PathSign, keyID, body, owner)
+}
+
+func (s *Server) authenticateAt(r *http.Request, path, keyID string, body []byte, owner string) (string, *Error) {
 	if auth := r.Header.Get("Authorization"); auth != "" {
 		token, ok := strings.CutPrefix(auth, "Bearer ")
 		if !ok || token == "" {
@@ -307,7 +311,7 @@ func (s *Server) authenticate(r *http.Request, keyID string, body []byte, owner 
 		if s.opts.Tokens == nil {
 			return "", newError(CodeTokenUnavailable, "no token verifier is configured")
 		}
-		request, err := jwt.RequestDigest(PathSign, keyID, body)
+		request, err := jwt.RequestDigest(path, keyID, body)
 		if err != nil {
 			return "", newError(CodeSessionBadRequest, "%v", err)
 		}
@@ -698,4 +702,82 @@ func parseConstructionUint(field,raw string)(*big.Int,*Error){
     if raw==""||len(raw)>78||(len(raw)>1&&raw[0]=='0'){return nil,newError(CodeSessionBadRequest,"%s must be canonical unsigned decimal",field)}
     for _,c:=range raw{if c<'0'||c>'9'{return nil,newError(CodeSessionBadRequest,"%s must be canonical unsigned decimal",field)}}
     return parseUint256(field,raw)
+}
+
+type LXReviewRequest struct {
+	Kind string `json:"kind,omitempty"`
+	SessionID string `json:"session_id"`
+	KeyID string `json:"key_id"`
+	Activity string `json:"activity"`
+}
+
+type LXReviewResponse struct {
+	Kind string `json:"kind"`
+	NodeID string `json:"node_id"`
+	KeyID string `json:"key_id"`
+	PublicKey string `json:"public_key"`
+	Activity string `json:"activity"`
+	SigningPreimage string `json:"signing_preimage"`
+	NetworkID uint32 `json:"network_id"`
+	ProtocolVersion uint16 `json:"protocol_version"`
+	Disclosure lx.Disclosure `json:"disclosure"`
+	NotAfter string `json:"not_after"`
+	Epoch uint64 `json:"epoch"`
+	AuditSequence uint64 `json:"audit_sequence"`
+}
+
+func (s *Server) HandleLXReview(w http.ResponseWriter, r *http.Request) {
+	body, e := readBody(r)
+	var resp LXReviewResponse
+	if e == nil { resp, e = s.doLXReview(r, body) }
+	s.finish(w, "lx.review", body, resp, e)
+}
+
+func (s *Server) doLXReview(r *http.Request, body []byte) (LXReviewResponse, *Error) {
+	var req LXReviewRequest
+	if e := decodeRequest(body, &req); e != nil { return LXReviewResponse{}, e }
+	if req.Kind == "" { req.Kind = KindLXActivity }
+	if req.Kind != KindLXActivity && req.Kind != KindLXSendAuth { return LXReviewResponse{}, newError(CodeSessionKind, "review supports only lx_activity or lx_send_authorization") }
+	if e := requireIDs(req.SessionID, req.KeyID); e != nil { return LXReviewResponse{}, e }
+	if r.Header.Get("Authorization") == "" || r.Header.Get(HeaderAgentKey) != "" {
+		return LXReviewResponse{}, newError(CodeTokenMissing, "original owner bearer authorization is required for review")
+	}
+	unlock := s.lockKey(req.KeyID)
+	defer unlock()
+	rec, payload, e := s.loadShare(req.KeyID)
+	if e != nil { return LXReviewResponse{}, e }
+	if strings.HasPrefix(payload.Owner, "agent:") {
+		return LXReviewResponse{}, newError(CodeTokenNotOwner, "review requires the original standard wallet identity")
+	}
+	subject, e := s.authenticateAt(r, PathLXReview, req.KeyID, body, payload.Owner)
+	if e != nil { return LXReviewResponse{}, s.deny("lx.review", req.KeyID, "", "denied", req.SessionID, e) }
+	refuse := func(e *Error) (LXReviewResponse, *Error) {
+		return LXReviewResponse{}, s.deny("lx.review", req.KeyID, subject, "denied", req.SessionID, e)
+	}
+	if subject != payload.Owner { return refuse(newError(CodeTokenNotOwner, "review requires the original key owner")) }
+	curve, valid := parseCurve(rec.Curve)
+	if !valid || curve != dealer.Ed25519 || len(rec.PublicKey) != 32 {
+		return refuse(newError(CodeKeyCurve, "review requires the original Ed25519 key"))
+	}
+	if s.opts.Inventory == nil { return refuse(newError(CodeTokenUnavailable, "owner-approved wallet inventory is unavailable")) }
+	if err := s.opts.Inventory.Check(req.KeyID, "sign", payload.Owner, rec.Curve, &rec); err != nil {
+		return refuse(newError(CodeKeyInvalidShare, "owner-approved wallet inventory differs from held share"))
+	}
+	if !common.IsHexAddress(payload.Account) { return refuse(newError(CodeKeyInvalidShare, "held wallet account is invalid")) }
+	raw, e := decodeHex("activity", req.Activity)
+	if e != nil { return refuse(e) }
+	if hex.EncodeToString(raw) != req.Activity { return refuse(newError(CodeSessionBadRequest, "activity must be canonical bare lowercase hex")) }
+	if _, err := lxwire.DecodeUnsignedActivity(raw, s.opts.Activities); err != nil { return refuse(policyError(policy.CodeDecodeError, err.Error())) }
+	var pub [32]byte
+	copy(pub[:], rec.PublicKey)
+	if s.opts.Kernel == nil || s.spends == nil { return refuse(newError(CodeTokenUnavailable, "kernel review policy and durable ledger are unavailable")) }
+	unlockAccount := s.lockKey("ledger\x00" + policy.AccountKey(payload.Account))
+	review, err := s.opts.Kernel.ReviewActivity(policy.Context{ChainID: new(big.Int).SetUint64(s.opts.ChainID), Account: common.HexToAddress(payload.Account)}, raw, pub, s.spends, req.Kind == KindLXSendAuth)
+	unlockAccount()
+	if err != nil { return refuse(refusal(err)) }
+	seq, e := s.audit("lx.review", req.KeyID, subject, "reviewed", "decoded review is not signing approval", req.SessionID)
+	if e != nil { return LXReviewResponse{}, e }
+	return LXReviewResponse{Kind: req.Kind, NodeID: s.opts.NodeID, KeyID: req.KeyID, PublicKey: hex.EncodeToString(rec.PublicKey), Activity: req.Activity,
+		SigningPreimage: hex.EncodeToString(review.Digest[:]), NetworkID: review.Activity.NetworkID, ProtocolVersion: review.Activity.ProtocolVersion,
+		Disclosure: review.Disclosure, NotAfter: strconv.FormatUint(review.Activity.NotAfter, 10), Epoch: rec.Epoch, AuditSequence: seq}, nil
 }
