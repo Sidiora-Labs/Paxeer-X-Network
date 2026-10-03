@@ -31787,7 +31787,9 @@ ac_5 = "The producer manifest and verified lifecycle are reusable inputs for rea
 
 [task.24.15]
 title = "Produce source-bound registry build and isolation artifacts"
-status = "in_progress"
+status = "done"
+completion_basis = "implementation"
+qualification_status = "unverified"
 mode = "BUILD"
 wave = 3
 requires = ["0.2", "111.6.11"]
