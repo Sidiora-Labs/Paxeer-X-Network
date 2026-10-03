@@ -6,7 +6,8 @@
 //! its own lock. Operations without an existing owner method are deliberately left out of the
 //! match: they are not answered with any substitute refusal.
 
-use layerx_agent_api::error::{ErrorClass, Level, RequestId, Retriability, VerificationStatus};
+use layerx_agent_api::error::{ErrorClass, RequestId, Retriability};
+use layerx_agent_api::verify::{Level, VerificationStatus};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
@@ -17,7 +18,9 @@ use crate::agent_rpc_wire::*;
 use crate::human::{
     HumanOperationError, HumanOperations, HumanPeer, HumanPrepare, HumanResponse, HumanSubmit,
 };
-use crate::human_runtime::{prepare_digest, submit_digest, HumanAuthorityBoundary, SharedAgentOwner};
+use crate::human_runtime::{
+    prepare_digest, submit_digest, HumanAuthorityBoundary, SharedAgentOwner,
+};
 use crate::session_control::OperationPermit;
 use crate::tenant::Operation;
 
@@ -44,7 +47,11 @@ const fn rejection(class: ErrorClass, request_id: RequestId, reason: &'static st
 }
 
 pub(crate) fn malformed(request_id: RequestId) -> Rejection {
-    rejection(ErrorClass::ProtocolIncompatibility, request_id, "envelope.malformed")
+    rejection(
+        ErrorClass::ProtocolIncompatibility,
+        request_id,
+        "envelope.malformed",
+    )
 }
 
 pub(crate) fn noncanonical(request_id: RequestId) -> Rejection {
@@ -74,7 +81,11 @@ pub(crate) fn decimal_u128(text: &str, request_id: RequestId) -> Result<u128, Re
 
 pub(crate) fn hex32(text: &str, request_id: RequestId) -> Result<[u8; 32], Rejection> {
     let bytes = text.as_bytes();
-    if bytes.len() != 64 || !bytes.iter().all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'f')) {
+    if bytes.len() != 64
+        || !bytes
+            .iter()
+            .all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'f'))
+    {
         return Err(malformed(request_id));
     }
     let mut out = [0_u8; 32];
@@ -87,7 +98,11 @@ pub(crate) fn hex32(text: &str, request_id: RequestId) -> Result<[u8; 32], Rejec
 
 pub(crate) fn hex_bytes(text: &str, request_id: RequestId) -> Result<Vec<u8>, Rejection> {
     let bytes = text.as_bytes();
-    if bytes.len() % 2 != 0 || !bytes.iter().all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'f')) {
+    if bytes.len() % 2 != 0
+        || !bytes
+            .iter()
+            .all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'f'))
+    {
         return Err(malformed(request_id));
     }
     bytes
@@ -129,7 +144,8 @@ pub(crate) fn decode<T: for<'de> Deserialize<'de>>(
 }
 
 pub(crate) fn native_variant(
-    request: &Map<String, Value>, id: RequestId,
+    request: &Map<String, Value>,
+    id: RequestId,
 ) -> Result<bool, Rejection> {
     match request.get("variant") {
         None => Ok(false),
@@ -154,7 +170,11 @@ pub(crate) fn native_approval_digest(
     grant: bool,
 ) -> Result<[u8; 32], serde_json::Error> {
     use sha2::{Digest, Sha256};
-    let operation = if grant { Operation::ApprovalApprove } else { Operation::ApprovalReject };
+    let operation = if grant {
+        Operation::ApprovalApprove
+    } else {
+        Operation::ApprovalReject
+    };
     Ok(Sha256::new()
         .chain_update(b"LXP/agent/request/v1\0")
         .chain_update(operation.name().as_bytes())
@@ -386,7 +406,10 @@ fn decode_tracked(reader: &mut Reader<'_>) -> Option<(Value, Option<Level>)> {
         _ => {}
     }
     let achieved = level(reader.u8()?)?;
-    out.insert("verification_level".into(), Value::String(level_name(achieved).into()));
+    out.insert(
+        "verification_level".into(),
+        Value::String(level_name(achieved).into()),
+    );
     let evidence_count = usize::from(reader.u8()?);
     if evidence_count > MAX_EVIDENCE {
         return None;
@@ -461,7 +484,10 @@ fn decode_receipt(reader: &mut Reader<'_>) -> Option<(Value, Option<Level>)> {
         0 => return None,
         value => level(value)?,
     };
-    out.insert("verification_level".into(), Value::String(level_name(achieved).into()));
+    out.insert(
+        "verification_level".into(),
+        Value::String(level_name(achieved).into()),
+    );
     Some((Value::Object(out), Some(achieved)))
 }
 
@@ -573,7 +599,10 @@ fn decode_approval(reader: &mut Reader<'_>) -> Option<Value> {
     out.insert("fee_limit".into(), dec(reader.u128()?));
     out.insert("expiry".into(), dec(reader.u64()?));
     out.insert("idempotency_key".into(), Value::String(reader.text()?));
-    out.insert("canonical_bytes_digest".into(), hexv(&reader.fixed::<32>()?));
+    out.insert(
+        "canonical_bytes_digest".into(),
+        hexv(&reader.fixed::<32>()?),
+    );
     out.insert("hold_reason_code".into(), Value::String(reader.text()?));
     out.insert("hold_reason".into(), Value::String(reader.text()?));
     out.insert("created_at_sequence".into(), dec(reader.u64()?));
@@ -631,7 +660,11 @@ pub(crate) fn dispatched(
     };
     let decoded = decoder(&mut reader).filter(|_| reader.finish().is_some());
     let (value, achieved) = decoded.ok_or_else(|| {
-        rejection(ErrorClass::InternalFault, request_id, "owner.response_malformed")
+        rejection(
+            ErrorClass::InternalFault,
+            request_id,
+            "owner.response_malformed",
+        )
     })?;
     Ok(Dispatched {
         value,
@@ -649,13 +682,24 @@ where
     T: Canonical,
 {
     let response = response.map_err(|error| owner_error(request_id, error))?;
-    let refused = || rejection(ErrorClass::InternalFault, request_id, "owner.response_malformed");
+    let refused = || {
+        rejection(
+            ErrorClass::InternalFault,
+            request_id,
+            "owner.response_malformed",
+        )
+    };
     if response.bytes().len() > MAX_BYTES {
         return Err(refused());
     }
     let wire = serde_json::from_slice::<W>(response.bytes()).map_err(|_| refused())?;
-    let value = convert(wire, request_id).map_err(|_| refused())?.canonical();
-    Ok(Dispatched { value, verification: None })
+    let value = convert(wire, request_id)
+        .map_err(|_| refused())?
+        .canonical();
+    Ok(Dispatched {
+        value,
+        verification: None,
+    })
 }
 
 #[derive(Deserialize, Serialize)]
@@ -793,7 +837,10 @@ pub(crate) fn human_prepare(
     })
 }
 
-pub(crate) fn human_submit(request: SubmitRequest, request_id: RequestId) -> Result<HumanSubmit, Rejection> {
+pub(crate) fn human_submit(
+    request: SubmitRequest,
+    request_id: RequestId,
+) -> Result<HumanSubmit, Rejection> {
     let _ = (request.tenant, request.agent);
     Ok(HumanSubmit {
         preparation_ref: request.preparation_ref,
@@ -826,7 +873,11 @@ fn wire_bytes<W: serde::de::DeserializeOwned, T: Canonical>(
     id: RequestId,
     into_request: fn(W, RequestId) -> Result<T, Rejection>,
 ) -> Result<Vec<u8>, Rejection> {
-    named(operation, &into_request(decode_wire::<W>(request, id)?, id)?.canonical(), id)
+    named(
+        operation,
+        &into_request(decode_wire::<W>(request, id)?, id)?.canonical(),
+        id,
+    )
 }
 
 /// Canonical bytes of the strictly decoded owner typed request, used by `agent_rpc` as the
@@ -856,32 +907,54 @@ pub(crate) fn canonical_request_bytes(
         Operation::Track => named(operation, &decode::<TrackRequest>(request, id)?, id)?,
         Operation::ApprovalList => {
             if native_variant(request, id)? {
-                wire_bytes::<NativeApprovalListV1Wire, _>(operation, request, id, NativeApprovalListV1Wire::into_request)?
+                wire_bytes::<NativeApprovalListV1Wire, _>(
+                    operation,
+                    request,
+                    id,
+                    NativeApprovalListV1Wire::into_request,
+                )?
             } else {
                 named(operation, &decode::<ApprovalListRequest>(request, id)?, id)?
             }
         }
         Operation::ApprovalGet => {
             if native_variant(request, id)? {
-                wire_bytes::<NativeApprovalGetV1Wire, _>(operation, request, id, NativeApprovalGetV1Wire::into_request)?
+                wire_bytes::<NativeApprovalGetV1Wire, _>(
+                    operation,
+                    request,
+                    id,
+                    NativeApprovalGetV1Wire::into_request,
+                )?
             } else {
                 named(operation, &decode::<ApprovalGetRequest>(request, id)?, id)?
             }
         }
-        Operation::ProgramReceipt => {
-            named(operation, &decode::<ActivityLookupRequest>(request, id)?, id)?
-        }
+        Operation::ProgramReceipt => named(
+            operation,
+            &decode::<ActivityLookupRequest>(request, id)?,
+            id,
+        )?,
         Operation::ApprovalApprove | Operation::ApprovalReject => {
             if native_variant(request, id)? {
-                wire_bytes::<NativeApprovalDecisionV1Wire, _>(operation, request, id, NativeApprovalDecisionV1Wire::into_request)?
+                wire_bytes::<NativeApprovalDecisionV1Wire, _>(
+                    operation,
+                    request,
+                    id,
+                    NativeApprovalDecisionV1Wire::into_request,
+                )?
             } else {
-                named(operation, &decode::<ApprovalDecisionRequest>(request, id)?, id)?
+                named(
+                    operation,
+                    &decode::<ApprovalDecisionRequest>(request, id)?,
+                    id,
+                )?
             }
         }
         Operation::Prepare => {
             if native_variant(request, id)? {
                 let typed = decode_wire::<NativePrepareV1Wire>(request, id)?.into_request(id)?;
-                return native_prepare_digest(&typed).map(|digest| Some(digest.to_vec()))
+                return native_prepare_digest(&typed)
+                    .map(|digest| Some(digest.to_vec()))
                     .map_err(|_| malformed(id));
             }
             let typed = human_prepare(decode(request, id)?, id)?;
@@ -899,23 +972,87 @@ pub(crate) fn canonical_request_bytes(
             bytes.extend(suffix);
             bytes
         }
-        Operation::BudgetFund => wire_bytes::<BudgetFundWire, _>(operation, request, id, BudgetFundWire::into_request)?,
-        Operation::BudgetRevoke => wire_bytes::<BudgetTargetWire, _>(operation, request, id, BudgetTargetWire::into_request)?,
-        Operation::CapabilityCreate => wire_bytes::<CapabilityCreateWire, _>(operation, request, id, CapabilityCreateWire::into_request)?,
-        Operation::CapabilityAttenuate => wire_bytes::<CapabilityAttenuateWire, _>(operation, request, id, CapabilityAttenuateWire::into_request)?,
-        Operation::CapabilityRevoke => wire_bytes::<CapabilityRevokeWire, _>(operation, request, id, CapabilityRevokeWire::into_request)?,
-        Operation::SessionRefresh => wire_bytes::<SessionRefreshWire, _>(operation, request, id, SessionRefreshWire::into_request)?,
-        Operation::SessionClose => wire_bytes::<SessionCloseWire, _>(operation, request, id, SessionCloseWire::into_request)?,
-        Operation::SubscriptionCreate => wire_bytes::<SubscriptionCreateWire, _>(operation, request, id, SubscriptionCreateWire::into_request)?,
+        Operation::BudgetFund => {
+            wire_bytes::<BudgetFundWire, _>(operation, request, id, BudgetFundWire::into_request)?
+        }
+        Operation::BudgetRevoke => wire_bytes::<BudgetTargetWire, _>(
+            operation,
+            request,
+            id,
+            BudgetTargetWire::into_request,
+        )?,
+        Operation::CapabilityCreate => wire_bytes::<CapabilityCreateWire, _>(
+            operation,
+            request,
+            id,
+            CapabilityCreateWire::into_request,
+        )?,
+        Operation::CapabilityAttenuate => wire_bytes::<CapabilityAttenuateWire, _>(
+            operation,
+            request,
+            id,
+            CapabilityAttenuateWire::into_request,
+        )?,
+        Operation::CapabilityRevoke => wire_bytes::<CapabilityRevokeWire, _>(
+            operation,
+            request,
+            id,
+            CapabilityRevokeWire::into_request,
+        )?,
+        Operation::SessionRefresh => wire_bytes::<SessionRefreshWire, _>(
+            operation,
+            request,
+            id,
+            SessionRefreshWire::into_request,
+        )?,
+        Operation::SessionClose => wire_bytes::<SessionCloseWire, _>(
+            operation,
+            request,
+            id,
+            SessionCloseWire::into_request,
+        )?,
+        Operation::SubscriptionCreate => wire_bytes::<SubscriptionCreateWire, _>(
+            operation,
+            request,
+            id,
+            SubscriptionCreateWire::into_request,
+        )?,
         Operation::SubscriptionPause
         | Operation::SubscriptionResume
-        | Operation::SubscriptionDelete => wire_bytes::<SubscriptionTargetWire, _>(operation, request, id, SubscriptionTargetWire::into_request)?,
-        Operation::SubscriptionAcknowledge => wire_bytes::<CursorAcknowledgementWire, _>(operation, request, id, CursorAcknowledgementWire::into_request)?,
-        Operation::Sign => wire_bytes::<SignRequestWire, _>(operation, request, id, SignRequestWire::into_request)?,
+        | Operation::SubscriptionDelete => wire_bytes::<SubscriptionTargetWire, _>(
+            operation,
+            request,
+            id,
+            SubscriptionTargetWire::into_request,
+        )?,
+        Operation::SubscriptionAcknowledge => wire_bytes::<CursorAcknowledgementWire, _>(
+            operation,
+            request,
+            id,
+            CursorAcknowledgementWire::into_request,
+        )?,
+        Operation::Sign => {
+            wire_bytes::<SignRequestWire, _>(operation, request, id, SignRequestWire::into_request)?
+        }
         Operation::ProgramCall => named(operation, &program_call_canonical(request, id)?, id)?,
-        Operation::ProgramDeploy => wire_bytes::<ProgramDeployWire, _>(operation, request, id, ProgramDeployWire::into_request)?,
-        Operation::ProgramUpgrade => wire_bytes::<ProgramUpgradeWire, _>(operation, request, id, ProgramUpgradeWire::into_request)?,
-        Operation::ProgramWindDown => wire_bytes::<ProgramWindDownWire, _>(operation, request, id, ProgramWindDownWire::into_request)?,
+        Operation::ProgramDeploy => wire_bytes::<ProgramDeployWire, _>(
+            operation,
+            request,
+            id,
+            ProgramDeployWire::into_request,
+        )?,
+        Operation::ProgramUpgrade => wire_bytes::<ProgramUpgradeWire, _>(
+            operation,
+            request,
+            id,
+            ProgramUpgradeWire::into_request,
+        )?,
+        Operation::ProgramWindDown => wire_bytes::<ProgramWindDownWire, _>(
+            operation,
+            request,
+            id,
+            ProgramWindDownWire::into_request,
+        )?,
         Operation::AgentRegister
         | Operation::SessionOpen
         | Operation::AvailabilityFetch
@@ -929,9 +1066,7 @@ pub(crate) fn canonical_request_bytes(
         | Operation::ProgramInterface
         | Operation::ProgramSimulate
         | Operation::Project
-
         | Operation::PolicyDryRun
-
         | Operation::BudgetState
         | Operation::ReadBatch
         | Operation::ReadHistory
@@ -987,7 +1122,11 @@ pub(crate) fn dispatch_operation<A: HumanAuthorityBoundary>(
         Operation::Track => {
             let request: TrackRequest = decode(request, id)?;
             let _ = (request.tenant, request.agent);
-            dispatched(id, owner.track(peer, &request.submission_ref), decode_observation)
+            dispatched(
+                id,
+                owner.track(peer, &request.submission_ref),
+                decode_observation,
+            )
         }
         Operation::ApprovalList => {
             if native_variant(request, id)? {
@@ -997,8 +1136,8 @@ pub(crate) fn dispatch_operation<A: HumanAuthorityBoundary>(
             let _ = (request.tenant, request.agent);
             let current_sequence = decimal_u64(&request.current_sequence, id)?;
             let cursor = request.cursor.map(|text| hex32(&text, id)).transpose()?;
-            let limit = u8::try_from(decimal_u64(&request.limit, id)?)
-                .map_err(|_| noncanonical(id))?;
+            let limit =
+                u8::try_from(decimal_u64(&request.limit, id)?).map_err(|_| noncanonical(id))?;
             dispatched(
                 id,
                 owner.approval_list(peer, current_sequence, cursor, limit),
@@ -1043,21 +1182,35 @@ pub(crate) fn dispatch_operation<A: HumanAuthorityBoundary>(
         Operation::BudgetFund => adapters::budget_fund(shared, context, request, ctx),
         Operation::BudgetList => adapters::budget_list(shared, context, request, ctx),
         Operation::BudgetRevoke => adapters::budget_revoke(shared, context, request, ctx),
-        Operation::BudgetReconciliation => adapters::budget_reconciliation(shared, context, request, ctx),
+        Operation::BudgetReconciliation => {
+            adapters::budget_reconciliation(shared, context, request, ctx)
+        }
         Operation::CapabilityCreate => adapters::capability_create(shared, context, request, ctx),
-        Operation::CapabilityAttenuate => adapters::capability_attenuate(shared, context, request, ctx),
+        Operation::CapabilityAttenuate => {
+            adapters::capability_attenuate(shared, context, request, ctx)
+        }
         Operation::CapabilityList => adapters::capability_list(shared, context, request, ctx),
         Operation::CapabilityRevoke => adapters::capability_revoke(shared, context, request, ctx),
         Operation::SessionRefresh => adapters::session_refresh(shared, context, request, ctx),
         Operation::SessionClose => adapters::session_close(shared, context, request, ctx),
         Operation::SessionList => adapters::session_list(shared, context, request, ctx),
-        Operation::SubscriptionCreate => adapters::subscription_create(shared, context, request, ctx),
+        Operation::SubscriptionCreate => {
+            adapters::subscription_create(shared, context, request, ctx)
+        }
         Operation::SubscriptionList => adapters::subscription_list(shared, context, request, ctx),
         Operation::SubscriptionPause => adapters::subscription_pause(shared, context, request, ctx),
-        Operation::SubscriptionResume => adapters::subscription_resume(shared, context, request, ctx),
-        Operation::SubscriptionDelete => adapters::subscription_delete(shared, context, request, ctx),
-        Operation::SubscriptionHealth => adapters::subscription_health(shared, context, request, ctx),
-        Operation::SubscriptionAcknowledge => adapters::subscription_acknowledge(shared, context, request, ctx),
+        Operation::SubscriptionResume => {
+            adapters::subscription_resume(shared, context, request, ctx)
+        }
+        Operation::SubscriptionDelete => {
+            adapters::subscription_delete(shared, context, request, ctx)
+        }
+        Operation::SubscriptionHealth => {
+            adapters::subscription_health(shared, context, request, ctx)
+        }
+        Operation::SubscriptionAcknowledge => {
+            adapters::subscription_acknowledge(shared, context, request, ctx)
+        }
         Operation::AvailabilityFetch => adapters::availability_fetch(shared, context, request, ctx),
         Operation::ReadModuleState => adapters::read_module_state(shared, context, request, ctx),
         Operation::ReadHistory => adapters::read_history(shared, context, request, ctx),
@@ -1092,8 +1245,14 @@ fn capability_refusal_carries_its_dimension_to_the_typed_wire_refusal() {
     let id = RequestId(9);
     for (dimension, reason) in [
         (crate::capability::Dimension::Expiry, "capability.expiry"),
-        (crate::capability::Dimension::ActivityType, "capability.activity_type"),
-        (crate::capability::Dimension::Counterparty, "capability.counterparty"),
+        (
+            crate::capability::Dimension::ActivityType,
+            "capability.activity_type",
+        ),
+        (
+            crate::capability::Dimension::Counterparty,
+            "capability.counterparty",
+        ),
         (crate::capability::Dimension::Asset, "capability.asset"),
         (crate::capability::Dimension::Amount, "capability.amount"),
         (crate::capability::Dimension::Rate, "capability.rate"),

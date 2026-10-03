@@ -1773,6 +1773,14 @@ fn run() -> Result<(), String> {
         .get(2)
         .map_or_else(|| repo_root.join(LOCK_PATH), PathBuf::from);
     match mode {
+        "--write-rust-operations" => {
+            if arguments.len() != 2 {
+                return Err(
+                    "usage: layerx-platform-sdkgen --write-rust-operations <repo-root>".to_owned(),
+                );
+            }
+            write_rust_operation_catalog(&repo_root)
+        }
         "--write" => write_lock(&repo_root, &lock_path),
         "--check" => check(&repo_root, &lock_path),
         _ => Err(

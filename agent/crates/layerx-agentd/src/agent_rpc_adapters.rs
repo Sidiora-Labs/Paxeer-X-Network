@@ -4,19 +4,20 @@
 //! `HumanOperations` method and calls it on the shared daemon owner. Operations without an
 //! existing owner method return `None`, so the dispatcher keeps them unmatched.
 
-use layerx_agent_api::error::{ErrorClass, Level, RequestId, Retriability, VerificationStatus};
+use layerx_agent_api::error::{ErrorClass, RequestId, Retriability};
+use layerx_agent_api::verify::{Level, VerificationStatus};
 use serde::Deserialize;
 use serde_json::{Map, Value};
 
 use crate::agent_rpc::Rejection;
 use crate::agent_rpc_dispatch::{DispatchContext, Dispatched};
 use crate::agent_rpc_peer::RpcOwnerContext;
+use crate::agent_rpc_wire::Canonical;
+use crate::human::HumanRefusal;
 use crate::human::{HumanOperationError, HumanOperations, HumanResponse};
 use crate::human_runtime::{HumanAuthorityBoundary, SharedAgentOwner};
 use crate::session_control::OperationPermit;
 use crate::tenant::Operation;
-use crate::agent_rpc_wire::Canonical;
-use crate::human::HumanRefusal;
 use layerx_agent_api::budget::{AuthorityResponse, BudgetRecord};
 use layerx_agent_api::read::Freshness;
 use sha2::{Digest, Sha256};
@@ -332,7 +333,9 @@ fn subscription_health_value(id: RequestId, payload: &[u8]) -> Result<Value, Rej
 }
 
 fn subscription_null_value(id: RequestId, payload: &[u8]) -> Result<Value, Rejection> {
-    subscription_payload(id, payload, |reader| (reader.u8()? == 0).then_some(Value::Null))
+    subscription_payload(id, payload, |reader| {
+        (reader.u8()? == 0).then_some(Value::Null)
+    })
 }
 
 pub(crate) fn budget_list<A: HumanAuthorityBoundary>(
@@ -419,9 +422,8 @@ pub(crate) fn budget_reconciliation<A: HumanAuthorityBoundary>(
         guard.rpc_budget_reconciliation(context, typed)
     }
     .map_err(|error| owner_error(id, error))?;
-    decode_budget_state(&response, budget_id).ok_or_else(|| {
-        rejection(ErrorClass::InternalFault, id, "owner.response_malformed")
-    })
+    decode_budget_state(&response, budget_id)
+        .ok_or_else(|| rejection(ErrorClass::InternalFault, id, "owner.response_malformed"))
 }
 
 #[derive(Deserialize)]
@@ -442,7 +444,11 @@ const fn rejection(class: ErrorClass, request_id: RequestId, reason: &'static st
 }
 
 fn malformed(request_id: RequestId) -> Rejection {
-    rejection(ErrorClass::ProtocolIncompatibility, request_id, "envelope.malformed")
+    rejection(
+        ErrorClass::ProtocolIncompatibility,
+        request_id,
+        "envelope.malformed",
+    )
 }
 
 fn decode<T: for<'de> Deserialize<'de>>(
@@ -464,7 +470,11 @@ fn decode<T: for<'de> Deserialize<'de>>(
 
 fn hex32(text: &str, request_id: RequestId) -> Result<[u8; 32], Rejection> {
     let bytes = text.as_bytes();
-    if bytes.len() != 64 || !bytes.iter().all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'f')) {
+    if bytes.len() != 64
+        || !bytes
+            .iter()
+            .all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'f'))
+    {
         return Err(malformed(request_id));
     }
     let mut out = [0_u8; 32];
@@ -593,35 +603,52 @@ fn decode_budget_state(response: &HumanResponse, budget_id: [u8; 32]) -> Option<
 }
 
 pub(crate) fn approval_list_native<A: HumanAuthorityBoundary>(
-    owner: &SharedAgentOwner<A>, context: &RpcOwnerContext<'_>,
-    request: &Map<String, Value>, ctx: &DispatchContext,
+    owner: &SharedAgentOwner<A>,
+    context: &RpcOwnerContext<'_>,
+    request: &Map<String, Value>,
+    ctx: &DispatchContext,
 ) -> Result<Dispatched, Rejection> {
     use crate::agent_rpc_dispatch::dispatched_native;
-    use crate::agent_rpc_wire::{decode_wire, NativeApprovalListV1Wire, NativeApprovalListResultV1Wire};
+    use crate::agent_rpc_wire::{
+        decode_wire, NativeApprovalListResultV1Wire, NativeApprovalListV1Wire,
+    };
     let id = ctx.request_id;
     decode_wire::<NativeApprovalListV1Wire>(request, id)?.into_request(id)?;
-    let response = owner.lock().and_then(|mut guard| guard.rpc_approval_list_native(context));
+    let response = owner
+        .lock()
+        .and_then(|mut guard| guard.rpc_approval_list_native(context));
     dispatched_native(id, response, NativeApprovalListResultV1Wire::into_result)
 }
 
 pub(crate) fn approval_get_native<A: HumanAuthorityBoundary>(
-    owner: &SharedAgentOwner<A>, context: &RpcOwnerContext<'_>,
-    request: &Map<String, Value>, ctx: &DispatchContext,
+    owner: &SharedAgentOwner<A>,
+    context: &RpcOwnerContext<'_>,
+    request: &Map<String, Value>,
+    ctx: &DispatchContext,
 ) -> Result<Dispatched, Rejection> {
     use crate::agent_rpc_dispatch::dispatched_native;
     use crate::agent_rpc_wire::{decode_wire, NativeApprovalGetV1Wire, NativeApprovalResultV1Wire};
     let id = ctx.request_id;
     let typed = decode_wire::<NativeApprovalGetV1Wire>(request, id)?.into_request(id)?;
-    let response = owner.lock().and_then(|mut guard| guard.rpc_approval_get_native(context, typed));
+    let response = owner
+        .lock()
+        .and_then(|mut guard| guard.rpc_approval_get_native(context, typed));
     dispatched_native(id, response, NativeApprovalResultV1Wire::into_result)
 }
 
 fn approval_decision_native<A: HumanAuthorityBoundary>(
-    owner: &SharedAgentOwner<A>, context: &RpcOwnerContext<'_>,
-    request: &Map<String, Value>, ctx: &DispatchContext, grant: bool,
+    owner: &SharedAgentOwner<A>,
+    context: &RpcOwnerContext<'_>,
+    request: &Map<String, Value>,
+    ctx: &DispatchContext,
+    grant: bool,
 ) -> Result<Dispatched, Rejection> {
-    use crate::agent_rpc_dispatch::{dispatched_native, malformed, mutation_key, native_approval_digest};
-    use crate::agent_rpc_wire::{decode_wire, NativeApprovalDecisionV1Wire, NativeApprovalResultV1Wire};
+    use crate::agent_rpc_dispatch::{
+        dispatched_native, malformed, mutation_key, native_approval_digest,
+    };
+    use crate::agent_rpc_wire::{
+        decode_wire, NativeApprovalDecisionV1Wire, NativeApprovalResultV1Wire,
+    };
     let id = ctx.request_id;
     let typed = decode_wire::<NativeApprovalDecisionV1Wire>(request, id)?.into_request(id)?;
     let envelope = crate::human::MutationEnvelope {
@@ -630,7 +657,9 @@ fn approval_decision_native<A: HumanAuthorityBoundary>(
         body_digest: native_approval_digest(&typed, grant).map_err(|_| malformed(id))?,
         operation: typed,
     };
-    let response = owner.lock().and_then(|mut guard| guard.rpc_approval_decide_native(context, envelope, grant));
+    let response = owner
+        .lock()
+        .and_then(|mut guard| guard.rpc_approval_decide_native(context, envelope, grant));
     dispatched_native(id, response, NativeApprovalResultV1Wire::into_result)
 }
 
@@ -692,7 +721,7 @@ pub(crate) fn prepare<A: HumanAuthorityBoundary>(
     let id = ctx.request_id;
     if crate::agent_rpc_dispatch::native_variant(request, id)? {
         use crate::agent_rpc_dispatch::{dispatched_native, malformed, native_prepare_digest};
-        use crate::agent_rpc_wire::{decode_wire, NativePrepareV1Wire, NativePrepareResultV1Wire};
+        use crate::agent_rpc_wire::{decode_wire, NativePrepareResultV1Wire, NativePrepareV1Wire};
         let typed = decode_wire::<NativePrepareV1Wire>(request, id)?.into_request(id)?;
         let envelope = crate::human::MutationEnvelope {
             request_id: id.0,
@@ -700,7 +729,9 @@ pub(crate) fn prepare<A: HumanAuthorityBoundary>(
             body_digest: native_prepare_digest(&typed).map_err(|_| malformed(id))?,
             operation: typed,
         };
-        let response = owner.lock().and_then(|mut guard| guard.rpc_prepare_native(context, envelope));
+        let response = owner
+            .lock()
+            .and_then(|mut guard| guard.rpc_prepare_native(context, envelope));
         return dispatched_native(id, response, NativePrepareResultV1Wire::into_result);
     }
     let typed = human_prepare(decode(request, id)?, id)?;
@@ -909,7 +940,14 @@ pub(crate) fn read_module_state<A: HumanAuthorityBoundary>(
         }
         let mut out = Map::new();
         out.insert("canonical_value".into(), hexv(canonical));
-        out.insert("proof".into(), if proof.is_empty() { Value::Null } else { hexv(proof) });
+        out.insert(
+            "proof".into(),
+            if proof.is_empty() {
+                Value::Null
+            } else {
+                hexv(proof)
+            },
+        );
         Some((Value::Object(out), Some(achieved)))
     })
 }
@@ -971,7 +1009,14 @@ pub(crate) fn read_history<A: HumanAuthorityBoundary>(
                 Value::String(level_wire(achieved).into()),
             );
             item.insert("canonical".into(), hexv(canonical));
-            item.insert("proof".into(), if proof.is_empty() { Value::Null } else { hexv(proof) });
+            item.insert(
+                "proof".into(),
+                if proof.is_empty() {
+                    Value::Null
+                } else {
+                    hexv(proof)
+                },
+            );
             items.push(Value::Object(item));
         }
         let cursor = match reader.u8()? {
@@ -1259,7 +1304,12 @@ fn capability_texts(reader: &mut Reader<'_>) -> Option<Vec<String>> {
 }
 
 fn capability_strings(items: &[String]) -> Value {
-    Value::Array(items.iter().map(|item| Value::String(item.clone())).collect())
+    Value::Array(
+        items
+            .iter()
+            .map(|item| Value::String(item.clone()))
+            .collect(),
+    )
 }
 
 /// One record: text capability_id (64 lowercase hex), u8 parent tag + text parent_id,
@@ -1412,7 +1462,10 @@ fn budget_body_digest<T: Canonical>(domain: &[u8], typed: &T) -> [u8; 32] {
 
 /// Body digest of a budget create: [`budget_body_digest`] under the create domain, followed by
 /// the optional `TextV1` purpose label suffix, which is empty when the label is absent.
-pub(crate) fn budget_create_body_digest<T: Canonical>(typed: &T, purpose: Option<&str>) -> [u8; 32] {
+pub(crate) fn budget_create_body_digest<T: Canonical>(
+    typed: &T,
+    purpose: Option<&str>,
+) -> [u8; 32] {
     let mut digest = Sha256::new();
     digest.update(b"LayerX/budget/create-body/v1\0");
     digest.update(typed.canonical().to_string().as_bytes());
@@ -1648,7 +1701,8 @@ pub(crate) fn read_proof_bundle<A: HumanAuthorityBoundary>(
     use crate::agent_rpc_wire::{decode_wire, ProofBundleWire};
     let id = ctx.request_id;
     let typed = decode_wire::<ProofBundleWire>(request, id)?.into_request(id)?;
-    let response = owner.lock()
+    let response = owner
+        .lock()
         .and_then(|mut guard| guard.rpc_read_proof_bundle(context, typed.clone()))
         .map_err(|error| owner_error(id, error))?;
     layerx_agent_api::proof::ProofBundle::check_response(&typed, &response)
@@ -1662,11 +1716,24 @@ pub(crate) fn read_proof_bundle<A: HumanAuthorityBoundary>(
             "achieved_verification_level": crate::agent_rpc_dispatch::level_name(response.achieved_verification_level),
             "freshness": freshness_value(&response.freshness),
         }),
-        verification: Some(VerificationStatus::Achieved(response.achieved_verification_level)),
+        verification: Some(VerificationStatus::Achieved(
+            response.achieved_verification_level,
+        )),
     };
-    if crate::agent_rpc::success_body(id, &dispatched, Some(Some(typed.requested_verification_level)))?
-        .body.len() > crate::agent_rpc::MAX_BODY_BYTES {
-        return Err(rejection(ErrorClass::InternalFault, id, "owner.response_malformed"));
+    if crate::agent_rpc::success_body(
+        id,
+        &dispatched,
+        Some(Some(typed.requested_verification_level)),
+    )?
+    .body
+    .len()
+        > crate::agent_rpc::MAX_BODY_BYTES
+    {
+        return Err(rejection(
+            ErrorClass::InternalFault,
+            id,
+            "owner.response_malformed",
+        ));
     }
     Ok(dispatched)
 }
@@ -1691,7 +1758,10 @@ pub(crate) fn export_offline<A: HumanAuthorityBoundary>(
         .map_err(|_| rejection(ErrorClass::InternalFault, id, "owner.response_malformed"))?;
     let export = &response.value;
     let buckets = |items: &[layerx_agent_api::prepare::CanonicalBytes]| {
-        items.iter().map(|item| hexv(item.as_bytes())).collect::<Vec<_>>()
+        items
+            .iter()
+            .map(|item| hexv(item.as_bytes()))
+            .collect::<Vec<_>>()
     };
     Ok(Dispatched {
         value: serde_json::json!({
@@ -1707,7 +1777,9 @@ pub(crate) fn export_offline<A: HumanAuthorityBoundary>(
             ),
             "freshness": freshness_value(&response.freshness),
         }),
-        verification: Some(VerificationStatus::Achieved(response.achieved_verification_level)),
+        verification: Some(VerificationStatus::Achieved(
+            response.achieved_verification_level,
+        )),
     })
 }
 
@@ -1914,36 +1986,54 @@ pub(crate) fn program_discover<A: HumanAuthorityBoundary>(
 }
 
 pub(crate) fn program_interface<A: HumanAuthorityBoundary>(
-    owner: &SharedAgentOwner<A>, context: &RpcOwnerContext<'_>,
-    request: &Map<String, Value>, ctx: &DispatchContext,
+    owner: &SharedAgentOwner<A>,
+    context: &RpcOwnerContext<'_>,
+    request: &Map<String, Value>,
+    ctx: &DispatchContext,
 ) -> Result<Dispatched, Rejection> {
     use crate::agent_rpc_wire::{decode_wire, ProgramDiscoverWire};
     use layerx_programs::SourceStatus;
     let id = ctx.request_id;
     let program = decode_wire::<ProgramDiscoverWire>(request, id)?.into_request(id)?;
-    let response = owner.lock()
+    let response = owner
+        .lock()
         .and_then(|mut guard| guard.rpc_program_interface_with_source(context, program))
         .map_err(|error| owner_error(id, error))?;
     let native = &response.interface;
     let head = &native.discovery;
     let source = &response.source;
-    if head.program.bytes() != program || source.program() != program
-        || source.version() != native.version || native.version != head.version
-        || source.code_hash() != head.code_hash || source.state_root() != head.state_root
-        || source.observed_sequence() != head.observed_sequence || source.observed_at() != head.observed_at
+    if head.program.bytes() != program
+        || source.program() != program
+        || source.version() != native.version
+        || native.version != head.version
+        || source.code_hash() != head.code_hash
+        || source.state_root() != head.state_root
+        || source.observed_sequence() != head.observed_sequence
+        || source.observed_at() != head.observed_at
         || source.current_head_receipt_digest() != head.receipt_digest
-        || source.deployment_receipt_digest() == [0; 32] || source.valid_through() > head.valid_through
+        || source.deployment_receipt_digest() == [0; 32]
+        || source.valid_through() > head.valid_through
     {
-        return Err(rejection(ErrorClass::InternalFault, id, "owner.response_malformed"));
+        return Err(rejection(
+            ErrorClass::InternalFault,
+            id,
+            "owner.response_malformed",
+        ));
     }
     let status = match source.source() {
         SourceStatus::Unpublished => serde_json::json!({"status":"unpublished"}),
-        SourceStatus::Verified { source_digest, environment_digest } => serde_json::json!({
+        SourceStatus::Verified {
+            source_digest,
+            environment_digest,
+        } => serde_json::json!({
             "status":"verified", "source_digest":hexv(source_digest),
             "environment_digest":hexv(environment_digest),
             "pipeline":source.pipeline().ok_or_else(|| rejection(ErrorClass::InternalFault, id, "owner.response_malformed"))?,
         }),
-        SourceStatus::Mismatch { expected, reproduced } => serde_json::json!({
+        SourceStatus::Mismatch {
+            expected,
+            reproduced,
+        } => serde_json::json!({
             "status":"mismatch", "expected_code_hash":hexv(expected), "reproduced_artifact_digest":hexv(reproduced),
         }),
     };
@@ -1971,7 +2061,8 @@ pub(crate) fn program_activity<A: HumanAuthorityBoundary>(
     use crate::agent_rpc_wire::{decode_wire, ProgramActivityWire};
     let id = ctx.request_id;
     let activity_id = decode_wire::<ProgramActivityWire>(request, id)?.into_request(id)?;
-    let response = owner.lock()
+    let response = owner
+        .lock()
         .and_then(|mut guard| guard.rpc_program_activity(context, activity_id))
         .map_err(|error| owner_error(id, error))?;
     program_activity_response(id, activity_id, response)
@@ -1984,7 +2075,10 @@ fn program_activity_response(
 ) -> Result<Dispatched, Rejection> {
     use crate::human_runtime::RpcProgramActivity;
     match response {
-        RpcProgramActivity::Unknown { idempotency_key, signed_activity } => Ok(Dispatched {
+        RpcProgramActivity::Unknown {
+            idempotency_key,
+            signed_activity,
+        } => Ok(Dispatched {
             value: serde_json::json!({
                 "state": "unknown",
                 "activity_id": hexv(&activity_id),
@@ -1994,17 +2088,27 @@ fn program_activity_response(
             verification: Some(VerificationStatus::Unverified {
                 requested: Level::SequencerSigned,
                 achieved: Level::Unverified,
-                reason: layerx_agent_api::error::ReasonCode::new("receipt_pending")
-                    .map_err(|_| rejection(ErrorClass::InternalFault, id, "owner.response_malformed"))?,
+                reason: layerx_agent_api::error::ReasonCode::new("receipt_pending").map_err(
+                    |_| rejection(ErrorClass::InternalFault, id, "owner.response_malformed"),
+                )?,
             }),
         }),
-        RpcProgramActivity::Verified { idempotency_key, signed_activity, authority, execution: result } => {
-            let malformed_response = || rejection(ErrorClass::InternalFault, id, "owner.response_malformed");
+        RpcProgramActivity::Verified {
+            idempotency_key,
+            signed_activity,
+            authority,
+            execution: result,
+        } => {
+            let malformed_response =
+                || rejection(ErrorClass::InternalFault, id, "owner.response_malformed");
             let execution = &result.execution;
-            let receipt = layerx_wire::receipt::decode(execution.receipt()).map_err(|_| malformed_response())?;
+            let receipt = layerx_wire::receipt::decode(execution.receipt())
+                .map_err(|_| malformed_response())?;
             let protocol = receipt.protocol().ok_or_else(malformed_response)?;
-            let unsigned = layerx_wire::receipt::encode_unsigned(&receipt).map_err(|_| malformed_response())?;
-            let receipt_digest = layerx_wire::hash::receipt_digest(&unsigned).map_err(|_| malformed_response())?;
+            let unsigned = layerx_wire::receipt::encode_unsigned(&receipt)
+                .map_err(|_| malformed_response())?;
+            let receipt_digest =
+                layerx_wire::hash::receipt_digest(&unsigned).map_err(|_| malformed_response())?;
             let outcome = execution.outcome().ok_or_else(malformed_response)?;
             if !execution.committed() || protocol.activity_id() != activity_id {
                 return Err(malformed_response());
@@ -2063,12 +2167,16 @@ pub(crate) fn program_simulate<A: HumanAuthorityBoundary>(
         .lock()
         .and_then(|mut guard| guard.rpc_program_simulate(context, typed))
         .map_err(|error| owner_error(id, error))?;
-    let malformed_response = || rejection(ErrorClass::InternalFault, id, "owner.response_malformed");
+    let malformed_response =
+        || rejection(ErrorClass::InternalFault, id, "owner.response_malformed");
     let execution = &response.execution;
-    let receipt = layerx_wire::receipt::decode(execution.receipt()).map_err(|_| malformed_response())?;
+    let receipt =
+        layerx_wire::receipt::decode(execution.receipt()).map_err(|_| malformed_response())?;
     let protocol = receipt.protocol().ok_or_else(malformed_response)?;
-    let unsigned = layerx_wire::receipt::encode_unsigned(&receipt).map_err(|_| malformed_response())?;
-    let receipt_digest = layerx_wire::hash::receipt_digest(&unsigned).map_err(|_| malformed_response())?;
+    let unsigned =
+        layerx_wire::receipt::encode_unsigned(&receipt).map_err(|_| malformed_response())?;
+    let receipt_digest =
+        layerx_wire::hash::receipt_digest(&unsigned).map_err(|_| malformed_response())?;
     let outcome = execution.outcome().ok_or_else(malformed_response)?;
     if execution.committed() || response.evidence.committed {
         return Err(malformed_response());
@@ -2140,7 +2248,9 @@ fn program_outcome_value(outcome: &layerx_types::intent::ProgramCallOutcome) -> 
         }),
         ProgramCallOutcome::Refused(failure) => {
             let failure = match *failure {
-                ProgramCallFailure::UnknownProgram => serde_json::json!({"kind": "unknown_program"}),
+                ProgramCallFailure::UnknownProgram => {
+                    serde_json::json!({"kind": "unknown_program"})
+                }
                 ProgramCallFailure::Reentrancy => serde_json::json!({"kind": "reentrancy"}),
                 ProgramCallFailure::DepthExceeded { limit, attempted } => {
                     serde_json::json!({"kind": "depth_exceeded", "limit": limit, "attempted": attempted})
@@ -2148,7 +2258,9 @@ fn program_outcome_value(outcome: &layerx_types::intent::ProgramCallOutcome) -> 
                 ProgramCallFailure::FanoutExceeded { limit, attempted } => {
                     serde_json::json!({"kind": "fanout_exceeded", "limit": limit, "attempted": attempted})
                 }
-                ProgramCallFailure::GuestRefused { code } => serde_json::json!({"kind": "guest_refused", "code": code}),
+                ProgramCallFailure::GuestRefused { code } => {
+                    serde_json::json!({"kind": "guest_refused", "code": code})
+                }
                 ProgramCallFailure::Authority => serde_json::json!({"kind": "authority"}),
                 ProgramCallFailure::Resource => serde_json::json!({"kind": "resource"}),
                 ProgramCallFailure::Response => serde_json::json!({"kind": "response"}),
@@ -2170,7 +2282,8 @@ pub(crate) fn read_batch<A: HumanAuthorityBoundary>(
     let _ = (request.tenant, request.agent);
     let requested = requested_level(&request.requested_verification_level, id)?;
     let typed = layerx_agent_api::read::ReadRequest {
-        selector: layerx_agent_api::read::BatchRef::new(request.batch).map_err(|_| malformed(id))?,
+        selector: layerx_agent_api::read::BatchRef::new(request.batch)
+            .map_err(|_| malformed(id))?,
         requested_verification_level: requested,
     };
     let mut guard = owner.lock().map_err(|error| owner_error(id, error))?;
@@ -2296,14 +2409,18 @@ fn session_context(
     id: RequestId,
 ) -> Result<layerx_agent_api::identity::SessionContext, Rejection> {
     use layerx_agent_api::identity::{
-        ActivityType, AgentDid, AuthorityRef, ClientId, ExplicitSet, PolicyVersion,
-        SessionContext, TenantId,
+        ActivityType, AgentDid, AuthorityRef, ClientId, ExplicitSet, PolicyVersion, SessionContext,
+        TenantId,
     };
     let principal = context.principal();
     if wire.tenant != principal.tenant.as_str()
         || wire.agent_did.as_bytes() != principal.agent.as_bytes()
     {
-        return Err(rejection(ErrorClass::PolicyRefusal, id, "session.not_authorized"));
+        return Err(rejection(
+            ErrorClass::PolicyRefusal,
+            id,
+            "session.not_authorized",
+        ));
     }
     let activity_types = wire
         .permitted_activity_types
@@ -2331,7 +2448,10 @@ fn session_context(
     .map_err(|_| malformed(id))
 }
 
-fn canonical_sequence(text: &str, id: RequestId) -> Result<layerx_agent_api::generated::Sequence, Rejection> {
+fn canonical_sequence(
+    text: &str,
+    id: RequestId,
+) -> Result<layerx_agent_api::generated::Sequence, Rejection> {
     layerx_agent_api::generated::Sequence::parse_decimal(text)
         .ok()
         .filter(|value| value.get().to_string() == text)
@@ -2342,7 +2462,9 @@ fn lower_hex_bytes(text: &str, id: RequestId) -> Result<Vec<u8>, Rejection> {
     let bytes = text.as_bytes();
     if bytes.is_empty()
         || bytes.len() % 2 != 0
-        || !bytes.iter().all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'f'))
+        || !bytes
+            .iter()
+            .all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'f'))
     {
         return Err(malformed(id));
     }
@@ -2454,42 +2576,53 @@ pub(crate) fn program_call<A: HumanAuthorityBoundary>(
     let id = ctx.request_id;
     let typed = crate::agent_rpc_wire::program_simulation_request(request, id)?;
     let key = crate::agent_rpc_dispatch::mutation_key(ctx)?;
-    let (activity_id, response) = owner.lock()
+    let (activity_id, response) = owner
+        .lock()
         .and_then(|mut guard| guard.rpc_program_call(context, typed, id.0, key))
         .map_err(|error| owner_error(id, error))?;
     program_activity_response(id, activity_id, response)
 }
 
 pub(crate) fn program_deploy<A: HumanAuthorityBoundary>(
-    owner: &SharedAgentOwner<A>, context: &RpcOwnerContext<'_>,
-    request: &Map<String, Value>, ctx: &DispatchContext,
+    owner: &SharedAgentOwner<A>,
+    context: &RpcOwnerContext<'_>,
+    request: &Map<String, Value>,
+    ctx: &DispatchContext,
 ) -> Result<Dispatched, Rejection> {
     program_lifecycle(owner, context, request, ctx, Operation::ProgramDeploy)
 }
 
 pub(crate) fn program_upgrade<A: HumanAuthorityBoundary>(
-    owner: &SharedAgentOwner<A>, context: &RpcOwnerContext<'_>,
-    request: &Map<String, Value>, ctx: &DispatchContext,
+    owner: &SharedAgentOwner<A>,
+    context: &RpcOwnerContext<'_>,
+    request: &Map<String, Value>,
+    ctx: &DispatchContext,
 ) -> Result<Dispatched, Rejection> {
     program_lifecycle(owner, context, request, ctx, Operation::ProgramUpgrade)
 }
 
 pub(crate) fn program_wind_down<A: HumanAuthorityBoundary>(
-    owner: &SharedAgentOwner<A>, context: &RpcOwnerContext<'_>,
-    request: &Map<String, Value>, ctx: &DispatchContext,
+    owner: &SharedAgentOwner<A>,
+    context: &RpcOwnerContext<'_>,
+    request: &Map<String, Value>,
+    ctx: &DispatchContext,
 ) -> Result<Dispatched, Rejection> {
     program_lifecycle(owner, context, request, ctx, Operation::ProgramWindDown)
 }
 
 fn program_lifecycle<A: HumanAuthorityBoundary>(
-    owner: &SharedAgentOwner<A>, context: &RpcOwnerContext<'_>,
-    request: &Map<String, Value>, ctx: &DispatchContext, operation: Operation,
+    owner: &SharedAgentOwner<A>,
+    context: &RpcOwnerContext<'_>,
+    request: &Map<String, Value>,
+    ctx: &DispatchContext,
+    operation: Operation,
 ) -> Result<Dispatched, Rejection> {
     use crate::agent_rpc_wire::{decode_wire, ProgramLifecycleWire};
     let id = ctx.request_id;
     let typed = decode_wire::<ProgramLifecycleWire>(request, id)?.into_request(id)?;
     let key = crate::agent_rpc_dispatch::mutation_key(ctx)?;
-    let (activity_id, receipt) = owner.lock()
+    let (activity_id, receipt) = owner
+        .lock()
         .and_then(|mut guard| guard.rpc_program_lifecycle(context, typed, id.0, key, operation))
         .map_err(|error| owner_error(id, error))?;
     let Some(receipt) = receipt else {
@@ -2497,15 +2630,18 @@ fn program_lifecycle<A: HumanAuthorityBoundary>(
             value: serde_json::json!({"state": "unknown", "activity_id": hexv(&activity_id),
                 "retry": "after", "retry_after_seconds": 2}),
             verification: Some(VerificationStatus::Unverified {
-                requested: Level::SequencerSigned, achieved: Level::Unverified,
-                reason: layerx_agent_api::error::ReasonCode::new("receipt_pending")
-                    .map_err(|_| rejection(ErrorClass::InternalFault, id, "owner.response_malformed"))?,
+                requested: Level::SequencerSigned,
+                achieved: Level::Unverified,
+                reason: layerx_agent_api::error::ReasonCode::new("receipt_pending").map_err(
+                    |_| rejection(ErrorClass::InternalFault, id, "owner.response_malformed"),
+                )?,
             }),
         });
     };
     let decoded = layerx_wire::receipt::decode(&receipt)
         .map_err(|_| rejection(ErrorClass::InternalFault, id, "owner.response_malformed"))?;
-    let protocol = decoded.protocol()
+    let protocol = decoded
+        .protocol()
         .filter(|protocol| protocol.activity_id() == activity_id)
         .ok_or_else(|| rejection(ErrorClass::InternalFault, id, "owner.response_malformed"))?;
     Ok(Dispatched {

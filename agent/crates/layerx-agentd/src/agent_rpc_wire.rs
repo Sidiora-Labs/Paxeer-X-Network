@@ -5,7 +5,9 @@
 //! constructor or validator. The dispatcher digest and the adapters decode through these same
 //! functions; [`Canonical`] gives the fixed JSON of the converted request for the digest.
 
-use layerx_agent_api::budget::{BudgetCreate, BudgetEnforcement, BudgetFund, BudgetId, BudgetTarget};
+use layerx_agent_api::budget::{
+    BudgetCreate, BudgetEnforcement, BudgetFund, BudgetId, BudgetTarget,
+};
 use layerx_agent_api::capability::{
     AmountCeiling, CapabilityAttenuate, CapabilityCreate, CapabilityDimensions, CapabilityId,
     CapabilityRevoke, ExplicitSet, RateCeiling,
@@ -13,11 +15,11 @@ use layerx_agent_api::capability::{
 use layerx_agent_api::error::RequestId;
 use layerx_agent_api::identity::{
     ActivityType, AgentDid, Asset, AuthorityRef, ClientId, ContractError, Counterparty,
-    NativeActivity, NativeApprovalDecisionV1, NativeApprovalGetV1, NativeApprovalListV1,
-    NativeApprovalListResultV1, NativeApprovalResultV1, NativePreparationPurposeV1,
-    NativeLocalGrantConsentV1, NativePrepareRequestV1, NativePrepareResultV1,
-    SignedNativePreparationPurposeV1,
-    PolicyVersion, Purpose, SessionClose, SessionContext, SessionId, SessionRefresh, TenantId,
+    NativeActivity, NativeApprovalDecisionV1, NativeApprovalGetV1, NativeApprovalListResultV1,
+    NativeApprovalListV1, NativeApprovalResultV1, NativeLocalGrantConsentV1,
+    NativePreparationPurposeV1, NativePrepareRequestV1, NativePrepareResultV1, PolicyVersion,
+    Purpose, SessionClose, SessionContext, SessionId, SessionRefresh,
+    SignedNativePreparationPurposeV1, TenantId,
 };
 use layerx_agent_api::read::{AccountRef, ModuleRef};
 use layerx_agent_api::submit::{PreparationRef, SignRequest, SignatureBytes};
@@ -40,9 +42,9 @@ use crate::human::HumanRefusal;
 use layerx_agent_api::budget::{BudgetAuthorization, SignedBudgetMutation};
 use layerx_agent_api::error::Retriability;
 use layerx_agent_api::export::{validate_export_request, FactRef};
+use layerx_agent_api::identity::{LegacyPolicyDryRun, MAX_POLICY_INTENT_BYTES};
 use layerx_agent_api::policy::PolicyDryRunRequest;
 use layerx_agent_api::read::{FeeProjectionRequest, ReadRequest};
-use layerx_agent_api::identity::{LegacyPolicyDryRun, MAX_POLICY_INTENT_BYTES};
 
 /// Decodes the operation `request` object into a wire struct with the dispatcher's strict
 /// decode error mapping (`envelope.unknown_field`, otherwise `envelope.malformed`).
@@ -96,7 +98,10 @@ fn texts<T>(
     ))
 }
 
-fn activity_types(values: &[String], id: RequestId) -> Result<ExplicitSet<ActivityType>, Rejection> {
+fn activity_types(
+    values: &[String],
+    id: RequestId,
+) -> Result<ExplicitSet<ActivityType>, Rejection> {
     Ok(ExplicitSet::allow(
         values
             .iter()
@@ -121,11 +126,21 @@ const fn enforcement_name(value: BudgetEnforcement) -> &'static str {
 }
 
 fn strs<T>(set: &ExplicitSet<T>, as_str: fn(&T) -> &str) -> Value {
-    Value::Array(set.values().iter().map(|item| Value::String(as_str(item).into())).collect())
+    Value::Array(
+        set.values()
+            .iter()
+            .map(|item| Value::String(as_str(item).into()))
+            .collect(),
+    )
 }
 
 fn activity_values(set: &ExplicitSet<ActivityType>) -> Value {
-    Value::Array(set.values().iter().map(|item| Value::String(item.0.to_string())).collect())
+    Value::Array(
+        set.values()
+            .iter()
+            .map(|item| Value::String(item.0.to_string()))
+            .collect(),
+    )
 }
 
 #[derive(Deserialize)]
@@ -141,10 +156,9 @@ impl NativeActivityV1Wire {
         if decimal_u64(&self.version, id)? != u64::from(NativeActivity::VERSION) {
             return Err(malformed(id));
         }
-        let module = u16::try_from(decimal_u64(&self.module, id)?)
-            .map_err(|_| noncanonical(id))?;
-        let ordinal = u16::try_from(decimal_u64(&self.ordinal, id)?)
-            .map_err(|_| noncanonical(id))?;
+        let module = u16::try_from(decimal_u64(&self.module, id)?).map_err(|_| noncanonical(id))?;
+        let ordinal =
+            u16::try_from(decimal_u64(&self.ordinal, id)?).map_err(|_| noncanonical(id))?;
         NativeActivity::new(module, ordinal).map_err(contract(id))
     }
 }
@@ -266,7 +280,10 @@ pub(crate) struct NativeLocalGrantConsentV1Wire {
 }
 
 impl NativeLocalGrantConsentV1Wire {
-    pub(crate) fn into_request(self, id: RequestId) -> Result<NativeLocalGrantConsentV1, Rejection> {
+    pub(crate) fn into_request(
+        self,
+        id: RequestId,
+    ) -> Result<NativeLocalGrantConsentV1, Rejection> {
         native_result_version(&self.version, id)?;
         for record in [&self.capability, &self.session_scope] {
             if record.is_empty() || record.len() > layerx_wire::limits::MAX_MESSAGE_BYTES * 2 {
@@ -281,7 +298,9 @@ impl NativeLocalGrantConsentV1Wire {
             session_scope: hex_bytes(&self.session_scope, id)?,
             expires_at_ms: decimal_u64(&self.expires_at_ms, id)?,
             owner_public_key: hex32(&self.owner_public_key, id)?,
-            signature: hex_bytes(&self.signature, id)?.try_into().map_err(|_| malformed(id))?,
+            signature: hex_bytes(&self.signature, id)?
+                .try_into()
+                .map_err(|_| malformed(id))?,
         };
         consent.validate().map_err(contract(id))?;
         Ok(consent)
@@ -362,7 +381,10 @@ impl NativePrepareV1Wire {
             payload_hash: hex32(&self.payload_hash, id)?,
             capability_id: text(self.capability_id, id, CapabilityId::new)?,
             purpose: self.purpose.into_request(id)?,
-            local_grant: self.local_grant.map(|grant| grant.into_request(id)).transpose()?,
+            local_grant: self
+                .local_grant
+                .map(|grant| grant.into_request(id))
+                .transpose()?,
         }
         .validate()
         .map_err(contract(id))
@@ -396,7 +418,11 @@ pub(crate) fn native_human_prepare(
 ) -> Result<crate::human::HumanPrepare, Rejection> {
     let request = request.clone().validate().map_err(contract(id))?;
     Ok(crate::human::HumanPrepare {
-        activity_type: request.activity.activity_type().map_err(contract(id))?.value(),
+        activity_type: request
+            .activity
+            .activity_type()
+            .map_err(contract(id))?
+            .value(),
         actor: request.actor.as_str().to_owned(),
         authority: request.authority,
         account_sequence: request.account_sequence,
@@ -443,7 +469,9 @@ impl NativeApprovalGetV1Wire {
         if self.variant != "native_v1" {
             return Err(malformed(id));
         }
-        Ok(NativeApprovalGetV1 { approval_id: hex32(&self.approval_id, id)? })
+        Ok(NativeApprovalGetV1 {
+            approval_id: hex32(&self.approval_id, id)?,
+        })
     }
 }
 
@@ -564,9 +592,10 @@ pub(crate) struct NativeApprovalResultV1Wire {
 impl NativeApprovalResultV1Wire {
     pub(crate) fn into_result(self, id: RequestId) -> Result<NativeApprovalResultV1, Rejection> {
         native_result_version(&self.version, id)?;
-        if !matches!(self.state.as_str(),
-            "Awaiting" | "Granted" | "Rejected" | "Expired" | "Defective" | "NotRequired")
-        {
+        if !matches!(
+            self.state.as_str(),
+            "Awaiting" | "Granted" | "Rejected" | "Expired" | "Defective" | "NotRequired"
+        ) {
             return Err(malformed(id));
         }
         Ok(NativeApprovalResultV1 {
@@ -600,13 +629,18 @@ pub(crate) struct NativeApprovalListResultV1Wire {
 }
 
 impl NativeApprovalListResultV1Wire {
-    pub(crate) fn into_result(self, id: RequestId) -> Result<NativeApprovalListResultV1, Rejection> {
+    pub(crate) fn into_result(
+        self,
+        id: RequestId,
+    ) -> Result<NativeApprovalListResultV1, Rejection> {
         native_result_version(&self.version, id)?;
         if self.approvals.len() > 100 {
             return Err(malformed(id));
         }
         Ok(NativeApprovalListResultV1 {
-            approvals: self.approvals.into_iter()
+            approvals: self
+                .approvals
+                .into_iter()
                 .map(|approval| approval.into_result(id))
                 .collect::<Result<_, _>>()?,
         })
@@ -1127,14 +1161,18 @@ pub(crate) struct ProofBundleWire {
 }
 
 impl ProofBundleWire {
-    pub(crate) fn into_request(self, id: RequestId) -> Result<ReadRequest<layerx_agent_api::prepare::CanonicalBytes>, Rejection> {
+    pub(crate) fn into_request(
+        self,
+        id: RequestId,
+    ) -> Result<ReadRequest<layerx_agent_api::prepare::CanonicalBytes>, Rejection> {
         if !matches!(self.target.len(), 70 | 134) {
             return Err(malformed(id));
         }
         let bytes = hex_bytes(&self.target, id)?;
         layerx_agent_api::proof::ProofBundleTarget::decode(&bytes).map_err(|_| malformed(id))?;
         Ok(ReadRequest {
-            selector: layerx_agent_api::prepare::CanonicalBytes::new(bytes).map_err(|_| malformed(id))?,
+            selector: layerx_agent_api::prepare::CanonicalBytes::new(bytes)
+                .map_err(|_| malformed(id))?,
             requested_verification_level: export_level(&self.requested_verification_level, id)?,
         })
     }
@@ -1172,8 +1210,8 @@ impl ExportOfflineWire {
 }
 
 /// The export level spelling is the envelope's level name; any other text is malformed.
-fn export_level(text: &str, id: RequestId) -> Result<layerx_agent_api::error::Level, Rejection> {
-    use layerx_agent_api::error::Level;
+fn export_level(text: &str, id: RequestId) -> Result<layerx_agent_api::verify::Level, Rejection> {
+    use layerx_agent_api::verify::Level;
     [
         Level::Unverified,
         Level::SequencerSigned,
@@ -1424,7 +1462,10 @@ impl SubscriptionFilterWire {
             assets: tenant_objects(self.assets, id, Asset::new)?,
             counterparties: tenant_objects(self.counterparties, id, Counterparty::new)?,
             result_classes: ExplicitSet::allow(
-                self.result_classes.into_iter().map(ResultCode::from_raw).collect(),
+                self.result_classes
+                    .into_iter()
+                    .map(ResultCode::from_raw)
+                    .collect(),
             ),
         })
     }
@@ -1943,13 +1984,18 @@ mod budget_create_wire_tests {
     #[test]
     fn same_purpose_label_gives_equal_digests() {
         let hex_label = "ab".repeat(32);
-        assert_eq!(request_bytes(Some(&hex_label)), request_bytes(Some(&hex_label)));
+        assert_eq!(
+            request_bytes(Some(&hex_label)),
+            request_bytes(Some(&hex_label))
+        );
         assert_eq!(body_digest(Some(&hex_label)), body_digest(Some(&hex_label)));
     }
 
     #[test]
     fn replay_with_a_different_purpose_label_misses_the_cached_success() {
-        use crate::idempotency::{EconomicResult, IdempotencyError, Outcome, RetentionPolicy, Store};
+        use crate::idempotency::{
+            EconomicResult, IdempotencyError, Outcome, RetentionPolicy, Store,
+        };
         let root = std::env::temp_dir().join(format!("lxp-budget-purpose-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
         let (Ok(tenant), Ok(retention)) = (
@@ -1980,15 +2026,13 @@ mod budget_create_wire_tests {
     }
 }
 
-
 #[cfg(test)]
 mod native_contract_tests {
     use super::{
-        native_human_prepare, Canonical, NativeActivityV1Wire, NativePreparationPurposeV1Wire,
-        NativeApprovalDecisionV1Wire, NativeApprovalGetV1Wire, NativeApprovalListV1Wire,
-        NativeApprovalListResultV1Wire, NativeApprovalResultV1Wire,
-        NativeLocalGrantConsentV1Wire, NativePrepareResultV1Wire, NativePrepareV1Wire,
-        SignedNativePreparationPurposeV1Wire,
+        native_human_prepare, Canonical, NativeActivityV1Wire, NativeApprovalDecisionV1Wire,
+        NativeApprovalGetV1Wire, NativeApprovalListResultV1Wire, NativeApprovalListV1Wire,
+        NativeApprovalResultV1Wire, NativeLocalGrantConsentV1Wire, NativePreparationPurposeV1Wire,
+        NativePrepareResultV1Wire, NativePrepareV1Wire, SignedNativePreparationPurposeV1Wire,
     };
     use layerx_agent_api::error::RequestId;
     use layerx_agent_api::identity::NativePreparationPurposeV1;
@@ -2066,7 +2110,8 @@ mod native_contract_tests {
         }
         assert!(serde_json::from_str::<NativeActivityV1Wire>(
             r#"{"version":"1","module":"1","ordinal":"1"} {}"#,
-        ).is_err());
+        )
+        .is_err());
     }
 
     #[test]
@@ -2105,7 +2150,8 @@ mod native_contract_tests {
     #[test]
     fn signed_native_purpose_wire_preserves_structural_signature_bytes() {
         let body = signed_purpose_body();
-        let Ok(wire) = serde_json::from_value::<SignedNativePreparationPurposeV1Wire>(body.clone()) else {
+        let Ok(wire) = serde_json::from_value::<SignedNativePreparationPurposeV1Wire>(body.clone())
+        else {
             panic!("signed purpose wire did not decode");
         };
         let Ok(signed) = wire.into_request(RequestId(1)) else {
@@ -2132,14 +2178,16 @@ mod native_contract_tests {
         ] {
             let mut body = signed_purpose_body();
             body[field] = Value::String(value);
-            let Ok(wire) = serde_json::from_value::<SignedNativePreparationPurposeV1Wire>(body) else {
+            let Ok(wire) = serde_json::from_value::<SignedNativePreparationPurposeV1Wire>(body)
+            else {
                 panic!("string signed purpose shape did not decode");
             };
             assert!(wire.into_request(RequestId(1)).is_err());
         }
         let mut zero_expiry = signed_purpose_body();
         zero_expiry["purpose"]["expires_at_ms"] = Value::String("0".into());
-        let Ok(wire) = serde_json::from_value::<SignedNativePreparationPurposeV1Wire>(zero_expiry) else {
+        let Ok(wire) = serde_json::from_value::<SignedNativePreparationPurposeV1Wire>(zero_expiry)
+        else {
             panic!("zero expiry signed purpose shape did not decode");
         };
         assert!(wire.into_request(RequestId(1)).is_err());
@@ -2159,14 +2207,19 @@ mod native_contract_tests {
                 panic!("signed purpose body is not an object");
             };
             missing.remove(field);
-            assert!(serde_json::from_value::<SignedNativePreparationPurposeV1Wire>(
-                Value::Object(missing),
-            ).is_err());
+            assert!(
+                serde_json::from_value::<SignedNativePreparationPurposeV1Wire>(Value::Object(
+                    missing
+                ),)
+                .is_err()
+            );
         }
         for field in ["owner_public_key", "signature"] {
             let mut numeric = signed_purpose_body();
             numeric[field] = json!(1);
-            assert!(serde_json::from_value::<SignedNativePreparationPurposeV1Wire>(numeric).is_err());
+            assert!(
+                serde_json::from_value::<SignedNativePreparationPurposeV1Wire>(numeric).is_err()
+            );
         }
     }
 
@@ -2226,16 +2279,25 @@ mod native_contract_tests {
             ("variant", "native_v2".into()),
             ("actor", "did:layerx:bob".into()),
             ("authority", String::new()),
-            ("authority", "a".repeat(layerx_types::limits::MAX_AUTHORITY_BYTES + 1)),
+            (
+                "authority",
+                "a".repeat(layerx_types::limits::MAX_AUTHORITY_BYTES + 1),
+            ),
             ("account_sequence", "04".into()),
             ("not_before", "21".into()),
             ("not_after", " 20".into()),
             ("idempotency_key", "88".repeat(31)),
-            ("fee_limit", "340282366920938463463374607431768211456".into()),
+            (
+                "fee_limit",
+                "340282366920938463463374607431768211456".into(),
+            ),
             ("payload", String::new()),
             ("payload", "AA".into()),
             ("payload", "0".into()),
-            ("payload", "00".repeat(layerx_types::limits::MAX_PAYLOAD_BYTES + 1)),
+            (
+                "payload",
+                "00".repeat(layerx_types::limits::MAX_PAYLOAD_BYTES + 1),
+            ),
             ("payload_hash", "99".repeat(33)),
             ("capability_id", "33".repeat(32)),
             ("capability_id", "AA".repeat(32)),
@@ -2297,26 +2359,35 @@ mod native_contract_tests {
         let Ok(wire) = serde_json::from_value::<NativeApprovalListV1Wire>(list.clone()) else {
             panic!("approval list did not decode");
         };
-        let Ok(request) = wire.into_request(RequestId(1)) else { panic!("approval list refused"); };
+        let Ok(request) = wire.into_request(RequestId(1)) else {
+            panic!("approval list refused");
+        };
         assert_eq!(request.canonical(), list);
         let get = json!({"variant": "native_v1", "approval_id": "11".repeat(32)});
         let Ok(wire) = serde_json::from_value::<NativeApprovalGetV1Wire>(get.clone()) else {
             panic!("approval get did not decode");
         };
-        let Ok(request) = wire.into_request(RequestId(1)) else { panic!("approval get refused"); };
+        let Ok(request) = wire.into_request(RequestId(1)) else {
+            panic!("approval get refused");
+        };
         assert_eq!(request.canonical(), get);
         let decision = json!({
             "variant": "native_v1", "approval_id": "11".repeat(32),
             "held_digest": "22".repeat(32), "current_sequence": "3",
         });
-        let Ok(wire) = serde_json::from_value::<NativeApprovalDecisionV1Wire>(decision.clone()) else {
+        let Ok(wire) = serde_json::from_value::<NativeApprovalDecisionV1Wire>(decision.clone())
+        else {
             panic!("approval decision did not decode");
         };
-        let Ok(request) = wire.into_request(RequestId(1)) else { panic!("approval decision refused"); };
+        let Ok(request) = wire.into_request(RequestId(1)) else {
+            panic!("approval decision refused");
+        };
         assert_eq!(request.canonical(), decision);
         for (field, value) in [
-            ("variant", "native_v2".into()), ("approval_id", "AA".repeat(32)),
-            ("held_digest", "22".repeat(31)), ("current_sequence", "03".into()),
+            ("variant", "native_v2".into()),
+            ("approval_id", "AA".repeat(32)),
+            ("held_digest", "22".repeat(31)),
+            ("current_sequence", "03".into()),
         ] {
             let mut body = decision.clone();
             body[field] = Value::String(value);
@@ -2325,8 +2396,14 @@ mod native_contract_tests {
             };
             assert!(wire.into_request(RequestId(1)).is_err());
         }
-        assert!(serde_json::from_value::<NativeApprovalListV1Wire>(json!({"variant":"native_v1","extra":1})).is_err());
-        assert!(serde_json::from_value::<NativeApprovalGetV1Wire>(json!({"variant":"native_v1"})).is_err());
+        assert!(serde_json::from_value::<NativeApprovalListV1Wire>(
+            json!({"variant":"native_v1","extra":1})
+        )
+        .is_err());
+        assert!(
+            serde_json::from_value::<NativeApprovalGetV1Wire>(json!({"variant":"native_v1"}))
+                .is_err()
+        );
     }
 
     #[test]
@@ -2334,38 +2411,61 @@ mod native_contract_tests {
         for required in [true, false] {
             let mut body = prepare_result_body();
             body["approval_required"] = json!(required);
-            if !required { body["approval_id"] = Value::Null; }
+            if !required {
+                body["approval_id"] = Value::Null;
+            }
             let Ok(wire) = serde_json::from_value::<NativePrepareResultV1Wire>(body.clone()) else {
                 panic!("prepare result did not decode");
             };
-            let Ok(result) = wire.into_result(RequestId(1)) else { panic!("prepare result refused"); };
+            let Ok(result) = wire.into_result(RequestId(1)) else {
+                panic!("prepare result refused");
+            };
             assert_eq!(result.canonical(), body);
             assert_eq!(result.activity.module, 9);
         }
-        for state in ["Awaiting", "Granted", "Rejected", "Expired", "Defective", "NotRequired"] {
+        for state in [
+            "Awaiting",
+            "Granted",
+            "Rejected",
+            "Expired",
+            "Defective",
+            "NotRequired",
+        ] {
             let mut body = approval_result_body();
             body["state"] = json!(state);
-            let Ok(wire) = serde_json::from_value::<NativeApprovalResultV1Wire>(body.clone()) else {
+            let Ok(wire) = serde_json::from_value::<NativeApprovalResultV1Wire>(body.clone())
+            else {
                 panic!("approval result did not decode");
             };
-            let Ok(result) = wire.into_result(RequestId(1)) else { panic!("approval result refused"); };
+            let Ok(result) = wire.into_result(RequestId(1)) else {
+                panic!("approval result refused");
+            };
             assert_eq!(result.canonical(), body);
         }
         let list = json!({"version":"1", "approvals":[approval_result_body()]});
-        let Ok(wire) = serde_json::from_value::<NativeApprovalListResultV1Wire>(list.clone()) else {
+        let Ok(wire) = serde_json::from_value::<NativeApprovalListResultV1Wire>(list.clone())
+        else {
             panic!("approval results did not decode");
         };
-        let Ok(result) = wire.into_result(RequestId(1)) else { panic!("approval results refused"); };
+        let Ok(result) = wire.into_result(RequestId(1)) else {
+            panic!("approval results refused");
+        };
         assert_eq!(result.canonical(), list);
     }
 
     #[test]
     fn native_prepare_result_refuses_version_hex_bounds_and_approval_inconsistency() {
         for (field, value) in [
-            ("version", "2".into()), ("version", "01".into()),
-            ("preparation_id", "11".repeat(31)), ("signing_preimage", "AA".repeat(32)),
-            ("canonical_bytes", String::new()), ("canonical_bytes", "a".into()),
-            ("canonical_bytes", "00".repeat(layerx_wire::limits::MAX_MESSAGE_BYTES + 1)),
+            ("version", "2".into()),
+            ("version", "01".into()),
+            ("preparation_id", "11".repeat(31)),
+            ("signing_preimage", "AA".repeat(32)),
+            ("canonical_bytes", String::new()),
+            ("canonical_bytes", "a".into()),
+            (
+                "canonical_bytes",
+                "00".repeat(layerx_wire::limits::MAX_MESSAGE_BYTES + 1),
+            ),
             ("approval_id", "33".repeat(33)),
         ] {
             let mut body = prepare_result_body();
@@ -2403,8 +2503,10 @@ mod native_contract_tests {
     #[test]
     fn native_approval_result_refuses_unknown_state_bad_refs_and_oversized_list() {
         for (field, value) in [
-            ("state", "granted".into()), ("version", "0".into()),
-            ("held_digest", "AA".repeat(32)), ("submission_ref", "33".repeat(31)),
+            ("state", "granted".into()),
+            ("version", "0".into()),
+            ("held_digest", "AA".repeat(32)),
+            ("submission_ref", "33".repeat(31)),
         ] {
             let mut body = approval_result_body();
             body[field] = Value::String(value);
@@ -2429,18 +2531,28 @@ mod native_contract_tests {
             "version":"1", "capability":"01", "session_scope":"02",
             "expires_at_ms":"1000", "owner_public_key":"11".repeat(32), "signature":"22".repeat(64),
         });
-        let Ok(wire) = serde_json::from_value::<NativeLocalGrantConsentV1Wire>(original.clone()) else {
+        let Ok(wire) = serde_json::from_value::<NativeLocalGrantConsentV1Wire>(original.clone())
+        else {
             panic!("local consent shape did not decode");
         };
-        let Ok(consent) = wire.into_request(RequestId(1)) else { panic!("local consent shape refused"); };
+        let Ok(consent) = wire.into_request(RequestId(1)) else {
+            panic!("local consent shape refused");
+        };
         assert_eq!(consent.canonical(), original);
         assert!(super::native_local_grant(&consent, RequestId(1)).is_err());
         for (field, value) in [
-            ("version","2".into()), ("capability",String::new()), ("session_scope",String::new()),
-            ("capability","00".repeat(layerx_wire::limits::MAX_MESSAGE_BYTES + 1)),
-            ("session_scope","AA".into()), ("expires_at_ms","0".into()),
-            ("expires_at_ms","01000".into()), ("owner_public_key","AA".repeat(32)),
-            ("signature","22".repeat(63)),
+            ("version", "2".into()),
+            ("capability", String::new()),
+            ("session_scope", String::new()),
+            (
+                "capability",
+                "00".repeat(layerx_wire::limits::MAX_MESSAGE_BYTES + 1),
+            ),
+            ("session_scope", "AA".into()),
+            ("expires_at_ms", "0".into()),
+            ("expires_at_ms", "01000".into()),
+            ("owner_public_key", "AA".repeat(32)),
+            ("signature", "22".repeat(63)),
         ] {
             let mut body = original.clone();
             body[field] = Value::String(value);
@@ -2489,7 +2601,10 @@ mod native_contract_tests {
             panic!("purpose body is not an object");
         };
         missing.remove("commitment");
-        assert!(serde_json::from_value::<NativePreparationPurposeV1Wire>(Value::Object(missing)).is_err());
+        assert!(
+            serde_json::from_value::<NativePreparationPurposeV1Wire>(Value::Object(missing))
+                .is_err()
+        );
         for field in ["generation", "expires_at_ms"] {
             let mut numeric = purpose_body();
             numeric[field] = json!(1);
@@ -2510,17 +2625,34 @@ fn proof_bundle_wire_keeps_native_selector_bytes_and_refuses_aliases() {
     use layerx_agent_api::proof::ProofBundleTarget;
     let id = RequestId(1);
     let activity = [1_u8; 32];
-    for target in [ProofBundleTarget::Activity(activity), ProofBundleTarget::Receipt(activity),
-        ProofBundleTarget::AccountState { activity_id: activity, account_id: [2_u8; 32] }] {
+    for target in [
+        ProofBundleTarget::Activity(activity),
+        ProofBundleTarget::Receipt(activity),
+        ProofBundleTarget::AccountState {
+            activity_id: activity,
+            account_id: [2_u8; 32],
+        },
+    ] {
         let bytes = target.encode().expect("canonical selector");
         let value = json!({"target": lower_hex(bytes.as_bytes()), "requested_verification_level": "BatchIncluded"});
         let request = decode_wire::<ProofBundleWire>(value.as_object().expect("object"), id)
-            .expect("wire").into_request(id).expect("selector");
+            .expect("wire")
+            .into_request(id)
+            .expect("selector");
         assert_eq!(request.selector.as_bytes(), bytes.as_bytes());
-        for invalid in [String::new(), "00".repeat(68), lower_hex(bytes.as_bytes()) + "00", "000103".to_owned() + &"00".repeat(32)] {
-            let malformed = json!({"target": invalid, "requested_verification_level": "BatchIncluded"});
-            assert!(decode_wire::<ProofBundleWire>(malformed.as_object().expect("object"), id)
-                .and_then(|wire| wire.into_request(id)).is_err());
+        for invalid in [
+            String::new(),
+            "00".repeat(68),
+            lower_hex(bytes.as_bytes()) + "00",
+            "000103".to_owned() + &"00".repeat(32),
+        ] {
+            let malformed =
+                json!({"target": invalid, "requested_verification_level": "BatchIncluded"});
+            assert!(
+                decode_wire::<ProofBundleWire>(malformed.as_object().expect("object"), id)
+                    .and_then(|wire| wire.into_request(id))
+                    .is_err()
+            );
         }
         let unknown = json!({"target": lower_hex(bytes.as_bytes()), "requested_verification_level": "BatchIncluded", "authority": "caller"});
         assert!(decode_wire::<ProofBundleWire>(unknown.as_object().expect("object"), id).is_err());
@@ -2528,11 +2660,17 @@ fn proof_bundle_wire_keeps_native_selector_bytes_and_refuses_aliases() {
 }
 
 pub(crate) fn program_call_canonical(
-    request: &Map<String, Value>, id: RequestId,
+    request: &Map<String, Value>,
+    id: RequestId,
 ) -> Result<Value, Rejection> {
     match program_simulation_request(request, id)? {
         ProgramSimulationRequest::Legacy(call) => Ok(call.canonical()),
-        ProgramSimulationRequest::Native { program_id, payload, fee_limit, signed_activity } => {
+        ProgramSimulationRequest::Native {
+            program_id,
+            payload,
+            fee_limit,
+            signed_activity,
+        } => {
             let call = layerx_types::program_call::NativeProgramCall::decode(&payload)
                 .map_err(|_| malformed(id))?;
             let entrypoint = std::str::from_utf8(call.entrypoint).map_err(|_| malformed(id))?;

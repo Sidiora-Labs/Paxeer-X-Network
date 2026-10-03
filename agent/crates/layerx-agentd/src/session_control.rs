@@ -148,8 +148,8 @@ impl SessionControl {
         let stored = store
             .get(&key)
             .ok_or(lifecycle(LifecycleError::NotFound))?
-            .bytes
-            .clone();
+            .bytes()
+            .to_vec();
         let mut record = DurablePreparation::decode(tenant.clone(), &stored).map_err(lifecycle)?;
         if record.terminal()
             || (extension.is_some()
@@ -163,7 +163,9 @@ impl SessionControl {
             return Ok(false);
         }
         if record.extensions.contains_key(&6)
-            && (outcome == ReleaseKind::Executed || (outcome == ReleaseKind::Failed && record.activity_id.is_some())) {
+            && (outcome == ReleaseKind::Executed
+                || (outcome == ReleaseKind::Failed && record.activity_id.is_some()))
+        {
             return Ok(false);
         }
         record.state = state;
@@ -179,12 +181,17 @@ impl SessionControl {
                 if reservation.id != preparation_id || !record.holds.is_empty() {
                     return Err(SessionControlError::Unavailable);
                 }
-                updates.extend(budget::program_consumption_updates(&store, tenant, &reservation)
-                    .map_err(|_| SessionControlError::Unavailable)?);
+                updates.extend(
+                    budget::program_consumption_updates(&store, tenant, &reservation)
+                        .map_err(|_| SessionControlError::Unavailable)?,
+                );
             } else {
-                let holds: Vec<DurableBudgetReservation> = record.holds.iter().map(|(hold, _)| hold.clone()).collect();
-                updates.extend(budget::consumption_updates(&store, tenant, &holds)
-                    .map_err(|_| SessionControlError::Unavailable)?);
+                let holds: Vec<DurableBudgetReservation> =
+                    record.holds.iter().map(|(hold, _)| hold.clone()).collect();
+                updates.extend(
+                    budget::consumption_updates(&store, tenant, &holds)
+                        .map_err(|_| SessionControlError::Unavailable)?,
+                );
             }
         }
         let staged =
@@ -248,9 +255,12 @@ impl SessionControl {
                 if reservation.id != record.preparation_id || !record.holds.is_empty() {
                     return Err(SessionControlError::Unavailable);
                 }
-                self.budgets.restore_program_reservation(&reservation)
+                self.budgets
+                    .restore_program_reservation(&reservation)
                     .map_err(|refusal| lifecycle(LifecycleError::Reservation(refusal)))?;
-                count = count.checked_add(reservation.holds.len()).ok_or(SessionControlError::Unavailable)?;
+                count = count
+                    .checked_add(reservation.holds.len())
+                    .ok_or(SessionControlError::Unavailable)?;
             }
         }
         Ok(count)
@@ -286,7 +296,12 @@ impl SessionControl {
             .write()
             .map_err(|_| SessionControlError::Unavailable)?;
         let (token, request, principal) = self.resolve_credential(
-            &registry, credential, operation, surface, core_sequence, target_owner,
+            &registry,
+            credential,
+            operation,
+            surface,
+            core_sequence,
+            target_owner,
         )?;
         let stop = registry
             .revocation_stop(&token)
@@ -338,9 +353,17 @@ impl SessionControl {
         surface: Surface,
         core_sequence: u64,
     ) -> Result<AuthenticatedOwnerLookup, SessionControlError> {
-        let registry = self.registry.read().map_err(|_| SessionControlError::Unavailable)?;
+        let registry = self
+            .registry
+            .read()
+            .map_err(|_| SessionControlError::Unavailable)?;
         let (_, _, principal) = self.resolve_credential(
-            &registry, credential, operation, surface, core_sequence, None,
+            &registry,
+            credential,
+            operation,
+            surface,
+            core_sequence,
+            None,
         )?;
         Ok(AuthenticatedOwnerLookup {
             credential: credential.clone(),
@@ -359,10 +382,16 @@ impl SessionControl {
     ) -> Result<OperationPermit, SessionControlError> {
         let (binding, owner) = target.into_parts();
         if !Arc::ptr_eq(&binding, &lookup.binding) {
-            return Err(SessionControlError::Authorization(AuthorizationError::NotAuthorized));
+            return Err(SessionControlError::Authorization(
+                AuthorizationError::NotAuthorized,
+            ));
         }
         let mut permit = self.authorize(
-            &lookup.credential, lookup.operation, lookup.surface, current_core_sequence, owner,
+            &lookup.credential,
+            lookup.operation,
+            lookup.surface,
+            current_core_sequence,
+            owner,
         )?;
         permit.lookup_binding = Some(lookup.binding);
         Ok(permit)
@@ -904,8 +933,8 @@ impl SessionControl {
         let stored = store
             .get(&key)
             .ok_or(lifecycle(LifecycleError::NotFound))?
-            .bytes
-            .clone();
+            .bytes()
+            .to_vec();
         let mut record = DurablePreparation::decode(tenant.clone(), &stored).map_err(lifecycle)?;
         let changed = match next {
             LifecycleState::Submitted | LifecycleState::Acknowledged => {
@@ -1093,39 +1122,92 @@ pub struct OperationPermit {
 
 impl OperationPermit {
     pub(crate) fn with_native_preparation<T>(
-        &self, control: &SessionControl, activity: layerx_agent_api::identity::NativeActivity,
+        &self,
+        control: &SessionControl,
+        activity: layerx_agent_api::identity::NativeActivity,
         sequence: u64,
-        effect: impl FnOnce(&mut Store, &SessionRegistry, &session::NativeSessionAuthorizationV1,
-            &BudgetLimiter, &PreparationLifecycle, u64) -> Result<T, SessionControlError>,
+        effect: impl FnOnce(
+            &mut Store,
+            &SessionRegistry,
+            &session::NativeSessionAuthorizationV1,
+            &BudgetLimiter,
+            &PreparationLifecycle,
+            u64,
+        ) -> Result<T, SessionControlError>,
     ) -> Result<T, SessionControlError> {
         self.require_operation(Operation::Prepare)?;
-        let registry = control.registry.read().map_err(|_| SessionControlError::Unavailable)?;
+        let registry = control
+            .registry
+            .read()
+            .map_err(|_| SessionControlError::Unavailable)?;
         self.resolve(control, &registry)?;
-        let mut store = control.store.lock().map_err(|_| SessionControlError::Unavailable)?;
-        let authorization = session::admit_native(&store, &registry, &self.token,
-            &self.principal.tenant, &self.principal.agent, activity, sequence).map_err(SessionControlError::Session)?;
-        let expiry = registry.get(&self.principal.tenant, self.principal.session_id)
-            .ok_or(SessionControlError::Session(SessionError::NotFound))?.request.expiry_sequence;
-        effect(&mut store, &registry, &authorization, &control.budgets, &control.lifecycle, expiry)
+        let mut store = control
+            .store
+            .lock()
+            .map_err(|_| SessionControlError::Unavailable)?;
+        let authorization = session::admit_native(
+            &store,
+            &registry,
+            &self.token,
+            &self.principal.tenant,
+            &self.principal.agent,
+            activity,
+            sequence,
+        )
+        .map_err(SessionControlError::Session)?;
+        let expiry = registry
+            .get(&self.principal.tenant, self.principal.session_id)
+            .ok_or(SessionControlError::Session(SessionError::NotFound))?
+            .request
+            .expiry_sequence;
+        effect(
+            &mut store,
+            &registry,
+            &authorization,
+            &control.budgets,
+            &control.lifecycle,
+            expiry,
+        )
     }
 
     pub(crate) fn with_native_authority<T>(
-        &self, control: &SessionControl, activity: layerx_agent_api::identity::NativeActivity,
+        &self,
+        control: &SessionControl,
+        activity: layerx_agent_api::identity::NativeActivity,
         sequence: u64,
-        effect: impl FnOnce(&mut Store, &SessionRegistry, &session::NativeSessionAuthorizationV1,
-            &BudgetLimiter, &PreparationLifecycle, u64) -> Result<T, SessionControlError>,
+        effect: impl FnOnce(
+            &mut Store,
+            &SessionRegistry,
+            &session::NativeSessionAuthorizationV1,
+            &BudgetLimiter,
+            &PreparationLifecycle,
+            u64,
+        ) -> Result<T, SessionControlError>,
     ) -> Result<T, SessionControlError> {
-        if !matches!(self.operation(), Operation::Prepare | Operation::Sign | Operation::Submit) {
-            return Err(SessionControlError::Authorization(AuthorizationError::ScopeDenied));
+        if !matches!(
+            self.operation(),
+            Operation::Prepare | Operation::Sign | Operation::Submit
+        ) {
+            return Err(SessionControlError::Authorization(
+                AuthorizationError::ScopeDenied,
+            ));
         }
         self.with_native_authority_authorized(control, activity, sequence, effect)
     }
 
     pub(crate) fn with_native_submission_authority<T>(
-        &self, control: &SessionControl, activity: layerx_agent_api::identity::NativeActivity,
+        &self,
+        control: &SessionControl,
+        activity: layerx_agent_api::identity::NativeActivity,
         sequence: u64,
-        effect: impl FnOnce(&mut Store, &SessionRegistry, &session::NativeSessionAuthorizationV1,
-            &BudgetLimiter, &PreparationLifecycle, u64) -> Result<T, SessionControlError>,
+        effect: impl FnOnce(
+            &mut Store,
+            &SessionRegistry,
+            &session::NativeSessionAuthorizationV1,
+            &BudgetLimiter,
+            &PreparationLifecycle,
+            u64,
+        ) -> Result<T, SessionControlError>,
     ) -> Result<T, SessionControlError> {
         if self.operation() == Operation::Submit {
             return self.with_native_authority(control, activity, sequence, effect);
@@ -1135,34 +1217,75 @@ impl OperationPermit {
     }
 
     fn with_native_authority_authorized<T>(
-        &self, control: &SessionControl, activity: layerx_agent_api::identity::NativeActivity,
+        &self,
+        control: &SessionControl,
+        activity: layerx_agent_api::identity::NativeActivity,
         sequence: u64,
-        effect: impl FnOnce(&mut Store, &SessionRegistry, &session::NativeSessionAuthorizationV1,
-            &BudgetLimiter, &PreparationLifecycle, u64) -> Result<T, SessionControlError>,
+        effect: impl FnOnce(
+            &mut Store,
+            &SessionRegistry,
+            &session::NativeSessionAuthorizationV1,
+            &BudgetLimiter,
+            &PreparationLifecycle,
+            u64,
+        ) -> Result<T, SessionControlError>,
     ) -> Result<T, SessionControlError> {
-        let registry = control.registry.read().map_err(|_| SessionControlError::Unavailable)?;
+        let registry = control
+            .registry
+            .read()
+            .map_err(|_| SessionControlError::Unavailable)?;
         self.resolve(control, &registry)?;
-        let mut store = control.store.lock().map_err(|_| SessionControlError::Unavailable)?;
-        let authorization = session::admit_native(&store, &registry, &self.token,
-            &self.principal.tenant, &self.principal.agent, activity, sequence).map_err(SessionControlError::Session)?;
-        let expiry = registry.get(&self.principal.tenant, self.principal.session_id)
-            .ok_or(SessionControlError::Session(SessionError::NotFound))?.request.expiry_sequence;
-        effect(&mut store, &registry, &authorization, &control.budgets, &control.lifecycle, expiry)
+        let mut store = control
+            .store
+            .lock()
+            .map_err(|_| SessionControlError::Unavailable)?;
+        let authorization = session::admit_native(
+            &store,
+            &registry,
+            &self.token,
+            &self.principal.tenant,
+            &self.principal.agent,
+            activity,
+            sequence,
+        )
+        .map_err(SessionControlError::Session)?;
+        let expiry = registry
+            .get(&self.principal.tenant, self.principal.session_id)
+            .ok_or(SessionControlError::Session(SessionError::NotFound))?
+            .request
+            .expiry_sequence;
+        effect(
+            &mut store,
+            &registry,
+            &authorization,
+            &control.budgets,
+            &control.lifecycle,
+            expiry,
+        )
     }
 
     pub(crate) fn with_native_owner_install<T>(
-        &self, control: &SessionControl,
+        &self,
+        control: &SessionControl,
         effect: impl FnOnce(&mut Store, &SessionRegistry) -> Result<T, SessionControlError>,
     ) -> Result<T, SessionControlError> {
         self.require_operation(Operation::Prepare)?;
-        let registry = control.registry.read().map_err(|_| SessionControlError::Unavailable)?;
+        let registry = control
+            .registry
+            .read()
+            .map_err(|_| SessionControlError::Unavailable)?;
         self.resolve(control, &registry)?;
-        let mut store = control.store.lock().map_err(|_| SessionControlError::Unavailable)?;
+        let mut store = control
+            .store
+            .lock()
+            .map_err(|_| SessionControlError::Unavailable)?;
         effect(&mut store, &registry)
     }
 
     pub(crate) fn matches_lookup(&self, binding: &Arc<()>) -> bool {
-        self.lookup_binding.as_ref().is_some_and(|value| Arc::ptr_eq(value, binding))
+        self.lookup_binding
+            .as_ref()
+            .is_some_and(|value| Arc::ptr_eq(value, binding))
     }
 
     #[must_use]
@@ -1223,7 +1346,9 @@ impl OperationPermit {
     ) -> Result<DurablePreparation, SessionControlError> {
         self.require_program_operation()?;
         if !matches!(admission.stage, AdmissionStage::Submit) {
-            return Err(SessionControlError::Authorization(AuthorizationError::ScopeDenied));
+            return Err(SessionControlError::Authorization(
+                AuthorizationError::ScopeDenied,
+            ));
         }
         self.admit_write_authorized(control, admission)
     }
@@ -1355,8 +1480,8 @@ impl OperationPermit {
         let stored = store
             .get(&key)
             .ok_or(lifecycle(LifecycleError::NotFound))?
-            .bytes
-            .clone();
+            .bytes()
+            .to_vec();
         let mut record = DurablePreparation::decode(tenant, &stored).map_err(lifecycle)?;
         if record.session_id != authorization.session.session_id.0
             || record.generation != authorization.generation
@@ -1383,9 +1508,9 @@ impl OperationPermit {
                 .is_retired(hold.limit_id)
                 .map_err(|refusal| lifecycle(LifecycleError::Reservation(refusal)))?
             {
-                return Err(lifecycle(LifecycleError::Reservation(LimitRefusal::Retired(
-                    hold.limit_id,
-                ))));
+                return Err(lifecycle(LifecycleError::Reservation(
+                    LimitRefusal::Retired(hold.limit_id),
+                )));
             }
         }
         let Some(charge) = &admission.charge else {
@@ -1394,7 +1519,12 @@ impl OperationPermit {
         let missing: Vec<LimitId> = charge
             .applicable_limits
             .iter()
-            .filter(|limit| !record.holds.iter().any(|(hold, _)| hold.limit_id == **limit))
+            .filter(|limit| {
+                !record
+                    .holds
+                    .iter()
+                    .any(|(hold, _)| hold.limit_id == **limit)
+            })
             .copied()
             .collect();
         if missing.is_empty() {
@@ -1492,7 +1622,10 @@ impl OperationPermit {
     ) -> Result<(), SessionControlError> {
         self.require_program_operation()?;
         self.transition_preparation_authorized(
-            control, preparation_id, LifecycleState::Submitted, current_sequence,
+            control,
+            preparation_id,
+            LifecycleState::Submitted,
+            current_sequence,
         )
     }
 
@@ -1635,7 +1768,12 @@ impl OperationPermit {
     ) -> Result<(), SessionControlError> {
         self.require_operation(Operation::Submit)?;
         self.submit_external_signature_authorized(
-            control, preparation_id, signed_bytes, activity_id, current_sequence, core_batch_time_ms,
+            control,
+            preparation_id,
+            signed_bytes,
+            activity_id,
+            current_sequence,
+            core_batch_time_ms,
         )
     }
 
@@ -1650,7 +1788,12 @@ impl OperationPermit {
     ) -> Result<(), SessionControlError> {
         self.require_program_operation()?;
         self.submit_external_signature_authorized(
-            control, preparation_id, signed_bytes, activity_id, current_sequence, core_batch_time_ms,
+            control,
+            preparation_id,
+            signed_bytes,
+            activity_id,
+            current_sequence,
+            core_batch_time_ms,
         )
     }
 
@@ -1736,27 +1879,58 @@ impl OperationPermit {
     }
 
     pub(crate) fn admit_submission_write(
-        &self, control: &SessionControl, admission: WriteAdmission<'_>,
+        &self,
+        control: &SessionControl,
+        admission: WriteAdmission<'_>,
     ) -> Result<DurablePreparation, SessionControlError> {
-        if self.operation() == Operation::Submit { return self.admit_write(control, admission); }
+        if self.operation() == Operation::Submit {
+            return self.admit_write(control, admission);
+        }
         self.admit_program_write(control, admission)
     }
 
     pub(crate) fn retain_external_submission(
-        &self, control: &SessionControl, preparation_id: [u8; 32], signed_bytes: Vec<u8>,
-        activity_id: [u8; 32], current_sequence: u64, core_time_ms: u64,
+        &self,
+        control: &SessionControl,
+        preparation_id: [u8; 32],
+        signed_bytes: Vec<u8>,
+        activity_id: [u8; 32],
+        current_sequence: u64,
+        core_time_ms: u64,
     ) -> Result<(), SessionControlError> {
         if self.operation() == Operation::Submit {
-            return self.submit_with_external_signature(control, preparation_id, signed_bytes, activity_id, current_sequence, core_time_ms);
+            return self.submit_with_external_signature(
+                control,
+                preparation_id,
+                signed_bytes,
+                activity_id,
+                current_sequence,
+                core_time_ms,
+            );
         }
-        self.submit_program_with_external_signature(control, preparation_id, signed_bytes, activity_id, current_sequence, core_time_ms)
+        self.submit_program_with_external_signature(
+            control,
+            preparation_id,
+            signed_bytes,
+            activity_id,
+            current_sequence,
+            core_time_ms,
+        )
     }
 
     pub(crate) fn transition_submission(
-        &self, control: &SessionControl, preparation_id: [u8; 32], current_sequence: u64,
+        &self,
+        control: &SessionControl,
+        preparation_id: [u8; 32],
+        current_sequence: u64,
     ) -> Result<(), SessionControlError> {
         if self.operation() == Operation::Submit {
-            return self.transition_preparation(control, preparation_id, LifecycleState::Submitted, current_sequence);
+            return self.transition_preparation(
+                control,
+                preparation_id,
+                LifecycleState::Submitted,
+                current_sequence,
+            );
         }
         self.transition_program_submitted(control, preparation_id, current_sequence)
     }
@@ -1771,7 +1945,9 @@ impl OperationPermit {
         ) {
             Ok(())
         } else {
-            Err(SessionControlError::Authorization(AuthorizationError::ScopeDenied))
+            Err(SessionControlError::Authorization(
+                AuthorizationError::ScopeDenied,
+            ))
         }
     }
 
@@ -1991,13 +2167,14 @@ fn live_preparation_for_key(
     let mut found = None;
     for preparation_id in DurablePreparation::recorded_ids(store, tenant).map_err(lifecycle)? {
         let key = DurablePreparation::store_key(tenant, preparation_id).map_err(lifecycle)?;
-        let stored = store
-            .get(&key)
-            .ok_or(lifecycle(LifecycleError::NotFound))?;
+        let stored = store.get(&key).ok_or(lifecycle(LifecycleError::NotFound))?;
         let record =
-            DurablePreparation::decode(tenant.clone(), &stored.bytes).map_err(lifecycle)?;
+            DurablePreparation::decode(tenant.clone(), stored.bytes()).map_err(lifecycle)?;
         if record.terminal()
-            || record.extensions.get(&EXTENSION_IDEMPOTENCY).map(Vec::as_slice)
+            || record
+                .extensions
+                .get(&EXTENSION_IDEMPOTENCY)
+                .map(Vec::as_slice)
                 != Some(idempotency_key.as_slice())
         {
             continue;

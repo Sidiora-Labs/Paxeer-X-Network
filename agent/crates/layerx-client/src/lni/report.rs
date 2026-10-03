@@ -146,5 +146,6 @@ const fn absent_behavior(capability: Capability) -> &'static str {
         Capability::ProgramRead => "snapshot_program_read_unavailable",
         Capability::ProgramHeadAttest => "program_head_attestation_unavailable",
         Capability::CapsDiscovery => "complete_caps_discovery_unavailable",
+        Capability::ExecutionPrestate => "execution_prestate_read_unavailable",
     }
 }

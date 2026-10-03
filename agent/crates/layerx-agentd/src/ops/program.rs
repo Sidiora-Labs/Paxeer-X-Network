@@ -39,7 +39,10 @@ pub enum ProgramOperationError {
     /// The node does not serve authenticated kind-5 Programs state.
     Unavailable,
     /// Any other exact core refusal of the kind-5 request.
-    CoreRefusal { class: u8, result: ResultCode },
+    CoreRefusal {
+        class: u8,
+        result: ResultCode,
+    },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -890,17 +893,25 @@ impl ProgramOperations {
         }
         let decoded = layerx_wire::receipt::decode(receipt)
             .map_err(|_| ProgramOperationError::UnverifiedReceipt)?;
-        let protocol = decoded.protocol().ok_or(ProgramOperationError::UnverifiedReceipt)?;
+        let protocol = decoded
+            .protocol()
+            .ok_or(ProgramOperationError::UnverifiedReceipt)?;
         if protocol.protocol_version() != activity.protocol_version() {
             return Err(ProgramOperationError::UnverifiedReceipt);
         }
-        let (program_id, guest_abi_version) = if activity.payload()
+        let (program_id, guest_abi_version) = if activity
+            .payload()
             .starts_with(layerx_types::intent::PROGRAM_CALL_PAYLOAD_DOMAIN)
         {
             let call = ProgramCall::from_canonical_payload(activity.payload())
                 .map_err(|_| ProgramOperationError::InvalidRequest)?;
-            (call.callee().bytes(), protocol.program_outcome()
-                .ok_or(ProgramOperationError::UnverifiedReceipt)?.abi_version())
+            (
+                call.callee().bytes(),
+                protocol
+                    .program_outcome()
+                    .ok_or(ProgramOperationError::UnverifiedReceipt)?
+                    .abi_version(),
+            )
         } else {
             if activity.protocol_version() != 3 {
                 return Err(ProgramOperationError::InvalidRequest);
@@ -909,16 +920,21 @@ impl ProgramOperations {
                 .map_err(|_| ProgramOperationError::InvalidRequest)?;
             (call.program_id.bytes(), call.guest_abi)
         };
-        let activity_id = activity_id(&activity).map_err(|_| ProgramOperationError::InvalidRequest)?;
+        let activity_id =
+            activity_id(&activity).map_err(|_| ProgramOperationError::InvalidRequest)?;
         let unsigned = layerx_wire::receipt::encode_unsigned(&decoded)
             .map_err(|_| ProgramOperationError::UnverifiedReceipt)?;
         let receipt_digest = layerx_wire::hash::receipt_digest(&unsigned)
             .map_err(|_| ProgramOperationError::UnverifiedReceipt)?;
-        let artifacts = self.reader.read_program_artifacts(activity_id, receipt_digest)
-            .map_err(|error| if error.is_unavailable() {
-                ProgramOperationError::Unavailable
-            } else {
-                ProgramOperationError::UnverifiedReceipt
+        let artifacts = self
+            .reader
+            .read_program_artifacts(activity_id, receipt_digest)
+            .map_err(|error| {
+                if error.is_unavailable() {
+                    ProgramOperationError::Unavailable
+                } else {
+                    ProgramOperationError::UnverifiedReceipt
+                }
             })?;
         let verified = verify_authorized_program_execution_with_payers(
             receipt,
@@ -932,8 +948,12 @@ impl ProgramOperations {
                 program_id,
                 guest_abi_version,
             },
-            &[OccupancyPayer { did: activity.actor_did(), account: None }],
-        ).map_err(|_| ProgramOperationError::UnverifiedReceipt)?;
+            &[OccupancyPayer {
+                did: activity.actor_did(),
+                account: None,
+            }],
+        )
+        .map_err(|_| ProgramOperationError::UnverifiedReceipt)?;
         Ok(ProgramActivityExecution {
             program_id,
             guest_abi_version,
@@ -970,12 +990,17 @@ impl ProgramOperations {
         program: ProgramId,
         now: u64,
     ) -> Result<layerx_programs::VerifiedProgramBalanceRead, ProgramOperationError> {
-        self.reader.read_protocol_state(program, now)
+        self.reader
+            .read_protocol_state(program, now)
             .map(|state| state.into_balances())
-            .map_err(|error| if error.is_stale() {
-                ProgramOperationError::Stale
-            } else {
-                ProgramOperationError::UnverifiedReceipt
+            .map_err(|error| match error {
+                layerx_programs_protocol_adapter::ProtocolAdapterError::AccountState(
+                    layerx_programs::AccountStateError::StaleRead,
+                )
+                | layerx_programs_protocol_adapter::ProtocolAdapterError::Registry(
+                    layerx_programs::RegistryError::StaleRead,
+                ) => ProgramOperationError::Stale,
+                _ => ProgramOperationError::UnverifiedReceipt,
             })
     }
 

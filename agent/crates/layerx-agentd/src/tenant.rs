@@ -119,6 +119,7 @@ impl OperationClass {
             | Operation::ApprovalReject => Some(Self::Approve),
             Operation::ExportOffline => Some(Self::Export),
             Operation::Prepare => Some(Self::Prepare),
+            Operation::PolicyDryRun => Some(Self::Read),
             Operation::SubscriptionAcknowledge
             | Operation::SubscriptionCreate
             | Operation::SubscriptionDelete

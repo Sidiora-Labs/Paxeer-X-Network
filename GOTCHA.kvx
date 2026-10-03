@@ -2013,3 +2013,23 @@ do = "Restore the genuine supported build libraries without replacing TLS or cha
 area = "replay"
 symptom = "Execution-prestate version1 authenticates only universal state, Programs state and accounts, not complete Oracle and Web inputs."
 do = "Preserve its closed decoder and refuse post-state substitution; any portable replay producer needs an explicit versioned prestate contract."
+
+[gotcha.611]
+area = "schema"
+symptom = "An approved Agent schema integration can leave its committed Rust consumer version stale."
+do = "Use the canonical source-bound standalone generator and preserve compatibility, baseline and drift assertions."
+
+[gotcha.612]
+area = "rust"
+symptom = "Durable store values expose bytes through their closed public accessor, not a public field."
+do = "Use bytes() and preserve borrowed decoding and owned retained snapshots."
+
+[gotcha.613]
+area = "native"
+symptom = "Integrated Program owners must use the genuine hex codec, explicit stale-read variants and the existing authorization kind catalogue."
+do = "Map every actual variant to its unique canonical tag while retaining legacy tags, encodings and all monetary checks."
+
+[gotcha.615]
+area = "schema"
+symptom = "Canonical Agent operation regeneration exposes missing exhaustive PolicyDryRun authorization and owner mappings."
+do = "Preserve the failed build and repair limit; resolve the actual authenticated session owner rather than treating referenced objects as absent."
