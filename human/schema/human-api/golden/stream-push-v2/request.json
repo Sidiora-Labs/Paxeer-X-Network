@@ -1,0 +1,8 @@
+{
+  "method": "GET",
+  "path": "/v1/stream/cur-000000000000000042",
+  "headers": {
+    "Accept": "text/event-stream",
+    "X-LayerX-Stream-Profile": "2"
+  }
+}

@@ -522,6 +522,8 @@ mod profile_tests {
                 "avatar_url": "https://example.com/avatar.png",
             })
         );
-        assert!(response.get("avatar_url").is_some_and(|value| value.is_string()));
+        assert!(response
+            .get("avatar_url")
+            .is_some_and(|value| value.is_string()));
     }
 }

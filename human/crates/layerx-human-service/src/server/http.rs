@@ -12,8 +12,9 @@ use zeroize::Zeroize;
 use crate::trace::TraceId;
 
 use super::backend::{
-    valid_bearer_assertion, ApiFailure, BackendResponse, BearerCredentials, HumanApiComponents,
-    ComponentState, PrincipalContext, Readiness, ScopedRequest, SessionCredentials, SessionSecrets,
+    valid_bearer_assertion, ApiFailure, BackendResponse, BearerCredentials, ComponentState,
+    HumanApiComponents, PrincipalContext, Readiness, ScopedRequest, SessionCredentials,
+    SessionSecrets,
 };
 use super::limits::PrincipalLimits;
 use super::schema::{ApiSchema, Operation};
@@ -23,9 +24,10 @@ const REFRESH_COOKIE: &str = "__Host-layerx_refresh";
 const CSRF_COOKIE: &str = "__Host-layerx_csrf";
 const PREFLIGHT_ALLOW_METHODS: &str = "DELETE, GET, PATCH, POST, PUT";
 const PREFLIGHT_ALLOW_HEADERS: &str =
-    "authorization, content-type, idempotency-key, x-layerx-trace, x-layerx-csrf, x-layerx-wallet-binding";
+    "authorization, content-type, idempotency-key, x-layerx-trace, x-layerx-csrf, x-layerx-wallet-binding, x-layerx-stream-profile";
 const PREFLIGHT_MAX_AGE: &str = "600";
 const EXPOSED_HEADERS: &str = "X-LayerX-Trace";
+const STREAM_EXPOSED_HEADERS: &str = "X-LayerX-Trace, X-LayerX-Stream-Profile";
 
 /// Finite HTTP parsing and browser-origin policy; `allowed_origin` lists one or
 /// more comma-separated HTTPS origins.
@@ -123,6 +125,15 @@ impl<B: HumanApiComponents> Router<B> {
         stream: &mut S,
         public_rate_key: &str,
     ) -> std::io::Result<()> {
+        self.serve_one_with_disconnect(stream, public_rate_key, || Ok(None))
+    }
+
+    pub(super) fn serve_one_with_disconnect<S: Read + Write>(
+        &self,
+        stream: &mut S,
+        public_rate_key: &str,
+        begin_watch: impl FnOnce() -> std::io::Result<Option<super::StreamCancellation>>,
+    ) -> std::io::Result<()> {
         let request = match HttpRequest::read(stream, &self.config) {
             Ok(request) => request,
             Err(failure) => {
@@ -136,7 +147,32 @@ impl<B: HumanApiComponents> Router<B> {
             .header("origin")
             .filter(|origin| origin_allowed(Some(origin), &self.config.allowed_origin))
             .map(str::to_owned);
-        let mut response = self.handle(request, public_rate_key);
+        let watch = if request.header("x-layerx-stream-profile") == Some("2")
+            && request.header("accept") == Some("text/event-stream")
+            && request.method == "GET"
+            && request.path.starts_with("/v1/stream/")
+        {
+            begin_watch()?
+        } else {
+            None
+        };
+        let cancelled = || {
+            watch
+                .as_ref()
+                .is_some_and(super::StreamCancellation::cancelled)
+        };
+        let mut streamed = None;
+        let mut response = self.handle(
+            request,
+            public_rate_key,
+            stream,
+            &mut streamed,
+            &cancelled,
+            watch.as_ref(),
+        );
+        if let Some(result) = streamed {
+            return result;
+        }
         if let Some(origin) = browser_origin {
             response
                 .headers
@@ -149,7 +185,15 @@ impl<B: HumanApiComponents> Router<B> {
         write_response(stream, &response)
     }
 
-    fn handle(&self, mut request: HttpRequest, public_rate_key: &str) -> HttpResponse {
+    fn handle(
+        &self,
+        mut request: HttpRequest,
+        public_rate_key: &str,
+        stream: &mut dyn Write,
+        streamed: &mut Option<std::io::Result<()>>,
+        cancelled: &dyn Fn() -> bool,
+        watch: Option<&super::StreamCancellation>,
+    ) -> HttpResponse {
         let trace = match mint_trace(request.header("x-layerx-trace")) {
             Ok(trace) => trace,
             Err(trace) => return error_response(&trace, &ApiFailure::unavailable()),
@@ -229,12 +273,58 @@ impl<B: HumanApiComponents> Router<B> {
             Ok(principal) => principal,
             Err(failure) => return error_response(&trace, &failure),
         };
+        let wants_stream = request.header("x-layerx-stream-profile") == Some("2")
+            && request.header("accept") == Some("text/event-stream");
+        if wants_stream && operation.name == "stream.next" {
+            let context = match principal.as_ref() {
+                Some(context) => context,
+                None => return error_response(&trace, &ApiFailure::unauthenticated()),
+            };
+            let now = match std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH) {
+                Ok(now) => now,
+                Err(_) => return error_response(&trace, &ApiFailure::unavailable()),
+            };
+            let remaining = match Duration::from_secs(context.expires_at())
+                .checked_sub(now)
+                .filter(|remaining| !remaining.is_zero() && *remaining <= Duration::from_secs(60))
+            {
+                Some(remaining) => remaining,
+                None => return error_response(&trace, &ApiFailure::session_expired()),
+            };
+            if let Some(watch) = watch {
+                if watch
+                    .set_deadline(std::time::Instant::now() + remaining)
+                    .is_err()
+                {
+                    return error_response(&trace, &ApiFailure::unavailable());
+                }
+            }
+            *streamed = Some(self.serve_stream(
+                stream,
+                operation,
+                &trace,
+                &request,
+                ScopedRequest {
+                    operation,
+                    principal,
+                    path_parameters: matched.path_parameters,
+                    body,
+                    idempotency_key,
+                    trace: trace.as_str().to_owned(),
+                },
+                cancelled,
+            ));
+            return success_response(200, &trace, Value::Null, Vec::new());
+        }
         let introspection_principal = introspection
             .then(|| {
-                principal
-                    .as_ref()
-                    .map(|context| (context.principal.as_str().to_owned(),
-                        context.tenant.as_str().to_owned(), context.session_id.clone()))
+                principal.as_ref().map(|context| {
+                    (
+                        context.principal.as_str().to_owned(),
+                        context.tenant.as_str().to_owned(),
+                        context.session_id.clone(),
+                    )
+                })
             })
             .flatten();
         let clear_session =
@@ -254,6 +344,70 @@ impl<B: HumanApiComponents> Router<B> {
             clear_session,
             response,
         )
+    }
+
+    fn serve_stream(
+        &self,
+        stream: &mut dyn Write,
+        operation: &Operation,
+        trace: &TraceId,
+        request: &HttpRequest,
+        scoped: ScopedRequest<'_>,
+        cancelled: &dyn Fn() -> bool,
+    ) -> std::io::Result<()> {
+        write!(stream, "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream; charset=utf-8\r\nCache-Control: no-store\r\nX-Content-Type-Options: nosniff\r\nX-LayerX-Trace: {}\r\nX-LayerX-Stream-Profile: 2\r\nConnection: close\r\n", trace.as_str())?;
+        if let Some(origin) = request
+            .header("origin")
+            .filter(|origin| origin_allowed(Some(origin), &self.config.allowed_origin))
+        {
+            write!(stream, "Access-Control-Allow-Origin: {origin}\r\nAccess-Control-Expose-Headers: {STREAM_EXPOSED_HEADERS}\r\nVary: Origin\r\n")?;
+        }
+        stream.write_all(b"\r\n")?;
+        stream.flush()?;
+        let mut budget = super::backend::StreamBudget::new(1_048_576);
+        let mut io_failure = None;
+        let result = self.backend.stream(
+            scoped,
+            1_048_576,
+            &mut |page| {
+                self.schema
+                    .encode_response(operation, &page)
+                    .map_err(|_| ApiFailure::upstream_degraded())?;
+                budget.accept(&page, trace.as_str())?;
+                let bytes = serde_json::to_vec(
+                    &json!({"ok": true, "result": page, "trace": trace.as_str()}),
+                )
+                .map_err(|_| ApiFailure::upstream_degraded())?;
+                let written = stream
+                    .write_all(b"event:stream.page\ndata:")
+                    .and_then(|()| stream.write_all(&bytes))
+                    .and_then(|()| stream.write_all(b"\n\n"))
+                    .and_then(|()| stream.flush());
+                if let Err(error) = written {
+                    io_failure = Some(error);
+                    return Err(ApiFailure::unavailable());
+                }
+                Ok(())
+            },
+            cancelled,
+        );
+        if cancelled() {
+            return Ok(());
+        }
+        if let Some(error) = io_failure {
+            return Err(error);
+        }
+        if let Err(failure) = result {
+            if budget.accept_failure(&failure, trace.as_str()).is_err() {
+                return Ok(());
+            }
+            let envelope = error_response(trace, &failure).body;
+            stream.write_all(b"event:stream.error\ndata:")?;
+            stream.write_all(&envelope)?;
+            stream.write_all(b"\n\n")?;
+            stream.flush()?;
+        }
+        Ok(())
     }
 
     fn version_response(&self, trace: &TraceId, public_rate_key: &str) -> HttpResponse {
@@ -323,7 +477,8 @@ impl<B: HumanApiComponents> Router<B> {
                         agent: ComponentState::Unavailable,
                         core: ComponentState::Unavailable,
                         paxeer: ComponentState::Unavailable,
-                    }.redacted(),
+                    }
+                    .redacted(),
                     Vec::new(),
                 ),
             });

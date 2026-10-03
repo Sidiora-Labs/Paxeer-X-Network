@@ -456,6 +456,71 @@ impl Dispatcher {
         }
     }
 
+    fn dispatch_stream(
+        &self,
+        request: &mut ComponentRequest,
+        maximum_bytes: usize,
+        emit: &mut dyn FnMut(Vec<u8>) -> Result<(), ApiFailure>,
+        cancelled: &dyn Fn() -> bool,
+    ) -> Result<(), ApiFailure> {
+        request.validate()?;
+        let ComponentRequest::Execute {
+            component,
+            operation,
+            principal,
+            path_parameters,
+            body,
+            idempotency_key,
+            trace,
+            stream_profile: Some(2),
+            ..
+        } = request
+        else {
+            return Err(ApiFailure::invalid_request(Some("stream_profile")));
+        };
+        let operation = self
+            .schema
+            .operation(operation)
+            .ok_or_else(ApiFailure::not_found)?;
+        if operation.name != "stream.next" || component != component_owner(&operation.name)? {
+            return Err(ApiFailure::forbidden());
+        }
+        validate_execute(operation, path_parameters, idempotency_key.as_deref())?;
+        if principal.is_none() {
+            return Err(ApiFailure::unauthenticated());
+        }
+        let principal = principal_context(principal.as_ref())?;
+        let body = self
+            .schema
+            .decode_request(operation, Some(std::mem::take(body)))
+            .map_err(|_| ApiFailure::invalid_request(Some("body")))?;
+        let mut budget = super::backend::StreamBudget::new(maximum_bytes);
+        let trace_copy = trace.clone();
+        self.backend.stream(
+            ScopedRequest {
+                operation,
+                principal,
+                path_parameters: std::mem::take(path_parameters),
+                body,
+                idempotency_key: idempotency_key.take(),
+                trace: std::mem::take(trace),
+            },
+            maximum_bytes,
+            &mut |page| {
+                self.schema
+                    .encode_response(operation, &page)
+                    .map_err(|_| ApiFailure::upstream_degraded())?;
+                budget.accept(&page, &trace_copy)?;
+                let response = super::backend::BackendResponse {
+                    result: page,
+                    session: None,
+                };
+                emit(encode_backend(&response)?)
+            },
+            cancelled,
+        )
+    }
+
     fn dispatch_frame(&self, frame: &mut [u8]) -> Vec<u8> {
         let parsed = serde_json::from_slice::<ComponentRequest>(frame);
         frame.zeroize();
@@ -578,6 +643,93 @@ fn serve_one(
     let mut frame = read_frame(stream, limits.maximum_frame_bytes)
         .map_err(|_| ComponentServerError::Protocol)?;
     reject_buffered_second_frame(stream)?;
+    let is_stream = serde_json::from_slice::<ComponentRequest>(&frame).is_ok_and(|request| {
+        matches!(
+            request,
+            ComponentRequest::Execute {
+                stream_profile: Some(2),
+                ..
+            }
+        )
+    });
+    if is_stream {
+        let parsed = serde_json::from_slice::<ComponentRequest>(&frame);
+        frame.zeroize();
+        let mut request = parsed.map_err(|_| ComponentServerError::Protocol)?;
+        let expiry = match &request {
+            ComponentRequest::Execute {
+                principal: Some(principal),
+                ..
+            } => principal.expires_at,
+            _ => 0,
+        };
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_err(|_| ComponentServerError::Protocol)?
+            .as_secs();
+        let deadline =
+            std::time::Instant::now() + Duration::from_secs(expiry.saturating_sub(now).min(60));
+        let cancellation =
+            super::StreamCancellation::watch(stream.try_clone().map_err(ComponentServerError::Io)?)
+                .map_err(ComponentServerError::Io)?;
+        if let Ok(now) = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH) {
+            if let Some(remaining) = Duration::from_secs(expiry)
+                .checked_sub(now)
+                .filter(|remaining| !remaining.is_zero() && *remaining <= Duration::from_secs(60))
+            {
+                cancellation
+                    .set_deadline(std::time::Instant::now() + remaining)
+                    .map_err(ComponentServerError::Io)?;
+            }
+        }
+        let trace = match &request {
+            ComponentRequest::Execute { trace, .. } => trace.clone(),
+            _ => return Err(ComponentServerError::Protocol),
+        };
+        let mut budget =
+            super::backend::StreamBudget::new(limits.maximum_frame_bytes.min(1_048_576));
+        let result = dispatcher.dispatch_stream(
+            &mut request,
+            limits.maximum_frame_bytes.min(1_048_576),
+            &mut |mut response| {
+                let page = serde_json::from_slice::<serde_json::Value>(&response)
+                    .map_err(|_| ApiFailure::upstream_degraded())?;
+                budget.accept(
+                    page.get("result")
+                        .ok_or_else(ApiFailure::upstream_degraded)?,
+                    &trace,
+                )?;
+                let remaining = deadline
+                    .checked_duration_since(std::time::Instant::now())
+                    .filter(|duration| !duration.is_zero())
+                    .ok_or_else(ApiFailure::session_expired)?;
+                stream
+                    .set_write_timeout(Some(remaining))
+                    .map_err(|_| ApiFailure::unavailable())?;
+                let written = write_frame(stream, &response, limits.maximum_frame_bytes);
+                response.zeroize();
+                written.map_err(|_| ApiFailure::unavailable())
+            },
+            &|| cancellation.cancelled(),
+        );
+        request.zeroize();
+        let mut response = match result {
+            Ok(()) => serde_json::to_vec(&serde_json::json!({
+                "version": super::backend::COMPONENT_PROTOCOL_VERSION, "ok": true, "kind": "stream.end"
+            })).map_err(|_| ComponentServerError::Protocol)?,
+            Err(failure) => {
+                budget.accept_failure(&failure, &trace).map_err(|_| ComponentServerError::Protocol)?;
+                encode_failure(&failure).map_err(|_| ComponentServerError::Protocol)?
+            },
+        };
+        stream
+            .set_write_timeout(Some(limits.deadline.min(Duration::from_secs(1))))
+            .map_err(ComponentServerError::Io)?;
+        let written = write_frame(stream, &response, limits.maximum_frame_bytes)
+            .map_err(|_| ComponentServerError::Protocol);
+        response.zeroize();
+        return written;
+    }
     let mut response = dispatcher.dispatch_frame(&mut frame);
     let result = write_frame(stream, &response, limits.maximum_frame_bytes)
         .map_err(|_| ComponentServerError::Protocol);

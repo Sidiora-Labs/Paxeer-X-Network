@@ -1603,6 +1603,7 @@ fn put_stream_progress(
             outbox,
         ],
     )?;
+    crate::server::stream_journal::changed();
     Ok(())
 }
 

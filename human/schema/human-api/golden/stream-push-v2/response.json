@@ -1,0 +1,11 @@
+{
+  "status": 200,
+  "headers": {
+    "Content-Type": "text/event-stream; charset=utf-8",
+    "X-LayerX-Stream-Profile": "2"
+  },
+  "frames": [
+    "event: stream.page\ndata: {\"ok\":true,\"result\":{\"events\":[{\"cursor\":\"cur-000000000000000043\",\"kind\":\"journey-progress\",\"observed_at\":\"2026-08-18T09:31:42Z\",\"journey\":{\"journey_id\":\"jrn_01j2gx3fam9kq4vte8n5w6y7z8\",\"kind\":\"deposit\",\"state\":\"processing\",\"state_copy_key\":\"status.processing\",\"stages\":[{\"stage_id\":\"stg_01j2gx3famm2x3y4z5a6b7c8d9\",\"copy_key\":\"deposit.stage.crediting\",\"state\":\"processing\",\"evidence\":[{\"evidence_id\":\"evd_01j2gx3famn4z5a6b7c8d9e0f1\",\"class\":\"submission-record\",\"verification\":\"unverified\"}]}],\"evidence\":[{\"evidence_id\":\"evd_01j2gx3famp6b7c8d9e0f1g2h3\",\"class\":\"local-journey-state\",\"verification\":\"unverified\"}],\"started_at\":\"2026-08-18T09:30:00Z\",\"updated_at\":\"2026-08-18T09:31:42Z\"}}],\"next_cursor\":\"cur-000000000000000043\"},\"trace\":\"trc_01j2gx8f6ma1b2c3d4e5f6g7h8\"}\n\n",
+    "event: stream.page\ndata: {\"ok\":true,\"result\":{\"events\":[{\"cursor\":\"cur-000000000000000044\",\"kind\":\"notification\",\"observed_at\":\"2026-08-18T09:31:44Z\"}],\"next_cursor\":\"cur-000000000000000044\"},\"trace\":\"trc_01j2gx8f6ma1b2c3d4e5f6g7h8\"}\n\n"
+  ]
+}

@@ -7,10 +7,40 @@ use layerx_proof::checkpoint::SettlementDomain;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest as _, Sha256};
+use std::sync::{Condvar, Mutex, OnceLock};
+use std::time::Duration;
 
 const HEAD: &str = "stream-head";
 const DOMAIN: &[u8] = b"layerx-human-stream-cursor/v1";
-const MAX_PAGE: usize = 100;
+pub(crate) const MAX_PAGE: usize = 100;
+
+static CHANGE: OnceLock<(Mutex<u64>, Condvar)> = OnceLock::new();
+
+pub(crate) fn change_position() -> Result<u64, ApiFailure> {
+    CHANGE
+        .get_or_init(|| (Mutex::new(0), Condvar::new()))
+        .0
+        .lock()
+        .map(|value| *value)
+        .map_err(|_| ApiFailure::unavailable())
+}
+
+pub(crate) fn changed() {
+    let (revision, signal) = CHANGE.get_or_init(|| (Mutex::new(0), Condvar::new()));
+    if let Ok(mut revision) = revision.lock() {
+        *revision = revision.wrapping_add(1);
+        signal.notify_all();
+    }
+}
+
+pub(crate) fn wait_for_change(after: u64, remaining: Duration) -> Result<(), ApiFailure> {
+    let (revision, signal) = CHANGE.get_or_init(|| (Mutex::new(0), Condvar::new()));
+    let revision = revision.lock().map_err(|_| ApiFailure::unavailable())?;
+    let _waited = signal
+        .wait_timeout_while(revision, remaining, |revision| *revision == after)
+        .map_err(|_| ApiFailure::unavailable())?;
+    Ok(())
+}
 
 #[derive(Serialize, Deserialize)]
 struct Event {
@@ -133,7 +163,9 @@ impl StreamJournal {
         }
         scope
             .put_batch(observed_at, rows)
-            .map_err(|error| store_failure(&error))
+            .map_err(|error| store_failure(&error))?;
+        changed();
+        Ok(())
     }
 
     pub fn open(&self, scope: &PrincipalScope<'_>) -> Result<Value, ApiFailure> {
@@ -186,9 +218,50 @@ impl StreamJournal {
             } else {
                 None
             };
-            events.push(json!({"cursor":self.cursor(scope,sequence),"kind":event.kind,"observed_at":event.observed_at,"journey":journey.or_else(||event.payload.get("journey").cloned()),"approval":event.payload.get("approval"),"notification":event.payload.get("notification")}));
+            let mut value = json!({"cursor":self.cursor(scope,sequence),"kind":event.kind,"observed_at":crate::time::rfc3339(event.observed_at)});
+            for (name, payload) in [
+                (
+                    "journey",
+                    journey.or_else(|| event.payload.get("journey").cloned()),
+                ),
+                ("approval", event.payload.get("approval").cloned()),
+                ("notification", event.payload.get("notification").cloned()),
+            ] {
+                if let Some(payload) = payload.filter(|value| !value.is_null()) {
+                    value[name] = payload;
+                }
+            }
+            events.push(value);
         }
         Ok(json!({"events":events,"next_cursor":self.cursor(scope,through)}))
+    }
+    pub(crate) fn next_push(
+        &self,
+        scope: &PrincipalScope<'_>,
+        cursor: &str,
+    ) -> Result<Value, ApiFailure> {
+        let after = self.decode_cursor(scope, cursor)?;
+        let head = Self::head(scope)?;
+        let first = scope
+            .keys(Table::Stream)
+            .into_iter()
+            .filter_map(|key| {
+                key.as_str()
+                    .strip_prefix("stream-event-")
+                    .and_then(|value| u64::from_str_radix(value, 16).ok())
+            })
+            .min();
+        if first.is_some_and(|first| after < head && after.saturating_add(1) < first) {
+            return Err(ApiFailure {
+                status: 410,
+                code: "cursor-expired".to_owned(),
+                copy_key: "error.cursor.expired".to_owned(),
+                retry: "structural".to_owned(),
+                retry_after_ms: None,
+                field: Some("cursor".to_owned()),
+            });
+        }
+        self.next(scope, cursor)
     }
     fn head(scope: &PrincipalScope<'_>) -> Result<u64, ApiFailure> {
         let key = RowKey::new(HEAD).map_err(|error| store_failure(&error))?;
@@ -231,6 +304,26 @@ impl StreamJournal {
             |_| ApiFailure::invalid_request(Some("cursor")),
         )?))
     }
+}
+
+pub(crate) fn notification_wire(
+    summary: &crate::notify::NotificationSummary,
+) -> Result<Value, ApiFailure> {
+    let mut payload: serde_json::Map<String, Value> =
+        serde_json::from_str(summary.delivery().payload())
+            .map_err(|_| ApiFailure::upstream_degraded())?;
+    payload.insert(
+        "notification_id".to_owned(),
+        json!(summary.notification_id().as_str()),
+    );
+    payload.insert("class".to_owned(), json!(summary.class().as_str()));
+    payload.insert("deep_link".to_owned(), json!(summary.deep_link()));
+    payload.insert("read".to_owned(), json!(summary.read()));
+    payload.insert(
+        "created_at".to_owned(),
+        json!(crate::time::rfc3339(summary.created_at())),
+    );
+    Ok(Value::Object(payload))
 }
 fn decode_u64(bytes: &[u8]) -> Result<u64, ApiFailure> {
     Ok(u64::from_be_bytes(

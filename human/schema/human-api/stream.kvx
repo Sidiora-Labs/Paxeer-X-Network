@@ -33,3 +33,24 @@ method = "GET"
 path = "/v1/stream/{cursor}"
 request = "Empty"
 response = "StreamPage"
+
+[transport.stream_push_v2]
+operation = "stream.next"
+profile = 2
+accept = "text/event-stream"
+profile_header = "X-LayerX-Stream-Profile"
+profile_value = "2"
+content_type = "text/event-stream; charset=utf-8"
+success_event = "stream.page"
+error_event = "stream.error"
+framing = "Each UTF-8 frame has exactly one event line, exactly one data line containing the existing ResponseEnvelope JSON, and an LF LF terminator. No id, retry, heartbeat or other fields are emitted."
+page = "A stream.page frame contains exactly one existing StreamEvent and next_cursor equals that delivered event cursor. stream.error contains the existing typed failure envelope and terminates the connection."
+maximum_events = 100
+maximum_payload_bytes = 1048576
+maximum_framing_bytes = 6400
+maximum_cursor_bytes = 512
+maximum_authorization_seconds = 60
+maximum_json_depth = 64
+authorization = "The existing read entitlement, principal-scoped passkey session and one-use stream.next execution capability authorize the whole connection. Aggregate events and serialized envelope bytes never exceed the original single-page budget or any smaller configured component frame bound. The connection closes by capability or session expiry, whichever occurs first."
+resumption = "Every reconnect authenticates a new stream.next request from the last event the caller processed. The iterator yields events individually and never advances processing state for buffered or undelivered events."
+client = "HumanApiClient.streamSubscribe(cursor, {signal?}) returns AsyncIterable<StreamEvent>. Abort cancels pending transport and completes the iterator. Clean finite close requires caller-controlled reconnect; typed failures are thrown through HumanApiError and malformed frames through HumanApiDecodeError."

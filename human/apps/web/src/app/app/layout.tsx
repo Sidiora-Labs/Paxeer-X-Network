@@ -20,7 +20,7 @@ export default async function AppPlaneLayout({ children }: Readonly<{ children: 
 
   return (
     <PrivacyModeProvider principalScope={privacyPrincipalScope(session.principalScope)}>
-      <NotificationCenterProvider>
+      <NotificationCenterProvider key={JSON.stringify([session.accountId, session.sessionId])}>
         <AuthenticatedShell initialSelection={selectServerShell(requestHeaders, requestCookies)}>
           {children}
         </AuthenticatedShell>

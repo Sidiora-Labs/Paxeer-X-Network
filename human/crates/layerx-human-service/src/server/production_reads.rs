@@ -268,7 +268,7 @@ pub(super) fn journey_json(
     Ok(
         json!({"journey_id": status.journey_id().as_str(), "kind": kind_label(journey.kind()), "state": state,
         "state_copy_key": format!("journey.state.{state}"), "stages": stages, "evidence": evidence,
-        "started_at": journey.started_at(), "updated_at": journey.updated_at()}),
+        "started_at": crate::time::rfc3339(journey.started_at()), "updated_at": crate::time::rfc3339(journey.updated_at())}),
     )
 }
 

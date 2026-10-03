@@ -56,6 +56,8 @@ pub(super) enum ComponentRequest {
     #[serde(rename = "human-api.execute")]
     Execute {
         version: u64,
+        #[serde(default)]
+        stream_profile: Option<u64>,
         component: String,
         operation: String,
         principal: Option<WirePrincipal>,
@@ -178,6 +180,7 @@ impl ComponentRequest {
             }
             Self::Execute {
                 version,
+                stream_profile,
                 component,
                 operation,
                 principal,
@@ -188,6 +191,11 @@ impl ComponentRequest {
             } => {
                 valid_version(*version)?;
                 valid_operation(operation)?;
+                if stream_profile.is_some_and(|profile| profile != 2)
+                    || (stream_profile.is_some() && operation != "stream.next")
+                {
+                    return Err(ApiFailure::invalid_request(Some("stream_profile")));
+                }
                 if component.is_empty()
                     || component.len() > OPERATION_LIMIT
                     || !component.bytes().all(|byte| {

@@ -28,7 +28,7 @@ k256.workspace = true
 subtle.workspace = true
 zeroize.workspace = true
 rustls = { version = "0.23.32", default-features = false, features = ["ring", "std", "tls12"] }
-rustix = { workspace = true, features = ["fs"] }
+rustix = { workspace = true, features = ["fs", "event"] }
 layerx-human-kms = { path = "../layerx-human-kms" }
 
 [dev-dependencies]

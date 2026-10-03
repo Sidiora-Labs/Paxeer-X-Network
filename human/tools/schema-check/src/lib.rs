@@ -328,7 +328,11 @@ fn parse_list(value: &str) -> Option<Vec<String>> {
 fn additive_list_extension(previous: &str, current: &str) -> bool {
     match (parse_list(previous), parse_list(current)) {
         (Some(old), Some(new)) => {
-            new.len() >= old.len() && old.iter().zip(new.iter()).all(|(before, after)| before == after)
+            new.len() >= old.len()
+                && old
+                    .iter()
+                    .zip(new.iter())
+                    .all(|(before, after)| before == after)
         }
         _ => false,
     }
@@ -421,7 +425,10 @@ fn load_kvx(root: &Path, name: &str, violations: &mut Vec<Violation>) -> Option<
     }
 }
 
-fn quoted<'entries>(entries: &'entries BTreeMap<String, String>, key: &str) -> Option<&'entries str> {
+fn quoted<'entries>(
+    entries: &'entries BTreeMap<String, String>,
+    key: &str,
+) -> Option<&'entries str> {
     entries.get(key).map(String::as_str).and_then(unquote)
 }
 
@@ -447,7 +454,10 @@ fn check_header(file: &SchemaFile, violations: &mut Vec<Violation>) -> Header {
             "schema.name must be a quoted non-empty string",
         )),
     }
-    match schema.get("major").and_then(|value| value.parse::<u32>().ok()) {
+    match schema
+        .get("major")
+        .and_then(|value| value.parse::<u32>().ok())
+    {
         Some(major) if major >= 1 => header.major = major,
         _ => violations.push(violation(
             &file.path,
@@ -455,7 +465,10 @@ fn check_header(file: &SchemaFile, violations: &mut Vec<Violation>) -> Header {
             "schema.major must be an explicit integer of at least 1",
         )),
     }
-    match schema.get("minor").and_then(|value| value.parse::<u32>().ok()) {
+    match schema
+        .get("minor")
+        .and_then(|value| value.parse::<u32>().ok())
+    {
         Some(minor) => header.minor = minor,
         None => violations.push(violation(
             &file.path,
@@ -471,7 +484,11 @@ fn check_header(file: &SchemaFile, violations: &mut Vec<Violation>) -> Header {
             "schema.compatibility must state the additive-only rule",
         )),
     }
-    match schema.get("includes").map(String::as_str).and_then(parse_list) {
+    match schema
+        .get("includes")
+        .map(String::as_str)
+        .and_then(parse_list)
+    {
         Some(includes) => header.includes = includes,
         None => violations.push(violation(
             &file.path,
@@ -743,7 +760,9 @@ fn collect_scalar(
     }
     let prefix = quoted(entries, "prefix").map(str::to_owned);
     if name_is_free(model, name) {
-        model.scalars.insert(name.to_owned(), Scalar { format, prefix });
+        model
+            .scalars
+            .insert(name.to_owned(), Scalar { format, prefix });
     } else {
         violations.push(violation(
             &file.path,
@@ -832,7 +851,11 @@ fn collect_operation(
             false
         }
     };
-    if model.operations.iter().any(|existing| existing.name == name) {
+    if model
+        .operations
+        .iter()
+        .any(|existing| existing.name == name)
+    {
         violations.push(violation(
             &file.path,
             "duplicate-declaration",
@@ -869,7 +892,9 @@ fn collect_declarations(files: &[SchemaFile], violations: &mut Vec<Violation>) -
                         collect_enum(file, name, variants, &mut model, violations);
                     }
                 } else if entries.contains_key("required") {
-                    collect_record(file, section, name, entries, "required", &mut model, violations);
+                    collect_record(
+                        file, section, name, entries, "required", &mut model, violations,
+                    );
                 } else {
                     violations.push(violation(
                         &file.path,
@@ -878,7 +903,9 @@ fn collect_declarations(files: &[SchemaFile], violations: &mut Vec<Violation>) -
                     ));
                 }
             } else if let Some(name) = section.strip_prefix("record.") {
-                collect_record(file, section, name, entries, "fields", &mut model, violations);
+                collect_record(
+                    file, section, name, entries, "fields", &mut model, violations,
+                );
             } else if let Some(name) = section.strip_prefix("operation.") {
                 collect_operation(file, name, entries, &mut model, violations);
             }
@@ -913,7 +940,10 @@ fn check_type_references(model: &Model, violations: &mut Vec<Violation>) {
                 violations.push(violation(
                     &record.origin,
                     "unresolved-type",
-                    format!("{name}.{} references undeclared type {}", field.name, field.type_name),
+                    format!(
+                        "{name}.{} references undeclared type {}",
+                        field.name, field.type_name
+                    ),
                 ));
             }
         }
@@ -943,7 +973,10 @@ fn check_operation_declarations(
             violations.push(violation(
                 &operation.origin,
                 "invalid-operation-path",
-                format!("operation.{} path {} has a malformed segment", operation.name, operation.path),
+                format!(
+                    "operation.{} path {} has a malformed segment",
+                    operation.name, operation.path
+                ),
             ));
         }
         for type_name in [&operation.request, &operation.response] {
@@ -951,7 +984,10 @@ fn check_operation_declarations(
                 violations.push(violation(
                     &operation.origin,
                     "unresolved-type",
-                    format!("operation.{} references undeclared type {type_name}", operation.name),
+                    format!(
+                        "operation.{} references undeclared type {type_name}",
+                        operation.name
+                    ),
                 ));
             }
         }
@@ -962,7 +998,9 @@ fn format_matches(format: &str, text: &str) -> bool {
     match format {
         "decimal" => !text.is_empty() && text.bytes().all(|byte| byte.is_ascii_digit()),
         "currency" => {
-            text.bytes().next().is_some_and(|first| first.is_ascii_uppercase())
+            text.bytes()
+                .next()
+                .is_some_and(|first| first.is_ascii_uppercase())
                 && text
                     .bytes()
                     .all(|byte| byte.is_ascii_uppercase() || byte.is_ascii_digit())
@@ -1077,7 +1115,8 @@ fn check_value(
             if let Some(scalar) = model.scalars.get(type_name) {
                 check_scalar_value(scalar, type_name, value, path, location, violations);
             } else if let Some(definition) = model.enums.get(type_name) {
-                let declared = matches!(value, Json::String(text) if definition.variants.contains(text));
+                let declared =
+                    matches!(value, Json::String(text) if definition.variants.contains(text));
                 if !declared {
                     violations.push(violation(
                         path,
@@ -1195,12 +1234,15 @@ fn path_matches_template(template: &str, actual: &str) -> bool {
     let pattern: Vec<&str> = template.split('/').collect();
     let segments: Vec<&str> = actual.split('/').collect();
     pattern.len() == segments.len()
-        && pattern.iter().zip(segments.iter()).all(|(expected, segment)| {
-            expected
-                .strip_prefix('{')
-                .and_then(|inner| inner.strip_suffix('}'))
-                .map_or_else(|| expected == segment, |_| !segment.is_empty())
-        })
+        && pattern
+            .iter()
+            .zip(segments.iter())
+            .all(|(expected, segment)| {
+                expected
+                    .strip_prefix('{')
+                    .and_then(|inner| inner.strip_suffix('}'))
+                    .map_or_else(|| expected == segment, |_| !segment.is_empty())
+            })
 }
 
 fn request_is_bodyless(model: &Model, type_name: &str) -> bool {
@@ -1219,7 +1261,11 @@ fn check_golden_request(
     violations: &mut Vec<Violation>,
 ) {
     let Json::Object(pairs) = vector else {
-        violations.push(violation(path, "invalid-golden-vector", "request vector must be a JSON object"));
+        violations.push(violation(
+            path,
+            "invalid-golden-vector",
+            "request vector must be a JSON object",
+        ));
         return;
     };
     for (key, _) in pairs {
@@ -1248,13 +1294,20 @@ fn check_golden_request(
         violations.push(violation(
             path,
             "golden-path-mismatch",
-            format!("request vector path must match the template {}", operation.path),
+            format!(
+                "request vector path must match the template {}",
+                operation.path
+            ),
         ));
     }
     let headers = vector.field("headers");
     if let Some(value) = headers {
         let Json::Object(entries) = value else {
-            violations.push(violation(path, "invalid-golden-vector", "headers must be a JSON object"));
+            violations.push(violation(
+                path,
+                "invalid-golden-vector",
+                "headers must be a JSON object",
+            ));
             return;
         };
         for (name, header) in entries {
@@ -1288,7 +1341,10 @@ fn check_golden_request(
         None => violations.push(violation(
             path,
             "missing-request-body",
-            format!("operation.{} declares request {}", operation.name, operation.request),
+            format!(
+                "operation.{} declares request {}",
+                operation.name, operation.request
+            ),
         )),
     }
 }
@@ -1301,7 +1357,11 @@ fn check_golden_response(
     violations: &mut Vec<Violation>,
 ) {
     let Json::Object(pairs) = vector else {
-        violations.push(violation(path, "invalid-golden-vector", "response vector must be a JSON object"));
+        violations.push(violation(
+            path,
+            "invalid-golden-vector",
+            "response vector must be a JSON object",
+        ));
         return;
     };
     for (key, _) in pairs {
@@ -1326,7 +1386,11 @@ fn check_golden_response(
         ));
     }
     let Some(body @ Json::Object(body_pairs)) = vector.field("body") else {
-        violations.push(violation(path, "invalid-response-envelope", "response vector body must be a JSON object"));
+        violations.push(violation(
+            path,
+            "invalid-response-envelope",
+            "response vector body must be a JSON object",
+        ));
         return;
     };
     for (key, _) in body_pairs {
@@ -1358,7 +1422,14 @@ fn check_golden_response(
         )),
     }
     match body.field("result") {
-        Some(result) => check_value(model, &operation.response, result, path, "body.result", violations),
+        Some(result) => check_value(
+            model,
+            &operation.response,
+            result,
+            path,
+            "body.result",
+            violations,
+        ),
         None => violations.push(violation(
             path,
             "invalid-response-envelope",
@@ -1379,7 +1450,11 @@ fn human_api_error_model(model: &Model, root: &Path, violations: &mut Vec<Violat
         ));
         return;
     };
-    for (field, wanted) in [("code", "ErrorCode"), ("copy_key", "CopyKey"), ("retry", "Retriability")] {
+    for (field, wanted) in [
+        ("code", "ErrorCode"),
+        ("copy_key", "CopyKey"),
+        ("retry", "Retriability"),
+    ] {
         let carried = record
             .required
             .iter()
@@ -1408,7 +1483,11 @@ fn human_api_error_model(model: &Model, root: &Path, violations: &mut Vec<Violat
 fn human_api_stream_module(model: &Model, root: &Path, violations: &mut Vec<Violation>) {
     let origin = root.join("stream.kvx");
     for operation in ["stream.open", "stream.next"] {
-        if !model.operations.iter().any(|declared| declared.name == operation) {
+        if !model
+            .operations
+            .iter()
+            .any(|declared| declared.name == operation)
+        {
             violations.push(violation(
                 &origin,
                 "missing-stream-module",
@@ -1424,7 +1503,11 @@ fn human_api_stream_module(model: &Model, root: &Path, violations: &mut Vec<Viol
         ));
         return;
     };
-    for (field, wanted) in [("cursor", "Cursor"), ("kind", "StreamEventKind"), ("observed_at", "Timestamp")] {
+    for (field, wanted) in [
+        ("cursor", "Cursor"),
+        ("kind", "StreamEventKind"),
+        ("observed_at", "Timestamp"),
+    ] {
         let carried = event
             .required
             .iter()
@@ -1438,8 +1521,13 @@ fn human_api_stream_module(model: &Model, root: &Path, violations: &mut Vec<Viol
         }
     }
     let paged = model.records.get("StreamPage").is_some_and(|page| {
-        page.required.iter().any(|declared| declared.name == "events" && declared.array)
-            && page.required.iter().any(|declared| declared.name == "next_cursor")
+        page.required
+            .iter()
+            .any(|declared| declared.name == "events" && declared.array)
+            && page
+                .required
+                .iter()
+                .any(|declared| declared.name == "next_cursor")
     });
     if !paged {
         violations.push(violation(
@@ -1450,13 +1538,283 @@ fn human_api_stream_module(model: &Model, root: &Path, violations: &mut Vec<Viol
     }
 }
 
+fn human_api_stream_push(
+    files: &[SchemaFile],
+    model: &Model,
+    root: &Path,
+    violations: &mut Vec<Violation>,
+) -> bool {
+    let Some(file) = files
+        .iter()
+        .find(|file| file.sections.contains_key("transport.stream_push_v2"))
+    else {
+        return false;
+    };
+    let entries = &file.sections["transport.stream_push_v2"];
+    if files
+        .iter()
+        .find_map(|file| file.sections.get("operation.stream.next"))
+        .and_then(|entries| quoted(entries, "authorization_class"))
+        != Some("read")
+    {
+        violations.push(violation(
+            &file.path,
+            "invalid-stream-push-operation",
+            "push must retain the existing stream.next read entitlement",
+        ));
+    }
+    for (key, expected) in [
+        ("operation", "\"stream.next\""),
+        ("profile", "2"),
+        ("accept", "\"text/event-stream\""),
+        ("profile_header", "\"X-LayerX-Stream-Profile\""),
+        ("profile_value", "\"2\""),
+        ("content_type", "\"text/event-stream; charset=utf-8\""),
+        ("success_event", "\"stream.page\""),
+        ("error_event", "\"stream.error\""),
+        ("maximum_events", "100"),
+        ("maximum_payload_bytes", "1048576"),
+        ("maximum_framing_bytes", "6400"),
+        ("maximum_cursor_bytes", "512"),
+        ("maximum_authorization_seconds", "60"),
+        ("maximum_json_depth", "64"),
+    ] {
+        if entries.get(key).map(String::as_str) != Some(expected) {
+            violations.push(violation(
+                &file.path,
+                "invalid-stream-push-profile",
+                format!("stream_push_v2.{key} must equal {expected}"),
+            ));
+        }
+    }
+    let Some(operation) = model
+        .operations
+        .iter()
+        .find(|operation| operation.name == "stream.next")
+    else {
+        return true;
+    };
+    if operation.method != "GET"
+        || operation.path != "/v1/stream/{cursor}"
+        || operation.request != "Empty"
+        || operation.response != "StreamPage"
+    {
+        violations.push(violation(
+            &file.path,
+            "invalid-stream-push-operation",
+            "push must retain the existing stream.next operation shape",
+        ));
+    }
+    let directory = root.join("golden/stream-push-v2");
+    let names = ["request.json", "response.json", "failure.json"];
+    match fs::read_dir(&directory) {
+        Ok(paths) => {
+            for entry in paths.flatten() {
+                if !names.iter().any(|name| entry.file_name() == *name) || !entry.path().is_file() {
+                    violations.push(violation(
+                        &entry.path(),
+                        "orphan-stream-push-vector",
+                        "stream_push_v2 owns exactly request.json, response.json and failure.json",
+                    ));
+                }
+            }
+        }
+        Err(_) => violations.push(violation(
+            &directory,
+            "missing-stream-push-vector",
+            "stream_push_v2 requires its versioned golden vector directory",
+        )),
+    }
+    for name in names {
+        let path = directory.join(name);
+        let vector = match fs::read_to_string(&path)
+            .ok()
+            .and_then(|body| parse_json(&body).ok())
+        {
+            Some(value) => value,
+            None => {
+                violations.push(violation(
+                    &path,
+                    "invalid-stream-push-vector",
+                    "missing or invalid JSON vector",
+                ));
+                continue;
+            }
+        };
+        if name == "request.json" {
+            let Some(headers) = vector.field("headers") else {
+                violations.push(violation(
+                    &path,
+                    "invalid-stream-push-vector",
+                    "request must carry the explicit push headers",
+                ));
+                continue;
+            };
+            for (key, expected) in [
+                ("Accept", "text/event-stream"),
+                ("X-LayerX-Stream-Profile", "2"),
+            ] {
+                if headers.field(key) != Some(&Json::String(expected.to_owned())) {
+                    violations.push(violation(
+                        &path,
+                        "invalid-stream-push-vector",
+                        "request push headers differ",
+                    ));
+                }
+            }
+            if vector.field("method") != Some(&Json::String("GET".to_owned()))
+                || !matches!(vector.field("path"), Some(Json::String(path)) if path.starts_with("/v1/stream/"))
+                || vector.field("body").is_some()
+            {
+                violations.push(violation(
+                    &path,
+                    "invalid-stream-push-vector",
+                    "request must retain bodyless stream.next GET",
+                ));
+            }
+            continue;
+        }
+        if vector.field("status") != Some(&Json::Number("200".to_owned())) {
+            violations.push(violation(
+                &path,
+                "invalid-stream-push-vector",
+                "push response status must be 200",
+            ));
+        }
+        let headers = vector.field("headers");
+        for (key, expected) in [
+            ("Content-Type", "text/event-stream; charset=utf-8"),
+            ("X-LayerX-Stream-Profile", "2"),
+        ] {
+            if headers.and_then(|headers| headers.field(key))
+                != Some(&Json::String(expected.to_owned()))
+            {
+                violations.push(violation(
+                    &path,
+                    "invalid-stream-push-vector",
+                    "response push headers differ",
+                ));
+            }
+        }
+        let Some(Json::Array(frames)) = vector.field("frames") else {
+            violations.push(violation(
+                &path,
+                "invalid-stream-push-vector",
+                "response must contain frames",
+            ));
+            continue;
+        };
+        if frames.is_empty() || frames.len() > 100 || (name == "failure.json" && frames.len() != 1)
+        {
+            violations.push(violation(
+                &path,
+                "invalid-stream-push-vector",
+                "invalid frame count",
+            ));
+        }
+        let mut payload_bytes = 0_usize;
+        let mut wire_bytes = 0_usize;
+        let mut previous_cursor: Option<String> = None;
+        for frame in frames {
+            let Json::String(frame) = frame else {
+                violations.push(violation(
+                    &path,
+                    "invalid-stream-push-vector",
+                    "frame must be a UTF-8 string",
+                ));
+                continue;
+            };
+            wire_bytes = wire_bytes.saturating_add(frame.len());
+            let event = if name == "failure.json" {
+                "stream.error"
+            } else {
+                "stream.page"
+            };
+            let prefix = format!("event: {event}\ndata: ");
+            let Some(data) = frame
+                .strip_prefix(&prefix)
+                .and_then(|frame| frame.strip_suffix("\n\n"))
+                .filter(|data| !data.contains(['\n', '\r']))
+            else {
+                violations.push(violation(
+                    &path,
+                    "invalid-stream-push-vector",
+                    "frame must contain exactly its event and data lines",
+                ));
+                continue;
+            };
+            payload_bytes = payload_bytes.saturating_add(data.len());
+            let Ok(body) = parse_json(data) else {
+                violations.push(violation(
+                    &path,
+                    "invalid-stream-push-vector",
+                    "frame envelope is invalid JSON",
+                ));
+                continue;
+            };
+            let wrapped = Json::Object(vec![
+                (
+                    "status".to_owned(),
+                    Json::Number(if name == "failure.json" { "410" } else { "200" }.to_owned()),
+                ),
+                ("body".to_owned(), body.clone()),
+            ]);
+            if name == "failure.json" {
+                check_golden_failure(model, operation, &path, &wrapped, violations);
+            } else {
+                check_golden_response(model, operation, &path, &wrapped, violations);
+                let result = body.field("result");
+                let events = result.and_then(|result| result.field("events"));
+                let cursor = match events {
+                    Some(Json::Array(events)) if events.len() == 1 => events[0].field("cursor"),
+                    _ => None,
+                };
+                if cursor.is_none()
+                    || cursor != result.and_then(|result| result.field("next_cursor"))
+                {
+                    violations.push(violation(
+                        &path,
+                        "invalid-stream-push-vector",
+                        "next_cursor must equal the single delivered event cursor",
+                    ));
+                }
+                if let Some(Json::String(cursor)) = cursor {
+                    if cursor.is_empty()
+                        || cursor.len() > 512
+                        || previous_cursor.as_ref() == Some(cursor)
+                    {
+                        violations.push(violation(
+                            &path,
+                            "invalid-stream-push-vector",
+                            "event cursor is empty, repeated or exceeds its bound",
+                        ));
+                    }
+                    previous_cursor = Some(cursor.clone());
+                }
+            }
+        }
+        if payload_bytes > 1_048_576 || wire_bytes > 1_048_576 + 6_400 {
+            violations.push(violation(
+                &path,
+                "invalid-stream-push-vector",
+                "subscription exceeds original aggregate payload bound",
+            ));
+        }
+    }
+    true
+}
+
 /// Enforces the identity module spine: account creation, session revocation,
 /// the operation-bound step-up challenge shape and the wallet-binding
 /// submission the authenticated plane stands on.
 fn human_api_identity_module(model: &Model, root: &Path, violations: &mut Vec<Violation>) {
     let origin = root.join("identity.kvx");
     for operation in ["account.create", "session.revoke", "binding.submit"] {
-        if !model.operations.iter().any(|declared| declared.name == operation) {
+        if !model
+            .operations
+            .iter()
+            .any(|declared| declared.name == operation)
+        {
             violations.push(violation(
                 &origin,
                 "missing-identity-module",
@@ -1494,10 +1852,9 @@ fn human_api_identity_module(model: &Model, root: &Path, violations: &mut Vec<Vi
             .required
             .iter()
             .any(|declared| declared.name == "device" && declared.type_name == "Device")
-            && session
-                .required
-                .iter()
-                .any(|declared| declared.name == "last_active_at" && declared.type_name == "Timestamp")
+            && session.required.iter().any(|declared| {
+                declared.name == "last_active_at" && declared.type_name == "Timestamp"
+            })
     });
     if !inventoried {
         violations.push(violation(
@@ -1513,8 +1870,17 @@ fn human_api_identity_module(model: &Model, root: &Path, violations: &mut Vec<Vi
 /// the estimate/ceiling split the quote presents before commitment.
 fn human_api_movement_module(model: &Model, root: &Path, violations: &mut Vec<Violation>) {
     let origin = root.join("movement.kvx");
-    for operation in ["move.quote", "move.commit", "deposit.start", "withdraw.start"] {
-        if !model.operations.iter().any(|declared| declared.name == operation) {
+    for operation in [
+        "move.quote",
+        "move.commit",
+        "deposit.start",
+        "withdraw.start",
+    ] {
+        if !model
+            .operations
+            .iter()
+            .any(|declared| declared.name == operation)
+        {
             violations.push(violation(
                 &origin,
                 "missing-movement-module",
@@ -1545,8 +1911,14 @@ fn human_api_movement_module(model: &Model, root: &Path, violations: &mut Vec<Vi
         )),
     }
     let separated = model.records.get("MoveQuote").is_some_and(|quote| {
-        quote.required.iter().any(|declared| declared.name == "fee_estimate")
-            && quote.required.iter().any(|declared| declared.name == "fee_ceiling")
+        quote
+            .required
+            .iter()
+            .any(|declared| declared.name == "fee_estimate")
+            && quote
+                .required
+                .iter()
+                .any(|declared| declared.name == "fee_ceiling")
     });
     if !separated {
         violations.push(violation(
@@ -1670,7 +2042,9 @@ fn human_api_settlement_domains(
         }
     }
     for operation in CUSTODY_CLAIM_OPERATIONS {
-        let path = root.join("golden").join(format!("{operation}.request.json"));
+        let path = root
+            .join("golden")
+            .join(format!("{operation}.request.json"));
         let Ok(source) = fs::read_to_string(&path) else {
             continue;
         };
@@ -1701,7 +2075,11 @@ fn human_api_settlement_domains(
 fn human_api_agent_module(model: &Model, root: &Path, violations: &mut Vec<Violation>) {
     let origin = root.join("agents.kvx");
     for operation in ["agent.create", "agent.archive", "approval.approve"] {
-        if !model.operations.iter().any(|declared| declared.name == operation) {
+        if !model
+            .operations
+            .iter()
+            .any(|declared| declared.name == operation)
+        {
             violations.push(violation(
                 &origin,
                 "missing-agent-module",
@@ -1748,7 +2126,11 @@ fn human_api_activity_module(model: &Model, root: &Path, violations: &mut Vec<Vi
         "activity.export.statement",
         "activity.export.evidence",
     ] {
-        if !model.operations.iter().any(|declared| declared.name == operation) {
+        if !model
+            .operations
+            .iter()
+            .any(|declared| declared.name == operation)
+        {
             violations.push(violation(
                 &origin,
                 "missing-activity-module",
@@ -1757,9 +2139,17 @@ fn human_api_activity_module(model: &Model, root: &Path, violations: &mut Vec<Vi
         }
     }
     let paged = model.records.get("ActivityPage").is_some_and(|page| {
-        page.required.iter().any(|declared| declared.name == "groups" && declared.array)
-            && page.required.iter().any(|declared| declared.name == "next_cursor")
-            && page.required.iter().any(|declared| declared.name == "filter")
+        page.required
+            .iter()
+            .any(|declared| declared.name == "groups" && declared.array)
+            && page
+                .required
+                .iter()
+                .any(|declared| declared.name == "next_cursor")
+            && page
+                .required
+                .iter()
+                .any(|declared| declared.name == "filter")
     });
     if !paged {
         violations.push(violation(
@@ -1778,7 +2168,11 @@ fn check_golden_failure(
     violations: &mut Vec<Violation>,
 ) {
     let Json::Object(pairs) = vector else {
-        violations.push(violation(path, "invalid-golden-vector", "failure vector must be a JSON object"));
+        violations.push(violation(
+            path,
+            "invalid-golden-vector",
+            "failure vector must be a JSON object",
+        ));
         return;
     };
     for (key, _) in pairs {
@@ -1803,7 +2197,11 @@ fn check_golden_failure(
         ));
     }
     let Some(body @ Json::Object(body_pairs)) = vector.field("body") else {
-        violations.push(violation(path, "invalid-failure-envelope", "failure vector body must be a JSON object"));
+        violations.push(violation(
+            path,
+            "invalid-failure-envelope",
+            "failure vector body must be a JSON object",
+        ));
         return;
     };
     for (key, _) in body_pairs {
@@ -1842,7 +2240,10 @@ fn check_golden_failure(
         None => violations.push(violation(
             path,
             "invalid-failure-envelope",
-            format!("operation.{} failure envelope must carry the structured error", operation.name),
+            format!(
+                "operation.{} failure envelope must carry the structured error",
+                operation.name
+            ),
         )),
     }
 }
@@ -1855,12 +2256,21 @@ fn check_golden(
     violations: &mut Vec<Violation>,
 ) -> usize {
     let mut vectors = 0;
-    let request_path = root.join("golden").join(format!("{}.request.json", operation.name));
+    let request_path = root
+        .join("golden")
+        .join(format!("{}.request.json", operation.name));
     match fs::read_to_string(&request_path) {
         Ok(body) => match parse_json(&body) {
             Ok(vector) => {
                 vectors += 1;
-                check_golden_request(model, encoding, operation, &request_path, &vector, violations);
+                check_golden_request(
+                    model,
+                    encoding,
+                    operation,
+                    &request_path,
+                    &vector,
+                    violations,
+                );
             }
             Err(detail) => violations.push(violation(&request_path, "invalid-golden-json", detail)),
         },
@@ -1870,14 +2280,18 @@ fn check_golden(
             format!("operation.{} has no golden request vector", operation.name),
         )),
     }
-    let response_path = root.join("golden").join(format!("{}.response.json", operation.name));
+    let response_path = root
+        .join("golden")
+        .join(format!("{}.response.json", operation.name));
     match fs::read_to_string(&response_path) {
         Ok(body) => match parse_json(&body) {
             Ok(vector) => {
                 vectors += 1;
                 check_golden_response(model, operation, &response_path, &vector, violations);
             }
-            Err(detail) => violations.push(violation(&response_path, "invalid-golden-json", detail)),
+            Err(detail) => {
+                violations.push(violation(&response_path, "invalid-golden-json", detail))
+            }
         },
         Err(_) => violations.push(violation(
             &response_path,
@@ -1885,7 +2299,9 @@ fn check_golden(
             format!("operation.{} has no golden response vector", operation.name),
         )),
     }
-    let failure_path = root.join("golden").join(format!("{}.failure.json", operation.name));
+    let failure_path = root
+        .join("golden")
+        .join(format!("{}.failure.json", operation.name));
     match fs::read_to_string(&failure_path) {
         Ok(body) => match parse_json(&body) {
             Ok(vector) => {
@@ -1903,7 +2319,7 @@ fn check_golden(
     vectors
 }
 
-fn check_orphan_goldens(root: &Path, model: &Model, violations: &mut Vec<Violation>) {
+fn check_orphan_goldens(root: &Path, model: &Model, push: bool, violations: &mut Vec<Violation>) {
     let golden = root.join("golden");
     let Ok(entries) = fs::read_dir(&golden) else {
         violations.push(violation(
@@ -1916,12 +2332,18 @@ fn check_orphan_goldens(root: &Path, model: &Model, violations: &mut Vec<Violati
     for entry in entries.flatten() {
         let path = entry.path();
         let name = entry.file_name().to_string_lossy().into_owned();
+        if push && name == "stream-push-v2" && path.is_dir() {
+            continue;
+        }
         let stem = name
             .strip_suffix(".request.json")
             .or_else(|| name.strip_suffix(".response.json"))
             .or_else(|| name.strip_suffix(".failure.json"));
         let owned = stem.is_some_and(|stem| {
-            model.operations.iter().any(|operation| operation.name == stem)
+            model
+                .operations
+                .iter()
+                .any(|operation| operation.name == stem)
         });
         if !owned {
             violations.push(violation(
@@ -1940,7 +2362,11 @@ fn check_compatibility(
     violations: &mut Vec<Violation>,
 ) -> Option<SchemaFile> {
     let file = load_kvx(root, "compatibility.kvx", violations)?;
-    match file.sections.get("compatibility").and_then(|top| quoted(top, "rule")) {
+    match file
+        .sections
+        .get("compatibility")
+        .and_then(|top| quoted(top, "rule"))
+    {
         Some(rule) if !rule.is_empty() => {}
         _ => violations.push(violation(
             &file.path,
@@ -2011,7 +2437,9 @@ fn check_baseline(
         violations.push(violation(
             &path,
             "missing-baseline",
-            format!("no frozen baseline manifest; generate it deliberately with: {REFRESH_COMMAND}"),
+            format!(
+                "no frozen baseline manifest; generate it deliberately with: {REFRESH_COMMAND}"
+            ),
         ));
         return 0;
     };
@@ -2099,15 +2527,13 @@ pub fn human_api_schema(root: &Path) -> Result<SchemaReport, Vec<Violation>> {
     let Some((header, files)) = load_all(root, &mut violations) else {
         return Err(violations);
     };
-    let encoding = files
-        .first()
-        .map_or_else(
-            || Encoding {
-                base_path: "/v1".to_owned(),
-                idempotency_header: "Idempotency-Key".to_owned(),
-            },
-            |v1| check_encoding(v1, &mut violations),
-        );
+    let encoding = files.first().map_or_else(
+        || Encoding {
+            base_path: "/v1".to_owned(),
+            idempotency_header: "Idempotency-Key".to_owned(),
+        },
+        |v1| check_encoding(v1, &mut violations),
+    );
     for file in files.iter().skip(1) {
         check_module_header(file, header.major, &mut violations);
     }
@@ -2116,6 +2542,7 @@ pub fn human_api_schema(root: &Path) -> Result<SchemaReport, Vec<Violation>> {
     check_operation_declarations(&model, &encoding, &mut violations);
     human_api_error_model(&model, root, &mut violations);
     human_api_stream_module(&model, root, &mut violations);
+    let push = human_api_stream_push(&files, &model, root, &mut violations);
     human_api_identity_module(&model, root, &mut violations);
     human_api_movement_module(&model, root, &mut violations);
     human_api_settlement_domains(&files, &model, root, &mut violations);
@@ -2125,9 +2552,10 @@ pub fn human_api_schema(root: &Path) -> Result<SchemaReport, Vec<Violation>> {
     for operation in &model.operations {
         golden_vectors += check_golden(root, &model, &encoding, operation, &mut violations);
     }
-    check_orphan_goldens(root, &model, &mut violations);
+    check_orphan_goldens(root, &model, push, &mut violations);
     let mut all_files = files;
-    if let Some(compatibility) = check_compatibility(root, header.major, header.minor, &mut violations)
+    if let Some(compatibility) =
+        check_compatibility(root, header.major, header.minor, &mut violations)
     {
         all_files.push(compatibility);
     }

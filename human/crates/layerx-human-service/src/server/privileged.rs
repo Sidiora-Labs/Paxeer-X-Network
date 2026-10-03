@@ -418,6 +418,16 @@ impl<S: PrivilegedHumanServices> HumanApiComponents for PrivilegedHumanComponent
         )
     }
 
+    fn stream(
+        &self,
+        _request: ScopedRequest<'_>,
+        _maximum_bytes: usize,
+        _emit: &mut dyn FnMut(serde_json::Value) -> Result<(), ApiFailure>,
+        _cancelled: &dyn Fn() -> bool,
+    ) -> Result<(), ApiFailure> {
+        Err(ApiFailure::unavailable())
+    }
+
     fn readiness(&self, _trace: &str) -> Result<Readiness, ApiFailure> {
         let now = self
             .clock

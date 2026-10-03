@@ -253,6 +253,23 @@ impl Dispatcher {
         } else {
             DispatchOutcome::Dispatched
         };
+        if let Some(delivery) = batch
+            .deliveries
+            .iter()
+            .find(|delivery| delivery.channel() == Channel::InApp)
+        {
+            let summary = NotificationSummary::from_delivery(scope, delivery.clone())?;
+            let payload = crate::server::stream_journal::notification_wire(&summary)
+                .map_err(|_| NotifyError::Corrupt("notification stream projection"))?;
+            crate::server::stream_journal::StreamJournal::append(
+                scope,
+                &format!("notification-delivery:{}", batch.notification_id.as_str()),
+                "notification",
+                delivery.created_at(),
+                serde_json::json!({"notification":payload}),
+            )
+            .map_err(|_| NotifyError::Corrupt("notification stream journal"))?;
+        }
         Ok(DispatchReport {
             notification_id: batch.notification_id,
             outcome,

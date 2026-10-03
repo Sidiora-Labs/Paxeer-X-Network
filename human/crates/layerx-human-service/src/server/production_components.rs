@@ -796,7 +796,8 @@ impl HumanApiComponents for ProductionComponents {
         .map_err(|error| auth_failure(&error))?;
         if context.assertion().is_some() {
             if let Some(attestor) = self.attestor_custody() {
-                attestor.admit_context_assertion(context)
+                attestor
+                    .admit_context_assertion(context)
                     .map_err(|_| ApiFailure::forbidden())?;
             }
         }
@@ -809,7 +810,136 @@ impl HumanApiComponents for ProductionComponents {
         let mut scope = store
             .principal(&principal)
             .map_err(|_| ApiFailure::unavailable())?;
-        self.execute_authorized(&request, &mut scope, &principal, &session_id)
+        let result = self.execute_authorized(&request, &mut scope, &principal, &session_id);
+        if request.operation.mutates() {
+            super::stream_journal::changed();
+        }
+        result
+    }
+
+    fn stream(
+        &self,
+        request: ScopedRequest<'_>,
+        maximum_bytes: usize,
+        emit: &mut dyn FnMut(serde_json::Value) -> Result<(), ApiFailure>,
+        cancelled: &dyn Fn() -> bool,
+    ) -> Result<(), ApiFailure> {
+        if request.operation.name != "stream.next"
+            || request.idempotency_key.is_some()
+            || maximum_bytes == 0
+        {
+            return Err(ApiFailure::invalid_request(None));
+        }
+        let _trace = super::agent_runtime::TraceContext::enter(&request.trace)
+            .map_err(|_| ApiFailure::invalid_request(None))?;
+        let context = request
+            .principal
+            .as_ref()
+            .ok_or_else(ApiFailure::unauthenticated)?;
+        let now = self.now()?;
+        let lifetime = context
+            .expires_at()
+            .checked_sub(now)
+            .filter(|value| *value > 0 && *value <= 60)
+            .ok_or_else(ApiFailure::session_expired)?;
+        consume_context(
+            &self.auth_index,
+            context,
+            AuthorizationDisclosure {
+                operation: request.operation,
+                destination: context.destination(),
+                path_parameters: &request.path_parameters,
+                body: &request.body,
+                idempotency_key: request.idempotency_key.as_deref(),
+                trace: &request.trace,
+            },
+            now,
+        )
+        .map_err(|error| auth_failure(&error))?;
+        if context.assertion().is_some() {
+            return Err(ApiFailure::forbidden());
+        }
+        let deadline = std::time::Instant::now()
+            .checked_add(Duration::from_secs(lifetime))
+            .ok_or_else(ApiFailure::unavailable)?;
+        let maximum_bytes = maximum_bytes.min(1_048_576);
+        let mut used = 0_usize;
+        let mut count = 0_usize;
+        let mut cursor = path(&request, "cursor")?.to_owned();
+        let schema = ApiSchema::v1().map_err(|_| ApiFailure::upstream_degraded())?;
+        loop {
+            if cancelled()
+                || count == super::stream_journal::MAX_PAGE
+                || std::time::Instant::now() >= deadline
+                || self.now()? >= context.expires_at()
+            {
+                return Ok(());
+            }
+            let observed_change = super::stream_journal::change_position()?;
+            let page = {
+                let mut store = self.store.lock().map_err(|_| ApiFailure::unavailable())?;
+                let scope = store
+                    .principal(&context.principal)
+                    .map_err(|_| ApiFailure::unavailable())?;
+                if scope.tenant() != &context.tenant {
+                    return Err(ApiFailure::forbidden());
+                }
+                Passkeys::list_sessions_authorized(&scope, &context.session_id)
+                    .map_err(|error| auth_failure(&error))?;
+                self.stream.next_push(&scope, &cursor)?
+            };
+            let events = page
+                .get("events")
+                .and_then(serde_json::Value::as_array)
+                .ok_or_else(ApiFailure::upstream_degraded)?;
+            if events.is_empty() {
+                let remaining = deadline.saturating_duration_since(std::time::Instant::now());
+                super::stream_journal::wait_for_change(observed_change, remaining)?;
+                continue;
+            }
+            for event in events {
+                if cancelled()
+                    || count == super::stream_journal::MAX_PAGE
+                    || std::time::Instant::now() >= deadline
+                    || self.now()? >= context.expires_at()
+                {
+                    return Ok(());
+                }
+                {
+                    let mut store = self.store.lock().map_err(|_| ApiFailure::unavailable())?;
+                    let scope = store
+                        .principal(&context.principal)
+                        .map_err(|_| ApiFailure::unavailable())?;
+                    if scope.tenant() != &context.tenant {
+                        return Err(ApiFailure::forbidden());
+                    }
+                    Passkeys::list_sessions_authorized(&scope, &context.session_id)
+                        .map_err(|error| auth_failure(&error))?;
+                }
+                let next = event
+                    .get("cursor")
+                    .and_then(serde_json::Value::as_str)
+                    .ok_or_else(ApiFailure::upstream_degraded)?;
+                let single = json!({"events":[event],"next_cursor":next});
+                schema
+                    .encode_response(request.operation, &single)
+                    .map_err(|_| ApiFailure::upstream_degraded())?;
+                let bytes =
+                    serde_json::to_vec(&json!({"ok":true,"trace":request.trace,"result":single}))
+                        .map_err(|_| ApiFailure::upstream_degraded())?
+                        .len();
+                let Some(total) = used
+                    .checked_add(bytes)
+                    .filter(|value| *value <= maximum_bytes)
+                else {
+                    return Ok(());
+                };
+                emit(single)?;
+                used = total;
+                count += 1;
+                cursor = next.to_owned();
+            }
+        }
     }
 
     fn readiness(&self, trace: &str) -> Result<Readiness, ApiFailure> {
@@ -1966,18 +2096,7 @@ fn notify_failure(error: &crate::notify::NotifyError) -> ApiFailure {
 }
 
 fn notification_json(summary: &NotificationSummary) -> Result<serde_json::Value, ApiFailure> {
-    let mut payload: serde_json::Map<String, serde_json::Value> =
-        serde_json::from_str(summary.delivery().payload())
-            .map_err(|_| ApiFailure::upstream_degraded())?;
-    payload.insert(
-        "notification_id".to_owned(),
-        json!(summary.notification_id().as_str()),
-    );
-    payload.insert("class".to_owned(), json!(summary.class().as_str()));
-    payload.insert("deep_link".to_owned(), json!(summary.deep_link()));
-    payload.insert("read".to_owned(), json!(summary.read()));
-    payload.insert("created_at".to_owned(), json!(summary.created_at()));
-    Ok(serde_json::Value::Object(payload))
+    super::stream_journal::notification_wire(summary)
 }
 
 fn preferences_json(preferences: &Preferences) -> serde_json::Value {
@@ -4594,7 +4713,7 @@ impl ProductionComponents {
                     "session_id": session.session_id,
                     "device": {"device_id": session.device.device_id(), "label": session.device.label(),
                         "platform": session.device.platform()},
-                    "opened_at": session.opened_at, "last_active_at": session.last_active_at,
+                    "opened_at": crate::time::rfc3339(session.opened_at), "last_active_at": crate::time::rfc3339(session.last_active_at),
                     "current": session.current
                 })).collect::<Vec<_>>();
         Ok(BackendResponse {
@@ -4951,54 +5070,72 @@ impl ProductionComponents {
         home: bool,
         response: Result<BackendResponse, ApiFailure>,
     ) -> Result<BackendResponse, ApiFailure> {
-        let key = RowKey::new(format!("verified-read-{name}"))
-            .map_err(|_| ApiFailure::unavailable())?;
+        let key =
+            RowKey::new(format!("verified-read-{name}")).map_err(|_| ApiFailure::unavailable())?;
         let now = self.now()?;
         match response {
             Ok(response) => {
                 let schema = ApiSchema::v1().map_err(|_| ApiFailure::upstream_degraded())?;
-                let operation = schema.operation(if home { "home.summary" } else { "account.balance" })
+                let operation = schema
+                    .operation(if home {
+                        "home.summary"
+                    } else {
+                        "account.balance"
+                    })
                     .ok_or_else(ApiFailure::upstream_degraded)?;
-                schema.encode_response(operation, &response.result)
+                schema
+                    .encode_response(operation, &response.result)
                     .map_err(|_| ApiFailure::upstream_degraded())?;
                 let bytes = serde_json::to_vec(&response.result)
                     .map_err(|_| ApiFailure::upstream_degraded())?;
                 let mut rows = vec![(Table::Cache, key, bytes)];
                 if home {
-                    let balance = response.result.get("balance")
+                    let balance = response
+                        .result
+                        .get("balance")
                         .ok_or_else(ApiFailure::upstream_degraded)?;
                     let key = RowKey::new("verified-read-account-balance")
                         .map_err(|_| ApiFailure::unavailable())?;
-                    let bytes = serde_json::to_vec(balance)
-                        .map_err(|_| ApiFailure::upstream_degraded())?;
+                    let bytes =
+                        serde_json::to_vec(balance).map_err(|_| ApiFailure::upstream_degraded())?;
                     rows.push((Table::Cache, key, bytes));
                 }
-                scope.put_batch(now, rows).map_err(|_| ApiFailure::unavailable())?;
+                scope
+                    .put_batch(now, rows)
+                    .map_err(|_| ApiFailure::unavailable())?;
                 Ok(response)
             }
             Err(failure) if failure.code == "upstream-degraded" => {
                 let row = scope.get(Table::Cache, &key).ok_or(failure)?;
-                let elapsed = now.checked_sub(row.written_at())
+                let elapsed = now
+                    .checked_sub(row.written_at())
                     .ok_or_else(ApiFailure::upstream_degraded)?;
                 let mut result: serde_json::Value = serde_json::from_slice(row.bytes())
                     .map_err(|_| ApiFailure::upstream_degraded())?;
                 let balance = if home {
-                    result.get_mut("balance").ok_or_else(ApiFailure::upstream_degraded)?
+                    result
+                        .get_mut("balance")
+                        .ok_or_else(ApiFailure::upstream_degraded)?
                 } else {
                     &mut result
                 };
-                let evidence = balance.get("evidence").and_then(serde_json::Value::as_array)
+                let evidence = balance
+                    .get("evidence")
+                    .and_then(serde_json::Value::as_array)
                     .ok_or_else(ApiFailure::upstream_degraded)?;
                 if evidence.is_empty() {
                     return Err(ApiFailure::upstream_degraded());
                 }
                 for reference in evidence {
-                    let id = reference.get("evidence_id").and_then(serde_json::Value::as_str)
+                    let id = reference
+                        .get("evidence_id")
+                        .and_then(serde_json::Value::as_str)
                         .and_then(|id| id.strip_prefix("evd_"))
                         .ok_or_else(ApiFailure::upstream_degraded)?;
                     let proof_key = RowKey::new(format!("state-proof-{id}"))
                         .map_err(|_| ApiFailure::upstream_degraded())?;
-                    let proof = scope.get(Table::Cache, &proof_key)
+                    let proof = scope
+                        .get(Table::Cache, &proof_key)
                         .ok_or_else(ApiFailure::upstream_degraded)?;
                     let digest: [u8; 32] = Sha256::digest(proof.bytes()).into();
                     let level = match proof.bytes().get(5) {
@@ -5006,22 +5143,35 @@ impl ProductionComponents {
                         Some(5) => "settlement-anchored",
                         _ => return Err(ApiFailure::upstream_degraded()),
                     };
-                    if proof.bytes().get(..5) != Some(b"LXHB1") || hex_bytes(&digest) != id
-                        || balance.get("verification").and_then(serde_json::Value::as_str) != Some(level)
-                        || reference.get("verification").and_then(serde_json::Value::as_str) != Some(level)
+                    if proof.bytes().get(..5) != Some(b"LXHB1")
+                        || hex_bytes(&digest) != id
+                        || balance
+                            .get("verification")
+                            .and_then(serde_json::Value::as_str)
+                            != Some(level)
+                        || reference
+                            .get("verification")
+                            .and_then(serde_json::Value::as_str)
+                            != Some(level)
                     {
                         return Err(ApiFailure::upstream_degraded());
                     }
                 }
-                let freshness = balance.get_mut("freshness")
+                let freshness = balance
+                    .get_mut("freshness")
                     .and_then(serde_json::Value::as_object_mut)
                     .ok_or_else(ApiFailure::upstream_degraded)?;
-                let age = freshness.get("age_seconds").and_then(serde_json::Value::as_u64)
+                let age = freshness
+                    .get("age_seconds")
+                    .and_then(serde_json::Value::as_u64)
                     .and_then(|age| age.checked_add(elapsed))
                     .ok_or_else(ApiFailure::upstream_degraded)?;
                 freshness.insert("age_seconds".to_owned(), json!(age));
                 freshness.insert("within_bound".to_owned(), json!(false));
-                Ok(BackendResponse { result, session: None })
+                Ok(BackendResponse {
+                    result,
+                    session: None,
+                })
             }
             Err(failure) => Err(failure),
         }
@@ -6331,7 +6481,8 @@ impl AttestorKms {
     }
 
     pub fn admit_context_assertion(&self, context: &PrincipalContext) -> Result<(), CustodyError> {
-        let assertion = context.assertion()
+        let assertion = context
+            .assertion()
             .ok_or(CustodyError::Kms(KmsError::Authentication))?;
         if context.session_id != super::production_auth::bearer_session_id(assertion) {
             return Err(CustodyError::Kms(KmsError::Authentication));

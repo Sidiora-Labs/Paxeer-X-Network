@@ -6,11 +6,14 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
 
-import { humanApi, type HumanApiClient } from "../../api";
+import { HumanApiError, humanApi, type HumanApiClient } from "../../api";
+import { observeHumanStream } from "../../api/stream";
+import { ACTIVE_ACCOUNT_STORAGE_KEY } from "../../auth/session";
 import { Notifications, type NotificationLanding } from "./controller";
 import { unreadNotificationCount, type PresentedNotification } from "./model";
 
@@ -38,6 +41,8 @@ export function NotificationCenterProvider({
 }: Readonly<{ children: ReactNode; client?: HumanApiClient }>) {
   const client = useMemo(() => suppliedClient ?? humanApi(), [suppliedClient]);
   const notifications = useMemo(() => new Notifications({ client }), [client]);
+  const generation = useRef(0);
+  const [connection, setConnection] = useState(0);
   const [state, setState] = useState<NotificationCenterState>({
     status: "loading",
     notifications: [],
@@ -45,39 +50,77 @@ export function NotificationCenterProvider({
     approvalCount: 0,
   });
 
-  const refresh = useCallback(async () => {
-    try {
-      const [archive, approvalCount] = await Promise.all([
-        notifications.archive(),
-        notifications.pendingApprovals(),
-      ]);
-      setState({
-        status: "ready",
-        notifications: archive,
-        unreadCount: unreadNotificationCount(archive),
-        approvalCount,
-      });
-    } catch (error) {
-      setState((current) => ({ ...current, status: "error", error }));
-    }
+  const reconcile = useCallback(async (signal?: AbortSignal) => {
+    const currentGeneration = generation.current;
+    const [archive, approvalCount] = await Promise.all([
+      notifications.archive(),
+      notifications.pendingApprovals(),
+    ]);
+    if (signal?.aborted || currentGeneration !== generation.current) return;
+    setState({
+      status: "ready",
+      notifications: archive,
+      unreadCount: unreadNotificationCount(archive),
+      approvalCount,
+    });
   }, [notifications]);
 
+  const refresh = useCallback(async () => {
+    const currentGeneration = generation.current;
+    try {
+      await reconcile();
+    } catch (error) {
+      if (currentGeneration !== generation.current) return;
+      setState((current) => ({ ...current, status: "error", error }));
+    }
+  }, [reconcile]);
+
   useEffect(() => {
-    void refresh();
-    const onFocus = () => { void refresh(); };
-    const onOnline = () => { void refresh(); };
-    const interval = window.setInterval(onFocus, 30_000);
-    window.addEventListener("focus", onFocus);
-    window.addEventListener("online", onOnline);
-    return () => {
-      window.clearInterval(interval);
-      window.removeEventListener("focus", onFocus);
-      window.removeEventListener("online", onOnline);
+    generation.current += 1;
+    const abort = new AbortController();
+    const failed = (error: unknown) => {
+      if (abort.signal.aborted) return;
+      if (error instanceof HumanApiError && (
+        error.detail.code === "unauthenticated"
+        || error.detail.code === "session-expired"
+        || error.detail.code === "forbidden"
+      )) {
+        setState({ status: "error", notifications: [], unreadCount: 0, approvalCount: 0, error });
+      } else {
+        setState((current) => ({ ...current, status: "error", error }));
+      }
     };
-  }, [refresh]);
+    void observeHumanStream(client, {
+      signal: abort.signal,
+      reset: () => {
+        generation.current += 1;
+        setState({ status: "loading", notifications: [], unreadCount: 0, approvalCount: 0 });
+      },
+      reconcile: () => reconcile(abort.signal),
+      process: async () => { await reconcile(abort.signal); },
+      failed,
+    }).catch(failed);
+    const reconnect = () => {
+      abort.abort();
+      generation.current += 1;
+      setState({ status: "loading", notifications: [], unreadCount: 0, approvalCount: 0 });
+      setConnection((current) => current + 1);
+    };
+    const accountChanged = (event: StorageEvent) => {
+      if (event.key === ACTIVE_ACCOUNT_STORAGE_KEY || event.key === null) reconnect();
+    };
+    window.addEventListener("storage", accountChanged);
+    return () => {
+      abort.abort();
+      generation.current += 1;
+      window.removeEventListener("storage", accountChanged);
+    };
+  }, [client, connection, reconcile]);
 
   const open = useCallback(async (notification: PresentedNotification) => {
+    const currentGeneration = generation.current;
     const landing = await notifications.open(notification);
+    if (currentGeneration !== generation.current) return landing;
     setState((current) => {
       if (current.status !== "ready") {
         return current;

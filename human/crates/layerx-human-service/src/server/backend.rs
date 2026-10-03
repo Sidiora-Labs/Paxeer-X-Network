@@ -483,6 +483,14 @@ pub trait HumanApiComponents: Send + Sync + 'static {
     /// Returns configured backend readiness or request execution failures.
     fn execute(&self, request: ScopedRequest<'_>) -> Result<BackendResponse, ApiFailure>;
 
+    fn stream(
+        &self,
+        request: ScopedRequest<'_>,
+        maximum_bytes: usize,
+        emit: &mut dyn FnMut(Value) -> Result<(), ApiFailure>,
+        cancelled: &dyn Fn() -> bool,
+    ) -> Result<(), ApiFailure>;
+
     /// Reads redacted component readiness without exposing endpoints or failure details.
     ///
     /// # Errors
@@ -497,6 +505,7 @@ pub trait HumanApiComponents: Send + Sync + 'static {
 pub struct UnixComponents {
     endpoint: PathBuf,
     gate: ConnectionGate,
+    stream_gate: ConnectionGate,
     limits: Limits,
 }
 
@@ -515,6 +524,7 @@ impl UnixComponents {
         Ok(Self {
             endpoint: endpoint.to_path_buf(),
             gate: ConnectionGate::new(limits.maximum_connections),
+            stream_gate: ConnectionGate::new(limits.maximum_streams),
             limits,
         })
     }
@@ -678,6 +688,122 @@ impl HumanApiComponents for UnixComponents {
         })();
         zeroize_value(&mut response);
         parsed
+    }
+
+    fn stream(
+        &self,
+        request: ScopedRequest<'_>,
+        maximum_bytes: usize,
+        emit: &mut dyn FnMut(Value) -> Result<(), ApiFailure>,
+        cancelled: &dyn Fn() -> bool,
+    ) -> Result<(), ApiFailure> {
+        if request.operation.name != "stream.next" || maximum_bytes == 0 {
+            return Err(ApiFailure::invalid_request(None));
+        }
+        let context = request
+            .principal
+            .as_ref()
+            .ok_or_else(ApiFailure::unauthenticated)?;
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_err(|_| ApiFailure::unavailable())?;
+        let remaining = Duration::from_secs(context.expires_at())
+            .checked_sub(now)
+            .filter(|duration| !duration.is_zero() && *duration <= Duration::from_secs(60))
+            .ok_or_else(ApiFailure::session_expired)?;
+        let deadline = std::time::Instant::now() + remaining;
+        let _permit = self.gate.acquire().map_err(|_| ApiFailure::unavailable())?;
+        let _stream_permit = self
+            .stream_gate
+            .acquire()
+            .map_err(|_| ApiFailure::unavailable())?;
+        if cancelled() {
+            return Ok(());
+        }
+        let socket = std::os::unix::net::UnixStream::connect(&self.endpoint)
+            .map_err(|_| ApiFailure::unavailable())?;
+        let mut connection = StreamSocket {
+            socket,
+            deadline,
+            cancelled,
+        };
+        let mut wire = json!({
+            "version": COMPONENT_PROTOCOL_VERSION, "kind": "human-api.execute",
+            "stream_profile": 2, "component": component_owner(&request.operation.name)?,
+            "operation": request.operation.name, "principal": {
+                "principal_id": context.principal.as_str(), "tenant_id": context.tenant.as_str(),
+                "session_id": context.session_id, "capability": context.capability(),
+                "request_digest": hex(&context.request_digest),
+                "disclosure_digest": hex(&context.disclosure_digest),
+                "operation": context.operation(), "destination": context.destination(),
+                "trace": context.trace(), "issued_at": context.issued_at(),
+                "expires_at": context.expires_at(), "assertion": context.assertion(), "did": context.did()
+            }, "path_parameters": request.path_parameters, "body": request.body,
+            "idempotency_key": request.idempotency_key, "trace": request.trace
+        });
+        let encoded = serde_json::to_vec(&wire);
+        zeroize_value(&mut wire);
+        let mut encoded = encoded.map_err(|_| ApiFailure::invalid_request(None))?;
+        let sent = layerx_client::lni::framing::write_frame(
+            &mut connection,
+            &encoded,
+            self.limits.maximum_frame_bytes,
+        );
+        encoded.zeroize();
+        sent.map_err(|_| ApiFailure::unavailable())?;
+        let mut budget = StreamBudget::new(maximum_bytes.min(self.limits.maximum_frame_bytes));
+        loop {
+            if cancelled() {
+                return Ok(());
+            }
+            let mut bytes = layerx_client::lni::framing::read_frame(
+                &mut connection,
+                self.limits.maximum_frame_bytes,
+            )
+            .map_err(|_| ApiFailure::upstream_degraded())?;
+            let parsed = serde_json::from_slice::<Value>(&bytes);
+            bytes.zeroize();
+            let mut frame = parsed.map_err(|_| ApiFailure::upstream_degraded())?;
+            let result = (|| {
+                let object = frame
+                    .as_object_mut()
+                    .ok_or_else(ApiFailure::upstream_degraded)?;
+                if object.get("version").and_then(Value::as_u64) != Some(COMPONENT_PROTOCOL_VERSION)
+                {
+                    return Err(ApiFailure::upstream_degraded());
+                }
+                if object.get("ok").and_then(Value::as_bool) == Some(false) {
+                    if object.len() != 3 {
+                        return Err(ApiFailure::upstream_degraded());
+                    }
+                    let failure = parse_failure(object.get("error"))?;
+                    budget.accept_failure(&failure, &request.trace)?;
+                    return Err(failure);
+                }
+                if object.get("ok").and_then(Value::as_bool) != Some(true) {
+                    return Err(ApiFailure::upstream_degraded());
+                }
+                if object.get("kind").and_then(Value::as_str) == Some("stream.end") {
+                    if object.len() != 3 {
+                        return Err(ApiFailure::upstream_degraded());
+                    }
+                    return Ok(true);
+                }
+                if object.len() != 3 {
+                    return Err(ApiFailure::upstream_degraded());
+                }
+                let page = object
+                    .remove("result")
+                    .ok_or_else(ApiFailure::upstream_degraded)?;
+                budget.accept(&page, &request.trace)?;
+                emit(page)?;
+                Ok(false)
+            })();
+            zeroize_value(&mut frame);
+            if result? {
+                return Ok(());
+            }
+        }
     }
 
     fn readiness(&self, trace: &str) -> Result<Readiness, ApiFailure> {
@@ -1018,5 +1144,126 @@ pub const fn default_component_limits() -> Limits {
         maximum_streams: 128,
         maximum_queued_bytes: 8_388_608,
         deadline: Duration::from_secs(10),
+    }
+}
+
+struct StreamSocket<'cancel> {
+    socket: std::os::unix::net::UnixStream,
+    deadline: std::time::Instant,
+    cancelled: &'cancel dyn Fn() -> bool,
+}
+
+impl std::io::Read for StreamSocket<'_> {
+    fn read(&mut self, bytes: &mut [u8]) -> std::io::Result<usize> {
+        let remaining = self
+            .deadline
+            .checked_duration_since(std::time::Instant::now())
+            .filter(|duration| !duration.is_zero())
+            .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::TimedOut, "stream deadline"))?;
+        if (self.cancelled)() {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::ConnectionAborted,
+                "stream cancelled",
+            ));
+        }
+        self.socket
+            .set_read_timeout(Some(remaining.min(Duration::from_millis(100))))?;
+        match std::io::Read::read(&mut self.socket, bytes) {
+            Err(error)
+                if matches!(
+                    error.kind(),
+                    std::io::ErrorKind::TimedOut | std::io::ErrorKind::WouldBlock
+                ) && std::time::Instant::now() < self.deadline
+                    && !(self.cancelled)() =>
+            {
+                Err(std::io::Error::new(
+                    std::io::ErrorKind::Interrupted,
+                    "stream wait",
+                ))
+            }
+            result => result,
+        }
+    }
+}
+
+impl std::io::Write for StreamSocket<'_> {
+    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+        if (self.cancelled)() {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::ConnectionAborted,
+                "stream cancelled",
+            ));
+        }
+        let remaining = self
+            .deadline
+            .checked_duration_since(std::time::Instant::now())
+            .filter(|duration| !duration.is_zero())
+            .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::TimedOut, "stream deadline"))?;
+        self.socket.set_write_timeout(Some(remaining))?;
+        std::io::Write::write(&mut self.socket, bytes)
+    }
+    fn flush(&mut self) -> std::io::Result<()> {
+        std::io::Write::flush(&mut self.socket)
+    }
+}
+
+pub(super) struct StreamBudget {
+    remaining_bytes: usize,
+    events: usize,
+    cursors: std::collections::BTreeSet<String>,
+}
+
+impl StreamBudget {
+    pub(super) fn new(maximum_bytes: usize) -> Self {
+        Self {
+            remaining_bytes: maximum_bytes.min(1_048_576),
+            events: 0,
+            cursors: std::collections::BTreeSet::new(),
+        }
+    }
+
+    pub(super) fn accept_failure(
+        &mut self,
+        failure: &ApiFailure,
+        trace: &str,
+    ) -> Result<(), ApiFailure> {
+        let bytes =
+            serde_json::to_vec(&json!({"ok": false, "error": failure.envelope(), "trace": trace}))
+                .map_err(|_| ApiFailure::upstream_degraded())?
+                .len();
+        self.remaining_bytes = self
+            .remaining_bytes
+            .checked_sub(bytes)
+            .ok_or_else(ApiFailure::upstream_degraded)?;
+        Ok(())
+    }
+
+    pub(super) fn accept(&mut self, page: &Value, trace: &str) -> Result<(), ApiFailure> {
+        let events = page
+            .get("events")
+            .and_then(Value::as_array)
+            .filter(|events| events.len() == 1)
+            .ok_or_else(ApiFailure::upstream_degraded)?;
+        let cursor = events[0]
+            .get("cursor")
+            .and_then(Value::as_str)
+            .filter(|cursor| !cursor.is_empty() && cursor.len() <= 512)
+            .ok_or_else(ApiFailure::upstream_degraded)?;
+        if page.get("next_cursor").and_then(Value::as_str) != Some(cursor)
+            || self.events >= 100
+            || self.cursors.contains(cursor)
+        {
+            return Err(ApiFailure::upstream_degraded());
+        }
+        let bytes = serde_json::to_vec(&json!({"ok": true, "result": page, "trace": trace}))
+            .map_err(|_| ApiFailure::upstream_degraded())?
+            .len();
+        self.remaining_bytes = self
+            .remaining_bytes
+            .checked_sub(bytes)
+            .ok_or_else(ApiFailure::upstream_degraded)?;
+        self.events += 1;
+        self.cursors.insert(cursor.to_owned());
+        Ok(())
     }
 }

@@ -1,7 +1,7 @@
 [schema]
 name = "LayerX Human API"
 major = 1
-minor = 6
+minor = 7
 source_of_truth = "This schema and the schema files it includes define the human-api contract between layerx-human-service and the web application. Generated client output is never authoritative."
 compatibility = "Additive only within a major version: a release may only add sections, keys, list entries or optional fields. Removing or changing an existing declaration requires a new major version."
 includes = ["journeys.kvx","errors.kvx","stream.kvx","identity.kvx","movement.kvx","agents.kvx","activity.kvx","support.kvx","home.kvx","intent.kvx"]
@@ -14,6 +14,7 @@ refusal = "Unclassified operations, disclosure mismatches, expiry, nonce replay,
 security_provider = "Authenticator verification and verified recovery receipt disclosure use a finite versioned binary Unix boundary, with no local fallback and no generic JSON service contract."
 
 [encoding]
+stream_push_profile = "The optional stream_push_v2 transport in stream.kvx applies only when both its Accept and profile headers are present; all existing application/json requests and responses retain their declared encoding."
 transport = "HTTPS"
 content_type = "application/json"
 base_path = "/v1"

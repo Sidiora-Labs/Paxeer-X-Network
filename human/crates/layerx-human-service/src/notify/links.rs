@@ -121,6 +121,13 @@ pub struct NotificationSummary {
 }
 
 impl NotificationSummary {
+    pub(crate) fn from_delivery(
+        scope: &PrincipalScope<'_>,
+        delivery: Delivery,
+    ) -> Result<Self, NotifyError> {
+        let read = read_state(scope, delivery.notification_id())?;
+        Ok(Self { delivery, read })
+    }
     #[must_use]
     pub const fn notification_id(&self) -> &NotificationId {
         self.delivery.notification_id()

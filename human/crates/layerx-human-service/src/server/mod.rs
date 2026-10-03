@@ -170,7 +170,10 @@ impl<B: HumanApiComponents> BoundPlainServer<B> {
                     return;
                 }
                 let public_rate_key = public_rate_key(peer);
-                let _ = router.serve_one(&mut tcp, &public_rate_key);
+                let watched = tcp.try_clone();
+                let _ = router.serve_one_with_disconnect(&mut tcp, &public_rate_key, || {
+                    StreamCancellation::watch(watched?).map(Some)
+                });
             });
         }
     }
@@ -262,7 +265,10 @@ impl<B: HumanApiComponents> HttpsServer<B> {
                 };
                 let mut stream = StreamOwned::new(connection, tcp);
                 let public_rate_key = public_rate_key(peer);
-                let _ = router.serve_one(&mut stream, &public_rate_key);
+                let watched = stream.sock.try_clone();
+                let _ = router.serve_one_with_disconnect(&mut stream, &public_rate_key, || {
+                    StreamCancellation::watch(watched?).map(Some)
+                });
             });
         }
     }
@@ -288,3 +294,126 @@ impl std::fmt::Display for ServerError {
 }
 
 impl std::error::Error for ServerError {}
+
+pub(super) struct StreamCancellation {
+    cancelled: Arc<std::sync::atomic::AtomicBool>,
+    stop: Arc<std::sync::atomic::AtomicBool>,
+    wake: std::os::unix::net::UnixStream,
+    deadline: Arc<std::sync::Mutex<Option<std::time::Instant>>>,
+    worker: Option<thread::JoinHandle<()>>,
+}
+
+impl StreamCancellation {
+    pub(super) fn watch<S: std::os::fd::AsFd + Send + 'static>(socket: S) -> io::Result<Self> {
+        use rustix::event::{poll, PollFd, PollFlags};
+        use std::sync::atomic::{AtomicBool, Ordering};
+        let (wake, waiter) = std::os::unix::net::UnixStream::pair()?;
+        let cancelled = Arc::new(AtomicBool::new(false));
+        let stop = Arc::new(AtomicBool::new(false));
+        let deadline = Arc::new(std::sync::Mutex::new(None::<std::time::Instant>));
+        let thread_deadline = Arc::clone(&deadline);
+        let thread_cancelled = Arc::clone(&cancelled);
+        let thread_stop = Arc::clone(&stop);
+        let worker = thread::Builder::new()
+            .name("human-stream-disconnect".to_owned())
+            .spawn(move || {
+                let mut descriptors = [
+                    PollFd::new(&socket, PollFlags::RDHUP),
+                    PollFd::new(&waiter, PollFlags::IN),
+                ];
+                loop {
+                    if thread_stop.load(Ordering::Acquire) {
+                        return;
+                    }
+                    let deadline = match thread_deadline.lock() {
+                        Ok(deadline) => *deadline,
+                        Err(_) => {
+                            thread_cancelled.store(true, Ordering::Release);
+                            let _ = rustix::net::shutdown(&socket, rustix::net::Shutdown::Both);
+                            stream_journal::changed();
+                            return;
+                        }
+                    };
+                    let remaining = deadline.map(|deadline| {
+                        deadline.saturating_duration_since(std::time::Instant::now())
+                    });
+                    if remaining.is_some_and(|remaining| remaining.is_zero()) {
+                        thread_cancelled.store(true, Ordering::Release);
+                        let _ = rustix::net::shutdown(&socket, rustix::net::Shutdown::Both);
+                        stream_journal::changed();
+                        return;
+                    }
+                    let timeout = remaining.map(|remaining| rustix::event::Timespec {
+                        tv_sec: i64::try_from(remaining.as_secs()).unwrap_or(i64::MAX),
+                        tv_nsec: i64::from(remaining.subsec_nanos()),
+                    });
+                    match poll(&mut descriptors, timeout.as_ref()) {
+                        Ok(_) => {
+                            if thread_stop.load(Ordering::Acquire) {
+                                return;
+                            }
+                            if !descriptors[1].revents().is_empty() {
+                                let mut byte = [0_u8; 1];
+                                let mut input = &waiter;
+                                if std::io::Read::read(&mut input, &mut byte).unwrap_or(0) == 0 {
+                                    return;
+                                }
+                                continue;
+                            }
+                            if descriptors[0].revents().intersects(
+                                PollFlags::RDHUP
+                                    | PollFlags::HUP
+                                    | PollFlags::ERR
+                                    | PollFlags::NVAL,
+                            ) {
+                                thread_cancelled.store(true, Ordering::Release);
+                                stream_journal::changed();
+                                return;
+                            }
+                        }
+                        Err(rustix::io::Errno::INTR) => continue,
+                        Err(_) => {
+                            thread_cancelled.store(true, Ordering::Release);
+                            stream_journal::changed();
+                            return;
+                        }
+                    }
+                }
+            })?;
+        Ok(Self {
+            cancelled,
+            stop,
+            wake,
+            deadline,
+            worker: Some(worker),
+        })
+    }
+
+    pub(super) fn set_deadline(&self, deadline: std::time::Instant) -> io::Result<()> {
+        let mut current = self
+            .deadline
+            .lock()
+            .map_err(|_| io::Error::other("stream deadline unavailable"))?;
+        if current.is_some_and(|current| deadline > current) {
+            return Err(io::Error::other("stream deadline cannot extend"));
+        }
+        *current = Some(deadline);
+        drop(current);
+        let mut wake = &self.wake;
+        std::io::Write::write_all(&mut wake, &[1])
+    }
+
+    pub(super) fn cancelled(&self) -> bool {
+        self.cancelled.load(std::sync::atomic::Ordering::Acquire)
+    }
+}
+
+impl Drop for StreamCancellation {
+    fn drop(&mut self) {
+        self.stop.store(true, std::sync::atomic::Ordering::Release);
+        let _ = self.wake.shutdown(std::net::Shutdown::Write);
+        if let Some(worker) = self.worker.take() {
+            let _ = worker.join();
+        }
+    }
+}

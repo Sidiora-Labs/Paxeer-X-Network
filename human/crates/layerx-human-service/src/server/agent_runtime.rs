@@ -43,7 +43,10 @@ impl TraceContext {
     pub(crate) fn enter(trace: &str) -> Result<Self, AgentBoundaryError> {
         let trace = crate::trace::TraceId::parse(trace).map_err(|_| AgentBoundaryError::Refused)?;
         let previous = REQUEST_TRACE.with(|current| current.replace(Some(trace)));
-        Ok(Self { previous, local: std::marker::PhantomData })
+        Ok(Self {
+            previous,
+            local: std::marker::PhantomData,
+        })
     }
 }
 
@@ -1555,8 +1558,11 @@ impl AgentRuntime {
             let mut envelope = Zeroizing::new(Vec::with_capacity(48 + request.len()));
             envelope.extend_from_slice(TRACED_MAGIC);
             envelope.extend_from_slice(trace.as_str().as_bytes());
-            envelope.extend_from_slice(&u32::try_from(request.len())
-                .map_err(|_| AgentBoundaryError::Refused)?.to_be_bytes());
+            envelope.extend_from_slice(
+                &u32::try_from(request.len())
+                    .map_err(|_| AgentBoundaryError::Refused)?
+                    .to_be_bytes(),
+            );
             envelope.extend_from_slice(&request);
             if envelope.len() > MAX_BYTES {
                 return Err(AgentBoundaryError::Refused);
@@ -1567,8 +1573,12 @@ impl AgentRuntime {
         };
         let mut transport = Uds::connect(&self.endpoint, &self.gate, self.limits)
             .map_err(|_| AgentBoundaryError::Unavailable)?;
-        transport.send(&request).map_err(|_| AgentBoundaryError::Unavailable)?;
-        let response = transport.receive().map_err(|_| AgentBoundaryError::Unavailable)?;
+        transport
+            .send(&request)
+            .map_err(|_| AgentBoundaryError::Unavailable)?;
+        let response = transport
+            .receive()
+            .map_err(|_| AgentBoundaryError::Unavailable)?;
         let mut reader = Reader::new(response);
         if let Some(trace) = trace {
             if reader.fixed::<8>()? != *TRACED_MAGIC

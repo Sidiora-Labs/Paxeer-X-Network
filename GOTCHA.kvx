@@ -2078,3 +2078,13 @@ rule = "Preserve original identifiers and reject changed terms; uncertain transf
 title = "SDK consumers must use canonical public type and artifact error owners"
 observed = "Human, explorer and ramp builds hit SDK imports from error instead of public verify/idempotency owners; complete artifact decoding returns a record-context error."
 rule = "Correct real SDK owners without weakening verification or flattening detailed artifact refusals."
+
+[gotcha.624]
+area = "human"
+symptom = "Finite JSON stream pages and notification deliveries without journal events cannot fulfil the no-polling stream contract."
+do = "Wire a genuine durable notification producer and explicit versioned push transport; retain current JSON operations and all session authorization rules."
+
+[gotcha.629]
+title = "Generator isolation prevents blocking the admitted source projection"
+observed = "The Human API generator waited for the explorer target lock; its waiting process was stopped before compiler work, then the same bounded recipe compiled and rendered in an isolated target."
+rule = "Use separate standalone generator targets and record lock waits separately from actual compilation."

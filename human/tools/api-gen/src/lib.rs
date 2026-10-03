@@ -1015,12 +1015,237 @@ fn method_signature(plan: &PlannedOperation) -> String {
     )
 }
 
-fn emit_client(out: &mut String, planned: &[PlannedOperation]) {
+const STREAM_PUSH_RUNTIME: &str = r#"
+export interface StreamSubscribeOptions {
+  readonly signal?: AbortSignal;
+}
+
+export const streamPushProfile = {
+  version: 2,
+  maximumEvents: 100,
+  maximumPayloadBytes: 1048576,
+  maximumFramingBytes: 6400,
+  maximumCursorBytes: 512,
+  maximumJsonDepth: 64,
+} as const;
+
+function streamFields(value: JsonObject, names: readonly string[], at: string): void {
+  for (const name of Object.keys(value)) {
+    if (!names.includes(name)) {
+      throw new HumanApiDecodeError(at + " contains an undeclared field");
+    }
+  }
+}
+
+function streamUnicode(value: JsonValue): void {
+  if (typeof value === "string") {
+    for (let index = 0; index < value.length; index += 1) {
+      const code = value.charCodeAt(index);
+      if (code >= 0xd800 && code <= 0xdbff) {
+        const next = value.charCodeAt(++index);
+        if (!(next >= 0xdc00 && next <= 0xdfff)) {
+          throw new HumanApiDecodeError("stream JSON contains invalid Unicode");
+        }
+      } else if (code >= 0xdc00 && code <= 0xdfff) {
+        throw new HumanApiDecodeError("stream JSON contains invalid Unicode");
+      }
+    }
+  } else if (Array.isArray(value)) {
+    for (const item of value) streamUnicode(item);
+  } else if (value !== null && typeof value === "object") {
+    for (const [name, item] of Object.entries(value)) {
+      streamUnicode(name);
+      streamUnicode(item);
+    }
+  }
+}
+
+function streamJsonFields(text: string): void {
+  const scopes: (Set<string> | null)[] = [];
+  for (let index = 0; index < text.length; index += 1) {
+    const character = text[index];
+    if (character === "{") scopes.push(new Set<string>());
+    else if (character === "[") scopes.push(null);
+    else if (character === "}" || character === "]") scopes.pop();
+    else if (character === '"') {
+      const start = index;
+      for (index += 1; index < text.length; index += 1) {
+        if (text[index] === "\\") index += 1;
+        else if (text[index] === '"') break;
+      }
+      let next = index + 1;
+      while (/\s/.test(text[next] ?? "") && next < text.length) next += 1;
+      if (text[next] === ":") {
+        const scope = scopes[scopes.length - 1];
+        const name = JSON.parse(text.slice(start, index + 1)) as string;
+        if (scope === null || scope === undefined || scope.has(name)) {
+          throw new HumanApiDecodeError("stream JSON contains a duplicate or misplaced field");
+        }
+        scope.add(name);
+      }
+    }
+    if (scopes.length > streamPushProfile.maximumJsonDepth) throw new HumanApiDecodeError("stream JSON exceeds its nesting bound");
+  }
+}
+
+function streamJson(text: string): JsonObject {
+  let value: JsonValue;
+  try {
+    value = JSON.parse(text) as JsonValue;
+  } catch {
+    throw new HumanApiDecodeError("stream frame data is not JSON");
+  }
+  streamJsonFields(text);
+  streamUnicode(value);
+  return expectObject(value, "stream envelope");
+}
+
+function streamFailure(envelope: JsonObject, status: number): never {
+  streamFields(envelope, ["ok", "error", "trace"], "stream failure");
+  if (expectBoolean(envelope["ok"], "stream.ok")) {
+    throw new HumanApiDecodeError("stream failure carries a success envelope");
+  }
+  const error = expectObject(envelope["error"], "stream.error");
+  streamFields(error, ["code", "copy_key", "retry", "retry_after_ms", "field"], "stream.error");
+  throw new HumanApiError(status, expectString(envelope["trace"], "stream.trace"), decodeApiError(error, "stream.error"));
+}
+
+function streamEvent(envelope: JsonObject): StreamEvent {
+  streamFields(envelope, ["ok", "result", "trace"], "stream success");
+  if (!expectBoolean(envelope["ok"], "stream.ok")) {
+    throw new HumanApiDecodeError("stream page carries a failure envelope");
+  }
+  expectString(envelope["trace"], "stream.trace");
+  const result = expectObject(envelope["result"], "stream.result");
+  streamFields(result, ["events", "next_cursor"], "stream.result");
+  const events = expectArray(result["events"], "stream.events");
+  if (events.length !== 1) {
+    throw new HumanApiDecodeError("stream page must carry exactly one event");
+  }
+  const eventValue = expectObject(events[0], "stream.event");
+  streamFields(eventValue, ["cursor", "kind", "observed_at", "journey", "approval", "notification"], "stream.event");
+  const page = decodeStreamPage(result, "stream.result");
+  const event = page.events[0];
+  if (event === undefined || page.next_cursor !== event.cursor) {
+    throw new HumanApiDecodeError("stream page cursor does not name its delivered event");
+  }
+  if (event.cursor.length === 0 || new TextEncoder().encode(event.cursor).byteLength > streamPushProfile.maximumCursorBytes) {
+    throw new HumanApiDecodeError("stream event cursor exceeds its bound");
+  }
+  return event;
+}
+"#;
+
+const STREAM_PUSH_CLIENT: &str = r#"
+  async function* subscribe(cursor: Cursor, subscription: StreamSubscribeOptions = {}): AsyncIterable<StreamEvent> {
+    streamUnicode(cursor);
+    if (cursor.length === 0 || new TextEncoder().encode(cursor).byteLength > streamPushProfile.maximumCursorBytes) {
+      throw new HumanApiDecodeError("stream cursor exceeds its bound");
+    }
+    if (subscription.signal?.aborted) return;
+    const cancellation = new AbortController();
+    const abort = () => cancellation.abort();
+    subscription.signal?.addEventListener("abort", abort, { once: true });
+    if (subscription.signal?.aborted) cancellation.abort();
+    let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
+    try {
+      const headers = new Headers(baseHeaders);
+      headers.set("Accept", "text/event-stream");
+      headers.set("X-LayerX-Stream-Profile", "2");
+      const outboundTrace = options.trace?.();
+      if (outboundTrace !== undefined) headers.set("X-LayerX-Trace", outboundTrace);
+      const response = await transport(baseUrl + "/v1/stream/" + encodeURIComponent(cursor), {
+        method: "GET", headers, credentials, signal: cancellation.signal,
+      });
+      if (response.body === null) throw new HumanApiDecodeError("stream response has no body");
+      reader = response.body.getReader();
+      const decoder = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true });
+      const encoder = new TextEncoder();
+      let received = 0;
+      let payload = 0;
+      let delivered = 0;
+      let pending = "";
+      const seen = new Set<Cursor>([cursor]);
+      if (!response.ok) {
+        for (;;) {
+          const chunk = await reader.read();
+          if (chunk.done) break;
+          received += chunk.value.byteLength;
+          if (received > streamPushProfile.maximumPayloadBytes) throw new HumanApiDecodeError("stream refusal exceeds its byte bound");
+          pending += decoder.decode(chunk.value, { stream: true });
+        }
+        pending += decoder.decode();
+        streamFailure(streamJson(pending), response.status);
+      }
+      if (response.headers.get("X-LayerX-Stream-Profile") !== "2" ||
+          response.headers.get("Content-Type")?.toLowerCase().replace(/\s/g, "") !== "text/event-stream;charset=utf-8") {
+        throw new HumanApiDecodeError("stream response transport profile differs");
+      }
+      for (;;) {
+        const chunk = await reader.read();
+        if (chunk.done) {
+          pending += decoder.decode();
+          if (pending.length !== 0) throw new HumanApiDecodeError("stream response ended inside a frame");
+          return;
+        }
+        received += chunk.value.byteLength;
+        if (received > streamPushProfile.maximumPayloadBytes + streamPushProfile.maximumFramingBytes) {
+          throw new HumanApiDecodeError("stream response exceeds its aggregate byte bound");
+        }
+        pending += decoder.decode(chunk.value, { stream: true });
+        for (;;) {
+          const end = pending.indexOf("\n\n");
+          if (end < 0) break;
+          const frame = pending.slice(0, end);
+          pending = pending.slice(end + 2);
+          const lines = frame.split("\n");
+          if (lines.length !== 2 || !lines[0]?.startsWith("event:") || !lines[1]?.startsWith("data:")) {
+            throw new HumanApiDecodeError("stream frame fields differ from its profile");
+          }
+          const kind = lines[0].slice(6).replace(/^ /, "");
+          const data = lines[1].slice(5).replace(/^ /, "");
+          payload += encoder.encode(data).byteLength;
+          if (payload > streamPushProfile.maximumPayloadBytes) throw new HumanApiDecodeError("stream payload exceeds its aggregate byte bound");
+          const envelope = streamJson(data);
+          if (kind === "stream.error") streamFailure(envelope, response.status);
+          if (kind !== "stream.page") throw new HumanApiDecodeError("stream event name is undeclared");
+          const event = streamEvent(envelope);
+          delivered += 1;
+          if (delivered > streamPushProfile.maximumEvents || seen.has(event.cursor)) {
+            throw new HumanApiDecodeError("stream event count or cursor is invalid");
+          }
+          if (cancellation.signal.aborted) return;
+          yield event;
+          seen.add(event.cursor);
+        }
+      }
+    } catch (error) {
+      if (cancellation.signal.aborted) return;
+      if (error instanceof HumanApiError || error instanceof HumanApiDecodeError) throw error;
+      throw new HumanApiDecodeError("stream transport or UTF-8 decoding failed");
+    } finally {
+      cancellation.abort();
+      subscription.signal?.removeEventListener("abort", abort);
+      if (reader !== undefined) {
+        try { await reader.cancel(); } catch {  }
+        reader.releaseLock();
+      }
+    }
+  }
+"#;
+
+fn emit_client(out: &mut String, planned: &[PlannedOperation], push: bool) {
     out.push_str(
         "\nexport type FetchLike = (input: string, init: RequestInit) => Promise<Response>;\n",
     );
     out.push_str("\nexport interface HumanApiClientOptions {\n  readonly baseUrl?: string;\n  readonly fetch?: FetchLike;\n  readonly headers?: { readonly [name: string]: string };\n  readonly credentials?: RequestCredentials;\n  readonly csrfToken?: () => string | undefined;\n  readonly trace?: () => string | undefined;\n}\n");
+    if push {
+        out.push_str(STREAM_PUSH_RUNTIME);
+    }
     out.push_str("\nexport interface HumanApiClient {\n");
+    if push {
+        out.push_str("  streamSubscribe(cursor: Cursor, options?: StreamSubscribeOptions): AsyncIterable<StreamEvent>;\n");
+    }
     for plan in planned {
         let _ = writeln!(out, "  {};", method_signature(plan));
     }
@@ -1047,7 +1272,13 @@ fn emit_client(out: &mut String, planned: &[PlannedOperation]) {
     out.push_str("    const trace = expectString(envelope[\"trace\"], \"response.trace\");\n");
     out.push_str("    if (!ok) {\n      throw new HumanApiError(response.status, trace, decodeApiError(envelope[\"error\"], \"response.error\"));\n    }\n");
     out.push_str("    return requireValue(envelope[\"result\"], \"response.result\");\n  }\n");
+    if push {
+        out.push_str(STREAM_PUSH_CLIENT);
+    }
     out.push_str("  const client: HumanApiClient = {\n");
+    if push {
+        out.push_str("    streamSubscribe: subscribe,\n");
+    }
     for plan in planned {
         let mut arguments = plan.path_params.clone();
         if !plan.bodyless {
@@ -1080,7 +1311,7 @@ fn emit_client(out: &mut String, planned: &[PlannedOperation]) {
     out.push_str("  };\n  return client;\n}\n");
 }
 
-fn emit_index(header: &Header, model: &Model, planned: &[PlannedOperation]) -> String {
+fn emit_index(header: &Header, model: &Model, planned: &[PlannedOperation], push: bool) -> String {
     let mut out = String::new();
     out.push_str(BANNER);
     let _ = writeln!(
@@ -1098,7 +1329,7 @@ fn emit_index(header: &Header, model: &Model, planned: &[PlannedOperation]) -> S
     }
     out.push_str(ERROR_CLASS);
     emit_manifest(&mut out, planned);
-    emit_client(&mut out, planned);
+    emit_client(&mut out, planned, push);
     out
 }
 
@@ -1201,6 +1432,59 @@ fn load_all(root: &Path, violations: &mut Vec<Violation>) -> Option<(Header, Vec
     Some((header, files))
 }
 
+fn stream_push_profile(files: &[SchemaFile], violations: &mut Vec<Violation>) -> bool {
+    let Some(file) = files
+        .iter()
+        .find(|file| file.sections.contains_key("transport.stream_push_v2"))
+    else {
+        return false;
+    };
+    let entries = &file.sections["transport.stream_push_v2"];
+    let operation = files
+        .iter()
+        .find_map(|file| file.sections.get("operation.stream.next"));
+    for (key, expected) in [
+        ("authorization_class", "read"),
+        ("method", "GET"),
+        ("path", "/v1/stream/{cursor}"),
+        ("request", "Empty"),
+        ("response", "StreamPage"),
+    ] {
+        if operation.and_then(|entries| quoted(entries, key)) != Some(expected) {
+            violations.push(violation(
+                &file.path,
+                "invalid-stream-push-operation",
+                format!("push must retain stream.next.{key}={expected}"),
+            ));
+        }
+    }
+    for (key, expected) in [
+        ("operation", "\"stream.next\""),
+        ("profile", "2"),
+        ("accept", "\"text/event-stream\""),
+        ("profile_header", "\"X-LayerX-Stream-Profile\""),
+        ("profile_value", "\"2\""),
+        ("content_type", "\"text/event-stream; charset=utf-8\""),
+        ("success_event", "\"stream.page\""),
+        ("error_event", "\"stream.error\""),
+        ("maximum_events", "100"),
+        ("maximum_payload_bytes", "1048576"),
+        ("maximum_framing_bytes", "6400"),
+        ("maximum_cursor_bytes", "512"),
+        ("maximum_authorization_seconds", "60"),
+        ("maximum_json_depth", "64"),
+    ] {
+        if entries.get(key).map(String::as_str) != Some(expected) {
+            violations.push(violation(
+                &file.path,
+                "invalid-stream-push-profile",
+                format!("stream_push_v2.{key} must equal {expected}"),
+            ));
+        }
+    }
+    true
+}
+
 /// Generates the deterministic TypeScript client and its conformance surface
 /// from the human-api schema.
 ///
@@ -1212,6 +1496,7 @@ pub fn generate_client(root: &Path) -> Result<GeneratedClient, Vec<Violation>> {
     let Some((header, files)) = load_all(root, &mut violations) else {
         return Err(violations);
     };
+    let push = stream_push_profile(&files, &mut violations);
     let model = collect_declarations(&files, &mut violations);
     check_type_references(&model, &mut violations);
     let planned = plan_operations(&model, &mut violations);
@@ -1219,7 +1504,10 @@ pub fn generate_client(root: &Path) -> Result<GeneratedClient, Vec<Violation>> {
         return Err(violations);
     }
     let mut generated = BTreeMap::new();
-    generated.insert("index.ts".to_owned(), emit_index(&header, &model, &planned));
+    generated.insert(
+        "index.ts".to_owned(),
+        emit_index(&header, &model, &planned, push),
+    );
     generated.insert("conformance.ts".to_owned(), emit_conformance(&planned));
     Ok(GeneratedClient {
         files: generated,

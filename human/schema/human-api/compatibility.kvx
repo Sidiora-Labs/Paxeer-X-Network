@@ -36,3 +36,9 @@ web_app = "0.1.x"
 schema = "1.6"
 service = "0.1.x"
 web_app = "0.1.x"
+
+[compatibility.row.8]
+schema = "1.7"
+service = "0.1.x"
+web_app = "0.1.x"
+stream_transport = "stream_push_v2"
