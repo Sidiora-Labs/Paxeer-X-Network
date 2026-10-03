@@ -25,7 +25,6 @@ layerx-wire.workspace = true
 layerx-program-sdk = { path = "../../../programs/sdk/rust" }
 ed25519-dalek = "=2.2.0"
 
-layerx-paxeer-verifier = { path = "../../../agent/crates/layerx-paxeer-verifier" }
 layerx-platform-authority = { path = "../../../platform/hosted/authority" }
 ureq = { version = "=3.4.0", default-features = false, features = ["rustls-no-provider", "_ring"] }
 zeroize.workspace = true

@@ -21306,6 +21306,28 @@ planned_paths = ["tools/paxeer-x/verify-task.sh", "tools/paxeer-x/release.sh", "
 path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
 evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
 
+[task.0.7]
+title = "Reconcile locked dependency graphs required by integrated Rust consumers"
+status = "pending"
+mode = "BUILD"
+wave = 2
+requires = ["0.2"]
+reqs = ["170", "1064.10", "1071.9"]
+do_1 = "Remove only identical duplicate dependency declarations that prevent parsing the Human integration workspace, preserving the actual dependency."
+do_2 = "Reconcile local path dependency edges in platform, agent and Human lockfiles against their current manifests without changing any already locked external package version, checksum or source."
+do_3 = "Build the existing event producer and webhook consumer from the locked integrated graph and verify Cargo resolves every affected graph with locked offline metadata. Preserve all feature checks and existing task acceptance."
+touches = ["platform/Cargo.lock", "agent/Cargo.lock", "human/Cargo.lock", "human/crates/layerx-explorer-index/Cargo.toml"]
+verify_cmd = "timeout 180s python3 -c 'import subprocess; [subprocess.run([\"/root/.cargo/bin/cargo\",\"metadata\",\"--locked\",\"--offline\",\"--manifest-path\",w+\"/Cargo.toml\",\"--format-version\",\"1\"], stdout=subprocess.DEVNULL, check=True) for w in [\"platform\",\"agent\",\"human\"]]'"
+build_cmd = "CARGO_BUILD_JOBS=4 CARGO_TARGET_DIR=/root/lx-target/platform /root/.cargo/bin/cargo build --locked --manifest-path platform/Cargo.toml -p layerx-platform-internal --bin layerx-event-source -p layerx-platform-webhooks --bin layerx-webhooks"
+gate_kind = "integration-prerequisite"
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop at the first unrelated failure, bounded qualification result or time limit; retain exact revision, command, exit code and private evidence. External package version changes require a separate decision and are not permitted by this task."
+evidence_policy = "Retain raw build and dependency evidence outside tracked product files. This prerequisite proves graph and consumer build compatibility only, never runtime readiness."
+
+
 [task.0.3]
 title = "Provide deterministic unified specification tooling"
 status = "done"
@@ -21833,14 +21855,14 @@ title = "Serve the authenticated agent operation envelope through the unified ro
 status = "in_progress"
 mode = "BUILD"
 wave = 2
-requires = ["0.2"]
+requires = ["0.2", "0.7"]
 reqs = ["126"]
 do_1 = "Implement bounded body parsing and catalogue dispatch in the full-mode executable, using common tenant/session authorization and existing daemon owners rather than a parallel state authority."
 do_2 = "Connect actual SDK envelope transports and the unified gateway agent route to the same response/surface contract without changing DNS."
 do_3 = "Author real full-mode process cases for read/program-read/approval list, allowed mutation, wrong scope/tenant/generation, malformed body, retired faucet and restart retry."
 do_4 = "Author the new focused harness tools/qualification/paxeer-x/agent_operation_envelope.py to exercise these acceptance cases against real production implementations and types. It must fail on missing candidate artifacts, missing authority/configuration, skipped cases or unverifiable receipts; retain the exact candidate revision, command, case results and evidence paths. Use disposable qualification state and provisioned authority without printing secret values; no mocks, synthetic success or substitution of a library-only model for a named process boundary."
 do_5 = "Implement the declared focused gate through the real production types and paths; exercise every acceptance criterion including refusal, restart or boundary cases specified by this requirement. The command is a planned deliverable, not an already-run gate."
-touches = ["agent/crates/layerx-agentd/src/main.rs", "agent/crates/layerx-agentd/src/tenant.rs", "agent/crates/layerx-agent-api/src/operation_generated.rs", "platform/sdk/jvm/src/main/java/com/sidiora/layerx/sdk/HttpProductionTransport.java", "agent/crates/layerx-sdk/src/lib.rs", "agent/sdk/typescript/src/agent-http.ts", "agent/sdk/python/layerx_sdk/agent_http.py", "platform/hosted/gateway/src/main.rs", "tools/qualification/paxeer-x/agent_operation_envelope.py", "agent/schema/agent-api/v1.kvx", "agent/crates/layerx-agentd/src/agent_rpc.rs", "agent/crates/layerx-agentd/src/human_runtime.rs", "platform/hosted/gateway/src/routes.rs", "tools/paxeer-x/route-catalogue.json", "agent/crates/layerx-sdk/src/agent_envelope.rs", "platform/sdk/go/http.go", "platform/sdk/swift/Sources/LayerXSDK/Transport.swift", "platform/sdk/dotnet/Transport.cs", "agent/crates/layerx-sdk/tests/agent_operation_envelope.rs", "agent/sdk/typescript/test/agent-operation-envelope.test.ts", "agent/sdk/python/tests/test_agent_operation_envelope.py", "platform/sdk/go/agent_operation_envelope_test.go", "platform/sdk/jvm/src/test/java/com/sidiora/layerx/sdk/AgentOperationEnvelopeProbe.java", "platform/sdk/jvm/src/test/kotlin/com/sidiora/layerx/sdk/AgentOperationEnvelopeProbe.kt", "platform/sdk/swift/Tests/LayerXSDKTests/AgentOperationEnvelopeTests.swift", "platform/sdk/dotnet/tests/LayerX.Sdk.Tests/AgentOperationEnvelopeTests.cs", "agent/crates/layerx-agentd/src/lib.rs", "agent/crates/layerx-agentd/src/human.rs", "agent/crates/layerx-agentd/src/agent_rpc_tls.rs", "agent/crates/layerx-agentd/Cargo.toml", "agent/Cargo.lock", "agent/crates/layerx-agentd/src/agent_rpc_dispatch.rs", "agent/crates/layerx-agentd/src/agent_rpc_adapters.rs", "agent/crates/layerx-agentd/src/agent_rpc_peer.rs", "platform/sdk/jvm/pom.xml", "agent/sdk/python/layerx_sdk/agent_http.pyi", "agent/crates/layerx-agentd/src/session.rs", "agent/crates/layerx-agentd/src/session_control.rs", "agent/crates/layerx-agentd/src/sign.rs", "agent/crates/layerx-agentd/src/ops/program.rs", "agent/crates/layerx-agentd/src/agent_rpc_wire.rs", "agent/crates/layerx-agentd/src/events/subscription.rs", "agent/crates/layerx-agentd/src/read/program_node.rs", "agent/crates/layerx-agentd/src/read/availability.rs", "agent/crates/layerx-agentd/src/export.rs", "agent/crates/layerx-agentd/src/prepare/expiry.rs", "agent/crates/layerx-agentd/src/events/gap.rs", "agent/crates/layerx-agentd/src/events/deliver.rs", "agent/crates/layerx-agentd/tests/subscription.rs", "agent/crates/layerx-agentd/tests/gaps.rs", "agent/crates/layerx-agentd/src/outbox/mod.rs", "agent/crates/layerx-agentd/src/outbox/recover.rs", "agent/crates/layerx-agentd/src/read/history.rs", "agent/crates/layerx-agentd/tests/outbox.rs", "agent/crates/layerx-agentd/tests/recovery.rs", "agent/crates/layerx-agentd/tests/migration.rs", "agent/crates/layerx-agentd/tests/operator.rs", "agent/crates/layerx-agentd/tests/operator_route.rs", "agent/crates/layerx-agentd/tests/unknown.rs", "agent/crates/layerx-agentd/src/protocol_evidence_native_tests.rs", "agent/crates/layerx-agentd/src/human_runtime/subject/tests.rs"]
+touches = ["agent/crates/layerx-agentd/src/main.rs", "agent/crates/layerx-agentd/src/tenant.rs", "agent/crates/layerx-agent-api/src/operation_generated.rs", "platform/sdk/jvm/src/main/java/com/sidiora/layerx/sdk/HttpProductionTransport.java", "agent/crates/layerx-sdk/src/lib.rs", "agent/sdk/typescript/src/agent-http.ts", "agent/sdk/python/layerx_sdk/agent_http.py", "platform/hosted/gateway/src/main.rs", "tools/qualification/paxeer-x/agent_operation_envelope.py", "agent/schema/agent-api/v1.kvx", "agent/crates/layerx-agentd/src/agent_rpc.rs", "agent/crates/layerx-agentd/src/human_runtime.rs", "platform/hosted/gateway/src/routes.rs", "tools/paxeer-x/route-catalogue.json", "agent/crates/layerx-sdk/src/agent_envelope.rs", "platform/sdk/go/http.go", "platform/sdk/swift/Sources/LayerXSDK/Transport.swift", "platform/sdk/dotnet/Transport.cs", "agent/crates/layerx-sdk/tests/agent_operation_envelope.rs", "agent/sdk/typescript/test/agent-operation-envelope.test.ts", "agent/sdk/python/tests/test_agent_operation_envelope.py", "platform/sdk/go/agent_operation_envelope_test.go", "platform/sdk/jvm/src/test/java/com/sidiora/layerx/sdk/AgentOperationEnvelopeProbe.java", "platform/sdk/jvm/src/test/kotlin/com/sidiora/layerx/sdk/AgentOperationEnvelopeProbe.kt", "platform/sdk/swift/Tests/LayerXSDKTests/AgentOperationEnvelopeTests.swift", "platform/sdk/dotnet/tests/LayerX.Sdk.Tests/AgentOperationEnvelopeTests.cs", "agent/crates/layerx-agentd/src/lib.rs", "agent/crates/layerx-agentd/src/human.rs", "agent/crates/layerx-agentd/src/agent_rpc_tls.rs", "agent/crates/layerx-agentd/Cargo.toml", "agent/crates/layerx-agentd/src/agent_rpc_dispatch.rs", "agent/crates/layerx-agentd/src/agent_rpc_adapters.rs", "agent/crates/layerx-agentd/src/agent_rpc_peer.rs", "platform/sdk/jvm/pom.xml", "agent/sdk/python/layerx_sdk/agent_http.pyi", "agent/crates/layerx-agentd/src/session.rs", "agent/crates/layerx-agentd/src/session_control.rs", "agent/crates/layerx-agentd/src/sign.rs", "agent/crates/layerx-agentd/src/ops/program.rs", "agent/crates/layerx-agentd/src/agent_rpc_wire.rs", "agent/crates/layerx-agentd/src/events/subscription.rs", "agent/crates/layerx-agentd/src/read/program_node.rs", "agent/crates/layerx-agentd/src/read/availability.rs", "agent/crates/layerx-agentd/src/export.rs", "agent/crates/layerx-agentd/src/prepare/expiry.rs", "agent/crates/layerx-agentd/src/events/gap.rs", "agent/crates/layerx-agentd/src/events/deliver.rs", "agent/crates/layerx-agentd/tests/subscription.rs", "agent/crates/layerx-agentd/tests/gaps.rs", "agent/crates/layerx-agentd/src/outbox/mod.rs", "agent/crates/layerx-agentd/src/outbox/recover.rs", "agent/crates/layerx-agentd/src/read/history.rs", "agent/crates/layerx-agentd/tests/outbox.rs", "agent/crates/layerx-agentd/tests/recovery.rs", "agent/crates/layerx-agentd/tests/migration.rs", "agent/crates/layerx-agentd/tests/operator.rs", "agent/crates/layerx-agentd/tests/operator_route.rs", "agent/crates/layerx-agentd/tests/unknown.rs", "agent/crates/layerx-agentd/src/protocol_evidence_native_tests.rs", "agent/crates/layerx-agentd/src/human_runtime/subject/tests.rs"]
 verify_cmd = "timeout 30m python3 tools/qualification/paxeer-x/agent_operation_envelope.py"
 gate_kind = "planned"
 max_builds = 1
@@ -21852,6 +21874,8 @@ deployment_profile = "product"
 planned_paths = ["tools/qualification/paxeer-x/agent_operation_envelope.py", "agent/crates/layerx-agentd/src/agent_rpc_dispatch.rs", "agent/crates/layerx-agentd/src/agent_rpc_adapters.rs", "agent/crates/layerx-agentd/src/agent_rpc_peer.rs", "agent/crates/layerx-agentd/src/agent_rpc_wire.rs"]
 path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
 evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+retained_shared_touch_paths = ["agent/Cargo.lock"]
+shared_dependency_owner = "0.7 reconciles the locked local dependency graph before dispatcher qualification; every 8.1 acceptance criterion remains unchanged."
 
 [task.8.2]
 title = "Publish executable MCP bindings with protected listener and peer admission"
@@ -22866,13 +22890,13 @@ title = "Publish explicit index stability and settlement verification levels"
 status = "in_progress"
 mode = "BUILD"
 wave = 2
-requires = ["0.2"]
+requires = ["0.2", "0.7"]
 reqs = ["196"]
 do_1 = "Reproduce the current final=true semantics and inspect its consumers before selecting the compatibility mapping; record whether each consumes index stability or settlement."
 do_2 = "Add explicit stability/verification fields and make any retained legacy final field unambiguous in the published contract."
 do_3 = "Create platform/hosted/indexer/tests/finality_contract.rs using production Store and receipt verification paths to contrast depth-only, valid settlement, invalid proof and rollback cases."
 do_4 = "Implement the declared focused gate through the real production types and paths; exercise every acceptance criterion including refusal, restart or boundary cases specified by this requirement. The command is a planned deliverable, not an already-run gate."
-touches = ["platform/hosted/indexer/src/store.rs", "platform/hosted/indexer/src/config.rs", "platform/hosted/indexer/src/layerx.rs", "platform/hosted/indexer/src/api.rs", "platform/hosted/indexer/tests/finality_contract.rs", "platform/hosted/indexer/Cargo.toml", "platform/Cargo.lock", "platform/hosted/indexer/src/lib.rs", "platform/hosted/indexer/src/settlement.rs"]
+touches = ["platform/hosted/indexer/src/store.rs", "platform/hosted/indexer/src/config.rs", "platform/hosted/indexer/src/layerx.rs", "platform/hosted/indexer/src/api.rs", "platform/hosted/indexer/tests/finality_contract.rs", "platform/hosted/indexer/Cargo.toml", "platform/hosted/indexer/src/lib.rs", "platform/hosted/indexer/src/settlement.rs"]
 verify_cmd = "timeout 10m cargo test --locked --manifest-path platform/Cargo.toml -p layerx-indexer --test finality_contract"
 gate_kind = "planned"
 max_builds = 1
@@ -22886,6 +22910,8 @@ path_policy = "Existing paths are modified in place. Planned paths must be creat
 evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
 
 settlement_source_policy = "Use the canonical client, proof and Paxeer verifier crates without changing them. Permit only the three existing dependency edges for layerx-indexer in Cargo.lock, with no package or version changes. Bind the exact signed header, authenticated receipt inclusion, checkpoint context, historical authority and independent publication before assigning settlement. Persist source provenance and preserve all invalid, unavailable, rollback and restart cases. A recorded checkpoint alone cannot supply a missing matching signed receipt, inclusion proof or real publication."
+retained_shared_touch_paths = ["platform/Cargo.lock"]
+shared_dependency_owner = "0.7 reconciles the local locked graph before task qualification; every original acceptance criterion remains unchanged."
 
 [task.23.1]
 title = "Navigate the complete server-paginated unified account history"
@@ -23688,7 +23714,7 @@ title = "Enforce the ten-line benchmark gate"
 status = "in_progress"
 mode = "BUILD"
 wave = 2
-requires = ["0.2"]
+requires = ["0.2", "0.7"]
 reqs = ["1090.4", "1088.5"]
 do_1 = "Reconcile the retained capability against the current candidate and explicit resolution sections. Reuse conforming implementation; complete only unmet criteria. Resolve historical paths against the current source without narrowing the capability or repeating operational transitions already completed."
 do_2 = "Build the benchmark gate that counts integration lines in the seller and buyer quickstarts against the published packages."
@@ -23697,7 +23723,7 @@ do_4 = "Measure against the packages as published, not against internal shortcut
 do_5 = "Record the measured line counts as build artifacts."
 do_6 = "Wire the gate into make platform-test-middleware and CI."
 do_7 = "Provide this task selector in tools/paxeer-x/gates and execute the full scoped acceptance contract using real production paths. Preserve the retained verification command coverage; move aggregate matrices to release scope and refuse an unknown or unimplemented selector."
-touches = ["platform/tools/benchmark/src/main.rs", ".github/workflows/platform.yml", "tools/paxeer-x/gates/104.16.5.sh", "platform/Cargo.toml", "platform/Cargo.lock", "platform/Makefile.inc", "platform/tools/benchmark/Cargo.toml"]
+touches = ["platform/tools/benchmark/src/main.rs", ".github/workflows/platform.yml", "tools/paxeer-x/gates/104.16.5.sh", "platform/Cargo.toml", "platform/Makefile.inc", "platform/tools/benchmark/Cargo.toml"]
 verify_cmd = "timeout 30m tools/paxeer-x/verify-task.sh 104.16.5"
 gate_kind = "planned-adapter"
 max_builds = 1
@@ -23713,13 +23739,15 @@ completion_policy = "Existing implementation is preserved; current candidate qua
 planned_paths = ["platform/tools/benchmark/src/main.rs", "tools/paxeer-x/gates/104.16.5.sh", "platform/tools/benchmark/Cargo.toml"]
 path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
 evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+retained_shared_touch_paths = ["platform/Cargo.lock"]
+shared_dependency_owner = "0.7 reconciles the local locked graph before task qualification; every original acceptance criterion remains unchanged."
 
 [task.104.17.3]
 title = "Build the deployable hosted testnet and faucet"
 status = "in_progress"
 mode = "QUALIFY"
 wave = 2
-requires = ["0.2"]
+requires = ["0.2", "0.7"]
 reqs = ["1089.3", "1089.7"]
 do_1 = "Reconcile the retained capability against the current candidate and explicit resolution sections. Reuse conforming implementation; complete only unmet criteria. Resolve historical paths against the current source without narrowing the capability or repeating operational transitions already completed."
 do_2 = "Stand up the hosted testnet running the pending-release protocol version with declared reset schedule and public status."
@@ -23728,7 +23756,7 @@ do_4 = "Publish testnet endpoints, chain parameters and reset calendar in the do
 do_5 = "Monitor testnet health on the status page, distinguishing testnet, gateway and core degradation."
 do_6 = "Exercise the faucet and a full test payment through the hosted surface in the scheduled CI run."
 do_7 = "Provide this task selector in tools/paxeer-x/gates and execute the full scoped acceptance contract using real production paths. Preserve the retained verification command coverage; move aggregate matrices to release scope and refuse an unknown or unimplemented selector."
-touches = ["platform/hosted/testnet", "platform/hosted/faucet", "platform/docs", "tools/paxeer-x/gates/104.17.3.sh", "platform/Cargo.lock", ".github/workflows/platform.yml"]
+touches = ["platform/hosted/testnet", "platform/hosted/faucet", "platform/docs", "tools/paxeer-x/gates/104.17.3.sh", ".github/workflows/platform.yml"]
 verify_cmd = "timeout 30m tools/paxeer-x/verify-task.sh 104.17.3"
 gate_kind = "planned-adapter"
 max_builds = 1
@@ -23744,6 +23772,8 @@ completion_policy = "Existing implementation is preserved; current candidate qua
 planned_paths = ["tools/paxeer-x/gates/104.17.3.sh"]
 path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
 evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+retained_shared_touch_paths = ["platform/Cargo.lock"]
+shared_dependency_owner = "0.7 reconciles the local locked graph before task qualification; every original acceptance criterion remains unchanged."
 
 [task.104.19.2]
 title = "Implement deterministic execution and metering"
@@ -23880,7 +23910,7 @@ title = "Build the market-maker ramp kit and reference ramp"
 status = "in_progress"
 mode = "QUALIFY"
 wave = 2
-requires = ["0.2"]
+requires = ["0.2", "0.7"]
 reqs = ["1097.5"]
 do_1 = "Reconcile the retained capability against the current candidate and explicit resolution sections. Reuse conforming implementation; complete only unmet criteria. Resolve historical paths against the current source without narrowing the capability or repeating operational transitions already completed."
 do_2 = "Build the ramp toolkit letting third parties operate on and off ramps as ordinary LayerX principals over agent accounts, 402LXP transfers and payer grants."
@@ -23889,7 +23919,7 @@ do_4 = "Ship a runnable reference ramp with rebalancing through the Paxeer bound
 do_5 = "Document ramp operation, risk boundaries and the external-custody labelling obligations."
 do_6 = "Exercise the reference ramp end to end in CI against the testnet."
 do_7 = "Provide this task selector in tools/paxeer-x/gates and execute the full scoped acceptance contract using real production paths. Preserve the retained verification command coverage; move aggregate matrices to release scope and refuse an unknown or unimplemented selector."
-touches = ["platform/ramps", "platform/Cargo.*", "Makefile", ".github/workflows/ramp-sandbox.yml", "tools/paxeer-x/gates/104.26.1.sh"]
+touches = ["platform/ramps", "platform/Cargo.toml", "Makefile", ".github/workflows/ramp-sandbox.yml", "tools/paxeer-x/gates/104.26.1.sh"]
 verify_cmd = "timeout 30m tools/paxeer-x/verify-task.sh 104.26.1"
 gate_kind = "planned-adapter"
 max_builds = 1
@@ -23905,6 +23935,8 @@ completion_policy = "Existing implementation is preserved; current candidate qua
 planned_paths = ["tools/paxeer-x/gates/104.26.1.sh"]
 path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
 evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+retained_shared_touch_patterns = ["platform/Cargo.*"]
+shared_dependency_owner = "0.7 owns lockfile reconciliation; manifests and all original acceptance remain owned by this task."
 
 [task.104.26.2]
 title = "Enforce external-custody labelling"

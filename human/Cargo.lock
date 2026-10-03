@@ -889,6 +889,7 @@ name = "layerx-agent-api"
 version = "0.1.0"
 dependencies = [
  "layerx-client",
+ "layerx-proof",
  "layerx-types",
 ]
 
@@ -909,7 +910,9 @@ dependencies = [
  "layerx-types",
  "layerx-wire",
  "rustix",
+ "rustls",
  "rustls-native-certs",
+ "rustls-webpki",
  "serde",
  "serde_json",
  "sha2",
@@ -1283,6 +1286,7 @@ dependencies = [
  "blake3",
  "ed25519-dalek",
  "k256",
+ "layerx-program-sdk",
  "num-bigint",
  "sha2",
  "sha3",

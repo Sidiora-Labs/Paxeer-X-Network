@@ -1988,3 +1988,13 @@ do = "Declare the workspace dependency and update the matching lockfile entry wi
 area = "wallet"
 symptom = "Capability session changes cannot be represented honestly by an address-only account mismatch refusal."
 do = "Declare the precise session-change refusal through the approved contract while preserving rejection predicates and error code."
+
+[gotcha.602]
+area = "rust"
+symptom = "Human workspace parsing fails when the explorer-index manifest declares the same verifier dependency twice."
+do = "Retain one identical genuine dependency declaration and preserve its path and version."
+
+[gotcha.603]
+area = "rust"
+symptom = "Current local dependency edges can differ from retained Cargo locks after integration."
+do = "Use actual Cargo metadata to reconcile local edges and compare complete external lock records; retain every external version, source and checksum."

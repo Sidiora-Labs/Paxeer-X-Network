@@ -1924,6 +1924,7 @@ dependencies = [
  "blake3",
  "ed25519-dalek",
  "k256",
+ "layerx-program-sdk",
  "num-bigint",
  "sha2 0.10.9",
  "sha3",
