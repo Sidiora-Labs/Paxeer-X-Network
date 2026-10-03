@@ -2,12 +2,97 @@ use native_tls::{Certificate, Identity, TlsConnector};
 use std::collections::BTreeMap;
 use std::io::{Read, Write};
 use std::net::{IpAddr, SocketAddr, TcpStream, ToSocketAddrs};
-use std::time::Duration;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::mpsc;
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(3);
 const IO_TIMEOUT: Duration = Duration::from_secs(10);
 const MAX_HEADERS: usize = 32 * 1024;
 const MAX_BODY: usize = 512 * 1024;
+static ADMISSION_RESOLVERS: AtomicUsize = AtomicUsize::new(0);
+
+struct ResolverPermit;
+
+impl Drop for ResolverPermit {
+    fn drop(&mut self) {
+        ADMISSION_RESOLVERS.fetch_sub(1, Ordering::Release);
+    }
+}
+
+pub(crate) fn resolve_until(
+    host: String,
+    port: u16,
+    deadline: Instant,
+) -> Result<Vec<SocketAddr>, String> {
+    remaining(deadline)?;
+    ADMISSION_RESOLVERS
+        .fetch_update(Ordering::AcqRel, Ordering::Acquire, |active| {
+            (active < 16).then_some(active + 1)
+        })
+        .map_err(|_| "admission DNS capacity unavailable")?;
+    let permit = ResolverPermit;
+    let (sender, receiver) = mpsc::sync_channel(1);
+    std::thread::Builder::new()
+        .name("webhook-admission-dns".to_owned())
+        .spawn(move || {
+            let _permit = permit;
+            let addresses = (host.as_str(), port)
+                .to_socket_addrs()
+                .map(|addresses| addresses.take(16).collect::<Vec<_>>())
+                .map_err(|error| error.to_string());
+            let _ = sender.send(addresses);
+        })
+        .map_err(|error| error.to_string())?;
+    receiver
+        .recv_timeout(remaining(deadline)?)
+        .map_err(|_| "admission DNS deadline exceeded".to_owned())?
+}
+
+pub(crate) struct DeadlineTcp {
+    pub(crate) socket: TcpStream,
+    pub(crate) deadline: Option<Instant>,
+    pub(crate) io_timeout: Duration,
+}
+
+impl DeadlineTcp {
+    fn budget(&self) -> std::io::Result<Duration> {
+        self.deadline.map_or(Ok(self.io_timeout), |deadline| {
+            deadline
+                .checked_duration_since(Instant::now())
+                .filter(|value| !value.is_zero())
+                .map(|value| value.min(self.io_timeout))
+                .ok_or_else(|| {
+                    std::io::Error::new(std::io::ErrorKind::TimedOut, "admission deadline exceeded")
+                })
+        })
+    }
+}
+
+impl Read for DeadlineTcp {
+    fn read(&mut self, bytes: &mut [u8]) -> std::io::Result<usize> {
+        self.socket.set_read_timeout(Some(self.budget()?))?;
+        self.socket.read(bytes)
+    }
+}
+
+impl Write for DeadlineTcp {
+    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+        self.socket.set_write_timeout(Some(self.budget()?))?;
+        self.socket.write(bytes)
+    }
+    fn flush(&mut self) -> std::io::Result<()> {
+        self.budget()?;
+        self.socket.flush()
+    }
+}
+
+pub(crate) fn remaining(deadline: Instant) -> Result<Duration, String> {
+    deadline
+        .checked_duration_since(Instant::now())
+        .filter(|value| !value.is_zero())
+        .ok_or_else(|| "admission deadline exceeded".to_owned())
+}
 
 #[derive(Clone, Debug)]
 pub(crate) struct Endpoint {
@@ -215,6 +300,22 @@ impl Client {
     }
 
     pub(crate) fn request(&self, request: &OutboundRequest<'_>) -> Result<Response, String> {
+        self.request_deadline(request, None)
+    }
+
+    pub(crate) fn request_until(
+        &self,
+        request: &OutboundRequest<'_>,
+        deadline: Instant,
+    ) -> Result<Response, String> {
+        self.request_deadline(request, Some(deadline))
+    }
+
+    fn request_deadline(
+        &self,
+        request: &OutboundRequest<'_>,
+        deadline: Option<Instant>,
+    ) -> Result<Response, String> {
         let OutboundRequest {
             endpoint,
             method,
@@ -232,7 +333,20 @@ impl Client {
             return Err("outbound request exceeds its boundary".to_owned());
         }
         let path = endpoint.path(path)?;
-        let addresses = resolve(endpoint, self.public_only)?;
+        let addresses = match deadline {
+            None => resolve(endpoint, self.public_only)?,
+            Some(deadline) => {
+                let addresses = resolve_until(endpoint.host.clone(), endpoint.port, deadline)?;
+                if addresses.is_empty()
+                    || (self.public_only && addresses.iter().any(|value| !public_ip(value.ip())))
+                {
+                    return Err(
+                        "endpoint DNS resolved outside the permitted public range".to_owned()
+                    );
+                }
+                addresses
+            }
+        };
         let mut builder = TlsConnector::builder();
         builder
             .add_root_certificate(self.identity.ca.clone())
@@ -243,14 +357,24 @@ impl Client {
         let connector = builder.build().map_err(|error| error.to_string())?;
         let mut last = None;
         for address in addresses {
-            match TcpStream::connect_timeout(&address, CONNECT_TIMEOUT) {
+            let budget = deadline.map_or(Ok(CONNECT_TIMEOUT), |deadline| {
+                remaining(deadline).map(|value| value.min(CONNECT_TIMEOUT))
+            })?;
+            match TcpStream::connect_timeout(&address, budget) {
                 Ok(tcp) => {
                     tcp.set_read_timeout(Some(IO_TIMEOUT))
                         .map_err(|error| error.to_string())?;
                     tcp.set_write_timeout(Some(IO_TIMEOUT))
                         .map_err(|error| error.to_string())?;
                     let mut stream = connector
-                        .connect(&endpoint.host, tcp)
+                        .connect(
+                            &endpoint.host,
+                            DeadlineTcp {
+                                socket: tcp,
+                                deadline,
+                                io_timeout: IO_TIMEOUT,
+                            },
+                        )
                         .map_err(|error| error.to_string())?;
                     let authorization = bearer.map_or_else(String::new, |value| {
                         format!("Authorization: Bearer {value}\r\n")
@@ -272,6 +396,16 @@ impl Client {
                         extra.push_str(value);
                         extra.push_str("\r\n");
                     }
+                    if let Some(deadline) = deadline {
+                        let absolute = SystemTime::now()
+                            .checked_add(remaining(deadline)?)
+                            .and_then(|value| value.duration_since(UNIX_EPOCH).ok())
+                            .ok_or("invalid admission deadline")?;
+                        extra.push_str(&format!(
+                            "x-layerx-admission-deadline-ms: {}\r\n",
+                            absolute.as_millis()
+                        ));
+                    }
                     write!(
                         stream,
                         "{method} {path} HTTP/1.1\r\nHost: {}\r\nAccept: application/json\r\nContent-Type: application/json\r\nUser-Agent: LayerX-Hosted/1\r\n{authorization}{idempotency}{extra}Content-Length: {}\r\nConnection: close\r\n\r\n",
@@ -281,7 +415,11 @@ impl Client {
                     .map_err(|error| error.to_string())?;
                     stream.write_all(body).map_err(|error| error.to_string())?;
                     stream.flush().map_err(|error| error.to_string())?;
-                    return read_response(&mut stream);
+                    let response = read_response(&mut stream)?;
+                    if let Some(deadline) = deadline {
+                        remaining(deadline)?;
+                    }
+                    return Ok(response);
                 }
                 Err(error) => last = Some(error),
             }

@@ -2677,7 +2677,7 @@ def event_principal_provisioning(manifest, results):
 
 def producer_readiness_inputs(fixture):
     configuration = fixture.get('producer_readiness')
-    if not isinstance(configuration, dict) or set(configuration) != {'clients', 'producer_ingress', 'operator_ingress'}:
+    if not isinstance(configuration, dict) or set(configuration) != {'clients', 'producer_ingress', 'operator_ingress', 'dependencies'}:
         raise Missing('producer readiness needs real client health endpoints and distinct producer/operator mTLS ingress identities')
     clients = configuration['clients']
     if set(clients) != {'human', 'registry', 'gateway'}:
@@ -2693,6 +2693,33 @@ def producer_readiness_inputs(fixture):
         ProvisioningHttp(item['endpoint'])
     if clients['human']['endpoint'] != fixture['human']:
         raise Missing('Human readiness must use the genuine Human service listener')
+    dependencies = configuration['dependencies']
+    binaries = {'redis': {'redis-server'}, 'kms': {'layerx-kms'},
+                'component': {'layerx-agent-boundary'},
+                'authority': {'layerx-receipt-authority'},
+                'source-principal': {'layerx-human-service', 'layerx-human-components'}}
+    if not isinstance(dependencies, dict) or set(dependencies) != set(binaries):
+        raise Missing('readiness requires every owned real dependency for deadline refusal and restoration')
+    ingress_env = fixture['services']['webhook-ingress']['environment']
+    origins = {'redis': ingress_env['LAYERX_WEBHOOKS_REDIS_URL'],
+               'kms': ingress_env['LAYERX_WEBHOOKS_KMS_URL'],
+               'component': ingress_env['LAYERX_WEBHOOKS_COMPONENT_URL'],
+               'authority': ingress_env['LAYERX_WEBHOOKS_AUTHORITY_URL'],
+               'source-principal': fixture['services']['journeys']['environment']['LAYERX_EVENTS_UPSTREAM_URL']}
+    for name, service_name in dependencies.items():
+        service = fixture['services'].get(service_name)
+        if not service or service['binary'] not in binaries[name]:
+            raise Missing('deadline dependency must be an owned production process: ' + name)
+        parsed = urlsplit(origins[name])
+        if parsed.hostname not in ('localhost', '127.0.0.1'):
+            raise Missing('deadline dependency must remain inside this isolated namespace: ' + name)
+        port = parsed.port or (6379 if name == 'redis' else 443)
+        if name == 'redis':
+            if '--tls-port' not in service['arguments'] or service['arguments'][service['arguments'].index('--tls-port') + 1] != str(port):
+                raise Missing('Redis deadline process must own the configured real TLS port')
+        elif not any(value in (f'127.0.0.1:{port}', f'localhost:{port}', f'0.0.0.0:{port}')
+                     for key, value in service['environment'].items() if key.endswith(('_LISTEN', '_BIND'))):
+            raise Missing('deadline process must own the configured dependency listener: ' + name)
     ingress = fixture['services']['webhook-ingress']['environment']['LAYERX_WEBHOOKS_LISTEN']
     for role in ('producer_ingress', 'operator_ingress'):
         endpoint = configuration[role]
@@ -2785,6 +2812,48 @@ def producer_readiness_checks(manifest, fixture, processes, work, principal, hum
         except (OSError, ssl.SSLError):
             refused = True
         check(kind + ' trigger readiness retains mTLS producer authority', refused)
+        for deadline in ('invalid', str(int(time.time() * 1000) - 1000)):
+            started = time.monotonic()
+            status, _ = ingress.request('GET', path, headers={'X-LayerX-Admission-Deadline-Ms': deadline})
+            check(kind + ' trigger refuses malformed or expired absolute deadline without probing',
+                  status in (400, 503) and time.monotonic() - started < 2)
+            started = time.monotonic()
+            status, _ = client.request('GET', '/internal/v1/producer-readiness',
+                                      headers={'X-LayerX-Admission-Deadline-Ms': deadline})
+            check(kind + ' source refuses malformed or expired absolute deadline without probing',
+                  status == 503 and time.monotonic() - started < 2)
+    for dependency, service_name in configuration['dependencies'].items():
+        child = processes.children[service_name]
+        child.send_signal(signal.SIGSTOP)
+        try:
+            if dependency == 'source-principal':
+                started = time.monotonic()
+                status, value = sources['journeys'].request('GET', '/internal/v1/producer-readiness')
+                check('principal identity transport cannot outlive the five-second admission budget',
+                      status == 503 and value.get('ready') is False and time.monotonic() - started < 6)
+                check('principal dependency stall leaves source independently live',
+                      sources['journeys'].request('GET', '/livez')[0] == 200)
+                started = time.monotonic()
+                status, _ = sources['journeys'].request('GET', '/internal/v1/producer-readiness',
+                    headers={'X-LayerX-Admission-Deadline-Ms': str(int(time.time() * 1000) + 250)})
+                check('source principal checks preserve the shorter caller deadline',
+                      status == 503 and time.monotonic() - started < 1)
+            else:
+                started = time.monotonic()
+                status, _ = ingress.request('GET', '/internal/v1/readiness/journey')
+                check(dependency + ' transport cannot outlive the shared five-second trigger budget',
+                      status == 503 and time.monotonic() - started < 6)
+                started = time.monotonic()
+                status, _ = ingress.request('GET', '/internal/v1/readiness/journey',
+                    headers={'X-LayerX-Admission-Deadline-Ms': str(int(time.time() * 1000) + 250)})
+                check(dependency + ' trigger checks preserve the shorter caller deadline',
+                      status == 503 and time.monotonic() - started < 1)
+                for name in clients:
+                    processes.wait(lambda name=name: ready(name, 503), dependency + ' producer refusal ' + name, 15)
+                check(dependency + ' refused readiness leaves canonical state intact', journals_empty())
+        finally:
+            child.send_signal(signal.SIGCONT)
+        restored(dependency + ' dependency resumed')
     for kind in KINDS:
         name = affected[kind]
         child = processes.children[kind]
@@ -2818,7 +2887,7 @@ def producer_readiness_checks(manifest, fixture, processes, work, principal, hum
         service = fixture['services'][item['service']]
         original = dict(service['environment'])
         source_kind = {'human': 'JOURNEY', 'registry': 'PROGRAM', 'gateway': 'PAYMENT'}[name]
-        for prefix in ('LAYERX_EVENTS_' + source_kind, 'LAYERX_WEBHOOKS'):
+        for prefix in ('LAYERX_EVENTS_' + source_kind, 'LAYERX_EVENTS_WEBHOOKS'):
             processes.stop(item['service'])
             service['environment'] = dict(original, **{prefix + '_UPSTREAM_TOKEN_FILE': invalid})
             processes.start(item['service'])
@@ -2838,8 +2907,8 @@ def producer_readiness_checks(manifest, fixture, processes, work, principal, hum
         check(name + ' partial producer configuration refuses startup', child.returncode != 0)
         processes.children.pop(item['service'])
         if name in ('human', 'registry'):
-            groups = ('LAYERX_EVENTS_JOURNEY', 'LAYERX_EVENTS_APPROVAL', 'LAYERX_WEBHOOKS') if name == 'human' \
-                else ('LAYERX_EVENTS_PROGRAM', 'LAYERX_WEBHOOKS')
+            groups = ('LAYERX_EVENTS_JOURNEY', 'LAYERX_EVENTS_APPROVAL', 'LAYERX_EVENTS_WEBHOOKS') if name == 'human' \
+                else ('LAYERX_EVENTS_PROGRAM', 'LAYERX_EVENTS_WEBHOOKS')
             service['environment'] = {key: value for key, value in original.items()
                 if not any(key == prefix + '_UPSTREAM_' + suffix for prefix in groups for suffix in suffixes)}
             processes.start(item['service'])
@@ -2850,13 +2919,13 @@ def producer_readiness_checks(manifest, fixture, processes, work, principal, hum
         if name == 'gateway':
             absent = {key: value for key, value in original.items()
                       if not any(key == prefix + '_UPSTREAM_' + suffix
-                                 for prefix in ('LAYERX_EVENTS_PAYMENT', 'LAYERX_WEBHOOKS') for suffix in suffixes)}
+                                 for prefix in ('LAYERX_EVENTS_PAYMENT', 'LAYERX_EVENTS_WEBHOOKS') for suffix in suffixes)}
             service['environment'] = absent
             processes.start(item['service'])
             processes.wait(lambda: ready(name), 'gateway whole producer group absent', 40)
             check('gateway producer is optional only with the complete group absent', ready(name))
             processes.stop(item['service'])
-            absent['LAYERX_WEBHOOKS_UPSTREAM_COOKIE_FILE'] = invalid
+            absent['LAYERX_EVENTS_WEBHOOKS_UPSTREAM_COOKIE_FILE'] = invalid
             service['environment'] = absent
             processes.start(item['service'])
             child = processes.children[item['service']]

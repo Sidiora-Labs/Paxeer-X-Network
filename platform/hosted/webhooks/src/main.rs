@@ -19,7 +19,7 @@ use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::thread;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 const MAX_CONNECTIONS: usize = 256;
 const DEFAULT_PAGE: usize = 50;
@@ -219,10 +219,17 @@ fn config() -> Result<Config, String> {
             .parse::<SocketAddr>()
             .map_err(|_| "webhook listen address is invalid".to_owned())?,
         health_listen: match env::var("LAYERX_WEBHOOKS_HEALTH_LISTEN") {
-            Ok(value) if !ingress => Some(value.parse::<SocketAddr>()
-                .map_err(|_| "webhook health listen address is invalid".to_owned())?),
+            Ok(value) if !ingress => Some(
+                value
+                    .parse::<SocketAddr>()
+                    .map_err(|_| "webhook health listen address is invalid".to_owned())?,
+            ),
             Err(env::VarError::NotPresent) => None,
-            _ => return Err("webhook health listener is only available to the public role".to_owned()),
+            _ => {
+                return Err(
+                    "webhook health listener is only available to the public role".to_owned(),
+                )
+            }
         },
         listener,
         service: Arc::new(HostedService::from_environment()?),
@@ -463,13 +470,41 @@ fn internal_route(
             if !request.body.is_empty() {
                 return Reply::refusal(400, "body_not_allowed", None);
             }
-            let admission = EventKind::parse(kind).and_then(|kind| sources.trigger_admission(kind));
+            let started = Instant::now();
+            let maximum = Duration::from_secs(5);
+            let budget = match request.header("x-layerx-admission-deadline-ms") {
+                None => maximum,
+                Some(value) => {
+                    let Some(absolute) = value
+                        .parse::<u64>()
+                        .ok()
+                        .and_then(|value| UNIX_EPOCH.checked_add(Duration::from_millis(value)))
+                    else {
+                        return Reply::refusal(400, "invalid_admission_deadline", None);
+                    };
+                    let Ok(budget) = absolute.duration_since(SystemTime::now()) else {
+                        return Reply::refusal(503, "admission_deadline_exceeded", None);
+                    };
+                    budget.min(maximum)
+                }
+            };
+            let Some(deadline) = started
+                .checked_add(budget)
+                .filter(|deadline| Instant::now() < *deadline)
+            else {
+                return Reply::refusal(503, "admission_deadline_exceeded", None);
+            };
+            let admission =
+                EventKind::parse(kind).and_then(|kind| sources.trigger_admission(kind, deadline));
             match admission {
-                Ok((generation, principals)) if config.service.ready() => encoded(200, &serde_json::json!({
-                    "schema": "layerx.event-admission.v1", "role": "webhook-trigger",
-                    "kind": kind, "ready": true, "generation": generation, "principals": principals,
-                    "principal_digest": false, "fresh_for_ms": 10_000
-                })),
+                Ok((generation, principals)) if config.service.ready_until(deadline) => encoded(
+                    200,
+                    &serde_json::json!({
+                        "schema": "layerx.event-admission.v1", "role": "webhook-trigger",
+                        "kind": kind, "ready": true, "generation": generation, "principals": principals,
+                        "principal_digest": false, "fresh_for_ms": 10_000
+                    }),
+                ),
                 Ok(_) => Reply::refusal(503, "delivery_state_unavailable", None),
                 Err(error) => refusal(&error),
             }
@@ -510,7 +545,10 @@ fn internal_path(request: &Request) -> bool {
 }
 
 fn readiness(config: &Config) -> Reply {
-    let delivery = config.service.ready();
+    let Some(deadline) = Instant::now().checked_add(Duration::from_secs(5)) else {
+        return Reply::refusal(503, "admission_deadline_exceeded", None);
+    };
+    let delivery = config.service.ready_until(deadline);
     match &config.role {
         Role::Public { .. } => encoded(
             if delivery { 200 } else { 503 },
@@ -521,7 +559,7 @@ fn readiness(config: &Config) -> Reply {
             }),
         ),
         Role::Ingress { sources, .. } => {
-            let sources = sources.ready();
+            let sources = sources.ready_until(deadline);
             encoded(
                 if delivery && sources { 200 } else { 503 },
                 &serde_json::json!({
@@ -606,8 +644,12 @@ fn serve_health(listener: TcpListener, config: &Arc<Config>) {
         let config = Arc::clone(config);
         thread::spawn(move || {
             let _guard = ConnectionGuard;
-            if stream.set_read_timeout(Some(Duration::from_secs(15))).is_err()
-                || stream.set_write_timeout(Some(Duration::from_secs(15))).is_err()
+            if stream
+                .set_read_timeout(Some(Duration::from_secs(15)))
+                .is_err()
+                || stream
+                    .set_write_timeout(Some(Duration::from_secs(15)))
+                    .is_err()
             {
                 return;
             }
@@ -627,12 +669,16 @@ fn serve_health(listener: TcpListener, config: &Arc<Config>) {
 }
 
 fn serve(config: Config) -> Result<(), String> {
-    let health = config.health_listen.map(TcpListener::bind).transpose()
+    let health = config
+        .health_listen
+        .map(TcpListener::bind)
+        .transpose()
         .map_err(|error| format!("webhook health listen: {error}"))?;
     let config = Arc::new(config);
     if let Some(listener) = health {
         let health_config = Arc::clone(&config);
-        thread::Builder::new().name("webhook-readiness".to_owned())
+        thread::Builder::new()
+            .name("webhook-readiness".to_owned())
             .spawn(move || serve_health(listener, &health_config))
             .map_err(|error| format!("webhook health thread: {error}"))?;
     }

@@ -1955,3 +1955,20 @@ area    = "human-entrypoint"
 symptom = "A POSIX sh loop over /run/human-material/journal/* under set -e fails test -s on the literal pattern when the directory is empty."
 cause   = "sh leaves an unmatched glob as the pattern itself, so the loop body runs once on a path that does not exist."
 do      = "Guard each iteration with [ -e \"$record\" ] || continue and check the directory itself with test -d before the loop."
+
+[gotcha.597]
+area = "builder"
+symptom = "Migrated source checkout may have no Rust toolchain despite retained build artifacts."
+do = "Provision the exact repository toolchain before qualification; retained artifacts are not build evidence."
+
+
+[gotcha.598]
+area = "spec"
+symptom = "A task claim can reserve unchanged caller files and collide with another task."
+do = "Map ownership to the actual changed producer and transport modules while retaining all caller acceptance cases, then use a normal claim."
+
+
+[gotcha.601]
+area = "events"
+symptom = "Producer readiness harness used a webhook upstream variable group differing from the served producer."
+do = "Use the exact events webhook upstream group while retaining real delivery and readiness assertions."

@@ -6,8 +6,9 @@ use std::env;
 use std::fs;
 use std::io::{Read, Write};
 use std::net::{IpAddr, SocketAddr, TcpStream, ToSocketAddrs};
-use std::sync::Arc;
-use std::time::Duration;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{mpsc, Arc};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use native_tls::{Certificate, Identity, TlsConnector};
 use rustls::pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer};
@@ -22,6 +23,81 @@ use crate::secret::read_secret_file;
 pub const MAX_UPSTREAM_BYTES: usize = 512 * 1024;
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 const IO_TIMEOUT: Duration = Duration::from_secs(8);
+static ADMISSION_RESOLVERS: AtomicUsize = AtomicUsize::new(0);
+
+struct ResolverPermit;
+
+impl Drop for ResolverPermit {
+    fn drop(&mut self) {
+        ADMISSION_RESOLVERS.fetch_sub(1, Ordering::Release);
+    }
+}
+
+pub const ADMISSION_DEADLINE_HEADER: &str = "x-layerx-admission-deadline-ms";
+
+pub fn admission_deadline(
+    headers: &BTreeMap<String, String>,
+    maximum: Duration,
+) -> Result<Instant, String> {
+    let now = Instant::now();
+    let budget = match headers.get(ADMISSION_DEADLINE_HEADER) {
+        None => maximum,
+        Some(value) => {
+            let millis = value
+                .parse::<u64>()
+                .map_err(|_| "invalid admission deadline")?;
+            let absolute = UNIX_EPOCH
+                .checked_add(Duration::from_millis(millis))
+                .ok_or("invalid admission deadline")?;
+            absolute
+                .duration_since(SystemTime::now())
+                .map_err(|_| "admission deadline exceeded")?
+                .min(maximum)
+        }
+    };
+    if budget.is_zero() {
+        return Err("admission deadline exceeded".to_owned());
+    }
+    now.checked_add(budget)
+        .ok_or_else(|| "invalid admission deadline".to_owned())
+}
+
+struct DeadlineTcp {
+    socket: TcpStream,
+    deadline: Option<Instant>,
+}
+
+impl DeadlineTcp {
+    fn budget(&self) -> std::io::Result<Duration> {
+        self.deadline.map_or(Ok(IO_TIMEOUT), |deadline| {
+            deadline
+                .checked_duration_since(Instant::now())
+                .filter(|value| !value.is_zero())
+                .map(|value| value.min(IO_TIMEOUT))
+                .ok_or_else(|| {
+                    std::io::Error::new(std::io::ErrorKind::TimedOut, "admission deadline exceeded")
+                })
+        })
+    }
+}
+
+impl Read for DeadlineTcp {
+    fn read(&mut self, bytes: &mut [u8]) -> std::io::Result<usize> {
+        self.socket.set_read_timeout(Some(self.budget()?))?;
+        self.socket.read(bytes)
+    }
+}
+
+impl Write for DeadlineTcp {
+    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+        self.socket.set_write_timeout(Some(self.budget()?))?;
+        self.socket.write(bytes)
+    }
+    fn flush(&mut self) -> std::io::Result<()> {
+        self.budget()?;
+        self.socket.flush()
+    }
+}
 
 /// Builds the listener configuration from `<prefix>_TLS_CERT_DER`,
 /// `<prefix>_TLS_KEY_DER` and the optional `<prefix>_CLIENT_CA_DER`. When a
@@ -217,7 +293,15 @@ impl Upstream {
     /// Returns [`UpstreamFailure::Unavailable`] when no well-formed response
     /// arrives.
     pub fn get(&self, path: &str) -> Result<UpstreamResponse, UpstreamFailure> {
-        self.request("GET", path, &[], None)
+        self.request("GET", path, &[], None, None)
+    }
+
+    pub fn get_until(
+        &self,
+        path: &str,
+        deadline: Instant,
+    ) -> Result<UpstreamResponse, UpstreamFailure> {
+        self.request("GET", path, &[], None, Some(deadline))
     }
 
     /// Performs a GET with an explicit principal credential.
@@ -237,13 +321,31 @@ impl Upstream {
                 "invalid principal credential".to_owned(),
             ));
         }
-        self.request("GET", path, &[], Some((header, credential)))
+        self.request("GET", path, &[], Some((header, credential)), None)
+    }
+
+    pub fn get_as_until(
+        &self,
+        path: &str,
+        header: &str,
+        credential: &str,
+        deadline: Instant,
+    ) -> Result<UpstreamResponse, UpstreamFailure> {
+        if !matches!(header, "Cookie" | "Authorization")
+            || credential.bytes().any(|byte| byte.is_ascii_control())
+            || credential.len() > 4096
+        {
+            return Err(UpstreamFailure::Unavailable(
+                "invalid principal credential".to_owned(),
+            ));
+        }
+        self.request("GET", path, &[], Some((header, credential)), Some(deadline))
     }
 
     /// # Errors
     /// Refuses transport failures and malformed responses.
     pub fn post(&self, path: &str, body: &[u8]) -> Result<UpstreamResponse, UpstreamFailure> {
-        self.request("POST", path, body, None)
+        self.request("POST", path, body, None, None)
     }
 
     #[must_use]
@@ -257,6 +359,7 @@ impl Upstream {
         path: &str,
         body: &[u8],
         credential: Option<(&str, &str)>,
+        deadline: Option<Instant>,
     ) -> Result<UpstreamResponse, UpstreamFailure> {
         if !path.starts_with('/') || path.contains(['?', '#', ' ', '\r', '\n']) || path.len() > 1024
         {
@@ -275,10 +378,40 @@ impl Upstream {
         let connector = builder
             .build()
             .map_err(|error| UpstreamFailure::Unavailable(error.to_string()))?;
-        let addresses = resolve(&self.origin)?;
+        let addresses = match deadline {
+            None => resolve(&self.origin)?,
+            Some(deadline) => {
+                remaining(deadline)?;
+                ADMISSION_RESOLVERS
+                    .fetch_update(Ordering::AcqRel, Ordering::Acquire, |active| {
+                        (active < 16).then_some(active + 1)
+                    })
+                    .map_err(|_| {
+                        UpstreamFailure::Unavailable(
+                            "admission DNS capacity unavailable".to_owned(),
+                        )
+                    })?;
+                let permit = ResolverPermit;
+                let origin = self.origin.clone();
+                let (sender, receiver) = mpsc::sync_channel(1);
+                std::thread::Builder::new()
+                    .name("event-admission-dns".to_owned())
+                    .spawn(move || {
+                        let _permit = permit;
+                        let _ = sender.send(resolve(&origin));
+                    })
+                    .map_err(|error| UpstreamFailure::Unavailable(error.to_string()))?;
+                receiver.recv_timeout(remaining(deadline)?).map_err(|_| {
+                    UpstreamFailure::Unavailable("admission DNS deadline exceeded".to_owned())
+                })??
+            }
+        };
         let mut last = "upstream has no addresses".to_owned();
         for address in addresses {
-            let tcp = match TcpStream::connect_timeout(&address, CONNECT_TIMEOUT) {
+            let budget = deadline.map_or(Ok(CONNECT_TIMEOUT), |deadline| {
+                remaining(deadline).map(|value| value.min(CONNECT_TIMEOUT))
+            })?;
+            let tcp = match TcpStream::connect_timeout(&address, budget) {
                 Ok(tcp) => tcp,
                 Err(error) => {
                     last = error.to_string();
@@ -290,7 +423,13 @@ impl Upstream {
             tcp.set_write_timeout(Some(IO_TIMEOUT))
                 .map_err(|error| UpstreamFailure::Unavailable(error.to_string()))?;
             let mut stream = connector
-                .connect(&self.origin.host, tcp)
+                .connect(
+                    &self.origin.host,
+                    DeadlineTcp {
+                        socket: tcp,
+                        deadline,
+                    },
+                )
                 .map_err(|error| UpstreamFailure::Unavailable(error.to_string()))?;
             let authorization = self.token.as_ref().map_or_else(String::new, |token| {
                 format!("Authorization: Bearer {}\r\n", token.as_str())
@@ -311,9 +450,21 @@ impl Upstream {
             } else {
                 format!("{}:{}", self.origin.host, self.origin.port)
             };
+            let admission = match deadline {
+                None => String::new(),
+                Some(deadline) => {
+                    let absolute = SystemTime::now()
+                        .checked_add(remaining(deadline)?)
+                        .and_then(|value| value.duration_since(UNIX_EPOCH).ok())
+                        .ok_or_else(|| {
+                            UpstreamFailure::Unavailable("invalid admission deadline".to_owned())
+                        })?;
+                    format!("{ADMISSION_DEADLINE_HEADER}: {}\r\n", absolute.as_millis())
+                }
+            };
             write!(
                 stream,
-                "{method} {path} HTTP/1.1\r\nHost: {host}\r\nAccept: application/json\r\nContent-Type: application/json\r\nUser-Agent: LayerX-Internal/1\r\n{authorization}{cookie}{principal}Content-Length: {}\r\nConnection: close\r\n\r\n",
+                "{method} {path} HTTP/1.1\r\nHost: {host}\r\nAccept: application/json\r\nContent-Type: application/json\r\nUser-Agent: LayerX-Internal/1\r\n{authorization}{cookie}{principal}{admission}Content-Length: {}\r\nConnection: close\r\n\r\n",
                 body.len()
             )
             .map_err(|error| UpstreamFailure::Unavailable(error.to_string()))?;
@@ -323,10 +474,21 @@ impl Upstream {
             stream
                 .flush()
                 .map_err(|error| UpstreamFailure::Unavailable(error.to_string()))?;
-            return read_response(&mut stream);
+            let response = read_response(&mut stream)?;
+            if let Some(deadline) = deadline {
+                remaining(deadline)?;
+            }
+            return Ok(response);
         }
         Err(UpstreamFailure::Unavailable(last))
     }
+}
+
+fn remaining(deadline: Instant) -> Result<Duration, UpstreamFailure> {
+    deadline
+        .checked_duration_since(Instant::now())
+        .filter(|value| !value.is_zero())
+        .ok_or_else(|| UpstreamFailure::Unavailable("admission deadline exceeded".to_owned()))
 }
 
 fn resolve(origin: &Origin) -> Result<Vec<SocketAddr>, UpstreamFailure> {

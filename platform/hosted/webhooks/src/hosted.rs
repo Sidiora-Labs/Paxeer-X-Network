@@ -13,7 +13,7 @@ use std::time::{Duration, Instant};
 use subtle::ConstantTimeEq;
 use zeroize::{Zeroize, Zeroizing};
 
-use crate::boundary::{Client, ClientIdentity, Endpoint, OutboundRequest};
+use crate::boundary::{remaining, Client, ClientIdentity, DeadlineTcp, Endpoint, OutboundRequest};
 use crate::deliveries::{AttemptRecord, DeliveryRecord, DeliveryState, FailureKind};
 use crate::encoding::{base64_decode, base64_encode, digest, hex_encode};
 use crate::endpoints::{EndpointHealth, RetryPolicy};
@@ -342,6 +342,10 @@ impl RedisRepository {
         matches!(self.command(&["PING"]), Ok(Resp::Simple(value)) if value == "PONG")
     }
 
+    fn ready_until(&self, deadline: Instant) -> bool {
+        matches!(self.command_deadline(&["PING"], Some(deadline)), Ok(Resp::Simple(value)) if value == "PONG")
+    }
+
     fn load(&self, principal: &Principal) -> Result<(u64, PrincipalShard), WebhookError> {
         let key = shard_key(principal);
         let response = self
@@ -424,13 +428,32 @@ impl RedisRepository {
     }
 
     fn command(&self, arguments: &[&str]) -> Result<Resp, String> {
+        self.command_deadline(arguments, None)
+    }
+
+    fn command_deadline(
+        &self,
+        arguments: &[&str],
+        deadline: Option<Instant>,
+    ) -> Result<Resp, String> {
         let mut last = None;
-        for address in (self.endpoint.host.as_str(), self.endpoint.port)
-            .to_socket_addrs()
-            .map_err(|error| error.to_string())?
-            .take(8)
-        {
-            match TcpStream::connect_timeout(&address, REDIS_CONNECT_TIMEOUT) {
+        let addresses = match deadline {
+            Some(deadline) => crate::boundary::resolve_until(
+                self.endpoint.host.clone(),
+                self.endpoint.port,
+                deadline,
+            )?,
+            None => (self.endpoint.host.as_str(), self.endpoint.port)
+                .to_socket_addrs()
+                .map_err(|error| error.to_string())?
+                .take(8)
+                .collect(),
+        };
+        for address in addresses.into_iter().take(8) {
+            let budget = deadline.map_or(Ok(REDIS_CONNECT_TIMEOUT), |deadline| {
+                remaining(deadline).map(|value| value.min(REDIS_CONNECT_TIMEOUT))
+            })?;
+            match TcpStream::connect_timeout(&address, budget) {
                 Ok(tcp) => {
                     tcp.set_read_timeout(Some(REDIS_IO_TIMEOUT))
                         .map_err(|error| error.to_string())?;
@@ -442,7 +465,14 @@ impl RedisRepository {
                         .build()
                         .map_err(|error| error.to_string())?;
                     let mut stream = connector
-                        .connect(&self.endpoint.host, tcp)
+                        .connect(
+                            &self.endpoint.host,
+                            DeadlineTcp {
+                                socket: tcp,
+                                deadline,
+                                io_timeout: REDIS_IO_TIMEOUT,
+                            },
+                        )
                         .map_err(|error| error.to_string())?;
                     write_resp(
                         &mut stream,
@@ -453,7 +483,11 @@ impl RedisRepository {
                         _ => return Err("webhook Redis authentication failed".to_owned()),
                     }
                     write_resp(&mut stream, arguments)?;
-                    return read_resp(&mut stream, 0);
+                    let response = read_resp(&mut stream, 0)?;
+                    if let Some(deadline) = deadline {
+                        remaining(deadline)?;
+                    }
+                    return Ok(response);
                 }
                 Err(error) => last = Some(error),
             }
@@ -571,22 +605,33 @@ impl KmsClient {
     }
 
     fn ready(&self) -> bool {
-        self.client
-            .request(&OutboundRequest {
-                endpoint: &self.endpoint,
-                method: "GET",
-                path: "/readyz",
-                bearer: Some(self.token.as_str()),
-                idempotency: None,
-                headers: &[],
-                body: &[],
-            })
-            .ok()
-            .filter(|response| {
-                response.status == 200 && response.content_type.starts_with("application/json")
-            })
-            .and_then(|response| serde_json::from_slice::<KmsReadiness>(&response.body).ok())
-            .is_some_and(|status| status.ready && status.ed25519_non_exportable)
+        self.ready_deadline(None)
+    }
+
+    fn ready_until(&self, deadline: Instant) -> bool {
+        self.ready_deadline(Some(deadline))
+    }
+
+    fn ready_deadline(&self, deadline: Option<Instant>) -> bool {
+        let request = OutboundRequest {
+            endpoint: &self.endpoint,
+            method: "GET",
+            path: "/readyz",
+            bearer: Some(self.token.as_str()),
+            idempotency: None,
+            headers: &[],
+            body: &[],
+        };
+        match deadline {
+            Some(deadline) => self.client.request_until(&request, deadline),
+            None => self.client.request(&request),
+        }
+        .ok()
+        .filter(|response| {
+            response.status == 200 && response.content_type.starts_with("application/json")
+        })
+        .and_then(|response| serde_json::from_slice::<KmsReadiness>(&response.body).ok())
+        .is_some_and(|status| status.ready && status.ed25519_non_exportable)
     }
 }
 
@@ -753,6 +798,12 @@ impl HostedService {
     #[must_use]
     pub fn ready(&self) -> bool {
         self.repository.ready() && self.kms.ready()
+    }
+
+    pub fn ready_until(&self, deadline: Instant) -> bool {
+        self.repository.ready_until(deadline)
+            && self.kms.ready_until(deadline)
+            && Instant::now() < deadline
     }
 
     #[must_use]

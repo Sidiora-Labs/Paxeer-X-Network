@@ -186,13 +186,22 @@ pub trait Outbox: Send + Sync + 'static {
     fn acknowledge(&self, id: &str, observed: bool) -> Result<(), String>;
     /// # Errors
     /// Refuses unavailable, corrupt or out-of-order durable delivery state.
-    fn select(&self) -> Result<Option<Pending>, String> { self.pending() }
+    fn select(&self) -> Result<Option<Pending>, String> {
+        self.pending()
+    }
     /// # Errors
     /// Refuses unavailable, corrupt or out-of-order durable delivery state.
-    fn scheduling(&self, _id: &str) -> Result<Option<DeliveryState>, String> { Ok(None) }
+    fn scheduling(&self, _id: &str) -> Result<Option<DeliveryState>, String> {
+        Ok(None)
+    }
     /// # Errors
     /// Refuses unavailable, corrupt or out-of-order durable delivery state.
-    fn failed_delivery(&self, _id: &str, _generation: Option<u64>, _reason: DeliveryFailure) -> Result<(), String> {
+    fn failed_delivery(
+        &self,
+        _id: &str,
+        _generation: Option<u64>,
+        _reason: DeliveryFailure,
+    ) -> Result<(), String> {
         Err("durable delivery scheduling unavailable".to_owned())
     }
     /// # Errors
@@ -220,12 +229,19 @@ pub enum DeliveryFailure {
 
 impl DeliveryFailure {
     fn from_error(error: &str) -> Self {
-        if error == "event observation unavailable" { Self::ObservationUnavailable }
-        else if error.starts_with("event observation refused:") { Self::ObservationRefused }
-        else if error.contains("acknowledgement") { Self::AcknowledgementInvalid }
-        else if error == "event notification unavailable" { Self::NotificationUnavailable }
-        else if error.starts_with("event notification refused:") { Self::NotificationRefused }
-        else { Self::PersistenceUnavailable }
+        if error == "event observation unavailable" {
+            Self::ObservationUnavailable
+        } else if error.starts_with("event observation refused:") {
+            Self::ObservationRefused
+        } else if error.contains("acknowledgement") {
+            Self::AcknowledgementInvalid
+        } else if error == "event notification unavailable" {
+            Self::NotificationUnavailable
+        } else if error.starts_with("event notification refused:") {
+            Self::NotificationRefused
+        } else {
+            Self::PersistenceUnavailable
+        }
     }
 }
 
@@ -248,10 +264,10 @@ pub struct DeliveryState {
 impl DeliveryState {
     #[must_use]
     pub fn eligible(&self, now: u64) -> bool {
-        now >= self.next_attempt_at || self.next_attempt_at.saturating_sub(now) > MAX_DELIVERY_BACKOFF
+        now >= self.next_attempt_at
+            || self.next_attempt_at.saturating_sub(now) > MAX_DELIVERY_BACKOFF
     }
 }
-
 
 #[derive(Clone, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -268,11 +284,18 @@ impl QueueState {
     /// Refuses corrupt entries, identities and non-contiguous counters.
     pub fn validate(&self) -> Result<(), String> {
         if self.delivery.attempts > MAX_DELIVERY_ATTEMPTS
-            || self.delivery.redelivery_required != (self.delivery.attempts == MAX_DELIVERY_ATTEMPTS)
-            || self.delivery.last_delivered_id.as_ref().is_some_and(|id| !valid_hex(id, 32))
+            || self.delivery.redelivery_required
+                != (self.delivery.attempts == MAX_DELIVERY_ATTEMPTS)
+            || self
+                .delivery
+                .last_delivered_id
+                .as_ref()
+                .is_some_and(|id| !valid_hex(id, 32))
             || self.delivery.first_refused_at > self.delivery.last_refused_at
-            || (self.delivery.attempts > 0 && (self.delivery.first_refused_at.is_none()
-                || self.delivery.last_refused_at.is_none() || self.delivery.last_refusal.is_none()))
+            || (self.delivery.attempts > 0
+                && (self.delivery.first_refused_at.is_none()
+                    || self.delivery.last_refused_at.is_none()
+                    || self.delivery.last_refusal.is_none()))
         {
             return Err("invalid producer scheduling state".to_owned());
         }
@@ -308,7 +331,8 @@ impl QueueState {
         let mut pending_sequences = BTreeMap::new();
         for pending in &self.entries {
             let stream = (&pending.observation.kind, &pending.observation.resource);
-            if pending_sequences.insert(stream, pending.observation.sequence)
+            if pending_sequences
+                .insert(stream, pending.observation.sequence)
                 .is_some_and(|earlier| earlier >= pending.observation.sequence)
             {
                 return Err("producer pending stream reordered".to_owned());
@@ -382,15 +406,21 @@ impl QueueState {
     }
 
     #[must_use]
-    pub const fn delivery(&self) -> &DeliveryState { &self.delivery }
+    pub const fn delivery(&self) -> &DeliveryState {
+        &self.delivery
+    }
 
     #[must_use]
-    pub fn pending_count(&self) -> usize { self.entries.len() }
+    pub fn pending_count(&self) -> usize {
+        self.entries.len()
+    }
 
     /// # Errors
     /// Refuses unavailable, corrupt or out-of-order durable delivery state.
     pub fn operator_redelivery(&mut self) -> Result<(), String> {
-        if self.entries.is_empty() { return Err("producer queue empty".to_owned()); }
+        if self.entries.is_empty() {
+            return Err("producer queue empty".to_owned());
+        }
         self.delivery.attempts = 0;
         self.delivery.next_attempt_at = 0;
         self.delivery.redelivery_required = false;
@@ -409,22 +439,38 @@ impl QueueState {
 
     /// # Errors
     /// Refuses unavailable, corrupt or out-of-order durable delivery state.
-    pub fn failed_delivery(&mut self, id: &str, generation: Option<u64>, now: u64, reason: DeliveryFailure) -> Result<(), String> {
-        if self.entries.first().is_none_or(|pending| pending.observation.id != id) {
+    pub fn failed_delivery(
+        &mut self,
+        id: &str,
+        generation: Option<u64>,
+        now: u64,
+        reason: DeliveryFailure,
+    ) -> Result<(), String> {
+        if self
+            .entries
+            .first()
+            .is_none_or(|pending| pending.observation.id != id)
+        {
             return Err("delivery refusal has no pending head".to_owned());
         }
-        self.delivery.attempts = self.delivery.attempts.saturating_add(1).min(MAX_DELIVERY_ATTEMPTS);
+        self.delivery.attempts = self
+            .delivery
+            .attempts
+            .saturating_add(1)
+            .min(MAX_DELIVERY_ATTEMPTS);
         self.delivery.first_refused_at.get_or_insert(now);
         self.delivery.last_refused_at = Some(self.delivery.last_refused_at.unwrap_or(now).max(now));
         if !self.delivery.redelivery_required || reason != DeliveryFailure::RecoveryRequired {
             self.delivery.last_refusal = Some(reason);
         }
         if !self.delivery.redelivery_required {
-            self.delivery.enrollment_generation = generation.or(self.delivery.enrollment_generation);
+            self.delivery.enrollment_generation =
+                generation.or(self.delivery.enrollment_generation);
         }
         self.delivery.redelivery_required = self.delivery.attempts == MAX_DELIVERY_ATTEMPTS;
         let delay = (1_u64 << self.delivery.attempts).min(MAX_DELIVERY_BACKOFF);
-        self.delivery.next_attempt_at = now.checked_add(delay)
+        self.delivery.next_attempt_at = now
+            .checked_add(delay)
             .ok_or_else(|| "delivery retry deadline exhausted".to_owned())?;
         Ok(())
     }
@@ -432,8 +478,14 @@ impl QueueState {
     /// # Errors
     /// Refuses unavailable, corrupt or out-of-order durable delivery state.
     pub fn resume_delivery(&mut self, id: &str, generation: u64) -> Result<(), String> {
-        if self.entries.first().is_none_or(|pending| pending.observation.id != id)
-            || self.delivery.enrollment_generation.is_some_and(|previous| generation <= previous)
+        if self
+            .entries
+            .first()
+            .is_none_or(|pending| pending.observation.id != id)
+            || self
+                .delivery
+                .enrollment_generation
+                .is_some_and(|previous| generation <= previous)
         {
             return Err("delivery recovery needs a newer authenticated generation".to_owned());
         }
@@ -513,11 +565,14 @@ impl Health {
     #[must_use]
     pub fn ready(&self) -> bool {
         (!self.admission_required.load(Ordering::Acquire)
-            || self.admitted_at.lock().is_ok_and(|checked| {
-                checked.is_some_and(|at| at.elapsed() < ADMISSION_FRESHNESS)
-            })) && self.failed_since
-            .lock()
-            .is_ok_and(|since| since.is_none_or(|since| since.elapsed() < UNAVAILABLE_AFTER))
+            || self
+                .admitted_at
+                .lock()
+                .is_ok_and(|checked| checked.is_some_and(|at| at.elapsed() < ADMISSION_FRESHNESS)))
+            && self
+                .failed_since
+                .lock()
+                .is_ok_and(|since| since.is_none_or(|since| since.elapsed() < UNAVAILABLE_AFTER))
     }
 
     #[must_use]
@@ -572,7 +627,6 @@ struct Admission {
     fresh_for_ms: u64,
 }
 
-
 impl Client {
     /// # Errors
     /// Requires mutually authenticated source and webhook clients.
@@ -589,7 +643,10 @@ impl Client {
             return Err("producer requires mTLS and bearer credentials".to_owned());
         }
         Ok(Self {
-            sources: sources.into_iter().map(|(kind, source)| (kind, Arc::new(source))).collect(),
+            sources: sources
+                .into_iter()
+                .map(|(kind, source)| (kind, Arc::new(source)))
+                .collect(),
             webhooks: Arc::new(webhooks),
             probe: Arc::new(Mutex::new(None)),
         })
@@ -698,11 +755,20 @@ impl Client {
         if response.status != 202 || !response.content_type.starts_with("application/json") {
             return Err(format!("event notification refused: {}", response.status));
         }
-        let acknowledgement: NotificationAcknowledgement = serde_json::from_slice(&response.body)
-            .map_err(|_| "event notification acknowledgement malformed".to_owned())?;
-        if acknowledgement.position == 0 || acknowledgement.queued.len() > MAX_PENDING
-            || acknowledgement.queued.iter().any(|id| !valid_identifier(id, 128))
-            || acknowledgement.queued.iter().collect::<std::collections::BTreeSet<_>>().len()
+        let acknowledgement: NotificationAcknowledgement =
+            serde_json::from_slice(&response.body)
+                .map_err(|_| "event notification acknowledgement malformed".to_owned())?;
+        if acknowledgement.position == 0
+            || acknowledgement.queued.len() > MAX_PENDING
+            || acknowledgement
+                .queued
+                .iter()
+                .any(|id| !valid_identifier(id, 128))
+            || acknowledgement
+                .queued
+                .iter()
+                .collect::<std::collections::BTreeSet<_>>()
+                .len()
                 != acknowledgement.queued.len()
         {
             return Err("event notification acknowledgement mismatch".to_owned());
@@ -711,12 +777,18 @@ impl Client {
     }
 
     fn enrollment(&self, pending: &Pending) -> Result<(u64, bool), String> {
-        let principal = pending.observation.principal.as_deref()
+        let principal = pending
+            .observation
+            .principal
+            .as_deref()
             .filter(|principal| valid_principal(principal))
             .ok_or_else(|| "enrollment recovery requires a principal".to_owned())?;
-        let source = self.sources.get(&pending.observation.kind)
+        let source = self
+            .sources
+            .get(&pending.observation.kind)
             .ok_or_else(|| "producer source missing".to_owned())?;
-        let response = source.get(&format!("/internal/v1/principals/{principal}/enrollment"))
+        let response = source
+            .get(&format!("/internal/v1/principals/{principal}/enrollment"))
             .map_err(|_| "enrollment recovery unavailable".to_owned())?;
         if response.status != 200 || !response.content_type.starts_with("application/json") {
             return Err("enrollment recovery refused".to_owned());
@@ -729,24 +801,42 @@ impl Client {
         Ok((enrollment.generation, enrollment.bound))
     }
 
-    fn admission_check(&self) -> Result<(), String> {
+    fn admission_check(&self, deadline: Instant) -> Result<(), String> {
         for (kind, source) in &self.sources {
             for (upstream, path, role) in [
-                (source, "/internal/v1/producer-readiness".to_owned(), "source-producer"),
-                (&self.webhooks, format!("/internal/v1/readiness/{kind}"), "webhook-trigger"),
+                (
+                    source,
+                    "/internal/v1/producer-readiness".to_owned(),
+                    "source-producer",
+                ),
+                (
+                    &self.webhooks,
+                    format!("/internal/v1/readiness/{kind}"),
+                    "webhook-trigger",
+                ),
             ] {
-                let response = upstream.get(&path).map_err(|_| format!("{role} unavailable"))?;
-                if response.status != 200 || !response.content_type.starts_with("application/json")
-                    || response.body.len() > 4096 {
+                let response = upstream
+                    .get_until(&path, deadline)
+                    .map_err(|_| format!("{role} unavailable"))?;
+                if response.status != 200
+                    || !response.content_type.starts_with("application/json")
+                    || response.body.len() > 4096
+                {
                     return Err(format!("{role} refused"));
                 }
                 let admission: Admission = serde_json::from_slice(&response.body)
                     .map_err(|_| format!("{role} malformed"))?;
-                if admission.schema != "layerx.event-admission.v1" || admission.role != role
-                    || admission.kind != *kind || !admission.ready || admission.principals == 0
-                    || admission.generation == 0 || admission.fresh_for_ms != 10_000
-                    || (role == "source-producer" && matches!(kind.as_str(), "payment" | "program")
-                        && !admission.principal_digest) {
+                if admission.schema != "layerx.event-admission.v1"
+                    || admission.role != role
+                    || admission.kind != *kind
+                    || !admission.ready
+                    || admission.principals == 0
+                    || admission.generation == 0
+                    || admission.fresh_for_ms != 10_000
+                    || (role == "source-producer"
+                        && matches!(kind.as_str(), "payment" | "program")
+                        && !admission.principal_digest)
+                {
                     return Err(format!("{role} admission mismatch"));
                 }
             }
@@ -757,15 +847,28 @@ impl Client {
     pub fn poll_admission(&self, health: &Health) -> Result<(), String> {
         health.require_admission();
         let result = (|| {
-            let mut slot = self.probe.lock().map_err(|_| "admission worker unavailable")?;
+            let mut slot = self
+                .probe
+                .lock()
+                .map_err(|_| "admission worker unavailable")?;
             if slot.is_none() {
                 let client = self.clone();
                 let (sender, result) = mpsc::sync_channel(1);
                 let started = Instant::now();
-                let worker = std::thread::Builder::new().name("event-admission-check".to_owned())
-                    .spawn(move || { let _ = sender.send(client.admission_check()); })
+                let deadline = started
+                    .checked_add(ADMISSION_DEADLINE)
+                    .ok_or("admission deadline invalid")?;
+                let worker = std::thread::Builder::new()
+                    .name("event-admission-check".to_owned())
+                    .spawn(move || {
+                        let _ = sender.send(client.admission_check(deadline));
+                    })
                     .map_err(|_| "admission worker refused")?;
-                *slot = Some(AdmissionProbe { started, result, worker });
+                *slot = Some(AdmissionProbe {
+                    started,
+                    result,
+                    worker,
+                });
             }
             let probe = slot.as_ref().ok_or("admission worker missing")?;
             let remaining = ADMISSION_DEADLINE.saturating_sub(probe.started.elapsed());
@@ -775,12 +878,18 @@ impl Client {
                     let timely = probe.started.elapsed() < ADMISSION_DEADLINE;
                     probe.worker.join().map_err(|_| "admission worker failed")?;
                     result?;
-                    if !timely { return Err("admission deadline exceeded".to_owned()); }
+                    if !timely {
+                        return Err("admission deadline exceeded".to_owned());
+                    }
                     Ok(probe.started)
                 }
-                Err(mpsc::RecvTimeoutError::Timeout) => Err("admission deadline exceeded".to_owned()),
+                Err(mpsc::RecvTimeoutError::Timeout) => {
+                    Err("admission deadline exceeded".to_owned())
+                }
                 Err(mpsc::RecvTimeoutError::Disconnected) => {
-                    if let Some(probe) = slot.take() { let _ = probe.worker.join(); }
+                    if let Some(probe) = slot.take() {
+                        let _ = probe.worker.join();
+                    }
                     Err("admission worker failed".to_owned())
                 }
             }
@@ -799,27 +908,43 @@ impl Client {
 
     fn delivery_step<S: Outbox>(&self, store: &S, health: &Health) -> Result<(), String> {
         let result = store.select().and_then(|pending| {
-            let Some(pending) = pending else { return Ok(()); };
+            let Some(pending) = pending else {
+                return Ok(());
+            };
             let schedule = store.scheduling(&pending.observation.id)?;
             let enrollment = schedule.as_ref().map(|_| self.enrollment(&pending));
             if let Some(schedule) = schedule.as_ref().filter(|state| state.redelivery_required) {
                 match enrollment.as_ref().and_then(|result| result.as_ref().ok()) {
-                    Some((generation, true)) if schedule.enrollment_generation.is_none_or(|old| *generation > old) => {
+                    Some((generation, true))
+                        if schedule
+                            .enrollment_generation
+                            .is_none_or(|old| *generation > old) =>
+                    {
                         store.resume_delivery(&pending.observation.id, *generation)?;
                     }
                     _ => {
-                        store.failed_delivery(&pending.observation.id, None, DeliveryFailure::RecoveryRequired)?;
+                        store.failed_delivery(
+                            &pending.observation.id,
+                            None,
+                            DeliveryFailure::RecoveryRequired,
+                        )?;
                         return Err("event redelivery requires authenticated recovery".to_owned());
                     }
                 }
             }
-            let attempt = self.deliver(&pending).and_then(|observed| {
-                store.acknowledge(&pending.observation.id, observed)
-            });
+            let attempt = self
+                .deliver(&pending)
+                .and_then(|observed| store.acknowledge(&pending.observation.id, observed));
             if let Err(error) = &attempt {
                 if schedule.is_some() {
-                    let generation = enrollment.and_then(Result::ok).map(|(generation, _)| generation);
-                    store.failed_delivery(&pending.observation.id, generation, DeliveryFailure::from_error(error))?;
+                    let generation = enrollment
+                        .and_then(Result::ok)
+                        .map(|(generation, _)| generation);
+                    store.failed_delivery(
+                        &pending.observation.id,
+                        generation,
+                        DeliveryFailure::from_error(error),
+                    )?;
                 }
             }
             attempt
@@ -841,12 +966,15 @@ impl Client {
         let admission_client = self.clone();
         let admission_store = store.clone();
         let admission_health = Arc::clone(&health);
-        std::thread::Builder::new().name("event-admission".to_owned()).spawn(move || {
-            while admission_store.upgrade().is_some() {
-                let _ = admission_client.poll_admission(&admission_health);
-                std::thread::sleep(Duration::from_secs(1));
-            }
-        }).map_err(|error| error.to_string())?;
+        std::thread::Builder::new()
+            .name("event-admission".to_owned())
+            .spawn(move || {
+                while admission_store.upgrade().is_some() {
+                    let _ = admission_client.poll_admission(&admission_health);
+                    std::thread::sleep(Duration::from_secs(1));
+                }
+            })
+            .map_err(|error| error.to_string())?;
         std::thread::Builder::new()
             .name("event-producer".to_owned())
             .spawn(move || {
@@ -971,14 +1099,22 @@ mod tests {
         assert!(!health.ready());
         health.recovered();
         assert!(!health.ready());
-        health.admission(Some(Instant::now().checked_sub(ADMISSION_FRESHNESS)
-            .unwrap_or_else(|| panic!("readiness clock underflow"))));
+        health.admission(Some(
+            Instant::now()
+                .checked_sub(ADMISSION_FRESHNESS)
+                .unwrap_or_else(|| panic!("readiness clock underflow")),
+        ));
         assert!(!health.ready());
         health.admission(Some(Instant::now()));
         assert!(health.ready());
-        *health.failed_since.lock().unwrap_or_else(|error| panic!("{error}")) = Some(
-            Instant::now().checked_sub(UNAVAILABLE_AFTER)
-                .unwrap_or_else(|| panic!("readiness clock underflow")));
+        *health
+            .failed_since
+            .lock()
+            .unwrap_or_else(|error| panic!("{error}")) = Some(
+            Instant::now()
+                .checked_sub(UNAVAILABLE_AFTER)
+                .unwrap_or_else(|| panic!("readiness clock underflow")),
+        );
         assert!(!health.ready());
     }
 
@@ -1074,11 +1210,18 @@ mod scheduling_tests {
     #[test]
     fn durable_retry_state_is_bounded_and_legacy_entries_keep_their_bytes() {
         let mut queue = QueueState::default();
-        let observation = queue.enqueue("first", super::tests::observation(1))
+        let observation = queue
+            .enqueue("first", super::tests::observation(1))
             .unwrap_or_else(|error| panic!("{error}"));
         let original = queue.pending().unwrap_or_else(|| panic!("pending missing"));
         for _ in 0..MAX_DELIVERY_ATTEMPTS + 2 {
-            queue.failed_delivery(&observation.id, Some(7), 100, DeliveryFailure::ObservationRefused)
+            queue
+                .failed_delivery(
+                    &observation.id,
+                    Some(7),
+                    100,
+                    DeliveryFailure::ObservationRefused,
+                )
                 .unwrap_or_else(|error| panic!("{error}"));
         }
         assert_eq!(queue.delivery().attempts, MAX_DELIVERY_ATTEMPTS);
@@ -1090,14 +1233,21 @@ mod scheduling_tests {
         assert!(queue.resume_delivery(&observation.id, 7).is_err());
         let mut encoded = serde_json::to_value(&queue).unwrap_or_else(|error| panic!("{error}"));
         encoded["delivery"]["redelivery_required"] = serde_json::json!(false);
-        let invalid: QueueState = serde_json::from_value(encoded).unwrap_or_else(|error| panic!("{error}"));
+        let invalid: QueueState =
+            serde_json::from_value(encoded).unwrap_or_else(|error| panic!("{error}"));
         assert!(invalid.validate().is_err());
         let mut legacy = serde_json::to_value(&queue).unwrap_or_else(|error| panic!("{error}"));
-        legacy.as_object_mut().unwrap_or_else(|| panic!("queue object missing")).remove("delivery");
-        let legacy: QueueState = serde_json::from_value(legacy).unwrap_or_else(|error| panic!("{error}"));
+        legacy
+            .as_object_mut()
+            .unwrap_or_else(|| panic!("queue object missing"))
+            .remove("delivery");
+        let legacy: QueueState =
+            serde_json::from_value(legacy).unwrap_or_else(|error| panic!("{error}"));
         assert!(legacy.validate().is_ok());
         assert_eq!(legacy.pending(), Some(original));
-        queue.resume_delivery(&observation.id, 8).unwrap_or_else(|error| panic!("{error}"));
+        queue
+            .resume_delivery(&observation.id, 8)
+            .unwrap_or_else(|error| panic!("{error}"));
         assert_eq!(queue.delivery().first_refused_at, Some(100));
         assert_eq!(queue.delivery().last_recovery_generation, Some(8));
         assert!(queue.delivery().eligible(100));
@@ -1106,9 +1256,16 @@ mod scheduling_tests {
     #[test]
     fn replay_rejects_a_reordered_subject_stream() {
         let mut queue = QueueState::default();
-        queue.enqueue("first", super::tests::observation(1)).unwrap_or_else(|error| panic!("{error}"));
-        queue.enqueue("second", super::tests::observation(2)).unwrap_or_else(|error| panic!("{error}"));
+        queue
+            .enqueue("first", super::tests::observation(1))
+            .unwrap_or_else(|error| panic!("{error}"));
+        queue
+            .enqueue("second", super::tests::observation(2))
+            .unwrap_or_else(|error| panic!("{error}"));
         queue.entries.swap(0, 1);
-        assert_eq!(queue.validate(), Err("producer pending stream reordered".to_owned()));
+        assert_eq!(
+            queue.validate(),
+            Err("producer pending stream reordered".to_owned())
+        );
     }
 }

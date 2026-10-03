@@ -6,6 +6,7 @@ use serde::Deserialize;
 use std::collections::BTreeMap;
 use std::env;
 use std::fs;
+use std::time::{Duration, Instant};
 use subtle::ConstantTimeEq;
 use x509_cert::der::asn1::ObjectIdentifier;
 use x509_cert::der::Decode;
@@ -274,44 +275,85 @@ impl TrustedSources {
 
     #[must_use]
     pub fn ready(&self) -> bool {
-        self.verifier.ready()
+        Instant::now()
+            .checked_add(Duration::from_secs(5))
+            .is_some_and(|deadline| self.ready_until(deadline))
+    }
+
+    pub fn ready_until(&self, deadline: Instant) -> bool {
+        self.verifier.ready_until(deadline)
             && self.sources.values().all(|source| {
                 self.client
-                    .request(&OutboundRequest {
-                        endpoint: &source.endpoint,
-                        method: "GET",
-                        path: "/readyz",
-                        bearer: Some(source.token.as_str()),
-                        idempotency: None,
-                        headers: &[],
-                        body: &[],
-                    })
+                    .request_until(
+                        &OutboundRequest {
+                            endpoint: &source.endpoint,
+                            method: "GET",
+                            path: "/readyz",
+                            bearer: Some(source.token.as_str()),
+                            idempotency: None,
+                            headers: &[],
+                            body: &[],
+                        },
+                        deadline,
+                    )
                     .is_ok_and(|response| response.status == 200)
             })
     }
 
-    pub fn trigger_admission(&self, kind: EventKind) -> Result<(u64, usize), WebhookError> {
-        let source = self.sources.get(&kind).ok_or(WebhookError::InvalidRequest)?;
-        let response = self.client.request(&OutboundRequest {
-            endpoint: &source.endpoint, method: "GET", path: "/internal/v1/reader-readiness",
-            bearer: Some(source.token.as_str()), idempotency: None, headers: &[], body: &[],
-        }).map_err(|_| WebhookError::Unavailable)?;
-        if response.status != 200 || !response.content_type.starts_with("application/json")
-            || response.body.len() > 4096 {
+    pub fn trigger_admission(
+        &self,
+        kind: EventKind,
+        deadline: Instant,
+    ) -> Result<(u64, usize), WebhookError> {
+        let source = self
+            .sources
+            .get(&kind)
+            .ok_or(WebhookError::InvalidRequest)?;
+        let response = self
+            .client
+            .request_until(
+                &OutboundRequest {
+                    endpoint: &source.endpoint,
+                    method: "GET",
+                    path: "/internal/v1/reader-readiness",
+                    bearer: Some(source.token.as_str()),
+                    idempotency: None,
+                    headers: &[],
+                    body: &[],
+                },
+                deadline,
+            )
+            .map_err(|_| WebhookError::Unavailable)?;
+        if response.status != 200
+            || !response.content_type.starts_with("application/json")
+            || response.body.len() > 4096
+        {
             return Err(WebhookError::Unavailable);
         }
         #[derive(Deserialize)]
         #[serde(deny_unknown_fields)]
         struct Admission {
-            schema: String, role: String, kind: String, ready: bool,
-            generation: u64, principals: usize, principal_digest: bool, fresh_for_ms: u64,
+            schema: String,
+            role: String,
+            kind: String,
+            ready: bool,
+            generation: u64,
+            principals: usize,
+            principal_digest: bool,
+            fresh_for_ms: u64,
         }
-        let value: Admission = serde_json::from_slice(&response.body)
-            .map_err(|_| WebhookError::Unavailable)?;
-        if value.schema != "layerx.event-admission.v1" || value.role != "source-reader"
-            || value.kind != kind.as_str() || !value.ready || value.generation == 0
-            || value.principals == 0 || value.principal_digest || value.fresh_for_ms != 10_000
-            || !self.verifier.ready() {
+        let value: Admission =
+            serde_json::from_slice(&response.body).map_err(|_| WebhookError::Unavailable)?;
+        if value.schema != "layerx.event-admission.v1"
+            || value.role != "source-reader"
+            || value.kind != kind.as_str()
+            || !value.ready
+            || value.generation == 0
+            || value.principals == 0
+            || value.principal_digest
+            || value.fresh_for_ms != 10_000
+            || !self.verifier.ready_until(deadline)
+        {
             return Err(WebhookError::Unavailable);
         }
         Ok((value.generation, value.principals))
@@ -546,7 +588,11 @@ impl DeveloperIdentity {
 impl SourceTrigger {
     #[must_use]
     pub fn shares_secret(&self, other: &Self) -> bool {
-        self.token.as_bytes().ct_eq(other.token.as_bytes()).unwrap_u8() == 1
+        self.token
+            .as_bytes()
+            .ct_eq(other.token.as_bytes())
+            .unwrap_u8()
+            == 1
     }
 
     /// # Errors
@@ -574,23 +620,24 @@ impl SourceTrigger {
 }
 
 impl ReceiptVerifier {
-    fn ready(&self) -> bool {
+    fn ready_until(&self, deadline: Instant) -> bool {
         [
             (&self.component, self.component_token.as_str()),
             (&self.authority, self.authority_token.as_str()),
         ]
         .into_iter()
         .all(|(endpoint, token)| {
+            let request = OutboundRequest {
+                endpoint,
+                method: "GET",
+                path: "/readyz",
+                bearer: Some(token),
+                idempotency: None,
+                headers: &[],
+                body: &[],
+            };
             self.client
-                .request(&OutboundRequest {
-                    endpoint,
-                    method: "GET",
-                    path: "/readyz",
-                    bearer: Some(token),
-                    idempotency: None,
-                    headers: &[],
-                    body: &[],
-                })
+                .request_until(&request, deadline)
                 .is_ok_and(|response| response.status == 200)
         })
     }
