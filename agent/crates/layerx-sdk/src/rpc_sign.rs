@@ -1,6 +1,8 @@
 //! `sign` over the version 1 Agent operation envelope.
 
-use layerx_agent_api::error::{Key, Level, RequestId};
+use layerx_agent_api::error::RequestId;
+use layerx_agent_api::idempotency::Key;
+use layerx_agent_api::verify::Level;
 use serde_json::{json, Value};
 
 use crate::agent_envelope::{AgentEnvelopeTransport, EnvelopeCredential, EnvelopeError};

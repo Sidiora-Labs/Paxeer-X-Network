@@ -7,7 +7,8 @@ mod agent {
         AmountCeiling, CapabilityAttenuate, CapabilityCreate, CapabilityDimensions, CapabilityList,
         CapabilityRevoke, ExplicitSet, RateCeiling,
     };
-    use layerx_agent_api::error::{Key, RequestId};
+    use layerx_agent_api::error::RequestId;
+    use layerx_agent_api::idempotency::Key;
     use layerx_agent_api::identity::{ActivityType, Asset, ContractError, Counterparty, Purpose};
     use layerx_agent_api::{Amount, TimestampSeconds};
     use serde_json::{json, Value};
@@ -54,7 +55,12 @@ mod agent {
     }
 
     fn strs(values: &[impl AsRef<str>]) -> Value {
-        Value::Array(values.iter().map(|item| Value::String(item.as_ref().into())).collect())
+        Value::Array(
+            values
+                .iter()
+                .map(|item| Value::String(item.as_ref().into()))
+                .collect(),
+        )
     }
 
     fn dimensions_value(dimensions: &CapabilityDimensions) -> Value {
@@ -162,7 +168,10 @@ mod agent {
             .map(|item| {
                 let ceiling = object(item, &["window_seconds", "maximum_actions"], operation)?;
                 Ok(RateCeiling {
-                    window_seconds: TimestampSeconds(decimal(&ceiling["window_seconds"], operation)?),
+                    window_seconds: TimestampSeconds(decimal(
+                        &ceiling["window_seconds"],
+                        operation,
+                    )?),
                     maximum_actions: decimal(&ceiling["maximum_actions"], operation)?,
                 })
             })
@@ -173,14 +182,21 @@ mod agent {
             assets: texts(&dimensions["assets"], operation, Asset::new)?,
             amount_ceilings: ExplicitSet::allow(amount_ceilings),
             rate_ceilings: ExplicitSet::allow(rate_ceilings),
-            purpose_constraints: texts(&dimensions["purpose_constraints"], operation, Purpose::new)?,
+            purpose_constraints: texts(
+                &dimensions["purpose_constraints"],
+                operation,
+                Purpose::new,
+            )?,
             expiry: TimestampSeconds(decimal(&dimensions["expiry"], operation)?),
         }
         .validate()
         .map_err(|_| violation(operation))
     }
 
-    fn decode_record(value: &Value, operation: Operation) -> Result<CapabilityRecord, EnvelopeError> {
+    fn decode_record(
+        value: &Value,
+        operation: Operation,
+    ) -> Result<CapabilityRecord, EnvelopeError> {
         let record = object(
             value,
             &[
@@ -362,7 +378,9 @@ mod agent {
                 .iter()
                 .map(|record| decode_record(record, operation))
                 .collect::<Result<Vec<_>, _>>()?;
-            if records.iter().any(|record| !owned(record, tenant, agent_did))
+            if records
+                .iter()
+                .any(|record| !owned(record, tenant, agent_did))
                 || records
                     .windows(2)
                     .any(|pair| pair[0].capability_id >= pair[1].capability_id)

@@ -409,7 +409,8 @@ pub use agent::{
 };
 
 mod agent {
-    use layerx_agent_api::error::{Key, RequestId};
+    use layerx_agent_api::error::RequestId;
+    use layerx_agent_api::idempotency::Key;
     use serde_json::{json, Map, Value};
 
     use crate::agent_envelope::{
@@ -477,7 +478,8 @@ mod agent {
         value
             .as_object()
             .filter(|object| {
-                object.len() == fields.len() && fields.iter().all(|field| object.contains_key(*field))
+                object.len() == fields.len()
+                    && fields.iter().all(|field| object.contains_key(*field))
             })
             .ok_or_else(|| violation(operation))
     }
@@ -534,7 +536,10 @@ mod agent {
         json!({"scope": scope_value(scope), "subscription_id": subscription_id})
     }
 
-    fn decode_scope(value: &Value, operation: Operation) -> Result<SubscriptionScope, EnvelopeError> {
+    fn decode_scope(
+        value: &Value,
+        operation: Operation,
+    ) -> Result<SubscriptionScope, EnvelopeError> {
         let scope = object(value, &["tenant", "agent", "capability"], operation)?;
         Ok(SubscriptionScope {
             tenant: text(&scope["tenant"], operation)?,
@@ -561,7 +566,10 @@ mod agent {
             .collect()
     }
 
-    fn decode_filter(value: &Value, operation: Operation) -> Result<SubscriptionFilter, EnvelopeError> {
+    fn decode_filter(
+        value: &Value,
+        operation: Operation,
+    ) -> Result<SubscriptionFilter, EnvelopeError> {
         let filter = object(
             value,
             &[
@@ -579,9 +587,7 @@ mod agent {
             .as_array()
             .ok_or_else(|| violation(operation))?
             .iter()
-            .map(|item| {
-                u16::try_from(decimal(item, operation)?).map_err(|_| violation(operation))
-            })
+            .map(|item| u16::try_from(decimal(item, operation)?).map_err(|_| violation(operation)))
             .collect::<Result<_, _>>()?;
         let result_classes = filter["result_classes"]
             .as_array()
@@ -604,7 +610,10 @@ mod agent {
         })
     }
 
-    fn decode_record(value: &Value, operation: Operation) -> Result<SubscriptionRecord, EnvelopeError> {
+    fn decode_record(
+        value: &Value,
+        operation: Operation,
+    ) -> Result<SubscriptionRecord, EnvelopeError> {
         let record = object(
             value,
             &[
@@ -625,14 +634,21 @@ mod agent {
             start: decimal(&record["start"], operation)?,
             last_acknowledged: decimal(&record["last_acknowledged"], operation)?,
             delivery_target: text(&record["delivery_target"], operation)?,
-            paused: record["paused"].as_bool().ok_or_else(|| violation(operation))?,
+            paused: record["paused"]
+                .as_bool()
+                .ok_or_else(|| violation(operation))?,
         })
     }
 
     fn decode_gap(value: &Value, operation: Operation) -> Result<GapNotice, EnvelopeError> {
         let gap = object(
             value,
-            &["missing_first", "missing_last", "backfill_cursor", "backfill_attempted"],
+            &[
+                "missing_first",
+                "missing_last",
+                "backfill_cursor",
+                "backfill_attempted",
+            ],
             operation,
         )?;
         let notice = GapNotice {
@@ -649,10 +665,18 @@ mod agent {
         Ok(notice)
     }
 
-    fn decode_health(value: &Value, operation: Operation) -> Result<SubscriptionHealth, EnvelopeError> {
+    fn decode_health(
+        value: &Value,
+        operation: Operation,
+    ) -> Result<SubscriptionHealth, EnvelopeError> {
         let health = object(
             value,
-            &["target", "last_acknowledged", "last_delivery_at", "pending_backfill"],
+            &[
+                "target",
+                "last_acknowledged",
+                "last_delivery_at",
+                "pending_backfill",
+            ],
             operation,
         )?;
         let target = object(&health["target"], &["scope", "subscription_id"], operation)?;

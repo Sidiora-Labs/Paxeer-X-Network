@@ -2073,3 +2073,8 @@ do = "Reconcile the owned task status explicitly while keeping unqualified work 
 title = "Ramp responses and replay must match actual durable rebalance semantics"
 observed = "The retained sandbox required own-account Paxeer domain and custody labels plus original-key replay; reference responses omitted these fields and duplicate keys always conflicted."
 rule = "Preserve original identifiers and reject changed terms; uncertain transfers reconcile without rebroadcast."
+
+[gotcha.628]
+title = "SDK consumers must use canonical public type and artifact error owners"
+observed = "Human, explorer and ramp builds hit SDK imports from error instead of public verify/idempotency owners; complete artifact decoding returns a record-context error."
+rule = "Correct real SDK owners without weakening verification or flattening detailed artifact refusals."

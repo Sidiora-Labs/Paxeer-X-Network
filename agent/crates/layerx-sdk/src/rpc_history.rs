@@ -1,6 +1,7 @@
 //! `read.history` over the version 1 Agent operation envelope.
 
-use layerx_agent_api::error::{Level, RequestId, VerificationStatus};
+use layerx_agent_api::error::RequestId;
+use layerx_agent_api::verify::{Level, VerificationStatus};
 use serde_json::{json, Value};
 
 use crate::agent_envelope::{AgentEnvelopeTransport, EnvelopeCredential, EnvelopeError};

@@ -32227,3 +32227,27 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 reference_verify_cmd = "timeout 20m tools/bringup/check-live.sh registry"
 reference_tests = ["tools/bringup/check-live.test.sh"]
 retained_capability = "108.2.6"
+
+[task.0.8]
+title = "Connect the Rust SDK to canonical Agent API type and artifact error owners"
+status = "done"
+completion_basis = "implementation"
+qualification_status = "passed"
+build_exit_code = 0
+verify_exit_code = 0
+mode = "BUILD"
+wave = 2
+requires = ["0.2", "0.7"]
+reqs = ["1018.1", "1018.2", "1018.4"]
+do_1 = "Correct only SDK imports to the existing canonical verify and idempotency owners, preserving generated types, wire contracts, verification levels, bounds and all refusal assertions."
+do_2 = "Return the actual declared complete-offline-artifact error through the existing export codec API, retaining every malformed/untrusted/error path."
+do_3 = "Build the affected real SDK targets and execute the existing signed-authority offline export behavior coverage once; no fabricated transport or weakening."
+touches = ["agent/crates/layerx-sdk/src/agent_envelope.rs", "agent/crates/layerx-sdk/src/rpc_history.rs", "agent/crates/layerx-sdk/src/rpc_sign.rs", "agent/crates/layerx-sdk/src/rpc_capability.rs", "agent/crates/layerx-sdk/src/rpc_subscription.rs", "agent/crates/layerx-sdk/src/rpc_export.rs"]
+build_cmd = "timeout 15m /root/.cargo/bin/cargo test --locked --manifest-path agent/Cargo.toml -p layerx-sdk --test offline_export --no-run"
+verify_cmd = "timeout 10m /root/.cargo/bin/cargo test --locked --manifest-path agent/Cargo.toml -p layerx-sdk --test offline_export"
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop at original thirty-minute cap, second relevant failed repair, missing real interface or any assertion weakening; report revision, command, exit and private log."
+completion_basis_policy = "Owner directive marks fully implemented tasks done; actual qualification results remain separate."

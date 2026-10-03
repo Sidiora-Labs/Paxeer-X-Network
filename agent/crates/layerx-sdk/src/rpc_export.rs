@@ -11,7 +11,7 @@ use layerx_agent_api::verify::{Level, VerificationStatus};
 use layerx_proof::export::{
     verify_complete, CompleteExportError, CompleteVerificationReport, IndependentOfflineTrust,
 };
-use layerx_proof::export_codec::{CompleteOfflineArtifact, ExportCodecError};
+use layerx_proof::export_codec::{ArtifactDecodeError, CompleteOfflineArtifact};
 use layerx_types::verify::VerificationLevel;
 use serde_json::{json, Value};
 
@@ -101,7 +101,7 @@ fn decode_export(value: &Value, operation: Operation) -> Result<OfflineExport, E
 pub fn decode_offline_export(
     export: &OfflineExport,
     _trust: &IndependentOfflineTrust,
-) -> Result<CompleteOfflineArtifact, ExportCodecError> {
+) -> Result<CompleteOfflineArtifact, ArtifactDecodeError> {
     let facts: Vec<&str> = export.facts.iter().map(FactRef::as_str).collect();
     let bytes = |bucket: &[CanonicalBytes]| -> Vec<Vec<u8>> {
         bucket
@@ -121,7 +121,7 @@ pub fn decode_offline_export(
 /// Refusal of an offline verification of a received export.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum OfflineVerificationError {
-    Codec(ExportCodecError),
+    Codec(ArtifactDecodeError),
     Verify(CompleteExportError),
     /// The independently verified level is below the level the response claimed.
     ClaimExceedsVerified {

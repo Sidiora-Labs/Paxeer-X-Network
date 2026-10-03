@@ -10,13 +10,14 @@ use std::fmt;
 use std::path::Path;
 use std::time::Duration;
 
-use layerx_agent_api::error::{
-    ApiError, ApiSuccess, ErrorClass, IdempotentMutation, Key, Level, ReasonCode, RequestId,
-    Retriability, VerificationStatus,
-};
+use layerx_agent_api::error::{ApiError, ErrorClass, ReasonCode, RequestId, Retriability};
+use layerx_agent_api::idempotency::{IdempotentMutation, Key};
 use layerx_agent_api::prepare::CanonicalBytes;
 use layerx_agent_api::proof::{ProofBundle, ProofBundleTarget, MAX_PROOF_BUNDLE_BYTES};
-use layerx_agent_api::read::{BatchRef, CheckpointRef, Freshness, ReadRequest, RelativeTo, VerifiedRead};
+use layerx_agent_api::read::{
+    BatchRef, CheckpointRef, Freshness, ReadRequest, RelativeTo, VerifiedRead,
+};
+use layerx_agent_api::verify::{ApiSuccess, Level, VerificationStatus};
 use layerx_agent_api::Sequence;
 use layerx_types::result::ResultCode;
 use serde_json::{json, Map, Value};
@@ -55,23 +56,35 @@ pub enum EnvelopeError {
     InvalidRequest,
     /// A session credential is required for every non-bootstrap operation and forbidden
     /// for the bootstrap set.
-    CredentialPresence { operation: Operation },
+    CredentialPresence {
+        operation: Operation,
+    },
     /// An idempotency key is required exactly for mutating operations.
-    IdempotencyKeyPresence { operation: Operation },
-    DeploymentMismatch { deployment: Deployment },
+    IdempotencyKeyPresence {
+        operation: Operation,
+    },
+    DeploymentMismatch {
+        deployment: Deployment,
+    },
     Bounds,
     GatewayAuthentication,
     /// The daemon or gateway answered with the established error envelope.
     Refused(ApiError),
     /// A read failed in transport (no response, non-JSON body, or an edge/gateway
     /// answer); it had no effect and may be re-issued by the caller.
-    Transport { operation: Operation },
+    Transport {
+        operation: Operation,
+    },
     /// A read returned a well-formed JSON body that violates the exact version 1
     /// success/error schema or names another request. Never re-issued.
-    Decode { operation: Operation },
+    Decode {
+        operation: Operation,
+    },
     /// A mutation may or may not have taken effect. Reconcile through `track` with the
     /// same idempotency key; never resend automatically.
-    Unknown { operation: Operation },
+    Unknown {
+        operation: Operation,
+    },
 }
 
 /// Whether the caller may re-issue an exchange that ended in an [`EnvelopeError`].
@@ -131,8 +144,7 @@ impl EnvelopeCredential {
         generation: u64,
     ) -> Result<Self, EnvelopeError> {
         let tenant = tenant.into();
-        if tenant.is_empty() || tenant.len() > MAX_TENANT_BYTES || tenant.as_bytes().contains(&0)
-        {
+        if tenant.is_empty() || tenant.len() > MAX_TENANT_BYTES || tenant.as_bytes().contains(&0) {
             return Err(EnvelopeError::InvalidCredential);
         }
         if session_id == [0; 32] || token_id == [0; 32] {
@@ -402,7 +414,9 @@ impl AgentEnvelopeTransport {
     }
 
     pub fn prepare_native(
-        &self, request_id: RequestId, key: Key,
+        &self,
+        request_id: RequestId,
+        key: Key,
         request: &layerx_agent_api::identity::NativePrepareRequestV1,
         credential: &EnvelopeCredential,
         registry: &layerx_types::payload::ModuleRegistry,
@@ -412,64 +426,114 @@ impl AgentEnvelopeTransport {
         let purpose = &request.purpose.purpose;
         if purpose.tenant.as_str() != credential.tenant()
             || purpose.session_id.to_bytes().ok() != Some(credential.session_id())
-            || purpose.generation != credential.generation() {
+            || purpose.generation != credential.generation()
+        {
             return Err(EnvelopeError::InvalidCredential);
         }
-        let response = self.send_operation(Operation::Prepare, request_id, &body, Some(credential), Some(key))?;
-        let unknown = || EnvelopeError::Unknown { operation: Operation::Prepare };
+        let response = self.send_operation(
+            Operation::Prepare,
+            request_id,
+            &body,
+            Some(credential),
+            Some(key),
+        )?;
+        let unknown = || EnvelopeError::Unknown {
+            operation: Operation::Prepare,
+        };
         let value = decode_native_preparation(&response.value).ok_or_else(unknown)?;
         let canonical_digest: [u8; 32] = Sha256::digest(&value.canonical_bytes).into();
-        let activity = layerx_wire::activity::decode_unsigned(&value.canonical_bytes, registry).map_err(|_| unknown())?;
+        let activity = layerx_wire::activity::decode_unsigned(&value.canonical_bytes, registry)
+            .map_err(|_| unknown())?;
         let preimage = layerx_wire::sign::preimage(&activity).map_err(|_| unknown())?;
-        if value.preparation_id != purpose.preparation_id || canonical_digest != purpose.canonical_digest
-            || value.preparation_id != canonical_digest || value.activity != request.activity
-            || activity.activity_type().value() != request.activity.activity_type().map_err(|_| unknown())?.value()
+        if value.preparation_id != purpose.preparation_id
+            || canonical_digest != purpose.canonical_digest
+            || value.preparation_id != canonical_digest
+            || value.activity != request.activity
+            || activity.activity_type().value()
+                != request
+                    .activity
+                    .activity_type()
+                    .map_err(|_| unknown())?
+                    .value()
             || activity.actor_did() != request.actor.as_str().as_bytes()
             || activity.account_sequence() != request.account_sequence
             || activity.timestamp_bound().not_before != request.not_before
             || activity.timestamp_bound().not_after != request.not_after
             || activity.idempotency_key() != request.idempotency_key
-            || activity.fee_limit() != request.fee_limit || activity.payload() != request.payload.as_slice()
-            || activity.payload_hash() != request.payload_hash || preimage.as_bytes() != &value.signing_preimage
-            || value.approval_id.is_some_and(|id| id != value.preparation_id) {
+            || activity.fee_limit() != request.fee_limit
+            || activity.payload() != request.payload.as_slice()
+            || activity.payload_hash() != request.payload_hash
+            || preimage.as_bytes() != &value.signing_preimage
+            || value
+                .approval_id
+                .is_some_and(|id| id != value.preparation_id)
+        {
             return Err(unknown());
         }
         Ok(native_success(response, value))
     }
 
     pub fn approval_list_native(
-        &self, request_id: RequestId, credential: &EnvelopeCredential,
-    ) -> Result<ApiSuccess<layerx_agent_api::identity::NativeApprovalListResultV1>, EnvelopeError> {
-        let response = self.send_operation(Operation::ApprovalList, request_id, &json!({"variant":"native_v1"}), Some(credential), None)?;
-        let value = decode_native_approval_list(&response.value)
-            .ok_or(EnvelopeError::Decode { operation: Operation::ApprovalList })?;
+        &self,
+        request_id: RequestId,
+        credential: &EnvelopeCredential,
+    ) -> Result<ApiSuccess<layerx_agent_api::identity::NativeApprovalListResultV1>, EnvelopeError>
+    {
+        let response = self.send_operation(
+            Operation::ApprovalList,
+            request_id,
+            &json!({"variant":"native_v1"}),
+            Some(credential),
+            None,
+        )?;
+        let value = decode_native_approval_list(&response.value).ok_or(EnvelopeError::Decode {
+            operation: Operation::ApprovalList,
+        })?;
         Ok(native_success(response, value))
     }
 
     pub fn approval_get_native(
-        &self, request_id: RequestId, request: &layerx_agent_api::identity::NativeApprovalGetV1,
+        &self,
+        request_id: RequestId,
+        request: &layerx_agent_api::identity::NativeApprovalGetV1,
         credential: &EnvelopeCredential,
     ) -> Result<ApiSuccess<layerx_agent_api::identity::NativeApprovalResultV1>, EnvelopeError> {
-        let response = self.send_operation(Operation::ApprovalGet, request_id,
-            &json!({"variant":"native_v1", "approval_id":hex(&request.approval_id)}), Some(credential), None)?;
+        let response = self.send_operation(
+            Operation::ApprovalGet,
+            request_id,
+            &json!({"variant":"native_v1", "approval_id":hex(&request.approval_id)}),
+            Some(credential),
+            None,
+        )?;
         let value = decode_native_approval(&response.value)
             .filter(|value| value.approval_id == request.approval_id)
-            .ok_or(EnvelopeError::Decode { operation: Operation::ApprovalGet })?;
+            .ok_or(EnvelopeError::Decode {
+                operation: Operation::ApprovalGet,
+            })?;
         Ok(native_success(response, value))
     }
 
     pub fn approval_decide_native(
-        &self, request_id: RequestId, key: Key,
+        &self,
+        request_id: RequestId,
+        key: Key,
         request: &layerx_agent_api::identity::NativeApprovalDecisionV1,
-        credential: &EnvelopeCredential, grant: bool,
+        credential: &EnvelopeCredential,
+        grant: bool,
     ) -> Result<ApiSuccess<layerx_agent_api::identity::NativeApprovalResultV1>, EnvelopeError> {
-        let operation = if grant { Operation::ApprovalApprove } else { Operation::ApprovalReject };
+        let operation = if grant {
+            Operation::ApprovalApprove
+        } else {
+            Operation::ApprovalReject
+        };
         let response = self.send_operation(operation, request_id,
             &json!({"variant":"native_v1", "approval_id":hex(&request.approval_id),
                     "held_digest":hex(&request.held_digest), "current_sequence":request.current_sequence.to_string()}),
             Some(credential), Some(key))?;
         let value = decode_native_approval(&response.value)
-            .filter(|value| value.approval_id == request.approval_id && value.held_digest == request.held_digest)
+            .filter(|value| {
+                value.approval_id == request.approval_id && value.held_digest == request.held_digest
+            })
             .ok_or(EnvelopeError::Unknown { operation })?;
         Ok(native_success(response, value))
     }
@@ -482,10 +546,16 @@ impl AgentEnvelopeTransport {
     ) -> Result<ApiSuccess<VerifiedRead<ProofBundle>>, EnvelopeError> {
         let body = encode_proof_bundle_request(request)?;
         let response = self.send_operation(
-            Operation::ReadProofBundle, request_id, &body, Some(credential), None,
+            Operation::ReadProofBundle,
+            request_id,
+            &body,
+            Some(credential),
+            None,
         )?;
-        let value = decode_proof_bundle_response(request, &response)
-            .ok_or(EnvelopeError::Decode { operation: Operation::ReadProofBundle })?;
+        let value =
+            decode_proof_bundle_response(request, &response).ok_or(EnvelopeError::Decode {
+                operation: Operation::ReadProofBundle,
+            })?;
         Ok(native_success(response, value))
     }
 
@@ -572,7 +642,9 @@ impl AgentEnvelopeTransport {
         let document: Value = serde_json::from_slice(&encoded).map_err(|_| malformed())?;
         *received = Some((status, document.clone()));
         let edge = matches!(status, 502..=504)
-            || document.as_object().is_some_and(|object| object.contains_key("ok"));
+            || document
+                .as_object()
+                .is_some_and(|object| object.contains_key("ok"));
         let schema_violation = || {
             if operation.mutating() {
                 EnvelopeError::Unknown { operation }
@@ -639,7 +711,10 @@ fn explicit_roots(path: &Path) -> Result<ureq::tls::RootCerts, EnvelopeError> {
 /// Decodes a version 1 response document. `None` means the document is not a valid
 /// success or error envelope for the given status.
 #[must_use]
-pub fn decode_response(status: u16, document: &Value) -> Option<Result<ApiSuccess<Value>, ApiError>> {
+pub fn decode_response(
+    status: u16,
+    document: &Value,
+) -> Option<Result<ApiSuccess<Value>, ApiError>> {
     let envelope = document.as_object()?;
     if status == 200 {
         if !exact_fields(envelope, SUCCESS_FIELDS) {
@@ -678,9 +753,7 @@ pub fn decode_response(status: u16, document: &Value) -> Option<Result<ApiSucces
     };
     let protocol_result_code = match envelope.get("protocol_result_code")? {
         Value::Null => None,
-        Value::Number(number) => Some(ResultCode::from_raw(
-            i32::try_from(number.as_i64()?).ok()?,
-        )),
+        Value::Number(number) => Some(ResultCode::from_raw(i32::try_from(number.as_i64()?).ok()?)),
         _ => return None,
     };
     Some(Err(ApiError {
@@ -756,16 +829,21 @@ fn exact_fields(value: &Map<String, Value>, fields: &[&str]) -> bool {
 
 fn hex(bytes: &[u8]) -> String {
     use std::fmt::Write as _;
-    bytes.iter().fold(String::with_capacity(bytes.len() * 2), |mut out, byte| {
-        let _ = write!(out, "{byte:02x}");
-        out
-    })
+    bytes
+        .iter()
+        .fold(String::with_capacity(bytes.len() * 2), |mut out, byte| {
+            let _ = write!(out, "{byte:02x}");
+            out
+        })
 }
 
 pub fn encode_native_prepare(
     request: &layerx_agent_api::identity::NativePrepareRequestV1,
 ) -> Result<Value, EnvelopeError> {
-    request.clone().validate().map_err(|_| EnvelopeError::InvalidRequest)?;
+    request
+        .clone()
+        .validate()
+        .map_err(|_| EnvelopeError::InvalidRequest)?;
     let signed = &request.purpose;
     let purpose = &signed.purpose;
     Ok(json!({
@@ -799,24 +877,33 @@ fn native_activity_json(activity: layerx_agent_api::identity::NativeActivity) ->
 
 fn native_activity(value: &Value) -> Option<layerx_agent_api::identity::NativeActivity> {
     let value = value.as_object()?;
-    if !exact_fields(value, &["version", "module", "ordinal"]) || value.get("version")?.as_str()? != "1" {
+    if !exact_fields(value, &["version", "module", "ordinal"])
+        || value.get("version")?.as_str()? != "1"
+    {
         return None;
     }
     layerx_agent_api::identity::NativeActivity::new(
         u16::try_from(canonical_u64(value.get("module")?.as_str()?)?).ok()?,
         u16::try_from(canonical_u64(value.get("ordinal")?.as_str()?)?).ok()?,
-    ).ok()
+    )
+    .ok()
 }
 
 fn native_hex(value: &Value, maximum: usize) -> Option<Vec<u8>> {
     let text = value.as_str()?;
-    if text.is_empty() || text.len() % 2 != 0 || text.len() / 2 > maximum
-        || !text.bytes().all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'f')) {
+    if text.is_empty()
+        || text.len() % 2 != 0
+        || text.len() / 2 > maximum
+        || !text
+            .bytes()
+            .all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'f'))
+    {
         return None;
     }
-    text.as_bytes().chunks_exact(2).map(|pair| {
-        u8::from_str_radix(std::str::from_utf8(pair).ok()?, 16).ok()
-    }).collect()
+    text.as_bytes()
+        .chunks_exact(2)
+        .map(|pair| u8::from_str_radix(std::str::from_utf8(pair).ok()?, 16).ok())
+        .collect()
 }
 
 fn native_id(value: &Value) -> Option<[u8; 32]> {
@@ -824,55 +911,110 @@ fn native_id(value: &Value) -> Option<[u8; 32]> {
 }
 
 fn native_optional_id(value: &Value) -> Option<Option<[u8; 32]>> {
-    if value.is_null() { Some(None) } else { native_id(value).map(Some) }
+    if value.is_null() {
+        Some(None)
+    } else {
+        native_id(value).map(Some)
+    }
 }
 
-pub fn decode_native_preparation(value: &Value) -> Option<layerx_agent_api::identity::NativePrepareResultV1> {
+pub fn decode_native_preparation(
+    value: &Value,
+) -> Option<layerx_agent_api::identity::NativePrepareResultV1> {
     let value = value.as_object()?;
-    if !exact_fields(value, &["version", "preparation_id", "canonical_bytes", "signing_preimage",
-        "activity", "approval_required", "approval_id"]) || value.get("version")?.as_str()? != "1" {
+    if !exact_fields(
+        value,
+        &[
+            "version",
+            "preparation_id",
+            "canonical_bytes",
+            "signing_preimage",
+            "activity",
+            "approval_required",
+            "approval_id",
+        ],
+    ) || value.get("version")?.as_str()? != "1"
+    {
         return None;
     }
     let approval_required = value.get("approval_required")?.as_bool()?;
     let approval_id = native_optional_id(value.get("approval_id")?)?;
-    if approval_required != approval_id.is_some() { return None; }
+    if approval_required != approval_id.is_some() {
+        return None;
+    }
     Some(layerx_agent_api::identity::NativePrepareResultV1 {
         preparation_id: native_id(value.get("preparation_id")?)?,
-        canonical_bytes: native_hex(value.get("canonical_bytes")?, layerx_wire::limits::MAX_MESSAGE_BYTES)?,
+        canonical_bytes: native_hex(
+            value.get("canonical_bytes")?,
+            layerx_wire::limits::MAX_MESSAGE_BYTES,
+        )?,
         signing_preimage: native_id(value.get("signing_preimage")?)?,
-        activity: native_activity(value.get("activity")?)?, approval_required, approval_id,
+        activity: native_activity(value.get("activity")?)?,
+        approval_required,
+        approval_id,
     })
 }
 
-pub fn decode_native_approval(value: &Value) -> Option<layerx_agent_api::identity::NativeApprovalResultV1> {
+pub fn decode_native_approval(
+    value: &Value,
+) -> Option<layerx_agent_api::identity::NativeApprovalResultV1> {
     let value = value.as_object()?;
-    if !exact_fields(value, &["version", "approval_id", "held_digest", "activity", "state", "submission_ref"])
-        || value.get("version")?.as_str()? != "1" { return None; }
+    if !exact_fields(
+        value,
+        &[
+            "version",
+            "approval_id",
+            "held_digest",
+            "activity",
+            "state",
+            "submission_ref",
+        ],
+    ) || value.get("version")?.as_str()? != "1"
+    {
+        return None;
+    }
     let state = value.get("state")?.as_str()?;
-    if !matches!(state, "Awaiting" | "Granted" | "Rejected" | "Expired" | "Defective" | "NotRequired") {
+    if !matches!(
+        state,
+        "Awaiting" | "Granted" | "Rejected" | "Expired" | "Defective" | "NotRequired"
+    ) {
         return None;
     }
     Some(layerx_agent_api::identity::NativeApprovalResultV1 {
-        approval_id: native_id(value.get("approval_id")?)?, held_digest: native_id(value.get("held_digest")?)?,
-        activity: native_activity(value.get("activity")?)?, state: state.to_owned(),
+        approval_id: native_id(value.get("approval_id")?)?,
+        held_digest: native_id(value.get("held_digest")?)?,
+        activity: native_activity(value.get("activity")?)?,
+        state: state.to_owned(),
         submission_ref: native_optional_id(value.get("submission_ref")?)?,
     })
 }
 
-pub fn decode_native_approval_list(value: &Value) -> Option<layerx_agent_api::identity::NativeApprovalListResultV1> {
+pub fn decode_native_approval_list(
+    value: &Value,
+) -> Option<layerx_agent_api::identity::NativeApprovalListResultV1> {
     let value = value.as_object()?;
-    if !exact_fields(value, &["version", "approvals"]) || value.get("version")?.as_str()? != "1" { return None; }
+    if !exact_fields(value, &["version", "approvals"]) || value.get("version")?.as_str()? != "1" {
+        return None;
+    }
     let approvals = value.get("approvals")?.as_array()?;
-    if approvals.len() > 100 { return None; }
+    if approvals.len() > 100 {
+        return None;
+    }
     Some(layerx_agent_api::identity::NativeApprovalListResultV1 {
-        approvals: approvals.iter().map(decode_native_approval).collect::<Option<Vec<_>>>()?,
+        approvals: approvals
+            .iter()
+            .map(decode_native_approval)
+            .collect::<Option<Vec<_>>>()?,
     })
 }
 
 fn native_success<T>(response: ApiSuccess<Value>, value: T) -> ApiSuccess<T> {
-    ApiSuccess { request_id: response.request_id, value, verification_status: response.verification_status }
+    ApiSuccess {
+        request_id: response.request_id,
+        value,
+        verification_status: response.verification_status,
+    }
 }
-
 
 pub fn encode_proof_bundle_request(
     request: &ReadRequest<CanonicalBytes>,
@@ -921,8 +1063,16 @@ pub fn decode_proof_bundle_response(
     }
     let proof = CanonicalBytes::new(native_hex(&proofs[0], MAX_PROOF_BUNDLE_BYTES)?).ok()?;
     let freshness = read.get("freshness")?.as_object()?;
-    if !exact_fields(freshness, &["chain_head", "latest_sealed_batch",
-        "latest_finalised_checkpoint", "value_sequence", "relative_to"]) {
+    if !exact_fields(
+        freshness,
+        &[
+            "chain_head",
+            "latest_sealed_batch",
+            "latest_finalised_checkpoint",
+            "value_sequence",
+            "relative_to",
+        ],
+    ) {
         return None;
     }
     let chain_head = canonical_u64(freshness.get("chain_head")?.as_str()?)?;
@@ -937,17 +1087,29 @@ pub fn decode_proof_bundle_response(
     }
     let batch = relative.get("batch")?.as_str()?;
     let batch_number = canonical_u64(batch)?;
-    if chain_head == 0 || value_sequence == 0 || sealed_number == 0 || batch_number == 0
-        || value_sequence > chain_head || batch_number > sealed_number {
+    if chain_head == 0
+        || value_sequence == 0
+        || sealed_number == 0
+        || batch_number == 0
+        || value_sequence > chain_head
+        || batch_number > sealed_number
+    {
         return None;
     }
-    let result = VerifiedRead::new(ProofBundle { target, proofs: vec![proof] }, achieved, Freshness {
-        chain_head: Sequence(chain_head),
-        latest_sealed_batch: BatchRef::new(sealed).ok()?,
-        latest_finalised_checkpoint: CheckpointRef::new(checkpoint.as_str()?).ok()?,
-        value_sequence: Sequence(value_sequence),
-        relative_to: RelativeTo::Batch(BatchRef::new(batch).ok()?),
-    });
+    let result = VerifiedRead::new(
+        ProofBundle {
+            target,
+            proofs: vec![proof],
+        },
+        achieved,
+        Freshness {
+            chain_head: Sequence(chain_head),
+            latest_sealed_batch: BatchRef::new(sealed).ok()?,
+            latest_finalised_checkpoint: CheckpointRef::new(checkpoint.as_str()?).ok()?,
+            value_sequence: Sequence(value_sequence),
+            relative_to: RelativeTo::Batch(BatchRef::new(batch).ok()?),
+        },
+    );
     ProofBundle::check_response(request, &result).ok()?;
     Some(result)
 }
