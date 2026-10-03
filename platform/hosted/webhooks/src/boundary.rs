@@ -49,6 +49,7 @@ pub(crate) fn resolve_until(
         .map_err(|_| "admission DNS deadline exceeded".to_owned())?
 }
 
+#[derive(Debug)]
 pub(crate) struct DeadlineTcp {
     pub(crate) socket: TcpStream,
     pub(crate) deadline: Option<Instant>,

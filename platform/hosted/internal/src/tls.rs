@@ -62,6 +62,7 @@ pub fn admission_deadline(
         .ok_or_else(|| "invalid admission deadline".to_owned())
 }
 
+#[derive(Debug)]
 struct DeadlineTcp {
     socket: TcpStream,
     deadline: Option<Instant>,

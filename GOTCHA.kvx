@@ -1998,3 +1998,13 @@ do = "Retain one identical genuine dependency declaration and preserve its path 
 area = "rust"
 symptom = "Current local dependency edges can differ from retained Cargo locks after integration."
 do = "Use actual Cargo metadata to reconcile local edges and compare complete external lock records; retain every external version, source and checksum."
+
+[gotcha.608]
+area = "rust"
+symptom = "native-tls handshake errors require the custom deadline stream to implement Debug for Display formatting."
+do = "Provide the real stream's Debug trait while retaining original handshake error text and deadline enforcement."
+
+[gotcha.610]
+area = "builder"
+symptom = "Migrated native TLS build artifacts may reach linking on a host without OpenSSL development libraries."
+do = "Restore the genuine supported build libraries without replacing TLS or changing service configuration."
