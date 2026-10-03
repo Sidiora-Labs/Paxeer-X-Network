@@ -1573,7 +1573,29 @@ fn unavailable_capability(path: &str) -> bool {
         || path.starts_with("/v1/programs/receipts/by-idempotency/")
 }
 
+fn gateway_readiness(config: &Config, request: &Request) -> Response {
+    let Some(token) = &config.receipt_events_token else {
+        return refusal(503, "gateway_readiness_not_configured", None);
+    };
+    let supplied = request.headers.get("authorization")
+        .and_then(|value| value.strip_prefix("Bearer "))
+        .unwrap_or("");
+    if !bool::from(supplied.as_bytes().ct_eq(token.as_bytes())) {
+        return refusal(401, "unauthorized", None);
+    }
+    if request.method != "GET" {
+        return refusal(405, "method_not_allowed", None);
+    }
+    if request.query.is_some() || !request.body.is_empty() {
+        return refusal(400, "invalid_request", None);
+    }
+    readiness(config)
+}
+
 fn core_route(config: &Config, request: &Request) -> Response {
+    if request.path == "/internal/readyz" {
+        return gateway_readiness(config, request);
+    }
     public_reads::route(config, request).unwrap_or_else(|| protocol_route(config, request))
 }
 

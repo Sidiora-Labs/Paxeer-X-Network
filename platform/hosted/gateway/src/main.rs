@@ -3457,6 +3457,47 @@ fn dependency_ready(
         && (!require_routes || (readiness.synchronous_receipts && readiness.state_snapshot))
 }
 
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct IdentityReadinessResponse {
+    status: String,
+    service: String,
+}
+
+fn public_core_readiness(upstream: &UpstreamResponse, network: u32, wire: &str) -> bool {
+    if upstream.status != 200 || upstream.content_type != "application/json" || upstream.body.len() > 4096 {
+        return false;
+    }
+    let Ok(readiness) = serde_json::from_slice::<ReadinessResponse>(&upstream.body) else {
+        return false;
+    };
+    readiness.ready
+        && readiness.network_id == network.to_string()
+        && readiness.wire_version == wire
+        && readiness.synchronous_receipts
+        && readiness.state_snapshot
+}
+
+fn identity_readiness(upstream: &UpstreamResponse) -> bool {
+    if upstream.status != 200 || upstream.content_type != "application/json" || upstream.body.len() > 4096 {
+        return false;
+    }
+    let Ok(readiness) = serde_json::from_slice::<IdentityReadinessResponse>(&upstream.body) else {
+        return false;
+    };
+    readiness.status == "ready" && readiness.service == "identity"
+}
+
+fn authenticated_readiness(config: &Config, endpoint: &Endpoint, token: &str) -> Option<UpstreamResponse> {
+    config.client.request(endpoint, token, &http::OutboundRequest {
+        method: "GET",
+        path: "/internal/readyz",
+        idempotency: None,
+        content_type: "application/json",
+        body: &[],
+    }).ok()
+}
+
 fn program_registry_ready(config: &Config) -> bool {
     let Ok(upstream) = config
         .target(KernelBackend::Registry)
@@ -3866,7 +3907,7 @@ fn kernel_availability(
 }
 
 fn readiness(config: &Config) -> Vec<BackendAvailability> {
-    vec![
+    let mut backends = vec![
         BackendAvailability::probed("durable_store", config.store.ready()),
         if config.event_producer {
             BackendAvailability::probed("event_producer", config.store.producer_health.ready())
@@ -3877,16 +3918,19 @@ fn readiness(config: &Config) -> Vec<BackendAvailability> {
             "not_configured" => BackendAvailability::not_configured("paxeer_chain"),
             status => BackendAvailability::probed("paxeer_chain", status == "available"),
         },
-        kernel_availability(config, KernelBackend::Component, |endpoint, token| {
-            dependency_ready(config, endpoint, token, true)
-        }),
-        kernel_availability(config, KernelBackend::Authority, |endpoint, token| {
-            authority_ready(config, endpoint, token)
-        }),
-        kernel_availability(config, KernelBackend::Registry, |_, _| {
-            program_registry_ready(config)
-        }),
-    ]
+    ];
+    backends.extend(KernelBackend::ALL.into_iter().map(|backend| {
+        kernel_availability(config, backend, |endpoint, token| match backend {
+            KernelBackend::Component => dependency_ready(config, endpoint, token, true),
+            KernelBackend::PublicCore => authenticated_readiness(config, endpoint, token)
+                .is_some_and(|upstream| public_core_readiness(&upstream, config.protocol_network_id, &config.wire_version)),
+            KernelBackend::Authority => authority_ready(config, endpoint, token),
+            KernelBackend::Identity => authenticated_readiness(config, endpoint, token)
+                .is_some_and(|upstream| identity_readiness(&upstream)),
+            KernelBackend::Registry => program_registry_ready(config),
+        })
+    }));
+    backends
 }
 
 fn backend_ready(backends: &[BackendAvailability], name: &str) -> bool {
@@ -3928,7 +3972,7 @@ fn gateway_readiness_scope(config: &Config, include_product_routes: bool) -> Out
             KernelBackend::Authority.name(),
         ]
         .iter()
-        .all(|name| backend_ready(&backends, name))
+        .all(|name| backend_ready(&backends, name)) && serving
     };
     let component_name = |name: &str| {
         if backend_ready(&backends, name) {
@@ -3958,6 +4002,8 @@ fn gateway_readiness_scope(config: &Config, include_product_routes: bool) -> Out
             "components": {
                 "durable_store": component_name("durable_store"),
                 "core_agent_boundary": component_name(KernelBackend::Component.name()),
+                "public_core": component_name(KernelBackend::PublicCore.name()),
+                "identity": component_name(KernelBackend::Identity.name()),
                 "independent_receipt_authority": component_name(KernelBackend::Authority.name()),
                 "program_registry": component_name(KernelBackend::Registry.name()),
                 "principal_state_boundary": "unavailable"
@@ -6453,4 +6499,113 @@ fn wallet_caps(config: &Config, request: &IncomingRequest, params: Option<&serde
     result.body = value.to_string().into_bytes();
     result.headers.push(("Cache-Control".to_owned(), "no-store".to_owned()));
     result
+}
+
+#[cfg(test)]
+mod complete_readiness_contract_tests {
+    use super::*;
+
+    #[test]
+    fn real_core_and_identity_readiness_contract() {
+        let input = env::var("PAXEER_X_ROUTER_READINESS_CASE").expect("real service case required");
+        let case: serde_json::Value = serde_json::from_slice(&fs::read(input).expect("case file"))
+            .expect("case JSON");
+        let text = |name: &str| case[name].as_str().expect(name);
+        let ca = Certificate::from_der(&fs::read(text("ca_der")).expect("CA file")).expect("CA DER");
+        let password = Zeroizing::new(fs::read_to_string(text("client_password_file")).expect("client password"));
+        let identity = Identity::from_pkcs12(&fs::read(text("client_pkcs12")).expect("client identity"), password.trim())
+            .expect("client identity parse");
+        let client = Client::new(ca, identity);
+        let network = u32::try_from(case["protocol_network_id"].as_u64().expect("network")).expect("network bound");
+        let wire = text("wire_version");
+        let mut count = 0;
+        for backend in ["core", "identity"] {
+            let endpoint = Endpoint::parse(text(&format!("{backend}_endpoint"))).expect("TLS endpoint");
+            let token = Zeroizing::new(fs::read_to_string(text(&format!("{backend}_token_file"))).expect("service token"));
+            let request = http::OutboundRequest {
+                method: "GET", path: "/internal/readyz", idempotency: None,
+                content_type: "application/json", body: &[],
+            };
+            let mut response = client.request(&endpoint, token.trim(), &request).expect("real readiness request");
+            let accepts = |response: &UpstreamResponse| if backend == "core" {
+                public_core_readiness(response, network, wire)
+            } else {
+                identity_readiness(response)
+            };
+            assert!(accepts(&response), "actual service must be ready");
+            count += 1;
+            let original = response.body.clone();
+            let document: serde_json::Value = serde_json::from_slice(&original).expect("actual readiness JSON");
+            for status in [201, 401, 403, 503] {
+                response.status = status;
+                assert!(!accepts(&response));
+                count += 1;
+            }
+            response.status = 200;
+            response.content_type = "text/plain".to_owned();
+            assert!(!accepts(&response));
+            count += 1;
+            response.content_type = "application/json".to_owned();
+            response.body = vec![b' '; 4097];
+            assert!(!accepts(&response));
+            count += 1;
+            for field in document.as_object().expect("object").keys() {
+                let mut missing = document.clone();
+                missing.as_object_mut().expect("object").remove(field);
+                response.body = serde_json::to_vec(&missing).expect("mutation");
+                assert!(!accepts(&response), "missing {field}");
+                count += 1;
+            }
+            let mut extra = document.clone();
+            extra["unexpected"] = serde_json::json!(true);
+            response.body = serde_json::to_vec(&extra).expect("mutation");
+            assert!(!accepts(&response));
+            count += 1;
+            let mutations = if backend == "core" {
+                vec![
+                    ("network_id", serde_json::json!(network)),
+                    ("network_id", serde_json::json!(format!("0{network}"))),
+                    ("network_id", serde_json::json!(format!("+{network}"))),
+                    ("network_id", serde_json::json!(text("network_label"))),
+                    ("network_id", serde_json::json!(u64::from(network) + 1)),
+                    ("ready", serde_json::json!(false)),
+                    ("wire_version", serde_json::json!("incompatible")),
+                    ("synchronous_receipts", serde_json::json!(false)),
+                    ("state_snapshot", serde_json::json!(false)),
+                ]
+            } else {
+                vec![("status", serde_json::json!("unavailable")),
+                     ("service", serde_json::json!("core"))]
+            };
+            for (field, value) in mutations {
+                let mut invalid = document.clone();
+                invalid[field] = value;
+                response.body = serde_json::to_vec(&invalid).expect("mutation");
+                assert!(!accepts(&response), "changed {field}");
+                count += 1;
+            }
+            response.body = original;
+            assert!(accepts(&response));
+            let refused = client.request_unauthenticated(&endpoint, &request).expect("unauthenticated refusal");
+            assert_eq!(refused.status, 401);
+            assert!(!accepts(&refused));
+            let body_request = http::OutboundRequest { body: b"{}", ..request };
+            let refused = client.request(&endpoint, token.trim(), &body_request).expect("body refusal");
+            assert_eq!(refused.status, 400);
+            assert!(!accepts(&refused));
+            count += 3;
+            if backend == "identity" {
+                let wrong_role = Zeroizing::new(fs::read_to_string(text("identity_wrong_role_token_file")).expect("provisioning credential"));
+                let request = http::OutboundRequest { body: &[], ..body_request };
+                let refused = client.request(&endpoint, wrong_role.trim(), &request).expect("service role refusal");
+                assert_eq!(refused.status, 403);
+                assert!(!accepts(&refused));
+                count += 1;
+            }
+        }
+        let roster = KernelBackend::ALL.map(KernelBackend::name);
+        assert_eq!(roster, ["core_agent_boundary", "public_core", "independent_receipt_authority", "identity", "program_registry"]);
+        count += 1;
+        println!("PAXEER_X_ROUTER_CONTRACT_CASES={count}");
+    }
 }

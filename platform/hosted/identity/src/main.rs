@@ -1003,7 +1003,7 @@ fn route(shared: &Shared, request: &Request) -> Response {
                 | "/v1/sessions"
                 | "/v1/publication-keys"
         )
-    ) || (request.method == "GET" && request.path == "/internal/v1/principal")
+    ) || (request.method == "GET" && matches!(request.path.as_str(), "/internal/v1/principal" | "/internal/readyz"))
         || (request.method == "DELETE" && request.path.starts_with("/v1/sessions/"));
     if !known_route {
         return refusal(404, "not_found", None);
@@ -1014,6 +1014,15 @@ fn route(shared: &Shared, request: &Request) -> Response {
     };
     let capabilities = service.capabilities();
     match (request.method.as_str(), request.path.as_str()) {
+        ("GET", "/internal/readyz") => {
+            if service != Service::Gateway {
+                return refusal(403, "service_not_permitted", None);
+            }
+            if !request.body.is_empty() {
+                return refusal(400, "invalid_argument", None);
+            }
+            readiness(shared)
+        }
         ("GET", "/internal/v1/principal") => {
             if service != Service::Registry {
                 return refusal(403, "service_not_permitted", None);
