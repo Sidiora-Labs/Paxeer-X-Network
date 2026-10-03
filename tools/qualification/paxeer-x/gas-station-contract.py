@@ -7,6 +7,7 @@ import json
 import os
 from pathlib import Path
 import socket
+import signal
 import stat
 import subprocess
 import sys
@@ -309,9 +310,356 @@ def run_case(name, row, binary, evidence, keccak):
             stop(refused)
 
 
+
+FIRST_USE_DRIVER = r"""
+import { readFileSync, writeFileSync } from 'node:fs';
+import { pathToFileURL } from 'node:url';
+const input = JSON.parse(readFileSync(process.argv[2], 'utf8'));
+const { PaxeerProvider } = await import(pathToFileURL(input.provider));
+const { gasStation } = await import(pathToFileURL(input.wallet));
+const sdk = await import(pathToFileURL(input.agent));
+const require = (value, reason) => { if (!value) throw new Error(reason); };
+const json = value => JSON.stringify(value, (_, item) => typeof item === 'bigint' ? item.toString() : item);
+const clone = value => JSON.parse(JSON.stringify(value));
+const post = async (path, body) => {
+  const response = await fetch(input.base_url + path, { method: 'POST', headers: { 'content-type': 'application/json' },
+    body: json(body), signal: AbortSignal.timeout(15000), redirect: 'error' });
+  return [response.status, await response.json()];
+};
+
+if (input.mode === 'native') {
+  const outcomes = [];
+  for (const row of input.scenarios) {
+    const observed = [];
+    const request = async ({ method, params }) => {
+      require(['eth_chainId', 'eth_getBlockByNumber', 'eth_call'].includes(method), 'native preference attempted a transaction');
+      observed.push(method);
+      const response = await fetch(row.rpc_url, { method: 'POST', headers: { 'content-type': 'application/json' },
+        body: json({ jsonrpc: '2.0', id: 1, method, params }), signal: AbortSignal.timeout(15000), redirect: 'error' });
+      const reply = await response.json(); require(response.ok && !reply.error && reply.id === 1, 'native real RPC refused');
+      return reply.result;
+    };
+    const preference = await sdk.readNativeFeePreference(row.account, { restUrl: row.rest_url, request });
+    require(preference.state === row.expected_state, 'native availability differs from actual governed state');
+    if (preference.state === 'available') {
+      require(preference.chainId === 125n && preference.decimals === 6 && preference.symbol === 'SID'
+        && preference.denom === row.registered_denom && preference.call.to === '0x0000000000000000000000000000000000001018'
+        && preference.call.value === 0n, 'native preference projection differs');
+    } else { require(preference.reason === row.expected_reason, 'native inactive/unavailable reason differs'); }
+    require(observed.every(method => method !== 'eth_sendTransaction'), 'native preference executed');
+    outcomes.push(preference);
+  }
+  writeFileSync(input.output, json(outcomes), { mode: 0o600 }); process.exit(0);
+}
+if (input.mode === 'direct') {
+  const provider = new PaxeerProvider({ gatewayUrl: input.gateway_url, rpcUrl: input.rpc_url, chainId: 125,
+    token: () => process.env[input.token_env], confirm: ({ method }) => method === 'eth_sendTransaction' });
+  const accounts = await provider.request({ method: 'eth_requestAccounts' });
+  require(accounts.some(account => account.toLowerCase() === input.account.toLowerCase()), 'direct wallet custody differs');
+  const transactionHash = await provider.request({ method: 'eth_sendTransaction', params: [{ from: input.account,
+    to: input.account, value: '0x0', data: input.data }] });
+  writeFileSync(input.output, json({ transactionHash }), { mode: 0o600 }); process.exit(0);
+}
+
+const token = process.env[input.token_env]; require(token, 'real wallet gateway session required');
+let signs = 0; let approved = null; let sent = null; let expiryProbe = true;
+const provider = new PaxeerProvider({ gatewayUrl: input.gateway_url, rpcUrl: input.rpc_url, chainId: 125,
+  token: () => token, confirm: () => { require(approved !== null, 'signing preceded explicit SID consent'); signs++; return true; } });
+const accounts = await provider.request({ method: 'eth_requestAccounts' });
+require(accounts.includes(input.account.toLowerCase()) || accounts.includes(input.account), 'wallet custody account differs');
+const config = { chainId: 125n, sponsor: input.sponsor, paymaster: input.paymaster, quoteUrl: input.base_url + '/quote' };
+const refused = [];
+const station = gasStation(provider, { ...config, fetch: async (url, options) => {
+  if (String(url).endsWith('/submit')) {
+    const body = JSON.parse(options.body);
+    if (expiryProbe) {
+      const wait = Number(BigInt(body.batch.quote.deadline) - BigInt(Math.floor(Date.now() / 1000)) + 1n);
+      require(wait >= 0 && wait <= 25, 'qualification quote expiry exceeds bound');
+      await new Promise(resolve => setTimeout(resolve, wait * 1000));
+      const reply = await fetch(url, options); const payload = await reply.clone().json();
+      require(reply.status === 422 && payload.error === 'expired_quote', 'expired fresh signature admitted');
+      expiryProbe = false; refused.push('expired_quote'); return reply;
+    }
+    const variants = [];
+    const vary = (name, change) => { const value = clone(body); change(value); variants.push([name, value]); };
+    vary('wrong_chain', value => { value.authorization.chainId = '126'; });
+    vary('wrong_delegate', value => { value.authorization.address = '0x0000000000000000000000000000000000000001'; });
+    vary('wrong_account', value => { value.batch.account = '0x0000000000000000000000000000000000000001'; });
+    vary('wrong_sponsor', value => { value.batch.quote.sponsor = '0x0000000000000000000000000000000000000001'; });
+    vary('wrong_token', value => { value.batch.quote.token = '0x0000000000000000000000000000000000000001'; });
+    vary('above_maximum', value => { value.batch.quote.maxTokenAmount = '0'; });
+    vary('invalid_signature', value => { value.authorization.r = '0x' + '00'.repeat(32); });
+    vary('consumed_authorization_nonce', value => { value.authorization.nonce = (BigInt(value.authorization.nonce) + 1n).toString(); });
+    vary('high_s', value => {
+      const order = 0xfffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141n;
+      value.authorization.s = '0x' + (order - BigInt(value.authorization.s)).toString(16).padStart(64, '0');
+      value.authorization.yParity = 1 - value.authorization.yParity;
+    });
+    const before = readFileSync(input.journal, 'utf8');
+    const sponsorNonce = await provider.request({ method: 'eth_getTransactionCount', params: [input.sponsor, 'pending'] });
+    for (const [name, value] of variants) {
+      const [status] = await post('/submit', value);
+      require(status === 422 || status === 409, name + ' not refused'); refused.push(name);
+    }
+    require(readFileSync(input.journal, 'utf8') === before, 'refused requests changed durable liabilities');
+    require(await provider.request({ method: 'eth_getTransactionCount', params: [input.sponsor, 'pending'] }) === sponsorNonce,
+      'refused requests funded a transaction');
+    sent = body;
+  }
+  return fetch(url, options);
+} });
+const nonce = await station.batchNonce(input.account);
+require(nonce === BigInt(input.expected_nonce), 'retained replay nonce differs');
+const calls = input.calls.map(call => ({ ...call, value: BigInt(call.value) }));
+const request = { account: input.account, nonce, calls, maxTokenAmount: BigInt(input.maximum), gasCost: BigInt(input.gas_cost) };
+const signed = await station.requestQuote(request);
+const batch = { chainId: 125n, account: input.account, nonce, calls, quote: signed.quote };
+const consent = value => {
+  require(value.kind === 'sponsored-eip7702' && value.symbol === 'SID' && value.decimals === 6
+    && value.amount > 0n && value.amount <= value.maximum && value.maximum === BigInt(input.maximum)
+    && value.deadline === batch.quote.deadline && / SID$/.test(value.amountDisplay), 'SID consent projection differs');
+  approved = value; return true;
+};
+let declined = false;
+try { await station.submitFirstUse(batch, signed.relayerSignature, { confirm: () => false }); } catch (error) {
+  declined = error.refusal?.field === 'consent';
+}
+require(declined && signs === 0, 'declined consent signed material');
+try { await station.submitFirstUse(batch, signed.relayerSignature, { confirm: consent }); } catch (error) {
+  require(error.refusal?.code === 'expired_quote' && !expiryProbe, 'expiry probe failed before real station');
+}
+require(!readFileSync(input.journal, 'utf8').split('\n').filter(Boolean).map(JSON.parse).some(entry => entry.kind === 'prepared'),
+  'expired authorization prepared transaction');
+const fresh = await station.requestQuote(request);
+const next = { ...batch, quote: fresh.quote };
+approved = null;
+const transactionHash = await station.submitFirstUse(next, fresh.relayerSignature, { confirm: value => {
+  require(value.amount === fresh.quote.tokenAmount && value.maximum === fresh.quote.maxTokenAmount
+    && value.deadline === fresh.quote.deadline && value.batchDigest === station.digest(next), 'fresh consent differs');
+  approved = value; return true;
+} });
+require(sent !== null && approved !== null && signs === 4, 'real wallet signature path incomplete');
+const sdkConsent = sdk.sponsoredConsent(station.config, next);
+require(sdkConsent.ok && sdkConsent.value.batchDigest === approved.batchDigest, 'agent and wallet consent digests differ');
+writeFileSync(input.output, json({ transactionHash, request: sent, consent: approved, refused, nonce }), { mode: 0o600 });
+"""
+
+
+def first_use_material(material, manifest):
+    require(material['source_revision'] == manifest['source']['revision'] and material['build_exit'] == 0,
+            'source-bound successful build required')
+    for name in ('binary', 'provider', 'wallet', 'agent'):
+        path = Path(material[name])
+        require(path.is_absolute() and path.is_file() and not path.is_symlink()
+                and not any(part == '.env' or part.startswith('.env.') for part in path.parts)
+                and digest(path) == material[name + '_sha256'], 'built artifact identity mismatch')
+    require(os.access(material['binary'], os.X_OK), 'station binary not executable')
+    require(set(material['scenarios']) == {'first-use', 'retained-storage', 'sid-transfer-revert', 'incompatible-delegation'},
+            'first-use acceptance scenario missing')
+
+
+def run_first_use(name, row, material, evidence, keccak):
+    config_path = protected(row['config']); config = document(config_path)
+    endpoints = row['observation_endpoints']
+    require(len(endpoints) >= 3 and len(set(endpoints)) == len(endpoints), 'independent observation quorum required')
+    for endpoint in config['endpoints'] + endpoints:
+        local_url(endpoint, secure=True)
+    local_url(row['base_url']); local_url(row['gateway_url'])
+    local_url(row['rpc_url'], secure=True)
+    require(row['rpc_url'] in config['endpoints'] and config['chain_id'] == 125, 'actual chain configuration differs')
+    require(8 <= config['interval_seconds'] <= 10, 'bounded real expiry interval required')
+    require(rpc(endpoints, 'eth_chainId', []) == '0x7d', 'chain 125 required')
+    account = row['account'].lower(); sponsor = row['sponsor'].lower(); token = config['token'].lower()
+    require(token == '0x21f7b20a555199fa73a238b1a91fd0f549068fee' and config['decimals'] == 6,
+            'exact six-decimal SID required')
+    code = rpc(endpoints, 'eth_getCode', [account, 'finalized'])
+    require(code == '0x' if name != 'incompatible-delegation' else code not in ('0x', '0xef0100' + config['paymaster'][2:].lower()),
+            'real delegation scenario precondition missing')
+    require(int(rpc(endpoints, 'eth_getBalance', [account, 'finalized']), 16) == 0, 'first-use account must have no PAX')
+    balance_call = {'to': token, 'data': '0x' + keccak(b'balanceOf(address)')[:4].hex() + '00' * 12 + account[2:]}
+    balance = int(rpc(endpoints, 'eth_call', [balance_call, 'finalized']), 16)
+    require(balance >= int(row['maximum']) > 0, 'real SID funding insufficient')
+    require(row['probes'] and len(row['probes']) <= 16, 'authorized-call observations required')
+    before = [rpc(endpoints, 'eth_call', [probe['call'], 'finalized']) for probe in row['probes']]
+    directory = evidence / name; directory.mkdir(mode=0o700)
+    state = directory / 'journal.jsonl'; state.touch(mode=0o600)
+    driver = directory / 'driver.mjs'; driver.write_text(FIRST_USE_DRIVER)
+    output = directory / 'sdk-result.json'; input_path = directory / 'input.json'
+    request = dict(row, provider=material['provider'], wallet=material['wallet'], agent=material['agent'],
+                   sponsor=row['sponsor'], paymaster=config['paymaster'], output=str(output), journal=str(state))
+    input_path.write_text(json.dumps(request)); input_path.chmod(0o600)
+    with (directory / 'process.log').open('wb') as log:
+        process = start(Path(material['binary']), config_path, state, log)
+        try:
+            deadline = time.monotonic() + 45
+            while time.monotonic() < deadline:
+                require(process.poll() is None, 'station exited before readiness')
+                try:
+                    if post(row['base_url'] + '/status', {})[0] == 400:
+                        break
+                except (OSError, urllib.error.URLError):
+                    pass
+                time.sleep(0.1)
+            else:
+                raise RuntimeError('station readiness timeout')
+            if name == 'incompatible-delegation':
+                body = {'account': account, 'nonce': row['expected_nonce'], 'calls': row['calls'],
+                        'maxTokenAmount': row['maximum'], 'gasCost': row['gas_cost'], 'chainId': '125',
+                        'token': config['token'], 'decimals': 6}
+                require(post(row['base_url'] + '/quote', body) == (422, {'error': 'incompatible_delegation'}),
+                        'incompatible delegation admitted')
+                require(state.read_bytes() == b'', 'incompatible delegation created liabilities')
+                return
+            with (directory / 'sdk.log').open('wb') as sdk_log:
+                completed = subprocess.run(['node', str(driver), str(input_path)], cwd=ROOT, stdin=subprocess.DEVNULL,
+                                           stdout=sdk_log, stderr=sdk_log, timeout=70, check=False)
+            require(completed.returncode == 0, 'real wallet/agent first-use driver failed')
+            answer = document(output)
+            require(set(answer['refused']) == {'expired_quote', 'wrong_chain', 'wrong_delegate', 'wrong_account',
+                    'wrong_sponsor', 'wrong_token', 'above_maximum', 'invalid_signature', 'consumed_authorization_nonce', 'high_s'},
+                    'pre-funding refusal coverage incomplete')
+            entries = journal(state)
+            submitted_quotes = [(quote, identity) for quote, identity in identities(entries)
+                                if any(entry['kind'] == 'prepared' and entry['key'] == quote['key'] for entry in entries)]
+            require(len(submitted_quotes) == 1, 'exactly one real submitted quote required')
+            quote, identity = submitted_quotes[0]
+            original = submitted(entries, quote['key'])
+            require(hexbytes(original['hash']) == answer['transactionHash'], 'SDK identity differs from journal')
+            stop(process); durable = state.read_bytes()
+            process = start(Path(material['binary']), config_path, state, log)
+            ready(process, row['base_url'], identity)
+            deadline = time.monotonic() + 100; status = None
+            while time.monotonic() < deadline:
+                require(process.poll() is None, 'station exited during recovery')
+                http, status = post(row['base_url'] + '/status', identity)
+                if http == 200 and status.get('state') == 'completed':
+                    break
+                time.sleep(0.2)
+            require(status and status['state'] == 'completed', 'real sponsored transaction did not finalize')
+            recovered = journal(state)
+            require(state.read_bytes().startswith(durable) and submitted(recovered, quote['key']) == original,
+                    'restart changed exact durable transaction')
+            prove_completion(endpoints, recovered, quote, status, keccak)
+            expected = 'reverted' if name == 'sid-transfer-revert' else 'included'
+            require(status['completion']['outcome'] == expected, 'real execution outcome differs')
+            require(post(row['base_url'] + '/retry', identity) == (200, status), 'terminal retry changed identity')
+            after = [rpc(endpoints, 'eth_call', [probe['call'], 'finalized']) for probe in row['probes']]
+            nonce_call = {'to': account, 'data': '0x' + keccak(b'nonce()')[:4].hex()}
+            nonce = int(rpc(endpoints, 'eth_call', [nonce_call, 'finalized']), 16)
+            initial_nonce = int(row['expected_nonce'])
+            require(initial_nonce > 0 if name == 'retained-storage' else initial_nonce == 0, 'retained nonce precondition missing')
+            require(nonce == initial_nonce + (expected == 'included'), 'batch replay nonce changed incorrectly')
+            require(rpc(endpoints, 'eth_getCode', [account, 'finalized']).lower() == '0xef0100' + config['paymaster'][2:].lower(),
+                    'actual EIP-7702 delegation missing')
+            if expected == 'reverted':
+                trace = rpc(endpoints, 'debug_traceTransaction', [answer['transactionHash'],
+                            {'tracer': 'callTracer', 'timeout': '5s'}])
+                require(trace.get('error') and trace.get('output', '').lower()
+                        == '0x' + keccak(b'TokenTransferFailed()')[:4].hex(),
+                        'canonical execution did not fail specifically on SID repayment')
+                require(after == before and int(rpc(endpoints, 'eth_call', [balance_call, 'finalized']), 16) == balance,
+                        'failed SID transfer did not atomically roll back calls and token state')
+                require(len(row['calls']) >= 2 and row['calls'][-1]['to'].lower() == token,
+                        'real repayment-failure scenario must exhaust SID after a prior authorized mutation')
+                transfer = '0x' + keccak(b'transfer(address,uint256)')[:4].hex()
+                data = row['calls'][-1]['data']
+                require(data.startswith(transfer) and len(data) == 138 and int(data[-64:], 16) == balance,
+                        'repayment-failure scenario must transfer the actual entire SID balance')
+                require(all(int(call['value']) == 0 for call in row['calls']), 'rollback case requires zero-PAX calls')
+                used_call = {'to': account, 'data': '0x' + keccak(b'usedQuoteNonces(address,uint256)')[:4].hex()
+                             + '00' * 12 + sponsor[2:] + integer(quote['key']['quote_nonce']).to_bytes(32, 'big').hex()}
+                require(int(rpc(endpoints, 'eth_call', [used_call, 'finalized']), 16) == 0,
+                        'failed repayment consumed the quote nonce')
+            else:
+                require(after == [probe['expected'] for probe in row['probes']] and after != before,
+                        'authorized batch calls did not execute exactly')
+                replay = {'account': account, 'nonce': row['expected_nonce'], 'calls': row['calls'],
+                          'maxTokenAmount': row['maximum'], 'gasCost': row['gas_cost'], 'chainId': '125',
+                          'token': config['token'], 'decimals': 6}
+                durable_completed = state.read_bytes()
+                require(post(row['base_url'] + '/quote', replay) == (409, {'error': 'conflict'}),
+                        'consumed batch nonce admitted for a fresh quote')
+                require(state.read_bytes() == durable_completed, 'consumed nonce created another liability')
+        finally:
+            stop(process)
+
+
+def run_sdk_observation(mode, request, material, evidence):
+    directory = evidence / mode; directory.mkdir(mode=0o700)
+    driver = directory / 'driver.mjs'; driver.write_text(FIRST_USE_DRIVER)
+    output = directory / 'sdk-result.json'; inputs = directory / 'input.json'
+    request = dict(request, mode=mode, provider=material['provider'], wallet=material['wallet'], agent=material['agent'], output=str(output))
+    inputs.write_text(json.dumps(request)); inputs.chmod(0o600)
+    with (directory / 'sdk.log').open('wb') as log:
+        result = subprocess.run(['node', str(driver), str(inputs)], cwd=ROOT, stdin=subprocess.DEVNULL,
+                                stdout=log, stderr=log, timeout=100, check=False)
+    require(result.returncode == 0, 'real SDK observation failed: ' + mode)
+    return document(output)
+
+
+def direct_call(calls, keccak):
+    require(0 < len(calls) <= 64, 'bounded actual direct batch required')
+    word = lambda value: int(value).to_bytes(32, 'big')
+    tuples = []
+    for call in calls:
+        address = bytes.fromhex(call['to'][2:]); data = bytes.fromhex(call['data'][2:])
+        require(len(address) == 20 and len(data) <= 65_536 and int(call['value']) == 0, 'direct call bounds differ')
+        tuples.append(b'\0' * 12 + address + word(call['value']) + word(96) + word(len(data))
+                      + data + b'\0' * (-len(data) % 32))
+    offset = len(tuples) * 32; offsets = []
+    for item in tuples:
+        offsets.append(word(offset)); offset += len(item)
+    return '0x' + (keccak(b'execute((address,uint256,bytes)[])')[:4] + word(32) + word(len(tuples))
+                   + b''.join(offsets) + b''.join(tuples)).hex()
+
+
+def direct_execution(row, material, evidence, keccak):
+    endpoints = row['observation_endpoints']
+    require(len(endpoints) >= 3 and len(set(endpoints)) == len(endpoints), 'direct observation quorum required')
+    for endpoint in endpoints + [row['rpc_url']]:
+        local_url(endpoint, secure=True)
+    local_url(row['gateway_url'])
+    require(rpc(endpoints, 'eth_chainId', []) == '0x7d', 'direct chain differs')
+    account = row['account']; nonce_call = {'to': account, 'data': '0x' + keccak(b'nonce()')[:4].hex()}
+    require(rpc(endpoints, 'eth_getCode', [account, 'finalized']).lower() == '0xef0100' + row['paymaster'][2:].lower(),
+            'direct path requires genuine existing delegation')
+    require(int(rpc(endpoints, 'eth_getBalance', [account, 'finalized']), 16) > 0, 'direct payer requires real PAX')
+    nonce = int(rpc(endpoints, 'eth_call', [nonce_call, 'finalized']), 16)
+    require(row['probes'], 'direct authorized-call observations required')
+    before = [rpc(endpoints, 'eth_call', [probe['call'], 'finalized']) for probe in row['probes']]
+    data = direct_call(row['calls'], keccak)
+    answer = run_sdk_observation('direct', dict(row, data=data), material, evidence)
+    deadline = time.monotonic() + 100; receipt = None
+    while time.monotonic() < deadline:
+        receipt = rpc(endpoints, 'eth_getTransactionReceipt', [answer['transactionHash']])
+        if receipt and int(rpc(endpoints, 'eth_getBlockByNumber', ['finalized', False])['number'], 16) >= int(receipt['blockNumber'], 16):
+            break
+        time.sleep(0.2)
+    receipt = canonical_receipt(endpoints, answer['transactionHash'])
+    transaction = rpc(endpoints, 'eth_getTransactionByHash', [answer['transactionHash']])
+    require(transaction['from'].lower() == account.lower() == transaction['to'].lower()
+            and transaction['input'].lower() == data and int(receipt['status'], 16) == 1,
+            'canonical direct execution differs')
+    require(int(rpc(endpoints, 'eth_call', [nonce_call, 'finalized']), 16) == nonce + 1, 'direct nonce differs')
+    after = [rpc(endpoints, 'eth_call', [probe['call'], 'finalized']) for probe in row['probes']]
+    require(after == [probe['expected'] for probe in row['probes']] and after != before, 'direct calls did not execute')
+    require(not any(log['topics'] and log['topics'][0] == '0x' + keccak(b'Sponsored(address,address,uint256,uint256)').hex()
+                    for log in receipt['logs']), 'direct execution unexpectedly charged a sponsored quote')
+
+
+def native_preference_cases(rows, material, evidence):
+    require(set(rows) == {'enabled', 'disabled', 'not-upgraded', 'stale-rate'}, 'real native activation coverage missing')
+    expected = {'enabled': ('available', None), 'disabled': ('inactive', 'fee_token_disabled'),
+                'not-upgraded': ('inactive', 'upgrade_not_applied'), 'stale-rate': ('inactive', 'stale_rate')}
+    for name, row in rows.items():
+        local_url(row['rpc_url'], secure=True); local_url(row['rest_url'])
+        require(row['expected_state'] == expected[name][0] and row.get('expected_reason') == expected[name][1],
+                'native expected state cannot be substituted')
+    run_sdk_observation('native', {'scenarios': list(rows.values())}, material, evidence)
+
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--case', required=True, choices=['station-autonomous-recovery'])
+    parser.add_argument('--case', required=True, choices=['station-autonomous-recovery', 'first-use-sponsorship'])
     parser.add_argument('--candidate-manifest', required=True)
     args = parser.parse_args()
     spec = importlib.util.spec_from_file_location('candidate', ROOT / 'tools/paxeer-x/candidate.py')
@@ -319,6 +667,24 @@ def main():
     manifest = candidate.load_private(args.candidate_manifest)
     candidate.validate(manifest, candidate.catalogue(ROOT / 'spec/paxeer-x/spec.kvx'), ROOT)
     require(not manifest['source']['dirty'], 'clean candidate required')
+    if args.case == 'first-use-sponsorship':
+        def interrupted(_number, _frame):
+            raise KeyboardInterrupt()
+        signal.signal(signal.SIGTERM, interrupted)
+        material = document(os.environ['PAXEER_X_STATION_FIRST_USE_MATERIAL'])
+        first_use_material(material, manifest)
+        evidence = Path(os.environ['PAXEER_X_EVIDENCE_DIR']).resolve()
+        info = evidence.stat()
+        require(stat.S_ISDIR(info.st_mode) and info.st_uid == os.geteuid() and not info.st_mode & 0o077,
+                'private evidence directory required')
+        from eth_hash.auto import keccak
+        for name, row in material['scenarios'].items():
+            run_first_use(name, row, material, evidence, keccak)
+            print('passed ' + name, flush=True)
+        direct_execution(material['direct'], material, evidence, keccak)
+        native_preference_cases(material['native'], material, evidence)
+        print('PAXEER_X_GATE tests=6 skipped=0')
+        return
     material = document(os.environ['PAXEER_X_STATION_RECOVERY_MATERIAL'])
     require(material['source_revision'] == manifest['source']['revision'] and material['build_exit'] == 0,
             'source-bound successful binary build required')

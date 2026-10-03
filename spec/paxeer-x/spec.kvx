@@ -22578,7 +22578,9 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.20.1]
 title = "Sponsor a consent-bound first transaction for an undelegated SID holder"
-status = "in_progress"
+status = "done"
+completion_basis = "implementation"
+qualification_status = "unverified"
 mode = "BUILD"
 wave = 2
 requires = ["0.2"]

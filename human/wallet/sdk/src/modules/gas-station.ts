@@ -2,12 +2,16 @@ import {
   SIDIORA_DECIMALS,
   GAS_STATION_QUOTE_URL,
   SIDIORA_TOKEN,
-  abiSelector,
   assembleEip7702Authorization,
   eip7702AuthorizationDigest,
   submitSponsoredGasBatch,
   requestGasQuote,
   sponsoredBatchCall,
+  sponsoredConsent,
+  discoverSponsoredNonce,
+  readNativeFeePreference,
+  type NativeFeePreference,
+  type SponsoredConsent,
   type GasQuoteRequest,
   type GasRefusal,
   type GasResult,
@@ -26,7 +30,6 @@ import type {
 } from '../types.js';
 import {
   ModuleError,
-  decodeAbiUint,
   ethQuantity,
   moduleAddress,
   type ModuleProvider,
@@ -80,6 +83,7 @@ export interface GasBudgetQuote {
 export interface SponsoredSubmitOptions {
   readonly now?: bigint;
   readonly signal?: AbortSignal;
+  readonly confirm?: (consent: SponsoredConsent) => boolean | Promise<boolean>;
 }
 
 export interface GasStationModule {
@@ -87,6 +91,7 @@ export interface GasStationModule {
   quote(budget: GasBudget): Promise<GasBudgetQuote>;
   requestQuote(request: GasQuoteRequest, options?: { readonly signal?: AbortSignal; readonly now?: bigint }): Promise<SignedGasQuote>;
   batchNonce(account: string): Promise<bigint>;
+  nativeFeePreference(account: string, restUrl: string, signal?: AbortSignal): Promise<NativeFeePreference>;
   construction(batch: SponsoredBatch): WireSponsoredBatch;
   digest(batch: SponsoredBatch): Hex;
   sign(batch: SponsoredBatch): Promise<string>;
@@ -154,30 +159,18 @@ function signature(value: unknown, field: string): `0x${string}` {
 }
 
 export function gasStation(provider: ModuleProvider, options: GasStationOptions): GasStationModule {
-  const config: GasStationConfig = {
+  const config: GasStationConfig = Object.freeze({
     quoteUrl: options.quoteUrl ?? GAS_STATION_QUOTE_URL,
     chainId: options.chainId,
     sponsor: moduleAddress(options.sponsor, 'sponsor'),
     token: SIDIORA_TOKEN,
     decimals: SIDIORA_DECIMALS,
     paymaster: moduleAddress(options.paymaster, 'paymaster'),
-  };
+  });
   const fetchImpl = options.fetch ?? globalThis.fetch.bind(globalThis);
 
-  const batchNonce = async (account: string): Promise<bigint> => {
-    const target = moduleAddress(account, 'account');
-    const code = await provider.request({ method: 'eth_getCode', params: [target, 'pending'] });
-    if (typeof code !== 'string' || !/^0x(?:[0-9a-fA-F]{2})*$/u.test(code)) {
-      throw new ModuleError('invalid_answer', 'eth_getCode');
-    }
-    if (code === '0x') return 0n;
-    if (code.toLowerCase() !== `0xef0100${config.paymaster.slice(2).toLowerCase()}`) {
-      throw new GasStationError({ code: 'refused', field: 'delegation' });
-    }
-    const nonce = await provider.request({ method: 'eth_call', params: [{ to: target, data: abiSelector('nonce()') }, 'pending'] });
-    if (typeof nonce !== 'string') throw new ModuleError('invalid_answer', 'nonce');
-    return decodeAbiUint(nonce);
-  };
+  const batchNonce = async (account: string): Promise<bigint> =>
+    unwrap(await discoverSponsoredNonce(config, account, args => provider.request(args)));
 
   const construction = (batch: SponsoredBatch): WireSponsoredBatch => {
     if (batch.calls.length === 0) {
@@ -268,14 +261,24 @@ export function gasStation(provider: ModuleProvider, options: GasStationOptions)
         decimals: config.decimals,
       };
     },
-    requestQuote: async (request, quoteOptions = {}) => unwrap(await requestGasQuote(config, request, quoteOptions)),
+    requestQuote: async (request, quoteOptions = {}) => unwrap(await requestGasQuote(config, request, { ...quoteOptions, fetch: fetchImpl })),
     batchNonce,
+    nativeFeePreference: (account, restUrl, signal) => readNativeFeePreference(account, { restUrl, request: args => provider.request(args), fetch: fetchImpl, ...(signal === undefined ? {} : { signal }) }),
     construction,
     digest,
     sign,
     executeCall,
     submitRequest,
-    submitFirstUse: async (batch, relayerSignature, submitOptions = {}) => {
+    submitFirstUse: async (input, relayerSignature, submitOptions = {}) => {
+      const batch: SponsoredBatch = Object.freeze({ ...input, quote: Object.freeze({ ...input.quote }),
+        calls: Object.freeze(input.calls.map(call => Object.freeze({ ...call }))) });
+      const consent = unwrap(sponsoredConsent(config, batch, submitOptions.now));
+      if (submitOptions.confirm === undefined || !await submitOptions.confirm(consent)) {
+        throw new GasStationError({ code: 'refused', field: 'consent' });
+      }
+      if (unwrap(sponsoredConsent(config, batch, submitOptions.now)).batchDigest !== consent.batchDigest) {
+        throw new GasStationError({ code: 'refused', field: 'consent_changed' });
+      }
       if (batch.nonce !== await batchNonce(batch.account)) throw new GasStationError({ code: 'refused', field: 'nonce' });
       const account = hexAddress(batch.account, 'account');
       const pending = await provider.request({ method: 'eth_getTransactionCount', params: [account, 'pending'] });

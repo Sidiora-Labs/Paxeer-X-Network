@@ -49,6 +49,8 @@ export interface GasQuoteRequest {
 }
 
 export type GasRefusalCode =
+  | "incompatible_delegation"
+  | "replay_state_unavailable"
   | "expired_quote"
   | "above_maximum"
   | "sponsor_mismatch"
@@ -314,10 +316,29 @@ function wireUint(value: unknown, field: string): bigint {
   return uint(BigInt(text), field);
 }
 
+
+async function stationRefusal(response: Response, field: string): Promise<GasResult<never>> {
+  let code: GasRefusalCode = response.status >= 500 ? "unavailable" : "refused";
+  if (response.status === 422 && response.body !== null) {
+    const reader = response.body.getReader(); let size = 0; const chunks: Uint8Array[] = [];
+    try {
+      for (;;) { const next = await reader.read(); if (next.done) break;
+        size += next.value.length; if (size > 1_024) return { ok: false, refusal: { code: "invalid_response", field } };
+        chunks.push(next.value); }
+      const bytes = new Uint8Array(size); let offset = 0;
+      for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.length; }
+      const body = record(JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes)));
+      if (body.error === "incompatible_delegation" || body.error === "replay_state_unavailable" || body.error === "expired_quote") code = body.error;
+    } catch { return { ok: false, refusal: { code: "invalid_response", field } }; }
+    finally { await reader.cancel(); }
+  }
+  return { ok: false, refusal: { code, field } };
+}
+
 export async function requestGasQuote(
   config: GasStationConfig,
   request: GasQuoteRequest,
-  options: { readonly signal?: AbortSignal; readonly now?: bigint } = {},
+  options: { readonly signal?: AbortSignal; readonly now?: bigint; readonly fetch?: typeof fetch } = {},
 ): Promise<GasResult<SignedGasQuote>> {
   const prepared = result(() => {
     validateConfig(config);
@@ -338,7 +359,7 @@ export async function requestGasQuote(
   if (!prepared.ok) return prepared;
   let response: Response;
   try {
-    response = await fetch(config.quoteUrl ?? GAS_STATION_QUOTE_URL, {
+    response = await (options.fetch ?? fetch)(config.quoteUrl ?? GAS_STATION_QUOTE_URL, {
       method: "POST", headers: { "content-type": "application/json" }, body: prepared.value,
       signal: options.signal ? AbortSignal.any([options.signal, AbortSignal.timeout(15_000)]) : AbortSignal.timeout(15_000),
       redirect: "error",
@@ -346,7 +367,7 @@ export async function requestGasQuote(
   } catch {
     return { ok: false, refusal: { code: options.signal?.aborted ? "cancelled" : "unavailable", field: "quoteUrl" } };
   }
-  if (!response.ok) return { ok: false, refusal: { code: response.status >= 500 ? "unavailable" : "refused", field: "quoteUrl" } };
+  if (!response.ok) return stationRefusal(response, "quoteUrl");
   let payload: unknown;
   try { payload = await response.json(); } catch { return { ok: false, refusal: { code: "invalid_response", field: "quote" } }; }
   return result(() => {
@@ -546,8 +567,183 @@ export async function submitSponsoredGasBatch(
   } catch {
     return { ok: false, refusal: { code: options.signal?.aborted ? "cancelled" : "unavailable", field: "submit" } };
   }
-  if (!response.ok) return { ok: false, refusal: { code: response.status >= 500 ? "unavailable" : "refused", field: "submit" } };
+  if (!response.ok) return stationRefusal(response, "submit");
   let payload: unknown;
   try { payload = await response.json(); } catch { return { ok: false, refusal: { code: "invalid_response", field: "submit" } }; }
   return result(() => wireHash(record(payload).transactionHash, "transactionHash"));
+}
+
+export interface SponsoredConsent {
+  readonly kind: "sponsored-eip7702";
+  readonly account: string;
+  readonly chainId: bigint;
+  readonly delegate: string;
+  readonly token: string;
+  readonly symbol: "SID";
+  readonly decimals: 6;
+  readonly amount: bigint;
+  readonly maximum: bigint;
+  readonly amountDisplay: string;
+  readonly maximumDisplay: string;
+  readonly deadline: bigint;
+  readonly batchDigest: string;
+  readonly calls: readonly PrecompileCall[];
+}
+
+export function sponsoredConsent(config: GasStationConfig, batch: SponsoredBatch, now = BigInt(Math.floor(Date.now() / 1000))): GasResult<SponsoredConsent> {
+  return result(() => {
+    validateConfig(config); validateQuote(config, batch.quote, now);
+    if (batch.chainId !== config.chainId) throw new Refusal("chain_mismatch", "chainId");
+    const consentDigest = sponsoredBatchDigest(batch);
+    if (!consentDigest.ok) throw new Refusal(consentDigest.refusal.code, consentDigest.refusal.field);
+    const display = (value: bigint) => `${value / 1_000_000n}.${(value % 1_000_000n).toString().padStart(6, "0")} SID`;
+    return Object.freeze({ kind: "sponsored-eip7702", account: address(batch.account, "account"),
+      chainId: batch.chainId, delegate: address(config.paymaster, "paymaster"), token: config.token,
+      symbol: "SID", decimals: 6, amount: batch.quote.tokenAmount, maximum: batch.quote.maxTokenAmount,
+      amountDisplay: display(batch.quote.tokenAmount), maximumDisplay: display(batch.quote.maxTokenAmount),
+      deadline: batch.quote.deadline, batchDigest: consentDigest.value,
+      calls: Object.freeze(batch.calls.map(call => Object.freeze({ ...call }))) });
+  });
+}
+
+export async function discoverSponsoredNonce(config: GasStationConfig, account: string,
+  request: (args: { readonly method: string; readonly params: readonly unknown[] }) => Promise<unknown>): Promise<GasResult<bigint>> {
+  try {
+    validateConfig(config); const target = address(account, "account");
+    const chain = await request({ method: "eth_chainId", params: [] });
+    if (typeof chain !== "string" || !/^0x[0-9a-fA-F]+$/u.test(chain) || BigInt(chain) !== config.chainId)
+      throw new Refusal("chain_mismatch", "chainId");
+    const head = record(await request({ method: "eth_getBlockByNumber", params: ["latest", false] }));
+    const block = { blockHash: wireHash(head.hash, "blockHash"), requireCanonical: true };
+    if (/^0x0{64}$/u.test(block.blockHash)) throw new Refusal("invalid_response", "blockHash");
+    const code = await request({ method: "eth_getCode", params: [target, block] });
+    if (typeof code !== "string" || !/^0x(?:[0-9a-fA-F]{2})*$/u.test(code) || code.length > 49_154)
+      throw new Refusal("invalid_response", "code");
+    const call = { to: target, data: abiSelector("nonce()") };
+    let params: readonly unknown[] = [call, block];
+    if (code === "0x") {
+      const implementation = await request({ method: "eth_getCode", params: [config.paymaster, block] });
+      if (typeof implementation !== "string" || !/^0x(?:[0-9a-fA-F]{2})+$/u.test(implementation)
+          || implementation.length > 49_154 || implementation.toLowerCase().startsWith("0xef0100"))
+        throw new Refusal("replay_state_unavailable", "paymasterCode");
+      params = [call, block, { [target]: { code: implementation } }];
+    } else if (code.toLowerCase() !== `0xef0100${config.paymaster.slice(2).toLowerCase()}`) {
+      throw new Refusal("incompatible_delegation", "delegation");
+    }
+    const nonce = await request({ method: "eth_call", params });
+    if (typeof nonce !== "string" || !/^0x[0-9a-fA-F]{64}$/u.test(nonce))
+      throw new Refusal("replay_state_unavailable", "nonce");
+    return { ok: true, value: BigInt(nonce) };
+  } catch (error) {
+    return { ok: false, refusal: error instanceof Refusal ? { code: error.code, field: error.field }
+      : { code: "replay_state_unavailable", field: "eth_call" } };
+  }
+}
+
+
+export type NativeFeePreference =
+  | { readonly kind: "native-fee-preference"; readonly state: "inactive" | "unavailable"; readonly reason: string }
+  | { readonly kind: "native-fee-preference"; readonly state: "available"; readonly chainId: 125n;
+      readonly blockHash: string; readonly blockNumber: bigint; readonly denom: string; readonly symbol: "SID";
+      readonly decimals: 6; readonly rate: string; readonly rateUpdateHeight: bigint;
+      readonly currentDenom: string; readonly call: PrecompileCall };
+
+function nativeString(value: unknown, headWords: number): string {
+  if (typeof value !== "string" || !/^0x(?:[0-9a-fA-F]{64})+$/u.test(value) || value.length > 2_050)
+    throw new Refusal("invalid_response", "nativeFeeAbi");
+  const raw = value.slice(2);
+  const offset = Number(BigInt(`0x${raw.slice(0, 64)}`));
+  if (offset !== headWords * 32 || raw.length < (offset + 32) * 2)
+    throw new Refusal("invalid_response", "nativeFeeAbi");
+  const size = Number(BigInt(`0x${raw.slice(offset * 2, offset * 2 + 64)}`));
+  if (!Number.isSafeInteger(size) || size < 1 || size > 256
+      || raw.length !== (offset + 32 + Math.ceil(size / 32) * 32) * 2
+      || !/^0*$/u.test(raw.slice((offset + 32 + size) * 2)))
+    throw new Refusal("invalid_response", "nativeFeeAbi");
+  const data = raw.slice((offset + 32) * 2, (offset + 32 + size) * 2);
+  const text = new TextDecoder("utf-8", { fatal: true }).decode(Uint8Array.from(data.match(/../gu) ?? [], byte => parseInt(byte, 16)));
+  if (!/^[a-zA-Z][a-zA-Z0-9/:._-]{2,255}$/u.test(text)) throw new Refusal("invalid_response", "denom");
+  return text;
+}
+
+export async function readNativeFeePreference(account: string, options: {
+  readonly restUrl: string;
+  readonly request: (args: { readonly method: string; readonly params: readonly unknown[] }) => Promise<unknown>;
+  readonly fetch?: typeof fetch;
+  readonly signal?: AbortSignal;
+}): Promise<NativeFeePreference> {
+  const inactive = (reason: string): NativeFeePreference => ({ kind: "native-fee-preference", state: "inactive", reason });
+  try {
+    const target = address(account, "account");
+    if (await options.request({ method: "eth_chainId", params: [] }) !== "0x7d") return inactive("chain_mismatch");
+    const head = record(await options.request({ method: "eth_getBlockByNumber", params: ["finalized", false] }));
+    const blockHash = wireHash(head.hash, "blockHash");
+    if (/^0x0{64}$/u.test(blockHash)) throw new Refusal("invalid_response", "blockHash");
+    if (typeof head.number !== "string" || head.number.length > 18 || !/^0x[0-9a-f]+$/u.test(head.number)) throw new Refusal("invalid_response", "blockNumber");
+    const height = BigInt(head.number); const block = { blockHash, requireCanonical: true };
+    const base = new URL(options.restUrl);
+    if (!["https:", "http:"].includes(base.protocol) || base.username || base.password || base.search || base.hash)
+      throw new Refusal("invalid_value", "restUrl");
+    const read = async (path: string): Promise<Record<string, unknown>> => {
+      const response = await (options.fetch ?? fetch)(new URL(path, base), { redirect: "error",
+        headers: { "x-cosmos-block-height": height.toString() },
+        signal: options.signal ? AbortSignal.any([options.signal, AbortSignal.timeout(15_000)]) : AbortSignal.timeout(15_000) });
+      if (!response.ok || (response.headers.get("x-cosmos-block-height") ?? response.headers.get("grpc-metadata-x-cosmos-block-height")) !== height.toString()
+          || Number(response.headers.get("content-length") ?? 0) > 65_536 || response.body === null)
+        throw new Refusal("unavailable", "governedState");
+      const reader = response.body.getReader(); let size = 0; const chunks: Uint8Array[] = [];
+      try { for (;;) { const next = await reader.read(); if (next.done) break;
+        size += next.value.length; if (size > 65_536) throw new Refusal("invalid_response", "governedState"); chunks.push(next.value); }
+      } finally { await reader.cancel(); }
+      const payload = new Uint8Array(size); let offset = 0;
+      for (const chunk of chunks) { payload.set(chunk, offset); offset += chunk.length; }
+      return record(JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(payload)));
+    };
+    const applied = await read("/cosmos/upgrade/v1beta1/applied_plan/v6.7");
+    const upgrade = wireUint(applied.height, "upgradeHeight");
+    if (upgrade === 0n || upgrade > height) return inactive("upgrade_not_applied");
+    const param = async (key: string): Promise<unknown> => {
+      const body = record((await read(`/cosmos/params/v1beta1/params?subspace=evm&key=${key}`)).param);
+      if (body.subspace !== "evm" || body.key !== key || typeof body.value !== "string")
+        throw new Refusal("invalid_response", "governedParameter");
+      return JSON.parse(body.value);
+    };
+    const enabled = await param("KeyFeeTokenEnabled");
+    if (typeof enabled !== "boolean") throw new Refusal("invalid_response", "feeTokenEnabled");
+    if (!enabled) return inactive("fee_token_disabled");
+    const bridge = "0x0000000000000000000000000000000000001016";
+    const denom = nativeString(await options.request({ method: "eth_call", params: [{ to: bridge,
+      data: encodeAbiCall("getCap", ["uint64", "address"], [0x534f4c414e41n, SIDIORA_TOKEN]) }, block] }), 4);
+    if (!/^factory\/[^/]+\/usid$/u.test(denom)) return inactive("sid_registration_mismatch");
+    const allowed = await param("KeyAllowedFeeDenoms");
+    if (!Array.isArray(allowed) || allowed.length > 256) throw new Refusal("invalid_response", "allowedFeeDenoms");
+    const matches = allowed.map(record).filter(entry => entry.denom === denom);
+    if (matches.length !== 1) return inactive("sid_not_allowed");
+    const entry = matches[0]!;
+    if (typeof entry.rate !== "string" || !/^(0|[1-9][0-9]*)(?:\.[0-9]{1,18})?$/u.test(entry.rate)
+        || entry.rate.length > 98 || BigInt(entry.rate.replace(".", "")) === 0n) return inactive("invalid_rate");
+    const updated = wireUint(typeof entry.rate_update_height === "number" && Number.isSafeInteger(entry.rate_update_height)
+      ? String(entry.rate_update_height) : entry.rate_update_height, "rateUpdateHeight");
+    const ageValue = await param("KeyMaxFeeTokenRateAge");
+    const maxAge = wireUint(typeof ageValue === "number" && Number.isSafeInteger(ageValue) ? String(ageValue) : ageValue, "maxRateAge");
+    if (maxAge === 0n || updated > height || height - updated > maxAge) return inactive("stale_rate");
+    const metadata = record((await read(`/cosmos/bank/v1beta1/denoms_metadata/${encodeURIComponent(denom)}`)).metadata);
+    if (metadata.base !== denom || metadata.display !== "SID" || metadata.symbol !== "SID" || metadata.name !== "Sidiora"
+        || !Array.isArray(metadata.denom_units) || metadata.denom_units.length !== 2) return inactive("sid_metadata_mismatch");
+    const units = metadata.denom_units.map(record);
+    if (!units.some(unit => unit.denom === denom && unit.exponent === 0)
+        || !units.some(unit => unit.denom === "SID" && unit.exponent === 6)) return inactive("sid_metadata_mismatch");
+    const precompile = "0x0000000000000000000000000000000000001018";
+    const currentDenom = nativeString(await options.request({ method: "eth_call", params: [{ to: precompile,
+      data: encodeAbiCall("getFeeDenom", ["address"], [target]) }, block] }), 1);
+    const call = { to: precompile, data: encodeAbiCall("setFeeDenom", ["string"], [denom]), value: 0n };
+    if (await options.request({ method: "eth_call", params: [{ from: target, to: call.to, data: call.data }, block] }) !== "0x")
+      throw new Refusal("invalid_response", "feePreferenceSimulation");
+    const canonical = record(await options.request({ method: "eth_getBlockByNumber", params: [head.number, false] }));
+    if (wireHash(canonical.hash, "blockHash") !== blockHash) throw new Refusal("unavailable", "canonicalBlock");
+    return { kind: "native-fee-preference", state: "available", chainId: 125n, blockHash, blockNumber: height,
+      denom, symbol: "SID", decimals: 6, rate: entry.rate, rateUpdateHeight: updated, currentDenom, call };
+  } catch (error) {
+    return { kind: "native-fee-preference", state: "unavailable", reason: error instanceof Refusal ? error.field : "governed_state_unavailable" };
+  }
 }

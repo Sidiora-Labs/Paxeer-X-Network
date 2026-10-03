@@ -23,6 +23,8 @@ pub enum StationError {
     Invalid,
     Missing,
     Conflict,
+    IncompatibleDelegation,
+    ReplayStateUnavailable,
 }
 impl std::fmt::Display for StationError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -138,47 +140,64 @@ impl<S: QuoteSigner, R: JsonRpc, P: PriceSource> GasStation<S, R, P> {
     pub const fn journal(&self) -> &Journal {
         &self.journal
     }
-    fn call_word(&self, account: Address, data: &[u8], block: &str) -> Result<Word, StationError> {
-        let result: String = read(
-            &self.rpc,
-            "eth_call",
-            json!([{"to":hex(&account),"data":hex(data)},block]),
-        )?;
-        bytes(&result)?
-            .try_into()
-            .map_err(|_| StationError::Rpc(RpcFault::Malformed))
-    }
-    /// Classifies account code: no code is an undelegated EOA, an EIP-7702
-    /// designator to the configured paymaster is compatible, anything else is
-    /// refused rather than read as zero state.
-    fn account_code(&self, account: Address, block: &str) -> Result<AccountCode, StationError> {
-        let code: String = read(&self.rpc, "eth_getCode", json!([hex(&account), block]))?;
-        let code = bytes(&code)?;
-        if code.is_empty() {
-            return Ok(AccountCode::Undelegated);
+    fn anchored_block(&self, tag: &str) -> Result<Value, StationError> {
+        let block = self.rpc.call("eth_getBlockByNumber", json!([tag, false]))?;
+        let hash = block["hash"].as_str().ok_or(RpcFault::Malformed)?;
+        let decoded = bytes(hash)?;
+        if decoded.len() != 32 || decoded.iter().all(|value| *value == 0) {
+            return Err(RpcFault::Malformed.into());
         }
-        if code.len() == 23
-            && code[..3] == [0xef, 0x01, 0x00]
-            && code[3..] == self.station.config.paymaster[..]
-        {
+        Ok(json!({"blockHash": hash, "requireCanonical": true}))
+    }
+    fn account_code(&self, account: Address, block: &Value) -> Result<AccountCode, StationError> {
+        let encoded: String = read(&self.rpc, "eth_getCode", json!([hex(&account), block]))?;
+        if encoded.len() > 49_154 { return Err(StationError::IncompatibleDelegation); }
+        let code = bytes(&encoded)?;
+        if code.is_empty() { return Ok(AccountCode::Undelegated); }
+        if code.len() == 23 && code[..3] == [0xef, 0x01, 0x00]
+            && code[3..] == self.station.config.paymaster[..] {
             return Ok(AccountCode::Delegated);
         }
-        Err(StationError::Conflict)
+        Err(StationError::IncompatibleDelegation)
+    }
+    fn replay_word(&self, account: Address, data: &[u8], block: &Value) -> Result<Word, StationError> {
+        let request = json!({"to":hex(&account), "data":hex(data)});
+        let params = match self.account_code(account, block)? {
+            AccountCode::Delegated => json!([request, block]),
+            AccountCode::Undelegated => {
+                let code: String = read(&self.rpc, "eth_getCode",
+                    json!([hex(&self.station.config.paymaster), block]))?;
+                if code.len() <= 2 || code.len() > 49_154 {
+                    return Err(StationError::ReplayStateUnavailable);
+                }
+                let raw = bytes(&code)?;
+                if raw.starts_with(&[0xef, 0x01, 0x00]) {
+                    return Err(StationError::ReplayStateUnavailable);
+                }
+                let mut overrides = serde_json::Map::new();
+                overrides.insert(hex(&account), json!({"code":code}));
+                json!([request, block, Value::Object(overrides)])
+            }
+        };
+        let encoded: String = read(&self.rpc, "eth_call", params).map_err(|error| match error {
+            RpcFault::Rejected { .. } => StationError::ReplayStateUnavailable,
+            other => StationError::Rpc(other),
+        })?;
+        if encoded.len() != 66 { return Err(StationError::ReplayStateUnavailable); }
+        bytes(&encoded)?.try_into().map_err(|_| StationError::ReplayStateUnavailable)
+    }
+    pub fn batch_nonce(&self, account: Address) -> Result<Word, StationError> {
+        let block = self.anchored_block("latest")?;
+        self.replay_word(account, &keccak(b"nonce()")[..4], &block)
     }
     fn consumed(&self, key: Key, account: Address) -> Result<bool, StationError> {
-        let data = [
-            keccak(b"usedQuoteNonces(address,uint256)")[..4].to_vec(),
-            address_word(key.sponsor).to_vec(),
-            key.quote_nonce.to_vec(),
-        ]
-        .concat();
-        if self.account_code(account, "finalized")? == AccountCode::Undelegated {
-            return Ok(false);
-        }
-        match self.call_word(account, &data, "finalized")? {
+        let data = [keccak(b"usedQuoteNonces(address,uint256)")[..4].to_vec(),
+            address_word(key.sponsor).to_vec(), key.quote_nonce.to_vec()].concat();
+        let block = self.anchored_block("finalized")?;
+        match self.replay_word(account, &data, &block)? {
             value if value == word(0) => Ok(false),
             value if value == word(1) => Ok(true),
-            _ => Err(RpcFault::Malformed.into()),
+            _ => Err(StationError::ReplayStateUnavailable),
         }
     }
     fn transaction_count(&self, address: Address, block: &str) -> Result<u64, StationError> {
@@ -377,12 +396,8 @@ impl<S: QuoteSigner, R: JsonRpc, P: PriceSource> GasStation<S, R, P> {
             return Err(StationError::Invalid);
         }
         let signed = quote.signed_quote()?;
-        let batch_nonce = match self.account_code(request.account, "pending")? {
-            AccountCode::Undelegated => word(0),
-            AccountCode::Delegated => {
-                self.call_word(request.account, &keccak(b"nonce()")[..4], "pending")?
-            }
-        };
+        let batch_nonce = self.batch_nonce(request.account)?;
+        self.account_code(request.account, &json!("pending"))?;
         let account_nonce: String = read(
             &self.rpc,
             "eth_getTransactionCount",

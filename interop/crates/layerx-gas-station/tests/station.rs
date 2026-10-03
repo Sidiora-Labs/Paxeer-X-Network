@@ -939,3 +939,67 @@ fn authenticated_retry_real_https_retains_unknown_liability_within_deadline() ->
     std::fs::remove_dir(&directory)?;
     Ok(())
 }
+
+
+#[test]
+fn first_use_replay_state_real_https_preserves_retained_storage() -> TestResult {
+    use std::io::Read as _;
+    use std::os::unix::fs::{MetadataExt as _, PermissionsExt as _};
+    use std::time::{Duration, Instant};
+
+    let path = PathBuf::from(std::env::var("PAXEER_X_STATION_FIRST_USE_MATERIAL")?);
+    let private = |path: &std::path::Path| -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+        if !path.is_absolute() || path.components().any(|part| part.as_os_str().to_str()
+            .is_some_and(|name| name == ".env" || name.starts_with(".env."))) {
+            return Err("absolute non-environment first-use material required".into());
+        }
+        let info = std::fs::symlink_metadata(path)?;
+        if !info.file_type().is_file() || info.permissions().mode() & 0o077 != 0 || info.nlink() != 1 {
+            return Err("private single-link first-use material required".into());
+        }
+        let mut data = Vec::new();
+        std::fs::File::open(path)?.take(16_777_217).read_to_end(&mut data)?;
+        if data.len() > 16_777_216 { return Err("first-use material exceeds bound".into()); }
+        Ok(data)
+    };
+    let material: Value = serde_json::from_slice(&private(&path)?)?;
+    let stamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)?.as_nanos();
+    let directory = std::env::temp_dir().join(format!("station-first-use-{}-{stamp}", std::process::id()));
+    std::fs::create_dir(&directory)?;
+    std::fs::set_permissions(&directory, std::fs::Permissions::from_mode(0o700))?;
+    for name in ["first-use", "retained-storage", "incompatible-delegation"] {
+        let scenario = &material["scenarios"][name];
+        let config_path = PathBuf::from(scenario["config"].as_str().ok_or("real config missing")?);
+        let config = layerx_gas_station::config::ServiceConfig::parse(std::str::from_utf8(&private(&config_path)?)?)?;
+        for endpoint in &config.station.endpoints {
+            let socket: std::net::SocketAddr = endpoint.strip_prefix("https://").ok_or("HTTPS required")?
+                .split('/').next().ok_or("authority missing")?.parse()?;
+            if !socket.ip().is_loopback() { return Err("isolated loopback RPC required".into()); }
+        }
+        let rpc = ConfiguredRpc::new(&config.station, HttpsExchange)?;
+        let account: Address = bytes(scenario["account"].as_str().ok_or("real account missing")?)?.as_slice().try_into()?;
+        let code = rpc.call("eth_getCode", json!([hex(&account), "finalized"]))?;
+        if name != "incompatible-delegation" { assert_eq!(code, "0x"); }
+        let count = Rc::new(Cell::new(0));
+        let signer = CountedSigner { inner: LocalSigner::from_config(&config.station)?, count: Rc::clone(&count) };
+        let prices = PaymasterRateSource::new(ConfiguredRpc::new(&config.station, HttpsExchange)?, config.station.paymaster);
+        let state = directory.join(format!("{name}.jsonl"));
+        let station = GasStation::new(config.station, signer, rpc, prices, Journal::open(&state)?)?;
+        let started = Instant::now();
+        if name == "incompatible-delegation" {
+            assert!(matches!(station.batch_nonce(account), Err(StationError::IncompatibleDelegation)));
+        } else {
+            let expected = scenario["expected_nonce"].as_str().ok_or("expected nonce missing")?.parse::<u128>()?;
+            assert_eq!(expected == 0, name == "first-use");
+            assert_eq!(station.batch_nonce(account)?, word(expected));
+        }
+        assert!(started.elapsed() < Duration::from_secs(30));
+        assert_eq!(count.get(), 0);
+        assert!(station.journal().state().items.is_empty());
+        assert!(std::fs::read(&state)?.is_empty());
+        drop(station);
+        std::fs::remove_file(&state)?;
+    }
+    std::fs::remove_dir(&directory)?;
+    Ok(())
+}

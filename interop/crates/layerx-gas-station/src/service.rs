@@ -34,6 +34,8 @@ pub enum ServiceError {
     TooLarge,
     Refused,
     ExpiredQuote,
+    IncompatibleDelegation,
+    ReplayStateUnavailable,
     Internal,
     Unavailable,
 }
@@ -48,7 +50,7 @@ impl ServiceError {
             Self::Conflict => 409,
             Self::LengthRequired => 411,
             Self::TooLarge => 413,
-            Self::Refused | Self::ExpiredQuote => 422,
+            Self::Refused | Self::ExpiredQuote | Self::IncompatibleDelegation | Self::ReplayStateUnavailable => 422,
             Self::Accept | Self::Internal => 500,
             Self::Unavailable => 503,
         }
@@ -65,6 +67,8 @@ impl ServiceError {
             Self::TooLarge => "too_large",
             Self::Refused => "refused",
             Self::ExpiredQuote => "expired_quote",
+            Self::IncompatibleDelegation => "incompatible_delegation",
+            Self::ReplayStateUnavailable => "replay_state_unavailable",
             Self::Accept | Self::Internal => "internal",
             Self::Unavailable => "unavailable",
         }
@@ -80,6 +84,8 @@ impl std::error::Error for ServiceError {}
 impl From<&StationError> for ServiceError {
     fn from(error: &StationError) -> Self {
         match error {
+            StationError::IncompatibleDelegation => Self::IncompatibleDelegation,
+            StationError::ReplayStateUnavailable => Self::ReplayStateUnavailable,
             StationError::Rpc(RpcFault::Rejected { .. })
             | StationError::Quote(
                 QuoteError::InvalidRequest
@@ -242,7 +248,10 @@ where
             ],
         )?;
         let account = address(&request["account"])?;
-        decimal_word(&request["nonce"])?;
+        let nonce = decimal_word(&request["nonce"])?;
+        if self.station.batch_nonce(account).map_err(|error| ServiceError::from(&error))? != nonce {
+            return Err(ServiceError::Conflict);
+        }
         calls(&request["calls"])?;
         let max_token_amount = amount(&request["maxTokenAmount"])?;
         let gas_cost = amount(&request["gasCost"])?;
