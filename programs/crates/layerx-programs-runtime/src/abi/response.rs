@@ -255,3 +255,39 @@ fn meter_write(refusal: &MeterRefusal, mut write: impl FnMut(&[u8])) {
         MeterRefusal::FeeOverflow => write(&[2]),
     }
 }
+
+impl ResponseRefusal {
+    pub(crate) fn decode_untrusted_replay(cursor: &mut crate::replay::ReplayCursor<'_>) -> Result<Self, crate::replay::ReplayWitnessError> {
+        use crate::replay::ReplayWitnessError as E;
+        Ok(match cursor.u8()? {
+            0 => Self::TooLarge { bytes: cursor.usize64()?, limit: cursor.usize64()? },
+            1 => Self::CapacityExceeded { bytes: cursor.usize64()?, capacity: cursor.usize64()? },
+            2 => Self::DuplicatePublication, 3 => Self::InvalidPublication,
+            4 => Self::CodeMismatch { published: cursor.i32()?, returned: cursor.i32()? },
+            5 => Self::Meter(crate::replay::decode_meter_refusal(cursor)?),
+            _ => return Err(E::Encoding),
+        })
+    }
+}
+impl ResponseRegion {
+    pub(crate) fn from_untrusted_canonical_bytes(bytes: &[u8]) -> Result<Self, crate::replay::ReplayWitnessError> {
+        use crate::replay::{ReplayCursor, ReplayWitnessError as E};
+        let mut cursor = ReplayCursor::new(bytes);
+        let capacity = cursor.usize64()?;
+        if capacity > MAX_CALL_RESPONSE_BYTES { return Err(E::Bounds); }
+        let published = if cursor.boolean()? {
+            let code = cursor.i32()?;
+            let length = cursor.usize64()?;
+            if length > capacity || length > MAX_CALL_RESPONSE_BYTES { return Err(E::Bounds); }
+            let mut value = Vec::new(); crate::replay::append(&mut value, cursor.take(length)?, length)?;
+            Some(CallResponse { code, bytes: value })
+        } else { None };
+        let refusal = if cursor.boolean()? { Some(ResponseRefusal::decode_untrusted_replay(&mut cursor)?) } else { None };
+        if !cursor.done() { return Err(E::Encoding); }
+        let value = Self { capacity, published, refusal };
+        let mut canonical = Vec::new(); let mut failed = false;
+        value.canonical_state_write(|part| { if crate::replay::append(&mut canonical, part, bytes.len()).is_err() { failed = true; } });
+        if failed || canonical != bytes { return Err(E::Encoding); }
+        Ok(value)
+    }
+}

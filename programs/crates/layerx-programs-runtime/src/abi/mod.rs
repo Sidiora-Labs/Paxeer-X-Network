@@ -25,6 +25,7 @@ pub use codec::{
     MAX_NESTING_DEPTH,
 };
 pub(crate) use host_state::{abi_error_bytes, HostStateCommitment, HostStateIdentity};
+pub(crate) use host_state::{CapturedAbiReplayAuthority, decode_replay_abi_error};
 pub use response::{CallResponse, ResponseRefusal, MAX_CALL_RESPONSE_BYTES};
 pub use storage_ops::StorageSelector;
 

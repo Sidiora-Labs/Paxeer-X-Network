@@ -18,6 +18,27 @@ impl<'a> ReplayCursor<'a> {
         self.offset = end;
         Ok(value)
     }
+    pub(crate) fn array<const N: usize>(&mut self) -> Result<[u8; N], ReplayWitnessError> {
+        self.take(N)?.try_into().map_err(|_| ReplayWitnessError::Encoding)
+    }
+    pub(crate) fn u16(&mut self) -> Result<u16, ReplayWitnessError> { Ok(u16::from_be_bytes(self.array()?)) }
+    pub(crate) fn i32(&mut self) -> Result<i32, ReplayWitnessError> { Ok(i32::from_be_bytes(self.array()?)) }
+    pub(crate) fn boolean(&mut self) -> Result<bool, ReplayWitnessError> {
+        match self.u8()? { 0 => Ok(false), 1 => Ok(true), _ => Err(ReplayWitnessError::Encoding) }
+    }
+    pub(crate) fn usize64(&mut self) -> Result<usize, ReplayWitnessError> {
+        usize::try_from(self.u64()?).map_err(|_| ReplayWitnessError::Bounds)
+    }
+    pub(crate) fn count(&mut self, minimum: usize) -> Result<usize, ReplayWitnessError> {
+        let count = usize::try_from(self.u32()?).map_err(|_| ReplayWitnessError::Bounds)?;
+        if minimum == 0 || count > self.bytes.len().saturating_sub(self.offset) / minimum { return Err(ReplayWitnessError::Bounds); }
+        Ok(count)
+    }
+    pub(crate) fn owned_field(&mut self, maximum: usize) -> Result<Vec<u8>, ReplayWitnessError> {
+        let bytes = self.field()?;
+        if bytes.len() > maximum { return Err(ReplayWitnessError::Bounds); }
+        copy(bytes)
+    }
     pub(crate) fn u8(&mut self) -> Result<u8, ReplayWitnessError> { Ok(self.take(1)?[0]) }
     pub(crate) fn u32(&mut self) -> Result<u32, ReplayWitnessError> {
         Ok(u32::from_be_bytes(self.take(4)?.try_into().map_err(|_| ReplayWitnessError::Encoding)?))
@@ -421,6 +442,105 @@ mod storage_pair_tests {
     }
 }
 
+pub(crate) fn replay_namespace(bytes: &[u8]) -> Result<crate::storage::StorageNamespace, ReplayWitnessError> {
+    use crate::storage::{ProgramId, PrincipalId, StorageNamespace};
+    if bytes.len() != 33 && bytes.len() != 65 { return Err(ReplayWitnessError::Encoding); }
+    let program = ProgramId::new(bytes[..32].try_into().map_err(|_| ReplayWitnessError::Encoding)?).map_err(|_| ReplayWitnessError::Encoding)?;
+    match bytes[32] {
+        0 if bytes.len() == 65 => Ok(StorageNamespace::principal(program, PrincipalId::new(bytes[33..].try_into().map_err(|_| ReplayWitnessError::Encoding)?).map_err(|_| ReplayWitnessError::Encoding)?)),
+        1 if bytes.len() == 33 => Ok(StorageNamespace::shared(program)),
+        2 if bytes.len() == 65 => Ok(StorageNamespace::protocol_private(program, bytes[33..].try_into().map_err(|_| ReplayWitnessError::Encoding)?)),
+        _ => Err(ReplayWitnessError::Encoding),
+    }
+}
+pub(crate) fn decode_meter_refusal(cursor: &mut ReplayCursor<'_>) -> Result<crate::MeterRefusal, ReplayWitnessError> {
+    use crate::{MeterRefusal, ResourceKind};
+    let tag = cursor.u8()?;
+    if tag == 2 { return Ok(MeterRefusal::FeeOverflow); }
+    if tag > 1 { return Err(ReplayWitnessError::Encoding); }
+    let resource = match cursor.u8()? {
+        0 => ResourceKind::Cpu, 1 => ResourceKind::Memory, 2 => ResourceKind::StorageRead,
+        3 => ResourceKind::StorageWrite, 4 => ResourceKind::StorageOccupancy, 5 => ResourceKind::Output,
+        6 => ResourceKind::OutputBytes, _ => return Err(ReplayWitnessError::Encoding),
+    };
+    Ok(if tag == 0 { MeterRefusal::BudgetExceeded { resource, limit: cursor.u64()?, attempted: cursor.u64()? } }
+        else { MeterRefusal::CounterOverflow { resource } })
+}
+
+const SEMANTIC_DOMAIN: &[u8] = b"LayerX/programs/semantic-replay-source/v2\0";
+
+#[derive(Debug)]
+pub struct CapturedSemanticReplayV2 {
+    host: ReplayHostWitnessV1,
+    storage: StorageReplayWitnessV1,
+    authority: crate::abi::CapturedAbiReplayAuthority,
+    composition: CompositionReplayWitnessV1,
+    resolver: Option<std::rc::Rc<dyn crate::ProgramResolver>>,
+}
+
+#[derive(Debug)]
+pub struct UntrustedRuntimeReplayState {
+    state: crate::host::RuntimeState,
+    code_hash: [u8; 32],
+}
+
+impl ReplayHostWitnessV1 {
+    pub(crate) fn abi_preimage(&self) -> Result<&[u8], ReplayWitnessError> { self.abi.as_deref().ok_or(ReplayWitnessError::StateUnavailable) }
+    pub(crate) fn runtime_preimage(&self) -> &[u8] { &self.runtime }
+}
+
+impl CapturedSemanticReplayV2 {
+    pub(crate) fn storage_budget(maximum: usize, host: &ReplayHostWitnessV1, composition: &CompositionReplayWitnessV1) -> Result<usize, ReplayWitnessError> {
+        maximum_bytes(maximum)?;
+        maximum.checked_sub(SEMANTIC_DOMAIN.len() + 16 + 33)
+            .and_then(|n| n.checked_sub(host.encoded_len().ok()?))
+            .and_then(|n| n.checked_sub(composition.canonical_bytes(maximum).ok()?.len()))
+            .ok_or(ReplayWitnessError::Bounds)
+    }
+    pub(crate) fn from_capture(host: ReplayHostWitnessV1, storage: StorageReplayWitnessV1, authority: crate::abi::CapturedAbiReplayAuthority, composition: CompositionReplayWitnessV1, resolver: Option<std::rc::Rc<dyn crate::ProgramResolver>>, maximum: usize) -> Result<Self, ReplayWitnessError> {
+        storage.compare_host_witness_baseline(&host, maximum)?;
+        if composition.code_hash() != host.code_hash() || composition.composition.is_some() != resolver.is_some() { return Err(ReplayWitnessError::Binding); }
+        let value = Self { host, storage, authority, composition, resolver };
+        let _ = value.canonical_bytes(maximum)?;
+        Ok(value)
+    }
+    pub fn canonical_bytes(&self, maximum: usize) -> Result<Vec<u8>, ReplayWitnessError> {
+        maximum_bytes(maximum)?;
+        let mut bytes = Vec::new();
+        append(&mut bytes, SEMANTIC_DOMAIN, maximum)?;
+        field(&mut bytes, &self.host.canonical_bytes(maximum)?, maximum)?;
+        field(&mut bytes, &self.storage.canonical_bytes(maximum)?, maximum)?;
+        field(&mut bytes, &self.authority.payment_metadata(), maximum)?;
+        field(&mut bytes, &self.composition.canonical_bytes(maximum)?, maximum)?;
+        Ok(bytes)
+    }
+    pub fn restore_untrusted(&self, maximum: usize) -> Result<UntrustedRuntimeReplayState, ReplayWitnessError> {
+        self.restore_untrusted_bytes(&self.canonical_bytes(maximum)?, maximum)
+    }
+    pub fn restore_untrusted_bytes(&self, bytes: &[u8], maximum: usize) -> Result<UntrustedRuntimeReplayState, ReplayWitnessError> {
+        maximum_bytes(maximum)?;
+        if bytes.len() > maximum { return Err(ReplayWitnessError::Bounds); }
+        let mut cursor = ReplayCursor::new(bytes);
+        if cursor.take(SEMANTIC_DOMAIN.len())? != SEMANTIC_DOMAIN { return Err(ReplayWitnessError::Encoding); }
+        let host = ReplayHostWitnessV1::decode(cursor.field()?, maximum)?;
+        let storage = StorageReplayWitnessV1::decode(cursor.field()?, maximum)?;
+        let payment = cursor.field()?;
+        let composition = CompositionReplayWitnessV1::decode(cursor.field()?, maximum)?;
+        if !cursor.done() { return Err(ReplayWitnessError::Encoding); }
+        if payment != self.authority.payment_metadata() || host != self.host || storage != self.storage || composition != self.composition { return Err(ReplayWitnessError::Binding); }
+        storage.compare_host_witness_baseline(&host, maximum)?;
+        let pair = storage.decode_untrusted_storage_pair(maximum)?;
+        let graph_state = composition.decode_untrusted_state(maximum)?;
+        let state = crate::host::RuntimeState::restore_untrusted_semantic(&host, pair, &self.authority, graph_state, self.resolver.clone())?;
+        Ok(UntrustedRuntimeReplayState { state, code_hash: host.code_hash() })
+    }
+}
+impl UntrustedRuntimeReplayState {
+    pub fn recapture(&self, maximum: usize) -> Result<CapturedSemanticReplayV2, ReplayWitnessError> {
+        self.state.capture_semantic_replay_source(self.code_hash, maximum)
+    }
+}
+
 
 const COMPOSITION_DOMAIN: &[u8] = b"LayerX/programs/replay-composition-witness/v1\0";
 
@@ -603,5 +723,93 @@ mod composition_replay_tests {
         let bytes = isolated.canonical_bytes(4096).unwrap_or_else(|error| panic!("isolated encode: {error:?}"));
         assert_eq!(CompositionReplayWitnessV1::decode(&bytes, 4096), Ok(isolated));
         assert_eq!(CompositionReplayWitnessV1::capture([0; 32], None, None, 4096), Err(ReplayWitnessError::Binding));
+    }
+}
+
+
+#[cfg(test)]
+mod semantic_replay_tests {
+    use super::*;
+    use crate::abi::{Abi, AuthorizationContext, Capability, CapabilitySet, UnavailableReceiptOracle};
+    use crate::host::RuntimeState;
+    use crate::{CallGraph, CompositionRules, PrincipalId, ProgramId, Storage, StorageNamespace};
+
+    fn composed_source() -> RuntimeState {
+        let program = ProgramId::new([1; 32]).unwrap_or_else(|error| panic!("program: {error}"));
+        let principal = PrincipalId::new([2; 32]).unwrap_or_else(|error| panic!("principal: {error}"));
+        let callee = ProgramId::new([3; 32]).unwrap_or_else(|error| panic!("callee: {error}"));
+        let grants = CapabilitySet::new([Capability::StorageRead, Capability::StorageWrite, Capability::EmitEvent])
+            .unwrap_or_else(|error| panic!("grants: {error}"));
+        let authorization = AuthorizationContext::new(principal, grants).with_payment_account([4; 32]);
+        let mut storage = Storage::new();
+        let mut transaction = storage.transaction(StorageNamespace::principal(program, principal));
+        transaction.write(b"key", b"baseline").unwrap_or_else(|error| panic!("baseline: {error}"));
+        transaction.commit();
+        let abi = Abi::new(2, program, authorization, storage, &UnavailableReceiptOracle)
+            .unwrap_or_else(|error| panic!("abi: {error}"));
+        let mut graph = CallGraph::root(CompositionRules::declared(), program, principal);
+        graph.enter(callee).unwrap_or_else(|error| panic!("edge: {error}")); graph.leave();
+        let composition = crate::calls::Composition::new(std::rc::Rc::new(crate::ProgramCatalog::new()), graph.clone(), crate::AbiRevision::V2);
+        let mut state = RuntimeState::composed_with_response(crate::Meter::declared(), abi, composition, 64)
+            .unwrap_or_else(|error| panic!("response: {error}"));
+        state.set_failure_graph(graph);
+        state.set_failure_subtree_fuel(17);
+        let context = crate::abi::context::ExecutionContext::authenticated(1, 1, 1, 2, 1)
+            .unwrap_or_else(|error| panic!("context: {error:?}"));
+        state.authenticate_protocol_context(context);
+        let mut meter = state.meter().clone();
+        let abi = state.abi_mut().unwrap_or_else(|| panic!("abi absent"));
+        abi.emit_event(&mut meter, b"topic".len(), b"genuine staged event".len())
+            .unwrap_or_else(|error| panic!("event: {error}"));
+        abi.stage_reserved_event(b"topic".to_vec(), b"genuine staged event".to_vec())
+            .unwrap_or_else(|error| panic!("stage: {error}"));
+        state.set_meter(meter);
+        state
+    }
+
+    #[test]
+    fn semantic_restore_retains_actual_authority_meter_storage_graph_and_context() {
+        let source = composed_source();
+        let maximum = 1024 * 1024;
+        let captured = source.capture_semantic_replay_source([5; 32], maximum)
+            .unwrap_or_else(|error| panic!("capture: {error:?}"));
+        let before = captured.canonical_bytes(maximum).unwrap_or_else(|error| panic!("encode: {error:?}"));
+        let mut restored = captured.restore_untrusted(maximum).unwrap_or_else(|error| panic!("restore: {error:?}"));
+        assert_eq!(restored.state.meter().replay_state_bytes(), source.meter().replay_state_bytes());
+        assert_eq!(restored.state.protocol_context(), source.protocol_context());
+        assert_eq!(restored.state.failure_graph(), source.failure_graph());
+        assert_eq!(restored.state.composition().map(crate::calls::Composition::graph), source.composition().map(crate::calls::Composition::graph));
+        assert_eq!(restored.state.authorization_abi().map(Abi::payment_account), Some([4; 32]));
+        assert_eq!(restored.state.take_failure_subtree_fuel(), Some(17));
+        let restored = captured.restore_untrusted(maximum).unwrap_or_else(|error| panic!("restore again: {error:?}"));
+        let recaptured = restored.recapture(maximum).unwrap_or_else(|error| panic!("recapture: {error:?}"));
+        assert_eq!(recaptured.canonical_bytes(maximum), Ok(before.clone()));
+        assert_eq!(recaptured.host, captured.host);
+        assert_eq!(recaptured.storage, captured.storage);
+        assert_eq!(recaptured.composition, captured.composition);
+        assert_eq!(captured.canonical_bytes(before.len() - 1), Err(ReplayWitnessError::Bounds));
+    }
+
+    #[test]
+    fn semantic_source_refuses_mutation_and_unbound_payment_or_live_graph_metadata() {
+        let captured = composed_source().capture_semantic_replay_source([5; 32], 1024 * 1024)
+            .unwrap_or_else(|error| panic!("capture: {error:?}"));
+        let encoded = captured.canonical_bytes(1024 * 1024).unwrap_or_else(|error| panic!("encode: {error:?}"));
+        let mut cursor = ReplayCursor::new(&encoded);
+        cursor.take(SEMANTIC_DOMAIN.len()).unwrap_or_else(|error| panic!("domain: {error:?}"));
+        let host = cursor.field().unwrap_or_else(|error| panic!("host: {error:?}"));
+        let storage = cursor.field().unwrap_or_else(|error| panic!("storage: {error:?}"));
+        let payment = cursor.field().unwrap_or_else(|error| panic!("payment: {error:?}"));
+        let composition = cursor.field().unwrap_or_else(|error| panic!("composition: {error:?}"));
+        for target in [host, storage, payment, composition] {
+            let offset = target.as_ptr() as usize - encoded.as_ptr() as usize;
+            let mut altered = encoded.clone(); altered[offset + target.len() - 1] ^= 1;
+            assert!(captured.restore_untrusted_bytes(&altered, 1024 * 1024).is_err());
+        }
+        for length in 0..encoded.len() {
+            assert!(captured.restore_untrusted_bytes(&encoded[..length], 1024 * 1024).is_err());
+        }
+        let mut surplus = encoded; surplus.push(0);
+        assert!(captured.restore_untrusted_bytes(&surplus, 1024 * 1024).is_err());
     }
 }

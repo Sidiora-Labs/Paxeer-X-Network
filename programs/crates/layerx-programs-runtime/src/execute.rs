@@ -932,6 +932,10 @@ impl ProgramInstance {
         self.store.data().replay_composition_witness(self.validated_code_hash, maximum_bytes)
     }
 
+    pub fn capture_semantic_replay_source(&self, maximum_bytes: usize) -> Result<crate::replay::CapturedSemanticReplayV2, crate::replay::ReplayWitnessError> {
+        self.store.data().capture_semantic_replay_source(self.validated_code_hash, maximum_bytes)
+    }
+
     pub fn capture_storage_replay_witness(&self, maximum_bytes: usize) -> Result<crate::replay::StorageReplayWitnessV1, crate::replay::ReplayWitnessError> {
         self.store.data().replay_storage_witness(self.validated_code_hash, maximum_bytes)
     }

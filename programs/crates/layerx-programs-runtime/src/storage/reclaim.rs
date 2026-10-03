@@ -83,3 +83,12 @@ pub(crate) fn apply(cells: &mut BTreeMap<StorageAddress, Vec<u8>>, drop: Namespa
         cells.remove(&address);
     }
 }
+
+impl NamespaceDrop {
+    pub(crate) fn from_untrusted_replay_fields(namespace: StorageNamespace, reclaimed_cells: u64, reclaimed_key_value_bytes: u64, metered_work: u64) -> Result<Self, crate::replay::ReplayWitnessError> {
+        if reclaimed_cells.checked_add(reclaimed_key_value_bytes) != Some(metered_work) {
+            return Err(crate::replay::ReplayWitnessError::Encoding);
+        }
+        Ok(Self { namespace, reclaimed_cells, reclaimed_key_value_bytes, metered_work })
+    }
+}

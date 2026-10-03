@@ -382,3 +382,169 @@ impl Abi {
         crate::replay::StorageReplayWitnessV1::capture(code_hash, baseline, &self.storage, maximum)
     }
 }
+
+#[derive(Clone, Debug)]
+pub(crate) struct CapturedAbiReplayAuthority {
+    preimage_root: [u8; 32],
+    authorization: super::AuthorizationContext,
+    receipts: std::collections::BTreeMap<[u8; 32], super::ReceiptView>,
+    balances: std::collections::BTreeMap<([u8; 32], [u8; 32]), Result<super::BalanceView, AbiError>>,
+    oracle: std::sync::Arc<dyn super::CommittedOracle + Send + Sync>,
+    web: std::sync::Arc<dyn super::CommittedWeb + Send + Sync>,
+}
+impl CapturedAbiReplayAuthority {
+    pub(crate) fn payment_metadata(&self) -> Vec<u8> {
+        match self.authorization.payment_account {
+            None => vec![0],
+            Some(account) => { let mut bytes = Vec::with_capacity(33); bytes.push(1); bytes.extend_from_slice(&account); bytes }
+        }
+    }
+}
+
+pub(crate) fn decode_replay_abi_error(cursor: &mut crate::replay::ReplayCursor<'_>) -> Result<AbiError, crate::replay::ReplayWitnessError> {
+    use crate::replay::ReplayWitnessError as E;
+    use crate::storage::StorageError;
+    Ok(match cursor.u8()? {
+        0 => AbiError::WrongVersion, 1 => AbiError::InvalidCapability, 2 => AbiError::DuplicateCapability,
+        3 => AbiError::CapabilityDenied, 4 => AbiError::CapabilityEscalation, 5 => AbiError::EventBounds,
+        6 => AbiError::CallBounds, 7 => AbiError::AmountBounds, 8 => AbiError::ReceiptMismatch,
+        9 => AbiError::BalanceAbsent, 10 => AbiError::BalanceEvidenceUnavailable, 11 => AbiError::InvalidEncoding,
+        12 => AbiError::Storage(match cursor.u8()? {
+            0 => StorageError::InvalidProgram, 1 => StorageError::InvalidPrincipal, 2 => StorageError::EmptyKey,
+            3 => StorageError::KeyTooLarge, 4 => StorageError::ValueTooLarge, 5 => StorageError::PrefixTooLarge,
+            6 => StorageError::InvalidScanCursor, 7 => StorageError::InvalidScanLimits, 8 => StorageError::ScanCeilingExceeded,
+            9 => StorageError::FrozenNamespace, 10 => StorageError::SizeOverflow, _ => return Err(E::Encoding),
+        }),
+        13 => AbiError::Meter(crate::replay::decode_meter_refusal(cursor)?),
+        14 => AbiError::AccessDeclaration, 15 => AbiError::OracleUnknownMarket, 16 => AbiError::OracleMarketHalted,
+        _ => return Err(E::Encoding),
+    })
+}
+fn replay_program(cursor: &mut crate::replay::ReplayCursor<'_>) -> Result<crate::storage::ProgramId, crate::replay::ReplayWitnessError> {
+    crate::storage::ProgramId::new(cursor.array()?).map_err(|_| crate::replay::ReplayWitnessError::Encoding)
+}
+fn replay_principal(cursor: &mut crate::replay::ReplayCursor<'_>) -> Result<crate::storage::PrincipalId, crate::replay::ReplayWitnessError> {
+    crate::storage::PrincipalId::new(cursor.array()?).map_err(|_| crate::replay::ReplayWitnessError::Encoding)
+}
+fn replay_frame(cursor: &mut crate::replay::ReplayCursor<'_>) -> Result<super::CallFrameId, crate::replay::ReplayWitnessError> {
+    super::CallFrameId::from_canonical(cursor.array()?, cursor.u8()?).map_err(|_| crate::replay::ReplayWitnessError::Encoding)
+}
+fn replay_capabilities(cursor: &mut crate::replay::ReplayCursor<'_>, version: u16) -> Result<super::CapabilitySet, crate::replay::ReplayWitnessError> {
+    use crate::replay::ReplayWitnessError as E;
+    let bytes = cursor.field()?;
+    let grants = if version == 1 { super::CapabilitySet::decode_canonical(bytes) } else { super::CapabilitySet::decode_v2_canonical(bytes) }.map_err(|_| E::Encoding)?;
+    let set = super::CapabilitySet::new(grants).map_err(|_| E::Encoding)?;
+    if set.canonical_encoding() != bytes { return Err(E::Encoding); }
+    Ok(set)
+}
+fn replay_push<T>(values: &mut Vec<T>, value: T) -> Result<(), crate::replay::ReplayWitnessError> {
+    values.try_reserve_exact(1).map_err(|_| crate::replay::ReplayWitnessError::Allocation)?;
+    values.push(value); Ok(())
+}
+
+impl Abi {
+    pub(crate) fn capture_replay_authority(&self, preimage: &[u8], maximum: usize) -> Result<CapturedAbiReplayAuthority, crate::replay::ReplayWitnessError> {
+        if self.replay_host_preimage(maximum)? != preimage { return Err(crate::replay::ReplayWitnessError::Binding); }
+        Ok(CapturedAbiReplayAuthority { preimage_root: Sha256::digest(preimage).into(), authorization: self.authorization.clone(),
+            receipts: self.receipts.clone(), balances: self.balances.clone(), oracle: std::sync::Arc::clone(&self.oracle), web: std::sync::Arc::clone(&self.web) })
+    }
+
+    pub(crate) fn restore_untrusted_host_preimage(bytes: &[u8], storage: Storage, authority: &CapturedAbiReplayAuthority) -> Result<Self, crate::replay::ReplayWitnessError> {
+        use crate::replay::{ReplayCursor, ReplayWitnessError as E};
+        use super::{AbiEffects, BalanceView, ReceiptView, ProgramEvent, ProgramCall, TransferRequest};
+        use crate::transfer::{ProgramAuthority, ProgramFundingBinding};
+        if bytes.len() > crate::MAX_ARBITRATION_HOST_STATE_BYTES { return Err(E::Bounds); }
+        let root: [u8; 32] = Sha256::digest(bytes).into();
+        if root != authority.preimage_root { return Err(E::Binding); }
+        let mut cursor = ReplayCursor::new(bytes);
+        if cursor.take(DOMAIN.len())? != DOMAIN { return Err(E::Encoding); }
+        let version = cursor.u16()?;
+        if super::manifest::manifest(version).is_none() { return Err(E::Encoding); }
+        let program = replay_program(&mut cursor)?;
+        let principal = replay_principal(&mut cursor)?;
+        let frame = replay_frame(&mut cursor)?;
+        let capabilities = replay_capabilities(&mut cursor, version)?;
+        if principal != authority.authorization.principal() || frame != authority.authorization.frame()
+            || &capabilities != authority.authorization.capabilities() { return Err(E::Binding); }
+        let principal_namespace = crate::replay::replay_namespace(cursor.field()?)?;
+        let shared_namespace = crate::replay::replay_namespace(cursor.field()?)?;
+        if principal_namespace != crate::storage::StorageNamespace::principal(program, principal)
+            || shared_namespace != crate::storage::StorageNamespace::shared(program) { return Err(E::Encoding); }
+        if cursor.take(b"storage-overlay/v1\0".len())? != b"storage-overlay/v1\0" { return Err(E::Encoding); }
+        let access_declaration = crate::AccessDeclaration::canonical_decode(cursor.field()?).map_err(|_| E::Encoding)?;
+        let event_count_base = cursor.usize64()?;
+        let mut receipts = std::collections::BTreeMap::new();
+        for _ in 0..cursor.count(148)? {
+            let digest = cursor.array()?;
+            let view = ReceiptView { receipt_digest: cursor.array()?, result_code: cursor.i32()?, asset: cursor.array()?, amount: cursor.u128()?, state_root: cursor.array()? };
+            if digest != view.receipt_digest || receipts.last_key_value().is_some_and(|(previous, _)| previous >= &digest) { return Err(E::Encoding); }
+            receipts.insert(digest, view);
+        }
+        let mut balances = std::collections::BTreeMap::new();
+        for _ in 0..cursor.count(70)? {
+            let key = (cursor.array()?, cursor.array()?);
+            if balances.last_key_value().is_some_and(|(previous, _)| previous >= &key) { return Err(E::Encoding); }
+            let view = if cursor.boolean()? {
+                let view = BalanceView { account: cursor.array()?, asset: cursor.array()?, balance: cursor.u128()?, receipt_digest: cursor.array()?, state_root: cursor.array()?, observed_sequence: cursor.u64()? };
+                if view.account != key.0 || view.asset != key.1 { return Err(E::Encoding); }
+                Ok(view)
+            } else {
+                let bytes = cursor.field()?; let mut error = ReplayCursor::new(bytes);
+                let value = decode_replay_abi_error(&mut error)?;
+                if !error.done() || abi_error_bytes(&value) != bytes { return Err(E::Encoding); }
+                Err(value)
+            };
+            balances.insert(key, view);
+        }
+        if receipts != authority.receipts || balances != authority.balances { return Err(E::Binding); }
+        let mut effects = AbiEffects::default();
+        for _ in 0..cursor.count(81)? {
+            let event = ProgramEvent { program: replay_program(&mut cursor)?, principal: replay_principal(&mut cursor)?, frame: replay_frame(&mut cursor)?,
+                topic: cursor.owned_field(super::MAX_EVENT_TOPIC_BYTES)?, data: cursor.owned_field(super::MAX_EVENT_DATA_BYTES)? };
+            replay_push(&mut effects.events, event)?;
+        }
+        for _ in 0..cursor.count(122)? {
+            let call = ProgramCall { caller: replay_program(&mut cursor)?, callee: replay_program(&mut cursor)?, principal: replay_principal(&mut cursor)?,
+                caller_frame: replay_frame(&mut cursor)?, callee_frame: replay_frame(&mut cursor)?, input: cursor.owned_field(super::MAX_CALL_INPUT_BYTES)?,
+                capabilities: replay_capabilities(&mut cursor, version)? };
+            replay_push(&mut effects.calls, call)?;
+        }
+        for _ in 0..cursor.count(186)? {
+            let transfer_program = replay_program(&mut cursor)?;
+            let transfer_principal = replay_principal(&mut cursor)?;
+            let transfer_frame = replay_frame(&mut cursor)?;
+            let source = match cursor.u8()? {
+                0 => TransferSource::Principal(replay_principal(&mut cursor)?),
+                1 => {
+                    let principal = replay_principal(&mut cursor)?;
+                    let owner = replay_program(&mut cursor)?;
+                    let seed = cursor.owned_field(crate::MAX_PROGRAM_ACCOUNT_SEED_BYTES)?;
+                    let account = cursor.array()?; let asset = cursor.array()?;
+                    let binding = ProgramFundingBinding::issue(owner, &seed, account, asset).map_err(|_| E::Encoding)?;
+                    TransferSource::ProgramFunding { principal, binding }
+                }
+                2 => {
+                    let owner = replay_program(&mut cursor)?;
+                    let seed = cursor.owned_field(crate::MAX_PROGRAM_ACCOUNT_SEED_BYTES)?;
+                    let account = cursor.array()?; let frame = replay_frame(&mut cursor)?;
+                    let asset = cursor.array()?; let to = cursor.array()?; let amount = cursor.u128()?;
+                    TransferSource::Program(ProgramAuthority::issue(owner, &seed, account, frame, asset, to, amount).map_err(|_| E::Encoding)?)
+                }
+                _ => return Err(E::Encoding),
+            };
+            let transfer = TransferRequest { program: transfer_program, principal: transfer_principal, frame: transfer_frame, source,
+                asset: cursor.array()?, to: cursor.array()?, amount: cursor.u128()? };
+            replay_push(&mut effects.transfers, transfer)?;
+        }
+        for _ in 0..cursor.count(61)? {
+            let namespace = crate::replay::replay_namespace(cursor.field()?)?;
+            let drop = crate::storage::NamespaceDrop::from_untrusted_replay_fields(namespace, cursor.u64()?, cursor.u64()?, cursor.u64()?)?;
+            replay_push(&mut effects.namespace_drops, drop)?;
+        }
+        if !cursor.done() { return Err(E::Encoding); }
+        let restored = Self { version, program, authorization: authority.authorization.clone(), principal_namespace, shared_namespace, storage,
+            receipts, balances, oracle: std::sync::Arc::clone(&authority.oracle), web: std::sync::Arc::clone(&authority.web), effects, event_count_base, access_declaration };
+        if restored.replay_host_preimage(bytes.len())? != bytes { return Err(E::Encoding); }
+        Ok(restored)
+    }
+}

@@ -702,6 +702,10 @@ impl Default for CompositionContext {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct MeteringPlanIdentity(Box<[u8; 76]>);
 
+impl MeteringPlanIdentity {
+    pub(crate) fn from_untrusted_replay_bytes(bytes: [u8; 76]) -> Self { Self(Box::new(bytes)) }
+}
+
 impl core::ops::Deref for MeteringPlanIdentity {
     type Target = [u8];
 

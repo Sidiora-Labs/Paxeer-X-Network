@@ -2008,3 +2008,8 @@ do = "Provide the real stream's Debug trait while retaining original handshake e
 area = "builder"
 symptom = "Migrated native TLS build artifacts may reach linking on a host without OpenSSL development libraries."
 do = "Restore the genuine supported build libraries without replacing TLS or changing service configuration."
+
+[gotcha.619]
+area = "replay"
+symptom = "Execution-prestate version1 authenticates only universal state, Programs state and accounts, not complete Oracle and Web inputs."
+do = "Preserve its closed decoder and refuse post-state substitution; any portable replay producer needs an explicit versioned prestate contract."
