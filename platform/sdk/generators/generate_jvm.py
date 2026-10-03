@@ -96,6 +96,12 @@ class Plane:
         ]:
             name, separator, declared = encoded.partition(":")
             field_type = declared if separator else self.declared_field_type(entries, name)
+            if field_type and field_type.endswith("?"):
+                field_type = field_type[:-1]
+                optional = True
+            if field_type and field_type.endswith("_or_null"):
+                field_type = field_type.removesuffix("_or_null")
+                optional = True
             fields.append((name, field_type, optional))
         return fields
 
@@ -122,8 +128,10 @@ class Plane:
             return "BigInteger"
         if declared in {"integer", "u8", "u16", "u32", "i32"}:
             return "Long" if optional else "long"
-        if declared == "boolean":
+        if declared in {"boolean", "bool"}:
             return "Boolean" if optional else "boolean"
+        if declared == "canonical-map":
+            return "ObjectNode"
         if declared == "object":
             return "JsonNode"
         if declared in self.models:
@@ -162,6 +170,11 @@ def record_source(name: str, fields: list[tuple[str, str | None, bool]], plane: 
     parameters = []
     for wire, declared, optional in fields:
         annotation = f'@JsonProperty("{wire}") ' if field_name(wire) != wire else ""
+        if plane.scalars.get(declared or "", {}).get("wire") == "decimal_string" and plane.java_type(declared, optional) == "BigInteger":
+            annotation += "@JsonSerialize(using = ToStringSerializer.class) "
+            annotation += "@JsonDeserialize(using = SchemaTypes.DecimalU64Deserializer.class) "
+        if declared in {"integer", "u8", "u16", "u32", "i32"}:
+            annotation += "@JsonDeserialize(using = SchemaTypes.IntegerNumberDeserializer.class) "
         parameters.append(f"{annotation}{plane.java_type(declared, optional)} {field_name(wire)}")
     joined = ", ".join(parameters)
     lines = [f"{indent}public record {name}({joined}) implements SchemaTypes.{marker} {{"]
@@ -169,9 +182,17 @@ def record_source(name: str, fields: list[tuple[str, str | None, bool]], plane: 
     for wire, declared, optional in fields:
         field = field_name(wire)
         java_type = plane.java_type(declared, optional)
+        bounds = {"u8": ("0", "255"), "u16": ("0", "65535"),
+                  "u32": ("0", "4294967295L"), "i32": ("-2147483648L", "2147483647L")}
+        if declared in bounds:
+            minimum, maximum = bounds[declared]
+            guard = f"SchemaTypes.protocolBoundedLong({field}, {minimum}, {maximum});"
+            validations.append(f"if ({field} != null) {guard}" if optional else guard)
         if optional:
             if java_type.startswith("List<"):
                 validations.append(f"if ({field} != null) {field} = List.copyOf({field});")
+            if declared in {"Sequence", "TimestampSeconds", "u64"}:
+                validations.append(f"if ({field} != null) SchemaTypes.protocolU64({field});")
             continue
         if java_type.startswith("List<"):
             validations.append(f"{field} = List.copyOf(Objects.requireNonNull({field}, \"{wire}\"));")
@@ -188,6 +209,10 @@ def record_source(name: str, fields: list[tuple[str, str | None, bool]], plane: 
     if delegating:
         wire, declared, optional = fields[0]
         lines.append(f"{indent}    @JsonValue public {plane.java_type(declared, optional)} wireValue() {{ return {field_name(wire)}; }}")
+    sensitive_fields = {"token", "token_id", "session_token", "credential", "password", "secret", "api_key", "private_key", "signing_key"}
+    if any(wire in sensitive_fields or wire.endswith(("_password", "_secret", "_private_key"))
+           for wire, _, _ in fields):
+        lines.append(f'{indent}    @Override public String toString() {{ return "[REDACTED]"; }}')
     lines.append(f"{indent}}}")
     return lines
 
@@ -265,6 +290,10 @@ def generate(repo: Path) -> str:
         "import com.fasterxml.jackson.annotation.JsonProperty;",
         "import com.fasterxml.jackson.annotation.JsonValue;",
         "import com.fasterxml.jackson.databind.JsonNode;",
+        "import com.fasterxml.jackson.databind.node.ObjectNode;",
+        "import com.fasterxml.jackson.databind.annotation.JsonDeserialize;",
+        "import com.fasterxml.jackson.databind.annotation.JsonSerialize;",
+        "import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;",
         "import java.math.BigInteger;", "import java.util.List;", "import java.util.Map;",
         "import java.util.Objects;", "import java.util.Set;", "", "public final class GeneratedSchema {",
         "    private GeneratedSchema() {}",

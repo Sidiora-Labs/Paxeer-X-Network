@@ -23649,7 +23649,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.104.15.4]
 title = "Build the JVM SDK for Java and Kotlin"
-status = "pending"
+status = "in_progress"
 mode = "QUALIFY"
 wave = 2
 requires = ["0.2"]
@@ -23661,7 +23661,7 @@ do_4 = "Implement streaming with resumable cursors on virtual-thread-friendly pr
 do_5 = "Enforce integer-only money via BigInteger-backed protocol types, idempotency keys and secret hygiene."
 do_6 = "Run the golden vectors and the conformance suite against the live schema in CI."
 do_7 = "Provide this task selector in tools/paxeer-x/gates and execute the full scoped acceptance contract using real production paths. Preserve the retained verification command coverage; move aggregate matrices to release scope and refuse an unknown or unimplemented selector."
-touches = ["platform/sdk/jvm", "platform/sdk/conformance", "platform/sdk/generators", "platform/sdk/pipeline.kvx", "platform/Makefile.inc", "platform/release/registries.kvx", ".github/workflows/platform.yml", "tools/paxeer-x/gates/104.15.4.sh"]
+touches = ["platform/sdk/jvm", "platform/sdk/conformance", "platform/sdk/generators", "platform/sdk/pipeline.kvx", "platform/Makefile.inc", "platform/release/registries.kvx", ".github/workflows/platform.yml", "tools/paxeer-x/gates/104.15.4.sh", "platform/sdk/go/generated.go"]
 verify_cmd = "timeout 30m tools/paxeer-x/verify-task.sh 104.15.4"
 gate_kind = "planned-adapter"
 max_builds = 0

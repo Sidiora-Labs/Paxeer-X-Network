@@ -2,6 +2,11 @@ package com.sidiora.layerx.sdk;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.fasterxml.jackson.core.JsonParser;
+import com.fasterxml.jackson.core.JsonToken;
+import com.fasterxml.jackson.databind.DeserializationContext;
+import com.fasterxml.jackson.databind.JsonDeserializer;
+import java.io.IOException;
 import java.math.BigInteger;
 import java.util.Collections;
 import java.util.LinkedHashMap;
@@ -158,6 +163,7 @@ public final class SchemaTypes {
     public static BigInteger protocolInteger(JsonNode value) {
         if (value == null || !value.isTextual()) throw PlatformSdkException.invalidArgument();
         String encoded = value.textValue();
+        if (encoded.length() > 39) throw PlatformSdkException.invalidArgument();
         if (!encoded.equals("0") && (encoded.isEmpty() || encoded.charAt(0) == '0')) {
             throw PlatformSdkException.invalidArgument();
         }
@@ -193,5 +199,32 @@ public final class SchemaTypes {
             throw PlatformSdkException.invalidArgument();
         }
         return value;
+    }
+
+    public static final class DecimalU64Deserializer extends JsonDeserializer<BigInteger> {
+        @Override
+        public BigInteger deserialize(JsonParser parser, DeserializationContext context) throws IOException {
+            if (!parser.hasToken(JsonToken.VALUE_STRING)) throw PlatformSdkException.invalidArgument();
+            String encoded = parser.getText();
+            if (!encoded.matches("0|[1-9][0-9]{0,19}")) throw PlatformSdkException.invalidArgument();
+            return protocolU64(new BigInteger(encoded));
+        }
+    }
+
+    public static final class IntegerNumberDeserializer extends JsonDeserializer<Long> {
+        @Override
+        public Long deserialize(JsonParser parser, DeserializationContext context) throws IOException {
+            if (!parser.hasToken(JsonToken.VALUE_NUMBER_INT)) throw PlatformSdkException.invalidArgument();
+            BigInteger value = parser.getBigIntegerValue();
+            if (value.compareTo(BigInteger.valueOf(Long.MIN_VALUE)) < 0
+                    || value.compareTo(BigInteger.valueOf(Long.MAX_VALUE)) > 0) {
+                throw PlatformSdkException.invalidArgument();
+            }
+            return value.longValue();
+        }
+    }
+
+    public static void protocolBoundedLong(long value, long minimum, long maximum) {
+        if (value < minimum || value > maximum) throw PlatformSdkException.invalidArgument();
     }
 }

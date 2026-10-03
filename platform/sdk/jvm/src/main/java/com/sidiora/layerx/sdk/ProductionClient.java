@@ -5,8 +5,10 @@ import com.fasterxml.jackson.databind.JavaType;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.util.Map;
+import java.util.ArrayList;
 import java.util.Objects;
 import java.util.concurrent.CompletionStage;
+import java.util.concurrent.Flow;
 
 public final class ProductionClient {
     public record Options(IdempotencyKey idempotencyKey, Map<String, String> pathParameters) {
@@ -28,6 +30,29 @@ public final class ProductionClient {
         this.telemetry = telemetry;
     }
     public ProductionClient(ProductionTransport transport) { this(transport, new ObjectMapper(), null); }
+
+    public CompletionStage<ResumableStream<GeneratedSchema.HumanModels.StreamEvent>> openHumanStream() {
+        return human(GeneratedSchema.HumanOperations.STREAM_OPEN,
+            new GeneratedSchema.HumanOperations.StreamOpenRequest(), Options.none())
+            .thenApply(position -> new ResumableStream<>(new ResumableStream.Cursor(position.cursor())));
+    }
+
+    public Flow.Publisher<ResumableStream.Event<GeneratedSchema.HumanModels.StreamEvent>> humanStreamPublisher(
+            ResumableStream<GeneratedSchema.HumanModels.StreamEvent> stream) {
+        Objects.requireNonNull(stream, "stream");
+        return stream.publisher(cursor -> human(GeneratedSchema.HumanOperations.STREAM_NEXT,
+            new GeneratedSchema.HumanOperations.StreamNextRequest(),
+            new Options(null, Map.of("cursor", cursor.value()))).thenApply(page -> {
+                var events = new ArrayList<ResumableStream.Event<GeneratedSchema.HumanModels.StreamEvent>>();
+                ResumableStream.Cursor previous = cursor;
+                for (var value : page.events()) {
+                    var next = new ResumableStream.Cursor(value.cursor());
+                    events.add(new ResumableStream.Event<>(value.cursor(), previous, next, value));
+                    previous = next;
+                }
+                return new ResumableStream.Page<>(cursor, events, new ResumableStream.Cursor(page.next_cursor()));
+            }));
+    }
 
     public CompletionStage<SchemaTypes.AgentResponse> agent(SchemaTypes.AgentRequest request, Options options) {
         Objects.requireNonNull(request, "request");

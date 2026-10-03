@@ -310,6 +310,15 @@ platform-build-connected-middleware:
 platform-test-connected-middleware:
 	tools/paxeer-x/gates/104.16.2.sh
 
+.PHONY: platform-build-jvm-conformance platform-test-jvm-sdk
+platform-build-jvm-conformance:
+	mvn -o -q -f platform/sdk/jvm/pom.xml -Pconformance -DskipTests test-compile
+	@test -n "$${PAXEER_X_JVM_BUILD_PROVENANCE:-}"
+	python3 platform/sdk/jvm/qualification.py seal "$${PAXEER_X_JVM_BUILD_PROVENANCE}"
+
+platform-test-jvm-sdk:
+	tools/paxeer-x/gates/104.15.4.sh
+
 platform-test-middleware: platform-sample-dependencies-ready
 	npm run build --workspace @sidiora/layerx-seller-middleware
 	npm run build --workspace @sidiora/layerx-buyer-middleware

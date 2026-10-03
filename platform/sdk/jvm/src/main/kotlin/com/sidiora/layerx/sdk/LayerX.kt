@@ -5,12 +5,17 @@ package com.sidiora.layerx.sdk
 import com.fasterxml.jackson.databind.node.ObjectNode
 import java.math.BigInteger
 import java.util.concurrent.CompletionStage
+import java.util.concurrent.Flow
 import kotlin.reflect.KClass
 
 public fun protocolAmount(value: BigInteger): ProtocolAmount = ProtocolAmount.of(value)
 public fun protocolAmount(value: String): ProtocolAmount = ProtocolAmount.parse(value)
 public fun idempotencyKey(value: String): IdempotencyKey = IdempotencyKey(value)
 public fun streamCursor(value: String): ResumableStream.Cursor = ResumableStream.Cursor(value)
+public fun ProductionClient.resumeHumanStream(
+    cursor: ResumableStream.Cursor,
+): Flow.Publisher<ResumableStream.Event<GeneratedSchema.HumanModels.StreamEvent>> =
+    humanStreamPublisher(ResumableStream<GeneratedSchema.HumanModels.StreamEvent>(cursor))
 public fun agentOperation(wireName: String): SchemaTypes.AgentOperation = OperationCatalog.agent(wireName)
 public fun humanOperation(wireName: String): SchemaTypes.HumanOperation = OperationCatalog.human(wireName)
 public fun agentRequest(

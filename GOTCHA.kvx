@@ -2033,3 +2033,18 @@ do = "Map every actual variant to its unique canonical tag while retaining legac
 area = "schema"
 symptom = "Canonical Agent operation regeneration exposes missing exhaustive PolicyDryRun authorization and owner mappings."
 do = "Preserve the failed build and repair limit; resolve the actual authenticated session owner rather than treating referenced objects as absent."
+
+[gotcha.614]
+area = "jvm"
+symptom = "A generator patch anchored in java_type instead of record_source can leave a local undefined name."
+do = "Change the exact schema scalar predicate and regenerate canonical JVM declarations before qualification."
+
+[gotcha.616]
+area = "builder"
+symptom = "Canonical SDK generation invokes the genuine Go formatter and fails when gofmt is absent from PATH."
+do = "Provision the pinned verified Go distribution and provide its bin directory to the canonical generator."
+
+[gotcha.617]
+area = "builder"
+symptom = "A release filename with a sha256 suffix may return an HTML page instead of a distribution digest."
+do = "Verify the retained archive digest and size against exact official release JSON metadata before extraction."

@@ -21,12 +21,14 @@ const (
 	AgentOperationBudgetList              AgentOperation = "budget.list"
 	AgentOperationBudgetReconciliation    AgentOperation = "budget.reconciliation"
 	AgentOperationBudgetRevoke            AgentOperation = "budget.revoke"
+	AgentOperationBudgetState             AgentOperation = "budget.state"
 	AgentOperationCapabilityAttenuate     AgentOperation = "capability.attenuate"
 	AgentOperationCapabilityCreate        AgentOperation = "capability.create"
 	AgentOperationCapabilityList          AgentOperation = "capability.list"
 	AgentOperationCapabilityRevoke        AgentOperation = "capability.revoke"
 	AgentOperationExportOffline           AgentOperation = "export.offline"
 	AgentOperationFaucetClaim             AgentOperation = "faucet.claim"
+	AgentOperationPolicyDryRun            AgentOperation = "policy.dry_run"
 	AgentOperationPrepare                 AgentOperation = "prepare"
 	AgentOperationProgramActivity         AgentOperation = "program.activity"
 	AgentOperationProgramCall             AgentOperation = "program.call"
@@ -75,12 +77,14 @@ func AllAgentOperations() []AgentOperation {
 		AgentOperationBudgetList,
 		AgentOperationBudgetReconciliation,
 		AgentOperationBudgetRevoke,
+		AgentOperationBudgetState,
 		AgentOperationCapabilityAttenuate,
 		AgentOperationCapabilityCreate,
 		AgentOperationCapabilityList,
 		AgentOperationCapabilityRevoke,
 		AgentOperationExportOffline,
 		AgentOperationFaucetClaim,
+		AgentOperationPolicyDryRun,
 		AgentOperationPrepare,
 		AgentOperationProgramActivity,
 		AgentOperationProgramCall,
@@ -119,7 +123,7 @@ func AllAgentOperations() []AgentOperation {
 
 func (operation AgentOperation) Valid() bool {
 	switch operation {
-	case AgentOperationAgentRegister, AgentOperationApprovalApprove, AgentOperationApprovalGet, AgentOperationApprovalList, AgentOperationApprovalReject, AgentOperationAvailabilityFetch, AgentOperationBudgetCreate, AgentOperationBudgetFund, AgentOperationBudgetList, AgentOperationBudgetReconciliation, AgentOperationBudgetRevoke, AgentOperationCapabilityAttenuate, AgentOperationCapabilityCreate, AgentOperationCapabilityList, AgentOperationCapabilityRevoke, AgentOperationExportOffline, AgentOperationFaucetClaim, AgentOperationPrepare, AgentOperationProgramActivity, AgentOperationProgramCall, AgentOperationProgramDeploy, AgentOperationProgramDiscover, AgentOperationProgramInterface, AgentOperationProgramReceipt, AgentOperationProgramSimulate, AgentOperationProgramUpgrade, AgentOperationProgramWindDown, AgentOperationProject, AgentOperationReadAccount, AgentOperationReadBalance, AgentOperationReadBatch, AgentOperationReadCheckpoint, AgentOperationReadHistory, AgentOperationReadModuleState, AgentOperationReadProofBundle, AgentOperationSessionClose, AgentOperationSessionList, AgentOperationSessionOpen, AgentOperationSessionRefresh, AgentOperationSign, AgentOperationSubmit, AgentOperationSubscriptionAcknowledge, AgentOperationSubscriptionCreate, AgentOperationSubscriptionDelete, AgentOperationSubscriptionHealth, AgentOperationSubscriptionList, AgentOperationSubscriptionPause, AgentOperationSubscriptionResume, AgentOperationTrack, AgentOperationWait:
+	case AgentOperationAgentRegister, AgentOperationApprovalApprove, AgentOperationApprovalGet, AgentOperationApprovalList, AgentOperationApprovalReject, AgentOperationAvailabilityFetch, AgentOperationBudgetCreate, AgentOperationBudgetFund, AgentOperationBudgetList, AgentOperationBudgetReconciliation, AgentOperationBudgetRevoke, AgentOperationBudgetState, AgentOperationCapabilityAttenuate, AgentOperationCapabilityCreate, AgentOperationCapabilityList, AgentOperationCapabilityRevoke, AgentOperationExportOffline, AgentOperationFaucetClaim, AgentOperationPolicyDryRun, AgentOperationPrepare, AgentOperationProgramActivity, AgentOperationProgramCall, AgentOperationProgramDeploy, AgentOperationProgramDiscover, AgentOperationProgramInterface, AgentOperationProgramReceipt, AgentOperationProgramSimulate, AgentOperationProgramUpgrade, AgentOperationProgramWindDown, AgentOperationProject, AgentOperationReadAccount, AgentOperationReadBalance, AgentOperationReadBatch, AgentOperationReadCheckpoint, AgentOperationReadHistory, AgentOperationReadModuleState, AgentOperationReadProofBundle, AgentOperationSessionClose, AgentOperationSessionList, AgentOperationSessionOpen, AgentOperationSessionRefresh, AgentOperationSign, AgentOperationSubmit, AgentOperationSubscriptionAcknowledge, AgentOperationSubscriptionCreate, AgentOperationSubscriptionDelete, AgentOperationSubscriptionHealth, AgentOperationSubscriptionList, AgentOperationSubscriptionPause, AgentOperationSubscriptionResume, AgentOperationTrack, AgentOperationWait:
 		return true
 	default:
 		return false
@@ -154,6 +158,8 @@ const (
 	HumanOperationAgentRecover                  HumanOperation = "agent.recover"
 	HumanOperationAgentResume                   HumanOperation = "agent.resume"
 	HumanOperationAgentRotate                   HumanOperation = "agent.rotate"
+	HumanOperationAgentRotationDisclosure       HumanOperation = "agent.rotation.disclosure"
+	HumanOperationAgentRotationStart            HumanOperation = "agent.rotation.start"
 	HumanOperationApprovalApprove               HumanOperation = "approval.approve"
 	HumanOperationApprovalGet                   HumanOperation = "approval.get"
 	HumanOperationApprovalList                  HumanOperation = "approval.list"
@@ -174,6 +180,8 @@ const (
 	HumanOperationExitEligibility               HumanOperation = "exit.eligibility"
 	HumanOperationExitStart                     HumanOperation = "exit.start"
 	HumanOperationHomeSummary                   HumanOperation = "home.summary"
+	HumanOperationIntentPlan                    HumanOperation = "intent.plan"
+	HumanOperationIntentSubmit                  HumanOperation = "intent.submit"
 	HumanOperationJourneyGet                    HumanOperation = "journey.get"
 	HumanOperationJourneyList                   HumanOperation = "journey.list"
 	HumanOperationMoveCommit                    HumanOperation = "move.commit"
@@ -191,6 +199,8 @@ const (
 	HumanOperationProfileGet                    HumanOperation = "profile.get"
 	HumanOperationProfileUpdate                 HumanOperation = "profile.update"
 	HumanOperationSecurityAction                HumanOperation = "security.action"
+	HumanOperationSecurityKeyExportBegin        HumanOperation = "security.key-export.begin"
+	HumanOperationSecurityKeyExportFinish       HumanOperation = "security.key-export.finish"
 	HumanOperationSecurityPasskeyList           HumanOperation = "security.passkey.list"
 	HumanOperationSecurityPasskeyRegisterBegin  HumanOperation = "security.passkey.register.begin"
 	HumanOperationSecurityPasskeyRegisterFinish HumanOperation = "security.passkey.register.finish"
@@ -198,6 +208,7 @@ const (
 	HumanOperationSecurityRecoveryReveal        HumanOperation = "security.recovery.reveal"
 	HumanOperationSecuritySessionRevoke         HumanOperation = "security.session.revoke"
 	HumanOperationSecuritySessionRevokeAll      HumanOperation = "security.session.revoke-all"
+	HumanOperationSessionFeePolicy              HumanOperation = "session.fee-policy"
 	HumanOperationSessionList                   HumanOperation = "session.list"
 	HumanOperationSessionOpen                   HumanOperation = "session.open"
 	HumanOperationSessionRefresh                HumanOperation = "session.refresh"
@@ -236,6 +247,8 @@ func AllHumanOperations() []HumanOperation {
 		HumanOperationAgentRecover,
 		HumanOperationAgentResume,
 		HumanOperationAgentRotate,
+		HumanOperationAgentRotationDisclosure,
+		HumanOperationAgentRotationStart,
 		HumanOperationApprovalApprove,
 		HumanOperationApprovalGet,
 		HumanOperationApprovalList,
@@ -256,6 +269,8 @@ func AllHumanOperations() []HumanOperation {
 		HumanOperationExitEligibility,
 		HumanOperationExitStart,
 		HumanOperationHomeSummary,
+		HumanOperationIntentPlan,
+		HumanOperationIntentSubmit,
 		HumanOperationJourneyGet,
 		HumanOperationJourneyList,
 		HumanOperationMoveCommit,
@@ -273,6 +288,8 @@ func AllHumanOperations() []HumanOperation {
 		HumanOperationProfileGet,
 		HumanOperationProfileUpdate,
 		HumanOperationSecurityAction,
+		HumanOperationSecurityKeyExportBegin,
+		HumanOperationSecurityKeyExportFinish,
 		HumanOperationSecurityPasskeyList,
 		HumanOperationSecurityPasskeyRegisterBegin,
 		HumanOperationSecurityPasskeyRegisterFinish,
@@ -280,6 +297,7 @@ func AllHumanOperations() []HumanOperation {
 		HumanOperationSecurityRecoveryReveal,
 		HumanOperationSecuritySessionRevoke,
 		HumanOperationSecuritySessionRevokeAll,
+		HumanOperationSessionFeePolicy,
 		HumanOperationSessionList,
 		HumanOperationSessionOpen,
 		HumanOperationSessionRefresh,
@@ -303,7 +321,7 @@ func AllHumanOperations() []HumanOperation {
 
 func (operation HumanOperation) Valid() bool {
 	switch operation {
-	case HumanOperationAccountBalance, HumanOperationAccountCreate, HumanOperationActivityEntry, HumanOperationActivityExportEvidence, HumanOperationActivityExportStatement, HumanOperationActivityQuery, HumanOperationAgentArchive, HumanOperationAgentCreate, HumanOperationAgentGet, HumanOperationAgentLimit, HumanOperationAgentList, HumanOperationAgentPause, HumanOperationAgentReclaim, HumanOperationAgentRecover, HumanOperationAgentResume, HumanOperationAgentRotate, HumanOperationApprovalApprove, HumanOperationApprovalGet, HumanOperationApprovalList, HumanOperationApprovalReject, HumanOperationAuthenticatorBackupRotate, HumanOperationAuthenticatorDisable, HumanOperationAuthenticatorSetupBegin, HumanOperationAuthenticatorSetupFinish, HumanOperationAuthenticatorStatus, HumanOperationBindingRebind, HumanOperationBindingRebindAction, HumanOperationBindingStatement, HumanOperationBindingStatus, HumanOperationBindingSubmit, HumanOperationDepositConfirm, HumanOperationDepositStart, HumanOperationEvidenceGet, HumanOperationExitEligibility, HumanOperationExitStart, HumanOperationHomeSummary, HumanOperationJourneyGet, HumanOperationJourneyList, HumanOperationMoveCommit, HumanOperationMoveQuote, HumanOperationNotificationList, HumanOperationNotificationPreferencesGet, HumanOperationNotificationPreferencesSet, HumanOperationNotificationRead, HumanOperationOnboardingResume, HumanOperationOnboardingStatus, HumanOperationPasskeyAssertBegin, HumanOperationPasskeyAssertFinish, HumanOperationPasskeyRegisterBegin, HumanOperationPasskeyRegisterFinish, HumanOperationProfileGet, HumanOperationProfileUpdate, HumanOperationSecurityAction, HumanOperationSecurityPasskeyList, HumanOperationSecurityPasskeyRegisterBegin, HumanOperationSecurityPasskeyRegisterFinish, HumanOperationSecurityPasskeyRevoke, HumanOperationSecurityRecoveryReveal, HumanOperationSecuritySessionRevoke, HumanOperationSecuritySessionRevokeAll, HumanOperationSessionList, HumanOperationSessionOpen, HumanOperationSessionRefresh, HumanOperationSessionRevoke, HumanOperationSessionRevokeAll, HumanOperationStepupBegin, HumanOperationStepupFinish, HumanOperationStreamNext, HumanOperationStreamOpen, HumanOperationSupportCreate, HumanOperationSupportFeedback, HumanOperationSupportList, HumanOperationSupportRead, HumanOperationSupportReply, HumanOperationSupportStatus, HumanOperationVersion, HumanOperationWithdrawClaim, HumanOperationWithdrawStart:
+	case HumanOperationAccountBalance, HumanOperationAccountCreate, HumanOperationActivityEntry, HumanOperationActivityExportEvidence, HumanOperationActivityExportStatement, HumanOperationActivityQuery, HumanOperationAgentArchive, HumanOperationAgentCreate, HumanOperationAgentGet, HumanOperationAgentLimit, HumanOperationAgentList, HumanOperationAgentPause, HumanOperationAgentReclaim, HumanOperationAgentRecover, HumanOperationAgentResume, HumanOperationAgentRotate, HumanOperationAgentRotationDisclosure, HumanOperationAgentRotationStart, HumanOperationApprovalApprove, HumanOperationApprovalGet, HumanOperationApprovalList, HumanOperationApprovalReject, HumanOperationAuthenticatorBackupRotate, HumanOperationAuthenticatorDisable, HumanOperationAuthenticatorSetupBegin, HumanOperationAuthenticatorSetupFinish, HumanOperationAuthenticatorStatus, HumanOperationBindingRebind, HumanOperationBindingRebindAction, HumanOperationBindingStatement, HumanOperationBindingStatus, HumanOperationBindingSubmit, HumanOperationDepositConfirm, HumanOperationDepositStart, HumanOperationEvidenceGet, HumanOperationExitEligibility, HumanOperationExitStart, HumanOperationHomeSummary, HumanOperationIntentPlan, HumanOperationIntentSubmit, HumanOperationJourneyGet, HumanOperationJourneyList, HumanOperationMoveCommit, HumanOperationMoveQuote, HumanOperationNotificationList, HumanOperationNotificationPreferencesGet, HumanOperationNotificationPreferencesSet, HumanOperationNotificationRead, HumanOperationOnboardingResume, HumanOperationOnboardingStatus, HumanOperationPasskeyAssertBegin, HumanOperationPasskeyAssertFinish, HumanOperationPasskeyRegisterBegin, HumanOperationPasskeyRegisterFinish, HumanOperationProfileGet, HumanOperationProfileUpdate, HumanOperationSecurityAction, HumanOperationSecurityKeyExportBegin, HumanOperationSecurityKeyExportFinish, HumanOperationSecurityPasskeyList, HumanOperationSecurityPasskeyRegisterBegin, HumanOperationSecurityPasskeyRegisterFinish, HumanOperationSecurityPasskeyRevoke, HumanOperationSecurityRecoveryReveal, HumanOperationSecuritySessionRevoke, HumanOperationSecuritySessionRevokeAll, HumanOperationSessionFeePolicy, HumanOperationSessionList, HumanOperationSessionOpen, HumanOperationSessionRefresh, HumanOperationSessionRevoke, HumanOperationSessionRevokeAll, HumanOperationStepupBegin, HumanOperationStepupFinish, HumanOperationStreamNext, HumanOperationStreamOpen, HumanOperationSupportCreate, HumanOperationSupportFeedback, HumanOperationSupportList, HumanOperationSupportRead, HumanOperationSupportReply, HumanOperationSupportStatus, HumanOperationVersion, HumanOperationWithdrawClaim, HumanOperationWithdrawStart:
 		return true
 	default:
 		return false
@@ -312,7 +330,7 @@ func (operation HumanOperation) Valid() bool {
 
 func (operation HumanOperation) RequiresIdempotency() bool {
 	switch operation {
-	case HumanOperationAccountCreate, HumanOperationActivityExportEvidence, HumanOperationActivityExportStatement, HumanOperationAgentArchive, HumanOperationAgentCreate, HumanOperationAgentLimit, HumanOperationAgentPause, HumanOperationAgentReclaim, HumanOperationAgentRecover, HumanOperationAgentResume, HumanOperationAgentRotate, HumanOperationApprovalApprove, HumanOperationApprovalReject, HumanOperationBindingRebind, HumanOperationBindingSubmit, HumanOperationDepositStart, HumanOperationExitStart, HumanOperationMoveCommit, HumanOperationSecuritySessionRevoke, HumanOperationSecuritySessionRevokeAll, HumanOperationSessionOpen, HumanOperationSessionRevoke, HumanOperationSessionRevokeAll, HumanOperationSupportCreate, HumanOperationSupportReply, HumanOperationWithdrawStart:
+	case HumanOperationAccountCreate, HumanOperationActivityExportEvidence, HumanOperationActivityExportStatement, HumanOperationAgentArchive, HumanOperationAgentCreate, HumanOperationAgentLimit, HumanOperationAgentPause, HumanOperationAgentReclaim, HumanOperationAgentRecover, HumanOperationAgentResume, HumanOperationAgentRotate, HumanOperationAgentRotationStart, HumanOperationApprovalApprove, HumanOperationApprovalReject, HumanOperationBindingRebind, HumanOperationBindingSubmit, HumanOperationDepositStart, HumanOperationExitStart, HumanOperationIntentSubmit, HumanOperationMoveCommit, HumanOperationSecuritySessionRevoke, HumanOperationSecuritySessionRevokeAll, HumanOperationSessionOpen, HumanOperationSessionRevoke, HumanOperationSessionRevokeAll, HumanOperationSupportCreate, HumanOperationSupportReply, HumanOperationWithdrawStart:
 		return true
 	default:
 		return false
@@ -360,6 +378,10 @@ func (operation HumanOperation) Metadata() (HumanOperationMetadata, bool) {
 		return HumanOperationMetadata{Method: "POST", Path: "/v1/agents/{agent_id}/resume", Request: "Empty", Response: "Agent"}, true
 	case HumanOperationAgentRotate:
 		return HumanOperationMetadata{Method: "POST", Path: "/v1/agents/{agent_id}/rotate", Request: "Empty", Response: "KeyChallenge"}, true
+	case HumanOperationAgentRotationDisclosure:
+		return HumanOperationMetadata{Method: "POST", Path: "/v1/agents/{agent_id}/rotation/disclosure", Request: "OwnerRotationDisclosureRequest", Response: "SecurityAction"}, true
+	case HumanOperationAgentRotationStart:
+		return HumanOperationMetadata{Method: "POST", Path: "/v1/agents/{agent_id}/rotation", Request: "OwnerRotationRequest", Response: "KeyChallenge"}, true
 	case HumanOperationApprovalApprove:
 		return HumanOperationMetadata{Method: "POST", Path: "/v1/approvals/{approval_id}/approve", Request: "ApprovalApproveRequest", Response: "ApprovalDecision"}, true
 	case HumanOperationApprovalGet:
@@ -400,6 +422,10 @@ func (operation HumanOperation) Metadata() (HumanOperationMetadata, bool) {
 		return HumanOperationMetadata{Method: "POST", Path: "/v1/exit", Request: "ExitStartRequest", Response: "Journey"}, true
 	case HumanOperationHomeSummary:
 		return HumanOperationMetadata{Method: "GET", Path: "/v1/home", Request: "Empty", Response: "HomeSummary"}, true
+	case HumanOperationIntentPlan:
+		return HumanOperationMetadata{Method: "POST", Path: "/v1/intents/plan", Request: "PlanIntentRequest", Response: "IntentPlan"}, true
+	case HumanOperationIntentSubmit:
+		return HumanOperationMetadata{Method: "POST", Path: "/v1/intents/submit", Request: "SubmitPlanRequest", Response: "IntentSubmission"}, true
 	case HumanOperationJourneyGet:
 		return HumanOperationMetadata{Method: "GET", Path: "/v1/journeys/{journey_id}", Request: "Empty", Response: "Journey"}, true
 	case HumanOperationJourneyList:
@@ -434,6 +460,10 @@ func (operation HumanOperation) Metadata() (HumanOperationMetadata, bool) {
 		return HumanOperationMetadata{Method: "PATCH", Path: "/v1/profile", Request: "ProfileUpdate", Response: "Profile"}, true
 	case HumanOperationSecurityAction:
 		return HumanOperationMetadata{Method: "POST", Path: "/v1/security/actions", Request: "SecurityActionRequest", Response: "SecurityAction"}, true
+	case HumanOperationSecurityKeyExportBegin:
+		return HumanOperationMetadata{Method: "POST", Path: "/v1/security/key-export/begin", Request: "KeyExportBegin", Response: "KeyExportChallenge"}, true
+	case HumanOperationSecurityKeyExportFinish:
+		return HumanOperationMetadata{Method: "POST", Path: "/v1/security/key-export/finish", Request: "KeyExportFinish", Response: "ExportedPrimaryKey"}, true
 	case HumanOperationSecurityPasskeyList:
 		return HumanOperationMetadata{Method: "GET", Path: "/v1/security/passkeys", Request: "Empty", Response: "PasskeyList"}, true
 	case HumanOperationSecurityPasskeyRegisterBegin:
@@ -448,6 +478,8 @@ func (operation HumanOperation) Metadata() (HumanOperationMetadata, bool) {
 		return HumanOperationMetadata{Method: "POST", Path: "/v1/security/sessions/{session_id}/revoke", Request: "SecuritySessionRevocation", Response: "SessionRevocation"}, true
 	case HumanOperationSecuritySessionRevokeAll:
 		return HumanOperationMetadata{Method: "POST", Path: "/v1/security/sessions/revoke-all", Request: "SecuritySessionRevocation", Response: "SessionRevocation"}, true
+	case HumanOperationSessionFeePolicy:
+		return HumanOperationMetadata{Method: "GET", Path: "/v1/sessions/fee-policy", Request: "Empty", Response: "NativeFeeAsset"}, true
 	case HumanOperationSessionList:
 		return HumanOperationMetadata{Method: "GET", Path: "/v1/sessions", Request: "Empty", Response: "SessionList"}, true
 	case HumanOperationSessionOpen:
@@ -611,11 +643,12 @@ const (
 	HumanVerificationReceiptVerified     HumanVerificationLevel = "receipt-verified"
 	HumanVerificationCheckpointFinalised HumanVerificationLevel = "checkpoint-finalised"
 	HumanVerificationPaxeerFinalised     HumanVerificationLevel = "paxeer-finalised"
+	HumanVerificationSettlementAnchored  HumanVerificationLevel = "settlement-anchored"
 )
 
 func (value HumanVerificationLevel) Valid() bool {
 	switch value {
-	case HumanVerificationUnverified, HumanVerificationReceiptVerified, HumanVerificationCheckpointFinalised, HumanVerificationPaxeerFinalised:
+	case HumanVerificationUnverified, HumanVerificationReceiptVerified, HumanVerificationCheckpointFinalised, HumanVerificationPaxeerFinalised, HumanVerificationSettlementAnchored:
 		return true
 	default:
 		return false

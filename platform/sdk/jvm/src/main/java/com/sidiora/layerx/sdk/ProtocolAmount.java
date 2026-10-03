@@ -2,11 +2,18 @@ package com.sidiora.layerx.sdk;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonValue;
+import com.fasterxml.jackson.core.JsonParser;
+import com.fasterxml.jackson.core.JsonToken;
+import com.fasterxml.jackson.databind.DeserializationContext;
+import com.fasterxml.jackson.databind.JsonDeserializer;
+import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
+import java.io.IOException;
 import java.math.BigInteger;
 import java.util.Objects;
 import java.util.regex.Pattern;
 
 /** An unsigned, integer-only 128-bit amount expressed in protocol base units. */
+@JsonDeserialize(using = ProtocolAmount.DecimalDeserializer.class)
 public record ProtocolAmount(BigInteger value) implements Comparable<ProtocolAmount> {
     public static final BigInteger MAX_VALUE = BigInteger.ONE.shiftLeft(128).subtract(BigInteger.ONE);
     private static final Pattern CANONICAL = Pattern.compile("0|[1-9][0-9]*");
@@ -20,7 +27,7 @@ public record ProtocolAmount(BigInteger value) implements Comparable<ProtocolAmo
 
     @JsonCreator
     public static ProtocolAmount parse(String value) {
-        if (value == null || !CANONICAL.matcher(value).matches()) {
+        if (value == null || value.length() > 39 || !CANONICAL.matcher(value).matches()) {
             throw PlatformSdkException.invalidArgument();
         }
         return new ProtocolAmount(new BigInteger(value));
@@ -28,6 +35,14 @@ public record ProtocolAmount(BigInteger value) implements Comparable<ProtocolAmo
 
     public static ProtocolAmount of(BigInteger value) {
         return new ProtocolAmount(value);
+    }
+
+    public static final class DecimalDeserializer extends JsonDeserializer<ProtocolAmount> {
+        @Override
+        public ProtocolAmount deserialize(JsonParser parser, DeserializationContext context) throws IOException {
+            if (!parser.hasToken(JsonToken.VALUE_STRING)) throw PlatformSdkException.invalidArgument();
+            return ProtocolAmount.parse(parser.getText());
+        }
     }
 
     @Override @JsonValue

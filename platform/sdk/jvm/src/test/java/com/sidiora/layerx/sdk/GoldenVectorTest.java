@@ -130,6 +130,28 @@ public final class GoldenVectorTest {
     }
 
     @Test
+    void testStreamRefusesGapAndRepeatedPositionWithoutAdvancing() {
+        var start = new ResumableStream.Cursor("position-0");
+        var middle = new ResumableStream.Cursor("position-1");
+        var end = new ResumableStream.Cursor("position-2");
+        var stream = new ResumableStream<String>(start);
+        var first = new ResumableStream.Event<>("event-1", start, middle, "first");
+        var gap = new ResumableStream.Event<>("event-2", start, end, "second");
+        assertThrows(PlatformSdkException.class,
+            () -> stream.accept(new ResumableStream.Page<>(start, List.of(first, gap), end)));
+        assertEquals(start, stream.cursor());
+        assertEquals(List.of(first), stream.accept(new ResumableStream.Page<>(start, List.of(first), middle)));
+        var unchanged = new ResumableStream.Event<>("event-3", middle, middle, "repeat-position");
+        assertThrows(PlatformSdkException.class,
+            () -> stream.accept(new ResumableStream.Page<>(middle, List.of(unchanged), middle)));
+        assertEquals(middle, stream.cursor());
+        var duplicate = new ResumableStream.Event<>("event-1", middle, end, "duplicate");
+        assertThrows(PlatformSdkException.class,
+            () -> stream.accept(new ResumableStream.Page<>(middle, List.of(duplicate), end)));
+        assertEquals(middle, stream.cursor());
+    }
+
+    @Test
     void testMerkleProofDepthCalculation() {
         byte[] leaf = new byte[32];
         byte[] root = sha256("LXP/v1/merkle-leaf\0".getBytes(java.nio.charset.StandardCharsets.UTF_8), leaf);
@@ -163,6 +185,61 @@ public final class GoldenVectorTest {
         assertEquals(OperationCatalog.HUMAN_ERROR_CODES,
             java.util.Arrays.stream(SchemaErrors.HumanCode.values()).map(SchemaErrors.HumanCode::wire)
                 .collect(java.util.stream.Collectors.toUnmodifiableSet()));
+    }
+
+    @Test
+    void testMoneyDoesNotCoerceNumericJson() throws Exception {
+        assertEquals(ProtocolAmount.of(BigInteger.TEN), JSON.readValue("\"10\"", ProtocolAmount.class));
+        for (String encoded : List.of("10", "10.0", "true", "\"01\"", "\"-1\"")) {
+            assertThrows(Exception.class, () -> JSON.readValue(encoded, ProtocolAmount.class));
+        }
+        assertEquals("\"10\"", JSON.writeValueAsString(ProtocolAmount.of(BigInteger.TEN)));
+    }
+
+    @Test
+    void testGeneratedCredentialDiagnosticsRedactTokens() {
+        var credential = new GeneratedSchema.AgentModels.AgentHttpCredential(
+            "tenant", "session", "credential-token", BigInteger.ONE);
+        assertEquals("[REDACTED]", credential.toString());
+        assertFalse(credential.toString().contains(credential.token_id()));
+    }
+
+    @Test
+    void testGeneratedEnvelopePreservesMapsAndNullableSchemaFields() throws Exception {
+        var encoded = JSON.readValue("{\"version\":1,\"request_id\":\"1\",\"operation\":\"session.open\",\"request\":{},\"credential\":null,\"idempotency_key\":null}",
+            com.fasterxml.jackson.databind.node.ObjectNode.class);
+        var envelope = JSON.treeToValue(encoded, GeneratedSchema.AgentModels.AgentHttpEnvelope.class);
+        assertTrue(envelope.request().isObject());
+        assertNull(envelope.credential());
+        assertNull(envelope.idempotency_key());
+        assertTrue(JSON.valueToTree(envelope).path("request").isObject());
+        assertEquals("[REDACTED]", envelope.toString());
+        for (String version : List.of("1.0", "\"1\"", "256", "-1")) {
+            encoded.set("version", JSON.readTree(version));
+            assertThrows(Exception.class,
+                () -> JSON.treeToValue(encoded, GeneratedSchema.AgentModels.AgentHttpEnvelope.class));
+        }
+    }
+
+    @Test
+    void testGeneratedTimestampUsesSchemaDecimalStrings() throws Exception {
+        var body = JSON.createObjectNode();
+        body.set("approval_id", JSON.createObjectNode());
+        body.set("tenant", JSON.createObjectNode());
+        body.set("held_activity", JSON.createObjectNode());
+        body.set("canonical_bytes_digest", JSON.createObjectNode());
+        body.set("hold_reason", JSON.createObjectNode());
+        body.put("created_at", "18446744073709551615");
+        body.put("expires_at", "18446744073709551615");
+        body.set("state", JSON.createObjectNode());
+        var record = JSON.treeToValue(body, GeneratedSchema.AgentModels.ApprovalRecord.class);
+        assertEquals(new BigInteger("18446744073709551615"), record.created_at());
+        assertTrue(JSON.valueToTree(record).path("created_at").isTextual());
+        for (String encoded : List.of("10", "10.0", "\"01\"", "\"18446744073709551616\"")) {
+            body.set("created_at", JSON.readTree(encoded));
+            assertThrows(Exception.class,
+                () -> JSON.treeToValue(body, GeneratedSchema.AgentModels.ApprovalRecord.class));
+        }
     }
 
     @Test

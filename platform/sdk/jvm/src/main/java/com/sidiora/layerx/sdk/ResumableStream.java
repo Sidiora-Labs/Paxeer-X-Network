@@ -9,6 +9,7 @@ import java.util.Queue;
 import java.util.Set;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.CompletionStage;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Flow;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
@@ -41,6 +42,13 @@ public final class ResumableStream<T> {
     public synchronized Cursor cursor() { return cursor; }
 
     public synchronized List<Event<T>> accept(Page<T> page) {
+        validate(page);
+        for (Event<T> event : page.events()) seen.add(event.eventId());
+        cursor = page.nextCursor();
+        return List.copyOf(new ArrayList<>(page.events()));
+    }
+
+    private synchronized void validate(Page<T> page) {
         Objects.requireNonNull(page, "page");
         if (!page.requestedCursor().equals(cursor)) throw decodeFailure();
         Cursor expected = cursor;
@@ -49,14 +57,12 @@ public final class ResumableStream<T> {
             if (event == null || event.eventId() == null || event.eventId().isEmpty()
                     || event.previousCursor() == null || event.cursor() == null
                     || !event.previousCursor().equals(expected)
+                    || event.cursor().equals(expected)
                     || seen.contains(event.eventId()) || !pageIds.add(event.eventId())) throw decodeFailure();
             expected = event.cursor();
         }
         if (!page.nextCursor().equals(expected)) throw decodeFailure();
         if (seen.size() + pageIds.size() > MAX_SEEN_EVENT_IDS) throw decodeFailure();
-        seen.addAll(pageIds);
-        cursor = page.nextCursor();
-        return List.copyOf(new ArrayList<>(page.events()));
     }
 
     public Flow.Publisher<Event<T>> publisher(PageSource<T> source) {
@@ -85,20 +91,28 @@ public final class ResumableStream<T> {
         private final AtomicBoolean cancelled = new AtomicBoolean();
         private final Queue<Event<T>> pending = new ArrayDeque<>();
         private final Object signal = new Object();
+        private volatile Thread worker;
 
         private StreamSubscription(Flow.Subscriber<? super Event<T>> subscriber, PageSource<T> source) {
             this.subscriber = subscriber;
             this.source = source;
         }
 
-        private void start() { Thread.ofVirtual().name("layerx-stream").start(this); }
+        private void start() {
+            worker = Thread.ofVirtual().name("layerx-stream").unstarted(this);
+            worker.start();
+        }
 
         @Override public void request(long count) {
             if (count <= 0) {
-                if (cancelled.compareAndSet(false, true)) {
-                    subscriber.onError(new IllegalArgumentException("demand must be positive"));
-                    wake();
+                synchronized (ResumableStream.this) {
+                    if (cancelled.compareAndSet(false, true)) {
+                        subscriber.onError(new IllegalArgumentException("demand must be positive"));
+                    }
                 }
+                Thread running = worker;
+                if (running != null) running.interrupt();
+                wake();
                 return;
             }
             demand.getAndUpdate(current -> current > Long.MAX_VALUE - count ? Long.MAX_VALUE : current + count);
@@ -106,7 +120,9 @@ public final class ResumableStream<T> {
         }
 
         @Override public void cancel() {
-            cancelled.set(true);
+            synchronized (ResumableStream.this) { cancelled.set(true); }
+            Thread running = worker;
+            if (running != null) running.interrupt();
             wake();
         }
 
@@ -117,13 +133,21 @@ public final class ResumableStream<T> {
                     if (cancelled.get()) return;
                     if (pending.isEmpty()) {
                         Page<T> page = Objects.requireNonNull(source.fetch(cursor()), "page stage")
-                            .toCompletableFuture().join();
-                        pending.addAll(accept(page));
+                            .toCompletableFuture().get();
+                        synchronized (ResumableStream.this) {
+                            if (cancelled.get()) return;
+                            validate(page);
+                            pending.addAll(page.events());
+                        }
                     }
                     while (demand.get() > 0 && !pending.isEmpty() && !cancelled.get()) {
-                        Event<T> event = pending.remove();
-                        demand.decrementAndGet();
-                        subscriber.onNext(event);
+                        synchronized (ResumableStream.this) {
+                            if (cancelled.get()) return;
+                            Event<T> event = pending.remove();
+                            accept(new Page<>(cursor, List.of(event), event.cursor()));
+                            demand.decrementAndGet();
+                            subscriber.onNext(event);
+                        }
                     }
                 }
             } catch (Throwable failure) {
@@ -142,8 +166,9 @@ public final class ResumableStream<T> {
         }
 
         private Throwable unwrap(Throwable failure) {
-            if (failure instanceof CompletionException completion && completion.getCause() != null) {
-                return completion.getCause();
+            if ((failure instanceof CompletionException || failure instanceof ExecutionException)
+                    && failure.getCause() != null) {
+                return failure.getCause();
             }
             return failure;
         }
