@@ -88,6 +88,8 @@ pub mod occupancy;
 #[deny(unsafe_code)]
 pub mod qualification;
 #[deny(unsafe_code)]
+pub mod replay;
+#[deny(unsafe_code)]
 pub mod schedule;
 #[deny(unsafe_code)]
 pub mod storage;

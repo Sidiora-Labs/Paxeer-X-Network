@@ -348,3 +348,31 @@ pub(super) fn commit(abi: &Abi, hash: bool) -> Result<HostStateCommitment, AbiEr
         canonical_bytes,
     })
 }
+
+impl Abi {
+    pub(crate) fn replay_host_preimage(&self, maximum: usize) -> Result<Vec<u8>, crate::replay::ReplayWitnessError> {
+        let maximum = maximum.min(MAX_CANONICAL_HOST_STATE_BYTES);
+        let mut length = 0_usize;
+        let mut over_bound = false;
+        let measured = write_state(self, &mut |bytes| {
+            match length.checked_add(bytes.len()) {
+                Some(next) if next <= maximum => { length = next; Ok(()) }
+                _ => { over_bound = true; Err(AbiError::InvalidEncoding) }
+            }
+        });
+        if measured.is_err() {
+            return Err(if over_bound { crate::replay::ReplayWitnessError::Bounds } else { crate::replay::ReplayWitnessError::StateUnavailable });
+        }
+        let mut out = Vec::new();
+        out.try_reserve_exact(length).map_err(|_| crate::replay::ReplayWitnessError::Allocation)?;
+        let mut failure = None;
+        let written = write_state(self, &mut |bytes| {
+            crate::replay::append(&mut out, bytes, maximum).map_err(|error| {
+                failure = Some(error); AbiError::InvalidEncoding
+            })
+        });
+        if written.is_err() { return Err(failure.unwrap_or(crate::replay::ReplayWitnessError::StateUnavailable)); }
+        if out.len() != length { return Err(crate::replay::ReplayWitnessError::Encoding); }
+        Ok(out)
+    }
+}

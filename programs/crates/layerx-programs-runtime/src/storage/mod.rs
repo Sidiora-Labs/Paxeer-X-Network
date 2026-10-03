@@ -207,6 +207,13 @@ impl Storage {
         self.accessed_namespaces.borrow().contains(&namespace)
     }
 
+    pub(crate) fn try_for_each_commitment_entry<E>(&self, mut visit: impl FnMut(Vec<u8>, &[u8]) -> Result<(), E>) -> Result<(), E> {
+        for (address, value) in &self.cells {
+            visit(Self::commitment_key(address), value)?;
+        }
+        Ok(())
+    }
+
     pub(crate) fn for_each_commitment_entry(&self, mut visit: impl FnMut(Vec<u8>, &[u8])) {
         for (address, value) in &self.cells {
             visit(Self::commitment_key(address), value);
@@ -702,4 +709,25 @@ pub fn metered_bytes(key: &[u8], value: Option<&[u8]>) -> Result<u64, StorageErr
         .checked_add(value.map_or(0, <[u8]>::len))
         .ok_or(StorageError::SizeOverflow)?;
     u64::try_from(bytes).map_err(|_| StorageError::SizeOverflow)
+}
+
+#[cfg(test)]
+mod replay_visit_tests {
+    use super::*;
+    #[test]
+    fn bounded_commitment_visit_stops_at_first_refusal() {
+        let program = ProgramId::new([1; 32]).unwrap_or_else(|error| panic!("program: {error}"));
+        let mut storage = Storage::new();
+        let mut transaction = storage.transaction(StorageNamespace::shared(program));
+        transaction.write(b"a", b"one").unwrap_or_else(|error| panic!("write: {error}"));
+        transaction.write(b"b", b"two").unwrap_or_else(|error| panic!("write: {error}"));
+        transaction.commit();
+        let mut count = 0;
+        let result = storage.try_for_each_commitment_entry(|_, _| { count += 1; Err(()) });
+        assert_eq!(result, Err(())); assert_eq!(count, 1);
+        let mut original = Vec::new(); storage.for_each_commitment_entry(|key, value| original.push((key, value.to_vec())));
+        let mut bounded = Vec::new();
+        storage.try_for_each_commitment_entry(|key, value| { bounded.push((key, value.to_vec())); Ok::<_, ()>(()) }).unwrap_or_else(|()| panic!("traversal"));
+        assert_eq!(bounded, original);
+    }
 }

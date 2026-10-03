@@ -928,6 +928,10 @@ fn convert_execution_transitions(
 }
 
 impl ProgramInstance {
+    pub fn capture_replay_host_witness(&self, maximum_bytes: usize) -> Result<crate::replay::ReplayHostWitnessV1, crate::replay::ReplayWitnessError> {
+        self.store.data().replay_host_witness(self.validated_code_hash, maximum_bytes)
+    }
+
     pub(crate) const fn new(store: Store<RuntimeState>, instance: Instance) -> Self {
         Self {
             store,

@@ -1571,3 +1571,156 @@ mod response_tests {
         assert_eq!(usage.output_values, 0);
     }
 }
+
+const REPLAY_METER_DOMAIN: &[u8] = b"LayerX/programs/replay-meter/v1\0";
+const MAX_REPLAY_METER_BYTES: usize = REPLAY_METER_DOMAIN.len() + 48 + 60 + 68 + 1 + 19;
+
+fn replay_resource_code(resource: ResourceKind) -> u8 {
+    match resource {
+        ResourceKind::Cpu => 0, ResourceKind::Memory => 1, ResourceKind::StorageRead => 2,
+        ResourceKind::StorageWrite => 3, ResourceKind::StorageOccupancy => 4,
+        ResourceKind::Output => 5, ResourceKind::OutputBytes => 6,
+    }
+}
+fn replay_budget_resource_code(resource: BudgetResourceKind) -> u8 {
+    match resource {
+        BudgetResourceKind::Cpu => 0, BudgetResourceKind::Memory => 1, BudgetResourceKind::StorageRead => 2,
+        BudgetResourceKind::StorageWrite => 3, BudgetResourceKind::Output => 4,
+        BudgetResourceKind::OutputBytes => 5, BudgetResourceKind::Table => 6,
+    }
+}
+fn replay_resource(code: u8) -> Result<ResourceKind, crate::replay::ReplayWitnessError> {
+    Ok(match code {
+        0 => ResourceKind::Cpu, 1 => ResourceKind::Memory, 2 => ResourceKind::StorageRead,
+        3 => ResourceKind::StorageWrite, 4 => ResourceKind::StorageOccupancy,
+        5 => ResourceKind::Output, 6 => ResourceKind::OutputBytes,
+        _ => return Err(crate::replay::ReplayWitnessError::Encoding),
+    })
+}
+fn replay_budget_resource(code: u8) -> Result<BudgetResourceKind, crate::replay::ReplayWitnessError> {
+    Ok(match code {
+        0 => BudgetResourceKind::Cpu, 1 => BudgetResourceKind::Memory, 2 => BudgetResourceKind::StorageRead,
+        3 => BudgetResourceKind::StorageWrite, 4 => BudgetResourceKind::Output,
+        5 => BudgetResourceKind::OutputBytes, 6 => BudgetResourceKind::Table,
+        _ => return Err(crate::replay::ReplayWitnessError::Encoding),
+    })
+}
+
+impl Meter {
+    pub(crate) fn replay_state_bytes(&self) -> Result<Vec<u8>, crate::replay::ReplayWitnessError> {
+        let mut out = Vec::new();
+        out.try_reserve_exact(MAX_REPLAY_METER_BYTES).map_err(|_| crate::replay::ReplayWitnessError::Allocation)?;
+        out.extend_from_slice(REPLAY_METER_DOMAIN);
+        for value in [self.budget.cpu_fuel, self.budget.memory_bytes, self.budget.storage_read_bytes, self.budget.storage_write_bytes] { out.extend_from_slice(&value.to_be_bytes()); }
+        out.extend_from_slice(&self.budget.output_values.to_be_bytes());
+        out.extend_from_slice(&self.budget.output_bytes.to_be_bytes());
+        out.extend_from_slice(&self.budget.table_elements.to_be_bytes());
+        out.extend_from_slice(&self.prices.version.to_be_bytes());
+        for value in [self.prices.fee_units_per_cpu_fuel, self.prices.fee_units_per_memory_byte,
+            self.prices.fee_units_per_storage_read_byte, self.prices.fee_units_per_storage_write_byte,
+            self.prices.fee_units_per_output_value, self.prices.fee_units_per_output_byte,
+            self.prices.fee_units_per_occupancy_byte_batch] { out.extend_from_slice(&value.to_be_bytes()); }
+        for value in [self.cpu_fuel, self.cpu_carried, self.memory_bytes, self.active_memory_bytes,
+            self.active_table_elements, self.storage_read_bytes, self.storage_write_bytes] { out.extend_from_slice(&value.to_be_bytes()); }
+        out.extend_from_slice(&self.output_values.to_be_bytes());
+        out.extend_from_slice(&self.output_bytes.to_be_bytes());
+        out.push(match self.mode { MeterMode::Legacy => 0, MeterMode::Activity => 1 });
+        match self.exhausted {
+            None => out.push(0),
+            Some(MeterExhaustion::Legacy(refusal)) => {
+                out.push(1);
+                match refusal {
+                    MeterRefusal::BudgetExceeded { resource, limit, attempted } => {
+                        out.extend_from_slice(&[0, replay_resource_code(resource)]);
+                        out.extend_from_slice(&limit.to_be_bytes()); out.extend_from_slice(&attempted.to_be_bytes());
+                    }
+                    MeterRefusal::CounterOverflow { resource } => out.extend_from_slice(&[1, replay_resource_code(resource)]),
+                    MeterRefusal::FeeOverflow => out.push(2),
+                }
+            }
+            Some(MeterExhaustion::Budget(refusal)) => {
+                out.push(2);
+                match refusal {
+                    BudgetMeterRefusal::BudgetExceeded { resource, limit, attempted } => {
+                        out.extend_from_slice(&[0, replay_budget_resource_code(resource)]);
+                        out.extend_from_slice(&limit.to_be_bytes()); out.extend_from_slice(&attempted.to_be_bytes());
+                    }
+                    BudgetMeterRefusal::CounterOverflow { resource } => out.extend_from_slice(&[1, replay_budget_resource_code(resource)]),
+                }
+            }
+        }
+        Ok(out)
+    }
+
+    pub(crate) fn from_replay_state_bytes(bytes: &[u8]) -> Result<Self, crate::replay::ReplayWitnessError> {
+        use crate::replay::{ReplayCursor, ReplayWitnessError as E};
+        if bytes.len() > MAX_REPLAY_METER_BYTES { return Err(E::Bounds); }
+        let mut cursor = ReplayCursor::new(bytes);
+        if cursor.take(REPLAY_METER_DOMAIN.len())? != REPLAY_METER_DOMAIN { return Err(E::Encoding); }
+        let budget = ResourceBudget { cpu_fuel: cursor.u64()?, memory_bytes: cursor.u64()?, storage_read_bytes: cursor.u64()?,
+            storage_write_bytes: cursor.u64()?, output_values: cursor.u32()?, output_bytes: cursor.u64()?, table_elements: cursor.u32()? };
+        let prices = FeeSchedule { version: cursor.u32()?, fee_units_per_cpu_fuel: cursor.u64()?, fee_units_per_memory_byte: cursor.u64()?,
+            fee_units_per_storage_read_byte: cursor.u64()?, fee_units_per_storage_write_byte: cursor.u64()?,
+            fee_units_per_output_value: cursor.u64()?, fee_units_per_output_byte: cursor.u64()?, fee_units_per_occupancy_byte_batch: cursor.u64()? };
+        let cpu_fuel = cursor.u64()?;
+        let cpu_carried = cursor.u64()?;
+        let memory_bytes = cursor.u64()?;
+        let active_memory_bytes = cursor.u64()?;
+        let active_table_elements = cursor.u64()?;
+        let storage_read_bytes = cursor.u64()?;
+        let storage_write_bytes = cursor.u64()?;
+        let output_values = cursor.u32()?;
+        let output_bytes = cursor.u64()?;
+        let mode = match cursor.u8()? { 0 => MeterMode::Legacy, 1 => MeterMode::Activity, _ => return Err(E::Encoding) };
+        let exhausted = match cursor.u8()? {
+            0 => None,
+            1 => Some(MeterExhaustion::Legacy(match cursor.u8()? {
+                0 => MeterRefusal::BudgetExceeded { resource: replay_resource(cursor.u8()?)?, limit: cursor.u64()?, attempted: cursor.u64()? },
+                1 => MeterRefusal::CounterOverflow { resource: replay_resource(cursor.u8()?)? },
+                2 => MeterRefusal::FeeOverflow,
+                _ => return Err(E::Encoding),
+            })),
+            2 => Some(MeterExhaustion::Budget(match cursor.u8()? {
+                0 => BudgetMeterRefusal::BudgetExceeded { resource: replay_budget_resource(cursor.u8()?)?, limit: cursor.u64()?, attempted: cursor.u64()? },
+                1 => BudgetMeterRefusal::CounterOverflow { resource: replay_budget_resource(cursor.u8()?)? },
+                _ => return Err(E::Encoding),
+            })),
+            _ => return Err(E::Encoding),
+        };
+        if !cursor.done() { return Err(E::Encoding); }
+        let meter = Self { budget, prices, cpu_fuel, cpu_carried, memory_bytes, active_memory_bytes, active_table_elements,
+            storage_read_bytes, storage_write_bytes, output_values, output_bytes, mode, exhausted };
+        if meter.replay_state_bytes()?.as_slice() != bytes { return Err(E::Encoding); }
+        Ok(meter)
+    }
+}
+
+#[cfg(test)]
+mod replay_meter_tests {
+    use super::*;
+    #[test]
+    fn exact_replay_codec_preserves_real_usage_and_exhaustion() {
+        let budget = ResourceBudget::new_complete(100, 131072, 100, 100, 8, 100, 2);
+        let mut legacy = Meter::new(budget, FeeSchedule::declared());
+        legacy.charge_cpu(9).unwrap_or_else(|error| panic!("cpu: {error}"));
+        legacy.carry_cpu(3).unwrap_or_else(|error| panic!("carry: {error}"));
+        legacy.charge_storage_read(11).unwrap_or_else(|error| panic!("read: {error}"));
+        legacy.charge_storage_write(13).unwrap_or_else(|error| panic!("write: {error}"));
+        legacy.memory_growing(0, 65536, Some(131072)).unwrap_or_else(|error| panic!("memory: {error}"));
+        let mut activity = Meter::new_activity(budget, FeeSchedule::declared());
+        assert!(activity.table_growing(0, 3, Some(4)).is_err());
+        let mut exhausted = legacy.clone();
+        assert!(exhausted.charge_cpu(101).is_err());
+        for meter in [legacy, activity, exhausted] {
+            let encoded = meter.replay_state_bytes().unwrap_or_else(|error| panic!("encode: {error:?}"));
+            let restored = Meter::from_replay_state_bytes(&encoded).unwrap_or_else(|error| panic!("decode: {error:?}"));
+            assert_eq!(restored.budget, meter.budget); assert_eq!(restored.prices, meter.prices);
+            assert_eq!(restored.cpu_carried, meter.cpu_carried); assert_eq!(restored.active_frame_resources(), meter.active_frame_resources());
+            assert_eq!(restored.exhausted, meter.exhausted); assert_eq!(restored.execution_trace_usage(), meter.execution_trace_usage());
+            assert_eq!(restored.replay_state_bytes(), Ok(encoded.clone()));
+            let mut trailing = encoded.clone(); trailing.push(0);
+            assert!(Meter::from_replay_state_bytes(&trailing).is_err());
+            for length in 0..encoded.len() { assert!(Meter::from_replay_state_bytes(&encoded[..length]).is_err()); }
+        }
+    }
+}

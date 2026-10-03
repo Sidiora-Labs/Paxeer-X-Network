@@ -1181,3 +1181,45 @@ pub(crate) fn linker_fault(error: &wasmi::errors::LinkerError) -> ExecutionFault
         reason: error.to_string(),
     }
 }
+
+impl RuntimeState {
+    pub(crate) fn replay_host_witness(&self, code_hash: [u8; 32], maximum: usize) -> Result<crate::replay::ReplayHostWitnessV1, crate::replay::ReplayWitnessError> {
+        use crate::replay::{append, ReplayHostWitnessV1, ReplayWitnessError as E, STORAGE_DOMAIN};
+        if code_hash == [0; 32] { return Err(E::Binding); }
+        let mut remaining = ReplayHostWitnessV1::payload_budget(maximum, self.abi.is_some())?;
+        let meter = self.meter.replay_state_bytes()?;
+        remaining = remaining.checked_sub(meter.len()).ok_or(E::Bounds)?;
+        let abi = self.abi.as_ref().map(|abi| abi.replay_host_preimage(remaining.min(crate::MAX_ARBITRATION_HOST_STATE_BYTES))).transpose()?;
+        let abi_bytes = abi.as_ref().map_or(0, Vec::len);
+        remaining = remaining.checked_sub(abi_bytes).ok_or(E::Bounds)?;
+        let runtime_limit = remaining.min(crate::MAX_ARBITRATION_HOST_STATE_BYTES.checked_sub(abi_bytes).ok_or(E::Bounds)?);
+        let mut runtime = Vec::new();
+        if let Some(abi_bytes) = &abi {
+            use sha2::{Digest, Sha256};
+            let abi_commitment = crate::abi::HostStateCommitment { root: Sha256::digest(abi_bytes).into(), canonical_bytes: abi_bytes.len() as u64 };
+            let mut failure = None;
+            let written = self.write_v2_runtime_state(&abi_commitment, &mut |bytes| {
+                append(&mut runtime, bytes, runtime_limit).map_err(|error| { failure = Some(error); AbiError::InvalidEncoding })
+            });
+            if written.is_err() { return Err(failure.unwrap_or(E::StateUnavailable)); }
+        } else {
+            append(&mut runtime, b"LayerX/programs/v2/isolated-host-state\0", runtime_limit)?;
+        }
+        remaining = remaining.checked_sub(runtime.len()).ok_or(E::Bounds)?;
+        let mut baseline = Vec::new();
+        append(&mut baseline, STORAGE_DOMAIN, remaining)?;
+        self.trace_storage_baseline.try_for_each_commitment_entry(|key, value| {
+            append(&mut baseline, &u32::try_from(key.len()).map_err(|_| E::Bounds)?.to_be_bytes(), remaining)?;
+            append(&mut baseline, &key, remaining)?;
+            append(&mut baseline, &u32::try_from(value.len()).map_err(|_| E::Bounds)?.to_be_bytes(), remaining)?;
+            append(&mut baseline, value, remaining)
+        })?;
+        let witness = ReplayHostWitnessV1::from_parts(code_hash, abi, runtime, meter, baseline, maximum)?;
+        let mut charge = wasmi::ObservationCharge::default();
+        let host = self.measure_supplement_host(&mut charge).map_err(|_| E::StateUnavailable)?;
+        let commitment = match host.isolated { Some(commitment) => commitment, None => self.v2_host_state_commitment().map_err(|_| E::StateUnavailable)? };
+        let identity = host.identity.ok_or(E::StateUnavailable)?;
+        witness.compare_v2_preimages(code_hash, commitment.root, commitment.canonical_bytes, identity.base_state)?;
+        Ok(witness)
+    }
+}
