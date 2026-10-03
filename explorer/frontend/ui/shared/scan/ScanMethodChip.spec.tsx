@@ -53,10 +53,10 @@ const declarationsOf = (element: Element, suffix = ''): string => {
     .join(';');
 };
 
-describe('ScanMethodChip', () => {
+describe.each([ 'light', 'dark' ] as const)('ScanMethodChip in %s appearance', (appearance) => {
   it('carries the method name as its text and as its hook', () => {
     const { container } = render(
-      <Provider>
+      <Provider forcedTheme={ appearance } enableSystem={ false }>
         <ScanMethodChip method="transfer"/>
       </Provider>,
     );
@@ -69,7 +69,7 @@ describe('ScanMethodChip', () => {
 
   it('renders a bare selector the same way', () => {
     const { container } = render(
-      <Provider>
+      <Provider forcedTheme={ appearance } enableSystem={ false }>
         <ScanMethodChip method="0xa9059cbb"/>
       </Provider>,
     );
@@ -79,26 +79,30 @@ describe('ScanMethodChip', () => {
 
   it('stands as tall as its label, its padding and its border', () => {
     const { container } = render(
-      <Provider>
+      <Provider forcedTheme={ appearance } enableSystem={ false }>
         <ScanMethodChip method="transfer"/>
       </Provider>,
     );
 
     const chip = container.querySelector('[data-scan-method="transfer"]') as Element;
+    expect(document.documentElement.classList.contains(appearance)).toBe(true);
     const declarations = declarationsOf(chip);
 
     // the chip reads 14px text on a 20px line box, with 2px above and below it and a 1px border on each edge
     expect(declarations).toContain('min-height:26px');
     expect(declarations).toMatch(/padding-(?:block|top):2px/);
+    expect(declarations).toMatch(/padding-(?:block|bottom):2px/);
     expect(declarations).toContain('border-width:1px');
     expect(declarations).toMatch(/(?:^|;)height:auto/);
+    expect(declarations).not.toMatch(/(?:^|;)height:(?!auto(?:;|$))[^;]+/);
+    expect(declarations).not.toMatch(/(?:^|;)max-height:/);
     expect(declarations).not.toMatch(/(?:^|;)height:[123]?\dpx/);
     expect(declarationsOf(chip.firstElementChild as Element)).toContain(`line-height:${ pillLineHeight('sm') }`);
   });
 
   it('truncates a long method to one line inside the chip', () => {
     const { container } = render(
-      <Provider>
+      <Provider forcedTheme={ appearance } enableSystem={ false }>
         <ScanMethodChip method="setApprovalForAllWithDeadlineAndSignature"/>
       </Provider>,
     );

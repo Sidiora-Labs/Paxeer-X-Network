@@ -53,10 +53,10 @@ const declarationsOf = (element: Element, suffix = ''): string => {
     .join(';');
 };
 
-describe('StatusTag', () => {
+describe.each([ 'light', 'dark' ] as const)('StatusTag in %s appearance', (appearance) => {
   it('names the status it carries and capitalises the text', () => {
     const { container } = render(
-      <Provider>
+      <Provider forcedTheme={ appearance } enableSystem={ false }>
         <StatusTag type="ok" text="success"/>
       </Provider>,
     );
@@ -69,7 +69,7 @@ describe('StatusTag', () => {
 
   it('marks a failed status apart from a pending one', () => {
     const { container, rerender } = render(
-      <Provider>
+      <Provider forcedTheme={ appearance } enableSystem={ false }>
         <StatusTag type="error" text="failed"/>
       </Provider>,
     );
@@ -77,7 +77,7 @@ describe('StatusTag', () => {
     expect(container.querySelector('[data-status="error"]')?.textContent).toBe('Failed');
 
     rerender(
-      <Provider>
+      <Provider forcedTheme={ appearance } enableSystem={ false }>
         <StatusTag type="pending" text="pending"/>
       </Provider>,
     );
@@ -87,7 +87,7 @@ describe('StatusTag', () => {
 
   it('keeps the icon alone in the compact mode a table row uses', () => {
     const { container } = render(
-      <Provider>
+      <Provider forcedTheme={ appearance } enableSystem={ false }>
         <StatusTag type="ok" text="success" mode="compact"/>
       </Provider>,
     );
@@ -100,7 +100,7 @@ describe('StatusTag', () => {
 
   it('carries the icon alone when there is no text to show', () => {
     const { container } = render(
-      <Provider>
+      <Provider forcedTheme={ appearance } enableSystem={ false }>
         <StatusTag type="error"/>
       </Provider>,
     );
@@ -110,41 +110,51 @@ describe('StatusTag', () => {
 
   it('stands as tall as its own line box and its padding on a title row', () => {
     const { container } = render(
-      <Provider>
+      <Provider forcedTheme={ appearance } enableSystem={ false }>
         <StatusTag type="ok" text="success"/>
       </Provider>,
     );
 
     const tag = container.querySelector('[data-status="ok"]') as Element;
+    expect(document.documentElement.classList.contains(appearance)).toBe(true);
     const declarations = declarationsOf(tag);
 
     // the chip reads 14px text on a 20px line box, with 2px above and below it
     expect(declarations).toContain(`line-height:${ pillLineHeight('sm') }`);
     expect(declarations).toMatch(/padding-(?:block|top):2px/);
+    expect(declarations).toMatch(/padding-(?:block|bottom):2px/);
     expect(declarations).toContain('min-height:24px');
     expect(declarations).toMatch(/(?:^|;)height:auto/);
+    expect(declarations).not.toMatch(/(?:^|;)height:(?!auto(?:;|$))[^;]+/);
+    expect(declarations).not.toMatch(/(?:^|;)max-height:/);
     expect(declarations).not.toMatch(/(?:^|;)height:[123]?\dpx/);
   });
 
   it('holds the small chip a compact row uses on its own line box too', () => {
     const { container } = render(
-      <Provider>
+      <Provider forcedTheme={ appearance } enableSystem={ false }>
         <StatusTag type="pending" text="pending" size="sm"/>
       </Provider>,
     );
 
     const tag = container.querySelector('[data-status="pending"]') as Element;
+    expect(document.documentElement.classList.contains(appearance)).toBe(true);
     const declarations = declarationsOf(tag);
 
     // the small chip reads 12px text on a 16px line box, which the old fixed 18px height cut into
     expect(declarations).toContain(`line-height:${ pillLineHeight('xs') }`);
     expect(declarations).toContain('min-height:20px');
+    expect(declarations).toMatch(/padding-(?:block|top):2px/);
+    expect(declarations).toMatch(/padding-(?:block|bottom):2px/);
+    expect(declarations).toMatch(/(?:^|;)height:auto/);
+    expect(declarations).not.toMatch(/(?:^|;)height:(?!auto(?:;|$))[^;]+/);
+    expect(declarations).not.toMatch(/(?:^|;)max-height:/);
     expect(declarations).not.toMatch(/(?:^|;)height:1?\dpx/);
   });
 
   it('keeps the status text on one line and the status icon at its own size', () => {
     const { container } = render(
-      <Provider>
+      <Provider forcedTheme={ appearance } enableSystem={ false }>
         <StatusTag type="error" text="failed"/>
       </Provider>,
     );
@@ -154,6 +164,8 @@ describe('StatusTag', () => {
     expect(declarationsOf(tag)).toContain('white-space:nowrap');
     expect(declarationsOf(tag, '>span')).toContain('min-width:0');
     expect(declarationsOf(tag, '>span')).toContain('text-overflow:ellipsis');
+    expect(declarationsOf(tag, '>span')).toContain('white-space:nowrap');
+    expect(declarationsOf(tag, '>span')).toContain('overflow:hidden');
     expect(declarationsOf(tag, '>svg')).toContain('flex-shrink:0');
   });
 });

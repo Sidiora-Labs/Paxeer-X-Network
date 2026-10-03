@@ -87,6 +87,49 @@ function tagSizeRoot(size: string): Declarations {
 }
 
 describe('the pill and chip sizing', () => {
+  it.each([
+    { size: 'sm', textStyle: 'xs', lineBox: 16, padding: 2, height: 20 },
+    { size: 'md', textStyle: 'sm', lineBox: 20, padding: 2, height: 24 },
+    { size: 'lg', textStyle: 'sm', lineBox: 20, padding: 4, height: 28 },
+  ] as const)('keeps the $size badge at its independently specified metrics', ({ size, textStyle, lineBox, padding, height }) => {
+    const metrics = BADGE_PILL_METRICS[size];
+    const declarations = badgeSize(size);
+
+    expect(metrics.textStyle).toBe(textStyle);
+    expect(pillLineBox(metrics.textStyle)).toBe(lineBox);
+    expect(pillSpacing(metrics.paddingY)).toBe(padding);
+    expect(metrics.borderWidth ?? 0).toBe(0);
+    expect(pillHeight(metrics)).toBe(height);
+    expect(declarations.py).toBe(`${ padding }px`);
+    expect(declarations.minH).toBe(`${ height }px`);
+    expect(height).toBe(lineBox + padding * 2);
+  });
+
+  it.each([
+    { size: 'md', lineBox: 20, padding: 2, border: 1, height: 26 },
+    { size: 'lg', lineBox: 20, padding: 6, border: 1, height: 34 },
+  ] as const)('keeps the $size chip at its independently specified metrics', ({ size, lineBox, padding, border, height }) => {
+    const metrics = TAG_PILL_METRICS[size];
+    const root = tagSizeRoot(size);
+
+    expect(metrics.textStyle).toBe('sm');
+    expect(pillLineBox(metrics.textStyle)).toBe(lineBox);
+    expect(pillSpacing(metrics.paddingY)).toBe(padding);
+    expect(metrics.borderWidth).toBe(border);
+    expect(pillHeight(metrics)).toBe(height);
+    expect(root.py).toBe(`${ padding }px`);
+    expect(root.minH).toBe(`${ height }px`);
+    expect(height).toBe(lineBox + padding * 2 + border * 2);
+  });
+
+  it('keeps tag decorations from shrinking with their label', () => {
+    const base = tagRecipe.base as unknown as Record<string, Declarations>;
+
+    expect(base.startElement.flexShrink).toBe(0);
+    expect(base.endElement.flexShrink).toBe(0);
+    expect(base.label.lineClamp).toBeUndefined();
+  });
+
   it.each([ 'xs', 'sm', 'md' ] as const)('reads the %s pill text off a line box the product typography agrees with', (textStyle) => {
     expect(pillLineBox(textStyle)).toBe(productLineBox(textStyle));
   });
@@ -192,6 +235,11 @@ describe('the pill and chip sizing', () => {
     const strip = String(size.root['--tabs-height']).replace('sizes.', '');
     const padding = pillSpacing(String(size.trigger.py));
 
+    expect(size.trigger.textStyle).toBe('sm');
+    expect(pillLineBox('sm')).toBe(20);
+    expect(padding).toBe(4);
+    expect(pillSize(strip)).toBe(32);
+    expect(pillSize(strip)).toBeGreaterThanOrEqual(20 + 8 + 2);
     expect(pillSize(strip)).toBeGreaterThanOrEqual(pillLineBox('sm') + padding * 2 + 2);
   });
 });

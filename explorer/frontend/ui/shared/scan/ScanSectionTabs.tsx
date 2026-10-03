@@ -37,7 +37,7 @@ const ScanSectionTabs = ({ items, value, onValueChange, rightSlot, className }: 
       <TabsRoot variant="pill" size="sm" value={ value } onValueChange={ handleValueChange } w="auto" maxW="100%" minW={ 0 }>
         <TabsList>
           { items.map((item) => (
-            <TabsTrigger key={ item.id } value={ item.id } disabled={ item.disabled } data-tab={ item.id }>
+            <TabsTrigger key={ item.id } value={ item.id } disabled={ item.disabled } data-tab={ item.id } maxW="100%" minW={ 0 }>
               <chakra.span data-tab-title overflow="hidden" textOverflow="ellipsis" whiteSpace="nowrap" minW={ 0 }>
                 { item.title }
               </chakra.span>

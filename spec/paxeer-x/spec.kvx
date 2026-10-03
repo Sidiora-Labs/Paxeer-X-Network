@@ -24911,7 +24911,9 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.110.8.2]
 title = "Size every pill and chip from its own text"
-status = "pending"
+status = "done"
+completion_basis = "implementation"
+qualification_status = "unverified"
 mode = "RELEASE"
 wave = 2
 requires = ["0.2"]

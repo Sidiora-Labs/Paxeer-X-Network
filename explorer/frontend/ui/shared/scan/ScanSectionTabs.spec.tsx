@@ -3,6 +3,7 @@
 import React from 'react';
 
 import { Provider } from 'toolkit/chakra/provider';
+import { pillLineHeight } from 'toolkit/theme/recipes/pillSizing';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, waitFor } from 'vitest/lib';
 
@@ -60,10 +61,10 @@ const items = [
 
 const noop = vi.fn();
 
-describe('ScanSectionTabs', () => {
+describe.each([ 'light', 'dark' ] as const)('ScanSectionTabs in %s appearance', (appearance) => {
   it('keeps the tabs in the order it is given', () => {
     const { container } = render(
-      <Provider>
+      <Provider forcedTheme={ appearance } enableSystem={ false }>
         <ScanSectionTabs items={ items } value="transactions" onValueChange={ noop }/>
       </Provider>,
     );
@@ -75,7 +76,7 @@ describe('ScanSectionTabs', () => {
 
   it('puts a count in parentheses after the title and leaves it out when there is none', () => {
     const { container } = render(
-      <Provider>
+      <Provider forcedTheme={ appearance } enableSystem={ false }>
         <ScanSectionTabs items={ items } value="transactions" onValueChange={ noop }/>
       </Provider>,
     );
@@ -87,7 +88,7 @@ describe('ScanSectionTabs', () => {
 
   it('marks the tab in force as the selected one', () => {
     const { container } = render(
-      <Provider>
+      <Provider forcedTheme={ appearance } enableSystem={ false }>
         <ScanSectionTabs items={ items } value="transfers" onValueChange={ noop }/>
       </Provider>,
     );
@@ -99,7 +100,7 @@ describe('ScanSectionTabs', () => {
   it('reports the tab a reader picks', async() => {
     const onValueChange = vi.fn();
     const { container } = render(
-      <Provider>
+      <Provider forcedTheme={ appearance } enableSystem={ false }>
         <ScanSectionTabs items={ items } value="transactions" onValueChange={ onValueChange }/>
       </Provider>,
     );
@@ -113,7 +114,7 @@ describe('ScanSectionTabs', () => {
 
   it('hands the right of the row to the slot it is given', () => {
     const { container } = render(
-      <Provider>
+      <Provider forcedTheme={ appearance } enableSystem={ false }>
         <ScanSectionTabs items={ items } value="transactions" onValueChange={ noop } rightSlot={ <span>Download Page Data</span> }/>
       </Provider>,
     );
@@ -123,15 +124,22 @@ describe('ScanSectionTabs', () => {
 
   it('lets a pill grow with its label instead of holding a height that clips it', () => {
     const { container } = render(
-      <Provider>
+      <Provider forcedTheme={ appearance } enableSystem={ false }>
         <ScanSectionTabs items={ items } value="transactions" onValueChange={ noop }/>
       </Provider>,
     );
 
     const pill = container.querySelector('[data-tab="transfers"]') as Element;
+    expect(document.documentElement.classList.contains(appearance)).toBe(true);
     const declarations = declarationsOf(pill);
 
     expect(declarations).toMatch(/(?:^|;)height:auto/);
+    expect(declarations).not.toMatch(/(?:^|;)height:(?!auto(?:;|$))[^;]+/);
+    expect(declarations).not.toMatch(/(?:^|;)max-height:/);
+    expect(declarations).toContain(`line-height:${ pillLineHeight('sm') }`);
+    expect(declarations).toMatch(/padding-(?:block|top):var\(--chakra-spacing-1\)/);
+    expect(declarations).toMatch(/padding-(?:block|bottom):var\(--chakra-spacing-1\)/);
+    expect(declarations).toContain('border-width:1px');
     expect(declarations).toContain('min-height:var(--tabs-height)');
     expect(declarations).toContain('white-space:nowrap');
     expect(declarations).not.toMatch(/(?:^|;)height:[123]?\dpx/);
@@ -139,7 +147,7 @@ describe('ScanSectionTabs', () => {
 
   it('gives way on the title and never on the count', () => {
     const { container } = render(
-      <Provider>
+      <Provider forcedTheme={ appearance } enableSystem={ false }>
         <ScanSectionTabs items={ items } value="transactions" onValueChange={ noop }/>
       </Provider>,
     );
@@ -152,6 +160,31 @@ describe('ScanSectionTabs', () => {
     expect(count.textContent).toBe('(1,234)');
     expect(declarationsOf(title)).toContain('text-overflow:ellipsis');
     expect(declarationsOf(title)).toContain('min-width:0');
+    expect(declarationsOf(title)).toContain('white-space:nowrap');
+    expect(declarationsOf(title)).toContain('overflow:hidden');
     expect(declarationsOf(count)).toContain('flex-shrink:0');
+  });
+
+  it('bounds a long title inside its strip while preserving its count', () => {
+    const title = 'Token transfers with a deliberately long section title';
+    const { container } = render(
+      <Provider forcedTheme={ appearance } enableSystem={ false }>
+        <ScanSectionTabs items={ [ { id: 'long', title, count: 1234 } ] } value="long" onValueChange={ noop }/>
+      </Provider>,
+    );
+    const pill = container.querySelector('[data-tab="long"]') as Element;
+    const strip = container.querySelector('[data-scope="tabs"][data-part="root"]') as Element;
+    const list = container.querySelector('[role="tablist"]') as Element;
+    const row = container.querySelector('[data-scan-section-tabs]') as Element;
+
+    expect(declarationsOf(pill)).toContain('max-width:100%');
+    expect(declarationsOf(pill)).toContain('min-width:0');
+    expect(declarationsOf(strip)).toContain('max-width:100%');
+    expect(declarationsOf(strip)).toContain('min-width:0');
+    expect(declarationsOf(list)).toContain('flex-wrap:wrap');
+    expect(declarationsOf(row)).toContain('width:100%');
+    expect(pill.querySelector('[data-tab-title]')?.textContent).toBe(title);
+    expect(pill.querySelector('[data-count]')?.textContent).toBe('(1,234)');
+    expect(declarationsOf(pill.querySelector('[data-count]') as Element)).toContain('flex-shrink:0');
   });
 });

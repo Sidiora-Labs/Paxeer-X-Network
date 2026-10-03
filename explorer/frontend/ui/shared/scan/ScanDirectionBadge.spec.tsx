@@ -53,10 +53,10 @@ const declarationsOf = (element: Element, suffix = ''): string => {
     .join(';');
 };
 
-describe('ScanDirectionBadge', () => {
+describe.each([ 'light', 'dark' ] as const)('ScanDirectionBadge in %s appearance', (appearance) => {
   it('reads IN for an incoming transfer', () => {
     const { container } = render(
-      <Provider>
+      <Provider forcedTheme={ appearance } enableSystem={ false }>
         <ScanDirectionBadge direction="in"/>
       </Provider>,
     );
@@ -69,7 +69,7 @@ describe('ScanDirectionBadge', () => {
 
   it('reads OUT for an outgoing transfer', () => {
     const { container } = render(
-      <Provider>
+      <Provider forcedTheme={ appearance } enableSystem={ false }>
         <ScanDirectionBadge direction="out"/>
       </Provider>,
     );
@@ -82,25 +82,29 @@ describe('ScanDirectionBadge', () => {
 
   it('stands as tall as its own line box and its padding, with no height its text can outgrow', () => {
     const { container } = render(
-      <Provider>
+      <Provider forcedTheme={ appearance } enableSystem={ false }>
         <ScanDirectionBadge direction="out"/>
       </Provider>,
     );
 
     const badge = container.querySelector('[data-direction="out"]');
+    expect(document.documentElement.classList.contains(appearance)).toBe(true);
     const declarations = declarationsOf(badge as Element);
 
     // the small badge reads 12px text on a 16px line box, with 2px above and below it
     expect(declarations).toContain(`line-height:${ pillLineHeight('xs') }`);
     expect(declarations).toMatch(/padding-(?:block|top):2px/);
+    expect(declarations).toMatch(/padding-(?:block|bottom):2px/);
     expect(declarations).toContain('min-height:20px');
     expect(declarations).toMatch(/(?:^|;)height:auto/);
+    expect(declarations).not.toMatch(/(?:^|;)height:(?!auto(?:;|$))[^;]+/);
+    expect(declarations).not.toMatch(/(?:^|;)max-height:/);
     expect(declarations).not.toMatch(/(?:^|;)height:1?\dpx/);
   });
 
   it('keeps IN and OUT on one line and lets only the label give way', () => {
     const { container } = render(
-      <Provider>
+      <Provider forcedTheme={ appearance } enableSystem={ false }>
         <ScanDirectionBadge direction="in"/>
       </Provider>,
     );
@@ -111,6 +115,8 @@ describe('ScanDirectionBadge', () => {
     expect(declarationsOf(badge)).toContain('overflow:hidden');
     expect(declarationsOf(badge, '>span')).toContain('min-width:0');
     expect(declarationsOf(badge, '>span')).toContain('text-overflow:ellipsis');
+    expect(declarationsOf(badge, '>span')).toContain('white-space:nowrap');
+    expect(declarationsOf(badge, '>span')).toContain('overflow:hidden');
     expect(declarationsOf(badge, '>svg')).toContain('flex-shrink:0');
     expect(badge.firstElementChild?.textContent).toBe('IN');
   });
