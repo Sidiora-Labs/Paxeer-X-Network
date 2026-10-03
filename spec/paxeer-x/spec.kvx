@@ -23691,7 +23691,11 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.104.16.2]
 title = "Build the merchant and agent middleware"
-status = "in_progress"
+status = "done"
+completion_basis = "implementation"
+qualification_status = "unverified"
+implemented_revision = "d1c97397f"
+build_status = "failed"
 mode = "QUALIFY"
 wave = 2
 requires = ["0.2"]
