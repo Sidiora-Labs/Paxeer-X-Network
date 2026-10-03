@@ -1000,3 +1000,106 @@ fn paxeer_observations_preserve_inclusion_and_confirmation_history() {
     drop(reopened);
     remove_journal(&path);
 }
+
+#[test]
+fn native_receive_binds_genuine_signed_grant_to_order_and_operator() {
+    use layerx_ramp_toolkit::clients::{parse_hex32, ActivityConfig, LayerxConfig, SecretFile};
+
+    #[derive(serde::Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct NativeReceiveInput {
+        order: RampOrder,
+        layerx: LayerxConfig,
+        canonical_receive_payload: Vec<u8>,
+        account_sequence: u64,
+        now: u64,
+    }
+
+    let path = std::env::var_os("LAYERX_RAMP_NATIVE_RECEIVE_CONTRACT_FILE")
+        .unwrap_or_else(|| panic!("genuine signed native receive contract input required"));
+    let bytes = SecretFile::new(PathBuf::from(path)).and_then(|file| file.read())
+        .unwrap_or_else(|_| panic!("protected native receive contract input unavailable"));
+    let input: NativeReceiveInput = serde_json::from_slice(&bytes)
+        .unwrap_or_else(|_| panic!("protected native receive contract input invalid"));
+    let activity = ActivityConfig {
+        actor_did: input.layerx.actor_did.into_bytes(),
+        protocol_version: input.layerx.protocol_version,
+        network_id: input.layerx.network_id,
+        fee_limit: input.layerx.fee_limit,
+        signer_public_key: parse_hex32(&input.layerx.signer_public_key)
+            .unwrap_or_else(|_| panic!("native receive signer public identity invalid")),
+    };
+    let payload = &input.canonical_receive_payload;
+    let order = &input.order;
+    let sequence = input.account_sequence;
+    let now = input.now;
+    assert_eq!(activity.protocol_version, 3);
+    assert_eq!(payload.len(), 733);
+    assert_eq!(order.direction(), RampDirection::OffRamp);
+    assert_eq!(activity.validate_native_receive(order, payload, sequence, now), Ok(()));
+    let layerx_crypto::payments::Payment::Receive { payer_grant, .. } =
+        layerx_crypto::payments::Payment::decode(
+            layerx_types::payload::ModuleId::Asset, 6, payload, &activity.actor_did,
+        ).unwrap_or_else(|_| panic!("genuine native receive decoding failed")) else {
+            panic!("native receive input carries another activity")
+        };
+    assert!(now < order.quote.expires_at);
+    assert!(now <= payer_grant.expiration);
+    for index in 0..payload.len() {
+        let mut changed = payload.clone();
+        changed[index] ^= 1;
+        assert!(activity.validate_native_receive(order, &changed, sequence, now).is_err(),
+            "changed canonical native receive byte admitted: {index}");
+    }
+    for length in [0, 1, 732] {
+        assert!(activity.validate_native_receive(order, &payload[..length], sequence, now).is_err());
+    }
+    let mut trailing = payload.clone();
+    trailing.push(0);
+    assert!(activity.validate_native_receive(order, &trailing, sequence, now).is_err());
+    assert!(activity.validate_native_receive(order, payload, sequence ^ 1, now).is_err());
+    assert!(activity.validate_native_receive(order, payload, sequence, order.quote.expires_at).is_err());
+    if let Some(expired) = payer_grant.expiration.checked_add(1) {
+        assert!(activity.validate_native_receive(order, payload, sequence, expired).is_err());
+    }
+    for protocol in [0, 1, 2, 4] {
+        let mut changed = activity.clone();
+        changed.protocol_version = protocol;
+        assert!(changed.validate_native_receive(order, payload, sequence, now).is_err());
+    }
+    let mut changed = activity.clone();
+    changed.network_id ^= 1;
+    assert!(changed.validate_native_receive(order, payload, sequence, now).is_err());
+    changed = activity.clone();
+    changed.signer_public_key[0] ^= 1;
+    assert!(changed.validate_native_receive(order, payload, sequence, now).is_err());
+    changed = activity.clone();
+    changed.actor_did.push(b'x');
+    assert!(changed.validate_native_receive(order, payload, sequence, now).is_err());
+    let mut changed = order.clone();
+    changed.quote.layerx_amount ^= 1;
+    changed.order_digest = changed.digest();
+    assert!(activity.validate_native_receive(&changed, payload, sequence, now).is_err());
+    changed = order.clone();
+    changed.quote.layerx_asset[0] ^= 1;
+    changed.order_digest = changed.digest();
+    assert!(activity.validate_native_receive(&changed, payload, sequence, now).is_err());
+    changed = order.clone();
+    changed.context[0] ^= 1;
+    changed.quote.context = changed.context;
+    changed.order_digest = changed.digest();
+    assert!(activity.validate_native_receive(&changed, payload, sequence, now).is_err());
+    changed = order.clone();
+    changed.payer_grant = None;
+    changed.order_digest = changed.digest();
+    assert!(activity.validate_native_receive(&changed, payload, sequence, now).is_err());
+    changed = order.clone();
+    std::mem::swap(&mut changed.customer.account, &mut changed.operator.account);
+    changed.order_digest = changed.digest();
+    assert!(activity.validate_native_receive(&changed, payload, sequence, now).is_err());
+    changed = order.clone();
+    changed.quote.direction = RampDirection::OnRamp;
+    changed.order_digest = changed.digest();
+    assert!(activity.validate_native_receive(&changed, payload, sequence, now).is_err());
+    assert_eq!(activity.validate_native_receive(order, payload, sequence, now), Ok(()));
+}

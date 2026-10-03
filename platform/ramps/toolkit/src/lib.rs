@@ -420,12 +420,14 @@ pub fn verify_order_receipt(
         RampDirection::OnRamp => (&order.operator.account, &order.customer.account),
         RampDirection::OffRamp => (&order.customer.account, &order.operator.account),
     };
-    let expected_from = layerx_wire::hash::account_id(
+    let expected_from = layerx_wire::hash::account_id_for_protocol(
         &AccountId::parse(from).map_err(|_| RampError::InvalidPrincipal)?,
+        protocol.protocol_version(),
     )
     .map_err(|_| RampError::ReceiptMismatch)?;
-    let expected_to = layerx_wire::hash::account_id(
+    let expected_to = layerx_wire::hash::account_id_for_protocol(
         &AccountId::parse(to).map_err(|_| RampError::InvalidPrincipal)?,
+        protocol.protocol_version(),
     )
     .map_err(|_| RampError::ReceiptMismatch)?;
     if protocol.activity_id() != evidence.activity_id

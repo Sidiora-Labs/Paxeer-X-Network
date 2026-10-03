@@ -22,7 +22,7 @@ use layerx_ramp_toolkit::clients::{
 use layerx_ramp_toolkit::engine::{InventoryRebalancer, RampEngine};
 use layerx_ramp_toolkit::journal::{Journal, WorkflowStage};
 use layerx_ramp_toolkit::{
-    platform_ramp_toolkit, CreateOrder, OperatorIdentity, QuoteTerms, RampError, RampOrder,
+    platform_ramp_toolkit, CreateOrder, OperatorIdentity, QuoteTerms, RampDirection, RampError, RampOrder,
     EXTERNAL_CUSTODY_LABEL,
 };
 use layerx_types::payload::{ActivityType, ModuleId, ModuleRegistration, ModuleRegistry};
@@ -855,13 +855,26 @@ fn perform_work(state: &State, request: &Request) -> Result<Response, Response> 
     if !journal.health().ready {
         return Err(error(503, "journal_recovery_required"));
     }
+    if work.canonical_receive_payload.is_some() && !matches!(work.action, WorkAction::SubmitLayerx) {
+        return Err(error(400, "work_invalid"));
+    }
+    if matches!(work.action, WorkAction::SubmitLayerx)
+        && state.layerx.activity.protocol_version == layerx_wire::limits::STATE_COMMITMENT_PROTOCOL_VERSION
+        && journal.order(&work.order_digest).is_some_and(|snapshot| snapshot.order.direction() == RampDirection::OffRamp)
+        && work.canonical_receive_payload.is_none()
+    {
+        return Err(error(400, "native_payer_grant_authorization_required"));
+    }
     let mut engine = engine(state, &mut journal);
     match work.action {
         WorkAction::Compliance => engine.evaluate_compliance(work.order_digest, now()),
         WorkAction::SubmitProvider => engine.submit_provider(work.order_digest, now()),
         WorkAction::ReconcileProvider => engine.reconcile_provider(work.order_digest, now()),
         WorkAction::SubmitLayerx => match work.account_sequence {
-            Some(sequence) => engine.submit_layerx(work.order_digest, sequence, now()),
+            Some(sequence) => match work.canonical_receive_payload.as_deref() {
+                Some(payload) => engine.submit_native_receive(work.order_digest, payload, sequence, now()),
+                None => engine.submit_layerx(work.order_digest, sequence, now()),
+            },
             None => Err(RampError::InvalidOrder),
         },
         WorkAction::ResolveLayerx => engine.resolve_layerx(work.order_digest, now()),
@@ -966,6 +979,7 @@ struct Work {
     order_digest: [u8; 32],
     action: WorkAction,
     account_sequence: Option<u64>,
+    canonical_receive_payload: Option<Vec<u8>>,
 }
 
 #[derive(Deserialize)]

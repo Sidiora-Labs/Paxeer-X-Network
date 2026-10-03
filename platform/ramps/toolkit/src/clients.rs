@@ -800,6 +800,66 @@ pub struct ActivityConfig {
     pub signer_public_key: [u8; 32],
 }
 
+impl ActivityConfig {
+    pub fn validate_native_receive(
+        &self,
+        order: &RampOrder,
+        canonical_payload: &[u8],
+        account_sequence: u64,
+        now: u64,
+    ) -> Result<(), RampError> {
+        order.validate_bound()?;
+        if self.protocol_version != layerx_wire::limits::STATE_COMMITMENT_PROTOCOL_VERSION
+            || self.network_id == 0
+            || order.direction() != RampDirection::OffRamp
+            || canonical_payload.len() != 733
+            || now >= order.quote.expires_at
+        {
+            return Err(RampError::InvalidOrder);
+        }
+        let actor = std::str::from_utf8(&self.actor_did)
+            .map_err(|_| RampError::InvalidPrincipal)?;
+        if order.operator.account != format!("agent:{actor}:main") {
+            return Err(RampError::InvalidPrincipal);
+        }
+        let layerx_crypto::payments::Payment::Receive {
+            from, to, asset, amount, grant, sequence, idempotency_key, context_hash,
+            receiver_authorization, payer_grant,
+        } = layerx_crypto::payments::Payment::decode(
+            layerx_types::payload::ModuleId::Asset,
+            6,
+            canonical_payload,
+            &self.actor_did,
+        ).map_err(|_| RampError::PayerGrantRequired)? else {
+            return Err(RampError::PayerGrantRequired);
+        };
+        let account = |name: &str| {
+            let parsed = layerx_types::account::AccountId::parse(name)
+                .map_err(|_| RampError::InvalidPrincipal)?;
+            layerx_wire::hash::account_id_for_protocol(&parsed, self.protocol_version)
+                .map_err(|_| RampError::InvalidPrincipal)
+        };
+        if from != account(&order.customer.account)?
+            || to != account(&order.operator.account)?
+            || asset != order.quote.layerx_asset
+            || amount != order.quote.layerx_amount
+            || Some(grant) != order.payer_grant
+            || sequence != account_sequence
+            || idempotency_key != order.order_digest
+            || context_hash != order.context
+            || receiver_authorization.kind != layerx_types::intent::SendAuthorizationKind::Owner as u8
+            || receiver_authorization.public_key != self.signer_public_key
+            || receiver_authorization.network_id != self.network_id
+            || receiver_authorization.protocol_version != self.protocol_version
+            || now > payer_grant.expiration
+            || amount > payer_grant.allowance
+        {
+            return Err(RampError::PayerGrantRequired);
+        }
+        Ok(())
+    }
+}
+
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct LayerxConfig {
@@ -953,9 +1013,41 @@ impl LayerxClient {
                     registry,
                 )?
             }
-            RampDirection::OffRamp => compile_payer_grant_draw(order, account_sequence, registry)?,
+            RampDirection::OffRamp => {
+                if self.activity.protocol_version == layerx_wire::limits::STATE_COMMITMENT_PROTOCOL_VERSION {
+                    return Err(RampError::PayerGrantRequired);
+                }
+                compile_payer_grant_draw(order, account_sequence, registry)?
+            }
         };
         let unsigned = self.unsigned(order, account_sequence, now, compiled)?;
+        self.prepare_unsigned(order, unsigned, registry)
+    }
+
+    pub fn prepare_native_receive(
+        &self,
+        order: &RampOrder,
+        canonical_payload: &[u8],
+        account_sequence: u64,
+        now: u64,
+        registry: &layerx_types::payload::ModuleRegistry,
+    ) -> Result<PreparedLayerx, RampError> {
+        self.activity.validate_native_receive(order, canonical_payload, account_sequence, now)?;
+        let activity_type = layerx_types::payload::ActivityType::new(
+            layerx_types::payload::ModuleId::Asset, 6,
+        ).map_err(|_| RampError::Layerx)?;
+        let payload = layerx_types::payload::Payload::new(registry, activity_type, canonical_payload)
+            .map_err(|_| RampError::Layerx)?;
+        let unsigned = self.unsigned_payload(order, account_sequence, now, activity_type, payload)?;
+        self.prepare_unsigned(order, unsigned, registry)
+    }
+
+    fn prepare_unsigned(
+        &self,
+        order: &RampOrder,
+        unsigned: UnsignedEnvelope,
+        registry: &layerx_types::payload::ModuleRegistry,
+    ) -> Result<PreparedLayerx, RampError> {
         let canonical = encode_unsigned_envelope(&unsigned).map_err(|_| RampError::Layerx)?;
         let signature = self.sign(order, &canonical)?;
         let signed =
@@ -1141,6 +1233,19 @@ impl LayerxClient {
         now: u64,
         compiled: crate::CompiledPayment,
     ) -> Result<UnsignedEnvelope, RampError> {
+        self.unsigned_payload(order, sequence, now, compiled.activity_type, compiled.payload)
+    }
+
+    fn unsigned_payload(
+        &self,
+        order: &RampOrder,
+        sequence: u64,
+        now: u64,
+        activity_type: layerx_types::payload::ActivityType,
+        payload: layerx_types::payload::Payload,
+    ) -> Result<UnsignedEnvelope, RampError> {
+        let payload_hash = layerx_wire::hash::payload_hash_for(&payload)
+            .map_err(|_| RampError::Layerx)?;
         if now >= order.quote.expires_at {
             return Err(RampError::InvalidOrder);
         }
@@ -1148,7 +1253,7 @@ impl LayerxClient {
         builder
             .protocol_version(self.activity.protocol_version)
             .and_then(|builder| builder.network_id(self.activity.network_id))
-            .and_then(|builder| builder.activity_type(compiled.activity_type))
+            .and_then(|builder| builder.activity_type(activity_type))
             .map_err(|_| RampError::Layerx)?;
         builder
             .actor_did(Did::new(&self.activity.actor_did).map_err(|_| RampError::Layerx)?)
@@ -1163,8 +1268,8 @@ impl LayerxClient {
             })
             .and_then(|builder| builder.idempotency_key(IdempotencyKey::new(order.order_digest)))
             .and_then(|builder| builder.fee_limit(Amount::from_u128(self.activity.fee_limit)))
-            .and_then(|builder| builder.payload_hash(compiled.payload_hash))
-            .and_then(|builder| builder.payload(compiled.payload))
+            .and_then(|builder| builder.payload_hash(payload_hash))
+            .and_then(|builder| builder.payload(payload))
             .map_err(|_| RampError::Layerx)?;
         builder.build().map_err(|_| RampError::Layerx)
     }
