@@ -144,12 +144,20 @@ import { readFile, writeFile } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
 import { randomBytes } from 'node:crypto';
 const [root, inputPath, resultPath] = process.argv.slice(2);
-const { createHumanApiClient, HumanApiError, operationNames, schemaVersion } =
+const { HumanApiError, operationNames, schemaVersion } =
   await import(pathToFileURL(root + '/human/apps/web/src/api/generated/index.ts').href);
+const { humanApi } = await import(pathToFileURL(root + '/human/apps/web/src/api/index.ts').href);
+const { default: webConfiguration } = await import(pathToFileURL(root + '/human/apps/web/next.config.mjs').href);
 const { conformance } = await import(pathToFileURL(root + '/human/apps/web/src/api/generated/conformance.ts').href);
 const fixture = JSON.parse(await readFile(inputPath, 'utf8'));
 let tests = 0;
 function check(ok, message) { if (!ok) throw new Error(message); tests += 1; }
+const rewrites = await webConfiguration.rewrites();
+const browserRewrite = rewrites.find((row) => row.source === '/human/v1/:path*');
+check(browserRewrite?.destination === new URL('/v1/:path*', fixture.url).href,
+  'browser Human API mount reaches the production service route');
+check(rewrites.some((row) => row.source === '/v1/:path*'
+  && row.destination === browserRewrite.destination), 'existing direct service route retained');
 const outputs = new Map();
 const successful = new Set();
 let balanceTrace;
@@ -171,17 +179,18 @@ function resolve(value) {
 function clientFor(principal) {
   const jar = sessions.get(principal);
   if (!jar) throw new Error('unknown fixture principal');
-  return createHumanApiClient({
-    baseUrl: fixture.url,
+  return humanApi({
     csrfToken: () => jar.get('__Host-layerx_csrf'),
     trace: () => 'trc_' + randomBytes(16).toString('hex'),
     fetch: async (input, init) => {
+      check(input.startsWith('/human/v1/'), 'browser wrapper retains the public Human API mount');
+      const destination = browserRewrite.destination.replace(':path*', input.slice('/human/v1/'.length));
       const headers = new Headers(init.headers);
       headers.set('Origin', fixture.origin);
       headers.set('Cookie', [...jar].map(([name, value]) => name + '=' + value).join('; '));
-      const response = await fetch(input, { ...init, headers, signal: AbortSignal.timeout(20000), redirect: 'error' });
+      const response = await fetch(destination, { ...init, headers, signal: AbortSignal.timeout(20000), redirect: 'error' });
       const envelope = await response.clone().json();
-      if (new URL(input).pathname === '/v1/account/balance') balanceTrace = envelope.trace;
+      if (new URL(destination).pathname === '/v1/account/balance') balanceTrace = envelope.trace;
       check(envelope.trace === headers.get('X-LayerX-Trace')
         && response.headers.get('X-LayerX-Trace') === envelope.trace, 'generated-client trace mismatch');
       for (const cookie of response.headers.getSetCookie()) {
@@ -392,7 +401,7 @@ def main():
             os.chmod(log.name, 0o600)
             result = subprocess.run([str(node), '--experimental-strip-types', str(runner), str(ROOT),
                                      args.manifest, str(output)], cwd=ROOT,
-                                    env=dict(os.environ, NODE_EXTRA_CA_CERTS=str(ca), NODE_TLS_REJECT_UNAUTHORIZED="1", NODE_OPTIONS=""),
+                                    env=dict(os.environ, NODE_EXTRA_CA_CERTS=str(ca), NODE_TLS_REJECT_UNAUTHORIZED="1", NODE_OPTIONS="", LAYERX_HUMAN_SERVICE_URL=material['url']),
                                     stdout=log, stderr=log, timeout=min(900, remaining()))
         check(result.returncode == 0, 'generated client live operation contract')
         observed = load(output)

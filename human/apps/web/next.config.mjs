@@ -21,7 +21,7 @@ const nextConfig = {
       endpoint.protocol !== "https:" ||
       endpoint.username !== "" ||
       endpoint.password !== "" ||
-      endpoint.pathname !== "/" ||
+      !["/", "/human", "/human/"].includes(endpoint.pathname) ||
       endpoint.search !== "" ||
       endpoint.hash !== ""
     ) {
@@ -29,6 +29,10 @@ const nextConfig = {
     }
     const baseUrl = endpoint.origin;
     return [
+      {
+        source: "/human/v1/:path*",
+        destination: `${baseUrl}/v1/:path*`,
+      },
       {
         source: "/v1/:path*",
         destination: `${baseUrl}/v1/:path*`,

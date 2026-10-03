@@ -29,7 +29,7 @@ export function humanApiForServer(context: ServerHumanApiContext): HumanApiClien
     throw new Error("LAYERX_HUMAN_WEB_ORIGIN must name the HTTPS web application");
   }
   return createHumanApiClient({
-    baseUrl: `${endpoint.origin}${endpoint.pathname.replace(/\/$/, "")}`,
+    baseUrl: endpoint.origin,
     credentials: "include",
     headers: { Cookie: context.cookie, Origin: origin },
     csrfToken: () => context.csrfToken,
