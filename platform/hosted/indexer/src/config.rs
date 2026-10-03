@@ -244,6 +244,7 @@ impl Config {
     where
         F: Fn(&str) -> Option<String>,
     {
+        crate::settlement::validate_configuration(lookup)?;
         let database = lookup("LAYERX_INDEXER_DB")
             .map(PathBuf::from)
             .ok_or_else(|| IndexError::Config("LAYERX_INDEXER_DB is required".to_owned()))?;

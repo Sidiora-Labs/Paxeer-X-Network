@@ -16,6 +16,9 @@ path = "src/main.rs"
 layerx-platform-internal.workspace = true
 layerx-types.workspace = true
 layerx-wire.workspace = true
+layerx-client.workspace = true
+layerx-proof.workspace = true
+layerx-paxeer-verifier = { path = "../../../agent/crates/layerx-paxeer-verifier" }
 postgres = "=0.19.14"
 rusqlite = { version = "=0.37.0", default-features = false, features = ["bundled"] }
 rustls.workspace = true

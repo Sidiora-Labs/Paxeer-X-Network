@@ -292,6 +292,7 @@ fn decode_activity(
     let lxp_receipt = lxp_receipt_json(receipt)?;
     let context = json!({
         "batch_number": batch_number.to_string(),
+        "receipt_hex": hex(&receipt_bytes),
         "actor": actor,
         "module": module,
         "accounts": accounts,
@@ -382,6 +383,7 @@ pub struct LayerXIngester {
     relay: Endpoint,
     policy: FollowPolicy,
     start_batch: Option<u64>,
+    settlement: std::sync::Mutex<Option<crate::settlement::SettlementSource>>,
 }
 
 impl LayerXIngester {
@@ -391,6 +393,7 @@ impl LayerXIngester {
             relay,
             policy,
             start_batch,
+            settlement: std::sync::Mutex::new(None),
         }
     }
 
@@ -430,7 +433,9 @@ impl LayerXIngester {
         store.record_source_head(CHAIN, head_batch)?;
         let Some(head_batch) = head_batch else {
             if store.cursor(CHAIN)?.is_some() {
-                return Err(IndexError::Source("source head is empty behind persisted cursor".to_owned()));
+                return Err(IndexError::Source(
+                    "source head is empty behind persisted cursor".to_owned(),
+                ));
             }
             return Ok(StepOutcome::Idle);
         };
@@ -446,6 +451,7 @@ impl LayerXIngester {
                 return self.reorg(store, cursor.position, start);
             }
         }
+        self.reconcile_settlement(store)?;
         let next = cursor.map_or(start, |cursor| cursor.position + 1);
         if next > head_batch {
             return Ok(StepOutcome::Idle);
@@ -476,10 +482,50 @@ impl LayerXIngester {
             store.commit(&unit, self.policy.finality_depth)?;
             units += 1;
         }
+        self.reconcile_settlement(store)?;
         Ok(StepOutcome::Advanced {
             units,
             position: last,
         })
+    }
+
+    fn reconcile_settlement(&self, store: &Store) -> Result<(), IndexError> {
+        let mut source = self
+            .settlement
+            .lock()
+            .map_err(|_| IndexError::Store("settlement source lock poisoned".into()))?;
+        if source.is_none() {
+            match crate::settlement::SettlementSource::from_environment() {
+                Ok(Some(configured)) => *source = Some(configured),
+                Ok(None) => return Ok(()),
+                Err(IndexError::Source(_)) => {
+                    for (_, receipt) in store.pending_settlement(64)? {
+                        store.record_settlement_failure(
+                            &receipt,
+                            crate::settlement::SettlementFailure::Unavailable,
+                        )?;
+                    }
+                    return Ok(());
+                }
+                Err(error) => return Err(error),
+            }
+        }
+        match source
+            .as_mut()
+            .ok_or_else(|| IndexError::Integrity("settlement source disappeared".into()))?
+            .reconcile(store)
+        {
+            Err(IndexError::Source(_)) => {
+                for (_, receipt) in store.pending_settlement(64)? {
+                    store.record_settlement_failure(
+                        &receipt,
+                        crate::settlement::SettlementFailure::Unavailable,
+                    )?;
+                }
+                Ok(())
+            }
+            result => result,
+        }
     }
 
     fn reorg(&self, store: &Store, from: u64, start: u64) -> Result<StepOutcome, IndexError> {

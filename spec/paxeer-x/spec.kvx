@@ -22902,7 +22902,11 @@ retained_shared_touch_paths = ["tools/explorer/tests/paxeer-x-data-boundary.py"]
 source_ownership = "Root serializes the explorer boundary fixture shared with23.3; this owner changes only standalone ingestion source. All original implementation and acceptance criteria remain required."
 [task.22.6]
 title = "Publish explicit index stability and settlement verification levels"
-status = "in_progress"
+status = "done"
+completion_basis = "implementation"
+qualification_status = "unverified"
+build_exit_code = 0
+verify_result = "unrun: genuine node and publication inputs absent"
 mode = "BUILD"
 wave = 2
 requires = ["0.2", "0.7"]

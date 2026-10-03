@@ -20,6 +20,7 @@ pub mod follow;
 pub mod layerx;
 pub mod paxeer;
 pub mod paxscan;
+pub mod settlement;
 pub mod store;
 pub mod transport;
 
