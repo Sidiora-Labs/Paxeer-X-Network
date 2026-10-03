@@ -2063,3 +2063,8 @@ do = "Resolve to actual tracked Dockerfiles and retain conforming packaging; do 
 area = "lni"
 symptom = "The native negotiated LNI session explicitly refuses a second NodeInfo request."
 do = "Use an existing authenticated read with a genuine nonzero selector to prove persistent-session liveness while preserving authentic receipts and journal state."
+
+[gotcha.620]
+area = "codify"
+symptom = "A low-level task lease can be registered without changing the task status in the feature source."
+do = "Reconcile the owned task status explicitly while keeping unqualified work in_progress."
