@@ -2433,30 +2433,58 @@ fn real_readiness_requires_live_lni_and_bounds_saturated_sessions() {
     let started = Instant::now();
     let answers = thread::scope(|scope| {
         let barrier = std::sync::Arc::new(std::sync::Barrier::new(8));
-        let handles = (0..8).map(|_| {
-            let client = Client { port: cluster.client.port, certificate: cluster.client.certificate.clone() };
-            let barrier = std::sync::Arc::clone(&barrier);
-            scope.spawn(move || {
-                barrier.wait();
-                client.get("/readyz", None)
+        let handles = (0..8)
+            .map(|_| {
+                let client = Client {
+                    port: cluster.client.port,
+                    certificate: cluster.client.certificate.clone(),
+                };
+                let barrier = std::sync::Arc::clone(&barrier);
+                scope.spawn(move || {
+                    barrier.wait();
+                    client.get("/readyz", None)
+                })
             })
-        }).collect::<Vec<_>>();
-        handles.into_iter().map(|handle| must(handle.join(), "concurrent real readiness")).collect::<Vec<_>>()
+            .collect::<Vec<_>>();
+        handles
+            .into_iter()
+            .map(|handle| must(handle.join(), "concurrent real readiness"))
+            .collect::<Vec<_>>()
     });
     let elapsed = started.elapsed();
     let live = cluster.client.get("/livez", None);
     command("kill", &["-CONT", &pid]);
-    assert!(listening.is_ok(), "stopped daemon must retain its real accepting TCP listener");
+    assert!(
+        listening.is_ok(),
+        "stopped daemon must retain its real accepting TCP listener"
+    );
     assert!(elapsed < Duration::from_secs(15), "session admission and live LNI probes exceeded their configured ten-second bound: {elapsed:?}");
     assert_eq!(answers.len(), 8);
     for answer in answers {
-        assert_eq!(answer.status, 503, "cached handshake must not mark a stopped daemon ready: {}", answer.text());
-        assert!(matches!(answer.error_code().as_str(), "node_unavailable" | "node_transport_lost"), "{}", answer.text());
+        assert_eq!(
+            answer.status,
+            503,
+            "cached handshake must not mark a stopped daemon ready: {}",
+            answer.text()
+        );
+        assert!(
+            matches!(
+                answer.error_code().as_str(),
+                "node_unavailable" | "node_transport_lost"
+            ),
+            "{}",
+            answer.text()
+        );
     }
     assert_eq!(live.status, 200);
     check_readiness(&cluster);
     assert_eq!(journal_record(&cluster, &submitted.key), before);
-    let replay = cluster.client.call(&Call::submit("/v1/activities", &cluster.gateway_token, &submitted.key, &signed));
+    let replay = cluster.client.call(&Call::submit(
+        "/v1/activities",
+        &cluster.gateway_token,
+        &submitted.key,
+        &signed,
+    ));
     assert_eq!(replay.status, 200);
     assert_eq!(replay.text(), submitted.body);
     assert_eq!(journal_record(&cluster, &submitted.key)["attempts"], 1);

@@ -136,14 +136,22 @@ impl SessionPool {
         }
     }
 
-    fn acquire(&self, usage: SessionUse, timeout: Duration) -> Result<SessionLease<'_>, LniFailure> {
-        let deadline = Instant::now().checked_add(timeout)
-            .ok_or_else(|| LniFailure::Unavailable("session admission deadline invalid".to_owned()))?;
+    fn acquire(
+        &self,
+        usage: SessionUse,
+        timeout: Duration,
+    ) -> Result<SessionLease<'_>, LniFailure> {
+        let deadline = Instant::now().checked_add(timeout).ok_or_else(|| {
+            LniFailure::Unavailable("session admission deadline invalid".to_owned())
+        })?;
         let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
         loop {
-            let remaining = deadline.checked_duration_since(Instant::now())
+            let remaining = deadline
+                .checked_duration_since(Instant::now())
                 .filter(|duration| !duration.is_zero())
-                .ok_or_else(|| LniFailure::Unavailable("session admission deadline exceeded".to_owned()))?;
+                .ok_or_else(|| {
+                    LniFailure::Unavailable("session admission deadline exceeded".to_owned())
+                })?;
             let first = usize::from(usage == SessionUse::ReceiptWait);
             if let Some(index) = (first..state.busy.len()).find(|index| !state.busy[*index]) {
                 state.busy[index] = true;
