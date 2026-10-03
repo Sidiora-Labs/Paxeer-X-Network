@@ -74,10 +74,11 @@ W8_CAPABILITY_RECORD = ('capability_id', 'parent_id', 'tenant', 'agent_did', 'di
                         'created_at_sequence', 'revoked_at_ms', 'revoked_at_sequence')
 W8_DIMENSIONS = ('activity_types', 'counterparties', 'assets', 'amount_ceilings', 'rate_ceilings', 'purpose_constraints', 'expiry')
 W8_DECIMAL = '(0|[1-9][0-9]{0,38})'
-SERVED_READ_DIRECT = ('project_fee_projection', 'policy_dry_run_explained', 'export_offline_bounded', 'program_discover_registry')
+SERVED_READ_DIRECT = ('project_fee_projection', 'policy_dry_run_explained', 'export_offline_bounded', 'program_discover_registry', 'program_interface_registry')
 SERVED_READ_REFUSALS = ('project_refuse_over_bound', 'project_refuse_legacy_payload', 'policy_dry_run_refuse_unknown_capability',
                         'export_refuse_seventeen_facts', 'export_refuse_duplicate_fact', 'export_refuse_uppercase_fact',
-                        'export_refuse_settlement_anchored', 'prepare_refuse_uppercase_capability_id')
+                        'export_refuse_settlement_anchored', 'prepare_refuse_uppercase_capability_id',
+                        'program_interface_refuse_unknown_field', 'program_interface_refuse_bad_level')
 PROJECT_REQUEST = ('protocol_activity_type', 'canonical_bytes', 'execution_units', 'storage_units')
 PROJECTED = ('request', 'parameter_version', 'fee', 'canonical_schedule', 'snapshot_sequence', 'snapshot_state_root')
 POLICY_DRY_RUN_REQUEST = ('tenant', 'agent_did', 'session_id', 'capability_id', 'activity_type', 'counterparty', 'asset',
@@ -108,8 +109,7 @@ HEALTH_PATH = '/healthz'
 
 RULED_REFUSALS = {'faucet.claim': (503, 'UnavailableCapability', 'unavailable_capability.faucet.claim'),
                   'agent.register': (403, 'PolicyRefusal', 'refused_pending_bootstrap_artifact'),
-                  'session.open': (403, 'PolicyRefusal', 'refused_pending_bootstrap_artifact'),
-                  'program.interface': (503, 'UnavailableCapability', 'unmatched_by_ruling')}
+                  'session.open': (403, 'PolicyRefusal', 'refused_pending_bootstrap_artifact')}
 CLASSES = {'TransportFailure', 'Deadline', 'ProtocolIncompatibility', 'UnavailableCapability', 'CoreRejection',
            'VerificationFailure', 'PolicyRefusal', 'CapabilityRefusal', 'BudgetRefusal', 'RateLimit',
            'IdempotencyConflict', 'InternalFault'}
@@ -556,6 +556,8 @@ def load_config():
         require(isinstance(config[key], dict) and all(isinstance(k, str) and isinstance(v, str) for k, v in config[key].items()),
                 key + ' must be a string map')
     require('LAYERX_AGENTD_RPC_LISTEN' not in config['agentd_env'], 'harness owns the agent RPC listener configuration')
+    require(config['agentd_env'].get('LAYERX_AGENT_REGISTRY_SOURCE_CONFIG'),
+            'program.interface requires a real protected registry source configuration')
     proof_bundle_authority_inputs(config, credential)
     native_inputs(config, credential)
     return config, credential
@@ -2087,6 +2089,27 @@ class Qualification:
                     for k in ('observed_sequence', 'observed_at', 'valid_through'))
                 and int(result['observed_at']) <= int(result['valid_through']), case + ': observation window')
         self.passed(case, self.d / 'responses' / (case + '.http'))
+
+        interface_request = req['operation.program.interface']['request']
+        case = SERVED_READ_DIRECT[4]
+        value, status, body = self.call(case, 'program.interface', interface_request)
+        response = self.success(status, body, value['request_id'], case)
+        require(response['verification_status'] == {
+            'state': 'unverified', 'requested': 'SequencerSigned', 'achieved': 'Unverified',
+            'reason': 'owner_payload_carries_no_level'}, case + ': explicit unverified provenance envelope')
+        result = response['value']
+        from layerx_sdk.programs import _interface
+        documented = _interface(result, interface_request['program_id'], int(result['observed_at']))
+        require(documented.program_id == interface_request['program_id'], case + ': interface names another program')
+        require(result['verification'] == 'deployment-interface-and-current-head-verified', case + ': provenance marker')
+        require(0 < int(result['valid_through']) and int(result['observed_at']) <= int(result['valid_through']),
+                case + ': bounded authenticated head observation')
+        self.passed(case, self.d / 'responses' / (case + '.http'))
+        self.served_read_refused(SERVED_READ_REFUSALS[8], 'program.interface', dict(interface_request, extra='forged'),
+                                 400, 'ProtocolIncompatibility', 'envelope.unknown_field')
+        self.served_read_refused(SERVED_READ_REFUSALS[9], 'program.interface',
+                                 dict(interface_request, requested_verification_level='settlement-anchored'),
+                                 400, 'ProtocolIncompatibility', 'envelope.malformed')
 
         case = SERVED_READ_REFUSALS[7]
         prepare = req[W7_SIGN_DIRECT[0]]['prepare']['request']

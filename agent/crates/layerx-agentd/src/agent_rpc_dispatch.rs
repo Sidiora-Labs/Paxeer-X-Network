@@ -912,7 +912,7 @@ pub(crate) fn canonical_request_bytes(
         | Operation::SubscriptionDelete => wire_bytes::<SubscriptionTargetWire, _>(operation, request, id, SubscriptionTargetWire::into_request)?,
         Operation::SubscriptionAcknowledge => wire_bytes::<CursorAcknowledgementWire, _>(operation, request, id, CursorAcknowledgementWire::into_request)?,
         Operation::Sign => wire_bytes::<SignRequestWire, _>(operation, request, id, SignRequestWire::into_request)?,
-        Operation::ProgramCall => wire_bytes::<ProgramCallWire, _>(operation, request, id, ProgramCallWire::into_request)?,
+        Operation::ProgramCall => named(operation, &program_call_canonical(request, id)?, id)?,
         Operation::ProgramDeploy => wire_bytes::<ProgramDeployWire, _>(operation, request, id, ProgramDeployWire::into_request)?,
         Operation::ProgramUpgrade => wire_bytes::<ProgramUpgradeWire, _>(operation, request, id, ProgramUpgradeWire::into_request)?,
         Operation::ProgramWindDown => wire_bytes::<ProgramWindDownWire, _>(operation, request, id, ProgramWindDownWire::into_request)?,
@@ -1083,11 +1083,7 @@ pub(crate) fn dispatch_operation<A: HumanAuthorityBoundary>(
             "refused_pending_bootstrap_artifact",
         )),
         Operation::ReadProofBundle => adapters::read_proof_bundle(shared, context, request, ctx),
-        Operation::ProgramInterface => Err(rejection(
-            ErrorClass::UnavailableCapability,
-            id,
-            "unmatched_by_ruling",
-        )),
+        Operation::ProgramInterface => adapters::program_interface(shared, context, request, ctx),
     }
 }
 

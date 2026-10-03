@@ -2526,3 +2526,27 @@ fn proof_bundle_wire_keeps_native_selector_bytes_and_refuses_aliases() {
         assert!(decode_wire::<ProofBundleWire>(unknown.as_object().expect("object"), id).is_err());
     }
 }
+
+pub(crate) fn program_call_canonical(
+    request: &Map<String, Value>, id: RequestId,
+) -> Result<Value, Rejection> {
+    match program_simulation_request(request, id)? {
+        ProgramSimulationRequest::Legacy(call) => Ok(call.canonical()),
+        ProgramSimulationRequest::Native { program_id, payload, fee_limit, signed_activity } => {
+            let call = layerx_types::program_call::NativeProgramCall::decode(&payload)
+                .map_err(|_| malformed(id))?;
+            let entrypoint = std::str::from_utf8(call.entrypoint).map_err(|_| malformed(id))?;
+            Ok(json!({
+                "payload_encoding": "native-v1", "program_id": lower_hex(&program_id),
+                "calldata": lower_hex(call.calldata),
+                "budget": {"fuel": call.resources.0[0].to_string(), "fee_limit": fee_limit.to_string()},
+                "signed_activity": lower_hex(&signed_activity),
+                "native_call": {"guest_abi": call.guest_abi, "entrypoint": entrypoint,
+                    "capabilities_hex": lower_hex(call.capabilities),
+                    "access_declaration_hex": lower_hex(call.access_declaration),
+                    "response_capacity": call.response_capacity,
+                    "resources": call.resources.0.map(|value| value.to_string())},
+            }))
+        }
+    }
+}

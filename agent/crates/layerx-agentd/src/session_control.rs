@@ -1118,6 +1118,28 @@ impl OperationPermit {
         if !matches!(self.operation(), Operation::Prepare | Operation::Sign | Operation::Submit) {
             return Err(SessionControlError::Authorization(AuthorizationError::ScopeDenied));
         }
+        self.with_native_authority_authorized(control, activity, sequence, effect)
+    }
+
+    pub(crate) fn with_native_submission_authority<T>(
+        &self, control: &SessionControl, activity: layerx_agent_api::identity::NativeActivity,
+        sequence: u64,
+        effect: impl FnOnce(&mut Store, &SessionRegistry, &session::NativeSessionAuthorizationV1,
+            &BudgetLimiter, &PreparationLifecycle, u64) -> Result<T, SessionControlError>,
+    ) -> Result<T, SessionControlError> {
+        if self.operation() == Operation::Submit {
+            return self.with_native_authority(control, activity, sequence, effect);
+        }
+        self.require_program_operation()?;
+        self.with_native_authority_authorized(control, activity, sequence, effect)
+    }
+
+    fn with_native_authority_authorized<T>(
+        &self, control: &SessionControl, activity: layerx_agent_api::identity::NativeActivity,
+        sequence: u64,
+        effect: impl FnOnce(&mut Store, &SessionRegistry, &session::NativeSessionAuthorizationV1,
+            &BudgetLimiter, &PreparationLifecycle, u64) -> Result<T, SessionControlError>,
+    ) -> Result<T, SessionControlError> {
         let registry = control.registry.read().map_err(|_| SessionControlError::Unavailable)?;
         self.resolve(control, &registry)?;
         let mut store = control.store.lock().map_err(|_| SessionControlError::Unavailable)?;
@@ -1711,6 +1733,32 @@ impl OperationPermit {
             .lifecycle
             .admit_submission_authorized(preparation_id, core_batch_time_ms, &authorization)
             .map_err(SessionControlError::Lifecycle)
+    }
+
+    pub(crate) fn admit_submission_write(
+        &self, control: &SessionControl, admission: WriteAdmission<'_>,
+    ) -> Result<DurablePreparation, SessionControlError> {
+        if self.operation() == Operation::Submit { return self.admit_write(control, admission); }
+        self.admit_program_write(control, admission)
+    }
+
+    pub(crate) fn retain_external_submission(
+        &self, control: &SessionControl, preparation_id: [u8; 32], signed_bytes: Vec<u8>,
+        activity_id: [u8; 32], current_sequence: u64, core_time_ms: u64,
+    ) -> Result<(), SessionControlError> {
+        if self.operation() == Operation::Submit {
+            return self.submit_with_external_signature(control, preparation_id, signed_bytes, activity_id, current_sequence, core_time_ms);
+        }
+        self.submit_program_with_external_signature(control, preparation_id, signed_bytes, activity_id, current_sequence, core_time_ms)
+    }
+
+    pub(crate) fn transition_submission(
+        &self, control: &SessionControl, preparation_id: [u8; 32], current_sequence: u64,
+    ) -> Result<(), SessionControlError> {
+        if self.operation() == Operation::Submit {
+            return self.transition_preparation(control, preparation_id, LifecycleState::Submitted, current_sequence);
+        }
+        self.transition_program_submitted(control, preparation_id, current_sequence)
     }
 
     fn require_program_operation(&self) -> Result<(), SessionControlError> {

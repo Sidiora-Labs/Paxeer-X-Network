@@ -1913,6 +1913,55 @@ pub(crate) fn program_discover<A: HumanAuthorityBoundary>(
     })
 }
 
+pub(crate) fn program_interface<A: HumanAuthorityBoundary>(
+    owner: &SharedAgentOwner<A>, context: &RpcOwnerContext<'_>,
+    request: &Map<String, Value>, ctx: &DispatchContext,
+) -> Result<Dispatched, Rejection> {
+    use crate::agent_rpc_wire::{decode_wire, ProgramDiscoverWire};
+    use layerx_programs::SourceStatus;
+    let id = ctx.request_id;
+    let program = decode_wire::<ProgramDiscoverWire>(request, id)?.into_request(id)?;
+    let response = owner.lock()
+        .and_then(|mut guard| guard.rpc_program_interface_with_source(context, program))
+        .map_err(|error| owner_error(id, error))?;
+    let native = &response.interface;
+    let head = &native.discovery;
+    let source = &response.source;
+    if head.program.bytes() != program || source.program() != program
+        || source.version() != native.version || native.version != head.version
+        || source.code_hash() != head.code_hash || source.state_root() != head.state_root
+        || source.observed_sequence() != head.observed_sequence || source.observed_at() != head.observed_at
+        || source.current_head_receipt_digest() != head.receipt_digest
+        || source.deployment_receipt_digest() == [0; 32] || source.valid_through() > head.valid_through
+    {
+        return Err(rejection(ErrorClass::InternalFault, id, "owner.response_malformed"));
+    }
+    let status = match source.source() {
+        SourceStatus::Unpublished => serde_json::json!({"status":"unpublished"}),
+        SourceStatus::Verified { source_digest, environment_digest } => serde_json::json!({
+            "status":"verified", "source_digest":hexv(source_digest),
+            "environment_digest":hexv(environment_digest),
+            "pipeline":source.pipeline().ok_or_else(|| rejection(ErrorClass::InternalFault, id, "owner.response_malformed"))?,
+        }),
+        SourceStatus::Mismatch { expected, reproduced } => serde_json::json!({
+            "status":"mismatch", "expected_code_hash":hexv(expected), "reproduced_artifact_digest":hexv(reproduced),
+        }),
+    };
+    let interface = native.interface.canonical_encoding();
+    let interface_digest: [u8; 32] = Sha256::digest(interface).into();
+    Ok(Dispatched {
+        value: serde_json::json!({
+            "program_id":hexv(&program), "version":native.version, "code_hash":hexv(&head.code_hash),
+            "abi_version":head.abi_version, "interface":hexv(interface), "interface_digest":hexv(&interface_digest),
+            "receipt_digest":hexv(&source.current_head_receipt_digest()), "state_root":hexv(&head.state_root),
+            "observed_sequence":dec(head.observed_sequence), "observed_at":dec(head.observed_at),
+            "valid_through":dec(source.valid_through()), "source":status,
+            "verification":"deployment-interface-and-current-head-verified",
+        }),
+        verification: None,
+    })
+}
+
 pub(crate) fn program_activity<A: HumanAuthorityBoundary>(
     owner: &SharedAgentOwner<A>,
     context: &RpcOwnerContext<'_>,
@@ -1920,12 +1969,20 @@ pub(crate) fn program_activity<A: HumanAuthorityBoundary>(
     ctx: &DispatchContext,
 ) -> Result<Dispatched, Rejection> {
     use crate::agent_rpc_wire::{decode_wire, ProgramActivityWire};
-    use crate::human_runtime::RpcProgramActivity;
     let id = ctx.request_id;
     let activity_id = decode_wire::<ProgramActivityWire>(request, id)?.into_request(id)?;
     let response = owner.lock()
         .and_then(|mut guard| guard.rpc_program_activity(context, activity_id))
         .map_err(|error| owner_error(id, error))?;
+    program_activity_response(id, activity_id, response)
+}
+
+fn program_activity_response(
+    id: RequestId,
+    activity_id: [u8; 32],
+    response: crate::human_runtime::RpcProgramActivity,
+) -> Result<Dispatched, Rejection> {
+    use crate::human_runtime::RpcProgramActivity;
     match response {
         RpcProgramActivity::Unknown { idempotency_key, signed_activity } => Ok(Dispatched {
             value: serde_json::json!({
@@ -2386,4 +2443,75 @@ impl<'a> Reader<'a> {
         let length = usize::try_from(self.u32()?).ok()?;
         self.take(length)
     }
+}
+
+pub(crate) fn program_call<A: HumanAuthorityBoundary>(
+    owner: &SharedAgentOwner<A>,
+    context: &RpcOwnerContext<'_>,
+    request: &Map<String, Value>,
+    ctx: &DispatchContext,
+) -> Result<Dispatched, Rejection> {
+    let id = ctx.request_id;
+    let typed = crate::agent_rpc_wire::program_simulation_request(request, id)?;
+    let key = crate::agent_rpc_dispatch::mutation_key(ctx)?;
+    let (activity_id, response) = owner.lock()
+        .and_then(|mut guard| guard.rpc_program_call(context, typed, id.0, key))
+        .map_err(|error| owner_error(id, error))?;
+    program_activity_response(id, activity_id, response)
+}
+
+pub(crate) fn program_deploy<A: HumanAuthorityBoundary>(
+    owner: &SharedAgentOwner<A>, context: &RpcOwnerContext<'_>,
+    request: &Map<String, Value>, ctx: &DispatchContext,
+) -> Result<Dispatched, Rejection> {
+    program_lifecycle(owner, context, request, ctx, Operation::ProgramDeploy)
+}
+
+pub(crate) fn program_upgrade<A: HumanAuthorityBoundary>(
+    owner: &SharedAgentOwner<A>, context: &RpcOwnerContext<'_>,
+    request: &Map<String, Value>, ctx: &DispatchContext,
+) -> Result<Dispatched, Rejection> {
+    program_lifecycle(owner, context, request, ctx, Operation::ProgramUpgrade)
+}
+
+pub(crate) fn program_wind_down<A: HumanAuthorityBoundary>(
+    owner: &SharedAgentOwner<A>, context: &RpcOwnerContext<'_>,
+    request: &Map<String, Value>, ctx: &DispatchContext,
+) -> Result<Dispatched, Rejection> {
+    program_lifecycle(owner, context, request, ctx, Operation::ProgramWindDown)
+}
+
+fn program_lifecycle<A: HumanAuthorityBoundary>(
+    owner: &SharedAgentOwner<A>, context: &RpcOwnerContext<'_>,
+    request: &Map<String, Value>, ctx: &DispatchContext, operation: Operation,
+) -> Result<Dispatched, Rejection> {
+    use crate::agent_rpc_wire::{decode_wire, ProgramLifecycleWire};
+    let id = ctx.request_id;
+    let typed = decode_wire::<ProgramLifecycleWire>(request, id)?.into_request(id)?;
+    let key = crate::agent_rpc_dispatch::mutation_key(ctx)?;
+    let (activity_id, receipt) = owner.lock()
+        .and_then(|mut guard| guard.rpc_program_lifecycle(context, typed, id.0, key, operation))
+        .map_err(|error| owner_error(id, error))?;
+    let Some(receipt) = receipt else {
+        return Ok(Dispatched {
+            value: serde_json::json!({"state": "unknown", "activity_id": hexv(&activity_id),
+                "retry": "after", "retry_after_seconds": 2}),
+            verification: Some(VerificationStatus::Unverified {
+                requested: Level::SequencerSigned, achieved: Level::Unverified,
+                reason: layerx_agent_api::error::ReasonCode::new("receipt_pending")
+                    .map_err(|_| rejection(ErrorClass::InternalFault, id, "owner.response_malformed"))?,
+            }),
+        });
+    };
+    let decoded = layerx_wire::receipt::decode(&receipt)
+        .map_err(|_| rejection(ErrorClass::InternalFault, id, "owner.response_malformed"))?;
+    let protocol = decoded.protocol()
+        .filter(|protocol| protocol.activity_id() == activity_id)
+        .ok_or_else(|| rejection(ErrorClass::InternalFault, id, "owner.response_malformed"))?;
+    Ok(Dispatched {
+        value: serde_json::json!({"state": if protocol.result_code() == 0 { "executed" } else { "refused" },
+            "activity_id": hexv(&activity_id), "receipt": hexv(&receipt),
+            "terminal_payload": "", "call_graph": ""}),
+        verification: Some(VerificationStatus::Achieved(Level::SequencerSigned)),
+    })
 }

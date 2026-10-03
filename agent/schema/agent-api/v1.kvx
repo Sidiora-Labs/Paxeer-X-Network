@@ -387,12 +387,12 @@ idempotency_key = "absent"
 disposition = "served_adapter_arm"
 
 [transport.agent_http.operation.program.interface]
-request = "The request object of this catalogue operation; the daemon declares no typed decoder for it in this contract revision."
+request = "ProgramDiscoverWire: program_id and requested_verification_level=sequencer-signed; unknown fields refused."
 access = "read"
 operation_class = "Read"
 surface = "Contract"
 idempotency_key = "absent"
-disposition = "unmatched_by_ruling"
+disposition = "served_adapter_arm"
 
 [transport.agent_http.operation.program.receipt]
 request = "ActivityLookupRequest"
@@ -635,7 +635,7 @@ transport_ambiguity = "A mutating request whose outcome the client cannot know i
 "envelope.noncanonical_integer" = "ProtocolIncompatibility Terminal. An integer string is not canonical decimal."
 "envelope.credential" = "ProtocolIncompatibility Terminal. Credential missing or a credential coordinate is malformed."
 "refused_pending_bootstrap_artifact" = "PolicyRefusal Terminal. agent.register or session.open before the authenticated bootstrap artifact exists."
-"unmatched_by_ruling" = "UnavailableCapability Terminal. program.interface, deliberately given no arm."
+"unmatched_by_ruling" = "UnavailableCapability Terminal. Historical program.interface refusal; retained as a reserved compatibility reason."
 "envelope.idempotency_key" = "IdempotencyConflict Terminal. Idempotency key presence violates the idempotency rule or the key is malformed."
 "envelope.coordinate_mismatch" = "PolicyRefusal Terminal. A request tenant or agent coordinate differs from the authenticated principal."
 "envelope.header_principal" = "PolicyRefusal Terminal. A LayerX-Tenant, LayerX-Agent or Authorization header reached the daemon."
