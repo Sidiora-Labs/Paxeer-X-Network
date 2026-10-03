@@ -2088,3 +2088,8 @@ do = "Wire a genuine durable notification producer and explicit versioned push t
 title = "Generator isolation prevents blocking the admitted source projection"
 observed = "The Human API generator waited for the explorer target lock; its waiting process was stopped before compiler work, then the same bounded recipe compiled and rendered in an isolated target."
 rule = "Use separate standalone generator targets and record lock waits separately from actual compilation."
+
+[gotcha.630]
+title = "Standalone explorer readiness needs live source availability and real trust files"
+observed = "Retained completeness could survive a lost node; startup required an unavailable authority probe, and the fixture supplied unused head values instead of actual genesis/finality trust."
+rule = "Bind authenticated serving after genuine node handshake, preserve authority refusals, and clear completeness on source loss."

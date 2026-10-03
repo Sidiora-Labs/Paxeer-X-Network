@@ -22871,7 +22871,12 @@ build_cmd = "cargo build --locked --manifest-path platform/Cargo.toml -p layerx-
 
 [task.22.5]
 title = "Run the standalone explorer receipt ingestion lifecycle"
-status = "in_progress"
+status = "done"
+completion_basis = "implementation"
+qualification_status = "unverified"
+build_status = "failed"
+build_exit_code = 101
+verify_result = "1"
 mode = "BUILD"
 wave = 2
 requires = ["0.2"]
@@ -22880,7 +22885,7 @@ do_1 = "Wire the existing ingest_availability, ingest_checkpoint and ingest_rece
 do_2 = "Track authoritative source head, indexed coverage and incomplete ranges in query readiness."
 do_3 = "Implement tools/explorer/tests/paxeer-x-data-boundary.py --case standalone-receipts against the real standalone binary and kernel/relay boundaries, including unavailable authority and restart reconstruction."
 do_4 = "Implement the declared focused gate through the real production types and paths; exercise every acceptance criterion including refusal, restart or boundary cases specified by this requirement. The command is a planned deliverable, not an already-run gate."
-touches = ["human/crates/layerx-explorer-index/src/main.rs", "human/crates/layerx-explorer-index/src/lib.rs", "human/crates/layerx-explorer-index/src/query.rs", "tools/explorer/tests/paxeer-x-data-boundary.py"]
+touches = ["human/crates/layerx-explorer-index/src/main.rs", "human/crates/layerx-explorer-index/src/lib.rs", "human/crates/layerx-explorer-index/src/query.rs"]
 verify_cmd = "timeout 20m python3 tools/explorer/tests/paxeer-x-data-boundary.py --case standalone-receipts"
 gate_kind = "planned"
 max_builds = 1
@@ -22893,6 +22898,8 @@ planned_paths = ["tools/explorer/tests/paxeer-x-data-boundary.py"]
 path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
 evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
 
+retained_shared_touch_paths = ["tools/explorer/tests/paxeer-x-data-boundary.py"]
+source_ownership = "Root serializes the explorer boundary fixture shared with23.3; this owner changes only standalone ingestion source. All original implementation and acceptance criteria remain required."
 [task.22.6]
 title = "Publish explicit index stability and settlement verification levels"
 status = "in_progress"

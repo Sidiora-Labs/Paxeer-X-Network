@@ -20,6 +20,7 @@ pub struct Page<T> {
 /// receipt-verified coverage from batch one and every uncovered range.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Readiness {
+    pub source_available: bool,
     pub source_chain_sequence: u64,
     pub source_sealed_batch: u64,
     /// Highest batch `b` such that every batch in `1..=b` completed independent
@@ -95,10 +96,13 @@ impl Indexer {
             Some((first, _)) => first.saturating_sub(1),
         };
         Readiness {
+            source_available: self.source_available,
             source_chain_sequence: self.observed_head.chain_sequence,
             source_sealed_batch,
             indexed_through,
-            complete: source_sealed_batch > 0 && incomplete_ranges.is_empty(),
+            complete: self.source_available
+                && source_sealed_batch > 0
+                && incomplete_ranges.is_empty(),
             incomplete_ranges,
         }
     }
@@ -396,6 +400,7 @@ mod readiness_tests {
         assert_eq!(
             index.readiness(),
             Readiness {
+                source_available: true,
                 source_chain_sequence: 70,
                 source_sealed_batch: 7,
                 indexed_through: 0,

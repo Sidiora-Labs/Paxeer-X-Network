@@ -238,6 +238,7 @@ impl ProtocolProgramIngestor {
 /// Rebuildable, non-authoritative projection over proof-gated boundary data.
 pub struct Indexer {
     observed_head: Head,
+    source_available: bool,
     checkpoints: BTreeMap<[u8; 32], CheckpointRecord>,
     checkpoints_by_batch: BTreeMap<u64, [u8; 32]>,
     batches: BTreeMap<u64, BatchRecord>,
@@ -255,6 +256,7 @@ impl Indexer {
     pub const fn new(observed_head: Head) -> Self {
         Self {
             observed_head,
+            source_available: true,
             checkpoints: BTreeMap::new(),
             checkpoints_by_batch: BTreeMap::new(),
             batches: BTreeMap::new(),
@@ -280,7 +282,12 @@ impl Indexer {
             return Err(IndexError::HeadRegression);
         }
         self.observed_head = head;
+        self.source_available = true;
         Ok(())
+    }
+
+    pub fn source_unavailable(&mut self) {
+        self.source_available = false;
     }
 
     /// Verifies and indexes one checkpoint certificate from the node boundary.

@@ -597,8 +597,8 @@ SR_BINARY_ENV = (
     "LAYERX_EXPLORER_DEPLOYMENT_JOURNAL",
     "LAYERX_EXPLORER_VERIFIED_SOURCE_STORE",
     "LAYERX_EXPLORER_PROGRAM_PROBE_ID",
-    "LAYERX_EXPLORER_OBSERVED_SEALED_BATCH",
-    "LAYERX_EXPLORER_FINALISED_CHECKPOINT",
+    "LAYERX_EXPLORER_GENESIS_TRUST",
+    "LAYERX_EXPLORER_FINALITY_POLICY",
     "LAYERX_EXPLORER_READ_KEY_FILE",
     "LAYERX_EXPLORER_READ_ENDPOINT",
     "LAYERX_EXPLORER_READ_CA_DER",
@@ -781,16 +781,17 @@ def sr_readiness_consistent(doc):
         through = int(doc["indexed_through"])
         ranges = [(int(a), int(b)) for a, b in doc["incomplete_ranges"]]
         complete = doc["complete"]
+        source_available = doc["source_available"]
         int(doc["source_chain_sequence"])
     except (KeyError, TypeError, ValueError):
         return False
-    if not isinstance(complete, bool) or through > head:
+    if not isinstance(complete, bool) or not isinstance(source_available, bool) or through > head:
         return False
     if any(a > b or a < 1 or b > head for a, b in ranges):
         return False
     if through < head and (not ranges or ranges[0][0] != through + 1):
         return False
-    return complete == (head > 0 and not ranges and through == head)
+    return complete == (source_available and head > 0 and not ranges and through == head)
 
 
 def sr_activity(account):
@@ -902,6 +903,8 @@ def case_standalone_receipts(args=None):
         work,
         os.environ["LAYERX_EXPLORER_DEPLOYMENT_JOURNAL"],
         os.environ["LAYERX_EXPLORER_SEQUENCER_TRUST_HISTORY"],
+        os.environ["LAYERX_EXPLORER_GENESIS_TRUST"],
+        os.environ["LAYERX_EXPLORER_FINALITY_POLICY"],
         os.environ["LAYERX_EXPLORER_AUTHORITY_CA_DER"],
         os.environ["LAYERX_EXPLORER_READ_CA_DER"],
         os.environ["LAYERX_EXPLORER_READ_KEY_FILE"],

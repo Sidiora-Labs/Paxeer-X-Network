@@ -932,7 +932,8 @@ fn readiness_json(index: &Indexer) -> String {
         .collect::<Vec<_>>()
         .join(",");
     format!(
-        "{{\"source_chain_sequence\":{},\"source_sealed_batch\":{},\"indexed_through\":{},\"incomplete_ranges\":[{ranges}],\"complete\":{},\"verified_activity_rows\":{}}}",
+        "{{\"source_available\":{},\"source_chain_sequence\":{},\"source_sealed_batch\":{},\"indexed_through\":{},\"incomplete_ranges\":[{ranges}],\"complete\":{},\"verified_activity_rows\":{}}}",
+        readiness.source_available,
         readiness.source_chain_sequence,
         readiness.source_sealed_batch,
         readiness.indexed_through,
@@ -1066,6 +1067,10 @@ fn ingest_batch(
         .map_or(0, |head| head.header().batch_number())
         < batch
     {
+        let previous = boundary
+            .history
+            .verified_head()
+            .map_or(0, |head| head.header().batch_number());
         let id = next()?;
         boundary
             .client
@@ -1080,6 +1085,14 @@ fn ingest_batch(
                 Some(&ingestion.finality),
             )
             .map_err(|error| format!("sequencer history unavailable: {error:?}"))?;
+        if boundary
+            .history
+            .verified_head()
+            .map_or(0, |head| head.header().batch_number())
+            <= previous
+        {
+            return Err("sequencer history did not advance".to_owned());
+        }
     }
     if !lock(index).has_checkpoint(batch) {
         let id = next()?;
@@ -1255,6 +1268,7 @@ fn ingest_lifecycle(ingestion: &IngestionConfig, index: &Mutex<Indexer>, initial
             }
             Err(error) => {
                 eprintln!("explorer-ingest outcome=unavailable:{error}");
+                lock(index).source_unavailable();
                 boundary = None;
                 thread::sleep(delay);
                 delay = (delay * 2).min(RETRY_MAX);
@@ -1360,12 +1374,7 @@ fn serve(config: &Config, ingestion: IngestionConfig, clock: &dyn Clock) -> Resu
     if restored_through > head.sealed_batch {
         return Err("explorer cursor is ahead of the authoritative source head".to_owned());
     }
-    let mut index = Indexer::new(head);
-    let now = now_ms(clock)?;
-    refresh_program(config, &mut index, config.probe_program, now)
-        .map_err(|error| format!("explorer protocol probe failed: {error}"))?;
-    probe_name_reads(config, now)
-        .map_err(|error| format!("explorer name read probe failed: {error}"))?;
+    let index = Indexer::new(head);
     let listener = TcpListener::bind(&config.listen)
         .map_err(|error| format!("explorer program listener failed: {error}"))?;
     eprintln!("explorer-ingest restored_cursor={restored_through} rebuilding_from=1");
