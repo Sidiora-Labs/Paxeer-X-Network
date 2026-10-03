@@ -23,11 +23,34 @@ export const VERIFICATION_STATUS_LABELS: Record<PaxeerXVerificationStatus, strin
 interface Props {
   data: PaxeerXReceipt;
   isLoading?: boolean;
+  freshness?: {
+    state: 'current' | 'refreshing' | 'stale' | 'paused' | 'complete';
+    checkedAt?: number;
+    message?: string;
+  };
 }
 
-const PaxeerXReceiptDetails = ({ data, isLoading }: Props) => {
+const PaxeerXReceiptDetails = ({ data, isLoading, freshness }: Props) => {
   return (
-    <Flex flexDir="column" rowGap={{ base: 3, lg: 4 }} data-receipt-details>
+    <Flex flexDir="column" rowGap={{ base: 3, lg: 4 }} data-receipt-details
+      data-settlement-status={ data.status } data-verification-status={ data.verification_status }>
+      { freshness ? (
+        <Box role="status" aria-live="polite" data-receipt-freshness={ freshness.state } color="text.secondary" textStyle="sm">
+          <Text>{ freshness.message ?? {
+            current: 'Latest indexed response received. Checking for updates.',
+            refreshing: 'Checking for newer indexed evidence.',
+            stale: 'Evidence may be stale. Retaining the last accepted response.',
+            paused: 'Refresh paused while this page is hidden.',
+            complete: 'Final settlement and anchored verification reported. Automatic refresh stopped.',
+          }[freshness.state] }</Text>
+          { freshness.checkedAt !== undefined ? (
+            <Text>Last checked: <time dateTime={ new Date(freshness.checkedAt).toISOString() } data-receipt-checked-at>
+              { new Date(freshness.checkedAt).toISOString() }
+            </time></Text>
+          ) : null }
+          <Text>Settlement and verification are separate indexed evidence. Time since the last check does not advance either.</Text>
+        </Box>
+      ) : null }
       <Box
         data-receipt-details-card
         bg="bg.surface"
@@ -102,12 +125,12 @@ const PaxeerXReceiptDetails = ({ data, isLoading }: Props) => {
             hint="The transaction that emitted the receipt"
             isLoading={ isLoading }
           >
-            <TxEntity
+            { data.transaction_hash === null ? <Text color="text.secondary">—</Text> : <TxEntity
               hash={ data.transaction_hash }
               isLoading={ isLoading }
               truncation="none"
               noIcon
-            />
+            /> }
           </ScanKeyValue>
 
           <ScanKeyValue
@@ -115,12 +138,12 @@ const PaxeerXReceiptDetails = ({ data, isLoading }: Props) => {
             hint="The block that holds the emitting transaction"
             isLoading={ isLoading }
           >
-            <BlockEntity
+            { data.block_number === null ? <Text color="text.secondary">—</Text> : <BlockEntity
               number={ data.block_number }
               isLoading={ isLoading }
               truncation="none"
               noIcon
-            />
+            /> }
           </ScanKeyValue>
 
           <ScanKeyValue
@@ -128,11 +151,11 @@ const PaxeerXReceiptDetails = ({ data, isLoading }: Props) => {
             hint="The time the block holding the emitting transaction was produced"
             isLoading={ isLoading }
           >
-            <TimeWithTooltip
+            { data.timestamp === null ? <Text color="text.secondary">—</Text> : <TimeWithTooltip
               timestamp={ data.timestamp }
               isLoading={ isLoading }
               timeFormat="absolute"
-            />
+            /> }
           </ScanKeyValue>
         </DetailedInfo.Container>
       </Box>
