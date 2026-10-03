@@ -290,6 +290,33 @@ impl TrustedSources {
             })
     }
 
+    pub fn trigger_admission(&self, kind: EventKind) -> Result<(u64, usize), WebhookError> {
+        let source = self.sources.get(&kind).ok_or(WebhookError::InvalidRequest)?;
+        let response = self.client.request(&OutboundRequest {
+            endpoint: &source.endpoint, method: "GET", path: "/internal/v1/reader-readiness",
+            bearer: Some(source.token.as_str()), idempotency: None, headers: &[], body: &[],
+        }).map_err(|_| WebhookError::Unavailable)?;
+        if response.status != 200 || !response.content_type.starts_with("application/json")
+            || response.body.len() > 4096 {
+            return Err(WebhookError::Unavailable);
+        }
+        #[derive(Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct Admission {
+            schema: String, role: String, kind: String, ready: bool,
+            generation: u64, principals: usize, principal_digest: bool, fresh_for_ms: u64,
+        }
+        let value: Admission = serde_json::from_slice(&response.body)
+            .map_err(|_| WebhookError::Unavailable)?;
+        if value.schema != "layerx.event-admission.v1" || value.role != "source-reader"
+            || value.kind != kind.as_str() || !value.ready || value.generation == 0
+            || value.principals == 0 || value.principal_digest || value.fresh_for_ms != 10_000
+            || !self.verifier.ready() {
+            return Err(WebhookError::Unavailable);
+        }
+        Ok((value.generation, value.principals))
+    }
+
     /// # Errors
     /// Refuses invalid identifiers, unavailable sources, malformed events and unverified receipts.
     pub fn fetch(

@@ -2274,7 +2274,7 @@ class ProvisioningProcesses:
             log.close()
 
 
-def provisioning_worker(manifest, results, attachment):
+def provisioning_worker(manifest, results, attachment, readiness=False):
     import base64
     import select
     import signal
@@ -2429,6 +2429,8 @@ def provisioning_worker(manifest, results, attachment):
             if service['phase'] in ('human', 'webhook'):
                 processes.start(name)
         processes.wait(lambda: human.request('GET', '/livez')[0] == 200, 'genuine Human issuer listener')
+        if readiness:
+            producer_readiness_empty(fixture, processes, human, source_clients, check)
         auth_log = (work / 'authenticator.log').open('ab')
         authenticator = subprocess.Popen([fixture['artifacts']['node']['path'], '--experimental-strip-types',
             str(ROOT / 'human/apps/web/e2e/software-authenticator.ts'), 'https://localhost'],
@@ -2454,6 +2456,9 @@ def provisioning_worker(manifest, results, attachment):
         principal, tenant = who['sub'], who['tenant_id']
         check('authenticated Human principal includes exact tenant and session binding', who.get('active') is True
               and who.get('session_id') == session['session_id'] and bool(principal) and bool(tenant))
+        if readiness:
+            producer_readiness_checks(manifest, fixture, processes, work, principal, human, check)
+            return
         for kind in source_clients:
             bindings[kind] = processes.wait(lambda kind=kind: (v if identity_bound(v := binding(kind)) else None),
                                             kind + ' automatic authorized enrollment')
@@ -2670,7 +2675,280 @@ def event_principal_provisioning(manifest, results):
         receiver._terminate(receiver.holder)
 
 
-CASES = {'principal-credential-lifecycle': principal_credential_lifecycle,
+def producer_readiness_inputs(fixture):
+    configuration = fixture.get('producer_readiness')
+    if not isinstance(configuration, dict) or set(configuration) != {'clients', 'producer_ingress', 'operator_ingress'}:
+        raise Missing('producer readiness needs real client health endpoints and distinct producer/operator mTLS ingress identities')
+    clients = configuration['clients']
+    if set(clients) != {'human', 'registry', 'gateway'}:
+        raise Missing('all three real producer clients are required')
+    expected = {'human': ('layerx-human-components', '/readyz'),
+                'registry': ('layerx-program-registry', '/healthz'),
+                'gateway': ('layerx-gateway', '/readyz')}
+    for name, (binary, path) in expected.items():
+        item = clients[name]
+        if item['service'] not in fixture['services'] \
+                or fixture['services'][item['service']]['binary'] != binary or item['path'] != path:
+            raise Missing('readiness must observe the actual production client: ' + name)
+        ProvisioningHttp(item['endpoint'])
+    if clients['human']['endpoint'] != fixture['human']:
+        raise Missing('Human readiness must use the genuine Human service listener')
+    ingress = fixture['services']['webhook-ingress']['environment']['LAYERX_WEBHOOKS_LISTEN']
+    for role in ('producer_ingress', 'operator_ingress'):
+        endpoint = configuration[role]
+        parsed = urlsplit(endpoint['url'])
+        if parsed.hostname not in ('localhost', '127.0.0.1') or parsed.port != int(ingress.rsplit(':', 1)[1]):
+            raise Missing('trigger readiness must reach the owned real ingress process')
+        for key in ('client_cert_pem', 'client_key_pem', 'ca_pem'):
+            protected_input(endpoint[key], 'actual ' + role + ' TLS material')
+        if set(endpoint.get('header_files', {})) != {'Authorization'}:
+            raise Missing('trigger client requires its existing scoped bearer reference')
+        protected_input(endpoint['header_files']['Authorization'], 'trigger scoped bearer')
+    return configuration
+
+
+def producer_readiness_empty(fixture, processes, human, sources, check):
+    producer_readiness_inputs(fixture)
+    for kind, client in sources.items():
+        status, value = client.request('GET', '/internal/v1/producer-readiness')
+        check(kind + ' authenticated empty source refuses admission while live', status == 503
+              and value.get('role') == 'source-producer' and value.get('principals') == 0
+              and value.get('ready') is False and client.request('GET', '/livez')[0] == 200)
+    processes.wait(lambda: human.request('GET', '/readyz')[0] == 503, 'empty principal producer refusal', 15)
+    check('Human idle producer is live but unready before first principal', human.request('GET', '/livez')[0] == 200)
+
+
+def producer_readiness_checks(manifest, fixture, processes, work, principal, human, check):
+    import signal
+    configuration = producer_readiness_inputs(fixture)
+    clients = {name: ProvisioningHttp(item['endpoint']) for name, item in configuration['clients'].items()}
+    sources = {kind: ProvisioningHttp(fixture['sources'][kind]) for kind in KINDS}
+    ingress = ProvisioningHttp(configuration['producer_ingress'])
+    operator = ProvisioningHttp(configuration['operator_ingress'])
+    singular = {'journeys': 'journey', 'approvals': 'approval', 'payments': 'payment', 'programs': 'program'}
+    affected = {'journeys': 'human', 'approvals': 'human', 'payments': 'gateway', 'programs': 'registry'}
+
+    def ready(name, expected=200):
+        return clients[name].request('GET', configuration['clients'][name]['path'])[0] == expected
+
+    def admission(kind):
+        status, value = sources[kind].request('GET', '/internal/v1/producer-readiness')
+        return status == 200 and value.get('schema') == 'layerx.event-admission.v1' \
+            and value.get('role') == 'source-producer' and value.get('kind') == singular[kind] \
+            and value.get('ready') is True and value.get('principals', 0) > 0 \
+            and value.get('generation', 0) > 0 and value.get('fresh_for_ms') == 10000
+
+    def journals_empty():
+        return all((Path(fixture['services'][kind]['environment']['LAYERX_EVENTS_STATE_DIR']) / 'journal.log')
+                   .read_bytes() == b'' for kind in KINDS)
+
+    def restored(label):
+        for kind in KINDS:
+            processes.wait(lambda kind=kind: admission(kind), label + ' source admission ' + kind, 40)
+        for name in clients:
+            processes.wait(lambda name=name: ready(name), label + ' producer ready ' + name, 40)
+        check(label + ' readiness does not synthesize or require a canonical event', journals_empty())
+
+    restored('first-principal bootstrap')
+    check('readiness bootstrap uses a genuinely issued Human principal', bool(principal)
+          and human.request('GET', '/internal/v1/principal')[1].get('result', {}).get('sub') == principal)
+    for kind, client in sources.items():
+        status, _ = client.request('GET', '/internal/v1/producer-readiness',
+                                   headers={'Authorization': 'Bearer invalid-readiness-credential'})
+        check(kind + ' liveness cannot authenticate invalid producer credentials', status == 401
+              and client.request('GET', '/livez')[0] == 200)
+        reader = protected_input(fixture['services'][kind]['environment']['LAYERX_EVENTS_TOKEN_FILE'],
+                                 'existing source reader').read_text().strip()
+        check(kind + ' reader authority cannot admit a producer',
+              client.request('GET', '/internal/v1/producer-readiness',
+                             headers={'Authorization': 'Bearer ' + reader})[0] == 401)
+        try:
+            status, _ = client.request('GET', '/internal/v1/producer-readiness', client_identity=False)
+            refused = status in (401, 403)
+        except (OSError, ssl.SSLError):
+            refused = True
+        check(kind + ' producer admission requires a verified client certificate', refused)
+        path = '/internal/v1/readiness/' + singular[kind]
+        processes.wait(lambda: ingress.request('GET', path)[0] == 200, kind + ' real trigger admission')
+        status, value = ingress.request('GET', path)
+        check(kind + ' trigger admission is a separate authenticated contract', status == 200
+              and value.get('role') == 'webhook-trigger' and value.get('kind') == singular[kind]
+              and value.get('schema') == 'layerx.event-admission.v1' and value.get('ready') is True
+              and value.get('generation', 0) > 0 and value.get('principals', 0) > 0
+              and value.get('fresh_for_ms') == 10000)
+        check(kind + ' operator cannot use producer readiness', operator.request('GET', path)[0] == 403)
+        check(kind + ' trigger refuses invalid scoped bearer', ingress.request('GET', path,
+              headers={'Authorization': 'Bearer invalid-readiness-credential'})[0] == 401)
+        try:
+            status, _ = ingress.request('GET', path, client_identity=False)
+            refused = status in (401, 403)
+        except (OSError, ssl.SSLError):
+            refused = True
+        check(kind + ' trigger readiness retains mTLS producer authority', refused)
+    for kind in KINDS:
+        name = affected[kind]
+        child = processes.children[kind]
+        child.send_signal(signal.SIGSTOP)
+        started = time.monotonic()
+        try:
+            processes.wait(lambda: ready(name, 503), kind + ' hung source refusal', 15)
+            check(kind + ' stopped real source expires producer readiness within freshness bound',
+                  time.monotonic() - started < 15)
+            time.sleep(6)
+            check(kind + ' stalled operation cannot restore readiness from cached success', ready(name, 503))
+        finally:
+            child.send_signal(signal.SIGCONT)
+        restored(kind + ' resumed dependency')
+        old_pid = processes.children[kind].pid
+        processes.stop(kind)
+        processes.wait(lambda: ready(name, 503), kind + ' unavailable refusal', 15)
+        processes.start(kind)
+        restored(kind + ' source restart')
+        check(kind + ' source recovery uses a new real process', processes.children[kind].pid != old_pid)
+    processes.stop('webhook-ingress')
+    for name in clients:
+        processes.wait(lambda name=name: ready(name, 503), name + ' trigger unavailable', 15)
+    check('all live idle producers refuse unavailable ingress', human.request('GET', '/livez')[0] == 200
+          and clients['gateway'].request('GET', '/livez')[0] == 200)
+    processes.start('webhook-ingress')
+    restored('trigger restored')
+    invalid = secret(work, 'invalid-producer-readiness-token', 'invalid-readiness-credential')
+    suffixes = ('URL', 'CA_DER', 'TOKEN_FILE', 'CLIENT_IDENTITY_PKCS12', 'CLIENT_IDENTITY_PASSWORD_FILE', 'COOKIE_FILE')
+    for name, item in configuration['clients'].items():
+        service = fixture['services'][item['service']]
+        original = dict(service['environment'])
+        source_kind = {'human': 'JOURNEY', 'registry': 'PROGRAM', 'gateway': 'PAYMENT'}[name]
+        for prefix in ('LAYERX_EVENTS_' + source_kind, 'LAYERX_WEBHOOKS'):
+            processes.stop(item['service'])
+            service['environment'] = dict(original, **{prefix + '_UPSTREAM_TOKEN_FILE': invalid})
+            processes.start(item['service'])
+            processes.wait(lambda: ready(name, 503), name + ' invalid ' + prefix, 15)
+            check(name + ' rejects loaded but unauthenticated ' + prefix + ' credentials', ready(name, 503))
+            processes.stop(item['service'])
+            service['environment'] = dict(original)
+            processes.start(item['service'])
+            restored(name + ' valid ' + prefix + ' credentials restored')
+        processes.stop(item['service'])
+        missing = dict(original)
+        missing.pop('LAYERX_EVENTS_' + source_kind + '_UPSTREAM_TOKEN_FILE')
+        service['environment'] = missing
+        processes.start(item['service'])
+        child = processes.children[item['service']]
+        child.wait(timeout=15)
+        check(name + ' partial producer configuration refuses startup', child.returncode != 0)
+        processes.children.pop(item['service'])
+        if name in ('human', 'registry'):
+            groups = ('LAYERX_EVENTS_JOURNEY', 'LAYERX_EVENTS_APPROVAL', 'LAYERX_WEBHOOKS') if name == 'human' \
+                else ('LAYERX_EVENTS_PROGRAM', 'LAYERX_WEBHOOKS')
+            service['environment'] = {key: value for key, value in original.items()
+                if not any(key == prefix + '_UPSTREAM_' + suffix for prefix in groups for suffix in suffixes)}
+            processes.start(item['service'])
+            child = processes.children[item['service']]
+            child.wait(timeout=15)
+            check(name + ' mandatory producer group cannot be absent', child.returncode != 0)
+            processes.children.pop(item['service'])
+        if name == 'gateway':
+            absent = {key: value for key, value in original.items()
+                      if not any(key == prefix + '_UPSTREAM_' + suffix
+                                 for prefix in ('LAYERX_EVENTS_PAYMENT', 'LAYERX_WEBHOOKS') for suffix in suffixes)}
+            service['environment'] = absent
+            processes.start(item['service'])
+            processes.wait(lambda: ready(name), 'gateway whole producer group absent', 40)
+            check('gateway producer is optional only with the complete group absent', ready(name))
+            processes.stop(item['service'])
+            absent['LAYERX_WEBHOOKS_UPSTREAM_COOKIE_FILE'] = invalid
+            service['environment'] = absent
+            processes.start(item['service'])
+            child = processes.children[item['service']]
+            child.wait(timeout=15)
+            check('gateway credential-only partial group refuses startup', child.returncode != 0)
+            processes.children.pop(item['service'])
+        service['environment'] = original
+        processes.start(item['service'])
+        restored(name + ' producer restart')
+    check('all readiness failures and recoveries leave canonical journals empty', journals_empty())
+    (work / 'producer-readiness.json').write_text(json.dumps({
+        'source_revision': manifest['source']['revision'], 'candidate_manifest_sha256': MANIFEST_DIGEST,
+        'real_processes': sorted(processes.children), 'canonical_events_created': 0,
+        'deployed_qualification': False}, sort_keys=True))
+
+
+def producer_readiness(manifest, results):
+    fixture = provisioning_inputs(manifest)
+    producer_readiness_inputs(fixture)
+    sys.path.insert(0, str(ROOT / 'tools/qualification/paxeer-x/fixtures'))
+    worker = os.environ.get('PAXEER_X_EVENT_PROVISIONING_WORKER')
+    if worker:
+        provisioning_worker(manifest, results, worker, readiness=True)
+        return
+    from hosted_delivery_fixture import CaMaterial
+    from event_receiver_fixture import EventReceiverFixture
+    evidence = os.environ.get('PAXEER_X_EVIDENCE_DIR')
+    if not evidence:
+        raise Missing('PAXEER_X_EVIDENCE_DIR is required')
+    work = Path(tempfile.mkdtemp(prefix='producer-readiness-', dir=private_directory(Path(evidence))))
+    work.chmod(0o700)
+    print('evidence=' + str(work))
+    fly = tomllib.loads((ROOT / 'platform/hosted/internal/fly.toml').read_text())
+    expected = {'kms', *KINDS}
+    provisioning_check(results, 'all five internal groups remain private-only', set(fly['processes']) == expected
+                       and not fly.get('services') and not fly.get('http_service'))
+    mounts = fly.get('mounts', [])
+    provisioning_check(results, 'all five deployment groups retain independent persistent volumes', len(mounts) == 5
+                       and {tuple(row['processes']) for row in mounts} == {(name,) for name in expected}
+                       and len({row['source'] for row in mounts}) == 5)
+    ca = CaMaterial.__new__(CaMaterial)
+    ca.directory = Path(fixture['ca']['directory'])
+    ca.ca_pem = protected_input(fixture['ca']['certificate'], 'genuine fixture CA certificate')
+    ca.ca_der = protected_input(fixture['ca']['der'], 'genuine fixture CA DER')
+    ca._key = protected_input(fixture['ca']['key_file'], 'protected fixture CA signing authority')
+    ca._serial = int.from_bytes(os.urandom(12), 'big')
+    receiver = EventReceiverFixture(work, ca, address=fixture['receiver_address'])
+    try:
+        receiver._materials()
+        receiver._start_namespace()
+        descriptor = {'parent_pid': os.getpid(), 'candidate_manifest_sha256': MANIFEST_DIGEST,
+                      'network_namespace': os.stat(f'/proc/{receiver.holder.pid}/ns/net').st_ino,
+                      'mount_namespace': os.stat(f'/proc/{receiver.holder.pid}/ns/mnt').st_ino,
+                      'work': str(work), 'receiver_root': str(receiver.root), 'receiver_endpoint': receiver.endpoint,
+                      'receiver_address': receiver.address, 'receiver_port': receiver.port,
+                      'receiver_cert': str(receiver.materials['server_cert']), 'receiver_key': str(receiver.materials['server_key'])}
+        attachment = work / 'worker.json'
+        attachment.write_text(json.dumps(descriptor))
+        attachment.chmod(0o600)
+        command = receiver.ns_command([sys.executable, str(Path(__file__).resolve()), '--case', 'producer-readiness',
+                                       '--candidate-manifest', str(MANIFEST_PATH)])
+        environment = {key: value for key, value in os.environ.items()
+                       if key.lower() not in ('http_proxy', 'https_proxy', 'all_proxy', 'no_proxy')}
+        environment.update(PAXEER_X_EVENT_PROVISIONING_WORKER=str(attachment), NO_PROXY='*')
+        child = subprocess.Popen(command, env=environment, stdin=subprocess.DEVNULL,
+                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        try:
+            output, errors = child.communicate(timeout=1100)
+        except subprocess.TimeoutExpired:
+            child.terminate()
+            output, errors = child.communicate(timeout=30)
+        (work / 'worker.log').write_text(output + errors)
+        for line in output.splitlines():
+            if line.startswith(('PASS ', 'FAIL ', 'MISSING ')):
+                print(line, flush=True)
+                if line.startswith('PASS '):
+                    results.passes += 1
+                else:
+                    results.failures += 1
+        result = {'revision': manifest['source']['revision'], 'command':
+                  'timeout 20m python3 tools/qualification/paxeer-x/event-delivery-contract.py --case producer-readiness --candidate-manifest "$PAXEER_X_CANDIDATE_MANIFEST"',
+                  'exit_code': child.returncode, 'log_path': str(work / 'worker.log')}
+        (work / 'result.json').write_text(json.dumps(result, sort_keys=True))
+        provisioning_check(results, 'complete real provisioning worker executed', child.returncode == 0
+                           and (work / 'producer-readiness.json').is_file())
+    finally:
+        receiver.stop()
+        receiver._terminate(receiver.holder)
+
+
+CASES = {'producer-readiness': producer_readiness,
+         'principal-credential-lifecycle': principal_credential_lifecycle,
          'principal-delivery-fairness': principal_delivery_fairness,
          'webhook-ingress-roles': webhook_ingress_roles,
          'event-principal-provisioning': event_principal_provisioning}

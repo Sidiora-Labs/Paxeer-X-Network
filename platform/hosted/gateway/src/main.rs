@@ -3749,6 +3749,7 @@ fn run() -> Result<(), String> {
         layerx_platform_internal::producer::Client::from_environment_if_configured(&["payment"])?;
     let config = Arc::new(config(producer.is_some())?);
     if let Some(producer) = producer {
+        config.store.producer_health.require_admission();
         producer.spawn(
             Arc::downgrade(&config.store),
             Arc::clone(&config.store.producer_health),

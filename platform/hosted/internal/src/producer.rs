@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex, Weak};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::{mpsc, Arc, Mutex, Weak};
 use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
@@ -11,6 +11,8 @@ use crate::tls::Upstream;
 
 pub const MAX_PENDING: usize = 1024;
 pub const MAX_OBSERVATION_BYTES: usize = 16 * 1024;
+pub const ADMISSION_FRESHNESS: Duration = Duration::from_secs(10);
+const ADMISSION_DEADLINE: Duration = Duration::from_secs(5);
 const UNAVAILABLE_AFTER: Duration = Duration::from_secs(30);
 const REQUIRED_UPSTREAM_SUFFIXES: [&str; 5] = [
     "UPSTREAM_URL",
@@ -471,12 +473,24 @@ impl QueueState {
 
 #[derive(Default)]
 pub struct Health {
+    admission_required: AtomicBool,
+    admitted_at: Mutex<Option<Instant>>,
     failed_since: Mutex<Option<Instant>>,
     failures: AtomicU64,
     overflow: AtomicU64,
 }
 
 impl Health {
+    pub fn require_admission(&self) {
+        self.admission_required.store(true, Ordering::Release);
+    }
+
+    fn admission(&self, checked_at: Option<Instant>) {
+        if let Ok(mut admitted) = self.admitted_at.lock() {
+            *admitted = checked_at;
+        }
+    }
+
     pub fn overflow(&self) {
         self.overflow.fetch_add(1, Ordering::Relaxed);
         self.failed();
@@ -498,7 +512,10 @@ impl Health {
 
     #[must_use]
     pub fn ready(&self) -> bool {
-        self.failed_since
+        (!self.admission_required.load(Ordering::Acquire)
+            || self.admitted_at.lock().is_ok_and(|checked| {
+                checked.is_some_and(|at| at.elapsed() < ADMISSION_FRESHNESS)
+            })) && self.failed_since
             .lock()
             .is_ok_and(|since| since.is_none_or(|since| since.elapsed() < UNAVAILABLE_AFTER))
     }
@@ -529,10 +546,32 @@ struct EnrollmentStatus {
     bound: bool,
 }
 
-pub struct Client {
-    sources: BTreeMap<String, Upstream>,
-    webhooks: Upstream,
+struct AdmissionProbe {
+    started: Instant,
+    result: mpsc::Receiver<Result<(), String>>,
+    worker: std::thread::JoinHandle<()>,
 }
+
+#[derive(Clone)]
+pub struct Client {
+    sources: BTreeMap<String, Arc<Upstream>>,
+    webhooks: Arc<Upstream>,
+    probe: Arc<Mutex<Option<AdmissionProbe>>>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Admission {
+    schema: String,
+    role: String,
+    kind: String,
+    ready: bool,
+    generation: u64,
+    principals: usize,
+    principal_digest: bool,
+    fresh_for_ms: u64,
+}
+
 
 impl Client {
     /// # Errors
@@ -549,7 +588,11 @@ impl Client {
         {
             return Err("producer requires mTLS and bearer credentials".to_owned());
         }
-        Ok(Self { sources, webhooks })
+        Ok(Self {
+            sources: sources.into_iter().map(|(kind, source)| (kind, Arc::new(source))).collect(),
+            webhooks: Arc::new(webhooks),
+            probe: Arc::new(Mutex::new(None)),
+        })
     }
 
     /// # Errors
@@ -686,18 +729,77 @@ impl Client {
         Ok((enrollment.generation, enrollment.bound))
     }
 
+    fn admission_check(&self) -> Result<(), String> {
+        for (kind, source) in &self.sources {
+            for (upstream, path, role) in [
+                (source, "/internal/v1/producer-readiness".to_owned(), "source-producer"),
+                (&self.webhooks, format!("/internal/v1/readiness/{kind}"), "webhook-trigger"),
+            ] {
+                let response = upstream.get(&path).map_err(|_| format!("{role} unavailable"))?;
+                if response.status != 200 || !response.content_type.starts_with("application/json")
+                    || response.body.len() > 4096 {
+                    return Err(format!("{role} refused"));
+                }
+                let admission: Admission = serde_json::from_slice(&response.body)
+                    .map_err(|_| format!("{role} malformed"))?;
+                if admission.schema != "layerx.event-admission.v1" || admission.role != role
+                    || admission.kind != *kind || !admission.ready || admission.principals == 0
+                    || admission.generation == 0 || admission.fresh_for_ms != 10_000
+                    || (role == "source-producer" && matches!(kind.as_str(), "payment" | "program")
+                        && !admission.principal_digest) {
+                    return Err(format!("{role} admission mismatch"));
+                }
+            }
+        }
+        Ok(())
+    }
+
+    pub fn poll_admission(&self, health: &Health) -> Result<(), String> {
+        health.require_admission();
+        let result = (|| {
+            let mut slot = self.probe.lock().map_err(|_| "admission worker unavailable")?;
+            if slot.is_none() {
+                let client = self.clone();
+                let (sender, result) = mpsc::sync_channel(1);
+                let started = Instant::now();
+                let worker = std::thread::Builder::new().name("event-admission-check".to_owned())
+                    .spawn(move || { let _ = sender.send(client.admission_check()); })
+                    .map_err(|_| "admission worker refused")?;
+                *slot = Some(AdmissionProbe { started, result, worker });
+            }
+            let probe = slot.as_ref().ok_or("admission worker missing")?;
+            let remaining = ADMISSION_DEADLINE.saturating_sub(probe.started.elapsed());
+            match probe.result.recv_timeout(remaining) {
+                Ok(result) => {
+                    let probe = slot.take().ok_or("admission worker missing")?;
+                    let timely = probe.started.elapsed() < ADMISSION_DEADLINE;
+                    probe.worker.join().map_err(|_| "admission worker failed")?;
+                    result?;
+                    if !timely { return Err("admission deadline exceeded".to_owned()); }
+                    Ok(probe.started)
+                }
+                Err(mpsc::RecvTimeoutError::Timeout) => Err("admission deadline exceeded".to_owned()),
+                Err(mpsc::RecvTimeoutError::Disconnected) => {
+                    if let Some(probe) = slot.take() { let _ = probe.worker.join(); }
+                    Err("admission worker failed".to_owned())
+                }
+            }
+        })();
+        health.admission(result.as_ref().ok().copied());
+        result.map(|_| ())
+    }
+
     /// # Errors
     /// Refuses unavailable, corrupt or out-of-order durable delivery state.
     pub fn step<S: Outbox>(&self, store: &S, health: &Health) -> Result<(), String> {
+        let admission = self.poll_admission(health);
+        let delivery = self.delivery_step(store, health);
+        admission.and(delivery)
+    }
+
+    fn delivery_step<S: Outbox>(&self, store: &S, health: &Health) -> Result<(), String> {
         let result = store.select().and_then(|pending| {
-            let Some(pending) = pending else {
-                for source in self.sources.values() {
-                    if !source.get("/livez").is_ok_and(|response| response.status == 200) {
-                        return Err("event source unreachable".to_owned());
-                    }
-                }
-                return Ok(());
-            };
+            let Some(pending) = pending else { return Ok(()); };
             let schedule = store.scheduling(&pending.observation.id)?;
             let enrollment = schedule.as_ref().map(|_| self.enrollment(&pending));
             if let Some(schedule) = schedule.as_ref().filter(|state| state.redelivery_required) {
@@ -735,11 +837,21 @@ impl Client {
     /// # Errors
     /// Returns failure to start the delivery worker.
     pub fn spawn<S: Outbox>(self, store: Weak<S>, health: Arc<Health>) -> Result<(), String> {
+        health.require_admission();
+        let admission_client = self.clone();
+        let admission_store = store.clone();
+        let admission_health = Arc::clone(&health);
+        std::thread::Builder::new().name("event-admission".to_owned()).spawn(move || {
+            while admission_store.upgrade().is_some() {
+                let _ = admission_client.poll_admission(&admission_health);
+                std::thread::sleep(Duration::from_secs(1));
+            }
+        }).map_err(|error| error.to_string())?;
         std::thread::Builder::new()
             .name("event-producer".to_owned())
             .spawn(move || {
                 while let Some(store) = store.upgrade() {
-                    let _ = self.step(store.as_ref(), &health);
+                    let _ = self.delivery_step(store.as_ref(), &health);
                     drop(store);
                     std::thread::sleep(Duration::from_secs(1));
                 }
@@ -844,6 +956,30 @@ mod tests {
             }),
             Err("LAYERX_EVENTS_PROGRAM_UPSTREAM_URL is required".to_owned())
         );
+    }
+
+    #[test]
+    fn attached_producer_requires_fresh_admission_independently_of_delivery() {
+        let health = Health::default();
+        health.require_admission();
+        assert!(!health.ready());
+        health.recovered();
+        assert!(!health.ready());
+        health.admission(Some(Instant::now()));
+        assert!(health.ready());
+        health.admission(None);
+        assert!(!health.ready());
+        health.recovered();
+        assert!(!health.ready());
+        health.admission(Some(Instant::now().checked_sub(ADMISSION_FRESHNESS)
+            .unwrap_or_else(|| panic!("readiness clock underflow"))));
+        assert!(!health.ready());
+        health.admission(Some(Instant::now()));
+        assert!(health.ready());
+        *health.failed_since.lock().unwrap_or_else(|error| panic!("{error}")) = Some(
+            Instant::now().checked_sub(UNAVAILABLE_AFTER)
+                .unwrap_or_else(|| panic!("readiness clock underflow")));
+        assert!(!health.ready());
     }
 
     #[test]

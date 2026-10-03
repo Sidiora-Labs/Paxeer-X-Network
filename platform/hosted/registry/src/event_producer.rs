@@ -226,9 +226,10 @@ impl ProgramOutbox {
     /// # Errors
     /// Refuses incomplete producer credentials or an unavailable journal.
     pub fn start(self: &Arc<Self>) -> Result<(), String> {
+        let producer = Client::from_environment(&["program"])?;
+        self.health.require_admission();
         self.with_journal(|_, _, _, _| Ok(()))?;
-        Client::from_environment(&["program"])?
-            .spawn(Arc::downgrade(self), Arc::clone(&self.health))
+        producer.spawn(Arc::downgrade(self), Arc::clone(&self.health))
     }
 }
 

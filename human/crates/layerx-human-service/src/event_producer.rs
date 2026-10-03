@@ -265,14 +265,15 @@ impl HumanOutbox {
             "pending":state.pending(), "pending_count":state.pending_count()}))
     }
     pub(crate) fn start(store: Arc<Mutex<PrincipalStore>>) -> Result<Arc<Self>, String> {
+        let producer = layerx_platform_internal::producer::Client::from_environment(&["journey", "approval"])?;
+        health().require_admission();
         let outbox = Arc::new(Self {
             store,
             health: health(),
         });
         start_status_listener(&outbox)?;
         start_enrollment_reconciler(&outbox)?;
-        layerx_platform_internal::producer::Client::from_environment(&["journey", "approval"])?
-            .spawn(Arc::downgrade(&outbox), health())?;
+        producer.spawn(Arc::downgrade(&outbox), health())?;
         Ok(outbox)
     }
 }

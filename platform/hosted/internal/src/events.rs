@@ -1147,6 +1147,29 @@ impl Service {
         }
         let enrolled = self.enrollments.current();
         let last_refusal = self.enrollments.last_refusal();
+        if request.method == "GET" && matches!(request.path.as_str(),
+            "/internal/v1/producer-readiness" | "/internal/v1/reader-readiness") {
+            if !request.peer_verified || !request.body.is_empty() {
+                return refusal(401, "unauthorized", None);
+            }
+            let producer = request.path == "/internal/v1/producer-readiness";
+            let credential = self.producers.iter()
+                .find(|credential| request.bearer_matches(&credential.token));
+            if (producer && credential.is_none()) || (!producer && !request.bearer_matches(&self.token)) {
+                return refusal(401, "unauthorized", None);
+            }
+            let ready = enrolled.adopted && !enrolled.credentials.is_empty()
+                && enrolled.credentials.keys().all(|principal| self.bind(&enrolled, principal).is_ok())
+                && self.store.lock().is_ok_and(|store| store.journal.probe_writable().is_ok());
+            return json(if ready { 200 } else { 503 }, &serde_json::json!({
+                "schema": "layerx.event-admission.v1",
+                "role": if producer { "source-producer" } else { "source-reader" },
+                "kind": self.kind.singular(), "ready": ready,
+                "generation": enrolled.number, "principals": enrolled.credentials.len(),
+                "principal_digest": credential.is_some_and(|value| value.allow_principal_digest),
+                "fresh_for_ms": 10_000
+            }));
+        }
         if request.method == "GET" {
             if let Some(principal) = request.path.strip_prefix("/internal/v1/principals/")
                 .and_then(|path| path.strip_suffix("/issued-enrollment"))

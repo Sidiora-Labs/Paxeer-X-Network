@@ -453,6 +453,27 @@ fn internal_route(
 ) -> Reply {
     let segments = request.segments();
     match (request.method.as_str(), segments.as_slice()) {
+        ("GET", ["internal", "v1", "readiness", kind]) => {
+            if peer != Some(IngressRole::Producer) {
+                return Reply::refusal(403, "producer_role_required", None);
+            }
+            if !source_trigger.authorizes(request.header("authorization")) {
+                return Reply::refusal(401, "source_authentication_required", None);
+            }
+            if !request.body.is_empty() {
+                return Reply::refusal(400, "body_not_allowed", None);
+            }
+            let admission = EventKind::parse(kind).and_then(|kind| sources.trigger_admission(kind));
+            match admission {
+                Ok((generation, principals)) if config.service.ready() => encoded(200, &serde_json::json!({
+                    "schema": "layerx.event-admission.v1", "role": "webhook-trigger",
+                    "kind": kind, "ready": true, "generation": generation, "principals": principals,
+                    "principal_digest": false, "fresh_for_ms": 10_000
+                })),
+                Ok(_) => Reply::refusal(503, "delivery_state_unavailable", None),
+                Err(error) => refusal(&error),
+            }
+        }
         ("POST", ["internal", "v1", "events", kind, source_event]) => {
             if peer != Some(IngressRole::Producer) {
                 return Reply::refusal(403, "producer_role_required", None);
