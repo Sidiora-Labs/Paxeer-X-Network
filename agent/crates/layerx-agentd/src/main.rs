@@ -681,6 +681,16 @@ fn connect_human_node(node_path: PathBuf, node_limits: Limits) -> Result<Client,
     Ok(node)
 }
 
+fn configured_registry_source() -> Result<Option<layerx_agentd::registry_source::RegistrySourceProvider>, String> {
+    let path = match env::var_os("LAYERX_AGENT_REGISTRY_SOURCE_CONFIG") {
+        None => return Ok(None),
+        Some(path) => PathBuf::from(path),
+    };
+    if !path.is_absolute() { return Err("LAYERX_AGENT_REGISTRY_SOURCE_CONFIG must be an absolute protected file".to_owned()); }
+    layerx_agentd::registry_source::RegistrySourceProvider::from_protected_config(&path)
+        .map(Some).map_err(|error| format!("registry source provider configuration refused: {error:?}"))
+}
+
 fn connect_human_authority(
     deadline: Duration,
     peers: &BTreeMap<u32, (String, String)>,
@@ -856,6 +866,10 @@ fn start_shared_owner(
     )
     .map_err(|error| format!("human owner is invalid: {error:?}"))?;
     unified.programs = programs;
+    if let Some(provider) = configured_registry_source()? {
+        unified.attach_registry_source(provider)
+            .map_err(|error| format!("registry source provider attachment refused: {error:?}"))?;
+    }
     unified.mcp_enrolment = mcp_republish;
     let owner = SharedAgentOwner::new(unified);
     let server = HumanUnixServer::bind(

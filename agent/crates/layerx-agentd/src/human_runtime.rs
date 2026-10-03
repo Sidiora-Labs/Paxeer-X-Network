@@ -1441,6 +1441,7 @@ pub struct UnifiedAgentOwner<A> {
     peers: Vec<HumanPeer>,
 
     pub programs: Option<crate::ops::program::ProgramOperations>,
+    registry_source: Option<crate::registry_source::RegistrySourceProvider>,
     pub approvals: Arc<ApprovalRegistry>,
     pub approval_queue: Arc<ApprovalSubmissionQueue>,
     pub approval_expiry: Arc<ApprovalExpiry>,
@@ -2486,6 +2487,39 @@ impl<A: HumanAuthorityBoundary> UnifiedAgentOwner<A> {
         out.finish()
     }
 
+    pub fn attach_registry_source(
+        &mut self,
+        provider: crate::registry_source::RegistrySourceProvider,
+    ) -> Result<(), HumanOperationError> {
+        if self.registry_source.is_some() { return Err(HumanOperationError::Refused); }
+        self.registry_source = Some(provider);
+        Ok(())
+    }
+
+    pub(crate) fn rpc_program_interface_with_source(
+        &mut self,
+        context: &crate::agent_rpc_peer::RpcOwnerContext<'_>,
+        program: [u8; 32],
+    ) -> Result<crate::registry_source::ProgramInterfaceWithSource, HumanOperationError> {
+        let program = layerx_programs::ProgramId::new(program).map_err(|_| HumanOperationError::Refused)?;
+        let provider = self.registry_source.as_ref().ok_or(HumanOperationError::Unavailable)?;
+        let mut operations = self.operations.lock().map_err(|_| HumanOperationError::Unavailable)?;
+        let programs = self.programs.as_mut().ok_or(HumanOperationError::Unavailable)?;
+        let (now, bound) = current_program_bundle(programs, &mut operations.node, context, program)?;
+        let interface = programs.interface(program, now, &bound).map_err(program_operation_error)?;
+        let source = provider.read(&interface, now).map_err(|error| match error {
+            crate::registry_source::RegistrySourceError::Unavailable => HumanOperationError::Unavailable,
+            crate::registry_source::RegistrySourceError::Binding => HumanOperationError::Typed(crate::human::HumanRefusal::StalePinnedHead),
+            _ => HumanOperationError::Refused,
+        })?;
+        let (after, current) = current_program_bundle(programs, &mut operations.node, context, program)?;
+        let current = programs.interface(program, after, &current).map_err(program_operation_error)?;
+        if current != interface || after > source.valid_through() {
+            return Err(HumanOperationError::Typed(crate::human::HumanRefusal::StalePinnedHead));
+        }
+        Ok(crate::registry_source::ProgramInterfaceWithSource { interface, source })
+    }
+
     fn settle_budget_write(
         &self,
         tenant: &TenantId,
@@ -2784,6 +2818,7 @@ impl<A: HumanAuthorityBoundary> UnifiedAgentOwner<A> {
             peers: restore_peers,
 
             programs: None,
+            registry_source: None,
             approvals,
             approval_queue,
             approval_expiry: Arc::new(ApprovalExpiry::from_shared_store(shared_store)),

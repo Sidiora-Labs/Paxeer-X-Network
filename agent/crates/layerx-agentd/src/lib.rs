@@ -35,6 +35,7 @@ pub mod prepare;
 pub mod protocol_evidence;
 pub mod read;
 pub mod receipt;
+pub mod registry_source;
 pub mod session;
 pub mod session_control;
 pub mod session_keys;
