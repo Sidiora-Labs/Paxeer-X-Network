@@ -55,6 +55,9 @@ export class NonceStore {
       if (reservation.rows[0] && reservation.rows[0].action_id !== ownerActionId) {
         throw new Error('wallet nonce is reserved by an action awaiting custody authorization or broadcast');
       }
+      const custody = await client.query<{ id:string }>(
+        "select id from wallet_custody_submissions where address=$1 and chain_id=$2 and state='pending' limit 1",[key,this.opts.chainId]);
+      if(custody.rows[0]) throw new Error('wallet nonce is reserved by an unresolved custody submission');
       const lease = new Lease(client, key, rows[0], this.opts.pendingCount);
       const result = await fn(lease);
       await client.query('COMMIT');

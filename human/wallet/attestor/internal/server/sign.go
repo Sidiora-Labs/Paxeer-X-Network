@@ -2,6 +2,8 @@ package server
 
 import (
 	"context"
+    "bytes"
+    gethcrypto "github.com/ethereum/go-ethereum/crypto"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -25,7 +27,8 @@ import (
 )
 
 const (
-	KindEVMTransaction  = "evm_tx"
+	KindCustody = "custody"
+    KindEVMTransaction  = "evm_tx"
 	KindTypedData       = "eip712"
 	KindPersonalMessage = "personal_message"
 	KindEthSignDigest   = "eth_sign_digest"
@@ -41,6 +44,7 @@ const (
 )
 
 var kindCurves = map[string]dealer.Curve{
+    KindCustody: dealer.Secp256k1,
 	KindEVMTransaction:  dealer.Secp256k1,
 	KindTypedData:       dealer.Secp256k1,
 	KindPersonalMessage: dealer.Secp256k1,
@@ -52,7 +56,7 @@ var kindCurves = map[string]dealer.Curve{
 }
 
 func SignKinds() []string {
-	return []string{KindEVMTransaction, KindTypedData, KindPersonalMessage, KindEthSignDigest, KindLXActivity, KindLXBind, KindLXGrant, KindLXSendAuth}
+	return []string{KindCustody, KindEVMTransaction, KindTypedData, KindPersonalMessage, KindEthSignDigest, KindLXActivity, KindLXBind, KindLXGrant, KindLXSendAuth}
 }
 
 type GrantJSON struct {
@@ -70,7 +74,10 @@ type GrantJSON struct {
 	RevocationSequence uint64 `json:"revocation_sequence"`
 }
 
+type CustodyProofJSON struct { Bytes string `json:"bytes"`; Signature string `json:"signature"` }
+
 type SignRequest struct {
+    Custody *CustodyProofJSON `json:"custody,omitempty"`
 	Origin *agent.OriginalRequest `json:"origin,omitempty"`
 	SessionID    string            `json:"session_id"`
 	KeyID        string            `json:"key_id"`
@@ -207,7 +214,7 @@ func parseAddress(field, s string) (common.Address, *Error) {
 }
 
 func (c *ConstructionJSON) claim(digest common.Hash) (any, string, *Error) {
-	chainID, e := parseUint256("construction.chainId", c.ChainID)
+	chainID, e := parseConstructionUint("construction.chainId", c.ChainID)
 	if e != nil {
 		return nil, "", e
 	}
@@ -220,16 +227,16 @@ func (c *ConstructionJSON) claim(digest common.Hash) (any, string, *Error) {
 		if e != nil {
 			return nil, "", e
 		}
-		nonce, e := parseUint256("construction.nonce", c.Nonce)
+		nonce, e := parseConstructionUint("construction.nonce", c.Nonce)
 		if e != nil {
 			return nil, "", e
 		}
-		if !nonce.IsUint64() {
+		if !nonce.IsUint64() || nonce.Uint64()==^uint64(0) {
 			return nil, "", newError(CodeSessionBadRequest, "construction.nonce must fit in 64 bits")
 		}
 		return &evm.AuthorizationClaim{ChainID: chainID, Address: address, Nonce: nonce.Uint64(), ClaimedDigest: digest}, policy.KindAuthorization, nil
 	case policy.KindSponsoredBatch:
-		if c.Address != "" || c.Quote == nil {
+		if c.Address != "" || c.Quote == nil || len(c.Calls)==0 || len(c.Calls)>128 {
 			return nil, "", newError(CodeSessionBadRequest, "a sponsored batch construction carries account, nonce, calls and quote")
 		}
 		batch := evm.SponsoredBatch{ChainID: chainID}
@@ -237,7 +244,7 @@ func (c *ConstructionJSON) claim(digest common.Hash) (any, string, *Error) {
 		if batch.Account, e = parseAddress("construction.account", c.Account); e != nil {
 			return nil, "", e
 		}
-		if batch.Nonce, e = parseUint256("construction.nonce", c.Nonce); e != nil {
+		if batch.Nonce, e = parseConstructionUint("construction.nonce", c.Nonce); e != nil {
 			return nil, "", e
 		}
 		for i, call := range c.Calls {
@@ -245,7 +252,7 @@ func (c *ConstructionJSON) claim(digest common.Hash) (any, string, *Error) {
 			if out.To, e = parseAddress("construction.calls.to", call.To); e != nil {
 				return nil, "", e
 			}
-			if out.Value, e = parseUint256("construction.calls.value", call.Value); e != nil {
+			if out.Value, e = parseConstructionUint("construction.calls.value", call.Value); e != nil {
 				return nil, "", e
 			}
 			data, err := hex.DecodeString(strings.TrimPrefix(call.Data, "0x"))
@@ -273,7 +280,7 @@ func (c *ConstructionJSON) claim(digest common.Hash) (any, string, *Error) {
 			{"construction.quote.quoteNonce", q.QuoteNonce, &batch.Quote.QuoteNonce},
 			{"construction.quote.gasCost", q.GasCost, &batch.Quote.GasCost},
 		} {
-			if *f.dst, e = parseUint256(f.name, f.raw); e != nil {
+			if *f.dst, e = parseConstructionUint(f.name, f.raw); e != nil {
 				return nil, "", e
 			}
 		}
@@ -426,13 +433,19 @@ func (s *Server) doSign(r *http.Request, body []byte) (SignResponse, *Error) {
             return refuse(policyError(policy.CodeDestinationDenied, "replicated agent policy refused the decoded request"))
         }
     }
+    ledgerSession:=req.SessionID
+    if req.Kind==KindCustody||req.Custody!=nil {
+        rawText:=req.Message;if req.Custody!=nil{rawText=req.Custody.Bytes}
+        raw,err:=hex.DecodeString(strings.TrimPrefix(rawText,"0x"));if err!=nil{return refuse(newError(CodeSessionBadRequest,"invalid custody bytes"))}
+        ledgerSession="custody-"+hex.EncodeToString(gethcrypto.Keccak256(raw))
+    }
 	unlockAccount := s.lockKey("ledger\x00" + policy.AccountKey(payload.Account))
-	decision := s.evaluate(payload.Account, policyKind, view, s.spends.ForRequest(requestID(req.KeyID, req.SessionID)))
+	decision := s.evaluate(payload.Account, policyKind, view, s.spends.ForRequest(requestID(req.KeyID, ledgerSession)))
 	unlockAccount()
 	if !decision.Allowed {
 		return refuse(policyError(decision.Code, decision.Reason))
 	}
-	if acked, silent := s.Announce(r.Context(), req.KeyID, req.SessionID, payload.Account, rec.Participants, decision.Spends); acked < int(dealer.Threshold) {
+	if acked, silent := s.Announce(r.Context(), req.KeyID, ledgerSession, payload.Account, rec.Participants, decision.Spends); acked < int(dealer.Threshold) {
 		if _, ae := s.audit("sign."+req.Kind, req.KeyID, subject, "denied", "announcement not acknowledged by a quorum", req.SessionID); ae != nil {
 			return SignResponse{}, ae
 		}
@@ -537,7 +550,17 @@ func (s *Server) prepare(req SignRequest, pubBytes []byte, subject string) ([]by
 	if req.Kind != KindLXActivity && req.Kind != KindLXSendAuth && (req.Disclosure != nil || req.Approval != nil) {
 		return nil, nil, "", newError(CodeSessionBadRequest, "disclosure and approval belong only to %s and %s", KindLXActivity, KindLXSendAuth)
 	}
+    if req.Kind==KindCustody&&(req.Transaction!=""||req.TypedData!=""||req.Digest!=""||req.Activity!=""||req.Grant!=nil||req.Construction!=nil){return nil,nil,"",newError(CodeSessionBadRequest,"custody signs only its complete canonical bytes")}
+    if req.Kind==KindEthSignDigest&&(req.Transaction!=""||req.TypedData!=""||req.Message!=""||req.Activity!=""||req.Grant!=nil){return nil,nil,"",newError(CodeSessionBadRequest,"digest signs only its complete construction")}
+    if req.Custody!=nil&&req.Kind!=KindEVMTransaction{return nil,nil,"",newError(CodeSessionBadRequest,"custody proof belongs only to its EVM transaction")}
+    public,err:=gethcrypto.UnmarshalPubkey(pubBytes)
+    var custodyOwner common.Address
+    if err==nil{custodyOwner=gethcrypto.PubkeyToAddress(*public)}
 	switch req.Kind {
+    case KindCustody:
+        raw,e:=decodeHex("message",req.Message);if e!=nil{return nil,nil,"",e}
+        consent,err:=evm.DecodeCustody(raw,new(big.Int).SetUint64(s.opts.ChainID),custodyOwner,uint64(time.Now().Unix()));if err!=nil{return nil,nil,"",policyError(policy.CodeDecodeError,"invalid canonical custody consent")}
+        return evm.PersonalDigest(raw).Bytes(),consent.Transaction,policy.KindEVMTransaction,nil
 	case KindEVMTransaction:
 		raw, e := decodeHex("transaction", req.Transaction)
 		if e != nil {
@@ -547,6 +570,13 @@ func (s *Server) prepare(req SignRequest, pubBytes []byte, subject string) ([]by
 		if err != nil {
 			return nil, nil, "", policyError(policy.CodeDecodeError, err.Error())
 		}
+        if req.Custody!=nil {
+            raw,e:=decodeHex("custody.bytes",req.Custody.Bytes);if e!=nil{return nil,nil,"",e}
+            consent,err:=evm.DecodeCustody(raw,new(big.Int).SetUint64(s.opts.ChainID),custodyOwner,uint64(time.Now().Unix()));if err!=nil||!consent.Matches(tx){return nil,nil,"",policyError(policy.CodeDecodeError,"custody consent differs from actual transaction")}
+            signature,e:=decodeHex("custody.signature",req.Custody.Signature);if e!=nil||len(signature)!=65{return nil,nil,"",newError(CodeSessionBadRequest,"invalid custody signature")}
+            if signature[64]>=27{signature[64]-=27}
+            recovered,err:=gethcrypto.SigToPub(evm.PersonalDigest(raw).Bytes(),signature);if err!=nil||gethcrypto.PubkeyToAddress(*recovered)!=custodyOwner{return nil,nil,"",policyError(policy.CodeDecodeError,"custody approval signer differs from original wallet")}
+        }
 		return tx.SigningDigest.Bytes(), tx, policy.KindEVMTransaction, nil
 	case KindTypedData:
 		if req.TypedData == "" {
@@ -562,6 +592,7 @@ func (s *Server) prepare(req SignRequest, pubBytes []byte, subject string) ([]by
 		if e != nil {
 			return nil, nil, "", e
 		}
+        if bytes.HasPrefix(raw,[]byte("LX:CUSTODY:")){return nil,nil,"",newError(CodeSessionBadRequest,"custody bytes require the canonical custody signing route")}
 		pm := evm.DecodePersonalMessage(raw)
 		return pm.Digest.Bytes(), pm, policy.KindPersonalMessage, nil
 	case KindEthSignDigest:
@@ -576,6 +607,13 @@ func (s *Server) prepare(req SignRequest, pubBytes []byte, subject string) ([]by
 		if e != nil {
 			return nil, nil, "", e
 		}
+        switch claim:=view.(type){
+        case *evm.SponsoredBatchClaim:
+            if claim.Batch.Account!=custodyOwner||claim.Batch.Quote.Deadline.Cmp(big.NewInt(time.Now().Unix()))<0||claim.Batch.Quote.TokenAmount.Cmp(claim.Batch.Quote.MaxTokenAmount)>0{return nil,nil,"",policyError(policy.CodeDecodeError,"sponsored consent owner, expiry or maximum differs")}
+            if _,err:=claim.Verify();err!=nil{return nil,nil,"",policyError(policy.CodeDigestMismatch,err.Error())}
+        case *evm.AuthorizationClaim:
+            if _,err:=claim.Verify();err!=nil{return nil,nil,"",policyError(policy.CodeDigestMismatch,err.Error())}
+        }
 		return d[:], view, policyKind, nil
 	case KindLXActivity:
 		raw, e := decodeHex("activity", req.Activity)
@@ -654,4 +692,10 @@ func (s *Server) prepare(req SignRequest, pubBytes []byte, subject string) ([]by
 		return pre[:], &lx.GrantRequest{PublicKey: pub, Grant: &g, Digest: pre}, policy.KindLXGrant, nil
 	}
 	return nil, nil, "", newError(CodeSessionKind, "kind %q is not supported", req.Kind)
+}
+
+func parseConstructionUint(field,raw string)(*big.Int,*Error){
+    if raw==""||len(raw)>78||(len(raw)>1&&raw[0]=='0'){return nil,newError(CodeSessionBadRequest,"%s must be canonical unsigned decimal",field)}
+    for _,c:=range raw{if c<'0'||c>'9'{return nil,newError(CodeSessionBadRequest,"%s must be canonical unsigned decimal",field)}}
+    return parseUint256(field,raw)
 }

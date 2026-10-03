@@ -1,4 +1,4 @@
-import { concat, encodeAbiParameters, hashMessage, keccak256, toHex, toRlp } from 'viem';
+import { concat, decodeAbiParameters, decodeFunctionData, encodeAbiParameters, encodeFunctionData, parseAbi, recoverAddress, recoverMessageAddress, hashMessage, keccak256, toHex, toRlp } from 'viem';
 import {
   ChainDisconnectedError,
   DisconnectedError,
@@ -102,6 +102,7 @@ export class PaxeerProvider implements Eip1193Provider {
   private chainId: number;
   private connected = false;
   private rpcId = 0;
+  private readonly custodyApprovals = new Map<string, { bytes: Hex; signature: Hex }>();
   private capsGeneration = 0;
   private readonly capsRequests = new Set<AbortController>();
 
@@ -147,6 +148,7 @@ export class PaxeerProvider implements Eip1193Provider {
     this.invalidateCapsSession();
     const hadAccounts = this.accounts.length > 0;
     this.accounts = [];
+    this.custodyApprovals.clear();
     this.connected = false;
     if (hadAccounts) this.emit('accountsChanged', []);
     this.emit('disconnect', new DisconnectedError('the embedded wallet was disconnected'));
@@ -156,8 +158,11 @@ export class PaxeerProvider implements Eip1193Provider {
     if (!args || typeof args !== 'object' || typeof args.method !== 'string' || args.method.length === 0) {
       throw new InvalidParamsError('method', 'request requires a method name');
     }
-    const params = positional(args.params);
     const method = args.method;
+    let params = positional(args.params);
+    if (SIGNING_METHODS.has(method)) {
+      try { params = freezeRequest(structuredClone(params)); } catch { throw new InvalidParamsError('params', 'signing parameters must be immutable data'); }
+    }
     if (UNSUPPORTED_METHODS.has(method)) throw new UnsupportedMethodError(method);
     if (SIGNING_METHODS.has(method) && this.confirm) {
       const approved = await this.confirm({ method, params });
@@ -185,6 +190,12 @@ export class PaxeerProvider implements Eip1193Provider {
         return this.personalSign(params);
       case 'eth_sign':
         return this.ethSign(params);
+      case 'paxeer_prepareCustody':
+        return this.prepareCustody(params);
+      case 'paxeer_custodyStatus':
+        return this.custodyStatus(params);
+      case 'paxeer_restoreCustody':
+        return this.restoreCustody(params);
       case 'paxeer_signCustody':
         return this.signCustody(params);
       default:
@@ -269,7 +280,23 @@ export class PaxeerProvider implements Eip1193Provider {
       if (chainId !== this.chainId) throw new ChainDisconnectedError(chainId, this.chainId);
       wire.chainId = chainId;
     }
-    const response = await this.gateway<SendTxResponse>('POST', '/v1/wallet/send', { tx: wire });
+    let custody: { bytes: Hex; signature: Hex } | undefined;
+    if (typeof wire.to === 'string' && wire.to.toLowerCase() === CUSTODY_TARGET) {
+      custody = this.custodyApprovals.get(custodyCallKey(account, BigInt(this.chainId), wire.to as Hex,
+        BigInt(String(wire.value ?? '0')), (wire.data ?? '0x') as Hex));
+      if (!custody) throw new UnauthorizedError('missing_construction', 'approve this exact custody call before sending');
+      const approved = decodeCustodyAuthorization(custody.bytes);
+      for (const field of ['nonce', 'gas', 'maxFeePerGas', 'maxPriorityFeePerGas'] as const) {
+        if (wire[field] !== undefined && BigInt(String(wire[field])) !== approved[field]) {
+          throw new InvalidParamsError(field, 'transaction differs from the signed custody authorization');
+        }
+      }
+      wire.chainId = this.chainId; wire.nonce = safeInteger(approved.nonce, 'nonce');
+      wire.gas = approved.gas.toString(); wire.maxFeePerGas = approved.maxFeePerGas.toString();
+      wire.maxPriorityFeePerGas = approved.maxPriorityFeePerGas.toString();
+    }
+    const response = await this.gateway<SendTxResponse>('POST', '/v1/wallet/send', { tx: wire, ...(custody ? { custody } : {}) });
+    if (!/^0x[0-9a-fA-F]{64}$/.test(response.tx_hash)) throw new InvalidParamsError('tx_hash', 'gateway returned an invalid transaction hash');
     return response.tx_hash;
   }
 
@@ -316,6 +343,7 @@ export class PaxeerProvider implements Eip1193Provider {
 
   private async ethSign(params: readonly unknown[]): Promise<Hex> {
     const account = this.requireAccount();
+    if (params.length !== 3) throw new InvalidParamsError('params', 'eth_sign requires account, digest and complete construction');
     const [address, digest, construction] = params;
     this.requireSameAccount(address, account, 'address');
     if (typeof digest !== 'string' || !/^0x[0-9a-fA-F]{64}$/.test(digest)) {
@@ -328,12 +356,16 @@ export class PaxeerProvider implements Eip1193Provider {
       );
     }
     const wire = this.wireConstruction(construction, account);
+    if (wire.kind === 'sponsored_batch' && BigInt(wire.quote.deadline) <= BigInt(Math.floor(Date.now() / 1000))) throw new InvalidParamsError('deadline', 'sponsored consent has expired');
     const recomputed = constructionDigest(wire);
     if (recomputed.toLowerCase() !== digest.toLowerCase()) {
       throw new UnauthorizedError('digest_mismatch', 'the supplied digest does not match its construction');
     }
     const response = await this.gateway<SignDigestResponse>('POST', '/v1/wallet/sign-digest', { construction: wire });
-    return response.signature;
+    this.requireSameAccount(response.address, account, 'response.address');
+    const signature = signatureField(response.signature);
+    this.requireSameAccount(await recoverAddress({ hash: recomputed, signature }), account, 'signature');
+    return signature;
   }
 
   private wireConstruction(construction: Record<string, unknown>, account: Hex): WireDigestConstruction {
@@ -349,17 +381,72 @@ export class PaxeerProvider implements Eip1193Provider {
     return wire;
   }
 
+  private async prepareCustody(params: readonly unknown[]): Promise<Hex> {
+    const account = this.requireAccount(); const call = params[0];
+    if (params.length !== 1 || !isRecord(call)) throw new InvalidParamsError('custody', 'a custody call is required');
+    exactKeys(call, ['account', 'chainId', 'to', 'value', 'data'], 'custody');
+    if (call.account !== undefined) this.requireSameAccount(call.account, account, 'account');
+    const chainId = call.chainId === undefined ? BigInt(this.chainId) : uintField(call.chainId as UintInput, 'chainId');
+    this.requireChain(chainId.toString());
+    const to = addressField(call.to, 'to'); const value = uintField(call.value as UintInput, 'value');
+    const data = bytesField(call.data, 'data');
+    if (to.toLowerCase() !== CUSTODY_TARGET) throw new InvalidParamsError('to', 'custody target required');
+    validateCustodyCall(value, data);
+    const network = await this.proxy('eth_chainId', []);
+    if (typeof network !== 'string' || !QUANTITY.test(network)) throw new InvalidParamsError('chainId', 'RPC returned an invalid chain');
+    if (BigInt(network) !== chainId) throw new ChainDisconnectedError(Number(chainId), Number(BigInt(network)));
+    const [nonceRaw, gasRaw, priorityRaw, head] = await Promise.all([
+      this.proxy('eth_getTransactionCount', [account, 'pending']),
+      this.proxy('eth_estimateGas', [{ from: account, to, value: toQuantity(value), data }]),
+      this.proxy('eth_maxPriorityFeePerGas', []), this.proxy('eth_getBlockByNumber', ['latest', false]),
+    ]);
+    const quantity = (v: unknown, field: string): bigint => {
+      if (typeof v !== 'string' || !QUANTITY.test(v)) throw new InvalidParamsError(field, 'RPC returned an invalid quantity');
+      return uintField(v, field);
+    };
+    if (!isRecord(head)) throw new InvalidParamsError('block', 'RPC returned no fee block');
+    const maxPriorityFeePerGas = quantity(priorityRaw, 'maxPriorityFeePerGas');
+    const maxFeePerGas = quantity(head.baseFeePerGas, 'baseFeePerGas') * 2n + maxPriorityFeePerGas;
+    return encodeCustodyAuthorization({ account, chainId, to, value, data, nonce: quantity(nonceRaw, 'nonce'),
+      gas: quantity(gasRaw, 'gas'), maxFeePerGas, maxPriorityFeePerGas, deadline: BigInt(Math.floor(Date.now() / 1000) + 600) });
+  }
+
+  private async custodyStatus(params: readonly unknown[]): Promise<CustodySubmissionStatus> {
+    const input = params[0]; const account = this.requireAccount();
+    if (params.length !== 1 || !isRecord(input)) throw new InvalidParamsError('custody', 'custody bytes required');
+    exactKeys(input, ['custody'], 'custody');
+    const bytes = bytesField(input.custody, 'custody'); const authorization = decodeCustodyAuthorization(bytes);
+    this.requireSameAccount(authorization.account, account, 'account'); this.requireChain(authorization.chainId.toString());
+    const id = keccak256(bytes);
+    const response = await this.gateway<unknown>('GET', `/v1/wallet/custody/${id}`);
+    return decodeCustodyStatus(response, id);
+  }
+
+  private async restoreCustody(params: readonly unknown[]): Promise<null> {
+    const account = this.requireAccount(); const input = params[0];
+    if (params.length !== 1 || !isRecord(input)) throw new InvalidParamsError('custody', 'retained custody proof is required');
+    exactKeys(input, ['custody', 'signature'], 'custody');
+    const bytes = bytesField(input.custody, 'custody'); const authorization = decodeCustodyAuthorization(bytes);
+    this.requireSameAccount(authorization.account, account, 'account'); this.requireChain(authorization.chainId.toString());
+    const signature = signatureField(input.signature);
+    this.requireSameAccount(await recoverMessageAddress({ message: { raw: bytes }, signature }), account, 'signature');
+    this.custodyApprovals.set(custodyCallKey(account, authorization.chainId, authorization.to, authorization.value, authorization.data), { bytes, signature });
+    return null;
+  }
+
   private async signCustody(params: readonly unknown[]): Promise<Hex> {
-    this.requireAccount();
-    const first = params[0];
-    const custody = isRecord(first) ? first.custody : first;
-    if (typeof custody !== 'string' || !BYTES.test(custody) || custody.length <= 2) {
-      throw new InvalidParamsError('custody', 'paxeer_signCustody requires non-empty custody bytes');
-    }
-    const response = await this.gateway<SignCustodyResponse>('POST', '/v1/wallet/sign-custody', {
-      custody: custody.toLowerCase(),
-    });
-    return response.signature;
+    const account = this.requireAccount(); const first = params[0];
+    if (params.length !== 1) throw new InvalidParamsError('custody', 'one custody authorization is required');
+    const custody = bytesField(isRecord(first) ? first.custody : first, 'custody');
+    if (isRecord(first)) exactKeys(first, ['custody'], 'custody');
+    const authorization = decodeCustodyAuthorization(custody);
+    this.requireSameAccount(authorization.account, account, 'account'); this.requireChain(authorization.chainId.toString());
+    const now = BigInt(Math.floor(Date.now() / 1000));
+    if (authorization.deadline <= now || authorization.deadline > now + 600n) throw new InvalidParamsError('deadline', 'custody consent is expired or exceeds ten minutes');
+    const response = await this.gateway<SignCustodyResponse>('POST', '/v1/wallet/sign-custody', { custody: custody.toLowerCase() });
+    this.requireSameAccount(response.address, account, 'response.address');
+    await this.restoreCustody([{ custody, signature: response.signature }]);
+    return signatureField(response.signature);
   }
 
   private async walletCaps(): Promise<unknown> {
@@ -476,6 +563,7 @@ export class PaxeerProvider implements Eip1193Provider {
   }
 
   private dropAccounts(): void {
+    this.custodyApprovals.clear();
     if (this.accounts.length === 0) return;
     this.accounts = [];
     this.emit('accountsChanged', []);
@@ -582,11 +670,13 @@ export function constructionDigest(construction: WireDigestConstruction): Hex {
 }
 
 export function wireSponsoredBatch(construction: SponsoredBatchConstruction): WireSponsoredBatch {
+  exactKeys(construction as unknown as Record<string, unknown>, ['kind','chainId','account','nonce','calls','quote'], 'construction');
   if (!Array.isArray(construction.calls) || construction.calls.length === 0) {
     throw new InvalidParamsError('calls', 'a sponsored batch requires at least one call');
   }
   const quote = construction.quote;
   if (!isRecord(quote)) throw new InvalidParamsError('quote', 'a sponsored batch requires a quote');
+  exactKeys(quote, ['sponsor','token','maxTokenAmount','tokenAmount','deadline','quoteNonce','gasCost'], 'quote');
   return {
     kind: 'sponsored_batch',
     chainId: uintField(construction.chainId, 'chainId').toString(),
@@ -594,6 +684,7 @@ export function wireSponsoredBatch(construction: SponsoredBatchConstruction): Wi
     nonce: uintField(construction.nonce, 'nonce').toString(),
     calls: construction.calls.map((call, index) => {
       if (!isRecord(call)) throw new InvalidParamsError(`calls.${index}`, 'each call must be an object');
+      exactKeys(call, ['to','value','data'], `calls.${index}`);
       return {
         to: addressField(call.to, `calls.${index}.to`),
         value: uintField(call.value as UintInput, `calls.${index}.value`).toString(),
@@ -614,6 +705,8 @@ export function wireSponsoredBatch(construction: SponsoredBatchConstruction): Wi
 
 export function toWireConstruction(construction: DigestConstruction): WireDigestConstruction {
   if (construction.kind === 'sponsored_batch') return wireSponsoredBatch(construction);
+  if (construction.kind !== 'eip7702_authorization') throw new InvalidParamsError('kind', 'unknown digest construction');
+  exactKeys(construction as unknown as Record<string, unknown>, ['kind','chainId','address','nonce'], 'construction');
   const nonce = uintField(construction.nonce, 'nonce');
   if (nonce >= UINT64_MAX) throw new InvalidParamsError('nonce', 'authorisation nonce exceeds 2^64 - 2');
   return {
@@ -700,4 +793,74 @@ function decodeMessage(message: string): string {
   } catch {
     throw new InvalidParamsError('message', 'personal_sign bytes must be UTF-8 text');
   }
+}
+
+export const CUSTODY_TARGET = '0x0000000000000000000000000000000000001013' as const;
+const CUSTODY_DOMAIN = toHex('LX:CUSTODY:v2');
+const CUSTODY_FIELDS = [
+  { type: 'address' }, { type: 'uint256' }, { type: 'address' }, { type: 'uint256' }, { type: 'bytes' },
+  { type: 'uint64' }, { type: 'uint64' }, { type: 'uint64' }, { type: 'uint256' }, { type: 'uint256' },
+] as const;
+const CUSTODY_ABI = parseAbi(['function deposit(bytes32 beneficiary) payable returns (bytes32 depositId)',
+  'function depositToken(address pointer,uint256 amount,bytes32 beneficiary) returns (bytes32 depositId)']);
+export interface CustodyAuthorization {
+  readonly account: Hex; readonly chainId: bigint; readonly to: Hex; readonly value: bigint; readonly data: Hex;
+  readonly nonce: bigint; readonly deadline: bigint; readonly gas: bigint;
+  readonly maxFeePerGas: bigint; readonly maxPriorityFeePerGas: bigint;
+}
+export function encodeCustodyAuthorization(input: CustodyAuthorization): Hex {
+  const account = addressField(input.account, 'account'); const to = addressField(input.to, 'to');
+  if (to.toLowerCase() !== CUSTODY_TARGET || /^0x0{40}$/i.test(account)) throw new InvalidParamsError('custody', 'invalid custody account or target');
+  for (const field of ['chainId','value','nonce','deadline','gas','maxFeePerGas','maxPriorityFeePerGas'] as const) uintField(input[field], field);
+  if (input.chainId === 0n || input.gas === 0n || input.maxFeePerGas === 0n || input.maxPriorityFeePerGas > input.maxFeePerGas ||
+    input.nonce >= UINT64_MAX || input.deadline > UINT64_MAX || input.gas > UINT64_MAX) throw new InvalidParamsError('custody', 'invalid custody bounds');
+  validateCustodyCall(input.value, input.data);
+  return concat([CUSTODY_DOMAIN, encodeAbiParameters(CUSTODY_FIELDS, [account,input.chainId,to,input.value,input.data,
+    input.nonce,input.deadline,input.gas,input.maxFeePerGas,input.maxPriorityFeePerGas])]);
+}
+export function decodeCustodyAuthorization(bytes: Hex): CustodyAuthorization {
+  if (typeof bytes !== 'string' || !BYTES.test(bytes) || !bytes.toLowerCase().startsWith(CUSTODY_DOMAIN) || bytes.length > 4096) throw new InvalidParamsError('custody', 'canonical v2 custody bytes are required');
+  try {
+    const [account,chainId,to,value,data,nonce,deadline,gas,maxFeePerGas,maxPriorityFeePerGas] = decodeAbiParameters(CUSTODY_FIELDS, `0x${bytes.slice(CUSTODY_DOMAIN.length)}`);
+    const out = { account,chainId,to,value,data,nonce,deadline,gas,maxFeePerGas,maxPriorityFeePerGas };
+    if (encodeCustodyAuthorization(out).toLowerCase() !== bytes.toLowerCase()) throw new Error('noncanonical');
+    return Object.freeze(out);
+  } catch { throw new InvalidParamsError('custody', 'malformed or noncanonical custody authorization'); }
+}
+function validateCustodyCall(value: bigint, data: Hex): void {
+  try {
+    const call = decodeFunctionData({ abi: CUSTODY_ABI, data });
+    if (encodeFunctionData({ abi: CUSTODY_ABI, functionName: call.functionName, args: call.args }).toLowerCase() !== data.toLowerCase()) throw new Error('noncanonical');
+    const beneficiary = call.functionName === 'deposit' ? call.args[0] : call.args[2];
+    if (/^0x0{64}$/i.test(beneficiary) || (call.functionName === 'deposit' ? value <= 0n : value !== 0n || call.args[1] <= 0n || /^0x0{40}$/i.test(call.args[0]))) throw new Error('invalid deposit');
+  } catch { throw new InvalidParamsError('data', 'only canonical positive custody deposits are accepted'); }
+}
+function custodyCallKey(account: Hex, chain: bigint, to: Hex, value: bigint, data: Hex): string {
+  return keccak256(encodeAbiParameters([{type:'address'},{type:'uint256'},{type:'address'},{type:'uint256'},{type:'bytes'}], [account,chain,to,value,data]));
+}
+function signatureField(value: unknown): Hex {
+  if (typeof value !== 'string' || !/^0x[0-9a-fA-F]{130}$/.test(value)) throw new InvalidParamsError('signature', 'invalid signature');
+  return value.toLowerCase() as Hex;
+}
+function exactKeys(value: Record<string, unknown>, allowed: readonly string[], field: string): void {
+  if (Object.keys(value).some(key => !allowed.includes(key))) throw new InvalidParamsError(field, 'unexpected fields are not accepted');
+}
+
+export interface CustodySubmissionStatus {
+  readonly custody_id: Hex; readonly tx_hash: Hex | null;
+  readonly status: 'pending' | 'confirmed' | 'reverted'; readonly receipt: Readonly<Record<string, unknown>> | null;
+}
+export function decodeCustodyStatus(input: unknown, expected: Hex): CustodySubmissionStatus {
+  if (!isRecord(input) || input.custody_id !== expected || (input.status !== 'pending' && input.status !== 'confirmed' && input.status !== 'reverted') ||
+    (input.tx_hash !== null && (typeof input.tx_hash !== 'string' || !/^0x[0-9a-fA-F]{64}$/.test(input.tx_hash)))) throw new InvalidParamsError('status', 'invalid custody status');
+  const receipt = input.receipt;
+  if (receipt !== null && (input.tx_hash === null || !isRecord(receipt) || (receipt.status !== '0x0' && receipt.status !== '0x1') || receipt.transactionHash !== input.tx_hash || typeof receipt.blockHash !== 'string' ||
+    !/^0x[0-9a-fA-F]{64}$/.test(receipt.blockHash) || /^0x0{64}$/.test(receipt.blockHash) || typeof receipt.blockNumber !== 'string' || !QUANTITY.test(receipt.blockNumber))) throw new InvalidParamsError('receipt', 'invalid custody receipt evidence');
+  if (input.status !== 'pending' && (!isRecord(receipt) || receipt.status !== (input.status === 'confirmed' ? '0x1' : '0x0'))) throw new InvalidParamsError('receipt', 'completion requires matching receipt evidence');
+  return Object.freeze(input as unknown as CustodySubmissionStatus);
+}
+
+function freezeRequest<T>(value: T): T {
+  if (typeof value === 'object' && value !== null) { for (const child of Object.values(value)) freezeRequest(child); Object.freeze(value); }
+  return value;
 }

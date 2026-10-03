@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { env } from './env.js';
 import { closePool, getPool } from './db/pool.js';
 import { runMigrations } from './db/migrate.js';
-import { walletRoutes } from './routes/wallet.js';
+import { walletRoutes, walletSponsorRoutes } from './routes/wallet.js';
 import { signRoutes } from './routes/sign.js';
 import { readinessRoutes } from './routes/readiness.js';
 import { agentAuthRoutes } from './routes/agentAuth.js';
@@ -88,6 +88,7 @@ export async function buildApp(): Promise<FastifyInstance> {
 
   // v1 routes
   await app.register(walletRoutes);
+  await app.register(walletSponsorRoutes);
   await app.register(signRoutes);
 
   // Agent-native lane: DID auth + dedicated kind='agent' wallets, the agent

@@ -4,6 +4,7 @@ import type { TLSSocket } from 'node:tls';
 import { loadWalletInventory, publishCustodyAuthority, requireInventoryKey } from '../agent/authority.js';
 import { readFileSync } from 'node:fs';
 import {
+  concat, decodeAbiParameters, encodeAbiParameters, hashMessage, keccak256, toRlp,
   getTransactionType,
   getTypesForEIP712Domain,
   hexToBytes,
@@ -44,6 +45,7 @@ export const AGENT_HEADERS = {
 } as const;
 
 export type SignKind =
+  | 'custody'
   | 'evm_tx'
   | 'eip712'
   | 'personal_message'
@@ -55,6 +57,7 @@ export type SignKind =
 export type Curve = 'secp256k1' | 'ed25519';
 
 export const KIND_CURVES: Record<SignKind, Curve> = {
+  custody: 'secp256k1',
   evm_tx: 'secp256k1',
   eip712: 'secp256k1',
   personal_message: 'secp256k1',
@@ -142,7 +145,8 @@ export interface ConstructionWire {
 }
 
 export type SignPayload =
-  | { kind: 'evm_tx'; transaction: Hex }
+  | { kind: 'evm_tx'; transaction: Hex; custody?: { bytes: Hex; signature: Hex } }
+  | { kind: 'custody'; message: Hex }
   | { kind: 'eip712'; typedData: string }
   | { kind: 'personal_message'; message: Hex }
   | { kind: 'eth_sign_digest'; digest: Hex; construction: ConstructionWire }
@@ -203,6 +207,7 @@ function checkApproved(disclosure: ActivityDisclosureWire, approval: ActivityApp
 }
 
 export interface SignRequestWire {
+  custody?: { bytes: string; signature: string };
   origin?: AgentOriginalRequest;
   session_id: string;
   key_id: string;
@@ -457,10 +462,11 @@ export function signRequestBody(sessionId: string, keyId: string, signers: strin
   const base = { session_id: sessionId, key_id: keyId, kind: payload.kind, signers };
   switch (payload.kind) {
     case 'evm_tx':
-      return { ...base, transaction: bareHex(payload.transaction) };
+      return { ...base, transaction: bareHex(payload.transaction), ...(payload.custody ? { custody: payload.custody } : {}) };
     case 'eip712':
       return { ...base, typed_data: payload.typedData };
     case 'personal_message':
+    case 'custody':
     case 'lx_bind':
       return { ...base, message: bareHex(payload.message) };
     case 'eth_sign_digest':
@@ -964,7 +970,7 @@ export async function signThroughAttestors(client: AttestorClient, input: SignIn
   return client.sign(input);
 }
 
-function splitSignature(result: SignResult): { r: Hex; s: Hex; yParity: number } {
+export function splitSignature(result: SignResult): { r: Hex; s: Hex; yParity: number } {
   const bytes = hexToBytes(result.signature);
   if (bytes.length !== SIGNATURE_BYTES.secp256k1) {
     throw new AttestorSessionError('bad_signature_length', `expected 65 signature bytes, got ${bytes.length}`);
@@ -1057,4 +1063,46 @@ export function attestorSigner(
       return { value: signature, result };
     },
   };
+}
+
+export const CUSTODY_DOMAIN = stringToHex('LX:CUSTODY:v2');
+export const CUSTODY_TARGET = '0x0000000000000000000000000000000000001013' as const;
+export const CUSTODY_ABI = [{type:'address'},{type:'uint256'},{type:'address'},{type:'uint256'},{type:'bytes'},
+  {type:'uint64'},{type:'uint64'},{type:'uint64'},{type:'uint256'},{type:'uint256'}] as const;
+export function decodeCustody(bytes: Hex, address: string, chainId: number, allowExpired = false) {
+  if (!/^0x(?:[0-9a-fA-F]{2})+$/.test(bytes) || bytes.length > 65_538 || !bytes.toLowerCase().startsWith(CUSTODY_DOMAIN)) throw new AttestorSessionError('custody_malformed','invalid custody domain');
+  const body = `0x${bytes.slice(CUSTODY_DOMAIN.length)}` as Hex;
+  const fields = decodeAbiParameters(CUSTODY_ABI,body);
+  if (encodeAbiParameters(CUSTODY_ABI,fields).toLowerCase()!==body.toLowerCase()) throw new AttestorSessionError('custody_malformed','custody encoding is not canonical');
+  const [account,network,to,value,data,nonce,deadline,gas,maxFeePerGas,maxPriorityFeePerGas]=fields;
+  const now=BigInt(Math.floor(Date.now()/1000));
+  if (account.toLowerCase()!==address.toLowerCase()||network!==BigInt(chainId)||to.toLowerCase()!==CUSTODY_TARGET||nonce>BigInt(Number.MAX_SAFE_INTEGER)||(!allowExpired&&(deadline<now||deadline>now+600n))||gas===0n||maxFeePerGas===0n||maxPriorityFeePerGas>maxFeePerGas) throw new AttestorSessionError('custody_mismatch','custody account, network, expiry or transaction bounds differ');
+  const native=keccak256(stringToHex('deposit(bytes32)')).slice(0,10);
+  const token=keccak256(stringToHex('depositToken(address,uint256,bytes32)')).slice(0,10);
+  let beneficiary:Hex;
+  if(data.length===74&&data.slice(0,10)===native&&value>0n) beneficiary=`0x${data.slice(10)}`;
+  else if(data.length===202&&data.slice(0,10)===token&&value===0n){
+    const [pointer,amount,who]=decodeAbiParameters([{type:'address'},{type:'uint256'},{type:'bytes32'}],`0x${data.slice(10)}`);
+    if(pointer==='0x0000000000000000000000000000000000000000'||amount===0n) throw new AttestorSessionError('custody_malformed','invalid token deposit');
+    if(encodeAbiParameters([{type:'address'},{type:'uint256'},{type:'bytes32'}],[pointer,amount,who]).slice(2)!==data.slice(10)) throw new AttestorSessionError('custody_malformed','noncanonical token calldata');
+    beneficiary=who;
+  }else throw new AttestorSessionError('custody_malformed','only canonical custody deposits are admitted');
+  if(BigInt(beneficiary)===0n) throw new AttestorSessionError('custody_malformed','empty beneficiary');
+  return {account,deadline,beneficiary,transaction:{type:'eip1559' as const,chainId,nonce:Number(nonce),to,value,data,gas,maxFeePerGas,maxPriorityFeePerGas}};
+}
+export function sponsorQuoteDigest(batch:ConstructionWire):Hex {
+  const q=batch.quote!;
+  return hashMessage({raw:keccak256(encodeAbiParameters(
+    [{type:'bytes32'},{type:'uint256'},{type:'address'},{type:'address'},{type:'address'},{type:'uint256'},{type:'uint256'},{type:'uint256'},{type:'uint256'},{type:'uint256'}],
+    [keccak256(stringToHex('Quote(uint256 chainId,address account,address sponsor,address token,uint256 maxTokenAmount,uint256 tokenAmount,uint256 deadline,uint256 quoteNonce,uint256 gasCost)')),BigInt(batch.chainId),batch.account as Hex,q.sponsor as Hex,q.token as Hex,BigInt(q.maxTokenAmount),BigInt(q.tokenAmount),BigInt(q.deadline),BigInt(q.quoteNonce),BigInt(q.gasCost)]))});
+}
+export function constructionDigest(construction:ConstructionWire):Hex {
+  if(construction.kind==='eip7702_authorization'){
+    const integer=(n:string):Hex=>BigInt(n)===0n?'0x':toHex(BigInt(n));
+    return keccak256(concat(['0x05',toRlp([integer(construction.chainId),construction.address as Hex,integer(construction.nonce)])]));
+  }
+  const calls=keccak256(encodeAbiParameters([{type:'tuple[]',components:[{name:'to',type:'address'},{name:'value',type:'uint256'},{name:'data',type:'bytes'}]}],
+    [construction.calls!.map(call=>({to:call.to as Hex,value:BigInt(call.value),data:call.data as Hex}))]));
+  return hashMessage({raw:keccak256(encodeAbiParameters([{type:'bytes32'},{type:'uint256'},{type:'bytes32'},{type:'bytes32'}],
+    [keccak256(stringToHex('SponsoredBatch(uint256 nonce,bytes32 callsHash,bytes32 quoteDigest)')),BigInt(construction.nonce),calls,sponsorQuoteDigest(construction)]))});
 }

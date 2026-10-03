@@ -25494,7 +25494,9 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.13.4]
 title = "Serve authenticated wallet custody, constrained signing and sponsored submission adapters"
-status = "pending"
+status = "done"
+completion_basis = "implementation"
+qualification_status = "unverified"
 mode = "BUILD"
 wave = 3
 requires = ["0.2", "13.1"]
