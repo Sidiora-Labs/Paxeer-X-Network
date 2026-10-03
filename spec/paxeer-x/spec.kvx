@@ -25630,7 +25630,11 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.17.5]
 title = "Report idle producer readiness from its first-delivery dependencies"
-status = "pending"
+status = "done"
+completion_basis = "implementation"
+qualification_status = "unverified"
+implemented_revision = "18b53037f"
+build_status = "failed"
 mode = "BUILD"
 wave = 3
 requires = ["0.2", "17.1"]
