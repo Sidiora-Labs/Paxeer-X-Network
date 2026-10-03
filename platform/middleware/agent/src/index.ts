@@ -35,6 +35,7 @@ export interface AgentSpendRequest {
   readonly submitIdempotencyKey: string;
   readonly approvalCurrentSequence: string;
   readonly approvalReleaseRef?: string;
+  readonly walletApprovalId?: string;
   readonly asset: string;
   readonly amount: string;
   readonly recipient: string;
@@ -118,9 +119,13 @@ export interface PreparedActivity {
   readonly disclosure: Readonly<Record<string, unknown>>;
   readonly expiry: string;
   readonly approval?: ApprovalHold;
+  readonly wallet_approval_id?: string;
+  readonly signer_public_key?: string;
 }
 
 export interface AgentSigner {
+  readonly walletApprovalRequired?: true;
+  verifyWalletApproval?(prepared: PreparedActivity): Promise<void>;
   sign(prepared: PreparedActivity): Promise<string>;
 }
 
@@ -177,7 +182,8 @@ export interface OwnerBudgetSpendResult {
   readonly kind: "owner-budget";
   readonly preparationId: string;
   readonly admissionObserved: boolean;
-  readonly state: "admission-unknown" | "approval" | "pending" | "unknown" | "owner-rejected" | "owner-expired" | "settled";
+  readonly prepared?: PreparedActivity;
+  readonly state: "admission-unknown" | "wallet-consent" | "approval" | "pending" | "unknown" | "owner-rejected" | "owner-expired" | "settled";
   readonly approval?: { readonly approvalId: string; readonly heldDigest: string; readonly state: string };
   readonly submission?: Submission;
   readonly verification?: ReceiptVerification;
@@ -256,12 +262,18 @@ export class AgentMiddleware {
     try { request = freezeRequest(JSON.parse(JSON.stringify(input))) as AgentSpendRequest; }
     catch { throw new AgentMiddlewareError("invalid-request"); }
     validateSpend(request);
+    const walletMode = this.#signer.walletApprovalRequired === true;
+    if (request.walletApprovalId !== undefined && !walletMode
+      || walletMode && request.walletApprovalId === undefined
+        && !("variant" in request.preparation && this.#preparationBudgets !== undefined)) {
+      throw new PlatformSdkError({ code: "policy-refusal", retry: "never" });
+    }
     if (request.commitment !== undefined && request.commitment.level !== "executed" && this.#commitments === undefined) throw new AgentMiddlewareError("invalid-request");
     const amount = protocolAmount(request.amount).toString();
     const mutationKey = idempotencyKey(request.preparation.idempotency_key);
     const requestDigest = await digestSpend(request);
     if ("variant" in request.preparation && this.#preparationBudgets !== undefined) {
-      const { approvalReleaseRef: _release, ...admissionRequest } = request;
+      const { approvalReleaseRef: _release, walletApprovalId: _walletConsent, ...admissionRequest } = request;
       return this.#preparationBudgets.spendPrepared(request, await digestSpend(admissionRequest), {
         signer: this.#signer, receipts: this.#receipts, protocolVersion: this.#protocolVersion,
         ...(this.#commitments === undefined ? {} : { commitments: this.#commitments }),

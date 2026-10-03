@@ -67,6 +67,7 @@ export function validateDaemonSpend(request: AgentSpendRequest): void {
   hex(request.authorityHex, 524288); decimal(request.networkId, 4294967295n);
   decimal(request.approvalCurrentSequence);
   if (request.approvalReleaseRef !== undefined) hex(request.approvalReleaseRef, 32, 32);
+  if (request.walletApprovalId !== undefined && (typeof request.walletApprovalId !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/u.test(request.walletApprovalId))) fail();
   if (digest(Buffer.from(p.payload, "hex"), "LXP/v1/payload-hash\0") !== p.payload_hash) fail();
 }
 
@@ -114,7 +115,9 @@ export function decodeDaemonPrepared(value: unknown, request: AgentSpendRequest,
   if (digest(Buffer.from(canonical, "hex")) !== reference || digest(Buffer.from(canonical, "hex"), "LXP/v1/signature-preimage\0") !== preimage) fail();
   return Object.freeze({ preparation_ref: reference, unsigned_canonical_bytes: canonical, signing_preimage: preimage,
     disclosure: Object.freeze({ ...p, canonical_digest: reference, network_id: request.networkId, authority_bytes: request.authorityHex }),
-    expiry: p.not_after, ...(approval === undefined ? {} : { approval: Object.freeze(approval) }) });
+    expiry: p.not_after, signer_public_key: request.signerPublicKey,
+    ...(request.walletApprovalId === undefined ? {} : { wallet_approval_id: request.walletApprovalId }),
+    ...(approval === undefined ? {} : { approval: Object.freeze(approval) }) });
 }
 export function signedActivityId(prepared: PreparedActivity, signature: string, publicKey: string): string {
   hex(signature, 64, 64); hex(publicKey, 32, 32);

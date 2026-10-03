@@ -19,6 +19,9 @@ try {
   const request = JSON.parse(required("LAYERX_SPEND_REQUEST_JSON"));
   if (request === null || typeof request !== "object" || Array.isArray(request)
     || request.tenant !== required("LAYERX_TENANT")) throw new Error("invalid_spend_request");
+  if (providers.signer.walletApprovalRequired === true && providers.preparationBudgets === undefined && typeof request.walletApprovalId !== "string") {
+    throw new Error("retained_wallet_approval_required");
+  }
   const middleware = new AgentMiddleware({
     client: new ProductionClient(new LayerXAgentTransport(authenticated.transport)),
     protocolVersion,
@@ -30,7 +33,7 @@ try {
   const result = await middleware.spend(request);
   process.stdout.write(JSON.stringify({
     kind: result.kind,
-    ...(result.kind === "owner-budget" ? { preparationId: result.preparationId, admissionObserved: result.admissionObserved, ownerState: result.state,
+    ...(result.kind === "owner-budget" ? { ...(result.prepared === undefined ? {} : { prepared: result.prepared }), preparationId: result.preparationId, admissionObserved: result.admissionObserved, ownerState: result.state,
       ...(result.verification === undefined ? {} : { receiptDigest: Buffer.from(result.verification.receiptDigest).toString("hex") }) } : {}),
     ...(result.kind === "verified" ? { receiptDigest: Buffer.from(result.verification.receiptDigest).toString("hex") } : {}),
     ...(result.kind === "approval-hold" ? { approvalId: result.approval.approvalId } : {}),
@@ -38,7 +41,7 @@ try {
       ...(result.retryAfterMs === undefined ? {} : { retryAfterMs: result.retryAfterMs }) } : {}),
     ...("reservation" in result ? { reservationState: result.reservation.state } : {}),
   }) + "\n");
-  if (!(result.kind === "owner-budget" ? ["settled", "approval", "pending"].includes(result.state) : ["verified", "approval-hold", "pending"].includes(result.kind))) process.exitCode = 2;
+  if (!(result.kind === "owner-budget" ? ["settled", "wallet-consent", "approval", "pending"].includes(result.state) : ["verified", "approval-hold", "pending"].includes(result.kind))) process.exitCode = 2;
 } finally {
   authenticated.destroy();
   await providers.destroy?.();

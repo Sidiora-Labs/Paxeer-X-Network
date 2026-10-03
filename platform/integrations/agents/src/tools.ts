@@ -278,6 +278,7 @@ export const SPEND_TOOL: ToolDefinition = {
       submitIdempotencyKey: { type: "string", pattern: HEX32_PATTERN },
       approvalCurrentSequence: { type: "string", pattern: AMOUNT_PATTERN },
       approvalReleaseRef: { type: "string", pattern: HEX32_PATTERN },
+      walletApprovalId: { type: "string", pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$" },
     },
   },
 };
@@ -377,6 +378,7 @@ export class AgentToolExecutor {
       submitIdempotencyKey: hex32(object, "submitIdempotencyKey"),
       approvalCurrentSequence: canonicalInteger(object, "approvalCurrentSequence"),
       ...(object["approvalReleaseRef"] === undefined ? {} : { approvalReleaseRef: hex32(object, "approvalReleaseRef") }),
+      ...(object["walletApprovalId"] === undefined ? {} : { walletApprovalId: text(object, "walletApprovalId", 36) }),
       asset: hex32(object, "asset"),
       amount: canonicalInteger(object, "amount"),
       recipient: hex32(object, "recipient"),
@@ -449,6 +451,7 @@ export function describeSpend(result: AgentSpendResult): ToolJsonObject {
   if (result.kind === "owner-budget") {
     return {
       kind: result.kind, preparationId: result.preparationId, admissionObserved: result.admissionObserved, ownerState: result.state,
+      ...(result.prepared === undefined ? {} : { prepared: jsonValue(result.prepared) }),
       ...(result.approval === undefined ? {} : { approvalId: result.approval.approvalId, approvalState: result.approval.state }),
       ...(result.submission === undefined ? {} : { submissionRef: result.submission.submission_ref }),
       ...(result.verification === undefined ? {} : { receiptDigest: toHex(result.verification.receiptDigest), level: result.verification.level }),

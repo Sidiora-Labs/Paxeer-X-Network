@@ -18,6 +18,8 @@ interface Retained {
   stage: Stage;
   activityId: string | null;
   submissionRef: string | null;
+  walletConsentRequired?: true;
+  walletApprovalId?: string;
 }
 export interface DaemonPreparationBudgetOptions {
   readonly transport: AgentEnvelopeTransport;
@@ -90,6 +92,9 @@ export class DaemonPreparationBudget implements AgentPreparationBudget {
     const p = request.preparation;
     if (!("variant" in p) || request.tenant !== this.#principal.tenant || p.actor !== this.#principal.actor
       || p.purpose.purpose.session_id !== this.#principal.sessionId || !(services.receipts instanceof DaemonReceiptResolver)) throw refusal();
+    const walletRequired = services.signer.walletApprovalRequired === true;
+    if (walletRequired && typeof services.signer.verifyWalletApproval !== "function"
+      || !walletRequired && request.walletApprovalId !== undefined) throw refusal();
     identifier(requestDigest);
     const preparationId = identifier(p.purpose.purpose.preparation_id);
     let admissionObserved = false;
@@ -97,8 +102,9 @@ export class DaemonPreparationBudget implements AgentPreparationBudget {
       ({ kind: "owner-budget", preparationId, admissionObserved, state, ...extra });
     let retained: Retained;
     let created: boolean;
-    try { ({ retained, created } = this.#admit(preparationId, requestDigest)); }
+    try { ({ retained, created } = this.#admit(preparationId, requestDigest, walletRequired)); }
     catch (error) { if (error instanceof PlatformSdkError && error.code === "idempotency-conflict") throw error; return outcome("unknown"); }
+    if (retained.walletApprovalId !== undefined && retained.walletApprovalId !== request.walletApprovalId) throw conflict();
     if (created) {
       try {
         const response = await this.#transport.prepareNative(p, idempotencyKey(p.idempotency_key));
@@ -122,12 +128,26 @@ export class DaemonPreparationBudget implements AgentPreparationBudget {
         });
       }
       if (approval.state === "Defective") return outcome("unknown");
+      if (walletRequired) {
+        if (request.walletApprovalId === undefined) return outcome("wallet-consent", {
+          prepared, approval: { approvalId: preparationId, heldDigest: approval.held_digest, state: approval.state },
+        });
+        if (retained.walletApprovalId === undefined) {
+          if (retained.stage !== "prepared") throw conflict();
+          await services.signer.verifyWalletApproval!(prepared);
+          const bound: Retained = { ...retained, walletApprovalId: request.walletApprovalId };
+          this.#replace(retained, bound); retained = bound;
+        }
+      }
       if (approval.state === "Awaiting") return outcome("approval", {
         approval: { approvalId: preparationId, heldDigest: approval.held_digest, state: approval.state },
       });
       if (approval.state === "Granted" && approval.submission_ref !== request.approvalReleaseRef) return outcome("unknown");
       if (approval.state === "NotRequired" && approval.submission_ref !== null) throw refusal();
-    } catch { return outcome("unknown"); }
+    } catch (error) {
+      if (error instanceof PlatformSdkError && error.code === "idempotency-conflict") throw error;
+      return outcome("unknown");
+    }
     if (retained.stage === "signing") return outcome("unknown");
     if (retained.stage === "prepared") {
       try {
@@ -166,18 +186,20 @@ export class DaemonPreparationBudget implements AgentPreparationBudget {
     } catch { return outcome("unknown"); }
   }
 
-  #admit(preparationId: string, requestDigest: string): { retained: Retained; created: boolean } {
+  #admit(preparationId: string, requestDigest: string, walletRequired: boolean): { retained: Retained; created: boolean } {
     return this.#transaction(() => {
       const rows = this.#db.prepare("SELECT record FROM admissions WHERE preparation_id = ? OR request_digest = ?").all(preparationId, requestDigest);
       if (rows.length > 1) throw conflict();
       if (rows.length === 1) {
         const retained = decode(rows[0]?.["record"]);
-        if (retained.preparationId !== preparationId || retained.requestDigest !== requestDigest) throw conflict();
+        if (retained.preparationId !== preparationId || retained.requestDigest !== requestDigest
+          || (retained.walletConsentRequired === true) !== walletRequired) throw conflict();
         return { retained, created: false };
       }
       const count = this.#db.prepare("SELECT COUNT(*) AS n FROM admissions").get()?.["n"];
       if (typeof count !== "number" || count >= 4096) throw refusal();
-      const retained: Retained = { preparationId, requestDigest, stage: "preparing", result: null, activityId: null, submissionRef: null };
+      const retained: Retained = { preparationId, requestDigest, stage: "preparing", result: null, activityId: null, submissionRef: null,
+        ...(walletRequired ? { walletConsentRequired: true as const } : {}) };
       this.#db.prepare("INSERT INTO admissions VALUES (?, ?, ?)").run(preparationId, requestDigest, JSON.stringify(retained));
       return { retained, created: true };
     });
@@ -204,7 +226,13 @@ export class DaemonPreparationBudget implements AgentPreparationBudget {
 function decode(value: unknown): Retained {
   if (typeof value !== "string" || Buffer.byteLength(value) > 4194304) throw refusal();
   const row = JSON.parse(value) as Retained;
-  if (!row || typeof row !== "object" || Object.keys(row).sort().join() !== ["requestDigest", "preparationId", "result", "stage", "activityId", "submissionRef"].sort().join()) throw refusal();
+  const required = ["requestDigest", "preparationId", "result", "stage", "activityId", "submissionRef"];
+  if (!row || typeof row !== "object" || required.some((key) => !Object.prototype.hasOwnProperty.call(row, key))
+    || Object.keys(row).some((key) => !required.includes(key) && key !== "walletConsentRequired" && key !== "walletApprovalId")) throw refusal();
+  if (row.walletConsentRequired !== undefined && row.walletConsentRequired !== true) throw refusal();
+  if (row.walletApprovalId !== undefined && (row.walletConsentRequired !== true || typeof row.walletApprovalId !== "string"
+    || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/u.test(row.walletApprovalId))) throw refusal();
+  if (row.walletConsentRequired === true && (row.stage === "signing" || row.stage === "signed") && row.walletApprovalId === undefined) throw refusal();
   identifier(row.requestDigest); identifier(row.preparationId);
   if (!["preparing", "prepared", "signing", "signed"].includes(row.stage)) throw refusal();
   if ((row.stage === "preparing") !== (row.result === null)) throw refusal();
