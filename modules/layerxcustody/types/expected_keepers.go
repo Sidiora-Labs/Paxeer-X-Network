@@ -26,3 +26,8 @@ type EVMKeeper interface {
 	GetPaxAddressOrDefault(ctx sdk.Context, evmAddress common.Address) sdk.AccAddress
 	ChainID(ctx sdk.Context) *big.Int
 }
+
+// UpgradeActivationReader is the narrow upgrade keeper view custody governance uses.
+type UpgradeActivationReader interface {
+	IsUpgradeActiveAtHeight(ctx sdk.Context, name string, height int64) bool
+}

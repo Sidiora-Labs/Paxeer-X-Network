@@ -780,7 +780,7 @@ func New(
 		wasmkeeper.NewDefaultPermissionKeeper(app.WasmKeeper), &app.WasmKeeper, &app.UpgradeKeeper)
 	app.BankKeeper.RegisterRecipientChecker(app.EvmKeeper.CanAddressReceive)
 	app.LayerXCustodyKeeper = layerxcustodykeeper.NewKeeper(appCodec, keys[layerxcustodytypes.StoreKey],
-		app.AccountKeeper, app.BankKeeper, &app.EvmKeeper)
+		app.AccountKeeper, app.BankKeeper, &app.EvmKeeper, app.UpgradeKeeper)
 	// Custody trusts only anchor-finalized checkpoints and anchor sequencer
 	// authorizations; its own authority-registered checkpoints are unused.
 	app.LayerXCustodyKeeper.SetAnchorReader(layerxanchorkeeper.NewCustodyAnchor(app.LayerXAnchorKeeper))
