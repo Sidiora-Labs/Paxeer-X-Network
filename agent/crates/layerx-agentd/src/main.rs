@@ -10,6 +10,9 @@ use std::sync::{mpsc, Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
+use layerx_agent_api::error::ErrorClass;
+use layerx_agentd::agent_rpc::{self, AgentRpcResponse};
+use layerx_agentd::agent_rpc_tls::{AgentRpcTls, AgentRpcTlsPaths};
 use layerx_agentd::audit::Redacted;
 use layerx_agentd::budget::{LimitConfig, LimitId, LimitScope};
 use layerx_agentd::capability::CapabilityId;
@@ -18,13 +21,10 @@ use layerx_agentd::enrolment::{
     WebDeclaration,
 };
 use layerx_agentd::human::{HumanListenerConfig, HumanPeer, HumanUnixServer};
-use layerx_agentd::agent_rpc::{self, AgentRpcResponse};
-use layerx_agentd::agent_rpc_tls::{AgentRpcTls, AgentRpcTlsPaths};
 use layerx_agentd::human_runtime::{
     HumanAuthorityBoundary, ProductionHumanOperations, RemoteHumanAuthority, SharedAgentOwner,
     UnifiedAgentOwner,
 };
-use layerx_agent_api::error::ErrorClass;
 use layerx_agentd::identity::{self, CoreIdentity, IdentityError, IdentityResolver};
 use layerx_agentd::ops::program::ProgramOperations;
 use layerx_agentd::read::{
@@ -63,13 +63,19 @@ struct DeadlineStream {
 
 impl DeadlineStream {
     fn new(socket: TcpStream) -> Self {
-        Self { socket, expires: Instant::now() + REQUEST_DEADLINE }
+        Self {
+            socket,
+            expires: Instant::now() + REQUEST_DEADLINE,
+        }
     }
 
     fn remaining(&self) -> std::io::Result<Duration> {
         let remaining = self.expires.saturating_duration_since(Instant::now());
         if remaining.is_zero() {
-            Err(std::io::Error::new(std::io::ErrorKind::TimedOut, "request deadline elapsed"))
+            Err(std::io::Error::new(
+                std::io::ErrorKind::TimedOut,
+                "request deadline elapsed",
+            ))
         } else {
             Ok(remaining.min(IO_CEILING))
         }
@@ -110,34 +116,48 @@ struct HttpPool {
 
 impl HttpPool {
     fn start<F>(listener: TcpListener, handle: F) -> Result<Self, String>
-    where F: Fn(DeadlineStream) + Send + Sync + 'static {
-        listener.set_nonblocking(true).map_err(|error| error.to_string())?;
+    where
+        F: Fn(DeadlineStream) + Send + Sync + 'static,
+    {
+        listener
+            .set_nonblocking(true)
+            .map_err(|error| error.to_string())?;
         let handle = Arc::new(handle);
         let mut pool = Self {
-            admissions: Arc::new((Mutex::new(HttpAdmissions {
-                stopping: false,
-                busy: vec![false; PROGRAM_WORKERS],
-                pending: (0..PROGRAM_WORKERS).map(|_| None).collect(),
-                active: (0..PROGRAM_WORKERS).map(|_| None).collect(),
-                queue: std::collections::VecDeque::with_capacity(PROGRAM_QUEUE),
-            }), std::sync::Condvar::new())),
+            admissions: Arc::new((
+                Mutex::new(HttpAdmissions {
+                    stopping: false,
+                    busy: vec![false; PROGRAM_WORKERS],
+                    pending: (0..PROGRAM_WORKERS).map(|_| None).collect(),
+                    active: (0..PROGRAM_WORKERS).map(|_| None).collect(),
+                    queue: std::collections::VecDeque::with_capacity(PROGRAM_QUEUE),
+                }),
+                std::sync::Condvar::new(),
+            )),
             threads: Vec::with_capacity(PROGRAM_WORKERS + 1),
         };
         for index in 0..PROGRAM_WORKERS {
             let admissions = Arc::clone(&pool.admissions);
             let handle = Arc::clone(&handle);
-            let worker = thread::Builder::new().name(format!("layerx-http-{index}")).spawn(move || {
-                loop {
+            let worker = thread::Builder::new()
+                .name(format!("layerx-http-{index}"))
+                .spawn(move || loop {
                     let stream = {
-                        let Ok(mut state) = admissions.0.lock() else { return; };
+                        let Ok(mut state) = admissions.0.lock() else {
+                            return;
+                        };
                         while state.pending[index].is_none() && !state.stopping {
                             state = match admissions.1.wait(state) {
                                 Ok(state) => state,
                                 Err(_) => return,
                             };
                         }
-                        if state.stopping { return; }
-                        let Some(stream) = state.pending[index].take() else { return; };
+                        if state.stopping {
+                            return;
+                        }
+                        let Some(stream) = state.pending[index].take() else {
+                            return;
+                        };
                         match stream.socket.try_clone() {
                             Ok(socket) => state.active[index] = Some(socket),
                             Err(_) => {
@@ -151,41 +171,56 @@ impl HttpPool {
                     if stream.remaining().is_ok() {
                         handle(stream);
                     }
-                    let Ok(mut state) = admissions.0.lock() else { return; };
+                    let Ok(mut state) = admissions.0.lock() else {
+                        return;
+                    };
                     state.active[index] = None;
                     state.pending[index] = state.queue.pop_front();
                     state.busy[index] = state.pending[index].is_some();
-                }
-            }).map_err(|error| format!("HTTP worker failed: {error}"))?;
+                })
+                .map_err(|error| format!("HTTP worker failed: {error}"))?;
             pool.threads.push(worker);
         }
         let admissions = Arc::clone(&pool.admissions);
-        pool.threads.push(thread::Builder::new().name("layerx-http-accept".to_owned()).spawn(move || {
-            loop {
-                {
-                    let Ok(mut state) = admissions.0.lock() else { return; };
-                    if state.stopping { return; }
-                    state.queue.retain(|stream| stream.remaining().is_ok());
-                }
-                match listener.accept() {
-                    Ok((socket, _)) => {
-                        let stream = DeadlineStream::new(socket);
-                        let Ok(mut state) = admissions.0.lock() else { return; };
-                        if state.stopping { return; }
-                        if let Some(index) = state.busy.iter().position(|busy| !busy) {
-                            state.busy[index] = true;
-                            state.pending[index] = Some(stream);
-                            admissions.1.notify_all();
-                        } else if state.queue.len() < PROGRAM_QUEUE {
-                            state.queue.push_back(stream);
+        pool.threads.push(
+            thread::Builder::new()
+                .name("layerx-http-accept".to_owned())
+                .spawn(move || loop {
+                    {
+                        let Ok(mut state) = admissions.0.lock() else {
+                            return;
+                        };
+                        if state.stopping {
+                            return;
                         }
+                        state.queue.retain(|stream| stream.remaining().is_ok());
                     }
-                    Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => thread::sleep(SUPERVISION_INTERVAL),
-                    Err(error) if error.kind() == std::io::ErrorKind::Interrupted => {},
-                    Err(_) => return,
-                }
-            }
-        }).map_err(|error| format!("HTTP accept thread failed: {error}"))?);
+                    match listener.accept() {
+                        Ok((socket, _)) => {
+                            let stream = DeadlineStream::new(socket);
+                            let Ok(mut state) = admissions.0.lock() else {
+                                return;
+                            };
+                            if state.stopping {
+                                return;
+                            }
+                            if let Some(index) = state.busy.iter().position(|busy| !busy) {
+                                state.busy[index] = true;
+                                state.pending[index] = Some(stream);
+                                admissions.1.notify_all();
+                            } else if state.queue.len() < PROGRAM_QUEUE {
+                                state.queue.push_back(stream);
+                            }
+                        }
+                        Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                            thread::sleep(SUPERVISION_INTERVAL)
+                        }
+                        Err(error) if error.kind() == std::io::ErrorKind::Interrupted => {}
+                        Err(_) => return,
+                    }
+                })
+                .map_err(|error| format!("HTTP accept thread failed: {error}"))?,
+        );
         Ok(pool)
     }
 
@@ -585,7 +620,8 @@ fn publish_mcp_binding(
     let session_id = request.session_id;
     if let Some(existing) = sessions.get(&tenant_id, session_id) {
         let advertised = existing.request.expiry_seconds.is_some();
-        publisher.validate_existing(&sessions, &identity, &request)
+        publisher
+            .validate_existing(&sessions, &identity, &request)
             .map_err(|error| format!("the published MCP binding is unusable: {error}"))?;
         if let (Some(expiry), false) = (verified, advertised) {
             enrolment::republish_with_verified_expiry(
@@ -649,7 +685,11 @@ fn connect_human_node(node_path: PathBuf, node_limits: Limits) -> Result<Client,
     let node = Client::connect(ClientConfig {
         endpoint: node_path,
         handshake: HandshakeConfig {
-            built_interface_version: if execution_prestate { Version::V1_9 } else { Version::V1_3 },
+            built_interface_version: if execution_prestate {
+                Version::V1_9
+            } else {
+                Version::V1_3
+            },
             expected_protocol_version: human_protocol_version,
             expected_network_id: required("LAYERX_AGENT_HUMAN_NETWORK_ID")?
                 .parse()
@@ -671,9 +711,14 @@ fn connect_human_node(node_path: PathBuf, node_limits: Limits) -> Result<Client,
     if execution_prestate {
         let handshake = node.handshake();
         let version = handshake.node().interface_version;
-        if version.major != 1 || version.minor < 9
-            || !handshake.capabilities().contains(layerx_client::lni::schema::Capability::CapsDiscovery)
-            || !handshake.capabilities().contains(layerx_client::lni::schema::Capability::ExecutionPrestate)
+        if version.major != 1
+            || version.minor < 9
+            || !handshake
+                .capabilities()
+                .contains(layerx_client::lni::schema::Capability::CapsDiscovery)
+            || !handshake
+                .capabilities()
+                .contains(layerx_client::lni::schema::Capability::ExecutionPrestate)
         {
             return Err("LAYERX_AGENT_EXECUTION_PRESTATE requires negotiated LNI1.9 and execution_prestate capability".to_owned());
         }
@@ -681,14 +726,20 @@ fn connect_human_node(node_path: PathBuf, node_limits: Limits) -> Result<Client,
     Ok(node)
 }
 
-fn configured_registry_source() -> Result<Option<layerx_agentd::registry_source::RegistrySourceProvider>, String> {
+fn configured_registry_source(
+) -> Result<Option<layerx_agentd::registry_source::RegistrySourceProvider>, String> {
     let path = match env::var_os("LAYERX_AGENT_REGISTRY_SOURCE_CONFIG") {
         None => return Ok(None),
         Some(path) => PathBuf::from(path),
     };
-    if !path.is_absolute() { return Err("LAYERX_AGENT_REGISTRY_SOURCE_CONFIG must be an absolute protected file".to_owned()); }
+    if !path.is_absolute() {
+        return Err(
+            "LAYERX_AGENT_REGISTRY_SOURCE_CONFIG must be an absolute protected file".to_owned(),
+        );
+    }
     layerx_agentd::registry_source::RegistrySourceProvider::from_protected_config(&path)
-        .map(Some).map_err(|error| format!("registry source provider configuration refused: {error:?}"))
+        .map(Some)
+        .map_err(|error| format!("registry source provider configuration refused: {error:?}"))
 }
 
 fn connect_human_authority(
@@ -743,8 +794,16 @@ fn start_human_owner(mcp: Option<McpBoot>) -> Result<OwnerStatus, String> {
     let tenants = human_policy_tenants(&human_peers()?)?;
     let native_policy_sources = native_policy_sources(&tenants)?;
     let denomination_sources = program_budget_denomination_sources(&tenants)?;
-    start_shared_owner(mcp, None, None, None, &native_policy_sources, &denomination_sources, runtime_clock)
-        .map(|(receiver, _, _)| receiver)
+    start_shared_owner(
+        mcp,
+        None,
+        None,
+        None,
+        &native_policy_sources,
+        &denomination_sources,
+        runtime_clock,
+    )
+    .map(|(receiver, _, _)| receiver)
 }
 
 fn start_shared_owner(
@@ -769,10 +828,18 @@ fn start_shared_owner(
     let peers = human_peers()?;
     let tenants = human_policy_tenants(&peers)?;
     if !native_policy_sources.keys().eq(tenants.iter()) {
-        return Err("LAYERX_NATIVE_POLICY_SOURCES must cover exactly the configured Human tenants".to_owned());
+        return Err(
+            "LAYERX_NATIVE_POLICY_SOURCES must cover exactly the configured Human tenants"
+                .to_owned(),
+        );
     }
-    if program_budget_denomination_sources.keys().any(|tenant| !tenants.contains(tenant)) {
-        return Err("Program budget denomination sources name an unconfigured Human tenant".to_owned());
+    if program_budget_denomination_sources
+        .keys()
+        .any(|tenant| !tenants.contains(tenant))
+    {
+        return Err(
+            "Program budget denomination sources name an unconfigured Human tenant".to_owned(),
+        );
     }
     let deadline = Duration::from_millis(parse_u64("LAYERX_AGENT_HUMAN_DEADLINE_MS")?);
     let human_limits = human_lni_limits(deadline)?;
@@ -821,7 +888,6 @@ fn start_shared_owner(
             .parse()
             .map_err(|_| "human payload bound is invalid")?,
         parse_u64("LAYERX_AGENT_HUMAN_TIMESTAMP_SPAN")?,
-
         clock,
     )
     .map_err(|error| format!("human operations are invalid: {error:?}"))?;
@@ -867,7 +933,8 @@ fn start_shared_owner(
     .map_err(|error| format!("human owner is invalid: {error:?}"))?;
     unified.programs = programs;
     if let Some(provider) = configured_registry_source()? {
-        unified.attach_registry_source(provider)
+        unified
+            .attach_registry_source(provider)
             .map_err(|error| format!("registry source provider attachment refused: {error:?}"))?;
     }
     unified.mcp_enrolment = mcp_republish;
@@ -938,12 +1005,15 @@ fn start_agent_rpc(
     let listener = TcpListener::bind(&listen)
         .map_err(|error| format!("agent rpc listener failed: {error}"))?;
     HttpPool::start(listener, move |stream| {
-        let Ok(mut stream) = tls.accept(stream) else { return; };
+        let Ok(mut stream) = tls.accept(stream) else {
+            return;
+        };
         let response = agent_rpc_exchange(&mut stream, &network, &owner);
         let _ = write_rpc_response(&mut stream, &response);
         stream.conn.send_close_notify();
         let _ = stream.flush();
-    }).map(Some)
+    })
+    .map(Some)
 }
 
 fn agent_rpc_exchange<S: Read>(
@@ -951,15 +1021,28 @@ fn agent_rpc_exchange<S: Read>(
     network: &str,
     owner: &SharedAgentOwner<RemoteHumanAuthority>,
 ) -> AgentRpcResponse {
-    let malformed = || agent_rpc::refusal(400, ErrorClass::ProtocolIncompatibility, "envelope.malformed");
+    let malformed = || {
+        agent_rpc::refusal(
+            400,
+            ErrorClass::ProtocolIncompatibility,
+            "envelope.malformed",
+        )
+    };
     let mut bytes = vec![0_u8; HEADER_LIMIT];
     let mut length = 0_usize;
     let head_end = loop {
-        if let Some(end) = bytes[..length].windows(4).position(|value| value == b"\r\n\r\n") {
+        if let Some(end) = bytes[..length]
+            .windows(4)
+            .position(|value| value == b"\r\n\r\n")
+        {
             break end + 4;
         }
         if length == bytes.len() {
-            return agent_rpc::refusal(431, ErrorClass::ProtocolIncompatibility, "envelope.malformed");
+            return agent_rpc::refusal(
+                431,
+                ErrorClass::ProtocolIncompatibility,
+                "envelope.malformed",
+            );
         }
         match stream.read(&mut bytes[length..]) {
             Ok(0) | Err(_) => return malformed(),
@@ -977,10 +1060,18 @@ fn agent_rpc_exchange<S: Read>(
     }
     let health = path == Some("/healthz");
     if path != Some("/rpc") && !health {
-        return agent_rpc::refusal(404, ErrorClass::ProtocolIncompatibility, "envelope.malformed");
+        return agent_rpc::refusal(
+            404,
+            ErrorClass::ProtocolIncompatibility,
+            "envelope.malformed",
+        );
     }
     if method != Some(if health { "GET" } else { "POST" }) {
-        return agent_rpc::refusal(405, ErrorClass::ProtocolIncompatibility, "envelope.malformed");
+        return agent_rpc::refusal(
+            405,
+            ErrorClass::ProtocolIncompatibility,
+            "envelope.malformed",
+        );
     }
     let mut content_length = None;
     for line in lines {
@@ -991,9 +1082,14 @@ fn agent_rpc_exchange<S: Read>(
         if name.eq_ignore_ascii_case("transfer-encoding") {
             return malformed();
         }
-        if ["authorization", "layerx-key", "layerx-tenant", "layerx-agent"]
-            .iter()
-            .any(|principal| name.eq_ignore_ascii_case(principal))
+        if [
+            "authorization",
+            "layerx-key",
+            "layerx-tenant",
+            "layerx-agent",
+        ]
+        .iter()
+        .any(|principal| name.eq_ignore_ascii_case(principal))
         {
             return agent_rpc::refusal(403, ErrorClass::PolicyRefusal, "envelope.header_principal");
         }
@@ -1018,7 +1114,11 @@ fn agent_rpc_exchange<S: Read>(
         return malformed();
     };
     if content_length > agent_rpc::MAX_BODY_BYTES {
-        return agent_rpc::refusal(413, ErrorClass::ProtocolIncompatibility, "envelope.oversized");
+        return agent_rpc::refusal(
+            413,
+            ErrorClass::ProtocolIncompatibility,
+            "envelope.oversized",
+        );
     }
     let mut body = bytes[head_end..length].to_vec();
     if body.len() > content_length {
@@ -1026,7 +1126,10 @@ fn agent_rpc_exchange<S: Read>(
     }
     let missing = content_length - body.len();
     body.resize(content_length, 0);
-    if stream.read_exact(&mut body[content_length - missing..]).is_err() {
+    if stream
+        .read_exact(&mut body[content_length - missing..])
+        .is_err()
+    {
         return malformed();
     }
     agent_rpc::handle_rpc(owner, &body)
@@ -1051,7 +1154,11 @@ fn agent_rpc_health(
 }
 
 fn write_rpc_response<S: Write>(stream: &mut S, response: &AgentRpcResponse) -> Result<(), String> {
-    let reason = if response.status < 300 { "OK" } else { "Refused" };
+    let reason = if response.status < 300 {
+        "OK"
+    } else {
+        "Refused"
+    };
     let header = format!(
         "HTTP/1.1 {} {reason}\r\nContent-Type: application/json\r\nCache-Control: no-store\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
         response.status,
@@ -1066,7 +1173,8 @@ fn write_rpc_response<S: Write>(stream: &mut S, response: &AgentRpcResponse) -> 
 fn human_policy_tenants(
     peers: &BTreeMap<u32, (String, String)>,
 ) -> Result<BTreeSet<TenantId>, String> {
-    peers.values()
+    peers
+        .values()
         .map(|(_, tenant)| TenantId::new(tenant.clone()))
         .collect::<Result<BTreeSet<_>, _>>()
         .map_err(|error| format!("human policy tenant is invalid: {error:?}"))
@@ -1075,9 +1183,8 @@ fn human_policy_tenants(
 fn native_policy_sources(
     tenants: &BTreeSet<TenantId>,
 ) -> Result<BTreeMap<TenantId, PathBuf>, String> {
-    layerx_agentd::config::parse_policy_sources(
-        &required("LAYERX_NATIVE_POLICY_SOURCES")?, tenants,
-    ).map_err(|error| format!("LAYERX_NATIVE_POLICY_SOURCES is invalid: {error}"))
+    layerx_agentd::config::parse_policy_sources(&required("LAYERX_NATIVE_POLICY_SOURCES")?, tenants)
+        .map_err(|error| format!("LAYERX_NATIVE_POLICY_SOURCES is invalid: {error}"))
 }
 
 fn program_budget_denomination_sources(
@@ -1091,7 +1198,8 @@ fn program_budget_denomination_sources(
     };
     let mut opted_in = BTreeSet::new();
     for declaration in value.split(',') {
-        let (tenant, _) = declaration.split_once(':')
+        let (tenant, _) = declaration
+            .split_once(':')
             .ok_or_else(|| format!("{SETTING} requires tenant:absolute-path entries"))?;
         let tenant = TenantId::new(tenant.trim().to_owned())
             .map_err(|_| format!("{SETTING} contains an invalid tenant"))?;
@@ -1124,11 +1232,9 @@ fn config() -> Result<Config, String> {
         return Err("agent staleness bound is non-canonical".to_owned());
     }
     let tenants = human_policy_tenants(&human_peers()?)?;
-    let policy_sources = layerx_agentd::config::parse_policy_sources(
-        &required("LAYERX_POLICY_SOURCES")?,
-        &tenants,
-    )
-    .map_err(|error| format!("human policy sources are invalid: {error}"))?;
+    let policy_sources =
+        layerx_agentd::config::parse_policy_sources(&required("LAYERX_POLICY_SOURCES")?, &tenants)
+            .map_err(|error| format!("human policy sources are invalid: {error}"))?;
     let native_policy_sources = native_policy_sources(&tenants)?;
     let program_budget_denomination_sources = program_budget_denomination_sources(&tenants)?;
     Ok(Config {
@@ -1282,10 +1388,15 @@ fn declared_body(request: &str) -> Result<usize, ()> {
     let mut length = None;
     for header in request.split("\r\n").skip(1) {
         let (name, value) = header.split_once(':').ok_or(())?;
-        if name.eq_ignore_ascii_case("transfer-encoding") { return Err(()); }
+        if name.eq_ignore_ascii_case("transfer-encoding") {
+            return Err(());
+        }
         if name.eq_ignore_ascii_case("content-length") {
             let value = value.trim();
-            if length.is_some() || value.is_empty() || !value.bytes().all(|byte| byte.is_ascii_digit()) {
+            if length.is_some()
+                || value.is_empty()
+                || !value.bytes().all(|byte| byte.is_ascii_digit())
+            {
                 return Err(());
             }
             length = Some(value.parse().map_err(|_| ())?);
@@ -1345,9 +1456,13 @@ fn parse_request(stream: &mut DeadlineStream, bearer: &str) -> Parsed {
     }
     let mut credentials = request.lines().filter_map(|header| {
         let (name, value) = header.split_once(':')?;
-        name.eq_ignore_ascii_case("authorization").then_some(value.trim())
+        name.eq_ignore_ascii_case("authorization")
+            .then_some(value.trim())
     });
-    let authorized = credentials.next().and_then(|value| value.strip_prefix("Bearer ")) == Some(bearer)
+    let authorized = credentials
+        .next()
+        .and_then(|value| value.strip_prefix("Bearer "))
+        == Some(bearer)
         && credentials.next().is_none();
     if !authorized {
         return Parsed::Refused(401, "{\"error\":\"unauthorized\"}");
@@ -1407,7 +1522,6 @@ fn route_request(
         _ => reply(503, "{\"error\":\"program_state_unavailable\"}"),
     }
 }
-
 
 fn native_handover_sources() -> Result<Option<(PathBuf, PathBuf)>, String> {
     let genesis_trust = match std::env::var("LAYERX_AGENT_GENESIS_TRUST") {
@@ -1531,7 +1645,7 @@ fn serve(config: Config) -> Result<(), String> {
                 client,
                 boot.enrolment.did.clone(),
                 config.bearer.clone(),
-                Arc::clone(&runtime_clock),
+                runtime_clock.clone(),
             )
             .map_err(|error| format!("native read route is invalid: {error:?}"))?;
             match handover_sources.as_ref() {
@@ -1561,16 +1675,15 @@ fn serve(config: Config) -> Result<(), String> {
         signed_history.as_ref(),
     )?);
     let export_trust = signed_history.map(export_trust_source).transpose()?;
-    let (human, owner, status) =
-        start_shared_owner(
-            mcp,
-            Some(programs),
-            export_trust,
-            Some(&config.policy_sources),
-            &config.native_policy_sources,
-            &config.program_budget_denomination_sources,
-            runtime_clock,
-        )?;
+    let (human, owner, status) = start_shared_owner(
+        mcp,
+        Some(programs),
+        export_trust,
+        Some(&config.policy_sources),
+        &config.native_policy_sources,
+        &config.program_budget_denomination_sources,
+        runtime_clock,
+    )?;
     let rpc = start_agent_rpc(owner)?;
     drop(status);
     route
@@ -1583,30 +1696,34 @@ fn serve(config: Config) -> Result<(), String> {
         let answer = match parse_request(&mut stream, &config.bearer) {
             Parsed::Closed => return,
             Parsed::Refused(status, body) => (status, body.to_owned()),
-            Parsed::Admitted(path) => {
-                loop {
-                    if stream.remaining().is_err() { return; }
-                    match shared_reads.try_lock() {
-                        Ok(mut reads) => {
-                            let (route, native) = &mut *reads;
-                            break route_request(&path, config.probe_program, route, native);
-                        }
-                        Err(std::sync::TryLockError::WouldBlock) => thread::sleep(SUPERVISION_INTERVAL),
-                        Err(std::sync::TryLockError::Poisoned(_)) => return,
-                    }
+            Parsed::Admitted(path) => loop {
+                if stream.remaining().is_err() {
+                    return;
                 }
-            }
+                match shared_reads.try_lock() {
+                    Ok(mut reads) => {
+                        let (route, native) = &mut *reads;
+                        break route_request(&path, config.probe_program, route, native);
+                    }
+                    Err(std::sync::TryLockError::WouldBlock) => thread::sleep(SUPERVISION_INTERVAL),
+                    Err(std::sync::TryLockError::Poisoned(_)) => return,
+                }
+            },
         };
         let _ = response(&mut stream, answer.0, &answer.1);
     })?;
     loop {
         match human.try_recv() {
             Ok(result) => return result,
-            Err(mpsc::TryRecvError::Disconnected) => return Err("human listener terminated without status".to_owned()),
-            Err(mpsc::TryRecvError::Empty) => {},
+            Err(mpsc::TryRecvError::Disconnected) => {
+                return Err("human listener terminated without status".to_owned())
+            }
+            Err(mpsc::TryRecvError::Empty) => {}
         }
         program.check()?;
-        if let Some(rpc) = &rpc { rpc.check()?; }
+        if let Some(rpc) = &rpc {
+            rpc.check()?;
+        }
         thread::sleep(SUPERVISION_INTERVAL);
     }
 }

@@ -2048,3 +2048,8 @@ do = "Provision the pinned verified Go distribution and provide its bin director
 area = "builder"
 symptom = "A release filename with a sha256 suffix may return an HTML page instead of a distribution digest."
 do = "Verify the retained archive digest and size against exact official release JSON metadata before extraction."
+
+[gotcha.621]
+area = "rust"
+symptom = "Arc::clone type inference can select a trait-object reference before coercing the concrete shared runtime clock."
+do = "Clone the same concrete Arc through its receiver so the existing argument coercion applies without changing the clock or trait."
