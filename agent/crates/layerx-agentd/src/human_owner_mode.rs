@@ -1,13 +1,13 @@
 use super::{
     config, connect_human_authority, connect_human_node, human_lni_limits, human_peers, optional,
-    parse_u64, required, response, serve, start_human_owner, DeadlineStream, HttpPool, Parsed,
-    parse_request, SUPERVISION_INTERVAL,
+    parse_request, parse_u64, required, response, serve, start_human_owner, DeadlineStream,
+    HttpPool, Parsed, SUPERVISION_INTERVAL,
 };
 use std::env;
 use std::net::TcpListener;
 use std::path::PathBuf;
-use std::sync::{mpsc, Arc};
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{mpsc, Arc};
 use std::thread;
 use std::time::Duration;
 
@@ -106,7 +106,9 @@ fn serve_health<F: Fn() -> bool>(
     match parse_request(stream, bearer) {
         Parsed::Closed => Ok(()),
         Parsed::Refused(status, body) => response(stream, status, body),
-        Parsed::Admitted(path) if path != "/healthz" => response(stream, 404, "{\"error\":\"not_found\"}"),
+        Parsed::Admitted(path) if path != "/healthz" => {
+            response(stream, 404, "{\"error\":\"not_found\"}")
+        }
         Parsed::Admitted(_) => {
             let ready = owner_ready() && dependencies_ready().is_ok() && owner_ready();
             if ready {
@@ -160,7 +162,9 @@ mod tests {
                     .map_err(|e| e.to_string())?;
                 let (sender, receiver) = mpsc::channel();
                 drop(sender);
-                super::serve_health(&mut super::DeadlineStream::new(stream), &bearer, || super::owner_running(&receiver).is_ok())
+                super::serve_health(&mut super::DeadlineStream::new(stream), &bearer, || {
+                    super::owner_running(&receiver).is_ok()
+                })
             });
             let mut client = TcpStream::connect(address)?;
             client.set_read_timeout(Some(Duration::from_secs(5)))?;

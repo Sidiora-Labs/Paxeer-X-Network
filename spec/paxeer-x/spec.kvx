@@ -21856,7 +21856,11 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.8.1]
 title = "Serve the authenticated agent operation envelope through the unified route and daemon"
-status = "in_progress"
+status = "done"
+completion_basis = "implementation"
+qualification_status = "unverified"
+implemented_revision = "fc4ccf96f"
+build_status = "passed"
 mode = "BUILD"
 wave = 2
 requires = ["0.2", "0.7"]
