@@ -23275,7 +23275,7 @@ source_scope = "Reuse existing dependency manifests and lockfile read-only. Pres
 
 [task.103.6.4]
 title = "Implement the layerx-agent-boundary component service over the LNI"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 2
 requires = ["0.2"]
@@ -23286,7 +23286,7 @@ do_3 = "Serve the component contract exactly as the gateway parses it: GET /read
 do_4 = "Persist real ProgramCall graph and terminal artifacts with explicit ownership through direct/prepared execution and explicitly versioned publication WAL/receipt-authority records, preserving old record decoding. Retrieve them through an authenticated additive program-listener route bound to activity ID and receipt digest, verify the existing signed receipt/artifact commitments at the boundary, and persist verified completed results for replay. Successful executions with missing/corrupt artifacts must remain unavailable; preserve truthful pre-runtime refusal data. Write tests under platform/hosted/agent-boundary/tests against a real layerxd and replica from build/bin covering every route, the exactly-once journal across a restart, refusal mapping, the entitlement split between the two tokens, and readiness under daemon loss; add platform/hosted/agent-boundary/Dockerfile from the faucet template."
 do_5 = "Owner-requested single BUILD wave: provide version-identified snapshot program reads with explicit freshness requirements outside the write queue; retain direct native transfers and conflict-aware parallel Programs execution including protocol accounts, sequences and budgets; minimize the durable commit-to-result path; deliver event-driven completion and bounded authenticated persistent connections; move reconstructible snapshot/publication work off live execution locks without changing recovery, required replica acknowledgements, receipt verification or unknown-outcome semantics. Implement the complete wave before one compile pass and one focused real-process behavior gate, with at most two repair cycles. This bounded BUILD checkpoint does not assert the task's full qualification chain passed."
 do_6 = "Provide this task selector in tools/paxeer-x/gates and execute the full scoped acceptance contract using real production paths. Preserve the retained verification command coverage; move aggregate matrices to release scope and refuse an unknown or unimplemented selector."
-touches = ["platform/hosted/agent-boundary", "platform/hosted/core", "platform/hosted/gateway", "agent/crates/layerx-client", "agent/schema/lni", "agent/tests/boundary/node/layerxd_lni.c", "programs/crates/layerx-programs-runtime", "include/layerx", "src/protocol", "src/modules/programs", "src/storage", "cmd/layerxd", "tests/protocol", "tests/storage", "tests/programs", "tests/daemon", "Makefile", "platform/Cargo.toml", "platform/Cargo.lock", "tools/paxeer-x/gates/103.6.4.sh"]
+touches = ["platform/hosted/agent-boundary/src/main.rs", "platform/hosted/agent-boundary/tests/real_node.rs", "tools/paxeer-x/gates/103.6.4.sh"]
 verify_cmd = "timeout 30m tools/paxeer-x/verify-task.sh 103.6.4"
 gate_kind = "planned-adapter"
 max_builds = 1
@@ -23302,6 +23302,9 @@ completion_policy = "Existing implementation is preserved; current candidate qua
 planned_paths = ["tools/paxeer-x/gates/103.6.4.sh"]
 path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
 evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+retained_shared_touch_paths = ["platform/hosted/agent-boundary", "platform/hosted/core", "platform/hosted/gateway", "agent/crates/layerx-client", "agent/schema/lni", "agent/tests/boundary/node/layerxd_lni.c", "programs/crates/layerx-programs-runtime", "include/layerx", "src/protocol", "src/modules/programs", "src/storage", "cmd/layerxd", "tests/protocol", "tests/storage", "tests/programs", "tests/daemon", "Makefile", "platform/Cargo.toml", "platform/Cargo.lock", "tools/paxeer-x/gates/103.6.4.sh"]
+source_ownership = "This readiness and pool continuation changes only the actual boundary service, real-process cases and selector. Root serializes shared native, gateway, client, schema, manifest and Makefile paths; every original acceptance criterion remains required."
+source_mapping = "Historical hosted agent-boundary and faucet Dockerfile paths resolve to existing docker/platform-agent-boundary/Dockerfile and docker/platform-faucet/Dockerfile; no duplicate packaging tree is created."
 
 [task.103.6.5]
 title = "Implement the layerx-identity principal and session service"

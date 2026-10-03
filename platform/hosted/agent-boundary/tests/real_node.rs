@@ -2420,6 +2420,48 @@ fn check_daemon_loss(cluster: &mut Cluster, submitted: &Submitted, first: &[u8])
     assert_eq!(live.status, 200);
 }
 
+#[test]
+fn real_readiness_requires_live_lni_and_bounds_saturated_sessions() {
+    let cluster = start_cluster();
+    check_readiness(&cluster);
+    let signed = signed_send(&cluster.actor, cluster.asset, 1);
+    let submitted = submit_send(&cluster, &signed, &format!("readiness-{}", token()));
+    let before = journal_record(&cluster, &submitted.key);
+    let pid = cluster.sequencer.child.id().to_string();
+    command("kill", &["-STOP", &pid]);
+    let listening = TcpStream::connect(("127.0.0.1", cluster.program_port));
+    let started = Instant::now();
+    let answers = thread::scope(|scope| {
+        let barrier = std::sync::Arc::new(std::sync::Barrier::new(8));
+        let handles = (0..8).map(|_| {
+            let client = Client { port: cluster.client.port, certificate: cluster.client.certificate.clone() };
+            let barrier = std::sync::Arc::clone(&barrier);
+            scope.spawn(move || {
+                barrier.wait();
+                client.get("/readyz", None)
+            })
+        }).collect::<Vec<_>>();
+        handles.into_iter().map(|handle| must(handle.join(), "concurrent real readiness")).collect::<Vec<_>>()
+    });
+    let elapsed = started.elapsed();
+    let live = cluster.client.get("/livez", None);
+    command("kill", &["-CONT", &pid]);
+    assert!(listening.is_ok(), "stopped daemon must retain its real accepting TCP listener");
+    assert!(elapsed < Duration::from_secs(15), "session admission and live LNI probes exceeded their configured ten-second bound: {elapsed:?}");
+    assert_eq!(answers.len(), 8);
+    for answer in answers {
+        assert_eq!(answer.status, 503, "cached handshake must not mark a stopped daemon ready: {}", answer.text());
+        assert!(matches!(answer.error_code().as_str(), "node_unavailable" | "node_transport_lost"), "{}", answer.text());
+    }
+    assert_eq!(live.status, 200);
+    check_readiness(&cluster);
+    assert_eq!(journal_record(&cluster, &submitted.key), before);
+    let replay = cluster.client.call(&Call::submit("/v1/activities", &cluster.gateway_token, &submitted.key, &signed));
+    assert_eq!(replay.status, 200);
+    assert_eq!(replay.text(), submitted.body);
+    assert_eq!(journal_record(&cluster, &submitted.key)["attempts"], 1);
+}
+
 fn signed_program_call(actor: &Actor, program_id: [u8; 32]) -> Vec<u8> {
     signed_program_call_at(actor, program_id, 1)
 }

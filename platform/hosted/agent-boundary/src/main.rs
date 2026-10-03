@@ -42,7 +42,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Condvar, Mutex, PoisonError};
 use std::thread;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use subtle::ConstantTimeEq;
 use zeroize::{Zeroize, Zeroizing};
 
@@ -136,18 +136,24 @@ impl SessionPool {
         }
     }
 
-    fn acquire(&self, usage: SessionUse) -> SessionLease<'_> {
+    fn acquire(&self, usage: SessionUse, timeout: Duration) -> Result<SessionLease<'_>, LniFailure> {
+        let deadline = Instant::now().checked_add(timeout)
+            .ok_or_else(|| LniFailure::Unavailable("session admission deadline invalid".to_owned()))?;
         let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
         loop {
+            let remaining = deadline.checked_duration_since(Instant::now())
+                .filter(|duration| !duration.is_zero())
+                .ok_or_else(|| LniFailure::Unavailable("session admission deadline exceeded".to_owned()))?;
             let first = usize::from(usage == SessionUse::ReceiptWait);
             if let Some(index) = (first..state.busy.len()).find(|index| !state.busy[*index]) {
                 state.busy[index] = true;
-                return SessionLease { pool: self, index };
+                return Ok(SessionLease { pool: self, index });
             }
-            state = self
+            let (next, _) = self
                 .changed
-                .wait(state)
+                .wait_timeout(state, remaining)
                 .unwrap_or_else(PoisonError::into_inner);
+            state = next;
         }
     }
 }
@@ -666,7 +672,7 @@ fn with_session_for<T>(
     usage: SessionUse,
     operation: impl FnOnce(&mut Session) -> Result<T, LniFailure>,
 ) -> Result<T, LniFailure> {
-    let lease = config.sessions.acquire(usage);
+    let lease = config.sessions.acquire(usage, config.lni_deadline)?;
     let mut slot = config.sessions.slots[lease.index]
         .lock()
         .unwrap_or_else(PoisonError::into_inner);
@@ -2062,16 +2068,18 @@ fn relay_bounded(config: &Config, target: &str, maximum: usize) -> Response {
 }
 
 fn readiness(config: &Config) -> Response {
+    let address = SocketAddr::from(([127, 0, 0, 1], config.node.port));
+    if TcpStream::connect_timeout(&address, CONNECT_TIMEOUT).is_err() {
+        return refusal(503, "node_unavailable", Some(5));
+    }
+    let probe = Sha256::digest(b"LayerX-AgentBoundary-Readiness/v1").into();
     let protocol_version = match with_session(config, |session| {
+        lookup_receipt(session, probe, ReceiptWaitMode::Immediate)?;
         Ok(session.handshake.node().protocol_version)
     }) {
         Ok(version) => version,
         Err(failure) => return failure.response(),
     };
-    let address = SocketAddr::from(([127, 0, 0, 1], config.node.port));
-    if TcpStream::connect_timeout(&address, CONNECT_TIMEOUT).is_err() {
-        return refusal(503, "node_unavailable", Some(5));
-    }
     ok(format!(
         "{{\"ready\":true,\"network_id\":\"{}\",\"wire_version\":\"{}\",\"synchronous_receipts\":true,\"state_snapshot\":true}}",
         config.network_name, protocol_version

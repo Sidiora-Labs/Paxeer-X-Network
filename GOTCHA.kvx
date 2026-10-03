@@ -2053,3 +2053,13 @@ do = "Verify the retained archive digest and size against exact official release
 area = "rust"
 symptom = "Arc::clone type inference can select a trait-object reference before coercing the concrete shared runtime clock."
 do = "Clone the same concrete Arc through its receiver so the existing argument coercion applies without changing the clock or trait."
+
+[gotcha.622]
+area = "paths"
+symptom = "Historical hosted Dockerfile locations can differ from current monorepo docker packaging."
+do = "Resolve to actual tracked Dockerfiles and retain conforming packaging; do not create duplicate old paths."
+
+[gotcha.623]
+area = "lni"
+symptom = "The native negotiated LNI session explicitly refuses a second NodeInfo request."
+do = "Use an existing authenticated read with a genuine nonzero selector to prove persistent-session liveness while preserving authentic receipts and journal state."
