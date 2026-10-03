@@ -31,6 +31,7 @@ export class UserRejectedRequestError extends ProviderRpcError {
 export type UnauthorizedReason =
   | 'not_connected'
   | 'no_token'
+  | 'session_changed'
   | 'account_mismatch'
   | 'missing_construction'
   | 'unknown_construction'

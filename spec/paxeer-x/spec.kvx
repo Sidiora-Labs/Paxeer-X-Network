@@ -25494,7 +25494,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.13.4]
 title = "Serve authenticated wallet custody, constrained signing and sponsored submission adapters"
-status = "done"
+status = "in_progress"
 completion_basis = "implementation"
 qualification_status = "unverified"
 mode = "BUILD"
@@ -25506,7 +25506,7 @@ do_2 = "Propagate complete construction/custody authorization through the migrat
 do_3 = "Implement the gas-station protocol adapter and real SDK-to-gateway/daemon contract coverage, including negative constructions and the DepositFlow handoff."
 do_4 = "Add the new bounded harness tools/qualification/paxeer-x/wallet-signing-adapters.py to exercise this task through the named production interfaces, including the stated refusal and recovery cases, with explicit prerequisite checks and nonzero exit on any unmet acceptance. Use supplied prebuilt executables and isolated retained state; do not hide a rebuild or invoke a release-wide suite."
 do_5 = "Implement the declared focused gate through the real production types and paths; exercise every acceptance criterion including refusal, restart or boundary cases specified by this requirement. The command is a planned deliverable, not an already-run gate."
-touches = ["human/wallet/gateway/src/index.ts", "human/wallet/gateway/src/routes/sign.ts", "human/wallet/gateway/src/routes/wallet.ts", "human/wallet/gateway/src/attestor/client.ts", "human/wallet/attestor/internal/server/sign.go", "human/wallet/attestor/internal/policy/evm/digest.go", "human/wallet/sdk/src/provider.ts", "human/wallet/sdk/src/modules/gas-station.ts", "human/apps/wallet/src/account/DepositFlow.tsx", "human/wallet/gateway/test/e2e/gateway.e2e.test.ts", "tools/qualification/paxeer-x/wallet-signing-adapters.py"]
+touches = ["human/wallet/gateway/src/index.ts", "human/wallet/gateway/src/routes/sign.ts", "human/wallet/gateway/src/routes/wallet.ts", "human/wallet/gateway/src/attestor/client.ts", "human/wallet/attestor/internal/server/sign.go", "human/wallet/attestor/internal/policy/evm/digest.go", "human/wallet/sdk/src/provider.ts", "human/wallet/sdk/src/modules/gas-station.ts", "human/apps/wallet/src/account/DepositFlow.tsx", "human/wallet/gateway/test/e2e/gateway.e2e.test.ts", "tools/qualification/paxeer-x/wallet-signing-adapters.py", "human/wallet/sdk/src/errors.ts"]
 verify_cmd = "timeout 15m python3 tools/qualification/paxeer-x/wallet-signing-adapters.py"
 gate_kind = "planned"
 max_builds = 1

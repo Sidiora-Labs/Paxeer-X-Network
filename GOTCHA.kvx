@@ -1984,3 +1984,7 @@ area = "node"
 symptom = "Connected conformance imports the agent integration package outside its original declared dependencies."
 do = "Declare the workspace dependency and update the matching lockfile entry without changing package versions."
 
+[gotcha.604]
+area = "wallet"
+symptom = "Capability session changes cannot be represented honestly by an address-only account mismatch refusal."
+do = "Declare the precise session-change refusal through the approved contract while preserving rejection predicates and error code."

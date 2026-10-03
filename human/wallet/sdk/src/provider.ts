@@ -453,7 +453,7 @@ export class PaxeerProvider implements Eip1193Provider {
     const address = this.accounts[0]?.toLowerCase();
     const chainId = this.chainId;
     const generation = this.capsGeneration;
-    if (!this.connected || !address) throw new UnauthorizedError('no_account', 'connect a wallet first');
+    if (!this.connected || !address) throw new UnauthorizedError('not_connected', 'connect a wallet first');
     const token = await this.token();
     if (!token) throw new UnauthorizedError('no_token', 'no signed-in session');
     if (generation !== this.capsGeneration) throw new UnauthorizedError('session_changed', 'the wallet session changed');
