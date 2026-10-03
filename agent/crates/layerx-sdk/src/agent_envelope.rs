@@ -14,6 +14,10 @@ use layerx_agent_api::error::{
     ApiError, ApiSuccess, ErrorClass, IdempotentMutation, Key, Level, ReasonCode, RequestId,
     Retriability, VerificationStatus,
 };
+use layerx_agent_api::prepare::CanonicalBytes;
+use layerx_agent_api::proof::{ProofBundle, ProofBundleTarget, MAX_PROOF_BUNDLE_BYTES};
+use layerx_agent_api::read::{BatchRef, CheckpointRef, Freshness, ReadRequest, RelativeTo, VerifiedRead};
+use layerx_agent_api::Sequence;
 use layerx_types::result::ResultCode;
 use serde_json::{json, Map, Value};
 use url::Url;
@@ -470,6 +474,21 @@ impl AgentEnvelopeTransport {
         Ok(native_success(response, value))
     }
 
+    pub fn read_proof_bundle(
+        &self,
+        request_id: RequestId,
+        request: &ReadRequest<CanonicalBytes>,
+        credential: &EnvelopeCredential,
+    ) -> Result<ApiSuccess<VerifiedRead<ProofBundle>>, EnvelopeError> {
+        let body = encode_proof_bundle_request(request)?;
+        let response = self.send_operation(
+            Operation::ReadProofBundle, request_id, &body, Some(credential), None,
+        )?;
+        let value = decode_proof_bundle_response(request, &response)
+            .ok_or(EnvelopeError::Decode { operation: Operation::ReadProofBundle })?;
+        Ok(native_success(response, value))
+    }
+
     fn exchange(
         &self,
         operation: Operation,
@@ -479,6 +498,11 @@ impl AgentEnvelopeTransport {
         idempotency_key: Option<Key>,
         received: &mut Option<(u16, Value)>,
     ) -> Result<ApiSuccess<Value>, EnvelopeError> {
+        let proof_request = if operation == Operation::ReadProofBundle {
+            Some(decode_proof_bundle_request(request).ok_or(EnvelopeError::InvalidRequest)?)
+        } else {
+            None
+        };
         let envelope =
             encode_envelope(operation, request_id, request, credential, idempotency_key)?;
         let body = serde_json::to_vec(&envelope).map_err(|_| EnvelopeError::InvalidRequest)?;
@@ -531,12 +555,20 @@ impl AgentEnvelopeTransport {
         if !json_body {
             return Err(malformed());
         }
+        let response_limit = if proof_request.is_some() {
+            MAX_ENVELOPE_BYTES as u64 + 1
+        } else {
+            MAX_HTTP_RESPONSE_BYTES
+        };
         let encoded = response
             .body_mut()
             .with_config()
-            .limit(MAX_HTTP_RESPONSE_BYTES)
+            .limit(response_limit)
             .read_to_vec()
             .map_err(|_| ambiguous())?;
+        if proof_request.is_some() && encoded.len() > MAX_ENVELOPE_BYTES {
+            return Err(EnvelopeError::Decode { operation });
+        }
         let document: Value = serde_json::from_slice(&encoded).map_err(|_| malformed())?;
         *received = Some((status, document.clone()));
         let edge = matches!(status, 502..=504)
@@ -564,7 +596,12 @@ impl AgentEnvelopeTransport {
                 EnvelopeError::Decode { operation }
             });
         }
-        decoded.map_err(EnvelopeError::Refused)
+        let success = decoded.map_err(EnvelopeError::Refused)?;
+        if let Some(request) = proof_request.as_ref() {
+            decode_proof_bundle_response(request, &success)
+                .ok_or(EnvelopeError::Decode { operation })?;
+        }
+        Ok(success)
     }
 }
 
@@ -834,4 +871,83 @@ pub fn decode_native_approval_list(value: &Value) -> Option<layerx_agent_api::id
 
 fn native_success<T>(response: ApiSuccess<Value>, value: T) -> ApiSuccess<T> {
     ApiSuccess { request_id: response.request_id, value, verification_status: response.verification_status }
+}
+
+
+pub fn encode_proof_bundle_request(
+    request: &ReadRequest<CanonicalBytes>,
+) -> Result<Value, EnvelopeError> {
+    ProofBundleTarget::decode(request.selector.as_bytes())
+        .map_err(|_| EnvelopeError::InvalidRequest)?;
+    Ok(json!({
+        "target": hex(request.selector.as_bytes()),
+        "requested_verification_level": format!("{:?}", request.requested_verification_level),
+    }))
+}
+
+pub fn decode_proof_bundle_request(value: &Value) -> Option<ReadRequest<CanonicalBytes>> {
+    let request = value.as_object()?;
+    if !exact_fields(request, &["target", "requested_verification_level"]) {
+        return None;
+    }
+    let bytes = native_hex(request.get("target")?, 67)?;
+    ProofBundleTarget::decode(&bytes).ok()?;
+    Some(ReadRequest {
+        selector: CanonicalBytes::new(bytes).ok()?,
+        requested_verification_level: level(request.get("requested_verification_level")?)?,
+    })
+}
+
+pub fn decode_proof_bundle_response(
+    request: &ReadRequest<CanonicalBytes>,
+    response: &ApiSuccess<Value>,
+) -> Option<VerifiedRead<ProofBundle>> {
+    let read = response.value.as_object()?;
+    if !exact_fields(read, &["value", "achieved_verification_level", "freshness"]) {
+        return None;
+    }
+    let achieved = level(read.get("achieved_verification_level")?)?;
+    if response.verification_status != VerificationStatus::Achieved(achieved) {
+        return None;
+    }
+    let bundle = read.get("value")?.as_object()?;
+    if !exact_fields(bundle, &["target", "proofs"]) {
+        return None;
+    }
+    let target = CanonicalBytes::new(native_hex(bundle.get("target")?, 67)?).ok()?;
+    let proofs = bundle.get("proofs")?.as_array()?;
+    if proofs.len() != 1 {
+        return None;
+    }
+    let proof = CanonicalBytes::new(native_hex(&proofs[0], MAX_PROOF_BUNDLE_BYTES)?).ok()?;
+    let freshness = read.get("freshness")?.as_object()?;
+    if !exact_fields(freshness, &["chain_head", "latest_sealed_batch",
+        "latest_finalised_checkpoint", "value_sequence", "relative_to"]) {
+        return None;
+    }
+    let chain_head = canonical_u64(freshness.get("chain_head")?.as_str()?)?;
+    let value_sequence = canonical_u64(freshness.get("value_sequence")?.as_str()?)?;
+    let sealed = freshness.get("latest_sealed_batch")?.as_str()?;
+    let sealed_number = canonical_u64(sealed)?;
+    let checkpoint = freshness.get("latest_finalised_checkpoint")?;
+    native_id(checkpoint)?;
+    let relative = freshness.get("relative_to")?.as_object()?;
+    if !exact_fields(relative, &["batch"]) {
+        return None;
+    }
+    let batch = relative.get("batch")?.as_str()?;
+    let batch_number = canonical_u64(batch)?;
+    if chain_head == 0 || value_sequence == 0 || sealed_number == 0 || batch_number == 0
+        || value_sequence > chain_head || batch_number > sealed_number {
+        return None;
+    }
+    let result = VerifiedRead::new(ProofBundle { target, proofs: vec![proof] }, achieved, Freshness {
+        chain_head: Sequence(chain_head),
+        latest_sealed_batch: BatchRef::new(sealed).ok()?,
+        latest_finalised_checkpoint: CheckpointRef::new(checkpoint.as_str()?).ok()?,
+        value_sequence: Sequence(value_sequence),
+        relative_to: RelativeTo::Batch(BatchRef::new(batch).ok()?),
+    });
+    ProofBundle::check_response(request, &result).ok()?;
+    Some(result)
 }

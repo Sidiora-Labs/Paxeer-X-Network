@@ -467,6 +467,115 @@ export interface AgentEnvelopeSuccess<TValue = unknown> {
   readonly verification_status: unknown;
 }
 
+export type ProofBundleVerificationLevel = "Unverified" | "SequencerSigned" | "BatchIncluded" | "StateProven" | "CheckpointFinalised" | "SettlementAnchored";
+
+export interface ProofBundleRequest {
+  readonly target: string;
+  readonly requested_verification_level: ProofBundleVerificationLevel;
+}
+
+export interface ProofBundleRead {
+  readonly value: { readonly target: string; readonly proofs: readonly [string] };
+  readonly achieved_verification_level: "BatchIncluded" | "StateProven";
+  readonly freshness: {
+    readonly chain_head: string;
+    readonly latest_sealed_batch: string;
+    readonly latest_finalised_checkpoint: string;
+    readonly value_sequence: string;
+    readonly relative_to: { readonly batch: string };
+  };
+}
+
+export type ProofBundleRecord = {
+  readonly variant: 1 | 2 | 3;
+  readonly canonical_value: string;
+  readonly native_proof: string;
+} | {
+  readonly variant: 4;
+  readonly canonical_value: string;
+  readonly native_proof: string;
+  readonly activity_receipt: string;
+  readonly activity_receipt_sp1: string;
+};
+
+export function encodeProofBundleRequest(value: unknown): ProofBundleRequest {
+  try {
+    const request = record(value);
+    exactKeys(request, ["target", "requested_verification_level"]);
+    const target = request.target, level = request.requested_verification_level;
+    if (typeof target !== "string" || (target.length !== 70 && target.length !== 134)
+      || !/^[0-9a-f]+$/u.test(target) || typeof level !== "string" || !VERIFICATION_LEVELS.has(level)) throw invalidArgument();
+    const bytes = Buffer.from(target, "hex"), kind = bytes[2];
+    if (bytes.readUInt16BE(0) !== 1 || (kind !== 1 && kind !== 2 && kind !== 3)
+      || bytes.length !== (kind === 2 ? 67 : 35) || bytes.subarray(3, 35).every((byte) => byte === 0)
+      || kind === 2 && bytes.subarray(35).every((byte) => byte === 0)) throw invalidArgument();
+    return Object.freeze({ target, requested_verification_level: level as ProofBundleVerificationLevel });
+  } catch { throw invalidArgument(); }
+}
+
+export function decodeProofBundleRecord(value: unknown): ProofBundleRecord {
+  try {
+    if (typeof value !== "string" || value.length === 0 || value.length > 524_288 || value.length % 2 !== 0 || /[^0-9a-f]/u.test(value)) throw decodeFailure();
+    const bytes = Buffer.from(value, "hex");
+    if (bytes.length < 6 || !bytes.subarray(0, 5).equals(Buffer.from("LXPB1", "ascii"))) throw decodeFailure();
+    const variant = bytes[5];
+    if (variant !== 1 && variant !== 2 && variant !== 3 && variant !== 4) throw decodeFailure();
+    let offset = 6;
+    const field = (): string => {
+      if (offset + 4 > bytes.length) throw decodeFailure();
+      const length = bytes.readUInt32BE(offset);
+      offset += 4;
+      if (length === 0 || length > bytes.length - offset) throw decodeFailure();
+      const result = bytes.subarray(offset, offset + length).toString("hex");
+      offset += length;
+      return result;
+    };
+    const canonical_value = field(), native_proof = field();
+    const result: ProofBundleRecord = variant === 4
+      ? { variant, canonical_value, native_proof, activity_receipt: field(), activity_receipt_sp1: field() }
+      : { variant, canonical_value, native_proof };
+    if (offset !== bytes.length) throw decodeFailure();
+    return Object.freeze(result);
+  } catch { throw decodeFailure(); }
+}
+
+export function checkProofBundleResponse(request: ProofBundleRequest, response: AgentEnvelopeSuccess): ProofBundleRecord {
+  const expected = encodeProofBundleRequest(request);
+  try {
+    const read = record(response.value);
+    exactKeys(read, ["value", "achieved_verification_level", "freshness"]);
+    const value = record(read.value);
+    exactKeys(value, ["target", "proofs"]);
+    if (value.target !== expected.target || !Array.isArray(value.proofs) || value.proofs.length !== 1) throw decodeFailure();
+    const proof = decodeProofBundleRecord(value.proofs[0]);
+    const kind = Buffer.from(expected.target, "hex")[2];
+    if (kind === 1 && proof.variant !== 1 || kind === 3 && proof.variant !== 3
+      || kind === 2 && proof.variant !== 2 && proof.variant !== 4) throw decodeFailure();
+    const achieved = kind === 2 ? "StateProven" : "BatchIncluded";
+    const levels = [...VERIFICATION_LEVELS];
+    const status = record(response.verification_status);
+    exactKeys(status, ["state", "level"]);
+    if (read.achieved_verification_level !== achieved || levels.indexOf(achieved) < levels.indexOf(expected.requested_verification_level)
+      || status.state !== "achieved" || status.level !== achieved) throw decodeFailure();
+    const freshness = record(read.freshness);
+    exactKeys(freshness, ["chain_head", "latest_sealed_batch", "latest_finalised_checkpoint", "value_sequence", "relative_to"]);
+    const relative = record(freshness.relative_to);
+    exactKeys(relative, ["batch"]);
+    const decimal = (value: unknown): bigint => {
+      if (typeof value !== "string") throw decodeFailure();
+      const number = exactU64(value);
+      if (value !== number.toString(10)) throw decodeFailure();
+      return number;
+    };
+    const head = decimal(freshness.chain_head), latest = decimal(freshness.latest_sealed_batch);
+    const sequence = decimal(freshness.value_sequence), batch = decimal(relative.batch);
+    if (head === 0n || latest === 0n || batch === 0n || sequence === 0n || sequence > head || batch > latest
+      || typeof freshness.latest_finalised_checkpoint !== "string" || freshness.latest_finalised_checkpoint.length !== 64 || !HEX32.test(freshness.latest_finalised_checkpoint)
+      || kind === 2 && (sequence !== head || batch !== latest)) throw decodeFailure();
+    return proof;
+  } catch { throw decodeFailure(response.request_id); }
+}
+
 /** Version 1 authenticated operation envelope over the unified gateway route POST /v1/agent/rpc. */
 export class AgentEnvelopeTransport implements ProductionTransport {
   readonly #endpoint: URL;
@@ -512,8 +621,9 @@ export class AgentEnvelopeTransport implements ProductionTransport {
     } else if (call.idempotencyKey !== undefined) {
       throw invalidArgument();
     }
+    const proofRequest = operation === "read.proof_bundle" ? encodeProofBundleRequest(call.request) : undefined;
     const requestId = freshRequestId();
-    const body = encodeAgentEnvelope(operation, requestId, call.request, this.#session, call.idempotencyKey);
+    const body = encodeAgentEnvelope(operation, requestId, proofRequest ?? call.request, this.#session, call.idempotencyKey);
     const headers: http.OutgoingHttpHeaders = {
       Accept: "application/json",
       "Content-Type": "application/json",
@@ -523,7 +633,15 @@ export class AgentEnvelopeTransport implements ProductionTransport {
     if (this.#gatewayCredential !== undefined) {
       this.#gatewayCredential.use((authorization) => { headers.Authorization = authorization; });
     }
-    return await this.dispatch<TResponse>(headers, body, mutation, requestId);
+    const response = await this.dispatch<TResponse>(headers, body, mutation, requestId, proofRequest !== undefined);
+    if (proofRequest !== undefined) checkProofBundleResponse(proofRequest, response as AgentEnvelopeSuccess);
+    return response;
+  }
+
+  public async readProofBundle(request: ProofBundleRequest): Promise<AgentEnvelopeSuccess<ProofBundleRead>> {
+    return await this.call<ProofBundleRequest, AgentEnvelopeSuccess<ProofBundleRead>>({
+      plane: "agent", operation: "read.proof_bundle", request,
+    });
   }
 
   public async prepareNative(request: NativePrepareRequestV1, idempotencyKey: IdempotencyKey): Promise<AgentEnvelopeSuccess<NativePrepareResultV1>> {
@@ -575,7 +693,7 @@ export class AgentEnvelopeTransport implements ProductionTransport {
     } catch { throw new PlatformSdkError({code:"unknown-outcome",retry:"unknown-outcome",requestId:response.request_id}); }
   }
 
-  private dispatch<TResponse>(headers: http.OutgoingHttpHeaders, body: Buffer, mutation: boolean, requestId: string): Promise<TResponse> {
+  private dispatch<TResponse>(headers: http.OutgoingHttpHeaders, body: Buffer, mutation: boolean, requestId: string, proofBundle: boolean): Promise<TResponse> {
     const ambiguous = (): PlatformSdkError => mutation
       ? new PlatformSdkError({ code: "unknown-outcome", retry: "unknown-outcome" })
       : new PlatformSdkError({ code: "transport-failure", retry: "safe" });
@@ -598,7 +716,7 @@ export class AgentEnvelopeTransport implements ProductionTransport {
         let received = 0;
         response.on("data", (chunk: Buffer) => {
           received += chunk.length;
-          if (received > this.#maximumResponseBytes) {
+          if (received > (proofBundle ? Math.min(this.#maximumResponseBytes, MAX_ENVELOPE_BYTES) : this.#maximumResponseBytes)) {
             response.destroy();
             finish(reject, ambiguous());
             return;

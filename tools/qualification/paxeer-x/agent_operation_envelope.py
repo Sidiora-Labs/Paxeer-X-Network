@@ -20,6 +20,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT / 'tests/daemon'))
 sys.path.insert(0, str(ROOT / 'agent/sdk/python'))
+sys.path.insert(0, str(ROOT / 'tools/qualification/paxeer-x/fixtures'))
+from event_source_fixture import NativeProofFaultRelay
 import paxeer_x_runtime_fixture as fixture
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
@@ -107,8 +109,7 @@ HEALTH_PATH = '/healthz'
 RULED_REFUSALS = {'faucet.claim': (503, 'UnavailableCapability', 'unavailable_capability.faucet.claim'),
                   'agent.register': (403, 'PolicyRefusal', 'refused_pending_bootstrap_artifact'),
                   'session.open': (403, 'PolicyRefusal', 'refused_pending_bootstrap_artifact'),
-                  'program.interface': (503, 'UnavailableCapability', 'unmatched_by_ruling'),
-                  'read.proof_bundle': (503, 'UnavailableCapability', 'unmatched_by_ruling')}
+                  'program.interface': (503, 'UnavailableCapability', 'unmatched_by_ruling')}
 CLASSES = {'TransportFailure', 'Deadline', 'ProtocolIncompatibility', 'UnavailableCapability', 'CoreRejection',
            'VerificationFailure', 'PolicyRefusal', 'CapabilityRefusal', 'BudgetRefusal', 'RateLimit',
            'IdempotencyConflict', 'InternalFault'}
@@ -118,6 +119,7 @@ SOURCES = ('agent/crates', 'agent/Cargo.toml', 'agent/Cargo.lock', 'agent/schema
            'agent/sdk/typescript/tsconfig.json', 'agent/sdk/python', 'platform/hosted/gateway', 'platform/Cargo.toml',
            'platform/Cargo.lock', 'platform/sdk/go', 'platform/sdk/jvm', 'platform/sdk/swift', 'platform/sdk/dotnet',
            'tools/paxeer-x/route-catalogue.json', 'tools/qualification/paxeer-x/agent_operation_envelope.py',
+           'tools/qualification/paxeer-x/fixtures/event_source_fixture.py',
            'tests/daemon/lxp_test_runtime_fixture.c', 'tests/storage/lxp_test_maintenance_publication.c',
            'tests/programs/test_call_activity.c', 'agent/schema/lni/v1.kvx')
 CASE_LINE = re.compile(r'^PAXEER_X_AGENT_ENVELOPE_CASE ([a-z0-9_.\-]+) passed$', re.M)
@@ -554,8 +556,36 @@ def load_config():
         require(isinstance(config[key], dict) and all(isinstance(k, str) and isinstance(v, str) for k, v in config[key].items()),
                 key + ' must be a string map')
     require('LAYERX_AGENTD_RPC_LISTEN' not in config['agentd_env'], 'harness owns the agent RPC listener configuration')
+    proof_bundle_authority_inputs(config, credential)
     native_inputs(config, credential)
     return config, credential
+
+
+def proof_bundle_authority_inputs(config, primary):
+    advance = config.get('proof_bundle_head_advance_sequence')
+    require(isinstance(advance, str) and re.fullmatch(DECIMAL_U64, advance) and 6 <= int(advance) < 2**64,
+            'proof_bundle_head_advance_sequence must be the genuine next treasury fixture sequence')
+    entries = config.get('proof_bundle_authorities')
+    names = {'wrong_tenant', 'wrong_principal', 'wrong_agent', 'wrong_asset', 'wrong_scope'}
+    require(isinstance(entries, dict) and set(entries) == names,
+            'proof_bundle_authorities needs five genuinely issued bootstrap/session inputs')
+    for name, entry in entries.items():
+        require(isinstance(entry, dict) and set(entry) == {'credential_file', 'session_context'},
+                'proof authority input fields: ' + name)
+        credential = load_private(entry['credential_file'], 'proof authority ' + name)
+        require(set(credential) == {'tenant', 'session_id', 'token_id', 'generation'}
+                and all(isinstance(v, str) for v in credential.values())
+                and credential != primary and re.fullmatch('[0-9a-f]{64}', credential['session_id'])
+                and re.fullmatch('[0-9a-f]{64}', credential['token_id'])
+                and re.fullmatch(DECIMAL_U64, credential['generation'])
+                and int(credential['generation']) < 2**64,
+                'proof authority must carry distinct real issued session coordinates: ' + name)
+        context = entry['session_context']
+        require(isinstance(context, dict) and set(context) == {'tenant', 'agent_did', 'authority_ref',
+                    'permitted_activity_types', 'expiry', 'client', 'policy_version'}
+                and context['tenant'] == credential['tenant'], 'proof authority session context: ' + name)
+        require((credential['tenant'] != primary['tenant']) == (name == 'wrong_tenant'),
+                'proof authority tenant dimension: ' + name)
 
 
 def tls_material(directory, peer):
@@ -674,14 +704,14 @@ class Qualification:
         directory = self.d / 'probes' / (language + '-' + run)
         failed = []
         for case in cases:
-            if not (case.startswith(('operation.', 'native_')) or (phase == 'read' and case in LANGUAGE_CASES)):
+            if not (case.startswith(('operation.', 'native_', 'proof_bundle.')) or (phase == 'read' and case in LANGUAGE_CASES)):
                 continue
             row = requests[case]
             operation = row['operation']
-            if case.startswith('native_refusal.'):
+            if case.startswith(('native_refusal.', 'proof_bundle.refusal.')):
                 try:
                     record = json.loads((directory / (case + '.json')).read_text())
-                    self.refusal(record['status'], json.dumps(record['body']), 403,
+                    self.refusal(record['status'], json.dumps(record['body']), row.get('expected_status', 403),
                                  row['expected_class'], row['expected_reason'], language + ' ' + case)
                     kind, ok = 'exact_native_refusal', True
                 except (OSError, ValueError, RuntimeError, KeyError, TypeError):
@@ -1343,7 +1373,9 @@ class Qualification:
 
         self.judge_cases(language, run, phase, cases, requests)
         for case in cases:
-            if case.startswith('native_'):
+            if case.startswith('proof_bundle.'):
+                self.passed('sdk_' + language + '_' + run + '_' + case, log)
+            elif case.startswith('native_'):
                 self.passed('sdk_' + language + '_' + run, log)
             else:
                 self.passed(case if phase != 'read' and not prefix else 'sdk_' + language + '_' + case
@@ -1508,7 +1540,7 @@ class Qualification:
 
     def w7_sign_cases(self):
         case = W7_SIGN_DIRECT[0]
-        self.w7_prepare_sign(case, refuse_foreign=True)
+        _, _, _, self.proof_bundle_unsigned = self.w7_prepare_sign(case, refuse_foreign=True)
         self.passed(case, self.d / 'responses' / (case + '.sign.http'))
         case = W7_SIGN_DIRECT[1]
         prepared, signature, public, signed = self.w7_prepare_sign(case)
@@ -1519,6 +1551,255 @@ class Qualification:
                 and isinstance(submitted.get('submission'), dict) and submitted['submission'].get('state') in W7_SUBMITTED_STATES,
                 case + '.submit: submit did not carry the signed activity forward')
         self.passed(case, self.d / 'responses' / (case + '.submit.http'))
+        self.proof_bundle_pre_restart(submitted)
+
+    def proof_bundle_record(self, envelope, request, expected_variant, receipt_bytes=None):
+        value = envelope['value']
+        require(isinstance(value, dict) and set(value) == {'value', 'achieved_verification_level', 'freshness'},
+                'proof bundle VerifiedRead fields')
+        bundle = value['value']
+        require(isinstance(bundle, dict) and set(bundle) == {'target', 'proofs'}
+                and bundle['target'] == request['target'] and isinstance(bundle['proofs'], list)
+                and len(bundle['proofs']) == 1, 'proof bundle exact target and single proof')
+        encoded = bundle['proofs'][0]
+        require(isinstance(encoded, str) and len(encoded) <= 524288 and re.fullmatch('([0-9a-f]{2})+', encoded),
+                'proof bundle canonical bounded record')
+        record = bytes.fromhex(encoded)
+        require(record[:5] == b'LXPB1' and len(record) > 6 and record[5] == expected_variant,
+                'proof bundle native evidence variant')
+        fields, offset = [], 6
+        for _ in range(4 if expected_variant == 4 else 2):
+            require(offset + 4 <= len(record), 'proof bundle counted field header')
+            count = int.from_bytes(record[offset:offset + 4], 'big')
+            offset += 4
+            require(count > 0 and offset + count <= len(record), 'proof bundle counted field bounds')
+            fields.append(record[offset:offset + count])
+            offset += count
+        require(offset == len(record), 'proof bundle trailing bytes')
+        if receipt_bytes is not None:
+            if expected_variant == 3:
+                require(fields[0].hex() == receipt_bytes, 'proof bundle changed retained verified receipt')
+            elif expected_variant == 4:
+                require(fields[2].hex() == receipt_bytes, 'proof bundle changed maintained activity receipt link')
+        level = 'StateProven' if expected_variant in (2, 4) else 'BatchIncluded'
+        require(value['achieved_verification_level'] == level
+                and envelope['verification_status'] == {'state': 'achieved', 'level': level}
+                and LEVELS.index(request['requested_verification_level']) <= LEVELS.index(level),
+                'proof bundle requested and achieved verification')
+        fresh = value['freshness']
+        require(isinstance(fresh, dict) and set(fresh) == set(FRESHNESS)
+                and all(isinstance(fresh[k], str) and re.fullmatch(DECIMAL_U64, fresh[k]) and int(fresh[k]) < 2**64
+                        for k in ('chain_head', 'latest_sealed_batch', 'value_sequence'))
+                and int(fresh['value_sequence']) <= int(fresh['chain_head'])
+                and isinstance(fresh['latest_finalised_checkpoint'], str)
+                and re.fullmatch('[0-9a-f]{64}', fresh['latest_finalised_checkpoint'])
+                and isinstance(fresh['relative_to'], dict) and set(fresh['relative_to']) == {'batch'}
+                and re.fullmatch('[1-9][0-9]{0,19}', fresh['relative_to']['batch'])
+                and int(fresh['relative_to']['batch']) <= int(fresh['latest_sealed_batch']),
+                'proof bundle canonical freshness')
+        return record
+
+    def proof_bundle_pre_restart(self, submitted):
+        case = 'proof_bundle.anchor'
+        submission_ref = submitted['submission']['submission_ref']
+        require(submitted.get('receipt') is None and submitted['submission']['state'] != 'Executed',
+                case + ': fresh dispatch unexpectedly contains a retained execution receipt')
+        absent_case = 'proof_bundle.refusal.missing_retained_receipt'
+        absent_request = {'target': '000103' + submitted['activity_id'], 'requested_verification_level': 'BatchIncluded'}
+        value, status, body = self.call(absent_case, 'read.proof_bundle', absent_request)
+        self.refusal(status, body, 503, 'UnavailableCapability', 'owner.unavailable', absent_case, value['request_id'])
+        self.passed(absent_case, self.d / 'responses' / (absent_case + '.http'))
+        deadline = time.monotonic() + 60
+        observed = submitted
+        while observed['submission']['state'] != 'Executed':
+            require(time.monotonic() < deadline, case + ': genuine signed submission did not execute')
+            value, status, body = self.call(case + '.track', 'track', {'submission_ref': submission_ref})
+            observed = self.success(status, body, value['request_id'], case + '.track')['value']
+            require(observed['activity_id'] == submitted['activity_id'] and observed['submission']['state'] != 'Failed',
+                    case + ': activity identity changed or execution failed')
+            if observed['submission']['state'] != 'Executed':
+                time.sleep(0.1)
+        require(isinstance(observed.get('receipt'), dict), case + ': owner did not retain a verified receipt')
+        self.proof_bundle_anchor = observed
+        activity = observed['activity_id']
+        account = self.config['requests']['read']['request']['account_id']
+        require(re.fullmatch(NONZERO_HEX32, activity) and re.fullmatch(NONZERO_HEX32, account), case + ': actual activity/account')
+        self.proof_bundle_requests = {}
+        self.proof_bundle_variants = set()
+        for name, kind, variant in (('activity', 1, 1), ('receipt', 3, 3), ('maintained_account', 2, 4)):
+            target = (b'\x00\x01' + bytes([kind]) + bytes.fromhex(activity)
+                      + (bytes.fromhex(account) if kind == 2 else b'')).hex()
+            request = {'target': target, 'requested_verification_level': 'StateProven' if kind == 2 else 'BatchIncluded'}
+            entry = {'operation': 'read.proof_bundle', 'request': request, 'expected_variant': variant}
+            self.proof_bundle_requests['proof_bundle.' + name] = entry
+            value, status, body = self.call('proof_bundle.' + name, entry['operation'], request)
+            result = self.success(status, body, value['request_id'], 'proof_bundle.' + name)
+            require(len(body) <= MAX_BODY, 'proof bundle response body bound')
+            record = self.proof_bundle_record(result, request, variant, observed['receipt']['canonical_bytes'])
+            self.proof_bundle_variants.add(record[5])
+            self.passed('proof_bundle.' + name, self.d / 'responses' / ('proof_bundle.' + name + '.http'))
+        receipt_request = self.proof_bundle_requests['proof_bundle.receipt']['request']
+        wrong_account = bytearray.fromhex(account)
+        wrong_account[0] ^= 1
+        account_request = self.proof_bundle_requests['proof_bundle.maintained_account']['request']
+        negative = {
+            'wrong_account': dict(account_request, target=account_request['target'][:70] + wrong_account.hex()),
+            'higher_level': dict(receipt_request, requested_verification_level='CheckpointFinalised'),
+            'missing_outbox': dict(receipt_request, target='000103' + hashlib.sha256(bytes.fromhex(activity) + b'missing-outbox').hexdigest()),
+        }
+        for name, request in negative.items():
+            self.proof_bundle_requests['proof_bundle.refusal.' + name] = {
+                'operation': 'read.proof_bundle', 'request': request, 'expected_status': 403,
+                'expected_class': 'PolicyRefusal', 'expected_reason': 'owner.refused'}
+        for name, request in {
+            'truncated': dict(receipt_request, target=receipt_request['target'][:-2]),
+            'oversized': dict(receipt_request, target=receipt_request['target'] + '00' * 68),
+            'zero_activity': dict(receipt_request, target='000103' + '00' * 32),
+            'unknown_field': dict(receipt_request, proof='00'),
+        }.items():
+            label = 'proof_bundle.malformed.' + name
+            value, status, body = self.call(label, 'read.proof_bundle', request)
+            self.refusal(status, body, 403, 'PolicyRefusal', 'owner.refused', label, value['request_id'])
+            self.passed(label, self.d / 'responses' / (label + '.http'))
+        self.config['requests']['operation.read.proof_bundle'] = dict(
+            self.proof_bundle_requests['proof_bundle.receipt'])
+        for language in NATIVE_LANGUAGES:
+            requests = dict(self.config['requests'], **self.proof_bundle_requests)
+            self.probe(language, tuple(self.proof_bundle_requests), 'pre-restart',
+                       self.d / 'probes' / (language + '-proof-bundle.state'), requests,
+                       run='proof-bundle-pre', prefix=True)
+        self.proof_bundle_authority_cases()
+        self.proof_bundle_native_faults()
+        self.proof_bundle_moving_head()
+        write_private(self.d / 'proof-bundle-coverage.json', {
+            'source': 'existing w7 signed submit, actual owner track and retained receipt',
+            'variants_produced': sorted(self.proof_bundle_variants),
+            'variant_2': 'UNIMPLEMENTED: this maintained RuntimeFixture has no isolated non-maintained account producer',
+            'authority_fault_process_cases': self.proof_bundle_fault_evidence,
+            'authority_cases': 'five issued sessions, genuine current balance/session controls, exact owner/scope refusals',
+            'missing_retained_receipt': 'actual fresh acknowledged outbox submission before first authenticated track persists receipt',
+            'head_cases': 'actual native signed send during acquisition, then prior account target refused against the advanced head',
+            'remaining_process_inputs': [],
+        })
+
+    def proof_bundle_authority_cases(self):
+        receipt_request = self.proof_bundle_requests['proof_bundle.receipt']['request']
+        expected_asset = self.proof_bundle_anchor['receipt']['authorised_batch']['asset']
+        primary_agent = self.config['requests']['operation.session.list']['request']['context']['agent_did']
+        for name, source in self.config['proof_bundle_authorities'].items():
+            case = 'proof_bundle.authority.' + name
+            credential = load_private(source['credential_file'], case)
+            context = source['session_context']
+            if name != 'wrong_tenant':
+                require((context['agent_did'] != primary_agent) == (name == 'wrong_agent'),
+                        case + ': issued agent dimension does not match this case')
+            def issued_call(suffix, operation, request):
+                value = self.envelope(operation, request)
+                value['credential'] = credential
+                status, body = self.http(self.encode(value), headers=self.api_key(), case=case + suffix)
+                return value, status, body
+            value, status, body = issued_call('.balance_control', 'read.balance', {})
+            balance = self.success(status, body, value['request_id'], case + '.balance_control')
+            require(balance['verification_status'].get('state') == 'achieved'
+                    and LEVELS.index(balance['verification_status']['level']) >= LEVELS.index('CheckpointFinalised')
+                    and isinstance(balance['value'], dict)
+                    and re.fullmatch(NONZERO_HEX32, balance['value'].get('account', ''))
+                    and re.fullmatch(NONZERO_HEX32, balance['value'].get('asset', '')),
+                    case + ': alternate credential has no genuine authorized balance control')
+            if name == 'wrong_asset':
+                require(balance['value']['asset'] != expected_asset, case + ': same asset is not an asset refusal case')
+            elif name in ('wrong_principal', 'wrong_scope'):
+                require(balance['value']['asset'] == expected_asset, case + ': asset differs in a principal/scope case')
+            if name != 'wrong_scope':
+                value, status, body = issued_call('.session_control', 'session.list', {'context': context})
+                listed = self.success(status, body, value['request_id'], case + '.session_control')['value']
+                require(isinstance(listed, dict) and isinstance(listed.get('sessions'), list), case + ': session control')
+                own = [row for row in listed['sessions'] if row.get('session_id') == credential['session_id']]
+                require(len(own) == 1 and own[0]['open'] is True and own[0]['agent_did'] == context['agent_did']
+                        and own[0]['token_id'] == credential['token_id'] and own[0]['generation'] == credential['generation'],
+                        case + ': current real session was not established before ownership refusal')
+            value, status, body = issued_call('', 'read.proof_bundle', receipt_request)
+            klass, reason = ('CapabilityRefusal', 'session.scope_denied') if name == 'wrong_scope' else ('PolicyRefusal', 'owner.refused')
+            self.refusal(status, body, 403, klass, reason, case, value['request_id'])
+            self.passed(case, self.d / 'responses' / (case + '.http'))
+
+    def proof_bundle_native_faults(self):
+        self.proof_bundle_fault_evidence = []
+        for mode in ('wrong_header_signature', 'wrong_native_network', 'wrong_sequencer_key', 'maintenance_link'):
+            case = 'proof_bundle.native_fault.' + mode
+            with tempfile.TemporaryDirectory(prefix='lx-pb-') as directory:
+                relay = NativeProofFaultRelay(self.runtime.manifest['node_socket'],
+                                              str(Path(directory) / 'node.sock'), mode).start()
+                try:
+                    self.start_agentd({'LAYERX_AGENT_HUMAN_NODE_LNI': str(Path(directory) / 'node.sock')})
+                    entry = self.proof_bundle_requests['proof_bundle.maintained_account' if mode == 'maintenance_link'
+                                                        else 'proof_bundle.receipt']
+                    value, status, body = self.call(case + '.baseline', entry['operation'], entry['request'])
+                    baseline = self.success(status, body, value['request_id'], case + '.baseline')
+                    self.proof_bundle_record(baseline, entry['request'], entry['expected_variant'],
+                                             self.proof_bundle_anchor['receipt']['canonical_bytes'])
+                    relay.arm()
+                    value, status, body = self.call(case, entry['operation'], entry['request'])
+                    self.refusal(status, body, 403, 'PolicyRefusal', 'owner.refused', case, value['request_id'])
+                    relay.disarm()
+                    require(relay.mutated_frame_count == 1 and not relay.failure_info,
+                            case + ': no single genuine native frame mutation')
+                    self.proof_bundle_fault_evidence.append({'case': case, 'mutated_frames': relay.mutated_frame_count,
+                                                            'evidence': str(self.d / 'responses' / (case + '.http'))})
+                    self.passed(case, self.d / 'responses' / (case + '.http'))
+                finally:
+                    try:
+                        self.start_agentd()
+                    finally:
+                        relay.stop()
+
+    def proof_bundle_moving_head(self):
+        case = 'proof_bundle.native_fault.moving_head'
+        entry = self.proof_bundle_requests['proof_bundle.receipt']
+        produced = []
+        with tempfile.TemporaryDirectory(prefix='lx-pb-head-') as directory:
+            relay = NativeProofFaultRelay(self.runtime.manifest['node_socket'],
+                                          str(Path(directory) / 'node.sock'), 'moving_head').start()
+            try:
+                self.start_agentd({'LAYERX_AGENT_HUMAN_NODE_LNI': str(Path(directory) / 'node.sock')})
+                value, status, body = self.call(case + '.baseline', entry['operation'], entry['request'])
+                baseline = self.success(status, body, value['request_id'], case + '.baseline')
+                self.proof_bundle_record(baseline, entry['request'], entry['expected_variant'],
+                                         self.proof_bundle_anchor['receipt']['canonical_bytes'])
+                head = int(baseline['value']['freshness']['chain_head'])
+                def advance():
+                    result = self.runtime.invoke('send-one', self.config['proof_bundle_head_advance_sequence'],
+                                                 'proof-bundle-head-advance')
+                    rows = [dict(item.split('=', 1) for item in line.split()[1:])
+                            for line in result.stdout.decode().splitlines() if line.startswith('receipt ')]
+                    require(len(rows) == 1 and rows[0]['result'] == '0' and int(rows[0]['sequence']) > head,
+                            case + ': real native fixture did not produce exactly one new successful receipt')
+                    produced.extend(rows)
+                relay.arm(on_selected=advance)
+                value, status, body = self.call(case, entry['operation'], entry['request'])
+                self.refusal(status, body, 503, 'UnavailableCapability', 'owner.unavailable', case, value['request_id'])
+                relay.disarm()
+                require(relay.trigger_count == 1 and relay.mutated_frame_count == 0 and len(produced) == 1,
+                        case + ': head advance must preserve every genuine native response byte')
+                self.runtime.catch_up(produced)
+                self.passed(case, self.d / 'responses' / (case + '.http'))
+            finally:
+                try:
+                    self.start_agentd()
+                finally:
+                    relay.stop()
+        stale_case = 'proof_bundle.refusal.stale_account_head'
+        stale = self.proof_bundle_requests['proof_bundle.maintained_account']['request']
+        value, status, body = self.call(stale_case, 'read.proof_bundle', stale)
+        self.refusal(status, body, 403, 'PolicyRefusal', 'owner.refused', stale_case, value['request_id'])
+        self.passed(stale_case, self.d / 'responses' / (stale_case + '.http'))
+
+    def proof_bundle_post_restart(self):
+        cases = ('proof_bundle.activity', 'proof_bundle.receipt')
+        for language in NATIVE_LANGUAGES:
+            requests = dict(self.config['requests'], **self.proof_bundle_requests)
+            self.probe(language, cases, 'post-restart', self.d / 'probes' / (language + '-proof-bundle.state'),
+                       requests, run='proof-bundle-post', prefix=True)
 
     def w20_subscription_lifecycle(self):
         case = 'subscription_lifecycle'
@@ -1977,6 +2258,7 @@ class Qualification:
         self.direct_cases()
         self.idempotency_cases()
         self.mtls_cases()
+        self.w7_sign_cases()
         self.decode_observed = []
         for language in LANGUAGES:
             self.read_cases(language)
@@ -2000,7 +2282,6 @@ class Qualification:
         self.w8_capability_cases()
         self.served_read_cases()
 
-        self.w7_sign_cases()
         python_state = self.d / 'probes/python-mutation.state'
         python_retry = self.d / 'probes/python-retry.state'
         python_requests = self.probe_requests('python')
@@ -2011,6 +2292,7 @@ class Qualification:
         self.agentd.wait(timeout=15)
         self.start_agentd()
         require(self.agentd.pid != old, 'agentd restart reused the process')
+        self.proof_bundle_post_restart()
         self.native_post_restart()
         self.probe('rust', RUST_POST_RESTART, 'post-restart', state)
 
@@ -2025,6 +2307,8 @@ class Qualification:
             'effect_count': len(self.effects), 'decode_requests': self.decode_observed})
 
         write_private(self.d / 'operation-evidence.json', {'rows': self.operation_evidence_rows})
+        require(self.proof_bundle_variants == {1, 2, 3, 4},
+                'proof bundle qualification incomplete: no genuine non-maintained Account variant-2 producer; see proof-bundle-coverage.json')
 
 
 def prestate_authority_records(path):
@@ -2245,6 +2529,7 @@ def worker(directory):
         expected += len(SERVED_READ_DIRECT) + len(SERVED_READ_REFUSALS)
         expected += len(NATIVE_LANGUAGES) * (16 + len(NATIVE_REFUSALS))
         expected += 4
+        expected += 3 + 4 + 5 + 4 + 1 + 2 + len(NATIVE_LANGUAGES) * (6 + 2)
         require(len(qualification.results) == expected, 'case count ' + str(len(qualification.results)) + ' != ' + str(expected))
         write_private(runtime.directory / 'case-results.json', qualification.results)
         print(f'PAXEER_X_GATE tests={len(qualification.results)} skipped=0', flush=True)

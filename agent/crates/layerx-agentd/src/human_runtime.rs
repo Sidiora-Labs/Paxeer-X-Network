@@ -2907,6 +2907,32 @@ impl<A: HumanAuthorityBoundary> UnifiedAgentOwner<A> {
         })
     }
 
+    pub(crate) fn rpc_read_proof_bundle(
+        &mut self,
+        context: &crate::agent_rpc_peer::RpcOwnerContext<'_>,
+        request: layerx_agent_api::read::ReadRequest<layerx_agent_api::prepare::CanonicalBytes>,
+    ) -> Result<
+        layerx_agent_api::read::VerifiedRead<layerx_agent_api::proof::ProofBundle>,
+        HumanOperationError,
+    > {
+        if context.permit().operation() != crate::tenant::Operation::ReadProofBundle {
+            return Err(HumanOperationError::Refused);
+        }
+        context.permit().boundary(&self.session_control)
+            .map_err(|_| HumanOperationError::Refused)?;
+        let peer = context.peer();
+        let principal = context.principal();
+        let scope = peer.subject.as_ref().ok_or(HumanOperationError::Refused)?;
+        if peer.uid == 0 || peer.tenant != principal.tenant.as_str()
+            || scope.owner.as_bytes() != principal.agent.as_bytes() {
+            return Err(HumanOperationError::Refused);
+        }
+        let response = self.lock_operations()?.read_proof_bundle(peer, request)?;
+        context.permit().boundary(&self.session_control)
+            .map_err(|_| HumanOperationError::Refused)?;
+        Ok(response)
+    }
+
     pub(crate) fn bind_rpc_subject(
         &mut self,
         peer: &HumanPeer,
@@ -2953,6 +2979,44 @@ impl<A: HumanAuthorityBoundary> UnifiedAgentOwner<A> {
         let tenant = &principal.tenant;
         let peer = bound.peer();
         let owner = match lookup.operation() {
+            Operation::ReadProofBundle => {
+                let request = crate::agent_rpc_wire::decode_wire::<crate::agent_rpc_wire::ProofBundleWire>(
+                    request, layerx_agent_api::error::RequestId(0),
+                ).and_then(|wire| wire.into_request(layerx_agent_api::error::RequestId(0)))
+                    .map_err(|_| HumanOperationError::Refused)?;
+                let target = layerx_agent_api::proof::ProofBundleTarget::decode(request.selector.as_bytes())
+                    .map_err(|_| HumanOperationError::Refused)?;
+                let scope = peer.subject.as_ref().ok_or(HumanOperationError::Refused)?;
+                if scope.owner.as_bytes() != principal.agent.as_bytes() {
+                    return Err(HumanOperationError::Refused);
+                }
+                let mut operations = self.lock_operations()?;
+                operations.authority.authorize_subject(peer)?;
+                let account = operations.export_bound_account(peer)?;
+                if let layerx_agent_api::proof::ProofBundleTarget::AccountState { account_id, .. } = &target {
+                    if *account_id != account {
+                        return Err(HumanOperationError::Refused);
+                    }
+                }
+                let registry = operations.authority.registry(peer).map_err(map_core)?;
+                let store = self.store.lock().map_err(|_| HumanOperationError::Unavailable)?;
+                let indexed = indexed_activity_owner(&store, tenant, target.activity_id())?;
+                if indexed.principal != peer.principal {
+                    return Err(HumanOperationError::Refused);
+                }
+                let retained = retained_activity_owner(&store, &registry, tenant, target.activity_id(), indexed)?;
+                let mut outbox = Outbox::default();
+                outbox.restore(&store, tenant.clone(), retained.idempotency_key)
+                    .map_err(|_| HumanOperationError::Unavailable)?;
+                let signed = outbox.exact_signed_bytes(retained.idempotency_key)
+                    .map_err(|_| HumanOperationError::Unavailable)?;
+                let decoded = layerx_wire::activity::decode_signed(signed, &registry)
+                    .map_err(|_| HumanOperationError::Refused)?;
+                if decoded.actor_did() != scope.owner.as_bytes() {
+                    return Err(HumanOperationError::Refused);
+                }
+                Some(crate::tenant::ObjectOwner { tenant: tenant.clone(), agent: Some(principal.agent.clone()) })
+            }
             Operation::ProgramUpgrade | Operation::ProgramWindDown => {
                 let mut operations = self.lock_operations()?;
                 Some(operations.rpc_program_target_owner(peer, &principal.agent, lookup.operation(), request)?)
@@ -8100,6 +8164,58 @@ impl<A: HumanAuthorityBoundary> ProductionHumanOperations<A> {
             }
         }
         Ok(account)
+    }
+
+    fn read_proof_bundle(
+        &mut self,
+        peer: &HumanPeer,
+        request: layerx_agent_api::read::ReadRequest<layerx_agent_api::prepare::CanonicalBytes>,
+    ) -> Result<
+        layerx_agent_api::read::VerifiedRead<layerx_agent_api::proof::ProofBundle>,
+        HumanOperationError,
+    > {
+        let target = layerx_agent_api::proof::ProofBundleTarget::decode(request.selector.as_bytes())
+            .map_err(|_| HumanOperationError::Refused)?;
+        let scope = peer.subject.as_ref().ok_or(HumanOperationError::Refused)?;
+        self.authority.authorize_subject(peer)?;
+        let account = self.export_bound_account(peer)?;
+        let registry = self.authority.registry(peer).map_err(map_core)?;
+        let tenant = TenantId::new(peer.tenant.clone()).map_err(|_| HumanOperationError::Refused)?;
+        let activity_id = target.activity_id();
+        let (retained_activity, served_receipt) = {
+            let store = self.store.lock().map_err(|_| HumanOperationError::Unavailable)?;
+            let indexed = indexed_activity_owner(&store, &tenant, activity_id)?;
+            if indexed.principal != peer.principal {
+                return Err(HumanOperationError::Refused);
+            }
+            let owner = retained_activity_owner(&store, &registry, &tenant, activity_id, indexed)?;
+            let mut outbox = Outbox::default();
+            outbox.restore(&store, tenant.clone(), owner.idempotency_key)
+                .map_err(|_| HumanOperationError::Unavailable)?;
+            let activity = outbox.exact_signed_bytes(owner.idempotency_key)
+                .map_err(|_| HumanOperationError::Unavailable)?.to_vec();
+            let decoded = layerx_wire::activity::decode_signed(&activity, &registry)
+                .map_err(|_| HumanOperationError::Refused)?;
+            if decoded.actor_did() != scope.owner.as_bytes() {
+                return Err(HumanOperationError::Refused);
+            }
+            let receipt = crate::receipt::serve(&store, tenant,
+                crate::receipt::ReceiptLookupKey::Activity(activity_id))
+                .map_err(|_| HumanOperationError::Unavailable)?;
+            if receipt.metadata.activity_id != activity_id
+                || receipt.metadata.idempotency_key != owner.idempotency_key {
+                return Err(HumanOperationError::Refused);
+            }
+            (activity, receipt.canonical_bytes)
+        };
+        crate::read::proof_bundle_owner::acquire(
+            &mut self.node, &registry, target, request.requested_verification_level,
+            crate::read::proof_bundle_owner::ProofBundleScope {
+                account, asset: scope.asset, retained_activity: &retained_activity,
+                served_receipt: &served_receipt,
+                correlation: boundary_correlation(peer, request.selector.as_bytes(), b"read-proof-bundle"),
+            },
+        )
     }
 
     pub(crate) fn attach_budget_limiter(&mut self, limiter: Arc<BudgetLimiter>) {

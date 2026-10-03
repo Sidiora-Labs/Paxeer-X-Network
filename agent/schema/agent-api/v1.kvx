@@ -489,12 +489,15 @@ idempotency_key = "absent"
 disposition = "served_adapter_arm"
 
 [transport.agent_http.operation.read.proof_bundle]
-request = "The request object of this catalogue operation; the daemon declares no typed decoder for it in this contract revision."
+request = "Exactly target and requested_verification_level. target is lowercase hex canonical native PB1: version u16be 1, kind 1 Activity or 3 Receipt plus nonzero activity_id32 (35 bytes); kind 2 AccountState adds nonzero account_id32 (67 bytes). No authority overrides or unknown fields."
+response = "VerifiedRead<ProofBundle>: exact target, exactly one lowercase-hex LXPB1 record, achieved_verification_level and Freshness. Record <=262144 bytes, complete JSON body <=1048576 bytes. LXPB1 variant 1 Activity, 2 Account, 3 Receipt, 4 MaintainedAccount; nonempty u32be-counted canonical_value and native_proof, variant 4 additionally original activity_receipt and activity_receipt_sp1."
+verification = "Activity/Receipt cap BatchIncluded; Account/MaintainedAccount cap StateProven. Requested level cannot exceed achieved level. Envelope Achieved status equals response level. Native proof authority remains mandatory; framing alone is not verification."
+ownership = "Bound authenticated subject, retained tenant/principal-owned signed outbox activity, signed actor equal authenticated agent, fresh subject account and asset, verified stored receipt. AccountState selector equals the bound account."
 access = "read"
 operation_class = "Read"
 surface = "Contract"
 idempotency_key = "absent"
-disposition = "unmatched_by_ruling"
+disposition = "served_adapter_arm"
 
 [transport.agent_http.operation.session.close]
 request = "The request object of this catalogue operation; the daemon declares no typed decoder for it in this contract revision."
@@ -632,7 +635,7 @@ transport_ambiguity = "A mutating request whose outcome the client cannot know i
 "envelope.noncanonical_integer" = "ProtocolIncompatibility Terminal. An integer string is not canonical decimal."
 "envelope.credential" = "ProtocolIncompatibility Terminal. Credential missing or a credential coordinate is malformed."
 "refused_pending_bootstrap_artifact" = "PolicyRefusal Terminal. agent.register or session.open before the authenticated bootstrap artifact exists."
-"unmatched_by_ruling" = "UnavailableCapability Terminal. program.interface or read.proof_bundle, deliberately given no arm."
+"unmatched_by_ruling" = "UnavailableCapability Terminal. program.interface, deliberately given no arm."
 "envelope.idempotency_key" = "IdempotencyConflict Terminal. Idempotency key presence violates the idempotency rule or the key is malformed."
 "envelope.coordinate_mismatch" = "PolicyRefusal Terminal. A request tenant or agent coordinate differs from the authenticated principal."
 "envelope.header_principal" = "PolicyRefusal Terminal. A LayerX-Tenant, LayerX-Agent or Authorization header reached the daemon."

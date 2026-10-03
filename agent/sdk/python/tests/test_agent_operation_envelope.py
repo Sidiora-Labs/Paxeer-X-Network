@@ -19,6 +19,8 @@ from layerx_sdk.agent_http import (  # noqa: E402
     AgentEnvelopeTransport,
     AgentSessionCredential,
     LayerXKeyCredential,
+    check_proof_bundle_response,
+    encode_proof_bundle_request,
 )
 from layerx_sdk.generated.client import encode_native_prepare_request, encode_native_approval_decision
 
@@ -240,6 +242,101 @@ class Probe:
         self.assertEqual((raw["status"], error.get("class"), error.get("reason")), (status, "ProtocolIncompatibility", reason))
         if request_id is not None:
             self.assertEqual(error.get("request_id"), request_id)
+
+    def proof_bundle_case(self, case_id: str) -> None:
+        entry = self.requests.get(case_id)
+        if not isinstance(entry, dict) or not isinstance(entry.get("request"), dict):
+            raise ProbeRefused("proof request entry is absent")
+        self.assertEqual(entry.get("operation"), "read.proof_bundle")
+        self.assertTrue("idempotency_key" not in entry)
+        request = entry["request"]
+        transport = AgentEnvelopeTransport(self.base, gateway_key=self._key(), session=self._session(), ca_file=self.ca_pem)
+        observed: list[tuple[int, object]] = []
+        real_opener = transport._opener
+
+        def observe_response(response):
+            real_read = response.read
+
+            def read(count=-1):
+                body = real_read(count)
+                parsed = json.loads(body.decode("utf-8"))
+                observed.append((response.status, parsed))
+                self._record(case_id, response.status, parsed)
+                return body
+
+            response.read = read
+            return response
+
+        class ResponseObserver:
+            def open(self, *args, **kwargs):
+                try:
+                    return observe_response(real_opener.open(*args, **kwargs))
+                except HTTPError as error:
+                    observe_response(error)
+                    raise
+
+        transport._opener = ResponseObserver()
+        if case_id.startswith("proof_bundle.malformed_request."):
+            with self.assertRaises(PlatformSdkError) as raised:
+                transport.call("agent", "read.proof_bundle", request, None)
+            self.assertEqual(raised.exception.code, SdkErrorCode.INVALID_ARGUMENT)
+            self.assertEqual(observed, [])
+            return
+        if case_id.startswith("proof_bundle.refusal."):
+            with self.assertRaises(PlatformSdkError) as raised:
+                transport.read_proof_bundle(encode_proof_bundle_request(request))
+            self.assertIsNotNone(raised.exception.request_id)
+            self.assertEqual(len(observed), 1)
+            status, body = observed[0]
+            self.assertEqual(status, entry.get("expected_status", 403))
+            self.assertEqual(body["class"], entry["expected_class"])
+            self.assertEqual(body["reason"], entry["expected_reason"])
+            return
+        typed = encode_proof_bundle_request(request)
+        typed_response = transport.read_proof_bundle(typed)
+        response = AgentEnvelopeSuccess(typed_response.request_id, typed_response.value, typed_response.verification_status)
+        self.assertEqual(len(observed), 1)
+        self.assertEqual(observed[0][0], 200)
+        proof = check_proof_bundle_response(typed, response)
+        self.assertEqual(proof.variant, entry["expected_variant"])
+        fields = [proof.canonical_value, proof.native_proof]
+        if proof.variant == 4:
+            self.assertIsNotNone(proof.activity_receipt)
+            self.assertIsNotNone(proof.activity_receipt_sp1)
+            fields.extend([proof.activity_receipt, proof.activity_receipt_sp1])
+        framed = b"LXPB1" + bytes([proof.variant]) + b"".join(len(value).to_bytes(4, "big") + value for value in fields)
+        value = response.value
+        self.assertEqual(framed.hex(), value["value"]["proofs"][0])
+
+        def reject(mutated, status=response.verification_status):
+            with self.assertRaises(PlatformSdkError) as raised:
+                check_proof_bundle_response(typed, AgentEnvelopeSuccess(response.request_id, mutated, status))
+            self.assertEqual(raised.exception.code, SdkErrorCode.DECODE_FAILURE)
+
+        def reject_record(raw):
+            reject({**value, "value": {**value["value"], "proofs": [raw.hex()]}})
+
+        bad_magic, bad_variant, empty_field, overrun = (bytearray(framed) for _ in range(4))
+        bad_magic[0], bad_variant[5] = 0, 0
+        empty_field[6:10] = (0).to_bytes(4, "big")
+        overrun[6:10] = len(framed).to_bytes(4, "big")
+        oversized = (framed * ((262_145 + len(framed) - 1) // len(framed)))[:262_145]
+        for raw in [framed[:-1], framed + b"\0", bad_magic, bad_variant, empty_field, overrun, oversized]:
+            reject_record(raw)
+        reject({**value, "value": {**value["value"], "proofs": []}})
+        reject({**value, "value": {**value["value"], "proofs": value["value"]["proofs"] * 2}})
+        other = bytearray.fromhex(typed["target"])
+        other[3] ^= 1
+        reject({**value, "value": {**value["value"], "target": other.hex()}})
+        reject({**value, "achieved_verification_level": "SettlementAnchored"})
+        reject(value, {"state": "achieved", "level": "SettlementAnchored"})
+        reject({**value, "unexpected": True})
+        for head in [0, "00", "18446744073709551616"]:
+            reject({**value, "freshness": {**value["freshness"], "chain_head": head}})
+        reject({**value, "freshness": {**value["freshness"], "relative_to": {"checkpoint": value["freshness"]["latest_finalised_checkpoint"]}}})
+        if proof.variant == 4:
+            reject_record(framed[:6 + 4 + len(proof.canonical_value) + 4 + len(proof.native_proof)])
+        self.assertEqual(len(observed), 1)
 
     def native_case(self, case_id: str) -> None:
         entry = self.requests.get(case_id)
@@ -489,7 +586,7 @@ def main() -> int:
     passed = 0
     failed = False
     for case_id in probe.cases:
-        handler: Callable[[], None] | None = (lambda: probe.native_case(case_id)) if case_id.startswith("native_") else getattr(probe, "case_" + case_id, None) if case_id.isidentifier() else None
+        handler: Callable[[], None] | None = (lambda: probe.proof_bundle_case(case_id)) if case_id.startswith("proof_bundle.") else (lambda: probe.native_case(case_id)) if case_id.startswith("native_") else getattr(probe, "case_" + case_id, None) if case_id.isidentifier() else None
         if handler is None:
             print(f"agent operation envelope probe: case {case_id} is not implemented by the Python probe", file=sys.stderr)
             failed = True

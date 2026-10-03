@@ -16,7 +16,9 @@ use layerx_agent_api::error::{
     ApiSuccess, ErrorClass, Key, Level, RequestId, Retriability, VerificationStatus,
 };
 use layerx_sdk::agent_envelope::{
-    canonical_u64, decode_response, decode_native_preparation, decode_native_approval, decode_native_approval_list, AgentEnvelopeTransport, ClientRetriability,
+    canonical_u64, decode_response, decode_native_preparation, decode_native_approval, decode_native_approval_list,
+    decode_proof_bundle_request, decode_proof_bundle_response, encode_proof_bundle_request,
+    AgentEnvelopeTransport, ClientRetriability,
     EnvelopeCredential, EnvelopeError, AGENT_RPC_ROUTE,
 };
 use layerx_sdk::production::SecretBytes;
@@ -413,6 +415,7 @@ impl Probe {
             }
             (_, "native_prepare" | "native_approval_list" | "native_approval_get" | "native_approval_approve" | "native_approval_reject") => self.native_case(case),
             (_, refusal) if refusal.starts_with("native_refusal.") => self.native_case(case),
+            (_, proof_case) if proof_case.starts_with("proof_bundle.") => self.proof_bundle_case(case),
             (_, "read_decode_failure") => self.read_decode_failure(),
             (_, "mutation_decode_unknown") => self.mutation_decode_unknown(),
             (PRE_RESTART, "allowed_mutation") => self.allowed_mutation(),
@@ -914,6 +917,55 @@ impl Probe {
         Ok(())
     }
 
+    fn proof_bundle_case(&mut self, case: &str) -> Result<(), Failure> {
+        let entry = field(&self.requests, case)?.clone();
+        let operation = catalogued(text(&entry, "operation")?)?;
+        if operation != Operation::ReadProofBundle {
+            return Err("proof bundle case operation mismatch".into());
+        }
+        let request = field(&entry, "request")?.clone();
+        let request_id = self.request_id();
+        let outcome = self.send_case(case, operation, request_id, &request, None)?;
+        let received_status = self.last.borrow().as_ref().map(|(status, _)| *status);
+        self.record(case, operation, &outcome)?;
+        if case.starts_with("proof_bundle.refusal.") {
+            let expected_status = match entry.get("expected_status") {
+                Some(value) => u16::try_from(value.as_u64().ok_or("expected_status is not an integer")?)?,
+                None => 403,
+            };
+            if received_status != Some(expected_status) {
+                return Err("proof bundle refusal HTTP status mismatch".into());
+            }
+            return match outcome {
+                Err(EnvelopeError::Refused(error))
+                    if format!("{:?}", error.class) == text(&entry, "expected_class")?
+                        && error.reason.as_str() == text(&entry, "expected_reason")? => Ok(()),
+                other => Err(format!("proof bundle refusal mismatch: {other:?}").into()),
+            };
+        }
+        let response = outcome.map_err(|error| format!("proof bundle failed: {error:?}"))?;
+        let typed_request = decode_proof_bundle_request(&request)
+            .ok_or("proof bundle request decoder refused real request")?;
+        if encode_proof_bundle_request(&typed_request).map_err(|error| format!("proof bundle encoder refused: {error:?}"))? != request {
+            return Err("proof bundle request changed in SDK round trip".into());
+        }
+        let read = decode_proof_bundle_response(&typed_request, &response)
+            .ok_or("proof bundle response decoder refused real owner response")?;
+        let record = read.value.record().map_err(|error| format!("proof bundle record refused: {error:?}"))?;
+        let expected_variant = field(&entry, "expected_variant")?.as_u64()
+            .ok_or("proof bundle expected_variant is not an integer")?;
+        if u64::from(record.variant as u8) != expected_variant {
+            return Err("proof bundle returned another native variant".into());
+        }
+        if record.encode().map_err(|error| format!("proof bundle encoding refused: {error:?}"))? != read.value.proofs[0] {
+            return Err("SDK altered native proof, canonical value, or maintenance fields".into());
+        }
+        layerx_sdk::Client::accept_proof_bundle(&typed_request, read.clone())
+            .map_err(|error| format!("typed SDK refused proof bundle: {error:?}"))?;
+        proof_bundle_decoder_negatives(&request, &response)?;
+        Ok(())
+    }
+
     fn operation_case(&mut self, case: &str) -> Result<(), Failure> {
         let name = &case["operation.".len()..];
         if !self.operations.iter().any(|operation| operation == name) {
@@ -980,6 +1032,132 @@ impl Probe {
             Err(other) => Err(format!("{case} failed: {other:?}").into()),
         }
     }
+}
+
+fn proof_bundle_decoder_negatives(request: &Value, response: &ApiSuccess<Value>) -> Result<(), Failure> {
+    let typed_request = decode_proof_bundle_request(request).ok_or("valid proof request missing")?;
+    let read = decode_proof_bundle_response(&typed_request, response).ok_or("valid proof response missing")?;
+    let mut request_cases = Vec::new();
+    for target in [String::new(), "00".to_owned(), "00".repeat(68)] {
+        let mut changed = request.clone();
+        changed["target"] = json!(target);
+        request_cases.push(changed);
+    }
+    let target = typed_request.selector.as_bytes();
+    for offset in [0_usize, 2] {
+        let mut bytes = target.to_vec();
+        bytes[offset] = 255;
+        let mut changed = request.clone();
+        changed["target"] = json!(hex(&bytes));
+        request_cases.push(changed);
+    }
+    let mut zero_activity = target.to_vec();
+    zero_activity[3..35].fill(0);
+    let mut changed = request.clone();
+    changed["target"] = json!(hex(&zero_activity));
+    request_cases.push(changed);
+    if target.len() == 67 {
+        let mut zero_account = target.to_vec();
+        zero_account[35..].fill(0);
+        let mut changed = request.clone();
+        changed["target"] = json!(hex(&zero_account));
+        request_cases.push(changed);
+    }
+    let mut changed = request.clone();
+    changed["target"] = json!(format!("{}A", hex(target)));
+    request_cases.push(changed);
+    let mut changed = request.clone();
+    changed["requested_verification_level"] = json!("Finalised");
+    request_cases.push(changed);
+    let mut changed = request.clone();
+    changed["sequencer_key"] = json!("00".repeat(32));
+    request_cases.push(changed);
+    for changed in request_cases {
+        if decode_proof_bundle_request(&changed).is_some() {
+            return Err("SDK accepted a malformed PB1 request".into());
+        }
+    }
+    let mut response_cases = Vec::new();
+    let mut changed = response.value.clone();
+    let mut wrong_target = target.to_vec();
+    wrong_target[34] ^= 1;
+    changed["value"]["target"] = json!(hex(&wrong_target));
+    response_cases.push(changed);
+    for proofs in [json!([]), json!([hex(read.value.proofs[0].as_bytes()), hex(read.value.proofs[0].as_bytes())]),
+        json!(["00".repeat(layerx_agent_api::proof::MAX_PROOF_BUNDLE_BYTES + 1)])] {
+        let mut changed = response.value.clone();
+        changed["value"]["proofs"] = proofs;
+        response_cases.push(changed);
+    }
+    let original = read.value.proofs[0].as_bytes();
+    let mut frames = Vec::new();
+    let mut changed = original.to_vec();
+    changed[0] ^= 1;
+    frames.push(changed);
+    let mut changed = original.to_vec();
+    changed[5] = 0;
+    frames.push(changed);
+    let mut changed = original.to_vec();
+    changed[6..10].fill(0);
+    frames.push(changed);
+    let mut changed = original.to_vec();
+    changed.pop();
+    frames.push(changed);
+    let mut changed = original.to_vec();
+    changed.push(0);
+    frames.push(changed);
+    if read.value.record().map_err(|error| format!("native record refused: {error:?}"))?.activity_receipt.is_some() {
+        let mut offset = 6_usize;
+        for _ in 0..2 {
+            let length = u32::from_be_bytes(original[offset..offset + 4].try_into()?) as usize;
+            offset += 4 + length;
+        }
+        frames.push(original[..offset].to_vec());
+    }
+    for bytes in frames {
+        let mut changed = response.value.clone();
+        changed["value"]["proofs"] = json!([hex(&bytes)]);
+        response_cases.push(changed);
+    }
+    for level in ["Unverified", "CheckpointFinalised", "SettlementAnchored"] {
+        let mut changed = response.value.clone();
+        changed["achieved_verification_level"] = json!(level);
+        response_cases.push(changed);
+    }
+    for (field, value) in [("chain_head", json!("01")), ("value_sequence", json!("18446744073709551616")),
+        ("latest_sealed_batch", json!(1)), ("latest_finalised_checkpoint", json!("00")),
+        ("relative_to", json!({"checkpoint":"00".repeat(32)}))] {
+        let mut changed = response.value.clone();
+        changed["freshness"][field] = value;
+        response_cases.push(changed);
+    }
+    let mut changed = response.value.clone();
+    changed["freshness"].as_object_mut().ok_or("freshness not object")?.remove("chain_head");
+    response_cases.push(changed);
+    for value in response_cases {
+        let changed = ApiSuccess {
+            request_id: response.request_id,
+            value,
+            verification_status: response.verification_status.clone(),
+        };
+        if decode_proof_bundle_response(&typed_request, &changed).is_some() {
+            return Err("SDK accepted a malformed owner response envelope or record frame".into());
+        }
+    }
+    let changed = ApiSuccess {
+        request_id: response.request_id,
+        value: response.value.clone(),
+        verification_status: VerificationStatus::Achieved(Level::Unverified),
+    };
+    if decode_proof_bundle_response(&typed_request, &changed).is_some() {
+        return Err("SDK accepted disagreement between outer and inner verification levels".into());
+    }
+    let mut higher_request = typed_request;
+    higher_request.requested_verification_level = Level::CheckpointFinalised;
+    if decode_proof_bundle_response(&higher_request, response).is_some() {
+        return Err("SDK promoted a native proof above its achieved verification level".into());
+    }
+    Ok(())
 }
 
 #[test]

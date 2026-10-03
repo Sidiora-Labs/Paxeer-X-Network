@@ -9,6 +9,8 @@ mod checkpoint_impl;
 #[path = "history.rs"]
 mod historical;
 mod native;
+#[path = "proof_bundle.rs"]
+pub(crate) mod proof_bundle_owner;
 #[path = "program_balances.rs"]
 mod program_balances_impl;
 #[path = "program_node.rs"]

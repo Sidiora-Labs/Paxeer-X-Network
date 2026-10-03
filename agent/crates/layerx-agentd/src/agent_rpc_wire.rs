@@ -1119,6 +1119,27 @@ pub(crate) fn policy_dry_run_request(
     }
 }
 
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct ProofBundleWire {
+    target: String,
+    requested_verification_level: String,
+}
+
+impl ProofBundleWire {
+    pub(crate) fn into_request(self, id: RequestId) -> Result<ReadRequest<layerx_agent_api::prepare::CanonicalBytes>, Rejection> {
+        if !matches!(self.target.len(), 70 | 134) {
+            return Err(malformed(id));
+        }
+        let bytes = hex_bytes(&self.target, id)?;
+        layerx_agent_api::proof::ProofBundleTarget::decode(&bytes).map_err(|_| malformed(id))?;
+        Ok(ReadRequest {
+            selector: layerx_agent_api::prepare::CanonicalBytes::new(bytes).map_err(|_| malformed(id))?,
+            requested_verification_level: export_level(&self.requested_verification_level, id)?,
+        })
+    }
+}
+
 /// `export.offline`: the fact set is checked by the one shared fact grammar
 /// (`parse_fact_set`: 1..=16, unique, strict) and the requested level is kept as sent.
 #[derive(Deserialize)]
@@ -2481,5 +2502,27 @@ mod native_contract_tests {
         assert!(serde_json::from_value::<NativePreparationPurposeV1Wire>(
             Value::Object(missing_expiry),
         ).is_err());
+    }
+}
+
+#[test]
+fn proof_bundle_wire_keeps_native_selector_bytes_and_refuses_aliases() {
+    use layerx_agent_api::proof::ProofBundleTarget;
+    let id = RequestId(1);
+    let activity = [1_u8; 32];
+    for target in [ProofBundleTarget::Activity(activity), ProofBundleTarget::Receipt(activity),
+        ProofBundleTarget::AccountState { activity_id: activity, account_id: [2_u8; 32] }] {
+        let bytes = target.encode().expect("canonical selector");
+        let value = json!({"target": lower_hex(bytes.as_bytes()), "requested_verification_level": "BatchIncluded"});
+        let request = decode_wire::<ProofBundleWire>(value.as_object().expect("object"), id)
+            .expect("wire").into_request(id).expect("selector");
+        assert_eq!(request.selector.as_bytes(), bytes.as_bytes());
+        for invalid in [String::new(), "00".repeat(68), lower_hex(bytes.as_bytes()) + "00", "000103".to_owned() + &"00".repeat(32)] {
+            let malformed = json!({"target": invalid, "requested_verification_level": "BatchIncluded"});
+            assert!(decode_wire::<ProofBundleWire>(malformed.as_object().expect("object"), id)
+                .and_then(|wire| wire.into_request(id)).is_err());
+        }
+        let unknown = json!({"target": lower_hex(bytes.as_bytes()), "requested_verification_level": "BatchIncluded", "authority": "caller"});
+        assert!(decode_wire::<ProofBundleWire>(unknown.as_object().expect("object"), id).is_err());
     }
 }

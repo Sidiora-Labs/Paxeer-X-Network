@@ -7,7 +7,7 @@ import ssl
 from collections.abc import Mapping
 from dataclasses import dataclass
 from http.client import HTTPException
-from typing import Generic, TypeVar, cast
+from typing import Generic, Literal, TypedDict, TypeVar, cast
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote, urlparse, urlunparse
 from urllib.request import HTTPRedirectHandler, HTTPSHandler, Request, build_opener
@@ -260,6 +260,135 @@ class NativeEnvelopeSuccess(Generic[_NativeValue]):
     verification_status: Mapping[str, object]
 
 
+ProofBundleVerificationLevel = Literal["Unverified", "SequencerSigned", "BatchIncluded", "StateProven", "CheckpointFinalised", "SettlementAnchored"]
+
+
+class ProofBundleRequest(TypedDict):
+    target: str
+    requested_verification_level: ProofBundleVerificationLevel
+
+
+class ProofBundleValue(TypedDict):
+    target: str
+    proofs: list[str]
+
+
+class ProofBundleRelativeTo(TypedDict):
+    batch: str
+
+
+class ProofBundleFreshness(TypedDict):
+    chain_head: str
+    latest_sealed_batch: str
+    latest_finalised_checkpoint: str
+    value_sequence: str
+    relative_to: ProofBundleRelativeTo
+
+
+class ProofBundleRead(TypedDict):
+    value: ProofBundleValue
+    achieved_verification_level: Literal["BatchIncluded", "StateProven"]
+    freshness: ProofBundleFreshness
+
+
+@dataclass(frozen=True)
+class ProofBundleRecord:
+    variant: Literal[1, 2, 3, 4]
+    canonical_value: bytes
+    native_proof: bytes
+    activity_receipt: bytes | None
+    activity_receipt_sp1: bytes | None
+
+
+def encode_proof_bundle_request(value: object) -> ProofBundleRequest:
+    if not isinstance(value, Mapping) or set(value) != {"target", "requested_verification_level"}:
+        raise _invalid_argument()
+    target, level = value["target"], value["requested_verification_level"]
+    if (not isinstance(target, str) or len(target) not in {70, 134} or any(character not in _HEX for character in target)
+        or not isinstance(level, str) or level not in _LEVELS):
+        raise _invalid_argument()
+    raw = bytes.fromhex(target)
+    kind = raw[2]
+    if (raw[:2] != b"\x00\x01" or kind not in {1, 2, 3} or len(raw) != (67 if kind == 2 else 35)
+        or not any(raw[3:35]) or kind == 2 and not any(raw[35:])):
+        raise _invalid_argument()
+    return {"target": target, "requested_verification_level": cast(ProofBundleVerificationLevel, level)}
+
+
+def decode_proof_bundle_record(value: object) -> ProofBundleRecord:
+    if (not isinstance(value, str) or not 0 < len(value) <= 524_288 or len(value) % 2
+        or any(character not in _HEX for character in value)):
+        raise _decode_failure()
+    raw = bytes.fromhex(value)
+    if len(raw) < 6 or raw[:5] != b"LXPB1" or raw[5] not in {1, 2, 3, 4}:
+        raise _decode_failure()
+    variant = cast(Literal[1, 2, 3, 4], raw[5])
+    offset = 6
+
+    def field() -> bytes:
+        nonlocal offset
+        if offset + 4 > len(raw):
+            raise _decode_failure()
+        length = int.from_bytes(raw[offset:offset + 4], "big")
+        offset += 4
+        if length == 0 or length > len(raw) - offset:
+            raise _decode_failure()
+        result = raw[offset:offset + length]
+        offset += length
+        return result
+
+    canonical_value, native_proof = field(), field()
+    receipt, receipt_proof = (field(), field()) if variant == 4 else (None, None)
+    if offset != len(raw):
+        raise _decode_failure()
+    return ProofBundleRecord(variant, canonical_value, native_proof, receipt, receipt_proof)
+
+
+def check_proof_bundle_response(request: ProofBundleRequest, response: AgentEnvelopeSuccess) -> ProofBundleRecord:
+    expected = encode_proof_bundle_request(request)
+    try:
+        read = response.value
+        if not isinstance(read, Mapping) or set(read) != {"value", "achieved_verification_level", "freshness"}:
+            raise ValueError("proof_bundle.read")
+        value = read["value"]
+        if not isinstance(value, Mapping) or set(value) != {"target", "proofs"} or value["target"] != expected["target"]:
+            raise ValueError("proof_bundle.target")
+        proofs = value["proofs"]
+        if not isinstance(proofs, list) or len(proofs) != 1:
+            raise ValueError("proof_bundle.proofs")
+        proof = decode_proof_bundle_record(proofs[0])
+        kind = bytes.fromhex(expected["target"])[2]
+        if kind == 1 and proof.variant != 1 or kind == 3 and proof.variant != 3 or kind == 2 and proof.variant not in {2, 4}:
+            raise ValueError("proof_bundle.variant")
+        achieved = "StateProven" if kind == 2 else "BatchIncluded"
+        if (read["achieved_verification_level"] != achieved or _LEVELS[achieved] < _LEVELS[expected["requested_verification_level"]]
+            or response.verification_status != {"state": "achieved", "level": achieved}):
+            raise ValueError("proof_bundle.level")
+        freshness = read["freshness"]
+        if not isinstance(freshness, Mapping) or set(freshness) != {"chain_head", "latest_sealed_batch", "latest_finalised_checkpoint", "value_sequence", "relative_to"}:
+            raise ValueError("proof_bundle.freshness")
+        relative = freshness["relative_to"]
+        if not isinstance(relative, Mapping) or set(relative) != {"batch"}:
+            raise ValueError("proof_bundle.relative_to")
+
+        def decimal(value: object) -> int:
+            if (not isinstance(value, str) or not 0 < len(value) <= 20 or not value.isascii() or not value.isdigit()
+                or len(value) > 1 and value[0] == "0" or int(value) > _MAX_U64):
+                raise ValueError("proof_bundle.sequence")
+            return int(value)
+
+        head, latest = decimal(freshness["chain_head"]), decimal(freshness["latest_sealed_batch"])
+        sequence, batch = decimal(freshness["value_sequence"]), decimal(relative["batch"])
+        checkpoint = freshness["latest_finalised_checkpoint"]
+        if (head == 0 or latest == 0 or batch == 0 or sequence == 0 or sequence > head or batch > latest
+            or not isinstance(checkpoint, str) or not _hex32(checkpoint)
+            or kind == 2 and (sequence != head or batch != latest)):
+            raise ValueError("proof_bundle.freshness_binding")
+        return proof
+    except (ValueError, TypeError, KeyError, PlatformSdkError):
+        raise _decode_failure(response.request_id) from None
+
+
 class AgentEnvelopeTransport(ProductionTransport):
     __slots__ = ("_gateway_key", "_endpoint", "_maximum_response_bytes", "_opener", "_path", "_session", "_timeout")
 
@@ -307,6 +436,9 @@ class AgentEnvelopeTransport(ProductionTransport):
             raise _unavailable_capability()
         if not isinstance(request, Mapping) or any(not isinstance(key, str) for key in request):
             raise _invalid_argument()
+        proof_request = encode_proof_bundle_request(request) if operation == "read.proof_bundle" else None
+        if proof_request is not None:
+            request = proof_request
         mutating = operation in _AGENT_IDEMPOTENT
         if operation in _BOOTSTRAP_OPERATIONS:
             credential: dict[str, str] | None = None
@@ -342,15 +474,22 @@ class AgentEnvelopeTransport(ProductionTransport):
         }
         if self._gateway_key is not None:
             headers["Authorization"] = self._gateway_key.use()
+        maximum = min(self._maximum_response_bytes, _ENVELOPE_MAX_BODY_BYTES) if proof_request is not None else self._maximum_response_bytes
+
+        def checked(response: AgentEnvelopeSuccess) -> AgentEnvelopeSuccess:
+            if proof_request is not None:
+                check_proof_bundle_response(proof_request, response)
+            return response
+
         outbound = Request(_route_endpoint(self._endpoint, self._path), data=body, headers=headers, method="POST")
         try:
             with self._opener.open(outbound, timeout=self._timeout) as response:
-                encoded = _envelope_read(response, self._maximum_response_bytes, mutating)
-                return _envelope_reply(response.status, response.headers.get("Content-Type"), encoded, request_id, mutating)
+                encoded = _envelope_read(response, maximum, mutating)
+                return checked(_envelope_reply(response.status, response.headers.get("Content-Type"), encoded, request_id, mutating))
         except HTTPError as error:
             try:
-                encoded = _envelope_read(error, self._maximum_response_bytes, mutating)
-                return _envelope_reply(error.code, error.headers.get("Content-Type"), encoded, request_id, mutating)
+                encoded = _envelope_read(error, maximum, mutating)
+                return checked(_envelope_reply(error.code, error.headers.get("Content-Type"), encoded, request_id, mutating))
             finally:
                 error.close()
         except PlatformSdkError:
@@ -360,6 +499,10 @@ class AgentEnvelopeTransport(ProductionTransport):
                 raise PlatformSdkError(SdkErrorCode.UNKNOWN_OUTCOME, "unknown-outcome") from None
             raise PlatformSdkError(SdkErrorCode.TRANSPORT_FAILURE, "safe") from None
 
+
+    def read_proof_bundle(self, request: ProofBundleRequest) -> NativeEnvelopeSuccess[ProofBundleRead]:
+        response = self.call("agent", "read.proof_bundle", request, None)
+        return NativeEnvelopeSuccess(response.request_id, cast(ProofBundleRead, response.value), response.verification_status)
 
     def prepare_native(self, request: NativePrepareRequestV1, idempotency_key: IdempotencyKey) -> NativeEnvelopeSuccess[NativePrepareResultV1]:
         try:

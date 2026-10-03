@@ -13,6 +13,7 @@ import {
   SecretBytes,
 } from "../src/index.js";
 import type { AgentEnvelopeSuccess } from "../src/index.js";
+import { encodeProofBundleRequest, checkProofBundleResponse } from "../src/agent-http.js";
 import { encodeNativePrepareRequest, encodeNativeApprovalDecision,
   type NativePrepareRequestV1, type NativeLocalGrantV1, type NativeApprovalResultV1, type Operation,
 } from "../src/generated/client.js";
@@ -165,7 +166,7 @@ function recordResponse(name: string): void {
 async function runCase(name: string): Promise<void> {
   lastResponse = undefined;
   responseCount = 0;
-  const special = name.startsWith("native_") ? nativeCase : SPECIAL_CASES[name];
+  const special = name.startsWith("proof_bundle.") ? proofBundleCase : name.startsWith("native_") ? nativeCase : SPECIAL_CASES[name];
   if (special !== undefined) {
     try {
       results.push({ case: name, outcome: "pass", detail: await special(name) });
@@ -201,6 +202,84 @@ async function runCase(name: string): Promise<void> {
   } catch (error) {
     results.push({ case: name, outcome: "fail", detail: describe(error) });
   }
+}
+
+async function proofBundleCase(name: string): Promise<string> {
+  const entry = object(requests, name), request = object(entry, "request");
+  assert(text(entry, "operation") === "read.proof_bundle" && !("idempotency_key" in entry), "proof bundle operation");
+  if (name.startsWith("proof_bundle.malformed_request.")) {
+    let failure: unknown;
+    try { await transport.call({ plane: "agent", operation: "read.proof_bundle", request }); }
+    catch (error) { failure = error; }
+    assert(failure instanceof PlatformSdkError && failure.code === "invalid-argument", "malformed proof target was accepted");
+    assert(responseCount === 0, "malformed proof request reached HTTP");
+    return "invalid request refused before HTTP";
+  }
+  if (name.startsWith("proof_bundle.refusal.")) {
+    let failure: unknown;
+    try { await transport.readProofBundle(encodeProofBundleRequest(request)); }
+    catch (error) { failure = error; }
+    assert(failure instanceof PlatformSdkError && failure.requestId !== undefined, "proof refusal absent");
+    assert(responseCount === 1 && observed() !== undefined, "proof refusal did not use real HTTP");
+    recordResponse(name);
+    const raw = observed();
+    assert(raw !== undefined, "proof refusal response absent");
+    const body = JSON.parse(raw.body.toString("utf8")) as Readonly<Record<string, unknown>>;
+    assert(raw.status === (entry.expected_status ?? 403), "proof refusal status");
+    assert(body.class === text(entry, "expected_class") && body.reason === text(entry, "expected_reason"), "proof refusal reason");
+    return "daemon proof refusal recorded";
+  }
+  const typed = encodeProofBundleRequest(request);
+  let response: Awaited<ReturnType<AgentEnvelopeTransport["readProofBundle"]>>;
+  try { response = await transport.readProofBundle(typed); }
+  finally { if (observed() !== undefined) recordResponse(name); }
+  assert(responseCount === 1 && observed()?.status === 200, "proof success did not use real HTTP");
+  const proof = checkProofBundleResponse(typed, response);
+  assert(proof.variant === field(entry, "expected_variant"), "proof variant differs from real fixture");
+  const fields = proof.variant === 4
+    ? [proof.canonical_value, proof.native_proof, proof.activity_receipt, proof.activity_receipt_sp1]
+    : [proof.canonical_value, proof.native_proof];
+  const framed = [Buffer.from("LXPB1", "ascii"), Buffer.from([proof.variant])];
+  for (const hex of fields) {
+    const value = Buffer.from(hex, "hex"), length = Buffer.alloc(4);
+    length.writeUInt32BE(value.length);
+    framed.push(length, value);
+  }
+  assert(Buffer.concat(framed).toString("hex") === response.value.value.proofs[0], "proof bytes changed during decoding");
+  let rejected = 0;
+  const reject = (value: unknown, status: unknown = response.verification_status): void => {
+    let failure: unknown;
+    try { checkProofBundleResponse(typed, { ...response, value, verification_status: status }); }
+    catch (error) { failure = error; }
+    assert(failure instanceof PlatformSdkError && failure.code === "decode-failure", "mutated real proof response accepted");
+    rejected += 1;
+  };
+  const raw = Buffer.from(response.value.value.proofs[0], "hex");
+  const badMagic = Buffer.from(raw); badMagic[0] = 0;
+  const badVariant = Buffer.from(raw); badVariant[5] = 0;
+  const emptyField = Buffer.from(raw); emptyField.writeUInt32BE(0, 6);
+  const overrun = Buffer.from(raw); overrun.writeUInt32BE(raw.length, 6);
+  const oversized = Buffer.concat(Array.from({ length: Math.ceil(262_145 / raw.length) }, () => raw)).subarray(0, 262_145);
+  for (const bytes of [raw.subarray(0, raw.length - 1), Buffer.concat([raw, Buffer.from([0])]), badMagic, badVariant, emptyField, overrun, oversized]) {
+    reject({ ...response.value, value: { ...response.value.value, proofs: [bytes.toString("hex")] } });
+  }
+  reject({ ...response.value, value: { ...response.value.value, proofs: [] } });
+  reject({ ...response.value, value: { ...response.value.value, proofs: [response.value.value.proofs[0], response.value.value.proofs[0]] } });
+  const other = Buffer.from(typed.target, "hex"); other[3] = other[3]! ^ 1;
+  reject({ ...response.value, value: { ...response.value.value, target: other.toString("hex") } });
+  reject({ ...response.value, achieved_verification_level: "SettlementAnchored" });
+  reject(response.value, { state: "achieved", level: "SettlementAnchored" });
+  reject({ ...response.value, unexpected: true });
+  for (const chain_head of [0, "00", "18446744073709551616"]) {
+    reject({ ...response.value, freshness: { ...response.value.freshness, chain_head } });
+  }
+  reject({ ...response.value, freshness: { ...response.value.freshness, relative_to: { checkpoint: response.value.freshness.latest_finalised_checkpoint } } });
+  if (proof.variant === 4) {
+    const missingLink = raw.subarray(0, 6 + 4 + proof.canonical_value.length / 2 + 4 + proof.native_proof.length / 2);
+    reject({ ...response.value, value: { ...response.value.value, proofs: [missingLink.toString("hex")] } });
+  }
+  assert(responseCount === 1, "local framing mutations unexpectedly used HTTP");
+  return `real variant ${proof.variant}; ${rejected} local framing/consistency refusals`;
 }
 
 function nativeOperation(value: string): Operation {

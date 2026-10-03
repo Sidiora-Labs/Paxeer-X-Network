@@ -78,7 +78,9 @@ pub mod policy {
 
 /// Proof retrieval contract namespace.
 pub mod proof {
-    pub use crate::read_contract::ProofBundle;
+    pub use crate::read_contract::{
+        ProofBundle, ProofBundleRecord, ProofBundleTarget, ProofBundleVariant, MAX_PROOF_BUNDLE_BYTES,
+    };
 }
 
 /// Availability retrieval contract namespace.

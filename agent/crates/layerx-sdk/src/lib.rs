@@ -216,6 +216,7 @@ pub enum SdkError {
     NotDirectNode,
     DirectConnection(ConnectionError),
     UnverifiedRead,
+    InvalidProofBundle,
     VerificationBelowRequested { requested: Level, achieved: Level },
     ExecutedWithoutEvidence,
 }
@@ -365,6 +366,15 @@ impl Client {
                 achieved: read.achieved_verification_level,
             });
         }
+        Ok(read)
+    }
+
+    pub fn accept_proof_bundle(
+        request: &ReadRequest<layerx_agent_api::prepare::CanonicalBytes>,
+        read: VerifiedRead<layerx_agent_api::proof::ProofBundle>,
+    ) -> Result<VerifiedRead<layerx_agent_api::proof::ProofBundle>, SdkError> {
+        layerx_agent_api::proof::ProofBundle::check_response(request, &read)
+            .map_err(|_| SdkError::InvalidProofBundle)?;
         Ok(read)
     }
 

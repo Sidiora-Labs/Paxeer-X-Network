@@ -613,3 +613,380 @@ exec "$@"
             self.cgroup = None
         if self.program is not None:
             self.program.stop()
+
+
+class NativeProofFaultRelay:
+    MODES = frozenset({'wrong_header_signature', 'wrong_native_network', 'wrong_sequencer_key', 'maintenance_link', 'moving_head'})
+    MAX_FRAME_BYTES = 4 * 1024 * 1024
+    MAX_CONNECTIONS = 16
+
+    def __init__(self, upstream_socket, private_socket_path, mode):
+        import socket
+        import threading
+        if mode not in self.MODES:
+            raise ValueError('unsupported native proof fault mode')
+        self.upstream_socket = Path(upstream_socket)
+        self.socket_path = Path(private_socket_path)
+        if not self.upstream_socket.is_absolute() or not self.socket_path.is_absolute() \
+                or len(os.fsencode(self.socket_path)) >= 108 or self.upstream_socket == self.socket_path:
+            raise ValueError('invalid native proof relay socket path')
+        self.mode = mode
+        self._socket_module = socket
+        self._threading = threading
+        self._lock = threading.RLock()
+        self._stop = threading.Event()
+        self._listener = None
+        self._accept_thread = None
+        self._workers = []
+        self._connections = set()
+        self._inode = None
+        self._active = False
+        self._epoch = 0
+        self._mutated = 0
+        self._triggered = 0
+        self._on_selected = None
+        self._callback_inflight = False
+        self._failures = []
+
+    @property
+    def mutated_frame_count(self):
+        with self._lock:
+            return self._mutated
+
+    @property
+    def mutation_count(self):
+        return self.mutated_frame_count
+
+    @property
+    def trigger_count(self):
+        with self._lock:
+            return self._triggered
+
+    @property
+    def failure_info(self):
+        with self._lock:
+            return tuple(self._failures)
+
+    def _failure(self, reason):
+        with self._lock:
+            if reason not in self._failures:
+                self._failures.append(reason)
+
+    def start(self):
+        import stat
+        with self._lock:
+            if self._listener is not None:
+                raise RuntimeError('native proof relay already started')
+            parent = self.socket_path.parent
+            info = parent.lstat()
+            if not stat.S_ISDIR(info.st_mode) or parent.resolve(strict=True) != parent \
+                    or info.st_uid != os.geteuid() or info.st_mode & 0o077:
+                raise RuntimeError('native proof relay requires an owned private directory')
+            if self.socket_path.exists() or self.socket_path.is_symlink():
+                raise RuntimeError('native proof relay socket path already exists')
+            if not stat.S_ISSOCK(self.upstream_socket.stat().st_mode):
+                raise RuntimeError('native proof relay upstream is not a Unix socket')
+            listener = self._socket_module.socket(self._socket_module.AF_UNIX, self._socket_module.SOCK_STREAM)
+            try:
+                listener.bind(str(self.socket_path))
+                self._inode = self.socket_path.stat().st_ino
+                self.socket_path.chmod(0o600)
+                listener.listen(self.MAX_CONNECTIONS)
+                listener.settimeout(0.2)
+            except BaseException:
+                listener.close()
+                if self._inode is not None and self.socket_path.lstat().st_ino == self._inode:
+                    self.socket_path.unlink()
+                raise
+            self._listener = listener
+            self._stop.clear()
+            self._accept_thread = self._threading.Thread(target=self._accept, daemon=True)
+            self._accept_thread.start()
+        return self
+
+    def arm(self, mode=None, *, on_selected=None):
+        with self._lock:
+            selected = self.mode if mode is None else mode
+            if self._listener is None or self._active or selected not in self.MODES:
+                raise RuntimeError('native proof relay cannot arm')
+            if self._failures:
+                raise RuntimeError('native proof relay has recorded failures')
+            if selected == 'moving_head' and not callable(on_selected) \
+                    or selected != 'moving_head' and on_selected is not None:
+                raise RuntimeError('native proof relay callback does not match selected mode')
+            self.mode = selected
+            self._epoch += 1
+            self._mutated = 0
+            self._triggered = 0
+            self._on_selected = on_selected
+            self._callback_inflight = False
+            self._active = True
+
+    def disarm(self):
+        with self._lock:
+            if not self._active:
+                raise RuntimeError('native proof relay is not armed')
+            self._active = False
+            result = {'mode': self.mode, 'mutated_frame_count': self._mutated, 'trigger_count': self._triggered,
+                      'failure_info': tuple(self._failures)}
+            expected = (0, 1) if self.mode == 'moving_head' else (1, 0)
+            if self._failures or self._callback_inflight or (self._mutated, self._triggered) != expected:
+                raise RuntimeError('native proof relay did not perform exactly one selected genuine response action')
+            return result
+
+    def stop(self):
+        failure = None
+        with self._lock:
+            if self._active:
+                try:
+                    self.disarm()
+                except RuntimeError as error:
+                    failure = error
+            self._stop.set()
+            listener, self._listener = self._listener, None
+            connections = tuple(self._connections)
+        if listener is not None:
+            listener.close()
+        for downstream, upstream in connections:
+            for connection in (downstream, upstream):
+                try:
+                    connection.shutdown(self._socket_module.SHUT_RDWR)
+                except OSError:
+                    pass
+                connection.close()
+        if self._accept_thread is not None:
+            self._accept_thread.join(timeout=2)
+        for worker in tuple(self._workers):
+            worker.join(timeout=2)
+            if worker.is_alive():
+                self._failure('worker_shutdown_timeout')
+        if self._inode is not None:
+            try:
+                if self.socket_path.lstat().st_ino != self._inode:
+                    raise RuntimeError('native proof relay socket was replaced')
+                self.socket_path.unlink()
+            except FileNotFoundError:
+                pass
+            self._inode = None
+        if failure is not None:
+            raise failure
+        if self.failure_info:
+            raise RuntimeError('native proof relay has recorded failures')
+
+    def _accept(self):
+        while not self._stop.is_set():
+            try:
+                downstream, _ = self._listener.accept()
+            except self._socket_module.timeout:
+                continue
+            except (OSError, AttributeError):
+                if not self._stop.is_set():
+                    self._failure('listener_failure')
+                return
+            with self._lock:
+                if self._stop.is_set() or len(self._connections) >= self.MAX_CONNECTIONS:
+                    downstream.close()
+                    if not self._stop.is_set():
+                        self._failure('connection_limit')
+                    continue
+                upstream = self._socket_module.socket(self._socket_module.AF_UNIX, self._socket_module.SOCK_STREAM)
+                try:
+                    upstream.settimeout(10)
+                    upstream.connect(str(self.upstream_socket))
+                    upstream.settimeout(None)
+                except OSError:
+                    downstream.close()
+                    upstream.close()
+                    self._failure('upstream_connect_failure')
+                    continue
+                pair = (downstream, upstream)
+                self._connections.add(pair)
+                self._workers = [worker for worker in self._workers if worker.is_alive()]
+                worker = self._threading.Thread(target=self._connection, args=(pair,), daemon=True)
+                self._workers.append(worker)
+                worker.start()
+
+    def _read_exact(self, connection, count, clean_eof=False):
+        result = bytearray()
+        while len(result) != count:
+            chunk = connection.recv(count - len(result))
+            if not chunk:
+                if clean_eof and not result:
+                    return None
+                raise ValueError('truncated_frame')
+            result.extend(chunk)
+        return bytes(result)
+
+    def _frame(self, connection):
+        prefix = self._read_exact(connection, 4, True)
+        if prefix is None:
+            return None
+        size = int.from_bytes(prefix, 'big')
+        if size < 22 or size > self.MAX_FRAME_BYTES:
+            raise ValueError('unsupported_frame_length')
+        return self._read_exact(connection, size)
+
+    @staticmethod
+    def _envelope(frame):
+        if len(frame) < 22:
+            raise ValueError('truncated_envelope')
+        payload_length = int.from_bytes(frame[14:18], 'big')
+        proof_offset = 18 + payload_length + 4
+        if proof_offset > len(frame):
+            raise ValueError('truncated_payload')
+        proof_length = int.from_bytes(frame[proof_offset - 4:proof_offset], 'big')
+        if proof_offset + proof_length != len(frame):
+            raise ValueError('invalid_proof_length')
+        return (int.from_bytes(frame[4:6], 'big'), int.from_bytes(frame[6:14], 'big'),
+                frame[18:proof_offset - 4], proof_offset)
+
+    def _connection(self, pair):
+        downstream, upstream = pair
+        try:
+            maintenance = None
+            epoch = None
+            while not self._stop.is_set():
+                request = self._frame(downstream)
+                if request is None:
+                    return
+                tag, correlation, selector, _ = self._envelope(request)
+                with self._lock:
+                    request_epoch = self._epoch if self._active else None
+                    if epoch != request_epoch:
+                        maintenance = None
+                        epoch = request_epoch
+                upstream.sendall(len(request).to_bytes(4, 'big') + request)
+                response = self._frame(upstream)
+                if response is None:
+                    raise ValueError('missing_upstream_response')
+                response_tag, response_correlation, payload, proof_offset = self._envelope(response)
+                callback = None
+                with self._lock:
+                    if self._active and request_epoch == self._epoch and self._mutated == 0 and self._triggered == 0 and tag == 16:
+                        if response_correlation != correlation:
+                            raise ValueError('proof_correlation_mismatch')
+                        if response_tag == 17:
+                            if self.mode == 'moving_head':
+                                if not payload or not response[proof_offset:]:
+                                    raise ValueError('genuine_proof_unavailable')
+                                self._proof_layout(response[proof_offset:], selector)
+                                if selector[2] in (1, 3):
+                                    callback = self._on_selected
+                                    self._triggered += 1
+                                    self._callback_inflight = True
+                            else:
+                                response, maintenance, changed = self._mutate(response, selector, payload, proof_offset,
+                                                                              correlation, maintenance)
+                                if changed:
+                                    self._mutated += 1
+                if callback is not None:
+                    try:
+                        callback()
+                    except BaseException:
+                        raise ValueError('moving_head_callback_failed') from None
+                    finally:
+                        with self._lock:
+                            self._callback_inflight = False
+                downstream.sendall(len(response).to_bytes(4, 'big') + response)
+        except ValueError as error:
+            if not self._stop.is_set():
+                self._failure(str(error))
+        except OSError:
+            if not self._stop.is_set():
+                self._failure('relay_transport_failure')
+        finally:
+            for connection in pair:
+                connection.close()
+            with self._lock:
+                self._connections.discard(pair)
+
+    @staticmethod
+    def _proof_layout(proof, selector):
+        cursor = 0
+
+        def take(count):
+            nonlocal cursor
+            if count < 0 or cursor + count > len(proof):
+                raise ValueError('unsupported_proof_layout')
+            start = cursor
+            cursor += count
+            return start
+
+        def number(count):
+            start = take(count)
+            return int.from_bytes(proof[start:start + count], 'big')
+
+        def counted(maximum):
+            length = number(4)
+            if length == 0 or length > maximum:
+                raise ValueError('unsupported_counted_field')
+            return take(length), length
+
+        def merkle():
+            index, count, depth = number(4), number(4), number(1)
+            if count == 0 or index >= count or depth > 32 or depth != (count - 1).bit_length():
+                raise ValueError('unsupported_merkle_proof')
+            take(depth * 32)
+
+        if len(selector) not in (35, 67) or selector[:2] != b'\0\1' \
+                or selector[2] not in (1, 2, 3) or len(selector) != (67 if selector[2] == 2 else 35):
+            raise ValueError('unsupported_proof_selector')
+        version, kind = number(2), number(1)
+        maintenance = False
+        if selector[2] in (1, 3):
+            if version != 1 or kind != selector[2] or proof[take(32):cursor] != selector[3:35]:
+                raise ValueError('unsupported_inclusion_proof')
+            merkle()
+        else:
+            if version not in (1, 2, 3) or kind != 2 or number(1) != 1 \
+                    or proof[take(32):cursor] != selector[35:67]:
+                raise ValueError('unsupported_account_proof')
+            take(96)
+            for _ in range(3):
+                merkle()
+            counted(1_048_576)
+            merkle()
+            maintenance = version in (2, 3)
+        if number(2) != 1:
+            raise ValueError('unsupported_signed_header')
+        sequencer_id = take(32)
+        key = take(32)
+        first, last = number(8), number(8)
+        if not any(proof[sequencer_id:sequencer_id + 32]) or not any(proof[key:key + 32]) or first == 0 or last < first:
+            raise ValueError('unsupported_signed_header_authority')
+        header, length = counted(4096)
+        signature = take(64)
+        if length != 354 or proof[header + 2:header + 6] != b'\x17\x01\x0f\x01' \
+                or proof[header + 8] != 2 or proof[header:header + 2] != proof[header + 6:header + 8] \
+                or int.from_bytes(proof[header:header + 2], 'big') not in (1, 2, 3):
+            raise ValueError('unsupported_batch_header')
+        if selector[2] == 2:
+            checkpoint = number(1)
+            if checkpoint == 1:
+                counted(1_048_576 + 4096 + 16 + 32 * 274)
+                counted(128 * 1024)
+            elif checkpoint != 0:
+                raise ValueError('unsupported_checkpoint')
+        if cursor != len(proof):
+            raise ValueError('trailing_proof_bytes')
+        return {'key': key, 'network': header + 12, 'signature': signature, 'maintenance': maintenance}
+
+    def _mutate(self, frame, selector, payload, proof_offset, correlation, maintenance):
+        proof = frame[proof_offset:]
+        if not payload or not proof:
+            raise ValueError('genuine_proof_unavailable')
+        layout = self._proof_layout(proof, selector)
+        if self.mode == 'maintenance_link':
+            if selector[2] == 2 and layout['maintenance']:
+                if correlation == (1 << 64) - 1:
+                    raise ValueError('maintenance_correlation_overflow')
+                return frame, (correlation + 1, selector[3:35]), False
+            if maintenance != (correlation, selector[3:35]) or selector[2] != 3:
+                return frame, maintenance, False
+            offset = 34
+        else:
+            offset = layout[{'wrong_header_signature': 'signature', 'wrong_native_network': 'network',
+                             'wrong_sequencer_key': 'key'}[self.mode]]
+        result = bytearray(frame)
+        result[proof_offset + offset] ^= 1
+        return bytes(result), None, True

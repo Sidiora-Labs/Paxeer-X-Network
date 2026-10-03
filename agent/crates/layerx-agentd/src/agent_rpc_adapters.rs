@@ -1639,6 +1639,38 @@ fn freshness_value(freshness: &Freshness) -> Value {
     })
 }
 
+pub(crate) fn read_proof_bundle<A: HumanAuthorityBoundary>(
+    owner: &SharedAgentOwner<A>,
+    context: &RpcOwnerContext<'_>,
+    request: &Map<String, Value>,
+    ctx: &DispatchContext,
+) -> Result<Dispatched, Rejection> {
+    use crate::agent_rpc_wire::{decode_wire, ProofBundleWire};
+    let id = ctx.request_id;
+    let typed = decode_wire::<ProofBundleWire>(request, id)?.into_request(id)?;
+    let response = owner.lock()
+        .and_then(|mut guard| guard.rpc_read_proof_bundle(context, typed.clone()))
+        .map_err(|error| owner_error(id, error))?;
+    layerx_agent_api::proof::ProofBundle::check_response(&typed, &response)
+        .map_err(|_| rejection(ErrorClass::InternalFault, id, "owner.response_malformed"))?;
+    let dispatched = Dispatched {
+        value: serde_json::json!({
+            "value": {
+                "target": hexv(response.value.target.as_bytes()),
+                "proofs": response.value.proofs.iter().map(|proof| hexv(proof.as_bytes())).collect::<Vec<_>>(),
+            },
+            "achieved_verification_level": crate::agent_rpc_dispatch::level_name(response.achieved_verification_level),
+            "freshness": freshness_value(&response.freshness),
+        }),
+        verification: Some(VerificationStatus::Achieved(response.achieved_verification_level)),
+    };
+    if crate::agent_rpc::success_body(id, &dispatched, Some(Some(typed.requested_verification_level)))?
+        .body.len() > crate::agent_rpc::MAX_BODY_BYTES {
+        return Err(rejection(ErrorClass::InternalFault, id, "owner.response_malformed"));
+    }
+    Ok(dispatched)
+}
+
 /// `export.offline`: the fact set is decoded through the shared fact grammar, the requested
 /// level is passed to the owner unchanged, and the response is accepted only when it states
 /// exactly the requested facts at or above the requested level.

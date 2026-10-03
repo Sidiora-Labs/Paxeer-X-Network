@@ -1082,7 +1082,8 @@ pub(crate) fn dispatch_operation<A: HumanAuthorityBoundary>(
             id,
             "refused_pending_bootstrap_artifact",
         )),
-        Operation::ProgramInterface | Operation::ReadProofBundle => Err(rejection(
+        Operation::ReadProofBundle => adapters::read_proof_bundle(shared, context, request, ctx),
+        Operation::ProgramInterface => Err(rejection(
             ErrorClass::UnavailableCapability,
             id,
             "unmatched_by_ruling",
