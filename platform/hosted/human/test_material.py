@@ -52,47 +52,90 @@ class MaterialTests(unittest.TestCase):
             self.assertFalse((Path(directory) / 'output.json').exists())
 
     def test_custody_bindings_resolve_to_the_native_custody_precompile(self):
+        import re
+        import provision
+
         precompile = '0x0000000000000000000000000000000000001013'
         self.assertEqual(material.CUSTODY_PRECOMPILE, precompile)
+
+        def required_path(name, directory=False):
+            raw = os.environ.get(name)
+            if not raw:
+                self.fail('required genuine producer input is missing: ' + name)
+            path = Path(raw)
+            try:
+                material.protected_file(path, 0o700 if directory else 0o600)
+            except (ValueError, OSError):
+                self.fail('required genuine producer input is not a canonical protected path: ' + name)
+            return path
+
+        source_evidence = required_path('PAXEER_X_HUMAN_EVIDENCE_DIR', directory=True)
+        source_work = source_evidence.parent
+        material.protected_file(source_work, 0o700)
+        deployment = required_path('PAXEER_X_HUMAN_DEPLOYMENT')
+        registry = required_path('PAXEER_X_MODULE_REGISTRY')
+        genesis = required_path('PAXEER_X_HUMAN_GENESIS_DIR', directory=True)
+        legacy_deployment = required_path('PAXEER_X_HUMAN_LEGACY_DEPLOYMENT')
+        genesis_binding = material.genesis_binding(genesis)
+        asset = (genesis / 'asset-id').read_text().strip()
+        if re.fullmatch('[0-9a-f]{64}', asset) is None or int(asset, 16) == 0:
+            self.fail('required genuine genesis asset-id is invalid')
+        native = provision.protected_json(deployment)
+        legacy = provision.protected_json(legacy_deployment)
+        network, chain = native['network_id'], native['chain_id']
+        if (type(network) is not int or not 0 < network < 2**32
+                or type(chain) is not int or not 0 < chain < 2**64
+                or legacy.get('network_id') != network or legacy.get('chain_id') != chain):
+            self.fail('genuine native and legacy deployment inputs must share the configured network and chain')
+        native_deployed = native['addresses']
+        deployed = legacy['addresses']
+        for name in ('vault', 'withdrawal_claims', 'emergency_exit'):
+            value = deployed.get(name)
+            if type(value) is not str or re.fullmatch('0x[0-9a-fA-F]{40}', value) is None or int(value, 16) == 0:
+                self.fail('genuine legacy deployment input is missing the deployed address: ' + name)
+        movement = provision.protected_json(source_work / 'human-evidence-input/movement-source.json')
+        source_names = ['identity/source-binding.json', 'human-owner-result.json', 'naming-deployment-result.json']
+        source_names += ['human-evidence-input/' + name for name in (
+            'recovery-policy.json', 'owner-registration.json', 'treasury.json', 'sequencer.json',
+            'movement-source.json', 'account-head-result.json', 'owner-native.json')]
+        for name in ('owner-kms.json', 'onboarding-configuration.json'):
+            path = source_work / 'human-evidence-input' / name
+            if path.exists() or path.is_symlink():
+                source_names.append('human-evidence-input/' + name)
+        source_names += ['human-evidence-input/owner-native-run/' + label + suffix
+                         for label in ('credit', 'identity', 'rotation', 'recovery')
+                         for suffix in ('.activity', '.receipt')]
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory).resolve()
-            evidence = root / 'human-evidence'
-            evidence.mkdir(mode=0o700)
-            for name, value in (
-                    ('components.json', {'AGENT_ACTOR': 'did:layerx:' + '01' * 32}),
-                    ('agent.json', {'HUMAN_PEERS': 'uid=4020;tenant=beta;principal=did:layerx:' + '01' * 32}),
-                    ('purpose-catalog.json', {'purposes': []}),
-                    ('authority.json', {'tenant': 'beta', 'principal': 'did:layerx:' + '01' * 32,
-                                        'core-clock-horizon': 60}),
-                    ('principal-policy.json', {'principals': []}),
-                    ('recovery-policy.json', {'root': list(range(1, 33)), 'threshold': 2,
-                                              'delay_seconds': 86400}),
-                    ('movement-policy.json', {'CUSTODY_REFERENCE': '0x' + 'ab' * 32,
-                                              'PAXEER_CHECKPOINT_AUTHORITY': '0x' + 'cd' * 32,
-                                              'PAXEER_CONFIRMATIONS': 12,
-                                              'CHECKPOINT_INTERVAL_SECONDS': 60,
-                                              'PAXEER_BLOCK_SECONDS': 2,
-                                              'REMINDER_INTERVAL_SECONDS': 300})):
-                material.write(evidence, name, json.dumps(value))
-            registry = root / 'module-registry.json'
-            registry.write_text(json.dumps({'schema_version': 2, 'assets': [{'asset': 'a' * 64}],
-                                            'modules': [{'module': 8, 'ordinals': [1, 2]}]}))
-            deployment = root / 'deployment.json'
-            deployed = {'vault': '0x' + '11' * 20, 'withdrawal_claims': '0x' + '22' * 20,
-                        'emergency_exit': '0x' + '33' * 20, 'checkpoint_registry': '0x' + '44' * 20}
-            deployment.write_text(json.dumps({'network_id': 402, 'chain_id': 125, 'addresses': deployed}))
-            output = root / 'policy.json'
-            material.assemble_policy(evidence, deployment, registry, output, 402, 125)
-            policy = json.loads(output.read_text())
+            work = root / 'work'
+            work.mkdir(mode=0o700)
+            for name in source_names:
+                data = provision.protected_bytes(source_work / name)
+                target = work / name
+                target.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+                material.write_bytes(target, data)
+            journal = work / 'registry-journal'
+            journal.mkdir(mode=0o700)
+            for name, data in provision.journal_records(source_evidence / 'journal').items():
+                material.write_bytes(journal / name, data)
+            provision.assemble(work, registry, asset, journal)
+            evidence = work / 'human-evidence'
+            bundle = root / 'human-policy'
+            bundle.mkdir(mode=0o700)
+            output = bundle / 'policy.json'
+            material.assemble_policy(evidence, deployment, registry, output, network, chain)
+            material.verify_bundle(bundle, network, chain)
+            self.assertEqual(material.genesis_binding(genesis), genesis_binding)
+            policy = provision.protected_json(output)
             for name in ('PAXEER_EXIT_CONTRACT', 'PAXEER_WITHDRAWAL_CLAIMS_CONTRACT'):
                 self.assertEqual(policy['components'][name], precompile)
             for name in ('PAXEER_VAULT', 'PAXEER_CLAIMS_CONTRACT', 'PAXEER_EXIT_CONTRACT'):
                 self.assertEqual(policy['movement'][name], precompile)
-            self.assertEqual(policy['movement']['PAXEER_CHECKPOINT_REGISTRY'], deployed['checkpoint_registry'])
-            self.assertEqual(policy['movement']['CUSTODY_REFERENCE'], '0x' + 'ab' * 32)
-            written = output.read_text()
+            self.assertEqual(policy['movement']['PAXEER_CHECKPOINT_REGISTRY'], native_deployed['checkpoint_registry'])
+            self.assertEqual(policy['movement']['CUSTODY_REFERENCE'], movement['CUSTODY_REFERENCE'])
+            written = output.read_text().lower()
             for name in ('vault', 'withdrawal_claims', 'emergency_exit'):
-                self.assertNotIn(deployed[name], written)
+                self.assertNotIn(deployed[name].lower(), written)
 
     def test_passkey_relying_party_follows_the_deployed_web_origin(self):
         self.assertEqual(material.passkey_relying_party(''),
