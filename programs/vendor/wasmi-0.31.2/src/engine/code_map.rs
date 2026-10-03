@@ -75,6 +75,8 @@ pub struct FuncHeader {
     /// The maximum stack height usage of the function during execution.
     max_stack_height: usize,
     local_types: Vec<crate::execution_trace::ExecutionValueType>,
+    module_function_index: Option<u32>,
+    instruction_count: usize,
 }
 
 impl FuncHeader {
@@ -93,6 +95,8 @@ impl FuncHeader {
             len_locals,
             max_stack_height,
             local_types,
+            module_function_index: None,
+            instruction_count: 0,
         }
     }
 
@@ -103,6 +107,8 @@ impl FuncHeader {
             len_locals: 0,
             max_stack_height: 0,
             local_types: Vec::new(),
+            module_function_index: None,
+            instruction_count: 0,
         }
     }
 
@@ -133,6 +139,12 @@ impl FuncHeader {
 
     pub(crate) fn local_types(&self) -> &[crate::execution_trace::ExecutionValueType] {
         &self.local_types
+    }
+
+    pub(crate) fn instruction_count(&self) -> usize { self.instruction_count }
+
+    pub(crate) fn module_function_index(&self) -> Option<u32> {
+        self.module_function_index
     }
 
     pub(crate) fn param_count(&self) -> usize {
@@ -218,6 +230,50 @@ impl CodeMap {
         let iref = InstructionsRef::new(start);
         self.headers[func.into_usize()] =
             FuncHeader::new(iref, len_locals, local_stack_height, local_types);
+        self.headers[func.into_usize()].instruction_count = self.instrs.len() - start;
+    }
+
+    pub(crate) fn set_module_function_index(&mut self, func: CompiledFunc, index: u32) {
+        self.headers[func.into_usize()].module_function_index = Some(index);
+    }
+
+    fn instruction_bounds(&self, func: CompiledFunc) -> Option<(usize, usize)> {
+        let header = self.headers.get(func.into_usize())?;
+        if header.is_uninit() { return None; }
+        let start = header.iref.to_usize();
+        let end = start.checked_add(header.instruction_count)?;
+        (end <= self.instrs.len()).then_some((start, end))
+    }
+
+    pub(crate) fn instruction_offset(&self, func: CompiledFunc, ptr: InstructionPtr) -> Option<u32> {
+        let (start, end) = self.instruction_bounds(func)?;
+        let bytes = (ptr.ptr as usize).checked_sub(self.instrs.as_ptr() as usize)?;
+        let width = core::mem::size_of::<Instruction>();
+        if bytes % width != 0 { return None; }
+        let index = bytes / width;
+        if index < start || index >= end { return None; }
+        u32::try_from(index - start).ok()
+    }
+
+    pub(crate) fn instruction_ptr_at(&self, func: CompiledFunc, offset: u32) -> Option<InstructionPtr> {
+        let (start, end) = self.instruction_bounds(func)?;
+        let index = start.checked_add(usize::try_from(offset).ok()?)?;
+        if index >= end { return None; }
+        Some(InstructionPtr::new(self.instrs.get(index)?))
+    }
+
+    pub(crate) fn observe_ptr(&self, func: CompiledFunc, pc: u64) -> Option<InstructionPtr> {
+        let (start, end) = self.instruction_bounds(func)?;
+        let mut found = None;
+        for index in start..end {
+            if matches!(self.instrs.get(index), Some(Instruction::Observe(value)) if *value == pc)
+                && self.metadata.get(index)?.as_ref()?.program_counter == pc
+            {
+                if found.is_some() { return None; }
+                found = Some(InstructionPtr::new(self.instrs.get(index)?));
+            }
+        }
+        found
     }
 
     pub(crate) fn metadata(

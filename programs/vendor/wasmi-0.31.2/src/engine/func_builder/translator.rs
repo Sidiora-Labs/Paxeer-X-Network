@@ -228,7 +228,9 @@ impl<'parser> FuncTranslator<'parser> {
             self.len_locals(),
             self.stack_height.max_stack_height() as usize,
             core::mem::take(&mut self.local_types),
-        )
+        )?;
+        self.res.engine().set_module_function_index(self.compiled_func, self.func.into_u32());
+        Ok(())
     }
 
     /// Consumes `self` and returns the underlying reusable [`FuncTranslatorAllocations`].

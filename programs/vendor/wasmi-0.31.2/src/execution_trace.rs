@@ -310,3 +310,82 @@ impl ExecutionObserver {
         Ok(should_record)
     }
 }
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExecutionReplayFrame {
+    pub module_function_index: u32,
+    pub instruction_offset: u32,
+    pub value_base: u32,
+    pub operand_types: Vec<ExecutionValueType>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExecutionReplaySnapshot {
+    pub snapshot: Arc<ExecutionSnapshot>,
+    pub frames: Vec<ExecutionReplayFrame>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExecutionReplayTransition {
+    pub pre: Arc<ExecutionReplaySnapshot>,
+    pub post: Arc<ExecutionReplaySnapshot>,
+    pub memory_expansion_bytes: u64,
+}
+
+#[derive(Debug, Clone)]
+pub struct ExecutionTrapRecord {
+    pub pre: Arc<ExecutionReplaySnapshot>,
+    pub trap_code: Option<crate::core::TrapCode>,
+    pub host_trap: bool,
+}
+
+impl PartialEq for ExecutionTrapRecord {
+    fn eq(&self, other: &Self) -> bool {
+        self.pre == other.pre && self.host_trap == other.host_trap
+            && self.trap_code.as_ref().map(core::mem::discriminant)
+                == other.trap_code.as_ref().map(core::mem::discriminant)
+    }
+}
+
+impl Eq for ExecutionTrapRecord {}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ExecutionStepOutcome {
+    Boundary(ExecutionReplayTransition),
+    Returned(ExecutionReplayTransition),
+    Trapped(ExecutionTrapRecord),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ExecutionStepError {
+    ReplayContextRequired,
+    EngineMismatch,
+    FuelModeMismatch,
+    UnknownFunction,
+    UnknownProgramCounter,
+    StateMismatch,
+    InstanceGraph,
+    Bounds,
+    RestoreFailed,
+    Observer(ExecutionObserverError),
+}
+
+#[derive(Debug, Default)]
+pub(crate) struct ExecutionReplayObserver {
+    pub(crate) frames: Vec<ExecutionReplayFrame>,
+    pub(crate) pending: Option<Arc<ExecutionReplaySnapshot>>,
+    pub(crate) transitions: Vec<ExecutionReplayTransition>,
+    pub(crate) trap: Option<ExecutionTrapRecord>,
+    pub(crate) single_step: bool,
+}
+
+pub struct ExecutionReplayContext<'a, T> {
+    pub(crate) store: crate::StoreContextMut<'a, T>,
+    pub(crate) instance: crate::Instance,
+}
+
+impl<'a, T> ExecutionReplayContext<'a, T> {
+    pub fn new(store: crate::StoreContextMut<'a, T>, instance: crate::Instance) -> Self {
+        Self { store, instance }
+    }
+}

@@ -152,6 +152,7 @@ pub struct StoreInner {
     fuel: Fuel,
     /// Protocol-owned deterministic execution observer, disabled by default.
     execution_observer: Option<ExecutionObserver>,
+    execution_replay: Option<crate::execution_trace::ExecutionReplayObserver>,
 }
 
 impl StoreInner {
@@ -254,8 +255,9 @@ impl StoreInner {
             });
         }
         if observer.sampled_current {
-            observer.pending = Some(snapshot);
+            observer.pending = Some(alloc::sync::Arc::clone(&snapshot));
         }
+        self.push_replay_snapshot(snapshot, false)?;
         Ok(())
     }
     pub(crate) fn execution_step_index(&self) -> u64 {
@@ -967,12 +969,75 @@ impl StoreInner {
             .retained_snapshots
             .checked_add(1)
             .ok_or(ExecutionObserverError::SnapshotLimitExceeded)?;
+        let post = alloc::sync::Arc::new(post);
         observer.transitions.push(ExecutionTransition {
             pre,
-            post: alloc::sync::Arc::new(post),
+            post: alloc::sync::Arc::clone(&post),
             memory_expansion_bytes,
         });
+        self.push_replay_snapshot(post, true)?;
         Ok(())
+    }
+
+    pub(crate) fn charge_execution_replay_bytes(&mut self, bytes: u64) -> Result<(), ExecutionObserverError> {
+        let observer = self.execution_observer.as_mut().ok_or(ExecutionObserverError::UnsupportedState)?;
+        let total_bytes = observer.aggregate_bytes.checked_add(bytes);
+        let total_work = observer.aggregate_work.checked_add(bytes);
+        match (total_bytes, total_work) {
+            (Some(total_bytes), Some(total_work)) if total_bytes <= observer.maximum_bytes && total_work <= observer.maximum_work => {
+                observer.aggregate_bytes = total_bytes;
+                observer.aggregate_work = total_work;
+                Ok(())
+            }
+            _ => {
+                observer.error = Some(ExecutionObserverError::SnapshotLimitExceeded);
+                Err(ExecutionObserverError::SnapshotLimitExceeded)
+            }
+        }
+    }
+
+    pub(crate) fn replay_enabled(&self) -> bool { self.execution_replay.is_some() }
+
+    pub(crate) fn set_replay_frames(&mut self, frames: Vec<crate::ExecutionReplayFrame>) {
+        if let Some(replay) = self.execution_replay.as_mut() { replay.frames = frames; }
+    }
+
+    pub(crate) fn replay_step_complete(&self) -> bool {
+        self.execution_replay.as_ref().is_some_and(|replay| {
+            replay.single_step && !replay.transitions.is_empty()
+        })
+    }
+
+    fn push_replay_snapshot(
+        &mut self, snapshot: alloc::sync::Arc<ExecutionSnapshot>, terminal: bool,
+    ) -> Result<(), ExecutionObserverError> {
+        let Some(replay) = self.execution_replay.as_mut() else { return Ok(()); };
+        let frames = if terminal { Vec::new() } else { core::mem::take(&mut replay.frames) };
+        if frames.len() != snapshot.call_frames.len() {
+            if let Some(observer) = self.execution_observer.as_mut() { observer.error = Some(ExecutionObserverError::UnsupportedState); }
+            return Err(ExecutionObserverError::UnsupportedState);
+        }
+        let post = alloc::sync::Arc::new(crate::ExecutionReplaySnapshot { snapshot, frames });
+        if let Some(pre) = replay.pending.take() {
+            let memory_expansion_bytes = post.snapshot.linear_memory.len()
+                .checked_sub(pre.snapshot.linear_memory.len())
+                .and_then(|n| u64::try_from(n).ok())
+                .ok_or(ExecutionObserverError::UnsupportedState)?;
+            replay.transitions.push(crate::ExecutionReplayTransition {
+                pre, post: alloc::sync::Arc::clone(&post), memory_expansion_bytes,
+            });
+        }
+        if !terminal { replay.pending = Some(post); }
+        Ok(())
+    }
+
+    pub(crate) fn record_replay_trap(&mut self, trap_code: Option<crate::core::TrapCode>, host_trap: bool) {
+        if self.execution_observer.as_ref().is_some_and(|observer| observer.error.is_some()) { return; }
+        if let Some(replay) = self.execution_replay.as_mut() {
+            if let Some(pre) = replay.pending.take() {
+                replay.trap = Some(crate::ExecutionTrapRecord { pre, trap_code, host_trap });
+            }
+        }
     }
 
     pub(crate) fn refuse_trapped_transition(&mut self) {
@@ -1106,6 +1171,7 @@ impl StoreInner {
             extern_objects: Arena::new(),
             fuel: Fuel::default(),
             execution_observer: None,
+            execution_replay: None,
         }
     }
 
@@ -1605,6 +1671,7 @@ impl<T> Store<T> {
         maximum_bytes: u64,
         maximum_work: u64,
     ) {
+        self.inner.execution_replay = None;
         self.inner.execution_observer = Some(ExecutionObserver {
             interval,
             maximum_snapshots,
@@ -1621,6 +1688,146 @@ impl<T> Store<T> {
             maximum_work,
             sampled_current: false,
         });
+    }
+
+    pub fn enable_execution_replay_observer_with_limits(
+        &mut self, maximum_snapshots: usize, maximum_bytes: u64, maximum_work: u64,
+    ) {
+        self.enable_execution_observer_with_limits(1, maximum_snapshots, maximum_bytes, maximum_work);
+        self.inner.execution_replay = Some(crate::execution_trace::ExecutionReplayObserver::default());
+    }
+
+    pub fn take_execution_replay_transitions(&mut self) -> Vec<crate::ExecutionReplayTransition> {
+        self.inner.execution_replay.as_mut()
+            .map_or_else(Vec::new, |replay| core::mem::take(&mut replay.transitions))
+    }
+
+    pub fn take_execution_trap_record(&mut self) -> Option<crate::ExecutionTrapRecord> {
+        self.inner.execution_replay.as_mut().and_then(|replay| replay.trap.take())
+    }
+
+    pub(crate) fn begin_execution_step(&mut self, pre: &crate::ExecutionReplaySnapshot) -> Result<u64, crate::ExecutionStepError> {
+        use crate::ExecutionStepError as E;
+        if pre.snapshot.supplement != ExecutionSupplement::default() && self.execution_supplement.is_none() {
+            return Err(E::ReplayContextRequired);
+        }
+        let observer = self.inner.execution_observer.as_mut().ok_or(E::ReplayContextRequired)?;
+        let replay = self.inner.execution_replay.as_mut().ok_or(E::ReplayContextRequired)?;
+        if observer.interval != 1 || observer.maximum_snapshots < 2 || observer.retained_snapshots != 0
+            || observer.pending.is_some() || !observer.transitions.is_empty() || observer.error.is_some()
+            || replay.single_step || replay.pending.is_some() || !replay.transitions.is_empty() || replay.trap.is_some()
+        { return Err(E::ReplayContextRequired); }
+        if pre.frames.is_empty() || pre.frames.len() != pre.snapshot.call_frames.len() || pre.snapshot.memory_expansion_bytes != 0 { return Err(E::StateMismatch); }
+        let frame_backing = pre.frames.capacity().checked_mul(core::mem::size_of::<crate::ExecutionReplayFrame>()).ok_or(E::Bounds)?;
+        let frame_bytes = pre.frames.iter().try_fold(u64::try_from(frame_backing).map_err(|_| E::Bounds)?, |n, frame| {
+            n.checked_add(u64::try_from(frame.operand_types.capacity()).ok()?)
+        }).ok_or(E::Bounds)?;
+        let bytes = pre.snapshot.retained_vec_bytes().ok_or(E::Bounds)?
+            .checked_add(frame_bytes).ok_or(E::Bounds)?;
+        if bytes > observer.maximum_bytes || bytes > observer.maximum_work { return Err(E::Bounds); }
+        observer.step_index = pre.snapshot.step_index.checked_add(1).ok_or(E::Bounds)?;
+        observer.pending = Some(alloc::sync::Arc::clone(&pre.snapshot));
+        observer.retained_snapshots = 1;
+        observer.sampled_current = true;
+        observer.supplement = pre.snapshot.supplement.clone();
+        observer.aggregate_bytes = bytes;
+        observer.aggregate_work = bytes;
+        replay.pending = Some(alloc::sync::Arc::new(pre.clone()));
+        replay.single_step = true;
+        Ok(observer.maximum_bytes)
+    }
+
+    pub(crate) fn charge_execution_replay_work(&mut self, work: u64) -> Result<(), crate::ExecutionStepError> {
+        use crate::ExecutionStepError as E;
+        let observer = self.inner.execution_observer.as_mut().ok_or(E::ReplayContextRequired)?;
+        let next = observer.aggregate_work.checked_add(work).ok_or(E::Bounds)?;
+        if next > observer.maximum_work { return Err(E::Bounds); }
+        observer.aggregate_work = next;
+        Ok(())
+    }
+
+    pub(crate) fn restore_execution_instance_states(
+        &mut self, root: crate::Instance, states: &[crate::ExecutionInstanceState], maximum_bytes: u64,
+    ) -> Result<(), crate::ExecutionStepError> {
+        use crate::ExecutionStepError as E;
+        let reached = self.inner.execution_reached_instances(root).map_err(E::Observer)?;
+        if reached.len() != 1 || states.len() != 1 || states[0].instance_index != 0 { return Err(E::InstanceGraph); }
+        let current = self.inner.capture_execution_instance_states(root, maximum_bytes).map_err(E::Observer)?;
+        let before = &current[0];
+        let target = &states[0];
+        if before.memories.len() != target.memories.len() || before.globals.len() != target.globals.len()
+            || before.tables.len() != target.tables.len() || before.data_segments.len() != target.data_segments.len()
+            || before.element_segments.len() != target.element_segments.len() { return Err(E::StateMismatch); }
+        for (a, b) in before.memories.iter().zip(&target.memories) {
+            if a.memory_index != b.memory_index || a.initial_pages != b.initial_pages || a.maximum_pages != b.maximum_pages
+                || b.bytes.len() < a.bytes.len() || b.bytes.len() % 65536 != 0
+                || b.bytes.len() as u64 > maximum_bytes { return Err(E::StateMismatch); }
+        }
+        for (a, b) in before.globals.iter().zip(&target.globals) {
+            if a.global_index != b.global_index || a.mutable != b.mutable || a.value.value_type != b.value.value_type
+                || (b.value.value_type == crate::ExecutionValueType::I32 && b.value.bits > u64::from(u32::MAX))
+                || (!a.mutable && a.value != b.value) { return Err(E::StateMismatch); }
+        }
+        let resolve_ref = |this: &Self, value: Option<crate::ExecutionFunctionRef>| -> Result<crate::FuncRef, E> {
+            match value {
+                None => Ok(crate::FuncRef::null()),
+                Some(value) if value.instance_index == 0 => this.inner.resolve_instance(&root)
+                    .get_func(value.function_index).map(crate::FuncRef::new).ok_or(E::StateMismatch),
+                Some(_) => Err(E::InstanceGraph),
+            }
+        };
+        for (a, b) in before.tables.iter().zip(&target.tables) {
+            if a.table_index != b.table_index || a.minimum != b.minimum || a.maximum != b.maximum
+                || b.elements.len() < a.elements.len() { return Err(E::StateMismatch); }
+            for value in &b.elements { resolve_ref(self, *value)?; }
+        }
+        for (a, b) in before.data_segments.iter().zip(&target.data_segments) {
+            if a.segment_index != b.segment_index || (b.dropped && !b.bytes.is_empty())
+                || (!b.dropped && (a.dropped || a.bytes != b.bytes)) { return Err(E::StateMismatch); }
+        }
+        for (a, b) in before.element_segments.iter().zip(&target.element_segments) {
+            if a.segment_index != b.segment_index || (b.dropped && !b.elements.is_empty())
+                || (!b.dropped && (a.dropped || a.elements != b.elements)) { return Err(E::StateMismatch); }
+        }
+        for value in &target.memories {
+            let memory = self.inner.resolve_instance(&root).get_memory(value.memory_index).ok_or(E::StateMismatch)?;
+            let old = self.inner.resolve_memory(&memory).data().len();
+            let additional = u32::try_from((value.bytes.len() - old) / 65536).map_err(|_| E::Bounds)?;
+            let pages = crate::core::Pages::new(additional).ok_or(E::Bounds)?;
+            memory.grow(&mut *self, pages).map_err(|_| E::RestoreFailed)?;
+            self.inner.resolve_memory_mut(&memory).data_mut().copy_from_slice(&value.bytes);
+        }
+        for value in &target.globals {
+            let global = self.inner.resolve_instance(&root).get_global(value.global_index).ok_or(E::StateMismatch)?;
+            if value.mutable { self.inner.resolve_global_mut(&global).set_untyped(wasmi_core::UntypedValue::from(value.value.bits)); }
+        }
+        for value in &target.tables {
+            let table = self.inner.resolve_instance(&root).get_table(value.table_index).ok_or(E::StateMismatch)?;
+            let old = self.inner.resolve_table(&table).size();
+            let wanted = u32::try_from(value.elements.len()).map_err(|_| E::Bounds)?;
+            table.grow(&mut *self, wanted.checked_sub(old).ok_or(E::StateMismatch)?, crate::Value::FuncRef(crate::FuncRef::null()))
+                .map_err(|_| E::RestoreFailed)?;
+            for (index, element) in value.elements.iter().enumerate() {
+                let reference = resolve_ref(self, *element)?;
+                self.inner.resolve_table_mut(&table).set(u32::try_from(index).map_err(|_| E::Bounds)?, crate::Value::FuncRef(reference))
+                    .map_err(|_| E::RestoreFailed)?;
+            }
+        }
+        for value in &target.data_segments {
+            if value.dropped {
+                let segment = self.inner.resolve_instance(&root).get_data_segment(value.segment_index).ok_or(E::StateMismatch)?;
+                self.inner.resolve_data_segment_mut(&segment).drop_bytes();
+            }
+        }
+        for value in &target.element_segments {
+            if value.dropped {
+                let segment = self.inner.resolve_instance(&root).get_element_segment(value.segment_index).ok_or(E::StateMismatch)?;
+                self.inner.resolve_element_segment_mut(&segment).drop_items();
+            }
+        }
+        let restored = self.inner.capture_execution_instance_states(root, maximum_bytes).map_err(E::Observer)?;
+        if restored != states { return Err(E::StateMismatch); }
+        Ok(())
     }
 
     pub fn set_execution_supplement(

@@ -126,7 +126,9 @@ pub use self::execution_trace::{
     ExecutionGlobal as ExecutionTraceGlobal, ExecutionInstanceState, ExecutionMemory,
     ExecutionMeteredUsage, ExecutionObserverError, ExecutionSnapshot, ExecutionSupplement,
     ExecutionTable, ExecutionTransition, ExecutionValue as ExecutionTraceValue, ExecutionValueType,
-    ObservationCharge,
+    ObservationCharge, ExecutionReplayFrame, ExecutionReplaySnapshot,
+    ExecutionReplayTransition, ExecutionReplayContext, ExecutionStepOutcome,
+    ExecutionStepError, ExecutionTrapRecord,
 };
 pub use self::{
     engine::{

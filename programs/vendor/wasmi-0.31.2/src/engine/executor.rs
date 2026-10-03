@@ -222,7 +222,13 @@ impl<'ctx, 'engine> Executor<'ctx, 'engine> {
         loop {
             match *self.ip.get() {
                 Instr::Observe(program_counter) => {
-                    if let Some(charge) = self.visit_observe(program_counter)? {
+                    let observation = self.visit_observe(program_counter).map_err(|error| {
+                        if self.ctx.replay_enabled() {
+                            self.ctx.fail_execution_observer(crate::ExecutionObserverError::UnsupportedState);
+                        }
+                        error
+                    })?;
+                    if let Some(charge) = observation {
                         return Ok(WasmOutcome::Observe(charge));
                     }
                 }
@@ -486,9 +492,21 @@ impl<'ctx, 'engine> Executor<'ctx, 'engine> {
                     return Err(error);
                 }
             };
+            if self.ctx.replay_enabled() {
+                let frames = self.capture_replay_frames().map_err(|error| {
+                    self.ctx.fail_execution_observer(crate::ExecutionObserverError::UnsupportedState);
+                    error
+                })?;
+                self.ctx.set_replay_frames(frames);
+            }
             self.ctx
                 .push_execution_snapshot(snapshot)
                 .map_err(|_| TrapCode::UnreachableCodeReached)?;
+            if self.ctx.replay_step_complete() {
+                self.sync_stack_ptr();
+                self.call_stack.push(FuncFrame::new(self.ip, self.cache.instance(), self.current_func, self.value_base))?;
+                return Ok(Some(crate::ObservationCharge::default()));
+            }
         }
         self.next_instr();
         Ok(None)
@@ -574,6 +592,14 @@ impl<'ctx, 'engine> Executor<'ctx, 'engine> {
             value_bytes = value_bytes
                 .checked_add(encoded_value_bytes(value_type))
                 .ok_or(TrapCode::UnreachableCodeReached)?;
+        }
+        if self.ctx.replay_enabled() {
+            let replay_bytes = self.call_stack.frames().iter().try_fold(
+                core::mem::size_of::<crate::ExecutionReplayFrame>() as u64 + metadata.operand_types.len() as u64,
+                |bytes, frame| bytes.checked_add(core::mem::size_of::<crate::ExecutionReplayFrame>() as u64)
+                    .and_then(|n| n.checked_add(frame.operand_types().len() as u64)),
+            ).ok_or(TrapCode::UnreachableCodeReached)?;
+            self.ctx.charge_execution_replay_bytes(replay_bytes).map_err(|_| TrapCode::UnreachableCodeReached)?;
         }
         let instance_state_bytes = self
             .ctx
@@ -729,6 +755,24 @@ impl<'ctx, 'engine> Executor<'ctx, 'engine> {
             memory_expansion_bytes: 0,
             supplement: self.ctx.execution_supplement(),
         })
+    }
+
+    fn capture_replay_frames(&self) -> Result<alloc::vec::Vec<crate::ExecutionReplayFrame>, TrapCode> {
+        let make = |function, ip, value_base, operand_types: &[crate::ExecutionValueType]| -> Result<crate::ExecutionReplayFrame, TrapCode> {
+            Ok(crate::ExecutionReplayFrame {
+                module_function_index: self.code_map.header(function).module_function_index().ok_or(TrapCode::UnreachableCodeReached)?,
+                instruction_offset: self.code_map.instruction_offset(function, ip).ok_or(TrapCode::UnreachableCodeReached)?,
+                value_base: u32::try_from(value_base).map_err(|_| TrapCode::UnreachableCodeReached)?,
+                operand_types: operand_types.to_vec(),
+            })
+        };
+        let mut frames = alloc::vec::Vec::with_capacity(self.call_stack.frames().len() + 1);
+        for frame in self.call_stack.frames() {
+            frames.push(make(frame.function(), frame.ip(), frame.value_base(), frame.operand_types())?);
+        }
+        let metadata = self.code_map.metadata(self.ip).ok_or(TrapCode::UnreachableCodeReached)?;
+        frames.push(make(self.current_func, self.ip, self.value_base, &metadata.operand_types)?);
+        Ok(frames)
     }
 
     fn capture_frame(
