@@ -23660,7 +23660,11 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.104.15.4]
 title = "Build the JVM SDK for Java and Kotlin"
-status = "in_progress"
+status = "done"
+completion_basis = "implementation"
+qualification_status = "unverified"
+implemented_revision = "f82e21b20"
+build_status = "unrun"
 mode = "QUALIFY"
 wave = 2
 requires = ["0.2"]
