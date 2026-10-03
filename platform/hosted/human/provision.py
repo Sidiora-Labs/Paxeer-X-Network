@@ -11,6 +11,7 @@ from pathlib import Path
 import re
 import stat
 import struct
+import sys
 import unicodedata
 import time
 
@@ -205,12 +206,16 @@ def purpose_catalog(template_path, registry_path, treasury_path, sequencer_path,
     return result
 
 
+def encode_json(value):
+    return (json.dumps(value, separators=(',', ':'), allow_nan=False) + '\n').encode()
+
+
 def write_json(path, value):
     path = Path(path)
     require(path.is_absolute() and path.resolve() == path, path, 'canonical absolute output')
-    encoded = json.dumps(value, separators=(',', ':'), allow_nan=False) + '\n'
+    encoded = encode_json(value)
     fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
-    with os.fdopen(fd, 'w') as output:
+    with os.fdopen(fd, 'wb') as output:
         output.write(encoded)
         output.flush()
         os.fsync(output.fileno())
@@ -373,6 +378,9 @@ def protected_bytes(path, maximum=1048576):
         with os.fdopen(fd, 'rb') as source:
             fd = None
             result = source.read(maximum + 1)
+            after = os.fstat(source.fileno())
+        require(len(result) == info.st_size and info.st_mtime_ns == after.st_mtime_ns
+                and info.st_ctime_ns == after.st_ctime_ns, path, 'file changed during protected read')
         require(0 < len(result) <= maximum, path, 'file bounds')
         return result
     except OSError as error:
@@ -475,11 +483,303 @@ def evidence_inputs(work_dir, registry_path, journal_path):
     journal_records(journal_path)
 
 
+def retained_evidence(destination, files, records):
+    expected = dict(files)
+    expected.update({'journal/' + name: data for name, data in records.items()})
+    info = destination.lstat()
+    require(stat.S_ISDIR(info.st_mode) and info.st_uid == os.geteuid()
+            and stat.S_IMODE(info.st_mode) == 0o700, destination, 'retained evidence directory; reconciliation required')
+    retained = {}
+    for path in destination.rglob('*'):
+        info = path.lstat()
+        require(not stat.S_ISLNK(info.st_mode), path, 'retained evidence symlink refused')
+        if stat.S_ISDIR(info.st_mode):
+            require(info.st_uid == os.geteuid() and stat.S_IMODE(info.st_mode) == 0o700,
+                    path, 'retained evidence directory permissions')
+        else:
+            retained[str(path.relative_to(destination))] = protected_bytes(path)
+    changed = sorted((set(expected) ^ set(retained)) | {n for n in expected.keys() & retained.keys() if expected[n] != retained[n]})
+    require(not changed, destination, 'retained evidence differs; reconciliation required, protected bindings not overwritten')
+
+
+def validate_native_records(records, registration, network):
+    from owner_native import Reader, digest, span, receipt_fields
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+    path = 'native owner evidence'
+    context = json.loads(records['native-context.json'], object_pairs_hook=strict_pairs)
+    fields(context, 'network_id sequencer_public_key', path, 'native context')
+    require(context['network_id'] == network, path, 'network binding')
+    h32(context['sequencer_public_key'], path, 'sequencer key')
+    h32(registration['authority'], path, 'owner authority')
+    public = bytes.fromhex(registration['authority'])
+    did = registration['identity']['did'].encode()
+    require(len(did) <= 255, path, 'owner DID length')
+    account = hashlib.sha256(b'LX:ACCOUNT:v1' + span(b'agent:' + did + b':main')).hexdigest()
+    require(registration['owner_account'] == account, path, 'original owner account')
+    results = {}
+    for label, module, ordinal in (('credit', 8, 1), ('identity', 7, 1), ('rotation', 7, 2), ('recovery', 7, 3)):
+        activity = records[label + '.activity']
+        r = Reader(activity, path)
+        require(r.take(5) == b'\0\3\x10\1\14', path, 'canonical signed activity')
+        def tag(value):
+            require(r.number(1) == value, path, 'canonical activity field')
+        tag(1)
+        require(r.number(2) == 3, path, 'protocol version')
+        tag(2)
+        require(r.number(4) == network, path, 'signed activity network')
+        tag(3)
+        require(r.number(4) == (module << 16) | ordinal, path, 'signed native activity type')
+        tag(4)
+        require(r.span(255) == did, path, 'signed owner DID')
+        tag(5)
+        require(r.span(32) == public, path, 'signed owner authority')
+        tag(6)
+        r.number(8)
+        tag(7)
+        start, end = r.number(8), r.number(8)
+        require(start < end, path, 'activity validity')
+        tag(8)
+        require(len(r.span(32)) == 32, path, 'idempotency key')
+        tag(9)
+        r.number(16)
+        tag(10)
+        payload_hash = r.span(32)
+        tag(11)
+        payload = r.span(1048576)
+        require(payload_hash == digest(b'payload-hash', payload), path, 'payload digest')
+        unsigned = b'\0\3\x10\1\13' + activity[5:r.offset]
+        tag(12)
+        signature = r.span(64)
+        r.finish()
+        try:
+            Ed25519PublicKey.from_public_bytes(public).verify(signature, digest(b'signature-preimage', unsigned))
+        except Exception as error:
+            raise Refused(path + ': owner activity signature refused') from error
+        result = receipt_fields(records[label + '.receipt'], bytes.fromhex(context['sequencer_public_key']), path)
+        require(result['activity_id'] == digest(b'activity-id', activity).hex()
+                and result['module'] == module and result['version'] == 1, path, 'signed receipt activity binding')
+        results[label] = result
+    require(results['credit']['target'] == account and results['credit']['amount'] > 0, path, 'committed owner credit')
+    did_id = digest(b'did-id', len(did).to_bytes(2, 'big') + did)
+    def state(result):
+        values = [body for module, event, kind, monetary, body in result['effects']
+                  if module == 7 and event == 0x7110 and kind == 3 and not monetary]
+        require(len(values) == 1 and len(values[0]) == 223 and values[0][:5] == b'LXGI1'
+                and values[0][5:37] == did_id, path, 'native committed owner snapshot')
+        return values[0]
+    def reference(result):
+        return {name: result[name] for name in ('activity_id', 'receipt_digest')}
+    def key_policy(result, recovery):
+        body = state(result)
+        revision, delay, maximum = (175, 183, 191) if recovery else (167, 199, 207)
+        read = lambda offset: int.from_bytes(body[offset:offset + 8], 'big')
+        minimum, upper = read(delay), read(maximum)
+        if not recovery:
+            minimum, upper = (minimum + 999) // 1000, upper // 1000
+        require(minimum > 0 and upper >= minimum, path, 'native policy delay bounds')
+        return dict(policy_revision=read(revision), required_delay_seconds=minimum,
+                    maximum_delay_seconds=upper, effective_sequence=result['sequence'], evidence=reference(result))
+    recovery = results['recovery']
+    expected = dict(did=did.decode(), authorities=[dict(kind='primary_key', id=public.hex())],
+                    revocation_sequence=int.from_bytes(state(recovery)[69:77], 'big'), frozen=False,
+                    evidence=reference(recovery), capabilities=[], rotation=key_policy(results['rotation'], False),
+                    recovery=key_policy(recovery, True))
+    require(registration['identity'] == expected, path, 'registration must match actual committed native state')
+
+
+def native_owner_records(work_dir, registration, registry):
+    from owner_native import receipt_fields, digest
+    root = Path(work_dir)
+    inputs = root / 'human-evidence-input'
+    config = protected_json(inputs / 'owner-native.json')
+    uint(config.get('network_id'), 32, inputs, 'native network', 1)
+    require(config['network_id'] == registry.get('network_id'), inputs, 'native registry network binding')
+    h32(config.get('sequencer_public_key'), inputs, 'native sequencer public key')
+    records = {'native-context.json': encode_json({
+        'network_id': config['network_id'], 'sequencer_public_key': config['sequencer_public_key']})}
+    references = {registration['identity'][name]['evidence']['receipt_digest']:
+                  registration['identity'][name]['evidence']['activity_id'] for name in ('rotation', 'recovery')}
+    references[registration['identity']['evidence']['receipt_digest']] = registration['identity']['evidence']['activity_id']
+    verified = set()
+    for label in ('credit', 'identity', 'rotation', 'recovery'):
+        receipt_path = inputs / 'owner-native-run' / (label + '.receipt')
+        receipt = protected_bytes(receipt_path)
+        activity = protected_bytes(receipt_path.with_suffix('.activity'))
+        result = receipt_fields(receipt, bytes.fromhex(config['sequencer_public_key']), receipt_path)
+        require(result['activity_id'] == digest(b'activity-id', activity).hex(), receipt_path, 'actual activity/receipt binding')
+        require(result['version'] == 1 and result['module'] == (8 if label == 'credit' else 7), receipt_path, 'native receipt module/version')
+        if result['receipt_digest'] in references:
+            require(result['activity_id'] == references[result['receipt_digest']], receipt_path, 'registration receipt binding')
+            verified.add(result['receipt_digest'])
+        if label == 'credit':
+            require(result['target'] == registration['owner_account'] and result['amount'] > 0,
+                    receipt_path, 'funded actual owner account')
+        records[label + '.receipt'] = receipt
+        records[label + '.activity'] = activity
+    require(verified == set(references), inputs, 'registration references require actual signed receipts')
+    validate_native_records(records, registration, registry['network_id'])
+    return records
+
+
+def producer_records(work_dir, registry, journal):
+    root = Path(work_dir)
+    inputs = root / 'human-evidence-input'
+    sources = {'source-binding.json': root / 'identity/source-binding.json',
+               'owner-result.json': root / 'human-owner-result.json',
+               'owner-registration.json': inputs / 'owner-registration.json',
+               'naming-deployment-result.json': root / 'naming-deployment-result.json',
+               'treasury.json': inputs / 'treasury.json', 'sequencer.json': inputs / 'sequencer.json'}
+    records = {name: protected_bytes(path) for name, path in sources.items()}
+    naming = protected_json(sources['naming-deployment-result.json'])
+    require(naming.get('state') == 'deployed', sources['naming-deployment-result.json'], 'actual naming deployment')
+    h32(naming.get('receipt_digest'), inputs, 'naming receipt')
+    h32(naming.get('activity_id'), inputs, 'naming activity')
+    require(all(naming['receipt_digest'] + suffix in journal for suffix in ('.admission', '.deployment')),
+            inputs, 'naming deployment journal pair')
+    records.update(native_owner_records(root, protected_json(sources['owner-registration.json']), registry))
+    return records
+
+
+PRODUCER_MANIFEST_SCHEMA = 'layerx.human.owner-producers.v1'
+
+
+def producer_manifest(work_dir, registry_path, journal_path, output):
+    work_dir = Path(work_dir)
+    require(work_dir.is_absolute() and work_dir.resolve() == work_dir, work_dir, 'canonical work directory')
+    inputs = work_dir / 'human-evidence-input'
+    binding_path = work_dir / 'identity/source-binding.json'
+    result_path = work_dir / 'human-owner-result.json'
+    registration_path = inputs / 'owner-registration.json'
+    owner = {}
+
+    def file_digest(path):
+        return hashlib.sha256(protected_bytes(path)).hexdigest()
+
+    def owner_identity():
+        peer_binding(protected_json(binding_path), binding_path)
+        return file_digest(binding_path)
+
+    def owner_result_input():
+        owner.update(owner_result(work_dir, result_path))
+        return file_digest(result_path)
+
+    def catalog():
+        template_path = Path(__file__).with_name('beta-purpose-catalog.json')
+        template = json.loads(template_path.read_text(), object_pairs_hook=strict_pairs)
+        fields(template, 'version presets', template_path, 'catalog template')
+        accounts = []
+        for path in (inputs / 'treasury.json', inputs / 'sequencer.json'):
+            account = protected_json(path)
+            require(type(account) is dict, path, 'account output')
+            h32(account.get('account'), path, 'account')
+            require(account['account'] not in accounts, path, 'distinct protocol account')
+            accounts.append(account['account'])
+        return file_digest(inputs / 'treasury.json')
+
+    def authority():
+        binding = protected_json(binding_path)
+        peer_binding(binding, binding_path)
+        owner_policy()
+        return file_digest(binding_path)
+
+    def principal():
+        registration = owner_registration(work_dir)
+        entry = registration['identity']
+        references = [entry['evidence'], entry['rotation']['evidence'], entry['recovery']['evidence']]
+        references.extend(c['evidence'] for c in entry['capabilities'])
+        identity(entry, registration_path, sorted({r['activity_id'] for r in references}))
+        return file_digest(registration_path)
+
+    def recovery():
+        path = inputs / 'recovery-policy.json'
+        recovery_policy(protected_json(path), path)
+        return file_digest(path)
+
+    def movement():
+        path = inputs / 'movement-source.json'
+        value = protected_json(path)
+        fields(value, 'CUSTODY_REFERENCE PAXEER_CHECKPOINT_AUTHORITY', path, 'movement source')
+        for key, item in value.items():
+            require(type(item) is str and re.fullmatch(r'0x[0-9a-fA-F]{64}', item) is not None
+                    and int(item, 16) != 0, path, key)
+        return file_digest(path)
+
+    def registry():
+        require(registry_path is not None, 'LAYERX_MODULE_REGISTRY', 'module registry absent')
+        value = protected_json(registry_path)
+        require(type(value) is dict and value.get('schema_version') == 2, registry_path, 'version 2 module registry')
+        array(value.get('assets'), registry_path, 'assets')
+        array(value.get('modules'), registry_path, 'modules')
+        require(bool(value['assets']) and bool(value['modules']), registry_path, 'deployed assets and modules')
+        return file_digest(registry_path)
+
+    def journal(suffix):
+        records = journal_records(journal_path)
+        digest = hashlib.sha256()
+        for name in sorted(records):
+            if name.endswith(suffix):
+                digest.update(name.encode() + b'\n' + hashlib.sha256(records[name]).digest())
+        return digest.hexdigest()
+
+    def native_registration():
+        native_owner_records(work_dir, owner_registration(work_dir), protected_json(registry_path))
+        require(bool(owner), result_path, 'LXIP owner result required before native owner registration')
+        owner_registration(work_dir, owner_did=owner['did'])
+        return file_digest(registration_path)
+
+    def naming():
+        path = work_dir / 'naming-deployment-result.json'
+        value = protected_json(path)
+        require(type(value) is dict and value.get('state') == 'deployed', path, 'deployed naming program')
+        h32(value.get('receipt_digest'), path, 'naming receipt_digest')
+        h32(value.get('activity_id'), path, 'naming activity_id')
+        records = journal_records(journal_path)
+        require(all(value['receipt_digest'] + suffix in records for suffix in ('.admission', '.deployment')), path, 'naming journal binding')
+        return file_digest(path)
+
+    def relative(path):
+        if path is None:
+            return None
+        path = Path(path)
+        try:
+            return str(path.relative_to(work_dir))
+        except ValueError:
+            return None
+
+    checks = [
+        ('owner-identity', 'human_owner_provision', relative(binding_path), owner_identity),
+        ('owner-result', 'human_owner_provision', relative(result_path), owner_result_input),
+        ('purpose-catalog', 'human_owner_provision', relative(inputs / 'treasury.json'), catalog),
+        ('authority', 'human_owner_provision', relative(binding_path), authority),
+        ('principal-policy', 'human_native_provision', relative(registration_path), principal),
+        ('recovery-policy', 'human_owner_provision', relative(inputs / 'recovery-policy.json'), recovery),
+        ('movement-policy', 'human_native_owner_prepare', relative(inputs / 'movement-source.json'), movement),
+        ('module-registry', 'registry_deployment_produce', 'secrets:module-registry.json', registry),
+        ('admission-journal', 'human_journal_deploy', relative(journal_path), lambda: journal('.admission')),
+        ('deployment-journal', 'human_journal_deploy', relative(journal_path), lambda: journal('.deployment')),
+        ('native-owner-registration', 'human_native_provision', relative(registration_path), native_registration),
+        ('naming-evidence', 'naming_program_deploy', relative(work_dir / 'naming-deployment-result.json'), naming),
+    ]
+    entries = []
+    for name, producer, path, check in checks:
+        entry = {'input': name, 'producer': producer, 'path': path, 'status': 'blocked', 'sha256': None, 'reason': None}
+        try:
+            require(path is not None, work_dir, 'producer output absent or outside the work directory')
+            entry.update(status='present', sha256=check())
+        except (Refused, OSError, ValueError, KeyError, TypeError) as error:
+            entry['reason'] = str(error) or type(error).__name__
+        entries.append(entry)
+    write_json(output, {'schema': PRODUCER_MANIFEST_SCHEMA, 'inputs': entries})
+    blocked = [entry for entry in entries if entry['status'] == 'blocked']
+    for entry in blocked:
+        print(f"blocked: {entry['input']}: {entry['reason']}", file=sys.stderr)
+    return not blocked
+
+
 def assemble(work_dir, registry_path, asset, journal_path):
     work_dir = Path(work_dir)
     require(work_dir.is_absolute() and work_dir.resolve() == work_dir, work_dir, 'canonical work directory')
     destination = work_dir / 'human-evidence'
-    require(not destination.exists() and not destination.is_symlink(), destination, 'existing evidence requires reconciliation')
     inputs = work_dir / 'human-evidence-input'
     owner = owner_result(work_dir, work_dir / 'human-owner-result.json')
     registration = owner_registration(work_dir, owner_did=owner['did'])
@@ -531,6 +831,8 @@ def assemble(work_dir, registry_path, asset, journal_path):
             ONBOARDING_INITIAL_FUNDING=onboarding['initial_funding'])
         files['onboarding-configuration.json'] = onboarding
     records = journal_records(journal_path)
+    registry = protected_json(registry_path)
+    produced = producer_records(work_dir, registry, records)
     lock = work_dir / '.human-evidence-publish'
     try:
         lock.mkdir(mode=0o700)
@@ -538,10 +840,21 @@ def assemble(work_dir, registry_path, asset, journal_path):
         raise Refused(f'{lock}: publication already active or interrupted') from error
     pending = None
     try:
-        require(not destination.exists() and not destination.is_symlink(), destination, 'existing evidence')
+        if destination.exists() or destination.is_symlink():
+            expected = {name: encode_json(value) for name, value in files.items()}
+            expected.update({'producer-records/' + name: data for name, data in produced.items()})
+            retained_evidence(destination, expected, records)
+            return
         pending = Path(tempfile.mkdtemp(prefix='.human-evidence-', dir=work_dir))
         for name, value in files.items():
             write_json(pending / name, value)
+        (pending / 'producer-records').mkdir(mode=0o700)
+        for name, data in produced.items():
+            fd = os.open(pending / 'producer-records' / name, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+            with os.fdopen(fd, 'wb') as output:
+                output.write(data)
+                output.flush()
+                os.fsync(output.fileno())
         (pending / 'journal').mkdir(mode=0o700)
         for name, data in records.items():
             fd = os.open(pending / 'journal' / name, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
@@ -549,7 +862,7 @@ def assemble(work_dir, registry_path, asset, journal_path):
                 output.write(data)
                 output.flush()
                 os.fsync(output.fileno())
-        for directory in (pending / 'journal', pending):
+        for directory in (pending / 'producer-records', pending / 'journal', pending):
             fd = os.open(directory, os.O_RDONLY | os.O_DIRECTORY)
             try:
                 os.fsync(fd)
@@ -610,7 +923,9 @@ def qualify_generated_set(work_dir, registry_path, secrets_dir, network, chain):
     fd = os.open(root / 'receipt-authority-replica-id', os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
     with os.fdopen(fd, 'w') as output:
         output.write(replica)
-    policy_path = root / 'policy.json'
+    bundle = root / 'policy-bundle'
+    bundle.mkdir(mode=0o700)
+    policy_path = bundle / 'policy.json'
     material.assemble_policy(evidence, work_dir / 'paxeer/deployment.json', registry_path,
                              policy_path, network, chain)
     subprocess.run(['python3', str(Path(__file__).with_name('material.py')), str(private),
@@ -753,6 +1068,7 @@ def main():
     mode.add_argument('--prepare-owner-admission', action='store_true')
     mode.add_argument('--catalog', action='store_true')
     mode.add_argument('--assemble', action='store_true')
+    mode.add_argument('--producer-manifest', action='store_true')
     mode.add_argument('--movement-source', action='store_true')
     mode.add_argument('--qualify-generated-set', action='store_true')
     mode.add_argument('--account-requests', action='store_true')
@@ -799,6 +1115,10 @@ def main():
     elif args.assemble:
         require(all((args.registry, args.asset)), args.work_dir, 'registry and asset arguments')
         assemble(args.work_dir, args.registry, args.asset, args.journal)
+    elif args.producer_manifest:
+        require(args.output is not None, args.work_dir, 'producer manifest output')
+        if not producer_manifest(args.work_dir, args.registry, args.journal, args.output):
+            raise SystemExit(3)
     elif args.account_requests:
         account_requests(args.work_dir)
     elif args.validate_job_input:

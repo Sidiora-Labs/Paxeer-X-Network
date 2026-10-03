@@ -1,12 +1,15 @@
 #!/usr/bin/env python3
 import base64
+import hashlib
 import json
 import os
 from pathlib import Path
 import re
 import secrets
+import shutil
 import stat
 import sys
+import tempfile
 import unicodedata
 from urllib.parse import urlsplit
 
@@ -24,49 +27,594 @@ def write(directory, name, value):
 
 
 def protected_json(path):
+    return parse(read_bytes(path))
+
+
+BUNDLE_SCHEMA = 'layerx.human.owner-bundle.v2'
+BUNDLE_REFUSED = 'Human owner bundle refused: '
+EVIDENCE_INPUTS = {
+    'components': 'components.json', 'agent': 'agent.json',
+    'purpose_catalog': 'purpose-catalog.json', 'authority': 'authority.json',
+    'principal_policy': 'principal-policy.json', 'recovery_policy': 'recovery-policy.json',
+    'movement': 'movement-policy.json',
+}
+JOURNAL_RECORD = re.compile(r'[0-9a-f]{64}\.(admission|deployment)')
+
+
+def refuse(detail):
+    raise ValueError(BUNDLE_REFUSED + detail)
+
+
+def digest(data):
+    return hashlib.sha256(data).hexdigest()
+
+
+def entry(name, data):
+    return {'name': name, 'sha256': digest(data), 'size': len(data)}
+
+
+def protected_file(path, mode):
     path = Path(path)
-    info = path.lstat()
-    if (not path.is_absolute() or path.resolve() != path
-            or not stat.S_ISREG(info.st_mode) or info.st_uid != os.geteuid()
-            or stat.S_IMODE(info.st_mode) != 0o600 or info.st_nlink != 1 or info.st_size > 1048576):
-        raise ValueError('Human evidence file ownership, type or bounds refused')
-    return json.loads(path.read_text())
+    try:
+        info = path.lstat()
+    except OSError:
+        refuse('missing ' + path.name)
+    if (not path.is_absolute() or path.resolve() != path or info.st_uid != os.geteuid()
+            or stat.S_IMODE(info.st_mode) != mode
+            or not (stat.S_ISDIR(info.st_mode) if mode == 0o700 else stat.S_ISREG(info.st_mode) and info.st_nlink == 1)):
+        refuse('ownership, type or mode of ' + path.name)
+
+
+def journal_records(directory):
+    from provision import journal_records as producer_journal
+    try:
+        return producer_journal(directory)
+    except (ValueError, OSError):
+        refuse('protected paired admission/deployment journal')
+
+
+def owner_evidence(evidence):
+    policy = {}
+    for key, filename in EVIDENCE_INPUTS.items():
+        try:
+            policy[key] = protected_json(evidence / filename)
+        except (ValueError, OSError):
+            refuse('protected owner evidence ' + filename)
+        if type(policy[key]) is not dict or not policy[key]:
+            refuse('empty owner evidence ' + filename)
+    authority = policy['authority']
+    if (set(authority) != {'tenant', 'principal', 'core-clock-horizon'}
+            or type(authority['tenant']) is not str
+            or not re.fullmatch(r'[A-Za-z0-9_-]{1,128}', authority['tenant'])
+            or type(authority['principal']) is not str
+            or not re.fullmatch(r'did:[a-z0-9]+:[^;,\s]+', authority['principal'])
+            or type(authority['core-clock-horizon']) is not int or authority['core-clock-horizon'] <= 0):
+        refuse('owner authority evidence')
+    principals = policy['principal_policy'].get('principals')
+    if (type(principals) is not list or not principals
+            or sum(1 for p in principals if type(p) is dict and p.get('tenant') == authority['tenant']
+                   and p.get('principal') == authority['principal']) != 1):
+        refuse('owner principal policy evidence')
+    return policy
+
+
+def read_bytes(path, maximum=1048576):
+    from provision import protected_bytes
+    try:
+        return protected_bytes(path, maximum)
+    except (ValueError, OSError):
+        refuse('protected producer file unavailable: ' + Path(path).name)
+
+
+def parse(data):
+    from provision import strict_pairs
+    return json.loads(data, object_pairs_hook=strict_pairs,
+                      parse_constant=lambda _: refuse('nonfinite JSON'))
+
+
+def write_bytes(path, data):
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+    with os.fdopen(fd, 'wb') as output:
+        output.write(data)
+        output.flush()
+        os.fsync(output.fileno())
+
+
+def sync_directory(path):
+    fd = os.open(path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    try:
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+
+
+PRODUCER_FILES = {'source-binding.json', 'owner-result.json', 'owner-registration.json',
+                  'naming-deployment-result.json', 'treasury.json', 'sequencer.json',
+                  'native-context.json', *{label + suffix for label in ('credit', 'identity', 'rotation', 'recovery')
+                                           for suffix in ('.activity', '.receipt')}}
+ONBOARDING_FILES = {'LAYERX_HUMAN_TENANCY_DIGEST', 'LAYERX_HUMAN_AUTH_INDEX_KEY',
+                    'LAYERX_HUMAN_STREAM_CURSOR_KEY', 'recovery-policy.json', 'registry.json'}
+
+
+def policy_from_inputs(inputs, records, network, chain):
+    from provision import identity, recovery_policy, peer_binding, validate_native_records
+    from owner_native import receipt_fields, digest as native_digest
+    deployment = parse(inputs['deployment.json'])
+    registry = parse(inputs['module-registry.json'])
+    if (type(network) is not int or not 0 < network < 2**32 or type(chain) is not int or not 0 < chain < 2**64
+            or deployment.get('network_id') != network or deployment.get('chain_id') != chain
+            or registry.get('network_id') != network or registry.get('schema_version') != 2
+            or not registry.get('assets') or not registry.get('modules')):
+        refuse('deployment network, chain or module registry binding')
+    policy = {key: parse(inputs[name]) for key, name in EVIDENCE_INPUTS.items()}
+    if any(type(value) is not dict or not value for value in policy.values()):
+        refuse('empty owner evidence')
+    producer = {name: inputs['producer-records/' + name] for name in PRODUCER_FILES}
+    binding = parse(producer['source-binding.json'])
+    owner = parse(producer['owner-result.json'])
+    registration = parse(producer['owner-registration.json'])
+    authority = policy['authority']
+    if (set(authority) != {'tenant', 'principal', 'core-clock-horizon'}
+            or {key: authority[key] for key in ('tenant', 'principal')} != binding
+            or policy['agent'].get('HUMAN_PEERS') != peer_binding(binding, 'owner bundle')
+            or type(authority['core-clock-horizon']) is not int or authority['core-clock-horizon'] <= 0
+            or registration['identity']['did'] != owner['did']
+            or policy['components'].get('AGENT_ACTOR') != owner['did']
+            or policy['components'].get('AGENT_AUTHORITY') != registration['authority']
+            or policy['components'].get('AGENT_OWNER_ACCOUNT') != 'agent:' + owner['did'] + ':main'):
+        refuse('original owner identity, authority or principal binding')
+    identity(registration['identity'], 'owner bundle')
+    recovery_policy(policy['recovery_policy'], 'owner bundle')
+    if policy['recovery_policy'] != {'root': owner['recovery_root'], 'threshold': owner['recovery_threshold'],
+                                    'delay_seconds': owner['recovery_delay_seconds']}:
+        refuse('original recovery policy binding')
+    principals = policy['principal_policy'].get('principals')
+    if (type(principals) is not list or len(principals) != 1
+            or any(principals[0].get(key) != binding[key] for key in ('tenant', 'principal'))
+            or principals[0].get('account_id') != registration['owner_account']
+            or principals[0].get('identities') != [registration['identity']]
+            or not any(asset.get('asset') == principals[0].get('asset_id') for asset in registry['assets'])):
+        refuse('actual owner principal policy binding')
+    context = parse(producer['native-context.json'])
+    if set(context) != {'network_id', 'sequencer_public_key'} or context['network_id'] != network:
+        refuse('native producer network binding')
+    key = context['sequencer_public_key']
+    if type(key) is not str or not re.fullmatch('[0-9a-f]{64}', key) or int(key, 16) == 0:
+        refuse('native sequencer pin')
+    validate_native_records(producer, registration, network)
+    references = [registration['identity']['evidence'], registration['identity']['rotation']['evidence'],
+                  registration['identity']['recovery']['evidence']]
+    observed = set()
+    for label in ('credit', 'identity', 'rotation', 'recovery'):
+        result = receipt_fields(producer[label + '.receipt'], bytes.fromhex(key), 'owner bundle receipt')
+        if (result['activity_id'] != native_digest(b'activity-id', producer[label + '.activity']).hex()
+                or result['module'] != (8 if label == 'credit' else 7) or result['version'] != 1):
+            refuse('native signed activity and receipt binding')
+        observed.add((result['activity_id'], result['receipt_digest']))
+        if label == 'credit' and (result['target'] != registration['owner_account'] or result['amount'] <= 0):
+            refuse('actual owner custody credit')
+    if any((ref['activity_id'], ref['receipt_digest']) not in observed for ref in references):
+        refuse('owner registration receipt references')
+    naming = parse(producer['naming-deployment-result.json'])
+    if (naming.get('state') != 'deployed' or type(naming.get('activity_id')) is not str
+            or not re.fullmatch('[0-9a-f]{64}', naming['activity_id'])
+            or any(naming.get('receipt_digest', '') + suffix not in records for suffix in ('.admission', '.deployment'))):
+        refuse('actual naming deployment journal pair')
+    modules = []
+    seen = set()
+    for module in registry['modules']:
+        number, ordinals = module['module'], module['ordinals']
+        if (type(number) is not int or not 1 <= number <= 9 or number in seen
+                or type(ordinals) is not list or not ordinals
+                or any(type(value) is not int or not 1 <= value < 65536 for value in ordinals)
+                or len(set(ordinals)) != len(ordinals)):
+            refuse('module activity registry')
+        seen.add(number)
+        modules.append({'module_id': number, 'activity_types': [(number << 16) | ordinal for ordinal in ordinals]})
+    asset = principals[0]['asset_id']
+    counterparties = [parse(producer[name])['account'] for name in ('treasury.json', 'sequencer.json')]
+    if (len(set(counterparties)) != 2 or any(type(value) is not str or not re.fullmatch('[0-9a-f]{64}', value)
+                                           or int(value, 16) == 0 for value in counterparties)):
+        refuse('actual purpose counterparty accounts')
+    catalog = policy['purpose_catalog']
+    activities = sorted(activity for module in modules for activity in module['activity_types'])
+    if (set(catalog) != {'version', 'presets'} or not isinstance(catalog['presets'], list)
+            or not catalog['presets'] or policy['agent'].get('HUMAN_LIMIT_SCOPE_ID') != registration['owner_account']
+            or policy['agent'].get('HUMAN_LIMIT_CONSUMED') != 0):
+        refuse('actual purpose catalogue or initial owner limit')
+    for preset in catalog['presets']:
+        if (preset.get('activity_types') != activities
+                or preset.get('counterparties') != [list(bytes.fromhex(value)) for value in counterparties]
+                or preset.get('assets') != [list(bytes.fromhex(asset))]
+                or preset.get('budget_asset') != list(bytes.fromhex(asset))):
+            refuse('purpose catalogue registry, asset or counterparty binding')
+    policy['registry'] = {'network_id': network, 'protocol_version': 3, 'modules': modules}
+    checkpoint = deployment['addresses']['checkpoint_registry']
+    if type(checkpoint) is not str or not re.fullmatch('0x[0-9a-fA-F]{40}', checkpoint) or int(checkpoint, 16) == 0:
+        refuse('deployed checkpoint registry')
+    policy['components'].update(PAXEER_EXIT_CONTRACT=CUSTODY_PRECOMPILE,
+                                PAXEER_WITHDRAWAL_CLAIMS_CONTRACT=CUSTODY_PRECOMPILE)
+    policy['movement'].update(PAXEER_VAULT=CUSTODY_PRECOMPILE, PAXEER_CHECKPOINT_REGISTRY=checkpoint,
+                             PAXEER_CLAIMS_CONTRACT=CUSTODY_PRECOMPILE, PAXEER_EXIT_CONTRACT=CUSTODY_PRECOMPILE)
+    policy['journal_directory'] = 'journal'
+    if 'onboarding-configuration.json' in inputs:
+        onboarding = parse(inputs['onboarding-configuration.json'])
+        if (set(onboarding) != {'directory', 'sponsor_principal', 'initial_funding'}
+                or onboarding['sponsor_principal'] != owner['principal']
+                or type(onboarding['initial_funding']) is not int or not 0 < onboarding['initial_funding'] < 2**128):
+            refuse('onboarding sponsor binding')
+        policy['onboarding_configuration'] = dict(onboarding, directory='onboarding')
+    return policy
 
 
 def assemble_policy(evidence, deployment, registry_path, output, network, chain):
-    evidence = Path(evidence)
-    deployment = json.loads(Path(deployment).read_text())
-    registry = json.loads(Path(registry_path).read_text())
-    if int(deployment['network_id']) != network or int(deployment['chain_id']) != chain:
-        raise ValueError('Human deployment network mismatch')
-    if registry.get('schema_version') != 2 or not registry.get('assets'):
-        raise ValueError('Human requires the rendered version 2 module registry')
-    policy = {key: protected_json(evidence / filename) for key, filename in {
-        'components': 'components.json', 'agent': 'agent.json',
-        'purpose_catalog': 'purpose-catalog.json', 'authority': 'authority.json',
-        'principal_policy': 'principal-policy.json', 'recovery_policy': 'recovery-policy.json',
-        'movement': 'movement-policy.json',
-    }.items()}
-    onboarding = evidence / 'onboarding-configuration.json'
-    if onboarding.exists():
-        policy['onboarding_configuration'] = protected_json(onboarding)
-    addresses = deployment['addresses']
-    policy['components'].update({
-        'PAXEER_EXIT_CONTRACT': CUSTODY_PRECOMPILE,
-        'PAXEER_WITHDRAWAL_CLAIMS_CONTRACT': CUSTODY_PRECOMPILE,
-    })
-    policy['movement'].update({
-        'PAXEER_VAULT': CUSTODY_PRECOMPILE,
-        'PAXEER_CHECKPOINT_REGISTRY': addresses['checkpoint_registry'],
-        'PAXEER_CLAIMS_CONTRACT': CUSTODY_PRECOMPILE,
-        'PAXEER_EXIT_CONTRACT': CUSTODY_PRECOMPILE,
-    })
-    policy['registry'] = {'network_id': network, 'protocol_version': 3, 'modules': [
-        {'module_id': module['module'], 'activity_types': [
-            (module['module'] << 16) | ordinal for ordinal in module['ordinals']]}
-        for module in registry['modules']]}
-    policy['journal_directory'] = str(evidence / 'journal')
-    write(Path(output).parent, Path(output).name, json.dumps(policy))
+    evidence, output = Path(evidence), Path(output)
+    directory = output.parent
+    protected_file(directory, 0o700)
+    if output.name != 'policy.json':
+        refuse('canonical policy filename')
+    inputs = {name: read_bytes(evidence / name) for name in EVIDENCE_INPUTS.values()}
+    inputs.update({'deployment.json': read_bytes(deployment), 'module-registry.json': read_bytes(registry_path)})
+    for name in PRODUCER_FILES:
+        inputs['producer-records/' + name] = read_bytes(evidence / 'producer-records' / name)
+    onboarding = {}
+    source = evidence / 'onboarding-configuration.json'
+    if source.exists() or source.is_symlink():
+        inputs[source.name] = read_bytes(source)
+        declared = parse(inputs[source.name])
+        config = Path(declared['directory'])
+        protected_file(config, 0o700)
+        for name in ONBOARDING_FILES - {'recovery-policy.json', 'registry.json'}:
+            onboarding[name] = read_bytes(config / name, 128)
+        retained = Path(registry_path).parent / 'human'
+        onboarding['recovery-policy.json'] = read_bytes(retained / 'identity/recovery-policy.json')
+        onboarding['registry.json'] = read_bytes(retained / 'kms/registry.json')
+    records = journal_records(evidence / 'journal')
+    policy = policy_from_inputs(inputs, records, network, chain)
+    if onboarding and (parse(onboarding['registry.json']) != policy['registry']
+                       or parse(onboarding['recovery-policy.json']) != policy['recovery_policy']):
+        refuse('retained onboarding registry or recovery changed')
+    policy_bytes = json.dumps(policy, sort_keys=True, separators=(',', ':'), allow_nan=False).encode()
+    manifest = {'schema': BUNDLE_SCHEMA, 'network_id': network, 'chain_id': chain,
+                'authority_sha256': digest(json.dumps(policy['authority'], sort_keys=True, separators=(',', ':')).encode()),
+                'policy_sha256': digest(policy_bytes),
+                'inputs': [entry(name, data) for name, data in sorted(inputs.items())],
+                'onboarding': [entry(name, data) for name, data in sorted(onboarding.items())],
+                'journal': [entry(name, data) for name, data in sorted(records.items())]}
+    files = {'policy.json': policy_bytes,
+             'bundle-manifest.json': json.dumps(manifest, sort_keys=True, separators=(',', ':')).encode()}
+    files.update({'inputs/' + name: data for name, data in inputs.items()})
+    files.update({'journal/' + name: data for name, data in records.items()})
+    files.update({'onboarding/' + name: data for name, data in onboarding.items()})
+    lock = directory.parent / ('.' + directory.name + '-publish')
+    try:
+        lock.mkdir(mode=0o700)
+    except FileExistsError:
+        refuse('reconciliation required: bundle publication interrupted or active')
+    try:
+        if any(directory.iterdir()):
+            try:
+                verify_bundle(directory, network, chain)
+            except (ValueError, OSError, KeyError, TypeError):
+                refuse('reconciliation required: retained or interrupted bundle invalid')
+            actual = {str(path.relative_to(directory)): read_bytes(path) for path in directory.rglob('*') if path.is_file()}
+            if actual != files:
+                refuse('reconciliation required: retained bundle contents differ')
+            return
+        for name, data in sorted(files.items(), key=lambda item: item[0] == 'bundle-manifest.json'):
+            path = directory / name
+            path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+            write_bytes(path, data)
+        for path in sorted((p for p in directory.rglob('*') if p.is_dir()), key=lambda p: len(p.parts), reverse=True):
+            sync_directory(path)
+        sync_directory(directory)
+        sync_directory(directory.parent)
+    finally:
+        lock.rmdir()
+
+
+def verify_bundle(directory, network, chain):
+    directory = Path(directory)
+    protected_file(directory, 0o700)
+    manifest = parse(read_bytes(directory / 'bundle-manifest.json'))
+    if (type(manifest) is not dict or set(manifest) != {'schema', 'network_id', 'chain_id', 'authority_sha256',
+            'policy_sha256', 'inputs', 'journal', 'onboarding'} or manifest['schema'] != BUNDLE_SCHEMA
+            or manifest['network_id'] != network or manifest['chain_id'] != chain):
+        refuse('bundle schema, network or chain mismatch')
+    allowed = {'policy.json', 'bundle-manifest.json'}
+    loaded = {}
+    for section in ('inputs', 'journal', 'onboarding'):
+        entries = manifest[section]
+        if type(entries) is not list or len(entries) > 128:
+            refuse('bundle manifest entries')
+        names = set()
+        data = {}
+        for item in entries:
+            if (type(item) is not dict or set(item) != {'name', 'sha256', 'size'} or type(item['name']) is not str
+                    or not re.fullmatch(r'(?:producer-records/)?[A-Za-z0-9_.-]+', item['name'])
+                    or item['name'] in ('.', '..') or item['name'] in names
+                    or type(item['size']) is not int or not 0 < item['size'] <= 1048576
+                    or type(item['sha256']) is not str or not re.fullmatch('[0-9a-f]{64}', item['sha256'])):
+                refuse('bundle manifest entry bounds or path')
+            names.add(item['name'])
+            name = section + '/' + item['name']
+            data[item['name']] = read_bytes(directory / name)
+            if entry(item['name'], data[item['name']]) != item:
+                refuse('producer output bytes differ: ' + item['name'])
+            allowed.add(name)
+        loaded[section] = data
+    expected_inputs = set(EVIDENCE_INPUTS.values()) | {'deployment.json', 'module-registry.json'} | {'producer-records/' + name for name in PRODUCER_FILES}
+    if 'onboarding-configuration.json' in loaded['inputs']:
+        expected_inputs.add('onboarding-configuration.json')
+        if set(loaded['onboarding']) != ONBOARDING_FILES:
+            refuse('retained onboarding outputs missing')
+    elif loaded['onboarding']:
+        refuse('undeclared onboarding outputs')
+    if set(loaded['inputs']) != expected_inputs:
+        refuse('producer input inventory differs')
+    actual = set()
+    expected_dirs = {str(Path(name).parent) for name in allowed} - {'.'}
+    expected_dirs.add('inputs')
+    for path in directory.rglob('*'):
+        name = str(path.relative_to(directory))
+        if path.is_dir() and not path.is_symlink():
+            protected_file(path, 0o700)
+            if name not in expected_dirs:
+                refuse('undeclared bundle directory')
+        else:
+            protected_file(path, 0o600)
+            actual.add(name)
+    if actual != allowed:
+        refuse('bundle file inventory differs')
+    records = journal_records(directory / 'journal')
+    if records != loaded['journal']:
+        refuse('journal inventory differs')
+    policy_bytes = read_bytes(directory / 'policy.json')
+    policy = parse(policy_bytes)
+    expected = policy_from_inputs(loaded['inputs'], records, network, chain)
+    if policy != expected or digest(policy_bytes) != manifest['policy_sha256']:
+        refuse('policy differs from declared actual producer outputs')
+    authority = digest(json.dumps(policy['authority'], sort_keys=True, separators=(',', ':')).encode())
+    if authority != manifest['authority_sha256']:
+        refuse('authority digest differs')
+    if loaded['onboarding']:
+        if (parse(loaded['onboarding']['registry.json']) != policy['registry']
+                or parse(loaded['onboarding']['recovery-policy.json']) != policy['recovery_policy']):
+            refuse('retained onboarding binding differs')
+        for name in ONBOARDING_FILES - {'registry.json', 'recovery-policy.json'}:
+            value = loaded['onboarding'][name].decode()
+            if not re.fullmatch('[A-Za-z0-9_-]{43}', value) or len(base64.urlsafe_b64decode(value + '=')) != 32:
+                refuse('retained onboarding key encoding')
+    return {'network_id': network, 'chain_id': chain, 'authority_sha256': authority,
+            'policy_sha256': manifest['policy_sha256'], 'bundle_sha256': digest(read_bytes(directory / 'bundle-manifest.json')),
+            'records': len(records)}
+
+
+def relocate_bundle(source, destination, network, chain):
+    source, destination = Path(source), Path(destination)
+    before = verify_bundle(source, network, chain)
+    if destination.exists() or destination.is_symlink():
+        refuse('reconciliation required: relocation destination already exists')
+    protected_file(destination.parent, 0o700)
+    pending = Path(tempfile.mkdtemp(prefix='.owner-relocate-', dir=destination.parent))
+    try:
+        for path in sorted(source.rglob('*')):
+            target = pending / path.relative_to(source)
+            if path.is_dir() and not path.is_symlink():
+                protected_file(path, 0o700)
+                target.mkdir(mode=0o700)
+            else:
+                write_bytes(target, read_bytes(path))
+        if verify_bundle(source, network, chain) != before or verify_bundle(pending, network, chain) != before:
+            refuse('bundle changed during relocation')
+        for path in sorted((p for p in pending.rglob('*') if p.is_dir()), key=lambda p: len(p.parts), reverse=True):
+            sync_directory(path)
+        sync_directory(pending)
+        os.rename(pending, destination)
+        pending = None
+        sync_directory(destination.parent)
+        return before
+    finally:
+        if pending is not None:
+            shutil.rmtree(pending)
+
+
+def material_inventory(root):
+    root = Path(root)
+    protected_file(root, 0o700)
+    entries = []
+    for path in sorted(root.rglob('*')):
+        if path == root / 'material-manifest.json':
+            continue
+        if path.is_dir() and not path.is_symlink():
+            protected_file(path, 0o700)
+        else:
+            name = str(path.relative_to(root))
+            entries.append(entry(name, read_bytes(path)))
+    if not entries or len(entries) > 512:
+        refuse('retained material output count')
+    return {'schema': 'layerx.human.retained-material.v1', 'files': entries}
+
+
+def seal_material(root):
+    root = Path(root)
+    value = material_inventory(root)
+    write_bytes(root / 'material-manifest.json', json.dumps(value, sort_keys=True, separators=(',', ':')).encode())
+    for path in sorted((p for p in root.rglob('*') if p.is_dir()), key=lambda p: len(p.parts), reverse=True):
+        sync_directory(path)
+    sync_directory(root)
+
+
+def verify_material(root):
+    root = Path(root)
+    if parse(read_bytes(root / 'material-manifest.json')) != material_inventory(root):
+        refuse('reconciliation required: retained material output changed')
+
+
+def genesis_binding(directory):
+    directory = Path(directory)
+    protected_file(directory, 0o700)
+    result = []
+    for name in ('metadata.lxgb', 'asset-id', 'replica-id'):
+        path = directory / name
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        with os.fdopen(fd, 'rb') as source:
+            info = os.fstat(source.fileno())
+            if (not stat.S_ISREG(info.st_mode) or info.st_uid != os.geteuid() or info.st_nlink != 1
+                    or info.st_mode & 0o022 or not 0 < info.st_size <= 1048576):
+                refuse('protected genesis binding output')
+            data = source.read(1048577)
+            after = os.fstat(source.fileno())
+            if (len(data) != info.st_size or info.st_mtime_ns != after.st_mtime_ns
+                    or info.st_ctime_ns != after.st_ctime_ns):
+                refuse('genesis changed during binding')
+        result.append(entry(name, data))
+    return {'schema': 'layerx.human.genesis-binding.v1', 'files': result}
+
+
+def secret_arguments(directory, network, chain):
+    directory = Path(directory)
+    verify_bundle(directory, network, chain)
+    names = set()
+    total = sum(path.stat().st_size for path in directory.rglob('*') if path.is_file())
+    if total > 1048576:
+        refuse('bundle exceeds Kubernetes Secret payload bound')
+    for path in sorted(directory.rglob('*')):
+        if not path.is_file():
+            continue
+        name = str(path.relative_to(directory)).replace('/', '.')
+        if name in names or len(name) > 253 or not re.fullmatch('[A-Za-z0-9_.-]+', name):
+            refuse('secret projection key collision')
+        names.add(name)
+        sys.stdout.buffer.write(('--from-file=' + name + '=' + str(path)).encode() + b'\0')
+
+
+def projected_files(directory, selected=None):
+    directory = Path(directory)
+    if not directory.is_absolute() or directory.resolve() != directory:
+        refuse('noncanonical Secret projection root')
+    info = directory.lstat()
+    readonly = bool(os.statvfs(directory).f_flag & os.ST_RDONLY)
+    if (not stat.S_ISDIR(info.st_mode) or info.st_uid not in (0, os.geteuid())
+            or (info.st_mode & 0o022 and not readonly)):
+        refuse('Secret projection root permissions')
+    marker = directory / '..data'
+    generation = marker.resolve(strict=True) if marker.is_symlink() else directory
+    if generation != directory and (generation.parent != directory or generation.resolve() != generation):
+        refuse('Secret projection generation outside mount')
+    info = generation.lstat()
+    if (not stat.S_ISDIR(info.st_mode) or info.st_uid not in (0, os.geteuid())
+            or (info.st_mode & 0o022 and not readonly)):
+        refuse('Secret projection generation permissions')
+    names = {path.name for path in generation.iterdir()}
+    if selected is not None:
+        if not set(selected) <= names:
+            refuse('required consumer projection absent')
+        names = set(selected)
+    if not names or len(names) > 256 or any(not re.fullmatch('[A-Za-z0-9_.-]+', name) or name.startswith('.') for name in names):
+        refuse('Secret projection key inventory')
+    result = {}
+    total = 0
+    for name in sorted(names):
+        if generation != directory and (directory / name).resolve(strict=True) != generation / name:
+            refuse('Secret projection key outside pinned generation')
+        fd = os.open(generation / name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        with os.fdopen(fd, 'rb') as source:
+            info = os.fstat(source.fileno())
+            if (not stat.S_ISREG(info.st_mode) or info.st_uid not in (0, os.geteuid()) or info.st_nlink != 1
+                    or info.st_mode & 0o022 or not 0 < info.st_size <= 1048576):
+                refuse('Secret projection file bounds or permissions')
+            data = source.read(1048577)
+            after = os.fstat(source.fileno())
+            if (len(data) != info.st_size or info.st_mtime_ns != after.st_mtime_ns
+                    or info.st_ctime_ns != after.st_ctime_ns):
+                refuse('Secret projection changed during copy')
+        total += len(data)
+        if total > 1048576:
+            refuse('Secret projection exceeds payload bound')
+        result[name] = data
+    if generation != directory and marker.resolve(strict=True) != generation:
+        refuse('Secret projection generation changed')
+    return result
+
+
+def import_secret(directory, destination, network, chain):
+    files = projected_files(directory)
+    if 'bundle-manifest.json' not in files or 'policy.json' not in files:
+        refuse('Secret bundle manifest and policy required')
+    manifest = parse(files['bundle-manifest.json'])
+    if manifest.get('schema') != BUNDLE_SCHEMA:
+        refuse('Secret bundle schema')
+    paths = {'policy.json': 'policy.json', 'bundle-manifest.json': 'bundle-manifest.json'}
+    for section in ('inputs', 'journal', 'onboarding'):
+        entries = manifest[section]
+        if type(entries) is not list or len(entries) > 128:
+            refuse('Secret manifest bounds')
+        for item in entries:
+            name = item['name']
+            if type(name) is not str or not re.fullmatch(r'(?:producer-records/)?[A-Za-z0-9_-][A-Za-z0-9_.-]*', name):
+                refuse('Secret relative entry name')
+            relative = section + '/' + name
+            key = relative.replace('/', '.')
+            if key in paths:
+                refuse('Secret projection collision')
+            paths[key] = relative
+    if set(files) != set(paths):
+        refuse('Secret projection differs from exact manifest')
+    destination = Path(destination)
+    protected_file(destination.parent, 0o700)
+    pending = Path(tempfile.mkdtemp(prefix='.secret-owner-', dir=destination.parent))
+    try:
+        for key, relative in paths.items():
+            path = pending / relative
+            path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+            write_bytes(path, files[key])
+        binding = verify_bundle(pending, network, chain)
+        if projected_files(directory) != files:
+            refuse('Secret projection changed before publication')
+        if destination.exists() or destination.is_symlink():
+            if verify_bundle(destination, network, chain) != binding:
+                refuse('reconciliation required: mounted owner bundle changed')
+            return binding
+        for path in sorted((p for p in pending.rglob('*') if p.is_dir()), key=lambda p: len(p.parts), reverse=True):
+            sync_directory(path)
+        sync_directory(pending)
+        os.rename(pending, destination)
+        pending = None
+        sync_directory(destination.parent)
+        return binding
+    finally:
+        if pending is not None:
+            shutil.rmtree(pending)
+
+
+def verify_projected_material(bundle, projections, network, chain):
+    bundle, projections = Path(bundle), Path(projections)
+    verify_bundle(bundle, network, chain)
+    policy = parse(read_bytes(bundle / 'policy.json'))
+    if parse(projected_files(projections / 'module-registry', {'registry.json'})['registry.json']) != parse(read_bytes(bundle / 'inputs/module-registry.json')):
+        refuse('runtime canonical module registry differs from actual producer input')
+    json_fields = [('components', 'purpose-catalog.json', 'purpose_catalog'), ('kms', 'registry.json', 'registry'),
+                   ('identity', 'recovery-policy.json', 'recovery_policy'), ('authority', 'principal-policy.json', 'principal_policy')]
+    for folder, name, key in json_fields:
+        if parse(projected_files(projections / folder, {name})[name]) != policy[key]:
+            refuse('runtime consumer JSON differs from verified owner bundle')
+    value_fields = [('components-config', 'LAYERX_HUMAN_', policy['components']),
+                    ('agent-config', 'LAYERX_AGENT_', policy['agent']),
+                    ('authority-config', '', policy['authority']),
+                    ('movement-config', 'LAYERX_HUMAN_MOVEMENT_PROVIDER_', policy['movement'])]
+    for folder, prefix, values in value_fields:
+        expected = {prefix + key: str(value).encode() for key, value in values.items()}
+        if projected_files(projections / folder, expected) != expected:
+            refuse('runtime consumer values differ from verified owner bundle')
+    expected = {'LAYERX_HUMAN_NETWORK_ID': str(network).encode(), 'LAYERX_HUMAN_PAXEER_CHAIN_ID': str(chain).encode()}
+    if 'onboarding_configuration' in policy:
+        for name in ONBOARDING_FILES - {'registry.json', 'recovery-policy.json'}:
+            expected[name] = read_bytes(bundle / 'onboarding' / name)
+    if projected_files(projections / 'components-config', expected) != expected:
+        refuse('runtime consumer network or original onboarding keys differ')
+    if projected_files(projections / 'journal') != journal_records(bundle / 'journal'):
+        refuse('runtime consumer journal differs from verified owner bundle')
 
 
 def passkey_relying_party(web_origin):
@@ -118,17 +666,28 @@ def main():
     network, chain = int(sys.argv[2]), int(sys.argv[3])
     config = component_defaults(network, chain, sys.argv[5] if len(sys.argv) > 5 else '')
     policy = protected_json(sys.argv[4]) if sys.argv[4] else None
+    if policy is not None:
+        if Path(policy.get('journal_directory', '')).is_absolute():
+            refuse('producer-local journal path')
+        verify_bundle(Path(sys.argv[4]).parent, network, chain)
     onboarding = policy.get('onboarding_configuration') if policy else None
     if onboarding is not None:
-        directory = Path(onboarding['directory'])
-        if not directory.is_absolute() or directory.resolve() != directory:
-            raise ValueError('canonical onboarding configuration directory required')
+        if onboarding['directory'] != 'onboarding':
+            refuse('producer-local onboarding path')
+        directory = Path(sys.argv[4]).parent / 'onboarding'
+        for source, destination in [('registry.json', root / 'kms/registry.json'), ('recovery-policy.json', root / 'identity/recovery-policy.json')]:
+            data = read_bytes(directory / source)
+            if destination.exists() or destination.is_symlink():
+                if read_bytes(destination) != data:
+                    refuse('reconciliation required: retained onboarding output differs')
+            else:
+                write_bytes(destination, data)
     for name in ('TENANCY_DIGEST', 'AUTH_INDEX_KEY', 'STREAM_CURSOR_KEY'):
         if onboarding is None:
             config[name] = base64.urlsafe_b64encode(secrets.token_bytes(32)).decode().rstrip('=')
         else:
             from provision import protected_bytes
-            source = Path(onboarding['directory']) / ('LAYERX_HUMAN_' + name)
+            source = directory / ('LAYERX_HUMAN_' + name)
             value = protected_bytes(source, 128).decode()
             if not re.fullmatch('[A-Za-z0-9_-]{43}', value) or len(base64.urlsafe_b64decode(value + '=')) != 32:
                 raise ValueError('onboarding configuration binding refused')
@@ -298,27 +857,9 @@ def main():
             write(root / 'kms', 'registry.json', json.dumps(policy['registry']))
         elif protected_json(root / 'kms/registry.json') != policy['registry']:
             raise ValueError('retained KMS registry changed')
-        source = Path(policy['journal_directory'])
-        if not source.is_absolute() or source.is_symlink() or not source.is_dir():
-            raise ValueError('Human deployment journal directory refused')
-        records = sorted(source.iterdir())
-        if not records or len(records) > 128:
-            raise ValueError('Human deployment journal record count refused')
-        total = 0
-        names = {record.name for record in records}
-        for record in records:
-            if not re.fullmatch(r'[0-9a-f]{64}\.(admission|deployment)', record.name):
-                raise ValueError('Human deployment journal filename refused')
-            if not {record.stem + '.admission', record.stem + '.deployment'} <= names:
-                raise ValueError('Human deployment journal pair missing')
-            info = record.lstat()
-            if not stat.S_ISREG(info.st_mode) or info.st_uid != os.geteuid() or info.st_mode & 0o022:
-                raise ValueError('Human deployment journal file refused')
-            total += info.st_size
-            if not info.st_size or total > 524288:
-                raise ValueError('Human deployment journal size refused')
-            destination = journal / record.name
-            destination.write_bytes(record.read_bytes())
+        for name, data in journal_records(Path(sys.argv[4]).parent / policy['journal_directory']).items():
+            destination = journal / name
+            destination.write_bytes(data)
             destination.chmod(0o600)
     for key, value in config.items():
         write(root / 'config', 'LAYERX_HUMAN_' + key, value)
@@ -338,7 +879,27 @@ if __name__ == '__main__':
     try:
         if len(sys.argv) > 1 and sys.argv[1] == '--assemble':
             assemble_policy(*sys.argv[2:6], int(sys.argv[6]), int(sys.argv[7]))
+        elif len(sys.argv) > 1 and sys.argv[1] == '--verify-bundle':
+            print(json.dumps(verify_bundle(sys.argv[2], int(sys.argv[3]), int(sys.argv[4])), sort_keys=True))
+        elif len(sys.argv) > 1 and sys.argv[1] == '--relocate-bundle':
+            print(json.dumps(relocate_bundle(sys.argv[2], sys.argv[3], int(sys.argv[4]), int(sys.argv[5])), sort_keys=True))
+        elif len(sys.argv) > 1 and sys.argv[1] == '--seal-material':
+            seal_material(sys.argv[2])
+        elif len(sys.argv) > 1 and sys.argv[1] == '--verify-material':
+            verify_material(sys.argv[2])
+        elif len(sys.argv) > 1 and sys.argv[1] == '--genesis-binding':
+            print(json.dumps(genesis_binding(sys.argv[2]), sort_keys=True))
+        elif len(sys.argv) > 1 and sys.argv[1] == '--import-secret':
+            print(json.dumps(import_secret(sys.argv[2], sys.argv[3], int(sys.argv[4]), int(sys.argv[5])), sort_keys=True))
+        elif len(sys.argv) > 1 and sys.argv[1] == '--verify-projected-material':
+            verify_projected_material(sys.argv[2], sys.argv[3], int(sys.argv[4]), int(sys.argv[5]))
+        elif len(sys.argv) > 1 and sys.argv[1] == '--secret-arguments':
+            secret_arguments(sys.argv[2], int(sys.argv[3]), int(sys.argv[4]))
         else:
             main()
-    except (ValueError, OSError, KeyError, TypeError):
-        raise SystemExit('Human material refused: check policy fields, file ownership and bounds')
+    except ValueError as error:
+        if str(error).startswith(BUNDLE_REFUSED):
+            raise SystemExit(str(error))
+        raise SystemExit(BUNDLE_REFUSED + 'check policy fields, file ownership and bounds')
+    except (OSError, KeyError, TypeError):
+        raise SystemExit(BUNDLE_REFUSED + 'check policy fields, file ownership and bounds')

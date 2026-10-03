@@ -132,6 +132,13 @@ spec:
           args:
             - |
               umask 077
+              install -d -m 0700 /run/human-policy-private/owner
+              python3 /usr/local/lib/layerx-human/material.py --import-secret \
+                /run/human-policy-input /run/human-policy-private/owner/bundle \
+                "$LAYERX_NODE_NETWORK_ID" "$LAYERX_NODE_PAXEER_CHAIN_ID" > /run/human-policy-private/owner/binding
+              python3 /usr/local/lib/layerx-human/material.py --verify-projected-material \
+                /run/human-policy-private/owner/bundle /run/human-policy-consumers \
+                "$LAYERX_NODE_NETWORK_ID" "$LAYERX_NODE_PAXEER_CHAIN_ID"
               install -d -m 0700 /run/authority-private/material
               install -m 0600 /run/authority-input/authority-token /run/authority-private/material/human-agent.token
               install -m 0600 /run/authority-input/principal-policy.json /run/authority-private/material/principal-policy.json
@@ -141,9 +148,25 @@ spec:
                   install -m 0600 /run/authority-input/genesis-handover-trust.lxt /run/authority-private/material/genesis-handover-trust.lxt
                   install -m 0600 /run/authority-input/handover-finality.conf /run/authority-private/material/handover-finality.conf
               fi
+          env:
+            - {name: PYTHONDONTWRITEBYTECODE, value: "1"}
+            - {name: LAYERX_NODE_NETWORK_ID, valueFrom: {configMapKeyRef: {name: layerx-node-config, key: network-id}}}
+            - {name: LAYERX_NODE_PAXEER_CHAIN_ID, valueFrom: {configMapKeyRef: {name: layerx-node-config, key: paxeer-chain-id}}}
           securityContext: {runAsUser: 4021, runAsGroup: 4020, allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}
           resources: {requests: {cpu: 10m, memory: 16Mi}, limits: {cpu: 100m, memory: 32Mi}}
           volumeMounts:
+            - {name: human-policy-input, mountPath: /run/human-policy-input, readOnly: true}
+            - {name: human-policy-private, mountPath: /run/human-policy-private}
+            - {name: human-policy-components-input, mountPath: /run/human-policy-consumers/components, readOnly: true}
+            - {name: human-policy-kms-input, mountPath: /run/human-policy-consumers/kms, readOnly: true}
+            - {name: human-policy-identity-input, mountPath: /run/human-policy-consumers/identity, readOnly: true}
+            - {name: human-authority, mountPath: /run/human-policy-consumers/authority, readOnly: true}
+            - {name: human-policy-components-config, mountPath: /run/human-policy-consumers/components-config, readOnly: true}
+            - {name: human-policy-agent-config, mountPath: /run/human-policy-consumers/agent-config, readOnly: true}
+            - {name: human-policy-authority-config, mountPath: /run/human-policy-consumers/authority-config, readOnly: true}
+            - {name: human-policy-movement-config, mountPath: /run/human-policy-consumers/movement-config, readOnly: true}
+            - {name: human-agent-journal, mountPath: /run/human-policy-consumers/journal, readOnly: true}
+            - {name: human-module-registry, mountPath: /run/human-policy-consumers/module-registry, readOnly: true}
             - {name: human-authority, mountPath: /run/authority-input, readOnly: true}
             - {name: human-authority-private, mountPath: /run/authority-private}
             - {name: human-module-registry, mountPath: /run/module-registry, readOnly: true}
@@ -906,6 +929,7 @@ spec:
             - name: human-agent-journal
               mountPath: /run/human-journal
               readOnly: true
+            - {name: human-policy-private, mountPath: /run/human-material/journal, subPath: owner/bundle/journal, readOnly: true}
           envFrom:
             - secretRef:
                 name: layerx-human-agent-config
@@ -918,6 +942,15 @@ spec:
             timeoutSeconds: 6
             periodSeconds: 10
       volumes:
+        - {name: human-policy-components-input, secret: {secretName: layerx-human-component-material, defaultMode: 0440, items: [{key: purpose-catalog.json, path: purpose-catalog.json}]}}
+        - {name: human-policy-kms-input, secret: {secretName: layerx-human-kms-material, defaultMode: 0440, items: [{key: registry.json, path: registry.json}]}}
+        - {name: human-policy-identity-input, secret: {secretName: layerx-human-identity-material, defaultMode: 0440, items: [{key: recovery-policy.json, path: recovery-policy.json}]}}
+        - {name: human-policy-input, secret: {secretName: layerx-human-policy, defaultMode: 0440}}
+        - {name: human-policy-private, emptyDir: {medium: Memory, sizeLimit: 4Mi}}
+        - {name: human-policy-components-config, secret: {secretName: layerx-human-components-config, defaultMode: 0440}}
+        - {name: human-policy-agent-config, secret: {secretName: layerx-human-agent-config, defaultMode: 0440}}
+        - {name: human-policy-authority-config, secret: {secretName: layerx-human-authority-config, defaultMode: 0440}}
+        - {name: human-policy-movement-config, secret: {secretName: layerx-human-movement-config, defaultMode: 0440}}
         - {name: guarantor-1-tls, secret: {secretName: layerx-guarantor-1-tls, defaultMode: 0440}}
         - {name: guarantor-2-tls, secret: {secretName: layerx-guarantor-2-tls, defaultMode: 0440}}
         - {name: checkpoint-submitter, secret: {secretName: paxeer-checkpoint-submitter, defaultMode: 0440}}

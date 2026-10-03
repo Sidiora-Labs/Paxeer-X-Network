@@ -232,6 +232,9 @@ human_evidence_provision() (
     naming_program_deploy
     registry_deployment_produce
     human_journal_deploy
+    python3 "$provision" --producer-manifest --work-dir "$WORK_DIR" \
+        --registry "$SECRETS_DIR/module-registry.json" --journal "$WORK_DIR/registry-journal" \
+        --output "$WORK_DIR/human-producers.json"
     python3 "$provision" --validate-evidence-inputs --work-dir "$WORK_DIR" \
         --registry "$SECRETS_DIR/module-registry.json" --journal "$WORK_DIR/registry-journal"
     python3 "$provision" --assemble --work-dir "$WORK_DIR" \
