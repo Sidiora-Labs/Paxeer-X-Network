@@ -13,11 +13,13 @@
 //! a missing rate, or a rate older than `max_rate_age` refuses the quote, and the
 //! quoted amount is the governed price plus `margin_bps`, within `spread_bps`.
 //! The caller opens a journal path such as `state/sponsorship.jsonl` and passes
-//! it to the station. Each JSON line is `quoted`, `prepared`, `released`,
-//! `replaced`, `cancelled`, or `completed`, keyed by sponsor and quote nonce.
-//! Quotes persist reservations and signatures; prepared entries persist the
-//! transaction nonce, hash and exact signed bytes; a released entry frees the
-//! sponsor nonce of a submission the node refused; a replaced entry persists the
+//! it to the station. Quote, admission, transaction, receipt and liability
+//! transitions are keyed by sponsor and quote nonce.
+//! Quotes persist reservations and signatures. Signing intents reserve nonces
+//! and replacement fee ceilings before the actual signer runs; an uncertain
+//! signing outcome retains that capacity and refuses further signing. Prepared entries persist the
+//! transaction nonce, hash and exact signed bytes; legacy released entries are
+//! refused because rejection cannot invalidate a signed transaction. A replaced entry persists the
 //! fee and signed bytes of the zero-value self-transfer that fills the sponsor
 //! nonce of a dropped or expired submission, written before it is broadcast; a
 //! cancelled entry records that replacement's inclusion; completion records
@@ -26,7 +28,14 @@
 //! publication or broadcast. Exclusive locking prevents simultaneous writers;
 //! corrupt or torn lines fail closed. Restart replays policy reservations,
 //! rebroadcasts the saved bytes and resumes each replacement from the journal.
-//! Reservations remain conservative after settlement.
+//! Active PAX liability is released only by an exact retained finalized receipt
+//! or finalized chain-time expiry of a tracked quote with no signing intent.
+//! A consumed quote releases only with an exact canonical finalized getter proof
+//! and tracked history proving no signing attempt. Incomplete legacy histories
+//! retain liability. Historical
+//! account/interval usage and finalized spend remain separate. Public admission
+//! is idempotent per account, batch nonce and chain interval, bounded to four
+//! quotes per account, 128 per interval and 1024 active quotes.
 //!
 //! The `paxeer-gas-station` binary runs as
 //! `paxeer-gas-station --config PATH --journal PATH`. Its configuration file
@@ -162,13 +171,15 @@ impl<S: QuoteSigner> Station<S> {
             request.account,
             &quote,
         );
-        self.policy
+        let mut policy = self.policy.clone();
+        policy
             .reserve(request.account, amount, request.gas_cost, balance, now)
             .map_err(QuoteError::Policy)?;
         let signature = self
             .signer
             .sign_digest(digest)
             .map_err(QuoteError::Signer)?;
+        self.policy = policy;
         Ok(SignedQuote {
             quote,
             digest,

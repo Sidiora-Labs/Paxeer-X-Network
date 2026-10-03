@@ -1,15 +1,16 @@
 use std::time::{Duration, Instant};
+use std::cell::{Cell, RefCell};
 
 use serde_json::{json, Value};
 
 use crate::config::StationConfig;
 use crate::journal::{
-    Completion, Entry, Item, Journal, JournalError, Key, QuoteRecord, Replacement, Submission,
+    Admission, Completion, Entry, Item, Journal, JournalError, Key, LiabilityRelease, QuoteRecord, Replacement, Submission,
 };
 use crate::price::{PriceError, PriceSource};
 use crate::quote::{address_word, keccak, word, Address, Word};
 use crate::rpc::{bytes, hex, quantity, read, JsonRpc, RpcFault};
-use crate::signer::QuoteSigner;
+use crate::signer::{QuoteSigner, SignerError};
 use crate::tx::{self, Authorization, Call, Fees, TransactionRequest, TxError};
 use crate::{QuoteError, QuoteRequest, SignedQuote, Station};
 
@@ -25,6 +26,7 @@ pub enum StationError {
     Conflict,
     IncompatibleDelegation,
     ReplayStateUnavailable,
+    SigningUnknown,
 }
 impl std::fmt::Display for StationError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -74,12 +76,37 @@ pub struct SubmitRequest {
     pub authorizations: Vec<Authorization>,
     pub account_signature: [u8; 65],
 }
+#[derive(Clone, Copy)]
+enum SigningKind { Submission, Replacement(Fees) }
+struct IntentSigner<'a, S> {
+    signer: &'a S,
+    journal: RefCell<&'a mut Journal>,
+    key: Key,
+    nonce: u64,
+    kind: SigningKind,
+    error: Cell<Option<JournalError>>,
+}
+impl<S: QuoteSigner> QuoteSigner for IntentSigner<'_, S> {
+    fn address(&self) -> Address { self.signer.address() }
+    fn sign_digest(&self, digest: Word) -> Result<[u8; 65], SignerError> {
+        let entry = match self.kind {
+            SigningKind::Submission => Entry::SigningIntent { key: self.key, nonce: self.nonce, digest },
+            SigningKind::Replacement(fees) => Entry::ReplacementSigningIntent { key: self.key, nonce: self.nonce, fees, digest },
+        };
+        if let Err(error) = self.journal.borrow_mut().append(&entry) {
+            self.error.set(Some(error));
+            return Err(SignerError::Signing);
+        }
+        self.signer.sign_digest(digest)
+    }
+}
 pub struct GasStation<S, R, P> {
     station: Station<S>,
     rpc: R,
     prices: P,
     journal: Journal,
     recovery_cursor: Option<(u64, Key)>,
+    liability_cursor: Option<Key>,
 }
 impl<S: QuoteSigner, R: JsonRpc, P: PriceSource> GasStation<S, R, P> {
     /// # Errors
@@ -117,29 +144,139 @@ impl<S: QuoteSigner, R: JsonRpc, P: PriceSource> GasStation<S, R, P> {
             {
                 return Err(StationError::Conflict);
             }
+            if journal.state().admissions.values().any(|(admission, key)|
+                *key == quote.key && admission.interval != quote.issued_at / station.config.interval_seconds) {
+                return Err(StationError::Conflict);
+            }
             station
                 .policy
-                .reserve(
-                    quote.account,
-                    amount(quote.amount)?,
-                    amount(quote.gas_cost)?,
-                    u128::MAX,
-                    quote.issued_at,
-                )
+                .restore_usage(quote.account, amount(quote.amount)?, amount(quote.gas_cost)?, quote.issued_at)
                 .map_err(|e| StationError::Quote(QuoteError::Policy(e)))?;
         }
+        station.policy.reconcile(journal.state().active_pax()?, journal.state().finalized_spend()?);
         Ok(Self {
             station,
             rpc,
             prices,
             journal,
             recovery_cursor: None,
+            liability_cursor: None,
         })
     }
     #[must_use]
     pub const fn journal(&self) -> &Journal {
         &self.journal
     }
+    pub fn chain_time(&self) -> Result<u64, StationError> {
+        let block = self.rpc.call("eth_getBlockByNumber", json!(["latest", false]))?;
+        u64::try_from(field_quantity(&block, "timestamp")?).map_err(|_| RpcFault::Malformed.into())
+    }
+
+    fn reconcile_policy(&mut self) -> Result<(), StationError> {
+        self.station.policy.reconcile(self.journal.state().active_pax()?, self.journal.state().finalized_spend()?);
+        Ok(())
+    }
+
+    fn sponsor_floor(&self, additional: u128) -> Result<(), StationError> {
+        let balance: String = read(&self.rpc, "eth_getBalance", json!([hex(&self.station.signer.address()), "pending"]))?;
+        self.station.policy.ensure_balance(quantity(&balance)?, additional)
+            .map_err(|error| StationError::Quote(QuoteError::Policy(error)))
+    }
+
+    fn release_settled(&mut self, key: Key) -> Result<(), StationError> {
+        if self.journal.state().liability_releases.contains_key(&key) { return Ok(()); }
+        let completion = self.journal.state().items.get(&key).and_then(|item| item.completion);
+        let hash = match completion {
+            Some(Completion::Included { hash, .. } | Completion::Reverted { hash } | Completion::Cancelled { hash, .. }) => hash,
+            _ => return Ok(()),
+        };
+        if !self.journal.state().receipts.contains_key(&hash) {
+            if !matches!(self.receipt(key, &hash)?, Receipt::Final(_)) { return Ok(()); }
+        }
+        self.journal.append(&Entry::LiabilityReleased { key, proof: LiabilityRelease::Settled { hash } })?;
+        self.reconcile_policy()
+    }
+
+    fn release_consumed(&mut self, key: Key) -> Result<(), StationError> {
+        let state = self.journal.state();
+        if state.liability_releases.contains_key(&key) || !state.tracked_quotes.contains(&key)
+            || state.signing_intents.contains_key(&key) || state.replacement_intents.contains_key(&key) { return Ok(()); }
+        let item = state.items.get(&key).ok_or(StationError::Missing)?;
+        if item.submission.is_some() || item.replacement.is_some() || item.completion != Some(Completion::Consumed) { return Ok(()); }
+        let quote = item.quote.clone().ok_or(StationError::Missing)?;
+        let finalized = self.rpc.call("eth_getBlockByNumber", json!(["finalized", false]))?;
+        let height = field_quantity(&finalized, "number")?;
+        let canonical = self.rpc.call("eth_getBlockByNumber", json!([format!("0x{height:x}"), false]))?;
+        let block = json!({"blockHash":finalized["hash"],"requireCanonical":true});
+        let code: String = read(&self.rpc, "eth_getCode", json!([hex(&quote.account), block]))?;
+        let data = [keccak(b"usedQuoteNonces(address,uint256)")[..4].to_vec(),
+            address_word(key.sponsor).to_vec(), key.quote_nonce.to_vec()].concat();
+        let (params, result) = self.replay_observation(quote.account, &data, &block)?;
+        if bytes(result.as_str().ok_or(RpcFault::Malformed)?)? != word(1) { return Err(RpcFault::Divergence.into()); }
+        let current = self.rpc.call("eth_getBlockByNumber", json!(["finalized", false]))?;
+        let checked = self.rpc.call("eth_getBlockByNumber", json!([format!("0x{height:x}"), false]))?;
+        if field_quantity(&current, "number")? < height || checked != canonical { return Err(RpcFault::Divergence.into()); }
+        self.journal.append(&Entry::LiabilityReleased { key, proof: LiabilityRelease::Consumed {
+            chain_id: quote.chain_id, account: quote.account, paymaster: quote.paymaster, quote_nonce: key.quote_nonce,
+            canonical, finalized, code, params, result } })?;
+        self.reconcile_policy()
+    }
+
+    fn reconcile_liabilities(&mut self, deadline: Instant) -> Result<(), StationError> {
+        let mut keys: Vec<_> = self.journal.state().items.iter().filter(|(key, item)|
+            item.quote.is_some() && !self.journal.state().liability_releases.contains_key(key)
+                && (item.submission.is_none() || item.completion.is_some())).map(|(key, _)| *key).collect();
+        if let Some(cursor) = self.liability_cursor {
+            let offset = keys.partition_point(|key| *key <= cursor); keys.rotate_left(offset);
+        }
+        let mut expiry = None;
+        for key in keys.into_iter().take(64) {
+            if Instant::now() >= deadline { break; }
+            self.rpc.set_deadline(Some(deadline))?;
+            let result = (|| {
+                let item = self.journal.state().items[&key].clone();
+                if item.submission.is_some() { return self.release_settled(key); }
+                if self.journal.state().signing_intents.contains_key(&key) || !self.journal.state().tracked_quotes.contains(&key) { return Ok(()); }
+                if item.completion == Some(Completion::Consumed) { return self.release_consumed(key); }
+                let quote = item.quote.ok_or(StationError::Missing)?;
+                if expiry.is_none() {
+                    let finalized = self.rpc.call("eth_getBlockByNumber", json!(["finalized", false]))?;
+                    let height = field_quantity(&finalized, "number")?;
+                    let canonical = self.rpc.call("eth_getBlockByNumber", json!([format!("0x{height:x}"), false]))?;
+                    expiry = Some((canonical, finalized));
+                }
+                let (canonical, finalized) = expiry.as_ref().ok_or(StationError::Missing)?;
+                if field_quantity(finalized, "timestamp")? > u128::from(quote.deadline) {
+                    self.journal.append(&Entry::LiabilityReleased { key, proof: LiabilityRelease::Expired {
+                        canonical: canonical.clone(), finalized: finalized.clone() } })?;
+                    self.reconcile_policy()?;
+                }
+                Ok(())
+            })();
+            self.rpc.set_deadline(None)?;
+            result?;
+            self.liability_cursor = Some(key);
+        }
+        Ok(())
+    }
+
+    pub fn admission(&self, identity: Word, digest: Word, account: Address, interval: u64)
+        -> Result<Option<Key>, StationError> {
+        if let Some((saved, key)) = self.journal.state().admissions.get(&identity) {
+            if saved.request_digest != digest { return Err(StationError::Conflict); }
+            return Ok(Some(*key));
+        }
+        let mut total = 0usize; let mut account_total = 0usize; let mut active = 0usize;
+        for (key, item) in &self.journal.state().items {
+            if item.quote.is_some() && !self.journal.state().liability_releases.contains_key(key) { active += 1; }
+            if item.quote.as_ref().is_some_and(|quote| quote.issued_at / self.station.config.interval_seconds == interval) {
+                total += 1; if item.account == account { account_total += 1; }
+            }
+        }
+        if total >= 128 || account_total >= 4 || active >= 1024 { return Err(StationError::Conflict); }
+        Ok(None)
+    }
+
     fn anchored_block(&self, tag: &str) -> Result<Value, StationError> {
         let block = self.rpc.call("eth_getBlockByNumber", json!([tag, false]))?;
         let hash = block["hash"].as_str().ok_or(RpcFault::Malformed)?;
@@ -161,6 +298,10 @@ impl<S: QuoteSigner, R: JsonRpc, P: PriceSource> GasStation<S, R, P> {
         Err(StationError::IncompatibleDelegation)
     }
     fn replay_word(&self, account: Address, data: &[u8], block: &Value) -> Result<Word, StationError> {
+        let (_, value) = self.replay_observation(account, data, block)?;
+        bytes(value.as_str().ok_or(RpcFault::Malformed)?)?.try_into().map_err(|_| StationError::ReplayStateUnavailable)
+    }
+    fn replay_observation(&self, account: Address, data: &[u8], block: &Value) -> Result<(Value, Value), StationError> {
         let request = json!({"to":hex(&account), "data":hex(data)});
         let params = match self.account_code(account, block)? {
             AccountCode::Delegated => json!([request, block]),
@@ -179,12 +320,13 @@ impl<S: QuoteSigner, R: JsonRpc, P: PriceSource> GasStation<S, R, P> {
                 json!([request, block, Value::Object(overrides)])
             }
         };
-        let encoded: String = read(&self.rpc, "eth_call", params).map_err(|error| match error {
+        let result = self.rpc.call("eth_call", params.clone()).map_err(|error| match error {
             RpcFault::Rejected { .. } => StationError::ReplayStateUnavailable,
             other => StationError::Rpc(other),
         })?;
-        if encoded.len() != 66 { return Err(StationError::ReplayStateUnavailable); }
-        bytes(&encoded)?.try_into().map_err(|_| StationError::ReplayStateUnavailable)
+        let encoded = result.as_str().ok_or(StationError::ReplayStateUnavailable)?;
+        if encoded.len() != 66 || bytes(encoded)?.len() != 32 { return Err(StationError::ReplayStateUnavailable); }
+        Ok((params, result))
     }
     pub fn batch_nonce(&self, account: Address) -> Result<Word, StationError> {
         let block = self.anchored_block("latest")?;
@@ -255,8 +397,23 @@ impl<S: QuoteSigner, R: JsonRpc, P: PriceSource> GasStation<S, R, P> {
         quote: &QuoteRecord,
     ) -> Result<(), StationError> {
         let fees = quote.fees.replacement()?;
-        let signed =
-            tx::sign_cancellation(quote.chain_id, submission.nonce, fees, &self.station.signer)?;
+        let prior = self.journal.state().liability(key)?;
+        let extra = fees.gas_cost()?.saturating_sub(prior);
+        self.sponsor_floor(extra)?;
+        if self.journal.state().replacement_intents.contains_key(&key) { return Err(StationError::SigningUnknown); }
+        let (signed, journal_error) = {
+            let signer = IntentSigner { signer: &self.station.signer, journal: RefCell::new(&mut self.journal),
+                key, nonce: submission.nonce, kind: SigningKind::Replacement(fees), error: Cell::new(None) };
+            let signed = tx::sign_cancellation(quote.chain_id, submission.nonce, fees, &signer);
+            (signed, signer.error.get())
+        };
+        if let Some(error) = journal_error { return Err(error.into()); }
+        self.reconcile_policy()?;
+        let signed = match signed {
+            Ok(value) => value,
+            Err(_) if self.journal.state().replacement_intents.contains_key(&key) => return Err(StationError::SigningUnknown),
+            Err(error) => return Err(error.into()),
+        };
         let replacement = Replacement {
             nonce: submission.nonce,
             fees,
@@ -267,9 +424,11 @@ impl<S: QuoteSigner, R: JsonRpc, P: PriceSource> GasStation<S, R, P> {
             key,
             replacement: replacement.clone(),
         })?;
+        self.reconcile_policy()?;
         self.send_replacement(&replacement)
     }
     fn send_replacement(&self, replacement: &Replacement) -> Result<(), StationError> {
+        self.sponsor_floor(0)?;
         if replacement.raw.first() != Some(&2) || keccak(&replacement.raw) != replacement.hash {
             return Err(RpcFault::Malformed.into());
         }
@@ -299,6 +458,8 @@ impl<S: QuoteSigner, R: JsonRpc, P: PriceSource> GasStation<S, R, P> {
             account,
             completion,
         })?;
+        self.release_settled(key)?;
+        if completion == Completion::Consumed { self.release_consumed(key)?; }
         Ok(Progress::Completed(completion))
     }
     /// # Errors
@@ -309,10 +470,24 @@ impl<S: QuoteSigner, R: JsonRpc, P: PriceSource> GasStation<S, R, P> {
         fees: Fees,
         now: u64,
     ) -> Result<QuoteOutcome, StationError> {
+        self.quote_admitted(request, fees, now, None)
+    }
+
+    pub fn quote_admitted(&mut self, request: &QuoteRequest, fees: Fees, now: u64, admission: Option<Admission>)
+        -> Result<QuoteOutcome, StationError> {
+        self.reconcile_liabilities(Instant::now() + Duration::from_secs(2))?;
         let key = Key {
             sponsor: self.station.signer.address(),
             quote_nonce: request.quote_nonce,
         };
+        if let Some(admission) = admission {
+            if admission.interval != now / self.station.config.interval_seconds
+                || admission.identity != Admission::identity(request.account, admission.batch_nonce, admission.interval) {
+                return Err(StationError::Invalid);
+            }
+            if self.admission(admission.identity, admission.request_digest, request.account, admission.interval)?
+                .is_some_and(|saved| saved != key) { return Err(StationError::Conflict); }
+        }
         if let Some(item) = self.journal.state().items.get(&key) {
             if item.account != request.account {
                 return Err(StationError::Conflict);
@@ -343,12 +518,12 @@ impl<S: QuoteSigner, R: JsonRpc, P: PriceSource> GasStation<S, R, P> {
             json!([hex(&key.sponsor), "pending"]),
         )?;
         let rate = self.prices.governed_rate().map_err(StationError::Price)?;
+        let policy = self.station.policy.clone();
         let signed = self
             .station
             .quote(request, &rate, quantity(&balance)?, now)
             .map_err(StationError::Quote)?;
-        self.journal.append(&Entry::Quoted {
-            quote: Box::new(QuoteRecord {
+        let record = Box::new(QuoteRecord {
                 key,
                 chain_id: self.station.config.chain_id,
                 paymaster: self.station.config.paymaster,
@@ -361,13 +536,28 @@ impl<S: QuoteSigner, R: JsonRpc, P: PriceSource> GasStation<S, R, P> {
                 issued_at: now,
                 signature: signed.signature.to_vec(),
                 fees,
-            }),
-        })?;
+            });
+        let entry = match admission {
+            Some(admission) => Entry::QuoteAdmitted { quote: record, admission },
+            None => Entry::QuoteReserved { quote: record },
+        };
+        if let Err(error) = self.journal.append(&entry) {
+            self.station.policy = policy;
+            return Err(error.into());
+        }
+        self.reconcile_policy()?;
         Ok(QuoteOutcome::Signed(signed))
     }
     /// # Errors
     /// Refuses account signatures, authorizations, expired quotes or conflicting journal state.
     pub fn submit(&mut self, request: &SubmitRequest, now: u64) -> Result<Progress, StationError> {
+        if self.journal.state().signing_intents.contains_key(&request.key)
+            && self.journal.state().items.get(&request.key).is_some_and(|item| item.submission.is_none()) {
+            return Err(StationError::SigningUnknown);
+        }
+        if self.journal.state().liability_releases.get(&request.key).is_some_and(|proof| matches!(proof, LiabilityRelease::Expired { .. })) {
+            return Err(StationError::Invalid);
+        }
         if request.key.sponsor != self.station.signer.address() {
             return Err(StationError::Invalid);
         }
@@ -414,7 +604,12 @@ impl<S: QuoteSigner, R: JsonRpc, P: PriceSource> GasStation<S, R, P> {
         while self.journal.state().holds(request.key.sponsor, nonce) {
             nonce = nonce.checked_add(1).ok_or(StationError::Invalid)?;
         }
-        let transaction = tx::sign(
+        self.sponsor_floor(0)?;
+        if !self.journal.state().tracked_quotes.contains(&request.key) { return Err(StationError::Conflict); }
+        let (transaction, journal_error) = {
+            let signer = IntentSigner { signer: &self.station.signer, journal: RefCell::new(&mut self.journal),
+                key: request.key, nonce, kind: SigningKind::Submission, error: Cell::new(None) };
+            let transaction = tx::sign(
             &TransactionRequest {
                 chain_id: quote.chain_id,
                 account: request.account,
@@ -427,8 +622,16 @@ impl<S: QuoteSigner, R: JsonRpc, P: PriceSource> GasStation<S, R, P> {
                 quote: &signed,
                 account_signature: &request.account_signature,
             },
-            &self.station.signer,
-        )?;
+            &signer,
+        );
+            (transaction, signer.error.get())
+        };
+        if let Some(error) = journal_error { return Err(error.into()); }
+        let transaction = match transaction {
+            Ok(transaction) => transaction,
+            Err(_) if self.journal.state().signing_intents.contains_key(&request.key) => return Err(StationError::SigningUnknown),
+            Err(error) => return Err(error.into()),
+        };
         let submission = Submission {
             nonce,
             hash: transaction.hash,
@@ -445,6 +648,7 @@ impl<S: QuoteSigner, R: JsonRpc, P: PriceSource> GasStation<S, R, P> {
     }
 
     fn broadcast(&self, key: Key) -> Result<Progress, StationError> {
+        self.sponsor_floor(0)?;
         let submission = self
             .journal
             .state()
@@ -486,6 +690,7 @@ impl<S: QuoteSigner, R: JsonRpc, P: PriceSource> GasStation<S, R, P> {
             return Ok(Progress::Completed(done));
         }
         let Some(submission) = item.submission else {
+            if self.journal.state().signing_intents.contains_key(&key) { return Err(StationError::SigningUnknown); }
             return Ok(Progress::Pending);
         };
         let quote = item.quote.as_ref().ok_or(StationError::Missing)?;
@@ -497,6 +702,7 @@ impl<S: QuoteSigner, R: JsonRpc, P: PriceSource> GasStation<S, R, P> {
             Receipt::Unfinalized => return Ok(Progress::Pending),
             Receipt::Absent => (),
         }
+        if item.replacement.is_none() && self.journal.state().replacement_intents.contains_key(&key) { return Err(StationError::SigningUnknown); }
         if let Some(replacement) = &item.replacement {
             return match self.receipt(key, &replacement.hash)? {
                 Receipt::Final(receipt) => {
@@ -506,6 +712,7 @@ impl<S: QuoteSigner, R: JsonRpc, P: PriceSource> GasStation<S, R, P> {
                         hash: replacement.hash,
                         block_number,
                     })?;
+                    self.release_settled(key)?;
                     Ok(Progress::Completed(Completion::Cancelled {
                         hash: replacement.hash,
                         block_number,
@@ -546,8 +753,8 @@ impl<S: QuoteSigner, R: JsonRpc, P: PriceSource> GasStation<S, R, P> {
             .state()
             .items
             .iter()
-            .filter(|(_, item)| item.completion.is_none() && item.submission.is_some())
-            .map(|(key, item)| (item.submission.as_ref().map_or(0, |s| s.nonce), *key))
+            .filter(|(key, item)| item.completion.is_none() && (item.submission.is_some() || self.journal.state().signing_intents.contains_key(key)))
+            .map(|(key, item)| (item.submission.as_ref().map_or_else(|| self.journal.state().signing_intents.get(key).copied().unwrap_or(0), |s| s.nonce), *key))
             .collect();
         keys.sort_unstable();
         keys.into_iter().map(|(_, key)| key).collect()
@@ -562,8 +769,14 @@ impl<S: QuoteSigner, R: JsonRpc, P: PriceSource> GasStation<S, R, P> {
     pub fn recover(&mut self, now: u64, budget: Duration) -> Result<Recovery, StationError> {
         let deadline = Instant::now().checked_add(budget).ok_or(StationError::Invalid)?;
         let mut recovery = Recovery::default();
+        match self.reconcile_liabilities(deadline) {
+            Ok(()) => (),
+            Err(StationError::Rpc(RpcFault::Unavailable | RpcFault::RateLimited)) => recovery.liability_unreachable = true,
+            Err(error) => return Err(error),
+        }
         let mut keys: Vec<_> = self.unresolved().into_iter().map(|key| {
-            (self.journal.state().items[&key].submission.as_ref().map_or(0, |s| s.nonce), key)
+            (self.journal.state().items[&key].submission.as_ref().map_or_else(
+                || self.journal.state().signing_intents.get(&key).copied().unwrap_or(0), |s| s.nonce), key)
         }).collect();
         if let Some(cursor) = self.recovery_cursor {
             let offset = keys.partition_point(|key| *key <= cursor);
@@ -583,6 +796,9 @@ impl<S: QuoteSigner, R: JsonRpc, P: PriceSource> GasStation<S, R, P> {
                 Ok(Progress::Pending) => recovery.pending += 1,
                 Err(StationError::Rpc(RpcFault::Unavailable | RpcFault::RateLimited)) => {
                     recovery.unreachable += 1;
+                }
+                Err(StationError::SigningUnknown | StationError::Quote(QuoteError::Policy(crate::policy::PolicyRefusal::BalanceFloor))) => {
+                    recovery.deferred += 1;
                 }
                 Err(error) => return Err(error),
             }
@@ -620,6 +836,8 @@ impl<S: QuoteSigner, R: JsonRpc, P: PriceSource> GasStation<S, R, P> {
         relayer_signature: &[u8; 65],
     ) -> Result<Status, StationError> {
         let item = self.authenticated(key, account, relayer_signature)?;
+        if item.completion.is_none() && ((item.submission.is_none() && self.journal.state().signing_intents.contains_key(&key))
+            || (item.replacement.is_none() && self.journal.state().replacement_intents.contains_key(&key))) { return Err(StationError::SigningUnknown); }
         let deadline = item.quote.as_ref().map_or(0, |q| q.deadline);
         Ok(Status {
             deadline,
@@ -646,7 +864,7 @@ impl<S: QuoteSigner, R: JsonRpc, P: PriceSource> GasStation<S, R, P> {
             return Ok(Progress::Completed(done));
         }
         if item.submission.is_none() {
-            return Err(StationError::Invalid);
+            return Err(if self.journal.state().signing_intents.contains_key(&key) { StationError::SigningUnknown } else { StationError::Invalid });
         }
         self.rpc.set_deadline(Some(Instant::now() + Duration::from_secs(20)))?;
         let result = self.resume_inner(key, now);
@@ -658,6 +876,7 @@ impl<S: QuoteSigner, R: JsonRpc, P: PriceSource> GasStation<S, R, P> {
 /// unanswered by the nodes and deferred to the next pass by its time budget.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct Recovery {
+    pub liability_unreachable: bool,
     pub completed: usize,
     pub pending: usize,
     pub unreachable: usize,

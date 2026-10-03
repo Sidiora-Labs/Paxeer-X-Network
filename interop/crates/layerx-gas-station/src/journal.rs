@@ -1,7 +1,8 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs::{File, OpenOptions};
 use std::io::{BufRead as _, BufReader, Write as _};
 use std::path::Path;
+use std::os::unix::fs::OpenOptionsExt as _;
 
 use serde::{Deserialize, Serialize};
 
@@ -115,8 +116,38 @@ pub enum Completion {
     },
 }
 #[derive(Clone, Debug, Deserialize, Serialize, Eq, PartialEq)]
+#[serde(tag = "reason", rename_all = "snake_case", deny_unknown_fields)]
+pub enum LiabilityRelease {
+    Expired { canonical: serde_json::Value, finalized: serde_json::Value },
+    Settled { hash: Word },
+    Consumed {
+        chain_id: u64, account: Address, paymaster: Address, quote_nonce: Word,
+        canonical: serde_json::Value, finalized: serde_json::Value,
+        code: String, params: serde_json::Value, result: serde_json::Value,
+    },
+}
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, Eq, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct Admission {
+    pub identity: Word,
+    pub request_digest: Word,
+    pub batch_nonce: Word,
+    pub interval: u64,
+}
+impl Admission {
+    #[must_use]
+    pub fn identity(account: Address, nonce: Word, interval: u64) -> Word {
+        keccak(&[b"paxeer-gas-admission-v1".as_slice(), &account, &nonce, &interval.to_be_bytes()].concat())
+    }
+}
+#[derive(Clone, Debug, Deserialize, Serialize, Eq, PartialEq)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Entry {
+    QuoteReserved { quote: Box<QuoteRecord> },
+    SigningIntent { key: Key, nonce: u64, digest: Word },
+    ReplacementSigningIntent { key: Key, nonce: u64, fees: Fees, digest: Word },
+    QuoteAdmitted { quote: Box<QuoteRecord>, admission: Admission },
+    LiabilityReleased { key: Key, proof: LiabilityRelease },
     Quoted {
         quote: Box<QuoteRecord>,
     },
@@ -197,6 +228,11 @@ pub struct State {
     pub items: BTreeMap<Key, Item>,
     pub receipts: BTreeMap<Word, serde_json::Value>,
     pub publications: BTreeMap<Word, (Publication, Option<Settlement>)>,
+    pub admissions: BTreeMap<Word, (Admission, Key)>,
+    pub tracked_quotes: BTreeSet<Key>,
+    pub signing_intents: BTreeMap<Key, u64>,
+    pub replacement_intents: BTreeMap<Key, Fees>,
+    pub liability_releases: BTreeMap<Key, LiabilityRelease>,
 }
 impl State {
     /// The gas the rate publisher spent or reserved on the chain day `day`
@@ -250,12 +286,132 @@ impl State {
     pub fn holds(&self, sponsor: Address, nonce: u64) -> bool {
         self.items.iter().any(|(key, item)| {
             key.sponsor == sponsor
-                && (item.submission.as_ref().is_some_and(|s| s.nonce == nonce)
+                && (self.signing_intents.get(key).is_some_and(|saved| *saved == nonce)
+                    || item.submission.as_ref().is_some_and(|s| s.nonce == nonce)
                     || item.replacement.as_ref().is_some_and(|r| r.nonce == nonce))
         })
     }
+    pub fn liability(&self, key: Key) -> Result<u128, JournalError> {
+        if self.liability_releases.contains_key(&key) { return Ok(0); }
+        let item = self.items.get(&key).ok_or(JournalError::Conflict)?;
+        let Some(quote) = &item.quote else { return Ok(0); };
+        let original = quote.fees.gas_cost().map_err(|_| JournalError::Corrupt)?;
+        let replacement = item.replacement.as_ref().map(|value| value.fees.gas_cost())
+            .transpose().map_err(|_| JournalError::Corrupt)?.unwrap_or(0);
+        let intended = self.replacement_intents.get(&key).map(|fees| fees.gas_cost()).transpose()
+            .map_err(|_| JournalError::Corrupt)?.unwrap_or(0);
+        Ok(original.max(replacement).max(intended))
+    }
+
+    pub fn active_pax(&self) -> Result<u128, JournalError> {
+        self.items.keys().try_fold(0u128, |sum, key| sum.checked_add(self.liability(*key)?)
+            .ok_or(JournalError::Corrupt))
+    }
+
+    pub fn finalized_spend(&self) -> Result<u128, JournalError> {
+        self.liability_releases.iter().try_fold(0u128, |sum, (key, proof)| {
+            let spent = match proof {
+                LiabilityRelease::Expired { .. } | LiabilityRelease::Consumed { .. } => 0,
+                LiabilityRelease::Settled { hash } => self.settlement_cost(*key, *hash)?,
+            };
+            sum.checked_add(spent).ok_or(JournalError::Corrupt)
+        })
+    }
+
+    fn settlement_cost(&self, key: Key, hash: Word) -> Result<u128, JournalError> {
+        let item = self.items.get(&key).ok_or(JournalError::Conflict)?;
+        let quote = item.quote.as_ref().ok_or(JournalError::Conflict)?;
+        let receipt = self.receipts.get(&hash).ok_or(JournalError::Conflict)?;
+        let (fees, status, recipient) = match item.completion {
+            Some(Completion::Included { hash: saved, .. }) if saved == hash => (quote.fees, 1, quote.account),
+            Some(Completion::Reverted { hash: saved }) if saved == hash => (quote.fees, 0, quote.account),
+            Some(Completion::Cancelled { hash: saved, .. }) if saved == hash =>
+                (item.replacement.as_ref().ok_or(JournalError::Conflict)?.fees, 1, key.sponsor),
+            _ => return Err(JournalError::Conflict),
+        };
+        let number = |name: &str| crate::rpc::quantity(receipt[name].as_str().ok_or(JournalError::Corrupt)?)
+            .map_err(|_| JournalError::Corrupt);
+        let gas = number("gasUsed")?; let price = number("effectiveGasPrice")?;
+        if receipt["transactionHash"] != crate::rpc::hex(&hash)
+            || receipt["from"] != crate::rpc::hex(&key.sponsor)
+            || receipt["to"] != crate::rpc::hex(&recipient)
+            || number("status")? != status || gas == 0 || gas > u128::from(fees.gas_limit)
+            || price > fees.max_fee_per_gas { return Err(JournalError::Corrupt); }
+        let spent = gas.checked_mul(price).ok_or(JournalError::Corrupt)?;
+        if let Some(Completion::Included { pax_spent, .. }) = item.completion {
+            if pax_spent != word(spent) { return Err(JournalError::Corrupt); }
+        }
+        Ok(spent)
+    }
+
     fn apply(&mut self, entry: &Entry) -> Result<(), JournalError> {
         match entry {
+            Entry::QuoteReserved { quote } => {
+                self.apply(&Entry::Quoted { quote: quote.clone() })?;
+                self.tracked_quotes.insert(quote.key);
+            }
+            Entry::SigningIntent { key, nonce, digest } => {
+                let item = self.items.get(key).ok_or(JournalError::Conflict)?;
+                if *digest == [0; 32] || !self.tracked_quotes.contains(key) || self.signing_intents.contains_key(key)
+                    || self.liability_releases.contains_key(key) || item.completion.is_some()
+                    || item.submission.is_some() || self.holds(key.sponsor, *nonce) {
+                    return Err(JournalError::Conflict);
+                }
+                self.signing_intents.insert(*key, *nonce);
+            }
+            Entry::ReplacementSigningIntent { key, nonce, fees, digest } => {
+                let item = self.items.get(key).ok_or(JournalError::Conflict)?;
+                if *digest == [0; 32] || self.replacement_intents.contains_key(key)
+                    || self.liability_releases.contains_key(key) || item.completion.is_some()
+                    || item.replacement.is_some() || item.submission.as_ref().is_none_or(|value| value.nonce != *nonce)
+                    || !fees.replaces(item.quote.as_ref().ok_or(JournalError::Conflict)?.fees).map_err(|_| JournalError::Corrupt)? {
+                    return Err(JournalError::Conflict);
+                }
+                self.replacement_intents.insert(*key, *fees);
+            }
+            Entry::QuoteAdmitted { quote, admission } => {
+                if admission.identity != Admission::identity(quote.account, admission.batch_nonce, admission.interval)
+                    || admission.request_digest == [0; 32]
+                    || self.admissions.contains_key(&admission.identity) { return Err(JournalError::Conflict); }
+                self.apply(&Entry::Quoted { quote: quote.clone() })?;
+                self.admissions.insert(admission.identity, (*admission, quote.key));
+                self.tracked_quotes.insert(quote.key);
+            }
+            Entry::LiabilityReleased { key, proof } => {
+                if self.liability_releases.contains_key(key) { return Err(JournalError::Conflict); }
+                let item = self.items.get(key).ok_or(JournalError::Conflict)?;
+                let quote = item.quote.as_ref().ok_or(JournalError::Conflict)?;
+                match proof {
+                    LiabilityRelease::Settled { hash } => { self.settlement_cost(*key, *hash)?; }
+                    LiabilityRelease::Consumed { chain_id, account, paymaster, quote_nonce, canonical, finalized, code, params, result } => {
+                        if !self.tracked_quotes.contains(key) || self.signing_intents.contains_key(key)
+                            || self.replacement_intents.contains_key(key) || item.submission.is_some() || item.replacement.is_some()
+                            || item.completion != Some(Completion::Consumed)
+                            || *chain_id != quote.chain_id || *account != quote.account
+                            || *paymaster != quote.paymaster || *quote_nonce != key.quote_nonce {
+                            return Err(JournalError::Conflict);
+                        }
+                        validate_consumed_proof(key, quote, canonical, finalized, code, params, result)?;
+                    }
+                    LiabilityRelease::Expired { canonical, finalized } => {
+                        let number = |value: &serde_json::Value, field: &str| crate::rpc::quantity(
+                            value[field].as_str().ok_or(JournalError::Corrupt)?)
+                            .map_err(|_| JournalError::Corrupt);
+                        let hash = crate::rpc::bytes(finalized["hash"].as_str().ok_or(JournalError::Corrupt)?)
+                            .map_err(|_| JournalError::Corrupt)?;
+                        if !self.tracked_quotes.contains(key) || self.signing_intents.contains_key(key)
+                            || self.replacement_intents.contains_key(key) || item.submission.is_some() || item.replacement.is_some()
+                            || hash.len() != 32 || hash.iter().all(|byte| *byte == 0)
+                            || canonical["hash"] != finalized["hash"]
+                            || number(canonical, "number")? != number(finalized, "number")?
+                            || number(canonical, "timestamp")? != number(finalized, "timestamp")?
+                            || number(finalized, "timestamp")? <= u128::from(quote.deadline) {
+                            return Err(JournalError::Conflict);
+                        }
+                    }
+                }
+                self.liability_releases.insert(*key, proof.clone());
+            }
             Entry::Quoted { quote } => {
                 quote.signed_quote()?;
                 if self.items.contains_key(&quote.key) {
@@ -273,11 +429,17 @@ impl State {
                 );
             }
             Entry::Prepared { key, submission } => {
+                if self.liability_releases.contains_key(key) { return Err(JournalError::Conflict); }
                 if submission.raw.first() != Some(&4) || keccak(&submission.raw) != submission.hash
                 {
                     return Err(JournalError::Corrupt);
                 }
-                if self.holds(key.sponsor, submission.nonce) {
+                if self.signing_intents.get(key).is_some_and(|nonce| *nonce != submission.nonce)
+                    || (self.tracked_quotes.contains(key) && !self.signing_intents.contains_key(key))
+                    || self.items.keys().any(|other| other != key && other.sponsor == key.sponsor
+                        && (self.signing_intents.get(other).is_some_and(|nonce| *nonce == submission.nonce)
+                            || self.items[other].submission.as_ref().is_some_and(|saved| saved.nonce == submission.nonce)
+                            || self.items[other].replacement.as_ref().is_some_and(|saved| saved.nonce == submission.nonce))) {
                     return Err(JournalError::Conflict);
                 }
                 let item = self.items.get_mut(key).ok_or(JournalError::Conflict)?;
@@ -328,6 +490,7 @@ impl State {
             }
             Entry::Released { .. } => return Err(JournalError::Conflict),
             Entry::Replaced { key, replacement } => {
+                if self.liability_releases.contains_key(key) { return Err(JournalError::Conflict); }
                 if replacement.raw.first() != Some(&2)
                     || keccak(&replacement.raw) != replacement.hash
                 {
@@ -336,6 +499,8 @@ impl State {
                 let item = self.items.get_mut(key).ok_or(JournalError::Conflict)?;
                 if item.completion.is_some()
                     || item.replacement.is_some()
+                    || self.replacement_intents.get(key).is_some_and(|fees| *fees != replacement.fees)
+                    || (self.tracked_quotes.contains(key) && !self.replacement_intents.contains_key(key))
                     || item
                         .submission
                         .as_ref()
@@ -414,6 +579,42 @@ impl State {
         Ok(())
     }
 }
+fn validate_consumed_proof(key: &Key, quote: &QuoteRecord, canonical: &serde_json::Value,
+    finalized: &serde_json::Value, code: &str, params: &serde_json::Value, result: &serde_json::Value)
+    -> Result<(), JournalError> {
+    use crate::rpc::{bytes, hex, quantity};
+    let number = |value: &serde_json::Value, field: &str| quantity(value[field].as_str().ok_or(JournalError::Corrupt)?)
+        .map_err(|_| JournalError::Corrupt);
+    let hash = bytes(finalized["hash"].as_str().ok_or(JournalError::Corrupt)?).map_err(|_| JournalError::Corrupt)?;
+    if hash.len() != 32 || hash.iter().all(|byte| *byte == 0)
+        || canonical["hash"] != finalized["hash"] || number(canonical, "number")? != number(finalized, "number")?
+        || number(canonical, "timestamp")? != number(finalized, "timestamp")? {
+        return Err(JournalError::Corrupt);
+    }
+    let data = [keccak(b"usedQuoteNonces(address,uint256)")[..4].to_vec(),
+        crate::quote::address_word(key.sponsor).to_vec(), key.quote_nonce.to_vec()].concat();
+    let params = params.as_array().ok_or(JournalError::Corrupt)?;
+    if !(2..=3).contains(&params.len())
+        || params[0] != serde_json::json!({"to":hex(&quote.account),"data":hex(&data)})
+        || params[1] != serde_json::json!({"blockHash":finalized["hash"],"requireCanonical":true})
+        || bytes(result.as_str().ok_or(JournalError::Corrupt)?).map_err(|_| JournalError::Corrupt)? != word(1) {
+        return Err(JournalError::Corrupt);
+    }
+    if code == "0x" {
+        if params.len() != 3 { return Err(JournalError::Corrupt); }
+        let override_ = params[2].as_object().ok_or(JournalError::Corrupt)?;
+        let account = override_.get(&hex(&quote.account)).and_then(serde_json::Value::as_object)
+            .ok_or(JournalError::Corrupt)?;
+        let runtime = account.get("code").and_then(serde_json::Value::as_str).ok_or(JournalError::Corrupt)?;
+        let raw = bytes(runtime).map_err(|_| JournalError::Corrupt)?;
+        if override_.len() != 1 || account.len() != 1 || raw.is_empty() || raw.len() > 24_576
+            || raw.starts_with(&[0xef, 0x01, 0x00]) { return Err(JournalError::Corrupt); }
+    } else if params.len() != 2 || code.to_ascii_lowercase() != format!("0xef0100{}", &hex(&quote.paymaster)[2..]) {
+        return Err(JournalError::Corrupt);
+    }
+    Ok(())
+}
+
 pub struct Journal {
     file: File,
     state: State,
@@ -427,6 +628,7 @@ impl Journal {
             .read(true)
             .append(true)
             .create(true)
+            .mode(0o600)
             .open(path)
             .map_err(|_| JournalError::Io)?;
         file.try_lock().map_err(|_| JournalError::Locked)?;

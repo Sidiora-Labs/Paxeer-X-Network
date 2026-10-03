@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import argparse
+import concurrent.futures
 import hashlib
 import importlib.util
 import ipaddress
@@ -101,7 +102,7 @@ def journal(path):
 
 
 def identities(entries):
-    quotes = [e['quote'] for e in entries if e['kind'] == 'quoted']
+    quotes = [e['quote'] for e in entries if e['kind'] in ('quoted', 'quote_admitted', 'quote_reserved')]
     require(quotes, 'scenario has no genuine durable quote')
     return [(q, {'sponsor': hexbytes(q['key']['sponsor']), 'quoteNonce': str(integer(q['key']['quote_nonce'])),
                  'account': hexbytes(q['account']), 'relayerSignature': hexbytes(q['signature'])}) for q in quotes]
@@ -430,6 +431,13 @@ try { await station.submitFirstUse(batch, signed.relayerSignature, { confirm: co
 }
 require(!readFileSync(input.journal, 'utf8').split('\n').filter(Boolean).map(JSON.parse).some(entry => entry.kind === 'prepared'),
   'expired authorization prepared transaction');
+const finalityDeadline = Date.now() + 30000;
+for (;;) {
+  const finalized = await provider.request({ method: 'eth_getBlockByNumber', params: ['finalized', false] });
+  if (BigInt(finalized.timestamp) > batch.quote.deadline) break;
+  require(Date.now() < finalityDeadline, 'real expired quote did not reach finalized chain time');
+  await new Promise(resolve => setTimeout(resolve, 100));
+}
 const fresh = await station.requestQuote(request);
 const next = { ...batch, quote: fresh.quote };
 approved = null;
@@ -657,9 +665,407 @@ def native_preference_cases(rows, material, evidence):
                 'native expected state cannot be substituted')
     run_sdk_observation('native', {'scenarios': list(rows.values())}, material, evidence)
 
+
+LIABILITY_SCENARIOS = ('expiry', 'included', 'reverted', 'cancelled', 'ambiguous', 'dropped-valid', 'replacement', 'balance-deteriorated', 'consumed', 'signing-intent', 'replacement-intent', 'legacy-untracked', 'admission-account', 'admission-interval', 'admission-active')
+
+
+def liability_ledger(entries):
+    items = {}; releases = {}; identities_ = {}; spend = 0
+    for entry in entries:
+        kind = entry['kind']
+        if kind in ('quoted', 'quote_admitted', 'quote_reserved'):
+            quote = entry['quote']; key = json.dumps(quote['key'], sort_keys=True)
+            require(key not in items, 'duplicate quote reservation')
+            items[key] = {'quote': quote, 'original': integer(quote['gas_cost']), 'replacement': 0}
+            if kind == 'quote_admitted':
+                identity = hexbytes(entry['admission']['identity'])
+                require(identity not in identities_, 'duplicate admission reservation')
+                identities_[identity] = key
+        elif kind in ('replaced', 'replacement_signing_intent'):
+            key = json.dumps(entry['key'], sort_keys=True)
+            fees = entry['replacement']['fees'] if kind == 'replaced' else entry['fees']
+            items[key]['replacement'] = int(fees['max_fee_per_gas']) * fees['gas_limit']
+        elif kind == 'liability_released':
+            key = json.dumps(entry['key'], sort_keys=True)
+            require(key in items and key not in releases, 'unknown or duplicate release')
+            proof = entry['proof']; quote = items[key]['quote']
+            if proof['reason'] == 'expired':
+                require(not any(value['kind'] in ('prepared', 'replaced', 'signing_intent', 'replacement_signing_intent') and value['key'] == quote['key'] for value in entries),
+                        'expiry released a signed transaction')
+                require(proof['canonical']['hash'] == proof['finalized']['hash']
+                        and proof['canonical']['number'] == proof['finalized']['number']
+                        and proof['canonical']['timestamp'] == proof['finalized']['timestamp']
+                        and int(proof['finalized']['timestamp'], 16) > quote['deadline'], 'early expiry release')
+            elif proof['reason'] == 'consumed':
+                require(not any(value['kind'] in ('prepared', 'replaced', 'signing_intent', 'replacement_signing_intent')
+                                and value['key'] == quote['key'] for value in entries), 'consumed release has uncertain signing')
+                require(proof['chain_id'] == quote['chain_id'] and proof['account'] == quote['account']
+                        and proof['paymaster'] == quote['paymaster'] and proof['quote_nonce'] == quote['key']['quote_nonce']
+                        and proof['result'] == '0x' + '00' * 31 + '01'
+                        and proof['params'][1] == {'blockHash': proof['finalized']['hash'], 'requireCanonical': True},
+                        'consumed release lacks exact anchored identity and result')
+            elif proof['reason'] == 'settled':
+                receipts = [value['receipt'] for value in entries if value['kind'] == 'receipt_observed'
+                            and value['hash'] == proof['hash'] and value['key'] == quote['key']]
+                require(len(receipts) == 1, 'release lacks retained exact receipt')
+                receipt = receipts[0]
+                spend += int(receipt['gasUsed'], 16) * int(receipt['effectiveGasPrice'], 16)
+            else:
+                raise RuntimeError('unknown liability release authority')
+            releases[key] = proof
+    active = sum(max(item['original'], item['replacement']) for key, item in items.items() if key not in releases)
+    return {'active': active, 'spend': spend, 'items': items, 'releases': releases, 'admissions': identities_}
+
+
+def wait_station(process, base):
+    deadline = time.monotonic() + 30
+    while time.monotonic() < deadline:
+        require(process.poll() is None, 'station exited before admission')
+        try:
+            if post(base + '/status', {})[0] == 400:
+                return
+        except (OSError, urllib.error.URLError):
+            pass
+        time.sleep(0.1)
+    raise RuntimeError('station readiness bound exceeded')
+
+
+def invalid_release_files(binary, config, state, directory):
+    entries = journal(state)
+    releases = [entry for entry in entries if entry['kind'] == 'liability_released']
+    require(releases, 'genuine release required before negative restart checks')
+    cases = {'duplicate-release': entries + [releases[0]]}
+    settled = next((entry for entry in releases if entry['proof']['reason'] == 'settled'), None)
+    if settled:
+        cases['release-without-receipt'] = [entry for entry in entries if not
+            (entry['kind'] == 'receipt_observed' and entry['hash'] == settled['proof']['hash'])]
+        altered = json.loads(json.dumps(entries))
+        receipt = next(entry for entry in altered if entry['kind'] == 'receipt_observed'
+                       and entry['hash'] == settled['proof']['hash'])
+        receipt['receipt']['effectiveGasPrice'] = '0xffffffffffffffffffffffffffffffff'
+        cases['invalid-finalized-spend'] = altered
+    expired = next((entry for entry in releases if entry['proof']['reason'] == 'expired'), None)
+    if expired:
+        changed = json.loads(json.dumps(entries)); target = next(entry for entry in changed if entry == expired)
+        quote = next(entry['quote'] for entry in entries if entry['kind'] in ('quoted', 'quote_admitted', 'quote_reserved')
+                     and entry['quote']['key'] == target['key'])
+        target['proof']['canonical']['timestamp'] = hex(quote['deadline'])
+        target['proof']['finalized']['timestamp'] = hex(quote['deadline'])
+        cases['early-release'] = changed
+    consumed = next((entry for entry in releases if entry['proof']['reason'] == 'consumed'), None)
+    if consumed:
+        changed = json.loads(json.dumps(entries)); target = next(entry for entry in changed if entry == consumed)
+        target['proof']['result'] = '0x' + '00' * 32
+        cases['unconsumed-release'] = changed
+        changed = json.loads(json.dumps(entries)); target = next(entry for entry in changed if entry == consumed)
+        target['proof']['params'][1]['requireCanonical'] = False
+        cases['unanchored-consumed-release'] = changed
+    for name, values in cases.items():
+        path = directory / (name + '.jsonl')
+        path.write_text(''.join(json.dumps(entry) + '\n' for entry in values)); path.chmod(0o600)
+        original = path.read_bytes()
+        with (directory / (name + '.log')).open('wb') as log:
+            process = start(binary, config, path, log)
+            try:
+                require(process.wait(timeout=20) != 0 and path.read_bytes() == original,
+                        'invalid release restart was admitted or rewrote source')
+            finally:
+                stop(process)
+        text = (directory / (name + '.log')).read_text()
+        require('Conflict' in text or 'Corrupt' in text, 'release refusal was unrelated to the journal')
+
+
+def liability_expiry(row, binary, evidence, keccak):
+    config_path = protected(row['config']); config = document(config_path)
+    endpoints = row['observation_endpoints']; base = row['base_url']; request = row['request']
+    local_url(base)
+    require(3 <= len(endpoints) == len(set(endpoints)), 'actual observation quorum required')
+    for endpoint in config['endpoints'] + endpoints:
+        local_url(endpoint, secure=True)
+    require(8 <= config['interval_seconds'] <= 15 and config['chain_id'] == 125,
+            'bounded real chain-time expiry scenario required')
+    require(rpc(endpoints, 'eth_chainId', []) == '0x7d', 'chain differs')
+    sponsor = row['sponsor']; balance = int(rpc(endpoints, 'eth_getBalance', [sponsor, 'pending']), 16)
+    gas = int(request['gasCost'])
+    require(balance - config['balance_floor'] == gas and gas > 0, 'real balance must permit exactly one outstanding promise')
+    directory = evidence / 'expiry'; directory.mkdir(mode=0o700)
+    state = directory / 'journal.jsonl'; state.touch(mode=0o600)
+    with (directory / 'process.log').open('wb') as log:
+        process = start(binary, config_path, state, log)
+        try:
+            wait_station(process, base)
+            boundary = time.monotonic() + 25
+            while time.monotonic() < boundary:
+                chain = int(rpc(endpoints, 'eth_getBlockByNumber', ['latest', False])['timestamp'], 16)
+                if chain % config['interval_seconds'] <= 1:
+                    break
+                time.sleep(0.1)
+            with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
+                replies = list(pool.map(lambda _: post(base + '/quote', request, timeout=20), range(8)))
+            require(all(reply[0] == 200 and reply[1] == replies[0][1] for reply in replies),
+                    'concurrent identical admission multiplied or changed a reservation')
+            initial = journal(state); ledger = liability_ledger(initial)
+            require(len(ledger['items']) == len(ledger['admissions']) == 1 and ledger['active'] == gas and ledger['spend'] == 0,
+                    'single atomic admission did not reserve exactly once')
+            quote, identity = identities(initial)[0]
+            require(quote['key']['sponsor'] == list(bytes.fromhex(sponsor[2:])), 'actual sponsor differs')
+            changed = dict(request, maxTokenAmount=str(int(request['maxTokenAmount']) + 1))
+            require(post(base + '/quote', changed)[0] == 409, 'same account nonce admitted another promise')
+            raw = json.dumps(request); malformed = '{"account":' + json.dumps(request['account']) + ',' + raw[1:]
+            req = urllib.request.Request(base + '/quote', malformed.encode(), {'Content-Type': 'application/json'})
+            try:
+                urllib.request.build_opener(urllib.request.ProxyHandler({})).open(req, timeout=5)
+                raise RuntimeError('duplicate JSON key admitted')
+            except urllib.error.HTTPError as error:
+                require(error.code == 400, 'malformed issuance did not refuse')
+            require(post(base + '/quote', row['competing_request']) == (503, {'error': 'balance_floor'}),
+                    'concurrent floor exhaustion overpromised sponsor funds')
+            require(liability_ledger(journal(state))['active'] == gas, 'refusal altered outstanding liability')
+            other = start(binary, config_path, state, log)
+            try:
+                require(other.wait(timeout=10) != 0, 'second writer admitted')
+            finally:
+                stop(other)
+            log.flush()
+            require('Locked' in (directory / 'process.log').read_text(), 'second writer refused for unrelated reason')
+            durable = state.read_bytes(); stop(process)
+            process = start(binary, config_path, state, log); wait_station(process, base)
+            require(state.read_bytes().startswith(durable), 'restart rewrote reservation identity')
+            if int(rpc(endpoints, 'eth_getBlockByNumber', ['latest', False])['timestamp'], 16) <= quote['deadline']:
+                require(post(base + '/quote', request) == replies[0], 'restarted replay changed quote signature')
+            deadline = time.monotonic() + 75
+            while time.monotonic() < deadline:
+                current = liability_ledger(journal(state))
+                if current['releases']:
+                    break
+                time.sleep(0.2)
+            require(current['active'] == 0 and len(current['releases']) == 1 and current['spend'] == 0,
+                    'finalized unused expiry failed to restore PAX capacity')
+            release = next(iter(current['releases'].values()))
+            canonical = rpc(endpoints, 'eth_getBlockByNumber', [release['finalized']['number'], False])
+            require(canonical == release['canonical'] and int(rpc(endpoints, 'eth_getBlockByNumber', ['finalized', False])['number'], 16)
+                    >= int(canonical['number'], 16), 'expiry evidence is not actual finalized canonical chain time')
+            stop(process); durable = state.read_bytes()
+            process = start(binary, config_path, state, log); wait_station(process, base)
+            require(state.read_bytes() == durable, 'repeated expiry double-released')
+            accepted = post(base + '/quote', request)
+            require(accepted[0] == 200 and accepted[1]['quote']['quoteNonce'] != replies[0][1]['quote']['quoteNonce'],
+                    'safe expiry did not restore available capacity in a new chain interval')
+            restored = liability_ledger(journal(state))
+            require(restored['active'] == gas and len(restored['items']) == 2 and len(restored['releases']) == 1,
+                    'historical usage was erased or active capacity was double counted')
+        finally:
+            stop(process)
+    invalid_release_files(binary, config_path, state, directory)
+
+
+def liability_recovery(name, row, binary, evidence, keccak):
+    config_path = protected(row['config']); config = document(config_path)
+    source = protected(row['journal']); entries = journal(source); initial = liability_ledger(entries)
+    require(initial['active'] > 0 and not initial['releases'], 'genuine unresolved promises required')
+    endpoints = row['observation_endpoints']; base = row['base_url']; local_url(base)
+    require(len(endpoints) >= 3 and len(set(endpoints)) == len(endpoints), 'actual observation quorum required')
+    for endpoint in config['endpoints'] + endpoints:
+        local_url(endpoint, secure=True)
+    quote, identity = next((quote, identity) for quote, identity in identities(entries)
+                           if any(entry['kind'] == 'prepared' and entry['key'] == quote['key'] for entry in entries))
+    original = submitted(entries, quote['key'])
+    directory = evidence / name; directory.mkdir(mode=0o700)
+    state = directory / 'journal.jsonl'; state.write_bytes(source.read_bytes()); state.chmod(0o600)
+    with (directory / 'process.log').open('wb') as log:
+        process = start(binary, config_path, state, log)
+        try:
+            status = ready(process, base, identity)
+            if name in ('ambiguous', 'dropped-valid', 'replacement', 'balance-deteriorated', 'consumed', 'signing-intent', 'replacement-intent', 'legacy-untracked', 'admission-account', 'admission-interval', 'admission-active'):
+                if name == 'dropped-valid':
+                    head = rpc(endpoints, 'eth_getBlockByNumber', ['latest', False])
+                    require(int(head['timestamp'], 16) <= quote['deadline'], 'dropped promise is not still executable')
+                    require(rpc(endpoints, 'eth_getTransactionReceipt', [hexbytes(original['hash'])]) is None,
+                            'dropped promise already executed')
+                if name == 'replacement':
+                    require(any(entry['kind'] == 'replaced' and entry['key'] == quote['key'] for entry in entries),
+                            'genuine unresolved replacement required')
+                if name == 'balance-deteriorated':
+                    balance = int(rpc(endpoints, 'eth_getBalance', [hexbytes(quote['key']['sponsor']), 'pending']), 16)
+                    require(balance < config['balance_floor'] + initial['active'], 'actual balance did not deteriorate')
+                require(status['completion'] is None, 'ambiguous promise falsely completed')
+                if name != 'ambiguous':
+                    balance = int(rpc(endpoints, 'eth_getBalance', [hexbytes(quote['key']['sponsor']), 'pending']), 16)
+                    require(balance < config['balance_floor'] + initial['active'] + int(row['request']['gasCost']),
+                            'actual unresolved liability does not exhaust capacity')
+                expected_refusal = 'unavailable' if name == 'ambiguous' else 'balance_floor'
+                require(post(base + '/quote', row['request']) == (503, {'error': expected_refusal}),
+                        'unresolved liability refused for a different reason or overpromised funds')
+                durable = state.read_bytes(); stop(process)
+                process = start(binary, config_path, state, log); ready(process, base, identity)
+                current = liability_ledger(journal(state))
+                require(current['active'] >= initial['active'] and not current['releases']
+                        and submitted(journal(state), quote['key']) == original and state.read_bytes().startswith(durable),
+                        'unresolved restart released or rewrote exact transaction liability')
+                return
+            deadline = time.monotonic() + 90
+            while time.monotonic() < deadline:
+                status = post(base + '/status', identity)[1]
+                current = liability_ledger(journal(state))
+                if status.get('state') == 'completed' and current['releases']:
+                    break
+                time.sleep(0.2)
+            require(status['completion']['outcome'] == name and current['active'] == 0 and len(current['releases']) == 1,
+                    'finalized outcome failed to release exactly one promise')
+            prove_completion(endpoints, journal(state), quote, status, keccak)
+            proof = next(iter(current['releases'].values()))
+            receipt = canonical_receipt(endpoints, hexbytes(proof['hash']))
+            require(current['spend'] == int(receipt['gasUsed'], 16) * int(receipt['effectiveGasPrice'], 16),
+                    'finalized spend ledger differs from exact receipt')
+            before = state.read_bytes(); stop(process)
+            process = start(binary, config_path, state, log); ready(process, base, identity)
+            require(post(base + '/retry', identity) == (200, status) and state.read_bytes() == before,
+                    'completed retry/restart released twice')
+            balance = int(rpc(endpoints, 'eth_getBalance', [hexbytes(quote['key']['sponsor']), 'pending']), 16)
+            require(balance >= config['balance_floor'] + int(row['request']['gasCost']), 'real remaining balance insufficient')
+            require(post(base + '/quote', row['request'])[0] == 200,
+                    'finalized historical spend still consumes outstanding capacity')
+        finally:
+            stop(process)
+    invalid_release_files(binary, config_path, state, directory)
+
+
+
+def liability_unsigned(name, row, binary, evidence):
+    config_path = protected(row['config']); config = document(config_path)
+    source = protected(row['journal']); entries = journal(source)
+    endpoints = row['observation_endpoints']; base = row['base_url']; local_url(base)
+    require(len(endpoints) >= 3 and len(set(endpoints)) == len(endpoints), 'actual observation quorum required')
+    for endpoint in config['endpoints'] + endpoints:
+        local_url(endpoint, secure=True)
+    if name in ('signing-intent', 'replacement-intent'):
+        kind = 'signing_intent' if name == 'signing-intent' else 'replacement_signing_intent'
+        index = next(index for index, entry in enumerate(entries) if entry['kind'] == kind)
+        entries = entries[:index + 1]
+        key = entries[-1]['key']
+        if name == 'replacement-intent':
+            original = submitted(entries, key)
+            require(rpc(endpoints, 'eth_getTransactionReceipt', [hexbytes(original['hash'])]) is None,
+                    'replacement intent crash case original already finalized')
+    elif name == 'consumed':
+        index = next(index for index, entry in enumerate(entries) if entry['kind'] == 'completed'
+                     and entry['completion']['outcome'] == 'consumed')
+        entries = entries[:index + 1]; key = entries[-1]['key']
+    else:
+        require(name == 'legacy-untracked', 'unknown unsigned case')
+        require(all(entry['kind'] == 'quoted' for entry in entries), 'genuine legacy quote-only journal required')
+        key = entries[0]['quote']['key']
+    quote, identity = next((quote, identity) for quote, identity in identities(entries) if quote['key'] == key)
+    initial = liability_ledger(entries)
+    require(initial['active'] > 0 and not initial['releases'], 'genuine outstanding reservation required')
+    directory = evidence / name; directory.mkdir(mode=0o700)
+    state = directory / 'journal.jsonl'
+    # Exact genuine producer prefix models a crash between fsync boundaries.
+    lines = source.read_bytes().splitlines(keepends=True)
+    state.write_bytes(b''.join(lines[:len(entries)])); state.chmod(0o600)
+    durable = state.read_bytes()
+    with (directory / 'process.log').open('wb') as log:
+        process = start(binary, config_path, state, log)
+        try:
+            wait_station(process, base)
+            if name == 'consumed':
+                deadline = time.monotonic() + 30
+                while time.monotonic() < deadline:
+                    current = liability_ledger(journal(state))
+                    if current['releases']:
+                        break
+                    time.sleep(0.2)
+                require(current['active'] == 0 and current['spend'] == 0 and len(current['releases']) == 1,
+                        'proven consumed unsigned promise retained capacity or invented spend')
+                proof = next(iter(current['releases'].values()))
+                require(proof['reason'] == 'consumed'
+                        and rpc(endpoints, 'eth_getBlockByNumber', [proof['finalized']['number'], False]) == proof['canonical']
+                        and int(rpc(endpoints, 'eth_getBlockByNumber', ['finalized', False])['number'], 16)
+                            >= int(proof['finalized']['number'], 16)
+                        and rpc(endpoints, 'eth_getCode', [hexbytes(quote['account']), proof['params'][1]]) == proof['code']
+                        and rpc(endpoints, 'eth_call', proof['params']) == proof['result'],
+                        'consumed release differs from actual canonical getter observation')
+                durable = state.read_bytes()
+            else:
+                if name == 'legacy-untracked':
+                    require(int(rpc(endpoints, 'eth_getBlockByNumber', ['finalized', False])['timestamp'], 16)
+                            > quote['deadline'], 'legacy conservative case is not chain-expired')
+                else:
+                    require(post(base + '/status', identity) == (503, {'error': 'signing_outcome_unknown'}),
+                            'uncertain signature was presented as known or absent')
+                current = liability_ledger(journal(state))
+                require(current['active'] == initial['active'] and not current['releases']
+                        and state.read_bytes() == durable, 'uncertain signing or legacy history released capacity')
+            stop(process); process = start(binary, config_path, state, log); wait_station(process, base)
+            require(state.read_bytes() == durable, 'restart changed already reconciled liability')
+            if name in ('signing-intent', 'replacement-intent'):
+                require(post(base + '/retry', identity) == (503, {'error': 'signing_outcome_unknown'}),
+                        'restart retried unknown signed bytes')
+        finally:
+            stop(process)
+    if name == 'consumed':
+        invalid_release_files(binary, config_path, state, directory)
+
+
+def liability_admission_bound(name, row, binary, evidence):
+    config_path = protected(row['config']); config = document(config_path)
+    source = protected(row['journal']); entries = journal(source)
+    initial = liability_ledger(entries); base = row['base_url']; local_url(base)
+    endpoints = row['observation_endpoints']
+    require(len(endpoints) >= 3 and len(set(endpoints)) == len(endpoints), 'actual observation quorum required')
+    for endpoint in config['endpoints'] + endpoints:
+        local_url(endpoint, secure=True)
+    chain = int(rpc(endpoints, 'eth_getBlockByNumber', ['latest', False])['timestamp'], 16)
+    interval = chain // config['interval_seconds']
+    account = row['request']['account'].lower()
+    current = [item['quote'] for item in initial['items'].values()
+               if item['quote']['issued_at'] // config['interval_seconds'] == interval]
+    if name == 'admission-account':
+        require(sum(hexbytes(quote['account']).lower() == account for quote in current) == 4,
+                'genuine four-admission account interval required')
+    elif name == 'admission-interval':
+        require(len(current) == 128, 'genuine 128-admission interval required')
+    else:
+        require(name == 'admission-active' and len(initial['items']) - len(initial['releases']) == 1024,
+                'genuine 1024 outstanding reservations required')
+    require(config['interval_seconds'] - chain % config['interval_seconds'] >= 30,
+            'admission boundary lacks sufficient chain-time window')
+    directory = evidence / name; directory.mkdir(mode=0o700)
+    state = directory / 'journal.jsonl'; state.write_bytes(source.read_bytes()); state.chmod(0o600)
+    with (directory / 'process.log').open('wb') as log:
+        process = start(binary, config_path, state, log)
+        try:
+            wait_station(process, base); durable = state.read_bytes()
+            with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
+                replies = list(pool.map(lambda _: post(base + '/quote', row['request']), range(8)))
+            require(all(reply == (409, {'error': 'conflict'}) for reply in replies)
+                    and state.read_bytes() == durable, 'public admission bound multiplied durable promises')
+            stop(process); process = start(binary, config_path, state, log); wait_station(process, base)
+            require(post(base + '/quote', row['request']) == (409, {'error': 'conflict'})
+                    and state.read_bytes() == durable, 'restart erased public admission interval usage')
+        finally:
+            stop(process)
+
+
+def liability_lifecycle(material, manifest, evidence):
+    require(material['source_revision'] == manifest['source']['revision'] and material['build_exit'] == 0,
+            'source-bound successful liability build required')
+    binary = protected(material['binary'])
+    require(os.access(binary, os.X_OK) and digest(binary) == material['binary_sha256'], 'binary identity differs')
+    require(set(material['scenarios']) == set(LIABILITY_SCENARIOS), 'liability acceptance scenario missing')
+    from eth_hash.auto import keccak
+    liability_expiry(material['scenarios']['expiry'], binary, evidence, keccak)
+    for name in LIABILITY_SCENARIOS[1:8]:
+        liability_recovery(name, material['scenarios'][name], binary, evidence, keccak)
+    for name in ('consumed', 'signing-intent', 'replacement-intent', 'legacy-untracked'):
+        liability_unsigned(name, material['scenarios'][name], binary, evidence)
+    for name in ('admission-account', 'admission-interval', 'admission-active'):
+        liability_admission_bound(name, material['scenarios'][name], binary, evidence)
+    print('PAXEER_X_GATE tests=15 skipped=0')
+
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--case', required=True, choices=['station-autonomous-recovery', 'first-use-sponsorship'])
+    parser.add_argument('--case', required=True, choices=['station-autonomous-recovery', 'first-use-sponsorship', 'quote-liability-lifecycle'])
     parser.add_argument('--candidate-manifest', required=True)
     args = parser.parse_args()
     spec = importlib.util.spec_from_file_location('candidate', ROOT / 'tools/paxeer-x/candidate.py')
@@ -667,6 +1073,16 @@ def main():
     manifest = candidate.load_private(args.candidate_manifest)
     candidate.validate(manifest, candidate.catalogue(ROOT / 'spec/paxeer-x/spec.kvx'), ROOT)
     require(not manifest['source']['dirty'], 'clean candidate required')
+    if args.case == 'quote-liability-lifecycle':
+        def interrupted(_number, _frame):
+            raise KeyboardInterrupt()
+        signal.signal(signal.SIGTERM, interrupted)
+        evidence = Path(os.environ['PAXEER_X_EVIDENCE_DIR']).resolve()
+        info = evidence.stat()
+        require(stat.S_ISDIR(info.st_mode) and info.st_uid == os.geteuid() and not info.st_mode & 0o077,
+                'private evidence directory required')
+        liability_lifecycle(document(os.environ['PAXEER_X_STATION_LIABILITY_MATERIAL']), manifest, evidence)
+        return
     if args.case == 'first-use-sponsorship':
         def interrupted(_number, _frame):
             raise KeyboardInterrupt()

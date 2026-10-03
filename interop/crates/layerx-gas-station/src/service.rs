@@ -6,15 +6,50 @@ use std::time::{Duration, Instant};
 use serde_json::{json, Map, Value};
 
 use crate::config::ServiceConfig;
-use crate::journal::{Completion, JournalError, Key};
+use crate::journal::{Admission, Completion, JournalError, Key};
 use crate::policy::PolicyRefusal;
 use crate::price::{PriceError, PriceSource};
-use crate::quote::{word, Address, Word};
+use crate::quote::{keccak, word, Address, Word};
 use crate::rpc::{bytes, hex, JsonRpc, RpcFault};
 use crate::signer::QuoteSigner;
 use crate::station::{GasStation, Progress, QuoteOutcome, Recovery, StationError, SubmitRequest};
 use crate::tx::{self, Authorization, Call, Fees, TxError};
 use crate::{QuoteError, QuoteRequest};
+
+struct StrictValue(Value);
+impl<'de> serde::Deserialize<'de> for StrictValue {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct Visitor;
+        impl<'de> serde::de::Visitor<'de> for Visitor {
+            type Value = StrictValue;
+            fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                formatter.write_str("JSON without duplicate object keys")
+            }
+            fn visit_map<M: serde::de::MapAccess<'de>>(self, mut source: M) -> Result<Self::Value, M::Error> {
+                let mut fields = Map::new();
+                while let Some((key, value)) = source.next_entry::<String, StrictValue>()? {
+                    if fields.insert(key, value.0).is_some() {
+                        return Err(serde::de::Error::custom("duplicate object key"));
+                    }
+                }
+                Ok(StrictValue(Value::Object(fields)))
+            }
+            fn visit_seq<M: serde::de::SeqAccess<'de>>(self, mut source: M) -> Result<Self::Value, M::Error> {
+                let mut values = Vec::new();
+                while let Some(value) = source.next_element::<StrictValue>()? { values.push(value.0); }
+                Ok(StrictValue(Value::Array(values)))
+            }
+            fn visit_bool<E: serde::de::Error>(self, value: bool) -> Result<Self::Value, E> { Ok(StrictValue(json!(value))) }
+            fn visit_i64<E: serde::de::Error>(self, value: i64) -> Result<Self::Value, E> { Ok(StrictValue(json!(value))) }
+            fn visit_u64<E: serde::de::Error>(self, value: u64) -> Result<Self::Value, E> { Ok(StrictValue(json!(value))) }
+            fn visit_f64<E: serde::de::Error>(self, value: f64) -> Result<Self::Value, E> { Ok(StrictValue(json!(value))) }
+            fn visit_str<E: serde::de::Error>(self, value: &str) -> Result<Self::Value, E> { Ok(StrictValue(json!(value))) }
+            fn visit_string<E: serde::de::Error>(self, value: String) -> Result<Self::Value, E> { Ok(StrictValue(json!(value))) }
+            fn visit_unit<E: serde::de::Error>(self) -> Result<Self::Value, E> { Ok(StrictValue(Value::Null)) }
+        }
+        deserializer.deserialize_any(Visitor)
+    }
+}
 
 const HEAD_LIMIT: usize = 8_192;
 const QUOTE_NONCE_ATTEMPTS: usize = 64;
@@ -36,6 +71,8 @@ pub enum ServiceError {
     ExpiredQuote,
     IncompatibleDelegation,
     ReplayStateUnavailable,
+    BalanceFloor,
+    SigningUnknown,
     Internal,
     Unavailable,
 }
@@ -52,7 +89,7 @@ impl ServiceError {
             Self::TooLarge => 413,
             Self::Refused | Self::ExpiredQuote | Self::IncompatibleDelegation | Self::ReplayStateUnavailable => 422,
             Self::Accept | Self::Internal => 500,
-            Self::Unavailable => 503,
+            Self::Unavailable | Self::BalanceFloor | Self::SigningUnknown => 503,
         }
     }
 
@@ -71,6 +108,8 @@ impl ServiceError {
             Self::ReplayStateUnavailable => "replay_state_unavailable",
             Self::Accept | Self::Internal => "internal",
             Self::Unavailable => "unavailable",
+            Self::BalanceFloor => "balance_floor",
+            Self::SigningUnknown => "signing_outcome_unknown",
         }
     }
 }
@@ -84,6 +123,8 @@ impl std::error::Error for ServiceError {}
 impl From<&StationError> for ServiceError {
     fn from(error: &StationError) -> Self {
         match error {
+            StationError::SigningUnknown => Self::SigningUnknown,
+            StationError::Quote(QuoteError::Policy(PolicyRefusal::BalanceFloor)) => Self::BalanceFloor,
             StationError::IncompatibleDelegation => Self::IncompatibleDelegation,
             StationError::ReplayStateUnavailable => Self::ReplayStateUnavailable,
             StationError::Rpc(RpcFault::Rejected { .. })
@@ -113,7 +154,7 @@ impl From<&StationError> for ServiceError {
             | StationError::Price(_)
             | StationError::Quote(
                 QuoteError::Price(_)
-                | QuoteError::Policy(PolicyRefusal::BalanceFloor | PolicyRefusal::ClockRegression),
+                | QuoteError::Policy(PolicyRefusal::ClockRegression),
             ) => Self::Unavailable,
             StationError::Rpc(RpcFault::Configuration)
             | StationError::Journal(_)
@@ -190,7 +231,7 @@ where
     /// # Errors
     /// Returns the refusal whose status the response carries.
     pub fn respond(&mut self, route: &str, body: &[u8]) -> Result<Value, ServiceError> {
-        let body: Value = serde_json::from_slice(body).map_err(|_| ServiceError::Malformed)?;
+        let body = serde_json::from_slice::<StrictValue>(body).map_err(|_| ServiceError::Malformed)?.0;
         match route {
             "/quote" => self.quote(&body),
             "/submit" => self.submit(&body),
@@ -263,15 +304,22 @@ where
             return Err(ServiceError::Refused);
         }
         let fees = self.fees(gas_cost)?;
-        let now = self.now()?;
+        self.now()?;
+        let now = self.station.chain_time().map_err(|error| ServiceError::from(&error))?;
         let deadline = (now - now % self.interval)
             .checked_add(self.interval - 1)
             .ok_or(ServiceError::Unavailable)?;
-        let mut quote_nonce = self.next_quote_nonce()?;
+        let interval = now / self.interval;
+        let identity = Admission::identity(account, nonce, interval);
+        let request_digest = keccak(&serde_json::to_vec(body).map_err(|_| ServiceError::Malformed)?);
+        let existing = self.station.admission(identity, request_digest, account, interval)
+            .map_err(|error| ServiceError::from(&error))?;
+        let mut quote_nonce = match existing { Some(key) => key.quote_nonce, None => self.next_quote_nonce()? };
+        let admission = Admission { identity, request_digest, batch_nonce: nonce, interval };
         for _ in 0..QUOTE_NONCE_ATTEMPTS {
             let outcome = self
                 .station
-                .quote(
+                .quote_admitted(
                     &QuoteRequest {
                         account,
                         max_token_amount,
@@ -281,6 +329,7 @@ where
                     },
                     fees,
                     now,
+                    Some(admission),
                 )
                 .map_err(|error| ServiceError::from(&error))?;
             match outcome {
@@ -355,7 +404,12 @@ where
         if call.to != account || call.value != word(0) || call.data != expected {
             return Err(ServiceError::Refused);
         }
-        let now = self.now()?;
+        let local_now = self.now()?;
+        if deadline < local_now && self.station.journal().state().items.get(&key)
+            .is_some_and(|item| item.submission.is_none() && item.completion.is_none()) {
+            return Err(ServiceError::ExpiredQuote);
+        }
+        let now = self.station.chain_time().map_err(|error| ServiceError::from(&error))?;
         if deadline < now && self.station.journal().state().items.get(&key)
             .is_some_and(|item| item.submission.is_none() && item.completion.is_none()) {
             return Err(ServiceError::ExpiredQuote);
@@ -590,15 +644,16 @@ where
                 Ok(recovery) => {
                     let _ = writeln!(
                         log,
-                        "recovery completed={} pending={} unreachable={} deferred={}",
+                        "recovery completed={} pending={} unreachable={} deferred={} liability_unreachable={}",
                         recovery.completed,
                         recovery.pending,
                         recovery.unreachable,
-                        recovery.deferred
+                        recovery.deferred,
+                        recovery.liability_unreachable
                     )
                     .and_then(|()| log.flush());
                     wait = if recovery.completed > 0
-                        || recovery.pending + recovery.unreachable + recovery.deferred == 0
+                        || (!recovery.liability_unreachable && recovery.pending + recovery.unreachable + recovery.deferred == 0)
                     {
                         schedule.interval
                     } else {
@@ -1113,4 +1168,19 @@ mod tests {
         );
         Ok(())
     }
+    #[test]
+    fn issuance_json_rejects_duplicate_keys_at_every_depth() -> Result<(), Box<dyn std::error::Error>> {
+        for input in [
+            br#"{"account":"one","account":"two"}"#.as_slice(),
+            br#"{"calls":[{"to":"one","to":"two"}]}"#.as_slice(),
+            br#"{"quote":{"deadline":"1","deadline":"2"}}"#.as_slice(),
+        ] {
+            assert!(serde_json::from_slice::<StrictValue>(input).is_err());
+        }
+        let input = br#"{"calls":[{"to":"one","value":"0","data":"0x"}],"decimals":6}"#;
+        let strict = serde_json::from_slice::<StrictValue>(input)?;
+        assert_eq!(strict.0, serde_json::from_slice::<Value>(input)?);
+        Ok(())
+    }
+
 }

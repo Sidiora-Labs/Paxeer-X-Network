@@ -18,6 +18,7 @@ impl std::fmt::Display for PolicyRefusal {
 }
 impl std::error::Error for PolicyRefusal {}
 
+#[derive(Clone)]
 pub struct QuotePolicy {
     config: StationConfig,
     interval: Option<u64>,
@@ -25,6 +26,7 @@ pub struct QuotePolicy {
     accounts: BTreeMap<Address, u128>,
     total: u128,
     reserved_pax: u128,
+    finalized_spend: u128,
 }
 impl QuotePolicy {
     /// # Errors
@@ -38,8 +40,36 @@ impl QuotePolicy {
             accounts: BTreeMap::new(),
             total: 0,
             reserved_pax: 0,
+            finalized_spend: 0,
         })
     }
+
+    pub(crate) fn restore_usage(&mut self, account: Address, amount: u128, gas: u128, now: u64) -> Result<(), PolicyRefusal> {
+        let active = self.reserved_pax;
+        self.reserved_pax = 0;
+        let result = self.reserve(account, amount, gas, u128::MAX, now);
+        self.reserved_pax = active;
+        result
+    }
+
+    pub(crate) fn reconcile(&mut self, active: u128, finalized_spend: u128) {
+        self.reserved_pax = active;
+        self.finalized_spend = finalized_spend;
+    }
+
+    pub(crate) fn ensure_balance(&self, balance: u128, additional: u128) -> Result<(), PolicyRefusal> {
+        let promised = self.reserved_pax.checked_add(additional).ok_or(PolicyRefusal::BalanceFloor)?;
+        if balance.checked_sub(promised).is_none_or(|remaining| remaining < self.config.balance_floor) {
+            return Err(PolicyRefusal::BalanceFloor);
+        }
+        Ok(())
+    }
+
+    #[must_use]
+    pub const fn outstanding_pax(&self) -> u128 { self.reserved_pax }
+
+    #[must_use]
+    pub const fn finalized_spend(&self) -> u128 { self.finalized_spend }
 
     /// # Errors
     /// Names the budget or balance floor that would be exceeded. Failed checks consume no budget.
@@ -154,4 +184,23 @@ mod tests {
         );
         Ok(())
     }
+    #[test]
+    fn settled_capacity_preserves_historical_limits() -> Result<(), Box<dyn std::error::Error>> {
+        let mut policy = QuotePolicy::new(&config())?;
+        policy.reserve([1; 20], 2_000_000, 1, 101, 1000)?;
+        assert_eq!(policy.outstanding_pax(), 1);
+        policy.reconcile(0, 1);
+        assert_eq!(policy.outstanding_pax(), 0);
+        assert_eq!(policy.finalized_spend(), 1);
+        policy.reserve([1; 20], 2_000_000, 1, 101, 1000)?;
+        policy.reconcile(0, 2);
+        assert_eq!(policy.reserve([1; 20], 1, 1, 101, 1000), Err(PolicyRefusal::PerAccount));
+        assert_eq!(policy.outstanding_pax(), 0);
+        assert_eq!(policy.finalized_spend(), 2);
+        policy.reserve([1; 20], 1, 1, 101, 1060)?;
+        assert_eq!(policy.outstanding_pax(), 1);
+        assert_eq!(policy.ensure_balance(100, 0), Err(PolicyRefusal::BalanceFloor));
+        Ok(())
+    }
+
 }
