@@ -22,20 +22,23 @@ try {
   const middleware = new AgentMiddleware({
     client: new ProductionClient(new LayerXAgentTransport(authenticated.transport)),
     protocolVersion,
-    budgets: providers.budgets,
+    ...(providers.budgets === undefined ? {} : { budgets: providers.budgets }),
+    ...(providers.preparationBudgets === undefined ? {} : { preparationBudgets: providers.preparationBudgets }),
     signer: providers.signer,
     receipts: providers.receipts,
   });
   const result = await middleware.spend(request);
   process.stdout.write(JSON.stringify({
     kind: result.kind,
+    ...(result.kind === "owner-budget" ? { preparationId: result.preparationId, admissionObserved: result.admissionObserved, ownerState: result.state,
+      ...(result.verification === undefined ? {} : { receiptDigest: Buffer.from(result.verification.receiptDigest).toString("hex") }) } : {}),
     ...(result.kind === "verified" ? { receiptDigest: Buffer.from(result.verification.receiptDigest).toString("hex") } : {}),
     ...(result.kind === "approval-hold" ? { approvalId: result.approval.approvalId } : {}),
     ...(result.kind === "refused" || result.kind === "budget-refused" ? { code: result.code, retry: result.retry,
       ...(result.retryAfterMs === undefined ? {} : { retryAfterMs: result.retryAfterMs }) } : {}),
     ...("reservation" in result ? { reservationState: result.reservation.state } : {}),
   }) + "\n");
-  if (!["verified", "approval-hold", "pending"].includes(result.kind)) process.exitCode = 2;
+  if (!(result.kind === "owner-budget" ? ["settled", "approval", "pending"].includes(result.state) : ["verified", "approval-hold", "pending"].includes(result.kind))) process.exitCode = 2;
 } finally {
   authenticated.destroy();
   await providers.destroy?.();

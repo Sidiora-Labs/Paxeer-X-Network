@@ -101,6 +101,13 @@ export class DaemonReceiptResolver implements AgentReceiptResolver {
     return (await this.#lookup(binding, binding.receiptDigest)).evidence;
   }
 
+  public async resolveActivity(input: AgentReceiptContext): Promise<AgentReceiptEvidence> {
+    const context = copyContext(input);
+    const fetched = await this.#lookup(context);
+    this.#persist({ ...context, receiptDigest: fetched.receiptDigest }, fetched.receiptDigest);
+    return fetched.evidence;
+  }
+
   public async resolveFor(receiptRef: string, input: AgentReceiptContext): Promise<AgentReceiptEvidence> {
     const reference = boundedText(receiptRef, 255, invalidArgument);
     const context = copyContext(input);

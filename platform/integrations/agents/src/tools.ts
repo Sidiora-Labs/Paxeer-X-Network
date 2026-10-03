@@ -446,6 +446,14 @@ export function renderOutcome(outcome: ToolOutcome): ToolJsonObject {
 }
 
 export function describeSpend(result: AgentSpendResult): ToolJsonObject {
+  if (result.kind === "owner-budget") {
+    return {
+      kind: result.kind, preparationId: result.preparationId, admissionObserved: result.admissionObserved, ownerState: result.state,
+      ...(result.approval === undefined ? {} : { approvalId: result.approval.approvalId, approvalState: result.approval.state }),
+      ...(result.submission === undefined ? {} : { submissionRef: result.submission.submission_ref }),
+      ...(result.verification === undefined ? {} : { receiptDigest: toHex(result.verification.receiptDigest), level: result.verification.level }),
+    };
+  }
   if (result.kind === "verified") {
     return {
       kind: result.kind,

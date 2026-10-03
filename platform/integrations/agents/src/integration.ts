@@ -1,4 +1,4 @@
-import { AgentMiddleware, type AgentBudgetLedger, type AgentSigner, type AgentReceiptResolver } from "@sidiora/layerx-agent-middleware";
+import { AgentMiddleware, type AgentBudgetLedger, type AgentPreparationBudget, type AgentSigner, type AgentReceiptResolver } from "@sidiora/layerx-agent-middleware";
 import { ProductionClient } from "@sidiora/layerx-sdk";
 import type { WebhookDeliveryStore } from "@sidiora/layerx-seller-middleware";
 import {
@@ -20,7 +20,8 @@ export type AgentFramework = (typeof AGENT_FRAMEWORKS)[number];
 
 export interface AgentIntegrationOptions {
   readonly environment: Environment;
-  readonly budgets: AgentBudgetLedger;
+  readonly budgets?: AgentBudgetLedger;
+  readonly preparationBudgets?: AgentPreparationBudget;
   readonly signer: AgentSigner;
   readonly receipts: AgentReceiptResolver;
   readonly deliveries?: WebhookDeliveryStore;
@@ -40,7 +41,7 @@ export interface LayerXAgentIntegration {
 
 export function createAgentIntegration(options: AgentIntegrationOptions): LayerXAgentIntegration {
   const config = readDeclaredConfig(options.environment);
-  if (options.budgets === undefined || options.signer === undefined || options.receipts === undefined) throw new AgentIntegrationError("missing-declared-key");
+  if ((options.budgets === undefined) === (options.preparationBudgets === undefined) || options.signer === undefined || options.receipts === undefined) throw new AgentIntegrationError("missing-declared-key");
   const authenticated = authenticatedAgentTransport(options.environment, config);
   try {
   const client = new ProductionClient(new LayerXAgentTransport(authenticated.transport));
@@ -48,7 +49,8 @@ export function createAgentIntegration(options: AgentIntegrationOptions): LayerX
   const middleware = new AgentMiddleware({
     client,
     protocolVersion: config.protocolVersion,
-    budgets: options.budgets,
+    ...(options.budgets === undefined ? {} : { budgets: options.budgets }),
+    ...(options.preparationBudgets === undefined ? {} : { preparationBudgets: options.preparationBudgets }),
     signer: options.signer,
     receipts,
     maximumTrackPolls: config.maximumTrackPolls,

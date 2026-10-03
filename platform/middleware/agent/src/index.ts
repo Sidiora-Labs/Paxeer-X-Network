@@ -1,5 +1,5 @@
 import { validateDaemonSpend, decodeDaemonPrepared, decodeDaemonSubmission, daemonApprovalHold, signedActivityId, type DaemonPreparation } from "./daemon.js";
-export { decodeDaemonSubmission } from "./daemon.js";
+export { decodeDaemonSubmission, decodeDaemonPrepared, signedActivityId } from "./daemon.js";
 export type { DaemonPreparation, DaemonPrepareRequest } from "./daemon.js";
 import { paymentCommitment, protocolSelection, requireProtocolVersion, verifyPaymentReceipt, type GrantDrawExecution, type SellerSettlementOutcome } from "@sidiora/layerx-seller-middleware";
 import { verifyPaymentCommitment, type PaymentCommitment, type PaymentCommitmentResolver } from "@sidiora/layerx-seller-middleware";
@@ -173,11 +173,31 @@ export interface AgentRefusal {
   readonly submissionState?: "Failed" | "Expired";
 }
 
+export interface OwnerBudgetSpendResult {
+  readonly kind: "owner-budget";
+  readonly preparationId: string;
+  readonly admissionObserved: boolean;
+  readonly state: "admission-unknown" | "approval" | "pending" | "unknown" | "owner-rejected" | "owner-expired" | "settled";
+  readonly approval?: { readonly approvalId: string; readonly heldDigest: string; readonly state: string };
+  readonly submission?: Submission;
+  readonly verification?: ReceiptVerification;
+}
+
+export interface AgentPreparationBudget {
+  spendPrepared(request: AgentSpendRequest, requestDigest: string, services: {
+    readonly signer: AgentSigner;
+    readonly receipts: AgentReceiptResolver;
+    readonly protocolVersion: SelectableProtocolVersion;
+    readonly commitments?: PaymentCommitmentResolver;
+  }): Promise<OwnerBudgetSpendResult>;
+}
+
 export interface AgentMiddlewareConfig {
   readonly commitments?: PaymentCommitmentResolver;
   readonly client: ProductionClient;
   readonly protocolVersion: SelectableProtocolVersion;
-  readonly budgets: AgentBudgetLedger;
+  readonly budgets?: AgentBudgetLedger;
+  readonly preparationBudgets?: AgentPreparationBudget;
   readonly signer: AgentSigner;
   readonly receipts: AgentReceiptResolver;
   readonly maximumTrackPolls?: number;
@@ -185,6 +205,7 @@ export interface AgentMiddlewareConfig {
 }
 
 export type AgentSpendResult =
+  | OwnerBudgetSpendResult
   | {
     readonly kind: "verified";
     readonly submission?: Submission;
@@ -202,7 +223,8 @@ export class AgentMiddleware {
   readonly #client: ProductionClient;
   readonly #protocolVersion: SelectableProtocolVersion;
   readonly #protocol: ProtocolSelection;
-  readonly #budgets: AgentBudgetLedger;
+  readonly #budgets: AgentBudgetLedger | undefined;
+  readonly #preparationBudgets: AgentPreparationBudget | undefined;
   readonly #signer: AgentSigner;
   readonly #receipts: AgentReceiptResolver;
   readonly #maximumTrackPolls: number;
@@ -214,6 +236,8 @@ export class AgentMiddleware {
     this.#protocolVersion = requireProtocolVersion(config.protocolVersion);
     this.#protocol = protocolSelection(this.#protocolVersion);
     this.#budgets = config.budgets;
+    this.#preparationBudgets = config.preparationBudgets;
+    if ((this.#budgets === undefined) === (this.#preparationBudgets === undefined)) throw new AgentMiddlewareError("invalid-request");
     this.#signer = config.signer;
     this.#receipts = config.receipts;
     this.#maximumTrackPolls = config.maximumTrackPolls ?? 20;
@@ -236,6 +260,14 @@ export class AgentMiddleware {
     const amount = protocolAmount(request.amount).toString();
     const mutationKey = idempotencyKey(request.preparation.idempotency_key);
     const requestDigest = await digestSpend(request);
+    if ("variant" in request.preparation && this.#preparationBudgets !== undefined) {
+      const { approvalReleaseRef: _release, ...admissionRequest } = request;
+      return this.#preparationBudgets.spendPrepared(request, await digestSpend(admissionRequest), {
+        signer: this.#signer, receipts: this.#receipts, protocolVersion: this.#protocolVersion,
+        ...(this.#commitments === undefined ? {} : { commitments: this.#commitments }),
+      });
+    }
+    if (this.#budgets === undefined) throw new PlatformSdkError({ code: "unavailable-capability", retry: "never" });
     const reserved = await this.#budgets.reserve({
       tenant: request.tenant,
       idempotencyKey: request.preparation.idempotency_key,
@@ -463,6 +495,7 @@ export class AgentMiddleware {
     if (reservation.state === "committed") {
       throw new AgentMiddlewareError("budget-conflict");
     }
+    if (this.#budgets === undefined) throw new AgentMiddlewareError("budget-conflict");
     const released = validateBudgetReservation(
       await this.#budgets.release({
         reservationId: reservation.reservationId,
@@ -482,6 +515,7 @@ export class AgentMiddleware {
 
   async #hold(approval: ApprovalHold, reservation: BudgetReservation, budget: BudgetFacts): Promise<AgentSpendResult> {
     let held: BudgetReservation;
+    if (this.#budgets === undefined) throw new AgentMiddlewareError("budget-conflict");
     try {
       held = validateBudgetReservation(await this.#budgets.hold({
         reservationId: reservation.reservationId, ...budget,

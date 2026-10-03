@@ -80,3 +80,7 @@ export type { AgentServiceProviders, DaemonReceiptServiceProviders, AgentService
 
 export { DaemonReceiptResolver } from "./daemon-providers.js";
 export type { DaemonReceiptPrincipal, DaemonReceiptResolverOptions } from "./daemon-providers.js";
+
+export { DaemonPreparationBudget } from "./daemon-budget.js";
+export type { DaemonPreparationBudgetOptions } from "./daemon-budget.js";
+export type { AgentPreparationBudget, OwnerBudgetSpendResult } from "@sidiora/layerx-agent-middleware";
