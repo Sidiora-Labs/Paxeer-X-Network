@@ -285,6 +285,151 @@ public sealed class ProgramsContractTests
         Assert.False((bool)Invoke("InterfaceHeaderBound", changed, codeHash, abi)!);
     }
 
+    [Fact]
+    public async Task GenuineTerminalV5CorpusVerifiesEveryOutcomeAndRetainsLegacyRefusals()
+    {
+        var path = Environment.GetEnvironmentVariable("PAXEER_X_PROGRAM_TERMINAL_V5_CORPUS");
+        Assert.False(string.IsNullOrEmpty(path), "genuine native ABI3/4 terminal-v5 corpus required");
+        var file = new FileInfo(path!);
+        Assert.True(file.Exists && file.LinkTarget is null && file.Length is > 0 and <= 16_777_216);
+        using var corpus = JsonDocument.Parse(File.ReadAllText(path!));
+        var root = corpus.RootElement;
+        var revision = Environment.GetEnvironmentVariable("PAXEER_X_MAINLINE");
+        Assert.False(string.IsNullOrEmpty(revision), "published candidate revision required");
+        Assert.Equal(revision, root.GetProperty("source_revision").GetString());
+        var pin = FixtureBytes(root, "trusted_sequencer_public_key_hex");
+        Assert.Equal(32, pin.Length); Assert.Contains(pin, value => value != 0);
+        var programs = new ProgramsClient(new PlatformClient(new AgentHttpTransport(new Uri("http://127.0.0.1:8080"))), pin, protocolVersion: 3);
+        var method = typeof(ProgramsClient).GetMethod("VerifyExecutionAsync", BindingFlags.Instance | BindingFlags.NonPublic)!;
+        var expected = new HashSet<string>(new[] { 3, 4 }.SelectMany(abi =>
+            new[] { "success", "failure", "resource", "callback", "settlement" }.Select(kind => $"{abi}:{kind}")));
+        var present = new HashSet<string>();
+        foreach (var row in root.GetProperty("cases").EnumerateArray())
+        {
+            var abi = row.GetProperty("guest_abi").GetUInt16(); var kind = row.GetProperty("outcome").GetString();
+            var selector = $"{abi}:{kind}";
+            Assert.Contains(selector, expected); Assert.True(present.Add(selector), "duplicate native corpus case");
+            Assert.Equal(pin, FixtureBytes(row, "sequencer_public_key_hex"));
+            var document = Assert.IsType<JsonValue.ObjectValue>(JsonSerializer.Deserialize<JsonValue>(row.GetProperty("execution").GetRawText()));
+            var map = document.Value; var signed = FixtureBytes(row, "signed_activity_hex");
+            var call = NativeCallFromSignedActivity(signed);
+            var native = Assert.IsType<NativeProgramCall>(call.NativeCall);
+            Assert.Equal(abi, native.GuestAbi);
+            Assert.Equal(FixtureBytes(row, "program_id_hex"), call.ProgramId);
+            var binding = Invoke("DecodeSignedCall", call)!;
+            var activity = Property<byte[]>(binding, "ActivityId");
+            var program = call.ProgramId;
+            Task<VerifiedProgramExecution> Check(IReadOnlyDictionary<string, JsonValue> value, byte[]? wantedActivity = null) =>
+                Assert.IsAssignableFrom<Task<VerifiedProgramExecution>>(method.Invoke(programs,
+                    [value, kind == "success" ? "executed" : "refused", value.ContainsKey("idempotency_key"), program,
+                        wantedActivity ?? activity, null, CancellationToken.None]));
+            var verified = await Check(map);
+            Assert.Equal(abi, verified.Receipt.Receipt.ProgramOutcome!.AbiVersion);
+            Assert.Equal("sequencer-signed", verified.Receipt.Level);
+            _ = Invoke("VerifyRequestedAbi", call, verified);
+            var crossedCall = new ProgramCall(native with { GuestAbi = (ushort)(abi == 3 ? 4 : 3) }, call.Budget.FeeLimit, signed);
+            Assert.IsType<PlatformSdkException>(Assert.Throws<TargetInvocationException>(() => Invoke("VerifyRequestedAbi", crossedCall, verified)).InnerException);
+            Assert.Equal(FixtureBytes(row, "canonical_receipt_hex"), Convert.FromHexString(Assert.IsType<JsonValue.StringValue>(map["receipt"]).Value));
+            Assert.Equal(FixtureBytes(row, "terminal_payload_hex"), verified.TerminalPayload);
+            Assert.Equal(FixtureBytes(row, "call_graph_hex"), verified.CallGraph);
+            foreach (var wrongAbi in new ushort[] { 0, 1, 2, 5, ushort.MaxValue, (ushort)(abi == 3 ? 4 : 3) })
+                await Assert.ThrowsAsync<PlatformSdkException>(() => Check(new Dictionary<string, JsonValue>(map) { ["guest_abi_version"] = JsonValue.Integer(wrongAbi) }));
+            foreach (var field in new[] { "receipt", "terminal_payload", "call_graph", "activity_id", "receipt_digest", "state_root" })
+            {
+                var bytes = Convert.FromHexString(Assert.IsType<JsonValue.StringValue>(map[field]).Value);
+                bytes[^1] ^= 1;
+                await Assert.ThrowsAsync<PlatformSdkException>(() => Check(new Dictionary<string, JsonValue>(map) { [field] = JsonValue.String(Convert.ToHexString(bytes).ToLowerInvariant()) }));
+            }
+            var usage = new Dictionary<string, JsonValue>(Assert.IsType<JsonValue.ObjectValue>(map["usage"]).Value);
+            foreach (var field in new[] { "cpu_fuel", "memory_bytes", "storage_read_bytes", "storage_write_bytes", "output_bytes", "fee_units" })
+            {
+                var changed = new Dictionary<string, JsonValue>(usage) { [field] = JsonValue.String((BigInteger.Parse(Assert.IsType<JsonValue.StringValue>(usage[field]).Value) + 1).ToString()) };
+                await Assert.ThrowsAsync<PlatformSdkException>(() => Check(new Dictionary<string, JsonValue>(map) { ["usage"] = JsonValue.Object(changed) }));
+            }
+            var authority = Assert.IsType<JsonValue.ObjectValue>(map["authority"]).Value;
+            foreach (var field in new[] { "batch_id", "asset", "previous_state_root", "resulting_state_root", "sequencer_public_key" })
+            {
+                var bytes = Convert.FromHexString(Assert.IsType<JsonValue.StringValue>(authority[field]).Value); bytes[0] ^= 1;
+                var changed = new Dictionary<string, JsonValue>(authority) { [field] = JsonValue.String(Convert.ToHexString(bytes).ToLowerInvariant()) };
+                await Assert.ThrowsAsync<PlatformSdkException>(() => Check(new Dictionary<string, JsonValue>(map) { ["authority"] = JsonValue.Object(changed) }));
+            }
+            var wrongActivity = activity.ToArray(); wrongActivity[0] ^= 1;
+            await Assert.ThrowsAsync<PlatformSdkException>(() => Check(map, wrongActivity));
+            foreach (var length in new[] { 0, 1, verified.TerminalPayload.Length - 1 })
+                await Assert.ThrowsAsync<PlatformSdkException>(() => Check(new Dictionary<string, JsonValue>(map) { ["terminal_payload"] = JsonValue.String(Convert.ToHexString(verified.TerminalPayload[..length]).ToLowerInvariant()) }));
+            await Assert.ThrowsAsync<PlatformSdkException>(() => Check(new Dictionary<string, JsonValue>(map) { ["terminal_payload"] = JsonValue.String(Convert.ToHexString(verified.TerminalPayload).ToLowerInvariant() + "00") }));
+            if (kind is "success" or "failure" or "resource")
+            {
+                var terminal = verified.TerminalPayload;
+                var domain = Encoding.UTF8.GetBytes("LXP/program-execution/v5\0");
+                var offset = terminal.AsSpan().IndexOf(domain); Assert.True(offset >= 0);
+                var outcome = Assert.IsType<JsonValue.ObjectValue>(map["outcome"]).Value;
+                void RefuseTerminal(byte[] changed, ProgramReceiptOutcome receipt) => Assert.IsType<PlatformSdkException>(
+                    Assert.Throws<TargetInvocationException>(() => Invoke("VerifyTerminal", changed, verified.CallGraph, program, outcome,
+                        (ushort)3, receipt with { TerminalPayloadRoot = SHA256.HashData(changed) })).InnerException);
+                var historical = terminal.ToArray(); historical[offset + domain.Length - 2] = (byte)'4';
+                RefuseTerminal(historical, verified.Receipt.Receipt.ProgramOutcome!);
+                var wrongProfile = terminal.ToArray(); wrongProfile[offset + domain.Length - 2] = (byte)'6';
+                RefuseTerminal(wrongProfile, verified.Receipt.Receipt.ProgramOutcome!);
+                foreach (var receiptAbi in new ushort[] { 0, 1, 2, 5, ushort.MaxValue, (ushort)(abi == 3 ? 4 : 3) })
+                    RefuseTerminal(terminal, verified.Receipt.Receipt.ProgramOutcome! with { AbiVersion = receiptAbi });
+                var abiOffset = CandidateTerminalAbiOffset(terminal, offset + domain.Length);
+                foreach (var embeddedAbi in new ushort[] { 0, 1, 2, 5, ushort.MaxValue })
+                {
+                    var changed = terminal.ToArray(); BinaryPrimitives.WriteUInt16BigEndian(changed.AsSpan(abiOffset), embeddedAbi);
+                    RefuseTerminal(changed, verified.Receipt.Receipt.ProgramOutcome! with { AbiVersion = embeddedAbi });
+                }
+                foreach (var index in new[] { offset + domain.Length + 5, abiOffset - 32 })
+                {
+                    var changed = terminal.ToArray(); changed[index] ^= 1;
+                    RefuseTerminal(changed, verified.Receipt.Receipt.ProgramOutcome!);
+                }
+                foreach (var index in new[] { 0, terminal.Length - 1 })
+                {
+                    var changed = terminal.ToArray(); changed[index] ^= 1;
+                    RefuseTerminal(changed, verified.Receipt.Receipt.ProgramOutcome!);
+                }
+            }
+        }
+        Assert.True(expected.SetEquals(present), "all ten genuine native ABI3/4 outcomes required");
+    }
+
+    private static ProgramCall NativeCallFromSignedActivity(byte[] signed)
+    {
+        Assert.True(signed.Length >= 5); Assert.Equal((ushort)3, BinaryPrimitives.ReadUInt16BigEndian(signed));
+        Assert.Equal((ushort)0x1001, BinaryPrimitives.ReadUInt16BigEndian(signed.AsSpan(2))); Assert.Equal((byte)12, signed[4]);
+        var offset = 5; byte[]? payload = null; BigInteger fee = 0;
+        for (byte tag = 1; tag <= 12; tag++)
+        {
+            Assert.Equal(tag, signed[offset++]);
+            var length = tag switch { 1 => 2, 2 or 3 => 4, 6 => 8, 7 or 9 => 16, _ => -1 };
+            if (length < 0) { length = checked((int)BinaryPrimitives.ReadUInt32BigEndian(signed.AsSpan(offset))); offset += 4; }
+            var bytes = signed.AsSpan(offset, length).ToArray(); offset += length;
+            if (tag == 9) fee = new BigInteger(bytes, true, true);
+            if (tag == 11) payload = bytes;
+        }
+        Assert.Equal(signed.Length, offset);
+        return new ProgramCall(NativeProgramCall.Decode(payload!), new ProtocolAmount(fee.ToString()), signed);
+    }
+
+    private static int CandidateTerminalAbiOffset(byte[] terminal, int offset)
+    {
+        offset += 10;
+        var values = BinaryPrimitives.ReadUInt64BigEndian(terminal.AsSpan(offset)); offset += 8;
+        Assert.True(values <= (ulong)(terminal.Length / 5));
+        for (ulong index = 0; index < values; index++)
+        {
+            var tag = terminal[offset++]; Assert.True(tag is 1 or 2); offset += tag == 1 ? 4 : 8;
+        }
+        offset += 60;
+        var trace = terminal[offset++]; Assert.True(trace is 0 or 1);
+        if (trace == 1)
+        {
+            var length = checked((int)BinaryPrimitives.ReadUInt64BigEndian(terminal.AsSpan(offset))); offset += 8 + length;
+        }
+        offset += 32; Assert.True(offset <= terminal.Length - 2); return offset;
+    }
+
     private static Dictionary<string, JsonValue> SignedHead(ushort abi, Ed25519PrivateKeyParameters signer)
     {
         var program = Repeat(0x11); var code = Repeat(0x22); var state = Repeat(0x33);

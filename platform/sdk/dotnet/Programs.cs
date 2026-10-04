@@ -206,6 +206,7 @@ public sealed class ProgramsClient
         var binding = DecodeSignedCall(call);
         var value = await _client.ProgramAsync("program.simulate", Encode(call), cancellationToken: cancellationToken).ConfigureAwait(false);
         var execution = await VerifySimulationAsync(value, call.ProgramId, binding, cancellationToken).ConfigureAwait(false);
+        VerifyRequestedAbi(call, execution);
         return new(value, execution);
     }
     public async Task<ProgramSubmission> SubmitAsync(ProgramCall call, IdempotencyKey idempotencyKey, CancellationToken cancellationToken = default)
@@ -226,8 +227,10 @@ public sealed class ProgramsClient
         }
         try
         {
-            return await VerifySubmissionAsync(value, call.ProgramId, binding.ActivityId, idempotencyKey.Value,
+            var submission = await VerifySubmissionAsync(value, call.ProgramId, binding.ActivityId, idempotencyKey.Value,
                 call.SignedActivity, cancellationToken).ConfigureAwait(false);
+            if (submission.Execution is { } execution) VerifyRequestedAbi(call, execution);
+            return submission;
         }
         catch (PlatformSdkException error) when (error.Code is SdkErrorCode.DecodeFailure or SdkErrorCode.VerificationFailure)
         {
@@ -273,6 +276,12 @@ public sealed class ProgramsClient
             !System.Security.Cryptography.CryptographicOperations.FixedTimeEquals(System.Security.Cryptography.SHA256.HashData(callGraph), outcome.CallGraphRoot))
             throw new PlatformSdkException(SdkErrorCode.VerificationFailure, RetryClass.Never);
         return verified;
+    }
+
+    private static void VerifyRequestedAbi(ProgramCall call, VerifiedProgramExecution execution)
+    {
+        if (call.NativeCall is { } native && execution.Receipt.Receipt.ProgramOutcome!.AbiVersion != native.GuestAbi)
+            throw Verify();
     }
 
     private async Task<ProgramSubmission> VerifySubmissionAsync(JsonValue value, byte[]? expectedProgramId,
@@ -602,7 +611,8 @@ public sealed class ProgramsClient
             if (encoded.Length == 0 || encoded.Length > MaximumProgramBytes || !Fixed(SHA256.HashData(encoded), receipt.TerminalPayloadRoot) ||
                 availableGraph.Length == 0 || !Fixed(SHA256.HashData(availableGraph), receipt.CallGraphRoot)) throw new InvalidDataException();
             var attachments = UnwrapTerminal(UnwrapAppliedTerminal(encoded, receipt)); var inner = attachments.Inner;
-            var candidate = Starts(inner, "LXP/program-execution/v4\0"); var successful = false;
+            var modern = Starts(inner, "LXP/program-execution/v5\0");
+            var candidate = Starts(inner, "LXP/program-execution/v4\0") || modern; var successful = false;
             if (Starts(inner, "LXP/program-execution/v2\0") || Starts(inner, "LXP/program-execution/v3\0"))
             {
                 var traced = Starts(inner, "LXP/program-execution/v3\0"); var domain = Encoding.UTF8.GetBytes(
@@ -628,7 +638,7 @@ public sealed class ProgramsClient
             }
             else if (candidate)
             {
-                var cursor = new TerminalCursor(inner, Encoding.UTF8.GetByteCount("LXP/program-execution/v4\0"));
+                var cursor = new TerminalCursor(inner, Encoding.UTF8.GetByteCount(modern ? "LXP/program-execution/v5\0" : "LXP/program-execution/v4\0"));
                 var runtime = cursor.U16(); var feeSchedule = cursor.U32(); var metering = cursor.U32();
                 var countValue = cursor.U64(); if (countValue > (ulong)(cursor.Remaining / 5)) throw new InvalidDataException();
                 for (var index = 0; index < (int)countValue; index++)
@@ -655,7 +665,8 @@ public sealed class ProgramsClient
                 else throw new InvalidDataException();
                 var graph = cursor.Sized64(); cursor.Finish();
                 if (graph.Length > MaximumCallGraphBytes || !Fixed(graph, availableGraph) || !Fixed(program, expectedProgram) ||
-                    abi != 2 || abi != receipt.AbiVersion || runtime == 0 || feeSchedule == 0 || metering == 0 ||
+                    (modern ? protocolVersion != 3 || abi is not (GeneratedReceiptContract.ProgramAbiV3 or GeneratedReceiptContract.ProgramAbiV4) : abi != 2) ||
+                    abi != receipt.AbiVersion || runtime == 0 || feeSchedule == 0 || metering == 0 ||
                     runtime != receipt.RuntimeVersion || feeSchedule != receipt.FeeScheduleVersion ||
                     metering != receipt.MeteringScheduleVersion) throw new InvalidDataException();
                 MatchUsage(usage, receipt);
