@@ -6429,7 +6429,6 @@ mod maintenance_head_tests {
             verify_sequencer_signature(&original, key).map_err(|error| format!("{error:?}"))?;
         assert_ne!(
             activity
-                .receipt()
                 .protocol()
                 .ok_or("activity protocol missing")?
                 .resulting_state_root(),
