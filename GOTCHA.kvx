@@ -2494,3 +2494,8 @@ resolution = "Move the authenticated callbacks to SharedAgentOwner and forward a
 area = "Scoped source formatting sequence"
 observed = "A task35 helper formatted authored regions before parent implementation completed and left one extra wire-file EOF blank line after final formatting."
 resolution = "Retain the sequencing deviation, perform final whole-task formatting before builds and remove only the extra blank line before publication; no assertion or qualification was changed."
+
+[gotcha.732]
+area = "Real attestor key import ceremony producer"
+observed = "The actual Send-purpose signing corpus failed HTTP400 because its inherited import helper omits mandatory ceremony identity, public membership and approved inventory authorization."
+resolution = "Keep production authorization checks intact and record build0 verify1; a genuine ceremony producer is required before another authorized qualification attempt."

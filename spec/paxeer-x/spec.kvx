@@ -34394,7 +34394,7 @@ requires = ["0.2"]
 reqs = ["1064.3", "1064.8", "1071.1", "1071.5"]
 do_1 = "Define the approved distinct NativeSendPurposeV1 canonical statement and custody signing kind/domain; bind actual owner, tenant, session generation, capability, chain/protocol, exact Send/preparation/economics/idempotency and expiry. Preserve all existing purpose codecs/refusals. Compose actual HumanPrimary custody and Go attestor validation, never a generic signing fallback. Publish exact canonical contract to daemon and public consent owners before their dependent edits."
 do_2 = "Author genuine signed statement, changed-field, wrong-owner/session, expiry and cross-profile refusal coverage through actual types and signing service; do not fabricate authority."
-touches = ["agent/crates/layerx-agent-api/src/identity.rs", "agent/schema/agent-api/v1.kvx", "human/crates/layerx-human-service/src/custody/provider.rs", "human/crates/layerx-human-service/src/custody/signer.rs", "human/crates/layerx-human-kms/src/attestor.rs", "human/wallet/attestor/internal/server/native_purpose.go", "human/wallet/attestor/internal/server/native_purpose_test.go", "human/crates/layerx-human-service/tests/native_send_purpose.rs", "tools/qualification/paxeer-x/native_send_purpose.py", "human/wallet/attestor/internal/policy/native/native.go"]
+touches = ["agent/crates/layerx-agent-api/src/identity.rs", "human/crates/layerx-human-service/src/custody/provider.rs", "human/crates/layerx-human-service/src/custody/signer.rs", "human/crates/layerx-human-kms/src/attestor.rs", "human/wallet/attestor/internal/server/native_purpose.go", "human/wallet/attestor/internal/server/native_purpose_test.go", "human/crates/layerx-human-service/tests/native_send_purpose.rs", "tools/qualification/paxeer-x/native_send_purpose.py", "human/wallet/attestor/internal/policy/native/native.go"]
 build_cmd = "python3 tools/qualification/paxeer-x/native_send_purpose.py --build"
 verify_cmd = "python3 tools/qualification/paxeer-x/native_send_purpose.py"
 max_builds = 1
@@ -34404,10 +34404,16 @@ time_limit_minutes = 30
 stop_condition = "Stop at 09:13 UTC, missing genuine external authority, unrelated failure or required weakening; partial source receives no gates. Root intake/publication precedes immutable candidate qualification."
 owner_approval = "2026-10-04 owner approved exact distinct Send-purpose and public-consent proposal; existing formats, refusals and security actions remain unchanged. New contract implementation scope does not reset old task30 or32 budgets."
 source_status = "complete"
-qualification_status = "UNRUN"
+qualification_status = "BUILD_PASSED_VERIFY_FAILED"
 completion_basis_policy = "Owner CONSTITUTION: fully implemented DONE, qualification separate; partial remains in_progress."
 completion_basis = "implementation"
 source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-104.13.34-source-handoff.json"
+retained_schema_contract_9_3 = "Canonical Agent schema now exclusively ownedby9.3; task34 preserves its frozen contract and qualifies immutablepublishedsource withoutschemaedits."
+qualification_revision = "a5e4e6bc8b60bf6d87c2f4120153639e6a3ea192"
+qualification_build_evidence = "a5e4e6bc8b60bf6d87c2f4120153639e6a3ea192 | python3 tools/qualification/paxeer-x/native_send_purpose.py --build | 0 | /root/lx-ops/paxeer-x-integration-2026-10-03/task-104.13.34-build-extension1.log"
+qualification_verify_evidence = "a5e4e6bc8b60bf6d87c2f4120153639e6a3ea192 | python3 tools/qualification/paxeer-x/native_send_purpose.py | 1 | /root/lx-ops/paxeer-x-integration-2026-10-03/task-104.13.34-verify-extension1.log"
+qualification_observed = "NativeSend corpus first real import HTTP400: required ceremony identity omitted by legacy importKernelKey/importKey helper; production requires CeremonyID, exact public key, participants, threshold, epoch, and current approved inventory import authority."
+qualification_result = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-104.13.34-result-extension1.json"
 
 [task.104.13.35]
 title = "Connect approved native Send profile to daemon preparation and durable approval"
