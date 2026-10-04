@@ -35034,3 +35034,38 @@ qualification_status = "BLOCKED_MISSING_GENUINE_FIXTURE"
 qualification_evidence = "ce4970d008fdfed2adc2d1464cf0a8ed179708f8 | timeout 15m python3 tools/qualification/paxeer-x/mcp_web_payer.py | 78 | /root/lx-ops/paxeer-x-integration-2026-10-03/task-9.5-verify.log"
 qualification_stop = "PAXEER_X_AGENTD_UPSTREAM_ARTIFACTS absent; actual worker refused real native upstream owner fixture required;0of38cases executed;no builds,edits,repairs or reruns."
 qualification_result = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-9.5-result.json"
+
+[task.104.35.17]
+title = "Connect authenticated admission authority to the real bounded single-step arbiter"
+status = "done"
+mode = "BUILD"
+wave = 2
+requires = ["0.2", "104.35.15", "104.35.16"]
+reqs = ["1105.3", "1105.4"]
+do_1 = "Derive actual runtime authority solely from sealed native V3 previous-root inventory proofs and signed activity; restore real committed interpreter/semantic state and verify one bounded instruction, host call or trap without trusting captured process authority."
+touches = ["programs/crates/layerx-programs-arbiter/tests/verified_step.rs"]
+build_cmd = "timeout 20m env CARGO_TARGET_DIR=/root/lx-target/programs /root/.cargo/bin/cargo test --locked --manifest-path programs/Cargo.toml -p layerx-programs-arbiter --test verified_step --no-run"
+verify_cmd = "timeout 20m env CARGO_TARGET_DIR=/root/lx-target/programs /root/.cargo/bin/cargo test --locked --manifest-path programs/Cargo.toml -p layerx-programs-arbiter --test verified_step"
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop at original dispatch cap, missing authority, unrelated failure or any weakening; record exact source state and evidence."
+completion_basis_policy = "Owner CONSTITUTION: fully implemented DONE; qualification separate and partial remains in_progress."
+source_ownership = "Root serializes shared manifests, lockfiles, spec and publication; no deployment."
+
+
+retained_contract_paths_104_35_29 = ["programs/crates/layerx-programs-arbiter/Cargo.toml", "programs/crates/layerx-programs-arbiter/src/lib.rs", "programs/crates/layerx-programs-arbiter/src/step.rs", "programs/crates/layerx-programs-arbiter/tests/verified_step.rs", "programs/crates/layerx-programs-runtime/src/execute.rs", "programs/crates/layerx-programs-runtime/src/replay.rs", "programs/crates/layerx-programs-runtime/src/host/mod.rs", "programs/crates/layerx-programs-runtime/src/abi/host_state.rs"]
+delegated_source_task_104_35_29 = "104.35.29"
+delegated_source_paths_104_35_29 = ["programs/crates/layerx-programs-arbiter/src/lib.rs", "programs/crates/layerx-programs-arbiter/src/step.rs"]
+retained_contract_paths_104_35_33 = ["programs/crates/layerx-programs-arbiter/Cargo.toml", "programs/crates/layerx-programs-arbiter/tests/verified_step.rs", "programs/crates/layerx-programs-runtime/src/execute.rs", "programs/crates/layerx-programs-runtime/src/replay.rs", "programs/crates/layerx-programs-runtime/src/host/mod.rs", "programs/crates/layerx-programs-runtime/src/abi/host_state.rs"]
+delegated_source_task_104_35_33 = "104.35.33"
+delegated_source_paths_104_35_33 = ["programs/crates/layerx-programs-arbiter/Cargo.toml", "programs/crates/layerx-programs-runtime/src/execute.rs", "programs/crates/layerx-programs-runtime/src/replay.rs"]
+lease_transfer_authority_104_35_33 = "Owner approved inactive lease reassignment; all unfinished requirements and assertions remain intact."
+fleet_authority = "User explicitly ordered30agents into pending integrations within4hours; fresh bounded source implementation resumes. Preserve prior source/evidence and every assertion."
+fleet_role = "/root/integrate_arbiter/authority_gate"
+fleet_scope_manifest = "/root/lx-ops/paxeer-x-integration-2026-10-03/fleet-104.35.17-brief.json"
+source_status = "complete"
+completion_basis = "implementation under owner CONSTITUTION; qualification separately recorded"
+qualification_status = "UNRUN"
+source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/fleet-104.35.17-intake.json"
