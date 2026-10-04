@@ -24336,12 +24336,22 @@ delegated_source_task_104_35_33 = "104.35.33"
 delegated_source_paths_104_35_33 = ["programs/crates/layerx-programs-runtime/src/execute.rs"]
 lease_transfer_authority_104_35_33 = "Owner approved inactive lease reassignment; all unfinished requirements and assertions remain intact."
 fleet_authority = "User explicitly ordered30agents into pending integrations within4hours; fresh bounded source implementation resumes. Preserve prior source/evidence and every assertion."
-fleet_role = "/root/complete_migration/native_migration_gate"
+fleet_role = "/root/complete_program_accounts"
 fleet_scope_manifest = "/root/lx-ops/paxeer-x-integration-2026-10-03/fleet-104.30.4-brief.json"
 source_status = "partial"
 completion_basis = "honest incomplete source checkpoint; original criteria remain required"
 qualification_status = "UNRUN"
 source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/fleet-104.30.4-partial-publication.json"
+owner_resolution = "2026-10-04 owner selected Owner stages bounded proposals. req1100.ac4 and task.do5 confer only bounded proposal authority: a child returns typed proposals, and the deriving owner explicitly stages payment from its own frame through existing transfer_program_402. req1100.ac3/ac6 owner-frame staging remains mandatory. No new direct child debit authority, new authority profile, ABI5, or old decoder unknown-tag acceptance."
+owner_window_minutes = 60
+owner_window_cutoff_utc = "2026-10-04T16:16:00Z"
+owner_window_builds = 1
+owner_window_verify_runs = 1
+owner_window_max_repairs = 2
+owner_window_prior_builds = 0
+owner_window_prior_verify_runs = 0
+owner_decision_record = 69
+owner_implementation_worktree = "/root/lx-worktrees/owner-proposals-104304"
 
 [task.104.31.1]
 title = "Expose the execution context to guest code"
