@@ -155,19 +155,19 @@ if [ "${1:-}" = "--self-test" ]; then
         exit 1
     fi
     : > "$fixture/budget.rs"
-    for family in oracle web
+    for probe_family in oracle web
     do
-        rm -f "$fixture/host/$family.rs"
+        rm -f "$fixture/host/$probe_family.rs"
         if check_root "$fixture" >/dev/null 2>&1; then
-            echo "runtime module boundary self-test: missing $family module was accepted" >&2
+            echo "runtime module boundary self-test: missing $probe_family module was accepted" >&2
             exit 1
         fi
-        printf '%s\n' 'use super::storage::register;' > "$fixture/host/$family.rs"
+        printf '%s\n' 'use super::storage::register;' > "$fixture/host/$probe_family.rs"
         if check_root "$fixture" >/dev/null 2>&1; then
-            echo "runtime module boundary self-test: $family sibling import was accepted" >&2
+            echo "runtime module boundary self-test: $probe_family sibling import was accepted" >&2
             exit 1
         fi
-        : > "$fixture/host/$family.rs"
+        : > "$fixture/host/$probe_family.rs"
     done
     : > "$fixture/host/unlisted.rs"
     if check_root "$fixture" >/dev/null 2>&1; then
