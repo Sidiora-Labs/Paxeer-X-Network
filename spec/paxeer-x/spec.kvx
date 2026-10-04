@@ -36547,8 +36547,18 @@ fanout_role = "integrate_arbiter/replay_kernel"
 parent_task = "104.33.7"
 source_status = "complete"
 completion_basis = "implementation under owner CONSTITUTION; qualification separately recorded"
-qualification_status = "UNRUN"
+qualification_status = "PREREQUISITE_UNAVAILABLE"
 source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/root-104.33.7.4-final-intake.json"
+qualification_revision = "27071c42809e1725e46c3fa17af62e32ce67ba06"
+qualification_command = "timeout 70s timeout 20m scripts/paxeer-x/verify-sdk-program-go.sh"
+qualification_exit_code = 1
+qualification_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/qualification/sdk1043374-v5/verify.log"
+qualification_evidence = "/root/lx-ops/paxeer-x-integration-2026-10-03/qualification/sdk1043374-v5/result.json"
+build_revision = "27071c42809e1725e46c3fa17af62e32ce67ba06"
+build_command = "timeout 95s env GOPROXY=off GOWORK=off GOMAXPROCS=3 /usr/local/go/bin/go test -c -o /root/lx-ops/paxeer-x-integration-2026-10-03/qualification/sdk1043374-v5/programs.test ."
+build_exit_code = 0
+build_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/qualification/sdk1043374-v5/build.log"
+qualification_observed = "TestProgramTerminalV5NativeCorpus refuses absent PAXEER_X_PROGRAM_TERMINAL_V5_CORPUS; no actual complete ten-case corpus exists at qualification."
 
 [task.104.33.7.5]
 title = "Complete JVM Programs client integration"
