@@ -33473,3 +33473,34 @@ qualification_status = "unverified"
 build_exit_code = 1
 verify_status = "UNRUN"
 qualification_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-104.35.25-build.log"
+
+[task.14.11]
+title = "Recover the original authenticated wallet custody authorization after response loss"
+status = "done"
+mode = "BUILD"
+wave = 4
+requires = ["0.2", "13.4"]
+reqs = ["149", "154"]
+do_1 = "Persist the exact original wallet custody consent and successful quorum signature before returning it; scope every read and reuse to authenticated user, current owned wallet, account, chain and canonical custody digest. Keep durable unknown signing outcomes from causing a fresh signing attempt."
+do_2 = "Expose typed authenticated recovery through the same unified gateway and SDK, preserving the current sign-custody request/response and strict custody parser. Recovery never synthesizes a signature, authorizes changed bytes or labels a signature as a transaction hash."
+do_3 = "Exercise the real production store and handlers for response loss, restart, exact replay, foreign owner, changed account or chain, malformed bytes and ambiguous signing outcome. Missing genuine fixture remains explicit and nonzero."
+touches = ["human/wallet/gateway/src/routes/sign.ts", "human/wallet/gateway/src/custody/authorization.ts", "human/wallet/gateway/migrations/013_wallet_custody_authorizations.sql", "human/wallet/gateway/test/custody-authorization.test.ts", "human/wallet/sdk/src/provider.ts", "tools/paxeer-x/route-catalogue.json", "tools/qualification/paxeer-x/wallet-custody-recovery.py", "human/wallet/gateway/src/agent/actions/orchestrator.ts"]
+build_cmd = "timeout 20m python3 tools/qualification/paxeer-x/wallet-custody-recovery.py --build"
+verify_cmd = "timeout 10m python3 tools/qualification/paxeer-x/wallet-custody-recovery.py"
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop at original30-minute cap, unrelated failure, missing genuine signing authority or weakening; report exact source state, command, exit code and log path."
+completion_basis_policy = "Owner CONSTITUTION: fully implemented DONE; qualification separate and partial remains in_progress."
+source_ownership = "Wait for task14.3 source and qualification lease release before claiming shared signing and provider paths. Root owns catalogue, shared manifests, spec and publication. No live signing or deployment."
+
+do_4 = "Close the recorded gateway compilation blocker by verifying the actual EIP1559 serialized transaction discriminant before typed signer recovery; retain exact authorized transaction comparisons and signature recovery. No unchecked broad type cast."
+
+
+
+completion_basis = "implementation"
+qualification_status = "unverified"
+build_exit_code = 0
+verify_exit_code = 78
+qualification_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-14.11-result.json"

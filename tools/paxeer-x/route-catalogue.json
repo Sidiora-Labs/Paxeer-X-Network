@@ -45298,6 +45298,31 @@
       ]
     },
     {
+      "id": "wallet-gateway:GET:/v1/wallet/custody-authorization/:id",
+      "service": "wallet-gateway",
+      "method": "GET",
+      "path": "/v1/wallet/custody-authorization/:id",
+      "transport": "http",
+      "authentication": "requireAuth",
+      "upstream": "wallet-gateway",
+      "timeout_seconds": 8,
+      "retries": 0,
+      "health_predicate": "service-ready-and-network-version-bound",
+      "version": "1",
+      "consumers": [
+        "wallet",
+        "developer"
+      ],
+      "source": "human/wallet/gateway/src/routes/sign.ts",
+      "proxy": true,
+      "timeout_scope": "per-io",
+      "connect_timeout_seconds": 3,
+      "attestor_authorization_headers": [
+        "X-Agent-Attestor-Authorization-Id",
+        "X-Agent-Attestor-Authorization"
+      ]
+    },
+    {
       "id": "wallet-gateway:POST:/v1/wallet/lx/review",
       "service": "wallet-gateway",
       "method": "POST",

@@ -41,6 +41,7 @@ import {
   type AuditPath,
 } from '../audit.js';
 import { SignTxBody, SendTxBody, SignMessageBody, type TxRequest } from '../schemas/tx.js';
+import { readCustodyAuthorization, retainCustodyAuthorization, completeCustodyAuthorization, CustodyAuthorizationError, type CustodyAuthorizationIdentity, type CustodyAuthorizationRecord } from '../custody/authorization.js';
 
 export interface SignRoutesOptions {
   pool?: Pool;
@@ -357,6 +358,7 @@ export async function signRoutes(app: FastifyInstance, opts: SignRoutesOptions =
       await client.query('ROLLBACK').catch(() => undefined);
       client.release();
       if (err instanceof RouteRefusal) return refuse(err.status, err.code, err.body, err.headers);
+      if (err instanceof CustodyAuthorizationError) return refuse(409,err.code,{error:err.code});
       if(err instanceof CustodyAuthorityError) return refuse(503,err.code,{error:err.code,replication_pending:true});
       if (err instanceof AttestorError) {
         return refuse(attestorErrorStatus(err), `${err.category}:${err.code}`, attestorErrorBody(err));
@@ -440,14 +442,54 @@ export async function signRoutes(app: FastifyInstance, opts: SignRoutesOptions =
     if(!row.rows[0]) return reply.code(404).send({error:'custody_not_found'});
     return reply.send(await custodyStatus(row.rows[0]));
   });
+  function custodyIdentity(sw:SigningWallet,subject:string,custody:Hex):CustodyAuthorizationIdentity {
+    requireQuorumWallet(sw);
+    if(sw.row.chain_id!==env.HYPERPAXEER_CHAIN_ID)throw new RouteRefusal(403,'chain_mismatch',{error:'chain_mismatch'});
+    readConsent(custody,sw.row.address,sw.row.chain_id,true);
+    return {id:keccak256(custody),userId:subject,walletId:sw.row.id,address:sw.row.address.toLowerCase() as Hex,chainId:sw.row.chain_id,keyId:sw.attestorKeyId,custody};
+  }
+  function custodyCompleted(sw:SigningWallet,record:CustodyAuthorizationRecord):Completed {
+    if(record.state!=='signed'||!record.signature||!record.evidence)throw new RouteRefusal(409,'custody_authorization_unknown',{error:'custody_authorization_unknown',custody_id:record.id,state:'signing_unknown'});
+    return {status:200,body:{signature:record.signature,address:sw.row.address},decision:'signed',path:'attestor',account:sw.row.address,walletId:sw.row.id,attestor:record.evidence,txHash:null,nonce:null,reasonCode:null};
+  }
+  app.get('/v1/wallet/custody-authorization/:id',{preHandler:requireAuth},async(req,reply)=>{
+    const id=(req.params as {id:string}).id;
+    if(!/^0x[0-9a-f]{64}$/.test(id))return reply.code(400).send({error:'invalid_custody_id'});
+    return run(req,reply,{requestId:randomUUID(),subject:req.user!.id,route:'/v1/wallet/custody-authorization',kind:'message',requestHash:hashRequest({id}),attestorOnly:true},0n,async({client,sw})=>{
+      const selected=await client.query<{custody:Hex}>('select custody from wallet_custody_authorizations where id=$1 and user_id=$2',[id,req.user!.id]);
+      const custody=selected.rows[0]?.custody;if(!custody)throw new RouteRefusal(404,'custody_authorization_not_found',{error:'custody_authorization_not_found'});
+      const identity=custodyIdentity(sw,req.user!.id,custody);
+      if(identity.id!==id)throw new RouteRefusal(409,'custody_authorization_mismatch',{error:'custody_authorization_mismatch'});
+      const consent=readConsent(custody,sw.row.address,sw.row.chain_id,true);await custodyBeneficiary(client,sw,consent.beneficiary);
+      const record=await readCustodyAuthorization(client,identity);
+      if(!record)throw new RouteRefusal(404,'custody_authorization_not_found',{error:'custody_authorization_not_found'});
+      const done=custodyCompleted(sw,record);
+      return {...done,body:{...done.body,custody_id:id,custody,state:'signed'}};
+    });
+  });
   app.post('/v1/wallet/sign-custody',{preHandler:requireAuth},async(req,reply)=>{
     const parsed=SignCustodyBody.safeParse(req.body);if(!parsed.success) return reply.code(400).send({error:'invalid_body',issues:parsed.error.issues});
     return run(req,reply,{requestId:randomUUID(),subject:req.user!.id,route:'/v1/wallet/sign-custody',kind:'message',requestHash:hashRequest(parsed.data),attestorOnly:true},0n,async({client,sw})=>{
-      const bytes=parsed.data.custody as Hex;const consent=readConsent(bytes,sw.row.address,sw.row.chain_id);
-      if(sw.row.chain_id!==env.HYPERPAXEER_CHAIN_ID||await rpc.getTransactionCount(sw.row.address as Hex,'pending')!==consent.transaction.nonce) throw new RouteRefusal(409,'custody_nonce_changed',{error:'custody_nonce_changed'});
-      await custodyBeneficiary(client,sw,consent.beneficiary);
-      const signed=await signConstruction(sw,req,{kind:'custody',message:bytes},hashMessage({raw:bytes}));
-      return {status:200,body:{signature:signed.signature,address:sw.row.address},decision:'signed',path:'attestor',account:sw.row.address,walletId:sw.row.id,attestor:signed.result,txHash:null,nonce:null,reasonCode:null};
+      const bytes=parsed.data.custody.toLowerCase() as Hex;const identity=custodyIdentity(sw,req.user!.id,bytes);
+      const consent=readConsent(bytes,sw.row.address,sw.row.chain_id,true);await custodyBeneficiary(client,sw,consent.beneficiary);
+      const prior=await readCustodyAuthorization(client,identity);if(prior)return custodyCompleted(sw,prior);
+      readConsent(bytes,sw.row.address,sw.row.chain_id);
+      if(await rpc.getTransactionCount(sw.row.address as Hex,'pending')!==consent.transaction.nonce) throw new RouteRefusal(409,'custody_nonce_changed',{error:'custody_nonce_changed'});
+      const retained=await retainCustodyAuthorization(client,identity);if(!retained.attempt)return custodyCompleted(sw,retained.record);
+      await client.query('COMMIT');
+      await client.query('BEGIN');
+      const current=await loadWalletForSigning(client,req.user!.id);
+      if(!current||current.row.is_disabled)throw new RouteRefusal(403,'wallet_disabled',{error:'wallet_disabled'});
+      const revalidated=custodyIdentity(current,req.user!.id,bytes);
+      if(revalidated.walletId!==identity.walletId||revalidated.address!==identity.address||revalidated.chainId!==identity.chainId||revalidated.keyId!==identity.keyId)throw new RouteRefusal(409,'custody_authorization_mismatch',{error:'custody_authorization_mismatch'});
+      const pending=await readCustodyAuthorization(client,revalidated);
+      if(!pending||pending.state!=='signing_unknown')throw new RouteRefusal(409,'custody_authorization_state_changed',{error:'custody_authorization_state_changed'});
+      readConsent(bytes,current.row.address,current.row.chain_id);
+      await custodyBeneficiary(client,current,consent.beneficiary);
+      if(await rpc.getTransactionCount(current.row.address as Hex,'pending')!==consent.transaction.nonce)throw new RouteRefusal(409,'custody_nonce_changed',{error:'custody_nonce_changed'});
+      const signed=await signConstruction(current,req,{kind:'custody',message:bytes},hashMessage({raw:bytes}));
+      const complete=await completeCustodyAuthorization(client,revalidated,signed.signature,signed.result);
+      return custodyCompleted(current,complete);
     });
   });
   app.post('/v1/wallet/sign-digest',{preHandler:requireAuth},async(req,reply)=>{

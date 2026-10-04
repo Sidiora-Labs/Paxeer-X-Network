@@ -536,6 +536,7 @@ async function broadcastLeg(
       value: BigInt(draft.value), nonce: draft.nonce, gas: BigInt(draft.gas),
       maxFeePerGas: BigInt(draft.maxFeePerGas), maxPriorityFeePerGas: BigInt(draft.maxPriorityFeePerGas),
     });
+    if(!isSerializedEip1559(raw))throw new Error('signer returned a non-EIP1559 serialized transaction');
     const parsed = parseTransaction(raw);
     if ((await recoverTransactionAddress({ serializedTransaction: raw })).toLowerCase() !== wallet.address.toLowerCase()
       || parsed.nonce !== draft.nonce || parsed.chainId !== draft.chainId
@@ -626,4 +627,9 @@ export async function advanceById(id: string): Promise<ActionRow | null> {
   if (!row) return null;
   await advanceAction(row);
   return getAction(id);
+}
+
+function isSerializedEip1559(value:Hex):value is `0x02${string}` {
+  if(!/^0x02(?:[0-9a-fA-F]{2})+$/u.test(value))return false;
+  try{return parseTransaction(value).type==='eip1559';}catch{return false;}
 }

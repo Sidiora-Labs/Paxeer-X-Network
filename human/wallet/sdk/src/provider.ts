@@ -200,6 +200,8 @@ export class PaxeerProvider implements Eip1193Provider {
         return this.custodyStatus(params);
       case 'paxeer_restoreCustody':
         return this.restoreCustody(params);
+      case 'paxeer_recoverCustody':
+        return this.recoverCustody(params);
       case 'paxeer_signCustody':
         return this.signCustody(params);
       default:
@@ -464,19 +466,70 @@ export class PaxeerProvider implements Eip1193Provider {
     return null;
   }
 
+  private async recoverCustody(params: readonly unknown[]): Promise<Hex> {
+    const account = this.requireAccount(); const input = params[0];
+    if (params.length !== 1 || !isRecord(input)) throw new InvalidParamsError('custody', 'exact retained custody bytes are required');
+    exactKeys(input, ['custody'], 'custody');
+    const custody = bytesField(input.custody, 'custody').toLowerCase() as Hex;
+    const authorization = decodeCustodyAuthorization(custody);
+    this.requireSameAccount(authorization.account, account, 'account'); this.requireChain(authorization.chainId.toString());
+    const generation = this.capsGeneration; const chain = this.chainId; const token = await this.token();
+    if (!token) throw new UnauthorizedError('no_token', 'no signed-in session');
+    const session = async (): Promise<void> => {
+      if (generation !== this.capsGeneration || token !== await this.token() || account !== this.accounts[0] || chain !== this.chainId) {
+        throw new UnauthorizedError('session_changed', 'the wallet session changed');
+      }
+    };
+    await session();
+    const id = keccak256(custody);
+    const response = await this.gateway<unknown>('GET', `/v1/wallet/custody-authorization/${id}`);
+    await session();
+    if (!isRecord(response)) throw new InvalidParamsError('custody', 'the gateway returned no custody authorization');
+    exactKeys(response, ['signature', 'address', 'custody_id', 'custody', 'state'], 'custody');
+    if (response.state !== 'signed' || response.custody_id !== id || response.custody !== custody) {
+      throw new InvalidParamsError('custody', 'retained authorization does not match the exact custody bytes');
+    }
+    this.requireSameAccount(response.address, account, 'response.address');
+    const signature = signatureField(response.signature);
+    this.requireSameAccount(await recoverMessageAddress({ message: { raw: custody }, signature }), account, 'signature');
+    await session();
+    this.custodyApprovals.set(custodyCallKey(account, authorization.chainId, authorization.to, authorization.value, authorization.data), { bytes: custody, signature });
+    return signature;
+  }
+
   private async signCustody(params: readonly unknown[]): Promise<Hex> {
     const account = this.requireAccount(); const first = params[0];
     if (params.length !== 1) throw new InvalidParamsError('custody', 'one custody authorization is required');
-    const custody = bytesField(isRecord(first) ? first.custody : first, 'custody');
+    const custody = bytesField(isRecord(first) ? first.custody : first, 'custody').toLowerCase() as Hex;
     if (isRecord(first)) exactKeys(first, ['custody'], 'custody');
     const authorization = decodeCustodyAuthorization(custody);
     this.requireSameAccount(authorization.account, account, 'account'); this.requireChain(authorization.chainId.toString());
+    const generation = this.capsGeneration; const chain = this.chainId; const token = await this.token();
+    const session = async (): Promise<void> => {
+      if (generation !== this.capsGeneration || token !== await this.token() || account !== this.accounts[0] || chain !== this.chainId) {
+        throw new UnauthorizedError('session_changed', 'the wallet session changed');
+      }
+    };
+    try { return await this.recoverCustody([{ custody }]); } catch (error) {
+      if (!(error instanceof ProviderRpcError) || !isRecord(error.data) || error.data.status !== 404 ||
+        !isRecord(error.data.body) || error.data.body.error !== 'custody_authorization_not_found') throw error;
+    }
+    await session();
     const now = BigInt(Math.floor(Date.now() / 1000));
     if (authorization.deadline <= now || authorization.deadline > now + 600n) throw new InvalidParamsError('deadline', 'custody consent is expired or exceeds ten minutes');
-    const response = await this.gateway<SignCustodyResponse>('POST', '/v1/wallet/sign-custody', { custody: custody.toLowerCase() });
+    let response: SignCustodyResponse;
+    try { response = await this.gateway<SignCustodyResponse>('POST', '/v1/wallet/sign-custody', { custody }); } catch (error) {
+      if (!(error instanceof DisconnectedError)) throw error;
+      await session();
+      return this.recoverCustody([{ custody }]);
+    }
+    await session();
     this.requireSameAccount(response.address, account, 'response.address');
-    await this.restoreCustody([{ custody, signature: response.signature }]);
-    return signatureField(response.signature);
+    const signature = signatureField(response.signature);
+    this.requireSameAccount(await recoverMessageAddress({ message: { raw: custody }, signature }), account, 'signature');
+    await session();
+    this.custodyApprovals.set(custodyCallKey(account, authorization.chainId, authorization.to, authorization.value, authorization.data), { bytes: custody, signature });
+    return signature;
   }
 
   private async walletCaps(): Promise<unknown> {
