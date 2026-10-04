@@ -36661,5 +36661,5 @@ owner_approval = "/root/lx-ops/paxeer-x-integration-2026-10-03/terminal-v5-owner
 source_status = "partial"
 completion_basis = "partial source published; original acceptance criteria remain required"
 qualification_status = "UNRUN"
-source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-104.33.7.9-core-source-handoff.json"
+source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/root-native-v5-helper-intake.json"
 qualification = "UNRUN"
