@@ -8,6 +8,7 @@ MANIFEST = RUNTIME / "abi/manifest.rs"
 ABI_MOD = RUNTIME / "abi/mod.rs"
 CRATE_ROOT = RUNTIME / "lib.rs"
 SDK_ABI = ROOT / "programs/sdk/rust/src/abi.rs"
+SDK_POLICY = ROOT / "programs/sdk/rust/src/abi_policy.rs"
 OUTPUT = ROOT / "programs/tests/vectors"
 FROZEN = ROOT / "programs/abi-frozen.sha256"
 
@@ -47,18 +48,36 @@ def function_types(source, name):
 def audit_surface(runtime_source):
     v1_manifest = rust_string(runtime_source, "ABI_V1_MANIFEST")
     crate_root = CRATE_ROOT.read_text()
-    current_version = rust_u16(crate_root, "ABI_VERSION")
+    policy = SDK_POLICY.read_text()
+    versions = {version: rust_u16(policy, f"ABI_V{version}_VERSION") for version in range(1, 5)}
+    if versions != {1: 1, 2: 2, 3: 3, 4: 4}:
+        raise ValueError("canonical SDK policy changed an allocated ABI version")
+    reexport = re.search(
+        r"^pub use layerx_program_sdk::abi_policy::\{([^}]+)\};$",
+        runtime_source, re.MULTILINE,
+    )
+    expected = {f"ABI_V{version}_VERSION" for version in versions}
+    exported = [name.strip() for name in reexport[1].split(",") if name.strip()] if reexport else []
+    if len(exported) != len(expected) or set(exported) != expected:
+        raise ValueError("runtime ABI versions do not reexport the canonical SDK policy")
+    current = re.search(
+        r"^pub const ABI_VERSION: u16 = layerx_program_sdk::abi_policy::(ABI_V[1-4]_VERSION);$",
+        crate_root, re.MULTILINE,
+    )
+    if current is None:
+        raise ValueError("crate-root ABI_VERSION is not bound to the canonical SDK policy")
+    current_version = rust_u16(policy, current[1])
     if current_version != 4: raise ValueError("crate-root ABI_VERSION does not identify ABI v4")
     v4_manifest = rust_string(crate_root, "ABI_MANIFEST")
     v2_manifest = rust_string(runtime_source, "ABI_V2_MANIFEST")
     v3_manifest = rust_string(runtime_source, "ABI_V3_MANIFEST")
     if "pub const ABI_V4_MANIFEST: &str = crate::ABI_MANIFEST;" not in runtime_source:
         raise ValueError("ABI v4 manifest is not owned by the crate-root ABI_MANIFEST")
-    if "pub const ABI_V4_VERSION: u16 = crate::ABI_VERSION;" not in runtime_source:
-        raise ValueError("ABI v4 version is not owned by the crate-root ABI_VERSION")
-    if "pub const ABI_V2_VERSION: u16 = 2;" not in runtime_source:
+    if versions[4] != current_version:
+        raise ValueError("ABI v4 version differs from the crate-root ABI_VERSION")
+    if versions[2] != 2:
         raise ValueError("frozen ABI v2 version is not pinned to its allocated number")
-    if "pub const ABI_V3_VERSION: u16 = 3;" not in runtime_source:
+    if versions[3] != 3:
         raise ValueError("frozen ABI v3 version is not pinned to its allocated number")
     v1 = table(ABI_MOD.read_text(), "HOST_FUNCTIONS")
     v2 = table(runtime_source, "ABI_V2_HOST_FUNCTIONS")

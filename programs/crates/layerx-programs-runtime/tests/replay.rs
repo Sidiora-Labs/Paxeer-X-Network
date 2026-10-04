@@ -1191,3 +1191,69 @@ fn a_valid_module_deploys_under_declared_limits() {
     assert_eq!(receipt.version(), 1);
     assert!(lifecycle.diagnostics().is_empty());
 }
+
+#[test]
+fn mixed_history_preserves_recorded_abi_and_refuses_version_substitution() {
+    let v1 = imported_add("layerx_v1", "storage_delete", 2);
+    let v2 = hash_module();
+    let args = [WasmValue::I32(20), WasmValue::I32(22)];
+    let recorded = [
+        RecordedExecution {
+            runtime_version: RUNTIME_VERSION,
+            abi_version: ABI_V1_VERSION,
+            fee_schedule_version: FeeSchedule::declared().version(),
+            metering_schedule_version:
+                layerx_programs_runtime::meter::inject::GENESIS_METERING_SCHEDULE_VERSION,
+            wasm: &v1,
+            export: "add",
+            args: &args,
+        },
+        RecordedExecution {
+            runtime_version: RUNTIME_VERSION,
+            abi_version: ABI_V2_VERSION,
+            fee_schedule_version: FeeSchedule::declared().version(),
+            metering_schedule_version:
+                layerx_programs_runtime::meter::inject::GENESIS_METERING_SCHEDULE_VERSION,
+            wasm: &v2,
+            export: "run",
+            args: &[],
+        },
+    ];
+    for record in &recorded {
+        let evidence = replay_recorded_execution(record)
+            .unwrap_or_else(|error| panic!("recorded ABI replay: {error}"));
+        let domain = b"LXP/program-execution/v2\0";
+        assert_eq!(evidence.get(..domain.len()), Some(domain.as_slice()));
+        let mut cursor = domain.len();
+        assert_eq!(
+            u16::from_be_bytes(take(&evidence, &mut cursor)),
+            record.runtime_version
+        );
+        assert_eq!(
+            u16::from_be_bytes(take(&evidence, &mut cursor)),
+            record.abi_version
+        );
+        assert_eq!(
+            u32::from_be_bytes(take(&evidence, &mut cursor)),
+            record.metering_schedule_version
+        );
+        assert_eq!(replay_recorded_execution(record), Ok(evidence));
+    }
+    assert!(matches!(
+        replay_recorded_execution(&RecordedExecution {
+            abi_version: ABI_V1_VERSION,
+            ..recorded[1].clone()
+        }),
+        Err(ReplayRefusal::Validation(
+            ValidationRefusal::ForbiddenImport { .. }
+        ))
+    ));
+    let original = replay_recorded_execution(&recorded[0]);
+    let substituted = replay_recorded_execution(&RecordedExecution {
+        abi_version: ABI_V2_VERSION,
+        ..recorded[0].clone()
+    });
+    assert!(original.is_ok());
+    assert!(substituted.is_ok());
+    assert_ne!(original, substituted);
+}
