@@ -2183,3 +2183,7 @@ resolution = "Record both contradictions once; require an explicit additive auth
 [gotcha.649]
 observed = "Native account-state encoding consumes bounded arena capacity; the additive profile2 wrapper must preserve canonical bytes before adding its root and opt-in proofs."
 resolution = "Retain exact canonical bytes and reset only the wrapper allocation mark; preserve old LXPS1/profile refusal, ownership and conservation checks."
+
+[gotcha.650]
+observed = "A task selector number does not imply a shell gate exists; ramp10426.3 owns an actual Python verifier rather than a guessed numbered shell file."
+resolution = "Use discovered tools/qualification/paxeer-x/ramp-source-settlement.py for the actual connected producer contract and preserve genuine isolated authority input requirements."

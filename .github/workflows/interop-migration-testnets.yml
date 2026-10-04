@@ -86,3 +86,26 @@ jobs:
           LAYERX_SOLANA_HISTORY_EVIDENCE: ${{ runner.temp }}/layerx-migration-testnets/solana-history.evidence
           LAYERX_SOLANA_HISTORY_STORE_CONFIG: ${{ runner.temp }}/layerx-migration-testnets/solana-history-store.json
         run: make interop-test-migration-testnets INTEROP_CARGO="cargo +1.91.1"
+  connected-source-qualification:
+    name: Authenticated mapping and funded migration V2
+    environment: migration-testnets
+    runs-on: ${{ vars.CI_LINUX_RUNNER }}
+    timeout-minutes: 30
+    env:
+      LAYERX_MIGRATION_V2_FIXTURE: ${{ vars.LAYERX_MIGRATION_V2_FIXTURE }}
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install pinned Rust toolchain
+        run: rustup toolchain install 1.91.1 --profile minimal --no-self-update
+      - name: Require protected owner fixture path
+        run: |
+          set -eu
+          test -n "${LAYERX_MIGRATION_V2_FIXTURE}"
+          printf 'CARGO_TARGET_DIR=%s/layerx-migration-v2-target\n' "${RUNNER_TEMP}" >> "${GITHUB_ENV}"
+      - name: Compile the connected migration test
+        run: timeout 20m cargo test --locked --manifest-path interop/Cargo.toml -p layerx-migrate --test migration_v2_connected --no-run
+      - name: Exercise genuine mapping and independently funded receipts
+        run: timeout 10m tools/paxeer-x/gates/104.24.2.sh
