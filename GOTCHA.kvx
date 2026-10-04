@@ -2419,3 +2419,13 @@ resolution = "Resolve actual filenames with rg --files before reading and preser
 area = "Scalar and native approval type boundary"
 observed = "Every genuine native ActivityType has a nonzero module in a u32, whereas the legacy scalar approval Prepared uses u16 and AgentDid counterparties; the checked conversion deliberately refuses it."
 resolution = "Preserve the refusal and use the existing explicit native_effect_v1 authority profile. Prevent unversioned configured-policy bypass without claiming the legacy scalar integration complete."
+
+[gotcha.704]
+area = "Concurrent candidate mainline binding"
+observed = "The custody build passed, but publishing another independent task advanced refs/heads/main and the dispatcher rejected the earlier clean candidate manifest before running any cases."
+resolution = "Bind future clean candidate creation and dispatch to the same immutable published mainline revision; retain the refused gate and do not rerun it unchanged."
+
+[gotcha.705]
+area = "Maintained custody receipt inclusion"
+observed = "The real boundary consumer omitted the newly required activity_receipt_proof field, causing the original adapter build to fail."
+resolution = "Consume it through the actual proof verifier with independently established sequencer authorization and preserve all prior root, sequence and signature assertions."
