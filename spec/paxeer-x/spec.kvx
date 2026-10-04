@@ -35999,3 +35999,23 @@ qualification_exit = 1
 qualification_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-103.6.18-verify-repair1.log"
 qualification_result = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-103.6.18-result.json"
 observed = "Duplicate fields resolved; existing task22.10/103.6.2 dependency-wave contradictions and task104.13.33 empty touches fail unchanged repository validation."
+
+[task.103.6.19]
+title = "Use the canonical read operation for private MCP environment access"
+status = "done"
+wave = 5
+verify_cmd = "timeout 10m execute the exact captured tenant_resolve compiler artifact with existing genuine corpus; no rebuild"
+touches = ["agent/crates/layerx-agentd/src/agent_rpc.rs"]
+do_1 = "Replace only nonexistent ReadAuthority with existing ReadModuleState in the MCP environment boundary while preserving all authorization and owner session checks"
+do_2 = "Compile the actual tenant_resolve target once with locked dependencies then run that captured compiler binary once"
+mode = "BUILD"
+build_cmd = "timeout 20m /root/.cargo/bin/cargo test --locked --manifest-path agent/Cargo.toml -p layerx-agentd --test tenant_resolve --no-run --message-format=json"
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop at 16:34 UTC, focused result, unrelated error, or authorization conflict; preserve every existing assertion and authority check."
+source_status = "complete"
+completion_basis = "implementation under owner CONSTITUTION; qualification separately recorded"
+qualification_status = "UNRUN"
+source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-103.6.19-publication-handoff.json"

@@ -1199,7 +1199,7 @@ pub fn mcp_owner_environment<A: HumanAuthorityBoundary>(
     credential: &SessionCredential,
 ) -> Result<McpOwnerEnvironment, Rejection> {
     let envelope = Envelope {
-        request_id, operation:Operation::ReadAuthority, idempotency_key:None,
+        request_id, operation:Operation::ReadModuleState, idempotency_key:None,
         request:serde_json::Map::new(), credential:Some(credential.clone()),
     };
     let (permit, _, bound, control) = authorized_on_surface(owner, &envelope, Surface::Mcp)?;
