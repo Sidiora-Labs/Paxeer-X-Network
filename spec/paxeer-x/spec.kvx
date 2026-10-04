@@ -24085,7 +24085,7 @@ source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/fleet-104.26.2-in
 
 [task.104.30.2]
 title = "Authorise transfer legs under program authority"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 2
 requires = ["0.2"]
@@ -24117,6 +24117,13 @@ build_cmd = "timeout 30m make -f Makefile -f tools/paxeer-x/build/104.30.2.mk pa
 build_targets = ["Native programs_monetary_law linked to current $(TEST_LIBRARY) and host-ffi sandbox staticlib with LXP_TESTING as existing target", "Rust runtime transfer unit-test executable", "Rust monetary_law integration executable including actual Wasm guest preparation cases"]
 producer_contract = "Compile all declared real fixtures, native libraries and Rust executables in one explicit scoped build stage after implementation. Gate consumes source/toolchain-bound artifact manifest without hidden compilation; no phony programs-build/workspace build. Record source revision, inputs, exact binaries and features."
 release_gate_policy = "Retain complete make programs-test once per merged wave or release candidate, never per-task; scoped gate is not an aggregate-equivalence claim."
+fleet_authority = "User explicitly ordered30agents into pending integrations within4hours; fresh bounded source implementation resumes. Preserve prior source/evidence and every assertion."
+fleet_role = "/root/complete_program_accounts/mcp_real_payer"
+fleet_scope_manifest = "/root/lx-ops/paxeer-x-integration-2026-10-03/fleet-104.30.2-brief.json"
+source_status = "complete"
+completion_basis = "implementation under owner CONSTITUTION; qualification separately recorded"
+qualification_status = "UNRUN"
+source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/fleet-104.30.2-retained-publication.json"
 
 [task.104.30.3]
 title = "Wire program-owned accounts into the kernel account registry"
