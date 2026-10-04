@@ -2239,3 +2239,13 @@ resolution = "Retain all legacy bytes; activate a signed additive replay profile
 area = "Replay canonical key buffer"
 observed = "Task104.35.20 build exit2 at state_record.c:496: exact progreplay/v1/ prefix is14bytes plus32-byte activity ID, while the new fixed buffer declares45."
 resolution = "Original task stopped at cap; finish exact46-byte serialization and proof buffers under a separate bounded owner, preserving every external bound and legacy encoding."
+
+[gotcha.663]
+area = "Replay producer qualification fixture"
+observed = "The exact replay key correction compiled production native and Programs code; its build then failed only in the new replay corpus on late POSIX feature configuration and unused included transport helpers."
+resolution = "Keep compiler checks intact; complete actual transport corpus and authenticated exports under the released fixture owner without rerunning unchanged task23."
+
+[gotcha.664]
+area = "Canonical admission receipt operation"
+observed = "Programs receipt operation is CALL3 and registered non-CALL0, independent of the signed activity ordinal; native21 authentic signing and restart corpus passed after matching this actual mapping."
+resolution = "Preserve registry and cryptographic checks and use the exact native operation binding."

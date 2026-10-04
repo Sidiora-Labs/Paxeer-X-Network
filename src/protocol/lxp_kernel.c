@@ -6322,7 +6322,7 @@ lxp_result lxp_kernel_program_replay_proof(
     const lxp_kernel *kernel, const lxp_receipt *receipt,
     lxp_state_witness *metadata_proof, lxp_byte_span *full_witness)
 {
-    uint8_t key[45];
+    uint8_t key[LXP_PROGRAMS_REPLAY_KEY_BYTES];
     uint8_t blob_key[32];
     uint8_t digest[32];
     lxp_result status;

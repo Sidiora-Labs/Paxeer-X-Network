@@ -708,7 +708,7 @@ typedef struct lxp_programs_call_activity lxp_programs_call_activity;
 enum {
     LXP_PROGRAMS_REPLAY_MAX_BOUNDARIES = 4096,
     LXP_PROGRAMS_REPLAY_MAX_BYTES = 1048576,
-    LXP_PROGRAMS_REPLAY_KEY_BYTES = 45
+    LXP_PROGRAMS_REPLAY_KEY_BYTES = 46
 };
 typedef struct lxp_programs_replay_capture {
     uint32_t network_id;
