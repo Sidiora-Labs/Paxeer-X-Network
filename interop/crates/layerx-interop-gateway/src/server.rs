@@ -33,6 +33,7 @@ pub enum HostedAdapter {
     FiatCard,
     FiatBank,
     FiatRtp,
+    MigrationV2,
 }
 
 impl HostedAdapter {
@@ -45,6 +46,7 @@ impl HostedAdapter {
             Self::Ucp => "ucp",
             Self::VisaTap => "visa-tap",
             Self::FiatCard | Self::FiatBank | Self::FiatRtp => "fiat",
+            Self::MigrationV2 => "migration-v2",
         }
     }
 
@@ -60,6 +62,7 @@ impl HostedAdapter {
             Self::FiatCard => "fiat-card",
             Self::FiatBank => "fiat-bank",
             Self::FiatRtp => "fiat-rtp",
+            Self::MigrationV2 => "migration-v2",
         }
     }
 }
@@ -84,6 +87,8 @@ pub enum InteropRoute<'a> {
     VisaVerifyIntent,
     VisaExecuteIntent,
     FiatCallback { adapter: HostedAdapter },
+    MigrationAccountV2,
+    MigrationAssetV2,
 }
 
 impl InteropRoute<'_> {
@@ -101,6 +106,7 @@ impl InteropRoute<'_> {
             Self::UcpComplete => Some(HostedAdapter::Ucp),
             Self::VisaVerifyIntent | Self::VisaExecuteIntent => Some(HostedAdapter::VisaTap),
             Self::FiatCallback { adapter } => Some(*adapter),
+            Self::MigrationAccountV2 | Self::MigrationAssetV2 => Some(HostedAdapter::MigrationV2),
         }
     }
 
@@ -114,6 +120,8 @@ impl InteropRoute<'_> {
                 | Self::UcpComplete
                 | Self::VisaExecuteIntent
                 | Self::FiatCallback { .. }
+                | Self::MigrationAccountV2
+                | Self::MigrationAssetV2
         )
     }
 }
@@ -189,6 +197,8 @@ pub fn interop_gateway_routes<'a>(
         ("GET", "/livez") => return Ok(InteropRoute::Live),
         ("GET", "/readyz") => return Ok(InteropRoute::Ready),
         ("GET", "/v1/adapters") => return Ok(InteropRoute::AdapterMetadata),
+        ("POST", "/v2/migration/accounts") => return Ok(InteropRoute::MigrationAccountV2),
+        ("POST", "/v2/migration/assets") => return Ok(InteropRoute::MigrationAssetV2),
         _ => {}
     }
     if method == "GET" {
@@ -270,4 +280,31 @@ pub enum RouteError {
     Unknown,
     UnknownTransport,
     InvalidOperation,
+}
+
+#[cfg(test)]
+mod migration_v2_route_tests {
+    use super::{interop_gateway_routes, HostedAdapter, InteropRoute, RouteError};
+
+    #[test]
+    fn mapping_v2_is_an_explicit_durable_route() {
+        let route = interop_gateway_routes("POST", "/v2/migration/accounts")
+            .unwrap_or_else(|error| panic!("migration route: {error:?}"));
+        assert_eq!(route, InteropRoute::MigrationAccountV2);
+        assert_eq!(route.adapter(), Some(HostedAdapter::MigrationV2));
+        assert!(route.state_changing());
+        assert_eq!(HostedAdapter::MigrationV2.id(), "migration-v2");
+    }
+
+    #[test]
+    fn mapping_v2_refuses_method_version_and_asset_aliases() {
+        for (method, path, refusal) in [
+            ("GET", "/v2/migration/accounts", RouteError::Unknown),
+            ("POST", "/v1/migration/accounts", RouteError::UnknownTransport),
+            ("POST", "/v2/migration/accounts/", RouteError::Unknown),
+            ("GET", "/v2/migration/assets", RouteError::Unknown),
+        ] {
+            assert_eq!(interop_gateway_routes(method, path), Err(refusal));
+        }
+    }
 }

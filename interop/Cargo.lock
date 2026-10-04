@@ -1168,6 +1168,7 @@ dependencies = [
  "layerx-ap2",
  "layerx-fiat",
  "layerx-interop-gateway",
+ "layerx-migrate",
  "layerx-platform-gateway",
  "layerx-proof",
  "layerx-ucp",

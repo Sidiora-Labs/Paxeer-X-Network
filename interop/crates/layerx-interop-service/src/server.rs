@@ -18,6 +18,8 @@ use layerx_interop_gateway::server::{
 };
 use layerx_interop_gateway::trace::TraceId;
 use layerx_interop_gateway::GatewayCore;
+use layerx_migrate::ramp_v2::{SourceSettlementRequestV2, SourceSettlementResponseV2};
+use layerx_migrate::{MigrationError, SourceEvidence};
 use layerx_platform_gateway::http::{IncomingRequest, OutboundRequest, OutgoingResponse};
 use layerx_platform_gateway::store::{
     Completion, KeyRecord, Reservation, ReservationRequest, TapCredentialRecord,
@@ -267,6 +269,8 @@ fn complete_operation(
         return failure(503, "persistence_unavailable", Some(5));
     }
     OutgoingResponse {
+        content_type: "application/json".to_owned(),
+        headers: Vec::new(),
         status: dispatched.status,
         body,
         retry_after: None,
@@ -347,7 +351,9 @@ fn continuation(request: &IncomingRequest) -> Result<String, ()> {
 fn resumed_request(encoded: &str, authorization: &str) -> Result<IncomingRequest, ()> {
     let continuation: DurableContinuation = serde_json::from_str(encoded).map_err(|_| ())?;
     if !matches!(continuation.method.as_str(), "GET" | "POST")
-        || !continuation.path.starts_with("/v1/")
+        || !(continuation.path.starts_with("/v1/")
+            || (continuation.method == "POST"
+                && matches!(continuation.path.as_str(), "/v2/migration/accounts" | "/v2/migration/assets")))
         || continuation.path.starts_with("/v1/operations/")
     {
         return Err(());
@@ -436,8 +442,236 @@ fn dispatch(
         InteropRoute::FiatCallback { adapter } => fiat(
             config, request, record, principal, trace, operation, adapter,
         ),
+        InteropRoute::MigrationAccountV2 => migration_account_v2(config, request, record, principal, trace),
+        InteropRoute::MigrationAssetV2 => migration_asset_v2(config, request, record, trace),
         InteropRoute::Live | InteropRoute::Ready | InteropRoute::AdapterMetadata => {
             Dispatch::error(404, "refused", "not_found")
+        }
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "lowercase")]
+enum MigrationSourceV2 {
+    Ethereum,
+    Solana,
+}
+
+impl MigrationSourceV2 {
+    const fn label(&self) -> &'static str {
+        match self {
+            Self::Ethereum => "ethereum",
+            Self::Solana => "solana",
+        }
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct MigrationAssetRequestV2 {
+    order_digest: [u8; 32],
+    chain: MigrationSourceV2,
+    source_evidence: String,
+}
+
+fn migration_asset_v2(
+    config: &Config,
+    request: &IncomingRequest,
+    record: &KeyRecord,
+    trace: &TraceId,
+) -> Dispatch {
+    let Ok(body) = direct_body::<MigrationAssetRequestV2>(request) else {
+        return Dispatch::error(400, "refused", "invalid_migration_request");
+    };
+    let Some(ramp) = config.migration_v2.as_ref().and_then(|profile| profile.ramp_intake.as_ref()) else {
+        return Dispatch::error(503, "refused", "migration_ramp_unconfigured");
+    };
+    let Ok(identity) = parse_hex32(&record.signer_public_key) else {
+        return Dispatch::error(503, "refused", "authenticated_signer_invalid");
+    };
+    if identity == [0; 32] {
+        return Dispatch::error(503, "refused", "authenticated_signer_invalid");
+    }
+    let Some(customer_authorization) = request.headers.get("authorization") else {
+        return Dispatch::error(401, "refused", "api_key_required");
+    };
+    let Ok(decoded) = STANDARD.decode(&body.source_evidence) else {
+        return Dispatch::error(400, "refused", "invalid_evidence");
+    };
+    if STANDARD.encode(&decoded) != body.source_evidence {
+        return Dispatch::error(400, "refused", "invalid_evidence");
+    }
+    let Ok(evidence) = SourceEvidence::new(decoded) else {
+        return Dispatch::error(400, "refused", "invalid_evidence");
+    };
+    let Ok(settlement) = SourceSettlementRequestV2::new(body.order_digest, body.chain.label(), &evidence) else {
+        return Dispatch::error(400, "refused", "invalid_migration_request");
+    };
+    let Ok(encoded) = serde_json::to_vec(&settlement) else {
+        return Dispatch::error(503, "refused", "migration_encoding_invalid");
+    };
+    let service_authorization = zeroize::Zeroizing::new(format!("Bearer {}", ramp.token.as_str()));
+    let Ok(upstream) = config.client.request_migration_source_settlement(
+        &ramp.endpoint,
+        service_authorization.as_str(),
+        &OutboundRequest {
+            method: "POST", path: "/internal/v2/source-settlements",
+            idempotency: request.headers.get("idempotency-key").map(String::as_str),
+            content_type: "application/json", body: &encoded,
+        },
+        Some(trace.as_str()), customer_authorization, &identity,
+    ) else {
+        return Dispatch::error(503, "pending", "migration_ramp_unavailable");
+    };
+    if !matches!(upstream.status, 200 | 202) {
+        return Dispatch::error(
+            if matches!(upstream.status, 401 | 403 | 404 | 409 | 422) { upstream.status } else { 503 },
+            if matches!(upstream.status, 401 | 403 | 404 | 409 | 422) { "refused" } else { "pending" },
+            "migration_source_settlement_refused",
+        );
+    }
+    if upstream.content_type != "application/json" || upstream.body.len() > MAX_BODY {
+        return Dispatch::error(503, "refused", "migration_response_invalid");
+    }
+    let Ok(response) = serde_json::from_slice::<SourceSettlementResponseV2>(&upstream.body) else {
+        return Dispatch::error(503, "refused", "migration_response_invalid");
+    };
+    if response.validate(&settlement, &evidence).is_err() {
+        return Dispatch::error(503, "refused", "migration_response_mismatch");
+    }
+    let durable_state = match response.state.as_str() {
+        "done" => "external_source_recorded",
+        "layerx_refused" => "refused",
+        _ => "pending",
+    };
+    Dispatch::result(upstream.status, durable_state, json!({
+        "source_settlement": response,
+        "provenance": "external-custody",
+        "custody_label": "External custody: this independent market maker controls the off-platform funds and payout.",
+        "layerx_receipt": false,
+    }))
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct MigrationAccountRequestV2 {
+    chain: MigrationSourceV2,
+    source_evidence: String,
+}
+
+fn migration_account_v2(
+    config: &Config,
+    request: &IncomingRequest,
+    record: &KeyRecord,
+    principal: &PrincipalId,
+    trace: &TraceId,
+) -> Dispatch {
+    let Ok(body) = direct_body::<MigrationAccountRequestV2>(request) else {
+        return Dispatch::error(400, "refused", "invalid_migration_request");
+    };
+    let Some(profile) = config.migration_v2.as_ref() else {
+        return Dispatch::error(503, "refused", "migration_v2_unconfigured");
+    };
+    let Ok(identity) = parse_hex32(&record.signer_public_key) else {
+        return Dispatch::error(503, "refused", "authenticated_signer_invalid");
+    };
+    if identity == [0; 32] {
+        return Dispatch::error(503, "refused", "authenticated_signer_invalid");
+    }
+    let Ok(decoded) = STANDARD.decode(&body.source_evidence) else {
+        return Dispatch::error(400, "refused", "invalid_evidence");
+    };
+    if STANDARD.encode(&decoded) != body.source_evidence {
+        return Dispatch::error(400, "refused", "invalid_evidence");
+    }
+    let Ok(evidence) = SourceEvidence::new(decoded) else {
+        return Dispatch::error(400, "refused", "invalid_evidence");
+    };
+    let confirmed = match body.chain {
+        MigrationSourceV2::Ethereum => {
+            let Some(verifier) = profile.ethereum.as_ref() else {
+                return Dispatch::error(503, "refused", "migration_source_unconfigured");
+            };
+            profile.mapping_store.confirm(principal, identity, &evidence, verifier, &profile.paxeer_binding, trace)
+        }
+        MigrationSourceV2::Solana => {
+            let Some(verifier) = profile.solana.as_ref() else {
+                return Dispatch::error(503, "refused", "migration_source_unconfigured");
+            };
+            profile.mapping_store.confirm(principal, identity, &evidence, verifier, &profile.paxeer_binding, trace)
+        }
+    };
+    match confirmed {
+        Ok(mapping) => match serde_json::to_value(mapping) {
+            Ok(value) => Dispatch::result(200, "external_mapping_confirmed", value),
+            Err(_) => Dispatch::error(503, "refused", "mapping_encoding_invalid"),
+        },
+        Err(error) => {
+            let (status, state) = match error {
+                MigrationError::SourcePending => (202, "pending"),
+                MigrationError::RpcUnavailable | MigrationError::RpcDivergence
+                    | MigrationError::RpcResponseMismatch => (503, "pending"),
+                MigrationError::RpcRateLimited { .. } => (429, "pending"),
+                MigrationError::Configuration | MigrationError::StorageRefused
+                    | MigrationError::CheckpointIntegrity => (503, "refused"),
+                MigrationError::CheckpointConflict | MigrationError::SourceDisplaced
+                    | MigrationError::SourceReverted => (409, "refused"),
+                _ => (400, "refused"),
+            };
+            Dispatch::error(status, state, error.code())
+        }
+    }
+}
+
+#[cfg(test)]
+mod migration_v2_request_tests {
+    use super::{direct_body, resumed_request, DurableContinuation, MigrationAccountRequestV2};
+    use layerx_platform_gateway::http::IncomingRequest;
+    use std::collections::BTreeMap;
+
+    fn request(body: &[u8]) -> IncomingRequest {
+        IncomingRequest {
+            method: "POST".to_owned(),
+            path: "/v2/migration/accounts".to_owned(),
+            headers: BTreeMap::from([("content-type".to_owned(), "application/json".to_owned())]),
+            body: body.to_vec(),
+        }
+    }
+
+    #[test]
+    fn mapping_body_cannot_supply_owner_or_receipt_authority() {
+        assert!(direct_body::<MigrationAccountRequestV2>(&request(
+            br#"{"chain":"ethereum","source_evidence":"AQ=="}"#,
+        )).is_ok());
+        for body in [
+            br#"{"chain":"ethereum","source_evidence":"AQ==","principal":"other"}"#.as_slice(),
+            br#"{"chain":"ethereum","source_evidence":"AQ==","layerx_identity":"other"}"#.as_slice(),
+            br#"{"chain":"ethereum","source_evidence":"AQ==","layerx_receipt":true}"#.as_slice(),
+            br#"{"chain":"paxeer","source_evidence":"AQ=="}"#.as_slice(),
+            br#"{"chain":"ethereum","chain":"solana","source_evidence":"AQ=="}"#.as_slice(),
+        ] {
+            assert!(direct_body::<MigrationAccountRequestV2>(&request(body)).is_err());
+        }
+    }
+
+    #[test]
+    fn pending_mapping_resumes_only_the_exact_authenticated_route() {
+        let encoded = serde_json::to_string(&DurableContinuation {
+            method: "POST".to_owned(), path: "/v2/migration/accounts".to_owned(),
+            content_type: "application/json".to_owned(), idempotency_key: Some("mapping-key".to_owned()),
+            body: "7b7d".to_owned(),
+        }).unwrap_or_else(|error| panic!("continuation encoding: {error}"));
+        let resumed = resumed_request(&encoded, "Bearer renewed-key")
+            .unwrap_or_else(|()| panic!("exact migration continuation refused"));
+        assert_eq!(resumed.path, "/v2/migration/accounts");
+        assert_eq!(resumed.headers.get("authorization").map(String::as_str), Some("Bearer renewed-key"));
+        for (method, path) in [("GET", "/v2/migration/accounts"), ("POST", "/v2/migration/assets/invalid")] {
+            let encoded = serde_json::to_string(&DurableContinuation {
+                method: method.to_owned(), path: path.to_owned(),
+                content_type: "application/json".to_owned(), idempotency_key: None,
+                body: "7b7d".to_owned(),
+            }).unwrap_or_else(|error| panic!("continuation encoding: {error}"));
+            assert!(resumed_request(&encoded, "Bearer renewed-key").is_err());
         }
     }
 }
@@ -2487,6 +2721,8 @@ fn stored_response(
 ) -> OutgoingResponse {
     match decode_hex(stored, MAX_BODY) {
         Ok(body) if !body.is_empty() => OutgoingResponse {
+            content_type: "application/json".to_owned(),
+            headers: Vec::new(),
             status: if state == "pending" { 202 } else { 200 },
             body,
             retry_after: None,
@@ -2501,6 +2737,8 @@ fn stored_response(
 
 fn failure(status: u16, code: &str, retry_after: Option<u64>) -> OutgoingResponse {
     OutgoingResponse {
+        content_type: "application/json".to_owned(),
+        headers: Vec::new(),
         status,
         body: json!({ "ok": false, "error": { "code": code } })
             .to_string()
@@ -2511,6 +2749,8 @@ fn failure(status: u16, code: &str, retry_after: Option<u64>) -> OutgoingRespons
 
 fn json_response(status: u16, value: &Value) -> OutgoingResponse {
     OutgoingResponse {
+        content_type: "application/json".to_owned(),
+        headers: Vec::new(),
         status,
         body: value.to_string().into_bytes(),
         retry_after: None,

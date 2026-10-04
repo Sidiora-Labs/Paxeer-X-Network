@@ -32413,3 +32413,25 @@ qualification_build_exit = 0
 qualification_verify_exit = 0
 qualification_build_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-104.35.12-build-repair1.log"
 qualification_verify_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-104.35.12-verify-repair1.log"
+
+[task.104.24.2]
+title = "Connect verified external mapping and funded ramp migration producers through the unified endpoint"
+status = "in_progress"
+mode = "BUILD"
+wave = 2
+requires = ["0.2", "104.26.1"]
+reqs = ["1096.1", "1096.2"]
+do_1 = "Freeze additive AccountMappingV2 and FundedRampMigrationV2 transport using genuine existing wallet binding, finalized source verifiers and actual funded ramp authority. Keep v1 policies, custody exclusivity and canonical ContextHash intact."
+do_2 = "Implement durable source-claim associations, exact signed activity before-send retention, protected replay/conflict/uncertainty recovery and independently verified settlement; never create reserve credit from external custody."
+do_3 = "Compose authenticated real producers and labeled provenance into the existing unified gateway; all routes use actual handlers and closed ownership."
+do_4 = "Implement one genuine protected Ethereum/Solana source-to-endpoint corpus covering mapping, funded transfer, refusal, tenant isolation, uncertainty and crash recovery."
+touches = ["interop/crates/layerx-migrate/src/mapping_v2.rs", "interop/crates/layerx-migrate/src/ramp_v2.rs", "interop/crates/layerx-migrate/src/journal.rs", "interop/crates/layerx-migrate/src/lib.rs", "interop/crates/layerx-migrate/src/main.rs", "interop/crates/layerx-migrate/tests/testnets.rs", "interop/crates/layerx-interop-service/src/config.rs", "interop/crates/layerx-interop-service/src/server.rs", "interop/crates/layerx-interop-gateway/src/server.rs", ".github/workflows/interop-migration-testnets.yml", "tools/paxeer-x/gates/104.24.2.sh", "tools/qualification/paxeer-x/migration-v2.py", "interop/crates/layerx-interop-service/Cargo.toml", "interop/Cargo.lock"]
+build_cmd = "timeout 20m env CARGO_TARGET_DIR=/root/lx-target/interop cargo build --locked --manifest-path interop/Cargo.toml -p layerx-migrate -p layerx-interop-service -p layerx-interop-gateway"
+verify_cmd = "timeout 20m tools/paxeer-x/gates/104.24.2.sh"
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop at original dispatch thirty-minute cap, two failed repairs, missing genuine interface or any legacy weakening; report exact source state and evidence."
+completion_basis_policy = "Owner CONSTITUTION: fully implemented tasks DONE, actual qualification separate; partial implementation remains in_progress."
+source_ownership = "Root serializes shared manifests, locks, spec, GOTCHA and publication. No deployment or live economic execution."

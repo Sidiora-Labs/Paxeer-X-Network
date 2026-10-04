@@ -55,6 +55,101 @@ struct ClaimCheckpoint {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct MappingCheckpointV2 {
+    principal: String,
+    source_network: String,
+    source_address: String,
+    layerx_identity: [u8; 32],
+    evm_address: [u8; 20],
+    paxeer_block_number: u64,
+    paxeer_block_hash: [u8; 32],
+    evidence_digest: [u8; 32],
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct AccountMappingV2 {
+    version: &'static str,
+    #[serde(flatten)]
+    checkpoint: MappingCheckpointV2,
+    provenance: &'static str,
+    layerx_receipt: bool,
+}
+
+pub struct AccountMappingStoreV2 {
+    journal: Journal,
+}
+
+impl AccountMappingStoreV2 {
+    pub fn new(config: &JournalConfig) -> Result<Self, MigrationError> {
+        Ok(Self { journal: Journal::new(config)? })
+    }
+
+    pub fn confirm(
+        &self,
+        principal: &PrincipalId,
+        authenticated_identity: [u8; 32],
+        evidence: &crate::SourceEvidence,
+        verifier: &impl crate::SourceVerifier,
+        bindings: &crate::mapping_v2::PaxeerBindingVerifierV2,
+        trace: &layerx_interop_gateway::trace::TraceId,
+    ) -> Result<AccountMappingV2, MigrationError> {
+        let ownership = verifier.verify_ownership(evidence, trace)?;
+        if authenticated_identity == [0; 32] || ownership.layerx_identity() != authenticated_identity {
+            return Err(MigrationError::EvidenceMismatch);
+        }
+        ownership.validate(evidence)?;
+        let binding = bindings.verify_identity(authenticated_identity)?;
+        let source_network = match ownership.chain() {
+            crate::SourceChain::Ethereum { chain_id } => format!("ethereum:{chain_id}"),
+            crate::SourceChain::Solana { genesis_hash } => format!("solana:{}", hex(&genesis_hash)),
+        };
+        let source_address = match ownership.address() {
+            crate::ExternalAddress::Ethereum(value) => hex(&value),
+            crate::ExternalAddress::Solana(value) => hex(&value),
+        };
+        let checkpoint = MappingCheckpointV2 {
+            principal: principal.as_str().to_owned(), source_network, source_address,
+            layerx_identity: binding.identity(), evm_address: binding.evm_address(),
+            paxeer_block_number: binding.block_number(), paxeer_block_hash: binding.block_hash(),
+            evidence_digest: ownership.evidence_digest(),
+        };
+        let key = mapping_key_v2(&checkpoint)?;
+        self.journal.append(&Update::AccountMappingV2 { key: key.clone(), checkpoint })?;
+        let stored = self.journal.load()?.account_mappings_v2.get(&key).cloned()
+            .ok_or(MigrationError::CheckpointIntegrity)?;
+        Ok(AccountMappingV2 { version: "account-mapping-v2", checkpoint: stored,
+            provenance: "paxeer-binding", layerx_receipt: false })
+    }
+}
+
+fn mapping_key_v2(value: &MappingCheckpointV2) -> Result<String, MigrationError> {
+    PrincipalId::new(value.principal.clone()).map_err(|_| MigrationError::CheckpointIntegrity)?;
+    let (chain, address) = if let Some(number) = value.source_network.strip_prefix("ethereum:") {
+        let chain_id = number.parse::<u64>().map_err(|_| MigrationError::CheckpointIntegrity)?;
+        if chain_id == 0 || chain_id.to_string() != number { return Err(MigrationError::CheckpointIntegrity); }
+        (crate::SourceChain::Ethereum { chain_id }, crate::ExternalAddress::Ethereum(
+            crate::source_codec::decode_fixed_hex(&format!("0x{}", value.source_address))?))
+    } else if let Some(genesis) = value.source_network.strip_prefix("solana:") {
+        let genesis_hash = crate::source_codec::decode_fixed_hex(&format!("0x{genesis}"))?;
+        (crate::SourceChain::Solana { genesis_hash }, crate::ExternalAddress::Solana(
+            crate::source_codec::decode_fixed_hex(&format!("0x{}", value.source_address))?))
+    } else { return Err(MigrationError::CheckpointIntegrity); };
+    chain.validate()?;
+    address.validate_for(chain)?;
+    if value.layerx_identity == [0; 32] || value.evm_address == [0; 20]
+        || value.paxeer_block_number == 0 || value.paxeer_block_hash == [0; 32]
+        || value.evidence_digest == [0; 32] {
+        return Err(MigrationError::CheckpointIntegrity);
+    }
+    let mut digest = Sha256::new();
+    digest.update(b"LayerX/migration/account-mapping/v2\0");
+    chain.commit(&mut digest);
+    address.commit(&mut digest);
+    Ok(hex(&digest.finalize()))
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 struct HistoryCheckpoint {
     previous_cursor: Option<[u8; 32]>,
     previous_anchor_hash: Option<[u8; 32]>,
@@ -90,6 +185,7 @@ enum Update {
         key: String,
         evidence_digest: [u8; 32],
     },
+    AccountMappingV2 { key: String, checkpoint: MappingCheckpointV2 },
     CustodyReference {
         key: String,
         claim_digest: [u8; 32],
@@ -134,6 +230,7 @@ struct State {
     claims: BTreeMap<String, ClaimCheckpoint>,
     histories: BTreeMap<String, HistoryCheckpoint>,
     ownership: BTreeMap<String, [u8; 32]>,
+    account_mappings_v2: BTreeMap<String, MappingCheckpointV2>,
     custody_references: BTreeMap<String, [u8; 32]>,
     external_history: BTreeMap<String, BTreeMap<[u8; 32], ExternalHistoryRecord>>,
     external_records: usize,
@@ -813,6 +910,22 @@ fn apply(state: &mut State, update: &Update) -> Result<Apply, MigrationError> {
             None => {
                 state.ownership.insert(key.clone(), *evidence_digest);
                 Ok(Apply::Applied)
+            }
+        },
+        Update::AccountMappingV2 { key, checkpoint } => {
+            if mapping_key_v2(checkpoint)? != *key { return Err(MigrationError::CheckpointIntegrity); }
+            match state.account_mappings_v2.get(key) {
+                Some(current) if current.principal == checkpoint.principal
+                    && current.source_network == checkpoint.source_network
+                    && current.source_address == checkpoint.source_address
+                    && current.layerx_identity == checkpoint.layerx_identity
+                    && current.evm_address == checkpoint.evm_address
+                    && current.evidence_digest == checkpoint.evidence_digest => Ok(Apply::Already),
+                Some(_) => Err(MigrationError::CheckpointConflict),
+                None => {
+                    state.account_mappings_v2.insert(key.clone(), checkpoint.clone());
+                    Ok(Apply::Applied)
+                }
             }
         },
         Update::CustodyReference { key, claim_digest } => match state.custody_references.get(key) {

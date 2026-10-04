@@ -2,6 +2,8 @@
 
 pub mod ethereum;
 pub mod history;
+pub mod mapping_v2;
+pub mod ramp_v2;
 mod journal;
 mod rpc;
 pub mod solana;
@@ -9,7 +11,7 @@ mod source_codec;
 #[cfg(test)]
 mod tests;
 
-pub use journal::JournalConfig;
+pub use journal::{AccountMappingStoreV2, AccountMappingV2, JournalConfig};
 pub use rpc::{RpcEndpointConfig, RpcQuorumConfig};
 
 use std::fmt::{Debug, Display, Formatter};

@@ -6,6 +6,10 @@ use layerx_interop_gateway::adapter::{
 use layerx_interop_gateway::server::EvidencePolicy;
 use layerx_interop_gateway::trace::TraceId;
 use layerx_interop_gateway::GatewayCore;
+use layerx_migrate::ethereum::{EthereumConfig, EthereumVerifier};
+use layerx_migrate::mapping_v2::{PaxeerBindingConfigV2, PaxeerBindingVerifierV2};
+use layerx_migrate::solana::{SolanaConfig, SolanaVerifier};
+use layerx_migrate::{AccountMappingStoreV2, JournalConfig};
 use layerx_platform_gateway::http::{Client, Endpoint};
 use layerx_platform_gateway::store::{RedisEndpoint, RedisStore};
 use layerx_platform_gateway::{
@@ -25,8 +29,11 @@ use rustls::ServerConfig;
 use serde::Deserialize;
 use std::collections::{BTreeMap, BTreeSet};
 use std::env;
-use std::fs;
+use std::fs::{self, File};
+use std::io::Read;
 use std::net::SocketAddr;
+use std::os::unix::fs::{MetadataExt, PermissionsExt};
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use zeroize::{Zeroize, Zeroizing};
 
@@ -53,6 +60,37 @@ pub struct Config {
     pub tap_clock_skew_seconds: u64,
     pub idempotency_seconds: u64,
     pub manifest: RuntimeManifest,
+    pub migration_v2: Option<MigrationV2Config>,
+}
+
+pub struct MigrationV2Config {
+    pub ethereum: Option<EthereumVerifier>,
+    pub solana: Option<SolanaVerifier>,
+    pub paxeer_binding: PaxeerBindingVerifierV2,
+    pub mapping_store: AccountMappingStoreV2,
+    pub ramp_intake: Option<RampIntakeV2Config>,
+}
+
+pub struct RampIntakeV2Config {
+    pub endpoint: Endpoint,
+    pub token: Zeroizing<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RampIntakeV2File {
+    endpoint: String,
+    token_file: PathBuf,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct MigrationV2File {
+    ethereum: Option<EthereumConfig>,
+    solana: Option<SolanaConfig>,
+    paxeer_binding: PaxeerBindingConfigV2,
+    mapping_journal: JournalConfig,
+    ramp_intake: Option<RampIntakeV2File>,
 }
 
 pub enum Listener {
@@ -279,7 +317,82 @@ pub fn load() -> Result<Config, String> {
         tap_clock_skew_seconds,
         idempotency_seconds,
         manifest,
+        migration_v2: migration_v2_config()?,
     })
+}
+
+fn migration_v2_config() -> Result<Option<MigrationV2Config>, String> {
+    let path = match env::var("LAYERX_INTEROP_MIGRATION_V2_CONFIG") {
+        Err(env::VarError::NotPresent) => return Ok(None),
+        Ok(path) => path,
+        Err(_) => return Err("migration V2 configuration path is invalid".to_owned()),
+    };
+    let profile: MigrationV2File = serde_json::from_slice(&protected_input(Path::new(&path), 256 * 1024)?)
+        .map_err(|_| "migration V2 configuration is invalid".to_owned())?;
+    if profile.ethereum.is_none() && profile.solana.is_none() {
+        return Err("migration V2 requires a source verifier".to_owned());
+    }
+    Ok(Some(MigrationV2Config {
+        ethereum: profile.ethereum.map(EthereumVerifier::new).transpose()
+            .map_err(|_| "migration V2 Ethereum authority is invalid".to_owned())?,
+        solana: profile.solana.map(SolanaVerifier::new).transpose()
+            .map_err(|_| "migration V2 Solana authority is invalid".to_owned())?,
+        paxeer_binding: PaxeerBindingVerifierV2::new(profile.paxeer_binding)
+            .map_err(|_| "migration V2 Paxeer binding authority is invalid".to_owned())?,
+        mapping_store: AccountMappingStoreV2::new(&profile.mapping_journal)
+            .map_err(|_| "migration V2 mapping journal is invalid".to_owned())?,
+        ramp_intake: profile.ramp_intake.map(|ramp| -> Result<RampIntakeV2Config, String> {
+            let token = protected_input(&ramp.token_file, 4096)?;
+            let mut token = Zeroizing::new(String::from_utf8(token)
+                .map_err(|_| "migration V2 ramp service credential is invalid".to_owned())?);
+            while matches!(token.as_bytes().last(), Some(b'\r' | b'\n')) {
+                token.pop();
+            }
+            if token.is_empty() || !token.bytes().all(|byte| byte.is_ascii_graphic()) {
+                return Err("migration V2 ramp service credential is invalid".to_owned());
+            }
+            Ok(RampIntakeV2Config {
+                endpoint: Endpoint::parse(&ramp.endpoint)
+                    .map_err(|_| "migration V2 ramp endpoint is invalid".to_owned())?,
+                token,
+            })
+        }).transpose()?,
+    }))
+}
+
+fn protected_input(path: &Path, maximum: usize) -> Result<Vec<u8>, String> {
+    let refused = || "migration V2 profile must be a bounded owner-only regular file".to_owned();
+    let before = fs::symlink_metadata(path).map_err(|_| refused())?;
+    let mut process_status = String::new();
+    File::open("/proc/self/status").map_err(|_| refused())?
+        .take(64 * 1024).read_to_string(&mut process_status).map_err(|_| refused())?;
+    let identifiers = process_status.lines().find_map(|line| line.strip_prefix("Uid:"))
+        .ok_or_else(refused)?.split_whitespace()
+        .map(str::parse::<u32>).collect::<Result<Vec<_>, _>>().map_err(|_| refused())?;
+    if identifiers.len() != 4 || !path.is_absolute()
+        || fs::canonicalize(path).ok().as_deref() != Some(path)
+        || !before.is_file() || before.nlink() != 1
+        || before.uid() != identifiers[1]
+        || before.permissions().mode() & 0o077 != 0
+        || before.len() == 0 || before.len() > maximum as u64
+    {
+        return Err(refused());
+    }
+    let mut file = File::open(path).map_err(|_| refused())?;
+    let after = file.metadata().map_err(|_| refused())?;
+    if before.dev() != after.dev() || before.ino() != after.ino()
+        || before.uid() != after.uid() || before.mode() != after.mode()
+        || before.nlink() != after.nlink() || before.len() != after.len()
+    {
+        return Err(refused());
+    }
+    let mut bytes = Vec::new();
+    Read::by_ref(&mut file).take(maximum as u64 + 1).read_to_end(&mut bytes)
+        .map_err(|_| refused())?;
+    if bytes.is_empty() || bytes.len() > maximum {
+        return Err(refused());
+    }
+    Ok(bytes)
 }
 
 fn module_registry() -> Result<ModuleRegistry, String> {
