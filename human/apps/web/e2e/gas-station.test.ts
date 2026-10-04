@@ -181,3 +181,43 @@ test("Sidiora copy is generated from the catalogue and remains within vocabulary
   const scripts = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")) as { scripts: Record<string, string> };
   for (const name of ["test", "test:component"]) assert.ok(scripts.scripts[name]?.includes("e2e/gas-station.test.ts"));
 });
+
+
+test("private sponsorship carries exact SDK constructions and binds every approved quote field", async () => {
+  const { PaxeerProvider, constructionDigest, toWireConstruction } = await import("@paxeer/wallet/provider");
+  const quoted = quoteFixture();
+  const provider = new PaxeerProvider({ gatewayUrl: "http://127.0.0.1:1", rpcUrl: "http://127.0.0.1:1", token: () => null, chainId: Number(quoted.batch.chainId) });
+  const module = wallet.sponsoredWalletModule(quoted, provider);
+  const construction = module.construction(quoted.batch);
+  assert.deepEqual(construction, {
+    kind: "sponsored_batch", chainId: "1325", account: quoted.batch.account, nonce: "0",
+    calls: [{ to: quoted.batch.calls[0]!.to, value: "0", data: "0x1234" }],
+    quote: { sponsor: quoted.batch.quote.sponsor, token: sdk.SIDIORA_TOKEN.toLowerCase(),
+      maxTokenAmount: "2100000", tokenAmount: "2000001", deadline: quoted.batch.quote.deadline.toString(), quoteNonce: "7", gasCost: (10n ** 18n).toString() },
+  });
+  const digest = sdk.sponsoredBatchDigest(quoted.batch);
+  assert(digest.ok);
+  assert.equal(constructionDigest(construction), digest.value);
+  const authorization = toWireConstruction({ kind: "eip7702_authorization", chainId: 1325n, address: quoted.paymaster as `0x${string}`, nonce: 8n });
+  assert.deepEqual(authorization, { kind: "eip7702_authorization", chainId: "1325", address: quoted.paymaster, nonce: "8" });
+  const authDigest = sdk.eip7702AuthorizationDigest({ chainId: 1325n, address: quoted.paymaster, nonce: 8n });
+  assert(authDigest.ok);
+  assert.equal(constructionDigest(authorization), authDigest.value);
+  assert.throws(() => toWireConstruction({ ...construction, kind: "bare_digest" } as never));
+  assert.throws(() => toWireConstruction({ ...construction, domain: "other" } as never));
+  const review = wallet.sidioraQuotePresentation(quoted)!;
+  for (const changed of [
+    { ...quoted, batch: { ...quoted.batch, chainId: 125n } },
+    { ...quoted, batch: { ...quoted.batch, account: quoted.paymaster } },
+    { ...quoted, batch: { ...quoted.batch, calls: [{ ...quoted.batch.calls[0]!, to: quoted.paymaster }] } },
+    { ...quoted, batch: { ...quoted.batch, calls: [{ ...quoted.batch.calls[0]!, data: "0x1235" }] } },
+    { ...quoted, batch: { ...quoted.batch, calls: [{ ...quoted.batch.calls[0]!, value: 1n }] } },
+    { ...quoted, batch: { ...quoted.batch, quote: { ...quoted.batch.quote, sponsor: quoted.paymaster } } },
+    { ...quoted, batch: { ...quoted.batch, quote: { ...quoted.batch.quote, quoteNonce: 8n } } },
+    { ...quoted, batch: { ...quoted.batch, quote: { ...quoted.batch.quote, deadline: quoted.batch.quote.deadline + 1n } } },
+    { ...quoted, relayerSignature: "0x01" },
+  ]) assert.deepEqual(await wallet.sendWalletSponsoredBatch(changed, review.identity), { outcome: "rejected" });
+  assert.equal(wallet.sidioraQuotePresentation(quoted, quoted.batch.quote.deadline), undefined);
+  await assert.rejects(provider.request({ method: "eth_sign", params: [quoted.batch.account, digest.value] }));
+  assert.deepEqual(await wallet.resumeWalletSponsoredSubmission(quoted.batch.account), { outcome: "unavailable" });
+});

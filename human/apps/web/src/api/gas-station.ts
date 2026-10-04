@@ -27,7 +27,7 @@ function stationConfiguration(): GasStationConfig | undefined {
   const chainId = process.env.PAXEER_GAS_STATION_CHAIN_ID;
   const sponsor = process.env.PAXEER_GAS_STATION_SPONSOR;
   const paymaster = process.env.PAXEER_GAS_STATION_PAYMASTER;
-  if (!quoteUrl || !chainId || !sponsor || !paymaster || !/^[1-9][0-9]*$/u.test(chainId)) return undefined;
+  if (!quoteUrl || !chainId || !sponsor || !paymaster || !/^0x[0-9a-fA-F]{40}$/.test(sponsor) || !/^0x[0-9a-fA-F]{40}$/.test(paymaster) || !/^[1-9][0-9]*$/u.test(chainId)) return undefined;
   try {
     const endpoint = new URL(quoteUrl);
     if (endpoint.protocol !== "https:" || endpoint.username || endpoint.password || endpoint.hash) return undefined;
@@ -35,6 +35,12 @@ function stationConfiguration(): GasStationConfig | undefined {
   } catch {
     return undefined;
   }
+}
+
+export async function sidioraStationMetadata(): Promise<Readonly<{ chainId: string; sponsor: string; paymaster: string }> | undefined> {
+  const config = stationConfiguration();
+  if (config === undefined || config.chainId >= 1n << 256n) return undefined;
+  return { chainId: config.chainId.toString(), sponsor: config.sponsor.toLowerCase(), paymaster: config.paymaster.toLowerCase() };
 }
 
 export async function requestSidioraGasQuote(request: GasQuoteRequest, chainId: bigint): Promise<GasQuoteOutcome> {

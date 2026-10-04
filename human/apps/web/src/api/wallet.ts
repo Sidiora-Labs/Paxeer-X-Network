@@ -1,9 +1,11 @@
+import { gasStation, GasStationError, ModuleError, type GasSubmissionStore, type SponsoredSubmissionEvidence } from "@paxeer/wallet";
+import { sidioraStationMetadata } from "./gas-station.ts";
 import { windowWalletProvider } from "../journeys/custody/handoff.ts";
 import { copyEntry } from "../../copy/runtime.ts";
 import { parseFeeAmount } from "../auth/native-fee-budget.ts";
 import {
-  SIDIORA_DECIMALS, SIDIORA_TOKEN, encodeAbiCall, eip7702AuthorizationDigest,
-  requestSidioraGasQuote, sendSponsoredBatch, sponsoredBatchDigest,
+  SIDIORA_DECIMALS, SIDIORA_TOKEN,
+  requestSidioraGasQuote, sponsoredBatchDigest,
   sendPrecompileCall, type PrecompileCall, type SidioraGasQuote,
 } from "./sdk.ts";
 
@@ -20,6 +22,10 @@ const CHAIN_DISCONNECTED = 4901;
 export function walletSendFailure(error: unknown): PrecompileSendOutcome {
   const code = typeof error === "object" && error !== null && "code" in error ? error.code : undefined;
   const detail = error instanceof Error ? error.message : undefined;
+  if (error instanceof GasStationError) {
+    return { outcome: error.refusal.code === "unavailable" ? "unavailable" : error.refusal.code === "cancelled" ? "cancelled" : "rejected" };
+  }
+  if (error instanceof ModuleError) return { outcome: error.code === "unavailable" ? "unavailable" : "rejected" };
   if (code === USER_REJECTED_REQUEST) {
     return { outcome: "cancelled" };
   }
@@ -53,12 +59,15 @@ export async function sendWalletPrecompileCall(from: string, build: () => Precom
     const preference = walletFeePreference();
     if (preference.currency === "sidiora") {
       if (preference.maximum === undefined) return { outcome: "rejected" };
-      const call = build();
+      const recovered = await resumeWalletSponsoredSubmission(from);
+      if (recovered !== undefined) return recovered;
+      const metadata = await sidioraStationMetadata();
+      if (metadata === undefined) return { outcome: "unavailable" };
       const chainId = rpcQuantity(await wallet.request({ method: "eth_chainId" }));
-      const code = await wallet.request({ method: "eth_getCode", params: [from, "latest"] });
-      const nonce = code === "0x" ? 0n : rpcQuantity(await wallet.request({
-        method: "eth_call", params: [{ to: from, data: encodeAbiCall("nonce", [], []) }, "latest"],
-      }));
+      if (chainId.toString() !== metadata.chainId) return { outcome: "rejected" };
+      const module = gasStation(wallet, { chainId, sponsor: metadata.sponsor, paymaster: metadata.paymaster });
+      const nonce = await module.batchNonce(from);
+      const call = build();
       const gas = rpcQuantity(await wallet.request({ method: "eth_estimateGas", params: [{
         from, to: call.to, data: call.data, value: `0x${call.value.toString(16)}`,
       }] }));
@@ -67,7 +76,7 @@ export async function sendWalletPrecompileCall(from: string, build: () => Precom
       if (!quoted.ok) return quoted.failure;
       const review = sidioraQuotePresentation(quoted.value);
       if (review === undefined) return { outcome: "rejected" };
-      const consent = typeof window !== "undefined" && window.confirm(review.consent);
+      const consent = typeof window !== "undefined" && window.confirm(`${review.consent}\nAccount: ${quoted.value.batch.account}\nNetwork: ${quoted.value.batch.chainId}`);
       return await sendWalletSponsoredBatch(quoted.value, consent ? review.identity : undefined);
     }
     const transactionHash = await sendPrecompileCall(wallet, from, build());
@@ -114,19 +123,70 @@ export function sidioraQuotePresentation(quoted: SidioraGasQuote, now = BigInt(M
   const digest = sponsoredBatchDigest(quoted.batch);
   if (!digest.ok || quote.token.toLowerCase() !== SIDIORA_TOKEN.toLowerCase()
     || quote.decimals !== SIDIORA_DECIMALS || quote.tokenAmount <= 0n
-    || quote.tokenAmount > quote.maxTokenAmount || quote.deadline < now
+    || quote.tokenAmount > quote.maxTokenAmount || quote.deadline <= now
     || quote.deadline > 8_640_000_000_000n) return undefined;
   const amount = sidioraAmount(quote.tokenAmount);
   const maximum = sidioraAmount(quote.maxTokenAmount);
   const deadline = new Date(Number(quote.deadline) * 1000).toUTCString();
   const consent = copyEntry("gas.sidiora.consent").message
     .replace("{amount}", amount).replace("{maximum}", maximum).replace("{deadline}", deadline);
-  return { amount, maximum, deadline, consent, identity: `${digest.value}:${quoted.paymaster.toLowerCase()}` };
+  return { amount, maximum, deadline, consent, identity: `${digest.value}:${quoted.paymaster.toLowerCase()}:${quoted.relayerSignature.toLowerCase()}` };
 }
 
 function rpcQuantity(value: unknown): bigint {
   if (typeof value !== "string" || !/^0x[0-9a-fA-F]+$/u.test(value)) throw new Error(copyEntry("gas.sidiora.failed").message);
   return BigInt(value);
+}
+
+const SPONSORED_CONTEXT = "layerx:private-sponsored:v1:";
+
+export function sponsoredWalletModule(quoted: SidioraGasQuote, wallet: NonNullable<ReturnType<typeof windowWalletProvider>>, submissionStore?: GasSubmissionStore) {
+  return gasStation(wallet, {
+    chainId: quoted.batch.chainId, sponsor: quoted.batch.quote.sponsor, paymaster: quoted.paymaster,
+    ...(submissionStore === undefined ? {} : { submissionStore }),
+  });
+}
+
+function browserSubmissionStore(): Storage {
+  if (typeof window === "undefined") throw new Error("Durable sponsored storage is unavailable");
+  return window.localStorage;
+}
+
+function sponsoredContextKey(account: string): string {
+  if (!EVM_ADDRESS.test(account)) throw new Error("Invalid sponsored account");
+  return SPONSORED_CONTEXT + account.toLowerCase();
+}
+
+function statusOutcome(report: SponsoredSubmissionEvidence): PrecompileSendOutcome {
+  if (report.status === "cancelled" || report.status === "reverted") return { outcome: "rejected" };
+  return report.tx_hash === null ? { outcome: "unavailable" } : { outcome: "sent", transactionHash: report.tx_hash };
+}
+
+export async function resumeWalletSponsoredSubmission(account: string): Promise<PrecompileSendOutcome | undefined> {
+  const wallet = windowWalletProvider();
+  if (wallet === undefined) return { outcome: "unavailable" };
+  try {
+    const store = browserSubmissionStore();
+    const raw = store.getItem(sponsoredContextKey(account));
+    if (raw === null) return undefined;
+    if (raw.length > 1024) return { outcome: "rejected" };
+    const value: unknown = JSON.parse(raw);
+    if (typeof value !== "object" || value === null || Array.isArray(value)) return { outcome: "rejected" };
+    const context = value as Record<string, unknown>;
+    if (Object.keys(context).length !== 6 || context.version !== 1 || context.account !== account.toLowerCase()
+      || typeof context.chainId !== "string" || !/^[1-9][0-9]*$/.test(context.chainId)
+      || BigInt(context.chainId) >= 1n << 256n || typeof context.sponsor !== "string" || !EVM_ADDRESS.test(context.sponsor)
+      || typeof context.paymaster !== "string" || !EVM_ADDRESS.test(context.paymaster)
+      || typeof context.identity !== "string" || !/^0x[0-9a-fA-F]{64}:0x[0-9a-fA-F]{40}:0x[0-9a-fA-F]{130}$/.test(context.identity)) return { outcome: "rejected" };
+    const module = gasStation(wallet, { chainId: BigInt(context.chainId), sponsor: context.sponsor, paymaster: context.paymaster, submissionStore: store });
+    const retained = await module.pending(account);
+    if (retained === null) return { outcome: "unavailable" };
+    const digest = sponsoredBatchDigest(retained.batch);
+    if (!digest.ok || context.identity !== `${digest.value}:${context.paymaster.toLowerCase()}:${retained.relayerSignature.toLowerCase()}`) return { outcome: "rejected" };
+    const report = await module.resume(retained.batch, retained.relayerSignature);
+    if (report.status !== "pending") store.removeItem(sponsoredContextKey(account));
+    return statusOutcome(report);
+  } catch (error) { return walletSendFailure(error); }
 }
 
 export async function sendWalletSponsoredBatch(quoted: SidioraGasQuote, consentIdentity: string | undefined): Promise<PrecompileSendOutcome> {
@@ -137,18 +197,29 @@ export async function sendWalletSponsoredBatch(quoted: SidioraGasQuote, consentI
   const wallet = windowWalletProvider();
   if (wallet === undefined) return { outcome: "unavailable" };
   try {
-    const chainId = rpcQuantity(await wallet.request({ method: "eth_chainId" }));
-    if (chainId !== snapshot.batch.chainId) return { outcome: "rejected" };
-    const nonce = rpcQuantity(await wallet.request({ method: "eth_getTransactionCount", params: [snapshot.batch.account, "pending"] }));
-    const batchDigest = sponsoredBatchDigest(snapshot.batch);
-    const authorizationDigest = eip7702AuthorizationDigest({ chainId, address: snapshot.paymaster, nonce });
-    if (!batchDigest.ok || !authorizationDigest.ok) return { outcome: "rejected" };
-    const accountSignature = await wallet.request({ method: "eth_sign", params: [snapshot.batch.account, batchDigest.value] });
-    if (typeof accountSignature !== "string") return { outcome: "failed" };
-    if (sidioraQuotePresentation(snapshot) === undefined) return { outcome: "rejected" };
-    const authorizationSignature = await wallet.request({ method: "eth_sign", params: [snapshot.batch.account, authorizationDigest.value] });
-    if (typeof authorizationSignature !== "string") return { outcome: "failed" };
-    return await sendSponsoredBatch(snapshot, accountSignature, nonce, authorizationSignature);
+    const storage = browserSubmissionStore();
+    const module = sponsoredWalletModule(snapshot, wallet, storage);
+    const pending = await module.pending(snapshot.batch.account);
+    if (pending !== null) {
+      const digest = sponsoredBatchDigest(pending.batch);
+      const expected = sponsoredBatchDigest(snapshot.batch);
+      if (!digest.ok || !expected.ok || digest.value !== expected.value || pending.relayerSignature.toLowerCase() !== snapshot.relayerSignature.toLowerCase()) return { outcome: "rejected" };
+      return statusOutcome(await module.resume(pending.batch, pending.relayerSignature));
+    }
+    const key = sponsoredContextKey(snapshot.batch.account);
+    const context = { version: 1, account: snapshot.batch.account.toLowerCase(), chainId: snapshot.batch.chainId.toString(),
+      sponsor: snapshot.batch.quote.sponsor.toLowerCase(), paymaster: snapshot.paymaster.toLowerCase(), identity: consentIdentity };
+    const existing = storage.getItem(key);
+    if (existing !== null && existing !== JSON.stringify(context)) return { outcome: "rejected" };
+    storage.setItem(key, JSON.stringify(context));
+    const transactionHash = await module.submitFirstUse(snapshot.batch, snapshot.relayerSignature, {
+      confirm: consent => {
+        const current = sidioraQuotePresentation(snapshot);
+        const digest = sponsoredBatchDigest(snapshot.batch);
+        return current !== undefined && current.identity === consentIdentity && digest.ok && consent.batchDigest === digest.value;
+      },
+    });
+    return { outcome: "sent", transactionHash };
   } catch (error) {
     return walletSendFailure(error);
   }

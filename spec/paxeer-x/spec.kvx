@@ -27122,7 +27122,7 @@ qualification_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-14.5-veri
 qualification_limit_violation = "Owner reported sole verifier began after original03:37UTC cap; failed padding assumption, no repair or rerun."
 [task.14.6]
 title = "Carry full sponsored constructions from retained private Human web"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 4
 requires = ["0.2", "13.4", "20.2"]
@@ -27132,7 +27132,7 @@ do_2 = "Bind the resulting signatures to the submitted batch and status lifecycl
 do_3 = "Extend the private gas-station integration case with altered construction, stale consent and restart/retry refusal."
 do_4 = "Add the new bounded harness tools/qualification/paxeer-x/private-human-sponsored.py to exercise this task through the named production interfaces, including the stated refusal and recovery cases, with explicit prerequisite checks and nonzero exit on any unmet acceptance. Use supplied prebuilt executables and isolated retained state; do not hide a rebuild or invoke a release-wide suite."
 do_5 = "Implement the declared focused gate through the real production types and paths; exercise every acceptance criterion including refusal, restart or boundary cases specified by this requirement. The command is a planned deliverable, not an already-run gate."
-touches = ["human/apps/web/src/api/wallet.ts", "human/wallet/sdk/src/provider.ts", "human/wallet/sdk/src/modules/gas-station.ts", "human/apps/web/e2e/gas-station.test.ts", "tools/qualification/paxeer-x/private-human-sponsored.py", "human/apps/web/package.json", "human/apps/web/package-lock.json"]
+touches = ["human/apps/web/src/api/wallet.ts", "human/apps/web/e2e/gas-station.test.ts", "tools/qualification/paxeer-x/private-human-sponsored.py", "human/apps/web/src/api/gas-station.ts"]
 verify_cmd = "timeout 15m python3 tools/qualification/paxeer-x/private-human-sponsored.py"
 gate_kind = "planned"
 max_builds = 1
@@ -27145,6 +27145,16 @@ planned_paths = ["tools/qualification/paxeer-x/private-human-sponsored.py"]
 path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
 evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
 
+retained_shared_touch_paths = ["human/wallet/sdk/src/provider.ts", "human/wallet/sdk/src/modules/gas-station.ts", "human/apps/web/package.json", "human/apps/web/package-lock.json"]
+source_ownership = "Task14.3 owns SDK implementation; task14.5 owns web manifest addition. Task14.6 adapts existing private sponsored callers to genuine SDK construction and status methods."
+build_cmd = "timeout 20m python3 tools/qualification/paxeer-x/private-human-sponsored.py --build"
+
+
+completion_basis = "implementation"
+qualification_status = "unverified"
+build_exit_code = 0
+verify_exit_code = 78
+qualification_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-14.6-verify.log"
 [task.14.7]
 title = "Present the supported wallet model in SDK exports and demo flows"
 status = "pending"
