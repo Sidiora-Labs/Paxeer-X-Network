@@ -78,8 +78,9 @@ static lxp_result node_snapshot_capacity(const lxp_state_store *state,
 
 struct postcommit_job;
 
-typedef struct lxp_daemon_process {
+struct lxp_daemon_process {
     lxp_daemon daemon;
+    lxp_daemon_configuration configuration;
     lxp_daemon_lni_server lni;
     lxp_daemon_protocol_owner owner;
     lxp_state_store state;
@@ -154,7 +155,7 @@ typedef struct lxp_daemon_process {
     bool postcommit_initialized;
     bool postcommit_started;
     bool postcommit_stopping;
-} lxp_daemon_process;
+};
 
 static lxp_result resume_batch_number(lxp_daemon_process *process);
 static lxp_result initialized_genesis_marker_identity(
@@ -6018,6 +6019,48 @@ static lxp_result open_process(lxp_daemon_process *process,
         (void)fprintf(stderr, "layerxd: bootstrap %s failed with result %d\n",
                       stage, (int)status);
     return status;
+}
+
+lxp_result lxp_daemon_process_open(
+    const char *configuration_path, lxp_daemon_process **out)
+{
+    lxp_daemon_process *process;
+    const char *listener_address = NULL;
+    uint16_t listener_port = 0U;
+    lxp_daemon_lni_configuration lni_configuration;
+    lxp_result status;
+    if (out == NULL) return LXP_ERR_NON_CANONICAL;
+    *out = NULL;
+    if (configuration_path == NULL || configuration_path[0] == '\0')
+        return LXP_ERR_NON_CANONICAL;
+    process = (lxp_daemon_process *)calloc(1U, sizeof(*process));
+    if (process == NULL) return LXP_ERR_IO;
+    status = open_process(process, configuration_path, &process->configuration,
+                          &listener_address, &listener_port,
+                          &lni_configuration);
+    if (status != LXP_OK) {
+        close_process(process);
+        free(process);
+        return status;
+    }
+    *out = process;
+    return LXP_OK;
+}
+
+const lxp_daemon_protocol_owner *lxp_daemon_process_owner(
+    const lxp_daemon_process *process)
+{
+    if (process == NULL || !process->owner.attached ||
+        process->owner.evidence_store != &process->evidence_store)
+        return NULL;
+    return &process->owner;
+}
+
+void lxp_daemon_process_close(lxp_daemon_process *process)
+{
+    if (process == NULL) return;
+    close_process(process);
+    free(process);
 }
 
 lxp_result lxp_daemon_serve(const char *configuration_path)

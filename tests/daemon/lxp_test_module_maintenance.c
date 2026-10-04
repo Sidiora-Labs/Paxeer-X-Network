@@ -54,8 +54,9 @@
         } \
     } while (0)
 
+static uint32_t NETWORK_ID = 77U;
+
 enum {
-    NETWORK_ID = 77,
     LNI_MAJOR = 1,
     LNI_MINOR = 7,
     NODE_INFO_REQUEST = 1,
@@ -1349,6 +1350,12 @@ int main(int argc, char **argv)
     bool handover_queue = strcmp(argv[2], "--handover-queue") == 0;
     bool handover_apply = strcmp(argv[2], "--handover-apply") == 0 || handover_queue;
     bool handover_recovered = strcmp(argv[2], "--handover-recovered") == 0;
+    const char *native_network = getenv("LAYERX_TEST_NATIVE_ARBITER_NETWORK_ID");
+    if (native_network != NULL) {
+        REQUIRE(strcmp(native_network, "7") == 0 &&
+            (handover_prepare || handover_apply || handover_recovered));
+        NETWORK_ID = 7U;
+    }
     REQUIRE((argc == 4 && (recovered || handover_prepare || strcmp(argv[2], "--module-maintenance") == 0)) ||
         (argc == 5 && (handover_apply || handover_recovered)));
     REQUIRE(signer_init(&owner, 0x11U) == 0 && signer_init(&provider, 0x33U) == 0);

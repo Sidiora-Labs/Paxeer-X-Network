@@ -8,6 +8,12 @@ build_dir=${1:-build}
 if [[ $build_dir != /* ]]; then build_dir="$root/$build_dir"; fi
 native_bin=${LAYERX_TEST_NATIVE_BIN_DIR:-"$build_dir/bin"}
 sequencer_binary="$native_bin/layerxd"
+network_id=77
+if [[ -n ${LAYERX_TEST_NATIVE_ARBITER_NETWORK_ID:-} ]]; then
+    [[ "$LAYERX_TEST_NATIVE_ARBITER_NETWORK_ID" == 7 && ${2:-} == --handover ]]
+    [[ -n ${LAYERX_NATIVE_AUTHORITY_FIXTURE_BIN:-} && -n ${LAYERX_NATIVE_AUTHORITY_OUTPUT:-} ]]
+    network_id=7
+fi
 if [[ ${2:-} == --maintenance-crash ]]; then
     sequencer_binary="$build_dir/tests/lxp_test_maintenance_crash"
 fi
@@ -92,7 +98,7 @@ if [[ ${2:-} == --handover ]]; then
 fi
 "${bootstrap_environment[@]}" \
 bash platform/hosted/node/bootstrap.sh --data-dir "$work/data" --run-dir "$runtime" \
-    --network-id 77 --genesis-metadata "$work/metadata" --sequencer-key "$work/sequencer" --treasury-key "$work/treasury" \
+    --network-id "$network_id" --genesis-metadata "$work/metadata" --sequencer-key "$work/sequencer" --treasury-key "$work/treasury" \
     --lni-uid 4021 --lni-gid 4021 --program-port "$program_port" --replica-port "$replica_port" \
     --layerxd "$native_bin/layerxd" --genesis-build "$native_bin/layerx-genesis-build" "${bootstrap_extra[@]}" \
     > "$work/bootstrap.log" 2>&1
@@ -269,6 +275,15 @@ PYWAIT
     timeout --signal=TERM --kill-after=5s 180s setpriv --reuid=4021 --regid=4021 --clear-groups "$work/client" "$runtime/layerxd.lni.sock" --handover-recovered "$scenario_state" "$scenario_state/handover.activity"
     LAYERX_TEST_HANDOVER_LNI_SOCKET="$runtime/layerxd.lni.sock" \
         "${LAYERX_TEST_PYTHON:-python3}" tests/daemon/handover-chain.py replay "$work" "$build_dir" "$scenario_state"
+    if [[ "$network_id" == 7 ]]; then
+        kill -TERM "$sequencer_pid"
+        wait "$sequencer_pid"
+        sequencer_pid=
+        kill -0 "$replica_pid"
+        (source platform/hosted/node/sequencer-env.sh
+         layerx_sequencer_environment "$work/data/sequencer.env"
+         exec "$LAYERX_NATIVE_AUTHORITY_FIXTURE_BIN" "$work/data/sequencer.conf" "$LAYERX_NATIVE_AUTHORITY_OUTPUT")
+    fi
     exit 0
 fi
 if [[ ${2:-} == --owner-authority ]]; then

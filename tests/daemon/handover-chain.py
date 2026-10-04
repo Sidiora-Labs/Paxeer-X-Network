@@ -28,6 +28,14 @@ def main():
     assert len(sys.argv) == 5
     stage, native, build, scenario = sys.argv[1], Path(sys.argv[2]), Path(sys.argv[3]), Path(sys.argv[4])
     assert stage in ('finalize', 'replay')
+    selected = os.environ.get('LAYERX_TEST_NATIVE_ARBITER_NETWORK_ID')
+    assert selected in (None, '7'), 'invalid native arbiter network profile'
+    network_id = 7 if selected == '7' else 77
+    registration = (native / 'data/genesis/paxeer-registration-request.lxrr').read_bytes()
+    assert len(registration) == 73 and registration[:5] == b'LXRR\x01'
+    assert int.from_bytes(registration[5:9], 'big') == network_id
+    if selected is not None:
+        assert os.environ.get('LAYERX_TEST_HANDOVER_PEERS') != '1', 'native arbiter uses native settlement'
     ready = json.loads((scenario / 'handover-ready.json').read_text())
     count = ready['batch'] + (2 if stage == 'replay' else 0)
     assert count > 1
@@ -37,6 +45,7 @@ def main():
     if stage == 'replay':
         current = json.loads((output / f'exports-{count}/{count}.json').read_text())
         header = PUBLICATION['decode_header'](current['canonical_header'])
+        assert header[1] == network_id
         assert header[2] == 2 and header[3] == count
         retained = os.environ.get('LAYERX_TEST_HANDOVER_DIVERGENCE')
         os.environ['LAYERX_TEST_HANDOVER_DIVERGENCE'] = '1'
@@ -82,7 +91,7 @@ def main():
                         transport='local-emulator', trust_anchor_der='', chain_id='125',
                         request_timeout_ms='8000', registry=domain['settlement_contract'].removeprefix('0x').lower(),
                         guarantor_bond=domain['guarantor_bond'].removeprefix('0x').lower(),
-                        protocol_version='3', network_id='77', canonical_genesis_root=registration[9:41].hex(),
+                        protocol_version='3', network_id=str(network_id), canonical_genesis_root=registration[9:41].hex(),
                         confirmations='1')
                     policy_path = client_directory / 'handover-finality.conf'
                     policy_path.write_text(''.join(f'{key}={value}\n' for key, value in policy.items()))
@@ -151,6 +160,7 @@ def main():
     for batch in range(1, count + 1):
         exported = json.loads((output / f'exports-{count}/{batch}.json').read_text())
         header = bytes.fromhex(exported['canonical_header'].removeprefix('0x'))
+        assert PUBLICATION['decode_header'](exported['canonical_header'])[1] == network_id
         path = output / f'header-{batch}.bin'
         path.write_bytes(header)
         certificate_directory = output / f'certificate-{batch}'

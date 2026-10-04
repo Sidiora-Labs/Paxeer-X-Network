@@ -22,6 +22,13 @@ from custody_chain import artifact_manifest, boundaries, calldata, from_environm
 
 ASSET = 'b5a32b12029f8ddfb905f90f280f664b46390de0fc62770fc197dd87b18cd898'
 NETWORK_ID = 77
+
+
+def native_network_id():
+    selected = os.environ.get('LAYERX_TEST_NATIVE_ARBITER_NETWORK_ID')
+    assert selected in (None, '7'), 'invalid native arbiter network profile'
+    return 7 if selected == '7' else NETWORK_ID
+
 # Custody is the native layerxcustody module behind the precompile at 0x...1013 and nothing
 # custodial is deployed for it: the asset map, the sequencer authorization and the deposit-root
 # authority are chain genesis state written by platform/hosted/paxeer/custody-genesis.py. One
@@ -56,17 +63,19 @@ def retain_public_evidence(work, evidence):
 
 
 def register(work, url):
+    network_id = native_network_id()
     if os.environ.get('LAYERX_TEST_SETTLEMENT_PUBLICATION') == '1':
         module = runpy.run_path(str(ROOT / 'tests/daemon/guarantor-publication-chain.py'))
         module['setup'](work, url)
         return
     request = (work / 'data/genesis/paxeer-registration-request.lxrr').read_bytes()
     assert len(request) == 73
+    assert request[:5] == b'LXRR\x01' and int.from_bytes(request[5:9], 'big') == network_id
     # Settlement is the native layerxanchor module, so no guarantor bond and no checkpoint
     # registry is deployed for it and the genesis registration this harness used to overwrite is
     # already the bytes platform/hosted/node/bootstrap.sh derived from the same request.
     assert (work / 'data/genesis/genesis.registration').read_bytes() == (
-        b'LXGR\x01' + NETWORK_ID.to_bytes(4, 'big') + bytes(8) + request[41:73] * 2 + b'\x01')
+        b'LXGR\x01' + network_id.to_bytes(4, 'big') + bytes(8) + request[41:73] * 2 + b'\x01')
     write_settlement(work, from_environment(url), ANCHOR_ADDRESS, ANCHOR_ADDRESS)
 
 
@@ -144,6 +153,7 @@ def main():
     # genesis is built from and the first credit signed by the beneficiary seed, for a node the
     # caller bootstraps itself with that sequencer seed and network id.
     modes.add_argument('--export', metavar='DIRECTORY')
+    parser.add_argument('--native-arbiter', action='store_true')
     parser.add_argument('--network-id', type=int, default=NETWORK_ID)
     parser.add_argument('--sequencer-key')
     parser.add_argument('--beneficiary-key')
@@ -151,7 +161,16 @@ def main():
     args = parser.parse_args()
     assert (args.export is not None) == (args.sequencer_key is not None) == (args.beneficiary_key is not None), \
         '--export, --sequencer-key and --beneficiary-key go together'
-    assert args.export is not None or args.network_id == NETWORK_ID, '--network-id needs --export'
+    assert 'LAYERX_TEST_NATIVE_ARBITER_NETWORK_ID' not in os.environ, 'select native profile explicitly'
+    if args.native_arbiter:
+        assert args.handover and args.network_id == 7, '--native-arbiter requires --handover --network-id 7'
+        assert os.environ.get('LAYERX_NATIVE_AUTHORITY_FIXTURE_BIN') and os.environ.get('LAYERX_NATIVE_AUTHORITY_OUTPUT'), \
+            'native arbiter requires its real fixture executable and output'
+        assert not any(name.startswith('LAYERX_TEST_HANDOVER_') for name in os.environ), \
+            'native arbiter has an isolated handover profile'
+        assert os.environ.get('LAYERX_TEST_SETTLEMENT_PUBLICATION') != '1', 'native arbiter uses native settlement'
+    else:
+        assert args.export is not None or args.network_id == NETWORK_ID, '--network-id needs --export'
     build = (ROOT / args.build_dir).resolve()
     artifacts_manifest = artifact_manifest(args.artifact_manifest)
     executables = {name: Path(row['path']) for name, row in artifacts_manifest['executables'].items()}
@@ -227,6 +246,8 @@ def main():
                             'LAYERX_TEST_ADMISSION_LOG_DIR': str(work), 'LAYERX_TEST_PYTHON': sys.executable,
                             'LAYERX_TEST_CUSTODY_ARTIFACTS': str(artifacts), 'LAYERX_TEST_CUSTODY_FILE': str(work / 'custody.json'),
                             'LAYERX_TEST_CUSTODY_CHAIN_FILE': str(first.identity_path), 'LAYERX_TEST_CUSTODY_BUILD_DIR': str(build)}
+                        if args.native_arbiter:
+                            env['LAYERX_TEST_NATIVE_ARBITER_NETWORK_ID'] = '7'
                         if os.environ.get('LAYERX_TEST_SETTLEMENT_PUBLICATION') == '1':
                             module = runpy.run_path(str(ROOT / 'tests/daemon/guarantor-publication-chain.py'))
                             module['drive'](work, env, first.url)

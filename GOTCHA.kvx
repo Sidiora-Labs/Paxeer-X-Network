@@ -2449,3 +2449,8 @@ resolution = "Retain each cryptographic verifier and its refusal, map errors exp
 area = "Native custody import session contract"
 observed = "The genuine Go signing setup returned HTTP400 because its import session identifier violated the existing no-slash length contract."
 resolution = "Keep the refusal and all predicates; record that Rust custody/passkey cases never ran and do not extend the exhausted task with a neighboring fixture repair."
+
+[gotcha.715]
+area = "Actual daemon replay lifecycle access"
+observed = "The new native authority fixture cannot use the private process replay callback through a real owner, while an older helper directly sets attached."
+resolution = "Provide a typed actual bootstrap lifecycle boundary with real canonical replay and signed handover inputs; do not copy the attached assignment or supply a no-op callback."
