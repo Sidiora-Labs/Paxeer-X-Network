@@ -34850,7 +34850,7 @@ mode = "BUILD"
 wave = 6
 requires = ["7.6"]
 reqs = ["124"]
-touches = ["tools/qualification/paxeer-x/programs_language_abi.py"]
+touches = ["tools/qualification/paxeer-x/programs_language_abi.py", "tests/programs/test_language_abi.c"]
 do_1 = "Apply the owner-approved existing reference-types and relocation compiler flags consistently to the genuine SDK and guest; retain canonical engine policy and all bounds/assertions."
 build_cmd = "python3 tools/qualification/paxeer-x/programs_language_abi.py --build"
 verify_cmd = "timeout 30m python3 tools/qualification/paxeer-x/programs_language_abi.py"
@@ -34863,7 +34863,7 @@ owner_authority = "User explicitly approved exact task-7.6-feature-proposal.patc
 qualification_status = "UNRUN"
 source_status = "complete"
 completion_basis = "implementation under owner CONSTITUTION; qualification separately recorded"
-source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-7.7-repair1-source.json"
+source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-7.7-repair2-source.json"
 
 [task.200.5]
 title = "Centralize Python SDK tests and preserve package discovery"

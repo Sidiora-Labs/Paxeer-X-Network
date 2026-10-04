@@ -482,7 +482,7 @@ static int language_cases(const char *path)
         cap_length=language_caps(caps,operation,f);
         payload_length=call_payload_with_data(f->payload,f->program_id,caps,cap_length,
             access,sizeof(access),calldata,calldata_length);
-        write_u16(f->payload+32U,4U);write_u32(f->payload+44U,4096U);
+        write_u16(f->payload+32U,4U);write_u32(f->payload+46U,4096U);
         if(language_execute(f,LX_PROGRAMS_CALL,payload_length,(uint8_t)(0x50U+index),&receipt)!=0 ||
             language_terminal(&receipt,&response,&refusal,&legs)!=0 || language_storage(f,after)!=0) goto finished;
         if(operation==3U || operation==7U) {
