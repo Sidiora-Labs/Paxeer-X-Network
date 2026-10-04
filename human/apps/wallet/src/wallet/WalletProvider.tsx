@@ -21,7 +21,7 @@ import {
     type WalletTransaction,
 } from '@paxeer/wallet';
 import type { WalletAccount } from '@/lib/wallet/types';
-import { getActiveRpcUrl } from '@/lib/constants';
+import { getActiveRpcUrl, PAXEER_CONFIG } from '@/lib/constants';
 import { custodyChoiceRepository } from '@/platform/storage/repositories';
 import { authRedirectUrl, resolveWalletConfig, type WalletConfig } from './config';
 import { IdentitySession, type IdentityProvider, type IdentityUser } from './identity';
@@ -41,6 +41,9 @@ export interface WalletContextValue {
     readonly status: WalletStatus;
     readonly mode: CustodyMode | null;
     readonly address: Hex | null;
+    readonly chainId: number | null;
+    readonly writeEpoch: number;
+    readonly isWriteCurrent: (epoch: number, address: string, chain: number) => boolean;
     readonly identity: IdentityUser | null;
     readonly wallet: WalletInterface | null;
     readonly injected: readonly Eip6963ProviderDetail[];
@@ -87,6 +90,7 @@ export interface WalletProviderProps {
 }
 
 interface Connection {
+    readonly chainId: number | null;
     readonly status: WalletStatus;
     readonly mode: CustodyMode | null;
     readonly address: Hex | null;
@@ -94,10 +98,10 @@ interface Connection {
     readonly wallet: WalletInterface | null;
 }
 
-const LOADING: Connection = { status: 'loading', mode: null, address: null, identity: null, wallet: null };
+const LOADING: Connection = { chainId: null, status: 'loading', mode: null, address: null, identity: null, wallet: null };
 
 function signedOut(mode: CustodyMode | null): Connection {
-    return { status: 'signed-out', mode, address: null, identity: null, wallet: null };
+    return { chainId: null, status: 'signed-out', mode, address: null, identity: null, wallet: null };
 }
 
 function message(error: unknown): string {
@@ -119,6 +123,8 @@ export function WalletProvider({ children, config: configProp, identity: identit
         return result.ok ? { config: result.config, error: null } : { config: null, error: result.error.message };
     }, [configProp]);
     const config = resolved.config;
+    const expectedChain = config?.chainId ?? PAXEER_CONFIG.chainId;
+    if (!Number.isSafeInteger(expectedChain) || expectedChain <= 0) throw new WalletUnavailableError('the configured wallet chain is invalid');
 
     const identity = useMemo(() => {
         if (identityProp !== undefined) return identityProp;
@@ -126,12 +132,23 @@ export function WalletProvider({ children, config: configProp, identity: identit
         return IdentitySession.create(config, { fetch: fetchImpl });
     }, [identityProp, config, fetchImpl]);
 
-    const [connection, setConnection] = useState<Connection>(LOADING);
+    const [connection, publishConnection] = useState<Connection>(LOADING);
+    const [writeEpoch, setWriteEpoch] = useState(0);
+    const epochRef = useRef(0);
+    const adoptionRef = useRef(0);
+    const expectedRef = useRef(expectedChain);
+    expectedRef.current = expectedChain;
     const [injected, setInjected] = useState<readonly Eip6963ProviderDetail[]>([]);
     const [error, setError] = useState<string | null>(null);
     const [busy, setBusy] = useState(false);
     const connectionRef = useRef(connection);
-    connectionRef.current = connection;
+    const setConnection = useCallback((next: Connection | ((previous: Connection) => Connection)) => {
+        const value = typeof next === 'function' ? next(connectionRef.current) : next;
+        epochRef.current += 1;
+        connectionRef.current = value;
+        setWriteEpoch(epochRef.current);
+        publishConnection(value);
+    }, []);
     const injectedRef = useRef<Eip6963ProviderDetail[]>([]);
 
     const connectEmbedded = useCallback(async (): Promise<Hex> => {
@@ -145,7 +162,9 @@ export function WalletProvider({ children, config: configProp, identity: identit
             if (!address) throw new WalletUnavailableError('the gateway returned no wallet');
             const user = await identity.user();
             custodyChoiceRepository.write('embedded');
-            setConnection({ status: 'ready', mode: 'embedded', address, identity: user, wallet });
+            const chain = await wallet.chainId();
+            if (chain !== expectedChain) throw new WalletUnavailableError('the embedded wallet chain differs from the configured chain');
+            setConnection({ chainId: chain, status: 'ready', mode: 'embedded', address, identity: user, wallet });
             return address;
         } catch (cause) {
             setError(message(cause));
@@ -154,34 +173,47 @@ export function WalletProvider({ children, config: configProp, identity: identit
         } finally {
             setBusy(false);
         }
-    }, [config, identity, fetchImpl, resolved.error]);
+    }, [config, identity, fetchImpl, resolved.error, expectedChain]);
 
     const adoptInjected = useCallback(async (detail: Eip6963ProviderDetail, prompt: boolean): Promise<Hex | null> => {
-        const wallet = injectedWallet(detail);
-        let address: Hex | null;
-        if (prompt) {
-            const [first] = await wallet.accounts();
-            address = first ?? null;
-        } else {
-            address = await authorisedAccount(detail);
-        }
-        if (!address) return null;
-        const expected = config?.chainId;
-        if (expected !== undefined && (await wallet.chainId()) !== expected) {
-            if (!prompt) return null;
-            await wallet.provider.request({
-                method: 'wallet_switchEthereumChain',
-                params: [{ chainId: `0x${expected.toString(16)}` }],
-            });
-            const switched = await wallet.chainId();
-            if (switched !== expected) {
-                throw new WalletUnavailableError(`the injected wallet is on chain ${switched}, not ${expected}`);
+        const adoption = ++adoptionRef.current;
+        const probe = injectedWallet(detail);
+        try {
+            let address: Hex | null;
+            if (prompt) {
+                const [first] = await probe.accounts();
+                address = first ?? null;
+            } else {
+                address = await authorisedAccount(detail);
             }
+            if (!address) return null;
+            if ((await probe.chainId()) !== expectedChain) {
+                if (!prompt) return null;
+                await detail.provider.request({
+                    method: 'wallet_switchEthereumChain',
+                    params: [{ chainId: `0x${expectedChain.toString(16)}` }],
+                });
+            }
+            const account = await authorisedAccount(detail);
+            const chain = await probe.chainId();
+            if (chain !== expectedChain || !account || account.toLowerCase() !== address.toLowerCase()) {
+                throw new WalletUnavailableError('the injected wallet account or configured chain was not admitted');
+            }
+            if (adoption !== adoptionRef.current || expectedRef.current !== expectedChain) throw new WalletNotReadyError('connect injected wallet');
+            const epoch = epochRef.current + 1;
+            const wallet: WalletInterface = injectedWallet(detail, {
+                chainId: expectedChain,
+                account,
+                current: () => epochRef.current === epoch && expectedRef.current === expectedChain && connectionRef.current.status === 'ready'
+                    && connectionRef.current.wallet === wallet,
+            });
+            custodyChoiceRepository.write('injected');
+            setConnection({ chainId: chain, status: 'ready', mode: 'injected', address: account, identity: null, wallet });
+            return account;
+        } finally {
+            probe.dispose();
         }
-        custodyChoiceRepository.write('injected');
-        setConnection({ status: 'ready', mode: 'injected', address, identity: null, wallet });
-        return address;
-    }, [config]);
+    }, [expectedChain, setConnection]);
 
     const connectInjected = useCallback(async (uuid: string): Promise<Hex> => {
         const detail = injectedRef.current.find((candidate) => candidate.info.uuid === uuid);
@@ -233,6 +265,7 @@ export function WalletProvider({ children, config: configProp, identity: identit
         })();
         return () => {
             alive = false;
+            adoptionRef.current += 1;
             discovery?.stop();
         };
     }, [eventTarget, identity, connectEmbedded, adoptInjected]);
@@ -253,20 +286,30 @@ export function WalletProvider({ children, config: configProp, identity: identit
     useEffect(() => {
         const wallet = connection.wallet;
         if (!wallet) return undefined;
+        const invalidate = () => {
+            if (connectionRef.current.wallet !== wallet) return;
+            setConnection(signedOut(connectionRef.current.mode));
+        };
         const onAccounts = (payload: unknown) => {
+            if (wallet.mode === 'injected') { invalidate(); return; }
             const accounts = Array.isArray(payload) ? payload : [];
             const [first] = accounts;
             if (typeof first === 'string' && ethers.isAddress(first)) {
                 setConnection((prev) => (prev.wallet === wallet ? { ...prev, address: first as Hex } : prev));
             } else {
-                setConnection((prev) => (prev.wallet === wallet ? signedOut(prev.mode) : prev));
+                invalidate();
             }
         };
         wallet.on('accountsChanged', onAccounts);
+        wallet.on('chainChanged', invalidate);
+        wallet.on('disconnect', invalidate);
         return () => {
             wallet.off('accountsChanged', onAccounts);
+            wallet.off('chainChanged', invalidate);
+            wallet.off('disconnect', invalidate);
+            wallet.dispose();
         };
-    }, [connection.wallet]);
+    }, [connection.wallet, setConnection]);
 
     const redirect = useCallback((): string => {
         if (!config) throw new WalletUnavailableError(resolved.error ?? 'the embedded wallet is not configured');
@@ -319,20 +362,26 @@ export function WalletProvider({ children, config: configProp, identity: identit
 
     const requireWallet = useCallback((action: string): WalletInterface => {
         const current = connectionRef.current;
-        if (current.status !== 'ready' || !current.wallet) throw new WalletNotReadyError(action);
+        if (current.status !== 'ready' || !current.wallet || current.chainId !== expectedRef.current) throw new WalletNotReadyError(action);
         return current.wallet;
     }, []);
 
     const refresh = useCallback(async (): Promise<void> => {
         const wallet = requireWallet('refresh');
+        const epoch = epochRef.current;
         const [address] = await wallet.accounts();
-        setConnection((prev) =>
-            prev.wallet === wallet ? (address ? { ...prev, address } : signedOut(prev.mode)) : prev,
-        );
-    }, [requireWallet]);
+        const chain = await wallet.chainId();
+        if (epoch !== epochRef.current || connectionRef.current.wallet !== wallet) throw new WalletNotReadyError('refresh');
+        if (!address || chain !== expectedChain || address.toLowerCase() !== connectionRef.current.address?.toLowerCase()) {
+            setConnection(signedOut(connectionRef.current.mode));
+            throw new WalletUnavailableError('the wallet account or configured chain changed; reconnect');
+        }
+    }, [requireWallet, expectedChain, setConnection]);
 
     const signOut = useCallback(async (): Promise<void> => {
         const current = connectionRef.current;
+        adoptionRef.current += 1;
+        setConnection(signedOut(null));
         setBusy(true);
         try {
             if (current.mode === 'embedded' && identity) await identity.signOut();
@@ -346,12 +395,12 @@ export function WalletProvider({ children, config: configProp, identity: identit
     }, [identity]);
 
     const sendTransaction = useCallback(
-        async (tx: WalletTransaction) => requireWallet('sendTransaction').sendTransaction(tx),
-        [requireWallet],
+        async (tx: WalletTransaction) => requireWallet('sendTransaction').sendTransaction({ ...tx, chainId: tx.chainId ?? expectedChain }),
+        [requireWallet, expectedChain],
     );
     const send = useCallback(
-        async (transfer: TransferRequest) => requireWallet('send').sendTransaction(transferTransaction(transfer)),
-        [requireWallet],
+        async (transfer: TransferRequest) => requireWallet('send').sendTransaction(transferTransaction(transfer, expectedChain)),
+        [requireWallet, expectedChain],
     );
     const signMessage = useCallback(
         async (text: string) => requireWallet('signMessage').signMessage(text),
@@ -366,11 +415,20 @@ export function WalletProvider({ children, config: configProp, identity: identit
         [requireWallet],
     );
 
+    const isWriteCurrent = useCallback((epoch: number, address: string, chain: number): boolean => {
+        const current = connectionRef.current;
+        return current.status === 'ready' && epochRef.current === epoch && current.address === address
+            && current.chainId === chain && expectedRef.current === chain;
+    }, []);
+
     const value = useMemo<WalletContextValue>(
         () => ({
             status: connection.status,
             mode: connection.mode,
             address: connection.address,
+            chainId: connection.status === 'ready' ? connection.chainId : null,
+            writeEpoch,
+            isWriteCurrent,
             identity: connection.identity,
             wallet: connection.wallet,
             injected,
@@ -393,6 +451,9 @@ export function WalletProvider({ children, config: configProp, identity: identit
         }),
         [
             connection,
+            expectedChain,
+            writeEpoch,
+            isWriteCurrent,
             injected,
             config,
             identity,

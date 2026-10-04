@@ -10,6 +10,7 @@ import {
     type ProviderDiscovery,
     type WalletTransaction,
 } from '@paxeer/wallet';
+import { PAXEER_CONFIG } from '@/lib/constants';
 import type { WalletConfig } from './config';
 import type { IdentitySession } from './identity';
 
@@ -41,8 +42,8 @@ export function embeddedWallet(
     return new WalletInterface(provider, EMBEDDED_WALLET_INFO);
 }
 
-export function injectedWallet(detail: Eip6963ProviderDetail): WalletInterface {
-    return new WalletInterface(detail.provider, detail.info);
+export function injectedWallet(detail: Eip6963ProviderDetail, admission?: { readonly chainId: number; readonly account: Hex; readonly current: () => boolean }): WalletInterface {
+    return new WalletInterface(detail.provider, detail.info, admission);
 }
 
 export function isEmbeddedDetail(detail: Eip6963ProviderDetail): boolean {
@@ -81,7 +82,7 @@ export class TransferError extends Error {
     }
 }
 
-export function transferTransaction(request: TransferRequest): WalletTransaction {
+export function transferTransaction(request: TransferRequest, chainId = PAXEER_CONFIG.chainId): WalletTransaction {
     if (!ethers.isAddress(request.to)) throw new TransferError('to', 'the recipient is not an address');
     const decimals = request.decimals ?? 18;
     if (!Number.isInteger(decimals) || decimals < 0 || decimals > 36) {
@@ -95,13 +96,14 @@ export function transferTransaction(request: TransferRequest): WalletTransaction
     }
     if (amount <= 0n) throw new TransferError('value', 'the amount must be greater than zero');
     const to = ethers.getAddress(request.to) as Hex;
-    if (request.tokenAddress === undefined) return { to, value: amount };
+    if (request.tokenAddress === undefined) return { to, value: amount, chainId };
     if (!ethers.isAddress(request.tokenAddress)) {
         throw new TransferError('tokenAddress', 'the token is not an address');
     }
     return {
         to: ethers.getAddress(request.tokenAddress) as Hex,
         value: 0n,
+        chainId,
         data: ERC20.encodeFunctionData('transfer', [to, amount]) as Hex,
     };
 }

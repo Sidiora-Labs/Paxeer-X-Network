@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Page, type Locator } from '@playwright/test';
 import { formatEther } from 'ethers';
 import { bottomTab, signIn } from './wallet';
 
@@ -185,4 +185,224 @@ test.describe('send transfer truth', () => {
         await expect(page.locator('[data-retained-evidence]')).toBeVisible();
     });
 
+});
+
+test('injected chain pinning uses the real official extension and isolated chains', async () => {
+    const fs = await import('node:fs/promises');
+    const path = await import('node:path');
+    const manifestPath = process.env.WALLET_INJECTED_CHAIN_RUNTIME;
+    if (!manifestPath) throw new Error('The private source-bound injected chain runtime is required');
+    const manifest = JSON.parse(await fs.readFile(manifestPath, 'utf8'));
+    if (manifest.schema !== 'paxeer-x.wallet-injected-chain-runtime.v1') throw new Error('Invalid injected chain runtime');
+    const { chromium } = await import('@playwright/test');
+    const context = await chromium.launchPersistentContext(manifest.profile_dir, {
+        headless: true, channel: 'chromium',
+        args: [`--disable-extensions-except=${manifest.extension_path}`, `--load-extension=${manifest.extension_path}`,
+            '--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE localhost, EXCLUDE 127.0.0.1'],
+    });
+    const cases: Record<string, unknown> = {};
+    try {
+        const worker = context.serviceWorkers().find((value) => value.url().startsWith('chrome-extension://'))
+            ?? await context.waitForEvent('serviceworker');
+        const extensionId = new URL(worker.url()).hostname;
+        expect(extensionId).toMatch(/^[a-p]{32}$/);
+        const home = await context.newPage();
+        await home.goto(`chrome-extension://${extensionId}/home.html`);
+        const password = (await fs.readFile(manifest.password_file, 'utf8')).trim();
+        const ui = async (id: string) => {
+            let found: Locator | undefined;
+            await expect.poll(async () => {
+                for (const page of context.pages()) {
+                    if (!page.url().startsWith(`chrome-extension://${extensionId}/`)) continue;
+                    const candidate = page.getByTestId(id);
+                    if (await candidate.count() === 1 && await candidate.isVisible()) { found = candidate; return true; }
+                }
+                return false;
+            }, { timeout: 20_000 }).toBe(true);
+            return found!;
+        };
+        const click = async (id: string) => (await ui(id)).click();
+        const fill = async (id: string, value: string) => (await ui(id)).fill(value);
+        await click('onboarding-create-wallet');
+        await click('onboarding-create-with-srp-button');
+        await fill('create-password-new-input', password);
+        await fill('create-password-confirm-input', password);
+        await click('create-password-terms');
+        await click('create-password-submit');
+        await click('passkey-maybe-later-button');
+        await click('recovery-phrase-remind-later');
+        const metrics = await ui('metametrics-checkbox');
+        if (await metrics.getAttribute('data-checked') === 'true') await metrics.click();
+        await click('metametrics-i-agree');
+        await click('onboarding-complete-done');
+        for (const chain of [125, 126]) {
+            await home.goto(`chrome-extension://${extensionId}/home.html#/networks?view=add`);
+            await fill('network-form-network-name', `Paxeer isolated ${chain}`);
+            await fill('network-form-chain-id', String(chain));
+            await home.locator('#nativeCurrency').fill('PAX');
+            await click('test-add-rpc-drop-down');
+            await home.getByRole('button', { name: 'Add RPC URL', exact: true }).click();
+            await fill('rpc-url-input-test', manifest[`rpc${chain}`]);
+            await fill('rpc-name-input-test', `Paxeer isolated ${chain}`);
+            await click('page-container-footer-next');
+            await click('page-container-footer-next');
+        }
+        const switchChain = async (chain: number) => {
+            await home.goto(`chrome-extension://${extensionId}/home.html#`);
+            await click('dapp-connection-control-bar__network-button');
+            await click(`Paxeer isolated ${chain}`);
+        };
+        await switchChain(125);
+        const app = await context.newPage();
+        await app.goto(manifest.app_url);
+        await expect(app.getByTestId('embedded-config')).toHaveText('unavailable');
+        await expect(app.getByTestId('bootstrap-config-mode')).toHaveText('default');
+        const connect = async (approve: boolean) => {
+            await app.bringToFront();
+            await app.locator('[data-testid="injected-connect"][data-provider-rdns="io.metamask"]').click();
+            if (approve) {
+                await expect.poll(async () => {
+                    if (await app.getByTestId('wallet-status').textContent() === 'ready') return 'ready';
+                    for (const page of context.pages()) {
+                        if (page.url().startsWith(`chrome-extension://${extensionId}/`)
+                            && await page.getByTestId('confirm-btn').isVisible()) {
+                            await page.getByTestId('confirm-btn').click(); return 'approved';
+                        }
+                    }
+                    return '';
+                }).not.toBe('');
+            } else await click('cancel-btn');
+        };
+        await connect(false);
+        await expect(app.getByTestId('wallet-status')).toHaveText('signed-out');
+        await expect(app.getByTestId('wallet-address')).toHaveText('');
+        cases.rejected_connection = true;
+        await connect(true);
+        await expect(app.getByTestId('wallet-status')).toHaveText('ready');
+        const account = (await app.getByTestId('wallet-address').textContent())!.trim();
+        expect(account).toMatch(/^0x[0-9a-fA-F]{40}$/);
+        await expect(app.getByTestId('wallet-chain')).toHaveText('125');
+        cases.missing_embedded_config = { account, chain: 125 };
+        for (const chain of [125, 126]) {
+            const accounts = await rpcAt(manifest[`rpc${chain}`], 'eth_accounts');
+            const hash = await rpcAt(manifest[`rpc${chain}`], 'eth_sendTransaction', [{
+                from: accounts[0], to: account, value: '0xde0b6b3a7640000', chainId: `0x${chain.toString(16)}`,
+            }]);
+            await expect.poll(async () => (await rpcAt(manifest[`rpc${chain}`], 'eth_getTransactionReceipt', [hash]))?.status).toBe('0x1');
+        }
+        await app.getByTestId('wallet-refresh').click();
+        await app.getByTestId('wallet-read-chain').click();
+        await expect(app.getByTestId('wallet-chain-status')).toHaveText('observed');
+        const open = async () => {
+            await app.getByTestId('wallet-clear-transfer').click();
+            await app.getByTestId('send-recipient').fill(manifest.recipient);
+            await app.getByTestId('send-amount').fill('0.0001');
+            await app.getByRole('button', { name: 'Send native PAX', exact: true }).click();
+            await expect(app.getByRole('dialog', { name: 'Confirm send transaction', exact: true })).toBeVisible();
+        };
+        await open();
+        await app.getByRole('button', { name: 'Confirm send', exact: true }).click();
+        await click('confirm-footer-button');
+        await expect(app.getByTestId('transaction-hash')).toHaveText(/^0x[0-9a-fA-F]{64}$/);
+        const hash = (await app.getByTestId('transaction-hash').textContent())!.trim();
+        await expect.poll(async () => (await rpcAt(manifest.rpc125, 'eth_getTransactionReceipt', [hash]))?.status).toBe('0x1');
+        const transaction = await rpcAt(manifest.rpc125, 'eth_getTransactionByHash', [hash]);
+        expect(BigInt(transaction.chainId)).toBe(125n);
+        expect(transaction.from.toLowerCase()).toBe(account.toLowerCase());
+        expect(transaction.to.toLowerCase()).toBe(manifest.recipient.toLowerCase());
+        expect(BigInt(transaction.value)).toBe(100000000000000n);
+        expect(await rpcAt(manifest.rpc126, 'eth_getTransactionReceipt', [hash])).toBeNull();
+        cases.expected_chain_transaction = { hash, chainId: 125 };
+        const nonce126 = await rpcAt(manifest.rpc126, 'eth_getTransactionCount', [account, 'pending']);
+        await open();
+        await switchChain(126);
+        await expect(app.getByTestId('wallet-status')).toHaveText('signed-out');
+        await expect(app.getByTestId('wallet-address')).toHaveText('');
+        await expect(app.getByTestId('wallet-chain')).toHaveText('');
+        await expect(app.getByRole('dialog', { name: 'Confirm send transaction', exact: true })).toHaveCount(0);
+        expect(await rpcAt(manifest.rpc126, 'eth_getTransactionCount', [account, 'pending'])).toBe(nonce126);
+        cases.mid_confirmation_switch = { chainId: 126, nonceUnchanged: true };
+        const sdkRefusals = await app.evaluate(async () => {
+            const detail = await new Promise<{ provider: any; info: any }>((resolve, reject) => {
+                const timer = window.setTimeout(() => { window.removeEventListener('eip6963:announceProvider', listener); reject(new Error('Actual provider discovery timed out')); }, 5000);
+                const listener = (event: Event) => {
+                    const value = (event as CustomEvent).detail;
+                    if (value?.info?.rdns !== 'io.metamask') return;
+                    window.clearTimeout(timer);
+                    window.removeEventListener('eip6963:announceProvider', listener);
+                    resolve(value);
+                };
+                window.addEventListener('eip6963:announceProvider', listener);
+                window.dispatchEvent(new Event('eip6963:requestProvider'));
+            });
+            const sdkPath = '/sdk.js';
+            const { WalletInterface } = await import(sdkPath);
+            const actual = new WalletInterface(detail.provider, detail.info);
+            const results = [];
+            try {
+                for (const action of [() => actual.signMessage('isolated chain admission'),
+                    () => actual.signTypedData({ domain: { chainId: 125 }, primaryType: 'Admission',
+                        types: { Admission: [{ name: 'chain', type: 'uint256' }] }, message: { chain: 125 } }),
+                    () => actual.sendTransaction({ to: '0x00000000000000000000000000000000000000b1', value: 1n, chainId: 125 })]) {
+                    try { await action(); throw new Error('A wrong-chain SDK request was admitted'); }
+                    catch (error) {
+                        if ((error as { code?: number }).code !== 4901) throw error;
+                        results.push(4901);
+                    }
+                }
+            } finally { actual.dispose(); }
+            return results;
+        });
+        expect(sdkRefusals).toEqual([4901, 4901, 4901]);
+        expect(await rpcAt(manifest.rpc126, 'eth_getTransactionCount', [account, 'pending'])).toBe(nonce126);
+        cases.sdk_wrong_chain_signatures = sdkRefusals;
+        await app.reload();
+        await expect(app.getByTestId('wallet-status')).toHaveText('signed-out');
+        await expect(app.getByTestId('wallet-address')).toHaveText('');
+        cases.wrong_chain_reload = true;
+        await switchChain(125);
+        await connect(true);
+        await expect(app.getByTestId('wallet-status')).toHaveText('ready');
+        await expect(app.getByTestId('wallet-chain')).toHaveText('125');
+        await expect(app.getByTestId('wallet-address')).toHaveText(account);
+        await app.reload();
+        await expect(app.getByTestId('wallet-status')).toHaveText('ready');
+        await expect(app.getByTestId('wallet-chain')).toHaveText('125');
+        cases.reconnect_reload = { account, chainId: 125 };
+        await open();
+        await home.goto(`chrome-extension://${extensionId}/home.html#`);
+        await click('account-options-menu-button');
+        await click('global-menu-lock');
+        await expect(app.getByTestId('wallet-status')).toHaveText('signed-out');
+        await expect(app.getByRole('dialog', { name: 'Confirm send transaction', exact: true })).toHaveCount(0);
+        cases.accounts_changed_lock = true;
+        await fill('unlock-password', password);
+        await click('unlock-submit');
+        await connect(true);
+        await expect(app.getByTestId('wallet-status')).toHaveText('ready');
+        await open();
+        await app.getByTestId('wallet-sign-out').click();
+        await expect(app.getByTestId('wallet-status')).toHaveText('signed-out');
+        await expect(app.getByRole('dialog', { name: 'Confirm send transaction', exact: true })).toHaveCount(0);
+        cases.sign_out = true;
+        await connect(true);
+        await expect(app.getByTestId('wallet-status')).toHaveText('ready');
+        await open();
+        await home.goto(`chrome-extension://${extensionId}/home.html#`);
+        await click('account-options-menu-button');
+        await click('global-menu-connected-sites');
+        await click('disconnect-all-button');
+        await click('disconnect-all-sites-confirm');
+        await expect(app.getByTestId('wallet-status')).toHaveText('signed-out');
+        await expect(app.getByTestId('wallet-address')).toHaveText('');
+        await expect(app.getByRole('dialog', { name: 'Confirm send transaction', exact: true })).toHaveCount(0);
+        expect(await rpcAt(manifest.rpc126, 'eth_getTransactionCount', [account, 'pending'])).toBe(nonce126);
+        cases.revoked_connection = true;
+        await fs.writeFile(path.join(manifest.output_dir, 'chain-result.json'), JSON.stringify({
+            schema: 'paxeer-x.wallet-injected-chain-result.v1', source_hashes: manifest.source_hashes,
+            cases, completed_cases: Object.keys(cases).length, skipped_cases: 0, exit_code: 0,
+        }), { mode: 0o600 });
+    } finally {
+        await context.close();
+    }
 });

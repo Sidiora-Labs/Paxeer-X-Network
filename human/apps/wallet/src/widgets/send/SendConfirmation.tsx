@@ -4,7 +4,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { Copy, Plus, ShieldCheck } from "lucide-react";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import Image from "next/image";
-import { PAXEER_CONFIG } from "@/lib/constants";
+import { useWallet, WalletNotReadyError } from '@/wallet/WalletProvider';
 import { useLocale } from '@/providers/LocaleProvider';
 
 export interface SendConfirmationProps {
@@ -32,7 +32,7 @@ export const SendConfirmation = ({
     amount,
     to,
     networkName = 'Paxeer Network',
-    chainId = PAXEER_CONFIG.chainId,
+    chainId: requestedChain,
     loading = false,
     onConfirm,
     onOpen,
@@ -40,12 +40,34 @@ export const SendConfirmation = ({
     fee = null,
 }: SendConfirmationProps) => {
     const { p, t } = useLocale();
+    const wallet = useWallet();
+    const chainId = wallet.chainId;
+    const snapshotRef = useRef<{ epoch: number; address: string; amount: string | undefined; to: string | undefined; chain: number } | null>(null);
+    const current = () => {
+        const snapshot = snapshotRef.current;
+        return snapshot !== null && wallet.isWriteCurrent(snapshot.epoch, snapshot.address, snapshot.chain)
+            && wallet.status === 'ready' && snapshot.epoch === wallet.writeEpoch
+            && snapshot.address === wallet.address && snapshot.chain === wallet.chainId
+            && snapshot.amount === amount && snapshot.to === to && (requestedChain === undefined || requestedChain === snapshot.chain);
+    };
     const [isOpen, setIsOpen] = useState(false);
     const [copied, setCopied] = useState(false);
     const dialogRef = useRef<HTMLDivElement>(null);
     const previousFocusRef = useRef<HTMLElement | null>(null);
 
+    useEffect(() => {
+        if (isOpen && !current()) {
+            snapshotRef.current = null;
+            setIsOpen(false);
+        }
+    }, [isOpen, wallet.status, wallet.writeEpoch, wallet.address, wallet.chainId, amount, to, requestedChain]);
+
     const handleConfirm = async () => {
+        if (!current()) {
+            snapshotRef.current = null;
+            setIsOpen(false);
+            throw new WalletNotReadyError('confirm send');
+        }
         if (onConfirm) {
             await onConfirm();
         }
@@ -53,11 +75,13 @@ export const SendConfirmation = ({
     };
 
     const handleOpen = useCallback(() => {
-        if (disabled) return;
+        if (disabled || wallet.status !== 'ready' || !wallet.address || wallet.chainId === null
+            || (requestedChain !== undefined && requestedChain !== wallet.chainId)) return;
         if (onOpen && !onOpen()) return;
+        snapshotRef.current = { epoch: wallet.writeEpoch, address: wallet.address, chain: wallet.chainId, amount, to };
         previousFocusRef.current = document.activeElement as HTMLElement;
         setIsOpen(true);
-    }, [disabled, onOpen]);
+    }, [disabled, onOpen, wallet.status, wallet.address, wallet.chainId, wallet.writeEpoch, amount, to, requestedChain]);
 
     const handleClose = useCallback(() => {
         setIsOpen(false);
