@@ -145,13 +145,16 @@ def build(evidence, target, deadline):
     target.mkdir(parents=True, exist_ok=True)
     manifest_parity()
     run([cargo, "build", "--offline", "--locked", "--manifest-path", ROOT / "programs/Cargo.toml",
-        "-p", "layerx-program-sdk", "--target", "wasm32-unknown-unknown", "--target-dir", target / "rust"],
+        "-p", "layerx-program-sdk", "--target", "wasm32-unknown-unknown", "--target-dir", target / "rust-engine",
+        "--config", 'target.wasm32-unknown-unknown.rustflags=["-C","target-feature=-reference-types","-C","link-arg=--compress-relocations"]'],
         evidence, "build-rust-sdk", deadline)
-    rlibs = list((target / "rust/wasm32-unknown-unknown/debug/deps").glob("liblayerx_program_sdk-*.rlib"))
+    rlibs = list((target / "rust-engine/wasm32-unknown-unknown/debug/deps").glob("liblayerx_program_sdk-*.rlib"))
     if len(rlibs) != 1:
         raise RuntimeError("exact freshly built SDK artifact required")
     run([rustc, "--edition=2021", "--target", "wasm32-unknown-unknown", "--crate-type", "cdylib",
-        "-C", "opt-level=2", "-C", "strip=debuginfo", "-C", "panic=abort", "--extern", "layerx_program_sdk=" + str(rlibs[0]),
+        "-C", "opt-level=2", "-C", "strip=debuginfo", "-C", "panic=abort",
+        "-C", "target-feature=-reference-types", "-C", "link-arg=--compress-relocations",
+        "--extern", "layerx_program_sdk=" + str(rlibs[0]),
         "-L", "dependency=" + str(rlibs[0].parent), ROOT / "programs/sdk/rust/tests/fixtures/language_abi.rs",
         "-o", target / "rust.wasm"], evidence, "build-rust-guest", deadline)
     run([clang, "--target=wasm32-unknown-unknown", "-std=c17", "-Oz", "-ffreestanding", "-fno-builtin",
