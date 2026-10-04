@@ -33,7 +33,7 @@ ATTACHMENT_FIELDS = (
     "required_case_inventory", "evidence_output_directory",
 )
 ATTESTOR_FIELDS = ("public_signer", "payout", "key_handle_ref", "data_dir", "peer_endpoint")
-STAGES = ("scanned", "fetching", "content-fetched", "attested", "before-quorum", "signatures-collected", "before-signed-journal", "submitted", "broadcast")
+STAGES = ("scanned", "fetching", "content-fetched", "attested", "before-quorum", "signatures-collected", "before-signed-journal", "submitted", "submitted-no-answer", "broadcast")
 BINDINGS = ("source_revision", "config_digest", "membership_ref", "storage_ref", "funded_accounts_ref")
 BINDING_PATTERNS = {
     "source_revision": re.compile(r"[0-9a-f]{40}|[0-9a-f]{64}"),
@@ -231,11 +231,15 @@ class Sidecar:
             "signatures-collected": ("main.rs", "if let Err(error) = pipeline.watcher.transition(request_id, WorkStage::Quorum) {"),
             "before-signed-journal": ("submit.rs", "let signed = transaction.sign(&self.key)?;"),
             "submitted": ("submit.rs", "self.broadcast(request_id, &signed)"),
+            "submitted-no-answer": ("submit.rs", "self.broadcast(request_id, &signed)"),
             "broadcast": ("submit.rs", "Ok(Outcome::Sent { hash: signed.hash })"),
         }
         name, needle = boundaries[stage]
         path = ROOT / "interop/crates/x-websearch/src" / name
-        lines = [number for number, line in enumerate(path.read_text().splitlines(), 1) if line.strip() == needle]
+        source = path.read_text()
+        pattern = r"\s*".join(re.escape(character) for character in "".join(needle.split()))
+        matches = list(re.finditer(r"(?m)^[ \t]*(?P<statement>" + pattern + r")[ \t]*$", source))
+        lines = [source.count("\n", 0, match.start("statement")) + 1 for match in matches]
         require(len(lines) == 1, "exact EVM production interruption boundary absent")
         return str(path) + ":" + str(lines[0])
 
@@ -417,6 +421,7 @@ def interrupt_at(stage, sidecars, threshold, endpoint, producer, authority):
         "before-signed-journal": lambda: journalled(target.slot, request_id)["stage"] == "quorum"
             and submitted(target.slot, request_id) is None,
         "submitted": lambda: submitted(target.slot, request_id) is not None,
+        "submitted-no-answer": lambda: submitted(target.slot, request_id) is not None,
         "broadcast": lambda: submitted(target.slot, request_id) is not None,
     }[stage]
     wait(reached, f"request {request_id} to reach {stage}")
@@ -430,7 +435,7 @@ def interrupt_at(stage, sidecars, threshold, endpoint, producer, authority):
     target.kill()
     require(journalled(target.slot, request_id)["source"] == source_before, "crash changed canonical source identity")
     before = submitted(target.slot, request_id)
-    if stage in ("submitted", "broadcast"):
+    if stage in ("submitted", "submitted-no-answer", "broadcast"):
         require(before is not None, f"request {request_id} signed bytes not journalled before the kill")
     elif request_status(endpoint, request_id) != STATUS_FULFILLED:
         entry = journalled(target.slot, request_id)
@@ -459,6 +464,11 @@ def interrupt_at(stage, sidecars, threshold, endpoint, producer, authority):
             path.write_bytes(original)
         require(refused_startup, "tampered durable digest did not refuse real process startup")
         checks.append({"case": "tampered-durable-digest", "refused": True})
+    if stage == "submitted-no-answer":
+        require(before is not None and before["state"] == "signed", "real signed recovery boundary absent")
+        path = Path(target.slot["data_dir"]) / "attest" / "answers" / (str(request_id) + ".json")
+        require(path.is_file(), "signed request lacks retained answer before crash")
+        path.unlink()
     target.start()
     if stage == "before-quorum":
         wait(lambda: served(target.slot, request_id) == record,

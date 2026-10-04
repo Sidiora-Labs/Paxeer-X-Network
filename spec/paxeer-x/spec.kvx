@@ -22531,7 +22531,11 @@ build_cmd = "cargo build --locked --manifest-path platform/Cargo.toml -p layerx-
 
 [task.19.1]
 title = "Retain EVM web-attestation work before advancing event cursors"
-status = "in_progress"
+status = "done"
+completion_basis = "implementation"
+qualification_status = "failed"
+build_exit_code = 101
+verify_exit_code = 3
 mode = "BUILD"
 wave = 2
 requires = ["0.2"]
@@ -22541,7 +22545,7 @@ do_2 = "Restore SignatureExchange and pending requests at startup, classify retr
 do_3 = "Add real-process interruption points around each durable transition and prove request retention, correct quorum binding and already-completed reconciliation."
 do_4 = "Create or extend the planned harness tools/qualification/paxeer-x/paid-web-contract.py with case evm-attestation-recovery; exercise the real served binaries and production persistence paths against the candidate manifest, record exact assertions and nonzero refusals, and fail if required inputs, executions or cases are absent."
 do_5 = "Implement the declared focused gate through the real production types and paths; exercise every acceptance criterion including refusal, restart or boundary cases specified by this requirement. The command is a planned deliverable, not an already-run gate."
-touches = ["interop/crates/x-websearch/src/watch.rs", "interop/crates/x-websearch/src/main.rs", "interop/crates/x-websearch/src/attest.rs", "interop/crates/x-websearch/src/submit.rs", "interop/crates/x-websearch/tests/attest.rs", "tools/qualification/paxeer-x/paid-web-contract.py", "tools/qualification/paxeer-x/fixtures/xweb_fixture.py"]
+touches = ["interop/crates/x-websearch/src/watch.rs", "interop/crates/x-websearch/src/main.rs", "interop/crates/x-websearch/src/attest.rs", "interop/crates/x-websearch/src/submit.rs", "interop/crates/x-websearch/tests/attest.rs", "tools/qualification/paxeer-x/paid-web-contract.py", "tools/qualification/paxeer-x/fixtures/xweb_fixture.py", "tools/qualification/paxeer-x/fixtures/xweb_attestation.py"]
 verify_cmd = "timeout 20m python3 tools/qualification/paxeer-x/paid-web-contract.py --case evm-attestation-recovery --candidate-manifest \"$PAXEER_X_CANDIDATE_MANIFEST\""
 gate_kind = "planned"
 max_builds = 1

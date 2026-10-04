@@ -2123,3 +2123,11 @@ rule = "Preserve native and client assertions. Resolve the actual receipt contra
 title = "Migration requires a genuine binding and funded custody producer"
 observed = "The retained v1 migration receipt policy expects an external claim in canonical protocol ContextHash but no real producer implements that contract; the selector was absent."
 rule = "Preserve old checks and ContextHash; source verification alone never proves account binding or asset credit."
+
+[gotcha.635]
+observed = "Canonical Human API owns domain kvx files, not guessed types.kvx/operations.kvx paths; rg returned exit2 before source reads."
+resolution = "Discover actual files with rg --files and read complete retrievable output before reasoning."
+
+[gotcha.636]
+observed = "Attestation production missed its FetchError import and exact signed-submission recovery depended on a retained answer/quorum."
+resolution = "Task19.1 restores signed bytes before any new answer/quorum and preserves request, signer ordering, membership and attestation-level binding."

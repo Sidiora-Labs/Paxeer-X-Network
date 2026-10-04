@@ -1078,16 +1078,28 @@ fn unwritten_answers_and_peer_signatures_never_authorize_fulfilment() -> Outcome
     std::fs::rename(&held, &answers)?;
     assert!(exchange.record(vector_answer(1, b"Paxeer X Network")?));
     let peer = vector_answer(3, b"Paxeer X Network")?;
-    let set = AttestorSet { signers: vec![signer_address(&attestor_key(1)?), signer_address(&attestor_key(3)?),
-        signer_address(&attestor_key(4)?)], threshold: 2 };
+    let set = AttestorSet {
+        signers: vec![
+            signer_address(&attestor_key(1)?),
+            signer_address(&attestor_key(3)?),
+            signer_address(&attestor_key(4)?),
+        ],
+        threshold: 2,
+    };
     std::fs::rename(&answers, &held)?;
-    assert_eq!(exchange.accept("real-signed-record", 7, &peer.record(), &set), Err(Discard::Persistence));
+    assert_eq!(
+        exchange.accept("real-signed-record", 7, &peer.record(), &set),
+        Err(Discard::Persistence)
+    );
     assert!(exchange.ready(7, &set).is_none());
     std::fs::rename(&held, &answers)?;
     drop(exchange);
     let reopened = SignatureExchange::open(&scratch.0, &[])?;
     assert!(reopened.ready(7, &set).is_none());
-    assert_eq!(reopened.accept("real-signed-record", 7, &peer.record(), &set), Ok(Some(peer.signer)));
+    assert_eq!(
+        reopened.accept("real-signed-record", 7, &peer.record(), &set),
+        Ok(Some(peer.signer))
+    );
     assert!(reopened.ready(7, &set).is_some());
     Ok(())
 }
@@ -1096,13 +1108,96 @@ fn unwritten_answers_and_peer_signatures_never_authorize_fulfilment() -> Outcome
 fn atomic_progress_is_authoritative_over_the_legacy_cursor() -> Outcome {
     let scratch = Scratch::new("atomic-progress")?;
     std::fs::write(scratch.0.join("cursor"), "999")?;
-    std::fs::write(scratch.0.join("pending.json"), json!({
-        "version": 1, "next_block": 31, "chain_id": 125, "entries": []
-    }).to_string())?;
-    let watcher = RequestWatcher::open(EvmRpc::new("http://127.0.0.1:9")?, 12, &scratch.0, Some(0))?
-        .with_chain_id(125)?;
+    std::fs::write(
+        scratch.0.join("pending.json"),
+        json!({
+            "version": 1, "next_block": 31, "chain_id": 125, "entries": []
+        })
+        .to_string(),
+    )?;
+    let watcher =
+        RequestWatcher::open(EvmRpc::new("http://127.0.0.1:9")?, 12, &scratch.0, Some(0))?
+            .with_chain_id(125)?;
     assert_eq!(watcher.next_block(), Some(31));
-    assert!(RequestWatcher::open(EvmRpc::new("http://127.0.0.1:9")?, 12, &scratch.0, None)?
-        .with_chain_id(126).is_err());
+    assert!(
+        RequestWatcher::open(EvmRpc::new("http://127.0.0.1:9")?, 12, &scratch.0, None)?
+            .with_chain_id(126)
+            .is_err()
+    );
+    Ok(())
+}
+
+#[test]
+fn restored_signatures_refuse_noncanonical_order_and_duplicates() -> Outcome {
+    let scratch = Scratch::new("exchange-canonical-signatures")?;
+    let set = three_attestors()?;
+    let exchange = SignatureExchange::open(&scratch.0, &[])?;
+    assert!(exchange.record(vector_answer(1, b"Paxeer X Network")?));
+    let honest = vector_answer(3, b"Paxeer X Network")?;
+    assert_eq!(
+        exchange.accept("signed-peer", 7, &honest.record(), &set),
+        Ok(Some(honest.signer))
+    );
+    assert!(exchange.ready(7, &set).is_some());
+    drop(exchange);
+    let path = scratch.0.join("answers/7.json");
+    let original = std::fs::read(&path)?;
+    let mut reversed: Value = serde_json::from_slice(&original)?;
+    reversed["signatures"]
+        .as_array_mut()
+        .ok_or_else(|| fail("missing signatures"))?
+        .reverse();
+    std::fs::write(&path, serde_json::to_vec(&reversed)?)?;
+    assert!(SignatureExchange::open(&scratch.0, &[]).is_err());
+    let mut duplicate: Value = serde_json::from_slice(&original)?;
+    let signatures = duplicate["signatures"]
+        .as_array_mut()
+        .ok_or_else(|| fail("missing signatures"))?;
+    signatures.push(signatures[0].clone());
+    std::fs::write(&path, serde_json::to_vec(&duplicate)?)?;
+    assert!(SignatureExchange::open(&scratch.0, &[]).is_err());
+    std::fs::write(&path, original)?;
+    assert!(SignatureExchange::open(&scratch.0, &[])?
+        .ready(7, &set)
+        .is_some());
+    Ok(())
+}
+
+#[test]
+fn restored_answer_level_and_signature_remain_bound_to_the_paid_request() -> Outcome {
+    let scratch = Scratch::new("retained-paid-binding")?;
+    let attestor = Attestor::new(
+        attestor_key(1)?,
+        CHAIN_ID,
+        Arc::new(loopback_fetcher()?),
+        Arc::new(WebIndex::open(&scratch.0)?),
+        Arc::new(ContentStore::open(&scratch.0, &[])?),
+    );
+    let mut requester = [0; 20];
+    requester[17..].copy_from_slice(&[0x0a, 0x11, 0xce]);
+    let request = WebRequest {
+        request_id: 7,
+        requester,
+        kind: 1,
+        payload: b"https://paxeer.app/".to_vec(),
+        callback_gas: 200_000,
+        paid: [0; 32],
+        timeout_height: 528,
+        block_number: 28,
+    };
+    let original = vector_answer(1, b"Paxeer X Network")?;
+    assert!(attestor.binds(&request, &original));
+    let mut changed = original.clone();
+    changed.level = Level::Single(original.signer);
+    assert!(!attestor.binds(&request, &changed));
+    let mut changed = original.clone();
+    changed.signature[0] ^= 1;
+    assert!(!attestor.binds(&request, &changed));
+    let mut changed = request.clone();
+    changed.payload.push(b'x');
+    assert!(!attestor.binds(&changed, &original));
+    let mut changed = request.clone();
+    changed.requester[0] ^= 1;
+    assert!(!attestor.binds(&changed, &original));
     Ok(())
 }

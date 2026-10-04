@@ -10,7 +10,7 @@ use serde_json::{json, Value};
 
 use crate::api::{self, ApiClient, ApiError, ApiPayload, KIND_API};
 use crate::content::{ContentStore, PEER_HEADER};
-use crate::fetch::{Fetcher, HttpClient, Url};
+use crate::fetch::{FetchError, Fetcher, HttpClient, Url};
 use crate::index::WebIndex;
 use crate::search;
 use crate::server::{Response, RouteError, RouteTable};
@@ -246,13 +246,25 @@ impl AttestError {
     pub const fn is_terminal(&self) -> bool {
         match self {
             Self::UnknownKind(_) | Self::Payload | Self::TooLong | Self::NotNamed(_) => true,
-            Self::Fetch(error) => match error {
-                FetchError::Resolve | FetchError::RobotsUnavailable | FetchError::Connect
-                | FetchError::ConnectTimeout | FetchError::Timeout | FetchError::Tls
+            Self::Fetch(error) | Self::Api(ApiError::Fetch(error)) => match error {
+                FetchError::Resolve
+                | FetchError::RobotsUnavailable
+                | FetchError::Connect
+                | FetchError::ConnectTimeout
+                | FetchError::Timeout
+                | FetchError::Tls
                 | FetchError::Transport => false,
                 FetchError::Status(status) => *status != 429 && *status < 500,
                 _ => true,
             },
+            Self::Api(
+                ApiError::Payload(_)
+                | ApiError::Envelope(_)
+                | ApiError::Credential(_)
+                | ApiError::NoEnvelope
+                | ApiError::TooLarge,
+            ) => true,
+            Self::Api(ApiError::Status(status)) => *status != 429 && *status < 500,
             _ => false,
         }
     }
@@ -451,11 +463,25 @@ impl Attestor {
     }
 
     pub fn binds(&self, request: &WebRequest, answer: &Answer) -> bool {
-        answer.attestation == Attestation::evm(self.chain_id, request,
-            answer.attestation.content_digest, &answer.response, answer.attestation.full_length)
+        answer.attestation
+            == Attestation::evm(
+                self.chain_id,
+                request,
+                answer.attestation.content_digest,
+                &answer.response,
+                answer.attestation.full_length,
+            )
             && answer.callback_gas == request.callback_gas
             && answer.timeout_height == request.timeout_height
             && answer.signer == self.signer
+            && answer.digest == answer.attestation.digest()
+            && recover_signer(&answer.digest, &answer.signature) == Ok(self.signer)
+            && match request.kind {
+                KIND_API => ApiPayload::decode(&request.payload)
+                    .is_ok_and(|payload| payload.attestation_level() == answer.level),
+                1 | 2 => answer.level == Level::Majority,
+                _ => false,
+            }
     }
 
     /// Answers one request: the content, the stored response and the
@@ -618,6 +644,28 @@ impl Collected {
     /// check out is refused as a whole.
     fn from_json(value: &Value) -> Option<Self> {
         let object = value.as_object()?;
+        let known = [
+            "origin",
+            "network_id",
+            "requester",
+            "request_id",
+            "kind",
+            "payload_hash",
+            "content_digest",
+            "response_hash",
+            "full_length",
+            "level",
+            "response",
+            "callback_gas",
+            "timeout_height",
+            "digest",
+            "signer",
+            "signature",
+            "signatures",
+        ];
+        if object.keys().any(|key| !known.contains(&key.as_str())) {
+            return None;
+        }
         let number = |key: &str| object.get(key).and_then(Value::as_u64);
         let attestation = Attestation {
             origin: u8::try_from(number("origin")?).ok()?,
@@ -644,7 +692,8 @@ impl Collected {
             signer: fixed(object.get("signer"))?,
             signature: fixed(object.get("signature"))?,
         };
-        if attestation.origin != ORIGIN_EVM || attestation.request_id == 0
+        if attestation.origin != ORIGIN_EVM
+            || attestation.request_id == 0
             || answer.response.len() > MAX_RESPONSE_BYTES
             || usize::try_from(attestation.full_length).ok()? < answer.response.len()
             || attestation.digest() != answer.digest
@@ -654,17 +703,20 @@ impl Collected {
             return None;
         }
         let mut signatures = BTreeMap::new();
+        let mut previous = None;
         for pair in object.get("signatures")?.as_array()? {
             let [signer, signature] = pair.as_array()?.as_slice() else {
                 return None;
             };
             let signer: [u8; 20] = fixed(Some(signer))?;
             let signature: [u8; SIGNATURE_LENGTH] = fixed(Some(signature))?;
-            if recover_signer(&answer.digest, &signature).ok()? != signer
+            if previous.is_some_and(|last| last >= signer)
+                || recover_signer(&answer.digest, &signature).ok()? != signer
                 || signatures.insert(signer, signature).is_some()
             {
                 return None;
             }
+            previous = Some(signer);
         }
         if signatures.get(&answer.signer) != Some(&answer.signature) {
             return None;
@@ -810,7 +862,9 @@ impl SignatureExchange {
     fn release(&self, request_id: u64) {
         match std::fs::remove_file(self.answer_path(request_id)) {
             Ok(()) => {
-                if let Err(error) = std::fs::File::open(&self.answers_dir).and_then(|directory| directory.sync_all()) {
+                if let Err(error) = std::fs::File::open(&self.answers_dir)
+                    .and_then(|directory| directory.sync_all())
+                {
                     eprintln!("x-websearch could not sync released answer: {error}");
                 }
             }
@@ -844,7 +898,9 @@ impl SignatureExchange {
             signatures: BTreeMap::from([(answer.signer, answer.signature)]),
             answer,
         };
-        if !self.retain(&collected) { return false; }
+        if !self.retain(&collected) {
+            return false;
+        }
         answers.insert(collected.answer.request_id(), collected);
         true
     }
@@ -946,10 +1002,14 @@ impl SignatureExchange {
         let verdict = match &parsed {
             None => Err(Discard::Malformed),
             Some(record) if record.request_id != request_id => Err(Discard::WrongRequest),
-            Some(record) if record.digest != local.digest
-                || record.content_digest != local.attestation.content_digest
-                || record.response_hash != local.attestation.response_hash
-                || record.full_length != local.attestation.full_length => Err(Discard::DifferentDigest),
+            Some(record)
+                if record.digest != local.digest
+                    || record.content_digest != local.attestation.content_digest
+                    || record.response_hash != local.attestation.response_hash
+                    || record.full_length != local.attestation.full_length =>
+            {
+                Err(Discard::DifferentDigest)
+            }
             Some(record) => match recover_signer(&local.digest, &record.signature) {
                 Ok(signer) if signer != record.signer => Err(Discard::BadSignature),
                 Err(_) => Err(Discard::BadSignature),
@@ -964,7 +1024,9 @@ impl SignatureExchange {
                     if collected.signatures.get(&signer) != Some(&record.signature) {
                         let mut candidate = collected.clone();
                         candidate.signatures.insert(signer, record.signature);
-                        if !self.retain(&candidate) { return Err(Discard::Persistence); }
+                        if !self.retain(&candidate) {
+                            return Err(Discard::Persistence);
+                        }
                         *collected = candidate;
                     }
                 }
@@ -1047,9 +1109,14 @@ impl SignatureExchange {
             .collect();
         let enough = match answer.level {
             Level::Majority => {
-                usize::try_from(set.threshold).is_ok_and(|threshold|
-                    threshold > set.signers.len() / 2 && threshold <= set.signers.len())
-                    && set.signers.iter().collect::<std::collections::BTreeSet<_>>().len() == set.signers.len()
+                usize::try_from(set.threshold).is_ok_and(|threshold| {
+                    threshold > set.signers.len() / 2 && threshold <= set.signers.len()
+                }) && set
+                    .signers
+                    .iter()
+                    .collect::<std::collections::BTreeSet<_>>()
+                    .len()
+                    == set.signers.len()
                     && u32::try_from(registered.len()).is_ok_and(|count| count >= set.threshold)
             }
             Level::Single(_) => registered.len() == 1,
