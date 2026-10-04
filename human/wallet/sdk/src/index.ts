@@ -9,6 +9,7 @@ import { ed25519 } from '@noble/curves/ed25519.js';
 import { sha256 } from '@noble/hashes/sha2.js';
 import {
   PaxeerWalletError,
+  FundedUnsupportedError,
   type ChainInfo,
   type FundedProvisionResponse,
   type FundedSelfResponse,
@@ -215,8 +216,7 @@ export class PaxeerWallet {
    *
    * NOTE: this composes the two primitives below. Prefer calling
    * `getStandardSelf()` + `provisionStandardWallet()` directly when you want
-   * the user to make an explicit choice (e.g. picking between a standard and
-   * a funded account at sign-in time).
+   * the user to explicitly choose embedded provisioning.
    */
   async getWallet(): Promise<{ wallet: PublicWallet; chain: ChainInfo }> {
     const me = await this.getStandardSelf();
@@ -234,8 +234,7 @@ export class PaxeerWallet {
    * Returns `null` if the user is signed in but hasn't created a wallet yet.
    *
    * Use this when the calling UI must NOT silently create a wallet — e.g.
-   * a chooser screen that lets the user explicitly pick "create a standard
-   * wallet" vs "create a funded account".
+   * an embedded wallet creation screen.
    */
   async getStandardSelf(): Promise<{ wallet: PublicWallet; chain: ChainInfo } | null> {
     try {
@@ -250,7 +249,7 @@ export class PaxeerWallet {
   }
 
   /**
-   * Explicitly provision a standard self-custody wallet for the authenticated
+   * Explicitly provision a embedded threshold-custody wallet for the authenticated
    * user. Idempotent on the server — calling twice returns the same wallet.
    */
   provisionStandardWallet(): Promise<{ wallet: PublicWallet }> {
@@ -330,10 +329,10 @@ export class PaxeerWallet {
       const review = record.review;
       const artifact = validateLxArtifact(await this.lxRequest(
         principal, 'POST', '/v1/wallet/lx/approve', {
-          review_id: review.id, activity: review.activity,
-          signing_preimage: review.signing_preimage, disclosure: review.disclosure,
-          expires_at: review.expires_at, decision: 'approve',
-        },
+        review_id: review.id, activity: review.activity,
+        signing_preimage: review.signing_preimage, disclosure: review.disclosure,
+        expires_at: review.expires_at, decision: 'approve',
+      },
       ), principal);
       sameLxReview(review, artifact);
       if (artifact.state !== 'approved') {
@@ -501,78 +500,33 @@ export class PaxeerWallet {
     finally { if (this.lxLocks.get(id) === next) this.lxLocks.delete(id); }
   }
 
-  // ---------------------------------------------------------------------
-  // Funded accounts (prop-firm tier)
-  //
-  // Parallel surface to the standard wallet methods above. Same auth model;
-  // every signing call is gated by the funded policy engine on the server
-  // (see HANDOFF.md §4). Denials surface as `PaxeerWalletError` with a stable
-  // `code` (e.g. WITHDRAWAL_BLOCKED, CONTRACT_NOT_WHITELISTED) and the full
-  // structured payload accessible via `error.detail`.
-  // ---------------------------------------------------------------------
-
-  /**
-   * Public — list every active funded tier and its (contract, selector)
-   * whitelist. Used by the UI to render the "Become a Funded Trader" panel
-   * before the user has signed in. No auth needed.
-   */
   listFundedTiers(): Promise<{ tiers: FundedTier[] }> {
-    return this.callJson<{ tiers: FundedTier[] }>(
-      'GET',
-      '/v1/funded/tiers',
-      undefined,
-      { auth: false },
-    );
+    return Promise.reject(new FundedUnsupportedError());
   }
 
-  /**
-   * Get the current user's funded account state — live balances, status,
-   * peak/daily-start equity, and the tier whitelist. Returns `null` if the
-   * user has not yet provisioned a funded account.
-   */
-  async getFundedSelf(): Promise<FundedSelfResponse | null> {
-    try {
-      return await this.callJson<FundedSelfResponse>('GET', '/v1/funded/me');
-    } catch (err) {
-      if (err instanceof PaxeerWalletError && err.status === 404) return null;
-      throw err;
-    }
+  getFundedSelf(): Promise<FundedSelfResponse | null> {
+    return Promise.reject(new FundedUnsupportedError());
   }
 
-  /**
-   * Provision a funded account in the given tier (default: `starter_25k`).
-   * Server flow: encrypt fresh EOA → insert funded_account row → treasury
-   * disburses USDL + PAX → mark active. Idempotent: if the user already has
-   * an account in this tier we return the existing one without re-funding.
-   *
-   * Holds the request open while the two on-chain transfers settle (typically
-   * ~4-6s on chain 125), so the UI can show the funded balance immediately.
-   */
   provisionFundedAccount(tier_id = 'starter_25k'): Promise<FundedProvisionResponse> {
-    return this.callJson<FundedProvisionResponse>('POST', '/v1/funded/provision', { tier_id });
+    void tier_id;
+    return Promise.reject(new FundedUnsupportedError());
   }
 
-  /** Sign a transaction with the funded wallet. Runs through the funded policy first. */
   signFundedTransaction(tx: TxRequest): Promise<SignTxResponse> {
-    return this.callJson<SignTxResponse>('POST', '/v1/funded/sign', { tx: serialize(tx) });
+    void tx;
+    return Promise.reject(new FundedUnsupportedError());
   }
 
-  /** Sign + broadcast through the funded wallet. Runs through the funded policy first. */
   sendFundedTransaction(tx: TxRequest): Promise<SendTxResponse> {
-    return this.callJson<SendTxResponse>('POST', '/v1/funded/send', { tx: serialize(tx) });
+    void tx;
+    return Promise.reject(new FundedUnsupportedError());
   }
 
-  /** EIP-191 personal_sign with the funded wallet (status check only — no whitelist gate). */
   signFundedMessage(message: string): Promise<SignMessageResponse> {
-    return this.callJson<SignMessageResponse>('POST', '/v1/funded/sign-message', { message });
+    void message;
+    return Promise.reject(new FundedUnsupportedError());
   }
-
-  // ---------------------------------------------------------------------
-  // Internal — auth-bearing fetch
-  //
-  // `auth: false` skips the bearer header so public endpoints (currently just
-  // `/v1/funded/tiers`) work without an active session.
-  // ---------------------------------------------------------------------
 
   private async callJson<T>(
     method: 'GET' | 'POST',

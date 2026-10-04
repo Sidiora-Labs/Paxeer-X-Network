@@ -27165,7 +27165,7 @@ verify_exit_code = 78
 qualification_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-14.6-verify.log"
 [task.14.7]
 title = "Present the supported wallet model in SDK exports and demo flows"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 4
 requires = ["0.2", "13.4"]
@@ -27175,7 +27175,7 @@ do_2 = "Align or explicitly deprecate the legacy funded SDK surface without addi
 do_3 = "Add a focused exported-contract/demo route check and actual supported-flow smoke harness with clear unavailable states."
 do_4 = "Add the new bounded harness tools/qualification/paxeer-x/wallet-supported-demo.py to exercise this task through the named production interfaces, including the stated refusal and recovery cases, with explicit prerequisite checks and nonzero exit on any unmet acceptance. Use supplied prebuilt executables and isolated retained state; do not hide a rebuild or invoke a release-wide suite."
 do_5 = "Implement the declared focused gate through the real production types and paths; exercise every acceptance criterion including refusal, restart or boundary cases specified by this requirement. The command is a planned deliverable, not an already-run gate."
-touches = ["human/wallet/demo/src/components/WalletModal.tsx", "human/wallet/sdk/src/index.ts", "human/wallet/sdk/src/provider.ts", "human/wallet/gateway/src/index.ts", "human/wallet/gateway/test/funded-removed.test.ts", "tools/qualification/paxeer-x/wallet-supported-demo.py", "human/wallet/demo/src/components/FundedAccountPanel.tsx", "human/wallet/demo/src/app/page.tsx", "human/wallet/sdk/src/types.ts"]
+touches = ["human/wallet/demo/src/components/WalletModal.tsx", "human/wallet/demo/src/components/ConnectButton.tsx", "human/wallet/demo/src/components/FundedAccountPanel.tsx", "human/wallet/demo/src/app/page.tsx", "human/wallet/sdk/src/index.ts", "human/wallet/sdk/src/types.ts", "tools/qualification/paxeer-x/wallet-supported-demo.py"]
 verify_cmd = "timeout 15m python3 tools/qualification/paxeer-x/wallet-supported-demo.py"
 gate_kind = "planned"
 max_builds = 1
@@ -27187,6 +27187,16 @@ deployment_profile = "product"
 planned_paths = ["tools/qualification/paxeer-x/wallet-supported-demo.py"]
 path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
 evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+
+
+retained_contract_paths = ["human/wallet/demo/src/components/WalletModal.tsx", "human/wallet/sdk/src/index.ts", "human/wallet/sdk/src/provider.ts", "human/wallet/gateway/src/index.ts", "human/wallet/gateway/test/funded-removed.test.ts", "tools/qualification/paxeer-x/wallet-supported-demo.py", "human/wallet/demo/src/components/FundedAccountPanel.tsx", "human/wallet/demo/src/app/page.tsx", "human/wallet/sdk/src/types.ts"]
+build_cmd = "timeout 10m python3 tools/qualification/paxeer-x/wallet-supported-demo.py --build"
+source_ownership = "Actual demo callers and SDK exports only; existing provider and gateway refusal dependencies remain unchanged. Root owns shared manifests, spec and publication; no deployment or real funded interaction."
+completion_basis = "implementation"
+qualification_status = "unverified"
+build_exit_code = 0
+verify_exit_code = 78
+qualification_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-14.7-result.json"
 
 [task.16.1]
 title = "Serve receipt-verified program discovery and value accounts for every supported guest ABI"

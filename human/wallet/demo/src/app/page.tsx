@@ -27,7 +27,7 @@ export default function Home() {
             px-3 py-1 text-[12px] text-neutral-400
           "
         >
-          Universal Embedded Wallet · HyperPaxeer · Chain 125
+          Embedded and Injected Wallets · HyperPaxeer · Chain 125
         </span>
         <h1 className="font-[var(--font-display)] text-[54px] leading-[1.1] tracking-[-0.02em] sm:text-[72px]">
           One sign-in.
@@ -37,9 +37,8 @@ export default function Home() {
           <span className="text-neutral-500">Every Paxeer app.</span>
         </h1>
         <p className="mt-8 max-w-xl text-[18px] leading-[1.6] text-neutral-400">
-          No seed phrase. No browser extension. No popup. Sign in with email or
-          social, get a wallet on HyperPaxeer in under a second, and use the same
-          identity across the entire Paxeer Network.
+          Sign in to explicitly provision an embedded threshold-custody wallet, or
+          connect an injected wallet. Review and approve each signing request.
         </p>
 
         <div className="mt-10 flex items-center gap-3">
@@ -62,8 +61,8 @@ export default function Home() {
 
       <section className="relative z-10 mx-auto grid max-w-5xl gap-3 px-6 pb-24 sm:grid-cols-3">
         <FeatureCard
-          title="Server-side signing"
-          body="Keys never reach the browser. AES-256-GCM at rest, decrypted in memory only when a request authenticates."
+          title="Threshold custody"
+          body="Embedded signing uses the threshold custody service. Injected signing stays with your chosen wallet. No private key is exported to this example."
         />
         <FeatureCard
           title="Same wallet, every app"

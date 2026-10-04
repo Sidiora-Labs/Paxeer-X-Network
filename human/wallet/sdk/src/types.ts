@@ -67,8 +67,15 @@ export class PaxeerWalletError extends Error {
   }
 }
 
+export class FundedUnsupportedError extends PaxeerWalletError {
+  constructor() {
+    super('Funded accounts are retired; use an embedded or injected wallet.', 'FUNDED_UNSUPPORTED', 410);
+    this.name = 'FundedUnsupportedError';
+  }
+}
+
 /* ============================================================================
- * Funded accounts (prop-firm tier)
+ * Retired funded compatibility types
  * ========================================================================== */
 
 /** Stable machine-friendly deny codes returned by the funded policy engine. */
