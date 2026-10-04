@@ -34334,3 +34334,26 @@ source_status = "partial"
 qualification_status = "UNRUN"
 remaining_source = "Genuine owner session, typed consent, native preview and internal composition source integrated; actual daemon/passkey/KMS success corpus and focused adapter remain missing."
 handoff_path = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-104.13.32-source-handoff.json"
+
+[task.104.13.33]
+title = "Apply owner-approved native Send compiler corrections and build the integrated callers"
+status = "done"
+mode = "BUILD"
+wave = 4
+requires = ["0.2"]
+reqs = ["1064.3", "1064.8", "1071.1", "1071.5", "129", "134"]
+do_1 = "Apply only owner-approved public capability exports, exact native amount-map type, and byte-identical signing-preimage vector conversion in the actual Human Send preview. Preserve every authorization, purpose and refusal predicate."
+do_2 = "Run one bounded integration build of actual Agentd, SDK/MCP and Human targets, retaining exact candidate and per-workspace compiler outcomes. No claim of runtime qualification or ordinary Send completion."
+touches = ["agent/crates/layerx-agentd/src/human_runtime.rs"]
+build_cmd = "Private owner-approved integration build of Agentd, SDK/MCP and Human; one pass, deadline2026-10-04T08:51:00Z"
+verify_cmd = "UNRUN: owner authorized compiler integration build only; genuine behavior fixtures remain unavailable"
+max_builds = 1
+max_verify_runs = 0
+max_repair_cycles = 0
+time_limit_minutes = 20
+stop_condition = "Stop on the approved integration build result or08:51UTC; no additional repair or behavior gate under this approval."
+completion_basis_policy = "Owner CONSTITUTION: implemented sourceDONE, qualification separately recorded."
+owner_approval = "User explicitly approved task104.13.32-compiler-proposal.patch and one additional20-minute integration build window covering Agentd SDK/MCP and Human."
+source_status = "complete"
+completion_basis = "implementation"
+qualification_status = "UNRUN"

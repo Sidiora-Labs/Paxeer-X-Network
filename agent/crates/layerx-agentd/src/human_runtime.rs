@@ -4599,7 +4599,7 @@ impl<A: HumanAuthorityBoundary> UnifiedAgentOwner<A> {
         peer: &HumanPeer,
         request: crate::human::HumanNativeSendPreviewRequestV1,
     ) -> Result<crate::human::HumanNativeSendPreviewV1, HumanOperationError> {
-        use crate::capability::{binding, effects, timed};
+        use crate::capability::{binding, derive_native_effects, timed, Effect, VerifiedInputs};
         use layerx_agent_api::identity::{AgentDid, CapabilityId, NativeActivity,
             NativePreparationPurposeV1, SessionId as ApiSessionId, TenantId as ApiTenantId};
         let human = request.prepare;
@@ -4694,17 +4694,17 @@ impl<A: HumanAuthorityBoundary> UnifiedAgentOwner<A> {
                 || !capability.purpose_commitments.contains(&purpose.commitment)
                 || capability.record.rate_ceilings.is_empty()
             { return Err(refused()); }
-            let plan = effects::derive_native_effects(&prepared.disclosure, &effects::VerifiedInputs::default())
+            let plan = derive_native_effects(&prepared.disclosure, &VerifiedInputs::default())
                 .map_err(|_| refused())?;
             if !plan.program_spend_bounds().is_empty() || plan.effects().len() != 1 { return Err(refused()); }
-            let effects::Effect::Transfer { from, to, asset, amount } = plan.effects()[0]
+            let Effect::Transfer { from, to, asset, amount } = plan.effects()[0]
                 else { return Err(refused()); };
             let principal = layerx_types::account::AccountId::for_asset(&human.actor, asset, fee.value.asset.asset_id)
                 .map_err(|_| refused())?;
             let source = layerx_wire::hash::account_id_for_protocol(&principal, prepared.envelope.protocol_version())
                 .map_err(|_| refused())?;
             if source != from || !capability.record.counterparties.contains(&to) { return Err(refused()); }
-            let mut totals = BTreeMap::from([(asset, amount)]);
+            let mut totals: BTreeMap<[u8; 32], u128> = BTreeMap::from([(asset, amount)]);
             if let Some(charge) = binding::native_effect_fee(&prepared, &fee, snapshot.observed_head_sequence)
                 .map_err(|_| refused())?
             {
@@ -4722,7 +4722,7 @@ impl<A: HumanAuthorityBoundary> UnifiedAgentOwner<A> {
         }).map_err(rpc_commit_error)?;
         permit.boundary(&control).map_err(|_| HumanOperationError::Refused)?;
         Ok(crate::human::HumanNativeSendPreviewV1 {
-            canonical_bytes: prepared.canonical_bytes, signing_preimage: prepared.signing_preimage,
+            canonical_bytes: prepared.canonical_bytes, signing_preimage: prepared.signing_preimage.to_vec(),
             purpose, observed_head_sequence: snapshot.observed_head_sequence,
             protocol_timestamp: snapshot.protocol_timestamp, owner_public_key: owner.public_key(),
             revocation_sequence: owner.revocation_sequence(),
