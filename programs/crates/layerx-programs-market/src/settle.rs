@@ -189,8 +189,7 @@ pub(crate) fn encode_claim(claim: &UsageClaim, output: &mut [u8]) -> Result<usiz
     Ok(offset)
 }
 
-#[cfg(target_arch = "wasm32")]
-pub(crate) fn decode_claim(input: &[u8]) -> Result<UsageClaim, ProgramError> {
+pub fn decode_claim(input: &[u8]) -> Result<UsageClaim, ProgramError> {
     let mut cursor = crate::Cursor::new(input);
     if cursor.byte()? != 1 {
         return Err(malformed());

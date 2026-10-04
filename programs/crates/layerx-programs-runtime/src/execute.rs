@@ -5293,3 +5293,411 @@ pub fn replay_portable_step(
     validate_arbitration_commitments(&ordinary, &actual[0], &actual[1])?;
     Ok(())
 }
+
+pub struct MarketSandboxRequest<'a> {
+    pub module: &'a ValidatedModule,
+    pub entrypoint: &'a str,
+    pub args: &'a [WasmValue],
+    pub authority: &'a crate::replay::MarketSandboxReplayAuthority,
+    pub replay_profile: crate::replay_record::ProgramReplayProfile,
+}
+
+#[derive(Debug)]
+pub struct MarketSandboxExecution {
+    pub profile_binding: [u8; 32],
+    pub values: Vec<WasmValue>,
+    pub usage: crate::MeteredUsage,
+    pub record: crate::replay_record::ProgramReplayRecord,
+    pub boundary_leaves: Vec<Vec<u8>>,
+    pub initial_commitment: crate::ArbitrationStepCommitment,
+    pub final_commitment: crate::ArbitrationStepCommitment,
+    pub terminal_fault: Option<ExecutionFault>,
+    pub final_namespace_bytes: u64,
+}
+
+pub fn market_sandbox_input_bytes(
+    args: &[WasmValue],
+) -> Result<Vec<u8>, crate::replay::ReplayWitnessError> {
+    let mut bytes = Vec::new();
+    for argument in args {
+        match argument {
+            WasmValue::I32(value) => {
+                crate::replay::append(&mut bytes, &[0], crate::MAX_STEP_STATE_BYTES)?;
+                crate::replay::append(
+                    &mut bytes,
+                    &value.to_be_bytes(),
+                    crate::MAX_STEP_STATE_BYTES,
+                )?;
+            }
+            WasmValue::I64(value) => {
+                crate::replay::append(&mut bytes, &[1], crate::MAX_STEP_STATE_BYTES)?;
+                crate::replay::append(
+                    &mut bytes,
+                    &value.to_be_bytes(),
+                    crate::MAX_STEP_STATE_BYTES,
+                )?;
+            }
+        }
+    }
+    Ok(bytes)
+}
+
+pub fn market_sandbox_input_digest(
+    entrypoint: &str,
+    args: &[WasmValue],
+) -> Result<[u8; 32], crate::replay::ReplayWitnessError> {
+    use sha2::{Digest, Sha256};
+    let arguments = market_sandbox_input_bytes(args)?;
+    let mut hash = Sha256::new();
+    hash.update(b"LXP/program-trace-input/v1\0");
+    hash.update(
+        u32::try_from(entrypoint.len())
+            .map_err(|_| crate::replay::ReplayWitnessError::Bounds)?
+            .to_be_bytes(),
+    );
+    hash.update(entrypoint.as_bytes());
+    hash.update(
+        u64::try_from(arguments.len())
+            .map_err(|_| crate::replay::ReplayWitnessError::Bounds)?
+            .to_be_bytes(),
+    );
+    hash.update(arguments);
+    Ok(hash.finalize().into())
+}
+
+impl ProgramInstance {
+    pub fn call_market_sandbox_untrusted(
+        &mut self,
+        request: MarketSandboxRequest<'_>,
+    ) -> Result<MarketSandboxExecution, RuntimeBoundaryReplayError> {
+        let inputs = request.authority;
+        let maximum = request.replay_profile.maximum_bytes() as usize;
+        if request.replay_profile.maximum_boundaries() > 4096
+            || request.entrypoint.is_empty()
+            || request.entrypoint.len() > 64
+        {
+            return Err(crate::replay::ReplayWitnessError::Bounds.into());
+        }
+        let abi_version = match request.module.abi_revision() {
+            AbiRevision::V1 => 1,
+            AbiRevision::V2 => 2,
+            AbiRevision::V3 => 3,
+            AbiRevision::V4 => 4,
+        };
+        if request.module.code_hash() != inputs.code_hash
+            || inputs.runtime_version != RUNTIME_VERSION
+            || inputs.abi_version != abi_version
+            || request.module.metering_schedule_version() != inputs.metering_schedule_version
+            || market_sandbox_input_digest(request.entrypoint, request.args)? != inputs.input_digest
+        {
+            return Err(RuntimeBoundaryReplayError::Binding);
+        }
+        let semantic = self
+            .store
+            .data()
+            .capture_semantic_replay_source(request.module.code_hash(), maximum)?
+            .canonical_bytes(maximum)?;
+        let (restored, authority) =
+            crate::replay::restore_market_sandbox_semantic(&semantic, inputs, maximum)?;
+        *self.store.data_mut() = restored.into_runtime_state();
+        let policy = request.replay_profile.trace_policy();
+        let identities = trace_identity(
+            request.module,
+            request.entrypoint,
+            &market_sandbox_input_bytes(request.args)?,
+            RUNTIME_VERSION,
+            abi_version,
+            inputs.fee_schedule_version,
+            policy,
+        )?;
+        let (values, record, terminal_fault) = match self.call_with_boundary_witnesses(
+            request.module,
+            request.entrypoint,
+            request.args,
+            policy,
+            maximum,
+        ) {
+            Ok(captured) => {
+                let mut leaves = Vec::new();
+                leaves
+                    .try_reserve_exact(
+                        captured
+                            .boundaries
+                            .len()
+                            .checked_add(1)
+                            .ok_or(crate::replay::ReplayWitnessError::Bounds)?,
+                    )
+                    .map_err(|_| crate::replay::ReplayWitnessError::Allocation)?;
+                let mut previous = None;
+                for boundary in &captured.boundaries {
+                    if let Some(previous) = previous {
+                        if previous != boundary.transition.pre.as_ref() {
+                            return Err(RuntimeBoundaryReplayError::Binding);
+                        }
+                    } else {
+                        let state = captured
+                            .trace
+                            .arbitration_steps()
+                            .first()
+                            .ok_or(RuntimeBoundaryReplayError::Binding)?
+                            .pre_state
+                            .as_ref();
+                        let mut leaf = crate::replay_record::captured_leaf_bytes(
+                            &boundary.transition.pre,
+                            state,
+                            &boundary.semantic.canonical_bytes(maximum)?,
+                            maximum,
+                        )?;
+                        crate::replay::append(&mut leaf, &[0], maximum)?;
+                        leaves.push(leaf);
+                    }
+                    let index = leaves.len() - 1;
+                    let state = captured
+                        .trace
+                        .arbitration_steps()
+                        .get(index)
+                        .ok_or(RuntimeBoundaryReplayError::Binding)?
+                        .post_state
+                        .as_ref();
+                    let mut leaf = crate::replay_record::captured_leaf_bytes(
+                        &boundary.transition.post,
+                        state,
+                        &boundary.expected_semantic.canonical_bytes(maximum)?,
+                        maximum,
+                    )?;
+                    crate::replay::append(&mut leaf, &[0], maximum)?;
+                    leaves.push(leaf);
+                    previous = Some(boundary.transition.post.as_ref());
+                }
+                let record = crate::replay_record::ProgramReplayRecord::from_captured(
+                    request.replay_profile,
+                    inputs.code_hash,
+                    inputs.input_digest,
+                    RUNTIME_VERSION,
+                    abi_version,
+                    inputs.fee_schedule_version,
+                    inputs.metering_schedule_version,
+                    0,
+                    leaves,
+                )?;
+                (captured.values, record, None)
+            }
+            Err(RuntimeBoundaryReplayError::Execution(fault)) => {
+                if let Some(observer_fault) = self.execution_observer_fault() {
+                    return Err(observer_fault.into());
+                }
+                let trap = self
+                    .store
+                    .take_execution_trap_record()
+                    .ok_or(RuntimeBoundaryReplayError::Binding)?;
+                let terminal = if matches!(
+                    fault,
+                    ExecutionFault::Resource { .. } | ExecutionFault::OutOfFuel
+                ) {
+                    2
+                } else {
+                    1
+                };
+                let record = capture_program_record_from_store(
+                    &mut self.store,
+                    request.replay_profile,
+                    identities,
+                    terminal,
+                    Some(trap),
+                )?;
+                (Vec::new(), record, Some(fault))
+            }
+            Err(error) => return Err(error),
+        };
+        if authority.missing_portable_query() {
+            return Err(crate::replay::ReplayWitnessError::StateUnavailable.into());
+        }
+        inputs.validate_market_meter(self.store.data().meter())?;
+        let usage = self
+            .store
+            .data()
+            .meter()
+            .execution_trace_usage()
+            .map_err(|_| crate::replay::ReplayWitnessError::StateUnavailable)?;
+        let (_, boundary_leaves) =
+            crate::portable_replay::decode_record(record.canonical_bytes(), maximum)?;
+        let first = crate::portable_replay::PortableBoundary::decode_untrusted(
+            boundary_leaves
+                .first()
+                .ok_or(RuntimeBoundaryReplayError::Binding)?,
+            maximum,
+        )?;
+        let last = crate::portable_replay::PortableBoundary::decode_untrusted(
+            boundary_leaves
+                .last()
+                .ok_or(RuntimeBoundaryReplayError::Binding)?,
+            maximum,
+        )?;
+        let initial_commitment = crate::ArbitrationStepCommitment::from_state(&first.arbitration)
+            .map_err(|error| commitment_fault(&error))?;
+        let final_commitment = crate::ArbitrationStepCommitment::from_state(&last.arbitration)
+            .map_err(|error| commitment_fault(&error))?;
+        let final_storage = self
+            .store
+            .data_mut()
+            .abi_mut()
+            .ok_or(RuntimeBoundaryReplayError::Binding)?
+            .storage_snapshot();
+        let final_namespace_bytes = inputs.namespace_bytes(&final_storage)?;
+        Ok(MarketSandboxExecution {
+            profile_binding: inputs.profile_binding,
+            values,
+            usage,
+            record,
+            boundary_leaves,
+            initial_commitment,
+            final_commitment,
+            terminal_fault,
+            final_namespace_bytes,
+        })
+    }
+}
+
+pub fn observe_market_sandbox_step(
+    module: &ValidatedModule,
+    pre: &crate::portable_replay::PortableBoundary,
+    inputs: &crate::replay::MarketSandboxReplayAuthority,
+    maximum: usize,
+) -> Result<crate::portable_replay::PortableBoundary, RuntimeBoundaryReplayError> {
+    pre.reencode_untrusted(maximum)?;
+    let identity = pre.arbitration.identity;
+    if identity.trace_policy.interval() != 1 || identity.trace_policy.maximum_commitments() > 4096 {
+        return Err(crate::replay::ReplayWitnessError::Bounds.into());
+    }
+    if module.code_hash() != inputs.code_hash
+        || identity.module_code_hash != inputs.code_hash
+        || identity.input_digest != inputs.input_digest
+        || identity.runtime_version != inputs.runtime_version
+        || identity.abi_version != inputs.abi_version
+        || identity.fee_schedule_version != inputs.fee_schedule_version
+        || identity.metering_schedule_version != inputs.metering_schedule_version
+        || module.metering_schedule_version() != inputs.metering_schedule_version
+    {
+        return Err(RuntimeBoundaryReplayError::Binding);
+    }
+    let (restored, authority) =
+        crate::replay::restore_market_sandbox_semantic(&pre.semantic_bytes, inputs, maximum)?;
+    restored
+        .recapture(maximum)?
+        .compare_boundary(module.code_hash(), &pre.replay.snapshot.supplement)?;
+    let state = restored.into_runtime_state();
+    let host_identity = state
+        .v2_host_state_identity()
+        .map_err(|_| crate::replay::ReplayWitnessError::StateUnavailable)?;
+    if host_identity.base_state != identity.host_base_state_root
+        || host_identity.receipt_oracle != identity.receipt_oracle_root
+        || host_identity.balance_oracle != identity.balance_oracle_root
+    {
+        return Err(RuntimeBoundaryReplayError::Binding);
+    }
+    let mut instance = module.instantiate_untrusted_replay(state)?;
+    instance
+        .store
+        .data_mut()
+        .enable_boundary_capture(module.code_hash(), 2, maximum)?;
+    instance.store.enable_execution_replay_observer_with_limits(
+        2,
+        crate::MAX_TRACE_STATE_BYTES,
+        crate::MAX_TRACE_STATE_BYTES,
+    );
+    instance
+        .store
+        .set_execution_supplement(RuntimeState::execution_supplement);
+    let engine = instance.store.engine().clone();
+    let context = wasmi::ExecutionReplayContext::new(
+        wasmi::AsContextMut::as_context_mut(&mut instance.store),
+        instance.instance,
+    );
+    let outcome = engine
+        .execute_step(context, &pre.replay)
+        .map_err(RuntimeBoundaryReplayError::Engine)?;
+    if authority.missing_portable_query() {
+        return Err(crate::replay::ReplayWitnessError::StateUnavailable.into());
+    }
+    match outcome {
+        wasmi::ExecutionStepOutcome::Trapped(trap) => {
+            if trap.pre.as_ref() != &pre.replay {
+                return Err(RuntimeBoundaryReplayError::Binding);
+            }
+            let mut observed = pre.clone();
+            observed.trap = Some(crate::portable_replay::PortableTrap {
+                code: trap.trap_code,
+                host_trap: trap.host_trap,
+            });
+            Ok(observed)
+        }
+        wasmi::ExecutionStepOutcome::Boundary(transition)
+        | wasmi::ExecutionStepOutcome::Returned(transition) => {
+            if transition.pre.as_ref() != &pre.replay {
+                return Err(RuntimeBoundaryReplayError::Binding);
+            }
+            let captures = instance.store.data_mut().take_boundary_captures();
+            if captures.len() != 1 {
+                return Err(RuntimeBoundaryReplayError::Binding);
+            }
+            let identities = TraceIdentities {
+                legacy: crate::ExecutionTraceIdentity {
+                    module_code_hash: inputs.code_hash,
+                    input_digest: inputs.input_digest,
+                    execution_parameters_digest: pre.arbitration.legacy.execution_parameters_digest,
+                },
+                runtime_version: inputs.runtime_version,
+                abi_version: inputs.abi_version,
+                fee_schedule_version: inputs.fee_schedule_version,
+                metering_schedule_version: inputs.metering_schedule_version,
+            };
+            let legacy =
+                execution_state_from_snapshot(&transition.post.snapshot, identities.legacy)?;
+            let arbitration = arbitration_state_from_snapshot(
+                &transition.post.snapshot,
+                identities,
+                identity.trace_policy,
+                std::sync::Arc::new(legacy),
+            )?;
+            let ordinary = wasmi::ExecutionTransition {
+                pre: transition.pre.snapshot.clone(),
+                post: transition.post.snapshot.clone(),
+                memory_expansion_bytes: transition.memory_expansion_bytes,
+            };
+            validate_arbitration_commitments(&ordinary, &pre.arbitration, &arbitration)?;
+            Ok(crate::portable_replay::PortableBoundary {
+                replay: transition.post.as_ref().clone(),
+                arbitration,
+                semantic_bytes: captures[0].canonical_bytes(maximum)?,
+                trap: None,
+            })
+        }
+    }
+}
+
+pub fn instantiate_market_sandbox_untrusted(
+    module: &ValidatedModule,
+    inputs: &crate::replay::MarketSandboxReplayAuthority,
+) -> Result<ProgramInstance, RuntimeBoundaryReplayError> {
+    let meter = crate::Meter::new(inputs.budget, inputs.fees);
+    inputs.validate_market_meter(&meter)?;
+    inputs.namespace_bytes(&inputs.baseline_storage)?;
+    let abi_version = match module.abi_revision() {
+        AbiRevision::V1 => 1,
+        AbiRevision::V2 => 2,
+        AbiRevision::V3 => 3,
+        AbiRevision::V4 => 4,
+    };
+    if module.code_hash() != inputs.code_hash
+        || abi_version != inputs.abi_version
+        || module.metering_schedule_version() != inputs.metering_schedule_version
+    {
+        return Err(RuntimeBoundaryReplayError::Binding);
+    }
+    let (abi, missing) = Abi::from_untrusted_market_profile(inputs)?;
+    let instance = module.instantiate_sandbox(meter, abi)?;
+    if missing.load(std::sync::atomic::Ordering::Relaxed) {
+        return Err(crate::replay::ReplayWitnessError::StateUnavailable.into());
+    }
+    Ok(instance)
+}

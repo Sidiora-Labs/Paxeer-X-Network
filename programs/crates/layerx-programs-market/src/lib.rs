@@ -1,10 +1,11 @@
 #![cfg_attr(target_arch = "wasm32", no_std)]
 
 pub mod settle;
-pub use settle::{ChallengeWindow, UsageClaim};
+pub use settle::{decode_claim as decode_usage_claim, ChallengeWindow, UsageClaim};
 
 use layerx_program_sdk::{AccountId, Amount, AssetId, Field, ProgramError, Reason};
 
+pub mod arbitration;
 pub mod attest;
 
 #[cfg(target_arch = "wasm32")]
@@ -16,7 +17,6 @@ use layerx_program_sdk::{
 #[cfg(target_arch = "wasm32")]
 layerx_program_sdk::trap_on_panic!();
 
-#[cfg(target_arch = "wasm32")]
 const VERSION: u8 = 1;
 #[cfg(target_arch = "wasm32")]
 const REGISTER_OFFER: u8 = 1;
@@ -42,12 +42,9 @@ const COMMIT_USAGE: u8 = 10;
 const CHALLENGE_USAGE: u8 = 11;
 #[cfg(target_arch = "wasm32")]
 const FINALIZE_USAGE: u8 = 12;
-#[cfg(target_arch = "wasm32")]
-const OFFER_PREFIX: &[u8] = b"lx.market.offer/";
-#[cfg(target_arch = "wasm32")]
-const LEASE_PREFIX: &[u8] = b"lx.market.lease/";
-#[cfg(target_arch = "wasm32")]
-const CLAIM_PREFIX: &[u8] = b"lx.market.claim/";
+pub const OFFER_PREFIX: &[u8] = b"lx.market.offer/";
+pub const LEASE_PREFIX: &[u8] = b"lx.market.lease/";
+pub const CLAIM_PREFIX: &[u8] = b"lx.market.claim/";
 #[cfg(target_arch = "wasm32")]
 const CHALLENGE_PREFIX: &[u8] = b"lx.market.challenge/";
 #[cfg(target_arch = "wasm32")]
@@ -77,7 +74,6 @@ pub enum VerificationModel {
     FraudProvable = 3,
 }
 
-#[cfg(target_arch = "wasm32")]
 impl VerificationModel {
     fn decode(value: u8) -> Result<Self, ProgramError> {
         match value {
@@ -304,13 +300,11 @@ fn malformed() -> ProgramError {
     ProgramError::value(Field::CallInput, Reason::Malformed)
 }
 
-#[cfg(target_arch = "wasm32")]
 struct Cursor<'a> {
     bytes: &'a [u8],
     offset: usize,
 }
 
-#[cfg(target_arch = "wasm32")]
 impl<'a> Cursor<'a> {
     const fn new(bytes: &'a [u8]) -> Self {
         Self { bytes, offset: 0 }
@@ -404,8 +398,7 @@ fn encode_offer(offer: Offer<'_>, output: &mut [u8]) -> Result<usize, ProgramErr
     Ok(offset)
 }
 
-#[cfg(target_arch = "wasm32")]
-fn decode_offer(input: &[u8]) -> Result<Offer<'_>, ProgramError> {
+pub fn decode_offer(input: &[u8]) -> Result<Offer<'_>, ProgramError> {
     let mut cursor = Cursor::new(input);
     if cursor.byte()? != VERSION {
         return Err(malformed());
@@ -465,8 +458,7 @@ fn encode_lease(lease: &ComputeLease<'_>, output: &mut [u8]) -> Result<usize, Pr
     Ok(offset)
 }
 
-#[cfg(target_arch = "wasm32")]
-fn decode_lease(input: &[u8]) -> Result<ComputeLease<'_>, ProgramError> {
+pub fn decode_lease(input: &[u8]) -> Result<ComputeLease<'_>, ProgramError> {
     let mut cursor = Cursor::new(input);
     if cursor.byte()? != VERSION {
         return Err(malformed());
@@ -639,6 +631,112 @@ fn invoke(input: &[u8]) -> Result<CallResult, ProgramError> {
             Ok(CallResult::OK)
         }
         SETTLE_LEASE => Err(malformed()),
+        arbitration::AUTHORIZE_SANDBOX_PROFILE => {
+            use layerx_program_sdk::arbiter::{
+                MarketSandboxProfile, MARKET_SANDBOX_PROFILE_CAPACITY,
+            };
+            let profile = MarketSandboxProfile::decode(cursor.remainder())?;
+            let mut lease_bytes = [0; LEASE_CAPACITY];
+            let lease = decode_lease(read_state(
+                LEASE_PREFIX,
+                profile.lease_id,
+                &mut lease_bytes,
+            )?)?;
+            let mut offer_bytes = [0; OFFER_CAPACITY];
+            let offer = decode_offer(read_state(OFFER_PREFIX, lease.offer_id, &mut offer_bytes)?)?;
+            let mut profile_bytes = [0; MARKET_SANDBOX_PROFILE_CAPACITY];
+            absent(arbitration::PROFILE_PREFIX, lease.id, &mut profile_bytes)?;
+            let mut claim_bytes = [0; settle::CLAIM_CAPACITY];
+            absent(CLAIM_PREFIX, lease.id, &mut claim_bytes)?;
+            let mut namespace_preimage = [0; 128];
+            let mut offset = 0;
+            append(
+                &mut namespace_preimage,
+                &mut offset,
+                arbitration::NAMESPACE_DOMAIN,
+            )?;
+            append(
+                &mut namespace_preimage,
+                &mut offset,
+                &profile.sandbox_program,
+            )?;
+            append(&mut namespace_preimage, &mut offset, &profile.lease_id)?;
+            let namespace = layerx_program_sdk::crypto::hash(
+                layerx_program_sdk::crypto::HashAlgorithm::Sha256,
+                layerx_program_sdk::crypto::HashInput::new(&namespace_preimage[..offset])?,
+            )?;
+            let profile = arbitration::authorize_profile(
+                &offer,
+                &lease,
+                profile,
+                caller,
+                Context::executing_program()?.bytes(),
+                attest::require_ready_commitment(lease.id)?,
+                namespace,
+                height,
+            )?;
+            let length = profile.encode(&mut profile_bytes)?;
+            write_state(
+                arbitration::PROFILE_PREFIX,
+                lease.id,
+                &profile_bytes[..length],
+            )?;
+            emit(arbitration::TOPIC_PROFILE, &profile_bytes[..length])?;
+            Ok(CallResult::OK)
+        }
+        arbitration::COMMIT_SANDBOX_BILLING => {
+            use layerx_program_sdk::arbiter::{
+                MarketBillingCommitment, MarketSandboxProfile, MARKET_SANDBOX_BILLING_CAPACITY,
+                MARKET_SANDBOX_PROFILE_CAPACITY,
+            };
+            let lease_id = cursor.array()?;
+            let billing = MarketBillingCommitment::decode(cursor.remainder())?;
+            let mut lease_bytes = [0; LEASE_CAPACITY];
+            let lease = decode_lease(read_state(LEASE_PREFIX, lease_id, &mut lease_bytes)?)?;
+            let mut offer_bytes = [0; OFFER_CAPACITY];
+            let offer = decode_offer(read_state(OFFER_PREFIX, lease.offer_id, &mut offer_bytes)?)?;
+            let mut profile_bytes = [0; MARKET_SANDBOX_PROFILE_CAPACITY];
+            let profile_encoding =
+                read_state(arbitration::PROFILE_PREFIX, lease.id, &mut profile_bytes)?;
+            let profile = MarketSandboxProfile::decode(profile_encoding)?;
+            if profile.market_program != Context::executing_program()?.bytes()
+                || profile.attested_input_commitment != attest::require_ready_commitment(lease.id)?
+            {
+                return Err(malformed());
+            }
+            let profile_digest = layerx_program_sdk::crypto::hash(
+                layerx_program_sdk::crypto::HashAlgorithm::Sha256,
+                layerx_program_sdk::crypto::HashInput::new(profile_encoding)?,
+            )?;
+            let mut claim_bytes = [0; settle::CLAIM_CAPACITY];
+            absent(CLAIM_PREFIX, lease.id, &mut claim_bytes)?;
+            let mut identity = [0; ID_BYTES];
+            absent(CLAIM_ID_PREFIX, profile.claim_id, &mut identity)?;
+            let mut billing_bytes = [0; MARKET_SANDBOX_BILLING_CAPACITY];
+            absent(arbitration::BILLING_PREFIX, lease.id, &mut billing_bytes)?;
+            let (claim, _) = arbitration::billing_claim(
+                offer,
+                &lease,
+                &profile,
+                &billing,
+                profile_digest,
+                caller,
+                height,
+            )?;
+            arbitration::matches_claim(&profile, &billing, &claim)?;
+            let claim_length = settle::encode_claim(&claim, &mut claim_bytes)?;
+            let billing_length = billing.encode(&mut billing_bytes)?;
+            write_state(CLAIM_PREFIX, lease.id, &claim_bytes[..claim_length])?;
+            write_state(CLAIM_ID_PREFIX, claim.id, &lease.id)?;
+            write_state(
+                arbitration::BILLING_PREFIX,
+                lease.id,
+                &billing_bytes[..billing_length],
+            )?;
+            emit(TOPIC_CLAIM, &claim_bytes[..claim_length])?;
+            emit(arbitration::TOPIC_BILLING, &billing_bytes[..billing_length])?;
+            Ok(CallResult::OK)
+        }
         COMMIT_USAGE => {
             let commitment = settle::ProviderCommitment {
                 id: cursor.array()?,
@@ -667,8 +765,7 @@ fn invoke(input: &[u8]) -> Result<CallResult, ProgramError> {
             )?)?;
             let mut offer_bytes = [0; OFFER_CAPACITY];
             let offer = decode_offer(read_state(OFFER_PREFIX, lease.offer_id, &mut offer_bytes)?)?;
-            if attest::require_ready_commitment(lease.id)? != commitment.input_commitment
-            {
+            if attest::require_ready_commitment(lease.id)? != commitment.input_commitment {
                 return Err(malformed());
             }
             let mut claim_bytes = [0; settle::CLAIM_CAPACITY];
@@ -851,9 +948,7 @@ fn invoke(input: &[u8]) -> Result<CallResult, ProgramError> {
             cursor.finish()?;
             let mut lease_bytes = [0; LEASE_CAPACITY];
             let lease = decode_lease(read_state(LEASE_PREFIX, lease_id, &mut lease_bytes)?)?;
-            if lease.tenant != caller
-                || lease.status != LeaseStatus::Funded
-            {
+            if lease.tenant != caller || lease.status != LeaseStatus::Funded {
                 return Err(malformed());
             }
             let mut scratch = [0; attest::ATTESTER_SET_CAPACITY];
@@ -882,9 +977,7 @@ fn invoke(input: &[u8]) -> Result<CallResult, ProgramError> {
                 commitment.lease_id,
                 &mut lease_bytes,
             )?)?;
-            if lease.tenant != caller
-                || lease.status != LeaseStatus::Funded
-            {
+            if lease.tenant != caller || lease.status != LeaseStatus::Funded {
                 return Err(malformed());
             }
             attest::commit(commitment, caller)?;
@@ -895,9 +988,7 @@ fn invoke(input: &[u8]) -> Result<CallResult, ProgramError> {
             cursor.finish()?;
             let mut lease_bytes = [0; LEASE_CAPACITY];
             let lease = decode_lease(read_state(LEASE_PREFIX, lease_id, &mut lease_bytes)?)?;
-            if lease.tenant != caller
-                || lease.status != LeaseStatus::Funded
-            {
+            if lease.tenant != caller || lease.status != LeaseStatus::Funded {
                 return Err(malformed());
             }
             attest::seal(lease_id, caller, height)?;
@@ -911,9 +1002,7 @@ fn invoke(input: &[u8]) -> Result<CallResult, ProgramError> {
                 attestation.input.lease_id,
                 &mut lease_bytes,
             )?)?;
-            if lease.provider != caller
-                || lease.status != LeaseStatus::Funded
-            {
+            if lease.provider != caller || lease.status != LeaseStatus::Funded {
                 return Err(malformed());
             }
             attest::admit(attestation, height)?;

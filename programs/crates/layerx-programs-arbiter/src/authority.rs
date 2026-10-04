@@ -27,6 +27,25 @@ impl VerifiedReplayAuthority {
         header: &VerifiedBatchHeader,
         receipt_proof: &Proof,
     ) -> Result<Self, ReplayError> {
+        Self::derive_call(receipt, admission, header, receipt_proof, true)
+    }
+
+    pub fn derive_program_call(
+        receipt: &VerifiedReceipt,
+        admission: &VerifiedAdmissionPrestate,
+        header: &VerifiedBatchHeader,
+        receipt_proof: &Proof,
+    ) -> Result<Self, ReplayError> {
+        Self::derive_call(receipt, admission, header, receipt_proof, false)
+    }
+
+    fn derive_call(
+        receipt: &VerifiedReceipt,
+        admission: &VerifiedAdmissionPrestate,
+        header: &VerifiedBatchHeader,
+        receipt_proof: &Proof,
+        replay_profile: bool,
+    ) -> Result<Self, ReplayError> {
         let protocol = receipt.receipt().protocol().ok_or(ReplayError::Receipt)?;
         let batch = header.header();
         let count = batch
@@ -248,7 +267,11 @@ impl VerifiedReplayAuthority {
             activity.fee_limit(),
             batch.timestamp_ms(),
         )?;
-        let capabilities = signed_capabilities(activity.payload())?;
+        let capabilities = if replay_profile {
+            signed_capabilities(activity.payload())?
+        } else {
+            call_capabilities(activity.payload())?
+        };
         let payer = if protocol.module_version() == 4 {
             payment.account_id
         } else {
@@ -846,7 +869,14 @@ fn signed_capabilities(payload: &[u8]) -> Result<CapabilitySet, ReplayError> {
         return Err(ReplayError::Bounds);
     }
     let call = r.vector(1_048_576)?;
-    if !r.0.is_empty() || call.len() < 106 {
+    if !r.0.is_empty() {
+        return Err(ReplayError::Authority);
+    }
+    call_capabilities(call)
+}
+
+fn call_capabilities(call: &[u8]) -> Result<CapabilitySet, ReplayError> {
+    if call.len() < 106 || call.len() > 1_048_576 {
         return Err(ReplayError::Authority);
     }
     let abi = u16::from_be_bytes(

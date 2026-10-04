@@ -1638,3 +1638,195 @@ pub(crate) fn restore_portable_semantic(
         authority,
     ))
 }
+
+#[derive(Clone, Debug)]
+pub struct MarketSandboxReplayAuthority {
+    pub profile_binding: [u8; 32],
+    pub namespace: [u8; 32],
+    pub lease_id: [u8; 32],
+    pub namespace_limit: u64,
+    pub program: crate::storage::ProgramId,
+    pub tenant: crate::storage::PrincipalId,
+    pub payment_account: [u8; 32],
+    pub code_hash: [u8; 32],
+    pub input_digest: [u8; 32],
+    pub runtime_version: u16,
+    pub abi_version: u16,
+    pub fee_schedule_version: u32,
+    pub metering_schedule_version: u32,
+    pub budget: crate::ResourceBudget,
+    pub fees: crate::FeeSchedule,
+    pub fee_budget: u128,
+    pub baseline_storage: crate::storage::Storage,
+    pub baseline_state_root: [u8; 32],
+}
+
+pub fn market_sandbox_namespace(
+    program: crate::storage::ProgramId,
+    lease_id: [u8; 32],
+) -> Result<[u8; 32], ReplayWitnessError> {
+    if lease_id == [0; 32] {
+        return Err(ReplayWitnessError::Binding);
+    }
+    let mut hash = Sha256::new();
+    hash.update(b"LayerX/programs/sandbox/namespace/v1\0");
+    hash.update(program.bytes());
+    hash.update(lease_id);
+    Ok(hash.finalize().into())
+}
+
+pub fn market_sandbox_baseline_root(
+    storage: &crate::storage::Storage,
+) -> Result<[u8; 32], ReplayWitnessError> {
+    let mut hash = Sha256::new();
+    hash.update(STORAGE_DOMAIN);
+    let mut overflow = false;
+    storage.for_each_commitment_entry(|key, value| {
+        let (Ok(key_length), Ok(value_length)) =
+            (u32::try_from(key.len()), u32::try_from(value.len()))
+        else {
+            overflow = true;
+            return;
+        };
+        hash.update(key_length.to_be_bytes());
+        hash.update(&key);
+        hash.update(value_length.to_be_bytes());
+        hash.update(value);
+    });
+    if overflow {
+        return Err(ReplayWitnessError::Bounds);
+    }
+    Ok(hash.finalize().into())
+}
+
+impl MarketSandboxReplayAuthority {
+    pub(crate) fn namespace_bytes(
+        &self,
+        storage: &crate::storage::Storage,
+    ) -> Result<u64, ReplayWitnessError> {
+        let principal = crate::storage::PrincipalId::new(self.namespace)
+            .map_err(|_| ReplayWitnessError::Binding)?;
+        let namespace = crate::storage::StorageNamespace::principal(self.program, principal);
+        let sizes = storage
+            .namespace_sizes()
+            .map_err(|_| ReplayWitnessError::StateUnavailable)?;
+        let bytes = sizes
+            .into_iter()
+            .find(|(candidate, _)| *candidate == namespace)
+            .map_or(0, |(_, size)| size);
+        if bytes > self.namespace_limit {
+            return Err(ReplayWitnessError::Bounds);
+        }
+        Ok(bytes)
+    }
+    pub(crate) fn validate_market_meter(
+        &self,
+        meter: &crate::Meter,
+    ) -> Result<(), ReplayWitnessError> {
+        if self.profile_binding == [0; 32]
+            || self.namespace == [0; 32]
+            || self.code_hash == [0; 32]
+            || self.input_digest == [0; 32]
+            || self.payment_account == [0; 32]
+            || self.fee_budget == 0
+            || self.runtime_version != crate::RUNTIME_VERSION
+            || self.fee_schedule_version == 0
+            || self.metering_schedule_version == 0
+            || self.fees.version() != self.fee_schedule_version
+            || self.namespace != market_sandbox_namespace(self.program, self.lease_id)?
+            || self.namespace_limit == 0
+            || market_sandbox_baseline_root(&self.baseline_storage)? != self.baseline_state_root
+        {
+            return Err(ReplayWitnessError::Binding);
+        }
+        let actual = meter.replay_state_bytes()?;
+        let expected = crate::Meter::new(self.budget, self.fees).replay_state_bytes()?;
+        let immutable = b"LayerX/programs/replay-meter/v1\0".len() + 48 + 60;
+        if actual.get(..immutable) != expected.get(..immutable)
+            || meter.fee_schedule_version() != self.fee_schedule_version
+            || meter
+                .execution_trace_usage()
+                .map_err(|_| ReplayWitnessError::StateUnavailable)?
+                .fee_units
+                > self.fee_budget
+        {
+            return Err(ReplayWitnessError::Binding);
+        }
+        Ok(())
+    }
+}
+
+pub(crate) fn restore_market_sandbox_semantic(
+    bytes: &[u8],
+    inputs: &MarketSandboxReplayAuthority,
+    maximum: usize,
+) -> Result<
+    (
+        UntrustedRuntimeReplayState,
+        crate::abi::CapturedAbiReplayAuthority,
+    ),
+    ReplayWitnessError,
+> {
+    maximum_bytes(maximum)?;
+    if bytes.len() > maximum || maximum > crate::replay_record::MAX_PROGRAM_REPLAY_BYTES as usize {
+        return Err(ReplayWitnessError::Bounds);
+    }
+    let mut cursor = ReplayCursor::new(bytes);
+    if cursor.take(SEMANTIC_DOMAIN.len())? != SEMANTIC_DOMAIN {
+        return Err(ReplayWitnessError::Encoding);
+    }
+    let host = ReplayHostWitnessV1::decode(cursor.field()?, maximum)?;
+    let storage = StorageReplayWitnessV1::decode(cursor.field()?, maximum)?;
+    let payment = cursor.field()?;
+    let composition = CompositionReplayWitnessV1::decode(cursor.field()?, maximum)?;
+    if !cursor.done()
+        || host.code_hash() != inputs.code_hash
+        || composition.code_hash() != inputs.code_hash
+    {
+        return Err(ReplayWitnessError::Binding);
+    }
+    inputs.validate_market_meter(&host.decode_untrusted_meter()?)?;
+    let authority = crate::abi::CapturedAbiReplayAuthority::from_untrusted_market(
+        host.abi_preimage()?,
+        payment,
+        inputs,
+        maximum,
+    )?;
+    if payment != authority.payment_metadata() {
+        return Err(ReplayWitnessError::Binding);
+    }
+    storage.compare_host_witness_baseline(&host, maximum)?;
+    let pair = storage.decode_untrusted_storage_pair(maximum)?;
+    if pair.baseline.replay_state_bytes(maximum)?
+        != inputs.baseline_storage.replay_state_bytes(maximum)?
+    {
+        return Err(ReplayWitnessError::Binding);
+    }
+    inputs.namespace_bytes(&pair.baseline)?;
+    inputs.namespace_bytes(&pair.current)?;
+    let graphs = composition.decode_untrusted_state(maximum)?;
+    if graphs.composition.is_some() || graphs.failure_graph.is_some() {
+        return Err(ReplayWitnessError::Binding);
+    }
+    let state = crate::host::RuntimeState::restore_untrusted_semantic(
+        &host, pair, &authority, graphs, None,
+    )?;
+    if state.protocol_context().is_some()
+        || state.metering_schedule_version() != inputs.metering_schedule_version
+    {
+        return Err(ReplayWitnessError::Binding);
+    }
+    let actual_identity = state
+        .v2_host_state_identity()
+        .map_err(|_| ReplayWitnessError::StateUnavailable)?;
+    if actual_identity.base_state != inputs.baseline_state_root {
+        return Err(ReplayWitnessError::Binding);
+    }
+    Ok((
+        UntrustedRuntimeReplayState {
+            state,
+            code_hash: host.code_hash(),
+        },
+        authority,
+    ))
+}

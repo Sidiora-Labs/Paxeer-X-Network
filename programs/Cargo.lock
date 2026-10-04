@@ -954,6 +954,9 @@ name = "layerx-programs-arbiter"
 version = "0.1.0"
 dependencies = [
  "layerx-client",
+ "layerx-crypto",
+ "layerx-program-sdk",
+ "layerx-programs-market",
  "layerx-programs-registry",
  "layerx-programs-runtime",
  "layerx-proof",

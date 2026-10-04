@@ -6,6 +6,8 @@ rust-version.workspace = true
 license.workspace = true
 
 [dependencies]
+layerx-program-sdk = { path = "../../sdk/rust" }
+layerx-programs-market = { path = "../layerx-programs-market" }
 layerx-programs-runtime = { path = "../layerx-programs-runtime" }
 layerx-programs-registry = { path = "../layerx-programs-registry" }
 layerx-client = { path = "../../../agent/crates/layerx-client" }
@@ -15,4 +17,5 @@ layerx-types = { path = "../../../agent/crates/layerx-types" }
 sha2.workspace = true
 
 [dev-dependencies]
+layerx-crypto = { path = "../../../agent/crates/layerx-crypto" }
 serde_json = "=1.0.151"

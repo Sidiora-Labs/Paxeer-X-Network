@@ -1101,3 +1101,100 @@ impl CapturedAbiReplayAuthority {
         })
     }
 }
+
+impl CapturedAbiReplayAuthority {
+    pub(crate) fn from_untrusted_market(
+        preimage: &[u8],
+        payment: &[u8],
+        inputs: &crate::replay::MarketSandboxReplayAuthority,
+        maximum: usize,
+    ) -> Result<Self, crate::replay::ReplayWitnessError> {
+        use crate::replay::{ReplayCursor, ReplayWitnessError as E};
+        if preimage.len() > maximum {
+            return Err(E::Bounds);
+        }
+        let mut cursor = ReplayCursor::new(preimage);
+        if cursor.take(DOMAIN.len())? != DOMAIN
+            || cursor.u16()? != inputs.abi_version
+            || replay_program(&mut cursor)? != inputs.program
+            || replay_principal(&mut cursor)?.bytes() != inputs.namespace
+            || replay_frame(&mut cursor)? != super::CallFrameId::root()
+        {
+            return Err(E::Binding);
+        }
+        let capabilities = replay_capabilities(&mut cursor, inputs.abi_version)?;
+        let closed = super::CapabilitySet::new([
+            super::Capability::StorageRead,
+            super::Capability::StorageWrite,
+        ])
+        .map_err(|_| E::Encoding)?;
+        if capabilities != closed {
+            return Err(E::Binding);
+        }
+        let principal =
+            crate::storage::PrincipalId::new(inputs.namespace).map_err(|_| E::Binding)?;
+        let authorization = match payment {
+            [0] if inputs.payment_account == principal.bytes() => {
+                super::AuthorizationContext::new(principal, closed)
+            }
+            [1, account @ ..] if account == inputs.payment_account => {
+                super::AuthorizationContext::new(principal, closed)
+                    .with_payment_account(inputs.payment_account)
+            }
+            _ => return Err(E::Binding),
+        };
+        let missing = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let queries = std::sync::Arc::new(PortableQueries {
+            oracle: std::collections::BTreeMap::new(),
+            web: std::collections::BTreeMap::new(),
+            missing: missing.clone(),
+        });
+        Ok(Self {
+            preimage_root: Sha256::digest(preimage).into(),
+            missing_query: Some(missing),
+            native_binding: None,
+            authorization,
+            receipts: std::collections::BTreeMap::new(),
+            balances: std::collections::BTreeMap::new(),
+            oracle: queries.clone(),
+            web: queries,
+        })
+    }
+}
+
+impl Abi {
+    pub(crate) fn from_untrusted_market_profile(
+        inputs: &crate::replay::MarketSandboxReplayAuthority,
+    ) -> Result<
+        (Self, std::sync::Arc<std::sync::atomic::AtomicBool>),
+        crate::replay::ReplayWitnessError,
+    > {
+        use crate::replay::ReplayWitnessError as E;
+        let principal =
+            crate::storage::PrincipalId::new(inputs.namespace).map_err(|_| E::Binding)?;
+        let capabilities = super::CapabilitySet::new([
+            super::Capability::StorageRead,
+            super::Capability::StorageWrite,
+        ])
+        .map_err(|_| E::Encoding)?;
+        let authorization = super::AuthorizationContext::new(principal, capabilities)
+            .with_payment_account(inputs.payment_account);
+        let mut abi = Self::new(
+            inputs.abi_version,
+            inputs.program,
+            authorization,
+            inputs.baseline_storage.clone(),
+            &super::UnavailableReceiptOracle,
+        )
+        .map_err(|_| E::Binding)?;
+        let missing = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let queries = std::sync::Arc::new(PortableQueries {
+            oracle: std::collections::BTreeMap::new(),
+            web: std::collections::BTreeMap::new(),
+            missing: missing.clone(),
+        });
+        abi.oracle = queries.clone();
+        abi.web = queries;
+        Ok((abi, missing))
+    }
+}
