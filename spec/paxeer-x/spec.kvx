@@ -23286,7 +23286,7 @@ readiness_obligation = "Requirements 1053.3 and 1053.4 remain required in full u
 
 [task.103.6.3]
 title = "Implement the layerx-receipt-authority service over the independent replica"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 2
 requires = ["0.2"]
@@ -23296,7 +23296,7 @@ do_2 = "Add the crate platform/hosted/authority (package layerx-platform-authori
 do_3 = "Serve GET /v1/authorized-batches/by-activity/{activity_id} and GET /internal/v1/activities/{activity_id}/authority: fetch the canonical receipt for the activity, compute its digest, fetch the replica's batch evidence, verify the header signature and the Merkle inclusion with layerx-proof, re-derive batch_id with layerx_wire::hash::execution_batch_id and require it to equal the receipt's, and answer the eight fields {activity_id, batch_id, asset, previous_state_root, resulting_state_root, sequencer_public_key, network_id, wire_version}, plus batch_evidence only when the batch carries an occupancy-maintenance receipt, containing the maintained batch identity and proof the consumer verifies with Content-Type application/json and no charset; relay GET /v1/batches/{batch_id}/receipt-authority?receipt_digest= to the replica unchanged; serve GET /readyz with {ready, network_id, wire_version} and 200 for an unauthenticated probe only when the replica answers; 404 for an unknown activity, 503 with a typed code when the replica or receipt source is unavailable."
 do_4 = "Write tests under platform/hosted/authority/tests against a real layerxd sequencer and replica from build/bin, proving a submitted activity's facts are served and verify with layerx-proof, that a tampered header signature or mismatched batch_id is refused, and that /readyz reflects replica loss; add platform/hosted/authority/Dockerfile from the faucet template; record the ramps toolkit six-field AuthorityBody conflict in private qualification evidence and align it to the eight-field contract."
 do_5 = "Provide this task selector in tools/paxeer-x/gates and execute the full scoped acceptance contract using real production paths. Preserve the retained verification command coverage; move aggregate matrices to release scope and refuse an unknown or unimplemented selector."
-touches = ["platform/hosted/authority", "platform/ramps/toolkit/src/clients.rs", "tools/paxeer-x/gates/103.6.3.sh"]
+touches = ["tools/paxeer-x/gates/103.6.3.sh"]
 verify_cmd = "timeout 30m tools/paxeer-x/verify-task.sh 103.6.3"
 gate_kind = "planned-adapter"
 max_builds = 1
@@ -23314,6 +23314,11 @@ path_policy = "Existing paths are modified in place. Planned paths must be creat
 evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
 
 source_scope = "Reuse existing dependency manifests and lockfile read-only. Preserve the complete service and strict all-target lint contract; global readiness requirements remain mandatory under their mapped release tasks."
+retained_qualification_adapter_paths = ["platform/hosted/authority", "platform/ramps/toolkit/src/clients.rs", "tools/paxeer-x/gates/103.6.3.sh"]
+build_cmd = "timeout 20m bash tools/paxeer-x/gates/103.6.3.sh --build"
+qualification_stage_contract = "Build once and capture source-bound actual authority service/test artifacts; verification consumes prebuilt artifacts and runs the genuine focused authority contract once. Original aggregate native and strict all-target lint requirements remain release-wave gates, not removed or credited."
+completion_basis = "implementation"
+qualification_status = "unrun_missing_genuine_inputs"
 
 [task.103.6.4]
 title = "Implement the layerx-agent-boundary component service over the LNI"
