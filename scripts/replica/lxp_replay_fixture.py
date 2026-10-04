@@ -3,7 +3,7 @@ import hashlib
 import pathlib
 import struct
 
-ROOT = pathlib.Path(__file__).resolve().parents[1]
+ROOT = pathlib.Path(__file__).resolve().parents[2]
 OUTPUT = ROOT / "tests" / "vectors" / "replay_corpus.lxb"
 
 ACTIVITY_TYPES = tuple(

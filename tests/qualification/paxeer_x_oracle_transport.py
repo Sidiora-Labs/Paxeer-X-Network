@@ -381,7 +381,7 @@ def qualify():
             with log.open('wb') as stream:
                 run([built['binaries'][name]['path']], stdout=stream, stderr=stream, timeout=120)
             result['cases'].append(name)
-        run(['sh', 'tools/lx_oracle_adapter_isolation.sh'])
+        run(['sh', 'tests/oracle/lx_oracle_adapter_isolation.sh'])
         symbols = run(['nm', built['binaries']['test_oracle_replay_absent']['path']], capture_output=True, text=True).stdout
         require('lx_oracle_adapter_run' not in symbols, 'replay linked external adapter')
         result['cases'].append('replay-network-isolation')

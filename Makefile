@@ -444,7 +444,7 @@ $(BUILD_DIR)/tests/test_receipt: tests/ledger/test_receipt.c \
 
 test-ledger-receipt: $(BUILD_DIR)/tests/test_receipt
 	$(RUN_PREFIX) $(BUILD_DIR)/tests/test_receipt
-	tools/lxp_check_sole_writer.sh
+	tests/ledger/lxp_check_sole_writer.sh
 
 $(BUILD_DIR)/tests/test_asset_registry: tests/modules/test_asset_registry.c \
 		$(LIBRARY) $(PROGRAMS_RUNTIME_LIB) | programs-build
@@ -484,7 +484,7 @@ $(BUILD_DIR)/tests/test_asset_transfer: tests/modules/test_asset_transfer.c \
 
 test-asset-transfer: $(BUILD_DIR)/tests/test_asset_transfer
 	$(RUN_PREFIX) $(BUILD_DIR)/tests/test_asset_transfer
-	tools/lxp_check_sole_writer.sh
+	tests/ledger/lxp_check_sole_writer.sh
 
 $(BUILD_DIR)/tests/test_asset_deposit: tests/modules/test_asset_deposit.c \
 		$(LIBRARY) $(PROGRAMS_RUNTIME_LIB) | programs-build
@@ -524,7 +524,7 @@ $(BUILD_DIR)/tests/test_escrow_open: tests/modules/test_escrow_open.c \
 
 test-escrow-open: $(BUILD_DIR)/tests/test_escrow_open
 	$(RUN_PREFIX) $(BUILD_DIR)/tests/test_escrow_open
-	tools/lxp_check_sole_writer.sh
+	tests/ledger/lxp_check_sole_writer.sh
 
 $(BUILD_DIR)/tests/test_escrow_capture: tests/modules/test_escrow_capture.c \
 		$(LIBRARY) $(PROGRAMS_RUNTIME_LIB) | programs-build
@@ -535,7 +535,7 @@ $(BUILD_DIR)/tests/test_escrow_capture: tests/modules/test_escrow_capture.c \
 
 test-escrow-capture: $(BUILD_DIR)/tests/test_escrow_capture
 	$(RUN_PREFIX) $(BUILD_DIR)/tests/test_escrow_capture
-	tools/lxp_check_sole_writer.sh
+	tests/ledger/lxp_check_sole_writer.sh
 
 $(BUILD_DIR)/tests/test_escrow_timeout: tests/modules/test_escrow_timeout.c \
 		$(LIBRARY) $(PROGRAMS_RUNTIME_LIB) | programs-build
@@ -558,7 +558,7 @@ test-escrow-timeout: $(BUILD_DIR)/tests/test_escrow_timeout \
 		$(BUILD_DIR)/tests/lxp_test_epoch_escrow_timeout
 	$(RUN_PREFIX) $(BUILD_DIR)/tests/test_escrow_timeout
 	$(RUN_PREFIX) $(BUILD_DIR)/tests/lxp_test_epoch_escrow_timeout
-	tools/lxp_check_sole_writer.sh
+	tests/ledger/lxp_check_sole_writer.sh
 
 $(BUILD_DIR)/tests/test_escrow_dispute: tests/modules/test_escrow_dispute.c \
 		$(TEST_LIBRARY) $(PROGRAMS_RUNTIME_LIB) | programs-build
@@ -569,7 +569,7 @@ $(BUILD_DIR)/tests/test_escrow_dispute: tests/modules/test_escrow_dispute.c \
 
 test-escrow-dispute: $(BUILD_DIR)/tests/test_escrow_dispute
 	$(RUN_PREFIX) $(BUILD_DIR)/tests/test_escrow_dispute
-	tools/lxp_check_sole_writer.sh
+	tests/ledger/lxp_check_sole_writer.sh
 
 $(BUILD_DIR)/tests/test_escrow_invariants: \
 		tests/modules/test_escrow_invariants.c $(LIBRARY) \
@@ -581,7 +581,7 @@ $(BUILD_DIR)/tests/test_escrow_invariants: \
 
 test-escrow-invariants: $(BUILD_DIR)/tests/test_escrow_invariants
 	$(RUN_PREFIX) $(BUILD_DIR)/tests/test_escrow_invariants
-	tools/lxp_check_sole_writer.sh
+	tests/ledger/lxp_check_sole_writer.sh
 
 $(BUILD_DIR)/tests/test_budget_create: tests/modules/test_budget_create.c \
 		$(LIBRARY) $(PROGRAMS_RUNTIME_LIB) | programs-build
@@ -592,7 +592,7 @@ $(BUILD_DIR)/tests/test_budget_create: tests/modules/test_budget_create.c \
 
 test-budget-create: $(BUILD_DIR)/tests/test_budget_create
 	$(RUN_PREFIX) $(BUILD_DIR)/tests/test_budget_create
-	tools/lxp_check_sole_writer.sh
+	tests/ledger/lxp_check_sole_writer.sh
 
 $(BUILD_DIR)/tests/test_budget_period: tests/modules/test_budget_period.c \
 		$(LIBRARY) $(PROGRAMS_RUNTIME_LIB) | programs-build
@@ -625,7 +625,7 @@ $(BUILD_DIR)/tests/test_budget_spend: tests/modules/test_budget_spend.c \
 
 test-budget-spend: $(BUILD_DIR)/tests/test_budget_spend
 	$(RUN_PREFIX) $(BUILD_DIR)/tests/test_budget_spend
-	tools/lxp_check_sole_writer.sh
+	tests/ledger/lxp_check_sole_writer.sh
 
 $(BUILD_DIR)/tests/test_budget_delegate: tests/modules/test_budget_delegate.c \
 		$(LIBRARY) $(PROGRAMS_RUNTIME_LIB) | programs-build
@@ -636,7 +636,7 @@ $(BUILD_DIR)/tests/test_budget_delegate: tests/modules/test_budget_delegate.c \
 
 test-budget-delegate: $(BUILD_DIR)/tests/test_budget_delegate
 	$(RUN_PREFIX) $(BUILD_DIR)/tests/test_budget_delegate
-	tools/lxp_check_sole_writer.sh
+	tests/ledger/lxp_check_sole_writer.sh
 
 $(BUILD_DIR)/tests/test_budget_close: tests/modules/test_budget_close.c \
 		$(LIBRARY) $(PROGRAMS_RUNTIME_LIB) | programs-build
@@ -647,7 +647,7 @@ $(BUILD_DIR)/tests/test_budget_close: tests/modules/test_budget_close.c \
 
 test-budget-revoke: $(BUILD_DIR)/tests/test_budget_close
 	$(RUN_PREFIX) $(BUILD_DIR)/tests/test_budget_close
-	tools/lxp_check_sole_writer.sh
+	tests/ledger/lxp_check_sole_writer.sh
 
 $(BUILD_DIR)/tests/test_stream_open: tests/modules/test_stream_open.c \
 		$(LIBRARY) $(PROGRAMS_RUNTIME_LIB) | programs-build
@@ -658,7 +658,7 @@ $(BUILD_DIR)/tests/test_stream_open: tests/modules/test_stream_open.c \
 
 test-stream-open: $(BUILD_DIR)/tests/test_stream_open
 	$(RUN_PREFIX) $(BUILD_DIR)/tests/test_stream_open
-	tools/lxp_check_sole_writer.sh
+	tests/ledger/lxp_check_sole_writer.sh
 
 $(BUILD_DIR)/tests/test_stream_accrue: tests/modules/test_stream_accrue.c \
 		$(LIBRARY)
@@ -688,7 +688,7 @@ $(BUILD_DIR)/tests/test_stream_settle: tests/modules/test_stream_settle.c \
 
 test-stream-settle: $(BUILD_DIR)/tests/test_stream_settle
 	$(RUN_PREFIX) $(BUILD_DIR)/tests/test_stream_settle
-	tools/lxp_check_sole_writer.sh
+	tests/ledger/lxp_check_sole_writer.sh
 
 $(BUILD_DIR)/tests/test_stream_lifecycle: \
 		tests/modules/test_stream_lifecycle.c $(TEST_LIBRARY) \
@@ -700,7 +700,7 @@ $(BUILD_DIR)/tests/test_stream_lifecycle: \
 
 test-stream-lifecycle: $(BUILD_DIR)/tests/test_stream_lifecycle
 	$(RUN_PREFIX) $(BUILD_DIR)/tests/test_stream_lifecycle
-	tools/lxp_check_sole_writer.sh
+	tests/ledger/lxp_check_sole_writer.sh
 
 $(BUILD_DIR)/tests/test_service_offer: tests/modules/test_service_offer.c \
 		tests/modules/test_service_helpers.h \
@@ -712,7 +712,7 @@ $(BUILD_DIR)/tests/test_service_offer: tests/modules/test_service_offer.c \
 
 test-service-offer: $(BUILD_DIR)/tests/test_service_offer
 	$(RUN_PREFIX) $(BUILD_DIR)/tests/test_service_offer
-	tools/lxp_check_sole_writer.sh
+	tests/ledger/lxp_check_sole_writer.sh
 
 $(BUILD_DIR)/tests/test_service_commit: tests/modules/test_service_commit.c \
 		tests/modules/test_service_helpers.h \
@@ -724,7 +724,7 @@ $(BUILD_DIR)/tests/test_service_commit: tests/modules/test_service_commit.c \
 
 test-service-commit: $(BUILD_DIR)/tests/test_service_commit
 	$(RUN_PREFIX) $(BUILD_DIR)/tests/test_service_commit
-	tools/lxp_check_sole_writer.sh
+	tests/ledger/lxp_check_sole_writer.sh
 
 $(BUILD_DIR)/tests/test_service_attest: tests/modules/test_service_attest.c \
 		tests/modules/test_service_helpers.h \
@@ -736,7 +736,7 @@ $(BUILD_DIR)/tests/test_service_attest: tests/modules/test_service_attest.c \
 
 test-service-attest: $(BUILD_DIR)/tests/test_service_attest
 	$(RUN_PREFIX) $(BUILD_DIR)/tests/test_service_attest
-	tools/lxp_check_sole_writer.sh
+	tests/ledger/lxp_check_sole_writer.sh
 
 $(BUILD_DIR)/tests/test_service_deliver: tests/modules/test_service_deliver.c \
 		tests/modules/test_service_helpers.h \
@@ -748,7 +748,7 @@ $(BUILD_DIR)/tests/test_service_deliver: tests/modules/test_service_deliver.c \
 
 test-service-deliver: $(BUILD_DIR)/tests/test_service_deliver
 	$(RUN_PREFIX) $(BUILD_DIR)/tests/test_service_deliver
-	tools/lxp_check_sole_writer.sh
+	tests/ledger/lxp_check_sole_writer.sh
 
 $(BUILD_DIR)/tests/test_service_acceptance: \
 		tests/modules/test_service_acceptance.c \
@@ -773,7 +773,7 @@ test-service-acceptance: $(BUILD_DIR)/tests/test_service_acceptance \
 		$(BUILD_DIR)/tests/lxp_test_epoch_service_acceptance
 	$(RUN_PREFIX) $(BUILD_DIR)/tests/test_service_acceptance
 	$(RUN_PREFIX) $(BUILD_DIR)/tests/lxp_test_epoch_service_acceptance
-	tools/lxp_check_sole_writer.sh
+	tests/ledger/lxp_check_sole_writer.sh
 
 $(BUILD_DIR)/tests/test_service_dispute: \
 		tests/modules/test_service_dispute.c \
@@ -786,7 +786,7 @@ $(BUILD_DIR)/tests/test_service_dispute: \
 
 test-service-dispute: $(BUILD_DIR)/tests/test_service_dispute
 	$(RUN_PREFIX) $(BUILD_DIR)/tests/test_service_dispute
-	tools/lxp_check_sole_writer.sh
+	tests/ledger/lxp_check_sole_writer.sh
 
 $(BUILD_DIR)/tests/test_oracle_adapter: tests/network/test_oracle_adapter.c \
 		$(LIBRARY)
@@ -806,7 +806,7 @@ test-oracle-adapter: $(BUILD_DIR)/tests/test_oracle_adapter \
 	$(RUN_PREFIX) $(BUILD_DIR)/tests/test_oracle_replay_absent
 	! nm $(BUILD_DIR)/tests/test_oracle_replay_absent | \
 		grep -q lx_oracle_adapter_run
-	sh tools/lx_oracle_adapter_isolation.sh
+	sh tests/oracle/lx_oracle_adapter_isolation.sh
 
 $(BUILD_DIR)/tests/test_oracle_intake: tests/modules/test_oracle_intake.c \
 		$(LIBRARY) $(PROGRAMS_RUNTIME_LIB) | programs-build
@@ -817,8 +817,8 @@ $(BUILD_DIR)/tests/test_oracle_intake: tests/modules/test_oracle_intake.c \
 
 test-oracle-intake: $(BUILD_DIR)/tests/test_oracle_intake
 	$(RUN_PREFIX) $(BUILD_DIR)/tests/test_oracle_intake
-	tools/lxp_check_sole_writer.sh
-	sh tools/lx_oracle_adapter_isolation.sh
+	tests/ledger/lxp_check_sole_writer.sh
+	sh tests/oracle/lx_oracle_adapter_isolation.sh
 
 $(BUILD_DIR)/tests/test_oracle_checks: tests/modules/test_oracle_checks.c \
 		$(LIBRARY) $(PROGRAMS_RUNTIME_LIB) | programs-build
@@ -829,7 +829,7 @@ $(BUILD_DIR)/tests/test_oracle_checks: tests/modules/test_oracle_checks.c \
 
 test-oracle-bounds: $(BUILD_DIR)/tests/test_oracle_checks
 	$(RUN_PREFIX) $(BUILD_DIR)/tests/test_oracle_checks
-	sh tools/lx_oracle_adapter_isolation.sh
+	sh tests/oracle/lx_oracle_adapter_isolation.sh
 
 $(BUILD_DIR)/tests/test_oracle_root: tests/sequencer/test_oracle_root.c \
 		$(LIBRARY) $(PROGRAMS_RUNTIME_LIB) | programs-build
@@ -850,7 +850,7 @@ $(BUILD_DIR)/tests/test_oracle_halt: tests/modules/test_oracle_halt.c \
 
 test-oracle-failclosed: $(BUILD_DIR)/tests/test_oracle_halt
 	$(RUN_PREFIX) $(BUILD_DIR)/tests/test_oracle_halt
-	sh tools/lx_oracle_adapter_isolation.sh
+	sh tests/oracle/lx_oracle_adapter_isolation.sh
 
 $(BUILD_DIR)/tests/test_web_adapter: tests/network/test_web_adapter.c \
 		tests/fixtures/web/observation-activity.hex $(LIBRARY) \
@@ -862,7 +862,7 @@ $(BUILD_DIR)/tests/test_web_adapter: tests/network/test_web_adapter.c \
 
 test-web-adapter: $(BUILD_DIR)/tests/test_web_adapter
 	$(RUN_PREFIX) $(BUILD_DIR)/tests/test_web_adapter
-	sh tools/lx_oracle_adapter_isolation.sh
+	sh tests/oracle/lx_oracle_adapter_isolation.sh
 
 $(BUILD_DIR)/tests/test_web_intake: tests/modules/test_web_intake.c \
 		$(LIBRARY) $(PROGRAMS_RUNTIME_LIB) | programs-build
@@ -873,8 +873,8 @@ $(BUILD_DIR)/tests/test_web_intake: tests/modules/test_web_intake.c \
 
 test-web-intake: $(BUILD_DIR)/tests/test_web_intake
 	$(RUN_PREFIX) $(BUILD_DIR)/tests/test_web_intake
-	tools/lxp_check_sole_writer.sh
-	sh tools/lx_oracle_adapter_isolation.sh
+	tests/ledger/lxp_check_sole_writer.sh
+	sh tests/oracle/lx_oracle_adapter_isolation.sh
 
 $(BUILD_DIR)/tests/test_web_root: tests/sequencer/test_web_root.c \
 		$(LIBRARY) $(PROGRAMS_RUNTIME_LIB) | programs-build
@@ -895,7 +895,7 @@ $(BUILD_DIR)/tests/test_perps_market: tests/modules/test_perps_market.c \
 
 test-perps-market: $(BUILD_DIR)/tests/test_perps_market
 	$(RUN_PREFIX) $(BUILD_DIR)/tests/test_perps_market
-	tools/lxp_check_sole_writer.sh
+	tests/ledger/lxp_check_sole_writer.sh
 
 $(BUILD_DIR)/tests/test_perps_book: tests/modules/test_perps_book.c \
 		$(LIBRARY) $(PROGRAMS_RUNTIME_LIB) | programs-build
@@ -906,7 +906,7 @@ $(BUILD_DIR)/tests/test_perps_book: tests/modules/test_perps_book.c \
 
 test-perps-book: $(BUILD_DIR)/tests/test_perps_book
 	$(RUN_PREFIX) $(BUILD_DIR)/tests/test_perps_book
-	tools/lxp_check_sole_writer.sh
+	tests/ledger/lxp_check_sole_writer.sh
 
 $(BUILD_DIR)/tests/test_spot_book: tests/modules/test_spot_book.c \
 		$(LIBRARY) $(PROGRAMS_RUNTIME_LIB) | programs-build
@@ -917,7 +917,7 @@ $(BUILD_DIR)/tests/test_spot_book: tests/modules/test_spot_book.c \
 
 test-spot-book: $(BUILD_DIR)/tests/test_spot_book
 	$(RUN_PREFIX) $(BUILD_DIR)/tests/test_spot_book
-	tools/lxp_check_sole_writer.sh
+	tests/ledger/lxp_check_sole_writer.sh
 
 $(BUILD_DIR)/tests/test_perps_position: tests/modules/test_perps_position.c \
 		$(LIBRARY) $(PROGRAMS_RUNTIME_LIB) | programs-build
@@ -928,7 +928,7 @@ $(BUILD_DIR)/tests/test_perps_position: tests/modules/test_perps_position.c \
 
 test-perps-margin: $(BUILD_DIR)/tests/test_perps_position
 	$(RUN_PREFIX) $(BUILD_DIR)/tests/test_perps_position
-	tools/lxp_check_sole_writer.sh
+	tests/ledger/lxp_check_sole_writer.sh
 
 $(BUILD_DIR)/tests/test_perps_funding: tests/modules/test_perps_funding.c \
 		$(LIBRARY) $(PROGRAMS_RUNTIME_LIB) | programs-build
@@ -939,7 +939,7 @@ $(BUILD_DIR)/tests/test_perps_funding: tests/modules/test_perps_funding.c \
 
 test-perps-funding: $(BUILD_DIR)/tests/test_perps_funding
 	$(RUN_PREFIX) $(BUILD_DIR)/tests/test_perps_funding
-	tools/lxp_check_sole_writer.sh
+	tests/ledger/lxp_check_sole_writer.sh
 
 $(BUILD_DIR)/tests/test_perps_liquidate: \
 		tests/modules/test_perps_liquidate.c $(LIBRARY) \
@@ -951,7 +951,7 @@ $(BUILD_DIR)/tests/test_perps_liquidate: \
 
 test-perps-liquidation: $(BUILD_DIR)/tests/test_perps_liquidate
 	$(RUN_PREFIX) $(BUILD_DIR)/tests/test_perps_liquidate
-	tools/lxp_check_sole_writer.sh
+	tests/ledger/lxp_check_sole_writer.sh
 
 $(BUILD_DIR)/tests/test_perps_insurance: \
 		tests/modules/test_perps_insurance.c $(LIBRARY) \
@@ -963,7 +963,7 @@ $(BUILD_DIR)/tests/test_perps_insurance: \
 
 test-perps-insurance: $(BUILD_DIR)/tests/test_perps_insurance
 	$(RUN_PREFIX) $(BUILD_DIR)/tests/test_perps_insurance
-	tools/lxp_check_sole_writer.sh
+	tests/ledger/lxp_check_sole_writer.sh
 
 test-wave-9: test-perps-market test-perps-book test-perps-margin \
 		test-perps-funding test-perps-liquidation test-perps-insurance
@@ -989,7 +989,7 @@ $(BUILD_DIR)/tests/test_batch_time: tests/test_batch_time.c $(LIBRARY)
 
 test-batch-time: $(BUILD_DIR)/tests/test_batch_time
 	$(RUN_PREFIX) $(BUILD_DIR)/tests/test_batch_time
-	sh tools/lxp_check_no_clock.sh
+	sh tests/protocol/lxp_check_no_clock.sh
 
 $(BUILD_DIR)/tests/test_batch_seal: tests/test_batch_seal.c $(LIBRARY)
 	@mkdir -p $(@D)
@@ -1068,7 +1068,7 @@ test-history: $(BUILD_DIR)/tests/test_history_query
 	$(RUN_PREFIX) $(BUILD_DIR)/tests/test_history_query
 
 test-replay-crossarch: tests/vectors/replay_corpus.lxb
-	sh tools/lxp_replay_matrix.sh
+	sh tests/replica/lxp_replay_matrix.sh
 
 test-wave-11: test-replica test-replay test-replica-divergence \
 		test-snapshot test-history test-replay-crossarch
@@ -1164,7 +1164,7 @@ $(BUILD_DIR)/tests/test_da_unavailable: tests/test_da_unavailable.c $(LIBRARY)
 		-lcrypto -o $@
 
 test-da-unavailable: $(BUILD_DIR)/tests/test_da_unavailable
-	tools/lxp_da_withhold.sh all $(BUILD_DIR)/tests/test_da_unavailable
+	tests/paxeer/lxp_da_withhold.sh all $(BUILD_DIR)/tests/test_da_unavailable
 
 $(BUILD_DIR)/tests/test_governance_params: \
 		tests/test_governance_params.c $(LIBRARY)
@@ -3464,8 +3464,8 @@ $(BUILD_DIR)/tests/test_programs_oracle_read: tests/test_programs_oracle_read.c 
 .PHONY: test-programs-oracle-read
 test-programs-oracle-read: $(BUILD_DIR)/tests/test_programs_oracle_read
 	$(RUN_PREFIX) $(BUILD_DIR)/tests/test_programs_oracle_read
-	tools/lxp_check_sole_writer.sh
-	sh tools/lx_oracle_adapter_isolation.sh
+	tests/ledger/lxp_check_sole_writer.sh
+	sh tests/oracle/lx_oracle_adapter_isolation.sh
 
 $(BUILD_DIR)/tests/test_programs_web_read: tests/test_programs_web_read.c \
 		tests/programs/test_call_activity.c \
@@ -3491,7 +3491,7 @@ $(BUILD_DIR)/tests/test_web_program_path: tests/test_web_program_path.c \
 test-web-program-path: $(BUILD_DIR)/tests/test_web_program_path programs-reference-web-reader
 	$(RUN_PREFIX) $(BUILD_DIR)/tests/test_web_program_path \
 		$(abspath $(if $(CARGO_TARGET_DIR),$(CARGO_TARGET_DIR),programs/sdk/rust/examples/web-reader/target)/wasm32-unknown-unknown/release/layerx_reference_web_reader.wasm)
-	sh tools/lx_oracle_adapter_isolation.sh
+	sh tests/oracle/lx_oracle_adapter_isolation.sh
 
 .PHONY: programs-native-lifecycle-fixtures programs-check-native-lifecycle-fixtures
 programs-native-lifecycle-fixtures: $(BUILD_DIR)/tests/programs_call_activity
