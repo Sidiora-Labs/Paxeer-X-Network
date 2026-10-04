@@ -33469,7 +33469,7 @@ source_status = "complete"
 qualification_status = "UNRUN"
 build_exit_code = 2
 verify_status = "unrun"
-qualification_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-104.35.20-build.log"
+qualification_log = "UNRUN"
 
 
 retained_contract_paths = ["Makefile", "programs/crates/layerx-programs-runtime/src/lib.rs", "programs/crates/layerx-programs-runtime/src/execute.rs", "programs/crates/layerx-programs-runtime/src/replay.rs", "programs/crates/layerx-programs-runtime/src/validate.rs", "programs/crates/layerx-programs-runtime/src/ffi_call.rs", "src/modules/programs/call.c", "src/modules/programs/state_record.c", "include/layerx/programs.h", "src/protocol/lxp_kernel.c", "include/layerx/lxp_kernel.h", "tests/daemon/lxp_test_program_replay.c", "programs/crates/layerx-programs-runtime/tests/program_replay.rs", "tools/qualification/paxeer-x/program-replay-record.py", "tools/paxeer-x/build/104.35.20.mk", "programs/crates/layerx-programs-runtime/src/replay_record.rs", "src/modules/programs/registration.c", "programs/crates/layerx-programs-runtime/src/host/mod.rs"]
@@ -33494,6 +33494,13 @@ fleet_role = "/root/integrate_arbiter/replay_kernel"
 fleet_scope_manifest = "/root/lx-ops/paxeer-x-integration-2026-10-03/fleet-104.35.20-brief.json"
 completion_basis = "implementation under owner CONSTITUTION; qualification separately recorded"
 source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/fleet-104.35.20-publication-current.json"
+qualification_revision = "9a2c30f816aacb253f2d08e64680cd0e3db742fe"
+qualification_command = "UNRUN"
+qualification_exit_code = "UNRUN"
+build_status = "FAILED_FIRST_ATTEMPT_POST_REPAIR_UNRUN"
+qualification_evidence = "/root/lx-ops/paxeer-x-integration-2026-10-03/fleet-104.35.20-repair1-handoff.json"
+build_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/qualification/fleet1043520/build.log"
+qualification_note = "Recorded first build2; source repair published by root at eccdbd35a673eb0734e30fbcc1ce7435a80aadda; subsequent buildUNRUN aftercutoff. No inferred post-repair result."
 
 [task.0.14]
 title = "Expose native public program and naming explorer reads through the unified gateway"
