@@ -157,6 +157,7 @@ fn verify_funded_accounts(
         verify_account_bundle(
             cluster,
             protocol,
+            &authorization,
             identifier,
             &value,
             &mut connection,
@@ -200,6 +201,7 @@ fn verify_funded_account(
 fn verify_account_bundle(
     cluster: &Cluster,
     protocol: &layerx_wire::receipt::ProtocolReceipt,
+    authorization: &SequencerAuthorization,
     identifier: [u8; 32],
     value: &layerx_client::read::ReadValue,
     connection: &mut AccountProofConnection,
@@ -239,9 +241,20 @@ fn verify_account_bundle(
             proof_material,
             activity_id,
             activity_receipt,
+            activity_receipt_proof,
             verified,
             signed_header,
         } => {
+            let activity_inclusion = must(
+                verify_receipt(
+                    &activity_receipt,
+                    &activity_receipt_proof,
+                    &signed_header.canonical_bytes,
+                    &signed_header.signature,
+                    authorization,
+                ),
+                "maintained activity receipt inclusion",
+            );
             let layerx_wire::receipt::Receipt::Protocol(covered) = must(
                 layerx_proof::receipt::verify_sequencer_signature(
                     &activity_receipt,
@@ -255,6 +268,13 @@ fn verify_account_bundle(
             assert_eq!(proof_material, value.proof_material());
             assert_eq!(activity_id, protocol.activity_id());
             assert_eq!(covered.activity_id(), protocol.activity_id());
+            assert_eq!(covered.batch_id(), protocol.batch_id());
+            assert_eq!(covered.global_sequence(), protocol.global_sequence());
+            assert_eq!(
+                covered.previous_state_root(),
+                protocol.previous_state_root()
+            );
+            assert_eq!(activity_inclusion.header(), verified.header());
             assert_eq!(
                 covered.resulting_state_root(),
                 protocol.resulting_state_root()

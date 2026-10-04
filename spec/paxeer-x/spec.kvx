@@ -34045,3 +34045,25 @@ qualification_status = "implemented-not-qualified"
 build_exit_code = 0
 verify_status = "unrun_missing_genuine_market_producer"
 qualification_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-104.35.33-source-handoff.json"
+
+[task.103.6.12]
+title = "Bind the maintained custody consumer to its actual activity receipt proof"
+status = "done"
+mode = "BUILD"
+wave = 2
+requires = ["0.2", "103.6.4"]
+reqs = ["1060.5", "1053.3"]
+do_1 = "Consume the added activity_receipt_proof in the existing genuine maintained-account boundary corpus. Verify its actual receipt inclusion and batch binding using the existing proof owner; preserve every current signature, account, root and sequence assertion. Never discard the field through a wildcard or weaken a predicate."
+touches = ["platform/hosted/agent-boundary/tests/real_node/custody.rs"]
+build_cmd = "timeout 20m bash tools/paxeer-x/gates/103.6.4.sh --build"
+verify_cmd = "timeout 15m tools/paxeer-x/verify-task.sh 103.6.4"
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop at original30-minute cap, missing real authority, unrelated failure or weakening; preserve exact source and evidence."
+completion_basis_policy = "Owner CONSTITUTION: fully implemented DONE; qualification separate and partial remains in_progress."
+source_ownership = "Exact custody consumer source only. Root owns clean candidate snapshot, spec and publication; no deployment or live economic activity."
+completion_basis = "implementation"
+qualification = "UNRUN"
+qualification_note = "Complete actual receipt-inclusion consumer; bounded build and verify pending clean candidate."
