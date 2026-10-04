@@ -2457,3 +2457,31 @@ fn settle_verifies_a_real_move_receipt_against_the_emulator_ledger() -> Result<(
     );
     Ok(())
 }
+
+#[test]
+fn conformance_gateway_collects_real_receipts_and_rejects_transport_lookalikes() -> Result<(), String> {
+    let setup = move_setup_protocol(3)?;
+    let payment = move_commit(&setup)?;
+    let receipt_path = payment.committed_result.pointer("/evidence/0/source_ref")
+        .and_then(serde_json::Value::as_str).ok_or("real move omitted canonical receipt reference")?;
+    let reply = request(&setup.address, "GET", receipt_path, "", &[])?;
+    assert_eq!(reply.status, 200);
+    let document = response_result(&reply)?;
+    let receipt = hex_decode(document["receipt"].as_str().ok_or("canonical receipt omitted")?)?;
+    let authority = published_authority(&document)?;
+    let verified = layerx_proof::receipt::verify_outcome(&receipt, &authority)
+        .map_err(|error| format!("actual production verification failed: {error:?}"))?;
+    assert_eq!(verified.canonical_bytes(), receipt.as_slice());
+    let mut corrupted = receipt.clone();
+    let last = corrupted.last_mut().ok_or("real receipt was empty")?;
+    *last ^= 1;
+    assert!(layerx_proof::receipt::verify_outcome(&corrupted, &authority).is_err());
+    let missing = request(&setup.address, "GET", "/v1/does-not-exist", "", &[])?;
+    assert_eq!(missing.status, 404);
+    assert!(serde_json::from_slice::<serde_json::Value>(&missing.body)
+        .map_err(|error| error.to_string())?["result"]["receipt"].as_str().is_none());
+    let malformed = request(&setup.address, "POST", "/v1/activities", "application/octet-stream", &[0])?;
+    assert_eq!(malformed.status, 400);
+    assert!(error_code(&malformed).is_some());
+    Ok(())
+}

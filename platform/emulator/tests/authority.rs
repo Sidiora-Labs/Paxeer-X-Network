@@ -386,3 +386,138 @@ fn emulator_refuses_authority_the_node_would_refuse() -> Result<(), String> {
     );
     Ok(())
 }
+
+fn conformance_hex(value: &str) -> Result<Vec<u8>, String> {
+    if value.is_empty() || value.len() % 2 != 0 || !value.bytes().all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte)) {
+        return Err("noncanonical conformance hexadecimal bytes".to_owned());
+    }
+    value.as_bytes().chunks_exact(2).map(|pair| {
+        let text = std::str::from_utf8(pair).map_err(|error| error.to_string())?;
+        u8::from_str_radix(text, 16).map_err(|error| error.to_string())
+    }).collect()
+}
+
+fn conformance_hex32(value: &serde_json::Value) -> Result<[u8; 32], String> {
+    conformance_hex(value.as_str().ok_or("missing canonical hexadecimal field")?)?
+        .try_into().map_err(|_| "expected 32 bytes".to_owned())
+}
+
+fn conformance_encode(bytes: &[u8]) -> String {
+    use std::fmt::Write as _;
+    let mut output = String::with_capacity(bytes.len() * 2);
+    for byte in bytes { let _ = write!(output, "{byte:02x}"); }
+    output
+}
+
+fn conformance_verified_state(state: &serde_json::Value, key: [u8; 32]) -> Result<serde_json::Value, String> {
+    let receipt = conformance_hex(state["receipt"].as_str().ok_or("head omitted receipt")?)?;
+    let verified = checked(layerx_proof::receipt::verify_sequencer_signature(&receipt, key))?;
+    let protocol = verified.protocol().ok_or("head is not a native receipt")?;
+    if protocol.protocol_version() != PROTOCOL_VERSION
+        || protocol.resulting_state_root() != conformance_hex32(&state["root"])?
+        || Some(protocol.global_sequence()) != state["sequence"].as_u64() {
+        return Err("state observation does not match its genuine signed head receipt".to_owned());
+    }
+    Ok(serde_json::json!({"root": state["root"], "sequence": state["sequence"]}))
+}
+
+fn conformance_verified_outcome(
+    row: &serde_json::Value,
+    observation: &serde_json::Value,
+    key: [u8; 32],
+    network: u32,
+) -> Result<serde_json::Value, String> {
+    use layerx_types::payload::{ActivityType, ModuleId, ModuleRegistration, ModuleRegistry};
+    let bytes = conformance_hex(observation["receipt"].as_str().ok_or("execution omitted receipt")?)?;
+    let decoded = checked(layerx_wire::receipt::decode(&bytes))?;
+    let protocol = decoded.protocol().ok_or("execution is not a native receipt")?;
+    let before = conformance_verified_state(&observation["receipt_before"], key)?;
+    let authorised = layerx_proof::receipt::AuthorizedBatch::new(
+        protocol.batch_id(), protocol.asset(), conformance_hex32(&before["root"])?,
+        protocol.resulting_state_root(), key,
+    );
+    let verified = checked(layerx_proof::receipt::verify_outcome(&bytes, &authorised))?;
+    let receipt = checked(layerx_wire::receipt::decode(verified.canonical_bytes()))?;
+    let protocol = receipt.protocol().ok_or("verified protocol receipt absent")?;
+    let types: Vec<ActivityType> = (1..=11).map(|ordinal| checked(ActivityType::new(ModuleId::Programs, ordinal))).collect::<Result<_, _>>()?;
+    let registration = checked(ModuleRegistration::new(ModuleId::Programs, &types))?;
+    let registry = checked(ModuleRegistry::new(&[registration]))?;
+    let activity_bytes = conformance_hex(row["activity"].as_str().ok_or("actual request absent")?)?;
+    let activity = checked(layerx_wire::activity::decode_signed(&activity_bytes, &registry))?;
+    if activity.network_id() != network
+        || activity.protocol_version() != PROTOCOL_VERSION
+        || checked(layerx_wire::hash::activity_id(&activity))? != protocol.activity_id()
+        || Some(i64::from(protocol.result_code())) != row["expected"]["result_code"].as_i64()
+        || layerx_types::result::ResultCode::from_raw(protocol.result_code()).known().is_none() {
+        return Err("receipt differs from the actual declared canonical operation or result".to_owned());
+    }
+    let abi = row["guest_abi"].as_u64().ok_or("declared guest ABI absent")?;
+    if abi != 0 && protocol.program_outcome().map(|outcome| u64::from(outcome.abi_version())) != Some(abi) {
+        return Err("actual receipt does not prove the declared guest ABI execution".to_owned());
+    }
+    let effects: Vec<serde_json::Value> = protocol.effects().iter().map(|effect| serde_json::json!({
+        "ordinal":effect.ordinal(), "module":effect.module_id(), "event":effect.event_type(),
+        "kind":effect.kind(), "monetary":effect.monetary(), "transfer_set_root":conformance_encode(&effect.transfer_set_root()),
+        "body":conformance_encode(effect.body()),
+    })).collect();
+    let units = protocol.total_units().map(|(actual, charged)| [actual.to_string(), charged.to_string()]);
+    Ok(serde_json::json!({
+        "canonical_unsigned":conformance_encode(&checked(layerx_wire::receipt::encode_unsigned(&receipt))?),
+        "result_code":protocol.result_code(), "module":protocol.module_id(), "module_version":protocol.module_version(),
+        "operation":protocol.operation(), "abi":abi, "effects":effects,
+        "amount":protocol.amount().to_string(), "fee_charged":protocol.fee_charged().to_string(), "total_units":units,
+    }))
+}
+
+fn conformance_compare(left: &serde_json::Value, right: &serde_json::Value) -> Result<(), String> {
+    if left != right { return Err("same-status canonical observation divergence".to_owned()); }
+    Ok(())
+}
+
+#[test]
+fn conformance_verifies_actual_signed_observations() -> Result<(), String> {
+    let path = std::env::var("PAXEER_X_CONFORMANCE_OBSERVATIONS")
+        .map_err(|_| "genuine served conformance observations are required".to_owned())?;
+    let bytes = std::fs::read(path).map_err(|error| error.to_string())?;
+    if bytes.is_empty() || bytes.len() > 16 * 1024 * 1024 { return Err("bounded nonempty observations required".to_owned()); }
+    let capture: serde_json::Value = serde_json::from_slice(&bytes).map_err(|error| error.to_string())?;
+    assert_eq!(capture["schema"], "layerx.emulator-conformance.observations.v1");
+    assert_eq!(capture["protocol_version"], PROTOCOL_VERSION);
+    let network = u32::try_from(capture["network_id"].as_u64().ok_or("network absent")?).map_err(|error| error.to_string())?;
+    let cases = capture["cases"].as_array().ok_or("nonempty actual cases required")?;
+    assert_eq!(cases.len(), 20);
+    let mut witnessed_state_failure = false;
+    for (index, row) in cases.iter().enumerate() {
+        let id = row["id"].as_str().ok_or("case identifier absent")?;
+        let mut compared = Vec::new();
+        for environment in ["emulator", "hosted"] {
+            let key = conformance_hex32(&capture["pins"][environment])?;
+            assert_ne!(key, [0; 32]);
+            let observed = &row[environment];
+            let state = conformance_verified_state(&observed["state"], key)?;
+            let before = conformance_verified_state(&observed["before"], key)?;
+            if index == 0 { assert_eq!(before, capture["initial_state"], "actual initial state must match its signed known head"); }
+            let outcome = if row["kind"] == "rejection" {
+                assert_eq!(state, before, "refusal changed signed state");
+                serde_json::json!({"status":observed["status"], "error":observed["error"], "stage":observed["stage"]})
+            } else {
+                let outcome = conformance_verified_outcome(row, observed, key, network)?;
+                assert_eq!(outcome, row["expected"]["observation"], "{id}: undeclared effect or metered cost");
+
+                outcome
+            };
+            if !witnessed_state_failure && state != before {
+                let left = serde_json::json!({"status":200, "state":before});
+                let right = serde_json::json!({"status":200, "state":state});
+                assert!(conformance_compare(&left, &right).is_err(), "same-status different genuine signed state must be refused");
+                witnessed_state_failure = true;
+            }
+            compared.push(serde_json::json!({"outcome":outcome, "state":state}));
+        }
+        conformance_compare(&compared[0], &compared[1]).map_err(|error| format!("{id}: {error}"))?;
+        println!("EMULATOR_CONFORMANCE_CASE {id}");
+    }
+    assert!(witnessed_state_failure);
+    println!("EMULATOR_CONFORMANCE_COMPARATOR different-state");
+    Ok(())
+}

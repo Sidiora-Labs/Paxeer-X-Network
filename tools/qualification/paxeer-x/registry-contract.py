@@ -11,6 +11,7 @@ import ssl
 import signal
 import time
 import uuid
+from urllib.parse import urlsplit
 import argparse
 import hashlib
 import json
@@ -27,6 +28,7 @@ SCHEMA = 'paxeer-x.candidate.v1'
 RESULT = re.compile(r'^test (\S+) \.\.\. (\S+)$', re.M)
 
 CASES = {
+    'emulator-conformance': {'tests': {'conformance_verifies_actual_signed_observations': 'canonical production receipt verification and comparator refusals'}},
     'guest-abi-discovery': {'tests': {'native_interfaces::guest_abi_discovery': 'real native and served ABI discovery contract'}},
     'durable-verification-idempotency': {
         'tests': {
@@ -605,14 +607,410 @@ def discovery_contract(artifacts):
     print('registry-contract: private discovery evidence ' + str(output), flush=True)
     return len(markers) + publication_count + 1
 
+
+CONFORMANCE_CASES = {f'abi{abi}-{kind}' for abi in range(1, 5)
+                     for kind in ('execute', 'refuse', 'replay', 'restart')}
+CONFORMANCE_CASES |= {'malformed-envelope', 'invalid-signature', 'unknown-abi', 'forbidden-downgrade'}
+
+
+def exact_fields(value, fields, label):
+    require(isinstance(value, dict) and set(value) == set(fields), label + ' closed fields')
+
+
+def strict_json(raw):
+    def unique(pairs):
+        value = {}
+        for key, item in pairs:
+            require(key not in value, 'duplicate JSON field: ' + key)
+            value[key] = item
+        return value
+    return json.loads(raw, object_pairs_hook=unique,
+                      parse_constant=lambda _: (_ for _ in ()).throw(ValueError('nonfinite JSON value')))
+
+
+def conformance_corpus(path):
+    data = Path(path).read_bytes()
+    require(0 < len(data) <= 4 * 1024 * 1024, 'nonempty bounded conformance corpus')
+    value = strict_json(data)
+    exact_fields(value, {'schema', 'network_id', 'protocol_version', 'case_count', 'initial_state',
+                         'normalization', 'cases'}, 'conformance corpus')
+    require(value['schema'] == 'layerx.emulator-conformance.corpus.v1', 'conformance corpus version')
+    require(type(value['network_id']) is int and 0 < value['network_id'] <= 0xffffffff
+            and value['protocol_version'] == 3, 'explicit native network/protocol')
+    require(isinstance(value['initial_state'], dict) and value['initial_state'], 'declared known initial state')
+    exact_fields(value['normalization'], {'state', 'error', 'receipt'}, 'normalization')
+    allowed = {'state': {'network_mode', 'batch_cadence'}, 'error': {'trace_id'}, 'receipt': {'sequencer_signature'}}
+    for kind, entries in value['normalization'].items():
+        require(isinstance(entries, dict) and set(entries) <= allowed[kind]
+                and all(isinstance(reason, str) and reason.strip() for reason in entries.values()),
+                'only explicitly justified environment metadata normalization')
+    require(type(value['case_count']) is int and value['case_count'] == len(CONFORMANCE_CASES)
+            and isinstance(value['cases'], list) and len(value['cases']) == value['case_count'],
+            'exact required case count')
+    require(set(value['normalization']['receipt']) == {'sequencer_signature'},
+            'explicit justification for independently verified environment signatures')
+    stages = {
+        'decode': {'LXP_ERR_TRUNCATED', 'LXP_ERR_TRAILING_BYTES', 'LXP_ERR_NON_CANONICAL', 'LXP_ERR_MALFORMED_ENVELOPE', 'malformed_activity', 'non_canonical_activity', 'invalid_argument'},
+        'signature': {'LXP_ERR_BAD_SIGNATURE', 'bad_signature'},
+        'protocol': {'LXP_ERR_VERSION_UNSUPPORTED', 'LXP_ERR_WRONG_NETWORK', 'version_unsupported', 'wrong_network'},
+    }
+    names = set()
+    for row in value['cases']:
+        exact_fields(row, {'id', 'kind', 'guest_abi', 'activity', 'idempotency_key', 'expected', 'replay_of'}, 'case')
+        require(isinstance(row['id'], str) and row['id'] in CONFORMANCE_CASES and row['id'] not in names, 'unique required case identity')
+        names.add(row['id'])
+        require(row['kind'] in ('execute', 'refuse', 'replay', 'restart', 'rejection'), 'declared case kind')
+        require(type(row['guest_abi']) is int and row['guest_abi'] in (0, 1, 2, 3, 4), 'declared ABI')
+        if row['id'].startswith('abi'):
+            abi, kind = row['id'].split('-')
+            require(row['guest_abi'] == int(abi[3:]) and row['kind'] == kind, 'ABI/kind coverage binding')
+        else:
+            require(row['guest_abi'] == 0 and row['kind'] in ('rejection', 'refuse'), 'declared negative case')
+        require(isinstance(row['activity'], str) and re.fullmatch('(?:[0-9a-f]{2})+', row['activity']) is not None
+                and len(row['activity']) <= 2 * 1024 * 1024, 'actual bounded canonical activity bytes')
+        require(isinstance(row['idempotency_key'], str) and re.fullmatch('[A-Za-z0-9_-]{16,128}', row['idempotency_key']) is not None,
+                'declared bounded idempotency key')
+        exact_fields(row['expected'], {'status', 'result_code', 'error_code', 'stage', 'observation'}, 'expected outcome')
+        expected = row['expected']
+        if row['kind'] == 'rejection':
+            require(expected['status'] in (400, 409, 422) and expected['result_code'] is None
+                    and isinstance(expected['error_code'], str) and expected['error_code']
+                    and expected['stage'] in stages and expected['error_code'] in stages[expected['stage']]
+                    and expected['observation'] is None, 'explicit protocol refusal, never authentication/transport')
+        else:
+            require(expected['status'] == 200 and type(expected['result_code']) is int
+                    and expected['error_code'] is None and expected['stage'] == 'receipt'
+                    and isinstance(expected['observation'], dict) and expected['observation'],
+                    'declared actual signed receipt observation')
+            require((expected['result_code'] < 0) == (row['kind'] == 'refuse'), 'positive/negative execution taxonomy')
+        if row['kind'] in ('replay', 'restart'):
+            require(isinstance(row['replay_of'], str) and row['replay_of'] in names and row['replay_of'] != row['id'], 'prior successful original request')
+            original = next(item for item in value['cases'] if item['id'] == row['replay_of'])
+            require(original['kind'] == 'execute' and original['guest_abi'] == row['guest_abi']
+                    and original['activity'] == row['activity'] and original['idempotency_key'] == row['idempotency_key'],
+                    'resume exact original canonical activity and request identity')
+        else:
+            require(row['replay_of'] is None, 'non-replay has no original reference')
+    require(names == CONFORMANCE_CASES, 'all supported ABIs and declared negatives required')
+    exact_fields(value['initial_state'], {'root', 'sequence'}, 'known initial state')
+    require(isinstance(value['initial_state']['root'], str) and re.fullmatch('[0-9a-f]{64}', value['initial_state']['root']) is not None
+            and type(value['initial_state']['sequence']) is int and value['initial_state']['sequence'] > 0, 'genuine known head')
+    return value
+
+
+def conformance_artifacts(candidate_digest):
+    path = os.environ.get('PAXEER_X_EMULATOR_CONFORMANCE_ARTIFACTS')
+    require(path, 'missing genuine equivalent-state emulator/hosted fixture: PAXEER_X_EMULATOR_CONFORMANCE_ARTIFACTS')
+    private = Path(path).resolve(strict=True)
+    require(private.is_file() and private.stat().st_mode & 0o077 == 0, 'private conformance artifact manifest')
+    value = strict_json(private.read_bytes())
+    exact_fields(value, {'schema', 'candidate_manifest_sha256', 'source_revision', 'source_files', 'artifacts',
+                         'fixture_root', 'environments', 'sequencer_public_keys', 'initialization', 'corpus_file'}, 'genuine conformance artifact manifest')
+    require(value['schema'] == 'paxeer-x.emulator-conformance-artifacts.v1'
+            and value['candidate_manifest_sha256'] == candidate_digest, 'conformance candidate binding')
+    require(value['source_revision'] == subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip()
+            and not subprocess.check_output(['git', 'status', '--porcelain'], cwd=ROOT), 'clean immutable conformance candidate')
+    paths = {'platform/emulator/tests/conformance.sh', 'platform/emulator/tests/gateway.rs',
+             'platform/emulator/tests/authority.rs', 'tools/qualification/paxeer-x/registry-contract.py',
+             'platform/emulator/src/main.rs', 'platform/emulator/core/emulator_core.c',
+             'platform/hosted/agent-boundary/src/main.rs'}
+    require(isinstance(value['source_files'], dict) and set(value['source_files']) == paths, 'exact conformance source inventory')
+    for name, digest in value['source_files'].items():
+        require(hashlib.sha256((ROOT / name).read_bytes()).hexdigest() == digest, 'conformance source binding: ' + name)
+    require(isinstance(value['artifacts'], dict) and set(value['artifacts']) == {'emulator', 'hosted', 'gateway-tests', 'authority-tests'}, 'real prebuilt conformance artifacts')
+    for name, row in value['artifacts'].items():
+        exact_fields(row, {'path', 'sha256'}, 'actual prebuilt artifact')
+        binary = Path(row['path']).resolve(strict=True)
+        require(binary.is_file() and os.access(binary, os.X_OK)
+                and hashlib.sha256(binary.read_bytes()).hexdigest() == row['sha256'], 'artifact identity: ' + name)
+    require(isinstance(value['environments'], dict) and set(value['environments']) == {'emulator', 'hosted'}
+            and isinstance(value['sequencer_public_keys'], dict) and set(value['sequencer_public_keys']) == {'emulator', 'hosted'}, 'two actual environment and authority bindings')
+    for key in value['sequencer_public_keys'].values():
+        require(isinstance(key, str) and re.fullmatch('[0-9a-f]{64}', key) is not None and key != '0' * 64, 'actual independently provisioned sequencer public key')
+    require(isinstance(value['initialization'], list), 'actual deterministic initialization activities')
+    root = Path(value['fixture_root']).resolve(strict=True)
+    require(root != ROOT and not root.is_relative_to(ROOT) and root.stat().st_mode & 0o077 == 0
+            and (root / '.emulator-conformance-fixture').is_file(), 'dedicated genuine fixture root')
+    return value
+
+
+class ConformanceProcess:
+    def __init__(self, name, artifacts, directory):
+        self.name = name
+        self.config = artifacts['environments'][name]
+        self.binary = artifacts['artifacts'][name]['path']
+        self.directory = directory
+        self.url = urlsplit(self.config['url'])
+        require(self.url.scheme in ('http', 'https') and self.url.hostname == '127.0.0.1'
+                and self.url.port and self.url.path in ('', '/') and not self.url.query
+                and not self.url.username and not self.url.password, 'private loopback test environment')
+        environment_file = Path(self.config['environment_file']).resolve(strict=True)
+        require(not environment_file.name.startswith('.env') and environment_file.stat().st_mode & 0o077 == 0,
+                'private disposable fixture environment JSON')
+        configured = strict_json(environment_file.read_bytes())
+        require(isinstance(configured, dict) and all(isinstance(k, str) and isinstance(v, str)
+                for k, v in configured.items()), 'actual fixture environment values')
+        self.environment = {key: item for key, item in os.environ.items() if not key.startswith('LAYERX_')}
+        self.environment.update(configured)
+        fixture = Path(artifacts['fixture_root']).resolve(strict=True)
+        if name == 'hosted':
+            for key in ('LAYERX_AGENT_BOUNDARY_STATE_DIR', 'LAYERX_AGENT_BOUNDARY_LNI_SOCKET'):
+                require(key in configured and Path(configured[key]).resolve().is_relative_to(fixture), 'dedicated actual hosted state/socket')
+        self.arguments = self.config['arguments']
+        require(isinstance(self.arguments, list) and all(isinstance(item, str) for item in self.arguments), 'actual production process arguments')
+        require(name != 'emulator' or self.arguments[:2] == ['emulator', 'up'], 'real CLI emulator owner')
+        self.token = Path(self.config['token_file']).read_text().strip() if self.config['token_file'] else None
+        self.context = ssl.create_default_context(cafile=self.config['ca_file']) if self.url.scheme == 'https' else None
+        if self.context is not None and self.config.get('client_cert_file') is not None:
+            self.context.load_cert_chain(self.config['client_cert_file'], self.config['client_key_file'])
+        self.process = None
+        self.log = None
+
+    def start(self):
+        self.log = (self.directory / (self.name + '-' + uuid.uuid4().hex + '.log')).open('xb')
+        os.chmod(self.log.name, 0o600)
+        self.process = subprocess.Popen([self.binary, *self.arguments], cwd=self.directory,
+                                        env=self.environment, stdin=subprocess.DEVNULL,
+                                        stdout=self.log, stderr=self.log, start_new_session=True)
+        deadline = time.monotonic() + 45
+        while time.monotonic() < deadline:
+            require(self.process.poll() is None, 'actual ' + self.name + ' startup refusal; private log ' + self.log.name)
+            try:
+                status, body = self.request('GET', '/healthz' if self.name == 'emulator' else '/readyz', b'')
+                if status == 200:
+                    document = strict_json(body)
+                    result = document.get('result', document)
+                    require(result.get('status') == 'ready' if self.name == 'emulator' else result.get('ready') is True, 'real readiness verdict')
+                    return
+            except (OSError, http.client.HTTPException):
+                pass
+            time.sleep(0.1)
+        raise RuntimeError(self.name + ' readiness deadline')
+
+    def stop(self):
+        if self.process is not None:
+            if self.process.poll() is None:
+                os.killpg(self.process.pid, signal.SIGTERM)
+                try:
+                    self.process.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    os.killpg(self.process.pid, signal.SIGKILL)
+                    self.process.wait(timeout=5)
+            self.process = None
+        if self.log is not None:
+            self.log.close()
+            self.log = None
+
+    def request(self, method, path, body, content_type='application/json', key=None):
+        require(path.startswith('/') and not path.startswith('//'), 'local production route')
+        connection = (http.client.HTTPSConnection(self.url.hostname, self.url.port, context=self.context, timeout=20)
+                      if self.context else http.client.HTTPConnection(self.url.hostname, self.url.port, timeout=20))
+        headers = {'Content-Type': content_type, 'Connection': 'close'}
+        if self.token:
+            headers['Authorization'] = 'Bearer ' + self.token
+        if key:
+            headers['Idempotency-Key'] = key
+        try:
+            connection.request(method, path, body=body, headers=headers)
+            response = connection.getresponse()
+            payload = response.read(4 * 1024 * 1024 + 1)
+            require(len(payload) <= 4 * 1024 * 1024, 'bounded actual response')
+            require(response.status not in (401, 403, 429, 500, 502, 503, 504), 'transport/authentication/unavailable is never protocol parity')
+            return response.status, payload
+        finally:
+            connection.close()
+
+    def state(self, case):
+        if self.name == 'emulator':
+            status, body = self.request('GET', '/v1/state', b'')
+            require(status == 200, 'real emulator state collection')
+            state = strict_json(body)['result']
+            sequence = state['next_sequence'] - 1
+            root = state['receipt_state_root']
+            path = self.config['head_receipt_paths'][case]
+            require(re.fullmatch('/v1/receipts/[0-9a-f]{64}', path) is not None, 'actual retained emulator head receipt')
+            status, body = self.request('GET', path, b'')
+            require(status == 200, 'actual retained head receipt must exist')
+            receipt = strict_json(body)['result']['receipt']
+        else:
+            address = urlsplit(self.config['state_url'])
+            require(address.scheme == 'http' and address.hostname == '127.0.0.1' and address.port
+                    and address.path == '/v1/protocol/account-state/head' and not address.query
+                    and not address.username and not address.password, 'actual private native state-head producer')
+            connection = http.client.HTTPConnection(address.hostname, address.port, timeout=20)
+            try:
+                connection.request('GET', address.path, headers={'Connection': 'close'})
+                response = connection.getresponse()
+                raw = response.read(4 * 1024 * 1024 + 1)
+                require(response.status == 200 and len(raw) <= 4 * 1024 * 1024, 'real native state-head collection')
+                document = strict_json(raw)
+            finally:
+                connection.close()
+            require(document['current'] is True, 'fresh native head observation')
+            root, sequence, receipt = document['state_root'], document['observed_sequence'], document['receipt_hex']
+        require(re.fullmatch('[0-9a-f]{64}', root) is not None and type(sequence) is int and sequence > 0
+                and re.fullmatch('(?:[0-9a-f]{2})+', receipt) is not None, 'canonical signed head observation')
+        return {'root': root, 'sequence': sequence, 'receipt': receipt}
+
+    def restart(self, previous):
+        snapshot = None
+        if self.name == 'emulator':
+            status, snapshot = self.request('GET', '/__emulator/snapshot', b'')
+            require(status == 200 and snapshot, 'real authenticated emulator recovery snapshot')
+            path = self.directory / ('recovery-' + uuid.uuid4().hex + '.snapshot')
+            path.write_bytes(snapshot)
+            os.chmod(path, 0o600)
+        before = self.state(previous)
+        self.stop()
+        self.start()
+        if snapshot is not None:
+            status, body = self.request('PUT', '/__emulator/snapshot', snapshot, 'application/octet-stream')
+            require(status == 200 and strict_json(body)['result']['imported'] is True, 'actual snapshot restore')
+        require(self.state(previous) == before, 'real process restart preserves exact signed state')
+
+
+def conformance_invalid_corpora(corpus, directory):
+    valid = json.dumps(corpus, separators=(',', ':')).encode()
+    mutations = {'empty': b'', 'comment-only': b'# no activity cases\n', 'malformed-json': b'{'}
+    for name in ('wrong-count', 'missing-abi', 'duplicate-case', 'unknown-abi', 'unjustified-normalization'):
+        changed = strict_json(valid)
+        if name == 'wrong-count':
+            changed['case_count'] += 1
+        elif name == 'missing-abi':
+            changed['cases'].pop()
+        elif name == 'duplicate-case':
+            changed['cases'][-1] = changed['cases'][0]
+        elif name == 'unknown-abi':
+            changed['cases'][0]['guest_abi'] = 5
+        else:
+            changed['normalization']['state']['root'] = 'forbidden removal of committed state'
+        mutations[name] = json.dumps(changed, separators=(',', ':')).encode()
+    for name, raw in mutations.items():
+        path = directory / ('invalid-' + name + '.json')
+        path.write_bytes(raw)
+        os.chmod(path, 0o600)
+        try:
+            conformance_corpus(path)
+        except (RuntimeError, ValueError):
+            print('EMULATOR_CONFORMANCE_INPUT_CASE ' + name, flush=True)
+        else:
+            raise RuntimeError('invalid corpus admitted: ' + name)
+    return len(mutations)
+
+
+def conformance_contract(artifacts, corpus):
+    root = Path(artifacts['fixture_root'])
+    directory = root / ('conformance-' + uuid.uuid4().hex)
+    directory.mkdir(mode=0o700)
+    input_count = conformance_invalid_corpora(corpus, directory)
+    servers = {name: ConformanceProcess(name, artifacts, directory) for name in ('emulator', 'hosted')}
+    observations = []
+    previous = {}
+    try:
+        for server in servers.values():
+            server.start()
+        for initialization in artifacts['initialization']:
+            exact_fields(initialization, {'activity', 'idempotency_key'}, 'genuine deterministic initialization')
+            require(re.fullmatch('(?:[0-9a-f]{2})+', initialization['activity']) is not None, 'actual signed initialization activity')
+            for server in servers.values():
+                status, body = server.request('POST', '/v1/activities', bytes.fromhex(initialization['activity']),
+                                              'application/octet-stream', initialization['idempotency_key'])
+                require(status == 200 and strict_json(body)['result']['state'] == 'completed', 'real deterministic fixture initialization')
+        for name, server in servers.items():
+            state = server.state('initial')
+            require({key: state[key] for key in ('root', 'sequence')} == corpus['initial_state'], 'equivalent declared initial state: ' + name)
+        prior_case = 'initial'
+        for row in corpus['cases']:
+            observation = {'id': row['id'], 'expected': row['expected'], 'guest_abi': row['guest_abi'], 'kind': row['kind'], 'activity': row['activity']}
+            for name, server in servers.items():
+                if row['kind'] == 'restart':
+                    server.restart(prior_case)
+                before = server.state(prior_case)
+                request = bytes.fromhex(row['activity'])
+                status, raw = server.request('POST', '/v1/activities', request, 'application/octet-stream', key=row['idempotency_key'])
+                body = strict_json(raw)
+                require(isinstance(body, dict) and status == row['expected']['status'], 'actual expected operation/refusal status')
+                after = server.state(row['id'])
+                state = dict(after)
+                if row['kind'] == 'rejection':
+                    require(before == after, 'preexecution refusal preserves actual state')
+                    error = body.get('error')
+                    require(isinstance(error, dict) and error.get('code') == row['expected']['error_code'], 'exact protocol error taxonomy')
+                    error = dict(error)
+                    for field in corpus['normalization']['error']:
+                        error.pop(field, None)
+                    outcome = {'status': status, 'error': error, 'stage': row['expected']['stage'], 'state': state, 'before': before}
+                else:
+                    result = body.get('result')
+                    require(isinstance(result, dict) and isinstance(result.get('receipt'), str), 'actual canonical receipt execution')
+                    receipt = result['receipt']
+                    require(re.fullmatch('(?:[0-9a-f]{2})+', receipt), 'lowerhex actual receipt')
+                    outcome = {'status': status, 'receipt': receipt, 'state': state, 'before': before}
+                outcome['receipt_before'] = (previous[(name, row['replay_of'])]['receipt_before']
+                                             if row['kind'] in ('replay', 'restart') else before)
+                if row['kind'] in ('replay', 'restart'):
+                    original = previous[(name, row['replay_of'])]
+                    require({key: item for key, item in outcome.items() if key != 'before'}
+                            == {key: item for key, item in original.items() if key != 'before'}, 'exact original canonical replay after real restart')
+                previous[(name, row['id'])] = outcome
+                observation[name] = outcome
+            observations.append(observation)
+            prior_case = row['id']
+        capture = {'schema': 'layerx.emulator-conformance.observations.v1', 'network_id': corpus['network_id'],
+                   'protocol_version': corpus['protocol_version'], 'initial_state': corpus['initial_state'], 'pins': artifacts['sequencer_public_keys'], 'cases': observations}
+        path = directory / 'observations.json'
+        path.write_text(json.dumps(capture, separators=(',', ':')))
+        os.chmod(path, 0o600)
+        environment = dict(os.environ, PAXEER_X_CONFORMANCE_OBSERVATIONS=str(path))
+        binary = artifacts['artifacts']['authority-tests']['path']
+        command = [binary, '--exact', 'conformance_verifies_actual_signed_observations', '--nocapture', '--test-threads=1']
+        result = subprocess.run(command, cwd=ROOT, env=environment, capture_output=True, text=True, timeout=120)
+        sys.stdout.write(result.stdout)
+        sys.stdout.write(result.stderr)
+        require(re.findall(r'^test (\S+) \.\.\.', result.stdout, re.M)
+                == ['conformance_verifies_actual_signed_observations'], 'exact production comparator execution')
+        require(result.returncode == 0 and re.findall(r'^test result: ok\. (\d+) passed; (\d+) failed; (\d+) ignored;', result.stdout, re.M) == [('1', '0', '0')],
+                'actual canonical verifier/comparator must execute once without skips')
+        markers = re.findall(r'^EMULATOR_CONFORMANCE_CASE ([A-Za-z0-9_-]+)$', result.stdout, re.M)
+        require(len(markers) == len(set(markers)) and set(markers) == CONFORMANCE_CASES,
+                'all required parity cases actually verified')
+        require(re.findall(r'^EMULATOR_CONFORMANCE_COMPARATOR ([a-z-]+)$', result.stdout, re.M)
+                == ['different-state'], 'actual comparator failure cases required')
+        gateway = subprocess.run([artifacts['artifacts']['gateway-tests']['path'], '--exact',
+                                  'conformance_gateway_collects_real_receipts_and_rejects_transport_lookalikes',
+                                  '--nocapture', '--test-threads=1'], cwd=ROOT, env=environment,
+                                 capture_output=True, text=True, timeout=120)
+        sys.stdout.write(gateway.stdout)
+        sys.stdout.write(gateway.stderr)
+        require(re.findall(r'^test (\S+) \.\.\.', gateway.stdout, re.M)
+                == ['conformance_gateway_collects_real_receipts_and_rejects_transport_lookalikes'], 'exact actual gateway case execution')
+        require(gateway.returncode == 0 and re.findall(r'^test result: ok\. (\d+) passed; (\d+) failed; (\d+) ignored;', gateway.stdout, re.M) == [('1', '0', '0')],
+                'real gateway observation and refusal case must execute once')
+        for name, entry in artifacts['artifacts'].items():
+            require(hashlib.sha256(Path(entry['path']).read_bytes()).hexdigest() == entry['sha256'], 'artifact changed during conformance: ' + name)
+        return len(markers) + 2 + input_count
+    finally:
+        for server in servers.values():
+            server.stop()
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument('--case', required=True, choices=sorted(CASES))
     parser.add_argument('--candidate-manifest', required=True)
+    parser.add_argument('--corpus')
+    parser.add_argument('--emulator-url')
+    parser.add_argument('--hosted-url')
     arguments = parser.parse_args()
     digest = manifest(arguments.candidate_manifest)
     print('registry-contract: candidate manifest sha256 ' + digest)
-    if arguments.case == 'guest-abi-discovery':
+    if arguments.case == 'emulator-conformance':
+        artifacts = conformance_artifacts(digest)
+        for name, supplied in [('emulator', arguments.emulator_url), ('hosted', arguments.hosted_url)]:
+            require(supplied is None or supplied == artifacts['environments'][name]['url'], 'URL bound to genuine fixture process')
+        corpus = conformance_corpus(arguments.corpus or artifacts['corpus_file'])
+        count = conformance_contract(artifacts, corpus)
+    elif arguments.case == 'guest-abi-discovery':
         count = discovery_contract(discovery_artifacts(digest))
     else:
         artifacts = artifact_manifest(digest)
