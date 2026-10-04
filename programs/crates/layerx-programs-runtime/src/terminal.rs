@@ -952,6 +952,7 @@ impl<'a> Cursor<'a> {
 mod source_vectors {
     use super::{
         decode_terminal_payload, CandidateTerminalOutcome, ExecutionTerminal, TerminalDetail,
+        EXECUTION_V4, EXECUTION_V5,
     };
 
     #[test]

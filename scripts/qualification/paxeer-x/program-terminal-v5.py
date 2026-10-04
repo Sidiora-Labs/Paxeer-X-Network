@@ -21,8 +21,8 @@ SCHEMA = 'paxeer-x.program-terminal-v5-artifacts.v1'
 PIN = 'b4f05aee172965774743f4cd7de4c3621c9e36fd77af7139aafec25eb3fb3360'
 CASES = {f'abi{abi}-{outcome}' for abi in (3, 4)
     for outcome in ('success', 'failure', 'resource', 'callback', 'settlement')}
-RUST_CASES = ('terminal::tests::execution_v5_closed_profile_and_abi_binding',
-    'terminal::tests::current_candidate_v4_success_decodes_exactly')
+RUST_CASES = ('terminal::source_vectors::execution_v5_closed_profile_and_abi_binding',
+    'terminal::source_vectors::current_candidate_v4_success_decodes_exactly')
 
 
 def build(output):
