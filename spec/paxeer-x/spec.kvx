@@ -27194,7 +27194,7 @@ do_4 = "Publish the offer, the lease and the settlement as readable protocol sta
 do_5 = "Keep the marketplace an ordinary program with no privileged authority, subject to the same monetary law and the same composition bounds as any other."
 do_6 = "Test the full lifecycle including a provider that never delivers, a renter that never funds and a lease that expires mid-work."
 do_7 = "Provide this task selector in tools/paxeer-x/gates and execute the full scoped acceptance contract using real production paths. Preserve the retained verification command coverage; move aggregate matrices to release scope and refuse an unknown or unimplemented selector."
-touches = ["programs/crates/layerx-programs-market/src/lib.rs", "tools/paxeer-x/gates/104.35.4.sh", "programs/crates/layerx-programs-runtime/src/market_tests.rs", "programs/crates/layerx-programs-runtime/src/lib.rs"]
+touches = ["programs/crates/layerx-programs-market/src/lib.rs", "tools/paxeer-x/gates/104.35.4.sh", "programs/crates/layerx-programs-runtime/src/market_tests.rs", "programs/crates/layerx-programs-runtime/src/lib.rs", "programs/crates/layerx-programs-runtime/src/execute.rs"]
 verify_cmd = "timeout 30m tools/paxeer-x/verify-task.sh 104.35.4"
 gate_kind = "planned-adapter"
 max_builds = 0
@@ -27216,7 +27216,7 @@ fanout_basis = "Owner requested maximum parallel implementation on 2026-10-04; d
 source_status = "complete"
 completion_basis = "implementation under owner CONSTITUTION; qualification separately recorded"
 qualification_status = "UNRUN"
-source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/task104.35.4-intake.json"
+source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/task104.35.4-registration-intake.json"
 
 [task.104.38.3]
 title = "Ship the privileged human component server"

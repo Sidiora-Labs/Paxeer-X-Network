@@ -56,8 +56,8 @@ runtime = binary('LAYERX_MARKET_RUNTIME_TEST_BINARY')
 inventory = execute(runtime, ['--list'], 'runtime-inventory')
 declared = set(re.findall(r'^(.+): test$', inventory, re.M))
 for case in [
-    'market_tests::compiled_market_funding_expiry_public_settlement_and_close',
-    'market_tests::compiled_market_refuses_unfunded_and_unauthorized_payments_atomically',
+    'execute::market_tests::compiled_market_funding_expiry_public_settlement_and_close',
+    'execute::market_tests::compiled_market_refuses_unfunded_and_unauthorized_payments_atomically',
     'transfer::tests::owner_frame_and_cumulative_program_spend_boundaries_are_closed',
     'transfer::tests::program_authority_refuses_wrong_seed_program_and_source_typed',
 ]:

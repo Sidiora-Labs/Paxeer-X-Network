@@ -5754,3 +5754,7 @@ pub fn instantiate_market_sandbox_untrusted(
     }
     Ok(instance)
 }
+
+#[cfg(test)]
+#[path = "market_tests.rs"]
+mod market_tests;
