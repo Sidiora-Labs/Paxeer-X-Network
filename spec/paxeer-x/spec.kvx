@@ -34075,7 +34075,7 @@ verify_log_path = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-103.6.12-ve
 
 [task.104.13.28]
 title = "Connect explicit native purpose and grant consent signing through actual remote custody"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 4
 requires = ["0.2"]
@@ -34083,7 +34083,7 @@ reqs = ["1064.3", "1064.8", "1071.1", "1071.5"]
 do_1 = "Add an authenticated closed v2 native profile to the existing private attestor signing service for exact canonical NativePreparationPurposeV1 and explicit native grant consent. Preserve existing v1 signing kinds, policies, domains and unknown-kind refusals. Never permit arbitrary messages or derive authorization from omitted facts."
 do_2 = "Wire actual Human custody and KMS providers to those exact operations, binding owner key, tenant/session/generation, canonical activity/capability coordinates, purpose digest, expiry and domain. Signatures express explicit owner consent; Agent trusted-head, session, revocation and capability verification remains mandatory."
 do_3 = "Author genuine disposable signing/provider positive, foreign-owner, malformed, expired, insufficient-quorum, restart and replay cases using real key stores and TLS/TSS code, without operational signing or fake attestors. Native capability provisioning and Human approval-hold continuation remain separate unfinished consumers."
-touches = ["human/wallet/attestor/internal/server/server.go", "human/wallet/attestor/internal/server/sign.go", "human/wallet/attestor/internal/server/native_purpose.go", "human/wallet/attestor/internal/server/native_purpose_test.go", "human/wallet/attestor/internal/policy/native/native.go", "human/wallet/attestor/internal/config/config.go", "human/wallet/attestor/cmd/attestor/main.go", "human/crates/layerx-human-service/src/custody/mod.rs", "human/crates/layerx-human-service/src/custody/provider.rs", "human/crates/layerx-human-service/src/custody/signer.rs", "human/crates/layerx-human-service/src/server/production_components.rs", "human/crates/layerx-human-kms/src/attestor.rs", "human/crates/layerx-human-kms/tests/attestor_native_profile.rs", "tools/qualification/paxeer-x/human_native_custody.py", "human/crates/layerx-human-kms/Cargo.toml", "human/Cargo.lock"]
+touches = ["human/wallet/attestor/internal/server/server.go", "human/wallet/attestor/internal/server/sign.go", "human/wallet/attestor/internal/server/native_purpose.go", "human/wallet/attestor/internal/server/native_purpose_test.go", "human/wallet/attestor/internal/policy/native/native.go", "human/wallet/attestor/internal/config/config.go", "human/wallet/attestor/cmd/attestor/main.go", "human/crates/layerx-human-service/src/custody/mod.rs", "human/crates/layerx-human-service/src/custody/provider.rs", "human/crates/layerx-human-service/src/custody/signer.rs", "human/crates/layerx-human-service/src/server/production_components.rs", "human/crates/layerx-human-kms/src/attestor.rs", "human/crates/layerx-human-kms/Cargo.toml", "human/Cargo.lock"]
 build_cmd = "timeout 20m python3 tools/qualification/paxeer-x/human_native_custody.py --build"
 verify_cmd = "timeout 20m python3 tools/qualification/paxeer-x/human_native_custody.py --candidate-manifest \"$PAXEER_X_CANDIDATE_MANIFEST\""
 max_builds = 1
@@ -34093,9 +34093,13 @@ time_limit_minutes = 30
 stop_condition = "Stop at original30-minute cap, missing genuine authority, unrelated failure or weakening; preserve exact source and evidence."
 completion_basis_policy = "Owner CONSTITUTION: fully implemented DONE; qualification separate and partial remains in_progress."
 source_ownership = "Exact paths only. Root owns Cargo dependency edges/lock, task state and publication. No production signing, deployment or credential access."
-implementation = "partial"
+implementation = "complete"
 qualification = "UNRUN"
-qualification_note = "Original 06:36 UTC cap reached with authentic Human passkey issuance and successful native-grant CustodySigner case missing; no format, build or verification run. Native signing source frozen; provisioning and held journey continuation remain separate."
+qualification_note = "Native signer and custody adapters completed by this task; missing genuine passkey issuer and successful grant corpus implemented by104.13.29. Qualification remains UNRUN pending its bounded gate."
+retained_contract_paths_104_13_29 = ["human/wallet/attestor/internal/server/server.go", "human/wallet/attestor/internal/server/sign.go", "human/wallet/attestor/internal/server/native_purpose.go", "human/wallet/attestor/internal/server/native_purpose_test.go", "human/wallet/attestor/internal/policy/native/native.go", "human/wallet/attestor/internal/config/config.go", "human/wallet/attestor/cmd/attestor/main.go", "human/crates/layerx-human-service/src/custody/mod.rs", "human/crates/layerx-human-service/src/custody/provider.rs", "human/crates/layerx-human-service/src/custody/signer.rs", "human/crates/layerx-human-service/src/server/production_components.rs", "human/crates/layerx-human-kms/src/attestor.rs", "human/crates/layerx-human-kms/tests/attestor_native_profile.rs", "tools/qualification/paxeer-x/human_native_custody.py", "human/crates/layerx-human-kms/Cargo.toml", "human/Cargo.lock"]
+delegated_passkey_corpus_task = "104.13.29"
+lease_transfer_authority_104_13_29 = "Owner approved inactive lease reassignment; task28 remains partial with all acceptance criteria intact."
+completion_basis = "implementation"
 
 [task.104.13.29]
 title = "Connect genuine passkey step-up issuance to native custody consent"

@@ -2429,3 +2429,8 @@ resolution = "Bind future clean candidate creation and dispatch to the same immu
 area = "Maintained custody receipt inclusion"
 observed = "The real boundary consumer omitted the newly required activity_receipt_proof field, causing the original adapter build to fail."
 resolution = "Consume it through the actual proof verifier with independently established sequencer authorization and preserve all prior root, sequence and signature assertions."
+
+[gotcha.706]
+area = "Native custody canonical semantics"
+observed = "NativeLocalGrantConsentV1 validation checks record bounds and expiry but does not itself establish full native capability and session semantics."
+resolution = "Parse and bind actual canonical capability and session constraints; signatures remain consent and never replace trusted native authorization."
