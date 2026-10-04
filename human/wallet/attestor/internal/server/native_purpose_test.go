@@ -24,6 +24,7 @@ import (
 
 	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/auth/agent"
 	nativepolicy "github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/policy/native"
+	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/tss/dealer"
 )
 
 func nativeText(out *bytes.Buffer, value string, width int) {
@@ -404,16 +405,70 @@ func nativeSendPurposeBytes(owner []byte, expiry uint64) []byte {
 	}
 	return out.Bytes()
 }
+func importNativeSendOwner(t *testing.T, c *testCluster, keyID, label, account string) (ed25519.PublicKey, *nativeInventoryAuthority) {
+	t.Helper()
+	seed := sha256.Sum256([]byte(label))
+	pub := ed25519.NewKeyFromSeed(seed[:]).Public().(ed25519.PublicKey)
+	scalar, err := dealer.Ed25519ScalarFromSeed(seed[:])
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer dealer.Wipe(scalar)
+	bundles, _, err := dealer.Split(dealer.Ed25519, scalar, c.ids)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(bundles) != dealer.Participants || len(c.nodes) != dealer.Participants {
+		t.Fatal("actual five-member ceremony")
+	}
+	participants := bundles[0].ParticipantIDs()
+	shares := make(map[string]ShareBundleJSON, len(bundles))
+	for _, bundle := range bundles {
+		if bundle.Threshold != dealer.Threshold || !sameIDs(bundle.ParticipantIDs(), participants) {
+			t.Fatal("actual ceremony share membership and threshold")
+		}
+		shares[bundle.ParticipantID] = EncodeBundle(bundle)
+	}
+	authority := nativeInventory(t, c, keyID, pub)
+	authority.keys[0].Operations = []string{"import"}
+	authority.publish(t)
+	results := c.callAll(t, c.nodes, PathImport, func(node *testNode) any {
+		share, ok := shares[node.id]
+		if !ok {
+			t.Errorf("actual ceremony share absent for %s", node.id)
+		}
+		return ImportRequest{CeremonyID: "native-send-import-" + keyID, SessionID: "import-" + keyID,
+			KeyID: keyID, Epoch: 0, PublicKey: hex.EncodeToString(pub), Participants: participants,
+			Threshold: dealer.Threshold, Owner: testOwner, Account: account, Share: share}
+	}, "")
+	responses := decodeOK[KeyResponse](t, "native send ceremony import", results)
+	if len(responses) != dealer.Participants {
+		t.Fatal("all actual ceremony import responses")
+	}
+	for i, node := range c.nodes {
+		response := responses[i]
+		if response.NodeID != node.id || response.KeyID != keyID || response.Curve != "ed25519" || response.PublicKey != hex.EncodeToString(pub) || response.Epoch != 0 || !sameIDs(response.Participants, participants) || response.AuditSequence == 0 {
+			t.Fatal("real imported ceremony response identity and audit")
+		}
+		record, payload, failure := node.server.loadShare(keyID)
+		if failure != nil || record.KeyID != keyID || record.Curve != "ed25519" || record.Epoch != 0 || !bytes.Equal(record.PublicKey, pub) || !sameIDs(record.Participants, participants) || payload.Owner != testOwner || payload.Account != account {
+			t.Fatal("actual stored ceremony owner public key account epoch and membership")
+		}
+	}
+	authority.keys[0].Operations = []string{"sign"}
+	authority.publish(t)
+	return pub, authority
+}
+
 func TestNativeSendPurposeRealProfiles(t *testing.T) {
 	seed := sha256.Sum256([]byte("native-send-disposable-owner"))
 	pub := ed25519.NewKeyFromSeed(seed[:]).Public().(ed25519.PublicKey)
 	document := &nativepolicy.Document{Version: 2, Rules: []nativepolicy.Rule{{KeyID: "native-owner", Owner: testOwner, Tenant: "tenant-a", AgentDID: "did:layerx:alice", OwnerPublicKey: hex.EncodeToString(pub), Operations: []string{NativeSendPurpose, NativeLocalGrantConsent}, Capabilities: []string{strings.Repeat("22", 32)}, MaximumValidityMS: 700000, RatePerMinute: 1000}}}
 	c := newTestClusterWith(t, 5, true, testPolicy(), func(o *Options) { o.NativePolicy = document })
-	imported := importKernelKey(t, c, "native-owner", "native-send-disposable-owner", "0x9999999999999999999999999999999999999999")
+	imported, authority := importNativeSendOwner(t, c, "native-owner", "native-send-disposable-owner", "0x9999999999999999999999999999999999999999")
 	if !bytes.Equal(imported, pub) {
 		t.Fatal("real imported owner key")
 	}
-	authority := nativeInventory(t, c, "native-owner", pub)
 	signers := []string{"node-1", "node-2", "node-3"}
 	expiry := uint64(time.Now().Add(10 * time.Minute).UnixMilli())
 	purpose := nativeSendPurposeBytes(pub, expiry)
