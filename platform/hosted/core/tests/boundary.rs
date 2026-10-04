@@ -2888,7 +2888,7 @@ fn start_configured_supervised_cluster(funded: bool) -> Cluster {
 fn supervisor_reset_rebuilds_genesis_and_replays_once() {
     let cluster = start_supervised_cluster();
     let certificates = certificates(&cluster.root);
-    let boundary = start_boundary(&cluster, &certificates);
+    let mut boundary = start_boundary(&cluster, &certificates);
     assert_eq!(boundary.core.get("/readyz").status, 200);
     let data = cluster.root.join("supervised-data");
     let manifest_path = data.join("genesis/genesis.manifest");
@@ -2933,6 +2933,62 @@ fn supervisor_reset_rebuilds_genesis_and_replays_once() {
             .0,
         head
     );
+    let reset_id = json(&first)["reset_id"]
+        .as_str()
+        .unwrap_or_else(|| panic!("stable caller reset identity"))
+        .to_owned();
+    let digest = hex_encode(&sha256(&[
+        format!("{{\"network\":{NETWORK_ID},\"operation\":\"reset\",\"reset_id\":\"{reset_id}\",\"version\":1}}")
+            .as_bytes(),
+    ]));
+    let mut supervisor = must(
+        UnixStream::connect(&boundary.supervisor_socket),
+        "real supervisor replay authority",
+    );
+    must(
+        supervisor.set_read_timeout(Some(Duration::from_secs(10))),
+        "real supervisor status timeout",
+    );
+    let status_request = serde_json::json!({
+        "version": 1, "operation": "status", "network": NETWORK_ID,
+        "reset_id": reset_id, "request_digest": digest,
+    });
+    must(
+        supervisor.write_all(format!("{status_request}\n").as_bytes()),
+        "actual versioned caller status request",
+    );
+    let mut status_reply = String::new();
+    must(supervisor.read_to_string(&mut status_reply), "actual caller status reply");
+    let status: serde_json::Value = must(
+        serde_json::from_str(&status_reply),
+        "actual caller status document",
+    );
+    assert_eq!(status["state"], "reset");
+    assert_eq!(status["reset_id"], reset_id);
+    assert_eq!(status["generation"], 2);
+    let cache = cluster.root.join("state/journal").join(format!(
+        "{}.json", hex_encode(&sha256(&[b"reset\0", b"real-reset"]))
+    ));
+    let journal = must(fs::read_to_string(&cache), "pre-effect reset intent");
+    let last: serde_json::Value = must(
+        serde_json::from_str(journal.lines().last().unwrap_or_else(|| panic!("reset intent record"))),
+        "retained reset intent document",
+    );
+    assert_eq!(last["status"], 202);
+    assert_eq!(
+        must(serde_json::from_str::<serde_json::Value>(last["body"].as_str().unwrap_or_else(|| panic!("reset pending body"))), "reset pending identity")["reset_id"],
+        reset_id,
+    );
+    boundary.process.stop();
+    drop(boundary);
+    must(fs::remove_file(&cache), "remove only core reset response cache");
+    let boundary = start_boundary(&cluster, &certificates);
+    let recovered = boundary.admin_post("/admin/v1/testnet/reset", "real-reset", "{}");
+    assert_eq!(recovered.status, first.status);
+    assert_eq!(recovered.body, first.body);
+    assert_eq!(must(fs::read_to_string(&generation), "generation after response cache loss"), "2");
+    assert_eq!(must(fs::read(data.join("keep-after-reset")), "new state after cache loss"), b"new data");
+    assert_eq!(chain_head(&cluster.lni_socket).unwrap_or_else(|| panic!("LNI recovered reset head")).0, head);
 }
 
 fn wait_for_supervisor(socket: &Path, supervisor: &mut Daemon) {
@@ -4108,6 +4164,15 @@ fn funded_receipt_archive_survives_actual_reset_and_refuses_storage_faults() {
     let original = boundary.admin_post("/admin/v1/testnet/fund", "retained-send", &body);
     assert_eq!(original.status, 200, "{}", original.body);
     assert_eq!(json(&original)["state"], "funded");
+    let response_intent = cluster.root.join("state/journal").join(format!(
+        "{}.json", hex_encode(&sha256(&[b"fund\0", b"retained-send"]))
+    ));
+    let pending_journal = must(fs::read_to_string(&response_intent), "pre-effect funding intent");
+    let pending_entry: serde_json::Value = must(
+        serde_json::from_str(pending_journal.lines().last().unwrap_or_else(|| panic!("funding intent record"))),
+        "pre-effect funding intent document",
+    );
+    assert_eq!(pending_entry["status"], 409);
     let activity = json(&original)["transaction_id"]
         .as_str()
         .unwrap_or_else(|| panic!("SEND identity"))

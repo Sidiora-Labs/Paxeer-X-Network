@@ -188,6 +188,47 @@ def group_processes(group):
     return result
 
 
+def pause_phase(state, reset_id, phase, group, output):
+    import ctypes
+    import select
+    import struct
+
+    library = ctypes.CDLL(None, use_errno=True)
+    descriptor = library.inotify_init1(os.O_CLOEXEC | os.O_NONBLOCK)
+    if descriptor < 0:
+        raise OSError(ctypes.get_errno(), 'actual reset state watch unavailable')
+    try:
+        if library.inotify_add_watch(descriptor, os.fsencode(state), 0x80) < 0:
+            raise OSError(ctypes.get_errno(), 'actual reset state directory watch unavailable')
+        write_private(Path(str(output) + '.ready'), b'ready\n')
+        deadline = time.monotonic() + 180
+        while time.monotonic() < deadline:
+            if not select.select([descriptor], [], [], 1)[0]:
+                continue
+            events = os.read(descriptor, 65536)
+            offset = 0
+            while offset < len(events):
+                _, mask, _, length = struct.unpack_from('iIII', events, offset)
+                name = events[offset + 16:offset + 16 + length].split(b'\0', 1)[0]
+                offset += 16 + length
+                if mask & (0x4000 | 0x8000):
+                    raise AssertionError('actual reset phase watch overflow or lost watch')
+                if name != b'state.json' or not mask & 0x80:
+                    continue
+                record = json.loads((state / 'state.json').read_bytes())['records'].get(reset_id)
+                if record is None or record['phase'] != phase:
+                    continue
+                os.killpg(group, signal.SIGSTOP)
+                frozen = json.loads((state / 'state.json').read_bytes())['records'][reset_id]
+                if frozen['phase'] != phase:
+                    raise AssertionError('actual process advanced beyond requested crash boundary')
+                write_private(output, canonical(frozen) + b'\n')
+                return
+        raise AssertionError('did not observe actual reset crash boundary ' + phase)
+    finally:
+        os.close(descriptor)
+
+
 class NodeProcesses:
     def __init__(self, work, profile, settlement, sequencer_seed, treasury_seed):
         from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
@@ -401,6 +442,31 @@ class NodeProcesses:
         finally:
             self.stop_role('sequencer')
 
+    def freeze_request(self, value, phase):
+        output = self.work / ('pause-' + value['reset_id'] + '-' + phase + '.json')
+        log = output.with_suffix('.log')
+        group = self.processes['sequencer'].pid
+        with log.open('wb') as stream:
+            watcher = subprocess.Popen([
+                sys.executable, str(Path(__file__).resolve()), '--pause-phase', str(self.state),
+                value['reset_id'], phase, str(group), str(output)],
+                cwd=ROOT, env=self.environment, stdin=subprocess.DEVNULL,
+                stdout=stream, stderr=stream, start_new_session=True)
+        try:
+            def ready():
+                assert watcher.poll() is None, 'actual phase watcher exited before readiness; log=' + str(log)
+                return Path(str(output) + '.ready').exists()
+            wait_until('actual phase watcher readiness', ready, 10)
+            exchange(self.socket, value, lost=True)
+            assert watcher.wait(timeout=190) == 0, 'actual phase watcher failed; log=' + str(log)
+            frozen = json.loads(output.read_bytes())
+            assert frozen == self.record(value['reset_id']) and frozen['phase'] == phase
+            return frozen
+        finally:
+            if watcher.poll() is None:
+                watcher.kill()
+                watcher.wait(timeout=5)
+
 
 class ActualResetRecovery(unittest.TestCase):
     completed_cases = []
@@ -417,6 +483,9 @@ class ActualResetRecovery(unittest.TestCase):
     def case(self, name):
         self.completed_cases.append(name)
         print('actual-reset-case: ' + name, flush=True)
+
+    def make_node(self, *arguments):
+        return NodeProcesses(*arguments)
 
     def test_actual_reset_identity_and_recovery(self):
         from custody_chain import boundaries, owned_chain
@@ -451,7 +520,7 @@ class ActualResetRecovery(unittest.TestCase):
                         ], cwd=ROOT, check=True, stdout=log, stderr=log, timeout=90)
                     self.assertEqual(profile.stat().st_size, 223)
                     withdraw.write_settlement(work, chain, withdraw.ANCHOR_ADDRESS, withdraw.ANCHOR_ADDRESS)
-                    node = NodeProcesses(work, profile, work / 'settlement.env', sequencer_seed, treasury_seed)
+                    node = self.make_node(work, profile, work / 'settlement.env', sequencer_seed, treasury_seed)
                     node.start()
                     self.exercise(node)
                     state_bytes = (node.state / 'state.json').read_bytes()
@@ -731,19 +800,161 @@ finally:
             self.assertEqual(result.stdout.decode().strip(), expected)
 
 
+class StagedResetRecovery(ActualResetRecovery):
+    def make_node(self, *arguments):
+        node = NodeProcesses(*arguments)
+        node.environment['LAYERX_NODE_RESET_STAGED_GENERATIONS'] = '1'
+        return node
+
+    def assert_staged_completed(self, node, value, frozen):
+        raw, response = exchange(node.socket, value)
+        expected = {'state': 'reset', 'reset_id': value['reset_id'], 'generation': frozen['generation']}
+        self.assertEqual(response, expected)
+        self.assertEqual(exchange(node.socket, request(value['reset_id'], 'status'))[0], raw)
+        node.native_pids()
+        marker_path = node.data / '.reset-generation.json'
+        info = marker_path.lstat()
+        self.assertTrue(stat.S_ISREG(info.st_mode) and info.st_uid == os.geteuid()
+                        and info.st_nlink == 1 and stat.S_IMODE(info.st_mode) == 0o600)
+        genesis = node.genesis()
+        expected_marker = {'version': 1, 'reset_id': value['reset_id'],
+                           'generation': frozen['generation'], 'data_dir': str(node.data),
+                           'genesis': {name: genesis[name] for name in GENESIS_FILES}}
+        self.assertEqual(json.loads(marker_path.read_bytes()), expected_marker)
+        decision = node.record(value['reset_id'])
+        self.assertEqual(decision['phase'], 'activating', 'activation must not require a completion append')
+        self.assertEqual(decision['activation_response'], expected)
+        self.assertEqual(decision['genesis'], expected_marker['genesis'])
+        for key in ('reset_id', 'generation', 'genesis_timestamp_ms', 'bindings',
+                    'request_digest', 'peer_uid', 'peer_gid'):
+            self.assertEqual(decision[key], frozen[key])
+        self.assertEqual(decision['request_digest'], value['request_digest'])
+        self.assertEqual(decision['peer_uid'], os.geteuid())
+        self.assertEqual(decision['peer_gid'], os.getegid())
+        canonical_request = (node.data / 'genesis/genesis-request.lxgb').read_bytes()
+        self.assertEqual(canonical_request[:5], b'LXGB\x02')
+        self.assertEqual(int.from_bytes(canonical_request[7:11], 'big'), NETWORK)
+        self.assertEqual(int.from_bytes(canonical_request[11:19], 'big'), frozen['genesis_timestamp_ms'])
+        return raw
+
+    def exercise(self, node):
+        retained_state = (node.state / 'state.json').read_bytes()
+        retained_genesis = node.genesis()
+        retained_pids = node.native_pids()
+        node.pause_scheduler()
+        node.state.chmod(0o500)
+        try:
+            refusal = exchange(node.socket, request())[1]
+            self.assertEqual(refusal['error']['code'], 'unsafe_state_directory')
+            self.assertEqual((node.state / 'state.json').read_bytes(), retained_state)
+            self.assertEqual(node.genesis(), retained_genesis)
+            self.assertEqual(node.native_pids(), retained_pids)
+        finally:
+            node.state.chmod(0o700)
+            node.processes['sequencer'].send_signal(signal.SIGCONT)
+        for phase in ('admitted', 'bootstrapping', 'prepared', 'activating'):
+            with self.subTest(crash_boundary=phase):
+                original_genesis = node.genesis()
+                original_pids = node.native_pids()
+                previous_generation = json.loads((node.data / '.reset-generation.json').read_bytes())['generation'] \
+                    if (node.data / '.reset-generation.json').exists() else node.state_value()['generation']
+                sentinel = node.data / 'retained-prior-generation'
+                retained = os.urandom(128)
+                write_private(sentinel, retained)
+                value = request()
+                frozen = node.freeze_request(value, phase)
+                self.assertEqual(frozen['generation'], previous_generation + 1)
+                marker_path = node.data / '.reset-generation.json'
+                activated = phase == 'activating' and marker_path.exists() \
+                    and json.loads(marker_path.read_bytes())['reset_id'] == value['reset_id']
+                if activated:
+                    marker = json.loads(marker_path.read_bytes())
+                    self.assertEqual(marker['genesis'], frozen['genesis'])
+                    self.assertEqual(marker['generation'], frozen['generation'])
+                    self.assertEqual(marker['data_dir'], str(node.data))
+                    self.assertEqual({name: node.genesis()[name] for name in GENESIS_FILES}, frozen['genesis'])
+                else:
+                    self.assertEqual(node.genesis(), original_genesis,
+                                     'previous canonical generation must survive until the activation decision')
+                    self.assertEqual(sentinel.read_bytes(), retained)
+                if phase == 'admitted':
+                    self.assertEqual(node.native_pids(), original_pids)
+                stage = node.state / 'generations' / value['reset_id'] / 'data'
+                if phase == 'prepared':
+                    staged_marker = json.loads((stage / '.reset-generation.json').read_bytes())
+                    self.assertEqual(staged_marker['reset_id'], value['reset_id'])
+                    self.assertEqual(staged_marker['generation'], frozen['generation'])
+                    self.assertEqual(staged_marker['data_dir'], str(node.data))
+                    self.assertEqual(staged_marker['genesis'], frozen['genesis'])
+                    for name, expected in frozen['genesis'].items():
+                        self.assertEqual(digest(stage / name), expected)
+                node.stop(kill=True)
+                shutil.rmtree(node.run)
+                node.start(explicit_state=True)
+                original_response = self.assert_staged_completed(node, value, frozen)
+                self.assertFalse(sentinel.exists())
+                self.assertNotEqual(node.genesis(), original_genesis)
+                self.assertNotEqual(node.native_pids(), original_pids)
+                self.assertEqual({name: digest(stage / name) for name in GENESIS_FILES},
+                                 {name: original_genesis[name] for name in GENESIS_FILES})
+                self.assertEqual((stage / 'retained-prior-generation').read_bytes(), retained)
+                current_genesis, current_pids = node.genesis(), node.native_pids()
+                with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
+                    replies = list(pool.map(lambda _: exchange(node.socket, value)[0], range(4)))
+                self.assertEqual(replies, [original_response] * 4)
+                self.assertEqual(node.genesis(), current_genesis)
+                self.assertEqual(node.native_pids(), current_pids)
+                self.case('staged actual ' + phase + ' crash retains prior generation and resumes frozen reset')
+
+        value = request()
+        original_genesis = node.genesis()
+        exchange(node.socket, value, lost=True)
+
+        def completed():
+            node.alive()
+            response = exchange(node.socket, request(value['reset_id'], 'status'), seconds=2)[1]
+            return response if response.get('state') == 'reset' else None
+
+        response = wait_until('staged actual readiness after lost reset response', completed, 180)
+        frozen = node.record(value['reset_id'])
+        original_response = self.assert_staged_completed(node, value, frozen)
+        self.assertEqual(response, json.loads(original_response))
+        self.assertNotEqual(node.genesis(), original_genesis)
+        activated_genesis = node.genesis()
+        durable_decision = (node.state / 'state.json').read_bytes()
+        node.stop(kill=True)
+        shutil.rmtree(node.run)
+        node.start(explicit_state=True)
+        self.assertEqual(self.assert_staged_completed(node, value, frozen), original_response)
+        self.assertEqual(node.genesis(), activated_genesis)
+        self.assertEqual((node.state / 'state.json').read_bytes(), durable_decision)
+        node.stop()
+        node.start(explicit_state=True)
+        self.assertEqual(self.assert_staged_completed(node, value, frozen), original_response)
+        self.assertEqual(node.genesis(), activated_genesis)
+        self.assertEqual((node.state / 'state.json').read_bytes(), durable_decision)
+        self.case('staged completion response loss and persistent or ephemeral restart require no outcome append')
+
+
 def main():
     os.umask(0o077)
     if len(sys.argv) == 3 and sys.argv[1] == '--record-native':
         record_native_artifacts(sys.argv[2])
         return 0
-    if len(sys.argv) != 1:
-        raise ValueError('usage: reset_recovery.py [--record-native EXACT_MANIFEST_PATH]')
+    if len(sys.argv) == 7 and sys.argv[1] == '--pause-phase':
+        pause_phase(Path(sys.argv[2]), sys.argv[3], sys.argv[4], int(sys.argv[5]), Path(sys.argv[6]))
+        return 0
+    staged = len(sys.argv) == 2 and sys.argv[1] == '--staged'
+    if len(sys.argv) != 1 and not staged:
+        raise ValueError('usage: reset_recovery.py [--staged | --record-native EXACT_MANIFEST_PATH]')
     helper_tests = load_module('reset_state_tests', NODE / 'tests/test_reset_state.py')
     helper_suite = unittest.defaultTestLoader.loadTestsFromModule(helper_tests)
     actual_suite = unittest.defaultTestLoader.loadTestsFromTestCase(ActualResetRecovery)
+    if staged:
+        actual_suite.addTests(unittest.defaultTestLoader.loadTestsFromTestCase(StagedResetRecovery))
     helper_count = helper_suite.countTestCases()
     actual_count = actual_suite.countTestCases()
-    if helper_count == 0 or actual_count != 1:
+    if helper_count == 0 or actual_count != (2 if staged else 1):
         raise AssertionError('missing durable-store or actual-process tests')
     result = unittest.TextTestRunner(verbosity=2).run(unittest.TestSuite((helper_suite, actual_suite)))
     counts = {'tests_run': result.testsRun, 'durable_store_tests_planned': helper_count,
@@ -754,7 +965,7 @@ def main():
     print('PAXEER_X_GATE tests=%d skipped=%d actual_cases=%d' %
           (result.testsRun, len(result.skipped), len(ActualResetRecovery.completed_cases)), flush=True)
     return 0 if (result.wasSuccessful() and not result.skipped
-                 and len(ActualResetRecovery.completed_cases) == 13
+                 and len(ActualResetRecovery.completed_cases) == (18 if staged else 13)
                  and result.testsRun == helper_count + actual_count) else 1
 
 

@@ -606,6 +606,11 @@ for key in ('LAYERX_NODE_HANDOVER_AUTHORITY_PUBLIC_KEY', 'LAYERX_NODE_PAXEER_CHA
         public_environment[key] = value
 value = {'arguments': options, 'files': fingerprints, 'public_keys': identities,
          'public_environment': public_environment}
+staged_profile = os.environ.get('LAYERX_NODE_RESET_STAGED_GENERATIONS', '0')
+if staged_profile not in ('0', '1'):
+    raise ValueError('invalid reset activation profile')
+if staged_profile == '1':
+    value['staged_generations'] = True
 temporary = output.with_name(output.name + '.tmp.' + str(os.getpid()))
 fd = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
 with os.fdopen(fd, 'w') as handle:
@@ -630,7 +635,7 @@ reset_state() {
 record_field() { python3 -c 'import json,sys; print(json.load(sys.stdin)[sys.argv[1]])' "$1"; }
 
 genesis_binding() {
-    python3 - "$DATA_DIR" "${1:-}" <<'GENESIS'
+    python3 - "${2:-$DATA_DIR}" "${1:-}" <<'GENESIS'
 import hashlib
 import json
 import os
@@ -667,6 +672,10 @@ GENESIS
 }
 
 perform_durable_reset() {
+    if [ "${LAYERX_NODE_RESET_STAGED_GENERATIONS:-0}" = 1 ]; then
+        perform_staged_reset "$1"
+        return
+    fi
     local record=$1 phase id timestamp target extra
     id=$(record_field reset_id <<< "$record")
     phase=$(record_field phase <<< "$record")
@@ -683,7 +692,7 @@ perform_durable_reset() {
         wait_for_file "$RUN_DIR/reset.$id.replica-stopped" 120 || fail "replica stop is ambiguous"
         rm -f "$RUN_DIR/reset.$id.replica-stopped" "$RUN_DIR/reset.$id.stop-replica"
         reset_state phase --reset-id "$id" --expected-phase stopping --new-phase bootstrapping >/dev/null
-        local -a frozen=()
+        local -a frozen=() authority=()
         local index
         for ((index = 0; index < ${#BOOTSTRAP_ARGS[@]}; index += 2)); do
             [ "${BOOTSTRAP_ARGS[index]}" = --genesis-timestamp-ms ] && continue
@@ -707,6 +716,78 @@ perform_durable_reset() {
         log "reset $id: durably complete at generation $GENERATION"
     else
         fail "reset $id requires explicit reconciliation: $phase"
+    fi
+}
+
+perform_staged_reset() {
+    local record=$1 phase id timestamp target stage extra
+    id=$(record_field reset_id <<< "$record")
+    phase=$(record_field phase <<< "$record")
+    timestamp=$(record_field genesis_timestamp_ms <<< "$record")
+    target=$(record_field generation <<< "$record")
+    stage="$STATE_DIR/generations/$id"
+    write_reset_bindings || fail "reset producer inputs unavailable"
+    if [ "$phase" = admitted ]; then
+        reset_state phase --reset-id "$id" --expected-phase admitted --new-phase stopping >/dev/null
+        phase=stopping
+    fi
+    if [ "$phase" = stopping ]; then
+        python3 "$SCRIPT_DIR/data_directory.py" prepare-stage "$DATA_DIR" "$STATE_DIR" "$id" >/dev/null \
+            || fail "reset stage preparation refused"
+        reset_state phase --reset-id "$id" --expected-phase stopping --new-phase bootstrapping >/dev/null
+        phase=bootstrapping
+    fi
+    if [ "$phase" = bootstrapping ]; then
+        local -a frozen=()
+        local index
+        for ((index = 0; index < ${#BOOTSTRAP_ARGS[@]}; index += 2)); do
+            [ "${BOOTSTRAP_ARGS[index]}" = --genesis-timestamp-ms ] && continue
+            frozen+=("${BOOTSTRAP_ARGS[index]}" "${BOOTSTRAP_ARGS[index + 1]}")
+        done
+        if [ ! -f "$stage/data/.reset-generation.json" ]; then
+            wait_for_treasury_signer
+            if [ -n "${LAYERX_NODE_HANDOVER_AUTHORITY_PUBLIC_KEY:-}" ]; then
+                authority=(--handover-authority "$LAYERX_NODE_HANDOVER_AUTHORITY_PUBLIC_KEY")
+            fi
+            python3 "$RESET_HELPER" exec-daemon -- "$SCRIPT_DIR/bootstrap.sh" \
+                --data-dir "$stage/data" --run-dir "$stage/run" --layerxd "$LAYERXD" \
+                --generation-target-dir "$DATA_DIR" --generation-run-dir "$RUN_DIR" \
+                "${authority[@]}" --force "${frozen[@]}" --genesis-timestamp-ms "$timestamp" \
+                || fail "canonical reset stage bootstrap refused"
+            extra=$(genesis_binding '' "$stage/data")
+            python3 "$SCRIPT_DIR/data_directory.py" seal-generation "$DATA_DIR" "$stage/data" \
+                "$id" "$target" "$(python3 -c 'import json,sys; print(json.dumps(json.load(sys.stdin)["genesis"],sort_keys=True,separators=(",",":")))' <<< "$extra")" >/dev/null \
+                || fail "canonical reset stage sealing refused"
+        fi
+        extra=$(genesis_binding '' "$stage/data")
+        record=$(reset_state phase --reset-id "$id" --expected-phase bootstrapping --new-phase prepared --extra-json "$extra")
+        phase=prepared
+    fi
+    if [ "$phase" = prepared ]; then
+        genesis_binding "$record" "$stage/data" >/dev/null || fail "sealed reset stage differs from admission"
+        record=$(reset_state phase --reset-id "$id" --expected-phase prepared --new-phase activating)
+        phase=activating
+    fi
+    if [ "$phase" = activating ]; then
+        stop_daemon
+        : > "$RUN_DIR/reset.$id.stop-replica"
+        wait_for_file "$RUN_DIR/reset.$id.replica-stopped" 120 || fail "replica stop pending at activation"
+        rm -f "$RUN_DIR/reset.$id.replica-stopped" "$RUN_DIR/reset.$id.stop-replica"
+        local genesis
+        genesis=$(python3 -c 'import json,sys; print(json.dumps(json.load(sys.stdin)["genesis"],sort_keys=True,separators=(",",":")))' <<< "$record")
+        python3 "$SCRIPT_DIR/data_directory.py" activate-generation "$DATA_DIR" "$stage/data" \
+            "$id" "$target" "$genesis" >/dev/null || fail "durable reset activation pending recovery"
+        check_sequencer_environment "$DATA_DIR/sequencer.env"
+        GENERATION=$target
+        publish_generation "$GENERATION"
+        start_daemon "$DATA_DIR/sequencer.env" --serve "$DATA_DIR/sequencer.conf"
+        wait_for_daemon_ready "$DATA_DIR/sequencer.env" --serve 120 || fail "reset native activation pending"
+        local observed
+        observed=$(reset_state active)
+        [ "$observed" = null ] || fail "reset activation readiness not yet authoritative"
+        log "reset $id: generation $GENERATION activated through retained decision"
+    else
+        fail "reset $id staged recovery phase refused: $phase"
     fi
 }
 

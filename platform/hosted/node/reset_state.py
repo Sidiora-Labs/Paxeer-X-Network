@@ -16,6 +16,7 @@ import struct
 import sys
 import threading
 import time
+import http.client
 
 
 MAX_RECORDS = 1024
@@ -146,6 +147,7 @@ class Store:
         if type(initial_generation) is not int or not 1 <= initial_generation <= 0x7fffffffffffffff:
             raise StoreError('invalid_initial_generation')
         self.initial_generation = initial_generation
+        self.staged = os.environ.get('LAYERX_NODE_RESET_STAGED_GENERATIONS', '0') == '1'
 
     def _authorize(self, peer):
         if (not isinstance(peer, (tuple, list)) or len(peer) != 2
@@ -156,7 +158,8 @@ class Store:
     def _record(self, record, reset_id):
         keys = {'reset_id', 'request_digest', 'network', 'peer_uid', 'peer_gid',
                 'generation', 'genesis_timestamp_ms', 'bindings', 'phase', 'response'}
-        if not isinstance(record, dict) or set(record) not in (keys, keys | {'genesis'}):
+        if not isinstance(record, dict) or set(record) not in (
+                keys, keys | {'genesis'}, keys | {'genesis', 'activation_response'}):
             raise StoreError('corrupt_state')
         if record['reset_id'] != reset_id or not IDENTITY.fullmatch(reset_id):
             raise StoreError('corrupt_state')
@@ -179,6 +182,10 @@ class Store:
             raise StoreError('corrupt_state')
         if 'genesis' in record:
             self._genesis(record['genesis'])
+        if 'activation_response' in record and (record['phase'] not in ('activating', 'completed')
+                or record['activation_response'] != {'state': 'reset', 'reset_id': reset_id,
+                                                     'generation': record['generation']}):
+            raise StoreError('corrupt_state')
         if record['phase'] in ('prepared', 'activating', 'completed') and 'genesis' not in record:
             raise StoreError('corrupt_state')
         expected = {'state': 'reset', 'reset_id': reset_id, 'generation': record['generation']}
@@ -252,6 +259,7 @@ class Store:
                 raise StoreError('state_too_large')
             state = decode(raw)
             self._validate(state)
+            state = self._materialized(state)
             return state
         finally:
             os.close(file)
@@ -366,7 +374,7 @@ class Store:
             if state['active']:
                 record = state['records'][state['active']]
                 self._bindings(record)
-                if record['phase'] in ('bootstrapping', 'activating'):
+                if record['phase'] in ('bootstrapping', 'activating') and not self.staged:
                     record['phase'] = 'ambiguous'
                     self._save(descriptor, state)
             for name in temporary:
@@ -378,6 +386,102 @@ class Store:
     def _bindings(self, record):
         if record['phase'] != 'completed' and record['bindings'] != self.bindings:
             raise StoreError('bindings_mismatch')
+
+    def _materialized(self, state):
+        active = state['active']
+        if active is None:
+            return state
+        record = state['records'][active]
+        if record['phase'] != 'activating' or 'activation_response' not in record:
+            return state
+        if not self._activated_ready(record):
+            return state
+        record['phase'] = 'completed'
+        record['response'] = copy.deepcopy(record['activation_response'])
+        state['generation'] = record['generation']
+        state['active'] = None
+        self._validate(state)
+        return state
+
+    def _activated_ready(self, record):
+        try:
+            marker = self._data_file('.reset-generation.json', 8192)
+            expected = {'version': 1, 'reset_id': record['reset_id'], 'generation': record['generation'],
+                        'data_dir': self.data_dir, 'genesis': record['genesis']}
+            if decode(marker) != expected:
+                return False
+            for name, digest in record['genesis'].items():
+                if hashlib.sha256(self._data_file(name, 64 * 1024 * 1024)).hexdigest() != digest:
+                    return False
+            sequencer = self._runtime_environment('sequencer.env')
+            replica = self._runtime_environment('replica.env')
+            lni = os.lstat(sequencer['LAYERX_NODE_LNI_SOCKET'])
+            if not stat.S_ISSOCK(lni.st_mode) or lni.st_uid != os.geteuid():
+                return False
+            if not self._probe(sequencer['LAYERX_NODE_PROGRAM_ADDRESS'], sequencer['LAYERX_NODE_PROGRAM_PORT'],
+                               sequencer['LAYERX_NODE_PROGRAM_BEARER_TOKEN'],
+                               '/v1/programs/account-state/changes?after_sequence=0', 200):
+                return False
+            zero = '0' * 64
+            return self._probe(replica['LAYERX_AUTHORITY_ADDRESS'], replica['LAYERX_AUTHORITY_PORT'],
+                               replica['LAYERX_AUTHORITY_BEARER_TOKEN'],
+                               '/v1/batches/' + zero + '/receipt-authority?receipt_digest=' + zero, 404)
+        except (OSError, StoreError, KeyError, ValueError, http.client.HTTPException):
+            return False
+
+    def _data_file(self, name, maximum):
+        descriptor = open_directory(self.data_dir)
+        file = None
+        try:
+            parts = name.split('/')
+            if any(part in ('', '.', '..') for part in parts):
+                raise StoreError('invalid_genesis')
+            for part in parts[:-1]:
+                child = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=descriptor)
+                os.close(descriptor)
+                descriptor = child
+            file = os.open(parts[-1], os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=descriptor)
+            metadata = os.fstat(file)
+            if not stat.S_ISREG(metadata.st_mode) or metadata.st_uid != os.geteuid() or metadata.st_nlink != 1 or metadata.st_size > maximum:
+                raise StoreError('unsafe_generation_file')
+            with os.fdopen(file, 'rb', closefd=False) as handle:
+                raw = handle.read(maximum + 1)
+            if len(raw) > maximum:
+                raise StoreError('generation_too_large')
+            return raw
+        finally:
+            if file is not None:
+                os.close(file)
+            os.close(descriptor)
+
+    def _runtime_environment(self, name):
+        result = {}
+        for line in self._data_file(name, 64 * 1024).decode('utf-8').splitlines():
+            if not line:
+                continue
+            key, separator, value = line.partition('=')
+            if not separator or not re.fullmatch(r'LAYERX_[A-Z0-9_]+', key) or key in result or any(ord(c) < 32 or ord(c) == 127 for c in value):
+                raise StoreError('unsafe_runtime_environment')
+            result[key] = value
+        return result
+
+    @staticmethod
+    def _probe(address, port, token, path, expected):
+        if address != '127.0.0.1' or not port.isdecimal() or not 1 <= int(port) <= 65535 or not token or len(token) > 4096 or any(ord(c) <= 32 or ord(c) >= 127 for c in token):
+            return False
+        connection = http.client.HTTPConnection(address, int(port), timeout=0.5)
+        try:
+            connection.request('GET', path, headers={'Authorization': 'Bearer ' + token, 'Connection': 'close'})
+            response = connection.getresponse()
+            raw = response.read(128 * 1024 + 1)
+            if response.status != expected or len(raw) > 128 * 1024:
+                return False
+            if expected == 200:
+                page = decode(raw)
+                return isinstance(page, dict) and set(page) == {'records', 'complete_through', 'scanned_through_sequence', 'caught_up'} and isinstance(page['records'], list) and type(page['caught_up']) is bool
+            return True
+        finally:
+            connection.close()
 
     def _lookup(self, state, request, peer):
         record = state['records'].get(request['reset_id'])
@@ -442,9 +546,14 @@ class Store:
             if record is None or record['phase'] != expected_phase or state['active'] != reset_id:
                 raise StoreError('phase_conflict')
             self._bindings(record)
+            if self.staged and new_phase == 'completed':
+                raise StoreError('activation_not_ready')
             record['phase'] = new_phase
             if extra:
                 record.update(copy.deepcopy(extra))
+            if self.staged and new_phase == 'activating':
+                record['activation_response'] = {'state': 'reset', 'reset_id': reset_id,
+                                                 'generation': record['generation']}
             if new_phase == 'completed':
                 record['response'] = {'state': 'reset', 'reset_id': reset_id,
                                       'generation': record['generation']}

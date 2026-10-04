@@ -119,6 +119,7 @@ struct Response {
     status: u16,
     body: String,
     retry_after: Option<u64>,
+    authoritative_replay: bool,
 }
 
 #[derive(Clone, Deserialize, serde::Serialize)]
@@ -495,6 +496,7 @@ fn refusal(status: u16, code: &str, retry_after: Option<u64>) -> Response {
         status,
         body: body.to_string(),
         retry_after,
+        authoritative_replay: false,
     }
 }
 
@@ -503,6 +505,7 @@ fn json_response(status: u16, value: &serde_json::Value) -> Response {
         status,
         body: value.to_string(),
         retry_after: None,
+        authoritative_replay: false,
     }
 }
 
@@ -1493,6 +1496,7 @@ fn relay_route(config: &Config, request: &Request) -> Response {
                 status,
                 body,
                 retry_after: None,
+                authoritative_replay: false,
             }
         }
         Ok((status, _)) => {
@@ -1871,7 +1875,7 @@ fn stateful(
     match prior {
         Ok(Some(entry)) if entry.request_digest == digest => {
             if (entry.status == 202 && program_lifecycle::ordinal(&request.path).is_some())
-                || (scope == "fund"
+                || (matches!(scope, "fund" | "reset")
                     && (entry.status == 202
                         || entry.status == 409
                         || entry.status >= 500
@@ -1881,6 +1885,9 @@ fn stateful(
                     return refusal(503, "journal_unavailable", Some(5));
                 }
                 let response = execute();
+                if response.authoritative_replay {
+                    return response;
+                }
                 if journal_write(
                     &path,
                     &JournalEntry {
@@ -1900,6 +1907,7 @@ fn stateful(
                 status: entry.status,
                 body: entry.body,
                 retry_after: entry.retry_after,
+                authoritative_replay: false,
             };
         }
         Ok(Some(_)) => return refusal(409, "idempotency_conflict", None),
@@ -1949,6 +1957,9 @@ fn stateful_execute_new(
     let response = execute();
     if timed {
         pay_timing("core.journal.execute", execute_started);
+    }
+    if response.authoritative_replay {
+        return response;
     }
     let final_started = Instant::now();
     if let Err(error) = journal_write(
@@ -2163,8 +2174,13 @@ fn fund_send(
     };
     persist_funding_intent(config, &intent)
         .map_err(|_| refusal(503, "journal_unavailable", Some(5)))?;
-    if let Ok(Some(facts)) = await_receipt(config, signed.activity_id, Duration::ZERO) {
-        return funding_receipt_response(command, &facts);
+    match await_receipt(config, signed.activity_id, Duration::ZERO) {
+        Ok(Some(facts)) => return intent_funding_response(config, &intent, &facts, false),
+        Ok(None) => {}
+        Err(error) => {
+            eprintln!("layerx-core-boundary: retained funding receipt: {error}");
+            return Err(refusal(503, "receipt_unavailable", Some(5)));
+        }
     }
     let (registry, _) =
         asset_registry().map_err(|_| refusal(503, "registry_unavailable", Some(5)))?;
@@ -2190,20 +2206,29 @@ fn fund_send(
         Submission::Acknowledged(acknowledgement) => acknowledgement.activity_id(),
         Submission::Unknown(unknown) => unknown.activity_id(),
     };
+    if activity_id != signed.activity_id {
+        return Err(refusal(422, "send_unbuildable", None));
+    }
     let transaction_id = hex_encode(&activity_id);
     match await_receipt(config, activity_id, config.receipt_deadline) {
-        Ok(Some(facts)) => funding_receipt_response(command, &facts),
-        Ok(None) => Ok(json_response(
-            202,
-            &serde_json::json!({
-                "funding_id": command.funding_id,
-                "state": "pending",
-                "transaction_id": transaction_id,
-            }),
-        )),
+        Ok(Some(facts)) => intent_funding_response(config, &intent, &facts, true),
+        Ok(None) => {
+            let mut response = json_response(
+                202,
+                &serde_json::json!({
+                    "funding_id": command.funding_id,
+                    "state": "pending",
+                    "transaction_id": transaction_id,
+                }),
+            );
+            response.authoritative_replay = true;
+            Ok(response)
+        }
         Err(error) => {
             eprintln!("layerx-core-boundary: {error}");
-            Err(refusal(503, "receipt_unavailable", Some(5)))
+            let mut response = refusal(503, "receipt_unavailable", Some(5));
+            response.authoritative_replay = true;
+            Err(response)
         }
     }
 }
@@ -2419,7 +2444,16 @@ fn funding_archive_facts(
     {
         return Err("funding archive binding differs".to_owned());
     }
-    let facts = receipt_facts(&archive.receipt, intent.sequencer_key)?;
+    funding_intent_receipt_facts(config, intent, &archive.receipt)
+}
+
+fn funding_intent_receipt_facts(
+    config: &Config,
+    intent: &FundingIntent,
+    bytes: &[u8],
+) -> Result<ReceiptFacts, String> {
+    validate_funding_intent(config, intent)?;
+    let facts = receipt_facts(bytes, intent.sequencer_key)?;
     let decoded =
         layerx_wire::receipt::decode(&facts.canonical).map_err(|error| format!("{error:?}"))?;
     let receipt = decoded
@@ -2437,6 +2471,30 @@ fn funding_archive_facts(
         return Err("funding receipt semantics differ".to_owned());
     }
     Ok(facts)
+}
+
+fn intent_funding_response(
+    config: &Config,
+    intent: &FundingIntent,
+    facts: &ReceiptFacts,
+    submitted: bool,
+) -> Result<Response, Response> {
+    let verified = funding_intent_receipt_facts(config, intent, &facts.canonical)
+        .map_err(|_| {
+            let mut response = refusal(503, "receipt_unavailable", Some(5));
+            response.authoritative_replay = submitted;
+            response
+        })?;
+    match funding_receipt_response(&intent.command, &verified) {
+        Ok(mut response) => {
+            response.authoritative_replay = true;
+            Ok(response)
+        }
+        Err(mut response) => {
+            response.authoritative_replay = true;
+            Err(response)
+        }
+    }
 }
 
 fn archived_funding_response(
@@ -2654,6 +2712,7 @@ fn funding_receipt_response(
 struct SupervisorReply {
     state: Option<String>,
     reset_id: Option<String>,
+    generation: Option<u64>,
     error: Option<SupervisorError>,
 }
 
@@ -2665,56 +2724,182 @@ struct SupervisorError {
     retry_after_seconds: Option<u64>,
 }
 
-fn reset(config: &Config) -> Response {
-    let outcome = UnixStream::connect(&config.supervisor_socket)
-        .and_then(|mut stream| {
-            stream.set_read_timeout(Some(RESET_TIMEOUT))?;
-            stream.set_write_timeout(Some(IO_TIMEOUT))?;
-            stream.write_all(b"reset\n")?;
-            stream.flush()?;
-            let mut line = String::new();
-            BufReader::new(stream).take(4096).read_line(&mut line)?;
-            Ok(line)
-        })
-        .map_err(|error| error.to_string());
-    let line = match outcome {
-        Ok(line) => line,
-        Err(error) => {
-            eprintln!("layerx-core-boundary: supervisor: {error}");
-            return refusal(503, "supervisor_unavailable", Some(30));
+#[derive(Clone, Copy, serde::Serialize)]
+struct SupervisorRequest<'a> {
+    version: u8,
+    operation: &'a str,
+    reset_id: &'a str,
+    network: u32,
+    request_digest: &'a str,
+}
+
+fn reset_identity(config: &Config, request: &Request, key: &str) -> (String, String) {
+    let mut identity = Sha256::new();
+    identity.update(b"layerx-core-reset/v1\0");
+    identity.update(config.network_id.to_be_bytes());
+    identity.update((key.len() as u64).to_be_bytes());
+    identity.update(key.as_bytes());
+    identity.update(request_digest(request).as_bytes());
+    let identity = identity.finalize();
+    let reset_id = hex_encode(&identity[..16]);
+    let canonical = format!(
+        "{{\"network\":{},\"operation\":\"reset\",\"reset_id\":\"{}\",\"version\":1}}",
+        config.network_id, reset_id
+    );
+    (reset_id, hex_encode(&Sha256::digest(canonical.as_bytes())))
+}
+
+fn supervisor_exchange(
+    config: &Config,
+    request: &SupervisorRequest<'_>,
+    attempted: &mut bool,
+) -> Result<SupervisorReply, String> {
+    let mut stream = UnixStream::connect(&config.supervisor_socket)
+        .map_err(|error| error.to_string())?;
+    stream.set_read_timeout(Some(RESET_TIMEOUT)).map_err(|error| error.to_string())?;
+    stream.set_write_timeout(Some(IO_TIMEOUT)).map_err(|error| error.to_string())?;
+    let mut bytes = serde_json::to_vec(request).map_err(|error| error.to_string())?;
+    bytes.push(b'\n');
+    *attempted = request.operation == "reset";
+    stream.write_all(&bytes).map_err(|error| error.to_string())?;
+    stream.flush().map_err(|error| error.to_string())?;
+    let mut line = String::new();
+    BufReader::new(stream).take(4097).read_line(&mut line).map_err(|error| error.to_string())?;
+    if line.len() > 4096 || !line.ends_with('\n') {
+        return Err("supervisor response framing differs".to_owned());
+    }
+    serde_json::from_str(line.trim_end_matches(['\r', '\n']))
+        .map_err(|error| error.to_string())
+}
+
+fn reset_pending(reset_id: &str) -> Response {
+    let mut response = json_response(202, &serde_json::json!({
+        "state": "pending", "reset_id": reset_id,
+    }));
+    response.retry_after = Some(30);
+    response.authoritative_replay = true;
+    response
+}
+
+fn reset_authoritative_reply(reply: &SupervisorReply, reset_id: &str) -> Option<Response> {
+    if reply.error.is_some()
+        || reply.reset_id.as_deref() != Some(reset_id)
+        || !reply.generation.is_some_and(|value| value > 0 && value <= i64::MAX as u64)
+    {
+        return None;
+    }
+    match reply.state.as_deref()? {
+        "reset" => {
+            let mut response = json_response(200, &serde_json::json!({
+                "state": "reset", "reset_id": reset_id,
+            }));
+            response.authoritative_replay = true;
+            Some(response)
         }
+        "admitted" | "stopping" | "bootstrapping" | "prepared" | "activating" | "ambiguous" => {
+            Some(reset_pending(reset_id))
+        }
+        _ => None,
+    }
+}
+
+fn reset_pre_admission_refusal(reply: &SupervisorReply) -> Option<Response> {
+    if reply.state.is_some() || reply.reset_id.is_some() || reply.generation.is_some() {
+        return None;
+    }
+    let error = reply.error.as_ref()?;
+    if error.retry != "never" || error.retry_after_seconds != Some(0) {
+        return None;
+    }
+    match error.code.as_str() {
+        "wrong_network" | "digest_mismatch" | "unsupported_version" | "unauthorized_peer"
+        | "identity_conflict" | "reset_in_progress" | "state_capacity" | "generation_exhausted"
+        | "invalid_request" | "invalid_operation" | "invalid_reset_id" | "invalid_digest" => {
+            Some(refusal(503, &error.code, None))
+        }
+        _ => None,
+    }
+}
+
+fn reset(config: &Config, request: &Request, key: &str) -> Response {
+    let (reset_id, digest) = reset_identity(config, request, key);
+    let status_request = SupervisorRequest {
+        version: 1, operation: "status", reset_id: &reset_id,
+        network: config.network_id, request_digest: &digest,
     };
-    let answer = line.trim_end_matches(['\r', '\n']);
-    match serde_json::from_str::<SupervisorReply>(answer) {
-        Ok(SupervisorReply {
-            state: Some(state),
-            reset_id: Some(reset_id),
-            error: None,
-        }) if state == "reset" && valid_key(&reset_id) => json_response(
-            200,
-            &serde_json::json!({ "state": "reset", "reset_id": reset_id }),
-        ),
-        Ok(SupervisorReply {
-            state: None,
-            reset_id: None,
-            error: Some(error),
-        }) if valid_key(&error.code) => {
-            eprintln!(
-                "layerx-core-boundary: supervisor refused the reset: {}",
-                error.code
-            );
-            let retry_after = if error.retry == "after" {
-                Some(error.retry_after_seconds.unwrap_or(30))
-            } else {
-                None
-            };
-            refusal(503, &error.code, retry_after)
-        }
-        _ => {
-            eprintln!("layerx-core-boundary: supervisor answered {answer:?}");
-            refusal(503, "reset_failed", Some(30))
+    let path = journal_path(config, "reset", key);
+    let previous_attempt = match journal_read(&path) {
+        Ok(Some(entry)) => entry.status == 202,
+        Ok(None) | Err(_) => return refusal(503, "journal_unavailable", Some(5)),
+    };
+    if !previous_attempt {
+        if let Err(response) = retain_funding_receipts(config) {
+            return response;
         }
     }
+    let mut attempted = false;
+    match supervisor_exchange(config, &status_request, &mut attempted) {
+        Ok(reply) => {
+            if let Some(response) = reset_authoritative_reply(&reply, &reset_id) {
+                return response;
+            }
+            if let Some(response) = reset_pre_admission_refusal(&reply) {
+                return response;
+            }
+            if !reply.error.as_ref().is_some_and(|error| error.code == "unknown_reset"
+                && error.retry == "never" && error.retry_after_seconds == Some(0))
+            {
+                return if previous_attempt {
+                    reset_pending(&reset_id)
+                } else {
+                    refusal(503, "reset_failed", Some(30))
+                };
+            }
+        }
+        Err(error) => {
+            eprintln!("layerx-core-boundary: supervisor status: {error}");
+            return if previous_attempt {
+                reset_pending(&reset_id)
+            } else {
+                refusal(503, "supervisor_unavailable", Some(30))
+            };
+        }
+    }
+    if previous_attempt {
+        if let Err(response) = retain_funding_receipts(config) {
+            return response;
+        }
+    }
+    let pending = reset_pending(&reset_id);
+    if journal_write(&path, &JournalEntry {
+        request_digest: request_digest(request), status: pending.status,
+        body: pending.body.clone(), retry_after: pending.retry_after,
+    }).is_err() {
+        return refusal(503, "journal_unavailable", Some(5));
+    }
+    let admission = SupervisorRequest { operation: "reset", ..status_request };
+    match supervisor_exchange(config, &admission, &mut attempted) {
+        Ok(reply) => {
+            if let Some(response) = reset_authoritative_reply(&reply, &reset_id) {
+                return response;
+            }
+            if let Some(response) = reset_pre_admission_refusal(&reply) {
+                return response;
+            }
+        }
+        Err(error) => {
+            eprintln!("layerx-core-boundary: supervisor admission: {error}");
+            if !attempted {
+                return refusal(503, "supervisor_unavailable", Some(30));
+            }
+        }
+    }
+    if let Ok(reply) = supervisor_exchange(config, &status_request, &mut attempted) {
+        if let Some(response) = reset_authoritative_reply(&reply, &reset_id) {
+            return response;
+        }
+    }
+    pending
 }
 
 fn admin_result(mut response: Response) -> Response {
@@ -2775,10 +2960,7 @@ fn admin_route(config: &Config, request: &Request) -> Response {
                 return refusal(400, "invalid_argument", None);
             }
             stateful(config, "reset", request, || {
-                match retain_funding_receipts(config) {
-                    Ok(()) => admin_result(reset(config)),
-                    Err(response) => response,
-                }
+                admin_result(reset(config, request, &key))
             })
         }
         _ => refusal(404, "not_found", None),

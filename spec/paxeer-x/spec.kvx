@@ -32252,7 +32252,7 @@ evidence_policy = "Private source-bound artifacts, generated identities and raw 
 
 [task.24.19]
 title = "Commit replay-safe reset activation without post-effect journal dependency"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 4
 requires = ["24.17", "24.18", "4.4"]
@@ -32261,7 +32261,7 @@ do_1 = "After4.4 is qualified and published, add secure generation staging/activ
 do_2 = "Bind a durable activation decision to the original caller reset identity and staged canonical generation. Preserve the prior live generation until the required durability checks succeed; prove exact recovery at all effect boundaries. Do not claim universal503/no-effect if any mandatory post-effect write can still fail."
 do_3 = "Wire core reset to stable supervisor admission/status and recover the original outcome. Require the verified receipt-preservation barrier before activation. Remove dependence on a post-effect core journal append only when the durable intent, authoritative receipt and reset activation records fully reconstruct the original response."
 do_4 = "Execute the complete actual-process crash/storage-fault/replay gate without mocked nodes, supervisors or receipts. Preserve task103.6.2 original full core suite and strict all-target Clippy as its separate required completion gate; do not mark103.6.2 complete from this prerequisite."
-touches = ["platform/hosted/node/supervisor.sh", "platform/hosted/node/reset_state.py", "platform/hosted/node/data_directory.py", "platform/hosted/node/bootstrap.sh", "platform/hosted/node/tests/test_data_directory.py", "platform/hosted/node/tests/reset_recovery.py", "platform/hosted/core/src/main.rs", "platform/hosted/core/tests/boundary.rs", "tools/qualification/paxeer-x/supervisor-reset-recovery.py", "tools/paxeer-x/gates/24.19.sh"]
+touches = ["platform/hosted/node/supervisor.sh", "platform/hosted/node/reset_state.py", "platform/hosted/node/data_directory.py", "platform/hosted/node/bootstrap.sh", "platform/hosted/node/tests/test_data_directory.py", "platform/hosted/node/tests/reset_recovery.py", "platform/hosted/core/src/main.rs", "platform/hosted/core/tests/boundary.rs", "tools/qualification/paxeer-x/supervisor-reset-recovery.py", "tools/paxeer-x/gates/24.19.sh", "platform/hosted/node/guarantor.sh", "platform/hosted/node/deployment.yaml", "docker/kernel/init.sh"]
 planned_paths = ["tools/qualification/paxeer-x/supervisor-reset-recovery.py", "tools/paxeer-x/gates/24.19.sh"]
 build_cmd = "cargo test --locked --manifest-path platform/Cargo.toml -p layerx-platform-core --no-run --message-format=json && make -j5 LXP_REVISION=\"$REVISION\" PAXEER_GO_JOBS=5 layerxd layerx-genesis-build layerx-handover && bash tools/paxeer-x/gates/24.16.sh build"
 verify_cmd = "timeout 15m python3 tools/qualification/paxeer-x/supervisor-reset-recovery.py"
@@ -32275,6 +32275,10 @@ completion_policy = "Only the assigned production durability prerequisite is cre
 path_policy = "Exact declared paths only; protect4.4 bootstrap lease until qualified publication. Root claims and integrates. No shared Cargo manifest, native consensus, fixture-authority or existing assertion weakening."
 evidence_policy = "Private source-bound artifacts, generated identities and raw logs outside the repository; no credential collection or public operational records."
 
+
+source_status = "partial"
+qualification_status = "unrun_partial_source"
+remaining_source = "Read-only peer-authenticated generation transport preserving separate guarantor identity capabilities and DATA0700 access."
 [task.108.2.5]
 title = "Inventory and produce shared registry and router material"
 status = "pending"

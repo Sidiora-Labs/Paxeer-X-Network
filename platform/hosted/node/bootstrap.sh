@@ -199,6 +199,8 @@ fi
 SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
 DATA_DIR=""
 RUN_DIR=""
+GENERATION_TARGET_DIR=""
+GENERATION_RUN_DIR=""
 NETWORK_ID=""
 SEQUENCER_KEY_FILE=""
 TREASURY_KEY_FILE=""
@@ -249,6 +251,12 @@ while [ $# -gt 0 ]; do
     case "$1" in
         --data-dir) DATA_DIR=$2; shift 2 ;;
         --run-dir) RUN_DIR=$2; shift 2 ;;
+        --generation-target-dir)
+            [ -z "$GENERATION_TARGET_DIR" ] || fail "--generation-target-dir repeats"
+            GENERATION_TARGET_DIR=$2; shift 2 ;;
+        --generation-run-dir)
+            [ -z "$GENERATION_RUN_DIR" ] || fail "--generation-run-dir repeats"
+            GENERATION_RUN_DIR=$2; shift 2 ;;
         --network-id) NETWORK_ID=$2; shift 2 ;;
         --sequencer-key) SEQUENCER_KEY_FILE=$2; shift 2 ;;
         --treasury-key) TREASURY_KEY_FILE=$2; shift 2 ;;
@@ -586,6 +594,26 @@ RUN_DIR=$(readlink -f "$RUN_DIR")
 case "$RUN_DIR" in "$DATA_DIR"/*) fail "--run-dir must not be inside --data-dir" ;; esac
 case "$SEQUENCER_KEY_FILE" in "$DATA_DIR"/*) fail "the sequencer key file must be outside the data directory: $SEQUENCER_KEY_FILE" ;; esac
 case "$(readlink -f "$SEQUENCER_KEY_FILE")" in "$DATA_DIR"/*) fail "the sequencer key file must be outside the data directory: $SEQUENCER_KEY_FILE" ;; esac
+ENV_DATA_DIR=$DATA_DIR
+ENV_RUN_DIR=$RUN_DIR
+if [ -n "$GENERATION_TARGET_DIR" ] || [ -n "$GENERATION_RUN_DIR" ]; then
+    [ -n "$GENERATION_TARGET_DIR" ] && [ -n "$GENERATION_RUN_DIR" ] \
+        || fail "generation target and run directories are both required"
+    ENV_DATA_DIR=$(python3 "$SCRIPT_DIR/data_directory.py" inspect "$GENERATION_TARGET_DIR") \
+        || fail "generation target data directory was refused"
+    ENV_RUN_DIR=$(python3 "$SCRIPT_DIR/data_directory.py" inspect "$GENERATION_RUN_DIR") \
+        || fail "generation target run directory was refused"
+    [ "$ENV_DATA_DIR" != "$DATA_DIR" ] && [ "$ENV_RUN_DIR" != "$RUN_DIR" ] \
+        || fail "generation bootstrap requires isolated output directories"
+    [ "$ENV_DATA_DIR" != "$ENV_RUN_DIR" ] || fail "generation data and run directories must differ"
+    case "$ENV_RUN_DIR" in "$ENV_DATA_DIR"/*) fail "generation run directory must be outside target data" ;; esac
+    case "$DATA_DIR/" in "$ENV_DATA_DIR/"*|"$ENV_RUN_DIR/"*) fail "generation staging overlaps active directories" ;; esac
+    case "$RUN_DIR/" in "$ENV_DATA_DIR/"*|"$ENV_RUN_DIR/"*) fail "generation run staging overlaps active directories" ;; esac
+    for protected_path in "$SEQUENCER_KEY_FILE" "$(readlink -f "$SEQUENCER_KEY_FILE")" \
+            "$GENESIS_METADATA" "$MODULE_FEES"; do
+        case "$protected_path" in "$ENV_DATA_DIR"/*) fail "canonical input must be outside target data directory" ;; esac
+    done
+fi
 if [ "$FORCE" -eq 1 ]; then
     python3 "$SCRIPT_DIR/data_directory.py" clear "$DATA_DIR" \
         || fail "data directory cleanup was refused"
@@ -596,8 +624,8 @@ fi
 chgrp "$LNI_GID" "$RUN_DIR" 2>/dev/null || [ "$(stat -c %g "$RUN_DIR")" = "$LNI_GID" ] \
     || fail "cannot set the run directory group to $LNI_GID: $RUN_DIR"
 chmod 0750 "$RUN_DIR"
-LNI_SOCKET="$RUN_DIR/layerxd.lni.sock"
-SUPERVISOR_SOCKET="$RUN_DIR/supervisor.sock"
+LNI_SOCKET="$ENV_RUN_DIR/layerxd.lni.sock"
+SUPERVISOR_SOCKET="$ENV_RUN_DIR/supervisor.sock"
 [ ${#LNI_SOCKET} -lt 108 ] || fail "LNI socket path is too long: $LNI_SOCKET"
 
 umask 077
@@ -759,6 +787,10 @@ REGISTRATION="$GENESIS_DIR/genesis.registration"
 
 # --- identities, tokens, configurations ------------------------------------
 IDENTITIES="$DATA_DIR/identities.txt"
+ENV_SNAPSHOT="$ENV_DATA_DIR/genesis/00000000000000000000.lxs"
+ENV_MANIFEST="$ENV_DATA_DIR/genesis/genesis.manifest"
+ENV_REGISTRATION="$ENV_DATA_DIR/genesis/genesis.registration"
+ENV_IDENTITIES="$ENV_DATA_DIR/identities.txt"
 printf '%s:%s:0\n' "$TREASURY_DID_HEX" "$TREASURY_PUBLIC" > "$IDENTITIES"
 if [ "$HANDOVER_PARAMETER_COUNT" -eq 1 ] && [ "$HANDOVER_AUTHORITY" != "$TREASURY_PUBLIC" ]; then
     governance_did=$(printf 'did:layerx:%s' "$HANDOVER_AUTHORITY" | bin_to_hex)
@@ -788,17 +820,17 @@ else
     printf '%s\n' "$SETTLEMENT_LINES" > "$DATA_DIR/sequencer.env"
 fi
 cat >> "$DATA_DIR/sequencer.env" <<EOF
-LAYERX_NODE_CHECKPOINT_DIRECTORY=$DATA_DIR/checkpoints
-LAYERX_NODE_SNAPSHOT=$SNAPSHOT
-LAYERX_NODE_GENESIS_MANIFEST=$MANIFEST
-LAYERX_NODE_GENESIS_REGISTRATION=$REGISTRATION
-LAYERX_NODE_IDENTITIES=$IDENTITIES
-LAYERX_NODE_PROGRAM_FEED_LOG=$DATA_DIR/logs/program-feed.log
-LAYERX_NODE_CANONICAL_LOG=$DATA_DIR/logs/canonical.log
-LAYERX_NODE_RECEIPT_AUTHORITY_LOG=$DATA_DIR/logs/receipt-authority.log
-LAYERX_NODE_BATCH_LOG=$DATA_DIR/logs/batch.log
-LAYERX_NODE_EVIDENCE_LOG=$DATA_DIR/logs/evidence.log
-LAYERX_NODE_HISTORY_DATABASE=$DATA_DIR/history.sqlite
+LAYERX_NODE_CHECKPOINT_DIRECTORY=$ENV_DATA_DIR/checkpoints
+LAYERX_NODE_SNAPSHOT=$ENV_SNAPSHOT
+LAYERX_NODE_GENESIS_MANIFEST=$ENV_MANIFEST
+LAYERX_NODE_GENESIS_REGISTRATION=$ENV_REGISTRATION
+LAYERX_NODE_IDENTITIES=$ENV_IDENTITIES
+LAYERX_NODE_PROGRAM_FEED_LOG=$ENV_DATA_DIR/logs/program-feed.log
+LAYERX_NODE_CANONICAL_LOG=$ENV_DATA_DIR/logs/canonical.log
+LAYERX_NODE_RECEIPT_AUTHORITY_LOG=$ENV_DATA_DIR/logs/receipt-authority.log
+LAYERX_NODE_BATCH_LOG=$ENV_DATA_DIR/logs/batch.log
+LAYERX_NODE_EVIDENCE_LOG=$ENV_DATA_DIR/logs/evidence.log
+LAYERX_NODE_HISTORY_DATABASE=$ENV_DATA_DIR/history.sqlite
 LAYERX_NODE_HISTORY_MIGRATIONS=$MIGRATIONS
 LAYERX_NODE_SEQUENCER_ID=$SEQUENCER_ID
 LAYERX_NODE_SEQUENCER_PUBLIC_KEY=$SEQUENCER_PUBLIC
@@ -820,7 +852,7 @@ LAYERX_NODE_LNI_DEADLINE_MS=2000
 EOF
 
 cat > "$DATA_DIR/replica.env" <<EOF
-LAYERX_AUTHORITY_REPLICA_LOG=$DATA_DIR/replica/receipt-authority.log
+LAYERX_AUTHORITY_REPLICA_LOG=$ENV_DATA_DIR/replica/receipt-authority.log
 LAYERX_AUTHORITY_REPLICA_ID=$REPLICA_ID
 LAYERX_AUTHORITY_SEQUENCER_ID=$SEQUENCER_ID
 LAYERX_AUTHORITY_SEQUENCER_PUBLIC_KEY=$SEQUENCER_PUBLIC
@@ -831,7 +863,7 @@ LAYERX_AUTHORITY_ADDRESS=127.0.0.1
 LAYERX_AUTHORITY_PORT=$REPLICA_PORT
 EOF
 if [ "$HANDOVER_PARAMETER_COUNT" -eq 1 ]; then
-    printf 'LAYERX_AUTHORITY_GENESIS_MANIFEST=%s\nLAYERX_AUTHORITY_AVAILABILITY_LOG=%s/checkpoints/da-bodies.log\n' "$MANIFEST" "$DATA_DIR" >> "$DATA_DIR/replica.env"
+    printf 'LAYERX_AUTHORITY_GENESIS_MANIFEST=%s\nLAYERX_AUTHORITY_AVAILABILITY_LOG=%s/checkpoints/da-bodies.log\n' "$ENV_MANIFEST" "$ENV_DATA_DIR" >> "$DATA_DIR/replica.env"
     if [ -n "$SETTLEMENT_ENV" ]; then
         printf 'LAYERX_NODE_SETTLEMENT_ENV=%s\n' "$SETTLEMENT_ENV" >> "$DATA_DIR/replica.env"
     else
@@ -850,8 +882,8 @@ LAYERX_NODE_LNI_SOCKET=$LNI_SOCKET
 LAYERX_NODE_SUPERVISOR_SOCKET=$SUPERVISOR_SOCKET
 LAYERX_NODE_PROGRAM_URL=http://127.0.0.1:$PROGRAM_PORT
 LAYERX_NODE_REPLICA_URL=http://127.0.0.1:$REPLICA_PORT
-LAYERX_NODE_PROGRAM_BEARER_TOKEN_FILE=$DATA_DIR/secrets/program-token
-LAYERX_NODE_REPLICA_BEARER_TOKEN_FILE=$DATA_DIR/secrets/replica-token
+LAYERX_NODE_PROGRAM_BEARER_TOKEN_FILE=$ENV_DATA_DIR/secrets/program-token
+LAYERX_NODE_REPLICA_BEARER_TOKEN_FILE=$ENV_DATA_DIR/secrets/replica-token
 LAYERX_NODE_SEQUENCER_ID=$SEQUENCER_ID
 LAYERX_NODE_SEQUENCER_PUBLIC_KEY=$SEQUENCER_PUBLIC
 LAYERX_NODE_REPLICA_ID=$REPLICA_ID
@@ -859,19 +891,19 @@ LAYERX_NODE_GENESIS_STATE_ROOT=$GENESIS_STATE_ROOT
 LAYERX_NODE_GENESIS_RECEIPT_STATE_ROOT=$GENESIS_RECEIPT_STATE_ROOT
 LAYERX_NODE_GENESIS_GUARANTOR_ID=$GUARANTOR_ID
 LAYERX_NODE_GENESIS_GUARANTOR_PUBLIC_KEY=$GUARANTOR_PUBLIC
-LAYERX_NODE_GENESIS_GUARANTOR_KEY_FILE=$GUARANTOR_KEY_FILE
-LAYERX_PAXEER_GENESIS_DIR=$GENESIS_DIR
+LAYERX_NODE_GENESIS_GUARANTOR_KEY_FILE=$ENV_DATA_DIR/secrets/${GUARANTOR_KEY_FILE##*/}
+LAYERX_PAXEER_GENESIS_DIR=$ENV_DATA_DIR/genesis
 LAYERX_NODE_TREASURY_DID=$TREASURY_DID
 LAYERX_NODE_TREASURY_PUBLIC_KEY=$TREASURY_PUBLIC
 LAYERX_NODE_TREASURY_ACCOUNT=$TREASURY_ACCOUNT
 LAYERX_NODE_TREASURY_BALANCE=$TREASURY_BALANCE
-LAYERX_NODE_SEQUENCER_CONFIG=$DATA_DIR/sequencer.conf
-LAYERX_NODE_REPLICA_CONFIG=$DATA_DIR/replica.conf
-LAYERX_NODE_SEQUENCER_ENV=$DATA_DIR/sequencer.env
-LAYERX_NODE_REPLICA_ENV=$DATA_DIR/replica.env
+LAYERX_NODE_SEQUENCER_CONFIG=$ENV_DATA_DIR/sequencer.conf
+LAYERX_NODE_REPLICA_CONFIG=$ENV_DATA_DIR/replica.conf
+LAYERX_NODE_SEQUENCER_ENV=$ENV_DATA_DIR/sequencer.env
+LAYERX_NODE_REPLICA_ENV=$ENV_DATA_DIR/replica.env
 EOF
 if [ "$HANDOVER_PARAMETER_COUNT" -eq 1 ]; then
-    printf 'LAYERX_NODE_GENESIS_HANDOVER_TRUST=%s/genesis-handover-trust.lxt\nLAYERX_NODE_HANDOVER_AUTHORITY_PUBLIC_KEY=%s\n' "$GENESIS_DIR" "$HANDOVER_AUTHORITY" >> "$DATA_DIR/node.env.tmp"
+    printf 'LAYERX_NODE_GENESIS_HANDOVER_TRUST=%s/genesis-handover-trust.lxt\nLAYERX_NODE_HANDOVER_AUTHORITY_PUBLIC_KEY=%s\n' "$ENV_DATA_DIR/genesis" "$HANDOVER_AUTHORITY" >> "$DATA_DIR/node.env.tmp"
 fi
 if [ -n "$TREASURY_SIGNER_SOCKET" ]; then
     printf 'LAYERX_NODE_TREASURY_SIGNER_SOCKET=%s\n' "$TREASURY_SIGNER_SOCKET" >> "$DATA_DIR/node.env.tmp"
@@ -887,7 +919,11 @@ for ((index = 0; index < GUARANTOR_COUNT; index++)); do
 done
 if [ "$GUARANTOR_COUNT" -gt 1 ]; then
     printf 'LAYERX_NODE_SECOND_GUARANTOR_ID=%s\nLAYERX_NODE_SECOND_GUARANTOR_PUBLIC_KEY=%s\nLAYERX_NODE_SECOND_GUARANTOR_KEY_FILE=%s\n' \
-        "$GUARANTOR_SECOND_ID" "$GUARANTOR_SECOND_PUBLIC" "$GUARANTOR_SECOND_KEY_FILE" >> "$DATA_DIR/node.env.tmp"
+        "$GUARANTOR_SECOND_ID" "$GUARANTOR_SECOND_PUBLIC" "$ENV_DATA_DIR/secrets/${GUARANTOR_SECOND_KEY_FILE##*/}" >> "$DATA_DIR/node.env.tmp"
+fi
+if [ -n "$GENERATION_TARGET_DIR" ]; then
+    printf 'LAYERX_NODE_GENESIS_GUARANTOR_PRODUCER_ROOT=%s/producer-generations\nLAYERX_NODE_CORE_ENV=%s/core.env\n' \
+        "$ENV_DATA_DIR" "$ENV_DATA_DIR" >> "$DATA_DIR/node.env.tmp"
 fi
 chmod 0600 "$DATA_DIR/node.env.tmp"
 mv "$DATA_DIR/node.env.tmp" "$DATA_DIR/node.env"
@@ -897,6 +933,9 @@ for ((index = 0; index < GUARANTOR_COUNT; index++)); do
     identity_id=${entry%% *}
     identity_key=${GUARANTOR_KEYS[$identity_id]}
     producer_dir="$(dirname "$DATA_DIR")/guarantor-$identity"
+    if [ -n "$GENERATION_TARGET_DIR" ]; then
+        producer_dir="$DATA_DIR/producer-generations/guarantor-$identity"
+    fi
     mkdir -p "$producer_dir/identity" "$producer_dir/state"
     chgrp "$LNI_GID" "$producer_dir" "$producer_dir/identity" "$producer_dir/state"
     chmod 0750 "$producer_dir" "$producer_dir/identity"
@@ -917,13 +956,17 @@ for ((index = 0; index < GUARANTOR_COUNT; index++)); do
     chgrp "$LNI_GID" "$producer_dir/identity/"*
     chmod 0440 "$producer_dir/identity/"*
 done
-printf 'LAYERX_CORE_SEQUENCER_ID=%s\nLAYERX_CORE_TREASURY_ASSET=%s\n' \
-    "$SEQUENCER_ID" "$ASSET_ID" > "$RUN_DIR/core.env.tmp"
-if [ -n "$TREASURY_SIGNER_SOCKET" ]; then
-    printf 'LAYERX_CORE_TREASURY_SIGNER_SOCKET=%s\n' "$TREASURY_SIGNER_SOCKET" >> "$RUN_DIR/core.env.tmp"
+CORE_ENV_OUTPUT="$RUN_DIR/core.env"
+if [ -n "$GENERATION_TARGET_DIR" ]; then
+    CORE_ENV_OUTPUT="$DATA_DIR/core.env"
 fi
-chmod 0644 "$RUN_DIR/core.env.tmp"
-mv "$RUN_DIR/core.env.tmp" "$RUN_DIR/core.env"
+printf 'LAYERX_CORE_SEQUENCER_ID=%s\nLAYERX_CORE_TREASURY_ASSET=%s\n' \
+    "$SEQUENCER_ID" "$ASSET_ID" > "$CORE_ENV_OUTPUT.tmp"
+if [ -n "$TREASURY_SIGNER_SOCKET" ]; then
+    printf 'LAYERX_CORE_TREASURY_SIGNER_SOCKET=%s\n' "$TREASURY_SIGNER_SOCKET" >> "$CORE_ENV_OUTPUT.tmp"
+fi
+chmod 0644 "$CORE_ENV_OUTPUT.tmp"
+mv "$CORE_ENV_OUTPUT.tmp" "$CORE_ENV_OUTPUT"
 
 cat > "$DATA_DIR/treasury.json" <<EOF
 {"did":"$TREASURY_DID","public_key":"$TREASURY_PUBLIC","account":"$TREASURY_ACCOUNT","asset":"$ASSET_ID","genesis_balance":"$TREASURY_BALANCE","network_id":$NETWORK_ID}
