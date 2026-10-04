@@ -2519,3 +2519,8 @@ resolution = "Implement the actual canonical effect owner and protected result w
 area = "Bounded source lookup output"
 observed = "A generator lookup included all build-script filenames and exceeded tool output capacity; two searches also named nonexistent candidate paths."
 resolution = "Use exact known directory and filename queries; recover the full truncated listing through a read-only helper before inferring generator availability."
+
+[gotcha.740]
+area = "Real custody consumer refusal assertion"
+observed = "After genuine five-node ceremony import succeeded, task38 verify reached the actual Rust consumer and failed the existing StepUpMismatch assertion at native_send_purpose.rs603."
+resolution = "Retain the assertion and exact build0 verify1 evidence; no unchanged rerun or unapproved neighboring edit. A concrete source repair or owner contract decision is required."
