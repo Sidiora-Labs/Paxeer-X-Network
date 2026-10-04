@@ -26347,8 +26347,16 @@ fleet_role = "integrate_dependencies"
 implementation_window = "2026-10-04T13:22:09.647272+00:00 to 2026-10-04T13:52:09.647272+00:00"
 source_status = "complete"
 completion_basis = "implementation under owner CONSTITUTION; qualification separately recorded"
-qualification_status = "UNRUN"
+qualification_status = "pending genuine native foundation artifact manifest"
 source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/fleet-103.6.9-publication.json"
+qualification_revision = "a4d263fb9efc1d6dfe5c17007889470ffc5e2fc3"
+qualification_command = "timeout 30m tools/paxeer-x/verify-task.sh 103.6.9"
+qualification_exit_code = "UNRUN"
+qualification_log = "UNRUN"
+build_status = "PREREQUISITE_UNAVAILABLE_BEFORE_COMPILE"
+build_exit_code = 78
+qualification_evidence = "/root/lx-ops/paxeer-x-integration-2026-10-03/fleet-103.6.9-result.json"
+build_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/fleet-103.6.9-build-a4d263fb9.log"
 
 [task.103.6.10]
 title = "Bind a real finality-authority verifier in layerxd so the sequencer bootstraps"
