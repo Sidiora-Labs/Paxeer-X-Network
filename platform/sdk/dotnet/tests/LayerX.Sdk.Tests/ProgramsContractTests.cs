@@ -328,11 +328,11 @@ public sealed class ProgramsContractTests
                         wantedActivity ?? activity, null, CancellationToken.None]));
             var verified = await Check(map);
             Assert.Equal(abi, verified.Receipt.Receipt.ProgramOutcome!.AbiVersion);
-            Assert.Equal(rawKind, verified.Receipt.Receipt.ProgramOutcome.TerminalKind);
+            Assert.Equal(rawKind, verified.Receipt.Receipt.ProgramOutcome!.TerminalKind);
             Assert.Equal("sequencer-signed", verified.Receipt.Level);
             if (kind is "callback" or "settlement")
             {
-                var unwrapped = Assert.IsType<byte[]>(Invoke("UnwrapAppliedTerminal", verified.TerminalPayload, verified.Receipt.Receipt.ProgramOutcome));
+                var unwrapped = Assert.IsType<byte[]>(Invoke("UnwrapAppliedTerminal", verified.TerminalPayload, verified.Receipt.Receipt.ProgramOutcome!));
                 var inner = Property<byte[]>(Invoke("UnwrapTerminal", unwrapped)!, "Inner");
                 Assert.True(inner.AsSpan().StartsWith(Encoding.UTF8.GetBytes($"LXP/programs/{kind}-failure/v1\0")));
             }
