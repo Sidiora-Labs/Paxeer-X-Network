@@ -33680,3 +33680,29 @@ qualification_status = "unverified"
 build_exit_code = 101
 verify_status = "UNRUN"
 qualification_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/qualification/task1043528/result.json"
+
+[task.104.35.31]
+title = "Compile and exercise the real historical replay Client corpus"
+status = "done"
+mode = "BUILD"
+wave = 4
+requires = ["0.2", "104.35.26", "104.35.28"]
+reqs = ["1105.3", "1105.4"]
+do_1 = "Remove only the obsolete duplicated Asset import block in the actual replay catalogue Client test. Preserve every actual test, proof, corpus input and assertion."
+do_2 = "Compile the genuine source-bound native and Client transport corpus after the relevant linker and test-source corrections, then execute the declared real proof and transport gate with separate retained evidence."
+touches = ["agent/crates/layerx-client/tests/replay_catalogue.rs"]
+build_cmd = "timeout 20m python3 tools/qualification/paxeer-x/replay-catalogue.py --build"
+verify_cmd = "timeout 10m python3 tools/qualification/paxeer-x/replay-catalogue.py"
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop at original30-minute cap, unrelated failure, missing genuine authority or any weakening; preserve exact command, exit and private log."
+completion_basis_policy = "Owner CONSTITUTION: fully implemented DONE; qualification separate and partial remains in_progress."
+source_ownership = "Only the exact Client test source is writable. Root owns spec and publication; no production behavior changes or deployment."
+
+completion_basis = "implementation"
+qualification_status = "unverified"
+build_exit_code = 0
+verify_exit_code = 1
+qualification_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-104.35.31-result.json"
