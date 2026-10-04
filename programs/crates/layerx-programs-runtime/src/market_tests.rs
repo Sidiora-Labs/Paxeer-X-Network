@@ -55,6 +55,7 @@ fn grants() -> Vec<Capability> {
     vec![
         Capability::SharedStorageRead,
         Capability::SharedStorageWrite,
+        Capability::EmitEvent,
     ]
 }
 fn fund(seed: &[u8], amount: u128) -> Capability {
@@ -81,6 +82,18 @@ fn execute(
     input: &[u8],
     extra: Vec<Capability>,
 ) -> CandidateAuthorizedExecutionRecord {
+    let mut authority = grants();
+    authority.extend(extra);
+    execute_with_authority(storage, actor, height, input, authority)
+}
+
+fn execute_with_authority(
+    storage: &mut Storage,
+    actor: [u8; 32],
+    height: u64,
+    input: &[u8],
+    authority: Vec<Capability>,
+) -> CandidateAuthorizedExecutionRecord {
     let path = std::env::var("LAYERX_MARKET_WASM")
         .unwrap_or_else(|e| panic!("actual compiled market: {e}"));
     let wasm = std::fs::read(path).unwrap_or_else(|e| panic!("compiled market: {e}"));
@@ -88,8 +101,6 @@ fn execute(
         .unwrap_or_else(|e| panic!("engine: {e}"))
         .validate_v2(&wasm)
         .unwrap_or_else(|e| panic!("market validation: {e}"));
-    let mut authority = grants();
-    authority.extend(extra);
     Executor::declared()
         .for_abi(2)
         .execute_authorized_v2_with_budget(
@@ -135,7 +146,10 @@ fn initialized() -> Storage {
         &offer(),
         vec![fund(b"offer/stake", 500)],
     );
-    assert!(registered.response().is_some());
+    assert!(
+        registered.response().is_some(),
+        "registered outcome: {registered:?}"
+    );
     let effects = registered
         .effects()
         .unwrap_or_else(|| panic!("offer effects"));
@@ -162,7 +176,7 @@ fn compiled_market_funding_expiry_public_settlement_and_close() {
         &lease(40),
         vec![fund(b"lease/escrow", 40)],
     );
-    assert!(opened.response().is_some());
+    assert!(opened.response().is_some(), "opened outcome: {opened:?}");
     let effects = opened.effects().unwrap_or_else(|| panic!("lease effects"));
     assert_eq!(effects.transfers.len(), 1);
     assert_eq!(effects.transfers[0].amount, 40);
@@ -192,7 +206,7 @@ fn compiled_market_funding_expiry_public_settlement_and_close() {
         &operation(4, [5; 32]),
         vec![spend(b"lease/escrow", [4; 32], 40)],
     );
-    assert!(expired.response().is_some());
+    assert!(expired.response().is_some(), "expired outcome: {expired:?}");
     let effects = expired
         .effects()
         .unwrap_or_else(|| panic!("refund effects"));
@@ -234,7 +248,7 @@ fn compiled_market_funding_expiry_public_settlement_and_close() {
         &operation(5, [1; 32]),
         vec![spend(b"offer/stake", [2; 32], 500)],
     );
-    assert!(closed.response().is_some());
+    assert!(closed.response().is_some(), "closed outcome: {closed:?}");
     let effects = closed.effects().unwrap_or_else(|| panic!("stake return"));
     assert_eq!(effects.transfers.len(), 1);
     assert_eq!(effects.transfers[0].amount, 500);
@@ -246,6 +260,22 @@ fn compiled_market_funding_expiry_public_settlement_and_close() {
 }
 #[test]
 fn compiled_market_refuses_unfunded_and_unauthorized_payments_atomically() {
+    let mut storage = Storage::new();
+    let before = storage.clone();
+    let refused = execute_with_authority(
+        &mut storage,
+        [2; 32],
+        1,
+        &offer(),
+        vec![
+            Capability::SharedStorageRead,
+            Capability::SharedStorageWrite,
+            fund(b"offer/stake", 500),
+        ],
+    );
+    assert!(refused.effects().is_none());
+    assert!(refused.response().is_none());
+    assert_eq!(storage, before);
     let mut storage = initialized();
     let before = storage.clone();
     for (amount, funding) in [
