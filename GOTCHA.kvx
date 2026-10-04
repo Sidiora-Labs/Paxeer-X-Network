@@ -2549,3 +2549,83 @@ resolution = "Invoke candidate.py create with exact repo, spec, immutable mainli
 area = "Rust Wasm debug sections"
 observed = "Language guest retained 1218038 bytes of DWARF and exceeded the existing module size limit."
 resolution = "Owner approved removing compiler debug sections during the original link; retain the bound, prior verify1 and separate new build evidence."
+
+[gotcha.738]
+area = "Native state-proof producer discovery"
+observed = "An initial registry lookup missed the genuine deployment bundle encoder in lxp_daemon_deployment.inc and incorrectly reported absent producer authority."
+resolution = "Correct the finding: existing encoder is already used by real LNI ProgramEvidence. Connect it through a distinct native HTTP route and exact boundary allowlist while preserving account-state profiles."
+
+[gotcha.739]
+area = "Native signing timestamp units"
+observed = "Canonical protocol3 activity validity is milliseconds while existing Go signing policy uses Unix seconds; new MCP payer cannot satisfy both unchanged contracts."
+resolution = "Keep old profiles intact and prepare an explicit authenticated native millisecond profile with checked approval conversion; require owner approval before the new signing policy is applied."
+
+[gotcha.741]
+area = "Source-complete task claims"
+observed = "Codify refuses a new implementation claim on an already done source task."
+resolution = "Use a separately recorded owner-approved continuation task while preserving original DONE source status, frozen handoffs, time limits and all prior qualification results."
+
+[gotcha.743]
+area = "Cargo proxy invocation"
+observed = "The language build resolved the Cargo proxy symlink to rustup and invoked the wrong executable name."
+resolution = "Preserve the absolute proxy path without resolving symlinks; keep firstbuild1 and exactone-line repairc9542c8fd separately."
+
+[gotcha.744]
+area = "Complete canonical web fixture width"
+observed = "The actual language fixture committed16textbytes plus40headerbytes but allocated55bytes; native compilation correctly rejected array bounds."
+resolution = "Derive allocation and exactlength comparison from canonical header plus complete text, retainfull-byte equality and record finalrepair2d5ff48853."
+
+[gotcha.745]
+area = "ExecutionRecord metering field"
+observed = "Migration build compilednativeowner butRustFFI called a nonexistent usage() method on actualExecutionRecord."
+resolution = "Read its real public usage field; preserve originalbuild1/Rust101 and sourceonlyrepairb70297361 until an authorized boundedbuild runs."
+
+[gotcha.746]
+area = "Interrupted worker time windows"
+observed = "After the session interruption, activeworker turns reported usage limits and wallclock was past every approved build window."
+resolution = "Recover only durable logs and hashes, preserve actual elapsedcaps and existingresults; explicitcontinuation required before additionalimplementation or gates."
+
+[gotcha.747]
+area = "Idle collaboration helper dispatch"
+observed = "Registry owner sent a corpus task to an already completedhelper with send_message, which did not launch a new turn; the livecorpus remained unwritten."
+resolution = "Use followup_task for completedagents; record unwritten source aspartial and neverinfer work frommessage delivery."
+
+[gotcha.748]
+area = "Migration fixture native declarations"
+observed = "C fixture compilation needed the actual lxp_crypto.h declaration and explicit bounded byte conversion."
+resolution = "Preserve all assertions; record repaired source c158fab46 and final build0 separately from missing historical fixture verify78."
+
+[gotcha.750]
+area = "External test layout edits"
+observed = "Eighteen Solidity tests were already moved outside the current agent team without a current coordination record."
+resolution = "Preserve exact files; user explicitly authorized finishing configuration and publishing those moves before any mutation."
+
+[gotcha.751]
+area = "KVX inline comments"
+observed = "A private layout checker treated markdown_mirror=false with an inline comment as enabled."
+resolution = "Preserve the exact false predicate while parsing the supported inline comment; retain original exit1 and corrected check0."
+
+[gotcha.752]
+area = "Python test collection tool prerequisite"
+observed = "The server Python lacked pytest after the SDK tests were relocated."
+resolution = "Use an isolated pytest8.4.2 development environment; retain first failure and actual119-test collection0 without running behavior or protected probes."
+
+[gotcha.753]
+area = "Scoped metadata publication"
+observed = "A whole-field path projection differed because the worktree also held unpublished lease edits."
+resolution = "Stage only the approved literal path substitutions against HEAD and preserve every unrelated existing field member; never stage the entire owner-dirty specification."
+
+[gotcha.754]
+area = "Authenticated DID compiler interface"
+observed = "The MCP price lookup passed DID bytes to an API requiring a reference to the typed DID."
+resolution = "Use the actual typed principal reference, preserve authorization predicates and record the original build failure plus scoped repair publication."
+
+[gotcha.755]
+area = "Wasm compiler configuration lookup"
+observed = "The standalone SDK build ran outside Programs configuration and direct rustc did not inherit the admitted Wasm flags."
+resolution = "Apply existing reference-types and relocation flags explicitly to SDK and guest compilation; keep engine policy and artifact bounds unchanged."
+
+[gotcha.756]
+area = "Negative ABI fixture import selection"
+observed = "The language negative generator mutated the first integer type rather than the actual oracle import type."
+resolution = "Resolve the real host import type index and mutate that signature while preserving every refusal assertion and complete section bounds."
