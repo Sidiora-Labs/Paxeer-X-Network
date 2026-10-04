@@ -45,6 +45,8 @@ const FINALIZE_USAGE: u8 = 12;
 pub const OFFER_PREFIX: &[u8] = b"lx.market.offer/";
 pub const LEASE_PREFIX: &[u8] = b"lx.market.lease/";
 pub const CLAIM_PREFIX: &[u8] = b"lx.market.claim/";
+pub const SETTLEMENT_PREFIX: &[u8] = b"lx.market.settlement/";
+pub const SETTLEMENT_CAPACITY: usize = 282;
 #[cfg(target_arch = "wasm32")]
 const CHALLENGE_PREFIX: &[u8] = b"lx.market.challenge/";
 #[cfg(target_arch = "wasm32")]
@@ -59,6 +61,8 @@ const TOPIC_LEASE: &[u8] = b"lx.market.lease";
 const TOPIC_CLAIM: &[u8] = b"lx.market.claim";
 #[cfg(target_arch = "wasm32")]
 const TOPIC_CHALLENGE: &[u8] = b"lx.market.challenge";
+#[cfg(target_arch = "wasm32")]
+const TOPIC_SETTLEMENT: &[u8] = b"lx.market.settlement";
 const ID_BYTES: usize = 32;
 const MAX_SEED_BYTES: usize = layerx_program_sdk::MAX_PROGRAM_ACCOUNT_SEED_BYTES;
 #[cfg(target_arch = "wasm32")]
@@ -136,6 +140,129 @@ pub struct ComputeLease<'a> {
     pub expires_at: u64,
     pub verification: VerificationModel,
     pub status: LeaseStatus,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct SettlementRecord {
+    pub lease_id: [u8; ID_BYTES],
+    pub offer_id: [u8; ID_BYTES],
+    pub claim_id: [u8; ID_BYTES],
+    pub escrow_account: AccountId,
+    pub asset: AssetId,
+    pub provider_payout: AccountId,
+    pub tenant_refund: AccountId,
+    pub funded: Amount,
+    pub provider_paid: Amount,
+    pub tenant_paid: Amount,
+    pub settled_at: u64,
+    pub status: LeaseStatus,
+}
+
+impl SettlementRecord {
+    pub fn new(
+        lease: &ComputeLease<'_>,
+        claim_id: [u8; ID_BYTES],
+        provider_paid: Amount,
+        tenant_paid: Amount,
+        settled_at: u64,
+    ) -> Result<Self, ProgramError> {
+        let record = Self {
+            lease_id: lease.id,
+            offer_id: lease.offer_id,
+            claim_id,
+            escrow_account: lease.escrow_account,
+            asset: lease.asset,
+            provider_payout: lease.provider_payout,
+            tenant_refund: lease.tenant_refund,
+            funded: lease.funded,
+            provider_paid,
+            tenant_paid,
+            settled_at,
+            status: lease.status,
+        };
+        record.validate()?;
+        if settled_at < lease.opened_at
+            || (lease.status == LeaseStatus::ExpiredRefunded && settled_at < lease.expires_at)
+        {
+            return Err(malformed());
+        }
+        Ok(record)
+    }
+
+    fn validate(&self) -> Result<(), ProgramError> {
+        if self.lease_id == [0; ID_BYTES]
+            || self.offer_id == [0; ID_BYTES]
+            || self.funded.is_zero()
+            || self.provider_paid.checked_add(self.tenant_paid)? != self.funded
+            || match self.status {
+                LeaseStatus::Funded => true,
+                LeaseStatus::Settled => self.claim_id == [0; ID_BYTES],
+                LeaseStatus::ExpiredRefunded => {
+                    self.claim_id != [0; ID_BYTES] || !self.provider_paid.is_zero()
+                }
+            }
+        {
+            return Err(malformed());
+        }
+        Ok(())
+    }
+}
+
+pub fn encode_settlement(
+    record: &SettlementRecord,
+    output: &mut [u8],
+) -> Result<usize, ProgramError> {
+    record.validate()?;
+    if output.len() < SETTLEMENT_CAPACITY {
+        return Err(malformed());
+    }
+    let mut offset = 0;
+    append(output, &mut offset, &[VERSION, record.status as u8])?;
+    for bytes in [
+        record.lease_id,
+        record.offer_id,
+        record.claim_id,
+        record.escrow_account.bytes(),
+        record.asset.bytes(),
+        record.provider_payout.bytes(),
+        record.tenant_refund.bytes(),
+    ] {
+        append(output, &mut offset, &bytes)?;
+    }
+    for amount in [record.funded, record.provider_paid, record.tenant_paid] {
+        append(output, &mut offset, &amount.to_be_bytes())?;
+    }
+    append(output, &mut offset, &record.settled_at.to_be_bytes())?;
+    Ok(offset)
+}
+
+pub fn decode_settlement(bytes: &[u8]) -> Result<SettlementRecord, ProgramError> {
+    let mut cursor = Cursor::new(bytes);
+    if cursor.byte()? != VERSION {
+        return Err(malformed());
+    }
+    let status = match cursor.byte()? {
+        2 => LeaseStatus::Settled,
+        3 => LeaseStatus::ExpiredRefunded,
+        _ => return Err(malformed()),
+    };
+    let record = SettlementRecord {
+        lease_id: cursor.array()?,
+        offer_id: cursor.array()?,
+        claim_id: cursor.array()?,
+        escrow_account: cursor.account()?,
+        asset: cursor.asset()?,
+        provider_payout: cursor.account()?,
+        tenant_refund: cursor.account()?,
+        funded: cursor.amount()?,
+        provider_paid: cursor.amount()?,
+        tenant_paid: cursor.amount()?,
+        settled_at: cursor.u64()?,
+        status,
+    };
+    cursor.finish()?;
+    record.validate()?;
+    Ok(record)
 }
 
 #[derive(Clone, Copy)]
@@ -300,6 +427,17 @@ fn malformed() -> ProgramError {
     ProgramError::value(Field::CallInput, Reason::Malformed)
 }
 
+#[cfg(any(test, target_arch = "wasm32"))]
+fn decode_operation(cursor: &mut Cursor<'_>) -> Result<u8, ProgramError> {
+    if cursor.byte()? != VERSION {
+        return Err(malformed());
+    }
+    match cursor.byte()? {
+        operation @ (1 | 2 | 4..=14) => Ok(operation),
+        _ => Err(malformed()),
+    }
+}
+
 struct Cursor<'a> {
     bytes: &'a [u8],
     offset: usize,
@@ -352,7 +490,6 @@ impl<'a> Cursor<'a> {
     }
 }
 
-#[cfg(target_arch = "wasm32")]
 fn append(output: &mut [u8], offset: &mut usize, value: &[u8]) -> Result<(), ProgramError> {
     let end = offset.checked_add(value.len()).ok_or_else(malformed)?;
     output
@@ -363,15 +500,13 @@ fn append(output: &mut [u8], offset: &mut usize, value: &[u8]) -> Result<(), Pro
     Ok(())
 }
 
-#[cfg(target_arch = "wasm32")]
 fn append_seed(output: &mut [u8], offset: &mut usize, seed: &[u8]) -> Result<(), ProgramError> {
     let length = u16::try_from(seed.len()).map_err(|_| malformed())?;
     append(output, offset, &length.to_be_bytes())?;
     append(output, offset, seed)
 }
 
-#[cfg(target_arch = "wasm32")]
-fn encode_offer(offer: Offer<'_>, output: &mut [u8]) -> Result<usize, ProgramError> {
+pub fn encode_offer(offer: Offer<'_>, output: &mut [u8]) -> Result<usize, ProgramError> {
     let mut offset = 0;
     append(
         output,
@@ -430,8 +565,7 @@ pub fn decode_offer(input: &[u8]) -> Result<Offer<'_>, ProgramError> {
     Ok(offer)
 }
 
-#[cfg(target_arch = "wasm32")]
-fn encode_lease(lease: &ComputeLease<'_>, output: &mut [u8]) -> Result<usize, ProgramError> {
+pub fn encode_lease(lease: &ComputeLease<'_>, output: &mut [u8]) -> Result<usize, ProgramError> {
     let mut offset = 0;
     append(
         output,
@@ -554,12 +688,18 @@ fn emit(topic: &[u8], bytes: &[u8]) -> Result<(), ProgramError> {
 }
 
 #[cfg(target_arch = "wasm32")]
+fn publish_settlement(record: SettlementRecord) -> Result<(), ProgramError> {
+    let mut bytes = [0; SETTLEMENT_CAPACITY];
+    absent(SETTLEMENT_PREFIX, record.lease_id, &mut bytes)?;
+    let written = encode_settlement(&record, &mut bytes)?;
+    write_state(SETTLEMENT_PREFIX, record.lease_id, &bytes[..written])?;
+    emit(TOPIC_SETTLEMENT, &bytes[..written])
+}
+
+#[cfg(target_arch = "wasm32")]
 fn invoke(input: &[u8]) -> Result<CallResult, ProgramError> {
     let mut cursor = Cursor::new(input);
-    if cursor.byte()? != VERSION {
-        return Err(malformed());
-    }
-    let operation = cursor.byte()?;
+    let operation = decode_operation(&mut cursor)?;
     let height = Context::batch_height()?;
     let caller = principal()?;
     match operation {
@@ -851,6 +991,13 @@ fn invoke(input: &[u8]) -> Result<CallResult, ProgramError> {
             let (offer, lease, claim, plan) =
                 settle::finalize_unchallenged(offer, lease, claim, height)?;
             settle::execute_settlement(&lease, None, plan)?;
+            publish_settlement(SettlementRecord::new(
+                &lease,
+                claim.id,
+                plan.provider,
+                plan.tenant,
+                height,
+            )?)?;
             let mut offer_output = [0; OFFER_CAPACITY];
             let mut lease_output = [0; LEASE_CAPACITY];
             let offer_written = encode_offer(offer, &mut offer_output)?;
@@ -877,6 +1024,13 @@ fn invoke(input: &[u8]) -> Result<CallResult, ProgramError> {
                 let (offer, lease, claim, plan) =
                     settle::finalize_unchallenged(offer, lease, claim, height)?;
                 settle::execute_settlement(&lease, None, plan)?;
+                publish_settlement(SettlementRecord::new(
+                    &lease,
+                    claim.id,
+                    plan.provider,
+                    plan.tenant,
+                    height,
+                )?)?;
                 let mut offer_output = [0; OFFER_CAPACITY];
                 let mut lease_output = [0; LEASE_CAPACITY];
                 let offer_written = encode_offer(offer, &mut offer_output)?;
@@ -896,6 +1050,13 @@ fn invoke(input: &[u8]) -> Result<CallResult, ProgramError> {
                     lease.asset,
                     lease.tenant_refund,
                     lease.funded,
+                )?)?;
+                publish_settlement(SettlementRecord::new(
+                    &lease,
+                    [0; ID_BYTES],
+                    Amount::ZERO,
+                    lease.funded,
+                    height,
                 )?)?;
                 let mut offer_output = [0; OFFER_CAPACITY];
                 let mut lease_output = [0; LEASE_CAPACITY];
@@ -1121,5 +1282,257 @@ mod tests {
         let (offer, lease) =
             open(offer, funded, tenant, 2).unwrap_or_else(|error| panic!("open: {error}"));
         assert!(expire(offer, lease, 19).is_err());
+    }
+
+    fn funded_lease() -> (Offer<'static>, ComputeLease<'static>) {
+        let provider = account(1);
+        let tenant = account(4);
+        let offer = offer(provider, b"stake/offer-1");
+        open(
+            offer,
+            OpenLease {
+                id: [5; 32],
+                offer_id: offer.id,
+                tenant,
+                refund: tenant,
+                escrow_account: account(6),
+                escrow_seed: b"lease/5",
+                units: 10,
+                funded: Amount::from_integer(40u64),
+                expires_at: 20,
+            },
+            tenant,
+            2,
+        )
+        .unwrap_or_else(|error| panic!("funded lease: {error}"))
+    }
+
+    #[test]
+    fn canonical_market_state_is_public_and_strictly_decoded() {
+        let (offer, lease) = funded_lease();
+        let mut offer_bytes = [0; 263 + MAX_SEED_BYTES];
+        let mut lease_bytes = [0; 308 + MAX_SEED_BYTES];
+        let offer_length = encode_offer(offer, &mut offer_bytes)
+            .unwrap_or_else(|error| panic!("offer encoding: {error}"));
+        let lease_length = encode_lease(&lease, &mut lease_bytes)
+            .unwrap_or_else(|error| panic!("lease encoding: {error}"));
+        assert_eq!(decode_offer(&offer_bytes[..offer_length]), Ok(offer));
+        assert_eq!(decode_lease(&lease_bytes[..lease_length]), Ok(lease));
+        assert_eq!(
+            decode_lease(&lease_bytes[..lease_length])
+                .unwrap_or_else(|error| panic!("lease: {error}"))
+                .verification,
+            VerificationModel::FraudProvable
+        );
+        for length in 0..offer_length {
+            assert!(decode_offer(&offer_bytes[..length]).is_err());
+        }
+        for length in 0..lease_length {
+            assert!(decode_lease(&lease_bytes[..length]).is_err());
+        }
+        assert!(decode_offer(&offer_bytes[..offer_length + 1]).is_err());
+        assert!(decode_lease(&lease_bytes[..lease_length + 1]).is_err());
+        for index in 0..3 {
+            let mut changed = offer_bytes;
+            changed[index] = 255;
+            assert!(decode_offer(&changed[..offer_length]).is_err());
+            let mut changed = lease_bytes;
+            changed[index] = 255;
+            assert!(decode_lease(&changed[..lease_length]).is_err());
+        }
+    }
+
+    #[test]
+    fn delivered_usage_settlement_conserves_escrow_and_is_readable() {
+        let (offer, lease) = funded_lease();
+        let (claim, window) = settle::commit_usage(
+            offer,
+            &lease,
+            settle::ProviderCommitment {
+                id: [7; 32],
+                lease_id: lease.id,
+                input_commitment: [11; 32],
+                output_digest: [12; 32],
+                execution_state_root: [13; 32],
+                usage: settle::MeteredUsageClaim {
+                    compute_units: 5,
+                    memory_byte_batches: 0,
+                    storage_read_bytes: 0,
+                    storage_written_bytes: 0,
+                    ingress_bytes: 0,
+                    egress_bytes: 0,
+                },
+                payable: Amount::from_integer(20u64),
+                challenger_stake: Amount::from_integer(50u64),
+                challenge_window_batches: 2,
+            },
+            offer.provider,
+            3,
+        )
+        .unwrap_or_else(|error| panic!("usage: {error}"));
+        assert!(
+            settle::finalize_unchallenged(offer, lease, claim, window.last_challenge_height)
+                .is_err()
+        );
+        let (offer, lease, claim, plan) = settle::finalize_unchallenged(offer, lease, claim, 6)
+            .unwrap_or_else(|error| panic!("settlement: {error}"));
+        assert_eq!(offer.available_capacity, offer.total_capacity);
+        assert_eq!(plan.total(), Ok(lease.funded));
+        assert_eq!(plan.provider, Amount::from_integer(20u64));
+        assert_eq!(plan.tenant, Amount::from_integer(20u64));
+        assert!(settle::finalize_unchallenged(offer, lease, claim, 7).is_err());
+        let record = SettlementRecord::new(&lease, claim.id, plan.provider, plan.tenant, 6)
+            .unwrap_or_else(|error| panic!("record: {error}"));
+        let mut bytes = [0; SETTLEMENT_CAPACITY];
+        assert_eq!(
+            encode_settlement(&record, &mut bytes),
+            Ok(SETTLEMENT_CAPACITY)
+        );
+        assert_eq!(decode_settlement(&bytes), Ok(record));
+        assert_eq!(record.escrow_account, lease.escrow_account);
+        assert_eq!(record.provider_payout, lease.provider_payout);
+        assert_eq!(record.tenant_refund, lease.tenant_refund);
+        assert_eq!(record.asset, lease.asset);
+    }
+
+    #[test]
+    fn absent_provider_expiry_records_exact_refund_once() {
+        let (offer, lease) = funded_lease();
+        assert!(expire(offer, lease, 19).is_err());
+        let (offer, lease) =
+            expire(offer, lease, 20).unwrap_or_else(|error| panic!("expiry: {error}"));
+        assert!(expire(offer, lease, 21).is_err());
+        let record = SettlementRecord::new(&lease, [0; 32], Amount::ZERO, lease.funded, 20)
+            .unwrap_or_else(|error| panic!("refund: {error}"));
+        assert_eq!(record.tenant_paid, Amount::from_integer(40u64));
+        assert_eq!(record.provider_paid, Amount::ZERO);
+        assert!(SettlementRecord::new(&lease, [0; 32], Amount::ZERO, lease.funded, 19).is_err());
+        let closed = close(offer, offer.provider).unwrap_or_else(|error| panic!("close: {error}"));
+        assert_eq!(closed.status, OfferStatus::Closed);
+        assert!(close(closed, closed.provider).is_err());
+    }
+
+    #[test]
+    fn renter_funding_and_provider_capacity_are_exact_obligations() {
+        let (reserved, lease) = funded_lease();
+        assert!(close(reserved, reserved.provider).is_err());
+        let original = offer(account(1), b"stake/offer-1");
+        let request = OpenLease {
+            id: [5; 32],
+            offer_id: original.id,
+            tenant: account(4),
+            refund: account(4),
+            escrow_account: account(6),
+            escrow_seed: b"lease/5",
+            units: 10,
+            funded: Amount::from_integer(40u64),
+            expires_at: 20,
+        };
+        for funding in [0, 39, 41] {
+            assert!(open(
+                original,
+                OpenLease {
+                    funded: Amount::from_integer(funding as u64),
+                    ..request
+                },
+                request.tenant,
+                2
+            )
+            .is_err());
+        }
+        assert!(open(original, request, original.provider, 2).is_err());
+        for units in [0, 1, 21, 101] {
+            assert!(open(
+                original,
+                OpenLease {
+                    units,
+                    funded: original
+                        .unit_price
+                        .checked_mul(Amount::from_integer(units))
+                        .unwrap_or_else(|error| panic!("price: {error}")),
+                    ..request
+                },
+                request.tenant,
+                2
+            )
+            .is_err());
+        }
+        assert!(open(
+            original,
+            OpenLease {
+                expires_at: 51,
+                ..request
+            },
+            request.tenant,
+            2
+        )
+        .is_err());
+        assert!(open(
+            original,
+            OpenLease {
+                expires_at: 2,
+                ..request
+            },
+            request.tenant,
+            2
+        )
+        .is_err());
+        assert_eq!(original.available_capacity, 100);
+        assert_eq!(
+            reserved.available_capacity + lease.units,
+            original.total_capacity
+        );
+    }
+
+    #[test]
+    fn settlement_decoder_refuses_invalid_totals_status_and_noncanonical_bytes() {
+        let (offer, lease) = funded_lease();
+        let (_, lease) = expire(offer, lease, 20).unwrap_or_else(|error| panic!("expiry: {error}"));
+        let record = SettlementRecord::new(&lease, [0; 32], Amount::ZERO, lease.funded, 20)
+            .unwrap_or_else(|error| panic!("record: {error}"));
+        let mut bytes = [0; SETTLEMENT_CAPACITY];
+        encode_settlement(&record, &mut bytes).unwrap_or_else(|error| panic!("encoding: {error}"));
+        for length in 0..SETTLEMENT_CAPACITY {
+            assert!(decode_settlement(&bytes[..length]).is_err());
+        }
+        let mut trailing = bytes.to_vec();
+        trailing.push(0);
+        assert!(decode_settlement(&trailing).is_err());
+        for index in [0, 1, 66, 241, 257, 273] {
+            let mut changed = bytes;
+            changed[index] ^= 1;
+            assert!(decode_settlement(&changed).is_err(), "mutation {index}");
+        }
+        let mut short = [0xa5; SETTLEMENT_CAPACITY - 1];
+        assert!(encode_settlement(&record, &mut short).is_err());
+        assert_eq!(short, [0xa5; SETTLEMENT_CAPACITY - 1]);
+        assert!(SettlementRecord::new(
+            &lease,
+            [0; 32],
+            Amount::from_integer(1u64),
+            lease.funded,
+            20
+        )
+        .is_err());
+        assert!(SettlementRecord::new(
+            &lease,
+            [0; 32],
+            Amount::MAX,
+            Amount::from_integer(1u64),
+            20
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn marketplace_selector_refuses_legacy_unchecked_settlement_and_unknown_operations() {
+        for operation in 0..=255 {
+            let bytes = [VERSION, operation];
+            let result = decode_operation(&mut Cursor::new(&bytes));
+            assert_eq!(result.is_ok(), matches!(operation, 1 | 2 | 4..=14));
+        }
+        for bytes in [vec![], vec![VERSION], vec![0, 1], vec![2, 1], vec![255, 1]] {
+            assert!(decode_operation(&mut Cursor::new(&bytes)).is_err());
+        }
     }
 }
