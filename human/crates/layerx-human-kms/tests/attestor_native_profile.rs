@@ -331,7 +331,8 @@ fn native_provider_and_sdk_real_cluster() -> Result<()> {
     .into();
     assert_eq!(result.signer_public_key(), public);
     ring::signature::UnparsedPublicKey::new(&ring::signature::ED25519, public)
-        .verify(&digest, result.signature())?;
+        .verify(&digest, result.signature())
+        .map_err(|_| "native purpose signature verification refused")?;
     let grant = NativeLocalGrantConsentV1 {
         capability: STANDARD.decode(&material.capability)?,
         session_scope: STANDARD.decode(&material.native_session)?,
@@ -358,7 +359,8 @@ fn native_provider_and_sdk_real_cluster() -> Result<()> {
     let grant_digest: [u8; 32] = Sha256::digest(native_local_grant_signing_bytes(&grant)?).into();
     assert_eq!(signature.digest(), &grant_digest);
     ring::signature::UnparsedPublicKey::new(&ring::signature::ED25519, public)
-        .verify(&grant_digest, signature.signature())?;
+        .verify(&grant_digest, signature.signature())
+        .map_err(|_| "native SDK grant signature verification refused")?;
 
     let passkeys = Passkeys::new(AuthConfig {
         rp_id: "paxportwallet.com".to_owned(),
@@ -520,7 +522,8 @@ fn native_provider_and_sdk_real_cluster() -> Result<()> {
     assert_eq!(signed.signer_public_key(), public);
     assert_eq!(signed.disclosure_digest(), grant_digest);
     ring::signature::UnparsedPublicKey::new(&ring::signature::ED25519, public)
-        .verify(&grant_digest, signed.signature())?;
+        .verify(&grant_digest, signed.signature())
+        .map_err(|_| "native custody grant signature verification refused")?;
     let replayed = ready(custody.sign_native_consent_in_scope(
         &mut scope,
         NativeConsentRequest::new(
