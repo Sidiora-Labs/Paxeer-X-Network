@@ -3362,7 +3362,7 @@ interop-test-visa-tap:
 
 interop-lint:
 	$(INTEROP_CARGO) clippy --manifest-path $(INTEROP_MANIFEST) --locked --workspace --all-targets -- -D warnings
-	sh interop/tools/dependency-policy.sh
+	sh scripts/interop/dependency-policy.sh
 	cargo deny --manifest-path $(INTEROP_MANIFEST) check advisories bans sources
 
 .PHONY: bridge-test-evm bridge-test-solana

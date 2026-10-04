@@ -34671,3 +34671,30 @@ remaining_repair_cycles = 1
 qualification_repair1_build_evidence = "b702973618ce764f4245cae99ba67614575c7beb | timeout 20m python3 tools/qualification/paxeer-x/programs_native_migration.py --build-artifacts | 1 | /root/lx-ops/paxeer-x-integration-2026-10-03/task-6.8-qualification-build/build-3.log"
 repair2 = "Explicit uint8_t conversion for bounded0/1 and actual lxp_crypto.h include; no assertion or bounds changes"
 remaining_repair_cycles_after_repair2 = 0
+
+[task.200.1]
+title = "Centralize the standalone interop dependency policy script"
+status = "done"
+mode = "BUILD"
+wave = 7
+requires = ["0.2"]
+reqs = ["2001"]
+do_1 = "Move interop/tools/dependency-policy.sh unchanged with originalmode to scripts/interop/dependency-policy.sh; update sole Makefile invocation and preserve same-depth repository root calculation. No product dependency-policy execution or compiled-tool move."
+touches = ["interop/tools/dependency-policy.sh", "scripts/interop/dependency-policy.sh", "Makefile"]
+verify_cmd = "sh -n scripts/interop/dependency-policy.sh"
+max_builds = 0
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "START11:28UTC END11:58UTC; exact standalone relocation only, no changes to active integrationworktrees or product qualification."
+source_status = "complete"
+qualification_status = "PASSED_SCOPED_SHELL_SYNTAX"
+owner_authority = "User explicitly requested repositorytidyup and delegated judgment for professional layout. Preserve firstparty/language tool conventions perdisclosedpolicy."
+qualification_evidence = "c158fab4653643f9185a8b859184f531e6803db4 + moved source sha256 39dbeca39ffd03c0f343ae60bbb4e3647ec0ac757b0c43105ed2e39f322c8527 | sh -n scripts/interop/dependency-policy.sh | 0 | /root/lx-ops/paxeer-x-integration-2026-10-03/task-200.1-verify.log"
+completion_basis = "implementation and exactdeclaredsyntaxgate; dependency policy itself notexecuted"
+
+[req.2001]
+title = "Organize first-party tests and scripts under canonical root directories"
+ac_1 = "Standalone first-party scripts live under scripts/subsystem and standalone integration tests under tests/subsystem, preserving target names, invocation semantics, permissions, imports, fixtures and CI discovery."
+ac_2 = "Retain language-required package-private Go tests, inline Rust unit tests, generated/dependency/upstream and tool-owned layouts; do not change visibility or remove coverage for directory uniformity."
+ac_3 = "Every relocation updates all actual source/build/CI references atomically; no untracked compatibility alias or disconnected harness substitutes for correct wiring."
