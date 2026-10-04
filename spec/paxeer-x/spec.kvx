@@ -36751,11 +36751,11 @@ source_status = "complete"
 completion_basis = "implementation under owner CONSTITUTION; qualification separately recorded"
 qualification_status = "UNRUN"
 source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/root-continuation-raw-104.33.7.3-intake.json"
-qualification_revision = "f91715b717ef87c64e8884484a8967de0f61b9a4"
-qualification_command = "timeout 20m scripts/paxeer-x/verify-sdk-program-python.sh"
-qualification_exit_code = 78
-qualification_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/python-104.33.7.3-v5-verify.log"
-qualification_evidence = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-104.33.7.3-v5-qualification.json"
+qualification_revision = "UNRUN"
+qualification_command = "UNRUN"
+qualification_exit_code = "UNRUN"
+qualification_log = "UNRUN"
+qualification_evidence = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-104.33.7.3-v5-continuation-artifact-handoff.json"
 build_revision = "f91715b717ef87c64e8884484a8967de0f61b9a4"
 build_command = "PYTHONPATH=agent/sdk/python python3 -m compileall -q agent/sdk/python/layerx_sdk"
 build_exit_code = 0
@@ -36763,6 +36763,15 @@ build_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/python-104.33.7.3-v5-b
 continuation_approval = "/root/lx-ops/paxeer-x-integration-2026-10-03/terminal-v5-continuation-approval.json"
 continuation_deadline_utc = "2026-10-04T19:20:41Z"
 continuation_minutes = 45
+source_revision = "ec5f365ed6ab84deedd251bc4c689e4ecc1a5a67"
+build_reused = true
+corpus_revision = "4c209dfc86a97fa56e8892cf19c30b9b35c1b56f"
+corpus_artifact = "/root/lx-ops/paxeer-x-integration-2026-10-03/native-terminal-v5-repair1-4c209dfc-qualification/build-output/terminal-v5-corpus.json"
+qualification_missing_prerequisite = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-104.33.7.3-http-producer-gap.json"
+qualification_stop = "Root forbids unchanged missing-HTTP-prerequisite gate; native corpus alone does not authorize rerun."
+prior_qualification_revision = "f91715b717ef87c64e8884484a8967de0f61b9a4"
+prior_qualification_exit_code = 78
+prior_qualification_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/python-104.33.7.3-v5-verify.log"
 
 [task.104.33.7.6]
 title = "Complete Swift Programs client integration"
