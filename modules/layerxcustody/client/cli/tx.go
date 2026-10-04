@@ -82,6 +82,7 @@ func NewSubmitCustodyProposalCmd() *cobra.Command {
 			return tx.GenerateOrBroadcastTxCLI(cmd.Context(), clientCtx, cmd.Flags(), msg)
 		},
 	}
+	cmd.Flags().String(flags.FlagChainID, "", "The network chain ID")
 	flags.AddTxFlagsToCmd(cmd)
 	return cmd
 }

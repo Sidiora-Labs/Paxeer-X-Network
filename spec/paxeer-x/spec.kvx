@@ -36019,3 +36019,17 @@ source_status = "complete"
 completion_basis = "implementation under owner CONSTITUTION; qualification separately recorded"
 qualification_status = "UNRUN"
 source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-103.6.19-publication-handoff.json"
+
+[task.103.6.21]
+title = "Declare the chain ID flag before custody proposal transaction flags"
+status = "done"
+wave = 5
+verify_cmd = "timeout 5m /root/lx-ops/paxeer-x-integration-2026-10-03/qualification/task103621/cli.test -test.run ^TestCustodyProposal -test.v"
+touches = ["modules/layerxcustody/client/cli/tx.go"]
+do_1 = "Register only existing flags.FlagChainID as a local string before existing AddTxFlagsToCmd"
+do_2 = "preserve all parsing and authorization checks"
+do_3 = "Compile the real declared package once then execute only its captured focused test binary once"
+source_status = "complete"
+completion_basis = "implementation under owner CONSTITUTION; qualification separately recorded"
+qualification_status = "UNRUN"
+source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-103.6.21-publication-handoff.json"
