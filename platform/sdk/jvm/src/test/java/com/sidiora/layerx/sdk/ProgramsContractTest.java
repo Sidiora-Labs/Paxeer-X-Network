@@ -471,6 +471,8 @@ public final class ProgramsContractTest {
         org.junit.jupiter.api.Assertions.assertNotNull(corpusPath, "actual native terminal-v5 corpus required");
         JsonNode corpus = JSON.readTree(Files.readString(Path.of(corpusPath)));
         assertTrue(corpus.path("source_revision").asText().matches("[0-9a-f]{40}"));
+        byte[] trustedSequencer = fixtureBytes(corpus, "trusted_sequencer_public_key_hex");
+        assertEquals(32, trustedSequencer.length);
         JsonNode cases = corpus.path("cases");
         assertTrue(cases.isArray());
         java.util.Set<String> observed = new java.util.HashSet<>();
@@ -481,6 +483,7 @@ public final class ProgramsContractTest {
             byte[] signed = fixtureBytes(row, "signed_activity_hex");
             NativeProgramCall request = NativeProgramCall.decodeSignedActivity(signed);
             assertEquals(abi, request.guestAbi());
+            assertArrayEquals(fixtureBytes(row, "native_call_payload_hex"), request.encode());
             assertArrayEquals(fixtureBytes(row, "program_id_hex"), request.programId());
             byte[] activity = sha256("LXP/v1/activity-id\0".getBytes(StandardCharsets.UTF_8), signed);
             JsonNode batch = row.path("authorized_batch");
@@ -494,8 +497,15 @@ public final class ProgramsContractTest {
                 request, signed, terminal, graph);
             assertEquals(abi, verified.receipt().programOutcome().abiVersion());
             assertArrayEquals(activity, verified.receipt().activityId());
+            assertArrayEquals(fixtureBytes(row, "receipt_digest_hex"), verified.receiptDigest());
+            assertArrayEquals(trustedSequencer, authority.sequencerPublicKey());
             assertArrayEquals(fixtureBytes(row, "sequencer_public_key_hex"), authority.sequencerPublicKey());
             assertThrows(PlatformSdkException.class, () -> LocalVerifier.verifyReceiptOutcome(canonical, authority, 3));
+            byte[] wrongAsset = authority.asset().clone(); wrongAsset[0] ^= 1;
+            var wrongAuthority = new LocalVerifier.AuthorizedReceiptBatch(authority.batchId(), wrongAsset,
+                authority.previousStateRoot(), authority.resultingStateRoot(), authority.sequencerPublicKey());
+            assertThrows(PlatformSdkException.class, () -> LocalVerifier.verifyProgramTerminalV5Receipt(
+                canonical, wrongAuthority, activity, request, signed, terminal, graph));
             NativeProgramCall wrongAbi = new NativeProgramCall(request.programId(), abi == 3 ? 4 : 3,
                 request.entrypoint(), request.calldata(), request.capabilities(), request.accessDeclaration(),
                 request.responseCapacity(), request.resources());

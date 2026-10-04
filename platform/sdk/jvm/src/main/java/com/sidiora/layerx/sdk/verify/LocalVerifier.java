@@ -311,6 +311,7 @@ public final class LocalVerifier {
                 && expectedGuestAbi != GeneratedReceiptContract.PROGRAM_ABI_V4) fail(ReceiptCheck.PROTOCOL_VERSION);
         ReceiptVerification verified = verifyReceiptOutcomeInternal(canonicalReceipt, authorized, true, 3);
         ProtocolReceipt receipt = verified.receipt();
+        if (!equal(receipt.asset(), exact(authorized.asset(), 32))) fail(ReceiptCheck.ASSET);
         ProgramReceiptOutcome program = receipt.programOutcome();
         if (receipt.moduleId() != 9 || receipt.operation() != 3 || program == null
                 || program.abiVersion() != expectedGuestAbi || program.resultCode() != receipt.resultCode()
