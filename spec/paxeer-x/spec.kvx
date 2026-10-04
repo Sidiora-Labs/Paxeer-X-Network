@@ -36193,13 +36193,21 @@ do_2 = "preserve all parsing and authorization checks"
 do_3 = "Compile the real declared package once then execute only its captured focused test binary once"
 source_status = "complete"
 completion_basis = "implementation under owner CONSTITUTION; qualification separately recorded"
-qualification_status = "UNRUN_BUILD_TIMEOUT"
+qualification_status = "FAILED"
 source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-103.6.21-publication-handoff.json"
 qualification_revision = "fc353a9b5f089ae8051000e45b346d47630fcc63"
 qualification_build_exit = 124
 qualification_build_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/qualification/task103621/build.log"
 qualification_verify_status = "UNRUN"
 qualification_repair_cycles = 0
+qualification_command = ["timeout", "5m", "/root/lx-ops/paxeer-x-integration-2026-10-03/qualification/task103621/cli.test", "-test.run", "^TestCustodyProposal", "-test.v"]
+qualification_exit_code = 1
+qualification_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/qualification/task103621/continuation-verify.log"
+qualification_evidence = "/root/lx-ops/paxeer-x-integration-2026-10-03/qualification/task103621/continuation-result.json"
+build_revision = "fc353a9b5f089ae8051000e45b346d47630fcc63"
+build_command = ["timeout", "15m", "/usr/local/go/bin/go", "test", "-c", "-race", "-tags=ledger,test_ledger_mock", "-p", "2", "-o", "/root/lx-ops/paxeer-x-integration-2026-10-03/qualification/task103621/cli.test", "./modules/layerxcustody/client/cli"]
+build_exit_code = 0
+build_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/qualification/task103621/continuation-build.log"
 
 [task.103.6.22]
 title = "Restore the original upgrade list after the override test"
