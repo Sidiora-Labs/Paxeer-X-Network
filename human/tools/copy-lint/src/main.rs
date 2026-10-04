@@ -93,8 +93,16 @@ fn contains_term(message: &str, term: &str) -> bool {
             .chars()
             .filter(|character| character.is_alphabetic())
             .all(char::is_uppercase);
-    let message = if acronym { message.to_owned() } else { message.to_lowercase() };
-    let term = if acronym { term.to_owned() } else { term.to_lowercase() };
+    let message = if acronym {
+        message.to_owned()
+    } else {
+        message.to_lowercase()
+    };
+    let term = if acronym {
+        term.to_owned()
+    } else {
+        term.to_lowercase()
+    };
     let mut offset = 0;
     while let Some(found) = message[offset..].find(&term) {
         let start = offset + found;
@@ -133,6 +141,8 @@ fn catalog_violations(source: &str) -> Vec<String> {
         entry.key == "ramp.external_custody.label"
             && entry.surface == "ramp"
             && entry.message == "External custody: this independent market maker controls the off-platform funds and payout."
+            && entry.kind == "body"
+            && entry.money_adjacent
     });
     if !required_label {
         violations.push("missing-ramp-external-custody-label".to_owned());
@@ -145,7 +155,7 @@ fn catalog_violations(source: &str) -> Vec<String> {
             violations.push(format!("non-ramp-copy-on-ramp-surface:{}", entry.key));
         }
         if entry.key.starts_with("ramp.")
-            && entry.message == "Done"
+            && matches!(entry.message.as_str(), "Done" | "Done, finalised")
             && !entry.context.contains("verified LayerX receipt")
         {
             violations.push(format!("ramp-done-without-receipt-rule:{}", entry.key));
@@ -350,6 +360,13 @@ fn source_violations(source_root: &Path) -> Vec<String> {
             continue;
         };
         for (number, line) in source.lines().enumerate() {
+            if ramp_on_default_surface(line) {
+                violations.push(format!(
+                    "ramp-on-default-human-surface:{}:{}",
+                    path.display(),
+                    number + 1
+                ));
+            }
             if concatenates_prose(line) {
                 violations.push(format!(
                     "runtime-copy-concatenation:{}:{}",
@@ -384,6 +401,19 @@ fn source_violations(source_root: &Path) -> Vec<String> {
     violations
 }
 
+fn ramp_on_default_surface(line: &str) -> bool {
+    literals(line).iter().any(|literal| {
+        let value = &line[literal.start + 1..literal.end];
+        (value.starts_with("ramp.") && value.len() > "ramp.".len())
+            || value == "/ramp"
+            || value == "/ramps"
+            || value.starts_with("/ramp/")
+            || value.starts_with("/ramps/")
+            || value == "/v1/ramp"
+            || value.starts_with("/v1/ramp/")
+    })
+}
+
 fn human_copy_lint(web_root: &Path) -> Result<(), Vec<String>> {
     let catalog_path = web_root.join("copy/catalog.ts");
     let catalog = fs::read_to_string(&catalog_path)
@@ -415,7 +445,8 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::{
-        catalog_violations, concatenates_prose, contains_term, entries, jsx_text_runs, sentence_case,
+        catalog_violations, concatenates_prose, contains_term, entries, jsx_text_runs,
+        ramp_on_default_surface, sentence_case,
     };
 
     #[test]
@@ -463,7 +494,9 @@ mod tests {
         assert!(concatenates_prose(
             "throw new Error(\"the request is missing the \" + name);"
         ));
-        assert!(concatenates_prose("const line = greeting + \" and welcome\";"));
+        assert!(concatenates_prose(
+            "const line = greeting + \" and welcome\";"
+        ));
         assert!(!concatenates_prose(
             "await execute(\"POST\", \"/v1/deposits/\" + encodeURIComponent(id), body);"
         ));
@@ -487,7 +520,9 @@ mod tests {
             "  {state === \"approved\" ? <ReleasedActivitySection entry={released} /> : null}"
         )
         .is_empty());
-        assert!(jsx_text_runs("  const resolved = value > 0 ? \"inbound\" : \"other\";").is_empty());
+        assert!(
+            jsx_text_runs("  const resolved = value > 0 ? \"inbound\" : \"other\";").is_empty()
+        );
     }
 
     #[test]
@@ -540,5 +575,51 @@ mod tests {
         assert!(catalog_violations(&source)
             .iter()
             .any(|value| value == "ambiguous-ramp-balance-claim:ramp.balance"));
+    }
+
+    #[test]
+    fn external_custody_label_cannot_be_disguised_as_an_action() {
+        let source = ramp_catalog("").replace(
+            "surface: \"ramp\", kind: \"body\", moneyAdjacent: true",
+            "surface: \"ramp\", kind: \"action\", moneyAdjacent: false",
+        );
+        assert!(catalog_violations(&source)
+            .iter()
+            .any(|value| value == "missing-ramp-external-custody-label"));
+    }
+
+    #[test]
+    fn finalised_ramp_done_requires_the_verified_layerx_receipt_rule() {
+        let source = ramp_catalog("  { key: \"ramp.status.finalised\", message: \"Done, finalised\", context: \"Provider paid.\", surface: \"ramp\", kind: \"status\", moneyAdjacent: true },");
+        assert!(catalog_violations(&source)
+            .iter()
+            .any(|value| value == "ramp-done-without-receipt-rule:ramp.status.finalised"));
+        let verified = source.replace(
+            "Provider paid.",
+            "Shown only against the verified LayerX receipt.",
+        );
+        assert!(!catalog_violations(&verified)
+            .iter()
+            .any(|value| value.starts_with("ramp-done-without-receipt-rule:")));
+    }
+
+    #[test]
+    fn default_human_source_cannot_surface_ramp_copy_or_navigation() {
+        for line in [
+            "copyEntry(\"ramp.external_custody.label\").message",
+            "formatCopy('ramp.status.done')",
+            "<Link href=\"/ramps\">{label}</Link>",
+            "fetch(\"/v1/ramp/orders\")",
+        ] {
+            assert!(ramp_on_default_surface(line), "{line}");
+        }
+        for line in [
+            "copyEntry(\"deposit.stage.crediting\").message",
+            "copyKey.startsWith(\"ramp.\")",
+            "<Link href=\"/explorer\">{label}</Link>",
+            "const name = \"rampart\";",
+        ] {
+            assert!(!ramp_on_default_surface(line), "{line}");
+        }
     }
 }

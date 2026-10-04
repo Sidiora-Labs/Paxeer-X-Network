@@ -74,7 +74,9 @@ export function errorPresentation(error: unknown, traceId = generatedTraceId()):
     : undefined;
   return Object.freeze({
     titleKey: "state.error",
-    descriptionKey: copyKey !== undefined && human_copy_catalog().has(copyKey) ? copyKey : "state.error.body",
+    descriptionKey: copyKey !== undefined && !copyKey.startsWith("ramp.") && human_copy_catalog().has(copyKey)
+      ? copyKey
+      : "state.error.body",
     moneyImpactKey: detail === undefined ? "error.money.not_started" : "state.error.body",
     machineCode,
     traceId: canonicalTrace ?? traceId,
