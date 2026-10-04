@@ -9,6 +9,8 @@ use layerx_proof::receipt::{
     verify_outcome_maintained_chain, verify_program_preexecution_rejection_maintained_chain,
     AuthorizedBatch, MaintainedOutcomeEvidence, VerifiedReceipt,
 };
+use layerx_proof::state_range::{ModuleRangeWitness, RangeError, MAX_MODULE_LEAVES};
+use layerx_proof::state_witness::StateWitness;
 use serde_json::Value;
 
 struct Capture {
@@ -408,6 +410,7 @@ fn real_native_arbiter_admission_transport() {
             inventory_offset = count_offset + 4;
             let first_leaf = inventory_offset;
             let mut first_leaf_end = first_leaf;
+            let mut leaves = Vec::with_capacity(count);
             for index in 0..count {
                 let length = usize::try_from(u32::from_be_bytes(
                     capture.v3[inventory_offset..inventory_offset + 4]
@@ -415,10 +418,118 @@ fn real_native_arbiter_admission_transport() {
                         .expect("witness"),
                 ))
                 .expect("bounded witness");
+                leaves.push(
+                    StateWitness::decode(
+                        &capture.v3[inventory_offset + 4..inventory_offset + 4 + length],
+                    )
+                    .expect("genuine canonical module leaf"),
+                );
                 inventory_offset += 4 + length;
                 if index == 0 {
                     first_leaf_end = inventory_offset;
                 }
+            }
+            let module = ModuleRangeWitness {
+                module_id: expected_module,
+                subtree_root: capture.v3[start + 2..start + 34]
+                    .try_into()
+                    .expect("subtree root"),
+                composite_index: u32::from_be_bytes(
+                    capture.v3[start + 34..start + 38]
+                        .try_into()
+                        .expect("module index"),
+                ),
+                composite_count: u32::from_be_bytes(
+                    capture.v3[start + 38..start + 42]
+                        .try_into()
+                        .expect("module count"),
+                ),
+                composite_siblings: capture.v3[start + 43..count_offset]
+                    .chunks_exact(32)
+                    .map(|bytes| bytes.try_into().expect("composite sibling"))
+                    .collect(),
+                leaves,
+            };
+            assert_eq!(
+                module.verify_prefix(checked.state_root(), b""),
+                Err(RangeError::Bounds)
+            );
+            let inventory = module
+                .verify_full_module(checked.state_root())
+                .expect("complete native module inventory");
+            assert_eq!(inventory.module_id(), expected_module);
+            assert_eq!(inventory.state_root(), checked.state_root());
+            assert_eq!(inventory.records().len(), count);
+            assert_eq!(inventory.is_empty(), count == 0);
+            let records: std::collections::BTreeMap<_, _> =
+                inventory.records().iter().cloned().collect();
+            assert_eq!(
+                &records,
+                match expected_module {
+                    1 => checked.asset_records(),
+                    3 => checked.budget_records(),
+                    7 => checked.governance_records(),
+                    _ => unreachable!("fixed native module inventory"),
+                }
+            );
+            let mut changed_module = module.clone();
+            changed_module.subtree_root[0] ^= 1;
+            assert!(changed_module
+                .verify_full_module(checked.state_root())
+                .is_err());
+            let mut changed_module = module.clone();
+            changed_module.composite_index ^= 1;
+            assert!(changed_module
+                .verify_full_module(checked.state_root())
+                .is_err());
+            let mut changed_module = module.clone();
+            changed_module.composite_count = 0;
+            assert!(changed_module
+                .verify_full_module(checked.state_root())
+                .is_err());
+            let mut changed_module = module.clone();
+            changed_module.composite_siblings.clear();
+            assert!(changed_module
+                .verify_full_module(checked.state_root())
+                .is_err());
+            if let Some(first) = module.leaves.first() {
+                assert!(module
+                    .verify_prefix(checked.state_root(), &first.key)
+                    .is_ok());
+                let mut changed_module = module.clone();
+                changed_module.leaves[0].leaf_index_a = u32::MAX;
+                assert_eq!(
+                    changed_module.verify_full_module(checked.state_root()),
+                    Err(RangeError::Position)
+                );
+                let mut changed_module = module.clone();
+                changed_module.leaves[0].leaf_count_a = 0;
+                assert_eq!(
+                    changed_module.verify_full_module(checked.state_root()),
+                    Err(RangeError::Position)
+                );
+                let mut changed_module = module.clone();
+                changed_module.leaves[0].leaf_count_b = 0;
+                assert_eq!(
+                    changed_module.verify_full_module(checked.state_root()),
+                    Err(RangeError::Position)
+                );
+                let mut changed_module = module.clone();
+                changed_module.leaves[0].key.clear();
+                assert!(changed_module
+                    .verify_full_module(checked.state_root())
+                    .is_err());
+                let mut changed_module = module.clone();
+                changed_module.leaves = vec![first.clone(); MAX_MODULE_LEAVES + 1];
+                assert_eq!(
+                    changed_module.verify_full_module(checked.state_root()),
+                    Err(RangeError::Bounds)
+                );
+            } else {
+                assert!(module
+                    .verify_prefix(checked.state_root(), b"existing-prefix")
+                    .expect("genuine empty module absence")
+                    .is_empty());
             }
             if count > 0 {
                 let mut missing_leaf = capture.v3.clone();

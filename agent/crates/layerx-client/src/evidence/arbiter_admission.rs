@@ -173,6 +173,7 @@ pub fn verify_arbiter_admission_v3_bounded(
     if !reader.0.is_empty() {
         return Err(AdmissionEvidenceError::Encoding);
     }
+    let mut inventories = Vec::with_capacity(3);
     for module in [&asset, &budget, &governance] {
         if module.composite_index != u32::from(module.module_id)
             || module.composite_count != u32::from(composite_count)
@@ -180,9 +181,11 @@ pub fn verify_arbiter_admission_v3_bounded(
         {
             return Err(AdmissionEvidenceError::Root);
         }
-        module
-            .verify_prefix(legacy.state_root(), b"")
-            .map_err(AdmissionEvidenceError::Range)?;
+        inventories.push(
+            module
+                .verify_full_module(legacy.state_root())
+                .map_err(AdmissionEvidenceError::Range)?,
+        );
     }
     let mut hasher = Sha256::new();
     hasher.update(b"LayerX/programs/arbiter-admission/v3\0");
@@ -190,21 +193,9 @@ pub fn verify_arbiter_admission_v3_bounded(
     Ok(VerifiedAdmissionPrestate {
         legacy,
         activity,
-        asset_records: asset
-            .leaves
-            .into_iter()
-            .map(|leaf| (leaf.key, leaf.value))
-            .collect(),
-        budget_records: budget
-            .leaves
-            .into_iter()
-            .map(|leaf| (leaf.key, leaf.value))
-            .collect(),
-        governance_records: governance
-            .leaves
-            .into_iter()
-            .map(|leaf| (leaf.key, leaf.value))
-            .collect(),
+        asset_records: inventories[0].records().iter().cloned().collect(),
+        budget_records: inventories[1].records().iter().cloned().collect(),
+        governance_records: inventories[2].records().iter().cloned().collect(),
         canonical_bytes: bytes.to_vec(),
         commitment: hasher.finalize().into(),
     })

@@ -2203,3 +2203,11 @@ resolution = "Discover actual paths and task sections before claiming; restore22
 [gotcha.654]
 observed = "The runtime ABI facade task build compiled unit-test code where transfer.rs:2893 calls clone on AtomicTransferSet, which has no Clone implementation; the source correction itself is complete."
 resolution = "Record this unrelated unit-test boundary once; retain the transfer type and test intact and do not expand the ABI export task or claim its unrun gate."
+
+[gotcha.655]
+observed = "Admission V3 supplied complete inventories using empty-prefix calls, while the legacy state range verifier deliberately rejects empty prefixes; the sealed admission input could therefore not be constructed."
+resolution = "Retain the existing prefix refusal and all cryptographic bounds; implement a distinct complete-module inventory verifier and use it at the V3 producer-consumer boundary."
+
+[gotcha.657]
+observed = "The complete-inventory build passed but native V3 verification stopped at unchanged fresh-versus-retained sidecar equality during serial DEPLOY maintenance publication, before any SDK case."
+resolution = "Record once and preserve the assertion; qualify a distinct native capture correction only after its relevant source change."
