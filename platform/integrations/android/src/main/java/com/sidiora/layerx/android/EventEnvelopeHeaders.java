@@ -7,10 +7,10 @@ import java.util.Objects;
 
 /** The signed-delivery headers a relayed LayerX event must carry to be accepted on device. */
 public record EventEnvelopeHeaders(String id, String timestamp, String keyId, String signature) {
-    public static final String ID_HEADER = "LayerX-Delivery-Id";
-    public static final String TIMESTAMP_HEADER = "LayerX-Timestamp";
-    public static final String KEY_ID_HEADER = "LayerX-Key-Id";
-    public static final String SIGNATURE_HEADER = "LayerX-Signature";
+    public static final String ID_HEADER = "LayerX-Webhook-Id";
+    public static final String TIMESTAMP_HEADER = "LayerX-Webhook-Timestamp";
+    public static final String KEY_ID_HEADER = "LayerX-Webhook-Key-Id";
+    public static final String SIGNATURE_HEADER = "LayerX-Webhook-Signature";
 
     public EventEnvelopeHeaders {
         Objects.requireNonNull(id, "id");
@@ -23,7 +23,11 @@ public record EventEnvelopeHeaders(String id, String timestamp, String keyId, St
         Map<String, String> normalized = new LinkedHashMap<>();
         for (Map.Entry<String, String> field : fields.entrySet()) {
             if (field.getKey() == null || field.getValue() == null) continue;
-            normalized.put(field.getKey().toLowerCase(Locale.ROOT), field.getValue());
+            String name = field.getKey().toLowerCase(Locale.ROOT);
+            if (isSignedHeader(name) && normalized.containsKey(name)) {
+                throw MobileIntegrationException.of(MobileIntegrationException.Code.INVALID_EVENT);
+            }
+            normalized.put(name, field.getValue());
         }
         String id = normalized.get(ID_HEADER.toLowerCase(Locale.ROOT));
         String timestamp = normalized.get(TIMESTAMP_HEADER.toLowerCase(Locale.ROOT));
@@ -33,5 +37,12 @@ public record EventEnvelopeHeaders(String id, String timestamp, String keyId, St
             throw MobileIntegrationException.of(MobileIntegrationException.Code.INVALID_EVENT);
         }
         return new EventEnvelopeHeaders(id, timestamp, keyId, signature);
+    }
+
+    private static boolean isSignedHeader(String name) {
+        return name.equals(ID_HEADER.toLowerCase(Locale.ROOT))
+            || name.equals(TIMESTAMP_HEADER.toLowerCase(Locale.ROOT))
+            || name.equals(KEY_ID_HEADER.toLowerCase(Locale.ROOT))
+            || name.equals(SIGNATURE_HEADER.toLowerCase(Locale.ROOT));
     }
 }

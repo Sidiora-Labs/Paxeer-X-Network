@@ -37,7 +37,10 @@ public final class ConsoleSampleMain {
             return;
         }
 
-        try (LayerXAndroid mobile = LayerXAndroid.create(configuration)) {
+        String deliveryStorePath = environment.get("LAYERX_SAMPLE_DELIVERY_STORE_PATH");
+        try (LayerXAndroid mobile = deliveryStorePath == null
+                ? LayerXAndroid.create(configuration)
+                : LayerXAndroid.create(configuration, Path.of(deliveryStorePath))) {
             RelayReceiptResolver receipts = new RelayReceiptResolver(
                 URI.create(SampleEnvironment.required(environment, "LAYERX_RECEIPT_RELAY_URL")),
                 mapper, (int) configuration.requestTimeoutMs());

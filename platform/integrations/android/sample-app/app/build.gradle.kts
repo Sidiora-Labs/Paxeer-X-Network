@@ -6,7 +6,6 @@ fun declared(name: String, fallback: String): String =
     providers.gradleProperty(name).getOrElse(fallback)
 
 val eventKeyId: String = declared("layerx.eventKeyId", "prod")
-val eventKeyResourceSuffix: String = eventKeyId.replace('-', '_')
 
 val declaredKeys: Map<String, String> = linkedMapOf(
     "layerx.service_url" to declared("layerx.serviceUrl", ""),
@@ -31,7 +30,7 @@ android {
 
         resValue("string", "layerx_service_url", declared("layerx.serviceUrl", ""))
         resValue("string", "layerx_session_broker_url", declared("layerx.sessionBrokerUrl", ""))
-        resValue("string", "layerx_event_public_key_$eventKeyResourceSuffix", declared("layerx.eventPublicKey", ""))
+        resValue("string", "layerx_event_public_key", declared("layerx.eventPublicKey", ""))
         resValue("string", "layerx_event_max_age_seconds", declared("layerx.eventMaxAgeSeconds", "300"))
         resValue("string", "layerx_request_timeout_seconds", declared("layerx.requestTimeoutSeconds", "30"))
         resValue("string", "layerx_event_key_id", eventKeyId)

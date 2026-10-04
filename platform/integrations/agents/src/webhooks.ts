@@ -9,8 +9,9 @@ import {
   type WebhookRequestHeaders,
 } from "@sidiora/layerx-seller-middleware";
 import { constants } from "node:fs";
-import { chmod, open, mkdir, rename, unlink } from "node:fs/promises";
+import { lstat, realpath, open, mkdir, rename, unlink } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import { AgentIntegrationError, type AgentWebhookSettings } from "./config.js";
 
 export const WEBHOOK_ID_HEADER = "layerx-webhook-id" as const;
@@ -121,6 +122,9 @@ interface FileDeliveryLedger {
   readonly entries: Readonly<Record<string, FileDeliveryEntry>>;
 }
 
+const COORDINATION_APPLICATION_ID = 0x4c585748;
+const COORDINATION_SCHEMA = "CREATE TABLE delivery_context (singleton INTEGER PRIMARY KEY CHECK (singleton = 1), ledger_path TEXT NOT NULL) STRICT";
+
 export class FileWebhookDeliveryStore implements WebhookDeliveryStore {
   readonly #ledgerPath: string;
   readonly #lockPath: string;
@@ -128,11 +132,12 @@ export class FileWebhookDeliveryStore implements WebhookDeliveryStore {
   readonly #capacity: number;
 
   public constructor(path = ".layerx/webhook-deliveries-v1.json", now?: () => number, capacity = 65_536) {
-    if (path.length === 0 || path.length > 4_096 || path.includes("\0") || capacity < 1) {
+    if (path.length === 0 || path.length > 4_096 || path.includes("\0")
+        || !Number.isSafeInteger(capacity) || capacity < 1) {
       throw new AgentIntegrationError("invalid-declared-key");
     }
     this.#ledgerPath = resolve(path);
-    this.#lockPath = `${this.#ledgerPath}.lock`;
+    this.#lockPath = `${this.#ledgerPath}.coordination.sqlite3`;
     this.#now = now ?? Date.now;
     this.#capacity = capacity;
   }
@@ -185,7 +190,10 @@ export class FileWebhookDeliveryStore implements WebhookDeliveryStore {
 
   async #mutate<Result>(body: (entries: Record<string, FileDeliveryEntry>) => Result): Promise<Result> {
     await mkdir(dirname(this.#ledgerPath), { recursive: true, mode: 0o700 });
-    await chmod(dirname(this.#ledgerPath), 0o700);
+    await secureOwnedPath(dirname(this.#ledgerPath), true);
+    if (await realpath(dirname(this.#ledgerPath)) !== dirname(this.#ledgerPath)) {
+      throw new AgentIntegrationError("service-refused");
+    }
     const lock = await this.#acquireLock();
     try {
       const entries = await this.#read();
@@ -196,25 +204,57 @@ export class FileWebhookDeliveryStore implements WebhookDeliveryStore {
       if (error instanceof MiddlewareError || error instanceof AgentIntegrationError) throw error;
       throw new AgentIntegrationError("service-refused");
     } finally {
-      await lock.close();
-      try {
-        await unlink(this.#lockPath);
-      } catch (error) {
-        if (!isNodeError(error, "ENOENT")) throw new AgentIntegrationError("service-refused");
-      }
+      try { if (lock.isTransaction) lock.exec("ROLLBACK"); }
+      finally { lock.close(); }
     }
   }
 
-  async #acquireLock(): Promise<Awaited<ReturnType<typeof open>>> {
-    for (let attempt = 0; attempt < 200; attempt += 1) {
-      try {
-        return await open(this.#lockPath, "wx", 0o600);
-      } catch (error) {
-        if (!isNodeError(error, "EEXIST")) throw error;
-        await new Promise<void>((resolveWait) => setTimeout(resolveWait, Math.min(10 + attempt * 5, 250)));
-      }
+  async #acquireLock(): Promise<DatabaseSync> {
+    try {
+      const file = await open(this.#lockPath, "wx", 0o600);
+      await file.close();
+    } catch (error) {
+      if (!isNodeError(error, "EEXIST")) throw new AgentIntegrationError("service-refused");
     }
-    throw new AgentIntegrationError("service-refused");
+    await secureOwnedPath(this.#lockPath, false);
+    let lock: DatabaseSync | undefined;
+    try {
+      lock = new DatabaseSync(this.#lockPath, {
+        timeout: 0, enableDoubleQuotedStringLiterals: false, allowExtension: false,
+      });
+      lock.exec("PRAGMA trusted_schema = OFF; PRAGMA synchronous = FULL");
+      await beginCoordination(lock);
+      const applicationId = coordinationPragma(lock, "application_id");
+      const version = coordinationPragma(lock, "user_version");
+      const objects = lock.prepare("SELECT type, name FROM sqlite_schema WHERE name NOT LIKE 'sqlite_%'").all();
+      if (applicationId === 0 && version === 0 && objects.length === 0) {
+        lock.exec(`${COORDINATION_SCHEMA}; PRAGMA application_id = ${COORDINATION_APPLICATION_ID}; PRAGMA user_version = 1`);
+        lock.prepare("INSERT INTO delivery_context (singleton, ledger_path) VALUES (1, ?)").run(this.#ledgerPath);
+      } else if (applicationId !== COORDINATION_APPLICATION_ID || version !== 1 || objects.length !== 1
+          || objects[0]?.["type"] !== "table" || objects[0]?.["name"] !== "delivery_context") {
+        throw new AgentIntegrationError("service-refused");
+      }
+      const schema = lock.prepare("SELECT sql FROM sqlite_schema WHERE type = 'table' AND name = 'delivery_context'").get();
+      const context = lock.prepare("SELECT singleton, ledger_path FROM delivery_context").all();
+      if (schema?.["sql"] !== COORDINATION_SCHEMA || context.length !== 1 || context[0]?.["singleton"] !== 1
+          || context[0]?.["ledger_path"] !== this.#ledgerPath) throw new AgentIntegrationError("service-refused");
+      lock.exec("PRAGMA max_page_count = 64");
+      if (coordinationPragma(lock, "max_page_count") !== 64 || coordinationPragma(lock, "synchronous") !== 2) {
+        throw new AgentIntegrationError("service-refused");
+      }
+      lock.exec("COMMIT");
+      await beginCoordination(lock);
+      for (const path of [this.#lockPath, `${this.#lockPath}-journal`]) {
+        try { await secureOwnedPath(path, false); }
+        catch (error) { if (!isNodeError(error, "ENOENT")) throw error; }
+      }
+      return lock;
+    } catch (error) {
+      try { if (lock?.isTransaction) lock.exec("ROLLBACK"); }
+      finally { lock?.close(); }
+      if (error instanceof AgentIntegrationError) throw error;
+      throw new AgentIntegrationError("service-refused");
+    }
   }
 
   async #read(): Promise<Record<string, FileDeliveryEntry>> {
@@ -226,15 +266,19 @@ export class FileWebhookDeliveryStore implements WebhookDeliveryStore {
       throw error;
     }
     const parsed: unknown = JSON.parse(new TextDecoder().decode(encoded));
-    if (!isLedger(parsed)) throw new AgentIntegrationError("service-refused");
+    if (!isLedger(parsed) || Object.keys(parsed.entries).length > this.#capacity) {
+      throw new AgentIntegrationError("service-refused");
+    }
     return { ...parsed.entries };
   }
 
   async #write(entries: Record<string, FileDeliveryEntry>): Promise<void> {
+    const encoded = JSON.stringify({ version: 1, entries } satisfies FileDeliveryLedger);
+    if (Buffer.byteLength(encoded, "utf8") > 32 * 1024 * 1024) throw new AgentIntegrationError("service-refused");
     const temporary = `${this.#ledgerPath}.${globalThis.crypto.randomUUID()}.tmp`;
     const handle = await open(temporary, "wx", 0o600);
     try {
-      await handle.writeFile(JSON.stringify({ version: 1, entries } satisfies FileDeliveryLedger), "utf8");
+      await handle.writeFile(encoded, "utf8");
       await handle.sync();
     } finally {
       await handle.close();
@@ -244,6 +288,12 @@ export class FileWebhookDeliveryStore implements WebhookDeliveryStore {
     } catch (error) {
       await unlink(temporary).catch(() => undefined);
       throw error;
+    }
+    const directory = await open(dirname(this.#ledgerPath), "r");
+    try {
+      await directory.sync();
+    } finally {
+      await directory.close();
     }
   }
 
@@ -270,6 +320,35 @@ export class FileWebhookDeliveryStore implements WebhookDeliveryStore {
 
   #requireDigest(value: string): void {
     if (!/^[0-9a-f]{64}$/u.test(value)) throw new AgentIntegrationError("service-refused");
+  }
+}
+
+async function beginCoordination(lock: DatabaseSync): Promise<void> {
+  for (let attempt = 0; attempt < 200; attempt += 1) {
+      try {
+        lock.exec("BEGIN IMMEDIATE");
+        return;
+      } catch (error) {
+        if (!(error instanceof Error) || !("errcode" in error) || error.errcode !== 5 && error.errcode !== 6) {
+          throw new AgentIntegrationError("service-refused");
+        }
+        await new Promise<void>((resolveWait) => setTimeout(resolveWait, Math.min(10 + attempt * 5, 250)));
+      }
+  }
+  throw new AgentIntegrationError("service-refused");
+}
+
+function coordinationPragma(lock: DatabaseSync, name: "application_id" | "user_version" | "max_page_count" | "synchronous"): number {
+  const value = lock.prepare(`PRAGMA ${name}`).get()?.[name];
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0) throw new AgentIntegrationError("service-refused");
+  return value;
+}
+
+async function secureOwnedPath(path: string, directory: boolean): Promise<void> {
+  const metadata = await lstat(path);
+  if (metadata.isSymbolicLink() || (directory ? !metadata.isDirectory() : !metadata.isFile() || metadata.nlink !== 1)
+      || (metadata.mode & 0o077) !== 0 || process.getuid !== undefined && metadata.uid !== process.getuid()) {
+    throw new AgentIntegrationError("service-refused");
   }
 }
 
@@ -364,14 +443,15 @@ function singleHeader(source: WebhookHeaderSource, name: string): string | undef
     const value = source.get(name);
     return value === null ? undefined : value;
   }
-  const value = source[name] ?? source[name.toUpperCase()];
-  if (value === undefined) {
-    return undefined;
+  let found: string | undefined;
+  for (const [key, value] of Object.entries(source)) {
+    if (key.toLowerCase() !== name) continue;
+    if (typeof value !== "string" || found !== undefined) {
+      throw new AgentIntegrationError("duplicate-header");
+    }
+    found = value;
   }
-  if (typeof value !== "string") {
-    throw new AgentIntegrationError("duplicate-header");
-  }
-  return value;
+  return found;
 }
 
 function json(status: number, body: Readonly<Record<string, string>>): AgentWebhookResponse {
@@ -386,7 +466,9 @@ async function readBoundedRegularFile(path: string, maximum: number): Promise<Ui
   const handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW);
   try {
     const metadata = await handle.stat();
-    if (!metadata.isFile() || metadata.size > maximum) throw new AgentIntegrationError("service-refused");
+    if (!metadata.isFile() || metadata.nlink !== 1 || (metadata.mode & 0o077) !== 0
+        || process.getuid !== undefined && metadata.uid !== process.getuid()
+        || metadata.size > maximum) throw new AgentIntegrationError("service-refused");
     const chunks: Uint8Array[] = [];
     let total = 0;
     for (;;) {
@@ -412,15 +494,17 @@ async function readBoundedRegularFile(path: string, maximum: number): Promise<Ui
 function isLedger(value: unknown): value is FileDeliveryLedger {
   if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
   const ledger = value as Readonly<Record<string, unknown>>;
-  if (ledger["version"] !== 1 || ledger["entries"] === null
+  if (Object.keys(ledger).length !== 2 || ledger["version"] !== 1 || ledger["entries"] === null
       || typeof ledger["entries"] !== "object" || Array.isArray(ledger["entries"])) return false;
   for (const [deliveryId, untrusted] of Object.entries(ledger["entries"] as Record<string, unknown>)) {
-    if (deliveryId.length === 0 || deliveryId.length > 255 || untrusted === null
+    if (deliveryId.length === 0 || deliveryId.length > 255 || deliveryId.includes("\0") || untrusted === null
         || typeof untrusted !== "object" || Array.isArray(untrusted)) return false;
     const entry = untrusted as Readonly<Record<string, unknown>>;
-    if (typeof entry["payloadDigest"] !== "string" || !/^[0-9a-f]{64}$/u.test(entry["payloadDigest"])
+    if (Object.keys(entry).length !== 3
+        || typeof entry["payloadDigest"] !== "string" || !/^[0-9a-f]{64}$/u.test(entry["payloadDigest"])
         || typeof entry["leaseUntilMs"] !== "number" || !Number.isSafeInteger(entry["leaseUntilMs"])
-        || typeof entry["completed"] !== "boolean") return false;
+        || entry["leaseUntilMs"] < 0 || typeof entry["completed"] !== "boolean"
+        || entry["completed"] && entry["leaseUntilMs"] !== 0) return false;
   }
   return true;
 }

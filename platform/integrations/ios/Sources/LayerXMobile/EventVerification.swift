@@ -3,10 +3,10 @@ import Foundation
 import LayerXSDK
 
 public struct EventEnvelopeHeaders: Sendable, Equatable {
-    public static let idHeader = "LayerX-Delivery-Id"
-    public static let timestampHeader = "LayerX-Timestamp"
-    public static let keyIDHeader = "LayerX-Key-Id"
-    public static let signatureHeader = "LayerX-Signature"
+    public static let idHeader = "LayerX-Webhook-Id"
+    public static let timestampHeader = "LayerX-Webhook-Timestamp"
+    public static let keyIDHeader = "LayerX-Webhook-Key-Id"
+    public static let signatureHeader = "LayerX-Webhook-Signature"
 
     public let id: String
     public let timestamp: String
@@ -23,7 +23,11 @@ public struct EventEnvelopeHeaders: Sendable, Equatable {
     public init(fields: [String: String]) throws {
         var normalized: [String: String] = [:]
         for (name, value) in fields {
-            normalized[name.lowercased()] = value
+            let normalizedName = name.lowercased()
+            guard normalized[normalizedName] == nil else {
+                throw MobileIntegrationError(.invalidEvent)
+            }
+            normalized[normalizedName] = value
         }
         guard let id = normalized[Self.idHeader.lowercased()],
               let timestamp = normalized[Self.timestampHeader.lowercased()],

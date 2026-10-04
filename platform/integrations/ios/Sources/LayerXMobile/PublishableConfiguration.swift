@@ -73,7 +73,22 @@ public struct PublishableConfiguration: Sendable, Equatable {
         var declared: [String: String] = [:]
         for (name, value) in environment {
             guard let key = Self.declaredKey(forEnvironmentVariable: name) else { continue }
+            guard declared[key] == nil else {
+                throw MobileIntegrationError(.invalidConfiguration)
+            }
             declared[key] = value
+        }
+        if environment["LAYERX_EVENT_KEY_ID"] != nil || environment["LAYERX_EVENT_PUBLIC_KEY"] != nil {
+            guard let identifier = environment["LAYERX_EVENT_KEY_ID"],
+                  let publicKey = environment["LAYERX_EVENT_PUBLIC_KEY"],
+                  Self.isKeyIdentifier(identifier) else {
+                throw MobileIntegrationError(.invalidConfiguration)
+            }
+            let key = Self.eventPublicKeyPrefix + identifier
+            guard declared[key] == nil else {
+                throw MobileIntegrationError(.invalidConfiguration)
+            }
+            declared[key] = publicKey
         }
         try self.init(declaredKeys: declared)
     }
@@ -90,7 +105,7 @@ public struct PublishableConfiguration: Sendable, Equatable {
         default:
             let keyPrefix = "event_public_key_"
             guard remainder.hasPrefix(keyPrefix) else { return nil }
-            let identifier = String(remainder.dropFirst(keyPrefix.count)).replacingOccurrences(of: "_", with: "-")
+            let identifier = String(remainder.dropFirst(keyPrefix.count))
             return isKeyIdentifier(identifier) ? eventPublicKeyPrefix + identifier : nil
         }
     }
@@ -145,11 +160,11 @@ public struct PublishableConfiguration: Sendable, Equatable {
     }
 
     private static func isKeyIdentifier(_ value: String) -> Bool {
-        guard !value.isEmpty, value.utf8.count <= 64, let first = value.first, first.isLetter || first.isNumber else {
+        guard !value.isEmpty, value.utf8.count <= 64 else {
             return false
         }
         return value.allSatisfy { character in
-            character.isASCII && (character.isLowercase || character.isNumber || character == "-")
+            character.isASCII && (character.isLetter || character.isNumber || character == "." || character == "-" || character == "_")
         }
     }
 

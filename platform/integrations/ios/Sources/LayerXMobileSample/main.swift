@@ -62,7 +62,11 @@ let urlSession = SampleEnvironment.session(timeoutSeconds: configuration.request
 
 let mobile: LayerXMobile
 do {
-    mobile = try LayerXMobile(configuration: configuration, session: urlSession)
+    let deliveryStoreURL = environment["LAYERX_SAMPLE_DELIVERY_STORE_PATH"].map {
+        URL(fileURLWithPath: $0)
+    }
+    mobile = try LayerXMobile(configuration: configuration, session: urlSession,
+        deliveryStoreURL: deliveryStoreURL)
 } catch {
     fail("client refused: \((error as? MobileIntegrationError)?.code.rawValue ?? "invalid-configuration")")
 }

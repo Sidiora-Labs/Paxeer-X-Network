@@ -9,6 +9,7 @@ let package = Package(
         .library(name: "LayerXMobileSampleKit", targets: ["LayerXMobileSampleKit"]),
         .executable(name: "layerx-ios-sample", targets: ["LayerXMobileSample"]),
         .executable(name: "layerx-ios-secret-scan", targets: ["LayerXMobileSecretScan"]),
+        .executable(name: "layerx-ios-webhook-conformance", targets: ["LayerXMobileWebhookConformance"]),
     ],
     dependencies: [
         .package(path: "../../sdk/swift"),
@@ -32,6 +33,11 @@ let package = Package(
             name: "LayerXMobileSample",
             dependencies: ["LayerXMobile", "LayerXMobileSampleKit", .product(name: "LayerXSDK", package: "swift")],
             path: "Sources/LayerXMobileSample"
+        ),
+        .executableTarget(
+            name: "LayerXMobileWebhookConformance",
+            dependencies: ["LayerXMobile", .product(name: "LayerXSDK", package: "swift")],
+            path: "Sources/LayerXMobileWebhookConformance"
         ),
         .executableTarget(
             name: "LayerXMobileSecretScan",

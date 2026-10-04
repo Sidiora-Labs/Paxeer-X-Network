@@ -1,8 +1,15 @@
 import { createServer } from "node:http";
-import { MAXIMUM_WEBHOOK_BYTES, readWebhookListener } from "@sidiora/layerx-agent-integrations";
+import { MAXIMUM_WEBHOOK_BYTES, loadAgentServiceProviders, readWebhookListener } from "@sidiora/layerx-agent-integrations";
 import { createMcpIntegration } from "@sidiora/layerx-agent-integrations/mcp";
 
-const integration = createMcpIntegration({ environment: process.env });
+const providers = await loadAgentServiceProviders(process.env);
+let integration;
+try {
+  integration = createMcpIntegration({ environment: process.env, ...providers });
+} catch (error) {
+  await providers.destroy?.();
+  throw error;
+}
 const mcp = integration.server;
 const listener = readWebhookListener(process.env);
 
@@ -54,13 +61,22 @@ const writeLine = (stream) => (line) => new Promise((resolve, reject) => {
   stream.write(line, (error) => (error === null || error === undefined ? resolve() : reject(error)));
 });
 
-const shutdown = () => {
-  integration.destroy();
-  if (http === undefined) {
-    process.exit(0);
-    return;
+let closing;
+const close = () => closing ??= Promise.resolve().then(async () => {
+  try { await integration.closeMcp(); }
+  finally {
+    try { integration.destroy(); }
+    finally { await providers.destroy?.(); }
   }
-  http.close(() => process.exit(0));
+});
+const shutdown = () => {
+  void close().then(() => {
+    if (http === undefined) process.exit(0);
+    else http.close(() => process.exit(0));
+  }).catch(() => {
+    process.exitCode = 1;
+    http?.close();
+  });
 };
 
 for (const signal of ["SIGINT", "SIGTERM"]) {
@@ -78,6 +94,6 @@ if (http !== undefined) {
 try {
   await mcp.serve({ input: process.stdin, write: writeLine(process.stdout) });
 } finally {
-  integration.destroy();
+  await close();
   http?.close();
 }

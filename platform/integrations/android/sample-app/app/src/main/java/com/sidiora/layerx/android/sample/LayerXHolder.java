@@ -4,7 +4,6 @@ import android.content.Context;
 import android.content.res.Resources;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sidiora.layerx.android.LayerXAndroid;
-import com.sidiora.layerx.android.MobileIntegrationException;
 import com.sidiora.layerx.android.PublishableConfiguration;
 import java.net.URI;
 import java.util.HashMap;
@@ -36,19 +35,18 @@ public final class LayerXHolder {
     private static LayerXHolder build(Context context) {
         Resources resources = context.getResources();
         String keyId = resources.getString(R.string.layerx_event_key_id);
-        String publicKeyName = "layerx_event_public_key_" + keyId.replace('-', '_');
-        int publicKeyId = resources.getIdentifier(publicKeyName, "string", context.getPackageName());
-        if (publicKeyId == 0) {
-            throw MobileIntegrationException.of(MobileIntegrationException.Code.INVALID_CONFIGURATION);
-        }
         Map<String, String> declared = new HashMap<>();
-        declared.put("layerx_service_url", resources.getString(R.string.layerx_service_url));
-        declared.put("layerx_session_broker_url", resources.getString(R.string.layerx_session_broker_url));
-        declared.put("layerx_event_max_age_seconds", resources.getString(R.string.layerx_event_max_age_seconds));
-        declared.put("layerx_request_timeout_seconds", resources.getString(R.string.layerx_request_timeout_seconds));
-        declared.put(publicKeyName, resources.getString(publicKeyId));
+        declared.put(PublishableConfiguration.SERVICE_URL_KEY, resources.getString(R.string.layerx_service_url));
+        declared.put(PublishableConfiguration.SESSION_BROKER_URL_KEY,
+            resources.getString(R.string.layerx_session_broker_url));
+        declared.put(PublishableConfiguration.EVENT_MAX_AGE_SECONDS_KEY,
+            resources.getString(R.string.layerx_event_max_age_seconds));
+        declared.put(PublishableConfiguration.REQUEST_TIMEOUT_SECONDS_KEY,
+            resources.getString(R.string.layerx_request_timeout_seconds));
+        declared.put(PublishableConfiguration.EVENT_PUBLIC_KEY_PREFIX + keyId,
+            resources.getString(R.string.layerx_event_public_key));
 
-        PublishableConfiguration configuration = SampleEnvironment.configuration(declared);
+        PublishableConfiguration configuration = PublishableConfiguration.of(declared);
         LayerXAndroid mobile = LayerXAndroid.create(context, configuration);
         String relay = resources.getString(R.string.layerx_receipt_relay_url);
         RelayReceiptResolver receipts = new RelayReceiptResolver(

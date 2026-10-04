@@ -51,6 +51,7 @@
     "build": "node scripts/patch-dependencies.mjs && tsc -p tsconfig.json",
     "test": "npm run build && node --test test/dependency-contracts.test.mjs && node test/a2a-store.test.mjs",
     "integration:real": "node examples/agent-runtime/index.mjs",
+    "integration:webhooks": "node examples/agent-runtime/webhook-conformance.mjs",
     "postinstall": "node scripts/patch-dependencies.mjs"
   },
   "dependencies": {

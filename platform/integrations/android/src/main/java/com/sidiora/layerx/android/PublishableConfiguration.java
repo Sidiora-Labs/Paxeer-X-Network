@@ -86,6 +86,14 @@ public final class PublishableConfiguration {
             String key = declaredKeyForEnvironmentVariable(entry.getKey());
             if (key != null) declared.put(key, entry.getValue());
         }
+        String eventKeyId = environment.get("LAYERX_EVENT_KEY_ID");
+        String eventPublicKey = environment.get("LAYERX_EVENT_PUBLIC_KEY");
+        if (eventKeyId != null || eventPublicKey != null) {
+            if (eventKeyId == null || eventPublicKey == null || !isKeyIdentifier(eventKeyId)
+                    || declared.putIfAbsent(EVENT_PUBLIC_KEY_PREFIX + eventKeyId, eventPublicKey) != null) {
+                throw invalid();
+            }
+        }
         return of(declared);
     }
 
@@ -196,12 +204,12 @@ public final class PublishableConfiguration {
 
     private static boolean isKeyIdentifier(String value) {
         if (value.isEmpty() || value.length() > 64) return false;
-        char first = value.charAt(0);
-        if (!(Character.isLetterOrDigit(first) && first < 128)) return false;
         for (int index = 0; index < value.length(); index++) {
             char character = value.charAt(index);
             boolean allowed = (character >= 'a' && character <= 'z')
-                || (character >= '0' && character <= '9') || character == '-';
+                || (character >= 'A' && character <= 'Z')
+                || (character >= '0' && character <= '9')
+                || character == '.' || character == '_' || character == '-';
             if (!allowed) return false;
         }
         return true;

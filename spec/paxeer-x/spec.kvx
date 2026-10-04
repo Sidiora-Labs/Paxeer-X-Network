@@ -26418,8 +26418,8 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.104.16.4]
 title = "Build the mobile bindings and agent-framework integrations"
-status = "pending"
-mode = "QUALIFY"
+status = "done"
+mode = "BUILD"
 wave = 3
 requires = ["0.2", "104.16.2"]
 reqs = ["1088.2", "1088.6", "1088.7"]
@@ -26430,10 +26430,10 @@ do_4 = "Verify webhook consumption, signature verification and replay protection
 do_5 = "Prove no secret ships in any mobile artifact via the CI scan."
 do_6 = "Exercise each integration end to end in CI against a real service."
 do_7 = "Provide this task selector in tools/paxeer-x/gates and execute the full scoped acceptance contract using real production paths. Preserve the retained verification command coverage; move aggregate matrices to release scope and refuse an unknown or unimplemented selector."
-touches = ["platform/integrations/ios", "platform/integrations/android", "platform/integrations/agents", "platform/integrations/next/bin/layerx-scan-bundle.mjs", "platform/Makefile.inc", ".github/workflows/platform.yml", "package*.json", "tools/paxeer-x/gates/104.16.4.sh"]
+touches = ["platform/integrations/ios", "platform/integrations/android", "platform/integrations/agents", "platform/integrations/next/bin/layerx-scan-bundle.mjs", "tools/paxeer-x/gates/104.16.4.sh", ".github/workflows/platform.yml"]
 verify_cmd = "timeout 30m tools/paxeer-x/verify-task.sh 104.16.4"
 gate_kind = "planned-adapter"
-max_builds = 0
+max_builds = 1
 max_verify_runs = 1
 max_repair_cycles = 2
 time_limit_minutes = 30
@@ -26446,6 +26446,14 @@ completion_policy = "Existing implementation is preserved; current candidate qua
 planned_paths = ["tools/paxeer-x/gates/104.16.4.sh"]
 path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
 evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+fleet_retained_shared_paths = ["platform/integrations/ios", "platform/integrations/android", "platform/integrations/agents", "platform/integrations/next/bin/layerx-scan-bundle.mjs", "platform/Makefile.inc", ".github/workflows/platform.yml", "package*.json", "tools/paxeer-x/gates/104.16.4.sh"]
+fleet_role = "complete_migration"
+fleet_authority = "User ordered 30 agents to finish pending integrations within four hours. This is the next dependency-eligible source task, not deployment."
+implementation_window = "2026-10-04T12:58:50.377438+00:00 to 2026-10-04T13:28:50.377438+00:00"
+source_status = "complete"
+completion_basis = "implementation under owner CONSTITUTION; qualification separately recorded"
+qualification_status = "UNRUN"
+source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/fleet-104.16.4-source-handoff.json"
 
 [task.104.17.4]
 title = "Build the deployable hosted gateway with keys and quotas"

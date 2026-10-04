@@ -11,17 +11,16 @@ public final class SampleEnvironment {
     private SampleEnvironment() {}
 
     public static PublishableConfiguration configuration(Map<String, String> named) {
-        Map<String, String> declared = new HashMap<>();
+        Map<String, String> environment = new HashMap<>();
         for (Map.Entry<String, String> entry : named.entrySet()) {
             if (entry.getKey() == null || entry.getValue() == null || entry.getValue().isEmpty()) continue;
-            String key = PublishableConfiguration.declaredKeyForEnvironmentVariable(
-                entry.getKey().toUpperCase(Locale.ROOT));
-            if (key != null) declared.put(key, entry.getValue());
+            String name = entry.getKey().toUpperCase(Locale.ROOT);
+            if (!name.startsWith("LAYERX_")) continue;
+            if (environment.putIfAbsent(name, entry.getValue()) != null) {
+                throw MobileIntegrationException.of(MobileIntegrationException.Code.INVALID_CONFIGURATION);
+            }
         }
-        if (declared.isEmpty()) {
-            throw MobileIntegrationException.of(MobileIntegrationException.Code.INVALID_CONFIGURATION);
-        }
-        return PublishableConfiguration.of(declared);
+        return PublishableConfiguration.ofEnvironment(environment);
     }
 
     public static String required(Map<String, String> environment, String name) {

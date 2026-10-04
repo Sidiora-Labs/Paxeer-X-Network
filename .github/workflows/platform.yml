@@ -228,6 +228,16 @@ jobs:
       - name: Execute the framework through the real LayerX service stack
         env:
           LAYERX_AGENT_FRAMEWORK: ${{ matrix.framework }}
+          LAYERX_AGENT_SERVICES_MODULE: ${{ vars.LAYERX_SCHEDULED_AGENT_SERVICES_MODULE }}
+          LAYERX_AGENT_SURFACE: ${{ vars.LAYERX_SCHEDULED_AGENT_SURFACE }}
+          LAYERX_SESSION_ID: ${{ vars.LAYERX_SCHEDULED_AGENT_SESSION_ID }}
+          LAYERX_SESSION_TOKEN: ${{ secrets.LAYERX_SCHEDULED_AGENT_SESSION_TOKEN }}
+          LAYERX_SESSION_GENERATION: ${{ vars.LAYERX_SCHEDULED_AGENT_SESSION_GENERATION }}
+          LAYERX_GATEWAY_KEY_ID: ${{ vars.LAYERX_SCHEDULED_GATEWAY_KEY_ID }}
+          LAYERX_GATEWAY_KEY: ${{ secrets.LAYERX_SCHEDULED_GATEWAY_KEY }}
+          LAYERX_CLIENT_CERTIFICATE_PEM: ${{ secrets.LAYERX_SCHEDULED_CLIENT_CERTIFICATE_PEM }}
+          LAYERX_CLIENT_KEY_PEM: ${{ secrets.LAYERX_SCHEDULED_CLIENT_KEY_PEM }}
+          LAYERX_TRUSTED_CA_PEM: ${{ secrets.LAYERX_SCHEDULED_TRUSTED_CA_PEM }}
           LAYERX_AGENT_RPC_URL: ${{ vars.LAYERX_SCHEDULED_AGENT_RPC_URL }}
           LAYERX_PROTOCOL_VERSION: ${{ vars.LAYERX_SCHEDULED_PROTOCOL_VERSION }}
           LAYERX_BUDGET_SERVICE_URL: ${{ vars.LAYERX_SCHEDULED_BUDGET_SERVICE_URL }}
@@ -239,11 +249,19 @@ jobs:
           LAYERX_AUTHORITY: ${{ vars.LAYERX_SCHEDULED_AGENT_AUTHORITY }}
           LAYERX_FEE_LIMIT: ${{ vars.LAYERX_SCHEDULED_AGENT_FEE_LIMIT }}
           LAYERX_WEBHOOK_PUBLIC_KEYS_JSON: ${{ vars.LAYERX_SCHEDULED_WEBHOOK_PUBLIC_KEYS_JSON }}
-          LAYERX_WEBHOOK_DELIVERY_STORE_PATH: ${{ runner.temp }}/layerx-webhook-deliveries-${{ matrix.framework }}.json
+          LAYERX_WEBHOOK_DELIVERY_STORE_PATH: ${{ runner.temp }}/layerx-framework-${{ matrix.framework }}/journey-deliveries.json
           LAYERX_WEBHOOK_DELIVERY_PATH: ${{ runner.temp }}/layerx-webhook-delivery.json
           LAYERX_TOKEN: ${{ secrets.LAYERX_SCHEDULED_AGENT_TOKEN }}
           LAYERX_SPEND_TOOL_INPUT_JSON: ${{ secrets.LAYERX_SCHEDULED_SPEND_TOOL_INPUT_JSON }}
-        run: make platform-real-agent-integration
+        run: |
+          test -n "$LAYERX_AGENT_SERVICES_MODULE"
+          test -s "$LAYERX_AGENT_SERVICES_MODULE"
+          umask 077
+          mkdir -m 700 -p "$(dirname "$LAYERX_WEBHOOK_DELIVERY_STORE_PATH")"
+          make platform-real-agent-integration
+          export LAYERX_WEBHOOK_DELIVERY_STORE_PATH="$RUNNER_TEMP/layerx-framework-${LAYERX_AGENT_FRAMEWORK}/restart-deliveries.json"
+          LAYERX_WEBHOOK_EXPECT=processed node platform/integrations/agents/examples/agent-runtime/webhook-conformance.mjs
+          LAYERX_WEBHOOK_EXPECT=duplicate node platform/integrations/agents/examples/agent-runtime/webhook-conformance.mjs
 
   real-ios-journey:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
@@ -271,7 +289,9 @@ jobs:
         env:
           LAYERX_SERVICE_URL: ${{ vars.LAYERX_SCHEDULED_HUMAN_SERVICE_URL }}
           LAYERX_SESSION_BROKER_URL: ${{ vars.LAYERX_SCHEDULED_SESSION_BROKER_URL }}
-          LAYERX_EVENT_PUBLIC_KEY_PROD: ${{ vars.LAYERX_SCHEDULED_EVENT_PUBLIC_KEY }}
+          LAYERX_EVENT_KEY_ID: ${{ vars.LAYERX_SCHEDULED_EVENT_KEY_ID }}
+          LAYERX_EVENT_PUBLIC_KEY: ${{ vars.LAYERX_SCHEDULED_EVENT_PUBLIC_KEY }}
+          LAYERX_SAMPLE_DELIVERY_STORE_PATH: ${{ runner.temp }}/layerx-mobile/journey-deliveries.json
           LAYERX_RECEIPT_RELAY_URL: ${{ vars.LAYERX_SCHEDULED_RECEIPT_RELAY_URL }}
           LAYERX_SAMPLE_ASSET: ${{ vars.LAYERX_SCHEDULED_ASSET }}
           LAYERX_SAMPLE_RECIPIENT: ${{ vars.LAYERX_SCHEDULED_RECIPIENT }}
@@ -279,7 +299,10 @@ jobs:
           LAYERX_SAMPLE_QUOTE_JSON: ${{ vars.LAYERX_SCHEDULED_MOVE_QUOTE_JSON }}
           LAYERX_SAMPLE_IDEMPOTENCY_KEY: mobile-ios-${{ github.run_id }}-${{ github.run_attempt }}
           LAYERX_SAMPLE_WEBHOOK_DELIVERY_PATH: ${{ runner.temp }}/layerx-webhook-delivery.json
-        run: make platform-real-ios-integration
+        run: |
+          umask 077
+          mkdir -m 700 -p "$(dirname "$LAYERX_SAMPLE_DELIVERY_STORE_PATH")"
+          make platform-real-ios-integration
 
   real-android-journey:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
@@ -312,7 +335,9 @@ jobs:
         env:
           LAYERX_SERVICE_URL: ${{ vars.LAYERX_SCHEDULED_HUMAN_SERVICE_URL }}
           LAYERX_SESSION_BROKER_URL: ${{ vars.LAYERX_SCHEDULED_SESSION_BROKER_URL }}
-          LAYERX_EVENT_PUBLIC_KEY_PROD: ${{ vars.LAYERX_SCHEDULED_EVENT_PUBLIC_KEY }}
+          LAYERX_EVENT_KEY_ID: ${{ vars.LAYERX_SCHEDULED_EVENT_KEY_ID }}
+          LAYERX_EVENT_PUBLIC_KEY: ${{ vars.LAYERX_SCHEDULED_EVENT_PUBLIC_KEY }}
+          LAYERX_SAMPLE_DELIVERY_STORE_PATH: ${{ runner.temp }}/layerx-mobile/journey-deliveries.json
           LAYERX_RECEIPT_RELAY_URL: ${{ vars.LAYERX_SCHEDULED_RECEIPT_RELAY_URL }}
           LAYERX_SAMPLE_ASSET: ${{ vars.LAYERX_SCHEDULED_ASSET }}
           LAYERX_SAMPLE_RECIPIENT: ${{ vars.LAYERX_SCHEDULED_RECIPIENT }}
@@ -320,7 +345,10 @@ jobs:
           LAYERX_SAMPLE_QUOTE_JSON: ${{ vars.LAYERX_SCHEDULED_MOVE_QUOTE_JSON }}
           LAYERX_SAMPLE_IDEMPOTENCY_KEY: mobile-android-${{ github.run_id }}-${{ github.run_attempt }}
           LAYERX_SAMPLE_WEBHOOK_DELIVERY_PATH: ${{ runner.temp }}/layerx-webhook-delivery.json
-        run: make platform-real-android-integration
+        run: |
+          umask 077
+          mkdir -m 700 -p "$(dirname "$LAYERX_SAMPLE_DELIVERY_STORE_PATH")"
+          make platform-real-android-integration
 
   programs-acceptance:
     if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/sdk-v')
