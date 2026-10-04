@@ -2289,3 +2289,8 @@ resolution = "Use the retained pnpm9.15.9 with CI=true and the exact workspace m
 area = "Gateway serialized transaction type"
 observed = "Task14.3 SDK compiled, but gateway compilation failed TS2322 at agent/actions/orchestrator.ts:540 because the signer returns Hex while recovery requires the concrete serialized transaction union."
 resolution = "Retain parsing and exact transaction checks; verify the actual EIP1559 discriminant before passing its narrowed serialized type to signature recovery in the explicit follow-up."
+
+[gotcha.672]
+area = "Wallet custody result semantics"
+observed = "Private Human deposit confirmation requires a 32-byte transaction hash while the wallet sign-custody operation returns a 65-byte signature."
+resolution = "Complete exact authorized submission and durable custody-status recovery; never expose the signature as a transaction reference."

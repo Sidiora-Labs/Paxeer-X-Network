@@ -15,9 +15,15 @@
     "./react": {
       "types": "./dist/react.d.ts",
       "import": "./dist/react.js"
+    },
+    "./provider": {
+      "types": "./dist/provider.d.ts",
+      "import": "./dist/provider.js"
     }
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "pnpm run build:agent-sdk && tsc -p tsconfig.json",
     "build:agent-sdk": "npm --prefix ../../../agent/sdk/typescript ci --no-audit --no-fund && npm --prefix ../../../agent/sdk/typescript run build",
@@ -30,7 +36,9 @@
     "react": ">=18.0.0"
   },
   "peerDependenciesMeta": {
-    "react": { "optional": true }
+    "react": {
+      "optional": true
+    }
   },
   "dependencies": {
     "@noble/curves": "^1.9.1",

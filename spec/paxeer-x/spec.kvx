@@ -27086,7 +27086,7 @@ verify_status = "UNRUN"
 qualification_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-14.3-result.json"
 [task.14.5]
 title = "Adapt retained private Human web custody requests to the supported provider contract"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 4
 requires = ["0.2", "13.4"]
@@ -27096,7 +27096,7 @@ do_2 = "Align the journey screen handoff with the current provider argument cont
 do_3 = "Add a private-network integration case for valid/refused and reconnect custody handoffs."
 do_4 = "Add the new bounded harness tools/qualification/paxeer-x/private-human-custody.py to exercise this task through the named production interfaces, including the stated refusal and recovery cases, with explicit prerequisite checks and nonzero exit on any unmet acceptance. Use supplied prebuilt executables and isolated retained state; do not hide a rebuild or invoke a release-wide suite."
 do_5 = "Implement the declared focused gate through the real production types and paths; exercise every acceptance criterion including refusal, restart or boundary cases specified by this requirement. The command is a planned deliverable, not an already-run gate."
-touches = ["human/apps/web/src/journeys/custody/handoff.ts", "human/apps/web/src/journeys/custody/journey-screen.tsx", "human/apps/web/src/api/generated/index.ts", "human/wallet/sdk/src/provider.ts", "human/apps/web/e2e/custody-evidence.test.ts", "tools/qualification/paxeer-x/private-human-custody.py", "human/apps/web/package.json", "human/apps/web/package-lock.json"]
+touches = ["human/apps/web/src/journeys/custody/handoff.ts", "human/apps/web/src/journeys/custody/journey-screen.tsx", "human/apps/web/src/api/generated/index.ts", "human/apps/web/e2e/custody-evidence.test.ts", "tools/qualification/paxeer-x/private-human-custody.py", "human/apps/web/package.json", "human/apps/web/package-lock.json", "human/wallet/sdk/package.json"]
 verify_cmd = "timeout 15m python3 tools/qualification/paxeer-x/private-human-custody.py"
 gate_kind = "planned"
 max_builds = 1
@@ -27109,6 +27109,17 @@ planned_paths = ["tools/qualification/paxeer-x/private-human-custody.py"]
 path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
 evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
 
+retained_shared_touch_paths = ["human/wallet/sdk/src/provider.ts"]
+source_ownership = "Task14.3 owns SDK provider writes; task14.5 adapts private browser callers to the existing strict custody contract. Generated API changes only via its actual generator; root owns manifests and narrow publication."
+build_cmd = "timeout 20m python3 tools/qualification/paxeer-x/private-human-custody.py --build"
+
+
+completion_basis = "implementation"
+qualification_status = "unverified"
+build_exit_code = 0
+verify_exit_code = 1
+qualification_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-14.5-verify.log"
+qualification_limit_violation = "Owner reported sole verifier began after original03:37UTC cap; failed padding assumption, no repair or rerun."
 [task.14.6]
 title = "Carry full sponsored constructions from retained private Human web"
 status = "pending"

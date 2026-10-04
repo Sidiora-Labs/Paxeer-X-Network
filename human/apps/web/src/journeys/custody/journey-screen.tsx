@@ -18,7 +18,7 @@ import {
 } from "../withdraw/model.ts";
 import { ChallengeHoldView, SettlementNotice } from "../withdraw/screen";
 import { presentedJourneyState, statusKeyForState } from "./evidence.ts";
-import { browserWalletBridge, windowWalletProvider } from "./handoff.ts";
+import { browserWalletBridge, windowWalletProvider, type PaxeerWalletBridge } from "./handoff.ts";
 import { journeyTimeline } from "./model.ts";
 import { isJourneyOutcomeUnknown } from "./recovery.ts";
 import type { CustodyTiming } from "./time.ts";
@@ -37,8 +37,8 @@ const REFRESH_INTERVAL_MS = 5_000;
 
 type CustodyController = DepositController | ExitController | WithdrawController;
 
-function controllerFor(journey: Journey): CustodyController | undefined {
-  const options = { api: humanApi(), bridge: browserWalletBridge(windowWalletProvider) };
+function controllerFor(journey: Journey, bridge: PaxeerWalletBridge): CustodyController | undefined {
+  const options = { api: humanApi(), bridge };
   switch (journey.kind) {
     case "deposit": {
       const controller = new DepositController(options);
@@ -98,6 +98,7 @@ export function JourneyScreen({
   const shell = useCustodyShell();
   const router = useRouter();
   const api = useMemo(() => humanApi(), []);
+  const bridge = useMemo(() => browserWalletBridge(windowWalletProvider), []);
   const controllerRef = useRef<CustodyController | undefined>(undefined);
   const [journey, setJourney] = useState<Journey | undefined>(undefined);
   const [busy, setBusy] = useState(false);
@@ -112,7 +113,7 @@ export function JourneyScreen({
         if (cancelled) {
           return;
         }
-        controllerRef.current = controllerFor(loaded);
+        controllerRef.current = controllerFor(loaded, bridge);
         setJourney(loaded);
       })
       .catch((error: unknown) => {
@@ -123,7 +124,7 @@ export function JourneyScreen({
     return () => {
       cancelled = true;
     };
-  }, [api, journeyId, retryToken]);
+  }, [api, bridge, journeyId, retryToken]);
 
   const presented = journey === undefined
     ? undefined
