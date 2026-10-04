@@ -27933,8 +27933,14 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 build_cmd = "timeout 20m flock /root/lx-cargo/human-build.lock env CARGO_BUILD_JOBS=4 CARGO_TARGET_DIR=/root/lx-target/human /root/.cargo/bin/cargo build --locked --manifest-path human/Cargo.toml -p layerx-human-service --bin layerx-human-service --bin layerx-human-components"
 source_status = "complete"
 completion_basis = "implementation"
-qualification_status = "UNRUN"
+qualification_status = "implemented-not-qualified"
 handoff_path = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-10.2-source-handoff.json"
+qualification_revision = "32c1ea8e653acd392db2651bac29b24807661bb2"
+build_exit_code = 101
+verify_status = "UNRUN"
+repair_cycles_used = 0
+build_log_path = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-10.2-build.log"
+qualification_note = "Build stopped on three unrelated native Send producer compiler errors in agentd human_runtime.rs; no repair or verify. Runtime fixture independently absent."
 
 [task.16.3]
 title = "Prove emulator and hosted execution parity with a nonempty canonical corpus"
