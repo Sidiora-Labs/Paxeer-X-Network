@@ -28296,8 +28296,15 @@ fleet_cutoff_utc = "2026-10-04T14:48:00Z"
 fleet_authority = "User requested thirty agents to complete remaining integrations in four hours; fresh eligible task admission, no deployment operations."
 source_status = "complete"
 completion_basis = "implementation under owner CONSTITUTION; qualification separately recorded"
-qualification_status = "UNRUN"
+qualification_status = "UNRUN_BUILD_TIMED_OUT"
 source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/fleet-104.33.4-current-publication.json"
+qualification_revision = "25862b1d5cb8cd11f98d390f5e9e299fe35ae4c5"
+verify_status = "UNRUN"
+build_status = "TIMED_OUT"
+build_exit_code = 124
+build_command = "timeout 20m bash tools/paxeer-x/gates/104.33.4.sh --build"
+build_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/fleet-104.33.4-build-25862b1d5.log"
+qualification_evidence = "/root/lx-ops/paxeer-x-integration-2026-10-03/fleet-104.33.4-result.json"
 
 [task.104.33.7]
 title = "Finish program operations across the hosted gateway and seven SDKs"
