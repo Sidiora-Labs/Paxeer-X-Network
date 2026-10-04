@@ -629,11 +629,21 @@ static int maintenance_publish(maintenance_fixture *f, uint32_t type,
             CHECK(lxp_kernel_prepare_terminal_rejection(&f->kernel, activities, executions,
                 LXP_ERR_IDENTITY_FROZEN, &legacy) == LXP_OK);
         } else if (type == LX_PROGRAMS_CALL) {
+            bool capture_enabled = f->kernel.replay_catalogue_capture_enabled;
+            uint64_t log_offset = f->evidence.log->write_offset;
+            size_t retained_bytes = f->evidence.replay_catalogue_retained_bytes;
             prepared_status = lxp_kernel_prepare_activity_batch_with_arbiter_prestate(
                 &f->kernel, activities, executions, count, 4U,
                 64U * 1024U * 1024U, &prepared, &retry);
+            f->kernel.replay_catalogue_capture_enabled = false;
             CHECK(lxp_kernel_prepare_activity_batch(&f->kernel, activities, executions,
                 count, 4U, &legacy, &retry) == LXP_OK);
+            f->kernel.replay_catalogue_capture_enabled = capture_enabled;
+            CHECK(lxp_kernel_prepared_batch_replay_catalogue(legacy, 0U).bytes == NULL);
+            CHECK(lxp_daemon_evidence_retain_replay_catalogues(&f->evidence, legacy) == LXP_ERR_IO);
+            CHECK(f->evidence.log->write_offset == log_offset &&
+                f->evidence.replay_catalogue_retained_bytes == retained_bytes &&
+                lxp_daemon_evidence_replay_catalogue_ready(&f->evidence));
         } else {
             CHECK(count == 1U);
             prepared_status = lxp_kernel_prepare_serial_activity_batch_with_arbiter_prestate(
@@ -815,6 +825,7 @@ static int maintenance_publish(maintenance_fixture *f, uint32_t type,
             if (type == LX_PROGRAMS_CALL) {
                 lxp_byte_span catalogue = lxp_kernel_prepared_batch_replay_catalogue(prepared, i);
                 uint32_t inner_length;
+                CHECK(decoded[i].operation == 3U);
                 CHECK(catalogue.bytes != NULL && catalogue.length > 10U &&
                     catalogue.bytes[0] == 0U && catalogue.bytes[1] == 1U);
                 inner_length = ((uint32_t)catalogue.bytes[2] << 24U) |
@@ -846,6 +857,7 @@ static int maintenance_publish(maintenance_fixture *f, uint32_t type,
                 ++catalogue_capture_count;
                 f->arbiter_first_capture = false;
             } else {
+                CHECK(decoded[i].operation == 0U);
                 CHECK(lxp_kernel_prepared_batch_replay_catalogue(prepared, i).bytes == NULL);
             }
 

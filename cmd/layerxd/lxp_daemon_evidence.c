@@ -3978,13 +3978,15 @@ lxp_result lxp_daemon_evidence_retain_replay_catalogues(
         bool exact = false;
         if (payload.length == 0U) {
             if (receipts[index].protocol_version == LXP_PROTOCOL_VERSION_STATE_COMMITMENT &&
-                receipts[index].module_id == LXP_MODULE_PROGRAMS)
+                receipts[index].module_id == LXP_MODULE_PROGRAMS &&
+                receipts[index].operation == 3U)
                 status = LXP_ERR_IO;
             continue;
         }
         status = replay_catalogue_validate(payload, store->network_id, key);
         if (status == LXP_OK && (receipts[index].protocol_version != LXP_PROTOCOL_VERSION_STATE_COMMITMENT ||
             receipts[index].module_id != LXP_MODULE_PROGRAMS ||
+            receipts[index].operation != 3U ||
             memcmp(payload.bytes + 12U, receipts[index].activity_id, 32U) != 0 ||
             read_u64(payload.bytes + 44U) != receipts[index].global_sequence ||
             memcmp(payload.bytes + 52U, receipts[index].previous_state_root, 32U) != 0))
@@ -4041,7 +4043,8 @@ lxp_result lxp_daemon_evidence_get_replay_catalogue(
         status = lxp_receipt_decode(evidence.canonical_receipt.bytes,
             evidence.canonical_receipt.length, true, &receipt);
     if (status == LXP_OK && (receipt.protocol_version != LXP_PROTOCOL_VERSION_STATE_COMMITMENT ||
-        receipt.module_id != LXP_MODULE_PROGRAMS || receipt.global_sequence == 0U ||
+        receipt.module_id != LXP_MODULE_PROGRAMS || receipt.operation != 3U ||
+        receipt.global_sequence == 0U ||
         memcmp(receipt.activity_id, activity_id, 32U) != 0))
         status = LXP_ERR_CONTEXT_MISMATCH;
     if (status == LXP_OK) {

@@ -2384,3 +2384,8 @@ resolution = "Declare the existing dependency without external version changes; 
 area = "Prior task source section publication"
 observed = "The narrow Human publication helper found an older in-progress parent section that had not yet been added to HEAD."
 resolution = "Classify existing and new task sections explicitly before staging, and reconstruct any later task edits only in index blobs verified against the earlier frozen source hashes."
+
+[gotcha.694]
+area = "Genuine replay first deployment"
+observed = "After the Client corpus import correction compiled, the real native replay fixture failed its first DEPLOY journal assertion before any SDK case."
+resolution = "Preserve the literal assertion and authenticate the real producer and capture boundary in a distinct bounded native task; do not manufacture a successful receipt."
