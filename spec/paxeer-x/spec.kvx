@@ -32760,7 +32760,7 @@ qualification_verify_status = "unrun"
 
 [task.104.13.9]
 title = "Produce authentic approval presentation, post-activity budget and managed receipt export facts"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 2
 requires = ["0.2", "8.1"]
@@ -32769,7 +32769,7 @@ do_1 = "Persist actual trusted-clock approval creation time with exact existing 
 do_2 = "Return genuine post-held-activity budget through the actual budget/reservation/verified-read owner, retaining asset, denomination, authority and evidence binding. Never relabel full unchanged balance as budget remaining after."
 do_3 = "Expose real managed-agent receipt bytes through authenticated tenant/session ownership and actual export/evidence store, preserving digest and canonical verification; do not fabricate evd IDs without exportable backing."
 do_4 = "Freeze and wire the distinct producer/consumer response profile to Human AgentRuntime and AgentApprovalRecord, retaining legacy encodings and checks; author genuine producer-to-consumer positive/refusal/reopen cases."
-touches = ["agent/crates/layerx-agentd/src/policy/approval.rs", "agent/crates/layerx-agentd/src/approval/mod.rs", "agent/crates/layerx-agentd/src/approval/events.rs", "agent/crates/layerx-agentd/src/human_runtime.rs", "agent/crates/layerx-agentd/src/managed_agent.rs", "human/crates/layerx-human-service/src/approvals/mod.rs", "agent/crates/layerx-agentd/tests/human_projection_facts.rs", "tools/qualification/paxeer-x/human-projection-facts.py", "agent/crates/layerx-agentd/src/human.rs", "agent/crates/layerx-agentd/src/budget/reserve.rs", "agent/crates/layerx-agentd/src/approval/native_program.rs"]
+touches = ["agent/crates/layerx-agentd/src/approval/mod.rs", "agent/crates/layerx-agentd/src/approval/events.rs", "agent/crates/layerx-agentd/src/managed_agent.rs", "agent/crates/layerx-agentd/tests/human_projection_facts.rs", "tools/qualification/paxeer-x/human-projection-facts.py"]
 build_cmd = "timeout 20m env CARGO_TARGET_DIR=/root/lx-target/human-facts cargo test --locked --manifest-path agent/Cargo.toml -p layerx-agentd --test human_projection_facts --no-run"
 verify_cmd = "timeout 20m python3 tools/qualification/paxeer-x/human-projection-facts.py"
 max_builds = 1
@@ -32784,6 +32784,21 @@ source_ownership = "Root owns all shared schema, generation, manifests, locks, s
 retained_contract_paths = ["agent/crates/layerx-agentd/src/policy/approval.rs", "agent/crates/layerx-agentd/src/approval/mod.rs", "agent/crates/layerx-agentd/src/approval/events.rs", "agent/crates/layerx-agentd/src/human_runtime.rs", "agent/crates/layerx-agentd/src/managed_agent.rs", "human/crates/layerx-human-service/src/server/agent_runtime.rs", "human/crates/layerx-human-service/src/approvals/mod.rs", "agent/crates/layerx-agentd/tests/human_projection_facts.rs", "tools/qualification/paxeer-x/human-projection-facts.py", "agent/crates/layerx-agentd/src/human.rs", "agent/crates/layerx-agentd/src/budget/reserve.rs", "agent/crates/layerx-agentd/src/approval/native_program.rs"]
 delegated_source_task = "104.13.22"
 delegated_source_paths = ["human/crates/layerx-human-service/src/server/agent_runtime.rs"]
+retained_contract_paths_104_13_26 = ["agent/crates/layerx-agentd/src/policy/approval.rs", "agent/crates/layerx-agentd/src/approval/mod.rs", "agent/crates/layerx-agentd/src/approval/events.rs", "agent/crates/layerx-agentd/src/human_runtime.rs", "agent/crates/layerx-agentd/src/managed_agent.rs", "human/crates/layerx-human-service/src/approvals/mod.rs", "agent/crates/layerx-agentd/tests/human_projection_facts.rs", "tools/qualification/paxeer-x/human-projection-facts.py", "agent/crates/layerx-agentd/src/human.rs", "agent/crates/layerx-agentd/src/budget/reserve.rs", "agent/crates/layerx-agentd/src/approval/native_program.rs"]
+delegated_source_task_104_13_26 = "104.13.26"
+delegated_source_paths_104_13_26 = ["agent/crates/layerx-agentd/src/policy/approval.rs", "agent/crates/layerx-agentd/src/human_runtime.rs"]
+lease_transfer_authority_104_13_26 = "Owner approved inactive lease reassignment for this integration sweep; all unfinished criteria and assertions are preserved."
+retained_contract_paths_104_13_30 = ["agent/crates/layerx-agentd/src/approval/mod.rs", "agent/crates/layerx-agentd/src/approval/events.rs", "agent/crates/layerx-agentd/src/managed_agent.rs", "human/crates/layerx-human-service/src/approvals/mod.rs", "agent/crates/layerx-agentd/tests/human_projection_facts.rs", "tools/qualification/paxeer-x/human-projection-facts.py", "agent/crates/layerx-agentd/src/human.rs", "agent/crates/layerx-agentd/src/budget/reserve.rs", "agent/crates/layerx-agentd/src/approval/native_program.rs"]
+delegated_source_paths_104_13_30 = ["agent/crates/layerx-agentd/src/human.rs"]
+lease_transfer_authority_104_13_30 = "Owner approved inactive lease reassignment; no live owner exists and every unfinished criterion remains intact."
+fleet_authority = "User explicitly ordered30agents into pending integrations within4hours; fresh bounded source implementation resumes. Preserve prior source/evidence and every assertion."
+fleet_role = "/root/complete_human_facts/facts_dispatch"
+fleet_scope_manifest = "/root/lx-ops/paxeer-x-integration-2026-10-03/fleet-104.13.9-brief.json"
+source_status = "complete"
+completion_basis = "implementation under owner CONSTITUTION; qualification separately recorded"
+qualification_status = "UNRUN"
+source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/fleet-104.13.9-intake.json"
+
 [task.0.11]
 title = "Preserve legacy deposit fault encoding with complete SDK error handling"
 status = "done"
