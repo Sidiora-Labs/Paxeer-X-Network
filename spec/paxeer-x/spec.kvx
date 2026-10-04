@@ -24197,7 +24197,7 @@ conditional_write_scope = "execute.rs: only budgeted authorized invocation outco
 
 [task.104.31.1]
 title = "Expose the execution context to guest code"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 2
 requires = ["0.2"]
@@ -24209,7 +24209,7 @@ do_4 = "Make the caller field honest at every frame: a callee observes its own i
 do_5 = "Meter the context read per byte returned and freeze the field identifiers and their encodings behind golden vectors."
 do_6 = "Prove across the composition suite that the caller field cannot be forged on any edge, at any depth, or by re-entry."
 do_7 = "Provide this task selector in tools/paxeer-x/gates and execute the full scoped acceptance contract using real production paths. Preserve the retained verification command coverage; move aggregate matrices to release scope and refuse an unknown or unimplemented selector."
-touches = ["programs/crates/layerx-programs-runtime/src/abi/context.rs", "programs/crates/layerx-programs-runtime/src/host/context.rs", "tools/paxeer-x/gates/104.31.1.sh", "tests/programs/test_execution_context.c", "tools/qualification/paxeer-x/program_execution_context.py", "tools/qualification/paxeer-x/program_execution_context.mk", "programs/crates/layerx-programs-runtime/src/execute.rs"]
+touches = ["programs/crates/layerx-programs-runtime/src/abi/context.rs", "programs/crates/layerx-programs-runtime/src/host/context.rs", "tools/paxeer-x/gates/104.31.1.sh", "tests/programs/test_execution_context.c", "tools/qualification/paxeer-x/program_execution_context.py", "tools/qualification/paxeer-x/program_execution_context.mk"]
 verify_cmd = "timeout 30m tools/paxeer-x/verify-task.sh 104.31.1"
 gate_kind = "planned-adapter"
 max_builds = 1
@@ -24233,6 +24233,17 @@ release_gate_policy = "Retain the complete make programs-test coverage once per 
 frozen_read_only_paths = ["Makefile", "programs/crates/layerx-programs-runtime/src/engine.rs", "programs/crates/layerx-programs-runtime/src/lib.rs", "programs/crates/layerx-programs-runtime/src/ffi_call.rs", "programs/crates/layerx-programs-runtime/src/ffi_interface.rs", "programs/crates/layerx-programs-runtime/src/abi/manifest.rs", "programs/crates/layerx-programs-runtime/Cargo.toml"]
 implementation_boundary = "Only declared touches may change. Existing native fixtures, kernel/state sources and other producer dependencies are read-only. A failure requiring a frozen or undeclared source change is a recorded owner dependency, not authorization to edit it. Preserve every existing assertion and refusal; do not weaken source checks, bounds, or tests to resolve a conflict."
 composition_scope = "Consume the exact shared authenticated composition-refusal implementation in execute.rs; no independent edits to that file. Run every execution-context acceptance case on the complete composed candidate. This task provides no program-spending completion credit; all existing context criteria, refusal boundaries and resource limits remain unchanged."
+retained_contract_paths_104_35_33 = ["programs/crates/layerx-programs-runtime/src/abi/context.rs", "programs/crates/layerx-programs-runtime/src/host/context.rs", "tools/paxeer-x/gates/104.31.1.sh", "tests/programs/test_execution_context.c", "tools/qualification/paxeer-x/program_execution_context.py", "tools/qualification/paxeer-x/program_execution_context.mk", "programs/crates/layerx-programs-runtime/src/execute.rs"]
+delegated_source_task_104_35_33 = "104.35.33"
+delegated_source_paths_104_35_33 = ["programs/crates/layerx-programs-runtime/src/execute.rs"]
+lease_transfer_authority_104_35_33 = "Owner approved inactive lease reassignment; all unfinished requirements and assertions remain intact."
+fleet_authority = "User explicitly ordered30agents into pending integrations within4hours; fresh bounded source implementation resumes. Preserve prior source/evidence and every assertion."
+fleet_role = "/root/daemon_native_bindings/arbiter_client"
+fleet_scope_manifest = "/root/lx-ops/paxeer-x-integration-2026-10-03/fleet-104.31.1-brief.json"
+source_status = "complete"
+completion_basis = "implementation under owner CONSTITUTION; qualification separately recorded"
+qualification_status = "UNRUN"
+source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/fleet-104.31.1-retained-publication.json"
 
 [task.104.31.2]
 title = "Expose receipt-verified balance reads"
