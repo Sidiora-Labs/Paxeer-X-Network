@@ -2793,3 +2793,23 @@ observed = "Successful native settlement transfers do not establish standalone s
 [gotcha.796]
 title = "Private qualification log tracking"
 observed = "The existing feature qualification log is local and absent from HEAD. Preserve its private tracking state while appending exact findings; do not force-add the historical log merely because task metadata is published."
+
+[gotcha.797]
+title = "Native test module and selector identity"
+observed = "The complete v5 producer build exposed missing EXECUTION_V4/V5 imports only inside source_vectors. Repair1 imported existing constants and selected the actual source_vectors tests; all four build stages and the twelve-case focused gate then passed."
+
+[gotcha.798]
+title = "Short callback truncation fixture"
+observed = "The genuine callback terminal is 84 bytes. TypeScript subarray(0,105) leaves those bytes unchanged, so the retained malformed-input rejection assertion fails. The exact proposed correction always removes bytes; exhausted repair allowance keeps it unapplied pending owner approval."
+
+[gotcha.799]
+title = "Explicit v5 asset authority binding"
+observed = "The .NET v5 mutation case exposed an absent receipt Asset equality with independently authorized batch Asset. The scoped repair adds equality only for protocol3 ABI3/4 Program CALL, preserving the generic legacy Program exception and every assertion."
+
+[gotcha.800]
+title = "Producer and repaired consumer revision"
+observed = "A retained genuine corpus does not satisfy a newer repaired consumer test that explicitly requires published candidate revision equality. Never reinterpret that environment binding, relabel the corpus or alter the assertion; capture genuine matching provenance under an authorized continuation."
+
+[gotcha.801]
+title = "Swift container build mountpoint"
+observed = "A read-only source container refused before compilation because the ignored .build mountpoint did not exist. Creating only that private mountpoint allowed the original bounded build; retain initialization125 separately from the successful compiler result."
