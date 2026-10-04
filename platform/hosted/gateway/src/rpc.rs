@@ -366,7 +366,10 @@ pub(super) fn dispatch(config: &Config, request: &IncomingRequest, value: &Value
     let id = value.get("id").cloned().unwrap_or(Value::Null);
     let method = value["method"].as_str()?;
     if method == "lx_getWalletCaps" {
-        let result = read_response(&id, &super::wallet_caps(config, request, value.get("params")));
+        let result = read_response(
+            &id,
+            &super::wallet_caps(config, request, value.get("params")),
+        );
         return value.get("id").map(|_| result);
     }
     if method == "px_getRouteCatalogue" {
@@ -1153,6 +1156,23 @@ mod tests {
             );
         }
         assert_eq!(methods.len(), published.len());
+    }
+
+    #[test]
+    fn read_and_submission_refusals_preserve_gateway_retry_timing() {
+        let answer = response(429, "quota_exceeded", Some(29));
+        let read = read_response(&json!(31), &answer);
+        let submitted = upstream_result(&json!(31), &answer)
+            .err()
+            .unwrap_or_else(|| panic!("quota refusal cannot be a success"));
+        for refused in [read, submitted] {
+            assert_eq!(refused["id"], 31);
+            assert_eq!(refused["error"]["code"], -32005);
+            assert_eq!(refused["error"]["data"]["error"]["code"], "quota_exceeded");
+            assert_eq!(refused["error"]["data"]["error"]["retry"], "after");
+            assert_eq!(refused["error"]["data"]["error"]["retry_after_seconds"], 29);
+            assert!(refused.get("result").is_none());
+        }
     }
 
     #[test]

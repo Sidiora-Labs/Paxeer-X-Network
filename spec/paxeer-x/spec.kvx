@@ -26628,8 +26628,8 @@ qualification_note = "Source publication recorded; zero build and verify runs."
 
 [task.104.17.4]
 title = "Build the deployable hosted gateway with keys and quotas"
-status = "pending"
-mode = "QUALIFY"
+status = "done"
+mode = "BUILD"
 wave = 3
 requires = ["0.2", "104.17.3"]
 reqs = ["1089.4", "1089.7"]
@@ -26643,7 +26643,7 @@ do_7 = "Provide this task selector in tools/paxeer-x/gates and execute the full 
 touches = ["platform/hosted/gateway", "platform/hosted/gateway/tests", "tools/paxeer-x/gates/104.17.4.sh"]
 verify_cmd = "timeout 30m tools/paxeer-x/verify-task.sh 104.17.4"
 gate_kind = "planned-adapter"
-max_builds = 0
+max_builds = 1
 max_verify_runs = 1
 max_repair_cycles = 2
 time_limit_minutes = 30
@@ -26656,6 +26656,15 @@ completion_policy = "Existing implementation is preserved; current candidate qua
 planned_paths = ["tools/paxeer-x/gates/104.17.4.sh"]
 path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
 evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+fleet_retained_shared_paths = []
+fleet_shared_writer = "Root serializes shared paths; all original criteria and inactive source assertions preserved."
+fleet_role = "/root/complete_indexer"
+fleet_cutoff_utc = "2026-10-04T14:48:00Z"
+fleet_authority = "User requested thirty agents to complete remaining integrations in four hours; fresh eligible task admission, no deployment operations."
+source_status = "complete"
+completion_basis = "implementation under owner CONSTITUTION; qualification separately recorded"
+qualification_status = "UNRUN"
+source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/fleet-104.17.4-current-publication.json"
 
 [task.104.18.2]
 title = "Ship the reference applications"

@@ -103,6 +103,37 @@ pub struct KeyRecord {
     pub disabled: bool,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum KeyRotation {
+    Rotated,
+    Conflict,
+    Limit,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum KeyIssuance {
+    Issued,
+    Conflict,
+    Limit,
+}
+
+fn valid_key_quota(record: &KeyRecord) -> Result<(), String> {
+    crate::Quota::new(record.quota_requests, record.quota_window_seconds)
+        .map_err(|_| "gateway stored key quota is invalid".to_owned())?;
+    if record.epoch == 0 {
+        return Err("gateway stored key epoch is invalid".to_owned());
+    }
+    Ok(())
+}
+
+fn key_disabled(value: &str) -> Result<bool, String> {
+    match value {
+        "0" => Ok(false),
+        "1" => Ok(true),
+        _ => Err("gateway stored key state is invalid".to_owned()),
+    }
+}
+
 pub enum Reservation {
     Reserved,
     Existing {
@@ -223,6 +254,22 @@ impl RedisStore {
     /// # Errors
     /// Returns transport, malformed store response, validation or audit contention errors.
     pub fn issue_key(&self, record: &KeyRecord, audit_event: &str) -> Result<(), String> {
+        match self.issue_key_outcome(record, audit_event)? {
+            KeyIssuance::Issued => Ok(()),
+            KeyIssuance::Conflict | KeyIssuance::Limit => {
+                Err("gateway key issue conflicted".to_owned())
+            }
+        }
+    }
+
+    /// # Errors
+    /// Returns transport, invalid durable data and audit contention errors.
+    pub fn issue_key_outcome(
+        &self,
+        record: &KeyRecord,
+        audit_event: &str,
+    ) -> Result<KeyIssuance, String> {
+        valid_key_quota(record)?;
         let key = format!("gateway:key:{}", record.key_id);
         let principal_keys = format!("gateway:principal:{}:keys", record.principal_digest);
         for _ in 0..AUDIT_ATTEMPTS {
@@ -253,10 +300,11 @@ impl RedisStore {
             if tag == "audit_retry" {
                 continue;
             }
-            return if tag == "issued" {
-                Ok(())
-            } else {
-                Err("gateway key issue conflicted".to_owned())
+            return match tag.as_str() {
+                "issued" => Ok(KeyIssuance::Issued),
+                "conflict" => Ok(KeyIssuance::Conflict),
+                "limit" => Ok(KeyIssuance::Limit),
+                _ => Err("gateway key issue response is invalid".to_owned()),
             };
         }
         Err("gateway audit head remained contended".to_owned())
@@ -270,7 +318,7 @@ impl RedisStore {
             Resp::Array(values) if values.is_empty() => Ok(None),
             Resp::Array(values) => {
                 let fields = pairs(&values)?;
-                Ok(Some(KeyRecord {
+                let record = KeyRecord {
                     key_id: key_id.to_owned(),
                     principal_digest: required(&fields, "principal")?,
                     salt: required(&fields, "salt")?,
@@ -280,8 +328,10 @@ impl RedisStore {
                     quota_requests: number(&fields, "quota_requests")?,
                     quota_window_seconds: number(&fields, "quota_window_seconds")?,
                     epoch: number(&fields, "epoch")?,
-                    disabled: required(&fields, "disabled")? == "1",
-                }))
+                    disabled: key_disabled(&required(&fields, "disabled")?)?,
+                };
+                valid_key_quota(&record)?;
+                Ok(Some(record))
             }
             _ => Err("gateway key response is invalid".to_owned()),
         }
@@ -317,6 +367,27 @@ impl RedisStore {
         replacement: &KeyRecord,
         audit_event: &str,
     ) -> Result<(), String> {
+        match self.rotate_key_outcome(old, replacement, audit_event)? {
+            KeyRotation::Rotated => Ok(()),
+            KeyRotation::Conflict | KeyRotation::Limit => {
+                Err("gateway key rotation conflicted".to_owned())
+            }
+        }
+    }
+
+    /// # Errors
+    /// Returns transport, invalid durable data and audit contention errors.
+    pub fn rotate_key_outcome(
+        &self,
+        old: &KeyRecord,
+        replacement: &KeyRecord,
+        audit_event: &str,
+    ) -> Result<KeyRotation, String> {
+        valid_key_quota(old)?;
+        valid_key_quota(replacement)?;
+        if old.principal_digest != replacement.principal_digest {
+            return Ok(KeyRotation::Conflict);
+        }
         let old_key = format!("gateway:key:{}", old.key_id);
         let new_key = format!("gateway:key:{}", replacement.key_id);
         let principal_keys = format!("gateway:principal:{}:keys", old.principal_digest);
@@ -350,10 +421,11 @@ impl RedisStore {
             if tag == "audit_retry" {
                 continue;
             }
-            return if tag == "rotated" {
-                Ok(())
-            } else {
-                Err("gateway key rotation conflicted".to_owned())
+            return match tag.as_str() {
+                "rotated" => Ok(KeyRotation::Rotated),
+                "conflict" => Ok(KeyRotation::Conflict),
+                "limit" => Ok(KeyRotation::Limit),
+                _ => Err("gateway key rotation response is invalid".to_owned()),
             };
         }
         Err("gateway audit head remained contended".to_owned())
@@ -398,6 +470,7 @@ impl RedisStore {
         record: &KeyRecord,
         request: ReservationRequest<'_>,
     ) -> Result<Reservation, String> {
+        valid_key_quota(record)?;
         let reserve_started = Instant::now();
         let ReservationRequest {
             idempotency_scope,
@@ -527,6 +600,7 @@ impl RedisStore {
         now: u64,
         audit_event: &str,
     ) -> Result<Option<u64>, String> {
+        valid_key_quota(record)?;
         let key = format!("gateway:key:{}", record.key_id);
         let window = now / record.quota_window_seconds;
         let usage = format!("gateway:quota:{}:{window}", record.key_id);
@@ -1522,5 +1596,48 @@ mod continuation_tests {
     #[test]
     fn oversized_program_activity_hex_is_rejected() {
         assert!(continuation_chunks(&"a".repeat(MAX_CONTINUATION_BYTES + 1)).is_err());
+    }
+}
+
+#[cfg(test)]
+mod key_record_tests {
+    use super::{key_disabled, valid_key_quota, KeyRecord};
+
+    #[test]
+    fn durable_key_state_is_explicit_and_never_defaults_active() {
+        assert_eq!(key_disabled("0"), Ok(false));
+        assert_eq!(key_disabled("1"), Ok(true));
+        for value in ["", "2", "false", "true", "00", " 0", "0\n"] {
+            assert!(key_disabled(value).is_err());
+        }
+    }
+
+    #[test]
+    fn stored_quotas_refuse_zero_and_excess_before_window_arithmetic() {
+        let mut key = KeyRecord {
+            key_id: "key".to_owned(),
+            principal_digest: "01".repeat(32),
+            salt: "02".repeat(32),
+            secret_digest: "03".repeat(32),
+            signer_public_key: "04".repeat(32),
+            scopes: "receipt:read".to_owned(),
+            quota_requests: 1,
+            quota_window_seconds: 1,
+            epoch: 1,
+            disabled: false,
+        };
+        assert!(valid_key_quota(&key).is_ok());
+        for (requests, seconds, epoch) in [
+            (0, 1, 1),
+            (1, 0, 1),
+            (1_000_001, 1, 1),
+            (1, 2_592_001, 1),
+            (1, 1, 0),
+        ] {
+            key.quota_requests = requests;
+            key.quota_window_seconds = seconds;
+            key.epoch = epoch;
+            assert!(valid_key_quota(&key).is_err());
+        }
     }
 }

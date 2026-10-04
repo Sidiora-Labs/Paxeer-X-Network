@@ -36,6 +36,7 @@ export function setup() {
   }
   const issued = http.post(`${baseUrl}/v1/keys`, JSON.stringify({
     signer_public_key: __ENV.LAYERX_GATEWAY_SIGNER_PUBLIC_KEY,
+    scopes: ['activity:write', 'receipt:read'],
     quota_requests: Number(__ENV.LAYERX_GATEWAY_LOAD_QUOTA || 1000000),
     quota_window_seconds: Number(__ENV.LAYERX_GATEWAY_LOAD_WINDOW_SECONDS || 3600),
   }), {

@@ -20,8 +20,8 @@ use layerx_platform_gateway::http::{
     self, Client, Endpoint, IncomingRequest, OutgoingResponse, UpstreamResponse,
 };
 use layerx_platform_gateway::store::{
-    Completion, KeyRecord, OperationRecord, RedisEndpoint, RedisStore, Reservation,
-    ReservationRequest,
+    Completion, KeyIssuance, KeyRecord, KeyRotation, OperationRecord, RedisEndpoint, RedisStore,
+    Reservation, ReservationRequest,
 };
 use layerx_platform_gateway::{
     authenticate_gateway_key, native_explorer_public_route, pay_timing, production_route,
@@ -1155,11 +1155,16 @@ fn config(event_producer: bool) -> Result<Config, String> {
 }
 
 fn response(status: u16, code: &str, retry_after: Option<u64>) -> OutgoingResponse {
+    let mut error = serde_json::json!({ "code": code });
+    if let Some(seconds) = retry_after {
+        error["retry"] = serde_json::json!("after");
+        error["retry_after_seconds"] = serde_json::json!(seconds);
+    }
     OutgoingResponse {
         content_type: "application/json".to_owned(),
         headers: Vec::new(),
         status,
-        body: serde_json::json!({ "ok": false, "error": { "code": code } })
+        body: serde_json::json!({ "ok": false, "error": error })
             .to_string()
             .into_bytes(),
         retry_after,
@@ -1730,8 +1735,10 @@ fn manage_keys(config: &Config, request: &IncomingRequest) -> OutgoingResponse {
     if !valid_identifier(key_id, 64) {
         return response(404, "not_found", None);
     }
-    let Some(old) = config.store.key(key_id).ok().flatten() else {
-        return response(404, "not_found", None);
+    let old = match config.store.key(key_id) {
+        Ok(Some(old)) => old,
+        Ok(None) => return response(404, "not_found", None),
+        Err(_) => return response(503, "persistence_unavailable", Some(5)),
     };
     if old
         .principal_digest
@@ -3862,13 +3869,11 @@ fn issue_key(
         quota,
         1,
     );
-    let written = config
-        .store
-        .issue_key(
-            &record,
-            &audit_event(principal_hash, "key_issue", &record.key_id, "issued"),
-        )
-        .is_ok();
+    let outcome = config.store.issue_key_outcome(
+        &record,
+        &audit_event(principal_hash, "key_issue", &record.key_id, "issued"),
+    );
+    let written = matches!(outcome, Ok(KeyIssuance::Issued));
     let existing = if written {
         Ok(None)
     } else {
@@ -3878,6 +3883,9 @@ fn issue_key(
     if !written && !replayed {
         return match existing {
             Ok(Some(_)) => response(409, "idempotency_conflict", None),
+            Ok(None) if matches!(outcome, Ok(KeyIssuance::Limit)) => {
+                response(409, "key_limit_reached", None)
+            }
             _ => response(503, "persistence_unavailable", Some(5)),
         };
     }
@@ -5087,21 +5095,21 @@ fn rotate_key(
         quota,
         1,
     );
-    let written = config
-        .store
-        .rotate_key(
-            old,
-            &replacement,
-            &audit_event(principal_hash, "key_rotate", key_id, "rotated"),
-        )
-        .is_ok();
-    let replayed = !written
-        && config
-            .store
-            .key(&replacement.key_id)
-            .ok()
-            .flatten()
-            .is_some_and(|existing| existing == replacement);
+    let outcome = config.store.rotate_key_outcome(
+        old,
+        &replacement,
+        &audit_event(principal_hash, "key_rotate", key_id, "rotated"),
+    );
+    let written = matches!(outcome, Ok(KeyRotation::Rotated));
+    let replayed = if written {
+        false
+    } else {
+        match config.store.key(&replacement.key_id) {
+            Ok(Some(existing)) => existing == replacement,
+            Ok(None) => false,
+            Err(_) => return response(503, "persistence_unavailable", Some(5)),
+        }
+    };
     if written || replayed {
         json_response(
             if written { 201 } else { 200 },
@@ -5116,6 +5124,10 @@ fn rotate_key(
                 }
             }),
         )
+    } else if matches!(outcome, Ok(KeyRotation::Limit)) {
+        response(409, "key_limit_reached", None)
+    } else if outcome.is_err() {
+        response(503, "persistence_unavailable", Some(5))
     } else {
         response(409, "rotation_conflict", None)
     }
@@ -5754,6 +5766,23 @@ mod programs_wire_tests {
         ] {
             assert_eq!(agent_error_class(status, code), expected);
         }
+    }
+
+    #[test]
+    fn quota_refusals_carry_the_same_timing_in_json_and_http() {
+        let output = response(429, "quota_exceeded", Some(17));
+        assert_eq!(output.status, 429);
+        assert_eq!(output.retry_after, Some(17));
+        let body: serde_json::Value =
+            serde_json::from_slice(&output.body).unwrap_or_else(|error| panic!("{error}"));
+        assert_eq!(body["error"]["code"], "quota_exceeded");
+        assert_eq!(body["error"]["retry"], "after");
+        assert_eq!(body["error"]["retry_after_seconds"], 17);
+        let terminal = response(403, "insufficient_scope", None);
+        let body: serde_json::Value =
+            serde_json::from_slice(&terminal.body).unwrap_or_else(|error| panic!("{error}"));
+        assert!(body["error"].get("retry_after_seconds").is_none());
+        assert!(body["error"].get("retry").is_none());
     }
 
     #[test]
