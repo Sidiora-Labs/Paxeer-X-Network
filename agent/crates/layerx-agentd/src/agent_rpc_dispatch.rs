@@ -1121,7 +1121,8 @@ pub(crate) fn canonical_request_bytes(
         | Operation::TenantReadiness
         | Operation::SubscriptionHealth
         | Operation::SubscriptionList
-        | Operation::Wait => return Ok(None),
+        | Operation::Wait
+        | Operation::McpInvoke => return Ok(None),
     }))
 }
 
@@ -1333,6 +1334,11 @@ pub(crate) fn dispatch_operation<A: HumanAuthorityBoundary>(
         )),
         Operation::ReadProofBundle => adapters::read_proof_bundle(shared, context, request, ctx),
         Operation::ProgramInterface => adapters::program_interface(shared, context, request, ctx),
+        Operation::McpInvoke => Err(rejection(
+            ErrorClass::PolicyRefusal,
+            id,
+            "mcp.operation_refused",
+        )),
     }
 }
 

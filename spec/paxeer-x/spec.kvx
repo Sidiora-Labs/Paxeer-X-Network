@@ -34633,3 +34633,22 @@ qualification_first_build_evidence = "24bbd8a0ed3c85c84a761e8dde3ac66b56441023 |
 repair1 = "Preserve absolute proxy invocation path instead of symlink resolution; no source or behavior checks changed"
 qualification_repair1_build_evidence = "c9542c8fde0c263bbd4189c3e5771a8437a630fd | python3 tools/qualification/paxeer-x/programs_language_abi.py --build | 2 | /root/lx-ops/paxeer-x-integration-2026-10-03/qualification/task7.5-repair1/build-native.log"
 repair2 = "Complete expected web record width derived from canonical header + exact actual committed text, with exact equality and every-byte comparison retained"
+
+[task.9.4]
+title = "Finish MCP operation dispatch and interrupted qualification"
+status = "done"
+mode = "BUILD"
+wave = 4
+requires = ["0.2", "9.3"]
+reqs = ["132"]
+touches = ["agent/crates/layerx-agentd/src/agent_rpc_dispatch.rs"]
+do_1 = "Complete only owner-approved interrupted continuation against frozen source and real task gate, retaining original DONE source status, all prior failures and remaining repair budget."
+verify_cmd = "timeout 30m python3 tools/qualification/paxeer-x/mcp_daemon_revocation.py"
+time_limit_minutes = 30
+stop_condition = "Owner-approved resumption START11:21UTC END11:51UTC; stop cap, unrelatedfailure, missinggenuineauthority orweakening."
+owner_approval = "User explicitly approved three30-minute resumptions after usage interruption. MCPtwo repairsremain, migrationone remains, languageszero. No budget reset."
+qualification_status = "UNRUN"
+remaining_repair_cycles = 2
+source_status = "complete"
+completion_basis = "implementation under owner CONSTITUTION; qualification separately recorded"
+source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-9.4-source-handoff.json"
