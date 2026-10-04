@@ -15,4 +15,4 @@ $(BUILD_DIR)/tests/lxp_test_program_replay: tests/daemon/lxp_test_program_replay
 	$(CC) $(CPPFLAGS) $(CFLAGS) -Icmd/layerxd -I$(BUILD_DIR)/generated $< \
 		$(filter-out $(BUILD_DIR)/obj/cmd/layerxd/main.o,$(LAYERXD_OBJECTS)) \
 		$(LIBRARY) $(PROGRAMS_RUNTIME_LIB) $(LIBRARY) $(EXTRA_LDFLAGS) \
-		-lcrypto -lsqlite3 -pthread -ldl -lm -o $@
+		$(PROGRAMS_NATIVE_LDLIBS) -lcrypto -lsqlite3 -pthread -ldl -lm -o $@
