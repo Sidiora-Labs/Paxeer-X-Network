@@ -155,6 +155,22 @@ impl Registry {
             {
                 return Err("unknown route upstream or service binding".into());
             }
+            if name == "layerx-explorer" {
+                let binding = &upstream.binding;
+                if upstream.service != "explorer"
+                    || binding.health_path != "/v1/readiness"
+                    || binding.identity_path != "/v1/identity"
+                    || binding.ready_pointer != "/complete"
+                    || binding.ready_value != json!(true)
+                    || binding.network_pointer != "/network_id"
+                    || binding.network_value != json!(network)
+                    || binding.version_pointer != "/wire_version"
+                    || binding.version_value != json!(wire)
+                {
+                    return Err("native explorer owner identity binding invalid".into());
+                }
+                let _ = native_explorer_authorization(binding)?;
+            }
         }
         for (id, binding) in file.services.iter().chain(
             file.upstreams
@@ -412,7 +428,13 @@ pub(super) fn route(config: &Config, request: &IncomingRequest) -> Option<Outgoi
     if let Some(result) = super::explorer_proxy::route(request) {
         return Some(result);
     }
-    if request.method == "OPTIONS" {
+    let browser_profile = http::browser_route_profile(&request.path);
+    if request.method == "OPTIONS" && browser_profile != http::BrowserRouteProfile::GasStation {
+        if browser_profile == http::BrowserRouteProfile::UnifiedAccount
+            && !http::unified_account_preflight(request)
+        {
+            return Some(response(400, "invalid_preflight", None));
+        }
         return Some(if config.routes.origin(request).is_some() {
             OutgoingResponse {
                 content_type: "application/json".to_owned(),
@@ -491,13 +513,27 @@ pub(super) fn route(config: &Config, request: &IncomingRequest) -> Option<Outgoi
     let entry = catalogue()["routes"].as_array()?.iter().find(|r| {
         r["proxy"] == true
             && r["method"] == request.method
-            && r["path"]
-                .as_str()
-                .is_some_and(|p| matches_path(p, &request.path))
+            && r["path"].as_str().is_some_and(|p| {
+                matches_path(p, &request.path)
+                    || (r["upstream"] == "layerx-explorer"
+                        && browser_profile == http::BrowserRouteProfile::UnifiedAccount)
+            })
     })?;
     let id = entry["service"].as_str()?;
     if private(id) {
         return Some(response(403, "private_service", None));
+    }
+    if entry["upstream"] == "layerx-explorer" {
+        if browser_profile != http::BrowserRouteProfile::UnifiedAccount
+            || request.method != "GET"
+            || !request.body.is_empty()
+            || request
+                .headers
+                .get("layerx-unified-profile")
+                .is_some_and(|value| !matches!(value.as_str(), "1" | "2"))
+        {
+            return Some(response(400, "invalid_explorer_profile_request", None));
+        }
     }
     if entry["authentication"] == "gateway-api-key" {
         if let Err(refusal) = authenticate_key(config, request) {
@@ -554,7 +590,17 @@ pub(super) fn route(config: &Config, request: &IncomingRequest) -> Option<Outgoi
         Ok(endpoint) => endpoint,
         Err(_) => return Some(response(503, "invalid_upstream", None)),
     };
-    let authorization = if matches!(
+    let native_authorization = if upstream == "layerx-explorer" {
+        match native_explorer_authorization(binding) {
+            Ok(value) => Some(value),
+            Err(_) => return Some(response(503, "explorer_authority_unavailable", None)),
+        }
+    } else {
+        None
+    };
+    let authorization = if let Some(value) = &native_authorization {
+        value.as_str()
+    } else if matches!(
         id,
         "human" | "wallet-gateway" | "interop" | "ramp" | "webhooks-dashboard"
     ) {
@@ -568,15 +614,22 @@ pub(super) fn route(config: &Config, request: &IncomingRequest) -> Option<Outgoi
     let forwarded: Vec<_> = request
         .headers
         .iter()
-        .filter(|(name, _)| forward_header(id, name))
+        .filter(|(name, value)| {
+            forward_header(id, name)
+                || http::browser_profile_request_header(&request.method, &request.path, name, value)
+        })
         .map(|(name, value)| (name.as_str(), value.as_str()))
         .collect();
-    let upstream_path = match routed_path(entry, &request.path) {
+    let upstream_path = match if upstream == "layerx-explorer" {
+        Some(request.path.clone())
+    } else {
+        routed_path(entry, &request.path)
+    } {
         Some(path) => path,
         None => return Some(response(400, "invalid_route_target", None)),
     };
     Some(
-        match config.client.request_forwarded(
+        match config.client.request_browser_forwarded(
             &endpoint,
             authorization,
             &http::OutboundRequest {
@@ -590,6 +643,7 @@ pub(super) fn route(config: &Config, request: &IncomingRequest) -> Option<Outgoi
                 body: &request.body,
             },
             &forwarded,
+            browser_profile,
         ) {
             Ok(reply) => OutgoingResponse {
                 status: reply.status,
@@ -597,7 +651,10 @@ pub(super) fn route(config: &Config, request: &IncomingRequest) -> Option<Outgoi
                 headers: reply
                     .headers
                     .into_iter()
-                    .filter(|(name, _)| response_header(id, name))
+                    .filter(|(name, _)| {
+                        response_header(id, name)
+                            || http::browser_profile_response_header(browser_profile, name)
+                    })
                     .collect(),
                 body: reply.body,
                 retry_after: None,
@@ -1252,6 +1309,27 @@ fn mcp_route(config: &Config, request: &IncomingRequest) -> OutgoingResponse {
         ),
         Err(_) => response(503, "mcp_deadline_exceeded", None),
     }
+}
+
+fn native_explorer_authorization(binding: &Binding) -> Result<Zeroizing<String>, String> {
+    let path = binding
+        .health_authorization_file
+        .as_ref()
+        .ok_or("native explorer authority absent")?;
+    let value = Zeroizing::new(
+        String::from_utf8(protected(path)?)
+            .map_err(|_| "native explorer authority invalid")?
+            .trim()
+            .to_owned(),
+    );
+    let token = value
+        .strip_prefix("Bearer ")
+        .ok_or("native explorer bearer required")?;
+    if token.len() < 32 || value.len() > 4096 || !token.bytes().all(|byte| byte.is_ascii_graphic())
+    {
+        return Err("native explorer authority invalid".into());
+    }
+    Ok(value)
 }
 
 fn probe_binding(client: &http::Client, binding: &Binding) -> Result<(), &'static str> {

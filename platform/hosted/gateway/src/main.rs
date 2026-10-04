@@ -1,6 +1,5 @@
 mod capabilities;
 mod explorer_proxy;
-mod ui_proxy;
 mod history;
 mod native_call;
 mod paxeer;
@@ -12,6 +11,7 @@ mod rpc_faucet;
 mod rpc_register;
 mod settlement;
 mod state;
+mod ui_proxy;
 mod ws;
 mod ws_wire;
 
@@ -1074,11 +1074,15 @@ fn configured_service_identity(kernel_configured: bool) -> Result<Option<Identit
         return Ok(None);
     }
     if kernel_configured {
-        return Err("service client identity conflicts with the configured kernel client identity"
-            .to_owned());
+        return Err(
+            "service client identity conflicts with the configured kernel client identity"
+                .to_owned(),
+        );
     }
     if !identity_configured || !password_configured {
-        return Err(format!("{IDENTITY} and {PASSWORD} must be configured together"));
+        return Err(format!(
+            "{IDENTITY} and {PASSWORD} must be configured together"
+        ));
     }
     let path = env::var(IDENTITY)
         .map_err(|_| "gateway service client identity path is invalid".to_owned())?;
@@ -3465,7 +3469,10 @@ struct IdentityReadinessResponse {
 }
 
 fn public_core_readiness(upstream: &UpstreamResponse, network: u32, wire: &str) -> bool {
-    if upstream.status != 200 || upstream.content_type != "application/json" || upstream.body.len() > 4096 {
+    if upstream.status != 200
+        || upstream.content_type != "application/json"
+        || upstream.body.len() > 4096
+    {
         return false;
     }
     let Ok(readiness) = serde_json::from_slice::<ReadinessResponse>(&upstream.body) else {
@@ -3479,7 +3486,10 @@ fn public_core_readiness(upstream: &UpstreamResponse, network: u32, wire: &str) 
 }
 
 fn identity_readiness(upstream: &UpstreamResponse) -> bool {
-    if upstream.status != 200 || upstream.content_type != "application/json" || upstream.body.len() > 4096 {
+    if upstream.status != 200
+        || upstream.content_type != "application/json"
+        || upstream.body.len() > 4096
+    {
         return false;
     }
     let Ok(readiness) = serde_json::from_slice::<IdentityReadinessResponse>(&upstream.body) else {
@@ -3488,14 +3498,25 @@ fn identity_readiness(upstream: &UpstreamResponse) -> bool {
     readiness.status == "ready" && readiness.service == "identity"
 }
 
-fn authenticated_readiness(config: &Config, endpoint: &Endpoint, token: &str) -> Option<UpstreamResponse> {
-    config.client.request(endpoint, token, &http::OutboundRequest {
-        method: "GET",
-        path: "/internal/readyz",
-        idempotency: None,
-        content_type: "application/json",
-        body: &[],
-    }).ok()
+fn authenticated_readiness(
+    config: &Config,
+    endpoint: &Endpoint,
+    token: &str,
+) -> Option<UpstreamResponse> {
+    config
+        .client
+        .request(
+            endpoint,
+            token,
+            &http::OutboundRequest {
+                method: "GET",
+                path: "/internal/readyz",
+                idempotency: None,
+                content_type: "application/json",
+                body: &[],
+            },
+        )
+        .ok()
 }
 
 fn program_registry_ready(config: &Config) -> bool {
@@ -3730,11 +3751,12 @@ fn exchange<S: ws::Connection>(config: &Arc<Config>, stream: &mut S) -> Result<(
                 .headers
                 .get("connection")
                 .is_none_or(|value| !value.eq_ignore_ascii_case("close"));
-        http::write_response_connection_with_origin(
+        http::write_response_connection_with_browser_profile(
             stream,
             &route(config, &request),
             keep_alive,
             config.routes.origin(&request),
+            &request.path,
         )?;
         if !keep_alive {
             return Ok(());
@@ -3924,7 +3946,13 @@ fn readiness(config: &Config) -> Vec<BackendAvailability> {
         kernel_availability(config, backend, |endpoint, token| match backend {
             KernelBackend::Component => dependency_ready(config, endpoint, token, true),
             KernelBackend::PublicCore => authenticated_readiness(config, endpoint, token)
-                .is_some_and(|upstream| public_core_readiness(&upstream, config.protocol_network_id, &config.wire_version)),
+                .is_some_and(|upstream| {
+                    public_core_readiness(
+                        &upstream,
+                        config.protocol_network_id,
+                        &config.wire_version,
+                    )
+                }),
             KernelBackend::Authority => authority_ready(config, endpoint, token),
             KernelBackend::Identity => authenticated_readiness(config, endpoint, token)
                 .is_some_and(|upstream| identity_readiness(&upstream)),
@@ -3973,7 +4001,8 @@ fn gateway_readiness_scope(config: &Config, include_product_routes: bool) -> Out
             KernelBackend::Authority.name(),
         ]
         .iter()
-        .all(|name| backend_ready(&backends, name)) && serving
+        .all(|name| backend_ready(&backends, name))
+            && serving
     };
     let component_name = |name: &str| {
         if backend_ready(&backends, name) {
@@ -6357,7 +6386,6 @@ mod authority_lni_compatibility_tests {
     }
 }
 
-
 struct WalletCaps {
     bridge: Endpoint,
     issuer_socket: std::path::PathBuf,
@@ -6370,28 +6398,72 @@ struct WalletCaps {
 }
 
 fn configured_wallet_caps() -> Result<Option<WalletCaps>, String> {
-    const NAMES: [&str; 7] = ["LAYERX_GATEWAY_WALLET_IDENTITY_URL", "LAYERX_GATEWAY_WALLET_ISSUER_SOCKET",
-        "LAYERX_GATEWAY_WALLET_BINDING_SOCKET", "LAYERX_GATEWAY_WALLET_IDENTITY_UID",
-        "LAYERX_GATEWAY_WALLET_IDENTITY_GID", "LAYERX_GATEWAY_WALLET_TENANT", "LAYERX_GATEWAY_WALLET_CHAIN_ID"];
-    if NAMES.iter().all(|name| env::var_os(name).is_none()) { return Ok(None); }
-    let values = NAMES.iter().map(|name| env::var(name).map_err(|_| "incomplete wallet caps configuration".to_owned())).collect::<Result<Vec<_>, _>>()?;
-    let peer_uid = values[3].parse().map_err(|_| "invalid wallet identity uid")?;
-    let peer_gid = values[4].parse().map_err(|_| "invalid wallet identity gid")?;
-    let chain_id = values[6].parse::<u64>().map_err(|_| "invalid wallet chain id")?;
-    if chain_id == 0 || values[5].is_empty() || values[5].len() > 255 || values[5].chars().any(char::is_control) {
+    const NAMES: [&str; 7] = [
+        "LAYERX_GATEWAY_WALLET_IDENTITY_URL",
+        "LAYERX_GATEWAY_WALLET_ISSUER_SOCKET",
+        "LAYERX_GATEWAY_WALLET_BINDING_SOCKET",
+        "LAYERX_GATEWAY_WALLET_IDENTITY_UID",
+        "LAYERX_GATEWAY_WALLET_IDENTITY_GID",
+        "LAYERX_GATEWAY_WALLET_TENANT",
+        "LAYERX_GATEWAY_WALLET_CHAIN_ID",
+    ];
+    if NAMES.iter().all(|name| env::var_os(name).is_none()) {
+        return Ok(None);
+    }
+    let values = NAMES
+        .iter()
+        .map(|name| env::var(name).map_err(|_| "incomplete wallet caps configuration".to_owned()))
+        .collect::<Result<Vec<_>, _>>()?;
+    let peer_uid = values[3]
+        .parse()
+        .map_err(|_| "invalid wallet identity uid")?;
+    let peer_gid = values[4]
+        .parse()
+        .map_err(|_| "invalid wallet identity gid")?;
+    let chain_id = values[6]
+        .parse::<u64>()
+        .map_err(|_| "invalid wallet chain id")?;
+    if chain_id == 0
+        || values[5].is_empty()
+        || values[5].len() > 255
+        || values[5].chars().any(char::is_control)
+    {
         return Err("invalid wallet caps binding".to_owned());
     }
-    let clock = layerx_client::runtime_clock::RuntimeClock::from_environment().map_err(|_| "wallet identity clock unavailable")?;
-    let bindings = layerx_identity_binding::Client::new(layerx_identity_binding::Config {
-        socket: values[2].clone().into(), tenant: values[5].clone(), peer_uid, peer_gid, deadline: Duration::from_secs(3),
-    }, clock.clone()).map_err(|_| "invalid wallet identity binding configuration")?;
+    let clock = layerx_client::runtime_clock::RuntimeClock::from_environment()
+        .map_err(|_| "wallet identity clock unavailable")?;
+    let bindings = layerx_identity_binding::Client::new(
+        layerx_identity_binding::Config {
+            socket: values[2].clone().into(),
+            tenant: values[5].clone(),
+            peer_uid,
+            peer_gid,
+            deadline: Duration::from_secs(3),
+        },
+        clock.clone(),
+    )
+    .map_err(|_| "invalid wallet identity binding configuration")?;
     let issuer_socket = std::path::PathBuf::from(&values[1]);
-    if !issuer_socket.is_absolute() { return Err("wallet issuer requires a same-host protected absolute socket".to_owned()); }
-    Ok(Some(WalletCaps { bridge: Endpoint::parse(&values[0])?, issuer_socket, peer_uid, peer_gid,
-        tenant: values[5].clone(), chain_id, bindings, clock }))
+    if !issuer_socket.is_absolute() {
+        return Err("wallet issuer requires a same-host protected absolute socket".to_owned());
+    }
+    Ok(Some(WalletCaps {
+        bridge: Endpoint::parse(&values[0])?,
+        issuer_socket,
+        peer_uid,
+        peer_gid,
+        tenant: values[5].clone(),
+        chain_id,
+        bindings,
+        clock,
+    }))
 }
 
-fn wallet_assertion(caps: &WalletCaps, assertion: &str, binding: &str) -> Result<(String, String), u16> {
+fn wallet_assertion(
+    caps: &WalletCaps,
+    assertion: &str,
+    binding: &str,
+) -> Result<(String, String), u16> {
     use std::io::{Read, Write};
     use std::os::unix::fs::{FileTypeExt, MetadataExt};
     use std::os::unix::net::UnixStream;
@@ -6399,106 +6471,262 @@ fn wallet_assertion(caps: &WalletCaps, assertion: &str, binding: &str) -> Result
     let parent = path.parent().ok_or(502_u16)?;
     let directory = fs::symlink_metadata(parent).map_err(|_| 503_u16)?;
     let before = fs::symlink_metadata(path).map_err(|_| 503_u16)?;
-    if fs::canonicalize(path).map_err(|_| 503_u16)? != *path || !directory.is_dir()
-        || directory.uid() != caps.peer_uid || directory.mode() & 0o022 != 0
-        || !before.file_type().is_socket() || before.uid() != caps.peer_uid || before.gid() != caps.peer_gid
-        || before.mode() & 0o007 != 0 || assertion.len() > 16384 || binding.len() > 16384 { return Err(403); }
+    if fs::canonicalize(path).map_err(|_| 503_u16)? != *path
+        || !directory.is_dir()
+        || directory.uid() != caps.peer_uid
+        || directory.mode() & 0o022 != 0
+        || !before.file_type().is_socket()
+        || before.uid() != caps.peer_uid
+        || before.gid() != caps.peer_gid
+        || before.mode() & 0o007 != 0
+        || assertion.len() > 16384
+        || binding.len() > 16384
+    {
+        return Err(403);
+    }
     let started = Instant::now();
-    let descriptor = rustix::net::socket_with(rustix::net::AddressFamily::UNIX, rustix::net::SocketType::STREAM,
-        rustix::net::SocketFlags::CLOEXEC | rustix::net::SocketFlags::NONBLOCK, None).map_err(|_| 503_u16)?;
-    rustix::net::connect(&descriptor, &rustix::net::SocketAddrUnix::new(path).map_err(|_| 503_u16)?).map_err(|_| 503_u16)?;
+    let descriptor = rustix::net::socket_with(
+        rustix::net::AddressFamily::UNIX,
+        rustix::net::SocketType::STREAM,
+        rustix::net::SocketFlags::CLOEXEC | rustix::net::SocketFlags::NONBLOCK,
+        None,
+    )
+    .map_err(|_| 503_u16)?;
+    rustix::net::connect(
+        &descriptor,
+        &rustix::net::SocketAddrUnix::new(path).map_err(|_| 503_u16)?,
+    )
+    .map_err(|_| 503_u16)?;
     let mut stream = UnixStream::from(descriptor);
     let peer = rustix::net::sockopt::socket_peercred(&stream).map_err(|_| 503_u16)?;
     let after = fs::symlink_metadata(path).map_err(|_| 503_u16)?;
-    if peer.uid.as_raw() != caps.peer_uid || peer.gid.as_raw() != caps.peer_gid
-        || before.dev() != after.dev() || before.ino() != after.ino() { return Err(403); }
+    if peer.uid.as_raw() != caps.peer_uid
+        || peer.gid.as_raw() != caps.peer_gid
+        || before.dev() != after.dev()
+        || before.ino() != after.ino()
+    {
+        return Err(403);
+    }
     stream.set_nonblocking(false).map_err(|_| 503_u16)?;
     let mut body = Zeroizing::new(b"LXIP\x01\x04".to_vec());
     body.extend_from_slice(&2_u32.to_be_bytes());
-    for field in [assertion, binding] { body.extend_from_slice(&(field.len() as u32).to_be_bytes()); body.extend_from_slice(field.as_bytes()); }
-    let mut frame = Zeroizing::new((body.len() as u32).to_be_bytes().to_vec()); frame.extend_from_slice(&body);
+    for field in [assertion, binding] {
+        body.extend_from_slice(&(field.len() as u32).to_be_bytes());
+        body.extend_from_slice(field.as_bytes());
+    }
+    let mut frame = Zeroizing::new((body.len() as u32).to_be_bytes().to_vec());
+    frame.extend_from_slice(&body);
     let mut pending = frame.as_slice();
     while !pending.is_empty() {
-        let left = Duration::from_secs(3).checked_sub(started.elapsed()).filter(|v| !v.is_zero()).ok_or(502_u16)?;
+        let left = Duration::from_secs(3)
+            .checked_sub(started.elapsed())
+            .filter(|v| !v.is_zero())
+            .ok_or(502_u16)?;
         stream.set_write_timeout(Some(left)).map_err(|_| 503_u16)?;
-        let sent = stream.write(pending).map_err(|_| 503_u16)?; if sent == 0 { return Err(403); } pending = &pending[sent..];
+        let sent = stream.write(pending).map_err(|_| 503_u16)?;
+        if sent == 0 {
+            return Err(403);
+        }
+        pending = &pending[sent..];
     }
     let mut read = |out: &mut [u8]| -> Result<(), u16> {
         let mut offset = 0;
         while offset < out.len() {
-            let left = Duration::from_secs(3).checked_sub(started.elapsed()).filter(|v| !v.is_zero()).ok_or(502_u16)?;
+            let left = Duration::from_secs(3)
+                .checked_sub(started.elapsed())
+                .filter(|v| !v.is_zero())
+                .ok_or(502_u16)?;
             stream.set_read_timeout(Some(left)).map_err(|_| 503_u16)?;
-            let count = stream.read(&mut out[offset..]).map_err(|_| 503_u16)?; if count == 0 { return Err(403); } offset += count;
+            let count = stream.read(&mut out[offset..]).map_err(|_| 503_u16)?;
+            if count == 0 {
+                return Err(403);
+            }
+            offset += count;
         }
         Ok(())
     };
-    let mut length = [0; 4]; read(&mut length)?;
+    let mut length = [0; 4];
+    read(&mut length)?;
     let length = u32::from_be_bytes(length) as usize;
-    if !(10..=2048).contains(&length) { return Err(403); }
-    let mut response = Zeroizing::new(vec![0; length]); read(&mut response)?;
-    if &response[..5] != b"LXIP\x01" { return Err(502); }
-    if response[5] == 4 { return Err(503); }
-    if response[5] != 0 { return Err(403); }
-    if response[6..10] != 2_u32.to_be_bytes() { return Err(403); }
+    if !(10..=2048).contains(&length) {
+        return Err(403);
+    }
+    let mut response = Zeroizing::new(vec![0; length]);
+    read(&mut response)?;
+    if &response[..5] != b"LXIP\x01" {
+        return Err(502);
+    }
+    if response[5] == 4 {
+        return Err(503);
+    }
+    if response[5] != 0 {
+        return Err(403);
+    }
+    if response[6..10] != 2_u32.to_be_bytes() {
+        return Err(403);
+    }
     let mut remaining = &response[10..];
     let mut fields = Vec::new();
     for _ in 0..2 {
-        let size = u32::from_be_bytes(remaining.get(..4).ok_or(502_u16)?.try_into().map_err(|_| 503_u16)?) as usize;
-        if size == 0 || size > 255 { return Err(403); }
-        fields.push(std::str::from_utf8(remaining.get(4..4 + size).ok_or(502_u16)?).map_err(|_| 503_u16)?.to_owned());
+        let size = u32::from_be_bytes(
+            remaining
+                .get(..4)
+                .ok_or(502_u16)?
+                .try_into()
+                .map_err(|_| 503_u16)?,
+        ) as usize;
+        if size == 0 || size > 255 {
+            return Err(403);
+        }
+        fields.push(
+            std::str::from_utf8(remaining.get(4..4 + size).ok_or(502_u16)?)
+                .map_err(|_| 503_u16)?
+                .to_owned(),
+        );
         remaining = remaining.get(4 + size..).ok_or(502_u16)?;
     }
-    if !remaining.is_empty() || PrincipalId::new(&fields[0]).is_err() { return Err(403); }
+    if !remaining.is_empty() || PrincipalId::new(&fields[0]).is_err() {
+        return Err(403);
+    }
     Ok((fields.remove(0), fields.remove(0)))
 }
 
-fn wallet_caps(config: &Config, request: &IncomingRequest, params: Option<&serde_json::Value>) -> OutgoingResponse {
+fn wallet_caps(
+    config: &Config,
+    request: &IncomingRequest,
+    params: Option<&serde_json::Value>,
+) -> OutgoingResponse {
     use layerx_types::clock::Clock;
-    let Some(caps) = &config.wallet_caps else { return response(503, "caps_not_configured", Some(5)); };
-    let Some(token) = request.headers.get("authorization").and_then(|v| v.strip_prefix("Bearer "))
-        .filter(|v| !v.is_empty() && v.len() <= 16384 && !v.chars().any(char::is_control)) else { return response(401, "caps_session_required", None); };
-    let Some(args) = params.and_then(serde_json::Value::as_array).filter(|v| v.len() == 1) else { return response(400, "invalid_caps_request", None); };
-    let Some(wanted) = args[0].as_object().filter(|v| v.len() == 2) else { return response(400, "invalid_caps_request", None); };
-    let Some(address) = wanted.get("address").and_then(serde_json::Value::as_str) else { return response(400, "invalid_caps_request", None); };
-    if wanted.get("chain_id").and_then(serde_json::Value::as_u64) != Some(caps.chain_id) { return response(403, "caps_network_refused", None); }
-    let Ok(upstream) = config.client.request(&caps.bridge, token, &http::OutboundRequest {
-        method: "GET", path: "/v1/wallet/me", idempotency: None, content_type: "application/json", body: &[],
-    }) else { return response(503, "caps_identity_unavailable", Some(5)); };
-    if matches!(upstream.status, 401 | 403) { return response(403, "caps_session_refused", None); }
-    if upstream.status != 200 || upstream.content_type != "application/json" { return response(503, "caps_identity_unavailable", Some(5)); }
-    let Ok(bridge) = serde_json::from_slice::<serde_json::Value>(&upstream.body) else { return response(502, "caps_identity_evidence", None); };
-    let Some(context) = bridge.get("capsContext").and_then(serde_json::Value::as_object) else { return response(503, "caps_binding_unavailable", Some(5)); };
+    let Some(caps) = &config.wallet_caps else {
+        return response(503, "caps_not_configured", Some(5));
+    };
+    let Some(token) = request
+        .headers
+        .get("authorization")
+        .and_then(|v| v.strip_prefix("Bearer "))
+        .filter(|v| !v.is_empty() && v.len() <= 16384 && !v.chars().any(char::is_control))
+    else {
+        return response(401, "caps_session_required", None);
+    };
+    let Some(args) = params
+        .and_then(serde_json::Value::as_array)
+        .filter(|v| v.len() == 1)
+    else {
+        return response(400, "invalid_caps_request", None);
+    };
+    let Some(wanted) = args[0].as_object().filter(|v| v.len() == 2) else {
+        return response(400, "invalid_caps_request", None);
+    };
+    let Some(address) = wanted.get("address").and_then(serde_json::Value::as_str) else {
+        return response(400, "invalid_caps_request", None);
+    };
+    if wanted.get("chain_id").and_then(serde_json::Value::as_u64) != Some(caps.chain_id) {
+        return response(403, "caps_network_refused", None);
+    }
+    let Ok(upstream) = config.client.request(
+        &caps.bridge,
+        token,
+        &http::OutboundRequest {
+            method: "GET",
+            path: "/v1/wallet/me",
+            idempotency: None,
+            content_type: "application/json",
+            body: &[],
+        },
+    ) else {
+        return response(503, "caps_identity_unavailable", Some(5));
+    };
+    if matches!(upstream.status, 401 | 403) {
+        return response(403, "caps_session_refused", None);
+    }
+    if upstream.status != 200 || upstream.content_type != "application/json" {
+        return response(503, "caps_identity_unavailable", Some(5));
+    }
+    let Ok(bridge) = serde_json::from_slice::<serde_json::Value>(&upstream.body) else {
+        return response(502, "caps_identity_evidence", None);
+    };
+    let Some(context) = bridge
+        .get("capsContext")
+        .and_then(serde_json::Value::as_object)
+    else {
+        return response(503, "caps_binding_unavailable", Some(5));
+    };
     let text = |key: &str| context.get(key).and_then(serde_json::Value::as_str);
-    let Some(binding) = bridge.get("identityBinding").and_then(serde_json::Value::as_str) else { return response(503, "caps_binding_unavailable", Some(5)); };
-    let mut hash = Sha256::new(); hash.update(b"LXP/wallet-caps/session/v1\0"); hash.update(token.as_bytes());
+    let Some(binding) = bridge
+        .get("identityBinding")
+        .and_then(serde_json::Value::as_str)
+    else {
+        return response(503, "caps_binding_unavailable", Some(5));
+    };
+    let mut hash = Sha256::new();
+    hash.update(b"LXP/wallet-caps/session/v1\0");
+    hash.update(token.as_bytes());
     let session_id = hex(&hash.finalize());
     let expires = text("expires_at").and_then(|v| v.parse::<u64>().ok());
-    let Ok(observed) = caps.clock.sample(Duration::from_secs(1)) else { return response(503, "caps_clock_unavailable", Some(5)); };
-    if text("tenant") != Some(caps.tenant.as_str()) || text("session_id") != Some(session_id.as_str())
-        || text("address") != Some(address) || context.get("chain_id").and_then(serde_json::Value::as_u64) != Some(caps.chain_id)
-        || expires.is_none_or(|v| v <= observed.unix_seconds()) { return response(403, "caps_binding_refused", None); }
+    let Ok(observed) = caps.clock.sample(Duration::from_secs(1)) else {
+        return response(503, "caps_clock_unavailable", Some(5));
+    };
+    if text("tenant") != Some(caps.tenant.as_str())
+        || text("session_id") != Some(session_id.as_str())
+        || text("address") != Some(address)
+        || context.get("chain_id").and_then(serde_json::Value::as_u64) != Some(caps.chain_id)
+        || expires.is_none_or(|v| v <= observed.unix_seconds())
+    {
+        return response(403, "caps_binding_refused", None);
+    }
     let (principal, did) = match wallet_assertion(caps, token, binding) {
         Ok(value) => value,
         Err(503) => return response(503, "caps_issuer_unavailable", Some(5)),
         Err(_) => return response(403, "caps_assertion_refused", None),
     };
-    let Ok(recorded) = caps.bindings.lookup(&principal) else { return response(403, "caps_principal_refused", None); };
-    if recorded.did().as_bytes() != did.as_bytes() || text("did") != Some(did.as_str()) { return response(403, "caps_principal_refused", None); }
-    let Some(account) = text("account_id").filter(|v| parse_hex32(v).is_ok()) else { return response(403, "caps_account_refused", None); };
+    let Ok(recorded) = caps.bindings.lookup(&principal) else {
+        return response(403, "caps_principal_refused", None);
+    };
+    if recorded.did().as_bytes() != did.as_bytes() || text("did") != Some(did.as_str()) {
+        return response(403, "caps_principal_refused", None);
+    }
+    let Some(account) = text("account_id").filter(|v| parse_hex32(v).is_ok()) else {
+        return response(403, "caps_account_refused", None);
+    };
     let body = serde_json::json!({"did": did, "account_id": account, "network_id": config.protocol_network_id}).to_string();
-    let mut result = public_reads::request(config, "POST", "/internal/v1/wallet-caps", body.as_bytes());
-    if result.status != 200 { return result; }
-    let Ok(mut value) = serde_json::from_slice::<serde_json::Value>(&result.body) else { return response(502, "caps_evidence_refused", None); };
-    let Some(snapshot) = value.get_mut("result").and_then(serde_json::Value::as_object_mut) else { return response(502, "caps_evidence_refused", None); };
+    let mut result =
+        public_reads::request(config, "POST", "/internal/v1/wallet-caps", body.as_bytes());
+    if result.status != 200 {
+        return result;
+    }
+    let Ok(mut value) = serde_json::from_slice::<serde_json::Value>(&result.body) else {
+        return response(502, "caps_evidence_refused", None);
+    };
+    let Some(snapshot) = value
+        .get_mut("result")
+        .and_then(serde_json::Value::as_object_mut)
+    else {
+        return response(502, "caps_evidence_refused", None);
+    };
     if snapshot.get("did").and_then(serde_json::Value::as_str) != Some(did.as_str())
-        || snapshot.get("account_id").and_then(serde_json::Value::as_str) != Some(account)
-        || snapshot.get("network_id").and_then(serde_json::Value::as_u64) != Some(u64::from(config.protocol_network_id)) { return response(502, "caps_evidence_refused", None); }
-    let Ok(completed) = caps.clock.sample(Duration::from_secs(1)) else { return response(503, "caps_clock_unavailable", Some(5)); };
-    if expires.is_none_or(|v| v <= completed.unix_seconds()) { return response(403, "caps_session_expired", None); }
+        || snapshot
+            .get("account_id")
+            .and_then(serde_json::Value::as_str)
+            != Some(account)
+        || snapshot
+            .get("network_id")
+            .and_then(serde_json::Value::as_u64)
+            != Some(u64::from(config.protocol_network_id))
+    {
+        return response(502, "caps_evidence_refused", None);
+    }
+    let Ok(completed) = caps.clock.sample(Duration::from_secs(1)) else {
+        return response(503, "caps_clock_unavailable", Some(5));
+    };
+    if expires.is_none_or(|v| v <= completed.unix_seconds()) {
+        return response(403, "caps_session_expired", None);
+    }
     snapshot.insert("context".to_owned(), serde_json::json!({"principal": principal, "session_id": session_id,
         "address": address, "chain_id": caps.chain_id, "expires_at": expires.map(|v| v.to_string())}));
     result.body = value.to_string().into_bytes();
-    result.headers.push(("Cache-Control".to_owned(), "no-store".to_owned()));
+    result
+        .headers
+        .push(("Cache-Control".to_owned(), "no-store".to_owned()));
     result
 }
 
@@ -6509,34 +6737,52 @@ mod complete_readiness_contract_tests {
     #[test]
     fn real_core_and_identity_readiness_contract() {
         let input = env::var("PAXEER_X_ROUTER_READINESS_CASE").expect("real service case required");
-        let case: serde_json::Value = serde_json::from_slice(&fs::read(input).expect("case file"))
-            .expect("case JSON");
+        let case: serde_json::Value =
+            serde_json::from_slice(&fs::read(input).expect("case file")).expect("case JSON");
         let text = |name: &str| case[name].as_str().expect(name);
-        let ca = Certificate::from_der(&fs::read(text("ca_der")).expect("CA file")).expect("CA DER");
-        let password = Zeroizing::new(fs::read_to_string(text("client_password_file")).expect("client password"));
-        let identity = Identity::from_pkcs12(&fs::read(text("client_pkcs12")).expect("client identity"), password.trim())
-            .expect("client identity parse");
+        let ca =
+            Certificate::from_der(&fs::read(text("ca_der")).expect("CA file")).expect("CA DER");
+        let password = Zeroizing::new(
+            fs::read_to_string(text("client_password_file")).expect("client password"),
+        );
+        let identity = Identity::from_pkcs12(
+            &fs::read(text("client_pkcs12")).expect("client identity"),
+            password.trim(),
+        )
+        .expect("client identity parse");
         let client = Client::new(ca, identity);
-        let network = u32::try_from(case["protocol_network_id"].as_u64().expect("network")).expect("network bound");
+        let network = u32::try_from(case["protocol_network_id"].as_u64().expect("network"))
+            .expect("network bound");
         let wire = text("wire_version");
         let mut count = 0;
         for backend in ["core", "identity"] {
-            let endpoint = Endpoint::parse(text(&format!("{backend}_endpoint"))).expect("TLS endpoint");
-            let token = Zeroizing::new(fs::read_to_string(text(&format!("{backend}_token_file"))).expect("service token"));
+            let endpoint =
+                Endpoint::parse(text(&format!("{backend}_endpoint"))).expect("TLS endpoint");
+            let token = Zeroizing::new(
+                fs::read_to_string(text(&format!("{backend}_token_file"))).expect("service token"),
+            );
             let request = http::OutboundRequest {
-                method: "GET", path: "/internal/readyz", idempotency: None,
-                content_type: "application/json", body: &[],
+                method: "GET",
+                path: "/internal/readyz",
+                idempotency: None,
+                content_type: "application/json",
+                body: &[],
             };
-            let mut response = client.request(&endpoint, token.trim(), &request).expect("real readiness request");
-            let accepts = |response: &UpstreamResponse| if backend == "core" {
-                public_core_readiness(response, network, wire)
-            } else {
-                identity_readiness(response)
+            let mut response = client
+                .request(&endpoint, token.trim(), &request)
+                .expect("real readiness request");
+            let accepts = |response: &UpstreamResponse| {
+                if backend == "core" {
+                    public_core_readiness(response, network, wire)
+                } else {
+                    identity_readiness(response)
+                }
             };
             assert!(accepts(&response), "actual service must be ready");
             count += 1;
             let original = response.body.clone();
-            let document: serde_json::Value = serde_json::from_slice(&original).expect("actual readiness JSON");
+            let document: serde_json::Value =
+                serde_json::from_slice(&original).expect("actual readiness JSON");
             for status in [201, 401, 403, 503] {
                 response.status = status;
                 assert!(!accepts(&response));
@@ -6575,8 +6821,10 @@ mod complete_readiness_contract_tests {
                     ("state_snapshot", serde_json::json!(false)),
                 ]
             } else {
-                vec![("status", serde_json::json!("unavailable")),
-                     ("service", serde_json::json!("core"))]
+                vec![
+                    ("status", serde_json::json!("unavailable")),
+                    ("service", serde_json::json!("core")),
+                ]
             };
             for (field, value) in mutations {
                 let mut invalid = document.clone();
@@ -6587,25 +6835,49 @@ mod complete_readiness_contract_tests {
             }
             response.body = original;
             assert!(accepts(&response));
-            let refused = client.request_unauthenticated(&endpoint, &request).expect("unauthenticated refusal");
+            let refused = client
+                .request_unauthenticated(&endpoint, &request)
+                .expect("unauthenticated refusal");
             assert_eq!(refused.status, 401);
             assert!(!accepts(&refused));
-            let body_request = http::OutboundRequest { body: b"{}", ..request };
-            let refused = client.request(&endpoint, token.trim(), &body_request).expect("body refusal");
+            let body_request = http::OutboundRequest {
+                body: b"{}",
+                ..request
+            };
+            let refused = client
+                .request(&endpoint, token.trim(), &body_request)
+                .expect("body refusal");
             assert_eq!(refused.status, 400);
             assert!(!accepts(&refused));
             count += 3;
             if backend == "identity" {
-                let wrong_role = Zeroizing::new(fs::read_to_string(text("identity_wrong_role_token_file")).expect("provisioning credential"));
-                let request = http::OutboundRequest { body: &[], ..body_request };
-                let refused = client.request(&endpoint, wrong_role.trim(), &request).expect("service role refusal");
+                let wrong_role = Zeroizing::new(
+                    fs::read_to_string(text("identity_wrong_role_token_file"))
+                        .expect("provisioning credential"),
+                );
+                let request = http::OutboundRequest {
+                    body: &[],
+                    ..body_request
+                };
+                let refused = client
+                    .request(&endpoint, wrong_role.trim(), &request)
+                    .expect("service role refusal");
                 assert_eq!(refused.status, 403);
                 assert!(!accepts(&refused));
                 count += 1;
             }
         }
         let roster = KernelBackend::ALL.map(KernelBackend::name);
-        assert_eq!(roster, ["core_agent_boundary", "public_core", "independent_receipt_authority", "identity", "program_registry"]);
+        assert_eq!(
+            roster,
+            [
+                "core_agent_boundary",
+                "public_core",
+                "independent_receipt_authority",
+                "identity",
+                "program_registry"
+            ]
+        );
         count += 1;
         println!("PAXEER_X_ROUTER_CONTRACT_CASES={count}");
     }

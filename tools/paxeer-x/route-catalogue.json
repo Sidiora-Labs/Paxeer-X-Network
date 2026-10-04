@@ -8433,12 +8433,56 @@
       "upstream_path": "/quote"
     },
     {
+      "id": "gas:OPTIONS:/gas-station/quote",
+      "service": "gas",
+      "method": "OPTIONS",
+      "path": "/gas-station/quote",
+      "transport": "http",
+      "authentication": "origin-checked-preflight",
+      "upstream": "gas",
+      "timeout_seconds": 8,
+      "retries": 0,
+      "health_predicate": "service-ready-and-network-version-bound",
+      "version": "1",
+      "consumers": [
+        "wallet",
+        "developer"
+      ],
+      "source": "interop/crates/layerx-gas-station/src/service.rs",
+      "proxy": true,
+      "timeout_scope": "per-io",
+      "connect_timeout_seconds": 3,
+      "upstream_path": "/quote"
+    },
+    {
       "id": "gas:POST:/gas-station/submit",
       "service": "gas",
       "method": "POST",
       "path": "/gas-station/submit",
       "transport": "http",
       "authentication": "signed-sponsorship-request",
+      "upstream": "gas",
+      "timeout_seconds": 8,
+      "retries": 0,
+      "health_predicate": "service-ready-and-network-version-bound",
+      "version": "1",
+      "consumers": [
+        "wallet",
+        "developer"
+      ],
+      "source": "interop/crates/layerx-gas-station/src/service.rs",
+      "proxy": true,
+      "timeout_scope": "per-io",
+      "connect_timeout_seconds": 3,
+      "upstream_path": "/submit"
+    },
+    {
+      "id": "gas:OPTIONS:/gas-station/submit",
+      "service": "gas",
+      "method": "OPTIONS",
+      "path": "/gas-station/submit",
+      "transport": "http",
+      "authentication": "origin-checked-preflight",
       "upstream": "gas",
       "timeout_seconds": 8,
       "retries": 0,
@@ -8816,12 +8860,56 @@
       "upstream_path": "/status"
     },
     {
+      "id": "gas:OPTIONS:/gas-station/status",
+      "service": "gas",
+      "method": "OPTIONS",
+      "path": "/gas-station/status",
+      "transport": "http",
+      "authentication": "origin-checked-preflight",
+      "upstream": "gas",
+      "timeout_seconds": 8,
+      "retries": 0,
+      "health_predicate": "service-ready-and-network-version-bound",
+      "version": "1",
+      "consumers": [
+        "wallet",
+        "developer"
+      ],
+      "source": "interop/crates/layerx-gas-station/src/service.rs",
+      "proxy": true,
+      "timeout_scope": "per-io",
+      "connect_timeout_seconds": 3,
+      "upstream_path": "/status"
+    },
+    {
       "id": "gas:POST:/gas-station/retry",
       "service": "gas",
       "method": "POST",
       "path": "/gas-station/retry",
       "transport": "http",
       "authentication": "signed-sponsorship-request",
+      "upstream": "gas",
+      "timeout_seconds": 8,
+      "retries": 0,
+      "health_predicate": "service-ready-and-network-version-bound",
+      "version": "1",
+      "consumers": [
+        "wallet",
+        "developer"
+      ],
+      "source": "interop/crates/layerx-gas-station/src/service.rs",
+      "proxy": true,
+      "timeout_scope": "per-io",
+      "connect_timeout_seconds": 3,
+      "upstream_path": "/retry"
+    },
+    {
+      "id": "gas:OPTIONS:/gas-station/retry",
+      "service": "gas",
+      "method": "OPTIONS",
+      "path": "/gas-station/retry",
+      "transport": "http",
+      "authentication": "origin-checked-preflight",
       "upstream": "gas",
       "timeout_seconds": 8,
       "retries": 0,
@@ -45014,6 +45102,28 @@
         "developer"
       ],
       "source": "interop/crates/layerx-interop-service/src/server.rs",
+      "proxy": true,
+      "timeout_scope": "per-io",
+      "connect_timeout_seconds": 3
+    },
+    {
+      "id": "layerx-explorer:GET:/v1/accounts/{accountId}/unified",
+      "service": "explorer",
+      "method": "GET",
+      "path": "/v1/accounts/{accountId}/unified",
+      "transport": "http",
+      "authentication": "public-read",
+      "upstream": "layerx-explorer",
+      "upstream_path": "/v1/accounts/{accountId}/unified",
+      "timeout_seconds": 8,
+      "retries": 0,
+      "health_predicate": "service-ready-and-network-version-bound",
+      "version": "1",
+      "consumers": [
+        "wallet",
+        "explorer"
+      ],
+      "source": "human/crates/layerx-explorer-index/src/main.rs",
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3

@@ -16,6 +16,103 @@ const MAX_IDLE_CONNECTIONS_PER_ENDPOINT: usize = 8;
 const MAX_IDLE_AGE: Duration =
     Duration::from_secs(layerx_platform_internal::http::IO_TIMEOUT.as_secs() / 2);
 
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum BrowserRouteProfile {
+    #[default]
+    Legacy,
+    GasStation,
+    UnifiedAccount,
+}
+
+pub fn browser_route_profile(target: &str) -> BrowserRouteProfile {
+    let Ok((path, _)) = split_target(target) else {
+        return BrowserRouteProfile::Legacy;
+    };
+    if matches!(
+        path,
+        "/gas-station/quote" | "/gas-station/submit" | "/gas-station/status" | "/gas-station/retry"
+    ) {
+        return BrowserRouteProfile::GasStation;
+    }
+    let Some(account) = path
+        .strip_prefix("/v1/accounts/")
+        .and_then(|part| part.strip_suffix("/unified"))
+    else {
+        return BrowserRouteProfile::Legacy;
+    };
+    if account.len() > 128 || account.contains('/') {
+        return BrowserRouteProfile::Legacy;
+    }
+    let decoded = account
+        .replace("%3A", ":")
+        .replace("%3a", ":")
+        .to_ascii_lowercase();
+    let hexadecimal = |value: &str, count: usize| {
+        value.len() == count && value.bytes().all(|byte| byte.is_ascii_hexdigit())
+    };
+    if hexadecimal(&decoded, 64)
+        || decoded
+            .strip_prefix("0x")
+            .is_some_and(|value| hexadecimal(value, 40))
+        || decoded
+            .strip_prefix("did:layerx:")
+            .is_some_and(|value| hexadecimal(value, 64))
+    {
+        BrowserRouteProfile::UnifiedAccount
+    } else {
+        BrowserRouteProfile::Legacy
+    }
+}
+
+pub fn browser_profile_request_header(method: &str, target: &str, name: &str, value: &str) -> bool {
+    match browser_route_profile(target) {
+        BrowserRouteProfile::GasStation => {
+            method == "OPTIONS"
+                && matches!(
+                    name,
+                    "access-control-request-method" | "access-control-request-headers"
+                )
+        }
+        BrowserRouteProfile::UnifiedAccount => {
+            method == "GET" && name == "layerx-unified-profile" && matches!(value, "1" | "2")
+        }
+        BrowserRouteProfile::Legacy => false,
+    }
+}
+
+pub fn browser_profile_response_header(profile: BrowserRouteProfile, name: &str) -> bool {
+    profile == BrowserRouteProfile::GasStation
+        && matches!(
+            name,
+            "access-control-allow-origin"
+                | "access-control-allow-methods"
+                | "access-control-allow-headers"
+                | "vary"
+        )
+}
+
+pub fn unified_account_preflight(request: &IncomingRequest) -> bool {
+    request.method == "OPTIONS"
+        && browser_route_profile(&request.path) == BrowserRouteProfile::UnifiedAccount
+        && request.body.is_empty()
+        && request
+            .headers
+            .get("access-control-request-method")
+            .is_some_and(|method| method == "GET")
+        && request
+            .headers
+            .get("access-control-request-headers")
+            .is_none_or(|headers| {
+                headers.len() <= 4096
+                    && headers.split(',').all(|name| {
+                        matches!(
+                            name.trim().to_ascii_lowercase().as_str(),
+                            "authorization" | "content-type" | "layerx-unified-profile"
+                        )
+                    })
+            })
+}
+
 #[derive(Clone)]
 pub struct Endpoint {
     pub host: String,
@@ -108,6 +205,7 @@ struct OutboundHeaders<'a> {
     query: Option<&'a str>,
     forwarded: &'a [(&'a str, &'a str)],
     migration_source: Option<(&'a str, &'a [u8; 32])>,
+    browser_profile: BrowserRouteProfile,
 }
 
 impl Client {
@@ -401,6 +499,29 @@ impl Client {
         )
     }
 
+    pub fn request_browser_forwarded(
+        &self,
+        endpoint: &Endpoint,
+        authorization: &str,
+        request: &OutboundRequest<'_>,
+        forwarded: &[(&str, &str)],
+        browser_profile: BrowserRouteProfile,
+    ) -> Result<UpstreamResponse, String> {
+        let (path, query) = split_target(request.path)?;
+        let request = OutboundRequest { path, ..*request };
+        self.request_with_freshness(
+            endpoint,
+            authorization,
+            &request,
+            OutboundHeaders {
+                query,
+                forwarded,
+                browser_profile,
+                ..OutboundHeaders::default()
+            },
+        )
+    }
+
     pub fn stream_forwarded(
         &self,
         endpoint: &Endpoint,
@@ -593,7 +714,16 @@ fn check_outbound_boundary(
         }
     }
     for (name, value) in headers.forwarded {
-        if !request_header_is_forwardable(name)
+        let profile_header = (headers.browser_profile == BrowserRouteProfile::GasStation
+            && request.method == "OPTIONS"
+            && matches!(request.path, "/quote" | "/submit" | "/status" | "/retry")
+            && matches!(
+                *name,
+                "access-control-request-method" | "access-control-request-headers"
+            ))
+            || (headers.browser_profile == BrowserRouteProfile::UnifiedAccount
+                && browser_profile_request_header(request.method, request.path, name, value));
+        if !(request_header_is_forwardable(name) || profile_header)
             || value.len() > 4096
             || value.bytes().any(|b| !b.is_ascii_graphic() && b != b' ')
         {
@@ -770,6 +900,7 @@ fn send_request(
         query,
         forwarded,
         migration_source,
+        ..
     } = headers;
     let idempotency = request
         .idempotency
@@ -847,7 +978,7 @@ fn exchange(
     headers: OutboundHeaders<'_>,
 ) -> Result<UpstreamResponse, String> {
     send_request(stream, endpoint, authorization, request, headers)?;
-    read_response(stream)
+    read_response_with_browser_profile(stream, headers.browser_profile)
 }
 
 /// # Errors
@@ -963,7 +1094,21 @@ fn read_response(stream: &mut impl Read) -> Result<UpstreamResponse, String> {
     response_parts(read_message(stream, MAX_RESPONSE, true)?)
 }
 
+pub fn read_response_with_browser_profile(
+    stream: &mut impl Read,
+    profile: BrowserRouteProfile,
+) -> Result<UpstreamResponse, String> {
+    response_parts_with_browser_profile(read_message(stream, MAX_RESPONSE, true)?, profile)
+}
+
 fn response_parts((start, fields, body): HttpMessage) -> Result<UpstreamResponse, String> {
+    response_parts_with_browser_profile((start, fields, body), BrowserRouteProfile::Legacy)
+}
+
+fn response_parts_with_browser_profile(
+    (start, fields, body): HttpMessage,
+    profile: BrowserRouteProfile,
+) -> Result<UpstreamResponse, String> {
     let mut parts = start.split_whitespace();
     if parts.next() != Some("HTTP/1.1") {
         return Err("component response must use HTTP/1.1".to_owned());
@@ -991,7 +1136,9 @@ fn response_parts((start, fields, body): HttpMessage) -> Result<UpstreamResponse
         && field("transfer-encoding").is_none());
     let headers = fields
         .into_iter()
-        .filter(|(name, _)| response_header_is_forwardable(name))
+        .filter(|(name, _)| {
+            response_header_is_forwardable(name) || browser_profile_response_header(profile, name)
+        })
         .collect();
     Ok(UpstreamResponse {
         status,
@@ -1303,11 +1450,54 @@ pub fn write_response_connection_with_origin(
     keep_alive: bool,
     origin: Option<&str>,
 ) -> Result<(), String> {
-    let cors = match origin {
+    write_response_connection_with_origin_profile(
+        stream,
+        response,
+        keep_alive,
+        origin,
+        BrowserRouteProfile::Legacy,
+    )
+}
+
+pub fn write_response_connection_with_browser_profile(
+    stream: &mut impl Write,
+    response: &OutgoingResponse,
+    keep_alive: bool,
+    origin: Option<&str>,
+    target: &str,
+) -> Result<(), String> {
+    let profile = browser_route_profile(target);
+    write_response_connection_with_origin_profile(
+        stream,
+        response,
+        keep_alive,
+        if profile == BrowserRouteProfile::GasStation {
+            None
+        } else {
+            origin
+        },
+        profile,
+    )
+}
+
+fn write_response_connection_with_origin_profile(
+    stream: &mut impl Write,
+    response: &OutgoingResponse,
+    keep_alive: bool,
+    origin: Option<&str>,
+    profile: BrowserRouteProfile,
+) -> Result<(), String> {
+    let mut cors = match origin {
         Some(origin) if origin.bytes().all(|b| b.is_ascii_graphic()) => format!("Access-Control-Allow-Origin: {origin}\r\nVary: Origin\r\nAccess-Control-Allow-Credentials: true\r\nAccess-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS\r\nAccess-Control-Allow-Headers: Content-Type, Authorization, Idempotency-Key, X-Agent-Key, X-Agent-Nonce, X-Agent-Expires, X-Agent-Signature, X-Agent-Attestor-Authorization-Id, X-Agent-Attestor-Authorization, X-Trace-Id, X-CSRF-Token, X-LayerX-CSRF, X-LayerX-Trace, LayerX-Payer-DID, X-LayerX-Wallet-Binding, Payment-Signature, X-Payment, Last-Event-ID\r\nAccess-Control-Expose-Headers: Payment-Required, Payment-Response, X-Payment-Response, Retry-After, Content-Disposition, ETag, X-Content-SHA256, X-LayerX-Batch\r\n"),
         Some(_) => return Err("invalid CORS origin".to_owned()),
         None => String::new(),
     };
+    if profile == BrowserRouteProfile::UnifiedAccount {
+        cors = cors.replace(
+            "X-Payment, Last-Event-ID\r\n",
+            "X-Payment, Last-Event-ID, LayerX-Unified-Profile\r\n",
+        );
+    }
     if !response
         .content_type
         .bytes()
@@ -1322,7 +1512,9 @@ pub fn write_response_connection_with_origin(
     };
     let mut forwarded = String::new();
     for (name, value) in &response.headers {
-        if !(response_header_is_forwardable(name) || browser_response_header_is_forwardable(name))
+        if !(response_header_is_forwardable(name)
+            || browser_response_header_is_forwardable(name)
+            || browser_profile_response_header(profile, name))
             || !value
                 .bytes()
                 .all(|byte| byte.is_ascii_graphic() || byte == b' ' || byte == b'\t')

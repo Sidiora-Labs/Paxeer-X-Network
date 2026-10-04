@@ -2220,3 +2220,8 @@ resolution = "Discover response ownership in the actual wire adapter; preserve t
 area = "Native admission SDK authentication"
 observed = "Task104.35.19 preserved native V2/V3 captures and all native assertions; first actual SDK transport page refuses Evidence(Activity), so SDK authentication remains unqualified."
 resolution = "Preserve every activity and authority check; implement the actual canonical signed activity integration in a separate bounded source task without rerunning the unchanged gate."
+
+[gotcha.660]
+area = "Concurrent source qualification"
+observed = "Gateway0.13 first build passed; its focused verify recompiled concurrent partial runtime validate.rs and failed missing replay_record export."
+resolution = "Record once without unchanged rerun; qualify only after complete dependency implementation, preserving bounded task caps."
