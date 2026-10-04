@@ -16,7 +16,7 @@ NPM = Path('/root/lx-toolchains/node24/bin/npm')
 WEB = ROOT / 'human/apps/web'
 SDK = ROOT / 'human/wallet/sdk'
 EVIDENCE = Path(os.environ.get('PRIVATE_HUMAN_CUSTODY_EVIDENCE_ROOT',
-    '/root/lx-ops/paxeer-x-integration-2026-10-03/qualification/task145'))
+    '/root/lx-ops/paxeer-x-integration-2026-10-03/qualification/task1412'))
 MANIFEST = EVIDENCE / 'build-manifest.json'
 
 
@@ -59,6 +59,7 @@ def run(argv, name, timeout):
     environment = dict(os.environ)
     environment['PATH'] = str(NODE.parent) + os.pathsep + environment.get('PATH', '')
     with log.open('wb') as output:
+        log.chmod(0o600)
         result = subprocess.run(argv, cwd=ROOT, env=environment, stdout=output,
                                 stderr=subprocess.STDOUT, timeout=timeout, check=False)
     print(json.dumps({'command': argv, 'exit_code': result.returncode, 'log_path': str(log)}), flush=True)
@@ -82,7 +83,7 @@ def upstream_sdk_manifest():
     supplied = os.environ.get('PRIVATE_HUMAN_CUSTODY_SDK_MANIFEST')
     if not supplied:
         print(json.dumps({'status': 'prerequisite-unavailable', 'exit_code': 78,
-                          'reason': 'PRIVATE_HUMAN_CUSTODY_SDK_MANIFEST from the completed sole task 14.3 SDK build required'}))
+                          'reason': 'PRIVATE_HUMAN_CUSTODY_SDK_MANIFEST from the completed sole task 14.11 SDK build required'}))
         return None
     path = Path(supplied)
     info = path.lstat()
@@ -112,7 +113,20 @@ def main():
         sdk_owner = upstream_sdk_manifest()
         if sdk_owner is None:
             return 78
-        code = run([str(NPM), '--prefix', str(WEB), 'run', 'build'], 'build-web', 720)
+        generated = [WEB / relative for relative in ('next-env.d.ts', 'tsconfig.json',
+                     'public/manifest.json', 'public/sw.js')]
+        generated.extend((WEB / 'packages/layerx-ui/dist').rglob('*.map'))
+        before = {path: path.read_bytes() if path.exists() else None for path in generated}
+        try:
+            code = run([str(NPM), '--prefix', str(WEB), 'run', 'build'], 'build-web', 720)
+        finally:
+            for path, content in before.items():
+                after = path.read_bytes() if path.exists() else None
+                if after != content:
+                    if content is None:
+                        path.unlink(missing_ok=True)
+                    else:
+                        path.write_bytes(content)
         if code != 0:
             return code
         require(hashes(source_paths()) == sources, 'web build changed frozen task source')
@@ -156,7 +170,7 @@ def main():
     expected = {'real-deposit-codec', 'owner-confirmation-refusal', 'retained-signed-proof', 'lost-broadcast-reply',
                 'gateway-restart', 'same-hash-resume', 'single-broadcast', 'receipt-confirmation',
                 'unresolved-signature-refusal', 'expiry-refusal', 'disconnected-owner-refusal',
-                'retained-authority-refusal', 'real-quorum-unavailable'}
+                'retained-authority-refusal', 'real-quorum-unavailable', 'original-signature-recovery'}
     require(report.get('version') == 1 and set(report.get('cases', [])) == expected
             and len(report['cases']) == len(expected),
             'complete real custody case inventory required')

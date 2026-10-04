@@ -81,10 +81,18 @@ test("private wallet request preserves the genuine v2 custody authorization byte
 test("private custody refuses malformed transport and foreign authority before wallet submission", () => {
   const custody = encodeCustodyAuthorization(canonicalAuthorization());
   const request = requestFor(custody);
-  const paddedRequest = requestFor(encodeCustodyAuthorization({ ...canonicalAuthorization(), value: 1n,
-    data: encodeFunctionData({ abi: nativeDepositAbi, functionName: "deposit", args: [beneficiary] }) }));
-  assert(paddedRequest.to_sign_base64.endsWith("="));
-  for (const to_sign_base64 of ["", "not-base64!", request.to_sign_base64 + "\n", paddedRequest.to_sign_base64.replace(/=+$/, ""),
+  const nativeCustody = encodeCustodyAuthorization({ ...canonicalAuthorization(), value: 1n,
+    data: encodeFunctionData({ abi: nativeDepositAbi, functionName: "deposit", args: [beneficiary] }) });
+  const nativeRequest = requestFor(nativeCustody);
+  assert.equal(custodyFromWalletSignRequest(nativeRequest).custody, nativeCustody);
+  assert(request.to_sign_base64.endsWith("=="));
+  const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+  const lastIndex = request.to_sign_base64.length - 3;
+  const padBits = request.to_sign_base64.slice(0, lastIndex)
+    + alphabet[alphabet.indexOf(request.to_sign_base64[lastIndex]!) | 1] + "==";
+  assert.equal(Buffer.from(padBits, "base64").toString("hex"), custody.slice(2));
+  for (const to_sign_base64 of ["", "not-base64!", request.to_sign_base64 + "\n", request.to_sign_base64.replace(/=+$/, ""),
+    nativeRequest.to_sign_base64 + "=", padBits,
     Buffer.from(custody.slice(2) + "00", "hex").toString("base64"),
     Buffer.from("LX:CUSTODY:v1").toString("base64")]) {
     assert.throws(() => custodyFromWalletSignRequest({ ...request, to_sign_base64 }));
@@ -204,7 +212,12 @@ if (process.env.PRIVATE_HUMAN_CUSTODY_RUNTIME !== undefined) {
     const signature = await original.request({ method: "paxeer_signCustody", params: [{ custody }] }) as Hex;
     assert.equal((await recoverMessageAddress({ message: { raw: custody }, signature })).toLowerCase(), runtime.account.toLowerCase());
     storage.setItem(key, JSON.stringify({ version: 1, stage_id: request.stage_id, account: runtime.account.toLowerCase(),
-      chain_id: "125", custody: custody.toLowerCase(), signature, phase: "signed", tx_hash: null }));
+      chain_id: "125", custody: custody.toLowerCase(), signature: null, phase: "signing", tx_hash: null }));
+    await control("restart");
+    const recoveredOwner = provider();
+    await recoveredOwner.request({ method: "eth_requestAccounts" });
+    assert.equal(await recoveredOwner.request({ method: "paxeer_recoverCustody", params: [{ custody }] }), signature);
+    assert.equal((JSON.parse(storage.getItem(key)!) as Record<string, unknown>).signature, null);
     await control("arm-custody");
     const restarted = provider();
     await restarted.request({ method: "eth_requestAccounts" });
@@ -261,6 +274,7 @@ if (process.env.PRIVATE_HUMAN_CUSTODY_RUNTIME !== undefined) {
     writeFileSync(join(runtime.evidence_dir, "private-human-custody-result.json"), JSON.stringify({
       version: 1, cases: ["real-deposit-codec", "owner-confirmation-refusal", "retained-signed-proof", "lost-broadcast-reply",
         "gateway-restart", "same-hash-resume", "single-broadcast", "receipt-confirmation", "unresolved-signature-refusal",
+        "original-signature-recovery",
         "expiry-refusal", "disconnected-owner-refusal", "retained-authority-refusal", "real-quorum-unavailable"],
     }, null, 2), { mode: 0o600 });
   });

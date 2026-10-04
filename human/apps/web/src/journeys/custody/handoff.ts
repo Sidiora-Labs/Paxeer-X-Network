@@ -1,5 +1,5 @@
 import { decodeCustodyAuthorization, encodeCustodyAuthorization, PAXEER_CHAIN_ID, type CustodyAuthorization, decodeCustodyStatus } from "@paxeer/wallet/provider";
-import { keccak256, type Hex } from "viem";
+import { keccak256, recoverMessageAddress, type Hex } from "viem";
 import type { WalletSignRequest } from "../../api/index.ts";
 
 export type WalletHandOffPhase =
@@ -201,7 +201,18 @@ export function browserWalletBridge(
         await requireCustodyWallet(wallet, request, authorization.chainId);
         const saved = storage.getItem(key);
         if (saved !== null) record = retainedRecord(saved, request, custody, authorization.chainId);
-        if (record?.phase === "signing" || record?.phase === "sending" || record?.phase === "submitted") {
+        if (record?.phase === "signing") {
+          const signature = await wallet.request({ method: "paxeer_recoverCustody", params: [{ custody }] });
+          if (typeof signature !== "string" || !SIGNATURE.test(signature.toLowerCase())) throw new Error("Invalid retained custody signature");
+          const recovered = signature.toLowerCase() as Hex;
+          if ((await recoverMessageAddress({ message: { raw: custody }, signature: recovered })).toLowerCase() !== request.from_address.toLowerCase()) {
+            throw new Error("Retained custody signature does not belong to the admitted account");
+          }
+          await requireCustodyWallet(wallet, request, authorization.chainId);
+          record = { ...record, signature: recovered, phase: "signed" };
+          storage.setItem(key, JSON.stringify(record));
+        }
+        if (record?.phase === "sending" || record?.phase === "submitted") {
           const status = decodeCustodyStatus(await wallet.request({ method: "paxeer_custodyStatus", params: [{ custody }] }), keccak256(custody));
           if (typeof status !== "object" || status === null || !["pending", "confirmed", "reverted"].includes(status.status)) {
             throw new Error("Custody status is unavailable");

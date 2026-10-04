@@ -2314,3 +2314,13 @@ resolution = "Retain source replacement and all patched package files; copy only
 area = "Historical replay inventory"
 observed = "The historical V1 prestate already authenticates every Programs module leaf; treating its retained program_records as prefix-only was incorrect."
 resolution = "Preserve the complete inventory verifier and add only matching historical WASM bytes from the same execution snapshot."
+
+[gotcha.677]
+area = "Lost wallet custody signing response"
+observed = "The sign-custody handler creates fresh quorum sessions, while durable wallet custody rows appear only at send; a lost sign response cannot recover its exact authorization."
+resolution = "Retain immutable owner-bound consent evidence and expose typed authenticated retrieval through the unified gateway; ambiguous signing must not trigger blind re-signing."
+
+[gotcha.682]
+area = "Custody base64 fixture"
+observed = "The real native custody payload in task14.5 has a length divisible by three; its test incorrectly demanded terminal base64 padding."
+resolution = "Preserve strict canonical decoding and use actual malformed encodings for refusal coverage; the recorded failed gate remains failed."
