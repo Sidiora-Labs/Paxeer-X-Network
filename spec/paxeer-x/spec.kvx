@@ -36572,7 +36572,7 @@ max_builds = 1
 max_verify_runs = 1
 max_repair_cycles = 2
 time_limit_minutes = 30
-stop_condition = "Freeze source and stop on gate result, 30 minute cap, two repairs, or true contract conflict. Preserve original parent acceptance."
+stop_condition = "Stop at 2026-10-04T19:20:41Z, scoped repair limit, missing authentic authority or required weakening; preserve all prior results."
 fanout_role = "integrate_arbiter/replay_kernel"
 parent_task = "104.33.7"
 source_status = "complete"
@@ -36589,6 +36589,9 @@ build_command = "timeout 95s env GOPROXY=off GOWORK=off GOMAXPROCS=3 /usr/local/
 build_exit_code = 0
 build_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/qualification/sdk1043374-v5/build.log"
 qualification_observed = "TestProgramTerminalV5NativeCorpus refuses absent PAXEER_X_PROGRAM_TERMINAL_V5_CORPUS; no actual complete ten-case corpus exists at qualification."
+continuation_approval = "/root/lx-ops/paxeer-x-integration-2026-10-03/terminal-v5-continuation-approval.json"
+continuation_deadline_utc = "2026-10-04T19:20:41Z"
+continuation_minutes = 45
 
 [task.104.33.7.5]
 title = "Complete JVM Programs client integration"
