@@ -2544,3 +2544,8 @@ resolution = "Record sourceDONE separately from build124 and verifyUNRUN, retain
 area = "Candidate generator command shape"
 observed = "The language worker first omitted the create subcommand and output path from candidate.py, receiving usage exit2 before generating any build candidate."
 resolution = "Invoke candidate.py create with exact repo, spec, immutable mainline and private output; successful candidate generation is source metadata, not a product gate."
+
+[gotcha.749]
+area = "Rust Wasm debug sections"
+observed = "Language guest retained 1218038 bytes of DWARF and exceeded the existing module size limit."
+resolution = "Owner approved removing compiler debug sections during the original link; retain the bound, prior verify1 and separate new build evidence."
