@@ -2184,50 +2184,104 @@ fn sequencer_identity_body(network_id: u32, sequencer_public_key: &[u8; 32]) -> 
         "sequencer_id": hex_encode(&Sha256::digest(sequencer_public_key)),
         "first_batch": 1,
         "last_batch": u64::MAX,
-    }).to_string()
+    })
+    .to_string()
 }
 
 fn current_head(emulator: &mut Emulator, trace: u64) -> Response {
     let mut head: CoreHead = unsafe { std::mem::zeroed() };
     let code = unsafe { platform_emulator_head_read(emulator.core, &raw mut head) };
     if code != 0 {
-        return refusal(trace, 503, "principal_state_proof_unavailable", &core_error(code));
+        return refusal(
+            trace,
+            503,
+            "principal_state_proof_unavailable",
+            &core_error(code),
+        );
     }
-    if head.receipt_bytes.is_null() || head.header_bytes.is_null() || head.proof_bytes.is_null() || head.activity_receipt_bytes.is_null()
-        || head.receipt_length == 0 || head.receipt_length > 524_288
-        || head.header_length == 0 || head.header_length > 65_536
-        || head.proof_length == 0 || head.proof_length > 65_536
-        || head.activity_receipt_length == 0 || head.activity_receipt_length > MAX_RECEIPT_BYTES
+    if head.receipt_bytes.is_null()
+        || head.header_bytes.is_null()
+        || head.proof_bytes.is_null()
+        || head.activity_receipt_bytes.is_null()
+        || head.receipt_length == 0
+        || head.receipt_length > 524_288
+        || head.header_length == 0
+        || head.header_length > 65_536
+        || head.proof_length == 0
+        || head.proof_length > 65_536
+        || head.activity_receipt_length == 0
+        || head.activity_receipt_length > MAX_RECEIPT_BYTES
     {
-        return refusal(trace, 503, "core_invalid_output", "invalid current-head evidence buffer");
+        return refusal(
+            trace,
+            503,
+            "core_invalid_output",
+            "invalid current-head evidence buffer",
+        );
     }
-    let receipt = unsafe { slice::from_raw_parts(head.receipt_bytes, head.receipt_length) }.to_vec();
+    let receipt =
+        unsafe { slice::from_raw_parts(head.receipt_bytes, head.receipt_length) }.to_vec();
     let header = unsafe { slice::from_raw_parts(head.header_bytes, head.header_length) }.to_vec();
     let proof = unsafe { slice::from_raw_parts(head.proof_bytes, head.proof_length) }.to_vec();
-    let activity_receipt = unsafe { slice::from_raw_parts(head.activity_receipt_bytes, head.activity_receipt_length) }.to_vec();
+    let activity_receipt =
+        unsafe { slice::from_raw_parts(head.activity_receipt_bytes, head.activity_receipt_length) }
+            .to_vec();
     let key = emulator.signing_key.verifying_key().to_bytes();
     let id: [u8; 32] = Sha256::digest(key).into();
     let authorization = layerx_proof::inclusion::SequencerAuthorization::new(id, key, 1, u64::MAX);
     let verified = (|| {
-        if head.sequencer_public_key != key || head.sequencer_id != id
-            || head.authorization_first_batch != 1 || head.authorization_last_batch != u64::MAX { return Err(()); }
+        if head.sequencer_public_key != key
+            || head.sequencer_id != id
+            || head.authorization_first_batch != 1
+            || head.authorization_last_batch != u64::MAX
+        {
+            return Err(());
+        }
         let path = layerx_wire::receipt::decode_merkle_proof(&proof).map_err(|_| ())?;
-        let path = layerx_proof::merkle::Proof::new(path.leaf_index(), path.leaf_count(), path.siblings().to_vec()).map_err(|_| ())?;
-        let evidence = layerx_proof::inclusion::verify_receipt(&receipt, &path, &header, &head.header_signature, &authorization).map_err(|_| ())?;
+        let path = layerx_proof::merkle::Proof::new(
+            path.leaf_index(),
+            path.leaf_count(),
+            path.siblings().to_vec(),
+        )
+        .map_err(|_| ())?;
+        let evidence = layerx_proof::inclusion::verify_receipt(
+            &receipt,
+            &path,
+            &header,
+            &head.header_signature,
+            &authorization,
+        )
+        .map_err(|_| ())?;
         let signed = evidence.header().header();
-        let maintenance = layerx_wire::batch_maintenance::decode_maintenance(&receipt).map_err(|_| ())?;
+        let maintenance =
+            layerx_wire::batch_maintenance::decode_maintenance(&receipt).map_err(|_| ())?;
         maintenance.verify_header(signed).map_err(|_| ())?;
-        if signed.network_id() != emulator.network_id || signed.protocol_version() != emulator.protocol_version
-            || signed.resulting_state_root() != head.state_root || signed.last_sequence() != head.observed_sequence
-            || signed.timestamp_ms() != head.observed_at || signed.batch_number() != head.batch_number
-            || <[u8; 32]>::from(Sha256::digest(&receipt)) != head.receipt_digest { return Err(()); }
+        if signed.network_id() != emulator.network_id
+            || signed.protocol_version() != emulator.protocol_version
+            || signed.resulting_state_root() != head.state_root
+            || signed.last_sequence() != head.observed_sequence
+            || signed.timestamp_ms() != head.observed_at
+            || signed.batch_number() != head.batch_number
+            || <[u8; 32]>::from(Sha256::digest(&receipt)) != head.receipt_digest
+        {
+            return Err(());
+        }
         let live = inspect_state(emulator).map_err(|_| ())?;
-        if live.canonical_state_root != head.state_root || live.next_sequence.checked_sub(1) != Some(head.observed_sequence)
-            || live.batch_number != head.batch_number { return Err(()); }
+        if live.canonical_state_root != head.state_root
+            || live.next_sequence.checked_sub(1) != Some(head.observed_sequence)
+            || live.batch_number != head.batch_number
+        {
+            return Err(());
+        }
         Ok(())
     })();
     if verified.is_err() {
-        return refusal(trace, 503, "state_proof_unverified", "current-head batch evidence failed verification");
+        return refusal(
+            trace,
+            503,
+            "state_proof_unverified",
+            "current-head batch evidence failed verification",
+        );
     }
     success(trace, &serde_json::json!({
         "current": true, "receipt_hex": hex_encode(&receipt), "receipt_digest": hex_encode(&head.receipt_digest),
@@ -3665,11 +3719,12 @@ pub fn run(arguments: impl IntoIterator<Item = String>) -> Result<(), String> {
 
 #[cfg(test)]
 mod boundary_tests {
-    use sha2::Digest as _;
     use super::{advance_trace, hex_encode, parse_config, sequencer_identity_body};
+    use sha2::Digest as _;
 
     #[test]
-    fn sequencer_identity_advertises_the_public_key_and_never_the_seed() -> Result<(), Box<dyn std::error::Error>> {
+    fn sequencer_identity_advertises_the_public_key_and_never_the_seed(
+    ) -> Result<(), Box<dyn std::error::Error>> {
         let seed = [0x42_u8; 32];
         let public_key = ed25519_dalek::SigningKey::from_bytes(&seed)
             .verifying_key()
@@ -3678,7 +3733,10 @@ mod boundary_tests {
         let document: serde_json::Value = serde_json::from_str(&body)?;
         assert_eq!(document["network_id"], 402);
         assert_eq!(document["sequencer_public_key"], hex_encode(&public_key));
-        assert_eq!(document["sequencer_id"], hex_encode(&sha2::Sha256::digest(public_key)));
+        assert_eq!(
+            document["sequencer_id"],
+            hex_encode(&sha2::Sha256::digest(public_key))
+        );
         assert_eq!(document["first_batch"], 1);
         assert_eq!(document["last_batch"], u64::MAX);
         assert!(!body.contains(&hex_encode(&seed)));
@@ -6215,47 +6273,103 @@ mod maintenance_head_tests {
     fn new_emulator(seed: [u8; 32]) -> Result<Emulator, String> {
         layerx_programs_runtime::retain_host_ffi_exports();
         layerx_programs_sandbox::retain_host_ffi_exports();
-        let core = unsafe { platform_emulator_create_for_protocol(402, DEFAULT_TIME_MS, seed.as_ptr(), 3) };
-        if core.is_null() { return Err("actual core initialization failed".into()); }
-        Ok(Emulator { core, signing_key: SigningKey::from_bytes(&seed), network_id: 402, protocol_version: 3,
-            receipts: HashMap::new(), receipt_order: VecDeque::new(), program_operations: HashMap::new(),
-            program_activity_operations: HashMap::new(), accounts: HashMap::new(), move_quotes: HashMap::new(),
-            move_operations: HashMap::new(), trace: 0 })
+        let core = unsafe {
+            platform_emulator_create_for_protocol(402, DEFAULT_TIME_MS, seed.as_ptr(), 3)
+        };
+        if core.is_null() {
+            return Err("actual core initialization failed".into());
+        }
+        Ok(Emulator {
+            core,
+            signing_key: SigningKey::from_bytes(&seed),
+            network_id: 402,
+            protocol_version: 3,
+            receipts: HashMap::new(),
+            receipt_order: VecDeque::new(),
+            program_operations: HashMap::new(),
+            program_activity_operations: HashMap::new(),
+            accounts: HashMap::new(),
+            move_quotes: HashMap::new(),
+            move_operations: HashMap::new(),
+            trace: 0,
+        })
     }
 
     fn json_request(path: &str, body: serde_json::Value) -> Request {
-        Request { method: "POST".into(), path: path.into(), content_type: "application/json".into(),
-            idempotency_key: Some("maintenance-head-send-0001".into()), body: body.to_string().into_bytes() }
+        Request {
+            method: "POST".into(),
+            path: path.into(),
+            content_type: "application/json".into(),
+            idempotency_key: Some("maintenance-head-send-0001".into()),
+            body: body.to_string().into_bytes(),
+        }
     }
 
     fn document(response: Response) -> Result<serde_json::Value, String> {
-        if response.status != 200 { return Err(format!("actual route status {}: {}", response.status, String::from_utf8_lossy(&response.body))); }
-        let parsed: serde_json::Value = serde_json::from_slice(&response.body).map_err(|error| error.to_string())?;
-        parsed.get("result").cloned().ok_or("actual response omitted result".into())
+        if response.status != 200 {
+            return Err(format!(
+                "actual route status {}: {}",
+                response.status,
+                String::from_utf8_lossy(&response.body)
+            ));
+        }
+        let parsed: serde_json::Value =
+            serde_json::from_slice(&response.body).map_err(|error| error.to_string())?;
+        parsed
+            .get("result")
+            .cloned()
+            .ok_or("actual response omitted result".into())
     }
 
     fn verify_document(value: &serde_json::Value, key: [u8; 32]) -> Result<(), String> {
         fn bytes(value: &serde_json::Value, pointer: &str) -> Result<Vec<u8>, String> {
-            hex_decode(value.pointer(pointer).and_then(serde_json::Value::as_str).ok_or("head field missing")?)
+            hex_decode(
+                value
+                    .pointer(pointer)
+                    .and_then(serde_json::Value::as_str)
+                    .ok_or("head field missing")?,
+            )
         }
-        if value["current"] != true { return Err("not current".into()); }
+        if value["current"] != true {
+            return Err("not current".into());
+        }
         let receipt = bytes(value, "/receipt_hex")?;
         let header = bytes(value, "/batch_evidence/header_hex")?;
-        let signature: [u8; 64] = bytes(value, "/batch_evidence/header_signature")?.try_into().map_err(|_| "signature length")?;
+        let signature: [u8; 64] = bytes(value, "/batch_evidence/header_signature")?
+            .try_into()
+            .map_err(|_| "signature length")?;
         let encoded = bytes(value, "/batch_evidence/receipt_proof_hex")?;
-        let path = layerx_wire::receipt::decode_merkle_proof(&encoded).map_err(|error| format!("{error:?}"))?;
-        let proof = layerx_proof::merkle::Proof::new(path.leaf_index(), path.leaf_count(), path.siblings().to_vec()).map_err(|error| format!("{error:?}"))?;
-        let authority = layerx_proof::inclusion::SequencerAuthorization::new(Sha256::digest(key).into(), key, 1, u64::MAX);
-        let evidence = layerx_proof::inclusion::verify_receipt(&receipt, &proof, &header, &signature, &authority).map_err(|error| format!("{error:?}"))?;
+        let path = layerx_wire::receipt::decode_merkle_proof(&encoded)
+            .map_err(|error| format!("{error:?}"))?;
+        let proof = layerx_proof::merkle::Proof::new(
+            path.leaf_index(),
+            path.leaf_count(),
+            path.siblings().to_vec(),
+        )
+        .map_err(|error| format!("{error:?}"))?;
+        let authority = layerx_proof::inclusion::SequencerAuthorization::new(
+            Sha256::digest(key).into(),
+            key,
+            1,
+            u64::MAX,
+        );
+        let evidence = layerx_proof::inclusion::verify_receipt(
+            &receipt, &proof, &header, &signature, &authority,
+        )
+        .map_err(|error| format!("{error:?}"))?;
         let signed = evidence.header().header();
-        let maintenance = layerx_wire::batch_maintenance::decode_maintenance(&receipt).map_err(|error| format!("{error:?}"))?;
-        maintenance.verify_header(signed).map_err(|error| format!("{error:?}"))?;
+        let maintenance = layerx_wire::batch_maintenance::decode_maintenance(&receipt)
+            .map_err(|error| format!("{error:?}"))?;
+        maintenance
+            .verify_header(signed)
+            .map_err(|error| format!("{error:?}"))?;
         assert_eq!(signed.network_id(), 402);
         assert_eq!(signed.protocol_version(), 3);
         if bytes(value, "/state_root")? != signed.resulting_state_root()
             || value["observed_sequence"].as_u64() != Some(signed.last_sequence())
             || value["observed_at"].as_u64() != Some(signed.timestamp_ms())
-            || bytes(value, "/receipt_digest")? != <[u8; 32]>::from(Sha256::digest(&receipt)) {
+            || bytes(value, "/receipt_digest")? != <[u8; 32]>::from(Sha256::digest(&receipt))
+        {
             return Err("signed head claims mismatch".into());
         }
         Ok(())
@@ -6268,47 +6382,99 @@ mod maintenance_head_tests {
         let key = emulator.signing_key.verifying_key().to_bytes();
         assert_eq!(current_head(&mut emulator, 1).status, 503);
         println!("MAINTENANCE_HEAD_CASE unavailable-before-seal");
-        prefund_core(&mut emulator, "did:layerx:maintenance-source", key, 0, 1000).map_err(core_error)?;
-        prefund_core(&mut emulator, "did:layerx:maintenance-destination", key, 0, 0).map_err(core_error)?;
-        let quoted = move_quote(&mut emulator, &json_request("/v1/moves/quote", serde_json::json!({
-            "source":"agent:did:layerx:maintenance-source:main", "destination":"agent:did:layerx:maintenance-destination:main",
-            "money":{"currency":"LXP","amount":"250"}
-        })), 2);
+        prefund_core(&mut emulator, "did:layerx:maintenance-source", key, 0, 1000)
+            .map_err(core_error)?;
+        prefund_core(
+            &mut emulator,
+            "did:layerx:maintenance-destination",
+            key,
+            0,
+            0,
+        )
+        .map_err(core_error)?;
+        let quoted = move_quote(
+            &mut emulator,
+            &json_request(
+                "/v1/moves/quote",
+                serde_json::json!({
+                    "source":"agent:did:layerx:maintenance-source:main", "destination":"agent:did:layerx:maintenance-destination:main",
+                    "money":{"currency":"LXP","amount":"250"}
+                }),
+            ),
+            2,
+        );
         let quoted = document(quoted)?;
-        let request = json_request("/v1/moves", serde_json::json!({"quote_id":quoted["quote_id"]}));
+        let request = json_request(
+            "/v1/moves",
+            serde_json::json!({"quote_id":quoted["quote_id"]}),
+        );
         let committed = move_commit(&mut emulator, &request, 3);
         let _ = document(committed)?;
         let head = document(current_head(&mut emulator, 4))?;
         verify_document(&head, key)?;
         let live = inspect_state(&emulator).map_err(core_error)?;
         assert_eq!(head["state_root"], hex_encode(&live.canonical_state_root));
-        assert_eq!(head["observed_sequence"].as_u64(), live.next_sequence.checked_sub(1));
+        assert_eq!(
+            head["observed_sequence"].as_u64(),
+            live.next_sequence.checked_sub(1)
+        );
         println!("MAINTENANCE_HEAD_CASE current-signed-maintenance");
-        let original = emulator.receipts.values().next().ok_or("actual activity receipt missing")?;
+        let original = emulator
+            .receipts
+            .values()
+            .next()
+            .ok_or("actual activity receipt missing")?;
         let original = hex_decode(original)?;
-        let activity = verify_sequencer_signature(&original, key).map_err(|error| format!("{error:?}"))?;
-        assert_ne!(activity.receipt().protocol().ok_or("activity protocol missing")?.resulting_state_root(), live.canonical_state_root);
+        let activity =
+            verify_sequencer_signature(&original, key).map_err(|error| format!("{error:?}"))?;
+        assert_ne!(
+            activity
+                .receipt()
+                .protocol()
+                .ok_or("activity protocol missing")?
+                .resulting_state_root(),
+            live.canonical_state_root
+        );
         let mut stale = head.clone();
         stale["receipt_hex"] = serde_json::Value::String(hex_encode(&original));
         assert!(verify_document(&stale, key).is_err());
         println!("MAINTENANCE_HEAD_CASE stale-activity-receipt");
-        for pointer in ["/receipt_hex", "/batch_evidence/header_hex", "/batch_evidence/header_signature", "/batch_evidence/receipt_proof_hex", "/state_root"] {
+        for pointer in [
+            "/receipt_hex",
+            "/batch_evidence/header_hex",
+            "/batch_evidence/header_signature",
+            "/batch_evidence/receipt_proof_hex",
+            "/state_root",
+        ] {
             let mut changed = head.clone();
-            let original = changed.pointer(pointer).and_then(serde_json::Value::as_str).ok_or("tamper field missing")?;
+            let original = changed
+                .pointer(pointer)
+                .and_then(serde_json::Value::as_str)
+                .ok_or("tamper field missing")?;
             let mut raw = hex_decode(original)?;
             let last = raw.last_mut().ok_or("empty evidence")?;
             *last ^= 1;
-            *changed.pointer_mut(pointer).ok_or("tamper target missing")? = serde_json::Value::String(hex_encode(&raw));
-            assert!(verify_document(&changed, key).is_err(), "tampered {pointer} accepted");
+            *changed
+                .pointer_mut(pointer)
+                .ok_or("tamper target missing")? = serde_json::Value::String(hex_encode(&raw));
+            assert!(
+                verify_document(&changed, key).is_err(),
+                "tampered {pointer} accepted"
+            );
             println!("MAINTENANCE_HEAD_CASE tamper-{pointer}");
         }
-        let wrong_key = SigningKey::from_bytes(&[0x43; 32]).verifying_key().to_bytes();
+        let wrong_key = SigningKey::from_bytes(&[0x43; 32])
+            .verifying_key()
+            .to_bytes();
         assert!(verify_document(&head, wrong_key).is_err());
         println!("MAINTENANCE_HEAD_CASE foreign-authority");
         let snapshot = export_snapshot(&mut emulator, 5);
         assert_eq!(snapshot.status, 200);
         let mut restarted = new_emulator(seed)?;
-        assert_eq!(import_snapshot(&mut restarted, &snapshot.body, 6).status, 200);
+        assert_eq!(
+            import_snapshot(&mut restarted, &snapshot.body, 6).status,
+            200
+        );
         let reopened = document(current_head(&mut restarted, 7))?;
         assert_eq!(reopened, head);
         verify_document(&reopened, key)?;
@@ -6319,7 +6485,8 @@ mod maintenance_head_tests {
         assert_ne!(import_snapshot(&mut restarted, &corrupted, 8).status, 200);
         assert_eq!(document(current_head(&mut restarted, 9))?, head);
         println!("MAINTENANCE_HEAD_CASE snapshot-tamper");
-        prefund_core(&mut restarted, "did:layerx:maintenance-new", key, 0, 1).map_err(core_error)?;
+        prefund_core(&mut restarted, "did:layerx:maintenance-new", key, 0, 1)
+            .map_err(core_error)?;
         assert_eq!(current_head(&mut restarted, 10).status, 503);
         println!("MAINTENANCE_HEAD_CASE stale-root");
         Ok(())
