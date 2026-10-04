@@ -26301,8 +26301,20 @@ implementation_window = "2026-10-04T13:26:10.748453+00:00 to 2026-10-04T13:56:10
 fleet_scope_boundary = "Code and configuration wiring only; owner handles deployment. Original deployment/readiness evidence remains UNRUN; no cluster bring-up command is admitted."
 source_status = "complete"
 completion_basis = "implementation under owner CONSTITUTION; qualification separately recorded"
-qualification_status = "UNRUN"
+qualification_status = "PARTIAL_CODE_ONLY_PASS_FULL_RUNTIME_UNRUN"
 source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/fleet-103.6.8-publication.json"
+qualification_revision = "082f0a67d180aed220e26dd1d18c5c8d276cc8db"
+qualification_command = "timeout 5m bash platform/hosted/tests/topology-check.sh --yaml-parser pyyaml"
+qualification_exit_code = 0
+qualification_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/qualification/task10368/topology.log"
+build_status = "PASSED"
+build_exit_code = 0
+qualification_evidence = "/root/lx-ops/paxeer-x-integration-2026-10-03/qualification/task10368/result.json"
+build_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/qualification/task10368/build.log"
+original_verify_command = "timeout 30m tools/paxeer-x/verify-task.sh 103.6.8"
+original_verify_status = "UNRUN"
+deployment = "UNRUN"
+runtime = "UNRUN"
 
 [task.103.6.9]
 title = "Serve program simulation over the LNI if the boundary recorded the gap"
