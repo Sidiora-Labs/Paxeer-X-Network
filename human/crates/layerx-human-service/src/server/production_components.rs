@@ -1983,14 +1983,16 @@ fn deposit_public_json(
         }
         None => Vec::new(),
     };
-    public_journey(
-        scope,
-        "deposit",
-        status.journey_id(),
-        state,
-        copy,
-        &evidence,
-        now,
+    if status.updated_at() < status.started_at() || now < status.updated_at() {
+        return Err(ApiFailure::upstream_degraded());
+    }
+    let started_at = super::projection::unix_time(status.started_at())?;
+    let updated_at = super::projection::unix_time(status.updated_at())?;
+    Ok(
+        json!({"journey_id":status.journey_id().as_str(),"kind":"deposit","state":state,
+        "state_copy_key":format!("status.{state}"),
+        "stages":[{"stage_id":"stg_deposit","copy_key":copy,"state":state,"evidence":evidence}],
+        "evidence":evidence,"started_at":started_at,"updated_at":updated_at}),
     )
 }
 fn withdrawal_public_json(
@@ -4898,6 +4900,16 @@ impl ProductionComponents {
         scope: &mut crate::store::PrincipalScope<'_>,
     ) -> Result<BackendResponse, ApiFailure> {
         let planning = movement_request(self, request, scope, self.now()?)?;
+        if let Some(journey) =
+            crate::journeys::DepositJourney::load_by_idempotency(scope, planning.idempotency_key)
+                .map_err(deposit_journey_failure)?
+        {
+            let status = journey.status().map_err(deposit_journey_failure)?;
+            return Ok(BackendResponse {
+                result: deposit_public_json(scope, self.settlement_domain, &status, self.now()?)?,
+                session: None,
+            });
+        }
         let movement = self
             .movement
             .lock()

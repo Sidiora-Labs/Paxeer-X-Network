@@ -27904,7 +27904,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.10.2]
 title = "Return a durable initial deposit journey with authoritative continuation metadata"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 5
 requires = ["0.2", "10.1"]
@@ -27926,6 +27926,11 @@ deployment_profile = "product"
 planned_paths = ["tools/qualification/paxeer-x/human_deposit_initial_response.py"]
 path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
 evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+build_cmd = "timeout 20m flock /root/lx-cargo/human-build.lock env CARGO_BUILD_JOBS=4 CARGO_TARGET_DIR=/root/lx-target/human /root/.cargo/bin/cargo build --locked --manifest-path human/Cargo.toml -p layerx-human-service --bin layerx-human-service --bin layerx-human-components"
+source_status = "complete"
+completion_basis = "implementation"
+qualification_status = "UNRUN"
+handoff_path = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-10.2-source-handoff.json"
 
 [task.16.3]
 title = "Prove emulator and hosted execution parity with a nonempty canonical corpus"

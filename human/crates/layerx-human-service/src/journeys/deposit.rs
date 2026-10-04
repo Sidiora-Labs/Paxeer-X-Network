@@ -356,6 +356,8 @@ pub struct DepositNotification {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DepositStatus {
     journey_id: JourneyId,
+    started_at: u64,
+    updated_at: u64,
     stage: DepositStage,
     in_flight_amount: Option<u128>,
     delay: Option<FinalityDelay>,
@@ -363,6 +365,16 @@ pub struct DepositStatus {
 }
 
 impl DepositStatus {
+    #[must_use]
+    pub const fn started_at(&self) -> u64 {
+        self.started_at
+    }
+
+    #[must_use]
+    pub const fn updated_at(&self) -> u64 {
+        self.updated_at
+    }
+
     #[must_use]
     pub const fn journey_id(&self) -> &JourneyId {
         &self.journey_id
@@ -710,6 +722,23 @@ impl DepositJourney {
         Ok(journey)
     }
 
+    pub fn load_by_idempotency(
+        scope: &PrincipalScope<'_>,
+        idempotency_key: [u8; 32],
+    ) -> Result<Option<Self>, DepositJourneyError> {
+        let key = record_row(idempotency_key)?;
+        let Some(row) = scope.get(Table::Journeys, &key) else {
+            return Ok(None);
+        };
+        let record = decode(row.bytes())?;
+        if record.idempotency_key != idempotency_key {
+            return Err(DepositJourneyError::Corrupt(
+                "deposit idempotency binding mismatch",
+            ));
+        }
+        Ok(Some(Self { record }))
+    }
+
     /// Loads one deposit by its public journey identifier.
     ///
     /// # Errors
@@ -978,6 +1007,8 @@ impl DepositJourney {
         };
         Ok(DepositStatus {
             journey_id,
+            started_at: self.record.started_at,
+            updated_at: self.record.updated_at,
             stage,
             in_flight_amount: if matches!(self.record.phase, Phase::Done | Phase::Failed) {
                 None
