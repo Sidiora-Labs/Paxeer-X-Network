@@ -6,15 +6,15 @@ use std::path::{Component, Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use layerx_agent_api::error::{ErrorClass, RequestId};
 use layerx_agentd::budget::{BudgetLimiter, LimitConfig, LimitId, LimitScope};
 use layerx_agentd::capability::CapabilityId;
 use layerx_agentd::config::{read_protected_source, ProtectedSourceError};
 use layerx_agentd::policy::approval::ApprovalRegistry;
 use layerx_agentd::prepare::PreparationLifecycle;
 use layerx_agentd::session::{SessionCredential, SessionId, SessionRegistry};
-use layerx_agentd::session_control::SessionControl;
+use layerx_agentd::session_control::{McpInvocationIdentity, SessionControl};
 use layerx_agentd::store::{Store, TenantId};
-use layerx_agent_api::error::{ErrorClass, RequestId};
 use layerx_sdk::agent_envelope::{AgentEnvelopeTransport, EnvelopeCredential, EnvelopeError};
 use layerx_sdk::production::SecretBytes;
 use layerx_sdk::programs::LayerXKeyCredential;
@@ -25,7 +25,7 @@ use crate::approval::ApprovalPolicy;
 use crate::boundary::{AgentSurface, BoundaryRefusal, ProgramReads, ToolBoundary};
 use crate::listener::ListenerConfig;
 use crate::server::{DeploymentMode, ReadOnly, Server, ToolDefinition, WebBoundary, WebRoute};
-use crate::stdio::{Bound, Session};
+use crate::stdio::{Bound, DaemonClientSession, Session};
 use crate::tools::web::{ExactTerms, GrantTerms, WebConfig, WebPayer, WebPayerError, WebToolError};
 
 const MAX_DOCUMENT_BYTES: usize = 65_536;
@@ -68,6 +68,7 @@ pub enum BindingError {
     Unreadable(String),
     Malformed(String),
     Refused(String),
+    Daemon(Value),
 }
 
 impl BindingError {
@@ -78,6 +79,12 @@ impl BindingError {
             Self::Unreadable(reason) => format!("the binding document is unreadable: {reason}"),
             Self::Malformed(reason) => format!("the binding document is malformed: {reason}"),
             Self::Refused(reason) => format!("the daemon refused the binding: {reason}"),
+            Self::Daemon(refusal) => json!({
+                "class": refusal.get("class").and_then(Value::as_str),
+                "reason": refusal.get("reason").and_then(Value::as_str),
+                "state": refusal.get("state").and_then(Value::as_str),
+            })
+            .to_string(),
         }
     }
 }
@@ -193,13 +200,21 @@ pub struct ReadinessBoundary {
 
 impl ReadinessBoundary {
     fn execute(&mut self, arguments: &Value) -> Result<Value, BoundaryRefusal> {
-        if arguments.as_object().is_none_or(|object| !object.is_empty()) {
-            return Err(BoundaryRefusal::Malformed("tenant.readiness requires an empty object".to_owned()));
+        if arguments
+            .as_object()
+            .is_none_or(|object| !object.is_empty())
+        {
+            return Err(BoundaryRefusal::Malformed(
+                "tenant.readiness requires an empty object".to_owned(),
+            ));
         }
         let request_id = self.next_request_id;
-        self.next_request_id = request_id.checked_add(1).ok_or_else(||
-            BoundaryRefusal::Unavailable("the readiness request counter is exhausted".to_owned()))?;
-        let response = self.transport.tenant_readiness(RequestId(request_id), &self.credential)
+        self.next_request_id = request_id.checked_add(1).ok_or_else(|| {
+            BoundaryRefusal::Unavailable("the readiness request counter is exhausted".to_owned())
+        })?;
+        let response = self
+            .transport
+            .tenant_readiness(RequestId(request_id), &self.credential)
             .map_err(readiness_refusal)?;
         let value = response.value;
         Ok(json!({
@@ -216,12 +231,20 @@ fn readiness_refusal(error: EnvelopeError) -> BoundaryRefusal {
     match error {
         EnvelopeError::GatewayAuthentication => BoundaryRefusal::Unauthorized,
         EnvelopeError::Refused(error) => match error.class {
-            ErrorClass::PolicyRefusal | ErrorClass::CapabilityRefusal => BoundaryRefusal::Unauthorized,
+            ErrorClass::PolicyRefusal | ErrorClass::CapabilityRefusal => {
+                BoundaryRefusal::Unauthorized
+            }
             ErrorClass::UnavailableCapability => BoundaryRefusal::NotServed("tenant.readiness"),
-            _ => BoundaryRefusal::Unavailable("the tenant readiness owner refused the request".to_owned()),
+            _ => BoundaryRefusal::Unavailable(
+                "the tenant readiness owner refused the request".to_owned(),
+            ),
         },
-        EnvelopeError::Transport { .. } => BoundaryRefusal::Unavailable("the authenticated readiness transport failed".to_owned()),
-        _ => BoundaryRefusal::Malformed("the authenticated readiness exchange was refused".to_owned()),
+        EnvelopeError::Transport { .. } => {
+            BoundaryRefusal::Unavailable("the authenticated readiness transport failed".to_owned())
+        }
+        _ => BoundaryRefusal::Malformed(
+            "the authenticated readiness exchange was refused".to_owned(),
+        ),
     }
 }
 
@@ -307,7 +330,10 @@ impl ToolBoundary for DaemonBoundary {
         match self {
             Self::Readiness { inner, readiness } => {
                 if tool.name == "tenant.readiness" {
-                    readiness.as_mut().ok_or(BoundaryRefusal::NotServed("tenant.readiness"))?.execute(arguments)
+                    readiness
+                        .as_mut()
+                        .ok_or(BoundaryRefusal::NotServed("tenant.readiness"))?
+                        .execute(arguments)
                 } else {
                     inner.execute(tool, arguments)
                 }
@@ -324,6 +350,77 @@ impl ToolBoundary for DaemonBoundary {
             Self::Web(web) => web.observed_sequence(),
         }
     }
+}
+
+struct OwnerBoundary<F> {
+    inner: Option<DaemonBoundary>,
+    credential: SessionCredential,
+    core_sequence: u64,
+    idempotency_key: [u8; 32],
+    owner: F,
+}
+
+impl<F> ToolBoundary for OwnerBoundary<F>
+where
+    F: FnMut(
+        layerx_agentd::tenant::Operation,
+        &SessionCredential,
+        &Value,
+        [u8; 32],
+    ) -> Result<Value, layerx_agentd::agent_rpc::Rejection>,
+{
+    fn execute(
+        &mut self,
+        tool: ToolDefinition,
+        arguments: &Value,
+    ) -> Result<Value, BoundaryRefusal> {
+        if let Some(inner) = &mut self.inner {
+            return inner.execute(tool, arguments);
+        }
+        let operation = crate::server::tool_operation(tool.name)
+            .ok_or(BoundaryRefusal::NotServed(tool.name))?;
+        (self.owner)(operation, &self.credential, arguments, self.idempotency_key)
+            .map_err(owner_refusal)
+    }
+
+    fn observed_sequence(&mut self) -> Result<u64, BoundaryRefusal> {
+        Ok(self.core_sequence)
+    }
+}
+
+impl<F> crate::server::DaemonExecutionBoundary for OwnerBoundary<F>
+where
+    F: FnMut(
+        layerx_agentd::tenant::Operation,
+        &SessionCredential,
+        &Value,
+        [u8; 32],
+    ) -> Result<Value, layerx_agentd::agent_rpc::Rejection>,
+{
+    fn reconcile(&mut self, submission_ref: &str) -> Result<Value, BoundaryRefusal> {
+        (self.owner)(
+            layerx_agentd::tenant::Operation::Track,
+            &self.credential,
+            &json!({"submission_ref": submission_ref}),
+            self.idempotency_key,
+        )
+        .map_err(owner_refusal)
+    }
+}
+
+fn owner_refusal(error: layerx_agentd::agent_rpc::Rejection) -> BoundaryRefusal {
+    error
+        .into_api_error()
+        .map(BoundaryRefusal::Owner)
+        .unwrap_or_else(|| {
+            BoundaryRefusal::Malformed("the daemon owner refusal is invalid".to_owned())
+        })
+}
+
+#[derive(Debug)]
+pub enum DaemonInvocationError {
+    Binding(BindingError),
+    Authority(crate::server::ServerError),
 }
 
 /// One complete, validated binding document.
@@ -387,8 +484,9 @@ impl Binding {
                 ProtectedSourceError::Unavailable => "the binding document is unavailable".to_owned(),
             })
         })?;
-        let document = String::from_utf8(bytes)
-            .map_err(|_| BindingError::Unreadable("the binding document is not UTF-8".to_owned()))?;
+        let document = String::from_utf8(bytes).map_err(|_| {
+            BindingError::Unreadable("the binding document is not UTF-8".to_owned())
+        })?;
         Self::parse(&document)
     }
 
@@ -404,8 +502,8 @@ impl Binding {
                 "the binding document exceeds {MAX_DOCUMENT_BYTES} bytes"
             )));
         }
-        let value: Value = serde_json::from_str(document)
-            .map_err(|_| malformed("it is not valid JSON"))?;
+        let value: Value =
+            serde_json::from_str(document).map_err(|_| malformed("it is not valid JSON"))?;
         let root = value
             .as_object()
             .ok_or_else(|| malformed("the binding document is not a JSON object"))?;
@@ -461,7 +559,9 @@ impl Binding {
                 readiness: match agent.get("readiness") {
                     None => None,
                     Some(value) => {
-                        let fields = value.as_object().ok_or_else(|| malformed("agent.readiness must be an object"))?;
+                        let fields = value
+                            .as_object()
+                            .ok_or_else(|| malformed("agent.readiness must be an object"))?;
                         closed(fields, &READINESS_KEYS, "agent.readiness")?;
                         Some(ReadinessBinding {
                             endpoint: text(fields, "endpoint")?.to_owned(),
@@ -632,28 +732,197 @@ impl Binding {
             }
             _ => DaemonBoundary::Reads(reads),
         };
-        Ok(Session::new(bound, DaemonBoundary::Readiness {
-            inner: Box::new(boundary),
-            readiness,
-        }))
+        Ok(Session::new(
+            bound,
+            DaemonBoundary::Readiness {
+                inner: Box::new(boundary),
+                readiness,
+            },
+        ))
     }
 
-    fn readiness_boundary(&self, token: &[u8; 32]) -> Result<Option<ReadinessBoundary>, BindingError> {
-        let Some(binding) = &self.agent.readiness else { return Ok(None); };
-        let encoded = protected_text(&binding.gateway_key_file, "agent.readiness.gateway_key_file")?;
-        let (key_id, secret) = encoded.split_once(':').ok_or_else(||
-            malformed("agent.readiness.gateway_key_file must hold key_id:lxp_live_secret"))?;
-        let suffix = secret.strip_prefix("lxp_live_").ok_or_else(|| malformed("readiness gateway credential is invalid"))?;
-        if suffix.len() != 64 || !suffix.bytes().all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte)) {
+    pub fn open_daemon_client(&self) -> Result<DaemonClientSession, BindingError> {
+        let token = self.session_token()?;
+        let readiness = self.readiness_boundary(&token)?.ok_or_else(|| {
+            malformed("agent.readiness must declare the authenticated unified gateway")
+        })?;
+        DaemonClientSession::connect(readiness.transport, readiness.credential, self.mode)
+            .map_err(BindingError::Daemon)
+    }
+
+    pub fn matches_session(&self, credential: &SessionCredential) -> bool {
+        credential.tenant().as_str() == self.tenant && credential.session_id().0 == self.session_id
+    }
+
+    pub fn daemon_credential(&self) -> Result<SessionCredential, BindingError> {
+        let token = self.session_token()?;
+        let tenant = TenantId::new(self.tenant.clone())
+            .map_err(|_| malformed("the MCP tenant is invalid"))?;
+        Ok(SessionCredential::new(
+            tenant,
+            SessionId(self.session_id),
+            *token,
+            self.session_generation,
+        ))
+    }
+
+    pub fn daemon_transport(&self) -> Result<AgentEnvelopeTransport, BindingError> {
+        let token = self.session_token()?;
+        self.readiness_boundary(&token)?
+            .map(|boundary| boundary.transport)
+            .ok_or_else(|| {
+                malformed("agent.readiness must declare the authenticated unified gateway")
+            })
+    }
+
+    pub fn daemon_invocation<F>(
+        &self,
+        control: SessionControl,
+        credential: SessionCredential,
+        core_sequence: u64,
+        tool: &str,
+        arguments: &Value,
+        identity: McpInvocationIdentity,
+        owner: F,
+    ) -> Result<crate::server::DaemonToolResult, DaemonInvocationError>
+    where
+        F: FnMut(
+            layerx_agentd::tenant::Operation,
+            &SessionCredential,
+            &Value,
+            [u8; 32],
+        ) -> Result<Value, layerx_agentd::agent_rpc::Rejection>,
+    {
+        if credential.tenant().as_str() != self.tenant
+            || credential.session_id().0 != self.session_id
+        {
+            return Err(DaemonInvocationError::Authority(
+                crate::server::ServerError::TenantMismatch,
+            ));
+        }
+        if identity.tool_name != tool {
+            return Err(DaemonInvocationError::Authority(
+                crate::server::ServerError::InvalidInvocation,
+            ));
+        }
+        let mut server = Server::bind_for_mode(
+            control,
+            credential.clone(),
+            CapabilityId(self.capability_id),
+            core_sequence,
+            &self.audit_root,
+            self.mode,
+        )
+        .map_err(DaemonInvocationError::Authority)?;
+        if tool == "mcp.describe" {
+            if arguments
+                .as_object()
+                .is_none_or(|arguments| !arguments.is_empty())
+            {
+                return Err(DaemonInvocationError::Authority(
+                    crate::server::ServerError::InvalidInvocation,
+                ));
+            }
+            return server
+                .describe_for_release(core_sequence, identity)
+                .map_err(DaemonInvocationError::Authority);
+        }
+        let canonical_owner = tool.starts_with("subscription.")
+            || tool.starts_with("approval.")
+            || matches!(
+                tool,
+                "tenant.readiness"
+                    | "activity.prepare"
+                    | "activity.submit"
+                    | "activity.sign"
+                    | "activity.track"
+                    | "activity.wait"
+            );
+        let inner = if canonical_owner {
+            None
+        } else {
+            let surface = AgentSurface::new(
+                &self.agent.endpoint,
+                self.agent_bearer()
+                    .map_err(DaemonInvocationError::Binding)?,
+                &self.agent.probe_program,
+                self.deadline,
+            )
+            .map_err(|error| {
+                DaemonInvocationError::Binding(BindingError::Refused(error.detail()))
+            })?;
+            let reads = ProgramReads::new(surface);
+            Some(if server.serves_web() {
+                let route = self
+                    .web_route(&server)
+                    .map_err(DaemonInvocationError::Binding)?;
+                DaemonBoundary::Web(Box::new(
+                    server
+                        .route_web(reads, route)
+                        .map_err(DaemonInvocationError::Authority)?,
+                ))
+            } else {
+                DaemonBoundary::Reads(reads)
+            })
+        };
+        let mut boundary = OwnerBoundary {
+            inner,
+            credential,
+            core_sequence,
+            idempotency_key: identity.idempotency_key,
+            owner,
+        };
+        server
+            .execute_for_release(core_sequence, tool, arguments, identity, &mut boundary)
+            .map_err(DaemonInvocationError::Authority)
+    }
+
+    fn readiness_boundary(
+        &self,
+        token: &[u8; 32],
+    ) -> Result<Option<ReadinessBoundary>, BindingError> {
+        let Some(binding) = &self.agent.readiness else {
+            return Ok(None);
+        };
+        let encoded = protected_text(
+            &binding.gateway_key_file,
+            "agent.readiness.gateway_key_file",
+        )?;
+        let (key_id, secret) = encoded.split_once(':').ok_or_else(|| {
+            malformed("agent.readiness.gateway_key_file must hold key_id:lxp_live_secret")
+        })?;
+        let suffix = secret
+            .strip_prefix("lxp_live_")
+            .ok_or_else(|| malformed("readiness gateway credential is invalid"))?;
+        if suffix.len() != 64
+            || !suffix
+                .bytes()
+                .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+        {
             return Err(malformed("readiness gateway credential is invalid"));
         }
-        let secret = SecretBytes::new(secret.as_bytes()).map_err(|_| malformed("readiness gateway credential is invalid"))?;
-        let gateway_key = LayerXKeyCredential::new(key_id, secret).map_err(|_| malformed("readiness gateway credential is invalid"))?;
-        let transport = AgentEnvelopeTransport::connect(&binding.endpoint, Some(gateway_key), binding.trust_anchors.as_deref())
-            .map_err(|_| malformed("readiness HTTPS endpoint or trust anchors are invalid"))?;
-        let credential = EnvelopeCredential::new(self.tenant.clone(), self.session_id, *token, self.session_generation)
-            .map_err(|_| malformed("readiness session credential is invalid"))?;
-        Ok(Some(ReadinessBoundary { transport, credential, next_request_id: 1 }))
+        let secret = SecretBytes::new(secret.as_bytes())
+            .map_err(|_| malformed("readiness gateway credential is invalid"))?;
+        let gateway_key = LayerXKeyCredential::new(key_id, secret)
+            .map_err(|_| malformed("readiness gateway credential is invalid"))?;
+        let transport = AgentEnvelopeTransport::connect(
+            &binding.endpoint,
+            Some(gateway_key),
+            binding.trust_anchors.as_deref(),
+        )
+        .map_err(|_| malformed("readiness HTTPS endpoint or trust anchors are invalid"))?;
+        let credential = EnvelopeCredential::new(
+            self.tenant.clone(),
+            self.session_id,
+            *token,
+            self.session_generation,
+        )
+        .map_err(|_| malformed("readiness session credential is invalid"))?;
+        Ok(Some(ReadinessBoundary {
+            transport,
+            credential,
+            next_request_id: 1,
+        }))
     }
 
     fn web_route(&self, server: &Server) -> Result<WebRoute, BindingError> {
@@ -748,14 +1017,17 @@ fn listener_config(declared: &Value, deadline_ms: u64) -> Result<ListenerConfig,
     }
     let socket = absolute(listener, "socket")?;
     let socket_text = text(listener, "socket")?;
-    if socket_text.len() > 107 || socket_text.as_bytes().contains(&0) || socket_text.ends_with('/') {
+    if socket_text.len() > 107 || socket_text.as_bytes().contains(&0) || socket_text.ends_with('/')
+    {
         return Err(malformed("field listener.socket is not a Unix socket path"));
     }
     if socket
         .components()
         .any(|component| !matches!(component, Component::RootDir | Component::Normal(_)))
         || socket.file_name().is_none()
-        || socket.parent().is_none_or(|parent| parent == Path::new("/"))
+        || socket
+            .parent()
+            .is_none_or(|parent| parent == Path::new("/"))
     {
         return Err(malformed(
             "field listener.socket must be a normalized path inside a dedicated directory",

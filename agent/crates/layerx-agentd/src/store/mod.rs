@@ -279,6 +279,8 @@ pub struct EventIngestion {
 pub struct Store {
     root: PathBuf,
     entries: BTreeMap<TenantKey, StoredValue>,
+    mcp_transition: Option<(&'static str, u64)>,
+    read_only: bool,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -306,7 +308,47 @@ impl Store {
         } else {
             BTreeMap::new()
         };
-        Ok(Self { root, entries })
+        Ok(Self {
+            root,
+            entries,
+            mcp_transition: None,
+            read_only: false,
+        })
+    }
+
+    pub fn open_read_only(root: impl AsRef<Path>) -> Result<Self, StoreError> {
+        use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
+        let root = root.as_ref().to_path_buf();
+        let root_metadata = fs::symlink_metadata(&root)?;
+        let own_uid = fs::metadata("/proc/self")?.uid();
+        if !root_metadata.is_dir()
+            || root_metadata.uid() != own_uid
+            || root_metadata.mode() & 0o077 != 0
+            || fs::canonicalize(&root)? != root
+        {
+            return Err(StoreError::Corrupt("unprotected read-only store root"));
+        }
+        let mut file = OpenOptions::new()
+            .read(true)
+            .custom_flags(0o400000)
+            .open(root.join(STORE_FILE))?;
+        let metadata = file.metadata()?;
+        if !metadata.is_file()
+            || metadata.uid() != own_uid
+            || metadata.nlink() != 1
+            || metadata.mode() & 0o022 != 0
+        {
+            return Err(StoreError::Corrupt("unprotected read-only store snapshot"));
+        }
+        let mut bytes = Vec::new();
+        std::io::Read::read_to_end(&mut file, &mut bytes)?;
+        let entries = decode(&bytes)?;
+        Ok(Self {
+            root,
+            entries,
+            mcp_transition: None,
+            read_only: true,
+        })
     }
 
     /// Returns the directory this store and its tenant audit logs live under.
@@ -1001,8 +1043,113 @@ impl Store {
         Ok(())
     }
 
-    fn persist(&self) -> Result<(), StoreError> {
-        let bytes = encode(&self.entries)?;
+    pub fn commit_local_records(
+        &mut self,
+        records: Vec<(TenantKey, Vec<u8>)>,
+    ) -> Result<(), StoreError> {
+        if records.is_empty() {
+            return Err(StoreError::Corrupt("empty local record transaction"));
+        }
+        let mut keys = BTreeSet::new();
+        for (key, _) in &records {
+            if !keys.insert(key.clone())
+                || self
+                    .entries
+                    .get(key)
+                    .is_some_and(|value| value.class != StorageClass::LocalOnly)
+            {
+                return Err(StoreError::Corrupt("invalid local record transaction"));
+            }
+        }
+        let before = self.entries.clone();
+        for (key, bytes) in records {
+            self.entries.insert(
+                key,
+                StoredValue {
+                    class: StorageClass::LocalOnly,
+                    bytes,
+                },
+            );
+        }
+        if let Err(error) = self.persist() {
+            self.entries = before;
+            return Err(error);
+        }
+        Ok(())
+    }
+
+    pub(crate) fn begin_mcp_transition(
+        &mut self,
+        kind: &'static str,
+        sequence: u64,
+    ) -> Result<(), StoreError> {
+        if self.mcp_transition.is_some()
+            || !matches!(
+                kind,
+                "session_close" | "session_revoke" | "session_narrow" | "session_refresh"
+            )
+        {
+            return Err(StoreError::Corrupt("invalid MCP transition owner"));
+        }
+        self.mcp_transition = Some((kind, sequence));
+        Ok(())
+    }
+
+    pub(crate) fn end_mcp_transition(&mut self) {
+        self.mcp_transition = None;
+    }
+
+    fn persist(&mut self) -> Result<(), StoreError> {
+        if self.read_only {
+            return Err(StoreError::Io(io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                "read-only store snapshot",
+            )));
+        }
+        let mut projected = None;
+        if self.mcp_transition.is_some()
+            || self.entries.keys().any(|key| {
+                key.kind() == ObjectKind::Idempotency
+                    && key.object_id().starts_with(b"mcp-invocation-v1/")
+            })
+        {
+            let path = self.root.join(STORE_FILE);
+            let previous = Self {
+                root: self.root.clone(),
+                entries: if path.exists() {
+                    decode(&fs::read(path)?)?
+                } else {
+                    BTreeMap::new()
+                },
+                mcp_transition: None,
+                read_only: true,
+            };
+            let updates = crate::session_control::mcp_transition_updates(
+                &previous,
+                self,
+                self.mcp_transition,
+            )?;
+            if !updates.is_empty() {
+                let mut entries = self.entries.clone();
+                for (key, bytes) in updates {
+                    if entries
+                        .get(&key)
+                        .is_some_and(|value| value.class != StorageClass::LocalOnly)
+                    {
+                        return Err(StoreError::Corrupt("nonlocal MCP transition record"));
+                    }
+                    entries.insert(
+                        key,
+                        StoredValue {
+                            class: StorageClass::LocalOnly,
+                            bytes,
+                        },
+                    );
+                }
+                projected = Some(entries);
+            }
+        }
+        let bytes = encode(projected.as_ref().unwrap_or(&self.entries))?;
         let temp_path = self.root.join(TEMP_FILE);
         let final_path = self.root.join(STORE_FILE);
         let mut file = OpenOptions::new()
@@ -1014,6 +1161,9 @@ impl Store {
         file.sync_all()?;
         fs::rename(temp_path, final_path)?;
         File::open(&self.root)?.sync_all()?;
+        if let Some(entries) = projected {
+            self.entries = entries;
+        }
         Ok(())
     }
 }
@@ -1252,7 +1402,10 @@ impl Store {
         let mut keys = BTreeSet::new();
         for (key, _) in &updates {
             if !keys.insert(key.clone())
-                || self.entries.get(key).is_none_or(|value| value.class != StorageClass::LocalOnly)
+                || self
+                    .entries
+                    .get(key)
+                    .is_none_or(|value| value.class != StorageClass::LocalOnly)
             {
                 return Err(StoreError::Corrupt("invalid program approval update"));
             }
@@ -1264,14 +1417,23 @@ impl Store {
         }
         for key in &removals {
             if !keys.insert(key.clone())
-                || self.entries.get(key).is_none_or(|value| value.class != StorageClass::LocalOnly)
+                || self
+                    .entries
+                    .get(key)
+                    .is_none_or(|value| value.class != StorageClass::LocalOnly)
             {
                 return Err(StoreError::Corrupt("invalid program approval removal"));
             }
         }
         let before = self.entries.clone();
         for (key, bytes) in updates.into_iter().chain(inserts) {
-            self.entries.insert(key, StoredValue { class: StorageClass::LocalOnly, bytes });
+            self.entries.insert(
+                key,
+                StoredValue {
+                    class: StorageClass::LocalOnly,
+                    bytes,
+                },
+            );
         }
         for key in removals {
             self.entries.remove(&key);

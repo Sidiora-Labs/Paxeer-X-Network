@@ -7,7 +7,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends build-essential
 COPY . .
 RUN cargo build --locked --release --manifest-path platform/Cargo.toml -p layerx-runtime-clock
 RUN cargo build --locked --release --manifest-path human/Cargo.toml -p layerx-human-service -p layerx-human-kms -p layerx-explorer-index --bins
-RUN cargo build --locked --release --manifest-path agent/Cargo.toml -p layerx-agentd --bin layerx-agentd
+RUN cargo build --locked --release --manifest-path agent/Cargo.toml -p layerx-agentd-host --bin layerx-agentd
 RUN cargo build --locked --release --manifest-path cmd/layerxctl/Cargo.toml
 RUN cargo build --locked --release --manifest-path human/Cargo.toml -p layerx-human-identity-provider -p layerx-human-security-provider -p layerx-human-movement-provider --bins
 

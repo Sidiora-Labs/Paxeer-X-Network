@@ -69,6 +69,21 @@ pub(crate) struct ResolvedTargetOwner {
     owner: ResolvedOwner,
 }
 
+#[derive(Clone)]
+pub struct McpNativeWebContextV1 {
+    pub debit: layerx_crypto::send::SendDebit,
+    pub actor: String,
+    pub identity_sequence: u64,
+    pub fee_limit: u128,
+    pub not_before: u64,
+    pub not_after: u64,
+    pub capability_id: layerx_agent_api::identity::CapabilityId,
+    pub local_grant: layerx_agent_api::identity::NativeLocalGrantConsentV1,
+    pub purpose_expires_at_ms: u64,
+    pub commitment: [u8; 32],
+    pub economic_action: [u8; 32],
+}
+
 impl ResolvedTargetOwner {
     pub(crate) fn into_parts(self) -> (Arc<()>, Option<crate::tenant::ObjectOwner>) {
         let owner = match self.owner {
@@ -80,6 +95,296 @@ impl ResolvedTargetOwner {
 }
 
 impl<A: HumanAuthorityBoundary> UnifiedAgentOwner<A> {
+    fn mcp_native_web_registry(
+        &mut self,
+        credential: &crate::session::SessionCredential,
+        owner_public_key: [u8; 32],
+    ) -> Result<ModuleRegistry, HumanOperationError> {
+        let head = self.lock_operations()?.node.head().chain_sequence;
+        let control = self.session_control.clone();
+        let permit = control
+            .authorize(
+                credential,
+                crate::tenant::Operation::Prepare,
+                crate::tenant::Surface::Mcp,
+                head,
+                None,
+            )
+            .map_err(|_| HumanOperationError::Refused)?;
+        let context = crate::agent_rpc_peer::bind_registered_mcp_owner(
+            self,
+            &permit,
+            owner_public_key,
+            head,
+        )?;
+        let registry = {
+            let mut ops = self.lock_operations()?;
+            ops.require_write_admission(&context.peer().tenant)?;
+            ops.subject_owner(
+                context.peer(),
+                &context.principal().agent,
+                &Authority::owner(&owner_public_key).map_err(|_| HumanOperationError::Refused)?,
+            )?;
+            ops.authority.registry(context.peer()).map_err(map_core)?
+        };
+        permit
+            .boundary(&control)
+            .map_err(|_| HumanOperationError::Refused)?;
+        Ok(registry)
+    }
+
+    fn mcp_native_web_context(
+        &mut self,
+        credential: &crate::session::SessionCredential,
+        owner_public_key: [u8; 32],
+        recipient: [u8; 32],
+        asset: [u8; 32],
+        amount: u128,
+        idempotency_key: [u8; 32],
+        local_grant: layerx_agent_api::identity::NativeLocalGrantConsentV1,
+        commitment: [u8; 32],
+        fee_limit: u128,
+        validity_ms: u64,
+    ) -> Result<McpNativeWebContextV1, HumanOperationError> {
+        if recipient == [0; 32]
+            || asset == [0; 32]
+            || amount == 0
+            || idempotency_key == [0; 32]
+            || commitment == [0; 32]
+            || validity_ms == 0
+            || validity_ms > 3_600_000
+            || local_grant.owner_public_key != owner_public_key
+        {
+            return Err(HumanOperationError::Refused);
+        }
+        let head = self.lock_operations()?.node.head().chain_sequence;
+        let control = self.session_control.clone();
+        let permit = control
+            .authorize(
+                credential,
+                crate::tenant::Operation::Prepare,
+                crate::tenant::Surface::Mcp,
+                head,
+                None,
+            )
+            .map_err(|_| HumanOperationError::Refused)?;
+        let context = crate::agent_rpc_peer::bind_registered_mcp_owner(
+            self,
+            &permit,
+            owner_public_key,
+            head,
+        )?;
+        let actor = context.principal().agent.clone();
+        let (snapshot, source, source_sequence) = {
+            let mut ops = self.lock_operations()?;
+            ops.require_write_admission(&context.peer().tenant)?;
+            ops.subject_owner(
+                context.peer(),
+                &actor,
+                &Authority::owner(&owner_public_key).map_err(|_| HumanOperationError::Refused)?,
+            )?;
+            let snapshot = core_preparation_snapshot(&mut ops.node, context.peer(), &actor)?;
+            let fee = ops
+                .node
+                .native_fee_policy(boundary_correlation(
+                    context.peer(),
+                    &idempotency_key,
+                    b"mcp-web-native-context-fee",
+                ))
+                .map_err(|_| HumanOperationError::Unavailable)?;
+            if snapshot.observed_head_sequence != head
+                || fee.observed_sequence != head
+                || fee.state_root == [0; 32]
+                || fee.value.asset.asset_id == [0; 32]
+            {
+                return Err(HumanOperationError::Refused);
+            }
+            let actor_text =
+                std::str::from_utf8(actor.as_bytes()).map_err(|_| HumanOperationError::Refused)?;
+            let account = layerx_types::account::AccountId::for_asset(
+                actor_text,
+                asset,
+                fee.value.asset.asset_id,
+            )
+            .map_err(|_| HumanOperationError::Refused)?;
+            let protocol = ops.node.handshake().node().protocol_version;
+            let source = layerx_wire::hash::account_id_for_protocol(&account, protocol)
+                .map_err(|_| HumanOperationError::Refused)?;
+            let (_, _, _, _, age, maximum_age, authorization) =
+                ops.authority.balance_context(context.peer())?;
+            if maximum_age == 0 || age > maximum_age || source == recipient {
+                return Err(HumanOperationError::Refused);
+            }
+            let value = ops
+                .node
+                .account(
+                    source,
+                    VerificationLevel::STATE_PROVEN,
+                    boundary_correlation(
+                        context.peer(),
+                        &idempotency_key,
+                        b"mcp-web-native-source",
+                    ),
+                    authorization,
+                )
+                .map_err(|_| HumanOperationError::Unavailable)?;
+            let decoded =
+                layerx_proof::state::decode_account_value(source, value.canonical_bytes())
+                    .map_err(|_| HumanOperationError::Refused)?;
+            if protocol != 3
+                || value.achieved() < VerificationLevel::STATE_PROVEN
+                || value.freshness().observed_head_sequence != head
+                || ops.node.head().chain_sequence != head
+                || decoded.frozen
+                || decoded.asset_id() != asset
+                || decoded.balance() < amount
+                || decoded.authority_key != Some(owner_public_key)
+            {
+                return Err(HumanOperationError::Refused);
+            }
+            (snapshot, source, decoded.next_sequence)
+        };
+        let owner = self.native_purpose_owner(&context, owner_public_key, head)?;
+        let grant = crate::agent_rpc_wire::native_local_grant(
+            &local_grant,
+            layerx_agent_api::error::RequestId(1),
+        )
+        .map_err(|_| HumanOperationError::Refused)?;
+        let (capability_id, not_after) = permit
+            .with_native_owner_install(&control, |store, sessions| {
+                let refused = || {
+                    crate::session_control::SessionControlError::Human(HumanOperationError::Refused)
+                };
+                let staged = crate::capability::binding::stage_native_local_grant(
+                    store,
+                    sessions,
+                    &owner,
+                    grant,
+                    head,
+                    snapshot.protocol_timestamp,
+                )
+                .map_err(|_| refused())?;
+                let capability = &staged.grant().capability;
+                let record = sessions
+                    .get(owner.tenant(), owner.session_id())
+                    .ok_or_else(refused)?;
+                let session_expiry = record
+                    .request
+                    .expiry_seconds
+                    .and_then(|seconds| seconds.checked_mul(1000))
+                    .ok_or_else(refused)?;
+                let not_after = snapshot
+                    .protocol_timestamp
+                    .checked_add(validity_ms)
+                    .ok_or_else(refused)?
+                    .min(session_expiry)
+                    .min(local_grant.expires_at_ms);
+                if capability.record.id != owner.session_id().0
+                    || !capability.purpose_commitments.contains(&commitment)
+                    || !capability.activities.contains(
+                        &layerx_agent_api::identity::NativeActivity::new(1, 5)
+                            .map_err(|_| refused())?,
+                    )
+                    || not_after <= snapshot.protocol_timestamp
+                    || u128::from(not_after) > capability.record.not_after_ms()
+                {
+                    return Err(refused());
+                }
+                Ok((capability.record.id, not_after))
+            })
+            .map_err(rpc_commit_error)?;
+        permit
+            .boundary(&control)
+            .map_err(|_| HumanOperationError::Refused)?;
+        Ok(McpNativeWebContextV1 {
+            debit: layerx_crypto::send::SendDebit {
+                from: source,
+                to: recipient,
+                asset,
+                amount,
+                source_sequence,
+                idempotency_key,
+                expires_at: not_after,
+                context_hash: layerx_crypto::send::send_context_hash(
+                    &source,
+                    &recipient,
+                    &asset,
+                    amount,
+                    &idempotency_key,
+                ),
+                conditions: Vec::new(),
+                authorization_kind: 1,
+                network_id: snapshot.network_id,
+                protocol_version: 3,
+            },
+            actor: std::str::from_utf8(actor.as_bytes())
+                .map_err(|_| HumanOperationError::Refused)?
+                .to_owned(),
+            identity_sequence: snapshot.account_sequence,
+            fee_limit,
+            not_before: snapshot.protocol_timestamp,
+            not_after,
+            capability_id: layerx_agent_api::identity::CapabilityId::new(hex(&capability_id))
+                .map_err(|_| HumanOperationError::Refused)?,
+            local_grant,
+            purpose_expires_at_ms: not_after,
+            commitment,
+            economic_action: owner.session_id().0,
+        })
+    }
+
+    fn mcp_native_web_purpose(
+        &mut self,
+        credential: crate::session::SessionCredential,
+        owner_public_key: [u8; 32],
+        prepare: HumanPrepare,
+        context: McpNativeWebContextV1,
+        canonical: &[u8],
+    ) -> Result<layerx_agent_api::identity::NativeSendPurposeV1, HumanOperationError> {
+        let head = self.lock_operations()?.node.head().chain_sequence;
+        let control = self.session_control.clone();
+        let permit = control
+            .authorize(
+                &credential,
+                crate::tenant::Operation::Prepare,
+                crate::tenant::Surface::Mcp,
+                head,
+                None,
+            )
+            .map_err(|_| HumanOperationError::Refused)?;
+        let bound = crate::agent_rpc_peer::bind_registered_mcp_owner(
+            self,
+            &permit,
+            owner_public_key,
+            head,
+        )?;
+        let preview = self.native_send_owner_preview_on_surface(
+            bound.peer(),
+            crate::human::HumanNativeSendOwnerPreviewRequestV1 {
+                credential,
+                request_id: boundary_correlation(
+                    bound.peer(),
+                    &context.debit.idempotency_key,
+                    b"mcp-web-native-purpose",
+                ),
+                prepare,
+                owner_public_key,
+                purpose_expires_at_ms: context.purpose_expires_at_ms,
+                commitment: context.commitment,
+                economic_action: context.economic_action,
+                local_grant: context.local_grant,
+            },
+            crate::tenant::Surface::Mcp,
+        )?;
+        if preview.canonical_bytes != canonical {
+            return Err(HumanOperationError::Refused);
+        }
+        permit
+            .boundary(&control)
+            .map_err(|_| HumanOperationError::Refused)?;
+        Ok(preview.purpose)
+    }
+
     pub(crate) fn rpc_sign(
         &mut self,
         context: &crate::agent_rpc_peer::RpcOwnerContext<'_>,
@@ -1688,10 +1993,86 @@ impl<A: HumanAuthorityBoundary> SharedAgentOwner<A> {
     ///
     /// # Errors
     /// Returns `HumanOperationError::Unavailable` when an owner lock is poisoned.
-    pub(crate) fn current_core_sequence(&self) -> Result<u64, HumanOperationError> {
+    pub fn current_core_sequence(&self) -> Result<u64, HumanOperationError> {
         let owner = self.lock()?;
         let operations = owner.lock_operations()?;
         Ok(operations.node.head().chain_sequence)
+    }
+
+    pub fn mcp_clock(&self) -> Result<Arc<dyn layerx_types::clock::Clock>, HumanOperationError> {
+        let owner = self.lock()?;
+        let ops = owner.lock_operations()?;
+        Ok(Arc::clone(&ops.clock))
+    }
+
+    pub fn mcp_native_web_sequencer_key(
+        &self,
+        credential: &crate::session::SessionCredential,
+        owner_public_key: [u8; 32],
+    ) -> Result<[u8; 32], HumanOperationError> {
+        let mut owner = self.lock()?;
+        owner.mcp_native_web_registry(credential, owner_public_key)?;
+        let ops = owner.lock_operations()?;
+        let node = ops.node.handshake().node();
+        let key = node.authorised_sequencer_key;
+        if node.protocol_version != 3 || key == [0; 32] {
+            return Err(HumanOperationError::Refused);
+        }
+        Ok(key)
+    }
+
+    pub fn mcp_native_web_registry(
+        &self,
+        credential: &crate::session::SessionCredential,
+        owner_public_key: [u8; 32],
+    ) -> Result<ModuleRegistry, HumanOperationError> {
+        self.lock()?
+            .mcp_native_web_registry(credential, owner_public_key)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn mcp_native_web_context(
+        &self,
+        credential: &crate::session::SessionCredential,
+        owner_public_key: [u8; 32],
+        recipient: [u8; 32],
+        asset: [u8; 32],
+        amount: u128,
+        idempotency_key: [u8; 32],
+        local_grant: layerx_agent_api::identity::NativeLocalGrantConsentV1,
+        commitment: [u8; 32],
+        fee_limit: u128,
+        validity_ms: u64,
+    ) -> Result<McpNativeWebContextV1, HumanOperationError> {
+        self.lock()?.mcp_native_web_context(
+            credential,
+            owner_public_key,
+            recipient,
+            asset,
+            amount,
+            idempotency_key,
+            local_grant,
+            commitment,
+            fee_limit,
+            validity_ms,
+        )
+    }
+
+    pub fn mcp_native_web_purpose(
+        &self,
+        credential: crate::session::SessionCredential,
+        owner_public_key: [u8; 32],
+        prepare: HumanPrepare,
+        context: McpNativeWebContextV1,
+        canonical: &[u8],
+    ) -> Result<layerx_agent_api::identity::NativeSendPurposeV1, HumanOperationError> {
+        self.lock()?.mcp_native_web_purpose(
+            credential,
+            owner_public_key,
+            prepare,
+            context,
+            canonical,
+        )
     }
 
     /// Maps a session-authenticated agent principal to a Human peer.
@@ -4065,6 +4446,7 @@ impl<A: HumanAuthorityBoundary> UnifiedAgentOwner<A> {
         let tenant = &principal.tenant;
         let peer = bound.peer();
         let owner = match lookup.operation() {
+            Operation::McpInvoke => return Err(HumanOperationError::Refused),
             Operation::PolicyDryRun => {
                 let request = crate::agent_rpc_wire::policy_dry_run_request(
                     request,
@@ -4262,6 +4644,7 @@ impl<A: HumanAuthorityBoundary> UnifiedAgentOwner<A> {
     ) -> Result<Option<crate::tenant::ObjectOwner>, HumanOperationError> {
         use crate::tenant::Operation;
         match operation {
+            Operation::McpInvoke => Err(HumanOperationError::Refused),
             Operation::BudgetState => self.budget_target_owner(request, tenant).map(Some),
             Operation::ApprovalList
             | Operation::SubscriptionList
@@ -5141,6 +5524,15 @@ impl<A: HumanAuthorityBoundary> UnifiedAgentOwner<A> {
         peer: &HumanPeer,
         request: crate::human::HumanNativeSendOwnerPreviewRequestV1,
     ) -> Result<crate::human::HumanNativeSendOwnerPreviewV1, HumanOperationError> {
+        self.native_send_owner_preview_on_surface(peer, request, crate::tenant::Surface::Contract)
+    }
+
+    fn native_send_owner_preview_on_surface(
+        &mut self,
+        peer: &HumanPeer,
+        request: crate::human::HumanNativeSendOwnerPreviewRequestV1,
+        surface: crate::tenant::Surface,
+    ) -> Result<crate::human::HumanNativeSendOwnerPreviewV1, HumanOperationError> {
         use crate::capability::{binding, derive_native_effects, timed, Effect, VerifiedInputs};
         use layerx_agent_api::identity::{
             AgentDid, CapabilityId, NativeActivity, NativeSendPurposeV1, SessionId as ApiSessionId,
@@ -5248,7 +5640,7 @@ impl<A: HumanAuthorityBoundary> UnifiedAgentOwner<A> {
             .authorize(
                 &request.credential,
                 crate::tenant::Operation::Prepare,
-                crate::tenant::Surface::Contract,
+                surface,
                 snapshot.observed_head_sequence,
                 None,
             )

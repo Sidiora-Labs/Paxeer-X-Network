@@ -112,7 +112,7 @@ impl OperationClass {
     #[must_use]
     pub const fn for_operation(operation: Operation) -> Option<Self> {
         match operation {
-            Operation::AgentRegister | Operation::SessionOpen => None,
+            Operation::AgentRegister | Operation::SessionOpen | Operation::McpInvoke => None,
             Operation::ApprovalApprove
             | Operation::ApprovalGet
             | Operation::ApprovalList

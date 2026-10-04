@@ -24,7 +24,7 @@ RUN CARGO_TARGET_DIR=/src/.lane-target cargo build --locked --manifest-path inte
     && CARGO_TARGET_DIR=/src/.lane-target cargo build --locked --manifest-path interop/Cargo.toml --release \
         --package layerx-mirror-signer --bin layerx-mirror-signer
 RUN cargo build --locked --release --manifest-path human/Cargo.toml -p layerx-human-service -p layerx-human-kms -p layerx-explorer-index --bins
-RUN cargo build --locked --release --manifest-path agent/Cargo.toml -p layerx-agentd --bin layerx-agentd -p layerx-mcp --bin layerx-mcp
+RUN cargo build --locked --release --manifest-path agent/Cargo.toml -p layerx-agentd-host --bin layerx-agentd -p layerx-mcp --bin layerx-mcp
 RUN cargo build --locked --release --manifest-path human/Cargo.toml -p layerx-human-identity-provider -p layerx-human-security-provider -p layerx-human-movement-provider --bins
 # The relay archive origin of docker/kernel/init.sh (task 4.6): its codec.
 RUN make LXP_REVISION="$LXP_REVISION" layerx-archive-codec && test -x build/bin/layerx-archive-codec

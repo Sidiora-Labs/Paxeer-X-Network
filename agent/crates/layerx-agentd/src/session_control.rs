@@ -420,8 +420,10 @@ impl SessionControl {
         let generation = registry
             .generation(tenant, session_id)
             .ok_or(SessionControlError::Session(SessionError::NotFound))?;
-        session::close(&mut store, &mut registry, tenant, session_id)
-            .map_err(SessionControlError::Session)?;
+        mcp_transition(&mut store, "session_close", current_sequence, |store| {
+            session::close(store, &mut registry, tenant, session_id)
+        })
+        .map_err(SessionControlError::Session)?;
         self.invalidate_preparations(
             &[(
                 session::SessionRef::new(tenant.clone(), session_id),
@@ -454,14 +456,16 @@ impl SessionControl {
         let generation = registry
             .generation(tenant, session_id)
             .ok_or(SessionControlError::Session(SessionError::NotFound))?;
-        session::close_with_companion(
-            &mut store,
-            &mut registry,
-            tenant,
-            session_id,
-            companion_key,
-            companion_bytes,
-        )
+        mcp_transition(&mut store, "session_close", current_sequence, |store| {
+            session::close_with_companion(
+                store,
+                &mut registry,
+                tenant,
+                session_id,
+                companion_key,
+                companion_bytes,
+            )
+        })
         .map_err(SessionControlError::Session)?;
         self.invalidate_preparations(
             &[(
@@ -498,14 +502,16 @@ impl SessionControl {
             .store
             .lock()
             .map_err(|_| SessionControlError::Unavailable)?;
-        let token = session::restrict_scope_with_companion(
-            &mut store,
-            &mut registry,
-            tenant,
-            restriction,
-            coordinate,
-            companion,
-        )
+        let token = mcp_transition(&mut store, "session_narrow", current_sequence, |store| {
+            session::restrict_scope_with_companion(
+                store,
+                &mut registry,
+                tenant,
+                restriction,
+                coordinate,
+                companion,
+            )
+        })
         .map_err(SessionControlError::Session)?;
         let preparations = self.invalidate_preparations(
             &[(
@@ -606,19 +612,21 @@ impl SessionControl {
             ),
         )
         .map_err(SessionControlError::Human)?;
-        let token = session::restrict_scope_with_companions(
-            &mut store,
-            &mut registry,
-            tenant,
-            session::ScopeRestriction {
-                session_id,
-                token_id: replacement_token,
-                scopes,
-                permitted_activity_types,
-            },
-            (coordinate_key, coordinate_bytes),
-            vec![(companion_key, companion_bytes), (ledger_key, ledger_bytes)],
-        )
+        let token = mcp_transition(&mut store, "session_narrow", current_sequence, |store| {
+            session::restrict_scope_with_companions(
+                store,
+                &mut registry,
+                tenant,
+                session::ScopeRestriction {
+                    session_id,
+                    token_id: replacement_token,
+                    scopes,
+                    permitted_activity_types,
+                },
+                (coordinate_key, coordinate_bytes),
+                vec![(companion_key, companion_bytes), (ledger_key, ledger_bytes)],
+            )
+        })
         .map_err(SessionControlError::Session)?;
         let preparations = self.invalidate_preparations(
             &[(
@@ -650,9 +658,13 @@ impl SessionControl {
             .lock()
             .map_err(|_| SessionControlError::Unavailable)?;
         let mut detached: [PendingActivity; 0] = [];
-        let report =
-            session::invalidate_on_revocation(&mut store, &mut registry, &mut detached, event)
-                .map_err(SessionControlError::Session)?;
+        let report = mcp_transition(
+            &mut store,
+            "session_revoke",
+            event.observed_sequence,
+            |store| session::invalidate_on_revocation(store, &mut registry, &mut detached, event),
+        )
+        .map_err(SessionControlError::Session)?;
         let preparations =
             self.invalidate_preparations(&report.invalidated_generations, event.observed_sequence)?;
         Ok((report, preparations))
@@ -679,9 +691,15 @@ impl SessionControl {
                 updates,
                 response,
             } => {
-                let report =
-                    session::invalidate_with_projection(&mut store, &mut registry, &event, updates)
-                        .map_err(|_| HumanOperationError::Refused)?;
+                let report = mcp_transition(
+                    &mut store,
+                    "session_revoke",
+                    event.observed_sequence,
+                    |store| {
+                        session::invalidate_with_projection(store, &mut registry, &event, updates)
+                    },
+                )
+                .map_err(|_| HumanOperationError::Refused)?;
                 drop(store);
                 drop(registry);
                 self.invalidate_preparations(
@@ -719,8 +737,10 @@ impl SessionControl {
             .store
             .lock()
             .map_err(|_| SessionControlError::Unavailable)?;
-        session::close(&mut store, &mut registry, &tenant, target)
-            .map_err(SessionControlError::Session)?;
+        mcp_transition(&mut store, "session_close", current_sequence, |store| {
+            session::close(store, &mut registry, &tenant, target)
+        })
+        .map_err(SessionControlError::Session)?;
         self.invalidate_preparations(
             &[(session::SessionRef::new(tenant, target), generation)],
             current_sequence,
@@ -784,6 +804,11 @@ impl SessionControl {
             .cloned()
             .ok_or(SessionControlError::Session(SessionError::NotFound))?;
         let (_, replacement_token) = replacement_bearer(&record, record.request.token_id)?;
+        let transition_kind = if narrowed.is_some() {
+            "session_narrow"
+        } else {
+            "session_refresh"
+        };
         let (scopes, permitted_activity_types) = narrowed.unwrap_or_else(|| {
             (
                 record.request.scopes.clone(),
@@ -794,15 +819,17 @@ impl SessionControl {
             .store
             .lock()
             .map_err(|_| SessionControlError::Unavailable)?;
-        let token = session::restrict_scope(
-            &mut store,
-            &mut registry,
-            &tenant,
-            target,
-            replacement_token,
-            scopes,
-            permitted_activity_types,
-        )
+        let token = mcp_transition(&mut store, transition_kind, current_sequence, |store| {
+            session::restrict_scope(
+                store,
+                &mut registry,
+                &tenant,
+                target,
+                replacement_token,
+                scopes,
+                permitted_activity_types,
+            )
+        })
         .map_err(SessionControlError::Session)?;
         let preparations = self.invalidate_preparations(
             &[(session::SessionRef::new(tenant, target), generation)],
@@ -1121,6 +1148,389 @@ pub struct OperationPermit {
 }
 
 impl OperationPermit {
+    pub fn mcp_begin(
+        &self,
+        control: &SessionControl,
+        identity: McpInvocationIdentity,
+    ) -> Result<McpInvocationStart, McpInvocationError> {
+        if identity.idempotency_key == [0; 32]
+            || identity.request_digest == [0; 32]
+            || identity.tool_name.is_empty()
+            || identity.tool_name.len() > 255
+        {
+            return Err(McpInvocationError::Conflict);
+        }
+        let registry = control
+            .registry
+            .read()
+            .map_err(|_| McpInvocationError::Unavailable)?;
+        self.resolve(control, &registry)
+            .map_err(McpInvocationError::Control)?;
+        let mut store = control
+            .store
+            .lock()
+            .map_err(|_| McpInvocationError::Unavailable)?;
+        let current_generation = mcp_current_generation(self, &registry, &store)?;
+        let handle = McpInvocationHandle {
+            tenant: self.principal.tenant.clone(),
+            actor: self.principal.agent.as_bytes().to_vec(),
+            session: self.principal.session_id.0,
+            generation: self.token.generation(),
+            identity,
+        };
+        let key = handle.store_key()?;
+        let legacy_key = TenantKey::new(
+            handle.tenant.clone(),
+            ObjectKind::Idempotency,
+            [b"mcp-invocation-v1/".as_slice(), &identity.idempotency_key].concat(),
+        )
+        .map_err(|_| McpInvocationError::Unavailable)?;
+        if store.get(&legacy_key).is_some() {
+            return Err(McpInvocationError::Conflict);
+        }
+        if let Some(value) = store.get(&key) {
+            let record = McpInvocationRecord::decode(value.bytes())?;
+            record.matches(&handle)?;
+            return Ok(match record.phase {
+                McpInvocationPhase::Settled => McpInvocationStart::Settled(
+                    handle,
+                    record.response.ok_or(McpInvocationError::Corrupt)?,
+                ),
+                _ => McpInvocationStart::Unknown(handle),
+            });
+        }
+        let mut record = McpInvocationRecord {
+            schema: "layerx.mcp.invocation.v1".to_owned(),
+            tool_name: Some(identity.tool_name.to_owned()),
+            native_preparation: None,
+            reconciled_receipt: None,
+            tenant: handle.tenant.as_str().to_owned(),
+            actor: handle.actor.clone(),
+            session: handle.session,
+            generation: handle.generation,
+            idempotency_key: handle.identity.idempotency_key,
+            request_digest: handle.identity.request_digest,
+            core_sequence: self.request.core_sequence,
+            phase: McpInvocationPhase::Begun,
+            response: None,
+            events: Vec::new(),
+        };
+        mcp_persist_event(
+            &mut store,
+            &handle,
+            &mut record,
+            "begin",
+            current_generation,
+            self.request.core_sequence,
+        )?;
+        Ok(McpInvocationStart::Started(handle))
+    }
+
+    pub fn mcp_start_effect(
+        &self,
+        control: &SessionControl,
+        handle: &McpInvocationHandle,
+    ) -> Result<(), McpInvocationError> {
+        let registry = control
+            .registry
+            .read()
+            .map_err(|_| McpInvocationError::Unavailable)?;
+        let authorization = self.resolve(control, &registry);
+        mcp_match_permit(self, handle)?;
+        let mut store = control
+            .store
+            .lock()
+            .map_err(|_| McpInvocationError::Unavailable)?;
+        let mut record = mcp_load(&store, handle)?;
+        let generation = mcp_generation_readback(self, &registry, &store)?;
+        if let Err(error) = authorization {
+            mcp_persist_event(
+                &mut store,
+                handle,
+                &mut record,
+                "effect_refused",
+                generation,
+                self.request.core_sequence,
+            )?;
+            return Err(McpInvocationError::Control(error));
+        }
+        mcp_current_generation(self, &registry, &store)?;
+        if record.phase != McpInvocationPhase::Begun {
+            return Err(McpInvocationError::Conflict);
+        }
+        record.phase = McpInvocationPhase::EffectStarted;
+        mcp_persist_event(
+            &mut store,
+            handle,
+            &mut record,
+            "effect_start",
+            generation,
+            self.request.core_sequence,
+        )
+    }
+
+    pub fn mcp_settle_effect(
+        &self,
+        control: &SessionControl,
+        handle: &McpInvocationHandle,
+        response: Option<&[u8]>,
+    ) -> Result<(), McpInvocationError> {
+        let registry = control
+            .registry
+            .read()
+            .map_err(|_| McpInvocationError::Unavailable)?;
+        mcp_match_permit(self, handle)?;
+        let mut store = control
+            .store
+            .lock()
+            .map_err(|_| McpInvocationError::Unavailable)?;
+        let mut record = mcp_load(&store, handle)?;
+        let generation = mcp_generation_readback(self, &registry, &store)?;
+        if record.phase != McpInvocationPhase::EffectStarted {
+            return Err(McpInvocationError::Conflict);
+        }
+        let kind = match response {
+            Some(bytes) => {
+                if bytes.len() > MCP_INVOCATION_MAX_RESPONSE {
+                    return Err(McpInvocationError::Unavailable);
+                }
+                record.response = Some(bytes.to_vec());
+                record.phase = McpInvocationPhase::Settled;
+                "effect_settled"
+            }
+            None => "effect_unknown",
+        };
+        mcp_persist_event(
+            &mut store,
+            handle,
+            &mut record,
+            kind,
+            generation,
+            self.request.core_sequence,
+        )
+    }
+
+    pub fn mcp_effect<E>(
+        &self,
+        control: &SessionControl,
+        handle: &McpInvocationHandle,
+        effect: impl FnOnce() -> Result<Vec<u8>, E>,
+    ) -> Result<Result<Vec<u8>, E>, McpInvocationError> {
+        self.mcp_start_effect(control, handle)?;
+        let response = effect();
+        self.mcp_settle_effect(control, handle, response.as_ref().ok().map(Vec::as_slice))?;
+        Ok(response)
+    }
+
+    pub fn mcp_bind_preparation(
+        &self,
+        control: &SessionControl,
+        handle: &McpInvocationHandle,
+        preparation_id: [u8; 32],
+    ) -> Result<(), McpInvocationError> {
+        let registry = control
+            .registry
+            .read()
+            .map_err(|_| McpInvocationError::Unavailable)?;
+        mcp_match_permit(self, handle)?;
+        let mut store = control
+            .store
+            .lock()
+            .map_err(|_| McpInvocationError::Unavailable)?;
+        let generation = mcp_generation_readback(self, &registry, &store)?;
+        let prepared = mcp_native_preparation(&store, handle, preparation_id)?;
+        let native_key: [u8; 32] = prepared
+            .extensions
+            .get(&EXTENSION_IDEMPOTENCY)
+            .ok_or(McpInvocationError::Corrupt)?
+            .as_slice()
+            .try_into()
+            .map_err(|_| McpInvocationError::Corrupt)?;
+        if native_key != handle.identity.idempotency_key {
+            return Err(McpInvocationError::Conflict);
+        }
+        let association = McpNativeAssociation {
+            preparation_id,
+            idempotency_key: native_key,
+        };
+        let mut record = mcp_load(&store, handle)?;
+        if let Some(existing) = &record.native_preparation {
+            return if existing == &association {
+                Ok(())
+            } else {
+                Err(McpInvocationError::Conflict)
+            };
+        }
+        if record.phase == McpInvocationPhase::Settled {
+            return Err(McpInvocationError::Conflict);
+        }
+        record.native_preparation = Some(association);
+        mcp_persist_event(
+            &mut store,
+            handle,
+            &mut record,
+            "native_association",
+            generation,
+            self.request.core_sequence,
+        )
+    }
+
+    pub fn mcp_reconcile_effect(
+        &self,
+        control: &SessionControl,
+        handle: &McpInvocationHandle,
+        response: &[u8],
+    ) -> Result<bool, McpInvocationError> {
+        use crate::receipt::{ReceiptLookupKey, ReceiptStoreError};
+        use sha2::{Digest, Sha256};
+        let registry = control
+            .registry
+            .read()
+            .map_err(|_| McpInvocationError::Unavailable)?;
+        mcp_match_permit(self, handle)?;
+        let mut store = control
+            .store
+            .lock()
+            .map_err(|_| McpInvocationError::Unavailable)?;
+        let generation = mcp_generation_readback(self, &registry, &store)?;
+        let mut record = mcp_load(&store, handle)?;
+        if record.phase != McpInvocationPhase::EffectStarted {
+            return Ok(false);
+        }
+        let Some(native) = &record.native_preparation else {
+            return Ok(false);
+        };
+        let prepared = mcp_native_preparation(&store, handle, native.preparation_id)?;
+        if !matches!(
+            prepared.state,
+            LifecycleState::Executed | LifecycleState::Failed
+        ) {
+            return Ok(false);
+        }
+        let receipt = match crate::receipt::serve(
+            &store,
+            handle.tenant.clone(),
+            ReceiptLookupKey::Idempotency(native.idempotency_key),
+        ) {
+            Ok(receipt) => receipt,
+            Err(ReceiptStoreError::Missing) => return Ok(false),
+            Err(_) => return Err(McpInvocationError::Corrupt),
+        };
+        let evidence =
+            crate::receipt::serve_evidence(&store, handle.tenant.clone(), native.idempotency_key)
+                .map_err(|_| McpInvocationError::Corrupt)?;
+        if evidence.is_none()
+            || receipt.metadata.verification_level
+                < layerx_types::verify::VerificationLevel::STATE_PROVEN
+            || Some(receipt.metadata.activity_id) != prepared.activity_id
+            || (prepared.state == LifecycleState::Executed)
+                != (receipt.metadata.result.code.raw() == 0)
+        {
+            return Ok(false);
+        }
+        if response.len() > MCP_INVOCATION_MAX_RESPONSE {
+            return Err(McpInvocationError::Unavailable);
+        }
+        record.reconciled_receipt = Some(McpReceiptAssociation {
+            activity_id: receipt.metadata.activity_id,
+            receipt_digest: Sha256::digest(&receipt.canonical_bytes).into(),
+            receipt_bytes: receipt.canonical_bytes,
+            global_sequence: receipt.metadata.global_sequence,
+            verification_rank: receipt.metadata.verification_level.wire_rank(),
+            result_code: receipt.metadata.result.code.raw(),
+        });
+        record.response = Some(response.to_vec());
+        record.phase = McpInvocationPhase::Settled;
+        mcp_persist_event(
+            &mut store,
+            handle,
+            &mut record,
+            "native_receipt_reconciled",
+            generation,
+            self.request.core_sequence,
+        )?;
+        Ok(true)
+    }
+
+    pub fn mcp_release<T>(
+        &self,
+        control: &SessionControl,
+        handle: &McpInvocationHandle,
+        writer: impl FnOnce() -> std::io::Result<T>,
+    ) -> Result<std::io::Result<T>, McpInvocationError> {
+        self.mcp_release_current(control, handle, self.request.core_sequence, writer)
+    }
+
+    pub fn mcp_release_current<T>(
+        &self,
+        control: &SessionControl,
+        handle: &McpInvocationHandle,
+        current_core_sequence: u64,
+        writer: impl FnOnce() -> std::io::Result<T>,
+    ) -> Result<std::io::Result<T>, McpInvocationError> {
+        if current_core_sequence < self.request.core_sequence {
+            return Err(McpInvocationError::Conflict);
+        }
+        let registry = control
+            .registry
+            .read()
+            .map_err(|_| McpInvocationError::Unavailable)?;
+        let authorization = self.resolve_at(control, &registry, current_core_sequence);
+        mcp_match_permit(self, handle)?;
+        let mut store = control
+            .store
+            .lock()
+            .map_err(|_| McpInvocationError::Unavailable)?;
+        if let Err(error) = authorization {
+            let generation = mcp_generation_readback(self, &registry, &store)?;
+            let mut record = mcp_load(&store, handle)?;
+            mcp_persist_event(
+                &mut store,
+                handle,
+                &mut record,
+                "release_refused",
+                generation,
+                current_core_sequence,
+            )?;
+            return Err(McpInvocationError::Control(error));
+        }
+        let generation = mcp_current_generation(self, &registry, &store)?;
+        let mut record = mcp_load(&store, handle)?;
+        if record.phase != McpInvocationPhase::Settled {
+            return Err(McpInvocationError::Conflict);
+        }
+        mcp_persist_event(
+            &mut store,
+            handle,
+            &mut record,
+            "release_generation_readback",
+            generation,
+            current_core_sequence,
+        )?;
+        drop(store);
+        let result = writer();
+        let mut store = control
+            .store
+            .lock()
+            .map_err(|_| McpInvocationError::Unavailable)?;
+        let mut record = mcp_load(&store, handle)?;
+        let generation = mcp_current_generation(self, &registry, &store)?;
+        let kind = if result.is_ok() {
+            "response_write_flush_ok"
+        } else {
+            "response_write_flush_failed"
+        };
+        mcp_persist_event(
+            &mut store,
+            handle,
+            &mut record,
+            kind,
+            generation,
+            current_core_sequence,
+        )?;
+        Ok(result)
+    }
+
     pub(crate) fn with_native_preparation<T>(
         &self,
         control: &SessionControl,
@@ -1354,33 +1764,49 @@ impl OperationPermit {
     }
 
     pub(crate) fn admit_write_with_companions<'a>(
-        &self,control:&SessionControl,admission:WriteAdmission<'a>,companion:AdmissionCompanionBuilder<'a>,
-    )->Result<DurablePreparation,SessionControlError>{
+        &self,
+        control: &SessionControl,
+        admission: WriteAdmission<'a>,
+        companion: AdmissionCompanionBuilder<'a>,
+    ) -> Result<DurablePreparation, SessionControlError> {
         self.require_operation(Operation::Prepare)?;
-        if !matches!(admission.stage,AdmissionStage::Prepare{..}) {return Err(SessionControlError::Unavailable)};
-        self.admit_write_authorized_with_companions(control,admission,Some(companion),None)
+        if !matches!(admission.stage, AdmissionStage::Prepare { .. }) {
+            return Err(SessionControlError::Unavailable);
+        };
+        self.admit_write_authorized_with_companions(control, admission, Some(companion), None)
     }
     pub(crate) fn admit_write_with_companions_and_publish<'a>(
-        &self, control: &SessionControl, admission: WriteAdmission<'a>,
-        companion: AdmissionCompanionBuilder<'a>, publisher: AdmissionPublisher<'a>,
+        &self,
+        control: &SessionControl,
+        admission: WriteAdmission<'a>,
+        companion: AdmissionCompanionBuilder<'a>,
+        publisher: AdmissionPublisher<'a>,
     ) -> Result<DurablePreparation, SessionControlError> {
         self.require_operation(Operation::Prepare)?;
         if !matches!(admission.stage, AdmissionStage::Prepare { .. }) {
             return Err(SessionControlError::Unavailable);
         }
-        self.admit_write_authorized_with_companions(control, admission, Some(companion), Some(publisher))
+        self.admit_write_authorized_with_companions(
+            control,
+            admission,
+            Some(companion),
+            Some(publisher),
+        )
     }
     fn admit_write_authorized(
         &self,
         control: &SessionControl,
         admission: WriteAdmission<'_>,
     ) -> Result<DurablePreparation, SessionControlError> {
-        self.admit_write_authorized_with_companions(control,admission,None,None)
+        self.admit_write_authorized_with_companions(control, admission, None, None)
     }
     fn admit_write_authorized_with_companions<'a>(
-        &self,control:&SessionControl,admission:WriteAdmission<'a>,companion:Option<AdmissionCompanionBuilder<'a>>,
+        &self,
+        control: &SessionControl,
+        admission: WriteAdmission<'a>,
+        companion: Option<AdmissionCompanionBuilder<'a>>,
         publisher: Option<AdmissionPublisher<'a>>,
-    )->Result<DurablePreparation,SessionControlError>{
+    ) -> Result<DurablePreparation, SessionControlError> {
         let lifecycle = SessionControlError::Lifecycle;
         let registry = control
             .registry
@@ -1414,14 +1840,22 @@ impl OperationPermit {
             if plan.updates.is_empty() && !plan.companions.is_empty() {
                 return Err(SessionControlError::Unavailable);
             }
-            let undo_updates = plan.updates.iter().map(|(key, _)| {
-                let original = store.get(key).ok_or(SessionControlError::Unavailable)?;
-                if original.class() != crate::store::StorageClass::LocalOnly {
-                    return Err(SessionControlError::Unavailable);
-                }
-                Ok((key.clone(), original.bytes().to_vec()))
-            }).collect::<Result<Vec<_>, SessionControlError>>()?;
-            let mut companion_keys = plan.companions.iter().map(|(key, _)| key.clone()).collect::<Vec<_>>();
+            let undo_updates = plan
+                .updates
+                .iter()
+                .map(|(key, _)| {
+                    let original = store.get(key).ok_or(SessionControlError::Unavailable)?;
+                    if original.class() != crate::store::StorageClass::LocalOnly {
+                        return Err(SessionControlError::Unavailable);
+                    }
+                    Ok((key.clone(), original.bytes().to_vec()))
+                })
+                .collect::<Result<Vec<_>, SessionControlError>>()?;
+            let mut companion_keys = plan
+                .companions
+                .iter()
+                .map(|(key, _)| key.clone())
+                .collect::<Vec<_>>();
             let idempotency_key = prepared.audit.idempotency_key;
             if live_preparation_for_key(&store, &tenant, idempotency_key)?.is_some() {
                 return Err(lifecycle(LifecycleError::Duplicate));
@@ -1474,16 +1908,24 @@ impl OperationPermit {
                 .map_err(|refusal| lifecycle(LifecycleError::Reservation(refusal)))
             };
             let extra = match companion {
-                Some(builder) => match builder(&store,&record) {Ok(value)=>Some(value),Err(error)=>{release_holds()?;return Err(error)}},
-                None=>None,
+                Some(builder) => match builder(&store, &record) {
+                    Ok(value) => Some(value),
+                    Err(error) => {
+                        release_holds()?;
+                        return Err(error);
+                    }
+                },
+                None => None,
             };
             if let Some(extra) = &extra {
                 companion_keys.extend(extra.iter().map(|(key, _)| key.clone()));
             }
             let published = record.encode().map_err(lifecycle).and_then(|bytes| {
-                let result = if let Some(extra)=extra {
-                    let mut inserts=plan.companions;inserts.extend(extra);inserts.push((key.clone(),bytes));
-                    store.apply_program_approval_batch(plan.updates,inserts,Vec::new())
+                let result = if let Some(extra) = extra {
+                    let mut inserts = plan.companions;
+                    inserts.extend(extra);
+                    inserts.push((key.clone(), bytes));
+                    store.apply_program_approval_batch(plan.updates, inserts, Vec::new())
                 } else if plan.updates.is_empty() {
                     store.put_local(key.clone(), bytes)
                 } else {
@@ -1503,16 +1945,34 @@ impl OperationPermit {
                 vec![preparation_id],
                 authorization,
             ) {
-                rollback_preparation_admission(&mut store, &control.budgets, &record,
-                    undo_updates, companion_keys, admission.current_sequence)?;
+                rollback_preparation_admission(
+                    &mut store,
+                    &control.budgets,
+                    &record,
+                    undo_updates,
+                    companion_keys,
+                    admission.current_sequence,
+                )?;
                 return Err(lifecycle(error));
             }
             if let Some(publish) = publisher {
                 if let Err(error) = publish(&store, &record) {
-                    rollback_preparation_admission(&mut store, &control.budgets, &record,
-                        undo_updates, companion_keys, admission.current_sequence)?;
-                    control.lifecycle.invalidate_preparations(&BTreeSet::from([preparation_id]),
-                        admission.current_sequence, &control.budgets).map_err(lifecycle)?;
+                    rollback_preparation_admission(
+                        &mut store,
+                        &control.budgets,
+                        &record,
+                        undo_updates,
+                        companion_keys,
+                        admission.current_sequence,
+                    )?;
+                    control
+                        .lifecycle
+                        .invalidate_preparations(
+                            &BTreeSet::from([preparation_id]),
+                            admission.current_sequence,
+                            &control.budgets,
+                        )
+                        .map_err(lifecycle)?;
                     return Err(error);
                 }
             }
@@ -2079,6 +2539,15 @@ impl OperationPermit {
         control: &SessionControl,
         registry: &SessionRegistry,
     ) -> Result<ResolvedPrincipal, SessionControlError> {
+        self.resolve_at(control, registry, self.request.core_sequence)
+    }
+
+    fn resolve_at(
+        &self,
+        control: &SessionControl,
+        registry: &SessionRegistry,
+        core_sequence: u64,
+    ) -> Result<ResolvedPrincipal, SessionControlError> {
         if self.stop.reason() == Some(Termination::SessionRevoked) {
             return Err(SessionControlError::Authorization(
                 AuthorizationError::Revoked,
@@ -2088,7 +2557,9 @@ impl OperationPermit {
             .observability
             .lock()
             .map_err(|_| SessionControlError::Unavailable)?;
-        tenant::resolve(&self.token, registry, &self.request, &mut observability)
+        let mut request = self.request.clone();
+        request.core_sequence = core_sequence;
+        tenant::resolve(&self.token, registry, &request, &mut observability)
             .map_err(SessionControlError::Authorization)
     }
 
@@ -2165,11 +2636,16 @@ pub struct AdmissionPlan {
 }
 
 /// Computes an [`AdmissionPlan`] against the locked store.
-pub(crate) type AdmissionCompanionBuilder<'a> = Box<dyn FnOnce(&Store,&DurablePreparation)
-    ->Result<Vec<(TenantKey,Vec<u8>)>,SessionControlError>+'a>;
+pub(crate) type AdmissionCompanionBuilder<'a> = Box<
+    dyn FnOnce(
+            &Store,
+            &DurablePreparation,
+        ) -> Result<Vec<(TenantKey, Vec<u8>)>, SessionControlError>
+        + 'a,
+>;
 
-pub(crate) type AdmissionPublisher<'a> = Box<dyn FnOnce(&Store, &DurablePreparation)
-    -> Result<(), SessionControlError> + 'a>;
+pub(crate) type AdmissionPublisher<'a> =
+    Box<dyn FnOnce(&Store, &DurablePreparation) -> Result<(), SessionControlError> + 'a>;
 
 pub(crate) fn rollback_preparation_admission(
     store: &mut Store,
@@ -2180,12 +2656,14 @@ pub(crate) fn rollback_preparation_admission(
     current_sequence: u64,
 ) -> Result<(), SessionControlError> {
     let lifecycle = SessionControlError::Lifecycle;
-    if record.state != LifecycleState::Prepared || record.activity_id.is_some()
+    if record.state != LifecycleState::Prepared
+        || record.activity_id.is_some()
         || record.extensions.contains_key(&6)
     {
         return Err(SessionControlError::Unavailable);
     }
-    let key = DurablePreparation::store_key(&record.tenant, record.preparation_id).map_err(lifecycle)?;
+    let key =
+        DurablePreparation::store_key(&record.tenant, record.preparation_id).map_err(lifecycle)?;
     let persisted = store.get(&key).ok_or(SessionControlError::Unavailable)?;
     let expected = record.encode().map_err(lifecycle)?;
     if persisted.class() != crate::store::StorageClass::LocalOnly
@@ -2196,10 +2674,16 @@ pub(crate) fn rollback_preparation_admission(
     let mut failed = record.clone();
     failed.state = LifecycleState::Failed;
     undo_updates.push((key, failed.encode().map_err(lifecycle)?));
-    store.apply_program_approval_batch(undo_updates, Vec::new(), companion_keys)
+    store
+        .apply_program_approval_batch(undo_updates, Vec::new(), companion_keys)
         .map_err(|_| SessionControlError::Unavailable)?;
-    budget::release(budgets, record.preparation_id, ReleaseKind::Failed, current_sequence)
-        .map_err(|refusal| lifecycle(LifecycleError::Reservation(refusal)))?;
+    budget::release(
+        budgets,
+        record.preparation_id,
+        ReleaseKind::Failed,
+        current_sequence,
+    )
+    .map_err(|refusal| lifecycle(LifecycleError::Reservation(refusal)))?;
     Ok(())
 }
 
@@ -3156,5 +3640,601 @@ mod tests {
         assert_eq!(control.budgets.held_reservations(), Ok(2));
         assert_eq!(control.budgets.held_exposure(second), Ok(5));
         let _ = std::fs::remove_dir_all(root);
+    }
+}
+
+const MCP_INVOCATION_MAX_RESPONSE: usize = 4 * 1024 * 1024;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct McpInvocationIdentity {
+    pub tool_name: &'static str,
+    pub idempotency_key: [u8; 32],
+    pub request_digest: [u8; 32],
+}
+
+#[derive(Clone, Debug)]
+pub struct McpInvocationHandle {
+    tenant: TenantId,
+    actor: Vec<u8>,
+    session: [u8; 32],
+    generation: u64,
+    identity: McpInvocationIdentity,
+}
+
+impl McpInvocationHandle {
+    fn store_key(&self) -> Result<TenantKey, McpInvocationError> {
+        use sha2::{Digest, Sha256};
+        let mut input = Vec::new();
+        input.extend_from_slice(&(self.identity.tool_name.len() as u64).to_be_bytes());
+        input.extend_from_slice(self.identity.tool_name.as_bytes());
+        input.extend_from_slice(&self.identity.idempotency_key);
+        let digest: [u8; 32] = Sha256::digest(&input).into();
+        let mut id = b"mcp-invocation-v1/".to_vec();
+        id.extend_from_slice(&digest);
+        TenantKey::new(self.tenant.clone(), ObjectKind::Idempotency, id)
+            .map_err(|_| McpInvocationError::Unavailable)
+    }
+}
+
+pub enum McpInvocationStart {
+    Started(McpInvocationHandle),
+    Settled(McpInvocationHandle, Vec<u8>),
+    Unknown(McpInvocationHandle),
+}
+
+#[derive(Debug)]
+pub enum McpInvocationError {
+    Control(SessionControlError),
+    Conflict,
+    Corrupt,
+    Unavailable,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum McpInvocationPhase {
+    Begun,
+    EffectStarted,
+    Settled,
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct McpInvocationEvent {
+    order: u64,
+    kind: String,
+    current_generation: u64,
+    core_sequence: u64,
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct McpInvocationRecord {
+    schema: String,
+    #[serde(default)]
+    tool_name: Option<String>,
+    #[serde(default)]
+    native_preparation: Option<McpNativeAssociation>,
+    #[serde(default)]
+    reconciled_receipt: Option<McpReceiptAssociation>,
+    tenant: String,
+    actor: Vec<u8>,
+    session: [u8; 32],
+    generation: u64,
+    idempotency_key: [u8; 32],
+    request_digest: [u8; 32],
+    core_sequence: u64,
+    phase: McpInvocationPhase,
+    response: Option<Vec<u8>>,
+    events: Vec<McpInvocationEvent>,
+}
+
+impl McpInvocationRecord {
+    fn decode(bytes: &[u8]) -> Result<Self, McpInvocationError> {
+        use sha2::{Digest, Sha256};
+        let record: Self =
+            serde_json::from_slice(bytes).map_err(|_| McpInvocationError::Corrupt)?;
+        if record.schema != "layerx.mcp.invocation.v1"
+            || record.generation == 0
+            || record.actor.is_empty()
+            || record.actor.len() > 4096
+            || record.events.is_empty()
+            || record.session == [0; 32]
+            || record.idempotency_key == [0; 32]
+            || record.request_digest == [0; 32]
+            || TenantId::new(record.tenant.clone()).is_err()
+            || record
+                .tool_name
+                .as_ref()
+                .is_some_and(|name| name.is_empty() || name.len() > 255)
+            || record.native_preparation.as_ref().is_some_and(|native| {
+                native.preparation_id == [0; 32] || native.idempotency_key != record.idempotency_key
+            })
+            || record.reconciled_receipt.as_ref().is_some_and(|receipt| {
+                record.native_preparation.is_none()
+                    || record.phase != McpInvocationPhase::Settled
+                    || receipt.activity_id == [0; 32]
+                    || receipt.receipt_bytes.is_empty()
+                    || receipt.receipt_bytes.len() > MCP_INVOCATION_MAX_RESPONSE
+                    || receipt.verification_rank < 3
+                    || receipt.verification_rank > 5
+                    || <[u8; 32]>::from(Sha256::digest(&receipt.receipt_bytes))
+                        != receipt.receipt_digest
+            })
+            || record.events.iter().any(|event| {
+                event.order == 0
+                    || event.current_generation == 0
+                    || !matches!(
+                        event.kind.as_str(),
+                        "begin"
+                            | "effect_start"
+                            | "effect_settled"
+                            | "effect_unknown"
+                            | "effect_refused"
+                            | "release_refused"
+                            | "release_generation_readback"
+                            | "response_write_flush_ok"
+                            | "response_write_flush_failed"
+                            | "session_close"
+                            | "session_revoke"
+                            | "session_narrow"
+                            | "session_refresh"
+                            | "native_association"
+                            | "native_transmission_started"
+                            | "native_receipt_reconciled"
+                    )
+            })
+            || (record.phase == McpInvocationPhase::Settled) != record.response.is_some()
+            || record
+                .response
+                .as_ref()
+                .is_some_and(|bytes| bytes.len() > MCP_INVOCATION_MAX_RESPONSE)
+            || record
+                .events
+                .windows(2)
+                .any(|pair| pair[0].order >= pair[1].order)
+        {
+            return Err(McpInvocationError::Corrupt);
+        }
+        Ok(record)
+    }
+
+    fn matches(&self, handle: &McpInvocationHandle) -> Result<(), McpInvocationError> {
+        if self.tool_name.as_deref() != Some(handle.identity.tool_name)
+            || self.tenant != handle.tenant.as_str()
+            || self.actor != handle.actor
+            || self.session != handle.session
+            || self.generation != handle.generation
+            || self.idempotency_key != handle.identity.idempotency_key
+            || self.request_digest != handle.identity.request_digest
+        {
+            return Err(McpInvocationError::Conflict);
+        }
+        Ok(())
+    }
+}
+
+fn mcp_match_permit(
+    permit: &OperationPermit,
+    handle: &McpInvocationHandle,
+) -> Result<(), McpInvocationError> {
+    if permit.principal.tenant != handle.tenant
+        || permit.principal.agent.as_bytes() != handle.actor.as_slice()
+        || permit.principal.session_id.0 != handle.session
+        || permit.token.generation() != handle.generation
+    {
+        return Err(McpInvocationError::Conflict);
+    }
+    Ok(())
+}
+
+fn mcp_generation_readback(
+    permit: &OperationPermit,
+    registry: &SessionRegistry,
+    store: &Store,
+) -> Result<u64, McpInvocationError> {
+    let tenant = &permit.principal.tenant;
+    let session = permit.principal.session_id;
+    let live = registry
+        .get(tenant, session)
+        .ok_or(McpInvocationError::Corrupt)?;
+    let mut durable = SessionRegistry::default();
+    durable
+        .restore_tenant(store, tenant)
+        .map_err(|error| McpInvocationError::Control(SessionControlError::Session(error)))?;
+    let restored = durable
+        .get(tenant, session)
+        .ok_or(McpInvocationError::Corrupt)?;
+    if live.generation != restored.generation
+        || live.open != restored.open
+        || restored.request.agent != permit.principal.agent
+    {
+        return Err(McpInvocationError::Corrupt);
+    }
+    Ok(restored.generation)
+}
+
+fn mcp_current_generation(
+    permit: &OperationPermit,
+    registry: &SessionRegistry,
+    store: &Store,
+) -> Result<u64, McpInvocationError> {
+    let generation = mcp_generation_readback(permit, registry, store)?;
+    let live = registry
+        .get(&permit.principal.tenant, permit.principal.session_id)
+        .ok_or(McpInvocationError::Corrupt)?;
+    if !live.open || generation != permit.token.generation() {
+        return Err(McpInvocationError::Conflict);
+    }
+    Ok(generation)
+}
+
+fn mcp_load(
+    store: &Store,
+    handle: &McpInvocationHandle,
+) -> Result<McpInvocationRecord, McpInvocationError> {
+    let key = handle.store_key()?;
+    let stored = store.get(&key).ok_or(McpInvocationError::Corrupt)?;
+    if stored.class() != crate::store::StorageClass::LocalOnly {
+        return Err(McpInvocationError::Corrupt);
+    }
+    let record = McpInvocationRecord::decode(stored.bytes())?;
+    record.matches(handle)?;
+    Ok(record)
+}
+
+fn mcp_persist_event(
+    store: &mut Store,
+    handle: &McpInvocationHandle,
+    record: &mut McpInvocationRecord,
+    kind: &str,
+    current_generation: u64,
+    core_sequence: u64,
+) -> Result<(), McpInvocationError> {
+    let counter_key = TenantKey::new(
+        handle.tenant.clone(),
+        ObjectKind::Configuration,
+        b"mcp-order-v1".to_vec(),
+    )
+    .map_err(|_| McpInvocationError::Unavailable)?;
+    let prior = match store.get(&counter_key) {
+        Some(value) => u64::from_be_bytes(
+            value
+                .bytes()
+                .try_into()
+                .map_err(|_| McpInvocationError::Corrupt)?,
+        ),
+        None => 0,
+    };
+    let order = prior
+        .checked_add(1)
+        .ok_or(McpInvocationError::Unavailable)?;
+    record.events.push(McpInvocationEvent {
+        order,
+        kind: kind.to_owned(),
+        current_generation,
+        core_sequence,
+    });
+    let encoded = serde_json::to_vec(record).map_err(|_| McpInvocationError::Unavailable)?;
+    store
+        .commit_local_records(vec![
+            (handle.store_key()?, encoded),
+            (counter_key, order.to_be_bytes().to_vec()),
+        ])
+        .map_err(|_| McpInvocationError::Unavailable)
+}
+
+pub fn mcp_store_evidence_for_tool(
+    store: &Store,
+    tenant: &TenantId,
+    idempotency_key: [u8; 32],
+    tool_name: Option<&str>,
+) -> Result<Option<serde_json::Value>, McpInvocationError> {
+    let mut found = None;
+    for id in store.list_object_ids(tenant, ObjectKind::Idempotency) {
+        if !id.starts_with(b"mcp-invocation-v1/") {
+            continue;
+        }
+        let key = TenantKey::new(tenant.clone(), ObjectKind::Idempotency, id)
+            .map_err(|_| McpInvocationError::Unavailable)?;
+        let value = store.get(&key).ok_or(McpInvocationError::Corrupt)?;
+        if value.class() != crate::store::StorageClass::LocalOnly {
+            return Err(McpInvocationError::Corrupt);
+        }
+        let record = McpInvocationRecord::decode(value.bytes())?;
+        if record.tenant != tenant.as_str() {
+            return Err(McpInvocationError::Corrupt);
+        }
+        if record.idempotency_key != idempotency_key
+            || tool_name.is_some_and(|tool| record.tool_name.as_deref() != Some(tool))
+        {
+            continue;
+        }
+        if found.is_some() {
+            return Err(McpInvocationError::Conflict);
+        }
+        found = Some(serde_json::to_value(record).map_err(|_| McpInvocationError::Unavailable)?);
+    }
+    Ok(found)
+}
+
+pub fn mcp_store_evidence(
+    store: &Store,
+    tenant: &TenantId,
+    idempotency_key: [u8; 32],
+) -> Result<Option<serde_json::Value>, McpInvocationError> {
+    mcp_store_evidence_for_tool(store, tenant, idempotency_key, None)
+}
+
+impl SessionControl {
+    pub fn mcp_evidence(
+        &self,
+        tenant: &TenantId,
+        idempotency_key: [u8; 32],
+    ) -> Result<Option<serde_json::Value>, McpInvocationError> {
+        let store = self
+            .store
+            .lock()
+            .map_err(|_| McpInvocationError::Unavailable)?;
+        mcp_store_evidence(&store, tenant, idempotency_key)
+    }
+}
+
+fn mcp_transition<T>(
+    store: &mut Store,
+    kind: &'static str,
+    sequence: u64,
+    transition: impl FnOnce(&mut Store) -> Result<T, SessionError>,
+) -> Result<T, SessionError> {
+    store
+        .begin_mcp_transition(kind, sequence)
+        .map_err(SessionError::Store)?;
+    let result = transition(store);
+    store.end_mcp_transition();
+    result
+}
+
+pub(crate) fn mcp_transition_updates(
+    previous: &Store,
+    current: &Store,
+    transition: Option<(&str, u64)>,
+) -> Result<Vec<(TenantKey, Vec<u8>)>, crate::store::StoreError> {
+    use crate::store::{StorageClass, StoreError};
+    let corrupt = || StoreError::Corrupt("invalid MCP generation transition");
+    let mut updates = Vec::new();
+    for tenant in previous.tenant_ids_for_kind(ObjectKind::Idempotency) {
+        let ids: Vec<_> = current
+            .list_object_ids(&tenant, ObjectKind::Idempotency)
+            .into_iter()
+            .filter(|id| id.starts_with(b"mcp-invocation-v1/"))
+            .collect();
+        if ids.is_empty() {
+            continue;
+        }
+        let mut old_sessions = SessionRegistry::default();
+        let mut new_sessions = SessionRegistry::default();
+        old_sessions
+            .restore_tenant(previous, &tenant)
+            .map_err(|_| corrupt())?;
+        new_sessions
+            .restore_tenant(current, &tenant)
+            .map_err(|_| corrupt())?;
+        let counter_key = TenantKey::new(
+            tenant.clone(),
+            ObjectKind::Configuration,
+            b"mcp-order-v1".to_vec(),
+        )?;
+        let mut order = match current.get(&counter_key) {
+            Some(value) if value.class() == StorageClass::LocalOnly => {
+                u64::from_be_bytes(value.bytes().try_into().map_err(|_| corrupt())?)
+            }
+            Some(_) => return Err(corrupt()),
+            None => return Err(corrupt()),
+        };
+        let first_order = order;
+        for id in ids {
+            let key = TenantKey::new(tenant.clone(), ObjectKind::Idempotency, id)?;
+            let stored = current.get(&key).ok_or_else(corrupt)?;
+            if stored.class() != StorageClass::LocalOnly {
+                return Err(corrupt());
+            }
+            let mut record = McpInvocationRecord::decode(stored.bytes()).map_err(|_| corrupt())?;
+            let session = SessionId(record.session);
+            let old = old_sessions.get(&tenant, session).ok_or_else(corrupt)?;
+            let new = new_sessions.get(&tenant, session).ok_or_else(corrupt)?;
+            if record.tenant != tenant.as_str()
+                || record.actor != old.request.agent.as_bytes()
+                || old.request.agent != new.request.agent
+            {
+                return Err(corrupt());
+            }
+            let mut events = Vec::new();
+            if let Some((kind, sequence)) = transition {
+                if old.generation != new.generation {
+                    if new.generation <= old.generation {
+                        return Err(corrupt());
+                    }
+                    if record.generation == old.generation {
+                        if !old.open
+                            || (matches!(kind, "session_close" | "session_revoke") && new.open)
+                            || (matches!(kind, "session_narrow" | "session_refresh") && !new.open)
+                            || !new.request.scopes.is_subset(&old.request.scopes)
+                            || !new
+                                .request
+                                .permitted_activity_types
+                                .is_subset(&old.request.permitted_activity_types)
+                        {
+                            return Err(corrupt());
+                        }
+                        events.push((kind, sequence));
+                    }
+                }
+            }
+            if record.phase == McpInvocationPhase::EffectStarted {
+                if let Some(native) = &record.native_preparation {
+                    let outbox_key = TenantKey::new(
+                        tenant.clone(),
+                        ObjectKind::Outbox,
+                        native.idempotency_key.to_vec(),
+                    )?;
+                    let before = previous.get(&outbox_key);
+                    let after = current.get(&outbox_key);
+                    if before.is_some()
+                        && after.is_some()
+                        && before.map(|value| value.bytes()) != after.map(|value| value.bytes())
+                    {
+                        let mut old_outbox = crate::outbox::Outbox::default();
+                        let mut new_outbox = crate::outbox::Outbox::default();
+                        old_outbox
+                            .restore(previous, tenant.clone(), native.idempotency_key)
+                            .map_err(|_| corrupt())?;
+                        new_outbox
+                            .restore(current, tenant.clone(), native.idempotency_key)
+                            .map_err(|_| corrupt())?;
+                        let prior_status = old_outbox
+                            .status(native.idempotency_key)
+                            .ok_or_else(corrupt)?;
+                        let status = new_outbox
+                            .status(native.idempotency_key)
+                            .ok_or_else(corrupt)?;
+                        if prior_status.state == crate::outbox::SubmissionState::Queued
+                            && status.state == crate::outbox::SubmissionState::Submitted
+                        {
+                            let origin = new_outbox
+                                .origin(native.idempotency_key)
+                                .map_err(|_| corrupt())?
+                                .ok_or_else(corrupt)?;
+                            if origin.session.tenant != tenant
+                                || origin.session.session_id != session
+                                || origin.generation != record.generation
+                                || !new.open
+                                || new.generation != record.generation
+                                || record
+                                    .events
+                                    .iter()
+                                    .any(|event| event.kind == "native_transmission_started")
+                            {
+                                return Err(corrupt());
+                            }
+                            events.push(("native_transmission_started", record.core_sequence));
+                        }
+                    }
+                }
+            }
+            if events.is_empty() {
+                continue;
+            }
+            for (kind, core_sequence) in events {
+                order = order.checked_add(1).ok_or(StoreError::SizeOverflow)?;
+                record.events.push(McpInvocationEvent {
+                    order,
+                    kind: kind.to_owned(),
+                    current_generation: new.generation,
+                    core_sequence,
+                });
+            }
+            updates.push((key, serde_json::to_vec(&record).map_err(|_| corrupt())?));
+        }
+        if order != first_order {
+            updates.push((counter_key, order.to_be_bytes().to_vec()));
+        }
+    }
+    Ok(updates)
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct McpNativeAssociation {
+    preparation_id: [u8; 32],
+    idempotency_key: [u8; 32],
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct McpReceiptAssociation {
+    activity_id: [u8; 32],
+    receipt_digest: [u8; 32],
+    receipt_bytes: Vec<u8>,
+    global_sequence: u64,
+    verification_rank: u8,
+    result_code: i32,
+}
+
+fn mcp_native_preparation(
+    store: &Store,
+    handle: &McpInvocationHandle,
+    preparation_id: [u8; 32],
+) -> Result<DurablePreparation, McpInvocationError> {
+    let key = DurablePreparation::store_key(&handle.tenant, preparation_id)
+        .map_err(|_| McpInvocationError::Corrupt)?;
+    let raw = store.get(&key).ok_or(McpInvocationError::Corrupt)?;
+    if raw.class() != crate::store::StorageClass::LocalOnly {
+        return Err(McpInvocationError::Corrupt);
+    }
+    let prepared = DurablePreparation::decode(handle.tenant.clone(), raw.bytes())
+        .map_err(|_| McpInvocationError::Corrupt)?;
+    if prepared.preparation_id != preparation_id
+        || prepared.session_id != handle.session
+        || prepared.generation != handle.generation
+        || !prepared.extensions.contains_key(&6)
+        || (!prepared.extensions.contains_key(&7) && !prepared.extensions.contains_key(&9))
+    {
+        return Err(McpInvocationError::Conflict);
+    }
+    if prepared.extensions.contains_key(&9) && !prepared.extensions.contains_key(&7) {
+        crate::approval::native_effect::NativeEffectApprovalCarrier::read(
+            store,
+            &handle.tenant,
+            preparation_id,
+        )
+        .map_err(|_| McpInvocationError::Corrupt)?;
+    }
+    Ok(prepared)
+}
+
+impl SessionControl {
+    pub fn mcp_reconciliation_target(
+        &self,
+        handle: &McpInvocationHandle,
+    ) -> Result<Option<String>, McpInvocationError> {
+        let store = self
+            .store
+            .lock()
+            .map_err(|_| McpInvocationError::Unavailable)?;
+        let record = mcp_load(&store, handle)?;
+        let Some(native) = record.native_preparation else {
+            return Ok(None);
+        };
+        mcp_native_preparation(&store, handle, native.preparation_id)?;
+        let key = TenantKey::new(
+            handle.tenant.clone(),
+            ObjectKind::Outbox,
+            native.idempotency_key.to_vec(),
+        )
+        .map_err(|_| McpInvocationError::Corrupt)?;
+        if store.get(&key).is_none() {
+            return Ok(None);
+        }
+        let mut outbox = crate::outbox::Outbox::default();
+        outbox
+            .restore(&store, handle.tenant.clone(), native.idempotency_key)
+            .map_err(|_| McpInvocationError::Corrupt)?;
+        let origin = outbox
+            .origin(native.idempotency_key)
+            .map_err(|_| McpInvocationError::Corrupt)?
+            .ok_or(McpInvocationError::Corrupt)?;
+        if origin.session.tenant != handle.tenant
+            || origin.session.session_id.0 != handle.session
+            || origin.generation != handle.generation
+        {
+            return Err(McpInvocationError::Conflict);
+        }
+        Ok(Some(
+            native
+                .idempotency_key
+                .iter()
+                .map(|byte| format!("{byte:02x}"))
+                .collect(),
+        ))
     }
 }

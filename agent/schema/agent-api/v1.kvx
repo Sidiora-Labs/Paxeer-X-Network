@@ -1,7 +1,7 @@
 [schema]
 name = "LayerX Agent API"
 major = 1
-minor = 10
+minor = 11
 node_interface_major = 1
 source_of_truth = "This schema and the schema files it includes define the daemon contract and every SDK surface. Generated output is never authoritative."
 compatibility = "Within one major version a release may only add sections or keys. Removing or changing an existing declaration requires a new major version."
@@ -902,3 +902,13 @@ wire_type = "NativeSendPrepareV1Wire"
 fields = ["variant:utf8", "activity:NativeActivityV1", "actor:utf8", "authority:utf8", "account_sequence:decimal_string", "not_before:decimal_string", "not_after:decimal_string", "idempotency_key:hex32", "fee_limit:decimal_string", "payload:lowercase_hex", "payload_hash:hex32", "capability_id:hex32", "purpose:SignedNativeSendPurposeV1", "local_grant:NativeLocalGrantConsentV1?"]
 variant = "Exactly native_send_v1; preview selector66. Existing native_effect_v1 and selectors63/65 retain all behavior and refusals."
 validation = "Closed ordinary Send1/5, exact actor/capability/idempotency/activity binds signed distinct purpose; canonical activity and payload remain original. Genuine profile-specific runtime authenticates and retains immutable economic request before hold/submit/resume."
+
+[transport.agent_http.operation.mcp.invoke]
+request = "Exactly tool and arguments. tool names one existing canonical MCP catalogue entry; arguments is its closed validated object. All tenant/session/token/generation authority comes from the complete current credential."
+access = "mutation"
+operation_class = "none"
+surface = "Mcp"
+idempotency_key = "required"
+disposition = "served_adapter_arm"
+response = "The exact daemon-owned MCP tool result, or a typed revoked/expired/unavailable refusal. No umbrella operation permit exists: the owner resolves the named tool to its original operation before execution and final release."
+authority = "exact_tool_operation_permit"

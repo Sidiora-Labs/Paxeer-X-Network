@@ -345,6 +345,12 @@ fn authorization_rejection(request_id: RequestId, error: &SessionControlError) -
             request_id,
             reason: "unavailable",
         },
+        SessionControlError::Session(crate::session::SessionError::Revoked) => {
+            Rejection::new(ErrorClass::PolicyRefusal, request_id, "session.revoked")
+        }
+        SessionControlError::Session(crate::session::SessionError::Expired) => {
+            Rejection::new(ErrorClass::PolicyRefusal, request_id, "session.expired")
+        }
         SessionControlError::Session(_) => Rejection::new(
             ErrorClass::PolicyRefusal,
             request_id,
@@ -598,8 +604,23 @@ fn authorized<A: HumanAuthorityBoundary>(
     ),
     Rejection,
 > {
+    authorized_on_surface(owner, envelope, surface_for(envelope.operation))
+}
+
+fn authorized_on_surface<A: HumanAuthorityBoundary>(
+    owner: &SharedAgentOwner<A>,
+    envelope: &Envelope,
+    surface: Surface,
+) -> Result<
+    (
+        OperationPermit,
+        u64,
+        agent_rpc_peer::BoundRpcPeer,
+        SessionControl,
+    ),
+    Rejection,
+> {
     let request_id = envelope.request_id;
-    let surface = surface_for(envelope.operation);
     let credential = envelope.credential.as_ref().ok_or_else(|| {
         Rejection::new(
             ErrorClass::ProtocolIncompatibility,
@@ -852,9 +873,10 @@ pub fn handle_human_native_prepare<A: HumanAuthorityBoundary>(
     let envelope = decode(body).map_err(|_| HumanOperationError::Refused)?;
     if envelope.operation != Operation::Prepare
         || !crate::agent_rpc_dispatch::native_effect_variant(&envelope.request)
-        || envelope.credential.as_ref().is_none_or(|credential| {
-            credential.tenant().as_str() != peer.tenant
-        })
+        || envelope
+            .credential
+            .as_ref()
+            .is_none_or(|credential| credential.tenant().as_str() != peer.tenant)
     {
         return Err(HumanOperationError::Refused);
     }
@@ -879,7 +901,9 @@ pub fn handle_human_native_prepare<A: HumanAuthorityBoundary>(
     {
         return Err(HumanOperationError::Refused);
     }
-    permit.boundary(&control).map_err(|_| HumanOperationError::Refused)?;
+    permit
+        .boundary(&control)
+        .map_err(|_| HumanOperationError::Refused)?;
     drop(context);
     drop(permit);
     drop(control);
@@ -1036,4 +1060,218 @@ fn requested_level_parses_the_program_activity_default() {
         requested_level(&level_request("sequencer-signed")),
         Some(Some(Level::SequencerSigned))
     );
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct McpToolRequest {
+    tool: String,
+    arguments: serde_json::Value,
+}
+
+pub struct McpInvocationRequest {
+    pub request_id: RequestId,
+    pub credential: SessionCredential,
+    pub tool: String,
+    pub arguments: serde_json::Value,
+    pub idempotency_key: [u8; 32],
+}
+
+pub fn decode_mcp_invocation(
+    body: &[u8],
+) -> Result<Option<McpInvocationRequest>, AgentRpcResponse> {
+    if body.len() > MAX_BODY_BYTES {
+        return Err(refusal(
+            413,
+            ErrorClass::ProtocolIncompatibility,
+            "envelope.oversized",
+        ));
+    }
+    let wire: WireEnvelope = match serde_json::from_slice(body) {
+        Ok(wire) => wire,
+        Err(_) => {
+            return Err(refusal(
+                400,
+                ErrorClass::ProtocolIncompatibility,
+                "envelope.malformed",
+            ))
+        }
+    };
+    if wire.operation != "mcp.invoke" {
+        return Ok(None);
+    }
+    let envelope = decode(body).map_err(|error| rejected(&error))?;
+    let id = envelope.request_id;
+    let request: McpToolRequest =
+        serde_json::from_value(serde_json::Value::Object(envelope.request)).map_err(|_| {
+            rejected(&Rejection::new(
+                ErrorClass::ProtocolIncompatibility,
+                id,
+                "envelope.unknown_field",
+            ))
+        })?;
+    if request.tool.is_empty()
+        || request.tool.len() > 128
+        || request.tool.as_bytes().contains(&0)
+        || !request.arguments.is_object()
+    {
+        return Err(rejected(&Rejection::new(
+            ErrorClass::ProtocolIncompatibility,
+            id,
+            "envelope.malformed",
+        )));
+    }
+    let credential = envelope.credential.ok_or_else(|| {
+        rejected(&Rejection::new(
+            ErrorClass::ProtocolIncompatibility,
+            id,
+            "envelope.credential",
+        ))
+    })?;
+    let idempotency_key = envelope.idempotency_key.ok_or_else(|| {
+        rejected(&Rejection::new(
+            ErrorClass::ProtocolIncompatibility,
+            id,
+            "envelope.idempotency_key",
+        ))
+    })?;
+    Ok(Some(McpInvocationRequest {
+        request_id: id,
+        credential,
+        tool: request.tool,
+        arguments: request.arguments,
+        idempotency_key,
+    }))
+}
+
+pub fn mcp_result_response(id: RequestId, value: serde_json::Value) -> AgentRpcResponse {
+    respond(
+        id,
+        None,
+        Ok(Dispatched {
+            value,
+            verification: None,
+        }),
+    )
+}
+
+pub fn mcp_result_refusal(
+    id: RequestId,
+    class: ErrorClass,
+    reason: &'static str,
+) -> AgentRpcResponse {
+    rejected(&Rejection::new(class, id, reason))
+}
+
+pub fn validate_mcp_native_request(
+    operation: Operation,
+    arguments: &serde_json::Value,
+) -> Result<(), Rejection> {
+    let id = RequestId(0);
+    let request = arguments
+        .as_object()
+        .ok_or_else(|| crate::agent_rpc_dispatch::malformed(id))?;
+    let variant = request.get("variant").and_then(serde_json::Value::as_str);
+    let admitted = match operation {
+        Operation::Prepare => matches!(
+            variant,
+            Some("native_v1" | "native_effect_v1" | "native_send_v1")
+        ),
+        Operation::Submit => variant == Some("native_send_submit_v1"),
+        _ => false,
+    };
+    if !admitted || canonical_request_bytes(operation, request, id)?.is_none() {
+        return Err(crate::agent_rpc_dispatch::malformed(id));
+    }
+    Ok(())
+}
+
+pub fn dispatch_mcp_owner<A: HumanAuthorityBoundary>(
+    owner: &SharedAgentOwner<A>,
+    request_id: RequestId,
+    credential: &SessionCredential,
+    operation: Operation,
+    arguments: &serde_json::Value,
+    idempotency_key: [u8; 32],
+) -> Result<serde_json::Value, Rejection> {
+    if operation == Operation::McpInvoke
+        || BOOTSTRAP_OPERATIONS.contains(&operation)
+        || idempotency_key == [0; 32]
+    {
+        return Err(Rejection::new(
+            ErrorClass::PolicyRefusal,
+            request_id,
+            "mcp.operation_refused",
+        ));
+    }
+    let request = arguments
+        .as_object()
+        .ok_or_else(|| crate::agent_rpc_dispatch::malformed(request_id))?;
+    if let Some(value) = request.get("idempotency_key") {
+        if value.as_str().and_then(parse_hex32) != Some(idempotency_key) {
+            return Err(Rejection::new(
+                ErrorClass::IdempotencyConflict,
+                request_id,
+                "idempotency.body_changed",
+            ));
+        }
+    }
+    let envelope = Envelope {
+        request_id,
+        operation,
+        idempotency_key: operation.mutating().then_some(idempotency_key),
+        request: request.clone(),
+        credential: Some(credential.clone()),
+    };
+    let (permit, _, bound, control) = authorized_on_surface(owner, &envelope, Surface::Mcp)?;
+    let context_peer = agent_rpc_peer::from_resolved(&control, &permit, bound)
+        .map_err(|error| authorization_rejection(request_id, &error))?;
+    let context = DispatchContext {
+        request_id,
+        idempotency_key: envelope.idempotency_key,
+        peer: context_peer.peer().clone(),
+    };
+    dispatch_operation(owner, &permit, &context_peer, operation, request, &context)
+        .map(|dispatched| dispatched.value)
+}
+
+pub fn mcp_api_refusal(error: &ApiError) -> AgentRpcResponse {
+    let reason = error.reason.as_str();
+    let status = match error.class {
+        ErrorClass::ProtocolIncompatibility => 400,
+        ErrorClass::PolicyRefusal if reason == "session.not_authorized" => 401,
+        ErrorClass::PolicyRefusal | ErrorClass::CapabilityRefusal | ErrorClass::BudgetRefusal => {
+            403
+        }
+        ErrorClass::IdempotencyConflict => 409,
+        ErrorClass::UnavailableCapability => 503,
+        _ => 500,
+    };
+    AgentRpcResponse {
+        status,
+        body: serde_json::json!({
+            "class": class_name(error.class),
+            "protocol_result_code": error.protocol_result_code.map(|code| code.raw()),
+            "retriability": match error.retriability {
+                Retriability::Terminal => "Terminal", Retriability::Retriable => "Retriable",
+            },
+            "request_id": error.request_id.0.to_string(),
+            "reason": reason,
+        })
+        .to_string()
+        .into_bytes(),
+    }
+}
+
+pub fn decode_mcp_local_grant_config(
+    value: &serde_json::Value,
+) -> Result<layerx_agent_api::identity::NativeLocalGrantConsentV1, Rejection> {
+    let id = RequestId(0);
+    serde_json::from_value::<crate::agent_rpc_wire::NativeLocalGrantConsentV1Wire>(value.clone())
+        .map_err(|_| crate::agent_rpc_dispatch::malformed(id))?
+        .into_request(id)
+}
+
+pub fn mcp_control_refusal(request_id: RequestId, error: &SessionControlError) -> AgentRpcResponse {
+    rejected(&authorization_rejection(request_id, error))
 }

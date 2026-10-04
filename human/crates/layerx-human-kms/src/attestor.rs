@@ -1,6 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::net::SocketAddr;
+use std::path::PathBuf;
 use std::sync::{Mutex, MutexGuard};
 use std::time::Duration;
 
@@ -511,6 +512,27 @@ pub struct AttestorSigner {
     native_replays: Mutex<BTreeMap<String, NativeReplay>>,
 }
 
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AttestorNodeConfig {
+    pub id: String,
+    pub address: SocketAddr,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AttestorSignerConfig {
+    pub nodes: Vec<AttestorNodeConfig>,
+    pub trust_anchors: Vec<PathBuf>,
+    pub client_certificate_chain: Vec<PathBuf>,
+    pub client_private_key_pkcs8: PathBuf,
+    pub key_id: String,
+    pub public_key: [u8; 32],
+    pub signers: Vec<String>,
+    pub network_id: u32,
+    pub timeout_seconds: u64,
+}
+
 impl fmt::Debug for AttestorSigner {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
@@ -524,6 +546,140 @@ impl fmt::Debug for AttestorSigner {
 }
 
 impl AttestorSigner {
+    pub fn from_config(config: &AttestorSignerConfig) -> Result<Self, AttestorError> {
+        if config.timeout_seconds == 0 || config.timeout_seconds > 60 {
+            return Err(AttestorError::Configuration("attestor timeout"));
+        }
+        let read = |path: &std::path::Path, secret| {
+            crate::config::protected(path, 1_048_576, secret)
+                .map_err(|_| AttestorError::Configuration("protected attestor TLS source"))
+        };
+        let roots = config
+            .trust_anchors
+            .iter()
+            .map(|path| read(path, false).map(|bytes| bytes.to_vec()))
+            .collect::<Result<Vec<_>, _>>()?;
+        let certificates = config
+            .client_certificate_chain
+            .iter()
+            .map(|path| read(path, false).map(|bytes| bytes.to_vec()))
+            .collect::<Result<Vec<_>, _>>()?;
+        let private_key = read(&config.client_private_key_pkcs8, true)?;
+        let nodes = config
+            .nodes
+            .iter()
+            .map(|node| (node.id.clone(), node.address))
+            .collect::<Vec<_>>();
+        let client = AttestorClient::new(
+            &nodes,
+            &roots,
+            &certificates,
+            &private_key,
+            Duration::from_secs(config.timeout_seconds),
+        )?;
+        let signers = config
+            .signers
+            .iter()
+            .map(String::as_str)
+            .collect::<Vec<_>>();
+        Self::new(
+            client,
+            &config.key_id,
+            config.public_key,
+            &signers,
+            config.network_id,
+        )
+    }
+
+    pub fn sign_payment_grant(
+        &self,
+        grant: &layerx_crypto::payments::Grant,
+        session_id: &str,
+        assertion: &str,
+    ) -> Result<Vec<u8>, AttestorError> {
+        if !valid_identifier(session_id)
+            || assertion.is_empty()
+            || grant.public_key != self.public_key
+            || grant.id != [0; 32]
+            || grant.signature != [0; 64]
+        {
+            return Err(AttestorError::Configuration("payment grant binding"));
+        }
+        let digest = grant
+            .signing_digest()
+            .map_err(|error| AttestorError::Disclosure(SignError::from(error)))?;
+        let body = Zeroizing::new(
+            serde_json::to_vec(&serde_json::json!({
+                "session_id": session_id,
+                "key_id": self.key_id,
+                "kind": "lx_grant",
+                "clock_profile": "native-v3-ms",
+                "signers": self.signers,
+                "grant": {
+                    "from": encode_hex(&grant.from),
+                    "recipient": encode_hex(&grant.recipient),
+                    "asset": encode_hex(&grant.asset),
+                    "per_draw_maximum": grant.per_draw_maximum.to_string(),
+                    "allowance": grant.allowance.to_string(),
+                    "recurring": grant.recurring,
+                    "window_length": grant.window_length,
+                    "expiration": grant.expiration,
+                    "purpose_hash": encode_hex(&grant.purpose_hash),
+                    "has_reference": grant.has_reference,
+                    "reference_hash": encode_hex(&grant.reference_hash),
+                    "revocation_sequence": grant.revocation_sequence,
+                }
+            }))
+            .map_err(|_| AttestorError::Configuration("payment grant request"))?,
+        );
+        let results = self
+            .client
+            .post_all(&self.signers, PATH_SIGN, &body, Some(assertion));
+        let mut signature = None;
+        let mut audit = BTreeMap::new();
+        for (node, result) in results {
+            let raw = result?;
+            let response: SignResponseBody =
+                serde_json::from_slice(&raw).map_err(|_| malformed(&node))?;
+            if response.node_id != node
+                || response.key_id != self.key_id
+                || response.kind != "lx_grant"
+                || response.recovery_id.is_some()
+            {
+                return Err(malformed(&node));
+            }
+            let signed =
+                decode_fixed::<32>(&response.signed_bytes).ok_or_else(|| malformed(&node))?;
+            if !layerx_crypto::ct::eq_fixed(&signed, &digest) {
+                return Err(malformed(&node));
+            }
+            let returned =
+                decode_fixed::<64>(&response.signature).ok_or_else(|| malformed(&node))?;
+            layerx_crypto::ed25519::verify_digest(&self.public_key, &returned, &digest)
+                .map_err(|_| AttestorError::SignatureInvalid { node: node.clone() })?;
+            signature.get_or_insert(returned);
+            audit.insert(node, response.audit_sequence);
+        }
+        let signature = signature.ok_or(AttestorError::Configuration("signing quorum"))?;
+        let mut recorded = self.recorded();
+        for (node, sequence) in &audit {
+            if *sequence == 0
+                || recorded
+                    .get(node)
+                    .is_some_and(|previous| sequence <= previous)
+            {
+                return Err(malformed(node));
+            }
+        }
+        recorded.extend(audit);
+        let mut signed = grant.clone();
+        signed.id = digest;
+        signed.signature = signature;
+        Payment::IssueGrant(signed)
+            .encode(b"")
+            .map_err(|error| AttestorError::Disclosure(SignError::from(error)))
+    }
+
     /// Binds a client to one attestor-held Ed25519 key, its expected group key, the signing
     /// quorum and the network whose activities it signs.
     ///
@@ -601,6 +757,18 @@ impl AttestorSigner {
         approval: &Approval<'_>,
         assertion: &str,
     ) -> Result<AttestorSignature, AttestorError> {
+        self.sign_activity_with_clock(canonical, disclosure, registry, approval, assertion, false)
+    }
+
+    fn sign_activity_with_clock(
+        &self,
+        canonical: &[u8],
+        disclosure: &Disclosure,
+        registry: &ModuleRegistry,
+        approval: &Approval<'_>,
+        assertion: &str,
+        native_clock: bool,
+    ) -> Result<AttestorSignature, AttestorError> {
         validate_disclosure(canonical, disclosure, registry)?;
         let activity = layerx_intents::canonical::decode_unsigned_activity(canonical, registry)
             .map_err(|_| AttestorError::Disclosure(SignError::InvalidDisclosure))?;
@@ -616,15 +784,28 @@ impl AttestorSigner {
         let approved = project(disclosure)?;
         approval.check(disclosure.expiry.not_after)?;
         let digest = preimage(canonical);
-        self.request_signature(
-            KIND_ACTIVITY,
-            canonical,
-            digest,
-            &approved,
-            approval,
-            activity.protocol_version(),
-            assertion,
-        )
+        if native_clock {
+            self.request_signature_with_clock(
+                KIND_ACTIVITY,
+                canonical,
+                digest,
+                &approved,
+                approval,
+                activity.protocol_version(),
+                assertion,
+                true,
+            )
+        } else {
+            self.request_signature(
+                KIND_ACTIVITY,
+                canonical,
+                digest,
+                &approved,
+                approval,
+                activity.protocol_version(),
+                assertion,
+            )
+        }
     }
 
     /// Signs an asset send with the attestor-held owner key: the quorum first signs the owner
@@ -642,7 +823,37 @@ impl AttestorSigner {
         debit: &SendDebit,
         options: &EnvelopeOptions<'_>,
         approval: &SendApproval<'_>,
+        assertion: impl FnMut() -> Result<String, AttestorError>,
+    ) -> Result<SignedSend, AttestorError> {
+        self.sign_send_with_clock(debit, options, approval, assertion, false)
+    }
+
+    pub fn sign_native_send(
+        &self,
+        debit: &SendDebit,
+        options: &EnvelopeOptions<'_>,
+        approval: &SendApproval<'_>,
+        assertion: impl FnMut() -> Result<String, AttestorError>,
+    ) -> Result<SignedSend, AttestorError> {
+        if debit.protocol_version != 3
+            || options.protocol_version != 3
+            || approval
+                .expires_at
+                .checked_mul(1000)
+                .is_none_or(|expiry| expiry > options.not_after)
+        {
+            return Err(AttestorError::Configuration("native send clock binding"));
+        }
+        self.sign_send_with_clock(debit, options, approval, assertion, true)
+    }
+
+    fn sign_send_with_clock(
+        &self,
+        debit: &SendDebit,
+        options: &EnvelopeOptions<'_>,
+        approval: &SendApproval<'_>,
         mut assertion: impl FnMut() -> Result<String, AttestorError>,
+        native_clock: bool,
     ) -> Result<SignedSend, AttestorError> {
         if debit.network_id != self.network {
             return Err(AttestorError::WrongNetwork {
@@ -701,7 +912,7 @@ impl AttestorSigner {
         if first.is_empty() {
             return Err(AttestorError::Configuration("user assertion"));
         }
-        let authorization = self.request_signature(
+        let authorization = self.request_signature_with_clock(
             KIND_SEND_AUTHORIZATION,
             &placeholder,
             digest,
@@ -709,6 +920,7 @@ impl AttestorSigner {
             &authorization_approval,
             debit.protocol_version,
             &first,
+            native_clock,
         )?;
         let payload = debit
             .encode_signed(self.public_key, *authorization.signature())
@@ -721,7 +933,7 @@ impl AttestorSigner {
             )));
         }
         let second = assertion()?;
-        let activity = self.sign_activity(
+        let activity = self.sign_activity_with_clock(
             &envelope.canonical,
             &envelope.disclosure,
             &envelope.registry,
@@ -731,6 +943,7 @@ impl AttestorSigner {
                 expires_at: approval.expires_at,
             },
             &second,
+            native_clock,
         )?;
         Ok(SignedSend {
             payload,
@@ -752,12 +965,39 @@ impl AttestorSigner {
         protocol_version: u16,
         assertion: &str,
     ) -> Result<AttestorSignature, AttestorError> {
+        self.request_signature_with_clock(
+            kind,
+            canonical,
+            digest,
+            disclosure,
+            approval,
+            protocol_version,
+            assertion,
+            false,
+        )
+    }
+
+    fn request_signature_with_clock(
+        &self,
+        kind: &str,
+        canonical: &[u8],
+        digest: [u8; 32],
+        disclosure: &DisclosureWire,
+        approval: &Approval<'_>,
+        protocol_version: u16,
+        assertion: &str,
+        native_clock: bool,
+    ) -> Result<AttestorSignature, AttestorError> {
+        if native_clock && protocol_version != 3 {
+            return Err(AttestorError::Configuration("native signing clock binding"));
+        }
         let activity_hex = encode_hex(canonical);
         let body = Zeroizing::new(
             serde_json::to_vec(&SignBody {
                 session_id: approval.session_id,
                 key_id: &self.key_id,
                 kind,
+                clock_profile: native_clock.then_some("native-v3-ms"),
                 signers: &self.signers,
                 activity: &activity_hex,
                 disclosure,
@@ -1153,6 +1393,8 @@ struct GenerateBody<'a> {
 
 #[derive(Serialize)]
 struct SignBody<'a> {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    clock_profile: Option<&'a str>,
     session_id: &'a str,
     key_id: &'a str,
     kind: &'a str,

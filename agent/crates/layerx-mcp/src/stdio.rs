@@ -2,6 +2,9 @@
 
 use std::io::{BufRead, Read as _, Write};
 
+use layerx_agent_api::error::RequestId;
+use layerx_agent_api::idempotency::Key;
+use layerx_sdk::agent_envelope::{AgentEnvelopeTransport, EnvelopeCredential, EnvelopeError};
 use serde_json::{json, Map, Value};
 
 use crate::boundary::{BoundaryRefusal, ToolBoundary};
@@ -282,6 +285,8 @@ fn authority_detail(error: &ServerError) -> String {
         ServerError::ToolAbsent => "the daemon does not authorize this tool for this session",
         ServerError::WrongServer => "the invocation belongs to another server binding",
         ServerError::AuthorizationUnavailable => "the daemon authorization state is unavailable",
+        ServerError::DurableInvocation(_) => "the durable daemon invocation was refused",
+        ServerError::InvocationUnknown => "the durable daemon invocation outcome is unknown",
         ServerError::Arithmetic => "the daemon invocation counter is exhausted",
         ServerError::Capability(_) => "the bound capability record is unusable",
         ServerError::Audit(_) => "the daemon audit log could not record this invocation",
@@ -325,4 +330,336 @@ fn failure(identifier: Value, code: i32, detail: &str) -> Value {
     envelope.insert("id".to_owned(), identifier);
     envelope.insert("error".to_owned(), Value::Object(error));
     Value::Object(envelope)
+}
+
+pub struct DaemonClientSession {
+    transport: AgentEnvelopeTransport,
+    credential: EnvelopeCredential,
+    mode: DeploymentMode,
+    next_request_id: u64,
+    loaded_binding: String,
+    tools: Vec<ToolDefinition>,
+    listings: Vec<Value>,
+}
+
+impl DaemonClientSession {
+    pub fn connect(
+        transport: AgentEnvelopeTransport,
+        credential: EnvelopeCredential,
+        mode: DeploymentMode,
+    ) -> Result<Self, Value> {
+        let mut session = Self {
+            transport,
+            credential,
+            mode,
+            next_request_id: 1,
+            loaded_binding: String::new(),
+            tools: Vec::new(),
+            listings: Vec::new(),
+        };
+        session.refresh_description()?;
+        Ok(session)
+    }
+
+    fn request_id(&mut self) -> Result<RequestId, Value> {
+        let id = self.next_request_id;
+        self.next_request_id = id.checked_add(1).ok_or_else(
+            || json!({"reason": "mcp.request_counter_exhausted", "state": "refused"}),
+        )?;
+        Ok(RequestId(id))
+    }
+
+    fn invoke(&mut self, tool: &str, arguments: &Value, key: Key) -> Result<Value, Value> {
+        let id = self.request_id()?;
+        self.transport
+            .mcp_invoke(id, &self.credential, tool, arguments, key)
+            .map(|response| response.value)
+            .map_err(daemon_client_refusal)
+    }
+
+    fn refresh_description(&mut self) -> Result<(), Value> {
+        let key = request_key()?;
+        let value = self.invoke("mcp.describe", &json!({}), key)?;
+        let fields = value.as_object().ok_or_else(description_refusal)?;
+        if fields.len() != 3
+            || fields.get("mode").and_then(Value::as_str) != Some(mode_name(self.mode))
+        {
+            return Err(description_refusal());
+        }
+        let binding = fields
+            .get("loaded_binding_v1")
+            .and_then(Value::as_str)
+            .filter(|value| {
+                value.len() == 64
+                    && value
+                        .bytes()
+                        .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+            })
+            .ok_or_else(description_refusal)?;
+        let listings = fields
+            .get("tools")
+            .and_then(Value::as_array)
+            .ok_or_else(description_refusal)?;
+        let definitions = catalogue::surface(self.mode)
+            .into_iter()
+            .chain(catalogue::web_surface())
+            .filter(|tool| {
+                self.mode == DeploymentMode::Full || tool.kind == crate::server::ToolKind::Read
+            })
+            .collect::<Vec<_>>();
+        let mut tools = Vec::new();
+        for listing in listings {
+            let name = listing
+                .get("name")
+                .and_then(Value::as_str)
+                .ok_or_else(description_refusal)?;
+            let tool = definitions
+                .iter()
+                .find(|tool| tool.name == name)
+                .copied()
+                .ok_or_else(description_refusal)?;
+            if tools
+                .iter()
+                .any(|prior: &ToolDefinition| prior.name == name)
+                || catalogue::listing(tool).as_ref() != Some(listing)
+            {
+                return Err(description_refusal());
+            }
+            tools.push(tool);
+        }
+        if tools.is_empty() {
+            return Err(description_refusal());
+        }
+        self.loaded_binding = binding.to_owned();
+        self.tools = tools;
+        self.listings = listings.clone();
+        Ok(())
+    }
+
+    pub fn handle(&mut self, message: &str) -> Option<Value> {
+        let Ok(request) = serde_json::from_str::<Value>(message) else {
+            return Some(failure(
+                Value::Null,
+                -32700,
+                "the message is not valid JSON",
+            ));
+        };
+        let identifier = request.get("id").cloned().unwrap_or(Value::Null);
+        let Some(method) = request.get("method").and_then(Value::as_str) else {
+            return Some(failure(
+                identifier,
+                -32600,
+                "the message did not name a method",
+            ));
+        };
+        if identifier.is_null() {
+            return None;
+        }
+        let parameters = request.get("params").cloned().unwrap_or(Value::Null);
+        Some(match method {
+            "ping" => success(identifier, json!({})),
+            "initialize" | "tools/list" => match self.refresh_description() {
+                Err(refusal) => daemon_protocol_failure(identifier, refusal),
+                Ok(()) if method == "tools/list" => {
+                    success(identifier, json!({"tools": self.listings}))
+                }
+                Ok(()) => {
+                    let read_tools = self
+                        .tools
+                        .iter()
+                        .filter(|tool| tool.kind == crate::server::ToolKind::Read)
+                        .count();
+                    let write_tools = self.tools.len().saturating_sub(read_tools);
+                    success(
+                        identifier,
+                        json!({
+                            "protocolVersion": PROTOCOL_VERSION,
+                            "capabilities": {"tools": {"listChanged": false}},
+                            "serverInfo": {"name": "layerx", "title": "LayerX", "version": env!("CARGO_PKG_VERSION")},
+                            "instructions": INSTRUCTIONS,
+                            "_meta": {
+                                "layerx/deployment_mode": mode_name(self.mode),
+                                "layerx/binding": "agent-daemon",
+                                "layerx/loaded_binding_v1": self.loaded_binding,
+                                "layerx/read_tools": read_tools,
+                                "layerx/write_tools": write_tools,
+                                "layerx/mutations_reachable": write_tools != 0,
+                            },
+                        }),
+                    )
+                }
+            },
+            "tools/call" => self.call(identifier, &parameters),
+            _ => failure(identifier, -32601, "the method is not implemented"),
+        })
+    }
+
+    fn call(&mut self, identifier: Value, parameters: &Value) -> Value {
+        let Some(name) = parameters.get("name").and_then(Value::as_str) else {
+            return failure(identifier, -32602, "the call did not name a tool");
+        };
+        let Some(tool) = self.tools.iter().find(|tool| tool.name == name).copied() else {
+            return failure(
+                identifier,
+                -32602,
+                "the tool is not served by this deployment",
+            );
+        };
+        let arguments = parameters.get("arguments").cloned().unwrap_or(Value::Null);
+        if let Err(error) = catalogue::validate(tool.name, &arguments) {
+            return success(
+                identifier,
+                content(
+                    &json!({
+                        "refusal": error.detail(), "tool": tool.name, "stage": "arguments", "state": "refused",
+                    }),
+                    true,
+                ),
+            );
+        }
+        let explicit_key = arguments.get("idempotency_key").is_some()
+            || parameters
+                .get("_meta")
+                .and_then(|meta| meta.get("layerx/idempotency_key"))
+                .is_some();
+        let key = if tool.kind == crate::server::ToolKind::Read && !explicit_key {
+            request_key()
+        } else {
+            invocation_key(parameters, &arguments)
+        };
+        let result = key.and_then(|key| self.invoke(tool.name, &arguments, key));
+        match result {
+            Ok(value) => {
+                let refused = value
+                    .get("state")
+                    .and_then(Value::as_str)
+                    .is_some_and(|state| matches!(state, "refused" | "unknown"));
+                success(
+                    identifier,
+                    content(&json!({"tool": tool.name, "result": value}), refused),
+                )
+            }
+            Err(refusal) => success(
+                identifier,
+                content(
+                    &json!({
+                        "tool": tool.name, "stage": "daemon", "refusal": refusal,
+                    }),
+                    true,
+                ),
+            ),
+        }
+    }
+
+    pub fn serve<R: BufRead, W: Write>(
+        &mut self,
+        reader: &mut R,
+        writer: &mut W,
+    ) -> Result<(), String> {
+        let mut line = String::new();
+        let limit = u64::try_from(MAX_MESSAGE_BYTES).unwrap_or(u64::MAX);
+        loop {
+            line.clear();
+            let read = reader
+                .by_ref()
+                .take(limit)
+                .read_line(&mut line)
+                .map_err(|error| format!("could not read a protocol message: {error}"))?;
+            if read == 0 {
+                return Ok(());
+            }
+            if read >= MAX_MESSAGE_BYTES && !line.ends_with('\n') {
+                return Err("a protocol message exceeded the transport limit".to_owned());
+            }
+            let message = line.trim();
+            if message.is_empty() {
+                continue;
+            }
+            if let Some(response) = self.handle(message) {
+                serde_json::to_writer(&mut *writer, &response)
+                    .map_err(|_| "could not encode a protocol message".to_owned())?;
+                writeln!(writer)
+                    .and_then(|()| writer.flush())
+                    .map_err(|error| format!("could not write a protocol message: {error}"))?;
+            }
+        }
+    }
+}
+
+fn description_refusal() -> Value {
+    json!({"reason": "mcp.description_invalid", "state": "refused"})
+}
+
+fn request_key() -> Result<Key, Value> {
+    let mut bytes = [0_u8; 32];
+    std::fs::File::open("/dev/urandom")
+        .and_then(|mut file| file.read_exact(&mut bytes))
+        .map_err(|_| json!({"reason": "mcp.request_entropy_unavailable", "state": "refused"}))?;
+    Key::new(bytes)
+        .map_err(|_| json!({"reason": "mcp.request_entropy_unavailable", "state": "refused"}))
+}
+
+fn invocation_key(parameters: &Value, arguments: &Value) -> Result<Key, Value> {
+    let argument_key = arguments.get("idempotency_key").and_then(Value::as_str);
+    let metadata_key = parameters
+        .get("_meta")
+        .and_then(|meta| meta.get("layerx/idempotency_key"))
+        .and_then(Value::as_str);
+    if argument_key
+        .zip(metadata_key)
+        .is_some_and(|(left, right)| left != right)
+    {
+        return Err(json!({"reason": "mcp.idempotency_key_conflict", "state": "refused"}));
+    }
+    let encoded = argument_key
+        .or(metadata_key)
+        .filter(|key| {
+            key.len() == 64
+                && key
+                    .bytes()
+                    .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+        })
+        .ok_or_else(|| json!({"reason": "mcp.idempotency_key_required", "state": "refused"}))?;
+    let mut bytes = [0_u8; 32];
+    for (index, byte) in bytes.iter_mut().enumerate() {
+        *byte = u8::from_str_radix(&encoded[index * 2..index * 2 + 2], 16)
+            .map_err(|_| json!({"reason": "mcp.idempotency_key_required", "state": "refused"}))?;
+    }
+    Key::new(bytes)
+        .map_err(|_| json!({"reason": "mcp.idempotency_key_required", "state": "refused"}))
+}
+
+fn daemon_client_refusal(error: EnvelopeError) -> Value {
+    match error {
+        EnvelopeError::Refused(error) => json!({
+            "class": format!("{:?}", error.class),
+            "protocol_result_code": error.protocol_result_code.map(|code| code.raw()),
+            "retriability": format!("{:?}", error.retriability),
+            "request_id": error.request_id.0.to_string(),
+            "reason": error.reason.as_str(),
+            "state": if error.reason.as_str() == "outcome.unknown" { "unknown" } else { "refused" },
+        }),
+        EnvelopeError::Unknown { .. } => {
+            json!({"reason": "outcome.unknown", "state": "unknown", "retriability": "Never"})
+        }
+        EnvelopeError::GatewayAuthentication => {
+            json!({"reason": "gateway.authentication", "state": "refused"})
+        }
+        EnvelopeError::Transport { .. } => {
+            json!({"reason": "mcp.transport_unavailable", "state": "refused"})
+        }
+        _ => json!({"reason": "mcp.exchange_invalid", "state": "refused"}),
+    }
+}
+
+fn daemon_protocol_failure(identifier: Value, refusal: Value) -> Value {
+    let mut response = failure(
+        identifier,
+        -32001,
+        "the live daemon refused the MCP authority",
+    );
+    if let Some(error) = response.get_mut("error").and_then(Value::as_object_mut) {
+        error.insert("data".to_owned(), refusal);
+    }
+    response
 }

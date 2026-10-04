@@ -370,6 +370,7 @@ pub struct GrantTerms {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ExactTerms {
     pub payer_did: String,
+    pub payer_account: [u8; 32],
     pub recipient: [u8; 32],
     pub recipient_account: String,
     pub asset: [u8; 32],
@@ -807,6 +808,7 @@ impl WebPlane<'_, '_> {
             Scheme::Exact => {
                 let terms = ExactTerms {
                     payer_did: self.config.payer_did.clone(),
+                    payer_account: facts.payer_accounts[1],
                     recipient: facts.pay_to,
                     recipient_account: facts.account.clone(),
                     asset: facts.asset,

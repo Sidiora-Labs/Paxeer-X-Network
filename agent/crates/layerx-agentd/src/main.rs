@@ -48,6 +48,9 @@ use layerx_types::ids::Did;
 mod human_owner_mode;
 mod human_peer_config;
 
+#[path = "../../layerx-agentd-host/src/payer.rs"]
+mod mcp_payer;
+
 const HEADER_LIMIT: usize = 16 * 1024;
 const BODY_LIMIT: usize = 0;
 const PROGRAM_WORKERS: usize = 8;
@@ -908,7 +911,8 @@ fn start_shared_owner(
     operations
         .attach_native_policies(native_policy_sources)
         .map_err(|error| format!("native tenant policies are invalid: {error}"))?;
-    operations.attach_native_effect_policies(native_effect_policy_sources)
+    operations
+        .attach_native_effect_policies(native_effect_policy_sources)
         .map_err(|error| format!("native effect policy source invalid: {error}"))?;
 
     operations
@@ -1008,25 +1012,287 @@ fn start_agent_rpc(
         return Err("agent rpc network name is invalid".to_owned());
     }
 
+    let mut mcp_bindings = optional("LAYERX_AGENTD_MCP_BINDINGS")
+        .map(|value| {
+            value
+                .split(',')
+                .map(|path| {
+                    layerx_mcp::binding::Binding::open(Path::new(path))
+                        .map_err(|_| "daemon MCP binding is invalid".to_owned())
+                })
+                .collect::<Result<Vec<_>, String>>()
+        })
+        .transpose()?
+        .unwrap_or_default();
+    attach_mcp_payers(&owner, &mut mcp_bindings)?;
     let listener = TcpListener::bind(&listen)
         .map_err(|error| format!("agent rpc listener failed: {error}"))?;
     HttpPool::start(listener, move |stream| {
         let Ok(mut stream) = tls.accept(stream) else {
             return;
         };
-        let response = agent_rpc_exchange(&mut stream, &network, &owner);
-        let _ = write_rpc_response(&mut stream, &response);
+        let response = agent_rpc_exchange(&mut stream, &network, &owner, &mcp_bindings);
+        if matches!(&response, RpcExchangeResponse::Mcp { .. })
+            && stream.sock.socket.set_nonblocking(true).is_err()
+        {
+            return;
+        }
+        if response.write(&mut stream, &owner).is_err() {
+            return;
+        }
         stream.conn.send_close_notify();
         let _ = stream.flush();
     })
     .map(Some)
 }
 
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct McpPayerConfig {
+    tenant: String,
+    session_id: String,
+    payer_did: String,
+    principal: String,
+    signer: layerx_human_kms::attestor::AttestorSignerConfig,
+    assertion_source: PathBuf,
+    sequencer_public_key: String,
+    local_grant: serde_json::Value,
+    commitment: String,
+    fee_limit: String,
+    send_validity_ms: u64,
+    grant_validity_seconds: u64,
+}
+
+fn mcp_config_digest(value: &str) -> Result<[u8; 32], String> {
+    if value.len() != 64
+        || !value
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+    {
+        return Err("MCP payer digest is invalid".to_owned());
+    }
+    let mut output = [0_u8; 32];
+    for (index, pair) in value.as_bytes().chunks_exact(2).enumerate() {
+        output[index] = u8::from_str_radix(
+            std::str::from_utf8(pair).map_err(|_| "MCP payer digest is invalid")?,
+            16,
+        )
+        .map_err(|_| "MCP payer digest is invalid")?;
+    }
+    if output == [0; 32] {
+        return Err("MCP payer digest is invalid".to_owned());
+    }
+    Ok(output)
+}
+
+fn attach_mcp_payers(
+    owner: &SharedAgentOwner<RemoteHumanAuthority>,
+    bindings: &mut [layerx_mcp::binding::Binding],
+) -> Result<(), String> {
+    let Some(source) = optional("LAYERX_AGENTD_MCP_PAYERS") else {
+        return Ok(());
+    };
+    let bytes = zeroize::Zeroizing::new(
+        layerx_agentd::config::read_protected_source(Path::new(&source), 1_048_576)
+            .map_err(|_| "MCP payer source is invalid")?,
+    );
+    let configs: Vec<McpPayerConfig> =
+        serde_json::from_slice(&bytes).map_err(|_| "MCP payer source is invalid")?;
+    if configs.is_empty() || configs.len() > 64 {
+        return Err("MCP payer configuration count is invalid".to_owned());
+    }
+    let mut attached = BTreeSet::new();
+    for config in configs {
+        let session_id = mcp_config_digest(&config.session_id)?;
+        let coordinate = (config.tenant.clone(), session_id);
+        if !attached.insert(coordinate) {
+            return Err("MCP payer binding is duplicated".to_owned());
+        }
+        let binding = bindings
+            .iter_mut()
+            .find(|binding| {
+                binding.daemon_credential().is_ok_and(|credential| {
+                    credential.tenant().as_str() == config.tenant
+                        && credential.session_id().0 == session_id
+                })
+            })
+            .ok_or("MCP payer has no configured binding")?;
+        let credential = binding
+            .daemon_credential()
+            .map_err(|_| "MCP payer credential is unavailable")?;
+        let transport = binding
+            .daemon_transport()
+            .map_err(|_| "MCP payer transport is unavailable")?;
+        let local_grant = agent_rpc::decode_mcp_local_grant_config(&config.local_grant)
+            .map_err(|_| "MCP payer local grant is invalid")?;
+        if config.fee_limit.is_empty()
+            || !config.fee_limit.bytes().all(|byte| byte.is_ascii_digit())
+            || (config.fee_limit.len() > 1 && config.fee_limit.starts_with('0'))
+        {
+            return Err("MCP payer fee limit is invalid".to_owned());
+        }
+        let fee_limit = config
+            .fee_limit
+            .parse::<u128>()
+            .map_err(|_| "MCP payer fee limit is invalid")?;
+        let signer = Arc::new(
+            layerx_human_kms::attestor::AttestorSigner::from_config(&config.signer)
+                .map_err(|_| "MCP payer attestor is invalid")?,
+        );
+        let clock = owner
+            .mcp_clock()
+            .map_err(|_| "MCP payer clock is unavailable")?;
+        let payer = mcp_payer::ProductionWebPayer::from_owner(
+            owner.clone(),
+            credential,
+            config.payer_did,
+            config.principal,
+            signer,
+            config.assertion_source,
+            transport,
+            mcp_config_digest(&config.sequencer_public_key)?,
+            clock,
+            config.grant_validity_seconds,
+            mcp_payer::RegisteredOwnerWebAccess {
+                local_grant,
+                commitment: mcp_config_digest(&config.commitment)?,
+                fee_limit,
+                send_validity_ms: config.send_validity_ms,
+            },
+        )
+        .map_err(|_| "MCP payer owner authority is unavailable")?;
+        let approvals = owner
+            .lock()
+            .map_err(|_| "MCP approval owner is unavailable")?
+            .approvals
+            .clone();
+        binding.attach_web(layerx_mcp::binding::WebAuthority::new(
+            approvals,
+            Box::new(payer),
+        ));
+    }
+    Ok(())
+}
+
+enum RpcExchangeResponse {
+    Ordinary(AgentRpcResponse),
+    Mcp {
+        id: layerx_agent_api::error::RequestId,
+        result: layerx_mcp::server::DaemonToolResult,
+    },
+}
+
+impl From<AgentRpcResponse> for RpcExchangeResponse {
+    fn from(value: AgentRpcResponse) -> Self {
+        Self::Ordinary(value)
+    }
+}
+
+fn mcp_authority_response(
+    id: layerx_agent_api::error::RequestId,
+    error: &layerx_mcp::server::ServerError,
+) -> AgentRpcResponse {
+    use layerx_mcp::server::ServerError;
+    let (class, reason) = match error {
+        ServerError::DurableInvocation(
+            layerx_agentd::session_control::McpInvocationError::Control(error),
+        ) => {
+            return agent_rpc::mcp_control_refusal(id, error);
+        }
+        ServerError::DurableInvocation(
+            layerx_agentd::session_control::McpInvocationError::Conflict,
+        ) => (ErrorClass::IdempotencyConflict, "mcp.invocation_conflict"),
+        ServerError::DurableInvocation(_) => {
+            (ErrorClass::InternalFault, "mcp.invocation_unavailable")
+        }
+        ServerError::InvocationUnknown => (ErrorClass::TransportFailure, "outcome.unknown"),
+        ServerError::RevokedSession | ServerError::ClosedSession => {
+            (ErrorClass::PolicyRefusal, "session.revoked")
+        }
+        ServerError::ExpiredAuthority => (ErrorClass::PolicyRefusal, "session.expired"),
+        ServerError::ToolAbsent | ServerError::NoScope => {
+            (ErrorClass::PolicyRefusal, "session.scope_denied")
+        }
+        ServerError::TenantMismatch | ServerError::CapabilityMismatch => {
+            (ErrorClass::PolicyRefusal, "session.not_authorized")
+        }
+        _ => (ErrorClass::InternalFault, "unavailable"),
+    };
+    agent_rpc::mcp_result_refusal(id, class, reason)
+}
+
+impl RpcExchangeResponse {
+    fn write<S: Write>(
+        self,
+        stream: &mut S,
+        owner: &SharedAgentOwner<RemoteHumanAuthority>,
+    ) -> Result<(), String> {
+        match self {
+            Self::Ordinary(response) => write_rpc_response(stream, &response),
+            Self::Mcp { id, result } => {
+                let sequence = owner
+                    .current_core_sequence()
+                    .map_err(|_| "MCP current head is unavailable".to_owned())?;
+                let mut attempted = false;
+                let outcome = result.release_current(sequence, |value| {
+                    use layerx_mcp::boundary::BoundaryRefusal;
+                    let response = match value {
+                        Ok(value) => agent_rpc::mcp_result_response(id, value),
+                        Err(BoundaryRefusal::Owner(mut error)) => {
+                            error.request_id = id;
+                            agent_rpc::mcp_api_refusal(&error)
+                        }
+                        Err(BoundaryRefusal::Unavailable(_)) => agent_rpc::mcp_result_refusal(
+                            id,
+                            ErrorClass::TransportFailure,
+                            "outcome.unknown",
+                        ),
+                        Err(BoundaryRefusal::Unauthorized) => agent_rpc::mcp_result_refusal(
+                            id,
+                            ErrorClass::PolicyRefusal,
+                            "session.not_authorized",
+                        ),
+                        Err(BoundaryRefusal::Held { .. }) => agent_rpc::mcp_result_refusal(
+                            id,
+                            ErrorClass::PolicyRefusal,
+                            "mcp.awaiting_approval",
+                        ),
+                        Err(BoundaryRefusal::NotServed(_) | BoundaryRefusal::UnsupportedRead) => {
+                            agent_rpc::mcp_result_refusal(
+                                id,
+                                ErrorClass::UnavailableCapability,
+                                "mcp.tool_not_served",
+                            )
+                        }
+                        Err(BoundaryRefusal::Malformed(_)) => agent_rpc::mcp_result_refusal(
+                            id,
+                            ErrorClass::ProtocolIncompatibility,
+                            "mcp.malformed",
+                        ),
+                    };
+                    attempted = true;
+                    write_rpc_response(stream, &response).map_err(|_| {
+                        layerx_agentd::session_control::SessionControlError::Unavailable
+                    })
+                });
+                match outcome {
+                    Ok(()) => Ok(()),
+                    Err(error) if !attempted => {
+                        write_rpc_response(stream, &mcp_authority_response(id, &error))
+                    }
+                    Err(_) => Err("MCP response release outcome is unknown".to_owned()),
+                }
+            }
+        }
+    }
+}
+
 fn agent_rpc_exchange<S: Read>(
     stream: &mut S,
     network: &str,
     owner: &SharedAgentOwner<RemoteHumanAuthority>,
-) -> AgentRpcResponse {
+    mcp_bindings: &[layerx_mcp::binding::Binding],
+) -> RpcExchangeResponse {
     let malformed = || {
         agent_rpc::refusal(
             400,
@@ -1048,21 +1314,22 @@ fn agent_rpc_exchange<S: Read>(
                 431,
                 ErrorClass::ProtocolIncompatibility,
                 "envelope.malformed",
-            );
+            )
+            .into();
         }
         match stream.read(&mut bytes[length..]) {
-            Ok(0) | Err(_) => return malformed(),
+            Ok(0) | Err(_) => return malformed().into(),
             Ok(count) => length += count,
         }
     };
     let Ok(head) = std::str::from_utf8(&bytes[..head_end - 4]) else {
-        return malformed();
+        return malformed().into();
     };
     let mut lines = head.split("\r\n");
     let mut parts = lines.next().unwrap_or_default().split(' ');
     let (method, path, version) = (parts.next(), parts.next(), parts.next());
     if version != Some("HTTP/1.1") || parts.next().is_some() {
-        return malformed();
+        return malformed().into();
     }
     let health = path == Some("/healthz");
     if path != Some("/rpc") && !health {
@@ -1070,23 +1337,25 @@ fn agent_rpc_exchange<S: Read>(
             404,
             ErrorClass::ProtocolIncompatibility,
             "envelope.malformed",
-        );
+        )
+        .into();
     }
     if method != Some(if health { "GET" } else { "POST" }) {
         return agent_rpc::refusal(
             405,
             ErrorClass::ProtocolIncompatibility,
             "envelope.malformed",
-        );
+        )
+        .into();
     }
     let mut content_length = None;
     for line in lines {
         let Some((name, value)) = line.split_once(':') else {
-            return malformed();
+            return malformed().into();
         };
         let value = value.trim_matches(|c| c == ' ' || c == '\t');
         if name.eq_ignore_ascii_case("transfer-encoding") {
-            return malformed();
+            return malformed().into();
         }
         if [
             "authorization",
@@ -1097,7 +1366,8 @@ fn agent_rpc_exchange<S: Read>(
         .iter()
         .any(|principal| name.eq_ignore_ascii_case(principal))
         {
-            return agent_rpc::refusal(403, ErrorClass::PolicyRefusal, "envelope.header_principal");
+            return agent_rpc::refusal(403, ErrorClass::PolicyRefusal, "envelope.header_principal")
+                .into();
         }
         if name.eq_ignore_ascii_case("content-length") {
             let canonical = !value.is_empty()
@@ -1105,30 +1375,31 @@ fn agent_rpc_exchange<S: Read>(
                 && (value == "0" || !value.starts_with('0'));
             let parsed = value.parse::<usize>().ok().filter(|_| canonical);
             if content_length.is_some() || parsed.is_none() {
-                return malformed();
+                return malformed().into();
             }
             content_length = parsed;
         }
     }
     if health {
         if content_length.unwrap_or(0) != 0 || length != head_end {
-            return malformed();
+            return malformed().into();
         }
-        return agent_rpc_health(owner, network);
+        return agent_rpc_health(owner, network).into();
     }
     let Some(content_length) = content_length else {
-        return malformed();
+        return malformed().into();
     };
     if content_length > agent_rpc::MAX_BODY_BYTES {
         return agent_rpc::refusal(
             413,
             ErrorClass::ProtocolIncompatibility,
             "envelope.oversized",
-        );
+        )
+        .into();
     }
     let mut body = bytes[head_end..length].to_vec();
     if body.len() > content_length {
-        return malformed();
+        return malformed().into();
     }
     let missing = content_length - body.len();
     body.resize(content_length, 0);
@@ -1136,9 +1407,101 @@ fn agent_rpc_exchange<S: Read>(
         .read_exact(&mut body[content_length - missing..])
         .is_err()
     {
-        return malformed();
+        return malformed().into();
     }
-    agent_rpc::handle_rpc(owner, &body)
+    let invocation = match agent_rpc::decode_mcp_invocation(&body) {
+        Ok(None) => return agent_rpc::handle_rpc(owner, &body).into(),
+        Err(response) => return response.into(),
+        Ok(Some(invocation)) => invocation,
+    };
+    let id = invocation.request_id;
+    let Some(binding) = mcp_bindings
+        .iter()
+        .find(|binding| binding.matches_session(&invocation.credential))
+    else {
+        return agent_rpc::mcp_result_refusal(
+            id,
+            ErrorClass::UnavailableCapability,
+            "mcp.owner_unavailable",
+        )
+        .into();
+    };
+    let control = match owner.lock() {
+        Ok(owner) => owner.session_control.clone(),
+        Err(_) => {
+            return agent_rpc::mcp_result_refusal(id, ErrorClass::InternalFault, "unavailable")
+                .into()
+        }
+    };
+    let sequence = match owner.current_core_sequence() {
+        Ok(sequence) => sequence,
+        Err(_) => {
+            return agent_rpc::mcp_result_refusal(id, ErrorClass::InternalFault, "unavailable")
+                .into()
+        }
+    };
+    use sha2::Digest as _;
+    let encoded = match serde_json::to_vec(&invocation.arguments) {
+        Ok(encoded) => encoded,
+        Err(_) => {
+            return agent_rpc::mcp_result_refusal(
+                id,
+                ErrorClass::ProtocolIncompatibility,
+                "mcp.malformed",
+            )
+            .into()
+        }
+    };
+    let request_digest = sha2::Sha256::new()
+        .chain_update(b"LXP/mcp/daemon-invocation/v1\0")
+        .chain_update((invocation.tool.len() as u64).to_be_bytes())
+        .chain_update(invocation.tool.as_bytes())
+        .chain_update(encoded)
+        .finalize()
+        .into();
+    let tool_name = if invocation.tool == "mcp.describe" {
+        "mcp.describe"
+    } else {
+        let Some(tool) = layerx_mcp::server::catalogue()
+            .iter()
+            .chain(layerx_mcp::catalogue::WEB_TOOLS.iter())
+            .chain(layerx_mcp::catalogue::SESSION_TOOLS.iter())
+            .find(|tool| tool.name == invocation.tool)
+        else {
+            return agent_rpc::mcp_result_refusal(id, ErrorClass::PolicyRefusal, "mcp.tool_absent")
+                .into();
+        };
+        tool.name
+    };
+    let identity = layerx_agentd::session_control::McpInvocationIdentity {
+        tool_name,
+        idempotency_key: invocation.idempotency_key,
+        request_digest,
+    };
+    match binding.daemon_invocation(
+        control,
+        invocation.credential,
+        sequence,
+        &invocation.tool,
+        &invocation.arguments,
+        identity,
+        |operation, credential, arguments, key| {
+            agent_rpc::dispatch_mcp_owner(owner, id, credential, operation, arguments, key)
+        },
+    ) {
+        Ok(result) => RpcExchangeResponse::Mcp { id, result },
+        Err(layerx_mcp::binding::DaemonInvocationError::Authority(error)) => {
+            mcp_authority_response(id, &error).into()
+        }
+        Err(layerx_mcp::binding::DaemonInvocationError::Binding(_)) => {
+            agent_rpc::mcp_result_refusal(
+                id,
+                ErrorClass::UnavailableCapability,
+                "mcp.owner_unavailable",
+            )
+            .into()
+        }
+    }
 }
 
 /// Readiness and negotiated node identity for the gateway's binding health check.
@@ -1193,7 +1556,9 @@ fn native_policy_sources(
         .map_err(|error| format!("LAYERX_NATIVE_POLICY_SOURCES is invalid: {error}"))
 }
 
-fn native_effect_policy_sources(tenants: &BTreeSet<TenantId>) -> Result<BTreeMap<TenantId, PathBuf>, String> {
+fn native_effect_policy_sources(
+    tenants: &BTreeSet<TenantId>,
+) -> Result<BTreeMap<TenantId, PathBuf>, String> {
     const SETTING: &str = "LAYERX_NATIVE_EFFECT_POLICY_SOURCES";
     let value = match env::var(SETTING) {
         Ok(value) => value,
@@ -1202,11 +1567,17 @@ fn native_effect_policy_sources(tenants: &BTreeSet<TenantId>) -> Result<BTreeMap
     };
     let mut declared = BTreeSet::new();
     for declaration in value.split(',') {
-        let (tenant, _) = declaration.split_once(':').ok_or_else(|| format!("{SETTING} requires tenant:absolute-path entries"))?;
-        let tenant = TenantId::new(tenant.trim().to_owned()).map_err(|_| format!("{SETTING} contains an invalid tenant"))?;
-        if !tenants.contains(&tenant) || !declared.insert(tenant) { return Err(format!("{SETTING} contains an unknown or duplicate tenant")); }
+        let (tenant, _) = declaration
+            .split_once(':')
+            .ok_or_else(|| format!("{SETTING} requires tenant:absolute-path entries"))?;
+        let tenant = TenantId::new(tenant.trim().to_owned())
+            .map_err(|_| format!("{SETTING} contains an invalid tenant"))?;
+        if !tenants.contains(&tenant) || !declared.insert(tenant) {
+            return Err(format!("{SETTING} contains an unknown or duplicate tenant"));
+        }
     }
-    layerx_agentd::config::parse_policy_sources(&value, &declared).map_err(|error| format!("{SETTING} is invalid: {error}"))
+    layerx_agentd::config::parse_policy_sources(&value, &declared)
+        .map_err(|error| format!("{SETTING} is invalid: {error}"))
 }
 
 fn program_budget_denomination_sources(
@@ -1753,7 +2124,78 @@ fn serve(config: Config) -> Result<(), String> {
     }
 }
 
+fn mcp_evidence_mode() -> Option<Result<(), String>> {
+    let arguments: Vec<_> = env::args_os().collect();
+    if arguments
+        .get(1)
+        .is_none_or(|value| value != "--mcp-evidence")
+    {
+        return None;
+    }
+    Some((|| {
+        if !(arguments.len() == 5 || arguments.len() == 6) {
+            return Err("invalid MCP evidence arguments".to_owned());
+        }
+        let root = PathBuf::from(&arguments[2]);
+        if !root.is_absolute()
+            || fs::canonicalize(&root).map_err(|_| "MCP evidence store is unavailable")? != root
+        {
+            return Err("MCP evidence store path is invalid".to_owned());
+        }
+        let tenant = arguments[3]
+            .to_str()
+            .ok_or("MCP evidence tenant is invalid")?;
+        let tenant =
+            TenantId::new(tenant.to_owned()).map_err(|_| "MCP evidence tenant is invalid")?;
+        let encoded = arguments[4].to_str().ok_or("MCP evidence key is invalid")?;
+        if encoded.len() != 64
+            || !encoded
+                .bytes()
+                .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+        {
+            return Err("MCP evidence key is invalid".to_owned());
+        }
+        let mut key = [0_u8; 32];
+        for (index, pair) in encoded.as_bytes().chunks_exact(2).enumerate() {
+            key[index] = u8::from_str_radix(
+                std::str::from_utf8(pair).map_err(|_| "MCP evidence key is invalid")?,
+                16,
+            )
+            .map_err(|_| "MCP evidence key is invalid")?;
+        }
+        if key == [0; 32] {
+            return Err("MCP evidence key is invalid".to_owned());
+        }
+        let store =
+            Store::open_read_only(&root).map_err(|_| "MCP evidence store is unavailable")?;
+        let tool = arguments
+            .get(5)
+            .map(|value| value.to_str().ok_or("MCP evidence tool is invalid"))
+            .transpose()?;
+        if tool
+            .is_some_and(|tool| tool.is_empty() || tool.len() > 128 || tool.as_bytes().contains(&0))
+        {
+            return Err("MCP evidence tool is invalid".to_owned());
+        }
+        let evidence =
+            layerx_agentd::session_control::mcp_store_evidence_for_tool(&store, &tenant, key, tool)
+                .map_err(|_| "MCP evidence record is unavailable")?;
+        println!(
+            "{}",
+            serde_json::to_string(&evidence).map_err(|_| "MCP evidence encoding failed")?
+        );
+        Ok(())
+    })())
+}
+
 fn main() {
+    if let Some(result) = mcp_evidence_mode() {
+        if result.is_err() {
+            eprintln!("layerx-agentd: MCP evidence refused");
+            std::process::exit(2);
+        }
+        return;
+    }
     if let Err(error) = human_owner_mode::run() {
         eprintln!("layerx-agentd: {}", Redacted::boot_diagnostic(&error));
         std::process::exit(2);

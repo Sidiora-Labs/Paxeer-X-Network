@@ -233,6 +233,32 @@ pub struct AgentEnvelopeTransport {
 pub const DAEMON_RPC_ROUTE: &str = "/rpc";
 
 impl AgentEnvelopeTransport {
+    pub fn mcp_invoke(
+        &self,
+        request_id: RequestId,
+        credential: &EnvelopeCredential,
+        tool: &str,
+        arguments: &Value,
+        idempotency_key: Key,
+    ) -> Result<ApiSuccess<Value>, EnvelopeError> {
+        if tool.is_empty()
+            || tool.len() > 128
+            || tool.as_bytes().contains(&0)
+            || !arguments.is_object()
+        {
+            return Err(EnvelopeError::Decode {
+                operation: Operation::McpInvoke,
+            });
+        }
+        self.send_operation(
+            Operation::McpInvoke,
+            request_id,
+            &json!({"tool":tool,"arguments":arguments}),
+            Some(credential),
+            Some(idempotency_key),
+        )
+    }
+
     pub fn tenant_readiness(
         &self,
         request_id: RequestId,
@@ -597,17 +623,44 @@ impl AgentEnvelopeTransport {
         credential: &EnvelopeCredential,
         registry: &layerx_types::payload::ModuleRegistry,
     ) -> Result<ApiSuccess<layerx_agent_api::identity::NativePrepareResultV1>, EnvelopeError> {
+        self.prepare_native_send_surface(request_id, key, request, credential, registry, false)
+    }
+
+    pub fn prepare_native_send_mcp(
+        &self,
+        request_id: RequestId,
+        key: Key,
+        request: &layerx_agent_api::identity::NativeSendPrepareRequestV1,
+        credential: &EnvelopeCredential,
+        registry: &layerx_types::payload::ModuleRegistry,
+    ) -> Result<ApiSuccess<layerx_agent_api::identity::NativePrepareResultV1>, EnvelopeError> {
+        self.prepare_native_send_surface(request_id, key, request, credential, registry, true)
+    }
+
+    fn prepare_native_send_surface(
+        &self,
+        request_id: RequestId,
+        key: Key,
+        request: &layerx_agent_api::identity::NativeSendPrepareRequestV1,
+        credential: &EnvelopeCredential,
+        registry: &layerx_types::payload::ModuleRegistry,
+        mcp: bool,
+    ) -> Result<ApiSuccess<layerx_agent_api::identity::NativePrepareResultV1>, EnvelopeError> {
         use sha2::{Digest, Sha256};
         let body = crate::native_effect::encode_native_send_prepare(request)?;
         let purpose = &request.purpose.purpose;
         crate::native_effect::validate_send_request_binding(request, credential, key)?;
-        let response = self.send_operation(
-            Operation::Prepare,
-            request_id,
-            &body,
-            Some(credential),
-            Some(key),
-        )?;
+        let response = if mcp {
+            self.mcp_invoke(request_id, credential, "activity.prepare", &body, key)?
+        } else {
+            self.send_operation(
+                Operation::Prepare,
+                request_id,
+                &body,
+                Some(credential),
+                Some(key),
+            )?
+        };
         let unknown = || EnvelopeError::Unknown {
             operation: Operation::Prepare,
         };

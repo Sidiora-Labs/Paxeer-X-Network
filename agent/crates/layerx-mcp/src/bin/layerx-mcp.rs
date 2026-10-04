@@ -41,7 +41,8 @@ fn clear_stale_socket(configuration: &ListenerConfig) -> Result<(), String> {
         || directory.gid() != configuration.owner_gid
         || directory.mode() & 0o027 != 0
         || fs::canonicalize(parent).map_or(true, |canonical| canonical != parent)
-        || fs::metadata("/proc/self").map_or(true, |process| process.uid() != configuration.owner_uid)
+        || fs::metadata("/proc/self")
+            .map_or(true, |process| process.uid() != configuration.owner_uid)
         || !metadata.file_type().is_socket()
         || metadata.uid() != configuration.owner_uid
         || metadata.gid() != configuration.owner_gid
@@ -71,16 +72,17 @@ fn clear_stale_socket(configuration: &ListenerConfig) -> Result<(), String> {
 fn run() -> Result<(), String> {
     let path = binding_path()?;
     let binding = Binding::open(&path).map_err(|error| error.detail())?;
-    let configuration = binding
-        .listener()
-        .cloned()
-        .ok_or_else(|| "the binding document declares no protocol socket".to_owned())?;
-    let mut session = binding.open_session().map_err(|error| error.detail())?;
+    let mut session = binding
+        .open_daemon_client()
+        .map_err(|error| error.detail())?;
+    let Some(configuration) = binding.listener().cloned() else {
+        return session.serve(&mut std::io::stdin().lock(), &mut std::io::stdout().lock());
+    };
     clear_stale_socket(&configuration)?;
     let listener = Listener::bind(configuration)
         .map_err(|error| format!("the protocol socket was refused: {}", error.detail()))?;
     listener
-        .serve(&mut session)
+        .serve_daemon_client(&mut session)
         .map_err(|error| format!("the protocol socket stopped: {}", error.detail()))
 }
 

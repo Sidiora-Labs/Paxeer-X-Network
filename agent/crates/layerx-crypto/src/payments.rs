@@ -574,7 +574,7 @@ fn decode_grant(d: &mut Decoder<'_>) -> Result<Grant, DisclosureError> {
 }
 
 impl Grant {
-    fn verify(&self) -> Result<(), DisclosureError> {
+    pub fn signing_digest(&self) -> Result<Id, DisclosureError> {
         if self.per_draw_maximum == 0
             || self.allowance == 0
             || self.expiration == 0
@@ -592,7 +592,11 @@ impl Grant {
         h.update(layerx_wire::hash::Domain::AuthorityHash.tag());
         h.update(b"LXP:GRANT:v1");
         h.update(&bytes[32..282]);
-        let digest: Id = h.finalize().into();
+        Ok(h.finalize().into())
+    }
+
+    fn verify(&self) -> Result<(), DisclosureError> {
+        let digest = self.signing_digest()?;
         if digest != self.id {
             return bad();
         }

@@ -25560,7 +25560,7 @@ handoff_path = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-8.4-source-han
 
 [task.9.3]
 title = "Authorize connected MCP processes against live daemon session generations"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 3
 requires = ["0.2", "8.1"]
@@ -25570,7 +25570,7 @@ do_2 = "Replace once-restored MCP authorization ownership with a daemon-mediated
 do_3 = "Retain local filtering as defense only and prove in-flight cancellation, commit ordering, durable restart and tenant isolation through actual processes."
 do_4 = "Author the new focused harness tools/qualification/paxeer-x/mcp_daemon_revocation.py to exercise these acceptance cases against real production implementations and types. It must fail on missing candidate artifacts, missing authority/configuration, skipped cases or unverifiable receipts; retain the exact candidate revision, command, case results and evidence paths. Use disposable qualification state and provisioned authority without printing secret values; no mocks, synthetic success or substitution of a library-only model for a named process boundary."
 do_5 = "Implement the declared focused gate through the real production types and paths; exercise every acceptance criterion including refusal, restart or boundary cases specified by this requirement. The command is a planned deliverable, not an already-run gate."
-touches = ["agent/crates/layerx-mcp/src/binding.rs", "agent/crates/layerx-mcp/src/server.rs", "agent/crates/layerx-mcp/src/boundary.rs", "agent/crates/layerx-agentd/src/session_control.rs", "agent/crates/layerx-agentd/src/store/mod.rs", "tools/qualification/paxeer-x/mcp_daemon_revocation.py", "agent/crates/layerx-mcp/src/stdio.rs", "agent/crates/layerx-mcp/src/listener.rs", "agent/crates/layerx-agentd-host/Cargo.toml", "agent/crates/layerx-agentd/src/main.rs", "agent/crates/layerx-mcp/src/lib.rs", "agent/crates/layerx-mcp/src/tools/wallet.rs", "agent/crates/layerx-agentd/src/policy/eval.rs", "agent/crates/layerx-agentd/src/tenant.rs", "agent/Cargo.toml", "agent/Cargo.lock", "agent/crates/layerx-agentd/Cargo.toml", "docker/kernel/Dockerfile", "docker/human-service/Dockerfile", "agent/crates/layerx-mcp/src/bin/layerx-mcp.rs", "agent/crates/layerx-mcp/src/tools/web.rs", "agent/crates/layerx-mcp/src/catalogue.rs", "agent/crates/layerx-agentd/src/agent_rpc.rs", "agent/crates/layerx-agentd/src/human_runtime.rs", "agent/crates/layerx-sdk/src/agent_envelope.rs", "agent/schema/agent-api/v1.kvx", "agent/crates/layerx-agent-api/src/generated.rs", "agent/crates/layerx-agent-api/src/operation_generated.rs", "agent/crates/layerx-agentd-host/src/payer.rs", "agent/crates/layerx-crypto/src/payments.rs", "human/crates/layerx-human-kms/src/attestor.rs", "agent/crates/layerx-agentd/src/agent_rpc_peer.rs", "agent/crates/layerx-agentd/src/agent_rpc_dispatch.rs"]
+touches = ["agent/crates/layerx-mcp/src/binding.rs", "agent/crates/layerx-mcp/src/server.rs", "agent/crates/layerx-mcp/src/boundary.rs", "agent/crates/layerx-agentd/src/session_control.rs", "agent/crates/layerx-agentd/src/store/mod.rs", "tools/qualification/paxeer-x/mcp_daemon_revocation.py", "agent/crates/layerx-mcp/src/stdio.rs", "agent/crates/layerx-mcp/src/listener.rs", "agent/crates/layerx-agentd-host/Cargo.toml", "agent/crates/layerx-agentd/src/main.rs", "agent/crates/layerx-mcp/src/lib.rs", "agent/crates/layerx-mcp/src/tools/wallet.rs", "agent/crates/layerx-agentd/src/policy/eval.rs", "agent/crates/layerx-agentd/src/tenant.rs", "agent/Cargo.toml", "agent/Cargo.lock", "agent/crates/layerx-agentd/Cargo.toml", "docker/kernel/Dockerfile", "docker/human-service/Dockerfile", "agent/crates/layerx-mcp/src/bin/layerx-mcp.rs", "agent/crates/layerx-mcp/src/tools/web.rs", "agent/crates/layerx-mcp/src/catalogue.rs", "agent/crates/layerx-agentd/src/agent_rpc.rs", "agent/crates/layerx-agentd/src/human_runtime.rs", "agent/crates/layerx-sdk/src/agent_envelope.rs", "agent/schema/agent-api/v1.kvx", "agent/crates/layerx-agent-api/src/generated.rs", "agent/crates/layerx-agent-api/src/operation_generated.rs", "agent/crates/layerx-agentd-host/src/payer.rs", "agent/crates/layerx-crypto/src/payments.rs", "human/crates/layerx-human-kms/src/attestor.rs", "agent/crates/layerx-agentd/src/agent_rpc_peer.rs", "agent/crates/layerx-agentd/src/agent_rpc_dispatch.rs", "human/wallet/attestor/internal/policy/lx/lx.go", "human/wallet/attestor/internal/server/sign.go"]
 verify_cmd = "timeout 30m python3 tools/qualification/paxeer-x/mcp_daemon_revocation.py"
 gate_kind = "planned"
 max_builds = 1
@@ -25586,11 +25586,15 @@ retained_contract_paths_104_13_35 = ["agent/crates/layerx-agentd/src/human_runti
 lease_transfer_authority_104_13_35 = "Owner approved inactive lease reassignment and distinct Send contract; original unfinished criteria and source checkpoints remain preserved."
 composition = "Actual daemon-hosted canonical MCP owner on existing RPC with exact mapped Surface::Mcp permit and result release. No blanket operation authority or local status polling. Shared schema/runtime/SDK owners compose typed fragments serially. Keep final executable and every affected production build/package caller connected."
 owner_extension = "Owner approved one additional30-minute continuation; START09:14UTC END09:44UTC. Finish actualclient/payer/durability/sharedowner, then onehost+MCPbuild and singlefocusedgate, atmosttwo scopedrepairs. Priorpartialcheckpoint and everyrefusal retained."
-source_status = "partial_continuation_authorized"
+source_status = "complete"
 qualification_status = "UNRUN"
 handoff_path = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-9.3-continuation-result.json"
 remaining_source = "Genuine payer owner attachment, exact tool dispatch, durable effect/result consumption without recursive locking, and mandatory process ordering/unknown corpus remain incomplete.27 authored paths isolated; no format/build/verify ran before09:44UTCcap."
 owner_extension_60m = "Owner explicitly approved60-minute continuation START09:48UTC END10:48UTC from frozen handoff; whole source first then one build and declaredfocusedverify, atmosttwo taskscopedrepairs. Preserveallpriorrecords."
+owner_native_clock_approval = "User explicitly approved frozen native clock proposal SHA2560c304889e1f3814eeb49b60ef4f13c2ef6c0ef8f25b1c1a10885fe9042c4b890. Explicitnative-v3-ms requires actualprotocol3 foractivities; standalonegrant has explicitmsvalidity, not encodedprotocolbinding. Authenticatedwholebody bindsprofile; checkedapprovalconversion; oldrequests unchanged. Existing10:48cap."
+build_cmd = "One bounded combined build of real Go attestor and actual Agentd host plus MCP binaries, within approved10:48UTC deadline."
+completion_basis = "implementation under owner CONSTITUTION; qualification separately recorded"
+source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-9.3-source-handoff-final.json"
 
 [task.12.2]
 title = "Supply movement with its authenticated Human KMS execution service"

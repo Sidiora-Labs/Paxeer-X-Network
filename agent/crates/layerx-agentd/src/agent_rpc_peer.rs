@@ -1,8 +1,10 @@
 use crate::human::{HumanOperationError, HumanPeer};
 use crate::human_runtime::{HumanAuthorityBoundary, UnifiedAgentOwner};
-use crate::session_control::{AuthenticatedOwnerLookup, OperationPermit, SessionControl, SessionControlError};
-use std::sync::Arc;
+use crate::session_control::{
+    AuthenticatedOwnerLookup, OperationPermit, SessionControl, SessionControlError,
+};
 use crate::tenant::ResolvedPrincipal;
+use std::sync::Arc;
 
 /// Owner operation context for one authorized agent RPC request: the retained session permit
 /// and the server-restored Human subject binding re-bound to the permit's agent.
@@ -41,6 +43,31 @@ pub fn bind<'p, A: HumanAuthorityBoundary>(
     Ok(RpcOwnerContext { permit, peer })
 }
 
+pub(crate) fn bind_registered_mcp_owner<'p, A: HumanAuthorityBoundary>(
+    owner: &mut UnifiedAgentOwner<A>,
+    permit: &'p OperationPermit,
+    owner_public_key: [u8; 32],
+    core_sequence: u64,
+) -> Result<RpcOwnerContext<'p>, HumanOperationError> {
+    if permit.principal().surface != crate::tenant::Surface::Mcp
+        || permit.operation() != crate::tenant::Operation::Prepare
+        || owner_public_key == [0; 32]
+    {
+        return Err(HumanOperationError::Refused);
+    }
+    let key = owner_public_key
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<String>();
+    let owner_did = format!("did:layerx:{key}");
+    if permit.principal().agent.as_bytes() != owner_did.as_bytes() {
+        return Err(HumanOperationError::Refused);
+    }
+    let context = bind(owner, permit)?;
+    owner.native_purpose_owner(&context, owner_public_key, core_sequence)?;
+    Ok(context)
+}
+
 pub(crate) struct BoundRpcPeer {
     peer: HumanPeer,
     principal: ResolvedPrincipal,
@@ -53,8 +80,7 @@ impl BoundRpcPeer {
     }
 
     pub(crate) fn matches(&self, lookup: &AuthenticatedOwnerLookup) -> bool {
-        self.principal == *lookup.principal()
-            && Arc::ptr_eq(&self.binding, &lookup.binding())
+        self.principal == *lookup.principal() && Arc::ptr_eq(&self.binding, &lookup.binding())
     }
 }
 
@@ -64,7 +90,9 @@ pub(crate) fn bind_lookup<A: HumanAuthorityBoundary>(
 ) -> Result<BoundRpcPeer, HumanOperationError> {
     let principal = lookup.principal();
     let tenant = principal.tenant.as_str();
-    let mut candidates = owner.retained_peers().iter()
+    let mut candidates = owner
+        .retained_peers()
+        .iter()
         .filter(|peer| peer.tenant == tenant && peer.subject.is_some() && peer.uid != 0);
     let (Some(retained), None) = (candidates.next(), candidates.next()) else {
         return Err(HumanOperationError::Refused);
@@ -74,7 +102,11 @@ pub(crate) fn bind_lookup<A: HumanAuthorityBoundary>(
     if peer.subject.is_none() || peer.uid == 0 || peer.tenant != tenant {
         return Err(HumanOperationError::Refused);
     }
-    Ok(BoundRpcPeer { peer, principal: principal.clone(), binding: lookup.binding() })
+    Ok(BoundRpcPeer {
+        peer,
+        principal: principal.clone(),
+        binding: lookup.binding(),
+    })
 }
 
 pub(crate) fn from_resolved<'p>(
@@ -83,13 +115,20 @@ pub(crate) fn from_resolved<'p>(
     bound: BoundRpcPeer,
 ) -> Result<RpcOwnerContext<'p>, SessionControlError> {
     permit.boundary(control)?;
-    if permit.principal() != &bound.principal || !permit.matches_lookup(&bound.binding)
-        || bound.peer.subject.is_none() || bound.peer.uid == 0
+    if permit.principal() != &bound.principal
+        || !permit.matches_lookup(&bound.binding)
+        || bound.peer.subject.is_none()
+        || bound.peer.uid == 0
         || bound.peer.tenant != permit.principal().tenant.as_str()
     {
-        return Err(SessionControlError::Authorization(crate::tenant::AuthorizationError::NotAuthorized));
+        return Err(SessionControlError::Authorization(
+            crate::tenant::AuthorizationError::NotAuthorized,
+        ));
     }
-    Ok(RpcOwnerContext { permit, peer: bound.peer })
+    Ok(RpcOwnerContext {
+        permit,
+        peer: bound.peer,
+    })
 }
 
 impl RpcOwnerContext<'_> {

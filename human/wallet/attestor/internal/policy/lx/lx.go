@@ -24,6 +24,15 @@ import (
 
 const Version = 1
 
+const NativeClockProfileV1 = "native-v3-ms"
+
+func NativeSigningTimestamp(profile string, protocol uint16, now time.Time) (int64, error) {
+	if profile != NativeClockProfileV1 || protocol != lxwire.StateCommitmentProtocolVersion {
+		return 0, refuse(policy.CodeDecodeError, "native clock profile requires the canonical protocol three contract")
+	}
+	return now.UnixMilli(), nil
+}
+
 const AssetNative = "native"
 
 const (
@@ -327,17 +336,19 @@ func (a *Approval) UnmarshalJSON(data []byte) error {
 }
 
 type ActivityRequest struct {
-	Envelope   []byte
-	Digest     [32]byte
-	PublicKey  [32]byte
-	Disclosure Disclosure
+	ClockProfile string
+	Envelope     []byte
+	Digest       [32]byte
+	PublicKey    [32]byte
+	Disclosure   Disclosure
 }
 
 type SendAuthorizationRequest struct {
-	Envelope   []byte
-	Digest     [32]byte
-	PublicKey  [32]byte
-	Disclosure Disclosure
+	ClockProfile string
+	Envelope     []byte
+	Digest       [32]byte
+	PublicKey    [32]byte
+	Disclosure   Disclosure
 }
 
 type BindRequest struct {
@@ -345,10 +356,11 @@ type BindRequest struct {
 }
 
 type GrantRequest struct {
-	PublicKey [32]byte
-	Grant     *lxwire.Grant
-	Receive   *lxwire.Receive
-	Digest    [32]byte
+	ClockProfile string
+	PublicKey    [32]byte
+	Grant        *lxwire.Grant
+	Receive      *lxwire.Receive
+	Digest       [32]byte
 }
 
 type Cap struct {
@@ -648,7 +660,7 @@ func (e *Evaluator) EvaluateSendAuthorization(account common.Address, req *SendA
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	call := &activityCall{
-		req:       &ActivityRequest{Envelope: req.Envelope, Digest: req.Digest, PublicKey: req.PublicKey, Disclosure: req.Disclosure},
+		req:       &ActivityRequest{Envelope: req.Envelope, Digest: req.Digest, PublicKey: req.PublicKey, Disclosure: req.Disclosure, ClockProfile: req.ClockProfile},
 		ledger:    ledger,
 		authorize: true,
 	}
@@ -819,8 +831,10 @@ func classifyDecodeError(envelope []byte, err error) error {
 
 func (e *Evaluator) inspectActivity(ctx policy.Context, view any) (policy.Inspection, error) {
 	if review, ok := view.(*activityReviewCall); ok {
-		if review == nil { return policy.Inspection{}, refuse(policy.CodeMissingField, "kernel review is missing") }
-		result, err := e.reviewActivity(ctx, review.envelope, review.publicKey, review.ledger, review.authorize)
+		if review == nil {
+			return policy.Inspection{}, refuse(policy.CodeMissingField, "kernel review is missing")
+		}
+		result, err := e.reviewActivity(ctx, review.envelope, review.publicKey, review.ledger, review.authorize, review.clockProfile)
 		review.result = result
 		return policy.Inspection{}, err
 	}
@@ -904,8 +918,18 @@ func (e *Evaluator) inspectActivity(ctx policy.Context, view any) (policy.Inspec
 	if err != nil {
 		return policy.Inspection{}, refuse(policy.CodeLedgerError, "%v", err)
 	}
-	if now.Unix() < 0 || uint64(now.Unix()) < activity.NotBefore || uint64(now.Unix()) > activity.NotAfter {
-		return policy.Inspection{}, refuse(CodeOutsideValidity, "activity is valid from %d to %d, now is %d", activity.NotBefore, activity.NotAfter, now.Unix())
+	if req.ClockProfile == "" {
+		if now.Unix() < 0 || uint64(now.Unix()) < activity.NotBefore || uint64(now.Unix()) > activity.NotAfter {
+			return policy.Inspection{}, refuse(CodeOutsideValidity, "activity is valid from %d to %d, now is %d", activity.NotBefore, activity.NotAfter, now.Unix())
+		}
+	} else {
+		timestamp, err := NativeSigningTimestamp(req.ClockProfile, activity.ProtocolVersion, now)
+		if err != nil {
+			return policy.Inspection{}, err
+		}
+		if timestamp < 0 || uint64(timestamp) < activity.NotBefore || uint64(timestamp) > activity.NotAfter {
+			return policy.Inspection{}, refuse(CodeOutsideValidity, "activity is valid from %d to %d, now is %d", activity.NotBefore, activity.NotAfter, timestamp)
+		}
 	}
 	totals := map[ID]*big.Int{}
 	outgoing := 0
@@ -1263,11 +1287,24 @@ func (e *Evaluator) inspectGrant(ctx policy.Context, view any) (policy.Inspectio
 		if g.PublicKey != req.PublicKey {
 			return policy.Inspection{}, refuse(CodeAuthorityMismatch, "grant names a key other than the signing key")
 		}
-		if now.Unix() < 0 || uint64(now.Unix()) >= g.Expiration {
-			return policy.Inspection{}, refuse(CodeOutsideValidity, "grant expired at %d, now is %d", g.Expiration, now.Unix())
+		if req.ClockProfile == "" {
+			if now.Unix() < 0 || uint64(now.Unix()) >= g.Expiration {
+				return policy.Inspection{}, refuse(CodeOutsideValidity, "grant expired at %d, now is %d", g.Expiration, now.Unix())
+			}
+		} else {
+			timestamp, err := NativeSigningTimestamp(req.ClockProfile, lxwire.StateCommitmentProtocolVersion, now)
+			if err != nil {
+				return policy.Inspection{}, err
+			}
+			if timestamp < 0 || uint64(timestamp) >= g.Expiration {
+				return policy.Inspection{}, refuse(CodeOutsideValidity, "grant expired at %d, now is %d", g.Expiration, timestamp)
+			}
 		}
 		account, asset, amount, prefix = g.From, g.Asset, toBig(g.Allowance), "lx-grant:"
 	} else {
+		if req.ClockProfile != "" {
+			return policy.Inspection{}, refuse(policy.CodeDecodeError, "native clock profile requires a payer grant")
+		}
 		r := req.Receive
 		preimage, err := lxwire.ReceivePreimage(*r)
 		if err != nil {
@@ -1297,42 +1334,61 @@ func (e *Evaluator) inspectGrant(ctx policy.Context, view any) (policy.Inspectio
 }
 
 type ActivityReview struct {
-	Activity *lxwire.Activity
-	Digest [32]byte
+	Activity   *lxwire.Activity
+	Digest     [32]byte
 	Disclosure Disclosure
 }
 
 type activityReviewCall struct {
-	envelope []byte
-	publicKey [32]byte
-	ledger policy.Ledger
-	authorize bool
-	result *ActivityReview
+	clockProfile string
+	envelope     []byte
+	publicKey    [32]byte
+	ledger       policy.Ledger
+	authorize    bool
+	result       *ActivityReview
 }
 
 func (e *Evaluator) ReviewActivity(ctx policy.Context, envelope []byte, publicKey [32]byte, ledger policy.Ledger, authorize bool) (*ActivityReview, error) {
+	return e.reviewActivityOnClock(ctx, envelope, publicKey, ledger, authorize, "")
+}
+
+func (e *Evaluator) ReviewNativeActivity(ctx policy.Context, envelope []byte, publicKey [32]byte, ledger policy.Ledger, authorize bool) (*ActivityReview, error) {
+	return e.reviewActivityOnClock(ctx, envelope, publicKey, ledger, authorize, NativeClockProfileV1)
+}
+
+func (e *Evaluator) reviewActivityOnClock(ctx policy.Context, envelope []byte, publicKey [32]byte, ledger policy.Ledger, authorize bool, clockProfile string) (*ActivityReview, error) {
 	if e == nil || ledger == nil {
 		return nil, refuse(policy.CodeNoPolicy, "kernel review needs the configured evaluator and ledger")
 	}
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	call := &activityReviewCall{envelope: envelope, publicKey: publicKey, ledger: ledger, authorize: authorize}
+	call := &activityReviewCall{envelope: envelope, publicKey: publicKey, ledger: ledger, authorize: authorize, clockProfile: clockProfile}
 	decision := e.engine.Evaluate(ctx.Account.Hex(), policy.Request{Kind: policy.KindLXActivity, View: call}, ledger)
-	if !decision.Allowed { return nil, refuse(decision.Code, "%s", decision.Reason) }
-	if call.result == nil { return nil, refuse(policy.CodeDecodeError, "review produced no decoded activity") }
+	if !decision.Allowed {
+		return nil, refuse(decision.Code, "%s", decision.Reason)
+	}
+	if call.result == nil {
+		return nil, refuse(policy.CodeDecodeError, "review produced no decoded activity")
+	}
 	if !chainMatches(ctx, uint64(call.result.Activity.NetworkID)) {
 		return nil, refuse(policy.CodeChainMismatch, "activity network differs from the configured node network")
 	}
 	return call.result, nil
 }
 
-func (e *Evaluator) reviewActivity(ctx policy.Context, envelope []byte, publicKey [32]byte, ledger policy.Ledger, authorize bool) (*ActivityReview, error) {
+func (e *Evaluator) reviewActivity(ctx policy.Context, envelope []byte, publicKey [32]byte, ledger policy.Ledger, authorize bool, clockProfile string) (*ActivityReview, error) {
 	rules, err := e.rules(ctx.Account)
-	if err != nil { return nil, err }
+	if err != nil {
+		return nil, err
+	}
 	registry, err := decodedOperations()
-	if err != nil { return nil, refuse(policy.CodeInvalidPolicy, "%v", err) }
+	if err != nil {
+		return nil, refuse(policy.CodeInvalidPolicy, "%v", err)
+	}
 	activity, err := lxwire.DecodeUnsignedActivity(envelope, registry)
-	if err != nil { return nil, classifyDecodeError(envelope, err) }
+	if err != nil {
+		return nil, classifyDecodeError(envelope, err)
+	}
 	if !chainMatches(ctx, uint64(activity.NetworkID)) {
 		return nil, refuse(policy.CodeChainMismatch, "activity network %d is not %v", activity.NetworkID, ctx.ChainID)
 	}
@@ -1344,52 +1400,86 @@ func (e *Evaluator) reviewActivity(ctx policy.Context, envelope []byte, publicKe
 		return nil, refuse(CodeAuthorityMismatch, "activity actor and authority must name the original signing identity")
 	}
 	module, ok := ModuleName(activity.Type.Module())
-	if !ok { return nil, refuse(CodeUnknownModule, "activity names an unknown module") }
+	if !ok {
+		return nil, refuse(CodeUnknownModule, "activity names an unknown module")
+	}
 	operations, allowed := rules.modules[module]
-	if !allowed { return nil, refuse(CodeModuleNotAllowed, "module %s is not allowed for this account", module) }
+	if !allowed {
+		return nil, refuse(CodeModuleNotAllowed, "module %s is not allowed for this account", module)
+	}
 	if !operations[activity.Type.Ordinal()] {
 		return nil, refuse(CodeOperationNotAllowed, "operation %d of module %s is not allowed for this account", activity.Type.Ordinal(), module)
 	}
 	var effect *Effect
 	var preimage [32]byte
 	if authorize {
-		if activity.Type != OpAssetTransfer { return nil, refuse(policy.CodeDecodeError, "a send authorization covers only an asset send") }
+		if activity.Type != OpAssetTransfer {
+			return nil, refuse(policy.CodeDecodeError, "a send authorization covers only an asset send")
+		}
 		send, decoded, err := DecodeSendAuthorization(activity)
-		if err != nil { return nil, refuse(policy.CodeDecodeError, "%v", err) }
+		if err != nil {
+			return nil, refuse(policy.CodeDecodeError, "%v", err)
+		}
 		effect = decoded
 		preimage, err = send.AuthorizationDigest()
-		if err != nil { return nil, refuse(policy.CodeDecodeError, "send authorization digest: %v", err) }
+		if err != nil {
+			return nil, refuse(policy.CodeDecodeError, "send authorization digest: %v", err)
+		}
 	} else {
 		effect, err = DecodeEffect(activity)
-		if err != nil { return nil, refuse(policy.CodeDecodeError, "%v", err) }
+		if err != nil {
+			return nil, refuse(policy.CodeDecodeError, "%v", err)
+		}
 		preimage, err = lxwire.SignaturePreimage(activity)
-		if err != nil { return nil, refuse(policy.CodeDecodeError, "activity preimage: %v", err) }
+		if err != nil {
+			return nil, refuse(policy.CodeDecodeError, "activity preimage: %v", err)
+		}
 	}
 	now, err := ledger.Now()
-	if err != nil { return nil, refuse(policy.CodeLedgerError, "%v", err) }
-	if now.Unix() < 0 || uint64(now.Unix()) < activity.NotBefore || uint64(now.Unix()) > activity.NotAfter {
-		return nil, refuse(CodeOutsideValidity, "activity is outside its validity window")
+	if err != nil {
+		return nil, refuse(policy.CodeLedgerError, "%v", err)
+	}
+	if clockProfile == "" {
+		if now.Unix() < 0 || uint64(now.Unix()) < activity.NotBefore || uint64(now.Unix()) > activity.NotAfter {
+			return nil, refuse(CodeOutsideValidity, "activity is outside its validity window")
+		}
+	} else {
+		timestamp, err := NativeSigningTimestamp(clockProfile, activity.ProtocolVersion, now)
+		if err != nil {
+			return nil, err
+		}
+		if timestamp < 0 || uint64(timestamp) < activity.NotBefore || uint64(timestamp) > activity.NotAfter {
+			return nil, refuse(CodeOutsideValidity, "activity is outside its validity window")
+		}
 	}
 	totals := map[ID]*big.Int{}
 	outgoing := 0
 	for _, leg := range effect.Legs {
 		owned, err := owns(did, leg.From, leg.Asset)
-		if err != nil { return nil, refuse(policy.CodeDecodeError, "%v", err) }
+		if err != nil {
+			return nil, refuse(policy.CodeDecodeError, "%v", err)
+		}
 		if !owned {
-			if activity.Type != OpProgramCall { return nil, refuse(CodeAccountNotOwned, "account %x is not held by the signing key", leg.From[:]) }
+			if activity.Type != OpProgramCall {
+				return nil, refuse(CodeAccountNotOwned, "account %x is not held by the signing key", leg.From[:])
+			}
 			continue
 		}
 		outgoing++
 		if rules.allow != nil && !rules.allow[leg.To] {
 			return nil, refuse(policy.CodeDestinationBlocked, "destination %x is not on the allow list", leg.To[:])
 		}
-		if totals[leg.Asset] == nil { totals[leg.Asset] = new(big.Int) }
+		if totals[leg.Asset] == nil {
+			totals[leg.Asset] = new(big.Int)
+		}
 		totals[leg.Asset].Add(totals[leg.Asset], leg.Amount)
 	}
 	if activity.Type == OpProgramCall && len(effect.Legs) > 0 && outgoing == 0 {
 		return nil, refuse(CodeAccountNotOwned, "no program leg debits an account held by the signing key")
 	}
-	if _, err := checkCaps(ledger, ctx.Account, now, rules.caps, "lx:", policy.CodeValueCap, totals); err != nil { return nil, err }
+	if _, err := checkCaps(ledger, ctx.Account, now, rules.caps, "lx:", policy.CodeValueCap, totals); err != nil {
+		return nil, err
+	}
 	return &ActivityReview{Activity: activity, Digest: preimage, Disclosure: Disclosure{
 		Account: effect.Account, Module: module, Operation: activity.Type.Ordinal(), Amounts: effect.Amounts,
 		Destinations: effect.Destinations, Sequence: activity.AccountSequence, NotBefore: activity.NotBefore, NotAfter: activity.NotAfter,

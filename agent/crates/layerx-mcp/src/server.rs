@@ -10,7 +10,10 @@ use layerx_agentd::capability::{Capability, CapabilityError, CapabilityId};
 use layerx_agentd::identity::ProtocolAuthority;
 use layerx_agentd::policy::approval::{ApprovalContext, ApprovalRegistry};
 use layerx_agentd::session::{SessionCredential, SessionError, SessionId, SessionRecord};
-use layerx_agentd::session_control::{OperationPermit, SessionControl, SessionControlError};
+use layerx_agentd::session_control::{
+    McpInvocationError, McpInvocationHandle, McpInvocationIdentity, McpInvocationStart,
+    OperationPermit, SessionControl, SessionControlError,
+};
 use layerx_agentd::store::TenantId;
 use layerx_agentd::tenant::{AuthorizationError, ObjectOwner, Operation, Surface};
 use layerx_types::ids::Did;
@@ -289,6 +292,7 @@ impl ScopeBinding {
                 TOOL_CATALOGUE
                     .iter()
                     .chain(WEB_TOOLS.iter())
+                    .chain(catalogue::SESSION_TOOLS.iter())
                     .any(|tool| tool.required_scope == scope.as_str())
             })
             .cloned()
@@ -348,10 +352,12 @@ impl ScopeBinding {
         hash.update(self.session_id.0);
         hash.update(self.generation.to_be_bytes());
         hash.update(self.capability_id.0);
-        hash.update([match mode { DeploymentMode::Full => 1, DeploymentMode::ReadOnly => 2 }]);
+        hash.update([match mode {
+            DeploymentMode::Full => 1,
+            DeploymentMode::ReadOnly => 2,
+        }]);
         format!("{:x}", hash.finalize())
     }
-
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -780,8 +786,19 @@ impl Server {
     }
 }
 
-fn tool_operation(name: &str) -> Option<Operation> {
+pub fn tool_operation(name: &str) -> Option<Operation> {
     match name {
+        "subscription.create" => Some(Operation::SubscriptionCreate),
+        "subscription.list" => Some(Operation::SubscriptionList),
+        "subscription.pause" => Some(Operation::SubscriptionPause),
+        "subscription.resume" => Some(Operation::SubscriptionResume),
+        "subscription.delete" => Some(Operation::SubscriptionDelete),
+        "subscription.health" => Some(Operation::SubscriptionHealth),
+        "subscription.acknowledge" => Some(Operation::SubscriptionAcknowledge),
+        "approval.list" => Some(Operation::ApprovalList),
+        "approval.get" => Some(Operation::ApprovalGet),
+        "approval.approve" => Some(Operation::ApprovalApprove),
+        "approval.reject" => Some(Operation::ApprovalReject),
         "tenant.readiness" => Some(Operation::TenantReadiness),
         "balance.get" | "wallet.balance" => Some(Operation::ReadBalance),
         "wallet.accounts" => Some(Operation::ReadAccount),
@@ -801,6 +818,334 @@ fn tool_operation(name: &str) -> Option<Operation> {
         "activity.wait" => Some(Operation::Wait),
         _ => None,
     }
+}
+
+pub trait DaemonExecutionBoundary: ToolBoundary {
+    fn reconcile(&mut self, submission_ref: &str) -> Result<Value, BoundaryRefusal>;
+}
+
+pub struct DaemonToolResult {
+    value: Result<Value, BoundaryRefusal>,
+    permit: OperationPermit,
+    control: SessionControl,
+    handle: McpInvocationHandle,
+}
+
+impl DaemonToolResult {
+    pub fn release_current<T>(
+        self,
+        core_sequence: u64,
+        writer: impl FnOnce(Result<Value, BoundaryRefusal>) -> Result<T, SessionControlError>,
+    ) -> Result<T, ServerError> {
+        let Self {
+            value,
+            permit,
+            control,
+            handle,
+        } = self;
+        permit
+            .mcp_release_current(&control, &handle, core_sequence, || {
+                writer(value).map_err(|_| std::io::Error::other("MCP result writer failed"))
+            })
+            .map_err(ServerError::DurableInvocation)?
+            .map_err(|_| ServerError::AuthorizationUnavailable)
+    }
+}
+
+impl Server {
+    fn retained_result(
+        &self,
+        permit: OperationPermit,
+        handle: McpInvocationHandle,
+        bytes: &[u8],
+    ) -> Result<DaemonToolResult, ServerError> {
+        Ok(DaemonToolResult {
+            value: decode_mcp_outcome(bytes)?,
+            permit,
+            control: self.control.clone(),
+            handle,
+        })
+    }
+
+    pub fn describe_for_release(
+        &self,
+        core_sequence: u64,
+        identity: McpInvocationIdentity,
+    ) -> Result<DaemonToolResult, ServerError> {
+        let tool = self.tools.first().copied().ok_or(ServerError::NoScope)?;
+        let permit = self.authorize_tool(core_sequence, tool)?;
+        match permit
+            .mcp_begin(&self.control, identity)
+            .map_err(ServerError::DurableInvocation)?
+        {
+            McpInvocationStart::Settled(handle, bytes) => {
+                self.retained_result(permit, handle, &bytes)
+            }
+            McpInvocationStart::Unknown(_) => Err(ServerError::InvocationUnknown),
+            McpInvocationStart::Started(handle) => {
+                permit
+                    .mcp_start_effect(&self.control, &handle)
+                    .map_err(ServerError::DurableInvocation)?;
+                let tools = self
+                    .tools
+                    .iter()
+                    .map(|tool| catalogue::listing(*tool).ok_or(ServerError::InvalidInvocation))
+                    .collect::<Result<Vec<_>, _>>()?;
+                let value = Ok(json!({
+                    "mode": match self.mode { DeploymentMode::Full => "full", DeploymentMode::ReadOnly => "read-only" },
+                    "loaded_binding_v1": self.binding.transport_binding(self.mode),
+                    "tools": tools,
+                }));
+                let bytes = encode_mcp_outcome(&value)?;
+                permit
+                    .mcp_settle_effect(&self.control, &handle, Some(&bytes))
+                    .map_err(ServerError::DurableInvocation)?;
+                Ok(DaemonToolResult {
+                    value,
+                    permit,
+                    control: self.control.clone(),
+                    handle,
+                })
+            }
+        }
+    }
+
+    pub fn execute_for_release<B: DaemonExecutionBoundary>(
+        &mut self,
+        core_sequence: u64,
+        name: &str,
+        arguments: &Value,
+        identity: McpInvocationIdentity,
+        boundary: &mut B,
+    ) -> Result<DaemonToolResult, ServerError> {
+        catalogue::validate(name, arguments).map_err(|_| ServerError::InvalidInvocation)?;
+        let encoded = serde_json::to_vec(arguments).map_err(|_| ServerError::InvalidInvocation)?;
+        let (invocation, permit) = self.route(core_sequence, name, encoded)?;
+        let start = permit
+            .mcp_begin(&self.control, identity)
+            .map_err(ServerError::DurableInvocation)?;
+        match start {
+            McpInvocationStart::Settled(handle, bytes) => {
+                self.retained_result(permit, handle, &bytes)
+            }
+            McpInvocationStart::Unknown(handle) => {
+                let Some(submission_ref) = self
+                    .control
+                    .mcp_reconciliation_target(&handle)
+                    .map_err(ServerError::DurableInvocation)?
+                else {
+                    return Err(ServerError::InvocationUnknown);
+                };
+                let value = match boundary.reconcile(&submission_ref) {
+                    Ok(value) => Ok(value),
+                    Err(_) => return Err(ServerError::InvocationUnknown),
+                };
+                let bytes = encode_mcp_outcome(&value)?;
+                if !permit
+                    .mcp_reconcile_effect(&self.control, &handle, &bytes)
+                    .map_err(ServerError::DurableInvocation)?
+                {
+                    return Err(ServerError::InvocationUnknown);
+                }
+                Ok(DaemonToolResult {
+                    value,
+                    permit,
+                    control: self.control.clone(),
+                    handle,
+                })
+            }
+            McpInvocationStart::Started(handle) => {
+                if matches!(name, "activity.submit" | "activity.sign") {
+                    if let Some(reference) =
+                        arguments.get("preparation_ref").and_then(Value::as_str)
+                    {
+                        if let Some(id) = mcp_hex32(reference) {
+                            permit
+                                .mcp_bind_preparation(&self.control, &handle, id)
+                                .map_err(ServerError::DurableInvocation)?;
+                        }
+                    }
+                }
+                permit
+                    .mcp_start_effect(&self.control, &handle)
+                    .map_err(ServerError::DurableInvocation)?;
+                let value = boundary.execute(invocation.tool, arguments);
+                if name == "activity.prepare" {
+                    if let Ok(result) = &value {
+                        if let Some(id) =
+                            layerx_sdk::agent_envelope::decode_native_preparation(result)
+                                .map(|value| value.preparation_id)
+                        {
+                            permit
+                                .mcp_bind_preparation(&self.control, &handle, id)
+                                .map_err(ServerError::DurableInvocation)?;
+                        }
+                    }
+                }
+                let outcome = match &value {
+                    Ok(_) => InvocationOutcome::Completed,
+                    Err(error) if error.unknown() => InvocationOutcome::Unknown,
+                    Err(_) => InvocationOutcome::Refused,
+                };
+                self.complete(&invocation, outcome)?;
+                if outcome == InvocationOutcome::Unknown {
+                    permit
+                        .mcp_settle_effect(&self.control, &handle, None)
+                        .map_err(ServerError::DurableInvocation)?;
+                    return Err(ServerError::InvocationUnknown);
+                }
+                let bytes = encode_mcp_outcome(&value)?;
+                permit
+                    .mcp_settle_effect(&self.control, &handle, Some(&bytes))
+                    .map_err(ServerError::DurableInvocation)?;
+                Ok(DaemonToolResult {
+                    value,
+                    permit,
+                    control: self.control.clone(),
+                    handle,
+                })
+            }
+        }
+    }
+}
+
+fn mcp_hex32(text: &str) -> Option<[u8; 32]> {
+    if text.len() != 64
+        || !text
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+    {
+        return None;
+    }
+    let mut bytes = [0; 32];
+    for (index, byte) in bytes.iter_mut().enumerate() {
+        *byte = u8::from_str_radix(&text[index * 2..index * 2 + 2], 16).ok()?;
+    }
+    Some(bytes)
+}
+
+fn encode_mcp_outcome(value: &Result<Value, BoundaryRefusal>) -> Result<Vec<u8>, ServerError> {
+    let value = match value {
+        Ok(value) => json!({"ok": value}),
+        Err(error) => {
+            let refusal = match error {
+                BoundaryRefusal::NotServed(tool) => json!({"kind": "not_served", "tool": tool}),
+                BoundaryRefusal::UnsupportedRead => json!({"kind": "unsupported_read"}),
+                BoundaryRefusal::Unauthorized => json!({"kind": "unauthorized"}),
+                BoundaryRefusal::Owner(error) => json!({
+                    "kind": "owner", "class": format!("{:?}", error.class),
+                    "protocol_result_code": error.protocol_result_code.map(|code| code.raw()),
+                    "retriability": format!("{:?}", error.retriability),
+                    "request_id": error.request_id.0.to_string(), "reason": error.reason.as_str(),
+                }),
+                BoundaryRefusal::Unavailable(reason) => {
+                    json!({"kind": "unavailable", "reason": reason})
+                }
+                BoundaryRefusal::Malformed(reason) => {
+                    json!({"kind": "malformed", "reason": reason})
+                }
+                BoundaryRefusal::Held { hold_id, awaiting } => {
+                    json!({"kind": "held", "hold_id": hold_id.iter().map(|byte| format!("{byte:02x}")).collect::<String>(), "awaiting": awaiting})
+                }
+            };
+            json!({"error": refusal})
+        }
+    };
+    serde_json::to_vec(&value).map_err(|_| ServerError::AuthorizationUnavailable)
+}
+
+fn decode_mcp_outcome(bytes: &[u8]) -> Result<Result<Value, BoundaryRefusal>, ServerError> {
+    use layerx_agent_api::error::{ApiError, ErrorClass, ReasonCode, RequestId, Retriability};
+    let corrupt = || ServerError::DurableInvocation(McpInvocationError::Corrupt);
+    let value: Value = serde_json::from_slice(bytes).map_err(|_| corrupt())?;
+    let fields = value
+        .as_object()
+        .filter(|fields| fields.len() == 1)
+        .ok_or_else(corrupt)?;
+    if let Some(value) = fields.get("ok") {
+        return Ok(Ok(value.clone()));
+    }
+    let fields = fields
+        .get("error")
+        .and_then(Value::as_object)
+        .ok_or_else(corrupt)?;
+    let kind = fields
+        .get("kind")
+        .and_then(Value::as_str)
+        .ok_or_else(corrupt)?;
+    let text = |field: &str| {
+        fields
+            .get(field)
+            .and_then(Value::as_str)
+            .ok_or_else(corrupt)
+    };
+    let (error, count) = match kind {
+        "not_served" => {
+            let name = text("tool")?;
+            let tool = catalogue()
+                .iter()
+                .chain(WEB_TOOLS.iter())
+                .chain(catalogue::SESSION_TOOLS.iter())
+                .find(|tool| tool.name == name)
+                .ok_or_else(corrupt)?;
+            (BoundaryRefusal::NotServed(tool.name), 2)
+        }
+        "unsupported_read" => (BoundaryRefusal::UnsupportedRead, 1),
+        "unauthorized" => (BoundaryRefusal::Unauthorized, 1),
+        "unavailable" => (BoundaryRefusal::Unavailable(text("reason")?.to_owned()), 2),
+        "malformed" => (BoundaryRefusal::Malformed(text("reason")?.to_owned()), 2),
+        "held" => (
+            BoundaryRefusal::Held {
+                hold_id: mcp_hex32(text("hold_id")?).ok_or_else(corrupt)?,
+                awaiting: fields
+                    .get("awaiting")
+                    .and_then(Value::as_bool)
+                    .ok_or_else(corrupt)?,
+            },
+            3,
+        ),
+        "owner" => {
+            let class_name = text("class")?;
+            let class = ErrorClass::ALL
+                .iter()
+                .copied()
+                .find(|class| format!("{class:?}") == class_name)
+                .ok_or_else(corrupt)?;
+            let retriability = match text("retriability")? {
+                "Terminal" => Retriability::Terminal,
+                "Retriable" => Retriability::Retriable,
+                _ => return Err(corrupt()),
+            };
+            let result = fields.get("protocol_result_code").ok_or_else(corrupt)?;
+            let protocol_result_code = if result.is_null() {
+                None
+            } else {
+                Some(layerx_types::result::ResultCode::from_raw(
+                    i32::try_from(result.as_i64().ok_or_else(corrupt)?).map_err(|_| corrupt())?,
+                ))
+            };
+            let encoded_id = text("request_id")?;
+            let request_id = encoded_id.parse::<u64>().map_err(|_| corrupt())?;
+            if request_id.to_string() != encoded_id {
+                return Err(corrupt());
+            }
+            (
+                BoundaryRefusal::Owner(ApiError {
+                    class,
+                    protocol_result_code,
+                    retriability,
+                    request_id: RequestId(request_id),
+                    reason: ReasonCode::new(text("reason")?).map_err(|_| corrupt())?,
+                }),
+                6,
+            )
+        }
+        _ => return Err(corrupt()),
+    };
+    if fields.len() != count {
+        return Err(corrupt());
+    }
+    Ok(Err(error))
 }
 
 /// The configured x-websearch sidecar, the payer's signing boundary and the approval registry
@@ -971,6 +1316,8 @@ pub enum ServerError {
     ToolAbsent,
     WrongServer,
     AuthorizationUnavailable,
+    DurableInvocation(McpInvocationError),
+    InvocationUnknown,
     Arithmetic,
     Capability(CapabilityError),
     Audit(AuditError),
@@ -999,9 +1346,10 @@ const fn map_authorization(error: &AuthorizationError) -> ServerError {
         AuthorizationError::Revoked => ServerError::RevokedSession,
         AuthorizationError::Expired => ServerError::ExpiredAuthority,
         AuthorizationError::ScopeDenied => ServerError::ToolAbsent,
-        AuthorizationError::NotAuthorized | AuthorizationError::InvalidRequest => {
-            ServerError::CapabilityMismatch
-        }
+        AuthorizationError::NotAuthorized
+        | AuthorizationError::InvalidRequest
+        | AuthorizationError::CoordinateMismatch
+        | AuthorizationError::BearerOnlyCatalogueWrite => ServerError::CapabilityMismatch,
     }
 }
 

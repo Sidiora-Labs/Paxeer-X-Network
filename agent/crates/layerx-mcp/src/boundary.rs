@@ -18,6 +18,7 @@ pub enum BoundaryRefusal {
     NotServed(&'static str),
     UnsupportedRead,
     Unauthorized,
+    Owner(layerx_agent_api::error::ApiError),
     Unavailable(String),
     Malformed(String),
     /// A spend the approval boundary holds under `hold_id`; `awaiting` marks a hold an earlier
@@ -38,6 +39,7 @@ impl BoundaryRefusal {
             }
             Self::UnsupportedRead => "the daemon does not serve the requested read".to_owned(),
             Self::Unauthorized => "the daemon refused the bound agent credential".to_owned(),
+            Self::Owner(error) => error.reason.as_str().to_owned(),
             Self::Unavailable(reason) => format!("the daemon is unavailable: {reason}"),
             Self::Malformed(reason) => format!("the daemon response is unusable: {reason}"),
             Self::Held {
@@ -56,8 +58,19 @@ impl BoundaryRefusal {
 
     /// Reports whether the refusal leaves the externally visible effect unknown.
     #[must_use]
-    pub const fn unknown(&self) -> bool {
-        matches!(self, Self::Unavailable(_))
+    pub fn unknown(&self) -> bool {
+        match self {
+            Self::Unavailable(_) => true,
+            Self::Owner(error) => {
+                matches!(
+                    error.class,
+                    layerx_agent_api::error::ErrorClass::TransportFailure
+                        | layerx_agent_api::error::ErrorClass::Deadline
+                        | layerx_agent_api::error::ErrorClass::InternalFault
+                ) || error.reason.as_str() == "outcome.unknown"
+            }
+            _ => false,
+        }
     }
 }
 

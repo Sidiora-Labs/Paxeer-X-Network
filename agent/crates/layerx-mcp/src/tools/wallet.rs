@@ -4,7 +4,7 @@ use std::sync::Arc;
 use std::task::{Context, Poll, Wake, Waker};
 use std::time::Duration;
 
-use layerx_agentd::policy::{evaluate, EvaluationInput, Outcome, PolicySet};
+use layerx_agentd::policy::{evaluate, EvaluationInput, Outcome, PolicySet, Purpose};
 use layerx_agentd::protocol_evidence::{RawActivityReceiptEvidence, RawReceiptEvidence};
 use layerx_crypto::payments::Payment;
 use layerx_sdk::rpc::{Commitment, RpcError, RpcValue};
@@ -42,15 +42,20 @@ pub fn execute(
     execution: &PaymentExecution<'_>,
 ) -> Result<VerifiedRpcReceipt, WalletToolError> {
     let input = execution.evaluation;
-    if input.session.request.session_id != server.binding().session_id()
-        || &input.session.request.tenant != server.binding().tenant()
-        || input.capability.id != server.binding().capability_id()
-        || input.session.request.agent.as_bytes() != execution.options.actor.as_bytes()
-        || input.request.core_sequence != core_sequence
-        || input.request.purpose != tool.name()
+    let intent = input.intent();
+    let session = input.session();
+    if session.request.session_id != server.binding().session_id()
+        || &session.request.tenant != server.binding().tenant()
+        || input.capability().id() != server.binding().capability_id()
+        || session.request.agent.as_bytes() != execution.options.actor.as_bytes()
+        || intent.core_sequence != core_sequence
+        || !matches!(&intent.purpose, Purpose::Text(text) if text.as_str() == tool.name())
     {
         return Err(WalletToolError::Scope);
     }
+    let [effect] = intent.effects.as_slice() else {
+        return Err(WalletToolError::Arguments);
+    };
     let ordinal = match tool {
         PaymentTool::Send | PaymentTool::Transfer => 5,
         PaymentTool::Create => 1,
@@ -77,10 +82,10 @@ pub fn execute(
                         let disclosure = prepared.disclosure();
                         let (amount, asset, counterparty) =
                             policy_dimensions(tool, disclosure, execution)?;
-                        if input.request.amount != amount
-                            || input.request.asset != asset
-                            || input.request.counterparty != counterparty
-                            || input.request.activity_type != ordinal
+                        if effect.amount != amount
+                            || effect.asset != asset
+                            || effect.counterparty != counterparty
+                            || effect.activity_type != ordinal
                         {
                             return Err(WalletToolError::Arguments);
                         }
