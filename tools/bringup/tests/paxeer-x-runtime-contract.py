@@ -950,11 +950,203 @@ finally:
 '''
 
 
+def kms_service_prerequisite():
+    import importlib.util
+    import shlex
+    os.umask(0o077)
+    sys.dont_write_bytecode = True
+    specification = importlib.util.spec_from_file_location('human_material', ROOT / 'platform/hosted/human/material.py')
+    material = importlib.util.module_from_spec(specification)
+    sys.path.insert(0, str(ROOT / 'platform/hosted/human'))
+    specification.loader.exec_module(material)
+    container = None
+    evidence = None
+    result = {'task': '24.12', 'cases': [], 'tests': 0, 'skipped': 0, 'exit_code': 1}
+
+    def require(condition, message):
+        if not condition:
+            raise RuntimeError(message)
+
+    def case(name):
+        result['cases'].append(name)
+        print('PASS ' + name, flush=True)
+
+    try:
+        raw = os.environ.get('PAXEER_X_KMS_PREREQUISITE_EVIDENCE')
+        if not raw:
+            raise FileNotFoundError('PAXEER_X_KMS_PREREQUISITE_EVIDENCE owned0700 directory required')
+        evidence = Path(raw)
+        material.protected_file(evidence, 0o700)
+        revision = command(['git', '-C', str(ROOT), 'rev-parse', 'HEAD']).stdout.strip()
+        require(not command(['git', '-C', str(ROOT), 'status', '--porcelain']).stdout.strip(), 'published clean candidate required')
+        raw = os.environ.get('PAXEER_X_FOUNDATION_MANIFEST')
+        if not raw:
+            raise FileNotFoundError('actual passed24.11 PAXEER_X_FOUNDATION_MANIFEST required')
+        manifest_path = Path(raw)
+        material.protected_file(manifest_path, 0o600)
+        foundation = material.protected_json(manifest_path)
+        proof = material.protected_json(manifest_path.parent / 'qualification.json')
+        require(foundation.get('stage') == 'dependency-foundation' and foundation.get('purpose') == 'disposable-test-only'
+                and proof.get('exit_code') == 0 and proof.get('tests', 0) > 0 and proof.get('skipped') == 0,
+                'genuine qualified dependency foundation required')
+        network = foundation['network']
+        require(re.fullmatch(r'paxeer-x-fixture-[a-zA-Z0-9_.-]+', network) is not None, 'isolated foundation network name refused')
+        require(docker('network', 'inspect', '--format', '{{.Internal}}', network).stdout.strip() == 'true', 'external dependency network refused')
+        registry_path = manifest_path.parent / foundation['inputs']['module_registry']
+        expected = foundation['generated_artifacts'][foundation['inputs']['module_registry']]
+        registry_bytes = material.read_bytes(registry_path)
+        require(hashlib.sha256(registry_bytes).hexdigest() == expected['sha256'], 'foundation canonical registry changed')
+        image = os.environ.get('PAXEER_X_RUNTIME_IMAGE', '')
+        if not re.fullmatch(r'sha256:[0-9a-f]{64}', image):
+            raise FileNotFoundError('prebuilt source-bound PAXEER_X_RUNTIME_IMAGE required')
+        metadata = json.loads(docker('image', 'inspect', image).stdout)[0]
+        image_revision = (metadata['Config'].get('Labels') or {}).get('org.opencontainers.image.revision', '')
+        require(metadata['Id'] == image and re.fullmatch('[0-9a-f]{40}', image_revision) is not None, 'image source identity refused')
+        paths = ['human/Cargo.toml', 'human/Cargo.lock', 'human/crates', 'agent', 'programs', 'interop',
+                 'platform/hosted/internal', 'platform/crates', 'platform/Cargo.toml', 'platform/Cargo.lock']
+        def binding(source):
+            return command(['git', '-C', str(ROOT), 'ls-tree', '-r', '--full-tree', '-z', source, '--', *paths]).stdout
+        require(binding(image_revision) == binding(revision), 'prebuilt Human KMS/runtime clock source differs')
+        work = evidence / ('kms-' + uuid.uuid4().hex)
+        work.mkdir(mode=0o700)
+        tls = work / 'tls'
+        tls.mkdir(mode=0o700)
+        command(['openssl', 'genpkey', '-algorithm', 'EC', '-pkeyopt', 'ec_paramgen_curve:P-256', '-out', str(tls / 'ca.key')])
+        command(['openssl', 'req', '-x509', '-new', '-key', str(tls / 'ca.key'), '-days', '1', '-subj', '/CN=Disposable Human KMS CA',
+                 '-addext', 'basicConstraints=critical,CA:TRUE', '-addext', 'keyUsage=critical,keyCertSign,cRLSign', '-out', str(tls / 'ca.crt')])
+        command(['openssl', 'x509', '-in', str(tls / 'ca.crt'), '-outform', 'DER', '-out', str(tls / 'ca.der')])
+        producer = (ROOT / 'platform/hosted/tests/beta-cluster.sh').read_text().split('issue_cert() {', 1)[1].split('\n}\n', 1)[0]
+        for name, common, usage, san in [('human-kms', 'layerx-human-kms', 'serverAuth', 'DNS:layerx-human-kms,DNS:localhost,IP:127.0.0.1'),
+                                       ('human-kms-client', 'layerx-human-components', 'clientAuth', ''),
+                                       ('human-kms-executor', 'layerx-human-movement', 'clientAuth', ''),
+                                       ('foreign', 'foreign-component', 'clientAuth', '')]:
+            code = 'CA_DIR=' + shlex.quote(str(tls)) + '\nissue_cert() {' + producer + '\n}\nissue_cert ' + ' '.join(map(shlex.quote, (name, common, usage, san)))
+            command(['bash', '-euo', 'pipefail', '-c', code])
+            os.chmod(tls / name, 0o700)
+            shutil.copyfile(tls / 'ca.der', tls / name / 'ca.der')
+            os.chmod(tls / name / 'ca.der', 0o600)
+        state = work / 'state'
+        state.mkdir(mode=0o700)
+        os.chown(state, 4026, 4020)
+        projected = work / 'material'
+        material.kms_prerequisite(registry_path, tls, projected, foundation['network_id'], foundation['asset_id'], state)
+        private = work / 'private'
+        private.mkdir(mode=0o700)
+        os.chown(private, 4026, 4020)
+        os.chown(projected, 4026, 4020)
+        for path in projected.iterdir():
+            os.chown(path, 4026, 4020)
+        container = 'paxeer-x-kms-' + uuid.uuid4().hex
+        arguments = ['run', '-d', '--pull=never', '--name', container, '--network', network, '--read-only', '--cap-drop', 'ALL',
+                     '--security-opt', 'no-new-privileges', '--tmpfs', '/tmp:rw,nosuid,nodev,mode=1777', '--user', '4026:4020',
+                     '--mount', 'type=bind,src=' + str(projected) + ',dst=/run/human-material,readonly',
+                     '--mount', 'type=bind,src=' + str(private) + ',dst=/run/human-private/kms',
+                     '--mount', 'type=bind,src=' + str(state) + ',dst=/var/lib/layerx/human',
+                     '--mount', 'type=bind,src=' + str(tls) + ',dst=/fixture-tls,readonly',
+                     '--mount', 'type=bind,src=' + str(ROOT / 'docker/human-service/entrypoint.sh') + ',dst=/usr/local/bin/human-entrypoint,readonly']
+        values = {'LISTEN': '127.0.0.1:9450', 'PROVIDER_REFERENCE': 'layerx-human-kms', 'STATE_DIR': '/var/lib/layerx/human',
+                  'DEADLINE_SECONDS': '3', 'REGISTRY_FILE': '/run/human-private/kms/registry.json',
+                  'CLIENT_CA_DER': '/run/human-private/kms/ca.der', 'TLS_CERT_DER': '/run/human-private/kms/kms-server.der',
+                  'TLS_KEY_DER': '/run/human-private/kms/kms-server-key.der', 'CLIENT_CERT_DER': '/run/human-private/kms/kms-client.der',
+                  'EVM_CLIENT_CERT_DER': '/run/human-private/kms/kms-executor.der', 'SEAL_SECRET_FILE': '/run/human-private/kms/kms-seal'}
+        for name, value in values.items():
+            arguments += ['-e', 'LAYERX_HUMAN_KMS_' + name + '=' + value]
+        arguments += ['--entrypoint', '/bin/sh', image, '/usr/local/bin/human-entrypoint', 'kms']
+        docker(*arguments)
+        client = '''import socket,ssl,struct,sys
+ctx=ssl.create_default_context(cafile='/fixture-tls/ca.crt')
+if sys.argv[1]!='none': ctx.load_cert_chain('/fixture-tls/'+sys.argv[1]+'/cert.pem','/fixture-tls/'+sys.argv[1]+'/key.pem')
+if sys.argv[2]=='wrongca':
+ ctx=ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+ ctx.load_cert_chain('/fixture-tls/human-kms-client/cert.pem','/fixture-tls/human-kms-client/key.pem')
+ctx.minimum_version=ssl.TLSVersion.TLSv1_3
+payload=bytes.fromhex(sys.argv[3])
+with socket.create_connection(('127.0.0.1',9450),timeout=3) as tcp:
+ with ctx.wrap_socket(tcp,server_hostname='wrong-server' if sys.argv[2]=='wrongname' else 'layerx-human-kms') as tls:
+  tls.sendall(struct.pack('>I',len(payload))+payload)
+  def read(n):
+   out=b''
+   while len(out)<n:
+    chunk=tls.recv(n-len(out))
+    if not chunk: raise RuntimeError('real KMS refused connection')
+    out+=chunk
+   return out
+  size=struct.unpack('>I',read(4))[0]
+  if not 0<size<=2097152: raise RuntimeError('real response frame bounds')
+  print(read(size).hex())
+'''
+        provider = b'layerx-human-kms'
+        binding_value = os.urandom(32)
+        def request(operation, reference=b'', provider_reference=provider):
+            frame = b'LXKP\x00\x01' + bytes([operation]) + len(provider_reference).to_bytes(4, 'big') + provider_reference
+            if operation:
+                frame += binding_value + int(foundation['network_id']).to_bytes(4, 'big') + b'\x01' + len(reference).to_bytes(4, 'big') + reference
+            return frame
+        def call(frame, role='human-kms-client', failure='', check=True):
+            answer = docker('exec', '--user', '0:0', container, 'python3', '-c', client, role, failure, frame.hex(), check=check)
+            return bytes.fromhex(answer.stdout.strip()) if answer.returncode == 0 else None
+        deadline = time.monotonic() + 30
+        while True:
+            if call(request(0), check=False) == b'LXKP\x00\x01\x00\x00':
+                break
+            require(time.monotonic() < deadline, 'actual KMS process startup failed')
+            time.sleep(0.25)
+        case('real-entrypoint-runtime-clock-and-mtls-startup')
+        created = call(request(1))
+        require(len(created) == 109 and created[:12] == b'LXKP\x00\x01\x01\x00\x00\x00\x00\x20', 'actual authorized create response refused')
+        reference, public = created[12:44], created[44:76]
+        require(any(reference) and any(public), 'actual KMS key identity absent')
+        described = call(request(2, reference))
+        require(described[7] == 0 and described[12:76] == created[12:76], 'actual provider describe identity mismatch')
+        case('authorized-provider-create-and-describe')
+        for label, role, failure in [('wrong-server-name', 'human-kms-client', 'wrongname'), ('wrong-ca', 'human-kms-client', 'wrongca'),
+                                     ('missing-client', 'none', ''), ('wrong-client-role', 'foreign', '')]:
+            require(call(request(0), role, failure, check=False) is None, label + ' unexpectedly admitted')
+            case(label + '-refused')
+        refused = call(request(1), 'human-kms-executor')
+        require(refused == b'LXKP\x00\x01\x01\x01', 'restricted executor admitted service key creation')
+        case('restricted-executor-service-operation-refused')
+        require(call(request(0, provider_reference=b'foreign-provider')) == b'LXKP\x00\x01\x00\x01', 'wrong provider policy admitted')
+        case('wrong-provider-policy-refused')
+        seal = hashlib.sha256((projected / 'kms-seal').read_bytes()).hexdigest()
+        docker('restart', container)
+        deadline = time.monotonic() + 30
+        while True:
+            restored = call(request(2, reference), check=False)
+            if restored is not None:
+                break
+            require(time.monotonic() < deadline, 'retained KMS failed to resume')
+            time.sleep(0.25)
+        require(restored[7] == 0 and restored[12:76] == created[12:76] and hashlib.sha256((projected / 'kms-seal').read_bytes()).hexdigest() == seal,
+                'restart replaced retained KMS seal or custody identity')
+        case('retained-state-seal-and-provider-identity-restart')
+        result.update(revision=revision, image=image, foundation_manifest=str(manifest_path), tests=len(result['cases']), exit_code=0)
+        material.write_bytes(evidence / 'kms-service-prerequisite.json', json.dumps(result, sort_keys=True).encode())
+        print('PAXEER_X_GATE tests=' + str(result['tests']) + ' skipped=0', flush=True)
+        return 0
+    except FileNotFoundError as error:
+        code = 78
+        result['observed'] = str(error)
+    except Exception as error:
+        code = 1
+        result['observed'] = str(error)
+    finally:
+        if container is not None:
+            docker('rm', '-f', container, check=False)
+    result.update(exit_code=code, tests=len(result['cases']))
+    if evidence is not None:
+        material.write_bytes(evidence / 'kms-service-prerequisite.json', json.dumps(result, sort_keys=True).encode())
+    print('Human KMS prerequisite refused: ' + result['observed'], file=sys.stderr, flush=True)
+    return code
+
+
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--case', required=True, choices=['role-directories', 'role-directory-prerequisite', 'export-recovery', 'fixture-foundation'])
+    parser.add_argument('--case', required=True, choices=['role-directories', 'role-directory-prerequisite', 'export-recovery', 'fixture-foundation', 'kms-service-prerequisite'])
     arguments = parser.parse_args()
     os.umask(0o077)
+    if arguments.case == 'kms-service-prerequisite':
+        return kms_service_prerequisite()
     if arguments.case == 'fixture-foundation':
         import importlib.util
         sys.dont_write_bytecode = True

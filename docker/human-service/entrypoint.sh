@@ -41,8 +41,48 @@ except (OSError, ValueError) as error:
 PY_PRIVATE
 copy_material() {
     name=$1
-    test -s "/run/human-material/$name"
-    install -m 0600 "/run/human-material/$name" "$private/$name"
+    python3 - "/run/human-material/$name" "$private/$name" <<'PY_COPY_MATERIAL'
+import os
+import stat
+import sys
+source, target = sys.argv[1:]
+try:
+    fd = os.open(source, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    with os.fdopen(fd, 'rb') as stream:
+        before = os.fstat(stream.fileno())
+        if (os.path.realpath(source) != source or not stat.S_ISREG(before.st_mode) or before.st_nlink != 1
+                or before.st_uid not in (0, os.geteuid()) or before.st_gid != os.getegid()
+                or stat.S_IMODE(before.st_mode) not in (0o400, 0o440, 0o600) or not 0 < before.st_size <= 1048576):
+            raise ValueError('source owner, type, mode or bound')
+        raw = stream.read(1048577)
+        after = os.fstat(stream.fileno())
+        if len(raw) != before.st_size or (before.st_ino, before.st_size, before.st_mtime_ns, before.st_ctime_ns) != (after.st_ino, after.st_size, after.st_mtime_ns, after.st_ctime_ns):
+            raise ValueError('source changed')
+    try:
+        info = os.lstat(target)
+    except FileNotFoundError:
+        info = None
+    if info is not None and (os.path.realpath(target) != target or not stat.S_ISREG(info.st_mode)
+            or info.st_nlink != 1 or (info.st_uid, info.st_gid, stat.S_IMODE(info.st_mode)) != (os.geteuid(), os.getegid(), 0o600)):
+        raise ValueError('retained private destination')
+    if info is not None and os.path.basename(target) == 'custody.profile':
+        retained = os.open(target, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        with os.fdopen(retained, 'rb') as stream:
+            current = os.fstat(stream.fileno())
+            previous = stream.read(1048577)
+            after = os.fstat(stream.fileno())
+        identity = lambda value: (value.st_dev, value.st_ino, value.st_size, value.st_mtime_ns, value.st_ctime_ns)
+        if identity(current) != identity(info) or identity(after) != identity(current) or previous != raw:
+            raise ValueError('custody profile changed; preserving reconciliation required')
+        raise SystemExit(0)
+    destination = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW, 0o600)
+    with os.fdopen(destination, 'wb') as stream:
+        stream.write(raw)
+        stream.flush()
+        os.fsync(stream.fileno())
+except (OSError, ValueError) as error:
+    raise SystemExit('Human protected material copy refused: ' + str(error))
+PY_COPY_MATERIAL
 }
 case "$role" in
     components)
@@ -196,7 +236,7 @@ PY_SECURITY_MATERIAL
         exec /usr/local/bin/layerx-runtime-clock --runtime-dir "$private" -- /usr/local/bin/layerx-human-security-provider "$@"
         ;;
     movement)
-        for name in ca.der kms-executor.der kms-executor-key.der; do
+        for name in ca.der kms-executor.der kms-executor-key.der custody.profile; do
             copy_material "$name"
         done
         exec /usr/local/bin/layerx-runtime-clock --runtime-dir "$private" -- /usr/local/bin/layerx-human-movement-provider "$@"

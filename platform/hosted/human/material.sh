@@ -1,5 +1,10 @@
 #!/usr/bin/env bash
 
+human_kms_material_generate() {
+    python3 "$REPO_ROOT/platform/hosted/human/material.py" --kms-prerequisite \
+        "$1" "$CA_DIR" "$2" "$NODE_NETWORK_ID" "$NODE_ASSET_ID" "$3"
+}
+
 human_secrets_generate() (
     set -euo pipefail
     umask 077

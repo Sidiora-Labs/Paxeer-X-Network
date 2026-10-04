@@ -154,6 +154,9 @@ guarantor human/wallet/deploy/human.toml - volume layerx-guarantor serverAuth,cl
 human platform/hosted/node/fly.toml - volume layerx-human serverAuth DNS:layerx-human,DNS:<app>.internal,DNS:paxeer-human-service.internal,DNS:localhost,IP:127.0.0.1
 human-event-client human/wallet/deploy/human.toml - volume layerx-human-events clientAuth URI:urn:layerx:webhooks:role:producer
 human-attestor-client human/wallet/deploy/human.toml - volume layerx-human-components clientAuth -
+human-kms human/wallet/deploy/human.toml - volume layerx-human-kms serverAuth DNS:layerx-human-kms,DNS:<app>.internal,DNS:localhost,IP:127.0.0.1
+human-kms-client human/wallet/deploy/human.toml - volume layerx-human-components clientAuth -
+human-kms-executor human/wallet/deploy/human.toml - volume layerx-human-movement clientAuth -
 relay-archive platform/hosted/node/fly.toml - volume layerx-relay-archive serverAuth DNS:layerx-relay-archive,DNS:<app>.internal,DNS:localhost,IP:127.0.0.1
 gateway-redis human/wallet/deploy/redis.toml - REDIS_TLS layerx-gateway-redis serverAuth DNS:layerx-gateway-redis,DNS:<app>.internal,DNS:localhost,IP:127.0.0.1
 gateway-client human/wallet/deploy/endpoint.toml - ENDPOINT_CLIENT layerx-gateway clientAuth URI:urn:layerx:webhooks:role:producer

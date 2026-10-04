@@ -638,14 +638,48 @@ core_boundary_prepare() {
 # The sequencer public key the pod mounted as gateway-authority/
 # sequencer-public-key, derived from the sequencer seed as kernel-genesis.sh
 # derives it.
+kernel_registry_material=$layerx/registry-material
+kernel_registry_identity() {
+	{ flock 8 && python3 /usr/local/lib/layerx-human/material.py --kernel-registry-material-produce \
+		"$genesis" "$keys/sequencer.key" "$kernel_registry_material" "$LAYERX_NODE_NETWORK_ID" "$trust_history_file"; } \
+		8>"$layerx/registry-material.lock" || return 1
+	python3 - "$kernel_registry_material" "$run/node/sequencer-public-key" "$trust_history_file" <<'PY_REGISTRY_IDENTITY'
+import os
+from pathlib import Path
+import stat
+import sys
+sys.path.insert(0, '/usr/local/lib/layerx-human')
+from material import verify_registry_material
+source, public, retained = map(Path, sys.argv[1:])
+selected = verify_registry_material(source)
+manifest = selected['manifest']
+for target, raw, mode in ((public, manifest['sequencer_public_key'].encode(), 0o444),
+                          (retained, selected['files']['trust-history'], 0o440)):
+    if target.exists() or target.is_symlink():
+        info = target.lstat()
+        if (target.resolve() != target or not stat.S_ISREG(info.st_mode) or info.st_nlink != 1
+                or info.st_uid != 0 or info.st_mode & 0o022 or target.read_bytes() != raw):
+            raise SystemExit('retained kernel identity differs; preserving reconciliation required')
+        continue
+    pending = target.with_name(target.name + '.new')
+    fd = os.open(pending, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, mode)
+    with os.fdopen(fd, 'wb') as output:
+        output.write(raw)
+        output.flush()
+        os.fsync(output.fileno())
+    os.chown(pending, 0, 4020)
+    os.chmod(pending, mode)
+    os.link(pending, target, follow_symlinks=False)
+    pending.unlink()
+    directory = os.open(target.parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    os.fsync(directory)
+    os.close(directory)
+PY_REGISTRY_IDENTITY
+}
+
 receipt_authority_prepare() {
 	network_name && tls_for receipt-authority 4021 || return 1
-	python3 -c 'import sys; sys.stdout.buffer.write(bytes.fromhex("302e020100300506032b657004220420" + sys.argv[1]))' \
-		"$(tr -d ' \r\n' <"$keys/sequencer.key")" | openssl pkey -inform DER -pubout -outform DER | tail -c 32 |
-		od -An -tx1 | tr -d ' \n' >"$run/node/sequencer-public-key.new" || return 1
-	[[ $(cat "$run/node/sequencer-public-key.new") =~ ^[0-9a-f]{64}$ ]] || return 1
-	chmod 0444 "$run/node/sequencer-public-key.new"
-	mv "$run/node/sequencer-public-key.new" "$run/node/sequencer-public-key"
+	kernel_registry_identity
 }
 
 receipt_authority_native_prepare() {
@@ -1054,29 +1088,10 @@ human_identity_prepare() {
 # publishes in core.env and the public key receipt_authority_prepare derives
 # from the sequencer seed. Written once; an existing history is never rewritten.
 trust_history() {
-	local history=$trust_history_file id key
-	while missing "$run/node/core.env" "$run/node/sequencer-public-key" >/dev/null; do
+	while missing "$genesis/metadata.lxgb" "$genesis/replica-id" "$genesis/asset-id" "$keys/sequencer.key" >/dev/null; do
 		sleep 5
 	done
-	[ -e "$history" ] && return 0
-	id=$(sed -n 's/^LAYERX_CORE_SEQUENCER_ID=//p' "$run/node/core.env")
-	key=$(tr -d ' \r\n' <"$run/node/sequencer-public-key")
-	[[ $id =~ ^[0-9a-f]{64}$ && $key =~ ^[0-9a-f]{64}$ ]] || {
-		log "core.env or sequencer-public-key does not hold a 64-hex sequencer identity; no trust history written"
-		return 1
-	}
-	python3 - "$history.new" "$id" "$key" "$LAYERX_NODE_NETWORK_ID" <<'PY' || return 1
-import struct, sys
-out, sequencer_id, public_key = sys.argv[1], bytes.fromhex(sys.argv[2]), bytes.fromhex(sys.argv[3])
-entry = struct.pack(">HIQ", 3, int(sys.argv[4]), 1) + sequencer_id + public_key + struct.pack(">QQBQ", 1, 1 << 40, 0, 0)
-assert len(entry) == 103
-with open(out, "wb") as handle:
-    handle.write(b"LayerX/sequencer-trust-history/v1\0" + struct.pack(">HH", 1, 0) + entry)
-PY
-	chown 0:4020 "$history.new"
-	chmod 0440 "$history.new"
-	mv "$history.new" "$history"
-	log "sequencer trust history written"
+	kernel_registry_identity
 }
 
 human_security_waits() {
@@ -1144,8 +1159,30 @@ human_security_prepare() {
 }
 
 human_movement_prepare() {
+	cmp -s "$human_paxeer_ca" "$tls/human-kms/ca.der" || return 1
 	human_project human-movement 4020 "$human_out/movement-config:env" "$human_paxeer_ca:ca.der" \
-		"$tls/human-kms-executor/cert.der:kms-executor.der" "$tls/human-kms-executor/key.der:kms-executor-key.der"
+		"$tls/human-kms-executor/cert.der:kms-executor.der" "$tls/human-kms-executor/key.der:kms-executor-key.der" \
+		"$human_out/movement/custody.profile:custody.profile"
+}
+
+human_kms_source=${LAYERX_HUMAN_KMS_REGISTRY_SOURCE:-$keys/human-kms/module-registry.json}
+human_kms_out=$human_state/kms-prerequisite/material
+human_kms_prepare() {
+	local directory=$human_material/human-kms name
+	if [ -e "$human_state/kms-prerequisite" ] || [ -L "$human_state/kms-prerequisite" ]; then
+		[ ! -L "$human_state/kms-prerequisite" ] && \
+			[ "$(stat -c '%u:%g:%a' "$human_state/kms-prerequisite")" = 0:0:700 ] || return 1
+	else
+		mkdir -m 0700 "$human_state/kms-prerequisite" || return 1
+	fi
+	[ ! -L "$human_state/kms-prerequisite.lock" ] || return 1
+	{ flock 7 && python3 /usr/local/lib/layerx-human/material.py --kms-prerequisite \
+		"$human_kms_source" "$tls" "$human_kms_out" "$LAYERX_NODE_NETWORK_ID" \
+		"$(cat "$genesis/asset-id")" "$human_state/kms"; } 7>"$human_state/kms-prerequisite.lock" || return 1
+	install -d -o 4026 -g 4020 -m 0500 "$directory"
+	for name in kms-server.der kms-server-key.der kms-client.der kms-executor.der ca.der kms-seal registry.json; do
+		install -o 0 -g 4020 -m 0440 "$human_kms_out/$name" "$directory/$name" || return 1
+	done
 }
 
 # The owner's session operator secret, made once on the volume like the
@@ -1165,6 +1202,22 @@ human_tls_prepare() {
 }
 
 if [ "$kernel_profile" = full ]; then
+human_root=$human_state/kms service human-kms 4026 \
+	"$genesis/asset-id $human_kms_source $tls/human-kms/cert.der $tls/human-kms/key.der $tls/human-kms/ca.der $tls/human-kms-client/cert.der $tls/human-kms-client/ca.der $tls/human-kms-executor/cert.der $tls/human-kms-executor/ca.der" \
+	human_kms_prepare - -- env \
+	LAYERX_HUMAN_KMS_LISTEN=127.0.0.1:9450 \
+	LAYERX_HUMAN_KMS_PROVIDER_REFERENCE=layerx-human-kms \
+	LAYERX_HUMAN_KMS_STATE_DIR=/var/lib/layerx/human \
+	LAYERX_HUMAN_KMS_DEADLINE_SECONDS=5 \
+	LAYERX_HUMAN_KMS_REGISTRY_FILE=/run/human-private/kms/registry.json \
+	LAYERX_HUMAN_KMS_CLIENT_CA_DER=/run/human-private/kms/ca.der \
+	LAYERX_HUMAN_KMS_TLS_CERT_DER=/run/human-private/kms/kms-server.der \
+	LAYERX_HUMAN_KMS_TLS_KEY_DER=/run/human-private/kms/kms-server-key.der \
+	LAYERX_HUMAN_KMS_CLIENT_CERT_DER=/run/human-private/kms/kms-client.der \
+	LAYERX_HUMAN_KMS_EVM_CLIENT_CERT_DER=/run/human-private/kms/kms-executor.der \
+	LAYERX_HUMAN_KMS_SEAL_SECRET_FILE=/run/human-private/kms/kms-seal \
+	/usr/local/bin/human-entrypoint kms
+
 human_root=$human_state/components service human-components 4020 \
 	"$genesis_files $human_policy $human_paxeer_ca $tls/human-event-client/identity.p12 $tls/human-attestor-client/ca.der $tls/human-attestor-client/cert.der $tls/human-attestor-client/key.der /run/secrets/events-journey-token /run/secrets/events-approval-token /run/secrets/events-webhooks-token" \
 	human_components_prepare - -- \
@@ -1213,7 +1266,7 @@ human_root=$human_state/security service human-security 4020 "$(human_security_w
 	/usr/local/bin/human-entrypoint security
 
 human_root=$human_state/movement service human-movement 4020 \
-	"$genesis_files $human_policy $human_paxeer_ca $tls/human-kms-executor/cert.der $tls/human-kms-executor/key.der" \
+	"$genesis_files $human_policy $human_paxeer_ca $tls/human-kms-executor/cert.der $tls/human-kms-executor/key.der $human_kms_out/kms-seal $human_kms_out/registry.json" \
 	human_movement_prepare - -- \
 	/bin/sh -ec "$human_env" sh env \
 	LAYERX_HUMAN_MOVEMENT_PROVIDER_SOCKET="$run/human/movement.sock" \

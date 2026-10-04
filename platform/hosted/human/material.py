@@ -128,7 +128,7 @@ def sync_directory(path):
         os.close(fd)
 
 
-PRODUCER_FILES = {'source-binding.json', 'owner-result.json', 'owner-registration.json',
+PRODUCER_FILES = {'source-binding.json', 'owner-result.json', 'owner-registration.json', 'custody.profile', 'owner-custody.json',
                   'naming-deployment-result.json', 'treasury.json', 'sequencer.json',
                   'native-context.json', *{label + suffix for label in ('credit', 'identity', 'rotation', 'recovery')
                                            for suffix in ('.activity', '.receipt')}}
@@ -236,6 +236,14 @@ def policy_from_inputs(inputs, records, network, chain):
                                 PAXEER_WITHDRAWAL_CLAIMS_CONTRACT=CUSTODY_PRECOMPILE)
     policy['movement'].update(PAXEER_VAULT=CUSTODY_PRECOMPILE, PAXEER_CHECKPOINT_REGISTRY=checkpoint,
                              PAXEER_CLAIMS_CONTRACT=CUSTODY_PRECOMPILE, PAXEER_EXIT_CONTRACT=CUSTODY_PRECOMPILE)
+    profile = producer['custody.profile']
+    custody = parse(producer['owner-custody.json'])
+    if (len(profile) != 223 or policy['movement'].get('CUSTODY_PROFILE') != '/run/human-private/movement/custody.profile'
+            or policy['movement'].get('CUSTODY_PROFILE_SHA256') != '0x' + digest(profile)
+            or custody.get('custody_profile') != 'custody.profile'
+            or custody.get('custody_profile_sha256') != '0x' + digest(profile)
+            or custody.get('vault') != CUSTODY_PRECOMPILE):
+        refuse('authenticated custody profile binding')
     policy['journal_directory'] = 'journal'
     if 'onboarding-configuration.json' in inputs:
         onboarding = parse(inputs['onboarding-configuration.json'])
@@ -808,12 +816,17 @@ def main():
         }
         movement_keys = {'PAXEER_VAULT', 'PAXEER_CHECKPOINT_REGISTRY',
                          'PAXEER_CLAIMS_CONTRACT', 'PAXEER_EXIT_CONTRACT',
+                         'CUSTODY_PROFILE', 'CUSTODY_PROFILE_SHA256',
                          'PAXEER_CHECKPOINT_AUTHORITY', 'CUSTODY_REFERENCE',
                          'PAXEER_CONFIRMATIONS', 'CHECKPOINT_INTERVAL_SECONDS',
                          'PAXEER_BLOCK_SECONDS', 'REMINDER_INTERVAL_SECONDS'}
         if set(policy['movement']) != movement_keys:
             raise ValueError('Human movement policy fields refused')
         for key, value in policy['movement'].items():
+            if key == 'CUSTODY_PROFILE':
+                if value != '/run/human-private/movement/custody.profile':
+                    raise ValueError('Human custody profile path refused')
+                continue
             width = 40 if key in {'PAXEER_VAULT', 'PAXEER_CHECKPOINT_REGISTRY',
                                  'PAXEER_CLAIMS_CONTRACT', 'PAXEER_EXIT_CONTRACT'} else 64
             if key in {'PAXEER_CONFIRMATIONS', 'CHECKPOINT_INTERVAL_SECONDS',
@@ -829,6 +842,11 @@ def main():
                 or policy['movement']['PAXEER_EXIT_CONTRACT'] != policy['components']['PAXEER_EXIT_CONTRACT']):
             raise ValueError('Human movement custody bindings differ')
         movement.update(policy['movement'])
+        profile = read_bytes(Path(sys.argv[4]).parent / 'inputs/producer-records/custody.profile')
+        if len(profile) != 223 or movement['CUSTODY_PROFILE_SHA256'] != '0x' + digest(profile):
+            refuse('retained authenticated custody profile differs')
+        (root / 'movement').mkdir(mode=0o700, exist_ok=True)
+        write_bytes(root / 'movement/custody.profile', profile)
         for key, value in movement.items():
             write(root / 'movement-config', 'LAYERX_HUMAN_MOVEMENT_PROVIDER_' + key, value)
         for key, value in authority.items():
@@ -874,10 +892,281 @@ def main():
         write(root / 'agent-config', 'LAYERX_AGENT_' + key, value)
 
 
+def kms_prerequisite(registry_path, tls_root, destination, network, asset, state):
+    destination, tls_root, state = Path(destination), Path(tls_root), Path(state)
+    protected_file(destination.parent, 0o700)
+    if type(network) is not int or not 0 < network < 2**32 or not re.fullmatch('[0-9a-f]{64}', asset):
+        refuse('KMS native registry scope')
+    registry = parse(read_bytes(registry_path))
+    if (set(registry) != {'schema_version', 'assets', 'modules'} or registry['schema_version'] != 2
+            or not any(record.get('asset') == asset for record in registry['assets'])):
+        refuse('KMS canonical native asset registry')
+    modules, seen = [], set()
+    for module in registry['modules']:
+        if (set(module) != {'module', 'ordinals'} or type(module['module']) is not int
+                or not 1 <= module['module'] <= 9 or module['module'] in seen
+                or type(module['ordinals']) is not list or not module['ordinals']
+                or len(set(module['ordinals'])) != len(module['ordinals'])
+                or any(type(n) is not int or not 1 <= n < 65536 for n in module['ordinals'])):
+            refuse('KMS canonical native module registry')
+        seen.add(module['module'])
+        modules.append({'module_id': module['module'], 'activity_types': [(module['module'] << 16) | n for n in module['ordinals']]})
+    if not modules or len(modules) > 32:
+        refuse('KMS module count')
+    files = {'registry.json': json.dumps({'network_id': network, 'protocol_version': 3, 'modules': modules}, sort_keys=True).encode()}
+    for role, source, name in [('human-kms', 'cert.der', 'kms-server.der'), ('human-kms', 'key.der', 'kms-server-key.der'),
+                              ('human-kms', 'ca.der', 'ca.der'), ('human-kms-client', 'cert.der', 'kms-client.der'),
+                              ('human-kms-executor', 'cert.der', 'kms-executor.der')]:
+        files[name] = read_bytes(tls_root / role / source, 65536)
+    if any(read_bytes(tls_root / role / 'ca.der', 65536) != files['ca.der']
+           for role in ('human-kms-client', 'human-kms-executor')):
+        refuse('KMS client and server trust roots differ')
+    if files['kms-client.der'] == files['kms-executor.der']:
+        refuse('KMS service and restricted executor identities must differ')
+    if destination.exists() or destination.is_symlink():
+        protected_file(destination, 0o700)
+        verify_material(destination)
+        if any(read_bytes(destination / name) != value for name, value in files.items()):
+            refuse('retained KMS registry or identity differs; preserving reconciliation required')
+        if len(read_bytes(destination / 'kms-seal', 32)) != 32:
+            refuse('retained KMS seal bounds')
+        return
+    if state.is_symlink() or (state.exists() and any(state.iterdir())):
+        refuse('existing KMS state requires its original retained seal and identities')
+    pending = Path(tempfile.mkdtemp(prefix='.kms-material-', dir=destination.parent))
+    try:
+        for name, value in files.items():
+            write_bytes(pending / name, value)
+        write_bytes(pending / 'kms-seal', secrets.token_bytes(32))
+        seal_material(pending)
+        import ctypes
+        libc = ctypes.CDLL(None, use_errno=True)
+        if libc.renameat2(-100, os.fsencode(pending), -100, os.fsencode(destination), 1):
+            raise OSError(ctypes.get_errno(), 'KMS material immutable publication refused')
+        pending = None
+        sync_directory(destination.parent)
+    finally:
+        if pending is not None:
+            shutil.rmtree(pending)
+
+
+REGISTRY_GENERATION_SCHEMA = 'layerx.kernel.registry-generation.v1'
+REGISTRY_GENERATION_FIELDS = {'schema', 'generation', 'network_id', 'sequencer_id', 'sequencer_public_key', 'replica_id', 'genesis_metadata_sha256', 'asset_id', 'history_sha256', 'replica_sha256'}
+REGISTRY_GENERATION_FILES = {'generation.json', 'replica-id', 'trust-history'}
+
+
+def registry_read(path, public=False):
+    path = Path(path)
+    if not path.is_absolute() or path.resolve() != path:
+        refuse('registry material canonical path')
+    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    with os.fdopen(fd, 'rb') as source:
+        info = os.fstat(source.fileno())
+        modes = (0o400, 0o440, 0o600, 0o644, 0o444) if public else (0o400, 0o440, 0o600)
+        if (not stat.S_ISREG(info.st_mode) or info.st_uid not in (0, os.geteuid(), 4020, 4030)
+                or info.st_nlink != 1 or stat.S_IMODE(info.st_mode) not in modes
+                or not 0 < info.st_size <= 1048576):
+            refuse('registry material owner, mode or bounds')
+        data = source.read(1048577)
+        after = os.fstat(source.fileno())
+        if len(data) != info.st_size or (info.st_mtime_ns, info.st_ctime_ns) != (after.st_mtime_ns, after.st_ctime_ns):
+            refuse('registry material changed during read')
+        return data
+
+
+def registry_manifest(files):
+    import struct
+    if set(files) != REGISTRY_GENERATION_FILES:
+        refuse('registry generation file inventory')
+    manifest = parse(files['generation.json'])
+    if type(manifest) is not dict or set(manifest) != REGISTRY_GENERATION_FIELDS or manifest['schema'] != REGISTRY_GENERATION_SCHEMA:
+        refuse('registry generation schema')
+    if type(manifest['network_id']) is not int or not 0 < manifest['network_id'] < 2**32:
+        refuse('registry generation network')
+    for name in REGISTRY_GENERATION_FIELDS - {'schema', 'network_id'}:
+        if type(manifest[name]) is not str or not re.fullmatch('[0-9a-f]{64}', manifest[name]):
+            refuse('registry generation identifier')
+    unsigned = {key: value for key, value in manifest.items() if key != 'generation'}
+    if manifest['generation'] != digest(json.dumps(unsigned, sort_keys=True, separators=(',', ':')).encode()):
+        refuse('registry generation digest')
+    if (not re.fullmatch(b'[0-9a-f]{64}\n?', files['replica-id'])
+            or files['replica-id'].decode().rstrip('\n') != manifest['replica_id']
+            or digest(files['replica-id']) != manifest['replica_sha256']
+            or digest(files['trust-history']) != manifest['history_sha256']):
+        refuse('registry generation exact producer bytes')
+    history = files['trust-history']; magic = b'LayerX/sequencer-trust-history/v1\0'
+    if not history.startswith(magic) or len(history) < len(magic) + 4:
+        refuse('registry generation trust history framing')
+    current, retired = struct.unpack('>HH', history[len(magic):len(magic)+4])
+    if current != 1 or retired > 256 or len(history) != len(magic) + 4 + 103 * (current + retired):
+        refuse('registry generation trust history bounds')
+    for offset in range(current + retired):
+        entry = history[len(magic)+4+103*offset:len(magic)+4+103*(offset+1)]
+        protocol, network, epoch = struct.unpack('>HIQ', entry[:14])
+        first, last, retired_flag, retired_at = struct.unpack('>QQBQ', entry[78:])
+        if protocol != 3 or network != manifest['network_id'] or epoch == 0 or not 0 < first <= last or retired_flag not in (0, 1):
+            refuse('registry generation trust history entry')
+        if offset == 0 and (entry[14:46].hex() != manifest['sequencer_id'] or entry[46:78].hex() != manifest['sequencer_public_key'] or retired_flag != 0 or retired_at != 0):
+            refuse('registry generation current sequencer mismatch')
+        if offset > 0 and (retired_flag != 1 or retired_at == 0):
+            refuse('registry generation retired sequencer mismatch')
+    if digest(('layerx-sequencer:' + manifest['sequencer_public_key']).encode()) != manifest['sequencer_id']:
+        refuse('registry generation sequencer derivation')
+    return manifest
+
+
+def verify_registry_material(directory):
+    directory = Path(directory)
+    if (directory / 'current').is_symlink():
+        selected = (directory / 'current').resolve(strict=True)
+        if selected.parent != directory / 'generations' or not re.fullmatch('[0-9a-f]{64}', selected.name):
+            refuse('registry generation selector')
+        directory = selected
+    info = directory.lstat()
+    if directory.resolve() != directory or not stat.S_ISDIR(info.st_mode) or info.st_uid not in (0, os.geteuid(), 4030) or stat.S_IMODE(info.st_mode) not in (0o700, 0o750):
+        refuse('registry generation directory owner or mode')
+    if {path.name for path in directory.iterdir()} != REGISTRY_GENERATION_FILES:
+        refuse('registry generation directory inventory')
+    if any((directory / name).lstat().st_uid != info.st_uid for name in REGISTRY_GENERATION_FILES):
+        refuse('registry generation mixed-owner tuple')
+    files = {name: registry_read(directory / name) for name in REGISTRY_GENERATION_FILES}
+    manifest = registry_manifest(files)
+    return {'directory': str(directory), 'generation': manifest['generation'], 'manifest': manifest, 'files': files}
+
+
+def publish_registry_material(destination, files, producer=False):
+    import fcntl
+    destination = Path(destination)
+    if not destination.is_absolute() or destination.resolve() != destination:
+        refuse('registry generation destination')
+    try:
+        destination.mkdir(mode=0o750 if producer else 0o700)
+        if producer:
+            os.chown(destination, 0, 4020); os.chmod(destination, 0o750)
+    except FileExistsError:
+        pass
+    info = destination.lstat()
+    if info.st_uid != os.geteuid() or stat.S_IMODE(info.st_mode) != (0o750 if producer else 0o700):
+        refuse('registry generation store protection')
+    lock_fd = os.open(destination / '.registry-material.lock', os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
+    with os.fdopen(lock_fd, 'r+b') as lock:
+        info = os.fstat(lock.fileno())
+        if info.st_uid != os.geteuid() or stat.S_IMODE(info.st_mode) != 0o600 or info.st_nlink != 1:
+            refuse('registry generation publication lock')
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        manifest = registry_manifest(files)
+        marker = destination / 'current'
+        if marker.is_symlink():
+            prior = verify_registry_material(destination)
+            if prior['generation'] != manifest['generation']:
+                refuse('retained registry generation differs; owner reconciliation required')
+        elif marker.exists():
+            refuse('registry generation selector type')
+        generations = destination / 'generations'
+        try:
+            generations.mkdir(mode=0o750 if producer else 0o700)
+            if producer:
+                os.chown(generations, 0, 4020); os.chmod(generations, 0o750)
+        except FileExistsError:
+            pass
+        if generations.is_symlink() or generations.stat().st_uid != os.geteuid() or stat.S_IMODE(generations.stat().st_mode) != (0o750 if producer else 0o700):
+            refuse('registry generation directory protection')
+        selected = generations / manifest['generation']
+        if selected.exists():
+            retained = verify_registry_material(selected)
+            if retained['files'] != files:
+                refuse('registry generation replay conflict')
+        else:
+            pending = Path(tempfile.mkdtemp(prefix='.pending-', dir=destination))
+            try:
+                for name, data in files.items():
+                    write_bytes(pending / name, data)
+                    if producer:
+                        os.chown(pending / name, 0, 4020); os.chmod(pending / name, 0o440)
+                if producer:
+                    os.chown(pending, 0, 4020); os.chmod(pending, 0o750)
+                verify_registry_material(pending); sync_directory(pending)
+                os.rename(pending, selected); sync_directory(generations)
+            finally:
+                if pending.exists(): shutil.rmtree(pending)
+        if producer:
+            os.chown(destination, 0, 4020); os.chown(generations, 0, 4020)
+        temporary = destination / ('.current-' + secrets.token_hex(8))
+        os.symlink('generations/' + manifest['generation'], temporary)
+        os.replace(temporary, marker); sync_directory(destination)
+        return {'directory': str(selected), 'generation': manifest['generation']}
+
+
+def export_registry_material(source):
+    material = verify_registry_material(source)
+    return {'schema': 'layerx.kernel.registry-export.v1', 'generation': material['generation'],
+            'files': {name: base64.b64encode(data).decode() for name, data in material['files'].items()}}
+
+
+def import_registry_material(source, destination, network, sequencer, public):
+    exported = parse(registry_read(Path(source)))
+    if type(exported) is not dict or set(exported) != {'schema', 'generation', 'files'} or exported['schema'] != 'layerx.kernel.registry-export.v1' or type(exported['files']) is not dict or set(exported['files']) != REGISTRY_GENERATION_FILES:
+        refuse('registry transfer schema')
+    files = {name: base64.b64decode(value, validate=True) for name, value in exported['files'].items()}
+    manifest = registry_manifest(files)
+    if (manifest['generation'] != exported['generation'] or manifest['network_id'] != network
+            or manifest['sequencer_id'] != sequencer or manifest['sequencer_public_key'] != public):
+        refuse('registry transfer authenticated producer identity')
+    return publish_registry_material(destination, files)
+
+
+def kernel_registry_material_produce(genesis, seed, destination, network, retained_history=None):
+    import struct
+    import subprocess
+    if os.geteuid() != 0 or not 0 < network < 2**32:
+        refuse('root kernel registry producer required')
+    genesis = Path(genesis)
+    for path, uid, gid, mode in ((Path(seed), 4020, 4020, 0o600), (genesis / 'metadata.lxgb', 4020, 4020, 0o600), (genesis / 'asset-id', 0, 0, 0o444), (genesis / 'replica-id', 0, 0, 0o444)):
+        info = path.lstat()
+        if (info.st_uid, info.st_gid, stat.S_IMODE(info.st_mode)) != (uid, gid, mode):
+            refuse('kernel protected producer ownership')
+    metadata = registry_read(genesis / 'metadata.lxgb', True)
+    asset = registry_read(genesis / 'asset-id', True)
+    replica = registry_read(genesis / 'replica-id', True)
+    key = registry_read(Path(seed))
+    if not re.fullmatch(b'[0-9a-f]{64}\n?', key) or not re.fullmatch(b'[0-9a-f]{64}\n?', asset) or not re.fullmatch(b'[0-9a-f]{64}\n?', replica):
+        refuse('kernel genesis canonical identity')
+    result = subprocess.run(['openssl', 'pkey', '-inform', 'DER', '-pubout', '-outform', 'DER'],
+        input=bytes.fromhex('302e020100300506032b657004220420') + bytes.fromhex(key.decode().rstrip('\n')),
+        stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, check=True, timeout=10)
+    if len(result.stdout) != 44 or result.stdout[:12] != bytes.fromhex('302a300506032b6570032100'):
+        refuse('kernel public identity derivation')
+    public = result.stdout[12:].hex(); sequencer = digest(('layerx-sequencer:' + public).encode())
+    if replica.decode().rstrip('\n') != digest(('layerx-authority-replica:' + public).encode()):
+        refuse('kernel genesis replica identity mismatch')
+    history = b'LayerX/sequencer-trust-history/v1\0' + struct.pack('>HH', 1, 0) + struct.pack('>HIQ', 3, network, 1) + bytes.fromhex(sequencer) + bytes.fromhex(public) + struct.pack('>QQBQ', 1, 1 << 40, 0, 0)
+    if retained_history is not None and (Path(retained_history).exists() or Path(retained_history).is_symlink()):
+        if registry_read(Path(retained_history)) != history:
+            refuse('kernel retained history differs from authenticated genesis')
+    manifest = {'schema': REGISTRY_GENERATION_SCHEMA, 'network_id': network, 'sequencer_id': sequencer,
+        'sequencer_public_key': public, 'replica_id': replica.decode().rstrip('\n'),
+        'genesis_metadata_sha256': digest(metadata), 'asset_id': asset.decode().rstrip('\n'),
+        'history_sha256': digest(history), 'replica_sha256': digest(replica)}
+    manifest['generation'] = digest(json.dumps(manifest, sort_keys=True, separators=(',', ':')).encode())
+    files = {'generation.json': json.dumps(manifest, sort_keys=True, separators=(',', ':')).encode() + b'\n', 'replica-id': replica, 'trust-history': history}
+    return publish_registry_material(destination, files, True)
+
+
 if __name__ == '__main__':
     os.umask(0o077)
     try:
-        if len(sys.argv) > 1 and sys.argv[1] == '--assemble':
+        if len(sys.argv) == 3 and sys.argv[1] == '--export-registry-material':
+            print(json.dumps(export_registry_material(sys.argv[2]), sort_keys=True))
+        elif len(sys.argv) == 7 and sys.argv[1] == '--import-registry-material':
+            print(json.dumps(import_registry_material(sys.argv[2], sys.argv[3], int(sys.argv[4]), sys.argv[5], sys.argv[6]), sort_keys=True))
+        elif len(sys.argv) == 3 and sys.argv[1] == '--verify-registry-material':
+            result = verify_registry_material(sys.argv[2])
+            print(json.dumps({key: value for key, value in result.items() if key != 'files'}, sort_keys=True))
+        elif len(sys.argv) in (6, 7) and sys.argv[1] == '--kernel-registry-material-produce':
+            print(json.dumps(kernel_registry_material_produce(sys.argv[2], sys.argv[3], sys.argv[4], int(sys.argv[5]), sys.argv[6] if len(sys.argv) == 7 else None), sort_keys=True))
+        elif len(sys.argv) == 8 and sys.argv[1] == '--kms-prerequisite':
+            kms_prerequisite(sys.argv[2], sys.argv[3], sys.argv[4], int(sys.argv[5]), sys.argv[6], sys.argv[7])
+        elif len(sys.argv) > 1 and sys.argv[1] == '--assemble':
             assemble_policy(*sys.argv[2:6], int(sys.argv[6]), int(sys.argv[7]))
         elif len(sys.argv) > 1 and sys.argv[1] == '--verify-bundle':
             print(json.dumps(verify_bundle(sys.argv[2], int(sys.argv[3]), int(sys.argv[4])), sort_keys=True))

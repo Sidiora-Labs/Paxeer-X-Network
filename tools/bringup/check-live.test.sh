@@ -1,5 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
+if [ "${1:-}" = --human-kms-prerequisite ]; then
+	[ "$#" -eq 1 ] || exit 2
+	exec timeout 15m python3 "$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/tools/bringup/tests/paxeer-x-runtime-contract.py" --case kms-service-prerequisite
+fi
 if [ "${1:-}" = --human-security-prerequisites ]; then
 	[ "$#" -eq 1 ] || exit 2
 	exec python3 "$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/tools/qualification/paxeer-x/human-security-prerequisites.py" --run-cases
