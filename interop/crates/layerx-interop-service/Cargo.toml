@@ -23,6 +23,7 @@ layerx-visa-tap = { path = "../layerx-visa-tap" }
 layerx-wire.workspace = true
 layerx-x402 = { path = "../layerx-x402" }
 native-tls.workspace = true
+openssl.workspace = true
 p256.workspace = true
 rustls.workspace = true
 serde.workspace = true

@@ -21,7 +21,8 @@ import urllib.error
 import urllib.request
 
 ROOT = Path(__file__).resolve().parents[3]
-CASES = ("archive-origin-freshness", "ramp-journal-readiness", "mirror-checkpoint-acquisition")
+CASES = ("archive-origin-freshness", "ramp-journal-readiness", "mirror-checkpoint-acquisition",
+         "interop-settlement-readiness")
 BUDGET_SECONDS = 3.0
 POLL_SECONDS = 0.2
 
@@ -1387,6 +1388,545 @@ def mirror_checkpoint_main(manifest):
             print("Evidence: " + str(contract.work))
 
 
+class ReadinessInterposer:
+    def __init__(self, contract):
+        self.contract = contract
+        self.mode = "pass"
+        self.seen = {}
+        outer = self
+
+        class Handler(http.server.BaseHTTPRequestHandler):
+            def log_message(self, format, *args):
+                del format, args
+
+            def do_POST(self):
+                self.close_connection = True
+
+            def do_GET(self):
+                if outer.mode == "offline":
+                    outer.seen[outer.mode] = outer.seen.get(outer.mode, 0) + 1
+                    self.close_connection = True
+                    return
+                try:
+                    headers = {"Authorization": self.headers.get("Authorization", "")}
+                    code, body = outer.contract.http(outer.contract.inputs["gateway"]["url"],
+                                                    self.path, headers=headers)
+                    if self.path == "/readyz/core":
+                        require(body.get("service") == "layerx-gateway", "actual gateway readiness absent")
+                        outer.seen[outer.mode] = outer.seen.get(outer.mode, 0) + 1
+                        if outer.mode != "pass":
+                            require(code == 200 and body["status"] == "ready",
+                                    "hostile readiness requires an actual ready upstream")
+                            code = 200
+                            outer.mutate(body)
+                    raw = json.dumps(body, separators=(",", ":")).encode()
+                    self.send_response(code)
+                    self.send_header("Content-Type", "application/json")
+                    self.send_header("Content-Length", str(len(raw)))
+                    self.send_header("Connection", "close")
+                    self.end_headers()
+                    self.wfile.write(raw)
+                except (OSError, Failure, ValueError, KeyError, TypeError):
+                    self.close_connection = True
+
+        from urllib.parse import urlsplit
+        endpoint = urlsplit(contract.inputs["proxy_tls"]["url"])
+        require(endpoint.scheme == "https" and endpoint.hostname in ("127.0.0.1", "localhost")
+                and endpoint.port is not None and endpoint.port > 1024 and not endpoint.path,
+                "owned proxy must be an explicit loopback TLS endpoint")
+        self.server = http.server.ThreadingHTTPServer((endpoint.hostname, endpoint.port), Handler)
+        tls = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        tls.minimum_version = ssl.TLSVersion.TLSv1_2
+        tls.load_cert_chain(contract.inputs["proxy_tls"]["certificate"],
+                            contract.inputs["proxy_tls"]["key"])
+        tls.load_verify_locations(cafile=contract.inputs["proxy_tls"]["client_ca"])
+        tls.verify_mode = ssl.CERT_REQUIRED
+        self.server.socket = tls.wrap_socket(self.server.socket, server_side=True)
+        self.server.daemon_threads = True
+        threading.Thread(target=self.server.serve_forever, daemon=True).start()
+
+    def mutate(self, body):
+        mode = self.mode
+        if mode == "degraded":
+            body["status"] = "degraded"
+        elif mode == "absent":
+            del body["backends"]["core_agent_boundary"]
+        elif mode == "unconfigured":
+            body["backends"]["core_agent_boundary"] = {"state": "unavailable", "reason": "not_configured"}
+        elif mode == "unknown-field":
+            body["unknown_required_contract"] = True
+        elif mode == "unknown-component":
+            body["components"]["unknown_required_contract"] = "ready"
+        elif mode == "malformed":
+            body["protocol_network_id"] = str(body["protocol_network_id"])
+        elif mode == "network":
+            body["network_id"] += "-wrong"
+        elif mode == "protocol-network":
+            body["protocol_network_id"] += 1
+        elif mode == "wire":
+            body["lxp_wire_version"] += "0"
+        elif mode == "chain":
+            body["capabilities"]["chain_serving"]["chain_id"] = 126
+        elif mode == "activity-capability":
+            body["capabilities"]["layerx_activity"]["state"] = "unavailable"
+        elif mode == "unknown-capability":
+            body["capabilities"]["unknown"] = {"state": "ready", "reason": "ready"}
+        elif mode == "scope":
+            body["scope"] = "product"
+        elif mode == "expiry":
+            body["observed_at_ms"] = now_ms() - 30_001
+            body["valid_until_ms"] = now_ms() - 1
+        elif mode == "future":
+            body["observed_at_ms"] = now_ms() + 60_000
+            body["valid_until_ms"] = body["observed_at_ms"] + 30_000
+        elif mode == "version":
+            body["readiness_version"] += 1
+        else:
+            raise Failure("unknown hostile readiness mode")
+
+    def close(self):
+        self.server.shutdown()
+        self.server.server_close()
+
+
+class InteropReadinessContract:
+    ADAPTERS = {"x402", "ap2", "ucp", "visa-tap", "fiat"}
+    TRANSPORTS = {"http", "mcp", "a2a"}
+
+    def __init__(self, manifest):
+        import stat
+        from urllib.parse import urlsplit
+        sys.path.insert(0, str(ROOT / "tools/paxeer-x"))
+        from candidate import catalogue, load_private, validate
+        self.private = load_private
+        candidate = load_private(manifest)
+        validate(candidate, catalogue(ROOT / "spec/paxeer-x/spec.kvx"))
+        self.revision = candidate["source"]["revision"]
+        require(self.revision == revision(), "interop candidate revision differs from checkout")
+        services = {item["id"]: item for item in candidate["services"]}
+        path = os.environ.get("PAXEER_X_INTEROP_READINESS_INPUTS", "")
+        require(path and services["interop"]["bindings"]["providers_ref"] == "private:" + str(Path(path).resolve()),
+                "candidate lacks the exact protected interop qualification input reference")
+        self.inputs = load_private(path)
+        self.fields(self.inputs, {"schema", "source_revision", "pins", "evidence_directory", "interop",
+                    "gateway", "dependencies", "proxy_tls", "http_tls", "credential_file", "exchanges",
+                    "refusals", "states", "configuration_refusals"}, "qualification inputs")
+        require(self.inputs["schema"] == "paxeer-x.interop-readiness-inputs.v1"
+                and self.inputs["source_revision"] == self.revision, "input schema or source mismatch")
+        self.fields(self.inputs["pins"], {"chain_id", "network_id", "protocol_network_id", "wire_version"}, "pins")
+        require(self.inputs["pins"]["chain_id"] == candidate["foundation"]["chain_id"] == 125,
+                "chain pin differs from the selected candidate")
+        evidence = Path(self.inputs["evidence_directory"])
+        info = evidence.lstat()
+        require(stat.S_ISDIR(info.st_mode) and info.st_uid == os.geteuid() and info.st_mode & 0o077 == 0,
+                "evidence parent is not a private owned directory")
+        self.work = Path(tempfile.mkdtemp(prefix="interop-readiness-", dir=evidence))
+        self.work.chmod(0o700)
+        self.children = {}
+        self.logs = []
+        self.cases = []
+        self.proxy = None
+        self.environment = {}
+        self.specs = {}
+        for name in ("interop", "gateway"):
+            spec = self.inputs[name]
+            self.fields(spec, {"binary", "binary_sha256", "environment", "url", "state_paths"}, name)
+            self.binary(spec)
+            env = load_private(spec["environment"])
+            require(all(isinstance(key, str) and isinstance(value, str) for key, value in env.items()),
+                    "environment must contain string values")
+            prefix = "LAYERX_INTEROP_" if name == "interop" else "LAYERX_GATEWAY_"
+            require(all(key.startswith(prefix) for key in env), "unexpected production environment variable")
+            binding = services[name]["bindings"]
+            require(binding["source_revision"] == self.revision
+                    and binding["config_ref"] == "private:" + str(Path(spec["environment"]).resolve())
+                    and binding["config_digest"] == "sha256:" + self.digest(Path(spec["environment"])),
+                    "candidate environment/source binding mismatch")
+            endpoint = urlsplit(spec["url"])
+            require(endpoint.scheme in ("http", "https") and endpoint.hostname in ("127.0.0.1", "localhost")
+                    and endpoint.port is not None and endpoint.port > 1024 and not endpoint.path,
+                    "served process must use an owned loopback endpoint")
+            require(env[prefix + "LISTEN"] == endpoint.hostname + ":" + str(endpoint.port),
+                    "process listen endpoint differs from qualification endpoint")
+            self.environment[name] = env
+            self.specs[name] = dict(spec, argv=[])
+        pins = self.inputs["pins"]
+        for name, prefix, wire in (("interop", "LAYERX_INTEROP_", "WIRE_VERSION"),
+                                    ("gateway", "LAYERX_GATEWAY_", "LXP_WIRE_VERSION")):
+            env = self.environment[name]
+            require(env[prefix + "NETWORK_ID"] == pins["network_id"]
+                    and env[prefix + wire] == pins["wire_version"]
+                    and env[prefix + "PROTOCOL_NETWORK_ID"] == str(pins["protocol_network_id"]),
+                    "production pins differ from qualification pins")
+        self.fields(self.inputs["proxy_tls"], {"url", "certificate", "key", "client_ca"}, "proxy TLS")
+        self.fields(self.inputs["http_tls"], {"ca", "certificate", "key"}, "HTTP TLS")
+        require(self.environment["interop"]["LAYERX_INTEROP_HOSTED_GATEWAY_URL"] == self.inputs["proxy_tls"]["url"],
+                "actual interop consumer is not wired to the hostile forwarding boundary")
+        for key in ("key",):
+            self.private_file(self.inputs["proxy_tls"][key])
+            self.private_file(self.inputs["http_tls"][key])
+        self.context = ssl.create_default_context(cafile=self.inputs["http_tls"]["ca"])
+        self.context.load_cert_chain(self.inputs["http_tls"]["certificate"], self.inputs["http_tls"]["key"])
+        self.private_file(self.inputs["credential_file"])
+        self.credential = Path(self.inputs["credential_file"]).read_text().strip()
+        require(self.credential and "\n" not in self.credential, "authentication input absent")
+        dependencies = self.inputs["dependencies"]
+        require(isinstance(dependencies, list) and {item["id"] for item in dependencies}
+                == {"core_agent_boundary", "receipt_authority", "redis"} and len(dependencies) == 3,
+                "owned real core, receipt authority and Redis processes are required")
+        for spec in dependencies:
+            self.fields(spec, {"id", "binary", "binary_sha256", "source_revision", "argv", "environment",
+                              "state_paths"}, "dependency")
+            require(spec["source_revision"] == self.revision and isinstance(spec["argv"], list)
+                    and all(isinstance(arg, str) for arg in spec["argv"]), "dependency source/argv mismatch")
+            self.binary(spec)
+            self.specs[spec["id"]] = spec
+            self.environment[spec["id"]] = load_private(spec["environment"])
+        for spec in self.specs.values():
+            require(isinstance(spec["state_paths"], list) and spec["state_paths"], "real persistence paths absent")
+            for path in spec["state_paths"]:
+                directory = Path(path)
+                info = directory.lstat()
+                require(directory.resolve().is_relative_to(evidence.resolve())
+                        and stat.S_ISDIR(info.st_mode) and info.st_uid == os.geteuid()
+                        and info.st_mode & 0o077 == 0, "process persistence is not an owned private fixture")
+        runtime = load_private(self.environment["interop"]["LAYERX_INTEROP_CONFIG"])
+        require({item["id"] for item in runtime["adapters"]} == self.ADAPTERS
+                and len(runtime["adapters"]) == 5 and {item["id"] for item in runtime["transports"]} == self.TRANSPORTS
+                and len(runtime["transports"]) == 3, "exact configured adapter/transport membership absent")
+        self.runtime = runtime
+
+    @staticmethod
+    def fields(value, expected, label):
+        require(isinstance(value, dict) and set(value) == expected, label + " has missing or unknown fields")
+
+    @staticmethod
+    def digest(path):
+        digest = hashlib.sha256()
+        with path.open("rb") as stream:
+            for block in iter(lambda: stream.read(1024 * 1024), b""):
+                digest.update(block)
+        return digest.hexdigest()
+
+    @staticmethod
+    def private_file(path):
+        import stat
+        require(not any(part == ".env" or part.startswith(".env.") for part in Path(path).parts),
+                "environment credential files are forbidden")
+        info = Path(path).lstat()
+        require(stat.S_ISREG(info.st_mode) and info.st_uid == os.geteuid()
+                and info.st_nlink == 1 and info.st_mode & 0o077 == 0, "input must be a private owned regular file")
+
+    def binary(self, spec):
+        path = Path(spec["binary"])
+        require(path.is_file() and os.access(path, os.X_OK) and self.digest(path) == spec["binary_sha256"],
+                "exact production executable absent or mismatched")
+        with path.open("rb") as stream:
+            require(stream.read(4) == b"\x7fELF", "qualification requires an actual built production executable")
+
+    def save(self, path, value):
+        fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY | os.O_NOFOLLOW, 0o600)
+        with os.fdopen(fd, "w") as stream:
+            json.dump(value, stream, sort_keys=True)
+            stream.write("\n")
+
+    def start(self, name, environment=None):
+        spec = self.specs[name]
+        log = (self.work / (name + ".log")).open("ab")
+        os.chmod(log.name, 0o600)
+        self.logs.append(log)
+        env = dict(PATH=os.environ.get("PATH", "/usr/bin:/bin"),
+                   **(self.environment[name] if environment is None else environment))
+        process = subprocess.Popen([spec["binary"], *spec["argv"]], cwd=ROOT, env=env,
+                                   stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT)
+        self.children[name] = process
+        return process
+
+    def stop(self, name):
+        process = self.children.get(name)
+        if process is not None and process.poll() is None:
+            process.terminate()
+            try:
+                process.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait(timeout=10)
+
+    def http(self, url, path, body=None, headers=None):
+        request = urllib.request.Request(url + path, data=None if body is None else json.dumps(body).encode(),
+                    headers=dict({"Content-Type": "application/json"}, **(headers or {})))
+        try:
+            response = urllib.request.urlopen(request, context=self.context, timeout=8)
+        except urllib.error.HTTPError as error:
+            response = error
+        with response:
+            require(response.headers.get_content_type() == "application/json", "served response is not JSON")
+            raw = response.read(512 * 1024 + 1)
+            require(len(raw) <= 512 * 1024, "served response exceeds bound")
+            from candidate import duplicate_free
+            return response.status, json.loads(raw, object_pairs_hook=duplicate_free)
+
+    def request(self, path, body=None, identity=None):
+        headers = {"Authorization": "Bearer " + self.credential}
+        if identity is not None:
+            headers["Idempotency-Key"] = identity
+        return self.http(self.inputs["interop"]["url"], path, body, headers)
+
+    def until(self, predicate, label, seconds=60):
+        deadline = time.monotonic() + seconds
+        while time.monotonic() < deadline:
+            require(self.children["interop"].poll() is None, "served interop process exited")
+            try:
+                result = predicate()
+                if result:
+                    return result
+            except (OSError, ValueError, KeyError, TypeError, Failure):
+                pass
+            time.sleep(0.1)
+        raise Failure("readiness deadline: " + label)
+
+    def agreement(self, expected):
+        code, ready = self.request("/readyz")
+        metadata_code, metadata = self.request("/v1/adapters")
+        require(code == (200 if expected else 503) and metadata_code == 200,
+                "readiness HTTP/metadata availability disagreement")
+        require(ready["status"] == ("ready" if expected else "degraded"), "readiness status disagreement")
+        require(ready["capabilities"] == metadata["capabilities"], "ready/metadata capability disagreement")
+        caps = ready["capabilities"]
+        require(caps["chain_serving"]["chain_id"] == 125
+                and caps["layerx_settlement"]["state"] == ("ready" if expected else "unavailable"),
+                "chain pin or settlement capability incorrect")
+        require({item["id"] for item in metadata["adapters"]} == self.ADAPTERS
+                and len(metadata["adapters"]) == 5
+                and {item["id"] for item in metadata["transports"]} == self.TRANSPORTS
+                and len(metadata["transports"]) == 3, "configured manifest membership changed")
+        pins = self.inputs["pins"]
+        require(ready["network_id"] == pins["network_id"]
+                and ready["protocol_network_id"] == pins["protocol_network_id"]
+                and ready["lxp_wire_version"] == pins["wire_version"], "served identity pins differ")
+        for adapter in metadata["adapters"]:
+            require(adapter["readiness"]["settlement"] == ("ready" if expected else "unavailable"),
+                    "adapter settlement differs from shared readiness")
+            configured = next(item for item in self.runtime["adapters"] if item["id"] == adapter["id"])
+            for field in ("specification", "version", "specification_sha256", "conformance_suite",
+                          "conformance_vectors", "conformance_sha256", "evidence_policy"):
+                require(adapter[field] == configured[field], "adapter trust manifest pin changed")
+        return ready
+
+    def passed(self, name, **evidence):
+        self.cases.append(dict(case=name, **evidence))
+        print("PASS " + name, flush=True)
+
+    def receipt(self, path):
+        evidence = self.private(path)
+        self.fields(evidence, {"activity_hex", "receipt_hex", "activity_id", "batch_id", "expected_signer"},
+                    "independent receipt evidence")
+        binary = self.inputs["interop"]["binary"]
+        env = dict(PATH=os.environ.get("PATH", "/usr/bin:/bin"), **self.environment["interop"])
+        def verify(file, valid):
+            result = subprocess.run([binary, "--verify-readiness-receipt", str(file)], cwd=ROOT, env=env,
+                                    stdin=subprocess.DEVNULL, capture_output=True, timeout=60)
+            require((result.returncode == 0) == valid, "independent production receipt verifier result differs")
+            if not valid:
+                return
+            value = json.loads(result.stdout)
+            self.fields(value, {"verified", "activity_id", "batch_id", "receipt_sha256", "receipt_digest", "network_id",
+                                "protocol_network_id", "wire_version"}, "receipt verifier output")
+            require(value["verified"] is True and value["activity_id"] == evidence["activity_id"]
+                    and value["batch_id"] == evidence["batch_id"]
+                    and value["receipt_sha256"] == hashlib.sha256(bytes.fromhex(evidence["receipt_hex"])).hexdigest(),
+                    "independent verifier does not bind exact activity, receipt and batch")
+            pins = self.inputs["pins"]
+            require(all(value[key] == pins[key] for key in ("network_id", "protocol_network_id", "wire_version")),
+                    "independent receipt network identity differs")
+            return value
+        verified = verify(path, True)
+        for field in ("activity_hex", "receipt_hex", "activity_id", "batch_id", "expected_signer"):
+            hostile = dict(evidence)
+            raw = bytearray(bytes.fromhex(hostile[field]))
+            require(raw, "empty actual receipt evidence")
+            raw[-1] ^= 1
+            hostile[field] = raw.hex()
+            file = self.work / ("receipt-refusal-" + field + "-" + str(len(self.cases)) + ".json")
+            self.save(file, hostile)
+            verify(file, False)
+        self.passed("independent-exact-activity-receipt-batch", activity_id=evidence["activity_id"],
+                    batch_id=evidence["batch_id"], refusals=5)
+        return dict(evidence, receipt_digest=verified["receipt_digest"])
+
+    def run(self):
+        for name in ("redis", "core_agent_boundary", "receipt_authority", "gateway"):
+            self.start(name)
+        self.proxy = ReadinessInterposer(self)
+        self.start("interop")
+        baseline = self.until(lambda: self.agreement(True), "actual complete core readiness")
+        self.passed("actual-served-ready-metadata-agreement", capabilities=baseline["capabilities"])
+        for mode in ("degraded", "absent", "unconfigured", "unknown-field", "unknown-component", "malformed",
+                     "network", "protocol-network", "wire", "chain", "activity-capability", "unknown-capability",
+                     "scope", "expiry", "future", "version"):
+            self.proxy.mode = mode
+            state = self.until(lambda: self.proxy.seen.get(mode, 0) > 0 and self.agreement(False), mode)
+            require(state["capabilities"]["chain_serving"] == baseline["capabilities"]["chain_serving"],
+                    "LayerX boundary refusal changed independent chain capability")
+            self.passed("actual-readiness-" + mode + "-refused", http_status=503,
+                        real_mutated_responses=self.proxy.seen[mode])
+            self.proxy.mode = "pass"
+            self.until(lambda: self.agreement(True), mode + " recovery")
+        self.fields(self.inputs["exchanges"], self.TRANSPORTS, "real exact exchanges")
+        for transport, path in self.inputs["exchanges"].items():
+            exchange = self.private(path)
+            self.fields(exchange, {"payment_required", "scheme_payload", "idempotency_prefix", "completed_operation",
+                                   "receipt_evidence"}, "exact exchange")
+            offers = exchange["payment_required"]["accepts"]
+            require(offers and all(offer["scheme"] == "exact" for offer in offers), "real exact scheme offer absent")
+            prefix = "/v1/" + transport + "/x402/"
+            code, offered = self.request(prefix + "seller/offer", exchange["payment_required"],
+                                          exchange["idempotency_prefix"] + "-seller")
+            require(code == 200 and offered["ok"] is True and offered["result"]["status"] == 402
+                    and offered["result"]["payment_required"] == exchange["payment_required"],
+                    "actual seller exact payment-required exchange refused")
+            code, built = self.request(prefix + "buyer/build", {"payment_required": offered["result"]["payment_required"],
+                                     "scheme_payload": exchange["scheme_payload"]}, exchange["idempotency_prefix"] + "-buyer")
+            require(code == 200 and built["ok"] is True, "real buyer payment exchange refused")
+            payment = built["result"]["payment_payload"]
+            require(payment["accepted"]["scheme"] == "exact" and payment["payload"] == exchange["scheme_payload"],
+                    "buyer changed exact signed payment payload")
+            code, verified = self.request(prefix + "verify", {"x402Version": 2, "paymentPayload": payment,
+                                          "paymentRequirements": payment["accepted"]},
+                                          exchange["idempotency_prefix"] + "-verify")
+            require(code == 200 and verified["ok"] is True and verified["result"]["isValid"] is True,
+                    "actual exact signed scheme verification refused")
+            code, settled = self.operation(exchange["completed_operation"])
+            require(code == 200 and settled["ok"] is True and settled["result"]["success"] is True,
+                    "actual durable completed exact exchange is absent")
+            evidence = self.receipt(exchange["receipt_evidence"])
+            require(payment["payload"]["layerxActivity"] == evidence["activity_hex"],
+                    "exchange signed activity differs from independently verified settlement")
+            self.passed("real-exact-scheme-" + transport, operation=exchange["completed_operation"])
+        self.fields(self.inputs["refusals"], self.ADAPTERS, "adapter constrained refusal cases")
+        allowed = {"x402": {"invalid_x402_request", "unsupported_x402_offer"},
+                   "ap2": {"mandate_verification_refused", "asset_binding_ambiguous"},
+                   "ucp": {"ucp_profile_refused", "ucp_capability_refused", "ucp_order_invalid"},
+                   "visa-tap": {"visa_tap_refused"},
+                   "fiat": {"provider_callback_refused"}}
+        routes = {"x402": "/v1/http/x402/verify", "ap2": "/v1/http/ap2/mandates/verify",
+                  "ucp": "/v1/http/ucp/checkouts/complete", "visa-tap": "/v1/http/visa-tap/intents/verify",
+                  "fiat": "/v1/http/fiat/card/callbacks"}
+        for adapter, path in self.inputs["refusals"].items():
+            refusal = self.private(path)
+            self.fields(refusal, {"body", "idempotency_key", "error_code"}, "constrained refusal")
+            require(refusal["error_code"] in allowed[adapter], "refusal fixture weakens adapter constraint")
+            code, body = self.request(routes[adapter], refusal["body"], refusal["idempotency_key"])
+            require(code == 400 and body["ok"] is False and body["error"]["code"] == refusal["error_code"],
+                    "real configured adapter did not refuse its trust constraint")
+            self.passed("configured-" + adapter + "-constrained-refusal", http_status=code,
+                        error_code=body["error"]["code"])
+        self.fields(self.inputs["states"], {"pending", "reversed", "chargeback"}, "external state cases")
+        retained = {}
+        for name in ("reversed", "chargeback"):
+            state = self.private(self.inputs["states"][name])
+            self.fields(state, {"completed_operation", "receipt_evidence"}, "retained external state")
+            code, body = self.operation(state["completed_operation"])
+            label = "reversed" if name == "reversed" else "charged-back"
+            require(code == 200 and body["ok"] is True and body["result"]["state"] == label,
+                    "actual external reversal/chargeback semantics changed")
+            evidence = self.receipt(state["receipt_evidence"])
+            require(body["result"]["receipt_digest"] == evidence["receipt_digest"],
+                    "external state lost its independently verified exact receipt")
+            retained[state["completed_operation"]] = body["result"]
+            self.passed("real-" + name + "-state", operation=state["completed_operation"])
+        self.proxy.mode = "offline"
+        self.until(lambda: self.agreement(False), "gateway loss")
+        pending = self.private(self.inputs["states"]["pending"])
+        self.fields(pending, {"body", "idempotency_key"}, "pending real provider input")
+        require(pending["body"]["evidence"]["facts"]["class"] == "settled"
+                and pending["body"]["activity"], "pending requires real signed provider and activity input")
+        code, body = self.request("/v1/http/fiat/card/callbacks", pending["body"], pending["idempotency_key"])
+        require(code == 503 and body["ok"] is False and body["error"]["code"] == "settlement_unavailable",
+                "dependency loss silently completed or refused a pending settlement")
+        require("receipt_digest" not in body and "receipt" not in body, "pending advertised receipt success")
+        self.passed("real-pending-during-dependency-loss", http_status=code, funded_dispatches=0)
+        self.proxy.mode = "pass"
+        self.until(lambda: self.agreement(True), "actual gateway restoration")
+        for name in ("gateway", "core_agent_boundary", "receipt_authority", "redis"):
+            self.stop(name)
+            self.until(lambda: self.agreement(False), name + " loss")
+            self.stop("interop")
+            self.start("interop")
+            self.until(lambda: self.agreement(False), "interop restart during " + name + " loss")
+            self.start(name)
+            self.until(lambda: self.agreement(True), name + " restoration")
+            self.passed("real-" + name + "-loss-restart-restoration", http_status=200)
+        self.stop("interop")
+        self.start("interop")
+        self.until(lambda: self.agreement(True), "retained interop restart")
+        for operation, result in retained.items():
+            code, body = self.operation(operation)
+            require(code == 200 and body["result"] == result, "restart lost retained exact external state")
+        self.passed("real-persistence-retains-distinct-external-outcomes")
+        self.configuration_refusals()
+        require(len(self.cases) == 44, "required interop execution cases absent")
+
+    def operation(self, operation):
+        require(isinstance(operation, str) and len(operation) == 64
+                and bytes.fromhex(operation).hex() == operation, "completed operation identity invalid")
+        return self.request("/v1/operations/" + operation)
+
+    def configuration_refusals(self):
+        required = {"ap2-assets", "ap2-roots", "visa-identities", "fiat-roots", "redis", "receipt-authority"}
+        self.fields(self.inputs["configuration_refusals"], required, "protected configuration refusals")
+        self.stop("interop")
+        for name, path in self.inputs["configuration_refusals"].items():
+            environment = self.private(path)
+            base = self.environment["interop"]
+            changed = {key for key in set(environment) | set(base) if environment.get(key) != base.get(key)}
+            expected = {"LAYERX_INTEROP_CONFIG"} if name in {"ap2-assets", "ap2-roots", "visa-identities", "fiat-roots"} else {
+                "LAYERX_INTEROP_REDIS_PASSWORD_FILE" if name == "redis" else "LAYERX_INTEROP_RECEIPT_AUTHORITY_TOKEN_FILE"}
+            require(changed == expected, "refusal environment changes unrelated authority")
+            if expected == {"LAYERX_INTEROP_CONFIG"}:
+                document = self.private(environment["LAYERX_INTEROP_CONFIG"])
+                field = {"ap2-assets": "ap2_assets", "ap2-roots": "ap2_keys", "visa-identities": "visa_agents",
+                         "fiat-roots": "fiat_providers"}[name]
+                require(document[field] == [] and {key for key in set(document) | set(self.runtime)
+                        if document.get(key) != self.runtime.get(key)} == {field}, "trust refusal removed extra constraints")
+            else:
+                require(not Path(environment[next(iter(expected))]).exists(), "missing protected authority fixture is present")
+            result = subprocess.run([self.inputs["interop"]["binary"]],
+                                    env=dict(PATH=os.environ.get("PATH", "/usr/bin:/bin"), **environment),
+                                    cwd=ROOT, stdin=subprocess.DEVNULL, capture_output=True, timeout=30)
+            require(result.returncode != 0, "missing required adapter/authority material silently disabled a service")
+            self.passed("missing-" + name + "-startup-refused", exit_code=result.returncode)
+
+    def close(self):
+        if self.proxy is not None:
+            self.proxy.close()
+        for name in reversed(list(self.children)):
+            self.stop(name)
+        for log in self.logs:
+            log.close()
+
+
+def interop_readiness_main(manifest):
+    contract = None
+    try:
+        contract = InteropReadinessContract(manifest)
+        contract.run()
+        contract.save(contract.work / "result.json", {"status": "passed", "revision": contract.revision,
+                      "case": "interop-settlement-readiness", "cases": contract.cases})
+        print("RESULT passed case=interop-settlement-readiness")
+        return 0
+    except (Failure, OSError, ValueError, KeyError, TypeError, subprocess.TimeoutExpired) as error:
+        print("FAIL interop-settlement-readiness " + type(error).__name__)
+        if contract is not None:
+            contract.save(contract.work / "result.json", {"status": "failed", "revision": contract.revision,
+                          "cases": contract.cases, "failure_type": type(error).__name__})
+        return 1
+    finally:
+        if contract is not None:
+            contract.close()
+            print("Evidence: " + str(contract.work))
+
+
 def main():
     parser = argparse.ArgumentParser(prog="interop-archive-contract")
     parser.add_argument("--case", required=True, choices=CASES)
@@ -1394,6 +1934,8 @@ def main():
     parser.add_argument("--build-dir", default=str(ROOT / "build"))
     parser.add_argument("--worker", action="store_true", help=argparse.SUPPRESS)
     arguments = parser.parse_args()
+    if arguments.case == "interop-settlement-readiness":
+        return interop_readiness_main(arguments.candidate_manifest)
     if arguments.case == "mirror-checkpoint-acquisition":
         return mirror_checkpoint_main(arguments.candidate_manifest)
     if arguments.case == "ramp-journal-readiness":

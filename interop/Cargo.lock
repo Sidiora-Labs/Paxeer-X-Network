@@ -1176,6 +1176,7 @@ dependencies = [
  "layerx-wire",
  "layerx-x402",
  "native-tls",
+ "openssl",
  "p256",
  "rustls",
  "serde",

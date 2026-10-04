@@ -1,3 +1,6 @@
+use base64::engine::general_purpose::STANDARD;
+use base64::Engine as _;
+use ed25519_dalek::VerifyingKey as Ed25519Key;
 use layerx_ap2::{ap2_adapter_descriptor, Merchant, AP2_SPEC_SHA256};
 use layerx_fiat::fiat_adapter_descriptor;
 use layerx_interop_gateway::adapter::{
@@ -21,9 +24,11 @@ use layerx_visa_tap::{
     canonical_tap_authority, canonical_tap_path, visa_tap_adapter_descriptor,
     MAX_CLOCK_SKEW_SECONDS, VISA_TAP_SPEC_SHA256,
 };
-use layerx_x402::facilitator::SupportedResponse;
+use layerx_x402::facilitator::{Facilitator, SupportedResponse};
 use layerx_x402::{x402_adapter_descriptor, X402_SPEC_SHA256};
 use native_tls::{Certificate, Identity};
+use openssl::pkey::{Id, PKey};
+use p256::ecdsa::VerifyingKey as P256Key;
 use rustls::pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer};
 use rustls::ServerConfig;
 use serde::Deserialize;
@@ -56,6 +61,8 @@ pub struct Config {
     pub wire_version: String,
     pub protocol_version: u16,
     pub protocol_network_id: u32,
+    pub readiness_chain_id: u64,
+    pub readiness_max_age_ms: u64,
     pub modules: ModuleRegistry,
     pub tap_clock_skew_seconds: u64,
     pub idempotency_seconds: u64,
@@ -282,6 +289,28 @@ pub fn load() -> Result<Config, String> {
         .map_err(|_| "LAYERX_INTEROP_PROTOCOL_NETWORK_ID is required".to_owned())?
         .parse::<u32>()
         .map_err(|_| "interop protocol network identifier is invalid".to_owned())?;
+    if protocol_network_id == 0 {
+        return Err("interop protocol network identifier must be nonzero".to_owned());
+    }
+    let readiness_chain_id = env::var("LAYERX_INTEROP_CHAIN_ID")
+        .map_err(|_| "LAYERX_INTEROP_CHAIN_ID is required".to_owned())?
+        .parse::<u64>()
+        .map_err(|_| "interop chain identifier is invalid".to_owned())?;
+    if readiness_chain_id != 125 {
+        return Err("interop chain identifier must select Paxeer chain 125".to_owned());
+    }
+    let readiness_max_age_ms = env::var("LAYERX_INTEROP_READINESS_MAX_AGE_MS")
+        .map_err(|_| "LAYERX_INTEROP_READINESS_MAX_AGE_MS is required".to_owned())?
+        .parse::<u64>()
+        .map_err(|_| "interop readiness maximum age is invalid".to_owned())?;
+    if !(1..=30_000).contains(&readiness_max_age_ms) {
+        return Err("interop readiness maximum age exceeds its bound".to_owned());
+    }
+    validate_x402_binding(
+        &manifest.x402_supported,
+        &network_id,
+        &trusted_sequencer_key,
+    )?;
     let modules = module_registry()?;
     let tap_clock_skew_seconds = env::var("LAYERX_INTEROP_TAP_CLOCK_SKEW_SECONDS")
         .map_err(|_| "LAYERX_INTEROP_TAP_CLOCK_SKEW_SECONDS is required".to_owned())?
@@ -313,6 +342,8 @@ pub fn load() -> Result<Config, String> {
         wire_version,
         protocol_version,
         protocol_network_id,
+        readiness_chain_id,
+        readiness_max_age_ms,
         modules,
         tap_clock_skew_seconds,
         idempotency_seconds,
@@ -327,36 +358,48 @@ fn migration_v2_config() -> Result<Option<MigrationV2Config>, String> {
         Ok(path) => path,
         Err(_) => return Err("migration V2 configuration path is invalid".to_owned()),
     };
-    let profile: MigrationV2File = serde_json::from_slice(&protected_input(Path::new(&path), 256 * 1024)?)
-        .map_err(|_| "migration V2 configuration is invalid".to_owned())?;
+    let profile: MigrationV2File =
+        serde_json::from_slice(&protected_input(Path::new(&path), 256 * 1024)?)
+            .map_err(|_| "migration V2 configuration is invalid".to_owned())?;
     if profile.ethereum.is_none() && profile.solana.is_none() {
         return Err("migration V2 requires a source verifier".to_owned());
     }
     Ok(Some(MigrationV2Config {
-        ethereum: profile.ethereum.map(EthereumVerifier::new).transpose()
+        ethereum: profile
+            .ethereum
+            .map(EthereumVerifier::new)
+            .transpose()
             .map_err(|_| "migration V2 Ethereum authority is invalid".to_owned())?,
-        solana: profile.solana.map(SolanaVerifier::new).transpose()
+        solana: profile
+            .solana
+            .map(SolanaVerifier::new)
+            .transpose()
             .map_err(|_| "migration V2 Solana authority is invalid".to_owned())?,
         paxeer_binding: PaxeerBindingVerifierV2::new(profile.paxeer_binding)
             .map_err(|_| "migration V2 Paxeer binding authority is invalid".to_owned())?,
         mapping_store: AccountMappingStoreV2::new(&profile.mapping_journal)
             .map_err(|_| "migration V2 mapping journal is invalid".to_owned())?,
-        ramp_intake: profile.ramp_intake.map(|ramp| -> Result<RampIntakeV2Config, String> {
-            let token = protected_input(&ramp.token_file, 4096)?;
-            let mut token = Zeroizing::new(String::from_utf8(token)
-                .map_err(|_| "migration V2 ramp service credential is invalid".to_owned())?);
-            while matches!(token.as_bytes().last(), Some(b'\r' | b'\n')) {
-                token.pop();
-            }
-            if token.is_empty() || !token.bytes().all(|byte| byte.is_ascii_graphic()) {
-                return Err("migration V2 ramp service credential is invalid".to_owned());
-            }
-            Ok(RampIntakeV2Config {
-                endpoint: Endpoint::parse(&ramp.endpoint)
-                    .map_err(|_| "migration V2 ramp endpoint is invalid".to_owned())?,
-                token,
+        ramp_intake: profile
+            .ramp_intake
+            .map(|ramp| -> Result<RampIntakeV2Config, String> {
+                let token = protected_input(&ramp.token_file, 4096)?;
+                let mut token =
+                    Zeroizing::new(String::from_utf8(token).map_err(|_| {
+                        "migration V2 ramp service credential is invalid".to_owned()
+                    })?);
+                while matches!(token.as_bytes().last(), Some(b'\r' | b'\n')) {
+                    token.pop();
+                }
+                if token.is_empty() || !token.bytes().all(|byte| byte.is_ascii_graphic()) {
+                    return Err("migration V2 ramp service credential is invalid".to_owned());
+                }
+                Ok(RampIntakeV2Config {
+                    endpoint: Endpoint::parse(&ramp.endpoint)
+                        .map_err(|_| "migration V2 ramp endpoint is invalid".to_owned())?,
+                    token,
+                })
             })
-        }).transpose()?,
+            .transpose()?,
     }))
 }
 
@@ -364,30 +407,46 @@ fn protected_input(path: &Path, maximum: usize) -> Result<Vec<u8>, String> {
     let refused = || "migration V2 profile must be a bounded owner-only regular file".to_owned();
     let before = fs::symlink_metadata(path).map_err(|_| refused())?;
     let mut process_status = String::new();
-    File::open("/proc/self/status").map_err(|_| refused())?
-        .take(64 * 1024).read_to_string(&mut process_status).map_err(|_| refused())?;
-    let identifiers = process_status.lines().find_map(|line| line.strip_prefix("Uid:"))
-        .ok_or_else(refused)?.split_whitespace()
-        .map(str::parse::<u32>).collect::<Result<Vec<_>, _>>().map_err(|_| refused())?;
-    if identifiers.len() != 4 || !path.is_absolute()
+    File::open("/proc/self/status")
+        .map_err(|_| refused())?
+        .take(64 * 1024)
+        .read_to_string(&mut process_status)
+        .map_err(|_| refused())?;
+    let identifiers = process_status
+        .lines()
+        .find_map(|line| line.strip_prefix("Uid:"))
+        .ok_or_else(refused)?
+        .split_whitespace()
+        .map(str::parse::<u32>)
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|_| refused())?;
+    if identifiers.len() != 4
+        || !path.is_absolute()
         || fs::canonicalize(path).ok().as_deref() != Some(path)
-        || !before.is_file() || before.nlink() != 1
+        || !before.is_file()
+        || before.nlink() != 1
         || before.uid() != identifiers[1]
         || before.permissions().mode() & 0o077 != 0
-        || before.len() == 0 || before.len() > maximum as u64
+        || before.len() == 0
+        || before.len() > maximum as u64
     {
         return Err(refused());
     }
     let mut file = File::open(path).map_err(|_| refused())?;
     let after = file.metadata().map_err(|_| refused())?;
-    if before.dev() != after.dev() || before.ino() != after.ino()
-        || before.uid() != after.uid() || before.mode() != after.mode()
-        || before.nlink() != after.nlink() || before.len() != after.len()
+    if before.dev() != after.dev()
+        || before.ino() != after.ino()
+        || before.uid() != after.uid()
+        || before.mode() != after.mode()
+        || before.nlink() != after.nlink()
+        || before.len() != after.len()
     {
         return Err(refused());
     }
     let mut bytes = Vec::new();
-    Read::by_ref(&mut file).take(maximum as u64 + 1).read_to_end(&mut bytes)
+    Read::by_ref(&mut file)
+        .take(maximum as u64 + 1)
+        .read_to_end(&mut bytes)
         .map_err(|_| refused())?;
     if bytes.is_empty() || bytes.len() > maximum {
         return Err(refused());
@@ -468,16 +527,22 @@ fn runtime_manifest(file: ManifestFile) -> Result<RuntimeManifest, String> {
         );
     }
     if file.ap2_keys.is_empty()
+        || file.ap2_keys.len() > MAX_AP2_ASSET_BINDINGS
         || file.ap2_assets.is_empty()
         || file.ap2_assets.len() > MAX_AP2_ASSET_BINDINGS
         || file.visa_agents.is_empty()
+        || file.visa_agents.len() > MAX_AP2_ASSET_BINDINGS
         || file.visa_targets.is_empty()
+        || file.visa_targets.len() > MAX_AP2_ASSET_BINDINGS
         || file.fiat_providers.is_empty()
+        || file.fiat_providers.len() > MAX_AP2_ASSET_BINDINGS
     {
         return Err(
             "interop trust roots for AP2, Visa TAP and fiat providers are required".to_owned(),
         );
     }
+    Facilitator::new(file.x402_supported.clone())
+        .map_err(|_| "x402 support declaration is invalid".to_owned())?;
     validate_ap2_roots(&file.ap2_keys, &file.ap2_assets)?;
     validate_visa_fiat_roots(&file.visa_agents, &file.visa_targets, &file.fiat_providers)?;
     let ucp_payment_handler = PaymentHandler::new(
@@ -502,6 +567,60 @@ fn runtime_manifest(file: ManifestFile) -> Result<RuntimeManifest, String> {
     Ok(manifest)
 }
 
+fn validate_x402_binding(
+    supported: &SupportedResponse,
+    network_id: &str,
+    sequencer_key: &[u8; 32],
+) -> Result<(), String> {
+    let (namespace, reference) = network_id
+        .split_once('-')
+        .ok_or_else(|| "interop network identifier cannot bind a CAIP-2 network".to_owned())?;
+    let network = format!("{namespace}:{reference}");
+    let signer = format!(
+        "did:layerx:{}",
+        sequencer_key
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<String>()
+    );
+    if *sequencer_key == [0; 32]
+        || supported.kinds.len() != 1
+        || supported.kinds[0].x402_version != 2
+        || supported.kinds[0].scheme != "exact"
+        || supported.kinds[0].network != network
+        || supported.signers.len() != 1
+        || supported.signers.get(&network) != Some(&vec![signer])
+    {
+        return Err(
+            "x402 support must bind exact settlement to the configured network and sequencer"
+                .to_owned(),
+        );
+    }
+    Ok(())
+}
+
+fn nonzero_hex32(value: &str) -> bool {
+    parse_hex32(value).is_ok_and(|bytes| bytes != [0; 32])
+}
+
+fn bounded_token(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= 512
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.' | b'~'))
+}
+
+fn https_origin(value: &str) -> bool {
+    value.strip_prefix("https://").is_some_and(|authority| {
+        !authority.is_empty()
+            && authority.contains('.')
+            && value.len() <= 512
+            && !authority.contains(['/', '@', '?', '#'])
+            && value.bytes().all(|byte| byte.is_ascii_graphic())
+    })
+}
+
 fn validate_ap2_roots(keys: &[Ap2KeyPin], assets: &[Ap2AssetBinding]) -> Result<(), String> {
     let mut ap2_key_identities = BTreeSet::new();
     for key in keys {
@@ -510,11 +629,19 @@ fn validate_ap2_roots(keys: &[Ap2KeyPin], assets: &[Ap2AssetBinding]) -> Result<
             "checkout-mandate" | "payment-mandate" | "merchant-checkout"
         ) || key.key_id.is_empty()
             || key.key_id.len() > 512
-            || decode_hex(&key.public_key_sec1, 65).is_err()
+            || !matches!(decode_hex(&key.public_key_sec1, 65), Ok(bytes)
+                if bytes.len() == 65 && bytes[0] == 4 && P256Key::from_sec1_bytes(&bytes).is_ok())
             || !ap2_key_identities.insert((key.use_case.as_str(), key.key_id.as_str()))
         {
             return Err("AP2 trust-root declaration is invalid".to_owned());
         }
+    }
+    let actual: BTreeSet<_> = keys.iter().map(|key| key.use_case.as_str()).collect();
+    let required: BTreeSet<_> = ["checkout-mandate", "payment-mandate", "merchant-checkout"]
+        .into_iter()
+        .collect();
+    if actual != required {
+        return Err("AP2 requires trust roots for every declared use case".to_owned());
     }
     let mut ap2_asset_identities = BTreeSet::new();
     for binding in assets {
@@ -522,9 +649,9 @@ fn validate_ap2_roots(keys: &[Ap2KeyPin], assets: &[Ap2AssetBinding]) -> Result<
             .atomic_units_per_minor_unit
             .parse::<u128>()
             .map_err(|_| "AP2 asset binding declaration is invalid".to_owned())?;
-        if parse_hex32(&binding.principal_digest).is_err()
+        if !nonzero_hex32(&binding.principal_digest)
             || binding.principal_digest != binding.principal_digest.to_ascii_lowercase()
-            || binding.audience.is_empty()
+            || !https_origin(&binding.audience)
             || binding.audience.len() > 512
             || binding.audience.bytes().any(|byte| byte.is_ascii_control())
             || binding.currency.len() != 3
@@ -534,9 +661,9 @@ fn validate_ap2_roots(keys: &[Ap2KeyPin], assets: &[Ap2AssetBinding]) -> Result<
                 .all(|byte| byte.is_ascii_uppercase())
             || binding.minor_unit_exponent > 18
             || atomic_units == 0
-            || parse_hex32(&binding.asset).is_err()
-            || parse_hex32(&binding.payer_account).is_err()
-            || parse_hex32(&binding.payee_account).is_err()
+            || !nonzero_hex32(&binding.asset)
+            || !nonzero_hex32(&binding.payer_account)
+            || !nonzero_hex32(&binding.payee_account)
             || Merchant::new(
                 binding.payee_merchant_id.clone(),
                 binding.payee_merchant_name.clone(),
@@ -559,22 +686,38 @@ fn validate_visa_fiat_roots(
 ) -> Result<(), String> {
     let mut visa_key_ids = BTreeSet::new();
     for key in agents {
-        if key.key_id.is_empty()
-            || key.agent_id.is_empty()
-            || !key.agent_domain.starts_with("https://")
-            || parse_hex32(&key.layerx_agent).is_err()
+        if !bounded_token(&key.key_id)
+            || !bounded_token(&key.agent_id)
+            || !https_origin(&key.agent_domain)
+            || !nonzero_hex32(&key.layerx_agent)
             || !matches!(key.algorithm.as_str(), "ed25519" | "rsa-pss-sha256")
             || key.public_key.is_empty()
+            || key.public_key.len() > 32 * 1024
             || !matches!(key.status.as_str(), "active" | "revoked")
             || key.expires_at == 0
             || !visa_key_ids.insert(key.key_id.as_str())
         {
             return Err("Visa TAP trust-root declaration is invalid".to_owned());
         }
+        let valid_key = match key.algorithm.as_str() {
+            "ed25519" => parse_hex32(&key.public_key).is_ok_and(|bytes| {
+                bytes != [0; 32] && Ed25519Key::from_bytes(&bytes).is_ok_and(|key| !key.is_weak())
+            }),
+            "rsa-pss-sha256" => STANDARD
+                .decode(&key.public_key)
+                .ok()
+                .filter(|bytes| bytes.len() <= 16 * 1024)
+                .and_then(|bytes| PKey::public_key_from_pem(&bytes).ok())
+                .is_some_and(|key| key.id() == Id::RSA && key.bits() >= 2048),
+            _ => false,
+        };
+        if !valid_key {
+            return Err("Visa TAP public-key material is invalid".to_owned());
+        }
     }
     let mut visa_target_principals = BTreeSet::new();
     for target in targets {
-        if parse_hex32(&target.principal_digest).is_err()
+        if !nonzero_hex32(&target.principal_digest)
             || target.principal_digest != target.principal_digest.to_ascii_lowercase()
             || !matches!(
                 canonical_tap_authority(&target.authority),
@@ -592,7 +735,10 @@ fn validate_visa_fiat_roots(
     let mut fiat_provider_ids = BTreeSet::new();
     for key in providers {
         if key.provider.is_empty()
-            || parse_hex32(&key.public_key_ed25519).is_err()
+            || key.provider.len() > 512
+            || key.provider.bytes().any(|byte| byte.is_ascii_control())
+            || !matches!(parse_hex32(&key.public_key_ed25519), Ok(bytes)
+                if bytes != [0; 32] && Ed25519Key::from_bytes(&bytes).is_ok_and(|key| !key.is_weak()))
             || !fiat_provider_ids.insert(key.provider.as_str())
         {
             return Err("fiat provider trust-root declaration is invalid".to_owned());

@@ -24,6 +24,8 @@ variables override them with a real external counterparty.
 """
 
 import argparse
+import base64
+import binascii
 import hashlib
 import json
 import os
@@ -125,6 +127,15 @@ COUNT_PATTERN = re.compile(r"^[1-9][0-9]{0,11}$")
 SEC1_PATTERN = re.compile(r"^04[0-9a-f]{128}$")
 AUDIENCE_PATTERN = re.compile(r"^https://[a-z0-9][a-z0-9.-]*(:[1-9][0-9]{0,4})?$")
 CURRENCY_PATTERN = re.compile(r"^[A-Z]{3}$")
+
+
+def closed_object(pairs):
+    value = {}
+    for key, item in pairs:
+        if key in value:
+            raise ValueError("duplicate declared field: %s" % key)
+        value[key] = item
+    return value
 
 
 class Refused(Exception):
@@ -261,7 +272,7 @@ def beta_roots(path, reasons):
     `--self-test`. Every identifier says the root is testnet-generated.
     """
     try:
-        material = json.loads(pathlib.Path(path).read_text())
+        material = json.loads(pathlib.Path(path).read_text(), object_pairs_hook=closed_object)
     except (OSError, ValueError) as error:
         reasons.append("the generated beta trust roots %s are unreadable: %s" % (path, error))
         return None
@@ -375,7 +386,7 @@ def cluster_roots(environ, network_id, sequencer_public_key, beta, reasons):
         declared = environ.get(variable, "").strip()
         if declared:
             try:
-                value = json.loads(declared)
+                value = json.loads(declared, object_pairs_hook=closed_object)
             except ValueError:
                 reasons.append("%s must hold JSON" % variable)
                 continue
@@ -431,7 +442,7 @@ def caip2(network_id, reasons):
 def override(path, adapters, transports, roots, reasons):
     """Apply the optional owner manifest field by field over everything above."""
     try:
-        document = json.loads(pathlib.Path(path).read_text())
+        document = json.loads(pathlib.Path(path).read_text(), object_pairs_hook=closed_object)
     except (OSError, ValueError) as error:
         raise Refused(["%s=%s could not be read as JSON: %s" % (OVERRIDE_VARIABLE, path, error)])
     if not isinstance(document, dict):
@@ -541,7 +552,156 @@ def validated(adapters, transports, roots, check_only, reasons, sources=None):
         document[root] = value
         if sources is not None:
             sources[root] = source
+    validate_roots(document, reasons)
     return document
+
+
+def validate_roots(document, reasons):
+    def text(value, maximum=512):
+        return isinstance(value, str) and 0 < len(value) <= maximum and all(32 <= ord(c) < 127 for c in value)
+
+    def nonzero(value):
+        return isinstance(value, str) and DIGEST_PATTERN.fullmatch(value) is not None and int(value, 16) != 0
+
+    def shape(entry, fields, optional=()):
+        return isinstance(entry, dict) and set(fields) <= set(entry) <= set(fields) | set(optional)
+
+    def entries(name, maximum=256):
+        value = document.get(name)
+        if value is None:
+            return []
+        if not isinstance(value, list) or not 1 <= len(value) <= maximum:
+            reasons.append("%s requires a bounded non-empty root array" % ROOT_VARIABLE[name])
+            return []
+        return value
+
+    keys = entries("ap2_keys")
+    identities = set()
+    uses = set()
+    for entry in keys:
+        if (not shape(entry, ("use_case", "key_id", "public_key_sec1"))
+                or entry.get("use_case") not in BETA_AP2_USE_CASES
+                or not text(entry.get("key_id"))
+                or not isinstance(entry.get("public_key_sec1"), str)
+                or not SEC1_PATTERN.fullmatch(entry["public_key_sec1"])
+                or int(entry["public_key_sec1"][2:], 16) == 0):
+            reasons.append("%s contains an invalid AP2 trust root" % ROOT_VARIABLE["ap2_keys"])
+            continue
+        identity = (entry["use_case"], entry["key_id"])
+        if identity in identities:
+            reasons.append("%s contains a duplicate key" % ROOT_VARIABLE["ap2_keys"])
+        identities.add(identity)
+        uses.add(entry["use_case"])
+    if keys and uses != set(BETA_AP2_USE_CASES):
+        reasons.append("%s requires every AP2 use case" % ROOT_VARIABLE["ap2_keys"])
+
+    identities = set()
+    asset_fields = ("principal_digest", "audience", "currency", "minor_unit_exponent",
+                    "atomic_units_per_minor_unit", "asset", "payer_account", "payee_account",
+                    "payee_merchant_id", "payee_merchant_name")
+    for entry in entries("ap2_assets"):
+        if not shape(entry, asset_fields, ("payee_merchant_website",)):
+            reasons.append("%s requires complete asset and merchant bindings" % ROOT_VARIABLE["ap2_assets"])
+            continue
+        exponent = entry["minor_unit_exponent"]
+        atomic = entry["atomic_units_per_minor_unit"]
+        if (not all(nonzero(entry[name]) for name in ("principal_digest", "asset", "payer_account", "payee_account"))
+                or not isinstance(entry["audience"], str) or not AUDIENCE_PATTERN.fullmatch(entry["audience"])
+                or not isinstance(entry["currency"], str) or not CURRENCY_PATTERN.fullmatch(entry["currency"])
+                or type(exponent) is not int or not 0 <= exponent <= 18
+                or not isinstance(atomic, str) or not re.fullmatch(r"[1-9][0-9]{0,38}", atomic)
+                or int(atomic) >= 2**128
+                or not text(entry["payee_merchant_id"]) or not text(entry["payee_merchant_name"])
+                or (entry.get("payee_merchant_website") is not None
+                    and (not text(entry["payee_merchant_website"]) or not entry["payee_merchant_website"].startswith("https://")))):
+            reasons.append("%s contains an invalid asset binding" % ROOT_VARIABLE["ap2_assets"])
+            continue
+        identity = (entry["principal_digest"], entry["currency"])
+        if identity in identities:
+            reasons.append("%s contains a duplicate binding" % ROOT_VARIABLE["ap2_assets"])
+        identities.add(identity)
+
+    identities = set()
+    for entry in entries("visa_agents"):
+        if not shape(entry, ("key_id", "agent_id", "agent_domain", "layerx_agent", "algorithm", "public_key", "status", "expires_at")):
+            reasons.append("%s requires complete agent identities" % ROOT_VARIABLE["visa_agents"])
+            continue
+        if (not text(entry["key_id"]) or not text(entry["agent_id"])
+                or not isinstance(entry["agent_domain"], str) or not AUDIENCE_PATTERN.fullmatch(entry["agent_domain"])
+                or not nonzero(entry["layerx_agent"])
+                or entry["algorithm"] not in ("ed25519", "rsa-pss-sha256")
+                or not text(entry["public_key"], 32 * 1024)
+                or (entry["algorithm"] == "ed25519" and not nonzero(entry["public_key"]))
+                or entry["status"] not in ("active", "revoked")
+                or type(entry["expires_at"]) is not int or not 0 < entry["expires_at"] < 2**64):
+            reasons.append("%s contains an invalid agent identity" % ROOT_VARIABLE["visa_agents"])
+            continue
+        if entry["algorithm"] == "rsa-pss-sha256":
+            try:
+                pem = base64.b64decode(entry["public_key"], validate=True)
+                if (len(pem) > 16 * 1024 or not pem.startswith(b"-----BEGIN PUBLIC KEY-----")
+                        or not pem.rstrip().endswith(b"-----END PUBLIC KEY-----")):
+                    raise ValueError("invalid public key")
+            except (ValueError, binascii.Error):
+                reasons.append("%s contains malformed RSA public-key material" % ROOT_VARIABLE["visa_agents"])
+        if entry["key_id"] in identities:
+            reasons.append("%s contains a duplicate key" % ROOT_VARIABLE["visa_agents"])
+        identities.add(entry["key_id"])
+
+    identities = set()
+    for entry in entries("visa_targets"):
+        if (not shape(entry, ("principal_digest", "authority", "path"))
+                or not nonzero(entry.get("principal_digest"))
+                or not isinstance(entry.get("authority"), str)
+                or not AUDIENCE_PATTERN.fullmatch("https://" + entry["authority"])
+                or not text(entry.get("path")) or not entry["path"].startswith("/")
+                or "#" in entry["path"]):
+            reasons.append("%s requires exact principal, authority and path bindings" % ROOT_VARIABLE["visa_targets"])
+            continue
+        if entry["principal_digest"] in identities:
+            reasons.append("%s contains a duplicate target" % ROOT_VARIABLE["visa_targets"])
+        identities.add(entry["principal_digest"])
+
+    identities = set()
+    for entry in entries("fiat_providers"):
+        if (not shape(entry, ("provider", "public_key_ed25519"))
+                or not text(entry.get("provider")) or not nonzero(entry.get("public_key_ed25519"))):
+            reasons.append("%s requires a real provider and key" % ROOT_VARIABLE["fiat_providers"])
+            continue
+        if entry["provider"] in identities:
+            reasons.append("%s contains a duplicate provider" % ROOT_VARIABLE["fiat_providers"])
+        identities.add(entry["provider"])
+
+    handler = document.get("ucp_payment_handler")
+    if handler is not None and (not shape(handler, ("id", "version", "spec", "schema"))
+            or not all(text(handler.get(name)) for name in ("id", "version", "spec", "schema"))
+            or not handler["spec"].startswith("https://") or not handler["schema"].startswith("https://")):
+        reasons.append("%s contains an invalid payment handler" % ROOT_VARIABLE["ucp_payment_handler"])
+
+    supported = document.get("x402_supported")
+    if supported is not None:
+        if (not shape(supported, ("kinds", "extensions", "signers"))
+                or not isinstance(supported["kinds"], list) or len(supported["kinds"]) != 1
+                or not isinstance(supported["extensions"], list) or len(supported["extensions"]) > 32
+                or not isinstance(supported["signers"], dict) or len(supported["signers"]) != 1):
+            reasons.append("%s requires one exact scheme and network binding" % ROOT_VARIABLE["x402_supported"])
+        else:
+            kind = supported["kinds"][0]
+            if (not shape(kind, ("x402Version", "scheme", "network"), ("extra",))
+                    or type(kind.get("x402Version")) is not int or kind["x402Version"] != 2
+                    or kind.get("scheme") != "exact" or not text(kind.get("network"))
+                    or not re.fullmatch(r"[a-zA-Z0-9_.-]{1,32}:[a-zA-Z0-9_.-]{1,64}", kind["network"])
+                    or (kind.get("extra") is not None and not isinstance(kind["extra"], dict))):
+                reasons.append("%s contains an invalid exact scheme" % ROOT_VARIABLE["x402_supported"])
+            else:
+                signers = supported["signers"].get(kind["network"])
+                if (not isinstance(signers, list) or len(signers) != 1
+                        or not isinstance(signers[0], str) or not signers[0].startswith("did:layerx:")
+                        or not nonzero(signers[0][len("did:layerx:"):])):
+                    reasons.append("%s requires the exact LayerX signer" % ROOT_VARIABLE["x402_supported"])
+            if (not all(text(extension, 32) for extension in supported["extensions"])
+                    or len(set(supported["extensions"])) != len(supported["extensions"])):
+                reasons.append("%s contains invalid extensions" % ROOT_VARIABLE["x402_supported"])
 
 
 def label(field, reasons):
@@ -648,6 +808,18 @@ def render(
     if manifest:
         override(manifest, adapters, transports, roots, reasons)
     document = validated(adapters, transports, roots, network_id is None, reasons, sources)
+    if network_id is not None:
+        expected_network = caip2(network_id, reasons)
+        if not isinstance(sequencer_public_key, str) or not DIGEST_PATTERN.fullmatch(sequencer_public_key) or int(sequencer_public_key, 16) == 0:
+            reasons.append("a real nonzero sequencer public key is required")
+        supported = document.get("x402_supported")
+        if expected_network and isinstance(supported, dict):
+            expected_signer = {expected_network: ["did:layerx:%s" % sequencer_public_key]}
+            if (supported.get("signers") != expected_signer
+                    or not isinstance(supported.get("kinds"), list)
+                    or any(not isinstance(kind, dict) or kind.get("network") != expected_network
+                           for kind in supported.get("kinds", []))):
+                reasons.append("x402 support differs from the configured network or sequencer authority")
     if reasons:
         raise Refused(reasons)
     return document
@@ -655,7 +827,7 @@ def render(
 
 def sequencer_key(path):
     value = pathlib.Path(path).read_text().strip()
-    if not DIGEST_PATTERN.match(value):
+    if not DIGEST_PATTERN.fullmatch(value) or int(value, 16) == 0:
         raise Refused(["%s does not hold the generated sequencer public key" % path])
     return value
 

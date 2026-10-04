@@ -27240,7 +27240,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.18.1]
 title = "Advertise interop settlement readiness only for a usable LayerX activity boundary"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 4
 requires = ["0.2", "15.1", "15.3", "15.4"]
@@ -27250,7 +27250,7 @@ do_2 = "Connect ready and adapter metadata to the same validated state and enfor
 do_3 = "Add real served readiness/dispatch agreement cases and adapter operation evidence, including degraded HTTP200 and unknown/mismatched documents."
 do_4 = "Create or extend the planned harness tools/qualification/paxeer-x/interop-archive-contract.py with case interop-settlement-readiness; exercise the real served binaries and production persistence paths against the candidate manifest, record exact assertions and nonzero refusals, and fail if required inputs, executions or cases are absent."
 do_5 = "Implement the declared focused gate through the real production types and paths; exercise every acceptance criterion including refusal, restart or boundary cases specified by this requirement. The command is a planned deliverable, not an already-run gate."
-touches = ["interop/crates/layerx-interop-service/src/server.rs", "interop/crates/layerx-interop-service/src/config.rs", "platform/hosted/interop/fly.toml", "platform/hosted/gateway/src/main.rs", "interop/deploy/gateway/render.py", "tools/qualification/paxeer-x/interop-archive-contract.py"]
+touches = ["interop/crates/layerx-interop-service/src/server.rs", "interop/crates/layerx-interop-service/src/config.rs", "platform/hosted/interop/fly.toml", "platform/hosted/gateway/src/main.rs", "interop/deploy/gateway/render.py", "tools/qualification/paxeer-x/interop-archive-contract.py", "interop/crates/layerx-interop-service/src/main.rs", "interop/crates/layerx-interop-service/Cargo.toml", "interop/Cargo.lock"]
 verify_cmd = "timeout 20m python3 tools/qualification/paxeer-x/interop-archive-contract.py --case interop-settlement-readiness --candidate-manifest \"$PAXEER_X_CANDIDATE_MANIFEST\""
 gate_kind = "planned"
 max_builds = 1
@@ -27263,6 +27263,12 @@ planned_paths = ["tools/qualification/paxeer-x/interop-archive-contract.py"]
 path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
 evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
 
+
+completion_basis = "implementation"
+qualification_status = "unverified"
+build_exit_code = 101
+verify_status = "UNRUN"
+qualification_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-18.1/result.json"
 [task.19.5]
 title = "Provision priced paid search and authorized web-attestor settlement identities"
 status = "pending"

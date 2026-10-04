@@ -353,7 +353,10 @@ fn resumed_request(encoded: &str, authorization: &str) -> Result<IncomingRequest
     if !matches!(continuation.method.as_str(), "GET" | "POST")
         || !(continuation.path.starts_with("/v1/")
             || (continuation.method == "POST"
-                && matches!(continuation.path.as_str(), "/v2/migration/accounts" | "/v2/migration/assets")))
+                && matches!(
+                    continuation.path.as_str(),
+                    "/v2/migration/accounts" | "/v2/migration/assets"
+                )))
         || continuation.path.starts_with("/v1/operations/")
     {
         return Err(());
@@ -442,7 +445,9 @@ fn dispatch(
         InteropRoute::FiatCallback { adapter } => fiat(
             config, request, record, principal, trace, operation, adapter,
         ),
-        InteropRoute::MigrationAccountV2 => migration_account_v2(config, request, record, principal, trace),
+        InteropRoute::MigrationAccountV2 => {
+            migration_account_v2(config, request, record, principal, trace)
+        }
         InteropRoute::MigrationAssetV2 => migration_asset_v2(config, request, record, trace),
         InteropRoute::Live | InteropRoute::Ready | InteropRoute::AdapterMetadata => {
             Dispatch::error(404, "refused", "not_found")
@@ -483,7 +488,11 @@ fn migration_asset_v2(
     let Ok(body) = direct_body::<MigrationAssetRequestV2>(request) else {
         return Dispatch::error(400, "refused", "invalid_migration_request");
     };
-    let Some(ramp) = config.migration_v2.as_ref().and_then(|profile| profile.ramp_intake.as_ref()) else {
+    let Some(ramp) = config
+        .migration_v2
+        .as_ref()
+        .and_then(|profile| profile.ramp_intake.as_ref())
+    else {
         return Dispatch::error(503, "refused", "migration_ramp_unconfigured");
     };
     let Ok(identity) = parse_hex32(&record.signer_public_key) else {
@@ -504,7 +513,9 @@ fn migration_asset_v2(
     let Ok(evidence) = SourceEvidence::new(decoded) else {
         return Dispatch::error(400, "refused", "invalid_evidence");
     };
-    let Ok(settlement) = SourceSettlementRequestV2::new(body.order_digest, body.chain.label(), &evidence) else {
+    let Ok(settlement) =
+        SourceSettlementRequestV2::new(body.order_digest, body.chain.label(), &evidence)
+    else {
         return Dispatch::error(400, "refused", "invalid_migration_request");
     };
     let Ok(encoded) = serde_json::to_vec(&settlement) else {
@@ -515,18 +526,30 @@ fn migration_asset_v2(
         &ramp.endpoint,
         service_authorization.as_str(),
         &OutboundRequest {
-            method: "POST", path: "/internal/v2/source-settlements",
+            method: "POST",
+            path: "/internal/v2/source-settlements",
             idempotency: request.headers.get("idempotency-key").map(String::as_str),
-            content_type: "application/json", body: &encoded,
+            content_type: "application/json",
+            body: &encoded,
         },
-        Some(trace.as_str()), customer_authorization, &identity,
+        Some(trace.as_str()),
+        customer_authorization,
+        &identity,
     ) else {
         return Dispatch::error(503, "pending", "migration_ramp_unavailable");
     };
     if !matches!(upstream.status, 200 | 202) {
         return Dispatch::error(
-            if matches!(upstream.status, 401 | 403 | 404 | 409 | 422) { upstream.status } else { 503 },
-            if matches!(upstream.status, 401 | 403 | 404 | 409 | 422) { "refused" } else { "pending" },
+            if matches!(upstream.status, 401 | 403 | 404 | 409 | 422) {
+                upstream.status
+            } else {
+                503
+            },
+            if matches!(upstream.status, 401 | 403 | 404 | 409 | 422) {
+                "refused"
+            } else {
+                "pending"
+            },
             "migration_source_settlement_refused",
         );
     }
@@ -544,12 +567,16 @@ fn migration_asset_v2(
         "layerx_refused" => "refused",
         _ => "pending",
     };
-    Dispatch::result(upstream.status, durable_state, json!({
-        "source_settlement": response,
-        "provenance": "external-custody",
-        "custody_label": "External custody: this independent market maker controls the off-platform funds and payout.",
-        "layerx_receipt": false,
-    }))
+    Dispatch::result(
+        upstream.status,
+        durable_state,
+        json!({
+            "source_settlement": response,
+            "provenance": "external-custody",
+            "custody_label": "External custody: this independent market maker controls the off-platform funds and payout.",
+            "layerx_receipt": false,
+        }),
+    )
 }
 
 #[derive(Deserialize)]
@@ -592,13 +619,27 @@ fn migration_account_v2(
             let Some(verifier) = profile.ethereum.as_ref() else {
                 return Dispatch::error(503, "refused", "migration_source_unconfigured");
             };
-            profile.mapping_store.confirm(principal, identity, &evidence, verifier, &profile.paxeer_binding, trace)
+            profile.mapping_store.confirm(
+                principal,
+                identity,
+                &evidence,
+                verifier,
+                &profile.paxeer_binding,
+                trace,
+            )
         }
         MigrationSourceV2::Solana => {
             let Some(verifier) = profile.solana.as_ref() else {
                 return Dispatch::error(503, "refused", "migration_source_unconfigured");
             };
-            profile.mapping_store.confirm(principal, identity, &evidence, verifier, &profile.paxeer_binding, trace)
+            profile.mapping_store.confirm(
+                principal,
+                identity,
+                &evidence,
+                verifier,
+                &profile.paxeer_binding,
+                trace,
+            )
         }
     };
     match confirmed {
@@ -609,13 +650,16 @@ fn migration_account_v2(
         Err(error) => {
             let (status, state) = match error {
                 MigrationError::SourcePending => (202, "pending"),
-                MigrationError::RpcUnavailable | MigrationError::RpcDivergence
-                    | MigrationError::RpcResponseMismatch => (503, "pending"),
+                MigrationError::RpcUnavailable
+                | MigrationError::RpcDivergence
+                | MigrationError::RpcResponseMismatch => (503, "pending"),
                 MigrationError::RpcRateLimited { .. } => (429, "pending"),
-                MigrationError::Configuration | MigrationError::StorageRefused
-                    | MigrationError::CheckpointIntegrity => (503, "refused"),
-                MigrationError::CheckpointConflict | MigrationError::SourceDisplaced
-                    | MigrationError::SourceReverted => (409, "refused"),
+                MigrationError::Configuration
+                | MigrationError::StorageRefused
+                | MigrationError::CheckpointIntegrity => (503, "refused"),
+                MigrationError::CheckpointConflict
+                | MigrationError::SourceDisplaced
+                | MigrationError::SourceReverted => (409, "refused"),
                 _ => (400, "refused"),
             };
             Dispatch::error(status, state, error.code())
@@ -642,10 +686,12 @@ mod migration_v2_request_tests {
     fn mapping_body_cannot_supply_owner_or_receipt_authority() {
         assert!(direct_body::<MigrationAccountRequestV2>(&request(
             br#"{"chain":"ethereum","source_evidence":"AQ=="}"#,
-        )).is_ok());
+        ))
+        .is_ok());
         for body in [
             br#"{"chain":"ethereum","source_evidence":"AQ==","principal":"other"}"#.as_slice(),
-            br#"{"chain":"ethereum","source_evidence":"AQ==","layerx_identity":"other"}"#.as_slice(),
+            br#"{"chain":"ethereum","source_evidence":"AQ==","layerx_identity":"other"}"#
+                .as_slice(),
             br#"{"chain":"ethereum","source_evidence":"AQ==","layerx_receipt":true}"#.as_slice(),
             br#"{"chain":"paxeer","source_evidence":"AQ=="}"#.as_slice(),
             br#"{"chain":"ethereum","chain":"solana","source_evidence":"AQ=="}"#.as_slice(),
@@ -657,20 +703,32 @@ mod migration_v2_request_tests {
     #[test]
     fn pending_mapping_resumes_only_the_exact_authenticated_route() {
         let encoded = serde_json::to_string(&DurableContinuation {
-            method: "POST".to_owned(), path: "/v2/migration/accounts".to_owned(),
-            content_type: "application/json".to_owned(), idempotency_key: Some("mapping-key".to_owned()),
+            method: "POST".to_owned(),
+            path: "/v2/migration/accounts".to_owned(),
+            content_type: "application/json".to_owned(),
+            idempotency_key: Some("mapping-key".to_owned()),
             body: "7b7d".to_owned(),
-        }).unwrap_or_else(|error| panic!("continuation encoding: {error}"));
+        })
+        .unwrap_or_else(|error| panic!("continuation encoding: {error}"));
         let resumed = resumed_request(&encoded, "Bearer renewed-key")
             .unwrap_or_else(|()| panic!("exact migration continuation refused"));
         assert_eq!(resumed.path, "/v2/migration/accounts");
-        assert_eq!(resumed.headers.get("authorization").map(String::as_str), Some("Bearer renewed-key"));
-        for (method, path) in [("GET", "/v2/migration/accounts"), ("POST", "/v2/migration/assets/invalid")] {
+        assert_eq!(
+            resumed.headers.get("authorization").map(String::as_str),
+            Some("Bearer renewed-key")
+        );
+        for (method, path) in [
+            ("GET", "/v2/migration/accounts"),
+            ("POST", "/v2/migration/assets/invalid"),
+        ] {
             let encoded = serde_json::to_string(&DurableContinuation {
-                method: method.to_owned(), path: path.to_owned(),
-                content_type: "application/json".to_owned(), idempotency_key: None,
+                method: method.to_owned(),
+                path: path.to_owned(),
+                content_type: "application/json".to_owned(),
+                idempotency_key: None,
                 body: "7b7d".to_owned(),
-            }).unwrap_or_else(|error| panic!("continuation encoding: {error}"));
+            })
+            .unwrap_or_else(|error| panic!("continuation encoding: {error}"));
             assert!(resumed_request(&encoded, "Bearer renewed-key").is_err());
         }
     }
@@ -2531,45 +2589,107 @@ fn live() -> OutgoingResponse {
     )
 }
 
+#[derive(Clone, Copy)]
+struct HostedReadiness {
+    chain_serving: bool,
+    layerx_activity: bool,
+}
+
+struct SettlementReadiness {
+    durable: bool,
+    hosted: HostedReadiness,
+    authority: bool,
+    configured: bool,
+    observed_at_seconds: u64,
+}
+
+fn adapter_configured(config: &Config, adapter: &str, now: u64) -> bool {
+    match adapter {
+        "x402" => !config.manifest.x402_supported.kinds.is_empty(),
+        "ap2" => !config.manifest.ap2_keys.is_empty() && !config.manifest.ap2_assets.is_empty(),
+        "ucp" => true,
+        "visa-tap" => {
+            !config.manifest.visa_targets.is_empty()
+                && config
+                    .manifest
+                    .visa_agents
+                    .iter()
+                    .any(|key| key.status == "active" && key.expires_at > now)
+        }
+        "fiat" => !config.manifest.fiat_providers.is_empty(),
+        _ => false,
+    }
+}
+
+impl SettlementReadiness {
+    fn observe(config: &Config) -> Self {
+        let observed = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .ok()
+            .map(|now| now.as_secs());
+        let observed_at_seconds = observed.unwrap_or(0);
+        let configured = observed.is_some()
+            && ["x402", "ap2", "ucp", "visa-tap", "fiat"]
+                .iter()
+                .all(|adapter| adapter_configured(config, adapter, observed_at_seconds));
+        Self {
+            configured,
+            observed_at_seconds,
+            durable: config.store.ready(),
+            hosted: hosted_readiness(config),
+            authority: dependency_ready(
+                config,
+                &config.receipt_authority,
+                config.receipt_authority_token.as_str(),
+            ),
+        }
+    }
+
+    fn settlement(&self) -> bool {
+        self.configured && self.durable && self.hosted.layerx_activity && self.authority
+    }
+
+    fn capabilities(&self, config: &Config) -> Value {
+        json!({
+            "chain_serving": {
+                "state": readiness(self.hosted.chain_serving),
+                "reason": if self.hosted.chain_serving { "ready" } else { "unreachable" },
+                "chain_id": config.readiness_chain_id
+            },
+            "layerx_settlement": {
+                "state": readiness(self.settlement()),
+                "reason": if self.settlement() { "ready" } else { "unreachable" }
+            }
+        })
+    }
+}
+
 fn ready(config: &Config) -> OutgoingResponse {
-    let durable = config.store.ready();
-    let hosted = hosted_ready(config);
-    let authority = dependency_ready(
-        config,
-        &config.receipt_authority,
-        config.receipt_authority_token.as_str(),
-    );
-    let ready = durable && hosted && authority;
+    let state = SettlementReadiness::observe(config);
+    let ready = state.settlement();
     json_response(
         if ready { 200 } else { 503 },
         &json!({
+            "readiness_version": 1,
+            "service": "layerx-interop-gateway",
             "status": if ready { "ready" } else { "degraded" },
             "network_id": config.network_id,
             "lxp_wire_version": config.wire_version,
+            "protocol_version": config.protocol_version,
             "protocol_network_id": config.protocol_network_id,
-            "components": { "durable_gateway_store": readiness(durable), "hosted_gateway": readiness(hosted), "receipt_authority": readiness(authority) }
+            "capabilities": state.capabilities(config),
+            "components": { "durable_gateway_store": readiness(state.durable),
+                "hosted_gateway": readiness(state.hosted.layerx_activity),
+                "receipt_authority": readiness(state.authority) }
         }),
     )
 }
 
 fn metadata(config: &Config) -> OutgoingResponse {
-    let durable = config.store.ready();
-    let hosted = hosted_ready(config);
-    let authority = dependency_ready(
-        config,
-        &config.receipt_authority,
-        config.receipt_authority_token.as_str(),
-    );
+    let state = SettlementReadiness::observe(config);
     let adapters: Vec<_> = config.manifest.adapters.values().map(|registered| {
         let descriptor = &registered.descriptor;
-        let configured = match descriptor.id().as_str() {
-            "x402" => !config.manifest.x402_supported.kinds.is_empty(),
-            "ap2" => !config.manifest.ap2_keys.is_empty() && !config.manifest.ap2_assets.is_empty(),
-            "ucp" => true,
-            "visa-tap" => !config.manifest.visa_agents.is_empty() && !config.manifest.visa_targets.is_empty(),
-            "fiat" => !config.manifest.fiat_providers.is_empty(),
-            _ => false,
-        };
+        let configured = adapter_configured(config, descriptor.id().as_str(), state.observed_at_seconds);
         let verification_boundary = match descriptor.id().as_str() {
             "x402" => "signed-402lxp-transfer-requirements-pre-settlement",
             "ap2" => "verified-mandate-and-layerx-receipt",
@@ -2586,9 +2706,9 @@ fn metadata(config: &Config) -> OutgoingResponse {
             "verification_boundary": verification_boundary,
             "readiness": {
                 "configuration": readiness(configured),
-                "ingress": readiness(durable && configured),
-                "settlement": readiness(hosted && configured),
-                "receipt_verification": readiness(authority && configured)
+                "ingress": readiness(state.durable && configured),
+                "settlement": readiness(state.settlement() && configured),
+                "receipt_verification": readiness(state.authority && configured)
             }
         })
     }).collect();
@@ -2598,8 +2718,18 @@ fn metadata(config: &Config) -> OutgoingResponse {
     })).collect();
     json_response(
         200,
-        &json!({ "adapters": adapters, "transports": transports }),
+        &json!({ "readiness_version": 1,
+        "capabilities": state.capabilities(config), "adapters": adapters, "transports": transports }),
     )
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ReceiptAuthorityReadiness {
+    ready: bool,
+    network_id: String,
+    protocol_network_id: u32,
+    wire_version: String,
 }
 
 fn dependency_ready(
@@ -2607,51 +2737,12 @@ fn dependency_ready(
     endpoint: &layerx_platform_gateway::http::Endpoint,
     token: &str,
 ) -> bool {
-    config
-        .client
-        .request(
-            endpoint,
-            token,
-            &OutboundRequest {
-                method: "GET",
-                path: "/readyz",
-                idempotency: None,
-                content_type: "application/json",
-                body: &[],
-            },
-        )
-        .is_ok_and(|response| response.status == 200 && response.content_type == "application/json")
-}
-
-#[derive(Deserialize)]
-struct GatewayActivityReadiness {
-    readiness_version: u16,
-    service: String,
-    status: String,
-    network_id: String,
-    lxp_wire_version: String,
-    protocol_version: u16,
-    protocol_network_id: u32,
-    observed_at_ms: u64,
-    valid_until_ms: u64,
-    components: BTreeMap<String, String>,
-    backends: BTreeMap<String, GatewayBackendReadiness>,
-}
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct GatewayBackendReadiness {
-    state: String,
-    reason: String,
-}
-
-fn hosted_ready(config: &Config) -> bool {
     let Ok(response) = config.client.request(
-        &config.hosted_gateway,
-        "readiness",
+        endpoint,
+        token,
         &OutboundRequest {
             method: "GET",
-            path: "/readyz/core",
+            path: "/readyz",
             idempotency: None,
             content_type: "application/json",
             body: &[],
@@ -2665,44 +2756,232 @@ fn hosted_ready(config: &Config) -> bool {
     {
         return false;
     }
-    let Ok(document) = serde_json::from_slice::<GatewayActivityReadiness>(&response.body) else {
+    let Ok(document) = serde_json::from_slice::<ReceiptAuthorityReadiness>(&response.body) else {
         return false;
     };
-    let Ok(observed_now) = SystemTime::now().duration_since(UNIX_EPOCH) else {
-        return false;
-    };
-    let Ok(observed_now) = u64::try_from(observed_now.as_millis()) else {
-        return false;
-    };
-    document.readiness_version == 1
-        && document.service == "layerx-gateway"
-        && document.status == "ready"
+    document.ready
         && document.network_id == config.network_id
-        && document.lxp_wire_version == config.wire_version
-        && document.protocol_version == config.protocol_version
         && document.protocol_network_id == config.protocol_network_id
-        && document.observed_at_ms <= observed_now
-        && document.valid_until_ms > observed_now
-        && document
-            .valid_until_ms
-            .checked_sub(document.observed_at_ms)
-            .is_some_and(|lifetime| lifetime > 0 && lifetime <= 30_000)
-        && [
-            "durable_store",
-            "core_agent_boundary",
-            "independent_receipt_authority",
+        && document.wire_version == config.wire_version
+}
+
+#[derive(Clone, Copy, Deserialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
+enum GatewayState {
+    Ready,
+    Unavailable,
+}
+
+#[derive(Clone, Copy, Deserialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
+enum GatewayReason {
+    Ready,
+    Unreachable,
+    NotConfigured,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct GatewayBackendReadiness {
+    state: GatewayState,
+    reason: GatewayReason,
+}
+
+impl GatewayBackendReadiness {
+    fn ready(&self) -> bool {
+        self.state == GatewayState::Ready && self.reason == GatewayReason::Ready
+    }
+    fn canonical(&self) -> bool {
+        (self.state == GatewayState::Ready) == (self.reason == GatewayReason::Ready)
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct GatewayComponents {
+    durable_store: GatewayState,
+    core_agent_boundary: GatewayState,
+    public_core: GatewayState,
+    identity: GatewayState,
+    independent_receipt_authority: GatewayState,
+    program_registry: GatewayState,
+    principal_state_boundary: GatewayState,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct GatewayBackends {
+    durable_store: GatewayBackendReadiness,
+    event_producer: GatewayBackendReadiness,
+    paxeer_chain: GatewayBackendReadiness,
+    core_agent_boundary: GatewayBackendReadiness,
+    public_core: GatewayBackendReadiness,
+    independent_receipt_authority: GatewayBackendReadiness,
+    identity: GatewayBackendReadiness,
+    program_registry: GatewayBackendReadiness,
+}
+
+impl GatewayBackends {
+    fn canonical(&self) -> bool {
+        [
+            &self.durable_store,
+            &self.event_producer,
+            &self.paxeer_chain,
+            &self.core_agent_boundary,
+            &self.public_core,
+            &self.independent_receipt_authority,
+            &self.identity,
+            &self.program_registry,
         ]
         .iter()
-        .all(|name| {
-            document
-                .components
-                .get(*name)
-                .is_some_and(|state| state == "ready")
-                && document
-                    .backends
-                    .get(*name)
-                    .is_some_and(|backend| backend.state == "ready" && backend.reason == "ready")
-        })
+        .all(|state| state.canonical())
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct GatewayChainCapability {
+    state: GatewayState,
+    reason: GatewayReason,
+    chain_id: u64,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct GatewayCapabilities {
+    chain_serving: GatewayChainCapability,
+    layerx_activity: GatewayBackendReadiness,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct GatewayActivityReadiness {
+    readiness_version: u16,
+    service: String,
+    status: String,
+    package_semver: String,
+    scope: String,
+    network_id: String,
+    lxp_wire_version: String,
+    protocol_version: u16,
+    protocol_network_id: u32,
+    observed_at_ms: u64,
+    valid_until_ms: u64,
+    components: GatewayComponents,
+    backends: GatewayBackends,
+    capabilities: GatewayCapabilities,
+    product_routes: (),
+}
+
+fn decode_hosted_readiness(
+    config: &Config,
+    status: u16,
+    content_type: &str,
+    body: &[u8],
+    now_ms: u64,
+) -> HostedReadiness {
+    let unavailable = HostedReadiness {
+        chain_serving: false,
+        layerx_activity: false,
+    };
+    if !matches!(status, 200 | 503) || content_type != "application/json" || body.len() > MAX_BODY {
+        return unavailable;
+    }
+    let Ok(document) = serde_json::from_slice::<GatewayActivityReadiness>(body) else {
+        return unavailable;
+    };
+    let components = &document.components;
+    let backends = &document.backends;
+    let component_agreement = [
+        (components.durable_store, &backends.durable_store),
+        (
+            components.core_agent_boundary,
+            &backends.core_agent_boundary,
+        ),
+        (components.public_core, &backends.public_core),
+        (components.identity, &backends.identity),
+        (
+            components.independent_receipt_authority,
+            &backends.independent_receipt_authority,
+        ),
+        (components.program_registry, &backends.program_registry),
+    ]
+    .iter()
+    .all(|(component, backend)| (*component == GatewayState::Ready) == backend.ready());
+    let lifetime = document.valid_until_ms.checked_sub(document.observed_at_ms);
+    if document.readiness_version != 1
+        || document.service != "layerx-gateway"
+        || document.scope != "core"
+        || document.package_semver.is_empty()
+        || document.package_semver.len() > 128
+        || document.network_id != config.network_id
+        || document.lxp_wire_version != config.wire_version
+        || document.protocol_version != config.protocol_version
+        || document.protocol_network_id != config.protocol_network_id
+        || document.capabilities.chain_serving.chain_id != config.readiness_chain_id
+        || document.observed_at_ms > now_ms
+        || document.valid_until_ms <= now_ms
+        || now_ms - document.observed_at_ms > config.readiness_max_age_ms
+        || !lifetime.is_some_and(|age| age > 0 && age <= 30_000)
+        || !backends.canonical()
+        || !component_agreement
+        || components.principal_state_boundary != GatewayState::Unavailable
+        || !document.capabilities.layerx_activity.canonical()
+        || ((document.capabilities.chain_serving.state == GatewayState::Ready)
+            != (document.capabilities.chain_serving.reason == GatewayReason::Ready))
+        || ((document.capabilities.chain_serving.state == GatewayState::Ready)
+            != backends.paxeer_chain.ready())
+    {
+        return unavailable;
+    }
+    let activity = document.capabilities.layerx_activity.ready()
+        && backends.durable_store.ready()
+        && backends.core_agent_boundary.ready()
+        && backends.independent_receipt_authority.ready();
+    if (document.status == "ready") != activity
+        || !matches!(document.status.as_str(), "ready" | "degraded")
+        || (status == 200) != activity
+    {
+        return unavailable;
+    }
+    let _ = document.product_routes;
+    HostedReadiness {
+        chain_serving: document.capabilities.chain_serving.state == GatewayState::Ready,
+        layerx_activity: activity,
+    }
+}
+
+fn hosted_readiness(config: &Config) -> HostedReadiness {
+    let unavailable = HostedReadiness {
+        chain_serving: false,
+        layerx_activity: false,
+    };
+    let Ok(response) = config.client.request(
+        &config.hosted_gateway,
+        "readiness",
+        &OutboundRequest {
+            method: "GET",
+            path: "/readyz/core",
+            idempotency: None,
+            content_type: "application/json",
+            body: &[],
+        },
+    ) else {
+        return unavailable;
+    };
+    let Ok(now) = SystemTime::now().duration_since(UNIX_EPOCH) else {
+        return unavailable;
+    };
+    let Ok(now) = u64::try_from(now.as_millis()) else {
+        return unavailable;
+    };
+    decode_hosted_readiness(
+        config,
+        response.status,
+        &response.content_type,
+        &response.body,
+        now,
+    )
 }
 
 const fn readiness(value: bool) -> &'static str {
@@ -3282,4 +3561,91 @@ mod receipt_authority_shape_tests {
             assert!(!decodes(&missing));
         }
     }
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ReadinessReceiptInput {
+    activity_hex: String,
+    receipt_hex: String,
+    activity_id: String,
+    batch_id: String,
+    expected_signer: String,
+}
+
+pub fn verify_readiness_receipt(config: &Config, path: &str) -> Result<Value, String> {
+    use std::os::unix::fs::PermissionsExt;
+    let metadata =
+        std::fs::symlink_metadata(path).map_err(|_| "receipt input is unavailable".to_owned())?;
+    if !metadata.is_file()
+        || metadata.file_type().is_symlink()
+        || metadata.permissions().mode() & 0o077 != 0
+        || metadata.len() == 0
+        || metadata.len() > (4 * MAX_BODY) as u64
+    {
+        return Err("receipt input must be a protected bounded regular file".to_owned());
+    }
+    let input: ReadinessReceiptInput = serde_json::from_slice(
+        &std::fs::read(path).map_err(|_| "receipt input is unavailable".to_owned())?,
+    )
+    .map_err(|_| "receipt input shape is invalid".to_owned())?;
+    let activity = decode_hex(&input.activity_hex, MAX_BODY)?;
+    let receipt = decode_hex(&input.receipt_hex, MAX_BODY)?;
+    let signer = parse_hex32(&input.expected_signer)?;
+    let activity_id = parse_hex32(&input.activity_id)?;
+    let batch_id = parse_hex32(&input.batch_id)?;
+    let submission = verify_submission(
+        &activity,
+        &config.modules,
+        config.protocol_version,
+        config.protocol_network_id,
+        &signer,
+    )
+    .map_err(|_| "receipt activity signature or domain is invalid".to_owned())?;
+    require_receipt_activity(activity_id, submission.activity_id())?;
+    let trace = TraceId::mint(
+        activity_id[..16]
+            .try_into()
+            .map_err(|_| "receipt trace is invalid".to_owned())?,
+    );
+    let facts = authority(config, &input.activity_id, &receipt, &trace)?;
+    if facts.batch_id != batch_id {
+        return Err("receipt batch identity mismatch".to_owned());
+    }
+    let authorized = AuthorizedBatch::new(
+        facts.batch_id,
+        facts.asset,
+        facts.previous_state_root,
+        facts.resulting_state_root,
+        facts.sequencer_public_key,
+    );
+    let operation = verify_activity_operation(
+        &receipt,
+        AuthorityFacts::new(
+            facts.batch_id,
+            facts.asset,
+            facts.previous_state_root,
+            facts.resulting_state_root,
+            facts.sequencer_public_key,
+        ),
+        &config.trusted_sequencer_key,
+        Some(activity_id),
+    )
+    .map_err(|_| "independent activity receipt verification failed".to_owned())?;
+    require_receipt_activity(submission.activity_id(), operation.activity_id())?;
+    let verified = verify(&receipt, &authorized)
+        .map_err(|_| "independent batch receipt verification failed".to_owned())?;
+    let protocol = verified
+        .receipt()
+        .protocol()
+        .ok_or_else(|| "protocol receipt is required".to_owned())?;
+    if protocol.batch_id() != batch_id || protocol.result_code() != 0 {
+        return Err("settlement receipt did not execute successfully".to_owned());
+    }
+    Ok(
+        json!({ "verified": true, "activity_id": hex(&activity_id), "batch_id": hex(&batch_id),
+        "receipt_sha256": hex(&Sha256::digest(&receipt)),
+        "receipt_digest": hex(&operation.receipt_digest()), "network_id": config.network_id,
+        "protocol_network_id": config.protocol_network_id, "wire_version": config.wire_version }),
+    )
 }

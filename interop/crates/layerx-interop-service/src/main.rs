@@ -45,6 +45,8 @@ fn exchange<S: Read + Write>(config: &Arc<config::Config>, stream: &mut S) -> Re
         return http::write_response(
             stream,
             &http::OutgoingResponse {
+                content_type: "application/json".to_owned(),
+                headers: Vec::new(),
                 status: 400,
                 body: b"{\"ok\":false,\"error\":{\"code\":\"invalid_http_request\"}}".to_vec(),
                 retry_after: None,
@@ -55,6 +57,23 @@ fn exchange<S: Read + Write>(config: &Arc<config::Config>, stream: &mut S) -> Re
 }
 
 fn run() -> Result<(), String> {
+    let arguments: Vec<_> = std::env::args().skip(1).collect();
+    if !arguments.is_empty() {
+        if arguments.len() != 2
+            || arguments[0] != "--verify-readiness-receipt"
+            || arguments[1].is_empty()
+        {
+            return Err("invalid interoperability gateway arguments".to_owned());
+        }
+        let config = config::load()?;
+        let verified = server::verify_readiness_receipt(&config, &arguments[1])?;
+        println!(
+            "{}",
+            serde_json::to_string(&verified)
+                .map_err(|_| "receipt result encoding failed".to_owned())?
+        );
+        return Ok(());
+    }
     let config = Arc::new(config::load()?);
     let listener = TcpListener::bind(config.listen).map_err(|error| error.to_string())?;
     for incoming in listener.incoming() {
