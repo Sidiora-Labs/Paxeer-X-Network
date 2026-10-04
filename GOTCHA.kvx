@@ -2524,3 +2524,23 @@ resolution = "Use exact known directory and filename queries; recover the full t
 area = "Real custody consumer refusal assertion"
 observed = "After genuine five-node ceremony import succeeded, task38 verify reached the actual Rust consumer and failed the existing StepUpMismatch assertion at native_send_purpose.rs603."
 resolution = "Retain the assertion and exact build0 verify1 evidence; no unchanged rerun or unapproved neighboring edit. A concrete source repair or owner contract decision is required."
+
+[gotcha.735]
+area = "Codify lease duration units"
+observed = "Codify spec_claim reports ttl in minutes; two initial claims supplied3600 as though seconds."
+resolution = "Refresh exact owners with45 or90minute leases and release completed tasks; this does not extend any task implementation or qualification deadline."
+
+[gotcha.736]
+area = "Isolated helper current working directory"
+observed = "A language fixture helper wrote its newly authored file into main instead of its assigned isolated worktree."
+resolution = "Freeze the helper, preserve exact authored bytes in the owned worktree, and remove only the identical untracked main copy before normal manifest-based intake."
+
+[gotcha.737]
+area = "Candidate publication handoff timing"
+observed = "Task7.3 whole source froze10:08 and was pushed, but root delayed sending its immutable candidate to the worker; the original10:18 cutoff interrupted the build before any compiler phase completed."
+resolution = "Record sourceDONE separately from build124 and verifyUNRUN, retain original deadline and require an explicit extension before another build; send publication results promptly."
+
+[gotcha.742]
+area = "Candidate generator command shape"
+observed = "The language worker first omitted the create subcommand and output path from candidate.py, receiving usage exit2 before generating any build candidate."
+resolution = "Invoke candidate.py create with exact repo, spec, immutable mainline and private output; successful candidate generation is source metadata, not a product gate."
