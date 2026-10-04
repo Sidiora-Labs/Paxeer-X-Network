@@ -57,8 +57,8 @@ type Options struct {
 	Clients         *ClientAuthorities
 	Tokens          *jwt.TokenVerifier
 	Agents          *agent.AgentVerifier
-    Authority *agent.Authority
-    Inventory *Inventory
+	Authority       *agent.Authority
+	Inventory       *Inventory
 	Activities      *lxwire.Registry
 	PeerProbe       func(ctx context.Context) map[string]health.PeerState
 	Replica         func() health.ReplicaState
@@ -135,6 +135,7 @@ func New(opts Options) (*Server, error) {
 	s.mux.HandleFunc(PathRefresh, s.post(s.operatorOnly("keys.refresh", s.inventoryRoute("refresh", s.HandleRefresh))))
 	s.mux.HandleFunc(PathAddShare, s.post(s.operatorOnly("keys.addshare", s.inventoryRoute("addshare", s.HandleAddShare))))
 	s.mux.HandleFunc(PathDescribe, s.post(s.operatorOnly("keys.describe", s.HandleDescribe)))
+	s.mux.HandleFunc(PathPublicWallet, s.post(s.gatewayOnly("keys.public-wallet", s.HandlePublicWallet)))
 	s.mux.HandleFunc(PathAuthority, s.post(s.gatewayOnly("custody.authority", s.HandleAuthority)))
 	s.mux.HandleFunc(PathSign, s.post(s.signRoute()))
 	s.mux.HandleFunc(PathLXReview, s.post(s.gatewayOnly("lx.review", s.HandleLXReview)))

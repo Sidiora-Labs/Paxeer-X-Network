@@ -1004,6 +1004,15 @@ fn wallet_identity_e2e_signs_a_kernel_send_through_the_attestors_to_a_verified_r
         SigningLimits::new(1_000, 10_000).unwrap_or_else(|error| panic!("limits: {error}")),
     );
 
+    let primary_key =
+        KeyId::new("human-primary").unwrap_or_else(|error| panic!("primary key: {error}"));
+    assert!(
+        signer
+            .public_wallet_identity(resolved.principal(), &primary_key)
+            .is_err(),
+        "native-only attestor fixture has no approved secp256k1 wallet identity"
+    );
+
     let home = format!("agent:{did}:main");
     let actor = AgentDid::new(did.clone()).unwrap_or_else(|error| panic!("actor: {error:?}"));
     let now = wall_clock();

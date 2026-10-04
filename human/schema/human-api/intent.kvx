@@ -63,7 +63,7 @@ method = "POST"
 path = "/v1/intents/plan"
 request = "PlanIntentRequest"
 response = "IntentPlan"
-purity = "Planning performs no state change and creates no journey. It states what would happen and exactly what must be signed for it to happen."
+purity = "Planning changes no money, custody, signing, authorization or journey state. The service retains an immutable private canonical observation memo scoped to the authenticated tenant, principal, session and custody identity, so the existing strict submission body can reference the original intent by plan_digest. Planning output remains deterministic and states exactly what must be signed."
 refusal = "A route the planner cannot serve, a deadline already passed, an unobservable balance and a top-up without a covering allowance are each typed refusals, never a partial plan."
 
 [operation.intent.submit]

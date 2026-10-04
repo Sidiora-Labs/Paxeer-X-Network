@@ -60,6 +60,30 @@ impl Keystore {
         Ok(record.provider_reference)
     }
 
+    pub fn public_wallet_identity(
+        &self,
+        principal: &PrincipalId,
+        key: &KeyId,
+    ) -> Result<
+        (
+            [u8; 20],
+            super::PrincipalKeyBinding,
+            super::ProviderKeyReference,
+        ),
+        CustodyError,
+    > {
+        let record = self.read_record(principal, key)?;
+        let binding = self.binding(principal, key, record.class)?;
+        Self::require_record_binding(&binding, &record)?;
+        let wallet = self
+            .provider
+            .evm_operation(6, &binding, &record.provider_reference, &[])
+            .map_err(CustodyError::Kms)?
+            .try_into()
+            .map_err(|_| CustodyError::Kms(KmsError::InvalidResponse))?;
+        Ok((wallet, binding, record.provider_reference))
+    }
+
     /// Resolves the EVM wallet attached to an existing principal custody key.
     /// # Errors
     /// Refuses absent, destroyed or mismatched custody records.

@@ -26995,7 +26995,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.10.1]
 title = "Plan and submit Human intents with authoritative attestor custody observations"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 4
 requires = ["0.2", "11.1", "13.4", "13.2"]
@@ -27005,7 +27005,7 @@ do_2 = "Implement or consume authoritative public wallet resolution for the sele
 do_3 = "Qualify gateway-to-ProductionComponents plan/submit with the actual provider selection, valid identity/account state and real approval/signing boundary."
 do_4 = "Author the new focused harness tools/qualification/paxeer-x/human_attestor_intents.py to exercise these acceptance cases against real production implementations and types. It must fail on missing candidate artifacts, missing authority/configuration, skipped cases or unverifiable receipts; retain the exact candidate revision, command, case results and evidence paths. Use disposable qualification state and provisioned authority without printing secret values; no mocks, synthetic success or substitution of a library-only model for a named process boundary."
 do_5 = "Implement the declared focused gate through the real production types and paths; exercise every acceptance criterion including refusal, restart or boundary cases specified by this requirement. The command is a planned deliverable, not an already-run gate."
-touches = ["human/crates/layerx-human-service/src/server/production_components.rs", "human/crates/layerx-human-service/src/custody/evm.rs", "human/crates/layerx-human-service/src/custody/signer.rs", "human/crates/layerx-human-service/tests/wallet_identity_e2e.rs", "tools/qualification/paxeer-x/human_attestor_intents.py"]
+touches = ["human/crates/layerx-human-service/src/server/production_components.rs", "human/crates/layerx-human-service/src/custody/evm.rs", "human/crates/layerx-human-service/src/custody/signer.rs", "human/crates/layerx-human-service/tests/wallet_identity_e2e.rs", "tools/qualification/paxeer-x/human_attestor_intents.py", "human/wallet/attestor/internal/server/server.go", "human/wallet/attestor/internal/server/public_identity.go", "human/crates/layerx-human-kms/src/attestor.rs", "human/schema/human-api/intent.kvx", "human/schema/human-api/baseline.kvx"]
 verify_cmd = "timeout 30m python3 tools/qualification/paxeer-x/human_attestor_intents.py"
 gate_kind = "planned"
 max_builds = 1
@@ -27018,6 +27018,15 @@ planned_paths = ["tools/qualification/paxeer-x/human_attestor_intents.py"]
 path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
 evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
 
+build_cmd = "timeout 20m env CARGO_TARGET_DIR=/root/lx-target/human /root/.cargo/bin/cargo build --locked --manifest-path human/Cargo.toml -p layerx-human-service"
+
+owner_contract_approval = "Owner explicitly approved the immutable private intent memo and matching contract correction on2026-10-04; preserve strict submission shape and current-state signature binding."
+
+completion_basis = "implementation"
+qualification_status = "unverified"
+build_exit_code = 124
+verify_status = "UNRUN"
+qualification_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-10.1-source-handoff.json"
 [task.12.4]
 title = "Report movement readiness only with an authenticated usable executor"
 status = "pending"

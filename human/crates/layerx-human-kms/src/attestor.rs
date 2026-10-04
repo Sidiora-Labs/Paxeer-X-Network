@@ -23,6 +23,7 @@ pub const MIN_SIGNERS: usize = 3;
 pub const APPROVAL_VERSION: u8 = 1;
 const PATH_SIGN: &str = "/v1/sign";
 const PATH_GENERATE: &str = "/v1/keys/generate";
+const PATH_PUBLIC_WALLET: &str = "/v1/keys/public-wallet";
 const PATH_HEALTH: &str = "/health";
 const PREIMAGE_DOMAIN: &[u8] = b"LXP/v1/signature-preimage\0";
 const MAX_RESPONSE_BYTES: u64 = 65_536;
@@ -369,6 +370,70 @@ impl AttestorClient {
             public_key,
             audit,
         })
+    }
+
+    pub fn public_wallet_identity(
+        &self,
+        ed_key_id: &str,
+        public_key: &[u8; 32],
+        owner: &str,
+        assertion: &str,
+    ) -> Result<[u8; 20], AttestorError> {
+        if !valid_identifier(ed_key_id) || owner.is_empty() || assertion.is_empty() {
+            return Err(AttestorError::Configuration(
+                "public wallet identity request",
+            ));
+        }
+        let session = session_id("public-wallet")?;
+        let body = serde_json::to_vec(&PublicWalletRequest {
+            session_id: &session,
+            key_id: ed_key_id,
+            public_key: &encode_hex(public_key),
+            owner,
+        })
+        .map_err(|_| AttestorError::Configuration("public wallet identity request"))?;
+        let mut identity = None;
+        for (node, result) in
+            self.post_all(&self.nodes(), PATH_PUBLIC_WALLET, &body, Some(assertion))
+        {
+            let raw = result?;
+            let response: PublicWalletBody =
+                serde_json::from_slice(&raw).map_err(|_| malformed(&node))?;
+            let address = decode_fixed::<20>(
+                response
+                    .address
+                    .strip_prefix("0x")
+                    .ok_or_else(|| malformed(&node))?,
+            )
+            .ok_or_else(|| malformed(&node))?;
+            let wallet_public =
+                decode_fixed::<65>(&response.wallet_public_key).ok_or_else(|| malformed(&node))?;
+            if response.node_id != node
+                || response.key_id != ed_key_id
+                || response.owner != owner
+                || decode_fixed::<32>(&response.public_key) != Some(*public_key)
+                || !valid_identifier(&response.wallet_key_id)
+                || response.audit_sequence == 0
+                || wallet_public[0] != 4
+                || address == [0; 20]
+            {
+                return Err(malformed(&node));
+            }
+            let observed = (
+                response.wallet_key_id,
+                wallet_public,
+                response.wallet_epoch,
+                address,
+            );
+            match &identity {
+                None => identity = Some(observed),
+                Some(agreed) if agreed == &observed => {}
+                Some(_) => return Err(malformed(&node)),
+            }
+        }
+        identity
+            .map(|(_, _, _, address)| address)
+            .ok_or(AttestorError::Configuration("no attestor wallet identity"))
     }
 
     fn address(&self, node: &str) -> Result<SocketAddr, AttestorError> {
@@ -1079,6 +1144,28 @@ struct KeyBody {
     key_id: String,
     curve: String,
     public_key: String,
+    audit_sequence: u64,
+}
+
+#[derive(Serialize)]
+struct PublicWalletRequest<'a> {
+    session_id: &'a str,
+    key_id: &'a str,
+    public_key: &'a str,
+    owner: &'a str,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct PublicWalletBody {
+    node_id: String,
+    key_id: String,
+    public_key: String,
+    owner: String,
+    wallet_key_id: String,
+    wallet_public_key: String,
+    wallet_epoch: u64,
+    address: String,
     audit_sequence: u64,
 }
 

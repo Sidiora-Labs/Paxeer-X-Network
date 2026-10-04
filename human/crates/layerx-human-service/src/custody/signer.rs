@@ -822,6 +822,21 @@ fn hex(bytes: [u8; 32]) -> String {
 }
 
 impl CustodySigner {
+    pub fn public_wallet_identity(
+        &self,
+        principal: &PrincipalId,
+        key: &KeyId,
+    ) -> Result<
+        (
+            [u8; 20],
+            super::PrincipalKeyBinding,
+            super::ProviderKeyReference,
+        ),
+        CustodyError,
+    > {
+        self.keystore.public_wallet_identity(principal, key)
+    }
+
     /// Resolves the principal's custody-bound EVM wallet.
     /// # Errors
     /// Refuses invalid custody records or unavailable providers.

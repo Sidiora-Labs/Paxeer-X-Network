@@ -1481,12 +1481,84 @@ fn move_quote_json(value: &super::movement_provider::AuthorizedMovePlan) -> serd
         "irreversibility_copy_key": "movement.review.irreversible"})
 }
 
+#[derive(serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct HeldIntentObservation {
+    profile: u16,
+    principal: String,
+    tenant: String,
+    session_id: String,
+    plan_digest: [u8; 32],
+    custody_binding_digest: [u8; 32],
+    identity_authority_digest: [u8; 32],
+    canonical_intent: Vec<u8>,
+    canonical_plan: Vec<u8>,
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct HeldIntentOutcome {
+    canonical_submission: Vec<u8>,
+    session_id: String,
+    plan_digest: [u8; 32],
+    result: serde_json::Value,
+}
+
+struct KernelIntentContext {
+    account: AccountId,
+    actor: AgentDid,
+    authority: AuthorityRef,
+    account_sequence: u64,
+    custody_key: KeyId,
+    custody_binding_digest: [u8; 32],
+    identity_authority_digest: [u8; 32],
+    network: layerx_types::intent::NetworkId,
+    protocol_version: u16,
+}
+
+fn resolve_kernel_intent_context(
+    components: &ProductionComponents,
+    scope: &crate::store::PrincipalScope<'_>,
+    asset: AssetId,
+) -> Result<KernelIntentContext, ApiFailure> {
+    let mut agent = components.principal_agent(scope)?;
+    let owner = resolve_principal_owner(components, scope, &mut agent)?;
+    let balance = agent.balance().map_err(agent_failure)?;
+    if balance.account != movement_account_address(&owner.account, components.protocol_version)?
+        || balance.asset != asset.bytes()
+        || balance.global_sequence != balance.observed_head_sequence
+        || balance.age_seconds > components.activity_freshness_seconds
+    {
+        return Err(ApiFailure::forbidden());
+    }
+    let custody_key = KeyId::new("human-primary").map_err(|_| ApiFailure::upstream_degraded())?;
+    let binding = components
+        .custody
+        .evm_binding(scope.principal(), &custody_key)
+        .map_err(|_| ApiFailure::forbidden())?;
+    let account_sequence = agent
+        .account_sequence(&owner.actor, &owner.authority)
+        .map_err(agent_failure)?;
+    Ok(KernelIntentContext {
+        account: owner.account,
+        actor: owner.actor,
+        authority: owner.authority,
+        account_sequence,
+        custody_key,
+        custody_binding_digest: binding.digest(),
+        identity_authority_digest: Sha256::digest(&owner.identity.canonical_bytes).into(),
+        network: layerx_types::intent::NetworkId::new(components.network_id)
+            .map_err(|_| ApiFailure::upstream_degraded())?,
+        protocol_version: components.protocol_version,
+    })
+}
+
 #[derive(Clone, Copy)]
 struct KernelSubmission<'a> {
     planned: &'a crate::journeys::UnifiedPlan,
     submitted: &'a crate::journeys::SubmitPlanRequest,
     expectation: &'a crate::journeys::BindingExpectation,
-    context: &'a super::movement_provider::PlanningContext,
+    context: &'a KernelIntentContext,
     idempotency: &'a str,
 }
 
@@ -1505,7 +1577,7 @@ fn intent_leg_route(
     components: &ProductionComponents,
     scope: &crate::store::PrincipalScope<'_>,
     agent: &mut AgentRuntime,
-    context: &super::movement_provider::PlanningContext,
+    context: &KernelIntentContext,
     leg: &crate::journeys::PlannedLeg,
     binding: &crate::journeys::IntentLegBinding,
     assertion: Option<&str>,
@@ -1538,7 +1610,7 @@ fn intent_send_route(
     components: &ProductionComponents,
     scope: &crate::store::PrincipalScope<'_>,
     agent: &mut AgentRuntime,
-    context: &super::movement_provider::PlanningContext,
+    context: &KernelIntentContext,
     leg: &crate::journeys::PlannedLeg,
     binding: &crate::journeys::IntentLegBinding,
     to: &AccountId,
@@ -1559,7 +1631,7 @@ fn intent_send_route(
     let context_hash = action_key(&format!(
         "{}:{}",
         scope.tenant().as_str(),
-        hex_bytes(&context.binding_receipt_digest)
+        hex_bytes(&context.identity_authority_digest)
     ));
     let signed = crate::custody::SendPlanAuthorization {
         plan_id: binding.action_key,
@@ -1628,7 +1700,7 @@ fn intent_send_route(
 fn intent_budget_route(
     scope: &crate::store::PrincipalScope<'_>,
     agent: &mut AgentRuntime,
-    context: &super::movement_provider::PlanningContext,
+    context: &KernelIntentContext,
     leg: &crate::journeys::PlannedLeg,
     binding: &crate::journeys::IntentLegBinding,
     budget: &AccountId,
@@ -1907,28 +1979,56 @@ fn exit_public_json(
     )
 }
 
-fn managed_agent_json(agent: &mut AgentRuntime, mut value: super::agent_runtime::ManagedAgentView) -> Result<serde_json::Value, ApiFailure> {
+fn managed_agent_json(
+    agent: &mut AgentRuntime,
+    mut value: super::agent_runtime::ManagedAgentView,
+) -> Result<serde_json::Value, ApiFailure> {
     hydrate_managed_evidence(agent, &mut value)?;
     super::projection::managed_agent(&value)
 }
-fn hydrate_managed_evidence(agent: &mut AgentRuntime, value: &mut super::agent_runtime::ManagedAgentView) -> Result<(), ApiFailure> {
+fn hydrate_managed_evidence(
+    agent: &mut AgentRuntime,
+    value: &mut super::agent_runtime::ManagedAgentView,
+) -> Result<(), ApiFailure> {
     for reference in &mut value.evidence {
-        let digest = super::projection::digest(reference.evidence_id.strip_prefix("evd_").unwrap_or(&reference.evidence_id))?;
-        let material = agent.managed_evidence(&value.agent_id, digest).map_err(agent_failure)?;
+        let digest = super::projection::digest(
+            reference
+                .evidence_id
+                .strip_prefix("evd_")
+                .unwrap_or(&reference.evidence_id),
+        )?;
+        let material = agent
+            .managed_evidence(&value.agent_id, digest)
+            .map_err(agent_failure)?;
         reference.verification = material.verification;
         reference.class = "layerx-receipt".to_owned();
     }
     Ok(())
 }
-fn managed_journey_json(value: &super::agent_runtime::ManagedAgentJourney) -> Result<serde_json::Value, ApiFailure> {
-    let state = ["getting-ready", "processing", "done", "refused"].get(usize::from(value.state)).ok_or_else(ApiFailure::upstream_degraded)?;
-    let kind = match value.kind.as_str() { "reclaim" => "move", "archive" => "agent-retire", _ => return Err(ApiFailure::upstream_degraded()) };
+fn managed_journey_json(
+    value: &super::agent_runtime::ManagedAgentJourney,
+) -> Result<serde_json::Value, ApiFailure> {
+    let state = ["getting-ready", "processing", "done", "refused"]
+        .get(usize::from(value.state))
+        .ok_or_else(ApiFailure::upstream_degraded)?;
+    let kind = match value.kind.as_str() {
+        "reclaim" => "move",
+        "archive" => "agent-retire",
+        _ => return Err(ApiFailure::upstream_degraded()),
+    };
     let stages = value.stages.iter().map(|stage| {
         let state = ["getting-ready", "processing", "done", "refused"].get(usize::from(stage.state)).ok_or_else(ApiFailure::upstream_degraded)?;
         Ok(json!({"stage_id":format!("stg_{}",stage.stage_id),"copy_key":stage.copy_key,"state":state,"evidence":stage.evidence.iter().map(super::projection::managed_evidence).collect::<Result<Vec<_>,_>>()?}))
     }).collect::<Result<Vec<_>,ApiFailure>>()?;
-    let time = |value: &str| value.parse::<u64>().map_err(|_|ApiFailure::upstream_degraded()).and_then(super::projection::unix_time);
-    Ok(json!({"journey_id":value.journey_id,"kind":kind,"state":state,"state_copy_key":format!("status.{state}"),"stages":stages,"evidence":value.evidence.iter().map(super::projection::managed_evidence).collect::<Result<Vec<_>,_>>()?,"started_at":time(&value.started_at)?,"updated_at":time(&value.updated_at)?}))
+    let time = |value: &str| {
+        value
+            .parse::<u64>()
+            .map_err(|_| ApiFailure::upstream_degraded())
+            .and_then(super::projection::unix_time)
+    };
+    Ok(
+        json!({"journey_id":value.journey_id,"kind":kind,"state":state,"state_copy_key":format!("status.{state}"),"stages":stages,"evidence":value.evidence.iter().map(super::projection::managed_evidence).collect::<Result<Vec<_>,_>>()?,"started_at":time(&value.started_at)?,"updated_at":time(&value.updated_at)?}),
+    )
 }
 fn agent_failure(error: crate::journeys::AgentBoundaryError) -> ApiFailure {
     match error {
@@ -2309,7 +2409,9 @@ fn journey_status_json(status: &crate::journeys::JourneyStatus) -> serde_json::V
 
 fn decode_id(value: &str) -> Result<[u8; 32], ()> {
     let value = value.strip_prefix("apr_").unwrap_or(value);
-    if value.len() == 64 { return super::projection::digest(value).map_err(|_| ()); }
+    if value.len() == 64 {
+        return super::projection::digest(value).map_err(|_| ());
+    }
     URL_SAFE_NO_PAD
         .decode(value)
         .map_err(|_| ())?
@@ -2317,27 +2419,52 @@ fn decode_id(value: &str) -> Result<[u8; 32], ()> {
         .map_err(|_| ())
 }
 
-fn append_approval_stream(scope: &mut crate::store::PrincipalScope<'_>, hold: &AgentApprovalRecord, value: &serde_json::Value, observed_at: u64) -> Result<(), ApiFailure> {
+fn append_approval_stream(
+    scope: &mut crate::store::PrincipalScope<'_>,
+    hold: &AgentApprovalRecord,
+    value: &serde_json::Value,
+    observed_at: u64,
+) -> Result<(), ApiFailure> {
     let (state, kind) = match hold.state {
         AgentApprovalState::AwaitingApproval => ("pending", "approval-created"),
         AgentApprovalState::Approved { .. } => ("approved", "approval-approved"),
         AgentApprovalState::Rejected => ("rejected", "approval-rejected"),
-        AgentApprovalState::Expired | AgentApprovalState::Defective => ("expired", "approval-expired"),
+        AgentApprovalState::Expired | AgentApprovalState::Defective => {
+            ("expired", "approval-expired")
+        }
     };
-    super::stream_journal::StreamJournal::append(scope, &format!("approval:{}:{state}", super::projection::hex(&hold.approval_id)), kind, observed_at, json!({"approval":value}))
+    super::stream_journal::StreamJournal::append(
+        scope,
+        &format!(
+            "approval:{}:{state}",
+            super::projection::hex(&hold.approval_id)
+        ),
+        kind,
+        observed_at,
+        json!({"approval":value}),
+    )
 }
 
-fn managed_for_actor(agent: &mut AgentRuntime, actor: &str) -> Result<super::agent_runtime::ManagedAgentView, ApiFailure> {
+fn managed_for_actor(
+    agent: &mut AgentRuntime,
+    actor: &str,
+) -> Result<super::agent_runtime::ManagedAgentView, ApiFailure> {
     let mut cursor = None;
     let mut seen = std::collections::BTreeSet::new();
     let mut found = None;
     loop {
         let page = agent.agent_list(cursor, 100).map_err(agent_failure)?;
         for value in page.agents {
-            let context = agent.agent_context(&value.agent_id).map_err(agent_failure)?;
-            if context.seed.agent_id != value.agent_id { return Err(ApiFailure::upstream_degraded()); }
+            let context = agent
+                .agent_context(&value.agent_id)
+                .map_err(agent_failure)?;
+            if context.seed.agent_id != value.agent_id {
+                return Err(ApiFailure::upstream_degraded());
+            }
             if context.agent_did == actor {
-                if found.is_some() { return Err(super::projection::hold_defective()); }
+                if found.is_some() {
+                    return Err(super::projection::hold_defective());
+                }
                 found = Some(value);
             }
         }
@@ -2350,82 +2477,234 @@ fn managed_for_actor(agent: &mut AgentRuntime, actor: &str) -> Result<super::age
     found.ok_or_else(super::projection::hold_defective)
 }
 
-fn project_approval(agent: &mut AgentRuntime, facts: &super::agent_runtime::AgentApprovalFacts, sequence: u64) -> Result<super::projection::ApprovalProjection, ApiFailure> {
+fn project_approval(
+    agent: &mut AgentRuntime,
+    facts: &super::agent_runtime::AgentApprovalFacts,
+    sequence: u64,
+) -> Result<super::projection::ApprovalProjection, ApiFailure> {
     let mut managed = managed_for_actor(agent, facts.approval.held_activity.actor.as_str())?;
     hydrate_managed_evidence(agent, &mut managed)?;
-    let budget = agent.verified_budget_after(&facts.approval, sequence).map_err(|_|ApiFailure::upstream_degraded())?;
-    let evidence = managed.evidence.iter().map(super::projection::managed_evidence).collect::<Result<Vec<_>,_>>()?;
+    let budget = agent
+        .verified_budget_after(&facts.approval, sequence)
+        .map_err(|_| ApiFailure::upstream_degraded())?;
+    let evidence = managed
+        .evidence
+        .iter()
+        .map(super::projection::managed_evidence)
+        .collect::<Result<Vec<_>, _>>()?;
     super::projection::approval(facts, &managed, budget, evidence)
 }
 
-fn cache_native_material(scope: &mut crate::store::PrincipalScope<'_>, material: serde_json::Value, observed_at: u64) -> Result<serde_json::Value,ApiFailure> {
-    let id = material["evidence_id"].as_str().ok_or_else(ApiFailure::upstream_degraded)?;
-    let digest = id.strip_prefix("evd_").ok_or_else(ApiFailure::upstream_degraded).and_then(super::projection::digest)?;
-    let key = RowKey::new(format!("native-approval-evidence-{}",super::projection::hex(&digest))).map_err(|_|ApiFailure::upstream_degraded())?;
-    scope.put(Table::Cache,key,observed_at,serde_json::to_vec(&material).map_err(|_|ApiFailure::upstream_degraded())?).map_err(|_|ApiFailure::unavailable())?;
+fn cache_native_material(
+    scope: &mut crate::store::PrincipalScope<'_>,
+    material: serde_json::Value,
+    observed_at: u64,
+) -> Result<serde_json::Value, ApiFailure> {
+    let id = material["evidence_id"]
+        .as_str()
+        .ok_or_else(ApiFailure::upstream_degraded)?;
+    let digest = id
+        .strip_prefix("evd_")
+        .ok_or_else(ApiFailure::upstream_degraded)
+        .and_then(super::projection::digest)?;
+    let key = RowKey::new(format!(
+        "native-approval-evidence-{}",
+        super::projection::hex(&digest)
+    ))
+    .map_err(|_| ApiFailure::upstream_degraded())?;
+    scope
+        .put(
+            Table::Cache,
+            key,
+            observed_at,
+            serde_json::to_vec(&material).map_err(|_| ApiFailure::upstream_degraded())?,
+        )
+        .map_err(|_| ApiFailure::unavailable())?;
     Ok(json!({"evidence_id":id,"class":material["class"],"verification":material["verification"]}))
 }
 
-fn project_native_approval(agent: &mut AgentRuntime, scope: &mut crate::store::PrincipalScope<'_>,
-    facts: &super::agent_runtime::NativeEffectApprovalFacts, sequence: u64, observed_at: u64) -> Result<super::projection::ApprovalProjection,ApiFailure> {
-    if !facts.requires_approval { return Err(ApiFailure::not_found()); }
-    let mut managed = managed_for_actor(agent,&facts.actor)?;
-    let context = agent.agent_context(&managed.agent_id).map_err(agent_failure)?;
-    if context.agent_did != facts.actor || context.seed.agent_id != managed.agent_id || context.seed.budget_asset != facts.asset { return Err(super::projection::hold_defective()); }
-    let budget = agent.native_effect_approval_budget(facts.approval_id,facts.held_digest,sequence).map_err(agent_failure)?;
-    let mut selected = budget.rows.iter().filter(|row|row.asset==facts.asset && row.budget_id==context.active_budget_id);
-    let (Some(row),None) = (selected.next(),selected.next()) else { return Err(super::projection::hold_defective()); };
+fn project_native_approval(
+    agent: &mut AgentRuntime,
+    scope: &mut crate::store::PrincipalScope<'_>,
+    facts: &super::agent_runtime::NativeEffectApprovalFacts,
+    sequence: u64,
+    observed_at: u64,
+) -> Result<super::projection::ApprovalProjection, ApiFailure> {
+    if !facts.requires_approval {
+        return Err(ApiFailure::not_found());
+    }
+    let mut managed = managed_for_actor(agent, &facts.actor)?;
+    let context = agent
+        .agent_context(&managed.agent_id)
+        .map_err(agent_failure)?;
+    if context.agent_did != facts.actor
+        || context.seed.agent_id != managed.agent_id
+        || context.seed.budget_asset != facts.asset
+    {
+        return Err(super::projection::hold_defective());
+    }
+    let budget = agent
+        .native_effect_approval_budget(facts.approval_id, facts.held_digest, sequence)
+        .map_err(agent_failure)?;
+    let mut selected = budget
+        .rows
+        .iter()
+        .filter(|row| row.asset == facts.asset && row.budget_id == context.active_budget_id);
+    let (Some(row), None) = (selected.next(), selected.next()) else {
+        return Err(super::projection::hold_defective());
+    };
     let fee_policy = agent.native_fee_policy().map_err(agent_failure)?;
-    let fee_currency = if facts.fee_asset==context.seed.budget_asset { managed.currency.clone() } else if facts.fee_asset==fee_policy.asset_id {fee_policy.currency} else {return Err(super::projection::hold_defective());};
-    let material = agent.native_effect_approval_material(facts.approval_id,facts.held_digest).map_err(agent_failure)?;
-    if material.owner!=facts.owner || material.approval_id!=facts.approval_id || material.held_digest!=facts.held_digest { return Err(ApiFailure::upstream_degraded()); }
-    let proof = agent.agent_budget_proof(row.budget_id).map_err(agent_failure)?;
-    if proof.owner != facts.owner || proof.budget_id!=row.budget_id || proof.asset!=row.asset || proof.source_account!=row.source_account
-        || proof.observed_head_sequence!=sequence || proof.remaining<row.remaining || proof.verification!=row.verification
-        || proof.evidence_digest!=row.evidence_digest || proof.receipt_digest!=row.receipt_digest || proof.checkpoint_digest!=row.checkpoint_digest
-        || proof.age_sequences!=row.age_sequences || proof.maximum_age_sequences!=row.maximum_age_sequences {
+    let fee_currency = if facts.fee_asset == context.seed.budget_asset {
+        managed.currency.clone()
+    } else if facts.fee_asset == fee_policy.asset_id {
+        fee_policy.currency
+    } else {
+        return Err(super::projection::hold_defective());
+    };
+    let material = agent
+        .native_effect_approval_material(facts.approval_id, facts.held_digest)
+        .map_err(agent_failure)?;
+    if material.owner != facts.owner
+        || material.approval_id != facts.approval_id
+        || material.held_digest != facts.held_digest
+    {
         return Err(ApiFailure::upstream_degraded());
     }
-    hydrate_managed_evidence(agent,&mut managed)?;
-    let mut evidence = managed.evidence.iter().map(super::projection::managed_evidence).collect::<Result<Vec<_>,_>>()?;
-    evidence.push(cache_native_material(scope,super::projection::owned_material(&material.canonical_unsigned_bytes,"approval-hold","application/vnd.layerx.activity"),observed_at)?);
-    evidence.push(cache_native_material(scope,super::projection::owned_material(&material.immutable_carrier_bytes,"approval-hold","application/vnd.layerx.approval-carrier"),observed_at)?);
-    evidence.push(cache_native_material(scope,super::projection::owned_material(&material.canonical_budget_bytes,"local-journey-state","application/vnd.layerx.budget-allocation"),observed_at)?);
-    let mut exported = super::projection::owned_material(&proof.canonical_export_bytes,"checkpoint-proof","application/vnd.layerx.budget-proof");
+    let proof = agent
+        .agent_budget_proof(row.budget_id)
+        .map_err(agent_failure)?;
+    if proof.owner != facts.owner
+        || proof.budget_id != row.budget_id
+        || proof.asset != row.asset
+        || proof.source_account != row.source_account
+        || proof.observed_head_sequence != sequence
+        || proof.remaining < row.remaining
+        || proof.verification != row.verification
+        || proof.evidence_digest != row.evidence_digest
+        || proof.receipt_digest != row.receipt_digest
+        || proof.checkpoint_digest != row.checkpoint_digest
+        || proof.age_sequences != row.age_sequences
+        || proof.maximum_age_sequences != row.maximum_age_sequences
+    {
+        return Err(ApiFailure::upstream_degraded());
+    }
+    hydrate_managed_evidence(agent, &mut managed)?;
+    let mut evidence = managed
+        .evidence
+        .iter()
+        .map(super::projection::managed_evidence)
+        .collect::<Result<Vec<_>, _>>()?;
+    evidence.push(cache_native_material(
+        scope,
+        super::projection::owned_material(
+            &material.canonical_unsigned_bytes,
+            "approval-hold",
+            "application/vnd.layerx.activity",
+        ),
+        observed_at,
+    )?);
+    evidence.push(cache_native_material(
+        scope,
+        super::projection::owned_material(
+            &material.immutable_carrier_bytes,
+            "approval-hold",
+            "application/vnd.layerx.approval-carrier",
+        ),
+        observed_at,
+    )?);
+    evidence.push(cache_native_material(
+        scope,
+        super::projection::owned_material(
+            &material.canonical_budget_bytes,
+            "local-journey-state",
+            "application/vnd.layerx.budget-allocation",
+        ),
+        observed_at,
+    )?);
+    let mut exported = super::projection::owned_material(
+        &proof.canonical_export_bytes,
+        "checkpoint-proof",
+        "application/vnd.layerx.budget-proof",
+    );
     exported["verification"] = json!(super::projection::level(proof.verification)?);
-    if exported["evidence_id"] != json!(format!("evd_{}",super::projection::hex(&proof.digest))) {return Err(ApiFailure::upstream_degraded());}
-    evidence.push(cache_native_material(scope,exported,observed_at)?);
-    super::projection::native_approval(facts,&managed,&budget,row,&fee_currency,evidence)
+    if exported["evidence_id"] != json!(format!("evd_{}", super::projection::hex(&proof.digest))) {
+        return Err(ApiFailure::upstream_degraded());
+    }
+    evidence.push(cache_native_material(scope, exported, observed_at)?);
+    super::projection::native_approval(facts, &managed, &budget, row, &fee_currency, evidence)
 }
 
-fn append_native_approval_stream(scope: &mut crate::store::PrincipalScope<'_>,facts: &super::agent_runtime::NativeEffectApprovalFacts,
-    summary: &serde_json::Value, observed_at: u64) -> Result<(),ApiFailure> {
+fn append_native_approval_stream(
+    scope: &mut crate::store::PrincipalScope<'_>,
+    facts: &super::agent_runtime::NativeEffectApprovalFacts,
+    summary: &serde_json::Value,
+    observed_at: u64,
+) -> Result<(), ApiFailure> {
     let state = super::projection::native_state(facts.state)?;
-    let kind = match state {"pending"=>"approval-created","approved"=>"approval-approved","rejected"=>"approval-rejected",_=>"approval-expired"};
-    super::stream_journal::StreamJournal::append(scope,&format!("approval:{}:{state}",super::projection::hex(&facts.approval_id)),kind,observed_at,json!({"approval":summary}))
+    let kind = match state {
+        "pending" => "approval-created",
+        "approved" => "approval-approved",
+        "rejected" => "approval-rejected",
+        _ => "approval-expired",
+    };
+    super::stream_journal::StreamJournal::append(
+        scope,
+        &format!(
+            "approval:{}:{state}",
+            super::projection::hex(&facts.approval_id)
+        ),
+        kind,
+        observed_at,
+        json!({"approval":summary}),
+    )
 }
 
-fn approval_inventory(agent: &mut AgentRuntime,scope:&mut crate::store::PrincipalScope<'_>,sequence:u64,observed_at:u64) -> Result<(Vec<serde_json::Value>,String),ApiFailure> {
-    let legacy = agent.approval_list_facts(sequence,None,100).map_err(agent_failure)?;
-    let native = agent.native_effect_approval_list_facts(None,100).map_err(agent_failure)?;
+fn approval_inventory(
+    agent: &mut AgentRuntime,
+    scope: &mut crate::store::PrincipalScope<'_>,
+    sequence: u64,
+    observed_at: u64,
+) -> Result<(Vec<serde_json::Value>, String), ApiFailure> {
+    let legacy = agent
+        .approval_list_facts(sequence, None, 100)
+        .map_err(agent_failure)?;
+    let native = agent
+        .native_effect_approval_list_facts(None, 100)
+        .map_err(agent_failure)?;
     let mut approvals = std::collections::BTreeMap::new();
     for facts in &legacy.approvals {
-        let projected = project_approval(agent,facts,sequence)?;
-        append_approval_stream(scope,&facts.approval,&projected.summary,observed_at)?;
-        if approvals.insert(facts.approval.approval_id,projected.summary).is_some() {return Err(ApiFailure::upstream_degraded());}
+        let projected = project_approval(agent, facts, sequence)?;
+        append_approval_stream(scope, &facts.approval, &projected.summary, observed_at)?;
+        if approvals
+            .insert(facts.approval.approval_id, projected.summary)
+            .is_some()
+        {
+            return Err(ApiFailure::upstream_degraded());
+        }
     }
-    for facts in native.approvals.iter().filter(|facts|facts.requires_approval) {
-        let projected = project_native_approval(agent,scope,facts,sequence,observed_at)?;
-        append_native_approval_stream(scope,facts,&projected.summary,observed_at)?;
-        if approvals.insert(facts.approval_id,projected.summary).is_some() {return Err(ApiFailure::upstream_degraded());}
+    for facts in native
+        .approvals
+        .iter()
+        .filter(|facts| facts.requires_approval)
+    {
+        let projected = project_native_approval(agent, scope, facts, sequence, observed_at)?;
+        append_native_approval_stream(scope, facts, &projected.summary, observed_at)?;
+        if approvals
+            .insert(facts.approval_id, projected.summary)
+            .is_some()
+        {
+            return Err(ApiFailure::upstream_degraded());
+        }
     }
-    if approvals.len()>100 {return Err(ApiFailure::upstream_degraded());}
-    let cursor = match (legacy.next_cursor,native.next_cursor) {
-        (None,None)=>String::new(),
-        (Some(cursor),None)|(None,Some(cursor))=>URL_SAFE_NO_PAD.encode(cursor),
-        (Some(_),Some(_))=>return Err(ApiFailure::upstream_degraded()),
+    if approvals.len() > 100 {
+        return Err(ApiFailure::upstream_degraded());
+    }
+    let cursor = match (legacy.next_cursor, native.next_cursor) {
+        (None, None) => String::new(),
+        (Some(cursor), None) | (None, Some(cursor)) => URL_SAFE_NO_PAD.encode(cursor),
+        (Some(_), Some(_)) => return Err(ApiFailure::upstream_degraded()),
     };
-    Ok((approvals.into_values().collect(),cursor))
+    Ok((approvals.into_values().collect(), cursor))
 }
 
 fn hex_bytes(bytes: &[u8]) -> String {
@@ -2609,9 +2888,9 @@ fn resolve_movement_context(
     let identity = owner.identity;
     let authority = owner.authority;
     let active = movement_active_binding(scope, agent.registry(), components.network_id)?;
-    let wallet = components
+    let (wallet, custody_binding, provider_reference) = components
         .custody
-        .evm_wallet(scope.principal(), &key)
+        .public_wallet_identity(scope.principal(), &key)
         .map_err(|_| ApiFailure::upstream_degraded())?;
     if wallet != active.address() {
         return Err(ApiFailure::forbidden());
@@ -2638,14 +2917,6 @@ fn resolve_movement_context(
     let not_after = observed_at
         .checked_add(components.agent_timestamp_span_seconds)
         .ok_or_else(ApiFailure::unavailable)?;
-    let provider_reference = components
-        .custody
-        .evm_provider_reference(scope.principal(), &key)
-        .map_err(|_| ApiFailure::upstream_degraded())?;
-    let custody_binding = components
-        .custody
-        .evm_binding(scope.principal(), &key)
-        .map_err(|_| ApiFailure::upstream_degraded())?;
     let mut context = super::movement_provider::PlanningContext {
         request_anchor: balance.observed_checkpoint,
         account,
@@ -3830,8 +4101,9 @@ impl ProductionComponents {
     fn intent_observed_state(
         &self,
         scope: &mut crate::store::PrincipalScope<'_>,
-        asset: AssetId,
+        intent: &crate::journeys::UnifiedIntent,
     ) -> Result<(crate::journeys::ObservedState, AccountId, String), ApiFailure> {
+        let asset = intent.asset();
         let observed_at = self.now()?;
         let key = KeyId::new("human-primary").map_err(|_| ApiFailure::upstream_degraded())?;
         let mut agent = self.principal_agent(scope)?;
@@ -3846,17 +4118,6 @@ impl ProductionComponents {
         {
             return Err(ApiFailure::upstream_degraded());
         }
-        let wallet = self
-            .custody
-            .evm_wallet(scope.principal(), &key)
-            .map_err(|_| ApiFailure::upstream_degraded())?;
-        let endpoint = layerx_network_gateway::GatewayEndpoint::from_environment()
-            .map_err(|_| ApiFailure::upstream_degraded())?;
-        let network = crate::journeys::NetworkObservation::read(
-            &endpoint,
-            layerx_network_gateway::AccountIdentifier::Evm(wallet),
-        )
-        .map_err(|error| observation_failure(&error))?;
 
         let home = crate::journeys::Endpoint::human(account.clone())
             .map_err(|_| ApiFailure::upstream_degraded())?;
@@ -3922,22 +4183,60 @@ impl ProductionComponents {
             }
         }
 
-        let observed = crate::journeys::ObservedStateBuilder::new(
+        let wallet_required = intent.source() == &crate::journeys::Endpoint::PaxeerWallet
+            || intent.destination() == &crate::journeys::Endpoint::PaxeerWallet;
+        let native = crate::journeys::ObservedState::new(
             layerx_types::intent::TimestampSeconds::from_u64(observed_at),
             account.clone(),
-            AccountId::parse("system:paxeer-reserve")
-                .map_err(|_| ApiFailure::upstream_degraded())?,
-            AccountId::parse("system:paxeer-withdrawals")
-                .map_err(|_| ApiFailure::upstream_degraded())?,
+            None,
+            ledger.clone(),
+            allowances.clone(),
+            budgets.clone(),
+            self.intent_fee_schedule()?,
         )
-        .with_network(network)
-        .with_ledger_balances(ledger)
-        .with_allowances(allowances)
-        .with_budget_bindings(budgets)
-        .with_fees(self.intent_fee_schedule()?)
-        .requiring(asset)
-        .build()
-        .map_err(|error| observation_failure(&error))?;
+        .map_err(intent_failure)?;
+        let top_up_required = !wallet_required
+            && intent.constraints().allow_top_up()
+            && matches!(
+                crate::journeys::plan(intent, &native),
+                Err(crate::journeys::Refusal::TopUpNotAuthorized { .. })
+            );
+        let observed = if wallet_required || top_up_required {
+            let (wallet, _, _) = self
+                .custody
+                .public_wallet_identity(scope.principal(), &key)
+                .map_err(|_| ApiFailure::upstream_degraded())?;
+            let active = movement_active_binding(scope, agent.registry(), self.network_id)?;
+            if wallet != active.address() {
+                return Err(ApiFailure::forbidden());
+            }
+            let endpoint = layerx_network_gateway::GatewayEndpoint::from_environment()
+                .map_err(|_| ApiFailure::upstream_degraded())?;
+            let network = crate::journeys::NetworkObservation::read(
+                &endpoint,
+                layerx_network_gateway::AccountIdentifier::Evm(wallet),
+            )
+            .map_err(|error| observation_failure(&error))?;
+            crate::journeys::ObservedStateBuilder::new(
+                layerx_types::intent::TimestampSeconds::from_u64(observed_at),
+                account.clone(),
+                AccountId::parse("system:paxeer-reserve")
+                    .map_err(|_| ApiFailure::upstream_degraded())?,
+                AccountId::parse("system:paxeer-withdrawals")
+                    .map_err(|_| ApiFailure::upstream_degraded())?,
+            )
+            .with_network(network)
+            .with_ledger_balances(ledger)
+            .with_allowances(allowances)
+            .with_budget_bindings(budgets)
+            .with_fees(self.intent_fee_schedule()?)
+            .requiring(asset)
+            .build()
+            .map_err(|error| observation_failure(&error))?
+        } else {
+            native
+        };
+
         Ok((observed, account, balance.currency.clone()))
     }
 
@@ -3969,14 +4268,13 @@ impl ProductionComponents {
     }
 
     fn intent_from_request(
-        request: &ScopedRequest<'_>,
+        body: &serde_json::Value,
         asset: AssetId,
     ) -> Result<crate::journeys::UnifiedIntent, ApiFailure> {
-        let source = intent_endpoint(&request.body, "source")?;
-        let destination = intent_endpoint(&request.body, "destination")?;
-        let (amount, _) = money_field(&request.body, "money")?;
-        let constraints = request
-            .body
+        let source = intent_endpoint(body, "source")?;
+        let destination = intent_endpoint(body, "destination")?;
+        let (amount, _) = money_field(body, "money")?;
+        let constraints = body
             .get("constraints")
             .ok_or_else(|| ApiFailure::invalid_request(Some("constraints")))?;
         let deadline = crate::time::seconds_from_rfc3339(text_field(constraints, "deadline")?)
@@ -4006,9 +4304,53 @@ impl ProductionComponents {
         scope: &mut crate::store::PrincipalScope<'_>,
     ) -> Result<BackendResponse, ApiFailure> {
         let asset = intent_asset(&request.body)?;
-        let intent = Self::intent_from_request(request, asset)?;
-        let (observed, _, currency) = self.intent_observed_state(scope, asset)?;
+        let intent = Self::intent_from_request(&request.body, asset)?;
+        let (observed, _, currency) = self.intent_observed_state(scope, &intent)?;
+        if money_field(&request.body, "money")?.1 != currency
+            || money_field(
+                request
+                    .body
+                    .get("constraints")
+                    .ok_or_else(|| ApiFailure::invalid_request(Some("constraints")))?,
+                "max_fee",
+            )?
+            .1 != currency
+        {
+            return Err(ApiFailure::invalid_request(Some("money.currency")));
+        }
         let planned = crate::journeys::plan(&intent, &observed).map_err(intent_failure)?;
+        let owner = resolve_kernel_intent_context(self, scope, asset)?;
+        let memo = HeldIntentObservation {
+            profile: 1,
+            principal: scope.principal().as_str().to_owned(),
+            tenant: scope.tenant().as_str().to_owned(),
+            session_id: request
+                .principal
+                .as_ref()
+                .ok_or_else(ApiFailure::unauthenticated)?
+                .session_id
+                .clone(),
+            plan_digest: planned.digest(),
+            custody_binding_digest: owner.custody_binding_digest,
+            identity_authority_digest: owner.identity_authority_digest,
+            canonical_intent: serde_json::to_vec(&request.body)
+                .map_err(|_| ApiFailure::invalid_request(None))?,
+            canonical_plan: planned.canonical_encode(),
+        };
+        let key = RowKey::new(format!(
+            "intent-observation-{}-{}",
+            hex_bytes(&planned.digest()),
+            hex_bytes(&Sha256::digest(memo.session_id.as_bytes()))
+        ))
+        .map_err(|_| ApiFailure::upstream_degraded())?;
+        let bytes = serde_json::to_vec(&memo).map_err(|_| ApiFailure::unavailable())?;
+        match scope.get(Table::Cache, &key) {
+            Some(row) if row.bytes() == bytes.as_slice() => {}
+            Some(_) => return Err(ApiFailure::forbidden()),
+            None => scope
+                .put(Table::Cache, key, observed.observed_at().value(), bytes)
+                .map_err(|_| ApiFailure::unavailable())?,
+        }
         Ok(BackendResponse {
             result: intent_plan_json(&planned, &currency),
             session: None,
@@ -4023,12 +4365,76 @@ impl ProductionComponents {
         let idempotency = required_idempotency(request)?.to_owned();
         let submitted =
             crate::journeys::SubmitPlanRequest::from_json(&request.body).map_err(submit_failure)?;
-        let asset = intent_asset(&request.body)?;
-        let intent = Self::intent_from_request(request, asset)?;
-        let (observed, _, currency) = self.intent_observed_state(scope, asset)?;
+        let key = RowKey::new(format!(
+            "intent-observation-{}-{}",
+            hex_bytes(&submitted.plan_digest),
+            hex_bytes(&Sha256::digest(
+                request
+                    .principal
+                    .as_ref()
+                    .ok_or_else(ApiFailure::unauthenticated)?
+                    .session_id
+                    .as_bytes()
+            ))
+        ))
+        .map_err(|_| ApiFailure::invalid_request(Some("plan_digest")))?;
+        let row = scope
+            .get(Table::Cache, &key)
+            .ok_or_else(ApiFailure::forbidden)?;
+        let memo: HeldIntentObservation =
+            serde_json::from_slice(row.bytes()).map_err(|_| ApiFailure::forbidden())?;
+        if memo.profile != 1
+            || memo.plan_digest != submitted.plan_digest
+            || memo.principal != scope.principal().as_str()
+            || memo.tenant != scope.tenant().as_str()
+            || memo.session_id
+                != request
+                    .principal
+                    .as_ref()
+                    .ok_or_else(ApiFailure::unauthenticated)?
+                    .session_id
+        {
+            return Err(ApiFailure::forbidden());
+        }
+        let body: serde_json::Value =
+            serde_json::from_slice(&memo.canonical_intent).map_err(|_| ApiFailure::forbidden())?;
+        let asset = intent_asset(&body)?;
+        let intent = Self::intent_from_request(&body, asset)?;
+        let context = resolve_kernel_intent_context(self, scope, asset)?;
+        let outcome_key = RowKey::new(format!(
+            "intent-outcome-{}",
+            hex_bytes(&action_key(&idempotency))
+        ))
+        .map_err(|_| ApiFailure::invalid_request(None))?;
+        let canonical_submission =
+            serde_json::to_vec(&request.body).map_err(|_| ApiFailure::invalid_request(None))?;
+        if let Some(row) = scope.get(Table::Cache, &outcome_key) {
+            let outcome: HeldIntentOutcome =
+                serde_json::from_slice(row.bytes()).map_err(|_| ApiFailure::forbidden())?;
+            if outcome.canonical_submission != canonical_submission
+                || outcome.session_id != memo.session_id
+                || outcome.plan_digest != memo.plan_digest
+                || context.custody_binding_digest != memo.custody_binding_digest
+                || context.identity_authority_digest != memo.identity_authority_digest
+            {
+                return Err(ApiFailure::forbidden());
+            }
+            return Ok(BackendResponse {
+                result: outcome.result,
+                session: None,
+            });
+        }
+        let (observed, _, currency) = self.intent_observed_state(scope, &intent)?;
         let planned = crate::journeys::plan(&intent, &observed).map_err(intent_failure)?;
+        if planned.canonical_encode() != memo.canonical_plan {
+            return Err(ApiFailure::forbidden());
+        }
         let now = self.now()?;
-        let context = resolve_movement_context(self, request, scope, now)?;
+        if context.custody_binding_digest != memo.custody_binding_digest
+            || context.identity_authority_digest != memo.identity_authority_digest
+        {
+            return Err(ApiFailure::forbidden());
+        }
         let expectation = crate::journeys::BindingExpectation {
             actor: context.actor.clone(),
             authority: context.authority.clone(),
@@ -4051,7 +4457,15 @@ impl ProductionComponents {
                 },
             )?,
             crate::journeys::IntentShape::CustodyDeposit => {
-                let planning = movement_request(self, request, scope, now)?;
+                let held_request = ScopedRequest {
+                    operation: request.operation,
+                    principal: None,
+                    path_parameters: request.path_parameters.clone(),
+                    body,
+                    idempotency_key: request.idempotency_key.clone(),
+                    trace: request.trace.clone(),
+                };
+                let planning = movement_request(self, &held_request, scope, now)?;
                 let movement = self
                     .movement
                     .lock()
@@ -4073,8 +4487,23 @@ impl ProductionComponents {
                 crate::journeys::IntentSubmission::from_deposit(&status, planned.digest())
             }
         };
+        let result = submission.to_json();
+        let outcome = HeldIntentOutcome {
+            canonical_submission,
+            session_id: memo.session_id,
+            plan_digest: memo.plan_digest,
+            result: result.clone(),
+        };
+        scope
+            .put(
+                Table::Cache,
+                outcome_key,
+                now,
+                serde_json::to_vec(&outcome).map_err(|_| ApiFailure::unavailable())?,
+            )
+            .map_err(|_| ApiFailure::unavailable())?;
         Ok(BackendResponse {
-            result: submission.to_json(),
+            result,
             session: None,
         })
     }
@@ -4800,86 +5229,205 @@ impl ProductionComponents {
         })
     }
 
-    fn execute_approval_list(&self, scope: &mut crate::store::PrincipalScope<'_>) -> Result<BackendResponse, ApiFailure> {
+    fn execute_approval_list(
+        &self,
+        scope: &mut crate::store::PrincipalScope<'_>,
+    ) -> Result<BackendResponse, ApiFailure> {
         let mut agent = self.principal_agent(scope)?;
         let sequence = agent.head().map_err(agent_failure)?.chain_sequence;
-        let (approvals,cursor) = approval_inventory(&mut agent,scope,sequence,self.now()?)?;
-        Ok(BackendResponse { result:json!({"approvals":approvals,"next_cursor":cursor}),session:None })
+        let (approvals, cursor) = approval_inventory(&mut agent, scope, sequence, self.now()?)?;
+        Ok(BackendResponse {
+            result: json!({"approvals":approvals,"next_cursor":cursor}),
+            session: None,
+        })
     }
 
-    fn execute_approval_get(&self, request: &ScopedRequest<'_>, scope: &mut crate::store::PrincipalScope<'_>) -> Result<BackendResponse, ApiFailure> {
-        let approval_id = decode_id(path(request,"approval_id")?).map_err(|()|ApiFailure::invalid_request(Some("approval_id")))?;
+    fn execute_approval_get(
+        &self,
+        request: &ScopedRequest<'_>,
+        scope: &mut crate::store::PrincipalScope<'_>,
+    ) -> Result<BackendResponse, ApiFailure> {
+        let approval_id = decode_id(path(request, "approval_id")?)
+            .map_err(|()| ApiFailure::invalid_request(Some("approval_id")))?;
         let mut agent = self.principal_agent(scope)?;
         let sequence = agent.head().map_err(agent_failure)?.chain_sequence;
         match agent.native_effect_approval_get_facts(approval_id) {
             Ok(facts) => {
-                let value = project_native_approval(&mut agent,scope,&facts,sequence,self.now()?)?;
-                append_native_approval_stream(scope,&facts,&value.summary,self.now()?)?;
-                return Ok(BackendResponse {result:value.detail,session:None});
+                let value =
+                    project_native_approval(&mut agent, scope, &facts, sequence, self.now()?)?;
+                append_native_approval_stream(scope, &facts, &value.summary, self.now()?)?;
+                return Ok(BackendResponse {
+                    result: value.detail,
+                    session: None,
+                });
             }
-            Err(crate::journeys::AgentBoundaryError::Refused) => {},
+            Err(crate::journeys::AgentBoundaryError::Refused) => {}
             Err(error) => return Err(agent_failure(error)),
         }
-        let facts = agent.approval_get_facts(approval_id, sequence).map_err(agent_failure)?;
+        let facts = agent
+            .approval_get_facts(approval_id, sequence)
+            .map_err(agent_failure)?;
         let value = project_approval(&mut agent, &facts, sequence)?;
         append_approval_stream(scope, &facts.approval, &value.summary, self.now()?)?;
-        Ok(BackendResponse { result:value.detail,session:None })
+        Ok(BackendResponse {
+            result: value.detail,
+            session: None,
+        })
     }
 
-    fn execute_approval_approve(&self, request: &ScopedRequest<'_>, scope: &mut crate::store::PrincipalScope<'_>) -> Result<BackendResponse, ApiFailure> {
-        let approval_id = decode_id(path(request,"approval_id")?).map_err(|()|ApiFailure::invalid_request(Some("approval_id")))?;
+    fn execute_approval_approve(
+        &self,
+        request: &ScopedRequest<'_>,
+        scope: &mut crate::store::PrincipalScope<'_>,
+    ) -> Result<BackendResponse, ApiFailure> {
+        let approval_id = decode_id(path(request, "approval_id")?)
+            .map_err(|()| ApiFailure::invalid_request(Some("approval_id")))?;
         let mut agent = self.principal_agent(scope)?;
         let sequence = agent.head().map_err(agent_failure)?.chain_sequence;
         match agent.native_effect_approval_get_facts(approval_id) {
             Ok(facts) => {
                 if super::projection::native_state(facts.state)? == "expired" {
-                    return Err(ApiFailure {status:409,code:"hold-expired".to_owned(),copy_key:"error.approval.hold-expired".to_owned(),retry:"final".to_owned(),retry_after_ms:None,field:None});
+                    return Err(ApiFailure {
+                        status: 409,
+                        code: "hold-expired".to_owned(),
+                        copy_key: "error.approval.hold-expired".to_owned(),
+                        retry: "final".to_owned(),
+                        retry_after_ms: None,
+                        field: None,
+                    });
                 }
                 let current = super::projection::native_state(facts.state)?;
-                let grant = request.operation.name=="approval.approve";
-                if (current=="approved" && !grant) || (current=="rejected" && grant) {
-                    return Err(ApiFailure {status:409,code:"already-decided".to_owned(),copy_key:"error.approval.already-decided".to_owned(),retry:"final".to_owned(),retry_after_ms:None,field:None});
+                let grant = request.operation.name == "approval.approve";
+                if (current == "approved" && !grant) || (current == "rejected" && grant) {
+                    return Err(ApiFailure {
+                        status: 409,
+                        code: "already-decided".to_owned(),
+                        copy_key: "error.approval.already-decided".to_owned(),
+                        retry: "final".to_owned(),
+                        retry_after_ms: None,
+                        field: None,
+                    });
                 }
-                project_native_approval(&mut agent,scope,&facts,sequence,self.now()?)?;
-                let decided = agent.native_effect_approval_decide(approval_id,facts.held_digest,required_idempotency(request)?,grant,sequence).map_err(agent_failure)?;
+                project_native_approval(&mut agent, scope, &facts, sequence, self.now()?)?;
+                let decided = agent
+                    .native_effect_approval_decide(
+                        approval_id,
+                        facts.held_digest,
+                        required_idempotency(request)?,
+                        grant,
+                        sequence,
+                    )
+                    .map_err(agent_failure)?;
                 let state = super::projection::native_state(decided.state)?;
-                if state == "expired" {return Err(ApiFailure {status:409,code:"hold-expired".to_owned(),copy_key:"error.approval.hold-expired".to_owned(),retry:"final".to_owned(),retry_after_ms:None,field:None});}
-                let projected = project_native_approval(&mut agent,scope,&decided,sequence,self.now()?)?;
-                append_native_approval_stream(scope,&decided,&projected.summary,self.now()?)?;
-                let evidence = projected.detail["evidence"].as_array().ok_or_else(ApiFailure::upstream_degraded)?.iter()
-                    .filter(|reference|reference["verification"]=="unverified" && matches!(reference["class"].as_str(),Some("approval-hold"|"local-journey-state")))
-                    .cloned().collect::<Vec<_>>();
-                return Ok(BackendResponse {result:json!({"approval_id":format!("apr_{}",super::projection::hex(&approval_id)),"state":state,
-                    "state_copy_key":format!("approval.state.{state}"),"money_moved":false,"moved_copy_key":"approval.decision.no-money-moved","evidence":evidence}),session:None});
+                if state == "expired" {
+                    return Err(ApiFailure {
+                        status: 409,
+                        code: "hold-expired".to_owned(),
+                        copy_key: "error.approval.hold-expired".to_owned(),
+                        retry: "final".to_owned(),
+                        retry_after_ms: None,
+                        field: None,
+                    });
+                }
+                let projected =
+                    project_native_approval(&mut agent, scope, &decided, sequence, self.now()?)?;
+                append_native_approval_stream(scope, &decided, &projected.summary, self.now()?)?;
+                let evidence = projected.detail["evidence"]
+                    .as_array()
+                    .ok_or_else(ApiFailure::upstream_degraded)?
+                    .iter()
+                    .filter(|reference| {
+                        reference["verification"] == "unverified"
+                            && matches!(
+                                reference["class"].as_str(),
+                                Some("approval-hold" | "local-journey-state")
+                            )
+                    })
+                    .cloned()
+                    .collect::<Vec<_>>();
+                return Ok(BackendResponse {
+                    result: json!({"approval_id":format!("apr_{}",super::projection::hex(&approval_id)),"state":state,
+                    "state_copy_key":format!("approval.state.{state}"),"money_moved":false,"moved_copy_key":"approval.decision.no-money-moved","evidence":evidence}),
+                    session: None,
+                });
             }
-            Err(crate::journeys::AgentBoundaryError::Refused) => {},
+            Err(crate::journeys::AgentBoundaryError::Refused) => {}
             Err(error) => return Err(agent_failure(error)),
         }
-        let facts = agent.approval_get_facts(approval_id, sequence).map_err(agent_failure)?;
-        let mut projected = if matches!(facts.approval.state, AgentApprovalState::AwaitingApproval) {
+        let facts = agent
+            .approval_get_facts(approval_id, sequence)
+            .map_err(agent_failure)?;
+        let mut projected = if matches!(facts.approval.state, AgentApprovalState::AwaitingApproval)
+        {
             Some(project_approval(&mut agent, &facts, sequence)?)
-        } else { None };
-        let decision = agent.approval_decide(request.operation.name=="approval.approve",approval_id,facts.approval.canonical_bytes_digest,required_idempotency(request)?,sequence).map_err(agent_failure)?;
+        } else {
+            None
+        };
+        let decision = agent
+            .approval_decide(
+                request.operation.name == "approval.approve",
+                approval_id,
+                facts.approval.canonical_bytes_digest,
+                required_idempotency(request)?,
+                sequence,
+            )
+            .map_err(agent_failure)?;
         if decision.resolution == crate::approvals::AgentDecisionResolution::AlreadyDecided {
-            return Err(ApiFailure { status:409,code:"already-decided".to_owned(),copy_key:"error.approval.already-decided".to_owned(),retry:"final".to_owned(),retry_after_ms:None,field:None });
+            return Err(ApiFailure {
+                status: 409,
+                code: "already-decided".to_owned(),
+                copy_key: "error.approval.already-decided".to_owned(),
+                retry: "final".to_owned(),
+                retry_after_ms: None,
+                field: None,
+            });
         }
         let state = match decision.status {
-            AgentDecisionStatus::Approved {..} => "approved",
+            AgentDecisionStatus::Approved { .. } => "approved",
             AgentDecisionStatus::Rejected => "rejected",
-            AgentDecisionStatus::Expired => return Err(ApiFailure {status:409,code:"hold-expired".to_owned(),copy_key:"error.approval.hold-expired".to_owned(),retry:"final".to_owned(),retry_after_ms:None,field:None}),
+            AgentDecisionStatus::Expired => {
+                return Err(ApiFailure {
+                    status: 409,
+                    code: "hold-expired".to_owned(),
+                    copy_key: "error.approval.hold-expired".to_owned(),
+                    retry: "final".to_owned(),
+                    retry_after_ms: None,
+                    field: None,
+                })
+            }
             AgentDecisionStatus::Defective => return Err(super::projection::hold_defective()),
         };
-        let evidence = if let Some(projected) = &projected { projected.detail["evidence"].clone() } else {
-            let mut managed = managed_for_actor(&mut agent,facts.approval.held_activity.actor.as_str())?;
-            hydrate_managed_evidence(&mut agent,&mut managed)?;
-            json!(managed.evidence.iter().map(super::projection::managed_evidence).collect::<Result<Vec<_>,_>>()?)
+        let evidence = if let Some(projected) = &projected {
+            projected.detail["evidence"].clone()
+        } else {
+            let mut managed =
+                managed_for_actor(&mut agent, facts.approval.held_activity.actor.as_str())?;
+            hydrate_managed_evidence(&mut agent, &mut managed)?;
+            json!(managed
+                .evidence
+                .iter()
+                .map(super::projection::managed_evidence)
+                .collect::<Result<Vec<_>, _>>()?)
         };
         let value = json!({"approval_id":format!("apr_{}",super::projection::hex(&approval_id)),"state":state,"state_copy_key":format!("approval.state.{state}"),"money_moved":false,"moved_copy_key":"approval.decision.no-money-moved","evidence":evidence});
         if let Some(projected) = &mut projected {
             projected.summary["state"] = json!(state);
-            super::stream_journal::StreamJournal::append(scope,&format!("approval:{}:{state}",super::projection::hex(&approval_id)),match state {"approved"=>"approval-approved","rejected"=>"approval-rejected",_=>"approval-expired"},self.now()?,json!({"approval":projected.summary}))?;
+            super::stream_journal::StreamJournal::append(
+                scope,
+                &format!("approval:{}:{state}", super::projection::hex(&approval_id)),
+                match state {
+                    "approved" => "approval-approved",
+                    "rejected" => "approval-rejected",
+                    _ => "approval-expired",
+                },
+                self.now()?,
+                json!({"approval":projected.summary}),
+            )?;
         }
-        Ok(BackendResponse {result:value,session:None})
+        Ok(BackendResponse {
+            result: value,
+            session: None,
+        })
     }
 
     fn execute_support_list(
@@ -5235,10 +5783,14 @@ impl ProductionComponents {
             _ => return Err(ApiFailure::upstream_degraded()),
         };
         let balance_json = json!({"account_id":format!("act_{}",hex_bytes(&balance.account)),"money":{"amount":balance.amount.to_string(),"currency":balance.currency},"verification":verification,"freshness":{"observed_at":balance.observed_at,"age_seconds":balance.age_seconds,"source_head":balance.observed_head_sequence.to_string(),"within_bound":balance.observed_head_sequence==balance.global_sequence && balance.age_seconds <= self.activity_freshness_seconds,"checkpoint":hex_bytes(&balance.observed_checkpoint)},"evidence":[{"evidence_id":format!("evd_{}",hex_bytes(&evidence_digest)),"class":if balance.verification>=4{"checkpoint-proof"}else{"layerx-receipt"},"verification":verification}]});
-        let managed_page = agent.agent_list(None,100).map_err(agent_failure)?;
-        let agents = managed_page.agents.into_iter().map(|value|managed_agent_json(&mut agent,value)).collect::<Result<Vec<_>,_>>()?;
+        let managed_page = agent.agent_list(None, 100).map_err(agent_failure)?;
+        let agents = managed_page
+            .agents
+            .into_iter()
+            .map(|value| managed_agent_json(&mut agent, value))
+            .collect::<Result<Vec<_>, _>>()?;
         let sequence = agent.head().map_err(agent_failure)?.chain_sequence;
-        let (approvals,_) = approval_inventory(&mut agent,scope,sequence,self.now()?)?;
+        let (approvals, _) = approval_inventory(&mut agent, scope, sequence, self.now()?)?;
         drop(agent);
         let filters = Feed::apply_filters(FilterDraft::new())
             .map_err(|error| activity_feed_failure(&error))?;
@@ -5573,39 +6125,92 @@ impl ProductionComponents {
     ) -> Result<BackendResponse, ApiFailure> {
         let existing = super::production_reads::execute(self.settlement_domain, scope, request)
             .unwrap_or_else(|| Err(ApiFailure::not_found()));
-        if request.operation.name != "evidence.get" || !matches!(&existing, Err(error) if error.code == "not-found") {
+        if request.operation.name != "evidence.get"
+            || !matches!(&existing, Err(error) if error.code == "not-found")
+        {
             return existing;
         }
         let id = path(request, "evidence_id")?;
-        let digest = id.strip_prefix("evd_").ok_or_else(||ApiFailure::invalid_request(Some("evidence_id")))
+        let digest = id
+            .strip_prefix("evd_")
+            .ok_or_else(|| ApiFailure::invalid_request(Some("evidence_id")))
             .and_then(super::projection::digest)?;
-        let key = RowKey::new(format!("native-approval-evidence-{}",super::projection::hex(&digest))).map_err(|_|ApiFailure::upstream_degraded())?;
-        if let Some(row) = scope.get(Table::Cache,&key) {
-            let material:serde_json::Value = serde_json::from_slice(row.bytes()).map_err(|_|ApiFailure::upstream_degraded())?;
-            let bytes = base64::engine::general_purpose::STANDARD.decode(material["bytes_base64"].as_str().ok_or_else(ApiFailure::upstream_degraded)?).map_err(|_|ApiFailure::upstream_degraded())?;
-            if <[u8;32]>::from(Sha256::digest(&bytes))!=digest || material["evidence_id"]!=id
-                || !matches!((material["class"].as_str(),material["verification"].as_str()),
-                    (Some("approval-hold"|"local-journey-state"),Some("unverified"))|
-                    (Some("checkpoint-proof"),Some("checkpoint-finalised"|"settlement-anchored"))) {
+        let key = RowKey::new(format!(
+            "native-approval-evidence-{}",
+            super::projection::hex(&digest)
+        ))
+        .map_err(|_| ApiFailure::upstream_degraded())?;
+        if let Some(row) = scope.get(Table::Cache, &key) {
+            let material: serde_json::Value =
+                serde_json::from_slice(row.bytes()).map_err(|_| ApiFailure::upstream_degraded())?;
+            let bytes = base64::engine::general_purpose::STANDARD
+                .decode(
+                    material["bytes_base64"]
+                        .as_str()
+                        .ok_or_else(ApiFailure::upstream_degraded)?,
+                )
+                .map_err(|_| ApiFailure::upstream_degraded())?;
+            if <[u8; 32]>::from(Sha256::digest(&bytes)) != digest
+                || material["evidence_id"] != id
+                || !matches!(
+                    (
+                        material["class"].as_str(),
+                        material["verification"].as_str()
+                    ),
+                    (
+                        Some("approval-hold" | "local-journey-state"),
+                        Some("unverified")
+                    ) | (
+                        Some("checkpoint-proof"),
+                        Some("checkpoint-finalised" | "settlement-anchored")
+                    )
+                )
+            {
                 return Err(ApiFailure::upstream_degraded());
             }
-            return Ok(BackendResponse {result:material,session:None});
+            return Ok(BackendResponse {
+                result: material,
+                session: None,
+            });
         }
         let mut agent = self.principal_agent(scope)?;
         let mut native_cursor = None;
         let mut native_seen = std::collections::BTreeSet::new();
         loop {
-            let page = agent.native_effect_approval_list_facts(native_cursor,100).map_err(agent_failure)?;
-            for facts in page.approvals.iter().filter(|facts|facts.requires_approval) {
-                let material = agent.native_effect_approval_material(facts.approval_id,facts.held_digest).map_err(agent_failure)?;
+            let page = agent
+                .native_effect_approval_list_facts(native_cursor, 100)
+                .map_err(agent_failure)?;
+            for facts in page
+                .approvals
+                .iter()
+                .filter(|facts| facts.requires_approval)
+            {
+                let material = agent
+                    .native_effect_approval_material(facts.approval_id, facts.held_digest)
+                    .map_err(agent_failure)?;
                 for value in [
-                    super::projection::owned_material(&material.canonical_unsigned_bytes,"approval-hold","application/vnd.layerx.activity"),
-                    super::projection::owned_material(&material.immutable_carrier_bytes,"approval-hold","application/vnd.layerx.approval-carrier"),
-                    super::projection::owned_material(&material.canonical_budget_bytes,"local-journey-state","application/vnd.layerx.budget-allocation"),
+                    super::projection::owned_material(
+                        &material.canonical_unsigned_bytes,
+                        "approval-hold",
+                        "application/vnd.layerx.activity",
+                    ),
+                    super::projection::owned_material(
+                        &material.immutable_carrier_bytes,
+                        "approval-hold",
+                        "application/vnd.layerx.approval-carrier",
+                    ),
+                    super::projection::owned_material(
+                        &material.canonical_budget_bytes,
+                        "local-journey-state",
+                        "application/vnd.layerx.budget-allocation",
+                    ),
                 ] {
                     if value["evidence_id"] == id {
-                        cache_native_material(scope,value.clone(),self.now()?)?;
-                        return Ok(BackendResponse {result:value,session:None});
+                        cache_native_material(scope, value.clone(), self.now()?)?;
+                        return Ok(BackendResponse {
+                            result: value,
+                            session: None,
+                        });
                     }
                 }
             }
@@ -5618,11 +6223,25 @@ impl ProductionComponents {
         let mut cursor = None;
         let mut seen = std::collections::BTreeSet::new();
         loop {
-            let page = agent.agent_list(cursor,100).map_err(agent_failure)?;
+            let page = agent.agent_list(cursor, 100).map_err(agent_failure)?;
             for managed in page.agents {
-                if managed.evidence.iter().any(|evidence| super::projection::digest(evidence.evidence_id.strip_prefix("evd_").unwrap_or(&evidence.evidence_id)).ok() == Some(digest)) {
-                    let material = agent.managed_evidence(&managed.agent_id,digest).map_err(agent_failure)?;
-                    return Ok(BackendResponse {result:super::projection::managed_export(&material)?,session:None});
+                if managed.evidence.iter().any(|evidence| {
+                    super::projection::digest(
+                        evidence
+                            .evidence_id
+                            .strip_prefix("evd_")
+                            .unwrap_or(&evidence.evidence_id),
+                    )
+                    .ok()
+                        == Some(digest)
+                }) {
+                    let material = agent
+                        .managed_evidence(&managed.agent_id, digest)
+                        .map_err(agent_failure)?;
+                    return Ok(BackendResponse {
+                        result: super::projection::managed_export(&material)?,
+                        session: None,
+                    });
                 }
             }
             match page.next_cursor {
@@ -6907,6 +7526,31 @@ impl crate::custody::KmsProvider for AttestorKms {
         reference: &ProviderKeyReference,
         payload: &[u8],
     ) -> Result<Vec<u8>, KmsError> {
+        if operation == 6 {
+            if !payload.is_empty() {
+                return Err(KmsError::InvalidResponse);
+            }
+            let (key_id, public_key, owner) = attestor_reference_parts(reference)?;
+            if key_id != attestor_key_id(binding) {
+                return Err(KmsError::InvalidReference);
+            }
+            let assertion = self
+                .inner
+                .assertions
+                .lock()
+                .map_err(|_| KmsError::Unavailable)?
+                .get(&owner)
+                .cloned()
+                .ok_or(KmsError::Authentication)?;
+            return self
+                .inner
+                .config
+                .client()
+                .map_err(|error| attestor_kms_failure(&error))?
+                .public_wallet_identity(&key_id, &public_key, &owner, assertion.as_str())
+                .map(|address| address.to_vec())
+                .map_err(|error| attestor_kms_failure(&error));
+        }
         if operation != ATTESTOR_SEND_OPERATION {
             return Err(KmsError::Refused);
         }
