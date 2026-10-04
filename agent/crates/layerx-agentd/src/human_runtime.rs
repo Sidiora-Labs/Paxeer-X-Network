@@ -169,7 +169,7 @@ impl<A: HumanAuthorityBoundary> UnifiedAgentOwner<A> {
             )?;
             let protocol = ops.node.handshake().node().protocol_version;
             let actor = layerx_wire::hash::did_id_for_protocol(
-                context.principal().agent.as_bytes(),
+                &context.principal().agent,
                 protocol,
             )
             .map_err(|_| HumanOperationError::Refused)?;
