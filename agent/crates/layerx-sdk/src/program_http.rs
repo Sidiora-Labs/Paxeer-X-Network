@@ -2260,26 +2260,78 @@ mod source_contract {
     fn native_execution_preserves_captured_receipt_authority_and_unknown_identity()
     -> Result<(), ProgramOperationError> {
         let fixture: Value = serde_json::from_str(include_str!(
-            "../../../../platform/sdk/conformance/fixtures/receipt-programs-executed-v3.json"
+            "../../../../platform/sdk/conformance/fixtures/receipt-programs-executed-v4.json"
         ))
         .map_err(|_| ProgramOperationError::Decode)?;
+        let source = object(&fixture)?;
         let signed = bounded_hex(
-            object(&fixture)?,
+            source,
             "signed_activity_hex",
             MAX_SIGNED_ACTIVITY_BYTES,
             None,
         )?;
-        let document = fixture
-            .get("execution_document")
-            .ok_or(ProgramOperationError::Decode)?;
-        let key = fixed(
-            object(
-                document
-                    .get("authority")
-                    .ok_or(ProgramOperationError::Decode)?,
-            )?,
-            "sequencer_public_key",
+        let registry = crate::program_lifecycle::programs_module_registry()?;
+        let activity = layerx_wire::activity::decode_signed(&signed, &registry)
+            .map_err(|_| ProgramOperationError::Decode)?;
+        let call = layerx_types::program_call::NativeProgramCall::decode(activity.payload())
+            .map_err(|_| ProgramOperationError::Decode)?;
+        let authority = object(
+            fixture
+                .get("authorized_batch")
+                .ok_or(ProgramOperationError::Decode)?,
         )?;
+        let key = fixed(authority, "sequencer_public_key_hex")?;
+        let evidence = super::ProgramExecutionEvidence {
+            payload_hash: layerx_wire::hash::payload_hash(&activity)
+                .map_err(|_| ProgramOperationError::Decode)?,
+            receipt: bounded_hex(
+                source,
+                "canonical_receipt_hex",
+                MAX_SIGNED_ACTIVITY_BYTES,
+                None,
+            )?,
+            terminal_payload: bounded_hex(
+                source,
+                "terminal_payload_hex",
+                MAX_SIGNED_ACTIVITY_BYTES,
+                None,
+            )?,
+            call_graph: bounded_hex(source, "call_graph_hex", MAX_SIGNED_ACTIVITY_BYTES, None)?,
+            authority: layerx_proof::receipt::AuthorizedBatch::new(
+                fixed(authority, "batch_id_hex")?,
+                fixed(authority, "asset_hex")?,
+                fixed(authority, "previous_state_root_hex")?,
+                fixed(authority, "resulting_state_root_hex")?,
+                key,
+            ),
+            activity_id: layerx_wire::hash::activity_id(&activity)
+                .map_err(|_| ProgramOperationError::Decode)?,
+            program_id: call.program_id.bytes(),
+            guest_abi_version: call.guest_abi,
+        };
+        let capture = super::verify_program_evidence_with_payers(&evidence, &[])?;
+        let protocol = capture
+            .receipt()
+            .receipt()
+            .protocol()
+            .ok_or(ProgramOperationError::Verification)?;
+        let document = json!({
+            "state":"executed","verification":super::EXECUTION_VERIFICATION,
+            "activity_id":hex(&evidence.activity_id),"program_id":hex(&evidence.program_id),
+            "guest_abi_version":evidence.guest_abi_version,"module_version":protocol.module_version(),
+            "batch_id":hex(&protocol.batch_id()),"global_sequence":protocol.global_sequence().to_string(),
+            "result_code":protocol.result_code(),"state_root":hex(&protocol.resulting_state_root()),
+            "receipt_digest":hex(&capture.receipt().evidence().receipt_digest().ok_or(ProgramOperationError::Verification)?),
+            "receipt":hex(&evidence.receipt),"terminal_payload":hex(&evidence.terminal_payload),"call_graph":hex(&evidence.call_graph),
+            "authority":{"batch_id":hex(&evidence.authority.batch_id()),"asset":hex(&fixed(authority,"asset_hex")?),
+                "previous_state_root":hex(&evidence.authority.previous_state_root()),
+                "resulting_state_root":hex(&evidence.authority.resulting_state_root()),"sequencer_public_key":hex(&key)},
+            "usage":{"cpu_fuel":capture.cpu_fuel().to_string(),"memory_bytes":capture.memory_bytes().to_string(),
+                "storage_read_bytes":capture.storage_read_bytes().to_string(),"storage_write_bytes":capture.storage_write_bytes().to_string(),
+                "output_values":capture.output_values(),"output_bytes":capture.output_bytes().to_string(),"fee_units":capture.fee_units().to_string()},
+            "outcome":super::expected_outcome(capture.outcome())
+        });
+        let document = &document;
         let execution = decode_execution(document, Some(ExecutionState::Executed), key, &signed)?;
         require_native_execution(&execution.verified)?;
         assert_eq!(

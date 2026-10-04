@@ -36476,7 +36476,7 @@ parent_task = "104.33.7"
 source_status = "complete"
 completion_basis = "implementation under owner CONSTITUTION; qualification separately recorded"
 qualification_status = "UNRUN"
-source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-104.33.7.1-repair1-source-handoff.json"
+source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-104.33.7.1-repair2-source-handoff.json"
 
 [task.104.33.7.8]
 title = "Unify Programs API schema and generated client contracts"
