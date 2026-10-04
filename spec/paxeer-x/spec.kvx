@@ -26118,8 +26118,12 @@ fleet_role = "/root/integrate_dependencies/native_authority_fixture"
 fleet_scope_manifest = "/root/lx-ops/paxeer-x-integration-2026-10-03/fleet-23.3-brief.json"
 source_status = "complete"
 completion_basis = "implementation under owner CONSTITUTION; qualification separately recorded"
-qualification_status = "UNRUN"
+qualification_status = "UNQUALIFIED"
 source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/fleet-23.3-intake.json"
+qualification_record = "/root/lx-ops/paxeer-x-integration-2026-10-03/fleet-23.3-result.json"
+build_exit = 0
+verify_exit = 3
+qualification_observed = "Missing LAYERX_RECEIPT_REFRESH_FIXTURE; browser and genuine proof producers did not run."
 
 [task.24.8]
 title = "Deliver one authenticated kernel identity generation to the registry"
