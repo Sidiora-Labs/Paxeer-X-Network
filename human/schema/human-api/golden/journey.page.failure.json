@@ -1,0 +1,13 @@
+{
+  "status": 400,
+  "body": {
+    "ok": false,
+    "error": {
+      "code": "invalid-request",
+      "copy_key": "error.request.invalid",
+      "retry": "final",
+      "field": "cursor"
+    },
+    "trace": "trc_journey_page_contract_example"
+  }
+}

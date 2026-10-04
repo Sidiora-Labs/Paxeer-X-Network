@@ -1,6 +1,6 @@
 //! Direct projections over durable Human journey and receipt owners.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use super::backend::{ApiFailure, BackendResponse, ScopedRequest};
 use crate::activity::{
@@ -26,7 +26,12 @@ pub(super) fn execute(
 ) -> Option<Result<BackendResponse, ApiFailure>> {
     Some(match request.operation.name.as_str() {
         "journey.get" => journey_get(scope, settlement_domain, request),
-        "journey.list" => journey_list(scope, settlement_domain),
+        "journey.list" => journey_list(scope, settlement_domain, None),
+        "journey.page" => journey_list(
+            scope,
+            settlement_domain,
+            request.path_parameters.get("cursor").map(String::as_str),
+        ),
         "evidence.get" => evidence_get(settlement_domain, scope, request),
         _ => return None,
     })
@@ -124,38 +129,168 @@ fn journey_get(
         .ok_or_else(|| ApiFailure::invalid_request(Some("journey_id")))?;
     let id = JourneyId::new(value.clone())
         .map_err(|_| ApiFailure::invalid_request(Some("journey_id")))?;
-    let journey = JourneyEngine::load(scope, &id)
-        .map_err(|error| failure(&error))?
+    let families = public_journeys(scope, settlement_domain)?;
+    let found = families
+        .into_iter()
+        .find(|entry| entry.id == id.as_str())
         .ok_or_else(ApiFailure::not_found)?;
-    Ok(response(journey_json(scope, settlement_domain, &journey)?))
+    Ok(response(found.value))
+}
+
+struct PublicJourney {
+    id: String,
+    updated_at: u64,
+    value: Value,
+}
+
+fn public_journeys(
+    scope: &PrincipalScope<'_>,
+    settlement_domain: SettlementDomain,
+) -> Result<Vec<PublicJourney>, ApiFailure> {
+    let deposits = crate::journeys::DepositJourney::list_readonly(scope)
+        .map_err(|_| ApiFailure::upstream_degraded())?;
+    let withdrawals = crate::journeys::WithdrawalJourney::list_readonly(scope)
+        .map_err(|_| ApiFailure::upstream_degraded())?;
+    let exits = crate::journeys::ExitJourney::list_readonly(scope)
+        .map_err(|_| ApiFailure::upstream_degraded())?;
+    let children = deposits
+        .iter()
+        .filter_map(|entry| entry.inner_journey_id())
+        .chain(
+            withdrawals
+                .iter()
+                .filter_map(|entry| entry.inner_journey_id()),
+        )
+        .map(|id| id.as_str().to_owned())
+        .collect::<BTreeSet<_>>();
+    let mut values = Vec::new();
+    for entry in deposits {
+        let status = entry
+            .status()
+            .map_err(|_| ApiFailure::upstream_degraded())?;
+        values.push(PublicJourney {
+            id: status.journey_id().as_str().to_owned(),
+            updated_at: status.updated_at(),
+            value: super::production_components::deposit_public_json(
+                scope,
+                settlement_domain,
+                &status,
+                status.updated_at(),
+            )?,
+        });
+    }
+    for entry in withdrawals {
+        let status = entry
+            .status()
+            .map_err(|_| ApiFailure::upstream_degraded())?;
+        values.push(PublicJourney {
+            id: status.journey_id().as_str().to_owned(),
+            updated_at: status.updated_at(),
+            value: super::production_components::withdrawal_public_json(
+                scope,
+                settlement_domain,
+                &status,
+                status.updated_at(),
+            )?,
+        });
+    }
+    for entry in exits {
+        let status = entry
+            .status()
+            .map_err(|_| ApiFailure::upstream_degraded())?;
+        values.push(PublicJourney {
+            id: status.journey_id().as_str().to_owned(),
+            updated_at: status.updated_at(),
+            value: super::production_components::exit_public_json(
+                scope,
+                &status,
+                status.updated_at(),
+            )?,
+        });
+    }
+    for entry in JourneyEngine::list(scope).map_err(|error| failure(&error))? {
+        let status = entry.status().map_err(|error| failure(&error))?;
+        if children.contains(status.journey_id().as_str()) {
+            continue;
+        }
+        values.push(PublicJourney {
+            id: status.journey_id().as_str().to_owned(),
+            updated_at: entry.updated_at(),
+            value: journey_json(scope, settlement_domain, &entry)?,
+        });
+    }
+    let mut ids = BTreeSet::new();
+    for entry in &values {
+        if !ids.insert(&entry.id) {
+            return Err(ApiFailure::upstream_degraded());
+        }
+    }
+    values.sort_by(|left, right| {
+        right
+            .updated_at
+            .cmp(&left.updated_at)
+            .then_with(|| right.id.cmp(&left.id))
+    });
+    Ok(values)
 }
 
 fn journey_list(
     scope: &PrincipalScope<'_>,
     settlement_domain: SettlementDomain,
+    cursor: Option<&str>,
 ) -> Result<BackendResponse, ApiFailure> {
-    let journeys = JourneyEngine::list(scope).map_err(|error| failure(&error))?;
+    const PAGE_SIZE: usize = 50;
+    let journeys = public_journeys(scope, settlement_domain)?;
     let mut digest = Sha256::new();
-    digest.update(b"layerx-human-journey-list-cursor/v1");
-    let values = journeys
+    digest.update(b"layerx-human-journey-page/v1\0");
+    digest.update(scope.principal().as_str().as_bytes());
+    for entry in &journeys {
+        digest.update(entry.updated_at.to_be_bytes());
+        digest.update((entry.id.len() as u64).to_be_bytes());
+        digest.update(entry.id.as_bytes());
+        digest.update(Sha256::digest(
+            serde_json::to_vec(&entry.value).map_err(|_| ApiFailure::upstream_degraded())?,
+        ));
+    }
+    let snapshot = hex(&digest.finalize().into());
+    let offset = match cursor {
+        None | Some("cur_start") => 0,
+        Some("cur_end") => journeys.len(),
+        Some(value) => {
+            if value.len() > 100 {
+                return Err(ApiFailure::invalid_request(Some("cursor")));
+            }
+            let suffix = value
+                .strip_prefix("cur_jrn1_")
+                .ok_or_else(|| ApiFailure::invalid_request(Some("cursor")))?;
+            let (bound, offset) = suffix
+                .split_once('_')
+                .ok_or_else(|| ApiFailure::invalid_request(Some("cursor")))?;
+            let parsed = offset
+                .parse::<usize>()
+                .map_err(|_| ApiFailure::invalid_request(Some("cursor")))?;
+            if bound != snapshot
+                || offset != parsed.to_string()
+                || parsed == 0
+                || parsed >= journeys.len()
+                || parsed % PAGE_SIZE != 0
+            {
+                return Err(ApiFailure::invalid_request(Some("cursor")));
+            }
+            parsed
+        }
+    };
+    let through = offset.saturating_add(PAGE_SIZE).min(journeys.len());
+    let values = journeys[offset..through]
         .iter()
-        .map(|journey| {
-            let value = journey_json(scope, settlement_domain, journey)?;
-            digest.update(journey.updated_at().to_be_bytes());
-            digest.update(
-                journey
-                    .status()
-                    .map_err(|error| failure(&error))?
-                    .journey_id()
-                    .as_str()
-                    .as_bytes(),
-            );
-            Ok(value)
-        })
-        .collect::<Result<Vec<_>, ApiFailure>>()?;
-    Ok(response(
-        json!({"journeys": values, "next_cursor": format!("cur_{}", hex(&digest.finalize().into()))}),
-    ))
+        .map(|entry| entry.value.clone())
+        .collect::<Vec<_>>();
+    let next = if through == journeys.len() {
+        "cur_end".to_owned()
+    } else {
+        format!("cur_jrn1_{snapshot}_{through}")
+    };
+    Ok(response(json!({"journeys": values, "next_cursor": next})))
 }
 
 fn evidence_get(

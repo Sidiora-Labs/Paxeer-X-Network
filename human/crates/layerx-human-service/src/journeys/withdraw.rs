@@ -403,7 +403,10 @@ pub enum WithdrawalStage {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct WithdrawalStatus {
     journey_id: JourneyId,
+    started_at: u64,
+    updated_at: u64,
     stage: WithdrawalStage,
+    outcome_unknown: bool,
     cancellation_policy: CancellationPolicy,
     debit_receipt_reference: Option<[u8; 32]>,
     withdrawal_id: Option<[u8; 32]>,
@@ -411,6 +414,21 @@ pub struct WithdrawalStatus {
 }
 
 impl WithdrawalStatus {
+    #[must_use]
+    pub const fn outcome_unknown(&self) -> bool {
+        self.outcome_unknown
+    }
+
+    #[must_use]
+    pub const fn started_at(&self) -> u64 {
+        self.started_at
+    }
+
+    #[must_use]
+    pub const fn updated_at(&self) -> u64 {
+        self.updated_at
+    }
+
     #[must_use]
     pub const fn journey_id(&self) -> &JourneyId {
         &self.journey_id
@@ -607,6 +625,78 @@ pub struct WithdrawalJourney {
 }
 
 impl WithdrawalJourney {
+    pub fn list_readonly(scope: &PrincipalScope<'_>) -> Result<Vec<Self>, WithdrawalJourneyError> {
+        let mut histories: std::collections::BTreeMap<
+            String,
+            std::collections::BTreeMap<u64, Record>,
+        > = std::collections::BTreeMap::new();
+        let mut identities = std::collections::BTreeMap::new();
+        for key in scope.keys(Table::Journeys) {
+            if !key.as_str().starts_with(STATE_PREFIX) {
+                continue;
+            }
+            let row = scope
+                .get(Table::Journeys, &key)
+                .ok_or(WithdrawalJourneyError::Corrupt(
+                    "withdrawal state disappeared",
+                ))?;
+            let record = decode(row.bytes())?;
+            if key != state_row(record.idempotency_key, record.sequence)? {
+                return Err(WithdrawalJourneyError::Corrupt(
+                    "withdrawal row binding mismatch",
+                ));
+            }
+            if let Some(identity) =
+                identities.insert(record.idempotency_key, record.journey_id.clone())
+            {
+                if identity != record.journey_id {
+                    return Err(WithdrawalJourneyError::Corrupt(
+                        "withdrawal identity binding mismatch",
+                    ));
+                }
+            }
+            let history = histories.entry(record.journey_id.clone()).or_default();
+            if history.insert(record.sequence, record).is_some() {
+                return Err(WithdrawalJourneyError::Corrupt(
+                    "duplicate withdrawal state sequence",
+                ));
+            }
+        }
+        let mut journeys = Vec::with_capacity(histories.len());
+        for history in histories.into_values() {
+            let (_, record) = history
+                .into_iter()
+                .next_back()
+                .ok_or(WithdrawalJourneyError::Corrupt("withdrawal history absent"))?;
+            journeys.push(Self { record });
+        }
+        Ok(journeys)
+    }
+
+    pub fn load_readonly(
+        scope: &PrincipalScope<'_>,
+        journey_id: &JourneyId,
+    ) -> Result<Option<Self>, WithdrawalJourneyError> {
+        Ok(Self::list_readonly(scope)?
+            .into_iter()
+            .find(|journey| journey.record.journey_id == journey_id.as_str()))
+    }
+
+    #[must_use]
+    pub const fn started_at(&self) -> u64 {
+        self.record.started_at
+    }
+
+    #[must_use]
+    pub const fn updated_at(&self) -> u64 {
+        self.record.updated_at
+    }
+
+    #[must_use]
+    pub fn inner_journey_id(&self) -> Option<JourneyId> {
+        JourneyId::new(self.record.debit_journey_id.clone()).ok()
+    }
+
     /// Verifies and submits the user's external claim signature exactly once.
     /// An unknown broadcast outcome moves immediately to lookup-only recovery.
     /// # Errors
@@ -1088,7 +1178,13 @@ impl WithdrawalJourney {
         };
         Ok(WithdrawalStatus {
             journey_id,
+            started_at: self.record.started_at,
+            updated_at: self.record.updated_at,
             stage,
+            outcome_unknown: matches!(
+                self.record.phase,
+                Phase::ClaimStillChecking | Phase::PayoutStillChecking
+            ),
             cancellation_policy: CancellationPolicy::CannotCancelAfterCommitCompleteOnly,
             debit_receipt_reference: self.record.debit_receipt_reference,
             withdrawal_id: self.record.debit_activity_id,

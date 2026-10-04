@@ -45831,6 +45831,49 @@
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3,
       "upstream_path": "/v1/native/send/access/confirm"
+    },
+    {
+      "id": "human:GET:/human/v1/journeys/page/{cursor}",
+      "service": "human",
+      "method": "GET",
+      "path": "/human/v1/journeys/page/{cursor}",
+      "transport": "http",
+      "authentication": "human-principal-session",
+      "upstream": "human",
+      "timeout_seconds": 8,
+      "retries": 0,
+      "health_predicate": "service-ready-and-network-version-bound",
+      "version": "1",
+      "consumers": [
+        "wallet",
+        "developer"
+      ],
+      "source": "human/schema/human-api/journeys.kvx",
+      "proxy": true,
+      "timeout_scope": "per-io",
+      "connect_timeout_seconds": 3,
+      "upstream_path": "/v1/journeys/page/{cursor}"
+    },
+    {
+      "id": "human:GET:/v1/journeys/page/{cursor}",
+      "service": "human",
+      "method": "GET",
+      "path": "/v1/journeys/page/{cursor}",
+      "transport": "http",
+      "authentication": "human-principal-session",
+      "upstream": "human",
+      "timeout_seconds": 8,
+      "retries": 0,
+      "health_predicate": "service-ready-and-network-version-bound",
+      "version": "1",
+      "consumers": [
+        "wallet",
+        "developer"
+      ],
+      "source": "human/schema/human-api/journeys.kvx",
+      "proxy": true,
+      "timeout_scope": "per-io",
+      "connect_timeout_seconds": 3
     }
   ],
   "denied_surfaces": [

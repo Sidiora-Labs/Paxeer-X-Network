@@ -359,12 +359,18 @@ pub struct DepositStatus {
     started_at: u64,
     updated_at: u64,
     stage: DepositStage,
+    outcome_unknown: bool,
     in_flight_amount: Option<u128>,
     delay: Option<FinalityDelay>,
     activity: Option<DepositActivity>,
 }
 
 impl DepositStatus {
+    #[must_use]
+    pub const fn outcome_unknown(&self) -> bool {
+        self.outcome_unknown
+    }
+
     #[must_use]
     pub const fn started_at(&self) -> u64 {
         self.started_at
@@ -603,6 +609,44 @@ pub struct DepositJourney {
 }
 
 impl DepositJourney {
+    pub fn list_readonly(scope: &PrincipalScope<'_>) -> Result<Vec<Self>, DepositJourneyError> {
+        let mut journeys = std::collections::BTreeMap::new();
+        for key in scope.keys(Table::Journeys) {
+            if !key.as_str().starts_with(RECORD_PREFIX) {
+                continue;
+            }
+            let row = scope
+                .get(Table::Journeys, &key)
+                .ok_or(DepositJourneyError::Corrupt("deposit disappeared"))?;
+            let record = decode(row.bytes())?;
+            if key != record_row(record.idempotency_key)? {
+                return Err(DepositJourneyError::Corrupt("deposit row binding mismatch"));
+            }
+            if journeys
+                .insert(record.journey_id.clone(), Self { record })
+                .is_some()
+            {
+                return Err(DepositJourneyError::Corrupt("duplicate deposit journey"));
+            }
+        }
+        Ok(journeys.into_values().collect())
+    }
+
+    #[must_use]
+    pub const fn started_at(&self) -> u64 {
+        self.record.started_at
+    }
+
+    #[must_use]
+    pub const fn updated_at(&self) -> u64 {
+        self.record.updated_at
+    }
+
+    #[must_use]
+    pub fn inner_journey_id(&self) -> Option<JourneyId> {
+        JourneyId::new(self.record.credit_journey_id.clone()).ok()
+    }
+
     /// Accepts the transaction returned by the bound wallet only after the
     /// production custody boundary verifies it against the immutable request.
     /// The verified transaction is persisted before finality polling begins.
@@ -1010,6 +1054,7 @@ impl DepositJourney {
             started_at: self.record.started_at,
             updated_at: self.record.updated_at,
             stage,
+            outcome_unknown: false,
             in_flight_amount: if matches!(self.record.phase, Phase::Done | Phase::Failed) {
                 None
             } else {

@@ -246,6 +246,8 @@ export const conformance: { readonly [name in OperationName]: (run: ConformanceR
     encodeJourney(await run.client.journeyGet(runParam(run, "journey_id"))),
   "journey.list": async (run) =>
     encodeJourneyPage(await run.client.journeyList()),
+  "journey.page": async (run) =>
+    encodeJourneyPage(await run.client.journeyPage(runParam(run, "cursor"))),
   "move.commit": async (run) =>
     encodeJourney(await run.client.moveCommit(decodeMoveCommitRequest(runBody(run), "golden request body"), runKey(run))),
   "move.quote": async (run) =>

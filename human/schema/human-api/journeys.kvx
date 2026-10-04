@@ -67,3 +67,10 @@ method = "GET"
 path = "/v1/journeys"
 request = "Empty"
 response = "JourneyPage"
+
+[operation.journey.page]
+authorization_class = "read"
+method = "GET"
+path = "/v1/journeys/page/{cursor}"
+request = "Empty"
+response = "JourneyPage"

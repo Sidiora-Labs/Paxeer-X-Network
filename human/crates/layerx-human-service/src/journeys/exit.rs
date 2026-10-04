@@ -265,10 +265,28 @@ pub enum ExitStage {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ExitStatus {
     journey_id: JourneyId,
+    started_at: u64,
+    updated_at: u64,
     stage: ExitStage,
+    outcome_unknown: bool,
 }
 
 impl ExitStatus {
+    #[must_use]
+    pub const fn outcome_unknown(&self) -> bool {
+        self.outcome_unknown
+    }
+
+    #[must_use]
+    pub const fn started_at(&self) -> u64 {
+        self.started_at
+    }
+
+    #[must_use]
+    pub const fn updated_at(&self) -> u64 {
+        self.updated_at
+    }
+
     #[must_use]
     pub const fn journey_id(&self) -> &JourneyId {
         &self.journey_id
@@ -523,6 +541,44 @@ pub struct ExitJourney {
 }
 
 impl ExitJourney {
+    pub fn list_readonly(scope: &PrincipalScope<'_>) -> Result<Vec<Self>, ExitJourneyError> {
+        let mut journeys = std::collections::BTreeMap::new();
+        for key in scope.keys(Table::Journeys) {
+            if !key.as_str().starts_with(RECORD_PREFIX) {
+                continue;
+            }
+            let row = scope
+                .get(Table::Journeys, &key)
+                .ok_or(ExitJourneyError::Corrupt("exit disappeared"))?;
+            let record = decode(row.bytes())?;
+            if key != record_row(record.idempotency_key)? {
+                return Err(ExitJourneyError::Corrupt("exit row binding mismatch"));
+            }
+            if journeys
+                .insert(record.journey_id.clone(), Self { record })
+                .is_some()
+            {
+                return Err(ExitJourneyError::Corrupt("duplicate exit journey"));
+            }
+        }
+        Ok(journeys.into_values().collect())
+    }
+
+    #[must_use]
+    pub const fn started_at(&self) -> u64 {
+        self.record.started_at
+    }
+
+    #[must_use]
+    pub const fn updated_at(&self) -> u64 {
+        self.record.updated_at
+    }
+
+    #[must_use]
+    pub fn inner_journey_id(&self) -> Option<JourneyId> {
+        None
+    }
+
     /// Persists the confirmed request before any claim construction or wallet effect.
     ///
     /// # Errors
@@ -816,7 +872,13 @@ impl ExitJourney {
                     .public(),
             ),
         };
-        Ok(ExitStatus { journey_id, stage })
+        Ok(ExitStatus {
+            journey_id,
+            started_at: self.record.started_at,
+            updated_at: self.record.updated_at,
+            stage,
+            outcome_unknown: false,
+        })
     }
 
     /// Polls one submitted transaction and records its confirmation progress.

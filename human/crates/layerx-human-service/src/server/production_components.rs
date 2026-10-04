@@ -140,6 +140,7 @@ const PRODUCTION_OPERATIONS: &[&str] = &[
     "native.send.access.confirm",
     "journey.get",
     "journey.list",
+    "journey.page",
     "move.commit",
     "move.quote",
     "notification.list",
@@ -1973,7 +1974,7 @@ fn move_public_json(
         now,
     )
 }
-fn deposit_public_json(
+pub(super) fn deposit_public_json(
     scope: &crate::store::PrincipalScope<'_>,
     settlement_domain: SettlementDomain,
     status: &crate::journeys::DepositStatus,
@@ -2015,17 +2016,21 @@ fn deposit_public_json(
         "evidence":evidence,"started_at":started_at,"updated_at":updated_at}),
     )
 }
-fn withdrawal_public_json(
+pub(super) fn withdrawal_public_json(
     scope: &crate::store::PrincipalScope<'_>,
     settlement_domain: SettlementDomain,
     status: &crate::journeys::WithdrawalStatus,
     now: u64,
 ) -> Result<serde_json::Value, ApiFailure> {
-    let state = match status.stage() {
-        crate::journeys::WithdrawalStage::ReadyToClaim => "waiting-for-you",
-        crate::journeys::WithdrawalStage::PaidOut(_) => "done",
-        crate::journeys::WithdrawalStage::Cancelled(_) => "refused",
-        _ => "processing",
+    let state = if status.outcome_unknown() {
+        "still-checking"
+    } else {
+        match status.stage() {
+            crate::journeys::WithdrawalStage::ReadyToClaim => "waiting-for-you",
+            crate::journeys::WithdrawalStage::PaidOut(_) => "done",
+            crate::journeys::WithdrawalStage::Cancelled(_) => "refused",
+            _ => "processing",
+        }
     };
     let evidence = match status.debit_receipt_reference() {
         Some(digest) => {
@@ -2037,17 +2042,18 @@ fn withdrawal_public_json(
         }
         None => Vec::new(),
     };
-    public_journey(
-        scope,
-        "withdraw",
-        status.journey_id(),
-        state,
-        "withdraw.stage.progress",
-        &evidence,
-        now,
+    if now < status.updated_at() || status.updated_at() < status.started_at() {
+        return Err(ApiFailure::upstream_degraded());
+    }
+    Ok(
+        json!({"journey_id":status.journey_id().as_str(),"kind":"withdraw","state":state,
+        "state_copy_key":format!("status.{state}"),
+        "stages":[{"stage_id":"stg_withdraw","copy_key":"withdraw.stage.progress","state":state,"evidence":evidence}],
+        "evidence":evidence,"started_at":super::projection::unix_time(status.started_at())?,
+        "updated_at":super::projection::unix_time(status.updated_at())?}),
     )
 }
-fn exit_public_json(
+pub(super) fn exit_public_json(
     scope: &crate::store::PrincipalScope<'_>,
     status: &crate::journeys::ExitStatus,
     now: u64,
@@ -2066,14 +2072,16 @@ fn exit_public_json(
         crate::journeys::ExitStage::WaitingForWallet => ("waiting-for-you", Vec::new()),
         _ => ("processing", Vec::new()),
     };
-    public_journey(
-        scope,
-        "exit",
-        status.journey_id(),
-        state,
-        "exit.stage.progress",
-        &evidence,
-        now,
+    if now < status.updated_at() || status.updated_at() < status.started_at() {
+        return Err(ApiFailure::upstream_degraded());
+    }
+    let _ = scope;
+    Ok(
+        json!({"journey_id":status.journey_id().as_str(),"kind":"exit","state":state,
+        "state_copy_key":format!("status.{state}"),
+        "stages":[{"stage_id":"stg_exit","copy_key":"exit.stage.progress","state":state,"evidence":evidence}],
+        "evidence":evidence,"started_at":super::projection::unix_time(status.started_at())?,
+        "updated_at":super::projection::unix_time(status.updated_at())?}),
     )
 }
 

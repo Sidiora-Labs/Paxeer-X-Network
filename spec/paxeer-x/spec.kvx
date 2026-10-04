@@ -28579,7 +28579,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.10.3]
 title = "Project every durable Human journey family through common get and list operations"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 6
 requires = ["0.2", "10.2"]
@@ -28589,7 +28589,7 @@ do_2 = "Define parent/child visibility and stable merged pagination without rewr
 do_3 = "Exercise returned outer IDs, list inclusion, cross-principal refusals and restart for deposit, withdrawal, exit and native journeys."
 do_4 = "Author the new focused harness tools/qualification/paxeer-x/human_journey_projections.py to exercise these acceptance cases against real production implementations and types. It must fail on missing candidate artifacts, missing authority/configuration, skipped cases or unverifiable receipts; retain the exact candidate revision, command, case results and evidence paths. Use disposable qualification state and provisioned authority without printing secret values; no mocks, synthetic success or substitution of a library-only model for a named process boundary."
 do_5 = "Implement the declared focused gate through the real production types and paths; exercise every acceptance criterion including refusal, restart or boundary cases specified by this requirement. The command is a planned deliverable, not an already-run gate."
-touches = ["human/crates/layerx-human-service/src/server/production_reads.rs", "human/crates/layerx-human-service/src/server/production_components.rs", "human/crates/layerx-human-service/src/journeys/engine.rs", "human/crates/layerx-human-service/src/journeys/deposit.rs", "human/crates/layerx-human-service/src/journeys/withdraw.rs", "human/crates/layerx-human-service/src/journeys/exit.rs", "human/crates/layerx-human-service/src/journeys/intent_submit.rs", "tools/qualification/paxeer-x/human_journey_projections.py"]
+touches = ["human/crates/layerx-human-service/src/journeys/deposit.rs", "human/crates/layerx-human-service/src/journeys/withdraw.rs", "human/crates/layerx-human-service/src/journeys/exit.rs", "tools/qualification/paxeer-x/human_journey_projections.py", "human/crates/layerx-human-service/src/server/production_reads.rs", "human/crates/layerx-human-service/src/server/production_components.rs", "human/crates/layerx-human-service/src/journeys/engine.rs", "human/crates/layerx-human-service/src/journeys/intent_submit.rs", "human/schema/human-api/journeys.kvx", "human/schema/human-api/v1.kvx", "human/apps/web/src/api/generated/index.ts", "human/apps/web/src/api/generated/conformance.ts", "human/crates/layerx-human-service/tests/journey_family_projections.rs", "tools/paxeer-x/route-catalogue.json", "human/schema/human-api/golden/journey.page.request.json", "human/schema/human-api/golden/journey.page.response.json", "human/schema/human-api/golden/journey.page.failure.json"]
 verify_cmd = "timeout 30m python3 tools/qualification/paxeer-x/human_journey_projections.py"
 gate_kind = "planned"
 max_builds = 1
@@ -28601,6 +28601,13 @@ deployment_profile = "product"
 planned_paths = ["tools/qualification/paxeer-x/human_journey_projections.py"]
 path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
 evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+retained_contract_paths_104_13_36 = ["human/crates/layerx-human-service/src/server/production_reads.rs", "human/crates/layerx-human-service/src/server/production_components.rs", "human/crates/layerx-human-service/src/journeys/engine.rs", "human/crates/layerx-human-service/src/journeys/intent_submit.rs"]
+lease_transfer_authority_104_13_36 = "Owner approved inactive lease reassignment and distinct Send contract; original unfinished criteria and source checkpoints remain preserved."
+implementation_window = "START11:21UTC END11:51UTC; whole source then onebuild anddeclaredverify, maxtwo scopedrepairs. Rootpublicationfirst."
+source_status = "complete"
+completion_basis = "implementation under owner CONSTITUTION; qualification separately recorded"
+qualification_status = "UNRUN"
+source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-10.3-intake-handoff.json"
 
 [task.24.4]
 title = "Require the complete configured kernel service roster for readiness"

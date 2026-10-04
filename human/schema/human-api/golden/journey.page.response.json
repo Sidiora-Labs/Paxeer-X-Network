@@ -1,0 +1,11 @@
+{
+  "status": 200,
+  "body": {
+    "ok": true,
+    "result": {
+      "journeys": [],
+      "next_cursor": "cur_end"
+    },
+    "trace": "trc_journey_page_contract_example"
+  }
+}
