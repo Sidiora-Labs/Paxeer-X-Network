@@ -349,6 +349,7 @@ fn prepare(directory: &Path, setup_path: &Path) -> Result<()> {
         }
         let usage = execution.usage;
         let billing_height = number(case, "billing_height").captured()?;
+        let successful_output = 12i32.to_be_bytes();
         let billing = MarketBillingCommitment {
             profile_digest: authority.profile_binding,
             provider_trace_root: provider_root,
@@ -356,7 +357,7 @@ fn prepare(directory: &Path, setup_path: &Path) -> Result<()> {
             output_digest: Sha256::digest(if name == "trap" {
                 b"trap".as_slice()
             } else {
-                &12i32.to_be_bytes()
+                &successful_output
             })
             .into(),
             usage: [
