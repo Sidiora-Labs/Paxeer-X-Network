@@ -26783,8 +26783,16 @@ fleet_cutoff_utc = "2026-10-04T14:08:00Z"
 fleet_authority = "User ordered thirty agents into pending integrations within four hours; this task has a fresh bounded implementation assignment."
 source_status = "complete"
 completion_basis = "implementation under owner CONSTITUTION; qualification separately recorded"
-qualification_status = "UNRUN"
+qualification_status = "NOT_FULLY_QUALIFIED"
 source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-104.25.2-publication.json"
+qualification_revision = "b2a7143a90a9407f47c62b2dc744d0ccdf7aac05"
+qualification_command = "timeout 30m tools/paxeer-x/verify-task.sh 104.25.2"
+build_status = "TIMED_OUT"
+build_exit_code = 124
+build_command = "timeout 20m env PATH=/root/.cargo/bin:$PATH RUSTUP_TOOLCHAIN=1.91.1 CARGO_BUILD_JOBS=2 CARGO_TARGET_DIR=/root/lx-target/interop PAXEER_X_TASK_DEADLINE_EPOCH=1791122880 bash tools/paxeer-x/gates/104.25.2.sh --build"
+build_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-104.25.2-build.log"
+qualification_evidence = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-104.25.2-result.json"
+verification_status = "UNRUN"
 
 [task.104.27.2]
 title = "Run the programs security qualification"
