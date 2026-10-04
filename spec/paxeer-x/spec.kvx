@@ -24422,7 +24422,7 @@ do_4 = "Make the verifier itself deterministic, integer-only and bounded so it c
 do_5 = "Prove the verifier agrees with the runtime on every step of the conformance corpus, so a correct execution is never judged incorrect."
 do_6 = "Freeze the verifier behind golden vectors covering every instruction, every host call and every trap."
 do_7 = "Provide this task selector in tools/paxeer-x/gates and execute the full scoped acceptance contract using real production paths. Preserve the retained verification command coverage; move aggregate matrices to release scope and refuse an unknown or unimplemented selector."
-touches = ["tools/paxeer-x/gates/104.35.2.sh", "programs/Cargo.toml", "programs/Cargo.lock", "programs/crates/layerx-programs-runtime/src/lib.rs", "programs/crates/layerx-programs-runtime/src/calls.rs", "programs/crates/layerx-programs-runtime/src/storage/reclaim.rs", "programs/crates/layerx-programs-runtime/src/abi/mod.rs", "programs/crates/layerx-programs-runtime/src/host/oracle.rs", "programs/crates/layerx-programs-runtime/src/host/web.rs", "programs/crates/layerx-programs-runtime/src/ffi_call.rs", "programs/crates/layerx-programs-runtime/src/ffi_interface.rs", "programs/crates/layerx-programs-runtime/src/abi/context.rs", "programs/crates/layerx-programs-runtime/src/abi/response.rs"]
+touches = ["tools/paxeer-x/gates/104.35.2.sh", "programs/Cargo.toml", "programs/crates/layerx-programs-runtime/src/calls.rs", "programs/crates/layerx-programs-runtime/src/storage/reclaim.rs", "programs/crates/layerx-programs-runtime/src/abi/mod.rs", "programs/crates/layerx-programs-runtime/src/host/oracle.rs", "programs/crates/layerx-programs-runtime/src/host/web.rs", "programs/crates/layerx-programs-runtime/src/ffi_interface.rs", "programs/crates/layerx-programs-runtime/src/abi/response.rs", "programs/crates/layerx-programs-runtime/tests/step_conformance.rs", "tools/qualification/paxeer-x/single-step-conformance.py", "tools/paxeer-x/build/104.35.2.mk"]
 verify_cmd = "timeout 30m tools/paxeer-x/verify-task.sh 104.35.2"
 gate_kind = "planned-adapter"
 max_builds = 1
@@ -24441,6 +24441,20 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 retained_shared_touch_paths = ["programs/crates/layerx-programs-arbiter/Cargo.toml", "programs/crates/layerx-programs-arbiter/src/lib.rs", "programs/crates/layerx-programs-arbiter/src/step.rs", "programs/crates/layerx-programs-runtime/src/replay.rs", "programs/crates/layerx-programs-runtime/src/execute.rs", "programs/crates/layerx-programs-runtime/src/host/mod.rs", "programs/crates/layerx-programs-runtime/src/abi/host_state.rs", "programs/crates/layerx-programs-runtime/src/meter.rs"]
 source_ownership = "Task104.35.13 owns the actual arbiter facade and authenticated runtime replay binding; all original full instruction/host/trap criteria remain required for104.35.2. Root owns workspace and locks."
+retained_contract_paths_104_35_33 = ["tools/paxeer-x/gates/104.35.2.sh", "programs/Cargo.toml", "programs/Cargo.lock", "programs/crates/layerx-programs-runtime/src/lib.rs", "programs/crates/layerx-programs-runtime/src/calls.rs", "programs/crates/layerx-programs-runtime/src/storage/reclaim.rs", "programs/crates/layerx-programs-runtime/src/abi/mod.rs", "programs/crates/layerx-programs-runtime/src/host/oracle.rs", "programs/crates/layerx-programs-runtime/src/host/web.rs", "programs/crates/layerx-programs-runtime/src/ffi_call.rs", "programs/crates/layerx-programs-runtime/src/ffi_interface.rs", "programs/crates/layerx-programs-runtime/src/abi/context.rs", "programs/crates/layerx-programs-runtime/src/abi/response.rs"]
+delegated_source_task_104_35_33 = "104.35.33"
+delegated_source_paths_104_35_33 = ["programs/Cargo.lock"]
+lease_transfer_authority_104_35_33 = "Owner approved inactive lease reassignment; all unfinished requirements and assertions remain intact."
+retained_contract_paths_104_35_35 = ["tools/paxeer-x/gates/104.35.2.sh", "programs/Cargo.toml", "programs/crates/layerx-programs-runtime/src/lib.rs", "programs/crates/layerx-programs-runtime/src/calls.rs", "programs/crates/layerx-programs-runtime/src/storage/reclaim.rs", "programs/crates/layerx-programs-runtime/src/abi/mod.rs", "programs/crates/layerx-programs-runtime/src/host/oracle.rs", "programs/crates/layerx-programs-runtime/src/host/web.rs", "programs/crates/layerx-programs-runtime/src/ffi_call.rs", "programs/crates/layerx-programs-runtime/src/ffi_interface.rs", "programs/crates/layerx-programs-runtime/src/abi/context.rs", "programs/crates/layerx-programs-runtime/src/abi/response.rs"]
+delegated_source_paths_104_35_35 = ["programs/crates/layerx-programs-runtime/src/lib.rs", "programs/crates/layerx-programs-runtime/src/ffi_call.rs"]
+lease_transfer_authority_104_35_35 = "Owner approved inactive lease reassignment; Codify confirms no live owner. Original unfinished criteria remain intact."
+fleet_authority = "User explicitly ordered30agents into pending integrations within4hours; fresh bounded source implementation resumes. Preserve prior source/evidence and every assertion."
+fleet_role = "/root/integrate_arbiter/rust_prestate"
+fleet_scope_manifest = "/root/lx-ops/paxeer-x-integration-2026-10-03/fleet-104.35.2-brief.json"
+source_status = "partial"
+completion_basis = "honest incomplete source checkpoint; original criteria remain required"
+qualification_status = "UNRUN"
+source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/fleet-104.35.2-partial-publication.json"
 
 [task.104.35.7]
 title = "Accept attested inputs from non-deterministic work"

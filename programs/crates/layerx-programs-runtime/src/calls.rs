@@ -1491,3 +1491,217 @@ mod context_tests {
         assert_eq!(graph.immediate_caller(), Some(root));
     }
 }
+
+#[cfg(test)]
+mod single_step_conformance {
+    use crate::test_support::{code_section, export_section, func_body, function_section,
+        import_section, module, raw_section, type_section, TYPE_I32, TYPE_I64};
+    use crate::{Abi, AuthorizationContext, CapabilitySet, FeeSchedule, Meter, PrincipalId,
+        ProgramId, ResourceBudget, Storage, TracePolicy, UnavailableReceiptOracle,
+        WasmEngine, WasmValue};
+
+    fn check(body: &[u8], result_type: u8, expected: WasmValue) {
+        let bytes = module(&[
+            type_section(&[(&[], &[result_type])]),
+            function_section(&[0]),
+            export_section(&[("run", 0)]),
+            code_section(&[func_body(&[], body)]),
+        ]);
+        check_module(&bytes, 2, Some(expected));
+    }
+
+    fn check_module(bytes: &[u8], abi_version: u16, expected: Option<WasmValue>) {
+        let engine = WasmEngine::declared().unwrap_or_else(|error| panic!("engine: {error}"));
+        let validated = engine.validate_versioned(abi_version, bytes)
+            .unwrap_or_else(|error| panic!("validation: {error}"));
+        let abi = Abi::new(abi_version,
+            ProgramId::new([0x11; 32]).unwrap_or_else(|error| panic!("program: {error}")),
+            AuthorizationContext::new(
+                PrincipalId::new([0x22; 32]).unwrap_or_else(|error| panic!("principal: {error}")),
+                CapabilitySet::empty()),
+            Storage::new(), &UnavailableReceiptOracle)
+            .unwrap_or_else(|error| panic!("ABI: {error}"));
+        let declared = ResourceBudget::declared();
+        let budget = ResourceBudget::new_complete(200_000_000, declared.memory_bytes(),
+            declared.storage_read_bytes(), declared.storage_write_bytes(), declared.output_values(),
+            declared.output_bytes(), declared.table_elements());
+        let mut instance = validated.instantiate_sandbox(
+            Meter::new(budget, FeeSchedule::declared()), abi)
+            .unwrap_or_else(|error| panic!("sandbox: {error}"));
+        let trace = TracePolicy::new(1, 512).unwrap_or_else(|error| panic!("trace policy: {error}"));
+        let capture = instance.call_with_boundary_witnesses(&validated, "run", &[], trace,
+            64 * 1024 * 1024).unwrap_or_else(|error| panic!("capture: {error:?}"));
+        if let Some(expected) = expected {
+            assert_eq!(capture.values, vec![expected], "fixed integer vector {bytes:02x?}");
+        } else {
+            assert_eq!(capture.values.len(), 1);
+            assert!(matches!(capture.values[0], WasmValue::I32(value) if value <= 0)
+                || matches!(capture.values[0], WasmValue::I64(value) if value <= 0));
+        }
+        assert!(!capture.boundaries.is_empty());
+        assert_eq!(capture.boundaries.len(), capture.trace.arbitration_steps().len());
+        for boundary in capture.boundaries {
+            boundary.replay(&validated)
+                .unwrap_or_else(|error| panic!("single-step: {error:?}"));
+        }
+    }
+
+    #[test]
+    fn fixed_i32_integer_vectors_replay_every_comparison_and_arithmetic_step() {
+        for (opcode, expected) in [
+            (0x46, 0), (0x47, 1), (0x48, 0), (0x49, 0), (0x4a, 1),
+            (0x4b, 1), (0x4c, 0), (0x4d, 0), (0x4e, 1), (0x4f, 1),
+            (0x6a, 15), (0x6b, 9), (0x6c, 36), (0x6d, 4), (0x6e, 4),
+            (0x6f, 0), (0x70, 0), (0x71, 0), (0x72, 15), (0x73, 15),
+            (0x74, 96), (0x75, 1), (0x76, 1), (0x77, 96), (0x78, i32::MIN + 1),
+        ] {
+            check(&[0x41, 12, 0x41, 3, opcode, 0x0b], TYPE_I32, WasmValue::I32(expected));
+        }
+        for (opcode, expected) in [(0x45, 0), (0x67, 28), (0x68, 2), (0x69, 2)] {
+            check(&[0x41, 12, opcode, 0x0b], TYPE_I32, WasmValue::I32(expected));
+        }
+    }
+
+    #[test]
+    fn fixed_i64_integer_vectors_replay_every_comparison_and_arithmetic_step() {
+        for (opcode, expected) in [
+            (0x51, 0), (0x52, 1), (0x53, 0), (0x54, 0), (0x55, 1),
+            (0x56, 1), (0x57, 0), (0x58, 0), (0x59, 1), (0x5a, 1),
+        ] {
+            check(&[0x42, 12, 0x42, 3, opcode, 0x0b], TYPE_I32, WasmValue::I32(expected));
+        }
+        check(&[0x42, 12, 0x50, 0x0b], TYPE_I32, WasmValue::I32(0));
+        for (opcode, expected) in [
+            (0x7c, 15), (0x7d, 9), (0x7e, 36), (0x7f, 4), (0x80, 4),
+            (0x81, 0), (0x82, 0), (0x83, 0), (0x84, 15), (0x85, 15),
+            (0x86, 96), (0x87, 1), (0x88, 1), (0x89, 96), (0x8a, i64::MIN + 1),
+        ] {
+            check(&[0x42, 12, 0x42, 3, opcode, 0x0b], TYPE_I64, WasmValue::I64(expected));
+        }
+        for (opcode, expected) in [(0x79, 60), (0x7a, 2), (0x7b, 2)] {
+            check(&[0x42, 12, opcode, 0x0b], TYPE_I64, WasmValue::I64(expected));
+        }
+    }
+
+    #[test]
+    fn fixed_integer_width_and_sign_extension_vectors_replay_real_steps() {
+        check(&[0x42, 0x7f, 0xa7, 0x0b], TYPE_I32, WasmValue::I32(-1));
+        check(&[0x41, 0x7f, 0xac, 0x0b], TYPE_I64, WasmValue::I64(-1));
+        check(&[0x41, 0x7f, 0xad, 0x0b], TYPE_I64, WasmValue::I64(4_294_967_295));
+        for opcode in [0xc0, 0xc1] {
+            check(&[0x41, 0x7f, opcode, 0x0b], TYPE_I32, WasmValue::I32(-1));
+        }
+        for opcode in [0xc2, 0xc3, 0xc4] {
+            check(&[0x42, 0x7f, opcode, 0x0b], TYPE_I64, WasmValue::I64(-1));
+        }
+    }
+
+    fn check_memory(body: &[u8], result: u8, expected: WasmValue) {
+        let bytes = module(&[
+            type_section(&[(&[], &[result])]),
+            function_section(&[0]),
+            raw_section(5, &[1, 1, 1, 2]),
+            export_section(&[("run", 0)]),
+            code_section(&[func_body(&[], body)]),
+        ]);
+        check_module(&bytes, 2, Some(expected));
+    }
+
+    #[test]
+    fn fixed_integer_memory_width_growth_fill_and_copy_vectors_replay_real_steps() {
+        for opcode in [0x28, 0x2c, 0x2d, 0x2e, 0x2f] {
+            check_memory(&[0x41, 0, 0x42, 42, 0x37, 0, 0, 0x41, 0, opcode, 0, 0, 0x0b],
+                TYPE_I32, WasmValue::I32(42));
+        }
+        for opcode in [0x29, 0x30, 0x31, 0x32, 0x33, 0x34, 0x35] {
+            check_memory(&[0x41, 0, 0x42, 42, 0x37, 0, 0, 0x41, 0, opcode, 0, 0, 0x0b],
+                TYPE_I64, WasmValue::I64(42));
+        }
+        for opcode in [0x36, 0x3a, 0x3b] {
+            check_memory(&[0x41, 0, 0x41, 42, opcode, 0, 0, 0x41, 0, 0x28, 0, 0, 0x0b],
+                TYPE_I32, WasmValue::I32(42));
+        }
+        for opcode in [0x37, 0x3c, 0x3d, 0x3e] {
+            check_memory(&[0x41, 0, 0x42, 42, opcode, 0, 0, 0x41, 0, 0x29, 0, 0, 0x0b],
+                TYPE_I64, WasmValue::I64(42));
+        }
+        check_memory(&[0x3f, 0, 0x0b], TYPE_I32, WasmValue::I32(1));
+        check_memory(&[0x41, 1, 0x40, 0, 0x0b], TYPE_I32, WasmValue::I32(1));
+        check_memory(&[0x41, 0, 0x41, 42, 0x41, 1, 0xfc, 0x0b, 0, 0x41, 0, 0x2d, 0, 0, 0x0b],
+            TYPE_I32, WasmValue::I32(42));
+        check_memory(&[0x41, 0, 0x41, 42, 0x3a, 0, 0, 0x41, 1, 0x41, 0, 0x41, 1,
+            0xfc, 0x0a, 0, 0, 0x41, 1, 0x2d, 0, 0, 0x0b], TYPE_I32, WasmValue::I32(42));
+    }
+
+    #[test]
+    fn fixed_control_flow_local_global_and_internal_call_vectors_replay_real_steps() {
+        for body in [
+            &[0x01, 0x41, 42, 0x0b][..],
+            &[0x41, 1, 0x1a, 0x41, 42, 0x0b],
+            &[0x02, TYPE_I32, 0x41, 42, 0x0c, 0, 0x0b, 0x0b],
+            &[0x02, TYPE_I32, 0x41, 42, 0x41, 1, 0x0d, 0, 0x0b, 0x0b],
+            &[0x02, TYPE_I32, 0x41, 42, 0x41, 0, 0x0e, 1, 0, 0, 0x0b, 0x0b],
+            &[0x41, 1, 0x04, TYPE_I32, 0x41, 42, 0x05, 0x41, 0, 0x0b, 0x0b],
+            &[0x03, TYPE_I32, 0x41, 42, 0x0b, 0x0b],
+            &[0x41, 42, 0x0f, 0x0b],
+            &[0x41, 42, 0x41, 0, 0x41, 1, 0x1b, 0x0b],
+            &[0x41, 42, 0x41, 0, 0x41, 1, 0x1c, 1, TYPE_I32, 0x0b],
+        ] {
+            check(body, TYPE_I32, WasmValue::I32(42));
+        }
+        let bytes = module(&[
+            type_section(&[(&[], &[TYPE_I32])]),
+            function_section(&[0, 0]),
+            raw_section(6, &[1, TYPE_I32, 1, 0x41, 0, 0x0b]),
+            export_section(&[("run", 1)]),
+            code_section(&[
+                func_body(&[], &[0x41, 42, 0x0b]),
+                func_body(&[(1, TYPE_I32)], &[0x10, 0, 0x21, 0, 0x20, 0,
+                    0x22, 0, 0x24, 0, 0x23, 0, 0x0b]),
+            ]),
+        ]);
+        check_module(&bytes, 2, Some(WasmValue::I32(42)));
+    }
+
+    #[test]
+    fn every_frozen_host_import_replays_its_real_bounds_or_authorization_refusal() {
+        use crate::abi::{manifest, AbiValueType};
+        let banks: [(u16, &str, &[crate::abi::HostFunction]); 4] = [
+            (1, manifest::ABI_V1_MODULE, &crate::abi::HOST_FUNCTIONS),
+            (2, manifest::ABI_V2_MODULE, &manifest::ABI_V2_HOST_FUNCTIONS),
+            (3, manifest::ABI_V3_MODULE, &manifest::ABI_V3_HOST_FUNCTIONS),
+            (4, manifest::ABI_V4_MODULE, &manifest::ABI_V4_HOST_FUNCTIONS),
+        ];
+        let mut checked = 0;
+        for (version, namespace, functions) in banks {
+            for function in functions {
+                let shape = manifest::permitted_import(version, namespace, function.name)
+                    .unwrap_or_else(|| panic!("frozen import {}", function.name));
+                let types = |values: &[AbiValueType]| values.iter().map(|value| match value {
+                    AbiValueType::I32 => TYPE_I32,
+                    AbiValueType::I64 => TYPE_I64,
+                }).collect::<Vec<_>>();
+                let parameters = types(shape.params);
+                let results = types(shape.results);
+                let mut body = Vec::new();
+                for parameter in shape.params {
+                    body.extend_from_slice(match parameter {
+                        AbiValueType::I32 => &[0x41, 0x7f],
+                        AbiValueType::I64 => &[0x42, 0],
+                    });
+                }
+                body.extend_from_slice(&[0x10, 0, 0x0b]);
+                let bytes = module(&[
+                    type_section(&[(&parameters, &results), (&[], &results)]),
+                    import_section(&[(namespace, function.name, 0)]),
+                    function_section(&[1]),
+                    export_section(&[("run", 1)]),
+                    code_section(&[func_body(&[], &body)]),
+                ]);
+                check_module(&bytes, version, None);
+                checked += 1;
+            }
+        }
+        assert_eq!(checked, 28);
+    }
+}
