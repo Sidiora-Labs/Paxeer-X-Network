@@ -27105,6 +27105,10 @@ source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-9.1-repair1-
 build_evidence = "ce4970d008fdfed2adc2d1464cf0a8ed179708f8 | timeout 20m python3 tools/qualification/paxeer-x/mcp_web_payer.py --build-artifacts | 0 | /root/lx-ops/paxeer-x-integration-2026-10-03/task-9.1-build-repair1.log"
 verification_evidence = "ce4970d008fdfed2adc2d1464cf0a8ed179708f8 | timeout 30m python3 tools/qualification/paxeer-x/mcp_web_payer.py | UNRUN | /root/lx-ops/paxeer-x-integration-2026-10-03/task-9.1-result.json"
 qualification_stop = "12:08UTC task cap expired before focused gate invocation; zero behavior cases executed; one scoped compiler repair used."
+verification_continuation = "Owner approved one existing-artifact verification run; no source changes or rebuild. START2026-10-04T12:21:52.750263+00:00 END2026-10-04T12:36:52.750263+00:00"
+latest_verification_task = "9.5"
+latest_verification_status = "BLOCKED_MISSING_GENUINE_FIXTURE"
+latest_verification_evidence = "ce4970d008fdfed2adc2d1464cf0a8ed179708f8 | timeout 15m python3 tools/qualification/paxeer-x/mcp_web_payer.py | 78 | /root/lx-ops/paxeer-x-integration-2026-10-03/task-9.5-verify.log"
 
 [task.9.2]
 title = "Execute advertised MCP writes through the ordinary daemon authority"
@@ -34958,3 +34962,23 @@ qualification_status = "UNRUN"
 source_status = "complete"
 completion_basis = "implementation under owner CONSTITUTION; qualification separately recorded"
 source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-7.8-source-handoff.json"
+
+[task.9.5]
+title = "Verify the completed MCP web payer through real process boundaries"
+status = "in_progress"
+mode = "QUALIFY"
+wave = 5
+requires = ["9.1"]
+reqs = ["130"]
+touches = ["tools/qualification/paxeer-x/mcp_web_payer.py"]
+verify_cmd = "timeout 15m python3 tools/qualification/paxeer-x/mcp_web_payer.py"
+max_builds = 0
+max_verify_runs = 1
+max_repair_cycles = 0
+time_limit_minutes = 15
+owner_authority = "User approved one existing-artifact verification run; no rebuild or source changes. Preserve original task9.1 build and UNRUN evidence."
+stop_condition = "START2026-10-04T12:22:03.970273+00:00 END2026-10-04T12:37:03.970273+00:00; one gate result or deadline, no source changes or rebuild."
+qualification_status = "BLOCKED_MISSING_GENUINE_FIXTURE"
+qualification_evidence = "ce4970d008fdfed2adc2d1464cf0a8ed179708f8 | timeout 15m python3 tools/qualification/paxeer-x/mcp_web_payer.py | 78 | /root/lx-ops/paxeer-x-integration-2026-10-03/task-9.5-verify.log"
+qualification_stop = "PAXEER_X_AGENTD_UPSTREAM_ARTIFACTS absent; actual worker refused real native upstream owner fixture required;0of38cases executed;no builds,edits,repairs or reruns."
+qualification_result = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-9.5-result.json"
