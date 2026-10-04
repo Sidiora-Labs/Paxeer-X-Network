@@ -3396,15 +3396,15 @@ programs-build:
 
 programs-lint: programs-module-boundaries
 	cd programs && $(PROGRAMS_CARGO) clippy --locked --workspace --all-targets --features layerx-programs-sandbox/host-ffi -- -D warnings
-	sh programs/tools/dependency-policy.sh
+	sh scripts/programs/dependency-policy.sh
 	cd programs && $(PROGRAMS_CARGO) deny check advisories sources
 	cd programs && $(PROGRAMS_CARGO) deny --exclude-dev check bans
 
 programs-module-boundaries:
-	sh programs/tools/runtime-module-boundaries.sh
+	sh tests/programs/runtime-module-boundaries.sh
 
 programs-abi-drift:
-	programs/tools/check-abi-drift.sh
+	tests/programs/check-abi-drift.sh
 	cd programs && $(PROGRAMS_CARGO) test --locked -p layerx-programs-runtime --test abi_linker
 
 .PHONY: programs-generate-capability-fixture programs-check-capability-fixture
@@ -3644,7 +3644,7 @@ programs-reference-web-reader:
 
 .PHONY: programs-reference-fixtures
 programs-reference-fixtures:
-	sh programs/tools/program-fixtures.sh
+	sh scripts/programs/program-fixtures.sh
 
 programs-sdk-rust:
 	npm --prefix programs/sdk/rust ci --ignore-scripts --no-audit --no-fund

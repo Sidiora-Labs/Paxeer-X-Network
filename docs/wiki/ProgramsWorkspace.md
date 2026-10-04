@@ -21,24 +21,24 @@ Members under `programs/crates/` (`programs/Cargo.toml:4-9`):
 
 ## Frozen ABI
 
-`programs/abi-frozen.sha256` stores SHA-256 checksums for frozen ABI vector files. Comment lines start with `#` (`programs/abi-frozen.sha256:1-2`, `programs/tools/generate-abi-vectors.py:94-95`). The pinned rows are (`programs/abi-frozen.sha256:3-4`):
+`programs/abi-frozen.sha256` stores SHA-256 checksums for frozen ABI vector files. Comment lines start with `#` (`programs/abi-frozen.sha256:1-2`, `scripts/programs/generate-abi-vectors.py:94-95`). The pinned rows are (`programs/abi-frozen.sha256:3-4`):
 
 ```
 1 09fcad46aeea9659d7d555a4a09ec151bd36d60b85bfd052d1f7a43cf71d58a3
 2 8827869bf1324c3e82c60baf7360b1c3e2baa84d8591e49eb6b73c2cea6c8b69
 ```
 
-Those digests are compared against `hashlib.sha256(path.read_bytes()).hexdigest()` of `programs/tests/vectors/abi-v{version}.hex` (`programs/tools/generate-abi-vectors.py:11-12`, `programs/tools/generate-abi-vectors.py:93-107`). The file comment states it is reviewed and updated separately only when a newly allocated ABI version is frozen (`programs/abi-frozen.sha256:1-2`).
+Those digests are compared against `hashlib.sha256(path.read_bytes()).hexdigest()` of `programs/tests/vectors/abi-v{version}.hex` (`scripts/programs/generate-abi-vectors.py:11-12`, `scripts/programs/generate-abi-vectors.py:93-107`). The file comment states it is reviewed and updated separately only when a newly allocated ABI version is frozen (`programs/abi-frozen.sha256:1-2`).
 
-`make programs-abi-drift` runs `programs/tools/check-abi-drift.sh`, then `cargo test --locked -p layerx-programs-runtime --test abi_linker` inside `programs/` (`Makefile:2887-2889`). `check-abi-drift.sh` execs `python3 programs/tools/generate-abi-vectors.py --check` (`programs/tools/check-abi-drift.sh:1-4`).
+`make programs-abi-drift` runs `tests/programs/check-abi-drift.sh`, then `cargo test --locked -p layerx-programs-runtime --test abi_linker` inside `programs/` (`Makefile:2887-2889`). `check-abi-drift.sh` execs `python3 scripts/programs/generate-abi-vectors.py --check` (`tests/programs/check-abi-drift.sh:1-4`).
 
 ### `generate-abi-vectors.py`
 
-The generator audits canonical sources under `programs/crates/layerx-programs-runtime/src` (`abi/manifest.rs`, `abi/mod.rs`, `lib.rs`) and `programs/sdk/rust/src/abi.rs` (`programs/tools/generate-abi-vectors.py:5-12`). It requires crate-root `ABI_VERSION` to equal `2` (`programs/tools/generate-abi-vectors.py:45-46`). It rebuilds the v1 and v2 manifests and fails (stderr `ABI surface drift: …`, return `1`) if the v1 table and v1 manifest diverge, if the v1+v2 tables and the composite v2 manifest diverge, if v2 function types and signatures diverge, if the validator allowlist is not derived from the frozen table, or if the Rust SDK v2 manifest or table diverges (`programs/tools/generate-abi-vectors.py:42-84`, `programs/tools/generate-abi-vectors.py:90-92`).
+The generator audits canonical sources under `programs/crates/layerx-programs-runtime/src` (`abi/manifest.rs`, `abi/mod.rs`, `lib.rs`) and `programs/sdk/rust/src/abi.rs` (`scripts/programs/generate-abi-vectors.py:5-12`). It requires crate-root `ABI_VERSION` to equal `2` (`scripts/programs/generate-abi-vectors.py:45-46`). It rebuilds the v1 and v2 manifests and fails (stderr `ABI surface drift: …`, return `1`) if the v1 table and v1 manifest diverge, if the v1+v2 tables and the composite v2 manifest diverge, if v2 function types and signatures diverge, if the validator allowlist is not derived from the frozen table, or if the Rust SDK v2 manifest or table diverges (`scripts/programs/generate-abi-vectors.py:42-84`, `scripts/programs/generate-abi-vectors.py:90-92`).
 
-For each audited version it forms `generated` as the hex encoding of a 2-byte big-endian version prefix plus the manifest bytes, plus a trailing newline, destined for `programs/tests/vectors/abi-v{version}.hex` (`programs/tools/generate-abi-vectors.py:98-100`).
+For each audited version it forms `generated` as the hex encoding of a 2-byte big-endian version prefix plus the manifest bytes, plus a trailing newline, destined for `programs/tests/vectors/abi-v{version}.hex` (`scripts/programs/generate-abi-vectors.py:98-100`).
 
-Write and check behaviour (`programs/tools/generate-abi-vectors.py:101-114`):
+Write and check behaviour (`scripts/programs/generate-abi-vectors.py:101-114`):
 
 - Frozen version, missing vector file: stderr `frozen ABI v{version} vector is missing and cannot be recreated`; return `1`. The generator does not create that file.
 - Frozen version, checksum mismatch against `abi-frozen.sha256`: stderr `frozen ABI v{version} checksum differs from independent baseline`; return `1`.
@@ -47,65 +47,65 @@ Write and check behaviour (`programs/tools/generate-abi-vectors.py:101-114`):
 - Unfrozen version, `--check`, no vector file: stderr `new ABI v{version} has no generated vector`; return `1`.
 - Unfrozen version, no `--check`, no vector file: `path.write_text(generated)` writes `programs/tests/vectors/abi-v{version}.hex`.
 
-`--check` is a boolean flag (`programs/tools/generate-abi-vectors.py:88-89`). `check-abi-drift.sh` passes `--check`, so the Makefile drift gate does not write vectors (`programs/tools/check-abi-drift.sh:4`).
+`--check` is a boolean flag (`scripts/programs/generate-abi-vectors.py:88-89`). `check-abi-drift.sh` passes `--check`, so the Makefile drift gate does not write vectors (`tests/programs/check-abi-drift.sh:4`).
 
 ## Dependency policy
 
 `make programs-lint` depends on `programs-module-boundaries`, then runs Clippy,
-`sh programs/tools/dependency-policy.sh`,
+`sh scripts/programs/dependency-policy.sh`,
 `cd programs && cargo deny check advisories sources`, and
 `cd programs && cargo deny --exclude-dev check bans`
 (`Makefile:2970-2974`). `programs/deny.toml` is the cargo-deny config the last
 two commands consume (`programs/deny.toml:1-57`). The shell script requires
 that file to be readable before it prints success
-(`programs/tools/dependency-policy.sh:163-164`).
+(`scripts/programs/dependency-policy.sh:163-164`).
 
 ### Banned crates (graph-wide, including dev)
 
-`dependency-policy.sh` runs `cargo metadata --manifest-path programs/Cargo.toml --locked --format-version 1` (`programs/tools/dependency-policy.sh:11-12`) and matches every `.packages[].name` against (`programs/tools/dependency-policy.sh:14-18`):
+`dependency-policy.sh` runs `cargo metadata --manifest-path programs/Cargo.toml --locked --format-version 1` (`scripts/programs/dependency-policy.sh:11-12`) and matches every `.packages[].name` against (`scripts/programs/dependency-policy.sh:14-18`):
 
 `bindgen`, `libsqlite3-sys`, `rusqlite`, `sqlx-sqlite`, `ctor`, `inventory`, `getrandom`, `rand`, `chrono`, `time`, `instant`, `tokio`, `mio`, `socket2`, `wasi`, `wasmtime`.
 
-The name check reads every `.packages[].name` and does not filter on dependency kind (`programs/tools/dependency-policy.sh:15`).
+The name check reads every `.packages[].name` and does not filter on dependency kind (`scripts/programs/dependency-policy.sh:15`).
 
 `programs/deny.toml` `[bans].deny` lists the same sixteen crate names (`programs/deny.toml:32-49`). `[graph] all-features = true` (`programs/deny.toml:1-2`). The Makefile bans check passes `--exclude-dev` before `check bans` (`Makefile:2974`), so cargo-deny bans omit dev-only packages. The shell script does not omit them.
 
-`rand_core` is not in the banned-name list. If any `rand_core` node in `resolve.nodes` enables feature `getrandom` or `std`, the script prints `programs dependency policy: rand_core entropy features are forbidden` and exits `1` (`programs/tools/dependency-policy.sh:19-28`).
+`rand_core` is not in the banned-name list. If any `rand_core` node in `resolve.nodes` enables feature `getrandom` or `std`, the script prints `programs dependency policy: rand_core entropy features are forbidden` and exits `1` (`scripts/programs/dependency-policy.sh:19-28`).
 
 ### Exact exit behaviour (`dependency-policy.sh`)
 
-The script uses `set -eu` (`programs/tools/dependency-policy.sh:2`). Failures write one line to stderr and `exit 1`:
+The script uses `set -eu` (`scripts/programs/dependency-policy.sh:2`). Failures write one line to stderr and `exit 1`:
 
 | Condition | Stderr | Lines |
 | --- | --- | --- |
-| Banned package name in metadata | `programs dependency policy: forbidden boundary, clock, randomness or network crate` | `programs/tools/dependency-policy.sh:15-18` |
-| `rand_core` with `getrandom` or `std` | `programs dependency policy: rand_core entropy features are forbidden` | `programs/tools/dependency-policy.sh:19-28` |
-| Sourced package with empty license | `programs dependency policy: $package has no SPDX license` | `programs/tools/dependency-policy.sh:44-47` |
-| License tokens outside the script allowlist | `programs dependency policy: $package uses non-allowlisted license $license` | `programs/tools/dependency-policy.sh:48-79` |
-| Sourced package/version lacking a vendored `Cargo.toml` plus `.cargo-checksum.json` | `programs vendoring policy: $package $version is not vendored with a checksum` | `programs/tools/dependency-policy.sh:106-114` |
-| Workspace `wasmi` pin is not `path = "vendor/wasmi-0.31.2"` and `version = "=0.31.2"` | `programs vendoring policy: the WASM engine must stay pinned to an exact revision` | `programs/tools/dependency-policy.sh:116-125` |
-| `programs/.cargo/config.toml` lacks `replace-with = "vendored-sources"` | `programs vendoring policy: builds must resolve the engine from programs/vendor` | `programs/tools/dependency-policy.sh:126-130` |
-| `unsafe fn` / `unsafe trait` / `unsafe impl` / `unsafe extern` / `unsafe {` under `programs/crates`, except `layerx-programs-runtime/src/ffi*.rs`, `layerx-programs-sandbox/src/host_ffi.rs`, and `layerx-programs-protocol-adapter/src/ffi.rs` | `programs unsafe policy: unsafe code is forbidden` | `programs/tools/dependency-policy.sh:132-150` |
-| `f32` or `f64` under `programs/crates` | `programs integer-only policy: floating-point types are forbidden in consensus-adjacent code` | `programs/tools/dependency-policy.sh:152-161` |
+| Banned package name in metadata | `programs dependency policy: forbidden boundary, clock, randomness or network crate` | `scripts/programs/dependency-policy.sh:15-18` |
+| `rand_core` with `getrandom` or `std` | `programs dependency policy: rand_core entropy features are forbidden` | `scripts/programs/dependency-policy.sh:19-28` |
+| Sourced package with empty license | `programs dependency policy: $package has no SPDX license` | `scripts/programs/dependency-policy.sh:44-47` |
+| License tokens outside the script allowlist | `programs dependency policy: $package uses non-allowlisted license $license` | `scripts/programs/dependency-policy.sh:48-79` |
+| Sourced package/version lacking a vendored `Cargo.toml` plus `.cargo-checksum.json` | `programs vendoring policy: $package $version is not vendored with a checksum` | `scripts/programs/dependency-policy.sh:106-114` |
+| Workspace `wasmi` pin is not `path = "vendor/wasmi-0.31.2"` and `version = "=0.31.2"` | `programs vendoring policy: the WASM engine must stay pinned to an exact revision` | `scripts/programs/dependency-policy.sh:116-125` |
+| `programs/.cargo/config.toml` lacks `replace-with = "vendored-sources"` | `programs vendoring policy: builds must resolve the engine from programs/vendor` | `scripts/programs/dependency-policy.sh:126-130` |
+| `unsafe fn` / `unsafe trait` / `unsafe impl` / `unsafe extern` / `unsafe {` under `programs/crates`, except `layerx-programs-runtime/src/ffi*.rs`, `layerx-programs-sandbox/src/host_ffi.rs`, and `layerx-programs-protocol-adapter/src/ffi.rs` | `programs unsafe policy: unsafe code is forbidden` | `scripts/programs/dependency-policy.sh:132-150` |
+| `f32` or `f64` under `programs/crates` | `programs integer-only policy: floating-point types are forbidden in consensus-adjacent code` | `scripts/programs/dependency-policy.sh:152-161` |
 
-On success it prints `programs dependency, vendoring, unsafe and integer-only policies passed` (`programs/tools/dependency-policy.sh:164`).
+On success it prints `programs dependency, vendoring, unsafe and integer-only policies passed` (`scripts/programs/dependency-policy.sh:164`).
 
-The script license allowlist tokens are `Apache-2.0`, `BSD-1-Clause`, `BSD-2-Clause`, `BSD-3-Clause`, `CC0-1.0`, `ISC`, `MIT`, `Unicode-3.0`, `Zlib`, `LLVM-exception` (`programs/tools/dependency-policy.sh:30-38`). `programs/deny.toml` `[licenses].allow` lists `Apache-2.0`, `Apache-2.0 WITH LLVM-exception`, `BSD-2-Clause`, `BSD-3-Clause`, `CC0-1.0`, `ISC`, `MIT`, `Unicode-3.0`, `Zlib` (`programs/deny.toml:15-25`). `BSD-1-Clause` is in the script allowlist and absent from `deny.toml`.
+The script license allowlist tokens are `Apache-2.0`, `BSD-1-Clause`, `BSD-2-Clause`, `BSD-3-Clause`, `CC0-1.0`, `ISC`, `MIT`, `Unicode-3.0`, `Zlib`, `LLVM-exception` (`scripts/programs/dependency-policy.sh:30-38`). `programs/deny.toml` `[licenses].allow` lists `Apache-2.0`, `Apache-2.0 WITH LLVM-exception`, `BSD-2-Clause`, `BSD-3-Clause`, `CC0-1.0`, `ISC`, `MIT`, `Unicode-3.0`, `Zlib` (`programs/deny.toml:15-25`). `BSD-1-Clause` is in the script allowlist and absent from `deny.toml`.
 
 ## Module-boundary check
 
-`make programs-module-boundaries` runs `sh programs/tools/runtime-module-boundaries.sh` (`Makefile:2884-2885`). With no argument the script checks `programs/crates/layerx-programs-runtime/src` (`programs/tools/runtime-module-boundaries.sh:4`). After `check_root` it re-executes itself with `--self-test` (`programs/tools/runtime-module-boundaries.sh:223-224`).
+`make programs-module-boundaries` runs `sh tests/programs/runtime-module-boundaries.sh` (`Makefile:2884-2885`). With no argument the script checks `programs/crates/layerx-programs-runtime/src` (`tests/programs/runtime-module-boundaries.sh:4`). After `check_root` it re-executes itself with `--self-test` (`tests/programs/runtime-module-boundaries.sh:223-224`).
 
-`check_root` fails (non-zero return, stderr as below) when (`programs/tools/runtime-module-boundaries.sh:43-137`):
+`check_root` fails (non-zero return, stderr as below) when (`tests/programs/runtime-module-boundaries.sh:43-137`):
 
-- A required file is missing: `budget.rs`; `abi/{mod,balance,capability,codec,context,event_tests,host_state,manifest,response,storage_ops}.rs`; `host/{mod,balance,context,memory,storage,events,calls,transfer,scan,crypto,signature}.rs` (`programs/tools/runtime-module-boundaries.sh:47-58`). Stderr: `runtime module boundary: missing $path`.
-- Legacy `abi.rs` or `host.rs` exists (`programs/tools/runtime-module-boundaries.sh:60-66`). Stderr: `runtime module boundary: legacy $legacy remains`.
-- Any `ffi*.rs` or `lifecycle.rs` matches `_for_qualification` (`programs/tools/runtime-module-boundaries.sh:68-75`). Stderr: `runtime module boundary: production transition reaches qualification-only API`.
-- The `abi/` `*.rs` basename set is not exactly `balance.rs capability.rs codec.rs context.rs event_tests.rs host_state.rs manifest.rs mod.rs response.rs storage_ops.rs` (`programs/tools/runtime-module-boundaries.sh:77-89`). Stderr: `runtime module boundary: unexpected ABI module inventory`.
-- The `host/` `*.rs` basename set is not exactly `balance.rs calls.rs context.rs crypto.rs events.rs memory.rs mod.rs scan.rs signature.rs storage.rs transfer.rs` (`programs/tools/runtime-module-boundaries.sh:90-103`). Stderr: `runtime module boundary: unexpected host module inventory`.
-- Host families `storage`, `events`, `calls`, `transfer`, `scan`, `crypto`, `signature` import a sibling family, name or alias a forbidden parent (`crate::host`, `use crate as`, `use super as`, grouped `self as`, `extern crate self as`), or mention `Abi` / `Composition` / `Storage` / `Meter` / `RuntimeState` as code tokens (`programs/tools/runtime-module-boundaries.sh:104-135`). Stderr: `runtime module boundary: $family imports a sibling host family`, `runtime module boundary: $family names or aliases a forbidden parent`, or `runtime module boundary: $family reaches state outside RuntimeState`.
+- A required file is missing: `budget.rs`; `abi/{mod,balance,capability,codec,context,event_tests,host_state,manifest,response,storage_ops}.rs`; `host/{mod,balance,context,memory,storage,events,calls,transfer,scan,crypto,signature}.rs` (`tests/programs/runtime-module-boundaries.sh:47-58`). Stderr: `runtime module boundary: missing $path`.
+- Legacy `abi.rs` or `host.rs` exists (`tests/programs/runtime-module-boundaries.sh:60-66`). Stderr: `runtime module boundary: legacy $legacy remains`.
+- Any `ffi*.rs` or `lifecycle.rs` matches `_for_qualification` (`tests/programs/runtime-module-boundaries.sh:68-75`). Stderr: `runtime module boundary: production transition reaches qualification-only API`.
+- The `abi/` `*.rs` basename set is not exactly `balance.rs capability.rs codec.rs context.rs event_tests.rs host_state.rs manifest.rs mod.rs response.rs storage_ops.rs` (`tests/programs/runtime-module-boundaries.sh:77-89`). Stderr: `runtime module boundary: unexpected ABI module inventory`.
+- The `host/` `*.rs` basename set is not exactly `balance.rs calls.rs context.rs crypto.rs events.rs memory.rs mod.rs scan.rs signature.rs storage.rs transfer.rs` (`tests/programs/runtime-module-boundaries.sh:90-103`). Stderr: `runtime module boundary: unexpected host module inventory`.
+- Host families `storage`, `events`, `calls`, `transfer`, `scan`, `crypto`, `signature` import a sibling family, name or alias a forbidden parent (`crate::host`, `use crate as`, `use super as`, grouped `self as`, `extern crate self as`), or mention `Abi` / `Composition` / `Storage` / `Meter` / `RuntimeState` as code tokens (`tests/programs/runtime-module-boundaries.sh:104-135`). Stderr: `runtime module boundary: $family imports a sibling host family`, `runtime module boundary: $family names or aliases a forbidden parent`, or `runtime module boundary: $family reaches state outside RuntimeState`.
 
-`--self-test` builds a temporary layout, asserts the valid layout is accepted, and asserts missing `budget.rs`, qualification-API leakage, sibling imports, parent aliases, and direct state access are rejected (`programs/tools/runtime-module-boundaries.sh:140-220`).
+`--self-test` builds a temporary layout, asserts the valid layout is accepted, and asserts missing `budget.rs`, qualification-API leakage, sibling imports, parent aliases, and direct state access are rejected (`tests/programs/runtime-module-boundaries.sh:140-220`).
 
 ## Fixture recipes
 

@@ -616,8 +616,8 @@ Sources:
 2 8827869bf1324c3e82c60baf7360b1c3e2baa84d8591e49eb6b73c2cea6c8b69
 ```
 
-`make programs-abi-drift` runs `programs/tools/check-abi-drift.sh`, which
-executes `programs/tools/generate-abi-vectors.py --check`. The generator
+`make programs-abi-drift` runs `tests/programs/check-abi-drift.sh`, which
+executes `scripts/programs/generate-abi-vectors.py --check`. The generator
 rebuilds the v1 and v2 manifests from `abi/manifest.rs`, `abi/mod.rs`,
 `lib.rs`, and `programs/sdk/rust/src/abi.rs`, and fails if they diverge from
 the frozen checksums or from each other (v1 table vs v1 manifest; v1+v2
@@ -630,8 +630,8 @@ ABI version is frozen.
 Sources:
 
 - `programs/abi-frozen.sha256`
-- `programs/tools/check-abi-drift.sh`
-- `programs/tools/generate-abi-vectors.py`
+- `tests/programs/check-abi-drift.sh`
+- `scripts/programs/generate-abi-vectors.py`
 - `Makefile` (`programs-abi-drift`, `programs-test`)
 
 ---

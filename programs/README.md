@@ -50,14 +50,15 @@ arithmetic are denied across the tree.
 | `sdk/rust`, `sdk/c`, `sdk/assemblyscript` | Guest program SDKs; Rust ships `escrow`, `naming`, `nft-lxt721`, `payments-merchant`, `swap-cpmm`, `token-lxt20`, and `vault`, while C and AssemblyScript ship `paid-counter` |
 | `porting/evm`, `porting/solana`, `porting/cosmwasm` | Migration crates and `MIGRATION.md` guides mapping Solidity / Anchor / CosmWasm vocabulary onto the programs ABI |
 | `fuzz` | Structure-aware fuzz target and corpus for the runtime |
-| `tools` | Boundary scripts: `dependency-policy.sh`, `runtime-module-boundaries.sh` |
+| `../scripts/programs` | Dependency policy, immutable ABI-vector generation, and reference-fixture build scripts |
+| `../tests/programs` | Standalone ABI-drift and runtime module-boundary checks |
 | `tests` | Cross-implementation vectors, the hostile-program `gauntlet`, and calldata fixtures |
 | `vendor` | Vendored, pinned dependencies for a hermetic build |
 
 Cargo promotes path dependencies below the workspace root into workspace members.
 Consequently `--workspace` gates exercise the vendored `parity-wasm`, `wasm-instrument`,
 and `wasmi` unit and documentation tests as well as every LayerX package. The vendored
-crates also remain subject to `tools/dependency-policy.sh`.
+crates also remain subject to `../scripts/programs/dependency-policy.sh`.
 
 ### The three crates
 
@@ -241,8 +242,8 @@ Each has a `MIGRATION.md` written for a developer who already knows the source c
 ## Fuzzing, tools, and tests
 
 - **`fuzz/`** - a structure-aware fuzz target (`src/main.rs`) with a checked-in corpus.
-- **`tools/dependency-policy.sh`** - enforces the vendored-dependency policy (`deny.toml`).
-- **`tools/runtime-module-boundaries.sh`** - enforces the runtime's module-boundary rules.
+- **`../scripts/programs/dependency-policy.sh`** - enforces the vendored-dependency policy (`deny.toml`).
+- **`../tests/programs/runtime-module-boundaries.sh`** - enforces the runtime's module-boundary rules.
 - **`tests/gauntlet/`** - the hostile-program gauntlet (cross-program derivation, callee
   spend attempts, escalation across depth/fan-out/repeated visits) with an
   `attack-inventory.tsv`.

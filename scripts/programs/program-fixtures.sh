@@ -25,8 +25,8 @@
 # cleared.
 set -eu
 
-programs_dir=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
-root_dir=$(CDPATH= cd -- "$programs_dir/.." && pwd)
+root_dir=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
+programs_dir="$root_dir/programs"
 target=wasm32-unknown-unknown
 CARGO=${CARGO:-cargo}
 program_id=5555555555555555555555555555555555555555555555555555555555555555
