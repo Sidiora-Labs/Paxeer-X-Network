@@ -23909,8 +23909,15 @@ fleet_cutoff_utc = "2026-10-04T14:06:30Z"
 fleet_authority = "User ordered thirty agents into pending integrations within four hours; this task has a fresh bounded implementation assignment."
 source_status = "complete"
 completion_basis = "implementation under owner CONSTITUTION; qualification separately recorded"
-qualification_status = "UNRUN"
+qualification_status = "IMPLEMENTED_NOT_FULLY_QUALIFIED"
 source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-104.17.3-publication.json"
+qualification_revision = "4aeba5f24b1ced1f025c0e9e68b9042d33cfab97"
+qualification_command = "timeout 30m tools/paxeer-x/verify-task.sh 104.17.3"
+qualification_exit_code = 8
+qualification_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-104.17.3-verify.log"
+build_status = "PASSED"
+build_exit_code = 0
+qualification_evidence = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-104.17.3-qualification-result.json"
 
 [task.104.19.2]
 title = "Implement deterministic execution and metering"
