@@ -1,0 +1,12 @@
+{
+  "status": 503,
+  "body": {
+    "ok": false,
+    "error": {
+      "code": "upstream-degraded",
+      "copy_key": "error.upstream.degraded",
+      "retry": "retriable"
+    },
+    "trace": "trc_program_approval_contract_example"
+  }
+}

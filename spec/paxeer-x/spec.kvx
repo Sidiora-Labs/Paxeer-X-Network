@@ -32612,7 +32612,7 @@ do_1 = "Persist actual trusted-clock approval creation time with exact existing 
 do_2 = "Return genuine post-held-activity budget through the actual budget/reservation/verified-read owner, retaining asset, denomination, authority and evidence binding. Never relabel full unchanged balance as budget remaining after."
 do_3 = "Expose real managed-agent receipt bytes through authenticated tenant/session ownership and actual export/evidence store, preserving digest and canonical verification; do not fabricate evd IDs without exportable backing."
 do_4 = "Freeze and wire the distinct producer/consumer response profile to Human AgentRuntime and AgentApprovalRecord, retaining legacy encodings and checks; author genuine producer-to-consumer positive/refusal/reopen cases."
-touches = ["agent/crates/layerx-agentd/src/policy/approval.rs", "agent/crates/layerx-agentd/src/approval/mod.rs", "agent/crates/layerx-agentd/src/approval/events.rs", "agent/crates/layerx-agentd/src/human_runtime.rs", "agent/crates/layerx-agentd/src/managed_agent.rs", "human/crates/layerx-human-service/src/server/agent_runtime.rs", "human/crates/layerx-human-service/src/approvals/mod.rs", "agent/crates/layerx-agentd/tests/human_projection_facts.rs", "tools/qualification/paxeer-x/human-projection-facts.py", "agent/crates/layerx-agentd/src/human.rs", "agent/crates/layerx-agentd/src/budget/reserve.rs", "agent/crates/layerx-agentd/src/approval/native_program.rs"]
+touches = ["agent/crates/layerx-agentd/src/policy/approval.rs", "agent/crates/layerx-agentd/src/approval/mod.rs", "agent/crates/layerx-agentd/src/approval/events.rs", "agent/crates/layerx-agentd/src/human_runtime.rs", "agent/crates/layerx-agentd/src/managed_agent.rs", "human/crates/layerx-human-service/src/approvals/mod.rs", "agent/crates/layerx-agentd/tests/human_projection_facts.rs", "tools/qualification/paxeer-x/human-projection-facts.py", "agent/crates/layerx-agentd/src/human.rs", "agent/crates/layerx-agentd/src/budget/reserve.rs", "agent/crates/layerx-agentd/src/approval/native_program.rs"]
 build_cmd = "timeout 20m env CARGO_TARGET_DIR=/root/lx-target/human-facts cargo test --locked --manifest-path agent/Cargo.toml -p layerx-agentd --test human_projection_facts --no-run"
 verify_cmd = "timeout 20m python3 tools/qualification/paxeer-x/human-projection-facts.py"
 max_builds = 1
@@ -32623,6 +32623,10 @@ stop_condition = "Stop at original dispatch cap, second failed repair, missing g
 completion_basis_policy = "Fully implemented DONE by owner CONSTITUTION; actual qualification separate."
 source_ownership = "Root owns all shared schema, generation, manifests, locks, spec and publication. Source helpers use only exact disjoint producer/consumer files."
 
+
+retained_contract_paths = ["agent/crates/layerx-agentd/src/policy/approval.rs", "agent/crates/layerx-agentd/src/approval/mod.rs", "agent/crates/layerx-agentd/src/approval/events.rs", "agent/crates/layerx-agentd/src/human_runtime.rs", "agent/crates/layerx-agentd/src/managed_agent.rs", "human/crates/layerx-human-service/src/server/agent_runtime.rs", "human/crates/layerx-human-service/src/approvals/mod.rs", "agent/crates/layerx-agentd/tests/human_projection_facts.rs", "tools/qualification/paxeer-x/human-projection-facts.py", "agent/crates/layerx-agentd/src/human.rs", "agent/crates/layerx-agentd/src/budget/reserve.rs", "agent/crates/layerx-agentd/src/approval/native_program.rs"]
+delegated_source_task = "104.13.22"
+delegated_source_paths = ["human/crates/layerx-human-service/src/server/agent_runtime.rs"]
 [task.0.11]
 title = "Preserve legacy deposit fault encoding with complete SDK error handling"
 status = "done"
@@ -32795,7 +32799,7 @@ reqs = ["1064.3", "1064.8", "1071.1", "1071.5"]
 do_1 = "Wire actual generic gated preparation to the existing configured policy evaluator, genuine typed budget reservation and hold_reserved_at with trusted clock; bind exact tenant/principal/session/actor/payload and preserve legacy refusals."
 do_2 = "Connect real native Programs presentation sidecars to explicit unused private facts selectors and actual Human AgentRuntime consumers; never substitute generic approval for a native carrier."
 do_3 = "Supply the actual closed producer types needed by canonical Human projection, preserve all old hashes/encodings, and author real production admission/reopen/tenant/refusal cases."
-touches = ["agent/crates/layerx-agentd/src/human_runtime.rs", "agent/crates/layerx-agentd/src/human.rs", "agent/crates/layerx-agentd/src/policy/approval.rs", "agent/crates/layerx-agentd/src/policy/eval.rs", "agent/crates/layerx-agentd/src/policy/operation.rs", "agent/crates/layerx-agentd/src/policy/mod.rs", "agent/crates/layerx-agentd/src/approval/native_program.rs", "human/crates/layerx-human-service/src/server/agent_runtime.rs", "human/crates/layerx-human-service/src/approvals/mod.rs", "agent/crates/layerx-agentd/tests/human_approval_admission.rs", "tools/qualification/paxeer-x/human-approval-admission.py", "agent/crates/layerx-agentd/src/session_control.rs", "agent/crates/layerx-agentd/src/policy/version.rs", "agent/crates/layerx-agentd/src/managed_agent.rs"]
+touches = ["agent/crates/layerx-agentd/src/human_runtime.rs", "agent/crates/layerx-agentd/src/human.rs", "agent/crates/layerx-agentd/src/policy/approval.rs", "agent/crates/layerx-agentd/src/policy/eval.rs", "agent/crates/layerx-agentd/src/policy/operation.rs", "agent/crates/layerx-agentd/src/policy/mod.rs", "agent/crates/layerx-agentd/src/approval/native_program.rs", "human/crates/layerx-human-service/src/approvals/mod.rs", "agent/crates/layerx-agentd/tests/human_approval_admission.rs", "tools/qualification/paxeer-x/human-approval-admission.py", "agent/crates/layerx-agentd/src/session_control.rs", "agent/crates/layerx-agentd/src/policy/version.rs", "agent/crates/layerx-agentd/src/managed_agent.rs"]
 build_cmd = "timeout 20m env CARGO_TARGET_DIR=/root/lx-target/agent /root/.cargo/bin/cargo test --locked --manifest-path agent/Cargo.toml -p layerx-agentd --test human_approval_admission --no-run"
 verify_cmd = "timeout 10m python3 tools/qualification/paxeer-x/human-approval-admission.py"
 max_builds = 1
@@ -32809,6 +32813,10 @@ source_status = "partial"
 qualification_status = "unrun_partial_source"
 remaining_source = "Native non-Programs capability/session/hold admission and complete real admission corpus; assigned distinct104.13.11."
 
+
+retained_contract_paths = ["agent/crates/layerx-agentd/src/human_runtime.rs", "agent/crates/layerx-agentd/src/human.rs", "agent/crates/layerx-agentd/src/policy/approval.rs", "agent/crates/layerx-agentd/src/policy/eval.rs", "agent/crates/layerx-agentd/src/policy/operation.rs", "agent/crates/layerx-agentd/src/policy/mod.rs", "agent/crates/layerx-agentd/src/approval/native_program.rs", "human/crates/layerx-human-service/src/server/agent_runtime.rs", "human/crates/layerx-human-service/src/approvals/mod.rs", "agent/crates/layerx-agentd/tests/human_approval_admission.rs", "tools/qualification/paxeer-x/human-approval-admission.py", "agent/crates/layerx-agentd/src/session_control.rs", "agent/crates/layerx-agentd/src/policy/version.rs", "agent/crates/layerx-agentd/src/managed_agent.rs"]
+delegated_source_task = "104.13.22"
+delegated_source_paths = ["human/crates/layerx-human-service/src/server/agent_runtime.rs"]
 [task.6.7]
 title = "Expose the canonical account profile predicate at the existing runtime ABI facade"
 status = "done"
@@ -32867,7 +32875,7 @@ wave = 2
 requires = ["0.2", "8.1"]
 reqs = ["1064.3", "1064.8", "1071.1", "1071.5"]
 do_1 = "Add a closed module/ordinal native non-Programs capability, policy and session authority profile using genuine account references; connect actual configured admission, budget reservation and atomic hold to real Human consumers. Preserve old u16/Programs-only profiles and every refusal."
-touches = ["agent/crates/layerx-agentd/src/capability/binding.rs", "agent/crates/layerx-agentd/src/policy/native_program.rs", "agent/crates/layerx-agentd/src/approval/native_effect.rs", "agent/crates/layerx-agentd/src/approval/mod.rs", "agent/crates/layerx-agentd/src/session_control.rs", "agent/crates/layerx-agentd/src/human_runtime.rs", "agent/crates/layerx-agentd/src/human.rs", "agent/crates/layerx-agentd/src/managed_agent.rs", "agent/crates/layerx-agentd/src/policy/approval.rs", "agent/crates/layerx-agentd/src/policy/eval.rs", "agent/crates/layerx-agentd/src/policy/operation.rs", "agent/crates/layerx-agentd/src/policy/version.rs", "agent/crates/layerx-agentd/src/policy/mod.rs", "human/crates/layerx-human-service/src/server/agent_runtime.rs", "human/crates/layerx-human-service/src/approvals/mod.rs", "agent/crates/layerx-agentd/tests/human_approval_admission.rs", "tools/qualification/paxeer-x/human-approval-admission.py", "agent/crates/layerx-agentd/src/config.rs", "agent/crates/layerx-agentd/src/main.rs", "agent/crates/layerx-agentd/src/budget/program_sources.rs", "agent/crates/layerx-agentd/src/budget/mod.rs", "agent/crates/layerx-agentd/src/capability/effects.rs", "agent/crates/layerx-agent-api/src/identity.rs", "agent/crates/layerx-agentd/src/agent_rpc_dispatch.rs", "agent/crates/layerx-agentd/src/agent_rpc_wire.rs", "agent/schema/agent-api/v1.kvx", "agent/crates/layerx-agentd/src/agent_rpc_adapters.rs", "agent/crates/layerx-agentd/src/capability/mod.rs", "agent/crates/layerx-agentd/src/budget/reserve.rs"]
+touches = ["agent/crates/layerx-agentd/src/capability/binding.rs", "agent/crates/layerx-agentd/src/policy/native_program.rs", "agent/crates/layerx-agentd/src/approval/native_effect.rs", "agent/crates/layerx-agentd/src/approval/mod.rs", "agent/crates/layerx-agentd/src/session_control.rs", "agent/crates/layerx-agentd/src/human_runtime.rs", "agent/crates/layerx-agentd/src/human.rs", "agent/crates/layerx-agentd/src/managed_agent.rs", "agent/crates/layerx-agentd/src/policy/approval.rs", "agent/crates/layerx-agentd/src/policy/eval.rs", "agent/crates/layerx-agentd/src/policy/operation.rs", "agent/crates/layerx-agentd/src/policy/version.rs", "agent/crates/layerx-agentd/src/policy/mod.rs", "human/crates/layerx-human-service/src/approvals/mod.rs", "agent/crates/layerx-agentd/tests/human_approval_admission.rs", "tools/qualification/paxeer-x/human-approval-admission.py", "agent/crates/layerx-agentd/src/config.rs", "agent/crates/layerx-agentd/src/main.rs", "agent/crates/layerx-agentd/src/budget/program_sources.rs", "agent/crates/layerx-agentd/src/budget/mod.rs", "agent/crates/layerx-agentd/src/capability/effects.rs", "agent/crates/layerx-agent-api/src/identity.rs", "agent/crates/layerx-agentd/src/agent_rpc_dispatch.rs", "agent/crates/layerx-agentd/src/agent_rpc_wire.rs", "agent/schema/agent-api/v1.kvx", "agent/crates/layerx-agentd/src/agent_rpc_adapters.rs", "agent/crates/layerx-agentd/src/capability/mod.rs", "agent/crates/layerx-agentd/src/budget/reserve.rs"]
 build_cmd = "timeout 20m env CARGO_TARGET_DIR=/root/lx-target/agent /root/.cargo/bin/cargo test --locked --manifest-path agent/Cargo.toml -p layerx-agentd --test human_approval_admission --no-run"
 verify_cmd = "timeout 10m python3 tools/qualification/paxeer-x/human-approval-admission.py"
 max_builds = 1
@@ -32881,6 +32889,10 @@ source_status = "partial"
 qualification_status = "unrun_partial_source"
 remaining_source = "Verified native budget and evidence export, ordinary allocation settlement, actual submission reference, legacy policy admission, lifecycle rollback and genuine admission corpus."
 
+
+retained_contract_paths = ["agent/crates/layerx-agentd/src/capability/binding.rs", "agent/crates/layerx-agentd/src/policy/native_program.rs", "agent/crates/layerx-agentd/src/approval/native_effect.rs", "agent/crates/layerx-agentd/src/approval/mod.rs", "agent/crates/layerx-agentd/src/session_control.rs", "agent/crates/layerx-agentd/src/human_runtime.rs", "agent/crates/layerx-agentd/src/human.rs", "agent/crates/layerx-agentd/src/managed_agent.rs", "agent/crates/layerx-agentd/src/policy/approval.rs", "agent/crates/layerx-agentd/src/policy/eval.rs", "agent/crates/layerx-agentd/src/policy/operation.rs", "agent/crates/layerx-agentd/src/policy/version.rs", "agent/crates/layerx-agentd/src/policy/mod.rs", "human/crates/layerx-human-service/src/server/agent_runtime.rs", "human/crates/layerx-human-service/src/approvals/mod.rs", "agent/crates/layerx-agentd/tests/human_approval_admission.rs", "tools/qualification/paxeer-x/human-approval-admission.py", "agent/crates/layerx-agentd/src/config.rs", "agent/crates/layerx-agentd/src/main.rs", "agent/crates/layerx-agentd/src/budget/program_sources.rs", "agent/crates/layerx-agentd/src/budget/mod.rs", "agent/crates/layerx-agentd/src/capability/effects.rs", "agent/crates/layerx-agent-api/src/identity.rs", "agent/crates/layerx-agentd/src/agent_rpc_dispatch.rs", "agent/crates/layerx-agentd/src/agent_rpc_wire.rs", "agent/schema/agent-api/v1.kvx", "agent/crates/layerx-agentd/src/agent_rpc_adapters.rs", "agent/crates/layerx-agentd/src/capability/mod.rs", "agent/crates/layerx-agentd/src/budget/reserve.rs"]
+delegated_source_task = "104.13.22"
+delegated_source_paths = ["human/crates/layerx-human-service/src/server/agent_runtime.rs"]
 [task.104.13.12]
 title = "Connect actual native approval facts to shared canonical Human API projections"
 status = "in_progress"
@@ -32889,7 +32901,7 @@ wave = 3
 requires = ["0.2", "104.13.7"]
 reqs = ["1064.3", "1064.8", "1071.1", "1071.5"]
 do_1 = "Project actual authenticated records into distinct canonical summaries, details, decisions, home and durable push; use genuine wall timestamps, managed association, evidence export and postreservation budget without raising verification status."
-touches = ["human/crates/layerx-human-service/src/server/production_components.rs", "human/crates/layerx-human-service/src/server/mod.rs", "human/crates/layerx-human-service/src/server/projection.rs", "tools/qualification/paxeer-x/human-canonical-projections.py", "human/apps/web/copy/catalog.ts", "human/apps/web/copy/messages.generated.ts"]
+touches = ["tools/qualification/paxeer-x/human-canonical-projections.py", "human/apps/web/copy/catalog.ts", "human/apps/web/copy/messages.generated.ts"]
 build_cmd = "timeout 20m env CARGO_TARGET_DIR=/root/lx-target/human /root/.cargo/bin/cargo build --locked --manifest-path human/Cargo.toml -p layerx-human-service"
 verify_cmd = "timeout 20m python3 tools/qualification/paxeer-x/human-canonical-projections.py --candidate-manifest \"$PAXEER_X_CANDIDATE_MANIFEST\""
 max_builds = 1
@@ -32903,6 +32915,10 @@ source_status = "partial"
 qualification_status = "unrun_partial_source"
 remaining_source = "Native profile canonical consumers and exact held/budget evidence require genuine producer; terminal budget owner and focused projection case incomplete."
 
+
+retained_contract_paths = ["human/crates/layerx-human-service/src/server/production_components.rs", "human/crates/layerx-human-service/src/server/mod.rs", "human/crates/layerx-human-service/src/server/projection.rs", "tools/qualification/paxeer-x/human-canonical-projections.py", "human/apps/web/copy/catalog.ts", "human/apps/web/copy/messages.generated.ts"]
+delegated_source_task = "104.13.22"
+delegated_source_paths = ["human/crates/layerx-human-service/src/server/production_components.rs", "human/crates/layerx-human-service/src/server/mod.rs", "human/crates/layerx-human-service/src/server/projection.rs"]
 [task.104.35.19]
 title = "Preserve deterministic authenticated admission capture through maintenance publication"
 status = "done"
@@ -33163,7 +33179,7 @@ reqs = ["1064.3", "1064.8", "1071.1", "1071.5"]
 do_1 = "Finish native typed verified budget and exact owned held/budget proof exports, including terminal reads; use actual core authority and reservations without fabricating remaining amounts."
 do_2 = "Connect ordinary non-Programs allocation receipt settlement, actual durable queue submission references and lifecycle error rollback while preserving every legacy Programs/u16/refusal/profile."
 do_3 = "Connect actual legacy configured admission to the existing owner and author the genuine production admission/reopen/decision/refusal corpus and gate."
-touches = ["agent/crates/layerx-agentd/src/capability/binding.rs", "agent/crates/layerx-agentd/src/policy/native_program.rs", "agent/crates/layerx-agentd/src/approval/native_effect.rs", "agent/crates/layerx-agentd/src/approval/mod.rs", "agent/crates/layerx-agentd/src/session_control.rs", "agent/crates/layerx-agentd/src/human_runtime.rs", "agent/crates/layerx-agentd/src/human.rs", "agent/crates/layerx-agentd/src/managed_agent.rs", "agent/crates/layerx-agentd/src/policy/approval.rs", "agent/crates/layerx-agentd/src/policy/eval.rs", "agent/crates/layerx-agentd/src/policy/operation.rs", "agent/crates/layerx-agentd/src/policy/version.rs", "agent/crates/layerx-agentd/src/policy/mod.rs", "human/crates/layerx-human-service/src/server/agent_runtime.rs", "human/crates/layerx-human-service/src/approvals/mod.rs", "agent/crates/layerx-agentd/tests/human_approval_admission.rs", "tools/qualification/paxeer-x/human-approval-admission.py", "agent/crates/layerx-agentd/src/config.rs", "agent/crates/layerx-agentd/src/main.rs", "agent/crates/layerx-agentd/src/budget/program_settlement.rs", "agent/crates/layerx-agentd/src/budget/program_sources.rs", "agent/crates/layerx-agentd/src/budget/mod.rs", "agent/crates/layerx-agentd/src/capability/effects.rs", "agent/crates/layerx-agent-api/src/identity.rs", "agent/crates/layerx-agentd/src/agent_rpc_dispatch.rs", "agent/crates/layerx-agentd/src/agent_rpc_wire.rs", "agent/schema/agent-api/v1.kvx", "agent/crates/layerx-agentd/src/agent_rpc_adapters.rs", "agent/crates/layerx-agentd/src/capability/mod.rs", "agent/crates/layerx-agentd/src/budget/reserve.rs", "agent/crates/layerx-agentd/src/approval/native_program.rs", "agent/crates/layerx-agentd/src/approval/events.rs", "agent/crates/layerx-agentd/src/store/mod.rs"]
+touches = ["agent/crates/layerx-agentd/src/capability/binding.rs", "agent/crates/layerx-agentd/src/policy/native_program.rs", "agent/crates/layerx-agentd/src/approval/native_effect.rs", "agent/crates/layerx-agentd/src/approval/mod.rs", "agent/crates/layerx-agentd/src/session_control.rs", "agent/crates/layerx-agentd/src/human_runtime.rs", "agent/crates/layerx-agentd/src/human.rs", "agent/crates/layerx-agentd/src/managed_agent.rs", "agent/crates/layerx-agentd/src/policy/approval.rs", "agent/crates/layerx-agentd/src/policy/eval.rs", "agent/crates/layerx-agentd/src/policy/operation.rs", "agent/crates/layerx-agentd/src/policy/version.rs", "agent/crates/layerx-agentd/src/policy/mod.rs", "human/crates/layerx-human-service/src/approvals/mod.rs", "agent/crates/layerx-agentd/tests/human_approval_admission.rs", "tools/qualification/paxeer-x/human-approval-admission.py", "agent/crates/layerx-agentd/src/config.rs", "agent/crates/layerx-agentd/src/main.rs", "agent/crates/layerx-agentd/src/budget/program_settlement.rs", "agent/crates/layerx-agentd/src/budget/program_sources.rs", "agent/crates/layerx-agentd/src/budget/mod.rs", "agent/crates/layerx-agentd/src/capability/effects.rs", "agent/crates/layerx-agent-api/src/identity.rs", "agent/crates/layerx-agentd/src/agent_rpc_dispatch.rs", "agent/crates/layerx-agentd/src/agent_rpc_wire.rs", "agent/schema/agent-api/v1.kvx", "agent/crates/layerx-agentd/src/agent_rpc_adapters.rs", "agent/crates/layerx-agentd/src/capability/mod.rs", "agent/crates/layerx-agentd/src/budget/reserve.rs", "agent/crates/layerx-agentd/src/approval/native_program.rs", "agent/crates/layerx-agentd/src/approval/events.rs", "agent/crates/layerx-agentd/src/store/mod.rs"]
 build_cmd = "timeout 20m env CARGO_TARGET_DIR=/root/lx-target/agent /root/.cargo/bin/cargo test --locked --manifest-path agent/Cargo.toml -p layerx-agentd --test human_approval_admission --no-run"
 verify_cmd = "timeout 10m python3 tools/qualification/paxeer-x/human-approval-admission.py"
 max_builds = 1
@@ -33177,6 +33193,10 @@ source_status = "partial"
 qualification_status = "unrun_partial_source"
 remaining_source = "Legacy native authority adapter, raw budget-proof intake verification, historical ordinary execution proof and complete admission corpus."
 
+
+retained_contract_paths = ["agent/crates/layerx-agentd/src/capability/binding.rs", "agent/crates/layerx-agentd/src/policy/native_program.rs", "agent/crates/layerx-agentd/src/approval/native_effect.rs", "agent/crates/layerx-agentd/src/approval/mod.rs", "agent/crates/layerx-agentd/src/session_control.rs", "agent/crates/layerx-agentd/src/human_runtime.rs", "agent/crates/layerx-agentd/src/human.rs", "agent/crates/layerx-agentd/src/managed_agent.rs", "agent/crates/layerx-agentd/src/policy/approval.rs", "agent/crates/layerx-agentd/src/policy/eval.rs", "agent/crates/layerx-agentd/src/policy/operation.rs", "agent/crates/layerx-agentd/src/policy/version.rs", "agent/crates/layerx-agentd/src/policy/mod.rs", "human/crates/layerx-human-service/src/server/agent_runtime.rs", "human/crates/layerx-human-service/src/approvals/mod.rs", "agent/crates/layerx-agentd/tests/human_approval_admission.rs", "tools/qualification/paxeer-x/human-approval-admission.py", "agent/crates/layerx-agentd/src/config.rs", "agent/crates/layerx-agentd/src/main.rs", "agent/crates/layerx-agentd/src/budget/program_settlement.rs", "agent/crates/layerx-agentd/src/budget/program_sources.rs", "agent/crates/layerx-agentd/src/budget/mod.rs", "agent/crates/layerx-agentd/src/capability/effects.rs", "agent/crates/layerx-agent-api/src/identity.rs", "agent/crates/layerx-agentd/src/agent_rpc_dispatch.rs", "agent/crates/layerx-agentd/src/agent_rpc_wire.rs", "agent/schema/agent-api/v1.kvx", "agent/crates/layerx-agentd/src/agent_rpc_adapters.rs", "agent/crates/layerx-agentd/src/capability/mod.rs", "agent/crates/layerx-agentd/src/budget/reserve.rs", "agent/crates/layerx-agentd/src/approval/native_program.rs", "agent/crates/layerx-agentd/src/approval/events.rs", "agent/crates/layerx-agentd/src/store/mod.rs"]
+delegated_source_task = "104.13.22"
+delegated_source_paths = ["human/crates/layerx-human-service/src/server/agent_runtime.rs"]
 [task.22.11]
 title = "Connect public program and naming browser reads to the unified origin"
 status = "done"
@@ -33312,7 +33332,7 @@ wave = 2
 requires = ["0.2", "8.1"]
 reqs = ["1064.3", "1064.8", "1071.1", "1071.5"]
 do_1 = "Connect real native approval list/get/decision/home/push through the existing unified Human surface with exact managed-child ownership, actual post-reserve budget rows and genuine LocalOwned held material. Never relabel local material or budget summaries as cryptographic proof."
-touches = ["human/crates/layerx-human-service/src/server/production_components.rs", "human/crates/layerx-human-service/src/server/mod.rs", "human/crates/layerx-human-service/src/server/projection.rs", "tools/qualification/paxeer-x/human-canonical-projections.py"]
+touches = ["tools/qualification/paxeer-x/human-canonical-projections.py"]
 build_cmd = "timeout 20m env CARGO_TARGET_DIR=/root/lx-target/human /root/.cargo/bin/cargo build --locked --manifest-path human/Cargo.toml -p layerx-human-service"
 verify_cmd = "timeout 20m python3 tools/qualification/paxeer-x/human-canonical-projections.py --candidate-manifest \"$PAXEER_X_CANDIDATE_MANIFEST\""
 max_builds = 1
@@ -33327,6 +33347,9 @@ source_status = "partial"
 qualification_status = "unrun_partial_source"
 remaining_source = "Genuine Programs material/disclosure/budget/decision private contract and canonical non-monetary representation; generic native52-57 consumers complete."
 
+retained_contract_paths = ["human/crates/layerx-human-service/src/server/production_components.rs", "human/crates/layerx-human-service/src/server/mod.rs", "human/crates/layerx-human-service/src/server/projection.rs", "tools/qualification/paxeer-x/human-canonical-projections.py"]
+delegated_source_task = "104.13.22"
+delegated_source_paths = ["human/crates/layerx-human-service/src/server/production_components.rs", "human/crates/layerx-human-service/src/server/mod.rs", "human/crates/layerx-human-service/src/server/projection.rs"]
 [task.104.5.4]
 title = "Complete authenticated multi-asset custody profiles and genuine per-asset reserves"
 status = "done"
@@ -33706,3 +33729,59 @@ qualification_status = "unverified"
 build_exit_code = 0
 verify_exit_code = 1
 qualification_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-104.35.31-result.json"
+
+[task.104.13.22]
+title = "Connect truthful native Programs approvals through unified Human routes and streams"
+status = "done"
+mode = "BUILD"
+wave = 4
+requires = ["0.2", "104.13.21"]
+reqs = ["1064.3", "1064.8", "1071.1", "1071.5"]
+do_1 = "Decode actual authenticated Agent profile5 methods58-62 with exact owner, managed-child, canonical payload and pagination checks. Serve approval.program list/get/material/budget/approve/reject under the existing unified Human mount and authorization classes."
+do_2 = "Add explicit OperationOnly and AuthorizedLimits projections, authentic held LocalOwned bytes, verified budget evidence and disclosure-bound decisions. Preserve required monetary types, expiry, idempotency and the distinction between release authorization and execution."
+do_3 = "Connect optional home program approvals and durable stream program approval events through both journal writer and reader. Generate clients from canonical schema and cover actual positive/refusal/recovery processes; missing genuine authority fails qualification."
+touches = ["human/crates/layerx-human-service/src/server/agent_runtime.rs", "human/crates/layerx-human-service/src/server/production_components.rs", "human/crates/layerx-human-service/src/server/schema.rs", "human/crates/layerx-human-service/src/server/mod.rs", "human/crates/layerx-human-service/src/server/projection.rs", "human/crates/layerx-human-service/src/server/stream_journal.rs", "human/schema/human-api/program-approvals.kvx", "human/schema/human-api/v1.kvx", "human/schema/human-api/home.kvx", "human/schema/human-api/stream.kvx", "human/schema/human-api/golden/approval.program.list.request.json", "human/schema/human-api/golden/approval.program.list.response.json", "human/schema/human-api/golden/approval.program.list.failure.json", "human/schema/human-api/golden/approval.program.get.request.json", "human/schema/human-api/golden/approval.program.get.response.json", "human/schema/human-api/golden/approval.program.get.failure.json", "human/schema/human-api/golden/approval.program.material.request.json", "human/schema/human-api/golden/approval.program.material.response.json", "human/schema/human-api/golden/approval.program.material.failure.json", "human/schema/human-api/golden/approval.program.budget.request.json", "human/schema/human-api/golden/approval.program.budget.response.json", "human/schema/human-api/golden/approval.program.budget.failure.json", "human/schema/human-api/golden/approval.program.approve.request.json", "human/schema/human-api/golden/approval.program.approve.response.json", "human/schema/human-api/golden/approval.program.approve.failure.json", "human/schema/human-api/golden/approval.program.reject.request.json", "human/schema/human-api/golden/approval.program.reject.response.json", "human/schema/human-api/golden/approval.program.reject.failure.json", "tools/qualification/paxeer-x/human_program_approvals.py", "human/apps/web/src/api/generated/index.ts", "human/apps/web/src/api/generated/conformance.ts", "tools/paxeer-x/route-catalogue.json", "human/apps/web/copy/catalog.ts", "human/apps/web/copy/messages.generated.ts", "human/schema/human-api/golden/approval.program.disclosure.request.json", "human/schema/human-api/golden/approval.program.disclosure.response.json", "human/schema/human-api/golden/approval.program.disclosure.failure.json", "human/crates/layerx-human-service/Cargo.toml", "human/Cargo.lock"]
+build_cmd = "timeout 20m env CARGO_BUILD_JOBS=4 CARGO_TARGET_DIR=/root/lx-target/human /root/.cargo/bin/cargo build --locked --manifest-path human/Cargo.toml -p layerx-human-service --bin layerx-human-service"
+verify_cmd = "timeout 20m python3 tools/qualification/paxeer-x/human_program_approvals.py --candidate-manifest \"$PAXEER_X_CANDIDATE_MANIFEST\""
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop at original 30-minute cap, missing authentic interface, ownership conflict, unrelated failure or weakening; record exact source, command, exit and private log."
+completion_basis_policy = "Owner CONSTITUTION: fully implemented DONE; qualification separate and partial remains in_progress."
+source_ownership = "Root transferred only coordinator-owned partial task paths, retaining every parent criterion. Root owns canonical generated clients, route catalogue, manifests, spec and publication. No deployments or live signing."
+
+do_4 = "Expose the genuine authenticated read-only decision disclosure for the existing approval step-up ceremony, binding the actual principal, tenant, selected target operation, held request, exact prospective body and idempotency key through the existing canonical digest owner. No invented browser digest or weakened approval class."
+
+completion_basis = "implementation"
+qualification_status = "unverified"
+build_exit_code = 101
+verify_status = "UNRUN"
+qualification_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-104.13.22-source-handoff.json"
+post_build_source = "Root declared the existing layerx-wire workspace dependency and exact local lock edge; no build or gate rerun."
+
+[task.104.13.8]
+title = "Project production approvals and managed agents into canonical Human API responses"
+status = "in_progress"
+mode = "BUILD"
+wave = 2
+requires = ["0.2", "104.13.7"]
+reqs = ["1064.3", "1064.8", "1071.1", "1071.5"]
+do_1 = "Emit distinct canonical summary/detail/decision projections, strict IDs, evidence and budget levels from actual authenticated records; preserve authorization and schemas."
+do_2 = "Resolve timestamp sources and units from genuine production domain facts; never reinterpret protocol sequences as wall time or synthesize missing expiry."
+do_3 = "Wire the actual list/get/decision and durable push producers to shared canonical projections and add a genuine production boundary case."
+touches = ["tools/qualification/paxeer-x/human-canonical-projections.py"]
+build_cmd = "timeout 20m env CARGO_TARGET_DIR=/root/lx-target/human cargo build --locked --manifest-path human/Cargo.toml -p layerx-human-service"
+verify_cmd = "timeout 20m python3 tools/qualification/paxeer-x/human-canonical-projections.py --candidate-manifest \"$PAXEER_X_CANDIDATE_MANIFEST\""
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop at original dispatch thirty-minute cap, two failed repairs, missing genuine interface or any legacy weakening; report exact source state and evidence."
+completion_basis_policy = "Owner CONSTITUTION: fully implemented tasks DONE, actual qualification separate; partial implementation remains in_progress."
+source_ownership = "Root serializes shared manifests, locks, spec, GOTCHA and publication. No deployment or live economic execution."
+
+
+retained_contract_paths = ["human/crates/layerx-human-service/src/server/production_components.rs", "human/crates/layerx-human-service/src/server/mod.rs", "human/crates/layerx-human-service/src/server/projection.rs", "tools/qualification/paxeer-x/human-canonical-projections.py"]
+delegated_source_task = "104.13.22"
+delegated_source_paths = ["human/crates/layerx-human-service/src/server/production_components.rs", "human/crates/layerx-human-service/src/server/mod.rs", "human/crates/layerx-human-service/src/server/projection.rs"]

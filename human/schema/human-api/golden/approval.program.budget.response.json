@@ -1,0 +1,31 @@
+{
+  "status": 200,
+  "body": {
+    "ok": true,
+    "result": {
+      "approval_id": "apr_5a9646c9ff0c3e0c5522c3442878f2b783538b67661c68300512c96b5ce2d521",
+      "held_digest": "ca7b300e0c2b7806061ad1e2e77d480ae9c05d21b7e83fb0ec5f42b747b06349",
+      "budget_id": "0af96a8ed622a394e8b2a239284ee46e9a7a7b0ec38191bbd08571b171118dd6",
+      "asset_id": "d59386e0ae435e292fbe0ebcdb954b75ed5fb3922091277cb19f798fc5d50718",
+      "source_account": "d0cc6810f7073d900bb9fadec0a776993b0ea619733e96aa4172d7c9a718c13c",
+      "remaining": "120000000",
+      "observed_head_sequence": "700",
+      "age_sequences": "2",
+      "maximum_age_sequences": "16",
+      "within_bound": true,
+      "terminal": false,
+      "verification": "checkpoint-finalised",
+      "proof_digest": "c1cda26362828b69266512052b97cb3729e3b052e4ade47c0a1e3383defe73c7",
+      "receipt_digest": "6f32860910ca0fb2a20c7fda143666b09dbf8db5238195c90a586fb542ff0cad",
+      "checkpoint_digest": "47320987f9a49d5b00119b960f247a956773f57543982b8bfcb6da5bb3afd9ef",
+      "evidence": [
+        {
+          "evidence_id": "evd_96d2f38fac5fd2c37b103e521e82d466503a4bcd79c619c64890263f00f3a782",
+          "class": "checkpoint-proof",
+          "verification": "checkpoint-finalised"
+        }
+      ]
+    },
+    "trace": "trc_program_approval_contract_example"
+  }
+}

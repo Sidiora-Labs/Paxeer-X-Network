@@ -1,0 +1,12 @@
+{
+  "status": 401,
+  "body": {
+    "ok": false,
+    "error": {
+      "code": "session-expired",
+      "copy_key": "error.session.expired",
+      "retry": "structural"
+    },
+    "trace": "trc_program_approval_contract_example"
+  }
+}

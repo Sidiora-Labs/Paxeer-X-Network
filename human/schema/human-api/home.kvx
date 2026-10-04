@@ -16,6 +16,7 @@ evidence = "evidence includes the verified read and any checkpoint proof require
 
 [type.HomeSummary]
 required = ["balance:AccountBalance","agents:Agent[]","approvals:ApprovalSummary[]","recent_activity:ActivityEntryDetail[]"]
+optional = ["program_approvals:ProgramApprovalSummary[]"]
 composition = "Every protocol fact retains the verification and evidence carried by its source operation. The summary is a bounded composition of the real balance, agent, approval and activity services, never a second cache or write model."
 
 [operation.account.balance]

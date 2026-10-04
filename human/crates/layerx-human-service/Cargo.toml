@@ -12,6 +12,7 @@ getrandom.workspace = true
 layerx-agent-api.workspace = true
 layerx-intents.workspace = true
 layerx-types.workspace = true
+layerx-wire.workspace = true
 layerx-crypto.workspace = true
 layerx-proof.workspace = true
 layerx-client.workspace = true

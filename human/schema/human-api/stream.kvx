@@ -6,11 +6,11 @@ spine = "Both shells render live state from one resumable event stream: journey 
 resumption = "Every event carries the stable cursor that names its position. A client that reconnects resumes from the last cursor it processed and receives every later event exactly once, in order, with no gaps and no duplicates. A cursor the service no longer retains is refused with the cursor-expired code, and the client re-opens from the current position."
 
 [type.StreamEventKind]
-variants = ["journey-progress","approval-created","approval-approved","approval-rejected","approval-expired","notification"]
+variants = ["journey-progress","approval-created","approval-approved","approval-rejected","approval-expired","notification","program-approval-created","program-approval-approved","program-approval-rejected","program-approval-expired"]
 
 [type.StreamEvent]
 required = ["cursor:Cursor","kind:StreamEventKind","observed_at:Timestamp"]
-optional = ["journey:Journey","approval:ApprovalSummary","notification:NotificationSummary"]
+optional = ["journey:Journey","approval:ApprovalSummary","notification:NotificationSummary","program_approval:ProgramApprovalSummary"]
 payloads = "An event embeds the journey it reports where one exists. Later modules extend the optional payloads additively; the cursor, kind and observed_at spine never changes."
 
 [type.StreamPosition]

@@ -33,6 +33,8 @@ import {
   decodePasskeyRegistrationFinish,
   decodePlanIntentRequest,
   decodeProfileUpdate,
+  decodeProgramApprovalDecisionRequest,
+  decodeProgramApprovalDisclosureRequest,
   decodeRebindingSubmission,
   decodeSecurityActionRequest,
   decodeSecurityPasskeyRegistrationBegin,
@@ -87,6 +89,12 @@ import {
   encodePasskeyList,
   encodePasskeyRegistrationChallenge,
   encodeProfile,
+  encodeProgramApprovalBudget,
+  encodeProgramApprovalDecision,
+  encodeProgramApprovalDetail,
+  encodeProgramApprovalDisclosure,
+  encodeProgramApprovalMaterial,
+  encodeProgramApprovalPage,
   encodeSecurityAction,
   encodeSession,
   encodeSessionList,
@@ -178,6 +186,20 @@ export const conformance: { readonly [name in OperationName]: (run: ConformanceR
     encodeApprovalDetail(await run.client.approvalGet(runParam(run, "approval_id"))),
   "approval.list": async (run) =>
     encodeApprovalPage(await run.client.approvalList()),
+  "approval.program.approve": async (run) =>
+    encodeProgramApprovalDecision(await run.client.approvalProgramApprove(runParam(run, "approval_id"), decodeProgramApprovalDecisionRequest(runBody(run), "golden request body"), runKey(run))),
+  "approval.program.budget": async (run) =>
+    encodeProgramApprovalBudget(await run.client.approvalProgramBudget(runParam(run, "approval_id"))),
+  "approval.program.disclosure": async (run) =>
+    encodeProgramApprovalDisclosure(await run.client.approvalProgramDisclosure(runParam(run, "approval_id"), decodeProgramApprovalDisclosureRequest(runBody(run), "golden request body"))),
+  "approval.program.get": async (run) =>
+    encodeProgramApprovalDetail(await run.client.approvalProgramGet(runParam(run, "approval_id"))),
+  "approval.program.list": async (run) =>
+    encodeProgramApprovalPage(await run.client.approvalProgramList(runParam(run, "cursor"))),
+  "approval.program.material": async (run) =>
+    encodeProgramApprovalMaterial(await run.client.approvalProgramMaterial(runParam(run, "approval_id"))),
+  "approval.program.reject": async (run) =>
+    encodeProgramApprovalDecision(await run.client.approvalProgramReject(runParam(run, "approval_id"), decodeProgramApprovalDecisionRequest(runBody(run), "golden request body"), runKey(run))),
   "approval.reject": async (run) =>
     encodeApprovalDecision(await run.client.approvalReject(runParam(run, "approval_id"), runKey(run))),
   "authenticator.backup.rotate": async (run) =>

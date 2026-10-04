@@ -2374,3 +2374,13 @@ resolution = "Use the existing absolute toolchain PATH and record the failed att
 area = "Historical replay Client corpus imports"
 observed = "The Programs SSL linker prerequisite built all seven production binaries, then the actual Client corpus failed compilation with duplicate imports in replay_catalogue.rs."
 resolution = "Preserve every real corpus assertion and correct only the recorded test-source compile boundary in its own bounded owner task."
+
+[gotcha.693]
+area = "Human service compiler interfaces"
+observed = "Human Programs integration build exposed a missing existing wire dependency, DID versus string comparison, absent saved-rotation JSON projection, mismatched authentication error owner, and move from a zeroizing response type."
+resolution = "Declare the existing dependency without external version changes; preserve exact identity, receipt, authentication and Drop semantics in the bounded service integration task."
+
+[gotcha.695]
+area = "Prior task source section publication"
+observed = "The narrow Human publication helper found an older in-progress parent section that had not yet been added to HEAD."
+resolution = "Classify existing and new task sections explicitly before staging, and reconstruct any later task edits only in index blobs verified against the earlier frozen source hashes."

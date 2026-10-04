@@ -1,0 +1,9 @@
+{
+  "method": "POST",
+  "path": "/v1/program-approvals/apr_5a9646c9ff0c3e0c5522c3442878f2b783538b67661c68300512c96b5ce2d521/disclosure",
+  "body": {
+    "decision": "approve",
+    "held_digest": "ca7b300e0c2b7806061ad1e2e77d480ae9c05d21b7e83fb0ec5f42b747b06349",
+    "idempotency_key": "program-approve-example"
+  }
+}

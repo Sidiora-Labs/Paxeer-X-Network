@@ -1,0 +1,12 @@
+{
+  "status": 409,
+  "body": {
+    "ok": false,
+    "error": {
+      "code": "already-decided",
+      "copy_key": "error.approval.already-decided",
+      "retry": "final"
+    },
+    "trace": "trc_program_approval_contract_example"
+  }
+}

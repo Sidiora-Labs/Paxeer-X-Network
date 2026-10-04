@@ -1,0 +1,12 @@
+{
+  "status": 422,
+  "body": {
+    "ok": false,
+    "error": {
+      "code": "hold-defective",
+      "copy_key": "error.approval.hold-defective",
+      "retry": "final"
+    },
+    "trace": "trc_program_approval_disclosure_example"
+  }
+}

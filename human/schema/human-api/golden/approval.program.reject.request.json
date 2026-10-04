@@ -1,0 +1,11 @@
+{
+  "method": "POST",
+  "path": "/v1/program-approvals/apr_5a9646c9ff0c3e0c5522c3442878f2b783538b67661c68300512c96b5ce2d521/reject",
+  "headers": {
+    "Idempotency-Key": "program-reject-example"
+  },
+  "body": {
+    "held_digest": "ca7b300e0c2b7806061ad1e2e77d480ae9c05d21b7e83fb0ec5f42b747b06349",
+    "step_up_evidence": "evd_4e98dfa9cc1cc6ec99398706305bc3d8f37d884e60812444b3918349dcc556a4"
+  }
+}

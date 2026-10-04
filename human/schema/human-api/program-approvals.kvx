@@ -1,0 +1,158 @@
+[module]
+name = "program-approvals"
+contract_major = 1
+compatibility = "additive_only"
+spine = "Native Programs approvals retain their actual operation semantics separately from monetary approvals. Operation-only holds authorize no invented transfer; authorized limits are bounds, never claims of executed spending."
+
+[type.ProgramApprovalState]
+variants = ["pending","approved","rejected","expired","defective","not-required"]
+not_required = "The producer reports that no approval is required. This state offers no approval control and does not imply execution."
+
+[type.ProgramApprovalSemantics]
+variants = ["operation-only","authorized-limits"]
+source = "operation-only carries an empty authorized_limits list. authorized-limits carries the actual non-fee reservation allocations validated against the canonical disclosure. Neither variant claims an executed amount."
+
+[type.ProgramOperationKind]
+variants = ["deploy","upgrade","call","wind-down"]
+
+[type.ProgramBytesCommitment]
+required = ["sha256:string","byte_length:Amount"]
+source = "The digest and byte length commit to the exact corresponding field in the canonical payload exported through the material evidence."
+
+[type.ProgramUpgradePolicyKind]
+variants = ["immutable","authority"]
+
+[type.ProgramUpgradePolicyFacts]
+required = ["kind:ProgramUpgradePolicyKind"]
+optional = ["authority:string"]
+source = "authority is present exactly for the canonical Authority policy and is its actual 32-byte identifier in lowercase hex."
+
+[type.ProgramDeployFacts]
+required = ["guest_abi:integer","policy:ProgramUpgradePolicyFacts","new_hash:string","wasm:ProgramBytesCommitment"]
+optional = ["interface:ProgramBytesCommitment"]
+
+[type.ProgramUpgradeFacts]
+required = ["guest_abi:integer","old_hash:string","new_hash:string","migration_hook_hex:string","clear_interface:boolean","wasm:ProgramBytesCommitment"]
+optional = ["interface:ProgramBytesCommitment"]
+
+[type.ProgramCallFacts]
+required = ["guest_abi:integer","entrypoint_hex:string","calldata:ProgramBytesCommitment","capabilities:ProgramBytesCommitment","access_declaration:ProgramBytesCommitment","response_capacity:integer","resources:Amount[]"]
+resources = "All seven resource ceilings in canonical protocol order retain their exact unsigned protocol integers encoded as a decimal string. Byte commitments preserve the actual calldata, capabilities and access declaration."
+
+[type.ProgramWindDownKind]
+variants = ["route","deprecate","tombstone","exit","bounded-exit"]
+
+[type.ProgramWindDownFacts]
+required = ["kind:ProgramWindDownKind"]
+optional = ["account:string","asset_id:string","destination:string","seed_hex:string","exit_program:string","deadline_batch:Amount","maximum_exit_amount:Amount"]
+source = "Only the fields of the actual closed wind-down subtype are present. Route binds account, asset, destination and seed; deprecate binds exit program and deadline; tombstone has no additional fields; exit binds account; bounded-exit also binds maximum_exit_amount. Missing genuine exit authority refuses before presentation."
+
+[type.ProgramApprovalOperation]
+required = ["kind:ProgramOperationKind","program_id:string"]
+optional = ["deploy:ProgramDeployFacts","upgrade:ProgramUpgradeFacts","call:ProgramCallFacts","wind_down:ProgramWindDownFacts"]
+source = "Exactly the payload field matching kind is present, decoded from the held canonical Programs payload. No alternate operation or inferred monetary counterparty is admitted."
+
+[type.ProgramChargeKind]
+variants = ["principal","program-spend"]
+
+[type.ProgramAuthorizedLimit]
+required = ["kind:ProgramChargeKind","source_account:string","asset_id:string","maximum_amount:Amount"]
+optional = ["destination:string"]
+source = "These are actual non-fee reservation allocations. asset_id is the exact protocol asset identifier and maximum_amount is its exact base-unit upper bound, with no guessed currency code or realised-spend claim."
+
+[type.ProgramApprovalSummary]
+required = ["approval_id:ApprovalId","agent_id:AgentId","agent_name:string","state:ProgramApprovalState","reason_copy_key:CopyKey","created_at:Timestamp","expires_at:Timestamp","held_digest:string","operation:ProgramApprovalOperation","semantics:ProgramApprovalSemantics","authorized_limits:ProgramAuthorizedLimit[]","evidence:EvidenceRef[]"]
+source = "The authenticated Human owner and actual managed child bind the immutable held material, operation, state and expiry. Held bytes are LocalOwned approval-hold evidence at unverified level, never receipts."
+
+[type.ProgramApprovalDetail]
+required = ["approval_id:ApprovalId","agent_id:AgentId","agent_name:string","state:ProgramApprovalState","reason_copy_key:CopyKey","created_at:Timestamp","expires_at:Timestamp","held_digest:string","operation:ProgramApprovalOperation","semantics:ProgramApprovalSemantics","authorized_limits:ProgramAuthorizedLimit[]","evidence:EvidenceRef[]","state_copy_key:CopyKey","created_at_sequence:Amount","budget_expiry_sequence:Amount"]
+optional = ["release_ref:string","budget:ProgramApprovalBudget"]
+release = "release_ref identifies authorization to release the retained activity. It is never a claim that the activity was queued, submitted, executed or verified."
+
+[type.ProgramApprovalPage]
+required = ["approvals:ProgramApprovalSummary[]","next_cursor:Cursor"]
+pagination = "The page route uses start for the initial page and the returned opaque next_cursor for continuation. An empty next_cursor is the end. The native producer's finite page and actual owner filtering remain authoritative; entries are never silently dropped."
+
+[type.ProgramMaterialProvenance]
+variants = ["local-owned"]
+
+[type.ProgramApprovalMaterial]
+required = ["approval_id:ApprovalId","held_digest:string","provenance:ProgramMaterialProvenance","canonical_unsigned:EvidenceRef","immutable_carrier:EvidenceRef","budget_reservation:EvidenceRef","evidence:EvidenceRef[]"]
+source = "Each reference resolves through authenticated evidence.get to the exact immutable owned canonical bytes. These references carry only approval-hold or local-journey-state at unverified level; material export does not raise verification."
+
+[type.ProgramApprovalBudget]
+required = ["approval_id:ApprovalId","held_digest:string","budget_id:string","asset_id:string","source_account:string","remaining:Amount","observed_head_sequence:Amount","age_sequences:Amount","maximum_age_sequences:Amount","within_bound:boolean","terminal:boolean","verification:VerificationLevel","proof_digest:string","receipt_digest:string","checkpoint_digest:string","evidence:EvidenceRef[]"]
+source = "The actual daemon reservation and terminal accounting bind a managed child's independently verified native budget proof. Remaining, source account, asset, observation head and all proof digests retain their exact identity and achieved level; no currency is guessed."
+freshness = "age_sequences is measured against the authenticated current head and never exceeds maximum_age_sequences for an admitted proof. Missing, stale, altered or cross-owner proof material refuses; within_bound never conceals a missing proof."
+
+[type.ProgramApprovalDecisionKind]
+variants = ["approve","reject"]
+
+[type.ProgramApprovalDisclosureRequest]
+required = ["decision:ProgramApprovalDecisionKind","held_digest:string","idempotency_key:string"]
+binding = "The authenticated owner selects one prospective decision and its exact idempotency key. The supplied held digest must equal the actual immutable owned hold before a disclosure can be produced."
+
+[type.ProgramApprovalDisclosure]
+required = ["approval_id:ApprovalId","held_digest:string","decision:ProgramApprovalDecisionKind","confirms:OperationDigest","evidence:EvidenceRef[]"]
+binding = "confirms is the server's existing principal-bound step_up_digest for approval.program.approve or approval.program.reject, the exact approval destination, canonical body containing held_digest, and the selected prospective idempotency key. It is never the held digest itself. This read creates no decision or release and consumes no mutation idempotency record."
+
+[type.ProgramApprovalDecisionRequest]
+required = ["held_digest:string","step_up_evidence:EvidenceId"]
+binding = "Both approve and reject disclose the exact immutable held digest, decision and idempotency key under authenticated owner-bound approval step-up. A wrong digest, missing authority or changed disclosure refuses before release."
+
+[type.ProgramApprovalDecision]
+required = ["approval_id:ApprovalId","held_digest:string","state:ProgramApprovalState","state_copy_key:CopyKey","money_moved:boolean","moved_copy_key:CopyKey","evidence:EvidenceRef[]"]
+optional = ["release_ref:string"]
+honesty = "money_moved is always false for this decision. Granted release authorization and a release_ref never imply submission or verified execution. Durable identical retries return the original outcome; opposite or expired decisions refuse."
+
+[operation.approval.program.list]
+authorization_class = "read"
+method = "GET"
+path = "/v1/program-approvals/page/{cursor}"
+request = "Empty"
+response = "ProgramApprovalPage"
+
+[operation.approval.program.get]
+authorization_class = "read"
+method = "GET"
+path = "/v1/program-approvals/{approval_id}"
+request = "Empty"
+response = "ProgramApprovalDetail"
+
+[operation.approval.program.material]
+authorization_class = "read"
+method = "GET"
+path = "/v1/program-approvals/{approval_id}/material"
+request = "Empty"
+response = "ProgramApprovalMaterial"
+
+[operation.approval.program.budget]
+authorization_class = "read"
+method = "GET"
+path = "/v1/program-approvals/{approval_id}/budget"
+request = "Empty"
+response = "ProgramApprovalBudget"
+
+[operation.approval.program.approve]
+authorization_class = "approval"
+method = "POST"
+path = "/v1/program-approvals/{approval_id}/approve"
+request = "ProgramApprovalDecisionRequest"
+response = "ProgramApprovalDecision"
+idempotency = true
+
+[operation.approval.program.reject]
+authorization_class = "approval"
+method = "POST"
+path = "/v1/program-approvals/{approval_id}/reject"
+request = "ProgramApprovalDecisionRequest"
+response = "ProgramApprovalDecision"
+idempotency = true
+
+[operation.approval.program.disclosure]
+authorization_class = "read"
+method = "POST"
+path = "/v1/program-approvals/{approval_id}/disclosure"
+request = "ProgramApprovalDisclosureRequest"
+response = "ProgramApprovalDisclosure"
+effect = "Read-only owner-authenticated preparation for one exact future approval decision. No held activity is released and no money moves."

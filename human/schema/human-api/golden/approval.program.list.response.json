@@ -1,0 +1,207 @@
+{
+  "status": 200,
+  "body": {
+    "ok": true,
+    "result": {
+      "approvals": [
+        {
+          "approval_id": "apr_5a9646c9ff0c3e0c5522c3442878f2b783538b67661c68300512c96b5ce2d521",
+          "agent_id": "agt_5642bc7c9241f4087df42c1d3b27e1a8de3a43b48f07aead2d2e04964f9d739a",
+          "agent_name": "Program Operator",
+          "state": "pending",
+          "reason_copy_key": "approval.reason.program-policy-required",
+          "created_at": "2026-10-04T04:00:00Z",
+          "expires_at": "2026-10-04T05:00:00Z",
+          "held_digest": "ca7b300e0c2b7806061ad1e2e77d480ae9c05d21b7e83fb0ec5f42b747b06349",
+          "operation": {
+            "kind": "deploy",
+            "program_id": "1310ca2c8932dbd118668bd97442558a3e1f546b5e15c69699dfbd6024f548d8",
+            "deploy": {
+              "guest_abi": 2,
+              "policy": {
+                "kind": "immutable"
+              },
+              "new_hash": "93a44bbb96c751218e4c00d479e4c14358122a389acca16205b1e4d0dc5f9476",
+              "wasm": {
+                "sha256": "93a44bbb96c751218e4c00d479e4c14358122a389acca16205b1e4d0dc5f9476",
+                "byte_length": "8"
+              }
+            }
+          },
+          "semantics": "operation-only",
+          "authorized_limits": [],
+          "evidence": [
+            {
+              "evidence_id": "evd_8be72a11ea9a1c40b8dcdcff260e384617125b472059ca9cc21ac08e10c35097",
+              "class": "approval-hold",
+              "verification": "unverified"
+            },
+            {
+              "evidence_id": "evd_ef5856cb13864c7954be4baa36299d190195761ae94a69757a763def7dc59cf8",
+              "class": "approval-hold",
+              "verification": "unverified"
+            },
+            {
+              "evidence_id": "evd_b62ddbdce2f49407bd3fcf4c705d2981f0cddeb75cbb8656b2364db402683844",
+              "class": "local-journey-state",
+              "verification": "unverified"
+            }
+          ]
+        },
+        {
+          "approval_id": "apr_26699f9f01fa9eccfde0405505d19efc7eed9841e1421a2256ba252852527d03",
+          "agent_id": "agt_5642bc7c9241f4087df42c1d3b27e1a8de3a43b48f07aead2d2e04964f9d739a",
+          "agent_name": "Program Operator",
+          "state": "pending",
+          "reason_copy_key": "approval.reason.program-policy-required",
+          "created_at": "2026-10-04T04:00:00Z",
+          "expires_at": "2026-10-04T05:00:00Z",
+          "held_digest": "a881a4f9d097dfa7f30128bbab5105d7e53db265772903a61dce5e20703ca511",
+          "operation": {
+            "kind": "upgrade",
+            "program_id": "3934d244480c06c886ed7d10d76e4bf9af75cc17db8a94197e824f0fa7c20b2b",
+            "upgrade": {
+              "guest_abi": 2,
+              "old_hash": "74e96847828c4521737b442a932e9843e7951e0f5b8d8d4054f5ef7b1d43044e",
+              "new_hash": "775514a77da2e42dd783e991ba335b5e65322a0c7eb0e8615eea553cf44557ae",
+              "migration_hook_hex": "6d696772617465",
+              "clear_interface": false,
+              "wasm": {
+                "sha256": "93a44bbb96c751218e4c00d479e4c14358122a389acca16205b1e4d0dc5f9476",
+                "byte_length": "8"
+              },
+              "interface": {
+                "sha256": "732322c128ed67841ef5aa42c7cd04ffcd74a61b2d17d710cd502b713d62930d",
+                "byte_length": "13"
+              }
+            }
+          },
+          "semantics": "operation-only",
+          "authorized_limits": [],
+          "evidence": [
+            {
+              "evidence_id": "evd_947db13864c007923ce0ba3c3f258312896836b2176537384a402553098a093d",
+              "class": "approval-hold",
+              "verification": "unverified"
+            },
+            {
+              "evidence_id": "evd_5a0d47e0f12f6151c05d7a203dabe06e48407f1a02bfbff400dfeddee1619aa7",
+              "class": "approval-hold",
+              "verification": "unverified"
+            },
+            {
+              "evidence_id": "evd_d413b7aefce413cb78f6872125e4199ea7f49b06921c5fe0e06f87b68ab660d2",
+              "class": "local-journey-state",
+              "verification": "unverified"
+            }
+          ]
+        },
+        {
+          "approval_id": "apr_3a7b66a8deb97b3ba721c6095bf49a78ace6f45313afe2b92927dc3d6b10ceb2",
+          "agent_id": "agt_5642bc7c9241f4087df42c1d3b27e1a8de3a43b48f07aead2d2e04964f9d739a",
+          "agent_name": "Program Operator",
+          "state": "pending",
+          "reason_copy_key": "approval.reason.program-policy-required",
+          "created_at": "2026-10-04T04:00:00Z",
+          "expires_at": "2026-10-04T05:00:00Z",
+          "held_digest": "839a0ce4d2ff0ee8b1c85d1256f2ddde6fdd83f986683d6d84099d44e1f52500",
+          "operation": {
+            "kind": "call",
+            "program_id": "58d93ec84a19e4fe5676a70a2389ee7c4fbe4f54bfd260ad3d15e7a1a506eab3",
+            "call": {
+              "guest_abi": 2,
+              "entrypoint_hex": "65786563757465",
+              "calldata": {
+                "sha256": "4bf5122f344554c53bde2ebb8cd2b7e3d1600ad631c385a5d7cce23c7785459a",
+                "byte_length": "1"
+              },
+              "capabilities": {
+                "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                "byte_length": "0"
+              },
+              "access_declaration": {
+                "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                "byte_length": "0"
+              },
+              "response_capacity": 1024,
+              "resources": [
+                "200000",
+                "4096",
+                "32",
+                "0",
+                "0",
+                "0",
+                "0"
+              ]
+            }
+          },
+          "semantics": "authorized-limits",
+          "authorized_limits": [
+            {
+              "kind": "principal",
+              "source_account": "act_d0cc6810f7073d900bb9fadec0a776993b0ea619733e96aa4172d7c9a718c13c",
+              "asset_id": "d59386e0ae435e292fbe0ebcdb954b75ed5fb3922091277cb19f798fc5d50718",
+              "destination": "act_c99211159a427162fec57cc104d913720f39c7a2ccfd847d3eebf32f63699bf9",
+              "maximum_amount": "2500000"
+            }
+          ],
+          "evidence": [
+            {
+              "evidence_id": "evd_addef1534a9f9d2cfa2f2e2b79146be7b931ccd91f795a888afb6c0f59d6ca14",
+              "class": "approval-hold",
+              "verification": "unverified"
+            },
+            {
+              "evidence_id": "evd_e89ef7b192f39473389a256709a02925ee0339e8662c8acd2e9c9a71d35ee330",
+              "class": "approval-hold",
+              "verification": "unverified"
+            },
+            {
+              "evidence_id": "evd_43a720967fb03227c2d04be0a07623a45a5b273d1276aefa442a5b55e36899ff",
+              "class": "local-journey-state",
+              "verification": "unverified"
+            }
+          ]
+        },
+        {
+          "approval_id": "apr_f0e077a959b49ab8608fe579cfc51b3df6bb8dbe5b7c5de3e1a6de95270e1032",
+          "agent_id": "agt_5642bc7c9241f4087df42c1d3b27e1a8de3a43b48f07aead2d2e04964f9d739a",
+          "agent_name": "Program Operator",
+          "state": "pending",
+          "reason_copy_key": "approval.reason.program-policy-required",
+          "created_at": "2026-10-04T04:00:00Z",
+          "expires_at": "2026-10-04T05:00:00Z",
+          "held_digest": "7694409e013e33c020e1b0f7003befe40a9ca696b2525566e8546d32e36858d4",
+          "operation": {
+            "kind": "wind-down",
+            "program_id": "f43def63b1eb8c3ce39803979b7c0ce54043f6dbeb392c3b9963bfbaea9f59d7",
+            "wind_down": {
+              "kind": "tombstone"
+            }
+          },
+          "semantics": "operation-only",
+          "authorized_limits": [],
+          "evidence": [
+            {
+              "evidence_id": "evd_2ce4f946285485a26d4ec7b10ff7a59efc6a4e49d2fd3e239c1bfdd0456b91f5",
+              "class": "approval-hold",
+              "verification": "unverified"
+            },
+            {
+              "evidence_id": "evd_7c6b1ee0b8abaa43a9c93a439a21e32d5ebd558d2831e82ba5ae03ca3107f0c0",
+              "class": "approval-hold",
+              "verification": "unverified"
+            },
+            {
+              "evidence_id": "evd_46ad55d7c72770f2310d777d75faa9b53b48d42e44e849430a49dbc49ee5d70a",
+              "class": "local-journey-state",
+              "verification": "unverified"
+            }
+          ]
+        }
+      ],
+      "next_cursor": ""
+    },
+    "trace": "trc_program_approval_contract_example"
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "status": 410,
+  "body": {
+    "ok": false,
+    "error": {
+      "code": "hold-expired",
+      "copy_key": "error.approval.hold-expired",
+      "retry": "final"
+    },
+    "trace": "trc_program_approval_contract_example"
+  }
+}

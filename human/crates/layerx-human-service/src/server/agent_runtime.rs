@@ -73,6 +73,11 @@ const NATIVE_EFFECT_APPROVAL_DECIDE: u8 = 54;
 const NATIVE_EFFECT_APPROVAL_MATERIAL: u8 = 55;
 const NATIVE_EFFECT_APPROVAL_BUDGET: u8 = 56;
 const AGENT_BUDGET_PROOF: u8 = 57;
+const NATIVE_PROGRAM_APPROVAL_LIST: u8 = 58;
+const NATIVE_PROGRAM_APPROVAL_GET: u8 = 59;
+const NATIVE_PROGRAM_APPROVAL_MATERIAL: u8 = 60;
+const NATIVE_PROGRAM_APPROVAL_BUDGET: u8 = 61;
+const NATIVE_PROGRAM_APPROVAL_DECIDE: u8 = 62;
 const APPROVAL_LIST: u8 = 9;
 const APPROVAL_GET: u8 = 10;
 const APPROVAL_APPROVE: u8 = 11;
@@ -220,35 +225,347 @@ pub struct NativeApprovalFactsPage {
     pub next_cursor: Option<[u8; 32]>,
 }
 
-#[derive(Clone,Copy,Debug,Eq,PartialEq)]
-pub enum NativeEffectApprovalFactState { Awaiting, Granted, Rejected, Expired, NotRequired }
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub enum NativeProgramChargeKind {
+    Principal = 1,
+    ProgramSpend = 2,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct NativeProgramLimit {
+    pub kind: NativeProgramChargeKind,
+    pub source: [u8; 32],
+    pub asset: [u8; 32],
+    pub destination: Option<[u8; 32]>,
+    pub maximum_amount: u128,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum NativeProgramApprovalSemantics {
+    OperationOnly,
+    AuthorizedLimits(Vec<NativeProgramLimit>),
+}
+
+pub struct NativeProgramApprovalFacts {
+    pub approval_id: [u8; 32],
+    pub held_digest: [u8; 32],
+    pub owner: String,
+    pub actor: String,
+    pub activity_module: u16,
+    pub activity_ordinal: u16,
+    pub state: NativeApprovalFactState,
+    pub created_at_sequence: u64,
+    pub budget_expiry_sequence: u64,
+    pub created_at_unix_seconds: u64,
+    pub activity_expires_at_unix_milliseconds: u64,
+    pub release_ref: Option<[u8; 32]>,
+    pub fee_asset: Option<[u8; 32]>,
+    pub canonical_payload_bytes: Vec<u8>,
+    pub semantics: NativeProgramApprovalSemantics,
+}
+
+pub struct NativeProgramApprovalFactsPage {
+    pub approvals: Vec<NativeProgramApprovalFacts>,
+    pub next_cursor: Option<[u8; 32]>,
+}
+
+pub struct NativeProgramApprovalMaterial {
+    pub approval_id: [u8; 32],
+    pub held_digest: [u8; 32],
+    pub owner: String,
+    pub provenance: NativeEffectMaterialProvenance,
+    pub canonical_unsigned_bytes: Vec<u8>,
+    pub immutable_carrier_bytes: Vec<u8>,
+    pub canonical_budget_bytes: Vec<u8>,
+    pub actor: String,
+    pub activity_ordinal: u16,
+    pub canonical_payload_bytes: Vec<u8>,
+    pub fee_limit: u128,
+    pub activity_expires_at_unix_milliseconds: u64,
+}
+
+impl NativeProgramApprovalMaterial {
+    pub fn validate_facts(
+        &self,
+        facts: &NativeProgramApprovalFacts,
+        registry: &ModuleRegistry,
+    ) -> Result<(), AgentBoundaryError> {
+        let activity =
+            layerx_wire::activity::decode_unsigned(&self.canonical_unsigned_bytes, registry)
+                .map_err(|_| AgentBoundaryError::CorruptResponse)?;
+        if self.approval_id != facts.approval_id
+            || self.held_digest != facts.held_digest
+            || self.owner != facts.owner
+            || <[u8; 32]>::from(sha2::Sha256::digest(&self.canonical_unsigned_bytes))
+                != self.approval_id
+            || <[u8; 32]>::from(sha2::Sha256::digest(&self.immutable_carrier_bytes))
+                != self.held_digest
+            || activity.protocol_version() != 3
+            || activity.activity_type().module() != ModuleId::Programs
+            || layerx_wire::activity::encode_unsigned(&activity)
+                .map_err(|_| AgentBoundaryError::CorruptResponse)?
+                != self.canonical_unsigned_bytes
+            || activity.activity_type().module() as u16 != facts.activity_module
+            || activity.activity_type().ordinal() != facts.activity_ordinal
+            || activity.actor_did() != facts.actor.as_bytes()
+            || activity.payload() != facts.canonical_payload_bytes
+            || activity.timestamp_bound().not_after != facts.activity_expires_at_unix_milliseconds
+        {
+            return Err(AgentBoundaryError::CorruptResponse);
+        }
+        let carrier: serde_json::Value = serde_json::from_slice(&self.immutable_carrier_bytes)
+            .map_err(|_| AgentBoundaryError::CorruptResponse)?;
+        if carrier
+            .get("created_at_sequence")
+            .and_then(serde_json::Value::as_u64)
+            != Some(facts.created_at_sequence)
+            || carrier
+                .get("budget_expiry_sequence")
+                .and_then(serde_json::Value::as_u64)
+                != Some(facts.budget_expiry_sequence)
+            || carrier
+                .get("envelope_not_after")
+                .and_then(serde_json::Value::as_u64)
+                != Some(facts.activity_expires_at_unix_milliseconds)
+        {
+            return Err(AgentBoundaryError::CorruptResponse);
+        }
+        let body_len = self
+            .canonical_budget_bytes
+            .len()
+            .checked_sub(32)
+            .ok_or(AgentBoundaryError::CorruptResponse)?;
+        let (body, digest) = self.canonical_budget_bytes.split_at(body_len);
+        let expected: [u8; 32] = sha2::Sha256::new()
+            .chain_update(b"layerx:program-budget:v2\0")
+            .chain_update(body)
+            .finalize()
+            .into();
+        if digest != expected {
+            return Err(AgentBoundaryError::CorruptResponse);
+        }
+        let mut reader = Reader::new(body.to_vec());
+        if reader.fixed::<5>()? != *b"LXPB\x02" {
+            return Err(AgentBoundaryError::CorruptResponse);
+        }
+        let legacy_len =
+            usize::try_from(reader.u32()?).map_err(|_| AgentBoundaryError::CorruptResponse)?;
+        let legacy = reader.take(legacy_len)?;
+        let legacy_body_len = legacy
+            .len()
+            .checked_sub(32)
+            .ok_or(AgentBoundaryError::CorruptResponse)?;
+        let (legacy_body, legacy_digest) = legacy.split_at(legacy_body_len);
+        let expected: [u8; 32] = sha2::Sha256::new()
+            .chain_update(b"layerx:program-budget:v1\0")
+            .chain_update(legacy_body)
+            .finalize()
+            .into();
+        if !legacy_body.starts_with(b"LXPB\x01") || legacy_digest != expected {
+            return Err(AgentBoundaryError::CorruptResponse);
+        }
+        let mut legacy = Reader::new(legacy_body.to_vec());
+        if legacy.fixed::<5>()? != *b"LXPB\x01"
+            || legacy.fixed::<32>()? != facts.approval_id
+            || legacy.u64()? != facts.budget_expiry_sequence
+        {
+            return Err(AgentBoundaryError::CorruptResponse);
+        }
+        let actor = layerx_types::ids::Did::new(facts.actor.as_bytes())
+            .map_err(|_| AgentBoundaryError::CorruptResponse)?;
+        let actor_id = layerx_wire::hash::did_id_for_protocol(&actor, 3)
+            .map_err(|_| AgentBoundaryError::CorruptResponse)?;
+        if reader.fixed::<32>()? != facts.approval_id
+            || reader.fixed::<32>()? != actor_id
+            || reader.fixed::<32>()? == [0; 32]
+        {
+            return Err(AgentBoundaryError::CorruptResponse);
+        }
+        reader.u64()?;
+        if reader.u64()? != facts.created_at_sequence {
+            return Err(AgentBoundaryError::CorruptResponse);
+        }
+        let count = usize::from(reader.u16()?);
+        if count == 0 || count > 256 {
+            return Err(AgentBoundaryError::CorruptResponse);
+        }
+        let mut limits = Vec::new();
+        let mut previous = None;
+        let mut fee = None;
+        for _ in 0..count {
+            let kind = reader.u8()?;
+            let source = reader.fixed::<32>()?;
+            let asset = reader.fixed::<32>()?;
+            let destination = match (reader.u8()?, reader.fixed::<32>()?) {
+                (0, value) if value == [0; 32] => None,
+                (1, value) if value != [0; 32] => Some(value),
+                _ => return Err(AgentBoundaryError::CorruptResponse),
+            };
+            let maximum_amount = reader.u128()?;
+            let key = (asset, source, kind, destination);
+            if source == [0; 32]
+                || asset == [0; 32]
+                || maximum_amount == 0
+                || previous.is_some_and(|old| old >= key)
+            {
+                return Err(AgentBoundaryError::CorruptResponse);
+            }
+            previous = Some(key);
+            let limit_count = usize::from(reader.u16()?);
+            if limit_count == 0 || limit_count > 1024 {
+                return Err(AgentBoundaryError::CorruptResponse);
+            }
+            let mut previous_limit = None;
+            for _ in 0..limit_count {
+                let limit = reader.fixed::<16>()?;
+                if previous_limit.is_some_and(|old| old >= limit) {
+                    return Err(AgentBoundaryError::CorruptResponse);
+                }
+                previous_limit = Some(limit);
+            }
+            if kind == 1 || kind == 3 {
+                let main =
+                    layerx_types::account::AccountId::parse(&format!("agent:{}:main", facts.actor))
+                        .map_err(|_| AgentBoundaryError::CorruptResponse)?;
+                let asset_hex: String = asset.iter().map(|byte| format!("{byte:02x}")).collect();
+                let asset_account = layerx_types::account::AccountId::parse(&format!(
+                    "agent:{}:asset:{asset_hex}",
+                    facts.actor
+                ))
+                .map_err(|_| AgentBoundaryError::CorruptResponse)?;
+                let main_id = layerx_wire::hash::account_id_for_protocol(&main, 3)
+                    .map_err(|_| AgentBoundaryError::CorruptResponse)?;
+                let asset_id = layerx_wire::hash::account_id_for_protocol(&asset_account, 3)
+                    .map_err(|_| AgentBoundaryError::CorruptResponse)?;
+                if source != main_id && source != asset_id {
+                    return Err(AgentBoundaryError::CorruptResponse);
+                }
+            }
+            match kind {
+                3 if destination.is_none()
+                    && maximum_amount == activity.fee_limit()
+                    && fee.is_none() =>
+                {
+                    fee = Some(asset)
+                }
+                1 | 2 if destination.is_some() => limits.push(NativeProgramLimit {
+                    kind: if kind == 1 {
+                        NativeProgramChargeKind::Principal
+                    } else {
+                        NativeProgramChargeKind::ProgramSpend
+                    },
+                    source,
+                    asset,
+                    destination,
+                    maximum_amount,
+                }),
+                _ => return Err(AgentBoundaryError::CorruptResponse),
+            }
+        }
+        reader.finish()?;
+        let semantics = if limits.is_empty() {
+            NativeProgramApprovalSemantics::OperationOnly
+        } else {
+            NativeProgramApprovalSemantics::AuthorizedLimits(limits)
+        };
+        if fee != facts.fee_asset
+            || fee.is_some() != (activity.fee_limit() != 0)
+            || semantics != facts.semantics
+        {
+            return Err(AgentBoundaryError::CorruptResponse);
+        }
+        Ok(())
+    }
+}
+
+pub struct NativeProgramApprovalBudget {
+    pub approval_id: [u8; 32],
+    pub held_digest: [u8; 32],
+    pub owner: String,
+    pub budget_id: [u8; 32],
+    pub asset: [u8; 32],
+    pub source_account: [u8; 32],
+    pub observed_at_sequence: u64,
+    pub remaining: u128,
+    pub terminal: bool,
+    pub verification: Level,
+    pub evidence_digest: [u8; 32],
+    pub receipt_digest: [u8; 32],
+    pub checkpoint_digest: [u8; 32],
+    pub age_sequences: u64,
+    pub maximum_age_sequences: u64,
+    pub proof_digest: [u8; 32],
+    pub verified_proof_bytes: Vec<u8>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum NativeEffectApprovalFactState {
+    Awaiting,
+    Granted,
+    Rejected,
+    Expired,
+    NotRequired,
+}
 pub type NativeEffectCounterparty = disclosure::Counterparty;
 pub type NativeEffectAmount = disclosure::DisclosedAmount;
 pub struct NativeEffectApprovalFacts {
-    pub approval_id:[u8;32],pub held_digest:[u8;32],pub owner:String,pub actor:String,
-    pub activity_module:u16,pub activity_ordinal:u16,pub state:NativeEffectApprovalFactState,pub requires_approval:bool,
-    pub created_at_sequence:u64,pub budget_expiry_sequence:u64,pub created_at_unix_seconds:u64,
-    pub activity_expires_at_unix_milliseconds:u64,pub asset:[u8;32],pub fee_asset:[u8;32],pub fee_limit:u128,
-    pub counterparties:Vec<NativeEffectCounterparty>,pub amounts:Vec<NativeEffectAmount>,
-    pub release_ref:Option<[u8;32]>,pub submission_ref:Option<[u8;32]>,
+    pub approval_id: [u8; 32],
+    pub held_digest: [u8; 32],
+    pub owner: String,
+    pub actor: String,
+    pub activity_module: u16,
+    pub activity_ordinal: u16,
+    pub state: NativeEffectApprovalFactState,
+    pub requires_approval: bool,
+    pub created_at_sequence: u64,
+    pub budget_expiry_sequence: u64,
+    pub created_at_unix_seconds: u64,
+    pub activity_expires_at_unix_milliseconds: u64,
+    pub asset: [u8; 32],
+    pub fee_asset: [u8; 32],
+    pub fee_limit: u128,
+    pub counterparties: Vec<NativeEffectCounterparty>,
+    pub amounts: Vec<NativeEffectAmount>,
+    pub release_ref: Option<[u8; 32]>,
+    pub submission_ref: Option<[u8; 32]>,
 }
-pub struct NativeEffectApprovalFactsPage {pub approvals:Vec<NativeEffectApprovalFacts>,pub next_cursor:Option<[u8;32]>}
+pub struct NativeEffectApprovalFactsPage {
+    pub approvals: Vec<NativeEffectApprovalFacts>,
+    pub next_cursor: Option<[u8; 32]>,
+}
 
-#[derive(Clone,Copy,Debug,Eq,PartialEq)]
-pub enum NativeEffectMaterialProvenance { LocalOwned }
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum NativeEffectMaterialProvenance {
+    LocalOwned,
+}
 pub struct NativeEffectApprovalMaterial {
-    pub approval_id:[u8;32],pub held_digest:[u8;32],pub owner:String,
-    pub provenance:NativeEffectMaterialProvenance,pub canonical_unsigned_bytes:Vec<u8>,
-    pub immutable_carrier_bytes:Vec<u8>,pub canonical_budget_bytes:Vec<u8>,
+    pub approval_id: [u8; 32],
+    pub held_digest: [u8; 32],
+    pub owner: String,
+    pub provenance: NativeEffectMaterialProvenance,
+    pub canonical_unsigned_bytes: Vec<u8>,
+    pub immutable_carrier_bytes: Vec<u8>,
+    pub canonical_budget_bytes: Vec<u8>,
 }
 pub struct NativeEffectBudgetRow {
-    pub asset:[u8;32],pub budget_id:[u8;32],pub source_account:[u8;32],pub remaining:u128,
-    pub verification:Level,pub evidence_digest:[u8;32],pub receipt_digest:[u8;32],pub checkpoint_digest:[u8;32],
-    pub age_sequences:u64,pub maximum_age_sequences:u64,
+    pub asset: [u8; 32],
+    pub budget_id: [u8; 32],
+    pub source_account: [u8; 32],
+    pub remaining: u128,
+    pub verification: Level,
+    pub evidence_digest: [u8; 32],
+    pub receipt_digest: [u8; 32],
+    pub checkpoint_digest: [u8; 32],
+    pub age_sequences: u64,
+    pub maximum_age_sequences: u64,
 }
 pub struct NativeEffectApprovalBudget {
-    pub approval_id:[u8;32],pub held_digest:[u8;32],pub owner:String,pub observed_at_sequence:u64,
-    pub fee_asset:[u8;32],pub rows:Vec<NativeEffectBudgetRow>,
+    pub approval_id: [u8; 32],
+    pub held_digest: [u8; 32],
+    pub owner: String,
+    pub observed_at_sequence: u64,
+    pub fee_asset: [u8; 32],
+    pub rows: Vec<NativeEffectBudgetRow>,
 }
 
 pub struct AgentApprovalFacts {
@@ -258,12 +575,12 @@ pub struct AgentApprovalFacts {
 }
 pub struct AgentApprovalFactsPage {
     pub approvals: Vec<AgentApprovalFacts>,
-    pub next_cursor: Option<[u8;32]>,
+    pub next_cursor: Option<[u8; 32]>,
 }
 pub struct ManagedReceiptExport {
     pub canonical_bytes: Vec<u8>,
-    pub digest: [u8;32],
-    pub activity_id: [u8;32],
+    pub digest: [u8; 32],
+    pub activity_id: [u8; 32],
     pub global_sequence: u64,
     pub verification: u8,
 }
@@ -523,10 +840,20 @@ pub struct AgentBudgetState {
 }
 
 pub struct AgentBudgetProof {
-    pub owner:String,pub budget_id:[u8;32],pub asset:[u8;32],pub source_account:[u8;32],
-    pub observed_head_sequence:u64,pub remaining:u128,pub verification:Level,
-    pub evidence_digest:[u8;32],pub receipt_digest:[u8;32],pub checkpoint_digest:[u8;32],
-    pub age_sequences:u64,pub maximum_age_sequences:u64,pub digest:[u8;32],pub canonical_export_bytes:Vec<u8>,
+    pub owner: String,
+    pub budget_id: [u8; 32],
+    pub asset: [u8; 32],
+    pub source_account: [u8; 32],
+    pub observed_head_sequence: u64,
+    pub remaining: u128,
+    pub verification: Level,
+    pub evidence_digest: [u8; 32],
+    pub receipt_digest: [u8; 32],
+    pub checkpoint_digest: [u8; 32],
+    pub age_sequences: u64,
+    pub maximum_age_sequences: u64,
+    pub digest: [u8; 32],
+    pub canonical_export_bytes: Vec<u8>,
 }
 pub struct AgentKeyPolicy {
     pub agent_did: String,
@@ -935,23 +1262,57 @@ impl AgentRuntime {
         reader.finish()?;
         Ok(value)
     }
-    pub fn agent_budget_proof(&mut self,budget_id:[u8;32])->Result<AgentBudgetProof,AgentBoundaryError>{
-        if self.subject.is_none()||budget_id==[0;32]{return Err(AgentBoundaryError::Refused)}
-        let mut writer=Writer::new(AGENT_BUDGET_PROOF);writer.fixed(&budget_id);
-        let mut reader=self.exchange(&writer.finish())?;
-        if reader.u16()?!=4{return Err(AgentBoundaryError::CorruptResponse)}
-        let value=AgentBudgetProof{owner:reader.text()?,budget_id:reader.fixed()?,asset:reader.fixed()?,source_account:reader.fixed()?,
-            observed_head_sequence:reader.u64()?,remaining:reader.u128()?,verification:decode_level(reader.u8()?)?,
-            evidence_digest:reader.fixed()?,receipt_digest:reader.fixed()?,checkpoint_digest:reader.fixed()?,
-            age_sequences:reader.u64()?,maximum_age_sequences:reader.u64()?,digest:reader.fixed()?,canonical_export_bytes:reader.bytes()?};
+    pub fn agent_budget_proof(
+        &mut self,
+        budget_id: [u8; 32],
+    ) -> Result<AgentBudgetProof, AgentBoundaryError> {
+        if self.subject.is_none() || budget_id == [0; 32] {
+            return Err(AgentBoundaryError::Refused);
+        }
+        let mut writer = Writer::new(AGENT_BUDGET_PROOF);
+        writer.fixed(&budget_id);
+        let mut reader = self.exchange(&writer.finish())?;
+        if reader.u16()? != 4 {
+            return Err(AgentBoundaryError::CorruptResponse);
+        }
+        let value = AgentBudgetProof {
+            owner: reader.text()?,
+            budget_id: reader.fixed()?,
+            asset: reader.fixed()?,
+            source_account: reader.fixed()?,
+            observed_head_sequence: reader.u64()?,
+            remaining: reader.u128()?,
+            verification: decode_level(reader.u8()?)?,
+            evidence_digest: reader.fixed()?,
+            receipt_digest: reader.fixed()?,
+            checkpoint_digest: reader.fixed()?,
+            age_sequences: reader.u64()?,
+            maximum_age_sequences: reader.u64()?,
+            digest: reader.fixed()?,
+            canonical_export_bytes: reader.bytes()?,
+        };
         reader.finish()?;
-        let actual_digest:[u8;32]=sha2::Sha256::digest(&value.canonical_export_bytes).into();
-        if self.subject.as_ref().is_none_or(|subject|subject.owner!=value.owner)||value.budget_id!=budget_id
-            ||value.asset==[0;32]||value.source_account==[0;32]||value.observed_head_sequence==0
-            ||!matches!(value.verification,Level::CheckpointFinalised|Level::SettlementAnchored)
-            ||value.evidence_digest==[0;32]||value.receipt_digest==[0;32]||value.checkpoint_digest==[0;32]
-            ||value.maximum_age_sequences==0||value.age_sequences>value.maximum_age_sequences||actual_digest!=value.digest{
-            return Err(AgentBoundaryError::CorruptResponse)
+        let actual_digest: [u8; 32] = sha2::Sha256::digest(&value.canonical_export_bytes).into();
+        if self
+            .subject
+            .as_ref()
+            .is_none_or(|subject| subject.owner != value.owner)
+            || value.budget_id != budget_id
+            || value.asset == [0; 32]
+            || value.source_account == [0; 32]
+            || value.observed_head_sequence == 0
+            || !matches!(
+                value.verification,
+                Level::CheckpointFinalised | Level::SettlementAnchored
+            )
+            || value.evidence_digest == [0; 32]
+            || value.receipt_digest == [0; 32]
+            || value.checkpoint_digest == [0; 32]
+            || value.maximum_age_sequences == 0
+            || value.age_sequences > value.maximum_age_sequences
+            || actual_digest != value.digest
+        {
+            return Err(AgentBoundaryError::CorruptResponse);
         }
         Ok(value)
     }
@@ -1788,21 +2149,62 @@ impl AgentRuntime {
     }
     /// # Errors
     /// Returns a boundary refusal for invalid request fields, an unavailable transport, or a malformed response.
-    pub fn approval_get_facts(&mut self, approval_id: [u8;32], current_sequence: u64) -> Result<AgentApprovalFacts, AgentBoundaryError> {
-        let mut writer=Writer::new(APPROVAL_GET_FACTS);writer.fixed(&approval_id);writer.u64(current_sequence);
-        let mut reader=self.exchange(&writer.finish())?;let facts=decode_approval_facts(&mut reader)?;reader.finish()?;
-        if facts.approval.approval_id!=approval_id {return Err(AgentBoundaryError::CorruptResponse)};Ok(facts)
+    pub fn approval_get_facts(
+        &mut self,
+        approval_id: [u8; 32],
+        current_sequence: u64,
+    ) -> Result<AgentApprovalFacts, AgentBoundaryError> {
+        let mut writer = Writer::new(APPROVAL_GET_FACTS);
+        writer.fixed(&approval_id);
+        writer.u64(current_sequence);
+        let mut reader = self.exchange(&writer.finish())?;
+        let facts = decode_approval_facts(&mut reader)?;
+        reader.finish()?;
+        if facts.approval.approval_id != approval_id {
+            return Err(AgentBoundaryError::CorruptResponse);
+        };
+        Ok(facts)
     }
-    pub fn approval_list_facts(&mut self, current_sequence:u64,cursor:Option<[u8;32]>,limit:u8) -> Result<AgentApprovalFactsPage,AgentBoundaryError> {
-        let mut writer=Writer::new(APPROVAL_LIST_FACTS);writer.u64(current_sequence);
-        match cursor {Some(value)=>{writer.u8(1);writer.fixed(&value)},None=>writer.u8(0)};writer.u8(limit);
-        let mut reader=self.exchange(&writer.finish())?;let count=usize::from(reader.u8()?);
-        if count>100 || count>usize::from(limit) {return Err(AgentBoundaryError::CorruptResponse)};
-        let mut approvals=Vec::with_capacity(count);for _ in 0..count {approvals.push(decode_approval_facts(&mut reader)?)};
-        let next_cursor=match reader.u8()? {0=>None,1=>Some(reader.fixed()?),_=>return Err(AgentBoundaryError::CorruptResponse)};
-        reader.finish()?;Ok(AgentApprovalFactsPage{approvals,next_cursor})
+    pub fn approval_list_facts(
+        &mut self,
+        current_sequence: u64,
+        cursor: Option<[u8; 32]>,
+        limit: u8,
+    ) -> Result<AgentApprovalFactsPage, AgentBoundaryError> {
+        let mut writer = Writer::new(APPROVAL_LIST_FACTS);
+        writer.u64(current_sequence);
+        match cursor {
+            Some(value) => {
+                writer.u8(1);
+                writer.fixed(&value)
+            }
+            None => writer.u8(0),
+        };
+        writer.u8(limit);
+        let mut reader = self.exchange(&writer.finish())?;
+        let count = usize::from(reader.u8()?);
+        if count > 100 || count > usize::from(limit) {
+            return Err(AgentBoundaryError::CorruptResponse);
+        };
+        let mut approvals = Vec::with_capacity(count);
+        for _ in 0..count {
+            approvals.push(decode_approval_facts(&mut reader)?)
+        }
+        let next_cursor = match reader.u8()? {
+            0 => None,
+            1 => Some(reader.fixed()?),
+            _ => return Err(AgentBoundaryError::CorruptResponse),
+        };
+        reader.finish()?;
+        Ok(AgentApprovalFactsPage {
+            approvals,
+            next_cursor,
+        })
     }
-    pub fn native_approval_get_facts(&mut self, approval_id: [u8; 32]) -> Result<NativeApprovalFacts, AgentBoundaryError> {
+    pub fn native_approval_get_facts(
+        &mut self,
+        approval_id: [u8; 32],
+    ) -> Result<NativeApprovalFacts, AgentBoundaryError> {
         if self.subject.is_none() || approval_id == [0; 32] {
             return Err(AgentBoundaryError::Refused);
         }
@@ -1821,22 +2223,36 @@ impl AgentRuntime {
         Ok(value)
     }
 
-    pub fn native_approval_list_facts(&mut self, cursor: Option<[u8; 32]>, limit: u8) -> Result<NativeApprovalFactsPage, AgentBoundaryError> {
+    pub fn native_approval_list_facts(
+        &mut self,
+        cursor: Option<[u8; 32]>,
+        limit: u8,
+    ) -> Result<NativeApprovalFactsPage, AgentBoundaryError> {
         if self.subject.is_none() || !(1..=100).contains(&limit) || cursor == Some([0; 32]) {
             return Err(AgentBoundaryError::Refused);
         }
         let mut writer = Writer::new(NATIVE_APPROVAL_LIST_FACTS);
-        match cursor { Some(value) => {writer.u8(1); writer.fixed(&value);}, None => writer.u8(0) }
+        match cursor {
+            Some(value) => {
+                writer.u8(1);
+                writer.fixed(&value);
+            }
+            None => writer.u8(0),
+        }
         writer.u8(limit);
         let mut reader = self.exchange(&writer.finish())?;
         let count = usize::from(reader.u8()?);
-        if count > usize::from(limit) { return Err(AgentBoundaryError::CorruptResponse); }
+        if count > usize::from(limit) {
+            return Err(AgentBoundaryError::CorruptResponse);
+        }
         let subject = self.subject.as_ref().ok_or(AgentBoundaryError::Refused)?;
         let mut previous = cursor;
         let mut approvals = Vec::with_capacity(count);
         for _ in 0..count {
             let value = decode_native_approval_facts(&mut reader)?;
-            if previous.is_some_and(|id| value.approval_id <= id) || value.owner.as_bytes() != subject.owner.as_bytes() {
+            if previous.is_some_and(|id| value.approval_id <= id)
+                || value.owner.as_bytes() != subject.owner.as_bytes()
+            {
                 return Err(AgentBoundaryError::CorruptResponse);
             }
             previous = Some(value.approval_id);
@@ -1848,106 +2264,653 @@ impl AgentRuntime {
             _ => return Err(AgentBoundaryError::CorruptResponse),
         };
         reader.finish()?;
-        if next_cursor.is_some() && (approvals.len() != usize::from(limit) || next_cursor != previous) {
+        if next_cursor.is_some()
+            && (approvals.len() != usize::from(limit) || next_cursor != previous)
+        {
             return Err(AgentBoundaryError::CorruptResponse);
         }
-        Ok(NativeApprovalFactsPage { approvals, next_cursor })
+        Ok(NativeApprovalFactsPage {
+            approvals,
+            next_cursor,
+        })
     }
 
-    pub fn native_effect_approval_get_facts(&mut self,approval_id:[u8;32])->Result<NativeEffectApprovalFacts,AgentBoundaryError>{
-        if self.subject.is_none()||approval_id==[0;32]{return Err(AgentBoundaryError::Refused)}
-        let mut writer=Writer::new(NATIVE_EFFECT_APPROVAL_GET);writer.fixed(&approval_id);
-        let mut reader=self.exchange(&writer.finish())?;let value=decode_native_effect_approval_facts(&mut reader)?;reader.finish()?;
-        if value.approval_id!=approval_id || self.subject.as_ref().is_none_or(|s|s.owner.as_bytes()!=value.owner.as_bytes()) {
-            return Err(AgentBoundaryError::CorruptResponse)
-        };Ok(value)
-    }
-    pub fn native_effect_approval_list_facts(&mut self,cursor:Option<[u8;32]>,limit:u8)->Result<NativeEffectApprovalFactsPage,AgentBoundaryError>{
-        if self.subject.is_none()||!(1..=100).contains(&limit)||cursor==Some([0;32]){return Err(AgentBoundaryError::Refused)}
-        let mut writer=Writer::new(NATIVE_EFFECT_APPROVAL_LIST);match cursor{Some(id)=>{writer.u8(1);writer.fixed(&id)},None=>writer.u8(0)};writer.u8(limit);
-        let mut reader=self.exchange(&writer.finish())?;let count=usize::from(reader.u8()?);if count>usize::from(limit){return Err(AgentBoundaryError::CorruptResponse)}
-        let mut approvals=Vec::with_capacity(count);let mut previous=cursor;
-        for _ in 0..count {let value=decode_native_effect_approval_facts(&mut reader)?;
-            if previous.is_some_and(|id|value.approval_id<=id)||self.subject.as_ref().is_none_or(|s|s.owner.as_bytes()!=value.owner.as_bytes()){
-                return Err(AgentBoundaryError::CorruptResponse)}
-            previous=Some(value.approval_id);approvals.push(value);
+    pub fn native_program_approval_list(
+        &mut self,
+        cursor: Option<[u8; 32]>,
+        limit: u8,
+    ) -> Result<NativeProgramApprovalFactsPage, AgentBoundaryError> {
+        if self.subject.is_none() || !(1..=100).contains(&limit) || cursor == Some([0; 32]) {
+            return Err(AgentBoundaryError::Refused);
         }
-        let next_cursor=decode_native_ref(&mut reader)?;reader.finish()?;
-        if next_cursor.is_some()&&(approvals.len()!=usize::from(limit)||next_cursor!=previous){return Err(AgentBoundaryError::CorruptResponse)}
-        Ok(NativeEffectApprovalFactsPage{approvals,next_cursor})
-    }
-    pub fn native_effect_approval_decide(&mut self,approval_id:[u8;32],held_digest:[u8;32],idempotency_key:&str,
-        grant:bool,current_sequence:u64)->Result<NativeEffectApprovalFacts,AgentBoundaryError>{
-        if self.subject.is_none()||approval_id==[0;32]||held_digest==[0;32]||current_sequence==0{return Err(AgentBoundaryError::Refused)}
-        let mut writer=Writer::new(NATIVE_EFFECT_APPROVAL_DECIDE);writer.fixed(&approval_id);writer.fixed(&held_digest);
-        writer.text(idempotency_key)?;writer.u8(u8::from(grant));writer.u64(current_sequence);
-        let mut reader=self.exchange(&writer.finish())?;let value=decode_native_effect_approval_facts(&mut reader)?;reader.finish()?;
-        if value.approval_id!=approval_id||value.held_digest!=held_digest||self.subject.as_ref().is_none_or(|s|s.owner.as_bytes()!=value.owner.as_bytes())
-            || !value.requires_approval || !matches!(value.state,NativeEffectApprovalFactState::Granted|NativeEffectApprovalFactState::Rejected|NativeEffectApprovalFactState::Expired)
-            || (value.state!=NativeEffectApprovalFactState::Expired && (value.state==NativeEffectApprovalFactState::Granted)!=grant){
-            return Err(AgentBoundaryError::CorruptResponse)
-        };Ok(value)
-    }
-
-    pub fn native_effect_approval_material(&mut self,approval_id:[u8;32],held_digest:[u8;32])->Result<NativeEffectApprovalMaterial,AgentBoundaryError>{
-        if self.subject.is_none()||approval_id==[0;32]||held_digest==[0;32]{return Err(AgentBoundaryError::Refused)}
-        let mut writer=Writer::new(NATIVE_EFFECT_APPROVAL_MATERIAL);writer.fixed(&approval_id);writer.fixed(&held_digest);
-        let mut reader=self.exchange(&writer.finish())?;
-        if reader.u16()?!=4||reader.fixed::<32>()?!=approval_id||reader.fixed::<32>()?!=held_digest{return Err(AgentBoundaryError::CorruptResponse)}
-        let owner=reader.text()?;if self.subject.as_ref().is_none_or(|s|s.owner.as_bytes()!=owner.as_bytes()){return Err(AgentBoundaryError::CorruptResponse)}
-        let provenance=match reader.u8()?{0=>NativeEffectMaterialProvenance::LocalOwned,_=>return Err(AgentBoundaryError::CorruptResponse)};
-        let canonical_unsigned_bytes=reader.bytes()?;let immutable_carrier_bytes=reader.bytes()?;let canonical_budget_bytes=reader.bytes()?;reader.finish()?;
-        let actual_id:[u8;32]=sha2::Sha256::digest(&canonical_unsigned_bytes).into();
-        let actual_digest:[u8;32]=sha2::Sha256::digest(&immutable_carrier_bytes).into();
-        if actual_id!=approval_id||actual_digest!=held_digest{return Err(AgentBoundaryError::CorruptResponse)}
-        let carrier:serde_json::Value=serde_json::from_slice(&immutable_carrier_bytes).map_err(|_|AgentBoundaryError::CorruptResponse)?;
-        let bound_budget=carrier.get("budget").and_then(serde_json::Value::as_array).ok_or(AgentBoundaryError::CorruptResponse)?;
-        if bound_budget.len()!=canonical_budget_bytes.len()||bound_budget.iter().zip(&canonical_budget_bytes)
-            .any(|(value,byte)|value.as_u64()!=Some(u64::from(*byte))) {return Err(AgentBoundaryError::CorruptResponse)}
-        let bound_canonical=carrier.get("canonical_bytes").and_then(serde_json::Value::as_array).ok_or(AgentBoundaryError::CorruptResponse)?;
-        if bound_canonical.len()!=canonical_unsigned_bytes.len()||bound_canonical.iter().zip(&canonical_unsigned_bytes)
-            .any(|(value,byte)|value.as_u64()!=Some(u64::from(*byte))) {return Err(AgentBoundaryError::CorruptResponse)}
-        Ok(NativeEffectApprovalMaterial{approval_id,held_digest,owner,provenance,canonical_unsigned_bytes,immutable_carrier_bytes,canonical_budget_bytes})
-    }
-    pub fn native_effect_approval_budget(&mut self,approval_id:[u8;32],held_digest:[u8;32],current_sequence:u64)->Result<NativeEffectApprovalBudget,AgentBoundaryError>{
-        if self.subject.is_none()||approval_id==[0;32]||held_digest==[0;32]||current_sequence==0{return Err(AgentBoundaryError::Refused)}
-        let mut writer=Writer::new(NATIVE_EFFECT_APPROVAL_BUDGET);writer.fixed(&approval_id);writer.fixed(&held_digest);writer.u64(current_sequence);
-        let mut reader=self.exchange(&writer.finish())?;
-        if reader.u16()?!=4||reader.fixed::<32>()?!=approval_id||reader.fixed::<32>()?!=held_digest{return Err(AgentBoundaryError::CorruptResponse)}
-        let owner=reader.text()?;let observed_at_sequence=reader.u64()?;let fee_asset=reader.fixed()?;
-        if self.subject.as_ref().is_none_or(|s|s.owner.as_bytes()!=owner.as_bytes())||observed_at_sequence!=current_sequence||fee_asset==[0;32]{
-            return Err(AgentBoundaryError::CorruptResponse)}
-        let count=usize::from(reader.u16()?);if count==0||count>256{return Err(AgentBoundaryError::CorruptResponse)}
-        let mut rows=Vec::with_capacity(count);let mut previous=None;
+        let mut writer = Writer::new(NATIVE_PROGRAM_APPROVAL_LIST);
+        writer.u16(5);
+        match cursor {
+            Some(id) => {
+                writer.u8(1);
+                writer.fixed(&id);
+            }
+            None => writer.u8(0),
+        }
+        writer.u8(limit);
+        let mut reader = self.exchange(&writer.finish())?;
+        if reader.u16()? != 5 {
+            return Err(AgentBoundaryError::CorruptResponse);
+        }
+        let count = usize::from(reader.u8()?);
+        if count > usize::from(limit) {
+            return Err(AgentBoundaryError::CorruptResponse);
+        }
+        let mut approvals = Vec::with_capacity(count);
+        let mut previous = cursor;
         for _ in 0..count {
-            let asset=reader.fixed()?;let budget_id=reader.fixed()?;let source_account=reader.fixed()?;let remaining=reader.u128()?;
-            let verification=match reader.u8()?{4=>Level::CheckpointFinalised,5=>Level::SettlementAnchored,_=>return Err(AgentBoundaryError::CorruptResponse)};
-            let evidence_digest=reader.fixed()?;let receipt_digest=reader.fixed()?;let checkpoint_digest=reader.fixed()?;
-            let age_sequences=reader.u64()?;let maximum_age_sequences=reader.u64()?;let key=(asset,budget_id,source_account);
-            if asset==[0;32]||budget_id==[0;32]||source_account==[0;32]||evidence_digest==[0;32]||receipt_digest==[0;32]||checkpoint_digest==[0;32]
-                ||maximum_age_sequences==0||age_sequences>maximum_age_sequences||previous.is_some_and(|old|old>=key){
-                return Err(AgentBoundaryError::CorruptResponse)}
-            previous=Some(key);rows.push(NativeEffectBudgetRow{asset,budget_id,source_account,remaining,verification,evidence_digest,receipt_digest,checkpoint_digest,
-                age_sequences,maximum_age_sequences});
+            let facts = decode_native_program_approval_facts(&mut reader)?;
+            self.require_program_owner(&facts.owner)?;
+            if previous.is_some_and(|id| facts.approval_id <= id) {
+                return Err(AgentBoundaryError::CorruptResponse);
+            }
+            previous = Some(facts.approval_id);
+            approvals.push(facts);
         }
-        reader.finish()?;Ok(NativeEffectApprovalBudget{approval_id,held_digest,owner,observed_at_sequence,fee_asset,rows})
+        let next_cursor = decode_native_ref(&mut reader)?;
+        reader.finish()?;
+        if next_cursor.is_some() && (count != usize::from(limit) || next_cursor != previous) {
+            return Err(AgentBoundaryError::CorruptResponse);
+        }
+        Ok(NativeProgramApprovalFactsPage {
+            approvals,
+            next_cursor,
+        })
     }
 
-    pub fn managed_evidence(&mut self,agent_id:&str,digest:[u8;32]) -> Result<ManagedReceiptExport,AgentBoundaryError> {
-        if digest==[0;32] {return Err(AgentBoundaryError::Refused)};
-        let mut writer=Writer::new(MANAGED_EVIDENCE);writer.text(agent_id)?;writer.fixed(&digest);
-        let mut reader=self.exchange(&writer.finish())?;
-        if reader.u16()?!=2 {return Err(AgentBoundaryError::CorruptResponse)};
-        let value=ManagedReceiptExport{digest:reader.fixed()?,activity_id:reader.fixed()?,global_sequence:reader.u64()?,
-            verification:reader.u8()?,canonical_bytes:reader.bytes()?};reader.finish()?;
-        let actual_digest:[u8;32]=sha2::Sha256::digest(&value.canonical_bytes).into();
-        let receipt=layerx_wire::receipt::decode(&value.canonical_bytes).map_err(|_|AgentBoundaryError::CorruptResponse)?;
-        let protocol=receipt.protocol().ok_or(AgentBoundaryError::CorruptResponse)?;
-        if value.digest!=digest || actual_digest!=digest || value.activity_id!=protocol.activity_id()
-            || value.global_sequence!=protocol.global_sequence() || !(1..=5).contains(&value.verification)
-            || layerx_wire::receipt::encode(&receipt).map_err(|_|AgentBoundaryError::CorruptResponse)?!=value.canonical_bytes {
-            return Err(AgentBoundaryError::CorruptResponse)
-        };Ok(value)
+    pub fn native_program_approval_get(
+        &mut self,
+        approval_id: [u8; 32],
+    ) -> Result<NativeProgramApprovalFacts, AgentBoundaryError> {
+        let writer = self.program_request(NATIVE_PROGRAM_APPROVAL_GET, approval_id)?;
+        let mut reader = self.exchange(&writer.finish())?;
+        let facts = decode_native_program_approval_facts(&mut reader)?;
+        reader.finish()?;
+        self.require_program_owner(&facts.owner)?;
+        if facts.approval_id != approval_id {
+            return Err(AgentBoundaryError::CorruptResponse);
+        }
+        Ok(facts)
+    }
+
+    pub fn native_program_approval_material(
+        &mut self,
+        approval_id: [u8; 32],
+        held_digest: [u8; 32],
+    ) -> Result<NativeProgramApprovalMaterial, AgentBoundaryError> {
+        if held_digest == [0; 32] {
+            return Err(AgentBoundaryError::Refused);
+        }
+        let mut writer = self.program_request(NATIVE_PROGRAM_APPROVAL_MATERIAL, approval_id)?;
+        writer.fixed(&held_digest);
+        let mut reader = self.exchange(&writer.finish())?;
+        if reader.u16()? != 5
+            || reader.fixed::<32>()? != approval_id
+            || reader.fixed::<32>()? != held_digest
+        {
+            return Err(AgentBoundaryError::CorruptResponse);
+        }
+        let owner = reader.text()?;
+        self.require_program_owner(&owner)?;
+        let provenance = match reader.u8()? {
+            0 => NativeEffectMaterialProvenance::LocalOwned,
+            _ => return Err(AgentBoundaryError::CorruptResponse),
+        };
+        let canonical_unsigned_bytes = reader.bytes()?;
+        let immutable_carrier_bytes = reader.bytes()?;
+        let canonical_budget_bytes = reader.bytes()?;
+        reader.finish()?;
+        if <[u8; 32]>::from(sha2::Sha256::digest(&canonical_unsigned_bytes)) != approval_id
+            || <[u8; 32]>::from(sha2::Sha256::digest(&immutable_carrier_bytes)) != held_digest
+        {
+            return Err(AgentBoundaryError::CorruptResponse);
+        }
+        let activity =
+            layerx_wire::activity::decode_unsigned(&canonical_unsigned_bytes, &self.registry)
+                .map_err(|_| AgentBoundaryError::CorruptResponse)?;
+        if activity.protocol_version() != 3
+            || activity.activity_type().module() != ModuleId::Programs
+            || layerx_wire::activity::encode_unsigned(&activity)
+                .map_err(|_| AgentBoundaryError::CorruptResponse)?
+                != canonical_unsigned_bytes
+        {
+            return Err(AgentBoundaryError::CorruptResponse);
+        }
+        validate_native_program_payload(activity.activity_type().ordinal(), activity.payload())?;
+        let carrier: serde_json::Value = serde_json::from_slice(&immutable_carrier_bytes)
+            .map_err(|_| AgentBoundaryError::CorruptResponse)?;
+        let subject = self.subject.as_ref().ok_or(AgentBoundaryError::Refused)?;
+        if carrier.get("principal").and_then(serde_json::Value::as_str)
+            != Some(subject.principal.as_str())
+            || carrier
+                .get("activity_module")
+                .and_then(serde_json::Value::as_u64)
+                != Some(9)
+            || carrier
+                .get("activity_ordinal")
+                .and_then(serde_json::Value::as_u64)
+                != Some(u64::from(activity.activity_type().ordinal()))
+            || !program_carrier_bytes(&carrier, "preparation", &approval_id)
+            || !program_carrier_bytes(&carrier, "canonical_bytes", &canonical_unsigned_bytes)
+            || !program_carrier_bytes(&carrier, "program_budget", &canonical_budget_bytes)
+            || !program_carrier_bytes(&carrier, "actor", activity.actor_did())
+        {
+            return Err(AgentBoundaryError::CorruptResponse);
+        }
+        let (allocation_body, allocation_digest) = canonical_budget_bytes
+            .split_at_checked(
+                canonical_budget_bytes
+                    .len()
+                    .checked_sub(32)
+                    .ok_or(AgentBoundaryError::CorruptResponse)?,
+            )
+            .ok_or(AgentBoundaryError::CorruptResponse)?;
+        let expected: [u8; 32] = sha2::Sha256::new()
+            .chain_update(b"layerx:program-budget:v2\0")
+            .chain_update(allocation_body)
+            .finalize()
+            .into();
+        if !allocation_body.starts_with(b"LXPB\x02") || allocation_digest != expected {
+            return Err(AgentBoundaryError::CorruptResponse);
+        }
+        let actor = String::from_utf8(activity.actor_did().to_vec())
+            .map_err(|_| AgentBoundaryError::CorruptResponse)?;
+        let activity_ordinal = activity.activity_type().ordinal();
+        let canonical_payload_bytes = activity.payload().to_vec();
+        let fee_limit = activity.fee_limit();
+        let activity_expires_at_unix_milliseconds = activity.timestamp_bound().not_after;
+        Ok(NativeProgramApprovalMaterial {
+            approval_id,
+            held_digest,
+            owner,
+            provenance,
+            canonical_unsigned_bytes,
+            immutable_carrier_bytes,
+            canonical_budget_bytes,
+            actor,
+            activity_ordinal,
+            canonical_payload_bytes,
+            fee_limit,
+            activity_expires_at_unix_milliseconds,
+        })
+    }
+
+    pub fn native_program_approval_budget(
+        &mut self,
+        approval_id: [u8; 32],
+        held_digest: [u8; 32],
+        current_sequence: u64,
+    ) -> Result<NativeProgramApprovalBudget, AgentBoundaryError> {
+        if held_digest == [0; 32] || current_sequence == 0 {
+            return Err(AgentBoundaryError::Refused);
+        }
+        let mut writer = self.program_request(NATIVE_PROGRAM_APPROVAL_BUDGET, approval_id)?;
+        writer.fixed(&held_digest);
+        writer.u64(current_sequence);
+        let mut reader = self.exchange(&writer.finish())?;
+        if reader.u16()? != 5
+            || reader.fixed::<32>()? != approval_id
+            || reader.fixed::<32>()? != held_digest
+        {
+            return Err(AgentBoundaryError::CorruptResponse);
+        }
+        let owner = reader.text()?;
+        self.require_program_owner(&owner)?;
+        let budget_id = reader.fixed()?;
+        let asset = reader.fixed()?;
+        let source_account = reader.fixed()?;
+        let observed_at_sequence = reader.u64()?;
+        let remaining = reader.u128()?;
+        let terminal = match reader.u8()? {
+            0 => false,
+            1 => true,
+            _ => return Err(AgentBoundaryError::CorruptResponse),
+        };
+        let verification = match reader.u8()? {
+            4 => Level::CheckpointFinalised,
+            5 => Level::SettlementAnchored,
+            _ => return Err(AgentBoundaryError::CorruptResponse),
+        };
+        let evidence_digest = reader.fixed()?;
+        let receipt_digest = reader.fixed()?;
+        let checkpoint_digest = reader.fixed()?;
+        let age_sequences = reader.u64()?;
+        let maximum_age_sequences = reader.u64()?;
+        let proof_digest = reader.fixed()?;
+        let verified_proof_bytes = reader.bytes()?;
+        reader.finish()?;
+        if budget_id == [0; 32]
+            || asset == [0; 32]
+            || source_account == [0; 32]
+            || observed_at_sequence != current_sequence
+            || evidence_digest == [0; 32]
+            || receipt_digest == [0; 32]
+            || checkpoint_digest == [0; 32]
+            || maximum_age_sequences == 0
+            || age_sequences > maximum_age_sequences
+            || proof_digest == [0; 32]
+            || <[u8; 32]>::from(sha2::Sha256::digest(&verified_proof_bytes)) != proof_digest
+        {
+            return Err(AgentBoundaryError::CorruptResponse);
+        }
+        Ok(NativeProgramApprovalBudget {
+            approval_id,
+            held_digest,
+            owner,
+            budget_id,
+            asset,
+            source_account,
+            observed_at_sequence,
+            remaining,
+            terminal,
+            verification,
+            evidence_digest,
+            receipt_digest,
+            checkpoint_digest,
+            age_sequences,
+            maximum_age_sequences,
+            proof_digest,
+            verified_proof_bytes,
+        })
+    }
+
+    pub fn native_program_approval_decide(
+        &mut self,
+        approval_id: [u8; 32],
+        held_digest: [u8; 32],
+        idempotency_key: &str,
+        grant: bool,
+        current_sequence: u64,
+    ) -> Result<NativeProgramApprovalFacts, AgentBoundaryError> {
+        if held_digest == [0; 32]
+            || current_sequence == 0
+            || idempotency_key.len() != 64
+            || !idempotency_key
+                .bytes()
+                .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+            || idempotency_key.bytes().all(|byte| byte == b'0')
+        {
+            return Err(AgentBoundaryError::Refused);
+        }
+        let mut writer = self.program_request(NATIVE_PROGRAM_APPROVAL_DECIDE, approval_id)?;
+        writer.fixed(&held_digest);
+        writer.text(idempotency_key)?;
+        writer.u8(u8::from(grant));
+        writer.u64(current_sequence);
+        let mut reader = self.exchange(&writer.finish())?;
+        let facts = decode_native_program_approval_facts(&mut reader)?;
+        reader.finish()?;
+        self.require_program_owner(&facts.owner)?;
+        if facts.approval_id != approval_id
+            || facts.held_digest != held_digest
+            || !matches!(
+                facts.state,
+                NativeApprovalFactState::Granted
+                    | NativeApprovalFactState::Rejected
+                    | NativeApprovalFactState::Expired
+            )
+            || (facts.state != NativeApprovalFactState::Expired
+                && (facts.state == NativeApprovalFactState::Granted) != grant)
+        {
+            return Err(AgentBoundaryError::CorruptResponse);
+        }
+        Ok(facts)
+    }
+
+    fn program_request(
+        &self,
+        operation: u8,
+        approval_id: [u8; 32],
+    ) -> Result<Writer, AgentBoundaryError> {
+        if self.subject.is_none() || approval_id == [0; 32] {
+            return Err(AgentBoundaryError::Refused);
+        }
+        let mut writer = Writer::new(operation);
+        writer.u16(5);
+        writer.fixed(&approval_id);
+        Ok(writer)
+    }
+
+    fn require_program_owner(&self, owner: &str) -> Result<(), AgentBoundaryError> {
+        let subject = self.subject.as_ref().ok_or(AgentBoundaryError::Refused)?;
+        if owner.as_bytes() != subject.owner.as_bytes() {
+            return Err(AgentBoundaryError::CorruptResponse);
+        }
+        Ok(())
+    }
+
+    pub fn native_effect_approval_get_facts(
+        &mut self,
+        approval_id: [u8; 32],
+    ) -> Result<NativeEffectApprovalFacts, AgentBoundaryError> {
+        if self.subject.is_none() || approval_id == [0; 32] {
+            return Err(AgentBoundaryError::Refused);
+        }
+        let mut writer = Writer::new(NATIVE_EFFECT_APPROVAL_GET);
+        writer.fixed(&approval_id);
+        let mut reader = self.exchange(&writer.finish())?;
+        let value = decode_native_effect_approval_facts(&mut reader)?;
+        reader.finish()?;
+        if value.approval_id != approval_id
+            || self
+                .subject
+                .as_ref()
+                .is_none_or(|s| s.owner.as_bytes() != value.owner.as_bytes())
+        {
+            return Err(AgentBoundaryError::CorruptResponse);
+        };
+        Ok(value)
+    }
+    pub fn native_effect_approval_list_facts(
+        &mut self,
+        cursor: Option<[u8; 32]>,
+        limit: u8,
+    ) -> Result<NativeEffectApprovalFactsPage, AgentBoundaryError> {
+        if self.subject.is_none() || !(1..=100).contains(&limit) || cursor == Some([0; 32]) {
+            return Err(AgentBoundaryError::Refused);
+        }
+        let mut writer = Writer::new(NATIVE_EFFECT_APPROVAL_LIST);
+        match cursor {
+            Some(id) => {
+                writer.u8(1);
+                writer.fixed(&id)
+            }
+            None => writer.u8(0),
+        };
+        writer.u8(limit);
+        let mut reader = self.exchange(&writer.finish())?;
+        let count = usize::from(reader.u8()?);
+        if count > usize::from(limit) {
+            return Err(AgentBoundaryError::CorruptResponse);
+        }
+        let mut approvals = Vec::with_capacity(count);
+        let mut previous = cursor;
+        for _ in 0..count {
+            let value = decode_native_effect_approval_facts(&mut reader)?;
+            if previous.is_some_and(|id| value.approval_id <= id)
+                || self
+                    .subject
+                    .as_ref()
+                    .is_none_or(|s| s.owner.as_bytes() != value.owner.as_bytes())
+            {
+                return Err(AgentBoundaryError::CorruptResponse);
+            }
+            previous = Some(value.approval_id);
+            approvals.push(value);
+        }
+        let next_cursor = decode_native_ref(&mut reader)?;
+        reader.finish()?;
+        if next_cursor.is_some()
+            && (approvals.len() != usize::from(limit) || next_cursor != previous)
+        {
+            return Err(AgentBoundaryError::CorruptResponse);
+        }
+        Ok(NativeEffectApprovalFactsPage {
+            approvals,
+            next_cursor,
+        })
+    }
+    pub fn native_effect_approval_decide(
+        &mut self,
+        approval_id: [u8; 32],
+        held_digest: [u8; 32],
+        idempotency_key: &str,
+        grant: bool,
+        current_sequence: u64,
+    ) -> Result<NativeEffectApprovalFacts, AgentBoundaryError> {
+        if self.subject.is_none()
+            || approval_id == [0; 32]
+            || held_digest == [0; 32]
+            || current_sequence == 0
+        {
+            return Err(AgentBoundaryError::Refused);
+        }
+        let mut writer = Writer::new(NATIVE_EFFECT_APPROVAL_DECIDE);
+        writer.fixed(&approval_id);
+        writer.fixed(&held_digest);
+        writer.text(idempotency_key)?;
+        writer.u8(u8::from(grant));
+        writer.u64(current_sequence);
+        let mut reader = self.exchange(&writer.finish())?;
+        let value = decode_native_effect_approval_facts(&mut reader)?;
+        reader.finish()?;
+        if value.approval_id != approval_id
+            || value.held_digest != held_digest
+            || self
+                .subject
+                .as_ref()
+                .is_none_or(|s| s.owner.as_bytes() != value.owner.as_bytes())
+            || !value.requires_approval
+            || !matches!(
+                value.state,
+                NativeEffectApprovalFactState::Granted
+                    | NativeEffectApprovalFactState::Rejected
+                    | NativeEffectApprovalFactState::Expired
+            )
+            || (value.state != NativeEffectApprovalFactState::Expired
+                && (value.state == NativeEffectApprovalFactState::Granted) != grant)
+        {
+            return Err(AgentBoundaryError::CorruptResponse);
+        };
+        Ok(value)
+    }
+
+    pub fn native_effect_approval_material(
+        &mut self,
+        approval_id: [u8; 32],
+        held_digest: [u8; 32],
+    ) -> Result<NativeEffectApprovalMaterial, AgentBoundaryError> {
+        if self.subject.is_none() || approval_id == [0; 32] || held_digest == [0; 32] {
+            return Err(AgentBoundaryError::Refused);
+        }
+        let mut writer = Writer::new(NATIVE_EFFECT_APPROVAL_MATERIAL);
+        writer.fixed(&approval_id);
+        writer.fixed(&held_digest);
+        let mut reader = self.exchange(&writer.finish())?;
+        if reader.u16()? != 4
+            || reader.fixed::<32>()? != approval_id
+            || reader.fixed::<32>()? != held_digest
+        {
+            return Err(AgentBoundaryError::CorruptResponse);
+        }
+        let owner = reader.text()?;
+        if self
+            .subject
+            .as_ref()
+            .is_none_or(|s| s.owner.as_bytes() != owner.as_bytes())
+        {
+            return Err(AgentBoundaryError::CorruptResponse);
+        }
+        let provenance = match reader.u8()? {
+            0 => NativeEffectMaterialProvenance::LocalOwned,
+            _ => return Err(AgentBoundaryError::CorruptResponse),
+        };
+        let canonical_unsigned_bytes = reader.bytes()?;
+        let immutable_carrier_bytes = reader.bytes()?;
+        let canonical_budget_bytes = reader.bytes()?;
+        reader.finish()?;
+        let actual_id: [u8; 32] = sha2::Sha256::digest(&canonical_unsigned_bytes).into();
+        let actual_digest: [u8; 32] = sha2::Sha256::digest(&immutable_carrier_bytes).into();
+        if actual_id != approval_id || actual_digest != held_digest {
+            return Err(AgentBoundaryError::CorruptResponse);
+        }
+        let carrier: serde_json::Value = serde_json::from_slice(&immutable_carrier_bytes)
+            .map_err(|_| AgentBoundaryError::CorruptResponse)?;
+        let bound_budget = carrier
+            .get("budget")
+            .and_then(serde_json::Value::as_array)
+            .ok_or(AgentBoundaryError::CorruptResponse)?;
+        if bound_budget.len() != canonical_budget_bytes.len()
+            || bound_budget
+                .iter()
+                .zip(&canonical_budget_bytes)
+                .any(|(value, byte)| value.as_u64() != Some(u64::from(*byte)))
+        {
+            return Err(AgentBoundaryError::CorruptResponse);
+        }
+        let bound_canonical = carrier
+            .get("canonical_bytes")
+            .and_then(serde_json::Value::as_array)
+            .ok_or(AgentBoundaryError::CorruptResponse)?;
+        if bound_canonical.len() != canonical_unsigned_bytes.len()
+            || bound_canonical
+                .iter()
+                .zip(&canonical_unsigned_bytes)
+                .any(|(value, byte)| value.as_u64() != Some(u64::from(*byte)))
+        {
+            return Err(AgentBoundaryError::CorruptResponse);
+        }
+        Ok(NativeEffectApprovalMaterial {
+            approval_id,
+            held_digest,
+            owner,
+            provenance,
+            canonical_unsigned_bytes,
+            immutable_carrier_bytes,
+            canonical_budget_bytes,
+        })
+    }
+    pub fn native_effect_approval_budget(
+        &mut self,
+        approval_id: [u8; 32],
+        held_digest: [u8; 32],
+        current_sequence: u64,
+    ) -> Result<NativeEffectApprovalBudget, AgentBoundaryError> {
+        if self.subject.is_none()
+            || approval_id == [0; 32]
+            || held_digest == [0; 32]
+            || current_sequence == 0
+        {
+            return Err(AgentBoundaryError::Refused);
+        }
+        let mut writer = Writer::new(NATIVE_EFFECT_APPROVAL_BUDGET);
+        writer.fixed(&approval_id);
+        writer.fixed(&held_digest);
+        writer.u64(current_sequence);
+        let mut reader = self.exchange(&writer.finish())?;
+        if reader.u16()? != 4
+            || reader.fixed::<32>()? != approval_id
+            || reader.fixed::<32>()? != held_digest
+        {
+            return Err(AgentBoundaryError::CorruptResponse);
+        }
+        let owner = reader.text()?;
+        let observed_at_sequence = reader.u64()?;
+        let fee_asset = reader.fixed()?;
+        if self
+            .subject
+            .as_ref()
+            .is_none_or(|s| s.owner.as_bytes() != owner.as_bytes())
+            || observed_at_sequence != current_sequence
+            || fee_asset == [0; 32]
+        {
+            return Err(AgentBoundaryError::CorruptResponse);
+        }
+        let count = usize::from(reader.u16()?);
+        if count == 0 || count > 256 {
+            return Err(AgentBoundaryError::CorruptResponse);
+        }
+        let mut rows = Vec::with_capacity(count);
+        let mut previous = None;
+        for _ in 0..count {
+            let asset = reader.fixed()?;
+            let budget_id = reader.fixed()?;
+            let source_account = reader.fixed()?;
+            let remaining = reader.u128()?;
+            let verification = match reader.u8()? {
+                4 => Level::CheckpointFinalised,
+                5 => Level::SettlementAnchored,
+                _ => return Err(AgentBoundaryError::CorruptResponse),
+            };
+            let evidence_digest = reader.fixed()?;
+            let receipt_digest = reader.fixed()?;
+            let checkpoint_digest = reader.fixed()?;
+            let age_sequences = reader.u64()?;
+            let maximum_age_sequences = reader.u64()?;
+            let key = (asset, budget_id, source_account);
+            if asset == [0; 32]
+                || budget_id == [0; 32]
+                || source_account == [0; 32]
+                || evidence_digest == [0; 32]
+                || receipt_digest == [0; 32]
+                || checkpoint_digest == [0; 32]
+                || maximum_age_sequences == 0
+                || age_sequences > maximum_age_sequences
+                || previous.is_some_and(|old| old >= key)
+            {
+                return Err(AgentBoundaryError::CorruptResponse);
+            }
+            previous = Some(key);
+            rows.push(NativeEffectBudgetRow {
+                asset,
+                budget_id,
+                source_account,
+                remaining,
+                verification,
+                evidence_digest,
+                receipt_digest,
+                checkpoint_digest,
+                age_sequences,
+                maximum_age_sequences,
+            });
+        }
+        reader.finish()?;
+        Ok(NativeEffectApprovalBudget {
+            approval_id,
+            held_digest,
+            owner,
+            observed_at_sequence,
+            fee_asset,
+            rows,
+        })
+    }
+
+    pub fn managed_evidence(
+        &mut self,
+        agent_id: &str,
+        digest: [u8; 32],
+    ) -> Result<ManagedReceiptExport, AgentBoundaryError> {
+        if digest == [0; 32] {
+            return Err(AgentBoundaryError::Refused);
+        };
+        let mut writer = Writer::new(MANAGED_EVIDENCE);
+        writer.text(agent_id)?;
+        writer.fixed(&digest);
+        let mut reader = self.exchange(&writer.finish())?;
+        if reader.u16()? != 2 {
+            return Err(AgentBoundaryError::CorruptResponse);
+        };
+        let value = ManagedReceiptExport {
+            digest: reader.fixed()?,
+            activity_id: reader.fixed()?,
+            global_sequence: reader.u64()?,
+            verification: reader.u8()?,
+            canonical_bytes: reader.bytes()?,
+        };
+        reader.finish()?;
+        let actual_digest: [u8; 32] = sha2::Sha256::digest(&value.canonical_bytes).into();
+        let receipt = layerx_wire::receipt::decode(&value.canonical_bytes)
+            .map_err(|_| AgentBoundaryError::CorruptResponse)?;
+        let protocol = receipt
+            .protocol()
+            .ok_or(AgentBoundaryError::CorruptResponse)?;
+        if value.digest != digest
+            || actual_digest != digest
+            || value.activity_id != protocol.activity_id()
+            || value.global_sequence != protocol.global_sequence()
+            || !(1..=5).contains(&value.verification)
+            || layerx_wire::receipt::encode(&receipt)
+                .map_err(|_| AgentBoundaryError::CorruptResponse)?
+                != value.canonical_bytes
+        {
+            return Err(AgentBoundaryError::CorruptResponse);
+        };
+        Ok(value)
     }
     pub fn approval_get(
         &mut self,
@@ -2407,52 +3370,302 @@ fn decode_managed_challenge(
     Ok(value)
 }
 
-fn decode_native_ref(reader:&mut Reader)->Result<Option<[u8;32]>,AgentBoundaryError>{
-    match reader.u8()?{0=>Ok(None),1=>{let id=reader.fixed()?;if id==[0;32]{Err(AgentBoundaryError::CorruptResponse)}else{Ok(Some(id))}},_=>Err(AgentBoundaryError::CorruptResponse)}
-}
-fn decode_native_effect_approval_facts(reader:&mut Reader)->Result<NativeEffectApprovalFacts,AgentBoundaryError>{
-    if reader.u16()?!=3{return Err(AgentBoundaryError::CorruptResponse)}
-    let approval_id=reader.fixed()?;let held_digest=reader.fixed()?;let owner=reader.text()?;let actor=reader.text()?;
-    let activity_module=reader.u16()?;let activity_ordinal=reader.u16()?;
-    let state=match reader.u8()?{0=>NativeEffectApprovalFactState::Awaiting,1=>NativeEffectApprovalFactState::Granted,
-        2=>NativeEffectApprovalFactState::Rejected,3=>NativeEffectApprovalFactState::Expired,5=>NativeEffectApprovalFactState::NotRequired,
-        _=>return Err(AgentBoundaryError::CorruptResponse)};
-    let requires_approval=match reader.u8()?{0=>false,1=>true,_=>return Err(AgentBoundaryError::CorruptResponse)};
-    let created_at_sequence=reader.u64()?;let budget_expiry_sequence=reader.u64()?;let created_at_unix_seconds=reader.u64()?;
-    let activity_expires_at_unix_milliseconds=reader.u64()?;let asset=reader.fixed()?;let fee_asset=reader.fixed()?;let fee_limit=reader.u128()?;
-    let count=usize::from(reader.u16()?);if count>256{return Err(AgentBoundaryError::CorruptResponse)}
-    let mut counterparties=Vec::with_capacity(count);for _ in 0..count {
-        let role=match reader.u8()?{0=>disclosure::CounterpartyRole::Payer,1=>disclosure::CounterpartyRole::Recipient,_=>return Err(AgentBoundaryError::CorruptResponse)};
-        let account=reader.fixed()?;if account==[0;32]{return Err(AgentBoundaryError::CorruptResponse)};
-        counterparties.push(disclosure::Counterparty{role,account});
+fn decode_native_ref(reader: &mut Reader) -> Result<Option<[u8; 32]>, AgentBoundaryError> {
+    match reader.u8()? {
+        0 => Ok(None),
+        1 => {
+            let id = reader.fixed()?;
+            if id == [0; 32] {
+                Err(AgentBoundaryError::CorruptResponse)
+            } else {
+                Ok(Some(id))
+            }
+        }
+        _ => Err(AgentBoundaryError::CorruptResponse),
     }
-    let count=usize::from(reader.u16()?);if count>256{return Err(AgentBoundaryError::CorruptResponse)}
-    let mut amounts=Vec::with_capacity(count);for _ in 0..count {
-        let role=match reader.u8()?{0=>disclosure::AmountRole::Transfer,1=>disclosure::AmountRole::SpendingLimit,2=>disclosure::AmountRole::SupplyCap,
-            3=>disclosure::AmountRole::PerDrawMaximum,4=>disclosure::AmountRole::GrantAllowance,_=>return Err(AgentBoundaryError::CorruptResponse)};
-        amounts.push(disclosure::DisclosedAmount{role,value:reader.u128()?});
-    }
-    let release_ref=decode_native_ref(reader)?;let submission_ref=decode_native_ref(reader)?;
-    layerx_types::ids::Did::new(owner.as_bytes()).map_err(|_|AgentBoundaryError::CorruptResponse)?;
-    layerx_types::ids::Did::new(actor.as_bytes()).map_err(|_|AgentBoundaryError::CorruptResponse)?;
-    let module=ModuleId::from_u16(activity_module).map_err(|_|AgentBoundaryError::CorruptResponse)?;
-    ActivityType::new(module,activity_ordinal).map_err(|_|AgentBoundaryError::CorruptResponse)?;
-    if module==ModuleId::Programs||approval_id==[0;32]||held_digest==[0;32]||fee_asset==[0;32]
-        ||created_at_unix_seconds==0||created_at_sequence>=budget_expiry_sequence
-        ||created_at_unix_seconds.checked_mul(1000).is_none_or(|created|created>=activity_expires_at_unix_milliseconds)
-        || (requires_approval && state==NativeEffectApprovalFactState::NotRequired)
-        || (!requires_approval && !matches!(state,NativeEffectApprovalFactState::NotRequired|NativeEffectApprovalFactState::Expired))
-        || (release_ref.is_some()!=(state==NativeEffectApprovalFactState::Granted))
-        || (submission_ref.is_some()&&!matches!(state,NativeEffectApprovalFactState::Granted|NativeEffectApprovalFactState::NotRequired)) {
-        return Err(AgentBoundaryError::CorruptResponse)
-    }
-    Ok(NativeEffectApprovalFacts{approval_id,held_digest,owner,actor,activity_module,activity_ordinal,state,requires_approval,
-        created_at_sequence,budget_expiry_sequence,created_at_unix_seconds,activity_expires_at_unix_milliseconds,asset,fee_asset,fee_limit,
-        counterparties,amounts,release_ref,submission_ref})
 }
 
-fn decode_native_approval_facts(reader: &mut Reader) -> Result<NativeApprovalFacts, AgentBoundaryError> {
-    if reader.u16()? != 2 { return Err(AgentBoundaryError::CorruptResponse); }
+fn program_carrier_bytes(carrier: &serde_json::Value, field: &str, bytes: &[u8]) -> bool {
+    carrier
+        .get(field)
+        .and_then(serde_json::Value::as_array)
+        .is_some_and(|values| {
+            values.len() == bytes.len()
+                && values
+                    .iter()
+                    .zip(bytes)
+                    .all(|(value, byte)| value.as_u64() == Some(u64::from(*byte)))
+        })
+}
+
+fn validate_native_program_payload(ordinal: u16, bytes: &[u8]) -> Result<(), AgentBoundaryError> {
+    use layerx_types::program_call::NativeProgramCall;
+    use layerx_types::program_lifecycle::{
+        NativeProgramDeploy, NativeProgramUpgrade, NativeProgramWindDown,
+    };
+    let encoded = match ordinal {
+        1 => NativeProgramDeploy::decode(bytes)
+            .and_then(|value| value.encode())
+            .map_err(|_| AgentBoundaryError::CorruptResponse)?,
+        2 => NativeProgramUpgrade::decode(bytes)
+            .and_then(|value| value.encode())
+            .map_err(|_| AgentBoundaryError::CorruptResponse)?,
+        3 => NativeProgramCall::decode(bytes)
+            .and_then(|value| value.encode())
+            .map_err(|_| AgentBoundaryError::CorruptResponse)?,
+        7 => NativeProgramWindDown::decode(bytes)
+            .and_then(|value| value.encode())
+            .map_err(|_| AgentBoundaryError::CorruptResponse)?,
+        _ => return Err(AgentBoundaryError::CorruptResponse),
+    };
+    if encoded != bytes {
+        return Err(AgentBoundaryError::CorruptResponse);
+    }
+    Ok(())
+}
+
+fn decode_native_program_approval_facts(
+    reader: &mut Reader,
+) -> Result<NativeProgramApprovalFacts, AgentBoundaryError> {
+    if reader.u16()? != 5 {
+        return Err(AgentBoundaryError::CorruptResponse);
+    }
+    let approval_id = reader.fixed()?;
+    let held_digest = reader.fixed()?;
+    let owner = reader.text()?;
+    let actor_bytes = reader.bytes()?;
+    if actor_bytes.len() > MAX_TEXT {
+        return Err(AgentBoundaryError::CorruptResponse);
+    }
+    let actor = String::from_utf8(actor_bytes).map_err(|_| AgentBoundaryError::CorruptResponse)?;
+    let activity_module = reader.u16()?;
+    let activity_ordinal = reader.u16()?;
+    let state = match reader.u8()? {
+        0 => NativeApprovalFactState::Awaiting,
+        1 => NativeApprovalFactState::Granted,
+        2 => NativeApprovalFactState::Rejected,
+        3 => NativeApprovalFactState::Expired,
+        4 => NativeApprovalFactState::Defective,
+        5 => NativeApprovalFactState::NotRequired,
+        _ => return Err(AgentBoundaryError::CorruptResponse),
+    };
+    let created_at_sequence = reader.u64()?;
+    let budget_expiry_sequence = reader.u64()?;
+    let created_at_unix_seconds = reader.u64()?;
+    let activity_expires_at_unix_milliseconds = reader.u64()?;
+    let release_ref = decode_native_ref(reader)?;
+    let fee_asset = decode_native_ref(reader)?;
+    let canonical_payload_bytes = reader.bytes()?;
+    validate_native_program_payload(activity_ordinal, &canonical_payload_bytes)?;
+    let semantics = match reader.u8()? {
+        0 => NativeProgramApprovalSemantics::OperationOnly,
+        1 => {
+            let count = usize::from(reader.u16()?);
+            if count == 0 || count > 256 {
+                return Err(AgentBoundaryError::CorruptResponse);
+            }
+            let mut limits = Vec::with_capacity(count);
+            let mut previous = None;
+            for _ in 0..count {
+                let kind = match reader.u8()? {
+                    1 => NativeProgramChargeKind::Principal,
+                    2 => NativeProgramChargeKind::ProgramSpend,
+                    _ => return Err(AgentBoundaryError::CorruptResponse),
+                };
+                let source = reader.fixed()?;
+                let asset = reader.fixed()?;
+                let destination = decode_native_ref(reader)?;
+                let maximum_amount = reader.u128()?;
+                let key = (asset, source, kind, destination);
+                if source == [0; 32]
+                    || asset == [0; 32]
+                    || destination.is_none()
+                    || maximum_amount == 0
+                    || previous.is_some_and(|old| old >= key)
+                {
+                    return Err(AgentBoundaryError::CorruptResponse);
+                }
+                previous = Some(key);
+                limits.push(NativeProgramLimit {
+                    kind,
+                    source,
+                    asset,
+                    destination,
+                    maximum_amount,
+                });
+            }
+            NativeProgramApprovalSemantics::AuthorizedLimits(limits)
+        }
+        _ => return Err(AgentBoundaryError::CorruptResponse),
+    };
+    layerx_types::ids::Did::new(owner.as_bytes())
+        .map_err(|_| AgentBoundaryError::CorruptResponse)?;
+    layerx_types::ids::Did::new(actor.as_bytes())
+        .map_err(|_| AgentBoundaryError::CorruptResponse)?;
+    let module =
+        ModuleId::from_u16(activity_module).map_err(|_| AgentBoundaryError::CorruptResponse)?;
+    ActivityType::new(module, activity_ordinal).map_err(|_| AgentBoundaryError::CorruptResponse)?;
+    if module != ModuleId::Programs
+        || approval_id == [0; 32]
+        || held_digest == [0; 32]
+        || created_at_sequence >= budget_expiry_sequence
+        || created_at_unix_seconds == 0
+        || created_at_unix_seconds
+            .checked_mul(1000)
+            .is_none_or(|created| created >= activity_expires_at_unix_milliseconds)
+        || release_ref.is_some() != (state == NativeApprovalFactState::Granted)
+    {
+        return Err(AgentBoundaryError::CorruptResponse);
+    }
+    Ok(NativeProgramApprovalFacts {
+        approval_id,
+        held_digest,
+        owner,
+        actor,
+        activity_module,
+        activity_ordinal,
+        state,
+        created_at_sequence,
+        budget_expiry_sequence,
+        created_at_unix_seconds,
+        activity_expires_at_unix_milliseconds,
+        release_ref,
+        fee_asset,
+        canonical_payload_bytes,
+        semantics,
+    })
+}
+
+fn decode_native_effect_approval_facts(
+    reader: &mut Reader,
+) -> Result<NativeEffectApprovalFacts, AgentBoundaryError> {
+    if reader.u16()? != 3 {
+        return Err(AgentBoundaryError::CorruptResponse);
+    }
+    let approval_id = reader.fixed()?;
+    let held_digest = reader.fixed()?;
+    let owner = reader.text()?;
+    let actor = reader.text()?;
+    let activity_module = reader.u16()?;
+    let activity_ordinal = reader.u16()?;
+    let state = match reader.u8()? {
+        0 => NativeEffectApprovalFactState::Awaiting,
+        1 => NativeEffectApprovalFactState::Granted,
+        2 => NativeEffectApprovalFactState::Rejected,
+        3 => NativeEffectApprovalFactState::Expired,
+        5 => NativeEffectApprovalFactState::NotRequired,
+        _ => return Err(AgentBoundaryError::CorruptResponse),
+    };
+    let requires_approval = match reader.u8()? {
+        0 => false,
+        1 => true,
+        _ => return Err(AgentBoundaryError::CorruptResponse),
+    };
+    let created_at_sequence = reader.u64()?;
+    let budget_expiry_sequence = reader.u64()?;
+    let created_at_unix_seconds = reader.u64()?;
+    let activity_expires_at_unix_milliseconds = reader.u64()?;
+    let asset = reader.fixed()?;
+    let fee_asset = reader.fixed()?;
+    let fee_limit = reader.u128()?;
+    let count = usize::from(reader.u16()?);
+    if count > 256 {
+        return Err(AgentBoundaryError::CorruptResponse);
+    }
+    let mut counterparties = Vec::with_capacity(count);
+    for _ in 0..count {
+        let role = match reader.u8()? {
+            0 => disclosure::CounterpartyRole::Payer,
+            1 => disclosure::CounterpartyRole::Recipient,
+            _ => return Err(AgentBoundaryError::CorruptResponse),
+        };
+        let account = reader.fixed()?;
+        if account == [0; 32] {
+            return Err(AgentBoundaryError::CorruptResponse);
+        };
+        counterparties.push(disclosure::Counterparty { role, account });
+    }
+    let count = usize::from(reader.u16()?);
+    if count > 256 {
+        return Err(AgentBoundaryError::CorruptResponse);
+    }
+    let mut amounts = Vec::with_capacity(count);
+    for _ in 0..count {
+        let role = match reader.u8()? {
+            0 => disclosure::AmountRole::Transfer,
+            1 => disclosure::AmountRole::SpendingLimit,
+            2 => disclosure::AmountRole::SupplyCap,
+            3 => disclosure::AmountRole::PerDrawMaximum,
+            4 => disclosure::AmountRole::GrantAllowance,
+            _ => return Err(AgentBoundaryError::CorruptResponse),
+        };
+        amounts.push(disclosure::DisclosedAmount {
+            role,
+            value: reader.u128()?,
+        });
+    }
+    let release_ref = decode_native_ref(reader)?;
+    let submission_ref = decode_native_ref(reader)?;
+    layerx_types::ids::Did::new(owner.as_bytes())
+        .map_err(|_| AgentBoundaryError::CorruptResponse)?;
+    layerx_types::ids::Did::new(actor.as_bytes())
+        .map_err(|_| AgentBoundaryError::CorruptResponse)?;
+    let module =
+        ModuleId::from_u16(activity_module).map_err(|_| AgentBoundaryError::CorruptResponse)?;
+    ActivityType::new(module, activity_ordinal).map_err(|_| AgentBoundaryError::CorruptResponse)?;
+    if module == ModuleId::Programs
+        || approval_id == [0; 32]
+        || held_digest == [0; 32]
+        || fee_asset == [0; 32]
+        || created_at_unix_seconds == 0
+        || created_at_sequence >= budget_expiry_sequence
+        || created_at_unix_seconds
+            .checked_mul(1000)
+            .is_none_or(|created| created >= activity_expires_at_unix_milliseconds)
+        || (requires_approval && state == NativeEffectApprovalFactState::NotRequired)
+        || (!requires_approval
+            && !matches!(
+                state,
+                NativeEffectApprovalFactState::NotRequired | NativeEffectApprovalFactState::Expired
+            ))
+        || (release_ref.is_some() != (state == NativeEffectApprovalFactState::Granted))
+        || (submission_ref.is_some()
+            && !matches!(
+                state,
+                NativeEffectApprovalFactState::Granted | NativeEffectApprovalFactState::NotRequired
+            ))
+    {
+        return Err(AgentBoundaryError::CorruptResponse);
+    }
+    Ok(NativeEffectApprovalFacts {
+        approval_id,
+        held_digest,
+        owner,
+        actor,
+        activity_module,
+        activity_ordinal,
+        state,
+        requires_approval,
+        created_at_sequence,
+        budget_expiry_sequence,
+        created_at_unix_seconds,
+        activity_expires_at_unix_milliseconds,
+        asset,
+        fee_asset,
+        fee_limit,
+        counterparties,
+        amounts,
+        release_ref,
+        submission_ref,
+    })
+}
+
+fn decode_native_approval_facts(
+    reader: &mut Reader,
+) -> Result<NativeApprovalFacts, AgentBoundaryError> {
+    if reader.u16()? != 2 {
+        return Err(AgentBoundaryError::CorruptResponse);
+    }
     let approval_id = reader.fixed()?;
     let held_digest = reader.fixed()?;
     let owner = reader.text()?;
@@ -2477,30 +3690,59 @@ fn decode_native_approval_facts(reader: &mut Reader) -> Result<NativeApprovalFac
         1 => Some(reader.fixed()?),
         _ => return Err(AgentBoundaryError::CorruptResponse),
     };
-    layerx_types::ids::Did::new(owner.as_bytes()).map_err(|_| AgentBoundaryError::CorruptResponse)?;
-    layerx_types::ids::Did::new(actor.as_bytes()).map_err(|_| AgentBoundaryError::CorruptResponse)?;
-    let module = ModuleId::from_u16(activity_module).map_err(|_| AgentBoundaryError::CorruptResponse)?;
+    layerx_types::ids::Did::new(owner.as_bytes())
+        .map_err(|_| AgentBoundaryError::CorruptResponse)?;
+    layerx_types::ids::Did::new(actor.as_bytes())
+        .map_err(|_| AgentBoundaryError::CorruptResponse)?;
+    let module =
+        ModuleId::from_u16(activity_module).map_err(|_| AgentBoundaryError::CorruptResponse)?;
     ActivityType::new(module, activity_ordinal).map_err(|_| AgentBoundaryError::CorruptResponse)?;
-    if module != ModuleId::Programs || approval_id == [0; 32] || held_digest == [0; 32]
+    if module != ModuleId::Programs
+        || approval_id == [0; 32]
+        || held_digest == [0; 32]
         || created_at_sequence >= budget_expiry_sequence
-        || created_at_unix_seconds.checked_mul(1000).is_none_or(|created| created >= activity_expires_at_unix_milliseconds)
+        || created_at_unix_seconds
+            .checked_mul(1000)
+            .is_none_or(|created| created >= activity_expires_at_unix_milliseconds)
         || submission_ref == Some([0; 32])
-        || submission_ref.is_some() != (state == NativeApprovalFactState::Granted) {
+        || submission_ref.is_some() != (state == NativeApprovalFactState::Granted)
+    {
         return Err(AgentBoundaryError::CorruptResponse);
     }
-    Ok(NativeApprovalFacts { approval_id, held_digest, owner, actor, activity_module, activity_ordinal, state,
-        created_at_sequence, budget_expiry_sequence, created_at_unix_seconds,
-        activity_expires_at_unix_milliseconds, submission_ref })
+    Ok(NativeApprovalFacts {
+        approval_id,
+        held_digest,
+        owner,
+        actor,
+        activity_module,
+        activity_ordinal,
+        state,
+        created_at_sequence,
+        budget_expiry_sequence,
+        created_at_unix_seconds,
+        activity_expires_at_unix_milliseconds,
+        submission_ref,
+    })
 }
 
-fn decode_approval_facts(reader:&mut Reader) -> Result<AgentApprovalFacts,AgentBoundaryError> {
-    if reader.u16()?!=2 {return Err(AgentBoundaryError::CorruptResponse)};
-    let approval=decode_approval(reader)?;let created_at_unix_seconds=reader.u64()?;
-    let activity_expires_at_unix_seconds=reader.u64()?;
-    if created_at_unix_seconds==0 || created_at_unix_seconds>=activity_expires_at_unix_seconds
-        || activity_expires_at_unix_seconds!=approval.held_activity.expiry.0 {
-        return Err(AgentBoundaryError::CorruptResponse)
-    };Ok(AgentApprovalFacts{approval,created_at_unix_seconds,activity_expires_at_unix_seconds})
+fn decode_approval_facts(reader: &mut Reader) -> Result<AgentApprovalFacts, AgentBoundaryError> {
+    if reader.u16()? != 2 {
+        return Err(AgentBoundaryError::CorruptResponse);
+    };
+    let approval = decode_approval(reader)?;
+    let created_at_unix_seconds = reader.u64()?;
+    let activity_expires_at_unix_seconds = reader.u64()?;
+    if created_at_unix_seconds == 0
+        || created_at_unix_seconds >= activity_expires_at_unix_seconds
+        || activity_expires_at_unix_seconds != approval.held_activity.expiry.0
+    {
+        return Err(AgentBoundaryError::CorruptResponse);
+    };
+    Ok(AgentApprovalFacts {
+        approval,
+        created_at_unix_seconds,
+        activity_expires_at_unix_seconds,
+    })
 }
 fn decode_approval(
     reader: &mut Reader,
@@ -2746,9 +3988,13 @@ impl crate::approvals::ApprovalBoundary for AgentRuntime {
         at_sequence: u64,
     ) -> Result<crate::approvals::VerifiedBudgetAfter, crate::approvals::ApprovalBoundaryError>
     {
-        let mut writer=Writer::new(APPROVAL_BUDGET_AFTER);writer.fixed(&hold.approval_id);
-        writer.fixed(&hold.canonical_bytes_digest);writer.u64(at_sequence);
-        let mut reader=self.exchange(&writer.finish()).map_err(map_approval_error)?;
+        let mut writer = Writer::new(APPROVAL_BUDGET_AFTER);
+        writer.fixed(&hold.approval_id);
+        writer.fixed(&hold.canonical_bytes_digest);
+        writer.u64(at_sequence);
+        let mut reader = self
+            .exchange(&writer.finish())
+            .map_err(map_approval_error)?;
         let decode=|reader:&mut Reader| -> Result<crate::approvals::VerifiedBudgetAfter,AgentBoundaryError> {
             if reader.u16()?!=2 || reader.fixed::<32>()?!=hold.approval_id
                 || reader.fixed::<32>()?!=hold.canonical_bytes_digest {return Err(AgentBoundaryError::CorruptResponse)};
@@ -2759,7 +4005,8 @@ impl crate::approvals::ApprovalBoundary for AgentRuntime {
             if evidence_digest==[0;32] || asset==[0;32] || observed_at_sequence!=at_sequence {
                 return Err(AgentBoundaryError::CorruptResponse)};
             reader.finish()?;Ok(crate::approvals::VerifiedBudgetAfter{remaining,level,evidence_digest,observed_at_sequence})
-        };decode(&mut reader).map_err(map_approval_error)
+        };
+        decode(&mut reader).map_err(map_approval_error)
     }
 
     fn track_released(

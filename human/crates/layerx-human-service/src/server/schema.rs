@@ -48,6 +48,10 @@ const SCHEMA_FILES: &[(&str, &str)] = &[
         "intent.kvx",
         include_str!("../../../../schema/human-api/intent.kvx"),
     ),
+    (
+        "program-approvals.kvx",
+        include_str!("../../../../schema/human-api/program-approvals.kvx"),
+    ),
 ];
 
 const MAX_SCHEMA_DEPTH: usize = 32;

@@ -79,6 +79,10 @@ impl StreamJournal {
                     | "approval-approved"
                     | "approval-rejected"
                     | "approval-expired"
+                    | "program-approval-created"
+                    | "program-approval-approved"
+                    | "program-approval-rejected"
+                    | "program-approval-expired"
                     | "notification"
             )
         {
@@ -225,6 +229,10 @@ impl StreamJournal {
                     journey.or_else(|| event.payload.get("journey").cloned()),
                 ),
                 ("approval", event.payload.get("approval").cloned()),
+                (
+                    "program_approval",
+                    event.payload.get("program_approval").cloned(),
+                ),
                 ("notification", event.payload.get("notification").cloned()),
             ] {
                 if let Some(payload) = payload.filter(|value| !value.is_null()) {
