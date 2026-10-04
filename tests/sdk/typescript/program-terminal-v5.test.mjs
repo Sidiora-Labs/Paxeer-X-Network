@@ -115,7 +115,7 @@ for (const row of corpus.cases) {
   await assert.rejects(verifyProgramReceiptV5(withoutRetained, authority, trust));
   const wrongRequest = Buffer.from(signed); wrongRequest[wrongRequest.length - 1] ^= 1;
   await assert.rejects(check(document, authority, wrongRequest));
-  for (const length of [0, 1, 105, hex(document.terminal_payload).length - 1]) {
+  for (const length of [0, 1, Math.min(105, hex(document.terminal_payload).length - 1), hex(document.terminal_payload).length - 1]) {
     const truncated = hex(document.terminal_payload).subarray(0, Math.max(0, length));
     await assert.rejects(check({ ...document, terminal_payload: truncated.toString("hex") }));
   }
