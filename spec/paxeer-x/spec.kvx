@@ -37135,3 +37135,27 @@ source_status = "complete"
 completion_basis = "implementation under owner CONSTITUTION; qualification separately recorded"
 source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/root-ci-103.6.38-intake.json"
 build_status = "NOT_APPLICABLE_METADATA_ONLY"
+
+[task.103.6.35]
+title = "Produce genuine private beta CI inputs on the current candidate"
+status = "done"
+mode = "BUILD"
+wave = 5
+requires = ["0.2"]
+reqs = ["1103.1"]
+touches = ["scripts/ci/beta-ledger-check.sh", "scripts/ci/beta-report.sh", "scripts/ci/beta-contract-check.sh", "scripts/ci/beta-ci-inputs.sh"]
+do_1 = "Recover the authoritative beta spec at pinned deletion predecessor f17f904928e2dacd38aabb8d4327edf523b8bafe outside source and retain original history separately without granting current evidence credit."
+do_2 = "Run actual nonrecursive beta-driver-test through the existing typed source and mutation observer to create a nonempty fresh candidate-bound ledger; resolve dotted acceptance references exactly, preserving all validation and no-go contract semantics."
+do_3 = "Pass one explicit closed set of private ledger/spec/evidence/candidate inputs through the unchanged beta checks; never manufacture evidence or relax a predicate."
+verify_cmd = "scripts/ci/beta-ci-inputs.sh followed by make beta-contract-check beta-ledger-check with its exact declared private inputs"
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+fanout_role = "integrate_dependencies"
+qualification_status = "UNRUN"
+stop_condition = "Stop at2026-10-04T20:54:49Z, on a missing real source authority or after two scoped repairs."
+owner_authorization = "Direct owner request to fix all listed CI failures on2026-10-04T20:24UTC"
+source_status = "complete"
+completion_basis = "implementation under owner CONSTITUTION; qualification separately recorded"
+source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-103.6.35-source-handoff.json"

@@ -506,7 +506,15 @@ def recipe(path, task):
     commands = [json.loads(block['verify_cmd'])]
     reqs = []
     for req in json.loads(block['reqs']):
-        reqs.extend(req + '.' + key[3:] for key in sections['req.' + req] if re.fullmatch('ac_[0-9]+', key))
+        need(isinstance(req, str) and re.fullmatch('[0-9]+(?:\.[0-9]+)?', req), 'invalid acceptance reference')
+        if '.' in req:
+            parent, ordinal = req.rsplit('.', 1)
+            need('req.' + parent in sections and 'ac_' + ordinal in sections['req.' + parent],
+                 'acceptance reference absent from selected spec')
+            reqs.append(req)
+        else:
+            need('req.' + req in sections, 'requirement absent from selected spec')
+            reqs.extend(req + '.' + key[3:] for key in sections['req.' + req] if re.fullmatch('ac_[0-9]+', key))
     need(reqs, 'task has no acceptance criteria')
     return commands, reqs
 
@@ -629,6 +637,19 @@ PY_SOURCE
 
 beta_ledger_check() {
     local root ledger="" spec="" evidence_root="${PAXEER_X_EVIDENCE_DIR:-}" candidate="" revisions_only=0
+    local ci_profile=0
+    if [ -n "${PAXEER_X_BETA_LEDGER_FILE+x}${PAXEER_X_BETA_SPEC_FILE+x}${PAXEER_X_BETA_CANDIDATE+x}" ]; then
+        if [ -z "${PAXEER_X_BETA_LEDGER_FILE:-}" ] || [ -z "${PAXEER_X_BETA_SPEC_FILE:-}" ] || \
+           [ -z "${PAXEER_X_BETA_CANDIDATE:-}" ] || [ -z "${PAXEER_X_EVIDENCE_DIR:-}" ]; then
+            echo 'beta CI inputs: explicit ledger, spec, candidate and private evidence root required' >&2
+            return 2
+        fi
+        [[ $PAXEER_X_BETA_CANDIDATE =~ ^[0-9a-f]{40}$ ]] || return 2
+        ci_profile=1
+        ledger=$PAXEER_X_BETA_LEDGER_FILE
+        spec=$PAXEER_X_BETA_SPEC_FILE
+        candidate=$PAXEER_X_BETA_CANDIDATE
+    fi
     root=$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)
     while [ "$#" -gt 0 ]; do
         case $1 in

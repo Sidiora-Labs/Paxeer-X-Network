@@ -91,6 +91,19 @@ EOF
 
 beta_report() {
     local root ledger="" contract="" spec="" output="" revision="" mode=render evidence_root="${PAXEER_X_EVIDENCE_DIR:-}"
+    local ci_profile=0
+    if [ -n "${PAXEER_X_BETA_LEDGER_FILE+x}${PAXEER_X_BETA_SPEC_FILE+x}${PAXEER_X_BETA_CANDIDATE+x}" ]; then
+        if [ -z "${PAXEER_X_BETA_LEDGER_FILE:-}" ] || [ -z "${PAXEER_X_BETA_SPEC_FILE:-}" ] || \
+           [ -z "${PAXEER_X_BETA_CANDIDATE:-}" ] || [ -z "${PAXEER_X_EVIDENCE_DIR:-}" ]; then
+            echo 'beta CI inputs: explicit ledger, spec, candidate and private evidence root required' >&2
+            return 2
+        fi
+        [[ $PAXEER_X_BETA_CANDIDATE =~ ^[0-9a-f]{40}$ ]] || return 2
+        ci_profile=1
+        ledger=$PAXEER_X_BETA_LEDGER_FILE
+        spec=$PAXEER_X_BETA_SPEC_FILE
+        revision=$PAXEER_X_BETA_CANDIDATE
+    fi
     root=$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)
     while [ "$#" -gt 0 ]; do
         case $1 in

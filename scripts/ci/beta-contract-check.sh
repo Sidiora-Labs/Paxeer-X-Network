@@ -141,6 +141,19 @@ EOF
 
 beta_contract_check() {
     local root contract="" yaml_parser="auto" contract_arg status=0 report_status=0
+    local -a report_inputs=()
+    local ci_profile=0
+    if [ -n "${PAXEER_X_BETA_LEDGER_FILE+x}${PAXEER_X_BETA_SPEC_FILE+x}${PAXEER_X_BETA_CANDIDATE+x}" ]; then
+        if [ -z "${PAXEER_X_BETA_LEDGER_FILE:-}" ] || [ -z "${PAXEER_X_BETA_SPEC_FILE:-}" ] || \
+           [ -z "${PAXEER_X_BETA_CANDIDATE:-}" ] || [ -z "${PAXEER_X_EVIDENCE_DIR:-}" ]; then
+            echo 'beta CI inputs: explicit ledger, spec, candidate and private evidence root required' >&2
+            return 2
+        fi
+        [[ $PAXEER_X_BETA_CANDIDATE =~ ^[0-9a-f]{40}$ ]] || return 2
+        ci_profile=1
+        report_inputs=(--ledger "$PAXEER_X_BETA_LEDGER_FILE" --spec "$PAXEER_X_BETA_SPEC_FILE"
+                       --evidence-root "$PAXEER_X_EVIDENCE_DIR" --revision "$PAXEER_X_BETA_CANDIDATE")
+    fi
     root=$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)
     while [ "$#" -gt 0 ]; do
         case $1 in
@@ -1209,7 +1222,7 @@ print(
     f"{len(computed_contradictions)} contradictions listed, readiness_claim={readiness})"
 )
 PY
-    "$root/scripts/ci/beta-report.sh" --check --contract "$contract_arg" || report_status=$?
+    "$root/scripts/ci/beta-report.sh" --check --contract "$contract_arg" "${report_inputs[@]}" || report_status=$?
     if [ "$status" -ne 0 ]; then
         return "$status"
     fi
