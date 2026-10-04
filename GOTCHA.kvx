@@ -2681,3 +2681,39 @@ observed = "A disposable real attestor foundation was incorrectly classified as 
 [gotcha.768]
 title = "Hosted ingress readiness authentication"
 observed = "Kubelet cannot authenticate to the mTLS-only webhook API. Use the existing health-only listener for probes while preserving all API authentication, and provide distinct identity tokens per caller role."
+
+[gotcha.769]
+title = "Task section identifiers"
+observed = "Task16.4 already existed for registry readiness; maintenance producer creation refused before mutation. Select an unused task identifier and preserve the existing task."
+
+[gotcha.770]
+title = "Qualification source immutability"
+observed = "A native recording build started against a mutable worktree and was stopped at exit143. Use a complete pinned tracked candidate with environment paths excluded before materialization."
+
+[gotcha.771]
+title = "Published source preimages"
+observed = "Shared source worktree baselines predated already-published per-file changes. Validate actual file preimages against an explicit published base before any intake; never overwrite independent owner changes."
+
+[gotcha.772]
+title = "Cargo artifact hardlinks"
+observed = "Cargo canonical executable shared a hardlink; genuine benchmark artifact capture refused its nlink. Copy verified bytes through safe descriptors into a private immutable single-link file, preserving the original nlink assertion."
+
+[gotcha.773]
+title = "Real wallet fixture adapters"
+observed = "Path.open does not accept opener and the browser launcher needs the actual Playwright package executable. Use supported real library interfaces without changing wallet or browser assertions."
+
+[gotcha.774]
+title = "Anvil genesis identity"
+observed = "Distinct chain IDs alone produced identical genuine Anvil genesis hashes. Select explicit distinct supported genesis timestamps and retain independent-chain assertions."
+
+[gotcha.775]
+title = "Emulator current maintenance evidence"
+observed = "The emulator retains activity receipts before maintenance but lacked sealed evidence for the later root. Implement genuine maintenance batch evidence and verify that authority; never relabel an old activity receipt as current."
+
+[gotcha.776]
+title = "Registry publication authority"
+observed = "The actual configured npm registry returned404 for @sidiora/layerx-express@0.1.0. Record missing publication; do not substitute a local package or invent registry provenance."
+
+[gotcha.777]
+title = "Build lock deadlines"
+observed = "A final native build reached its cap while awaiting the shared build lock. Record exit124 and verification UNRUN; lock waiting is not compiler success."
