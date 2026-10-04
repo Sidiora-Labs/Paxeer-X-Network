@@ -6,7 +6,7 @@ pub mod support;
 mod transport;
 
 use layerx_platform_internal::{
-    events::{Kind, ProducerCredential, Service},
+    events::{enrollment_snapshot_mac, Kind, ProducerCredential, Service, ENROLLMENT_VERSION},
     gateway_http, http,
     principal::PrincipalClient,
     producer::{Client, Outbox},
@@ -15,6 +15,7 @@ use layerx_platform_internal::{
 use layerx_platform_registry::event_producer::ProgramOutbox;
 use std::collections::BTreeMap;
 use std::fs;
+use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
@@ -187,13 +188,38 @@ fn source(
     secret: &str,
     port: u16,
 ) -> transport::Listener {
+    let credential = Zeroizing::new(format!("program-key:{secret}"));
+    let credential_path = root.join("source-principal.credential");
+    let snapshot_path = root.join("source-enrollment.json");
+    let enrollment_key = "0123456789abcdef0123456789abcdef";
+    let snapshot = serde_json::json!({
+        "version": ENROLLMENT_VERSION,
+        "generation": 1,
+        "principals": [{
+            "principal": "program-principal",
+            "credential_file": credential_path,
+        }],
+        "mac": enrollment_snapshot_mac(
+            Kind::Program,
+            1,
+            &[("program-principal", credential.as_str())],
+            enrollment_key,
+        ),
+    });
+    for (path, contents) in [
+        (&credential_path, credential.as_str().to_owned()),
+        (&snapshot_path, snapshot.to_string()),
+    ] {
+        fs::write(path, contents)
+            .unwrap_or_else(|error| panic!("source enrollment file: {error:?}"));
+        fs::set_permissions(path, fs::Permissions::from_mode(0o600))
+            .unwrap_or_else(|error| panic!("source enrollment permissions: {error:?}"));
+    }
     let service = Service::open(
         Kind::Program,
         tls.upstream(gateway_port, "unused"),
-        BTreeMap::from([(
-            "program-principal".to_owned(),
-            Zeroizing::new(format!("program-key:{secret}")),
-        )]),
+        &snapshot_path,
+        enrollment_key,
         Zeroizing::new("consumer-token".to_owned()),
         &root.join("source"),
     )
@@ -204,6 +230,9 @@ fn source(
         }])
     })
     .unwrap_or_else(|error| panic!("program source: {error:?}"));
+    service
+        .refresh()
+        .unwrap_or_else(|error| panic!("program source enrollment: {error:?}"));
     transport::Listener::start(Arc::clone(&tls.config), port, move |stream| {
         if let Ok(mut request) = http::parse_client_request(stream) {
             request.peer_verified = stream
