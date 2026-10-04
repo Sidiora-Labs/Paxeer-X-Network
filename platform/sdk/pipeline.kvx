@@ -4,7 +4,7 @@ outputs = ["agent-api-rust", "agent-rust", "agent-typescript", "agent-python", "
 
 [source.agent-api]
 root = "agent/schema/agent-api"
-digest = "7a9ee6e4663de3beefaaca57f784b4e294dfbfcabbe48fcfadc5f4f04bb06387"
+digest = "1046c3fe372a922359329734728bb33fb53c8a91a1bc1abc19a5b5ec5f8376c4"
 
 [source.human-api]
 root = "human/schema/human-api"

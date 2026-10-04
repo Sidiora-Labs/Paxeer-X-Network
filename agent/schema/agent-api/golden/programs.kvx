@@ -286,9 +286,34 @@ lookup_binding = "URL_key_is_retained_signed_idempotency_key"
 required = ["activity_id","requested_verification_level"]
 activity_id = "bytes32"
 
+[type.ProgramExecutionV4]
+encoding_version = 4
+domain = "LXP/program-execution/v4"
+domain_terminator_hex = "00"
+allowed_guest_abis = ["ABI_V2_VERSION"]
+layout = "frozen_execution_v4_field_order_widths_bounds_and_canonical_outcome_grammar"
+compatibility = "existing_ABI2_bytes_and_all_positive_negative_assertions_unchanged"
+
+[type.ProgramExecutionV5]
+encoding_version = 5
+domain = "LXP/program-execution/v5"
+domain_terminator_hex = "00"
+allowed_guest_abis = ["ABI_V3_VERSION","ABI_V4_VERSION"]
+layout = "execution_v4_field_order_widths_bounds_and_canonical_outcome_grammar_with_distinct_domain_only"
+abi_binding = "embedded_terminal_expected_request_signed_receipt_and_deployed_module_guest_ABI_all_equal_exactly"
+outcomes = ["success","guest_failure","resource"]
+usage_binding = "all_seven_metered_resource_classes_exactly_match_signed_receipt_usage_and_declared_budget"
+graph_binding = "canonical_graph_bytes_and_digest_bound_to_signed_receipt_and_authenticated_terminal"
+attachment_binding = "unchanged_occupancy_transfer_authority_applied_leg_commitments_required_without_missing_proof_fallback"
+failure_binding = "existing_callback_and_settlement_failure_domains_and_typed_refusals_with_exact_native_protocol3_guest_ABI3_or4"
+historical_compatibility = "ABI3_or4_under_execution_v4_remains_refused_never_relabel_or_reinterpret"
+unsupported = "ABI0_ABI1_ABI2_ABI5_and_every_other_u16_refused_under_execution_v5"
+
 [type.ProgramExecutionEvidence]
 required = ["activity_id","receipt","terminal_payload","call_graph","authority"]
 proof = "local_canonical_receipt_signature_and_terminal_commitment_verification"
+execution_profiles = ["ProgramExecutionV4","ProgramExecutionV5"]
+legacy_execution_profiles = "retained_ABI1_execution_v2_and_v3_bytes_and_refusals_unchanged"
 transport_outcome = "never_authoritative"
 
 [type.ProgramSimulation]

@@ -408,6 +408,42 @@ fn receipt_contract(repo_root: &Path) -> Result<ReceiptContract, String> {
             "Programs ABI capability encoding differs from the canonical policy".to_owned(),
         );
     }
+    let terminal_source = fs::read_to_string(
+        repo_root.join("programs/crates/layerx-programs-runtime/src/terminal.rs"),
+    )
+    .map_err(|error| format!("read native terminal codec: {error}"))?;
+    for (section, version, allowed) in [
+        (
+            "type.ProgramExecutionV4",
+            4,
+            vec!["ABI_V2_VERSION".to_owned()],
+        ),
+        (
+            "type.ProgramExecutionV5",
+            5,
+            vec!["ABI_V3_VERSION".to_owned(), "ABI_V4_VERSION".to_owned()],
+        ),
+    ] {
+        let domain = layerx_platform_kvx::unquote(programs.required(section, "domain")?)?;
+        if domain != format!("LXP/program-execution/v{version}")
+            || programs.required(section, "encoding_version")? != version.to_string()
+            || layerx_platform_kvx::unquote(programs.required(section, "domain_terminator_hex")?)?
+                != "00"
+            || layerx_platform_kvx::string_list(programs.required(section, "allowed_guest_abis")?)?
+                != allowed
+        {
+            return Err(format!("{section} violates the frozen execution profile"));
+        }
+        let declaration = format!("const EXECUTION_V{version}: &[u8] = b\"{domain}\\0\";");
+        if !terminal_source
+            .lines()
+            .any(|line| line.trim() == declaration)
+        {
+            return Err(format!(
+                "{section} has no matching genuine terminal domain producer"
+            ));
+        }
+    }
     Ok(ReceiptContract {
         programs_module_id,
         program_outcome_tags,
