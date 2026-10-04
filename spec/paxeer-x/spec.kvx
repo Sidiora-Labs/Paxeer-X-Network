@@ -27013,8 +27013,17 @@ fleet_authority = "User ordered 30 agents to finish pending integrations within 
 implementation_window = "2026-10-04T12:58:50.377438+00:00 to 2026-10-04T13:28:50.377438+00:00"
 source_status = "complete"
 completion_basis = "implementation under owner CONSTITUTION; qualification separately recorded"
-qualification_status = "UNRUN"
+qualification_status = "UNRUN_BUILD_FAILED"
 source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/fleet-104.38.9-format-publication.json"
+qualification_revision = "3f3a9cc7962aa08252f973127f8d000d1dd03a15"
+qualification_command = "timeout 30m tools/paxeer-x/verify-task.sh 104.38.9"
+qualification_exit_code = "UNRUN"
+qualification_log = "UNRUN"
+build_status = "FAILED"
+build_exit_code = 2
+qualification_evidence = "/root/lx-ops/paxeer-x-integration-2026-10-03/fleet-104.38.9-qualification/result.json"
+build_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/fleet-104.38.9-qualification/build.log"
+qualification_note = "E0599: existing transfer.rs:2893 assertion calls AtomicTransferSet::clone but Clone is not implemented"
 
 [task.104.38.10]
 title = "Align Programs event metering and capability transport bounds"
