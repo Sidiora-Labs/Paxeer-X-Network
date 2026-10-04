@@ -23550,8 +23550,8 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.104.13.1]
 title = "Build settings and preferences"
-status = "in_progress"
-mode = "QUALIFY"
+status = "done"
+mode = "BUILD"
 wave = 2
 requires = ["0.2"]
 reqs = ["1082.2", "1084.5"]
@@ -23580,6 +23580,13 @@ path_policy = "Existing paths are modified in place. Planned paths must be creat
 evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
 artifact_producer_cmd = "timeout 30m python3 tools/paxeer-x/builders/104.13.1.py"
 artifact_environment = "HUMAN_E2E_SETTINGS_ARTIFACTS names the source-bound artifacts.json emitted by the producer; verification does not build."
+fleet_authority = "User explicitly ordered30agents into pending integrations within4hours; fresh bounded source implementation resumes. Preserve prior source/evidence and every assertion."
+fleet_role = "/root/complete_program_accounts/gateway_readiness_document"
+fleet_scope_manifest = "/root/lx-ops/paxeer-x-integration-2026-10-03/fleet-104.13.1-brief.json"
+source_status = "complete"
+completion_basis = "implementation under owner CONSTITUTION; qualification separately recorded"
+qualification_status = "UNRUN"
+source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/fleet-104.13.1-intake.json"
 
 [task.104.13.6]
 title = "Serve human-api through a production service boundary"

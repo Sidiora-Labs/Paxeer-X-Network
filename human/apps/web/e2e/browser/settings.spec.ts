@@ -3,6 +3,7 @@ import { expect, test } from "@playwright/test";
 import { copyEntry } from "../../copy/catalog.ts";
 import { formatCopy } from "../../copy/format.ts";
 import { establishPublicSession } from "../public-session.ts";
+import { decodeProfile } from "../../src/api/generated/index.ts";
 
 function requiredEnvironment(name: string): string {
   const value = process.env[name]?.trim();
@@ -39,7 +40,7 @@ test("@settings settings preferences persist and privacy masks every figure", as
   if (!pushWasEnabled) {
     const channelSaved = page.waitForResponse((response) =>
       response.request().method() === "POST"
-        && new URL(response.url()).pathname === "/v1/notifications/preferences"
+        && new URL(response.url()).pathname === "/human/v1/notifications/preferences"
     );
     await pushToggle.click();
     await expect((await channelSaved).ok()).toBe(true);
@@ -54,7 +55,7 @@ test("@settings settings preferences persist and privacy masks every figure", as
   const approvalWasEnabled = await approvalToggle.isChecked();
   const preferenceSaved = page.waitForResponse((response) =>
     response.request().method() === "POST"
-      && new URL(response.url()).pathname === "/v1/notifications/preferences"
+      && new URL(response.url()).pathname === "/human/v1/notifications/preferences"
   );
   await approvalToggle.click();
   await expect((await preferenceSaved).ok()).toBe(true);
@@ -118,7 +119,7 @@ test("@settings profile and notification detail changes apply and persist", asyn
   await page.getByRole("textbox", { name: copyEntry("settings.profile.display_name").message }).fill(name);
   const profileSaved = page.waitForResponse((response) =>
     response.request().method() === "PATCH"
-      && new URL(response.url()).pathname === "/v1/profile"
+      && new URL(response.url()).pathname === "/human/v1/profile"
   );
   await page.getByRole("button", { name: copyEntry("settings.action.save").message }).click();
   await expect((await profileSaved).ok()).toBe(true);
@@ -133,7 +134,7 @@ test("@settings profile and notification detail changes apply and persist", asyn
     });
     const detailSaved = page.waitForResponse((response) =>
       response.request().method() === "POST"
-        && new URL(response.url()).pathname === "/v1/notifications/preferences"
+        && new URL(response.url()).pathname === "/human/v1/notifications/preferences"
     );
     await choice.click();
     const response = await detailSaved;
@@ -143,6 +144,45 @@ test("@settings profile and notification detail changes apply and persist", asyn
     await page.reload({ waitUntil: "networkidle" });
     await expect(choice).toHaveAttribute("aria-selected", "true");
   }
+});
+
+test("@settings declared-local avatar can be added and cleared through the real profile API", async ({ page }) => {
+  await page.goto("/app/settings", { waitUntil: "networkidle" });
+  const initialResponse = await page.request.get("/human/v1/profile");
+  expect(initialResponse.ok()).toBe(true);
+  const original = decodeProfile(await initialResponse.json(), "authenticated profile");
+  const avatarUrl = new URL(requiredEnvironment("HUMAN_E2E_BASE_URL")).href;
+  const openEditor = async () => {
+    await page.getByText(copyEntry("settings.profile.display_name").message, { exact: true }).click();
+  };
+  const avatar = page.getByRole("textbox", { name: copyEntry("settings.profile.avatar").message });
+  const save = async () => {
+    const completed = page.waitForResponse((response) => response.request().method() === "PATCH"
+      && new URL(response.url()).pathname === "/human/v1/profile");
+    await page.getByRole("button", { name: copyEntry("settings.action.save").message }).click();
+    const response = await completed;
+    expect(response.ok()).toBe(true);
+    return decodeProfile(await response.json(), "saved local profile");
+  };
+  await openEditor();
+  await avatar.fill(avatarUrl);
+  const added = await save();
+  expect(added.display_name).toBe(original.display_name);
+  expect(added.avatar_url).toBe(avatarUrl);
+  await page.reload({ waitUntil: "networkidle" });
+  await openEditor();
+  await expect(avatar).toHaveValue(avatarUrl);
+  await avatar.fill("");
+  const cleared = await save();
+  expect(cleared.display_name).toBe(original.display_name);
+  expect(cleared.avatar_url).toBeUndefined();
+  await page.reload({ waitUntil: "networkidle" });
+  await openEditor();
+  await expect(avatar).toHaveValue("");
+  const persistedResponse = await page.request.get("/human/v1/profile");
+  expect(persistedResponse.ok()).toBe(true);
+  const persisted = decodeProfile(await persistedResponse.json(), "persisted local profile");
+  expect(persisted).toEqual(cleared);
 });
 
 test("@settings privacy synchronizes tabs and remains scoped to the authenticated user", async ({ page, context }) => {
@@ -190,7 +230,7 @@ test("@settings mandatory recovery and wallet rebinding keep an active delivery 
   });
   const saveResponse = () => page.waitForResponse((response) =>
     response.request().method() === "POST"
-      && new URL(response.url()).pathname === "/v1/notifications/preferences"
+      && new URL(response.url()).pathname === "/human/v1/notifications/preferences"
   );
   const push = channelToggle("push");
   if (!(await push.isChecked())) {

@@ -16,6 +16,7 @@ import {
   type NotificationChannel,
 } from "../src/settings/model.ts";
 import type { NotificationPreferences } from "../src/api/generated/index.ts";
+import { decodeProfile, encodeProfileUpdate } from "../src/api/generated/index.ts";
 
 const baseNotificationPreferences: NotificationPreferences = {
   push: {
@@ -243,6 +244,15 @@ test("profile editing copy declares display name and avatar fields", () => {
   const avatar = copyEntry("settings.profile.avatar");
   assert.ok(avatar.message.length > 0);
   assert.equal(avatar.surface, "default");
+});
+
+test("declared-local avatar clearing uses the schema string update and absent response field", () => {
+  assert.deepEqual(encodeProfileUpdate({ avatar_url: "" }), { avatar_url: "" });
+  assert.deepEqual(encodeProfileUpdate({ display_name: "Local profile" }), { display_name: "Local profile" });
+  const cleared = decodeProfile({ display_name: "Local profile" }, "cleared profile");
+  assert.equal(cleared.avatar_url, undefined);
+  assert.equal(Object.hasOwn(cleared, "avatar_url"), false);
+  assert.throws(() => decodeProfile({ display_name: "Local profile", avatar_url: null }, "null avatar"));
 });
 
 test("settings save copy declares success and failure states", () => {
