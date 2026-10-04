@@ -371,6 +371,36 @@ impl ApprovalRegistry {
         Ok(snapshot(held))
     }
 
+    pub(crate) fn terminal_reservations_scoped(
+        &self,
+        tenant: &TenantId,
+        hold_id: [u8; 32],
+        disclosure_digest: [u8; 32],
+        expected_state: ApprovalState,
+    ) -> Result<Vec<DurableBudgetReservation>, ApprovalError> {
+        let holds = self.holds.lock().map_err(|_| ApprovalError::Unavailable)?;
+        let held = holds.get(&hold_id).ok_or(ApprovalError::NotFound)?;
+        if &held.context.tenant != tenant {
+            return Err(ApprovalError::NotFound);
+        }
+        if held.state != expected_state
+            || !matches!(held.state, ApprovalState::Approved | ApprovalState::Rejected
+                | ApprovalState::Expired | ApprovalState::Defective)
+        {
+            return Err(ApprovalError::DecisionConflict);
+        }
+        if held.prepared.disclosure.canonical_digest != disclosure_digest
+            || canonical_digest(held.prepared.unsigned_canonical_bytes.as_bytes())
+                != disclosure_digest
+        {
+            return Err(ApprovalError::DisclosureChanged);
+        }
+        if held.context.request_id != hold_id || held.budget_reservations.is_empty() {
+            return Err(ApprovalError::CorruptRecord);
+        }
+        Ok(held.budget_reservations.clone())
+    }
+
     pub(crate) fn claim_scoped(
         &self,
         tenant: &TenantId,

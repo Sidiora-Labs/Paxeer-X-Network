@@ -9428,10 +9428,19 @@ impl<A: HumanAuthorityBoundary> HumanOperations for UnifiedAgentOwner<A> {
             .get(&tenant, approval_id, current_sequence)
             .map_err(|_| HumanOperationError::Refused)?;
         if record.canonical_bytes_digest != held_digest
-            || record.state != ApprovalState::AwaitingApproval
+            || !matches!(record.state, ApprovalState::AwaitingApproval | ApprovalState::Approved
+                | ApprovalState::Rejected | ApprovalState::Expired | ApprovalState::Defective)
         {
             return Err(HumanOperationError::Refused);
         }
+        let terminal = record.state != ApprovalState::AwaitingApproval;
+        let retained_reservations = if terminal {
+            self.approvals
+                .terminal_reservations_scoped(&tenant, approval_id, held_digest, record.state)
+                .map_err(|_| HumanOperationError::Refused)?
+        } else {
+            Vec::new()
+        };
         let amount = record
             .held_activity
             .amounts
@@ -9454,10 +9463,13 @@ impl<A: HumanAuthorityBoundary> HumanOperations for UnifiedAgentOwner<A> {
         let (Some(owner), None) = (selected.next(), selected.next()) else {
             return Err(HumanOperationError::Refused);
         };
-        let held_limits = self
-            .budgets
-            .held_limits(approval_id)
-            .map_err(|_| HumanOperationError::Refused)?;
+        let held_limits = if terminal {
+            retained_reservations.iter().map(|hold| hold.limit_id).collect()
+        } else {
+            self.budgets
+                .held_limits(approval_id)
+                .map_err(|_| HumanOperationError::Refused)?
+        };
         let mut operations = self.lock_operations()?;
         let actor = Did::new(record.held_activity.actor.as_str().as_bytes())
             .map_err(|_| HumanOperationError::Refused)?;
@@ -9503,8 +9515,8 @@ impl<A: HumanAuthorityBoundary> HumanOperations for UnifiedAgentOwner<A> {
                 !limits.iter().any(|limit| {
                     limit.limit_id == *id
                         && limit.asset == asset
-                        && !limit.revoked
-                        && limit.expiry_ms > snapshot.protocol_timestamp
+                        && (terminal || (!limit.revoked
+                            && limit.expiry_ms > snapshot.protocol_timestamp))
                         && limit.agent_digest
                             == daemon_limit_agent(record.held_activity.actor.as_str())
                 })
@@ -9512,16 +9524,23 @@ impl<A: HumanAuthorityBoundary> HumanOperations for UnifiedAgentOwner<A> {
         {
             return Err(HumanOperationError::Refused);
         };
-        let remaining = self
-            .budgets
-            .remaining_after_reservation_bound(
+        let remaining = if terminal {
+            self.budgets.remaining_after_retained_reservation_bound(
+                approval_id,
+                amount,
+                &retained_reservations,
+                true,
+                state.remaining,
+            )
+        } else {
+            self.budgets.remaining_after_reservation_bound(
                 approval_id,
                 amount,
                 current_sequence,
                 crate::budget::CoreTimestampMs(snapshot.protocol_timestamp),
                 state.remaining,
             )
-            .map_err(|_| HumanOperationError::Refused)?;
+        }.map_err(|_| HumanOperationError::Refused)?;
         let mut digest = Sha256::new();
         digest.update(b"LayerX/Human/approval-budget-after/v2\0");
         digest.update(approval_id);
