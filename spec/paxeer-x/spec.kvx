@@ -36678,7 +36678,7 @@ max_builds = 1
 max_verify_runs = 1
 max_repair_cycles = 2
 time_limit_minutes = 30
-stop_condition = "Freeze source and stop on gate result, 30 minute cap, two repairs, or true contract conflict. Preserve original parent acceptance."
+stop_condition = "Stop at 2026-10-04T19:20:41Z, scoped repair limit, missing authentic authority or required weakening; preserve all prior results."
 fanout_role = "complete_human_facts"
 parent_task = "104.33.7"
 source_status = "complete"
@@ -36699,6 +36699,9 @@ qualification_repairs = 1
 prior_qualification_revision = "3dff2ee3129731e3fec8f7b7880495aef73f1a04"
 prior_qualification_exit_code = 1
 prior_qualification_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/sdk-typescript-v5-3dff2ee31-qualification/verify.log"
+continuation_approval = "/root/lx-ops/paxeer-x-integration-2026-10-03/terminal-v5-continuation-approval.json"
+continuation_deadline_utc = "2026-10-04T19:20:41Z"
+continuation_minutes = 45
 
 [task.104.33.7.3]
 title = "Complete Python Programs client integration"
