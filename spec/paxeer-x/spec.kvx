@@ -33768,7 +33768,7 @@ post_build_source = "Root declared the existing layerx-wire workspace dependency
 
 [task.104.13.8]
 title = "Project production approvals and managed agents into canonical Human API responses"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 2
 requires = ["0.2", "104.13.7"]
@@ -33791,6 +33791,9 @@ source_ownership = "Root serializes shared manifests, locks, spec, GOTCHA and pu
 retained_contract_paths = ["human/crates/layerx-human-service/src/server/production_components.rs", "human/crates/layerx-human-service/src/server/mod.rs", "human/crates/layerx-human-service/src/server/projection.rs", "tools/qualification/paxeer-x/human-canonical-projections.py"]
 delegated_source_task = "104.13.22"
 delegated_source_paths = ["human/crates/layerx-human-service/src/server/production_components.rs", "human/crates/layerx-human-service/src/server/mod.rs", "human/crates/layerx-human-service/src/server/projection.rs"]
+completion_basis = "implementation"
+source_completion_tasks = ["104.13.21", "104.13.22", "104.13.24"]
+qualification_status = "unrun"
 
 [task.104.13.23]
 title = "Connect native Programs decisions to the unified Human approval and home screens"

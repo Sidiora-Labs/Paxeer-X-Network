@@ -2394,3 +2394,13 @@ resolution = "Preserve the literal assertion and authenticate the real producer 
 area = "Native replay predicate placement"
 observed = "A first scoped retention correction matched the older execution-prestate helper rather than the separate historical replay catalogue helper."
 resolution = "Restore the old helper exactly and scope the CALL-only predicate to the actual catalogue producer and getter; preserve both original assertion sets."
+
+[gotcha.697]
+area = "Human genuine runtime clock gate"
+observed = "Human boundary cases compiled but the gate omitted the existing genuine runtime clock supervisor, producing clock-unavailable refusals."
+resolution = "Build and pin the real clock once, clear inherited bindings and invoke the existing wrapper with a private namespace; the six original cases then passed."
+
+[gotcha.698]
+area = "Codify task lease ownership"
+observed = "A source-complete task can retain its Codify lease; release also refuses a coordinator name that differs from the actual recorded owner."
+resolution = "Release using the actual owner before claiming a successor; keep implementation status and graph ownership distinct."
