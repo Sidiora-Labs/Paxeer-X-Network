@@ -49,7 +49,7 @@ check_root() {
         abi/mod.rs abi/balance.rs abi/capability.rs abi/codec.rs abi/context.rs \
         abi/event_tests.rs abi/host_state.rs abi/manifest.rs abi/response.rs abi/storage_ops.rs \
         host/mod.rs host/balance.rs host/context.rs host/memory.rs host/storage.rs host/events.rs host/calls.rs \
-        host/transfer.rs host/scan.rs host/crypto.rs host/signature.rs
+        host/transfer.rs host/scan.rs host/crypto.rs host/signature.rs host/oracle.rs host/web.rs
     do
         if [ ! -f "$root/$path" ]; then
             echo "runtime module boundary: missing $path" >&2
@@ -94,7 +94,7 @@ check_root() {
                 [ -f "$file" ] && basename "$file"
             done | sort
         )
-        expected=$(printf '%s\n' balance.rs calls.rs context.rs crypto.rs events.rs memory.rs mod.rs scan.rs signature.rs storage.rs transfer.rs)
+        expected=$(printf '%s\n' balance.rs calls.rs context.rs crypto.rs events.rs memory.rs mod.rs oracle.rs scan.rs signature.rs storage.rs transfer.rs web.rs)
         if [ "$actual" != "$expected" ]; then
             echo "runtime module boundary: unexpected host module inventory" >&2
             failed=1
@@ -102,12 +102,12 @@ check_root() {
     fi
 
     if [ -d "$root/host" ]; then
-        for family in storage events calls transfer scan crypto signature
+        for family in storage events calls transfer scan crypto signature oracle web
         do
             file="$root/host/$family.rs"
             [ -f "$file" ] || continue
             flattened=$(rust_code "$file")
-            for sibling in storage events calls transfer scan crypto signature
+            for sibling in storage events calls transfer scan crypto signature oracle web
             do
                 [ "$sibling" = "$family" ] && continue
                 if printf '%s\n' "$flattened" | grep -E "(super::|crate::host::)([[:space:]]*\\{[^}]*|)$sibling(::|[^[:alnum:]_])" >/dev/null
@@ -141,7 +141,7 @@ if [ "${1:-}" = "--self-test" ]; then
     fixture=$(mktemp -d)
     trap 'find "$fixture" -type f -delete; find "$fixture" -depth -type d -exec rmdir {} \; 2>/dev/null || true' EXIT
     mkdir -p "$fixture/abi" "$fixture/host"
-    for path in budget.rs abi/mod.rs abi/balance.rs abi/capability.rs abi/codec.rs abi/context.rs abi/event_tests.rs abi/host_state.rs abi/manifest.rs abi/response.rs abi/storage_ops.rs host/mod.rs host/balance.rs host/context.rs host/memory.rs host/storage.rs host/events.rs host/calls.rs host/transfer.rs host/scan.rs host/crypto.rs host/signature.rs
+    for path in budget.rs abi/mod.rs abi/balance.rs abi/capability.rs abi/codec.rs abi/context.rs abi/event_tests.rs abi/host_state.rs abi/manifest.rs abi/response.rs abi/storage_ops.rs host/mod.rs host/balance.rs host/context.rs host/memory.rs host/storage.rs host/events.rs host/calls.rs host/transfer.rs host/scan.rs host/crypto.rs host/signature.rs host/oracle.rs host/web.rs
     do
         : > "$fixture/$path"
     done
@@ -155,6 +155,26 @@ if [ "${1:-}" = "--self-test" ]; then
         exit 1
     fi
     : > "$fixture/budget.rs"
+    for family in oracle web
+    do
+        rm -f "$fixture/host/$family.rs"
+        if check_root "$fixture" >/dev/null 2>&1; then
+            echo "runtime module boundary self-test: missing $family module was accepted" >&2
+            exit 1
+        fi
+        printf '%s\n' 'use super::storage::register;' > "$fixture/host/$family.rs"
+        if check_root "$fixture" >/dev/null 2>&1; then
+            echo "runtime module boundary self-test: $family sibling import was accepted" >&2
+            exit 1
+        fi
+        : > "$fixture/host/$family.rs"
+    done
+    : > "$fixture/host/unlisted.rs"
+    if check_root "$fixture" >/dev/null 2>&1; then
+        echo "runtime module boundary self-test: unexpected host module was accepted" >&2
+        exit 1
+    fi
+    rm -f "$fixture/host/unlisted.rs"
     printf '%s\n' 'fn invalid() { execute_authorized_budgeted_for_qualification(); }' > "$fixture/ffi.rs"
     if check_root "$fixture" >/dev/null 2>&1; then
         echo "runtime module boundary self-test: qualification API reached production transition" >&2

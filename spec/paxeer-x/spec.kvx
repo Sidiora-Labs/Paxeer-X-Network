@@ -35856,3 +35856,27 @@ passed_cases = 11
 failed_cases = 2
 skipped_cases = 0
 repair_cycles = 0
+
+[task.103.6.14]
+title = "Repair strict Programs host boundary inventory for current production modules"
+status = "done"
+mode = "BUILD"
+wave = 2
+requires = ["0.2"]
+reqs = ["1093.1", "1093.7"]
+do_1 = "Preserve strict module boundary inventory and every existing refusal while adding current oracle and web modules to explicit mandatory inventory and each family/sibling boundary check."
+do_2 = "Run the actual current-source checker and all retained checker negative cases once; do not disable checks or remove production host modules."
+touches = ["tests/programs/runtime-module-boundaries.sh"]
+build_cmd = "sh -n tests/programs/runtime-module-boundaries.sh"
+verify_cmd = "timeout 5m sh tests/programs/runtime-module-boundaries.sh"
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+owner_continuation_cutoff_utc = "2026-10-04T16:07:00Z"
+fleet_role = "/root/integrate_arbiter"
+source_status = "complete"
+qualification_status = "UNRUN"
+owner_authority = "User explicitly requested separate agents fix actual failing CI without stopping integration implementation."
+stop_condition = "One focused build/check then one verify; maximum two scoped repairs and stop at16:07UTC; retain all assertions and typed refusals."
+completion_basis = "implementation under owner CONSTITUTION; qualification separately recorded"
