@@ -4,6 +4,7 @@ import struct
 from dataclasses import dataclass
 from hashlib import sha256
 
+from .generated.receipt import supports_program_guest_abi
 from .program_wire import DecodedSignedProgramCall, bind_signed_program_lifecycle
 
 
@@ -44,7 +45,7 @@ def _fixed(value: bytes) -> bytes:
 
 
 def _code(program: bytes, abi: int, wasm: bytes, digest: bytes) -> None:
-    if (_fixed(program) == bytes(32) or type(abi) is not int or abi not in (1, 2, 3, 4)
+    if (_fixed(program) == bytes(32) or not supports_program_guest_abi(abi)
             or not wasm.startswith(b"\0asm\x01\0\0\0") or len(wasm) > 1_048_576
             or _fixed(digest) != sha256(wasm).digest()):
         raise ValueError("invalid program code")

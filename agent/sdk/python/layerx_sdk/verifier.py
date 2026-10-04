@@ -902,6 +902,38 @@ def verify_receipt_outcome(
     signatures: LocalSignatureVerifier,
     *, protocol_version: int = _CURRENT_PROTOCOL_VERSION,
 ) -> ReceiptVerification:
+    return _verify_receipt_outcome(canonical_receipt, authorized, signatures, protocol_version=protocol_version)
+
+
+def verify_program_receipt_outcome_v5(
+    canonical_receipt: bytes, authorized: AuthorizedReceiptBatch, signatures: LocalSignatureVerifier,
+    terminal_payload: bytes, call_graph: bytes, program_id: str, expected_signed_activity: bytes,
+    *, occupancy_payers: tuple = (),
+) -> ReceiptVerification:
+    from .program_wire import (decode_and_verify_program_terminal, bind_retained_program_call,
+                               verify_native_program_call_signature)
+    receipt, _ = _decode_protocol_receipt(canonical_receipt)
+    outcome = receipt.program_outcome
+    if (receipt.protocol_version != 3 or receipt.module_id != PROGRAMS_MODULE_ID or receipt.operation != 3
+            or outcome is None or outcome.abi_version not in (3, 4) or outcome.runtime_version != 1):
+        _receipt_failure(ReceiptFailureCode.PROTOCOL_VERSION)
+    expected_payload_hash, expected_abi, _ = bind_retained_program_call(
+        expected_signed_activity, receipt.activity_id.hex(), program_id, 3)
+    if expected_abi != outcome.abi_version:
+        _receipt_failure(ReceiptFailureCode.PROTOCOL_VERSION)
+    verify_native_program_call_signature(expected_signed_activity, signatures)
+    decode_and_verify_program_terminal(terminal_payload, call_graph, program_id, outcome, 3,
+                                       protocol=receipt, expected_payload_hash=expected_payload_hash,
+                                       occupancy_payers=occupancy_payers)
+    return _verify_receipt_outcome(canonical_receipt, authorized, signatures, protocol_version=3,
+                                   validated_v5_outcome=outcome)
+
+
+def _verify_receipt_outcome(
+    canonical_receipt: bytes, authorized: AuthorizedReceiptBatch, signatures: LocalSignatureVerifier,
+    *, protocol_version: int = _CURRENT_PROTOCOL_VERSION,
+    validated_v5_outcome: ProgramReceiptOutcome | None = None,
+) -> ReceiptVerification:
     try:
         receipt, unsigned_receipt = _decode_protocol_receipt(canonical_receipt)
     except ReceiptVerificationError:
@@ -923,7 +955,9 @@ def verify_receipt_outcome(
                 _receipt_failure(ReceiptFailureCode.RECEIPT_SHAPE)
             assert outcome is not None
             if outcome.abi_version not in (1, 2) or outcome.runtime_version != 1:
-                _receipt_failure(ReceiptFailureCode.PROTOCOL_VERSION)
+                if (protocol_version != 3 or outcome.abi_version not in (3, 4)
+                        or outcome.runtime_version != 1 or validated_v5_outcome != outcome):
+                    _receipt_failure(ReceiptFailureCode.PROTOCOL_VERSION)
     if not program and receipt.operation == 0:
         _receipt_failure(ReceiptFailureCode.OPERATION)
     if _all_zero(receipt.activity_id):

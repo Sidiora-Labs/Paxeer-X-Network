@@ -26,6 +26,7 @@ from .verifier import (
     programs_module_version_for_protocol,
     verify_program_lifecycle_receipt,
     verify_receipt_outcome,
+    verify_program_receipt_outcome_v5,
 )
 
 ProgramCapability = Literal["storage_read", "storage_write", "transfer", "emit_event", "compose"]
@@ -196,14 +197,28 @@ def verify_program_receipt(
     module_version = execution.get("module_version")
     guest_abi = execution.get("guest_abi_version")
     result_code = execution.get("result_code")
-    if not isinstance(activity_id, str) or not _hex32(activity_id) or not programs_module_version_for_protocol(trust.protocol_version, module_version) or type(guest_abi) is not int or guest_abi not in (1, 2) or type(result_code) is not int:
+    if not isinstance(activity_id, str) or not _hex32(activity_id) or not programs_module_version_for_protocol(trust.protocol_version, module_version) or type(guest_abi) is not int or not native_guest_abi_for_protocol(guest_abi, trust.protocol_version) or type(result_code) is not int:
         raise ValueError("invalid program execution evidence")
     receipt = _evidence_bytes(execution, "receipt")
     terminal_payload = _evidence_bytes(execution, "terminal_payload")
     call_graph = _evidence_bytes(execution, "call_graph")
     if authority.sequencer_public_key != trust.sequencer_public_key or _mapping(execution.get("authority")).get("sequencer_public_key") != trust.sequencer_public_key.hex():
         raise ValueError("program sequencer authority mismatch")
-    verification = verify_receipt_outcome(receipt, authority, signatures, protocol_version=trust.protocol_version)
+    if guest_abi in (3, 4):
+        retained_v5 = expected_signed_activity
+        if retained_v5 is None and "retained_signed_activity" in execution:
+            retained_v5 = _evidence_bytes(execution, "retained_signed_activity")
+        if retained_v5 is None:
+            raise ValueError("v5 receipt requires actual retained signed request")
+        v5_hash, v5_abi, _ = bind_retained_program_call(retained_v5, activity_id, cast(str, execution["program_id"]), trust.protocol_version)
+        if v5_abi != guest_abi:
+            raise ValueError("v5 signed request ABI mismatch")
+        verify_native_program_call_signature(retained_v5, signatures, trust.network_id)
+        verification = verify_program_receipt_outcome_v5(receipt, authority, signatures, terminal_payload,
+                                                        call_graph, cast(str, execution["program_id"]), retained_v5,
+                                                        occupancy_payers=occupancy_payers)
+    else:
+        verification = verify_receipt_outcome(receipt, authority, signatures, protocol_version=trust.protocol_version)
     protocol = verification.receipt
     outcome = protocol.program_outcome
     authority_document = _mapping(execution.get("authority"))
@@ -499,7 +514,7 @@ def _execution(value: object, expected_state: Literal["executed", "refused", "si
     _hex_field(execution, "call_graph", _MAX_CALLDATA)
     for field in ("global_sequence",):
         _decimal(execution.get(field), (1 << 64) - 1)
-    if not isinstance(execution.get("module_version"), int) or isinstance(execution.get("module_version"), bool) or execution["module_version"] not in (1, 2, 3, 4) or not isinstance(execution.get("guest_abi_version"), int) or isinstance(execution.get("guest_abi_version"), bool) or execution.get("guest_abi_version") not in (1, 2) or not isinstance(execution.get("result_code"), int) or isinstance(execution.get("result_code"), bool):
+    if not isinstance(execution.get("module_version"), int) or isinstance(execution.get("module_version"), bool) or execution["module_version"] not in (1, 2, 3, 4) or not isinstance(execution.get("guest_abi_version"), int) or isinstance(execution.get("guest_abi_version"), bool) or execution.get("guest_abi_version") not in (1, 2, 3, 4) or not isinstance(execution.get("result_code"), int) or isinstance(execution.get("result_code"), bool):
         raise ValueError("invalid program execution metadata")
     if execution.get("verification") != "receipt-terminal-and-call-graph-verified":
         raise ValueError("invalid program verification status")

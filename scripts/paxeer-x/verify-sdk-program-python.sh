@@ -12,9 +12,9 @@ import sys
 import unittest
 
 root = Path(sys.argv[1])
-if not os.environ.get('LAYERX_PYTHON_PROGRAM_HTTP_FIXTURE'):
+if not os.environ.get('LAYERX_PYTHON_PROGRAM_HTTP_FIXTURE') or not os.environ.get('PAXEER_X_PROGRAM_TERMINAL_V5_CORPUS'):
     print(json.dumps({'exit_code': 78, 'status': 'prerequisite-unavailable',
-                      'reason': 'protected real production gateway/native cluster HTTP fixture required'}))
+                      'reason': 'protected real gateway/native cluster HTTP fixture and genuine signed native v5 corpus required'}))
     sys.exit(78)
 suite = unittest.TestSuite()
 paths = ['platform/sdk/conformance/terminal-v4.test.py',

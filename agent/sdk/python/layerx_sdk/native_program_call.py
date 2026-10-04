@@ -4,6 +4,8 @@ import re
 import struct
 from dataclasses import dataclass
 
+from .generated.receipt import PROGRAM_ABI_V1, PROGRAM_ABI_V2, supports_program_guest_abi
+
 
 @dataclass(frozen=True)
 class NativeProgramCall:
@@ -19,7 +21,7 @@ class NativeProgramCall:
 
 def encode_native_program_call(call: NativeProgramCall) -> bytes:
     if (len(call.program_id) != 32 or call.program_id == bytes(32)
-            or type(call.guest_abi) is not int or call.guest_abi not in (1, 2, 3, 4)
+            or not supports_program_guest_abi(call.guest_abi)
             or re.fullmatch(r"[A-Za-z0-9_.]{1,128}", call.entrypoint) is None
             or len(call.calldata) > 1_048_576 or len(call.capabilities) > 65_535
             or len(call.access_declaration) > 1_048_576
@@ -53,6 +55,6 @@ def decode_native_program_call(payload: bytes) -> NativeProgramCall:
 
 
 def native_guest_abi_for_protocol(guest_abi: int, protocol_version: int) -> bool:
-    return (type(guest_abi) is int and guest_abi in (1, 2, 3, 4)
+    return (supports_program_guest_abi(guest_abi)
             and type(protocol_version) is int and protocol_version in (1, 2, 3)
-            and (guest_abi in (1, 2) or protocol_version == 3))
+            and (guest_abi in (PROGRAM_ABI_V1, PROGRAM_ABI_V2) or protocol_version == 3))

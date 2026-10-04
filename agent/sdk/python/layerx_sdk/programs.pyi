@@ -2,6 +2,7 @@ from collections.abc import Callable, Mapping
 from typing import Literal, TypeAlias
 
 from .native_program_call import NativeProgramCall
+from .program_wire import OccupancyPayer
 from .production import IdempotencyKey, ProductionClient
 from .verifier import (
     AuthorizedReceiptBatch,
@@ -74,8 +75,10 @@ class VerifiedProgramReceipt:
     verification: ReceiptVerification
     terminal_payload: bytes
     call_graph: bytes
+    transfer_verification: Literal["reconstructed", "recorded_terminal_root_not_locally_reconstructable"]
+    occupancy_payment_accounts: tuple[bytes, ...]
 
-def verify_program_receipt(execution: Mapping[str, object], authority: AuthorizedReceiptBatch, signatures: LocalSignatureVerifier, trust: ProgramTrustContext) -> VerifiedProgramReceipt: ...
+def verify_program_receipt(execution: Mapping[str, object], authority: AuthorizedReceiptBatch, signatures: LocalSignatureVerifier, trust: ProgramTrustContext, *, expected_signed_activity: bytes | None = ..., occupancy_payers: tuple[OccupancyPayer, ...] = ...) -> VerifiedProgramReceipt: ...
 
 class ProgramOperations:
     def __init__(self, client: ProductionClient, signatures: LocalSignatureVerifier, trust: ProgramTrustContext) -> None: ...

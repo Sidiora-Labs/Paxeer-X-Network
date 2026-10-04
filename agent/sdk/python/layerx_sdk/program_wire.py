@@ -19,6 +19,7 @@ _CALL_DOMAIN = b"LayerX/programs/call/v1\0"
 _EXECUTION_V2 = b"LXP/program-execution/v2\0"
 _EXECUTION_V3 = b"LXP/program-execution/v3\0"
 _EXECUTION_V4 = b"LXP/program-execution/v4\0"
+_EXECUTION_V5 = b"LXP/program-execution/v5\0"
 _OCCUPANCY = b"LXP/program-execution-with-occupancy/v1\0"
 _AUTHORITY = b"LXP/program-execution-with-transfer-authority/v2\0"
 _PRE_RUNTIME = b"LXP/v1/context-hash\0LXP/programs/pre-runtime-failure/v1\0"
@@ -312,11 +313,20 @@ def decode_and_verify_program_terminal(
         outcome: Mapping[str, object] = {"kind": "legacy_completed", "code": receipt.result_code, "values": decoded["values"]}
         usage = cast(Mapping[str, object], decoded["usage"])
         successful = True
-    elif inner.startswith(_EXECUTION_V4):
+    elif inner.startswith((_EXECUTION_V4, _EXECUTION_V5)):
         candidate = True
-        decoded = _decode_candidate(inner[len(_EXECUTION_V4):])
-        if decoded["kind"] != receipt.terminal_kind or receipt.abi_version != 2 or decoded["program"] != expected_program_id:
-            _fail("candidate terminal binding")
+        if inner.startswith(_EXECUTION_V5):
+            if protocol_version != 3 or receipt.abi_version not in (3, 4):
+                _fail("v5 terminal ABI or protocol")
+            decoded = _decode_candidate_v5(inner[len(_EXECUTION_V5):], receipt.abi_version)
+            if decoded["kind"] != receipt.terminal_kind or decoded["program"] != expected_program_id:
+                _fail("v5 terminal binding")
+            if decoded["fee"] != receipt.fee_schedule_version:
+                _fail("v5 fee schedule binding")
+        else:
+            decoded = _decode_candidate(inner[len(_EXECUTION_V4):])
+            if decoded["kind"] != receipt.terminal_kind or receipt.abi_version != 2 or decoded["program"] != expected_program_id:
+                _fail("candidate terminal binding")
         _bind_metadata(decoded, receipt)
         if decoded["graph"] != call_graph:
             _fail("candidate call graph")
@@ -511,6 +521,46 @@ def _decode_candidate(encoded: bytes) -> dict[str, object]:
         _fail("candidate ABI")
     tag = reader.byte()
     result: dict[str, object] = {"runtime": runtime, "abi": 2, "fee": fee, "metering": metering, "usage": usage, "program": program}
+    if tag == 0:
+        code = reader.i32()
+        if code < 0: _fail("candidate result code")
+        result.update({"kind": 1, "outcome": "success", "code": code, "response": reader.sized_u64(1_048_576)})
+    elif tag == 1:
+        _decode_program_failure(reader.sized_u64(4_136)); result.update({"kind": 2, "outcome": "failure"})
+    elif tag == 2:
+        _decode_resource(reader, True, usage); result.update({"kind": 3, "outcome": "resource"})
+    else:
+        _fail("candidate outcome tag")
+    result["graph"] = reader.sized_u64(_MAX_GRAPH)
+    reader.end()
+    return result
+
+
+def _decode_candidate_v5(encoded: bytes, expected_abi: int) -> dict[str, object]:
+    if type(expected_abi) is not int or expected_abi not in (3, 4):
+        _fail("v5 expected ABI")
+    reader = _Reader(encoded)
+    runtime = reader.u16(); fee = reader.u32(); metering = reader.u32()
+    if not runtime or not fee or not metering:
+        _fail("candidate metadata")
+    count = reader.u64()
+    if count > reader.remaining() // 5:
+        _fail("candidate value count")
+    for _ in range(count):
+        tag = reader.byte()
+        if tag == 1: reader.i32()
+        elif tag == 2: reader.i64()
+        else: _fail("candidate value tag")
+    usage = _usage(reader.u64(), reader.u64(), reader.u64(), reader.u64(), reader.u32(), reader.u64(), reader.u128())
+    trace = reader.byte()
+    if trace == 1: reader.sized_u64(_MAX_TRACE)
+    elif trace != 0: _fail("candidate trace tag")
+    program = reader.fixed(32).hex()
+    abi = reader.u16()
+    if abi != expected_abi or abi not in (3, 4):
+        _fail("candidate ABI")
+    tag = reader.byte()
+    result: dict[str, object] = {"runtime": runtime, "abi": abi, "fee": fee, "metering": metering, "usage": usage, "program": program}
     if tag == 0:
         code = reader.i32()
         if code < 0: _fail("candidate result code")
