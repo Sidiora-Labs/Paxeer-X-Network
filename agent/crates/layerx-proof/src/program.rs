@@ -179,6 +179,19 @@ impl VerifiedProgramExecution {
     }
 
     #[must_use]
+    pub const fn is_standalone_refusal(&self) -> bool {
+        matches!(
+            self.terminal.detail,
+            TerminalDetail::Failure(_) | TerminalDetail::Resource(_)
+        )
+    }
+
+    #[must_use]
+    pub const fn terminal_execution_version(&self) -> Option<u8> {
+        self.terminal.execution_encoding_version()
+    }
+
+    #[must_use]
     pub const fn result_code(&self) -> i32 {
         self.result_code
     }
@@ -402,6 +415,16 @@ fn verify_program_execution_receipt(
         terminal_detail,
     )
     .map_err(|_| ProgramExecutionVerificationFailure::at(ProgramExecutionCheck::Terminal))?;
+    if matches!(outcome.abi_version(), 3 | 4)
+        && (protocol.protocol_version() != STATE_COMMITMENT_PROTOCOL_VERSION
+            || !(terminal.execution_encoding_version() == Some(5)
+                || matches!(
+                    &terminal.detail,
+                    TerminalDetail::Failure(_) | TerminalDetail::Resource(_)
+                )))
+    {
+        return terminal_failure();
+    }
     if let TerminalDetail::Failure(FailureTerminal::PreRuntime(failure)) = &terminal.detail {
         if !pre_runtime {
             return terminal_failure();

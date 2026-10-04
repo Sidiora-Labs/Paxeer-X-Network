@@ -8,6 +8,7 @@ use crate::{
 const EXECUTION_V2: &[u8] = b"LXP/program-execution/v2\0";
 const EXECUTION_V3: &[u8] = b"LXP/program-execution/v3\0";
 const EXECUTION_V4: &[u8] = b"LXP/program-execution/v4\0";
+const EXECUTION_V5: &[u8] = b"LXP/program-execution/v5\0";
 const OCCUPANCY: &[u8] = b"LXP/program-execution-with-occupancy/v1\0";
 const AUTHORITY: &[u8] = b"LXP/program-execution-with-transfer-authority/v2\0";
 const FAILURE: &[u8] = b"LXP/programs/failure-detail/v1\0";
@@ -177,6 +178,14 @@ pub enum TerminalDetail {
 pub struct DecodedTerminal {
     pub detail: TerminalDetail,
     pub attachments: Vec<TerminalAttachment>,
+    execution_encoding_version: Option<u8>,
+}
+
+impl DecodedTerminal {
+    #[must_use]
+    pub const fn execution_encoding_version(&self) -> Option<u8> {
+        self.execution_encoding_version
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -209,8 +218,12 @@ pub fn decode_terminal_payload(
             return Err(TerminalDecodeError::MismatchedAbi);
         }
         TerminalDetail::Execution(decode_legacy(inner, abi, inner.starts_with(EXECUTION_V3))?)
-    } else if inner.starts_with(EXECUTION_V4) {
-        let execution = decode_v4(inner, abi)?;
+    } else if inner.starts_with(EXECUTION_V4) || inner.starts_with(EXECUTION_V5) {
+        let execution = if inner.starts_with(EXECUTION_V5) {
+            decode_v5(inner, abi)?
+        } else {
+            decode_v4(inner, abi)?
+        };
         let expected = match &execution {
             ExecutionTerminal::CandidateV4 {
                 outcome: CandidateTerminalOutcome::Success { .. },
@@ -263,6 +276,17 @@ pub fn decode_terminal_payload(
         return Err(TerminalDecodeError::Malformed);
     };
     Ok(DecodedTerminal {
+        execution_encoding_version: if inner.starts_with(EXECUTION_V5) {
+            Some(5)
+        } else if inner.starts_with(EXECUTION_V4) {
+            Some(4)
+        } else if inner.starts_with(EXECUTION_V3) {
+            Some(3)
+        } else if inner.starts_with(EXECUTION_V2) {
+            Some(2)
+        } else {
+            None
+        },
         detail,
         attachments,
     })
@@ -432,6 +456,96 @@ fn decode_v4(encoded: &[u8], expected_abi: u16) -> Result<ExecutionTerminal, Ter
     let abi_version = c.u16()?;
     if abi_version != expected_abi
         || abi_version != 2
+        || runtime_version == 0
+        || fee_schedule_version == 0
+        || metering_schedule_version == 0
+    {
+        return Err(TerminalDecodeError::MismatchedAbi);
+    }
+    let outcome = match c.byte()? {
+        0 => {
+            let code = c.i32()?;
+            if code < 0 {
+                return Err(TerminalDecodeError::Malformed);
+            }
+            let response = c.sized_u64()?;
+            if response.len() > MAX_CALL_RESPONSE_BYTES {
+                return Err(TerminalDecodeError::Malformed);
+            }
+            CandidateTerminalOutcome::Success {
+                code,
+                response: response.to_vec(),
+            }
+        }
+        1 => CandidateTerminalOutcome::Failure(
+            ProgramFailure::canonical_decode(c.sized_u64()?)
+                .map_err(|_| TerminalDecodeError::Malformed)?,
+        ),
+        2 => CandidateTerminalOutcome::Resource(decode_meter(&mut c, usage)?),
+        _ => return Err(TerminalDecodeError::Malformed),
+    };
+    let graph = c.sized_u64()?;
+    if graph.len() > MAX_GRAPH_EVIDENCE_BYTES {
+        return Err(TerminalDecodeError::Malformed);
+    }
+    c.end()?;
+    Ok(ExecutionTerminal::CandidateV4 {
+        runtime_version,
+        fee_schedule_version,
+        metering_schedule_version,
+        program,
+        abi_version,
+        values,
+        usage,
+        trace,
+        graph: graph.to_vec(),
+        outcome,
+    })
+}
+
+fn decode_v5(encoded: &[u8], expected_abi: u16) -> Result<ExecutionTerminal, TerminalDecodeError> {
+    let mut c = Cursor::new(&encoded[EXECUTION_V5.len()..]);
+    let runtime_version = c.u16()?;
+    let fee_schedule_version = c.u32()?;
+    let metering_schedule_version = c.u32()?;
+    let count = usize::try_from(c.u64()?).map_err(|_| TerminalDecodeError::Malformed)?;
+    if count > c.remaining() / 5 {
+        return Err(TerminalDecodeError::Malformed);
+    }
+    let mut values = Vec::with_capacity(count);
+    for _ in 0..count {
+        values.push(match c.byte()? {
+            1 => ExecutionValue::I32(c.i32()?),
+            2 => ExecutionValue::I64(c.i64()?),
+            _ => return Err(TerminalDecodeError::Malformed),
+        });
+    }
+    let usage = MeteredUsage {
+        cpu_fuel: c.u64()?,
+        memory_bytes: c.u64()?,
+        storage_read_bytes: c.u64()?,
+        storage_write_bytes: c.u64()?,
+        output_values: c.u32()?,
+        output_bytes: c.u64()?,
+        occupancy_byte_batches: 0,
+        occupancy_fee_units: 0,
+        fee_units: u128::from_be_bytes(c.array()?),
+    };
+    let trace = match c.byte()? {
+        0 => None,
+        1 => {
+            let bytes = c.sized_u64()?;
+            if bytes.len() > MAX_TRACE_EVIDENCE_BYTES {
+                return Err(TerminalDecodeError::Malformed);
+            }
+            Some(bytes.to_vec())
+        }
+        _ => return Err(TerminalDecodeError::Malformed),
+    };
+    let program = c.array()?;
+    let abi_version = c.u16()?;
+    if abi_version != expected_abi
+        || !matches!(abi_version, 3 | 4)
         || runtime_version == 0
         || fee_schedule_version == 0
         || metering_schedule_version == 0
@@ -866,6 +980,66 @@ mod source_vectors {
         };
         assert!(
             matches!(decoded.detail,TerminalDetail::Execution(ExecutionTerminal::CandidateV4{outcome:CandidateTerminalOutcome::Success{code:0,response},..}) if response==[0xaa,0xbb])
+        );
+    }
+
+    fn execution_v5_codec_vector(abi: u16) -> Vec<u8> {
+        let mut bytes = EXECUTION_V5.to_vec();
+        bytes.extend_from_slice(&1_u16.to_be_bytes());
+        bytes.extend_from_slice(&1_u32.to_be_bytes());
+        bytes.extend_from_slice(&1_u32.to_be_bytes());
+        bytes.extend_from_slice(&0_u64.to_be_bytes());
+        for value in [1_u64, 2, 3, 4] {
+            bytes.extend_from_slice(&value.to_be_bytes());
+        }
+        bytes.extend_from_slice(&0_u32.to_be_bytes());
+        bytes.extend_from_slice(&2_u64.to_be_bytes());
+        bytes.extend_from_slice(&10_u128.to_be_bytes());
+        bytes.push(0);
+        bytes.extend_from_slice(&[7; 32]);
+        bytes.extend_from_slice(&abi.to_be_bytes());
+        bytes.push(0);
+        bytes.extend_from_slice(&0_i32.to_be_bytes());
+        bytes.extend_from_slice(&2_u64.to_be_bytes());
+        bytes.extend_from_slice(&[0xaa, 0xbb]);
+        bytes.extend_from_slice(&0_u64.to_be_bytes());
+        bytes
+    }
+
+    #[test]
+    fn execution_v5_closed_profile_and_abi_binding() {
+        for abi in [3, 4] {
+            let bytes = execution_v5_codec_vector(abi);
+            let terminal =
+                decode_terminal_payload(1, abi, &bytes).unwrap_or_else(|error| panic!("{error:?}"));
+            assert_eq!(terminal.execution_encoding_version(), Some(5));
+            for other in [0, 1, 2, 3, 4, 5, u16::MAX] {
+                if other != abi {
+                    assert!(decode_terminal_payload(1, other, &bytes).is_err());
+                }
+            }
+            for length in 0..bytes.len() {
+                assert!(decode_terminal_payload(1, abi, &bytes[..length]).is_err());
+            }
+            let mut trailing = bytes.clone();
+            trailing.push(0);
+            assert!(decode_terminal_payload(1, abi, &trailing).is_err());
+            assert!(decode_terminal_payload(2, abi, &bytes).is_err());
+            assert!(decode_terminal_payload(3, abi, &bytes).is_err());
+            let mut old_profile = bytes;
+            old_profile[..EXECUTION_V4.len()].copy_from_slice(EXECUTION_V4);
+            assert!(decode_terminal_payload(1, abi, &old_profile).is_err());
+        }
+        for abi in [0, 1, 2, 5, u16::MAX] {
+            assert!(decode_terminal_payload(1, abi, &execution_v5_codec_vector(abi)).is_err());
+        }
+        let mut v4 = execution_v5_codec_vector(2);
+        v4[..EXECUTION_V4.len()].copy_from_slice(EXECUTION_V4);
+        assert_eq!(
+            decode_terminal_payload(1, 2, &v4)
+                .unwrap_or_else(|error| panic!("{error:?}"))
+                .execution_encoding_version(),
+            Some(4)
         );
     }
 

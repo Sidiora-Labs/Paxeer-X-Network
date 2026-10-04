@@ -2712,6 +2712,7 @@ pub extern "C" fn layerx_programs_call_begin(
             || fee_schedule_version == 0
             || metering_schedule_version == 0
             || !protocol_admits_abi(protocol_version, abi_version)
+            || matches!(abi_version, ABI_V3_VERSION | ABI_V4_VERSION) && protocol_version != 3
             || entrypoint_length == 0
             || entrypoint_length > 128
             || calldata_length > 1_048_576
@@ -3886,56 +3887,132 @@ pub struct RawNativeReceiptAuthorityV1 {
 }
 
 impl RawNativeReceiptAuthorityV1 {
-    pub const fn version(&self) -> u16 { self.version }
-    pub const fn network_id(&self) -> u32 { self.network_id }
-    pub const fn protocol_version(&self) -> u16 { self.protocol_version }
-    pub const fn module_id(&self) -> u16 { self.module_id }
-    pub const fn operation(&self) -> u8 { self.operation }
-    pub const fn result_code(&self) -> i32 { self.result_code }
-    pub const fn batch_number(&self) -> u64 { self.batch_number }
-    pub const fn epoch(&self) -> u64 { self.epoch }
-    pub const fn global_sequence(&self) -> u64 { self.global_sequence }
-    pub const fn authorization_first_batch_number(&self) -> u64 { self.authorization_first_batch_number }
-    pub const fn authorization_last_batch_number(&self) -> u64 { self.authorization_last_batch_number }
-    pub const fn receipt_digest(&self) -> [u8; 32] { self.receipt_digest }
-    pub const fn activity_id(&self) -> [u8; 32] { self.activity_id }
-    pub const fn previous_state_root(&self) -> [u8; 32] { self.previous_state_root }
-    pub const fn resulting_state_root(&self) -> [u8; 32] { self.resulting_state_root }
-    pub const fn sequencer_id(&self) -> [u8; 32] { self.sequencer_id }
-    pub const fn sequencer_public_key(&self) -> [u8; 32] { self.sequencer_public_key }
-    pub const fn canonical_bytes(&self) -> &[u8; RAW_NATIVE_RECEIPT_AUTHORITY_V1_BYTES] { &self.canonical_bytes }
+    pub const fn version(&self) -> u16 {
+        self.version
+    }
+    pub const fn network_id(&self) -> u32 {
+        self.network_id
+    }
+    pub const fn protocol_version(&self) -> u16 {
+        self.protocol_version
+    }
+    pub const fn module_id(&self) -> u16 {
+        self.module_id
+    }
+    pub const fn operation(&self) -> u8 {
+        self.operation
+    }
+    pub const fn result_code(&self) -> i32 {
+        self.result_code
+    }
+    pub const fn batch_number(&self) -> u64 {
+        self.batch_number
+    }
+    pub const fn epoch(&self) -> u64 {
+        self.epoch
+    }
+    pub const fn global_sequence(&self) -> u64 {
+        self.global_sequence
+    }
+    pub const fn authorization_first_batch_number(&self) -> u64 {
+        self.authorization_first_batch_number
+    }
+    pub const fn authorization_last_batch_number(&self) -> u64 {
+        self.authorization_last_batch_number
+    }
+    pub const fn receipt_digest(&self) -> [u8; 32] {
+        self.receipt_digest
+    }
+    pub const fn activity_id(&self) -> [u8; 32] {
+        self.activity_id
+    }
+    pub const fn previous_state_root(&self) -> [u8; 32] {
+        self.previous_state_root
+    }
+    pub const fn resulting_state_root(&self) -> [u8; 32] {
+        self.resulting_state_root
+    }
+    pub const fn sequencer_id(&self) -> [u8; 32] {
+        self.sequencer_id
+    }
+    pub const fn sequencer_public_key(&self) -> [u8; 32] {
+        self.sequencer_public_key
+    }
+    pub const fn canonical_bytes(&self) -> &[u8; RAW_NATIVE_RECEIPT_AUTHORITY_V1_BYTES] {
+        &self.canonical_bytes
+    }
 }
 
 fn decode_native_receipt_authority(
     bytes: [u8; RAW_NATIVE_RECEIPT_AUTHORITY_V1_BYTES],
-    expected_digest: [u8; 32], expected_batch: u64,
+    expected_digest: [u8; 32],
+    expected_batch: u64,
 ) -> Result<RawNativeReceiptAuthorityV1, i32> {
     let parse = || -> Result<RawNativeReceiptAuthorityV1, crate::replay::ReplayWitnessError> {
         let mut cursor = crate::replay::ReplayCursor::new(&bytes);
         let value = RawNativeReceiptAuthorityV1 {
-            version: cursor.u16()?, network_id: cursor.u32()?, protocol_version: cursor.u16()?,
-            module_id: cursor.u16()?, operation: cursor.u8()?, result_code: cursor.i32()?,
-            batch_number: cursor.u64()?, epoch: cursor.u64()?, global_sequence: cursor.u64()?,
-            authorization_first_batch_number: cursor.u64()?, authorization_last_batch_number: cursor.u64()?,
-            receipt_digest: cursor.array()?, activity_id: cursor.array()?, previous_state_root: cursor.array()?,
-            resulting_state_root: cursor.array()?, sequencer_id: cursor.array()?, sequencer_public_key: cursor.array()?,
+            version: cursor.u16()?,
+            network_id: cursor.u32()?,
+            protocol_version: cursor.u16()?,
+            module_id: cursor.u16()?,
+            operation: cursor.u8()?,
+            result_code: cursor.i32()?,
+            batch_number: cursor.u64()?,
+            epoch: cursor.u64()?,
+            global_sequence: cursor.u64()?,
+            authorization_first_batch_number: cursor.u64()?,
+            authorization_last_batch_number: cursor.u64()?,
+            receipt_digest: cursor.array()?,
+            activity_id: cursor.array()?,
+            previous_state_root: cursor.array()?,
+            resulting_state_root: cursor.array()?,
+            sequencer_id: cursor.array()?,
+            sequencer_public_key: cursor.array()?,
             canonical_bytes: bytes,
         };
-        if !cursor.done() { return Err(crate::replay::ReplayWitnessError::Encoding); }
+        if !cursor.done() {
+            return Err(crate::replay::ReplayWitnessError::Encoding);
+        }
         Ok(value)
     };
     let value = parse().map_err(|_| NON_CANONICAL)?;
-    if value.version != 1 || !matches!(value.protocol_version, PROTOCOL_LEGACY | PROTOCOL_OCCUPANCY | PROTOCOL_STATE_COMMITMENT) { return Err(-101); }
-    if value.network_id == 0 || value.batch_number == 0 || value.global_sequence == 0
-        || value.receipt_digest == [0; 32] || value.sequencer_id == [0; 32] || value.sequencer_public_key == [0; 32]
-    { return Err(NON_CANONICAL); }
-    if value.batch_number != expected_batch || value.receipt_digest != expected_digest { return Err(-801); }
-    if value.authorization_first_batch_number > value.batch_number || value.authorization_last_batch_number < value.batch_number { return Err(-204); }
+    if value.version != 1
+        || !matches!(
+            value.protocol_version,
+            PROTOCOL_LEGACY | PROTOCOL_OCCUPANCY | PROTOCOL_STATE_COMMITMENT
+        )
+    {
+        return Err(-101);
+    }
+    if value.network_id == 0
+        || value.batch_number == 0
+        || value.global_sequence == 0
+        || value.receipt_digest == [0; 32]
+        || value.sequencer_id == [0; 32]
+        || value.sequencer_public_key == [0; 32]
+    {
+        return Err(NON_CANONICAL);
+    }
+    if value.batch_number != expected_batch || value.receipt_digest != expected_digest {
+        return Err(-801);
+    }
+    if value.authorization_first_batch_number > value.batch_number
+        || value.authorization_last_batch_number < value.batch_number
+    {
+        return Err(-204);
+    }
     Ok(value)
 }
 
 extern "C" {
-    fn layerx_programs_call_arbiter_authority_begin(token: u64, d0: u64, d1: u64, d2: u64, d3: u64, expected_batch: u64) -> i32;
+    fn layerx_programs_call_arbiter_authority_begin(
+        token: u64,
+        d0: u64,
+        d1: u64,
+        d2: u64,
+        d3: u64,
+        expected_batch: u64,
+    ) -> i32;
     fn layerx_programs_call_arbiter_authority_byte(token: u64, offset: u32) -> i32;
 }
 
@@ -3944,12 +4021,22 @@ extern "C" {
 /// # Safety
 /// The token must name a live, exclusively accessed native Programs CALL frame for the entire read.
 pub unsafe fn read_native_receipt_authority(
-    token: u64, digest: [u8; 32], expected_batch: u64,
+    token: u64,
+    digest: [u8; 32],
+    expected_batch: u64,
 ) -> Result<RawNativeReceiptAuthorityV1, i32> {
-    if token == 0 || digest == [0; 32] || expected_batch == 0 { return Err(NON_CANONICAL); }
+    if token == 0 || digest == [0; 32] || expected_batch == 0 {
+        return Err(NON_CANONICAL);
+    }
     let [d0, d1, d2, d3] = words(digest);
-    let status = unsafe { layerx_programs_call_arbiter_authority_begin(token, d0, d1, d2, d3, expected_batch) };
-    match status { OK => {}, status if status < 0 => return Err(status), _ => return Err(NON_CANONICAL) }
+    let status = unsafe {
+        layerx_programs_call_arbiter_authority_begin(token, d0, d1, d2, d3, expected_batch)
+    };
+    match status {
+        OK => {}
+        status if status < 0 => return Err(status),
+        _ => return Err(NON_CANONICAL),
+    }
     let mut bytes = [0; RAW_NATIVE_RECEIPT_AUTHORITY_V1_BYTES];
     for (offset, byte) in bytes.iter_mut().enumerate() {
         let value = unsafe { layerx_programs_call_arbiter_authority_byte(token, offset as u32) };
@@ -3962,9 +4049,19 @@ pub unsafe fn read_native_receipt_authority(
 /// The token must name a live, exclusively accessed native Programs CALL frame.
 #[no_mangle]
 pub unsafe extern "C" fn layerx_programs_call_arbiter_authority_check(
-    token: u64, d0: u64, d1: u64, d2: u64, d3: u64, expected_batch: u64,
+    token: u64,
+    d0: u64,
+    d1: u64,
+    d2: u64,
+    d3: u64,
+    expected_batch: u64,
 ) -> i32 {
     let mut digest = [0; 32];
-    for (target, word) in digest.chunks_exact_mut(8).zip([d0, d1, d2, d3]) { target.copy_from_slice(&word.to_be_bytes()); }
-    match unsafe { read_native_receipt_authority(token, digest, expected_batch) } { Ok(_) => OK, Err(status) => status }
+    for (target, word) in digest.chunks_exact_mut(8).zip([d0, d1, d2, d3]) {
+        target.copy_from_slice(&word.to_be_bytes());
+    }
+    match unsafe { read_native_receipt_authority(token, digest, expected_batch) } {
+        Ok(_) => OK,
+        Err(status) => status,
+    }
 }

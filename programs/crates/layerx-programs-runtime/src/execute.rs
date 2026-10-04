@@ -2515,7 +2515,10 @@ impl V2AuthorizedExecutionRecord {
 
     #[must_use]
     pub fn canonical_evidence(&self) -> Vec<u8> {
-        let mut evidence = b"LXP/program-execution/v4\0".to_vec();
+        let mut evidence = match self.abi_revision {
+            AbiRevision::V3 | AbiRevision::V4 => b"LXP/program-execution/v5\0".to_vec(),
+            AbiRevision::V1 | AbiRevision::V2 => b"LXP/program-execution/v4\0".to_vec(),
+        };
         evidence.extend_from_slice(&self.execution.runtime_version.to_be_bytes());
         evidence.extend_from_slice(&self.execution.fee_schedule_version.to_be_bytes());
         evidence.extend_from_slice(&self.execution.metering_schedule_version.to_be_bytes());
@@ -2583,7 +2586,10 @@ impl V2AuthorizedExecutionRecord {
     #[cfg(feature = "host-ffi")]
     pub(crate) fn write_canonical_evidence(&self, evidence: &mut Vec<u8>, graph: &mut Vec<u8>) {
         evidence.clear();
-        evidence.extend_from_slice(b"LXP/program-execution/v4\0");
+        evidence.extend_from_slice(match self.abi_revision {
+            AbiRevision::V3 | AbiRevision::V4 => b"LXP/program-execution/v5\0",
+            AbiRevision::V1 | AbiRevision::V2 => b"LXP/program-execution/v4\0",
+        });
         evidence.extend_from_slice(&self.execution.runtime_version.to_be_bytes());
         evidence.extend_from_slice(&self.execution.fee_schedule_version.to_be_bytes());
         evidence.extend_from_slice(&self.execution.metering_schedule_version.to_be_bytes());
