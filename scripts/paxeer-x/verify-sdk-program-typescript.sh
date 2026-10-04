@@ -10,3 +10,5 @@ for test_file in program-lifecycle program-response-code; do
   fi
   node "$artifact"
 done
+
+node tests/sdk/typescript/program-terminal-v5.test.mjs

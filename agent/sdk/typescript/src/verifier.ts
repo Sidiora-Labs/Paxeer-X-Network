@@ -1119,6 +1119,51 @@ export async function verifyReceiptOutcome(
   });
 }
 
+export async function verifyNativeProgramReceiptOutcomeV5(
+  canonicalReceipt: Uint8Array,
+  authorized: AuthorizedReceiptBatch,
+): Promise<ReceiptVerification> {
+  const selected = STATE_COMMITMENT_PROTOCOL_VERSION;
+  const canonical = canonicalReceipt.slice();
+  const authority = Object.freeze({
+    batchId: exactBytes(authorized.batchId, 32).slice(),
+    asset: exactBytes(authorized.asset, 32).slice(),
+    previousStateRoot: exactBytes(authorized.previousStateRoot, 32).slice(),
+    resultingStateRoot: exactBytes(authorized.resultingStateRoot, 32).slice(),
+    sequencerPublicKey: exactBytes(authorized.sequencerPublicKey, 32).slice(),
+  });
+  let decoded: DecodedReceipt;
+  try {
+    decoded = decodeProtocolReceipt(canonical);
+  } catch (error) {
+    if (error instanceof ReceiptVerificationError) throw error;
+    return receiptFailure(ReceiptFailureCode.Decode);
+  }
+  const { receipt, unsignedBytes } = decoded;
+  if (receipt.protocolVersion !== selected) return receiptFailure(ReceiptFailureCode.ProtocolVersion);
+  if (receipt.moduleId !== PROGRAMS_MODULE_ID || receipt.operation !== PROGRAMS_CALL_OPERATION) return receiptFailure(ReceiptFailureCode.Operation);
+  if (!programsModuleVersionForProtocol(receipt.protocolVersion, receipt.moduleVersion, false)) return receiptFailure(ReceiptFailureCode.ModuleVersion);
+  const outcome = receipt.programOutcome;
+  if (outcome === undefined) return receiptFailure(ReceiptFailureCode.ReceiptShape);
+  if ((outcome.abiVersion !== 3 && outcome.abiVersion !== 4) || outcome.runtimeVersion !== 1 || outcome.encodingVersion !== 4) return receiptFailure(ReceiptFailureCode.ProtocolVersion);
+  if (allZero(receipt.activityId)) return receiptFailure(ReceiptFailureCode.ActivityId);
+  verifyStateChain(receipt, authority);
+  const receiptDigest = await sha256(RECEIPT_DOMAIN, unsignedBytes);
+  if (!await verifyEd25519(
+    authority.sequencerPublicKey,
+    receipt.sequencerSignature,
+    receiptDigest,
+  )) {
+    return receiptFailure(ReceiptFailureCode.SequencerSignature);
+  }
+  return Object.freeze({
+    level: "sequencer-signed",
+    receipt,
+    canonicalBytes: canonical,
+    receiptDigest,
+  });
+}
+
 export async function verifyReceipt(
   canonicalReceipt: Uint8Array,
   authorized: AuthorizedReceiptBatch,

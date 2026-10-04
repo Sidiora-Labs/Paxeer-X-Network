@@ -3,7 +3,7 @@ import { encodeNativeProgramCall, encodeNativeProgramCallV1, type NativeProgramC
 import { NativeProgramLifecycleRequest, type ProgramLifecycleSubmission } from "./program-lifecycle.js";
 import type { AuthorizedReceiptBatch, ReceiptVerification, SelectableProtocolVersion } from "./verifier.js";
 import { DEFAULT_PROTOCOL_VERSION, isSelectableProtocolVersion, programsModuleVersionForProtocol, verifyProgramLifecycleReceipt,
-  supportedProgramGuestAbi, verifyReceiptOutcome } from "./verifier.js";
+  supportedProgramGuestAbi, verifyReceiptOutcome, verifyNativeProgramReceiptOutcomeV5 } from "./verifier.js";
 import { PlatformSdkError, type IdempotencyKey, type ProductionClient } from "./production.js";
 import { assertFreshSimulationObservation, bindRetainedProgramCall, decodeAndVerifyProgramTerminal, decodeSignedProgramCall,
   type DecodedSignedProgramCall, type OccupancyPayer } from "./program-wire.js";
@@ -176,6 +176,59 @@ export async function verifyProgramReceipt(
     occupancyPaymentAccounts: terminal.occupancyPaymentAccounts });
 }
 
+export async function verifyProgramReceiptV5(
+  execution: ProgramExecutionDocument,
+  authority: AuthorizedReceiptBatch,
+  trust: ProgramTrustContext,
+  expectedSignedActivity?: Uint8Array,
+  occupancyPayers: readonly OccupancyPayer[] = [],
+): Promise<VerifiedProgramReceipt> {
+  const protocolVersion = trust.protocolVersion();
+  if (!HEX32.test(execution.activity_id)
+    || !programsModuleVersionForProtocol(protocolVersion, execution.module_version, false)
+    || protocolVersion !== 3 || (execution.guest_abi_version !== 3 && execution.guest_abi_version !== 4)) throw new TypeError("invalid program execution evidence");
+  const receipt = decodeHex(execution.receipt, 1_048_576);
+  const terminalPayload = decodeHex(execution.terminal_payload, 1_048_576);
+  const callGraph = decodeHex(execution.call_graph, 1_048_576);
+  const pinnedKey = trust.sequencerPublicKey();
+  if (!equal(authority.sequencerPublicKey, pinnedKey)
+    || execution.authority.sequencer_public_key !== hex(pinnedKey)) throw new TypeError("program sequencer authority mismatch");
+  const verification = await verifyNativeProgramReceiptOutcomeV5(receipt, authority);
+  const protocol = verification.receipt;
+  const outcome = protocol.programOutcome;
+  if (protocol.moduleId !== 9 || protocol.operation !== 3 || protocol.protocolVersion !== protocolVersion
+    || !programsModuleVersionForProtocol(protocol.protocolVersion, protocol.moduleVersion, false)
+    || protocol.moduleVersion !== execution.module_version
+    || hex(protocol.activityId) !== execution.activity_id || outcome === undefined
+    || outcome.abiVersion !== execution.guest_abi_version
+    || outcome.resultCode !== execution.result_code
+    || hex(protocol.batchId) !== execution.batch_id || execution.batch_id !== execution.authority.batch_id
+    || protocol.globalSequence.toString() !== execution.global_sequence
+    || hex(protocol.previousStateRoot) !== execution.authority.previous_state_root
+    || hex(protocol.resultingStateRoot) !== execution.state_root
+    || execution.state_root !== execution.authority.resulting_state_root
+    || hex(verification.receiptDigest) !== execution.receipt_digest
+    || callGraph.length === 0
+    || !equal(await digest(terminalPayload), outcome.terminalPayloadRoot)
+    || !equal(await digest(callGraph), outcome.callGraphRoot)) {
+    throw new TypeError("program receipt binding failed");
+  }
+  const retained = execution.retained_signed_activity === undefined ? undefined : decodeHex(execution.retained_signed_activity, MAX_CALLDATA);
+  if (retained !== undefined && expectedSignedActivity !== undefined && !equal(retained, expectedSignedActivity)) throw new TypeError("retained program activity mismatch");
+  const canonical = expectedSignedActivity ?? retained;
+  if (canonical === undefined) throw new TypeError("v5 requires original signed request");
+  if (canonical !== undefined) {
+    const bound = await bindRetainedProgramCall(canonical, execution.activity_id, execution.program_id, protocol.protocolVersion);
+    if (bound.guestAbi !== execution.guest_abi_version
+      || execution.idempotency_key !== undefined && bound.idempotencyKey !== execution.idempotency_key) throw new TypeError("retained program call metadata mismatch");
+  }
+  const terminal = await decodeAndVerifyProgramTerminal(terminalPayload, callGraph, execution.program_id, outcome, protocol.protocolVersion,
+    canonical === undefined ? undefined : { protocol, signedActivity: canonical }, occupancyPayers);
+  if (!sameUsage(terminal.usage, execution.usage) || !sameOutcome(terminal.outcome, execution.outcome)) throw new TypeError("program terminal document binding failed");
+  return Object.freeze({ verification, terminalPayload, callGraph, transferVerification: terminal.transferVerification,
+    occupancyPaymentAccounts: terminal.occupancyPaymentAccounts });
+}
+
 export class ProgramOperations {
   public async lifecycleReceipt(request: NativeProgramLifecycleRequest): Promise<ReceiptVerification> {
     if (this.trust.protocolVersion() !== 3) throw new TypeError("lifecycle scope");
@@ -238,7 +291,7 @@ export class ProgramOperations {
     this.#requireCurrentHead(call.programId, prior);
     requireFreshHead(prior, this.trust.nowMilliseconds());
     const simulation = simulationDocument(value, call.programId, signed.activityId);
-    const verified = await verifyProgramReceipt(simulation.execution, wireAuthority(simulation.execution.authority, this.trust), this.trust, signed.canonicalBytes);
+    const verified = await verifyServedProgramReceipt(simulation.execution, wireAuthority(simulation.execution.authority, this.trust), this.trust, signed.canonicalBytes);
     await verifySimulationEvidence(simulation, verified, prior, signed, this.trust);
     this.#requireCurrentHead(call.programId, prior);
     requireFreshHead(prior, this.trust.nowMilliseconds());
@@ -277,6 +330,16 @@ export class ProgramOperations {
       return Object.freeze({ state: "unknown", activity_id: signed.activityId, idempotency_key: idempotencyKey,
         retained_signed_activity: retained });
     }
+  }
+
+  public async nativeReceipt(call: NativeProgramRequestV1, idempotencyKey: IdempotencyKey): Promise<ProgramSubmission> {
+    validateCall(call);
+    if (this.trust.protocolVersion() !== 3) throw new TypeError("native receipt requires protocol3");
+    const signed = await decodeSignedProgramCall(call, idempotencyKey);
+    const value = await this.client.agent<unknown, unknown>("program.receipt", { idempotency_key: idempotencyKey,
+      expected_activity_id: signed.activityId, requested_verification_level: "sequencer-signed" });
+    return submissionDocument(value, this.trust, { programId: call.programId, activityId: signed.activityId,
+      idempotencyKey, retainedSignedActivity: hex(signed.canonicalBytes) });
   }
 
   public async receipt(idempotencyKey: string, expectedActivityId: string): Promise<ProgramSubmission> {
@@ -348,11 +411,11 @@ async function submissionDocument(value: unknown, trust: ProgramTrustContext, ex
       ...(boundRetained === undefined ? {} : { retained_signed_activity: boundRetained }) });
   }
   if (candidate.state !== "executed" && candidate.state !== "refused") throw new TypeError("invalid program submission state");
-  const execution = executionDocument(candidate, candidate.state);
+  const execution = servedExecutionDocument(candidate, candidate.state);
   if ((expected.programId !== undefined && execution.program_id !== expected.programId)
     || (expected.activityId !== undefined && execution.activity_id !== expected.activityId)
     || (expected.idempotencyKey !== undefined && execution.idempotency_key !== expected.idempotencyKey)) throw new TypeError("program execution binding failed");
-  await verifyProgramReceipt(execution, wireAuthority(execution.authority, trust), trust,
+  await verifyServedProgramReceipt(execution, wireAuthority(execution.authority, trust), trust,
     expected.retainedSignedActivity === undefined ? undefined : decodeHex(expected.retainedSignedActivity, MAX_CALLDATA));
   return execution as ProgramSubmission;
 }
@@ -361,7 +424,7 @@ function simulationDocument(value: unknown, expectedProgramId: string, expectedA
   const candidate = object(value);
   exactKeys(candidate, ["committed", "execution", "simulation_evidence"]);
   if (candidate.committed !== false) throw new TypeError("committed program simulation");
-  const execution = executionDocument(object(candidate.execution), "simulated") as ProgramSimulation["execution"];
+  const execution = servedExecutionDocument(object(candidate.execution), "simulated") as ProgramSimulation["execution"];
   if (execution.program_id !== expectedProgramId || execution.activity_id !== expectedActivityId) throw new TypeError("program simulation binding failed");
   const rawEvidence = object(candidate.simulation_evidence);
   const evidence: ProgramSimulationEvidence = Object.freeze({
@@ -432,6 +495,68 @@ function executionDocument(candidate: Readonly<Record<string, unknown>>, state: 
     || (state === "executed" && result.outcome.kind === "refused")) throw new TypeError("program state/outcome mismatch");
   return result;
 }
+
+function executionDocumentV5(candidate: Readonly<Record<string, unknown>>, state: "executed" | "refused" | "simulated"): ProgramExecutionDocument {
+  if (candidate.state !== state) throw new TypeError("invalid program execution state");
+  exactKeys(candidate, ["state", "activity_id", "program_id", "guest_abi_version", "module_version", "batch_id",
+    "global_sequence", "result_code", "state_root", "receipt", "receipt_digest", "terminal_payload", "call_graph",
+    "authority", "usage", "outcome", "verification"], ["idempotency_key", "retained_signed_activity"]);
+  const usage = object(candidate.usage);
+  const authority = object(candidate.authority);
+  exactKeys(authority, ["batch_id", "asset", "previous_state_root", "resulting_state_root", "sequencer_public_key"]);
+  exactKeys(usage, ["cpu_fuel", "memory_bytes", "storage_read_bytes", "storage_write_bytes", "output_values", "output_bytes", "fee_units"]);
+  const result: ProgramExecutionDocument = Object.freeze({
+    state,
+    activity_id: requiredHex32(candidate, "activity_id"),
+    program_id: requiredHex32(candidate, "program_id"),
+    guest_abi_version: exactInteger(candidate.guest_abi_version, 3, 4),
+    module_version: exactInteger(candidate.module_version, 1, 4),
+    batch_id: requiredHex32(candidate, "batch_id"),
+    global_sequence: decimal(candidate.global_sequence),
+    result_code: exactInteger(candidate.result_code, -2147483648, 2147483647),
+    state_root: requiredHex32(candidate, "state_root"),
+    receipt: requiredHex(candidate, "receipt", MAX_CALLDATA),
+    receipt_digest: requiredHex32(candidate, "receipt_digest"),
+    terminal_payload: requiredHex(candidate, "terminal_payload", MAX_CALLDATA),
+    call_graph: requiredHex(candidate, "call_graph", MAX_CALLDATA),
+    authority: Object.freeze({
+      batch_id: requiredHex32(authority, "batch_id"),
+      asset: requiredHex32(authority, "asset"),
+      previous_state_root: requiredHex32(authority, "previous_state_root"),
+      resulting_state_root: requiredHex32(authority, "resulting_state_root"),
+      sequencer_public_key: requiredHex32(authority, "sequencer_public_key"),
+    }),
+    usage: Object.freeze({
+      cpu_fuel: decimal(usage.cpu_fuel), memory_bytes: decimal(usage.memory_bytes),
+      storage_read_bytes: decimal(usage.storage_read_bytes), storage_write_bytes: decimal(usage.storage_write_bytes),
+      output_values: exactInteger(usage.output_values, 0, 0xffff_ffff), output_bytes: decimal(usage.output_bytes), fee_units: decimal(usage.fee_units, true),
+    }),
+    outcome: programOutcome(candidate.outcome),
+    verification: candidate.verification === "receipt-terminal-and-call-graph-verified"
+      ? candidate.verification : (() => { throw new TypeError("invalid program verification status"); })(),
+    ...(candidate.idempotency_key === undefined ? {} : { idempotency_key: requiredHex32(candidate, "idempotency_key") }),
+    ...(candidate.retained_signed_activity === undefined ? {} : { retained_signed_activity: requiredHex(candidate, "retained_signed_activity", MAX_CALLDATA) }),
+  });
+  if ((state === "refused" && result.outcome.kind !== "refused")
+    || (state === "executed" && result.outcome.kind === "refused")) throw new TypeError("program state/outcome mismatch");
+  return result;
+}
+
+function servedExecutionDocument(candidate: Readonly<Record<string, unknown>>, state: "executed" | "refused" | "simulated"): ProgramExecutionDocument {
+  return candidate.guest_abi_version === 3 || candidate.guest_abi_version === 4
+    ? executionDocumentV5(candidate, state) : executionDocument(candidate, state);
+}
+
+export function parseProgramExecutionDocumentV5(value: unknown): ProgramExecutionDocument {
+  const candidate = object(value);
+  if (candidate.state !== "executed" && candidate.state !== "refused" && candidate.state !== "simulated") throw new TypeError("invalid program execution state");
+  return executionDocumentV5(candidate, candidate.state);
+}
+
+const verifyServedProgramReceipt: typeof verifyProgramReceipt = (execution, authority, trust, signed, payers) =>
+  execution.guest_abi_version === 3 || execution.guest_abi_version === 4
+    ? verifyProgramReceiptV5(execution, authority, trust, signed, payers)
+    : verifyProgramReceipt(execution, authority, trust, signed, payers);
 
 export interface GatewayProgramDiscovery extends ProgramDiscovery {
   readonly deployment_receipt_digest: string;

@@ -9,6 +9,7 @@ const CALL_DOMAIN = bytes("LayerX/programs/call/v1\0");
 const EXECUTION_V2 = bytes("LXP/program-execution/v2\0");
 const EXECUTION_V3 = bytes("LXP/program-execution/v3\0");
 const EXECUTION_V4 = bytes("LXP/program-execution/v4\0");
+const EXECUTION_V5 = bytes("LXP/program-execution/v5\0");
 const OCCUPANCY = bytes("LXP/program-execution-with-occupancy/v1\0");
 const AUTHORITY = bytes("LXP/program-execution-with-transfer-authority/v2\0");
 const FAILURE = bytes("LXP/programs/failure-detail/v1\0");
@@ -211,6 +212,28 @@ export async function decodeAndVerifyProgramTerminal(
     const decoded = decodeCandidate(inner.subarray(EXECUTION_V4.length));
     if (decoded.kind !== receipt.terminalKind || receipt.abiVersion !== 2 || decoded.program !== expectedProgramId) fail("candidate terminal binding");
     bindExecutionMetadata(decoded.runtime, 2, decoded.fee, decoded.metering, decoded.usage, receipt);
+    if (!equal(decoded.graph, callGraph)) fail("candidate call graph");
+    if (decoded.outcome === "success") {
+      if (receipt.resultCode !== 0) fail("candidate response code requires successful execution");
+      outcome = Object.freeze({ kind: "completed", code: decoded.code, response: hex(decoded.response) });
+      successfulExecution = true;
+    } else if (decoded.outcome === "failure") {
+      outcome = Object.freeze({ kind: "refused", failure: Object.freeze({ kind: "guest_refused", code: receipt.resultCode }) });
+    } else {
+      outcome = Object.freeze({ kind: "refused", failure: Object.freeze({ kind: "resource" }) });
+    }
+    usage = decoded.usage;
+  } else if (starts(inner, EXECUTION_V5)) {
+    if (binding === undefined || binding.protocol.protocolVersion !== 3 || binding.protocol.moduleId !== 9
+      || binding.protocol.operation !== 3 || binding.protocol.programOutcome === undefined
+      || !sameReceiptOutcome(binding.protocol.programOutcome, receipt)) fail("v5 requires exact signed receipt and request");
+    const retained = await bindRetainedProgramCall(binding.signedActivity, hex(binding.protocol.activityId), expectedProgramId, 3);
+    if (retained.guestAbi !== receipt.abiVersion) fail("v5 request ABI binding");
+    candidate = true;
+    const decoded = decodeCandidateV5(inner.subarray(EXECUTION_V5.length), receipt.abiVersion);
+    if (decoded.kind !== receipt.terminalKind || (receipt.abiVersion !== 3 && receipt.abiVersion !== 4) || protocolVersion !== 3 || decoded.program !== expectedProgramId) fail("candidate terminal binding");
+    bindExecutionMetadata(decoded.runtime, receipt.abiVersion, decoded.fee, decoded.metering, decoded.usage, receipt);
+    if (decoded.fee !== receipt.feeScheduleVersion) fail("v5 fee schedule binding");
     if (!equal(decoded.graph, callGraph)) fail("candidate call graph");
     if (decoded.outcome === "success") {
       if (receipt.resultCode !== 0) fail("candidate response code requires successful execution");
@@ -452,6 +475,47 @@ function decodeCandidate(encoded: Uint8Array): Candidate {
   if (traceTag === 1) reader.sizedU64(MAX_TRACE_EVIDENCE_BYTES); else if (traceTag !== 0) fail("candidate trace tag");
   const program = hex(reader.fixed(32));
   if (reader.u16() !== 2) fail("candidate ABI");
+  const tag = reader.byte();
+  let variant:
+    | { readonly outcome: "success"; readonly code: number; readonly response: Uint8Array }
+    | { readonly outcome: "failure" }
+    | { readonly outcome: "resource" };
+  let kind: 1 | 2 | 3;
+  if (tag === 0) {
+    const code = reader.i32();
+    if (code < 0) fail("candidate result code");
+    variant = { outcome: "success", code, response: reader.sizedU64(MAX_CALL_RESPONSE_BYTES) };
+    kind = 1;
+  } else if (tag === 1) {
+    decodeProgramFailure(reader.sizedU64(4_136));
+    variant = { outcome: "failure" };
+    kind = 2;
+  } else if (tag === 2) {
+    decodeResource(reader, true, usage);
+    variant = { outcome: "resource" };
+    kind = 3;
+  } else fail("candidate outcome tag");
+  const graph = reader.sizedU64(MAX_GRAPH_EVIDENCE_BYTES);
+  reader.end();
+  return { runtime, fee, metering, usage, program, graph, kind, ...variant } as Candidate;
+}
+
+function decodeCandidateV5(encoded: Uint8Array, expectedAbi: number): Candidate {
+  if (expectedAbi !== 3 && expectedAbi !== 4) fail("v5 ABI");
+  const reader = new Reader(encoded);
+  const runtime = reader.u16(); const fee = reader.u32(); const metering = reader.u32();
+  if (runtime === 0 || fee === 0 || metering === 0) fail("candidate metadata");
+  const count = reader.u64();
+  if (count > BigInt(Math.floor(reader.remaining() / 5))) fail("candidate value count");
+  for (let index = 0n; index < count; index += 1n) {
+    const tag = reader.byte();
+    if (tag === 1) reader.i32(); else if (tag === 2) reader.i64(); else fail("candidate value tag");
+  }
+  const usage = usageValue(reader.u64(), reader.u64(), reader.u64(), reader.u64(), reader.u32(), reader.u64(), reader.u128());
+  const traceTag = reader.byte();
+  if (traceTag === 1) reader.sizedU64(MAX_TRACE_EVIDENCE_BYTES); else if (traceTag !== 0) fail("candidate trace tag");
+  const program = hex(reader.fixed(32));
+  if (reader.u16() !== expectedAbi) fail("v5 embedded ABI");
   const tag = reader.byte();
   let variant:
     | { readonly outcome: "success"; readonly code: number; readonly response: Uint8Array }
