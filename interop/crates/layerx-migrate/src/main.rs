@@ -8,12 +8,13 @@ use std::path::Path;
 use layerx_interop_gateway::principal::PrincipalId;
 use layerx_interop_gateway::trace::TraceId;
 use layerx_migrate::ethereum::{EthereumConfig, EthereumVerifier};
+use layerx_migrate::gateway_client::{GatewayClient, GatewayClientConfig};
 use layerx_migrate::history::DurableExternalHistory;
 use layerx_migrate::mapping_v2::{PaxeerBindingConfigV2, PaxeerBindingVerifierV2};
 use layerx_migrate::solana::{SolanaConfig, SolanaVerifier};
 use layerx_migrate::{
-    AccountMappingStoreV2, ExternalAddress, ExternalHistorySink, ExternalProvenance, JournalConfig, MigrationError,
-    SourceChain, SourceEvidence, SourceTransaction, SourceVerifier,
+    AccountMappingStoreV2, ExternalAddress, ExternalHistorySink, ExternalProvenance, JournalConfig,
+    MigrationError, SourceChain, SourceEvidence, SourceTransaction, SourceVerifier,
 };
 use serde::de::DeserializeOwned;
 use serde_json::{json, Value};
@@ -126,6 +127,9 @@ fn run() -> Result<Value, MigrationError> {
             "--binding-config",
             "--mapping-config",
             "--identity",
+            "--gateway-config",
+            "--order-digest",
+            "--idempotency",
         ]
         .contains(&key.as_str())
         {
@@ -137,7 +141,24 @@ fn run() -> Result<Value, MigrationError> {
         }
     }
     let allowed: &[&str] = match command.as_str() {
-        "confirm-mapping" => &["--chain", "--config", "--evidence", "--principal", "--trace", "--binding-config", "--mapping-config", "--identity"],
+        "migrate-asset" => &[
+            "--chain",
+            "--evidence",
+            "--gateway-config",
+            "--order-digest",
+            "--idempotency",
+            "--trace",
+        ],
+        "confirm-mapping" => &[
+            "--chain",
+            "--config",
+            "--evidence",
+            "--principal",
+            "--trace",
+            "--binding-config",
+            "--mapping-config",
+            "--identity",
+        ],
         "verify-ownership" | "verify-asset" => &["--chain", "--config", "--evidence", "--trace"],
         "import-history" => &[
             "--chain",
@@ -167,6 +188,31 @@ fn run() -> Result<Value, MigrationError> {
         Some(value) => TraceId::parse(value).map_err(|_| MigrationError::Configuration)?,
         None => TraceId::mint(entropy),
     };
+    if command == "migrate-asset" {
+        let text = required(&args, "--order-digest")?;
+        if text.len() != 64 || !text.bytes().all(|value| value.is_ascii_hexdigit()) {
+            return Err(MigrationError::InvalidEvidence);
+        }
+        let mut order_digest = [0_u8; 32];
+        for (index, byte) in order_digest.iter_mut().enumerate() {
+            *byte = u8::from_str_radix(&text[index * 2..index * 2 + 2], 16)
+                .map_err(|_| MigrationError::InvalidEvidence)?;
+        }
+        let evidence =
+            SourceEvidence::new(private_input(required(&args, "--evidence")?, 1024 * 1024)?)?;
+        let client = GatewayClient::new(&config::<GatewayClientConfig>(required(
+            &args,
+            "--gateway-config",
+        )?)?)?;
+        let observation = client.migrate_asset(
+            order_digest,
+            required(&args, "--chain")?,
+            &evidence,
+            required(&args, "--idempotency")?,
+            &trace,
+        )?;
+        return Ok(json!({"ok":true, "result":observation, "trace":trace.as_str()}));
+    }
     if command == "confirm-mapping" {
         let principal = PrincipalId::new(required(&args, "--principal")?)
             .map_err(|_| MigrationError::Configuration)?;
@@ -179,17 +225,38 @@ fn run() -> Result<Value, MigrationError> {
             *byte = u8::from_str_radix(&text[index * 2..index * 2 + 2], 16)
                 .map_err(|_| MigrationError::InvalidEvidence)?;
         }
-        let evidence = SourceEvidence::new(private_input(required(&args, "--evidence")?, 1024 * 1024)?)?;
-        let binding = PaxeerBindingVerifierV2::new(config::<PaxeerBindingConfigV2>(required(&args, "--binding-config")?)?)?;
-        let store = AccountMappingStoreV2::new(&config::<JournalConfig>(required(&args, "--mapping-config")?)?)?;
+        let evidence =
+            SourceEvidence::new(private_input(required(&args, "--evidence")?, 1024 * 1024)?)?;
+        let binding = PaxeerBindingVerifierV2::new(config::<PaxeerBindingConfigV2>(required(
+            &args,
+            "--binding-config",
+        )?)?)?;
+        let store = AccountMappingStoreV2::new(&config::<JournalConfig>(required(
+            &args,
+            "--mapping-config",
+        )?)?)?;
         let mapping = match required(&args, "--chain")? {
-            "ethereum" => store.confirm(&principal, identity, &evidence,
-                &EthereumVerifier::new(config::<EthereumConfig>(required(&args, "--config")?)?)?, &binding, &trace)?,
-            "solana" => store.confirm(&principal, identity, &evidence,
-                &SolanaVerifier::new(config::<SolanaConfig>(required(&args, "--config")?)?)?, &binding, &trace)?,
+            "ethereum" => store.confirm(
+                &principal,
+                identity,
+                &evidence,
+                &EthereumVerifier::new(config::<EthereumConfig>(required(&args, "--config")?)?)?,
+                &binding,
+                &trace,
+            )?,
+            "solana" => store.confirm(
+                &principal,
+                identity,
+                &evidence,
+                &SolanaVerifier::new(config::<SolanaConfig>(required(&args, "--config")?)?)?,
+                &binding,
+                &trace,
+            )?,
             _ => return Err(MigrationError::InvalidNetwork),
         };
-        return Ok(json!({"ok":true, "result":{"state":"external_mapping_confirmed", "mapping":mapping}, "trace":trace.as_str()}));
+        return Ok(
+            json!({"ok":true, "result":{"state":"external_mapping_confirmed", "mapping":mapping}, "trace":trace.as_str()}),
+        );
     }
     if command == "read-history" {
         let store = DurableExternalHistory::new(&config::<JournalConfig>(required(

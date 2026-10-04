@@ -1,10 +1,11 @@
 #![forbid(unsafe_code)]
 
 pub mod ethereum;
+pub mod gateway_client;
 pub mod history;
+mod journal;
 pub mod mapping_v2;
 pub mod ramp_v2;
-mod journal;
 mod rpc;
 pub mod solana;
 mod source_codec;
@@ -1203,6 +1204,7 @@ pub enum MigrationError {
     SourceDisplaced,
     FinalityWindowExceeded,
     RpcUnavailable,
+    GatewaySubmissionUnknown,
     RpcRateLimited { retry_after_seconds: u64 },
     RpcDivergence,
     RpcResponseMismatch,
@@ -1235,6 +1237,7 @@ impl MigrationError {
             Self::SourceDisplaced => "source_displaced",
             Self::FinalityWindowExceeded => "finality_window_exceeded",
             Self::RpcUnavailable => "rpc_unavailable",
+            Self::GatewaySubmissionUnknown => "gateway_submission_unknown",
             Self::RpcRateLimited { .. } => "rpc_rate_limited",
             Self::RpcDivergence => "rpc_divergence",
             Self::RpcResponseMismatch => "rpc_response_mismatch",
@@ -1272,6 +1275,9 @@ impl Display for MigrationError {
                 formatter.write_str("source ancestry exceeds the configured verification window")
             }
             Self::RpcUnavailable => formatter.write_str("source RPC is unavailable"),
+            Self::GatewaySubmissionUnknown => {
+                formatter.write_str("gateway submission disposition is unknown")
+            }
             Self::RpcRateLimited {
                 retry_after_seconds,
             } => write!(

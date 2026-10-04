@@ -33013,3 +33013,28 @@ qualification_status = "implemented-not-qualified"
 build_exit_code = 2
 verify_status = "unrun"
 qualification_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-104.35.23-build.log"
+
+[task.104.24.5]
+title = "Submit authenticated funded asset migrations from the real operator CLI"
+status = "done"
+mode = "BUILD"
+wave = 2
+requires = ["0.2", "0.10", "104.26.3", "104.24.4"]
+reqs = ["1096.1", "1096.2"]
+do_1 = "Add actual funded asset migration CLI invocation through existing unified POST /v2/migration/assets, preserving original caller Authorization and sealed source evidence verification; never imply verify-asset alone creates a LayerX credit."
+do_2 = "Use protected bounded gateway/credential/CA material, exact order_digest/chain/padded-base64 source_evidence, typed real outcomes and genuine operator corpus; retain all existing mapping/history/verification commands and refusals."
+touches = ["interop/crates/layerx-migrate/src/main.rs", "interop/crates/layerx-migrate/src/gateway_client.rs", "interop/crates/layerx-migrate/src/lib.rs", "interop/crates/layerx-migrate/tests/funded_operator.rs", "tools/qualification/paxeer-x/migration-funded-operator.py"]
+build_cmd = "timeout 20m env CARGO_TARGET_DIR=/root/lx-target/interop /root/.cargo/bin/cargo test --locked --manifest-path interop/Cargo.toml -p layerx-migrate --test funded_operator --no-run"
+verify_cmd = "timeout 10m python3 tools/qualification/paxeer-x/migration-funded-operator.py"
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop at original cap, unrelated failure, missing genuine authority or weakening; report exact source state and evidence."
+completion_basis_policy = "Owner CONSTITUTION: fully implemented DONE; qualification separate."
+source_ownership = "Root owns shared manifests, locks, spec and publication; no deployment or live funding."
+completion_basis = "implementation"
+qualification_status = "implemented-not-qualified"
+build_exit_code = 124
+verify_status = "unrun"
+qualification_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-104.24.5-build-repair-1.log"
