@@ -1415,6 +1415,7 @@ dependencies = [
  "layerx-client",
  "layerx-crypto",
  "layerx-identity-binding",
+ "layerx-intents",
  "layerx-paxeer-verifier",
  "layerx-programs-protocol-adapter",
  "layerx-programs-registry",

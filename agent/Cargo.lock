@@ -756,6 +756,7 @@ dependencies = [
  "layerx-client",
  "layerx-crypto",
  "layerx-identity-binding",
+ "layerx-intents",
  "layerx-paxeer-verifier",
  "layerx-programs-protocol-adapter",
  "layerx-programs-registry",
@@ -823,6 +824,19 @@ dependencies = [
  "rustix",
  "serde",
  "serde_json",
+ "sha2",
+]
+
+[[package]]
+name = "layerx-intents"
+version = "0.1.0"
+dependencies = [
+ "layerx-client",
+ "layerx-crypto",
+ "layerx-proof",
+ "layerx-sdk",
+ "layerx-types",
+ "layerx-wire",
  "sha2",
 ]
 
