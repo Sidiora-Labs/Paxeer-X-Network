@@ -212,6 +212,7 @@ typedef struct lxp_kernel {
         lxp_byte_span maintenance, uint64_t timestamp_ms);
     void *commit_observer_context;
     bool execution_prestate_capture_enabled;
+    bool asset_execution_prestate_capture_enabled;
     bool publication_poisoned;
     uint64_t poisoned_sequence;
     uint8_t poisoned_activity_id[32];
@@ -479,6 +480,12 @@ const lxp_receipt *lxp_kernel_prepared_batch_receipts(
     const lxp_kernel_prepared_batch *batch);
 lxp_byte_span lxp_kernel_prepared_batch_execution_prestate(
     const lxp_kernel_prepared_batch *batch, size_t receipt_index);
+lxp_byte_span lxp_kernel_prepared_batch_asset_execution_prestate(
+    const lxp_kernel_prepared_batch *batch, size_t receipt_index);
+lxp_result lxp_kernel_encode_asset_execution_prestate(
+    const lxp_kernel *kernel, const lxp_activity *activity,
+    const lxp_kernel_execution *execution, size_t maximum_bytes,
+    lxp_byte_span *owned_capture);
 lxp_byte_span lxp_kernel_prepared_batch_replay_witness(
     const lxp_kernel_prepared_batch *batch, size_t receipt_index);
 lxp_byte_span lxp_kernel_prepared_batch_replay_metadata_proof(

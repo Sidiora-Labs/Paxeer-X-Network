@@ -33315,3 +33315,30 @@ build_exit_code = 0
 verify_exit_code = 1
 qualification_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-1041319-verify.log"
 remaining_source = "Bind allocation actor, preparation digest and original head before exposing Programs presentation through task104.13.21."
+
+[task.104.13.15]
+title = "Retain authenticated historical execution prestate for ordinary native Asset Send"
+status = "done"
+mode = "BUILD"
+wave = 2
+requires = ["0.2", "104.35.21"]
+reqs = ["1064.3", "1064.8", "1071.5"]
+do_1 = "Capture and durably serve the exact actual execution previous root, account sequence and fee policy for module1 ordinal5 through a separate closed Asset Send profile, authenticated against the signed receipt and real StateWitness. Preserve every existing Programs-only execution-prestate decoder and refusal; never substitute current-head reads for historical execution facts."
+touches = ["src/protocol/lxp_kernel.c", "include/layerx/lxp_kernel.h", "cmd/layerxd/lxp_daemon_evidence.c", "cmd/layerxd/lxp_daemon_lni.c", "cmd/layerxd/lxp_daemon_lni_caps.h", "agent/crates/layerx-client/src/evidence/execution_prestate.rs", "agent/crates/layerx-client/src/execution_prestate.rs", "agent/crates/layerx-client/src/client.rs", "agent/crates/layerx-client/tests/asset_execution_prestate.rs", "tests/daemon/lxp_test_asset_execution_prestate.c", "tools/qualification/paxeer-x/asset-execution-prestate.py", "include/layerx/lxp_daemon.h", "cmd/layerxd/lxp_daemon_process.c", "agent/crates/layerx-client/src/evidence.rs"]
+build_cmd = "timeout 20m python3 tools/qualification/paxeer-x/asset-execution-prestate.py --build"
+verify_cmd = "timeout 10m python3 tools/qualification/paxeer-x/asset-execution-prestate.py"
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop at original 30-minute cap, unrelated failure, missing genuine authority or weakening; report exact source state, command, exit code and log path."
+completion_basis_policy = "Owner CONSTITUTION: fully implemented DONE; qualification separate and partial remains in_progress."
+source_ownership = "Root owns shared manifests, locks, spec and narrow publication. Source must freeze across native owners before any qualification. No deployment."
+
+completion_basis = "implementation"
+qualification_status = "implemented-not-qualified"
+format_exit_code = 0
+build_exit_code = 2
+verify_status = "unrun"
+qualification_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-104.13.15-result.json"
+source_repair = "Added canonical Asset header after undeclared LX_ASSET_SEND; repair unverified at original task cap."

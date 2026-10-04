@@ -3563,6 +3563,11 @@ static lxp_result commit_prepared_batch_wal(
             &process->evidence_store, owned_prepared);
         if (status != LXP_OK) { free(prospective); return status; }
     }
+    if (process->evidence_store.asset_execution_prestate_enabled) {
+        status = lxp_daemon_evidence_retain_asset_execution_prestates(
+            &process->evidence_store, owned_prepared);
+        if (status != LXP_OK) { free(prospective); return status; }
+    }
     availability_job = (availability_store_job){
         process, &process->prepared_availability_body, LXP_OK, 0U, 0U};
     *wal_prepare_us = pay_timing_us() - started_us;
@@ -4234,6 +4239,9 @@ static lxp_result redo_prepared_batch_wal(
             &process->evidence_store, prepared);
     if (status == LXP_OK && process->evidence_store.arbiter_admission_prestate_enabled)
         status = lxp_daemon_evidence_retain_arbiter_admission_prestates(
+            &process->evidence_store, prepared);
+    if (status == LXP_OK && process->evidence_store.asset_execution_prestate_enabled)
+        status = lxp_daemon_evidence_retain_asset_execution_prestates(
             &process->evidence_store, prepared);
     if (status == LXP_OK)
         status = lxp_kernel_commit_prepared_batch(&process->kernel,
@@ -5823,6 +5831,19 @@ static lxp_result open_process(lxp_daemon_process *process,
             if (process->protocol_version != LXP_PROTOCOL_VERSION_STATE_COMMITMENT)
                 status = LXP_ERR_VERSION_UNSUPPORTED;
             else process->evidence_store.arbiter_admission_prestate_enabled = true;
+        }
+    }
+    if (status == LXP_OK) {
+        const char *prestate = getenv("LAYERX_ASSET_EXECUTION_PRESTATE");
+        if (prestate != NULL && strcmp(prestate, "0") != 0 && strcmp(prestate, "1") != 0)
+            status = LXP_ERR_NON_CANONICAL;
+        else if (prestate != NULL && strcmp(prestate, "1") == 0) {
+            if (process->protocol_version != LXP_PROTOCOL_VERSION_STATE_COMMITMENT)
+                status = LXP_ERR_VERSION_UNSUPPORTED;
+            else {
+                process->evidence_store.asset_execution_prestate_enabled = true;
+                process->kernel.asset_execution_prestate_capture_enabled = true;
+            }
         }
     }
     if (status == LXP_OK &&

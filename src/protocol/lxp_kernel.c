@@ -70,6 +70,7 @@ struct lxp_kernel_prepared_batch {
     uint8_t **event_bytes;
     uint8_t **artifact_bytes;
     lxp_byte_span *execution_prestates;
+    lxp_byte_span *asset_execution_prestates;
     lxp_byte_span *arbiter_prestates;
     lxp_byte_span *admission_prestates;
     lxp_byte_span *replay_witnesses;
@@ -3902,6 +3903,57 @@ static lxp_result kernel_execution_prestate_capture(
     return status;
 }
 
+lxp_result lxp_kernel_encode_asset_execution_prestate(
+    const lxp_kernel *kernel, const lxp_activity *activity,
+    const lxp_kernel_execution *execution, size_t maximum_bytes,
+    lxp_byte_span *owned_capture)
+{
+    prestate_snapshot output = {{0}, NULL, 0U, 0U, maximum_bytes};
+    lxp_byte_span legacy = {NULL, 0U};
+    lxp_byte_span canonical = {NULL, 0U};
+    lxp_state_witness *witness = NULL;
+    uint8_t *wire = NULL;
+    size_t mark;
+    lxp_result status;
+    if (owned_capture == NULL) return LXP_ERR_NON_CANONICAL;
+    *owned_capture = (lxp_byte_span){NULL, 0U};
+    if (kernel == NULL || activity == NULL || execution == NULL ||
+        execution->arena == NULL || execution->fee_parameters == NULL ||
+        maximum_bytes == 0U || maximum_bytes > PRESTATE_MAX_BYTES)
+        return LXP_ERR_NON_CANONICAL;
+    if (activity->protocol_version != LXP_PROTOCOL_VERSION_STATE_COMMITMENT ||
+        activity->activity_type != LX_ASSET_SEND)
+        return LXP_ERR_CONTEXT_MISMATCH;
+    status = lxp_fee_replay_schedule_verify(kernel, execution->parameter_version,
+        execution->fee_parameters);
+    if (status == LXP_OK)
+        status = kernel_execution_prestate_capture(kernel, activity, execution,
+            maximum_bytes, &legacy);
+    if (status == LXP_OK) {
+        memcpy(output.root, legacy.bytes + 46U, 32U);
+        witness = malloc(sizeof(*witness));
+        wire = malloc(LXP_STATE_WITNESS_MAX_BYTES);
+        if (witness == NULL || wire == NULL) status = LXP_ERR_ARENA_EXHAUSTED;
+    }
+    if (status == LXP_OK) status = prestate_integer(&output, 1U, 2U);
+    if (status == LXP_OK) status = prestate_blob(&output, legacy.bytes, legacy.length);
+    mark = lxp_arena_mark(execution->arena);
+    if (status == LXP_OK) status = lxp_activity_encode(activity, execution->arena, &canonical);
+    if (status == LXP_OK) status = prestate_blob(&output, canonical.bytes, canonical.length);
+    if (lxp_arena_reset(execution->arena, mark) != LXP_OK) status = LXP_FATAL_INVARIANT;
+    if (status == LXP_OK) status = prestate_integer(&output, 2U, 2U);
+    if (status == LXP_OK) status = prestate_module(&output, kernel,
+        LXP_MODULE_ASSET, witness, wire);
+    if (status == LXP_OK) status = prestate_module(&output, kernel,
+        LXP_MODULE_GOVERNANCE, witness, wire);
+    free((void *)legacy.bytes);
+    free(wire);
+    free(witness);
+    if (status == LXP_OK) *owned_capture = (lxp_byte_span){output.bytes, output.length};
+    else free(output.bytes);
+    return status;
+}
+
 lxp_result lxp_kernel_encode_arbiter_prestate(
     const lxp_kernel_batch_snapshot *snapshot, const lxp_activity *activity,
     const lxp_kernel_execution *execution, size_t maximum_bytes,
@@ -4014,6 +4066,21 @@ static bool kernel_execution_prestate_matches(lxp_byte_span capture,
         memcmp(capture.bytes + 6U, receipt->activity_id, 32U) == 0 &&
         memcmp(capture.bytes + 38U, sequence, 8U) == 0 &&
         memcmp(capture.bytes + 46U, receipt->previous_state_root, 32U) == 0;
+}
+
+static bool kernel_asset_execution_prestate_matches(lxp_byte_span capture,
+                                                     const lxp_receipt *receipt)
+{
+    size_t length;
+    if (capture.bytes == NULL || capture.length < 8U ||
+        capture.bytes[0] != 0U || capture.bytes[1] != 1U ||
+        receipt->module_id != LXP_MODULE_ASSET || receipt->operation != 5U)
+        return false;
+    length = ((size_t)capture.bytes[2] << 24U) |
+        ((size_t)capture.bytes[3] << 16U) |
+        ((size_t)capture.bytes[4] << 8U) | capture.bytes[5];
+    return length <= capture.length - 8U &&
+        kernel_execution_prestate_matches((lxp_byte_span){capture.bytes + 6U, length}, receipt);
 }
 
 static bool kernel_arbiter_prestate_matches(lxp_byte_span capture,
@@ -4873,6 +4940,15 @@ static lxp_result kernel_prepare_serial_activity_batch(
     batch->settled->programs_runtime.state_feed = runtime->state_feed;
     batch->settled->kernel.observe_commit = kernel_stage_commit;
     batch->settled->kernel.commit_observer_context = &record;
+    if (kernel->asset_execution_prestate_capture_enabled &&
+        activity->protocol_version == LXP_PROTOCOL_VERSION_STATE_COMMITMENT &&
+        activity->activity_type == LX_ASSET_SEND) {
+        batch->asset_execution_prestates = calloc(1U, sizeof(*batch->asset_execution_prestates));
+        status = batch->asset_execution_prestates == NULL ? LXP_ERR_IO :
+            lxp_kernel_encode_asset_execution_prestate(&batch->settled->kernel, activity,
+                &private_execution, PRESTATE_MAX_BYTES, &batch->asset_execution_prestates[0]);
+        if (status != LXP_OK) goto done;
+    }
     if (kernel->execution_prestate_capture_enabled &&
         activity->protocol_version == LXP_PROTOCOL_VERSION_STATE_COMMITMENT &&
         lxp_activity_module_id(activity->activity_type) == LXP_MODULE_PROGRAMS) {
@@ -4905,6 +4981,9 @@ static lxp_result kernel_prepare_serial_activity_batch(
     if (status == LXP_OK && activity->activity_type == LXP_GOVERNANCE_HANDOVER &&
         batch->receipts[0].result_code != LXP_OK)
         status = (lxp_result)batch->receipts[0].result_code;
+    if (status == LXP_OK && batch->asset_execution_prestates != NULL &&
+        !kernel_asset_execution_prestate_matches(batch->asset_execution_prestates[0], &batch->receipts[0]))
+        status = LXP_ERR_IO;
     if (status == LXP_OK && batch->execution_prestates != NULL &&
         !kernel_execution_prestate_matches(batch->execution_prestates[0], &batch->receipts[0]))
         status = LXP_ERR_IO;
@@ -6300,6 +6379,15 @@ lxp_byte_span lxp_kernel_prepared_batch_execution_prestate(
     return batch->execution_prestates[receipt_index];
 }
 
+lxp_byte_span lxp_kernel_prepared_batch_asset_execution_prestate(
+    const lxp_kernel_prepared_batch *batch, size_t receipt_index)
+{
+    if (batch == NULL || batch->simulation || receipt_index >= batch->count ||
+        batch->asset_execution_prestates == NULL)
+        return (lxp_byte_span){NULL, 0U};
+    return batch->asset_execution_prestates[receipt_index];
+}
+
 lxp_byte_span lxp_kernel_prepared_batch_replay_witness(
     const lxp_kernel_prepared_batch *batch, size_t receipt_index)
 {
@@ -6374,6 +6462,10 @@ void lxp_kernel_prepared_batch_destroy(lxp_kernel_prepared_batch *batch)
         for (index = 0U; index < batch->count; ++index)
             free((void *)batch->execution_prestates[index].bytes);
     free(batch->execution_prestates);
+    if (batch->asset_execution_prestates != NULL)
+        for (index = 0U; index < batch->count; ++index)
+            free((void *)batch->asset_execution_prestates[index].bytes);
+    free(batch->asset_execution_prestates);
     if (batch->arbiter_prestates != NULL)
         for (index = 0U; index < batch->count; ++index)
             free((void *)batch->arbiter_prestates[index].bytes);
@@ -7193,6 +7285,15 @@ static lxp_result kernel_prepare_terminal_rejection(
     batch->settled->programs_runtime.state_feed = runtime->state_feed;
     batch->settled->kernel.observe_commit = kernel_stage_commit;
     batch->settled->kernel.commit_observer_context = &record;
+    if (kernel->asset_execution_prestate_capture_enabled &&
+        activity->protocol_version == LXP_PROTOCOL_VERSION_STATE_COMMITMENT &&
+        activity->activity_type == LX_ASSET_SEND) {
+        batch->asset_execution_prestates = calloc(1U, sizeof(*batch->asset_execution_prestates));
+        status = batch->asset_execution_prestates == NULL ? LXP_ERR_IO :
+            lxp_kernel_encode_asset_execution_prestate(&batch->settled->kernel, activity,
+                &private_execution, PRESTATE_MAX_BYTES, &batch->asset_execution_prestates[0]);
+        if (status != LXP_OK) goto done;
+    }
     if (kernel->execution_prestate_capture_enabled &&
         activity->protocol_version == LXP_PROTOCOL_VERSION_STATE_COMMITMENT &&
         lxp_activity_module_id(activity->activity_type) == LXP_MODULE_PROGRAMS) {
@@ -7223,6 +7324,9 @@ static lxp_result kernel_prepare_terminal_rejection(
     status = lxp_kernel_terminal_rejection(&batch->settled->kernel, activity,
                                            &private_execution, refusal,
                                            &batch->receipts[0]);
+    if (status == LXP_OK && batch->asset_execution_prestates != NULL &&
+        !kernel_asset_execution_prestate_matches(batch->asset_execution_prestates[0], &batch->receipts[0]))
+        status = LXP_ERR_IO;
     if (status == LXP_OK && batch->execution_prestates != NULL &&
         !kernel_execution_prestate_matches(batch->execution_prestates[0], &batch->receipts[0]))
         status = LXP_ERR_IO;
