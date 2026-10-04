@@ -23435,7 +23435,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.103.6.11]
 title = "Version the receipt transition to commit the full account state without changing legacy receipts"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 2
 requires = ["0.2"]
@@ -23445,7 +23445,7 @@ do_2 = "Add explicit protocol version 3 for the composite-state commitment trans
 do_3 = "Make fresh version-3 genesis select the exact Programs V4 plus Asset V1 module table and make the daemon pin activity and LNI protocol version to its signed genesis. Preserve legacy genesis reconstruction with the original Programs-only table. Extend real client/wire receipt decoding to explicit version 3 using existing occupancy field layouts and preserve legacy encodings. Use version 3 explicitly in new beta artifacts and real-node qualification fixtures. Version-3 Rust account derivation, intent compilation and disclosure verification must match native canonical account names and IDs byte-for-byte while preserving legacy vectors."
 do_4 = "Qualify both legacy and new transitions with native real-kernel tests, including exact preview-versus-committed roots and tamper rejection, native genesis and aggregate checks, Rust wire/crypto/proof checks, versioned intent golden vectors and selected-version settlement contracts. The real fresh-genesis SEND and independent replica/account-evidence gate remains mandatory in dependent task 6.10; do not mark that integration complete until actual receipt and account evidence verify."
 do_5 = "Provide this task selector in tools/paxeer-x/gates and execute the full scoped acceptance contract using real production paths. Preserve the retained verification command coverage; move aggregate matrices to release scope and refuse an unknown or unimplemented selector."
-touches = ["include/layerx", "src/protocol", "src/modules", "src/state", "src/replica", "src/codec", "src/ledger", "contracts", "scripts", "cmd/layerxd", "cmd/layerx-genesis", "agent/crates", "interop/crates", "human/crates/layerx-intents", "platform/hosted", "tests", "Makefile", "tools/paxeer-x/gates/103.6.11.sh"]
+touches = ["tools/paxeer-x/gates/103.6.11.sh"]
 verify_cmd = "timeout 30m tools/paxeer-x/verify-task.sh 103.6.11"
 gate_kind = "planned-adapter"
 max_builds = 1
@@ -23461,6 +23461,15 @@ completion_policy = "Existing implementation is preserved; current candidate qua
 planned_paths = ["tools/paxeer-x/gates/103.6.11.sh"]
 path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
 evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+fleet_retained_shared_paths = ["include/layerx", "src/protocol", "src/modules", "src/state", "src/replica", "src/codec", "src/ledger", "contracts", "scripts", "cmd/layerxd", "cmd/layerx-genesis", "agent/crates", "interop/crates", "human/crates/layerx-intents", "platform/hosted", "tests", "Makefile", "tools/paxeer-x/gates/103.6.11.sh"]
+fleet_role = "/root/complete_explorer"
+fleet_cutoff_utc = "2026-10-04T14:55:00Z"
+fleet_authority = "Existing protocol3 code retained; source-only missing selector admission under user integration directive."
+module_table_resolution = "Preserve current Programs V4 plus Asset V1 plus Governance table and exact count3 assertion. Governance is the existing migration-budget authority covered by owner-approved task6.2 policy. This task adds no module or protocol policy."
+source_status = "complete"
+completion_basis = "implementation under owner CONSTITUTION; qualification separately recorded"
+qualification_status = "UNRUN"
+source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/fleet-103.6.11-publication.json"
 
 [task.104.5.8]
 title = "Replace the mounted root secret with a production KMS boundary"
