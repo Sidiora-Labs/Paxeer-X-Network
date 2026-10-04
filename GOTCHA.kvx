@@ -2434,3 +2434,18 @@ resolution = "Consume it through the actual proof verifier with independently es
 area = "Native custody canonical semantics"
 observed = "NativeLocalGrantConsentV1 validation checks record bounds and expiry but does not itself establish full native capability and session semantics."
 resolution = "Parse and bind actual canonical capability and session constraints; signatures remain consent and never replace trusted native authorization."
+
+[gotcha.711]
+area = "Native custody audit trace ownership"
+observed = "The native signer passed its TraceId by value to an audit API requiring a shared reference."
+resolution = "Borrow the same trace identity without changing audit fields, consent bytes or authorization; preserve the prior failed build."
+
+[gotcha.712]
+area = "Native custody corpus error and trace ownership"
+observed = "The genuine Rust custody corpus initially used ring errors without an error conversion and moved a TraceId across multiple consent requests."
+resolution = "Retain each cryptographic verifier and its refusal, map errors explicitly and clone the same trace value; stop after the two recorded repair cycles."
+
+[gotcha.713]
+area = "Native custody import session contract"
+observed = "The genuine Go signing setup returned HTTP400 because its import session identifier violated the existing no-slash length contract."
+resolution = "Keep the refusal and all predicates; record that Rust custody/passkey cases never ran and do not extend the exhausted task with a neighboring fixture repair."

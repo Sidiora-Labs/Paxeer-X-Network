@@ -34156,7 +34156,14 @@ stop_condition = "Stop at original30-minute cap, missing genuine authority, unre
 completion_basis_policy = "Owner CONSTITUTION: fully implemented DONE; qualification separate and partial remains in_progress."
 source_ownership = "Exact three paths only; root owns clean candidate, task state and publication. No production signing or deployment."
 completion_basis = "implementation"
-qualification = "UNRUN"
+qualification = "implemented-not-qualified"
+qualification_revision = "37aea1abd9f85356094e8baabbb20b08a026410c"
+build_exit_code = 0
+verify_exit_code = 1
+repair_cycles_used = 2
+build_manifest_path = "/root/lx-ops/paxeer-x-integration-2026-10-03/qualification/task1041331-repair2/build.json"
+verify_log_path = "/root/lx-ops/paxeer-x-integration-2026-10-03/qualification/task1041331-repair2/native-custody-verify.log"
+qualification_note = "All Go/Rust targets compiled; actual Go import producer refused its invalid session ID before Rust custody/passkey cases. Both repair cycles exhausted; no further repair or rerun."
 
 [task.104.35.34]
 title = "Produce genuine signed Market profile and portable Sandbox proof captures"
