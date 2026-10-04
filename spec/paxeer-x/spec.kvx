@@ -32556,8 +32556,17 @@ fanout_scope_delegated = []
 fanout_basis = "Owner requested maximum parallel implementation on 2026-10-04; delegated shared file edits require root coordination and retain original acceptance criteria"
 source_status = "complete"
 completion_basis = "implementation under owner CONSTITUTION; qualification separately recorded"
-qualification_status = "UNRUN"
+qualification_status = "PREREQUISITE_UNAVAILABLE"
 source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-24.12-source-handoff.json"
+qualification_revision = "7e36564bb03409652d50376e1acd5c5168a20b64"
+qualification_command = ["timeout", "15m", "python3", "tools/bringup/tests/paxeer-x-runtime-contract.py", "--case", "kms-service-prerequisite"]
+qualification_exit_code = 78
+qualification_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/fanout2412-qualification/kms-service-prerequisite-approved.log"
+qualification_evidence = "/root/lx-ops/paxeer-x-integration-2026-10-03/fanout2412-qualification/kms-gate-evidence.json"
+build_revision = "7e36564bb03409652d50376e1acd5c5168a20b64"
+build_command = ["python3", "/root/lx-ops/paxeer-x-integration-2026-10-03/fanout2412-qualification/source-build.py"]
+build_exit_code = 0
+build_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/fanout2412-qualification/source-build-approved.log"
 
 [task.24.13]
 status = "done"
