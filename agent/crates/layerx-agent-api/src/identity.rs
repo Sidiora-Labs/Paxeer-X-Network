@@ -1,7 +1,7 @@
 //! Agent identity, session, capability, and budget contract types.
 
-use crate::write_contract::{PreparationRef, SignatureBytes};
 use crate::verify::Level;
+use crate::write_contract::{PreparationRef, SignatureBytes};
 use crate::{Amount, BudgetLimit, Sequence, TimestampSeconds};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -163,7 +163,6 @@ impl SessionId {
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct ActivityType(pub u16);
 
-
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct NativeActivity {
     pub module: u16,
@@ -260,17 +259,18 @@ impl NativePreparationPurposeV1 {
     }
 
     pub fn from_canonical_bytes(bytes: &[u8]) -> Result<Self, ContractError> {
-        let rest = bytes.strip_prefix(Self::DOMAIN)
+        let rest = bytes
+            .strip_prefix(Self::DOMAIN)
             .ok_or(ContractError::Malformed("native_purpose.domain"))?;
-        let (version, rest) = rest.split_first()
+        let (version, rest) = rest
+            .split_first()
             .ok_or(ContractError::Malformed("native_purpose.version"))?;
         if *version != Self::VERSION {
             return Err(ContractError::Malformed("native_purpose.version"));
         }
         let (tenant, rest) = native_purpose_text(rest, 255, "tenant")?;
-        let (agent, rest) = native_purpose_text(
-            rest, layerx_types::limits::MAX_DID_BYTES, "agent_did",
-        )?;
+        let (agent, rest) =
+            native_purpose_text(rest, layerx_types::limits::MAX_DID_BYTES, "agent_did")?;
         if rest.len() != 176 {
             return Err(ContractError::Malformed("native_purpose.length"));
         }
@@ -286,7 +286,8 @@ impl NativePreparationPurposeV1 {
             preparation_id: native_purpose_fixed(&rest[80..112])?,
             canonical_digest: native_purpose_fixed(&rest[112..144])?,
             commitment: native_purpose_fixed(&rest[144..176])?,
-        }.validate()?;
+        }
+        .validate()?;
         if value.canonical_bytes()?.as_slice() != bytes {
             return Err(ContractError::Malformed("native_purpose.canonical_bytes"));
         }
@@ -301,8 +302,8 @@ impl NativePreparationPurposeV1 {
             ("tenant", self.tenant.as_str()),
             ("agent_did", self.agent_did.as_str()),
         ] {
-            let length = u32::try_from(value.len())
-                .map_err(|_| ContractError::OutOfRange(field))?;
+            let length =
+                u32::try_from(value.len()).map_err(|_| ContractError::OutOfRange(field))?;
             bytes.extend_from_slice(&length.to_be_bytes());
             bytes.extend_from_slice(value.as_bytes());
         }
@@ -322,21 +323,25 @@ fn native_purpose_text<'a>(
     maximum: usize,
     field: &'static str,
 ) -> Result<(&'a str, &'a [u8]), ContractError> {
-    let (length, rest) = bytes.split_first_chunk::<4>()
+    let (length, rest) = bytes
+        .split_first_chunk::<4>()
         .ok_or(ContractError::Malformed(field))?;
     let length = usize::try_from(u32::from_be_bytes(*length))
         .map_err(|_| ContractError::OutOfRange(field))?;
     if length == 0 || length > maximum {
         return Err(ContractError::OutOfRange(field));
     }
-    let (text, rest) = rest.split_at_checked(length)
+    let (text, rest) = rest
+        .split_at_checked(length)
         .ok_or(ContractError::Malformed(field))?;
     let text = core::str::from_utf8(text).map_err(|_| ContractError::Malformed(field))?;
     Ok((text, rest))
 }
 
 fn native_purpose_fixed<const N: usize>(bytes: &[u8]) -> Result<[u8; N], ContractError> {
-    bytes.try_into().map_err(|_| ContractError::Malformed("native_purpose.length"))
+    bytes
+        .try_into()
+        .map_err(|_| ContractError::Malformed("native_purpose.length"))
 }
 
 fn native_purpose_hex32(bytes: &[u8; 32]) -> String {
@@ -363,6 +368,176 @@ impl SignedNativePreparationPurposeV1 {
             owner_public_key: self.owner_public_key,
             signature: self.signature,
         })
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct NativeSendPurposeV1 {
+    pub tenant: TenantId,
+    pub agent_did: AgentDid,
+    pub owner_did: AgentDid,
+    pub owner_public_key: [u8; 32],
+    pub session_id: SessionId,
+    pub generation: u64,
+    pub expires_at_ms: u64,
+    pub capability_id: CapabilityId,
+    pub protocol_version: u16,
+    pub network_id: u32,
+    pub activity: NativeActivity,
+    pub preparation_id: [u8; 32],
+    pub canonical_digest: [u8; 32],
+    pub economic_action: [u8; 32],
+    pub idempotency_key: [u8; 32],
+    pub commitment: [u8; 32],
+}
+
+impl NativeSendPurposeV1 {
+    pub const VERSION: u8 = 1;
+    pub const DOMAIN: &'static [u8] = b"LayerX/native/send-purpose/v1\0";
+
+    pub fn validate(self) -> Result<Self, ContractError> {
+        self.validate_fields()?;
+        Ok(self)
+    }
+
+    fn validate_fields(&self) -> Result<(), ContractError> {
+        let tenant = self.tenant.as_str().as_bytes();
+        if tenant.is_empty() || tenant.len() > 255 || tenant.contains(&0) {
+            return Err(ContractError::Malformed("tenant"));
+        }
+        for did in [&self.agent_did, &self.owner_did] {
+            if did.as_str().as_bytes().contains(&0) {
+                return Err(ContractError::Malformed("native_send.did"));
+            }
+            layerx_types::ids::Did::new(did.as_str().as_bytes())
+                .map_err(|_| ContractError::Malformed("native_send.did"))?;
+        }
+        let expected_owner = format!(
+            "did:layerx:{}",
+            native_purpose_hex32(&self.owner_public_key)
+        );
+        if self.owner_public_key == [0; 32] || self.owner_did.as_str() != expected_owner {
+            return Err(ContractError::Mismatch("native_send.owner"));
+        }
+        self.session_id.to_bytes()?;
+        self.capability_id.to_bytes()?;
+        if self.generation == 0 || self.expires_at_ms == 0 {
+            return Err(ContractError::Zero("native_send.lifetime"));
+        }
+        if self.protocol_version != 3
+            || self.network_id == 0
+            || self.activity != NativeActivity::new(1, 5)?
+        {
+            return Err(ContractError::Mismatch("native_send.domain"));
+        }
+        for (name, value) in [
+            ("preparation_id", self.preparation_id),
+            ("canonical_digest", self.canonical_digest),
+            ("economic_action", self.economic_action),
+            ("idempotency_key", self.idempotency_key),
+            ("commitment", self.commitment),
+        ] {
+            if value == [0; 32] {
+                return Err(ContractError::Zero(name));
+            }
+        }
+        Ok(())
+    }
+
+    pub fn canonical_bytes(&self) -> Result<Vec<u8>, ContractError> {
+        self.validate_fields()?;
+        let mut bytes = Self::DOMAIN.to_vec();
+        bytes.push(Self::VERSION);
+        for (field, value) in [
+            ("tenant", self.tenant.as_str()),
+            ("agent_did", self.agent_did.as_str()),
+            ("owner_did", self.owner_did.as_str()),
+        ] {
+            let length =
+                u32::try_from(value.len()).map_err(|_| ContractError::OutOfRange(field))?;
+            bytes.extend_from_slice(&length.to_be_bytes());
+            bytes.extend_from_slice(value.as_bytes());
+        }
+        bytes.extend_from_slice(&self.owner_public_key);
+        bytes.extend_from_slice(&self.session_id.to_bytes()?);
+        bytes.extend_from_slice(&self.generation.to_be_bytes());
+        bytes.extend_from_slice(&self.expires_at_ms.to_be_bytes());
+        bytes.extend_from_slice(&self.capability_id.to_bytes()?);
+        bytes.extend_from_slice(&self.protocol_version.to_be_bytes());
+        bytes.extend_from_slice(&self.network_id.to_be_bytes());
+        bytes.extend_from_slice(&self.activity.encode()?);
+        for value in [
+            self.preparation_id,
+            self.canonical_digest,
+            self.economic_action,
+            self.idempotency_key,
+            self.commitment,
+        ] {
+            bytes.extend_from_slice(&value);
+        }
+        Ok(bytes)
+    }
+
+    pub fn from_canonical_bytes(bytes: &[u8]) -> Result<Self, ContractError> {
+        let rest = bytes
+            .strip_prefix(Self::DOMAIN)
+            .ok_or(ContractError::Malformed("native_send.domain"))?;
+        let (version, rest) = rest
+            .split_first()
+            .ok_or(ContractError::Malformed("native_send.version"))?;
+        if *version != Self::VERSION {
+            return Err(ContractError::Malformed("native_send.version"));
+        }
+        let (tenant, rest) = native_purpose_text(rest, 255, "tenant")?;
+        let (agent, rest) =
+            native_purpose_text(rest, layerx_types::limits::MAX_DID_BYTES, "agent_did")?;
+        let (owner, rest) =
+            native_purpose_text(rest, layerx_types::limits::MAX_DID_BYTES, "owner_did")?;
+        if rest.len() != 283 {
+            return Err(ContractError::Malformed("native_send.length"));
+        }
+        let session: [u8; 32] = native_purpose_fixed(&rest[32..64])?;
+        let capability: [u8; 32] = native_purpose_fixed(&rest[80..112])?;
+        let value = Self {
+            tenant: TenantId::new(tenant)?,
+            agent_did: AgentDid::new(agent)?,
+            owner_did: AgentDid::new(owner)?,
+            owner_public_key: native_purpose_fixed(&rest[..32])?,
+            session_id: SessionId::new(native_purpose_hex32(&session))?,
+            generation: u64::from_be_bytes(native_purpose_fixed(&rest[64..72])?),
+            expires_at_ms: u64::from_be_bytes(native_purpose_fixed(&rest[72..80])?),
+            capability_id: CapabilityId::new(native_purpose_hex32(&capability))?,
+            protocol_version: u16::from_be_bytes(native_purpose_fixed(&rest[112..114])?),
+            network_id: u32::from_be_bytes(native_purpose_fixed(&rest[114..118])?),
+            activity: NativeActivity::decode(&rest[118..123])?,
+            preparation_id: native_purpose_fixed(&rest[123..155])?,
+            canonical_digest: native_purpose_fixed(&rest[155..187])?,
+            economic_action: native_purpose_fixed(&rest[187..219])?,
+            idempotency_key: native_purpose_fixed(&rest[219..251])?,
+            commitment: native_purpose_fixed(&rest[251..283])?,
+        }
+        .validate()?;
+        if value.canonical_bytes()?.as_slice() != bytes {
+            return Err(ContractError::Malformed("native_send.canonical_bytes"));
+        }
+        Ok(value)
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SignedNativeSendPurposeV1 {
+    pub purpose: NativeSendPurposeV1,
+    pub owner_public_key: [u8; 32],
+    pub signature: [u8; 64],
+}
+
+impl SignedNativeSendPurposeV1 {
+    pub fn validate(self) -> Result<Self, ContractError> {
+        let purpose = self.purpose.validate()?;
+        if self.owner_public_key != purpose.owner_public_key {
+            return Err(ContractError::Mismatch("native_send.signature_owner"));
+        }
+        Ok(Self { purpose, ..self })
     }
 }
 
@@ -498,6 +673,67 @@ impl NativeEffectPrepareRequestV1 {
         }
         if self.capability_id != self.purpose.purpose.capability_id {
             return Err(ContractError::Mismatch("capability_id"));
+        }
+        if let Some(local_grant) = &self.local_grant {
+            local_grant.validate()?;
+        }
+        Ok(Self {
+            purpose: self.purpose.validate()?,
+            ..self
+        })
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct NativeSendPrepareRequestV1 {
+    pub activity: NativeActivity,
+    pub actor: AgentDid,
+    pub authority: String,
+    pub account_sequence: u64,
+    pub not_before: u64,
+    pub not_after: u64,
+    pub idempotency_key: [u8; 32],
+    pub fee_limit: u128,
+    pub payload: Vec<u8>,
+    pub payload_hash: [u8; 32],
+    pub capability_id: CapabilityId,
+    pub purpose: SignedNativeSendPurposeV1,
+    pub local_grant: Option<NativeLocalGrantConsentV1>,
+}
+
+impl NativeSendPrepareRequestV1 {
+    pub fn validate(self) -> Result<Self, ContractError> {
+        if self.activity != NativeActivity::new(1, 5)? {
+            return Err(ContractError::Mismatch("native_send_prepare.activity"));
+        }
+        layerx_types::ids::Did::new(self.actor.as_str().as_bytes())
+            .map_err(|_| ContractError::Malformed("actor"))?;
+        if self.authority.is_empty() {
+            return Err(ContractError::Empty("authority"));
+        }
+        if self.authority.len() > layerx_types::limits::MAX_AUTHORITY_BYTES {
+            return Err(ContractError::OutOfRange("authority"));
+        }
+        if self.not_after < self.not_before {
+            return Err(ContractError::OutOfRange("timestamp_bound"));
+        }
+        if self.payload.is_empty() {
+            return Err(ContractError::Empty("payload"));
+        }
+        if self.payload.len() > layerx_types::limits::MAX_PAYLOAD_BYTES {
+            return Err(ContractError::OutOfRange("payload"));
+        }
+        self.capability_id.to_bytes()?;
+        if self.actor != self.purpose.purpose.agent_did {
+            return Err(ContractError::Mismatch("actor"));
+        }
+        if self.capability_id != self.purpose.purpose.capability_id {
+            return Err(ContractError::Mismatch("capability_id"));
+        }
+        if self.activity != self.purpose.purpose.activity
+            || self.idempotency_key != self.purpose.purpose.idempotency_key
+        {
+            return Err(ContractError::Mismatch("native_send_prepare.request"));
         }
         if let Some(local_grant) = &self.local_grant {
             local_grant.validate()?;
@@ -1325,7 +1561,6 @@ mod tests {
     }
 }
 
-
 #[cfg(test)]
 mod native_contract_tests {
     use super::{
@@ -1406,7 +1641,8 @@ mod native_contract_tests {
     }
 
     #[test]
-    fn native_purpose_canonical_bytes_bind_exact_identity_and_commitment() -> Result<(), ContractError> {
+    fn native_purpose_canonical_bytes_bind_exact_identity_and_commitment(
+    ) -> Result<(), ContractError> {
         let value = purpose()?;
         let mut expected = NativePreparationPurposeV1::DOMAIN.to_vec();
         expected.push(1);
@@ -1449,10 +1685,14 @@ mod native_contract_tests {
     }
 
     #[test]
-    fn native_purpose_canonical_decoder_refuses_truncation_trailing_version_and_text() -> Result<(), ContractError> {
+    fn native_purpose_canonical_decoder_refuses_truncation_trailing_version_and_text(
+    ) -> Result<(), ContractError> {
         let value = purpose()?;
         let bytes = value.canonical_bytes()?;
-        assert_eq!(NativePreparationPurposeV1::from_canonical_bytes(&bytes)?, value);
+        assert_eq!(
+            NativePreparationPurposeV1::from_canonical_bytes(&bytes)?,
+            value
+        );
         for length in 0..bytes.len() {
             assert!(NativePreparationPurposeV1::from_canonical_bytes(&bytes[..length]).is_err());
         }
@@ -1476,7 +1716,8 @@ mod native_contract_tests {
     }
 
     #[test]
-    fn native_purpose_refuses_noncanonical_identifiers_zero_generation_and_zero_expiry() -> Result<(), ContractError> {
+    fn native_purpose_refuses_noncanonical_identifiers_zero_generation_and_zero_expiry(
+    ) -> Result<(), ContractError> {
         let valid = purpose()?;
         for field in 0..7 {
             let mut invalid = valid.clone();
@@ -1488,9 +1729,8 @@ mod native_contract_tests {
                 3 => invalid.tenant = TenantId::new("bad\0tenant")?,
                 4 => invalid.tenant = TenantId::new("a".repeat(256))?,
                 5 => {
-                    invalid.agent_did = AgentDid::new(
-                        "a".repeat(layerx_types::limits::MAX_DID_BYTES + 1),
-                    )?;
+                    invalid.agent_did =
+                        AgentDid::new("a".repeat(layerx_types::limits::MAX_DID_BYTES + 1))?;
                 }
                 _ => unreachable!(),
             }

@@ -949,6 +949,7 @@ impl CustodySigner {
         let event = AuditEvent::SigningDecision {
             operation: match request.consent {
                 super::NativeConsent::PreparationPurpose(_) => SigningOperation::ProtocolMutation,
+                super::NativeConsent::SendPurpose(_) => SigningOperation::ProtocolMutation,
                 super::NativeConsent::LocalGrant(_) => SigningOperation::SecuritySettings,
             },
             disclosure_digest: digest.unwrap_or([0; 32]),
@@ -975,6 +976,7 @@ impl CustodySigner {
         let digest = digest.ok_or(CustodyError::InvalidEvidence)?;
         let expected_operation = match request.consent {
             super::NativeConsent::PreparationPurpose(_) => Operation::ProtocolMutation,
+            super::NativeConsent::SendPurpose(_) => Operation::ProtocolMutation,
             super::NativeConsent::LocalGrant(_) => Operation::SecuritySettings,
         };
         if request.authorization.operation != expected_operation {

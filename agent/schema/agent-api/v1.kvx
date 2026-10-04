@@ -879,3 +879,26 @@ serving_status = "Source request and conversion contract only. Integration uses 
 
 [encoding.NativeEffectPrepareV1_request_digest]
 digest = "SHA-256 of bytes LXP/agent/native-effect-prepare/v1 followed by NUL and serde_json::to_vec of the validated NativeEffectPrepareRequestV1 canonical JSON value, including exact native_effect_v1 discriminator and explicit local_grant null or full object. Existing native prepare digest remains unchanged."
+
+
+[record.NativeSendPurposeV1]
+rust = "layerx_agent_api::identity::NativeSendPurposeV1"
+wire_type = "NativeSendPurposeV1Wire"
+fields = ["version:decimal_string", "tenant:utf8", "agent_did:utf8", "owner_did:utf8", "owner_public_key:hex32", "session_id:hex32", "generation:decimal_string", "expires_at_ms:decimal_string", "capability_id:hex32", "protocol_version:decimal_string", "network_id:decimal_string", "activity:NativeActivityV1", "preparation_id:hex32", "canonical_digest:hex32", "economic_action:hex32", "idempotency_key:hex32", "commitment:hex32"]
+canonical_bytes = "LayerX/native/send-purpose/v1 NUL, u8 version1, u32BE-length UTF8 tenant/agent_did/owner_did, owner_public_key32, session32, generation u64BE, expiry u64BE, capability32, protocol u16BE, network u32BE, NativeActivity.encode five bytes, preparation32, canonical_digest32, economic_action32, idempotency32, immutable economic commitment32."
+validation = "Closed version1, protocol3, nonzero kernel network, ordinary Asset Send module1 ordinal5, actual owner_did exactly did:layerx: plus owner_public_key lowercasehex; canonical identifiers, nonzero generation/expiry/digests, bounded texts, exact inverse decoder and reencoding, no trailing bytes."
+authority = "Owner signatures authenticate this distinct consent statement, never an embedded protocol purpose; validate actual principal/session/generation/capability/current authority, native active chain, exact canonical Send and economic action from retained production owners. Existing preparation-purpose and local-grant encodings and refusals remain unchanged."
+
+[record.SignedNativeSendPurposeV1]
+rust = "layerx_agent_api::identity::SignedNativeSendPurposeV1"
+wire_type = "SignedNativeSendPurposeV1Wire"
+fields = ["purpose:NativeSendPurposeV1", "owner_public_key:hex32", "signature:hex64"]
+signature_digest = "SHA256 exact NativeSendPurposeV1 canonical bytes; duplicate owner_public_key must equal nested owner key and actual current HumanPrimary owner."
+validation = "Data carrier only. Actual cryptographic signer/daemon validates genuine owner signature and fresh authority; local structural validation never establishes authority."
+
+[record.NativeSendPrepareRequestV1]
+rust = "layerx_agent_api::identity::NativeSendPrepareRequestV1"
+wire_type = "NativeSendPrepareV1Wire"
+fields = ["variant:utf8", "activity:NativeActivityV1", "actor:utf8", "authority:utf8", "account_sequence:decimal_string", "not_before:decimal_string", "not_after:decimal_string", "idempotency_key:hex32", "fee_limit:decimal_string", "payload:lowercase_hex", "payload_hash:hex32", "capability_id:hex32", "purpose:SignedNativeSendPurposeV1", "local_grant:NativeLocalGrantConsentV1?"]
+variant = "Exactly native_send_v1; preview selector66. Existing native_effect_v1 and selectors63/65 retain all behavior and refusals."
+validation = "Closed ordinary Send1/5, exact actor/capability/idempotency/activity binds signed distinct purpose; canonical activity and payload remain original. Genuine profile-specific runtime authenticates and retains immutable economic request before hold/submit/resume."
