@@ -49,6 +49,8 @@ COPY --from=build /src/platform/hosted/node/reset_state.py /opt/layerx/reset_sta
 COPY --from=build /src/platform/hosted/node/guarantor.sh /opt/layerx/guarantor.sh
 COPY --from=build /src/platform/hosted/node/checkpoint-authority.py /opt/layerx/checkpoint-authority.py
 COPY --from=build /src/precompiles/layerxanchor/abi.json /opt/layerx/precompiles/layerxanchor/abi.json
+COPY --from=build /src/precompiles/layerxcustody/abi.json /opt/layerx/precompiles/layerxcustody/abi.json
+COPY --from=build /src/precompiles/addr/abi.json /opt/layerx/precompiles/addr/abi.json
 COPY --from=build /src/platform/hosted/node/signer /opt/layerx/signer
 RUN chmod 0755 /opt/layerx/bootstrap.sh /opt/layerx/supervisor.sh /opt/layerx/guarantor.sh
 USER 4020:4020

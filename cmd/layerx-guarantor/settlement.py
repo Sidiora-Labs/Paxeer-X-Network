@@ -71,6 +71,33 @@ def require(condition, message):
         raise ValueError(message)
 
 
+def load_anchor_abi(path=None):
+    if path is None:
+        path = os.environ.get('LAYERX_GUARANTOR_ANCHOR_ABI',
+                              str(Path(__file__).resolve().parents[2] / 'precompiles/layerxanchor/abi.json'))
+    document = json.loads(Path(path).read_text())
+    require(isinstance(document, list), 'anchor ABI must be an array')
+    required = {
+        SUBMIT: (('bytes', 'bytes', 'bytes'), ('bytes32', 'uint8'), 'nonpayable'),
+        'finalize(uint64)': (('uint64',), ('bool',), 'nonpayable'),
+        'statusOf(uint64)': (('uint64',), ('uint8',), 'view'),
+    }
+    methods = {}
+    for item in document:
+        require(isinstance(item, dict), 'anchor ABI entry invalid')
+        if item.get('type') != 'function':
+            continue
+        inputs = tuple(field['type'] for field in item['inputs'])
+        signature = item['name'] + '(' + ','.join(inputs) + ')'
+        if signature in required:
+            require(signature not in methods, 'duplicate anchor ABI method')
+            shape = (inputs, tuple(field['type'] for field in item['outputs']), item['stateMutability'])
+            require(shape == required[signature], 'anchor ABI method shape mismatch: ' + signature)
+            methods[signature] = item
+    require(set(methods) == set(required), 'anchor ABI checkpoint methods missing')
+    return methods
+
+
 def raw(value, length=None):
     require(isinstance(value, str) and value.startswith('0x'), 'hex encoding required')
     result = bytes.fromhex(value[2:])
@@ -86,6 +113,10 @@ def values(types, data):
 
 
 def calldata(signature, types=(), args=()):
+    if signature in (SUBMIT, 'finalize(uint64)', 'statusOf(uint64)'):
+        method = load_anchor_abi()[signature]
+        require(tuple(types) == tuple(field['type'] for field in method['inputs']),
+                'anchor calldata types differ from ABI')
     return '0x' + (keccak(text=signature)[:4] + encode(types, args)).hex()
 
 
@@ -807,11 +838,18 @@ def register_with_race_recovery(rpc, request):
 
 
 def configuration(request):
+    load_anchor_abi()
     domain = anchor_domain(request)
     result = {'chain_id': domain['paxeer_chain_id'], 'network_id': domain['network_id'], 'settlement_contract': domain['guarantor_bond'], 'checkpoint_registry': domain['settlement_contract'], 'members': domain['guarantor_set']}
     require(int(os.environ['LAYERX_NODE_PAXEER_CHAIN_ID']) == result['chain_id'], 'settlement chain environment mismatch')
     require(raw(os.environ['LAYERX_NODE_SETTLEMENT_CONTRACT'], 20) == raw(result['settlement_contract'], 20), 'settlement bond environment mismatch')
     require(raw(os.environ['LAYERX_NODE_CHECKPOINT_REGISTRY'], 20) == raw(result['checkpoint_registry'], 20), 'settlement registry environment mismatch')
+    for name, expected in (
+            ('LAYERX_NODE_REGISTRY_PRECOMPILE', '0x0000000000000000000000000000000000001004'),
+            ('LAYERX_NODE_CUSTODY_PRECOMPILE', '0x0000000000000000000000000000000000001013'),
+            ('LAYERX_NODE_ANCHOR_PRECOMPILE', ANCHOR)):
+        require(raw(os.environ.get(name, expected), 20) == raw(expected, 20),
+                'canonical precompile environment mismatch: ' + name)
     require(0 < len(result['members']) <= 32, 'settlement member count mismatch')
     previous = bytes(32)
     for member in result['members']:
@@ -828,6 +866,7 @@ MODES = ('config', 'membership', 'register', 'deposit', 'register-guarantor', 'i
 
 def main():
     require(len(sys.argv) == 4 and sys.argv[1] in MODES, 'usage: settlement.py ' + '|'.join(MODES) + ' INPUT.json OUTPUT.json')
+    load_anchor_abi()
     request = json.loads(Path(sys.argv[2]).read_text())
     started = time.monotonic()
     if sys.argv[1] == 'config':

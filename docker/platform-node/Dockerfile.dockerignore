@@ -34,6 +34,8 @@ occ_tests
 parallelization
 precompiles
 !precompiles/layerxanchor/abi.json
+!precompiles/layerxcustody/abi.json
+!precompiles/addr/abi.json
 ratelimiter
 rpc
 sdk

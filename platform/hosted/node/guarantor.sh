@@ -52,6 +52,7 @@ guarantor_anchor_abi() {
             'any(.[] | select(.type == "function") | .name + "(" + ([.inputs[].type] | join(",")) + ")"; . == $signature)' \
             "$anchor_abi" > /dev/null || { echo "anchor precompile ABI $anchor_abi does not declare $signature" >&2; exit 2; }
     done
+    export LAYERX_GUARANTOR_ANCHOR_ABI="$anchor_abi"
 }
 guarantor_anchor_abi
 guarantor_binary=${LAYERX_GUARANTOR_BINARY:-/usr/local/bin/layerx-guarantor}
