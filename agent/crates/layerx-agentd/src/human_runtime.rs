@@ -1711,6 +1711,59 @@ impl<A: HumanAuthorityBoundary> SharedAgentOwner<A> {
 }
 
 impl<A: HumanAuthorityBoundary> HumanOperations for SharedAgentOwner<A> {
+    fn native_journey_envelope_v1(
+        &mut self,
+        peer: &HumanPeer,
+        request: crate::human::HumanNativeJourneyEnvelopeV1,
+    ) -> Result<HumanResponse, HumanOperationError> {
+        let response =
+            crate::agent_rpc::handle_human_native_prepare(self, peer, request.envelope.as_slice())?;
+        let mut out = Encoder::new();
+        out.u8(1);
+        out.u16(usize::from(response.status))?;
+        out.bytes(&response.body)?;
+        out.finish()
+    }
+
+    fn native_send_envelope_v1(
+        &mut self,
+        peer: &HumanPeer,
+        request: crate::human::HumanNativeSendEnvelopeV1,
+    ) -> Result<HumanResponse, HumanOperationError> {
+        let response = crate::agent_rpc::handle_human_native_send_prepare(
+            self,
+            peer,
+            request.envelope.as_slice(),
+        )?;
+        let mut out = Encoder::new();
+        out.u8(1);
+        out.u16(usize::from(response.status))?;
+        out.bytes(&response.body)?;
+        out.finish()
+    }
+
+    fn native_owner_context_v1(
+        &mut self,
+        peer: &HumanPeer,
+        request: crate::human::HumanNativeOwnerContextRequestV1,
+    ) -> Result<HumanResponse, HumanOperationError> {
+        self.lock()?.native_owner_context_v1(peer, request)
+    }
+    fn native_send_preview_v1(
+        &mut self,
+        peer: &HumanPeer,
+        request: crate::human::HumanNativeSendPreviewRequestV1,
+    ) -> Result<HumanResponse, HumanOperationError> {
+        self.lock()?.native_send_preview_v1(peer, request)
+    }
+    fn native_send_owner_preview_v1(
+        &mut self,
+        peer: &HumanPeer,
+        request: crate::human::HumanNativeSendOwnerPreviewRequestV1,
+    ) -> Result<HumanResponse, HumanOperationError> {
+        self.lock()?.native_send_owner_preview_v1(peer, request)
+    }
+
     fn native_program_approval_list(
         &mut self,
         peer: &HumanPeer,
@@ -7909,37 +7962,6 @@ impl<A: HumanAuthorityBoundary> HumanOperations for UnifiedAgentOwner<A> {
         permit
             .boundary(&control)
             .map_err(|_| HumanOperationError::Refused)?;
-        out.finish()
-    }
-
-    fn native_journey_envelope_v1(
-        &mut self,
-        peer: &HumanPeer,
-        request: crate::human::HumanNativeJourneyEnvelopeV1,
-    ) -> Result<HumanResponse, HumanOperationError> {
-        let response =
-            crate::agent_rpc::handle_human_native_prepare(self, peer, request.envelope.as_slice())?;
-        let mut out = Encoder::new();
-        out.u8(1);
-        out.u16(usize::from(response.status))?;
-        out.bytes(&response.body)?;
-        out.finish()
-    }
-
-    fn native_send_envelope_v1(
-        &mut self,
-        peer: &HumanPeer,
-        request: crate::human::HumanNativeSendEnvelopeV1,
-    ) -> Result<HumanResponse, HumanOperationError> {
-        let response = crate::agent_rpc::handle_human_native_send_prepare(
-            self,
-            peer,
-            request.envelope.as_slice(),
-        )?;
-        let mut out = Encoder::new();
-        out.u8(1);
-        out.u16(usize::from(response.status))?;
-        out.bytes(&response.body)?;
         out.finish()
     }
 

@@ -34424,10 +34424,14 @@ time_limit_minutes = 30
 stop_condition = "Stop at 09:13 UTC, missing genuine external authority, unrelated failure or required weakening; partial source receives no gates. Root intake/publication precedes immutable candidate qualification."
 owner_approval = "2026-10-04 owner approved exact distinct Send-purpose and public-consent proposal; existing formats, refusals and security actions remain unchanged. New contract implementation scope does not reset old task30 or32 budgets."
 source_status = "complete"
-qualification_status = "UNRUN"
+qualification_status = "BUILD101_REPAIR1_PENDING"
 completion_basis_policy = "Owner CONSTITUTION: fully implemented DONE, qualification separate; partial remains in_progress."
 completion_basis = "implementation"
 source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-104.13.35-source-handoff.json"
+qualification_first_revision = "c7e25a9edfe6df8dfe121687607b9ffd35f7c1cf"
+qualification_first_build_exit = 101
+qualification_first_build_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-104.13.35-build.log"
+qualification_repair1 = "Move authenticated65/67 callbacks to actual Shared owner and forward63/64/66; no authority or refusal weakening."
 
 [task.104.13.36]
 title = "Expose approved passkey Send consent and original-request journey through Human API"
