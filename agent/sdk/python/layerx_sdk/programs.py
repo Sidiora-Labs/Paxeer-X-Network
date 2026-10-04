@@ -7,7 +7,7 @@ from threading import RLock
 from time import time_ns
 from typing import Literal, cast
 
-from .native_program_call import NativeProgramCall, encode_native_program_call
+from .native_program_call import NativeProgramCall, encode_native_program_call, native_guest_abi_for_protocol
 from .production import IdempotencyKey, PlatformSdkError, ProductionClient, SdkErrorCode
 from .program_lifecycle import NativeProgramLifecycleRequest
 from .program_wire import (
@@ -17,6 +17,7 @@ from .program_wire import (
     bind_retained_program_call,
     decode_and_verify_program_terminal,
     decode_signed_program_call,
+    verify_native_program_call_signature,
 )
 from .verifier import (
     AuthorizedReceiptBatch,
@@ -95,6 +96,9 @@ class ProgramDiscovery:
     observed_at: int
     valid_through: int
     verification: Literal["server-side-receipt-verification-only"] = "server-side-receipt-verification-only"
+    deployment_receipt_digest: str | None = None
+    sequencer_signature_verified: bool = False
+    value_accounts: Mapping[str, object] | None = None
 
 
 @dataclass(frozen=True)
@@ -121,10 +125,12 @@ class ProgramTrustContext:
     maximum_simulation_age_milliseconds: int = _DEFAULT_MAXIMUM_SIMULATION_AGE_MILLISECONDS
 
     protocol_version: int = 2
+    network_id: int | None = None
 
     def __post_init__(self) -> None:
         if (
-            self.protocol_version not in (2, 3)
+            type(self.protocol_version) is not int or self.protocol_version not in (2, 3)
+            or self.network_id is not None and (type(self.network_id) is not int or not 0 < self.network_id < 1 << 32)
             or not isinstance(self.sequencer_public_key, bytes)
             or len(self.sequencer_public_key) != 32
             or self.sequencer_public_key == bytes(32)
@@ -153,11 +159,13 @@ class VerifiedProgramReceipt:
 
 
 def _hex32(value: str) -> bool:
-    return len(value) == 64 and all(character in "0123456789abcdef" for character in value)
+    return isinstance(value, str) and len(value) == 64 and all(character in "0123456789abcdef" for character in value)
 
 
 def _validate(call: ProgramCall | NativeProgramRequest) -> None:
-    if not _hex32(call.program_id) or call.program_id == "0" * 64 or not 0 < call.fuel <= _MAX_U64 or not 0 <= call.fee_limit <= _MAX_U128:
+    if (not _hex32(call.program_id) or call.program_id == "0" * 64
+            or type(call.fuel) is not int or type(call.fee_limit) is not int
+            or not 0 < call.fuel <= _MAX_U64 or not 0 <= call.fee_limit <= _MAX_U128):
         raise ValueError("invalid bounded program call")
     if len(call.calldata) > _MAX_CALLDATA or len(call.capabilities) > 5 or not 0 < len(call.signed_activity) <= _MAX_CALLDATA:
         raise ValueError("invalid bounded program call")
@@ -210,6 +218,8 @@ def verify_program_receipt(
         retained = expected_signed_activity
     payload_hash = None
     if retained is not None:
+        if protocol.protocol_version == 3:
+            verify_native_program_call_signature(retained, signatures, trust.network_id)
         payload_hash, expected_abi, expected_key = bind_retained_program_call(
             retained, activity_id, cast(str, execution["program_id"]), protocol.protocol_version)
         if expected_abi != guest_abi or ("idempotency_key" in execution and execution["idempotency_key"] != expected_key):
@@ -299,19 +309,29 @@ class ProgramOperations:
         self._signatures = signatures
         self._trust = trust
         self._heads: dict[str, tuple[str, int, int, int]] = {}
+        self._discoveries: dict[str, ProgramDiscovery] = {}
+        self._retained_calls: dict[str, DecodedSignedProgramCall] = {}
         self._heads_lock = RLock()
 
     def discover(self, program_id: str) -> ProgramDiscovery:
         if not _hex32(program_id):
             raise ValueError("invalid program id")
-        result = _discovery(self._client.agent("program.discover", {"program_id": program_id, "requested_verification_level": "sequencer-signed"}), program_id, self._trust.now_milliseconds())
+        result = _discovery(self._client.agent("program.discover", {"program_id": program_id, "requested_verification_level": "sequencer-signed"}), program_id, self._trust.now_milliseconds(), self._signatures, self._trust)
         self._remember_head(program_id, _head(result))
+        with self._heads_lock:
+            self._discoveries[program_id] = result
         return result
 
     def interface(self, program_id: str) -> ProgramInterface:
         if not _hex32(program_id):
             raise ValueError("invalid program id")
-        result = _interface(self._client.agent("program.interface", {"program_id": program_id, "requested_verification_level": "sequencer-signed"}), program_id, self._trust.now_milliseconds())
+        result = _interface(self._client.agent("program.interface", {"program_id": program_id, "requested_verification_level": "sequencer-signed"}), program_id, self._trust.now_milliseconds(), self._trust.protocol_version)
+        if result.abi_version in (3, 4):
+            discovered = self.discover(program_id)
+            if (not discovered.sequencer_signature_verified or discovered.version != result.version
+                    or discovered.code_hash != result.code_hash or discovered.abi_version != result.abi_version
+                    or _head(discovered) != _head(result) or discovered.deployment_receipt_digest != result.receipt_digest):
+                raise ValueError("interface does not match pinned signed discovery")
         self._remember_head(program_id, _head(result))
         return result
 
@@ -320,6 +340,7 @@ class ProgramOperations:
         if isinstance(call, NativeProgramRequest) and self._trust.protocol_version != 3:
             raise ValueError("native call requires selected protocol 3")
         signed = decode_signed_program_call(call)
+        self._require_native_request(call)
         head = self._remembered_head(call.program_id)
         if head is None:
             raise ValueError("a fresh discovered program head is required before simulation")
@@ -371,6 +392,23 @@ class ProgramOperations:
             if self._heads.get(program_id) != expected:
                 raise ValueError("program head changed during simulation")
 
+    def _require_native_request(self, call: ProgramCall | NativeProgramRequest) -> None:
+        if not isinstance(call, NativeProgramRequest):
+            return
+        if not native_guest_abi_for_protocol(call.native_call.guest_abi, self._trust.protocol_version):
+            raise ValueError("guest ABI does not match selected protocol")
+        verify_native_program_call_signature(call.signed_activity, self._signatures, self._trust.network_id)
+        if call.native_call.guest_abi in (3, 4):
+            if self._trust.network_id is None:
+                raise ValueError("account-capable call requires selected network")
+            with self._heads_lock:
+                discovery = self._discoveries.get(call.program_id)
+                if (discovery is None or not discovery.sequencer_signature_verified
+                        or discovery.abi_version != call.native_call.guest_abi
+                        or discovery.lifecycle != "active" or self._heads.get(call.program_id) != _head(discovery)):
+                    raise ValueError("fresh pinned signed discovery required for account-capable call")
+                _fresh(_head(discovery), self._trust.now_milliseconds())
+
     def submit(self, call: ProgramCall | NativeProgramRequest, idempotency_key: IdempotencyKey) -> Mapping[str, object]:
         _validate(call)
         if isinstance(call, NativeProgramRequest) and self._trust.protocol_version != 3:
@@ -378,7 +416,13 @@ class ProgramOperations:
         if not _hex32(str(idempotency_key)):
             raise ValueError("invalid program idempotency key")
         signed = decode_signed_program_call(call, str(idempotency_key))
+        self._require_native_request(call)
         retained = signed.canonical_bytes.hex()
+        with self._heads_lock:
+            prior = self._retained_calls.get(str(idempotency_key))
+            if prior is not None and prior.canonical_bytes != signed.canonical_bytes:
+                raise ValueError("program idempotency belongs to different signed bytes")
+            self._retained_calls[str(idempotency_key)] = signed
         try:
             result = self._client.agent("program.call", _wire(call), idempotency_key=idempotency_key)
             return _submission(result, self._signatures, self._trust, program_id=call.program_id, activity_id=signed.activity_id, idempotency_key=str(idempotency_key), retained_signed_activity=retained)
@@ -390,8 +434,13 @@ class ProgramOperations:
     def receipt(self, idempotency_key: str, expected_activity_id: str) -> Mapping[str, object]:
         if not _hex32(idempotency_key) or not _hex32(expected_activity_id):
             raise ValueError("invalid program receipt selector")
+        with self._heads_lock:
+            retained = self._retained_calls.get(idempotency_key)
+        if retained is not None and retained.activity_id != expected_activity_id:
+            raise ValueError("receipt selector differs from retained activity")
         result = self._client.agent("program.receipt", {"idempotency_key": idempotency_key, "expected_activity_id": expected_activity_id, "requested_verification_level": "sequencer-signed"})
-        return _submission(result, self._signatures, self._trust, activity_id=expected_activity_id, idempotency_key=idempotency_key)
+        return _submission(result, self._signatures, self._trust, activity_id=expected_activity_id, idempotency_key=idempotency_key,
+                           retained_signed_activity=None if retained is None else retained.canonical_bytes.hex())
 
     def activity(self, activity_id: str) -> Mapping[str, object]:
         if not _hex32(activity_id):
@@ -532,13 +581,14 @@ def _verify_simulation(
         raise ValueError("stale or mismatched simulation head")
 
 
-def _discovery(value: object, program_id: str, now: int) -> ProgramDiscovery:
+def _discovery(value: object, program_id: str, now: int, signatures: LocalSignatureVerifier | None = None, trust: ProgramTrustContext | None = None) -> ProgramDiscovery:
     result = _mapping(value)
     _exact(result, ("program_id", "lifecycle", "version", "code_hash", "abi_version", "receipt_digest",
-        "state_root", "observed_sequence", "observed_at", "valid_through", "verification"))
+        "state_root", "observed_sequence", "observed_at", "valid_through", "verification"),
+        ("deployment_receipt_digest", "discovery_public_key", "discovery_signature", "value_accounts"))
     if _hex_field(result, "program_id", 32, exact=True) != program_id or result.get("verification") != "registry-receipt-and-current-head-verified":
         raise ValueError("unverified program discovery")
-    if result.get("lifecycle") not in ("active", "deprecated", "tombstoned") or not _integer(result.get("version"), 1, (1 << 32) - 1) or not _integer(result.get("abi_version"), 1, 2):
+    if result.get("lifecycle") not in ("active", "deprecated", "tombstoned") or not _integer(result.get("version"), 1, (1 << 32) - 1) or not native_guest_abi_for_protocol(result.get("abi_version"), 2 if trust is None else trust.protocol_version):
         raise ValueError("invalid program discovery")
     for field in ("code_hash", "receipt_digest", "state_root"):
         _hex_field(result, field, 32, exact=True)
@@ -549,16 +599,41 @@ def _discovery(value: object, program_id: str, now: int) -> ProgramDiscovery:
         cast(str, result["state_root"]), _decimal(result["observed_sequence"], _MAX_U64),
         _decimal(result["observed_at"], _MAX_U64), _decimal(result["valid_through"], _MAX_U64))
     _fresh(_head(documented), now)
-    return documented
+    signed = _verify_discovery_signature(result, documented, signatures, trust)
+    deployment = None if "deployment_receipt_digest" not in result else _hex_field(result, "deployment_receipt_digest", 32, exact=True)
+    accounts = None if "value_accounts" not in result else dict(_mapping(result["value_accounts"]))
+    if documented.abi_version in (3, 4) and (not signed or deployment is None):
+        raise ValueError("account-capable discovery requires pinned signature and deployment binding")
+    return ProgramDiscovery(**{**documented.__dict__, "deployment_receipt_digest": deployment,
+                              "sequencer_signature_verified": signed, "value_accounts": accounts})
 
 
-def _interface(value: object, program_id: str, now: int) -> ProgramInterface:
+def _verify_discovery_signature(value: Mapping[str, object], head: ProgramDiscovery,
+                                signatures: LocalSignatureVerifier | None, trust: ProgramTrustContext | None) -> bool:
+    if "discovery_public_key" not in value and "discovery_signature" not in value:
+        return False
+    if signatures is None or trust is None:
+        raise ValueError("pinned discovery verifier required")
+    key = bytes.fromhex(_hex_field(value, "discovery_public_key", 32, exact=True))
+    signature = bytes.fromhex(_hex_field(value, "discovery_signature", 64, exact=True))
+    digest = sha256(b"LayerX/program-discovery-proof/v1\0" + bytes.fromhex(head.program_id) + b"\1"
+                    + head.version.to_bytes(4, "big") + bytes.fromhex(head.code_hash)
+                    + head.abi_version.to_bytes(2, "big") + head.observed_sequence.to_bytes(8, "big")
+                    + head.observed_at.to_bytes(8, "big") + head.valid_through.to_bytes(8, "big")
+                    + bytes.fromhex(head.state_root)).digest()
+    if (key != trust.sequencer_public_key or digest.hex() != head.receipt_digest
+            or not signatures.verify_ed25519(key, signature, digest)):
+        raise ValueError("program discovery sequencer signature binding failed")
+    return True
+
+
+def _interface(value: object, program_id: str, now: int, protocol_version: int = 2) -> ProgramInterface:
     result = _mapping(value)
     _exact(result, ("program_id", "version", "code_hash", "abi_version", "interface", "interface_digest",
         "receipt_digest", "state_root", "observed_sequence", "observed_at", "valid_through", "source", "verification"))
     if _hex_field(result, "program_id", 32, exact=True) != program_id or result.get("verification") != "deployment-interface-and-current-head-verified":
         raise ValueError("unverified program interface")
-    if not _integer(result.get("version"), 1, (1 << 32) - 1) or not _integer(result.get("abi_version"), 1, 2):
+    if not _integer(result.get("version"), 1, (1 << 32) - 1) or not native_guest_abi_for_protocol(result.get("abi_version"), protocol_version):
         raise ValueError("invalid program interface")
     for field in ("code_hash", "interface_digest", "receipt_digest", "state_root"):
         _hex_field(result, field, 32, exact=True)

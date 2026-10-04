@@ -44,7 +44,7 @@ def _fixed(value: bytes) -> bytes:
 
 
 def _code(program: bytes, abi: int, wasm: bytes, digest: bytes) -> None:
-    if (_fixed(program) == bytes(32) or type(abi) is not int or abi not in (1, 2, 3)
+    if (_fixed(program) == bytes(32) or type(abi) is not int or abi not in (1, 2, 3, 4)
             or not wasm.startswith(b"\0asm\x01\0\0\0") or len(wasm) > 1_048_576
             or _fixed(digest) != sha256(wasm).digest()):
         raise ValueError("invalid program code")

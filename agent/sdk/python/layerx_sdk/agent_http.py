@@ -906,7 +906,15 @@ def _accepted_program_verification(operation: str, result: object, value: object
         return False
     result_state = result.get("state") if isinstance(result, dict) else None
     if operation in {"program.discover", "program.interface"}:
-        return _exact_unverified(value, "server_side_receipt_verification_only")
+        if _exact_unverified(value, "server_side_receipt_verification_only"):
+            return True
+        if operation != "program.discover" or not isinstance(result, dict):
+            return False
+        key, signature = result.get("discovery_public_key"), result.get("discovery_signature")
+        return (set(value) == {"state", "level"} and value.get("state") == "Achieved"
+                and value.get("level") == "SequencerSigned" and isinstance(key, str) and _hex32(key)
+                and isinstance(signature, str) and len(signature) == 128
+                and all(character in _HEX for character in signature))
     if operation in {"program.call", "program.receipt", "program.activity"} and result_state in {"unknown", "pending"}:
         return _exact_unverified(value, "receipt_pending")
     return set(value) == {"state", "level"} and value.get("state") == "Achieved" and value.get("level") == "SequencerSigned"

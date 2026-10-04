@@ -123,6 +123,10 @@ class _SignedCallEnvelope:
     fee_limit: int
     payload_hash: bytes
     payload: bytes
+    network_id: int
+    public_key: bytes
+    signature: bytes
+    signature_digest: bytes
 
 
 def _signed_call_envelope(canonical: bytes) -> _SignedCallEnvelope:
@@ -135,26 +139,40 @@ def _signed_call_envelope(canonical: bytes) -> _SignedCallEnvelope:
     _field(reader, 1)
     if reader.u16() != envelope_version:
         _fail("signed activity protocol")
-    _field(reader, 2); reader.u32()
+    _field(reader, 2); network_id = reader.u32()
     _field(reader, 3)
     if reader.u32() != 0x0009_0003:
         _fail("signed activity type")
     _field(reader, 4); reader.sized_u32(255)
-    _field(reader, 5); reader.sized_u32(524_288)
+    _field(reader, 5); public_key = reader.sized_u32(524_288)
     _field(reader, 6); reader.u64()
     _field(reader, 7); not_before = reader.u64(); not_after = reader.u64()
     _field(reader, 8); idempotency = reader.sized_u32(32, 32)
     _field(reader, 9); envelope_fee_limit = reader.u128()
     _field(reader, 10); payload_hash = reader.sized_u32(32, 32)
     _field(reader, 11); payload = reader.sized_u32(524_288)
-    _field(reader, 12); reader.sized_u32(128)
+    unsigned_end = len(canonical) - reader.remaining()
+    _field(reader, 12); signature = reader.sized_u32(128)
     reader.end()
+    unsigned = bytearray(canonical[:unsigned_end]); unsigned[4] = 11
+    signature_digest = sha256(b"LXP/v1/signature-preimage\0" + unsigned).digest()
     if not_after < not_before:
         _fail("signed activity bounds")
     if payload_hash != sha256(_PAYLOAD_DOMAIN + payload).digest():
         _fail("signed activity payload hash")
     return _SignedCallEnvelope(canonical, envelope_version, not_before, not_after,
-                               idempotency, envelope_fee_limit, payload_hash, payload)
+                               idempotency, envelope_fee_limit, payload_hash, payload, network_id, public_key, signature, signature_digest)
+
+
+def verify_native_program_call_signature(canonical: bytes, signatures: object, expected_network: int | None = None) -> None:
+    envelope = _signed_call_envelope(canonical)
+    if (envelope.protocol_version != 3 or not envelope.network_id
+            or expected_network is not None and (type(expected_network) is not int or not 0 < expected_network < 1 << 32)
+            or expected_network is not None and envelope.network_id != expected_network
+            or len(envelope.public_key) != 32 or not any(envelope.public_key)
+            or len(envelope.signature) != 64
+            or not signatures.verify_ed25519(envelope.public_key, envelope.signature, envelope.signature_digest)):
+        _fail("native activity signature or network")
 
 
 def bind_retained_program_call(canonical: bytes, expected_activity: str,
