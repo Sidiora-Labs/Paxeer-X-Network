@@ -192,7 +192,8 @@ int main(int argc, char **argv)
         lxp_state_store_init(&state, 0U) != LXP_OK ||
         lxp_kernel_create(&kernel, &state, &journal, &parameters, 0U) != LXP_OK ||
         lxp_kernel_register_module(&kernel, programs_module_registration()) != LXP_OK ||
-        lxp_kernel_module_for_activity(&kernel, UINT32_MAX, 0U, &resolved) != LXP_ERR_UNKNOWN_ACTIVITY ||
+        lxp_kernel_module_for_activity(&kernel,
+            ((uint32_t)LXP_MODULE_PROGRAMS << 16U) | UINT16_MAX, 0U, &resolved) != LXP_ERR_UNKNOWN_ACTIVITY ||
         lxp_module_version_for_epoch(&kernel, LXP_MODULE_PROGRAMS, 0U, UINT16_MAX, &resolved) != LXP_ERR_VERSION_UNSUPPORTED ||
         lxp_state_store_destroy(&state) != LXP_OK) return 1;
     (void)puts("PROGRAM_MODULE_REGISTRATION_CASE name=versioned_registration");
