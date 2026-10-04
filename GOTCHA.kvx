@@ -2629,3 +2629,23 @@ resolution = "Apply existing reference-types and relocation flags explicitly to 
 area = "Negative ABI fixture import selection"
 observed = "The language negative generator mutated the first integer type rather than the actual oracle import type."
 resolution = "Resolve the real host import type index and mutate that signature while preserving every refusal assertion and complete section bounds."
+
+[gotcha.757]
+area = "Native call fixture field offsets"
+observed = "The language corpus wrote response capacity at byte44 rather than canonical byte46, corrupting access-declaration length and receiving NON_CANONICAL."
+resolution = "Published scoped fixture correction retains4096 capacity and every existing assertion; record subsequent independent trace-layout failure separately."
+
+[gotcha.758]
+area = "Restricted catalogue path publication"
+observed = "A literal-only relocation affected seven descriptive catalogue lines; the private staging helper incorrectly expected one."
+resolution = "Validate exactly seven old/new literal pairs without outputting or hashing catalogue values, then stage only the admitted path."
+
+[gotcha.759]
+area = "Canonical path projections across files"
+observed = "The layout projection list included feature and workflow sections, plus a private lease field absent from HEAD."
+resolution = "Select rows by source file; project current public path fields against HEAD and preserve unpublished owner/lease metadata."
+
+[gotcha.760]
+area = "Codify owner and finished-task claims"
+observed = "Lease release used the canonical agent path instead of stored owner name, and sourceDONE task9.1 cannot be reclaimed for verification."
+resolution = "Use the exact stored owner; admit a separate owner-approved verification task preserving completed source and all previous gate evidence."
