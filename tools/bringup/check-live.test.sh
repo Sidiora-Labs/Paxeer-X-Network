@@ -1,5 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
+if [ "${1:-}" = --human-security-prerequisites ]; then
+	[ "$#" -eq 1 ] || exit 2
+	exec python3 "$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/tools/qualification/paxeer-x/human-security-prerequisites.py" --run-cases
+fi
 mkdir -p /run/lock
 exec 9>/run/lock/check-live-harness
 flock 9

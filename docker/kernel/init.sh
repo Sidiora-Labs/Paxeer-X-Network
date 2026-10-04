@@ -161,7 +161,8 @@ install -d -o 4020 -g 4020 -m 0750 "$run/node"
 chmod 0755 "$status"
 echo "$$" >"$status/pid"
 
-install -d -o 0 -g 4020 -m 2775 "$layerx" "$genesis" "$layerx/settlement"
+install -d -o 0 -g 4020 -m 2775 "$layerx" "$layerx/settlement"
+install -d -o 0 -g 4020 -m 0750 "$genesis"
 if [ "$kernel_profile" = native ]; then
     chmod 3775 "$layerx"
     if [ -L "$layerx/trust" ] || { [ -e "$layerx/trust" ] && [ ! -d "$layerx/trust" ]; }; then
@@ -404,11 +405,16 @@ service() {
 		trap - TERM INT
 		while :; do
 			# shellcheck disable=SC2086
-			if absent="$(missing $waits)"; then
-				case " $genesis_files " in
-				*" $absent "*) echo "$uid waiting genesis" ;;
-				*) echo "$uid waiting $absent" ;;
-				esac >"$status/$name"
+			if { [ "$name" = human-security ] && absent="$(human_security_prerequisite)"; } ||
+				{ [ "$name" != human-security ] && absent="$(missing $waits)"; }; then
+				if [ "$name" = human-security ]; then
+					echo "$uid waiting $absent" >"$status/$name"
+				else
+					case " $genesis_files " in
+					*" $absent "*) echo "$uid waiting genesis" ;;
+					*) echo "$uid waiting $absent" ;;
+					esac >"$status/$name"
+				fi
 				sleep 5
 				continue
 			fi
@@ -771,14 +777,133 @@ human_policy_bundle_install() {
 		"$LAYERX_NODE_NETWORK_ID" "$LAYERX_NODE_PAXEER_CHAIN_ID"
 }
 
+human_genesis_project() {
+	{ flock 8 && python3 - "$genesis" "$human_state/genesis-binding" <<'PY_GENESIS_PROJECT'
+import ctypes
+import os
+import shutil
+import stat
+import sys
+import tempfile
+
+source, destination = sys.argv[1:]
+names = ('metadata.lxgb', 'asset-id', 'replica-id')
+fds = []
+pending = None
+
+def identity(info):
+    return (info.st_dev, info.st_ino, info.st_uid, info.st_gid, info.st_mode,
+            info.st_nlink, info.st_size, info.st_mtime_ns, info.st_ctime_ns)
+
+def directory(path, uid, gid, mode):
+    fd = os.open(path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    info = os.fstat(fd)
+    if (os.path.realpath(path) != path
+            or (info.st_uid, info.st_gid, stat.S_IMODE(info.st_mode)) != (uid, gid, mode)):
+        os.close(fd)
+        raise ValueError('protected directory ownership or mode')
+    return fd
+
+try:
+    if os.geteuid() != 0:
+        raise ValueError('root projection required')
+    source_fd = directory(source, 0, 4020, 0o750)
+    fds.append(source_fd)
+    source_directory = identity(os.fstat(source_fd))
+    parent_fd = directory(os.path.dirname(destination), 0, 4020, 0o750)
+    fds.append(parent_fd)
+    data, snapshots, opened = {}, {}, {}
+    for name in names:
+        fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=source_fd)
+        fds.append(fd)
+        info = os.fstat(fd)
+        producer = ((info.st_uid, info.st_gid, stat.S_IMODE(info.st_mode)) == (4020, 4020, 0o600)
+                    if name == 'metadata.lxgb' else
+                    info.st_uid == 0 and info.st_gid in (0, 4020) and stat.S_IMODE(info.st_mode) == 0o444)
+        if (not producer or not stat.S_ISREG(info.st_mode) or info.st_nlink != 1
+                or not 0 < info.st_size <= 1048576):
+            raise ValueError('protected source ownership, type or bounds: ' + name)
+        with os.fdopen(os.dup(fd), 'rb') as handle:
+            value = handle.read(1048577)
+        if len(value) != info.st_size or identity(os.fstat(fd)) != identity(info):
+            raise ValueError('source changed during projection: ' + name)
+        if identity(os.stat(name, dir_fd=source_fd, follow_symlinks=False)) != identity(info):
+            raise ValueError('source path changed during projection: ' + name)
+        data[name], snapshots[name], opened[name] = value, identity(info), fd
+
+    def source_unchanged():
+        if identity(os.fstat(source_fd)) != source_directory:
+            raise ValueError('source directory changed during projection')
+        for name in names:
+            if (identity(os.fstat(opened[name])) != snapshots[name]
+                    or identity(os.stat(name, dir_fd=source_fd, follow_symlinks=False)) != snapshots[name]):
+                raise ValueError('source changed during projection: ' + name)
+
+    if os.path.lexists(destination):
+        retained_fd = directory(destination, 0, 0, 0o700)
+        fds.append(retained_fd)
+        if set(os.listdir(retained_fd)) != set(names):
+            raise ValueError('retained projection inventory differs')
+        for name in names:
+            fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=retained_fd)
+            fds.append(fd)
+            info = os.fstat(fd)
+            if (not stat.S_ISREG(info.st_mode) or info.st_nlink != 1
+                    or (info.st_uid, info.st_gid, stat.S_IMODE(info.st_mode)) != (0, 0, 0o600)
+                    or info.st_size != len(data[name])):
+                raise ValueError('retained projection protected file differs: ' + name)
+            with os.fdopen(os.dup(fd), 'rb') as handle:
+                value = handle.read(1048577)
+            if (value != data[name] or identity(os.fstat(fd)) != identity(info)
+                    or identity(os.stat(name, dir_fd=retained_fd, follow_symlinks=False)) != identity(info)):
+                raise ValueError('retained projection bytes differ: ' + name)
+        source_unchanged()
+    else:
+        pending = tempfile.mkdtemp(prefix='.genesis-binding-', dir=os.path.dirname(destination))
+        os.chown(pending, 0, 0)
+        os.chmod(pending, 0o700)
+        for name in names:
+            fd = os.open(pending + '/' + name, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+            with os.fdopen(fd, 'wb') as handle:
+                os.fchown(handle.fileno(), 0, 0)
+                os.fchmod(handle.fileno(), 0o600)
+                handle.write(data[name])
+                handle.flush()
+                os.fsync(handle.fileno())
+        source_unchanged()
+        pending_fd = directory(pending, 0, 0, 0o700)
+        try:
+            os.fsync(pending_fd)
+        finally:
+            os.close(pending_fd)
+        rename = ctypes.CDLL(None, use_errno=True).renameat2
+        rename.argtypes = (ctypes.c_int, ctypes.c_char_p, ctypes.c_int, ctypes.c_char_p, ctypes.c_uint)
+        rename.restype = ctypes.c_int
+        if rename(-100, os.fsencode(pending), -100, os.fsencode(destination), 1) != 0:
+            code = ctypes.get_errno()
+            raise OSError(code, os.strerror(code))
+        pending = None
+        os.fsync(parent_fd)
+except (OSError, ValueError, AttributeError) as error:
+    raise SystemExit('human genesis projection refused: ' + str(error))
+finally:
+    for fd in reversed(fds):
+        os.close(fd)
+    if pending is not None:
+        shutil.rmtree(pending)
+PY_GENESIS_PROJECT
+	} 8>"$human_state/genesis-binding.lock"
+}
+
 human_material_generate() {
 	local work=$human_state/material.new check=$human_state/material.check d
+	human_genesis_project || return 1
 	if [ -d "$human_state/material" ]; then
 		python3 /usr/local/lib/layerx-human/material.py --verify-material "$human_state/material" || return 1
 		rm -rf "$check"
 		install -d -o 0 -g 0 -m 0700 "$check"
 		human_policy_bundle_install "$check/policy-bundle" >"$check/bundle-binding" || return 1
-		python3 /usr/local/lib/layerx-human/material.py --genesis-binding "$genesis" >"$check/genesis-binding" || return 1
+		python3 /usr/local/lib/layerx-human/material.py --genesis-binding "$human_state/genesis-binding" >"$check/genesis-binding" || return 1
 		if ! cmp -s "$check/bundle-binding" "$human_state/material/bundle-binding" ||
 			! cmp -s "$check/genesis-binding" "$human_state/material/genesis-binding"; then
 			echo 'human owner bundle: reconciliation required' >&2
@@ -795,8 +920,8 @@ human_material_generate() {
 	for d in components kms config agent-config movement-config authority-config authority identity; do
 		install -d -o 0 -g 0 -m 0700 "$work/human/$d"
 	done
-	install -o 0 -g 0 -m 0600 "$genesis/replica-id" "$work/receipt-authority-replica-id"
-	python3 /usr/local/lib/layerx-human/material.py --genesis-binding "$genesis" >"$work/genesis-binding" || return 1
+	install -o 0 -g 0 -m 0600 "$human_state/genesis-binding/replica-id" "$work/receipt-authority-replica-id"
+	python3 /usr/local/lib/layerx-human/material.py --genesis-binding "$human_state/genesis-binding" >"$work/genesis-binding" || return 1
 	human_policy_bundle_install "$work/policy-bundle" >"$work/bundle-binding" || return 1
 	python3 /usr/local/lib/layerx-human/material.py "$work/human" "$LAYERX_NODE_NETWORK_ID" \
 		"$LAYERX_NODE_PAXEER_CHAIN_ID" "$work/policy-bundle/policy.json" https://paxportwallet.com || return 1
@@ -920,6 +1045,66 @@ PY
 	log "sequencer trust history written"
 }
 
+human_security_waits() {
+	printf '%s' "$genesis_files $run/node/core.env $run/node/sequencer-public-key $human_policy ${human_policy%/*}/bundle-manifest.json ${human_policy%/*}/inputs ${human_policy%/*}/journal $human_state/trust-history"
+}
+
+human_security_prerequisite() {
+	local absent waits
+	waits="$(human_security_waits)"
+	waits=${waits% "$human_state/trust-history"}
+	# shellcheck disable=SC2086
+	if absent="$(missing $waits)"; then
+		printf '%s' "$absent"
+		return 0
+	fi
+	if ! human_genesis_project; then
+		printf '%s' 'genesis protected projection refused'
+		return 0
+	fi
+	if absent="$(python3 - "$human_state/genesis-binding" "${human_policy%/*}" "$human_state/trust-history" "$LAYERX_NODE_NETWORK_ID" "$LAYERX_NODE_PAXEER_CHAIN_ID" <<'PY_SECURITY_PREREQUISITE'
+import os
+import stat
+import sys
+
+sys.path.insert(0, '/usr/local/lib/layerx-human')
+try:
+    from material import genesis_binding, verify_bundle
+except (ImportError, OSError):
+    print('owner-policy material validator unavailable', end='')
+    raise SystemExit(0)
+for label, validate in (
+        ('genesis', lambda: genesis_binding(sys.argv[1])),
+        ('owner-policy', lambda: verify_bundle(sys.argv[2], int(sys.argv[4]), int(sys.argv[5])))):
+    try:
+        validate()
+    except (OSError, ValueError, KeyError, TypeError) as error:
+        print(label + ' ' + str(error), end='')
+        raise SystemExit(0)
+try:
+    path = sys.argv[3]
+    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    with os.fdopen(fd, 'rb') as source:
+        info = os.fstat(source.fileno())
+        if (os.path.realpath(path) != path or not stat.S_ISREG(info.st_mode)
+                or (info.st_uid, info.st_gid, stat.S_IMODE(info.st_mode)) != (0, 4020, 0o440)
+                or info.st_nlink != 1 or not 0 < info.st_size <= 1048576):
+            raise ValueError('ownership, type or bounds')
+except FileNotFoundError:
+    print(path, end='')
+    raise SystemExit(0)
+except (OSError, ValueError):
+    print('trust-history protected material refused', end='')
+    raise SystemExit(0)
+PY_SECURITY_PREREQUISITE
+	)"; then
+		[ -n "$absent" ] || return 1
+		printf '%s' "$absent"
+	else
+		printf '%s' 'security prerequisite validator failed'
+	fi
+}
+
 human_security_prepare() {
 	human_project human-security 4020 "$human_state/trust-history:trust-history"
 }
@@ -984,7 +1169,7 @@ human_root=$human_state/identity service human-identity 4020 "$genesis_files $hu
 	LAYERX_HUMAN_IDENTITY_PROVIDER_DEADLINE_SECONDS=5 \
 	/usr/local/bin/human-entrypoint identity
 
-human_root=$human_state/security service human-security 4020 "$human_state/trust-history" human_security_prepare - -- \
+human_root=$human_state/security service human-security 4020 "$(human_security_waits)" human_security_prepare - -- \
 	env \
 	LAYERX_HUMAN_SECURITY_PROVIDER_SOCKET="$run/human/security.sock" \
 	LAYERX_HUMAN_SECURITY_PROVIDER_STATE_ROOT=/var/lib/layerx/human/security \

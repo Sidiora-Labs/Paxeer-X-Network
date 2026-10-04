@@ -158,6 +158,40 @@ PY_BINDING
         exec /usr/local/bin/layerx-runtime-clock --runtime-dir "$private" -- /usr/local/bin/layerx-human-identity-provider "$@"
         ;;
     security)
+        while [ ! -e /run/human-material/trust-history ] && [ ! -L /run/human-material/trust-history ]; do
+            printf 'security waiting /run/human-material/trust-history\n' >&2
+            sleep 5
+        done
+        python3 - "$private" <<'PY_SECURITY_MATERIAL'
+import os
+import stat
+import sys
+
+try:
+    path = '/run/human-material/trust-history'
+    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    with os.fdopen(fd, 'rb') as source:
+        info = os.fstat(source.fileno())
+        if (os.path.realpath(path) != path or not stat.S_ISREG(info.st_mode)
+                or (info.st_uid, info.st_gid, stat.S_IMODE(info.st_mode)) != (0, 4020, 0o440)
+                or info.st_nlink != 1 or not 0 < info.st_size <= 1048576):
+            raise ValueError('ownership, type or bounds')
+except (OSError, ValueError):
+    raise SystemExit('security trust-history protected material refused')
+try:
+    destination = sys.argv[1] + '/trust-history'
+    try:
+        info = os.lstat(destination)
+    except FileNotFoundError:
+        info = None
+    if info is not None and (os.path.realpath(destination) != destination
+            or not stat.S_ISREG(info.st_mode) or info.st_nlink != 1
+            or (info.st_uid, info.st_gid, stat.S_IMODE(info.st_mode)) !=
+            (os.geteuid(), os.getegid(), 0o600)):
+        raise ValueError('ownership, type or mode')
+except (OSError, ValueError):
+    raise SystemExit('security trust-history private copy refused')
+PY_SECURITY_MATERIAL
         copy_material trust-history
         exec /usr/local/bin/layerx-runtime-clock --runtime-dir "$private" -- /usr/local/bin/layerx-human-security-provider "$@"
         ;;

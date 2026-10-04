@@ -25530,7 +25530,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.12.6]
 title = "Expose complete security-role material prerequisites before preparation"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 3
 requires = ["0.2", "12.5"]
@@ -25553,6 +25553,14 @@ planned_paths = ["tools/qualification/paxeer-x/human-security-prerequisites.py"]
 path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
 evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
 
+build_cmd = "bash -n docker/kernel/init.sh docker/human-service/entrypoint.sh tools/bringup/check-live.test.sh"
+
+
+completion_basis = "implementation"
+qualification_status = "unverified"
+build_exit_code = 0
+verify_exit_code = 1
+qualification_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-12.6-result.json"
 [task.13.3]
 title = "Resume wallet migration through durable import and verification stages"
 status = "in_progress"
