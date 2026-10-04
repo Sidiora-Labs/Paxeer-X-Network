@@ -32890,3 +32890,27 @@ build_exit_code = 0
 verify_exit_code = 101
 final_catalogue_adjustment_after_build = true
 qualification_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-0.13-verify.log"
+
+[task.22.10]
+title = "Connect public explorer availability browser caller to the single unified origin"
+status = "done"
+mode = "BUILD"
+wave = 2
+requires = ["0.2", "22.9", "0.13"]
+reqs = ["194", "1078"]
+do_1 = "Wire only explicit profile2 public-ledger availability consumer to existing HTTPS-capable explorerOrigin and exact unified GET route; preserve legacy private Programs handlers and their bearer, strict decoders, bounds and typed unavailable responses."
+touches = ["human/apps/web/src/explorer/client.ts"]
+build_cmd = "timeout 20m env PATH=/root/lx-toolchains/node24/bin:$PATH npm --prefix human/apps/web run build"
+verify_cmd = "timeout 10m env PATH=/root/lx-toolchains/node24/bin:$PATH npm --prefix human/apps/web run test:explorer"
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop at original cap, unrelated failure, missing genuine authority or weakening; report exact source state and exit/log. No unchanged reruns."
+completion_basis_policy = "Owner CONSTITUTION: fully implemented DONE; qualification separate."
+source_ownership = "Root owns shared manifests/spec/publication; source owners preserve concurrent edits and no deployment."
+completion_basis = "implementation"
+qualification_status = "implemented-not-qualified"
+build_exit_code = 0
+verify_exit_code = 1
+qualification_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-22.10-verify.log"

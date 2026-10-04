@@ -250,7 +250,7 @@ export async function unifiedAccountAvailability(
     || !Number.isSafeInteger(limit) || limit < 1 || limit > 100) {
     throw new TypeError("Invalid unified account query");
   }
-  const { origin, bearer } = programExplorerOrigin();
+  const origin = explorerOrigin();
   const url = new URL(`/v1/accounts/${encodeURIComponent(account.canonical)}/unified`, origin);
   if (beforeBlock !== undefined) {
     url.searchParams.set("before_block", beforeBlock);
@@ -262,7 +262,7 @@ export async function unifiedAccountAvailability(
   let response: Response;
   try {
     response = await fetch(url, {
-      headers: { Accept: "application/json", Authorization: `Bearer ${bearer}`, "LayerX-Unified-Profile": "2" },
+      headers: { Accept: "application/json", "LayerX-Unified-Profile": "2" },
       cache: "no-store",
       signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
     });

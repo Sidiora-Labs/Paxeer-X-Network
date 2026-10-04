@@ -2225,3 +2225,8 @@ resolution = "Preserve every activity and authority check; implement the actual 
 area = "Concurrent source qualification"
 observed = "Gateway0.13 first build passed; its focused verify recompiled concurrent partial runtime validate.rs and failed missing replay_record export."
 resolution = "Record once without unchanged rerun; qualify only after complete dependency implementation, preserving bounded task caps."
+
+[gotcha.661]
+area = "Explorer legacy fixture shape"
+observed = "Task22.10 webbuild passed; focused explorer gate has two existing explorer-account.test.ts inputs omitting mandatory layerx_activity, independent of the changed profile2 caller."
+resolution = "Preserve existing checks and fixtures; record once without unrelated repair or rerun. Source implementation and qualification remain separate."
