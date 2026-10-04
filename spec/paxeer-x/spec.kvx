@@ -33137,3 +33137,29 @@ qualification_status = "implemented-not-qualified"
 build_exit_code = 2
 verify_status = "unrun"
 qualification_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-104.35.24-build.log"
+
+[task.0.15]
+title = "Complete remaining public service route connections through the unified gateway"
+status = "done"
+mode = "BUILD"
+wave = 2
+requires = ["0.2", "0.14"]
+reqs = ["1", "4", "5"]
+do_1 = "Reconcile actual public service handler and caller contracts with the unified catalogue; connect only demonstrated missing real existing routes through strict service-specific method/path/authentication/identity/readiness bindings. Preserve all old guards and unknown route refusal; no wildcard authority or parallel endpoint."
+touches = ["tools/paxeer-x/route-catalogue.json", "platform/hosted/gateway/src/routes.rs", "platform/hosted/gateway/src/lib.rs", "platform/hosted/gateway/src/main.rs", "platform/hosted/gateway/src/http.rs", "platform/hosted/gateway/tests/unified_service_paths.rs"]
+build_cmd = "timeout 15m env CARGO_TARGET_DIR=/root/lx-target/migration-gateway /root/.cargo/bin/cargo test --locked --manifest-path platform/Cargo.toml -p layerx-platform-gateway --test unified_service_paths --no-run"
+verify_cmd = "timeout 10m env CARGO_TARGET_DIR=/root/lx-target/migration-gateway /root/.cargo/bin/cargo test --locked --manifest-path platform/Cargo.toml -p layerx-platform-gateway --test unified_service_paths"
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop at original 30-minute cap, unrelated failure, absent real interface or weakening; report exact missing path/interface or complete source, exit code and logs."
+completion_basis_policy = "Owner CONSTITUTION: fully implemented DONE; qualification separate and partial remains in_progress."
+source_ownership = "Root owns shared manifests, locks, spec and narrow publication; no deployment."
+
+completion_basis = "implementation"
+qualification_status = "passed"
+build_exit_code = 0
+verify_exit_code = 0
+repair_cycles = 1
+qualification_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-0.15-verify.log"

@@ -2254,3 +2254,8 @@ resolution = "Preserve registry and cryptographic checks and use the exact nativ
 area = "Locked gateway runtime dependency"
 observed = "Authority16 and migration24.5 initially stopped on stale shared Cargo.lock entries after the gateway added a direct runtime dependency."
 resolution = "Root added only the existing dependency edges; gateway0.14 locked build and focused gate passed. Prior unrelated failed tasks remain separately unqualified."
+
+[gotcha.667]
+area = "Gateway stream classifier owner"
+observed = "Extracting shared HTTP catalogue classification removed matches_path still used by the existing streaming path; first build failed E0425."
+resolution = "Restore the original stream helper unchanged; one scoped repair build and focused gateway route gate passed."

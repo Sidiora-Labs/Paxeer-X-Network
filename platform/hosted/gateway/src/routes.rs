@@ -6,10 +6,8 @@ use serde_json::{json, Value};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::os::unix::fs::MetadataExt;
-use std::sync::OnceLock;
 use zeroize::Zeroizing;
 
-const CATALOGUE: &str = include_str!("../../../../tools/paxeer-x/route-catalogue.json");
 const MAX_BINDINGS_BYTES: u64 = 1024 * 1024;
 const AGENT_RPC_PATH: &str = "/v1/agent/rpc";
 const AGENT_RPC_SERVICE: &str = "agentd";
@@ -71,8 +69,7 @@ pub(super) struct Registry {
 }
 
 fn catalogue() -> &'static Value {
-    static VALUE: OnceLock<Value> = OnceLock::new();
-    VALUE.get_or_init(|| serde_json::from_str(CATALOGUE).expect("compiled route catalogue"))
+    layerx_platform_gateway::unified_service_catalogue()
 }
 
 fn service(id: &str) -> Option<&'static Value> {
@@ -510,6 +507,7 @@ pub(super) fn route(config: &Config, request: &IncomingRequest) -> Option<Outgoi
     {
         return Some(agent_rpc(config, request));
     }
+    let classified = layerx_platform_gateway::unified_service_route(&request.method, &request.path);
     let entry = catalogue()["routes"].as_array()?.iter().find(|r| {
         r["proxy"] == true
             && r["method"] == request.method
@@ -530,7 +528,7 @@ pub(super) fn route(config: &Config, request: &IncomingRequest) -> Option<Outgoi
                         _ => false,
                     }
                 } else {
-                    matches_path(p, &request.path)
+                    classified.is_some_and(|entry| entry["id"] == r["id"])
                 }
             })
     })?;

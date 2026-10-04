@@ -981,6 +981,92 @@ pub fn production_route<'a>(
 }
 
 #[must_use]
+pub fn unified_service_catalogue() -> &'static serde_json::Value {
+    static CATALOGUE: std::sync::OnceLock<serde_json::Value> = std::sync::OnceLock::new();
+    CATALOGUE.get_or_init(|| {
+        serde_json::from_str(include_str!(
+            "../../../../tools/paxeer-x/route-catalogue.json"
+        ))
+        .expect("compiled unified route catalogue")
+    })
+}
+
+#[must_use]
+pub fn unified_service_route(method: &str, target: &str) -> Option<&'static serde_json::Value> {
+    let (path, query) = http::split_target(target).ok()?;
+    if path.len() > 2048
+        || path.contains('%')
+        || path.split('/').any(|part| part == "." || part == "..")
+    {
+        return None;
+    }
+    let wallet_contract = match path {
+        "/v1/wallet/sponsored/submit"
+        | "/v1/wallet/sponsored/status"
+        | "/v1/wallet/sign-digest"
+        | "/v1/wallet/sign-custody"
+        | "/v1/wallet/lx/review"
+        | "/v1/wallet/lx/approve"
+        | "/v1/wallet/lx/sign" => Some(method == "POST" && query.is_none()),
+        _ if path.starts_with("/v1/wallet/custody/") => {
+            let id = path.strip_prefix("/v1/wallet/custody/")?;
+            Some(
+                method == "GET"
+                    && query.is_none()
+                    && id.strip_prefix("0x").is_some_and(canonical_program_id),
+            )
+        }
+        _ if path.starts_with("/v1/wallet/lx/approvals/") => {
+            let id = path.strip_prefix("/v1/wallet/lx/approvals/")?;
+            Some(
+                method == "GET"
+                    && query.is_none()
+                    && id.len() == 36
+                    && id.bytes().enumerate().all(|(index, byte)| {
+                        if matches!(index, 8 | 13 | 18 | 23) {
+                            byte == b'-'
+                        } else {
+                            byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte)
+                        }
+                    }),
+            )
+        }
+        _ => None,
+    };
+    if wallet_contract == Some(false) || path == "/v1/sync/readiness" && query.is_some() {
+        return None;
+    }
+    unified_service_catalogue()["routes"]
+        .as_array()?
+        .iter()
+        .find(|entry| {
+            if entry["proxy"] != true
+                || entry["method"] != method
+                || entry["upstream"] == "layerx-explorer"
+            {
+                return false;
+            }
+            let Some(template) = entry["path"].as_str() else {
+                return false;
+            };
+            let expected: Vec<_> = template.split('/').collect();
+            let actual: Vec<_> = path.split('/').collect();
+            expected.len() == actual.len()
+                && expected.iter().zip(actual).all(|(left, right)| {
+                    if left.starts_with(':') || left.starts_with('{') && left.ends_with('}') {
+                        !right.is_empty()
+                            && right.len() <= 512
+                            && right
+                                .bytes()
+                                .all(|byte| byte.is_ascii_alphanumeric() || b"-._:".contains(&byte))
+                    } else {
+                        *left == right
+                    }
+                })
+        })
+}
+
+#[must_use]
 pub fn platform_gateway() -> &'static str {
     "tls-receipt-verifying-multi-instance-hosted-gateway"
 }

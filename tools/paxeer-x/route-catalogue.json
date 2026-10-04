@@ -45171,6 +45171,252 @@
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3
+    },
+    {
+      "id": "wallet-gateway:POST:/v1/wallet/sponsored/submit",
+      "service": "wallet-gateway",
+      "method": "POST",
+      "path": "/v1/wallet/sponsored/submit",
+      "transport": "http",
+      "authentication": "requireAuth",
+      "upstream": "wallet-gateway",
+      "timeout_seconds": 8,
+      "retries": 0,
+      "health_predicate": "service-ready-and-network-version-bound",
+      "version": "1",
+      "consumers": [
+        "wallet",
+        "developer"
+      ],
+      "source": "human/wallet/gateway/src/routes/wallet.ts",
+      "proxy": true,
+      "timeout_scope": "per-io",
+      "connect_timeout_seconds": 3,
+      "attestor_authorization_headers": [
+        "X-Agent-Attestor-Authorization-Id",
+        "X-Agent-Attestor-Authorization"
+      ]
+    },
+    {
+      "id": "wallet-gateway:POST:/v1/wallet/sponsored/status",
+      "service": "wallet-gateway",
+      "method": "POST",
+      "path": "/v1/wallet/sponsored/status",
+      "transport": "http",
+      "authentication": "requireAuth",
+      "upstream": "wallet-gateway",
+      "timeout_seconds": 8,
+      "retries": 0,
+      "health_predicate": "service-ready-and-network-version-bound",
+      "version": "1",
+      "consumers": [
+        "wallet",
+        "developer"
+      ],
+      "source": "human/wallet/gateway/src/routes/wallet.ts",
+      "proxy": true,
+      "timeout_scope": "per-io",
+      "connect_timeout_seconds": 3,
+      "attestor_authorization_headers": [
+        "X-Agent-Attestor-Authorization-Id",
+        "X-Agent-Attestor-Authorization"
+      ]
+    },
+    {
+      "id": "wallet-gateway:POST:/v1/wallet/sign-digest",
+      "service": "wallet-gateway",
+      "method": "POST",
+      "path": "/v1/wallet/sign-digest",
+      "transport": "http",
+      "authentication": "requireAuth",
+      "upstream": "wallet-gateway",
+      "timeout_seconds": 8,
+      "retries": 0,
+      "health_predicate": "service-ready-and-network-version-bound",
+      "version": "1",
+      "consumers": [
+        "wallet",
+        "developer"
+      ],
+      "source": "human/wallet/gateway/src/routes/sign.ts",
+      "proxy": true,
+      "timeout_scope": "per-io",
+      "connect_timeout_seconds": 3,
+      "attestor_authorization_headers": [
+        "X-Agent-Attestor-Authorization-Id",
+        "X-Agent-Attestor-Authorization"
+      ]
+    },
+    {
+      "id": "wallet-gateway:POST:/v1/wallet/sign-custody",
+      "service": "wallet-gateway",
+      "method": "POST",
+      "path": "/v1/wallet/sign-custody",
+      "transport": "http",
+      "authentication": "requireAuth",
+      "upstream": "wallet-gateway",
+      "timeout_seconds": 8,
+      "retries": 0,
+      "health_predicate": "service-ready-and-network-version-bound",
+      "version": "1",
+      "consumers": [
+        "wallet",
+        "developer"
+      ],
+      "source": "human/wallet/gateway/src/routes/sign.ts",
+      "proxy": true,
+      "timeout_scope": "per-io",
+      "connect_timeout_seconds": 3,
+      "attestor_authorization_headers": [
+        "X-Agent-Attestor-Authorization-Id",
+        "X-Agent-Attestor-Authorization"
+      ]
+    },
+    {
+      "id": "wallet-gateway:GET:/v1/wallet/custody/:id",
+      "service": "wallet-gateway",
+      "method": "GET",
+      "path": "/v1/wallet/custody/:id",
+      "transport": "http",
+      "authentication": "requireAuth",
+      "upstream": "wallet-gateway",
+      "timeout_seconds": 8,
+      "retries": 0,
+      "health_predicate": "service-ready-and-network-version-bound",
+      "version": "1",
+      "consumers": [
+        "wallet",
+        "developer"
+      ],
+      "source": "human/wallet/gateway/src/routes/sign.ts",
+      "proxy": true,
+      "timeout_scope": "per-io",
+      "connect_timeout_seconds": 3,
+      "attestor_authorization_headers": [
+        "X-Agent-Attestor-Authorization-Id",
+        "X-Agent-Attestor-Authorization"
+      ]
+    },
+    {
+      "id": "wallet-gateway:POST:/v1/wallet/lx/review",
+      "service": "wallet-gateway",
+      "method": "POST",
+      "path": "/v1/wallet/lx/review",
+      "transport": "http",
+      "authentication": "requireAuth",
+      "upstream": "wallet-gateway",
+      "timeout_seconds": 8,
+      "retries": 0,
+      "health_predicate": "service-ready-and-network-version-bound",
+      "version": "1",
+      "consumers": [
+        "wallet",
+        "developer"
+      ],
+      "source": "human/wallet/gateway/src/routes/sign.ts",
+      "proxy": true,
+      "timeout_scope": "per-io",
+      "connect_timeout_seconds": 3,
+      "attestor_authorization_headers": [
+        "X-Agent-Attestor-Authorization-Id",
+        "X-Agent-Attestor-Authorization"
+      ]
+    },
+    {
+      "id": "wallet-gateway:POST:/v1/wallet/lx/approve",
+      "service": "wallet-gateway",
+      "method": "POST",
+      "path": "/v1/wallet/lx/approve",
+      "transport": "http",
+      "authentication": "requireAuth",
+      "upstream": "wallet-gateway",
+      "timeout_seconds": 8,
+      "retries": 0,
+      "health_predicate": "service-ready-and-network-version-bound",
+      "version": "1",
+      "consumers": [
+        "wallet",
+        "developer"
+      ],
+      "source": "human/wallet/gateway/src/routes/sign.ts",
+      "proxy": true,
+      "timeout_scope": "per-io",
+      "connect_timeout_seconds": 3,
+      "attestor_authorization_headers": [
+        "X-Agent-Attestor-Authorization-Id",
+        "X-Agent-Attestor-Authorization"
+      ]
+    },
+    {
+      "id": "wallet-gateway:POST:/v1/wallet/lx/sign",
+      "service": "wallet-gateway",
+      "method": "POST",
+      "path": "/v1/wallet/lx/sign",
+      "transport": "http",
+      "authentication": "requireAuth",
+      "upstream": "wallet-gateway",
+      "timeout_seconds": 8,
+      "retries": 0,
+      "health_predicate": "service-ready-and-network-version-bound",
+      "version": "1",
+      "consumers": [
+        "wallet",
+        "developer"
+      ],
+      "source": "human/wallet/gateway/src/routes/sign.ts",
+      "proxy": true,
+      "timeout_scope": "per-io",
+      "connect_timeout_seconds": 3,
+      "attestor_authorization_headers": [
+        "X-Agent-Attestor-Authorization-Id",
+        "X-Agent-Attestor-Authorization"
+      ]
+    },
+    {
+      "id": "wallet-gateway:GET:/v1/wallet/lx/approvals/:id",
+      "service": "wallet-gateway",
+      "method": "GET",
+      "path": "/v1/wallet/lx/approvals/:id",
+      "transport": "http",
+      "authentication": "requireAuth",
+      "upstream": "wallet-gateway",
+      "timeout_seconds": 8,
+      "retries": 0,
+      "health_predicate": "service-ready-and-network-version-bound",
+      "version": "1",
+      "consumers": [
+        "wallet",
+        "developer"
+      ],
+      "source": "human/wallet/gateway/src/routes/sign.ts",
+      "proxy": true,
+      "timeout_scope": "per-io",
+      "connect_timeout_seconds": 3,
+      "attestor_authorization_headers": [
+        "X-Agent-Attestor-Authorization-Id",
+        "X-Agent-Attestor-Authorization"
+      ]
+    },
+    {
+      "id": "archive:GET:/v1/sync/readiness",
+      "service": "archive",
+      "method": "GET",
+      "path": "/v1/sync/readiness",
+      "transport": "http",
+      "authentication": "public",
+      "upstream": "archive",
+      "timeout_seconds": 8,
+      "retries": 0,
+      "health_predicate": "service-ready-and-network-version-bound",
+      "version": "1",
+      "consumers": [
+        "wallet",
+        "developer"
+      ],
+      "source": "platform/relay_archive/runtime.py",
+      "proxy": true,
+      "timeout_scope": "per-io",
+      "connect_timeout_seconds": 3
     }
   ],
   "denied_surfaces": [
