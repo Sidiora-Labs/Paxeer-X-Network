@@ -108,6 +108,8 @@ const NATIVE_EFFECT_APPROVAL_DECIDE_V3: u8 = 54;
 const NATIVE_EFFECT_APPROVAL_MATERIAL_V4: u8 = 55;
 const NATIVE_EFFECT_APPROVAL_BUDGET_V4: u8 = 56;
 const AGENT_BUDGET_PROOF_V4: u8 = 57;
+const NATIVE_SEND_PREVIEW_V1: u8 = 63;
+const NATIVE_OWNER_CONTEXT_V1: u8 = 64;
 const HEAD: u8 = 7;
 const EVIDENCE: u8 = 8;
 const MAX_TEXT: usize = 255;
@@ -175,6 +177,33 @@ pub struct HumanPrepare {
     pub payload: Vec<u8>,
     pub payload_hash: [u8; 32],
     pub capability_id: Option<[u8; 32]>,
+}
+
+pub struct HumanNativeOwnerContextRequestV1 {
+    pub credential: crate::session::SessionCredential,
+    pub owner_public_key: [u8; 32],
+    pub request_id: u64,
+}
+
+pub struct HumanNativeSendPreviewRequestV1 {
+    pub credential: crate::session::SessionCredential,
+    pub request_id: u64,
+    pub prepare: HumanPrepare,
+    pub owner_public_key: [u8; 32],
+    pub purpose_expires_at_ms: u64,
+    pub commitment: [u8; 32],
+    pub local_grant: layerx_agent_api::identity::NativeLocalGrantConsentV1,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct HumanNativeSendPreviewV1 {
+    pub canonical_bytes: Vec<u8>,
+    pub signing_preimage: Vec<u8>,
+    pub purpose: layerx_agent_api::identity::NativePreparationPurposeV1,
+    pub observed_head_sequence: u64,
+    pub protocol_timestamp: u64,
+    pub owner_public_key: [u8; 32],
+    pub revocation_sequence: u64,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -316,6 +345,8 @@ pub enum HumanAgentJourneyKind {
 }
 
 pub enum HumanRequest {
+    NativeOwnerContextV1(HumanNativeOwnerContextRequestV1),
+    NativeSendPreviewV1(HumanNativeSendPreviewRequestV1),
     NativeProgramApprovalListV5 { cursor: Option<[u8;32]>, limit:u8 },
     NativeProgramApprovalGetV5 { approval_id:[u8;32] },
     NativeProgramApprovalMaterialV5 { approval_id:[u8;32], held_digest:[u8;32] },
@@ -536,6 +567,22 @@ impl HumanResponse {
 /// Narrow adapter over the existing daemon operation owners. It deliberately
 /// has no sign method: Human custody supplies the public signature to submit.
 pub trait HumanOperations {
+    fn native_owner_context_v1(
+        &mut self,
+        _peer: &HumanPeer,
+        _request: HumanNativeOwnerContextRequestV1,
+    ) -> Result<HumanResponse, HumanOperationError> {
+        Err(HumanOperationError::Refused)
+    }
+
+    fn native_send_preview_v1(
+        &mut self,
+        _peer: &HumanPeer,
+        _request: HumanNativeSendPreviewRequestV1,
+    ) -> Result<HumanResponse, HumanOperationError> {
+        Err(HumanOperationError::Refused)
+    }
+
     fn native_program_approval_list(
         &mut self,
         _peer: &HumanPeer,
@@ -1876,6 +1923,8 @@ fn dispatch_request<O: HumanOperations>(
     operations: &mut O,
 ) -> Result<HumanResponse, HumanOperationError> {
     match request {
+        HumanRequest::NativeOwnerContextV1(request) => operations.native_owner_context_v1(peer, request),
+        HumanRequest::NativeSendPreviewV1(request) => operations.native_send_preview_v1(peer, request),
         HumanRequest::Subject {
             principal,
             owner,
@@ -2117,6 +2166,56 @@ fn decode_operation(
     reader: &mut Reader,
 ) -> Result<HumanRequest, HumanProtocolError> {
     Ok(match operation {
+        NATIVE_OWNER_CONTEXT_V1 => {
+            let tenant = crate::store::TenantId::new(reader.text()?)
+                .map_err(|_| HumanProtocolError::Malformed)?;
+            let session_id = crate::session::SessionId(reader.fixed()?);
+            let mut token_id = reader.fixed()?;
+            let generation = reader.u64()?;
+            let credential = crate::session::SessionCredential::new(tenant, session_id, token_id, generation);
+            token_id.fill(0);
+            HumanRequest::NativeOwnerContextV1(HumanNativeOwnerContextRequestV1 {
+                credential, owner_public_key: reader.fixed()?, request_id: reader.u64()?,
+            })
+        }
+        NATIVE_SEND_PREVIEW_V1 => {
+            let tenant = crate::store::TenantId::new(reader.text()?)
+                .map_err(|_| HumanProtocolError::Malformed)?;
+            let session_id = crate::session::SessionId(reader.fixed()?);
+            let mut token_id = reader.fixed()?;
+            let generation = reader.u64()?;
+            let credential = crate::session::SessionCredential::new(tenant, session_id, token_id, generation);
+            token_id.fill(0);
+            let request_id = reader.u64()?;
+            let prepare = HumanPrepare {
+                activity_type: reader.u32()?,
+                actor: reader.text()?,
+                authority: reader.text()?,
+                account_sequence: reader.u64()?,
+                not_before: reader.u64()?,
+                not_after: reader.u64()?,
+                idempotency_key: reader.text()?,
+                fee_limit: reader.u128()?,
+                payload: reader.bytes()?,
+                payload_hash: reader.fixed()?,
+                capability_id: Some(reader.fixed()?),
+            };
+            let owner_public_key = reader.fixed()?;
+            let purpose_expires_at_ms = reader.u64()?;
+            let commitment = reader.fixed()?;
+            let local_grant = layerx_agent_api::identity::NativeLocalGrantConsentV1 {
+                capability: reader.bytes()?,
+                session_scope: reader.bytes()?,
+                expires_at_ms: reader.u64()?,
+                owner_public_key: reader.fixed()?,
+                signature: reader.fixed()?,
+            };
+            local_grant.validate().map_err(|_| HumanProtocolError::Malformed)?;
+            HumanRequest::NativeSendPreviewV1(HumanNativeSendPreviewRequestV1 {
+                credential, request_id, prepare, owner_public_key,
+                purpose_expires_at_ms, commitment, local_grant,
+            })
+        }
         PREPARE => {
             let envelope = mutation_header(reader)?;
             HumanRequest::Prepare(MutationEnvelope {

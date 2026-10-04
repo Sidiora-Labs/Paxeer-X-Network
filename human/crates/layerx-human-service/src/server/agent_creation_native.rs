@@ -580,3 +580,65 @@ impl ProductionAgentCreation<'_> {
         Ok(signed)
     }
 }
+
+impl ProductionAgentCreation<'_> {
+    pub fn provision_human_send_session(
+        &mut self, scope: &mut PrincipalScope<'_>, registry: &ModuleRegistry,
+        request: &super::super::native_send::NativeSendAccessRequest,
+    ) -> Result<super::super::native_send::HumanOwnerNativeSessionV1, AgentFailure> {
+        request.validate()?;
+        let owner = std::str::from_utf8(request.owner.as_bytes())
+            .map_err(|_| AgentFailure::Refused("invalid Human owner DID"))?;
+        let key = KeyId::new("human-primary").map_err(|_| AgentFailure::Refused("invalid Human key"))?;
+        let descriptor = self.custody.describe_key(scope.principal(), &key)
+            .map_err(|_| AgentFailure::Refused("Human custody unavailable"))?;
+        let binding = self.custody.evm_binding(scope.principal(), &key)
+            .map_err(|_| AgentFailure::Refused("Human custody binding unavailable"))?;
+        if self.actor.as_str() != owner || descriptor.class != KeyClass::HumanPrimary
+            || binding.class() != KeyClass::HumanPrimary || descriptor.public_key != request.owner_public_key
+            || request.action_key == [0; 32] || request.not_before >= request.expires_at {
+            return Err(AgentFailure::Refused("Human owner session binding differs"));
+        }
+        let identity = self.runtime.identity_resolve(owner).map_err(map_boundary)?;
+        if !matches!(identity.verification, 4 | 5) || identity.frozen
+            || identity.revocation_sequence == 0 || identity.revocation_sequence > identity.head_sequence
+            || !identity.authorities.contains(&(1, request.owner_public_key)) {
+            return Err(AgentFailure::Refused("Human owner identity is not checkpoint verified"));
+        }
+        let session_key = RowKey::new(format!("human-native-owner-session-{}", hex(&request.action_key)))
+            .map_err(|_| AgentFailure::Refused("invalid Human session key"))?;
+        let request_binding: [u8; 32] = Sha256::digest(serde_json::to_vec(&(
+            request.owner.as_bytes(), request.owner_public_key, request.not_before, request.expires_at,
+            request.native_fee_budget.map(|fee| (fee.asset, fee.maximum_per_activity, fee.maximum_total,
+                fee.period_length, fee.maximum_per_period, fee.period_start)),
+        )).map_err(|_| AgentFailure::Refused("invalid Human session request"))?).into();
+        if let Some(row) = scope.get(Table::Journeys, &session_key) {
+            let (binding, session): ([u8; 32], super::super::native_send::HumanOwnerNativeSessionV1) =
+                serde_json::from_slice(row.bytes()).map_err(|_| AgentFailure::Refused("invalid retained Human session"))?;
+            session.validate(scope, request.not_before)?;
+            if binding != request_binding || session.session_id != request.action_key
+                || session.owner_public_key != request.owner_public_key || session.owner != owner {
+                return Err(AgentFailure::Refused("Human session changed on retry"));
+            }
+            return Ok(session);
+        }
+        let activity = layerx_types::payload::ActivityType::new(layerx_types::payload::ModuleId::Asset, 5)
+            .map_err(|_| AgentFailure::Refused("invalid native Send activity"))?;
+        let grantor = layerx_intents::canonical::did_id_for_protocol(&request.owner, 3)
+            .map_err(|_| AgentFailure::Refused("invalid Human owner"))?;
+        let evidence = self.provision_session_scoped(scope, registry, SessionProvision {
+            replacement: None, native_fee_budget: request.native_fee_budget, not_before: request.not_before,
+            action_key: request.action_key, did: request.owner.clone(), activity_types: vec![activity],
+            daemon_scopes: vec!["prepare".to_owned(), "submit".to_owned(), "track".to_owned()],
+            expires_at: request.expires_at, primary_authority: request.owner_public_key,
+            grantor, custody_key: key, revocation_sequence: identity.revocation_sequence,
+        })?;
+        let (token, generation, finalization) = self.take_latest_session_credential()?;
+        let session = super::super::native_send::HumanOwnerNativeSessionV1::from_installed(
+            scope, request, token, generation, evidence.object_id, finalization)?;
+        scope.put(Table::Journeys, session_key, request.not_before,
+            serde_json::to_vec(&(request_binding, &session)).map_err(|_| AgentFailure::Refused("Human session cannot persist"))?)
+            .map_err(|_| AgentFailure::Unavailable)?;
+        Ok(session)
+    }
+}

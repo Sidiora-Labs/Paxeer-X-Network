@@ -4408,3 +4408,73 @@ mod subject_tests {
             .is_err());
     }
 }
+
+impl AgentRuntime {
+    pub fn native_send_owner_context(
+        &mut self, session: &super::native_send::HumanOwnerNativeSessionV1, request_id: u64,
+    ) -> Result<super::native_send::NativeSendOwnerCoordinatesV1, AgentBoundaryError> {
+        let mut writer = Writer::new(64);
+        writer.text(&session.tenant)?; writer.fixed(&session.session_id);
+        writer.fixed(session.credential()); writer.u64(session.generation);
+        writer.fixed(&session.owner_public_key); writer.u64(request_id);
+        let mut reader = self.exchange_secret(&writer.finish_secret())?;
+        let actor = reader.text()?;
+        let kind = reader.u8()?;
+        let authority: [u8; 32] = reader.fixed()?;
+        if kind != 2 || authority != session.grant_id { return Err(AgentBoundaryError::CorruptResponse); }
+        let value = super::native_send::NativeSendOwnerCoordinatesV1 {
+            actor, authority: format!("session:{}", authority.iter().map(|byte| format!("{byte:02x}")).collect::<String>()),
+            generation: reader.u64()?, head_sequence: reader.u64()?, protocol_time_ms: reader.u64()?,
+            account_sequence: reader.u64()?, expiry_sequence: reader.u64()?, expiry_ms: reader.u64()?,
+            owner_public_key: reader.fixed()?, revocation_sequence: reader.u64()?, native_fee_asset: reader.fixed()?,
+        };
+        reader.finish()?;
+        if value.actor != session.owner || value.generation != session.generation
+            || value.owner_public_key != session.owner_public_key || value.head_sequence == 0
+            || value.revocation_sequence == 0 || value.native_fee_asset == [0; 32] {
+            return Err(AgentBoundaryError::CorruptResponse);
+        }
+        Ok(value)
+    }
+
+    pub fn native_send_preview(
+        &mut self, context: &super::native_send::HumanOwnerNativeContextV1,
+        request: &PrepareRequest, purpose_expires_ms: u64, commitment: [u8; 32],
+    ) -> Result<super::native_send::NativeSendPreviewV1, AgentBoundaryError> {
+        let grant = context.signed_grant().map_err(|_| AgentBoundaryError::Refused)?;
+        let session = &context.session;
+        let mut writer = Writer::new(63);
+        writer.text(&session.tenant)?; writer.fixed(&session.session_id);
+        writer.fixed(session.credential()); writer.u64(session.generation);
+        writer.u64(u64::from_be_bytes(context.capability_id[..8].try_into().map_err(|_| AgentBoundaryError::Refused)?));
+        writer.u32(request.protocol_activity_type); writer.text(request.actor.as_str())?;
+        writer.text(request.authority.as_str())?; writer.u64(request.account_sequence.0);
+        writer.u64(request.timestamp_bound.not_before.0); writer.u64(request.timestamp_bound.not_after.0);
+        writer.text(request.idempotency_key.as_str())?; writer.u128(request.fee_limit.0);
+        writer.bytes(request.payload.as_bytes())?; writer.fixed(&request.payload_hash);
+        writer.fixed(&context.capability_id); writer.fixed(&session.owner_public_key);
+        writer.u64(purpose_expires_ms); writer.fixed(&commitment);
+        writer.bytes(&grant.capability)?; writer.bytes(&grant.session_scope)?;
+        writer.u64(grant.expires_at_ms); writer.fixed(&grant.owner_public_key); writer.fixed(&grant.signature);
+        let mut reader = self.exchange_secret(&writer.finish_secret())?;
+        let canonical_bytes = reader.bytes()?; let signing_preimage = reader.bytes()?;
+        let purpose = layerx_agent_api::identity::NativePreparationPurposeV1::from_canonical_bytes(&reader.bytes()?)
+            .map_err(|_| AgentBoundaryError::CorruptResponse)?;
+        let value = super::native_send::NativeSendPreviewV1 { canonical_bytes, signing_preimage, purpose,
+            head_sequence: reader.u64()?, protocol_time_ms: reader.u64()?,
+            owner_public_key: reader.fixed()?, revocation_sequence: reader.u64()? };
+        reader.finish()?;
+        let canonical_digest: [u8; 32] = sha2::Sha256::digest(&value.canonical_bytes).into();
+        if value.purpose.tenant.as_str() != session.tenant || value.purpose.agent_did.as_str() != session.owner
+            || value.purpose.session_id.to_bytes().map_err(|_| AgentBoundaryError::CorruptResponse)? != session.session_id
+            || value.purpose.capability_id.to_bytes().map_err(|_| AgentBoundaryError::CorruptResponse)? != context.capability_id
+            || value.purpose.generation != session.generation || value.purpose.expires_at_ms != purpose_expires_ms
+            || value.purpose.commitment != commitment || value.purpose.canonical_digest != canonical_digest
+            || value.owner_public_key != session.owner_public_key || value.head_sequence < session.grant_sequence
+            || value.revocation_sequence == 0 || value.revocation_sequence > value.head_sequence
+            || value.protocol_time_ms >= purpose_expires_ms || value.signing_preimage.is_empty() {
+            return Err(AgentBoundaryError::CorruptResponse);
+        }
+        Ok(value)
+    }
+}

@@ -453,6 +453,75 @@ mod owner;
 use owner::resolve_principal_owner;
 
 impl ProductionComponents {
+    pub async fn provision_native_send_access(
+        &self,
+        scope: &mut crate::store::PrincipalScope<'_>,
+        authenticated: &crate::auth::StepUpEvidence,
+        expected_operation: crate::auth::OperationDigest,
+        request_digest: [u8; 32],
+        trace: &TraceId,
+        access: &super::native_send::NativeSendAccessRequest,
+    ) -> Result<super::native_send::HumanOwnerNativeContextV1, ApiFailure> {
+        let now = self.now()?;
+        if request_digest == [0; 32] || expected_operation.bytes() == [0; 32] {
+            return Err(ApiFailure::forbidden());
+        }
+        if expected_operation != super::native_send::access_operation(scope, access).map_err(agent_failure)? {
+            return Err(ApiFailure::forbidden());
+        }
+        self.passkeys
+            .revalidate_step_up(scope, authenticated, expected_operation, now)
+            .map_err(|_| ApiFailure::forbidden())?;
+        let mut runtime = self.principal_agent(scope)?;
+        let owner = resolve_principal_owner(self, scope, &mut runtime)?;
+        if access.owner.as_bytes() != owner.actor.as_str().as_bytes()
+            || owner.authority.as_str() != hex_bytes(&access.owner_public_key)
+        {
+            return Err(ApiFailure::forbidden());
+        }
+        let registry = runtime.registry().clone();
+        let session = {
+            let mut producer = ProductionAgentCreation::new(
+                &mut runtime,
+                &self.agent_contract,
+                &self.custody,
+                trace,
+                owner.actor,
+                owner.authority,
+                super::agent_creation::CreationBounds {
+                    timestamp_span: self.agent_timestamp_span_seconds,
+                    fee_limit: self.agent_fee_limit,
+                },
+            )
+            .map_err(|_| ApiFailure::upstream_degraded())?;
+            producer
+                .provision_human_send_session(scope, &registry, access)
+                .map_err(agent_failure)?
+        };
+        super::native_send::authorize_access(
+            scope, &mut runtime, &self.custody, &self.passkeys, authenticated,
+            expected_operation, request_digest, trace, access, session, now,
+        )
+        .await
+        .map_err(agent_failure)
+    }
+
+    pub fn preview_native_send(
+        &self,
+        scope: &crate::store::PrincipalScope<'_>,
+        preparation: &layerx_agent_api::prepare::PrepareRequest,
+        capability_id: [u8; 32],
+        purpose_expires_at_ms: u64,
+        commitment: [u8; 32],
+    ) -> Result<super::native_send::NativeSendPreviewV1, ApiFailure> {
+        let mut runtime = self.principal_agent(scope)?;
+        super::native_send::preview_send(
+            scope, &mut runtime, preparation, capability_id,
+            purpose_expires_at_ms, commitment, self.now()?,
+        )
+        .map_err(agent_failure)
+    }
+
     /// # Errors
     /// Refuses unverified production dependencies or invalid configuration.
     pub fn open(

@@ -4529,6 +4529,141 @@ impl<A: HumanAuthorityBoundary> UnifiedAgentOwner<A> {
         })
     }
 
+    pub(crate) fn native_send_preview(
+        &mut self,
+        peer: &HumanPeer,
+        request: crate::human::HumanNativeSendPreviewRequestV1,
+    ) -> Result<crate::human::HumanNativeSendPreviewV1, HumanOperationError> {
+        use crate::capability::{binding, effects, timed};
+        use layerx_agent_api::identity::{AgentDid, CapabilityId, NativeActivity,
+            NativePreparationPurposeV1, SessionId as ApiSessionId, TenantId as ApiTenantId};
+        let human = request.prepare;
+        let actor = Did::new(human.actor.as_bytes()).map_err(|_| HumanOperationError::Refused)?;
+        let activity = ActivityType::from_u32(human.activity_type).map_err(|_| HumanOperationError::Refused)?;
+        if peer.uid == 0 || peer.subject.is_none()
+            || peer.tenant != request.credential.tenant().as_str()
+            || peer.subject.as_ref().is_none_or(|scope| scope.owner.as_bytes() != actor.as_bytes())
+            || (activity.module(), activity.ordinal()) != (layerx_types::payload::ModuleId::Asset, 5)
+            || request.owner_public_key != request.local_grant.owner_public_key
+            || human.capability_id.is_none() || request.request_id == 0
+        {
+            return Err(HumanOperationError::Refused);
+        }
+        {
+            let sessions = self.sessions.read().map_err(|_| HumanOperationError::Unavailable)?;
+            let token = sessions.authenticate(&request.credential).map_err(|_| HumanOperationError::Refused)?;
+            token.boundary(&sessions).map_err(|_| HumanOperationError::Refused)?;
+            if token.agent() != &actor { return Err(HumanOperationError::Refused); }
+        }
+        let authority = decode_owner_authority(&human.authority).map_err(|_| HumanOperationError::Refused)?;
+        let (prepared, snapshot, fee) = {
+            let mut ops = self.lock_operations()?;
+            if !ops.unified_owner_active { return Err(HumanOperationError::Unavailable); }
+            ops.require_write_admission(&peer.tenant)?;
+            ops.subject_owner(peer, &actor, &authority)?;
+            let protocol_version = ops.node.handshake().node().protocol_version;
+            let defaults = PreparationDefaults {
+                timestamp_span: ops.timestamp_span,
+                fee_limit: Amount::from_u128(human.fee_limit),
+                maximum_payload_bytes: ops.maximum_payload_bytes,
+            };
+            let mut boundary = ProductionCorePreparationBoundary::new(&mut ops.node, request.request_id)
+                .map_err(map_core)?;
+            let prepared = prepare_activity_for_protocol(&mut boundary, defaults, PrepareRequest {
+                actor: actor.clone(), authority, activity_type: activity,
+                expected_account_sequence: Some(human.account_sequence),
+                timestamp_bound: Some(TimestampBound::new(human.not_before, human.not_after)
+                    .map_err(|_| HumanOperationError::Refused)?),
+                fee_limit: Some(Amount::from_u128(human.fee_limit)),
+                idempotency_key: IdempotencyKey::new(digest_from_hex(&human.idempotency_key)
+                    .ok_or(HumanOperationError::Refused)?),
+                payload: human.payload.clone(), declared_payload_limit: defaults.maximum_payload_bytes,
+            }, protocol_version).map_err(|_| HumanOperationError::Refused)?;
+            let snapshot = boundary.last_state().ok_or(HumanOperationError::Unavailable)?.clone();
+            drop(boundary);
+            let fee = ops.node.native_fee_policy(boundary_correlation(peer, actor.as_bytes(), b"native-send-preview-fee"))
+                .map_err(|_| HumanOperationError::Unavailable)?;
+            if prepared.envelope.payload_hash() != human.payload_hash
+                || prepared.observed_head_sequence != snapshot.observed_head_sequence
+                || fee.observed_sequence != snapshot.observed_head_sequence || fee.state_root == [0; 32]
+            { return Err(HumanOperationError::Refused); }
+            (prepared, snapshot, fee)
+        };
+        let control = self.session_control.clone();
+        let permit = control.authorize(&request.credential, crate::tenant::Operation::Prepare,
+            crate::tenant::Surface::Contract, snapshot.observed_head_sequence, None)
+            .map_err(|_| HumanOperationError::Refused)?;
+        let context = crate::agent_rpc_peer::bind(self, &permit)?;
+        if context.peer() != peer { return Err(HumanOperationError::Refused); }
+        let owner = self.native_purpose_owner(&context, request.owner_public_key, snapshot.observed_head_sequence)?;
+        let canonical_digest: [u8; 32] = Sha256::digest(&prepared.canonical_bytes).into();
+        let purpose = NativePreparationPurposeV1 {
+            tenant: ApiTenantId::new(owner.tenant().as_str()).map_err(|_| HumanOperationError::Refused)?,
+            agent_did: AgentDid::new(human.actor.clone()).map_err(|_| HumanOperationError::Refused)?,
+            session_id: ApiSessionId::new(hex(&owner.session_id().0)).map_err(|_| HumanOperationError::Refused)?,
+            generation: owner.generation(), expires_at_ms: request.purpose_expires_at_ms,
+            capability_id: CapabilityId::new(hex(&human.capability_id.ok_or(HumanOperationError::Refused)?))
+                .map_err(|_| HumanOperationError::Refused)?,
+            preparation_id: canonical_digest, canonical_digest, commitment: request.commitment,
+        }.validate().map_err(|_| HumanOperationError::Refused)?;
+        crate::prepare::verify_disclosure_binding(&prepared).map_err(|_| HumanOperationError::Refused)?;
+        if binding::purpose_commitment(&prepared.disclosure) != Some(purpose.commitment)
+            || snapshot.protocol_timestamp >= purpose.expires_at_ms
+            || purpose.expires_at_ms > prepared.envelope.timestamp_bound().not_after()
+        { return Err(HumanOperationError::Refused); }
+        let grant = crate::agent_rpc_wire::native_local_grant(&request.local_grant,
+            layerx_agent_api::error::RequestId(request.request_id)).map_err(|_| HumanOperationError::Refused)?;
+        context.permit().with_native_owner_install(&control, |store, sessions| {
+            let refused = || crate::session_control::SessionControlError::Human(HumanOperationError::Refused);
+            let staged = binding::stage_native_local_grant(store, sessions, &owner, grant,
+                snapshot.observed_head_sequence, snapshot.protocol_timestamp).map_err(|_| refused())?;
+            let record = sessions.get(owner.tenant(), owner.session_id()).ok_or_else(refused)?;
+            if record.request.expiry_seconds.and_then(|v| v.checked_mul(1000))
+                .is_none_or(|expiry| purpose.expires_at_ms > expiry)
+            { return Err(refused()); }
+            let capability = &staged.grant().capability;
+            if capability.record.id != human.capability_id.ok_or_else(refused)?
+                || capability.record.authority != record.request.authority
+                || u128::from(purpose.expires_at_ms) > capability.record.not_after_ms()
+                || !capability.activities.contains(&NativeActivity::from(activity))
+                || !capability.purpose_commitments.contains(&purpose.commitment)
+                || capability.record.rate_ceilings.is_empty()
+            { return Err(refused()); }
+            let plan = effects::derive_native_effects(&prepared.disclosure, &effects::VerifiedInputs::default())
+                .map_err(|_| refused())?;
+            if !plan.program_spend_bounds().is_empty() || plan.effects().len() != 1 { return Err(refused()); }
+            let effects::Effect::Transfer { from, to, asset, amount } = plan.effects()[0]
+                else { return Err(refused()); };
+            let principal = layerx_types::account::AccountId::for_asset(&human.actor, asset, fee.value.asset.asset_id)
+                .map_err(|_| refused())?;
+            let source = layerx_wire::hash::account_id_for_protocol(&principal, prepared.envelope.protocol_version())
+                .map_err(|_| refused())?;
+            if source != from || !capability.record.counterparties.contains(&to) { return Err(refused()); }
+            let mut totals = BTreeMap::from([(asset, amount)]);
+            if let Some(charge) = binding::native_effect_fee(&prepared, &fee, snapshot.observed_head_sequence)
+                .map_err(|_| refused())?
+            {
+                let total = totals.entry(charge.asset).or_default();
+                *total = total.checked_add(charge.maximum_amount).ok_or_else(refused)?;
+            }
+            for (asset, amount) in totals {
+                if !capability.record.assets.contains(&asset)
+                    || capability.record.amount_ceilings.get(&asset).is_none_or(|bound| amount > *bound)
+                    || capability.spend_ceilings.get(&(timed::NativeSpendSourceV1::Principal, asset))
+                        .is_none_or(|bound| amount > *bound)
+                { return Err(refused()); }
+            }
+            Ok(())
+        }).map_err(rpc_commit_error)?;
+        permit.boundary(&control).map_err(|_| HumanOperationError::Refused)?;
+        Ok(crate::human::HumanNativeSendPreviewV1 {
+            canonical_bytes: prepared.canonical_bytes, signing_preimage: prepared.signing_preimage,
+            purpose, observed_head_sequence: snapshot.observed_head_sequence,
+            protocol_timestamp: snapshot.protocol_timestamp, owner_public_key: owner.public_key(),
+            revocation_sequence: owner.revocation_sequence(),
+        })
+    }
+
     pub(crate) fn rpc_prepare_native_effect(
         &mut self,
         context: &crate::agent_rpc_peer::RpcOwnerContext<'_>,
@@ -6183,6 +6318,83 @@ impl<A: HumanAuthorityBoundary> UnifiedAgentOwner<A> {
 }
 
 impl<A: HumanAuthorityBoundary> HumanOperations for UnifiedAgentOwner<A> {
+    fn native_owner_context_v1(
+        &mut self,
+        peer: &HumanPeer,
+        request: crate::human::HumanNativeOwnerContextRequestV1,
+    ) -> Result<HumanResponse, HumanOperationError> {
+        if peer.uid == 0 || peer.subject.is_none() || request.request_id == 0
+            || peer.tenant != request.credential.tenant().as_str()
+        { return Err(HumanOperationError::Refused); }
+        let actor = {
+            let sessions = self.sessions.read().map_err(|_| HumanOperationError::Unavailable)?;
+            let token = sessions.authenticate(&request.credential).map_err(|_| HumanOperationError::Refused)?;
+            token.boundary(&sessions).map_err(|_| HumanOperationError::Refused)?;
+            token.agent().clone()
+        };
+        if peer.subject.as_ref().is_none_or(|scope| scope.owner.as_bytes() != actor.as_bytes()) {
+            return Err(HumanOperationError::Refused);
+        }
+        let (snapshot, fee) = {
+            let mut ops = self.lock_operations()?;
+            ops.require_write_admission(&peer.tenant)?;
+            ops.subject_owner(peer, &actor, &Authority::owner(&request.owner_public_key)
+                .map_err(|_| HumanOperationError::Refused)?)?;
+            let snapshot = core_preparation_snapshot(&mut ops.node, peer, &actor)?;
+            let fee = ops.node.native_fee_policy(request.request_id)
+                .map_err(|_| HumanOperationError::Unavailable)?;
+            if fee.observed_sequence != snapshot.observed_head_sequence || fee.state_root == [0; 32]
+                || fee.value.asset.asset_id == [0; 32]
+            { return Err(HumanOperationError::Refused); }
+            (snapshot, fee)
+        };
+        let control = self.session_control.clone();
+        let permit = control.authorize(&request.credential, crate::tenant::Operation::Prepare,
+            crate::tenant::Surface::Contract, snapshot.observed_head_sequence, None)
+            .map_err(|_| HumanOperationError::Refused)?;
+        let context = crate::agent_rpc_peer::bind(self, &permit)?;
+        if context.peer() != peer { return Err(HumanOperationError::Refused); }
+        let owner = self.native_purpose_owner(&context, request.owner_public_key, snapshot.observed_head_sequence)?;
+        let sessions = self.sessions.read().map_err(|_| HumanOperationError::Unavailable)?;
+        let record = sessions.get(owner.tenant(), owner.session_id()).ok_or(HumanOperationError::Refused)?;
+        let expiry_ms = record.request.expiry_seconds.and_then(|v| v.checked_mul(1000))
+            .ok_or(HumanOperationError::Refused)?;
+        if snapshot.protocol_timestamp >= expiry_ms { return Err(HumanOperationError::Refused); }
+        let mut out = Encoder::new();
+        out.text(std::str::from_utf8(owner.agent().as_bytes()).map_err(|_| HumanOperationError::Refused)?)?;
+        let (kind, key) = match &record.request.authority {
+            ProtocolAuthority::PrimaryKey(key) => (1, *key),
+            ProtocolAuthority::SessionKey(key) => (2, *key),
+            ProtocolAuthority::CapabilityGrant(key) => (3, *key),
+        };
+        out.u8(kind); out.fixed(&key);
+        out.u64(owner.generation()); out.u64(snapshot.observed_head_sequence);
+        out.u64(snapshot.protocol_timestamp); out.u64(snapshot.account_sequence);
+        out.u64(record.request.expiry_sequence); out.u64(expiry_ms);
+        out.fixed(&owner.public_key()); out.u64(owner.revocation_sequence());
+        out.fixed(&fee.value.asset.asset_id);
+        drop(sessions);
+        permit.boundary(&control).map_err(|_| HumanOperationError::Refused)?;
+        out.finish()
+    }
+
+    fn native_send_preview_v1(
+        &mut self,
+        peer: &HumanPeer,
+        request: crate::human::HumanNativeSendPreviewRequestV1,
+    ) -> Result<HumanResponse, HumanOperationError> {
+        let value = self.native_send_preview(peer, request)?;
+        let mut out = Encoder::new();
+        out.bytes(&value.canonical_bytes)?;
+        out.bytes(&value.signing_preimage)?;
+        out.bytes(&value.purpose.canonical_bytes().map_err(|_| HumanOperationError::Refused)?)?;
+        out.u64(value.observed_head_sequence);
+        out.u64(value.protocol_timestamp);
+        out.fixed(&value.owner_public_key);
+        out.u64(value.revocation_sequence);
+        out.finish()
+    }
+
     fn native_program_approval_list(
         &mut self,
         peer: &HumanPeer,

@@ -6,6 +6,7 @@ rust-version.workspace = true
 license.workspace = true
 
 [dependencies]
+layerx-agentd.workspace = true
 layerx-platform-internal.workspace = true
 base64.workspace = true
 getrandom.workspace = true
@@ -37,7 +38,6 @@ layerx-human-test-support = { path = "../layerx-human-test-support" }
 native-tls = "=0.2.18"
 ciborium = "=0.2.2"
 ed25519-dalek = "=2.2.0"
-layerx-agentd.workspace = true
 layerx-intents = { workspace = true, features = ["test-vectors"] }
 proptest.workspace = true
 layerx-human-identity-provider = { path = "../layerx-human-identity-provider" }
