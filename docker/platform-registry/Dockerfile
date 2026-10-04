@@ -6,7 +6,8 @@ COPY . .
 RUN cargo build --locked --release --manifest-path platform/Cargo.toml -p layerx-platform-registry --bin layerx-program-registry --bin layerx-cgroup-exec
 
 FROM alpine:3.22 AS base
-RUN apk add --no-cache bubblewrap ca-certificates libgcc openssl && addgroup -g 4030 layerx && adduser -D -H -u 4030 -G layerx layerx
+RUN apk add --no-cache bubblewrap ca-certificates libgcc openssl python3 util-linux && addgroup -g 4030 layerx && adduser -D -H -u 4030 -G layerx layerx
+COPY platform/hosted/human/material.py platform/hosted/human/provision.py /usr/local/lib/layerx-human/
 COPY --from=build /src/platform/target/release/layerx-program-registry /usr/local/bin/layerx-program-registry
 COPY --from=build /src/platform/target/release/layerx-cgroup-exec /usr/bin/layerx-cgroup-exec
 

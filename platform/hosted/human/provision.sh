@@ -186,6 +186,7 @@ PYPAIR
 human_native_owner_prepare() (
     set -euo pipefail
     umask 077
+    registry_kernel_material
     local input="$WORK_DIR/human-evidence-input" status
     local provision="$REPO_ROOT/platform/hosted/human/provision.py"
     [ -d "$input" ] && [ ! -L "$input" ] || fail "$input: owner registration producer inputs required"
@@ -219,6 +220,50 @@ PYHEAD
         *) fail 'LAYERX_BETA_OWNER_CUSTODY must be kms or operator' ;;
     esac
     human_custody_step deposit
+)
+
+registry_kernel_material() (
+    set -euo pipefail
+    umask 077
+    local helper="$REPO_ROOT/platform/hosted/human/material.py"
+    local stage before after selected
+    stage=$(mktemp -d "$WORK_DIR/.registry-kernel-XXXXXXXX")
+    trap 'rm -rf "$stage"' EXIT
+    kube -n "$TESTNET_NAMESPACE" get pod layerx-node-0 -o json > "$stage/before.json"
+    before=$(python3 - "$stage/before.json" <<'PY_KERNEL_POD'
+import json,sys
+p=json.load(open(sys.argv[1]))
+c=next(x for x in p['status']['containerStatuses'] if x['name']=='layerxd')
+if p['status']['phase']!='Running' or not c.get('ready') or not c.get('imageID') or not p['metadata'].get('uid'):
+    raise SystemExit('selected kernel producer pod is not ready')
+print(p['metadata']['uid']+'|'+c['imageID'])
+PY_KERNEL_POD
+)
+    kube -n "$TESTNET_NAMESPACE" exec layerx-node-0 -c layerxd -- \
+        python3 /usr/local/lib/layerx-human/material.py --export-registry-material \
+        /data/layerx/registry-material > "$stage/export.json"
+    kube -n "$TESTNET_NAMESPACE" get pod layerx-node-0 -o json > "$stage/after.json"
+    after=$(python3 - "$stage/after.json" <<'PY_KERNEL_POD'
+import json,sys
+p=json.load(open(sys.argv[1]))
+c=next(x for x in p['status']['containerStatuses'] if x['name']=='layerxd')
+if p['status']['phase']!='Running' or not c.get('ready'):
+    raise SystemExit('selected kernel producer changed during transfer')
+print(p['metadata']['uid']+'|'+c['imageID'])
+PY_KERNEL_POD
+)
+    [ "$before" = "$after" ] || fail 'kernel producer pod or selected image changed during private transfer'
+    python3 "$helper" --import-registry-material "$stage/export.json" "$SECRETS_DIR/registry-kernel" \
+        "$NODE_NETWORK_ID" "$NODE_SEQUENCER_ID" "$NODE_SEQUENCER_PUBLIC_KEY" > "$stage/import.json"
+    selected=$(python3 - "$stage/import.json" <<'PY_KERNEL_SELECTED'
+import json,sys
+print(json.load(open(sys.argv[1]))['directory'])
+PY_KERNEL_SELECTED
+)
+    python3 "$helper" --verify-registry-material "$selected" > /dev/null
+    apply_secret "$TESTNET_NAMESPACE" layerx-registry-kernel-generation \
+        --from-file=generation.json="$selected/generation.json" \
+        --from-file=replica-id="$selected/replica-id" --from-file=trust-history="$selected/trust-history"
 )
 
 human_evidence_provision() (

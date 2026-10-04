@@ -40,6 +40,19 @@ log() { printf 'registry-init: %s\n' "$*" >&2; }
 # missing <prerequisite> <producer>: the named refusal line of one item.
 missing() { printf 'fail registry-bootstrap missing=%s producer=%s\n' "$1" "$2" >&2; }
 
+verify_kernel_material() {
+	python3 /usr/local/lib/layerx-human/material.py --verify-registry-material "$1" || {
+		missing "complete-authenticated-kernel-generation" "kernel-registry-material-producer"
+		return 1
+	}
+}
+
+if [ "${1:-}" = --validate-kernel-material ]; then
+	[ "$#" = 2 ] || exit 64
+	verify_kernel_material "$2"
+	exit $?
+fi
+
 mode=serve
 case "${1:-}" in
 --prepare-material) [ "$#" = 1 ] || exit 64; mode=material ;;
@@ -198,7 +211,13 @@ client_dir=$(dirname "$LAYERX_REGISTRY_IDENTITY_CLIENT_IDENTITY_PKCS12")
 wait_for "tools/bringup/ca.sh issue registry" "$LAYERX_REGISTRY_TLS_CERT_DER" "$LAYERX_REGISTRY_TLS_KEY_DER" "$LAYERX_REGISTRY_CLIENT_CA_DER"
 wait_for "tools/bringup/ca.sh issue registry-event-client" "$LAYERX_REGISTRY_IDENTITY_CLIENT_IDENTITY_PKCS12" "$LAYERX_REGISTRY_IDENTITY_CLIENT_IDENTITY_PASSWORD_FILE" "$client_dir/ca.der"
 wait_for "the builder environment step of the deploy" "$builder/environment-tree-digest" "$LAYERX_REGISTRY_BUILDER_ENVIRONMENT_ROOT$LAYERX_REGISTRY_BUILDER_ENTRYPOINT"
-wait_for "the kernel material step of the deploy" "$kernel/replica-id" "$LAYERX_REGISTRY_SEQUENCER_TRUST_HISTORY"
+wait_for "the authenticated kernel material step of the deploy" "$kernel/current/generation.json"
+generation=$(verify_kernel_material "$kernel") || exit 1
+selected=$(printf '%s' "$generation" | python3 -c 'import json,sys; print(json.load(sys.stdin)["directory"])')
+generation_id=$(printf '%s' "$generation" | python3 -c 'import json,sys; print(json.load(sys.stdin)["generation"])')
+export LAYERX_REGISTRY_KERNEL_GENERATION="$generation_id"
+LAYERX_REGISTRY_SEQUENCER_TRUST_HISTORY="$selected/trust-history"
+export LAYERX_REGISTRY_SEQUENCER_TRUST_HISTORY
 
 # One internal CA for every identity this app serves or presents: the CA every
 # trust variable names and the root the event client identity was issued
@@ -213,7 +232,7 @@ for trust in "$LAYERX_REGISTRY_OUTBOUND_CA_DER" "$LAYERX_REGISTRY_IDENTITY_CA_DE
 	}
 done
 
-replica=$(tr -d ' \r\n' <"$kernel/replica-id")
+replica=$(tr -d '\n' <"$selected/replica-id")
 case "$replica" in
 *[!0-9a-f]* | '')
 	log "$kernel/replica-id is not lowercase hex"
@@ -280,8 +299,13 @@ while [ "$slot" -lt "$slots" ]; do
 	slot=$((slot + 1))
 done
 
-chown -R 4030:4030 "$tls_dir" "$client_dir" "$tokens" "$LAYERX_REGISTRY_STATE" "$LAYERX_REGISTRY_JOURNAL" "$kernel"
-chmod 0400 "$LAYERX_REGISTRY_REQUEST_TOKEN_FILE" "$LAYERX_REGISTRY_PUBLICATION_TOKEN_FILE" "$LAYERX_REGISTRY_SEQUENCER_TRUST_HISTORY"
+chown -R 4030:4030 "$tls_dir" "$client_dir" "$tokens" "$LAYERX_REGISTRY_STATE" "$LAYERX_REGISTRY_JOURNAL"
+install -d -o 4030 -g 4030 -m 0700 "$run/registry-generation"
+install -o 4030 -g 4030 -m 0400 "$selected/trust-history" "$run/registry-generation/trust-history"
+cmp -s "$selected/trust-history" "$run/registry-generation/trust-history" || exit 1
+LAYERX_REGISTRY_SEQUENCER_TRUST_HISTORY="$run/registry-generation/trust-history"
+export LAYERX_REGISTRY_SEQUENCER_TRUST_HISTORY
+chmod 0400 "$LAYERX_REGISTRY_REQUEST_TOKEN_FILE" "$LAYERX_REGISTRY_PUBLICATION_TOKEN_FILE"
 # ca.sh makes the certificate root under umask 077; uid 4030 only traverses it.
 chmod 0711 "$(dirname "$tls_dir")"
 

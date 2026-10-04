@@ -26358,7 +26358,7 @@ qualification_observed = "Missing LAYERX_RECEIPT_REFRESH_FIXTURE; browser and ge
 
 [task.24.8]
 title = "Deliver one authenticated kernel identity generation to the registry"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 4
 requires = ["0.2", "24.10", "24.11"]
@@ -26368,7 +26368,7 @@ do_2 = "Implement the previously specified kernel-to-registry material handoff i
 do_3 = "Bind registry init readiness to exact replica/trust-history equality and required permissions."
 do_4 = "Implement tools/bringup/tests/paxeer-x-runtime-contract.py --case registry-material with actual producer documents, authenticated transfer path and registry validation; cover mismatched/partial/replayed generations."
 do_5 = "Implement the declared focused gate through the real production types and paths; exercise every acceptance criterion including refusal, restart or boundary cases specified by this requirement. The command is a planned deliverable, not an already-run gate."
-touches = ["docker/platform-registry/init.sh", "docker/kernel/init.sh", "platform/hosted/human/provision.sh", "tools/bringup/tests/paxeer-x-runtime-contract.py"]
+touches = ["docker/platform-registry/init.sh", "platform/hosted/human/provision.sh", "docker/platform-registry/Dockerfile", "platform/hosted/registry/deployment.yaml", "docker/platform-node/Dockerfile", "platform/hosted/node/supervisor.sh", "platform/hosted/human/material.py", "tools/bringup/tests/paxeer-x-runtime-contract.py"]
 verify_cmd = "timeout 15m python3 tools/bringup/tests/paxeer-x-runtime-contract.py --case registry-material"
 gate_kind = "planned"
 max_builds = 1
@@ -26380,6 +26380,13 @@ deployment_profile = "product"
 planned_paths = ["tools/bringup/tests/paxeer-x-runtime-contract.py"]
 path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
 evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+fanout_role = "complete_migration/generation_consumers"
+fanout_scope_delegated = ["docker/kernel/init.sh", "tools/bringup/tests/paxeer-x-runtime-contract.py"]
+fanout_basis = "Owner requested maximum parallel implementation on 2026-10-04; delegated shared file edits require root coordination and retain original acceptance criteria"
+source_status = "partial"
+completion_basis = "partial source published; original acceptance criteria remain required"
+qualification_status = "UNRUN"
+source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/publication-normalized-24.8.json"
 
 [task.25.3]
 title = "Bind manually published candidate artifacts to their accepted provenance source"
