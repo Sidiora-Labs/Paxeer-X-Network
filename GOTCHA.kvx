@@ -2749,3 +2749,11 @@ observed = "A private build wrapper continued to wait on its build lock after ca
 [gotcha.785]
 title = "Preserved proof negative-case disagreement"
 observed = "After exact fixture-call compiler repair, eleven proof cases passed and two untouched negative cases failed at header bounds and maintenance-link error classification. Preserve assertions, record raw failures, and do not treat subset success as full qualification."
+
+[gotcha.786]
+title = "Cold candidate Git status"
+observed = "Candidate admission retained its twenty-second Git-status bound. A cold large checkout exceeded that bound and returned a generic refusal; read-only status warmup then admission within the unchanged bound succeeded. Never loosen the bound or treat refusal as compiler evidence."
+
+[gotcha.787]
+title = "Provider Docker runtime for isolated CI"
+observed = "The provider-default haishare Docker runtime rejected a CPU-only CI container. An isolated CI Docker daemon using runc passed; the provider default and production runtime configuration remained unchanged."
