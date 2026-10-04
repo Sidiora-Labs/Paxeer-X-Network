@@ -36033,3 +36033,17 @@ source_status = "complete"
 completion_basis = "implementation under owner CONSTITUTION; qualification separately recorded"
 qualification_status = "UNRUN"
 source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-103.6.21-publication-handoff.json"
+
+[task.103.6.22]
+title = "Restore the original upgrade list after the override test"
+status = "done"
+wave = 5
+verify_cmd = "timeout 5m /root/lx-ops/paxeer-x-integration-2026-10-03/qualification/task103622/node.test -test.run ^(TestOverrideList|TestSidioraFeeTokenUpgradeIsRegisteredAndRunsTheFeeTokenMigration|TestXWebUpgradeKeepsExistingXWebState)$ -test.v"
+touches = ["node/upgrades_test.go"]
+do_1 = "Add t.Cleanup restoring the genuine saved upgradesList in TestOverrideList"
+do_2 = "preserve every production implementation and assertion"
+do_3 = "Compile the real declared package once then execute only its captured focused test binary once"
+source_status = "complete"
+completion_basis = "implementation under owner CONSTITUTION; qualification separately recorded"
+qualification_status = "UNRUN"
+source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-103.6.22-publication-handoff.json"

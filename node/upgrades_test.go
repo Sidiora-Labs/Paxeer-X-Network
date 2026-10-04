@@ -21,6 +21,9 @@ import (
 
 func TestOverrideList(t *testing.T) {
 	defaultList := upgradesList
+	t.Cleanup(func() {
+		upgradesList = defaultList
+	})
 	tests := []struct {
 		name         string
 		envValue     string
