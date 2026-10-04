@@ -230,7 +230,11 @@ fn spawn_node(
                         value.node.latest_batch_observed = Some(acquired.head.latest_sealed_batch);
                         record_checkpoint(value, &acquired.checkpoint);
                     });
-                    if !acquired.checkpoint.coordinate().is_some_and(|checkpoint| checkpoint.batch_number >= next_batch) {
+                    if !acquired
+                        .checkpoint
+                        .coordinate()
+                        .is_some_and(|checkpoint| checkpoint.batch_number >= next_batch)
+                    {
                         update_status(&status, |value| {
                             value.node.ready = false;
                             value.node.phase = Some("awaiting_verified_checkpoint");
@@ -283,23 +287,24 @@ fn spawn_node(
                         }),
                     }
                 }
-                Err(error) => {
-                    match source.observe_checkpoint() {
-                        Ok((head, checkpoint)) if head.latest_sealed_batch.checked_add(1) == Some(next_batch) => {
-                            update_status(&status, |value| {
-                                value.node.latest_batch_observed = Some(head.latest_sealed_batch);
-                                record_checkpoint(value, &checkpoint);
-                                value.node.ready = matches!(checkpoint, CheckpointAcquisition::Verified(_));
-                                value.node.error_class = None;
-                                value.node.phase = Some("head_reconciled");
-                            });
-                        }
-                        _ => update_status(&status, |value| {
-                            value.node.ready = false;
-                            value.node.error_class = Some(node_error_class(&error));
-                        }),
+                Err(error) => match source.observe_checkpoint() {
+                    Ok((head, checkpoint))
+                        if head.latest_sealed_batch.checked_add(1) == Some(next_batch) =>
+                    {
+                        update_status(&status, |value| {
+                            value.node.latest_batch_observed = Some(head.latest_sealed_batch);
+                            record_checkpoint(value, &checkpoint);
+                            value.node.ready =
+                                matches!(checkpoint, CheckpointAcquisition::Verified(_));
+                            value.node.error_class = None;
+                            value.node.phase = Some("head_reconciled");
+                        });
                     }
-                }
+                    _ => update_status(&status, |value| {
+                        value.node.ready = false;
+                        value.node.error_class = Some(node_error_class(&error));
+                    }),
+                },
             }
             thread::sleep(poll);
         }
@@ -327,26 +332,34 @@ fn spawn_ethereum(
         let mut gate = ProgressGate::new();
         loop {
             let ordered = ordered_archives(&spool);
+            let mut publication_error = None;
             for archive in &ordered {
                 match archive {
                     Ok(archive) => match client.advance(archive) {
                         Ok(progress) => update_ethereum(&status, progress),
-                        Err(error) => update_status(&status, |value| {
-                            value.ethereum.ready = false;
-                            value.ethereum.error_class = Some(ethereum_error_class(&error));
-                        }),
+                        Err(error) => {
+                            let error_class = ethereum_error_class(&error);
+                            publication_error.get_or_insert(error_class);
+                            update_status(&status, |value| {
+                                value.ethereum.ready = false;
+                                value.ethereum.error_class = Some(error_class);
+                            });
+                        }
                     },
-                    Err(()) => update_status(&status, |value| {
-                        value.ethereum.ready = false;
-                        value.ethereum.error_class = Some("archive_spool");
-                    }),
+                    Err(()) => {
+                        publication_error.get_or_insert("archive_spool");
+                        update_status(&status, |value| {
+                            value.ethereum.ready = false;
+                            value.ethereum.error_class = Some("archive_spool");
+                        });
+                    }
                 }
             }
             let archives = ordered.into_iter().flatten().collect::<Vec<_>>();
             let progress = gate.acknowledge(client.cursor(), &archives, |commitment| {
                 client.retrieve_finalized(commitment)
             });
-            apply_ethereum_progress(&status, progress);
+            apply_ethereum_progress(&status, progress, publication_error);
             thread::sleep(poll);
         }
     });
@@ -374,26 +387,34 @@ fn spawn_solana(
         let mut gate = ProgressGate::new();
         loop {
             let ordered = ordered_archives(&spool);
+            let mut publication_error = None;
             for archive in &ordered {
                 match archive {
                     Ok(archive) => match client.advance(archive) {
                         Ok(progress) => update_solana(&status, progress),
-                        Err(error) => update_solana_status(&status, |value| {
-                            value.ready = false;
-                            value.error_class = Some(solana_error_class(&error));
-                        }),
+                        Err(error) => {
+                            let error_class = solana_error_class(&error);
+                            publication_error.get_or_insert(error_class);
+                            update_solana_status(&status, |value| {
+                                value.ready = false;
+                                value.error_class = Some(error_class);
+                            });
+                        }
                     },
-                    Err(()) => update_solana_status(&status, |value| {
-                        value.ready = false;
-                        value.error_class = Some("archive_spool");
-                    }),
+                    Err(()) => {
+                        publication_error.get_or_insert("archive_spool");
+                        update_solana_status(&status, |value| {
+                            value.ready = false;
+                            value.error_class = Some("archive_spool");
+                        });
+                    }
                 }
             }
             let archives = ordered.into_iter().flatten().collect::<Vec<_>>();
             let progress = gate.acknowledge(client.cursor(), &archives, |commitment| {
                 client.retrieve_finalized(commitment)
             });
-            apply_solana_progress(&status, progress);
+            apply_solana_progress(&status, progress, publication_error);
             thread::sleep(poll);
         }
     });
@@ -751,10 +772,11 @@ fn update_ethereum(status: &Arc<Mutex<RuntimeStatus>>, progress: EthereumProgres
         if progress.phase == PublicationPhase::Reorged {
             value.ethereum.reorgs_observed = value.ethereum.reorgs_observed.saturating_add(1);
         }
-        value.ethereum.ready = value.ethereum.ready && !matches!(
-            progress.phase,
-            PublicationPhase::PermanentRefusal | PublicationPhase::Reorged
-        );
+        value.ethereum.ready = value.ethereum.ready
+            && !matches!(
+                progress.phase,
+                PublicationPhase::PermanentRefusal | PublicationPhase::Reorged
+            );
         VerifiedProgress::of(value).apply(&mut value.ethereum);
         value.ethereum.phase = Some(phase_name(progress.phase));
         value.ethereum.error_class = None;
@@ -769,10 +791,11 @@ fn update_solana(status: &Arc<Mutex<RuntimeStatus>>, progress: SolanaProgress) {
         if progress.phase == PublicationPhase::Reorged {
             value.reorgs_observed = value.reorgs_observed.saturating_add(1);
         }
-        value.ready = value.ready && !matches!(
-            progress.phase,
-            PublicationPhase::PermanentRefusal | PublicationPhase::Reorged
-        );
+        value.ready = value.ready
+            && !matches!(
+                progress.phase,
+                PublicationPhase::PermanentRefusal | PublicationPhase::Reorged
+            );
         verified.apply(value);
         value.phase = Some(phase_name(progress.phase));
         value.error_class = None;
@@ -781,18 +804,26 @@ fn update_solana(status: &Arc<Mutex<RuntimeStatus>>, progress: SolanaProgress) {
 
 /// Reports only gate-acknowledged mirrored coordinates. A reconcile refusal
 /// holds the lane unready under its typed code.
-fn apply_ethereum_progress(status: &Arc<Mutex<RuntimeStatus>>, progress: ChainProgress) {
+fn apply_ethereum_progress(
+    status: &Arc<Mutex<RuntimeStatus>>,
+    progress: ChainProgress,
+    publication_error: Option<&'static str>,
+) {
     update_status(status, |value| {
         let verified = VerifiedProgress::of(value);
-        apply_progress(&mut value.ethereum, verified, progress);
+        apply_progress(&mut value.ethereum, verified, progress, publication_error);
     });
 }
 
-fn apply_solana_progress(status: &Arc<Mutex<RuntimeStatus>>, progress: ChainProgress) {
+fn apply_solana_progress(
+    status: &Arc<Mutex<RuntimeStatus>>,
+    progress: ChainProgress,
+    publication_error: Option<&'static str>,
+) {
     update_status(status, |value| {
         let verified = VerifiedProgress::of(value);
         if let Some(solana) = value.solana.as_mut() {
-            apply_progress(solana, verified, progress);
+            apply_progress(solana, verified, progress, publication_error);
         }
     });
 }
@@ -801,13 +832,18 @@ fn apply_progress(
     status: &mut ComponentStatus,
     verified: VerifiedProgress,
     progress: ChainProgress,
+    publication_error: Option<&'static str>,
 ) {
     status.latest_batch_mirrored = progress.mirrored.latest_batch;
     set_checkpoint_status(status, progress.mirrored.latest_checkpoint);
     verified.apply(status);
-    if let Some(refusal) = progress.refusal {
+    if let Some(error_class) = progress
+        .refusal
+        .map(|refusal| refusal.code())
+        .or(publication_error)
+    {
         status.ready = false;
-        status.error_class = Some(refusal.code());
+        status.error_class = Some(error_class);
     } else {
         status.ready = progress.mirrored.latest_checkpoint.is_some()
             && !matches!(status.phase, Some("permanent_refusal" | "reorged"));
@@ -907,9 +943,14 @@ fn solana_error_class(error: &SolanaError) -> &'static str {
 
 fn validate_runtime(config: &RuntimeConfig) -> Result<(), RuntimeError> {
     let checkpoint_policy = &config.node.checkpoint_policy;
-    if checkpoint_policy.chain_id == 0 || checkpoint_policy.confirmations == 0
-        || fixed_hex::<32>(&checkpoint_policy.genesis_hash_hex).map_err(|_| RuntimeError::Configuration)? == [0; 32]
-        || fixed_hex::<32>(&checkpoint_policy.sequencer_public_key_hex).map_err(|_| RuntimeError::Configuration)? == [0; 32]
+    if checkpoint_policy.chain_id == 0
+        || checkpoint_policy.confirmations == 0
+        || fixed_hex::<32>(&checkpoint_policy.genesis_hash_hex)
+            .map_err(|_| RuntimeError::Configuration)?
+            == [0; 32]
+        || fixed_hex::<32>(&checkpoint_policy.sequencer_public_key_hex)
+            .map_err(|_| RuntimeError::Configuration)?
+            == [0; 32]
     {
         return Err(RuntimeError::Configuration);
     }
@@ -1034,14 +1075,16 @@ fn base58_decode(value: &str, maximum: usize) -> Result<Vec<u8>, SignerErrorShim
 mod tests {
     use std::path::PathBuf;
     use std::sync::atomic::{AtomicU64, Ordering};
+    use std::sync::{Arc, Mutex};
 
     use super::{
-        hex_bytes, record_checkpoint, recover_batch_sequence, recover_next_batch, recover_spool,
-        ComponentStatus, RuntimeConfig, RuntimeStatus, SpoolRecoveryError,
+        apply_ethereum_progress, apply_solana_progress, hex_bytes, record_checkpoint,
+        recover_batch_sequence, recover_next_batch, recover_spool, ComponentStatus, RuntimeConfig,
+        RuntimeStatus, SpoolRecoveryError,
     };
     use crate::node::{CheckpointAcquisition, CheckpointRefusal};
     use crate::store::{ArchiveSpool, StoreError};
-    use crate::{archive_commitment, ArchiveCommitment, NodeHead};
+    use crate::{archive_commitment, ArchiveCommitment, ChainProgress, NodeHead};
     use layerx_client::evidence::EvidenceError;
     use layerx_proof::checkpoint::CheckpointError;
 
@@ -1163,9 +1206,14 @@ mod tests {
               }},
               {}
             }}"#,
-            serde_json::to_string(&serde_json::from_str::<serde_json::Value>(include_str!("../../../deploy/mirror/config.example.json"))
-                .unwrap_or_else(|error| panic!("portable config: {error:?}"))["node"]["checkpoint_policy"])
-                .unwrap_or_else(|error| panic!("portable policy: {error:?}")),
+            serde_json::to_string(
+                &serde_json::from_str::<serde_json::Value>(include_str!(
+                    "../../../deploy/mirror/config.example.json"
+                ))
+                .unwrap_or_else(|error| panic!("portable config: {error:?}"))["node"]
+                    ["checkpoint_policy"]
+            )
+            .unwrap_or_else(|error| panic!("portable policy: {error:?}")),
             sections.join(",\n")
         )
     }
@@ -1328,6 +1376,44 @@ mod tests {
             .unwrap_or_else(|error| panic!("recover empty spool: {error:?}")),
             41
         );
+    }
+
+    #[test]
+    fn worker_degradation_survives_progress_application_per_lane() {
+        let status = Arc::new(Mutex::new(RuntimeStatus {
+            solana: Some(ComponentStatus::default()),
+            ..RuntimeStatus::default()
+        }));
+        apply_ethereum_progress(&status, ChainProgress::default(), Some("rpc"));
+        apply_solana_progress(&status, ChainProgress::default(), Some("archive_spool"));
+        {
+            let value = status
+                .lock()
+                .unwrap_or_else(|error| panic!("runtime status: {error}"));
+            assert!(!value.ethereum.ready);
+            assert_eq!(value.ethereum.error_class, Some("rpc"));
+            assert_eq!(value.ethereum.latest_batch_mirrored, None);
+            let solana = value
+                .solana
+                .as_ref()
+                .unwrap_or_else(|| panic!("configured Solana lane"));
+            assert!(!solana.ready);
+            assert_eq!(solana.error_class, Some("archive_spool"));
+            assert_eq!(solana.latest_checkpoint_batch_mirrored, None);
+        }
+
+        apply_ethereum_progress(&status, ChainProgress::default(), None);
+        let value = status
+            .lock()
+            .unwrap_or_else(|error| panic!("runtime status: {error}"));
+        assert!(!value.ethereum.ready);
+        assert_eq!(value.ethereum.error_class, None);
+        let solana = value
+            .solana
+            .as_ref()
+            .unwrap_or_else(|| panic!("configured Solana lane"));
+        assert!(!solana.ready);
+        assert_eq!(solana.error_class, Some("archive_spool"));
     }
 
     #[test]
