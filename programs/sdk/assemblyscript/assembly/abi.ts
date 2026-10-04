@@ -113,3 +113,54 @@ export function abiManifest(): StaticArray<u8> {
   }
   return manifest;
 }
+
+export const ABI_V1_VERSION: i32 = 1;
+export const ABI_V2_VERSION: i32 = 2;
+export const ABI_V3_VERSION: i32 = 3;
+export const ABI_V4_VERSION: i32 = 4;
+export const CURRENT_ABI_VERSION: i32 = 4;
+export const V2_ABI_MODULE: string = "layerx_v2";
+export function abiManifestV2(): StaticArray<u8> { return fromString("layerx_v1\0storage_read(i32,i32,i32,i32)->i32\0storage_write(i32,i32,i32,i32)->i32\0storage_delete(i32,i32)->i32\0event_emit(i32,i32,i32,i32)->i32\0program_call(i32,i32,i32,i32,i32,i32)->i32\0transfer_402(i64,i64,i32,i32,i32,i32)->i32\0receipt_read(i32,i32,i32,i32)->i32\0layerx_v2\0response_write(i32,i32,i32)->i32\0program_call_response(i32,i32,i32,i32,i32,i32,i32,i32)->i64\0refusal_write(i32,i32,i32)->i32\0storage_read_scoped(i32,i32,i32,i32,i32)->i32\0storage_write_scoped(i32,i32,i32,i32,i32)->i32\0storage_delete_scoped(i32,i32,i32)->i32\0storage_drop_scoped(i32)->i32\0storage_scan_scoped(i32,i32,i32,i32,i32,i32,i32,i32,i32)->i32\0transfer_program_402(i64,i64,i32,i32,i32,i32,i32,i32,i32,i32)->i32\0fund_program_402(i64,i64,i32,i32,i32,i32,i32,i32)->i32\0context_read(i32,i32,i32)->i32\0balance_read(i32,i32,i32,i32,i32,i32)->i32\0hash(i32,i32,i32,i32)->i32\0signature_verify(i32,i32,i32,i32,i32,i32,i32)->i32\0signature_recover(i32,i32,i32,i32,i32,i32,i32)->i32\0bigint_mul_256(i32,i32,i32,i32,i32,i32)->i32\0bigint_div_256(i32,i32,i32,i32,i32,i32)->i32\0bigint_rem_256(i32,i32,i32,i32,i32,i32)->i32\0bigint_modexp_256(i32,i32,i32,i32,i32,i32,i32,i32)->i32\0"); }
+export function hostFunctionsV2(): HostFunction[] {
+  const functions = new Array<HostFunction>();
+  functions.push(new HostFunction("response_write", "(i32,i32,i32)->i32"));
+  functions.push(new HostFunction("program_call_response", "(i32,i32,i32,i32,i32,i32,i32,i32)->i64"));
+  functions.push(new HostFunction("refusal_write", "(i32,i32,i32)->i32"));
+  functions.push(new HostFunction("storage_read_scoped", "(i32,i32,i32,i32,i32)->i32"));
+  functions.push(new HostFunction("storage_write_scoped", "(i32,i32,i32,i32,i32)->i32"));
+  functions.push(new HostFunction("storage_delete_scoped", "(i32,i32,i32)->i32"));
+  functions.push(new HostFunction("storage_drop_scoped", "(i32)->i32"));
+  functions.push(new HostFunction("storage_scan_scoped", "(i32,i32,i32,i32,i32,i32,i32,i32,i32)->i32"));
+  functions.push(new HostFunction("transfer_program_402", "(i64,i64,i32,i32,i32,i32,i32,i32,i32,i32)->i32"));
+  functions.push(new HostFunction("fund_program_402", "(i64,i64,i32,i32,i32,i32,i32,i32)->i32"));
+  functions.push(new HostFunction("context_read", "(i32,i32,i32)->i32"));
+  functions.push(new HostFunction("balance_read", "(i32,i32,i32,i32,i32,i32)->i32"));
+  functions.push(new HostFunction("hash", "(i32,i32,i32,i32)->i32"));
+  functions.push(new HostFunction("signature_verify", "(i32,i32,i32,i32,i32,i32,i32)->i32"));
+  functions.push(new HostFunction("signature_recover", "(i32,i32,i32,i32,i32,i32,i32)->i32"));
+  functions.push(new HostFunction("bigint_mul_256", "(i32,i32,i32,i32,i32,i32)->i32"));
+  functions.push(new HostFunction("bigint_div_256", "(i32,i32,i32,i32,i32,i32)->i32"));
+  functions.push(new HostFunction("bigint_rem_256", "(i32,i32,i32,i32,i32,i32)->i32"));
+  functions.push(new HostFunction("bigint_modexp_256", "(i32,i32,i32,i32,i32,i32,i32,i32)->i32"));
+  return functions;
+}
+export const V3_ABI_MODULE: string = "layerx_v3";
+export function abiManifestV3(): StaticArray<u8> { return fromString("layerx_v1\0storage_read(i32,i32,i32,i32)->i32\0storage_write(i32,i32,i32,i32)->i32\0storage_delete(i32,i32)->i32\0event_emit(i32,i32,i32,i32)->i32\0program_call(i32,i32,i32,i32,i32,i32)->i32\0transfer_402(i64,i64,i32,i32,i32,i32)->i32\0receipt_read(i32,i32,i32,i32)->i32\0layerx_v2\0response_write(i32,i32,i32)->i32\0program_call_response(i32,i32,i32,i32,i32,i32,i32,i32)->i64\0refusal_write(i32,i32,i32)->i32\0storage_read_scoped(i32,i32,i32,i32,i32)->i32\0storage_write_scoped(i32,i32,i32,i32,i32)->i32\0storage_delete_scoped(i32,i32,i32)->i32\0storage_drop_scoped(i32)->i32\0storage_scan_scoped(i32,i32,i32,i32,i32,i32,i32,i32,i32)->i32\0transfer_program_402(i64,i64,i32,i32,i32,i32,i32,i32,i32,i32)->i32\0fund_program_402(i64,i64,i32,i32,i32,i32,i32,i32)->i32\0context_read(i32,i32,i32)->i32\0balance_read(i32,i32,i32,i32,i32,i32)->i32\0hash(i32,i32,i32,i32)->i32\0signature_verify(i32,i32,i32,i32,i32,i32,i32)->i32\0signature_recover(i32,i32,i32,i32,i32,i32,i32)->i32\0bigint_mul_256(i32,i32,i32,i32,i32,i32)->i32\0bigint_div_256(i32,i32,i32,i32,i32,i32)->i32\0bigint_rem_256(i32,i32,i32,i32,i32,i32)->i32\0bigint_modexp_256(i32,i32,i32,i32,i32,i32,i32,i32)->i32\0layerx_v3\0oracle_read(i32,i32,i32,i32)->i32\0"); }
+export function hostFunctionsV3(): HostFunction[] {
+  const functions = new Array<HostFunction>();
+  functions.push(new HostFunction("oracle_read", "(i32,i32,i32,i32)->i32"));
+  return functions;
+}
+export const V4_ABI_MODULE: string = "layerx_v4";
+export function abiManifestV4(): StaticArray<u8> { return fromString("layerx_v1\0storage_read(i32,i32,i32,i32)->i32\0storage_write(i32,i32,i32,i32)->i32\0storage_delete(i32,i32)->i32\0event_emit(i32,i32,i32,i32)->i32\0program_call(i32,i32,i32,i32,i32,i32)->i32\0transfer_402(i64,i64,i32,i32,i32,i32)->i32\0receipt_read(i32,i32,i32,i32)->i32\0layerx_v2\0response_write(i32,i32,i32)->i32\0program_call_response(i32,i32,i32,i32,i32,i32,i32,i32)->i64\0refusal_write(i32,i32,i32)->i32\0storage_read_scoped(i32,i32,i32,i32,i32)->i32\0storage_write_scoped(i32,i32,i32,i32,i32)->i32\0storage_delete_scoped(i32,i32,i32)->i32\0storage_drop_scoped(i32)->i32\0storage_scan_scoped(i32,i32,i32,i32,i32,i32,i32,i32,i32)->i32\0transfer_program_402(i64,i64,i32,i32,i32,i32,i32,i32,i32,i32)->i32\0fund_program_402(i64,i64,i32,i32,i32,i32,i32,i32)->i32\0context_read(i32,i32,i32)->i32\0balance_read(i32,i32,i32,i32,i32,i32)->i32\0hash(i32,i32,i32,i32)->i32\0signature_verify(i32,i32,i32,i32,i32,i32,i32)->i32\0signature_recover(i32,i32,i32,i32,i32,i32,i32)->i32\0bigint_mul_256(i32,i32,i32,i32,i32,i32)->i32\0bigint_div_256(i32,i32,i32,i32,i32,i32)->i32\0bigint_rem_256(i32,i32,i32,i32,i32,i32)->i32\0bigint_modexp_256(i32,i32,i32,i32,i32,i32,i32,i32)->i32\0layerx_v3\0oracle_read(i32,i32,i32,i32)->i32\0layerx_v4\0web_read(i32,i32,i32,i32)->i32\0"); }
+export function hostFunctionsV4(): HostFunction[] {
+  const functions = new Array<HostFunction>();
+  functions.push(new HostFunction("web_read", "(i32,i32,i32,i32)->i32"));
+  return functions;
+}
+export function admitAbiUpgrade(current: i32, requested: i32): bool { return current >= 1 && current <= 4 && requested >= current && requested <= 4; }
+export function capabilityEncodingVersion(abiVersion: i32): i32 { if (abiVersion == 1) return 1; if (abiVersion >= 2 && abiVersion <= 4) return 2; return -2; }
+export const MAX_CALL_RESPONSE_BYTES: i32 = 1048576;
+export const MAX_PROGRAM_ACCOUNT_SEED_BYTES: i32 = 128;
+export const MAX_REFUSAL_REASON_BYTES: i32 = 4096;
+export const V2_REFUSAL_SENTINEL: i32 = -64;

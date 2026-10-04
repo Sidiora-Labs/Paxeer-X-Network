@@ -327,6 +327,63 @@ pub fn abi_surface_violations() -> Vec<DeterminismViolation> {
         layerx_program_sdk::REFUSAL_CLASS_MANIFEST,
         layerx_programs_runtime::REFUSAL_CLASS_MANIFEST,
     ));
+    for (
+        version,
+        guest_module,
+        host_module,
+        guest_manifest,
+        host_manifest,
+        guest_functions,
+        host_functions,
+    ) in [
+        (
+            3,
+            layerx_program_sdk::abi::V3_ABI_MODULE,
+            layerx_programs_runtime::ABI_V3_MODULE,
+            layerx_program_sdk::abi::V3_ABI_MANIFEST,
+            layerx_programs_runtime::ABI_V3_MANIFEST,
+            layerx_program_sdk::abi::V3_HOST_FUNCTIONS.as_slice(),
+            layerx_programs_runtime::ABI_V3_HOST_FUNCTIONS.as_slice(),
+        ),
+        (
+            4,
+            layerx_program_sdk::abi::V4_ABI_MODULE,
+            layerx_programs_runtime::ABI_V4_MODULE,
+            layerx_program_sdk::abi::V4_ABI_MANIFEST,
+            layerx_programs_runtime::ABI_V4_MANIFEST,
+            layerx_program_sdk::abi::V4_HOST_FUNCTIONS.as_slice(),
+            layerx_programs_runtime::ABI_V4_HOST_FUNCTIONS.as_slice(),
+        ),
+    ] {
+        if guest_module != host_module || guest_manifest != host_manifest {
+            violations.push(DeterminismViolation::AbiDrift {
+                detail: format!("ABI v{version} namespace or manifest differs"),
+            });
+        }
+        let guest: Vec<_> = guest_functions
+            .iter()
+            .map(|function| (function.name, function.signature))
+            .collect();
+        let host: Vec<_> = host_functions
+            .iter()
+            .map(|function| (function.name, function.signature))
+            .collect();
+        compare_function_tables(&format!("v{version}"), &guest, &host, &mut violations);
+    }
+    let mut shared = String::new();
+    for (module, version, functions) in VERSIONED_HOST_NAMESPACES {
+        for function in functions {
+            shared.push_str(&format!(
+                "{version}\t{module}\t{}\t{}\n",
+                function.name, function.signature
+            ));
+        }
+    }
+    if shared != layerx_program_sdk::abi::SHARED_ABI_MANIFEST_TSV {
+        violations.push(DeterminismViolation::AbiDrift {
+            detail: "shared language manifest differs from runtime".to_string(),
+        });
+    }
     violations
 }
 
@@ -465,7 +522,8 @@ pub fn lint_artifact_for_abi(wasm: &[u8], abi_version: u16) -> Vec<DeterminismVi
 }
 
 fn lint_supported_artifact(wasm: &[u8], abi_version: u16) -> Vec<DeterminismViolation> {
-    let mut violations = import_and_export_violations(wasm, abi_version);
+    let mut violations = abi_surface_violations();
+    violations.extend(import_and_export_violations(wasm, abi_version));
     violations.extend(engine_violations(wasm, abi_version));
     violations
 }
@@ -578,14 +636,22 @@ pub fn discover_artifact(project: &Path) -> Result<PathBuf, DeterminismViolation
 
 fn permitted_import(abi_version: u16, import_module: &str, import_name: &str) -> bool {
     (ABI_V1_VERSION..=ABI_V4_VERSION).contains(&abi_version)
-        && VERSIONED_HOST_NAMESPACES
-            .iter()
-            .any(|(namespace, introduced, functions)| {
-                *introduced <= abi_version
-                    && *namespace == import_module
-                    && functions
-                        .iter()
-                        .any(|function| function.name == import_name)
+        && layerx_program_sdk::abi::SHARED_ABI_MANIFEST_TSV
+            .lines()
+            .any(|line| {
+                let mut fields = line.split('\t');
+                let introduced = fields
+                    .next()
+                    .and_then(|version| version.parse::<u16>().ok());
+                let module = fields.next();
+                let name = fields.next();
+                let signature = fields.next();
+                introduced
+                    .is_some_and(|version| version >= ABI_V1_VERSION && version <= abi_version)
+                    && module == Some(import_module)
+                    && name == Some(import_name)
+                    && signature.is_some()
+                    && fields.next().is_none()
             })
 }
 

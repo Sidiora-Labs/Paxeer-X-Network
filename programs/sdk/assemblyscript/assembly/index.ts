@@ -134,3 +134,22 @@ export { Receipt, ReceiptRead, decodeReceipt, readReceipt } from "./receipt";
 export { StoredValue, checkKey, deleteValue, readValue, writeValue } from "./storage";
 
 export { Payment, transfer402 } from "./transfer";
+
+export { ABI_V1_VERSION, ABI_V2_VERSION, ABI_V3_VERSION, ABI_V4_VERSION, CURRENT_ABI_VERSION,
+  V2_ABI_MODULE, V3_ABI_MODULE, V4_ABI_MODULE, abiManifestV2, abiManifestV3, abiManifestV4,
+  hostFunctionsV2, hostFunctionsV3, hostFunctionsV4, admitAbiUpgrade, capabilityEncodingVersion,
+  MAX_CALL_RESPONSE_BYTES, MAX_PROGRAM_ACCOUNT_SEED_BYTES, MAX_REFUSAL_REASON_BYTES,
+  V2_REFUSAL_SENTINEL } from "./abi";
+
+export { STATUS_VERIFY_FAILED, STATUS_WEB_ABSENT, STORAGE_PRINCIPAL, STORAGE_SHARED,
+  MAX_SCAN_CURSOR_BYTES, MAX_SCAN_ENTRIES, MAX_SCAN_BYTES, HASH_SHA256, HASH_KECCAK256, HASH_BLAKE3,
+  CONTEXT_EXECUTING_PROGRAM, CONTEXT_IMMEDIATE_CALLER, CONTEXT_INVOKING_PRINCIPAL,
+  CONTEXT_ACTIVITY_SEQUENCE, CONTEXT_BATCH_HEIGHT, CONTEXT_RUNTIME_VERSION, CONTEXT_ABI_VERSION,
+  CONTEXT_REMAINING_FUEL, CONTEXT_FEE_SCHEDULE_VERSION, VersionedBytes, CallResponseV2,
+  publishResponseV2, publishRefusalV2, decodeCallResponseV2, callProgramResponseV2,
+  readScopedV2, writeScopedV2, deleteScopedV2, dropScopedV2, ScanEntryV2, ScanPageV2,
+  decodeScanPageV2, scanScopedV2, transferProgram402V2, fundProgram402V2, readContextV2,
+  readBalanceV2, hashV2, verifyEd25519V2, verifySecp256k1V2, recoverSecp256k1V2,
+  bigintMulV2, bigintDivV2, bigintRemV2, bigintModexpV2, readOracleV3, OracleObservationV3,
+  readU64LEVersioned, readU32LEVersioned, WEB_ANSWER_HEADER_BYTES, MAX_WEB_RESPONSE_BYTES,
+  WEB_RECORD_BYTES, WebAnswerV4, readWebV4 } from "./versioned";

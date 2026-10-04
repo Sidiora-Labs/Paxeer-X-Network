@@ -31,18 +31,33 @@ const RULE_MISSING_MEMORY = "missing-memory-export";
 const RULE_IMPORT_DECLARATION = "forbidden-import-declaration";
 const RULE_FORBIDDEN_SOURCE = "forbidden-source-construct";
 
-const ABI_MODULE = "layerx_v1";
 const MEMORY_EXPORT = "memory";
+const RULE_IMPORT_SIGNATURE = "wrong-import-signature";
+let selectedAbiVersion = 1;
+let abiFunctions = [];
 
-const ABI_FUNCTIONS = [
-  "storage_read",
-  "storage_write",
-  "storage_delete",
-  "event_emit",
-  "program_call",
-  "transfer_402",
-  "receipt_read"
-];
+function loadManifest(path) {
+  const text = readFileSync(path, "utf8");
+  if (!text.endsWith("\n")) refuse(RULE_MALFORMED, "unterminated ABI manifest");
+  const seen = new Set();
+  let previous = 1;
+  const functions = text.slice(0, -1).split("\n").map((line) => {
+    const fields = line.split("\t");
+    if (fields.length !== 4 || !/^[1-4]$/.test(fields[0]) ||
+        fields[1] !== `layerx_v${fields[0]}` || !/^[a-z][a-z0-9_]*$/.test(fields[2]) ||
+        !/^\((?:(?:i32|i64)(?:,(?:i32|i64))*)?\)->(?:i32|i64)$/.test(fields[3])) {
+      refuse(RULE_MALFORMED, "invalid ABI manifest row");
+    }
+    const introduced = Number(fields[0]);
+    const key = `${fields[1]}::${fields[2]}`;
+    if (introduced < previous || seen.has(key)) refuse(RULE_MALFORMED, "noncanonical ABI manifest");
+    previous = introduced;
+    seen.add(key);
+    return { introduced, module: fields[1], name: fields[2], signature: fields[3] };
+  });
+  if (functions.length !== 28 || previous !== 4) refuse(RULE_MALFORMED, "incomplete ABI manifest");
+  return functions;
+}
 
 class Refusal extends Error {
   constructor(rule, detail) {
@@ -73,6 +88,7 @@ class Reader {
     let result = 0;
     for (let index = 0; index < 5; index += 1) {
       const byte = this.byte();
+      if (index === 4 && (byte & 0xf0) !== 0) refuse(RULE_MALFORMED, "unsigned LEB128 overflow");
       result |= (byte & 0x7f) << (index * 7);
       if ((byte & 0x80) === 0) return result >>> 0;
     }
@@ -270,7 +286,16 @@ function walkExpression(reader, limit) {
 }
 
 function permittedImport(module, name) {
-  return module === ABI_MODULE && ABI_FUNCTIONS.includes(name);
+  return abiFunctions.find((entry) => entry.introduced <= selectedAbiVersion &&
+    entry.module === module && entry.name === name);
+}
+
+function valueTypeName(code) {
+  if (code === 0x7f) return "i32";
+  if (code === 0x7e) return "i64";
+  if (code === 0x70) return "funcref";
+  if (code === 0x6f) return "externref";
+  refuse(RULE_MALFORMED, "unknown value type");
 }
 
 function checkTypeSection(reader, limit) {
@@ -279,9 +304,20 @@ function checkTypeSection(reader, limit) {
     if (reader.cursor > limit) refuse(RULE_MALFORMED, "type section overran");
     if (reader.byte() !== 0x60) refuse(RULE_MALFORMED, "unknown type form");
     const parameters = reader.unsignedLeb();
-    for (let position = 0; position < parameters; position += 1) checkValueType(reader.byte());
+    const parameterTypes = [];
+    for (let position = 0; position < parameters; position += 1) {
+      const code = reader.byte();
+      checkValueType(code);
+      parameterTypes.push(valueTypeName(code));
+    }
     const results = reader.unsignedLeb();
-    for (let position = 0; position < results; position += 1) checkValueType(reader.byte());
+    const resultTypes = [];
+    for (let position = 0; position < results; position += 1) {
+      const code = reader.byte();
+      checkValueType(code);
+      resultTypes.push(valueTypeName(code));
+    }
+    reader.types.push(`(${parameterTypes.join(",")})->${resultTypes.join(",")}`);
   }
 }
 
@@ -292,10 +328,17 @@ function checkImportSection(reader, limit) {
     const module = reader.name();
     const name = reader.name();
     const kind = reader.byte();
-    if (kind !== 0x00 || !permittedImport(module, name)) {
+    const functionDeclaration = permittedImport(module, name);
+    if (kind !== 0x00 || !functionDeclaration) {
       refuse(RULE_FORBIDDEN_IMPORT, `${module}::${name}`);
     }
-    reader.skipUnsignedLeb();
+    const typeIndex = reader.unsignedLeb();
+    if (reader.types[typeIndex] !== functionDeclaration.signature) {
+      refuse(RULE_IMPORT_SIGNATURE, `${module}::${name}`);
+    }
+    const key = `${module}::${name}`;
+    if (reader.imported.has(key)) refuse(RULE_FORBIDDEN_IMPORT, `duplicate ${key}`);
+    reader.imported.add(key);
   }
 }
 
@@ -358,6 +401,8 @@ function checkModule(bytes) {
     }
   }
   const reader = new Reader(bytes);
+  reader.types = [];
+  reader.imported = new Set();
   reader.cursor = preamble.length;
   let memoryExported = false;
   while (reader.cursor < bytes.length) {
@@ -386,6 +431,9 @@ function checkModule(bytes) {
         break;
       default:
         break;
+    }
+    if ([1, 2, 3, 6, 7, 10].includes(id) && reader.cursor !== sectionEnd) {
+      refuse(RULE_MALFORMED, "section has trailing or overrun bytes");
     }
     reader.cursor = sectionEnd;
   }
@@ -420,11 +468,15 @@ const FORBIDDEN_SOURCE_CONSTRUCTS = [
  * compiler runs.
  */
 function checkSource(text) {
-  const externals = text.matchAll(/@external\s*\(\s*"([^"]*)"/g);
-  for (const match of externals) {
-    if (match[1] !== ABI_MODULE) {
-      refuse(RULE_IMPORT_DECLARATION, `${match[1]} declared instead of ${ABI_MODULE}`);
+  const externals = text.matchAll(/@external\s*\(\s*"([^"]*)"\s*,\s*"([^"]*)"\s*\)/g);
+  const bindings = [...externals];
+  for (const match of bindings) {
+    if (!permittedImport(match[1], match[2])) {
+      refuse(RULE_IMPORT_DECLARATION, `${match[1]}::${match[2]} outside selected ABI`);
     }
+  }
+  if ([...text.matchAll(/@external\s*\(/g)].length !== bindings.length) {
+    refuse(RULE_IMPORT_DECLARATION, "external binding lacks exact module and function name");
   }
   const declared = text.matchAll(/\bdeclare\s+function\s+([A-Za-z_$][\w$]*)/g);
   const externalCount = [...text.matchAll(/@external\s*\(/g)].length;
@@ -486,6 +538,23 @@ function lintPath(path) {
 }
 
 function main(argv) {
+  let manifest = new URL("../../abi-manifest.tsv", import.meta.url);
+  let index = 0;
+  while (index < argv.length && argv[index].startsWith("--")) {
+    if (argv[index] === "--abi-version" && index + 1 < argv.length) {
+      if (!/^[1-4]$/.test(argv[index + 1])) return 2;
+      selectedAbiVersion = Number(argv[index + 1]);
+    } else if (argv[index] === "--abi-manifest" && index + 1 < argv.length) {
+      manifest = argv[index + 1];
+    } else return 2;
+    index += 2;
+  }
+  argv = argv.slice(index);
+  try { abiFunctions = loadManifest(manifest); }
+  catch (error) {
+    process.stderr.write(`determinism-lint: ABI manifest: ${error.message}\n`);
+    return 2;
+  }
   if (argv.length === 0) {
     process.stderr.write("usage: determinism-lint <module.wasm|source.ts|directory>...\n");
     return 2;

@@ -259,4 +259,122 @@ lxp_program_status lxp_program_call_input(int32_t pointer, int32_t length,
                                           const uint8_t **out,
                                           size_t *out_length);
 
+#define LXP_PROGRAM_V2_ABI_MODULE "layerx_v2"
+#define LXP_PROGRAM_V3_ABI_MODULE "layerx_v3"
+#define LXP_PROGRAM_V4_ABI_MODULE "layerx_v4"
+enum {
+    LXP_PROGRAM_V1_ABI_VERSION = 1,
+    LXP_PROGRAM_V2_ABI_VERSION = 2,
+    LXP_PROGRAM_V3_ABI_VERSION = 3,
+    LXP_PROGRAM_V4_ABI_VERSION = 4,
+    LXP_PROGRAM_MAX_CALL_RESPONSE_BYTES = 1048576,
+    LXP_PROGRAM_MAX_REFUSAL_REASON_BYTES = 4096,
+    LXP_PROGRAM_MAX_ACCOUNT_SEED_BYTES = 128,
+    LXP_PROGRAM_V2_REFUSAL_SENTINEL = -64,
+    LXP_PROGRAM_MAX_SCAN_CURSOR_BYTES = 591,
+    LXP_PROGRAM_MAX_SCAN_ENTRIES = 64,
+    LXP_PROGRAM_MAX_SCAN_BYTES = 67126228,
+    LXP_PROGRAM_MAX_HASH_INPUT_BYTES = 1048576,
+    LXP_PROGRAM_ORACLE_OBSERVATION_BYTES = 64,
+    LXP_PROGRAM_WEB_HEADER_BYTES = 40,
+    LXP_PROGRAM_WEB_MAX_RESPONSE_BYTES = 4096,
+    LXP_PROGRAM_WEB_RECORD_BYTES = 4136,
+    LXP_PROGRAM_WEB_STATUS_ABSENT = -7
+};
+typedef enum lxp_program_storage_scope {
+    LXP_PROGRAM_STORAGE_PRINCIPAL = 1,
+    LXP_PROGRAM_STORAGE_SHARED = 2
+} lxp_program_storage_scope;
+typedef enum lxp_program_context_field {
+    LXP_PROGRAM_CONTEXT_EXECUTING_PROGRAM = 1,
+    LXP_PROGRAM_CONTEXT_IMMEDIATE_CALLER = 2,
+    LXP_PROGRAM_CONTEXT_INVOKING_PRINCIPAL = 3,
+    LXP_PROGRAM_CONTEXT_ACTIVITY_SEQUENCE = 4,
+    LXP_PROGRAM_CONTEXT_BATCH_HEIGHT = 5,
+    LXP_PROGRAM_CONTEXT_RUNTIME_VERSION = 6,
+    LXP_PROGRAM_CONTEXT_ABI_VERSION = 7,
+    LXP_PROGRAM_CONTEXT_REMAINING_FUEL = 8,
+    LXP_PROGRAM_CONTEXT_FEE_SCHEDULE_VERSION = 9
+} lxp_program_context_field;
+typedef enum lxp_program_hash_algorithm {
+    LXP_PROGRAM_HASH_SHA256 = 1,
+    LXP_PROGRAM_HASH_KECCAK256 = 2,
+    LXP_PROGRAM_HASH_BLAKE3 = 3
+} lxp_program_hash_algorithm;
+typedef enum lxp_program_signature_algorithm {
+    LXP_PROGRAM_SIGNATURE_ED25519 = 1,
+    LXP_PROGRAM_SIGNATURE_SECP256K1 = 2
+} lxp_program_signature_algorithm;
+typedef enum lxp_program_refusal_class {
+    LXP_PROGRAM_REFUSAL_REJECTED = 1,
+    LXP_PROGRAM_REFUSAL_INVALID_INPUT = 2,
+    LXP_PROGRAM_REFUSAL_UNAUTHORIZED = 3,
+    LXP_PROGRAM_REFUSAL_CONFLICT = 4,
+    LXP_PROGRAM_REFUSAL_NOT_FOUND = 5,
+    LXP_PROGRAM_REFUSAL_RUNTIME_FAULT = 254,
+    LXP_PROGRAM_REFUSAL_LEGACY = 255
+} lxp_program_refusal_class;
+typedef struct lxp_program_scan_page {
+    const uint8_t *encoded;
+    size_t length;
+    uint16_t count;
+    const uint8_t *cursor;
+    size_t cursor_length;
+} lxp_program_scan_page;
+typedef struct lxp_program_oracle_observation {
+    lxp_program_amount price;
+    uint64_t observed_at;
+    uint64_t sequence;
+    lxp_program_digest source_set_digest;
+} lxp_program_oracle_observation;
+typedef struct lxp_program_web_answer {
+    lxp_program_digest content_digest;
+    uint32_t full_length;
+    const uint8_t *response;
+    size_t response_length;
+} lxp_program_web_answer;
+
+
+const uint8_t *lxp_program_abi_manifest_version(uint16_t version, size_t *length);
+lxp_program_status lxp_program_response_write(int32_t code, const uint8_t *bytes, size_t length);
+lxp_program_status lxp_program_refusal_write(lxp_program_refusal_class class_code, const uint8_t *reason, size_t length);
+lxp_program_status lxp_program_call_response(lxp_program_id callee,
+    const uint8_t *input, size_t input_length, const uint8_t *capabilities,
+    size_t capabilities_length, uint8_t *output, size_t capacity, int32_t *code, size_t *length);
+lxp_program_status lxp_program_storage_read_scoped(lxp_program_storage_scope scope,
+    const uint8_t *key, size_t key_length, uint8_t *out, size_t capacity, size_t *length, bool *found);
+lxp_program_status lxp_program_storage_write_scoped(lxp_program_storage_scope scope,
+    const uint8_t *key, size_t key_length, const uint8_t *value, size_t value_length);
+lxp_program_status lxp_program_storage_delete_scoped(lxp_program_storage_scope scope,
+    const uint8_t *key, size_t key_length);
+lxp_program_status lxp_program_storage_drop_scoped(lxp_program_storage_scope scope);
+lxp_program_status lxp_program_storage_scan_scoped(lxp_program_storage_scope scope,
+    const uint8_t *prefix, size_t prefix_length, const uint8_t *cursor, size_t cursor_length,
+    uint32_t max_entries, uint32_t max_bytes, uint8_t *output, size_t capacity, lxp_program_scan_page *page);
+lxp_program_status lxp_program_transfer_program_402(lxp_program_amount amount,
+    const uint8_t *seed, size_t seed_length, lxp_program_account source, lxp_program_asset asset, lxp_program_account recipient);
+lxp_program_status lxp_program_fund_program_402(lxp_program_amount amount,
+    const uint8_t *seed, size_t seed_length, lxp_program_account destination, lxp_program_asset asset);
+lxp_program_status lxp_program_context_read(lxp_program_context_field field,
+    uint8_t *output, size_t capacity, size_t *length);
+lxp_program_status lxp_program_balance_read(lxp_program_account account,
+    lxp_program_asset asset, lxp_program_amount *amount);
+lxp_program_status lxp_program_hash(lxp_program_hash_algorithm algorithm,
+    const uint8_t *input, size_t length, lxp_program_digest *digest);
+lxp_program_status lxp_program_signature_verify(lxp_program_signature_algorithm algorithm,
+    const uint8_t *message, size_t message_length, const uint8_t *key, size_t key_length, const uint8_t signature[64]);
+lxp_program_status lxp_program_signature_recover(const uint8_t digest[32],
+    const uint8_t signature[64], uint8_t recovery_id, uint8_t output[65]);
+lxp_program_status lxp_program_bigint_mul_256(const uint8_t left[32], const uint8_t right[32], uint8_t output[64]);
+lxp_program_status lxp_program_bigint_div_256(const uint8_t left[32], const uint8_t right[32], uint8_t output[32]);
+lxp_program_status lxp_program_bigint_rem_256(const uint8_t left[32], const uint8_t right[32], uint8_t output[32]);
+lxp_program_status lxp_program_bigint_modexp_256(const uint8_t base[32], const uint8_t exponent[32],
+    const uint8_t modulus[32], uint8_t output[32]);
+lxp_program_status lxp_program_oracle_read(const uint8_t market[32], lxp_program_oracle_observation *observation);
+lxp_program_status lxp_program_web_read(uint64_t request_id, uint8_t *record, size_t capacity,
+    lxp_program_web_answer *answer, bool *found);
+
+int32_t lxp_program_reserve_call_input_versioned(int32_t length);
+lxp_program_status lxp_program_call_input_versioned(int32_t pointer, int32_t length, const uint8_t **out, size_t *out_length);
+
 #endif

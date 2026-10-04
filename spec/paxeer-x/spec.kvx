@@ -27017,7 +27017,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.7.3]
 title = "Provide current versioned program capabilities in Rust, C and AssemblyScript"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 4
 requires = ["0.2", "6.3", "6.4"]
@@ -27027,7 +27027,7 @@ do_2 = "Update language determinism linters from the shared manifest and preserv
 do_3 = "Create actual per-language guest fixtures covering accounts, calls, oracle/web committed reads and negative capabilities, and compare their canonical outputs with Rust."
 do_4 = "Author the new focused harness tools/qualification/paxeer-x/programs_language_abi.py to exercise these acceptance cases against real production implementations and types. It must fail on missing candidate artifacts, missing authority/configuration, skipped cases or unverifiable receipts; retain the exact candidate revision, command, case results and evidence paths. Use disposable qualification state and provisioned authority without printing secret values; no mocks, synthetic success or substitution of a library-only model for a named process boundary."
 do_5 = "Implement the declared focused gate through the real production types and paths; exercise every acceptance criterion including refusal, restart or boundary cases specified by this requirement. The command is a planned deliverable, not an already-run gate."
-touches = ["programs/sdk/c/include/layerx/program.h", "programs/sdk/c/src/host.h", "programs/sdk/c/tools/determinism_lint.c", "programs/sdk/assemblyscript/assembly/abi.ts", "programs/sdk/assemblyscript/assembly/index.ts", "programs/sdk/assemblyscript/tools/determinism-lint.mjs", "programs/sdk/rust/src/abi.rs", "programs/sdk/rust/lint/src/lib.rs", "tools/qualification/paxeer-x/programs_language_abi.py"]
+touches = ["programs/sdk/c/include/layerx/program.h", "programs/sdk/c/src/host.h", "programs/sdk/c/tools/determinism_lint.c", "programs/sdk/assemblyscript/assembly/abi.ts", "programs/sdk/assemblyscript/assembly/index.ts", "programs/sdk/assemblyscript/tools/determinism-lint.mjs", "programs/sdk/rust/src/abi.rs", "programs/sdk/rust/lint/src/lib.rs", "tools/qualification/paxeer-x/programs_language_abi.py", "programs/sdk/c/src/versioned.c", "programs/sdk/c/tests/language_abi.c", "programs/sdk/assemblyscript/assembly/versioned.ts", "programs/sdk/assemblyscript/tests/language_abi.ts", "programs/sdk/rust/tests/fixtures/language_abi.rs", "programs/sdk/abi-manifest.tsv", "tests/programs/test_language_abi.c", "programs/sdk/assemblyscript/package.json"]
 verify_cmd = "timeout 30m python3 tools/qualification/paxeer-x/programs_language_abi.py"
 gate_kind = "planned"
 max_builds = 1
@@ -27039,6 +27039,12 @@ deployment_profile = "product"
 planned_paths = ["tools/qualification/paxeer-x/programs_language_abi.py"]
 path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
 evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+implementation_window = "START09:48UTC END10:18UTC; entire source then one build and declaredverify, maximumtwo scopedrepairs. Root publication precedes immutable candidate qualification."
+build_cmd = "timeout 20m python3 tools/qualification/paxeer-x/programs_language_abi.py --build"
+source_status = "complete"
+completion_basis = "implementation under owner CONSTITUTION; qualification separately recorded"
+qualification_status = "UNRUN"
+source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-7.3-source-handoff.json"
 
 [task.9.1]
 title = "Attach approved production payment authority to served MCP web tools"

@@ -308,3 +308,5 @@ mod tests {
         }
     }
 }
+
+pub const SHARED_ABI_MANIFEST_TSV: &str = include_str!("../../abi-manifest.tsv");

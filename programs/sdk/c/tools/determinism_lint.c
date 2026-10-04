@@ -1,3 +1,5 @@
+#define _XOPEN_SOURCE 700
+#include <limits.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -30,12 +32,26 @@ static const char RULE_UNKNOWN_INSTRUCTION[] = "unknown-instruction";
 static const char RULE_MISSING_MEMORY[] = "missing-memory-export";
 static const char RULE_IMPORT_DECLARATION[] = "forbidden-import-declaration";
 
-static const char ABI_MODULE[] = "layerx_v1";
+static unsigned selected_abi_version = 1U;
+static const char *manifest_path;
+static char default_manifest_path[PATH_MAX];
+static const char RULE_IMPORT_SIGNATURE[] = "wrong-import-signature";
 
-static const char *const ABI_FUNCTIONS[] = {
-    "storage_read", "storage_write", "storage_delete", "event_emit",
-    "program_call", "transfer_402", "receipt_read"
-};
+typedef struct abi_function {
+    unsigned introduced;
+    char module[32];
+    char name[64];
+    char signature[128];
+} abi_function;
+static abi_function abi_functions[28];
+static size_t abi_function_count;
+
+typedef struct function_type {
+    uint32_t parameters;
+    uint32_t results;
+    uint8_t parameter_types[16];
+    uint8_t result_type;
+} function_type;
 
 typedef struct lint_state {
     const uint8_t *bytes;
@@ -45,6 +61,9 @@ typedef struct lint_state {
     char detail[LINT_DETAIL_BYTES];
     int memory_exported;
     uint32_t function_count;
+    uint32_t type_count;
+    function_type types[LINT_MAX_FUNCTIONS];
+    uint8_t imported[28];
 } lint_state;
 
 static int fail(lint_state *state, const char *rule, const char *detail)
@@ -83,6 +102,8 @@ static int read_u32_leb(lint_state *state, uint32_t *out)
     for (index = 0U; index < 5U; ++index) {
         uint8_t byte;
         if (!read_byte(state, &byte)) return 0;
+        if (index == 4U && (byte & 0xF0U) != 0U)
+            return fail(state, RULE_MALFORMED, "unsigned LEB128 overflow");
         result |= (uint32_t)(byte & 0x7FU) << (index * 7U);
         if ((byte & 0x80U) == 0U) {
             *out = result;
@@ -331,20 +352,46 @@ static int read_name(lint_state *state, char *out, size_t capacity)
     for (index = 0U; index < length; ++index) {
         uint8_t byte;
         if (!read_byte(state, &byte)) return 0;
+        if (byte == 0U) return fail(state, RULE_MALFORMED, "embedded NUL in name");
         out[index] = (char)byte;
     }
     out[length] = '\0';
     return 1;
 }
 
-static int permitted_import(const char *module, const char *name)
+static const abi_function *permitted_import(const char *module, const char *name)
 {
     size_t index;
-    if (strcmp(module, ABI_MODULE) != 0) return 0;
-    for (index = 0U; index < sizeof(ABI_FUNCTIONS) / sizeof(ABI_FUNCTIONS[0]);
-         ++index)
-        if (strcmp(name, ABI_FUNCTIONS[index]) == 0) return 1;
-    return 0;
+    for (index = 0U; index < abi_function_count; ++index)
+        if (abi_functions[index].introduced <= selected_abi_version &&
+            strcmp(module, abi_functions[index].module) == 0 &&
+            strcmp(name, abi_functions[index].name) == 0)
+            return &abi_functions[index];
+    return NULL;
+}
+
+static int exact_signature(const function_type *type, const char *expected)
+{
+    char signature[128];
+    size_t used = 0U;
+    uint32_t index;
+    if (type->parameters > 16U || type->results != 1U) return 0;
+    signature[used++] = '(';
+    for (index = 0U; index < type->parameters; ++index) {
+        const char *name;
+        if (type->parameter_types[index] == 0x7FU) name = "i32";
+        else if (type->parameter_types[index] == 0x7EU) name = "i64";
+        else return 0;
+        if (index != 0U) signature[used++] = ',';
+        memcpy(signature + used, name, 3U);
+        used += 3U;
+    }
+    memcpy(signature + used, ")->", 3U);
+    used += 3U;
+    if (type->result_type == 0x7FU) memcpy(signature + used, "i32", 4U);
+    else if (type->result_type == 0x7EU) memcpy(signature + used, "i64", 4U);
+    else return 0;
+    return strcmp(signature, expected) == 0;
 }
 
 static int check_type_section(lint_state *state, size_t limit)
@@ -352,6 +399,8 @@ static int check_type_section(lint_state *state, size_t limit)
     uint32_t count;
     uint32_t index;
     if (!read_u32_leb(state, &count)) return 0;
+    if (count > LINT_MAX_FUNCTIONS) return fail(state, RULE_MALFORMED, "too many function types");
+    state->type_count = count;
     for (index = 0U; index < count; ++index) {
         uint8_t form;
         uint32_t parameters;
@@ -363,16 +412,20 @@ static int check_type_section(lint_state *state, size_t limit)
         if (form != 0x60U)
             return fail(state, RULE_MALFORMED, "unknown type form");
         if (!read_u32_leb(state, &parameters)) return 0;
+        state->types[index].parameters = parameters;
         for (position = 0U; position < parameters; ++position) {
             uint8_t code;
             if (!read_byte(state, &code)) return 0;
             if (!check_value_type(state, code)) return 0;
+            if (position < 16U) state->types[index].parameter_types[position] = code;
         }
         if (!read_u32_leb(state, &results)) return 0;
+        state->types[index].results = results;
         for (position = 0U; position < results; ++position) {
             uint8_t code;
             if (!read_byte(state, &code)) return 0;
             if (!check_value_type(state, code)) return 0;
+            if (position == 0U) state->types[index].result_type = code;
         }
     }
     return 1;
@@ -387,15 +440,25 @@ static int check_import_section(lint_state *state, size_t limit)
     if (!read_u32_leb(state, &count)) return 0;
     for (index = 0U; index < count; ++index) {
         uint8_t kind;
+        uint32_t type_index;
+        const abi_function *function;
+        size_t function_index;
         if (state->cursor > limit)
             return fail(state, RULE_MALFORMED, "import section overran");
         if (!read_name(state, module, sizeof(module))) return 0;
         if (!read_name(state, name, sizeof(name))) return 0;
         if (!read_byte(state, &kind)) return 0;
-        if (kind != 0x00U || !permitted_import(module, name))
+        function = permitted_import(module, name);
+        if (kind != 0x00U || function == NULL)
             return fail_named(state, RULE_FORBIDDEN_IMPORT, "%s::%s", module,
                               name);
-        if (!skip_u32_leb(state)) return 0;
+        if (!read_u32_leb(state, &type_index)) return 0;
+        if (type_index >= state->type_count || !exact_signature(&state->types[type_index], function->signature))
+            return fail_named(state, RULE_IMPORT_SIGNATURE, "%s::%s", module, name);
+        function_index = (size_t)(function - abi_functions);
+        if (state->imported[function_index])
+            return fail_named(state, RULE_FORBIDDEN_IMPORT, "duplicate %s::%s", module, name);
+        state->imported[function_index] = 1U;
     }
     return 1;
 }
@@ -522,6 +585,9 @@ static int check_module(lint_state *state)
         default:
             break;
         }
+        if ((id == 1U || id == 2U || id == 3U || id == 6U || id == 7U || id == 10U)
+            && state->cursor != section_end)
+            return fail(state, RULE_MALFORMED, "section has trailing or overrun bytes");
         state->cursor = section_end;
     }
     if (!state->memory_exported)
@@ -593,10 +659,27 @@ static int check_source(const char *path, const char *text, lint_state *state)
                         "import module name exceeds the declared bound");
         memcpy(module, quote + 1, length);
         module[length] = '\0';
-        if (strcmp(module, ABI_MODULE) != 0)
+        if (strncmp(module, "layerx_v", 8U) != 0 || strlen(module) != 9U ||
+            module[8] < '1' || module[8] > '4' || (unsigned)(module[8] - '0') > selected_abi_version)
             return fail_named(state, RULE_IMPORT_DECLARATION,
-                              "%s declared instead of %s", module,
-                              ABI_MODULE);
+                              "%s declared outside %s", module, "selected ABI");
+        {
+            const char *end = strchr(close, ';');
+            const char *name_marker = strstr(close, "import_name");
+            if (name_marker != NULL && (end == NULL || name_marker < end)) {
+                const char *name_quote = strchr(name_marker, '"');
+                const char *name_close = name_quote == NULL ? NULL : strchr(name_quote + 1, '"');
+                char name[256];
+                if (name_close == NULL || (end != NULL && name_close > end))
+                    return fail(state, RULE_IMPORT_DECLARATION, "import_name without literal name");
+                length = (size_t)(name_close - name_quote - 1);
+                if (length >= sizeof(name)) return fail(state, RULE_IMPORT_DECLARATION, "import name too long");
+                memcpy(name, name_quote + 1, length);
+                name[length] = '\0';
+                if (permitted_import(module, name) == NULL)
+                    return fail_named(state, RULE_IMPORT_DECLARATION, "%s::%s", module, name);
+            }
+        }
         cursor = close + 1;
     }
 }
@@ -630,16 +713,95 @@ static int lint_path(const char *path)
     return 0;
 }
 
+static int select_default_manifest(void)
+{
+    char source[PATH_MAX];
+    const char suffix[] = "/c/tools/determinism_lint.c";
+    size_t length;
+    size_t prefix;
+    if (realpath(__FILE__, source) == NULL) return 0;
+    length = strlen(source);
+    if (length < sizeof(suffix) - 1U ||
+        strcmp(source + length - (sizeof(suffix) - 1U), suffix) != 0) return 0;
+    prefix = length - (sizeof(suffix) - 1U);
+    if (prefix + sizeof("/abi-manifest.tsv") > sizeof(default_manifest_path)) return 0;
+    memcpy(default_manifest_path, source, prefix);
+    memcpy(default_manifest_path + prefix, "/abi-manifest.tsv", sizeof("/abi-manifest.tsv"));
+    manifest_path = default_manifest_path;
+    return 1;
+}
+
+static int load_manifest(void)
+{
+    FILE *file = fopen(manifest_path, "rb");
+    char line[256];
+    unsigned previous = 1U;
+    if (file == NULL) return 0;
+    while (fgets(line, sizeof(line), file) != NULL) {
+        char *fields[4];
+        char *cursor = line;
+        size_t index;
+        unsigned introduced;
+        size_t length = strlen(line);
+        if (length == 0U || line[length - 1U] != '\n' || abi_function_count >= 28U) {
+            (void)fclose(file); return 0;
+        }
+        line[length - 1U] = '\0';
+        for (index = 0U; index < 4U; ++index) {
+            fields[index] = cursor;
+            if (index < 3U) {
+                cursor = strchr(cursor, '\t');
+                if (cursor == NULL) { (void)fclose(file); return 0; }
+                *cursor++ = '\0';
+            } else if (strchr(cursor, '\t') != NULL) { (void)fclose(file); return 0; }
+        }
+        if (strlen(fields[0]) != 1U || fields[0][0] < '1' || fields[0][0] > '4') {
+            (void)fclose(file); return 0;
+        }
+        introduced = (unsigned)(fields[0][0] - '0');
+        if (introduced < previous || strlen(fields[1]) != 9U ||
+            strncmp(fields[1], "layerx_v", 8U) != 0 || fields[1][8] != fields[0][0] ||
+            fields[2][0] == '\0' || strlen(fields[2]) >= 64U || strlen(fields[3]) >= 128U ||
+            fields[3][0] != '(' || strstr(fields[3], ")->") == NULL) {
+            (void)fclose(file); return 0;
+        }
+        for (index = 0U; index < abi_function_count; ++index)
+            if (strcmp(abi_functions[index].module, fields[1]) == 0 &&
+                strcmp(abi_functions[index].name, fields[2]) == 0) { (void)fclose(file); return 0; }
+        abi_functions[abi_function_count].introduced = introduced;
+        (void)strcpy(abi_functions[abi_function_count].module, fields[1]);
+        (void)strcpy(abi_functions[abi_function_count].name, fields[2]);
+        (void)strcpy(abi_functions[abi_function_count].signature, fields[3]);
+        abi_function_count++;
+        previous = introduced;
+    }
+    if (ferror(file)) { (void)fclose(file); return 0; }
+    (void)fclose(file);
+    return abi_function_count == 28U && previous == 4U;
+}
+
 int main(int argc, char **argv)
 {
     int failures = 0;
-    int index;
-    if (argc < 2) {
-        (void)fprintf(stderr,
-                      "usage: determinism-lint <module.wasm|source.c>...\n");
+    int index = 1;
+    while (index < argc && strncmp(argv[index], "--", 2U) == 0) {
+        if (strcmp(argv[index], "--abi-version") == 0 && index + 1 < argc) {
+            const char *version = argv[++index];
+            if (strlen(version) != 1U || version[0] < '1' || version[0] > '4') return 2;
+            selected_abi_version = (unsigned)(version[0] - '0');
+        } else if (strcmp(argv[index], "--abi-manifest") == 0 && index + 1 < argc) {
+            manifest_path = argv[++index];
+        } else return 2;
+        index++;
+    }
+    if (index >= argc) {
+        (void)fprintf(stderr, "usage: determinism-lint [--abi-version 1..4] [--abi-manifest path] <module.wasm|source.c>...\n");
         return 2;
     }
-    for (index = 1; index < argc; ++index)
-        failures += lint_path(argv[index]);
+    if ((manifest_path == NULL && !select_default_manifest()) || !load_manifest()) {
+        (void)fprintf(stderr, "determinism-lint: malformed or unreadable ABI manifest\n");
+        return 2;
+    }
+    for (; index < argc; ++index) failures += lint_path(argv[index]);
     return failures == 0 ? 0 : 1;
 }
