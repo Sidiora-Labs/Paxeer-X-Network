@@ -24330,7 +24330,7 @@ do_4 = "Make the verifier itself deterministic, integer-only and bounded so it c
 do_5 = "Prove the verifier agrees with the runtime on every step of the conformance corpus, so a correct execution is never judged incorrect."
 do_6 = "Freeze the verifier behind golden vectors covering every instruction, every host call and every trap."
 do_7 = "Provide this task selector in tools/paxeer-x/gates and execute the full scoped acceptance contract using real production paths. Preserve the retained verification command coverage; move aggregate matrices to release scope and refuse an unknown or unimplemented selector."
-touches = ["programs/crates/layerx-programs-arbiter/src/step.rs", "tools/paxeer-x/gates/104.35.2.sh", "programs/Cargo.toml", "programs/Cargo.lock", "programs/crates/layerx-programs-arbiter/Cargo.toml", "programs/crates/layerx-programs-arbiter/src/lib.rs", "programs/crates/layerx-programs-runtime/src/replay.rs", "programs/crates/layerx-programs-runtime/src/host/mod.rs", "programs/crates/layerx-programs-runtime/src/abi/host_state.rs", "programs/crates/layerx-programs-runtime/src/execute.rs", "programs/crates/layerx-programs-runtime/src/lib.rs", "programs/crates/layerx-programs-runtime/src/calls.rs", "programs/crates/layerx-programs-runtime/src/meter.rs", "programs/crates/layerx-programs-runtime/src/storage/reclaim.rs", "programs/crates/layerx-programs-runtime/src/abi/mod.rs", "programs/crates/layerx-programs-runtime/src/host/oracle.rs", "programs/crates/layerx-programs-runtime/src/host/web.rs", "programs/crates/layerx-programs-runtime/src/ffi_call.rs", "programs/crates/layerx-programs-runtime/src/ffi_interface.rs", "programs/crates/layerx-programs-runtime/src/abi/context.rs", "programs/crates/layerx-programs-runtime/src/abi/response.rs"]
+touches = ["tools/paxeer-x/gates/104.35.2.sh", "programs/Cargo.toml", "programs/Cargo.lock", "programs/crates/layerx-programs-runtime/src/lib.rs", "programs/crates/layerx-programs-runtime/src/calls.rs", "programs/crates/layerx-programs-runtime/src/storage/reclaim.rs", "programs/crates/layerx-programs-runtime/src/abi/mod.rs", "programs/crates/layerx-programs-runtime/src/host/oracle.rs", "programs/crates/layerx-programs-runtime/src/host/web.rs", "programs/crates/layerx-programs-runtime/src/ffi_call.rs", "programs/crates/layerx-programs-runtime/src/ffi_interface.rs", "programs/crates/layerx-programs-runtime/src/abi/context.rs", "programs/crates/layerx-programs-runtime/src/abi/response.rs"]
 verify_cmd = "timeout 30m tools/paxeer-x/verify-task.sh 104.35.2"
 gate_kind = "planned-adapter"
 max_builds = 1
@@ -24346,6 +24346,9 @@ completion_policy = "Existing implementation is preserved; current candidate qua
 planned_paths = ["programs/crates/layerx-programs-arbiter/src/step.rs", "tools/paxeer-x/gates/104.35.2.sh", "programs/crates/layerx-programs-arbiter/Cargo.toml", "programs/crates/layerx-programs-arbiter/src/lib.rs"]
 path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
 evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+
+retained_shared_touch_paths = ["programs/crates/layerx-programs-arbiter/Cargo.toml", "programs/crates/layerx-programs-arbiter/src/lib.rs", "programs/crates/layerx-programs-arbiter/src/step.rs", "programs/crates/layerx-programs-runtime/src/replay.rs", "programs/crates/layerx-programs-runtime/src/execute.rs", "programs/crates/layerx-programs-runtime/src/host/mod.rs", "programs/crates/layerx-programs-runtime/src/abi/host_state.rs", "programs/crates/layerx-programs-runtime/src/meter.rs"]
+source_ownership = "Task104.35.13 owns the actual arbiter facade and authenticated runtime replay binding; all original full instruction/host/trap criteria remain required for104.35.2. Root owns workspace and locks."
 
 [task.104.35.7]
 title = "Accept attested inputs from non-deterministic work"
@@ -32569,3 +32572,31 @@ qualification_build_exit = 0
 qualification_verify_exit = 0
 qualification_build_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-0.12-build.log"
 qualification_verify_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-0.12-verify.log"
+
+[task.104.35.16]
+title = "Retain genuine per-boundary interpreter and semantic replay witnesses in production execution"
+status = "done"
+mode = "BUILD"
+wave = 2
+requires = ["0.2", "104.35.11"]
+reqs = ["1105.3", "1105.4"]
+do_1 = "Capture actual interpreter PC/frame/function/value/local/memory/global/meter state and matching runtime semantic state at each committed execution boundary, through the real EngineStepHook and production execute path."
+do_2 = "Keep every legacy trace hash and encoding unchanged; add explicit bounded sidecar pairing genuine witnesses to exact existing trace commitments. Do not present process-local authorization as authenticated ledger authority."
+do_3 = "Provide deterministic bounded actual runtime restore and one-step access using real engine/types; preserve every host/trap/refusal and budget check. Root's authenticated native admission producer supplies separate authority facts to10435.13."
+do_4 = "Author real runtime positive/refusal/restoration cases with no fake host authority, preserving old checks. Remain connected to production execution and actual authenticated arbiter consumer."
+touches = ["programs/crates/layerx-programs-runtime/src/execute.rs", "programs/crates/layerx-programs-runtime/src/replay.rs", "programs/crates/layerx-programs-runtime/src/host/mod.rs", "programs/crates/layerx-programs-runtime/src/abi/host_state.rs", "programs/crates/layerx-programs-runtime/tests/boundary_witness.rs", "tools/qualification/paxeer-x/runtime-boundary-witness.py", "programs/crates/layerx-programs-runtime/src/meter.rs"]
+build_cmd = "timeout 20m env CARGO_TARGET_DIR=/root/lx-target/programs /root/.cargo/bin/cargo test --locked --manifest-path programs/Cargo.toml -p layerx-programs-runtime --test boundary_witness --no-run"
+verify_cmd = "timeout 10m python3 tools/qualification/paxeer-x/runtime-boundary-witness.py"
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop at original dispatch cap, second failed repair, missing actual owner/type or legacy weakening; report exact partial state and evidence."
+completion_basis_policy = "Owner CONSTITUTION: fully implemented DONE; actual qualification separate."
+source_ownership = "Root owns workspace, locks, shared lib.rs exports, spec and publication.10435.13 retains authenticated facade. Source edits wait until10435.12 bounded native transport gate ends."
+completion_basis = "implementation"
+qualification_status = "passed"
+qualification_build_exit = 0
+qualification_verify_exit = 0
+qualification_build_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/qualification/task1043516/build.log"
+qualification_verify_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/qualification/task1043516/verify.log"

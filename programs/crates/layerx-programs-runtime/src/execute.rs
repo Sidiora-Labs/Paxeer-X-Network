@@ -184,13 +184,135 @@ fn commitment_fault(error: &crate::CommitmentError) -> ExecutionFault {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 struct TraceIdentities {
     legacy: crate::ExecutionTraceIdentity,
     runtime_version: u16,
     abi_version: u16,
     fee_schedule_version: u32,
     metering_schedule_version: u32,
+}
+
+#[derive(Debug)]
+pub enum RuntimeBoundaryReplayError {
+    Witness(crate::replay::ReplayWitnessError),
+    Execution(ExecutionFault),
+    Engine(wasmi::ExecutionStepError),
+    Binding,
+}
+
+impl From<crate::replay::ReplayWitnessError> for RuntimeBoundaryReplayError {
+    fn from(error: crate::replay::ReplayWitnessError) -> Self {
+        Self::Witness(error)
+    }
+}
+impl From<ExecutionFault> for RuntimeBoundaryReplayError {
+    fn from(error: ExecutionFault) -> Self {
+        Self::Execution(error)
+    }
+}
+
+#[derive(Debug)]
+pub struct CapturedBoundaryExecution {
+    pub values: Vec<WasmValue>,
+    pub trace: crate::ExecutionTrace,
+    pub boundaries: Vec<CapturedRuntimeBoundary>,
+}
+
+#[derive(Debug)]
+pub struct CapturedRuntimeBoundary {
+    transition: wasmi::ExecutionReplayTransition,
+    semantic: crate::replay::CapturedSemanticReplayV2,
+    expected_semantic: crate::replay::CapturedSemanticReplayV2,
+    pre_commitment: crate::ArbitrationStepCommitment,
+    post_commitment: crate::ArbitrationStepCommitment,
+    identities: TraceIdentities,
+    policy: crate::TracePolicy,
+    maximum_bytes: usize,
+}
+
+impl CapturedRuntimeBoundary {
+    pub fn step_index(&self) -> u64 {
+        self.transition.pre.snapshot.step_index
+    }
+    pub fn pre_commitment(&self) -> crate::ArbitrationStepCommitment {
+        self.pre_commitment
+    }
+    pub fn post_commitment(&self) -> crate::ArbitrationStepCommitment {
+        self.post_commitment
+    }
+    pub fn replay(&self, module: &ValidatedModule) -> Result<(), RuntimeBoundaryReplayError> {
+        if module.code_hash() != self.identities.legacy.module_code_hash {
+            return Err(RuntimeBoundaryReplayError::Binding);
+        }
+        let mut instance = module.instantiate()?;
+        *instance.store.data_mut() = self
+            .semantic
+            .restore_untrusted(self.maximum_bytes)?
+            .into_runtime_state();
+        instance.store.data_mut().enable_boundary_capture(
+            module.code_hash(),
+            2,
+            self.maximum_bytes,
+        )?;
+        instance.store.enable_execution_replay_observer_with_limits(
+            2,
+            crate::MAX_TRACE_STATE_BYTES,
+            crate::MAX_TRACE_STATE_BYTES,
+        );
+        instance
+            .store
+            .set_execution_supplement(RuntimeState::execution_supplement);
+        let engine = instance.store.engine().clone();
+        let context = wasmi::ExecutionReplayContext::new(
+            wasmi::AsContextMut::as_context_mut(&mut instance.store),
+            instance.instance,
+        );
+        let outcome = engine
+            .execute_step(context, &self.transition.pre)
+            .map_err(RuntimeBoundaryReplayError::Engine)?;
+        let transition = match outcome {
+            wasmi::ExecutionStepOutcome::Boundary(value)
+            | wasmi::ExecutionStepOutcome::Returned(value) => value,
+            wasmi::ExecutionStepOutcome::Trapped(_) => {
+                return Err(RuntimeBoundaryReplayError::Binding)
+            }
+        };
+        if transition != self.transition {
+            return Err(RuntimeBoundaryReplayError::Binding);
+        }
+        let captures = instance.store.data_mut().take_boundary_captures();
+        if captures.len() != 1
+            || captures[0].canonical_bytes(self.maximum_bytes)?
+                != self.expected_semantic.canonical_bytes(self.maximum_bytes)?
+        {
+            return Err(RuntimeBoundaryReplayError::Binding);
+        }
+        let ordinary = wasmi::ExecutionTransition {
+            pre: transition.pre.snapshot.clone(),
+            post: transition.post.snapshot.clone(),
+            memory_expansion_bytes: transition.memory_expansion_bytes,
+        };
+        let pre = execution_state_from_snapshot(&ordinary.pre, self.identities.legacy)?;
+        let post = execution_state_from_snapshot(&ordinary.post, self.identities.legacy)?;
+        let pre = arbitration_state_from_snapshot(
+            &ordinary.pre,
+            self.identities,
+            self.policy,
+            std::sync::Arc::new(pre),
+        )?;
+        let post = arbitration_state_from_snapshot(
+            &ordinary.post,
+            self.identities,
+            self.policy,
+            std::sync::Arc::new(post),
+        )?;
+        let commitments = validate_arbitration_commitments(&ordinary, &pre, &post)?;
+        if commitments != (self.pre_commitment, self.post_commitment) {
+            return Err(RuntimeBoundaryReplayError::Binding);
+        }
+        Ok(())
+    }
 }
 
 fn trace_identity(
@@ -928,20 +1050,167 @@ fn convert_execution_transitions(
 }
 
 impl ProgramInstance {
-    pub fn capture_composition_replay_witness(&self, maximum_bytes: usize) -> Result<crate::replay::CompositionReplayWitnessV1, crate::replay::ReplayWitnessError> {
-        self.store.data().replay_composition_witness(self.validated_code_hash, maximum_bytes)
+    pub fn call_with_boundary_witnesses(
+        &mut self,
+        module: &ValidatedModule,
+        export: &str,
+        args: &[WasmValue],
+        policy: crate::TracePolicy,
+        maximum_bytes: usize,
+    ) -> Result<CapturedBoundaryExecution, RuntimeBoundaryReplayError> {
+        if self.validated_code_hash != module.code_hash() || policy.interval() != 1 {
+            return Err(RuntimeBoundaryReplayError::Binding);
+        }
+        crate::replay::maximum_bytes(maximum_bytes)?;
+        let maximum_snapshots = usize::try_from(policy.maximum_commitments())
+            .map_err(|_| RuntimeBoundaryReplayError::Binding)?;
+        let mut inputs = Vec::new();
+        for argument in args {
+            match argument {
+                WasmValue::I32(value) => {
+                    crate::replay::append(&mut inputs, &[0], maximum_bytes)?;
+                    crate::replay::append(&mut inputs, &value.to_be_bytes(), maximum_bytes)?;
+                }
+                WasmValue::I64(value) => {
+                    crate::replay::append(&mut inputs, &[1], maximum_bytes)?;
+                    crate::replay::append(&mut inputs, &value.to_be_bytes(), maximum_bytes)?;
+                }
+            }
+        }
+        let abi_version = match module.abi_revision() {
+            AbiRevision::V1 => 1,
+            AbiRevision::V2 => 2,
+            AbiRevision::V3 => 3,
+            AbiRevision::V4 => 4,
+        };
+        let identities = trace_identity(
+            module,
+            export,
+            &inputs,
+            RUNTIME_VERSION,
+            abi_version,
+            self.store.data().meter().fee_schedule_version(),
+            policy,
+        )?;
+        self.store.data_mut().enable_boundary_capture(
+            module.code_hash(),
+            maximum_snapshots,
+            maximum_bytes,
+        )?;
+        self.store.enable_execution_replay_observer_with_limits(
+            maximum_snapshots,
+            crate::MAX_TRACE_STATE_BYTES,
+            crate::MAX_TRACE_STATE_BYTES,
+        );
+        self.store
+            .set_execution_supplement(RuntimeState::execution_supplement);
+        let values = self.call(export, args)?;
+        if let Some(error) = self.execution_observer_fault() {
+            return Err(error.into());
+        }
+        let transitions = self.store.take_execution_replay_transitions();
+        let captures = self.store.data_mut().take_boundary_captures();
+        if transitions.is_empty()
+            || captures.len()
+                != transitions
+                    .len()
+                    .checked_add(1)
+                    .ok_or(RuntimeBoundaryReplayError::Binding)?
+        {
+            return Err(RuntimeBoundaryReplayError::Binding);
+        }
+        let trace = self.take_execution_trace(policy, identities)?;
+        let mut boundaries = Vec::new();
+        boundaries
+            .try_reserve_exact(transitions.len())
+            .map_err(|_| crate::replay::ReplayWitnessError::Allocation)?;
+        for (index, transition) in transitions.into_iter().enumerate() {
+            captures[index]
+                .compare_boundary(module.code_hash(), &transition.pre.snapshot.supplement)?;
+            captures[index + 1]
+                .compare_boundary(module.code_hash(), &transition.post.snapshot.supplement)?;
+            let ordinary = wasmi::ExecutionTransition {
+                pre: transition.pre.snapshot.clone(),
+                post: transition.post.snapshot.clone(),
+                memory_expansion_bytes: transition.memory_expansion_bytes,
+            };
+            let pre = execution_state_from_snapshot(&ordinary.pre, identities.legacy)?;
+            let post = execution_state_from_snapshot(&ordinary.post, identities.legacy)?;
+            let pre = arbitration_state_from_snapshot(
+                &ordinary.pre,
+                identities,
+                policy,
+                std::sync::Arc::new(pre),
+            )?;
+            let post = arbitration_state_from_snapshot(
+                &ordinary.post,
+                identities,
+                policy,
+                std::sync::Arc::new(post),
+            )?;
+            let (pre_commitment, post_commitment) =
+                validate_arbitration_commitments(&ordinary, &pre, &post)?;
+            let recorded = trace
+                .arbitration_steps()
+                .get(index)
+                .ok_or(RuntimeBoundaryReplayError::Binding)?;
+            if recorded.pre_commitment != pre_commitment
+                || recorded.post_commitment != post_commitment
+            {
+                return Err(RuntimeBoundaryReplayError::Binding);
+            }
+            boundaries.push(CapturedRuntimeBoundary {
+                transition,
+                semantic: captures[index].clone(),
+                expected_semantic: captures[index + 1].clone(),
+                pre_commitment,
+                post_commitment,
+                identities,
+                policy,
+                maximum_bytes,
+            });
+        }
+        Ok(CapturedBoundaryExecution {
+            values,
+            trace,
+            boundaries,
+        })
     }
 
-    pub fn capture_semantic_replay_source(&self, maximum_bytes: usize) -> Result<crate::replay::CapturedSemanticReplayV2, crate::replay::ReplayWitnessError> {
-        self.store.data().capture_semantic_replay_source(self.validated_code_hash, maximum_bytes)
+    pub fn capture_composition_replay_witness(
+        &self,
+        maximum_bytes: usize,
+    ) -> Result<crate::replay::CompositionReplayWitnessV1, crate::replay::ReplayWitnessError> {
+        self.store
+            .data()
+            .replay_composition_witness(self.validated_code_hash, maximum_bytes)
     }
 
-    pub fn capture_storage_replay_witness(&self, maximum_bytes: usize) -> Result<crate::replay::StorageReplayWitnessV1, crate::replay::ReplayWitnessError> {
-        self.store.data().replay_storage_witness(self.validated_code_hash, maximum_bytes)
+    pub fn capture_semantic_replay_source(
+        &self,
+        maximum_bytes: usize,
+    ) -> Result<crate::replay::CapturedSemanticReplayV2, crate::replay::ReplayWitnessError> {
+        self.store
+            .data()
+            .capture_semantic_replay_source(self.validated_code_hash, maximum_bytes)
     }
 
-    pub fn capture_replay_host_witness(&self, maximum_bytes: usize) -> Result<crate::replay::ReplayHostWitnessV1, crate::replay::ReplayWitnessError> {
-        self.store.data().replay_host_witness(self.validated_code_hash, maximum_bytes)
+    pub fn capture_storage_replay_witness(
+        &self,
+        maximum_bytes: usize,
+    ) -> Result<crate::replay::StorageReplayWitnessV1, crate::replay::ReplayWitnessError> {
+        self.store
+            .data()
+            .replay_storage_witness(self.validated_code_hash, maximum_bytes)
+    }
+
+    pub fn capture_replay_host_witness(
+        &self,
+        maximum_bytes: usize,
+    ) -> Result<crate::replay::ReplayHostWitnessV1, crate::replay::ReplayWitnessError> {
+        self.store
+            .data()
+            .replay_host_witness(self.validated_code_hash, maximum_bytes)
     }
 
     pub(crate) const fn new(store: Store<RuntimeState>, instance: Instance) -> Self {

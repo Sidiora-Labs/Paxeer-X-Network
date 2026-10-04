@@ -2171,3 +2171,7 @@ resolution = "Freeze new authentic Human facts profile on separate verified-unus
 [gotcha.647]
 observed = "Codify spec implemented parses --help as a task ID; guessed identity module paths also returned exit2 before any source operation."
 resolution = "Read the actual exposed tool declaration and discover paths with rg --files; do not infer a source conclusion from a failed path read."
+
+[gotcha.648]
+observed = "Runtime boundary identity must bind the actual governed meter fee-schedule version; a declared default does not establish that fact."
+resolution = "Use the read-only actual Meter version accessor; task10435.16 preserves legacy trace/fuel encodings and keeps captured process authority explicitly untrusted."

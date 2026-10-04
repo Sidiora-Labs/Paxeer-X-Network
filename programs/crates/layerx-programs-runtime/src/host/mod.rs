@@ -68,6 +68,16 @@ pub(crate) struct RuntimeState {
     legacy_reference_engine_committed: u64,
     trace_storage_baseline: crate::storage::Storage,
     v2_host_identity: Option<crate::abi::HostStateIdentity>,
+    boundary_capture: Option<BoundaryCapture>,
+}
+
+#[derive(Debug)]
+struct BoundaryCapture {
+    code_hash: [u8; 32],
+    maximum_snapshots: usize,
+    maximum_bytes: usize,
+    retained_bytes: usize,
+    snapshots: Vec<crate::replay::CapturedSemanticReplayV2>,
 }
 
 #[derive(Debug)]
@@ -502,6 +512,81 @@ impl RuntimeState {
         })
     }
 
+    pub(crate) fn enable_boundary_capture(
+        &mut self,
+        code_hash: [u8; 32],
+        maximum_snapshots: usize,
+        maximum_bytes: usize,
+    ) -> Result<(), crate::replay::ReplayWitnessError> {
+        use crate::replay::ReplayWitnessError;
+        if self.abi.is_none() {
+            return Err(ReplayWitnessError::StateUnavailable);
+        }
+        if maximum_snapshots == 0 || maximum_bytes == 0 || self.boundary_capture.is_some() {
+            return Err(ReplayWitnessError::Bounds);
+        }
+        self.boundary_capture = Some(BoundaryCapture {
+            code_hash,
+            maximum_snapshots,
+            maximum_bytes,
+            retained_bytes: 0,
+            snapshots: Vec::new(),
+        });
+        Ok(())
+    }
+
+    fn retain_boundary_capture(&mut self) -> Result<(), wasmi::ExecutionObserverError> {
+        let Some(capture) = self.boundary_capture.as_ref() else {
+            return Ok(());
+        };
+        if capture.snapshots.len() >= capture.maximum_snapshots {
+            return Err(wasmi::ExecutionObserverError::SnapshotLimitExceeded);
+        }
+        let remaining = capture
+            .maximum_bytes
+            .checked_sub(capture.retained_bytes)
+            .ok_or(wasmi::ExecutionObserverError::SnapshotLimitExceeded)?;
+        let source = self
+            .capture_semantic_replay_source(capture.code_hash, remaining)
+            .map_err(|error| match error {
+                crate::replay::ReplayWitnessError::Bounds => {
+                    wasmi::ExecutionObserverError::SnapshotLimitExceeded
+                }
+                _ => wasmi::ExecutionObserverError::SupplementRejected,
+            })?;
+        let bytes = source
+            .canonical_bytes(remaining)
+            .map_err(|error| match error {
+                crate::replay::ReplayWitnessError::Bounds => {
+                    wasmi::ExecutionObserverError::SnapshotLimitExceeded
+                }
+                _ => wasmi::ExecutionObserverError::SupplementRejected,
+            })?
+            .len();
+        let capture = self
+            .boundary_capture
+            .as_mut()
+            .ok_or(wasmi::ExecutionObserverError::SupplementRejected)?;
+        capture.retained_bytes = capture
+            .retained_bytes
+            .checked_add(bytes)
+            .ok_or(wasmi::ExecutionObserverError::SnapshotLimitExceeded)?;
+        capture
+            .snapshots
+            .try_reserve(1)
+            .map_err(|_| wasmi::ExecutionObserverError::SnapshotLimitExceeded)?;
+        capture.snapshots.push(source);
+        Ok(())
+    }
+
+    pub(crate) fn take_boundary_captures(
+        &mut self,
+    ) -> Vec<crate::replay::CapturedSemanticReplayV2> {
+        self.boundary_capture
+            .take()
+            .map_or_else(Vec::new, |capture| capture.snapshots)
+    }
+
     fn measure_supplement_host(
         &self,
         charge: &mut wasmi::ObservationCharge,
@@ -638,7 +723,7 @@ impl RuntimeState {
             .execution_trace_usage()
             .map_err(|_| wasmi::ExecutionObserverError::SupplementRejected)?;
         let storage_overlay = self.supplement_storage_overlay(overlay_entries);
-        Ok(wasmi::ExecutionSupplement {
+        let supplement = wasmi::ExecutionSupplement {
             storage_overlay,
             authoritative_fuel: self.meter.cpu_remaining(),
             authoritative_usage: wasmi_usage(meter),
@@ -660,7 +745,9 @@ impl RuntimeState {
             )
             .map_err(|_| wasmi::ExecutionObserverError::SupplementRejected)?,
             arbitration_commitment_fuel: arbitration_fuel,
-        })
+        };
+        self.retain_boundary_capture()?;
+        Ok(supplement)
     }
 
     pub(crate) fn isolated(meter: Meter) -> Self {
@@ -678,6 +765,7 @@ impl RuntimeState {
             legacy_reference_fuel: false,
             legacy_reference_engine_committed: 0,
             trace_storage_baseline: crate::storage::Storage::new(),
+            boundary_capture: None,
             v2_host_identity: Some(crate::abi::HostStateIdentity {
                 base_state: Sha256::digest(b"LayerX/programs/v2/isolated-base-state\0").into(),
                 receipt_oracle: Sha256::digest(b"LayerX/programs/v2/isolated-receipt-oracle\0")
@@ -705,6 +793,7 @@ impl RuntimeState {
             legacy_reference_engine_committed: 0,
             trace_storage_baseline,
             v2_host_identity,
+            boundary_capture: None,
         }
     }
 
@@ -738,6 +827,7 @@ impl RuntimeState {
             legacy_reference_engine_committed: 0,
             trace_storage_baseline,
             v2_host_identity,
+            boundary_capture: None,
         })
     }
 
@@ -1183,100 +1273,229 @@ pub(crate) fn linker_fault(error: &wasmi::errors::LinkerError) -> ExecutionFault
 }
 
 impl RuntimeState {
-    pub(crate) fn replay_host_witness(&self, code_hash: [u8; 32], maximum: usize) -> Result<crate::replay::ReplayHostWitnessV1, crate::replay::ReplayWitnessError> {
+    pub(crate) fn replay_host_witness(
+        &self,
+        code_hash: [u8; 32],
+        maximum: usize,
+    ) -> Result<crate::replay::ReplayHostWitnessV1, crate::replay::ReplayWitnessError> {
         use crate::replay::{append, ReplayHostWitnessV1, ReplayWitnessError as E, STORAGE_DOMAIN};
-        if code_hash == [0; 32] { return Err(E::Binding); }
+        if code_hash == [0; 32] {
+            return Err(E::Binding);
+        }
         let mut remaining = ReplayHostWitnessV1::payload_budget(maximum, self.abi.is_some())?;
         let meter = self.meter.replay_state_bytes()?;
         remaining = remaining.checked_sub(meter.len()).ok_or(E::Bounds)?;
-        let abi = self.abi.as_ref().map(|abi| abi.replay_host_preimage(remaining.min(crate::MAX_ARBITRATION_HOST_STATE_BYTES))).transpose()?;
+        let abi = self
+            .abi
+            .as_ref()
+            .map(|abi| {
+                abi.replay_host_preimage(remaining.min(crate::MAX_ARBITRATION_HOST_STATE_BYTES))
+            })
+            .transpose()?;
         let abi_bytes = abi.as_ref().map_or(0, Vec::len);
         remaining = remaining.checked_sub(abi_bytes).ok_or(E::Bounds)?;
-        let runtime_limit = remaining.min(crate::MAX_ARBITRATION_HOST_STATE_BYTES.checked_sub(abi_bytes).ok_or(E::Bounds)?);
+        let runtime_limit = remaining.min(
+            crate::MAX_ARBITRATION_HOST_STATE_BYTES
+                .checked_sub(abi_bytes)
+                .ok_or(E::Bounds)?,
+        );
         let mut runtime = Vec::new();
         if let Some(abi_bytes) = &abi {
             use sha2::{Digest, Sha256};
-            let abi_commitment = crate::abi::HostStateCommitment { root: Sha256::digest(abi_bytes).into(), canonical_bytes: abi_bytes.len() as u64 };
+            let abi_commitment = crate::abi::HostStateCommitment {
+                root: Sha256::digest(abi_bytes).into(),
+                canonical_bytes: abi_bytes.len() as u64,
+            };
             let mut failure = None;
             let written = self.write_v2_runtime_state(&abi_commitment, &mut |bytes| {
-                append(&mut runtime, bytes, runtime_limit).map_err(|error| { failure = Some(error); AbiError::InvalidEncoding })
+                append(&mut runtime, bytes, runtime_limit).map_err(|error| {
+                    failure = Some(error);
+                    AbiError::InvalidEncoding
+                })
             });
-            if written.is_err() { return Err(failure.unwrap_or(E::StateUnavailable)); }
+            if written.is_err() {
+                return Err(failure.unwrap_or(E::StateUnavailable));
+            }
         } else {
-            append(&mut runtime, b"LayerX/programs/v2/isolated-host-state\0", runtime_limit)?;
+            append(
+                &mut runtime,
+                b"LayerX/programs/v2/isolated-host-state\0",
+                runtime_limit,
+            )?;
         }
         remaining = remaining.checked_sub(runtime.len()).ok_or(E::Bounds)?;
         let mut baseline = Vec::new();
         append(&mut baseline, STORAGE_DOMAIN, remaining)?;
-        self.trace_storage_baseline.try_for_each_commitment_entry(|key, value| {
-            append(&mut baseline, &u32::try_from(key.len()).map_err(|_| E::Bounds)?.to_be_bytes(), remaining)?;
-            append(&mut baseline, &key, remaining)?;
-            append(&mut baseline, &u32::try_from(value.len()).map_err(|_| E::Bounds)?.to_be_bytes(), remaining)?;
-            append(&mut baseline, value, remaining)
-        })?;
-        let witness = ReplayHostWitnessV1::from_parts(code_hash, abi, runtime, meter, baseline, maximum)?;
+        self.trace_storage_baseline
+            .try_for_each_commitment_entry(|key, value| {
+                append(
+                    &mut baseline,
+                    &u32::try_from(key.len())
+                        .map_err(|_| E::Bounds)?
+                        .to_be_bytes(),
+                    remaining,
+                )?;
+                append(&mut baseline, &key, remaining)?;
+                append(
+                    &mut baseline,
+                    &u32::try_from(value.len())
+                        .map_err(|_| E::Bounds)?
+                        .to_be_bytes(),
+                    remaining,
+                )?;
+                append(&mut baseline, value, remaining)
+            })?;
+        let witness =
+            ReplayHostWitnessV1::from_parts(code_hash, abi, runtime, meter, baseline, maximum)?;
         let mut charge = wasmi::ObservationCharge::default();
-        let host = self.measure_supplement_host(&mut charge).map_err(|_| E::StateUnavailable)?;
-        let commitment = match host.isolated { Some(commitment) => commitment, None => self.v2_host_state_commitment().map_err(|_| E::StateUnavailable)? };
+        let host = self
+            .measure_supplement_host(&mut charge)
+            .map_err(|_| E::StateUnavailable)?;
+        let commitment = match host.isolated {
+            Some(commitment) => commitment,
+            None => self
+                .v2_host_state_commitment()
+                .map_err(|_| E::StateUnavailable)?,
+        };
         let identity = host.identity.ok_or(E::StateUnavailable)?;
-        witness.compare_v2_preimages(code_hash, commitment.root, commitment.canonical_bytes, identity.base_state)?;
+        witness.compare_v2_preimages(
+            code_hash,
+            commitment.root,
+            commitment.canonical_bytes,
+            identity.base_state,
+        )?;
         Ok(witness)
     }
 }
 
 impl RuntimeState {
-    pub(crate) fn replay_storage_witness(&self, code_hash: [u8; 32], maximum: usize) -> Result<crate::replay::StorageReplayWitnessV1, crate::replay::ReplayWitnessError> {
-        self.abi.as_ref().ok_or(crate::replay::ReplayWitnessError::StateUnavailable)?
+    pub(crate) fn replay_storage_witness(
+        &self,
+        code_hash: [u8; 32],
+        maximum: usize,
+    ) -> Result<crate::replay::StorageReplayWitnessV1, crate::replay::ReplayWitnessError> {
+        self.abi
+            .as_ref()
+            .ok_or(crate::replay::ReplayWitnessError::StateUnavailable)?
             .replay_storage_witness(code_hash, &self.trace_storage_baseline, maximum)
     }
 }
 
-fn replay_execution_fault(cursor: &mut crate::replay::ReplayCursor<'_>) -> Result<ExecutionFault, crate::replay::ReplayWitnessError> {
+fn replay_execution_fault(
+    cursor: &mut crate::replay::ReplayCursor<'_>,
+) -> Result<ExecutionFault, crate::replay::ReplayWitnessError> {
     use crate::replay::ReplayWitnessError as E;
     Ok(match cursor.u8()? {
         tag @ (0 | 1) => {
             let bytes = cursor.owned_field(crate::MAX_ARBITRATION_HOST_STATE_BYTES)?;
             let name = String::from_utf8(bytes).map_err(|_| E::Encoding)?;
-            if tag == 0 { ExecutionFault::UnknownExport { name } } else { ExecutionFault::NotAFunction { name } }
+            if tag == 0 {
+                ExecutionFault::UnknownExport { name }
+            } else {
+                ExecutionFault::NotAFunction { name }
+            }
         }
-        2 => ExecutionFault::UnreachableExecuted, 3 => ExecutionFault::MemoryOutOfBounds,
-        4 => ExecutionFault::TableOutOfBounds, 5 => ExecutionFault::IndirectCallToNull,
-        6 => ExecutionFault::IntegerDivisionByZero, 7 => ExecutionFault::IntegerOverflow,
-        8 => ExecutionFault::BadConversionToInteger, 9 => ExecutionFault::StackExhausted,
-        10 => ExecutionFault::BadSignature, 11 => ExecutionFault::OutOfFuel, 12 => ExecutionFault::GrowthLimited,
-        13 => ExecutionFault::Resource { refusal: replay_resource_refusal(cursor)? },
-        14 => ExecutionFault::NonIntegerValue, _ => return Err(E::Encoding),
+        2 => ExecutionFault::UnreachableExecuted,
+        3 => ExecutionFault::MemoryOutOfBounds,
+        4 => ExecutionFault::TableOutOfBounds,
+        5 => ExecutionFault::IndirectCallToNull,
+        6 => ExecutionFault::IntegerDivisionByZero,
+        7 => ExecutionFault::IntegerOverflow,
+        8 => ExecutionFault::BadConversionToInteger,
+        9 => ExecutionFault::StackExhausted,
+        10 => ExecutionFault::BadSignature,
+        11 => ExecutionFault::OutOfFuel,
+        12 => ExecutionFault::GrowthLimited,
+        13 => ExecutionFault::Resource {
+            refusal: replay_resource_refusal(cursor)?,
+        },
+        14 => ExecutionFault::NonIntegerValue,
+        _ => return Err(E::Encoding),
     })
 }
-fn replay_resource_refusal(cursor: &mut crate::replay::ReplayCursor<'_>) -> Result<crate::MeterRefusal, crate::replay::ReplayWitnessError> {
+fn replay_resource_refusal(
+    cursor: &mut crate::replay::ReplayCursor<'_>,
+) -> Result<crate::MeterRefusal, crate::replay::ReplayWitnessError> {
     match crate::abi::decode_replay_abi_error(cursor)? {
-        AbiError::Meter(refusal) => Ok(refusal), _ => Err(crate::replay::ReplayWitnessError::Encoding),
+        AbiError::Meter(refusal) => Ok(refusal),
+        _ => Err(crate::replay::ReplayWitnessError::Encoding),
     }
 }
-fn replay_composition_refusal(cursor: &mut crate::replay::ReplayCursor<'_>) -> Result<CompositionRefusal, crate::replay::ReplayWitnessError> {
+fn replay_composition_refusal(
+    cursor: &mut crate::replay::ReplayCursor<'_>,
+) -> Result<CompositionRefusal, crate::replay::ReplayWitnessError> {
     use crate::replay::ReplayWitnessError as E;
-    fn program(cursor: &mut crate::replay::ReplayCursor<'_>) -> Result<crate::storage::ProgramId, E> {
+    fn program(
+        cursor: &mut crate::replay::ReplayCursor<'_>,
+    ) -> Result<crate::storage::ProgramId, E> {
         crate::storage::ProgramId::new(cursor.array()?).map_err(|_| E::Encoding)
     }
     fn revision(cursor: &mut crate::replay::ReplayCursor<'_>) -> Result<AbiRevision, E> {
-        match cursor.u8()? { 1 => Ok(AbiRevision::V1), 2 => Ok(AbiRevision::V2), 3 => Ok(AbiRevision::V3), 4 => Ok(AbiRevision::V4), _ => Err(E::Encoding) }
+        match cursor.u8()? {
+            1 => Ok(AbiRevision::V1),
+            2 => Ok(AbiRevision::V2),
+            3 => Ok(AbiRevision::V3),
+            4 => Ok(AbiRevision::V4),
+            _ => Err(E::Encoding),
+        }
     }
     Ok(match cursor.u8()? {
-        0 => CompositionRefusal::NotComposable, 1 => CompositionRefusal::ActivityEvidenceRequired,
-        2 => CompositionRefusal::ActivityEvidenceMismatch, 3 => CompositionRefusal::ActivityEvidenceReused,
-        4 => CompositionRefusal::WrongVersion { expected: revision(cursor)?, actual: revision(cursor)? },
-        5 => CompositionRefusal::MeteringPlanMismatch { expected: crate::calls::MeteringPlanIdentity::from_untrusted_replay_bytes(cursor.array()?), actual: crate::calls::MeteringPlanIdentity::from_untrusted_replay_bytes(cursor.array()?) },
-        6 => CompositionRefusal::UnknownProgram { program: program(cursor)? },
-        7 => CompositionRefusal::Reentrancy { program: program(cursor)? },
-        8 => CompositionRefusal::DepthExceeded { limit: cursor.u32()?, attempted: cursor.u32()? },
-        9 => CompositionRefusal::EdgesExceeded { limit: cursor.u32()?, attempted: cursor.u32()? },
-        10 => CompositionRefusal::FanoutExceeded { limit: cursor.u32()?, attempted: cursor.u32()? },
-        11 => CompositionRefusal::VisitsExceeded { program: program(cursor)?, limit: cursor.u32()?, attempted: cursor.u32()? },
-        12 => CompositionRefusal::MissingEntry, 13 => CompositionRefusal::MissingAllocator, 14 => CompositionRefusal::MissingMemory,
-        15 => CompositionRefusal::AllocationRefused { code: cursor.i32()? },
-        16 => CompositionRefusal::InputTooLarge { bytes: cursor.usize64()?, limit: cursor.usize64()? },
-        17 => CompositionRefusal::GuestRefused { program: program(cursor)?, code: cursor.i32()? },
-        18 => CompositionRefusal::Program(ProgramFailure::canonical_decode(cursor.field()?).map_err(|_| E::Encoding)?),
+        0 => CompositionRefusal::NotComposable,
+        1 => CompositionRefusal::ActivityEvidenceRequired,
+        2 => CompositionRefusal::ActivityEvidenceMismatch,
+        3 => CompositionRefusal::ActivityEvidenceReused,
+        4 => CompositionRefusal::WrongVersion {
+            expected: revision(cursor)?,
+            actual: revision(cursor)?,
+        },
+        5 => CompositionRefusal::MeteringPlanMismatch {
+            expected: crate::calls::MeteringPlanIdentity::from_untrusted_replay_bytes(
+                cursor.array()?,
+            ),
+            actual: crate::calls::MeteringPlanIdentity::from_untrusted_replay_bytes(
+                cursor.array()?,
+            ),
+        },
+        6 => CompositionRefusal::UnknownProgram {
+            program: program(cursor)?,
+        },
+        7 => CompositionRefusal::Reentrancy {
+            program: program(cursor)?,
+        },
+        8 => CompositionRefusal::DepthExceeded {
+            limit: cursor.u32()?,
+            attempted: cursor.u32()?,
+        },
+        9 => CompositionRefusal::EdgesExceeded {
+            limit: cursor.u32()?,
+            attempted: cursor.u32()?,
+        },
+        10 => CompositionRefusal::FanoutExceeded {
+            limit: cursor.u32()?,
+            attempted: cursor.u32()?,
+        },
+        11 => CompositionRefusal::VisitsExceeded {
+            program: program(cursor)?,
+            limit: cursor.u32()?,
+            attempted: cursor.u32()?,
+        },
+        12 => CompositionRefusal::MissingEntry,
+        13 => CompositionRefusal::MissingAllocator,
+        14 => CompositionRefusal::MissingMemory,
+        15 => CompositionRefusal::AllocationRefused {
+            code: cursor.i32()?,
+        },
+        16 => CompositionRefusal::InputTooLarge {
+            bytes: cursor.usize64()?,
+            limit: cursor.usize64()?,
+        },
+        17 => CompositionRefusal::GuestRefused {
+            program: program(cursor)?,
+            code: cursor.i32()?,
+        },
+        18 => CompositionRefusal::Program(
+            ProgramFailure::canonical_decode(cursor.field()?).map_err(|_| E::Encoding)?,
+        ),
         19 => CompositionRefusal::Authority(crate::abi::decode_replay_abi_error(cursor)?),
         20 => CompositionRefusal::Fault(replay_execution_fault(cursor)?),
         21 => CompositionRefusal::Resource(replay_resource_refusal(cursor)?),
@@ -1286,78 +1505,189 @@ fn replay_composition_refusal(cursor: &mut crate::replay::ReplayCursor<'_>) -> R
 }
 
 impl RuntimeState {
-    pub(crate) fn capture_semantic_replay_source(&self, code_hash: [u8; 32], maximum: usize) -> Result<crate::replay::CapturedSemanticReplayV2, crate::replay::ReplayWitnessError> {
+    pub(crate) fn capture_semantic_replay_source(
+        &self,
+        code_hash: [u8; 32],
+        maximum: usize,
+    ) -> Result<crate::replay::CapturedSemanticReplayV2, crate::replay::ReplayWitnessError> {
         use crate::replay::{CapturedSemanticReplayV2, ReplayWitnessError as E};
         let abi = self.abi.as_ref().ok_or(E::StateUnavailable)?;
         let host = self.replay_host_witness(code_hash, maximum)?;
         let composition = self.replay_composition_witness(code_hash, maximum)?;
         let resolver = self.composition.as_ref().map(Composition::resolver);
-        let storage_budget = CapturedSemanticReplayV2::storage_budget(maximum, &host, &composition)?;
+        let storage_budget =
+            CapturedSemanticReplayV2::storage_budget(maximum, &host, &composition)?;
         let storage = self.replay_storage_witness(code_hash, storage_budget)?;
         let authority = abi.capture_replay_authority(host.abi_preimage()?, maximum)?;
-        CapturedSemanticReplayV2::from_capture(host, storage, authority, composition, resolver, maximum)
+        CapturedSemanticReplayV2::from_capture(
+            host,
+            storage,
+            authority,
+            composition,
+            resolver,
+            maximum,
+        )
     }
 
-    pub(crate) fn restore_untrusted_semantic(host: &crate::replay::ReplayHostWitnessV1, pair: crate::replay::UntrustedStorageReplayPair, authority: &crate::abi::CapturedAbiReplayAuthority, graphs: crate::replay::UntrustedCompositionReplayState, resolver: Option<std::rc::Rc<dyn crate::ProgramResolver>>) -> Result<Self, crate::replay::ReplayWitnessError> {
+    pub(crate) fn restore_untrusted_semantic(
+        host: &crate::replay::ReplayHostWitnessV1,
+        pair: crate::replay::UntrustedStorageReplayPair,
+        authority: &crate::abi::CapturedAbiReplayAuthority,
+        graphs: crate::replay::UntrustedCompositionReplayState,
+        resolver: Option<std::rc::Rc<dyn crate::ProgramResolver>>,
+    ) -> Result<Self, crate::replay::ReplayWitnessError> {
         use crate::replay::{append, ReplayCursor, ReplayWitnessError as E};
         use sha2::{Digest, Sha256};
         let bytes = host.runtime_preimage();
-        if bytes.len() > crate::MAX_ARBITRATION_HOST_STATE_BYTES { return Err(E::Bounds); }
+        if bytes.len() > crate::MAX_ARBITRATION_HOST_STATE_BYTES {
+            return Err(E::Bounds);
+        }
         let abi_bytes = host.abi_preimage()?;
         let abi = Abi::restore_untrusted_host_preimage(abi_bytes, pair.current, authority)?;
         let meter = host.decode_untrusted_meter()?;
-        let commitment = crate::abi::HostStateCommitment { root: Sha256::digest(abi_bytes).into(), canonical_bytes: abi_bytes.len() as u64 };
+        let commitment = crate::abi::HostStateCommitment {
+            root: Sha256::digest(abi_bytes).into(),
+            canonical_bytes: abi_bytes.len() as u64,
+        };
         let mut cursor = ReplayCursor::new(bytes);
-        if cursor.take(b"LayerX/programs/v2/runtime-host-state\0".len())? != b"LayerX/programs/v2/runtime-host-state\0"
-            || cursor.array::<32>()? != commitment.root || cursor.u64()? != commitment.canonical_bytes { return Err(E::Binding); }
-        let usage = crate::MeteredUsage { cpu_fuel: cursor.u64()?, memory_bytes: cursor.u64()?, storage_read_bytes: cursor.u64()?, storage_write_bytes: cursor.u64()?,
-            output_values: cursor.u32()?, output_bytes: cursor.u64()?, occupancy_byte_batches: cursor.u128()?, occupancy_fee_units: cursor.u128()?, fee_units: cursor.u128()? };
-        if usage != meter.execution_trace_usage().map_err(|_| E::StateUnavailable)? || cursor.u64()? != meter.cpu_remaining() { return Err(E::Binding); }
-        let failure_subtree_fuel = if cursor.boolean()? { Some(cursor.u64()?) } else { None };
+        if cursor.take(b"LayerX/programs/v2/runtime-host-state\0".len())?
+            != b"LayerX/programs/v2/runtime-host-state\0"
+            || cursor.array::<32>()? != commitment.root
+            || cursor.u64()? != commitment.canonical_bytes
+        {
+            return Err(E::Binding);
+        }
+        let usage = crate::MeteredUsage {
+            cpu_fuel: cursor.u64()?,
+            memory_bytes: cursor.u64()?,
+            storage_read_bytes: cursor.u64()?,
+            storage_write_bytes: cursor.u64()?,
+            output_values: cursor.u32()?,
+            output_bytes: cursor.u64()?,
+            occupancy_byte_batches: cursor.u128()?,
+            occupancy_fee_units: cursor.u128()?,
+            fee_units: cursor.u128()?,
+        };
+        if usage
+            != meter
+                .execution_trace_usage()
+                .map_err(|_| E::StateUnavailable)?
+            || cursor.u64()? != meter.cpu_remaining()
+        {
+            return Err(E::Binding);
+        }
+        let failure_subtree_fuel = if cursor.boolean()? {
+            Some(cursor.u64()?)
+        } else {
+            None
+        };
         let legacy_reference_engine_committed = cursor.u64()?;
-        let metering_schedule = crate::FuelSchedule::from_protocol_bytes(cursor.take(76)?).map_err(|_| E::Encoding)?;
+        let metering_schedule =
+            crate::FuelSchedule::from_protocol_bytes(cursor.take(76)?).map_err(|_| E::Encoding)?;
         let legacy_reference_fuel = cursor.boolean()?;
-        let protocol_context = if cursor.boolean()? { Some(ExecutionContext::from_untrusted_canonical_bytes(cursor.take(24)?)?) } else { None };
+        let protocol_context = if cursor.boolean()? {
+            Some(ExecutionContext::from_untrusted_canonical_bytes(
+                cursor.take(24)?,
+            )?)
+        } else {
+            None
+        };
         let composition = match (graphs.composition, resolver) {
             (None, None) => None,
-            (Some((revision, graph)), Some(resolver)) => Some(Composition::new(resolver, graph, revision)),
+            (Some((revision, graph)), Some(resolver)) => {
+                Some(Composition::new(resolver, graph, revision))
+            }
             _ => return Err(E::Binding),
         };
         let failure_graph = graphs.failure_graph;
-        for graph in [composition.as_ref().map(Composition::graph), failure_graph.as_ref()] {
+        for graph in [
+            composition.as_ref().map(Composition::graph),
+            failure_graph.as_ref(),
+        ] {
             let present = cursor.boolean()?;
-            if present != graph.is_some() { return Err(E::Binding); }
+            if present != graph.is_some() {
+                return Err(E::Binding);
+            }
             if let Some(graph) = graph {
                 let length = cursor.usize64()?;
-                if cursor.take(length)? != graph.canonical_evidence() { return Err(E::Binding); }
+                if cursor.take(length)? != graph.canonical_evidence() {
+                    return Err(E::Binding);
+                }
             }
         }
-        let refusal = if cursor.boolean()? { Some(replay_composition_refusal(&mut cursor)?) } else { None };
+        let refusal = if cursor.boolean()? {
+            Some(replay_composition_refusal(&mut cursor)?)
+        } else {
+            None
+        };
         let outcome = match cursor.u8()? {
             0 => None,
             tag @ (1 | 2) => {
                 let length = cursor.usize64()?;
                 let encoded = cursor.take(length)?;
-                Some(if tag == 1 { V2OutcomeRegion::Response(ResponseRegion::from_untrusted_canonical_bytes(encoded)?) }
-                    else { V2OutcomeRegion::Failure(ProgramFailure::canonical_decode(encoded).map_err(|_| E::Encoding)?) })
+                Some(if tag == 1 {
+                    V2OutcomeRegion::Response(ResponseRegion::from_untrusted_canonical_bytes(
+                        encoded,
+                    )?)
+                } else {
+                    V2OutcomeRegion::Failure(
+                        ProgramFailure::canonical_decode(encoded).map_err(|_| E::Encoding)?,
+                    )
+                })
             }
             _ => return Err(E::Encoding),
         };
-        if !cursor.done() { return Err(E::Encoding); }
-        let v2_host_identity = Some(abi.v2_host_state_identity(&pair.baseline).map_err(|_| E::StateUnavailable)?);
-        let value = Self { meter, abi: Some(abi), composition, refusal, outcome, failure_subtree_fuel, failure_graph,
-            protocol_context, metering_schedule, legacy_reference_fuel, legacy_reference_engine_committed, trace_storage_baseline: pair.baseline, v2_host_identity };
-        let mut canonical = Vec::new(); let mut failure = None;
-        value.write_v2_runtime_state(&commitment, &mut |part| append(&mut canonical, part, bytes.len()).map_err(|error| { failure = Some(error); AbiError::InvalidEncoding }))
+        if !cursor.done() {
+            return Err(E::Encoding);
+        }
+        let v2_host_identity = Some(
+            abi.v2_host_state_identity(&pair.baseline)
+                .map_err(|_| E::StateUnavailable)?,
+        );
+        let value = Self {
+            meter,
+            abi: Some(abi),
+            composition,
+            refusal,
+            outcome,
+            failure_subtree_fuel,
+            failure_graph,
+            protocol_context,
+            metering_schedule,
+            legacy_reference_fuel,
+            legacy_reference_engine_committed,
+            trace_storage_baseline: pair.baseline,
+            v2_host_identity,
+            boundary_capture: None,
+        };
+        let mut canonical = Vec::new();
+        let mut failure = None;
+        value
+            .write_v2_runtime_state(&commitment, &mut |part| {
+                append(&mut canonical, part, bytes.len()).map_err(|error| {
+                    failure = Some(error);
+                    AbiError::InvalidEncoding
+                })
+            })
             .map_err(|_| failure.unwrap_or(E::Encoding))?;
-        if canonical != bytes { return Err(E::Encoding); }
+        if canonical != bytes {
+            return Err(E::Encoding);
+        }
         Ok(value)
     }
 }
 
-
 impl RuntimeState {
-    pub(crate) fn replay_composition_witness(&self, code_hash: [u8; 32], maximum: usize) -> Result<crate::replay::CompositionReplayWitnessV1, crate::replay::ReplayWitnessError> {
-        crate::replay::CompositionReplayWitnessV1::capture(code_hash, self.composition.as_ref(), self.failure_graph.as_ref(), maximum)
+    pub(crate) fn replay_composition_witness(
+        &self,
+        code_hash: [u8; 32],
+        maximum: usize,
+    ) -> Result<crate::replay::CompositionReplayWitnessV1, crate::replay::ReplayWitnessError> {
+        crate::replay::CompositionReplayWitnessV1::capture(
+            code_hash,
+            self.composition.as_ref(),
+            self.failure_graph.as_ref(),
+            maximum,
+        )
     }
 }
