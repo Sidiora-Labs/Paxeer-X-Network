@@ -49,7 +49,7 @@ def compiler(name, override):
     value = os.environ.get(override) or shutil.which(name)
     if not value or not Path(value).is_file():
         raise FileNotFoundError("missing genuine toolchain: " + name)
-    return Path(value).resolve()
+    return Path(value).absolute()
 
 
 def manifest_parity():

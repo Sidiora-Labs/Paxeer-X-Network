@@ -34601,3 +34601,25 @@ qualification_build_evidence = "73dee8a6903f6b905bc8ba958ee06898989b74ef | pytho
 qualification_verify_evidence = "73dee8a6903f6b905bc8ba958ee06898989b74ef | python3 tools/qualification/paxeer-x/native_send_purpose.py | 1 | /root/lx-ops/paxeer-x-integration-2026-10-03/task-104.13.38-verify.log"
 qualification_observed = "Genuine task-local ceremony imports actual five-member shares under signed inventory authority and corpus reaches real Rust custody/passkey consumer; existing Rust assertion native_send_purpose.rs603 expecting CustodyError::StepUpMismatch fails. Rust exits101, Go corpus exits1."
 qualification_result = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-104.13.38-result.json"
+
+[task.7.5]
+title = "Finish owner-approved qualification of the published language ABI integration"
+status = "in_progress"
+mode = "QUALIFY"
+wave = 4
+requires = ["0.2", "7.3"]
+reqs = ["124"]
+do_1 = "Run approved one actual language build and focused native parity verifier for immutable7.3 source; preserve prior timeout and every assertion. Only task-scoped repairs ifnecessary, maximumtwo cycles."
+touches = ["programs/sdk/c/include/layerx/program.h", "programs/sdk/c/src/host.h", "programs/sdk/c/tools/determinism_lint.c", "programs/sdk/assemblyscript/assembly/abi.ts", "programs/sdk/assemblyscript/assembly/index.ts", "programs/sdk/assemblyscript/tools/determinism-lint.mjs", "programs/sdk/rust/src/abi.rs", "programs/sdk/rust/lint/src/lib.rs", "tools/qualification/paxeer-x/programs_language_abi.py", "programs/sdk/c/src/versioned.c", "programs/sdk/c/tests/language_abi.c", "programs/sdk/assemblyscript/assembly/versioned.ts", "programs/sdk/assemblyscript/tests/language_abi.ts", "programs/sdk/rust/tests/fixtures/language_abi.rs", "programs/sdk/abi-manifest.tsv", "tests/programs/test_language_abi.c", "programs/sdk/assemblyscript/package.json"]
+build_cmd = "python3 tools/qualification/paxeer-x/programs_language_abi.py --build"
+verify_cmd = "timeout 30m python3 tools/qualification/paxeer-x/programs_language_abi.py"
+time_limit_minutes = 30
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+stop_condition = "START10:25UTC END10:55UTC; cap, unrelatedfailure, missinggenuineauthority orweakening. No unchanged repeat."
+owner_approval = "User explicitly approved30-minute languageverification continuation. Original7.3sourceDONE andpriorqualification preserved."
+source_status = "qualification_only"
+qualification_status = "RUNNING"
+qualification_first_build_evidence = "24bbd8a0ed3c85c84a761e8dde3ac66b56441023 | python3 tools/qualification/paxeer-x/programs_language_abi.py --build | 1 | /root/lx-ops/paxeer-x-integration-2026-10-03/qualification/task7.3-continuation/build-rust-sdk.log"
+repair1 = "Preserve absolute proxy invocation path instead of symlink resolution; no source or behavior checks changed"
