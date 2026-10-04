@@ -239,8 +239,41 @@ fn journey_list(
     settlement_domain: SettlementDomain,
     cursor: Option<&str>,
 ) -> Result<BackendResponse, ApiFailure> {
+    journey_list_with(scope, settlement_domain, cursor, Vec::new())
+}
+
+pub(super) fn journey_list_with(
+    scope: &PrincipalScope<'_>,
+    settlement_domain: SettlementDomain,
+    cursor: Option<&str>,
+    additional: Vec<(u64, Value)>,
+) -> Result<BackendResponse, ApiFailure> {
     const PAGE_SIZE: usize = 50;
-    let journeys = public_journeys(scope, settlement_domain)?;
+    let mut journeys = public_journeys(scope, settlement_domain)?;
+    for (updated_at, value) in additional {
+        let id = value["journey_id"]
+            .as_str()
+            .ok_or_else(ApiFailure::upstream_degraded)?
+            .to_owned();
+        JourneyId::new(id.clone()).map_err(|_| ApiFailure::upstream_degraded())?;
+        journeys.push(PublicJourney {
+            id,
+            updated_at,
+            value,
+        });
+    }
+    let mut ids = BTreeSet::new();
+    for entry in &journeys {
+        if !ids.insert(&entry.id) {
+            return Err(ApiFailure::upstream_degraded());
+        }
+    }
+    journeys.sort_by(|left, right| {
+        right
+            .updated_at
+            .cmp(&left.updated_at)
+            .then_with(|| right.id.cmp(&left.id))
+    });
     let mut digest = Sha256::new();
     digest.update(b"layerx-human-journey-page/v1\0");
     digest.update(scope.principal().as_str().as_bytes());

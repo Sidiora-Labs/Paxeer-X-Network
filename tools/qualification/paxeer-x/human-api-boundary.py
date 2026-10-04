@@ -236,9 +236,30 @@ for (const row of fixture.cases) {
         && Number.isFinite(Date.parse(result.updated_at))
         && Date.parse(result.updated_at) >= Date.parse(result.started_at),
         'canonical genuine creation journey timestamps and stages');
-      const recovered = await client.journeyGet(result.journey_id);
+      let recovered = await client.journeyGet(result.journey_id);
       check(recovered.journey_id === result.journey_id && recovered.kind === result.kind,
         'principal-owned creation journey recovery');
+      const recoveryDeadline = Date.now() + 60000;
+      while (!['done', 'done-finalised', 'refused'].includes(recovered.state)
+        && Date.now() < recoveryDeadline) {
+        await new Promise((resolve) => setTimeout(resolve, 250));
+        recovered = await client.journeyGet(result.journey_id);
+      }
+      check(['done', 'done-finalised'].includes(recovered.state),
+        'background creation owner completes without another economic POST');
+      let page = await client.journeyList();
+      const listed = [];
+      const cursors = new Set();
+      for (;;) {
+        listed.push(...page.journeys);
+        if (page.next_cursor === 'cur_end') break;
+        check(!cursors.has(page.next_cursor) && cursors.size < 1024,
+          'creation pagination cursor advances within genuine fixture bounds');
+        cursors.add(page.next_cursor);
+        page = await client.journeyPage(page.next_cursor);
+      }
+      check(listed.filter((journey) => journey.journey_id === recovered.journey_id).length === 1,
+        'creation journey participates exactly once in canonical snapshot pagination');
       const settled = recovered.state === 'done' || recovered.state === 'done-finalised';
       if (settled) {
         check(recovered.stages.every((stage) => ['done', 'done-finalised'].includes(stage.state)

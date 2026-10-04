@@ -23641,7 +23641,7 @@ qualification_note = "Original cap elapsed while waiting for root-authorized com
 
 [task.104.13.6]
 title = "Serve human-api through a production service boundary"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 2
 requires = ["0.2"]
@@ -23653,7 +23653,7 @@ do_4 = "Add the missing receipt-verified account-balance and home-summary read c
 do_5 = "Implement browser session cookies, anti-forgery enforcement, trace propagation, idempotency keys, typed error responses and principal-scoped request limits at the transport boundary."
 do_6 = "Wire the web application's server-side and browser-side client configuration to the service and expose redacted liveness/readiness that distinguishes custody, agent, core and Paxeer degradation."
 do_7 = "Provide this task selector in tools/paxeer-x/gates and execute the full scoped acceptance contract using real production paths. Preserve the retained verification command coverage; move aggregate matrices to release scope and refuse an unknown or unimplemented selector."
-touches = ["human/apps/web/next.config.mjs", "human/apps/web/src/api/server.ts", "tools/qualification/paxeer-x/human-api-boundary.py", "tools/paxeer-x/gates/104.13.6.sh", "human/crates/layerx-human-service/src/server/production_components.rs"]
+touches = ["human/apps/web/src/api/server.ts", "tools/qualification/paxeer-x/human-api-boundary.py", "tools/paxeer-x/gates/104.13.6.sh", "human/crates/layerx-human-service/src/server/production_components.rs", "human/crates/layerx-human-service/src/server/production_reads.rs", "human/crates/layerx-human-service/src/agents/create.rs"]
 verify_cmd = "timeout 30m tools/paxeer-x/verify-task.sh 104.13.6"
 gate_kind = "planned-adapter"
 max_builds = 1
@@ -23674,10 +23674,16 @@ source_ownership = "Boundary routing continuation owns actual web mount, server 
 fleet_authority = "User explicitly ordered30agents into pending integrations within4hours; fresh bounded source implementation resumes. Preserve prior source/evidence and every assertion."
 fleet_role = "/root/complete_migration/generation_consumers"
 fleet_scope_manifest = "/root/lx-ops/paxeer-x-integration-2026-10-03/fleet-104.13.6-brief.json"
-source_status = "partial"
-completion_basis = "honest incomplete source checkpoint; original criteria remain required"
+source_status = "complete"
+completion_basis = "implementation under owner CONSTITUTION; qualification separately recorded"
 qualification_status = "UNRUN"
-source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/fleet-104.13.6-publication-current.json"
+source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-104.13.6-continuation-intake.json"
+fleet_next_config_lease = "Inactive next.config.mjs lease temporarily transferred to104.25.2 for required unified mirror UI asset routing; all13.6 existing rewrites, source and criteria preserved."
+owner_continuation_agent = "/root/complete_migration/generation_consumers"
+owner_continuation_cutoff_utc = "2026-10-04T16:12:00Z"
+owner_continuation_minutes = 45
+owner_continuation_authority = "Explicit owner approval in current session; existing assertions and original repair counts retained. No deployment."
+owner_continuation_exact_scope = "production_reads.rs merges genuine creation journeys into existing snapshot-bound pagination; agents/create.rs recognizes exact journey keys and validates matching agent_id instead of decoding evidence tuples as JourneyRecord. Preserve receipt, owner, custody, cursor and read-only GET checks."
 
 [task.104.14.2]
 title = "Run the hostile-plane no-fabrication suite"

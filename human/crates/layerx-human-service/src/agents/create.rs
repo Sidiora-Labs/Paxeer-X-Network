@@ -842,8 +842,26 @@ impl CreationJourney {
         let mut journeys = Vec::new();
         let mut identifiers = BTreeSet::new();
         for key in scope.keys(Table::Journeys) {
-            if !key.as_str().starts_with("agent-create-") {
+            let Some(suffix) = key.as_str().strip_prefix("agent-create-") else {
                 continue;
+            };
+            if let Some((identifier, stage)) = suffix.split_once("-e") {
+                if identifier.len() == 32
+                    && identifier
+                        .bytes()
+                        .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+                    && (1_u8..=10).any(|code| stage == code.to_string())
+                {
+                    continue;
+                }
+                return Err(AgentCreationError::CorruptJourney);
+            }
+            if suffix.len() != 32
+                || !suffix
+                    .bytes()
+                    .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+            {
+                return Err(AgentCreationError::CorruptJourney);
             }
             let row = scope
                 .get(Table::Journeys, &key)
@@ -851,6 +869,9 @@ impl CreationJourney {
             let record: JourneyRecord = serde_json::from_slice(row.bytes())
                 .map_err(|_| AgentCreationError::CorruptJourney)?;
             validate_record(&record, record.agent_id)?;
+            if journey_row(record.agent_id)? != key {
+                return Err(AgentCreationError::CorruptJourney);
+            }
             if !identifiers.insert(record.agent_id) {
                 return Err(AgentCreationError::CorruptJourney);
             }
@@ -869,6 +890,10 @@ impl CreationJourney {
     #[must_use]
     pub const fn agent_id(&self) -> [u8; 32] {
         self.record.agent_id
+    }
+
+    pub(crate) fn native_resume_eligible(&self) -> bool {
+        self.record.version == 2 && self.record.native.is_some()
     }
 
     #[must_use]
