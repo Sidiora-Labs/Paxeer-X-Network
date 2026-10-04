@@ -242,3 +242,298 @@ pub fn run_if_configured() -> Result<Option<String>, String> {
         expected.expected_network_id
     )))
 }
+
+fn production_socket() -> Result<std::ffi::OsString, String> {
+    std::env::var_os("LAYERX_QUALIFY_LNI_SOCKET")
+        .ok_or_else(|| "genuine production LNI socket is required".to_owned())
+}
+
+fn expected_handshake() -> Result<HandshakeConfig, String> {
+    Ok(HandshakeConfig {
+        built_interface_version: Version::V1_3,
+        expected_protocol_version: std::env::var("LAYERX_QUALIFY_PROTOCOL_VERSION")
+            .map_err(|_| "production protocol version is required".to_owned())?
+            .parse()
+            .map_err(|_| "invalid production protocol version".to_owned())?,
+        expected_network_id: std::env::var("LAYERX_QUALIFY_NETWORK_ID")
+            .map_err(|_| "production network is required".to_owned())?
+            .parse()
+            .map_err(|_| "invalid production network".to_owned())?,
+    })
+}
+
+fn signed_unknown() -> Result<Vec<u8>, String> {
+    let path = std::env::var_os("LAYERX_QUALIFY_UNKNOWN_SIGNED_ACTIVITY").ok_or_else(|| {
+        "genuine separately authorized unknown-outcome activity is required".to_owned()
+    })?;
+    fs::read(path).map_err(|_| "could not read genuine unknown-outcome activity".to_owned())
+}
+
+fn require_receipt(transport: &mut dyn FrameTransport, bytes: &[u8]) -> Result<Vec<u8>, String> {
+    let modules = registry()?;
+    let decoded = decode_signed(bytes, &modules)
+        .map_err(|error| format!("retained activity is not canonical: {error:?}"))?;
+    let identifier = activity_id(&decoded)
+        .map_err(|error| format!("retained activity identifier failed: {error:?}"))?;
+    let mut selector = vec![1];
+    selector.extend_from_slice(&identifier);
+    let mut receipt = Vec::new();
+    for attempt in 0..100 {
+        let (tag, candidate, proof) = exchange(transport, 5, 38_600 + attempt, &selector)?;
+        if tag != 6 || !proof.is_empty() {
+            return Err("retained receipt response has mismatched evidence".to_owned());
+        }
+        if !candidate.is_empty() {
+            receipt = candidate;
+            break;
+        }
+        thread::sleep(Duration::from_millis(20));
+    }
+    if receipt.is_empty() {
+        return Err("retained unknown outcome has no genuine durable receipt".to_owned());
+    }
+    let decoded_receipt = decode_receipt(&receipt)
+        .map_err(|error| format!("retained receipt is noncanonical: {error:?}"))?;
+    let protocol = decoded_receipt
+        .protocol()
+        .ok_or_else(|| "retained receipt is replay-only".to_owned())?;
+    let mut by_key = vec![2];
+    by_key.extend_from_slice(&decoded.idempotency_key());
+    let (tag, candidate, proof) = exchange(transport, 5, 38_701, &by_key)?;
+    if tag != 6 || candidate != receipt || !proof.is_empty() {
+        return Err("retained unknown idempotency receipt changed".to_owned());
+    }
+    let mut by_sequence = vec![3];
+    by_sequence.extend_from_slice(&protocol.global_sequence().to_be_bytes());
+    let (tag, candidate, proof) = exchange(transport, 5, 38_702, &by_sequence)?;
+    if tag != 6 || candidate != receipt || !proof.is_empty() {
+        return Err("retained unknown sequence receipt changed".to_owned());
+    }
+    Ok(receipt)
+}
+
+struct InterruptedSocket {
+    stream: UnixStream,
+    interrupt_receive: bool,
+}
+
+impl FrameTransport for InterruptedSocket {
+    fn send(&mut self, bytes: &[u8]) -> Result<(), layerx_client::lni::transport::TransportError> {
+        layerx_client::lni::framing::write_frame(&mut self.stream, bytes, 1_146_902)
+    }
+
+    fn receive(&mut self) -> Result<Vec<u8>, layerx_client::lni::transport::TransportError> {
+        if self.interrupt_receive {
+            self.stream
+                .shutdown(std::net::Shutdown::Read)
+                .map_err(|error| {
+                    layerx_client::lni::transport::TransportError::ConnectionFailure(error.kind())
+                })?;
+            self.interrupt_receive = false;
+        }
+        layerx_client::lni::framing::read_frame(&mut self.stream, 1_146_902)
+    }
+}
+
+pub fn run_required() -> Result<(), String> {
+    let socket = production_socket()?;
+    let unknown_bytes = signed_unknown()?;
+    let report =
+        run_if_configured()?.ok_or_else(|| "mandatory production branch was omitted".to_owned())?;
+    println!("{report}");
+    println!("LNI_CASE canonical-admission-and-receipt-selectors");
+    println!("LNI_CASE maximum-canonical-activity-and-bounded-deadline");
+    let expected = expected_handshake()?;
+    let mut wrong_network = expected.clone();
+    wrong_network.expected_network_id = expected.expected_network_id ^ 1;
+    let mut wrong = connect(Path::new(&socket))?;
+    if !matches!(
+        perform(&mut wrong, &wrong_network, None),
+        Err(layerx_client::lni::handshake::HandshakeError::Network { .. })
+    ) {
+        return Err("wrong network was not refused by the real handshake".to_owned());
+    }
+    drop(wrong);
+    println!("LNI_CASE wrong-network-refusal");
+    let mut wrong_protocol = expected.clone();
+    wrong_protocol.expected_protocol_version ^= 1;
+    let mut wrong = connect(Path::new(&socket))?;
+    if !matches!(
+        perform(&mut wrong, &wrong_protocol, None),
+        Err(layerx_client::lni::handshake::HandshakeError::ProtocolVersion { .. })
+    ) {
+        return Err("wrong protocol was not refused by the real handshake".to_owned());
+    }
+    drop(wrong);
+    println!("LNI_CASE wrong-protocol-refusal");
+    let mut oversized = UnixStream::connect(Path::new(&socket))
+        .map_err(|_| "could not connect excessive-frame case".to_owned())?;
+    oversized
+        .set_read_timeout(Some(Duration::from_secs(2)))
+        .map_err(|_| "could not bound excessive-frame refusal".to_owned())?;
+    oversized
+        .write_all(&1_146_903_u32.to_be_bytes())
+        .map_err(|_| "could not transmit excessive-frame prefix".to_owned())?;
+    require_peer_closed(&mut oversized)?;
+    println!("LNI_CASE excessive-frame-refusal-before-body-allocation");
+    let deadline_ms: u64 = std::env::var("LAYERX_QUALIFY_LNI_DEADLINE_MS")
+        .map_err(|_| "genuine native deadline is required".to_owned())?
+        .parse()
+        .map_err(|_| "invalid genuine native deadline".to_owned())?;
+    if deadline_ms == 0 || deadline_ms > 60_000 {
+        return Err("native deadline is outside its production bound".to_owned());
+    }
+    let mut drip = UnixStream::connect(Path::new(&socket))
+        .map_err(|_| "could not connect absolute-deadline case".to_owned())?;
+    drip.set_read_timeout(Some(Duration::from_millis(100)))
+        .map_err(|_| "could not bound absolute-deadline observation".to_owned())?;
+    drip.write_all(&[0])
+        .map_err(|_| "could not transmit incomplete frame".to_owned())?;
+    thread::sleep(Duration::from_millis(deadline_ms + 100));
+    require_peer_closed(&mut drip)?;
+    println!("LNI_CASE actual-incomplete-frame-closure-at-deadline");
+    let mut transport = connect(Path::new(&socket))?;
+    perform(&mut transport, &expected, None)
+        .map_err(|error| format!("production negative-case handshake failed: {error:?}"))?;
+    let mut invalid_signature = unknown_bytes.clone();
+    let last = invalid_signature
+        .last_mut()
+        .ok_or_else(|| "unknown activity is empty".to_owned())?;
+    *last ^= 1;
+    let (tag, refusal, proof) = exchange(&mut transport, 3, 38_710, &invalid_signature)?;
+    let refusal = layerx_client::lni::refusal::decode_core_refusal(&refusal)
+        .ok_or_else(|| "signature refusal was not typed".to_owned())?;
+    if tag != 25 || refusal.class != 6 || !proof.is_empty() {
+        return Err("invalid signature did not receive an authentication refusal".to_owned());
+    }
+    println!("LNI_CASE signature-authentication-refusal");
+    let (tag, refusal, proof) = exchange(&mut transport, 3, 38_711, &[])?;
+    if tag != 25
+        || layerx_client::lni::refusal::decode_core_refusal(&refusal).is_none()
+        || !proof.is_empty()
+    {
+        return Err("malformed submit did not receive a typed refusal".to_owned());
+    }
+    drop(transport);
+    println!("LNI_CASE malformed-submit-refusal");
+    let modules = registry()?;
+    let decoded = decode_signed(&unknown_bytes, &modules)
+        .map_err(|error| format!("unknown-outcome activity is noncanonical: {error:?}"))?;
+    let signer_public_key: [u8; 32] = decoded.authority().try_into().map_err(|_| {
+        "unknown-outcome activity must use its real primary signing authority".to_owned()
+    })?;
+    let stream = UnixStream::connect(Path::new(&socket))
+        .map_err(|_| "could not connect unknown-outcome socket".to_owned())?;
+    stream
+        .set_read_timeout(Some(Duration::from_secs(2)))
+        .map_err(|_| "could not bound unknown read".to_owned())?;
+    stream
+        .set_write_timeout(Some(Duration::from_secs(2)))
+        .map_err(|_| "could not bound unknown write".to_owned())?;
+    let mut interrupted = InterruptedSocket {
+        stream,
+        interrupt_receive: false,
+    };
+    let handshake = perform(&mut interrupted, &expected, None)
+        .map_err(|error| format!("unknown-outcome handshake failed: {error:?}"))?;
+    interrupted.interrupt_receive = true;
+    let outcome = layerx_client::submit::submit_signed(
+        &mut interrupted,
+        &modules,
+        layerx_client::submit::SubmissionContext {
+            interface_version: handshake.node().interface_version,
+            protocol_version: expected.expected_protocol_version,
+            network_id: expected.expected_network_id,
+            correlation_id: 38_712,
+            signer_public_key,
+            attempt: 0,
+        },
+        &unknown_bytes,
+    )
+    .map_err(|error| format!("unknown-outcome submission failed: {error:?}"))?;
+    match outcome {
+        layerx_client::submit::Submission::Unknown(unknown)
+            if unknown.retry_bytes() == unknown_bytes.as_slice()
+                && matches!(
+                    unknown.cause(),
+                    layerx_client::submit::UnknownCause::Transport(_)
+                ) => {}
+        _ => {
+            return Err(
+                "real socket loss did not retain the original signed unknown outcome".to_owned(),
+            )
+        }
+    }
+    drop(interrupted);
+    println!("LNI_CASE real-response-loss-retains-original-bytes");
+    Ok(())
+}
+
+pub fn run_recovery() -> Result<(), String> {
+    let socket = production_socket()?;
+    let expected = expected_handshake()?;
+    let mut transport = connect(Path::new(&socket))?;
+    perform(&mut transport, &expected, None)
+        .map_err(|error| format!("restarted native handshake failed: {error:?}"))?;
+    let unknown_bytes = signed_unknown()?;
+    require_receipt(&mut transport, &unknown_bytes)?;
+    println!("LNI_CASE durable-unknown-receipt-after-native-restart");
+    Ok(())
+}
+
+pub fn run_duplicate() -> Result<(), String> {
+    let socket = production_socket()?;
+    let expected = expected_handshake()?;
+    let mut transport = connect(Path::new(&socket))?;
+    perform(&mut transport, &expected, None)
+        .map_err(|error| format!("duplicate-case handshake failed: {error:?}"))?;
+    let path = std::env::var_os("LAYERX_QUALIFY_SIGNED_ACTIVITY")
+        .ok_or_else(|| "original signed activity is required".to_owned())?;
+    let original = fs::read(path).map_err(|_| "original signed activity unavailable".to_owned())?;
+    let before = require_receipt(&mut transport, &original)?;
+    let decoded = decode_signed(&original, &registry()?)
+        .map_err(|error| format!("original activity is noncanonical: {error:?}"))?;
+    let identifier =
+        activity_id(&decoded).map_err(|error| format!("original identifier failed: {error:?}"))?;
+    let (tag, retained, proof) = exchange(&mut transport, 3, 38_713, &original)?;
+    if tag != 4 || retained != original || proof != identifier {
+        return Err("post-restart duplicate did not retain exact original admission".to_owned());
+    }
+    if require_receipt(&mut transport, &original)? != before {
+        return Err("post-restart duplicate changed the original receipt".to_owned());
+    }
+    println!("LNI_CASE post-restart-duplicate-preserves-original-receipt");
+    Ok(())
+}
+
+pub fn run_peer_refusal() -> Result<(), String> {
+    let socket = production_socket()?;
+    let mut transport = connect(Path::new(&socket))?;
+    match perform(&mut transport, &expected_handshake()?, None) {
+        Err(layerx_client::lni::handshake::HandshakeError::Transport(
+            layerx_client::lni::transport::TransportError::PeerShutdown
+            | layerx_client::lni::transport::TransportError::ConnectionFailure(_),
+        )) => {}
+        _ => return Err("wrong Unix peer was not closed before handshake parsing".to_owned()),
+    }
+    println!("LNI_CASE wrong-unix-peer-refusal-before-frame-parse");
+    Ok(())
+}
+
+fn require_peer_closed(stream: &mut UnixStream) -> Result<(), String> {
+    let mut byte = [0];
+    match stream.read(&mut byte) {
+        Ok(0) => Ok(()),
+        Err(error)
+            if matches!(
+                error.kind(),
+                std::io::ErrorKind::ConnectionReset | std::io::ErrorKind::BrokenPipe
+            ) =>
+        {
+            Ok(())
+        }
+        _ => {
+            Err("production peer remained open or did not yield real shutdown evidence".to_owned())
+        }
+    }
+}
