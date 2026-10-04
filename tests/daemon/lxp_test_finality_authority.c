@@ -341,7 +341,7 @@ static int actual_payload(const char *state, const char *batch, const char *chec
     lxp_daemon_finality_authority authority;
     lxp_finalisation_state before;
     lxp_batch_header header;
-    uint8_t checkpoint_id[32], *payload, *proof, *saved_header, *memory;
+    uint8_t checkpoint_id[32], *payload, *proof, *saved_header, *arena_memory;
     size_t payload_length, proof_length, header_length;
     char path[4096];
     lxp_arena arena;
@@ -362,8 +362,8 @@ static int actual_payload(const char *state, const char *batch, const char *chec
     if (status != LXP_OK) { (void)fprintf(stderr, "finality authority bind refused: %d\n", (int)status); FAIL(); }
     /* The trusted predecessor anchor is the settlement root the checkpoint extends. */
     (void)memcpy(store.registry.finalisation.settlement_anchor, header.previous_state_root, 32U);
-    memory = malloc(4U * LXP_MAX_VALIDITY_PROOF_BYTES);
-    if (memory == NULL || lxp_arena_init(&arena, memory, 4U * LXP_MAX_VALIDITY_PROOF_BYTES) != LXP_OK) FAIL();
+    arena_memory = malloc(4U * LXP_MAX_VALIDITY_PROOF_BYTES);
+    if (arena_memory == NULL || lxp_arena_init(&arena, arena_memory, 4U * LXP_MAX_VALIDITY_PROOF_BYTES) != LXP_OK) FAIL();
     before = store.registry.finalisation;
     status = lxp_daemon_finality_contents_verify(header.network_id, (lxp_byte_span){payload, payload_length},
         (lxp_byte_span){proof, proof_length}, (lxp_byte_span){saved_header, LXP_BATCH_HEADER_ENCODED_SIZE},
@@ -505,7 +505,7 @@ static int actual_payload(const char *state, const char *batch, const char *chec
         (void)printf("\",\"settlement_contract\":\""); hex(authority.settlement_contract, 20U);
         (void)printf("\"}\n");
     }
-    free(memory); free(saved_header); free(proof); free(payload);
+    free(arena_memory); free(saved_header); free(proof); free(payload);
     return failed;
 }
 

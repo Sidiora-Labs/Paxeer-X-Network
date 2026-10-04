@@ -35523,3 +35523,27 @@ build_status = "PASSED"
 build_exit_code = 0
 qualification_evidence = "/root/lx-ops/paxeer-x-integration-2026-10-03/fleet-104.30.8-source-handoff.json"
 build_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/qualification/fleet104308/build.log"
+
+[task.2.5]
+title = "Remove the finality recording fixture shadow without changing verification"
+status = "done"
+mode = "BUILD"
+wave = 3
+requires = ["0.2", "2.4"]
+reqs = ["107"]
+do_1 = "Rename only the local arena backing-memory variable in actual_payload so the existing strict -Wshadow build succeeds. Preserve the global memory owner, every allocation bound, comparison, refusal and assertion."
+do_2 = "Run one bounded build of paxeer-x-finality-recordings-build, then the existing genuine recording verifier once if authentic inputs exist. Record missing external artifacts without creating synthetic authority."
+touches = ["tests/daemon/lxp_test_finality_authority.c"]
+verify_cmd = "timeout 25m python3 tests/daemon/paxeer_x_finality_recordings.py"
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop after the declared result, original30-minute cutoff, or a genuine contract conflict; no unrelated fixes or repeated unchanged gates."
+parent_task = "2.4"
+fleet_role = "/root/integrate_arbiter"
+fleet_authority = "Direct compiler blocker discovered by the user-authorized integration sweep; separate one-file correction preserves task2.4 prior evidence."
+source_status = "complete"
+completion_basis = "implementation under owner CONSTITUTION; qualification separately recorded"
+qualification_status = "UNRUN"
+source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-2.5-publication.json"
