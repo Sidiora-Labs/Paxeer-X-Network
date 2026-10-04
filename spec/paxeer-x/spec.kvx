@@ -36609,26 +36609,26 @@ prior_qualification_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/qualific
 
 [task.104.33.7.5]
 title = "Complete JVM Programs client integration"
-status = "done"
+status = "in_progress"
 mode = "BUILD"
 wave = 4
 requires = ["0.2", "104.17.4"]
 reqs = ["1098.7", "1103.1", "1103.2", "1103.6"]
 do_1 = "Complete authored Programs discover/interface/simulate/call adapter wiring against actual canonical gateway and receipt owners; preserve real authority and typed refusals. Reuse conforming code, implement only demonstrated gaps."
 do_2 = "Use authoritative shared schema/generator owner for generated changes. Never hand edit generated outputs. Implement real focused corpus for affected production paths without fake authority."
-touches = ["platform/sdk/jvm/src/main/java/com/sidiora/layerx/sdk/ProgramsClient.java", "platform/sdk/jvm/src/main/java/com/sidiora/layerx/sdk/NativeProgramCall.java", "platform/sdk/jvm/src/test/java/com/sidiora/layerx/sdk/ProgramsContractTest.java", "scripts/paxeer-x/verify-sdk-program-jvm.sh", "platform/sdk/jvm/src/main/java/com/sidiora/layerx/sdk/HttpProductionTransport.java", "platform/sdk/jvm/src/main/java/com/sidiora/layerx/sdk/verify/LocalVerifier.java"]
+touches = ["platform/sdk/jvm/src/main/java/com/sidiora/layerx/sdk/ProgramsClient.java", "platform/sdk/jvm/src/main/java/com/sidiora/layerx/sdk/NativeProgramCall.java", "platform/sdk/jvm/src/test/java/com/sidiora/layerx/sdk/ProgramsContractTest.java", "scripts/paxeer-x/verify-sdk-program-jvm.sh", "platform/sdk/jvm/src/main/java/com/sidiora/layerx/sdk/HttpProductionTransport.java", "platform/sdk/jvm/src/main/java/com/sidiora/layerx/sdk/verify/LocalVerifier.java", "platform/sdk/jvm/src/test/kotlin/com/sidiora/layerx/sdk/AgentOperationEnvelopeProbe.kt"]
 verify_cmd = "timeout 20m scripts/paxeer-x/verify-sdk-program-jvm.sh"
 max_builds = 1
 max_verify_runs = 1
 max_repair_cycles = 2
 time_limit_minutes = 30
-stop_condition = "Freeze source and stop on gate result, 30 minute cap, two repairs, or true contract conflict. Preserve original parent acceptance."
+stop_condition = "Stop at2026-10-04T20:29:37Z or actual contract conflict; one complete implementation then one bounded build and focused gate, at most two scoped repairs."
 fanout_role = "daemon_native_bindings/arbiter_client"
 parent_task = "104.33.7"
-source_status = "complete"
-completion_basis = "implementation under owner CONSTITUTION; qualification separately recorded"
-qualification_status = "FAILED"
-source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/root-104.33.7.5-final-intake.json"
+source_status = "compiler_fix_complete; corpus_adapter_under_inspection"
+completion_basis = "partial source published; original acceptance criteria remain required"
+qualification_status = "UNRUN_AFTER_REPAIR"
+source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/root-jvm-kotlin-approved-intake.json"
 qualification_revision = "00032eea837e67b29bc6905d2e01839e3a89e0aa"
 qualification_command = "UNRUN"
 qualification_exit_code = "UNRUN"
@@ -36643,6 +36643,10 @@ build_command_basis = "Exact published revision, command and exit reported by th
 qualification_observed = "Kotlin test-compile AgentOperationEnvelopeProbe.kt lines60/64/79 unresolved reference agentOperation; outside six leased JVM paths. No repair or rerun."
 qualification_missing_prerequisite = "Unrelated Kotlin compilation failure; actual native callback capture missing for mandatory ten-case verification."
 build_revision = "00032eea837e67b29bc6905d2e01839e3a89e0aa"
+continuation_approval = "/root/lx-ops/paxeer-x-integration-2026-10-03/terminal-v5-one-hour-owner-approval.json"
+continuation_deadline_utc = "2026-10-04T20:29:37Z"
+continuation_minutes = 60
+source_handoff_kotlin = "/root/lx-ops/paxeer-x-integration-2026-10-03/sdk-fanout-104.33.7.5-kotlin-source.json"
 
 [task.104.33.7.7]
 title = "Complete Dotnet Programs client integration"

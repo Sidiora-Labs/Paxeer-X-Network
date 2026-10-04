@@ -57,11 +57,11 @@ private fun request(provisioned: JsonNode, field: String): ObjectNode =
     provisioned.get(field) as? ObjectNode ?: throw IllegalStateException("provisioned request lacks $field")
 
 private fun read(transport: HttpProductionTransport, operation: String, request: ObjectNode): JsonNode =
-    transport.call<JsonNode>(ProductionTransport.Call(agentOperation(operation), request, null, null), node)
+    transport.call<JsonNode>(ProductionTransport.Call(OperationCatalog.agent(operation), request, null, null), node)
         .toCompletableFuture().join()
 
 private fun reply(transport: HttpProductionTransport, operation: String, request: ObjectNode): HttpProductionTransport.AgentReply =
-    transport.callAgentReply(ProductionTransport.Call(agentOperation(operation), request, null, null))
+    transport.callAgentReply(ProductionTransport.Call(OperationCatalog.agent(operation), request, null, null))
         .toCompletableFuture().join()
 
 private fun refusal(transport: HttpProductionTransport, operation: String, request: ObjectNode): PlatformSdkException {
@@ -76,7 +76,7 @@ private fun refusal(transport: HttpProductionTransport, operation: String, reque
 
 private fun decodeCase(config: JsonNode, credential: JsonNode, generation: String, requests: JsonNode, id: String, responses: Path) {
     val provisioned = requests.get(id)?.takeIf { it.isObject } ?: throw IllegalStateException("provisioned request lacks case $id")
-    val operation = agentOperation(provisioned.text("operation"))
+    val operation = OperationCatalog.agent(provisioned.text("operation"))
     val mutating = OperationCatalog.requiresIdempotency(operation)
     check(mutating == (id == "mutation_decode_unknown")) { "case $id operation mutability" }
     val key = if (mutating) {
