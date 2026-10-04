@@ -1,8 +1,9 @@
 //! Runtime adapters over the canonical ABI version policy the program SDK owns.
 
 pub use layerx_program_sdk::abi_policy::{
-    admit_abi_upgrade, admit_abi_version, capability_encoding, AbiVersionRefusal,
-    CapabilityEncoding, ABI_V1_VERSION, ABI_V2_VERSION, ABI_V3_VERSION, ABI_V4_VERSION,
+    account_profile2_guest_supported, admit_abi_upgrade, admit_abi_version, capability_encoding,
+    AbiVersionRefusal, CapabilityEncoding, ABI_V1_VERSION, ABI_V2_VERSION, ABI_V3_VERSION,
+    ABI_V4_VERSION,
 };
 
 use crate::AbiRevision;

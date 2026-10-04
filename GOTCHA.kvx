@@ -2195,3 +2195,11 @@ resolution = "Preserve the predicate and every legacy assertion; repair only its
 [gotcha.652]
 observed = "Native activities use a module/ordinal u32 code; legacy approval, policy and timed-session u16 contracts and the existing native capability binding explicitly cannot admit non-Programs modules."
 resolution = "Retain every legacy bound and Programs-only refusal; provide an explicit authenticated module/ordinal native profile rather than truncate activity identity or fabricate account DIDs."
+
+[gotcha.653]
+observed = "A guessed arbiter evidence filename/directory was absent; task22.7 already names a completed reader, so the attempted availability claim temporarily reactivated the wrong source contract."
+resolution = "Discover actual paths and task sections before claiming; restore22.7 exactly from HEAD and assign the distinct availability source contract22.9."
+
+[gotcha.654]
+observed = "The runtime ABI facade task build compiled unit-test code where transfer.rs:2893 calls clone on AtomicTransferSet, which has no Clone implementation; the source correction itself is complete."
+resolution = "Record this unrelated unit-test boundary once; retain the transfer type and test intact and do not expand the ABI export task or claim its unrun gate."

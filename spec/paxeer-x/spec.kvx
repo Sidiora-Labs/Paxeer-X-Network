@@ -32711,3 +32711,27 @@ source_ownership = "Root serializes shared manifests, lockfiles, Makefile, spec 
 source_status = "partial"
 qualification_status = "unrun_partial_source"
 remaining_source = "Native non-Programs capability/session/hold admission and complete real admission corpus; assigned distinct104.13.11."
+
+[task.6.7]
+title = "Expose the canonical account profile predicate at the existing runtime ABI facade"
+status = "done"
+mode = "BUILD"
+wave = 2
+requires = ["0.2", "6.6"]
+reqs = ["120"]
+do_1 = "Re-export the SDK-owned account_profile2_guest_supported predicate through the existing Programs runtime ABI facade so the actual registry caller resolves without changing policy."
+touches = ["programs/crates/layerx-programs-runtime/src/abi_policy.rs"]
+build_cmd = "timeout 15m env CARGO_TARGET_DIR=/root/lx-target/arbiter-prestate/rust /root/.cargo/bin/cargo test --locked --manifest-path programs/Cargo.toml -p layerx-programs-runtime --lib abi_policy::tests --no-run"
+verify_cmd = "timeout 15m env CARGO_TARGET_DIR=/root/lx-target/arbiter-prestate/rust /root/.cargo/bin/cargo test --locked --manifest-path programs/Cargo.toml -p layerx-programs-runtime --lib abi_policy::tests"
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on original cap, unrelated failure or any weakening; report exact source state and evidence."
+completion_basis_policy = "Owner CONSTITUTION: implemented DONE; qualification recorded separately."
+source_ownership = "Root owns shared manifests, spec and publication."
+completion_basis = "implementation"
+qualification_status = "blocked_unrelated_transfer_unit_test"
+qualification_build_exit = 101
+qualification_verify_status = "unrun"
+qualification_build_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-6.7-build.log"
