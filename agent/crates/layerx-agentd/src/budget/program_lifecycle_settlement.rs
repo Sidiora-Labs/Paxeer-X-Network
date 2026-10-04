@@ -707,7 +707,7 @@ fn verify_exit_transfer_root(
         .map_err(|_| ProgramSettlementError::Terminal)
 }
 
-fn active_fee_asset(
+pub(super) fn active_fee_asset(
     records: &BTreeMap<Vec<u8>, Vec<u8>>,
 ) -> Result<[u8; 32], ProgramSettlementError> {
     let bytes = state(records, b"progfee/active/v1", &[])

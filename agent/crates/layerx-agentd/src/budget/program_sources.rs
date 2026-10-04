@@ -365,7 +365,7 @@ fn validate_prepared(prepared: &Prepared) -> Result<(), ProgramSourceError> {
     Ok(())
 }
 
-fn principal_source(
+pub(super) fn principal_source(
     accounts: &BTreeMap<[u8; 32], CanonicalAccount>, actor: &Did, protocol: u16, asset: [u8; 32],
 ) -> Result<[u8; 32], ProgramSourceError> {
     if asset == [0; 32] { return Err(ProgramSourceError::SourceAsset); }

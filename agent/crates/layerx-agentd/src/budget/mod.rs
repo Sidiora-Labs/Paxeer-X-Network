@@ -931,7 +931,11 @@ pub(crate) fn program_settlement_recorded(
     let key = program_settlement_key(tenant, id)?;
     match store.get(&key) {
         None => Ok(false),
-        Some(value) if value.class() == crate::store::StorageClass::LocalOnly => Ok(true),
+        Some(value) if value.class() == crate::store::StorageClass::LocalOnly => {
+            reservations::validate_program_settlement_marker(value.bytes(), id)
+                .map_err(|_| DaemonLimitError::Corrupt)?;
+            Ok(true)
+        }
         Some(_) => Err(DaemonLimitError::Corrupt),
     }
 }

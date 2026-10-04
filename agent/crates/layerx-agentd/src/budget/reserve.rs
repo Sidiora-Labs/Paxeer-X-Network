@@ -1487,6 +1487,26 @@ fn program_settlement_marker(record: &ProgramBudgetReservation, receipt: [u8; 32
     Ok(marker)
 }
 
+pub(super) fn validate_program_settlement_marker(
+    marker: &[u8], reservation_id: [u8; 32],
+) -> Result<(), LimitRefusal> {
+    if reservation_id == [0; 32] || marker.len() < 135
+        || &marker[..5] != b"LXPS\x01"
+        || marker[5..37] != reservation_id
+        || marker[37..69] == [0; 32] || marker[69..101] == [0; 32]
+    { return Err(LimitRefusal::InvalidRequest); }
+    let count = usize::from(u16::from_be_bytes(marker[101..103].try_into()
+        .map_err(|_| LimitRefusal::InvalidRequest)?));
+    if count == 0 || count > 256 || marker.len() != 135 + count * 16 {
+        return Err(LimitRefusal::InvalidRequest);
+    }
+    let signed = marker.len() - 32;
+    let digest: [u8; 32] = Sha256::new().chain_update(b"layerx:program-budget-settlement:v1\0")
+        .chain_update(&marker[..signed]).finalize().into();
+    if marker[signed..] != digest { return Err(LimitRefusal::InvalidRequest); }
+    Ok(())
+}
+
 impl BudgetLimiter {
     pub(super) fn stage_program_settlement_inner(
         &self, record: &ProgramBudgetReservation,

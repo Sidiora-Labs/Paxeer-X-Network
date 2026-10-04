@@ -648,6 +648,9 @@ impl VerifiedAssetExecutionPrestate {
     pub fn all_accounts(&self) -> &BTreeMap<[u8; 32], CanonicalAccount> {
         self.inner.all_accounts()
     }
+    pub fn program_records(&self) -> &BTreeMap<Vec<u8>, Vec<u8>> {
+        self.inner.program_records()
+    }
     pub const fn activity(&self) -> &layerx_wire::activity::Activity {
         &self.activity
     }
