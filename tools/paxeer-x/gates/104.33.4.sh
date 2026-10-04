@@ -129,7 +129,9 @@ def build(directory):
     binaries, prefixes, compiler = {}, set(), []
     capture_dir = directory / 'compiled'
     capture_dir.mkdir(mode=0o700)
-    lock_path = Path('/root/lx-cargo/native-build.lock')
+    lock_path = Path('/root/lx-cargo/interpreter-build.lock'
+        if environment['CARGO_TARGET_DIR'] == '/root/lx-target/arbiter-prestate/rust'
+        else '/root/lx-cargo/native-build.lock')
     lock_path.parent.mkdir(parents=True, exist_ok=True)
     with lock_path.open('a') as lock:
         while True:
