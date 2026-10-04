@@ -7,6 +7,12 @@ int language_reference_main(int argc, char **argv);
 #include "layerx/lx_perps.h"
 #include "layerx/lx_web.h"
 
+static const uint8_t language_web_text[] = "Paxeer X Network";
+enum {
+    LANGUAGE_WEB_RECORD_BYTES = LX_WEB_ANSWER_HEADER_BYTES +
+        sizeof(language_web_text) - 1U
+};
+
 #define LANG_CHECK(condition) do { if (!(condition)) { \
     (void)fprintf(stderr, "language ABI fixture line %d\n", __LINE__); \
     return 1; } } while (0)
@@ -242,9 +248,9 @@ static int language_deploy(language_fixture *f, const char *path)
     return 0;
 }
 
-static int language_inputs(language_fixture *f, uint8_t expected_oracle[64], uint8_t expected_web[55])
+static int language_inputs(language_fixture *f, uint8_t expected_oracle[64],
+    uint8_t expected_web[LANGUAGE_WEB_RECORD_BYTES])
 {
-    static const uint8_t text[] = "Paxeer X Network";
     uint8_t market_id[32], bytes[65536];
     lx_perps_market market;
     lx_perps_oracle_state oracle;
@@ -281,8 +287,8 @@ static int language_inputs(language_fixture *f, uint8_t expected_oracle[64], uin
     memcpy(web.program_id,f->program_id,32U);
     web.request_id = UINT64_C(0x0102030405060708); web.kind = LX_WEB_KIND_FETCH;
     memset(web.content_digest,0x5a,32U); web.full_length = 5000U;
-    web.response_length = sizeof(text)-1U;
-    memcpy(web.response,text,sizeof(text)-1U);
+    web.response_length = sizeof(language_web_text)-1U;
+    memcpy(web.response,language_web_text,sizeof(language_web_text)-1U);
     LANG_CHECK(lx_web_committed_put(&ctx,&web) == LXP_OK);
     LANG_CHECK(lxp_module_ctx_prepare_commit(&ctx) == LXP_OK);
     LANG_CHECK(lxp_state_journal_commit(&f->journal) == LXP_OK);
@@ -293,7 +299,8 @@ static int language_inputs(language_fixture *f, uint8_t expected_oracle[64], uin
         expected_web[32U+index]=(uint8_t)(web.full_length>>(8U*index));
         expected_web[36U+index]=(uint8_t)(web.response_length>>(8U*index));
     }
-    memcpy(expected_web+40U,text,sizeof(text)-1U);
+    memcpy(expected_web+LX_WEB_ANSWER_HEADER_BYTES,language_web_text,
+        sizeof(language_web_text)-1U);
     return 0;
 }
 
@@ -455,7 +462,7 @@ static int language_cases(const char *path)
     static const uint8_t binding[]="binding";
     language_fixture *f=calloc(1U,sizeof(*f));
     language_effects *before=malloc(sizeof(*before)),*after=malloc(sizeof(*after));
-    uint8_t expected_oracle[64],expected_web[55];
+    uint8_t expected_oracle[64],expected_web[LANGUAGE_WEB_RECORD_BYTES];
     size_t index;
     int result=1;
     if(f==NULL || before==NULL || after==NULL) goto finished;
@@ -495,7 +502,8 @@ static int language_cases(const char *path)
                 language_u32(after->bytes+22U)!=0U || receipt.program_outcome.event_envelope_payload.length==0U))
                 goto finished;
             if(operation==1U && (response.length!=64U || memcmp(response.bytes,expected_oracle,64U)!=0)) goto finished;
-            if(operation==2U && (response.length!=55U || memcmp(response.bytes,expected_web,55U)!=0)) goto finished;
+            if(operation==2U && (response.length!=sizeof(expected_web) ||
+                memcmp(response.bytes,expected_web,sizeof(expected_web))!=0)) goto finished;
             if(operation==5U) {
                 size_t account_index;
                 lx_account *account;
