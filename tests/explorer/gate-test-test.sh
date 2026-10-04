@@ -12,14 +12,14 @@
 #
 # Run from anywhere:
 #
-#   tools/explorer/tests/gate-test-test.sh
+#   tests/explorer/gate-test-test.sh
 #
 # Exit codes: 0 when every case holds, 1 when one does not.
 
 set -eu
 
 script_dir=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd -P)
-gate_script=$script_dir/../gate-test.sh
+gate_script=$script_dir/../../scripts/explorer/gate-test.sh
 
 [ -x "$gate_script" ] || {
     printf 'gate-test-test: %s is not an executable script\n' "$gate_script" >&2
@@ -89,11 +89,11 @@ refute_file() {
 repository=$work_dir/repository
 log_dir=$work_dir/logs
 stub_bin=$work_dir/bin
-mkdir -p "$repository/tools/explorer" "$repository/explorer/deploy/tools" \
+mkdir -p "$repository/scripts/explorer" "$repository/explorer/deploy/tools" \
     "$repository/explorer/frontend" "$stub_bin"
 
-cp "$gate_script" "$repository/tools/explorer/gate-test.sh"
-chmod +x "$repository/tools/explorer/gate-test.sh"
+cp "$gate_script" "$repository/scripts/explorer/gate-test.sh"
+chmod +x "$repository/scripts/explorer/gate-test.sh"
 
 # The suites of four umbrella applications, one of them carrying two, plus a
 # suite the gate must leave alone because its path does not carry the fork's
@@ -144,7 +144,7 @@ run_gate() {
     : >"$record_file"
     rm -rf "$log_dir"
     set +e
-    "$repository/tools/explorer/gate-test.sh" >"$output_file" 2>&1
+    "$repository/scripts/explorer/gate-test.sh" >"$output_file" 2>&1
     gate_status=$?
     set -e
 }

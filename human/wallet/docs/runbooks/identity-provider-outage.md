@@ -22,7 +22,7 @@ path and none is added during an outage.
 
 ## Preconditions
 
-- The attestor network is healthy: `tools/wallet/check-live.sh attestors`
+- The attestor network is healthy: `scripts/wallet/check-live.sh attestors`
   passes. An identity outage and an attestor outage are handled separately.
 - The gateway's other readiness components (`attestors`, `nonce_store`,
   `rpc_pool`) are `up`, so the outage is isolated to identity.
@@ -76,7 +76,7 @@ curl -sS https://<gateway-base>/readyz
 The route answers 200 with `"ready":true` and
 `components.identity_provider` `up` with `keys` of one or more. A fresh
 sign-in and a signature through the gateway for a test identity pass
-`tools/wallet/check-live.sh gateway` (added by task 4.1). If the provider
+`scripts/wallet/check-live.sh gateway` (added by task 4.1). If the provider
 rotated its signing key during the outage, the attestors fetch the new key set
 on the first token with the new key id; no action is needed. Record revision,
 command, exit code and log path in `spec/paxeer-x-wallet/qualification.kvx`.

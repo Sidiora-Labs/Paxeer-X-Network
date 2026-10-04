@@ -10,7 +10,7 @@ the lost node ever held.
 
 ## Trigger
 
-- `tools/wallet/check-live.sh attestors` prints `fail node <id> ...` or a
+- `scripts/wallet/check-live.sh attestors` prints `fail node <id> ...` or a
   `fail <base> transport ...` line for the same node on consecutive runs.
 - The gateway readiness route `/readyz` reports the node with `healthy: false`
   under `components.attestors.nodes`.
@@ -80,7 +80,7 @@ goldens under `human/wallet/schema/attestor-api/golden/`.
 
    ```sh
    flyctl logs --app paxeer-attestor-<N> --no-tail
-   tools/wallet/check-live.sh attestors
+   scripts/wallet/check-live.sh attestors
    ```
 
    Expected: the lost node fails, the other lines pass, the quorum line passes.
@@ -108,7 +108,7 @@ goldens under `human/wallet/schema/attestor-api/golden/`.
    peer address. Validate them offline.
 
    ```sh
-   tools/wallet/check-deploy.sh
+   scripts/wallet/check-deploy.sh
    ```
 
    Expected: every rule prints `pass`, except the attestor `health-check` rule
@@ -165,7 +165,7 @@ goldens under `human/wallet/schema/attestor-api/golden/`.
 
    ```sh
    (cd human/wallet/deploy && flyctl deploy --config attestor-<M>.toml --image <attestor-image> --app paxeer-attestor-<M> --ha=false --no-public-ips -y)
-   tools/wallet/check-live.sh attestors
+   scripts/wallet/check-live.sh attestors
    ```
 
    Expected after the last survivor: five `pass node` lines, the replacement
@@ -256,14 +256,14 @@ goldens under `human/wallet/schema/attestor-api/golden/`.
 ## Readiness check that proves recovery
 
 ```sh
-tools/wallet/check-live.sh attestors
+scripts/wallet/check-live.sh attestors
 ```
 
 Every node passes with `peers=4/4`, the replacement's `shares=` equals its
 peers' count, and the quorum line reads `pass quorum ready=5/5 need=3`. The
 gateway's `/readyz` answers 200 with `components.attestors.healthy` of 5.
 A signature through the gateway with a quorum that includes the replacement,
-checked with `tools/wallet/check-live.sh gateway` (added by task 4.1), closes
+checked with `scripts/wallet/check-live.sh gateway` (added by task 4.1), closes
 the replacement. Record revision, command, exit code and log path of the
 attestor check in `spec/paxeer-x-wallet/qualification.kvx`.
 

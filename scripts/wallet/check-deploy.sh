@@ -3,7 +3,7 @@ set -euo pipefail
 
 usage() {
 	cat <<'EOF'
-usage: tools/wallet/check-deploy.sh [dir]
+usage: scripts/wallet/check-deploy.sh [dir]
 
 Validates the wallet deployment definitions offline, without contacting the
 platform. dir defaults to human/wallet/deploy and must hold the attestor-*.toml,

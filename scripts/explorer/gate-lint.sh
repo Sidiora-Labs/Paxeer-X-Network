@@ -1,16 +1,14 @@
 #!/bin/sh
 #
-# gate-test.sh
+# gate-lint.sh
 #
-# The explorer test gate, the path the workflow contract names as the test
-# gate. It runs the backend Paxeer X suites through
-# explorer/deploy/tools/mix-in-builder.sh, one invocation per umbrella
-# application so that each of them gets a database sidecar and a virtual
-# machine of its own, and then the frontend type check and the frontend vitest
-# suite from explorer/frontend. Run it from anywhere:
+# The explorer lint gate, the path the workflow contract names as the lint
+# gate. It runs the same three language checks the explorer-lint job runs, in
+# the same order: scripts/explorer/lint-backend.sh, scripts/explorer/lint-frontend.sh
+# and scripts/explorer/lint-services.sh. Run it from anywhere:
 #
-#   tools/explorer/gate-test.sh
-#   tools/explorer/gate-test.sh --check
+#   scripts/explorer/gate-lint.sh
+#   scripts/explorer/gate-lint.sh --check
 #
 # Each leg is bounded by EXPLORER_GATE_BUDGET_SECONDS, 1500 by default, applied
 # through timeout(1). The gate stops on the first leg that fails or exhausts
@@ -35,7 +33,6 @@ script_dir=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd -P)
 repo_root=$(CDPATH='' cd -- "$script_dir/../.." && pwd -P)
 runner=$repo_root/explorer/deploy/tools/mix-in-builder.sh
 dockerfile=$repo_root/docker/explorer-elixir-builder/Dockerfile
-backend_dir=$repo_root/explorer/backend
 frontend_dir=$repo_root/explorer/frontend
 log_dir=${EXPLORER_GATE_LOG_DIR:-$repo_root/build/explorer-gates}
 budget=${EXPLORER_GATE_BUDGET_SECONDS:-$DEFAULT_BUDGET_SECONDS}
@@ -43,7 +40,7 @@ budget=${EXPLORER_GATE_BUDGET_SECONDS:-$DEFAULT_BUDGET_SECONDS}
 check_only=0
 
 log() {
-  printf 'gate-test: %s\n' "$*" >&2
+  printf 'gate-lint: %s\n' "$*" >&2
 }
 
 die() {
@@ -53,15 +50,15 @@ die() {
 
 usage() {
   cat >&2 <<'USAGE'
-Usage: tools/explorer/gate-test.sh [--check]
+Usage: scripts/explorer/gate-lint.sh [--check]
 
-Runs the explorer test gate: the backend Paxeer X suites through the pinned
-Elixir builder with a database sidecar of its own, then the frontend type check
-and the frontend vitest suite.
+Runs the explorer lint gate: the backend formatting and static analysis, the
+frontend eslint and type check, and the services formatting and clippy, through
+the three lint scripts the explorer-lint job calls.
 
   --check     validate this script, the container runtime, the builder image
               recipe, the node toolchain and the three lint scripts, then exit
-              without running a suite
+              without running a check
   -h, --help  print this usage
 
 Environment
@@ -71,7 +68,8 @@ Environment
                                 124 instead of starting the next leg
   EXPLORER_GATE_LOG_DIR         directory the leg logs are written to; the
                                 default is build/explorer-gates under the
-                                repository root
+                                repository root, and the backend lint script
+                                writes its own per-check logs there too
 USAGE
 }
 
@@ -148,33 +146,6 @@ run_leg() {
   exit "$status"
 }
 
-# Every Paxeer X test file the backend umbrella carries, as paths relative to
-# the backend root, which is what mix reads inside the builder. Discovering
-# them keeps the gate honest as the fork adds suites.
-backend_suites() {
-  (
-    cd "$backend_dir" || exit 1
-    find apps -type f -name '*_test.exs' -path '*paxeer_x*' | LC_ALL=C sort
-  )
-}
-
-# The umbrella applications those suites belong to, and the suites of one of
-# them. The backend is tested one application at a time because each
-# application's test helper configures the whole virtual machine it is given:
-# it defines the Mox mocks and leaves the Ecto sandbox in the mode its own
-# cases expect. A single umbrella-wide invocation runs every helper in one
-# virtual machine, where the sandbox mode an earlier application leaves behind
-# denies the next application's background migrations a connection and ends
-# that application before its first test. One invocation per application is
-# also the shape every task in this feature qualified through.
-backend_applications() {
-  backend_suites | sed -n 's|^apps/\([^/]*\)/.*|\1|p' | LC_ALL=C sort -u
-}
-
-backend_application_suites() {
-  backend_suites | grep "^apps/$1/"
-}
-
 check_toolchain() {
   sh -n "$0" || die "$0 does not parse"
   log 'the gate script parses'
@@ -194,7 +165,7 @@ check_toolchain() {
   command -v node >/dev/null 2>&1 || die 'node is not on PATH'
   command -v yarn >/dev/null 2>&1 || die 'yarn is not on PATH'
   [ -f "$frontend_dir/package.json" ] || die "$frontend_dir/package.json does not exist"
-  for frontend_script in lint:tsc test:vitest; do
+  for frontend_script in lint:eslint lint:tsc; do
     grep -q "\"$frontend_script\":" "$frontend_dir/package.json" ||
       die "the frontend declares no $frontend_script script"
   done
@@ -207,13 +178,7 @@ check_toolchain() {
   done
   log 'the backend, frontend and services lint scripts parse'
 
-  suite_count=$(backend_suites | grep -c . || true)
-  [ "$suite_count" -gt 0 ] ||
-    die "no Paxeer X test file was found under ${backend_dir#"$repo_root"/}/apps"
-  application_count=$(backend_applications | grep -c . || true)
-  log "$suite_count backend Paxeer X test files in $application_count umbrella applications resolve"
-
-  log "no suite was run; the budget per leg is $budget seconds"
+  log "no check was run; the budget per leg is $budget seconds"
 }
 
 while [ "$#" -gt 0 ]; do
@@ -254,39 +219,14 @@ if [ "$check_only" -eq 1 ]; then
   exit 0
 fi
 
-backend_leg_applications=$(backend_applications)
-[ -n "$backend_leg_applications" ] ||
-  die "no Paxeer X test file was found under ${backend_dir#"$repo_root"/}/apps"
+# The backend lint script keeps one log per mix check; the gate collects them
+# beside its own leg logs so one directory holds everything the run wrote.
+EXPLORER_LINT_LOG_DIR=$log_dir
+export EXPLORER_LINT_LOG_DIR
 
-# One leg per umbrella application, each of them its own mix invocation. No
-# --reuse-db: every invocation gets a fresh database sidecar, which is what the
-# gate is required to run the backend suites against.
-for backend_application in $backend_leg_applications; do
-  # The suite paths become the positional parameters so a path survives the way
-  # the shell splits words.
-  set --
-  while IFS= read -r suite; do
-    [ -n "$suite" ] || continue
-    set -- "$@" "$suite"
-  done <<APPLICATION_SUITES
-$(backend_application_suites "$backend_application")
-APPLICATION_SUITES
+run_leg lint-backend 'backend lint' "$repo_root" "$script_dir/lint-backend.sh"
+run_leg lint-frontend 'frontend lint' "$repo_root" "$script_dir/lint-frontend.sh"
+run_leg lint-services 'services lint' "$repo_root" "$script_dir/lint-services.sh"
 
-  [ "$#" -gt 0 ] ||
-    die "the $backend_application application lost its Paxeer X test files"
-
-  run_leg "backend-$backend_application" "backend Paxeer X $backend_application" \
-    "$repo_root" "$runner" test "$@"
-done
-
-# Husky installs git hooks from the package prepare script; a gate run must not
-# rewrite the checkout's hooks.
-run_leg frontend-install 'frontend dependency' "$frontend_dir" \
-  env HUSKY=0 yarn install --frozen-lockfile
-run_leg frontend-tsc 'frontend type check' "$frontend_dir" \
-  env HUSKY=0 yarn lint:tsc
-run_leg frontend-vitest 'frontend vitest' "$frontend_dir" \
-  env HUSKY=0 yarn test:vitest run
-
-log 'the backend Paxeer X suites, the frontend type check and the frontend vitest suite passed'
+log 'the backend, frontend and services lint checks passed'
 log "logs: $log_dir"

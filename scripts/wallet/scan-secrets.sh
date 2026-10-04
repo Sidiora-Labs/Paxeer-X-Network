@@ -9,7 +9,7 @@ usage() {
 [ "$#" -ge 1 ] || usage
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-allow_file="${SCAN_SECRETS_ALLOW:-$script_dir/scan-secrets.allow}"
+allow_file="${SCAN_SECRETS_ALLOW:-$script_dir/../../tools/wallet/scan-secrets.allow}"
 
 for p in "$@"; do
   if [ ! -e "$p" ]; then

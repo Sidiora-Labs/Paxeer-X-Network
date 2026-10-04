@@ -140,7 +140,7 @@ bridge    runs bridge/deploy/checklist.sh for every chain under bridge/evm/chain
 wallet    reads the public wallet endpoint name from the wallet_endpoint
           value of [decision.public_names] in
           spec/paxeer-x-bringup/spec.kvx, then runs the wallet gates of
-          tools/wallet/check-live.sh and prints their check lines:
+          scripts/wallet/check-live.sh and prints their check lines:
   endpoint   "pass endpoint name=<host> source=spec", or "fail endpoint
              source=spec name=unset" when the value is unset or not a host
              name, in which case cutover is skipped
@@ -1618,7 +1618,7 @@ print(len(ms), len([m for m in ms if m.get("state") == "started"]))
 	finish "$failures"
 }
 
-# check_human_session: the wallet check-live harness tools/wallet/check-live.test.sh
+# check_human_session: the wallet check-live harness tests/wallet/check-live.test.sh
 # passes, then the wallet feature's human-session gate plans the golden intent
 # at https://api-hull.paxeer.network from the wallet origin
 # https://paxportwallet.com under the wallet identity assertion of
@@ -1627,16 +1627,16 @@ print(len(ms), len([m for m in ms if m.get("state") == "started"]))
 # they come and any failure of either fails the subcommand.
 check_human_session() {
 	local output status=0 failures=0
-	output="$("$repo_root/tools/wallet/check-live.test.sh" 2>&1)" || status=$?
+	output="$("$repo_root/tests/wallet/check-live.test.sh" 2>&1)" || status=$?
 	if [ "$status" -eq 0 ]; then
-		echo "pass harness tools/wallet/check-live.test.sh"
+		echo "pass harness tests/wallet/check-live.test.sh"
 	else
-		echo "fail harness tools/wallet/check-live.test.sh exit=$status first=$(grep -m 1 '^FAIL ' <<<"$output" | cut -c1-160 || echo none)"
+		echo "fail harness tests/wallet/check-live.test.sh exit=$status first=$(grep -m 1 '^FAIL ' <<<"$output" | cut -c1-160 || echo none)"
 		failures=$((failures + 1))
 	fi
 	status=0
 	CHECK_LIVE_HUMAN_BASE=https://api-hull.paxeer.network CHECK_LIVE_HUMAN_ORIGIN=https://paxportwallet.com \
-		"$repo_root/tools/wallet/check-live.sh" human-session || status=$?
+		"$repo_root/scripts/wallet/check-live.sh" human-session || status=$?
 	[ "$status" -eq 0 ] || failures=$((failures + 1))
 	finish "$failures"
 }
@@ -2429,7 +2429,7 @@ check_wallet() {
 	if grep -Eq "$host_re" <<<"$name"; then
 		echo "pass endpoint name=$name source=spec"
 		status=0
-		output="$(CHECK_LIVE_CUTOVER_HOST="$name" "$repo_root/tools/wallet/check-live.sh" cutover 2>&1)" || status=$?
+		output="$(CHECK_LIVE_CUTOVER_HOST="$name" "$repo_root/scripts/wallet/check-live.sh" cutover 2>&1)" || status=$?
 		grep -Ev '^check-live: (all checks passed|[0-9]+ check\(s\) failed)$' <<<"$output" || true
 		[ "$status" -eq 0 ] || failures=$((failures + 1))
 	else
@@ -2438,7 +2438,7 @@ check_wallet() {
 	fi
 
 	status=0
-	output="$(CHECK_LIVE_GATEWAY_BASE="https://$app.fly.dev" "$repo_root/tools/wallet/check-live.sh" gateway 2>&1)" || status=$?
+	output="$(CHECK_LIVE_GATEWAY_BASE="https://$app.fly.dev" "$repo_root/scripts/wallet/check-live.sh" gateway 2>&1)" || status=$?
 	grep -Ev '^check-live: (all checks passed|[0-9]+ check\(s\) failed)$' <<<"$output" || true
 	[ "$status" -eq 0 ] || failures=$((failures + 1))
 
@@ -2633,7 +2633,7 @@ print(len(ms), ",".join(str(p) for p in ports) or "none")
 # check_human: the human service of the kernel app answers at
 # CHECK_LIVE_HUMAN_BASE, by default https://api-hull.paxeer.network, as the
 # wallet origin CHECK_LIVE_HUMAN_ORIGIN, by default https://paxportwallet.com:
-# the live, preflight and plan checks of tools/wallet/check-live.sh human,
+# the live, preflight and plan checks of scripts/wallet/check-live.sh human,
 # /readyz 200 with ready true, and the passkey registration options of the
 # probe account CHECK_LIVE_HUMAN_PROBE_EMAIL, created under an idempotency key
 # derived from that address so every run converges on one account, naming the
@@ -2652,7 +2652,7 @@ check_human() {
 			failures=$((failures + 1))
 			;;
 		esac
-	done < <(CHECK_LIVE_HUMAN_BASE="$base" CHECK_LIVE_HUMAN_ORIGIN="$origin" CHECK_LIVE_TIMEOUT="$timeout" "$repo_root/tools/wallet/check-live.sh" human 2>&1 || true)
+	done < <(CHECK_LIVE_HUMAN_BASE="$base" CHECK_LIVE_HUMAN_ORIGIN="$origin" CHECK_LIVE_TIMEOUT="$timeout" "$repo_root/scripts/wallet/check-live.sh" human 2>&1 || true)
 	answer="$(curl -sS --max-time "$timeout" -H "origin: $origin" -w ' %{http_code}' "$base/readyz" 2>/dev/null)" || answer=""
 	code="${answer##* }"
 	body="${answer% *}"

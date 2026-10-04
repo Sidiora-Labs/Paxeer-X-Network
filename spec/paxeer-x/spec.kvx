@@ -13937,7 +13937,7 @@ kernel_private = "The chain archive node's peer side, the validators, the sequen
 overview = "Wave 0 retargets the tooling from host roles to Fly apps, fronts search from a Fly app, closes the validator attestor ports and keeps the docs on the router URL. Wave 1 makes the kernel real: settlement on the precompiles, the finality verifier bound in layerxd, the bare-host abort points fixed, the kernel image and app on Fly with its init, two Paxeer boundaries inside it, the genesis and sequencer key made inside the machine and a value loop proven through layerxctl. Wave 2 runs the kernel's boundaries, turns the existing endpoint app into the router, brings the identity service and the registry up as Fly apps and gives the TLS-only public services a plain listener for the Fly edge. Wave 3 completes the human graph inside the kernel app for the wallet identity, brings the internal services up once the human service's event listener exists and brings agentd and MCP live. Wave 4 runs in parallel over everything else and ends with the probe of every public name."
 
 [contract_context.108.design.probe]
-script = "tools/bringup/check-live.sh <subcommand> follows tools/wallet/check-live.sh: one subcommand per system, one line per check printed as pass or fail with the observed value, exit 0 only when every check passes, exit 2 on usage, CHECK_LIVE_TIMEOUT per request; ssh checks use the host map and never print it; Fly checks read the app name from the app's toml and run inside a machine through flyctl ssh console; tools/bringup/check-live.test.sh exercises the argument parsing and the pass and fail lines against local fixtures."
+script = "tools/bringup/check-live.sh <subcommand> follows scripts/wallet/check-live.sh: one subcommand per system, one line per check printed as pass or fail with the observed value, exit 0 only when every check passes, exit 2 on usage, CHECK_LIVE_TIMEOUT per request; ssh checks use the host map and never print it; Fly checks read the app name from the app's toml and run inside a machine through flyctl ssh console; tools/bringup/check-live.test.sh exercises the argument parsing and the pass and fail lines against local fixtures."
 subcommands = "hosts, ca, search-front, validators, kernel-app, kernel-node, kernel-value-loop, paxeer-boundary, kernel-boundaries, router, identity, internal, registry, human, agent, human-session, wallet, search, xweb-attest, xweb-attestors, archive-node, explorer, developers, relay, interop, interop-adapters, mirrors, ramp, gas, bridge, ci, hpx, rpc-nodes, rpc-placement, indexer, agent-public, names"
 
 [contract_context.108.design.fly]
@@ -14057,7 +14057,7 @@ reference_namespace = "feature.108"
 [req.1168]
 title = "Wallet move completed"
 story = "As the owner, the production wallets are migrated with the ceremony tool and the wallet endpoint serves the new gateway."
-ac_1 = "WHEN steps 1 to 9 of human/wallet/docs/cutover.md have run, the public wallet endpoint name is served by the wallet gateway app under its Fly certificate in place of step 10's endpoint proxy, and steps 11 to 13 have made the old database role read-only, sealed the old master key and retired the old wallet service THE wallet endpoint SHALL answer through the new gateway with the x-served-by header and readiness true, as tools/wallet/check-live.sh cutover checks."
+ac_1 = "WHEN steps 1 to 9 of human/wallet/docs/cutover.md have run, the public wallet endpoint name is served by the wallet gateway app under its Fly certificate in place of step 10's endpoint proxy, and steps 11 to 13 have made the old database role read-only, sealed the old master key and retired the old wallet service THE wallet endpoint SHALL answer through the new gateway with the x-served-by header and readiness true, as scripts/wallet/check-live.sh cutover checks."
 contract_profile = "retained-with-explicit-resolutions"
 reference_namespace = "feature.108"
 
@@ -14144,9 +14144,9 @@ touches = ["tools/bringup/check-live.sh", "tools/bringup/check-live.test.sh"]
 tests = ["tools/bringup/check-live.test.sh"]
 verification_contract = "timeout 10m tools/bringup/check-live.test.sh"
 obligation = "Retain the complete capability and qualify its applicable acceptance criteria on the candidate; preserve valid existing implementation and evidence."
-do_1 = "Write tools/bringup/check-live.sh after tools/wallet/check-live.sh: a usage block, one function per subcommand of [contract_context.108.design.probe], pass and fail lines with the observed value, CHECK_LIVE_TIMEOUT, exit 0 only when every check passes and 2 on usage; every subcommand of a later task is added by that task."
+do_1 = "Write tools/bringup/check-live.sh after scripts/wallet/check-live.sh: a usage block, one function per subcommand of [contract_context.108.design.probe], pass and fail lines with the observed value, CHECK_LIVE_TIMEOUT, exit 0 only when every check passes and 2 on usage; every subcommand of a later task is added by that task."
 do_2 = "Source BRINGUP_HOSTS_FILE in a load_hosts function that exits 2 naming the first missing role of EDGE_HOST, KERNEL_HOST, PLATFORM_HOST, EXPLORER_HOST, ARCHIVE_HOST, VALIDATOR_HOSTS, RPC_HOSTS and HPX_HOST, and never echoes a value; implement the hosts subcommand as one ssh true per role."
-do_3 = "Write tools/bringup/check-live.test.sh after tools/wallet/check-live.test.sh proving the usage exit, a passing subcommand and a failing subcommand against local fixtures with no network."
+do_3 = "Write tools/bringup/check-live.test.sh after tests/wallet/check-live.test.sh proving the usage exit, a passing subcommand and a failing subcommand against local fixtures with no network."
 symbols = ["load_hosts", "check_hosts", "usage"]
 
 [capability.108.0.2]
@@ -14293,7 +14293,7 @@ verification_contract = "timeout 20m tools/bringup/check-live.sh kernel-app"
 obligation = "Retain the complete capability and qualify its applicable acceptance criteria on the candidate; preserve valid existing implementation and evidence."
 do_1 = "Write docker/kernel/Dockerfile and docker/kernel/Dockerfile.dockerignore as the union of docker/platform-node, platform-core, platform-authority, platform-agent-boundary, interop-mirror and human-service plus layerx-mcp from agent/crates/layerx-mcp on a Debian base with socat and util-linux, reusing each image's build stages and entrypoints."
 do_2 = "Write docker/kernel/init.sh as the root entrypoint: replay the init containers of platform/hosted/node/deployment.yaml (guarantor storage, checkpoint authority, publication policy, human directories and human authority material) on the volume, mount tmpfs for /run/layerx, the private directories and /tmp, then start every long-running container command of that pod under its uid through setpriv and restart one that exits, starting a TLS listener only once its certificate is on the volume; every listen value and socat bind is [::] for the private network."
-do_3 = "Make human/wallet/deploy/human.toml the kernel app's toml: build docker/kernel/Dockerfile, one machine of a performance class with at least four CPUs and 16GB in the region nearest the RPC nodes by measured round trip, one volume mounted at /data holding /data/layerx and /data/human-state with daily snapshots and retention, only the CA roots as [[files]] secret_name entries while every private key and signing request is generated inside the machine on the volume and tools/bringup/ca.sh writes each certificate back to the volume, and the existing plain 8080 http_service with LAYERX_HUMAN_LISTENER plain and LAYERX_HUMAN_BIND [::]:8080 from the first deploy; add every new [env] name of the toml to human/wallet/deploy/env with one line each so tools/wallet/check-deploy.sh keeps passing."
+do_3 = "Make human/wallet/deploy/human.toml the kernel app's toml: build docker/kernel/Dockerfile, one machine of a performance class with at least four CPUs and 16GB in the region nearest the RPC nodes by measured round trip, one volume mounted at /data holding /data/layerx and /data/human-state with daily snapshots and retention, only the CA roots as [[files]] secret_name entries while every private key and signing request is generated inside the machine on the volume and tools/bringup/ca.sh writes each certificate back to the volume, and the existing plain 8080 http_service with LAYERX_HUMAN_LISTENER plain and LAYERX_HUMAN_BIND [::]:8080 from the first deploy; add every new [env] name of the toml to human/wallet/deploy/env with one line each so scripts/wallet/check-deploy.sh keeps passing."
 do_4 = "The existing machine of the app is a volumeless machine in ams, and a deploy does not attach a new volume to it: create the volume in ams, export the old machine's writable-root state with tools/bringup/human-state-preserve.sh export and stop that machine as the rollback, clone it onto the volume, import and verify the state there before the kernel init first runs, deploy with the [mounts] section excluding the old machine, and destroy the old machine only after the pre-destroy checks pass, after which the kernel-app gate runs; the app name, and so the edge's upstream for api-hull.paxeer.network, is unchanged."
 do_5 = "Add the kernel-app subcommand: the app has exactly one started machine with its volume mounted at /data, the init runs as the entrypoint, and every process of the pod not waiting on the genesis runs under its uid."
 symbols = ["check_kernel_app"]
@@ -14517,7 +14517,7 @@ verification_contract = "timeout 10m tools/bringup/check-live.sh human"
 obligation = "Retain the complete capability and qualify its applicable acceptance criteria on the candidate; preserve valid existing implementation and evidence."
 do_1 = "Run identity, security, movement, components and the onboarding roles under docker/kernel/init.sh through docker/human-service/entrypoint.sh with the README's uid split (4020, 4021, 4026), sockets under /run/layerx/human, materials generated inside the machine by platform/hosted/human/material.py under /data/human-state with https://paxportwallet.com as its web origin argument, so the passkey relying party id is paxportwallet.com, the movement provider at the two Paxeer boundaries with minimum agreement 2, the components at the router's px_ reads and the custody precompile, and the five Fly attestors at their apps' .internal names at protocol 3 with threshold three (unverified: attestor count five-vs-four unresolved)."
 do_2 = "Run two human service processes on the one components socket: the plain listener on [::]:8080 behind the app's http_service with CORS for https://paxportwallet.com, and a TLS listener under the internal CA on [::] for the journeys and approvals event sources over the private network; add every new [env] name of human/wallet/deploy/human.toml to human/wallet/deploy/env with one line each; register api-hull.paxeer.network on the edge with tools/bringup/edge.sh add api-hull.paxeer.network <app>."
-do_3 = "Add the human subcommand that runs tools/wallet/check-live.sh human with CHECK_LIVE_HUMAN_BASE=https://api-hull.paxeer.network and CHECK_LIVE_HUMAN_ORIGIN=https://paxportwallet.com, then checks /readyz ready and that the passkey registration options name rp.id paxportwallet.com."
+do_3 = "Add the human subcommand that runs scripts/wallet/check-live.sh human with CHECK_LIVE_HUMAN_BASE=https://api-hull.paxeer.network and CHECK_LIVE_HUMAN_ORIGIN=https://paxportwallet.com, then checks /readyz ready and that the passkey registration options name rp.id paxportwallet.com."
 symbols = ["check_human"]
 
 [capability.108.3.6]
@@ -14538,11 +14538,11 @@ title = "Point the wallet PWA at api-hull.paxeer.network and prove the authentic
 reference_namespace = "feature.108"
 reqs = ["1166.6"]
 touches = ["human/wallet/deploy/env", "tools/bringup/check-live.sh"]
-tests = ["tools/wallet/check-live.test.sh"]
+tests = ["tests/wallet/check-live.test.sh"]
 verification_contract = "timeout 10m tools/bringup/check-live.sh human-session"
 obligation = "Retain the complete capability and qualify its applicable acceptance criteria on the candidate; preserve valid existing implementation and evidence."
 do_1 = "Configure the existing Docker-hosted wallet PWA to use the authenticated Human API without implicitly changing its hosting platform."
-do_2 = "Add the human-session subcommand that runs tools/wallet/check-live.test.sh and then the wallet feature's human-session gate, tools/wallet/check-live.sh human-session with CHECK_LIVE_HUMAN_BASE=https://api-hull.paxeer.network and CHECK_LIVE_HUMAN_ORIGIN=https://paxportwallet.com, as this task's proof."
+do_2 = "Add the human-session subcommand that runs tests/wallet/check-live.test.sh and then the wallet feature's human-session gate, scripts/wallet/check-live.sh human-session with CHECK_LIVE_HUMAN_BASE=https://api-hull.paxeer.network and CHECK_LIVE_HUMAN_ORIGIN=https://paxportwallet.com, as this task's proof."
 symbols = ["check_human_session"]
 
 [capability.108.3.9]
@@ -14653,13 +14653,13 @@ title = "Complete the wallet move and serve the public wallet endpoint from the 
 reference_namespace = "feature.108"
 reqs = ["1168.1"]
 touches = ["tools/bringup/check-live.sh", "tools/bringup/check-live.test.sh", "human/wallet/deploy/cutover/retire.sh"]
-tests = ["tools/wallet/check-live.test.sh"]
+tests = ["tests/wallet/check-live.test.sh"]
 verification_contract = "timeout 10m tools/bringup/check-live.sh wallet"
 obligation = "Retain the complete capability and qualify its applicable acceptance criteria on the candidate; preserve valid existing implementation and evidence."
 do_1 = "Run steps 1 through 9 of human/wallet/docs/cutover.md from the operator host, with the flyctl proxy tunnels to the wallet attestor apps (count unresolved) on the operator host open through step 8."
-do_2 = "In place of step 10's proxy rewrite, scale the wallet gateway app of human/wallet/deploy/gateway.toml to a second region with at least one started machine there beside its machines in ams, register the public wallet endpoint name on the edge with tools/bringup/edge.sh add <name> <gateway app>; once the name reaches the edge, through the wildcard or after the owner's one record move when the name is not under paxeer.network, and tools/wallet/check-live.sh cutover passes against the name, the public wallet endpoint name is answered only by the Fly wallet gateway behind the edge, and write CUTOVER_STATE_DIR/applied-at in the format human/wallet/deploy/cutover/apply.sh writes, holding the time the edge began serving it."
+do_2 = "In place of step 10's proxy rewrite, scale the wallet gateway app of human/wallet/deploy/gateway.toml to a second region with at least one started machine there beside its machines in ams, register the public wallet endpoint name on the edge with tools/bringup/edge.sh add <name> <gateway app>; once the name reaches the edge, through the wildcard or after the owner's one record move when the name is not under paxeer.network, and scripts/wallet/check-live.sh cutover passes against the name, the public wallet endpoint name is answered only by the Fly wallet gateway behind the edge, and write CUTOVER_STATE_DIR/applied-at in the format human/wallet/deploy/cutover/apply.sh writes, holding the time the edge began serving it."
 do_3 = "Run step 11, making the database at the backend origin that the deploy side's discovery packet names read-only through its admin access; step 12, the owner's sealing of the old master key; and step 13, once CUTOVER_SOAK_SECONDS have passed and only once the new PWA origin serves, because stopping the legacy container also removes the old PWA: human/wallet/deploy/cutover/retire.sh in container mode on OLD_WALLET_HOST with CUTOVER_CONTAINER the legacy wallet container, CUTOVER_PUBLIC_HOST the public wallet endpoint name, CUTOVER_STATE_DIR and CUTOVER_SOAK_SECONDS as the runbook sets them; retire.sh's check sees the name answered by the Fly wallet gateway with its x-served-by header, and after it clears the container's restart policy and stops it the Fly wallet gateway alone answers the name; then drop OLD_WALLET_HOST from the host-map roles of tools/bringup/check-live.sh and from the fixtures of tools/bringup/check-live.test.sh."
-do_4 = "Add the wallet subcommand that runs tools/wallet/check-live.sh cutover with CHECK_LIVE_CUTOVER_HOST the public wallet endpoint name of [contract_context.108.decision.public_names] wallet_endpoint, and tools/wallet/check-live.sh gateway against the Fly wallet gateway, and checks that the wallet gateway app runs started machines in two regions."
+do_4 = "Add the wallet subcommand that runs scripts/wallet/check-live.sh cutover with CHECK_LIVE_CUTOVER_HOST the public wallet endpoint name of [contract_context.108.decision.public_names] wallet_endpoint, and scripts/wallet/check-live.sh gateway against the Fly wallet gateway, and checks that the wallet gateway app runs started machines in two regions."
 symbols = ["check_wallet"]
 
 [capability.108.4.2]
@@ -15200,7 +15200,7 @@ completion_task = "80.10"
 [contract_context.110.decision]
 code_quality = "A+ on every changed path: real code paths, real types, real fixtures. No stub, mock or fake test double on a production path, no placeholder implementation, no TODO, FIXME or 'for now' comment, no dead branch left behind to be cleaned up later. A test exercises the module it names through its public interface with data shaped like production data; a test that would need a fake to pass is a signal that the implementation is wrong, not that the test needs a double."
 no_weakening = "Inherited from workflow.kvx and restated because this feature's whole first wave is failing checks: no assertion is relaxed, no bound loosened, no type widened, no silent fallback added, no test skipped, deleted or marked pending, no lint rule disabled on a file this fork owns, and no continue-on-error added to a workflow to make a job report success. Where the code and a check disagree, both stay exactly as written and the conflict is recorded in spec/paxeer-x-explorer/qualification.kvx."
-test_ratio = "Every task's touches list names its test files explicitly, and a task that changes a source file under explorer/ changes or adds at least one test file that references it - an Elixir *_test.exs, a TypeScript *.test.ts, *.test.tsx, *.spec.ts, *.spec.tsx or *.pw.tsx, or a Rust #[cfg(test)] module or tests/ file. tools/explorer/test-ratio.sh enforces the ratio over a git range in continuous integration. Shell scripts, YAML workflows, environment presets, JSON deployment definitions, SVG marks and Markdown are not source files for the ratio and need no test file; the script that enforces the ratio has its own test."
+test_ratio = "Every task's touches list names its test files explicitly, and a task that changes a source file under explorer/ changes or adds at least one test file that references it - an Elixir *_test.exs, a TypeScript *.test.ts, *.test.tsx, *.spec.ts, *.spec.tsx or *.pw.tsx, or a Rust #[cfg(test)] module or tests/ file. scripts/explorer/test-ratio.sh enforces the ratio over a git range in continuous integration. Shell scripts, YAML workflows, environment presets, JSON deployment definitions, SVG marks and Markdown are not source files for the ratio and need no test file; the script that enforces the ratio has its own test."
 testing_allowance = "Testing time is bounded on purpose. Every task's verify_cmd is one command wrapped in `timeout 20m`, run from the repository root. A task gets one build of its declared targets and one verify_cmd run, then at most two task-scoped repair cycles, each followed by exactly one rerun. Aggregate suites, the full explorer test matrix and the lint matrix run once, in the wave gate task of wave 3, never per task and never per rebase. A task whose verify_cmd exceeds its timeout stops and reports implemented-not-qualified with the exact command, exit code and log path; that is an acceptable outcome and is never dressed up as a pass."
 naming = "The product is Paxeer X Network. LayerX is the name of the kernel domain only. Chain-side modules, configuration keys, chain-type values and asset paths read paxeer_x, PaxeerX or paxeer-x; kernel-side database entities, columns and schema modules keep the lx_ prefix that the migrations already use. The coin is Paxeer, its symbol is PAX and it has 18 decimals. No file, comment, commit message or log line introduced by this feature carries a date, a hostname, an IP address, a port of an internal host, an internal URL or the name of an agent or a working branch."
 generated_files = "CLAUDE.md, AGENTS.md, .github/copilot-instructions.md, .codify/agent-context.md and the requirements.md, design.md and tasks.md mirrors under spec/*/ are generated and off limits: edit spec/workflow.kvx or this file and regenerate. explorer/frontend/nextjs/nextjs-routes.d.ts is generated by the nextjs-routes plugin and is regenerated by its generator, never hand-edited."
@@ -15241,7 +15241,7 @@ reference_namespace = "feature.110"
 [req.1183]
 title = "Test Ratio Gate"
 story = "As the owner of this fork, I want a changed source file to arrive with a test that references it, so that the fork's coverage grows with the fork instead of behind it."
-ac_1 = "THE repository SHALL carry tools/explorer/test-ratio.sh which, for a git range given as its argument, counts the non-test source files changed under explorer/ and the test files changed or added in the same range, and fails when the test files are fewer than the source files."
+ac_1 = "THE repository SHALL carry scripts/explorer/test-ratio.sh which, for a git range given as its argument, counts the non-test source files changed under explorer/ and the test files changed or added in the same range, and fails when the test files are fewer than the source files."
 ac_2 = "THE script SHALL count as a source file an Elixir .ex, a TypeScript or TSX file that is not a test, and a Rust .rs that is not a test module, and SHALL count as a test file an Elixir *_test.exs, a TypeScript *.test.ts, *.test.tsx, *.spec.ts, *.spec.tsx or *.pw.tsx, and a Rust file under a tests/ directory or carrying a #[cfg(test)] module; shell, YAML, JSON, environment presets, SVG and Markdown SHALL be counted as neither."
 ac_3 = "THE script SHALL require each counted test file to reference at least one of the changed source files by module name, component name or path, SHALL name in its failure output every source file left without a referencing test, and SHALL exit zero when the range changes no explorer source file."
 ac_4 = "THE explorer build workflow SHALL run the script on pull requests over the range from the merge base to the head commit, and explorer/README.md SHALL document the rule, the file classifications and how to run the script locally."
@@ -15252,7 +15252,7 @@ reference_namespace = "feature.110"
 [req.1184]
 title = "Bounded Fleet Gates"
 story = "As the integrator landing a wave, I want one test gate and one lint gate that run the explorer suites the same way everywhere and stop at a known bound, so that landing a branch is a decision, not an open-ended session."
-ac_1 = "THE repository SHALL carry tools/explorer/gate-test.sh and tools/explorer/gate-lint.sh, the two paths the workflow contract already names as the test and lint gates, each executable from the repository root and each returning a non-zero exit code on any failure of the work it gates."
+ac_1 = "THE repository SHALL carry scripts/explorer/gate-test.sh and scripts/explorer/gate-lint.sh, the two paths the workflow contract already names as the test and lint gates, each executable from the repository root and each returning a non-zero exit code on any failure of the work it gates."
 ac_2 = "THE test gate SHALL run the backend Paxeer X suites and the frontend vitest suite through the containerised builder with a fresh database sidecar per invocation, and the lint gate SHALL run the same three language checks the explorer-lint job runs."
 ac_3 = "EACH gate SHALL be bounded by a budget in seconds taken from the environment with a documented default, SHALL stop at that budget, and SHALL report the command, the exit code and the log path of whatever it stopped on rather than continuing."
 ac_4 = "EACH gate SHALL support a check mode that validates its own syntax, its required tooling and its container recipe without running a suite, so that the gate itself can be qualified inside a task budget."
@@ -15619,11 +15619,11 @@ symbols = ["docs-site"]
 title = "Make the backend lint gate green"
 reference_namespace = "feature.110"
 reqs = ["1182.1", "1182.5"]
-touches = ["tools/explorer/lint-backend.sh", "explorer/backend/.credo.exs", "explorer/backend/.formatter.exs", "explorer/backend/apps/explorer/lib/explorer/chain/paxeer_x", "explorer/backend/apps/explorer/lib/explorer/chain/import/runner/paxeer_x", "explorer/backend/apps/indexer/lib/indexer/transform/paxeer_x_logs.ex", "explorer/backend/apps/ethereum_jsonrpc/lib/ethereum_jsonrpc/paxeer_x.ex", "explorer/backend/apps/block_scout_web/lib/block_scout_web/controllers/api/v2/paxeer_x", "explorer/backend/apps/block_scout_web/lib/block_scout_web/views/api/v2/paxeer_x"]
+touches = ["scripts/explorer/lint-backend.sh", "explorer/backend/.credo.exs", "explorer/backend/.formatter.exs", "explorer/backend/apps/explorer/lib/explorer/chain/paxeer_x", "explorer/backend/apps/explorer/lib/explorer/chain/import/runner/paxeer_x", "explorer/backend/apps/indexer/lib/indexer/transform/paxeer_x_logs.ex", "explorer/backend/apps/ethereum_jsonrpc/lib/ethereum_jsonrpc/paxeer_x.ex", "explorer/backend/apps/block_scout_web/lib/block_scout_web/controllers/api/v2/paxeer_x", "explorer/backend/apps/block_scout_web/lib/block_scout_web/views/api/v2/paxeer_x"]
 tests = []
-verification_contract = "timeout 20m sh -c 'tools/explorer/lint-backend.sh'"
+verification_contract = "timeout 20m sh -c 'scripts/explorer/lint-backend.sh'"
 obligation = "Retain the complete capability and qualify its applicable acceptance criteria on the candidate; preserve valid existing implementation and evidence."
-do_1 = "Write tools/explorer/lint-backend.sh which runs `mix format --check-formatted` and `mix credo --strict` through explorer/deploy/tools/mix-in-builder.sh, returns the first non-zero exit code, and prints the failing command and log path."
+do_1 = "Write scripts/explorer/lint-backend.sh which runs `mix format --check-formatted` and `mix credo --strict` through explorer/deploy/tools/mix-in-builder.sh, returns the first non-zero exit code, and prints the failing command and log path."
 do_2 = "Fix every formatting finding in fork-owned modules by formatting them with the committed .formatter.exs settings; do not reformat vendored upstream files the fork has not modified."
 do_3 = "Fix every credo finding in fork-owned modules - the Paxeer X chain, controller, view, import runner, transform and configuration modules - in the code: missing module documentation, alias ordering, function complexity, nesting depth and naming."
 do_4 = "For findings inherited from vendored upstream files, add a scoped entry to explorer/backend/.credo.exs that names the upstream path it covers with a one-line reason in the file; never disable a check globally and never exclude a fork-owned path."
@@ -15633,11 +15633,11 @@ symbols = ["lint-backend"]
 title = "Make the frontend lint gate green"
 reference_namespace = "feature.110"
 reqs = ["1182.2", "1182.5"]
-touches = ["tools/explorer/lint-frontend.sh", "explorer/frontend/eslint.config.mjs", "explorer/frontend/ui/paxeerX", "explorer/frontend/ui/pages/PaxeerXAccount.tsx", "explorer/frontend/ui/pages/PaxeerXAnchors.tsx", "explorer/frontend/ui/pages/PaxeerXReceipts.tsx", "explorer/frontend/pages/paxeer-x", "explorer/frontend/lib/api/services/general/paxeerX.ts", "explorer/frontend/lib/api/services/general/paxeerXLists.ts", "explorer/frontend/types/api/paxeerX.ts", "explorer/frontend/types/api/paxeerXLists.ts", "explorer/frontend/mocks/paxeerX", "explorer/frontend/stubs/paxeerXLists.ts", "explorer/frontend/configs/app/features/paxeerXLists.ts"]
+touches = ["scripts/explorer/lint-frontend.sh", "explorer/frontend/eslint.config.mjs", "explorer/frontend/ui/paxeerX", "explorer/frontend/ui/pages/PaxeerXAccount.tsx", "explorer/frontend/ui/pages/PaxeerXAnchors.tsx", "explorer/frontend/ui/pages/PaxeerXReceipts.tsx", "explorer/frontend/pages/paxeer-x", "explorer/frontend/lib/api/services/general/paxeerX.ts", "explorer/frontend/lib/api/services/general/paxeerXLists.ts", "explorer/frontend/types/api/paxeerX.ts", "explorer/frontend/types/api/paxeerXLists.ts", "explorer/frontend/mocks/paxeerX", "explorer/frontend/stubs/paxeerXLists.ts", "explorer/frontend/configs/app/features/paxeerXLists.ts"]
 tests = []
 verification_contract = "timeout 20m sh -c 'cd explorer/frontend && HUSKY=0 yarn install --frozen-lockfile && yarn lint:eslint && yarn lint:tsc'"
 obligation = "Retain the complete capability and qualify its applicable acceptance criteria on the candidate; preserve valid existing implementation and evidence."
-do_1 = "Write tools/explorer/lint-frontend.sh which installs the locked dependencies with husky disabled and runs `yarn lint:eslint` then `yarn lint:tsc` from explorer/frontend, returning the first non-zero exit code."
+do_1 = "Write scripts/explorer/lint-frontend.sh which installs the locked dependencies with husky disabled and runs `yarn lint:eslint` then `yarn lint:tsc` from explorer/frontend, returning the first non-zero exit code."
 do_2 = "Fix every eslint and type finding in fork-owned frontend files - the Paxeer X pages, views, components, API services, types, mocks, stubs and the search bar helpers - in the code, with no eslint-disable comment and no any."
 do_3 = "For findings inherited from vendored upstream files, add an override block to explorer/frontend/eslint.config.mjs whose files globs name the upstream paths it covers, with a one-line reason in the file; never relax a rule for the whole project and never for a fork-owned path."
 do_4 = "Leave the lint scripts in package.json exactly as upstream defines them so the job and a developer run the same commands."
@@ -15647,11 +15647,11 @@ symbols = ["lint-frontend"]
 title = "Make the services lint gate green"
 reference_namespace = "feature.110"
 reqs = ["1182.3", "1182.5"]
-touches = ["tools/explorer/lint-services.sh", "explorer/services/smart-contract-verifier", "explorer/services/sig-provider"]
+touches = ["scripts/explorer/lint-services.sh", "explorer/services/smart-contract-verifier", "explorer/services/sig-provider"]
 tests = []
-verification_contract = "timeout 20m sh -c 'tools/explorer/lint-services.sh'"
+verification_contract = "timeout 20m sh -c 'scripts/explorer/lint-services.sh'"
 obligation = "Retain the complete capability and qualify its applicable acceptance criteria on the candidate; preserve valid existing implementation and evidence."
-do_1 = "Write tools/explorer/lint-services.sh which, for each of explorer/services/smart-contract-verifier and explorer/services/sig-provider, runs `cargo fmt --all --check` and `cargo clippy --all-targets --locked -- -D warnings` from that service directory and returns the first non-zero exit code."
+do_1 = "Write scripts/explorer/lint-services.sh which, for each of explorer/services/smart-contract-verifier and explorer/services/sig-provider, runs `cargo fmt --all --check` and `cargo clippy --all-targets --locked -- -D warnings` from that service directory and returns the first non-zero exit code."
 do_2 = "Fix every formatting difference by running the formatter over the service workspaces, and fix every clippy warning in the code."
 do_3 = "Where a clippy lint is inherited from vendored upstream code and cannot be fixed without a mass edit, add the allow at the narrowest scope that covers it with a one-line reason beside it; never add a crate-wide allow and never pass an allow flag from the script."
 do_4 = "Install the protocol-buffer compiler the services need in the script when it is absent from the environment, exactly as the explorer build workflow does, so the script runs the same way locally and in continuous integration."
@@ -15661,14 +15661,14 @@ symbols = ["lint-services"]
 title = "Enforce the test ratio and wire both explorer gates into continuous integration"
 reference_namespace = "feature.110"
 reqs = ["1182.4", "1183.1", "1183.2", "1183.3", "1183.4", "1183.5"]
-touches = ["tools/explorer/test-ratio.sh", "tools/explorer/tests/test-ratio-test.sh", ".github/workflows/explorer-build.yml", "explorer/README.md"]
+touches = ["scripts/explorer/test-ratio.sh", "tests/explorer/test-ratio-test.sh", ".github/workflows/explorer-build.yml", "explorer/README.md"]
 tests = []
-verification_contract = "timeout 20m sh -c 'actionlint .github/workflows/explorer-build.yml && shellcheck tools/explorer/test-ratio.sh tools/explorer/tests/test-ratio-test.sh && tools/explorer/tests/test-ratio-test.sh'"
+verification_contract = "timeout 20m sh -c 'actionlint .github/workflows/explorer-build.yml && shellcheck scripts/explorer/test-ratio.sh tests/explorer/test-ratio-test.sh && tests/explorer/test-ratio-test.sh'"
 obligation = "Retain the complete capability and qualify its applicable acceptance criteria on the candidate; preserve valid existing implementation and evidence."
-do_1 = "Write tools/explorer/test-ratio.sh taking a git range, listing the files changed under explorer/ in that range, classifying each as source, test or neither by the rules in the test-ratio decision, and failing when the count of changed or added test files is lower than the count of changed source files."
+do_1 = "Write scripts/explorer/test-ratio.sh taking a git range, listing the files changed under explorer/ in that range, classifying each as source, test or neither by the rules in the test-ratio decision, and failing when the count of changed or added test files is lower than the count of changed source files."
 do_2 = "Require every counted test file to reference at least one changed source file by module name, exported component name or path fragment, and make the failure output name each source file that no changed test references; exit zero when the range changes no explorer source file."
-do_3 = "Write tools/explorer/tests/test-ratio-test.sh that builds a throwaway git repository in a temporary directory with commits covering a satisfied ratio, an unsatisfied ratio, a test that references nothing changed, a shell-and-documentation-only change and an empty range, asserting the script's exit code and the named files for each case."
-do_4 = "Add to .github/workflows/explorer-build.yml an explorer-lint job with one leg per language calling tools/explorer/lint-backend.sh, tools/explorer/lint-frontend.sh and tools/explorer/lint-services.sh, and an explorer-test-ratio job running tools/explorer/test-ratio.sh over the range from the merge base to the head commit on pull requests; give neither job a continue-on-error and no conditional skip, and leave the existing build jobs untouched."
+do_3 = "Write tests/explorer/test-ratio-test.sh that builds a throwaway git repository in a temporary directory with commits covering a satisfied ratio, an unsatisfied ratio, a test that references nothing changed, a shell-and-documentation-only change and an empty range, asserting the script's exit code and the named files for each case."
+do_4 = "Add to .github/workflows/explorer-build.yml an explorer-lint job with one leg per language calling scripts/explorer/lint-backend.sh, scripts/explorer/lint-frontend.sh and scripts/explorer/lint-services.sh, and an explorer-test-ratio job running scripts/explorer/test-ratio.sh over the range from the merge base to the head commit on pull requests; give neither job a continue-on-error and no conditional skip, and leave the existing build jobs untouched."
 do_5 = "Document in explorer/README.md the ratio rule, the file classifications, how to run the ratio script and the three lint scripts locally, and what a scoped upstream exemption must carry."
 symbols = ["test-ratio"]
 
@@ -15676,12 +15676,12 @@ symbols = ["test-ratio"]
 title = "Write the two bounded fleet gates"
 reference_namespace = "feature.110"
 reqs = ["1184.1", "1184.2", "1184.3", "1184.4"]
-touches = ["tools/explorer/gate-test.sh", "tools/explorer/gate-lint.sh", "explorer/README.md"]
+touches = ["scripts/explorer/gate-test.sh", "scripts/explorer/gate-lint.sh", "explorer/README.md"]
 tests = []
-verification_contract = "timeout 20m sh -c 'shellcheck tools/explorer/gate-test.sh tools/explorer/gate-lint.sh && tools/explorer/gate-lint.sh --check && tools/explorer/gate-test.sh --check'"
+verification_contract = "timeout 20m sh -c 'shellcheck scripts/explorer/gate-test.sh scripts/explorer/gate-lint.sh && scripts/explorer/gate-lint.sh --check && scripts/explorer/gate-test.sh --check'"
 obligation = "Retain the complete capability and qualify its applicable acceptance criteria on the candidate; preserve valid existing implementation and evidence."
-do_1 = "Write tools/explorer/gate-test.sh, the test gate the workflow contract names: run the backend Paxeer X suites through explorer/deploy/tools/mix-in-builder.sh with a fresh database sidecar, then the frontend type check and vitest suite from explorer/frontend, and return non-zero on the first failure with its command, exit code and log path."
-do_2 = "Write tools/explorer/gate-lint.sh, the lint gate: run tools/explorer/lint-backend.sh, tools/explorer/lint-frontend.sh and tools/explorer/lint-services.sh in that order with the same reporting."
+do_1 = "Write scripts/explorer/gate-test.sh, the test gate the workflow contract names: run the backend Paxeer X suites through explorer/deploy/tools/mix-in-builder.sh with a fresh database sidecar, then the frontend type check and vitest suite from explorer/frontend, and return non-zero on the first failure with its command, exit code and log path."
+do_2 = "Write scripts/explorer/gate-lint.sh, the lint gate: run scripts/explorer/lint-backend.sh, scripts/explorer/lint-frontend.sh and scripts/explorer/lint-services.sh in that order with the same reporting."
 do_3 = "Bound both gates by EXPLORER_GATE_BUDGET_SECONDS, defaulting to 1500, applied per leg through the shell timeout utility; on expiry stop and report the leg, its command and its log path as a timeout rather than continuing to the next leg."
 do_4 = "Give both gates a `--check` mode that validates the script syntax, the presence of the container runtime, the builder image recipe, the node toolchain and the three lint scripts, and exits without running a suite; write every log under build/explorer-gates/ and print the directory."
 do_5 = "Document both gates and their budget variable in explorer/README.md; the workflow contract already names these two paths as the test and lint gates, so neither spec/workflow.kvx nor any generated pointer file is edited."
@@ -15914,9 +15914,9 @@ reference_namespace = "feature.110"
 reqs = ["1196.1", "1196.2", "1196.3", "1196.4"]
 touches = ["spec/paxeer-x/qualification.kvx"]
 tests = []
-verification_contract = "timeout 20m sh -c 'EXPLORER_GATE_BUDGET_SECONDS=1080 tools/explorer/gate-test.sh'"
+verification_contract = "timeout 20m sh -c 'EXPLORER_GATE_BUDGET_SECONDS=1080 scripts/explorer/gate-test.sh'"
 obligation = "Retain the complete capability and qualify its applicable acceptance criteria on the candidate; preserve valid existing implementation and evidence."
-do_1 = "On the revision that merges waves 1 and 2, run tools/explorer/gate-test.sh once with its budget set to fit this task's timeout, writing its logs under build/explorer-gates/."
+do_1 = "On the revision that merges waves 1 and 2, run scripts/explorer/gate-test.sh once with its budget set to fit this task's timeout, writing its logs under build/explorer-gates/."
 do_2 = "Append one gate record per leg to spec/paxeer-x-explorer/qualification.kvx - the backend Paxeer X suites, the frontend type check and vitest suite - carrying the task, the requirements the leg qualifies, the revision, the exact command, the exit code and the log path, written only from a command that actually ran."
 do_3 = "Append one observation per failure the run exposes that belongs to no task in this feature: revision, command, exit code, log path, one sentence of what was observed and one sentence of what is assumed; do not investigate it further and do not rerun it."
 do_4 = "Rerun nothing that already passed at this revision, spawn no review of a task whose verify_cmd passed, and write no gate record for a command that did not run."
@@ -15930,15 +15930,15 @@ children = ["110.4.1", "110.4.2"]
 title = "Make the umbrella test leg of the wave gate pass"
 reference_namespace = "feature.110"
 reqs = ["1184.1", "1184.2", "1184.5", "1196.1"]
-touches = ["tools/explorer/gate-test.sh", "tools/explorer/tests/gate-test-test.sh", "explorer/README.md", "spec/paxeer-x/qualification.kvx"]
+touches = ["scripts/explorer/gate-test.sh", "tests/explorer/gate-test-test.sh", "explorer/README.md", "spec/paxeer-x/qualification.kvx"]
 tests = []
-verification_contract = "timeout 20m sh -c 'EXPLORER_GATE_BUDGET_SECONDS=1080 tools/explorer/gate-test.sh'"
+verification_contract = "timeout 20m sh -c 'EXPLORER_GATE_BUDGET_SECONDS=1080 scripts/explorer/gate-test.sh'"
 obligation = "Retain the complete capability and qualify its applicable acceptance criteria on the candidate; preserve valid existing implementation and evidence."
 do_1 = "Root-cause the backend leg from the recorded wave-gate run rather than from a rerun: the gate collects every Paxeer X suite of the umbrella into a single mix invocation, so the four applications' test helpers run in one virtual machine, and the Ecto sandbox mode the explorer application's non-async cases leave behind denies the indexer test helper's background migrations a connection, ending that application before its first test while the same suites pass when the application is tested on its own."
-do_2 = "In tools/explorer/gate-test.sh derive the umbrella applications from the suites the gate discovers and run one leg per application, each of them its own mix invocation through explorer/deploy/tools/mix-in-builder.sh with a fresh database sidecar, carrying that application's suites in path order and no other application's."
+do_2 = "In scripts/explorer/gate-test.sh derive the umbrella applications from the suites the gate discovers and run one leg per application, each of them its own mix invocation through explorer/deploy/tools/mix-in-builder.sh with a fresh database sidecar, carrying that application's suites in path order and no other application's."
 do_3 = "Keep every discovered suite in the run: skip no test, exclude no tag, relax no assertion, change no test helper, and keep the gate stopping on the first failing leg with that leg's command, exit code and log path, each leg under its own log."
 do_4 = "Report the number of umbrella applications beside the suite count in the gate's check mode, and record the reason for the per-application invocation in the script itself so a later reader does not merge the legs back."
-do_5 = "Add tools/explorer/tests/gate-test-test.sh, which builds a throwaway copy of the gate over a backend tree of Paxeer X suites spread across four applications with recording stand-ins for the mix runner and for yarn, and asserts one invocation per application carrying only that application's suites, a log per application, the frontend legs after them, and a failing application stopping the gate on its own exit code before the next application and before the frontend."
+do_5 = "Add tests/explorer/gate-test-test.sh, which builds a throwaway copy of the gate over a backend tree of Paxeer X suites spread across four applications with recording stand-ins for the mix runner and for yarn, and asserts one invocation per application carrying only that application's suites, a log per application, the frontend legs after them, and a failing application stopping the gate on its own exit code before the next application and before the frontend."
 do_6 = "Document the per-application backend leg under the fleet gates heading of explorer/README.md, and leave the records of task 3.1 untouched so that task reruns the gate itself."
 symbols = ["gate-test"]
 
@@ -16187,7 +16187,7 @@ touches = ["explorer/frontend/ui/tx/TxDetailsDegraded.spec.tsx", "explorer/front
 tests = ["explorer/frontend/ui/tx/TxDetailsDegraded.spec.tsx", "explorer/frontend/ui/tx/TxLogs.spec.tsx", "explorer/frontend/ui/tx/TxInternals.spec.tsx", "explorer/frontend/ui/tx/TxRawTrace.spec.tsx", "explorer/frontend/ui/tx/TxState.spec.tsx", "explorer/frontend/ui/tx/details/txDetailsActions/TxDetailsActionsInterpretation.spec.tsx", "explorer/frontend/ui/tx/details/txDetailsActions/TxDetailsActionsRaw.spec.tsx"]
 verification_contract = "timeout 20m sh -c 'cd explorer/frontend && HUSKY=0 yarn install --frozen-lockfile && yarn lint:tsc && yarn test:vitest run ui/tx'"
 obligation = "Retain the complete capability and qualify its applicable acceptance criteria on the candidate; preserve valid existing implementation and evidence."
-do_1 = "List the source files the transaction page rebuild changed that carry no spec beside them, by diffing that rebuild's commit against its parent over explorer/ and applying the rule tools/explorer/test-ratio.sh states - a changed test counts for a changed source only when it sits in the same directory under the same stem, names one of that source's exported names, or names a fragment of its path."
+do_1 = "List the source files the transaction page rebuild changed that carry no spec beside them, by diffing that rebuild's commit against its parent over explorer/ and applying the rule scripts/explorer/test-ratio.sh states - a changed test counts for a changed source only when it sits in the same directory under the same stem, names one of that source's exported names, or names a fragment of its path."
 do_2 = "Add one vitest spec beside each source that list names - explorer/frontend/ui/tx/TxDetailsDegraded.spec.tsx, TxLogs.spec.tsx, TxInternals.spec.tsx, TxRawTrace.spec.tsx, TxState.spec.tsx and explorer/frontend/ui/tx/details/txDetailsActions/TxDetailsActionsInterpretation.spec.tsx and TxDetailsActionsRaw.spec.tsx - each rendering the real component through explorer/frontend/vitest/lib.tsx with payload mocks from explorer/frontend/mocks/ and asserting the structure the rebuild gave it, changing no source file and adding no file ending in .pw.tsx and no __screenshots__ directory."
 symbols = ["TxDetailsDegraded", "TxLogs", "TxInternals", "TxRawTrace", "TxState", "TxDetailsActionsInterpretation", "TxDetailsActionsRaw"]
 
@@ -16234,11 +16234,11 @@ reference_namespace = "feature.110"
 reqs = ["1196.1", "1196.2", "1196.3", "1196.4"]
 touches = ["spec/paxeer-x/qualification.kvx"]
 tests = []
-verification_contract = "timeout 20m sh -c 'EXPLORER_GATE_BUDGET_SECONDS=1080 tools/explorer/gate-test.sh'"
+verification_contract = "timeout 20m sh -c 'EXPLORER_GATE_BUDGET_SECONDS=1080 scripts/explorer/gate-test.sh'"
 obligation = "Retain the complete capability and qualify its applicable acceptance criteria on the candidate; preserve valid existing implementation and evidence."
-do_1 = "On the revision that merges waves 5 and 6, run tools/explorer/gate-lint.sh once, writing its log under build/explorer-gates/."
-do_2 = "At that same revision run tools/explorer/gate-test.sh once with its budget set to fit this task's timeout, writing its logs under build/explorer-gates/."
-do_3 = "At that same revision run tools/explorer/test-ratio.sh once over the range that spans waves 5 and 6, so that every source file those waves changed is proven to have a changed test referencing it."
+do_1 = "On the revision that merges waves 5 and 6, run scripts/explorer/gate-lint.sh once, writing its log under build/explorer-gates/."
+do_2 = "At that same revision run scripts/explorer/gate-test.sh once with its budget set to fit this task's timeout, writing its logs under build/explorer-gates/."
+do_3 = "At that same revision run scripts/explorer/test-ratio.sh once over the range that spans waves 5 and 6, so that every source file those waves changed is proven to have a changed test referencing it."
 do_4 = "At that same revision build the frontend image once from explorer/frontend/Dockerfile, writing its log under build/explorer-gates/."
 do_5 = "Append one gate record per run to spec/paxeer-x-explorer/qualification.kvx as gate.7.1.1 through gate.7.1.4, each carrying the task, the requirements the run qualifies, the revision, the exact command, the exit code and the log path, written only from a command that actually ran."
 do_6 = "Record the Playwright visual baselines of the redesigned components in the same log as a release-time refresh item, because no task in waves 5 and 6 changes a file ending in .pw.tsx or a __screenshots__ directory and the baselines are refreshed once at release."
@@ -16359,7 +16359,7 @@ reference_namespace = "feature.110"
 reqs = ["1183.3", "1199.9", "1200.9", "1201.9", "1203.8"]
 touches = ["explorer/frontend/ui/pages/Address.spec.tsx", "explorer/frontend/ui/pages/PaxeerXAccount.spec.tsx", "explorer/frontend/ui/pages/PaxeerXReceipt.spec.tsx", "explorer/frontend/ui/tx/TxSubHeading.spec.tsx", "explorer/frontend/ui/txs/TxsStats.spec.tsx"]
 tests = ["explorer/frontend/ui/pages/Address.spec.tsx", "explorer/frontend/ui/pages/PaxeerXAccount.spec.tsx", "explorer/frontend/ui/pages/PaxeerXReceipt.spec.tsx", "explorer/frontend/ui/tx/TxSubHeading.spec.tsx", "explorer/frontend/ui/txs/TxsStats.spec.tsx"]
-verification_contract = "timeout 15m sh -c 'cd explorer/frontend && yarn vitest run ui/pages/Address.spec.tsx ui/pages/PaxeerXAccount.spec.tsx ui/pages/PaxeerXReceipt.spec.tsx ui/tx/TxSubHeading.spec.tsx ui/txs/TxsStats.spec.tsx --reporter=dot && bash ../../tools/explorer/test-ratio.sh 94a2b6b09..HEAD'"
+verification_contract = "timeout 15m sh -c 'cd explorer/frontend && yarn vitest run ui/pages/Address.spec.tsx ui/pages/PaxeerXAccount.spec.tsx ui/pages/PaxeerXReceipt.spec.tsx ui/tx/TxSubHeading.spec.tsx ui/txs/TxsStats.spec.tsx --reporter=dot && bash ../../scripts/explorer/test-ratio.sh 94a2b6b09..HEAD'"
 obligation = "Retain the complete capability and qualify its applicable acceptance criteria on the candidate; preserve valid existing implementation and evidence."
 do_1 = "Extend the spec that already sits at the mirror position of each source file the wave-8 test-ratio run names without a changed test beside it - explorer/frontend/ui/pages/Address.spec.tsx, ui/pages/PaxeerXAccount.spec.tsx, ui/pages/PaxeerXReceipt.spec.tsx and ui/tx/TxSubHeading.spec.tsx - because the gate counts only the test files the range changes, so a spec that sits in the right place but is untouched by the range leaves its source file uncovered."
 do_2 = "Extend explorer/frontend/ui/txs/TxsStats.spec.tsx as well, the mirror spec of the fifth source file the same wave changed, so the range carries at least as many referencing test files as source files."
@@ -16568,7 +16568,7 @@ reference_namespace = "feature.111"
 [req.1216]
 title = "Release Gates, Runbooks and Review"
 story = "As the owner, I want one bounded gate, a rehearsal record and an operations record before anything live changes."
-ac_1 = "THE repository SHALL carry tools/wallet/gate-test.sh and tools/wallet/gate-lint.sh, each bounded by a budget from the environment with a documented default, each with a check mode, running the Go, TypeScript and Rust suites and lints this feature owns, and tools/wallet/scan-secrets.sh that fails on key-shaped, token-shaped or connection-string-shaped content."
+ac_1 = "THE repository SHALL carry scripts/wallet/gate-test.sh and scripts/wallet/gate-lint.sh, each bounded by a budget from the environment with a documented default, each with a check mode, running the Go, TypeScript and Rust suites and lints this feature owns, and scripts/wallet/scan-secrets.sh that fails on key-shaped, token-shaped or connection-string-shaped content."
 ac_2 = "THE runbooks under human/wallet/docs SHALL cover node loss and replacement, refresh cadence, backup restore, identity provider outage, RPC pool failure, and the operator cutover checklist with its approval gates, without hosts or secrets."
 ac_3 = "A security review document under human/wallet/docs SHALL record the delta review of the vendored threshold library since its published audit, the daemon's trust boundaries, and every open finding with severity."
 ac_4 = "THE merged gate SHALL run once on the merged feature tip in wave 5 with its evidence recorded, and the rehearsal SHALL run once with counts recorded; no task reruns either."
@@ -16703,39 +16703,39 @@ symbols = ["Log", "Append", "Head", "Verify", "Report", "Metrics"]
 title = "Import the wallet gateway, SDK and demo as one workspace with secrets scrubbed"
 reference_namespace = "feature.111"
 reqs = ["1208.1", "1216.1"]
-touches = ["human/wallet/package.json", "human/wallet/pnpm-workspace.yaml", "human/wallet/pnpm-lock.yaml", "human/wallet/tsconfig.base.json", "human/wallet/.gitignore", "human/wallet/README.md", "human/wallet/gateway/", "human/wallet/sdk/", "human/wallet/demo/", "human/wallet/deploy/env", "tools/wallet/scan-secrets.sh", "tools/wallet/scan-secrets.test.sh"]
+touches = ["human/wallet/package.json", "human/wallet/pnpm-workspace.yaml", "human/wallet/pnpm-lock.yaml", "human/wallet/tsconfig.base.json", "human/wallet/.gitignore", "human/wallet/README.md", "human/wallet/gateway/", "human/wallet/sdk/", "human/wallet/demo/", "human/wallet/deploy/env", "scripts/wallet/scan-secrets.sh", "tests/wallet/scan-secrets.test.sh"]
 tests = []
-verification_contract = "timeout 20m sh -c 'tools/wallet/scan-secrets.sh human/wallet && pnpm --dir human/wallet -r test'"
+verification_contract = "timeout 20m sh -c 'scripts/wallet/scan-secrets.sh human/wallet && pnpm --dir human/wallet -r test'"
 obligation = "Retain the complete capability and qualify its applicable acceptance criteria on the candidate; preserve valid existing implementation and evidence."
 do_1 = "Copy the existing embedded-wallet API, SDK and demo sources from their current deployment into human/wallet/gateway, human/wallet/sdk and human/wallet/demo under one pnpm workspace rooted at human/wallet/package.json and human/wallet/pnpm-workspace.yaml, excluding every environment file, lock-in of credentials, build output, container data and anything under a mail or console directory; the copy is read-only on the source."
 do_2 = "Replace every literal credential, connection string, key, token or internal address found in the imported sources with a documented environment variable, add human/wallet/deploy/env listing every variable name with a one-line purpose and no value, and add human/wallet/README.md describing the workspace layout."
-do_3 = "Make the imported test suites run under the workspace (pnpm install, existing vitest or node test runners), fixing only what the move broke, and add tools/wallet/scan-secrets.sh with a test that runs it over the imported tree and over a fixture containing a key-shaped string."
+do_3 = "Make the imported test suites run under the workspace (pnpm install, existing vitest or node test runners), fixing only what the move broke, and add scripts/wallet/scan-secrets.sh with a test that runs it over the imported tree and over a fixture containing a key-shaped string."
 symbols = ["scan-secrets", "workspace"]
 
 [capability.111.1.11]
 title = "Add the bounded test and lint gates for the wallet tree"
 reference_namespace = "feature.111"
 reqs = ["1216.1"]
-touches = ["tools/wallet/gate-test.sh", "tools/wallet/gate-lint.sh", "tools/wallet/gate.test.sh"]
+touches = ["scripts/wallet/gate-test.sh", "scripts/wallet/gate-lint.sh", "tests/wallet/gate.test.sh"]
 tests = []
-verification_contract = "timeout 20m sh -c 'tools/wallet/gate.test.sh'"
+verification_contract = "timeout 20m sh -c 'tests/wallet/gate.test.sh'"
 obligation = "Retain the complete capability and qualify its applicable acceptance criteria on the candidate; preserve valid existing implementation and evidence."
-do_1 = "Add tools/wallet/gate-test.sh running the Go suites under human/wallet/attestor and human/wallet/ceremony, the pnpm workspace tests under human/wallet and human/apps/wallet, and the Rust tests of layerx-human-kms, layerx-human-identity-provider, layerx-human-service and layerx-platform-gateway, bounded by WALLET_GATE_BUDGET_SECONDS with a documented default, reporting the command, exit code and log path of whatever it stopped on."
-do_2 = "Add tools/wallet/gate-lint.sh running gofmt and go vet for the Go modules, eslint and tsc for the workspace and the app, and cargo fmt and clippy for the named crates, with the same budget and reporting; both gates take --check to validate their syntax, required tooling and target list without running a suite."
-do_3 = "Add tools/wallet/gate.test.sh exercising --check for both gates and a budget of one second against a deliberately slow target, asserting the reported command and exit code."
+do_1 = "Add scripts/wallet/gate-test.sh running the Go suites under human/wallet/attestor and human/wallet/ceremony, the pnpm workspace tests under human/wallet and human/apps/wallet, and the Rust tests of layerx-human-kms, layerx-human-identity-provider, layerx-human-service and layerx-platform-gateway, bounded by WALLET_GATE_BUDGET_SECONDS with a documented default, reporting the command, exit code and log path of whatever it stopped on."
+do_2 = "Add scripts/wallet/gate-lint.sh running gofmt and go vet for the Go modules, eslint and tsc for the workspace and the app, and cargo fmt and clippy for the named crates, with the same budget and reporting; both gates take --check to validate their syntax, required tooling and target list without running a suite."
+do_3 = "Add tests/wallet/gate.test.sh exercising --check for both gates and a budget of one second against a deliberately slow target, asserting the reported command and exit code."
 symbols = ["gate-test", "gate-lint"]
 
 [capability.111.1.12]
 title = "Write the deployment definitions for the attestors, the gateway and the endpoint"
 reference_namespace = "feature.111"
 reqs = ["1206.1", "1215.2"]
-touches = ["human/wallet/deploy/attestor-1.toml", "human/wallet/deploy/attestor-2.toml", "human/wallet/deploy/attestor-3.toml", "human/wallet/deploy/attestor-4.toml", "human/wallet/deploy/attestor-5.toml", "human/wallet/deploy/gateway.toml", "human/wallet/deploy/endpoint.toml", "human/wallet/attestor/Dockerfile", "human/wallet/gateway/Dockerfile", "tools/wallet/check-deploy.sh", "tools/wallet/check-deploy.test.sh", "human/wallet/deploy/env"]
+touches = ["human/wallet/deploy/attestor-1.toml", "human/wallet/deploy/attestor-2.toml", "human/wallet/deploy/attestor-3.toml", "human/wallet/deploy/attestor-4.toml", "human/wallet/deploy/attestor-5.toml", "human/wallet/deploy/gateway.toml", "human/wallet/deploy/endpoint.toml", "human/wallet/attestor/Dockerfile", "human/wallet/gateway/Dockerfile", "scripts/wallet/check-deploy.sh", "tests/wallet/check-deploy.test.sh", "human/wallet/deploy/env"]
 tests = []
-verification_contract = "timeout 20m sh -c 'tools/wallet/check-deploy.test.sh'"
+verification_contract = "timeout 20m sh -c 'tests/wallet/check-deploy.test.sh'"
 obligation = "Retain the complete capability and qualify its applicable acceptance criteria on the candidate; preserve valid existing implementation and evidence."
 do_1 = "Add human/wallet/deploy with one application definition per attestor node (five, each naming its region, one machine, a persistent volume mount for the data directory, private-network-only peer and health ports, the daemon image built from human/wallet/attestor/Dockerfile, and secrets by name), one for the wallet gateway and one for the hosted endpoint, plus the container files each image builds from."
-do_2 = "Add tools/wallet/check-deploy.sh validating every definition offline: five distinct regions across at least two continents, one machine each, volumes present, no secret values, health checks pointing at the daemon's health route, image references in the repository, and the environment names matching human/wallet/deploy/env."
-do_3 = "Add tools/wallet/check-deploy.test.sh with fixtures that pass and fixtures that violate each rule."
+do_2 = "Add scripts/wallet/check-deploy.sh validating every definition offline: five distinct regions across at least two continents, one machine each, volumes present, no secret values, health checks pointing at the daemon's health route, image references in the repository, and the environment names matching human/wallet/deploy/env."
+do_3 = "Add tests/wallet/check-deploy.test.sh with fixtures that pass and fixtures that violate each rule."
 symbols = ["check-deploy"]
 
 [capability.111.1.13]
@@ -16968,12 +16968,12 @@ symbols = ["AttestorSigner", "sign_activity"]
 title = "Deploy the attestor network from the definitions and prove a signature across regions"
 reference_namespace = "feature.111"
 reqs = ["1206.4", "1206.3"]
-touches = ["tools/wallet/check-live.sh", "tools/wallet/check-live.test.sh", "spec/paxeer-x/qualification.kvx"]
+touches = ["scripts/wallet/check-live.sh", "tests/wallet/check-live.test.sh", "spec/paxeer-x/qualification.kvx"]
 tests = []
-verification_contract = "timeout 20m sh -c 'tools/wallet/check-live.sh attestors'"
+verification_contract = "timeout 20m sh -c 'scripts/wallet/check-live.sh attestors'"
 obligation = "Retain the complete capability and qualify its applicable acceptance criteria on the candidate; preserve valid existing implementation and evidence."
 do_1 = "Build the attestor image from the repository, deploy the five applications from human/wallet/deploy with their volumes and secrets set out of band, verify health on every node and peer reachability across the private network, generate a test key of each curve, sign with a quorum spanning three regions and verify the signatures."
-do_2 = "Add tools/wallet/check-live.sh that reads the health of every configured node and the quorum state without secrets, and record the run - image digest, regions, node health, signature verification - in spec/paxeer-x-wallet/qualification.kvx."
+do_2 = "Add scripts/wallet/check-live.sh that reads the health of every configured node and the quorum state without secrets, and record the run - image digest, regions, node health, signature verification - in spec/paxeer-x-wallet/qualification.kvx."
 symbols = ["check-live"]
 
 [capability.111.3.6]
@@ -16992,12 +16992,12 @@ symbols = ["useWallet", "WalletProvider"]
 title = "Deploy the shared endpoint in chain-only mode"
 reference_namespace = "feature.111"
 reqs = ["1215.2"]
-touches = ["tools/wallet/check-live.sh", "tools/wallet/check-live.test.sh", "spec/paxeer-x/qualification.kvx", "human/wallet/deploy/redis.toml", "human/wallet/deploy/env", "human/wallet/deploy/endpoint.toml"]
+touches = ["scripts/wallet/check-live.sh", "tests/wallet/check-live.test.sh", "spec/paxeer-x/qualification.kvx", "human/wallet/deploy/redis.toml", "human/wallet/deploy/env", "human/wallet/deploy/endpoint.toml"]
 tests = []
-verification_contract = "timeout 20m sh -c 'tools/wallet/check-live.sh endpoint'"
+verification_contract = "timeout 20m sh -c 'scripts/wallet/check-live.sh endpoint'"
 obligation = "Retain the complete capability and qualify its applicable acceptance criteria on the candidate; preserve valid existing implementation and evidence."
 do_1 = "Build the endpoint image from the repository, deploy it from human/wallet/deploy/endpoint.toml with the chain RPC configured and the kernel backends unconfigured, verify eth_chainId, px_resolveAccount and px_getNetwork answer and that kernel methods return the typed unavailable error, and record the run in the qualification log without hosts."
-do_2 = "Extend tools/wallet/check-live.sh with an endpoint mode that performs those calls against a configured base."
+do_2 = "Extend scripts/wallet/check-live.sh with an endpoint mode that performs those calls against a configured base."
 symbols = ["check-live"]
 
 [capability.111.3.8]
@@ -17106,12 +17106,12 @@ children = ["111.4.1", "111.4.2", "111.4.3", "111.4.4", "111.4.5", "111.4.6", "1
 title = "Run the gateway in shadow against the live attestors with a fresh account on the chain"
 reference_namespace = "feature.111"
 reqs = ["1209.2", "1208.6"]
-touches = ["tools/wallet/check-live.sh", "tools/wallet/check-live.test.sh", "spec/paxeer-x/qualification.kvx"]
+touches = ["scripts/wallet/check-live.sh", "tests/wallet/check-live.test.sh", "spec/paxeer-x/qualification.kvx"]
 tests = []
-verification_contract = "timeout 20m sh -c 'tools/wallet/check-live.sh gateway'"
+verification_contract = "timeout 20m sh -c 'scripts/wallet/check-live.sh gateway'"
 obligation = "Retain the complete capability and qualify its applicable acceptance criteria on the candidate; preserve valid existing implementation and evidence."
 do_1 = "Deploy the gateway from human/wallet/deploy/gateway.toml beside the existing service under a platform-issued name, pointed at the deployed attestors, the identity provider and the RPC pool, with the sponsor account funded out of band; sign in with a fresh test identity, provision, observe both keys, the top-up and the binding on the chain, sign and send a minimal transaction, sign a message, and confirm getUnifiedAccount reports the binding."
-do_2 = "Extend tools/wallet/check-live.sh with a gateway mode that checks readiness and /v1/wallet/me for a configured test identity, and record the run in the qualification log with the transaction hash and no hosts or secrets."
+do_2 = "Extend scripts/wallet/check-live.sh with a gateway mode that checks readiness and /v1/wallet/me for a configured test identity, and record the run in the qualification log with the transaction hash and no hosts or secrets."
 symbols = ["check-live"]
 
 [capability.111.4.2]
@@ -17156,7 +17156,7 @@ reference_namespace = "feature.111"
 reqs = ["1216.2", "1207.5"]
 touches = ["human/wallet/docs/runbooks/", "human/wallet/docs/cutover.md"]
 tests = []
-verification_contract = "timeout 20m sh -c 'tools/wallet/scan-secrets.sh human/wallet/docs'"
+verification_contract = "timeout 20m sh -c 'scripts/wallet/scan-secrets.sh human/wallet/docs'"
 obligation = "Retain the complete capability and qualify its applicable acceptance criteria on the candidate; preserve valid existing implementation and evidence."
 do_1 = "Add human/wallet/docs/runbooks covering node loss and replacement by add-share and refresh, refresh cadence, backup restore, identity provider outage, RPC pool failure and gateway rollback, each with the exact commands from the repository's tools and no hosts or secrets."
 do_2 = "Add human/wallet/docs/cutover.md: the operator checklist from rehearsal record through live ceremony, funded archive verification, wallet flag flip, endpoint cutover through the current host's proxy, old service read-only, sealed retention of the old master key and old service shutdown, each step naming its readiness check and its rollback."
@@ -17204,7 +17204,7 @@ reference_namespace = "feature.111"
 reqs = ["1216.3"]
 touches = ["human/wallet/docs/security-review.md", "human/wallet/attestor/go.mod"]
 tests = []
-verification_contract = "timeout 20m sh -c 'tools/wallet/scan-secrets.sh human/wallet/docs && cd human/wallet/attestor && go vet ./...'"
+verification_contract = "timeout 20m sh -c 'scripts/wallet/scan-secrets.sh human/wallet/docs && cd human/wallet/attestor && go vet ./...'"
 obligation = "Retain the complete capability and qualify its applicable acceptance criteria on the candidate; preserve valid existing implementation and evidence."
 do_1 = "Add human/wallet/docs/security-review.md recording the review of every change to the vendored threshold library's CGGMP, FROST, refresh and Birkhoff code since its published audit, the daemon's trust boundaries (gateway, attestor, identity provider, operator, dealer), the policy fail-closed paths, and every open finding with severity and owner action."
 do_2 = "Where the review finds a defect in the daemon, fix it in this task with a test; where it finds one in the library, record it and pin the dependency version in go.mod with the reason."
@@ -17360,7 +17360,7 @@ reference_namespace = "feature.111"
 reqs = ["1204.4", "1204.7", "1206.3", "1216.2"]
 touches = ["human/wallet/attestor/internal/server/server.go", "human/wallet/attestor/internal/server/keys.go", "human/wallet/attestor/internal/server/server_test.go", "human/wallet/attestor/internal/server/e2e_test.go", "human/wallet/schema/attestor-api/v1.kvx", "human/wallet/schema/attestor-api/golden/keys.describe.request.json", "human/wallet/schema/attestor-api/golden/keys.describe.response.json", "human/wallet/docs/runbooks/node-replacement.md"]
 tests = []
-verification_contract = "timeout 20m sh -c 'cd human/wallet/attestor && go test -count=1 ./internal/server/... && cd ../../.. && tools/wallet/scan-secrets.sh human/wallet/docs'"
+verification_contract = "timeout 20m sh -c 'cd human/wallet/attestor && go test -count=1 ./internal/server/... && cd ../../.. && scripts/wallet/scan-secrets.sh human/wallet/docs'"
 obligation = "Retain the complete capability and qualify its applicable acceptance criteria on the candidate; preserve valid existing implementation and evidence."
 do_1 = "Add keys.describe to human/wallet/attestor/internal/server: POST /v1/keys/describe with session_id and key_id, accepted only from the operator identity through operatorOnly, answering from the node's held record the key id, the curve, the public key hex, the address for secp256k1 or the DID for Ed25519, the owner and the account of the stored share, the committed epoch and the participant set, with the node id and the audit sequence of a keys.describe audit record; it never returns, logs or serialises a share, answers key_not_found for a key the node does not hold, and needs no other participant, so it answers while a node is lost; its fields are exactly the curve, public_key, owner and account that AddShareRequest requires, and the participant set yields the quorum (closes observation 4.5.3)."
 do_2 = "human/wallet/schema/attestor-api/v1.kvx gains keys.describe with its request, response and refusal codes, and keys.describe.request.json and keys.describe.response.json are generated from the implementation by the golden test beside the others."
@@ -17431,9 +17431,9 @@ reference_namespace = "feature.111"
 reqs = ["1216.4"]
 touches = ["spec/paxeer-x/qualification.kvx"]
 tests = []
-verification_contract = "timeout 20m sh -c 'tools/wallet/gate-lint.sh --check && tools/wallet/gate-test.sh --check'"
+verification_contract = "timeout 20m sh -c 'scripts/wallet/gate-lint.sh --check && scripts/wallet/gate-test.sh --check'"
 obligation = "Retain the complete capability and qualify its applicable acceptance criteria on the candidate; preserve valid existing implementation and evidence."
-do_1 = "On the merged feature tip run tools/wallet/gate-test.sh once and tools/wallet/gate-lint.sh once, each tee'd to a log under .logs, and append the evidence of both to spec/paxeer-x-wallet/qualification.kvx; a failure is recorded, not repaired here."
+do_1 = "On the merged feature tip run scripts/wallet/gate-test.sh once and scripts/wallet/gate-lint.sh once, each tee'd to a log under .logs, and append the evidence of both to spec/paxeer-x-wallet/qualification.kvx; a failure is recorded, not repaired here."
 symbols = ["gate-test", "gate-lint"]
 
 [capability.111.5.2]
@@ -17456,12 +17456,12 @@ symbols = ["Rehearse", "CopySource", "checkReadOnlyRole", "TableCounts", "Prepar
 title = "Cut the wallet endpoint over to the new gateway and retire the old service"
 reference_namespace = "feature.111"
 reqs = ["1207.5"]
-touches = ["human/wallet/deploy/cutover/", "human/wallet/gateway/src/index.ts", "human/wallet/gateway/test/served-by.test.ts", "tools/wallet/check-live.sh", "tools/wallet/check-live.test.sh", "spec/paxeer-x/qualification.kvx"]
+touches = ["human/wallet/deploy/cutover/", "human/wallet/gateway/src/index.ts", "human/wallet/gateway/test/served-by.test.ts", "scripts/wallet/check-live.sh", "tests/wallet/check-live.test.sh", "spec/paxeer-x/qualification.kvx"]
 tests = []
-verification_contract = "timeout 20m sh -c 'tools/wallet/check-live.sh cutover'"
+verification_contract = "timeout 20m sh -c 'scripts/wallet/check-live.sh cutover'"
 obligation = "Retain the complete capability and qualify its applicable acceptance criteria on the candidate; preserve valid existing implementation and evidence."
 do_1 = "Add human/wallet/deploy/cutover/ with the reverse-proxy configuration for the current host forwarding the endpoint hostname to the new gateway with the original host and client address headers preserved, a preflight script that checks the new gateway's readiness and the proxied path end to end, an apply script the operator runs on the current host, and a retire script that stops and disables the old service units only after the proxied path has served for a configured soak period."
-do_2 = "Make the gateway set a response header that names it on every response, and extend tools/wallet/check-live.sh with a cutover mode that confirms the public hostname, taken from an environment variable with no default, is served by the new gateway through that header; record the run in the qualification log without hosts or secrets."
+do_2 = "Make the gateway set a response header that names it on every response, and extend scripts/wallet/check-live.sh with a cutover mode that confirms the public hostname, taken from an environment variable with no default, is served by the new gateway through that header; record the run in the qualification log without hosts or secrets."
 symbols = ["check-live", "cutover"]
 
 [capability.111.5.4]
@@ -17478,7 +17478,7 @@ do_3 = "Run the live steps from the operator machine in this order, each only af
 do_4 = "Add a backfill command entry to human/wallet/gateway, since backfillAccounts has none today: src/jobs/backfillAccounts.ts builds the provisioning dependencies with provisionDepsFromEnv, refuses to start without the attestor configuration, calls backfillAccounts in bounded batches from its resumable cursor until done, and prints one totals line per BackfillOutcome (bound, awaiting_owner, awaiting_agent_signature, refused, skipped, failed) with no address, identifier or token; package.json gains a backfill:accounts script over the built entry taking --batch-size and --max-batches. Run once after deliver, it generates each moved wallet's Ed25519 identity and, with no user token present, leaves standard wallets awaiting their owner and agent wallets awaiting their agent's signature; it never signs for an absent user."
 do_5 = "Complete each moved wallet's binding at its user's next sign-in: requestAccounts in human/wallet/sdk/src/provider.ts provisions only when /v1/wallet/me answers no_wallet today, so it also posts /v1/wallet/provision with the user's token when /v1/wallet/me returns a wallet whose binding_state is unbound or pending; provisionAccount then resumes from the backfilled identity, sends the sponsor top-up of task 3.1 for the exact binding gas within the cap, has the binding signed through the attestors and broadcasts bindLayerX; a refused binding surfaces as a typed error and a bound wallet makes no provision call."
 do_6 = "Add tests: internal/move/move_test.go against a real source database with a read-only role and an empty target, proving counts and digests on both sides, the refusal of a non-empty target, an unchanged source, no file created, and --delta moving only absent rows and refusing a colliding row; human/wallet/gateway/test/backfill-command.test.ts running the entry against the provisioning test's real attestor daemon and in-test chain, asserting the totals line and that no top-up or binding is sent; and provider tests for the provision call on unbound and pending, none on bound, and the typed refusal."
-do_7 = "After the backfill, apply task 5.3's proxy on the current host, run move --delta and, when it moved rows, deliver and the backfill entry again; shut the old service down with task 5.3's retire script only after tools/wallet/check-live.sh cutover passes and the gateway serves the moved wallets; keep the old master key sealed and never destroy it; no step of this task writes to the production database. Steps 4, 5, 8 and 9 of human/wallet/docs/cutover.md name the move, the counts flag and the backfill entry in place of the notes on observations 4.5.4 and 4.5.6."
+do_7 = "After the backfill, apply task 5.3's proxy on the current host, run move --delta and, when it moved rows, deliver and the backfill entry again; shut the old service down with task 5.3's retire script only after scripts/wallet/check-live.sh cutover passes and the gateway serves the moved wallets; keep the old master key sealed and never destroy it; no step of this task writes to the production database. Steps 4, 5, 8 and 9 of human/wallet/docs/cutover.md name the move, the counts flag and the backfill entry in place of the notes on observations 4.5.4 and 4.5.6."
 do_8 = "Append one gate record per step to spec/paxeer-x-wallet/qualification.kvx: the per-table row counts and stream digests on both sides of the move and of any delta, the plan counts beside the rehearsal's, the archive's row count and digest, the deliver report and its --report-only-counts line, the backfill totals with the number awaiting their owner and awaiting an agent signature, the transaction hash of a verified signature from one migrated wallet of each class, the cutover check and the retire run; never an address, a key or a host."
 symbols = ["Deliver", "MarkMigrated", "Move", "MoveDelta", "backfillAccounts", "BackfillOutcome", "requestAccounts"]
 
@@ -17488,9 +17488,9 @@ reference_namespace = "feature.111"
 reqs = ["1216.4"]
 touches = ["spec/paxeer-x/qualification.kvx"]
 tests = []
-verification_contract = "timeout 60m sh -c 'tools/wallet/gate-lint.sh && tools/wallet/gate-test.sh'"
+verification_contract = "timeout 60m sh -c 'scripts/wallet/gate-lint.sh && scripts/wallet/gate-test.sh'"
 obligation = "Retain the complete capability and qualify its applicable acceptance criteria on the candidate; preserve valid existing implementation and evidence."
-do_1 = "Run tools/wallet/gate-lint.sh and tools/wallet/gate-test.sh without --check on the feature tip and record every target's result in spec/paxeer-x-wallet/qualification.kvx; a failure is recorded, not repaired here."
+do_1 = "Run scripts/wallet/gate-lint.sh and scripts/wallet/gate-test.sh without --check on the feature tip and record every target's result in spec/paxeer-x-wallet/qualification.kvx; a failure is recorded, not repaired here."
 symbols = ["gate-test", "gate-lint"]
 
 [capability.111.6.1]
@@ -17534,23 +17534,23 @@ symbols = ["human-entrypoint"]
 title = "Deploy the human service to the platform and check it live"
 reference_namespace = "feature.111"
 reqs = ["1215.2"]
-touches = ["tools/wallet/check-live.sh", "tools/wallet/check-live.test.sh", "spec/paxeer-x/qualification.kvx"]
+touches = ["scripts/wallet/check-live.sh", "tests/wallet/check-live.test.sh", "spec/paxeer-x/qualification.kvx"]
 tests = []
-verification_contract = "timeout 10m sh -c 'tools/wallet/check-live.test.sh && CHECK_LIVE_HUMAN_BASE=https://paxeer-human-service.fly.dev CHECK_LIVE_HUMAN_ORIGIN=https://app.paxportwallet.com tools/wallet/check-live.sh human'"
+verification_contract = "timeout 10m sh -c 'tests/wallet/check-live.test.sh && CHECK_LIVE_HUMAN_BASE=https://paxeer-human-service.fly.dev CHECK_LIVE_HUMAN_ORIGIN=https://app.paxportwallet.com scripts/wallet/check-live.sh human'"
 obligation = "Retain the complete capability and qualify its applicable acceptance criteria on the candidate; preserve valid existing implementation and evidence."
 do_1 = "Create the application paxeer-human-service in the platform organisation and deploy the image built from docker/human-service/Dockerfile with human/wallet/deploy/human.toml; no database is created because the service keeps file-based stores with in-process migrations; record the deploy in spec/paxeer-x-wallet/qualification.kvx without hosts."
-do_2 = "Extend tools/wallet/check-live.sh with a human mode over CHECK_LIVE_HUMAN_BASE and CHECK_LIVE_HUMAN_ORIGIN: GET /livez must answer 200 with live true and the service name, an OPTIONS preflight from the origin must answer with Access-Control-Allow-Origin equal to that origin, and an unauthenticated POST /v1/intents/plan with the golden request body from that origin must answer the structured unauthenticated envelope, never a 5xx; extend tools/wallet/check-live.test.sh with responder profiles for each pass and fail case."
+do_2 = "Extend scripts/wallet/check-live.sh with a human mode over CHECK_LIVE_HUMAN_BASE and CHECK_LIVE_HUMAN_ORIGIN: GET /livez must answer 200 with live true and the service name, an OPTIONS preflight from the origin must answer with Access-Control-Allow-Origin equal to that origin, and an unauthenticated POST /v1/intents/plan with the golden request body from that origin must answer the structured unauthenticated envelope, never a 5xx; extend tests/wallet/check-live.test.sh with responder profiles for each pass and fail case."
 symbols = ["human", "check-live"]
 
 [capability.111.6.5]
 title = "Prove the authenticated human-api path from the wallet identity against the deployed service"
 reference_namespace = "feature.111"
 reqs = ["1211.3", "1211.4"]
-touches = ["tools/wallet/check-live.sh", "tools/wallet/check-live.test.sh", "spec/paxeer-x/qualification.kvx"]
+touches = ["scripts/wallet/check-live.sh", "tests/wallet/check-live.test.sh", "spec/paxeer-x/qualification.kvx"]
 tests = []
-verification_contract = "timeout 10m sh -c 'tools/wallet/check-live.test.sh && CHECK_LIVE_HUMAN_BASE=https://paxeer-human-service.fly.dev CHECK_LIVE_HUMAN_ORIGIN=https://app.paxportwallet.com tools/wallet/check-live.sh human-session'"
+verification_contract = "timeout 10m sh -c 'tests/wallet/check-live.test.sh && CHECK_LIVE_HUMAN_BASE=https://paxeer-human-service.fly.dev CHECK_LIVE_HUMAN_ORIGIN=https://app.paxportwallet.com scripts/wallet/check-live.sh human-session'"
 obligation = "Retain the complete capability and qualify its applicable acceptance criteria on the candidate; preserve valid existing implementation and evidence."
-do_1 = "Once the human-api schema declares an HTTP operation that opens a session from the wallet identity assertion (today session.open takes only a passkey assertion_id and the wallet assertion sign-in exists only in process), open a session with a staged assertion from CHECK_LIVE_HUMAN_ASSERTION, plan a kernel send with the golden intent plan body under that session and expect the plan shape the contract declares; add this as the human-session mode of tools/wallet/check-live.sh with its responder cases in tools/wallet/check-live.test.sh."
+do_1 = "Once the human-api schema declares an HTTP operation that opens a session from the wallet identity assertion (today session.open takes only a passkey assertion_id and the wallet assertion sign-in exists only in process), open a session with a staged assertion from CHECK_LIVE_HUMAN_ASSERTION, plan a kernel send with the golden intent plan body under that session and expect the plan shape the contract declares; add this as the human-session mode of scripts/wallet/check-live.sh with its responder cases in tests/wallet/check-live.test.sh."
 do_2 = "Record in spec/paxeer-x-wallet/qualification.kvx the contract gap between the wallet SDK, which sends a bearer authorization header, and the service, which admits only its same-site session cookies, so the owner can decide which side moves before the wallet app sets NEXT_PUBLIC_PAXEER_HUMAN_API."
 symbols = ["human-session", "check-live"]
 
@@ -17584,12 +17584,12 @@ symbols = ["check.sh", "build-env.sh", "beta-images.sh"]
 title = "Move the explorer, interop, flyci, chain node and root container files under docker/ and update the workflows and compose files"
 reference_namespace = "feature.111"
 reqs = ["1215.2"]
-touches = ["docker/layerx/Dockerfile", "docker/layerx/Dockerfile.dockerignore", "docker/interop-gateway/Dockerfile", "docker/interop-mirror/Dockerfile", "docker/x-websearch/Dockerfile", "docker/flyci-controller/Dockerfile", "docker/flyci-runner/Dockerfile", "docker/explorer-frontend/Dockerfile", "docker/explorer-frontend/Dockerfile.dockerignore", "docker/explorer-sig-provider/Dockerfile", "docker/explorer-smart-contract-verifier/Dockerfile", "docker/explorer-elixir-builder/Dockerfile", "docker/explorer-backend/Dockerfile", "docker/explorer-backend/oldUI.Dockerfile", "docker/localnode/Dockerfile", "docker/rpcnode/Dockerfile", "docker/docker-compose.yml", "chain.mk", ".github/workflows/explorer-images.yml", ".github/workflows/paxeer-docker-publish.yml", ".github/workflows/paxeer-docker-build.yml", ".github/workflows/paxeer-integration-test.yml", ".github/labeler.yml", "explorer/deploy/tools/mix-in-builder.sh", "tools/explorer/gate-lint.sh", "tools/explorer/gate-test.sh", "interop/deploy/x-websearch/tests/packaging-check.sh", "tools/flyci/controller/fly.toml", "tools/flyci/runner/fly.toml", "docker/interop-gateway/Dockerfile.dockerignore", "docker/interop-mirror/Dockerfile.dockerignore", "docker/x-websearch/Dockerfile.dockerignore", "docker/flyci-controller/Dockerfile.dockerignore", "docker/flyci-runner/Dockerfile.dockerignore", "docker/explorer-sig-provider/Dockerfile.dockerignore", "docker/explorer-smart-contract-verifier/Dockerfile.dockerignore", "docker/explorer-elixir-builder/Dockerfile.dockerignore", "docker/localnode/Dockerfile.dockerignore", "docker/rpcnode/Dockerfile.dockerignore", ".github/workflows/paxeer-buf-check.yml", ".github/workflows/paxeer-cross-arch-build.yml", ".github/workflows/paxeer-db-tests.yml", ".github/workflows/paxeer-ecr.yml", ".github/workflows/paxeer-enforce-labels.yml", ".github/workflows/paxeer-eth-blocktests.yml", ".github/workflows/paxeer-forge-test.yml", ".github/workflows/paxeer-go-test.yml", ".github/workflows/paxeer-golangci.yml", ".github/workflows/paxeer-libwasmvm.yml", ".github/workflows/paxeer-mock-balances-build.yml", ".github/workflows/paxeer-pr-to-slack-codex.yml", ".github/workflows/paxeer-rocksdb-unit-tests.yml", ".github/workflows/paxeer-uci-backport.yml", ".github/workflows/paxeer-uci-go-lint.yml", "explorer/backend/docker-compose/docker-compose.yml", "explorer/backend/docker-compose/no-services.yml", "explorer/services/smart-contract-verifier/docker-compose.yml", "explorer/frontend/tools/scripts/build.docker.sh", "platform/hosted/tests/beta-images.sh", "explorer/README.md", "interop/deploy/gateway/README.md", "docs/MONOREPO.md"]
+touches = ["docker/layerx/Dockerfile", "docker/layerx/Dockerfile.dockerignore", "docker/interop-gateway/Dockerfile", "docker/interop-mirror/Dockerfile", "docker/x-websearch/Dockerfile", "docker/flyci-controller/Dockerfile", "docker/flyci-runner/Dockerfile", "docker/explorer-frontend/Dockerfile", "docker/explorer-frontend/Dockerfile.dockerignore", "docker/explorer-sig-provider/Dockerfile", "docker/explorer-smart-contract-verifier/Dockerfile", "docker/explorer-elixir-builder/Dockerfile", "docker/explorer-backend/Dockerfile", "docker/explorer-backend/oldUI.Dockerfile", "docker/localnode/Dockerfile", "docker/rpcnode/Dockerfile", "docker/docker-compose.yml", "chain.mk", ".github/workflows/explorer-images.yml", ".github/workflows/paxeer-docker-publish.yml", ".github/workflows/paxeer-docker-build.yml", ".github/workflows/paxeer-integration-test.yml", ".github/labeler.yml", "explorer/deploy/tools/mix-in-builder.sh", "scripts/explorer/gate-lint.sh", "scripts/explorer/gate-test.sh", "interop/deploy/x-websearch/tests/packaging-check.sh", "tools/flyci/controller/fly.toml", "tools/flyci/runner/fly.toml", "docker/interop-gateway/Dockerfile.dockerignore", "docker/interop-mirror/Dockerfile.dockerignore", "docker/x-websearch/Dockerfile.dockerignore", "docker/flyci-controller/Dockerfile.dockerignore", "docker/flyci-runner/Dockerfile.dockerignore", "docker/explorer-sig-provider/Dockerfile.dockerignore", "docker/explorer-smart-contract-verifier/Dockerfile.dockerignore", "docker/explorer-elixir-builder/Dockerfile.dockerignore", "docker/localnode/Dockerfile.dockerignore", "docker/rpcnode/Dockerfile.dockerignore", ".github/workflows/paxeer-buf-check.yml", ".github/workflows/paxeer-cross-arch-build.yml", ".github/workflows/paxeer-db-tests.yml", ".github/workflows/paxeer-ecr.yml", ".github/workflows/paxeer-enforce-labels.yml", ".github/workflows/paxeer-eth-blocktests.yml", ".github/workflows/paxeer-forge-test.yml", ".github/workflows/paxeer-go-test.yml", ".github/workflows/paxeer-golangci.yml", ".github/workflows/paxeer-libwasmvm.yml", ".github/workflows/paxeer-mock-balances-build.yml", ".github/workflows/paxeer-pr-to-slack-codex.yml", ".github/workflows/paxeer-rocksdb-unit-tests.yml", ".github/workflows/paxeer-uci-backport.yml", ".github/workflows/paxeer-uci-go-lint.yml", "explorer/backend/docker-compose/docker-compose.yml", "explorer/backend/docker-compose/no-services.yml", "explorer/services/smart-contract-verifier/docker-compose.yml", "explorer/frontend/tools/scripts/build.docker.sh", "platform/hosted/tests/beta-images.sh", "explorer/README.md", "interop/deploy/gateway/README.md", "docs/MONOREPO.md"]
 tests = []
 verification_contract = "timeout 20m tools/containers/check.sh"
 obligation = "Retain the complete capability and qualify its applicable acceptance criteria on the candidate; preserve valid existing implementation and evidence."
 do_1 = "Move the root Dockerfile with its Dockerfile.dockerignore to docker/layerx/, interop/deploy/{gateway,mirror,x-websearch}/Dockerfile to docker/interop-gateway, docker/interop-mirror and docker/x-websearch, tools/flyci/{controller,runner}/Dockerfile to docker/flyci-controller and docker/flyci-runner, explorer/frontend/Dockerfile with its .dockerignore to docker/explorer-frontend/, the two explorer service Dockerfiles with their .dockerignore files to docker/explorer-sig-provider and docker/explorer-smart-contract-verifier, explorer/deploy/tools/Dockerfile.elixir-builder to docker/explorer-elixir-builder/Dockerfile, and explorer/backend/docker/{Dockerfile,oldUI.Dockerfile} to docker/explorer-backend/; rewrite the COPY paths of the runner, frontend, service and elixir-builder images for the repository root, keep the Blockscout backend images on the explorer/backend context, and give docker/localnode and docker/rpcnode root-context COPY paths."
-do_2 = "Update every referrer: the explorer-images, paxeer-docker-publish, paxeer-docker-build and paxeer-integration-test workflows, every workflow path filter naming the root Dockerfile, the pr-to-slack chain path list, the uci-backport chain file list, .github/labeler.yml, chain.mk, docker/docker-compose.yml, the explorer compose files, explorer/deploy/tools/mix-in-builder.sh, tools/explorer/gate-lint.sh and gate-test.sh, explorer/frontend/tools/scripts/build.docker.sh, interop/deploy/x-websearch/tests/packaging-check.sh, the flyci fly.toml files and the monorepo docs pages that name the old paths."
+do_2 = "Update every referrer: the explorer-images, paxeer-docker-publish, paxeer-docker-build and paxeer-integration-test workflows, every workflow path filter naming the root Dockerfile, the pr-to-slack chain path list, the uci-backport chain file list, .github/labeler.yml, chain.mk, docker/docker-compose.yml, the explorer compose files, explorer/deploy/tools/mix-in-builder.sh, scripts/explorer/gate-lint.sh and gate-test.sh, explorer/frontend/tools/scripts/build.docker.sh, interop/deploy/x-websearch/tests/packaging-check.sh, the flyci fly.toml files and the monorepo docs pages that name the old paths."
 symbols = ["check.sh", "mix-in-builder.sh", "packaging-check.sh"]
 
 [capability.111.6.13]
@@ -22820,10 +22820,10 @@ requires = ["0.2"]
 reqs = ["191"]
 do_1 = "Extend receipt schema/import representation with explicit origin and kernel provenance, using a new migration under explorer/backend/apps/explorer/priv/repo/migrations/20261001000300_add_kernel_receipt_provenance.exs."
 do_2 = "Add a production relay/archive receipt worker at explorer/backend/apps/indexer/lib/indexer/fetcher/paxeer_x_kernel_receipts.ex and register it in the existing indexer supervision application."
-do_3 = "Connect receipt APIs to the new projection and create tools/explorer/tests/paxeer-x-data-boundary.py with --case kernel-receipts, driving real kernel/relay output through the production worker, database and HTTP API, including restart and tamper refusal."
+do_3 = "Connect receipt APIs to the new projection and create tests/explorer/paxeer-x-data-boundary.py with --case kernel-receipts, driving real kernel/relay output through the production worker, database and HTTP API, including restart and tamper refusal."
 do_4 = "Implement the declared focused gate through the real production types and paths; exercise every acceptance criterion including refusal, restart or boundary cases specified by this requirement. The command is a planned deliverable, not an already-run gate."
-touches = ["explorer/backend/apps/explorer/lib/explorer/chain/paxeer_x/receipt.ex", "explorer/backend/apps/explorer/lib/explorer/chain/import/runner/paxeer_x/receipts.ex", "explorer/backend/apps/indexer/lib/indexer/application.ex", "explorer/backend/apps/indexer/lib/indexer/fetcher/paxeer_x_kernel_receipts.ex", "explorer/backend/apps/explorer/priv/repo/migrations/20261001000300_add_kernel_receipt_provenance.exs", "explorer/backend/apps/block_scout_web/lib/block_scout_web/controllers/api/v2/paxeer_x/receipt_controller.ex", "tools/explorer/tests/paxeer-x-data-boundary.py"]
-verify_cmd = "timeout 20m python3 tools/explorer/tests/paxeer-x-data-boundary.py --case kernel-receipts"
+touches = ["explorer/backend/apps/explorer/lib/explorer/chain/paxeer_x/receipt.ex", "explorer/backend/apps/explorer/lib/explorer/chain/import/runner/paxeer_x/receipts.ex", "explorer/backend/apps/indexer/lib/indexer/application.ex", "explorer/backend/apps/indexer/lib/indexer/fetcher/paxeer_x_kernel_receipts.ex", "explorer/backend/apps/explorer/priv/repo/migrations/20261001000300_add_kernel_receipt_provenance.exs", "explorer/backend/apps/block_scout_web/lib/block_scout_web/controllers/api/v2/paxeer_x/receipt_controller.ex", "tests/explorer/paxeer-x-data-boundary.py"]
+verify_cmd = "timeout 20m python3 tests/explorer/paxeer-x-data-boundary.py --case kernel-receipts"
 gate_kind = "planned"
 max_builds = 1
 max_verify_runs = 1
@@ -22831,7 +22831,7 @@ max_repair_cycles = 2
 time_limit_minutes = 30
 stop_condition = "Stop on the bounded gate result or time limit; record exact revision, command, exit code and private evidence location. Do not mark complete without the declared evidence."
 deployment_profile = "product"
-planned_paths = ["explorer/backend/apps/indexer/lib/indexer/fetcher/paxeer_x_kernel_receipts.ex", "explorer/backend/apps/explorer/priv/repo/migrations/20261001000300_add_kernel_receipt_provenance.exs", "tools/explorer/tests/paxeer-x-data-boundary.py"]
+planned_paths = ["explorer/backend/apps/indexer/lib/indexer/fetcher/paxeer_x_kernel_receipts.ex", "explorer/backend/apps/explorer/priv/repo/migrations/20261001000300_add_kernel_receipt_provenance.exs", "tests/explorer/paxeer-x-data-boundary.py"]
 path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
 evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
 
@@ -22870,10 +22870,10 @@ requires = ["0.2"]
 reqs = ["193"]
 do_1 = "Record per-source success, error and cursor/head observations in the indexer follow loop and expose a typed readiness document distinct from /healthz."
 do_2 = "Propagate the document through platform/hosted/gateway/src/history.rs without converting every HTTP 200 to available."
-do_3 = "Implement tools/explorer/tests/paxeer-x-data-boundary.py --case history-readiness with the real indexer/gateway and controlled disconnect/reconnect of an actual relay source, checking idle, stalled and restart states."
+do_3 = "Implement tests/explorer/paxeer-x-data-boundary.py --case history-readiness with the real indexer/gateway and controlled disconnect/reconnect of an actual relay source, checking idle, stalled and restart states."
 do_4 = "Implement the declared focused gate through the real production types and paths; exercise every acceptance criterion including refusal, restart or boundary cases specified by this requirement. The command is a planned deliverable, not an already-run gate."
-touches = ["platform/hosted/indexer/src/main.rs", "platform/hosted/indexer/src/api.rs", "platform/hosted/indexer/src/store.rs", "platform/hosted/gateway/src/history.rs", "tools/explorer/tests/paxeer-x-data-boundary.py", "platform/Cargo.lock", "platform/hosted/indexer/Cargo.toml", "platform/hosted/indexer/src/lib.rs", "platform/hosted/indexer/src/settlement.rs", "platform/hosted/indexer/tests/finality_contract.rs"]
-verify_cmd = "timeout 15m python3 tools/explorer/tests/paxeer-x-data-boundary.py --case history-readiness"
+touches = ["platform/hosted/indexer/src/main.rs", "platform/hosted/indexer/src/api.rs", "platform/hosted/indexer/src/store.rs", "platform/hosted/gateway/src/history.rs", "tests/explorer/paxeer-x-data-boundary.py", "platform/Cargo.lock", "platform/hosted/indexer/Cargo.toml", "platform/hosted/indexer/src/lib.rs", "platform/hosted/indexer/src/settlement.rs", "platform/hosted/indexer/tests/finality_contract.rs"]
+verify_cmd = "timeout 15m python3 tests/explorer/paxeer-x-data-boundary.py --case history-readiness"
 gate_kind = "planned"
 max_builds = 1
 max_verify_runs = 1
@@ -22881,10 +22881,10 @@ max_repair_cycles = 2
 time_limit_minutes = 30
 stop_condition = "Stop on the bounded gate result or time limit; record exact revision, command, exit code and private evidence location. Do not mark complete without the declared evidence."
 deployment_profile = "product"
-planned_paths = ["tools/explorer/tests/paxeer-x-data-boundary.py"]
+planned_paths = ["tests/explorer/paxeer-x-data-boundary.py"]
 path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
 evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
-build_cmd = "cargo build --locked --manifest-path platform/Cargo.toml -p layerx-indexer -p layerx-platform-gateway && python3 -m py_compile tools/explorer/tests/paxeer-x-data-boundary.py"
+build_cmd = "cargo build --locked --manifest-path platform/Cargo.toml -p layerx-indexer -p layerx-platform-gateway && python3 -m py_compile tests/explorer/paxeer-x-data-boundary.py"
 
 
 [task.22.5]
@@ -22901,10 +22901,10 @@ requires = ["0.2"]
 reqs = ["195"]
 do_1 = "Wire the existing ingest_availability, ingest_checkpoint and ingest_receipt_authority library paths into the binary lifecycle using the production boundary clients."
 do_2 = "Track authoritative source head, indexed coverage and incomplete ranges in query readiness."
-do_3 = "Implement tools/explorer/tests/paxeer-x-data-boundary.py --case standalone-receipts against the real standalone binary and kernel/relay boundaries, including unavailable authority and restart reconstruction."
+do_3 = "Implement tests/explorer/paxeer-x-data-boundary.py --case standalone-receipts against the real standalone binary and kernel/relay boundaries, including unavailable authority and restart reconstruction."
 do_4 = "Implement the declared focused gate through the real production types and paths; exercise every acceptance criterion including refusal, restart or boundary cases specified by this requirement. The command is a planned deliverable, not an already-run gate."
 touches = ["human/crates/layerx-explorer-index/src/main.rs", "human/crates/layerx-explorer-index/src/lib.rs", "human/crates/layerx-explorer-index/src/query.rs"]
-verify_cmd = "timeout 20m python3 tools/explorer/tests/paxeer-x-data-boundary.py --case standalone-receipts"
+verify_cmd = "timeout 20m python3 tests/explorer/paxeer-x-data-boundary.py --case standalone-receipts"
 gate_kind = "planned"
 max_builds = 1
 max_verify_runs = 1
@@ -22912,11 +22912,11 @@ max_repair_cycles = 2
 time_limit_minutes = 30
 stop_condition = "Stop on the bounded gate result or time limit; record exact revision, command, exit code and private evidence location. Do not mark complete without the declared evidence."
 deployment_profile = "product"
-planned_paths = ["tools/explorer/tests/paxeer-x-data-boundary.py"]
+planned_paths = ["tests/explorer/paxeer-x-data-boundary.py"]
 path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
 evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
 
-retained_shared_touch_paths = ["tools/explorer/tests/paxeer-x-data-boundary.py"]
+retained_shared_touch_paths = ["tests/explorer/paxeer-x-data-boundary.py"]
 source_ownership = "Root serializes the explorer boundary fixture shared with23.3; this owner changes only standalone ingestion source. All original implementation and acceptance criteria remain required."
 [task.22.6]
 title = "Publish explicit index stability and settlement verification levels"
@@ -22961,10 +22961,10 @@ requires = ["0.2"]
 reqs = ["197"]
 do_1 = "Preserve next_page in the controller/view response and extend the frontend API type and resource query."
 do_2 = "Replace ActivityList local-only pagination with server continuation controls, retaining accessible loading/refusal states."
-do_3 = "Implement tools/explorer/tests/paxeer-x-data-boundary.py --case unified-pagination using the real backend database/API and browser page with an actual multi-page account, including reload and concurrent insertion."
+do_3 = "Implement tests/explorer/paxeer-x-data-boundary.py --case unified-pagination using the real backend database/API and browser page with an actual multi-page account, including reload and concurrent insertion."
 do_4 = "Implement the declared focused gate through the real production types and paths; exercise every acceptance criterion including refusal, restart or boundary cases specified by this requirement. The command is a planned deliverable, not an already-run gate."
-touches = ["explorer/backend/apps/block_scout_web/lib/block_scout_web/controllers/api/v2/paxeer_x/unified_account_controller.ex", "explorer/backend/apps/block_scout_web/lib/block_scout_web/views/api/v2/paxeer_x/unified_account_view.ex", "explorer/frontend/lib/api/services/general/paxeerX.ts", "explorer/frontend/types/api/paxeerX.ts", "explorer/frontend/ui/pages/PaxeerXAccount.tsx", "explorer/frontend/ui/paxeerX/account/ActivityList.tsx", "tools/explorer/tests/paxeer-x-data-boundary.py", "explorer/backend/apps/explorer/lib/explorer/chain/paxeer_x/unified_account.ex", "explorer/backend/apps/block_scout_web/lib/block_scout_web/schemas/api/v2/paxeer_x/unified_account.ex", "explorer/backend/apps/block_scout_web/lib/block_scout_web/schemas/api/v2/paxeer_x/unified_account/activity_item.ex", "explorer/frontend/ui/paxeerX/account/placeholderData.ts", "explorer/backend/apps/block_scout_web/test/block_scout_web/controllers/api/v2/paxeer_x/unified_account_controller_test.exs", "explorer/frontend/mocks/paxeerX/unifiedAccount.ts"]
-verify_cmd = "timeout 15m python3 tools/explorer/tests/paxeer-x-data-boundary.py --case unified-pagination"
+touches = ["explorer/backend/apps/block_scout_web/lib/block_scout_web/controllers/api/v2/paxeer_x/unified_account_controller.ex", "explorer/backend/apps/block_scout_web/lib/block_scout_web/views/api/v2/paxeer_x/unified_account_view.ex", "explorer/frontend/lib/api/services/general/paxeerX.ts", "explorer/frontend/types/api/paxeerX.ts", "explorer/frontend/ui/pages/PaxeerXAccount.tsx", "explorer/frontend/ui/paxeerX/account/ActivityList.tsx", "tests/explorer/paxeer-x-data-boundary.py", "explorer/backend/apps/explorer/lib/explorer/chain/paxeer_x/unified_account.ex", "explorer/backend/apps/block_scout_web/lib/block_scout_web/schemas/api/v2/paxeer_x/unified_account.ex", "explorer/backend/apps/block_scout_web/lib/block_scout_web/schemas/api/v2/paxeer_x/unified_account/activity_item.ex", "explorer/frontend/ui/paxeerX/account/placeholderData.ts", "explorer/backend/apps/block_scout_web/test/block_scout_web/controllers/api/v2/paxeer_x/unified_account_controller_test.exs", "explorer/frontend/mocks/paxeerX/unifiedAccount.ts"]
+verify_cmd = "timeout 15m python3 tests/explorer/paxeer-x-data-boundary.py --case unified-pagination"
 gate_kind = "planned"
 max_builds = 1
 max_verify_runs = 1
@@ -22972,7 +22972,7 @@ max_repair_cycles = 2
 time_limit_minutes = 30
 stop_condition = "Stop on the bounded gate result or time limit; record exact revision, command, exit code and private evidence location. Do not mark complete without the declared evidence."
 deployment_profile = "product"
-planned_paths = ["tools/explorer/tests/paxeer-x-data-boundary.py"]
+planned_paths = ["tests/explorer/paxeer-x-data-boundary.py"]
 path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
 evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
 
@@ -24862,9 +24862,9 @@ requires = ["0.2"]
 reqs = ["1168.1"]
 do_1 = "Reconcile the retained capability against the current candidate and explicit resolution sections. Reuse conforming implementation; complete only unmet criteria. Resolve historical paths against the current source without narrowing the capability or repeating operational transitions already completed."
 do_2 = "Run steps 1 through 9 of human/wallet/docs/cutover.md from the operator host, with the flyctl proxy tunnels to the wallet attestor apps (count unresolved) on the operator host open through step 8."
-do_3 = "In place of step 10's proxy rewrite, scale the wallet gateway app of human/wallet/deploy/gateway.toml to a second region with at least one started machine there beside its machines in ams, register the public wallet endpoint name on the edge with tools/bringup/edge.sh add <name> <gateway app>; once the name reaches the edge, through the wildcard or after the owner's one record move when the name is not under paxeer.network, and tools/wallet/check-live.sh cutover passes against the name, the public wallet endpoint name is answered only by the Fly wallet gateway behind the edge, and write CUTOVER_STATE_DIR/applied-at in the format human/wallet/deploy/cutover/apply.sh writes, holding the time the edge began serving it."
+do_3 = "In place of step 10's proxy rewrite, scale the wallet gateway app of human/wallet/deploy/gateway.toml to a second region with at least one started machine there beside its machines in ams, register the public wallet endpoint name on the edge with tools/bringup/edge.sh add <name> <gateway app>; once the name reaches the edge, through the wildcard or after the owner's one record move when the name is not under paxeer.network, and scripts/wallet/check-live.sh cutover passes against the name, the public wallet endpoint name is answered only by the Fly wallet gateway behind the edge, and write CUTOVER_STATE_DIR/applied-at in the format human/wallet/deploy/cutover/apply.sh writes, holding the time the edge began serving it."
 do_4 = "Run step 11, making the database at the backend origin that the deploy side's discovery packet names read-only through its admin access; step 12, the owner's sealing of the old master key; and step 13, once CUTOVER_SOAK_SECONDS have passed and only once the new PWA origin serves, because stopping the legacy container also removes the old PWA: human/wallet/deploy/cutover/retire.sh in container mode on OLD_WALLET_HOST with CUTOVER_CONTAINER the legacy wallet container, CUTOVER_PUBLIC_HOST the public wallet endpoint name, CUTOVER_STATE_DIR and CUTOVER_SOAK_SECONDS as the runbook sets them; retire.sh's check sees the name answered by the Fly wallet gateway with its x-served-by header, and after it clears the container's restart policy and stops it the Fly wallet gateway alone answers the name; then drop OLD_WALLET_HOST from the host-map roles of tools/bringup/check-live.sh and from the fixtures of tools/bringup/check-live.test.sh."
-do_5 = "Add the wallet subcommand that runs tools/wallet/check-live.sh cutover with CHECK_LIVE_CUTOVER_HOST the public wallet endpoint name of [contract_context.108.decision.public_names] wallet_endpoint, and tools/wallet/check-live.sh gateway against the Fly wallet gateway, and checks that the wallet gateway app runs started machines in two regions."
+do_5 = "Add the wallet subcommand that runs scripts/wallet/check-live.sh cutover with CHECK_LIVE_CUTOVER_HOST the public wallet endpoint name of [contract_context.108.decision.public_names] wallet_endpoint, and scripts/wallet/check-live.sh gateway against the Fly wallet gateway, and checks that the wallet gateway app runs started machines in two regions."
 do_6 = "Provide this task selector in tools/paxeer-x/gates and execute the full scoped acceptance contract using real production paths. Preserve the retained verification command coverage; move aggregate matrices to release scope and refuse an unknown or unimplemented selector."
 touches = ["tools/bringup/check-live.sh", "tools/bringup/check-live.test.sh", "human/wallet/deploy/cutover/retire.sh", "tools/paxeer-x/gates/108.4.1.sh"]
 verify_cmd = "timeout 30m tools/paxeer-x/verify-task.sh 108.4.1"
@@ -24876,7 +24876,7 @@ time_limit_minutes = 30
 stop_condition = "Stop on the bounded gate result or time limit; record exact revision, command, exit code and private evidence location. Do not mark complete without the declared evidence."
 retained_capability = "108.4.1"
 reference_verify_cmd = "timeout 10m tools/bringup/check-live.sh wallet"
-reference_tests = ["tools/wallet/check-live.test.sh"]
+reference_tests = ["tests/wallet/check-live.test.sh"]
 deployment_profile = "product"
 completion_policy = "Existing implementation is preserved; current candidate qualification and applicable runtime evidence remain required."
 planned_paths = ["tools/paxeer-x/gates/108.4.1.sh"]
@@ -24980,13 +24980,13 @@ requires = ["0.2"]
 reqs = ["1184.1", "1184.2", "1184.5", "1196.1"]
 do_1 = "Reconcile the retained capability against the current candidate and explicit resolution sections. Reuse conforming implementation; complete only unmet criteria. Resolve historical paths against the current source without narrowing the capability or repeating operational transitions already completed."
 do_2 = "Root-cause the backend leg from the recorded wave-gate run rather than from a rerun: the gate collects every Paxeer X suite of the umbrella into a single mix invocation, so the four applications' test helpers run in one virtual machine, and the Ecto sandbox mode the explorer application's non-async cases leave behind denies the indexer test helper's background migrations a connection, ending that application before its first test while the same suites pass when the application is tested on its own."
-do_3 = "In tools/explorer/gate-test.sh derive the umbrella applications from the suites the gate discovers and run one leg per application, each of them its own mix invocation through explorer/deploy/tools/mix-in-builder.sh with a fresh database sidecar, carrying that application's suites in path order and no other application's."
+do_3 = "In scripts/explorer/gate-test.sh derive the umbrella applications from the suites the gate discovers and run one leg per application, each of them its own mix invocation through explorer/deploy/tools/mix-in-builder.sh with a fresh database sidecar, carrying that application's suites in path order and no other application's."
 do_4 = "Keep every discovered suite in the run: skip no test, exclude no tag, relax no assertion, change no test helper, and keep the gate stopping on the first failing leg with that leg's command, exit code and log path, each leg under its own log."
 do_5 = "Report the number of umbrella applications beside the suite count in the gate's check mode, and record the reason for the per-application invocation in the script itself so a later reader does not merge the legs back."
-do_6 = "Add tools/explorer/tests/gate-test-test.sh, which builds a throwaway copy of the gate over a backend tree of Paxeer X suites spread across four applications with recording stand-ins for the mix runner and for yarn, and asserts one invocation per application carrying only that application's suites, a log per application, the frontend legs after them, and a failing application stopping the gate on its own exit code before the next application and before the frontend."
+do_6 = "Add tests/explorer/gate-test-test.sh, which builds a throwaway copy of the gate over a backend tree of Paxeer X suites spread across four applications with recording stand-ins for the mix runner and for yarn, and asserts one invocation per application carrying only that application's suites, a log per application, the frontend legs after them, and a failing application stopping the gate on its own exit code before the next application and before the frontend."
 do_7 = "Document the per-application backend leg under the fleet gates heading of explorer/README.md, and leave the records of task 3.1 untouched so that task reruns the gate itself."
 do_8 = "Provide this task selector in tools/paxeer-x/gates and execute the full scoped acceptance contract using real production paths. Preserve the retained verification command coverage; move aggregate matrices to release scope and refuse an unknown or unimplemented selector."
-touches = ["tools/explorer/gate-test.sh", "tools/explorer/tests/gate-test-test.sh", "explorer/README.md", "spec/paxeer-x/qualification.kvx", "tools/paxeer-x/gates/110.4.1.sh"]
+touches = ["scripts/explorer/gate-test.sh", "tests/explorer/gate-test-test.sh", "explorer/README.md", "spec/paxeer-x/qualification.kvx", "tools/paxeer-x/gates/110.4.1.sh"]
 verify_cmd = "timeout 30m tools/paxeer-x/verify-task.sh 110.4.1"
 gate_kind = "planned-adapter"
 max_builds = 0
@@ -24995,7 +24995,7 @@ max_repair_cycles = 2
 time_limit_minutes = 30
 stop_condition = "Stop on the bounded gate result or time limit; record exact revision, command, exit code and private evidence location. Do not mark complete without the declared evidence."
 retained_capability = "110.4.1"
-reference_verify_cmd = "timeout 20m sh -c 'EXPLORER_GATE_BUDGET_SECONDS=1080 tools/explorer/gate-test.sh'"
+reference_verify_cmd = "timeout 20m sh -c 'EXPLORER_GATE_BUDGET_SECONDS=1080 scripts/explorer/gate-test.sh'"
 reference_tests = []
 deployment_profile = "product"
 completion_policy = "Existing implementation is preserved; current candidate qualification and applicable runtime evidence remain required."
@@ -25011,9 +25011,9 @@ wave = 2
 requires = ["0.2"]
 reqs = ["1196.1", "1196.2", "1196.3", "1196.4"]
 do_1 = "Reconcile the retained capability against the current candidate and explicit resolution sections. Reuse conforming implementation; complete only unmet criteria. Resolve historical paths against the current source without narrowing the capability or repeating operational transitions already completed."
-do_2 = "On the revision that merges waves 5 and 6, run tools/explorer/gate-lint.sh once, writing its log under build/explorer-gates/."
-do_3 = "At that same revision run tools/explorer/gate-test.sh once with its budget set to fit this task's timeout, writing its logs under build/explorer-gates/."
-do_4 = "At that same revision run tools/explorer/test-ratio.sh once over the range that spans waves 5 and 6, so that every source file those waves changed is proven to have a changed test referencing it."
+do_2 = "On the revision that merges waves 5 and 6, run scripts/explorer/gate-lint.sh once, writing its log under build/explorer-gates/."
+do_3 = "At that same revision run scripts/explorer/gate-test.sh once with its budget set to fit this task's timeout, writing its logs under build/explorer-gates/."
+do_4 = "At that same revision run scripts/explorer/test-ratio.sh once over the range that spans waves 5 and 6, so that every source file those waves changed is proven to have a changed test referencing it."
 do_5 = "At that same revision build the frontend image once from explorer/frontend/Dockerfile, writing its log under build/explorer-gates/."
 do_6 = "Append one gate record per run to spec/paxeer-x-explorer/qualification.kvx as gate.7.1.1 through gate.7.1.4, each carrying the task, the requirements the run qualifies, the revision, the exact command, the exit code and the log path, written only from a command that actually ran."
 do_7 = "Record the Playwright visual baselines of the redesigned components in the same log as a release-time refresh item, because no task in waves 5 and 6 changes a file ending in .pw.tsx or a __screenshots__ directory and the baselines are refreshed once at release."
@@ -25029,7 +25029,7 @@ max_repair_cycles = 2
 time_limit_minutes = 30
 stop_condition = "Stop on the bounded gate result or time limit; record exact revision, command, exit code and private evidence location. Do not mark complete without the declared evidence."
 retained_capability = "110.7.1"
-reference_verify_cmd = "timeout 20m sh -c 'EXPLORER_GATE_BUDGET_SECONDS=1080 tools/explorer/gate-test.sh'"
+reference_verify_cmd = "timeout 20m sh -c 'EXPLORER_GATE_BUDGET_SECONDS=1080 scripts/explorer/gate-test.sh'"
 reference_tests = []
 deployment_profile = "product"
 completion_policy = "Existing implementation is preserved; current candidate qualification and applicable runtime evidence remain required."
@@ -25119,9 +25119,9 @@ requires = ["0.2"]
 reqs = ["1209.2", "1208.6"]
 do_1 = "Reconcile the retained capability against the current candidate and explicit resolution sections. Reuse conforming implementation; complete only unmet criteria. Resolve historical paths against the current source without narrowing the capability or repeating operational transitions already completed."
 do_2 = "Deploy the gateway from human/wallet/deploy/gateway.toml beside the existing service under a platform-issued name, pointed at the deployed attestors, the identity provider and the RPC pool, with the sponsor account funded out of band; sign in with a fresh test identity, provision, observe both keys, the top-up and the binding on the chain, sign and send a minimal transaction, sign a message, and confirm getUnifiedAccount reports the binding."
-do_3 = "Extend tools/wallet/check-live.sh with a gateway mode that checks readiness and /v1/wallet/me for a configured test identity, and record the run in the qualification log with the transaction hash and no hosts or secrets."
+do_3 = "Extend scripts/wallet/check-live.sh with a gateway mode that checks readiness and /v1/wallet/me for a configured test identity, and record the run in the qualification log with the transaction hash and no hosts or secrets."
 do_4 = "Provide this task selector in tools/paxeer-x/gates and execute the full scoped acceptance contract using real production paths. Preserve the retained verification command coverage; move aggregate matrices to release scope and refuse an unknown or unimplemented selector."
-touches = ["tools/wallet/check-live.sh", "tools/wallet/check-live.test.sh", "spec/paxeer-x/qualification.kvx", "tools/paxeer-x/gates/111.4.1.sh"]
+touches = ["scripts/wallet/check-live.sh", "tests/wallet/check-live.test.sh", "spec/paxeer-x/qualification.kvx", "tools/paxeer-x/gates/111.4.1.sh"]
 verify_cmd = "timeout 30m tools/paxeer-x/verify-task.sh 111.4.1"
 gate_kind = "planned-adapter"
 max_builds = 0
@@ -25130,7 +25130,7 @@ max_repair_cycles = 2
 time_limit_minutes = 30
 stop_condition = "Stop on the bounded gate result or time limit; record exact revision, command, exit code and private evidence location. Do not mark complete without the declared evidence."
 retained_capability = "111.4.1"
-reference_verify_cmd = "timeout 20m sh -c 'tools/wallet/check-live.sh gateway'"
+reference_verify_cmd = "timeout 20m sh -c 'scripts/wallet/check-live.sh gateway'"
 reference_tests = []
 deployment_profile = "product"
 completion_policy = "Existing implementation is preserved; current candidate qualification and applicable runtime evidence remain required."
@@ -25206,7 +25206,7 @@ wave = 2
 requires = ["0.2"]
 reqs = ["1216.4"]
 do_1 = "Reconcile the retained capability against the current candidate and explicit resolution sections. Reuse conforming implementation; complete only unmet criteria. Resolve historical paths against the current source without narrowing the capability or repeating operational transitions already completed."
-do_2 = "Run tools/wallet/gate-lint.sh and tools/wallet/gate-test.sh without --check on the feature tip and record every target's result in spec/paxeer-x-wallet/qualification.kvx; a failure is recorded, not repaired here."
+do_2 = "Run scripts/wallet/gate-lint.sh and scripts/wallet/gate-test.sh without --check on the feature tip and record every target's result in spec/paxeer-x-wallet/qualification.kvx; a failure is recorded, not repaired here."
 do_3 = "Provide this task selector in tools/paxeer-x/gates and execute the full scoped acceptance contract using real production paths. Preserve the retained verification command coverage; move aggregate matrices to release scope and refuse an unknown or unimplemented selector."
 touches = ["spec/paxeer-x/qualification.kvx", "tools/paxeer-x/gates/111.5.5.sh"]
 verify_cmd = "timeout 30m tools/paxeer-x/verify-task.sh 111.5.5"
@@ -25217,7 +25217,7 @@ max_repair_cycles = 2
 time_limit_minutes = 30
 stop_condition = "Stop on the bounded gate result or time limit; record exact revision, command, exit code and private evidence location. Do not mark complete without the declared evidence."
 retained_capability = "111.5.5"
-reference_verify_cmd = "timeout 60m sh -c 'tools/wallet/gate-lint.sh && tools/wallet/gate-test.sh'"
+reference_verify_cmd = "timeout 60m sh -c 'scripts/wallet/gate-lint.sh && scripts/wallet/gate-test.sh'"
 reference_tests = []
 deployment_profile = "product"
 completion_policy = "Existing implementation is preserved; current candidate qualification and applicable runtime evidence remain required."
@@ -25233,10 +25233,10 @@ wave = 2
 requires = ["0.2"]
 reqs = ["1211.3", "1211.4"]
 do_1 = "Reconcile the retained capability against the current candidate and explicit resolution sections. Reuse conforming implementation; complete only unmet criteria. Resolve historical paths against the current source without narrowing the capability or repeating operational transitions already completed."
-do_2 = "Once the human-api schema declares an HTTP operation that opens a session from the wallet identity assertion (today session.open takes only a passkey assertion_id and the wallet assertion sign-in exists only in process), open a session with a staged assertion from CHECK_LIVE_HUMAN_ASSERTION, plan a kernel send with the golden intent plan body under that session and expect the plan shape the contract declares; add this as the human-session mode of tools/wallet/check-live.sh with its responder cases in tools/wallet/check-live.test.sh."
+do_2 = "Once the human-api schema declares an HTTP operation that opens a session from the wallet identity assertion (today session.open takes only a passkey assertion_id and the wallet assertion sign-in exists only in process), open a session with a staged assertion from CHECK_LIVE_HUMAN_ASSERTION, plan a kernel send with the golden intent plan body under that session and expect the plan shape the contract declares; add this as the human-session mode of scripts/wallet/check-live.sh with its responder cases in tests/wallet/check-live.test.sh."
 do_3 = "Record in spec/paxeer-x-wallet/qualification.kvx the contract gap between the wallet SDK, which sends a bearer authorization header, and the service, which admits only its same-site session cookies, so the owner can decide which side moves before the wallet app sets NEXT_PUBLIC_PAXEER_HUMAN_API."
 do_4 = "Provide this task selector in tools/paxeer-x/gates and execute the full scoped acceptance contract using real production paths. Preserve the retained verification command coverage; move aggregate matrices to release scope and refuse an unknown or unimplemented selector."
-touches = ["tools/wallet/check-live.sh", "tools/wallet/check-live.test.sh", "spec/paxeer-x/qualification.kvx", "tools/paxeer-x/gates/111.6.5.sh"]
+touches = ["scripts/wallet/check-live.sh", "tests/wallet/check-live.test.sh", "spec/paxeer-x/qualification.kvx", "tools/paxeer-x/gates/111.6.5.sh"]
 verify_cmd = "timeout 30m tools/paxeer-x/verify-task.sh 111.6.5"
 gate_kind = "planned-adapter"
 max_builds = 0
@@ -25245,7 +25245,7 @@ max_repair_cycles = 2
 time_limit_minutes = 30
 stop_condition = "Stop on the bounded gate result or time limit; record exact revision, command, exit code and private evidence location. Do not mark complete without the declared evidence."
 retained_capability = "111.6.5"
-reference_verify_cmd = "timeout 10m sh -c 'tools/wallet/check-live.test.sh && CHECK_LIVE_HUMAN_BASE=https://paxeer-human-service.fly.dev CHECK_LIVE_HUMAN_ORIGIN=https://app.paxportwallet.com tools/wallet/check-live.sh human-session'"
+reference_verify_cmd = "timeout 10m sh -c 'tests/wallet/check-live.test.sh && CHECK_LIVE_HUMAN_BASE=https://paxeer-human-service.fly.dev CHECK_LIVE_HUMAN_ORIGIN=https://app.paxportwallet.com scripts/wallet/check-live.sh human-session'"
 reference_tests = []
 deployment_profile = "product"
 completion_policy = "Existing implementation is preserved; current candidate qualification and applicable runtime evidence remain required."
@@ -25991,10 +25991,10 @@ requires = ["0.2", "22.1"]
 reqs = ["199"]
 do_1 = "Reproduce the open-page behavior using the current query client before choosing a page-local polling or event invalidation policy."
 do_2 = "Implement the bounded policy in PaxeerXReceipt and expose freshness through its detail component without changing global query behavior unnecessarily."
-do_3 = "Implement tools/explorer/tests/paxeer-x-data-boundary.py --case receipt-refresh with a real receipt projection and browser session; advance genuine verification evidence while the page remains open and exercise disconnect/reconnect."
+do_3 = "Implement tests/explorer/paxeer-x-data-boundary.py --case receipt-refresh with a real receipt projection and browser session; advance genuine verification evidence while the page remains open and exercise disconnect/reconnect."
 do_4 = "Implement the declared focused gate through the real production types and paths; exercise every acceptance criterion including refusal, restart or boundary cases specified by this requirement. The command is a planned deliverable, not an already-run gate."
-touches = ["explorer/frontend/ui/pages/PaxeerXReceipt.tsx", "explorer/frontend/ui/paxeerX/receipts/PaxeerXReceiptDetails.tsx", "tools/explorer/tests/paxeer-x-data-boundary.py"]
-verify_cmd = "timeout 15m python3 tools/explorer/tests/paxeer-x-data-boundary.py --case receipt-refresh"
+touches = ["explorer/frontend/ui/pages/PaxeerXReceipt.tsx", "explorer/frontend/ui/paxeerX/receipts/PaxeerXReceiptDetails.tsx", "tests/explorer/paxeer-x-data-boundary.py"]
+verify_cmd = "timeout 15m python3 tests/explorer/paxeer-x-data-boundary.py --case receipt-refresh"
 gate_kind = "planned"
 max_builds = 1
 max_verify_runs = 1
@@ -26002,7 +26002,7 @@ max_repair_cycles = 2
 time_limit_minutes = 30
 stop_condition = "Stop on the bounded gate result or time limit; record exact revision, command, exit code and private evidence location. Do not mark complete without the declared evidence."
 deployment_profile = "product"
-planned_paths = ["tools/explorer/tests/paxeer-x-data-boundary.py"]
+planned_paths = ["tests/explorer/paxeer-x-data-boundary.py"]
 path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
 evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
 
@@ -26901,7 +26901,7 @@ reqs = ["1162.3"]
 do_1 = "Reconcile the retained capability against the current candidate and explicit resolution sections. Reuse conforming implementation; complete only unmet criteria. Resolve historical paths against the current source without narrowing the capability or repeating operational transitions already completed."
 do_2 = "Write docker/kernel/Dockerfile and docker/kernel/Dockerfile.dockerignore as the union of docker/platform-node, platform-core, platform-authority, platform-agent-boundary, interop-mirror and human-service plus layerx-mcp from agent/crates/layerx-mcp on a Debian base with socat and util-linux, reusing each image's build stages and entrypoints."
 do_3 = "Write docker/kernel/init.sh as the root entrypoint: replay the init containers of platform/hosted/node/deployment.yaml (guarantor storage, checkpoint authority, publication policy, human directories and human authority material) on the volume, mount tmpfs for /run/layerx, the private directories and /tmp, then start every long-running container command of that pod under its uid through setpriv and restart one that exits, starting a TLS listener only once its certificate is on the volume; every listen value and socat bind is [::] for the private network."
-do_4 = "Make human/wallet/deploy/human.toml the kernel app's toml: build docker/kernel/Dockerfile, one machine of a performance class with at least four CPUs and 16GB in the region nearest the RPC nodes by measured round trip, one volume mounted at /data holding /data/layerx and /data/human-state with daily snapshots and retention, only the CA roots as [[files]] secret_name entries while every private key and signing request is generated inside the machine on the volume and tools/bringup/ca.sh writes each certificate back to the volume, and the existing plain 8080 http_service with LAYERX_HUMAN_LISTENER plain and LAYERX_HUMAN_BIND [::]:8080 from the first deploy; add every new [env] name of the toml to human/wallet/deploy/env with one line each so tools/wallet/check-deploy.sh keeps passing."
+do_4 = "Make human/wallet/deploy/human.toml the kernel app's toml: build docker/kernel/Dockerfile, one machine of a performance class with at least four CPUs and 16GB in the region nearest the RPC nodes by measured round trip, one volume mounted at /data holding /data/layerx and /data/human-state with daily snapshots and retention, only the CA roots as [[files]] secret_name entries while every private key and signing request is generated inside the machine on the volume and tools/bringup/ca.sh writes each certificate back to the volume, and the existing plain 8080 http_service with LAYERX_HUMAN_LISTENER plain and LAYERX_HUMAN_BIND [::]:8080 from the first deploy; add every new [env] name of the toml to human/wallet/deploy/env with one line each so scripts/wallet/check-deploy.sh keeps passing."
 do_5 = "The existing machine of the app is a volumeless machine in ams, and a deploy does not attach a new volume to it: create the volume in ams, export the old machine's writable-root state with tools/bringup/human-state-preserve.sh export and stop that machine as the rollback, clone it onto the volume, import and verify the state there before the kernel init first runs, deploy with the [mounts] section excluding the old machine, and destroy the old machine only after the pre-destroy checks pass, after which the kernel-app gate runs; the app name, and so the edge's upstream for api-hull.paxeer.network, is unchanged."
 do_6 = "Add the kernel-app subcommand: the app has exactly one started machine with its volume mounted at /data, the init runs as the entrypoint, and every process of the pod not waiting on the genesis runs under its uid."
 do_7 = "Provide this task selector in tools/paxeer-x/gates and execute the full scoped acceptance contract using real production paths. Preserve the retained verification command coverage; move aggregate matrices to release scope and refuse an unknown or unimplemented selector."
@@ -26990,9 +26990,9 @@ requires = ["0.2", "111.6.11"]
 reqs = ["1215.3"]
 do_1 = "Reconcile the retained capability against the current candidate and explicit resolution sections. Reuse conforming implementation; complete only unmet criteria. Resolve historical paths against the current source without narrowing the capability or repeating operational transitions already completed."
 do_2 = "Move the root Dockerfile with its Dockerfile.dockerignore to docker/layerx/, interop/deploy/{gateway,mirror,x-websearch}/Dockerfile to docker/interop-gateway, docker/interop-mirror and docker/x-websearch, tools/flyci/{controller,runner}/Dockerfile to docker/flyci-controller and docker/flyci-runner, explorer/frontend/Dockerfile with its .dockerignore to docker/explorer-frontend/, the two explorer service Dockerfiles with their .dockerignore files to docker/explorer-sig-provider and docker/explorer-smart-contract-verifier, explorer/deploy/tools/Dockerfile.elixir-builder to docker/explorer-elixir-builder/Dockerfile, and explorer/backend/docker/{Dockerfile,oldUI.Dockerfile} to docker/explorer-backend/; rewrite the COPY paths of the runner, frontend, service and elixir-builder images for the repository root, keep the Blockscout backend images on the explorer/backend context, and give docker/localnode and docker/rpcnode root-context COPY paths."
-do_3 = "Update every referrer: the explorer-images, paxeer-docker-publish, paxeer-docker-build and paxeer-integration-test workflows, every workflow path filter naming the root Dockerfile, the pr-to-slack chain path list, the uci-backport chain file list, .github/labeler.yml, chain.mk, docker/docker-compose.yml, the explorer compose files, explorer/deploy/tools/mix-in-builder.sh, tools/explorer/gate-lint.sh and gate-test.sh, explorer/frontend/tools/scripts/build.docker.sh, interop/deploy/x-websearch/tests/packaging-check.sh, the flyci fly.toml files and the monorepo docs pages that name the old paths."
+do_3 = "Update every referrer: the explorer-images, paxeer-docker-publish, paxeer-docker-build and paxeer-integration-test workflows, every workflow path filter naming the root Dockerfile, the pr-to-slack chain path list, the uci-backport chain file list, .github/labeler.yml, chain.mk, docker/docker-compose.yml, the explorer compose files, explorer/deploy/tools/mix-in-builder.sh, scripts/explorer/gate-lint.sh and gate-test.sh, explorer/frontend/tools/scripts/build.docker.sh, interop/deploy/x-websearch/tests/packaging-check.sh, the flyci fly.toml files and the monorepo docs pages that name the old paths."
 do_4 = "Provide this task selector in tools/paxeer-x/gates and execute the full scoped acceptance contract using real production paths. Preserve the retained verification command coverage; move aggregate matrices to release scope and refuse an unknown or unimplemented selector."
-touches = ["docker/layerx/Dockerfile", "docker/layerx/Dockerfile.dockerignore", "docker/interop-gateway/Dockerfile", "docker/interop-mirror/Dockerfile", "docker/x-websearch/Dockerfile", "docker/flyci-controller/Dockerfile", "docker/flyci-runner/Dockerfile", "docker/explorer-frontend/Dockerfile", "docker/explorer-frontend/Dockerfile.dockerignore", "docker/explorer-sig-provider/Dockerfile", "docker/explorer-smart-contract-verifier/Dockerfile", "docker/explorer-elixir-builder/Dockerfile", "docker/explorer-backend/Dockerfile", "docker/explorer-backend/oldUI.Dockerfile", "docker/localnode/Dockerfile", "docker/rpcnode/Dockerfile", "docker/docker-compose.yml", "chain.mk", ".github/workflows/explorer-images.yml", ".github/workflows/paxeer-docker-publish.yml", ".github/workflows/paxeer-docker-build.yml", ".github/workflows/paxeer-integration-test.yml", ".github/labeler.yml", "explorer/deploy/tools/mix-in-builder.sh", "tools/explorer/gate-lint.sh", "tools/explorer/gate-test.sh", "interop/deploy/x-websearch/tests/packaging-check.sh", "tools/flyci/controller/fly.toml", "tools/flyci/runner/fly.toml", "docker/interop-gateway/Dockerfile.dockerignore", "docker/interop-mirror/Dockerfile.dockerignore", "docker/x-websearch/Dockerfile.dockerignore", "docker/flyci-controller/Dockerfile.dockerignore", "docker/flyci-runner/Dockerfile.dockerignore", "docker/explorer-sig-provider/Dockerfile.dockerignore", "docker/explorer-smart-contract-verifier/Dockerfile.dockerignore", "docker/explorer-elixir-builder/Dockerfile.dockerignore", "docker/localnode/Dockerfile.dockerignore", "docker/rpcnode/Dockerfile.dockerignore", ".github/workflows/paxeer-buf-check.yml", ".github/workflows/paxeer-cross-arch-build.yml", ".github/workflows/paxeer-db-tests.yml", ".github/workflows/paxeer-ecr.yml", ".github/workflows/paxeer-enforce-labels.yml", ".github/workflows/paxeer-eth-blocktests.yml", ".github/workflows/paxeer-forge-test.yml", ".github/workflows/paxeer-go-test.yml", ".github/workflows/paxeer-golangci.yml", ".github/workflows/paxeer-libwasmvm.yml", ".github/workflows/paxeer-mock-balances-build.yml", ".github/workflows/paxeer-pr-to-slack-codex.yml", ".github/workflows/paxeer-rocksdb-unit-tests.yml", ".github/workflows/paxeer-uci-backport.yml", ".github/workflows/paxeer-uci-go-lint.yml", "explorer/backend/docker-compose/docker-compose.yml", "explorer/backend/docker-compose/no-services.yml", "explorer/services/smart-contract-verifier/docker-compose.yml", "explorer/frontend/tools/scripts/build.docker.sh", "platform/hosted/tests/beta-images.sh", "explorer/README.md", "interop/deploy/gateway/README.md", "docs/MONOREPO.md", "tools/paxeer-x/gates/111.6.12.sh", "tools/containers/check.sh", "docker/explorer-backend/Dockerfile.dockerignore", "docker/explorer-backend/oldUI.Dockerfile.dockerignore"]
+touches = ["docker/layerx/Dockerfile", "docker/layerx/Dockerfile.dockerignore", "docker/interop-gateway/Dockerfile", "docker/interop-mirror/Dockerfile", "docker/x-websearch/Dockerfile", "docker/flyci-controller/Dockerfile", "docker/flyci-runner/Dockerfile", "docker/explorer-frontend/Dockerfile", "docker/explorer-frontend/Dockerfile.dockerignore", "docker/explorer-sig-provider/Dockerfile", "docker/explorer-smart-contract-verifier/Dockerfile", "docker/explorer-elixir-builder/Dockerfile", "docker/explorer-backend/Dockerfile", "docker/explorer-backend/oldUI.Dockerfile", "docker/localnode/Dockerfile", "docker/rpcnode/Dockerfile", "docker/docker-compose.yml", "chain.mk", ".github/workflows/explorer-images.yml", ".github/workflows/paxeer-docker-publish.yml", ".github/workflows/paxeer-docker-build.yml", ".github/workflows/paxeer-integration-test.yml", ".github/labeler.yml", "explorer/deploy/tools/mix-in-builder.sh", "scripts/explorer/gate-lint.sh", "scripts/explorer/gate-test.sh", "interop/deploy/x-websearch/tests/packaging-check.sh", "tools/flyci/controller/fly.toml", "tools/flyci/runner/fly.toml", "docker/interop-gateway/Dockerfile.dockerignore", "docker/interop-mirror/Dockerfile.dockerignore", "docker/x-websearch/Dockerfile.dockerignore", "docker/flyci-controller/Dockerfile.dockerignore", "docker/flyci-runner/Dockerfile.dockerignore", "docker/explorer-sig-provider/Dockerfile.dockerignore", "docker/explorer-smart-contract-verifier/Dockerfile.dockerignore", "docker/explorer-elixir-builder/Dockerfile.dockerignore", "docker/localnode/Dockerfile.dockerignore", "docker/rpcnode/Dockerfile.dockerignore", ".github/workflows/paxeer-buf-check.yml", ".github/workflows/paxeer-cross-arch-build.yml", ".github/workflows/paxeer-db-tests.yml", ".github/workflows/paxeer-ecr.yml", ".github/workflows/paxeer-enforce-labels.yml", ".github/workflows/paxeer-eth-blocktests.yml", ".github/workflows/paxeer-forge-test.yml", ".github/workflows/paxeer-go-test.yml", ".github/workflows/paxeer-golangci.yml", ".github/workflows/paxeer-libwasmvm.yml", ".github/workflows/paxeer-mock-balances-build.yml", ".github/workflows/paxeer-pr-to-slack-codex.yml", ".github/workflows/paxeer-rocksdb-unit-tests.yml", ".github/workflows/paxeer-uci-backport.yml", ".github/workflows/paxeer-uci-go-lint.yml", "explorer/backend/docker-compose/docker-compose.yml", "explorer/backend/docker-compose/no-services.yml", "explorer/services/smart-contract-verifier/docker-compose.yml", "explorer/frontend/tools/scripts/build.docker.sh", "platform/hosted/tests/beta-images.sh", "explorer/README.md", "interop/deploy/gateway/README.md", "docs/MONOREPO.md", "tools/paxeer-x/gates/111.6.12.sh", "tools/containers/check.sh", "docker/explorer-backend/Dockerfile.dockerignore", "docker/explorer-backend/oldUI.Dockerfile.dockerignore"]
 verify_cmd = "timeout 30m tools/paxeer-x/verify-task.sh 111.6.12"
 gate_kind = "planned-adapter"
 max_builds = 1
@@ -27967,7 +27967,7 @@ do_4 = "Run the live steps from the operator machine in this order, each only af
 do_5 = "Add a backfill command entry to human/wallet/gateway, since backfillAccounts has none today: src/jobs/backfillAccounts.ts builds the provisioning dependencies with provisionDepsFromEnv, refuses to start without the attestor configuration, calls backfillAccounts in bounded batches from its resumable cursor until done, and prints one totals line per BackfillOutcome (bound, awaiting_owner, awaiting_agent_signature, refused, skipped, failed) with no address, identifier or token; package.json gains a backfill:accounts script over the built entry taking --batch-size and --max-batches. Run once after deliver, it generates each moved wallet's Ed25519 identity and, with no user token present, leaves standard wallets awaiting their owner and agent wallets awaiting their agent's signature; it never signs for an absent user."
 do_6 = "Complete each moved wallet's binding at its user's next sign-in: requestAccounts in human/wallet/sdk/src/provider.ts provisions only when /v1/wallet/me answers no_wallet today, so it also posts /v1/wallet/provision with the user's token when /v1/wallet/me returns a wallet whose binding_state is unbound or pending; provisionAccount then resumes from the backfilled identity, sends the sponsor top-up of task 3.1 for the exact binding gas within the cap, has the binding signed through the attestors and broadcasts bindLayerX; a refused binding surfaces as a typed error and a bound wallet makes no provision call."
 do_7 = "Add tests: internal/move/move_test.go against a real source database with a read-only role and an empty target, proving counts and digests on both sides, the refusal of a non-empty target, an unchanged source, no file created, and --delta moving only absent rows and refusing a colliding row; human/wallet/gateway/test/backfill-command.test.ts running the entry against the provisioning test's real attestor daemon and in-test chain, asserting the totals line and that no top-up or binding is sent; and provider tests for the provision call on unbound and pending, none on bound, and the typed refusal."
-do_8 = "After the backfill, apply task 5.3's proxy on the current host, run move --delta and, when it moved rows, deliver and the backfill entry again; shut the old service down with task 5.3's retire script only after tools/wallet/check-live.sh cutover passes and the gateway serves the moved wallets; keep the old master key sealed and never destroy it; no step of this task writes to the production database. Steps 4, 5, 8 and 9 of human/wallet/docs/cutover.md name the move, the counts flag and the backfill entry in place of the notes on observations 4.5.4 and 4.5.6."
+do_8 = "After the backfill, apply task 5.3's proxy on the current host, run move --delta and, when it moved rows, deliver and the backfill entry again; shut the old service down with task 5.3's retire script only after scripts/wallet/check-live.sh cutover passes and the gateway serves the moved wallets; keep the old master key sealed and never destroy it; no step of this task writes to the production database. Steps 4, 5, 8 and 9 of human/wallet/docs/cutover.md name the move, the counts flag and the backfill entry in place of the notes on observations 4.5.4 and 4.5.6."
 do_9 = "Append one gate record per step to spec/paxeer-x-wallet/qualification.kvx: the per-table row counts and stream digests on both sides of the move and of any delta, the plan counts beside the rehearsal's, the archive's row count and digest, the deliver report and its --report-only-counts line, the backfill totals with the number awaiting their owner and awaiting an agent signature, the transaction hash of a verified signature from one migrated wallet of each class, the cutover check and the retire run; never an address, a key or a host."
 do_10 = "Provide this task selector in tools/paxeer-x/gates and execute the full scoped acceptance contract using real production paths. Preserve the retained verification command coverage; move aggregate matrices to release scope and refuse an unknown or unimplemented selector."
 touches = ["human/wallet/ceremony/cmd/ceremony/main.go", "human/wallet/ceremony/cmd/ceremony/main_test.go", "human/wallet/ceremony/internal/move/move.go", "human/wallet/ceremony/internal/move/move_test.go", "human/wallet/ceremony/internal/testsupport/postgres.go", "human/wallet/gateway/src/jobs/backfillAccounts.ts", "human/wallet/gateway/package.json", "human/wallet/gateway/test/backfill-command.test.ts", "human/wallet/sdk/src/provider.ts", "human/wallet/sdk/test/provider.test.ts", "human/wallet/docs/cutover.md", "spec/paxeer-x/qualification.kvx", "tools/paxeer-x/gates/111.5.4.sh"]
@@ -28567,9 +28567,9 @@ requires = ["0.2", "111.4.1", "111.5.2", "111.5.4"]
 reqs = ["1207.5"]
 do_1 = "Complete durable migration, quorum-backed verification, address/count reconciliation and an operational rollback before proxy cutover. Reconcile any already completed stage from actual retained evidence; never retire the active frontend or rerun a ceremony blindly."
 do_2 = "Add human/wallet/deploy/cutover/ with the reverse-proxy configuration for the current host forwarding the endpoint hostname to the new gateway with the original host and client address headers preserved, a preflight script that checks the new gateway's readiness and the proxied path end to end, an apply script the operator runs on the current host, and a retire script that stops and disables the old service units only after the proxied path has served for a configured soak period."
-do_3 = "Make the gateway set a response header that names it on every response, and extend tools/wallet/check-live.sh with a cutover mode that confirms the public hostname, taken from an environment variable with no default, is served by the new gateway through that header; record the run in the qualification log without hosts or secrets."
+do_3 = "Make the gateway set a response header that names it on every response, and extend scripts/wallet/check-live.sh with a cutover mode that confirms the public hostname, taken from an environment variable with no default, is served by the new gateway through that header; record the run in the qualification log without hosts or secrets."
 do_4 = "Provide this task selector in tools/paxeer-x/gates and execute the full scoped acceptance contract using real production paths. Preserve the retained verification command coverage; move aggregate matrices to release scope and refuse an unknown or unimplemented selector."
-touches = ["human/wallet/deploy/cutover/", "human/wallet/gateway/src/index.ts", "human/wallet/gateway/test/served-by.test.ts", "tools/wallet/check-live.sh", "tools/wallet/check-live.test.sh", "spec/paxeer-x/qualification.kvx", "tools/paxeer-x/gates/111.5.3.sh"]
+touches = ["human/wallet/deploy/cutover/", "human/wallet/gateway/src/index.ts", "human/wallet/gateway/test/served-by.test.ts", "scripts/wallet/check-live.sh", "tests/wallet/check-live.test.sh", "spec/paxeer-x/qualification.kvx", "tools/paxeer-x/gates/111.5.3.sh"]
 verify_cmd = "timeout 30m tools/paxeer-x/verify-task.sh 111.5.3"
 gate_kind = "planned-adapter"
 max_builds = 0
@@ -28578,7 +28578,7 @@ max_repair_cycles = 2
 time_limit_minutes = 30
 stop_condition = "Stop on the bounded gate result or time limit; record exact revision, command, exit code and private evidence location. Do not mark complete without the declared evidence."
 retained_capability = "111.5.3"
-reference_verify_cmd = "timeout 20m sh -c 'tools/wallet/check-live.sh cutover'"
+reference_verify_cmd = "timeout 20m sh -c 'scripts/wallet/check-live.sh cutover'"
 reference_tests = []
 deployment_profile = "product"
 completion_policy = "Existing implementation is preserved; current candidate qualification and applicable runtime evidence remain required."
@@ -29375,7 +29375,7 @@ reqs = ["1166.4"]
 do_1 = "Reconcile the retained capability against the current candidate and explicit resolution sections. Reuse conforming implementation; complete only unmet criteria. Resolve historical paths against the current source without narrowing the capability or repeating operational transitions already completed."
 do_2 = "Run identity, security, movement, components and the onboarding roles under docker/kernel/init.sh through docker/human-service/entrypoint.sh with the README's uid split (4020, 4021, 4026), sockets under /run/layerx/human, materials generated inside the machine by platform/hosted/human/material.py under /data/human-state with https://paxportwallet.com as its web origin argument, so the passkey relying party id is paxportwallet.com, the movement provider at the two Paxeer boundaries with minimum agreement 2, the components at the router's px_ reads and the custody precompile, and the five Fly attestors at their apps' .internal names at protocol 3 with threshold three (unverified: attestor count five-vs-four unresolved)."
 do_3 = "Run two human service processes on the one components socket: the plain listener on [::]:8080 behind the app's http_service with CORS for https://paxportwallet.com, and a TLS listener under the internal CA on [::] for the journeys and approvals event sources over the private network; add every new [env] name of human/wallet/deploy/human.toml to human/wallet/deploy/env with one line each; register api-hull.paxeer.network on the edge with tools/bringup/edge.sh add api-hull.paxeer.network <app>."
-do_4 = "Add the human subcommand that runs tools/wallet/check-live.sh human with CHECK_LIVE_HUMAN_BASE=https://api-hull.paxeer.network and CHECK_LIVE_HUMAN_ORIGIN=https://paxportwallet.com, then checks /readyz ready and that the passkey registration options name rp.id paxportwallet.com."
+do_4 = "Add the human subcommand that runs scripts/wallet/check-live.sh human with CHECK_LIVE_HUMAN_BASE=https://api-hull.paxeer.network and CHECK_LIVE_HUMAN_ORIGIN=https://paxportwallet.com, then checks /readyz ready and that the passkey registration options name rp.id paxportwallet.com."
 do_5 = "Provide this task selector in tools/paxeer-x/gates and execute the full scoped acceptance contract using real production paths. Preserve the retained verification command coverage; move aggregate matrices to release scope and refuse an unknown or unimplemented selector."
 touches = ["docker/kernel/init.sh", "human/wallet/deploy/human.toml", "human/wallet/deploy/env", "tools/bringup/check-live.sh", "tools/paxeer-x/gates/108.3.5.sh"]
 verify_cmd = "timeout 30m tools/paxeer-x/verify-task.sh 108.3.5"
@@ -29961,7 +29961,7 @@ requires = ["0.2", "108.3.5", "108.3.6"]
 reqs = ["1166.6"]
 do_1 = "Reconcile the retained capability against the current candidate and explicit resolution sections. Reuse conforming implementation; complete only unmet criteria. Resolve historical paths against the current source without narrowing the capability or repeating operational transitions already completed."
 do_2 = "Configure the existing Docker-hosted wallet PWA to use the authenticated Human API without implicitly changing its hosting platform."
-do_3 = "Add the human-session subcommand that runs tools/wallet/check-live.test.sh and then the wallet feature's human-session gate, tools/wallet/check-live.sh human-session with CHECK_LIVE_HUMAN_BASE=https://api-hull.paxeer.network and CHECK_LIVE_HUMAN_ORIGIN=https://paxportwallet.com, as this task's proof."
+do_3 = "Add the human-session subcommand that runs tests/wallet/check-live.test.sh and then the wallet feature's human-session gate, scripts/wallet/check-live.sh human-session with CHECK_LIVE_HUMAN_BASE=https://api-hull.paxeer.network and CHECK_LIVE_HUMAN_ORIGIN=https://paxportwallet.com, as this task's proof."
 do_4 = "Provide this task selector in tools/paxeer-x/gates and execute the full scoped acceptance contract using real production paths. Preserve the retained verification command coverage; move aggregate matrices to release scope and refuse an unknown or unimplemented selector."
 touches = ["human/wallet/deploy/env", "tools/bringup/check-live.sh", "tools/paxeer-x/gates/108.3.7.sh"]
 verify_cmd = "timeout 30m tools/paxeer-x/verify-task.sh 108.3.7"
@@ -29973,7 +29973,7 @@ time_limit_minutes = 30
 stop_condition = "Stop on the bounded gate result or time limit; record exact revision, command, exit code and private evidence location. Do not mark complete without the declared evidence."
 retained_capability = "108.3.7"
 reference_verify_cmd = "timeout 10m tools/bringup/check-live.sh human-session"
-reference_tests = ["tools/wallet/check-live.test.sh"]
+reference_tests = ["tests/wallet/check-live.test.sh"]
 deployment_profile = "product"
 completion_policy = "Existing implementation is preserved; current candidate qualification and applicable runtime evidence remain required."
 planned_paths = ["tools/paxeer-x/gates/108.3.7.sh"]
@@ -31447,7 +31447,7 @@ do_1 = "Prepare the complete bounded gate harness before qualification. Reuse on
 do_2 = "Implement a versioned real-service journey matrix generated from the route manifest, with one bounded executable leg per subsystem and immutable input/evidence references."
 do_3 = "Use a separately authorized deployment window to apply the reviewed inventory delta, then execute each leg once at the integrated candidate; preserve authentic credentials and funded limits."
 do_4 = "Collect receipts, proof/state identities, restart outcomes and failure cases into the private release manifest; direct-backend-only success cannot satisfy router coverage."
-touches = ["tools/bringup/paxeer-x-journeys.py", "tools/bringup/paxeer-x-journey-matrix.json", "tools/bringup/check-live.sh", "tools/wallet/check-live.sh"]
+touches = ["tools/bringup/paxeer-x-journeys.py", "tools/bringup/paxeer-x-journey-matrix.json", "tools/bringup/check-live.sh", "scripts/wallet/check-live.sh"]
 verify_cmd = "timeout 30m python3 tools/bringup/paxeer-x-journeys.py --leg \"$PAXEER_X_JOURNEY_LEG\" --router https://api-mainnet-beta.paxeer.network --candidate \"$PAXEER_X_CANDIDATE\" --output \"$PAXEER_X_PRIVATE_EVIDENCE/journeys\""
 gate_kind = "planned"
 max_builds = 0
@@ -34890,3 +34890,24 @@ qualification_result = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-200.5-
 qualification_observed = "First exit1 was absent local pytest. Isolated pytest8.4.2 prerequisite correction then unchanged check0;119 tests across24 modules collected, all25 import origins verified. No behavioral or protected probe execution."
 qualification_first_result = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-200.5-result.json"
 source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-200.5-source-handoff.json"
+
+[task.200.6]
+title = "Centralize Explorer Wallet and Workspace scripts and focused tests"
+status = "done"
+mode = "BUILD"
+wave = 7
+requires = ["200.5"]
+reqs = ["2001"]
+touches = [".github/workflows/explorer-build.yml", "Makefile", "explorer/README.md", "human/wallet/README.md", "human/wallet/deploy/env", "human/wallet/docs/cutover.md", "human/wallet/docs/runbooks/backup-restore.md", "human/wallet/docs/runbooks/gateway-rollback.md", "human/wallet/docs/runbooks/identity-provider-outage.md", "human/wallet/docs/runbooks/node-replacement.md", "human/wallet/docs/runbooks/refresh-cadence.md", "human/wallet/docs/runbooks/rpc-pool-failure.md", "scripts/explorer/gate-lint.sh", "scripts/explorer/gate-test.sh", "scripts/explorer/lint-backend.sh", "scripts/explorer/lint-frontend.sh", "scripts/explorer/lint-services.sh", "scripts/explorer/test-ratio.sh", "scripts/wallet/check-deploy.sh", "scripts/wallet/check-live.sh", "scripts/wallet/gate-lint.sh", "scripts/wallet/gate-test.sh", "scripts/wallet/scan-secrets.sh", "scripts/workspace/check-core-gates.sh", "scripts/workspace/check-hardhat-compilers.mjs", "scripts/workspace/check-paxeer-manifests.sh", "scripts/workspace/check-platform-dependencies.sh", "tests/explorer/gate-test-test.sh", "tests/explorer/paxeer-x-data-boundary.py", "tests/explorer/test-ratio-test.sh", "tests/wallet/check-deploy.test.sh", "tests/wallet/check-live.test.sh", "tests/wallet/gate.test.sh", "tests/wallet/scan-secrets.test.sh", "tests/workspace/test-dashboard.sh", "tools/bringup/check-live.sh", "tools/bringup/check-live.test.sh", "tools/explorer/gate-lint.sh", "tools/explorer/gate-test.sh", "tools/explorer/lint-backend.sh", "tools/explorer/lint-frontend.sh", "tools/explorer/lint-services.sh", "tools/explorer/test-ratio.sh", "tools/explorer/tests/gate-test-test.sh", "tools/explorer/tests/paxeer-x-data-boundary.py", "tools/explorer/tests/test-ratio-test.sh", "tools/wallet/check-deploy.sh", "tools/wallet/check-deploy.test.sh", "tools/wallet/check-live.sh", "tools/wallet/check-live.test.sh", "tools/wallet/gate-lint.sh", "tools/wallet/gate-test.sh", "tools/wallet/gate.test.sh", "tools/wallet/scan-secrets.sh", "tools/wallet/scan-secrets.test.sh", "tools/workspace/check-core-gates.sh", "tools/workspace/check-hardhat-compilers.mjs", "tools/workspace/check-paxeer-manifests.sh", "tools/workspace/check-platform-dependencies.sh", "tools/workspace/test-dashboard.sh"]
+do_1 = "Move23 standalone scripts/tests, update14directcallers/docs and preserve every root binding, executable mode, argument, fixture, and retained data asset. No existing runtime defect or optional configuration change."
+verify_cmd = "timeout 10m python3 /root/lx-ops/paxeer-x-integration-2026-10-03/task-200.6-layout-verify.py --repository /root/Layerx-protocol --plan /root/lx-ops/paxeer-x-integration-2026-10-03/task-200.6-layout-plan.json"
+max_builds = 0
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "START2026-10-04T11:59:36.425883+00:00 END2026-10-04T12:29:36.425883+00:00; whole source then one private syntax/path check, no production script or behavior execution, stop conflictingwriters, unrelatedfailure or cutoff."
+qualification_status = "PASS_SYNTAX_PATH_ONLY"
+source_status = "complete"
+completion_basis = "implementation complete; declared relocation gate passed"
+qualification_evidence = "d76f1d4417dd2b2c60d5a38014ea3017392e9f17 | timeout 10m python3 /root/lx-ops/paxeer-x-integration-2026-10-03/task-200.6-layout-verify.py --repository /root/Layerx-protocol --plan /root/lx-ops/paxeer-x-integration-2026-10-03/task-200.6-layout-plan.json | 0 | /root/lx-ops/paxeer-x-integration-2026-10-03/task-200.6-layout-verify.log"
+source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-200.6-source-handoff.json"

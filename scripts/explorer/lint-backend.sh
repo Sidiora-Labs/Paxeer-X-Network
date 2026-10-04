@@ -10,7 +10,7 @@
 #
 # Run from anywhere:
 #
-#   tools/explorer/lint-backend.sh
+#   scripts/explorer/lint-backend.sh
 #
 # Every check runs even when an earlier one fails, so one invocation reports
 # every finding; the exit code is the first non-zero one, and the failing

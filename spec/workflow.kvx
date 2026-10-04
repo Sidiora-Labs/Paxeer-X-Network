@@ -137,8 +137,8 @@ enabled       = true
 main          = "main"
 remote        = "origin"
 worktrees     = ".codegraph/worktrees"
-test_gate     = "tools/explorer/gate-test.sh"
-lint_gate     = "tools/explorer/gate-lint.sh"
+test_gate     = "scripts/explorer/gate-test.sh"
+lint_gate     = "scripts/explorer/gate-lint.sh"
 pr            = "manual"
 checkpoint    = "manual"
 

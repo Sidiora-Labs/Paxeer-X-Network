@@ -33,13 +33,13 @@ Rules that hold for every step:
 
   ```sh
   mkdir -p .logs
-  tools/wallet/gate-test.sh 2>&1 | tee .logs/gate-test.log
-  tools/wallet/gate-lint.sh 2>&1 | tee .logs/gate-lint.log
+  scripts/wallet/gate-test.sh 2>&1 | tee .logs/gate-test.log
+  scripts/wallet/gate-lint.sh 2>&1 | tee .logs/gate-lint.log
   ```
 
   `WALLET_GATE_BUDGET_SECONDS` bounds each run (default 1200).
-- Readiness check: both exit 0; `tools/wallet/gate-test.sh --check` and
-  `tools/wallet/gate-lint.sh --check` exit 0.
+- Readiness check: both exit 0; `scripts/wallet/gate-test.sh --check` and
+  `scripts/wallet/gate-lint.sh --check` exit 0.
 - Evidence: one gate record per script.
 - Rollback: none; a failure is recorded and the checklist stops.
 
@@ -50,7 +50,7 @@ Rules that hold for every step:
   variables of `runbooks/node-replacement.md`, read every node.
 
   ```sh
-  tools/wallet/check-live.sh attestors
+  scripts/wallet/check-live.sh attestors
   ```
 
 - Readiness check: five `pass node` lines with `peers=4/4` and
@@ -69,10 +69,10 @@ Rules that hold for every step:
 
   ```sh
   curl -sS https://<gateway-base>/readyz
-  tools/wallet/check-live.sh gateway
+  scripts/wallet/check-live.sh gateway
   ```
 
-  `tools/wallet/check-live.sh gateway` is added by task 4.1.
+  `scripts/wallet/check-live.sh gateway` is added by task 4.1.
 - Readiness check: `/readyz` answers 200 with every component `up`; the
   gateway mode of check-live passes.
 - Evidence: the gate record of task 4.1 with the binding transaction hash.
@@ -174,7 +174,7 @@ Rules that hold for every step:
 
   ```sh
   (cd human/wallet/deploy && flyctl deploy --config attestor-<N>.toml --image <attestor-image> --app paxeer-attestor-<N> --ha=false --no-public-ips -y --env ATTESTOR_CEREMONY=true)
-  tools/wallet/check-live.sh attestors
+  scripts/wallet/check-live.sh attestors
   ```
 
 - Readiness check: after the fifth node, five `pass node` lines and
@@ -207,7 +207,7 @@ Rules that hold for every step:
 - Readiness check: exit 0 and
   `eligible=<e> funded_archived=<f> read=<e> verified=<e> imported=<e> refreshed=<e> test_signed=<e> matched=<e>`;
   `psql "$CEREMONY_DATABASE_URL" -Atc "select count(*) from wallets where migrated_at is not null"`
-  prints `<e>`; `tools/wallet/check-live.sh attestors` passes with every
+  prints `<e>`; `scripts/wallet/check-live.sh attestors` passes with every
   node's `shares=` raised by the keys imported; a signature through the
   gateway for one migrated wallet of each class verifies;
   `deliver --report-only-counts` reports every eligible wallet migrated.
@@ -225,7 +225,7 @@ Rules that hold for every step:
 
   ```sh
   (cd human/wallet/deploy && flyctl deploy --config attestor-<N>.toml --image <attestor-image> --app paxeer-attestor-<N> --ha=false --no-public-ips -y)
-  tools/wallet/check-live.sh attestors
+  scripts/wallet/check-live.sh attestors
   ```
 
 - Readiness check: the quorum line passes after each node; a keys.import to
@@ -270,7 +270,7 @@ Rules that hold for every step:
   flyctl scale count 1 --region <second-region> --app paxeer-wallet-gateway -y
   flyctl machines list --app paxeer-wallet-gateway
   tools/bringup/edge.sh add <public-wallet-host> paxeer-wallet-gateway
-  CHECK_LIVE_CUTOVER_HOST=<public-wallet-host> tools/wallet/check-live.sh cutover
+  CHECK_LIVE_CUTOVER_HOST=<public-wallet-host> scripts/wallet/check-live.sh cutover
   ```
 
   Once the cutover mode passes, the edge serves the name from the gateway;
@@ -301,7 +301,7 @@ Rules that hold for every step:
   psql <old-service-admin-connection> -c "alter role <old-service-role> set default_transaction_read_only = on"
   ```
 
-- Readiness check: `tools/wallet/check-live.sh cutover` still passes; the old
+- Readiness check: `scripts/wallet/check-live.sh cutover` still passes; the old
   service's log shows no signing or write after the change.
 - Evidence: the check's gate record.
 - Rollback:
@@ -324,7 +324,7 @@ Rules that hold for every step:
 - Action: after the proxied path has served for the configured soak period,
   run the retire script of task 5.3 on the current host, which stops and
   disables the old service units.
-- Readiness check: `tools/wallet/check-live.sh cutover` passes after the
+- Readiness check: `scripts/wallet/check-live.sh cutover` passes after the
   retire; `curl -sS https://<gateway-base>/readyz` answers 200.
 - Evidence: the retire run's gate record.
 - Rollback: re-enable and start the old service units on the current host

@@ -74,7 +74,7 @@ the first answering name of `LAYERX_GATEWAY_PAXEER_RPC_URLS`.
 
    ```sh
    flyctl secrets set ATTESTOR_RPC_URL=<rpc-url-1> --app paxeer-attestor-<N>
-   tools/wallet/check-live.sh attestors
+   scripts/wallet/check-live.sh attestors
    ```
 
    Expected: `Secrets are deployed`, then `pass quorum` after each node.
@@ -86,7 +86,7 @@ curl -sS https://<gateway-base>/readyz
 ```
 
 The route answers 200 with `components.rpc_pool.state` `up` and `healthy` of
-two or more, and `tools/wallet/check-live.sh gateway` (added by task 4.1)
+two or more, and `scripts/wallet/check-live.sh gateway` (added by task 4.1)
 passes. Record revision, command, exit code and log path in
 `spec/paxeer-x-wallet/qualification.kvx`, with the count of endpoints and no
 URL.

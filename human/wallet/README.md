@@ -27,7 +27,7 @@ pnpm -r test
 
 The gateway suites load `gateway/test/setup.ts`, which supplies synthetic environment values so no configuration file is needed to run them.
 
-From the repository root, `tools/wallet/scan-secrets.sh human/wallet` scans the workspace for key-shaped, token-shaped and credentialed connection-string content and exits non-zero on a match.
+From the repository root, `scripts/wallet/scan-secrets.sh human/wallet` scans the workspace for key-shaped, token-shaped and credentialed connection-string content and exits non-zero on a match.
 
 ## Configuration
 

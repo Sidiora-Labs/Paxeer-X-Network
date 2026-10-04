@@ -31,7 +31,7 @@ how long a stolen share is worth anything.
 1. Check the network.
 
    ```sh
-   tools/wallet/check-live.sh attestors
+   scripts/wallet/check-live.sh attestors
    ```
 
    Expected: five `pass node` lines with `peers=4/4` and
@@ -71,7 +71,7 @@ how long a stolen share is worth anything.
 ## Readiness check that proves completion
 
 ```sh
-tools/wallet/check-live.sh attestors
+scripts/wallet/check-live.sh attestors
 ```
 
 Every node passes, reports an `epoch=` no lower than in step 1, an `audit=`

@@ -3130,9 +3130,9 @@ paxeer-ci:
 	GOPROXY=off $(PAXEER_MAKE) GOLANGCI_LINT=$(PAXEER_GOLANGCI_LINT) ci
 
 workspace-inventory-check:
-	sh tools/workspace/check-paxeer-manifests.sh
-	sh tools/workspace/check-core-gates.sh
-	sh tools/workspace/check-platform-dependencies.sh
+	sh scripts/workspace/check-paxeer-manifests.sh
+	sh scripts/workspace/check-core-gates.sh
+	sh scripts/workspace/check-platform-dependencies.sh
 
 paxeer-node-preflight:
 	@node -e 'const major=Number(process.versions.node.split(".")[0]); if (major < 20) { console.error(`Node >=20 required; found $${process.version}`); process.exit(1); }'
@@ -3148,7 +3148,7 @@ paxeer-npm-dependencies-ready:
 	@test -d integration_test/rpc_tests/node_modules
 
 paxeer-hardhat-compilers-ready: paxeer-npm-dependencies-ready
-	node tools/workspace/check-hardhat-compilers.mjs
+	node scripts/workspace/check-hardhat-compilers.mjs
 
 paxeer-npm-build: paxeer-hardhat-compilers-ready
 	npm --prefix contracts exec -- hardhat compile

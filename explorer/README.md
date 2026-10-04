@@ -98,11 +98,11 @@ Two scripts gate a branch before it lands, and both run from the repository
 root:
 
 ```
-tools/explorer/gate-test.sh
-tools/explorer/gate-lint.sh
+scripts/explorer/gate-test.sh
+scripts/explorer/gate-lint.sh
 ```
 
-`tools/explorer/gate-test.sh` runs the backend Paxeer X suites - every
+`scripts/explorer/gate-test.sh` runs the backend Paxeer X suites - every
 `*_test.exs` under `backend/apps` whose path carries `paxeer_x` - through
 `deploy/tools/mix-in-builder.sh`, one invocation per umbrella application, so
 each application gets the pinned builder image, a database sidecar and a
@@ -110,8 +110,8 @@ virtual machine of its own, which is what its test helper configures; it then
 runs the frontend dependency install, `yarn lint:tsc` and `yarn test:vitest
 run` from `frontend/`.
 
-`tools/explorer/gate-lint.sh` runs `tools/explorer/lint-backend.sh`,
-`tools/explorer/lint-frontend.sh` and `tools/explorer/lint-services.sh` in that
+`scripts/explorer/gate-lint.sh` runs `scripts/explorer/lint-backend.sh`,
+`scripts/explorer/lint-frontend.sh` and `scripts/explorer/lint-services.sh` in that
 order, which is what the `explorer-lint` job runs.
 
 Each gate stops on the first leg that fails and reports the leg, the command it
@@ -130,8 +130,8 @@ check - enough to qualify a change to the gates without spending a suite's
 worth of time:
 
 ```
-tools/explorer/gate-lint.sh --check
-tools/explorer/gate-test.sh --check
+scripts/explorer/gate-lint.sh --check
+scripts/explorer/gate-test.sh --check
 ```
 
 ## Running the whole stack locally
@@ -214,20 +214,20 @@ changes no explorer source file passes whatever else it carries.
 
 ### Running the ratio gate locally
 
-`tools/explorer/test-ratio.sh` takes the range to measure. The pull request job
+`scripts/explorer/test-ratio.sh` takes the range to measure. The pull request job
 passes the merge base of the base branch and the head commit, which is what the
 three-dot form computes:
 
 ```
-tools/explorer/test-ratio.sh origin/main...HEAD
-tools/explorer/test-ratio.sh HEAD~1..HEAD
-tools/explorer/test-ratio.sh origin/main HEAD
+scripts/explorer/test-ratio.sh origin/main...HEAD
+scripts/explorer/test-ratio.sh HEAD~1..HEAD
+scripts/explorer/test-ratio.sh origin/main HEAD
 ```
 
 It exits 0 when the ratio holds or the range changes no explorer source file, 1
 when it does not and names every source file left without a referencing test,
 and 2 when the arguments or the repository do not resolve.
-`tools/explorer/tests/test-ratio-test.sh` is the gate's own test: it builds a
+`tests/explorer/test-ratio-test.sh` is the gate's own test: it builds a
 throwaway git history and asserts the exit code and the named files for a
 satisfied ratio, an unsatisfied one, a test that references nothing changed, a
 shell and documentation change and an empty range.
@@ -238,9 +238,9 @@ One script per language, each running exactly what its leg of `explorer-lint`
 runs, each from anywhere in the repository:
 
 ```
-tools/explorer/lint-backend.sh
-tools/explorer/lint-frontend.sh
-tools/explorer/lint-services.sh
+scripts/explorer/lint-backend.sh
+scripts/explorer/lint-frontend.sh
+scripts/explorer/lint-services.sh
 ```
 
 `lint-backend.sh` runs `mix format --check-formatted` and `mix credo --strict`

@@ -11,7 +11,7 @@ gateway's code to an earlier image; it never returns the database schema.
 
 - After a deployment, `curl -sS https://<gateway-base>/readyz` answers 503
   for a component that was `up` before it, or `/healthz` stops answering.
-- `tools/wallet/check-live.sh gateway` (added by task 4.1) fails where it
+- `scripts/wallet/check-live.sh gateway` (added by task 4.1) fails where it
   passed on the previous release.
 - Signing, provisioning or broadcast errors rise after a deployment with the
   attestor network, the identity provider and the RPC pool healthy.
@@ -77,7 +77,7 @@ curl -sS https://<gateway-base>/readyz
 
 `/healthz` answers `ok: true`; `/readyz` answers 200 with `"ready":true`
 and `attestors`, `nonce_store`, `rpc_pool` and `identity_provider` all `up`;
-`tools/wallet/check-live.sh gateway` passes. The platform check in
+`scripts/wallet/check-live.sh gateway` passes. The platform check in
 `gateway.toml` requests `/health/ready`, a path the gateway does not serve
 (observation 4.5.1); readiness is read from `/readyz`. Record revision,
 command, exit code and log path in `spec/paxeer-x-wallet/qualification.kvx`.

@@ -35,7 +35,7 @@ Two backup layers exist:
   share from an older epoch no longer combines with its peers; if the last
   refresh recorded in `spec/paxeer-x-wallet/qualification.kvx` is newer than
   the snapshot, use `node-replacement.md` Case B instead.
-- At least three other nodes answer ready (`tools/wallet/check-live.sh attestors`).
+- At least three other nodes answer ready (`scripts/wallet/check-live.sh attestors`).
 - The operator shell of `node-replacement.md`, and the node's region, the
   `primary_region` of `human/wallet/deploy/attestor-<N>.toml`.
 
@@ -96,7 +96,7 @@ Two backup layers exist:
 ## Readiness check that proves recovery
 
 ```sh
-tools/wallet/check-live.sh attestors
+scripts/wallet/check-live.sh attestors
 ```
 
 The restored node passes with `peers=4/4`, its `shares=` equals its peers'

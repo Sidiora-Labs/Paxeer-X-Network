@@ -14,7 +14,7 @@ import time
 import urllib.error
 import urllib.request
 
-ROOT = Path(__file__).resolve().parents[2]
+ROOT = Path(__file__).resolve().parents[2] / "tools"
 BUILD = Path(os.environ.get("LAYERX_BUILD_DIR", ROOT / "build")).resolve()
 BACKEND = ROOT / "explorer/backend"
 TOOLCHAIN_IMAGE = "task23-1-toolchain:local"
@@ -34,7 +34,7 @@ def require(condition, message):
         raise AssertionError(message)
 
 
-KERNEL_ROOT = Path(__file__).resolve().parents[3]
+KERNEL_ROOT = Path(__file__).resolve().parents[2]
 KERNEL_BUILD = Path(os.environ.get("LAYERX_BUILD_DIR", KERNEL_ROOT / "build")).resolve()
 
 
@@ -559,7 +559,7 @@ def kernel_receipts():
 
 
 # --- case: standalone-receipts (req.195) -------------------------------------
-# Self-contained section for tools/explorer/tests/paxeer-x-data-boundary.py.
+# Self-contained section for tests/explorer/paxeer-x-data-boundary.py.
 # Requires only the stdlib. Register with:
 #     CASES["standalone-receipts"] = case_standalone_receipts
 # The function returns (tests, failures); the dispatcher prints the gate line.
@@ -1037,7 +1037,7 @@ def history_readiness():
     import socket
     import urllib.parse
 
-    repo = Path(__file__).resolve().parents[3]
+    repo = Path(__file__).resolve().parents[2]
     build = Path(os.environ.get("LAYERX_BUILD_DIR", repo / "build")).resolve()
     binaries = {}
     for key, name in (("LAYERX_INDEXER_BIN", "layerx-indexer"),
@@ -1278,7 +1278,7 @@ def unified_pagination():
     import secrets
     import urllib.parse
 
-    pagination_root = Path(__file__).resolve().parents[3]
+    pagination_root = Path(__file__).resolve().parents[2]
     backend = unified_pagination_required("PAXEER_X_GATE_BACKEND_URL").rstrip("/")
     frontend = unified_pagination_required("PAXEER_X_GATE_FRONTEND_URL").rstrip("/")
     unified_pagination_local_url(backend)

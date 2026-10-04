@@ -3,7 +3,7 @@ set -euo pipefail
 
 usage() {
 	cat <<'EOF'
-usage: tools/wallet/check-live.sh endpoint | attestors | gateway | cutover | human | human-session
+usage: scripts/wallet/check-live.sh endpoint | attestors | gateway | cutover | human | human-session
 
 Checks a deployed wallet service against its live answers.
 

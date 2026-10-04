@@ -1593,10 +1593,10 @@ wait $bridge_pids 2>/dev/null || true
 bridge_pids=""
 
 # The wallet cases run the probe of the fixture tree, which carries the
-# wallet gates of tools/wallet/check-live.sh and a gateway toml naming its
+# wallet gates of scripts/wallet/check-live.sh and a gateway toml naming its
 # fixture app; the public wallet name comes from the spec's wallet_endpoint.
-mkdir -p "$fx/tools/wallet" "$fx/spec/paxeer-x-bringup"
-cp "$root/tools/wallet/check-live.sh" "$fx/tools/wallet/"
+mkdir -p "$fx/scripts/wallet" "$fx/spec/paxeer-x-bringup"
+cp "$root/scripts/wallet/check-live.sh" "$fx/scripts/wallet/"
 gateway="$(fx_app human/wallet/deploy/gateway.toml)"
 printf 'app = "%s"\n' "$gateway" >"$fx/human/wallet/deploy/gateway.toml"
 CHECK_LIVE_TEST_WALLET_TOKEN="fixture-wallet-token-$(openssl rand -hex 16)"

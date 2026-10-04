@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-GATE_NAME="gate-lint"
+GATE_NAME="gate-test"
 SCRIPT_PATH="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
 ROOT="$(cd "$(dirname "$SCRIPT_PATH")/../.." && pwd)"
 BUDGET="${WALLET_GATE_BUDGET_SECONDS:-1200}"
@@ -10,24 +10,19 @@ REQUIRED_TOOLS=(go pnpm cargo timeout)
 
 usage() {
   cat <<'EOF'
-Usage: tools/wallet/gate-lint.sh [--check | --help]
+Usage: scripts/wallet/gate-test.sh [--check | --help]
 
-Runs the lints of the wallet tree in order: gofmt -l and go vet ./... for
-the Go modules human/wallet/attestor and human/wallet/ceremony; eslint in
-every package of the pnpm workspace human/wallet that has an eslint config
-and tsc --noEmit in every package that has a tsconfig.json, after building
-the sdk with its own build script, which first builds the linked sdk
-agent/sdk/typescript; eslint and
-tsc --noEmit for the app human/apps/wallet; cargo fmt --check and
-cargo clippy -- -D warnings for layerx-human-kms,
-layerx-human-identity-provider and layerx-human-service in the human
-workspace and for layerx-platform-gateway in the platform workspace. A
-target whose directory or manifest does not exist is reported as absent and
-is never counted as passed.
+Runs the test suites of the wallet tree in order: the Go modules
+human/wallet/attestor and human/wallet/ceremony, the pnpm workspace
+human/wallet, the app human/apps/wallet, the Rust crates
+layerx-human-kms, layerx-human-identity-provider and layerx-human-service
+in the human workspace, and layerx-platform-gateway in the platform
+workspace. A target whose directory or manifest does not exist is reported
+as absent and is never counted as passed.
 
   --check   validate this script's syntax, the required tooling
             (go, pnpm, cargo, timeout) and print the target list with
-            exists or absent per target, without running any lint
+            exists or absent per target, without running any suite
   --help    print this text
 
 Environment:
@@ -46,26 +41,14 @@ Exit status is non-zero when any target that ran failed or the budget ran out.
 EOF
 }
 
-GOFMT_CMD='out="$(gofmt -l .)"; if [ -n "$out" ]; then printf "unformatted:\n%s\n" "$out"; exit 1; fi'
-PNPM_ESLINT_CMD='pnpm -r exec bash -c '"'"'if compgen -G "eslint.config.*" >/dev/null || compgen -G ".eslintrc*" >/dev/null; then exec eslint .; fi'"'"
-SDK_BUILD_CMD='pnpm --filter @paxeer/wallet run build'
-PNPM_TSC_CMD="$SDK_BUILD_CMD"' && pnpm -r exec bash -c '"'"'if [ -f tsconfig.json ]; then exec tsc --noEmit; fi'"'"
-HUMAN_PKGS='-p layerx-human-kms -p layerx-human-identity-provider -p layerx-human-service'
-
 builtin_targets() {
   printf '%s\t%s\t%s\t%s\n' \
-    go-attestor-gofmt human/wallet/attestor "$GOFMT_CMD" go.mod \
-    go-attestor-vet human/wallet/attestor 'go vet ./...' go.mod \
-    go-ceremony-gofmt human/wallet/ceremony "$GOFMT_CMD" go.mod \
-    go-ceremony-vet human/wallet/ceremony 'go vet ./...' go.mod \
-    pnpm-wallet-eslint human/wallet "$PNPM_ESLINT_CMD" pnpm-workspace.yaml \
-    pnpm-wallet-tsc human/wallet "$PNPM_TSC_CMD" pnpm-workspace.yaml \
-    pnpm-app-eslint human/apps/wallet 'pnpm exec eslint .' package.json \
-    pnpm-app-tsc human/apps/wallet 'pnpm exec tsc --noEmit' package.json \
-    rust-human-fmt human "cargo fmt --check $HUMAN_PKGS" Cargo.toml \
-    rust-human-clippy human "cargo clippy $HUMAN_PKGS -- -D warnings" Cargo.toml \
-    rust-platform-fmt platform 'cargo fmt --check -p layerx-platform-gateway' hosted/gateway/Cargo.toml \
-    rust-platform-clippy platform 'cargo clippy -p layerx-platform-gateway -- -D warnings' hosted/gateway/Cargo.toml
+    go-attestor human/wallet/attestor 'go test ./...' go.mod \
+    go-ceremony human/wallet/ceremony 'go test ./...' go.mod \
+    pnpm-wallet human/wallet 'pnpm -r --no-bail test' pnpm-workspace.yaml \
+    pnpm-app human/apps/wallet 'pnpm exec vitest run' package.json \
+    rust-human human 'cargo test --no-fail-fast -p layerx-human-kms -p layerx-human-identity-provider -p layerx-human-service' Cargo.toml \
+    rust-platform platform 'cargo test --no-fail-fast -p layerx-platform-gateway' hosted/gateway/Cargo.toml
 }
 
 LABELS=()

@@ -4,7 +4,8 @@ on:
   pull_request:
     paths:
       - 'explorer/**'
-      - 'tools/explorer/**'
+      - 'scripts/explorer/**'
+      - 'tests/explorer/**'
       - '.github/workflows/explorer-build.yml'
 
 permissions:
@@ -128,7 +129,7 @@ jobs:
         env:
           LEG: ${{ matrix.leg }}
         run: |
-          "tools/explorer/lint-$LEG.sh"
+          "scripts/explorer/lint-$LEG.sh"
 
   explorer-test-ratio:
     name: Explorer test ratio
@@ -144,4 +145,4 @@ jobs:
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-        run: tools/explorer/test-ratio.sh "$BASE_SHA...$HEAD_SHA"
+        run: scripts/explorer/test-ratio.sh "$BASE_SHA...$HEAD_SHA"

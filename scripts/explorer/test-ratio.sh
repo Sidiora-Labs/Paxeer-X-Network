@@ -10,9 +10,9 @@
 #
 # Run from anywhere inside the repository:
 #
-#   tools/explorer/test-ratio.sh BASE..HEAD
-#   tools/explorer/test-ratio.sh BASE...HEAD
-#   tools/explorer/test-ratio.sh BASE HEAD
+#   scripts/explorer/test-ratio.sh BASE..HEAD
+#   scripts/explorer/test-ratio.sh BASE...HEAD
+#   scripts/explorer/test-ratio.sh BASE HEAD
 #
 # Exit codes: 0 when the ratio holds or the range changes no explorer source
 # file; 1 when the ratio does not hold; 2 when the arguments or the repository
@@ -33,9 +33,9 @@ die() {
 
 usage() {
     cat <<'USAGE'
-Usage: tools/explorer/test-ratio.sh BASE..HEAD
-       tools/explorer/test-ratio.sh BASE...HEAD
-       tools/explorer/test-ratio.sh BASE HEAD
+Usage: scripts/explorer/test-ratio.sh BASE..HEAD
+       scripts/explorer/test-ratio.sh BASE...HEAD
+       scripts/explorer/test-ratio.sh BASE HEAD
 
 Counts the source files and the test files the range changes under explorer/
 and fails when the test files are fewer than the source files or when a changed

@@ -2,7 +2,7 @@
 set -euo pipefail
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-checker="$root/tools/wallet/check-live.sh"
+checker="$root/scripts/wallet/check-live.sh"
 work="$(mktemp -d)"
 responder_pid=""
 

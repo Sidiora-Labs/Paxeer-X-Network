@@ -6,19 +6,19 @@
 # repository in a temporary directory, commits a satisfied ratio, an
 # unsatisfied ratio, a test that references nothing the range changed, a
 # change made only of shell, configuration and documentation, and a Rust pair,
-# then runs tools/explorer/test-ratio.sh over each range and asserts its exit
+# then runs scripts/explorer/test-ratio.sh over each range and asserts its exit
 # code and the files it names.
 #
 # Run from anywhere:
 #
-#   tools/explorer/tests/test-ratio-test.sh
+#   tests/explorer/test-ratio-test.sh
 #
 # Exit codes: 0 when every case holds, 1 when one does not.
 
 set -eu
 
 script_dir=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd -P)
-ratio_script=$script_dir/../test-ratio.sh
+ratio_script=$script_dir/../../scripts/explorer/test-ratio.sh
 
 [ -x "$ratio_script" ] || {
     printf 'test-ratio-test: %s is not an executable script\n' "$ratio_script" >&2

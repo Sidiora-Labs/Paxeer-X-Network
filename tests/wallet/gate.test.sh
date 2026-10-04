@@ -2,8 +2,8 @@
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-GATE_TEST="$HERE/gate-test.sh"
-GATE_LINT="$HERE/gate-lint.sh"
+GATE_TEST="$HERE/../../scripts/wallet/gate-test.sh"
+GATE_LINT="$HERE/../../scripts/wallet/gate-lint.sh"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 
