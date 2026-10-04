@@ -321,12 +321,16 @@ struct NativeTerminal {
 
 impl NativeProgramApprovalCarrier {
     pub(crate) fn held_digest(&self) -> Result<[u8; 32], CarrierError> {
+        Ok(Sha256::digest(self.immutable_hold_bytes()?).into())
+    }
+
+    pub(crate) fn immutable_hold_bytes(&self) -> Result<Vec<u8>, CarrierError> {
         let mut held = self.clone();
         held.state = if held.local_policy_outcome == NativeLocalOutcome::ApprovalRequired {
             NativeApprovalState::Awaiting
         } else { NativeApprovalState::NotRequired };
         held.terminal = None;
-        Ok(Sha256::digest(held.encoded()?).into())
+        held.encoded()
     }
 
     pub(crate) fn budget(&self) -> Result<ProgramBudgetReservation, CarrierError> {

@@ -28,6 +28,28 @@ pub enum ProgramSourceError {
     Arithmetic,
 }
 
+pub(super) fn bind_program_presentation_budget_proof(
+    reservation: &super::ProgramBudgetReservation,
+    actor: &[u8],
+    proof: &super::budget_proof::VerifiedBudgetProof,
+    sequence: u64,
+) -> Result<(), ProgramSourceError> {
+    reservation.validate().map_err(|_| ProgramSourceError::Preparation)?;
+    let actor = Did::new(actor).map_err(|_| ProgramSourceError::SourceOwnership)?;
+    if actor.as_bytes() != proof.owner().as_bytes()
+        || proof.observed_head_sequence() != sequence
+        || reservation.allocation_sequence().is_none_or(|allocated| allocated > sequence)
+        || proof.age_sequences() > proof.maximum_age_sequences()
+        || proof.maximum_age_sequences() == 0
+        || !(4..=5).contains(&proof.verification().wire_rank())
+    { return Err(ProgramSourceError::Snapshot); }
+    let rows = reservation.allocations().ok_or(ProgramSourceError::MissingSource)?;
+    if !rows.iter().any(|row| row.asset == proof.asset()
+        && row.source == proof.source_account() && !row.applicable_limits.is_empty())
+    { return Err(ProgramSourceError::SourceAsset); }
+    Ok(())
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ResolvedProgramSource {
     Principal { account: [u8; 32] },

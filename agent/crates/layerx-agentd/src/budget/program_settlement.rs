@@ -38,6 +38,84 @@ pub enum ProgramSettlementError {
     Arithmetic,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ProgramPresentationBudgetError { Ownership, Binding, Missing, Lineage }
+
+pub struct VerifiedProgramApprovalBudgetRow {
+    approval_id: [u8; 32], held_digest: [u8; 32], budget_id: [u8; 32],
+    asset: [u8; 32], source: [u8; 32], observed_sequence: u64,
+    remaining_after_reservations: u128, terminal: bool,
+    verification: VerificationLevel, evidence_digest: [u8; 32], receipt_digest: [u8; 32],
+    checkpoint_digest: [u8; 32], age_sequences: u64, maximum_age_sequences: u64,
+    proof_digest: [u8; 32], proof_bytes: Vec<u8>,
+}
+
+impl VerifiedProgramApprovalBudgetRow {
+    pub const fn approval_id(&self) -> [u8; 32] { self.approval_id }
+    pub const fn held_digest(&self) -> [u8; 32] { self.held_digest }
+    pub const fn budget_id(&self) -> [u8; 32] { self.budget_id }
+    pub const fn asset(&self) -> [u8; 32] { self.asset }
+    pub const fn source(&self) -> [u8; 32] { self.source }
+    pub const fn observed_sequence(&self) -> u64 { self.observed_sequence }
+    pub const fn remaining_after_reservations(&self) -> u128 { self.remaining_after_reservations }
+    pub const fn terminal(&self) -> bool { self.terminal }
+    pub const fn verification(&self) -> VerificationLevel { self.verification }
+    pub const fn evidence_digest(&self) -> [u8; 32] { self.evidence_digest }
+    pub const fn receipt_digest(&self) -> [u8; 32] { self.receipt_digest }
+    pub const fn checkpoint_digest(&self) -> [u8; 32] { self.checkpoint_digest }
+    pub const fn age_sequences(&self) -> u64 { self.age_sequences }
+    pub const fn maximum_age_sequences(&self) -> u64 { self.maximum_age_sequences }
+    pub const fn proof_digest(&self) -> [u8; 32] { self.proof_digest }
+    pub fn verified_proof_bytes(&self) -> &[u8] { &self.proof_bytes }
+}
+
+pub fn read_owned_program_budget(
+    store: &Store, peer: &crate::human::HumanPeer, id: [u8; 32], held_digest: [u8; 32],
+    registry: &ModuleRegistry, budgets: &super::BudgetLimiter,
+    proof: &super::budget_proof::VerifiedBudgetProof, expected_sequence: u64,
+) -> Result<VerifiedProgramApprovalBudgetRow, ProgramPresentationBudgetError> {
+    use crate::approval::native_program_presentation::read_owned;
+    use crate::prepare::DurablePreparation;
+    let held = read_owned(store, peer, id, registry).map_err(|_| ProgramPresentationBudgetError::Ownership)?;
+    if held.held_digest() != held_digest { return Err(ProgramPresentationBudgetError::Binding); }
+    let tenant = TenantId::new(peer.tenant.clone()).map_err(|_| ProgramPresentationBudgetError::Ownership)?;
+    let owners = crate::managed_agent::budget_owners(store, &tenant)
+        .map_err(|_| ProgramPresentationBudgetError::Ownership)?;
+    let actor = std::str::from_utf8(held.actor()).map_err(|_| ProgramPresentationBudgetError::Ownership)?;
+    let mut selected = owners.iter().filter(|owner| owner.agent_did == actor);
+    let (Some(owner), None) = (selected.next(), selected.next()) else {
+        return Err(ProgramPresentationBudgetError::Ownership);
+    };
+    if owner.active_budget_id != proof.budget_id() || owner.agent_did != proof.owner() {
+        return Err(ProgramPresentationBudgetError::Binding);
+    }
+    super::program_sources::bind_program_presentation_budget_proof(held.reservation(), held.actor(), proof, expected_sequence)
+        .map_err(|_| ProgramPresentationBudgetError::Binding)?;
+    let key = DurablePreparation::store_key(&tenant, id).map_err(|_| ProgramPresentationBudgetError::Missing)?;
+    let raw = store.get(&key).ok_or(ProgramPresentationBudgetError::Missing)?;
+    if raw.class() != crate::store::StorageClass::LocalOnly { return Err(ProgramPresentationBudgetError::Binding); }
+    let durable = DurablePreparation::decode(tenant, raw.bytes()).map_err(|_| ProgramPresentationBudgetError::Binding)?;
+    let encoded = held.reservation().encode().map_err(|_| ProgramPresentationBudgetError::Binding)?;
+    if durable.preparation_id != id || durable.extensions.get(&6) != Some(&encoded)
+        || durable.extensions.get(&7).map(Vec::as_slice) != Some(held_digest.as_slice())
+    { return Err(ProgramPresentationBudgetError::Binding); }
+    let terminal = durable.terminal();
+    if !terminal && held.reservation().expiry_sequence <= expected_sequence {
+        return Err(ProgramPresentationBudgetError::Binding);
+    }
+    let remaining = budgets.remaining_after_allocation_bound(held.reservation(), proof.asset(), proof.source_account(), proof.remaining(), terminal)
+        .map_err(|_| ProgramPresentationBudgetError::Lineage)?;
+    Ok(VerifiedProgramApprovalBudgetRow {
+        approval_id: id, held_digest, budget_id: proof.budget_id(), asset: proof.asset(),
+        source: proof.source_account(), observed_sequence: expected_sequence,
+        remaining_after_reservations: remaining, terminal, verification: proof.verification(),
+        evidence_digest: proof.evidence_digest(), receipt_digest: proof.receipt_digest(),
+        checkpoint_digest: proof.checkpoint_digest(), age_sequences: proof.age_sequences(),
+        maximum_age_sequences: proof.maximum_age_sequences(), proof_digest: proof.digest(),
+        proof_bytes: proof.canonical_export_bytes().to_vec(),
+    })
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ProgramExecutedDebit {
     pub kind: ProgramChargeKind,

@@ -17,6 +17,7 @@ mod events;
 mod expiry;
 pub(crate) mod program_requirement;
 pub(crate) mod native_program;
+pub mod native_program_presentation;
 pub(crate) mod native_effect;
 pub(crate) use expiry::PreparedDecision;
 
