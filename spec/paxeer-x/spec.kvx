@@ -28606,8 +28606,12 @@ lease_transfer_authority_104_13_36 = "Owner approved inactive lease reassignment
 implementation_window = "START11:21UTC END11:51UTC; whole source then onebuild anddeclaredverify, maxtwo scopedrepairs. Rootpublicationfirst."
 source_status = "complete"
 completion_basis = "implementation under owner CONSTITUTION; qualification separately recorded"
-qualification_status = "UNRUN"
+qualification_status = "BUILD_PASSED_VERIFY_NOT_PASSED"
 source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-10.3-intake-handoff.json"
+qualification_build_evidence = "804b8e14aebbe7b34fee7ed4275a23ef9419e0b2 | timeout 929s /root/.cargo/bin/cargo test --locked --manifest-path human/Cargo.toml -p layerx-human-service --test journey_family_projections --no-run --message-format=json | 0 | /root/lx-ops/paxeer-x-integration-2026-10-03/task-10.3-build.log"
+qualification_verify_evidence = "804b8e14aebbe7b34fee7ed4275a23ef9419e0b2 | timeout 685s python3 tools/qualification/paxeer-x/human_journey_projections.py | 1 | /root/lx-ops/paxeer-x-integration-2026-10-03/task-10.3-verify.log"
+qualification_observed = "Missing genuine protected PAXEER_X_HUMAN_JOURNEY_PROJECTIONS_FIXTURE; gate refused before launching processes or running behavior cases"
+qualification_result = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-10.3-qualification.json"
 
 [task.24.4]
 title = "Require the complete configured kernel service roster for readiness"
