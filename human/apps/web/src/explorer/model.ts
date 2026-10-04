@@ -560,6 +560,11 @@ export interface UnifiedAccountRecord {
   readonly balances: Readonly<{ items: readonly UnifiedBalanceRecord[]; joinedLimit: string }>;
   readonly settlement: UnifiedSettlement;
   readonly paxeerActivity: PaxeerActivityWindow;
+  readonly layerxActivity: Readonly<{
+    items: readonly AccountActivityRecord[];
+    nextBefore?: string;
+  }>;
+  readonly freshness: ExplorerFreshness;
 }
 
 function evmAddress(value: unknown, at: string): string {
@@ -674,6 +679,25 @@ function decodePaxeerActivity(value: unknown, at: string): PaxeerActivityRecord 
   });
 }
 
+function unifiedActivityInteger(value: unknown, minimum: number, maximum: number, at: string): number {
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value < minimum || value > maximum) {
+    throw new TypeError(`${at} must be a bounded integer`);
+  }
+  return value;
+}
+
+function decodeUnifiedActivity(value: unknown, at: string): AccountActivityRecord {
+  const item = record(value, at);
+  const rank = unifiedActivityInteger(item.verification, 0, 5, `${at}.verification`);
+  const levels = ["unverified", "sequencer-signed", "batch-included", "state-proven", "checkpoint-finalised", "settlement-anchored"] as const;
+  return decodeAccountActivity({
+    ...item,
+    operation: String(unifiedActivityInteger(item.operation, 0, 255, `${at}.operation`)),
+    result_code: String(unifiedActivityInteger(item.result_code, -2_147_483_648, 2_147_483_647, `${at}.result_code`)),
+    verification_level: levels[rank],
+  }, at);
+}
+
 export function decodeUnifiedAccount(value: unknown, at = "unified_account"): UnifiedAccountRecord {
   const item = record(value, at);
   if (item.evidence !== "gateway-reported") {
@@ -693,6 +717,14 @@ export function decodeUnifiedAccount(value: unknown, at = "unified_account"): Un
     throw new TypeError(`${at}.paxeer_activity.items must be a bounded array`);
   }
   const nextBeforeBlock = optionalDecimal(activity.next_before_block, `${at}.paxeer_activity.next_before_block`);
+  const layerxActivity = record(item.layerx_activity, `${at}.layerx_activity`);
+  if (!Array.isArray(layerxActivity.items) || layerxActivity.items.length > 100) {
+    throw new TypeError(`${at}.layerx_activity.items must be a bounded array`);
+  }
+  const nextBefore = optionalDecimal(layerxActivity.next_before, `${at}.layerx_activity.next_before`);
+  if (nextBefore === "0" || (nextBefore !== undefined && layerxActivity.items.length === 0)) {
+    throw new TypeError(`${at}.layerx_activity.next_before is invalid`);
+  }
   return Object.freeze({
     requested: requested.canonical,
     canonical: canonical.canonical,
@@ -704,6 +736,12 @@ export function decodeUnifiedAccount(value: unknown, at = "unified_account"): Un
       joinedLimit: decimal(balances.joined_limit, `${at}.balances.joined_limit`),
     }),
     settlement: decodeSettlement(item.settlement, `${at}.settlement`),
+    freshness: decodeFreshness(item.freshness, `${at}.freshness`),
+    layerxActivity: Object.freeze({
+      items: Object.freeze(layerxActivity.items.map((entry, index) =>
+        decodeUnifiedActivity(entry, `${at}.layerx_activity.items[${String(index)}]`))),
+      ...(nextBefore === undefined ? {} : { nextBefore }),
+    }),
     paxeerActivity: Object.freeze({
       items: Object.freeze(activity.items.map((entry, index) =>
         decodePaxeerActivity(entry, `${at}.paxeer_activity.items[${String(index)}]`))),

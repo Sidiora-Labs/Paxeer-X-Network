@@ -39,6 +39,7 @@ pub struct Readiness {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum QueryError {
     InvalidPageSize,
+    InvalidCursor,
     AccountIndexIncomplete {
         batch: u64,
     },
@@ -123,6 +124,10 @@ impl Indexer {
         before_sequence: Option<u64>,
         limit: usize,
     ) -> Result<Indexed<UnifiedAccountView>, QueryFailure> {
+        validate_limit(limit).map_err(|error| self.failure(error))?;
+        if before_sequence == Some(0) {
+            return Err(self.failure(QueryError::InvalidCursor));
+        }
         let layerx_activity = match join.identities.layerx_account {
             Some(account) => self
                 .account_activity_page(account, before_sequence, limit)

@@ -610,6 +610,61 @@ pub struct UnifiedAccountView {
     pub layerx_activity: Page<AccountActivityRecord>,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct UnifiedAccountQuery {
+    pub before_block: Option<u64>,
+    pub before_sequence: Option<u64>,
+    pub limit: usize,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum UnifiedQueryError {
+    InvalidCursor,
+    InvalidPageSize,
+    InvalidQuery,
+}
+
+impl UnifiedAccountQuery {
+    pub fn parse(query: &str, default_limit: usize) -> Result<Self, UnifiedQueryError> {
+        let mut result = Self {
+            before_block: None,
+            before_sequence: None,
+            limit: default_limit,
+        };
+        let mut seen = std::collections::BTreeSet::new();
+        for pair in query.split('&').filter(|_| !query.is_empty()) {
+            let (name, value) = pair
+                .split_once('=')
+                .ok_or(UnifiedQueryError::InvalidQuery)?;
+            if !seen.insert(name) {
+                return Err(UnifiedQueryError::InvalidQuery);
+            }
+            let error = match name {
+                "before" | "before_block" => UnifiedQueryError::InvalidCursor,
+                "limit" => UnifiedQueryError::InvalidPageSize,
+                _ => return Err(UnifiedQueryError::InvalidQuery),
+            };
+            if value.is_empty()
+                || !value.bytes().all(|byte| byte.is_ascii_digit())
+                || (value.len() > 1 && value.starts_with('0'))
+            {
+                return Err(error);
+            }
+            let number = value.parse::<u64>().map_err(|_| error)?;
+            match name {
+                "before" if number != 0 => result.before_sequence = Some(number),
+                "before_block" => result.before_block = Some(number),
+                "limit" => result.limit = usize::try_from(number).map_err(|_| error)?,
+                _ => return Err(error),
+            }
+        }
+        if result.limit == 0 || result.limit > MAXIMUM_ACTIVITY_LIMIT {
+            return Err(UnifiedQueryError::InvalidPageSize);
+        }
+        Ok(result)
+    }
+}
+
 /// Reads one account's unified view through the network gateway.
 pub struct UnifiedAccountReader<'a> {
     endpoint: &'a GatewayEndpoint,
@@ -705,7 +760,10 @@ impl<'a> UnifiedAccountReader<'a> {
             lowest = from;
             let result = self.call("eth_getLogs", &[logs_filter(from, to)])?;
             items.extend(decode_logs(
-                &result, identities.evm_address, &accounts, identities.layerx_did,
+                &result,
+                identities.evm_address,
+                &accounts,
+                identities.layerx_did,
             )?);
             if items.len() >= self.window.limit {
                 break;
@@ -752,7 +810,8 @@ fn address_text(value: Option<[u8; 20]>) -> Value {
 
 /// Renders the exact unified-account document the web explorer decodes.
 #[must_use]
-pub fn unified_account_json(join: &UnifiedAccountJoin, freshness: Freshness) -> String {
+pub fn unified_account_json(view: &UnifiedAccountView, freshness: Freshness) -> String {
+    let join = &view.join;
     serde_json::json!({
         "requested": join.requested.canonical_text(),
         "canonical": join.canonical.canonical_text(),
@@ -790,6 +849,32 @@ pub fn unified_account_json(join: &UnifiedAccountJoin, freshness: Freshness) -> 
             "finalized_batch": count_text(join.settlement.finalized_batch),
             "anchor_status": count_text(join.settlement.anchor_status),
             "anchor_status_name": optional_text(join.settlement.anchor_status_name.as_deref()),
+        },
+        "freshness": {
+            "observed_chain_sequence": freshness.observed_chain_sequence.to_string(),
+            "observed_sealed_batch": freshness.observed_sealed_batch.to_string(),
+            "observed_finalised_checkpoint": hex::encode(&freshness.observed_finalised_checkpoint),
+            "indexed_batch": freshness.indexed_batch.map(|batch| batch.to_string()),
+            "indexed_checkpoint": freshness.indexed_checkpoint.map(|checkpoint| hex::encode(&checkpoint)),
+            "batches_behind": freshness.batches_behind().to_string(),
+            "current": freshness.is_current(),
+        },
+        "layerx_activity": {
+            "items": view.layerx_activity.items.iter().map(|record| serde_json::json!({
+                "receipt_id": hex::encode(&record.receipt_id.bytes()),
+                "receipt_digest": hex::encode(&record.receipt_digest),
+                "batch_number": record.batch_number.to_string(),
+                "global_sequence": record.global_sequence.to_string(),
+                "activity_id": hex::encode(&record.activity_id),
+                "operation": record.operation,
+                "result_code": record.result_code,
+                "asset": hex::encode(&record.asset),
+                "amount": record.amount.to_string(),
+                "from": hex::encode(&record.from),
+                "to": hex::encode(&record.to),
+                "verification": record.verification_level.wire_rank(),
+            })).collect::<Vec<_>>(),
+            "next_before": view.layerx_activity.next_before.map(|sequence| sequence.to_string()),
         },
         "paxeer_activity": {
             "from_block": join.paxeer_activity.from_block.to_string(),
@@ -1262,8 +1347,11 @@ mod tests {
         let bound = decode_log(&binding).expect("binding ABI");
         assert!(!bound.concerns(None, &[key], None));
         assert!(bound.concerns(None, &[], Some(key)));
-        assert!(decode_logs(&serde_json::json!([binding]), None, &[key], None)
-            .expect("binding page").is_empty());
+        assert!(
+            decode_logs(&serde_json::json!([binding]), None, &[key], None)
+                .expect("binding page")
+                .is_empty()
+        );
     }
 
     #[test]
@@ -1456,7 +1544,13 @@ mod tests {
             },
         };
         let document: Value = serde_json::from_str(&unified_account_json(
-            &join,
+            &super::UnifiedAccountView {
+                join,
+                layerx_activity: crate::Page {
+                    items: Vec::new(),
+                    next_before: None,
+                },
+            },
             crate::Freshness {
                 observed_chain_sequence: 19,
                 observed_sealed_batch: 7,
@@ -1526,7 +1620,13 @@ mod tests {
             },
         };
         let document: Value = serde_json::from_str(&unified_account_json(
-            &join,
+            &super::UnifiedAccountView {
+                join,
+                layerx_activity: crate::Page {
+                    items: Vec::new(),
+                    next_before: None,
+                },
+            },
             crate::Freshness {
                 observed_chain_sequence: 19,
                 observed_sealed_batch: 7,

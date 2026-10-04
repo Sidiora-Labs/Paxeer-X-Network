@@ -189,9 +189,14 @@ export async function programRecord(identifier: string): Promise<ProgramRecord |
 export async function unifiedAccount(
   identifier: string,
   beforeBlock?: string,
+  before?: string,
+  limit = 25,
 ): Promise<UnifiedAccountRecord | undefined> {
   const account = parseAccountIdentifier(identifier);
-  if (account === undefined || (beforeBlock !== undefined && !validExplorerCoordinate(beforeBlock))) {
+  if (account === undefined
+    || (beforeBlock !== undefined && !validExplorerCoordinate(beforeBlock))
+    || (before !== undefined && (!validExplorerCoordinate(before) || before === "0"))
+    || !Number.isSafeInteger(limit) || limit < 1 || limit > 100) {
     throw new TypeError("Invalid unified account query");
   }
   const { origin, bearer } = programExplorerOrigin();
@@ -199,6 +204,10 @@ export async function unifiedAccount(
   if (beforeBlock !== undefined) {
     url.searchParams.set("before_block", beforeBlock);
   }
+  if (before !== undefined) {
+    url.searchParams.set("before", before);
+  }
+  url.searchParams.set("limit", String(limit));
   let response: Response;
   try {
     response = await fetch(url, {

@@ -28,7 +28,8 @@ use layerx_explorer_index::reads::{
 };
 use layerx_explorer_index::receipt_authority::{ReadOutcome, ReceiptAuthorityReader};
 use layerx_explorer_index::unified::{
-    unified_account_json, AccountIdentifier, ActivityWindow, GatewayEndpoint, UnifiedAccountReader,
+    unified_account_json, AccountIdentifier, ActivityWindow, GatewayEndpoint, UnifiedAccountQuery,
+    UnifiedAccountReader, UnifiedQueryError,
 };
 use layerx_explorer_index::{Indexer, ProtocolProgramIngestor, QueryError, RecordId};
 use layerx_programs::{
@@ -807,13 +808,6 @@ fn query_value<'a>(query: &'a str, name: &str) -> Option<&'a str> {
     })
 }
 
-fn query_number(query: &str, name: &str) -> Result<Option<u64>, ()> {
-    match query_value(query, name) {
-        None => Ok(None),
-        Some(value) => value.parse::<u64>().map(Some).map_err(|_| ()),
-    }
-}
-
 /// Decodes the percent-escapes a browser applies to `did:layerx:` spellings.
 fn percent_decode(text: &str) -> Option<String> {
     if text.len() > IDENTIFIER_LIMIT {
@@ -856,50 +850,31 @@ fn serve_unified_account(
     let Ok(identifier) = AccountIdentifier::parse(&decoded) else {
         return response(stream, 400, "{\"error\":\"invalid_account\"}");
     };
-    let (Ok(before_block), Ok(before_sequence), Ok(limit)) = (
-        query_number(query, "before_block"),
-        query_number(query, "before"),
-        query_number(query, "limit"),
-    ) else {
-        return response(stream, 400, "{\"error\":\"invalid_query\"}");
-    };
-    let limit = match limit {
-        None => DEFAULT_ACTIVITY_LIMIT,
-        Some(value) => match usize::try_from(value) {
-            Ok(value) => value,
-            Err(_) => return response(stream, 400, "{\"error\":\"invalid_query\"}"),
-        },
+    let page = match UnifiedAccountQuery::parse(query, DEFAULT_ACTIVITY_LIMIT) {
+        Ok(page) => page,
+        Err(error) => {
+            return response(
+                stream,
+                400,
+                match error {
+                    UnifiedQueryError::InvalidCursor => "{\"error\":\"invalid_cursor\"}",
+                    UnifiedQueryError::InvalidPageSize => "{\"error\":\"invalid_page_size\"}",
+                    UnifiedQueryError::InvalidQuery => "{\"error\":\"invalid_query\"}",
+                },
+            )
+        }
     };
     let Ok(reader) = UnifiedAccountReader::new(&config.gateway, ACTIVITY_WINDOW) else {
         return response(stream, 503, "{\"error\":\"network_gateway_unavailable\"}");
     };
-    let Ok(join) = reader.join(identifier, before_block) else {
+    let Ok(join) = reader.join(identifier, page.before_block) else {
         return response(stream, 503, "{\"error\":\"network_gateway_unavailable\"}");
     };
-    match index.unified_account(join, before_sequence, limit) {
-        Ok(view) => {
-            let mut body: Value = serde_json::from_str(&unified_account_json(&view.value.join, view.freshness))
-                .map_err(|_| "unified account serialization failed".to_owned())?;
-            body["layerx_activity"] = serde_json::json!({
-                "items": view.value.layerx_activity.items.iter().map(|record| serde_json::json!({
-                    "receipt_id": hex::encode(&record.receipt_id.bytes()),
-                    "receipt_digest": hex::encode(&record.receipt_digest),
-                    "batch_number": record.batch_number.to_string(),
-                    "global_sequence": record.global_sequence.to_string(),
-                    "activity_id": hex::encode(&record.activity_id),
-                    "operation": record.operation,
-                    "result_code": record.result_code,
-                    "asset": hex::encode(&record.asset),
-                    "amount": record.amount.to_string(),
-                    "from": hex::encode(&record.from),
-                    "to": hex::encode(&record.to),
-                    "verification": record.verification_level.wire_rank(),
-                })).collect::<Vec<_>>(),
-                "next_before": view.value.layerx_activity.next_before.map(|sequence| sequence.to_string()),
-            });
-            response(stream, 200, &body.to_string())
-        }
+    match index.unified_account(join, page.before_sequence, page.limit) {
+        Ok(view) => response(stream, 200, &unified_account_json(&view.value, view.freshness)),
         Err(failure) => match failure.error {
+            QueryError::InvalidPageSize => response(stream, 400, "{\"error\":\"invalid_page_size\"}"),
+            QueryError::InvalidCursor => response(stream, 400, "{\"error\":\"invalid_cursor\"}"),
             QueryError::IncompleteFromHead {
                 source_sealed_batch,
                 indexed_through,

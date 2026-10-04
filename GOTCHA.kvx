@@ -2159,3 +2159,7 @@ resolution = "Use the installed /root/.cargo/bin/cargo explicitly; record launch
 [gotcha.645]
 observed = "New SDK ContractError variants exposed a non-exhaustive legacy deposit fault encoder; gateway binary also called a library Client constructor with module-private visibility."
 resolution = "Record each compiler boundary once and repair its own source contract in bounded tasks, preserving old wire refusal and all authentication predicates."
+
+[gotcha.646]
+observed = "Explorer exact decoder requires settlement and denomination fields that an optional canonical join can represent as absent; browser typecheck and genuine fixture qualification remain unrun or refused."
+resolution = "Preserve existing decoder checks; implement a distinct honest availability contract at the producer/consumer boundary rather than inventing values or widening accepted fields."

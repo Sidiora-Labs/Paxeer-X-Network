@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 
 import { copyEntry } from "../../../../../copy/runtime";
 import { formatCopy } from "../../../../../copy/format";
-import { accountActivityPage, unifiedAccount } from "../../../../explorer/client";
+import { unifiedAccount } from "../../../../explorer/client";
 import {
   ExplorerFrame,
   ExplorerUnavailable,
@@ -181,6 +181,14 @@ function PaxeerActivityPanel({ account }: Readonly<{ account?: UnifiedAccountRec
   );
 }
 
+function accountPagePath(identifier: string, before?: string, beforeBlock?: string): string {
+  const query = new URLSearchParams();
+  if (before !== undefined) query.set("before", before);
+  if (beforeBlock !== undefined) query.set("beforeBlock", beforeBlock);
+  const suffix = query.toString();
+  return accountIdentifierPath(identifier) + (suffix === "" ? "" : `?${suffix}`);
+}
+
 export default async function AccountPage({
   params,
   searchParams,
@@ -201,33 +209,24 @@ export default async function AccountPage({
       </ExplorerFrame>
     );
   }
-  if (identifier.canonical !== requested) {
-    redirect(accountIdentifierPath(identifier.canonical));
-  }
   const query = await searchParams;
+  if (identifier.canonical !== requested) {
+    redirect(accountPagePath(identifier.canonical, query.before, query.beforeBlock));
+  }
   let account: UnifiedAccountRecord | undefined;
   try {
-    account = await unifiedAccount(identifier.canonical, query.beforeBlock);
+    account = await unifiedAccount(identifier.canonical, query.beforeBlock, query.before);
   } catch {
     account = undefined;
   }
   if (account !== undefined && account.canonical !== identifier.canonical) {
-    redirect(accountIdentifierPath(account.canonical));
+    redirect(accountPagePath(account.canonical, query.before, query.beforeBlock));
   }
-  const layerxAccount = account?.identities.layerxAccount
-    ?? (identifier.kind === "account" ? identifier.canonical : undefined);
-  let activity;
-  if (layerxAccount !== undefined) {
-    try {
-      activity = await accountActivityPage(layerxAccount, query.before);
-    } catch {
-      activity = undefined;
-    }
-  }
-  if (account === undefined && activity === undefined) {
+  if (account === undefined) {
     return <ExplorerUnavailable />;
   }
-  const freshness = activity?.freshness;
+  const activity = account.layerxActivity;
+  const freshness = account.freshness;
   const accountProps = account === undefined ? {} : { account };
   return (
     <ExplorerFrame
@@ -276,7 +275,7 @@ export default async function AccountPage({
               />
             )}
         {activity?.nextBefore === undefined ? null : (
-          <ExplorerLink href={`${accountIdentifierPath(identifier.canonical)}?before=${activity.nextBefore}`}>
+          <ExplorerLink href={accountPagePath(identifier.canonical, activity.nextBefore, query.beforeBlock)}>
             {copyEntry("explorer.pagination.older").message}
           </ExplorerLink>
         )}
@@ -284,7 +283,7 @@ export default async function AccountPage({
       <PaxeerActivityPanel {...accountProps} />
       {account?.paxeerActivity.nextBeforeBlock === undefined ? null : (
         <ExplorerLink
-          href={`${accountIdentifierPath(identifier.canonical)}?beforeBlock=${account.paxeerActivity.nextBeforeBlock}`}
+          href={accountPagePath(identifier.canonical, query.before, account.paxeerActivity.nextBeforeBlock)}
         >
           {copyEntry("explorer.pagination.older").message}
         </ExplorerLink>
