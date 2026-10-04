@@ -155,6 +155,23 @@ def build():
                 and entry.get("executable")):
             executables.append(entry["executable"])
     require(len(executables) == 1, "exact Rust derivation executable required")
+    output = run([cargo[0], "test", *cargo[1:], "-p", "layerx-programs-registry",
+                  "--test", "interface_protocol", "--no-run", "--message-format=json"],
+                 evidence / "build-interface-inputs.log", env)
+    interface_executables = []
+    for line in output.splitlines():
+        if line.startswith("{"):
+            entry = json.loads(line)
+            if (entry.get("reason") == "compiler-artifact"
+                    and entry.get("target", {}).get("name") == "interface_protocol"
+                    and entry.get("executable")):
+                interface_executables.append(entry["executable"])
+    require(len(interface_executables) == 1, "exact interface input producer required")
+    run([cargo[0], "build", *cargo[1:], "-p", "layerx-programs-market",
+         "--target", "wasm32-unknown-unknown", "--release"],
+        evidence / "build-market-guest.log", env)
+    market_guest = rust_target / "wasm32-unknown-unknown/release/layerx_programs_market.wasm"
+    require(market_guest.is_file() and not market_guest.is_symlink(), "missing real Market guest")
     archive = rust_target / "debug/liblayerx_programs_sandbox.a"
     require(archive.is_file() and not archive.is_symlink(), "missing real sandbox archive")
     native = target / "native"
@@ -179,6 +196,8 @@ def build():
                 "native": {name: artifact(native / "tests/task104303" / name)
                            for name in NATIVE},
                 "rust": artifact(executables[0]),
+                "interface_input_producer": artifact(interface_executables[0]),
+                "market_guest": {"path": str(market_guest), "sha256": digest(market_guest)},
                 "sandbox_archive": {"path": str(archive), "sha256": digest(archive)},
                 "core_archive": {"path": str(native / "liblayerx.a"),
                                  "sha256": digest(native / "liblayerx.a")},
@@ -198,13 +217,47 @@ def verify():
             "artifact source identity mismatch")
     require(manifest.get("source_inputs") == inputs(), "artifact source hash mismatch")
     require(set(manifest.get("native", {})) == set(NATIVE), "incomplete native corpus")
-    for entry in [*manifest["native"].values(), manifest["rust"]]:
+    for entry in [*manifest["native"].values(), manifest["rust"],
+                  manifest["interface_input_producer"]]:
         require(artifact(entry["path"]) == entry, "executable identity mismatch")
-    for key in ("sandbox_archive", "core_archive"):
+    for key in ("sandbox_archive", "core_archive", "market_guest"):
         entry = manifest[key]
         require(digest(Path(entry["path"])) == entry["sha256"], "archive identity mismatch")
+    with Path(manifest["market_guest"]["path"]).open("rb") as stream:
+        require(stream.read(8) == b"\x00asm\x01\x00\x00\x00", "actual Market Wasm required")
+    cache_inputs = evidence / "cache-inputs"
+    interface_inputs = evidence / "interface-inputs"
+    interface_output = evidence / "interface-output"
+    for directory in (cache_inputs, interface_inputs, interface_output):
+        require(not directory.exists(), "fresh genuine fixture inputs required")
+        directory.mkdir(mode=0o700)
+    run([manifest["native"]["test_cache_native_equivalence"]["path"],
+         "--emit-guests", str(cache_inputs)], evidence / "produce-cache-guests.log")
+    require({path.name for path in cache_inputs.iterdir()}
+            == {f"guest-{index:02d}.wasm" for index in range(12)},
+            "complete actual cache guest inventory required")
+    producer_env = os.environ.copy()
+    producer_env["PAXEER_X_INTERFACE_INPUTS"] = str(interface_inputs)
+    produced = run([manifest["interface_input_producer"]["path"], "--exact",
+                    "emit_native_inputs", "--nocapture", "--test-threads=1"],
+                   evidence / "produce-interface-inputs.log", producer_env)
+    require(re.search(r"test result: ok\. 1 passed; 0 failed; 0 ignored;", produced),
+            "real canonical interface input producer failed")
+    require({path.name for path in interface_inputs.iterdir()} == {
+        "abi1", "abi2", "abi2-dynamic", "abi3", "abi3-dynamic", "abi4",
+        "abi4-dynamic", "abi2-widening", "abi2-narrowing"},
+        "complete actual interface guest inventory required")
+    guest_inputs = {str(path): digest(path) for directory in (cache_inputs, interface_inputs)
+                    for path in directory.rglob("*") if path.is_file()}
     for name in NATIVE:
-        run([manifest["native"][name]["path"]], evidence / f"verify-{name}.log")
+        command = [manifest["native"][name]["path"]]
+        if name == "test_cache_native_equivalence":
+            command.extend(["--guest-dir", str(cache_inputs)])
+        elif name == "test_interface_protocol":
+            command.extend(["--input", str(interface_inputs), "--output", str(interface_output)])
+        elif name == "test_market_attestation":
+            command.append(manifest["market_guest"]["path"])
+        run(command, evidence / f"verify-{name}.log")
     output = run([manifest["rust"]["path"], "--nocapture", "--test-threads=1"],
                  evidence / "verify-derivation.log")
     passed = re.findall(r"^test ([a-z_]+) \.\.\. ok$", output, re.MULTILINE)
@@ -214,11 +267,15 @@ def verify():
                       output), "Rust corpus skipped or incomplete")
     require(identity() == source and inputs() == manifest["source_inputs"],
             "source changed during verification")
-    for entry in [*manifest["native"].values(), manifest["rust"]]:
+    require(all(digest(Path(path)) == value for path, value in guest_inputs.items()),
+            "actual producer inputs changed during verification")
+    for entry in [*manifest["native"].values(), manifest["rust"],
+                  manifest["interface_input_producer"]]:
         require(artifact(entry["path"]) == entry, "artifact changed during verification")
     write_json(evidence / "result.json", {"schema": SCHEMA, **source,
-               "commands": records, "tests": len(NATIVE) + len(passed), "skipped": 0})
-    print(f"PAXEER_X_GATE tests={len(NATIVE) + len(passed)} skipped=0")
+               "commands": records, "producer_inputs": guest_inputs,
+               "tests": len(NATIVE) + len(passed) + 1, "skipped": 0})
+    print(f"PAXEER_X_GATE tests={len(NATIVE) + len(passed) + 1} skipped=0")
 
 
 records = []

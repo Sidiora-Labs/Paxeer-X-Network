@@ -24250,7 +24250,7 @@ fleet_authority = "User ordered thirty agents into pending integrations within f
 source_status = "complete"
 completion_basis = "implementation under owner CONSTITUTION; qualification separately recorded"
 qualification_status = "UNRUN"
-source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/fleet-104.30.3-repair1-handoff.json"
+source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/fleet-104.30.3-repair2-handoff.json"
 
 [task.104.30.4]
 title = "Add the program spending capability with downward-only narrowing"
