@@ -634,7 +634,7 @@ def main():
         code, error = 78, str(failure)
     except (ValueError, KeyError, TypeError, IndexError, OSError, subprocess.SubprocessError,
             HTTP.Failure, HTTP.FixtureRefused) as failure:
-        error = str(failure)
+        code, error = 1, str(failure)
     finally:
         if directory is not None:
             path = directory / 'result.json'

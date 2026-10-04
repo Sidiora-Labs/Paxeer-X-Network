@@ -27101,7 +27101,7 @@ implementation_window = "START11:38UTC END12:08UTC; entire source first, one bui
 source_status = "complete"
 completion_basis = "implementation under owner CONSTITUTION; qualification separately recorded"
 qualification_status = "UNRUN"
-source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-9.1-source-handoff.json"
+source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-9.1-exit-correction-handoff.json"
 
 [task.9.2]
 title = "Execute advertised MCP writes through the ordinary daemon authority"
