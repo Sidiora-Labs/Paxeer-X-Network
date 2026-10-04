@@ -952,9 +952,16 @@ finally:
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--case', required=True, choices=['role-directories', 'role-directory-prerequisite', 'export-recovery'])
+    parser.add_argument('--case', required=True, choices=['role-directories', 'role-directory-prerequisite', 'export-recovery', 'fixture-foundation'])
     arguments = parser.parse_args()
     os.umask(0o077)
+    if arguments.case == 'fixture-foundation':
+        import importlib.util
+        sys.dont_write_bytecode = True
+        spec = importlib.util.spec_from_file_location('fixture_foundation', Path(__file__).with_name('paxeer-x-fixture-foundation.py'))
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module.main()
     if arguments.case == 'role-directories':
         suite = unittest.defaultTestLoader.loadTestsFromTestCase(RoleDirectories)
     elif arguments.case == 'role-directory-prerequisite':
