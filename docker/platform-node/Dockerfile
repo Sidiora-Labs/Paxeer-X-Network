@@ -29,6 +29,7 @@ COPY --from=build /src/cmd/layerx-guarantor/authorization.py /opt/layerx/guarant
 COPY --from=build /src/platform/hosted/human/recipient_binding.py /opt/layerx/human/recipient_binding.py
 COPY --from=build /src/platform/hosted/human/onboarding_socket.py /opt/layerx/human/onboarding_socket.py
 COPY --from=build /src/platform/hosted/human/provision.py /opt/layerx/human/provision.py
+COPY --from=build /src/platform/hosted/human/material.py /src/platform/hosted/human/provision.py /usr/local/lib/layerx-human/
 COPY --from=build /src/cmd/layerx-guarantor/requirements.txt /opt/layerx/guarantor/requirements.txt
 RUN python3 -m venv /opt/layerx/guarantor/venv \
     && /opt/layerx/guarantor/venv/bin/pip install --no-cache-dir -r /opt/layerx/guarantor/requirements.txt

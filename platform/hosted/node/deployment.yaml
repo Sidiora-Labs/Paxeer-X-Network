@@ -224,6 +224,7 @@ spec:
             - --lni-gid
             - "4020"
           env:
+            - {name: LAYERX_NODE_REGISTRY_MATERIAL, value: "1"}
             - {name: LAYERX_NODE_RESET_STAGED_GENERATIONS, value: "1"}
             - {name: LAYERX_NODE_GENERATION_TRANSPORT, value: "1"}
             - name: LAYERX_NODE_HANDOVER_AUTHORITY_PUBLIC_KEY

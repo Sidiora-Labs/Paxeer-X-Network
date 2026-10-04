@@ -241,7 +241,7 @@ PY_KERNEL_POD
 )
     kube -n "$TESTNET_NAMESPACE" exec layerx-node-0 -c layerxd -- \
         python3 /usr/local/lib/layerx-human/material.py --export-registry-material \
-        /data/layerx/registry-material > "$stage/export.json"
+        /var/lib/layerx/registry-material > "$stage/export.json"
     kube -n "$TESTNET_NAMESPACE" get pod layerx-node-0 -o json > "$stage/after.json"
     after=$(python3 - "$stage/after.json" <<'PY_KERNEL_POD'
 import json,sys

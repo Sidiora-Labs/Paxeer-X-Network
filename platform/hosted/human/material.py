@@ -1152,6 +1152,91 @@ def kernel_registry_material_produce(genesis, seed, destination, network, retain
     return publish_registry_material(destination, files, True)
 
 
+def hosted_registry_material_produce(data, destination):
+    import struct
+    import subprocess
+    data = Path(data)
+    if os.geteuid() != 4020:
+        refuse('hosted kernel producer identity')
+    protected_file(data, 0o700)
+
+    def environment(name):
+        path = data / name
+        protected_file(path, 0o600)
+        raw = registry_read(path)
+        values = {}
+        for line in raw.decode('ascii').splitlines():
+            if not line:
+                continue
+            key, separator, value = line.partition('=')
+            if (not separator or not re.fullmatch('LAYERX_[A-Z0-9_]+', key)
+                    or key in values or not value or any(ord(c) < 32 or ord(c) == 127 for c in value)):
+                refuse('hosted kernel environment framing')
+            values[key] = value
+        return raw, values
+
+    node_raw, node = environment('node.env')
+    replica_raw, replica = environment('replica.env')
+    names = ('NETWORK_ID', 'SEQUENCER_ID', 'SEQUENCER_PUBLIC_KEY', 'REPLICA_ID', 'ASSET_ID')
+    values = {name: node.get('LAYERX_NODE_' + name) for name in names}
+    if not re.fullmatch('[1-9][0-9]*', values['NETWORK_ID'] or ''):
+        refuse('hosted kernel network identity')
+    network = int(values['NETWORK_ID'])
+    if not 0 < network < 2**32 or any(not re.fullmatch('[0-9a-f]{64}', values[name] or '') for name in names[1:]):
+        refuse('hosted kernel public identity')
+    if any(replica.get('LAYERX_AUTHORITY_' + name) != values[name] for name in ('SEQUENCER_ID', 'SEQUENCER_PUBLIC_KEY', 'REPLICA_ID')):
+        refuse('hosted kernel replica generation mismatch')
+    first_text = replica.get('LAYERX_AUTHORITY_FIRST_BATCH', '')
+    last_text = replica.get('LAYERX_AUTHORITY_LAST_BATCH', '')
+    if not re.fullmatch('[1-9][0-9]*', first_text) or not re.fullmatch('[1-9][0-9]*', last_text):
+        refuse('hosted kernel batch authorization')
+    first, last = int(first_text), int(last_text)
+    if not 0 < first <= last < 2**64:
+        refuse('hosted kernel batch authorization bounds')
+    manifest_path = data / 'genesis/genesis.manifest'
+    manifest_bytes = registry_read(manifest_path, True)
+    if (len(manifest_bytes) < 114 or manifest_bytes[:6] != bytes.fromhex('000347010003')
+            or struct.unpack('>I', manifest_bytes[6:10])[0] != network
+            or manifest_bytes[-104:-100] != struct.pack('>I', 32)
+            or manifest_bytes[-68:-64] != struct.pack('>I', 64)
+            or manifest_bytes[-100:-68].hex() != values['SEQUENCER_PUBLIC_KEY']):
+        refuse('hosted signed genesis identity mismatch; finalized history requires owner reconciliation')
+    if digest(('layerx-sequencer:' + values['SEQUENCER_PUBLIC_KEY']).encode()) != values['SEQUENCER_ID']:
+        refuse('hosted kernel sequencer derivation')
+    subprocess.run(['/usr/local/bin/layerx-handover', '--verify-key', str(manifest_path),
+                    str(data / 'checkpoints/da-bodies.log'), values['SEQUENCER_PUBLIC_KEY']],
+                   stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                   check=True, timeout=30)
+    request_path = data / 'genesis/genesis-request.lxgb'
+    request = registry_read(request_path)
+    if (len(request) < 23 or request[:7] != b'LXGB\x02\x00\x03'
+            or struct.unpack('>I', request[7:11])[0] != network):
+        refuse('hosted native genesis request network')
+    parameters = struct.unpack('>H', request[19:21])[0]
+    offset = 21 + 66 * parameters
+    if parameters > 64 or offset + 2 > len(request):
+        refuse('hosted native genesis request parameter bounds')
+    guarantors = struct.unpack('>H', request[offset:offset + 2])[0]
+    offset += 2 + 81 * guarantors
+    if guarantors > 32 or offset + 32 > len(request) or request[offset:offset + 32].hex() != values['ASSET_ID']:
+        refuse('hosted native genesis request asset identity')
+    if (registry_read(manifest_path, True) != manifest_bytes or registry_read(data / 'node.env') != node_raw
+            or registry_read(data / 'replica.env') != replica_raw):
+        refuse('hosted kernel generation changed during verification')
+    replica_bytes = (values['REPLICA_ID'] + '\n').encode()
+    history = (b'LayerX/sequencer-trust-history/v1\0' + struct.pack('>HH', 1, 0)
+               + struct.pack('>HIQ', 3, network, 1) + bytes.fromhex(values['SEQUENCER_ID'])
+               + bytes.fromhex(values['SEQUENCER_PUBLIC_KEY']) + struct.pack('>QQBQ', first, last, 0, 0))
+    generation = {'schema': REGISTRY_GENERATION_SCHEMA, 'network_id': network,
+                  'sequencer_id': values['SEQUENCER_ID'], 'sequencer_public_key': values['SEQUENCER_PUBLIC_KEY'],
+                  'replica_id': values['REPLICA_ID'], 'genesis_metadata_sha256': digest(request),
+                  'asset_id': values['ASSET_ID'], 'history_sha256': digest(history), 'replica_sha256': digest(replica_bytes)}
+    generation['generation'] = digest(json.dumps(generation, sort_keys=True, separators=(',', ':')).encode())
+    files = {'generation.json': json.dumps(generation, sort_keys=True, separators=(',', ':')).encode() + b'\n',
+             'replica-id': replica_bytes, 'trust-history': history}
+    return publish_registry_material(destination, files)
+
+
 if __name__ == '__main__':
     os.umask(0o077)
     try:
@@ -1159,6 +1244,8 @@ if __name__ == '__main__':
             print(json.dumps(export_registry_material(sys.argv[2]), sort_keys=True))
         elif len(sys.argv) == 7 and sys.argv[1] == '--import-registry-material':
             print(json.dumps(import_registry_material(sys.argv[2], sys.argv[3], int(sys.argv[4]), sys.argv[5], sys.argv[6]), sort_keys=True))
+        elif len(sys.argv) == 4 and sys.argv[1] == '--hosted-registry-material-produce':
+            print(json.dumps(hosted_registry_material_produce(sys.argv[2], sys.argv[3]), sort_keys=True))
         elif len(sys.argv) == 3 and sys.argv[1] == '--verify-registry-material':
             result = verify_registry_material(sys.argv[2])
             print(json.dumps({key: value for key, value in result.items() if key != 'files'}, sort_keys=True))

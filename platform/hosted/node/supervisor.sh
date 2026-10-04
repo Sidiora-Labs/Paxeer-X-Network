@@ -509,6 +509,13 @@ start_generation_transport() {
 
 publish_generation() {
     local generation=$1
+    if [ "${LAYERX_NODE_REGISTRY_MATERIAL:-0}" = 1 ]; then
+        python3 /usr/local/lib/layerx-human/material.py --hosted-registry-material-produce \
+            "$DATA_DIR" "$(dirname "$DATA_DIR")/registry-material" >/dev/null \
+            || fail "authenticated registry kernel generation refused"
+    elif [ "${LAYERX_NODE_REGISTRY_MATERIAL:-0}" != 0 ]; then
+        fail "invalid registry material producer profile"
+    fi
     rm -f "$RUN_DIR"/replica-ready.* 2>/dev/null || true
     printf '%s' "$generation" > "$GENERATION_FILE.tmp"
     mv "$GENERATION_FILE.tmp" "$GENERATION_FILE"

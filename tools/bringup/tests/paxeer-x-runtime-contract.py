@@ -1140,11 +1140,203 @@ with socket.create_connection(('127.0.0.1',9450),timeout=3) as tcp:
     return code
 
 
+def registry_material():
+    import importlib.util
+    import stat
+    os.umask(0o077)
+    sys.dont_write_bytecode = True
+    specification = importlib.util.spec_from_file_location('registry_material', ROOT / 'platform/hosted/human/material.py')
+    material = importlib.util.module_from_spec(specification)
+    sys.path.insert(0, str(ROOT / 'platform/hosted/human'))
+    specification.loader.exec_module(material)
+    evidence = None
+    containers = []
+    volume = None
+    result = {'task': '24.8', 'cases': [], 'tests': 0, 'skipped': 0, 'exit_code': 1}
+
+    def require(condition, message):
+        if not condition:
+            raise RuntimeError(message)
+
+    def case(name):
+        result['cases'].append(name)
+        print('PASS ' + name, flush=True)
+
+    def execute(container, user, *args, check=True):
+        return docker('exec', '--user', user, container, *args, check=check)
+
+    def python(container, user, source, *args, check=True):
+        return execute(container, user, 'python3', '-c', source, *args, check=check)
+
+    try:
+        raw = os.environ.get('PAXEER_X_REGISTRY_MATERIAL_EVIDENCE')
+        if not raw:
+            raise FileNotFoundError('PAXEER_X_REGISTRY_MATERIAL_EVIDENCE owned0700 directory required')
+        evidence = Path(raw)
+        material.protected_file(evidence, 0o700)
+        revision = command(['git', '-C', str(ROOT), 'rev-parse', 'HEAD']).stdout.strip()
+        require(not command(['git', '-C', str(ROOT), 'status', '--porcelain']).stdout.strip(), 'published clean candidate required')
+        raw = os.environ.get('PAXEER_X_FOUNDATION_MANIFEST')
+        if not raw:
+            raise FileNotFoundError('genuine qualified24.11 PAXEER_X_FOUNDATION_MANIFEST required')
+        manifest_path = Path(raw)
+        material.protected_file(manifest_path, 0o600)
+        foundation = material.protected_json(manifest_path)
+        proof = material.protected_json(manifest_path.parent / 'qualification.json')
+        require(foundation.get('stage') == 'dependency-foundation' and foundation.get('purpose') == 'disposable-test-only'
+                and proof.get('exit_code') == 0 and proof.get('tests', 0) > 0 and proof.get('skipped') == 0
+                and foundation.get('producers') and all(p.get('exit_code') == 0 and p.get('command') for p in foundation['producers']),
+                'actual qualified native producer provenance required')
+        native_path = foundation['inputs']['native_genesis']
+        require(native_path == 'node/genesis/genesis.manifest', 'native producer generation path mismatch')
+        for name in (native_path, foundation['inputs']['metadata']):
+            expected = foundation['generated_artifacts'][name]
+            require(hashlib.sha256((manifest_path.parent / name).read_bytes()).hexdigest() == expected['sha256'],
+                    'qualified producer document changed')
+        require(os.geteuid() == 0, 'root-controlled local disposable Docker qualification required')
+        context = json.loads(command(['docker', 'context', 'inspect']).stdout)
+        host = context[0]['Endpoints']['docker']['Host']
+        require(host.startswith('unix:///'), 'remote or unauthenticated Docker handoff refused')
+        socket = Path(host.removeprefix('unix://'))
+        info = socket.stat()
+        require(stat.S_ISSOCK(info.st_mode) and info.st_uid == 0 and not info.st_mode & 0o002,
+                'private authenticated Docker owner socket required')
+        images = {}
+        for role, environment, files in (
+                ('node', 'PAXEER_X_NODE_IMAGE', {'/usr/local/lib/layerx-human/material.py': 'platform/hosted/human/material.py',
+                                                '/opt/layerx/supervisor.sh': 'platform/hosted/node/supervisor.sh'}),
+                ('registry', 'PAXEER_X_REGISTRY_IMAGE', {'/usr/local/lib/layerx-human/material.py': 'platform/hosted/human/material.py',
+                                                        '/usr/local/bin/registry-fly-init': 'docker/platform-registry/init.sh'})):
+            image = os.environ.get(environment, '')
+            if not re.fullmatch(r'sha256:[0-9a-f]{64}', image):
+                raise FileNotFoundError(environment + ' actual source-bound packaged image required')
+            metadata = json.loads(docker('image', 'inspect', image).stdout)[0]
+            require(metadata['Id'] == image and (metadata['Config'].get('Labels') or {}).get('org.opencontainers.image.revision') == revision,
+                    role + ' packaged image source identity mismatch')
+            lines = docker('run', '--rm', '--pull=never', '--network=none', '--entrypoint', '/usr/bin/sha256sum',
+                           image, *files).stdout.splitlines()
+            require(len(lines) == len(files), role + ' packaged production source inventory incomplete')
+            for line, relative in zip(lines, files.values()):
+                require(line.split()[0] == hashlib.sha256((ROOT / relative).read_bytes()).hexdigest(),
+                        role + ' packaged production helper differs')
+            images[role] = image
+        volume = 'paxeer-x-registry-material-' + uuid.uuid4().hex
+        docker('volume', 'create', volume)
+        for role in ('node', 'registry'):
+            name = volume + '-' + role
+            containers.append(name)
+            args = ['run', '--detach', '--pull=never', '--network=none', '--user', '0:0', '--name', name,
+                    '--mount', 'type=volume,src=' + volume + ',dst=/case']
+            if role == 'node':
+                args += ['--mount', 'type=bind,src=' + str(manifest_path.parent) + ',dst=/foundation,readonly']
+            docker(*args, '--entrypoint', '/bin/sh', images[role], '-ec', 'exec sleep 1800')
+        node, registry = containers
+        execute(node, '0:0', 'bash', '-euc', 'umask 077; cp -a /foundation/node /case/node; chown -R 4020:4020 /case/node; chmod 0700 /case/node; mkdir /case/producer; chown 4020:4020 /case/producer; chmod 0700 /case/producer; mkdir /case/consumer; chown 4030:4030 /case/consumer; chmod 0700 /case/consumer')
+        helper = '/usr/local/lib/layerx-human/material.py'
+        producer = ('python3', helper, '--hosted-registry-material-produce', '/case/node', '/case/producer/kernel-material')
+        created = json.loads(execute(node, '4020:4020', *producer).stdout)
+        selected = created['directory']
+        generation = created['generation']
+        case('actual-hosted-native-signed-genesis-producer')
+        exported = execute(node, '4020:4020', 'python3', helper, '--export-registry-material', '/case/producer/kernel-material').stdout
+        transfer = subprocess.run(['docker', 'exec', '-i', '--user', '0:0', registry, 'python3', '-c',
+            "import os,sys; p='/case/consumer/export.json'; fd=os.open(p,os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW,0o600); data=sys.stdin.buffer.read(1048577); assert 0<len(data)<=1048576; f=os.fdopen(fd,'wb'); f.write(data); f.flush(); os.fsync(f.fileno()); f.close(); os.chown(p,4030,4030)"],
+            input=exported, text=True, capture_output=True, timeout=30)
+        require(transfer.returncode == 0, 'authenticated private public-generation transfer failed')
+        transfer_manifest = material.registry_manifest({name: __import__('base64').b64decode(value, validate=True)
+            for name, value in json.loads(exported)['files'].items()})
+        require(transfer_manifest['network_id'] == foundation['network_id']
+                and transfer_manifest['sequencer_id'] == foundation['sequencer_id']
+                and transfer_manifest['sequencer_public_key'] == foundation['sequencer_public_key'],
+                'actual selected foundation producer identity differs')
+        importer = ('python3', helper, '--import-registry-material', '/case/consumer/export.json', '/case/consumer/material',
+                    str(foundation['network_id']), foundation['sequencer_id'], foundation['sequencer_public_key'])
+        imported = json.loads(execute(registry, '4030:4030', *importer).stdout)
+        require(imported['generation'] == generation, 'handoff selected another producer generation')
+        consumer = imported['directory']
+        validator = ('/usr/local/bin/registry-fly-init', '--validate-kernel-material', '/case/consumer/material')
+        validated = json.loads(execute(registry, '4030:4030', *validator).stdout)
+        require(validated['generation'] == generation, 'actual registry readiness validator selected another generation')
+        python(registry, '0:0', "from pathlib import Path; import sys; a,b=map(Path,sys.argv[1:]); assert {p.name for p in a.iterdir()}=={'generation.json','replica-id','trust-history'}; assert all((a/p.name).read_bytes()==p.read_bytes() for p in b.iterdir())", selected, consumer)
+        case('authenticated-private-transfer-exact-producer-bytes-and-registry-validation')
+        wrong = list(importer)
+        wrong[-3] = str(foundation['network_id'] + 1)
+        require(execute(registry, '4030:4030', *wrong, check=False).returncode != 0, 'wrong authenticated producer network admitted')
+        wrong = list(importer)
+        wrong[-1] = '0' * 64
+        require(execute(registry, '4030:4030', *wrong, check=False).returncode != 0, 'wrong authenticated public key admitted')
+        case('wrong-authenticated-network-and-public-key-refused')
+        for label, source in (
+            ('independent-history', "p=d/'trust-history'; original=p.read_bytes(); p.write_bytes(original+b'foreign');"),
+            ('mismatched-replica', "p=d/'replica-id'; original=p.read_bytes(); p.write_bytes(b'0'*64+b'\\n');"),
+            ('partial-generation', "p=d/'generation.json'; original=p.read_bytes(); p.unlink();")):
+            python(registry, '4030:4030', "from pathlib import Path; import sys; d=Path(sys.argv[1]); " + source + " (d.parent/'restore.bin').write_bytes(original)", consumer)
+            require(execute(registry, '4030:4030', *validator, check=False).returncode != 0, label + ' admitted before readiness')
+            name = 'generation.json' if label == 'partial-generation' else 'replica-id' if label == 'mismatched-replica' else 'trust-history'
+            python(registry, '4030:4030', "from pathlib import Path; import os,sys; d=Path(sys.argv[1]); p=d/sys.argv[2]; p.write_bytes((d.parent/'restore.bin').read_bytes()); os.chmod(p,0o600); (d.parent/'restore.bin').unlink()", consumer, name)
+            case(label + '-refused-before-registry-readiness')
+        path = consumer + '/trust-history'
+        execute(registry, '0:0', 'chmod', '0660', path)
+        require(execute(registry, '4030:4030', *validator, check=False).returncode != 0, 'wrong mode admitted')
+        execute(registry, '0:0', 'chmod', '0600', path)
+        execute(registry, '0:0', 'chown', '4020:4020', path)
+        require(execute(registry, '0:0', *validator, check=False).returncode != 0, 'mixed producer/consumer owner admitted')
+        execute(registry, '0:0', 'chown', '4030:4030', path)
+        case('wrong-mode-and-mixed-authority-owner-refused')
+        replay = json.loads(execute(node, '4020:4020', *producer).stdout)
+        require(replay == created, 'producer restart replaced retained selected generation')
+        replay = json.loads(execute(registry, '4030:4030', *importer).stdout)
+        require(replay == imported, 'same authenticated handoff replay changed retained generation')
+        case('actual-producer-restart-and-handoff-replay-idempotent')
+        python(registry, '4030:4030', "from pathlib import Path; p=Path('/case/consumer/material/.pending-abandoned'); p.mkdir(mode=0o700); (p/'replica-id').write_bytes(b'incomplete')")
+        retained = json.loads(execute(registry, '4030:4030', *validator).stdout)
+        require(retained['generation'] == generation, 'abandoned unpublished generation replaced prior complete selection')
+        require(json.loads(execute(registry, '4030:4030', *importer).stdout) == imported, 'restart could not retain prior complete handoff')
+        case('interrupted-unpublished-generation-retains-prior-complete-on-restart')
+        execute(registry, '0:0', 'chown', '4021:4021', consumer)
+        require(execute(registry, '0:0', *validator, check=False).returncode != 0, 'foreign owner generation admitted')
+        execute(registry, '0:0', 'chown', '4030:4030', consumer)
+        case('foreign-runtime-owner-generation-refused')
+        retained = json.loads(execute(registry, '4030:4030', *validator).stdout)
+        require(retained['generation'] == generation, 'final generation identity lost after refusals')
+        source = (ROOT / 'platform/hosted/human/provision.sh').read_text()
+        require('before' in source and '[ "$before" = "$after" ]' in source
+                and 'exec layerx-node-0 -c layerxd --' in source and '--export-registry-material' in source,
+                'actual authenticated Kubernetes producer handoff absent')
+        supervisor = (ROOT / 'platform/hosted/node/supervisor.sh').read_text()
+        publish = supervisor.split('publish_generation() {', 1)[1].split('\n}', 1)[0]
+        require(publish.index('--hosted-registry-material-produce') < publish.index('replica-ready'), 'producer waits on replica or Human readiness')
+        case('acyclic-production-order-and-identifiable-retained-generation')
+        result.update(revision=revision, images=images, foundation_manifest=str(manifest_path), generation=generation,
+                      tests=len(result['cases']), exit_code=0)
+        material.write_bytes(evidence / 'registry-material.json', json.dumps(result, sort_keys=True).encode())
+        print('PAXEER_X_GATE tests=' + str(result['tests']) + ' skipped=0', flush=True)
+        return 0
+    except FileNotFoundError as error:
+        code = 78
+        result['observed'] = str(error)
+    except Exception as error:
+        code = 1
+        result['observed'] = str(error)
+    finally:
+        for container in reversed(containers):
+            docker('rm', '-f', container, check=False)
+        if volume is not None:
+            docker('volume', 'rm', volume, check=False)
+    result.update(exit_code=code, tests=len(result['cases']))
+    if evidence is not None:
+        material.write_bytes(evidence / 'registry-material.json', json.dumps(result, sort_keys=True).encode())
+    print('Registry kernel material refused: ' + result['observed'], file=sys.stderr, flush=True)
+    return code
+
+
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--case', required=True, choices=['role-directories', 'role-directory-prerequisite', 'export-recovery', 'fixture-foundation', 'kms-service-prerequisite'])
+    parser.add_argument('--case', required=True, choices=['role-directories', 'role-directory-prerequisite', 'export-recovery', 'fixture-foundation', 'kms-service-prerequisite', 'registry-material'])
     arguments = parser.parse_args()
     os.umask(0o077)
+    if arguments.case == 'registry-material':
+        return registry_material()
     if arguments.case == 'kms-service-prerequisite':
         return kms_service_prerequisite()
     if arguments.case == 'fixture-foundation':
