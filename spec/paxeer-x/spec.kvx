@@ -23981,8 +23981,16 @@ fleet_role = "/root/complete_migration/migration_host_mapping"
 fleet_scope_manifest = "/root/lx-ops/paxeer-x-integration-2026-10-03/fleet-104.24.1-brief.json"
 source_status = "complete"
 completion_basis = "implementation under owner CONSTITUTION; qualification separately recorded"
-qualification_status = "UNRUN"
+qualification_status = "TIMED_OUT_FULL_GATE_UNPROVEN"
 source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/fleet-104.24.1-gate-publication.json"
+qualification_revision = "347923e211da379a9bc4b6291c096c3060a1961b"
+qualification_command = "tools/paxeer-x/verify-task.sh 104.24.1"
+qualification_exit_code = 124
+qualification_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/qualification/task-104.24.1-fleet/verify.log"
+build_status = "TIMED_OUT"
+build_exit_code = 124
+qualification_evidence = "/root/lx-ops/paxeer-x-integration-2026-10-03/qualification/task-104.24.1-fleet/verify-result.json"
+qualification_note = "Recorded build and verification exits are124; no full gate success recorded."
 
 [task.104.25.1]
 title = "Build the mirror publisher"
