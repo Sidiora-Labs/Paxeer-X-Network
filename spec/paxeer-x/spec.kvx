@@ -26903,8 +26903,8 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.104.38.9]
 title = "Unify Programs ABI upgrade policy across consensus and projections"
-status = "pending"
-mode = "QUALIFY"
+status = "done"
+mode = "BUILD"
 wave = 3
 requires = ["0.2", "104.33.1"]
 reqs = ["1109.9", "1092.4", "1092.7"]
@@ -26915,10 +26915,10 @@ do_4 = "Return one typed version refusal for a downgrade rather than allowing co
 do_5 = "Keep historical ABI replay under the version recorded in the receipt and do not rewrite existing versions."
 do_6 = "Write cross-language upgrade and downgrade cases for human qualification."
 do_7 = "Provide this task selector in tools/paxeer-x/gates and execute the full scoped acceptance contract using real production paths. Preserve the retained verification command coverage; move aggregate matrices to release scope and refuse an unknown or unimplemented selector."
-touches = ["include/layerx/programs.h", "src/modules/programs/deploy.c", "tests/programs/test_registration.c", "programs/crates/layerx-programs-runtime/src/abi_policy.rs", "programs/crates/layerx-programs-runtime/src/lib.rs", "programs/crates/layerx-programs-runtime/src/lifecycle.rs", "programs/crates/layerx-programs-runtime/tests/lifecycle.rs", "programs/crates/layerx-programs-registry/src", "programs/crates/layerx-programs-registry/tests", "spec/paxeer-x/qualification.kvx", "tools/paxeer-x/gates/104.38.9.sh"]
+touches = ["tests/programs/test_registration.c", "programs/crates/layerx-programs-runtime/src/abi_policy.rs", "programs/crates/layerx-programs-runtime/src/lifecycle.rs", "programs/crates/layerx-programs-runtime/tests/lifecycle.rs", "programs/crates/layerx-programs-registry/src/account_state.rs", "programs/crates/layerx-programs-registry/src/lib.rs", "programs/crates/layerx-programs-registry/src/hex.rs", "programs/crates/layerx-programs-registry/src/lxt20.rs", "programs/crates/layerx-programs-registry/src/hash.rs", "programs/crates/layerx-programs-registry/src/archive.rs", "programs/crates/layerx-programs-registry/src/lxt721.rs", "programs/crates/layerx-programs-registry/src/interface.rs", "programs/crates/layerx-programs-registry/src/resolver.rs", "programs/crates/layerx-programs-registry/src/naming.rs", "programs/crates/layerx-programs-registry/src/deprecate.rs", "programs/crates/layerx-programs-registry/src/authority.rs", "programs/crates/layerx-programs-registry/src/swap.rs", "programs/crates/layerx-programs-registry/src/pipeline.rs", "programs/crates/layerx-programs-registry/tests/swap_reference.rs", "programs/crates/layerx-programs-registry/tests/lxt20_reference.rs", "programs/crates/layerx-programs-registry/tests/interface_protocol.rs", "programs/crates/layerx-programs-registry/tests/program_bundle_verification.rs", "programs/crates/layerx-programs-registry/tests/registry.rs", "programs/crates/layerx-programs-registry/tests/naming_reference.rs", "programs/crates/layerx-programs-registry/tests/interface.rs", "programs/crates/layerx-programs-registry/tests/winddown.rs", "programs/crates/layerx-programs-registry/tests/lxt721_reference.rs", "programs/crates/layerx-programs-registry/tests/support/mod.rs", "tools/paxeer-x/gates/104.38.9.sh", "tools/qualification/paxeer-x/program-abi-policy.py", "tools/paxeer-x/build/104.38.9.mk"]
 verify_cmd = "timeout 30m tools/paxeer-x/verify-task.sh 104.38.9"
 gate_kind = "planned-adapter"
-max_builds = 0
+max_builds = 1
 max_verify_runs = 1
 max_repair_cycles = 2
 time_limit_minutes = 30
@@ -26931,6 +26931,15 @@ completion_policy = "Existing implementation is preserved; current candidate qua
 planned_paths = ["spec/paxeer-x/qualification.kvx", "tools/paxeer-x/gates/104.38.9.sh"]
 path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
 evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+retained_migration_accounting_paths_6_2 = ["include/layerx/programs.h", "src/modules/programs/deploy.c"]
+fleet_retained_shared_paths = ["tests/programs/test_registration.c", "programs/crates/layerx-programs-runtime/src/abi_policy.rs", "programs/crates/layerx-programs-runtime/src/lib.rs", "programs/crates/layerx-programs-runtime/src/lifecycle.rs", "programs/crates/layerx-programs-runtime/tests/lifecycle.rs", "programs/crates/layerx-programs-registry/src", "programs/crates/layerx-programs-registry/tests", "spec/paxeer-x/qualification.kvx", "tools/paxeer-x/gates/104.38.9.sh"]
+fleet_role = "daemon_native_bindings/arbiter_daemon"
+fleet_authority = "User ordered 30 agents to finish pending integrations within four hours. This is the next dependency-eligible source task, not deployment."
+implementation_window = "2026-10-04T12:58:50.377438+00:00 to 2026-10-04T13:28:50.377438+00:00"
+source_status = "complete"
+completion_basis = "implementation under owner CONSTITUTION; qualification separately recorded"
+qualification_status = "UNRUN"
+source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/fleet-104.38.9-publication-current.json"
 
 [task.104.38.10]
 title = "Align Programs event metering and capability transport bounds"

@@ -391,6 +391,36 @@ cleanup:
 #endif
 }
 
+static int abi_transition_matrix(void)
+{
+    static const uint16_t versions[] = {
+        LX_PROGRAMS_ABI_VERSION, LX_PROGRAMS_ACCOUNT_ABI_VERSION,
+        LX_PROGRAMS_SANDBOX_ABI_VERSION, LX_PROGRAMS_GUEST_ABI_V4_VERSION
+    };
+    size_t current;
+    size_t requested;
+    size_t count = 0U;
+    for (current = 0U; current < sizeof(versions) / sizeof(versions[0]); ++current) {
+        if (lxp_programs_abi_transition_validate(0U, versions[current]) != LXP_OK)
+            return 1;
+        ++count;
+        for (requested = 0U; requested < sizeof(versions) / sizeof(versions[0]); ++requested) {
+            lxp_result expected = versions[requested] < versions[current]
+                ? LXP_ERR_VERSION_UNSUPPORTED : LXP_OK;
+            if (lxp_programs_abi_transition_validate(versions[current], versions[requested]) != expected)
+                return 1;
+            ++count;
+        }
+        if (lxp_programs_abi_transition_validate(versions[current], 0U) != LXP_ERR_VERSION_UNSUPPORTED ||
+            lxp_programs_abi_transition_validate(versions[current], UINT16_MAX) != LXP_ERR_VERSION_UNSUPPORTED ||
+            lxp_programs_abi_transition_validate(UINT16_MAX, versions[current]) != LXP_ERR_VERSION_UNSUPPORTED)
+            return 1;
+        count += 3U;
+    }
+    (void)printf("ABI_POLICY_NATIVE tests=%zu skipped=0\n", count);
+    return 0;
+}
+
 int main(int argc, char **argv)
 {
     if (argc == 2 && strcmp(argv[1], "--sandbox-bounds") == 0)
@@ -421,6 +451,7 @@ int main(int argc, char **argv)
                                              LX_PROGRAMS_GUEST_ABI_V4_VERSION + 1U) !=
             LXP_ERR_VERSION_UNSUPPORTED)
         return 1;
+    if (abi_transition_matrix() != 0) return 1;
     if (registration_contract() != 0) return 1;
     if (exercise(lxp_activity_type_ordinal(LX_PROGRAMS_CALL), 40U,
                  LXP_ERR_TRUNCATED, 0U) != 0) return 1;

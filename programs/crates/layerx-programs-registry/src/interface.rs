@@ -1566,6 +1566,32 @@ mod conformance_vectors {
         );
     }
     #[test]
+    fn every_supported_abi_transition_binds_the_recorded_interface_version() {
+        for current in [ABI_V1_VERSION, ABI_V2_VERSION, ABI_V3_VERSION, ABI_V4_VERSION] {
+            for requested in [ABI_V1_VERSION, ABI_V2_VERSION, ABI_V3_VERSION, ABI_V4_VERSION] {
+                let prior = ProgramInterface::from_parts([1; 32], current, vec![entry(64)])
+                    .unwrap_or_else(|error| panic!("historical interface: {error}"));
+                let next = ProgramInterface::from_parts([2; 32], requested, vec![entry(64)])
+                    .unwrap_or_else(|error| panic!("requested interface: {error}"));
+                for breaking in [false, true] {
+                    let expected = if requested < current {
+                        Err(InterfaceRefusal::AbiVersion(AbiVersionRefusal::Downgrade {
+                            current, requested,
+                        }))
+                    } else {
+                        Ok(())
+                    };
+                    assert_eq!(next.authorize_upgrade(&prior, breaking), expected);
+                }
+                let restored = ProgramInterface::decode(prior.canonical_encoding())
+                    .unwrap_or_else(|error| panic!("historical interface replay: {error}"));
+                assert_eq!(restored, prior);
+                assert_eq!(restored.abi_version(), current);
+            }
+        }
+    }
+
+    #[test]
     fn every_abi_refuses_substituted_domains_and_noncanonical_capabilities() {
         for abi in [ABI_V1_VERSION, ABI_V2_VERSION, ABI_V3_VERSION, ABI_V4_VERSION] {
             let plain = ProgramInterface::from_parts([1; 32], abi, vec![entry(80)])
