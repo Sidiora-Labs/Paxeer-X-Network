@@ -1636,7 +1636,7 @@ static lxp_result encode_record(
     if (key == NULL || body == NULL || body_length == NULL || digest == NULL ||
         network_id == 0U || ordinal == 0U ||
         kind < LXP_DAEMON_EVIDENCE_ACCOUNT ||
-        kind > LXP_DAEMON_EVIDENCE_ASSET_EXECUTION_PRESTATE ||
+        kind > LXP_DAEMON_EVIDENCE_REPLAY_CATALOGUE ||
         (payload.bytes == NULL && payload.length != 0U) ||
         (proof.bytes == NULL && proof.length != 0U) ||
         payload.length > UINT32_MAX || proof.length > UINT32_MAX ||
@@ -1699,7 +1699,7 @@ static lxp_result decode_record(const uint8_t *body, size_t body_length,
         memcmp(body, evidence_magic, sizeof(evidence_magic)) != 0 ||
         body[4] != EVIDENCE_RECORD_VERSION || body[6] != 0U || body[7] != 0U ||
         body[5] < LXP_DAEMON_EVIDENCE_ACCOUNT ||
-        body[5] > LXP_DAEMON_EVIDENCE_ASSET_EXECUTION_PRESTATE || read_u32(body + 8U) == 0U ||
+        body[5] > LXP_DAEMON_EVIDENCE_REPLAY_CATALOGUE || read_u32(body + 8U) == 0U ||
         read_u64(body + 12U) == 0U)
         return LXP_ERR_LOG_CORRUPT;
     status = lxp_hash_sha256(body,
@@ -2303,6 +2303,159 @@ static lxp_result asset_execution_prestate_validate(lxp_byte_span payload,
     return status;
 }
 
+static lxp_result replay_catalogue_key(const uint8_t identity[78], uint8_t key[32])
+{
+    static const uint8_t domain[] = "LayerX/programs/replay-catalogue/key/v1";
+    lxp_hash_context hash;
+    lxp_result status;
+    lxp_hash_init(&hash);
+    status = lxp_hash_update(&hash, domain, sizeof(domain));
+    if (status == LXP_OK) status = lxp_hash_update(&hash, identity, 78U);
+    if (status == LXP_OK) status = lxp_hash_final(&hash, key);
+    return status;
+}
+
+typedef struct replay_catalogue_entry {
+    uint8_t program_id[32];
+    uint8_t code_hash[32];
+    uint32_t length;
+    bool manifest;
+    bool supplied;
+} replay_catalogue_entry;
+
+static lxp_result replay_catalogue_witness(evidence_reader *reader,
+                                           lxp_state_witness *witness)
+{
+    uint32_t length = 0U;
+    const uint8_t *bytes = NULL;
+    lxp_result status = reader_u32(reader, &length);
+    if (status == LXP_OK && (length == 0U || length > LXP_STATE_WITNESS_MAX_BYTES))
+        status = LXP_ERR_LENGTH_LIMIT;
+    if (status == LXP_OK) status = reader_take(reader, length, &bytes);
+    if (status == LXP_OK) status = lxp_state_proof_decode(bytes, length, witness);
+    return status;
+}
+
+static lxp_result replay_catalogue_validate(lxp_byte_span payload,
+                                           uint32_t network_id, uint8_t key[32])
+{
+    evidence_reader reader = {payload.bytes, payload.length, 0U};
+    evidence_reader inner, records = {NULL, 0U, 0U};
+    lxp_byte_span legacy = {NULL, 0U};
+    replay_catalogue_entry *entries = NULL;
+    lxp_state_witness *witness = NULL;
+    uint32_t length = 0U, record_count = 0U, code_count = 0U;
+    uint16_t version = 0U;
+    size_t entry_count = 0U, expected_codes = 0U, index, pass;
+    uint8_t previous[32] = {0};
+    lxp_result status;
+    if (payload.bytes == NULL || payload.length > LXP_KERNEL_MAX_BLOB_TOTAL_BYTES)
+        return LXP_ERR_LENGTH_LIMIT;
+    status = reader_u16(&reader, &version);
+    if (status == LXP_OK && version != 1U) status = LXP_ERR_VERSION_UNSUPPORTED;
+    if (status == LXP_OK) status = reader_u32(&reader, &length);
+    if (status == LXP_OK) status = reader_take(&reader, length, &legacy.bytes);
+    legacy.length = length;
+    if (status == LXP_OK) status = execution_prestate_validate(legacy, network_id, key);
+    if (status != LXP_OK) return status;
+    inner = (evidence_reader){legacy.bytes, legacy.length,
+        80U + (size_t)read_u16(legacy.bytes + 78U) * 32U};
+    witness = malloc(sizeof(*witness));
+    if (witness == NULL) return LXP_ERR_IO;
+    for (pass = 0U; status == LXP_OK && pass < 2U; ++pass) {
+        uint16_t module;
+        uint8_t subtree[32];
+        lxp_state_proof proof;
+        status = reader_u16(&inner, &module);
+        if (status == LXP_OK) status = reader_copy(&inner, subtree, 32U);
+        if (status == LXP_OK) status = read_state_proof(&inner, &proof);
+        if (status == LXP_OK) status = reader_u32(&inner, &record_count);
+        if (status == LXP_OK && module != (pass == 0U ? 0U : LXP_MODULE_PROGRAMS))
+            status = LXP_ERR_CONTEXT_MISMATCH;
+        if (status == LXP_OK && pass == 1U) {
+            records = inner;
+            if (record_count != 0U) {
+                entries = calloc(record_count, sizeof(*entries));
+                if (entries == NULL) status = LXP_ERR_IO;
+            }
+        }
+        for (index = 0U; status == LXP_OK && index < record_count; ++index) {
+            status = replay_catalogue_witness(&inner, witness);
+            if (status != LXP_OK || pass == 0U || witness->key_length < 8U ||
+                memcmp(witness->key, "program\0", 8U) != 0) continue;
+            if (witness->key_length != 40U || witness->value_length != 71U ||
+                lxp_ct_is_zero(witness->key + 8U, 32U) ||
+                lxp_ct_is_zero(witness->value + 33U, 32U)) {
+                status = LXP_ERR_NON_CANONICAL;
+                break;
+            }
+            memcpy(entries[entry_count].program_id, witness->key + 8U, 32U);
+            memcpy(entries[entry_count].code_hash, witness->value + 33U, 32U);
+            ++entry_count;
+        }
+    }
+    for (index = 0U; status == LXP_OK && index < record_count; ++index) {
+        size_t entry;
+        status = replay_catalogue_witness(&records, witness);
+        if (status != LXP_OK || witness->key_length != 40U ||
+            memcmp(witness->key, "progcode", 8U) != 0) continue;
+        for (entry = 0U; entry < entry_count; ++entry) {
+            if (memcmp(entries[entry].program_id, witness->key + 8U, 32U) != 0) continue;
+            if (entries[entry].manifest || witness->value_length != 38U ||
+                read_u16(witness->value) != 1U || read_u32(witness->value + 2U) == 0U ||
+                read_u32(witness->value + 2U) > LXP_KERNEL_MAX_BLOB_BYTES ||
+                memcmp(entries[entry].code_hash, witness->value + 6U, 32U) != 0) {
+                status = LXP_ERR_CONTEXT_MISMATCH;
+                break;
+            }
+            entries[entry].length = read_u32(witness->value + 2U);
+            entries[entry].manifest = true;
+        }
+    }
+    for (index = 0U; status == LXP_OK && index < entry_count; ++index) {
+        size_t earlier;
+        if (!entries[index].manifest) { status = LXP_ERR_CONTEXT_MISMATCH; break; }
+        for (earlier = 0U; earlier < index; ++earlier)
+            if (memcmp(entries[earlier].code_hash, entries[index].code_hash, 32U) == 0) break;
+        if (earlier == index) ++expected_codes;
+        else if (entries[earlier].length != entries[index].length) status = LXP_ERR_CONTEXT_MISMATCH;
+    }
+    if (status == LXP_OK) status = reader_u32(&reader, &code_count);
+    if (status == LXP_OK && (code_count != expected_codes || code_count > LXP_KERNEL_MAX_BLOBS))
+        status = LXP_ERR_CONTEXT_MISMATCH;
+    for (index = 0U; status == LXP_OK && index < code_count; ++index) {
+        uint8_t hash[32], actual[32];
+        const uint8_t *bytes = NULL;
+        size_t entry;
+        bool referenced = false;
+        status = reader_copy(&reader, hash, 32U);
+        if (status == LXP_OK && (lxp_ct_is_zero(hash, 32U) ||
+            (index != 0U && memcmp(previous, hash, 32U) >= 0))) status = LXP_ERR_NON_CANONICAL;
+        if (status == LXP_OK) status = reader_u32(&reader, &length);
+        if (status == LXP_OK && (length == 0U || length > LXP_KERNEL_MAX_BLOB_BYTES))
+            status = LXP_ERR_LENGTH_LIMIT;
+        if (status == LXP_OK) status = reader_take(&reader, length, &bytes);
+        if (status == LXP_OK) status = lxp_hash_sha256(bytes, length, actual);
+        if (status == LXP_OK && memcmp(hash, actual, 32U) != 0) status = LXP_ERR_ROOT_MISMATCH;
+        for (entry = 0U; status == LXP_OK && entry < entry_count; ++entry) {
+            if (memcmp(entries[entry].code_hash, hash, 32U) != 0) continue;
+            referenced = true;
+            if (entries[entry].supplied || entries[entry].length != length)
+                status = LXP_ERR_CONTEXT_MISMATCH;
+            else entries[entry].supplied = true;
+        }
+        if (status == LXP_OK && !referenced) status = LXP_ERR_CONTEXT_MISMATCH;
+        if (status == LXP_OK) memcpy(previous, hash, 32U);
+    }
+    for (index = 0U; status == LXP_OK && index < entry_count; ++index)
+        if (!entries[index].supplied) status = LXP_ERR_CONTEXT_MISMATCH;
+    if (status == LXP_OK) status = reader_finish(&reader);
+    if (status == LXP_OK) status = replay_catalogue_key(legacy.bytes, key);
+    free(entries);
+    free(witness);
+    return status;
+}
+
 static lxp_result validate_recovered_record(
     lxp_daemon_evidence_store *store, const decoded_record *record,
     lxp_arena *arena)
@@ -2397,6 +2550,15 @@ static lxp_result validate_recovered_record(
             record->payload.length > LXP_KERNEL_MAX_BLOB_TOTAL_BYTES -
                 store->asset_execution_prestate_retained_bytes)) status = LXP_ERR_LOG_CORRUPT;
         if (status == LXP_OK) store->asset_execution_prestate_retained_bytes += record->payload.length;
+    } else if (record->kind == LXP_DAEMON_EVIDENCE_REPLAY_CATALOGUE) {
+        uint8_t key[32];
+        status = record->proof.length == 0U ?
+            replay_catalogue_validate(record->payload, store->network_id, key) :
+            LXP_ERR_NON_CANONICAL;
+        if (status == LXP_OK && (memcmp(key, record->key, 32U) != 0 ||
+            record->payload.length > LXP_KERNEL_MAX_BLOB_TOTAL_BYTES -
+                store->replay_catalogue_retained_bytes)) status = LXP_ERR_LOG_CORRUPT;
+        if (status == LXP_OK) store->replay_catalogue_retained_bytes += record->payload.length;
     } else {
         status = LXP_ERR_INVALID_TAG;
     }
@@ -3774,6 +3936,135 @@ lxp_result lxp_daemon_evidence_get_asset_execution_prestate(
                     memcmp(activity_bytes, evidence.canonical_activity.bytes, activity_length) != 0)
                     status = LXP_ERR_CONTEXT_MISMATCH;
             }
+            if (status == LXP_OK) status = consume(context, record.payload);
+            free(body);
+            return status;
+        }
+        if (status == LXP_OK) {
+            if (offset > UINT64_MAX - LXP_LOG_HEADER_BYTES - (uint64_t)header.body_length)
+                status = LXP_ERR_OVERFLOW;
+            else offset += LXP_LOG_HEADER_BYTES + header.body_length;
+        }
+        free(body);
+    }
+    return status == LXP_OK ? LXP_ERR_UNKNOWN_ACTIVITY : status;
+}
+
+bool lxp_daemon_evidence_replay_catalogue_ready(
+    const lxp_daemon_evidence_store *store)
+{
+    return store != NULL && store->initialized && store->replay_catalogue_enabled &&
+        store->log != NULL && store->log->descriptor >= 0 &&
+        store->replay_catalogue_retained_bytes <= LXP_KERNEL_MAX_BLOB_TOTAL_BYTES;
+}
+
+lxp_result lxp_daemon_evidence_retain_replay_catalogues(
+    lxp_daemon_evidence_store *store, const lxp_kernel_prepared_batch *batch)
+{
+    const lxp_receipt *receipts;
+    size_t count;
+    size_t index;
+    size_t new_bytes = 0U;
+    lxp_result status = LXP_OK;
+    if (!lxp_daemon_evidence_replay_catalogue_ready(store) || batch == NULL)
+        return LXP_ERR_MODULE_DISABLED;
+    receipts = lxp_kernel_prepared_batch_receipts(batch);
+    count = lxp_kernel_prepared_batch_count(batch);
+    if (receipts == NULL || count == 0U) return LXP_ERR_NON_CANONICAL;
+    for (index = 0U; status == LXP_OK && index < count; ++index) {
+        lxp_byte_span payload = lxp_kernel_prepared_batch_replay_catalogue(batch, index);
+        uint8_t key[32];
+        bool present = false;
+        bool exact = false;
+        if (payload.length == 0U) {
+            if (receipts[index].protocol_version == LXP_PROTOCOL_VERSION_STATE_COMMITMENT &&
+                receipts[index].module_id == LXP_MODULE_PROGRAMS)
+                status = LXP_ERR_IO;
+            continue;
+        }
+        status = replay_catalogue_validate(payload, store->network_id, key);
+        if (status == LXP_OK && (receipts[index].protocol_version != LXP_PROTOCOL_VERSION_STATE_COMMITMENT ||
+            receipts[index].module_id != LXP_MODULE_PROGRAMS ||
+            memcmp(payload.bytes + 12U, receipts[index].activity_id, 32U) != 0 ||
+            read_u64(payload.bytes + 44U) != receipts[index].global_sequence ||
+            memcmp(payload.bytes + 52U, receipts[index].previous_state_root, 32U) != 0))
+            status = LXP_ERR_CONTEXT_MISMATCH;
+        if (status == LXP_OK)
+            status = find_record(store, LXP_DAEMON_EVIDENCE_REPLAY_CATALOGUE, key,
+                payload, (lxp_byte_span){NULL, 0U}, NULL, &present, &exact);
+        if (status == LXP_OK && present && !exact) status = LXP_ERR_LOG_CORRUPT;
+        if (status == LXP_OK && !present) {
+            if (new_bytes > LXP_KERNEL_MAX_BLOB_TOTAL_BYTES - store->replay_catalogue_retained_bytes ||
+                payload.length > LXP_KERNEL_MAX_BLOB_TOTAL_BYTES -
+                    store->replay_catalogue_retained_bytes - new_bytes)
+                status = LXP_ERR_LENGTH_LIMIT;
+            else new_bytes += payload.length;
+        }
+    }
+    if (status != LXP_OK) return status;
+    for (index = 0U; status == LXP_OK && index < count; ++index) {
+        lxp_byte_span payload = lxp_kernel_prepared_batch_replay_catalogue(batch, index);
+        uint8_t key[32];
+        bool appended = false;
+        if (payload.length == 0U) continue;
+        status = replay_catalogue_validate(payload, store->network_id, key);
+        if (status == LXP_OK)
+            status = append_record(store, LXP_DAEMON_EVIDENCE_REPLAY_CATALOGUE,
+                key, payload, (lxp_byte_span){NULL, 0U}, NULL, &appended);
+        if (status == LXP_OK && appended)
+            store->replay_catalogue_retained_bytes += payload.length;
+    }
+    if (status == LXP_OK) status = lxp_log_write_boundary(store->log);
+    if (status != LXP_OK) store->replay_catalogue_enabled = false;
+    return status;
+}
+
+lxp_result lxp_daemon_evidence_get_replay_catalogue(
+    const lxp_daemon_evidence_store *store, uint32_t network_id,
+    const uint8_t activity_id[32], const uint8_t receipt_digest[32],
+    lxp_arena *arena, lxp_daemon_execution_prestate_consumer consume,
+    void *context)
+{
+    lxp_daemon_activity_evidence evidence;
+    lxp_receipt receipt;
+    uint8_t identity[78];
+    uint8_t key[32];
+    uint64_t offset = 0U;
+    lxp_result status;
+    if (!lxp_daemon_evidence_replay_catalogue_ready(store) || network_id != store->network_id ||
+        activity_id == NULL || receipt_digest == NULL || arena == NULL || consume == NULL)
+        return LXP_ERR_NON_CANONICAL;
+    status = lxp_daemon_activity_evidence_lookup(store, activity_id, arena, &evidence);
+    if (status == LXP_OK && memcmp(evidence.receipt_digest, receipt_digest, 32U) != 0)
+        status = LXP_ERR_CONTEXT_MISMATCH;
+    if (status == LXP_OK)
+        status = lxp_receipt_decode(evidence.canonical_receipt.bytes,
+            evidence.canonical_receipt.length, true, &receipt);
+    if (status == LXP_OK && (receipt.protocol_version != LXP_PROTOCOL_VERSION_STATE_COMMITMENT ||
+        receipt.module_id != LXP_MODULE_PROGRAMS || receipt.global_sequence == 0U ||
+        memcmp(receipt.activity_id, activity_id, 32U) != 0))
+        status = LXP_ERR_CONTEXT_MISMATCH;
+    if (status == LXP_OK) {
+        write_u16(identity, 1U);
+        write_u32(identity + 2U, network_id);
+        memcpy(identity + 6U, activity_id, 32U);
+        write_u64(identity + 38U, receipt.global_sequence);
+        memcpy(identity + 46U, receipt.previous_state_root, 32U);
+        status = replay_catalogue_key(identity, key);
+    }
+    while (status == LXP_OK && offset < store->log->write_offset) {
+        lxp_log_record_header header;
+        decoded_record record;
+        uint8_t *body = NULL;
+        status = read_log_record(store, offset, &header, &body, &record);
+        if (status == LXP_OK && record.kind == LXP_DAEMON_EVIDENCE_REPLAY_CATALOGUE &&
+            memcmp(record.key, key, 32U) == 0) {
+            uint8_t actual_key[32];
+            status = replay_catalogue_validate(record.payload, network_id, actual_key);
+            if (status == LXP_OK && (record.network_id != network_id || record.proof.length != 0U ||
+                memcmp(actual_key, key, 32U) != 0 ||
+                memcmp(record.payload.bytes + 6U, identity, sizeof(identity)) != 0))
+                status = LXP_ERR_CONTEXT_MISMATCH;
             if (status == LXP_OK) status = consume(context, record.payload);
             free(body);
             return status;

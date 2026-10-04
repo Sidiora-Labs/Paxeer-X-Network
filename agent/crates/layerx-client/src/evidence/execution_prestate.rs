@@ -24,6 +24,7 @@ pub enum ExecutionPrestateEvidenceError {
     Account,
     FeeSchedule,
     Activity,
+    CodeCatalogue,
 }
 
 #[derive(Clone, Debug)]
@@ -884,5 +885,113 @@ fn verified_asset_fee_policy(
         asset_prices,
         module_prices,
         canonical_bytes: encoded,
+    })
+}
+
+const MAX_REPLAY_CODE_BLOBS: usize = 512;
+const MAX_REPLAY_CODE_BYTES: usize = 1_048_576;
+
+#[derive(Clone, Debug)]
+pub struct VerifiedReplayCatalogue {
+    legacy: VerifiedNativeExecutionPrestate,
+    code_blobs: BTreeMap<[u8; 32], Vec<u8>>,
+    canonical_bytes: Vec<u8>,
+}
+
+impl VerifiedReplayCatalogue {
+    pub const fn legacy(&self) -> &VerifiedNativeExecutionPrestate {
+        &self.legacy
+    }
+    pub fn program_records(&self) -> &BTreeMap<Vec<u8>, Vec<u8>> {
+        self.legacy.program_records()
+    }
+    pub fn code_blobs(&self) -> &BTreeMap<[u8; 32], Vec<u8>> {
+        &self.code_blobs
+    }
+    pub fn canonical_bytes(&self) -> &[u8] {
+        &self.canonical_bytes
+    }
+}
+
+pub fn verify_replay_catalogue_object(
+    bytes: &[u8],
+    anchor: &VerifiedReceipt,
+    expected_network_id: u32,
+) -> Result<VerifiedReplayCatalogue, ExecutionPrestateEvidenceError> {
+    use sha2::{Digest, Sha256};
+    if bytes.len() > MAX_CAPS_OBJECT_BYTES {
+        return Err(ExecutionPrestateEvidenceError::Bounds);
+    }
+    let mut reader = Reader(bytes);
+    if reader.u16()? != 1 {
+        return Err(ExecutionPrestateEvidenceError::Encoding);
+    }
+    let legacy_bytes = reader.bytes(MAX_CAPS_OBJECT_BYTES)?;
+    let legacy =
+        verify_native_execution_prestate_object(legacy_bytes, anchor, expected_network_id)?;
+    let mut required = BTreeMap::<[u8; 32], usize>::new();
+    for (key, record) in legacy.program_records() {
+        if !key.starts_with(b"program\0") {
+            continue;
+        }
+        if key.len() != 40 || record.len() != 71 {
+            return Err(ExecutionPrestateEvidenceError::CodeCatalogue);
+        }
+        let hash: [u8; 32] = record[33..65]
+            .try_into()
+            .map_err(|_| ExecutionPrestateEvidenceError::CodeCatalogue)?;
+        let mut manifest_key = b"progcode".to_vec();
+        manifest_key.extend_from_slice(&key[8..]);
+        let manifest = legacy
+            .program_records()
+            .get(&manifest_key)
+            .ok_or(ExecutionPrestateEvidenceError::CodeCatalogue)?;
+        if manifest.len() != 38 || manifest[..2] != [0, 1] || manifest[6..] != hash {
+            return Err(ExecutionPrestateEvidenceError::CodeCatalogue);
+        }
+        let length = usize::try_from(u32::from_be_bytes(
+            manifest[2..6]
+                .try_into()
+                .map_err(|_| ExecutionPrestateEvidenceError::CodeCatalogue)?,
+        ))
+        .map_err(|_| ExecutionPrestateEvidenceError::Bounds)?;
+        if length == 0 || length > MAX_REPLAY_CODE_BYTES {
+            return Err(ExecutionPrestateEvidenceError::Bounds);
+        }
+        if required
+            .insert(hash, length)
+            .is_some_and(|prior| prior != length)
+        {
+            return Err(ExecutionPrestateEvidenceError::CodeCatalogue);
+        }
+    }
+    let count = reader.count(MAX_REPLAY_CODE_BLOBS)?;
+    if count != required.len() {
+        return Err(ExecutionPrestateEvidenceError::CodeCatalogue);
+    }
+    let mut code_blobs = BTreeMap::new();
+    let mut previous = None;
+    for _ in 0..count {
+        let hash: [u8; 32] = reader.array()?;
+        if previous.is_some_and(|prior| prior >= hash) {
+            return Err(ExecutionPrestateEvidenceError::CodeCatalogue);
+        }
+        let raw = reader.bytes(MAX_REPLAY_CODE_BYTES)?;
+        if raw.is_empty()
+            || required.get(&hash) != Some(&raw.len())
+            || <[u8; 32]>::from(Sha256::digest(raw)) != hash
+        {
+            return Err(ExecutionPrestateEvidenceError::CodeCatalogue);
+        }
+        code_blobs.insert(hash, raw.to_vec());
+        previous = Some(hash);
+    }
+    if !reader.0.is_empty() {
+        return Err(ExecutionPrestateEvidenceError::Encoding);
+    }
+    Ok(VerifiedReplayCatalogue {
+        legacy,
+        code_blobs,
+        canonical_bytes: bytes.to_vec(),
     })
 }

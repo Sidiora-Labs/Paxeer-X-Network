@@ -1423,6 +1423,15 @@ static bool asset_execution_prestate_available(const lxp_daemon_lni_server *serv
         lxp_daemon_evidence_asset_execution_prestate_ready(server->owner->evidence_store);
 }
 
+static bool replay_catalogue_available(const lxp_daemon_lni_server *server)
+{
+    return server->owner->protocol_version == LXP_PROTOCOL_VERSION_STATE_COMMITMENT &&
+        server->owner->evidence_store != NULL &&
+        server->owner->receipt_authority != NULL &&
+        server->owner->kernel != NULL && server->owner->scratch != NULL &&
+        lxp_daemon_evidence_replay_catalogue_ready(server->owner->evidence_store);
+}
+
 static bool arbiter_prestate_available(const lxp_daemon_lni_server *server)
 {
     return server->owner->protocol_version == LXP_PROTOCOL_VERSION_STATE_COMMITMENT &&
@@ -1509,6 +1518,8 @@ static lxp_result send_node_info(lxp_daemon_lni_server *server,
         execution_prestate_available(server);
     bool asset_execution_prestate = requested_minor >= LNI_EXECUTION_PRESTATE_MINOR &&
         asset_execution_prestate_available(server);
+    bool replay_catalogue = requested_minor >= LNI_EXECUTION_PRESTATE_MINOR &&
+        replay_catalogue_available(server);
     lxp_result status = LXP_OK;
     bool arbiter_prestate = requested_minor >= LNI_ARBITER_PRESTATE_MINOR &&
         arbiter_prestate_available(server);
@@ -1516,8 +1527,8 @@ static lxp_result send_node_info(lxp_daemon_lni_server *server,
         arbiter_admission_prestate_available(server);
     lni_reply_minor = arbiter_admission_prestate ? LNI_ARBITER_ADMISSION_PRESTATE_MINOR :
         arbiter_prestate ? LNI_ARBITER_PRESTATE_MINOR :
-        (execution_prestate || asset_execution_prestate) ? LNI_EXECUTION_PRESTATE_MINOR : LNI_VERSION_MINOR;
-    if (base_count + 8U > sizeof(capabilities) / sizeof(capabilities[0]))
+        (execution_prestate || asset_execution_prestate || replay_catalogue) ? LNI_EXECUTION_PRESTATE_MINOR : LNI_VERSION_MINOR;
+    if (base_count + 9U > sizeof(capabilities) / sizeof(capabilities[0]))
         return LXP_ERR_LENGTH_LIMIT;
     for (index = 0U; index < base_count; ++index) {
         if (server->owner->protocol_version !=
@@ -1582,6 +1593,15 @@ static lxp_result send_node_info(lxp_daemon_lni_server *server,
             --at;
         }
         capabilities[at] = "asset_execution_prestate";
+        ++capability_count;
+    }
+    if (replay_catalogue) {
+        size_t at = capability_count;
+        while (at != 0U && strcmp(capabilities[at - 1U], "replay_catalogue") > 0) {
+            capabilities[at] = capabilities[at - 1U];
+            --at;
+        }
+        capabilities[at] = "replay_catalogue";
         ++capability_count;
     }
     if (arbiter_prestate) {
@@ -4527,6 +4547,10 @@ static lxp_result serve_connection_inner(lxp_daemon_lni_server *server,
             status = request.payload_length == LNI_CAPS_REQUEST_BYTES &&
                 load_u16(request.payload) == 3U ?
                 send_asset_execution_prestate_discovery(server, descriptor,
+                    &request, execution_snapshot, deadline) :
+                request.payload_length == LNI_CAPS_REQUEST_BYTES &&
+                load_u16(request.payload) == 4U ?
+                send_replay_catalogue_discovery(server, descriptor,
                     &request, execution_snapshot, deadline) :
                 send_execution_prestate_discovery(server, descriptor,
                     &request, execution_snapshot, deadline);

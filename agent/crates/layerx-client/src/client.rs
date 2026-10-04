@@ -581,6 +581,86 @@ impl Client {
         }
     }
 
+    pub fn start_replay_catalogue<'a>(
+        &'a mut self,
+        receipt: &'a layerx_proof::receipt::VerifiedReceipt,
+        correlation_id: u64,
+    ) -> Result<
+        crate::execution_prestate::ReplayCatalogueDiscovery<'a>,
+        crate::execution_prestate::ExecutionPrestateError,
+    > {
+        use crate::execution_prestate::{
+            ExecutionPrestateError, ReplayCatalogueDiscovery, CAPS_REQUEST_BYTES,
+            CAPS_RESPONSE_HEADER_BYTES, MAX_CAPS_PAGE_BYTES,
+        };
+        if !self
+            .handshake
+            .capabilities()
+            .contains(Capability::CapsDiscovery)
+            || !self
+                .handshake
+                .capabilities()
+                .unknown_advertised()
+                .iter()
+                .any(|name| name == "replay_catalogue")
+        {
+            return Err(ExecutionPrestateError::Unavailable);
+        }
+        let limits = self.config.limits;
+        if limits.maximum_frame_bytes < CAPS_REQUEST_BYTES + 22 {
+            return Err(ExecutionPrestateError::Bounds);
+        }
+        let page_bytes = limits
+            .maximum_frame_bytes
+            .checked_sub(CAPS_RESPONSE_HEADER_BYTES + 22)
+            .filter(|bytes| *bytes > 0)
+            .ok_or(ExecutionPrestateError::Bounds)?
+            .min(MAX_CAPS_PAGE_BYTES);
+        let page_bytes = u32::try_from(page_bytes).map_err(|_| ExecutionPrestateError::Bounds)?;
+        let node = self.handshake.node();
+        if node.protocol_version != 3 {
+            return Err(ExecutionPrestateError::Unavailable);
+        }
+        let transport = self
+            .transport
+            .as_mut()
+            .ok_or(ExecutionPrestateError::Transport(
+                TransportError::PeerShutdown,
+            ))?;
+        ReplayCatalogueDiscovery::begin(
+            transport,
+            self.handshake.capabilities(),
+            node.interface_version,
+            node.network_id,
+            correlation_id,
+            receipt,
+            page_bytes,
+            limits.deadline,
+        )
+    }
+
+    pub fn replay_catalogue(
+        &mut self,
+        receipt: &layerx_proof::receipt::VerifiedReceipt,
+        correlation_id: u64,
+    ) -> Result<
+        crate::evidence::VerifiedReplayCatalogue,
+        crate::execution_prestate::ExecutionPrestateError,
+    > {
+        use crate::execution_prestate::{ExecutionPrestateError, ReplayCatalogueProgress};
+        let mut discovery = self.start_replay_catalogue(receipt, correlation_id)?;
+        loop {
+            match discovery.advance() {
+                ReplayCatalogueProgress::Incomplete { .. } => {}
+                ReplayCatalogueProgress::Complete(prestate) => return Ok(prestate),
+                ReplayCatalogueProgress::Refused(error) => return Err(error),
+                ReplayCatalogueProgress::Unavailable => {
+                    return Err(ExecutionPrestateError::Unavailable)
+                }
+            }
+        }
+    }
+
     pub fn start_caps_discovery<'a>(
         &'a mut self,
         did: [u8; 32],

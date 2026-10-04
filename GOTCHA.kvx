@@ -2324,3 +2324,8 @@ resolution = "Retain immutable owner-bound consent evidence and expose typed aut
 area = "Custody base64 fixture"
 observed = "The real native custody payload in task14.5 has a length divisible by three; its test incorrectly demanded terminal base64 padding."
 resolution = "Preserve strict canonical decoding and use actual malformed encodings for refusal coverage; the recorded failed gate remains failed."
+
+[gotcha.685]
+area = "Native Programs SSL linkage"
+observed = "Task104.35.26 new fixture and existing daemon linkage encountered undefined SSL symbols after the genuine Programs and Client dependency closure expanded."
+resolution = "Keep native checks intact; use the actual SSL system library before crypto for Programs-linked targets in the bounded linker prerequisite."

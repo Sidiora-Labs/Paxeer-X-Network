@@ -15,9 +15,9 @@ pub use arbiter_prestate::{
 pub use caps::{verify_caps_object, CapsEvidenceError, VerifiedCaps};
 pub use execution_prestate::{
     verify_asset_execution_prestate_object, verify_execution_prestate_object,
-    verify_native_execution_prestate_object, ExecutionPrestateEvidenceError,
-    VerifiedAssetExecutionPrestate, VerifiedAssetFeePolicy, VerifiedExecutionPrestate,
-    VerifiedNativeExecutionPrestate,
+    verify_native_execution_prestate_object, verify_replay_catalogue_object,
+    ExecutionPrestateEvidenceError, VerifiedAssetExecutionPrestate, VerifiedAssetFeePolicy,
+    VerifiedExecutionPrestate, VerifiedNativeExecutionPrestate, VerifiedReplayCatalogue,
 };
 
 mod module_state;

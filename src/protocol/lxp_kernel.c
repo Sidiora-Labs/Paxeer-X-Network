@@ -71,6 +71,7 @@ struct lxp_kernel_prepared_batch {
     uint8_t **artifact_bytes;
     lxp_byte_span *execution_prestates;
     lxp_byte_span *asset_execution_prestates;
+    lxp_byte_span *replay_catalogues;
     lxp_byte_span *arbiter_prestates;
     lxp_byte_span *admission_prestates;
     lxp_byte_span *replay_witnesses;
@@ -3903,6 +3904,120 @@ static lxp_result kernel_execution_prestate_capture(
     return status;
 }
 
+static int replay_catalogue_blob_compare(const void *left, const void *right)
+{
+    const lxp_module_blob *const *a = left;
+    const lxp_module_blob *const *b = right;
+    return memcmp((*a)->key, (*b)->key, 32U);
+}
+
+lxp_result lxp_kernel_encode_replay_catalogue(
+    const lxp_kernel *kernel, const lxp_activity *activity,
+    const lxp_kernel_execution *execution, size_t maximum_bytes,
+    lxp_byte_span *owned_capture)
+{
+    prestate_snapshot output = {{0}, NULL, 0U, 0U, maximum_bytes};
+    lxp_byte_span legacy = {NULL, 0U};
+    const lxp_module_blob **blobs = NULL;
+    size_t count = 0U;
+    lxp_result status;
+    if (owned_capture == NULL) return LXP_ERR_NON_CANONICAL;
+    *owned_capture = (lxp_byte_span){NULL, 0U};
+    if (kernel == NULL || activity == NULL || execution == NULL ||
+        execution->arena == NULL || maximum_bytes == 0U ||
+        maximum_bytes > PRESTATE_MAX_BYTES)
+        return LXP_ERR_NON_CANONICAL;
+    if (activity->protocol_version != LXP_PROTOCOL_VERSION_STATE_COMMITMENT ||
+        activity->activity_type != LX_PROGRAMS_CALL)
+        return LXP_ERR_CONTEXT_MISMATCH;
+    if (kernel->module_kv_count > LXP_KERNEL_MAX_MODULE_KV ||
+        kernel->blob_count > LXP_KERNEL_MAX_BLOBS)
+        return LXP_ERR_LENGTH_LIMIT;
+    blobs = calloc(LXP_KERNEL_MAX_BLOBS, sizeof(*blobs));
+    if (blobs == NULL) return LXP_ERR_ARENA_EXHAUSTED;
+    status = kernel_execution_prestate_capture(kernel, activity, execution,
+        maximum_bytes, &legacy);
+    for (size_t i = 0U; status == LXP_OK && i < kernel->module_kv_count; ++i) {
+        const lxp_module_kv_entry *program = &kernel->module_kv[i];
+        const lxp_module_kv_entry *manifest = NULL;
+        const lxp_module_blob *blob = NULL;
+        uint8_t digest[32];
+        uint32_t length;
+        size_t seen;
+        if (program->module_id != LXP_MODULE_PROGRAMS || program->key_length < 8U ||
+            memcmp(program->key, "program\0", 8U) != 0) continue;
+        if (program->key_length != 40U || program->value_length != 71U ||
+            lxp_ct_is_zero(program->key + 8U, 32U) ||
+            lxp_ct_is_zero(program->value + 33U, 32U)) {
+            status = LXP_ERR_NON_CANONICAL;
+            break;
+        }
+        for (size_t j = 0U; j < kernel->module_kv_count; ++j) {
+            const lxp_module_kv_entry *entry = &kernel->module_kv[j];
+            if (entry->module_id != LXP_MODULE_PROGRAMS || entry->key_length != 40U ||
+                memcmp(entry->key, "progcode", 8U) != 0 ||
+                memcmp(entry->key + 8U, program->key + 8U, 32U) != 0) continue;
+            if (manifest != NULL) { status = LXP_ERR_NON_CANONICAL; break; }
+            manifest = entry;
+        }
+        if (status != LXP_OK) break;
+        if (manifest == NULL || manifest->value_length != 38U ||
+            manifest->value[0] != 0U || manifest->value[1] != 1U ||
+            memcmp(manifest->value + 6U, program->value + 33U, 32U) != 0) {
+            status = LXP_ERR_CONTEXT_MISMATCH;
+            break;
+        }
+        length = ((uint32_t)manifest->value[2] << 24U) |
+            ((uint32_t)manifest->value[3] << 16U) |
+            ((uint32_t)manifest->value[4] << 8U) | manifest->value[5];
+        if (length == 0U || length > LXP_KERNEL_MAX_BLOB_BYTES) {
+            status = LXP_ERR_LENGTH_LIMIT;
+            break;
+        }
+        for (size_t j = 0U; j < kernel->blob_count; ++j) {
+            const lxp_module_blob *entry = &kernel->blobs[j];
+            if (entry->module_id != LXP_MODULE_PROGRAMS ||
+                memcmp(entry->key, program->value + 33U, 32U) != 0) continue;
+            if (blob != NULL) { status = LXP_ERR_NON_CANONICAL; break; }
+            blob = entry;
+        }
+        if (status != LXP_OK) break;
+        if (blob == NULL || blob->bytes == NULL || blob->length != length) {
+            status = LXP_ERR_CONTEXT_MISMATCH;
+            break;
+        }
+        status = lxp_hash_sha256(blob->bytes, blob->length, digest);
+        if (status == LXP_OK && memcmp(digest, blob->key, 32U) != 0)
+            status = LXP_ERR_ROOT_MISMATCH;
+        if (status != LXP_OK) break;
+        for (seen = 0U; seen < count; ++seen)
+            if (memcmp(blobs[seen]->key, blob->key, 32U) == 0) break;
+        if (seen == count) {
+            if (count == LXP_KERNEL_MAX_BLOBS) {
+                status = LXP_ERR_LENGTH_LIMIT;
+                break;
+            }
+            blobs[count++] = blob;
+        } else if (blobs[seen]->length != blob->length) {
+            status = LXP_ERR_CONTEXT_MISMATCH;
+        }
+    }
+    if (status == LXP_OK) qsort(blobs, count, sizeof(*blobs), replay_catalogue_blob_compare);
+    if (status == LXP_OK) status = prestate_integer(&output, 1U, 2U);
+    if (status == LXP_OK) status = prestate_blob(&output, legacy.bytes, legacy.length);
+    if (status == LXP_OK) status = prestate_integer(&output, count, 4U);
+    for (size_t i = 0U; status == LXP_OK && i < count; ++i) {
+        status = prestate_append(&output, blobs[i]->key, 32U);
+        if (status == LXP_OK)
+            status = prestate_blob(&output, blobs[i]->bytes, blobs[i]->length);
+    }
+    free((void *)legacy.bytes);
+    free(blobs);
+    if (status == LXP_OK) *owned_capture = (lxp_byte_span){output.bytes, output.length};
+    else free(output.bytes);
+    return status;
+}
+
 lxp_result lxp_kernel_encode_asset_execution_prestate(
     const lxp_kernel *kernel, const lxp_activity *activity,
     const lxp_kernel_execution *execution, size_t maximum_bytes,
@@ -4068,6 +4183,22 @@ static bool kernel_execution_prestate_matches(lxp_byte_span capture,
         memcmp(capture.bytes + 46U, receipt->previous_state_root, 32U) == 0;
 }
 
+static bool kernel_replay_catalogue_matches(lxp_byte_span capture,
+                                            const lxp_receipt *receipt)
+{
+    size_t length;
+    if (capture.bytes == NULL || capture.length < 10U ||
+        capture.bytes[0] != 0U || capture.bytes[1] != 1U ||
+        receipt->protocol_version != LXP_PROTOCOL_VERSION_STATE_COMMITMENT ||
+        receipt->module_id != LXP_MODULE_PROGRAMS || receipt->operation != 3U)
+        return false;
+    length = ((size_t)capture.bytes[2] << 24U) |
+        ((size_t)capture.bytes[3] << 16U) |
+        ((size_t)capture.bytes[4] << 8U) | capture.bytes[5];
+    return length <= capture.length - 10U &&
+        kernel_execution_prestate_matches((lxp_byte_span){capture.bytes + 6U, length}, receipt);
+}
+
 static bool kernel_asset_execution_prestate_matches(lxp_byte_span capture,
                                                      const lxp_receipt *receipt)
 {
@@ -4129,8 +4260,10 @@ static lxp_result kernel_snapshot_apply_prepared_with_capture(
     size_t *captured_bytes, lxp_byte_span *arbiter_prestate,
     size_t *arbiter_captured_bytes, size_t arbiter_maximum,
     lxp_byte_span *admission_prestate, size_t *admission_captured_bytes,
-    size_t admission_maximum)
+    size_t admission_maximum, lxp_byte_span *replay_catalogue,
+    size_t *replay_captured_bytes)
 {
+    lxp_byte_span replay_captured = {NULL, 0U};
     lxp_byte_span captured = {NULL, 0U};
     lxp_byte_span arbiter_captured = {NULL, 0U};
     lxp_byte_span admission_captured = {NULL, 0U};
@@ -4186,6 +4319,14 @@ static lxp_result kernel_snapshot_apply_prepared_with_capture(
         if (status == LXP_OK &&
             lxp_ct_memcmp(activity_id, prepared->activity_id, 32U) != 0)
             status = LXP_ERR_CONTEXT_MISMATCH;
+    }
+    if (status == LXP_OK && replay_catalogue != NULL) {
+        if (replay_captured_bytes == NULL || *replay_captured_bytes >= PRESTATE_MAX_BYTES)
+            status = LXP_ERR_LENGTH_LIMIT;
+        else if (activity->protocol_version == LXP_PROTOCOL_VERSION_STATE_COMMITMENT) {
+            status = lxp_kernel_encode_replay_catalogue(&snapshot->kernel, activity,
+                execution, PRESTATE_MAX_BYTES - *replay_captured_bytes, &replay_captured);
+        }
     }
     if (status == LXP_OK && prestate != NULL) {
         if (captured_bytes == NULL || *captured_bytes > PRESTATE_MAX_BYTES)
@@ -4352,6 +4493,9 @@ static lxp_result kernel_snapshot_apply_prepared_with_capture(
         status = receipt_state_root(
             &candidate->kernel, module_ctx_initialized ? &module_ctx : NULL,
             activity, receipt, execution->arena, receipt->resulting_state_root);
+    if (status == LXP_OK && replay_captured.bytes != NULL &&
+        !kernel_replay_catalogue_matches(replay_captured, receipt))
+        status = LXP_ERR_IO;
     if (status == LXP_OK && captured.bytes != NULL &&
         !kernel_execution_prestate_matches(captured, receipt))
         status = LXP_ERR_IO;
@@ -4398,6 +4542,10 @@ static lxp_result kernel_snapshot_apply_prepared_with_capture(
     if (candidate != NULL && candidate->journal.open)
         (void)lxp_state_journal_rollback(&candidate->journal);
     lxp_kernel_batch_snapshot_destroy(candidate);
+    if (status == LXP_OK && replay_captured.bytes != NULL) {
+        *replay_catalogue = replay_captured;
+        *replay_captured_bytes += replay_captured.length;
+    } else free((void *)replay_captured.bytes);
     if (status == LXP_OK && captured.bytes != NULL) {
         *prestate = captured;
         *captured_bytes += captured.length;
@@ -4421,7 +4569,7 @@ lxp_result lxp_kernel_snapshot_apply_prepared(
 {
     return kernel_snapshot_apply_prepared_with_capture(snapshot, activity,
         execution, prepared, receipt, canonical_events, NULL, NULL, NULL, NULL, 0U,
-        NULL, NULL, 0U);
+        NULL, NULL, 0U, NULL, NULL);
 }
 
 static bool kernel_snapshot_matches_live(
@@ -4940,6 +5088,15 @@ static lxp_result kernel_prepare_serial_activity_batch(
     batch->settled->programs_runtime.state_feed = runtime->state_feed;
     batch->settled->kernel.observe_commit = kernel_stage_commit;
     batch->settled->kernel.commit_observer_context = &record;
+    if (kernel->replay_catalogue_capture_enabled &&
+        activity->protocol_version == LXP_PROTOCOL_VERSION_STATE_COMMITMENT &&
+        activity->activity_type == LX_PROGRAMS_CALL) {
+        batch->replay_catalogues = calloc(1U, sizeof(*batch->replay_catalogues));
+        status = batch->replay_catalogues == NULL ? LXP_ERR_ARENA_EXHAUSTED :
+            lxp_kernel_encode_replay_catalogue(&batch->settled->kernel, activity,
+                &private_execution, PRESTATE_MAX_BYTES, &batch->replay_catalogues[0]);
+        if (status != LXP_OK) goto done;
+    }
     if (kernel->asset_execution_prestate_capture_enabled &&
         activity->protocol_version == LXP_PROTOCOL_VERSION_STATE_COMMITMENT &&
         activity->activity_type == LX_ASSET_SEND) {
@@ -4981,6 +5138,9 @@ static lxp_result kernel_prepare_serial_activity_batch(
     if (status == LXP_OK && activity->activity_type == LXP_GOVERNANCE_HANDOVER &&
         batch->receipts[0].result_code != LXP_OK)
         status = (lxp_result)batch->receipts[0].result_code;
+    if (status == LXP_OK && batch->replay_catalogues != NULL &&
+        !kernel_replay_catalogue_matches(batch->replay_catalogues[0], &batch->receipts[0]))
+        status = LXP_ERR_IO;
     if (status == LXP_OK && batch->asset_execution_prestates != NULL &&
         !kernel_asset_execution_prestate_matches(batch->asset_execution_prestates[0], &batch->receipts[0]))
         status = LXP_ERR_IO;
@@ -5473,6 +5633,8 @@ static lxp_result kernel_prepare_activity_batch(
     size_t arbiter_captured_bytes = 0U;
     lxp_byte_span *staged_admission_prestates = NULL;
     size_t admission_captured_bytes = 0U;
+    lxp_byte_span *staged_replay_catalogues = NULL;
+    size_t replay_captured_bytes = 0U;
     lxp_arena *coordinator_arenas = NULL;
     uint8_t **coordinator_bytes = NULL;
     lxp_prepared_transition *prepared[
@@ -5513,6 +5675,8 @@ static lxp_result kernel_prepare_activity_batch(
     normalized = (lxp_kernel_execution *)calloc(count, sizeof(*normalized));
     staged_receipts = (lxp_receipt *)calloc(count, sizeof(*staged_receipts));
     staged_events = (lxp_byte_span *)calloc(count, sizeof(*staged_events));
+    if (kernel->replay_catalogue_capture_enabled)
+        staged_replay_catalogues = calloc(count, sizeof(*staged_replay_catalogues));
     if (kernel->execution_prestate_capture_enabled)
         staged_prestates = calloc(count, sizeof(*staged_prestates));
     if (arbiter_maximum != 0U)
@@ -5523,7 +5687,8 @@ static lxp_result kernel_prepare_activity_batch(
                                              sizeof(*coordinator_arenas));
     coordinator_bytes = (uint8_t **)calloc(count,
                                            sizeof(*coordinator_bytes));
-    if ((admission_maximum != 0U && staged_admission_prestates == NULL) ||
+    if ((kernel->replay_catalogue_capture_enabled && staged_replay_catalogues == NULL) ||
+        (admission_maximum != 0U && staged_admission_prestates == NULL) ||
         (arbiter_maximum != 0U && staged_arbiter_prestates == NULL) ||
         (kernel->execution_prestate_capture_enabled && staged_prestates == NULL) ||
         items == NULL || normalized == NULL || staged_receipts == NULL ||
@@ -5613,7 +5778,9 @@ static lxp_result kernel_prepare_activity_batch(
                     staged_arbiter_prestates == NULL ? NULL : &staged_arbiter_prestates[0],
                     &arbiter_captured_bytes, arbiter_maximum,
                     staged_admission_prestates == NULL ? NULL : &staged_admission_prestates[0],
-                    &admission_captured_bytes, admission_maximum);
+                    &admission_captured_bytes, admission_maximum,
+                    staged_replay_catalogues == NULL ? NULL : &staged_replay_catalogues[0],
+                    &replay_captured_bytes);
         }
         if (status == LXP_OK &&
             (staged_receipts[0].result_code == LXP_OK ||
@@ -5730,7 +5897,9 @@ static lxp_result kernel_prepare_activity_batch(
                     staged_arbiter_prestates == NULL ? NULL : &staged_arbiter_prestates[index],
                     &arbiter_captured_bytes, arbiter_maximum,
                     staged_admission_prestates == NULL ? NULL : &staged_admission_prestates[index],
-                    &admission_captured_bytes, admission_maximum);
+                    &admission_captured_bytes, admission_maximum,
+                    staged_replay_catalogues == NULL ? NULL : &staged_replay_catalogues[index],
+                    &replay_captured_bytes);
                 if (status != LXP_OK)
                     status_is_semantic =
                         !lxp_result_is_fatal(status) &&
@@ -5820,6 +5989,11 @@ assemble_batch:
         staged_receipts = NULL;
         batch->execution_prestates = staged_prestates;
         staged_prestates = NULL;
+        if (staged_replay_catalogues != NULL)
+            for (index = count; index < planned_count; ++index)
+                free((void *)staged_replay_catalogues[index].bytes);
+        batch->replay_catalogues = staged_replay_catalogues;
+        staged_replay_catalogues = NULL;
         if (staged_arbiter_prestates != NULL)
             for (index = count; index < planned_count; ++index)
                 lxp_kernel_arbiter_prestate_destroy(&staged_arbiter_prestates[index]);
@@ -5852,6 +6026,10 @@ done:
         for (index = 0U; index < planned_count; ++index)
             free((void *)staged_prestates[index].bytes);
     free(staged_prestates);
+    if (staged_replay_catalogues != NULL)
+        for (index = 0U; index < planned_count; ++index)
+            free((void *)staged_replay_catalogues[index].bytes);
+    free(staged_replay_catalogues);
     if (staged_arbiter_prestates != NULL)
         for (index = 0U; index < planned_count; ++index)
             free((void *)staged_arbiter_prestates[index].bytes);
@@ -6379,6 +6557,15 @@ lxp_byte_span lxp_kernel_prepared_batch_execution_prestate(
     return batch->execution_prestates[receipt_index];
 }
 
+lxp_byte_span lxp_kernel_prepared_batch_replay_catalogue(
+    const lxp_kernel_prepared_batch *batch, size_t receipt_index)
+{
+    if (batch == NULL || batch->simulation || receipt_index >= batch->count ||
+        batch->replay_catalogues == NULL)
+        return (lxp_byte_span){NULL, 0U};
+    return batch->replay_catalogues[receipt_index];
+}
+
 lxp_byte_span lxp_kernel_prepared_batch_asset_execution_prestate(
     const lxp_kernel_prepared_batch *batch, size_t receipt_index)
 {
@@ -6462,6 +6649,10 @@ void lxp_kernel_prepared_batch_destroy(lxp_kernel_prepared_batch *batch)
         for (index = 0U; index < batch->count; ++index)
             free((void *)batch->execution_prestates[index].bytes);
     free(batch->execution_prestates);
+    if (batch->replay_catalogues != NULL)
+        for (index = 0U; index < batch->count; ++index)
+            free((void *)batch->replay_catalogues[index].bytes);
+    free(batch->replay_catalogues);
     if (batch->asset_execution_prestates != NULL)
         for (index = 0U; index < batch->count; ++index)
             free((void *)batch->asset_execution_prestates[index].bytes);
@@ -7285,6 +7476,15 @@ static lxp_result kernel_prepare_terminal_rejection(
     batch->settled->programs_runtime.state_feed = runtime->state_feed;
     batch->settled->kernel.observe_commit = kernel_stage_commit;
     batch->settled->kernel.commit_observer_context = &record;
+    if (kernel->replay_catalogue_capture_enabled &&
+        activity->protocol_version == LXP_PROTOCOL_VERSION_STATE_COMMITMENT &&
+        activity->activity_type == LX_PROGRAMS_CALL) {
+        batch->replay_catalogues = calloc(1U, sizeof(*batch->replay_catalogues));
+        status = batch->replay_catalogues == NULL ? LXP_ERR_ARENA_EXHAUSTED :
+            lxp_kernel_encode_replay_catalogue(&batch->settled->kernel, activity,
+                &private_execution, PRESTATE_MAX_BYTES, &batch->replay_catalogues[0]);
+        if (status != LXP_OK) goto done;
+    }
     if (kernel->asset_execution_prestate_capture_enabled &&
         activity->protocol_version == LXP_PROTOCOL_VERSION_STATE_COMMITMENT &&
         activity->activity_type == LX_ASSET_SEND) {
@@ -7324,6 +7524,9 @@ static lxp_result kernel_prepare_terminal_rejection(
     status = lxp_kernel_terminal_rejection(&batch->settled->kernel, activity,
                                            &private_execution, refusal,
                                            &batch->receipts[0]);
+    if (status == LXP_OK && batch->replay_catalogues != NULL &&
+        !kernel_replay_catalogue_matches(batch->replay_catalogues[0], &batch->receipts[0]))
+        status = LXP_ERR_IO;
     if (status == LXP_OK && batch->asset_execution_prestates != NULL &&
         !kernel_asset_execution_prestate_matches(batch->asset_execution_prestates[0], &batch->receipts[0]))
         status = LXP_ERR_IO;

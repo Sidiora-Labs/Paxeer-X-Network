@@ -33565,3 +33565,29 @@ qualification_status = "unverified"
 build_exit_code = 0
 verify_exit_code = 78
 qualification_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-14.12-result.json"
+
+[task.104.35.26]
+title = "Retain genuine historical Programs code for authenticated replay resolvers"
+status = "done"
+mode = "BUILD"
+wave = 2
+requires = ["0.2"]
+reqs = ["1105.3", "1105.4"]
+do_1 = "Capture exact original code bytes from each execution snapshot alongside byte-identical existing full Programs inventory. Add independently authenticated historical retention and closed selector4 client proof; preserve all legacy versions and current head checks. Never substitute live catalogue or cloned authority."
+touches = ["src/protocol/lxp_kernel.c", "include/layerx/lxp_kernel.h", "include/layerx/lxp_daemon.h", "cmd/layerxd/lxp_daemon_evidence.c", "cmd/layerxd/lxp_daemon_process.c", "cmd/layerxd/lxp_daemon_lni.c", "cmd/layerxd/lxp_daemon_lni_caps.h", "agent/crates/layerx-client/src/evidence/execution_prestate.rs", "agent/crates/layerx-client/src/evidence.rs", "agent/crates/layerx-client/src/execution_prestate.rs", "agent/crates/layerx-client/src/client.rs", "tests/daemon/lxp_test_replay_catalogue.c", "agent/crates/layerx-client/tests/replay_catalogue.rs", "tools/qualification/paxeer-x/replay-catalogue.py"]
+build_cmd = "timeout 20m python3 tools/qualification/paxeer-x/replay-catalogue.py --build"
+verify_cmd = "timeout 10m python3 tools/qualification/paxeer-x/replay-catalogue.py"
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop at original30-minute cap, unrelated failure, missing genuine authority or weakening; report exact source state, command, exit code and log path."
+completion_basis_policy = "Owner CONSTITUTION: fully implemented DONE; qualification separate and partial remains in_progress."
+source_ownership = "Root serializes manifests, spec and publication; no deployments, live signing, owner-file replacement or concurrent modification of source used by an active gate."
+
+
+completion_basis = "implementation"
+qualification_status = "unverified"
+build_exit_code = 2
+verify_status = "UNRUN"
+qualification_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-104.35.26-result.json"
