@@ -158,6 +158,14 @@ def qualify(evidence):
             captures = json.loads((fixture / "inputs.json").read_text()).get("captures", [])
             if {item.get("name") for item in captures} != {"serial-empty-0", "scheduled-0", "scheduled-1", "terminal-0"}:
                 raise RuntimeError("complete genuine serial/scheduled/terminal corpus required")
+            for capture in captures:
+                for field, length in (("signing_preimage_path", 32), ("authority_key_path", 32)):
+                    path = Path(capture[field]).resolve(strict=True)
+                    if path.parent != fixture or len(path.read_bytes()) != length:
+                        raise RuntimeError("genuine native signing artifacts required")
+                path = Path(capture["activity_path"]).resolve(strict=True)
+                if path.parent != fixture or not path.read_bytes():
+                    raise RuntimeError("genuine canonical signed activity required")
             for path in fixture.iterdir():
                 if path.is_file() and not path.is_socket():
                     os.chown(path, 0, 65534)

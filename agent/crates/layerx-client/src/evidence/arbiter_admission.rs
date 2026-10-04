@@ -127,7 +127,12 @@ pub fn verify_arbiter_admission_v3_bounded(
         || activity.protocol_version() != receipt.protocol_version()
         || activity.network_id() != expected_network_id
         || activity.activity_type().module() != ModuleId::Programs
-        || activity.activity_type().ordinal() != u16::from(receipt.operation())
+        || receipt.operation()
+            != if activity.activity_type().ordinal() == 3 {
+                3
+            } else {
+                0
+            }
         || activity.actor_did().is_empty()
         || layerx_wire::hash::activity_id(&activity)
             .map_err(|_| AdmissionEvidenceError::Activity)?

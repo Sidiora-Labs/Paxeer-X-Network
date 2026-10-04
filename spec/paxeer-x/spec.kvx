@@ -32965,3 +32965,27 @@ qualification_status = "passed"
 build_exit_code = 0
 verify_exit_code = 0
 qualification_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-0.14-verify.log"
+
+[task.104.35.21]
+title = "Connect actual native signed activity verification to SDK admission"
+status = "done"
+mode = "BUILD"
+wave = 2
+requires = ["0.2", "104.35.19"]
+reqs = ["1105.3", "1105.4"]
+do_1 = "Repair the exact actual SDK Evidence(Activity) refusal using canonical native signing bytes and authenticated committed authority facts; preserve every cryptographic, registry, network, payload, sequence, bound and root refusal. No accepting unverified activity or weakening existing checks."
+touches = ["agent/crates/layerx-client/src/evidence/arbiter_admission.rs", "agent/crates/layerx-client/tests/arbiter_admission.rs", "tests/daemon/lxp_test_arbiter_admission.c", "tools/qualification/paxeer-x/arbiter-admission.py"]
+build_cmd = "timeout 20m make paxeer-x-arbiter-admission-build"
+verify_cmd = "timeout 10m python3 tools/qualification/paxeer-x/arbiter-admission.py"
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop at original cap, unrelated failure, missing genuine authority or weakening; report exact source state and exit/log. No unchanged reruns."
+completion_basis_policy = "Owner CONSTITUTION: fully implemented DONE; qualification separate."
+source_ownership = "Root owns shared manifests/spec/publication; source owners preserve concurrent edits and no deployment."
+completion_basis = "implementation"
+qualification_status = "passed"
+build_exit_code = 0
+verify_exit_code = 0
+qualification_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-104.35.21-verify.log"

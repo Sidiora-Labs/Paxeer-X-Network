@@ -1,7 +1,8 @@
 use std::fs;
 
 use layerx_client::evidence::{
-    verify_arbiter_admission_v3, verify_arbiter_admission_v3_bounded, MAX_ADMISSION_PRESTATE_BYTES,
+    verify_arbiter_admission_v3, verify_arbiter_admission_v3_bounded, AdmissionEvidenceError,
+    MAX_ADMISSION_PRESTATE_BYTES,
 };
 use layerx_proof::inclusion::{verify_header, verify_receipt, SequencerAuthorization};
 use layerx_proof::merkle::decode_proof;
@@ -17,6 +18,9 @@ struct Capture {
     name: String,
     v3: Vec<u8>,
     v2: Vec<u8>,
+    activity: Vec<u8>,
+    signing_preimage: [u8; 32],
+    authority_key: [u8; 32],
     receipt: VerifiedReceipt,
 }
 
@@ -179,6 +183,13 @@ impl Fixture {
                     name: string(capture, "name").to_owned(),
                     v3: bytes(capture, "v3_path"),
                     v2: bytes(capture, "v2_path"),
+                    activity: bytes(capture, "activity_path"),
+                    signing_preimage: bytes(capture, "signing_preimage_path")
+                        .try_into()
+                        .expect("native 32-byte signing preimage"),
+                    authority_key: bytes(capture, "authority_key_path")
+                        .try_into()
+                        .expect("native registered authority key"),
                     receipt: verified,
                 }
             })
@@ -373,6 +384,64 @@ fn real_native_arbiter_admission_transport() {
         drop(discovery);
         let signed_activity = checked.activity();
         assert_eq!(
+            layerx_wire::activity::encode_signed(signed_activity)
+                .expect("canonical native signed activity"),
+            capture.activity
+        );
+        assert_eq!(signed_activity.authority(), capture.authority_key);
+        let unsigned =
+            layerx_wire::activity::signing_bytes(signed_activity).expect("canonical signing bytes");
+        let signing = layerx_crypto::SignatureMessage::new(
+            layerx_wire::hash::Domain::SignaturePreimage,
+            signed_activity.protocol_version(),
+            signed_activity.network_id(),
+            unsigned.as_bytes(),
+        )
+        .expect("native signing domain");
+        assert_eq!(signing.digest(), capture.signing_preimage);
+        let signature: [u8; 64] = signed_activity
+            .signature()
+            .expect("actual native signature")
+            .try_into()
+            .expect("native Ed25519 signature");
+        layerx_crypto::ed25519::verify(&capture.authority_key, &signature, signing)
+            .expect("actual native signer cryptographic verification");
+        let mut bad_signature = signature;
+        bad_signature[0] ^= 1;
+        assert!(
+            layerx_crypto::ed25519::verify(&capture.authority_key, &bad_signature, signing)
+                .is_err()
+        );
+        let mut bad_key = capture.authority_key;
+        bad_key[0] ^= 1;
+        assert!(layerx_crypto::ed25519::verify(&bad_key, &signature, signing).is_err());
+        let mut bad_preimage = capture.signing_preimage;
+        bad_preimage[0] ^= 1;
+        assert!(layerx_crypto::ed25519::verify_digest(
+            &capture.authority_key,
+            &signature,
+            &bad_preimage
+        )
+        .is_err());
+        let native_operation = capture
+            .receipt
+            .receipt()
+            .protocol()
+            .expect("native operation")
+            .operation();
+        assert_eq!(
+            native_operation,
+            if signed_activity.activity_type().ordinal() == 3 {
+                3
+            } else {
+                0
+            }
+        );
+        if capture.name.starts_with("serial-empty") {
+            assert_eq!(signed_activity.activity_type().ordinal(), 1);
+            assert_eq!(native_operation, 0);
+        }
+        assert_eq!(
             layerx_wire::hash::activity_id(signed_activity).expect("real activity binding"),
             checked.activity_id()
         );
@@ -391,6 +460,32 @@ fn real_native_arbiter_admission_transport() {
         assert_eq!(
             &capture.v3[activity_end..activity_end + 2],
             &3_u16.to_be_bytes()
+        );
+        let other = fixture
+            .captures
+            .iter()
+            .find(|other| {
+                other
+                    .receipt
+                    .receipt()
+                    .protocol()
+                    .expect("native operation")
+                    .operation()
+                    != native_operation
+            })
+            .expect("genuine CALL and non-CALL captures");
+        let mut wrong_operation = capture.v3[..v2_end].to_vec();
+        wrong_operation.extend_from_slice(
+            &u32::try_from(other.activity.len())
+                .expect("bounded native activity")
+                .to_be_bytes(),
+        );
+        wrong_operation.extend_from_slice(&other.activity);
+        wrong_operation.extend_from_slice(&capture.v3[activity_end..]);
+        assert_eq!(
+            verify_arbiter_admission_v3(&wrong_operation, &capture.receipt, fixture.network)
+                .expect_err("genuine signed activity with wrong native receipt operation"),
+            AdmissionEvidenceError::Activity
         );
         let mut inventory_offset = activity_end + 2;
         for expected_module in [1_u16, 3, 7] {

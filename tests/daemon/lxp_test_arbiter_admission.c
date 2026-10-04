@@ -780,11 +780,23 @@ static int maintenance_publish(maintenance_fixture *f, uint32_t type,
         CHECK(snprintf(name, sizeof(name), "batch-%llu.maintenance-proof", (unsigned long long)batch_number) > 0);
         CHECK(write_evidence_proof(f->evidence_directory, name, &input.maintenance_proof) == 0);
         for (size_t i = 0U; i < count; ++i) {
+            uint8_t signing_preimage[32];
             lxp_byte_span v2 = lxp_kernel_prepared_batch_arbiter_prestate(prepared, i);
             lxp_byte_span v1 = lxp_kernel_prepared_batch_execution_prestate(prepared, i);
             lxp_byte_span v3 = lxp_kernel_prepared_batch_admission_prestate(prepared, i);
             CHECK(v3.length > v2.length + 12U && v3.bytes[0] == 0U && v3.bytes[1] == 3U);
             CHECK(memcmp(v3.bytes + 6U, v2.bytes, v2.length) == 0);
+            CHECK(lxp_activity_verify_signature(&activities[i]) == LXP_OK);
+            CHECK(activities[i].authority.length == 32U &&
+                memcmp(activities[i].authority.bytes, f->actor_public_key, 32U) == 0 &&
+                memcmp(f->identity->primary_key, f->actor_public_key, 32U) == 0);
+            CHECK(lxp_activity_signing_preimage(&activities[i], signing_preimage) == LXP_OK);
+            CHECK(snprintf(name, sizeof(name), "batch-%llu-%zu.activity", (unsigned long long)batch_number, i) > 0);
+            CHECK(write_evidence_file(f->evidence_directory, name, canonical[i].bytes, canonical[i].length) == 0);
+            CHECK(snprintf(name, sizeof(name), "batch-%llu-%zu.signing-preimage", (unsigned long long)batch_number, i) > 0);
+            CHECK(write_evidence_file(f->evidence_directory, name, signing_preimage, sizeof(signing_preimage)) == 0);
+            CHECK(snprintf(name, sizeof(name), "batch-%llu-%zu.authority-key", (unsigned long long)batch_number, i) > 0);
+            CHECK(write_evidence_file(f->evidence_directory, name, f->actor_public_key, sizeof(f->actor_public_key)) == 0);
             CHECK(snprintf(name, sizeof(name), "batch-%llu-%zu.v3", (unsigned long long)batch_number, i) > 0);
             CHECK(write_evidence_file(f->evidence_directory, name, v3.bytes, v3.length) == 0);
             CHECK(snprintf(name, sizeof(name), "batch-%llu-%zu.v2", (unsigned long long)batch_number, i) > 0);
@@ -796,8 +808,8 @@ static int maintenance_publish(maintenance_fixture *f, uint32_t type,
             CHECK(snprintf(name, sizeof(name), "batch-%llu-%zu.proof", (unsigned long long)batch_number, i) > 0);
             CHECK(write_evidence_proof(f->evidence_directory, name, &proofs[i]) == 0);
             CHECK(snprintf(absolute, sizeof(absolute), "%s/batch-%llu", f->evidence_directory, (unsigned long long)batch_number) > 0);
-            CHECK(fprintf(f->arbiter_manifest, "%s{\"name\":\"%s-%zu\",\"v3_path\":\"%s-%zu.v3\",\"v2_path\":\"%s-%zu.v2\",\"v1_path\":\"%s-%zu.v1\",\"receipt_path\":\"%s-%zu.receipt\",\"proof_path\":\"%s-%zu.proof\",\"header_path\":\"%s.header\",\"header_signature_path\":\"%s.signature\",\"maintenance_path\":\"%s.maintenance\",\"maintenance_proof_path\":\"%s.maintenance-proof\",\"receipts\":[", f->arbiter_first_capture ? "" : ",", kind, i,
-                absolute, i, absolute, i, absolute, i, absolute, i, absolute, i, absolute, absolute, absolute, absolute) > 0);
+            CHECK(fprintf(f->arbiter_manifest, "%s{\"name\":\"%s-%zu\",\"v3_path\":\"%s-%zu.v3\",\"v2_path\":\"%s-%zu.v2\",\"v1_path\":\"%s-%zu.v1\",\"receipt_path\":\"%s-%zu.receipt\",\"proof_path\":\"%s-%zu.proof\",\"activity_path\":\"%s-%zu.activity\",\"signing_preimage_path\":\"%s-%zu.signing-preimage\",\"authority_key_path\":\"%s-%zu.authority-key\",\"header_path\":\"%s.header\",\"header_signature_path\":\"%s.signature\",\"maintenance_path\":\"%s.maintenance\",\"maintenance_proof_path\":\"%s.maintenance-proof\",\"receipts\":[", f->arbiter_first_capture ? "" : ",", kind, i,
+                absolute, i, absolute, i, absolute, i, absolute, i, absolute, i, absolute, i, absolute, i, absolute, i, absolute, absolute, absolute, absolute) > 0);
             for (size_t j = 0U; j < count; ++j)
                 CHECK(fprintf(f->arbiter_manifest, "%s\"%s-%zu.receipt\"", j == 0U ? "" : ",", absolute, j) > 0);
             CHECK(fprintf(f->arbiter_manifest, "]}") > 0);
