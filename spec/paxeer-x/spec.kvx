@@ -27237,7 +27237,7 @@ source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/task104.35.4-regi
 
 [task.104.38.3]
 title = "Ship the privileged human component server"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 3
 requires = ["0.2", "104.13.6"]
@@ -27249,7 +27249,7 @@ do_4 = "Keep layerx-intents as the sole payload authority and route every protoc
 do_5 = "Fail closed on unavailable dependencies, malformed component frames, stale evidence and unknown operations without an in-memory fallback."
 do_6 = "Ship a production binary and configuration surface plus real-boundary cases, leaving execution to human qualification."
 do_7 = "Provide this task selector in tools/paxeer-x/gates and execute the full scoped acceptance contract using real production paths. Preserve the retained verification command coverage; move aggregate matrices to release scope and refuse an unknown or unimplemented selector."
-touches = ["human/crates/layerx-human-service/src", "human/crates/layerx-human-service/Cargo.toml", "human/tests", "spec/paxeer-x/qualification.kvx", "tools/paxeer-x/gates/104.38.3.sh"]
+touches = ["human/crates/layerx-human-service/src/server/component.rs", "human/crates/layerx-human-service/src/server/component_protocol.rs", "human/crates/layerx-human-service/src/bin/layerx-human-components.rs", "tools/paxeer-x/gates/104.38.3.sh"]
 verify_cmd = "timeout 30m tools/paxeer-x/verify-task.sh 104.38.3"
 gate_kind = "planned-adapter"
 max_builds = 1
@@ -27265,6 +27265,13 @@ completion_policy = "Existing implementation is preserved; current candidate qua
 planned_paths = ["human/tests", "spec/paxeer-x/qualification.kvx", "tools/paxeer-x/gates/104.38.3.sh"]
 path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
 evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+fanout_role = "integrate_dependencies/native_authority_fixture"
+fanout_scope_delegated = ["human/crates/layerx-human-service/src", "human/crates/layerx-human-service/Cargo.toml", "human/tests", "spec/paxeer-x/qualification.kvx"]
+fanout_basis = "Owner requested maximum parallel implementation on 2026-10-04; delegated shared file edits require root coordination and retain original acceptance criteria"
+source_status = "complete"
+completion_basis = "implementation under owner CONSTITUTION; qualification separately recorded"
+qualification_status = "UNRUN"
+source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/publication-normalized-104.38.3.json"
 
 [task.104.38.9]
 title = "Unify Programs ABI upgrade policy across consensus and projections"

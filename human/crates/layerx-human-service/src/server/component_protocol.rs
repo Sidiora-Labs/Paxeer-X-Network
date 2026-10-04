@@ -1,15 +1,15 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use serde::Deserialize;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use sha2::{Digest as _, Sha256};
 use zeroize::Zeroize;
 
 use crate::trace::TraceId;
 
 use super::backend::{
-    valid_bearer_assertion, ApiFailure, BackendResponse, PrincipalContext, Readiness,
-    SessionSecrets, COMPONENT_PROTOCOL_VERSION,
+    ApiFailure, BackendResponse, COMPONENT_PROTOCOL_VERSION, PrincipalContext, Readiness,
+    SessionSecrets, valid_bearer_assertion,
 };
 use super::schema::Operation;
 
@@ -90,6 +90,34 @@ pub(super) struct WirePrincipal {
     pub did: Option<String>,
 }
 
+impl WirePrincipal {
+    pub(super) fn validate_disclosure(
+        &self,
+        operation: &Operation,
+        path_parameters: &BTreeMap<String, String>,
+        body: &Value,
+        idempotency_key: Option<&str>,
+        trace: &str,
+    ) -> Result<(), ApiFailure> {
+        if self.operation != operation.name
+            || self.trace != trace
+            || parse_digest(&self.disclosure_digest, "disclosure_digest")? != json_digest(body)?
+            || parse_digest(&self.request_digest, "request_digest")?
+                != authorized_request_digest(
+                    operation,
+                    &self.destination,
+                    path_parameters,
+                    body,
+                    idempotency_key,
+                    trace,
+                )?
+        {
+            return Err(ApiFailure::unauthenticated());
+        }
+        Ok(())
+    }
+}
+
 impl ComponentRequest {
     pub(super) fn validate(&self) -> Result<(), ApiFailure> {
         match self {
@@ -116,7 +144,11 @@ impl ComponentRequest {
                 if intended_destination.is_empty()
                     || intended_destination.len() > DESTINATION_LIMIT
                     || !intended_destination.starts_with('/')
-                    || intended_destination.contains(['\0', '\r', '\n'])
+                    || intended_destination.starts_with("//")
+                    || intended_destination.contains('\\')
+                    || intended_destination
+                        .bytes()
+                        .any(|byte| byte.is_ascii_control())
                 {
                     return Err(ApiFailure::invalid_request(Some("intended_destination")));
                 }
@@ -161,7 +193,11 @@ impl ComponentRequest {
                 if intended_destination.is_empty()
                     || intended_destination.len() > DESTINATION_LIMIT
                     || !intended_destination.starts_with('/')
-                    || intended_destination.contains(['\0', '\r', '\n'])
+                    || intended_destination.starts_with("//")
+                    || intended_destination.contains('\\')
+                    || intended_destination
+                        .bytes()
+                        .any(|byte| byte.is_ascii_control())
                 {
                     return Err(ApiFailure::invalid_request(Some("intended_destination")));
                 }
@@ -185,6 +221,7 @@ impl ComponentRequest {
                 operation,
                 principal,
                 path_parameters,
+                body,
                 idempotency_key,
                 trace,
                 ..
@@ -206,6 +243,13 @@ impl ComponentRequest {
                 }
                 if let Some(principal) = principal {
                     validate_principal(principal)?;
+                    if principal.operation != *operation
+                        || principal.trace != *trace
+                        || parse_digest(&principal.disclosure_digest, "disclosure_digest")?
+                            != json_digest(body)?
+                    {
+                        return Err(ApiFailure::unauthenticated());
+                    }
                 }
                 validate_parameters(path_parameters)?;
                 if idempotency_key
@@ -609,6 +653,11 @@ fn validate_principal(principal: &WirePrincipal) -> Result<(), ApiFailure> {
         || principal.destination.len() > DESTINATION_LIMIT
         || !principal.destination.starts_with('/')
         || principal.destination.starts_with("//")
+        || principal.destination.contains('\\')
+        || principal
+            .destination
+            .bytes()
+            .any(|byte| byte.is_ascii_control())
     {
         return Err(ApiFailure::invalid_request(Some("principal")));
     }
@@ -640,4 +689,111 @@ fn validate_principal(principal: &WirePrincipal) -> Result<(), ApiFailure> {
         return Err(ApiFailure::invalid_request(Some("principal")));
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::super::schema::ApiSchema;
+    use super::{ComponentRequest, hex, json_digest, validate_execute};
+    use serde_json::json;
+    use std::collections::BTreeMap;
+
+    const TRACE: &str = "trc_00112233445566778899aabbccddeeff";
+
+    #[test]
+    fn component_protocol_refuses_unknown_duplicate_and_future_frames()
+    -> Result<(), Box<dyn std::error::Error>> {
+        for bytes in [
+            br#"{"kind":"unknown","version":1,"trace":"trc_00112233445566778899aabbccddeeff"}"#.as_slice(),
+            br#"{"kind":"readiness","version":1,"version":1,"trace":"trc_00112233445566778899aabbccddeeff"}"#.as_slice(),
+            br#"{"kind":"readiness","version":1,"trace":"trc_00112233445566778899aabbccddeeff","extra":true}"#.as_slice(),
+        ] {
+            assert!(serde_json::from_slice::<ComponentRequest>(bytes).is_err());
+        }
+        let request: ComponentRequest =
+            serde_json::from_value(json!({"kind":"readiness","version":2,"trace":TRACE}))?;
+        assert_eq!(
+            request.validate().err().map(|error| error.status),
+            Some(400)
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn component_protocol_authorization_refuses_ambiguous_destinations()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let body = json!({});
+        for destination in [
+            "//untrusted.invalid/v1",
+            "/v1\\account",
+            "/v1/\taccount",
+            "",
+        ] {
+            let request: ComponentRequest = serde_json::from_value(json!({
+                "kind":"session.authorize", "version":1, "operation":"account.balance",
+                "access_token":"untrusted-input", "csrf_token":null, "intended_destination":destination,
+                "refresh":false, "request_digest":"00".repeat(32), "disclosure_digest":hex(&json_digest(&body).map_err(|error| format!("{error:?}"))?),
+                "path_parameters":{}, "body":body, "idempotency_key":null, "trace":TRACE
+            }))?;
+            assert_eq!(
+                request.validate().err().map(|error| error.status),
+                Some(400)
+            );
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn component_protocol_execution_refuses_changed_authorization_disclosure()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let body = json!({});
+        let request = json!({
+            "kind":"human-api.execute", "version":1, "component":"activity", "operation":"account.balance",
+            "principal": {
+                "principal_id":"untrusted-input", "tenant_id":"untrusted-input", "session_id":"untrusted-input",
+                "capability":"untrusted-input", "request_digest":"00".repeat(32), "disclosure_digest":hex(&json_digest(&body).map_err(|error| format!("{error:?}"))?),
+                "operation":"account.balance", "destination":"/v1/account/balance", "trace":TRACE,
+                "issued_at":1, "expires_at":2, "refresh_token":null, "refresh_csrf":null, "assertion":null, "did":null
+            },
+            "path_parameters":{}, "body":body, "idempotency_key":null, "trace":TRACE
+        });
+        for (field, changed) in [
+            ("operation", json!("account.home")),
+            ("trace", json!("trc_ffeeddccbbaa99887766554433221100")),
+            ("body", json!({"changed":true})),
+        ] {
+            let mut bytes = request.clone();
+            bytes[field] = changed;
+            let decoded: ComponentRequest = serde_json::from_value(bytes)?;
+            assert_eq!(
+                decoded.validate().err().map(|error| error.status),
+                Some(401)
+            );
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn component_protocol_route_contract_refuses_undeclared_parameters_and_idempotency()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let schema = ApiSchema::v1()?;
+        let operation = schema
+            .operation("version")
+            .ok_or("version operation missing")?;
+        let mut parameters = BTreeMap::new();
+        parameters.insert("principal".to_owned(), "untrusted-input".to_owned());
+        assert_eq!(
+            validate_execute(operation, &parameters, None)
+                .err()
+                .map(|error| error.status),
+            Some(400)
+        );
+        assert_eq!(
+            validate_execute(operation, &BTreeMap::new(), Some("untrusted-input"))
+                .err()
+                .map(|error| error.status),
+            Some(400)
+        );
+        Ok(())
+    }
 }

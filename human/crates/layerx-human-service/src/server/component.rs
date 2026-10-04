@@ -1,5 +1,5 @@
 use std::fs;
-use std::io;
+use std::io::{self, Read, Write};
 use std::os::unix::fs::{FileTypeExt, MetadataExt, PermissionsExt};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
@@ -7,23 +7,23 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, SyncSender, TryRecvError, TrySendError};
 use std::sync::{Arc, Mutex};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use layerx_client::lni::framing::{read_frame, write_frame};
 use layerx_client::lni::transport::Limits;
 use rustix::net::sockopt::socket_peercred;
-use rustix::net::{recv, RecvFlags};
+use rustix::net::{RecvFlags, recv};
 use zeroize::Zeroize;
 
 use crate::store::{AgentTenantId, PrincipalId};
 
 use super::backend::{
-    component_owner, ApiFailure, BearerCredentials, HumanApiComponents, PrincipalContext,
-    ScopedRequest, SessionCredentials,
+    ApiFailure, BearerCredentials, HumanApiComponents, PrincipalContext, ScopedRequest,
+    SessionCredentials, component_owner,
 };
 use super::component_protocol::{
-    authorized_request_digest, encode_authorized, encode_backend, encode_failure, encode_readiness,
-    json_digest, parse_digest, validate_execute, ComponentRequest, WirePrincipal,
+    ComponentRequest, WirePrincipal, authorized_request_digest, encode_authorized, encode_backend,
+    encode_failure, encode_readiness, json_digest, parse_digest, validate_execute,
 };
 use super::schema::ApiSchema;
 
@@ -141,7 +141,10 @@ impl HumanComponentServer {
     where
         B: HumanApiComponents + ComponentMaintenance,
     {
-        if interval.is_zero() || maximum_items == 0 {
+        if interval.is_zero()
+            || maximum_items == 0
+            || Instant::now().checked_add(interval).is_none()
+        {
             return Err(ComponentServerError::Configuration);
         }
         Ok(Self {
@@ -240,7 +243,17 @@ impl BoundHumanComponentServer {
             let shutdown = self.shutdown.clone();
             Some(thread::spawn(move || {
                 while !shutdown.requested() {
-                    thread::sleep(maintenance.interval);
+                    let Some(next) = Instant::now().checked_add(maintenance.interval) else {
+                        maintenance.backend.set_maintenance_health(false);
+                        break;
+                    };
+                    while !shutdown.requested() {
+                        let remaining = next.saturating_duration_since(Instant::now());
+                        if remaining.is_zero() {
+                            break;
+                        }
+                        thread::sleep(remaining.min(ACCEPT_POLL));
+                    }
                     if shutdown.requested() {
                         break;
                     }
@@ -330,6 +343,7 @@ impl Dispatcher {
                     .schema
                     .operation(operation)
                     .ok_or_else(ApiFailure::not_found)?;
+                validate_execute(operation, path_parameters, idempotency_key.as_deref())?;
                 let request_digest = parse_digest(request_digest, "request_digest")?;
                 let disclosure_digest = parse_digest(disclosure_digest, "disclosure_digest")?;
                 if disclosure_digest != json_digest(body)?
@@ -379,6 +393,7 @@ impl Dispatcher {
                     .schema
                     .operation(operation)
                     .ok_or_else(ApiFailure::not_found)?;
+                validate_execute(operation, path_parameters, idempotency_key.as_deref())?;
                 let request_digest = parse_digest(request_digest, "request_digest")?;
                 let disclosure_digest = parse_digest(disclosure_digest, "disclosure_digest")?;
                 if disclosure_digest != json_digest(body)?
@@ -431,6 +446,15 @@ impl Dispatcher {
                 validate_execute(operation, path_parameters, idempotency_key.as_deref())?;
                 if operation.is_public_bootstrap() != principal.is_none() {
                     return Err(ApiFailure::forbidden());
+                }
+                if let Some(principal) = principal.as_ref() {
+                    principal.validate_disclosure(
+                        operation,
+                        path_parameters,
+                        body,
+                        idempotency_key.as_deref(),
+                        trace,
+                    )?;
                 }
                 let principal = principal_context(principal.as_ref())?;
                 let body = self
@@ -488,6 +512,15 @@ impl Dispatcher {
         validate_execute(operation, path_parameters, idempotency_key.as_deref())?;
         if principal.is_none() {
             return Err(ApiFailure::unauthenticated());
+        }
+        if let Some(principal) = principal.as_ref() {
+            principal.validate_disclosure(
+                operation,
+                path_parameters,
+                body,
+                idempotency_key.as_deref(),
+                trace,
+            )?;
         }
         let principal = principal_context(principal.as_ref())?;
         let body = self
@@ -640,17 +673,28 @@ fn serve_one(
         .set_read_timeout(Some(limits.deadline))
         .and_then(|()| stream.set_write_timeout(Some(limits.deadline)))
         .map_err(ComponentServerError::Io)?;
-    let mut frame = read_frame(stream, limits.maximum_frame_bytes)
-        .map_err(|_| ComponentServerError::Protocol)?;
-    reject_buffered_second_frame(stream)?;
-    let is_stream = serde_json::from_slice::<ComponentRequest>(&frame).is_ok_and(|request| {
-        matches!(
-            request,
+    let deadline = Instant::now()
+        .checked_add(limits.deadline)
+        .ok_or(ComponentServerError::Configuration)?;
+    let mut frame = read_frame(
+        &mut DeadlineStream { stream, deadline },
+        limits.maximum_frame_bytes,
+    )
+    .map_err(|_| ComponentServerError::Protocol)?;
+    if let Err(error) = reject_buffered_second_frame(stream) {
+        frame.zeroize();
+        return Err(error);
+    }
+    let is_stream = serde_json::from_slice::<ComponentRequest>(&frame).is_ok_and(|mut request| {
+        let result = matches!(
+            &request,
             ComponentRequest::Execute {
                 stream_profile: Some(2),
                 ..
             }
-        )
+        );
+        request.zeroize();
+        result
     });
     if is_stream {
         let parsed = serde_json::from_slice::<ComponentRequest>(&frame);
@@ -731,10 +775,47 @@ fn serve_one(
         return written;
     }
     let mut response = dispatcher.dispatch_frame(&mut frame);
-    let result = write_frame(stream, &response, limits.maximum_frame_bytes)
-        .map_err(|_| ComponentServerError::Protocol);
+    let result = write_frame(
+        &mut DeadlineStream { stream, deadline },
+        &response,
+        limits.maximum_frame_bytes,
+    )
+    .map_err(|_| ComponentServerError::Protocol);
     response.zeroize();
     result
+}
+
+struct DeadlineStream<'a> {
+    stream: &'a mut UnixStream,
+    deadline: Instant,
+}
+
+impl DeadlineStream<'_> {
+    fn remaining(&self) -> io::Result<Duration> {
+        self.deadline
+            .checked_duration_since(Instant::now())
+            .filter(|remaining| !remaining.is_zero())
+            .ok_or_else(|| io::Error::new(io::ErrorKind::TimedOut, "component frame deadline"))
+    }
+}
+
+impl Read for DeadlineStream<'_> {
+    fn read(&mut self, bytes: &mut [u8]) -> io::Result<usize> {
+        self.stream.set_read_timeout(Some(self.remaining()?))?;
+        self.stream.read(bytes)
+    }
+}
+
+impl Write for DeadlineStream<'_> {
+    fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+        self.stream.set_write_timeout(Some(self.remaining()?))?;
+        self.stream.write(bytes)
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        self.remaining()?;
+        self.stream.flush()
+    }
 }
 
 fn reject_buffered_second_frame(stream: &UnixStream) -> Result<(), ComponentServerError> {
@@ -829,11 +910,16 @@ impl std::error::Error for ComponentServerError {}
 mod tests {
     use std::io::{Read as _, Write as _};
 
-    use super::{reject_buffered_second_frame, ComponentServerError, UnixStream};
+    use super::{
+        ComponentServerError, DeadlineStream, Duration, Instant, UnixStream,
+        reject_buffered_second_frame,
+    };
+    use layerx_client::lni::framing::{read_frame, write_frame};
+    use layerx_client::lni::transport::{FrameViolation, TransportError};
 
     #[test]
-    fn second_frame_probe_is_nonblocking_and_does_not_consume_bytes(
-    ) -> Result<(), Box<dyn std::error::Error>> {
+    fn second_frame_probe_is_nonblocking_and_does_not_consume_bytes()
+    -> Result<(), Box<dyn std::error::Error>> {
         let (server, mut client) = UnixStream::pair()?;
         reject_buffered_second_frame(&server)?;
 
@@ -846,6 +932,75 @@ mod tests {
         let mut retained = [0_u8; 1];
         (&server).read_exact(&mut retained)?;
         assert_eq!(retained, [0x7f]);
+        Ok(())
+    }
+
+    #[test]
+    fn component_deadline_preserves_real_canonical_frame() -> Result<(), Box<dyn std::error::Error>>
+    {
+        let (mut server, mut client) = UnixStream::pair()?;
+        let payload =
+            br#"{"kind":"readiness","version":1,"trace":"trc_00112233445566778899aabbccddeeff"}"#;
+        write_frame(&mut client, payload, 4096).map_err(|error| format!("{error:?}"))?;
+        let mut bounded = DeadlineStream {
+            stream: &mut server,
+            deadline: Instant::now() + Duration::from_secs(1),
+        };
+        let received = read_frame(&mut bounded, 4096).map_err(|error| format!("{error:?}"))?;
+        assert_eq!(received, payload);
+        Ok(())
+    }
+
+    #[test]
+    fn component_deadline_refuses_oversized_prefix() -> Result<(), Box<dyn std::error::Error>> {
+        let (mut server, mut client) = UnixStream::pair()?;
+        client.write_all(&4097_u32.to_be_bytes())?;
+        let mut bounded = DeadlineStream {
+            stream: &mut server,
+            deadline: Instant::now() + Duration::from_secs(1),
+        };
+        assert_eq!(
+            read_frame(&mut bounded, 4096),
+            Err(TransportError::Frame(FrameViolation::Oversized {
+                declared: 4097,
+                maximum: 4096
+            }))
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn component_deadline_does_not_restart_after_partial_frame()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let (mut server, mut client) = UnixStream::pair()?;
+        client.write_all(&[0])?;
+        let sender = std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(100));
+            let _ = client.write_all(&[0, 0, 1]);
+            std::thread::sleep(Duration::from_millis(100));
+            let _ = client.write_all(&[1]);
+        });
+        let mut bounded = DeadlineStream {
+            stream: &mut server,
+            deadline: Instant::now() + Duration::from_millis(150),
+        };
+        let outcome = read_frame(&mut bounded, 4096);
+        sender.join().map_err(|_| "real socket sender panicked")?;
+        assert_eq!(outcome, Err(TransportError::Deadline));
+        Ok(())
+    }
+
+    #[test]
+    fn component_deadline_refuses_write_after_expiry() -> Result<(), Box<dyn std::error::Error>> {
+        let (mut server, _client) = UnixStream::pair()?;
+        let mut bounded = DeadlineStream {
+            stream: &mut server,
+            deadline: Instant::now(),
+        };
+        assert_eq!(
+            write_frame(&mut bounded, b"{}", 4096),
+            Err(TransportError::Deadline)
+        );
         Ok(())
     }
 }
