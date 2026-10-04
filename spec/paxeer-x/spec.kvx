@@ -34467,10 +34467,15 @@ time_limit_minutes = 30
 stop_condition = "Stop at 09:13 UTC, missing genuine external authority, unrelated failure or required weakening; partial source receives no gates. Root intake/publication precedes immutable candidate qualification."
 owner_approval = "2026-10-04 owner approved exact distinct Send-purpose and public-consent proposal; existing formats, refusals and security actions remain unchanged. New contract implementation scope does not reset old task30 or32 budgets."
 source_status = "complete"
-qualification_status = "UNRUN"
+qualification_status = "BUILD_PASSED_VERIFY_FAILED"
 completion_basis_policy = "Owner CONSTITUTION: fully implemented DONE, qualification separate; partial remains in_progress."
 completion_basis = "implementation"
 source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-104.13.36-source-handoff.json"
+qualification_revision = "a5e4e6bc8b60bf6d87c2f4120153639e6a3ea192"
+qualification_build_evidence = "a5e4e6bc8b60bf6d87c2f4120153639e6a3ea192 | timeout 649s /root/.cargo/bin/cargo test --locked --manifest-path human/Cargo.toml -p layerx-human-service --test native_journey_approval --no-run | 0 | /root/lx-ops/paxeer-x-integration-2026-10-03/task-104.13.37-task36-repair1-build.log"
+qualification_verify_evidence = "a5e4e6bc8b60bf6d87c2f4120153639e6a3ea192 | timeout 559s python3 tools/qualification/paxeer-x/native-journey-approval.py | 1 | /root/lx-ops/paxeer-x-integration-2026-10-03/task-104.13.37-task36-verify.log"
+qualification_observed = "Genuine protected native Journey LNI/KMS/authenticated peer fixture unavailable; zero behavior cases executed."
+qualification_result = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-104.13.37-task36-qualification.json"
 
 [task.104.13.37]
 title = "Apply approved Human byte-type corrections and finish sequential Send qualification"
