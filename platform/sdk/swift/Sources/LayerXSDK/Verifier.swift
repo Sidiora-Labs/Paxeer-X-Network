@@ -411,6 +411,25 @@ public enum LocalVerifier {
     }
 
     public static func verifyReceiptOutcome(_ canonicalReceipt: Data, authorized: AuthorizedReceiptBatch, protocolVersion: UInt16 = 2) async throws -> ReceiptVerification {
+        try await verifyReceiptOutcomeCore(canonicalReceipt, authorized: authorized, protocolVersion: protocolVersion, v5: nil)
+    }
+
+    static func verifyProgramReceiptV5(_ canonicalReceipt: Data, authorized: AuthorizedReceiptBatch,
+        protocolVersion: UInt16, expectedActivityID: Data, expectedProgramID: Data, expectedGuestABI: UInt16,
+        terminalPayload: Data, callGraph: Data, documentOutcome: [String: JSONValue]) async throws -> ReceiptVerification {
+        let binding = ProgramReceiptV5Binding(activity: expectedActivityID, program: expectedProgramID,
+            abi: expectedGuestABI, terminal: terminalPayload, graph: callGraph, outcome: documentOutcome)
+        return try await verifyReceiptOutcomeCore(canonicalReceipt, authorized: authorized,
+            protocolVersion: protocolVersion, v5: binding)
+    }
+
+    private struct ProgramReceiptV5Binding {
+        let activity: Data; let program: Data; let abi: UInt16; let terminal: Data; let graph: Data
+        let outcome: [String: JSONValue]
+    }
+
+    private static func verifyReceiptOutcomeCore(_ canonicalReceipt: Data, authorized: AuthorizedReceiptBatch,
+        protocolVersion: UInt16, v5: ProgramReceiptV5Binding?) async throws -> ReceiptVerification {
         let decoded = try decodeProtocolReceipt(canonicalReceipt)
         let receipt = decoded.receipt
         guard (protocolVersion == 2 || protocolVersion == 3) && receipt.protocolVersion == protocolVersion else { throw receiptFailure(.protocolVersion) }
@@ -426,7 +445,16 @@ public enum LocalVerifier {
             if receipt.operation == 0 && receipt.resultCode != 0 { throw receiptFailure(.resultCode) }
             if receipt.operation == 3 {
                 guard let outcome = receipt.programOutcome else { throw receiptFailure(.receiptShape) }
-                guard (outcome.abiVersion == 1 || outcome.abiVersion == 2) && outcome.runtimeVersion == 1 else { throw receiptFailure(.protocolVersion) }
+                if let binding = v5 {
+                    guard protocolVersion == 3, receipt.moduleVersion == 4,
+                        binding.abi == 3 || binding.abi == 4, outcome.abiVersion == binding.abi,
+                        outcome.runtimeVersion == 1, outcome.encodingVersion == 4,
+                        binding.activity.count == 32, !allZero(binding.activity), receipt.activityID == binding.activity,
+                        binding.program.count == 32, !allZero(binding.program)
+                    else { throw receiptFailure(.protocolVersion) }
+                } else {
+                    guard (outcome.abiVersion == 1 || outcome.abiVersion == 2) && outcome.runtimeVersion == 1 else { throw receiptFailure(.protocolVersion) }
+                }
             }
         }
         guard program || receipt.operation != 0 else { throw receiptFailure(.operation) }
@@ -447,6 +475,13 @@ public enum LocalVerifier {
         let receiptDigest = digest(receiptDomain, decoded.unsignedBytes)
         guard verifyEd25519(publicKey: try exact(authorized.sequencerPublicKey, 32), signature: receipt.sequencerSignature, message: receiptDigest) else {
             throw receiptFailure(.sequencerSignature)
+        }
+        if let binding = v5 {
+            guard program, receipt.operation == 3, let outcome = receipt.programOutcome,
+                isProgramTerminalV5(binding.terminal, receipt: outcome)
+            else { throw receiptFailure(.receiptShape) }
+            _ = try verifyTerminal(binding.terminal, availableGraph: binding.graph, expectedProgram: binding.program,
+                documentOutcome: binding.outcome, protocolVersion: protocolVersion, receipt: outcome)
         }
         return ReceiptVerification(level: "sequencer-signed", receipt: receipt, canonicalBytes: canonicalReceipt, receiptDigest: receiptDigest)
     }

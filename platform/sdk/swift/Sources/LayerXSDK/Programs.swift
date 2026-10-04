@@ -230,7 +230,8 @@ public struct ProgramsClient: Sendable {
         do {
             return try await verifiedSubmission(value, expectedProgramID: call.programID,
                 expectedActivityID: binding.activityID, expectedIdempotencyKey: idempotencyKey.rawValue,
-                retainedSignedActivity: call.signedActivity, pinnedKey: sequencerPublicKey, protocolVersion: protocolVersion)
+                retainedSignedActivity: call.signedActivity, pinnedKey: sequencerPublicKey, protocolVersion: protocolVersion,
+                expectedGuestABI: call.nativeCall?.guestABI)
         } catch let error as PlatformSDKError where error.code == .decodeFailure || error.code == .verificationFailure {
             return unknownSubmission(activity: binding.activityID, key: idempotencyKey.rawValue, retained: call.signedActivity)
         }
@@ -254,9 +255,19 @@ public struct ProgramsClient: Sendable {
 
     public static func verifyReceipt(_ canonicalReceipt: Data, authorized: AuthorizedReceiptBatch,
                                      expectedActivityID: Data, expectedGuestABIVersion: UInt16,
-                                     terminalPayload: Data, callGraph: Data, protocolVersion: UInt16 = 2) async throws -> ReceiptVerification {
-        guard expectedActivityID.count == 32, expectedGuestABIVersion == 1 || expectedGuestABIVersion == 2 else { throw programInvalid() }
-        let verified = try await LocalVerifier.verifyReceiptOutcome(canonicalReceipt, authorized: authorized, protocolVersion: protocolVersion)
+                                     terminalPayload: Data, callGraph: Data, protocolVersion: UInt16 = 2,
+                                     expectedProgramID: Data? = nil, documentOutcome: [String: JSONValue]? = nil) async throws -> ReceiptVerification {
+        guard expectedActivityID.count == 32 else { throw programInvalid() }
+        let verified: ReceiptVerification
+        if expectedGuestABIVersion == 1 || expectedGuestABIVersion == 2 {
+            verified = try await LocalVerifier.verifyReceiptOutcome(canonicalReceipt, authorized: authorized, protocolVersion: protocolVersion)
+        } else if expectedGuestABIVersion == 3 || expectedGuestABIVersion == 4,
+                  let expectedProgramID, let documentOutcome {
+            verified = try await LocalVerifier.verifyProgramReceiptV5(canonicalReceipt, authorized: authorized,
+                protocolVersion: protocolVersion, expectedActivityID: expectedActivityID, expectedProgramID: expectedProgramID,
+                expectedGuestABI: expectedGuestABIVersion, terminalPayload: terminalPayload,
+                callGraph: callGraph, documentOutcome: documentOutcome)
+        } else { throw programInvalid() }
         let receipt = verified.receipt
         let outcome = receipt.programOutcome
         guard receipt.protocolVersion > 0, receipt.moduleID == receiptModuleID, receipt.operation == callOperation,
@@ -275,6 +286,7 @@ struct ActivityBinding {
     let idempotencyKey: Data
     let notBefore: UInt64
     let notAfter: UInt64
+    let guestABI: UInt16?
 }
 
 private struct TerminalUsage {
@@ -308,7 +320,8 @@ private struct StorageNamespaceBinding {
 
 private func verifiedSubmission(_ value: JSONValue, expectedProgramID: Data?, expectedActivityID: Data?,
                                 expectedIdempotencyKey: String?, retainedSignedActivity: Data?,
-                                pinnedKey: Data, protocolVersion: UInt16 = 2) async throws -> ProgramSubmission {
+                                pinnedKey: Data, protocolVersion: UInt16 = 2,
+                                expectedGuestABI: UInt16? = nil) async throws -> ProgramSubmission {
     guard let object = value.objectValue, let state = object["state"]?.stringValue else { throw programVerification() }
     if state == "unknown" {
         let retainedPresent = object["retained_signed_activity"] != nil
@@ -327,7 +340,8 @@ private func verifiedSubmission(_ value: JSONValue, expectedProgramID: Data?, ex
     guard state == "executed" || state == "refused" else { throw programDecode() }
     let execution = try await verifiedExecution(object, state: state, idempotent: true,
         expectedProgramID: expectedProgramID, expectedActivityID: expectedActivityID,
-        expectedIdempotencyKey: expectedIdempotencyKey, pinnedKey: pinnedKey, protocolVersion: protocolVersion)
+        expectedIdempotencyKey: expectedIdempotencyKey, pinnedKey: pinnedKey, protocolVersion: protocolVersion,
+        expectedGuestABI: expectedGuestABI)
     let outcomeKind = try objectValue(object, "outcome")["kind"]?.stringValue
     guard state == "refused" && outcomeKind == "refused" || state == "executed"
             && (outcomeKind == "completed" || outcomeKind == "legacy_completed") else { throw programVerification() }
@@ -335,9 +349,10 @@ private func verifiedSubmission(_ value: JSONValue, expectedProgramID: Data?, ex
         idempotencyKey: try text(object, "idempotency_key"), retainedSignedActivity: nil, execution: execution)
 }
 
-private func verifiedExecution(_ object: [String: JSONValue], state: String, idempotent: Bool,
+func verifiedExecution(_ object: [String: JSONValue], state: String, idempotent: Bool,
                                expectedProgramID: Data?, expectedActivityID: Data?,
-                               expectedIdempotencyKey: String?, pinnedKey: Data, protocolVersion: UInt16 = 2) async throws -> VerifiedProgramExecution {
+                               expectedIdempotencyKey: String?, pinnedKey: Data, protocolVersion: UInt16 = 2,
+                               expectedGuestABI: UInt16? = nil) async throws -> VerifiedProgramExecution {
     var fields: Set<String> = ["state", "activity_id", "program_id", "guest_abi_version", "module_version",
         "batch_id", "global_sequence", "result_code", "state_root", "receipt", "receipt_digest",
         "terminal_payload", "call_graph", "authority", "usage", "outcome", "verification"]
@@ -349,7 +364,9 @@ private func verifiedExecution(_ object: [String: JSONValue], state: String, ide
           expectedProgramID == nil || program == expectedProgramID,
           expectedActivityID == nil || activity == expectedActivityID,
           expectedIdempotencyKey == nil || object["idempotency_key"]?.stringValue == expectedIdempotencyKey,
-          let guestABI = object["guest_abi_version"]?.integerValue, guestABI == 1 || guestABI == 2,
+          let guestABI = object["guest_abi_version"]?.integerValue,
+          let namedABI = UInt16(exactly: guestABI), ProgramGuestABI(rawValue: namedABI) != nil,
+          expectedGuestABI == nil || namedABI == expectedGuestABI,
           let moduleVersion = object["module_version"]?.integerValue, (1...4).contains(moduleVersion),
           try text(object, "verification") == "receipt-terminal-and-call-graph-verified" else { throw programVerification() }
     let resultCode = try integer32(object, "result_code")
@@ -379,7 +396,8 @@ private func verifiedExecution(_ object: [String: JSONValue], state: String, ide
     let graph = try hexData(object, "call_graph", maximumBytes: 1_048_576)
     let verified = try await ProgramsClient.verifyReceipt(receipt, authorized: authority,
         expectedActivityID: activity, expectedGuestABIVersion: UInt16(guestABI),
-        terminalPayload: terminal, callGraph: graph, protocolVersion: protocolVersion)
+        terminalPayload: terminal, callGraph: graph, protocolVersion: protocolVersion,
+        expectedProgramID: program, documentOutcome: outcomeDocument)
     guard let receiptOutcome = verified.receipt.programOutcome else { throw programVerification() }
     let transferVerification = try verifyTerminal(terminal, availableGraph: graph, expectedProgram: program,
         documentOutcome: outcomeDocument, protocolVersion: verified.receipt.protocolVersion, receipt: receiptOutcome)
@@ -410,7 +428,8 @@ private func verifiedSimulation(_ value: JSONValue, expectedProgramID: Data, bin
     guard object["committed"] == .boolean(false), let execution = object["execution"]?.objectValue else { throw programVerification() }
     let verified = try await verifiedExecution(execution, state: "simulated", idempotent: false,
         expectedProgramID: expectedProgramID, expectedActivityID: binding.activityID,
-        expectedIdempotencyKey: nil, pinnedKey: pinnedKey, protocolVersion: protocolVersion)
+        expectedIdempotencyKey: nil, pinnedKey: pinnedKey, protocolVersion: protocolVersion,
+        expectedGuestABI: binding.guestABI)
     guard let evidence = object["simulation_evidence"]?.objectValue else { throw programVerification() }
     try requireFields(evidence, ["boundary_id", "activity_id", "previous_state_root", "hypothetical_state_root",
         "observed_sequence", "observed_at", "committed", "public_key", "signature"])
@@ -595,6 +614,14 @@ private func validateFailure(_ failure: [String: JSONValue]) throws {
     }
 }
 
+func isProgramTerminalV5(_ encoded: Data, receipt: ProgramReceiptOutcome) -> Bool {
+    guard let applied = try? unwrapAppliedTerminal(encoded, receipt: receipt),
+          let attachments = try? unwrapTerminal(applied) else { return false }
+    return starts(attachments.inner, "LXP/program-execution/v5\0")
+        || starts(attachments.inner, "LXP/programs/callback-failure/v1\0")
+        || starts(attachments.inner, "LXP/programs/settlement-failure/v1\0")
+}
+
 func verifyTerminal(_ encoded: Data, availableGraph: Data, expectedProgram: Data,
                             documentOutcome: [String: JSONValue], protocolVersion: UInt16,
                             receipt: ProgramReceiptOutcome) throws -> String {
@@ -603,7 +630,8 @@ func verifyTerminal(_ encoded: Data, availableGraph: Data, expectedProgram: Data
               Data(SHA256.hash(data: encoded)) == receipt.terminalPayloadRoot,
               !availableGraph.isEmpty, Data(SHA256.hash(data: availableGraph)) == receipt.callGraphRoot else { throw programVerification() }
         let attachments = try unwrapTerminal(unwrapAppliedTerminal(encoded, receipt: receipt)); let inner = attachments.inner
-        let candidate = starts(inner, "LXP/program-execution/v4\0"); var successful = false
+        let profileV5 = starts(inner, "LXP/program-execution/v5\0")
+        let candidate = starts(inner, "LXP/program-execution/v4\0") || profileV5; var successful = false
         if starts(inner, "LXP/program-execution/v2\0") || starts(inner, "LXP/program-execution/v3\0") {
             let traced = starts(inner, "LXP/program-execution/v3\0")
             let domain = Data((traced ? "LXP/program-execution/v3\0" : "LXP/program-execution/v2\0").utf8)
@@ -633,7 +661,7 @@ func verifyTerminal(_ encoded: Data, availableGraph: Data, expectedProgram: Data
             try cursor.finish(); guard receipt.terminalKind == 1, try integer32(documentOutcome, "code") >= 0 else { throw programVerification() }
             try matchUsage(usage, receipt); successful = true
         } else if candidate {
-            var cursor = try TerminalCursor(inner, offset: Data("LXP/program-execution/v4\0".utf8).count)
+            var cursor = try TerminalCursor(inner, offset: Data((profileV5 ? "LXP/program-execution/v5\0" : "LXP/program-execution/v4\0").utf8).count)
             let runtime = try cursor.u16(); let feeSchedule = try cursor.u32(); let metering = try cursor.u32()
             let countValue = try cursor.u64(); guard countValue <= UInt64(cursor.remaining / 5) else { throw programVerification() }
             for _ in 0..<Int(countValue) {
@@ -658,7 +686,8 @@ func verifyTerminal(_ encoded: Data, availableGraph: Data, expectedProgram: Data
                 try validateCandidateResource(&cursor, usage: usage); expectedKind = "resource"
             } else { throw programVerification() }
             let graph = try cursor.sized64(); try cursor.finish()
-            guard graph.count <= ProgramsClient.maximumCallGraphBytes, graph == availableGraph, program == expectedProgram, abi == 2,
+            guard graph.count <= ProgramsClient.maximumCallGraphBytes, graph == availableGraph, program == expectedProgram,
+                  profileV5 ? (abi == 3 || abi == 4) : abi == 2,
                   abi == receipt.abiVersion, runtime > 0, feeSchedule > 0, metering > 0,
                   runtime == receipt.runtimeVersion, feeSchedule == receipt.feeScheduleVersion,
                   metering == receipt.meteringScheduleVersion else { throw programVerification() }
@@ -1261,7 +1290,7 @@ func decodeSignedCall(_ call: ProgramCall) throws -> ActivityBinding {
         let expected = try canonicalCallPayload(call)
         guard payload == expected, payloadHash == digest(Data("LXP/v1/payload-hash\0".utf8), payload) else { throw programInvalid() }
         return .init(activityID: digest(Data("LXP/v1/activity-id\0".utf8), call.signedActivity),
-            idempotencyKey: idempotency, notBefore: notBefore, notAfter: notAfter)
+            idempotencyKey: idempotency, notBefore: notBefore, notAfter: notAfter, guestABI: call.nativeCall?.guestABI)
     } catch { throw programInvalid() }
 }
 
