@@ -28158,6 +28158,13 @@ source_status = "complete"
 completion_basis = "implementation under owner CONSTITUTION; qualification separately recorded"
 qualification_status = "UNRUN"
 source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/fleet-104.21.1-publication.json"
+qualification_revision = "4635cdfb7f6ad0d24cc6bc223c4bc38cb7c0c726"
+verify_status = "UNRUN"
+build_status = "CANCELLED_AFTER_CANDIDATE_REFUSAL"
+build_exit_code = 143
+build_command = "timeout --signal=TERM --kill-after=5s 156s bash tools/paxeer-x/gates/104.21.1.sh --build"
+build_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-104.21.1-build.log"
+qualification_evidence = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-104.21.1-final-result.json"
 
 [task.104.27.1]
 title = "Run the adoption benchmark gates"
