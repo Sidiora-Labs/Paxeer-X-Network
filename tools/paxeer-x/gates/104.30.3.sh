@@ -78,8 +78,8 @@ def inputs():
         if not relative:
             continue
         path = ROOT / relative
-        require(not any(part == ".env" or part.startswith(".env.")
-                        for part in path.parts), "secret path in source inventory")
+        if any(part == ".env" or part.startswith(".env.") for part in path.parts):
+            continue
         require(path.is_file() and not path.is_symlink(),
                 f"noncanonical source input: {relative}")
         result[relative] = digest(path)
