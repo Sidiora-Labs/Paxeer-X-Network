@@ -25591,14 +25591,20 @@ lease_transfer_authority_104_13_35 = "Owner approved inactive lease reassignment
 composition = "Actual daemon-hosted canonical MCP owner on existing RPC with exact mapped Surface::Mcp permit and result release. No blanket operation authority or local status polling. Shared schema/runtime/SDK owners compose typed fragments serially. Keep final executable and every affected production build/package caller connected."
 owner_extension = "Owner approved one additional30-minute continuation; START09:14UTC END09:44UTC. Finish actualclient/payer/durability/sharedowner, then onehost+MCPbuild and singlefocusedgate, atmosttwo scopedrepairs. Priorpartialcheckpoint and everyrefusal retained."
 source_status = "complete"
-qualification_status = "UNRUN"
+qualification_status = "BUILD_PASSED_VERIFY_NOT_PASSED"
 handoff_path = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-9.3-continuation-result.json"
-remaining_source = "Genuine payer owner attachment, exact tool dispatch, durable effect/result consumption without recursive locking, and mandatory process ordering/unknown corpus remain incomplete.27 authored paths isolated; no format/build/verify ran before09:44UTCcap."
+prior_partial_remaining_source = "Genuine payer owner attachment, exact tool dispatch, durable effect/result consumption without recursive locking, and mandatory process ordering/unknown corpus remain incomplete.27 authored paths isolated; no format/build/verify ran before09:44UTCcap."
+remaining_source = "none"
 owner_extension_60m = "Owner explicitly approved60-minute continuation START09:48UTC END10:48UTC from frozen handoff; whole source first then one build and declaredfocusedverify, atmosttwo taskscopedrepairs. Preserveallpriorrecords."
 owner_native_clock_approval = "User explicitly approved frozen native clock proposal SHA2560c304889e1f3814eeb49b60ef4f13c2ef6c0ef8f25b1c1a10885fe9042c4b890. Explicitnative-v3-ms requires actualprotocol3 foractivities; standalonegrant has explicitmsvalidity, not encodedprotocolbinding. Authenticatedwholebody bindsprofile; checkedapprovalconversion; oldrequests unchanged. Existing10:48cap."
 build_cmd = "One bounded combined build of real Go attestor and actual Agentd host plus MCP binaries, within approved10:48UTC deadline."
 completion_basis = "implementation under owner CONSTITUTION; qualification separately recorded"
 source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-9.3-source-handoff-final.json"
+qualification_revision = "fd42ec9e3fbb193091deba58f73564f6ef6adce1"
+qualification_build_evidence = "fd42ec9e3fbb193091deba58f73564f6ef6adce1 | timeout 20m flock /root/lx-cargo/agent-build.lock env CARGO_TARGET_DIR=/root/lx-target/agent CARGO_BUILD_JOBS=4 /root/.cargo/bin/cargo build --locked --manifest-path agent/Cargo.toml -p layerx-agentd-host --bin layerx-agentd -p layerx-mcp --bin layerx-mcp --message-format=json | 0 | /root/lx-ops/paxeer-x-integration-2026-10-03/task-9.4-rust-build.log"
+qualification_verify_evidence = "fd42ec9e3fbb193091deba58f73564f6ef6adce1 | timeout 24m timeout 30m python3 tools/qualification/paxeer-x/mcp_daemon_revocation.py | 1 | /root/lx-ops/paxeer-x-integration-2026-10-03/task-9.4-verify.log"
+qualification_observed = "Missing genuine protected MCP baseline artifacts; 0 of 15 runtime cases executed."
+qualification_result = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-9.4-result.json"
 
 [task.12.2]
 title = "Supply movement with its authenticated Human KMS execution service"
@@ -34647,11 +34653,16 @@ verify_cmd = "timeout 30m python3 tools/qualification/paxeer-x/mcp_daemon_revoca
 time_limit_minutes = 30
 stop_condition = "Owner-approved resumption START11:21UTC END11:51UTC; stop cap, unrelatedfailure, missinggenuineauthority orweakening."
 owner_approval = "User explicitly approved three30-minute resumptions after usage interruption. MCPtwo repairsremain, migrationone remains, languageszero. No budget reset."
-qualification_status = "UNRUN"
-remaining_repair_cycles = 2
+qualification_status = "BUILD_PASSED_VERIFY_NOT_PASSED"
+remaining_repair_cycles = 1
 source_status = "complete"
-completion_basis = "implementation under owner CONSTITUTION; qualification separately recorded"
+completion_basis = "implemented source under owner CONSTITUTION; failed qualification remains separately recorded"
 source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-9.4-source-handoff.json"
+qualification_revision = "fd42ec9e3fbb193091deba58f73564f6ef6adce1"
+qualification_build_evidence = "fd42ec9e3fbb193091deba58f73564f6ef6adce1 | timeout 20m flock /root/lx-cargo/agent-build.lock env CARGO_TARGET_DIR=/root/lx-target/agent CARGO_BUILD_JOBS=4 /root/.cargo/bin/cargo build --locked --manifest-path agent/Cargo.toml -p layerx-agentd-host --bin layerx-agentd -p layerx-mcp --bin layerx-mcp --message-format=json | 0 | /root/lx-ops/paxeer-x-integration-2026-10-03/task-9.4-rust-build.log"
+qualification_verify_evidence = "fd42ec9e3fbb193091deba58f73564f6ef6adce1 | timeout 24m timeout 30m python3 tools/qualification/paxeer-x/mcp_daemon_revocation.py | 1 | /root/lx-ops/paxeer-x-integration-2026-10-03/task-9.4-verify.log"
+qualification_observed = "Missing genuine protected MCP baseline artifacts; 0 of 15 runtime cases executed."
+qualification_result = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-9.4-result.json"
 
 [task.6.8]
 title = "Finish the interrupted migration compiler repair qualification"
