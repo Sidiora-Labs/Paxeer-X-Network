@@ -206,6 +206,7 @@ struct OutboundHeaders<'a> {
     forwarded: &'a [(&'a str, &'a str)],
     migration_source: Option<(&'a str, &'a [u8; 32])>,
     browser_profile: BrowserRouteProfile,
+    hpx_ingress: Option<(std::net::IpAddr, Option<&'a str>)>,
 }
 
 impl Client {
@@ -522,6 +523,24 @@ impl Client {
         )
     }
 
+    pub fn request_hpx_forwarded(
+        &self,
+        endpoint: &Endpoint,
+        request: &OutboundRequest<'_>,
+        address: std::net::IpAddr,
+        token: Option<&str>,
+    ) -> Result<UpstreamResponse, String> {
+        self.request_with_freshness(
+            endpoint,
+            "",
+            request,
+            OutboundHeaders {
+                hpx_ingress: Some((address, token)),
+                ..OutboundHeaders::default()
+            },
+        )
+    }
+
     pub fn stream_forwarded(
         &self,
         endpoint: &Endpoint,
@@ -691,6 +710,28 @@ fn check_outbound_boundary(
         publication_key,
         ..
     } = headers;
+    if let Some((address, token)) = headers.hpx_ingress {
+        if !matches!(
+            (request.method, request.path),
+            ("POST", "/api/register") | ("GET", "/api/myip")
+        ) || address.is_unspecified()
+            || address.is_multicast()
+            || !authorization.is_empty()
+            || !headers.forwarded.is_empty()
+            || headers.query.is_some()
+            || headers.migration_source.is_some()
+            || headers.browser_profile != BrowserRouteProfile::Legacy
+            || token.is_some_and(|token| {
+                token.is_empty()
+                    || token.len() > 4096
+                    || !token.bytes().all(|byte| byte.is_ascii_graphic())
+            })
+            || request.path == "/api/myip" && !request.body.is_empty()
+            || request.path == "/api/register" && request.body.len() > 65_536
+        {
+            return Err("HPX provenance outside owner boundary".into());
+        }
+    }
     if let Some((customer_authorization, _)) = headers.migration_source {
         let bearer = authorization.strip_prefix("Bearer ");
         if request.method != "POST"
@@ -900,6 +941,7 @@ fn send_request(
         query,
         forwarded,
         migration_source,
+        hpx_ingress,
         ..
     } = headers;
     let idempotency = request
@@ -935,6 +977,17 @@ fn send_request(
     } else {
         zeroize::Zeroizing::new(format!("Authorization: {authorization}\r\n"))
     };
+    let hpx_headers = hpx_ingress.map_or_else(zeroize::Zeroizing::default, |(address, token)| {
+        let mut fields = zeroize::Zeroizing::new(format!(
+            "X-Forwarded-For: {address}\r\nX-Real-IP: {address}\r\n"
+        ));
+        if let Some(token) = token {
+            fields.push_str("X-HPX-Token: ");
+            fields.push_str(token);
+            fields.push_str("\r\n");
+        }
+        fields
+    });
     let forwarded_headers = zeroize::Zeroizing::new(
         forwarded
             .iter()
@@ -948,10 +1001,11 @@ fn send_request(
     };
     let forwarded = forwarded_headers.as_str();
     let migration_headers = migration.as_str();
+    let hpx_headers = hpx_headers.as_str();
     let mut outbound = zeroize::Zeroizing::new(Vec::new());
     write!(
         outbound,
-        "{} {}{}{} HTTP/1.1\r\nHost: {}\r\n{}{accept}Content-Type: {}\r\n{idempotency}{trace}{freshness}{forwarded}{migration_headers}{}Content-Length: {}\r\nConnection: keep-alive\r\n\r\n",
+        "{} {}{}{} HTTP/1.1\r\nHost: {}\r\n{}{accept}Content-Type: {}\r\n{idempotency}{trace}{freshness}{forwarded}{migration_headers}{hpx_headers}{}Content-Length: {}\r\nConnection: keep-alive\r\n\r\n",
         request.method,
         endpoint.base_path,
         request.path,

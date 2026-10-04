@@ -2269,3 +2269,13 @@ resolution = "Preserve canonical character checks and admit only four exact lowe
 area = "Custody owner and beneficiary identity"
 observed = "The genuine daemon resolves the owner main account for authority and fees; LXBC4 credits require an independent canonical asset account for the same owner."
 resolution = "Preserve main-account authority and fee checks while binding only the credited beneficiary to the selected asset profile."
+
+[gotcha.673]
+area = "Private Go toolchain PATH"
+observed = "Custody formatting and an HPX build leg could not locate Go tools through PATH; the installed toolchain is /usr/local/go/bin."
+resolution = "Use the existing absolute toolchain path in bounded follow-up work and preserve prior exact unrun/failure records."
+
+[gotcha.675]
+area = "HPX real TLS fixture identity"
+observed = "The first HPX ingress gate offered an IP-literal fixture URL to a production endpoint parser that requires a DNS name."
+resolution = "Keep the endpoint identity check and provision genuine localhost TLS identity for the actual fixture."

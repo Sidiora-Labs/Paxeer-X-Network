@@ -45417,6 +45417,50 @@
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3
+    },
+    {
+      "id": "hpx:POST:/hpx/api/register",
+      "service": "hpx",
+      "method": "POST",
+      "path": "/hpx/api/register",
+      "transport": "http",
+      "authentication": "gateway-api-key",
+      "upstream": "hpx",
+      "timeout_seconds": 8,
+      "retries": 0,
+      "health_predicate": "service-ready-and-network-version-bound",
+      "version": "1",
+      "consumers": [
+        "wallet",
+        "developer"
+      ],
+      "source": "hpx/registry/main.go",
+      "proxy": true,
+      "timeout_scope": "per-io",
+      "connect_timeout_seconds": 3,
+      "upstream_path": "/api/register"
+    },
+    {
+      "id": "hpx:GET:/hpx/api/myip",
+      "service": "hpx",
+      "method": "GET",
+      "path": "/hpx/api/myip",
+      "transport": "http",
+      "authentication": "gateway-api-key",
+      "upstream": "hpx",
+      "timeout_seconds": 8,
+      "retries": 0,
+      "health_predicate": "service-ready-and-network-version-bound",
+      "version": "1",
+      "consumers": [
+        "wallet",
+        "developer"
+      ],
+      "source": "hpx/registry/main.go",
+      "proxy": true,
+      "timeout_scope": "per-io",
+      "connect_timeout_seconds": 3,
+      "upstream_path": "/api/myip"
     }
   ],
   "denied_surfaces": [

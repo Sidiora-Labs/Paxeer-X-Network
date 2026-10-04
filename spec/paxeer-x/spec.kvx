@@ -33342,3 +33342,28 @@ build_exit_code = 2
 verify_status = "unrun"
 qualification_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-104.13.15-result.json"
 source_repair = "Added canonical Asset header after undeclared LX_ASSET_SEND; repair unverified at original task cap."
+
+[task.0.16]
+title = "Connect HPX registration and address discovery through authenticated ingress provenance"
+status = "done"
+mode = "BUILD"
+wave = 2
+requires = ["0.15"]
+reqs = ["1", "4", "5"]
+do_1 = "Expose the actual HPX register and myip handlers through the same unified gateway with caller address derived from the actual accepted connection or explicitly trusted ingress, preserving registration tokens, bounds and all public-address checks. Strip untrusted forwarding claims, preserve old HTTP server APIs and avoid parallel endpoints."
+touches = ["tools/paxeer-x/route-catalogue.json", "platform/hosted/gateway/src/lib.rs", "platform/hosted/gateway/src/main.rs", "platform/hosted/gateway/src/routes.rs", "platform/hosted/gateway/src/http.rs", "platform/hosted/gateway/tests/hpx_ingress.rs", "tools/qualification/paxeer-x/hpx-ingress.py", "hpx/hpx"]
+build_cmd = "timeout 20m python3 tools/qualification/paxeer-x/hpx-ingress.py --build"
+verify_cmd = "timeout 10m python3 tools/qualification/paxeer-x/hpx-ingress.py"
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop at original30-minute cap, unrelated failure, missing genuine interface or weakening; report exact source state, command, exit code and log path."
+completion_basis_policy = "Owner CONSTITUTION: fully implemented DONE; qualification separate and partial remains in_progress."
+source_ownership = "Root owns manifests/spec/publication; no deployment or live peer registration."
+
+completion_basis = "implementation"
+qualification_status = "passed"
+build_exit_code = 0
+verify_exit_code = 0
+qualification_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-0.16-verify-repair-2.log"

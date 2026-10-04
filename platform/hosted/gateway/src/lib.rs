@@ -1033,6 +1033,9 @@ pub fn unified_service_route(method: &str, target: &str) -> Option<&'static serd
         }
         _ => None,
     };
+    if matches!(path, "/hpx/api/register" | "/hpx/api/myip") && query.is_some() {
+        return None;
+    }
     if wallet_contract == Some(false) || path == "/v1/sync/readiness" && query.is_some() {
         return None;
     }
@@ -1064,6 +1067,140 @@ pub fn unified_service_route(method: &str, target: &str) -> Option<&'static serd
                     }
                 })
         })
+}
+
+#[derive(Clone, Default)]
+pub struct HpxIngressPolicy {
+    trusted_proxies: std::collections::BTreeSet<std::net::IpAddr>,
+}
+
+impl HpxIngressPolicy {
+    pub fn from_protected_file(path: &std::path::Path) -> Result<Self, String> {
+        use std::io::Read;
+        use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
+        #[derive(serde::Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct Policy {
+            schema: String,
+            trusted_proxies: Vec<String>,
+        }
+        if !path.is_absolute()
+            || path.components().any(|part| {
+                part.as_os_str()
+                    .to_str()
+                    .is_some_and(|part| part == ".env" || part.starts_with(".env."))
+            })
+        {
+            return Err("HPX ingress path invalid".into());
+        }
+        let mut file = std::fs::OpenOptions::new()
+            .read(true)
+            .custom_flags(0x20000)
+            .open(path)
+            .map_err(|_| "HPX ingress policy unavailable")?;
+        let metadata = file
+            .metadata()
+            .map_err(|_| "HPX ingress policy unavailable")?;
+        let owner = std::fs::metadata("/proc/self")
+            .map_err(|_| "HPX ingress owner unavailable")?
+            .uid();
+        if !metadata.is_file()
+            || metadata.uid() != owner
+            || metadata.nlink() != 1
+            || metadata.mode() & 0o077 != 0
+            || metadata.len() > 16_384
+        {
+            return Err("HPX ingress policy not protected".into());
+        }
+        let mut bytes = Vec::new();
+        file.by_ref()
+            .take(16_385)
+            .read_to_end(&mut bytes)
+            .map_err(|_| "HPX ingress policy unreadable")?;
+        if bytes.len() > 16_384 {
+            return Err("HPX ingress policy exceeds bound".into());
+        }
+        let document: Policy =
+            serde_json::from_slice(&bytes).map_err(|_| "HPX ingress policy malformed")?;
+        if document.schema != "layerx.hpx-ingress.v1"
+            || document.trusted_proxies.is_empty()
+            || document.trusted_proxies.len() > 32
+        {
+            return Err("HPX ingress policy shape invalid".into());
+        }
+        let mut trusted_proxies = std::collections::BTreeSet::new();
+        for value in document.trusted_proxies {
+            let ip = canonical_hpx_ip(&value)?;
+            if !trusted_proxies.insert(ip) {
+                return Err("HPX ingress proxy duplicated".into());
+            }
+        }
+        Ok(Self { trusted_proxies })
+    }
+
+    pub fn client_address(
+        &self,
+        peer: std::net::SocketAddr,
+        forwarded: Option<&str>,
+    ) -> Result<std::net::IpAddr, String> {
+        let mut current = normalized_hpx_ip(peer.ip());
+        if !self.trusted_proxies.contains(&current) {
+            return Ok(current);
+        }
+        let chain = forwarded.ok_or("HPX trusted ingress chain absent")?;
+        if chain.is_empty()
+            || chain.len() > 1024
+            || chain
+                .bytes()
+                .any(|byte| !byte.is_ascii_graphic() && byte != b' ')
+        {
+            return Err("HPX trusted ingress chain exceeds bound".into());
+        }
+        let parts: Vec<_> = chain.split(',').collect();
+        if parts.is_empty() || parts.len() > 16 {
+            return Err("HPX trusted ingress chain exceeds bound".into());
+        }
+        let mut seen = std::collections::BTreeSet::new();
+        let mut addresses = Vec::new();
+        for part in parts {
+            let address = canonical_hpx_ip(part.trim())?;
+            if !seen.insert(address) {
+                return Err("HPX trusted ingress chain repeats an address".into());
+            }
+            addresses.push(address);
+        }
+        for address in addresses.into_iter().rev() {
+            if !self.trusted_proxies.contains(&current) {
+                return Ok(current);
+            }
+            current = address;
+        }
+        if self.trusted_proxies.contains(&current) {
+            return Err("HPX trusted ingress client absent".into());
+        }
+        Ok(current)
+    }
+}
+
+fn normalized_hpx_ip(ip: std::net::IpAddr) -> std::net::IpAddr {
+    match ip {
+        std::net::IpAddr::V6(ip) => ip
+            .to_ipv4_mapped()
+            .map_or(std::net::IpAddr::V6(ip), std::net::IpAddr::V4),
+        ip => ip,
+    }
+}
+
+fn canonical_hpx_ip(value: &str) -> Result<std::net::IpAddr, String> {
+    let ip: std::net::IpAddr = value.parse().map_err(|_| "HPX ingress address invalid")?;
+    if ip.to_string() != value
+        || normalized_hpx_ip(ip) != ip
+        || ip.is_unspecified()
+        || ip.is_multicast()
+    {
+        return Err("HPX ingress address not canonical".into());
+    }
+    Ok(ip)
 }
 
 #[must_use]

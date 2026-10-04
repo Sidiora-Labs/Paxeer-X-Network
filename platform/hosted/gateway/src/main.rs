@@ -3571,6 +3571,14 @@ fn principal_route(config: &Config, request: &IncomingRequest, trace_id: &str) -
 }
 
 fn route(config: &Config, request: &IncomingRequest) -> OutgoingResponse {
+    route_with_peer(config, request, None)
+}
+
+fn route_with_peer(
+    config: &Config,
+    request: &IncomingRequest,
+    peer: Option<SocketAddr>,
+) -> OutgoingResponse {
     let program_request = programs_request_path(&request.method, &request.path);
     let trace_id = trace(request);
     if request.headers.contains_key("x-layerx-principal")
@@ -3583,7 +3591,7 @@ fn route(config: &Config, request: &IncomingRequest) -> OutgoingResponse {
             result
         };
     }
-    if let Some(result) = routes::route(config, request) {
+    if let Some(result) = routes::route(config, request, peer) {
         return result;
     }
     if request.path == "/" && request.method == "POST" {
@@ -3701,6 +3709,7 @@ impl Drop for ConnectionGuard {
 }
 
 fn serve(config: &Arc<Config>, tcp: TcpStream) -> Result<(), String> {
+    let peer = tcp.peer_addr().map_err(|error| error.to_string())?;
     tcp.set_nodelay(true).map_err(|error| error.to_string())?;
     tcp.set_read_timeout(Some(Duration::from_secs(10)))
         .map_err(|error| error.to_string())?;
@@ -3710,16 +3719,20 @@ fn serve(config: &Arc<Config>, tcp: TcpStream) -> Result<(), String> {
         Listener::Tls(tls) => {
             let connection =
                 ServerConnection::new(Arc::clone(tls)).map_err(|error| error.to_string())?;
-            exchange(config, &mut StreamOwned::new(connection, tcp))
+            exchange(config, &mut StreamOwned::new(connection, tcp), peer)
         }
         Listener::Plain => {
             let mut stream = tcp;
-            exchange(config, &mut stream)
+            exchange(config, &mut stream, peer)
         }
     }
 }
 
-fn exchange<S: ws::Connection>(config: &Arc<Config>, stream: &mut S) -> Result<(), String> {
+fn exchange<S: ws::Connection>(
+    config: &Arc<Config>,
+    stream: &mut S,
+    peer: SocketAddr,
+) -> Result<(), String> {
     for request_number in 0..MAX_REQUESTS_PER_CONNECTION {
         let request = match http::read_request(stream, MAX_REQUEST) {
             Ok(request) => request,
@@ -3754,7 +3767,7 @@ fn exchange<S: ws::Connection>(config: &Arc<Config>, stream: &mut S) -> Result<(
                 .is_none_or(|value| !value.eq_ignore_ascii_case("close"));
         http::write_response_connection_with_browser_profile(
             stream,
-            &route(config, &request),
+            &route_with_peer(config, &request, Some(peer)),
             keep_alive,
             config.routes.origin(&request),
             &request.path,

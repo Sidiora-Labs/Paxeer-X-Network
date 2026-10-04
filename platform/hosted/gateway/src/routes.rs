@@ -66,6 +66,7 @@ pub(super) struct Registry {
     allowed_origins: BTreeSet<String>,
     passthrough: Vec<Passthrough>,
     mcp: BTreeMap<String, McpRoute>,
+    hpx_ingress: layerx_platform_gateway::HpxIngressPolicy,
 }
 
 fn catalogue() -> &'static Value {
@@ -105,6 +106,12 @@ fn protected(path: &str) -> Result<Vec<u8>, String> {
 
 impl Registry {
     pub(super) fn configured(network: &str, wire: &str) -> Result<Self, String> {
+        let hpx_ingress = match std::env::var_os("LAYERX_GATEWAY_HPX_INGRESS_FILE") {
+            Some(path) => layerx_platform_gateway::HpxIngressPolicy::from_protected_file(
+                std::path::Path::new(&path),
+            )?,
+            None => layerx_platform_gateway::HpxIngressPolicy::default(),
+        };
         let Some(path) = std::env::var_os("LAYERX_GATEWAY_ROUTE_BINDINGS_FILE") else {
             return Ok(Self {
                 bindings: BTreeMap::new(),
@@ -112,6 +119,7 @@ impl Registry {
                 allowed_origins: BTreeSet::new(),
                 passthrough: Vec::new(),
                 mcp: BTreeMap::new(),
+                hpx_ingress,
             });
         };
         let path = path.to_str().ok_or("route binding path invalid")?;
@@ -256,6 +264,7 @@ impl Registry {
             allowed_origins,
             passthrough: file.passthrough,
             mcp,
+            hpx_ingress,
         })
     }
 
@@ -421,7 +430,11 @@ fn matches_path(template: &str, path: &str) -> bool {
         })
 }
 
-pub(super) fn route(config: &Config, request: &IncomingRequest) -> Option<OutgoingResponse> {
+pub(super) fn route(
+    config: &Config,
+    request: &IncomingRequest,
+    peer: Option<std::net::SocketAddr>,
+) -> Option<OutgoingResponse> {
     if let Some(result) = super::explorer_proxy::route(request) {
         return Some(result);
     }
@@ -643,6 +656,65 @@ pub(super) fn route(config: &Config, request: &IncomingRequest) -> Option<Outgoi
         Some(path) => path,
         None => return Some(response(400, "invalid_route_target", None)),
     };
+    if id == "hpx" && matches!(upstream_path.as_str(), "/api/register" | "/api/myip") {
+        let Some(peer) = peer else {
+            return Some(response(503, "hpx_ingress_provenance_unavailable", None));
+        };
+        let address = match config.routes.hpx_ingress.client_address(
+            peer,
+            request.headers.get("x-forwarded-for").map(String::as_str),
+        ) {
+            Ok(address) => address,
+            Err(_) => return Some(response(400, "hpx_ingress_provenance_refused", None)),
+        };
+        if request.headers.get("x-hpx-token").is_some_and(|token| {
+            token.is_empty()
+                || token.len() > 4096
+                || !token.bytes().all(|byte| byte.is_ascii_graphic())
+        }) {
+            return Some(response(400, "hpx_registration_token_invalid", None));
+        }
+        if upstream_path == "/api/register" && request.body.len() > 65_536 {
+            return Some(response(413, "hpx_registration_body_too_large", None));
+        }
+        if upstream_path == "/api/myip" && !request.body.is_empty() {
+            return Some(response(400, "hpx_discovery_body_forbidden", None));
+        }
+        return Some(
+            match config.client.request_hpx_forwarded(
+                &endpoint,
+                &http::OutboundRequest {
+                    method: &request.method,
+                    path: &upstream_path,
+                    idempotency: None,
+                    content_type: request
+                        .headers
+                        .get("content-type")
+                        .map_or("application/json", String::as_str),
+                    body: &request.body,
+                },
+                address,
+                if upstream_path == "/api/register" {
+                    request.headers.get("x-hpx-token").map(String::as_str)
+                } else {
+                    None
+                },
+            ) {
+                Ok(reply) => OutgoingResponse {
+                    status: reply.status,
+                    content_type: reply.content_type,
+                    headers: reply
+                        .headers
+                        .into_iter()
+                        .filter(|(name, _)| response_header(id, name))
+                        .collect(),
+                    body: reply.body,
+                    retry_after: None,
+                },
+                Err(_) => response(503, "hpx_upstream_unavailable", None),
+            },
+        );
+    }
     Some(
         match config.client.request_browser_forwarded(
             &endpoint,

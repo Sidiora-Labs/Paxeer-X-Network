@@ -22,6 +22,8 @@ readonly VERSION="3.1.0"
 # ── Mirror / chain defaults (chain-info.json overrides at runtime) ────────────
 MIRROR="${HPX_MIRROR:-https://node.hyperpaxeer.com}"
 CHAIN_ID="${HPX_CHAIN_ID:-hyperpax_125-1}"
+HPX_UNIFIED_GATEWAY_URL="${HPX_UNIFIED_GATEWAY_URL:-}"
+HPX_GATEWAY_TOKEN_FILE="${HPX_GATEWAY_TOKEN_FILE:-}"
 HPX_TOKEN="${HPX_TOKEN:-}"            # optional registry auth token
 
 # ── Per-host layout ───────────────────────────────────────────────────────────
@@ -177,9 +179,40 @@ fetch_chain_info() {
     [ -n "$CI_CHAIN_ID" ] && CHAIN_ID="$CI_CHAIN_ID"
 }
 
+hpx_api_request() {
+    local method="$1" path="$2" seconds="$3" body="${4:-}" base="$MIRROR" token="" mode owner links size
+    if [ -n "$HPX_UNIFIED_GATEWAY_URL" ]; then
+        base="${HPX_UNIFIED_GATEWAY_URL%/}"
+        [[ "$base" =~ ^https://([A-Za-z0-9.-]+|\[[0-9a-f:]+\])(:[0-9]{1,5})?$ ]] || { err "invalid unified gateway origin"; return 1; }
+        [ -n "$HPX_GATEWAY_TOKEN_FILE" ] && [[ "$HPX_GATEWAY_TOKEN_FILE" = /* ]] &&
+            [ -f "$HPX_GATEWAY_TOKEN_FILE" ] && [ ! -L "$HPX_GATEWAY_TOKEN_FILE" ] || { err "protected gateway token file required"; return 1; }
+        case "$HPX_GATEWAY_TOKEN_FILE" in */.env|*/.env.*) err "gateway token file path refused"; return 1 ;; esac
+        read -r mode owner links size < <(stat -c '%a %u %h %s' -- "$HPX_GATEWAY_TOKEN_FILE") || return 1
+        [[ "$mode" =~ ^[0-7]+$ && "$owner" = "$(id -u)" && "$links" = 1 && "$size" =~ ^[0-9]+$ ]] &&
+            [ "$size" -le 4096 ] && [ "$((8#$mode & 077))" -eq 0 ] || { err "gateway token file is not protected"; return 1; }
+        token=$(<"$HPX_GATEWAY_TOKEN_FILE")
+        [[ "$token" =~ ^lxp_live_[0-9a-f]{64}$ ]] || { err "gateway token shape refused"; return 1; }
+        base="${base}/hpx"
+    fi
+    if [ "$path" = /api/register ] && [[ "$HPX_TOKEN" = *[$'\r\n']* ]]; then err "registry token shape refused"; return 1; fi
+    local -a request=(--fail --silent --show-error --max-time "$seconds" --request "$method" "${base}${path}" --header @-)
+    [ "$method" != POST ] || request+=(--data "$body")
+    {
+        printf '%s\n' 'Content-Type: application/json'
+        [ -z "$token" ] || printf 'Authorization: Bearer %s\n' "$token"
+        [ "$path" != /api/register ] || [ -z "$HPX_TOKEN" ] || printf 'X-HPX-Token: %s\n' "$HPX_TOKEN"
+    } | curl --disable "${request[@]}"
+}
+
 my_ip() {
     local ip
-    ip=$(curl -fsS --max-time 6 "${MIRROR}/api/myip" 2>/dev/null || true)
+    if [ -n "$HPX_UNIFIED_GATEWAY_URL" ]; then
+        ip=$(hpx_api_request GET /api/myip 6 2>/dev/null) || return 1
+        [ -n "$ip" ] || return 1
+        echo "$ip"
+        return 0
+    fi
+    ip=$(hpx_api_request GET /api/myip 6 2>/dev/null || true)
     [ -z "$ip" ] && ip=$(curl -fsS --max-time 6 https://api.ipify.org 2>/dev/null || true)
     [ -z "$ip" ] && ip=$(hostname -I 2>/dev/null | awk '{print $1}')
     echo "$ip"
@@ -294,7 +327,7 @@ configure_node() {
 
 fetch_peers() {
     local self="$1"
-    curl -fsS --max-time 10 "${MIRROR}/api/peers.txt?self=${self}" 2>/dev/null
+    hpx_api_request GET "/api/peers.txt?self=${self}" 10 2>/dev/null
 }
 
 # The chain is pruned, so a fresh node cannot blocksync from genesis — it must
@@ -303,7 +336,7 @@ fetch_peers() {
 # if state sync was actually enabled.
 configure_statesync() {
     local cfg="${CFG_DIR}/config.toml" j en rpc th hh tp
-    j=$(curl -fsS --max-time 12 "${MIRROR}/api/statesync" 2>/dev/null) || return 1
+    j=$(hpx_api_request GET /api/statesync 12 2>/dev/null) || return 1
     [ -z "$j" ] && return 1
     en=$(echo "$j" | jq -r '.enable // false')
     [ "$en" = "true" ] || { warn "state sync not offered by mirror: $(echo "$j" | jq -r '.reason // "?"')"; return 1; }
@@ -332,10 +365,7 @@ register_node() {
     body=$(jq -nc --arg id "$id" --arg m "$moniker" --arg ip "$ip" \
         --arg t "$type" --arg v "$ver" --argjson p "$P2P_PORT" \
         '{node_id:$id,moniker:$m,ip:$ip,type:$t,version:$v,p2p_port:$p}')
-    local -a headers=(-H "Content-Type: application/json")
-    [ -n "$HPX_TOKEN" ] && headers+=(-H "X-HPX-Token: ${HPX_TOKEN}")
-    resp=$(curl -fsS --max-time 12 -X POST "${MIRROR}/api/register" \
-        "${headers[@]}" --data "$body" 2>/dev/null) \
+    resp=$(hpx_api_request POST /api/register 12 "$body" 2>/dev/null) \
         || { warn "registry register failed (will still start; peers from /api/peers)"; echo ""; return 1; }
     echo "$resp" | jq -r '.persistent_peers // empty' 2>/dev/null
 }
@@ -383,6 +413,16 @@ UNIT
 }
 
 install_refresh_timer() {
+    local api_environment="" endpoint pointer
+    if [ -n "$HPX_UNIFIED_GATEWAY_URL" ]; then
+        endpoint="${HPX_UNIFIED_GATEWAY_URL%/}"
+        [[ "$endpoint" =~ ^https://([A-Za-z0-9.-]+|\[[0-9a-f:]+\])(:[0-9]{1,5})?$ ]] || die "invalid unified gateway origin"
+        [[ "$HPX_GATEWAY_TOKEN_FILE" = /* && "$HPX_GATEWAY_TOKEN_FILE" != *[$'\r\n']* ]] || die "protected gateway token file required"
+        pointer="${HPX_GATEWAY_TOKEN_FILE//\\/\\\\}"
+        pointer="${pointer//\"/\\\"}"
+        pointer="${pointer//%/%%}"
+        printf -v api_environment 'Environment="HPX_UNIFIED_GATEWAY_URL=%s"\nEnvironment="HPX_GATEWAY_TOKEN_FILE=%s"' "$endpoint" "$pointer"
+    fi
     cat > "$REFRESH_UNIT" <<UNIT
 [Unit]
 Description=HyperPax peer-list refresh
@@ -390,6 +430,7 @@ After=network-online.target
 
 [Service]
 Type=oneshot
+$api_environment
 ExecStart=/usr/local/bin/hpx peers refresh --quiet
 UNIT
     cat > "$REFRESH_TIMER" <<'UNIT'
@@ -503,7 +544,7 @@ cmd_peers() {
         show)
             ensure_deps
             blank; prn "${C_BOLD}Registry nodes${C_RST}"; hr
-            curl -fsS --max-time 10 "${MIRROR}/api/nodes" 2>/dev/null \
+            hpx_api_request GET /api/nodes 10 2>/dev/null \
                 | jq -r '.nodes[] | "  \(.type)\t\(.moniker)\t\(.ip)\t\(.node_id)"' 2>/dev/null \
                 | column -t -s $'\t' || warn "registry unreachable"
             hr; blank
@@ -930,7 +971,8 @@ usage() {
     prn "  hpx validator status        operator address, balance, and on-chain validator state"
     prn "  hpx remove                  uninstall (optionally wipe data)"
     prn "  hpx version | help"; blank
-    prn "${C_DIM}Mirror: ${MIRROR}  (override with HPX_MIRROR)${C_RST}"; blank
+    prn "${C_DIM}Mirror: ${MIRROR}  (override with HPX_MIRROR)${C_RST}"
+    prn "Unified HPX API: set HPX_UNIFIED_GATEWAY_URL and an owned private HPX_GATEWAY_TOKEN_FILE."; blank
 }
 
 main() {
