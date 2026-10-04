@@ -12,8 +12,7 @@ use layerx_programs_runtime::{
 };
 use layerx_programs_runtime::{
     AuthorizedExecutionRequest, BudgetMeterRefusal, BudgetResourceKind, CompositionContext,
-    Executor, PreparedAuthorizedActivityOutcome, WasmEngine,
-    ABI_MODULE, CALL_ENTRY_EXPORT,
+    Executor, PreparedAuthorizedActivityOutcome, WasmEngine, ABI_MODULE, CALL_ENTRY_EXPORT,
 };
 
 use layerx_programs_runtime::abi::UnavailableReceiptOracle as NoReceipts;
@@ -95,7 +94,6 @@ fn candidate_program_transfer_module(
     repeated_program_transfer_module(seed, source, asset, recipient, 1)
 }
 
-
 fn repeated_program_transfer_module(
     seed: &[u8],
     source: [u8; 32],
@@ -127,7 +125,9 @@ fn repeated_program_transfer_module(
     let mut entry = Vec::new();
     for index in 0..repetitions {
         entry.extend_from_slice(&call);
-        if index + 1 < repetitions { entry.push(0x1a); }
+        if index + 1 < repetitions {
+            entry.push(0x1a);
+        }
     }
     entry.push(OP_END);
     module(&[
@@ -638,10 +638,11 @@ fn candidate_forwarding_module(callee: ProgramId, requested: &CapabilitySet) -> 
         loop {
             let byte = (value & 0x7f) as u8;
             value >>= 7;
-            let done = (value == 0 && byte & 0x40 == 0)
-                || (value == -1 && byte & 0x40 != 0);
+            let done = (value == 0 && byte & 0x40 == 0) || (value == -1 && byte & 0x40 != 0);
             entry.push(if done { byte } else { byte | 0x80 });
-            if done { break; }
+            if done {
+                break;
+            }
         }
     }
     entry.extend([OP_CALL, 0, 0x1a, OP_I32_CONST, 0, OP_END]);
@@ -654,35 +655,53 @@ fn candidate_forwarding_module(callee: ProgramId, requested: &CapabilitySet) -> 
         import_section(&[(CANDIDATE_ABI_MODULE, "program_call_response", 0)]),
         function_section(&[1, 2]),
         section(5, &[1, 1, 1, 1]),
-        exports(&[("layerx_reserve", 0, 1), (CALL_ENTRY_EXPORT, 0, 2), ("memory", 2, 0)]),
-        code_section(&[func_body(&[], &[OP_I32_CONST, 0, OP_END]), func_body(&[], &entry)]),
+        exports(&[
+            ("layerx_reserve", 0, 1),
+            (CALL_ENTRY_EXPORT, 0, 2),
+            ("memory", 2, 0),
+        ]),
+        code_section(&[
+            func_body(&[], &[OP_I32_CONST, 0, OP_END]),
+            func_body(&[], &entry),
+        ]),
         data_section(&[(0, &callee.bytes()), (32, &encoded)]),
     ])
 }
 
 #[test]
 fn real_wasm_program_leg_staged_by_callee_frame_is_refused() {
-    use layerx_programs_runtime::{CompositionRefusal, CompositionRules, ExecutionError, ProgramCatalog};
+    use layerx_programs_runtime::{
+        CompositionRefusal, CompositionRules, ExecutionError, ProgramCatalog,
+    };
     let owner = ProgramId::new([61; 32]).unwrap_or_else(|error| panic!("owner: {error}"));
     let callee = ProgramId::new([62; 32]).unwrap_or_else(|error| panic!("callee: {error}"));
     let payer = PrincipalId::new([63; 32]).unwrap_or_else(|error| panic!("payer: {error}"));
     let seed = b"owner-only";
     let source = layerx_programs_runtime::derive_program_account(owner, seed)
-        .unwrap_or_else(|error| panic!("source: {error}")).bytes();
+        .unwrap_or_else(|error| panic!("source: {error}"))
+        .bytes();
     let asset = [64; 32];
     let recipient = [65; 32];
     let spend = Capability::ProgramSpend {
-        owner_program: owner, seed: seed.to_vec(), source_account: source,
-        asset, to: recipient, maximum_amount: 5,
+        owner_program: owner,
+        seed: seed.to_vec(),
+        source_account: source,
+        asset,
+        to: recipient,
+        maximum_amount: 5,
     };
-    let requested = CapabilitySet::new([spend.clone()])
-        .unwrap_or_else(|error| panic!("requested: {error}"));
+    let requested =
+        CapabilitySet::new([spend.clone()]).unwrap_or_else(|error| panic!("requested: {error}"));
     let grants = CapabilitySet::new([Capability::Call { program: callee }, spend])
         .unwrap_or_else(|error| panic!("grants: {error}"));
     let engine = WasmEngine::declared().unwrap_or_else(|error| panic!("engine: {error}"));
-    let root = engine.validate_candidate_v2(&candidate_forwarding_module(callee, &requested))
+    let root = engine
+        .validate_candidate_v2(&candidate_forwarding_module(callee, &requested))
         .unwrap_or_else(|error| panic!("root module: {error}"));
-    let child = engine.validate_candidate_v2(&candidate_program_transfer_module(seed, source, asset, recipient))
+    let child = engine
+        .validate_candidate_v2(&candidate_program_transfer_module(
+            seed, source, asset, recipient,
+        ))
         .unwrap_or_else(|error| panic!("child module: {error}"));
     let mut catalog = ProgramCatalog::new();
     assert!(catalog.insert(callee, child).is_none());
@@ -691,16 +710,22 @@ fn real_wasm_program_leg_staged_by_callee_frame_is_refused() {
     let refused = Executor::declared().execute_authorized_candidate(
         &mut storage,
         AuthorizedExecutionRequest {
-            module: &root, program: owner,
+            module: &root,
+            program: owner,
             authorization: AuthorizationContext::new(payer, grants),
-            receipts: &NoReceipts, entrypoint: CALL_ENTRY_EXPORT, calldata: &[],
+            receipts: &NoReceipts,
+            entrypoint: CALL_ENTRY_EXPORT,
+            calldata: &[],
             composition: CompositionContext::catalog(catalog, CompositionRules::declared()),
             response_capacity: 0,
         },
     );
-    assert_eq!(refused, Err(ExecutionError::Composition(
-        CompositionRefusal::Authority(AbiError::CapabilityEscalation),
-    )));
+    assert_eq!(
+        refused,
+        Err(ExecutionError::Composition(CompositionRefusal::Authority(
+            AbiError::CapabilityEscalation
+        ),))
+    );
     assert_eq!(storage, before);
 }
 
@@ -711,38 +736,132 @@ fn real_wasm_cumulative_program_legs_refuse_one_past_grant_atomically() {
     let payer = PrincipalId::new([72; 32]).unwrap_or_else(|error| panic!("payer: {error}"));
     let seed = b"cumulative";
     let source = layerx_programs_runtime::derive_program_account(owner, seed)
-        .unwrap_or_else(|error| panic!("source: {error}")).bytes();
+        .unwrap_or_else(|error| panic!("source: {error}"))
+        .bytes();
     let asset = [73; 32];
     let recipient = [74; 32];
-    let module = WasmEngine::declared().unwrap_or_else(|error| panic!("engine: {error}"))
-        .validate_candidate_v2(&repeated_program_transfer_module(seed, source, asset, recipient, 2))
+    let module = WasmEngine::declared()
+        .unwrap_or_else(|error| panic!("engine: {error}"))
+        .validate_candidate_v2(&repeated_program_transfer_module(
+            seed, source, asset, recipient, 2,
+        ))
         .unwrap_or_else(|error| panic!("module: {error}"));
     for maximum_amount in [9, 10] {
         let grants = CapabilitySet::new([Capability::ProgramSpend {
-            owner_program: owner, seed: seed.to_vec(), source_account: source,
-            asset, to: recipient, maximum_amount,
-        }]).unwrap_or_else(|error| panic!("grants: {error}"));
+            owner_program: owner,
+            seed: seed.to_vec(),
+            source_account: source,
+            asset,
+            to: recipient,
+            maximum_amount,
+        }])
+        .unwrap_or_else(|error| panic!("grants: {error}"));
         let mut storage = Storage::default();
         let before = storage.clone();
         let outcome = Executor::declared().execute_authorized_candidate(
             &mut storage,
             AuthorizedExecutionRequest {
-                module: &module, program: owner,
+                module: &module,
+                program: owner,
                 authorization: AuthorizationContext::new(payer, grants),
-                receipts: &NoReceipts, entrypoint: CALL_ENTRY_EXPORT, calldata: &[],
-                composition: CompositionContext::isolated(), response_capacity: 0,
+                receipts: &NoReceipts,
+                entrypoint: CALL_ENTRY_EXPORT,
+                calldata: &[],
+                composition: CompositionContext::isolated(),
+                response_capacity: 0,
             },
         );
         if maximum_amount == 9 {
-            assert_eq!(outcome, Err(ExecutionError::Composition(
-                CompositionRefusal::Authority(AbiError::CapabilityEscalation),
-            )));
+            assert_eq!(
+                outcome,
+                Err(ExecutionError::Composition(CompositionRefusal::Authority(
+                    AbiError::CapabilityEscalation
+                ),))
+            );
         } else {
             let record = outcome.unwrap_or_else(|error| panic!("at bound: {error}"));
-            let effects = record.effects().unwrap_or_else(|| panic!("at-bound effects"));
+            let effects = record
+                .effects()
+                .unwrap_or_else(|| panic!("at-bound effects"));
             assert_eq!(effects.transfers.len(), 2);
-            assert_eq!(effects.transfers.iter().map(|leg| leg.amount).sum::<u128>(), 10);
+            assert_eq!(
+                effects.transfers.iter().map(|leg| leg.amount).sum::<u128>(),
+                10
+            );
         }
         assert_eq!(storage, before);
     }
+}
+
+#[test]
+fn monetary_law_raw_balance_and_issuance_imports_refuse_every_supported_abi() {
+    use layerx_programs_runtime::ValidationRefusal;
+    let engine = WasmEngine::declared().unwrap_or_else(|error| panic!("engine: {error}"));
+    for abi_version in 1..=4 {
+        for module_name in [ABI_MODULE, CANDIDATE_ABI_MODULE, "env", "kernel", "ledger"] {
+            for import_name in [
+                "balance_write",
+                "balance_set",
+                "balance_add",
+                "balance_sub",
+                "ledger_apply",
+                "apply_transfer_set",
+                "mint",
+                "burn",
+                "transfer_from",
+            ] {
+                let wasm = module(&[
+                    type_section(&[(&[], &[TYPE_I32])]),
+                    import_section(&[(module_name, import_name, 0)]),
+                ]);
+                let refusal = match engine.validate_versioned(abi_version, &wasm) {
+                    Ok(_) => panic!(
+                        "raw monetary import validated: {abi_version}/{module_name}/{import_name}"
+                    ),
+                    Err(refusal) => refusal,
+                };
+                assert_eq!(
+                    refusal,
+                    ValidationRefusal::ForbiddenImport {
+                        import_module: module_name.into(),
+                        import_name: import_name.into(),
+                    },
+                    "ABI {abi_version}/{module_name}/{import_name}",
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn monetary_law_principal_transfer_without_invoker_grant_refuses_atomically() {
+    use layerx_programs_runtime::{EntrypointRefusal, ExecutionError};
+    let program = ProgramId::new([81; 32]).unwrap_or_else(|error| panic!("program: {error}"));
+    let payer = PrincipalId::new([82; 32]).unwrap_or_else(|error| panic!("payer: {error}"));
+    let module = WasmEngine::declared()
+        .unwrap_or_else(|error| panic!("engine: {error}"))
+        .validate(&transfer_module())
+        .unwrap_or_else(|error| panic!("module: {error}"));
+    let mut storage = Storage::default();
+    let before = storage.clone();
+    let refused = Executor::declared().execute_authorized(
+        &mut storage,
+        AuthorizedExecutionRequest {
+            module: &module,
+            program,
+            authorization: AuthorizationContext::new(payer, CapabilitySet::empty()),
+            receipts: &NoReceipts,
+            entrypoint: "run",
+            calldata: &[],
+            composition: CompositionContext::isolated(),
+            response_capacity: 0,
+        },
+    );
+    assert_eq!(
+        refused,
+        Err(ExecutionError::Entrypoint(
+            EntrypointRefusal::GuestRefused { code: -1 }
+        )),
+    );
+    assert_eq!(storage, before);
 }
