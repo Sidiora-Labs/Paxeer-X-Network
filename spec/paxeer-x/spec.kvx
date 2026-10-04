@@ -23356,7 +23356,10 @@ retained_qualification_adapter_paths = ["platform/hosted/agent-boundary/src/main
 build_cmd = "timeout 20m bash tools/paxeer-x/gates/103.6.4.sh --build"
 qualification_stage_contract = "Build declared real boundary targets once, bind actual service and test artifacts to source, then run the focused real-process corpus from prebuilt binaries. Preserve all mandatory non-skipped cases and the original native/artifact/recovery/strict all-target lint requirements at release-wave scope."
 completion_basis = "implementation"
-qualification_status = "pending_scoped_gate"
+qualification_status = "implemented-not-qualified"
+build_exit_code = 101
+verify_status = "unrun"
+qualification_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-103.6.4-adapter-result.json"
 
 [task.103.6.5]
 title = "Implement the layerx-identity principal and session service"
