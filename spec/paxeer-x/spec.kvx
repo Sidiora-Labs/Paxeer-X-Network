@@ -26613,8 +26613,20 @@ fanout_scope_delegated = ["Makefile"]
 fanout_basis = "Owner requested maximum parallel implementation on 2026-10-04; delegated shared file edits require root coordination and retain original acceptance criteria"
 source_status = "complete"
 completion_basis = "implementation under owner CONSTITUTION; qualification separately recorded"
-qualification_status = "UNRUN"
+qualification_status = "FAILED"
 source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/task103610-continuation-intake.json"
+qualification_revision = "ddc77a3dd82c0d82dd1f730dc0121c9dc9581733"
+qualification_command = ["timeout", "30m", "tools/paxeer-x/verify-task.sh", "103.6.10"]
+qualification_exit_code = 8
+qualification_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/fanout103610-approved-qualification/verify-repair1.log"
+qualification_evidence = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-103.6.10-approved-final-result.json"
+build_revision = "ddc77a3dd82c0d82dd1f730dc0121c9dc9581733"
+build_command = ["timeout", "20m", "tools/paxeer-x/gates/103.6.10.sh", "--build"]
+build_exit_code = 0
+build_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/fanout103610-approved-qualification/build.log"
+qualification_gate_exit_code = 1
+qualification_gate_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/fanout103610-approved-qualification/103.6.10-ddc77a3dd82c-20261004T180920070341Z-81425ce7.log"
+qualification_missing_prerequisite = "UNRUN: genuine PAXEER_X_FINALITY_AUTHORITY_RECORDINGS_MANIFEST required; prior foundation absence preserved"
 
 [task.104.14.1]
 title = "Run every journey against the real stack"
