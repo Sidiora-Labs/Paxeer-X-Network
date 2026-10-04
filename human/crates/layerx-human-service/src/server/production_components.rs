@@ -8953,7 +8953,7 @@ impl ProductionComponents {
                     Table::Journeys,
                     row_key,
                     now,
-                    serde_json::to_vec(&retained).map_err(|_| ApiFailure::unavailable)?,
+                    serde_json::to_vec(&retained).map_err(|_| ApiFailure::unavailable())?,
                 )
                 .map_err(|_| ApiFailure::unavailable())?;
         }
