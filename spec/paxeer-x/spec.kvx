@@ -35171,7 +35171,7 @@ source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/fleet-104.35.37-s
 
 [task.104.13.32]
 title = "Provide genuine Human-owner native sessions, consented grants and immutable Send previews"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 4
 requires = ["0.2", "104.13.28", "104.13.29"]
@@ -35181,7 +35181,7 @@ do_2 = "Connect explicit verified SecuritySettings consent for the exact typed n
 do_3 = "Expose immutable native Send preview using actual core preparation, native head, fees, signed grant and capability context before signing the exact preparation purpose. Preview has no debit, reservation, durable grant installation or budget charge. Missing authentic owner, grant or proof refuses."
 do_4 = "Compose the real producer in the existing Human server and expose typed internal context for the unfinished journey hold/resume consumer. Do not invent a separate public endpoint or claim task30 journey integration complete. Preserve existing legacy paths and refusal predicates."
 do_5 = "Author genuine disposable denied-before-consent, session/grant installation, exact preview/purpose binding, restart/replay and foreign or changed context cases through actual native, Human and custody owners. No direct fabricated authority rows or substitute attestors."
-touches = ["agent/crates/layerx-agentd/src/human.rs", "agent/crates/layerx-agentd/src/human_runtime.rs", "human/crates/layerx-human-service/src/server/agent_runtime.rs", "human/crates/layerx-human-service/src/server/agent_creation_native.rs", "human/crates/layerx-human-service/src/server/native_send.rs", "human/crates/layerx-human-service/src/server/mod.rs", "human/crates/layerx-human-service/src/server/schema.rs", "human/crates/layerx-human-service/src/server/production_components.rs", "human/crates/layerx-human-service/tests/native_send_producer.rs", "tools/qualification/paxeer-x/human-native-send-producer.py", "human/crates/layerx-human-service/Cargo.toml"]
+touches = ["human/crates/layerx-human-service/src/server/agent_creation_native.rs", "human/crates/layerx-human-service/tests/native_send_producer.rs", "tools/qualification/paxeer-x/human-native-send-producer.py", "human/crates/layerx-human-service/Cargo.toml"]
 build_cmd = "timeout 20m env CARGO_TARGET_DIR=/root/lx-target/human /root/.cargo/bin/cargo test --locked --manifest-path human/Cargo.toml -p layerx-human-service --test native_send_producer --no-run"
 verify_cmd = "timeout 20m python3 tools/qualification/paxeer-x/human-native-send-producer.py --candidate-manifest \"$PAXEER_X_CANDIDATE_MANIFEST\""
 max_builds = 1
@@ -35193,10 +35193,27 @@ completion_basis_policy = "Owner CONSTITUTION: fully implemented DONE; qualifica
 source_ownership = "Only isolated task checkout exact paths; root owns inactive lease transfer, shared schema/manifest coordination, task state and publication. No production activity or deployment."
 root_dependency_edge = "Promote existing local agentd dependency from dev to production after static dependency graph cycle check; lock graph already contains the edge. No version changes."
 security_schema_boundary = "Internal-only producer exported for actual authorized SecuritySettings composition; all eight security.action variants and canonical body remain unchanged. No public journey completion claimed."
-source_status = "partial"
+source_status = "complete"
 qualification_status = "UNRUN"
 remaining_source = "Genuine owner session, typed consent, native preview and internal composition source integrated; actual daemon/passkey/KMS success corpus and focused adapter remain missing."
 handoff_path = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-104.13.32-source-handoff.json"
+retained_contract_paths_8_4 = ["agent/crates/layerx-agentd/src/human_runtime.rs"]
+lease_transfer_authority_8_4 = "Owner approved inactive lease reassignment; preserve all unfinished source criteria and published component bytes. Successor owns only its declared integration."
+retained_contract_paths_10_2 = ["human/crates/layerx-human-service/src/server/production_components.rs"]
+lease_transfer_authority_10_2 = "Owner approved inactive lease reassignment; preserve all unfinished source criteria and published component bytes. Successor owns only its declared integration."
+retained_contract_paths_104_13_30_resume = ["agent/crates/layerx-agentd/src/human.rs", "human/crates/layerx-human-service/src/server/agent_runtime.rs"]
+lease_transfer_authority_104_13_30_resume = "Owner approved inactive lease reassignment and explicit30-minute task30 continuation; preserve genuine owner/session/preview contracts from task32."
+retained_native_selector_path_104_13_30 = "human/crates/layerx-human-service/src/server/native_send.rs"
+retained_contract_paths_104_13_36 = ["human/crates/layerx-human-service/src/server/mod.rs", "human/crates/layerx-human-service/src/server/schema.rs"]
+lease_transfer_authority_104_13_36 = "Owner approved inactive lease reassignment and distinct Send contract; original unfinished criteria and source checkpoints remain preserved."
+fleet_authority = "User explicitly ordered30agents into pending integrations within4hours; fresh bounded source implementation resumes. Preserve prior source/evidence and every assertion."
+fleet_role = "/root/complete_program_accounts/tenant_readiness_corpus"
+fleet_scope_manifest = "/root/lx-ops/paxeer-x-integration-2026-10-03/fleet-104.13.32-brief.json"
+fanout_role = "complete_human_facts/facts_dispatch"
+fanout_scope_delegated = []
+fanout_basis = "Owner requested maximum parallel implementation on 2026-10-04; delegated shared file edits require root coordination and retain original acceptance criteria"
+completion_basis = "implementation under owner CONSTITUTION; qualification separately recorded"
+source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/fanout-104.13.32-intake.json"
 
 [task.104.13.33]
 title = "Apply owner-approved native Send compiler corrections and build the integrated callers"
