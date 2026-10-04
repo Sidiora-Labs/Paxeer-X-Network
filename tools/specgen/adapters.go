@@ -12,7 +12,7 @@ func buildBrief(wf *Doc) string {
 	name := wf.Str("meta", "name")
 	fmt.Fprintf(&b, "# %s\n\n", name)
 	b.WriteString("The single source of truth for how to work in this repo is **`spec/`** (kvx).\n")
-	b.WriteString("This file is a GENERATED pointer to it. Do not hand-edit it; edit `spec/workflow.kvx` and run `go run ./tools/specgen -root .`.\n\n")
+	b.WriteString("This file is a GENERATED pointer to it. Do not hand-edit it; edit `spec/workflow.kvx` and run `spec/specgen`.\n\n")
 
 	if sot := wf.Str("meta", "source_of_truth"); sot != "" {
 		fmt.Fprintf(&b, "> %s\n\n", sot)

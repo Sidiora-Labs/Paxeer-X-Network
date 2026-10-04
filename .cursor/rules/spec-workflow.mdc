@@ -8,7 +8,7 @@ alwaysApply: true
 # LayerX Spec Workflow
 
 The single source of truth for how to work in this repo is **`spec/`** (kvx).
-This file is a GENERATED pointer to it. Do not hand-edit it; edit `spec/workflow.kvx` and run `go run ./tools/specgen -root .`.
+This file is a GENERATED pointer to it. Do not hand-edit it; edit `spec/workflow.kvx` and run `spec/specgen`.
 
 > spec/ (kvx). Per-IDE rule files are GENERATED pointers — never hand-edit; run cg spec render && cg commit -m \"Specgen re-render\" to regenerate.
 
