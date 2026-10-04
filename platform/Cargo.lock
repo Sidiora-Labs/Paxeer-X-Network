@@ -1779,7 +1779,7 @@ dependencies = [
  "layerx-identity-binding",
  "layerx-indexer",
  "layerx-platform-internal",
- "layerx-programs",
+ "layerx-programs-registry",
  "layerx-programs-runtime",
  "layerx-proof",
  "layerx-types",

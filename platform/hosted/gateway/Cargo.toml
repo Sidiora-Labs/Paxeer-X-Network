@@ -21,7 +21,7 @@ layerx-crypto = { path = "../../../agent/crates/layerx-crypto" }
 layerx-types = { path = "../../../agent/crates/layerx-types" }
 layerx-wire = { path = "../../../agent/crates/layerx-wire" }
 layerx-programs-runtime = { path = "../../../programs/crates/layerx-programs-runtime" }
-layerx-programs = { path = "../../../programs/crates/layerx-programs-registry" }
+layerx-programs = { package = "layerx-programs-registry", path = "../../../programs/crates/layerx-programs-registry" }
 native-tls.workspace = true
 rustls.workspace = true
 serde.workspace = true
