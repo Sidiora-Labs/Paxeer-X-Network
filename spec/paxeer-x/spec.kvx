@@ -36668,31 +36668,37 @@ fanout_role = "integrate_arbiter/authority_gate"
 parent_task = "104.33.7"
 source_status = "complete"
 completion_basis = "implementation under owner CONSTITUTION; qualification separately recorded"
-qualification_status = "UNRUN_AFTER_REPAIR"
+qualification_status = "PASS"
 source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/root-dotnet-v5-asset-repair1-intake.json"
-qualification_revision = "ba638f24e029f8923094420893742c24e6f41337"
-qualification_command = "timeout 20m scripts/paxeer-x/verify-sdk-program-dotnet.sh"
-qualification_exit_code = "UNRUN"
-qualification_log = "UNRUN"
-qualification_evidence = "/root/lx-ops/paxeer-x-integration-2026-10-03/task1043377-dotnet-v5-repair1-ba638f24-qualification/finalizedresult.json"
+qualification_revision = "5f475ec5ee2ba4e9fd85bf825f9d9d15c27a7001"
+qualification_command = "timeout 20m env DOTNET=/root/lx-target/task1043377-dotnet/sdk/dotnet DOTNET_CLI_HOME=/root/lx-target/task1043377-dotnet/home DOTNET_CLI_TELEMETRY_OPTOUT=1 DOTNET_SKIP_FIRST_TIME_EXPERIENCE=1 NUGET_PACKAGES=/root/lx-target/task1043377-dotnet/nuget-packages PAXEER_X_MAINLINE=5f475ec5ee2ba4e9fd85bf825f9d9d15c27a7001 PAXEER_X_PROGRAM_TERMINAL_V5_CORPUS=/root/lx-ops/paxeer-x-integration-2026-10-03/native-terminal-v5-common-5f475ec5-qualification/build-output/terminal-v5-corpus.json LAYERX_DOTNET_PROGRAMS_RESULTS_DIR=/root/lx-ops/paxeer-x-integration-2026-10-03/task1043377-dotnet-v5-continuation-5f475ec5-qualification/test-results scripts/paxeer-x/verify-sdk-program-dotnet.sh > /root/lx-ops/paxeer-x-integration-2026-10-03/task1043377-dotnet-v5-continuation-5f475ec5-qualification/verify.log 2>&1"
+qualification_exit_code = 0
+qualification_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/task1043377-dotnet-v5-continuation-5f475ec5-qualification/verify.log"
+qualification_evidence = "/root/lx-ops/paxeer-x-integration-2026-10-03/task1043377-dotnet-v5-continuation-5f475ec5-qualification/finalizedresult.json"
 source_revision = "ba638f24e029f8923094420893742c24e6f41337"
 build_status = "PASS"
 build_command = "timeout 60s env DOTNET_CLI_HOME=/root/lx-target/task1043377-dotnet/home DOTNET_CLI_TELEMETRY_OPTOUT=1 DOTNET_SKIP_FIRST_TIME_EXPERIENCE=1 NUGET_PACKAGES=/root/lx-target/task1043377-dotnet/nuget-packages /root/lx-target/task1043377-dotnet/sdk/dotnet build platform/sdk/dotnet/tests/LayerX.Sdk.Tests/LayerX.Sdk.Tests.csproj --no-restore --configuration Release --nologo"
 build_exit_code = 0
 build_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/task1043377-dotnet-v5-repair1-ba638f24-qualification/build.log"
 qualification_preparation_exit_code = 143
-qualification_observed = "The v5 Asset-authority repair is published and compiles; focused verification awaits genuine matching-revision corpus."
-qualification_missing_prerequisite = "Retained genuine corpus source revision4c209 differs from repaired published candidateba638. Exact candidate-revision assertion preserved; no native rerun, relabel or variable reinterpretation authorized."
+qualification_observed = "All14 tests passed with genuine same-revision native corpus and repaired SDK artifacts."
+qualification_missing_prerequisite = "NONE"
 continuation_approval = "/root/lx-ops/paxeer-x-integration-2026-10-03/terminal-v5-one-hour-owner-approval.json"
 continuation_deadline_utc = "2026-10-04T20:29:37Z"
 continuation_minutes = 60
 build_revision = "ba638f24e029f8923094420893742c24e6f41337"
-corpus_revision = "4c209dfc86a97fa56e8892cf19c30b9b35c1b56f"
+corpus_revision = "5f475ec5ee2ba4e9fd85bf825f9d9d15c27a7001"
 prior_qualification_revision = "4c209dfc86a97fa56e8892cf19c30b9b35c1b56f"
 prior_qualification_command = "timeout 516s scripts/paxeer-x/verify-sdk-program-dotnet.sh (recorded real SDK and genuine native corpus environment)"
 prior_qualification_exit_code = 1
 prior_qualification_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/task1043377-dotnet-v5-4c209dfc-qualification/verify.log"
 qualification_repairs = 1
+build_reused = true
+corpus_artifact = "/root/lx-ops/paxeer-x-integration-2026-10-03/native-terminal-v5-common-5f475ec5-qualification/build-output/terminal-v5-corpus.json"
+corpus_sha256 = "4634ccfc80560f1ba093ccc863f95dc8c1f74f087cc38ed0ff6b46bf9565ceb2"
+qualification_case_count = 14
+qualification_skips = 0
+continuation_repairs = 0
 
 [task.104.33.7.2]
 title = "Complete TypeScript Programs client integration"
