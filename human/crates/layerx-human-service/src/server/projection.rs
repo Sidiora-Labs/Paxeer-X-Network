@@ -87,6 +87,65 @@ pub(super) struct ApprovalProjection {
     pub detail: Value,
 }
 
+pub(super) fn native_state(state: super::agent_runtime::NativeEffectApprovalFactState) -> Result<&'static str, ApiFailure> {
+    use super::agent_runtime::NativeEffectApprovalFactState;
+    match state {
+        NativeEffectApprovalFactState::Awaiting => Ok("pending"),
+        NativeEffectApprovalFactState::Granted => Ok("approved"),
+        NativeEffectApprovalFactState::Rejected => Ok("rejected"),
+        NativeEffectApprovalFactState::Expired => Ok("expired"),
+        NativeEffectApprovalFactState::NotRequired => Err(ApiFailure::not_found()),
+    }
+}
+
+pub(super) fn level(level: Level) -> Result<&'static str, ApiFailure> {
+    verification(match level { Level::Unverified => 0, Level::SequencerSigned => 1, Level::BatchIncluded => 2,
+        Level::StateProven => 3, Level::CheckpointFinalised => 4, Level::SettlementAnchored => 5 })
+}
+
+pub(super) fn native_approval(facts: &super::agent_runtime::NativeEffectApprovalFacts,
+    managed: &ManagedAgentView, budget: &super::agent_runtime::NativeEffectApprovalBudget,
+    row: &super::agent_runtime::NativeEffectBudgetRow, fee_currency: &str, evidence: Vec<Value>) -> Result<ApprovalProjection, ApiFailure> {
+    use layerx_crypto::disclosure::{AmountRole, CounterpartyRole};
+    if !facts.requires_approval || facts.activity_module == 9 || facts.approval_id == [0;32] || facts.held_digest == [0;32]
+        || facts.created_at_sequence >= facts.budget_expiry_sequence || facts.created_at_unix_seconds == 0
+        || facts.owner != budget.owner || facts.approval_id != budget.approval_id || facts.held_digest != budget.held_digest
+        || facts.asset != row.asset || facts.fee_asset != budget.fee_asset || row.evidence_digest == [0;32] {
+        return Err(hold_defective());
+    }
+    let [amount] = facts.amounts.as_slice() else { return Err(hold_defective()); };
+    if amount.role != AmountRole::Transfer { return Err(hold_defective()); }
+    let recipients = facts.counterparties.iter().filter(|party|party.role == CounterpartyRole::Recipient).collect::<Vec<_>>();
+    let payers = facts.counterparties.iter().filter(|party|party.role == CounterpartyRole::Payer).collect::<Vec<_>>();
+    if recipients.len() > 1 || payers.len() > 1 || facts.counterparties.len() != recipients.len() + payers.len()
+        || payers.first().is_some_and(|payer|payer.account != row.source_account) {
+        return Err(hold_defective());
+    }
+    let counterparty = recipients.first().or_else(||payers.first()).ok_or_else(hold_defective)?;
+    if counterparty.account == [0;32] { return Err(hold_defective()); }
+    let state = native_state(facts.state)?;
+    let approval_id = format!("apr_{}",hex(&facts.approval_id));
+    let counterparty = format!("act_{}",hex(&counterparty.account));
+    let money = json!({"amount":amount.value.to_string(),"currency":managed.currency});
+    let expires_at = unix_milliseconds(facts.activity_expires_at_unix_milliseconds)?;
+    let remaining = json!({"money":{"amount":row.remaining.to_string(),"currency":managed.currency},"verification":level(row.verification)?});
+    let summary = json!({"approval_id":approval_id,"agent_id":managed.agent_id,"agent_name":managed.name,"counterparty":counterparty,"amount":money,
+        "reason_copy_key":"approval.reason.policy-required","expires_at":expires_at,"state":state,"budget_remaining_after":remaining});
+    let detail = json!({"approval_id":approval_id,"agent_id":managed.agent_id,"agent_name":managed.name,"state":state,"state_copy_key":format!("approval.state.{state}"),
+        "reason_copy_key":"approval.reason.policy-required","facts":{"amount":money,"counterparty":counterparty,"asset":managed.currency,
+        "fees":{"amount":facts.fee_limit.to_string(),"currency":fee_currency},"expires_at":expires_at},"budget_remaining_after":remaining,
+        "created_at":unix_time(facts.created_at_unix_seconds)?,"evidence":evidence});
+    Ok(ApprovalProjection {summary,detail})
+}
+
+pub(super) fn owned_material(bytes: &[u8], class: &str, content_type: &str) -> Value {
+    use base64::Engine as _;
+    use sha2::{Digest as _, Sha256};
+    let digest:[u8;32] = Sha256::digest(bytes).into();
+    json!({"evidence_id":format!("evd_{}",hex(&digest)),"class":class,"verification":"unverified", "content_type":content_type,
+        "bytes_base64":base64::engine::general_purpose::STANDARD.encode(bytes)})
+}
+
 pub(super) fn approval(facts: &AgentApprovalFacts, managed: &ManagedAgentView, budget: VerifiedBudgetAfter, evidence: Vec<Value>) -> Result<ApprovalProjection, ApiFailure> {
     let hold = &facts.approval;
     if hold.held_activity.canonical_digest != hold.canonical_bytes_digest || facts.activity_expires_at_unix_seconds != hold.held_activity.expiry.0

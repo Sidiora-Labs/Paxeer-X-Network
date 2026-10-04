@@ -33214,3 +33214,26 @@ qualification_status = "implemented-not-qualified"
 build_exit_code = 101
 verify_status = "unrun"
 qualification_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-104.13.18-build.log"
+
+[task.104.13.14]
+title = "Complete canonical native approval projections from actual held and budget facts"
+status = "in_progress"
+mode = "BUILD"
+wave = 2
+requires = ["0.2", "8.1"]
+reqs = ["1064.3", "1064.8", "1071.1", "1071.5"]
+do_1 = "Connect real native approval list/get/decision/home/push through the existing unified Human surface with exact managed-child ownership, actual post-reserve budget rows and genuine LocalOwned held material. Never relabel local material or budget summaries as cryptographic proof."
+touches = ["human/crates/layerx-human-service/src/server/production_components.rs", "human/crates/layerx-human-service/src/server/mod.rs", "human/crates/layerx-human-service/src/server/projection.rs", "tools/qualification/paxeer-x/human-canonical-projections.py"]
+build_cmd = "timeout 20m env CARGO_TARGET_DIR=/root/lx-target/human /root/.cargo/bin/cargo build --locked --manifest-path human/Cargo.toml -p layerx-human-service"
+verify_cmd = "timeout 20m python3 tools/qualification/paxeer-x/human-canonical-projections.py --candidate-manifest \"$PAXEER_X_CANDIDATE_MANIFEST\""
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop at original 30-minute cap, unrelated failure, missing genuine authority or weakening; report exact source state, command, exit code and log path."
+completion_basis_policy = "Owner CONSTITUTION: fully implemented DONE; qualification separate and partial remains in_progress."
+source_ownership = "Root owns shared manifests, locks, spec and publication; preserve owner edits and no deployment."
+
+source_status = "partial"
+qualification_status = "unrun_partial_source"
+remaining_source = "Genuine Programs material/disclosure/budget/decision private contract and canonical non-monetary representation; generic native52-57 consumers complete."

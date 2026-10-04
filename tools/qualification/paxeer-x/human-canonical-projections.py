@@ -104,6 +104,18 @@ for (const expected of fixture.observations) {
   check(Date.parse(value.expires_at) === expected.activity_expires_at_unix_milliseconds, 'activity expiry preserves genuine wall-time units');
   const detail = await client.approvalGet(value.approval_id);
   check(Date.parse(detail.created_at) === expected.created_at_unix_seconds * 1000, 'creation time comes from genuine persisted Unix metadata');
+  if (expected.profile === 3) {
+    const local = detail.evidence.filter((reference) => reference.class === 'approval-hold');
+    check(local.length === 2 && local.every((reference) => reference.verification === 'unverified'), 'actual held canonical bytes and local carrier never promoted to protocol verification');
+    const allocation = detail.evidence.filter((reference) => reference.class === 'local-journey-state');
+    check(allocation.length === 1 && allocation[0].verification === 'unverified', 'allocation report remains honestly local owned');
+    const proof = detail.evidence.filter((reference) => reference.class === 'checkpoint-proof');
+    check(proof.length >= 1 && proof.every((reference) => ['checkpoint-finalised','settlement-anchored'].includes(reference.verification)), 'real independently verified raw budget package remains separate from local materials');
+    check(local.some((reference) => reference.evidence_id === 'evd_' + expected.held_digest), 'held carrier export bound to genuine immutable owner digest');
+    check(proof.some((reference) => reference.evidence_id === 'evd_' + expected.budget_proof_digest), 'raw budget export bound to actual independently verified package');
+    await denied(() => conformance['approval.approve']({client:foreign,params:{approval_id:expected.approval_id},body:expected.foreign_approve_body,idempotencyKey:expected.foreign_approve_key}), ['not-found','forbidden','step-up-required']);
+  }
+
 }
 check(profiles.has(2) && profiles.has(3), 'real legacy and generic native producers both executed');
 const home = await client.homeSummary();
