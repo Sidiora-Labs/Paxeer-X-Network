@@ -126,6 +126,10 @@ export type JourneyId = string;
 
 export type Milliseconds = bigint;
 
+export type NativeSendCount = bigint;
+
+export type NativeSendUnixSeconds = bigint;
+
 export type NotificationId = string;
 
 export type OpaqueCredential = string;
@@ -2609,6 +2613,7 @@ export function encodeMoney(value: Money): JsonValue {
 
 export interface MoveCommitRequest {
   quote_id: QuoteId;
+  native_access_id?: string;
 }
 
 export function decodeMoveCommitRequest(value: JsonValue | undefined, at: string): MoveCommitRequest {
@@ -2616,6 +2621,9 @@ export function decodeMoveCommitRequest(value: JsonValue | undefined, at: string
   const result: MoveCommitRequest = {
     quote_id: expectString(object["quote_id"], at + ".quote_id"),
   };
+  if (object["native_access_id"] !== undefined) {
+    result.native_access_id = expectString(object["native_access_id"], at + ".native_access_id");
+  }
   return result;
 }
 
@@ -2623,6 +2631,9 @@ export function encodeMoveCommitRequest(value: MoveCommitRequest): JsonValue {
   const result: JsonObject = {
     quote_id: value.quote_id,
   };
+  if (value.native_access_id !== undefined) {
+    result["native_access_id"] = value.native_access_id;
+  }
   return result;
 }
 
@@ -2636,6 +2647,7 @@ export interface MoveQuote {
   arrival_estimate: Timestamp;
   expires_at: Timestamp;
   irreversibility_copy_key?: CopyKey;
+  native_send_access?: NativeSendAccessRequest;
 }
 
 export function decodeMoveQuote(value: JsonValue | undefined, at: string): MoveQuote {
@@ -2653,6 +2665,9 @@ export function decodeMoveQuote(value: JsonValue | undefined, at: string): MoveQ
   if (object["irreversibility_copy_key"] !== undefined) {
     result.irreversibility_copy_key = expectString(object["irreversibility_copy_key"], at + ".irreversibility_copy_key");
   }
+  if (object["native_send_access"] !== undefined) {
+    result.native_send_access = decodeNativeSendAccessRequest(object["native_send_access"], at + ".native_send_access");
+  }
   return result;
 }
 
@@ -2669,6 +2684,9 @@ export function encodeMoveQuote(value: MoveQuote): JsonValue {
   };
   if (value.irreversibility_copy_key !== undefined) {
     result["irreversibility_copy_key"] = value.irreversibility_copy_key;
+  }
+  if (value.native_send_access !== undefined) {
+    result["native_send_access"] = encodeNativeSendAccessRequest(value.native_send_access);
   }
   return result;
 }
@@ -2750,6 +2768,150 @@ export function encodeNativeFeeBudget(value: NativeFeeBudget): JsonValue {
     maximum_total: encodeConsensusInteger(value.maximum_total),
     period_length_ms: encodeConsensusInteger(value.period_length_ms),
     maximum_per_period: encodeConsensusInteger(value.maximum_per_period),
+  };
+  return result;
+}
+
+export interface NativeSendAccessConfirmation {
+  access_id: string;
+  counterparty: string;
+  asset: string;
+  maximum_amount: Amount;
+  not_before: NativeSendUnixSeconds;
+  expires_at: NativeSendUnixSeconds;
+  rate_window_ms: Milliseconds;
+  maximum_uses: NativeSendCount;
+  commitment: string;
+  step_up: StepUpEvidence;
+  native_fee_budget?: NativeFeeBudget;
+}
+
+export function decodeNativeSendAccessConfirmation(value: JsonValue | undefined, at: string): NativeSendAccessConfirmation {
+  const object = expectObject(value, at);
+  const result: NativeSendAccessConfirmation = {
+    access_id: expectString(object["access_id"], at + ".access_id"),
+    counterparty: expectString(object["counterparty"], at + ".counterparty"),
+    asset: expectString(object["asset"], at + ".asset"),
+    maximum_amount: decodeConsensusInteger(object["maximum_amount"], at + ".maximum_amount"),
+    not_before: decodeConsensusInteger(object["not_before"], at + ".not_before"),
+    expires_at: decodeConsensusInteger(object["expires_at"], at + ".expires_at"),
+    rate_window_ms: decodeConsensusInteger(object["rate_window_ms"], at + ".rate_window_ms"),
+    maximum_uses: decodeConsensusInteger(object["maximum_uses"], at + ".maximum_uses"),
+    commitment: expectString(object["commitment"], at + ".commitment"),
+    step_up: decodeStepUpEvidence(object["step_up"], at + ".step_up"),
+  };
+  if (object["native_fee_budget"] !== undefined) {
+    result.native_fee_budget = decodeNativeFeeBudget(object["native_fee_budget"], at + ".native_fee_budget");
+  }
+  return result;
+}
+
+export function encodeNativeSendAccessConfirmation(value: NativeSendAccessConfirmation): JsonValue {
+  const result: JsonObject = {
+    access_id: value.access_id,
+    counterparty: value.counterparty,
+    asset: value.asset,
+    maximum_amount: encodeConsensusInteger(value.maximum_amount),
+    not_before: encodeConsensusInteger(value.not_before),
+    expires_at: encodeConsensusInteger(value.expires_at),
+    rate_window_ms: encodeConsensusInteger(value.rate_window_ms),
+    maximum_uses: encodeConsensusInteger(value.maximum_uses),
+    commitment: value.commitment,
+    step_up: encodeStepUpEvidence(value.step_up),
+  };
+  if (value.native_fee_budget !== undefined) {
+    result["native_fee_budget"] = encodeNativeFeeBudget(value.native_fee_budget);
+  }
+  return result;
+}
+
+export interface NativeSendAccessDisclosure {
+  access_id: string;
+  confirms: OperationDigest;
+}
+
+export function decodeNativeSendAccessDisclosure(value: JsonValue | undefined, at: string): NativeSendAccessDisclosure {
+  const object = expectObject(value, at);
+  const result: NativeSendAccessDisclosure = {
+    access_id: expectString(object["access_id"], at + ".access_id"),
+    confirms: expectString(object["confirms"], at + ".confirms"),
+  };
+  return result;
+}
+
+export function encodeNativeSendAccessDisclosure(value: NativeSendAccessDisclosure): JsonValue {
+  const result: JsonObject = {
+    access_id: value.access_id,
+    confirms: value.confirms,
+  };
+  return result;
+}
+
+export interface NativeSendAccessRequest {
+  access_id: string;
+  counterparty: string;
+  asset: string;
+  maximum_amount: Amount;
+  not_before: NativeSendUnixSeconds;
+  expires_at: NativeSendUnixSeconds;
+  rate_window_ms: Milliseconds;
+  maximum_uses: NativeSendCount;
+  commitment: string;
+  native_fee_budget?: NativeFeeBudget;
+}
+
+export function decodeNativeSendAccessRequest(value: JsonValue | undefined, at: string): NativeSendAccessRequest {
+  const object = expectObject(value, at);
+  const result: NativeSendAccessRequest = {
+    access_id: expectString(object["access_id"], at + ".access_id"),
+    counterparty: expectString(object["counterparty"], at + ".counterparty"),
+    asset: expectString(object["asset"], at + ".asset"),
+    maximum_amount: decodeConsensusInteger(object["maximum_amount"], at + ".maximum_amount"),
+    not_before: decodeConsensusInteger(object["not_before"], at + ".not_before"),
+    expires_at: decodeConsensusInteger(object["expires_at"], at + ".expires_at"),
+    rate_window_ms: decodeConsensusInteger(object["rate_window_ms"], at + ".rate_window_ms"),
+    maximum_uses: decodeConsensusInteger(object["maximum_uses"], at + ".maximum_uses"),
+    commitment: expectString(object["commitment"], at + ".commitment"),
+  };
+  if (object["native_fee_budget"] !== undefined) {
+    result.native_fee_budget = decodeNativeFeeBudget(object["native_fee_budget"], at + ".native_fee_budget");
+  }
+  return result;
+}
+
+export function encodeNativeSendAccessRequest(value: NativeSendAccessRequest): JsonValue {
+  const result: JsonObject = {
+    access_id: value.access_id,
+    counterparty: value.counterparty,
+    asset: value.asset,
+    maximum_amount: encodeConsensusInteger(value.maximum_amount),
+    not_before: encodeConsensusInteger(value.not_before),
+    expires_at: encodeConsensusInteger(value.expires_at),
+    rate_window_ms: encodeConsensusInteger(value.rate_window_ms),
+    maximum_uses: encodeConsensusInteger(value.maximum_uses),
+    commitment: value.commitment,
+  };
+  if (value.native_fee_budget !== undefined) {
+    result["native_fee_budget"] = encodeNativeFeeBudget(value.native_fee_budget);
+  }
+  return result;
+}
+
+export interface NativeSendAccessResult {
+  native_access_id: string;
+}
+
+export function decodeNativeSendAccessResult(value: JsonValue | undefined, at: string): NativeSendAccessResult {
+  const object = expectObject(value, at);
+  const result: NativeSendAccessResult = {
+    native_access_id: expectString(object["native_access_id"], at + ".native_access_id"),
+  };
+  return result;
+}
+
+export function encodeNativeSendAccessResult(value: NativeSendAccessResult): JsonValue {
+  const result: JsonObject = {
+    native_access_id: value.native_access_id,
   };
   return result;
 }
@@ -4567,6 +4729,7 @@ export interface SubmitPlanRequest {
   plan_digest: string;
   signed_digest: string;
   bindings: IntentLegBinding[];
+  native_access_id?: string;
 }
 
 export function decodeSubmitPlanRequest(value: JsonValue | undefined, at: string): SubmitPlanRequest {
@@ -4576,6 +4739,9 @@ export function decodeSubmitPlanRequest(value: JsonValue | undefined, at: string
     signed_digest: expectString(object["signed_digest"], at + ".signed_digest"),
     bindings: decodeArray(object["bindings"], at + ".bindings", decodeIntentLegBinding),
   };
+  if (object["native_access_id"] !== undefined) {
+    result.native_access_id = expectString(object["native_access_id"], at + ".native_access_id");
+  }
   return result;
 }
 
@@ -4585,6 +4751,9 @@ export function encodeSubmitPlanRequest(value: SubmitPlanRequest): JsonValue {
     signed_digest: value.signed_digest,
     bindings: value.bindings.map(encodeIntentLegBinding),
   };
+  if (value.native_access_id !== undefined) {
+    result["native_access_id"] = value.native_access_id;
+  }
   return result;
 }
 
@@ -5115,6 +5284,8 @@ export const operationNames = [
   "journey.list",
   "move.commit",
   "move.quote",
+  "native.send.access.begin",
+  "native.send.access.confirm",
   "notification.list",
   "notification.preferences.get",
   "notification.preferences.set",
@@ -5212,6 +5383,8 @@ export const operations: { readonly [name in OperationName]: OperationShape } = 
   "journey.list": { method: "GET", path: "/v1/journeys", pathParams: [], request: "Empty", response: "JourneyPage", idempotency: false, bodyless: true },
   "move.commit": { method: "POST", path: "/v1/moves", pathParams: [], request: "MoveCommitRequest", response: "Journey", idempotency: true, bodyless: false },
   "move.quote": { method: "POST", path: "/v1/moves/quote", pathParams: [], request: "MoveQuoteRequest", response: "MoveQuote", idempotency: false, bodyless: false },
+  "native.send.access.begin": { method: "POST", path: "/v1/native/send/access/begin", pathParams: [], request: "NativeSendAccessRequest", response: "NativeSendAccessDisclosure", idempotency: false, bodyless: false },
+  "native.send.access.confirm": { method: "POST", path: "/v1/native/send/access/confirm", pathParams: [], request: "NativeSendAccessConfirmation", response: "NativeSendAccessResult", idempotency: false, bodyless: false },
   "notification.list": { method: "GET", path: "/v1/notifications", pathParams: [], request: "Empty", response: "NotificationPage", idempotency: false, bodyless: true },
   "notification.preferences.get": { method: "GET", path: "/v1/notifications/preferences", pathParams: [], request: "Empty", response: "NotificationPreferences", idempotency: false, bodyless: true },
   "notification.preferences.set": { method: "POST", path: "/v1/notifications/preferences", pathParams: [], request: "NotificationPreferences", response: "NotificationPreferences", idempotency: false, bodyless: false },
@@ -5438,6 +5611,8 @@ export interface HumanApiClient {
   journeyList(): Promise<JourneyPage>;
   moveCommit(request: MoveCommitRequest, idempotencyKey: string): Promise<Journey>;
   moveQuote(request: MoveQuoteRequest): Promise<MoveQuote>;
+  nativeSendAccessBegin(request: NativeSendAccessRequest): Promise<NativeSendAccessDisclosure>;
+  nativeSendAccessConfirm(request: NativeSendAccessConfirmation): Promise<NativeSendAccessResult>;
   notificationList(): Promise<NotificationPage>;
   notificationPreferencesGet(): Promise<NotificationPreferences>;
   notificationPreferencesSet(request: NotificationPreferences): Promise<NotificationPreferences>;
@@ -5726,6 +5901,10 @@ export function createHumanApiClient(options: HumanApiClientOptions = {}): Human
       decodeJourney(await execute("POST", "/v1/moves", encodeMoveCommitRequest(request), idempotencyKey), "move.commit result"),
     moveQuote: async (request) =>
       decodeMoveQuote(await execute("POST", "/v1/moves/quote", encodeMoveQuoteRequest(request), undefined), "move.quote result"),
+    nativeSendAccessBegin: async (request) =>
+      decodeNativeSendAccessDisclosure(await execute("POST", "/v1/native/send/access/begin", encodeNativeSendAccessRequest(request), undefined), "native.send.access.begin result"),
+    nativeSendAccessConfirm: async (request) =>
+      decodeNativeSendAccessResult(await execute("POST", "/v1/native/send/access/confirm", encodeNativeSendAccessConfirmation(request), undefined), "native.send.access.confirm result"),
     notificationList: async () =>
       decodeNotificationPage(await execute("GET", "/v1/notifications", undefined, undefined), "notification.list result"),
     notificationPreferencesGet: async () =>

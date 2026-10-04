@@ -51,6 +51,7 @@ binding = "One binding per leg, carrying the action key it was signed against. A
 
 [type.SubmitPlanRequest]
 required = ["plan_digest:string","signed_digest:string","bindings:IntentLegBinding[]"]
+optional = ["native_access_id:string"]
 replan = "The service re-plans the stated intent against the observed state at submission time. When the recomputed digest differs from plan_digest the submission is refused and no journey is created."
 
 [type.IntentSubmission]

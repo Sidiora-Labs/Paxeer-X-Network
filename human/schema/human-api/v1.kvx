@@ -111,3 +111,43 @@ method = "GET"
 path = "/v1/version"
 request = "Empty"
 response = "VersionInfo"
+
+[scalar.NativeSendUnixSeconds]
+json = "string"
+format = "decimal"
+rust = "u64"
+typescript = "bigint"
+
+[scalar.NativeSendCount]
+json = "string"
+format = "decimal"
+rust = "u64"
+typescript = "bigint"
+
+[type.NativeSendAccessRequest]
+required = ["access_id:string","counterparty:string","asset:string","maximum_amount:Amount","not_before:NativeSendUnixSeconds","expires_at:NativeSendUnixSeconds","rate_window_ms:Milliseconds","maximum_uses:NativeSendCount","commitment:string"]
+optional = ["native_fee_budget:NativeFeeBudget"]
+
+[type.NativeSendAccessConfirmation]
+required = ["access_id:string","counterparty:string","asset:string","maximum_amount:Amount","not_before:NativeSendUnixSeconds","expires_at:NativeSendUnixSeconds","rate_window_ms:Milliseconds","maximum_uses:NativeSendCount","commitment:string","step_up:StepUpEvidence"]
+optional = ["native_fee_budget:NativeFeeBudget"]
+
+[type.NativeSendAccessDisclosure]
+required = ["access_id:string","confirms:OperationDigest"]
+
+[type.NativeSendAccessResult]
+required = ["native_access_id:string"]
+
+[operation.native.send.access.begin]
+authorization_class = "money-movement"
+method = "POST"
+path = "/v1/native/send/access/begin"
+request = "NativeSendAccessRequest"
+response = "NativeSendAccessDisclosure"
+
+[operation.native.send.access.confirm]
+authorization_class = "security-settings"
+method = "POST"
+path = "/v1/native/send/access/confirm"
+request = "NativeSendAccessConfirmation"
+response = "NativeSendAccessResult"

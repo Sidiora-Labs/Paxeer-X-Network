@@ -1230,6 +1230,7 @@ fn journey_status(
         (ActivityKind::Withdrawal, _, JourneyPhase::ReceiptVerified) => {
             ActivityStatus::Withdrawal(WithdrawalStage::WaitingForSettlement)
         }
+        (_, _, JourneyPhase::AwaitingApproval) => ActivityStatus::WaitingForYou,
         (_, _, JourneyPhase::Compiled | JourneyPhase::Preparing | JourneyPhase::Prepared) => {
             ActivityStatus::GettingReady
         }
@@ -1398,6 +1399,7 @@ const fn journey_phase_code(phase: crate::journeys::JourneyPhase) -> u8 {
         JourneyPhase::StillChecking => 6,
         JourneyPhase::ReceiptVerified => 7,
         JourneyPhase::Refused => 8,
+        JourneyPhase::AwaitingApproval => 9,
     }
 }
 

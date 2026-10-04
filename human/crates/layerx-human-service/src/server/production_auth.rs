@@ -492,6 +492,12 @@ pub fn authorize_execution(
     let step_up_digest = class
         .requires_step_up()
         .then(|| {
+            if d.operation.name == "native.send.access.confirm" {
+                let access = super::production_components::native_access_request(&scope, d.body)
+                    .map_err(|_| ProductionAuthError::InvalidDisclosure)?;
+                return super::native_send::access_operation(&scope, &access)
+                    .map_err(|_| ProductionAuthError::InvalidDisclosure);
+            }
             step_up_digest(
                 &principal,
                 &tenant,

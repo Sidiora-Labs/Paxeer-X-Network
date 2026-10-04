@@ -9,6 +9,7 @@ import {
   type JourneyState,
   type Money,
   type MoveQuote,
+  type NativeSendAccessRequest,
 } from "../../api/index.ts";
 import { ACTIVE_ACCOUNT_STORAGE_KEY } from "../../auth/session.ts";
 import { formatExplicitCurrencyAmount } from "../../kit/a11y.ts";
@@ -18,6 +19,7 @@ import {
   type ProtocolAmount,
   type StatusKey,
 } from "../../kit/model.ts";
+import { browserPasskeyAuthenticator, performStepUp } from "../approvals/ceremony.ts";
 
 export const HOME_ROUTE = "/app";
 export const MOVE_ROUTE = "/app/move";
@@ -68,6 +70,7 @@ export interface PendingMoveAttempt {
   readonly source: string;
   readonly quoteId: string;
   readonly attemptKey: string;
+  readonly nativeAccessId?: string;
 }
 
 function validPendingMove(value: unknown): value is PendingMoveAttempt {
@@ -82,7 +85,11 @@ function validPendingMove(value: unknown): value is PendingMoveAttempt {
     typeof record.quoteId === "string" &&
     /^qte_[A-Za-z0-9_-]{8,128}$/u.test(record.quoteId) &&
     typeof record.attemptKey === "string" &&
-    /^[a-f0-9]{32}$/u.test(record.attemptKey)
+    /^[a-f0-9]{32}$/u.test(record.attemptKey) &&
+    (record.nativeAccessId === undefined ||
+      (typeof record.nativeAccessId === "string" &&
+        record.nativeAccessId.length > 0 &&
+        record.nativeAccessId.length <= 256))
   );
 }
 
@@ -331,13 +338,39 @@ export type MoveCommitOutcome =
   | Readonly<{ kind: "uncertain"; message: string }>
   | Readonly<{ kind: "failed"; failure: MoveFailure }>;
 
+export async function authorizeMoveNativeAccess(
+  client: HumanApiClient,
+  request: NativeSendAccessRequest,
+): Promise<string> {
+  const body = Object.freeze({
+    ...request,
+    ...(request.native_fee_budget === undefined
+      ? {}
+      : { native_fee_budget: Object.freeze({ ...request.native_fee_budget }) }),
+  });
+  const disclosure = await client.nativeSendAccessBegin(body);
+  if (disclosure.access_id !== body.access_id) {
+    throw new Error("The native access disclosure differs from the reviewed quote");
+  }
+  const stepUp = await performStepUp(client, disclosure.confirms, browserPasskeyAuthenticator());
+  const access = await client.nativeSendAccessConfirm({ ...body, step_up: stepUp });
+  if (access.native_access_id.length === 0) {
+    throw new Error("The native access confirmation returned no access identifier");
+  }
+  return access.native_access_id;
+}
+
 export async function commitMove(
   client: HumanApiClient,
   quoteId: string,
   attemptKey: string,
+  nativeAccessId?: string,
 ): Promise<MoveCommitOutcome> {
   try {
-    const journey = await client.moveCommit({ quote_id: quoteId }, attemptKey);
+    const journey = await client.moveCommit({
+      quote_id: quoteId,
+      ...(nativeAccessId === undefined ? {} : { native_access_id: nativeAccessId }),
+    }, attemptKey);
     return { kind: "journey", journey };
   } catch (error) {
     if (!(error instanceof HumanApiError)) {

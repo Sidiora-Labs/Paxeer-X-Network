@@ -20,6 +20,7 @@ import {
   HOME_ROUTE,
   MOVE_CURRENCY,
   OTHER_ACCOUNT_OPTION,
+  authorizeMoveNativeAccess,
   clearPendingMove,
   commitMove,
   destinationOptions,
@@ -111,6 +112,12 @@ function ReviewPane({
         label={copyEntry("move.summary.amount").message}
         value={<PrivateFigure>{review.amount}</PrivateFigure>}
       />
+      {quote.quote.native_send_access === undefined ? null : (
+        <CopyableIdentifier
+          label={copyEntry("move.summary.to").message}
+          value={quote.quote.native_send_access.counterparty}
+        />
+      )}
       <p className="text-sm text-foreground-secondary">
         <PrivateFigure>{review.fee}</PrivateFigure>
       </p>
@@ -317,6 +324,7 @@ export function MoveMoney() {
   const [phase, setPhase] = useState<MovePhase>({ kind: "wizard" });
   const agentRequest = useRef(0);
   const quoteRequest = useRef(0);
+  const commitInFlight = useRef(false);
 
   const loadAgents = useCallback(async () => {
     const request = ++agentRequest.current;
@@ -405,7 +413,10 @@ export function MoveMoney() {
   }, [client, destination, amount]);
 
   const complete = useCallback((recovering = false) => {
-    const attempt = recovering && phase.kind === "uncertain"
+    if (commitInFlight.current) {
+      return;
+    }
+    const selectedAttempt: PendingMoveAttempt | undefined = recovering && phase.kind === "uncertain"
       ? phase.attempt
       : quote.kind === "quoted"
         ? {
@@ -414,7 +425,7 @@ export function MoveMoney() {
             attemptKey: quote.attemptKey,
           }
         : undefined;
-    if (attempt === undefined) {
+    if (selectedAttempt === undefined) {
       return;
     }
     if (!recovering && quote.kind === "quoted" && quoteExpired(quote.quote)) {
@@ -423,9 +434,32 @@ export function MoveMoney() {
       setPhase({ kind: "wizard" });
       return;
     }
-    persistPendingMove(window.localStorage, attempt);
+    const reviewedQuote = !recovering && quote.kind === "quoted" ? quote.quote : undefined;
+    const quoteVersion = quoteRequest.current;
+    commitInFlight.current = true;
     setPhase({ kind: "committing" });
-    void commitMove(client, attempt.quoteId, attempt.attemptKey).then((outcome) => {
+    void (async () => {
+      let attempt = selectedAttempt;
+      if (reviewedQuote?.native_send_access !== undefined && attempt.nativeAccessId === undefined) {
+        try {
+          const nativeAccessId = await authorizeMoveNativeAccess(client, reviewedQuote.native_send_access);
+          if (quoteVersion !== quoteRequest.current) {
+            return;
+          }
+          if (quoteExpired(reviewedQuote)) {
+            setQuote({ kind: "idle" });
+            setNotice(copyEntry("error.move.quote-expired").message);
+            setPhase({ kind: "wizard" });
+            return;
+          }
+          attempt = { ...attempt, nativeAccessId };
+        } catch (error) {
+          setPhase({ kind: "failed", failure: moveFailure(error) });
+          return;
+        }
+      }
+      persistPendingMove(window.localStorage, attempt);
+      const outcome = await commitMove(client, attempt.quoteId, attempt.attemptKey, attempt.nativeAccessId);
       if (outcome.kind === "journey") {
         clearPendingMove(window.localStorage);
         setPhase({ kind: "result", journey: outcome.journey });
@@ -443,7 +477,7 @@ export function MoveMoney() {
         return;
       }
       setPhase({ kind: "failed", failure: outcome.failure });
-    });
+    })().finally(() => { commitInFlight.current = false; });
   }, [client, phase, quote]);
 
   const reset = useCallback(() => {

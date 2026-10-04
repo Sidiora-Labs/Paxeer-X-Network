@@ -982,6 +982,12 @@ fn zeroize_value(value: &mut Value) {
 }
 
 pub(super) fn component_owner(operation: &str) -> Result<&'static str, ApiFailure> {
+    if matches!(
+        operation,
+        "native.send.access.begin" | "native.send.access.confirm"
+    ) {
+        return Ok("custody");
+    }
     if operation == "account.balance" {
         return Ok("agent");
     }

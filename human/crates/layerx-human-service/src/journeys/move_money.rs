@@ -734,12 +734,42 @@ impl MoveJourney {
         registry: &ModuleRegistry,
         now: u64,
     ) -> Result<Self, MoveJourneyError> {
+        Self::commit_profile(scope, plan, authorization, registry, now, false)
+    }
+
+    pub fn commit_native(
+        scope: &mut PrincipalScope<'_>,
+        plan: &MovePlan,
+        authorization: MoveAuthorization,
+        registry: &ModuleRegistry,
+        now: u64,
+    ) -> Result<Self, MoveJourneyError> {
+        Self::commit_profile(scope, plan, authorization, registry, now, true)
+    }
+
+    fn commit_profile(
+        scope: &mut PrincipalScope<'_>,
+        plan: &MovePlan,
+        authorization: MoveAuthorization,
+        registry: &ModuleRegistry,
+        now: u64,
+        native: bool,
+    ) -> Result<Self, MoveJourneyError> {
         if let MoveAuthorization::Refused(refusal) = authorization {
             return Err(MoveJourneyError::Refused(refusal));
         }
-        let digest = move_plan_digest(plan, registry)?;
+        let mut digest = move_plan_digest(plan, registry)?;
+        if native {
+            digest = Sha256::digest(
+                [b"layerx-human-move-plan/v2".as_slice(), digest.as_slice()].concat(),
+            )
+            .into();
+        }
         let row = move_row(&plan.journey_id)?;
-        let record = stored_move(plan, digest);
+        let mut record = stored_move(plan, digest);
+        if native {
+            record.version = 2;
+        }
         if let Some(existing) = scope.get(Table::Journeys, &row) {
             let existing = decode_move(existing.bytes())?;
             if existing.plan_digest != digest || existing != record {
@@ -747,7 +777,18 @@ impl MoveJourney {
             }
         }
         let journey_plan = engine_plan(plan)?;
-        let engine = JourneyEngine::start(scope, &journey_plan, registry, now)?;
+        let engine = if native {
+            if record
+                .legs
+                .iter()
+                .any(|leg| leg.mechanism != mechanism_code(Mechanism::Send))
+            {
+                return Err(MoveJourneyError::InvalidPlan);
+            }
+            JourneyEngine::start_native(scope, &journey_plan, registry, now)?
+        } else {
+            JourneyEngine::start(scope, &journey_plan, registry, now)?
+        };
         let bytes = serde_json::to_vec(&record)
             .map_err(|_| MoveJourneyError::Corrupt("move record cannot be encoded"))?;
         scope.put(Table::Journeys, row, now, bytes)?;
@@ -770,6 +811,9 @@ impl MoveJourney {
         let record = decode_move(stored.bytes())?;
         let engine = JourneyEngine::load(scope, journey_id)?
             .ok_or(MoveJourneyError::Corrupt("move engine is missing"))?;
+        if engine.native_profile() != (record.version == 2) {
+            return Err(MoveJourneyError::IdempotencyConflict);
+        }
         Ok(Some(Self { record, engine }))
     }
 
@@ -1083,7 +1127,7 @@ fn move_row(journey_id: &JourneyId) -> Result<RowKey, MoveJourneyError> {
 fn decode_move(bytes: &[u8]) -> Result<StoredMove, MoveJourneyError> {
     let record: StoredMove = serde_json::from_slice(bytes)
         .map_err(|_| MoveJourneyError::Corrupt("invalid move record encoding"))?;
-    if record.version != RECORD_VERSION
+    if !matches!(record.version, RECORD_VERSION | 2)
         || JourneyId::new(record.journey_id.clone()).is_err()
         || record.idempotency_key == [0; 32]
         || record.plan_digest == [0; 32]

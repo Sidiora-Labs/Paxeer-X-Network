@@ -45787,6 +45787,50 @@
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3
+    },
+    {
+      "id": "human:POST:/v1/native/send/access/begin",
+      "service": "human",
+      "method": "POST",
+      "path": "/v1/native/send/access/begin",
+      "transport": "http",
+      "authentication": "human-principal-session",
+      "upstream": "human",
+      "timeout_seconds": 8,
+      "retries": 0,
+      "health_predicate": "service-ready-and-network-version-bound",
+      "version": "1",
+      "consumers": [
+        "wallet",
+        "developer"
+      ],
+      "source": "human/schema/human-api/v1.kvx",
+      "proxy": true,
+      "timeout_scope": "per-io",
+      "connect_timeout_seconds": 3,
+      "upstream_path": "/v1/native/send/access/begin"
+    },
+    {
+      "id": "human:POST:/v1/native/send/access/confirm",
+      "service": "human",
+      "method": "POST",
+      "path": "/v1/native/send/access/confirm",
+      "transport": "http",
+      "authentication": "human-principal-session",
+      "upstream": "human",
+      "timeout_seconds": 8,
+      "retries": 0,
+      "health_predicate": "service-ready-and-network-version-bound",
+      "version": "1",
+      "consumers": [
+        "wallet",
+        "developer"
+      ],
+      "source": "human/schema/human-api/v1.kvx",
+      "proxy": true,
+      "timeout_scope": "per-io",
+      "connect_timeout_seconds": 3,
+      "upstream_path": "/v1/native/send/access/confirm"
     }
   ],
   "denied_surfaces": [

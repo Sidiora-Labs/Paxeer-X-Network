@@ -136,6 +136,8 @@ const PRODUCTION_OPERATIONS: &[&str] = &[
     "home.summary",
     "intent.plan",
     "intent.submit",
+    "native.send.access.begin",
+    "native.send.access.confirm",
     "journey.get",
     "journey.list",
     "move.commit",
@@ -466,7 +468,10 @@ impl ProductionComponents {
         if request_digest == [0; 32] || expected_operation.bytes() == [0; 32] {
             return Err(ApiFailure::forbidden());
         }
-        if expected_operation != super::native_send::access_operation(scope, access).map_err(agent_failure)? {
+        if expected_operation
+            != super::native_send::access_operation(scope, access)
+                .map_err(agent_failure_from_creation_contract)?
+        {
             return Err(ApiFailure::forbidden());
         }
         self.passkeys
@@ -496,14 +501,23 @@ impl ProductionComponents {
             .map_err(|_| ApiFailure::upstream_degraded())?;
             producer
                 .provision_human_send_session(scope, &registry, access)
-                .map_err(agent_failure)?
+                .map_err(agent_failure_from_creation_contract)?
         };
         super::native_send::authorize_access(
-            scope, &mut runtime, &self.custody, &self.passkeys, authenticated,
-            expected_operation, request_digest, trace, access, session, now,
+            scope,
+            &mut runtime,
+            &self.custody,
+            &self.passkeys,
+            authenticated,
+            expected_operation,
+            request_digest,
+            trace,
+            access,
+            session,
+            now,
         )
         .await
-        .map_err(agent_failure)
+        .map_err(agent_failure_from_creation_contract)
     }
 
     pub fn preview_native_send(
@@ -516,10 +530,15 @@ impl ProductionComponents {
     ) -> Result<super::native_send::NativeSendPreviewV1, ApiFailure> {
         let mut runtime = self.principal_agent(scope)?;
         super::native_send::preview_send(
-            scope, &mut runtime, preparation, capability_id,
-            purpose_expires_at_ms, commitment, self.now()?,
+            scope,
+            &mut runtime,
+            preparation,
+            capability_id,
+            purpose_expires_at_ms,
+            commitment,
+            self.now()?,
         )
-        .map_err(agent_failure)
+        .map_err(agent_failure_from_creation_contract)
     }
 
     /// # Errors
@@ -1202,6 +1221,7 @@ impl ProductionComponents {
     ) -> Result<bool, ApiFailure> {
         let mut agent = self.principal_agent(scope)?;
         let registry = agent.registry().clone();
+        self.bind_native_journey_access(scope, &mut agent, id, None)?;
         match kind {
             "intent" => {
                 let mut journey = crate::journeys::JourneyEngine::load(scope, id)
@@ -4791,19 +4811,31 @@ impl ProductionComponents {
         }
         let journey_id = crate::journeys::intent_journey_id(idempotency, planned.digest())
             .map_err(submit_failure)?;
-        let mut journey = crate::journeys::start_kernel_journey(
+        let native = request
+            .body
+            .get("native_access_id")
+            .and_then(serde_json::Value::as_str);
+        let start = if native.is_some() {
+            crate::journeys::start_native_kernel_journey
+        } else {
+            crate::journeys::start_kernel_journey
+        };
+        let mut journey = start(
             scope,
             planned,
             submitted,
             expectation,
             crate::journeys::KernelStart {
                 routes: &routes,
-                journey_id,
+                journey_id: journey_id.clone(),
                 custody_key: context.custody_key.clone(),
                 registry: &registry,
             },
         )
         .map_err(submit_failure)?;
+        if let Some(access_id) = native {
+            self.bind_native_journey_access(scope, &mut agent, &journey_id, Some(access_id))?;
+        }
         let trace =
             TraceId::parse(&request.trace).map_err(|_| ApiFailure::invalid_request(None))?;
         let status = super::executor::poll_once_ready(crate::journeys::drive_intent_journey(
@@ -4840,8 +4872,12 @@ impl ProductionComponents {
         let quote = movement
             .quote_move(scope, planning)
             .map_err(movement_failure)?;
+        let mut result = move_quote_json(&quote);
+        if let Some(access) = self.move_native_send_access(scope, &quote)? {
+            result["native_send_access"] = access;
+        }
         Ok(BackendResponse {
-            result: move_quote_json(&quote),
+            result,
             session: None,
         })
     }
@@ -4865,7 +4901,16 @@ impl ProductionComponents {
             )
             .map_err(movement_failure)?;
         let registry = self.principal_agent(scope)?.registry().clone();
-        let mut journey = crate::journeys::MoveJourney::commit(
+        let native = request
+            .body
+            .get("native_access_id")
+            .and_then(serde_json::Value::as_str);
+        let commit = if native.is_some() {
+            crate::journeys::MoveJourney::commit_native
+        } else {
+            crate::journeys::MoveJourney::commit
+        };
+        let mut journey = commit(
             scope,
             &plan,
             crate::journeys::MoveAuthorization::Allowed,
@@ -4876,7 +4921,15 @@ impl ProductionComponents {
         let trace =
             TraceId::parse(&request.trace).map_err(|_| ApiFailure::invalid_request(None))?;
         let mut agent = self.principal_agent(scope)?;
-        let status = super::executor::poll_once_ready(journey.advance(
+        if let Some(access_id) = native {
+            let id = journey
+                .status()
+                .map_err(move_journey_failure)?
+                .journey_id()
+                .clone();
+            self.bind_native_journey_access(scope, &mut agent, &id, Some(access_id))?;
+        }
+        let mut status = super::executor::poll_once_ready(journey.advance(
             scope,
             &self.agent_contract,
             &mut agent,
@@ -4887,6 +4940,19 @@ impl ProductionComponents {
         ))
         .map_err(|_| ApiFailure::upstream_degraded())?
         .map_err(move_journey_failure)?;
+        if native.is_some() {
+            status = super::executor::poll_once_ready(journey.advance(
+                scope,
+                &self.agent_contract,
+                &mut agent,
+                &self.custody,
+                &registry,
+                &trace,
+                self.now()?,
+            ))
+            .map_err(|_| ApiFailure::upstream_degraded())?
+            .map_err(move_journey_failure)?;
+        }
         schedule_continuation(scope, "move", status.journey_id(), self.now()?)?;
         Ok(BackendResponse {
             result: move_public_json(scope, self.settlement_domain, &status, self.now()?)?,
@@ -7104,6 +7170,8 @@ impl ProductionComponents {
             "binding.rebind" => self.execute_binding_rebind(request, scope),
             "intent.plan" => self.execute_intent_plan(request, scope),
             "intent.submit" => self.submit_intent(request, scope),
+            "native.send.access.begin" => self.execute_native_send_access_begin(request, scope),
+            "native.send.access.confirm" => self.execute_native_send_access_confirm(request, scope),
             "move.quote" => self.execute_move_quote(request, scope),
             "move.commit" => self.execute_move_commit(request, scope),
             "deposit.start" => self.execute_deposit_start(request, scope),
@@ -8017,29 +8085,54 @@ impl AttestorKms {
         Ok(*signature.signature())
     }
     fn sign_native_now(
-        &self, binding: &PrincipalKeyBinding, reference: &ProviderKeyReference,
+        &self,
+        binding: &PrincipalKeyBinding,
+        reference: &ProviderKeyReference,
         request: crate::custody::ProviderNativeSignRequest<'_>,
     ) -> Result<[u8; 64], CustodyError> {
-        let (key_id, public_key, owner) = attestor_reference_parts(reference).map_err(CustodyError::Kms)?;
-        if key_id != attestor_key_id(binding) || binding.class() != KeyClass::HumanPrimary
-            || !layerx_crypto::ct::eq_fixed(&public_key, &request.expected_public_key()) {
+        let (key_id, public_key, owner) =
+            attestor_reference_parts(reference).map_err(CustodyError::Kms)?;
+        if key_id != attestor_key_id(binding)
+            || binding.class() != KeyClass::HumanPrimary
+            || !layerx_crypto::ct::eq_fixed(&public_key, &request.expected_public_key())
+        {
             return Err(CustodyError::Kms(KmsError::Integrity));
         }
-        request.consent().validate_at(request.now_ms(), public_key)?;
-        let assertion = self.inner.assertions.lock().map_err(|_| CustodyError::Kms(KmsError::Unavailable))?
-            .remove(&owner).ok_or(CustodyError::Kms(KmsError::Authentication))?;
+        request
+            .consent()
+            .validate_at(request.now_ms(), public_key)?;
+        let assertion = self
+            .inner
+            .assertions
+            .lock()
+            .map_err(|_| CustodyError::Kms(KmsError::Unavailable))?
+            .remove(&owner)
+            .ok_or(CustodyError::Kms(KmsError::Authentication))?;
         if assertion_subject(assertion.as_str()).ok().as_deref() != Some(owner.as_str()) {
             return Err(CustodyError::Kms(KmsError::Authentication));
         }
-        let signer = self.signer(&key_id, public_key, binding.network_id()).map_err(attestor_custody_failure)?;
-        let session = layerx_human_kms::attestor::new_session_id("native-consent").map_err(attestor_custody_failure)?;
+        let signer = self
+            .signer(&key_id, public_key, binding.network_id())
+            .map_err(attestor_custody_failure)?;
+        let session = layerx_human_kms::attestor::new_session_id("native-consent")
+            .map_err(attestor_custody_failure)?;
         let signed = match request.consent() {
-            crate::custody::NativeConsent::PreparationPurpose(purpose) => signer.sign_native_preparation_purpose(purpose, &session, assertion.as_str()),
-            crate::custody::NativeConsent::LocalGrant(grant) => signer.sign_native_local_grant(grant, &session, assertion.as_str()),
-        }.map_err(|error| { self.refused(&error); attestor_custody_failure(error) })?;
+            crate::custody::NativeConsent::PreparationPurpose(purpose) => {
+                signer.sign_native_preparation_purpose(purpose, &session, assertion.as_str())
+            }
+            crate::custody::NativeConsent::LocalGrant(grant) => {
+                signer.sign_native_local_grant(grant, &session, assertion.as_str())
+            }
+            crate::custody::NativeConsent::SendPurpose(purpose) => {
+                signer.sign_native_send_purpose(purpose, &session, assertion.as_str())
+            }
+        }
+        .map_err(|error| {
+            self.refused(&error);
+            attestor_custody_failure(error)
+        })?;
         Ok(*signed.signature())
     }
-
 }
 
 impl crate::custody::KmsProvider for AttestorKms {
@@ -8175,9 +8268,13 @@ impl crate::custody::KmsProvider for AttestorKms {
     }
 
     fn sign_native<'a>(
-        &'a self, binding: &'a PrincipalKeyBinding, reference: &'a ProviderKeyReference,
+        &'a self,
+        binding: &'a PrincipalKeyBinding,
+        reference: &'a ProviderKeyReference,
         request: crate::custody::ProviderNativeSignRequest<'a>,
-    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<[u8; 64], CustodyError>> + Send + 'a>> {
+    ) -> std::pin::Pin<
+        Box<dyn std::future::Future<Output = Result<[u8; 64], CustodyError>> + Send + 'a>,
+    > {
         Box::pin(async move { self.sign_native_now(binding, reference, request) })
     }
 
@@ -8739,5 +8836,291 @@ const fn intent_journey_kind_label(kind: crate::journeys::JourneyKind) -> &'stat
         crate::journeys::JourneyKind::AgentFund => "agent-fund",
         crate::journeys::JourneyKind::AgentPause => "agent-pause",
         crate::journeys::JourneyKind::AgentRetire => "agent-retire",
+    }
+}
+
+fn native_access_row(body: &serde_json::Value) -> Result<RowKey, ApiFailure> {
+    let id = text_field(body, "access_id")?;
+    native_access_hex(id)?;
+    RowKey::new(format!("native-send-public-disclosure-{id}"))
+        .map_err(|_| ApiFailure::unavailable())
+}
+fn native_access_hex(text: &str) -> Result<[u8; 32], ApiFailure> {
+    if text.len() != 64
+        || !text
+            .bytes()
+            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+    {
+        return Err(ApiFailure::invalid_request(None));
+    }
+    let mut bytes = [0; 32];
+    for (i, byte) in bytes.iter_mut().enumerate() {
+        *byte = u8::from_str_radix(&text[i * 2..i * 2 + 2], 16)
+            .map_err(|_| ApiFailure::invalid_request(None))?;
+    }
+    if bytes == [0; 32] {
+        return Err(ApiFailure::invalid_request(None));
+    }
+    Ok(bytes)
+}
+fn native_access_public_body(body: &serde_json::Value) -> Result<serde_json::Value, ApiFailure> {
+    let mut body = body.clone();
+    let object = body
+        .as_object_mut()
+        .ok_or_else(|| ApiFailure::invalid_request(None))?;
+    object.remove("step_up");
+    Ok(body)
+}
+pub(super) fn native_access_request(
+    scope: &crate::store::PrincipalScope<'_>,
+    body: &serde_json::Value,
+) -> Result<super::native_send::NativeSendAccessRequest, ApiFailure> {
+    let row = scope
+        .get(Table::Journeys, &native_access_row(body)?)
+        .ok_or_else(ApiFailure::forbidden)?;
+    let retained: serde_json::Value =
+        serde_json::from_slice(row.bytes()).map_err(|_| ApiFailure::unavailable())?;
+    if retained["body"] != native_access_public_body(body)? {
+        return Err(ApiFailure::forbidden());
+    }
+    let public = &retained["body"];
+    let number = |name| -> Result<u64, ApiFailure> {
+        u64::try_from(canonical_fee_amount(public, name)?)
+            .map_err(|_| ApiFailure::invalid_request(Some(name)))
+    };
+    let fee = if let Some(value) = public.get("native_fee_budget") {
+        Some(layerx_crypto::authority_grant::NativeFeeBudget {
+            asset: native_access_hex(text_field(value, "asset_id")?)?,
+            maximum_per_activity: canonical_fee_amount(value, "maximum_per_activity")?,
+            maximum_total: canonical_fee_amount(value, "maximum_total")?,
+            maximum_per_period: canonical_fee_amount(value, "maximum_per_period")?,
+            period_length: u64::try_from(canonical_fee_amount(value, "period_length_ms")?)
+                .map_err(|_| ApiFailure::invalid_request(None))?,
+            period_start: retained["issued_at_ms"]
+                .as_u64()
+                .ok_or_else(ApiFailure::unavailable)?,
+        })
+    } else {
+        None
+    };
+    let request = super::native_send::NativeSendAccessRequest {
+        action_key: native_access_hex(text_field(public, "access_id")?)?,
+        owner: Did::new(text_field(&retained, "owner")?.as_bytes())
+            .map_err(|_| ApiFailure::forbidden())?,
+        owner_public_key: native_access_hex(text_field(&retained, "owner_public_key")?)?,
+        not_before: number("not_before")?,
+        expires_at: number("expires_at")?,
+        native_fee_budget: fee,
+        counterparty: native_access_hex(text_field(public, "counterparty")?)?,
+        asset: native_access_hex(text_field(public, "asset")?)?,
+        maximum_amount: canonical_fee_amount(public, "maximum_amount")?,
+        rate_window_ms: number("rate_window_ms")?,
+        maximum_uses: number("maximum_uses")?,
+        commitment: native_access_hex(text_field(public, "commitment")?)?,
+    };
+    request
+        .validate()
+        .map_err(agent_failure_from_creation_contract)?;
+    Ok(request)
+}
+impl ProductionComponents {
+    fn execute_native_send_access_begin(
+        &self,
+        request: &ScopedRequest<'_>,
+        scope: &mut crate::store::PrincipalScope<'_>,
+    ) -> Result<BackendResponse, ApiFailure> {
+        let now = self.now()?;
+        let mut runtime = self.principal_agent(scope)?;
+        let owner = resolve_principal_owner(self, scope, &mut runtime)?;
+        let fee_policy = runtime.native_fee_policy().map_err(agent_failure)?;
+        native_fee_consent(&request.body, &fee_policy)?;
+        let owner_key = native_access_hex(owner.authority.as_str())?;
+        let row_key = native_access_row(&request.body)?;
+        let public = native_access_public_body(&request.body)?;
+        if let Some(row) = scope.get(Table::Journeys, &row_key) {
+            let stored: serde_json::Value =
+                serde_json::from_slice(row.bytes()).map_err(|_| ApiFailure::unavailable())?;
+            if stored["body"] != public
+                || stored["owner"] != owner.actor.as_str()
+                || stored["owner_public_key"] != hex_bytes(&owner_key)
+            {
+                return Err(ApiFailure::forbidden());
+            }
+        } else {
+            let retained = json!({"body":public,"owner":owner.actor.as_str(),"owner_public_key":hex_bytes(&owner_key),"issued_at_ms":now.checked_mul(1000).ok_or_else(ApiFailure::unavailable)?});
+            scope
+                .put(
+                    Table::Journeys,
+                    row_key,
+                    now,
+                    serde_json::to_vec(&retained).map_err(|_| ApiFailure::unavailable)?,
+                )
+                .map_err(|_| ApiFailure::unavailable())?;
+        }
+        let access = native_access_request(scope, &request.body)?;
+        if now < access.not_before || now >= access.expires_at {
+            return Err(ApiFailure::forbidden());
+        }
+        let digest = super::native_send::access_operation(scope, &access)
+            .map_err(agent_failure_from_creation_contract)?;
+        Ok(BackendResponse {
+            result: json!({"access_id":text_field(&request.body,"access_id")?,"confirms":format!("opd_{}",URL_SAFE_NO_PAD.encode(digest.bytes()))}),
+            session: None,
+        })
+    }
+    fn execute_native_send_access_confirm(
+        &self,
+        request: &ScopedRequest<'_>,
+        scope: &mut crate::store::PrincipalScope<'_>,
+    ) -> Result<BackendResponse, ApiFailure> {
+        let now = self.now()?;
+        let access = native_access_request(scope, &request.body)?;
+        let operation = super::native_send::access_operation(scope, &access)
+            .map_err(agent_failure_from_creation_contract)?;
+        let challenge = request
+            .body
+            .get("step_up")
+            .and_then(|v| v.get("challenge_id"))
+            .and_then(serde_json::Value::as_str)
+            .ok_or_else(ApiFailure::forbidden)?;
+        let evidence = self
+            .passkeys
+            .load_step_up_evidence(scope, challenge, now)
+            .map_err(|_| ApiFailure::forbidden())?;
+        let context = request
+            .principal
+            .as_ref()
+            .ok_or_else(ApiFailure::forbidden)?;
+        self.passkeys
+            .revalidate_step_up(scope, &evidence, operation, now)
+            .map_err(|_| ApiFailure::forbidden())?;
+        let retained_key = RowKey::new(format!(
+            "human-native-send-access-{}",
+            hex_bytes(&access.action_key)
+        ))
+        .map_err(|_| ApiFailure::unavailable())?;
+        if scope.get(Table::Journeys, &retained_key).is_some() {
+            let retained = super::native_send::load_access(scope, access.action_key, now)
+                .map_err(agent_failure_from_creation_contract)?;
+            if retained.commitment != access.commitment
+                || retained.session.owner.as_bytes() != access.owner.as_bytes()
+                || retained.session.owner_public_key != access.owner_public_key
+                || retained.capability_id != access.action_key
+            {
+                return Err(ApiFailure::forbidden());
+            }
+            return Ok(BackendResponse {
+                result: json!({"native_access_id":hex_bytes(&retained.capability_id)}),
+                session: None,
+            });
+        }
+        let trace =
+            TraceId::parse(&request.trace).map_err(|_| ApiFailure::invalid_request(None))?;
+        let result = super::executor::poll_once_ready(self.provision_native_send_access(
+            scope,
+            &evidence,
+            operation,
+            context.request_digest(),
+            &trace,
+            &access,
+        ))
+        .map_err(|_| ApiFailure::upstream_degraded())??;
+        Ok(BackendResponse {
+            result: json!({"native_access_id":hex_bytes(&result.capability_id)}),
+            session: None,
+        })
+    }
+}
+
+impl ProductionComponents {
+    fn bind_native_journey_access(
+        &self,
+        scope: &mut crate::store::PrincipalScope<'_>,
+        agent: &mut AgentRuntime,
+        journey: &crate::notify::JourneyId,
+        selected: Option<&str>,
+    ) -> Result<(), ApiFailure> {
+        let key = RowKey::new(format!("native-send-journey-access-{}", journey.as_str()))
+            .map_err(|_| ApiFailure::unavailable())?;
+        let retained = scope
+            .get(Table::Journeys, &key)
+            .map(|row| row.bytes().to_vec());
+        let (access_id, expiry) = if let Some(bytes) = retained {
+            let saved: serde_json::Value =
+                serde_json::from_slice(&bytes).map_err(|_| ApiFailure::unavailable())?;
+            let id = text_field(&saved, "access_id")?.to_owned();
+            if selected.is_some_and(|actual| actual != id) {
+                return Err(ApiFailure::forbidden());
+            }
+            (
+                id,
+                saved["purpose_expires_at_ms"]
+                    .as_u64()
+                    .ok_or_else(ApiFailure::unavailable)?,
+            )
+        } else if let Some(id) = selected {
+            let context =
+                super::native_send::load_access(scope, native_access_hex(id)?, self.now()?)
+                    .map_err(agent_failure_from_creation_contract)?;
+            let expiry = context.expires_at_ms;
+            let bytes = serde_json::to_vec(&json!({"access_id":id,"purpose_expires_at_ms":expiry}))
+                .map_err(|_| ApiFailure::unavailable())?;
+            scope
+                .put(Table::Journeys, key, self.now()?, bytes)
+                .map_err(|_| ApiFailure::unavailable())?;
+            (id.to_owned(), expiry)
+        } else {
+            return Ok(());
+        };
+        let context =
+            super::native_send::load_access(scope, native_access_hex(&access_id)?, self.now()?)
+                .map_err(agent_failure_from_creation_contract)?;
+        agent
+            .bind_native_journey_context(context, expiry)
+            .map_err(agent_failure)
+    }
+    fn move_native_send_access(
+        &self,
+        scope: &crate::store::PrincipalScope<'_>,
+        quote: &super::movement_provider::AuthorizedMovePlan,
+    ) -> Result<Option<serde_json::Value>, ApiFailure> {
+        let legs = quote.plan.route().legs();
+        if legs.len() != 1 {
+            return Ok(None);
+        }
+        let IntentKind::LxpSend(send) = legs[0].intent().kind() else {
+            return Ok(None);
+        };
+        let (from, to, asset, amount, _, _, expires, _, _, _, protocol) = send.to_wire_parts();
+        let mut agent = self.principal_agent(scope)?;
+        let owner = resolve_principal_owner(self, scope, &mut agent)?;
+        let fee = agent.native_fee_policy().map_err(agent_failure)?;
+        let actual_from = AccountId::for_asset(owner.actor.as_str(), asset.bytes(), fee.asset_id)
+            .map_err(|_| ApiFailure::forbidden())?;
+        if &actual_from != from {
+            return Ok(None);
+        }
+        let to = layerx_intents::canonical::account_id_for_protocol(to, protocol.value())
+            .map_err(|_| ApiFailure::forbidden())?;
+        let canonical = quote.canonical_encode();
+        let commitment: [u8; 32] = sha2::Sha256::digest(&canonical).into();
+        let mut digest = Sha256::new();
+        digest.update(b"LayerX/Human/native-Send-access/move-plan/v1\0");
+        digest.update(&canonical);
+        let access_id: [u8; 32] = digest.finalize().into();
+        let ceiling = quote.plan.quote().fee_ceiling();
+        let (_, _, _, _, _, executions, _, _, _) = quote.plan.to_wire_parts();
+        let (_, _, _, _, not_before, not_after, _) = executions[0].to_wire_parts();
+        let mut request = json!({"access_id":hex_bytes(&access_id),"counterparty":hex_bytes(&to),"asset":hex_bytes(&asset.bytes()),
+            "maximum_amount":amount.value().to_string(),"not_before":not_before.to_string(),"expires_at":expires.value().min(not_after).to_string(),
+            "rate_window_ms":"60000","maximum_uses":"1","commitment":hex_bytes(&commitment)});
+        if fee.version == 2 {
+            if ceiling == 0 {
+                return Err(ApiFailure::forbidden());
+            }
+            request["native_fee_budget"] = json!({"asset_id":hex_bytes(&fee.asset_id),"maximum_per_activity":ceiling.to_string(),
+                "maximum_total":ceiling.to_string(),"period_length_ms":"0","maximum_per_period":"0"});
+        }
+        Ok(Some(request))
     }
 }

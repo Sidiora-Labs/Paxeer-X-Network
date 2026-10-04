@@ -71,7 +71,7 @@ endpoints = "source and destination name the user's account, one of their manage
 
 [type.MoveQuote]
 required = ["quote_id:QuoteId","description_copy_key:CopyKey","mechanism:MoveMechanism","money:Money","fee_estimate:Money","fee_ceiling:Money","arrival_estimate:Timestamp","expires_at:Timestamp"]
-optional = ["irreversibility_copy_key:CopyKey"]
+optional = ["irreversibility_copy_key:CopyKey","native_send_access:NativeSendAccessRequest"]
 description = "description_copy_key resolves to the plain-language statement of what will happen, shown before the user commits."
 estimates = "fee_estimate and arrival_estimate are labelled estimates and never receipt-shaped, and fee_ceiling is the most the fee can be. Receipt-backed actuals replace every estimate once the journey completes."
 expiry = "A quote is honoured until expires_at. Committing an expired quote is refused with the quote-expired code and the client requests a fresh quote."
@@ -79,6 +79,7 @@ irreversibility = "irreversibility_copy_key is present when the movement cannot 
 
 [type.MoveCommitRequest]
 required = ["quote_id:QuoteId"]
+optional = ["native_access_id:string"]
 
 [type.DepositStartRequest]
 required = ["money:Money"]

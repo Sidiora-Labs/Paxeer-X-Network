@@ -34428,3 +34428,27 @@ qualification_status = "UNRUN"
 completion_basis_policy = "Owner CONSTITUTION: fully implemented DONE, qualification separate; partial remains in_progress."
 completion_basis = "implementation"
 source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-104.13.35-source-handoff.json"
+
+[task.104.13.36]
+title = "Expose approved passkey Send consent and original-request journey through Human API"
+status = "done"
+mode = "BUILD"
+wave = 4
+requires = ["0.2"]
+reqs = ["1064.3", "1064.8", "1071.1", "1071.5"]
+do_1 = "Add owner-approved authenticated native.send.access begin/confirm to existing Human/gateway surface. Begin binds the immutable access request to the actual existing passkey SecuritySettings ceremony; confirm validates genuine completed step-up, invokes real custody/SessionGrant provisioning and persists opaque native context. Preserve all eight existing security actions and exact request ownership/expiry/refusals."
+do_2 = "Compose frozen task30 source with approved new profile and current deposit fixes. Actual Send selects explicit owned grant, signs exact new purpose, persists original held request and resumes only with genuine permission release and fresh authority. Fix direct native Send AgentFailure mapper mismatch while retaining typed failures. Wire canonical generated API callers and real UI entry through existing gateway catalog; admit exact generated/frontend paths before editing. Missing genuine authority refuses. Author real hold/reopen/grant/reject/replay cases."
+touches = ["human/schema/human-api/v1.kvx", "human/crates/layerx-human-service/src/server/production_components.rs", "human/crates/layerx-human-service/src/server/production_auth.rs", "human/crates/layerx-human-service/src/server/native_send.rs", "human/crates/layerx-human-service/src/server/agent_runtime.rs", "human/crates/layerx-human-service/src/server/production_reads.rs", "human/crates/layerx-human-service/src/server/mod.rs", "human/crates/layerx-human-service/src/server/schema.rs", "human/crates/layerx-human-service/src/journeys/engine.rs", "human/crates/layerx-human-service/src/journeys/intent_submit.rs", "human/crates/layerx-human-service/src/journeys/move_money.rs", "human/crates/layerx-human-service/src/journeys/mod.rs", "human/crates/layerx-human-service/src/activity/mod.rs", "human/crates/layerx-human-service/tests/native_journey_approval.rs", "tools/qualification/paxeer-x/native-journey-approval.py", "human/schema/human-api/intent.kvx", "human/apps/web/src/api/generated/index.ts", "human/apps/web/src/api/generated/conformance.ts", "human/apps/web/src/journeys/move/model.ts", "human/apps/web/src/journeys/move/move.tsx", "human/crates/layerx-human-service/src/server/backend.rs", "human/schema/human-api/golden/native.send.access.begin.request.json", "human/schema/human-api/golden/native.send.access.begin.response.json", "human/schema/human-api/golden/native.send.access.begin.failure.json", "human/schema/human-api/golden/native.send.access.confirm.request.json", "human/schema/human-api/golden/native.send.access.confirm.response.json", "human/schema/human-api/golden/native.send.access.confirm.failure.json", "human/schema/human-api/movement.kvx", "tools/paxeer-x/route-catalogue.json"]
+build_cmd = "cargo test --locked --manifest-path human/Cargo.toml -p layerx-human-service --test native_journey_approval --no-run"
+verify_cmd = "python3 tools/qualification/paxeer-x/native-journey-approval.py"
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop at 09:13 UTC, missing genuine external authority, unrelated failure or required weakening; partial source receives no gates. Root intake/publication precedes immutable candidate qualification."
+owner_approval = "2026-10-04 owner approved exact distinct Send-purpose and public-consent proposal; existing formats, refusals and security actions remain unchanged. New contract implementation scope does not reset old task30 or32 budgets."
+source_status = "complete"
+qualification_status = "UNRUN"
+completion_basis_policy = "Owner CONSTITUTION: fully implemented DONE, qualification separate; partial remains in_progress."
+completion_basis = "implementation"
+source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-104.13.36-source-handoff.json"

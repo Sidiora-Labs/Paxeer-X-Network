@@ -358,6 +358,7 @@ fn phase_label(value: JourneyPhase) -> &'static str {
     match value {
         JourneyPhase::Compiled => "compiled",
         JourneyPhase::Preparing => "preparing",
+        JourneyPhase::AwaitingApproval => "awaiting-approval",
         JourneyPhase::Prepared => "prepared",
         JourneyPhase::Signed => "signed",
         JourneyPhase::Submitted => "submitted",
@@ -368,6 +369,7 @@ fn phase_label(value: JourneyPhase) -> &'static str {
 }
 fn phase_state(value: JourneyPhase) -> &'static str {
     match value {
+        JourneyPhase::AwaitingApproval => "awaiting-approval",
         JourneyPhase::Compiled | JourneyPhase::Preparing | JourneyPhase::Prepared => {
             "getting-ready"
         }

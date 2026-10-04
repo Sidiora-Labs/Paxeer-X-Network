@@ -24,6 +24,8 @@ import {
   decodeKeyExportFinish,
   decodeMoveCommitRequest,
   decodeMoveQuoteRequest,
+  decodeNativeSendAccessConfirmation,
+  decodeNativeSendAccessRequest,
   decodeNotificationPreferences,
   decodeOwnerRotationDisclosureRequest,
   decodeOwnerRotationRequest,
@@ -80,6 +82,8 @@ import {
   encodeKeyExportChallenge,
   encodeMoveQuote,
   encodeNativeFeeAsset,
+  encodeNativeSendAccessDisclosure,
+  encodeNativeSendAccessResult,
   encodeNotificationPage,
   encodeNotificationPreferences,
   encodeNotificationSummary,
@@ -246,6 +250,10 @@ export const conformance: { readonly [name in OperationName]: (run: ConformanceR
     encodeJourney(await run.client.moveCommit(decodeMoveCommitRequest(runBody(run), "golden request body"), runKey(run))),
   "move.quote": async (run) =>
     encodeMoveQuote(await run.client.moveQuote(decodeMoveQuoteRequest(runBody(run), "golden request body"))),
+  "native.send.access.begin": async (run) =>
+    encodeNativeSendAccessDisclosure(await run.client.nativeSendAccessBegin(decodeNativeSendAccessRequest(runBody(run), "golden request body"))),
+  "native.send.access.confirm": async (run) =>
+    encodeNativeSendAccessResult(await run.client.nativeSendAccessConfirm(decodeNativeSendAccessConfirmation(runBody(run), "golden request body"))),
   "notification.list": async (run) =>
     encodeNotificationPage(await run.client.notificationList()),
   "notification.preferences.get": async (run) =>

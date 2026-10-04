@@ -5,7 +5,9 @@ use std::fmt::{Display, Formatter};
 
 use layerx_agent_api::error::RequestId;
 use layerx_agent_api::idempotency::{BodyDigest, IdempotentMutation, Key};
-use layerx_agent_api::identity::{AgentDid, AuthorityRef, ContractError};
+use layerx_agent_api::identity::{
+    AgentDid, AuthorityRef, ContractError, NativeSendPurposeV1, SignedNativeSendPurposeV1,
+};
 use layerx_agent_api::prepare::{
     IdempotencyRef, PayloadBytes, PreparationRef, PrepareRequest, TimestampBound,
 };
@@ -22,7 +24,8 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest as _, Sha256};
 
 use crate::custody::{
-    CustodyError, CustodySigner, KeyId, Operation, SignAuthorization, SignRequest, StepUpEvidence,
+    CustodyError, CustodySigner, KeyId, NativeConsent, NativeConsentRequest, Operation,
+    SignAuthorization, SignRequest, StepUpEvidence,
 };
 use crate::notify::JourneyId;
 use crate::store::{PrincipalScope, RowKey, StoreError, Table};
@@ -188,6 +191,36 @@ pub struct AgentPreparation {
     pub idempotency_key: [u8; 32],
 }
 
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum NativeJourneyApprovalState {
+    Awaiting,
+    Granted,
+    Rejected,
+    Expired,
+    NotRequired,
+}
+
+pub struct NativeJourneyPreview {
+    pub preparation: AgentPreparation,
+    pub purpose: NativeSendPurposeV1,
+    pub owner_public_key: [u8; 32],
+    pub head_sequence: u64,
+    pub protocol_time_ms: u64,
+    pub revocation_sequence: u64,
+}
+
+pub struct NativeJourneyAdmission {
+    pub preparation: AgentPreparation,
+    pub approval_id: [u8; 32],
+    pub held_digest: [u8; 32],
+    pub state: NativeJourneyApprovalState,
+    pub release_ref: Option<[u8; 32]>,
+    pub head_sequence: u64,
+    pub protocol_time_ms: u64,
+    pub revocation_sequence: u64,
+}
+
 /// Canonical receipt bytes, independently supplied batch authority, and the
 /// verification rank authenticated by the agent boundary. The rank is not
 /// inferred from receipt bytes and cannot replace local receipt verification.
@@ -238,6 +271,28 @@ pub enum AgentBoundaryError {
 /// the engine. Production adapters execute these typed SDK calls; tests bind
 /// the same contract to the real `layerx-agentd` implementation.
 pub trait AgentBoundary {
+    fn native_journey_preview(
+        &mut self,
+        _call: &Call<IdempotentMutation<PrepareRequest>>,
+    ) -> Result<NativeJourneyPreview, AgentBoundaryError> {
+        Err(AgentBoundaryError::Unavailable)
+    }
+    fn native_journey_prepare(
+        &mut self,
+        _call: &Call<IdempotentMutation<PrepareRequest>>,
+        _purpose: &SignedNativeSendPurposeV1,
+    ) -> Result<NativeJourneyAdmission, AgentBoundaryError> {
+        Err(AgentBoundaryError::Unavailable)
+    }
+    fn native_journey_resume(
+        &mut self,
+        _call: &Call<IdempotentMutation<PrepareRequest>>,
+        _purpose: &SignedNativeSendPurposeV1,
+        _approval_id: [u8; 32],
+        _held_digest: [u8; 32],
+    ) -> Result<NativeJourneyAdmission, AgentBoundaryError> {
+        Err(AgentBoundaryError::Unavailable)
+    }
     /// Prepares canonical unsigned activity bytes under the request action key.
     ///
     /// # Errors
@@ -284,6 +339,7 @@ pub trait AgentBoundary {
 pub enum JourneyPhase {
     Compiled,
     Preparing,
+    AwaitingApproval,
     Prepared,
     Signed,
     Submitted,
@@ -421,6 +477,40 @@ struct SignedEvidence {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+struct StoredNativePreparation {
+    purpose: Vec<u8>,
+    owner_public_key: Option<[u8; 32]>,
+    purpose_signature: Option<Vec<u8>>,
+    unsigned_canonical_bytes: Vec<u8>,
+    signing_preimage: Vec<u8>,
+    disclosure_digest: [u8; 32],
+    owner_key: [u8; 32],
+    created_head_sequence: u64,
+    created_protocol_time_ms: u64,
+    approval_id: Option<[u8; 32]>,
+    held_digest: Option<[u8; 32]>,
+    release_ref: Option<[u8; 32]>,
+    approval_state: Option<NativeJourneyApprovalState>,
+}
+
+impl StoredNativePreparation {
+    fn signed_purpose(&self) -> Result<SignedNativeSendPurposeV1, JourneyError> {
+        Ok(SignedNativeSendPurposeV1 {
+            purpose: NativeSendPurposeV1::from_canonical_bytes(&self.purpose)?,
+            owner_public_key: self
+                .owner_public_key
+                .ok_or(JourneyError::PreparationMismatch)?,
+            signature: self
+                .purpose_signature
+                .as_deref()
+                .ok_or(JourneyError::PreparationMismatch)?
+                .try_into()
+                .map_err(|_| JourneyError::PreparationMismatch)?,
+        })
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 struct LegRecord {
     action_key: [u8; 32],
     activity_type: u32,
@@ -428,6 +518,8 @@ struct LegRecord {
     payload: Vec<u8>,
     payload_hash: [u8; 32],
     preparation: StoredPreparation,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    native: Option<StoredNativePreparation>,
     phase: JourneyPhase,
     prepared_ref: Option<String>,
     prepared_digest: Option<[u8; 32]>,
@@ -528,13 +620,73 @@ impl JourneyEngine {
             return Err(JourneyError::Corrupt("journey leg is not prepared"));
         }
         let call = self.prepare_call(agent_contract, index)?;
-        let prepared = agent.prepare(&call)?;
+        let prepared = if self.record.version == 2 {
+            let native = self.record.legs[index]
+                .native
+                .as_ref()
+                .ok_or(JourneyError::PreparationMismatch)?;
+            let admission = agent.native_journey_resume(
+                &call,
+                &native.signed_purpose()?,
+                native
+                    .approval_id
+                    .ok_or(JourneyError::PreparationMismatch)?,
+                native
+                    .held_digest
+                    .ok_or(JourneyError::PreparationMismatch)?,
+            )?;
+            self.validate_native_admission(index, &admission, registry)?;
+            if !matches!(
+                admission.state,
+                NativeJourneyApprovalState::Granted | NativeJourneyApprovalState::NotRequired
+            ) {
+                return Err(JourneyError::PreparationMismatch);
+            }
+            admission.preparation
+        } else {
+            agent.prepare(&call)?
+        };
         self.validate_preparation(index, &prepared, registry)?;
         prepared
             .disclosure
             .audit_digest()
             .map_err(|_| JourneyError::PreparationMismatch)
     }
+    pub fn native_approval_binding(&self) -> Option<([u8; 32], [u8; 32])> {
+        let native = self
+            .record
+            .legs
+            .get(self.record.current_leg)?
+            .native
+            .as_ref()?;
+        Some((native.approval_id?, native.held_digest?))
+    }
+
+    pub const fn native_profile(&self) -> bool {
+        self.record.version == 2
+    }
+
+    pub fn native_approval_state(&self) -> Option<NativeJourneyApprovalState> {
+        self.record
+            .legs
+            .get(self.record.current_leg)?
+            .native
+            .as_ref()?
+            .approval_state
+    }
+
+    pub fn native_context_binding(&self) -> Result<Option<NativeSendPurposeV1>, JourneyError> {
+        self.record
+            .legs
+            .get(self.record.current_leg)
+            .and_then(|leg| leg.native.as_ref())
+            .map(|native| {
+                NativeSendPurposeV1::from_canonical_bytes(&native.purpose)
+                    .map_err(JourneyError::from)
+            })
+            .transpose()
+    }
+
     /// Compiles and independently verifies every typed intent, then atomically
     /// persists the immutable plan before any agent-layer effect is possible.
     /// Repeating the caller idempotency key returns the original journey.
@@ -549,12 +701,51 @@ impl JourneyEngine {
         registry: &ModuleRegistry,
         now: u64,
     ) -> Result<Self, JourneyError> {
+        Self::start_version(scope, plan, registry, now, RECORD_VERSION)
+    }
+
+    pub fn start_native(
+        scope: &mut PrincipalScope<'_>,
+        plan: &JourneyPlan,
+        registry: &ModuleRegistry,
+        now: u64,
+    ) -> Result<Self, JourneyError> {
+        Self::start_version(scope, plan, registry, now, 2)
+    }
+
+    fn start_version(
+        scope: &mut PrincipalScope<'_>,
+        plan: &JourneyPlan,
+        registry: &ModuleRegistry,
+        now: u64,
+        version: u8,
+    ) -> Result<Self, JourneyError> {
         let row = journey_row(plan.idempotency_key)?;
         let compiled = compile_plan(plan, registry)?;
-        let plan_digest = plan_digest(plan, &compiled);
+        if version == 2
+            && compiled
+                .iter()
+                .any(|leg| leg.activity_type != crate::server::native_send::NATIVE_SEND)
+        {
+            return Err(JourneyError::InvalidPlan);
+        }
+        let mut plan_digest = plan_digest(plan, &compiled);
+        if version == 2 {
+            plan_digest = Sha256::digest(
+                [
+                    b"layerx-human-journey-plan/v2".as_slice(),
+                    plan_digest.as_slice(),
+                ]
+                .concat(),
+            )
+            .into();
+        }
         if let Some(existing) = scope.get(Table::Journeys, &row) {
             let record = decode_record(existing.bytes())?;
-            if record.plan_digest != plan_digest || record.journey_id != plan.journey_id.as_str() {
+            if record.version != version
+                || record.plan_digest != plan_digest
+                || record.journey_id != plan.journey_id.as_str()
+            {
                 return Err(JourneyError::IdempotencyConflict);
             }
             let engine = Self { record };
@@ -568,7 +759,7 @@ impl JourneyEngine {
             observed_at: now,
         }];
         let record = JourneyRecord {
-            version: RECORD_VERSION,
+            version,
             journey_id: plan.journey_id.as_str().to_owned(),
             kind: plan.kind,
             idempotency_key: plan.idempotency_key,
@@ -724,6 +915,29 @@ impl JourneyEngine {
         }
         let leg_index = self.record.current_leg;
         let phase = self.record.legs[leg_index].phase;
+        if self.record.version == 2
+            && matches!(
+                phase,
+                JourneyPhase::Preparing
+                    | JourneyPhase::AwaitingApproval
+                    | JourneyPhase::Prepared
+                    | JourneyPhase::Signed
+            )
+        {
+            self.advance_native(
+                scope,
+                agent_contract,
+                agent,
+                custody,
+                registry,
+                trace,
+                step_up,
+                now,
+            )
+            .await?;
+            self.repair_events(scope)?;
+            return self.status();
+        }
         match phase {
             JourneyPhase::Compiled => {
                 self.transition(scope, leg_index, JourneyPhase::Preparing, now)?;
@@ -795,10 +1009,311 @@ impl JourneyEngine {
                     }
                 }
             }
+            JourneyPhase::AwaitingApproval => {
+                return Err(JourneyError::Corrupt(
+                    "legacy journey has native approval phase",
+                ))
+            }
             JourneyPhase::ReceiptVerified | JourneyPhase::Refused => {}
         }
         self.repair_events(scope)?;
         self.status()
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    async fn advance_native(
+        &mut self,
+        scope: &mut PrincipalScope<'_>,
+        contract: &AgentClient,
+        agent: &mut dyn AgentBoundary,
+        custody: &CustodySigner,
+        registry: &ModuleRegistry,
+        trace: &TraceId,
+        step_up: Option<&StepUpEvidence>,
+        now: u64,
+    ) -> Result<(), JourneyError> {
+        let index = self.record.current_leg;
+        let phase = self.record.legs[index].phase;
+        let call = self.prepare_call(contract, index)?;
+        if phase == JourneyPhase::Preparing {
+            if self.record.legs[index].native.is_none() {
+                let preview = agent.native_journey_preview(&call)?;
+                self.validate_preparation(index, &preview.preparation, registry)?;
+                validate_native_send_purpose(
+                    &preview.preparation,
+                    &preview.purpose,
+                    preview.owner_public_key,
+                    registry,
+                )?;
+                let digest: [u8; 32] =
+                    Sha256::digest(&preview.preparation.unsigned_canonical_bytes).into();
+                let leg = &self.record.legs[index];
+                if preview.purpose.agent_did != preview.preparation.actor
+                    || preview.purpose.preparation_id != digest
+                    || preview.purpose.canonical_digest != digest
+                    || preview.owner_public_key == [0; 32]
+                    || preview.head_sequence == 0
+                    || preview.revocation_sequence == 0
+                    || preview.revocation_sequence > preview.head_sequence
+                    || preview.protocol_time_ms >= preview.purpose.expires_at_ms
+                    || preview.purpose.expires_at_ms
+                        > leg
+                            .preparation
+                            .not_after
+                            .checked_mul(1000)
+                            .ok_or(JourneyError::PreparationMismatch)?
+                {
+                    return Err(JourneyError::PreparationMismatch);
+                }
+                let purpose = preview.purpose.canonical_bytes()?;
+                let leg = &mut self.record.legs[index];
+                leg.prepared_ref = Some(preview.preparation.preparation_ref.as_str().to_owned());
+                leg.prepared_digest = Some(digest);
+                leg.native = Some(StoredNativePreparation {
+                    purpose,
+                    owner_public_key: None,
+                    purpose_signature: None,
+                    unsigned_canonical_bytes: preview.preparation.unsigned_canonical_bytes,
+                    signing_preimage: preview.preparation.signing_preimage,
+                    disclosure_digest: preview
+                        .preparation
+                        .disclosure
+                        .audit_digest()
+                        .map_err(|_| JourneyError::PreparationMismatch)?,
+                    owner_key: preview.owner_public_key,
+                    created_head_sequence: preview.head_sequence,
+                    created_protocol_time_ms: preview.protocol_time_ms,
+                    approval_id: None,
+                    held_digest: None,
+                    release_ref: None,
+                    approval_state: None,
+                });
+                self.persist(scope)?;
+            }
+            if self.record.legs[index]
+                .native
+                .as_ref()
+                .is_none_or(|native| native.purpose_signature.is_none())
+            {
+                let native = self.record.legs[index]
+                    .native
+                    .as_ref()
+                    .ok_or(JourneyError::PreparationMismatch)?;
+                let purpose = NativeSendPurposeV1::from_canonical_bytes(&native.purpose)?;
+                let owner_key = native.owner_key;
+                let principal = scope.principal().clone();
+                let key = KeyId::new(self.record.custody_key.clone())?;
+                let grant = custody
+                    .sign_native_consent_in_scope(
+                        scope,
+                        NativeConsentRequest::new(
+                            &principal,
+                            &key,
+                            NativeConsent::SendPurpose(&purpose),
+                            SignAuthorization::new(Operation::ProtocolMutation, step_up),
+                            now,
+                            trace.clone(),
+                        ),
+                    )
+                    .await?;
+                if grant.signer_public_key() != owner_key
+                    || grant.disclosure_digest() != NativeConsent::SendPurpose(&purpose).digest()?
+                {
+                    return Err(JourneyError::PreparationMismatch);
+                }
+                let native = self.record.legs[index]
+                    .native
+                    .as_mut()
+                    .ok_or(JourneyError::PreparationMismatch)?;
+                native.owner_public_key = Some(grant.signer_public_key());
+                native.purpose_signature = Some(grant.signature().to_vec());
+                self.persist(scope)?;
+            }
+            let native = self.record.legs[index]
+                .native
+                .as_ref()
+                .ok_or(JourneyError::PreparationMismatch)?;
+            let admission = agent.native_journey_prepare(&call, &native.signed_purpose()?)?;
+            self.validate_native_admission(index, &admission, registry)?;
+            let native = self.record.legs[index]
+                .native
+                .as_mut()
+                .ok_or(JourneyError::PreparationMismatch)?;
+            native.approval_id = Some(admission.approval_id);
+            native.held_digest = Some(admission.held_digest);
+            native.release_ref = admission.release_ref;
+            native.approval_state = Some(admission.state);
+            return self.transition_native_admission(scope, index, admission.state, now);
+        }
+        let native = self.record.legs[index]
+            .native
+            .as_ref()
+            .ok_or(JourneyError::PreparationMismatch)?;
+        let admission = agent.native_journey_resume(
+            &call,
+            &native.signed_purpose()?,
+            native
+                .approval_id
+                .ok_or(JourneyError::PreparationMismatch)?,
+            native
+                .held_digest
+                .ok_or(JourneyError::PreparationMismatch)?,
+        )?;
+        self.validate_native_admission(index, &admission, registry)?;
+        self.record.legs[index]
+            .native
+            .as_mut()
+            .ok_or(JourneyError::PreparationMismatch)?
+            .approval_state = Some(admission.state);
+        if matches!(
+            admission.state,
+            NativeJourneyApprovalState::Rejected | NativeJourneyApprovalState::Expired
+        ) {
+            self.record.legs[index]
+                .native
+                .as_mut()
+                .ok_or(JourneyError::PreparationMismatch)?
+                .release_ref = None;
+            return self.transition(scope, index, JourneyPhase::Refused, now);
+        }
+        if admission.state == NativeJourneyApprovalState::Awaiting {
+            if phase != JourneyPhase::AwaitingApproval {
+                return Err(JourneyError::PreparationMismatch);
+            }
+            return Ok(());
+        }
+        self.record.legs[index]
+            .native
+            .as_mut()
+            .ok_or(JourneyError::PreparationMismatch)?
+            .release_ref = admission.release_ref;
+        if phase == JourneyPhase::AwaitingApproval {
+            return self.transition(scope, index, JourneyPhase::Prepared, now);
+        }
+        if phase == JourneyPhase::Prepared {
+            let prepared = admission.preparation;
+            let operation = operation_from_label(&self.record.signing_operation)?;
+            let key = KeyId::new(self.record.custody_key.clone())?;
+            let principal = scope.principal().clone();
+            let signature = custody
+                .sign_in_scope(
+                    scope,
+                    SignRequest::new(
+                        &principal,
+                        &key,
+                        trace,
+                        SignAuthorization::new(operation, step_up),
+                        &prepared.unsigned_canonical_bytes,
+                        &prepared.disclosure,
+                        now,
+                    ),
+                )
+                .await?;
+            if signature.signer_public_key()
+                != self.record.legs[index]
+                    .native
+                    .as_ref()
+                    .ok_or(JourneyError::PreparationMismatch)?
+                    .owner_key
+            {
+                return Err(JourneyError::PreparationMismatch);
+            }
+            self.record.legs[index].signed = Some(SignedEvidence {
+                preparation_ref: prepared.preparation_ref.as_str().to_owned(),
+                canonical_digest: Sha256::digest(&prepared.unsigned_canonical_bytes).into(),
+                signature: signature.signature().to_vec(),
+                signer_public_key: signature.signer_public_key(),
+            });
+            return self.transition(scope, index, JourneyPhase::Signed, now);
+        }
+        if phase == JourneyPhase::Signed {
+            let (call, key) = self.submit_call(contract, index)?;
+            let observation = agent.submit(&call, key)?;
+            return self.apply_observation(scope, index, observation, now);
+        }
+        Err(JourneyError::PreparationMismatch)
+    }
+
+    fn transition_native_admission(
+        &mut self,
+        scope: &mut PrincipalScope<'_>,
+        index: usize,
+        state: NativeJourneyApprovalState,
+        now: u64,
+    ) -> Result<(), JourneyError> {
+        let phase = match state {
+            NativeJourneyApprovalState::Awaiting => JourneyPhase::AwaitingApproval,
+            NativeJourneyApprovalState::Granted | NativeJourneyApprovalState::NotRequired => {
+                JourneyPhase::Prepared
+            }
+            NativeJourneyApprovalState::Rejected | NativeJourneyApprovalState::Expired => {
+                JourneyPhase::Refused
+            }
+        };
+        self.transition(scope, index, phase, now)
+    }
+
+    fn validate_native_admission(
+        &self,
+        index: usize,
+        admission: &NativeJourneyAdmission,
+        registry: &ModuleRegistry,
+    ) -> Result<(), JourneyError> {
+        self.validate_preparation(index, &admission.preparation, registry)?;
+        let native = self.record.legs[index]
+            .native
+            .as_ref()
+            .ok_or(JourneyError::PreparationMismatch)?;
+        let purpose = NativeSendPurposeV1::from_canonical_bytes(&native.purpose)?;
+        validate_native_send_purpose(&admission.preparation, &purpose, native.owner_key, registry)?;
+        if admission.preparation.unsigned_canonical_bytes != native.unsigned_canonical_bytes
+            || admission.preparation.signing_preimage != native.signing_preimage
+            || admission
+                .preparation
+                .disclosure
+                .audit_digest()
+                .map_err(|_| JourneyError::PreparationMismatch)?
+                != native.disclosure_digest
+            || admission.approval_id != purpose.preparation_id
+            || admission.held_digest == [0; 32]
+            || native.approval_state.is_some_and(|state| {
+                state == NativeJourneyApprovalState::NotRequired
+                    && admission.state != NativeJourneyApprovalState::NotRequired
+                    || state == NativeJourneyApprovalState::Awaiting
+                        && admission.state == NativeJourneyApprovalState::NotRequired
+                    || state == NativeJourneyApprovalState::Granted
+                        && matches!(
+                            admission.state,
+                            NativeJourneyApprovalState::Awaiting
+                                | NativeJourneyApprovalState::NotRequired
+                        )
+            })
+            || native
+                .approval_id
+                .is_some_and(|id| id != admission.approval_id)
+            || native
+                .held_digest
+                .is_some_and(|digest| digest != admission.held_digest)
+            || native.release_ref.is_some_and(|release| {
+                admission
+                    .release_ref
+                    .is_some_and(|actual| actual != release)
+            })
+            || admission.release_ref.is_some()
+                != (admission.state == NativeJourneyApprovalState::Granted)
+            || admission.release_ref == Some([0; 32])
+            || admission.head_sequence < native.created_head_sequence
+            || admission.revocation_sequence == 0
+            || admission.revocation_sequence > admission.head_sequence
+            || admission.protocol_time_ms < native.created_protocol_time_ms
+            || !matches!(
+                admission.state,
+                NativeJourneyApprovalState::Rejected | NativeJourneyApprovalState::Expired
+            ) && admission.protocol_time_ms >= purpose.expires_at_ms
+        {
+            return Err(JourneyError::PreparationMismatch);
+        }
+        Ok(())
     }
 
     /// Returns the current state without claiming more than persisted receipt evidence.
@@ -931,9 +1446,10 @@ impl JourneyEngine {
             return JourneyState::Done;
         }
         match self.record.legs[self.record.current_leg].phase {
-            JourneyPhase::Compiled | JourneyPhase::Preparing | JourneyPhase::Prepared => {
-                JourneyState::GettingReady
-            }
+            JourneyPhase::Compiled
+            | JourneyPhase::Preparing
+            | JourneyPhase::Prepared
+            | JourneyPhase::AwaitingApproval => JourneyState::GettingReady,
             JourneyPhase::Signed => JourneyState::Sending,
             JourneyPhase::Submitted | JourneyPhase::ReceiptVerified => JourneyState::Processing,
             JourneyPhase::StillChecking => JourneyState::StillChecking,
@@ -990,7 +1506,7 @@ impl JourneyEngine {
         let request = SubmitRequest {
             preparation_ref: PreparationRef::new(signed.preparation_ref.clone())?,
             signature: SignatureBytes::new(signed.signature.clone())?,
-            approval_release_ref: None,
+            approval_release_ref: leg.native.as_ref().and_then(|native| native.release_ref),
         };
         let digest = submit_digest(&request, signed.signer_public_key);
         Ok((
@@ -1291,6 +1807,7 @@ fn compile_plan(
                     not_after: leg.not_after,
                     fee_limit: leg.fee_limit,
                 },
+                native: None,
                 phase: JourneyPhase::Compiled,
                 prepared_ref: None,
                 prepared_digest: None,
@@ -1306,8 +1823,115 @@ fn compile_plan(
         .collect()
 }
 
+fn validate_native_send_purpose(
+    prepared: &AgentPreparation,
+    purpose: &NativeSendPurposeV1,
+    owner_public_key: [u8; 32],
+    registry: &ModuleRegistry,
+) -> Result<(), JourneyError> {
+    let canonical = purpose.canonical_bytes()?;
+    if NativeSendPurposeV1::from_canonical_bytes(&canonical)? != *purpose {
+        return Err(JourneyError::PreparationMismatch);
+    }
+    let activity =
+        layerx_wire::activity::decode_unsigned(&prepared.unsigned_canonical_bytes, registry)
+            .map_err(|_| JourneyError::PreparationMismatch)?;
+    if purpose.owner_public_key != owner_public_key
+        || purpose.agent_did != prepared.actor
+        || purpose.activity.activity_type()? != prepared.activity_type
+        || purpose.activity.activity_type()? != activity.activity_type()
+        || purpose.protocol_version != activity.protocol_version()
+        || purpose.network_id != activity.network_id()
+        || purpose.idempotency_key != prepared.idempotency_key
+        || purpose.idempotency_key != activity.idempotency_key()
+        || purpose.preparation_id
+            != <[u8; 32]>::from(Sha256::digest(&prepared.unsigned_canonical_bytes))
+        || purpose.canonical_digest != purpose.preparation_id
+    {
+        return Err(JourneyError::PreparationMismatch);
+    }
+    Ok(())
+}
+
+fn validate_native_record(leg: &LegRecord) -> Result<(), JourneyError> {
+    if leg.activity_type != crate::server::native_send::NATIVE_SEND {
+        return Err(JourneyError::InvalidPlan);
+    }
+    if matches!(leg.phase, JourneyPhase::Compiled) {
+        if leg.native.is_some() {
+            return Err(JourneyError::PreparationMismatch);
+        }
+        return Ok(());
+    }
+    let Some(native) = &leg.native else {
+        return if leg.phase == JourneyPhase::Preparing {
+            Ok(())
+        } else {
+            Err(JourneyError::PreparationMismatch)
+        };
+    };
+    let purpose = NativeSendPurposeV1::from_canonical_bytes(&native.purpose)?;
+    let digest: [u8; 32] = Sha256::digest(&native.unsigned_canonical_bytes).into();
+    if purpose.agent_did.as_str() != leg.preparation.actor
+        || purpose.preparation_id != digest
+        || purpose.canonical_digest != digest
+        || purpose.idempotency_key != leg.action_key
+        || purpose.owner_public_key != native.owner_key
+        || purpose.activity.activity_type()?.value() != leg.activity_type
+        || native.signing_preimage.is_empty()
+        || native.owner_key == [0; 32]
+        || native.created_head_sequence == 0
+        || native.created_protocol_time_ms >= purpose.expires_at_ms
+        || leg.prepared_digest != Some(digest)
+        || native.owner_public_key.is_some() != native.purpose_signature.is_some()
+        || native
+            .owner_public_key
+            .is_some_and(|key| key != native.owner_key)
+        || native
+            .purpose_signature
+            .as_ref()
+            .is_some_and(|bytes| bytes.len() != 64)
+        || native.approval_id.is_some() != native.held_digest.is_some()
+        || native.approval_id.is_some() != native.approval_state.is_some()
+        || native.approval_state.is_some_and(|state| {
+            native.release_ref.is_some() != (state == NativeJourneyApprovalState::Granted)
+        })
+        || native.approval_id.is_some_and(|id| id != digest)
+        || native.held_digest == Some([0; 32])
+        || native.release_ref == Some([0; 32])
+        || leg.phase == JourneyPhase::AwaitingApproval
+            && (native.approval_state != Some(NativeJourneyApprovalState::Awaiting)
+                || leg.signed.is_some()
+                || leg.submission_ref.is_some()
+                || native.approval_id.is_none()
+                || native.purpose_signature.is_none()
+                || native.release_ref.is_some())
+        || matches!(
+            leg.phase,
+            JourneyPhase::Prepared
+                | JourneyPhase::Signed
+                | JourneyPhase::Submitted
+                | JourneyPhase::StillChecking
+                | JourneyPhase::ReceiptVerified
+        ) && (native.approval_id.is_none()
+            || native.purpose_signature.is_none()
+            || !matches!(
+                native.approval_state,
+                Some(NativeJourneyApprovalState::Granted | NativeJourneyApprovalState::NotRequired)
+            ))
+        || leg.signed.as_ref().is_some_and(|signed| {
+            signed.canonical_digest != digest
+                || signed.signer_public_key != native.owner_key
+                || Some(&signed.preparation_ref) != leg.prepared_ref.as_ref()
+        })
+    {
+        return Err(JourneyError::PreparationMismatch);
+    }
+    Ok(())
+}
+
 fn validate_record(record: &JourneyRecord) -> Result<(), JourneyError> {
-    if record.version != RECORD_VERSION
+    if !matches!(record.version, RECORD_VERSION | 2)
         || JourneyId::new(record.journey_id.clone()).is_err()
         || record.idempotency_key == [0; 32]
         || record.plan_digest == [0; 32]
@@ -1321,6 +1945,14 @@ fn validate_record(record: &JourneyRecord) -> Result<(), JourneyError> {
     }
     let mut keys = BTreeSet::new();
     for (index, leg) in record.legs.iter().enumerate() {
+        if record.version == RECORD_VERSION
+            && (leg.native.is_some() || leg.phase == JourneyPhase::AwaitingApproval)
+        {
+            return Err(JourneyError::Corrupt("native evidence on legacy journey"));
+        }
+        if record.version == 2 {
+            validate_native_record(leg)?;
+        }
         if leg.action_key == [0; 32]
             || !keys.insert(leg.action_key)
             || ActivityType::from_u32(leg.activity_type).is_err()
@@ -1551,9 +2183,10 @@ fn put_stream_progress(
     let event_bytes = serde_json::to_vec(&event)
         .map_err(|_| JourneyError::Corrupt("stream event cannot be encoded"))?;
     let state = match progress.phase() {
-        JourneyPhase::Compiled | JourneyPhase::Preparing | JourneyPhase::Prepared => {
-            "getting-ready"
-        }
+        JourneyPhase::Compiled
+        | JourneyPhase::Preparing
+        | JourneyPhase::Prepared
+        | JourneyPhase::AwaitingApproval => "getting-ready",
         JourneyPhase::Signed => "sending",
         JourneyPhase::StillChecking => "still-checking",
         JourneyPhase::ReceiptVerified if progress.leg() + 1 == legs => "done",

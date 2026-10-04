@@ -21,13 +21,15 @@ pub use deposit::{
 pub use engine::{
     AgentBoundary, AgentBoundaryError, AgentObservation, AgentPreparation, JourneyEngine,
     JourneyError, JourneyKind, JourneyLeg, JourneyPhase, JourneyPlan, JourneyProgress,
-    JourneyState, JourneyStatus, ReceiptLookup, ReceiptMaterial, VerifiedLegEvidence,
+    JourneyState, JourneyStatus, NativeJourneyAdmission, NativeJourneyApprovalState,
+    NativeJourneyPreview, ReceiptLookup, ReceiptMaterial, VerifiedLegEvidence,
 };
 
 pub use intent_submit::{
     authority_label, drive_intent_journey, intent_journey_id, start_deposit_journey,
-    start_kernel_journey, verify_bindings, BindingExpectation, IntentDriver, IntentLegBinding,
-    IntentShape, IntentSubmission, KernelStart, SubmitPlanRequest, SubmitRefusal,
+    start_kernel_journey, start_native_kernel_journey, verify_bindings, BindingExpectation,
+    IntentDriver, IntentLegBinding, IntentShape, IntentSubmission, KernelStart, SubmitPlanRequest,
+    SubmitRefusal,
 };
 
 pub use move_money::{

@@ -1,0 +1,22 @@
+{
+  "method": "POST",
+  "path": "/v1/native/send/access/confirm",
+  "body": {
+    "access_id": "1111111111111111111111111111111111111111111111111111111111111111",
+    "counterparty": "2222222222222222222222222222222222222222222222222222222222222222",
+    "asset": "3333333333333333333333333333333333333333333333333333333333333333",
+    "maximum_amount": "100",
+    "not_before": "1801555200",
+    "expires_at": "1801555260",
+    "rate_window_ms": "60000",
+    "maximum_uses": "1",
+    "commitment": "4444444444444444444444444444444444444444444444444444444444444444",
+    "step_up": {
+      "challenge_id": "chg_01j2h5w4eh8j0k2m4n6p8q0r2s",
+      "confirms": "opd_01j2h5x8fj9k1m3n5p7q9r1s3t",
+      "passkey_id": "pky_01j2h5m2we5f7g9h1j3k5m7n9p",
+      "completed_at": "2026-08-20T09:35:00Z",
+      "expires_at": "2026-08-20T09:40:00Z"
+    }
+  }
+}

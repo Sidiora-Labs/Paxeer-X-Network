@@ -294,6 +294,27 @@ pub fn start_kernel_journey(
     expectation: &BindingExpectation,
     start: KernelStart<'_>,
 ) -> Result<JourneyEngine, SubmitRefusal> {
+    start_kernel_profile(scope, plan, request, expectation, start, false)
+}
+
+pub fn start_native_kernel_journey(
+    scope: &mut PrincipalScope<'_>,
+    plan: &UnifiedPlan,
+    request: &SubmitPlanRequest,
+    expectation: &BindingExpectation,
+    start: KernelStart<'_>,
+) -> Result<JourneyEngine, SubmitRefusal> {
+    start_kernel_profile(scope, plan, request, expectation, start, true)
+}
+
+fn start_kernel_profile(
+    scope: &mut PrincipalScope<'_>,
+    plan: &UnifiedPlan,
+    request: &SubmitPlanRequest,
+    expectation: &BindingExpectation,
+    start: KernelStart<'_>,
+    native: bool,
+) -> Result<JourneyEngine, SubmitRefusal> {
     verify_bindings(plan, request, expectation)?;
     if IntentShape::of(plan)? != IntentShape::Kernel {
         return Err(SubmitRefusal::UnsupportedPlan);
@@ -345,11 +366,21 @@ pub fn start_kernel_journey(
         legs,
     )
     .map_err(|_| SubmitRefusal::JourneyUnavailable)?;
-    JourneyEngine::start(scope, &journey_plan, start.registry, expectation.now).map_err(|error| {
-        match error {
-            JourneyError::IdempotencyConflict => SubmitRefusal::AlreadySubmitted,
-            _ => SubmitRefusal::JourneyUnavailable,
+    let engine = if native {
+        if plan
+            .legs()
+            .iter()
+            .any(|leg| leg.mechanism() != LegMechanism::Protocol(Mechanism::Send))
+        {
+            return Err(SubmitRefusal::UnsupportedPlan);
         }
+        JourneyEngine::start_native(scope, &journey_plan, start.registry, expectation.now)
+    } else {
+        JourneyEngine::start(scope, &journey_plan, start.registry, expectation.now)
+    };
+    engine.map_err(|error| match error {
+        JourneyError::IdempotencyConflict => SubmitRefusal::AlreadySubmitted,
+        _ => SubmitRefusal::JourneyUnavailable,
     })
 }
 

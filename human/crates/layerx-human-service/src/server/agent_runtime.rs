@@ -122,6 +122,7 @@ pub struct AgentRuntime {
     limits: Limits,
     registry: ModuleRegistry,
     subject: Option<Subject>,
+    native_journey: Option<(super::native_send::HumanOwnerNativeContextV1, u64)>,
 }
 
 #[derive(Clone)]
@@ -161,6 +162,7 @@ impl AgentRuntime {
             gate: self.gate.clone(),
             limits: self.limits,
             registry: self.registry.clone(),
+            native_journey: None,
             subject: Some(Subject {
                 principal: principal.as_str().to_owned(),
                 owner: owner.clone(),
@@ -2025,6 +2027,7 @@ impl AgentRuntime {
             limits,
             registry,
             subject: None,
+            native_journey: None,
         })
     }
 
@@ -3846,6 +3849,55 @@ fn decision(
 }
 
 impl AgentBoundary for AgentRuntime {
+    fn native_journey_preview(
+        &mut self,
+        call: &Call<IdempotentMutation<PrepareRequest>>,
+    ) -> Result<crate::journeys::NativeJourneyPreview, AgentBoundaryError> {
+        let (context, expiry) = self
+            .native_journey
+            .take()
+            .ok_or(AgentBoundaryError::Refused)?;
+        let result = self.native_send_preview_v2(
+            &context,
+            &call.request().operation,
+            expiry,
+            context.commitment,
+        );
+        self.native_journey = Some((context, expiry));
+        let preview = result?;
+        let preparation = self.native_journey_preparation(
+            &call.request().operation,
+            preview.canonical_bytes,
+            preview.signing_preimage,
+        )?;
+        Ok(crate::journeys::NativeJourneyPreview {
+            preparation,
+            purpose: preview.purpose,
+            owner_public_key: preview.owner_public_key,
+            head_sequence: preview.head_sequence,
+            protocol_time_ms: preview.protocol_time_ms,
+            revocation_sequence: preview.revocation_sequence,
+        })
+    }
+
+    fn native_journey_prepare(
+        &mut self,
+        call: &Call<IdempotentMutation<PrepareRequest>>,
+        purpose: &layerx_agent_api::identity::SignedNativeSendPurposeV1,
+    ) -> Result<crate::journeys::NativeJourneyAdmission, AgentBoundaryError> {
+        self.native_journey_admit(call, purpose, None)
+    }
+
+    fn native_journey_resume(
+        &mut self,
+        call: &Call<IdempotentMutation<PrepareRequest>>,
+        purpose: &layerx_agent_api::identity::SignedNativeSendPurposeV1,
+        approval_id: [u8; 32],
+        held_digest: [u8; 32],
+    ) -> Result<crate::journeys::NativeJourneyAdmission, AgentBoundaryError> {
+        self.native_journey_admit(call, purpose, Some((approval_id, held_digest)))
+    }
+
     fn prepare(
         &mut self,
         call: &Call<IdempotentMutation<PrepareRequest>>,
@@ -3916,6 +3968,9 @@ impl AgentBoundary for AgentRuntime {
         call: &Call<IdempotentMutation<SubmitRequest>>,
         signer_public_key: [u8; 32],
     ) -> Result<AgentObservation, AgentBoundaryError> {
+        if self.native_journey.is_some() {
+            return self.native_journey_submit(call, signer_public_key);
+        }
         let mutation = call.request();
         let mut writer = Self::encode_mutation_header(SUBMIT, mutation);
         writer.text(mutation.operation.preparation_ref.as_str())?;
@@ -4411,68 +4466,675 @@ mod subject_tests {
 
 impl AgentRuntime {
     pub fn native_send_owner_context(
-        &mut self, session: &super::native_send::HumanOwnerNativeSessionV1, request_id: u64,
+        &mut self,
+        session: &super::native_send::HumanOwnerNativeSessionV1,
+        request_id: u64,
     ) -> Result<super::native_send::NativeSendOwnerCoordinatesV1, AgentBoundaryError> {
         let mut writer = Writer::new(64);
-        writer.text(&session.tenant)?; writer.fixed(&session.session_id);
-        writer.fixed(session.credential()); writer.u64(session.generation);
-        writer.fixed(&session.owner_public_key); writer.u64(request_id);
+        writer.text(&session.tenant)?;
+        writer.fixed(&session.session_id);
+        writer.fixed(session.credential());
+        writer.u64(session.generation);
+        writer.fixed(&session.owner_public_key);
+        writer.u64(request_id);
         let mut reader = self.exchange_secret(&writer.finish_secret())?;
         let actor = reader.text()?;
         let kind = reader.u8()?;
         let authority: [u8; 32] = reader.fixed()?;
-        if kind != 2 || authority != session.grant_id { return Err(AgentBoundaryError::CorruptResponse); }
+        if kind != 2 || authority != session.grant_id {
+            return Err(AgentBoundaryError::CorruptResponse);
+        }
         let value = super::native_send::NativeSendOwnerCoordinatesV1 {
-            actor, authority: format!("session:{}", authority.iter().map(|byte| format!("{byte:02x}")).collect::<String>()),
-            generation: reader.u64()?, head_sequence: reader.u64()?, protocol_time_ms: reader.u64()?,
-            account_sequence: reader.u64()?, expiry_sequence: reader.u64()?, expiry_ms: reader.u64()?,
-            owner_public_key: reader.fixed()?, revocation_sequence: reader.u64()?, native_fee_asset: reader.fixed()?,
+            actor,
+            authority: format!(
+                "session:{}",
+                authority
+                    .iter()
+                    .map(|byte| format!("{byte:02x}"))
+                    .collect::<String>()
+            ),
+            generation: reader.u64()?,
+            head_sequence: reader.u64()?,
+            protocol_time_ms: reader.u64()?,
+            account_sequence: reader.u64()?,
+            expiry_sequence: reader.u64()?,
+            expiry_ms: reader.u64()?,
+            owner_public_key: reader.fixed()?,
+            revocation_sequence: reader.u64()?,
+            native_fee_asset: reader.fixed()?,
         };
         reader.finish()?;
-        if value.actor != session.owner || value.generation != session.generation
-            || value.owner_public_key != session.owner_public_key || value.head_sequence == 0
-            || value.revocation_sequence == 0 || value.native_fee_asset == [0; 32] {
+        if value.actor != session.owner
+            || value.generation != session.generation
+            || value.owner_public_key != session.owner_public_key
+            || value.head_sequence == 0
+            || value.revocation_sequence == 0
+            || value.native_fee_asset == [0; 32]
+        {
             return Err(AgentBoundaryError::CorruptResponse);
         }
         Ok(value)
     }
 
     pub fn native_send_preview(
-        &mut self, context: &super::native_send::HumanOwnerNativeContextV1,
-        request: &PrepareRequest, purpose_expires_ms: u64, commitment: [u8; 32],
+        &mut self,
+        context: &super::native_send::HumanOwnerNativeContextV1,
+        request: &PrepareRequest,
+        purpose_expires_ms: u64,
+        commitment: [u8; 32],
     ) -> Result<super::native_send::NativeSendPreviewV1, AgentBoundaryError> {
-        let grant = context.signed_grant().map_err(|_| AgentBoundaryError::Refused)?;
+        let grant = context
+            .signed_grant()
+            .map_err(|_| AgentBoundaryError::Refused)?;
         let session = &context.session;
         let mut writer = Writer::new(63);
-        writer.text(&session.tenant)?; writer.fixed(&session.session_id);
-        writer.fixed(session.credential()); writer.u64(session.generation);
-        writer.u64(u64::from_be_bytes(context.capability_id[..8].try_into().map_err(|_| AgentBoundaryError::Refused)?));
-        writer.u32(request.protocol_activity_type); writer.text(request.actor.as_str())?;
-        writer.text(request.authority.as_str())?; writer.u64(request.account_sequence.0);
-        writer.u64(request.timestamp_bound.not_before.0); writer.u64(request.timestamp_bound.not_after.0);
-        writer.text(request.idempotency_key.as_str())?; writer.u128(request.fee_limit.0);
-        writer.bytes(request.payload.as_bytes())?; writer.fixed(&request.payload_hash);
-        writer.fixed(&context.capability_id); writer.fixed(&session.owner_public_key);
-        writer.u64(purpose_expires_ms); writer.fixed(&commitment);
-        writer.bytes(&grant.capability)?; writer.bytes(&grant.session_scope)?;
-        writer.u64(grant.expires_at_ms); writer.fixed(&grant.owner_public_key); writer.fixed(&grant.signature);
+        writer.text(&session.tenant)?;
+        writer.fixed(&session.session_id);
+        writer.fixed(session.credential());
+        writer.u64(session.generation);
+        writer.u64(u64::from_be_bytes(
+            context.capability_id[..8]
+                .try_into()
+                .map_err(|_| AgentBoundaryError::Refused)?,
+        ));
+        writer.u32(request.protocol_activity_type);
+        writer.text(request.actor.as_str())?;
+        writer.text(request.authority.as_str())?;
+        writer.u64(request.account_sequence.0);
+        writer.u64(request.timestamp_bound.not_before.0);
+        writer.u64(request.timestamp_bound.not_after.0);
+        writer.text(request.idempotency_key.as_str())?;
+        writer.u128(request.fee_limit.0);
+        writer.bytes(request.payload.as_bytes())?;
+        writer.fixed(&request.payload_hash);
+        writer.fixed(&context.capability_id);
+        writer.fixed(&session.owner_public_key);
+        writer.u64(purpose_expires_ms);
+        writer.fixed(&commitment);
+        writer.bytes(&grant.capability)?;
+        writer.bytes(&grant.session_scope)?;
+        writer.u64(grant.expires_at_ms);
+        writer.fixed(&grant.owner_public_key);
+        writer.fixed(&grant.signature);
         let mut reader = self.exchange_secret(&writer.finish_secret())?;
-        let canonical_bytes = reader.bytes()?; let signing_preimage = reader.bytes()?;
-        let purpose = layerx_agent_api::identity::NativePreparationPurposeV1::from_canonical_bytes(&reader.bytes()?)
-            .map_err(|_| AgentBoundaryError::CorruptResponse)?;
-        let value = super::native_send::NativeSendPreviewV1 { canonical_bytes, signing_preimage, purpose,
-            head_sequence: reader.u64()?, protocol_time_ms: reader.u64()?,
-            owner_public_key: reader.fixed()?, revocation_sequence: reader.u64()? };
+        let canonical_bytes = reader.bytes()?;
+        let signing_preimage = reader.bytes()?;
+        let purpose = layerx_agent_api::identity::NativePreparationPurposeV1::from_canonical_bytes(
+            &reader.bytes()?,
+        )
+        .map_err(|_| AgentBoundaryError::CorruptResponse)?;
+        let value = super::native_send::NativeSendPreviewV1 {
+            canonical_bytes,
+            signing_preimage,
+            purpose,
+            head_sequence: reader.u64()?,
+            protocol_time_ms: reader.u64()?,
+            owner_public_key: reader.fixed()?,
+            revocation_sequence: reader.u64()?,
+        };
         reader.finish()?;
         let canonical_digest: [u8; 32] = sha2::Sha256::digest(&value.canonical_bytes).into();
-        if value.purpose.tenant.as_str() != session.tenant || value.purpose.agent_did.as_str() != session.owner
-            || value.purpose.session_id.to_bytes().map_err(|_| AgentBoundaryError::CorruptResponse)? != session.session_id
-            || value.purpose.capability_id.to_bytes().map_err(|_| AgentBoundaryError::CorruptResponse)? != context.capability_id
-            || value.purpose.generation != session.generation || value.purpose.expires_at_ms != purpose_expires_ms
-            || value.purpose.commitment != commitment || value.purpose.canonical_digest != canonical_digest
-            || value.owner_public_key != session.owner_public_key || value.head_sequence < session.grant_sequence
-            || value.revocation_sequence == 0 || value.revocation_sequence > value.head_sequence
-            || value.protocol_time_ms >= purpose_expires_ms || value.signing_preimage.is_empty() {
+        if value.purpose.tenant.as_str() != session.tenant
+            || value.purpose.agent_did.as_str() != session.owner
+            || value
+                .purpose
+                .session_id
+                .to_bytes()
+                .map_err(|_| AgentBoundaryError::CorruptResponse)?
+                != session.session_id
+            || value
+                .purpose
+                .capability_id
+                .to_bytes()
+                .map_err(|_| AgentBoundaryError::CorruptResponse)?
+                != context.capability_id
+            || value.purpose.generation != session.generation
+            || value.purpose.expires_at_ms != purpose_expires_ms
+            || value.purpose.commitment != commitment
+            || value.purpose.canonical_digest != canonical_digest
+            || value.owner_public_key != session.owner_public_key
+            || value.head_sequence < session.grant_sequence
+            || value.revocation_sequence == 0
+            || value.revocation_sequence > value.head_sequence
+            || value.protocol_time_ms >= purpose_expires_ms
+            || value.signing_preimage.is_empty()
+        {
+            return Err(AgentBoundaryError::CorruptResponse);
+        }
+        Ok(value)
+    }
+}
+
+impl AgentRuntime {
+    fn native_journey_submit(
+        &mut self,
+        call: &Call<IdempotentMutation<SubmitRequest>>,
+        signer_public_key: [u8; 32],
+    ) -> Result<AgentObservation, AgentBoundaryError> {
+        let (context, _) = self
+            .native_journey
+            .as_ref()
+            .ok_or(AgentBoundaryError::Refused)?;
+        if signer_public_key != context.session.owner_public_key {
+            return Err(AgentBoundaryError::Refused);
+        }
+        let mutation = call.request();
+        let body = layerx_sdk::native_effect::encode_native_send_submit(
+            &mutation.operation,
+            &signer_public_key,
+        )
+        .map_err(|_| AgentBoundaryError::Refused)?;
+        let credential = layerx_sdk::agent_envelope::EnvelopeCredential::new(
+            &context.session.tenant,
+            context.session.session_id,
+            *context.session.credential(),
+            context.session.generation,
+        )
+        .map_err(|_| AgentBoundaryError::Refused)?;
+        let envelope = layerx_sdk::agent_envelope::encode_envelope(
+            layerx_sdk::Operation::Submit,
+            mutation.request_id,
+            &body,
+            Some(&credential),
+            Some(mutation.key),
+        )
+        .map_err(|_| AgentBoundaryError::Refused)?;
+        let encoded =
+            Zeroizing::new(serde_json::to_vec(&envelope).map_err(|_| AgentBoundaryError::Refused)?);
+        let mut writer = Writer::new(67);
+        writer.u8(1);
+        writer.bytes(&encoded)?;
+        let mut reader = self.exchange_secret(&writer.finish_secret())?;
+        if reader.u8()? != 1 {
+            return Err(AgentBoundaryError::CorruptResponse);
+        }
+        let status = reader.u16()?;
+        let result = reader.bytes()?;
+        reader.finish()?;
+        let result: serde_json::Value =
+            serde_json::from_slice(&result).map_err(|_| AgentBoundaryError::CorruptResponse)?;
+        let result = layerx_sdk::agent_envelope::decode_response(status, &result)
+            .ok_or(AgentBoundaryError::CorruptResponse)?
+            .map_err(|error| {
+                if error.retriability == layerx_agent_api::error::Retriability::Retriable {
+                    AgentBoundaryError::Unavailable
+                } else {
+                    AgentBoundaryError::Refused
+                }
+            })?;
+        if result.request_id != mutation.request_id {
+            return Err(AgentBoundaryError::CorruptResponse);
+        }
+        let value = result
+            .value
+            .as_object()
+            .ok_or(AgentBoundaryError::CorruptResponse)?;
+        if value.len() != 3 || !value.contains_key("receipt") {
+            return Err(AgentBoundaryError::CorruptResponse);
+        }
+        let activity_id = decode_hex32(
+            value
+                .get("activity_id")
+                .and_then(serde_json::Value::as_str)
+                .ok_or(AgentBoundaryError::CorruptResponse)?,
+        )?;
+        if activity_id == [0; 32] {
+            return Err(AgentBoundaryError::CorruptResponse);
+        }
+        let submission = value
+            .get("submission")
+            .and_then(serde_json::Value::as_object)
+            .ok_or(AgentBoundaryError::CorruptResponse)?;
+        let reference = SubmissionRef::new(
+            submission
+                .get("submission_ref")
+                .and_then(serde_json::Value::as_str)
+                .ok_or(AgentBoundaryError::CorruptResponse)?
+                .to_owned(),
+        )
+        .map_err(|_| AgentBoundaryError::CorruptResponse)?;
+        let mut writer = Writer::new(TRACK);
+        writer.text(reference.as_str())?;
+        let mut reader = self.exchange(&writer.finish())?;
+        let observation = Self::decode_observation(&mut reader)?;
+        if observation.activity_id != activity_id
+            || observation.submission.submission_ref != reference
+        {
+            return Err(AgentBoundaryError::CorruptResponse);
+        }
+        Ok(observation)
+    }
+
+    pub fn bind_native_journey_context(
+        &mut self,
+        context: super::native_send::HumanOwnerNativeContextV1,
+        expires_at_ms: u64,
+    ) -> Result<(), AgentBoundaryError> {
+        let subject = self.subject.as_ref().ok_or(AgentBoundaryError::Refused)?;
+        if subject.owner.as_bytes() != context.session.owner.as_bytes()
+            || subject.principal != context.session.principal
+            || expires_at_ms == 0
+            || expires_at_ms > context.expires_at_ms
+            || context.commitment == [0; 32]
+        {
+            return Err(AgentBoundaryError::Refused);
+        }
+        context
+            .signed_grant()
+            .map_err(|_| AgentBoundaryError::Refused)?;
+        self.native_journey = Some((context, expires_at_ms));
+        Ok(())
+    }
+
+    fn native_journey_preparation(
+        &self,
+        request: &PrepareRequest,
+        canonical: Vec<u8>,
+        preimage: Vec<u8>,
+    ) -> Result<AgentPreparation, AgentBoundaryError> {
+        let activity = layerx_wire::activity::decode_unsigned(&canonical, &self.registry)
+            .map_err(|_| AgentBoundaryError::CorruptResponse)?;
+        let actual_preimage = layerx_wire::sign::preimage(&activity)
+            .map_err(|_| AgentBoundaryError::CorruptResponse)?;
+        if activity.activity_type().value() != request.protocol_activity_type
+            || activity.actor_did() != request.actor.as_str().as_bytes()
+            || activity.account_sequence() != request.account_sequence.0
+            || activity.timestamp_bound().not_before != request.timestamp_bound.not_before.0
+            || activity.timestamp_bound().not_after != request.timestamp_bound.not_after.0
+            || activity.fee_limit().value() != request.fee_limit.0
+            || activity.payload().as_bytes() != request.payload.as_bytes()
+            || activity.payload_hash() != request.payload_hash
+            || activity.idempotency_key() != decode_hex32(request.idempotency_key.as_str())?
+            || actual_preimage != preimage
+        {
+            return Err(AgentBoundaryError::CorruptResponse);
+        }
+        let id: [u8; 32] = sha2::Sha256::digest(&canonical).into();
+        let disclosure = disclosure::bind(&canonical, &self.registry)
+            .map_err(|_| AgentBoundaryError::CorruptResponse)?;
+        if disclosure
+            .reencode()
+            .map_err(|_| AgentBoundaryError::CorruptResponse)?
+            != canonical
+        {
+            return Err(AgentBoundaryError::CorruptResponse);
+        }
+        let hex: String = id.iter().map(|byte| format!("{byte:02x}")).collect();
+        let idempotency_key = decode_hex32(request.idempotency_key.as_str())?;
+        Ok(AgentPreparation {
+            preparation_ref: PreparationRef::new(hex)
+                .map_err(|_| AgentBoundaryError::CorruptResponse)?,
+            unsigned_canonical_bytes: canonical,
+            signing_preimage: preimage,
+            disclosure,
+            actor: request.actor.clone(),
+            authority: request.authority.clone(),
+            account_sequence: request.account_sequence.0,
+            not_before: request.timestamp_bound.not_before.0,
+            not_after: request.timestamp_bound.not_after.0,
+            fee_limit: request.fee_limit.0,
+            activity_type: ActivityType::from_u32(request.protocol_activity_type)
+                .map_err(|_| AgentBoundaryError::Refused)?,
+            payload: request.payload.as_bytes().to_vec(),
+            payload_hash: request.payload_hash,
+            idempotency_key,
+        })
+    }
+
+    fn native_journey_admit(
+        &mut self,
+        call: &Call<IdempotentMutation<PrepareRequest>>,
+        purpose: &layerx_agent_api::identity::SignedNativeSendPurposeV1,
+        expected: Option<([u8; 32], [u8; 32])>,
+    ) -> Result<crate::journeys::NativeJourneyAdmission, AgentBoundaryError> {
+        use crate::journeys::{AgentBoundary as _, NativeJourneyApprovalState as State};
+        if let Some((approval_id, held_digest)) = expected {
+            let (context, expiry) = self
+                .native_journey
+                .take()
+                .ok_or(AgentBoundaryError::Refused)?;
+            let coordinates =
+                self.native_send_owner_context(&context.session, call.request().request_id.0);
+            self.native_journey = Some((context, expiry));
+            let coordinates = coordinates?;
+            let (context, expiry) = self
+                .native_journey
+                .as_ref()
+                .ok_or(AgentBoundaryError::Refused)?;
+            let statement = &purpose.purpose;
+            let request = &call.request().operation;
+            if statement.preparation_id != approval_id
+                || held_digest == [0; 32]
+                || statement.tenant.as_str() != context.session.tenant
+                || statement.agent_did.as_str() != context.session.owner
+                || statement.owner_did.as_str() != context.session.owner
+                || statement.agent_did != request.actor
+                || statement.owner_public_key != context.session.owner_public_key
+                || purpose.owner_public_key != context.session.owner_public_key
+                || statement
+                    .session_id
+                    .to_bytes()
+                    .map_err(|_| AgentBoundaryError::Refused)?
+                    != context.session.session_id
+                || statement
+                    .capability_id
+                    .to_bytes()
+                    .map_err(|_| AgentBoundaryError::Refused)?
+                    != context.capability_id
+                || statement.generation != context.session.generation
+                || statement.expires_at_ms != *expiry
+                || statement.expires_at_ms > context.expires_at_ms
+                || statement.commitment != context.commitment
+                || statement.economic_action != context.session.session_id
+                || statement.idempotency_key != decode_hex32(request.idempotency_key.as_str())?
+                || coordinates.protocol_time_ms >= coordinates.expiry_ms
+                || coordinates.head_sequence < context.session.grant_sequence
+                || coordinates.revocation_sequence == 0
+                || coordinates.revocation_sequence > coordinates.head_sequence
+            {
+                return Err(AgentBoundaryError::Refused);
+            }
+            let purpose_digest: [u8; 32] = sha2::Sha256::digest(
+                statement
+                    .canonical_bytes()
+                    .map_err(|_| AgentBoundaryError::Refused)?,
+            )
+            .into();
+            layerx_crypto::ed25519::verify_digest(
+                &purpose.owner_public_key,
+                &purpose.signature,
+                &purpose_digest,
+            )
+            .map_err(|_| AgentBoundaryError::Refused)?;
+            let facts = self.native_effect_approval_get_facts(approval_id)?;
+            if matches!(
+                facts.state,
+                NativeEffectApprovalFactState::Rejected | NativeEffectApprovalFactState::Expired
+            ) {
+                let material = self.native_effect_approval_material(approval_id, held_digest)?;
+                if facts.approval_id != approval_id
+                    || facts.held_digest != held_digest
+                    || facts.actor != request.actor.as_str()
+                    || facts.owner != statement.owner_did.as_str()
+                    || facts.activity_module != 1
+                    || facts.activity_ordinal != 5
+                    || facts.fee_limit != request.fee_limit.0
+                    || facts.release_ref.is_some()
+                    || facts.submission_ref.is_some()
+                    || material.owner != statement.owner_did.as_str()
+                    || sha2::Sha256::digest(&material.canonical_unsigned_bytes)[..]
+                        != statement.canonical_digest
+                {
+                    return Err(AgentBoundaryError::CorruptResponse);
+                }
+                let activity = layerx_wire::activity::decode_unsigned(
+                    &material.canonical_unsigned_bytes,
+                    &self.registry,
+                )
+                .map_err(|_| AgentBoundaryError::CorruptResponse)?;
+                if activity.protocol_version() != statement.protocol_version
+                    || activity.network_id() != statement.network_id
+                    || layerx_agent_api::identity::NativeActivity::from(activity.activity_type())
+                        != statement.activity
+                    || activity.idempotency_key() != statement.idempotency_key
+                {
+                    return Err(AgentBoundaryError::CorruptResponse);
+                }
+                let preimage = layerx_wire::sign::preimage(&activity)
+                    .map_err(|_| AgentBoundaryError::CorruptResponse)?;
+                let preparation = self.native_journey_preparation(
+                    request,
+                    material.canonical_unsigned_bytes,
+                    preimage,
+                )?;
+                return Ok(crate::journeys::NativeJourneyAdmission {
+                    preparation,
+                    approval_id,
+                    held_digest,
+                    state: if facts.state == NativeEffectApprovalFactState::Rejected {
+                        State::Rejected
+                    } else {
+                        State::Expired
+                    },
+                    release_ref: None,
+                    head_sequence: coordinates.head_sequence,
+                    protocol_time_ms: coordinates.protocol_time_ms,
+                    revocation_sequence: coordinates.revocation_sequence,
+                });
+            }
+        }
+        let preview = self.native_journey_preview(call)?;
+        let (context, _) = self
+            .native_journey
+            .as_ref()
+            .ok_or(AgentBoundaryError::Refused)?;
+        if preview.purpose != purpose.purpose
+            || purpose.owner_public_key != preview.owner_public_key
+            || purpose.signature == [0; 64]
+        {
+            return Err(AgentBoundaryError::Refused);
+        }
+        let request = &call.request().operation;
+        let id = purpose.purpose.preparation_id;
+        if expected.is_none() {
+            let typed = layerx_agent_api::identity::NativeSendPrepareRequestV1 {
+                activity: layerx_agent_api::identity::NativeActivity::new(1, 5)
+                    .map_err(|_| AgentBoundaryError::Refused)?,
+                actor: request.actor.clone(),
+                authority: request.authority.as_str().to_owned(),
+                account_sequence: request.account_sequence.0,
+                not_before: request.timestamp_bound.not_before.0,
+                not_after: request.timestamp_bound.not_after.0,
+                idempotency_key: preview.preparation.idempotency_key,
+                fee_limit: request.fee_limit.0,
+                payload: request.payload.as_bytes().to_vec(),
+                payload_hash: request.payload_hash,
+                capability_id: purpose.purpose.capability_id.clone(),
+                purpose: purpose.clone(),
+                local_grant: Some(
+                    context
+                        .signed_grant()
+                        .map_err(|_| AgentBoundaryError::Refused)?,
+                ),
+            };
+            let body = layerx_sdk::native_effect::encode_native_send_prepare(&typed)
+                .map_err(|_| AgentBoundaryError::Refused)?;
+            let credential = layerx_sdk::agent_envelope::EnvelopeCredential::new(
+                &context.session.tenant,
+                context.session.session_id,
+                *context.session.credential(),
+                context.session.generation,
+            )
+            .map_err(|_| AgentBoundaryError::Refused)?;
+            let envelope = layerx_sdk::agent_envelope::encode_envelope(
+                layerx_sdk::Operation::Prepare,
+                call.request().request_id,
+                &body,
+                Some(&credential),
+                Some(call.request().key),
+            )
+            .map_err(|_| AgentBoundaryError::Refused)?;
+            let bytes = Zeroizing::new(
+                serde_json::to_vec(&envelope).map_err(|_| AgentBoundaryError::Refused)?,
+            );
+            let mut writer = Writer::new(67);
+            writer.u8(1);
+            writer.bytes(&bytes)?;
+            let mut reader = self.exchange_secret(&writer.finish_secret())?;
+            if reader.u8()? != 1 {
+                return Err(AgentBoundaryError::CorruptResponse);
+            }
+            let status = reader.u16()?;
+            let result = reader.bytes()?;
+            reader.finish()?;
+            if status != 200 {
+                return Err(AgentBoundaryError::Refused);
+            }
+            let result: serde_json::Value =
+                serde_json::from_slice(&result).map_err(|_| AgentBoundaryError::CorruptResponse)?;
+            let value = layerx_sdk::agent_envelope::decode_native_preparation(&result["value"])
+                .ok_or(AgentBoundaryError::CorruptResponse)?;
+            if value.preparation_id != id
+                || value.canonical_bytes != preview.preparation.unsigned_canonical_bytes
+                || value.signing_preimage != preview.preparation.signing_preimage
+            {
+                return Err(AgentBoundaryError::CorruptResponse);
+            }
+        }
+        let facts = self.native_effect_approval_get_facts(id)?;
+        if expected.is_some_and(|(approval, digest)| approval != id || digest != facts.held_digest)
+            || facts.actor != request.actor.as_str()
+            || facts.activity_module != 1
+            || facts.activity_ordinal != 5
+            || facts.held_digest == [0; 32]
+            || facts.fee_limit != request.fee_limit.0
+        {
+            return Err(AgentBoundaryError::CorruptResponse);
+        }
+        let material = self.native_effect_approval_material(id, facts.held_digest)?;
+        if material.canonical_unsigned_bytes != preview.preparation.unsigned_canonical_bytes {
+            return Err(AgentBoundaryError::CorruptResponse);
+        }
+        let state = match facts.state {
+            NativeEffectApprovalFactState::Awaiting => State::Awaiting,
+            NativeEffectApprovalFactState::Granted => State::Granted,
+            NativeEffectApprovalFactState::Rejected => State::Rejected,
+            NativeEffectApprovalFactState::Expired => State::Expired,
+            NativeEffectApprovalFactState::NotRequired => State::NotRequired,
+        };
+        if (state == State::Granted) != facts.release_ref.is_some()
+            || facts.submission_ref.is_some()
+        {
+            return Err(AgentBoundaryError::CorruptResponse);
+        }
+        Ok(crate::journeys::NativeJourneyAdmission {
+            preparation: preview.preparation,
+            approval_id: id,
+            held_digest: facts.held_digest,
+            state,
+            release_ref: facts.release_ref,
+            head_sequence: preview.head_sequence,
+            protocol_time_ms: preview.protocol_time_ms,
+            revocation_sequence: preview.revocation_sequence,
+        })
+    }
+}
+
+fn decode_hex32(text: &str) -> Result<[u8; 32], AgentBoundaryError> {
+    if text.len() != 64
+        || !text
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+    {
+        return Err(AgentBoundaryError::Refused);
+    }
+    let mut bytes = [0; 32];
+    for (i, pair) in text.as_bytes().chunks_exact(2).enumerate() {
+        let part = std::str::from_utf8(pair).map_err(|_| AgentBoundaryError::Refused)?;
+        bytes[i] = u8::from_str_radix(part, 16).map_err(|_| AgentBoundaryError::Refused)?;
+    }
+    Ok(bytes)
+}
+
+impl AgentRuntime {
+    pub fn native_send_preview_v2(
+        &mut self,
+        context: &super::native_send::HumanOwnerNativeContextV1,
+        request: &PrepareRequest,
+        purpose_expires_ms: u64,
+        commitment: [u8; 32],
+    ) -> Result<super::native_send::NativeSendPreviewV2, AgentBoundaryError> {
+        let grant = context
+            .signed_grant()
+            .map_err(|_| AgentBoundaryError::Refused)?;
+        let session = &context.session;
+        let mut writer = Writer::new(66);
+        writer.u16(1);
+        writer.text(&session.tenant)?;
+        writer.fixed(&session.session_id);
+        writer.fixed(session.credential());
+        writer.u64(session.generation);
+        writer.u64(u64::from_be_bytes(
+            context.capability_id[..8]
+                .try_into()
+                .map_err(|_| AgentBoundaryError::Refused)?,
+        ));
+        writer.u32(request.protocol_activity_type);
+        writer.text(request.actor.as_str())?;
+        writer.text(request.authority.as_str())?;
+        writer.u64(request.account_sequence.0);
+        writer.u64(request.timestamp_bound.not_before.0);
+        writer.u64(request.timestamp_bound.not_after.0);
+        writer.text(request.idempotency_key.as_str())?;
+        writer.u128(request.fee_limit.0);
+        writer.bytes(request.payload.as_bytes())?;
+        writer.fixed(&request.payload_hash);
+        writer.fixed(&context.capability_id);
+        writer.fixed(&session.owner_public_key);
+        writer.u64(purpose_expires_ms);
+        writer.fixed(&commitment);
+        writer.fixed(&session.session_id);
+        writer.bytes(&grant.capability)?;
+        writer.bytes(&grant.session_scope)?;
+        writer.u64(grant.expires_at_ms);
+        writer.fixed(&grant.owner_public_key);
+        writer.fixed(&grant.signature);
+        let mut reader = self.exchange_secret(&writer.finish_secret())?;
+        if reader.u16()? != 1 {
+            return Err(AgentBoundaryError::CorruptResponse);
+        }
+        let canonical_bytes = reader.bytes()?;
+        let signing_preimage = reader.bytes()?;
+        let purpose =
+            layerx_agent_api::identity::NativeSendPurposeV1::from_canonical_bytes(&reader.bytes()?)
+                .map_err(|_| AgentBoundaryError::CorruptResponse)?;
+        let value = super::native_send::NativeSendPreviewV2 {
+            canonical_bytes,
+            signing_preimage,
+            purpose,
+            head_sequence: reader.u64()?,
+            protocol_time_ms: reader.u64()?,
+            owner_public_key: reader.fixed()?,
+            revocation_sequence: reader.u64()?,
+        };
+        reader.finish()?;
+        let canonical_digest: [u8; 32] = sha2::Sha256::digest(&value.canonical_bytes).into();
+        let activity =
+            layerx_wire::activity::decode_unsigned(&value.canonical_bytes, &self.registry)
+                .map_err(|_| AgentBoundaryError::CorruptResponse)?;
+        if value.purpose.owner_did.as_str() != session.owner
+            || value.purpose.owner_public_key != session.owner_public_key
+            || value.purpose.economic_action != session.session_id
+            || value.purpose.idempotency_key != decode_hex32(request.idempotency_key.as_str())?
+            || value.purpose.activity.module != 1
+            || value.purpose.activity.ordinal != 5
+            || value.purpose.protocol_version != activity.protocol_version()
+            || value.purpose.network_id != activity.network_id()
+            || value.purpose.tenant.as_str() != session.tenant
+            || value.purpose.agent_did.as_str() != session.owner
+            || value
+                .purpose
+                .session_id
+                .to_bytes()
+                .map_err(|_| AgentBoundaryError::CorruptResponse)?
+                != session.session_id
+            || value
+                .purpose
+                .capability_id
+                .to_bytes()
+                .map_err(|_| AgentBoundaryError::CorruptResponse)?
+                != context.capability_id
+            || value.purpose.generation != session.generation
+            || value.purpose.expires_at_ms != purpose_expires_ms
+            || value.purpose.commitment != commitment
+            || value.purpose.canonical_digest != canonical_digest
+            || value.owner_public_key != session.owner_public_key
+            || value.head_sequence < session.grant_sequence
+            || value.revocation_sequence == 0
+            || value.revocation_sequence > value.head_sequence
+            || value.protocol_time_ms >= purpose_expires_ms
+            || value.signing_preimage.is_empty()
+        {
             return Err(AgentBoundaryError::CorruptResponse);
         }
         Ok(value)
