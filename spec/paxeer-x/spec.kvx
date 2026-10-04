@@ -27100,8 +27100,11 @@ retained_mcp_continuation_paths_9_3 = ["agent/crates/layerx-mcp/src/bin/layerx-m
 implementation_window = "START11:38UTC END12:08UTC; entire source first, one build and focusedverify, atmosttwo scopedrepairs. Rootpublishes beforecandidatequalification."
 source_status = "complete"
 completion_basis = "implementation under owner CONSTITUTION; qualification separately recorded"
-qualification_status = "UNRUN"
+qualification_status = "BUILD_PASS_VERIFY_UNRUN_CAP"
 source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-9.1-repair1-handoff.json"
+build_evidence = "ce4970d008fdfed2adc2d1464cf0a8ed179708f8 | timeout 20m python3 tools/qualification/paxeer-x/mcp_web_payer.py --build-artifacts | 0 | /root/lx-ops/paxeer-x-integration-2026-10-03/task-9.1-build-repair1.log"
+verification_evidence = "ce4970d008fdfed2adc2d1464cf0a8ed179708f8 | timeout 30m python3 tools/qualification/paxeer-x/mcp_web_payer.py | UNRUN | /root/lx-ops/paxeer-x-integration-2026-10-03/task-9.1-result.json"
+qualification_stop = "12:08UTC task cap expired before focused gate invocation; zero behavior cases executed; one scoped compiler repair used."
 
 [task.9.2]
 title = "Execute advertised MCP writes through the ordinary daemon authority"
