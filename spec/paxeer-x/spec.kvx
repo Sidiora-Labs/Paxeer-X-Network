@@ -26394,8 +26394,17 @@ fanout_scope_delegated = ["docker/kernel/init.sh", "tools/bringup/tests/paxeer-x
 fanout_basis = "Owner requested maximum parallel implementation on 2026-10-04; delegated shared file edits require root coordination and retain original acceptance criteria"
 source_status = "complete"
 completion_basis = "implementation under owner CONSTITUTION; qualification separately recorded"
-qualification_status = "UNRUN"
+qualification_status = "PREREQUISITE_UNAVAILABLE"
 source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/task248-continuation-intake.json"
+qualification_revision = "5cbb949c3b62d4310f9e02bf3fedcae3c7d1f227"
+qualification_command = "timeout 15m python3 tools/bringup/tests/paxeer-x-runtime-contract.py --case registry-material"
+qualification_exit_code = 78
+qualification_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-24.8-continuation-qualification/verify.log"
+qualification_evidence = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-24.8-continuation-qualification/result.json"
+build_revision = "5cbb949c3b62d4310f9e02bf3fedcae3c7d1f227"
+build_command = "timeout 120s python3 /root/lx-ops/paxeer-x-integration-2026-10-03/task-24.8-continuation-qualification/source-build.py /root/lx-ops/paxeer-x-integration-2026-10-03/task-24.8-continuation-qualification/source"
+build_exit_code = 0
+build_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-24.8-continuation-qualification/build.log"
 
 [task.25.3]
 title = "Bind manually published candidate artifacts to their accepted provenance source"
