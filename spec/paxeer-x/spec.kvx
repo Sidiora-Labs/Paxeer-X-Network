@@ -26540,7 +26540,7 @@ build_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/fleet-103.6.9-build-a4
 
 [task.103.6.10]
 title = "Bind a real finality-authority verifier in layerxd so the sequencer bootstraps"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 3
 requires = ["0.2", "103.6.11"]
@@ -26550,7 +26550,7 @@ do_2 = "Add cmd/layerxd/lxp_daemon_finality_authority.c implementing lxp_daemon_
 do_3 = "Fix every other defect that stops layerxd --serve bootstrapping from a fresh layerx-genesis-build genesis with absent log files, including log creation capacity in path_empty_or_absent/lxp_log_open and the replica's log growth, so that the sequencer and --authority-replica start, accept a SEND over the LNI, and publish batch evidence to the replica; keep bootstrap_storage_empty and verify_bootstrap_genesis strict."
 do_4 = "Add tests/daemon/lxp_test_finality_authority.c wired into the Makefile test list: a real anvil (pinned Foundry on PATH) chain with the settlement contracts deployed, a registered checkpoint, and proofs that a genuine registration verifies, that a mismatched chain id, contract, checkpoint id, block number, or reverted transaction is refused, and that an unreachable chain returns an unavailability error rather than success; add a shell test that boots layerxd --serve and the replica end to end from genesis and submits one activity."
 do_5 = "Provide this task selector in tools/paxeer-x/gates and execute the full scoped acceptance contract using real production paths. Preserve the retained verification command coverage; move aggregate matrices to release scope and refuse an unknown or unimplemented selector."
-touches = ["cmd/layerxd", "cmd/layerx-genesis", "include/layerx/lxp_daemon.h", "include/layerx/lxp_storage.h", "src/storage/lxp_log.c", "src/protocol/lxp_genesis.c", "tests/test_genesis_manifest.c", "tests/daemon", "platform/hosted/authority/tests/real_node.rs", "Makefile", "tools/paxeer-x/gates/103.6.10.sh"]
+touches = ["cmd/layerxd", "cmd/layerx-genesis", "include/layerx/lxp_daemon.h", "include/layerx/lxp_storage.h", "src/storage/lxp_log.c", "src/protocol/lxp_genesis.c", "tests/test_genesis_manifest.c", "tests/daemon", "platform/hosted/authority/tests/real_node.rs", "tools/paxeer-x/gates/103.6.10.sh"]
 verify_cmd = "timeout 30m tools/paxeer-x/verify-task.sh 103.6.10"
 gate_kind = "planned-adapter"
 max_builds = 1
@@ -26566,6 +26566,13 @@ completion_policy = "Existing implementation is preserved; current candidate qua
 planned_paths = ["tools/paxeer-x/gates/103.6.10.sh"]
 path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
 evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+fanout_role = "integrate_arbiter"
+fanout_scope_delegated = ["Makefile"]
+fanout_basis = "Owner requested maximum parallel implementation on 2026-10-04; delegated shared file edits require root coordination and retain original acceptance criteria"
+source_status = "complete"
+completion_basis = "implementation under owner CONSTITUTION; qualification separately recorded"
+qualification_status = "UNRUN"
+source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-103.6.10-intake.json"
 
 [task.104.14.1]
 title = "Run every journey against the real stack"
