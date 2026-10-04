@@ -34511,7 +34511,7 @@ qualification_note = "Approved lifetime repair compiled all targets. Genuine nat
 
 [task.104.35.35]
 title = "Project bounded native authenticated receipt authority into actual Programs calls"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 4
 requires = ["0.2", "104.35.33"]
@@ -34520,7 +34520,7 @@ do_1 = "Add a distinct bounded native receipt-authority index populated only at 
 do_2 = "Expose an immutable versioned native CALL authority view binding network, protocol, module, operation, result, batch, epoch, sequence, authorization interval, digest, activity, previous/result roots, sequencer identity and key. Derive executing identity and network from actual admitted CALL. No caller key, unbounded lookup or current-key substitution."
 do_3 = "Project the closed actual native view into Runtime FFI without inventing Client sealed authority. Missing, evicted, future or unsealed receipts and mismatched network/batch refuse explicitly. Arbitrary historical retrieval beyond bounded retention and the ABI5 host callback remain separate unfinished integration."
 do_4 = "Author genuine native-owner publication, handover, reopen, CALL view and malformed authorization cases with actual receipts and proofs; preserve old receipt lookup behavior."
-touches = []
+touches = ["include/layerx/programs.h", "src/modules/programs/call.c", "src/protocol/lxp_module_ctx.c"]
 build_cmd = "timeout 20m python3 tools/qualification/paxeer-x/arbiter-native-authority.py --build"
 verify_cmd = "timeout 10m python3 tools/qualification/paxeer-x/arbiter-native-authority.py"
 max_builds = 1
@@ -34534,10 +34534,15 @@ retained_contract_paths_104_35_37 = ["include/layerx/programs.h", "include/layer
 delegated_source_paths_104_35_37 = ["tests/daemon/lxp_test_arbiter_native_authority.c", "tools/paxeer-x/build/104.35.35.mk", "tools/qualification/paxeer-x/arbiter-native-authority.py"]
 lease_transfer_authority_104_35_37 = "Owner approved inactive lease reassignment; all original criteria and isolated partial source remain preserved."
 retained_production_paths_104_35_37 = ["include/layerx/programs.h", "include/layerx/lxp_receipt.h", "include/layerx/lxp_module.h", "src/modules/programs/call.c", "src/protocol/lxp_receipt.c", "src/protocol/lxp_module_ctx.c", "cmd/layerxd/lxp_daemon_protocol.c", "programs/crates/layerx-programs-runtime/src/ffi_call.rs", "programs/crates/layerx-programs-runtime/src/lib.rs"]
-source_status = "partial"
+source_status = "complete"
 qualification_status = "UNRUN"
-remaining_source = "Frozen production authority components integrated; mandatory genuine owner/CALL/handover fixture remains absent and task37 remains partial."
+remaining_source = "Complete within declared bounded receipt authority scope; runtime qualification remains outstanding."
 handoff_path = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-104.35.35-source-handoff.json"
+fleet_authority = "User explicitly ordered30agents into pending integrations within4hours; fresh bounded source implementation resumes. Preserve prior source/evidence and every assertion."
+fleet_role = "/root/integrate_arbiter/admission_mapping"
+fleet_scope_manifest = "/root/lx-ops/paxeer-x-integration-2026-10-03/fleet-104.35.35-brief.json"
+completion_basis = "Owner CONSTITUTION implementation completion; native producer retained and actual CALL/handover/reopen corpus now implemented by104.35.37."
+source_dependency_revision = "b3e076057185992f8447a7ef5495241e5bbf6fda"
 
 [task.104.35.37]
 title = "Connect the actual daemon lifecycle to native receipt-authority integration cases"
