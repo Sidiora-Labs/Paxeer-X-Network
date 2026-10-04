@@ -1016,6 +1016,7 @@ dependencies = [
  "base64 0.22.1",
  "getrandom 0.3.4",
  "k256",
+ "layerx-agent-api",
  "layerx-client",
  "layerx-crypto",
  "layerx-human-service",

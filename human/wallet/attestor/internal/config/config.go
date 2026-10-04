@@ -46,6 +46,7 @@ const (
 	EnvAgentsFile           = "ATTESTOR_AGENTS_FILE"
 	EnvAgentMaxExpiry       = "ATTESTOR_AGENT_MAX_EXPIRY"
 	EnvKernelPolicy         = "ATTESTOR_KERNEL_POLICY_FILE"
+ EnvNativePolicy = "ATTESTOR_NATIVE_POLICY_FILE"
 	DefaultJWTMaxAge        = time.Hour
 	DefaultAgentExpiry      = 5 * time.Minute
 	EnvSnapshotInterval     = "ATTESTOR_SNAPSHOT_INTERVAL"
@@ -99,6 +100,7 @@ type Config struct {
 	AgentsFile       string
 	AgentMaxExpiry   time.Duration
 	KernelPolicy     string
+ NativePolicy string
 	SnapshotInterval time.Duration
 	SnapshotRetain   int
 }
@@ -129,6 +131,7 @@ func Load(getenv func(string) string) (*Config, error) {
 		RPCURL:         get(EnvRPCURL),
 		AgentsFile:     get(EnvAgentsFile),
 		KernelPolicy:   get(EnvKernelPolicy),
+ NativePolicy: get(EnvNativePolicy),
 	}
 
 	var err error

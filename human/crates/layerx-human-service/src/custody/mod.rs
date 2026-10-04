@@ -10,7 +10,7 @@ mod sessions;
 mod signer;
 
 pub use provider::{
-    KmsProvider, PrincipalKeyBinding, ProviderDeployment, ProviderKeyDescription,
+    KmsProvider, NativeConsent, ProviderNativeSignRequest, PrincipalKeyBinding, ProviderDeployment, ProviderKeyDescription,
     ProviderKeyReference, ProviderSignRequest, RemoteCustodySigner, RemoteKmsProvider,
     RotationState,
 };
@@ -24,7 +24,7 @@ pub use sessions::{
 };
 
 pub use signer::{
-    CustodySigner, Operation, SettlementRecipientRequest, SignAuthorization, SignRequest,
+    CustodySigner, NativeConsentRequest, Operation, SettlementRecipientRequest, SignAuthorization, SignRequest,
     SignatureGrant, SigningLimits, StepUpEvidence,
 };
 

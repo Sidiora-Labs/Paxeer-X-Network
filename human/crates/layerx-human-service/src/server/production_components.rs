@@ -7935,6 +7935,30 @@ impl AttestorKms {
             })?;
         Ok(*signature.signature())
     }
+    fn sign_native_now(
+        &self, binding: &PrincipalKeyBinding, reference: &ProviderKeyReference,
+        request: crate::custody::ProviderNativeSignRequest<'_>,
+    ) -> Result<[u8; 64], CustodyError> {
+        let (key_id, public_key, owner) = attestor_reference_parts(reference).map_err(CustodyError::Kms)?;
+        if key_id != attestor_key_id(binding) || binding.class() != KeyClass::HumanPrimary
+            || !layerx_crypto::ct::eq_fixed(&public_key, &request.expected_public_key()) {
+            return Err(CustodyError::Kms(KmsError::Integrity));
+        }
+        request.consent().validate_at(request.now_ms(), public_key)?;
+        let assertion = self.inner.assertions.lock().map_err(|_| CustodyError::Kms(KmsError::Unavailable))?
+            .remove(&owner).ok_or(CustodyError::Kms(KmsError::Authentication))?;
+        if assertion_subject(assertion.as_str()).ok().as_deref() != Some(owner.as_str()) {
+            return Err(CustodyError::Kms(KmsError::Authentication));
+        }
+        let signer = self.signer(&key_id, public_key, binding.network_id()).map_err(attestor_custody_failure)?;
+        let session = layerx_human_kms::attestor::new_session_id("native-consent").map_err(attestor_custody_failure)?;
+        let signed = match request.consent() {
+            crate::custody::NativeConsent::PreparationPurpose(purpose) => signer.sign_native_preparation_purpose(purpose, &session, assertion.as_str()),
+            crate::custody::NativeConsent::LocalGrant(grant) => signer.sign_native_local_grant(grant, &session, assertion.as_str()),
+        }.map_err(|error| { self.refused(&error); attestor_custody_failure(error) })?;
+        Ok(*signed.signature())
+    }
+
 }
 
 impl crate::custody::KmsProvider for AttestorKms {
@@ -8067,6 +8091,13 @@ impl crate::custody::KmsProvider for AttestorKms {
         _reference: &ProviderKeyReference,
     ) -> Result<(), KmsError> {
         Err(KmsError::Refused)
+    }
+
+    fn sign_native<'a>(
+        &'a self, binding: &'a PrincipalKeyBinding, reference: &'a ProviderKeyReference,
+        request: crate::custody::ProviderNativeSignRequest<'a>,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<[u8; 64], CustodyError>> + Send + 'a>> {
+        Box::pin(async move { self.sign_native_now(binding, reference, request) })
     }
 
     fn sign<'a>(

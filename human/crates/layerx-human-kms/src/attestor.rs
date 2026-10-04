@@ -22,6 +22,7 @@ pub const KIND_SEND_AUTHORIZATION: &str = "lx_send_authorization";
 pub const MIN_SIGNERS: usize = 3;
 pub const APPROVAL_VERSION: u8 = 1;
 const PATH_SIGN: &str = "/v1/sign";
+const PATH_SIGN_NATIVE: &str = "/v2/sign/native";
 const PATH_GENERATE: &str = "/v1/keys/generate";
 const PATH_PUBLIC_WALLET: &str = "/v1/keys/public-wallet";
 const PATH_HEALTH: &str = "/health";
@@ -507,6 +508,7 @@ pub struct AttestorSigner {
     signers: Vec<String>,
     network: u32,
     audit: Mutex<BTreeMap<String, u64>>,
+    native_replays: Mutex<BTreeMap<String, NativeReplay>>,
 }
 
 impl fmt::Debug for AttestorSigner {
@@ -560,6 +562,7 @@ impl AttestorSigner {
             signers: distinct.into_iter().map(str::to_owned).collect(),
             network,
             audit: Mutex::new(BTreeMap::new()),
+            native_replays: Mutex::new(BTreeMap::new()),
         })
     }
 
@@ -820,6 +823,94 @@ impl AttestorSigner {
             digest,
             audit,
         })
+    }
+
+    pub fn sign_native_preparation_purpose(
+        &self,
+        purpose: &layerx_agent_api::identity::NativePreparationPurposeV1,
+        session_id: &str,
+        assertion: &str,
+    ) -> Result<AttestorSignature, AttestorError> {
+        let canonical = purpose.canonical_bytes().map_err(|_| native_invalid())?;
+        let decoded = layerx_agent_api::identity::NativePreparationPurposeV1::from_canonical_bytes(&canonical)
+            .map_err(|_| native_invalid())?;
+        if &decoded != purpose { return Err(native_invalid()); }
+        let purpose = encode_hex(&canonical);
+        self.request_native_signature(NativeSignBody {
+            profile: 2, session_id, key_id: &self.key_id,
+            operation: "preparation-purpose", signers: &self.signers,
+            purpose: Some(&purpose), capability: None, native_session: None, expiry_ms: None,
+        }, Sha256::digest(&canonical).into(), assertion)
+    }
+
+    pub fn sign_native_local_grant(
+        &self,
+        grant: &layerx_agent_api::identity::NativeLocalGrantConsentV1,
+        session_id: &str,
+        assertion: &str,
+    ) -> Result<AttestorSignature, AttestorError> {
+        if grant.owner_public_key != self.public_key || grant.signature != [0; 64] {
+            return Err(native_invalid());
+        }
+        validate_native_local_grant(grant)?;
+        let canonical = native_local_grant_signing_bytes(grant)?;
+        let capability = encode_hex(&grant.capability);
+        let native_session = encode_hex(&grant.session_scope);
+        let expiry = grant.expires_at_ms.to_string();
+        self.request_native_signature(NativeSignBody {
+            profile: 2, session_id, key_id: &self.key_id,
+            operation: "local-grant-consent", signers: &self.signers,
+            purpose: None, capability: Some(&capability), native_session: Some(&native_session),
+            expiry_ms: Some(&expiry),
+        }, Sha256::digest(&canonical).into(), assertion)
+    }
+
+    fn request_native_signature(
+        &self, body: NativeSignBody<'_>, digest: [u8; 32], assertion: &str,
+    ) -> Result<AttestorSignature, AttestorError> {
+        if !valid_identifier(body.session_id) || assertion.is_empty() {
+            return Err(AttestorError::Configuration("native assertion/session"));
+        }
+        let bytes = Zeroizing::new(serde_json::to_vec(&body)
+            .map_err(|_| AttestorError::Configuration("native sign request"))?);
+        let request_digest: [u8; 32] = Sha256::digest(&*bytes).into();
+        let mut replays = self.native_replays.lock().map_err(|_| AttestorError::Configuration("native replay lock"))?;
+        let previous = replays.get(body.session_id).cloned();
+        if previous.as_ref().is_some_and(|record| record.request_digest != request_digest)
+            || (previous.is_none() && replays.len() >= 512) { return Err(native_invalid()); }
+        let results = self.client.post_all(&self.signers, PATH_SIGN_NATIVE, &bytes, Some(assertion));
+        let mut signature = None;
+        let mut audit = BTreeMap::new();
+        for (node, result) in results {
+            let response: NativeSignResponse = serde_json::from_slice(&result?)
+                .map_err(|_| malformed(&node))?;
+            if response.profile != 2 || response.node_id != node || response.key_id != self.key_id
+                || response.operation != body.operation { return Err(malformed(&node)); }
+            let signed = decode_fixed::<32>(&response.signed_bytes).ok_or_else(|| malformed(&node))?;
+            let returned = decode_fixed::<64>(&response.signature).ok_or_else(|| malformed(&node))?;
+            if response.signed_bytes != encode_hex(&signed) || response.signature != encode_hex(&returned)
+                || !layerx_crypto::ct::eq_fixed(&signed, &digest) { return Err(malformed(&node)); }
+            layerx_crypto::ed25519::verify_digest(&self.public_key, &returned, &digest)
+                .map_err(|_| AttestorError::SignatureInvalid { node: node.clone() })?;
+            if signature.is_some_and(|previous| previous != returned) { return Err(malformed(&node)); }
+            signature = Some(returned);
+            audit.insert(node, response.audit_sequence);
+        }
+        if audit.len() != self.signers.len() { return Err(AttestorError::Configuration("native signing quorum")); }
+        let signature = signature.ok_or(AttestorError::Configuration("native signing quorum"))?;
+        let exact_replay = previous.as_ref().is_some_and(|record| record.signature == signature
+            && record.digest == digest && record.audit == audit);
+        let mut recorded = self.recorded();
+        for (node, sequence) in &audit {
+            if *sequence == 0 || (!exact_replay && recorded.get(node).is_some_and(|previous| sequence <= previous)) {
+                return Err(malformed(node));
+            }
+        }
+        for (node, sequence) in &audit {
+            let entry = recorded.entry(node.clone()).or_default(); *entry = (*entry).max(*sequence);
+        }
+        replays.insert(body.session_id.to_owned(), NativeReplay { request_digest, signature, digest, audit: audit.clone() });
+        Ok(AttestorSignature { signature, digest, audit })
     }
 
     fn recorded(&self) -> MutexGuard<'_, BTreeMap<String, u64>> {
@@ -1306,3 +1397,188 @@ const fn nibble(digit: u8) -> Option<u8> {
         _ => None,
     }
 }
+
+#[derive(Serialize)]
+struct NativeSignBody<'a> {
+    profile: u8,
+    session_id: &'a str,
+    key_id: &'a str,
+    operation: &'a str,
+    signers: &'a [String],
+    #[serde(skip_serializing_if = "Option::is_none")]
+    purpose: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    capability: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    native_session: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    expiry_ms: Option<&'a str>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct NativeSignResponse {
+    profile: u8,
+    node_id: String,
+    key_id: String,
+    operation: String,
+    signed_bytes: String,
+    signature: String,
+    audit_sequence: u64,
+}
+
+fn native_invalid() -> AttestorError { AttestorError::Configuration("native consent binding") }
+
+pub struct NativeGrantCoordinates {
+    pub tenant: String,
+    pub agent: String,
+    pub session_id: [u8; 32],
+    pub generation: u64,
+    pub capability_id: [u8; 32],
+    pub created_at_ms: u64,
+    pub expires_at_ms: u64,
+}
+
+struct NativeReader<'a> { bytes: &'a [u8], at: usize }
+impl<'a> NativeReader<'a> {
+    fn take(&mut self, length: usize) -> Result<&'a [u8], AttestorError> {
+        let end = self.at.checked_add(length).ok_or_else(native_invalid)?;
+        let value = self.bytes.get(self.at..end).ok_or_else(native_invalid)?;
+        self.at = end; Ok(value)
+    }
+    fn array<const N: usize>(&mut self) -> Result<[u8; N], AttestorError> {
+        self.take(N)?.try_into().map_err(|_| native_invalid())
+    }
+    fn u8(&mut self) -> Result<u8, AttestorError> { Ok(self.array::<1>()?[0]) }
+    fn u16(&mut self) -> Result<u16, AttestorError> { Ok(u16::from_be_bytes(self.array()?)) }
+    fn u32(&mut self) -> Result<u32, AttestorError> { Ok(u32::from_be_bytes(self.array()?)) }
+    fn u64(&mut self) -> Result<u64, AttestorError> { Ok(u64::from_be_bytes(self.array()?)) }
+    fn u128(&mut self) -> Result<u128, AttestorError> { Ok(u128::from_be_bytes(self.array()?)) }
+    fn text(&mut self) -> Result<String, AttestorError> {
+        let length = usize::from(self.u16()?);
+        String::from_utf8(self.take(length)?.to_vec()).map_err(|_| native_invalid())
+    }
+    fn end(&self) -> Result<(), AttestorError> {
+        if self.at == self.bytes.len() { Ok(()) } else { Err(native_invalid()) }
+    }
+    fn ids(&mut self) -> Result<BTreeSet<[u8; 32]>, AttestorError> {
+        let mut ids = BTreeSet::new();
+        for _ in 0..self.u16()? {
+            let id = self.array()?;
+            if ids.last().is_some_and(|previous| *previous >= id) { return Err(native_invalid()); }
+            ids.insert(id);
+        }
+        Ok(ids)
+    }
+    fn activities(&mut self) -> Result<BTreeSet<layerx_agent_api::identity::NativeActivity>, AttestorError> {
+        let mut values = BTreeSet::new();
+        for _ in 0..self.u16()? {
+            let value = layerx_agent_api::identity::NativeActivity::decode(self.take(5)?)
+                .map_err(|_| native_invalid())?;
+            if values.last().is_some_and(|previous| *previous >= value) { return Err(native_invalid()); }
+            values.insert(value);
+        }
+        Ok(values)
+    }
+}
+
+pub fn native_local_grant_signing_bytes(
+    grant: &layerx_agent_api::identity::NativeLocalGrantConsentV1,
+) -> Result<Vec<u8>, AttestorError> {
+    validate_native_local_grant(grant)?;
+    let mut bytes = b"LayerX/native/local-grant/v1\0".to_vec();
+    bytes.extend_from_slice(&grant.expires_at_ms.to_be_bytes());
+    bytes.extend_from_slice(&grant.owner_public_key);
+    for record in [&grant.capability, &grant.session_scope] {
+        let length = u32::try_from(record.len()).map_err(|_| native_invalid())?;
+        bytes.extend_from_slice(&length.to_be_bytes()); bytes.extend_from_slice(record);
+    }
+    Ok(bytes)
+}
+
+pub fn validate_native_local_grant(
+    grant: &layerx_agent_api::identity::NativeLocalGrantConsentV1,
+) -> Result<NativeGrantCoordinates, AttestorError> {
+    grant.validate().map_err(|_| native_invalid())?;
+    if grant.signature != [0; 64] { return Err(native_invalid()); }
+    let mut outer = NativeReader { bytes: &grant.capability, at: 0 };
+    if outer.take(4)? != b"LXNC" || outer.u8()? != 1 { return Err(native_invalid()); }
+    let length = usize::try_from(outer.u32()?).map_err(|_| native_invalid())?;
+    let mut record = NativeReader { bytes: outer.take(length)?, at: 0 };
+    if record.u8()? != 1 { return Err(native_invalid()); }
+    let capability_id = record.array::<32>()?;
+    match record.u8()? {
+        0 => (),
+        1 => if record.array::<32>()? == capability_id { return Err(native_invalid()); },
+        _ => return Err(native_invalid()),
+    }
+    let tenant = record.text()?;
+    layerx_agent_api::identity::TenantId::new(&tenant).map_err(|_| native_invalid())?;
+    if tenant.len() > 255 || tenant.as_bytes().contains(&0) { return Err(native_invalid()); }
+    let agent = record.text()?;
+    layerx_types::ids::Did::new(agent.as_bytes()).map_err(|_| native_invalid())?;
+    if !(1..=3).contains(&record.u8()?) { return Err(native_invalid()); }
+    record.array::<32>()?;
+    if record.u16()? != 0 { return Err(native_invalid()); }
+    record.ids()?;
+    let assets = record.ids()?;
+    let mut ceilings = BTreeMap::new();
+    for _ in 0..record.u16()? {
+        let asset = record.array::<32>()?; let amount = record.u128()?;
+        if !assets.contains(&asset) || ceilings.last_key_value().is_some_and(|(previous, _)| *previous >= asset) {
+            return Err(native_invalid());
+        }
+        ceilings.insert(asset, amount);
+    }
+    let mut last_window = None;
+    for _ in 0..record.u16()? {
+        let window = record.u64()?; record.u64()?;
+        if window == 0 || last_window.is_some_and(|last| last >= window) { return Err(native_invalid()); }
+        last_window = Some(window);
+    }
+    if record.u16()? != 0 { return Err(native_invalid()); }
+    let expiry_seconds = record.u64()?;
+    let grant_not_after_ms = record.u64()?;
+    let created_at_ms = record.u64()?;
+    record.u64()?;
+    if record.u8()? != 0 || expiry_seconds == 0 || grant_not_after_ms != grant.expires_at_ms
+        || u128::from(expiry_seconds) * 1000 > u128::from(grant.expires_at_ms)
+        || created_at_ms >= grant.expires_at_ms { return Err(native_invalid()); }
+    record.end()?;
+    let activities = outer.activities()?;
+    outer.ids()?;
+    let mut previous_spend = None;
+    for _ in 0..outer.u16()? {
+        let source = match outer.u8()? {
+            0 => (0_u8, [0; 32], Vec::new(), [0; 32]),
+            1 => {
+                let program = outer.array::<32>()?;
+                let length = usize::from(outer.u16()?);
+                let seed = outer.take(length)?.to_vec();
+                let account = outer.array::<32>()?;
+                (1, program, seed, account)
+            },
+            _ => return Err(native_invalid()),
+        };
+        let asset = outer.array::<32>()?; let amount = outer.u128()?;
+        let key = (source, asset);
+        if !assets.contains(&asset) || ceilings.get(&asset).is_none_or(|maximum| amount > *maximum)
+            || previous_spend.as_ref().is_some_and(|last| last >= &key) { return Err(native_invalid()); }
+        previous_spend = Some(key);
+    }
+    outer.end()?;
+    let mut session = NativeReader { bytes: &grant.session_scope, at: 0 };
+    if session.take(6)? != b"LXNS01" || session.text()? != tenant || session.text()? != agent {
+        return Err(native_invalid());
+    }
+    let session_id = session.array::<32>()?;
+    let generation = session.u64()?;
+    let permitted = session.activities()?;
+    if session_id == [0; 32] || generation == 0 || !activities.is_subset(&permitted) { return Err(native_invalid()); }
+    session.end()?;
+    Ok(NativeGrantCoordinates { tenant, agent, session_id, generation, capability_id,
+        created_at_ms, expires_at_ms: grant.expires_at_ms })
+}
+
+#[derive(Clone)]
+struct NativeReplay { request_digest: [u8;32], signature: [u8;64], digest: [u8;32], audit: BTreeMap<String,u64> }

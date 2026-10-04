@@ -369,6 +369,57 @@ struct ValidatedSignRequest {
     disclosure: Vec<u8>,
 }
 
+#[derive(Clone, Copy, Debug)]
+pub enum NativeConsent<'a> {
+    PreparationPurpose(&'a layerx_agent_api::identity::NativePreparationPurposeV1),
+    LocalGrant(&'a layerx_agent_api::identity::NativeLocalGrantConsentV1),
+}
+
+impl NativeConsent<'_> {
+    pub fn digest(self) -> Result<[u8; 32], CustodyError> {
+        let bytes = match self {
+            Self::PreparationPurpose(value) => value.canonical_bytes().map_err(|_| CustodyError::InvalidEvidence)?,
+            Self::LocalGrant(value) => layerx_human_kms::attestor::native_local_grant_signing_bytes(value)
+                .map_err(|_| CustodyError::InvalidEvidence)?,
+        };
+        Ok(Sha256::digest(bytes).into())
+    }
+
+    pub fn validate_at(self, now_ms: u64, expected_public_key: [u8; 32]) -> Result<(), CustodyError> {
+        match self {
+            Self::PreparationPurpose(value) => {
+                let canonical = value.canonical_bytes().map_err(|_| CustodyError::InvalidEvidence)?;
+                let actual = layerx_agent_api::identity::NativePreparationPurposeV1::from_canonical_bytes(&canonical)
+                    .map_err(|_| CustodyError::InvalidEvidence)?;
+                if &actual != value || now_ms >= value.expires_at_ms { return Err(CustodyError::InvalidEvidence); }
+            },
+            Self::LocalGrant(value) => {
+                let coordinates = layerx_human_kms::attestor::validate_native_local_grant(value)
+                    .map_err(|_| CustodyError::InvalidEvidence)?;
+                if value.owner_public_key != expected_public_key || now_ms >= value.expires_at_ms
+                    || now_ms < coordinates.created_at_ms { return Err(CustodyError::InvalidEvidence); }
+            },
+        }
+        Ok(())
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct ProviderNativeSignRequest<'a> {
+    consent: NativeConsent<'a>,
+    expected_public_key: [u8; 32],
+    now_ms: u64,
+}
+
+impl<'a> ProviderNativeSignRequest<'a> {
+    pub(super) const fn new(consent: NativeConsent<'a>, expected_public_key: [u8; 32], now_ms: u64) -> Self {
+        Self { consent, expected_public_key, now_ms }
+    }
+    pub const fn consent(self) -> NativeConsent<'a> { self.consent }
+    pub const fn expected_public_key(self) -> [u8; 32] { self.expected_public_key }
+    pub const fn now_ms(self) -> u64 { self.now_ms }
+}
+
 /// Future returned by object-safe KMS provider signing.
 pub type KmsSignFuture<'a> =
     Pin<Box<dyn Future<Output = Result<[u8; 64], CustodyError>> + Send + 'a>>;
@@ -490,6 +541,13 @@ pub trait KmsProvider: Debug + Send + Sync {
         reference: &ProviderKeyReference,
     ) -> Result<(), KmsError>;
 
+    fn sign_native<'a>(
+        &'a self, _binding: &'a PrincipalKeyBinding, _reference: &'a ProviderKeyReference,
+        _request: ProviderNativeSignRequest<'a>,
+    ) -> KmsSignFuture<'a> {
+        Box::pin(async { Err(CustodyError::Kms(KmsError::Refused)) })
+    }
+
     /// Signs only a complete disclosure-bound request and returns only the
     /// public signature bytes.
     ///
@@ -542,6 +600,16 @@ impl RemoteCustodySigner {
     #[must_use]
     pub const fn class(&self) -> KeyClass {
         self.class
+    }
+
+    pub async fn sign_native_consent(&self, consent: NativeConsent<'_>, now_ms: u64) -> Result<[u8;64], CustodyError> {
+        consent.validate_at(now_ms, self.public_key)?;
+        let digest = consent.digest()?;
+        let signature = self.provider.sign_native(&self.binding, &self.reference,
+            ProviderNativeSignRequest::new(consent, self.public_key, now_ms)).await?;
+        layerx_crypto::ed25519::verify_digest(&self.public_key, &signature, &digest)
+            .map_err(|_| CustodyError::Sign(layerx_crypto::signer::SignError::ReturnedSignatureInvalid))?;
+        Ok(signature)
     }
 
     /// Sends the exact canonical bytes and matching disclosure to the provider

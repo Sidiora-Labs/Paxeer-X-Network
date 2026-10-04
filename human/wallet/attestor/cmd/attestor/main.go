@@ -27,6 +27,7 @@ import (
 	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/lxwire"
 	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/policy"
 	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/policy/lx"
+ nativepolicy "github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/policy/native"
 	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/replica"
 	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/server"
 	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/store"
@@ -272,7 +273,9 @@ func run(ctx context.Context, getenv func(string) string, ready func(listening))
 	}
 	defer tr.Close()
 
-	srv, err := server.New(server.Options{
+	var nativeDoc *nativepolicy.Document
+ if cfg.NativePolicy != "" { nativeDoc,err = nativepolicy.LoadFile(cfg.NativePolicy); if err != nil { return fmt.Errorf("attestor: %s: %w",config.EnvNativePolicy,err) } }
+ srv, err := server.New(server.Options{
 		NodeID:       cfg.NodeID,
 		Region:       cfg.Region,
 		ChainID:      cfg.ChainID,
@@ -283,6 +286,7 @@ func run(ctx context.Context, getenv func(string) string, ready func(listening))
 		Transport:    tr,
 		Policy:       engine,
 		Kernel:       kernel,
+ NativePolicy: nativeDoc,
 		Ledger:       ledger,
 		Clients:      clients,
 		Tokens:       tokens,

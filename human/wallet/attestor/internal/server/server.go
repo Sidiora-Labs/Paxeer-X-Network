@@ -24,6 +24,7 @@ import (
 	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/lxwire"
 	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/policy"
 	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/policy/lx"
+ nativepolicy "github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/policy/native"
 	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/store"
 	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/transport"
 )
@@ -53,6 +54,7 @@ type Options struct {
 	Transport       *transport.Transport
 	Policy          *policy.Policy
 	Kernel          *lx.Evaluator
+ NativePolicy *nativepolicy.Document
 	Ledger          policy.Ledger
 	Clients         *ClientAuthorities
 	Tokens          *jwt.TokenVerifier
@@ -85,7 +87,8 @@ func New(opts Options) (*Server, error) {
 	if opts.NodeID == "" || opts.ChainID == 0 || opts.Store == nil || opts.Audit == nil || opts.Transport == nil || opts.Policy == nil || opts.Ledger == nil || opts.Clients == nil {
 		return nil, errors.New("server: node id, chain id, store, audit log, transport, policy, ledger and client authorities are required")
 	}
-	participants, ok := sortedUnique(opts.Participants)
+	if opts.NativePolicy != nil { if err := opts.NativePolicy.Validate(); err != nil { return nil, fmt.Errorf("server: native-v2 policy: %w",err) } }
+ participants, ok := sortedUnique(opts.Participants)
 	if !ok || len(participants) < 2 {
 		return nil, errors.New("server: participants must be distinct non-empty ids")
 	}
@@ -138,6 +141,7 @@ func New(opts Options) (*Server, error) {
 	s.mux.HandleFunc(PathPublicWallet, s.post(s.gatewayOnly("keys.public-wallet", s.HandlePublicWallet)))
 	s.mux.HandleFunc(PathAuthority, s.post(s.gatewayOnly("custody.authority", s.HandleAuthority)))
 	s.mux.HandleFunc(PathSign, s.post(s.signRoute()))
+ s.mux.HandleFunc(PathNativeSign,s.post(s.gatewayOnly("sign.native-v2",s.HandleNativeSign)))
 	s.mux.HandleFunc(PathLXReview, s.post(s.gatewayOnly("lx.review", s.HandleLXReview)))
 	s.mux.HandleFunc(PathHealth, s.HandleHealth)
 	return s, nil

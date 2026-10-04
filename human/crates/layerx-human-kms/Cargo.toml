@@ -6,6 +6,7 @@ rust-version.workspace = true
 license.workspace = true
 
 [dependencies]
+layerx-agent-api.workspace = true
 layerx-intents.workspace = true
 getrandom.workspace = true
 k256.workspace = true

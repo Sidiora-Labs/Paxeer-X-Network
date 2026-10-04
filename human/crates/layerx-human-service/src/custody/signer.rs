@@ -244,6 +244,22 @@ impl Debug for SignRequest<'_> {
     }
 }
 
+pub struct NativeConsentRequest<'a> {
+    principal: &'a PrincipalId,
+    key: &'a KeyId,
+    consent: super::NativeConsent<'a>,
+    authorization: SignAuthorization<'a>,
+    now: u64,
+    trace: TraceId,
+}
+
+impl<'a> NativeConsentRequest<'a> {
+    pub const fn new(principal: &'a PrincipalId, key: &'a KeyId, consent: super::NativeConsent<'a>,
+        authorization: SignAuthorization<'a>, now: u64, trace: TraceId) -> Self {
+        Self { principal, key, consent, authorization, now, trace }
+    }
+}
+
 /// Public material returned after one audited custody signing grant.
 #[derive(Clone, Copy, Eq, PartialEq)]
 pub struct SignatureGrant {
@@ -892,5 +908,60 @@ impl CustodySigner {
         authorization: &super::SendPlanAuthorization,
     ) -> Result<[u8; 64], CustodyError> {
         self.keystore.authorize_send(principal, key, authorization)
+    }
+}
+
+impl CustodySigner {
+    pub async fn sign_native_consent_in_scope(
+        &self, scope: &mut PrincipalScope<'_>, request: NativeConsentRequest<'_>,
+    ) -> Result<SignatureGrant, CustodyError> {
+        if scope.principal() != request.principal { return Err(CustodyError::InvalidEvidence); }
+        let digest = request.consent.digest();
+        let result = self.perform_native_consent(scope, &request, digest.as_ref().ok().copied()).await;
+        let step_up = match request.authorization.step_up {
+            Some(evidence) => AuditStepUpEvidence::Fresh { ceremony_digest: ceremony_digest(evidence)? },
+            None if request.authorization.operation.requires_step_up() => AuditStepUpEvidence::Missing,
+            None => AuditStepUpEvidence::NotRequired,
+        };
+        let event = AuditEvent::SigningDecision {
+            operation: match request.consent {
+                super::NativeConsent::PreparationPurpose(_) => SigningOperation::ProtocolMutation,
+                super::NativeConsent::LocalGrant(_) => SigningOperation::SecuritySettings,
+            },
+            disclosure_digest: digest.unwrap_or([0; 32]), step_up,
+            outcome: if result.is_ok() { Decision::Granted } else { Decision::Refused },
+        };
+        let mut chain = AuditChain::open(scope).map_err(CustodyError::Audit)?;
+        chain.append(scope, request.now, request.trace, &event, &[]).map_err(CustodyError::Audit)?;
+        result
+    }
+
+    async fn perform_native_consent(
+        &self, scope: &mut PrincipalScope<'_>, request: &NativeConsentRequest<'_>,
+        digest: Option<[u8; 32]>,
+    ) -> Result<SignatureGrant, CustodyError> {
+        let digest = digest.ok_or(CustodyError::InvalidEvidence)?;
+        let expected_operation = match request.consent {
+            super::NativeConsent::PreparationPurpose(_) => Operation::ProtocolMutation,
+            super::NativeConsent::LocalGrant(_) => Operation::SecuritySettings,
+        };
+        if request.authorization.operation != expected_operation { return Err(CustodyError::StepUpOperationMismatch); }
+        match request.authorization.step_up {
+            None if expected_operation.requires_step_up() => return Err(CustodyError::StepUpRequired),
+            Some(evidence) => {
+                if evidence.operation != expected_operation { return Err(CustodyError::StepUpOperationMismatch); }
+                if evidence.disclosure_digest != digest { return Err(CustodyError::StepUpMismatch); }
+                if request.now < evidence.valid_from { return Err(CustodyError::StepUpNotYetValid); }
+                if request.now >= evidence.expires_at { return Err(CustodyError::StepUpExpired); }
+                if expected_operation.requires_step_up() { consume_step_up_in_scope(scope, evidence, request.now)?; }
+            },
+            None => (),
+        }
+        consume_rate_in_scope(scope, self.limits, request.now)?;
+        let now_ms = request.now.checked_mul(1000).ok_or(CustodyError::InvalidEvidence)?;
+        let signer = self.keystore.remote_signer(request.principal, request.key)?;
+        if signer.class() != super::KeyClass::HumanPrimary { return Err(CustodyError::InvalidEvidence); }
+        let signature = signer.sign_native_consent(request.consent, now_ms).await?;
+        Ok(SignatureGrant { signature, signer_public_key: signer.public_key(), disclosure_digest: digest })
     }
 }
