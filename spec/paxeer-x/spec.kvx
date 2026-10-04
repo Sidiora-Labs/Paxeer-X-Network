@@ -26306,7 +26306,7 @@ source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/fleet-103.6.8-pub
 
 [task.103.6.9]
 title = "Serve program simulation over the LNI if the boundary recorded the gap"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 3
 requires = ["0.2", "103.6.4"]
@@ -26331,6 +26331,12 @@ completion_policy = "Existing implementation is preserved; current candidate qua
 planned_paths = ["tools/paxeer-x/gates/103.6.9.sh"]
 path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
 evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+fleet_role = "integrate_dependencies"
+implementation_window = "2026-10-04T13:22:09.647272+00:00 to 2026-10-04T13:52:09.647272+00:00"
+source_status = "complete"
+completion_basis = "implementation under owner CONSTITUTION; qualification separately recorded"
+qualification_status = "UNRUN"
+source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/fleet-103.6.9-publication.json"
 
 [task.103.6.10]
 title = "Bind a real finality-authority verifier in layerxd so the sequencer bootstraps"
