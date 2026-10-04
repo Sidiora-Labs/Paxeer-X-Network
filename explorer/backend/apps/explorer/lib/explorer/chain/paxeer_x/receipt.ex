@@ -145,7 +145,7 @@ defmodule Explorer.Chain.PaxeerX.Receipt do
     |> default_block_consensus()
     |> foreign_key_constraint(:transaction_hash)
     |> foreign_key_constraint(:block_hash)
-    |> constraints()
+    |> receipt_constraints()
   end
 
   defp kernel_changeset(receipt, attrs) do
@@ -160,10 +160,10 @@ defmodule Explorer.Chain.PaxeerX.Receipt do
     |> validate_number(:kernel_sequence, greater_than_or_equal_to: 0)
     |> validate_receipt_id_is_activity_id()
     |> validate_kernel_proof()
-    |> constraints()
+    |> receipt_constraints()
   end
 
-  defp constraints(changeset) do
+  defp receipt_constraints(changeset) do
     changeset
     |> unique_constraint([:transaction_hash, :log_index], name: :lx_receipts_transaction_hash_log_index_index)
     |> unique_constraint([:kernel_batch_number, :kernel_sequence],
