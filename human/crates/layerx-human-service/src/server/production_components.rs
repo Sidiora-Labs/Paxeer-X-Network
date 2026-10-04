@@ -2224,27 +2224,221 @@ fn agent_failure_from_creation_contract(error: crate::agents::AgentFailure) -> A
     }
 }
 
+fn creation_stage_code(stage: crate::agents::CreationStage) -> u8 {
+    use crate::agents::CreationStage;
+    match stage {
+        CreationStage::Custody => 1,
+        CreationStage::DidRegistration => 2,
+        CreationStage::RecoveryRegistration => 3,
+        CreationStage::SessionProvision => 4,
+        CreationStage::CapabilityNarrowing => 5,
+        CreationStage::BudgetCreation => 6,
+        CreationStage::BudgetFunding => 7,
+        CreationStage::MainFunding => 8,
+        CreationStage::AssetAccountOpening => 9,
+        CreationStage::InitialFunding => 10,
+    }
+}
+
+fn creation_material(
+    scope: &crate::store::PrincipalScope<'_>,
+    agent: &mut AgentRuntime,
+    journey: &CreationJourney,
+    stage: crate::agents::CreationStage,
+) -> Result<Option<serde_json::Value>, ApiFailure> {
+    use crate::agents::CreationStage;
+    let source_stage = if stage == CreationStage::Custody {
+        CreationStage::DidRegistration
+    } else {
+        stage
+    };
+    let full_id = hex_bytes(&journey.agent_id());
+    let short_id = &full_id[..32];
+    let key = RowKey::new(format!("agent-create-{short_id}"))
+        .map_err(|_| ApiFailure::upstream_degraded())?;
+    let record: serde_json::Value = serde_json::from_slice(
+        scope.get(Table::Journeys, &key).ok_or_else(ApiFailure::upstream_degraded)?.bytes(),
+    ).map_err(|_| ApiFailure::upstream_degraded())?;
+    let progress = record["stages"].as_array().ok_or_else(ApiFailure::upstream_degraded)?
+        .iter().find(|value| {
+            serde_json::from_value::<CreationStage>(value["stage"].clone()).ok() == Some(source_stage)
+        }).ok_or_else(ApiFailure::upstream_degraded)?;
+    if progress["evidence_digest"].is_null() {
+        return Ok(None);
+    }
+    let expected: [u8; 32] = serde_json::from_value(progress["evidence_digest"].clone())
+        .map_err(|_| ApiFailure::upstream_degraded())?;
+    let action_key: [u8; 32] = serde_json::from_value(progress["action_key"].clone())
+        .map_err(|_| ApiFailure::upstream_degraded())?;
+    let object: [u8; 32] = serde_json::from_value(progress["object_id"].clone())
+        .map_err(|_| ApiFailure::upstream_degraded())?;
+    let code = creation_stage_code(source_stage);
+    let evidence_key = RowKey::new(format!("agent-create-{short_id}-e{code}"))
+        .map_err(|_| ApiFailure::upstream_degraded())?;
+    let row = scope.get(Table::Journeys, &evidence_key)
+        .ok_or_else(ApiFailure::upstream_degraded)?;
+    if source_stage == CreationStage::CapabilityNarrowing {
+        let (key, object_id, sequence, rank, recorded): ([u8; 32], [u8; 32], u64, u8, [u8; 32]) =
+            serde_json::from_slice(row.bytes()).map_err(|_| ApiFailure::upstream_degraded())?;
+        let observation = crate::agents::AgentEvidence {
+            action_key: key,
+            object_id,
+            observed_sequence: sequence,
+            verification_level: match rank {
+                2 => layerx_types::verify::VerificationLevel::BATCH_INCLUDED,
+                3 => layerx_types::verify::VerificationLevel::STATE_PROVEN,
+                4 => layerx_types::verify::VerificationLevel::CHECKPOINT_FINALISED,
+                5 => layerx_types::verify::VerificationLevel::SETTLEMENT_ANCHORED,
+                _ => return Err(ApiFailure::upstream_degraded()),
+            },
+            receipt_digest: recorded,
+        };
+        if key != action_key || object_id != object || object_id == [0; 32] || sequence == 0 || rank < 2
+            || recorded != expected || recorded != observation.expected_digest(source_stage)
+        {
+            return Err(ApiFailure::upstream_degraded());
+        }
+        return Ok(Some(super::projection::owned_material(
+            row.bytes(), "local-journey-state", "application/vnd.layerx.agent-capability-evidence",
+        )));
+    }
+    let native_key = RowKey::new(format!("native-create-activity-{full_id}-{code}"))
+        .map_err(|_| ApiFailure::upstream_degraded())?;
+    let protocol_key = RowKey::new(format!("protocol-signed-{}", hex_bytes(&action_key)))
+        .map_err(|_| ApiFailure::upstream_degraded())?;
+    let signed = scope.get(Table::Journeys, &native_key)
+        .or_else(|| scope.get(Table::Journeys, &protocol_key))
+        .ok_or_else(ApiFailure::upstream_degraded)?;
+    let activity = layerx_intents::owner_activity::verify(signed.bytes(), agent.registry())
+        .map_err(|_| ApiFailure::upstream_degraded())?;
+    if activity.idempotency_key() != action_key
+        || activity.network_id() != journey.projection().network_id
+    {
+        return Err(ApiFailure::upstream_degraded());
+    }
+    let activity_id = layerx_intents::canonical::activity_id(&activity)
+        .map_err(|_| ApiFailure::upstream_degraded())?;
+    if source_stage != CreationStage::SessionProvision && activity_id != object {
+        return Err(ApiFailure::upstream_degraded());
+    }
+    let material = match crate::journeys::AgentBoundary::receipt_by_idempotency_key(
+        agent, action_key, activity_id,
+    ).map_err(agent_failure)? {
+        crate::journeys::ReceiptLookup::Found(value) => value,
+        crate::journeys::ReceiptLookup::Absent => return Err(ApiFailure::upstream_degraded()),
+    };
+    let evidence = crate::agents::ProtocolEvidence {
+        signed_activity: signed.bytes().to_vec(),
+        actor: activity.actor_did().to_vec(),
+        owner_public_key: <[u8; 32]>::try_from(activity.authority())
+            .map_err(|_| ApiFailure::upstream_degraded())?,
+        network_id: activity.network_id(),
+        action_key,
+        activity_id,
+        receipt_bytes: material.canonical_bytes,
+        authorized_batch: material.authorised_batch,
+        verification_level: material.verification_level,
+    };
+    let verified = evidence.verify_outcome(activity.activity_type())
+        .map_err(agent_failure_from_creation_contract)?;
+    if <[u8; 32]>::from(Sha256::digest(verified.canonical_bytes())) != expected
+        || (source_stage != CreationStage::SessionProvision && row.bytes() != verified.canonical_bytes())
+    {
+        return Err(ApiFailure::upstream_degraded());
+    }
+    if source_stage == CreationStage::SessionProvision {
+        let (key, object_id, sequence, rank, recorded): ([u8; 32], [u8; 32], u64, u8, [u8; 32]) =
+            serde_json::from_slice(row.bytes()).map_err(|_| ApiFailure::upstream_degraded())?;
+        if key != action_key || object_id != object || object_id == [0; 32] || sequence == 0
+            || rank < 4 || rank > evidence.verification_level.wire_rank() || recorded != expected
+        {
+            return Err(ApiFailure::upstream_degraded());
+        }
+    }
+    let mut value = super::projection::owned_material(
+        verified.canonical_bytes(), "layerx-receipt", "application/vnd.layerx.receipt",
+    );
+    value["verification"] = json!(super::projection::verification(
+        evidence.verification_level.wire_rank(),
+    )?);
+    Ok(Some(value))
+}
+
 fn agent_creation_json(
+    scope: &crate::store::PrincipalScope<'_>,
+    agent: &mut AgentRuntime,
     journey: &CreationJourney,
     status: &crate::agents::CreationStatus,
-) -> serde_json::Value {
-    use crate::agents::{CreationState, StageState};
+) -> Result<serde_json::Value, ApiFailure> {
+    use crate::agents::{CreationStage, CreationState, StageState};
     let projection = journey.projection();
-    json!({
+    let state = if status.stages.iter().any(|(_, state)| *state == StageState::Refused) {
+        "refused"
+    } else if status.stages.iter().any(|(_, state)| *state == StageState::Unavailable) {
+        "still-checking"
+    } else {
+        match status.state {
+            CreationState::GettingReady => "getting-ready",
+            CreationState::Partial => "processing",
+            CreationState::Active => "done",
+        }
+    };
+    let mut stages = Vec::new();
+    let mut evidence = Vec::new();
+    for (stage, stage_state) in &status.stages {
+        if *stage == CreationStage::CapabilityNarrowing {
+            continue;
+        }
+        let mut references = Vec::new();
+        if let Some(material) = creation_material(scope, agent, journey, *stage)? {
+            references.push(json!({"evidence_id":material["evidence_id"],
+                "class":material["class"],"verification":material["verification"]}));
+        }
+        let mut states = vec![*stage_state];
+        if *stage == CreationStage::SessionProvision {
+            if let Some((capability, capability_state)) = status.stages.iter()
+                .find(|(candidate, _)| *candidate == CreationStage::CapabilityNarrowing)
+            {
+                states.push(*capability_state);
+                if let Some(material) = creation_material(scope, agent, journey, *capability)? {
+                    references.push(json!({"evidence_id":material["evidence_id"],
+                        "class":material["class"],"verification":material["verification"]}));
+                }
+            }
+        }
+        let stage_state = if states.contains(&StageState::Refused) { "refused" }
+            else if states.contains(&StageState::Unavailable) { "still-checking" }
+            else if states.iter().all(|state| *state == StageState::ReceiptVerified) { "done" }
+            else { "getting-ready" };
+        let copy = match stage {
+            CreationStage::MainFunding | CreationStage::InitialFunding | CreationStage::BudgetFunding => "agent.create.stage.first-funding",
+            CreationStage::RecoveryRegistration | CreationStage::SessionProvision | CreationStage::BudgetCreation => "agent.create.stage.protection",
+            _ => "agent.create.stage.setting-up",
+        };
+        stages.push(json!({"stage_id":format!("stg_agent_create_{}",creation_stage_code(*stage)),
+            "copy_key":copy,"state":stage_state,"evidence":references}));
+        for reference in references {
+            if !evidence.contains(&reference) {
+                evidence.push(reference);
+            }
+        }
+    }
+    let key = RowKey::new(format!("agent-create-{}", &hex_bytes(&journey.agent_id())[..32]))
+        .map_err(|_| ApiFailure::upstream_degraded())?;
+    let updated_at = scope.get(Table::Journeys, &key)
+        .ok_or_else(ApiFailure::upstream_degraded)?.written_at();
+    Ok(json!({
         "journey_id": format!("jrn_{}", URL_SAFE_NO_PAD.encode(status.agent_id)),
-        "agent_id": URL_SAFE_NO_PAD.encode(status.agent_id),
-        "kind": "agent-create",
-        "name": projection.name,
-        "purpose": projection.purpose,
-        "monthly_limit": projection.monthly_limit.to_string(),
-        "state": match status.state { CreationState::GettingReady => "getting-ready", CreationState::Partial => "partial", CreationState::Active => "active" },
-        "stages": status.stages.iter().map(|(stage, state)| json!({
-            "stage": format!("{stage:?}").to_ascii_lowercase(),
-            "state": match state { StageState::Pending => "pending", StageState::LocalComplete => "local-complete",
-                StageState::Unavailable => "unavailable", StageState::Refused => "refused", StageState::ReceiptVerified => "receipt-verified" }
-        })).collect::<Vec<_>>(),
-        "started_at": projection.started_at,
-    })
+        "kind": "agent-create", "state": state,
+        "state_copy_key": match state {
+            "done" => "agent.create.ready",
+            "getting-ready" => "agent.create.progress.title",
+            _ => "agent.create.partial",
+        },
+        "stages": stages, "evidence": evidence,
+        "started_at": super::projection::unix_time(projection.started_at)?,
+        "updated_at": super::projection::unix_time(updated_at)?,
+    }))
 }
 
 fn bearer_failure(error: &identity_dispatch::IdentityDispatchError) -> ApiFailure {
@@ -3565,7 +3759,7 @@ impl ProductionComponents {
                 .map_err(|_| ApiFailure::upstream_degraded())?;
         }
         Ok(BackendResponse {
-            result: agent_creation_json(&journey, &status),
+            result: agent_creation_json(scope, &mut runtime, &journey, &status)?,
             session: None,
         })
     }
@@ -6644,6 +6838,18 @@ impl ProductionComponents {
         request: &ScopedRequest<'_>,
         scope: &mut crate::store::PrincipalScope<'_>,
     ) -> Result<BackendResponse, ApiFailure> {
+        if request.operation.name == "journey.get" {
+            let requested = path(request, "journey_id")?;
+            for journey in CreationJourney::list(scope).map_err(|error| agent_creation_failure(&error))? {
+                if requested == format!("jrn_{}", URL_SAFE_NO_PAD.encode(journey.agent_id())) {
+                    let mut agent = self.principal_agent(scope)?;
+                    return Ok(BackendResponse {
+                        result: agent_creation_json(scope, &mut agent, &journey, &journey.status())?,
+                        session: None,
+                    });
+                }
+            }
+        }
         let existing = super::production_reads::execute(self.settlement_domain, scope, request)
             .unwrap_or_else(|| Err(ApiFailure::not_found()));
         if request.operation.name != "evidence.get"
@@ -6695,6 +6901,15 @@ impl ProductionComponents {
             });
         }
         let mut agent = self.principal_agent(scope)?;
+        for journey in CreationJourney::list(scope).map_err(|error| agent_creation_failure(&error))? {
+            for (stage, _) in journey.status().stages {
+                if let Some(material) = creation_material(scope, &mut agent, &journey, stage)? {
+                    if material["evidence_id"] == id {
+                        return Ok(BackendResponse { result: material, session: None });
+                    }
+                }
+            }
+        }
         let mut native_cursor = None;
         let mut native_seen = std::collections::BTreeSet::new();
         loop {

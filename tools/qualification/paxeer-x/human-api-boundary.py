@@ -230,6 +230,41 @@ for (const row of fixture.cases) {
     const result = await conformance[row.operation](run);
     outputs.set(row.id, result);
     successful.add(row.operation);
+    if (row.operation === 'agent.create') {
+      check(result.kind === 'agent-create' && result.stages.length > 0
+        && Number.isFinite(Date.parse(result.started_at))
+        && Number.isFinite(Date.parse(result.updated_at))
+        && Date.parse(result.updated_at) >= Date.parse(result.started_at),
+        'canonical genuine creation journey timestamps and stages');
+      const recovered = await client.journeyGet(result.journey_id);
+      check(recovered.journey_id === result.journey_id && recovered.kind === result.kind,
+        'principal-owned creation journey recovery');
+      const settled = recovered.state === 'done' || recovered.state === 'done-finalised';
+      if (settled) {
+        check(recovered.stages.every((stage) => ['done', 'done-finalised'].includes(stage.state)
+          && stage.evidence.some((reference) => reference.class === 'layerx-receipt'
+            && ['receipt-verified', 'checkpoint-finalised', 'settlement-anchored'].includes(reference.verification))),
+          'every completed creation stage retains genuine receipt backing');
+        const protection = recovered.stages.find((stage) => stage.stage_id === 'stg_agent_create_4');
+        check(protection !== undefined && protection.evidence.some((reference) =>
+          reference.class === 'local-journey-state' && reference.verification === 'unverified'),
+          'capability evidence remains explicitly local in the receipt-backed protection stage');
+      }
+      for (const reference of recovered.evidence) {
+        const material = await client.evidenceGet(reference.evidence_id);
+        check(material.evidence_id === reference.evidence_id && material.class === reference.class
+          && material.verification === reference.verification
+          && Buffer.from(material.bytes_base64, 'base64').length > 0,
+          'creation evidence exports its actual producer bytes and verification');
+      }
+      const foreign = [...clients.entries()].find(([principal]) => principal !== row.principal);
+      check(foreign !== undefined,
+        'creation isolation requires a distinct authenticated principal');
+      let denied;
+      try { await foreign[1].journeyGet(result.journey_id); } catch (error) { denied = error; }
+      check(denied instanceof HumanApiError && ['not-found', 'forbidden'].includes(denied.detail.code),
+        'cross-principal creation journey recovery refused');
+    }
     if (row.replay === true) {
       check(typeof row.idempotencyKey === 'string' && typeof result.journey_id === 'string', 'economic replay fixture');
       const replay = await conformance[row.operation](run);
