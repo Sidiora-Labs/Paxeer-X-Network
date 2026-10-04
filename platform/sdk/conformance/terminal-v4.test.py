@@ -76,9 +76,9 @@ class TerminalV5(unittest.TestCase):
                 canonical = bytes.fromhex(row['canonical_receipt_hex'])
                 terminal = bytes.fromhex(row['terminal_payload_hex'])
                 graph = bytes.fromhex(row['call_graph_hex'])
-                document = row['execution']
+                activity_id = sha256(b'LXP/v1/activity-id\0' + signed).hexdigest()
                 signatures = module.LayerXSignatureVerifier()
-                payload_hash, abi, _ = bind_retained_program_call(signed, document['activity_id'], row['program_id_hex'], 3)
+                payload_hash, abi, idempotency_key = bind_retained_program_call(signed, activity_id, row['program_id_hex'], 3)
                 self.assertEqual(abi, row['guest_abi'])
                 self.assertEqual(authority.sequencer_public_key.hex(), row['sequencer_public_key_hex'])
                 verified = verify_program_receipt_outcome_v5(canonical, authority, signatures,
@@ -88,8 +88,24 @@ class TerminalV5(unittest.TestCase):
                     verify_receipt_outcome(canonical, authority, signatures, protocol_version=3)
                 decoded = decode_and_verify_program_terminal(terminal, graph, row['program_id_hex'],
                     verified.receipt.program_outcome, 3, protocol=verified.receipt, expected_payload_hash=payload_hash)
-                self.assertEqual(decoded.usage, document['usage'])
-                self.assertEqual(decoded.outcome, document['outcome'])
+                receipt = verified.receipt
+                document = {
+                    'state': 'executed' if receipt.result_code == 0 else 'refused',
+                    'activity_id': receipt.activity_id.hex(), 'program_id': row['program_id_hex'],
+                    'guest_abi_version': receipt.program_outcome.abi_version,
+                    'module_version': receipt.module_version, 'batch_id': receipt.batch_id.hex(),
+                    'global_sequence': str(receipt.global_sequence),
+                    'result_code': receipt.program_outcome.result_code,
+                    'state_root': receipt.resulting_state_root.hex(), 'receipt': canonical.hex(),
+                    'receipt_digest': verified.receipt_digest.hex(),
+                    'terminal_payload': terminal.hex(), 'call_graph': graph.hex(),
+                    'authority': {field: getattr(authority, field).hex() for field in
+                        ('batch_id', 'asset', 'previous_state_root', 'resulting_state_root', 'sequencer_public_key')},
+                    'usage': dict(decoded.usage), 'outcome': dict(decoded.outcome),
+                    'verification': 'receipt-terminal-and-call-graph-verified',
+                    'idempotency_key': idempotency_key, 'retained_signed_activity': signed.hex(),
+                }
+                self.assertEqual(receipt.activity_id.hex(), activity_id)
                 checked = verify_program_receipt(_execution(document, document['state']), authority, signatures,
                     ProgramTrustContext(authority.sequencer_public_key, protocol_version=3), expected_signed_activity=signed)
                 self.assertEqual(checked.verification.canonical_bytes, canonical)

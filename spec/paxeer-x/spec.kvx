@@ -36614,7 +36614,7 @@ parent_task = "104.33.7"
 source_status = "complete"
 completion_basis = "implementation under owner CONSTITUTION; qualification separately recorded"
 qualification_status = "UNRUN"
-source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/root-v5-104.33.7.3-intake.json"
+source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/root-104.33.7.3-final-intake.json"
 
 [task.104.33.7.6]
 title = "Complete Swift Programs client integration"
