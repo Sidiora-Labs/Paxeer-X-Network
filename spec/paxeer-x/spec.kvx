@@ -33112,3 +33112,28 @@ qualification_status = "passed"
 build_exit_code = 0
 verify_exit_code = 0
 qualification_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-22.11-verify.log"
+
+[task.104.35.24]
+title = "Complete real replay proof producer corpus and authenticated downstream exports"
+status = "done"
+mode = "BUILD"
+wave = 2
+requires = ["0.2"]
+reqs = ["1105.3", "1105.4"]
+do_1 = "Complete the genuine native serial/scheduled/trap/reopen replay corpus with correct early POSIX feature configuration and real transport helper use; export actual retained replay witness and receipt-bound metadata state proof for independent consumers. Preserve every old assertion, compiler warning and signed authority refusal."
+touches = ["tests/daemon/lxp_test_program_replay.c", "tools/qualification/paxeer-x/program-replay-record.py"]
+build_cmd = "timeout 20m make paxeer-x-program-replay-build"
+verify_cmd = "timeout 10m python3 tools/qualification/paxeer-x/program-replay-record.py"
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop at original 30-minute cap, unrelated failure, missing genuine authority or weakening; report exact source state, command, exit code and log path."
+completion_basis_policy = "Owner CONSTITUTION: fully implemented DONE; qualification separate and partial remains in_progress."
+source_ownership = "Root owns shared manifests, locks, spec and publication; preserve owner edits and no deployment."
+
+completion_basis = "implementation"
+qualification_status = "implemented-not-qualified"
+build_exit_code = 2
+verify_status = "unrun"
+qualification_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-104.35.24-build.log"
