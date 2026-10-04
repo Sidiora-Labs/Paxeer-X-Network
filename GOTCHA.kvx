@@ -2745,3 +2745,7 @@ observed = "Helper delivery, formatting publication and complete candidate prepa
 [gotcha.784]
 title = "Candidate refusal control flow"
 observed = "A private build wrapper continued to wait on its build lock after candidate admission refused. The owner cancelled it before compilation; future wrappers must stop immediately on nonzero candidate creation."
+
+[gotcha.785]
+title = "Preserved proof negative-case disagreement"
+observed = "After exact fixture-call compiler repair, eleven proof cases passed and two untouched negative cases failed at header bounds and maintenance-link error classification. Preserve assertions, record raw failures, and do not treat subset success as full qualification."
