@@ -2649,3 +2649,35 @@ resolution = "Select rows by source file; project current public path fields aga
 area = "Codify owner and finished-task claims"
 observed = "Lease release used the canonical agent path instead of stored owner name, and sourceDONE task9.1 cannot be reclaimed for verification."
 resolution = "Use the exact stored owner; admit a separate owner-approved verification task preserving completed source and all previous gate evidence."
+
+[gotcha.761]
+title = "Sparse qualification dependencies"
+observed = "Partial checkout omitted required include headers and checkpoint contract config; setup repairs restored full tracked dependencies with environment paths excluded."
+
+[gotcha.762]
+title = "Idle agent dispatch"
+observed = "send_message queues text but does not restart a completed agent; use followup_task for a new active turn."
+
+[gotcha.763]
+title = "Private gate evidence directory"
+observed = "Core dispatcher refused absent evidence directory before running any case; create private0700 directory before adapter invocation."
+
+[gotcha.764]
+title = "Scoped process inspection"
+observed = "One worker process inspection included unrelated command arguments; no values were copied into task artifacts. Use scoped process identifiers and omit unrelated arguments."
+
+[gotcha.765]
+title = "Frozen source handoff"
+observed = "A migration gate changed after its freeze and initial publication; root published the explicit one-file follow-on separately and rebound qualification to that revision."
+
+[gotcha.766]
+title = "Atomic transfer fixture ownership"
+observed = "Canonical round-trip test attempted to clone a sealed non-Clone transfer set; borrow both equality operands, preserving exact comparison and authority semantics. Scoped test passed at0c9d64a2b."
+
+[gotcha.767]
+title = "Fresh attestor fixture authority"
+observed = "A disposable real attestor foundation was incorrectly classified as requiring original customer keys. Generate and configure genuine disposable authority and signed inventory; original sealed-state requirements apply separately to migration rehearsal."
+
+[gotcha.768]
+title = "Hosted ingress readiness authentication"
+observed = "Kubelet cannot authenticate to the mTLS-only webhook API. Use the existing health-only listener for probes while preserving all API authentication, and provide distinct identity tokens per caller role."
