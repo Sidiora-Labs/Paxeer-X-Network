@@ -33229,7 +33229,7 @@ qualification_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-22.10-ver
 
 [task.104.35.20]
 title = "Commit real execution boundaries and native replay facts into authenticated protocol state"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 2
 requires = ["0.2", "104.35.16"]
@@ -33238,7 +33238,7 @@ do_1 = "Activate a distinct replay profile only through an authenticated signed 
 do_2 = "Capture genuine interpreter and semantic witnesses through authorized execution including module start; commit a bounded boundary Merkle root and actual native-checked admission/host-input facts in module9 protocol KV metadata before receipt postroot preview."
 do_3 = "Retain record staging across actual serial, scheduled and rollback paths; record no resulting root or final receipt digest inside committed metadata, avoiding a hash cycle. Exact receipt/resultroot binding occurs through real postcommit StateWitness and signed receipt."
 do_4 = "Provide actual native runtime positive/refusal/trap/reopen producer cases; unrecorded historical inputs remain missing-proof refusals and callbacks never become proof authority."
-touches = ["programs/crates/layerx-programs-runtime/src/lib.rs", "programs/crates/layerx-programs-runtime/src/execute.rs", "programs/crates/layerx-programs-runtime/src/replay.rs", "programs/crates/layerx-programs-runtime/src/validate.rs", "programs/crates/layerx-programs-runtime/src/ffi_call.rs", "src/modules/programs/call.c", "src/modules/programs/state_record.c", "include/layerx/programs.h", "src/protocol/lxp_kernel.c", "include/layerx/lxp_kernel.h", "tests/daemon/lxp_test_program_replay.c", "programs/crates/layerx-programs-runtime/tests/program_replay.rs", "tools/qualification/paxeer-x/program-replay-record.py", "tools/paxeer-x/build/104.35.20.mk", "programs/crates/layerx-programs-runtime/src/replay_record.rs", "src/modules/programs/registration.c", "programs/crates/layerx-programs-runtime/src/host/mod.rs"]
+touches = ["programs/crates/layerx-programs-runtime/src/validate.rs", "src/modules/programs/state_record.c", "tests/daemon/lxp_test_program_replay.c", "programs/crates/layerx-programs-runtime/tests/program_replay.rs", "tools/qualification/paxeer-x/program-replay-record.py", "tools/paxeer-x/build/104.35.20.mk", "programs/crates/layerx-programs-runtime/src/replay_record.rs", "programs/crates/layerx-programs-runtime/src/host/mod.rs"]
 build_cmd = "timeout 20m make paxeer-x-program-replay-build"
 verify_cmd = "timeout 10m python3 tools/qualification/paxeer-x/program-replay-record.py"
 max_builds = 1
@@ -33248,8 +33248,8 @@ time_limit_minutes = 30
 stop_condition = "Stop at original cap, unrelated failure, missing actual authority or weakening; report exact source state and evidence."
 completion_basis_policy = "Owner CONSTITUTION: fully implemented DONE; qualification separate and partial remains in_progress."
 source_ownership = "Root owns workspace, shared manifests, locks, Makefile include, spec and publication. Existing native19 source/gates hold overlapping paths until released."
-source_status = "authored_compile_failed"
-qualification_status = "implemented-not-qualified"
+source_status = "complete"
+qualification_status = "UNRUN"
 build_exit_code = 2
 verify_status = "unrun"
 qualification_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-104.35.20-build.log"
@@ -33259,6 +33259,25 @@ retained_contract_paths = ["Makefile", "programs/crates/layerx-programs-runtime/
 delegated_source_task = "104.35.28"
 delegated_source_paths = ["Makefile"]
 lease_transfer_authority = "Owner explicitly approved inactive file lease reassignment for the current integration sweep; preserve every unfinished task and assertion."
+
+retained_contract_paths_104_35_32 = ["programs/crates/layerx-programs-runtime/src/lib.rs", "programs/crates/layerx-programs-runtime/src/execute.rs", "programs/crates/layerx-programs-runtime/src/replay.rs", "programs/crates/layerx-programs-runtime/src/validate.rs", "programs/crates/layerx-programs-runtime/src/ffi_call.rs", "src/modules/programs/call.c", "src/modules/programs/state_record.c", "include/layerx/programs.h", "src/protocol/lxp_kernel.c", "include/layerx/lxp_kernel.h", "tests/daemon/lxp_test_program_replay.c", "programs/crates/layerx-programs-runtime/tests/program_replay.rs", "tools/qualification/paxeer-x/program-replay-record.py", "tools/paxeer-x/build/104.35.20.mk", "programs/crates/layerx-programs-runtime/src/replay_record.rs", "src/modules/programs/registration.c", "programs/crates/layerx-programs-runtime/src/host/mod.rs"]
+delegated_source_task_104_35_32 = "104.35.32"
+delegated_source_paths_104_35_32 = ["src/protocol/lxp_kernel.c", "include/layerx/lxp_kernel.h"]
+retained_contract_paths_104_35_33 = ["programs/crates/layerx-programs-runtime/src/lib.rs", "programs/crates/layerx-programs-runtime/src/execute.rs", "programs/crates/layerx-programs-runtime/src/replay.rs", "programs/crates/layerx-programs-runtime/src/validate.rs", "programs/crates/layerx-programs-runtime/src/ffi_call.rs", "src/modules/programs/call.c", "src/modules/programs/state_record.c", "include/layerx/programs.h", "tests/daemon/lxp_test_program_replay.c", "programs/crates/layerx-programs-runtime/tests/program_replay.rs", "tools/qualification/paxeer-x/program-replay-record.py", "tools/paxeer-x/build/104.35.20.mk", "programs/crates/layerx-programs-runtime/src/replay_record.rs", "src/modules/programs/registration.c", "programs/crates/layerx-programs-runtime/src/host/mod.rs"]
+delegated_source_task_104_35_33 = "104.35.33"
+delegated_source_paths_104_35_33 = ["programs/crates/layerx-programs-runtime/src/execute.rs", "programs/crates/layerx-programs-runtime/src/replay.rs"]
+lease_transfer_authority_104_35_33 = "Owner approved inactive lease reassignment; all unfinished requirements and assertions remain intact."
+retained_contract_paths_104_35_35 = ["programs/crates/layerx-programs-runtime/src/lib.rs", "programs/crates/layerx-programs-runtime/src/validate.rs", "programs/crates/layerx-programs-runtime/src/ffi_call.rs", "src/modules/programs/call.c", "src/modules/programs/state_record.c", "include/layerx/programs.h", "tests/daemon/lxp_test_program_replay.c", "programs/crates/layerx-programs-runtime/tests/program_replay.rs", "tools/qualification/paxeer-x/program-replay-record.py", "tools/paxeer-x/build/104.35.20.mk", "programs/crates/layerx-programs-runtime/src/replay_record.rs", "src/modules/programs/registration.c", "programs/crates/layerx-programs-runtime/src/host/mod.rs"]
+delegated_source_paths_104_35_35 = ["programs/crates/layerx-programs-runtime/src/lib.rs", "programs/crates/layerx-programs-runtime/src/ffi_call.rs", "src/modules/programs/call.c", "include/layerx/programs.h"]
+lease_transfer_authority_104_35_35 = "Owner approved inactive lease reassignment; Codify confirms no live owner. Original unfinished criteria remain intact."
+retained_contract_paths_6_2 = ["src/modules/programs/registration.c"]
+lease_transfer_authority_6_2 = "Owner approved inactive lease reassignment; original source, unfinished status and assertions preserved. Task6.2 sole writer for governed migration continuation."
+fleet_authority = "User explicitly ordered30agents into pending integrations within4hours; fresh bounded source implementation resumes. Preserve prior source/evidence and every assertion."
+fleet_role = "/root/integrate_arbiter/replay_kernel"
+fleet_scope_manifest = "/root/lx-ops/paxeer-x-integration-2026-10-03/fleet-104.35.20-brief.json"
+completion_basis = "implementation under owner CONSTITUTION; qualification separately recorded"
+source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/fleet-104.35.20-publication-handoff-next.json"
+
 [task.0.14]
 title = "Expose native public program and naming explorer reads through the unified gateway"
 status = "done"

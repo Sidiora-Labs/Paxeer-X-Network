@@ -5,6 +5,7 @@ use crate::replay::{append, ReplayWitnessError};
 pub const PROGRAM_REPLAY_RECORD_DOMAIN: &[u8] = b"LXP/program-replay-record/v1\0";
 pub const PROGRAM_REPLAY_WITNESS_DOMAIN: &[u8] = b"LXP/program-replay-witness/v1\0";
 pub const MAX_PROGRAM_REPLAY_BYTES: u32 = 1024 * 1024;
+pub const MAX_PROGRAM_REPLAY_BOUNDARIES: u32 = 4096;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ProgramReplayProfile {
@@ -15,7 +16,10 @@ pub struct ProgramReplayProfile {
 
 impl ProgramReplayProfile {
     pub fn new(maximum_boundaries: u32, maximum_bytes: u32) -> Result<Self, ReplayWitnessError> {
-        if maximum_boundaries < 2 || maximum_bytes == 0 || maximum_bytes > MAX_PROGRAM_REPLAY_BYTES
+        if maximum_boundaries < 2
+            || maximum_boundaries > MAX_PROGRAM_REPLAY_BOUNDARIES
+            || maximum_bytes < 512
+            || maximum_bytes > MAX_PROGRAM_REPLAY_BYTES
         {
             return Err(ReplayWitnessError::Bounds);
         }

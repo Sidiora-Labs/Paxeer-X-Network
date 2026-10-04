@@ -80,6 +80,7 @@ static int reopen_proofs(void)
 {
     char path[4096];
     uint8_t root[32],digest[32];
+    uint8_t malformed[394],blob_key[32];
     uint8_t *encoded=malloc(LXP_STATE_WITNESS_MAX_BYTES),*bytes=malloc(LXP_KERNEL_MAX_BLOB_BYTES);
     lxp_state_witness *proof=calloc(1,sizeof(*proof));
     CHECK(encoded!=NULL&&bytes!=NULL&&proof!=NULL);
@@ -91,6 +92,22 @@ static int reopen_proofs(void)
         CHECK(snprintf(path,sizeof(path),"%s/replay-%u.root",replay_directory,i)>0);
         file=fopen(path,"rb");CHECK(file!=NULL&&fread(root,1,32,file)==32);CHECK(fclose(file)==0);
         CHECK(lxp_state_proof_verify(proof,root)==LXP_OK);
+        CHECK(lxp_programs_replay_record_blob_key(
+            (lxp_byte_span){proof->value,proof->value_length},blob_key)==LXP_OK);
+        CHECK(memcmp(blob_key,proof->value+362U,32U)==0);
+        memcpy(malformed,proof->value,sizeof(malformed));
+        write_u32(malformed+217U,4097U);
+        CHECK(lxp_programs_replay_record_blob_key(
+            (lxp_byte_span){malformed,sizeof(malformed)},blob_key)==LXP_ERR_NON_CANONICAL);
+        CHECK(lxp_ct_is_zero(blob_key,32U));
+        memcpy(malformed,proof->value,sizeof(malformed));
+        write_u32(malformed+221U,511U);
+        CHECK(lxp_programs_replay_record_blob_key(
+            (lxp_byte_span){malformed,sizeof(malformed)},blob_key)==LXP_ERR_NON_CANONICAL);
+        memcpy(malformed,proof->value,sizeof(malformed));
+        malformed[225U]=3U;
+        CHECK(lxp_programs_replay_record_blob_key(
+            (lxp_byte_span){malformed,sizeof(malformed)},blob_key)==LXP_ERR_NON_CANONICAL);
         CHECK(snprintf(path,sizeof(path),"%s/replay-%u.witness",replay_directory,i)>0);
         file=fopen(path,"rb");CHECK(file!=NULL);count=fread(bytes,1,LXP_KERNEL_MAX_BLOB_BYTES,file);CHECK(!ferror(file));CHECK(fclose(file)==0);
         CHECK(count>0U&&count<=LXP_PROGRAMS_REPLAY_MAX_BYTES);
@@ -169,6 +186,13 @@ int main(int argc,char **argv)
     CHECK(replay_records==4U&&!replay_error);
     write_u32(profile+34U+sizeof("LXP/program-replay-profile/v1")+2U,0U);
     replay_batch=7U;CHECK(replay_publish(f,LX_PROGRAMS_CALL,profile,length,1U,replay_batch,LXP_ERR_NON_CANONICAL,true)==0);
+    CHECK(replay_records==4U&&!replay_error);
+    write_u32(profile+34U+sizeof("LXP/program-replay-profile/v1")+2U,4097U);
+    replay_batch=8U;CHECK(replay_publish(f,LX_PROGRAMS_CALL,profile,length,1U,replay_batch,LXP_ERR_NON_CANONICAL,true)==0);
+    CHECK(replay_records==4U&&!replay_error);
+    write_u32(profile+34U+sizeof("LXP/program-replay-profile/v1")+2U,128U);
+    write_u32(profile+34U+sizeof("LXP/program-replay-profile/v1")+6U,511U);
+    replay_batch=9U;CHECK(replay_publish(f,LX_PROGRAMS_CALL,profile,length,1U,replay_batch,LXP_ERR_NON_CANONICAL,true)==0);
     CHECK(replay_records==4U&&!replay_error);
     CHECK(fprintf(f->arbiter_manifest,"]}\n")>0&&fclose(f->arbiter_manifest)==0);
     CHECK(fprintf(replay_manifest,"]}\n")>0&&fclose(replay_manifest)==0);

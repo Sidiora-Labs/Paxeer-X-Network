@@ -488,6 +488,12 @@ lxp_result lxp_programs_state_record_profile2_encode(
 static const uint8_t replay_record_domain[] = "LXP/program-replay-native/v1";
 enum { REPLAY_RECORD_BODY_BYTES = 365 };
 
+static uint32_t replay_record_u32(const uint8_t *bytes)
+{
+    return ((uint32_t)bytes[0] << 24U) | ((uint32_t)bytes[1] << 16U) |
+        ((uint32_t)bytes[2] << 8U) | (uint32_t)bytes[3];
+}
+
 void lxp_programs_replay_record_key(const uint8_t activity_id[32],
     uint8_t key[LXP_PROGRAMS_REPLAY_KEY_BYTES])
 {
@@ -498,11 +504,27 @@ void lxp_programs_replay_record_key(const uint8_t activity_id[32],
 
 lxp_result lxp_programs_replay_record_blob_key(lxp_byte_span record, uint8_t blob_key[32])
 {
+    const uint8_t *body;
+    uint32_t maximum_boundaries, maximum_bytes, boundary_count;
+    if (blob_key != NULL) (void)memset(blob_key, 0, 32U);
     if (record.bytes == NULL || blob_key == NULL ||
         record.length != sizeof(replay_record_domain) + REPLAY_RECORD_BODY_BYTES ||
         lxp_ct_memcmp(record.bytes, replay_record_domain, sizeof(replay_record_domain)) != 0 ||
         record.bytes[sizeof(replay_record_domain)] != 0U ||
         record.bytes[sizeof(replay_record_domain) + 1U] != 1U)
+        return LXP_ERR_NON_CANONICAL;
+    body = record.bytes + sizeof(replay_record_domain);
+    maximum_boundaries = replay_record_u32(body + 188U);
+    maximum_bytes = replay_record_u32(body + 192U);
+    boundary_count = replay_record_u32(body + 197U);
+    if (body[186U] != 0U || body[187U] != 1U ||
+        maximum_boundaries < 2U || maximum_boundaries > LXP_PROGRAMS_REPLAY_MAX_BOUNDARIES ||
+        maximum_bytes < 512U || maximum_bytes > LXP_PROGRAMS_REPLAY_MAX_BYTES ||
+        body[196U] > 2U || boundary_count == 0U || boundary_count > maximum_boundaries ||
+        lxp_ct_is_zero(body + 6U, 32U) || lxp_ct_is_zero(body + 38U, 8U) ||
+        lxp_ct_is_zero(body + 78U, 32U) || lxp_ct_is_zero(body + 110U, 32U) ||
+        lxp_ct_is_zero(body + 174U, 2U) || lxp_ct_is_zero(body + 176U, 2U) ||
+        replay_record_u32(body + 178U) == 0U || replay_record_u32(body + 182U) == 0U)
         return LXP_ERR_NON_CANONICAL;
     (void)memcpy(blob_key, record.bytes + record.length - 32U, 32U);
     if (lxp_ct_is_zero(blob_key, 32U)) return LXP_ERR_NON_CANONICAL;
@@ -519,10 +541,16 @@ lxp_result lxp_programs_replay_capture_stage(lxp_module_ctx *ctx,
     if (capture == NULL) return LXP_OK;
     if (ctx == NULL || ctx->module_id != LXP_MODULE_PROGRAMS ||
         capture->bytes == NULL || capture->length == 0U ||
-        capture->length > capture->max_bytes || capture->max_bytes > LXP_PROGRAMS_REPLAY_MAX_BYTES ||
-        capture->max_boundaries == 0U || capture->boundary_count == 0U ||
+        capture->length > capture->max_bytes || capture->max_bytes < 512U ||
+        capture->max_bytes > LXP_PROGRAMS_REPLAY_MAX_BYTES ||
+        capture->max_boundaries < 2U ||
+        capture->max_boundaries > LXP_PROGRAMS_REPLAY_MAX_BOUNDARIES || capture->boundary_count == 0U ||
         capture->boundary_count > capture->max_boundaries ||
         capture->terminal_status > 2U ||
+        capture->runtime_version == 0U || capture->abi_version == 0U ||
+        !ctx->call_admission.present ||
+        ctx->call_admission.fee_schedule_version != capture->fee_version ||
+        ctx->call_admission.metering_schedule_version != capture->metering_version ||
         ctx->global_sequence != capture->sequence ||
         lxp_ct_memcmp(ctx->activity_id, capture->activity_id, 32U) != 0)
         return LXP_ERR_NON_CANONICAL;

@@ -42,6 +42,65 @@ def prepare(path):
     source=source[:insert]+publish+source[insert:owner]+source[reopen:main]
     source=re.sub(r'#include "(\.\./[^"\n]+)"',lambda m:'#include "'+str((ROOT/'tests/daemon'/m.group(1)).resolve())+'"',source)
     path=Path(path);path.parent.mkdir(parents=True,exist_ok=True);path.write_text(source)
+def checked_replay(fixture,capture,admission):
+    proof=(fixture/capture['metadata_proof']).read_bytes()
+    key_length=int.from_bytes(proof[4:8],'big')
+    key=proof[8:8+key_length]
+    cursor=8+key_length
+    value_length=int.from_bytes(proof[cursor:cursor+4],'big')
+    metadata=proof[cursor+4:cursor+4+value_length]
+    domain=b'LXP/program-replay-native/v1\0'
+    if value_length!=394 or not metadata.startswith(domain) or len(metadata)!=394:
+        raise RuntimeError('canonical native replay metadata missing')
+    body=metadata[len(domain):]
+    if key!=b'progreplay/v1/'+body[6:38] or int.from_bytes(body[2:6],'big')!=7:
+        raise RuntimeError('metadata activity/network binding mismatch')
+    blob=(fixture/capture['witness']).read_bytes()
+    if hashlib.sha256(blob).digest()!=body[-32:]:
+        raise RuntimeError('native witness digest mismatch')
+    def field(data,offset):
+        if offset+4>len(data): raise RuntimeError('replay length truncated')
+        length=int.from_bytes(data[offset:offset+4],'big');offset+=4
+        if length==0 or length>len(data)-offset: raise RuntimeError('replay field bounds')
+        return data[offset:offset+length],offset+length
+    native_domain=b'LXP/program-replay-native-blob/v1\0'
+    if not blob.startswith(native_domain): raise RuntimeError('native replay domain mismatch')
+    runtime,cursor=field(blob,len(native_domain))
+    authority,cursor=field(blob,cursor)
+    hosts,cursor=field(blob,cursor)
+    if cursor!=len(blob) or hashlib.sha256(authority).digest()!=body[201:233] or hashlib.sha256(hosts).digest()!=body[233:265]:
+        raise RuntimeError('actual native authority/host facts root mismatch')
+    authority_domain=b'LXP/program-replay-authority/v1\0'
+    if not authority.startswith(authority_domain) or not hosts.startswith(b'LXP/program-replay-hosts/v1\0'):
+        raise RuntimeError('native checked facts domain mismatch')
+    signed_activity,_=field(authority,len(authority_domain))
+    if signed_activity!=Path(admission['activity_path']).read_bytes():
+        raise RuntimeError('checked authority does not bind the signed additive request')
+    runtime_domain=b'LXP/program-replay-record/v1\0'
+    if not runtime.startswith(runtime_domain): raise RuntimeError('runtime replay domain mismatch')
+    record=runtime[len(runtime_domain):]
+    for source,destination,length in [(0,0,2),(2,110,32),(34,142,32),(66,174,12),(78,188,8),(86,196,5),(91,265,64)]:
+        if record[source:source+length]!=body[destination:destination+length]:
+            raise RuntimeError('runtime/native metadata binding mismatch')
+    witness,cursor=field(record,155)
+    if cursor!=len(record) or hashlib.sha256(witness).digest()!=body[297:329]:
+        raise RuntimeError('canonical boundary witness digest mismatch')
+    witness_domain=b'LXP/program-replay-witness/v1\0'
+    if not witness.startswith(witness_domain): raise RuntimeError('boundary witness domain mismatch')
+    cursor=len(witness_domain)
+    count=int.from_bytes(witness[cursor:cursor+4],'big');cursor+=4
+    if count!=int.from_bytes(body[197:201],'big') or not 0<count<=4096:
+        raise RuntimeError('boundary count mismatch')
+    hashes=[]
+    for index in range(count):
+        leaf,cursor=field(witness,cursor)
+        if not leaf.startswith(b'LXP/program-replay-boundary/v1\0'):
+            raise RuntimeError('actual engine boundary encoding missing')
+        hashes.append(hashlib.sha256(b'LXP/program-replay-leaf/v1\0'+index.to_bytes(4,'big')+len(leaf).to_bytes(4,'big')+leaf).digest())
+    if cursor!=len(witness): raise RuntimeError('trailing boundary witness bytes')
+    while len(hashes)>1:
+        hashes=[hashlib.sha256(b'LXP/program-replay-node/v1\0'+hashes[index]+hashes[index+1 if index+1<len(hashes) else index]).digest() for index in range(0,len(hashes),2)]
+    if hashes[0]!=body[265:297]: raise RuntimeError('actual engine boundary Merkle root mismatch')
 def exported_inputs(fixture):
     admission=json.loads((fixture/'inputs.json').read_text())
     replay=json.loads((fixture/'replay-inputs.json').read_text())
@@ -56,6 +115,7 @@ def exported_inputs(fixture):
     for capture in captures:
         receipt=capture['receipt']
         if receipt not in admissions: raise RuntimeError('replay has no signed admission evidence')
+        checked_replay(fixture,capture,admissions[receipt])
         for key in ('metadata_proof','witness','root'):
             path=(fixture/capture[key]).resolve(strict=True)
             if path.parent!=fixture.resolve() or path.stat().st_size==0:
