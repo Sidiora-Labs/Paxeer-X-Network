@@ -252,6 +252,33 @@ pub struct EthereumVerifier {
 impl crate::sealed::SourceVerifier for EthereumVerifier {}
 
 impl EthereumVerifier {
+    pub fn verify_owned_history(
+        &self,
+        ownership_evidence: &SourceEvidence,
+        history_evidence: &SourceEvidence,
+        authenticated_identity: [u8; 32],
+        trace: &TraceId,
+    ) -> Result<VerifiedHistoryPage, MigrationError> {
+        let claim = parse_history(history_evidence)?;
+        let owner_claim = parse_ownership(ownership_evidence)?;
+        if authenticated_identity == [0; 32]
+            || owner_claim.layerx_identity != authenticated_identity
+            || owner_claim.chain_id != claim.chain_id
+            || owner_claim.address != claim.address
+        {
+            return Err(MigrationError::EvidenceMismatch);
+        }
+        let ownership = self.verify_ownership(ownership_evidence, trace)?;
+        if authenticated_identity == [0; 32]
+            || ownership.layerx_identity() != authenticated_identity
+            || ownership.chain() != (SourceChain::Ethereum { chain_id: claim.chain_id })
+            || ownership.address() != ExternalAddress::Ethereum(claim.address)
+        {
+            return Err(MigrationError::EvidenceMismatch);
+        }
+        self.verify_history(history_evidence, trace)
+    }
+
     /// Builds a verifier and reconciles its authenticated journal head with
     /// the configured non-rollbackable quorum authority.
     ///

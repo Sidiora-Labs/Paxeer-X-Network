@@ -576,10 +576,26 @@ pub(super) fn route(
             return Some(refusal);
         }
     }
+    let migration_history = id == "interop"
+        && matches!(
+            entry["path"].as_str(),
+            Some("/v2/migration/history" | "/v2/migration/history/read")
+        );
+    if migration_history {
+        if entry["path"].as_str() != Some(request.path.as_str()) {
+            return Some(response(400, "migration_history_query_forbidden", None));
+        }
+        if request.body.len() > 512 * 1024 {
+            return Some(response(413, "migration_history_request_too_large", None));
+        }
+    }
     if id == "interop"
         && matches!(
             request.path.as_str(),
-            "/v2/migration/accounts" | "/v2/migration/assets"
+            "/v2/migration/accounts"
+                | "/v2/migration/assets"
+                | "/v2/migration/history"
+                | "/v2/migration/history/read"
         )
     {
         if !request

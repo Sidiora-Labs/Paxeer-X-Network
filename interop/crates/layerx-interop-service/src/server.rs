@@ -19,7 +19,7 @@ use layerx_interop_gateway::server::{
 use layerx_interop_gateway::trace::TraceId;
 use layerx_interop_gateway::GatewayCore;
 use layerx_migrate::ramp_v2::{SourceSettlementRequestV2, SourceSettlementResponseV2};
-use layerx_migrate::{MigrationError, SourceEvidence};
+use layerx_migrate::{ExternalHistorySink, MigrationError, SourceEvidence, SourceVerifier};
 use layerx_platform_gateway::http::{IncomingRequest, OutboundRequest, OutgoingResponse};
 use layerx_platform_gateway::store::{
     Completion, KeyRecord, Reservation, ReservationRequest, TapCredentialRecord,
@@ -356,6 +356,7 @@ fn resumed_request(encoded: &str, authorization: &str) -> Result<IncomingRequest
                 && matches!(
                     continuation.path.as_str(),
                     "/v2/migration/accounts" | "/v2/migration/assets"
+                        | "/v2/migration/history" | "/v2/migration/history/read"
                 )))
         || continuation.path.starts_with("/v1/operations/")
     {
@@ -449,10 +450,125 @@ fn dispatch(
             migration_account_v2(config, request, record, principal, trace)
         }
         InteropRoute::MigrationAssetV2 => migration_asset_v2(config, request, record, trace),
+        InteropRoute::MigrationHistoryImportV2 => migration_history_import_v2(config, request, record, principal, trace),
+        InteropRoute::MigrationHistoryReadV2 => migration_history_read_v2(config, request, principal),
         InteropRoute::Live | InteropRoute::Ready | InteropRoute::AdapterMetadata => {
             Dispatch::error(404, "refused", "not_found")
         }
     }
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct MigrationHistoryImportRequestV2 {
+    chain: MigrationSourceV2,
+    ownership_evidence: String,
+    source_evidence: String,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct MigrationHistoryReadRequestV2 {
+    cursor: Option<String>,
+    limit: usize,
+}
+
+fn history_evidence(encoded: &str) -> Result<SourceEvidence, MigrationError> {
+    let decoded = STANDARD.decode(encoded).map_err(|_| MigrationError::InvalidEvidence)?;
+    if STANDARD.encode(&decoded) != encoded {
+        return Err(MigrationError::InvalidEvidence);
+    }
+    SourceEvidence::new(decoded)
+}
+
+fn migration_history_import_v2(
+    config: &Config,
+    request: &IncomingRequest,
+    record: &KeyRecord,
+    principal: &PrincipalId,
+    trace: &TraceId,
+) -> Dispatch {
+    let Ok(body) = direct_body::<MigrationHistoryImportRequestV2>(request) else {
+        return Dispatch::error(400, "refused", "invalid_migration_request");
+    };
+    let Some(profile) = config.migration_v2.as_ref() else {
+        return Dispatch::error(503, "refused", "migration_v2_unconfigured");
+    };
+    let Some(history) = profile.history.as_ref() else {
+        return Dispatch::error(503, "refused", "migration_history_unconfigured");
+    };
+    let Ok(identity) = parse_hex32(&record.signer_public_key) else {
+        return Dispatch::error(503, "refused", "authenticated_signer_invalid");
+    };
+    if identity == [0; 32] {
+        return Dispatch::error(503, "refused", "authenticated_signer_invalid");
+    }
+    let imported = (|| -> Result<Value, MigrationError> {
+        let ownership = history_evidence(&body.ownership_evidence)?;
+        let evidence = history_evidence(&body.source_evidence)?;
+        let page = match body.chain {
+            MigrationSourceV2::Ethereum => profile.ethereum.as_ref()
+                .ok_or(MigrationError::Configuration)?
+                .verify_owned_history(&ownership, &evidence, identity, trace)?,
+            MigrationSourceV2::Solana => profile.solana.as_ref()
+                .ok_or(MigrationError::Configuration)?
+                .verify_owned_history(&ownership, &evidence, identity, trace)?,
+        };
+        {
+            let mut sink = history.lock().map_err(|_| MigrationError::StorageRefused)?;
+            sink.store_external(principal, &page, trace)?;
+        }
+        match body.chain {
+            MigrationSourceV2::Ethereum => profile.ethereum.as_ref()
+                .ok_or(MigrationError::Configuration)?.commit_history(&evidence, &page, trace)?,
+            MigrationSourceV2::Solana => profile.solana.as_ref()
+                .ok_or(MigrationError::Configuration)?.commit_history(&evidence, &page, trace)?,
+        }
+        Ok(json!({"version":"external-history-v2", "state":"external-history-imported",
+            "record_count":page.records().len(), "next_cursor":page.next_cursor().map(|value| hex(&value)),
+            "evidence_digest":hex(&page.evidence_digest()), "provenance":"external", "layerx_receipt":false}))
+    })();
+    match imported {
+        Ok(value) => Dispatch::result(200, "external_history_imported", value),
+        Err(error) => migration_history_error(error),
+    }
+}
+
+fn migration_history_read_v2(config: &Config, request: &IncomingRequest, principal: &PrincipalId) -> Dispatch {
+    let Ok(body) = direct_body::<MigrationHistoryReadRequestV2>(request) else {
+        return Dispatch::error(400, "refused", "invalid_migration_request");
+    };
+    let Some(history) = config.migration_v2.as_ref().and_then(|profile| profile.history.as_ref()) else {
+        return Dispatch::error(503, "refused", "migration_history_unconfigured");
+    };
+    let cursor = match body.cursor {
+        None => None,
+        Some(text) => match parse_hex32(&text) {
+            Ok(value) if value != [0; 32] && hex(&value) == text => Some(value),
+            _ => return Dispatch::error(400, "refused", "invalid_history"),
+        },
+    };
+    let page = history.lock().map_err(|_| MigrationError::StorageRefused)
+        .and_then(|sink| sink.read(principal, cursor, body.limit));
+    match page {
+        Ok(page) => Dispatch::result(200, "external_history_read", page.json()),
+        Err(error) => migration_history_error(error),
+    }
+}
+
+fn migration_history_error(error: MigrationError) -> Dispatch {
+    let (status, state) = match error {
+        MigrationError::SourcePending => (202, "pending"),
+        MigrationError::RpcUnavailable | MigrationError::RpcDivergence
+            | MigrationError::RpcResponseMismatch => (503, "pending"),
+        MigrationError::RpcRateLimited { .. } => (429, "pending"),
+        MigrationError::Configuration | MigrationError::StorageRefused
+            | MigrationError::CheckpointIntegrity => (503, "refused"),
+        MigrationError::CheckpointConflict | MigrationError::SourceDisplaced
+            | MigrationError::SourceReverted => (409, "refused"),
+        _ => (400, "refused"),
+    };
+    Dispatch::error(status, state, error.code())
 }
 
 #[derive(Deserialize)]
@@ -669,7 +785,8 @@ fn migration_account_v2(
 
 #[cfg(test)]
 mod migration_v2_request_tests {
-    use super::{direct_body, resumed_request, DurableContinuation, MigrationAccountRequestV2};
+    use super::{direct_body, history_evidence, resumed_request, DurableContinuation,
+        MigrationAccountRequestV2, MigrationHistoryImportRequestV2, MigrationHistoryReadRequestV2};
     use layerx_platform_gateway::http::IncomingRequest;
     use std::collections::BTreeMap;
 
@@ -730,6 +847,47 @@ mod migration_v2_request_tests {
             })
             .unwrap_or_else(|error| panic!("continuation encoding: {error}"));
             assert!(resumed_request(&encoded, "Bearer renewed-key").is_err());
+        }
+    }
+
+    #[test]
+    fn history_body_cannot_inject_owner_or_receipt_authority() {
+        assert!(direct_body::<MigrationHistoryImportRequestV2>(&request(
+            br#"{"chain":"ethereum","ownership_evidence":"AQ==","source_evidence":"Ag=="}"#,
+        )).is_ok());
+        assert!(direct_body::<MigrationHistoryReadRequestV2>(&request(
+            br#"{"cursor":null,"limit":1}"#,
+        )).is_ok());
+        for body in [
+            br#"{"chain":"ethereum","ownership_evidence":"AQ==","source_evidence":"Ag==","principal":"other"}"#.as_slice(),
+            br#"{"chain":"ethereum","ownership_evidence":"AQ==","source_evidence":"Ag==","layerx_receipt":true}"#.as_slice(),
+        ] {
+            assert!(direct_body::<MigrationHistoryImportRequestV2>(&request(body)).is_err());
+        }
+        for body in [
+            br#"{"cursor":null,"limit":1,"principal":"other"}"#.as_slice(),
+            br#"{"cursor":null,"limit":1,"layerx_receipt":true}"#.as_slice(),
+            br#"{"cursor":null,"limit":-1}"#.as_slice(),
+        ] {
+            assert!(direct_body::<MigrationHistoryReadRequestV2>(&request(body)).is_err());
+        }
+        for malformed in ["", "AQ", "AR==", "AQ==\n", "AQ-_", "!!!!"] {
+            assert!(history_evidence(malformed).is_err());
+        }
+    }
+
+    #[test]
+    fn history_pending_continuations_retain_exact_route_and_reauthentication() {
+        for path in ["/v2/migration/history", "/v2/migration/history/read"] {
+            let encoded = serde_json::to_string(&DurableContinuation {
+                method: "POST".to_owned(), path: path.to_owned(),
+                content_type: "application/json".to_owned(), idempotency_key: Some("history-key".to_owned()),
+                body: "7b7d".to_owned(),
+            }).unwrap_or_else(|error| panic!("history continuation: {error}"));
+            let resumed = resumed_request(&encoded, "Bearer renewed-key")
+                .unwrap_or_else(|()| panic!("history continuation refused"));
+            assert_eq!(resumed.path, path);
+            assert_eq!(resumed.headers.get("authorization").map(String::as_str), Some("Bearer renewed-key"));
         }
     }
 }

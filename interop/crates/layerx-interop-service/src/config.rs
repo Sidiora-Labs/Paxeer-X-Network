@@ -10,6 +10,7 @@ use layerx_interop_gateway::server::EvidencePolicy;
 use layerx_interop_gateway::trace::TraceId;
 use layerx_interop_gateway::GatewayCore;
 use layerx_migrate::ethereum::{EthereumConfig, EthereumVerifier};
+use layerx_migrate::history::DurableExternalHistory;
 use layerx_migrate::mapping_v2::{PaxeerBindingConfigV2, PaxeerBindingVerifierV2};
 use layerx_migrate::solana::{SolanaConfig, SolanaVerifier};
 use layerx_migrate::{AccountMappingStoreV2, JournalConfig};
@@ -39,7 +40,7 @@ use std::io::Read;
 use std::net::SocketAddr;
 use std::os::unix::fs::{MetadataExt, PermissionsExt};
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use zeroize::{Zeroize, Zeroizing};
 
 const MAX_IDEMPOTENCY_SECONDS: u64 = 2_592_000;
@@ -76,6 +77,7 @@ pub struct MigrationV2Config {
     pub paxeer_binding: PaxeerBindingVerifierV2,
     pub mapping_store: AccountMappingStoreV2,
     pub ramp_intake: Option<RampIntakeV2Config>,
+    pub history: Option<Mutex<DurableExternalHistory>>,
 }
 
 pub struct RampIntakeV2Config {
@@ -98,6 +100,7 @@ struct MigrationV2File {
     paxeer_binding: PaxeerBindingConfigV2,
     mapping_journal: JournalConfig,
     ramp_intake: Option<RampIntakeV2File>,
+    history_journal: Option<JournalConfig>,
 }
 
 pub enum Listener {
@@ -364,6 +367,17 @@ fn migration_v2_config() -> Result<Option<MigrationV2Config>, String> {
     if profile.ethereum.is_none() && profile.solana.is_none() {
         return Err("migration V2 requires a source verifier".to_owned());
     }
+    if let Some(history) = profile.history_journal.as_ref() {
+        let journals = std::iter::once(&profile.mapping_journal)
+            .chain(profile.ethereum.as_ref().map(|source| &source.journal))
+            .chain(profile.solana.as_ref().map(|source| &source.journal));
+        if journals.into_iter().any(|journal| {
+            (history.directory == journal.directory && history.namespace == journal.namespace)
+                || history.rollback_anchor_id == journal.rollback_anchor_id
+        }) {
+            return Err("migration V2 history journal must have separate ownership".to_owned());
+        }
+    }
     Ok(Some(MigrationV2Config {
         ethereum: profile
             .ethereum
@@ -379,6 +393,8 @@ fn migration_v2_config() -> Result<Option<MigrationV2Config>, String> {
             .map_err(|_| "migration V2 Paxeer binding authority is invalid".to_owned())?,
         mapping_store: AccountMappingStoreV2::new(&profile.mapping_journal)
             .map_err(|_| "migration V2 mapping journal is invalid".to_owned())?,
+        history: profile.history_journal.as_ref().map(DurableExternalHistory::new).transpose()
+            .map_err(|_| "migration V2 history journal is invalid".to_owned())?.map(Mutex::new),
         ramp_intake: profile
             .ramp_intake
             .map(|ramp| -> Result<RampIntakeV2Config, String> {

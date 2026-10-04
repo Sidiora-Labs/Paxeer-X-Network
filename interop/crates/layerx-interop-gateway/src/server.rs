@@ -89,6 +89,8 @@ pub enum InteropRoute<'a> {
     FiatCallback { adapter: HostedAdapter },
     MigrationAccountV2,
     MigrationAssetV2,
+    MigrationHistoryImportV2,
+    MigrationHistoryReadV2,
 }
 
 impl InteropRoute<'_> {
@@ -106,7 +108,8 @@ impl InteropRoute<'_> {
             Self::UcpComplete => Some(HostedAdapter::Ucp),
             Self::VisaVerifyIntent | Self::VisaExecuteIntent => Some(HostedAdapter::VisaTap),
             Self::FiatCallback { adapter } => Some(*adapter),
-            Self::MigrationAccountV2 | Self::MigrationAssetV2 => Some(HostedAdapter::MigrationV2),
+            Self::MigrationAccountV2 | Self::MigrationAssetV2
+                | Self::MigrationHistoryImportV2 | Self::MigrationHistoryReadV2 => Some(HostedAdapter::MigrationV2),
         }
     }
 
@@ -122,6 +125,7 @@ impl InteropRoute<'_> {
                 | Self::FiatCallback { .. }
                 | Self::MigrationAccountV2
                 | Self::MigrationAssetV2
+                | Self::MigrationHistoryImportV2
         )
     }
 }
@@ -199,6 +203,8 @@ pub fn interop_gateway_routes<'a>(
         ("GET", "/v1/adapters") => return Ok(InteropRoute::AdapterMetadata),
         ("POST", "/v2/migration/accounts") => return Ok(InteropRoute::MigrationAccountV2),
         ("POST", "/v2/migration/assets") => return Ok(InteropRoute::MigrationAssetV2),
+        ("POST", "/v2/migration/history") => return Ok(InteropRoute::MigrationHistoryImportV2),
+        ("POST", "/v2/migration/history/read") => return Ok(InteropRoute::MigrationHistoryReadV2),
         _ => {}
     }
     if method == "GET" {
@@ -306,5 +312,22 @@ mod migration_v2_route_tests {
         ] {
             assert_eq!(interop_gateway_routes(method, path), Err(refusal));
         }
+    }
+
+    #[test]
+    fn history_routes_preserve_import_and_read_separation() {
+        let import = interop_gateway_routes("POST", "/v2/migration/history")
+            .unwrap_or_else(|error| panic!("history import route: {error:?}"));
+        let read = interop_gateway_routes("POST", "/v2/migration/history/read")
+            .unwrap_or_else(|error| panic!("history read route: {error:?}"));
+        assert_eq!(import, InteropRoute::MigrationHistoryImportV2);
+        assert_eq!(read, InteropRoute::MigrationHistoryReadV2);
+        assert!(import.state_changing());
+        assert!(!read.state_changing());
+        assert_eq!(import.adapter(), read.adapter());
+        for path in ["/v2/migration/history/", "/v2/migration/history/read/", "/v2/migration/history?principal=other"] {
+            assert_eq!(interop_gateway_routes("POST", path), Err(RouteError::Unknown));
+        }
+        assert_eq!(interop_gateway_routes("GET", "/v2/migration/history/read"), Err(RouteError::Unknown));
     }
 }

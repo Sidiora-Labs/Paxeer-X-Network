@@ -1,6 +1,7 @@
 use layerx_interop_gateway::principal::PrincipalId;
 use layerx_interop_gateway::trace::TraceId;
 use sha2::{Digest as _, Sha256};
+use serde_json::{json, Value};
 
 use crate::journal::Journal;
 use crate::source_codec::{decode_hex, ethereum_hex, Reader, Writer};
@@ -60,6 +61,31 @@ pub struct ExternalHistoryPage {
 }
 
 impl ExternalHistoryPage {
+    #[must_use]
+    pub fn json(&self) -> Value {
+        let records: Vec<_> = self.records.iter().map(|record| {
+            let network = match record.chain() {
+                SourceChain::Ethereum { chain_id } => json!({"chain":"ethereum", "chain_id":chain_id.to_string()}),
+                SourceChain::Solana { genesis_hash } => json!({"chain":"solana", "genesis_hash":crate::source_codec::hex(&genesis_hash)}),
+            };
+            let transaction = match record.transaction() {
+                SourceTransaction::Ethereum(value) => crate::source_codec::hex(&value),
+                SourceTransaction::Solana(value) => crate::source_codec::hex(&value),
+            };
+            let address = match record.address() {
+                ExternalAddress::Ethereum(value) => crate::source_codec::hex(&value),
+                ExternalAddress::Solana(value) => crate::source_codec::hex(&value),
+            };
+            json!({"network":network, "transaction":transaction, "address":address,
+                "kind":format!("{:?}", record.kind()), "timestamp":record.timestamp().to_string(),
+                "asset":crate::source_codec::hex(&record.source_asset()), "amount":record.source_amount().to_string(),
+                "provenance":match record.provenance() { ExternalProvenance::Ethereum => "ethereum-external", ExternalProvenance::Solana => "solana-external" },
+                "layerx_receipt":false})
+        }).collect();
+        json!({"state":"external-history", "records":records,
+            "next_cursor":self.next_cursor.map(|value| crate::source_codec::hex(&value))})
+    }
+
     #[must_use]
     pub fn records(&self) -> &[ExternalHistoryRecord] {
         &self.records

@@ -45063,6 +45063,54 @@
       "upstream_path": "/readyz"
     },
     {
+      "id": "interop:POST:/v2/migration/history",
+      "service": "interop",
+      "method": "POST",
+      "path": "/v2/migration/history",
+      "transport": "http",
+      "authentication": "gateway-api-key",
+      "upstream": "interop",
+      "timeout_seconds": 8,
+      "retries": 0,
+      "health_predicate": "service-ready-and-network-version-bound",
+      "version": "external-history-v2",
+      "consumers": [
+        "migration",
+        "wallet",
+        "developer"
+      ],
+      "source": "interop/crates/layerx-interop-service/src/server.rs",
+      "proxy": true,
+      "timeout_scope": "per-io",
+      "connect_timeout_seconds": 3,
+      "upstream_path": "/v2/migration/history",
+      "max_body_bytes": 524288
+    },
+    {
+      "id": "interop:POST:/v2/migration/history/read",
+      "service": "interop",
+      "method": "POST",
+      "path": "/v2/migration/history/read",
+      "transport": "http",
+      "authentication": "gateway-api-key",
+      "upstream": "interop",
+      "timeout_seconds": 8,
+      "retries": 0,
+      "health_predicate": "service-ready-and-network-version-bound",
+      "version": "external-history-v2",
+      "consumers": [
+        "migration",
+        "wallet",
+        "developer"
+      ],
+      "source": "interop/crates/layerx-interop-service/src/server.rs",
+      "proxy": true,
+      "timeout_scope": "per-io",
+      "connect_timeout_seconds": 3,
+      "upstream_path": "/v2/migration/history/read",
+      "max_body_bytes": 524288
+    },
+    {
       "id": "interop:POST:/v2/migration/accounts",
       "service": "interop",
       "method": "POST",

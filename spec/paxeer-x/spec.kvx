@@ -23934,8 +23934,8 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.104.24.1]
 title = "Build the Ethereum and Solana migration tooling"
-status = "in_progress"
-mode = "QUALIFY"
+status = "done"
+mode = "BUILD"
 wave = 2
 requires = ["0.2"]
 reqs = ["1096.1", "1096.2"]
@@ -23946,7 +23946,7 @@ do_4 = "Build transaction-history import labelled as external provenance, never 
 do_5 = "Refuse any migration claim lacking verifiable finality evidence, with typed results."
 do_6 = "Test migration end to end against Ethereum and Solana test networks."
 do_7 = "Provide this task selector in tools/paxeer-x/gates and execute the full scoped acceptance contract using real production paths. Preserve the retained verification command coverage; move aggregate matrices to release scope and refuse an unknown or unimplemented selector."
-touches = ["interop/crates/layerx-migrate", ".github/workflows/interop-migration-testnets.yml", "tools/paxeer-x/gates/104.24.1.sh"]
+touches = ["interop/crates/layerx-migrate/src/ethereum.rs", "interop/crates/layerx-migrate/src/solana.rs", "interop/crates/layerx-migrate/src/history.rs", "interop/crates/layerx-migrate/src/rpc.rs", "interop/crates/layerx-migrate/src/source_codec.rs", "interop/crates/layerx-migrate/src/tests.rs", "interop/crates/layerx-migrate/tests/operator.rs", "tools/paxeer-x/gates/104.24.1.sh", "interop/crates/layerx-interop-service/src/config.rs", "interop/crates/layerx-interop-service/src/server.rs", "interop/crates/layerx-interop-gateway/src/server.rs", "platform/hosted/gateway/src/routes.rs", "tools/paxeer-x/route-catalogue.json"]
 verify_cmd = "timeout 30m tools/paxeer-x/verify-task.sh 104.24.1"
 gate_kind = "planned-adapter"
 max_builds = 1
@@ -23964,7 +23964,15 @@ path_policy = "Existing paths are modified in place. Planned paths must be creat
 evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
 
 retained_shared_touch_paths = ["interop/Cargo.*", "agent/crates/layerx-wire/src/receipt.rs", "Makefile"]
-source_ownership = "Root owns shared interop manifests, lock, wire receipt and Makefile; this owner changes migration source, CI and gate. All original implementation and acceptance criteria remain required."
+source_ownership = "Published source/history CLI is preserved. Task104.24.2 owns the distinct real V2 mapping/ramp producers, journal composition and unified routes; root owns shared manifests and CI. All original task criteria remain required."
+fleet_authority = "User explicitly ordered30agents into pending integrations within4hours; fresh bounded source implementation resumes. Preserve prior source/evidence and every assertion."
+fleet_role = "/root/complete_migration/migration_host_mapping"
+fleet_scope_manifest = "/root/lx-ops/paxeer-x-integration-2026-10-03/fleet-104.24.1-brief.json"
+source_status = "complete"
+completion_basis = "implementation under owner CONSTITUTION; qualification separately recorded"
+qualification_status = "UNRUN"
+source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/fleet-104.24.1-publication.json"
+
 [task.104.25.1]
 title = "Build the mirror publisher"
 status = "pending"
