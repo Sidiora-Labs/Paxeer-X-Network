@@ -35329,5 +35329,13 @@ implementation_window = "2026-10-04T13:28:34.704223+00:00 to 2026-10-04T13:58:34
 stop_condition = "Stop on scoped result, actual unrelated failure, second failed repair or30-minute cap. Root publishes source and exact result; no deployment."
 source_status = "complete"
 completion_basis = "implementation under owner CONSTITUTION; qualification separately recorded"
-qualification_status = "UNRUN"
+qualification_status = "passed focused gate"
 source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/fleet-104.30.8-publication.json"
+qualification_revision = "0c9d64a2bc4523197bb08b4a1a0d7e5802478f5b"
+qualification_command = "flock /root/lx-cargo/native-build.lock timeout 10m env CARGO_BUILD_JOBS=3 CARGO_TARGET_DIR=/root/lx-target/programs /root/.cargo/bin/cargo test --locked --manifest-path programs/Cargo.toml -p layerx-programs-runtime --lib transfer::tests::real_guest_mixed_effects_seal_exact_dual_authority_kernel_set -- --exact"
+qualification_exit_code = 0
+qualification_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/qualification/fleet104308/verify.log"
+build_status = "PASSED"
+build_exit_code = 0
+qualification_evidence = "/root/lx-ops/paxeer-x-integration-2026-10-03/fleet-104.30.8-source-handoff.json"
+build_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/qualification/fleet104308/build.log"
