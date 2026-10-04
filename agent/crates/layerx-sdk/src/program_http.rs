@@ -1386,7 +1386,11 @@ fn decode_execution(
     }
     let activity_id = fixed(value, "activity_id")?;
     let program_id = fixed(value, "program_id")?;
-    let guest_abi_version = bounded_u16(value, "guest_abi_version", 1, 2)?;
+    let guest_abi_version = match value.get("guest_abi_version").and_then(Value::as_u64) {
+        Some(3) => 3,
+        Some(4) => 4,
+        _ => bounded_u16(value, "guest_abi_version", 1, 2)?,
+    };
     let module_version = bounded_u32(value, "module_version", 1, 4)?;
     let batch_id = fixed(value, "batch_id")?;
     let global_sequence = decimal_u64(value, "global_sequence")?;
@@ -1463,6 +1467,44 @@ fn decode_execution(
         authority,
         verified,
     })
+}
+
+pub(super) fn verify_execution_profile(
+    verified: &layerx_proof::program::VerifiedProgramExecution,
+    guest_abi: u16,
+) -> Result<(), ProgramOperationError> {
+    match guest_abi {
+        1 | 2 => {
+            if verified.terminal_execution_version() == Some(5) {
+                return Err(ProgramOperationError::Verification);
+            }
+            Ok(())
+        }
+        3 | 4 => {
+            let protocol = verified
+                .receipt()
+                .receipt()
+                .protocol()
+                .ok_or(ProgramOperationError::Verification)?;
+            let outcome = protocol
+                .program_outcome()
+                .ok_or(ProgramOperationError::Verification)?;
+            if protocol.protocol_version() != 3 || outcome.abi_version() != guest_abi {
+                return Err(ProgramOperationError::IdentityMismatch);
+            }
+            match verified.terminal_execution_version() {
+                Some(5) => Ok(()),
+                None if verified.is_standalone_refusal()
+                    && matches!(outcome.terminal_kind(), 2 | 3)
+                    && !verified.outcome().is_completed() =>
+                {
+                    Ok(())
+                }
+                _ => Err(ProgramOperationError::Verification),
+            }
+        }
+        _ => Err(ProgramOperationError::Bounds),
+    }
 }
 
 fn expected_outcome(outcome: &ProgramCallOutcome) -> Value {
@@ -2392,6 +2434,227 @@ mod source_contract {
         assert_eq!(activity_id, request.activity_id);
         assert_eq!(idempotency_key, request.idempotency_key);
         assert_eq!(retained_signed_activity.as_deref(), Some(signed.as_slice()));
+        Ok(())
+    }
+
+    #[test]
+    fn v5_native_corpus_binds_exact_profiles_authority_and_all_outcomes()
+    -> Result<(), ProgramOperationError> {
+        let path = std::env::var_os("PAXEER_X_PROGRAM_TERMINAL_V5_CORPUS")
+            .map(std::path::PathBuf::from)
+            .ok_or(ProgramOperationError::Verification)?;
+        if path
+            .components()
+            .any(|part| part.as_os_str().to_string_lossy().starts_with(".env"))
+        {
+            return Err(ProgramOperationError::Verification);
+        }
+        let metadata =
+            std::fs::symlink_metadata(&path).map_err(|_| ProgramOperationError::Verification)?;
+        if !metadata.is_file() || metadata.len() > super::MAX_HTTP_RESPONSE_BYTES {
+            return Err(ProgramOperationError::Bounds);
+        }
+        let corpus: Value = serde_json::from_slice(
+            &std::fs::read(&path).map_err(|_| ProgramOperationError::Verification)?,
+        )
+        .map_err(|_| ProgramOperationError::Decode)?;
+        let revision = corpus
+            .get("source_revision")
+            .and_then(Value::as_str)
+            .ok_or(ProgramOperationError::Decode)?;
+        if revision.len() != 40 || !revision.bytes().all(super::canonical_hex_byte) {
+            return Err(ProgramOperationError::Decode);
+        }
+        let cases = corpus
+            .get("cases")
+            .and_then(Value::as_array)
+            .ok_or(ProgramOperationError::Decode)?;
+        assert_eq!(cases.len(), 10);
+        let anchor: Value = serde_json::from_str(include_str!(
+            "../../../../platform/sdk/conformance/fixtures/receipt-programs-executed-v4.json"
+        ))
+        .map_err(|_| ProgramOperationError::Decode)?;
+        let pinned_key = fixed(
+            object(
+                anchor
+                    .get("authorized_batch")
+                    .ok_or(ProgramOperationError::Decode)?,
+            )?,
+            "sequencer_public_key_hex",
+        )?;
+        let registry = crate::program_lifecycle::programs_module_registry()?;
+        let mut seen = std::collections::BTreeSet::new();
+        for case in cases {
+            let case_object = object(case)?;
+            let abi = super::bounded_u16(case_object, "guest_abi", 3, 4)?;
+            let role = super::required_string(case_object, "outcome")?;
+            assert!(matches!(
+                role,
+                "success" | "failure" | "resource" | "callback" | "settlement"
+            ));
+            assert!(seen.insert((abi, role.to_owned())));
+            assert_eq!(fixed(case_object, "sequencer_public_key_hex")?, pinned_key);
+            let signed = bounded_hex(
+                case_object,
+                "signed_activity_hex",
+                MAX_SIGNED_ACTIVITY_BYTES,
+                None,
+            )?;
+            let activity = layerx_wire::activity::decode_signed(&signed, &registry)
+                .map_err(|_| ProgramOperationError::Decode)?;
+            let native = layerx_types::program_call::NativeProgramCall::decode(activity.payload())
+                .map_err(|_| ProgramOperationError::Decode)?;
+            assert_eq!(activity.protocol_version(), 3);
+            assert_eq!(native.guest_abi, abi);
+            let authority = object(
+                case.get("authorized_batch")
+                    .ok_or(ProgramOperationError::Decode)?,
+            )?;
+            assert_eq!(fixed(authority, "sequencer_public_key_hex")?, pinned_key);
+            let evidence = super::ProgramExecutionEvidence {
+                payload_hash: layerx_wire::hash::payload_hash(&activity)
+                    .map_err(|_| ProgramOperationError::Decode)?,
+                receipt: bounded_hex(
+                    case_object,
+                    "canonical_receipt_hex",
+                    MAX_SIGNED_ACTIVITY_BYTES,
+                    None,
+                )?,
+                terminal_payload: bounded_hex(
+                    case_object,
+                    "terminal_payload_hex",
+                    MAX_SIGNED_ACTIVITY_BYTES,
+                    None,
+                )?,
+                call_graph: bounded_hex(
+                    case_object,
+                    "call_graph_hex",
+                    MAX_SIGNED_ACTIVITY_BYTES,
+                    None,
+                )?,
+                authority: layerx_proof::receipt::AuthorizedBatch::new(
+                    fixed(authority, "batch_id_hex")?,
+                    fixed(authority, "asset_hex")?,
+                    fixed(authority, "previous_state_root_hex")?,
+                    fixed(authority, "resulting_state_root_hex")?,
+                    pinned_key,
+                ),
+                activity_id: layerx_wire::hash::activity_id(&activity)
+                    .map_err(|_| ProgramOperationError::Decode)?,
+                program_id: native.program_id.bytes(),
+                guest_abi_version: native.guest_abi,
+            };
+            assert_eq!(evidence.program_id, fixed(case_object, "program_id_hex")?);
+            let capture = super::verify_program_evidence_with_payers(&evidence, &[])?;
+            let protocol = capture
+                .receipt()
+                .receipt()
+                .protocol()
+                .ok_or(ProgramOperationError::Verification)?;
+            let document = json!({
+                "state":if capture.outcome().is_completed() {"executed"} else {"refused"},
+                "verification":super::EXECUTION_VERIFICATION,
+                "activity_id":hex(&evidence.activity_id),"program_id":hex(&evidence.program_id),
+                "guest_abi_version":evidence.guest_abi_version,"module_version":protocol.module_version(),
+                "batch_id":hex(&protocol.batch_id()),"global_sequence":protocol.global_sequence().to_string(),
+                "result_code":protocol.result_code(),"state_root":hex(&protocol.resulting_state_root()),
+                "receipt_digest":hex(&capture.receipt().evidence().receipt_digest().ok_or(ProgramOperationError::Verification)?),
+                "receipt":hex(&evidence.receipt),"terminal_payload":hex(&evidence.terminal_payload),"call_graph":hex(&evidence.call_graph),
+                "authority":{"batch_id":hex(&evidence.authority.batch_id()),"asset":hex(&fixed(authority,"asset_hex")?),
+                    "previous_state_root":hex(&evidence.authority.previous_state_root()),
+                    "resulting_state_root":hex(&evidence.authority.resulting_state_root()),"sequencer_public_key":hex(&pinned_key)},
+                "usage":{"cpu_fuel":capture.cpu_fuel().to_string(),"memory_bytes":capture.memory_bytes().to_string(),
+                    "storage_read_bytes":capture.storage_read_bytes().to_string(),"storage_write_bytes":capture.storage_write_bytes().to_string(),
+                    "output_values":capture.output_values(),"output_bytes":capture.output_bytes().to_string(),"fee_units":capture.fee_units().to_string()},
+                "outcome":super::expected_outcome(capture.outcome())
+            });
+            let document = &document;
+            for (wire, captured) in [
+                ("receipt", "canonical_receipt_hex"),
+                ("terminal_payload", "terminal_payload_hex"),
+                ("call_graph", "call_graph_hex"),
+            ] {
+                assert_eq!(document.get(wire), case.get(captured));
+            }
+            let decoded = decode_execution(document, None, pinned_key, &signed)?;
+            require_native_execution(&decoded.verified)?;
+            assert_eq!(decoded.program_id, native.program_id.bytes());
+            assert_eq!(
+                decoded.activity_id,
+                layerx_wire::hash::activity_id(&activity)
+                    .map_err(|_| ProgramOperationError::Decode)?
+            );
+            assert_eq!(decoded.verified.outcome().is_completed(), role == "success");
+            if matches!(role, "callback" | "settlement") {
+                assert_eq!(decoded.verified.terminal_execution_version(), None);
+                assert!(decoded.verified.is_standalone_refusal());
+                assert!(matches!(
+                    decoded
+                        .verified
+                        .receipt()
+                        .receipt()
+                        .protocol()
+                        .ok_or(ProgramOperationError::Verification)?
+                        .program_outcome()
+                        .ok_or(ProgramOperationError::Verification)?
+                        .terminal_kind(),
+                    2 | 3
+                ));
+            } else {
+                assert_eq!(decoded.verified.terminal_execution_version(), Some(5));
+                assert!(!decoded.verified.is_standalone_refusal());
+            }
+            for changed in [0, 1, 2, if abi == 3 { 4 } else { 3 }, 5, u16::MAX] {
+                let mut altered = document.clone();
+                altered["guest_abi_version"] = json!(changed);
+                assert!(decode_execution(&altered, None, pinned_key, &signed).is_err());
+            }
+            assert!(decode_execution(document, None, [0x55; 32], &signed).is_err());
+            for field in [
+                "activity_id",
+                "program_id",
+                "state_root",
+                "receipt_digest",
+                "batch_id",
+            ] {
+                let mut altered = document.clone();
+                altered[field] = json!(hex(&[0x55; 32]));
+                assert!(decode_execution(&altered, None, pinned_key, &signed).is_err());
+            }
+            for field in ["receipt", "terminal_payload", "call_graph"] {
+                let bytes = bounded_hex(object(document)?, field, MAX_SIGNED_ACTIVITY_BYTES, None)?;
+                for length in [0, 1, bytes.len() / 2, bytes.len().saturating_sub(1)] {
+                    let mut altered = document.clone();
+                    altered[field] = json!(hex(&bytes[..length]));
+                    assert!(decode_execution(&altered, None, pinned_key, &signed).is_err());
+                }
+                let mut trailing = bytes.clone();
+                trailing.push(0);
+                let mut altered = document.clone();
+                altered[field] = json!(hex(&trailing));
+                assert!(decode_execution(&altered, None, pinned_key, &signed).is_err());
+            }
+            for meter in [
+                "cpu_fuel",
+                "memory_bytes",
+                "storage_read_bytes",
+                "storage_write_bytes",
+                "output_bytes",
+                "fee_units",
+            ] {
+                let mut altered = document.clone();
+                altered["usage"][meter] = json!("18446744073709551615");
+                assert!(decode_execution(&altered, None, pinned_key, &signed).is_err());
+            }
+            let mut altered = document.clone();
+            altered["outcome"] = json!({"kind":"completed","code":987,"response":"00"});
+            assert!(decode_execution(&altered, None, pinned_key, &signed).is_err());
+        }
+        for abi in [3, 4] {
+            for role in ["success", "failure", "resource", "callback", "settlement"] {
+                assert!(seen.contains(&(abi, role.to_owned())));
+            }
+        }
         Ok(())
     }
 }

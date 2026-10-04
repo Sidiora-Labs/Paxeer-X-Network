@@ -11,7 +11,7 @@ artifacts=[m for m in messages if m.get("reason")=="compiler-artifact" and m.get
 assert len(artifacts)==1, "exactly one real SDK lib test executable is required"
 binary=pathlib.Path(artifacts[0]["executable"]); assert binary.is_file() and os.access(binary,os.X_OK), "compiled SDK executable unavailable"
 record={"build_json":str(build.resolve()),"build_json_sha256":hashlib.sha256(build.read_bytes()).hexdigest(),"executable":str(binary.resolve()),"sha256":hashlib.sha256(binary.read_bytes()).hexdigest(),"cases":[]}
-expected={"programs::http::source_contract":10,"program_lifecycle::tests":2}
+expected={"programs::http::source_contract":11,"program_lifecycle::tests":2}
 for selector,count in expected.items():
     command=[str(binary),selector,"--nocapture","--test-threads=1"]
     result=subprocess.run(command,text=True,stdout=subprocess.PIPE,stderr=subprocess.STDOUT)

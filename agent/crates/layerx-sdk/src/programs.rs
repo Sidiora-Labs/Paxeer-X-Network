@@ -2,10 +2,10 @@
 
 pub use layerx_agent_api::error::{ErrorClass as AgentErrorClass, Retriability};
 use layerx_proof::program::{
-    verify_authorized_program_execution_with_payers, AuthorizedProgramExecutionExpectation,
-    VerifiedProgramExecution,
+    AuthorizedProgramExecutionExpectation, VerifiedProgramExecution,
+    verify_authorized_program_execution_with_payers,
 };
-pub use layerx_proof::program::{OccupancyPayer, MAX_OCCUPANCY_PAYERS};
+pub use layerx_proof::program::{MAX_OCCUPANCY_PAYERS, OccupancyPayer};
 use layerx_proof::receipt::AuthorizedBatch;
 use layerx_types::intent::ProgramCall;
 use layerx_types::payload::{ModuleId, ModuleRegistry};
@@ -19,9 +19,9 @@ pub const MAX_SIGNED_ACTIVITY_BYTES: usize = 1_048_576;
 pub(crate) mod http;
 
 pub use crate::program_lifecycle::{
-    programs_module_registry, verify_lifecycle_receipt, NativeProgramDeployRequest,
-    NativeProgramLifecycleRequest, NativeProgramUpgradeRequest, NativeProgramWindDownRequest,
-    ProgramLifecycleSubmission,
+    NativeProgramDeployRequest, NativeProgramLifecycleRequest, NativeProgramUpgradeRequest,
+    NativeProgramWindDownRequest, ProgramLifecycleSubmission, programs_module_registry,
+    verify_lifecycle_receipt,
 };
 pub use http::{HttpProgramTransport, LayerXKeyCredential};
 
@@ -657,7 +657,7 @@ pub fn verify_program_evidence_with_payers(
     {
         return Err(ProgramOperationError::Bounds);
     }
-    verify_authorized_program_execution_with_payers(
+    let verified = verify_authorized_program_execution_with_payers(
         &evidence.receipt,
         &evidence.terminal_payload,
         &evidence.call_graph,
@@ -670,7 +670,9 @@ pub fn verify_program_evidence_with_payers(
         },
         occupancy_payers,
     )
-    .map_err(|_| ProgramOperationError::Verification)
+    .map_err(|_| ProgramOperationError::Verification)?;
+    http::verify_execution_profile(&verified, evidence.guest_abi_version)?;
+    Ok(verified)
 }
 
 #[must_use]
