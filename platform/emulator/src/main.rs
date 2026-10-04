@@ -6392,6 +6392,8 @@ mod maintenance_head_tests {
             0,
         )
         .map_err(core_error)?;
+        let genesis_snapshot = export_snapshot(&mut emulator, 1);
+        assert_eq!(genesis_snapshot.status, 200);
         let quoted = move_quote(
             &mut emulator,
             &json_request(
@@ -6484,8 +6486,15 @@ mod maintenance_head_tests {
         assert_ne!(import_snapshot(&mut restarted, &corrupted, 8).status, 200);
         assert_eq!(document(current_head(&mut restarted, 9))?, head);
         println!("MAINTENANCE_HEAD_CASE snapshot-tamper");
-        prefund_core(&mut restarted, "did:layerx:maintenance-new", key, 0, 1)
-            .map_err(core_error)?;
+        assert_eq!(
+            import_snapshot(&mut restarted, &genesis_snapshot.body, 10).status,
+            200
+        );
+        let restored = inspect_state(&restarted).map_err(core_error)?;
+        assert_ne!(
+            head["state_root"],
+            hex_encode(&restored.canonical_state_root)
+        );
         assert_eq!(current_head(&mut restarted, 10).status, 503);
         println!("MAINTENANCE_HEAD_CASE stale-root");
         Ok(())
