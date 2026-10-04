@@ -33043,8 +33043,16 @@ fleet_role = "/root/complete_human_facts/facts_dispatch"
 fleet_scope_manifest = "/root/lx-ops/paxeer-x-integration-2026-10-03/fleet-104.13.9-brief.json"
 source_status = "complete"
 completion_basis = "implementation under owner CONSTITUTION; qualification separately recorded"
-qualification_status = "UNRUN"
+qualification_status = "build_passed_verify_unrun_cutoff"
 source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/fleet-104.13.9-format-handoff.json"
+qualification_revision = "5be433cae28a22213a6f94c06772afbc839b4a2c"
+qualification_command = "timeout 20m python3 tools/qualification/paxeer-x/human-projection-facts.py"
+qualification_exit_code = "UNRUN"
+qualification_log = "UNRUN"
+build_status = "PASSED"
+build_exit_code = 0
+qualification_evidence = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-104.13.9-fleet-qualification.json"
+build_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-104.13.9-fleet-build.log"
 
 [task.0.11]
 title = "Preserve legacy deposit fault encoding with complete SDK error handling"
