@@ -255,7 +255,7 @@ pub extern "C" fn layerx_programs_migration_execute_activity(
             if legacy {
                 return RESULT_OK;
             }
-            let usage = record.usage();
+            let usage = record.usage;
             if usage.occupancy_byte_batches != 0 || usage.occupancy_fee_units != 0 {
                 return RESULT_FATAL_INVARIANT;
             }

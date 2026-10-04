@@ -25466,6 +25466,8 @@ owner_extension_60m = "Owner explicitly approved60-minute continuation START09:4
 owner_replay_governance_approval = "Owner explicitly approved existing genesis governance key budget authority; preserve original validation-fee-only behavior solely for authenticated preactivation replay with proven original executor semantics. Missing provenance refuses; no historical repricing."
 completion_basis = "implementation under owner CONSTITUTION; qualification separately recorded"
 source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-6.2-source-handoff.json"
+qualification_first_build_evidence = "72abafd48a7effa6193a7fd051b130b657362d80 | timeout 20m python3 tools/qualification/paxeer-x/programs_native_migration.py --build-artifacts | 1 | /root/lx-ops/paxeer-x-integration-2026-10-03/task-6.2-qualification-build/build-2.log"
+repair1 = "Use record.usage without changing metering, authorization or fees"
 
 [task.6.4]
 title = "Preserve account proofs and legitimate wind-down across account-capable ABI upgrades"
