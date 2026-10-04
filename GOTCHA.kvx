@@ -2249,3 +2249,8 @@ resolution = "Keep compiler checks intact; complete actual transport corpus and 
 area = "Canonical admission receipt operation"
 observed = "Programs receipt operation is CALL3 and registered non-CALL0, independent of the signed activity ordinal; native21 authentic signing and restart corpus passed after matching this actual mapping."
 resolution = "Preserve registry and cryptographic checks and use the exact native operation binding."
+
+[gotcha.665]
+area = "Locked gateway runtime dependency"
+observed = "Authority16 and migration24.5 initially stopped on stale shared Cargo.lock entries after the gateway added a direct runtime dependency."
+resolution = "Root added only the existing dependency edges; gateway0.14 locked build and focused gate passed. Prior unrelated failed tasks remain separately unqualified."

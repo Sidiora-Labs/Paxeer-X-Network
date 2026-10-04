@@ -22,6 +22,10 @@ use sha2::{Digest, Sha256};
 use std::sync::atomic::Ordering;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+const MAX_EXPORT_BYTES: usize = 1_048_576;
+const MAX_EXPORT_MATERIAL_BYTES: usize = (MAX_EXPORT_BYTES - 16_384) / 2;
+const MAX_EXPORT_READS: usize = 5;
+
 pub(super) struct Session<'a> {
     config: &'a Config,
     transport: Uds,
@@ -30,6 +34,8 @@ pub(super) struct Session<'a> {
     evidence: Sha256,
     history: Option<layerx_client::handover::SequencerHistory>,
     observed_key: [u8; 32],
+    export: Option<Vec<serde_json::Value>>,
+    export_material_bytes: usize,
 }
 
 fn limits() -> Limits {
@@ -42,9 +48,9 @@ fn limits() -> Limits {
     }
 }
 
-fn handshake(config: &Config) -> HandshakeConfig {
+fn handshake(config: &Config, interface_version: Version) -> HandshakeConfig {
     HandshakeConfig {
-        built_interface_version: Version::V1_5,
+        built_interface_version: interface_version,
         expected_protocol_version: PROTOCOL_VERSION,
         expected_network_id: config.protocol_network_id,
     }
@@ -60,14 +66,21 @@ fn correlation() -> Result<u64, ()> {
 
 impl<'a> Session<'a> {
     pub(super) fn open(config: &'a Config) -> Result<Self, ()> {
+        Self::open_profile(config, Version::V1_5)
+    }
+
+    fn open_profile(config: &'a Config, interface_version: Version) -> Result<Self, ()> {
         let deadline = std::time::Instant::now()
             .checked_add(IO_TIMEOUT)
             .ok_or(())?;
         let mut transport =
             Uds::connect(&config.lni_socket, &config.lni_gate, limits()).map_err(|_| ())?;
-        let result = perform(&mut transport, &handshake(config), None).map_err(|_| ())?;
+        let result =
+            perform(&mut transport, &handshake(config, interface_version), None).map_err(|_| ())?;
         let node = result.node();
-        if node.interface_version != Version::V1_5 || node.latest_finalised_checkpoint == [0; 32] {
+        if node.interface_version != interface_version
+            || node.latest_finalised_checkpoint == [0; 32]
+        {
             return Err(());
         }
         let head = Head {
@@ -112,6 +125,8 @@ impl<'a> Session<'a> {
             evidence,
             history,
             observed_key: node.authorised_sequencer_key,
+            export: None,
+            export_material_bytes: 0,
             context: ReadContext {
                 interface_version: node.interface_version,
                 correlation_id: 0,
@@ -131,12 +146,37 @@ impl<'a> Session<'a> {
         Ok(self.context)
     }
 
-    fn retain(&mut self, value: &ReadValue) -> Result<(), ()> {
+    fn retain(&mut self, value: &ReadValue, selector: serde_json::Value) -> Result<(), ()> {
         if value.freshness().batch_number != self.context.head.sealed_batch
             || value.freshness().global_sequence != self.context.head.chain_sequence
             || value.freshness().observed_checkpoint != self.context.head.finalised_checkpoint
         {
             return Err(());
+        }
+        if let Some(export) = &mut self.export {
+            let bytes = value
+                .canonical_bytes()
+                .len()
+                .checked_add(value.proof_material().len())
+                .ok_or(())?;
+            self.export_material_bytes = self.export_material_bytes.checked_add(bytes).ok_or(())?;
+            if self.export_material_bytes > MAX_EXPORT_MATERIAL_BYTES
+                || export.len() >= MAX_EXPORT_READS
+                || value.proof_material().is_empty()
+                || value.achieved().wire_rank()
+                    < VerificationLevel::CHECKPOINT_FINALISED.wire_rank()
+            {
+                return Err(());
+            }
+            export.push(value!({
+                "selector": selector,
+                "canonical_bytes": hex::encode(value.canonical_bytes()),
+                "proof_material": hex::encode(value.proof_material()),
+                "verification": value.achieved().wire_rank(),
+                "batch_number": value.freshness().batch_number,
+                "global_sequence": value.freshness().global_sequence,
+                "observed_checkpoint": hex::encode(&value.freshness().observed_checkpoint)
+            }));
         }
         for bytes in [value.canonical_bytes(), value.proof_material()] {
             self.evidence
@@ -155,7 +195,10 @@ impl<'a> Session<'a> {
             None => read::module_state(&mut self.transport, module, key, context),
         }
         .map_err(|_| ())?;
-        self.retain(&value)?;
+        self.retain(
+            &value,
+            value!({"kind":"module","module_id":module,"key":hex::encode(key)}),
+        )?;
         Ok(value.canonical_bytes().to_vec())
     }
 
@@ -166,7 +209,10 @@ impl<'a> Session<'a> {
             None => read::account(&mut self.transport, id, context),
         }
         .map_err(|_| ())?;
-        self.retain(&value)?;
+        self.retain(
+            &value,
+            value!({"kind":"account","account_id":hex::encode(&id)}),
+        )?;
         let policy = AccountEvidencePolicy {
             expected_protocol_version: PROTOCOL_VERSION,
             expected_network_id: self.config.protocol_network_id,
@@ -209,9 +255,15 @@ impl<'a> Session<'a> {
     pub(super) fn unchanged(&self) -> Result<(), ()> {
         let mut transport = Uds::connect(&self.config.lni_socket, &self.config.lni_gate, limits())
             .map_err(|_| ())?;
-        let result = perform(&mut transport, &handshake(self.config), None).map_err(|_| ())?;
+        let result = perform(
+            &mut transport,
+            &handshake(self.config, self.context.interface_version),
+            None,
+        )
+        .map_err(|_| ())?;
         let node = result.node();
-        if node.authorised_sequencer_key != self.observed_key
+        if node.interface_version != self.context.interface_version
+            || node.authorised_sequencer_key != self.observed_key
             || node.chain_head_sequence != self.context.head.chain_sequence
             || node.latest_sealed_batch != self.context.head.sealed_batch
             || node.latest_finalised_checkpoint != self.context.head.finalised_checkpoint
@@ -272,7 +324,7 @@ fn accounts(
     session: &mut Session<'_>,
     record: &Record,
     p: &PrincipalPolicy,
-) -> Result<VerifiedAccountEvidence, ()> {
+) -> Result<(VerifiedAccountEvidence, [u8; 32]), ()> {
     let owner = session.account(record.owner)?;
     let did = owner_did(owner.account(), p)?;
     identity(session, did, owner.account())?;
@@ -300,11 +352,23 @@ fn accounts(
     {
         return Err(());
     }
-    Ok(budget)
+    Ok((budget, identity_key(did)?))
 }
 
-fn produce(config: &Config, p: &PrincipalPolicy, id: [u8; 32]) -> Result<Response, ()> {
-    let mut session = Session::open(config)?;
+fn produce(
+    config: &Config,
+    p: &PrincipalPolicy,
+    id: [u8; 32],
+    export: bool,
+) -> Result<Response, ()> {
+    let mut session = if export {
+        Session::open_profile(config, Version::V1_8)?
+    } else {
+        Session::open(config)?
+    };
+    if export {
+        session.export = Some(Vec::new());
+    }
     let mut key = b"budget:".to_vec();
     key.extend_from_slice(&id);
     let bytes = session.module(3, &key)?;
@@ -316,7 +380,7 @@ fn produce(config: &Config, p: &PrincipalPolicy, id: [u8; 32]) -> Result<Respons
     {
         return Err(());
     }
-    let budget = accounts(&mut session, &record, p)?;
+    let (budget, identity) = accounts(&mut session, &record, p)?;
     let header = layerx_wire::receipt::decode_batch_header(session.checkpoint.canonical_header())
         .map_err(|_| ())?;
     let timestamp = header.timestamp_ms();
@@ -329,22 +393,68 @@ fn produce(config: &Config, p: &PrincipalPolicy, id: [u8; 32]) -> Result<Respons
         return Err(());
     }
     session.unchanged()?;
-    let evidence: [u8; 32] = session.evidence.finalize().into();
-    Ok(json(
+    let evidence: [u8; 32] = session.evidence.clone().finalize().into();
+    let state = value!({
+        "budget_id": hex::encode(&record.id), "asset": hex::encode(&record.asset),
+        "revocation_sequence": record.revocation,
+        "observed_head_sequence": session.context.head.chain_sequence,
+        "verification": 4, "evidence_digest": hex::encode(&evidence),
+        "receipt_digest": hex::encode(&budget.receipt_digest()),
+        "checkpoint_digest": hex::encode(&session.context.head.finalised_checkpoint),
+        "age_sequences": 0, "maximum_age_sequences": p.maximum_age_sequences,
+        "remaining": record.remaining(budget.account().balance(), timestamp, budget.account().frozen).to_string(),
+        "closed": record.closed, "revoked": record.revoked,
+        "canonical_core_bytes": hex::encode(&bytes)
+    });
+    if !export {
+        return Ok(json(200, &state));
+    }
+    let finality_bytes = session
+        .checkpoint
+        .canonical_header()
+        .len()
+        .checked_add(session.checkpoint.checkpoint_bytes().len())
+        .ok_or(())?
+        .checked_add(session.checkpoint.context_bytes().len())
+        .ok_or(())?;
+    if session
+        .export_material_bytes
+        .checked_add(finality_bytes)
+        .ok_or(())?
+        > MAX_EXPORT_MATERIAL_BYTES
+    {
+        return Err(());
+    }
+    let authorization = session.context.sequencer_authorization;
+    let response = json(
         200,
         &value!({
-            "budget_id": hex::encode(&record.id), "asset": hex::encode(&record.asset),
-            "revocation_sequence": record.revocation,
-            "observed_head_sequence": session.context.head.chain_sequence,
-            "verification": 4, "evidence_digest": hex::encode(&evidence),
-            "receipt_digest": hex::encode(&budget.receipt_digest()),
-            "checkpoint_digest": hex::encode(&session.context.head.finalised_checkpoint),
-            "age_sequences": 0, "maximum_age_sequences": p.maximum_age_sequences,
-            "remaining": record.remaining(budget.account().balance(), timestamp, budget.account().frozen).to_string(),
-            "closed": record.closed, "revoked": record.revoked,
-            "canonical_core_bytes": hex::encode(&bytes)
+            "schema": "layerx.human.budget-proof.v1",
+            "tenant": p.tenant, "principal": p.principal,
+            "protocol_version": PROTOCOL_VERSION, "network_id": config.protocol_network_id,
+            "lni_interface_version": {"major":session.context.interface_version.major,"minor":session.context.interface_version.minor},
+            "maximum_age_seconds":p.maximum_age_seconds,
+            "head": {"batch_number":session.context.head.sealed_batch,"global_sequence":session.context.head.chain_sequence,"checkpoint_id":hex::encode(&session.context.head.finalised_checkpoint)},
+            "budget_state": state,
+            "accounts": {"owner":hex::encode(&record.owner),"budget":hex::encode(&record.account),"source":hex::encode(&record.source.unwrap_or(record.owner))},
+            "identity_key": hex::encode(&identity),
+            "proofs": session.export.as_ref().ok_or(())?,
+            "finality": {
+                "canonical_header": hex::encode(session.checkpoint.canonical_header()),
+                "checkpoint_bytes": hex::encode(session.checkpoint.checkpoint_bytes()),
+                "context_bytes": hex::encode(session.checkpoint.context_bytes()),
+                "checkpoint_id": hex::encode(&session.context.head.finalised_checkpoint),
+                "set_version": session.checkpoint.set_version(),
+                "observed_block_hash": session.checkpoint.observed_block_hash().map(|hash| hex::encode(&hash))
+            },
+            "authorization": {"sequencer_id":hex::encode(&authorization.sequencer_id()),"public_key":hex::encode(&authorization.public_key()),"first_batch_number":authorization.first_batch_number(),"last_batch_number":authorization.last_batch_number()},
+            "maximum_bytes":MAX_EXPORT_BYTES
         }),
-    ))
+    );
+    if response.body.len() > MAX_EXPORT_BYTES {
+        return Err(());
+    }
+    Ok(response)
 }
 
 pub(super) fn read(config: &Config, p: &PrincipalPolicy, id: &str) -> Result<Response, Response> {
@@ -352,7 +462,7 @@ pub(super) fn read(config: &Config, p: &PrincipalPolicy, id: &str) -> Result<Res
         return Err(refusal(404, "budget_not_bound", None));
     }
     let id = hex::decode32(id).map_err(|_| refusal(400, "invalid_budget_id", None))?;
-    produce(config, p, id).map_err(|()| unavailable("budget_state_proof_unavailable"))
+    produce(config, p, id, false).map_err(|()| unavailable("budget_state_proof_unavailable"))
 }
 
 pub(super) fn read_dynamic(
@@ -361,5 +471,21 @@ pub(super) fn read_dynamic(
     id: &str,
 ) -> Result<Response, Response> {
     let id = hex::decode32(id).map_err(|_| refusal(400, "invalid_budget_id", None))?;
-    produce(config, p, id).map_err(|()| unavailable("budget_state_proof_unavailable"))
+    produce(config, p, id, false).map_err(|()| unavailable("budget_state_proof_unavailable"))
+}
+
+pub(super) fn export(config: &Config, p: &PrincipalPolicy, id: &str) -> Result<Response, Response> {
+    if !p.budgets.iter().any(|bound| bound == id) {
+        return Err(refusal(404, "budget_not_bound", None));
+    }
+    export_dynamic(config, p, id)
+}
+
+pub(super) fn export_dynamic(
+    config: &Config,
+    p: &PrincipalPolicy,
+    id: &str,
+) -> Result<Response, Response> {
+    let id = hex::decode32(id).map_err(|_| refusal(400, "invalid_budget_id", None))?;
+    produce(config, p, id, true).map_err(|()| unavailable("budget_proof_export_unavailable"))
 }

@@ -533,7 +533,7 @@ fn dispatch(config: &Config, request: &Request) -> Result<Response, Response> {
         "authorized-batch" => &["activity_id"],
         "identity" => &["did"],
         "capability-scope" => &["did", "authority", "action_key", "capability_id"],
-        "budget-state" => &["budget_id"],
+        "budget-state" | "budget-proof" => &["budget_id"],
         "key-policy" => &["did", "recovery"],
         _ => return Err(refusal(404, "not_found", None)),
     };
@@ -544,6 +544,9 @@ fn dispatch(config: &Config, request: &Request) -> Result<Response, Response> {
     }
     if name == "registry" {
         return registry(&human.registry_path);
+    }
+    if name == "budget-proof" {
+        return budget_state::export(config, p, &params["budget_id"]);
     }
     if name == "authorized-batch" {
         let activity = &params["activity_id"];

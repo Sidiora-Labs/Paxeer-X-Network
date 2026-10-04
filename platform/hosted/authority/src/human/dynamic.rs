@@ -349,7 +349,7 @@ fn validate_parameters(name: &str, params: &BTreeMap<String, String>) -> Result<
         "identity" => &["did"],
         "key-policy" => &["did", "recovery"],
         "capability-scope" => &["did", "authority", "action_key", "capability_id"],
-        "budget-state" => &["budget_id"],
+        "budget-state" | "budget-proof" => &["budget_id"],
         _ => return Err(refusal(404, "not_found", None)),
     };
     let base = [
@@ -609,6 +609,7 @@ pub(super) fn dispatch(
     match name {
         "core-clock" => super::clock(&evidence, human.horizon),
         "budget-state" => budget_state::read_dynamic(config, &bound, &params["budget_id"]),
+        "budget-proof" => budget_state::export_dynamic(config, &bound, &params["budget_id"]),
         _ => super::policy_route(name, params, &bound, &evidence),
     }
 }
