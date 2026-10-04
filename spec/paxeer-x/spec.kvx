@@ -23288,8 +23288,12 @@ fleet_role = "/root/integrate_dependencies"
 fleet_scope_manifest = "/root/lx-ops/paxeer-x-integration-2026-10-03/fleet-103.6.2-brief.json"
 source_status = "complete"
 completion_basis = "implementation under owner CONSTITUTION; qualification separately recorded"
-qualification_status = "UNRUN"
+qualification_status = "UNQUALIFIED"
 source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/fleet-103.6.2-publication-handoff-next.json"
+qualification_record = "/root/lx-ops/paxeer-x-integration-2026-10-03/fleet-103.6.2-result.json"
+build_exit = 0
+verify_exit = 8
+qualification_observed = "Hosted core compiled; gate loader lacks eth_account and no process tests ran."
 
 [task.103.6.3]
 title = "Implement the layerx-receipt-authority service over the independent replica"
