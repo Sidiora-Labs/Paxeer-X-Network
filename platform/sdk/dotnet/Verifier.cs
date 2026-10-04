@@ -358,6 +358,8 @@ public static class LocalVerifier
                     ? GeneratedReceiptContract.SupportsProgramGuestAbi(outcome.AbiVersion)
                     : outcome.AbiVersion is GeneratedReceiptContract.ProgramAbiV1 or GeneratedReceiptContract.ProgramAbiV2;
                 if (!supportedAbi || outcome.RuntimeVersion != 1) throw VerificationFailure(ReceiptCheck.ProtocolVersion);
+                if (receipt.ProtocolVersion == 3 && outcome.AbiVersion is GeneratedReceiptContract.ProgramAbiV3 or GeneratedReceiptContract.ProgramAbiV4 &&
+                    !Equal(receipt.Asset, Exact(authorized.Asset, 32))) throw VerificationFailure(ReceiptCheck.Asset);
             }
         }
         if (!program && receipt.Operation == 0) throw VerificationFailure(ReceiptCheck.Operation);
