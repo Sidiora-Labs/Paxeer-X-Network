@@ -36545,8 +36545,14 @@ fanout_role = "integrate_dependencies"
 parent_task = "104.33.7"
 source_status = "complete"
 completion_basis = "implementation under owner CONSTITUTION; qualification separately recorded"
-qualification_status = "UNRUN"
+qualification_status = "PASS"
 source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/root-v5-104.33.7.8-intake.json"
+qualification_revision = "3d70d6036bd34c3ace344cc4ac8a12522b59ec16"
+qualification_command = ["timeout", "39s", "scripts/paxeer-x/verify-sdk-program-schema.sh"]
+qualification_exit_code = 0
+qualification_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/qualification/task1043378-v5/verify.log"
+qualification_evidence = "/root/lx-ops/paxeer-x-integration-2026-10-03/qualification/task1043378-v5/result.json"
+prior_qualification_evidence = "/root/lx-ops/paxeer-x-integration-2026-10-03/qualification/task1043378/result.json"
 
 [task.104.33.7.4]
 title = "Complete Go Programs client integration"
