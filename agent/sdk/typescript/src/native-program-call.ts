@@ -1,3 +1,5 @@
+import { supportsProgramGuestAbi } from "./generated/receipt.js";
+
 export interface NativeProgramCall {
   readonly programId: Uint8Array;
   readonly guestAbi: 1 | 2;
@@ -9,9 +11,19 @@ export interface NativeProgramCall {
   readonly resources: readonly [bigint, bigint, bigint, bigint, bigint, bigint, bigint];
 }
 
+export type NativeProgramCallV1 = Omit<NativeProgramCall, "guestAbi"> & Readonly<{ guestAbi: 1 | 2 | 3 | 4 }>;
+
 export function encodeNativeProgramCall(call: NativeProgramCall): Uint8Array {
+  return encodeCall(call, false);
+}
+
+export function encodeNativeProgramCallV1(call: NativeProgramCallV1): Uint8Array {
+  return encodeCall(call, true);
+}
+
+function encodeCall(call: NativeProgramCallV1, native: boolean): Uint8Array {
   if (call.programId.length !== 32 || call.programId.every(value => value === 0)
-    || (call.guestAbi !== 1 && call.guestAbi !== 2) || !/^[A-Za-z0-9_.]{1,128}$/.test(call.entrypoint)
+    || (native ? !supportsProgramGuestAbi(call.guestAbi) : (call.guestAbi !== 1 && call.guestAbi !== 2)) || !/^[A-Za-z0-9_.]{1,128}$/.test(call.entrypoint)
     || call.calldata.length > 1_048_576 || call.capabilities.length > 65_535
     || call.accessDeclaration.length > 1_048_576 || !Number.isInteger(call.responseCapacity)
     || call.responseCapacity < 0 || call.responseCapacity > 1_048_576
@@ -34,19 +46,27 @@ export function encodeNativeProgramCall(call: NativeProgramCall): Uint8Array {
 }
 
 export function decodeNativeProgramCall(payload: Uint8Array): NativeProgramCall {
+  return decodeCall(payload, false) as NativeProgramCall;
+}
+
+export function decodeNativeProgramCallV1(payload: Uint8Array): NativeProgramCallV1 {
+  return decodeCall(payload, true);
+}
+
+function decodeCall(payload: Uint8Array, native: boolean): NativeProgramCallV1 {
   if (payload.length < 106) throw new TypeError("invalid native program call");
   const view = new DataView(payload.buffer, payload.byteOffset, payload.byteLength);
   const lengths = [view.getUint16(34), view.getUint32(36), view.getUint16(40), view.getUint32(42)];
   if (106 + lengths.reduce((total, length) => total + length, 0) !== payload.length) throw new TypeError("invalid native program call");
   let offset = 106;
   const body = (length: number): Uint8Array => { const result = payload.slice(offset, offset + length); offset += length; return result; };
-  const call: NativeProgramCall = {
-    programId: payload.slice(0, 32), guestAbi: view.getUint16(32) as 1 | 2,
+  const call: NativeProgramCallV1 = {
+    programId: payload.slice(0, 32), guestAbi: view.getUint16(32) as 1 | 2 | 3 | 4,
     entrypoint: new TextDecoder("utf-8", { fatal: true }).decode(body(lengths[0]!)),
     calldata: body(lengths[1]!), capabilities: body(lengths[2]!), accessDeclaration: body(lengths[3]!),
     responseCapacity: view.getUint32(46),
     resources: [view.getBigUint64(50), view.getBigUint64(58), view.getBigUint64(66), view.getBigUint64(74), view.getBigUint64(82), view.getBigUint64(90), view.getBigUint64(98)],
   };
-  encodeNativeProgramCall(call);
+  encodeCall(call, native);
   return call;
 }

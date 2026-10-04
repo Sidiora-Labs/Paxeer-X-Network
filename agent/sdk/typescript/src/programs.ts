@@ -1,4 +1,5 @@
-import { encodeNativeProgramCall, type NativeProgramCall } from "./native-program-call.js";
+import { supportsProgramGuestAbi } from "./generated/receipt.js";
+import { encodeNativeProgramCall, encodeNativeProgramCallV1, type NativeProgramCall, type NativeProgramCallV1 } from "./native-program-call.js";
 import { NativeProgramLifecycleRequest, type ProgramLifecycleSubmission } from "./program-lifecycle.js";
 import type { AuthorizedReceiptBatch, ReceiptVerification, SelectableProtocolVersion } from "./verifier.js";
 import { DEFAULT_PROTOCOL_VERSION, isSelectableProtocolVersion, programsModuleVersionForProtocol, verifyProgramLifecycleReceipt,
@@ -26,7 +27,7 @@ const CAPABILITY_ORDER = Object.freeze({
 export interface ProgramBudget { readonly fuel: bigint; readonly feeLimit: bigint }
 export type ProgramCapability = keyof typeof CAPABILITY_ORDER;
 export interface ProgramCall {
-  readonly nativeCall?: NativeProgramCall;
+  readonly nativeCall?: NativeProgramCallV1;
   readonly programId: string;
   readonly calldata: Uint8Array;
   readonly budget: ProgramBudget;
@@ -43,6 +44,23 @@ export class NativeProgramRequest implements ProgramCall {
     encodeNativeProgramCall(nativeCall);
     this.programId = hex(nativeCall.programId); this.calldata = nativeCall.calldata;
     this.budget = { fuel: nativeCall.resources[0], feeLimit };
+  }
+}
+
+export class NativeProgramRequestV1 implements ProgramCall {
+  readonly programId: string;
+  readonly calldata: Uint8Array;
+  readonly budget: ProgramBudget;
+  readonly capabilities: readonly ProgramCapability[] = [];
+  readonly nativeCall: NativeProgramCallV1;
+  readonly signedActivity: Uint8Array;
+  constructor(call: NativeProgramCallV1, feeLimit: bigint, signedActivity: Uint8Array) {
+    const snapshot = { ...call, programId: new Uint8Array(call.programId), calldata: new Uint8Array(call.calldata),
+      capabilities: new Uint8Array(call.capabilities), accessDeclaration: new Uint8Array(call.accessDeclaration),
+      resources: [...call.resources] as NativeProgramCallV1["resources"] };
+    encodeNativeProgramCallV1(snapshot);
+    this.nativeCall = snapshot; this.programId = hex(snapshot.programId); this.calldata = snapshot.calldata;
+    this.budget = { fuel: snapshot.resources[0], feeLimit }; this.signedActivity = new Uint8Array(signedActivity);
   }
 }
 
@@ -183,21 +201,28 @@ export class ProgramOperations {
     return resolveLifecycleResponse(result, binding, this.trust.sequencerPublicKey());
   }
   readonly #heads = new Map<string, ProgramHeadObservation>();
+  readonly #gatewayDiscoveries = new Map<string, GatewayProgramDiscovery>();
 
   public constructor(private readonly client: ProductionClient, private readonly trust: ProgramTrustContext) {}
 
   public async discover(programId: string): Promise<ProgramDiscovery> {
     if (!HEX32.test(programId)) throw new TypeError("invalid program id");
     const value = await this.client.agent<unknown, unknown>("program.discover", { program_id: programId, requested_verification_level: "sequencer-signed" });
-    const result = discovery(value, programId, this.trust.nowMilliseconds());
+    const result = "deployment_receipt_digest" in object(value)
+      ? await verifyGatewayProgramDiscovery(value, programId, this.trust)
+      : discovery(value, programId, this.trust.nowMilliseconds());
     this.#rememberHead(programId, head(result));
+    if ("deployment_receipt_digest" in result) this.#gatewayDiscoveries.set(programId, result as GatewayProgramDiscovery);
     return result;
   }
 
   public async interface(programId: string): Promise<ProgramInterface> {
     if (!HEX32.test(programId)) throw new TypeError("invalid program id");
     const value = await this.client.agent<unknown, unknown>("program.interface", { program_id: programId, requested_verification_level: "sequencer-signed" });
-    const result = await programInterface(value, programId, this.trust.nowMilliseconds());
+    const observed = this.#gatewayDiscoveries.get(programId);
+    const result = observed === undefined
+      ? await programInterface(value, programId, this.trust.nowMilliseconds())
+      : await verifyGatewayProgramInterface(value, programId, this.trust, observed);
     this.#rememberHead(programId, head(result));
     return result;
   }
@@ -406,6 +431,79 @@ function executionDocument(candidate: Readonly<Record<string, unknown>>, state: 
   if ((state === "refused" && result.outcome.kind !== "refused")
     || (state === "executed" && result.outcome.kind === "refused")) throw new TypeError("program state/outcome mismatch");
   return result;
+}
+
+export interface GatewayProgramDiscovery extends ProgramDiscovery {
+  readonly deployment_receipt_digest: string;
+  readonly discovery_verification: "sequencer-signed" | "server-side-receipt-verification-only";
+  readonly discovery_public_key?: string;
+  readonly discovery_signature?: string;
+}
+
+export async function verifyGatewayProgramDiscovery(value: unknown, programId: string, trust: ProgramTrustContext): Promise<GatewayProgramDiscovery> {
+  const candidate = object(structuredClone(value));
+  exactKeys(candidate, ["program_id", "lifecycle", "version", "code_hash", "abi_version", "receipt_digest",
+    "deployment_receipt_digest", "state_root", "observed_sequence", "observed_at", "valid_through", "verification"],
+    ["discovery_public_key", "discovery_signature", "value_accounts"]);
+  if (!HEX32.test(programId) || programId === "0".repeat(64) || requiredHex32(candidate, "program_id") !== programId
+    || candidate.verification !== "registry-receipt-and-current-head-verified"
+    || trust.protocolVersion() !== 3 || !supportsProgramGuestAbi(candidate.abi_version as number)
+    || (candidate.lifecycle !== "active" && candidate.lifecycle !== "deprecated" && candidate.lifecycle !== "tombstoned")) {
+    throw new TypeError("invalid native gateway discovery");
+  }
+  if ("value_accounts" in candidate) object(candidate.value_accounts);
+  const version = exactInteger(candidate.version, 1, 0xffff_ffff);
+  const abi = candidate.abi_version as 1 | 2 | 3 | 4;
+  const integers = new Uint8Array(7); const view = new DataView(integers.buffer);
+  integers[0] = 1; view.setUint32(1, version); view.setUint16(5, abi);
+  const codeHash = requiredHex32(candidate, "code_hash"), stateRoot = requiredHex32(candidate, "state_root");
+  const sequence = decimal(candidate.observed_sequence), observed = decimal(candidate.observed_at), through = decimal(candidate.valid_through);
+  const digestBytes = await digest(concat(new TextEncoder().encode("LayerX/program-discovery-proof/v1\0"),
+    decodeHex(programId, 32), integers.subarray(0, 5), decodeHex(codeHash, 32), integers.subarray(5),
+    u64(BigInt(sequence)), u64(BigInt(observed)), u64(BigInt(through)), decodeHex(stateRoot, 32)));
+  if (hex(digestBytes) !== requiredHex32(candidate, "receipt_digest")) throw new TypeError("native discovery digest mismatch");
+  const signed = "discovery_public_key" in candidate || "discovery_signature" in candidate;
+  if (abi >= 3 && !signed) throw new TypeError("native ABI requires signed discovery");
+  let proof: Readonly<{ discovery_public_key: string; discovery_signature: string }> | undefined;
+  if (signed) {
+    const publicKey = requiredHex32(candidate, "discovery_public_key"), signature = requiredHex(candidate, "discovery_signature", 64);
+    if (signature.length !== 128 || publicKey !== hex(trust.sequencerPublicKey())) throw new TypeError("discovery sequencer key does not match pin");
+    const key = await globalThis.crypto.subtle.importKey("raw", buffer(decodeHex(publicKey, 32)), { name: "Ed25519" }, false, ["verify"]);
+    if (!await globalThis.crypto.subtle.verify("Ed25519", key, buffer(decodeHex(signature, 64)), buffer(digestBytes))) throw new TypeError("discovery signature mismatch");
+    proof = { discovery_public_key: publicKey, discovery_signature: signature };
+  }
+  const result: GatewayProgramDiscovery = Object.freeze({ program_id: programId, lifecycle: candidate.lifecycle, version,
+    code_hash: codeHash, abi_version: abi, receipt_digest: hex(digestBytes), deployment_receipt_digest: requiredHex32(candidate, "deployment_receipt_digest"),
+    state_root: stateRoot, observed_sequence: sequence, observed_at: observed, valid_through: through,
+    verification: "server-side-receipt-verification-only", discovery_verification: signed ? "sequencer-signed" : "server-side-receipt-verification-only",
+    ...(proof ?? {}) });
+  requireFreshHead(head(result), trust.nowMilliseconds());
+  return result;
+}
+
+export async function verifyGatewayProgramInterface(value: unknown, programId: string, trust: ProgramTrustContext,
+  observed: GatewayProgramDiscovery): Promise<ProgramInterface> {
+  observed = Object.freeze(structuredClone(observed));
+  const candidate = object(structuredClone(value));
+  const { discovery_verification: _presentation, ...packet } = observed;
+  await verifyGatewayProgramDiscovery({ ...packet, verification: "registry-receipt-and-current-head-verified" }, programId, trust);
+  exactKeys(candidate, ["program_id", "version", "code_hash", "abi_version", "interface", "interface_digest",
+    "receipt_digest", "state_root", "observed_sequence", "observed_at", "valid_through", "source", "verification"]);
+  if (programId !== observed.program_id || requiredHex32(candidate, "program_id") !== programId
+    || candidate.verification !== "deployment-interface-and-current-head-verified" || trust.protocolVersion() !== 3
+    || candidate.abi_version !== observed.abi_version || candidate.version !== observed.version
+    || candidate.code_hash !== observed.code_hash || candidate.state_root !== observed.state_root
+    || candidate.observed_sequence !== observed.observed_sequence || candidate.observed_at !== observed.observed_at
+    || candidate.valid_through !== observed.valid_through || candidate.receipt_digest !== observed.deployment_receipt_digest
+    || observed.abi_version >= 3 && observed.discovery_verification !== "sequencer-signed") throw new TypeError("interface does not match discovered deployment and head");
+  requireFreshHead(head(observed), trust.nowMilliseconds());
+  const iface = requiredHex(candidate, "interface", 952);
+  const ifaceDigest = requiredHex32(candidate, "interface_digest");
+  if (iface.length === 0 || hex(await digest(decodeHex(iface, 952))) !== ifaceDigest) throw new TypeError("program interface digest mismatch");
+  return Object.freeze({ program_id: programId, version: observed.version, code_hash: observed.code_hash, abi_version: observed.abi_version,
+    interface: iface, interface_digest: ifaceDigest, receipt_digest: observed.deployment_receipt_digest, state_root: observed.state_root,
+    observed_sequence: observed.observed_sequence, observed_at: observed.observed_at, valid_through: observed.valid_through,
+    source: programSource(candidate.source), verification: "server-side-receipt-verification-only" });
 }
 
 function discovery(value: unknown, programId: string, now: bigint): ProgramDiscovery {

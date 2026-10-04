@@ -1,4 +1,4 @@
-import { decodeNativeProgramCall, encodeNativeProgramCall } from "./native-program-call.js";
+import { decodeNativeProgramCall, encodeNativeProgramCall, decodeNativeProgramCallV1, encodeNativeProgramCallV1 } from "./native-program-call.js";
 import { decodeNativeCapabilitySet } from "./native-capabilities.js";
 import type { ProgramCall, ProgramOutcome, ProgramUsage } from "./programs.js";
 import type { ProgramReceiptOutcome, ProtocolReceipt } from "./verifier.js";
@@ -120,7 +120,7 @@ export async function decodeSignedProgramCall(
     if (protocolVersion !== 3 || envelopeFeeLimit !== call.budget.feeLimit
       || hex(call.nativeCall.programId) !== call.programId || !equal(call.nativeCall.calldata, call.calldata)
       || call.nativeCall.resources[0] !== call.budget.fuel || call.capabilities.length !== 0
-      || !equal(payload, encodeNativeProgramCall(call.nativeCall))) fail("native signed activity binding");
+      || !equal(payload, encodeNativeProgramCallV1(call.nativeCall))) fail("native signed activity binding");
   } else decodeCallPayload(payload, call);
   const idempotencyKey = hex(idempotency);
   if (expectedIdempotencyKey !== undefined && idempotencyKey !== expectedIdempotencyKey) fail("signed activity idempotency");
@@ -346,8 +346,8 @@ export async function bindRetainedProgramCall(
   if (notAfter < notBefore || !equal(await sha256(PAYLOAD_DOMAIN, payload), declaredHash)) fail("retained call payload hash");
   let program: string, guestAbi: number;
   if (version === 3 || version === 2 && !starts(payload, CALL_DOMAIN)) {
-    const native = decodeNativeProgramCall(payload);
-    if (!equal(encodeNativeProgramCall(native), payload)) fail("retained native call encoding");
+    const native = version === 3 ? decodeNativeProgramCallV1(payload) : decodeNativeProgramCall(payload);
+    if (!equal(version === 3 ? encodeNativeProgramCallV1(native) : encodeNativeProgramCall(native as import("./native-program-call.js").NativeProgramCall), payload)) fail("retained native call encoding");
     program = hex(native.programId); guestAbi = native.guestAbi;
   } else {
     const legacy = new Reader(payload);

@@ -105,3 +105,36 @@ assert.throws(() => encodeNativeProgramDeploy({ programId, guestAbi: 2, policy: 
 assert.throws(() => encodeNativeProgramDeploy({ programId, guestAbi: 2, policy: 0, authority: Buffer.alloc(32), newHash, wasm, interface: Buffer.alloc(953) }));
 assert.throws(() => encodeNativeProgramUpgrade({ programId, guestAbi: 2, oldHash: newHash, newHash, wasm, migrationHook: Buffer.alloc(0), clearInterface: true }));
 assert.throws(() => encodeNativeProgramWindDown({ programId, operation: "route", account: programId, asset: programId, destination: programId, seed: Buffer.alloc(129) }));
+
+const nativeCodec = await import("../src/native-program-call.js");
+for (const name of ["native-program-call-v3", "native-program-call-v4"]) {
+  const fixture = JSON.parse(readFileSync(new URL(`../../../../../platform/sdk/conformance/fixtures/${name}.json`, import.meta.url), "utf8"));
+  const payload = Buffer.from(fixture.payload_hex, "hex");
+  const decoded = nativeCodec.decodeNativeProgramCallV1(payload);
+  assert.deepEqual(Buffer.from(nativeCodec.encodeNativeProgramCallV1(decoded)), payload);
+  const programs = await import("../src/programs.js");
+  const wire = await import("../src/program-wire.js");
+  const request = new programs.NativeProgramRequestV1(decoded, BigInt(fixture.fee_limit), Buffer.from(fixture.signed_activity_hex, "hex"));
+  assert.equal((await wire.decodeSignedProgramCall(request, fixture.idempotency_key_hex)).activityId, fixture.activity_id_hex);
+  await assert.rejects(wire.decodeSignedProgramCall(request, "00".repeat(32)));
+  await assert.rejects(programs.verifyGatewayProgramDiscovery(null, request.programId,
+    new programs.ProgramTrustContext(Buffer.from(fixture.public_key_hex, "hex"), () => 0n, 300_000n, 3)));
+  await assert.rejects(programs.verifyGatewayProgramInterface(null, request.programId,
+    new programs.ProgramTrustContext(Buffer.from(fixture.public_key_hex, "hex"), () => 0n, 300_000n, 3),
+    null as unknown as Parameters<typeof programs.verifyGatewayProgramInterface>[3]));
+  assert.deepEqual(Buffer.from(nativeCodec.encodeNativeProgramCall(nativeCodec.decodeNativeProgramCall(payload))), payload);
+  for (const guestAbi of [3, 4] as const) {
+    const call = { ...decoded, guestAbi };
+    const canonical = nativeCodec.encodeNativeProgramCallV1(call);
+    assert.equal(new DataView(canonical.buffer, canonical.byteOffset).getUint16(32), guestAbi);
+    assert.deepEqual(nativeCodec.decodeNativeProgramCallV1(canonical), call);
+    assert.throws(() => nativeCodec.decodeNativeProgramCall(canonical));
+    for (const boundary of [0, 32, 105, canonical.length - 1]) assert.throws(() => nativeCodec.decodeNativeProgramCallV1(canonical.subarray(0, boundary)));
+    assert.throws(() => nativeCodec.decodeNativeProgramCallV1(Buffer.concat([canonical, Buffer.from([0])])));
+  }
+  for (const guestAbi of [0, 5, 65535]) {
+    const invalid = Buffer.from(payload); invalid.writeUInt16BE(guestAbi, 32);
+    assert.throws(() => nativeCodec.decodeNativeProgramCallV1(invalid));
+  }
+}
+console.log("native-v1 call encoding uses the canonical ABI policy; legacy ABI1/2 refusals retained");
