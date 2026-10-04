@@ -2499,3 +2499,8 @@ resolution = "Retain the sequencing deviation, perform final whole-task formatti
 area = "Real attestor key import ceremony producer"
 observed = "The actual Send-purpose signing corpus failed HTTP400 because its inherited import helper omits mandatory ceremony identity, public membership and approved inventory authorization."
 resolution = "Keep production authorization checks intact and record build0 verify1; a genuine ceremony producer is required before another authorized qualification attempt."
+
+[gotcha.731]
+area = "Human native Send type and constructor integration"
+observed = "Human runtime used legacy native amount and signing-preimage representations; the approved correction then exposed an uncalled ApiFailure constructor."
+resolution = "Apply the five approved byte-identical conversions and one exact constructor call; retain the original build failures and separate successful builds from failed behavior gates."
