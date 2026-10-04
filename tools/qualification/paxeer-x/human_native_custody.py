@@ -20,7 +20,8 @@ if os.environ.get('PAXEER_X_TASK_DEADLINE_UNIX'):
 
 def inventory():
     roots = (ROOT / 'human', ROOT / 'agent', ROOT / 'crates', ROOT / 'platform')
-    paths = {ROOT / 'tools/qualification/paxeer-x/human_native_custody.py'}
+    paths = {ROOT / 'tools/qualification/paxeer-x/human_native_custody.py',
+             ROOT / 'human/apps/web/e2e/software-authenticator.ts'}
     for root in roots:
         for directory, children, files in os.walk(root):
             children[:] = [name for name in children if name not in ('target', 'node_modules', '.git', '.next')]
@@ -93,7 +94,6 @@ def main():
     from candidate import catalogue, load_private, validate
     candidate = load_private(args.candidate_manifest)
     validate(candidate, catalogue(ROOT / 'spec/paxeer-x/spec.kvx'))
-    B.require(False, 'missing authentic Human passkey issuance and native-grant custody positive consumer; task remains implemented only in part, qualification refused')
     material = B.load(os.environ.get('PAXEER_X_NATIVE_CUSTODY_BUILD_MANIFEST', str(destination / 'build.json')))
     B.require(material['schema'] == 'layerx-human-native-custody-build.v1', 'closed protected real-process build authority')
     files = inventory()
@@ -110,6 +110,8 @@ def main():
          '-test.timeout=' + str(max(1, int(B.remaining()))) + 's'], log, ROOT / 'human/wallet/attestor', environment)
     observed = log.read_text()
     B.require('--- PASS: TestNativeCustodyRealProfiles' in observed and 'native_provider_and_sdk_real_cluster ... ok' in observed
+              and 'native custody genuine passkey issuance and grant consent verified' in observed
+              and 'native custody principal digest forgery ceremony-replay and consumed-evidence refusals verified' in observed
               and '\nPASS\n' in observed and 'SKIP' not in observed,
               'both real Go corpus and actual Rust custody/provider consumer ran without skips')
     print('human-native-custody: PASS revision=' + revision)
