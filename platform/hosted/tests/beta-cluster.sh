@@ -1004,6 +1004,9 @@ secrets_generate() {
         "$(cat "$d/dashboard-redis.password")" >> "$d/gateway-redis.acl")
     (umask 077; printf 'user default off\nuser layerx-webhooks on >%s ~webhooks:* +ping +eval +hget +hmget +hset +hincrby +smembers +sadd\n' \
         "$(cat "$d/webhook-redis.password")" > "$d/internal-redis.acl")
+    write_token "$d/internal-redis-probe.password"
+    (umask 077; printf 'user layerx-internal-probe on >%s +ping\n' \
+        "$(cat "$d/internal-redis-probe.password")" >> "$d/internal-redis.acl")
     write_token "$d/internal-kms-seal.key"
     local event_kind
     for event_kind in journeys approvals payments programs; do
@@ -1319,7 +1322,8 @@ secrets_apply() {
     kube create namespace "$INTERNAL_NAMESPACE" --dry-run=client -o yaml | kube apply -f - > /dev/null
     apply_secret "$INTERNAL_NAMESPACE" layerx-internal-redis-runtime \
         --from-file=server.pem="$c/internal-redis/cert.pem" --from-file=server.key="$c/internal-redis/key.pem" \
-        --from-file=ca.pem="$c/ca.crt" --from-file=users.acl="$s/internal-redis.acl"
+        --from-file=ca.pem="$c/ca.crt" --from-file=users.acl="$s/internal-redis.acl" \
+        --from-file=probe-password="$s/internal-redis-probe.password"
     apply_secret "$INTERNAL_NAMESPACE" layerx-internal-kms-runtime \
         --from-file=server.der="$c/internal-kms/cert.der" --from-file=server-key.der="$c/internal-kms/key.der" \
         --from-file=ca.der="$c/ca.der" --from-file=token="$s/developer-kms.token" --from-file=seal-secret="$s/internal-kms-seal.key"
@@ -1474,6 +1478,7 @@ secrets_apply() {
         --from-file=webhook-redis-username="$s/webhook-redis.username" --from-file=webhook-redis-password="$s/webhook-redis.password" \
         --from-file=dashboard-redis-username="$s/dashboard-redis.username" --from-file=dashboard-redis-password="$s/dashboard-redis.password" \
         --from-file=kms-token="$s/developer-kms.token" --from-file=identity-token="$s/developer-identity.token" \
+        --from-file=dashboard-identity-token="$s/identity-tokens/dashboard" \
         --from-file=authority-token="$s/developer-authority.token" \
         --from-file=journey-source-token="$s/developer-journey.token" --from-file=payment-source-token="$s/developer-payment.token" \
         --from-file=approval-source-token="$s/developer-approval.token" --from-file=program-source-token="$s/developer-program.token" \

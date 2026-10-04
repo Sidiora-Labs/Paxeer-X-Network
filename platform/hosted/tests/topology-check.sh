@@ -601,6 +601,33 @@ class Topology:
                 if reference:
                     env.append((None, ("configmap-all", text(get(reference, "name")), text(get(entry, "prefix")))))
         self.workloads.append({"kind": kind, "name": name, "ns": ns, "labels": labels, "ports": ports, "env": env, "source": source})
+        for container in get(template, "spec", "containers", default=[]) or []:
+            readiness = get(container, "readinessProbe", default={}) or {}
+            if labels.get("app") == "layerx-webhooks" and labels.get("role") == "ingress":
+                health = get(readiness, "httpGet", default={}) or {}
+                configured = {text(get(entry, "name")): text(get(entry, "value"))
+                              for entry in get(container, "env", default=[]) or []}
+                if (text(get(health, "path")) != "/healthz"
+                        or text(get(health, "scheme")) != "HTTP"
+                        or text(get(health, "port")) != "9447"
+                        or configured.get("LAYERX_WEBHOOKS_HEALTH_LISTEN") != "0.0.0.0:9447"):
+                    self.problems.append("%s %s/%s requires the dedicated dependency-aware webhook health listener" % (kind, ns, name))
+            elif labels.get("app") == "layerx-internal-redis":
+                command = get(readiness, "exec", "command", default=[]) or []
+                expected = ("REDISCLI_AUTH=$(cat /run/layerx/probe-password)",
+                            "redis-cli --tls --cacert /run/layerx/ca.pem",
+                            "--sni redis.layerx-internal.svc", "--user layerx-internal-probe",
+                            "--no-auth-warning PING", "= PONG")
+                script = text(command[-1]) if command else ""
+                if command[:2] != ["/bin/sh", "-ec"] or not all(part in script for part in expected):
+                    self.problems.append("%s %s/%s requires authenticated TLS Redis PING readiness" % (kind, ns, name))
+            elif labels.get("app") == "layerx-dashboard-api":
+                items = [item for volume in get(template, "spec", "volumes", default=[]) or []
+                         for source in get(volume, "projected", "sources", default=[]) or []
+                         for item in get(source, "secret", "items", default=[]) or []
+                         if text(get(item, "path")) == "tokens/identity"]
+                if len(items) != 1 or text(get(items[0], "key")) != "dashboard-identity-token":
+                    self.problems.append("%s %s/%s requires its distinct dashboard identity token projection" % (kind, ns, name))
 
     def resolved_env(self, workload):
         for env_name, value in workload["env"]:

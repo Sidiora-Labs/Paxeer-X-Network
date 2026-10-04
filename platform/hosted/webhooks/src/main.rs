@@ -219,17 +219,13 @@ fn config() -> Result<Config, String> {
             .parse::<SocketAddr>()
             .map_err(|_| "webhook listen address is invalid".to_owned())?,
         health_listen: match env::var("LAYERX_WEBHOOKS_HEALTH_LISTEN") {
-            Ok(value) if !ingress => Some(
+            Ok(value) => Some(
                 value
                     .parse::<SocketAddr>()
                     .map_err(|_| "webhook health listen address is invalid".to_owned())?,
             ),
             Err(env::VarError::NotPresent) => None,
-            _ => {
-                return Err(
-                    "webhook health listener is only available to the public role".to_owned(),
-                )
-            }
+            Err(_) => return Err("webhook health listen address is invalid".to_owned()),
         },
         listener,
         service: Arc::new(HostedService::from_environment()?),

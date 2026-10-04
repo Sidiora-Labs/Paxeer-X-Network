@@ -136,12 +136,13 @@ spec:
             - { name: LAYERX_WEBHOOKS_SEQUENCER_FIRST_BATCH_FILE, value: /run/layerx/keys/sequencer-first-batch }
             - { name: LAYERX_WEBHOOKS_SEQUENCER_LAST_BATCH_FILE, value: /run/layerx/keys/sequencer-last-batch }
             - { name: LAYERX_WEBHOOKS_ROLE, value: ingress }
+            - { name: LAYERX_WEBHOOKS_HEALTH_LISTEN, value: "0.0.0.0:9447" }
             - { name: LAYERX_WEBHOOKS_LISTENER, value: tls }
             - { name: LAYERX_WEBHOOKS_INGRESS_CLIENT_CA_DER, value: /run/layerx/ca/internal.der }
             - name: LAYERX_WEBHOOKS_INSTANCE_ID
               valueFrom: { fieldRef: { fieldPath: metadata.uid } }
           ports: [{ name: https, containerPort: 9444 }]
-          readinessProbe: { tcpSocket: { port: https }, periodSeconds: 10 }
+          readinessProbe: { httpGet: { scheme: HTTP, path: /healthz, port: 9447 }, timeoutSeconds: 10, periodSeconds: 10 }
           livenessProbe: { tcpSocket: { port: https }, periodSeconds: 20 }
           resources:
             requests: { cpu: 250m, memory: 256Mi }
@@ -230,7 +231,7 @@ spec:
                     - { key: dashboard-redis-password, path: dashboard-redis/password }
                     - { key: webhook-redis-username, path: redis/username }
                     - { key: webhook-redis-password, path: redis/password }
-                    - { key: identity-token, path: tokens/identity }
+                    - { key: dashboard-identity-token, path: tokens/identity }
 ---
 apiVersion: apps/v1
 kind: Deployment

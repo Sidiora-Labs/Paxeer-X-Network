@@ -42,7 +42,17 @@ spec:
           image: redis:8.2.1-alpine
           command: [redis-server, /etc/redis/redis.conf]
           ports: [{name: redis-tls, containerPort: 6379}]
-          readinessProbe: {tcpSocket: {port: redis-tls}, periodSeconds: 5}
+          readinessProbe:
+            exec:
+              command:
+                - /bin/sh
+                - -ec
+                - |
+                  REDISCLI_AUTH=$(cat /run/layerx/probe-password)
+                  export REDISCLI_AUTH
+                  test "$(redis-cli --tls --cacert /run/layerx/ca.pem --sni redis.layerx-internal.svc -h 127.0.0.1 -p 6379 --user layerx-internal-probe --no-auth-warning PING)" = PONG
+            timeoutSeconds: 5
+            periodSeconds: 5
           livenessProbe: {tcpSocket: {port: redis-tls}, periodSeconds: 15}
           resources: {requests: {cpu: 100m, memory: 128Mi}, limits: {cpu: "1", memory: 512Mi}}
           securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}
