@@ -1,7 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { NextRequest } from 'next/server';
-import { GET as owned } from '../app/api/pns/api/v1/addresses:lookup/route';
-import { GET as lookup } from '../app/api/pns/api/v1/domains:lookup/route';
+import {
+  getRedirectUrl,
+  getRewrittenUrl,
+  unstable_getResponseFromNextConfig,
+} from 'next/experimental/testing/server';
+import nextConfig from '../../next.config.mjs';
+import { GET as owned } from '../app/api/pns/api/v1/addresses-lookup/route';
+import { GET as lookup } from '../app/api/pns/api/v1/domains-lookup/route';
 import { GET as domain } from '../app/api/pns/api/v1/domains/[name]/route';
 import { GET as events } from '../app/api/pns/api/v1/domains/[name]/events/route';
 import { GET as addressName } from '../app/api/pns/api/v1/addresses/[address]/route';
@@ -70,6 +76,49 @@ const CASES: RouteCase[] = [
     upstream: 'https://open.er-api.com/v6/latest/USD',
   },
 ];
+
+describe('portable PNS route bindings', () => {
+  it.each([
+    {
+      publicPath: 'addresses:lookup',
+      portablePath: 'addresses-lookup',
+      query: `address=${ADDRESS}&owned_by=true&only_active=true&sort=registration_date&order=DESC`,
+    },
+    {
+      publicPath: 'domains:lookup',
+      portablePath: 'domains-lookup',
+      query: 'name=example.pax&only_active=true',
+    },
+  ])(
+    'preserves the public $publicPath URL and query through the real Next router',
+    async ({ publicPath, portablePath, query }) => {
+      const url = `${ORIGIN}/wallet/api/pns/api/v1/${publicPath}?${query}`;
+      const redirect = await unstable_getResponseFromNextConfig({ url, nextConfig });
+      expect(redirect.status).toBe(308);
+      const canonicalUrl = `${ORIGIN}/wallet/api/pns/api/v1/${publicPath}/?${query}`;
+      expect(getRedirectUrl(redirect)).toBe(canonicalUrl);
+
+      const rewrite = await unstable_getResponseFromNextConfig({ url: canonicalUrl, nextConfig });
+      expect(getRewrittenUrl(rewrite)).toBe(`${ORIGIN}/wallet/api/pns/api/v1/${portablePath}/?${query}`);
+    }
+  );
+
+  it.each([
+    '/wallet/api/pns/api/v1/addressesXlookup/',
+    '/wallet/api/pns/api/v1/domainsXlookup/',
+    '/wallet/api/pns/api/v1/addresses:lookup/extra/',
+    '/wallet/api/pns/api/v1/domains:lookup/extra/',
+    '/api/pns/api/v1/addresses:lookup/',
+    '/api/pns/api/v1/domains:lookup/',
+  ])('keeps the lookup rewrite confined for %s', async (path) => {
+    const response = await unstable_getResponseFromNextConfig({
+      url: `${ORIGIN}${path}`,
+      nextConfig,
+    });
+    expect(getRewrittenUrl(response)).toBeNull();
+    expect(getRedirectUrl(response)).toBeNull();
+  });
+});
 
 describe('finite wallet provider requests', () => {
   it.each(CASES)('binds $route to its actual provider without forwarding credentials', (entry) => {

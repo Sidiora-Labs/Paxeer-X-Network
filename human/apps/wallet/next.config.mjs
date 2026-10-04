@@ -27,6 +27,22 @@ const nextConfig = {
         loader: 'custom',
         loaderFile: './src/lib/safe-image-loader.ts',
     },
+    async rewrites() {
+        return {
+            beforeFiles: [
+                {
+                    source: '/api/pns/api/v1/addresses\\:lookup/',
+                    destination: '/api/pns/api/v1/addresses-lookup/',
+                },
+                {
+                    source: '/api/pns/api/v1/domains\\:lookup/',
+                    destination: '/api/pns/api/v1/domains-lookup/',
+                },
+            ],
+            afterFiles: [],
+            fallback: [],
+        };
+    },
     // PWA headers
     async headers() {
         return [
