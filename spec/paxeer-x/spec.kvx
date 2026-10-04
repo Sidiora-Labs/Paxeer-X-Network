@@ -22077,8 +22077,17 @@ fanout_scope_delegated = ["platform/hosted/human/material.py", "docker/kernel/in
 fanout_basis = "Owner requested maximum parallel implementation on 2026-10-04; delegated shared file edits require root coordination and retain original acceptance criteria"
 source_status = "complete"
 completion_basis = "implementation under owner CONSTITUTION; qualification separately recorded"
-qualification_status = "UNRUN"
+qualification_status = "PREREQUISITE_UNAVAILABLE"
 source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-12.3-source-handoff.json"
+qualification_revision = "9186850717002fdd1dae18692f279cd475e5f28c"
+qualification_command = "timeout 15m python3 tools/qualification/paxeer-x/movement-custody-profile.py"
+qualification_exit_code = 78
+qualification_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/fanout123-qualification/task-12.3-verify.log"
+qualification_evidence = "/root/lx-ops/paxeer-x-integration-2026-10-03/fanout123-qualification/task-12.3-continuation-result.json"
+build_revision = "9186850717002fdd1dae18692f279cd475e5f28c"
+build_command = "timeout 20m flock /root/lx-cargo/human-build.lock env CARGO_TARGET_DIR=/root/lx-target/human CARGO_BUILD_JOBS=2 /root/.cargo/bin/cargo test --locked --manifest-path human/Cargo.toml -p layerx-human-movement-provider --test startup --no-run --message-format=json"
+build_exit_code = 0
+build_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/fanout123-qualification/task-12.3-build.log"
 
 [task.12.5]
 title = "Assemble and relocate canonical owner policy and deployment evidence"
