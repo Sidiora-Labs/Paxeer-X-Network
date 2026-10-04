@@ -666,7 +666,7 @@ static int real_mixed_program_authority_kernel_case(void)
         lxp_programs_account_derive(program_id, spend_seed,
                                     sizeof(spend_seed), source_id) != LXP_OK)
         return monetary_real_failure(__LINE__, call_result, receipt.result_code);
-        if (lxp_did_id_derive(did, sizeof(did) - 1U, authority.principal) != LXP_OK)
+    if (lxp_did_id_derive(did, sizeof(did) - 1U, authority.principal) != LXP_OK)
         return monetary_real_failure(__LINE__, call_result, receipt.result_code);
     (void)memcpy(authority.actor, authority.principal, 32U);
     (void)memcpy(authority.verified_key, primary_key, 32U);
@@ -742,7 +742,7 @@ static int real_mixed_program_authority_kernel_case(void)
         receipt.result_code != LXP_OK ||
         identity->next_sequence != ++identity_sequence)
         return monetary_real_failure(__LINE__, call_result, receipt.result_code);
-        if (lxp_state_journal_open(&state, state.next_sequence,
+    if (lxp_state_journal_open(&state, state.next_sequence,
                                &journal) != LXP_OK ||
         lxp_arena_init(&register_arena, register_arena_bytes,
                        sizeof(register_arena_bytes)) != LXP_OK ||
@@ -771,7 +771,7 @@ static int real_mixed_program_authority_kernel_case(void)
             (lxp_u128){0U, PROGRAM_SPEND_SOURCE_BALANCE}, 0U) != LXP_OK ||
         lxp_state_root(&kernel, kernel.current_state_root) != LXP_OK)
         return monetary_real_failure(__LINE__, call_result, receipt.result_code);
-        payload_length = call_payload_with_capabilities(
+    payload_length = call_payload_with_capabilities(
         call, program_id, capabilities,
         monetary_mixed_capabilities(capabilities, program_id, spend_seed,
                                    sizeof(spend_seed), source_id, fee_asset,
@@ -804,7 +804,7 @@ static int real_mixed_program_authority_kernel_case(void)
         memcmp(receipt.transfer_set_root,
                receipt.program_outcome.transfer_root, 32U) != 0)
         return monetary_real_failure(__LINE__, call_result, receipt.result_code);
-        source_before = source->balance;
+    source_before = source->balance;
     payee_before = payee->balance;
     actor_before = actor->balance;
     actor_sequence_before = actor->next_sequence;
@@ -837,7 +837,7 @@ static int real_mixed_program_authority_kernel_case(void)
         lxp_u128_cmp(source->balance, source_before) != 0 ||
         lxp_u128_cmp(payee->balance, payee_before) != 0)
         return monetary_real_failure(__LINE__, call_result, receipt.result_code);
-        payload_length = call_payload_with_capabilities(
+    payload_length = call_payload_with_capabilities(
         call, program_id, capabilities,
         monetary_mixed_capabilities(capabilities, program_id, spend_seed,
                                    sizeof(spend_seed), source_id, fee_asset,

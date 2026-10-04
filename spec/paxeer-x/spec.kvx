@@ -36174,3 +36174,16 @@ max_verify_runs = 0
 max_repair_cycles = 0
 time_limit_minutes = 30
 stop_condition = "Record only accepted final host-owner evidence and stop; never claim repository CI or new postrestart execution without real evidence."
+
+[task.103.6.25]
+title = "Correct misleading indentation in the genuine monetary-law producer"
+status = "done"
+wave = 5
+verify_cmd = "timeout 10m execute the captured programs_monetary_law native executable for the existing six real cases; no rebuild"
+touches = ["tests/programs/test_monetary_law.c"]
+do_1 = "Correct only five misleading-indentation compiler defects in real_mixed_program_authority_kernel_case while preserving every semantic operation and assertion"
+do_2 = "Compile the actual programs_monetary_law target once using existing genuine sandbox material and run only its captured six-case native executable once"
+source_status = "complete"
+completion_basis = "implementation under owner CONSTITUTION; qualification separately recorded"
+qualification_status = "UNRUN"
+source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/fleet-103.6.25-source-handoff.json"
