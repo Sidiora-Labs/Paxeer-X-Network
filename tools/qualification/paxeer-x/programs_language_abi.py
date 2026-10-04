@@ -101,15 +101,57 @@ def rejected_artifacts(path, evidence):
         sections[identifier] = (start, end)
         cursor = end
     start, end = sections[2]
-    import_offset = original.find(b"oracle_read", start, end)
-    if import_offset < 0:
+    count, cursor = leb(start)
+    oracle_type = None
+    import_offset = None
+    for _ in range(count):
+        length, cursor = leb(cursor)
+        if cursor + length > end:
+            raise RuntimeError("compiled import module exceeds section")
+        module = original[cursor:cursor + length]
+        cursor += length
+        length, cursor = leb(cursor)
+        if cursor + length >= end:
+            raise RuntimeError("compiled import name exceeds section")
+        name_offset = cursor
+        name = original[cursor:cursor + length]
+        cursor += length
+        if original[cursor] != 0:
+            raise RuntimeError("compiled guest requires canonical function imports")
+        type_index, cursor = leb(cursor + 1)
+        if cursor > end:
+            raise RuntimeError("compiled import type exceeds section")
+        if module == b"layerx_v3" and name == b"oracle_read":
+            if oracle_type is not None:
+                raise RuntimeError("duplicate committed oracle import")
+            oracle_type = type_index
+            import_offset = name_offset
+    if cursor != end or oracle_type is None:
         raise RuntimeError("compiled guest does not exercise committed oracle import")
     wrong_import = bytearray(original)
     wrong_import[import_offset + 5] = ord("f")
     start, end = sections[1]
-    type_offset = next((offset for offset in range(start, end) if original[offset] in (0x7f, 0x7e)), None)
-    if type_offset is None:
-        raise RuntimeError("compiled guest has no integer function type")
+    count, cursor = leb(start)
+    if oracle_type >= count:
+        raise RuntimeError("committed oracle type index exceeds section")
+    type_offset = None
+    for index in range(count):
+        if cursor >= end or original[cursor] != 0x60:
+            raise RuntimeError("compiled guest requires canonical function types")
+        parameters, cursor = leb(cursor + 1)
+        if cursor + parameters > end:
+            raise RuntimeError("compiled function parameters exceed section")
+        if index == oracle_type:
+            if parameters == 0 or original[cursor] not in (0x7f, 0x7e):
+                raise RuntimeError("committed oracle import requires integer parameters")
+            type_offset = cursor
+        cursor += parameters
+        results, cursor = leb(cursor)
+        if cursor + results > end:
+            raise RuntimeError("compiled function results exceed section")
+        cursor += results
+    if cursor != end or type_offset is None:
+        raise RuntimeError("compiled guest has no committed oracle function type")
     wrong_signature = bytearray(original)
     wrong_signature[type_offset] = 0x7e if original[type_offset] == 0x7f else 0x7f
     floating = bytearray(original)

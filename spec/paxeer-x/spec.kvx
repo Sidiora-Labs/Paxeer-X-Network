@@ -34863,7 +34863,7 @@ owner_authority = "User explicitly approved exact task-7.6-feature-proposal.patc
 qualification_status = "UNRUN"
 source_status = "complete"
 completion_basis = "implementation under owner CONSTITUTION; qualification separately recorded"
-source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-7.7-source-handoff.json"
+source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-7.7-repair1-source.json"
 
 [task.200.5]
 title = "Centralize Python SDK tests and preserve package discovery"
