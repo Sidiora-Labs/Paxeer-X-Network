@@ -2294,3 +2294,23 @@ resolution = "Retain parsing and exact transaction checks; verify the actual EIP
 area = "Wallet custody result semantics"
 observed = "Private Human deposit confirmation requires a 32-byte transaction hash while the wallet sign-custody operation returns a 65-byte signature."
 resolution = "Complete exact authorized submission and durable custody-status recovery; never expose the signature as a transaction reference."
+
+[gotcha.666]
+area = "Replay runtime fixture lifetime"
+observed = "Replay24 native fixture compiled; build stopped in existing program_replay.rs on temporary array borrows at lines41-44 with E0716."
+resolution = "Record unrelated failure once and retain assertions; finish actual runtime corpus source under its released exact owner."
+
+[gotcha.679]
+area = "Portable replay Wasmi aliases"
+observed = "Task18.1 build found seven references to ExecutionValue, ExecutionGlobal and ExecutionFrame, while the actual Wasmi facade exports ExecutionTrace aliases."
+resolution = "Use the existing exported types without widening visibility or changing execution semantics; task104.35.27 owns the scoped correction."
+
+[gotcha.680]
+area = "Offline Programs dependency closure"
+observed = "Adding the actual Client and Arbiter workspace edges exposed missing genuine packages in Programs strict offline vendor source."
+resolution = "Retain source replacement and all patched package files; copy only exact locked registry packages with complete checksums before the bounded build."
+
+[gotcha.681]
+area = "Historical replay inventory"
+observed = "The historical V1 prestate already authenticates every Programs module leaf; treating its retained program_records as prefix-only was incorrect."
+resolution = "Preserve the complete inventory verifier and add only matching historical WASM bytes from the same execution snapshot."

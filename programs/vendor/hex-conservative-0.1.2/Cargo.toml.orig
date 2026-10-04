@@ -1,0 +1,42 @@
+[package]
+name = "hex-conservative"
+version = "0.1.2"
+authors = ["Andrew Poelstra <apoelstra@wpsoftware.net>"]
+license = "CC0-1.0"
+repository = "https://github.com/rust-bitcoin/hex-conservative"
+documentation = "https://docs.rs/hex-conservative/"
+description = "A hex encoding and decoding crate with a conservative MSRV and dependency policy."
+categories = ["encoding"]
+keywords = ["encoding", "hex", "hexadecimal"]
+readme = "README.md"
+edition = "2018"
+exclude = ["tests", "contrib"]
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+
+[workspace]
+members = ["fuzz"]
+
+[features]
+default = ["std"]
+std = ["alloc"]
+alloc = []
+
+[dependencies]
+core2 = { version = "0.3.2", default_features = false, optional = true }
+
+[dev-dependencies]
+
+[[example]]
+name = "hexy"
+
+[[example]]
+name = "custom"
+
+[[example]]
+name = "wrap_array_display_hex_trait"
+
+[[example]]
+name = "wrap_array_fmt_traits"

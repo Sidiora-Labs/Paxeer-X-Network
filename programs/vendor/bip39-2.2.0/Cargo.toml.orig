@@ -1,0 +1,63 @@
+[package]
+name = "bip39"
+version = "2.2.0"
+authors = ["Steven Roose <steven@stevenroose.org>"]
+license = "CC0-1.0"
+homepage = "https://github.com/rust-bitcoin/rust-bip39/"
+repository = "https://github.com/rust-bitcoin/rust-bip39/"
+documentation = "https://docs.rs/bip39/"
+description = "Library for BIP-39 Bitcoin mnemonic codes"
+keywords = [ "crypto", "bitcoin", "bip39", "mnemonic" ]
+readme = "README.md"
+edition = "2018"
+
+[features]
+default = [ "std" ]
+std = [ "alloc", "serde/std", "unicode-normalization/std" ]
+rand = [ "crate_rand", "rand_core" ]
+alloc = [ "unicode-normalization" ]
+
+# Note: English is the standard for bip39 so always included
+chinese-simplified = []
+chinese-traditional = []
+czech = []
+french = []
+italian = []
+japanese = []
+korean = []
+portuguese = []
+spanish = []
+
+all-languages = [
+    "chinese-simplified",
+    "chinese-traditional",
+    "czech",
+    "french",
+    "italian",
+    "japanese",
+    "korean",
+    "portuguese",
+    "spanish"
+]
+
+[dependencies]
+rand_core = { version = ">=0.4.0, <0.7.0", optional = true }
+crate_rand = { package = "rand", version = ">=0.6.0, <0.9.0", optional = true }
+serde = { version = "1.0", default-features = false, features = [ "alloc" ], optional = true }
+
+# Enabling this feature raises the MSRV to 1.51
+zeroize = { version = "1.5", features = ["zeroize_derive"], optional = true }
+
+# Unexported dependnecies
+bitcoin_hashes = { version = ">=0.12, <=0.13", default-features = false }
+unicode-normalization = { version = "0.1.22", default-features = false, optional = true }
+
+[dev-dependencies]
+# Enabling the "rand" feature by default to run the benches
+bip39 = { path = ".", features = ["rand"] }
+bitcoin_hashes = ">=0.12,<0.14" # enable default features for test
+
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]

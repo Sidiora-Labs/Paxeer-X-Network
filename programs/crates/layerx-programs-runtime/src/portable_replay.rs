@@ -62,13 +62,13 @@ fn values(cursor: &mut ReplayCursor<'_>) -> Result<Vec<crate::ExecutionValue>, R
     Ok(result)
 }
 
-fn wasmi_value(value: crate::ExecutionValue) -> wasmi::ExecutionValue {
+fn wasmi_value(value: crate::ExecutionValue) -> wasmi::ExecutionTraceValue {
     match value {
-        crate::ExecutionValue::I32(value) => wasmi::ExecutionValue {
+        crate::ExecutionValue::I32(value) => wasmi::ExecutionTraceValue {
             value_type: wasmi::ExecutionValueType::I32,
             bits: u64::from(u32::from_be_bytes(value.to_be_bytes())),
         },
-        crate::ExecutionValue::I64(value) => wasmi::ExecutionValue {
+        crate::ExecutionValue::I64(value) => wasmi::ExecutionTraceValue {
             value_type: wasmi::ExecutionValueType::I64,
             bits: u64::from_be_bytes(value.to_be_bytes()),
         },
@@ -77,7 +77,7 @@ fn wasmi_value(value: crate::ExecutionValue) -> wasmi::ExecutionValue {
 
 fn wasmi_values(
     values: &[crate::ExecutionValue],
-) -> Result<Vec<wasmi::ExecutionValue>, ReplayWitnessError> {
+) -> Result<Vec<wasmi::ExecutionTraceValue>, ReplayWitnessError> {
     let mut result = reserve(values.len())?;
     result.extend(values.iter().copied().map(wasmi_value));
     Ok(result)
@@ -289,7 +289,7 @@ fn instances(bytes: &[u8]) -> Result<Vec<wasmi::ExecutionInstanceState>, ReplayW
         let count = cursor.count(10)?;
         let mut globals = reserve(count)?;
         for _ in 0..count {
-            globals.push(wasmi::ExecutionGlobal {
+            globals.push(wasmi::ExecutionTraceGlobal {
                 global_index: cursor.u32()?,
                 mutable: cursor.boolean()?,
                 value: wasmi_value(value(&mut cursor)?),
@@ -449,7 +449,7 @@ impl PortableBoundary {
         }
         let mut call_frames = reserve(legacy.call_frames.len())?;
         for frame in &legacy.call_frames {
-            call_frames.push(wasmi::ExecutionFrame {
+            call_frames.push(wasmi::ExecutionTraceFrame {
                 function_index: frame.function_index,
                 return_program_counter: frame.return_program_counter,
                 locals: wasmi_values(&frame.locals)?,
@@ -457,7 +457,7 @@ impl PortableBoundary {
         }
         let mut globals = reserve(legacy.globals.len())?;
         for global in &legacy.globals {
-            globals.push(wasmi::ExecutionGlobal {
+            globals.push(wasmi::ExecutionTraceGlobal {
                 global_index: global.global_index,
                 mutable: global.mutable,
                 value: wasmi_value(global.value),

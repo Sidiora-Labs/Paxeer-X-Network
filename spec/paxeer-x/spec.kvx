@@ -33514,3 +33514,29 @@ qualification_status = "unverified"
 build_exit_code = 0
 verify_exit_code = 78
 qualification_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-14.11-result.json"
+
+[task.104.35.27]
+title = "Complete the genuine vendored dependency closure for authenticated Programs replay"
+status = "done"
+mode = "BUILD"
+wave = 2
+requires = ["0.2"]
+reqs = ["1105.3", "1105.4"]
+do_1 = "Add only genuine newly required locked registry packages and checksums for the existing Client and Arbiter dependency closure. Preserve every existing patched vendor file, source replacement, offline policy, package version and checksum. Never disable offline or source verification for production qualification."
+do_2 = "Correct the portable replay decoder references to the existing Wasmi ExecutionTrace aliases; preserve all types and public exports."
+touches = ["programs/vendor", "tools/qualification/paxeer-x/replay-vendor-closure.py", "programs/crates/layerx-programs-runtime/src/portable_replay.rs"]
+build_cmd = "timeout 20m python3 tools/qualification/paxeer-x/replay-vendor-closure.py --build"
+verify_cmd = "timeout 10m python3 tools/qualification/paxeer-x/replay-vendor-closure.py"
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop at original30-minute cap, unrelated failure, missing genuine authority or weakening; report exact source state, command, exit code and log path."
+completion_basis_policy = "Owner CONSTITUTION: fully implemented DONE; qualification separate and partial remains in_progress."
+source_ownership = "Root serializes manifests, spec and publication; no deployments, live signing, owner-file replacement or concurrent modification of source used by an active gate."
+
+completion_basis = "implementation"
+qualification_status = "passed"
+build_exit_code = 0
+verify_exit_code = 0
+qualification_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-104.35.27-result.json"
