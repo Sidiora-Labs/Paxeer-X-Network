@@ -2329,3 +2329,8 @@ resolution = "Preserve strict canonical decoding and use actual malformed encodi
 area = "Native Programs SSL linkage"
 observed = "Task104.35.26 new fixture and existing daemon linkage encountered undefined SSL symbols after the genuine Programs and Client dependency closure expanded."
 resolution = "Keep native checks intact; use the actual SSL system library before crypto for Programs-linked targets in the bounded linker prerequisite."
+
+[gotcha.690]
+area = "Ignored genuine vendor package files"
+observed = "Git ignored39 checksum-required public upstream certificate/key test vectors when publishing the new vendor directories; a clean candidate then failed the strict OpenSSL package checksum."
+resolution = "Stage only the exact genuine upstream checksum-bound files explicitly; keep all operational credentials excluded and retain the prior failed candidate evidence."
