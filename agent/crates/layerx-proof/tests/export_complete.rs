@@ -8,9 +8,10 @@ use layerx_proof::export::{
     TrustedCheckpointMembership,
 };
 use layerx_proof::export_codec::{
-    parse_fact_set, AccountStateRecord, ArtifactDecodeError, CheckpointRecord, CompleteOfflineArtifact,
-    ExportCodecError, FactRefError, FactSelector, HeaderRecord, InclusionRecord, ProofRecord,
-    ReceiptRecord, MAX_FACT_REFS, MAX_FACT_REF_BYTES, MAX_RECORD_BYTES, RECORD_VERSION,
+    parse_fact_set, AccountStateRecord, ArtifactDecodeError, CheckpointRecord,
+    CompleteOfflineArtifact, ExportCodecError, FactRefError, FactSelector, HeaderRecord,
+    InclusionRecord, ProofRecord, ReceiptRecord, MAX_FACT_REFS, MAX_FACT_REF_BYTES,
+    MAX_RECORD_BYTES, RECORD_VERSION,
 };
 use layerx_proof::merkle::{build_leaf_hash_proof, encode_proof, Proof};
 use layerx_proof::signed_authority::SignedAuthorityHistory;
@@ -225,7 +226,13 @@ fn pair_proof(index: u32) -> Proof {
     must(Proof::new(index, 2, vec![[0x31; 32]]))
 }
 
-fn inclusion_bytes(kind: u8, reference: &str, leaf: &[u8], proof: &Proof, digest: [u8; 32]) -> Vec<u8> {
+fn inclusion_bytes(
+    kind: u8,
+    reference: &str,
+    leaf: &[u8],
+    proof: &Proof,
+    digest: [u8; 32],
+) -> Vec<u8> {
     let mut out = b"LXIP".to_vec();
     out.push(1);
     out.push(kind);
@@ -360,7 +367,12 @@ fn chunk_bytes(chunk: &Chunk, proof: &Proof) -> Vec<u8> {
     out
 }
 
-fn checkpoint_bytes(reference: &str, header: &[u8], order: &[usize], chunk_count: Option<u16>) -> Vec<u8> {
+fn checkpoint_bytes(
+    reference: &str,
+    header: &[u8],
+    order: &[usize],
+    chunk_count: Option<u16>,
+) -> Vec<u8> {
     let attestations = [attestation(1), attestation(2)];
     let mut certificate = Vec::new();
     lp(&mut certificate, header);
@@ -412,7 +424,10 @@ fn assert_strict<T>(bytes: &[u8], decode: impl Fn(&[u8]) -> Result<T, ExportCode
     }
     let mut trailing = bytes.to_vec();
     trailing.push(0);
-    assert_eq!(decode(&trailing).err(), Some(ExportCodecError::TrailingBytes));
+    assert_eq!(
+        decode(&trailing).err(),
+        Some(ExportCodecError::TrailingBytes)
+    );
     let mut version = bytes.to_vec();
     version[4] = RECORD_VERSION + 1;
     assert_eq!(decode(&version).err(), Some(ExportCodecError::Version));
@@ -439,11 +454,24 @@ fn fact_grammar_accepts_each_canonical_form_in_request_order() {
     assert_eq!(
         parsed,
         vec![
-            FactSelector::Checkpoint { activity_id: activity, batch_number: u64::MAX },
-            FactSelector::State { activity_id: activity, account_id: account },
-            FactSelector::Receipt { activity_id: activity },
-            FactSelector::Activity { activity_id: activity },
-            FactSelector::Checkpoint { activity_id: activity, batch_number: 1 },
+            FactSelector::Checkpoint {
+                activity_id: activity,
+                batch_number: u64::MAX
+            },
+            FactSelector::State {
+                activity_id: activity,
+                account_id: account
+            },
+            FactSelector::Receipt {
+                activity_id: activity
+            },
+            FactSelector::Activity {
+                activity_id: activity
+            },
+            FactSelector::Checkpoint {
+                activity_id: activity,
+                batch_number: 1
+            },
         ]
     );
     for (text, selector) in texts.iter().zip(&parsed) {
@@ -494,7 +522,10 @@ fn fact_grammar_refuses_every_noncanonical_form() {
     ];
     for text in &refused {
         assert!(FactSelector::parse(text).is_err(), "accepted {text:?}");
-        assert!(parse_fact_set(&[text.as_str()]).is_err(), "set accepted {text:?}");
+        assert!(
+            parse_fact_set(&[text.as_str()]).is_err(),
+            "set accepted {text:?}"
+        );
     }
     assert_eq!(
         FactSelector::parse(&format!("receipt:{zero}")),
@@ -512,19 +543,30 @@ fn fact_grammar_refuses_every_noncanonical_form() {
         FactSelector::parse(&format!("checkpoint:{good}:01")),
         Err(FactRefError::Decimal)
     );
-    assert_eq!(FactSelector::parse(&format!("ledger:{good}")), Err(FactRefError::UnknownKind));
+    assert_eq!(
+        FactSelector::parse(&format!("ledger:{good}")),
+        Err(FactRefError::UnknownKind)
+    );
     let long = format!("{}0", state_ref(id(1), id(2)));
     assert_eq!(long.len(), MAX_FACT_REF_BYTES + 1);
     assert_eq!(
         FactSelector::parse(&long),
-        Err(FactRefError::TooLong { length: MAX_FACT_REF_BYTES + 1 })
+        Err(FactRefError::TooLong {
+            length: MAX_FACT_REF_BYTES + 1
+        })
     );
     let empty: [&str; 0] = [];
     assert_eq!(parse_fact_set(&empty), Err(FactRefError::NoFacts));
     let seventeen: Vec<String> = (1..=17).map(|value| receipt_ref(id(value))).collect();
-    assert_eq!(parse_fact_set(&seventeen), Err(FactRefError::TooMany { count: 17 }));
+    assert_eq!(
+        parse_fact_set(&seventeen),
+        Err(FactRefError::TooMany { count: 17 })
+    );
     let repeated = [receipt_ref(id(1)), receipt_ref(id(2)), receipt_ref(id(1))];
-    assert_eq!(parse_fact_set(&repeated), Err(FactRefError::Duplicate { index: 2 }));
+    assert_eq!(
+        parse_fact_set(&repeated),
+        Err(FactRefError::Duplicate { index: 2 })
+    );
 }
 
 #[test]
@@ -552,13 +594,21 @@ fn receipt_header_and_inclusion_records_round_trip_their_frozen_byte_layouts() {
     let receipt_wire =
         receipt_record_bytes(activity, &receipt_bytes, signer.verifying_key().to_bytes());
     let record = must(ReceiptRecord::decode(&receipt_wire));
-    assert_eq!(record.reference, FactSelector::Receipt { activity_id: activity });
+    assert_eq!(
+        record.reference,
+        FactSelector::Receipt {
+            activity_id: activity
+        }
+    );
     assert_eq!(record.canonical_receipt, receipt_bytes);
     assert_eq!(must(record.encode()), receipt_wire);
     assert_strict(&receipt_wire, ReceiptRecord::decode);
     let mut wrong_kind = b"LXRF".to_vec();
     wrong_kind.push(1);
-    lp(&mut wrong_kind, format!("activity:{}", hex(&activity)).as_bytes());
+    lp(
+        &mut wrong_kind,
+        format!("activity:{}", hex(&activity)).as_bytes(),
+    );
     wrong_kind.extend_from_slice(&receipt_wire[9 + receipt_ref(activity).len()..]);
     assert_eq!(
         ReceiptRecord::decode(&wrong_kind).err(),
@@ -568,7 +618,11 @@ fn receipt_header_and_inclusion_records_round_trip_their_frozen_byte_layouts() {
     let digest = must(header.digest());
     for (kind, reference, leaf) in [
         (2_u8, receipt_ref(activity), receipt_bytes.clone()),
-        (1_u8, format!("activity:{}", hex(&activity)), b"activity-leaf".to_vec()),
+        (
+            1_u8,
+            format!("activity:{}", hex(&activity)),
+            b"activity-leaf".to_vec(),
+        ),
     ] {
         let wire = inclusion_bytes(kind, &reference, &leaf, &pair_proof(1), digest);
         let decoded = must(InclusionRecord::decode(&wire));
@@ -588,17 +642,32 @@ fn receipt_header_and_inclusion_records_round_trip_their_frozen_byte_layouts() {
         for tag in [0_u8, 3, 0xff] {
             let mut unknown = wire.clone();
             unknown[5] = tag;
-            assert_eq!(InclusionRecord::decode(&unknown).err(), Some(ExportCodecError::Tag));
+            assert_eq!(
+                InclusionRecord::decode(&unknown).err(),
+                Some(ExportCodecError::Tag)
+            );
         }
     }
     // Receipt inclusion must not travel under the activity kind.
-    let swapped = inclusion_bytes(1, &receipt_ref(activity), &receipt_bytes, &pair_proof(1), digest);
+    let swapped = inclusion_bytes(
+        1,
+        &receipt_ref(activity),
+        &receipt_bytes,
+        &pair_proof(1),
+        digest,
+    );
     assert_eq!(
         InclusionRecord::decode(&swapped).err(),
         Some(ExportCodecError::ReferenceKind)
     );
     // A Merkle path that does not match its tree size is not a canonical proof.
-    let mut bad_proof = inclusion_bytes(2, &receipt_ref(activity), &receipt_bytes, &pair_proof(1), digest);
+    let mut bad_proof = inclusion_bytes(
+        2,
+        &receipt_ref(activity),
+        &receipt_bytes,
+        &pair_proof(1),
+        digest,
+    );
     let proof_at = bad_proof.len() - 32 - encode_proof(&pair_proof(1)).len();
     bad_proof[proof_at + 5..proof_at + 9].copy_from_slice(&3_u32.to_be_bytes());
     assert!(InclusionRecord::decode(&bad_proof).is_err());
@@ -614,7 +683,13 @@ fn account_state_records_round_trip_both_variants_and_refuse_unknown_variants() 
     let digest = [0x51; 32];
     let plain = account_state_bytes(&reference, 1, &receipt_bytes, digest, None);
     let decoded = must(AccountStateRecord::decode(&plain));
-    assert_eq!(decoded.reference, FactSelector::State { activity_id: activity, account_id: account });
+    assert_eq!(
+        decoded.reference,
+        FactSelector::State {
+            activity_id: activity,
+            account_id: account
+        }
+    );
     assert_eq!(decoded.account_id, account);
     assert_eq!(decoded.account_value, vec![0x41; 48]);
     assert_eq!(decoded.account_proof, pair_proof(0));
@@ -626,7 +701,13 @@ fn account_state_records_round_trip_both_variants_and_refuse_unknown_variants() 
     assert_eq!(must(must(ProofRecord::decode(&plain)).encode()), plain);
     assert_strict(&plain, AccountStateRecord::decode);
 
-    let maintained = account_state_bytes(&reference, 2, b"maintenance", digest, Some((3, 7, activity)));
+    let maintained = account_state_bytes(
+        &reference,
+        2,
+        b"maintenance",
+        digest,
+        Some((3, 7, activity)),
+    );
     let decoded = must(AccountStateRecord::decode(&maintained));
     assert!(matches!(
         decoded.variant,
@@ -647,7 +728,10 @@ fn account_state_records_round_trip_both_variants_and_refuse_unknown_variants() 
     for tag in [0_u8, 3, 0xff] {
         let mut unknown = plain.clone();
         unknown[variant_at] = tag;
-        assert_eq!(AccountStateRecord::decode(&unknown).err(), Some(ExportCodecError::Tag));
+        assert_eq!(
+            AccountStateRecord::decode(&unknown).err(),
+            Some(ExportCodecError::Tag)
+        );
     }
 }
 
@@ -658,7 +742,13 @@ fn checkpoint_record_round_trips_and_refuses_partial_reordered_or_unknown_materi
     let header = &HEADERS[..HEADER_BYTES];
     let wire = checkpoint_bytes(&reference, header, &[0, 1, 2], None);
     let decoded = must(CheckpointRecord::decode(&wire));
-    assert_eq!(decoded.reference, FactSelector::Checkpoint { activity_id: activity, batch_number: 1 });
+    assert_eq!(
+        decoded.reference,
+        FactSelector::Checkpoint {
+            activity_id: activity,
+            batch_number: 1
+        }
+    );
     assert_eq!(decoded.certificate.checkpoint().header_bytes(), header);
     assert_eq!(decoded.certificate.threshold(), 2);
     assert_eq!(decoded.certificate.attestations().len(), 2);
@@ -676,13 +766,27 @@ fn checkpoint_record_round_trips_and_refuses_partial_reordered_or_unknown_materi
     assert_eq!(must(decoded.encode()), wire);
     assert_strict(&wire, CheckpointRecord::decode);
 
-    for order in [&[1_usize, 0, 2][..], &[0, 2][..], &[0, 1, 1][..], &[2, 1, 0][..]] {
+    for order in [
+        &[1_usize, 0, 2][..],
+        &[0, 2][..],
+        &[0, 1, 1][..],
+        &[2, 1, 0][..],
+    ] {
         let reordered = checkpoint_bytes(&reference, header, order, None);
-        assert!(CheckpointRecord::decode(&reordered).is_err(), "order {order:?} accepted");
+        assert!(
+            CheckpointRecord::decode(&reordered).is_err(),
+            "order {order:?} accepted"
+        );
     }
     assert!(CheckpointRecord::decode(&checkpoint_bytes(&reference, header, &[], None)).is_err());
-    assert!(CheckpointRecord::decode(&checkpoint_bytes(&reference, header, &[0, 1, 2], Some(4))).is_err());
-    assert!(CheckpointRecord::decode(&checkpoint_bytes(&reference, header, &[0, 1, 2], Some(2))).is_err());
+    assert!(
+        CheckpointRecord::decode(&checkpoint_bytes(&reference, header, &[0, 1, 2], Some(4)))
+            .is_err()
+    );
+    assert!(
+        CheckpointRecord::decode(&checkpoint_bytes(&reference, header, &[0, 1, 2], Some(2)))
+            .is_err()
+    );
     let mut unknown_class = wire.clone();
     let class_at = wire.len() - chunk_bytes(&data.chunks[2], &data.proofs[2]).len() + 12;
     unknown_class[class_at] = 6;
@@ -690,11 +794,19 @@ fn checkpoint_record_round_trips_and_refuses_partial_reordered_or_unknown_materi
     let mut option_tag = wire.clone();
     let option_at = wire.len()
         - 2
-        - (0..3).map(|index| chunk_bytes(&data.chunks[index], &data.proofs[index]).len()).sum::<usize>()
+        - (0..3)
+            .map(|index| chunk_bytes(&data.chunks[index], &data.proofs[index]).len())
+            .sum::<usize>()
         - 1;
     option_tag[option_at] = 2;
     assert!(CheckpointRecord::decode(&option_tag).is_err());
-    assert!(CheckpointRecord::decode(&checkpoint_bytes(&receipt_ref(activity), header, &[0, 1, 2], None)).is_err());
+    assert!(CheckpointRecord::decode(&checkpoint_bytes(
+        &receipt_ref(activity),
+        header,
+        &[0, 1, 2],
+        None
+    ))
+    .is_err());
 }
 
 #[test]
@@ -710,7 +822,10 @@ fn record_size_is_capped_at_exactly_one_mebibyte() {
     let over = vec![0x5a; MAX_RECORD_BYTES - empty + 1];
     let oversized = inclusion_bytes(1, &reference, &over, &single_proof(), digest);
     assert_eq!(oversized.len(), MAX_RECORD_BYTES + 1);
-    assert_eq!(InclusionRecord::decode(&oversized).err(), Some(ExportCodecError::Bound));
+    assert_eq!(
+        InclusionRecord::decode(&oversized).err(),
+        Some(ExportCodecError::Bound)
+    );
     let mut record = decoded;
     record.canonical_leaf = over;
     assert_eq!(record.encode().err(), Some(ExportCodecError::Bound));
@@ -721,12 +836,22 @@ fn receipt_artifact(header: &HeaderRecord, activity: [u8; 32]) -> Vec<Vec<u8>> {
     let receipt_bytes = receipt(activity, &signer);
     vec![
         receipt_record_bytes(activity, &receipt_bytes, signer.verifying_key().to_bytes()),
-        inclusion_bytes(2, &receipt_ref(activity), &receipt_bytes, &single_proof(), must(header.digest())),
+        inclusion_bytes(
+            2,
+            &receipt_ref(activity),
+            &receipt_bytes,
+            &single_proof(),
+            must(header.digest()),
+        ),
         header_bytes(header),
     ]
 }
 
-fn decode_artifact(facts: &[String], parts: &[Vec<u8>], certificates: &[Vec<u8>]) -> CompleteOfflineArtifact {
+fn decode_artifact(
+    facts: &[String],
+    parts: &[Vec<u8>],
+    certificates: &[Vec<u8>],
+) -> CompleteOfflineArtifact {
     must(CompleteOfflineArtifact::decode(
         facts,
         &parts[..1],
@@ -744,7 +869,12 @@ fn artifact_container_round_trips_and_refuses_duplicate_or_malformed_buckets() {
     let parts = receipt_artifact(&header, activity);
     let facts = vec![receipt_ref(activity)];
     let artifact = decode_artifact(&facts, &parts, &[]);
-    assert_eq!(artifact.facts, vec![FactSelector::Receipt { activity_id: activity }]);
+    assert_eq!(
+        artifact.facts,
+        vec![FactSelector::Receipt {
+            activity_id: activity
+        }]
+    );
     let encoded = must(artifact.encode());
     assert_eq!(encoded.facts, facts);
     assert_eq!(encoded.receipts, parts[..1].to_vec());
@@ -754,13 +884,29 @@ fn artifact_container_round_trips_and_refuses_duplicate_or_malformed_buckets() {
     let no_certificates: [Vec<u8>; 0] = [];
     let doubled = [receipt_ref(activity), receipt_ref(activity)];
     assert_eq!(
-        CompleteOfflineArtifact::decode(&doubled, &parts[..1], &parts[1..2], &no_certificates, &parts[2..]).err(),
-        Some(ArtifactDecodeError::Facts(FactRefError::Duplicate { index: 1 }))
+        CompleteOfflineArtifact::decode(
+            &doubled,
+            &parts[..1],
+            &parts[1..2],
+            &no_certificates,
+            &parts[2..]
+        )
+        .err(),
+        Some(ArtifactDecodeError::Facts(FactRefError::Duplicate {
+            index: 1
+        }))
     );
     let mut trailing = parts[2].clone();
     trailing.push(0);
     assert_eq!(
-        CompleteOfflineArtifact::decode(&facts, &parts[..1], &parts[1..2], &no_certificates, &[trailing]).err(),
+        CompleteOfflineArtifact::decode(
+            &facts,
+            &parts[..1],
+            &parts[1..2],
+            &no_certificates,
+            &[trailing]
+        )
+        .err(),
         Some(ArtifactDecodeError::Record {
             bucket: "headers",
             index: 0,
@@ -768,7 +914,14 @@ fn artifact_container_round_trips_and_refuses_duplicate_or_malformed_buckets() {
         })
     );
     // A header record in the receipt bucket is not reinterpreted.
-    assert!(CompleteOfflineArtifact::decode(&facts, &parts[2..], &parts[1..2], &no_certificates, &parts[2..]).is_err());
+    assert!(CompleteOfflineArtifact::decode(
+        &facts,
+        &parts[2..],
+        &parts[1..2],
+        &no_certificates,
+        &parts[2..]
+    )
+    .is_err());
 }
 
 #[test]
@@ -798,7 +951,7 @@ fn independent_trust_refuses_false_membership_threshold_and_network() {
     ));
     let trust = trust();
     assert_eq!(trust.settlement(), domain());
-    assert_eq!(trust.network_id(), native().history.network_id());
+    assert_eq!(trust.network_id(), self::native().history.network_id());
 }
 
 #[test]
@@ -806,7 +959,11 @@ fn settlement_anchored_is_refused_without_an_offline_finality_proof() {
     let native = native();
     let activity = id(1);
     let header = header_record(0, native.first_key, 1, 13);
-    let artifact = decode_artifact(&[receipt_ref(activity)], &receipt_artifact(&header, activity), &[]);
+    let artifact = decode_artifact(
+        &[receipt_ref(activity)],
+        &receipt_artifact(&header, activity),
+        &[],
+    );
     assert_eq!(
         verify_complete(&artifact, &trust(), VerificationLevel::SETTLEMENT_ANCHORED).err(),
         Some(CompleteExportError::SettlementAnchoringUnavailable)
@@ -821,7 +978,11 @@ fn rogue_sequencer_key_and_false_key_range_are_refused_against_independent_trust
     let level = VerificationLevel::BATCH_INCLUDED;
     let genuine = header_record(0, native.first_key, 1, 13);
     let control = verify_complete(
-        &decode_artifact(&[receipt_ref(activity)], &receipt_artifact(&genuine, activity), &[]),
+        &decode_artifact(
+            &[receipt_ref(activity)],
+            &receipt_artifact(&genuine, activity),
+            &[],
+        ),
         &trust,
         level,
     );
@@ -842,16 +1003,27 @@ fn rogue_sequencer_key_and_false_key_range_are_refused_against_independent_trust
             wrong_id
         },
     ] {
-        let artifact = decode_artifact(&[receipt_ref(activity)], &receipt_artifact(&header, activity), &[]);
+        let artifact = decode_artifact(
+            &[receipt_ref(activity)],
+            &receipt_artifact(&header, activity),
+            &[],
+        );
         assert!(
-            matches!(verify_complete(&artifact, &trust, level), Err(CompleteExportError::Header { fact: 0 })),
+            matches!(
+                verify_complete(&artifact, &trust, level),
+                Err(CompleteExportError::Header { fact: 0 })
+            ),
             "header {:?} accepted",
             (header.public_key, header.first_batch, header.last_batch)
         );
     }
     let mut forged = header_record(0, native.first_key, 1, 13);
     forged.canonical_header[100] ^= 1;
-    let artifact = decode_artifact(&[receipt_ref(activity)], &receipt_artifact(&forged, activity), &[]);
+    let artifact = decode_artifact(
+        &[receipt_ref(activity)],
+        &receipt_artifact(&forged, activity),
+        &[],
+    );
     assert!(verify_complete(&artifact, &trust, level).is_err());
 }
 
@@ -873,7 +1045,10 @@ fn swapped_and_orphan_records_are_refused() {
         out[at..at + new.len()].copy_from_slice(new.as_bytes());
         out
     };
-    let receipts = [swap(&first[0], id(1), id(2)), swap(&second[0], id(2), id(1))];
+    let receipts = [
+        swap(&first[0], id(1), id(2)),
+        swap(&second[0], id(2), id(1)),
+    ];
     let artifact = must(CompleteOfflineArtifact::decode(
         &facts,
         &receipts,
@@ -882,7 +1057,10 @@ fn swapped_and_orphan_records_are_refused() {
         &first[2..],
     ));
     assert!(verify_complete(&artifact, &trust, level).is_err());
-    let inclusions = [swap_inclusion(&first[1], id(1), id(2)), swap_inclusion(&second[1], id(2), id(1))];
+    let inclusions = [
+        swap_inclusion(&first[1], id(1), id(2)),
+        swap_inclusion(&second[1], id(2), id(1)),
+    ];
     let artifact = must(CompleteOfflineArtifact::decode(
         &facts,
         &[first[0].clone(), second[0].clone()],
@@ -949,11 +1127,13 @@ fn state_path_tamper_and_missing_maintenance_link_are_refused() {
     tampered[path_at] ^= 1;
     assert!(verify(vec![tampered], Vec::new()).is_err());
     // Maintenance state without its dependency receipt and inclusion is refused.
-    let maintained = account_state_bytes(&facts[0], 2, b"maintenance", digest, Some((3, 7, activity)));
+    let maintained =
+        account_state_bytes(&facts[0], 2, b"maintenance", digest, Some((3, 7, activity)));
     let missing = verify(vec![maintained.clone()], Vec::new());
     assert!(matches!(
         missing,
-        Err(CompleteExportError::MissingRecord { fact: 0 } | CompleteExportError::MaintenanceLink { fact: 0 })
+        Err(CompleteExportError::MissingRecord { fact: 0 }
+            | CompleteExportError::MaintenanceLink { fact: 0 })
     ));
     // A dependency receipt for another activity does not complete the link.
     let other = receipt(id(3), &signer);
@@ -962,7 +1142,11 @@ fn state_path_tamper_and_missing_maintenance_link_are_refused() {
             maintained,
             inclusion_bytes(2, &receipt_ref(id(3)), &other, &single_proof(), digest),
         ],
-        vec![receipt_record_bytes(id(3), &other, signer.verifying_key().to_bytes())],
+        vec![receipt_record_bytes(
+            id(3),
+            &other,
+            signer.verifying_key().to_bytes(),
+        )],
     );
     assert!(wrong.is_err());
 }
@@ -982,12 +1166,23 @@ fn checkpoint_facts_refuse_wrong_domain_membership_and_incomplete_availability()
     let full = checkpoint_bytes(&reference, &HEADERS[..HEADER_BYTES], &[0, 1, 2], None);
     assert!(run(&trust(), full.clone()).is_err());
     let other = |domain: SettlementDomain, member: TrustedCheckpointMembership| {
-        let native = native();
-        must(IndependentOfflineTrust::new(native.registry, native.history, domain, vec![member]))
+        let native = self::native();
+        must(IndependentOfflineTrust::new(
+            native.registry,
+            native.history,
+            domain,
+            vec![member],
+        ))
     };
     for trust in [
-        other(SettlementDomain::new(31_337, [0x56; 20]), membership(&[1, 2, 3], 2)),
-        other(SettlementDomain::new(31_338, [0x55; 20]), membership(&[1, 2, 3], 2)),
+        other(
+            SettlementDomain::new(31_337, [0x56; 20]),
+            membership(&[1, 2, 3], 2),
+        ),
+        other(
+            SettlementDomain::new(31_338, [0x55; 20]),
+            membership(&[1, 2, 3], 2),
+        ),
         other(domain(), membership(&[1, 2, 4], 2)),
         other(domain(), membership(&[1, 2], 2)),
         other(domain(), membership(&[1, 2, 3], 3)),
@@ -995,7 +1190,11 @@ fn checkpoint_facts_refuse_wrong_domain_membership_and_incomplete_availability()
         assert!(run(&trust, full.clone()).is_err());
     }
     // Missing tail chunk and substituted chunk bytes are refused, never partially served.
-    assert!(run(&trust(), checkpoint_bytes(&reference, &HEADERS[..HEADER_BYTES], &[0, 1], None)).is_err());
+    assert!(run(
+        &trust(),
+        checkpoint_bytes(&reference, &HEADERS[..HEADER_BYTES], &[0, 1], None)
+    )
+    .is_err());
     let mut substituted = full.clone();
     let data = availability();
     let tail = chunk_bytes(&data.chunks[2], &data.proofs[2]);
@@ -1007,7 +1206,12 @@ fn checkpoint_facts_refuse_wrong_domain_membership_and_incomplete_availability()
     let artifact = decode_artifact(
         &[next.clone()],
         &parts,
-        &[checkpoint_bytes(&next, &HEADERS[..HEADER_BYTES], &[0, 1, 2], None)],
+        &[checkpoint_bytes(
+            &next,
+            &HEADERS[..HEADER_BYTES],
+            &[0, 1, 2],
+            None,
+        )],
     );
     assert!(verify_complete(&artifact, &trust(), VerificationLevel::CHECKPOINT_FINALISED).is_err());
 }
