@@ -32843,7 +32843,7 @@ fleet_scope_manifest = "/root/lx-ops/paxeer-x-integration-2026-10-03/fleet-104.1
 source_status = "complete"
 completion_basis = "implementation under owner CONSTITUTION; qualification separately recorded"
 qualification_status = "UNRUN"
-source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/fleet-104.13.9-intake.json"
+source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/fleet-104.13.9-format-handoff.json"
 
 [task.0.11]
 title = "Preserve legacy deposit fault encoding with complete SDK error handling"
