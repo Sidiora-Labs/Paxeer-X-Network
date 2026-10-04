@@ -67,29 +67,47 @@ stop_child() {
 trap 'stop_child; exit 0' TERM INT
 trap stop_child EXIT
 while :; do
-    while [ ! -r "$LAYERX_GUARANTOR_IDENTITY_DIR/producer.env" ] || \
-          [ ! -r "$LAYERX_GUARANTOR_IDENTITY_DIR/genesis.manifest" ] || \
-          [ ! -r "$LAYERX_GUARANTOR_IDENTITY_DIR/genesis.registration" ] || \
+    producer_env="$LAYERX_GUARANTOR_IDENTITY_DIR/producer.env"
+    manifest="$LAYERX_GUARANTOR_IDENTITY_DIR/genesis.manifest"
+    registration="$LAYERX_GUARANTOR_IDENTITY_DIR/genesis.registration"
+    if [ "${LAYERX_GENERATION_FD_MODE:-0}" = 1 ]; then
+        producer_env=${LAYERX_GUARANTOR_PRODUCER_ENV_FILE:?generation producer environment is required}
+        manifest=${LAYERX_NODE_GENESIS_MANIFEST:?generation manifest is required}
+        registration=${LAYERX_NODE_GENESIS_REGISTRATION:?generation registration is required}
+        : "${LAYERX_GUARANTOR_KEY_FILE:?generation identity key is required}"
+        : "${LAYERX_NODE_SNAPSHOT:?generation snapshot is required}"
+        : "${LAYERX_NODE_IDENTITIES:?generation identity inventory is required}"
+        : "${LAYERX_GUARANTOR_NODE_CONFIG:?generation node config is required}"
+    fi
+    while [ ! -r "$producer_env" ] || \
+          [ ! -r "$manifest" ] || \
+          [ ! -r "$registration" ] || \
           [ ! -r "$LAYERX_GUARANTOR_SETTLEMENT_ENV" ] || \
           { [ -n "${LAYERX_GUARANTOR_PUBLICATION_AUTHORIZATION_SOURCE:-}" ] && \
             [ ! -r "$LAYERX_GUARANTOR_PUBLICATION_AUTHORIZATION_SOURCE" ]; } || \
           [ ! -S "$LAYERX_GUARANTOR_LNI_SOCKET" ]; do
         sleep 1
     done
-    generation=$(stat -c %i "$LAYERX_GUARANTOR_IDENTITY_DIR/producer.env")
+    if [ "${LAYERX_GENERATION_FD_MODE:-0}" = 1 ]; then
+        generation=$(stat -Lc %i "$producer_env")
+    else
+        generation=$(stat -c %i "$producer_env")
+    fi
     settlement=$("$(dirname "$0")/bootstrap.sh" --check-settlement "$LAYERX_GUARANTOR_SETTLEMENT_ENV")
     set -a
-    . "$LAYERX_GUARANTOR_IDENTITY_DIR/producer.env"
+    . "$producer_env"
     eval "$settlement"
     set +a
     [[ $LAYERX_GUARANTOR_ID =~ ^[0-9a-f]{64}$ ]]
     export LAYERX_GUARANTOR_STATE_DIR="$state_root/$LAYERX_GUARANTOR_ID"
-    export LAYERX_GUARANTOR_KEY_FILE="$LAYERX_GUARANTOR_IDENTITY_DIR/key.pem"
-    export LAYERX_NODE_SNAPSHOT="$LAYERX_GUARANTOR_IDENTITY_DIR/genesis.lxs"
-    export LAYERX_NODE_GENESIS_MANIFEST="$LAYERX_GUARANTOR_IDENTITY_DIR/genesis.manifest"
-    export LAYERX_NODE_GENESIS_REGISTRATION="$LAYERX_GUARANTOR_IDENTITY_DIR/genesis.registration"
-    export LAYERX_NODE_IDENTITIES="$LAYERX_GUARANTOR_IDENTITY_DIR/identities.txt"
-    export LAYERX_GUARANTOR_NODE_CONFIG="$LAYERX_GUARANTOR_IDENTITY_DIR/node.conf"
+    if [ "${LAYERX_GENERATION_FD_MODE:-0}" != 1 ]; then
+        export LAYERX_GUARANTOR_KEY_FILE="$LAYERX_GUARANTOR_IDENTITY_DIR/key.pem"
+        export LAYERX_NODE_SNAPSHOT="$LAYERX_GUARANTOR_IDENTITY_DIR/genesis.lxs"
+        export LAYERX_NODE_GENESIS_MANIFEST="$LAYERX_GUARANTOR_IDENTITY_DIR/genesis.manifest"
+        export LAYERX_NODE_GENESIS_REGISTRATION="$LAYERX_GUARANTOR_IDENTITY_DIR/genesis.registration"
+        export LAYERX_NODE_IDENTITIES="$LAYERX_GUARANTOR_IDENTITY_DIR/identities.txt"
+        export LAYERX_GUARANTOR_NODE_CONFIG="$LAYERX_GUARANTOR_IDENTITY_DIR/node.conf"
+    fi
     umask 077
     mkdir -p "$LAYERX_GUARANTOR_STATE_DIR/signer"
     chmod 0700 "$LAYERX_GUARANTOR_STATE_DIR/signer"
@@ -109,8 +127,10 @@ while :; do
     child=$!
     current=$generation
     while kill -0 "$child" 2>/dev/null; do
-        current=$(stat -c %i "$LAYERX_GUARANTOR_IDENTITY_DIR/producer.env")
-        [ "$current" = "$generation" ] || break
+        if [ "${LAYERX_GENERATION_FD_MODE:-0}" != 1 ]; then
+            current=$(stat -c %i "$producer_env")
+            [ "$current" = "$generation" ] || break
+        fi
         sleep 1
     done
     if [ "$current" != "$generation" ]; then

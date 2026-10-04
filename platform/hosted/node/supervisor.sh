@@ -430,12 +430,17 @@ fi
 
 trap 'true' USR1
 SOCAT_PID=""
+GENERATION_TRANSPORT_PID=""
 OWNS_RUNTIME=0
 
 cleanup() {
     trap - TERM INT EXIT
     stop_daemon
     if [ -n "$SOCAT_PID" ]; then kill "$SOCAT_PID" 2>/dev/null || true; fi
+    if [ -n "$GENERATION_TRANSPORT_PID" ]; then
+        kill "$GENERATION_TRANSPORT_PID" 2>/dev/null || true
+        wait "$GENERATION_TRANSPORT_PID" 2>/dev/null || true
+    fi
     if [ "$OWNS_RUNTIME" -eq 1 ]; then rm -f "$PID_FILE" "$SUPERVISOR_SOCKET"; fi
 }
 trap 'cleanup; exit 0' TERM INT
@@ -476,8 +481,30 @@ run_bootstrap() {
     if [ -n "${LAYERX_NODE_HANDOVER_AUTHORITY_PUBLIC_KEY:-}" ]; then
         authority=(--handover-authority "$LAYERX_NODE_HANDOVER_AUTHORITY_PUBLIC_KEY")
     fi
+    if [ "${LAYERX_NODE_GENERATION_TRANSPORT:-0}" = 1 ]; then
+        authority+=(--generation-authorization-dir "$STATE_DIR/generation-authorizations")
+    fi
     python3 "$RESET_HELPER" exec-daemon -- "$SCRIPT_DIR/bootstrap.sh" --data-dir "$DATA_DIR" \
         --run-dir "$RUN_DIR" --layerxd "$LAYERXD" "${authority[@]}" "$@"
+}
+
+start_generation_transport() {
+    [ "${LAYERX_NODE_GENERATION_TRANSPORT:-0}" = 1 ] || return 0
+    [ "${LAYERX_NODE_RESET_STAGED_GENERATIONS:-0}" = 1 ] || fail "generation transport requires staged reset admission"
+    if [ -n "$GENERATION_TRANSPORT_PID" ]; then
+        kill -0 "$GENERATION_TRANSPORT_PID" 2>/dev/null || fail "generation transport exited"
+        return 0
+    fi
+    local uid gid
+    uid=$(sed -n 's/^LAYERX_NODE_LNI_ALLOWED_UID=//p' "$DATA_DIR/sequencer.env")
+    gid=$(sed -n 's/^LAYERX_NODE_LNI_ALLOWED_GID=//p' "$DATA_DIR/sequencer.env")
+    [[ $uid =~ ^[0-9]+$ && $gid =~ ^[0-9]+$ ]] || fail "generation consumer peer identity unavailable"
+    python3 "$RESET_HELPER" exec-daemon -- python3 "$SCRIPT_DIR/generation_transport.py" \
+        --data-dir "$DATA_DIR" --state-dir "$STATE_DIR" --run-dir "$RUN_DIR" \
+        --socket "$RUN_DIR/generation.sock" --allowed-uid "$uid" --allowed-gid "$gid" &
+    GENERATION_TRANSPORT_PID=$!
+    wait_for_file "$RUN_DIR/generation.sock" 10 || fail "generation transport startup pending"
+    kill -0 "$GENERATION_TRANSPORT_PID" 2>/dev/null || fail "generation transport startup refused"
 }
 
 publish_generation() {
@@ -611,6 +638,11 @@ if staged_profile not in ('0', '1'):
     raise ValueError('invalid reset activation profile')
 if staged_profile == '1':
     value['staged_generations'] = True
+transport_profile = os.environ.get('LAYERX_NODE_GENERATION_TRANSPORT', '0')
+if transport_profile not in ('0', '1') or (transport_profile == '1' and staged_profile != '1'):
+    raise ValueError('invalid generation transport admission profile')
+if transport_profile == '1':
+    value['generation_transport'] = True
 temporary = output.with_name(output.name + '.tmp.' + str(os.getpid()))
 fd = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
 with os.fdopen(fd, 'w') as handle:
@@ -749,6 +781,9 @@ perform_staged_reset() {
             if [ -n "${LAYERX_NODE_HANDOVER_AUTHORITY_PUBLIC_KEY:-}" ]; then
                 authority=(--handover-authority "$LAYERX_NODE_HANDOVER_AUTHORITY_PUBLIC_KEY")
             fi
+            if [ "${LAYERX_NODE_GENERATION_TRANSPORT:-0}" = 1 ]; then
+                authority+=(--generation-authorization-dir "$STATE_DIR/generation-authorizations")
+            fi
             python3 "$RESET_HELPER" exec-daemon -- "$SCRIPT_DIR/bootstrap.sh" \
                 --data-dir "$stage/data" --run-dir "$stage/run" --layerxd "$LAYERXD" \
                 --generation-target-dir "$DATA_DIR" --generation-run-dir "$RUN_DIR" \
@@ -778,6 +813,7 @@ perform_staged_reset() {
         python3 "$SCRIPT_DIR/data_directory.py" activate-generation "$DATA_DIR" "$stage/data" \
             "$id" "$target" "$genesis" >/dev/null || fail "durable reset activation pending recovery"
         check_sequencer_environment "$DATA_DIR/sequencer.env"
+        start_generation_transport
         GENERATION=$target
         publish_generation "$GENERATION"
         start_daemon "$DATA_DIR/sequencer.env" --serve "$DATA_DIR/sequencer.conf"
@@ -805,6 +841,7 @@ write_reset_bindings
 reset_state initialize >/dev/null
 record=$(reset_state active)
 GENERATION=$(reset_state generation)
+if [ -r "$DATA_DIR/node.env" ]; then start_generation_transport; fi
 if [ "$record" != null ]; then
     perform_durable_reset "$record"
 else
@@ -824,6 +861,7 @@ else
             || fail "configured handover authority differs from committed genesis"
     fi
     check_sequencer_environment "$DATA_DIR/sequencer.env"
+    start_generation_transport
     publish_generation "$GENERATION"
     start_daemon "$DATA_DIR/sequencer.env" --serve "$DATA_DIR/sequencer.conf"
     wait_for_daemon_ready "$DATA_DIR/sequencer.env" --serve 120 || fail "sequencer did not become ready"
@@ -857,5 +895,8 @@ while :; do
         fail "layerxd --serve exited with status $status"
     fi
     if ! kill -0 "$SOCAT_PID" 2>/dev/null; then fail "supervisor socket listener exited"; fi
+    if [ -n "$GENERATION_TRANSPORT_PID" ] && ! kill -0 "$GENERATION_TRANSPORT_PID" 2>/dev/null; then
+        fail "generation transport listener exited"
+    fi
     sleep 0.2
 done

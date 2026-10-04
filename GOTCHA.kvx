@@ -2334,3 +2334,38 @@ resolution = "Keep native checks intact; use the actual SSL system library befor
 area = "Ignored genuine vendor package files"
 observed = "Git ignored39 checksum-required public upstream certificate/key test vectors when publishing the new vendor directories; a clean candidate then failed the strict OpenSSL package checksum."
 resolution = "Stage only the exact genuine upstream checksum-bound files explicitly; keep all operational credentials excluded and retain the prior failed candidate evidence."
+
+[gotcha.683]
+area = "Reset generation access"
+observed = "Node-owned DATA0700 prevents guarantor UID4021 from traversing the active generation; the two guarantors share the same UID."
+resolution = "Preserve node and per-slot isolation with peer-authenticated read-only generation transport and distinct protected slot capabilities, not permission widening."
+
+[gotcha.684]
+area = "Native genesis protected projection"
+observed = "Canonical genesis output uses builder ownership and directory mode2775, while Human private inputs require0700 directories and0600 files."
+resolution = "Validate the genuine producer outputs and create a separate protected projection; preserve native builder ownership and existing strict private input checks."
+
+[gotcha.686]
+area = "Sparse isolated source candidate"
+observed = "A no-checkout worktree initially has an empty index, and sparse-checkout configuration alone left every tracked file as an apparent staged deletion."
+resolution = "Initialize the private worktree index and files with read-tree under explicit credential exclusions, then require a clean status before overlaying exact task sources."
+
+[gotcha.687]
+area = "Inherited descriptor native path contract"
+observed = "The real guarantor key and runtime readers reject /proc/self/fd symlinks through O_NOFOLLOW."
+resolution = "Preserve native path checks; materialize the authenticated immutable generation bundle in caller-owned protected real files before launching the consumer."
+
+[gotcha.688]
+area = "Same-UID generation isolation"
+observed = "Distinct capability mounts alone do not isolate guarantor identities when siblings share a PID namespace and can inspect each other through proc."
+resolution = "Keep node and per-slot mount separation and add actual per-service PID and proc isolation with correct child termination propagation."
+
+[gotcha.689]
+area = "Private source candidate directory"
+observed = "The isolated generation build refused its newly created worktree because the candidate root did not yet have the required private0700 mode."
+resolution = "Tighten only the owned private candidate directory before its bounded task-scoped repair; preserve the check and original failure evidence."
+
+[gotcha.691]
+area = "Native candidate build tool PATH"
+observed = "The isolated generation candidate reached the mandatory Programs build but its environment did not include the installed cargo binary."
+resolution = "Use the existing absolute toolchain PATH and record the failed attempt without changing compiler or source verification checks."

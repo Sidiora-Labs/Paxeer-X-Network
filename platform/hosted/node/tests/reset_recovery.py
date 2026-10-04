@@ -936,8 +936,259 @@ class StagedResetRecovery(ActualResetRecovery):
         self.case('staged completion response loss and persistent or ephemeral restart require no outcome append')
 
 
+
+class TransportNodeProcesses(NodeProcesses):
+    def __init__(self, *arguments):
+        super().__init__(*arguments)
+        global NODE, BIN
+        support = self.work / 'consumer-source'
+        local_node = support / 'platform/hosted/node'
+        shutil.copytree(NODE, local_node, ignore=shutil.ignore_patterns('__pycache__'))
+        local_bin = support / 'bin'
+        local_bin.mkdir(mode=0o755)
+        for name in (*NATIVE_EXECUTABLES, 'layerx-guarantor'):
+            target = local_bin / name
+            shutil.copy2(BIN / name, target)
+            assert digest(target) == digest(BIN / name), 'native fixture copy mismatch'
+            target.chmod(0o755)
+        for name in ('contracts/config/checkpoint-settlement.json', 'migrations/0007_history_index.sql',
+                     'cmd/layerx-guarantor/settlement.py', 'cmd/layerx-guarantor/publication.py'):
+            target = support / name
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(ROOT / name, target)
+            assert digest(target) == digest(ROOT / name)
+        for index, value in enumerate(self.arguments):
+            if value == '--lni-uid': self.arguments[index + 1] = '4021'
+            if value == '--lni-gid': self.arguments[index + 1] = '4020'
+            if value == '--settlement-document': self.arguments[index + 1] = str(support / 'contracts/config/checkpoint-settlement.json')
+            if value == '--migrations': self.arguments[index + 1] = str(support / 'migrations/0007_history_index.sql')
+            if value == '--genesis-build': self.arguments[index + 1] = str(local_bin / 'layerx-genesis-build')
+        for target in (self.work, *self.work.rglob('*')):
+            if not target.is_symlink(): os.chown(target, 4020, 4020)
+        self.environment.update(LAYERX_NODE_GENERATION_TRANSPORT='1', LAYERX_NODE_RESET_STAGED_GENERATIONS='1')
+        self.environment['PATH'] = str(local_bin) + os.pathsep + self.environment.get('PATH', '')
+        NODE, BIN = local_node, local_bin
+
+    def launch(self, role, explicit_state=False):
+        assert role not in self.processes
+        self.sequence += 1
+        path = self.work / f'{role}-{self.sequence}.log'
+        command = ['bash', str(NODE / 'supervisor.sh'), '--role', role,
+                   '--data-dir', str(self.data), '--run-dir', str(self.run),
+                   '--state-dir', str(self.state), '--layerxd', str(BIN / 'layerxd')]
+        if role == 'sequencer': command += ['--', *self.arguments]
+        with path.open('wb') as log:
+            process = subprocess.Popen(command, cwd=self.work, env=self.environment,
+                stdout=log, stderr=log, start_new_session=True, user=4020, group=4020, extra_groups=[])
+        self.processes[role], self.logs[role] = process, path
+        return process
+
+    def control(self, value):
+        previous = os.getegid()
+        try:
+            os.setegid(4020)
+            return exchange(self.socket, value)
+        finally: os.setegid(previous)
+
+    def start(self, explicit_state=False):
+        previous = os.getegid()
+        try:
+            os.setegid(4020)
+            super().start(explicit_state)
+        finally: os.setegid(previous)
+
+
+class GenerationTransportRecovery(ActualResetRecovery):
+    completed_cases = []
+
+    def make_node(self, *arguments):
+        return TransportNodeProcesses(*arguments)
+
+    def capture(self, node, operation='identity', slot=1, wrong=False, uid=4021, hold=False):
+        code = r"""
+import fcntl,hashlib,json,os,sys
+sys.path.insert(0,sys.argv[1])
+from generation_client import receive
+from reset_state import StoreError
+operation,slot,wrong,hold=sys.argv[3],int(sys.argv[4]),sys.argv[6]=='1',sys.argv[7]=='1'
+cap=open(sys.argv[5],'rb').read() if operation=='identity' else None
+if wrong: cap=bytes(32)
+try:
+ result,fds=receive(sys.argv[2],operation,slot,cap)
+except (OSError,StoreError) as error:
+ print(json.dumps({'refused':type(error).__name__}),flush=True);sys.exit(3)
+assert all(fcntl.fcntl(fd,fcntl.F_GETFL)&os.O_ACCMODE==os.O_RDONLY for fd in fds)
+def public():
+ return {name:hashlib.sha256(os.pread(fd,64*1024*1024,0)).hexdigest()
+         for name,fd in zip(result['artifacts'],fds)
+         if name not in ('key.pem','producer.env','core.env')}
+if operation=='core':
+ fields=dict(line.split('=',1) for line in os.pread(fds[0],65536,0).decode().splitlines())
+ assert set(fields) <= {'LAYERX_CORE_SEQUENCER_ID','LAYERX_CORE_TREASURY_ASSET','LAYERX_CORE_TREASURY_SIGNER_SOCKET'}
+print(json.dumps({'response':result,'hashes':public()}),flush=True)
+if hold:
+ sys.stdin.readline();print(json.dumps({'response':result,'hashes':public()}),flush=True)
+for fd in fds: os.close(fd)
+"""
+        cap = node.work / 'guarantor-1/identity/generation.cap'
+        command = [sys.executable, '-c', code, str(NODE), str(node.run / 'generation.sock'),
+                   operation, str(slot), str(cap), str(int(wrong)), str(int(hold))]
+        process = subprocess.Popen(command, cwd=node.work, env=node.environment,
+            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            text=True, user=uid, group=4020, extra_groups=[])
+        if hold:
+            row = process.stdout.readline()
+            self.assertTrue(row, 'actual descriptor capture failed')
+            return process, json.loads(row)
+        output, error = process.communicate(timeout=20)
+        self.assertTrue(output, 'actual transport returned no result; exit=' + str(process.returncode))
+        return process.returncode, json.loads(output)
+
+    def exercise(self, node):
+        wait_until('actual generation broker', lambda: (node.run / 'generation.sock').is_socket(), 20)
+        self.assertEqual(node.data.stat().st_uid, 4020)
+        self.assertEqual(stat.S_IMODE(node.data.stat().st_mode), 0o700)
+        capability = node.work / 'guarantor-1/identity/generation.cap'
+        initial_capability = capability.read_bytes()
+        self.assertEqual(len(initial_capability), 32)
+        holder, original = self.capture(node, hold=True)
+        consumers = []
+        try:
+            self.assertEqual(original['response']['generation'], 1)
+            self.assertIsNone(original['response']['reset_id'])
+            self.assertEqual(original['hashes']['genesis.manifest'], digest(node.data / 'genesis/genesis.manifest'))
+            self.case('actual canonical bootstrap read-only descriptors preserve protected DATA0700')
+            for parameters in ({'wrong':True}, {'slot':2}, {'uid':4022}):
+                code, refusal = self.capture(node, **parameters)
+                self.assertEqual(code, 3)
+                self.assertIn('refused', refusal)
+            self.case('actual peer credentials and independent slot capabilities reject foreign consumers')
+            code, core = self.capture(node, operation='core')
+            self.assertEqual(code, 0)
+            self.assertEqual(core['response']['generation'], 1)
+            self.assertNotIn('key.pem', core['response']['artifacts'])
+            self.assertEqual(set(core['hashes']), set(GENESIS_FILES))
+            self.case('actual core view contains only canonical public configuration and genesis')
+
+            producer_state = node.work / 'transport-producer'
+            producer_state.mkdir(mode=0o700);os.chown(producer_state,4021,4020)
+            tls = node.work / 'transport-tls';tls.mkdir(mode=0o750);os.chown(tls,4021,4020)
+            with (node.work / 'transport-tls.log').open('wb') as log:
+                subprocess.run(['openssl','req','-x509','-newkey','rsa:2048','-nodes',
+                    '-keyout',str(tls/'key.pem'),'-out',str(tls/'cert.pem'),'-days','1',
+                    '-subj','/CN=localhost','-addext','subjectAltName=DNS:localhost,IP:127.0.0.1'],
+                    check=True,stdout=log,stderr=log,timeout=30)
+            for path in tls.iterdir(): os.chown(path,4021,4020);path.chmod(0o440)
+            from eth_account import Account
+            submitter = node.work / 'transport-submitter.key'
+            write_private(submitter, ('0x'+Account.create().key.hex()).encode());os.chown(submitter,4021,4020)
+            node_environment = dict(line.split('=',1) for line in (node.data/'node.env').read_text().splitlines())
+            domain = load_module('transport_settlement_domain', ROOT/'platform/hosted/paxeer/settlement-domain.py')
+            members=[]
+            for prefix in ('LAYERX_NODE_GENESIS_GUARANTOR','LAYERX_NODE_SECOND_GUARANTOR'):
+                if prefix+'_ID' in node_environment:
+                    public=bytes.fromhex(node_environment[prefix+'_PUBLIC_KEY'])
+                    members.append({'guarantor_id':'0x'+node_environment[prefix+'_ID'],
+                        'public_key':'0x'+public.hex(),'signer':'0x'+domain.signer_of(public).hex()})
+            policy=json.loads((ROOT/'contracts/config/checkpoint-settlement.json').read_bytes())
+            settlement=dict(line.split('=',1) for line in (node.work/'settlement.env').read_text().splitlines())
+            policy['settlement_domains']['transport']={'protocol_version':3,'paxeer_chain_id':125,'network_id':NETWORK,
+                'settlement_contract':settlement['LAYERX_NODE_CHECKPOINT_REGISTRY'],
+                'guarantor_bond':settlement['LAYERX_NODE_SETTLEMENT_CONTRACT'],
+                'minimum_bond':1000000,'maximum_attestation_delay_ms':86400000,
+                'guarantor_set':sorted(members,key=lambda value:value['guarantor_id'])}
+            policy_file=node.work/'transport-settlement.json';write_private(policy_file,canonical(policy));os.chown(policy_file,4021,4020)
+            reservation=socket.socket();reservation.bind(('127.0.0.1',0));port=reservation.getsockname()[1];reservation.close()
+            environment=node.environment|settlement|{'LAYERX_GUARANTOR_STATE_DIR':str(producer_state),
+                'LAYERX_GUARANTOR_LNI_SOCKET':str(node.run/'layerxd.lni.sock'),
+                'LAYERX_GUARANTOR_SETTLEMENT_FILE':str(policy_file),'LAYERX_GUARANTOR_SETTLEMENT_DOMAIN':'transport',
+                'LAYERX_GUARANTOR_SUBMITTER_KEY_FILE':str(submitter),
+                'LAYERX_GUARANTOR_PYTHON':sys.executable,
+                'LAYERX_GUARANTOR_SETTLEMENT_HELPER':str(node.work/'consumer-source/cmd/layerx-guarantor/settlement.py'),
+                'LAYERX_GUARANTOR_LISTEN_PORT':str(port),'LAYERX_GUARANTOR_PEER_URL':f'https://127.0.0.1:{port}',
+                'LAYERX_GUARANTOR_TLS_CA_FILE':str(tls/'cert.pem'),'LAYERX_GUARANTOR_TLS_CERT_FILE':str(tls/'cert.pem'),
+                'LAYERX_GUARANTOR_TLS_KEY_FILE':str(tls/'key.pem')}
+            log_path=node.work/'actual-transport-guarantor.log'
+            with log_path.open('wb') as log:
+                consumer=subprocess.Popen([sys.executable,str(NODE/'generation_client.py'),'identity',
+                    '--socket',str(node.run/'generation.sock'),'--capability-file',str(capability),'--slot','1',
+                    '--watch-seconds','1','--',str(BIN/'layerx-guarantor')],cwd=node.work,env=environment,
+                    user=4021,group=4020,extra_groups=[],stdout=log,stderr=log,start_new_session=True)
+            consumers.append(consumer)
+            def producer_ready():
+                self.assertIsNone(consumer.poll(), 'actual guarantor failed; log='+str(log_path))
+                try:
+                    with socket.create_connection(('127.0.0.1',port),timeout=.5): return True
+                except OSError: return False
+            wait_until('actual native guarantor reads committed FD generation and listens',producer_ready,30)
+            def native_consumer():
+                found=[]
+                children=Path(f'/proc/{consumer.pid}/task/{consumer.pid}/children')
+                for value in children.read_text().split():
+                    pid=int(value)
+                    with contextlib.suppress(FileNotFoundError):
+                        if Path(f'/proc/{pid}/exe').resolve()==BIN/'layerx-guarantor': found.append(pid)
+                self.assertLessEqual(len(found),1)
+                return found[0] if found else None
+            original_consumer=wait_until('actual native guarantor child',native_consumer,10)
+            self.case('actual native guarantor initializes key and replay engine from admitted descriptors')
+            value=request();raw,response=node.control(value)
+            self.assertEqual(response['state'],'reset')
+            frozen=node.record(value['reset_id'])
+            self.assertEqual(frozen['phase'],'activating')
+            self.assertEqual(frozen['activation_response'],response)
+            code,current=self.capture(node)
+            self.assertEqual(code,0)
+            self.assertEqual(current['response']['reset_id'],value['reset_id'])
+            self.assertEqual(current['response']['generation'],response['generation'])
+            self.assertNotEqual(current['hashes']['genesis.manifest'],original['hashes']['genesis.manifest'])
+            self.assertEqual(capability.read_bytes(),initial_capability)
+            wait_until('actual native consumer PID after generation switch',
+                lambda: (native_consumer() or original_consumer)!=original_consumer,30)
+            wait_until('actual native consumer after generation switch',producer_ready,30)
+            node.stop(kill=True)
+            holder.stdin.write('\n');holder.stdin.flush()
+            retained=json.loads(holder.stdout.readline())
+            self.assertEqual(retained,original,'captured descriptors must retain one complete old generation')
+            self.assertEqual(holder.wait(timeout=10),0)
+            code,refusal=self.capture(node)
+            self.assertEqual(code,3)
+            self.assertIn('refused',refusal)
+            self.case('durable activation changes complete generation while broker loss retains original descriptors')
+            decision=(node.state/'state.json').read_bytes()
+            shutil.rmtree(node.run)
+            node.start(explicit_state=True)
+            self.assertEqual(node.control(request(value['reset_id'],'status'))[0],raw)
+            self.assertEqual((node.state/'state.json').read_bytes(),decision)
+            self.assertEqual(capability.read_bytes(),initial_capability)
+            code,recovered=self.capture(node)
+            self.assertEqual(code,0)
+            self.assertEqual(recovered,current)
+            self.case('ephemeral restart preserves capability and the original single activation decision')
+        finally:
+            if holder.poll() is None: holder.kill();holder.wait(timeout=5)
+            for consumer in consumers:
+                with contextlib.suppress(ProcessLookupError): os.killpg(consumer.pid,signal.SIGTERM)
+                try: consumer.wait(timeout=10)
+                except subprocess.TimeoutExpired:
+                    with contextlib.suppress(ProcessLookupError): os.killpg(consumer.pid,signal.SIGKILL)
+                    consumer.wait(timeout=5)
+
+
+def generation_transport_main():
+    suite=unittest.defaultTestLoader.loadTestsFromTestCase(GenerationTransportRecovery)
+    assert suite.countTestCases()==1, 'missing focused real generation process corpus'
+    result=unittest.TextTestRunner(verbosity=2).run(suite)
+    cases=len(GenerationTransportRecovery.completed_cases)
+    print('PAXEER_X_GENERATION_PROCESS_GATE tests=%d skipped=%d actual_cases=%d' %
+          (result.testsRun,len(result.skipped),cases),flush=True)
+    return 0 if result.wasSuccessful() and result.testsRun==1 and not result.skipped and cases==6 else 1
+
+
 def main():
     os.umask(0o077)
+    if len(sys.argv) == 2 and sys.argv[1] == '--generation-transport':
+        return generation_transport_main()
     if len(sys.argv) == 3 and sys.argv[1] == '--record-native':
         record_native_artifacts(sys.argv[2])
         return 0

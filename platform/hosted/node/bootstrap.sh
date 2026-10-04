@@ -201,6 +201,8 @@ DATA_DIR=""
 RUN_DIR=""
 GENERATION_TARGET_DIR=""
 GENERATION_RUN_DIR=""
+GENERATION_AUTHORIZATION_DIR=""
+GENERATION_TRANSPORT=${LAYERX_NODE_GENERATION_TRANSPORT:-0}
 NETWORK_ID=""
 SEQUENCER_KEY_FILE=""
 TREASURY_KEY_FILE=""
@@ -257,6 +259,9 @@ while [ $# -gt 0 ]; do
         --generation-run-dir)
             [ -z "$GENERATION_RUN_DIR" ] || fail "--generation-run-dir repeats"
             GENERATION_RUN_DIR=$2; shift 2 ;;
+        --generation-authorization-dir)
+            [ -z "$GENERATION_AUTHORIZATION_DIR" ] || fail "--generation-authorization-dir repeats"
+            GENERATION_AUTHORIZATION_DIR=$2; shift 2 ;;
         --network-id) NETWORK_ID=$2; shift 2 ;;
         --sequencer-key) SEQUENCER_KEY_FILE=$2; shift 2 ;;
         --treasury-key) TREASURY_KEY_FILE=$2; shift 2 ;;
@@ -299,6 +304,13 @@ while [ $# -gt 0 ]; do
         *) fail "unknown argument $1" ;;
     esac
 done
+
+case "$GENERATION_TRANSPORT" in 0|1) ;; *) fail "invalid generation transport profile" ;; esac
+if [ "$GENERATION_TRANSPORT" = 1 ]; then
+    [[ $GENERATION_AUTHORIZATION_DIR = /* ]] || fail "generation transport requires private authorization directory"
+elif [ -n "$GENERATION_AUTHORIZATION_DIR" ]; then
+    fail "generation authorization directory requires the admitted transport profile"
+fi
 
 if [ "${#GENESIS_MODULES[@]}" -eq 0 ]; then
     [ -f "$SCRIPT_DIR/genesis-modules.conf" ] && [ -r "$SCRIPT_DIR/genesis-modules.conf" ] \
@@ -921,7 +933,71 @@ if [ "$GUARANTOR_COUNT" -gt 1 ]; then
     printf 'LAYERX_NODE_SECOND_GUARANTOR_ID=%s\nLAYERX_NODE_SECOND_GUARANTOR_PUBLIC_KEY=%s\nLAYERX_NODE_SECOND_GUARANTOR_KEY_FILE=%s\n' \
         "$GUARANTOR_SECOND_ID" "$GUARANTOR_SECOND_PUBLIC" "$ENV_DATA_DIR/secrets/${GUARANTOR_SECOND_KEY_FILE##*/}" >> "$DATA_DIR/node.env.tmp"
 fi
-if [ -n "$GENERATION_TARGET_DIR" ]; then
+if [ "$GENERATION_TRANSPORT" = 1 ]; then
+    python3 - "$SCRIPT_DIR" "$DATA_DIR" <<'GENERATION_PROOF'
+import os
+import stat
+import sys
+
+sys.path.insert(0, sys.argv[1])
+from reset_state import open_directory
+
+data = open_directory(sys.argv[2])
+proof = source = None
+try:
+    os.mkdir('.generation-proof', 0o700, dir_fd=data)
+    os.fsync(data)
+    proof_root = open_directory(os.path.join(sys.argv[2], '.generation-proof'))
+    try:
+        os.mkdir('genesis', 0o700, dir_fd=proof_root)
+        os.fsync(proof_root)
+    finally:
+        os.close(proof_root)
+    proof = open_directory(os.path.join(sys.argv[2], '.generation-proof/genesis'))
+    source = os.open('genesis', os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=data)
+    for name in ('genesis.manifest', 'genesis-request.lxgb', 'genesis.registration',
+                 '00000000000000000000.lxs', 'paxeer-registration-request.lxrr',
+                 'paxeer-deployment-descriptor.lxgd'):
+        original = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=source)
+        target = None
+        try:
+            info = os.fstat(original)
+            if (not stat.S_ISREG(info.st_mode) or info.st_uid != os.geteuid()
+                    or info.st_nlink != 1 or not 0 < info.st_size <= 64 * 1024 * 1024):
+                raise ValueError('canonical generation artifact refused')
+            target = os.open(name, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
+                             0o600, dir_fd=proof)
+            copied = 0
+            while True:
+                block = os.read(original, 1024 * 1024)
+                if not block:
+                    break
+                copied += len(block)
+                if copied > info.st_size:
+                    raise ValueError('canonical generation artifact changed')
+                remaining = memoryview(block)
+                while remaining:
+                    count = os.write(target, remaining)
+                    if count <= 0:
+                        raise ValueError('generation proof write unavailable')
+                    remaining = remaining[count:]
+            if copied != info.st_size:
+                raise ValueError('canonical generation artifact changed')
+            os.fsync(target)
+        finally:
+            if target is not None:
+                os.close(target)
+            os.close(original)
+    os.fsync(proof)
+finally:
+    if source is not None:
+        os.close(source)
+    if proof is not None:
+        os.close(proof)
+    os.close(data)
+GENERATION_PROOF
+fi
+if [ -n "$GENERATION_TARGET_DIR" ] || [ "$GENERATION_TRANSPORT" = 1 ]; then
     printf 'LAYERX_NODE_GENESIS_GUARANTOR_PRODUCER_ROOT=%s/producer-generations\nLAYERX_NODE_CORE_ENV=%s/core.env\n' \
         "$ENV_DATA_DIR" "$ENV_DATA_DIR" >> "$DATA_DIR/node.env.tmp"
 fi
@@ -933,7 +1009,7 @@ for ((index = 0; index < GUARANTOR_COUNT; index++)); do
     identity_id=${entry%% *}
     identity_key=${GUARANTOR_KEYS[$identity_id]}
     producer_dir="$(dirname "$DATA_DIR")/guarantor-$identity"
-    if [ -n "$GENERATION_TARGET_DIR" ]; then
+    if [ -n "$GENERATION_TARGET_DIR" ] || [ "$GENERATION_TRANSPORT" = 1 ]; then
         producer_dir="$DATA_DIR/producer-generations/guarantor-$identity"
     fi
     mkdir -p "$producer_dir/identity" "$producer_dir/state"
@@ -955,9 +1031,102 @@ for ((index = 0; index < GUARANTOR_COUNT; index++)); do
     mv "$producer_dir/identity/producer.env.tmp" "$producer_dir/identity/producer.env"
     chgrp "$LNI_GID" "$producer_dir/identity/"*
     chmod 0440 "$producer_dir/identity/"*
+    if [ "$GENERATION_TRANSPORT" = 1 ]; then
+        capability_export="$(dirname "$ENV_DATA_DIR")/guarantor-$identity/identity"
+        python3 - "$SCRIPT_DIR" "$GENERATION_AUTHORIZATION_DIR" "$capability_export" "$identity" "$LNI_GID" <<'CAPABILITY'
+import hmac
+import os
+from pathlib import Path
+import secrets
+import stat
+import sys
+
+sys.path.insert(0, sys.argv[1])
+from reset_state import open_directory
+
+private, exported = map(Path, sys.argv[2:4])
+slot, group = map(int, sys.argv[4:6])
+if slot not in (1, 2):
+    raise ValueError('generation identity slot outside transport bounds')
+private_fd = open_directory(str(private), create=True)
+root_fd = None
+export_fd = None
+try:
+    name = 'slot-%d.cap' % slot
+    try:
+        descriptor = os.open(name, os.O_RDONLY | os.O_NOFOLLOW, dir_fd=private_fd)
+    except FileNotFoundError:
+        descriptor = os.open(name, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
+                             0o600, dir_fd=private_fd)
+        try:
+            value = secrets.token_bytes(32)
+            if os.write(descriptor, value) != len(value):
+                raise ValueError('incomplete generation capability write')
+            os.fsync(descriptor)
+        finally:
+            os.close(descriptor)
+        os.fsync(private_fd)
+        descriptor = os.open(name, os.O_RDONLY | os.O_NOFOLLOW, dir_fd=private_fd)
+    try:
+        info = os.fstat(descriptor)
+        if (not stat.S_ISREG(info.st_mode) or info.st_uid != os.geteuid()
+                or stat.S_IMODE(info.st_mode) != 0o600 or info.st_nlink != 1 or info.st_size != 32):
+            raise ValueError('unsafe generation capability')
+        value = os.read(descriptor, 33)
+        if len(value) != 32:
+            raise ValueError('invalid generation capability length')
+    finally:
+        os.close(descriptor)
+    root_fd = os.open('/', os.O_RDONLY | os.O_DIRECTORY)
+    for part in exported.parts[1:]:
+        created = False
+        try:
+            os.mkdir(part, 0o750, dir_fd=root_fd)
+            created = True
+            os.fsync(root_fd)
+        except FileExistsError:
+            pass
+        child = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=root_fd)
+        if created:
+            os.fchown(child, -1, group)
+            os.fchmod(child, 0o750)
+            os.fsync(child)
+        os.close(root_fd)
+        root_fd = child
+    info = os.fstat(root_fd)
+    if info.st_uid != os.geteuid() or stat.S_IMODE(info.st_mode) != 0o750:
+        raise ValueError('unsafe generation capability export directory')
+    os.fchown(root_fd, -1, group)
+    try:
+        export_fd = os.open('generation.cap', os.O_RDONLY | os.O_NOFOLLOW, dir_fd=root_fd)
+    except FileNotFoundError:
+        export_fd = os.open('generation.cap', os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
+                            0o440, dir_fd=root_fd)
+        if os.write(export_fd, value) != len(value):
+            raise ValueError('incomplete generation capability export')
+        os.fchown(export_fd, -1, group)
+        os.fchmod(export_fd, 0o440)
+        os.fsync(export_fd)
+        os.close(export_fd)
+        export_fd = None
+        os.fsync(root_fd)
+        export_fd = os.open('generation.cap', os.O_RDONLY | os.O_NOFOLLOW, dir_fd=root_fd)
+    info = os.fstat(export_fd)
+    if (not stat.S_ISREG(info.st_mode) or info.st_uid != os.geteuid() or info.st_gid != group
+            or stat.S_IMODE(info.st_mode) != 0o440 or info.st_nlink != 1 or info.st_size != 32
+            or not hmac.compare_digest(os.read(export_fd, 33), value)):
+        raise ValueError('generation capability export differs from original admission')
+finally:
+    if export_fd is not None:
+        os.close(export_fd)
+    if root_fd is not None:
+        os.close(root_fd)
+    os.close(private_fd)
+CAPABILITY
+    fi
 done
 CORE_ENV_OUTPUT="$RUN_DIR/core.env"
-if [ -n "$GENERATION_TARGET_DIR" ]; then
+if [ -n "$GENERATION_TARGET_DIR" ] || [ "$GENERATION_TRANSPORT" = 1 ]; then
     CORE_ENV_OUTPUT="$DATA_DIR/core.env"
 fi
 printf 'LAYERX_CORE_SEQUENCER_ID=%s\nLAYERX_CORE_TREASURY_ASSET=%s\n' \

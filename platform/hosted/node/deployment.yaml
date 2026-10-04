@@ -26,7 +26,7 @@ spec:
     spec:
       securityContext: {runAsNonRoot: true, runAsUser: 4020, runAsGroup: 4020, fsGroup: 4020}
       automountServiceAccountToken: false
-      shareProcessNamespace: true
+      shareProcessNamespace: false
       terminationGracePeriodSeconds: 60
       initContainers:
         - name: guarantor-storage
@@ -43,6 +43,17 @@ spec:
                 chmod 2770 "/var/lib/layerx/guarantor-$identity/state"
               done
           securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}
+          volumeMounts:
+            - {name: data, mountPath: /var/lib/layerx}
+        - name: core-storage
+          image: ghcr.io/sidiora-labs/layerx-node:0.1.0
+          imagePullPolicy: Always
+          command: [/bin/sh, -ec]
+          args:
+            - |
+              mkdir -p /var/lib/layerx/core
+              chmod 0700 /var/lib/layerx/core
+          securityContext: {runAsUser: 4021, runAsGroup: 4020, allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}
           volumeMounts:
             - {name: data, mountPath: /var/lib/layerx}
         # The Paxeer custody genesis pins depositRootAuthority to the public half of this key, and
@@ -213,6 +224,8 @@ spec:
             - --lni-gid
             - "4020"
           env:
+            - {name: LAYERX_NODE_RESET_STAGED_GENERATIONS, value: "1"}
+            - {name: LAYERX_NODE_GENERATION_TRANSPORT, value: "1"}
             - name: LAYERX_NODE_HANDOVER_AUTHORITY_PUBLIC_KEY
               valueFrom:
                 configMapKeyRef:
@@ -265,7 +278,8 @@ spec:
         - name: guarantor-1
           image: ghcr.io/sidiora-labs/layerx-node:0.1.0
           imagePullPolicy: Always
-          command: [/opt/layerx/guarantor.sh]
+          command: [/usr/bin/python3]
+          args: [/opt/layerx/node/generation_client.py, identity, --socket, /run/layerx/node/generation.sock, --capability-file, /var/lib/guarantor/identity/generation.cap, --slot, "1", --watch-seconds, "1", --, /bin/bash, /opt/layerx/guarantor.sh]
           securityContext: {runAsUser: 4021, runAsGroup: 4020, allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}
           env:
             - {name: LAYERX_GUARANTOR_IDENTITY_DIR, value: /var/lib/guarantor/identity}
@@ -297,7 +311,8 @@ spec:
         - name: guarantor-2
           image: ghcr.io/sidiora-labs/layerx-node:0.1.0
           imagePullPolicy: Always
-          command: [/opt/layerx/guarantor.sh]
+          command: [/usr/bin/python3]
+          args: [/opt/layerx/node/generation_client.py, identity, --socket, /run/layerx/node/generation.sock, --capability-file, /var/lib/guarantor/identity/generation.cap, --slot, "2", --watch-seconds, "1", --, /bin/bash, /opt/layerx/guarantor.sh]
           securityContext: {runAsUser: 4021, runAsGroup: 4020, allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}
           env:
             - {name: LAYERX_GUARANTOR_IDENTITY_DIR, value: /var/lib/guarantor/identity}
@@ -381,6 +396,9 @@ spec:
           imagePullPolicy: Always
           command: [/opt/layerx/supervisor.sh]
           args: [--role, replica, --data-dir, /var/lib/layerx/node, --run-dir, /run/layerx/node]
+          env:
+            - {name: LAYERX_NODE_RESET_STAGED_GENERATIONS, value: "1"}
+            - {name: LAYERX_NODE_GENERATION_TRANSPORT, value: "1"}
           resources: {requests: {cpu: 250m, memory: 256Mi}, limits: {cpu: "1", memory: 1Gi}}
           securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}
           volumeMounts:
@@ -393,14 +411,12 @@ spec:
           command: [/bin/sh, -ec]
           args:
             - |
-              while [ ! -r /run/layerx/node/core.env ]; do sleep 1; done
-              set -a
-              . /run/layerx/node/core.env
-              set +a
+              exec /usr/bin/python3 /opt/layerx/node/generation_client.py core --socket /run/layerx/node/generation.sock --watch-seconds 1 -- /bin/sh -ec '
               : "${LAYERX_CORE_SEQUENCER_ID:?generated sequencer identity is required}"
               : "${LAYERX_CORE_TREASURY_ASSET:?generated treasury asset is required}"
               : "${LAYERX_CORE_TREASURY_SIGNER_SOCKET:?treasury signer socket is required}"
               exec /usr/local/bin/layerx-core-boundary
+              '
           securityContext: {runAsUser: 4021, runAsGroup: 4020, allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}
           env:
             - {name: LAYERX_CORE_LISTEN, value: "0.0.0.0:9443"}
@@ -426,7 +442,7 @@ spec:
           livenessProbe: {httpGet: {scheme: HTTPS, path: /livez, port: core-tls}, periodSeconds: 15}
           resources: {requests: {cpu: 250m, memory: 128Mi}, limits: {cpu: "1", memory: 512Mi}}
           volumeMounts:
-            - {name: data, mountPath: /var/lib/layerx}
+            - {name: data, mountPath: /var/lib/layerx/core, subPath: core}
             - {name: run, mountPath: /run/layerx}
             - {name: tokens, mountPath: /run/layerx/tokens, readOnly: true}
             - {name: backend-admin, mountPath: /run/layerx/backend-admin, readOnly: true}
@@ -441,14 +457,14 @@ spec:
           command: [/bin/sh, -ec]
           args:
             - |
-              while [ ! -r /run/layerx/node/core.env ]; do sleep 1; done
-              set -a
-              . /run/layerx/node/core.env
-              set +a
+              exec /usr/bin/python3 /opt/layerx/node/generation_client.py core --socket /run/layerx/node/generation.sock --watch-seconds 1 -- /bin/sh -ec '
               : "${LAYERX_CORE_SEQUENCER_ID:?generated sequencer identity is required}"
-              export LAYERX_AUTHORITY_SEQUENCER_ID="$LAYERX_CORE_SEQUENCER_ID"
-              export LAYERX_AUTHORITY_SEQUENCER_PUBLIC_KEY="$(tr -d '\r\n' < /run/layerx/gateway-authority/sequencer-public-key)"
+              : "${LAYERX_AUTHORITY_SEQUENCER_ID:?generation sequencer identity is required}"
+              : "${LAYERX_AUTHORITY_SEQUENCER_PUBLIC_KEY:?generation sequencer public key is required}"
+              : "${LAYERX_AUTHORITY_REPLICA_ID:?generation replica identity is required}"
+              [ "$LAYERX_AUTHORITY_SEQUENCER_ID" = "$LAYERX_CORE_SEQUENCER_ID" ]
               exec /usr/local/bin/layerx-runtime-clock --runtime-dir /run/layerx/human/authority-clock -- /usr/local/bin/layerx-receipt-authority
+              '
           env:
             - {name: LAYERX_AUTHORITY_LISTEN, value: "0.0.0.0:9445"}
             - {name: LAYERX_AUTHORITY_NETWORK_ID, valueFrom: {configMapKeyRef: {name: layerx-node-config, key: network-name}}}

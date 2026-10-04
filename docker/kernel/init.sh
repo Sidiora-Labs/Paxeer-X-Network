@@ -64,6 +64,8 @@ genesis_files="$genesis/metadata.lxgb $keys/sequencer.key $genesis/asset-id $gen
 # wrote beside the genesis metadata.
 : "${LAYERX_NODE_NETWORK_ID:?the kernel network id is set in the app env}"
 export LAYERX_NODE_NETWORK_ID
+export LAYERX_NODE_RESET_STAGED_GENERATIONS=1
+export LAYERX_NODE_GENERATION_TRANSPORT=1
 export LAYERX_NODE_PAXEER_RELAY_PORT=18545
 export LAYERX_NODE_PAXEER_CHAIN_ID=125
 export LAYERX_NODE_PAXEER_RPC_URL=http://127.0.0.1:$LAYERX_NODE_PAXEER_RELAY_PORT
@@ -388,7 +390,7 @@ missing() {
 # clock is "-" (a command that enters the clock itself), and restarts it when
 # it exits.
 service() {
-	local name=$1 uid=$2 waits=$3 prepare=$4 clock=$5 absent wrap=() ns=() pid rc
+	local name=$1 uid=$2 waits=$3 prepare=$4 clock=$5 absent wrap=() ns=() pid rc mask_one mask_two human_source
 	shift 6
 	# human_root=<dir> before a call: the pod's per-role mounts, the role's
 	# projected material at /run/human-material and <dir> at
@@ -397,6 +399,31 @@ service() {
 	[ -z "${human_root:-}" ] || ns=(unshare --mount --propagation private -- /bin/sh -ec \
 		'mount --bind "$1" /run/human-material && mount --bind "$2" /var/lib/layerx/human && shift 2 && exec "$@"' \
 		sh "$human_material/$name" "$human_root")
+	if [ "$uid" = 4021 ]; then
+		mask_one="$layerx/guarantor-1"
+		mask_two="$layerx/guarantor-2"
+		case "${guarantor_identity:-}" in
+		1) mask_one=- ;;
+		2) mask_two=- ;;
+		"") ;;
+		*) return 1 ;;
+		esac
+		install -d -o 0 -g 0 -m 0700 "$run/generation-isolation"
+		human_source=-
+		[ -z "${human_root:-}" ] || human_source="$human_material/$name"
+		ns=(unshare --mount --pid --fork --kill-child=TERM --propagation private -- /bin/sh -ec \
+			'mount -t proc proc /proc
+for target in "$2" "$3"; do
+    [ "$target" = - ] || { mount --bind "$1" "$target" && mount -o remount,bind,ro "$target"; }
+done
+if [ "$4" != - ]; then
+    mount --bind "$4" /run/human-material
+    mount --bind "$5" /var/lib/layerx/human
+fi
+shift 5
+exec "$@"' sh "$run/generation-isolation" "$mask_one" "$mask_two" \
+			"$human_source" "${human_root:--}")
+	fi
 	[ "$clock" = - ] || {
 		install -d -o "$uid" -g 4020 -m 0700 "$run/clock/$name"
 		wrap=(/usr/local/bin/layerx-runtime-clock --runtime-dir "$run/clock/$name" --)
@@ -437,8 +464,8 @@ service() {
 
 guarantor() {
 	local identity=$1 port=$2 peer=$3
-	service "guarantor-$identity" 4021 \
-		"$genesis_files $tls/guarantor/cert.pem $keys/checkpoint-authority/key.pem $keys/publication/authorization.json" \
+	guarantor_identity=$identity service "guarantor-$identity" 4021 \
+		"$genesis_files $run/node/generation.sock $layerx/guarantor-$identity/identity/generation.cap $tls/guarantor/cert.pem $keys/checkpoint-authority/key.pem $keys/publication/authorization.json" \
 		guarantor_prepare clock -- \
 		env \
 		LAYERX_GUARANTOR_IDENTITY_DIR="$layerx/guarantor-$identity/identity" \
@@ -457,7 +484,9 @@ guarantor() {
 		LAYERX_GUARANTOR_CHECKPOINT_AUTHORITY_KEY_FILE="$layerx/guarantor-submitter/checkpoint-authority.pem" \
 		LAYERX_GUARANTOR_PUBLICATION_AUTHORIZATION_SOURCE="$layerx/guarantor-submitter/publication-authorization.json" \
 		LAYERX_GUARANTOR_PYTHON=/opt/layerx/guarantor/venv/bin/python3 \
-		/opt/layerx/guarantor.sh
+		python3 /opt/layerx/node/generation_client.py identity --socket "$run/node/generation.sock" \
+		--capability-file "$layerx/guarantor-$identity/identity/generation.cap" --slot "$identity" \
+		--watch-seconds 1 -- /bin/bash /opt/layerx/guarantor.sh
 }
 
 # The publication authorization of kernel-genesis.sh, handed from the root-only
@@ -646,7 +675,7 @@ agent_boundary_prepare() {
 
 # shellcheck disable=SC2016 # core.env is read when the service starts
 service core-boundary 4021 \
-	"$genesis_files $run/node/core.env $tls/pending-core/cert.der $tls/pending-core/key.der $tls/pending-core/ca.der $tls/pending-core-admin/cert.der $tls/pending-core-admin/key.der" \
+	"$genesis_files $run/node/generation.sock $tls/pending-core/cert.der $tls/pending-core/key.der $tls/pending-core/ca.der $tls/pending-core-admin/cert.der $tls/pending-core-admin/key.der" \
 	core_boundary_prepare - -- \
 	env \
 	"LAYERX_CORE_LISTEN=[::]:9443" \
@@ -666,7 +695,8 @@ service core-boundary 4021 \
 	LAYERX_CORE_ADMIN_TOKEN_FILE="$keys/tokens/backend-admin" \
 	LAYERX_CORE_RECEIPT_EVENTS_TOKEN_FILE="$keys/tokens/gateway-component" \
 	LAYERX_CORE_STATE_DIR="$layerx/core" \
-	/bin/sh -ec 'set -a; . '"$run"'/node/core.env; set +a
+	python3 /opt/layerx/node/generation_client.py core --socket "$run/node/generation.sock" --watch-seconds 1 -- \
+	/bin/sh -ec '
 : "${LAYERX_CORE_SEQUENCER_ID:?generated sequencer identity is required}"
 : "${LAYERX_CORE_TREASURY_ASSET:?generated treasury asset is required}"
 : "${LAYERX_CORE_TREASURY_SIGNER_SOCKET:?treasury signer socket is required}"
@@ -676,7 +706,7 @@ exec /usr/local/bin/layerx-core-boundary'
 # shellcheck disable=SC2016 # core.env and the material are read when the service starts
 if [ "$kernel_profile" = full ]; then
 service receipt-authority 4021 \
-	"$genesis_files $run/node/core.env $run/node/layerxd.lni.sock $tls/receipt-authority/cert.der $tls/receipt-authority/key.der $tls/receipt-authority/ca.der $run/registry-authority/token $authority_material/human-agent.token $authority_material/principal-policy.json $authority_material/registry.json $authority_material/authority.json" \
+	"$genesis_files $run/node/generation.sock $run/node/layerxd.lni.sock $tls/receipt-authority/cert.der $tls/receipt-authority/key.der $tls/receipt-authority/ca.der $run/registry-authority/token $authority_material/human-agent.token $authority_material/principal-policy.json $authority_material/registry.json $authority_material/authority.json" \
 	receipt_authority_prepare - -- \
 	env \
 	"LAYERX_AUTHORITY_LISTEN=[::]:9445" \
@@ -697,13 +727,15 @@ service receipt-authority 4021 \
 	LAYERX_AUTHORITY_LNI_SOCKET="$run/node/layerxd.lni.sock" \
 	LAYERX_AUTHORITY_FIRST_BATCH=1 \
 	LAYERX_AUTHORITY_LAST_BATCH=18446744073709551615 \
-	/bin/sh -ec 'set -a; . '"$run"'/node/core.env; set +a
+	python3 /opt/layerx/node/generation_client.py core --socket "$run/node/generation.sock" --watch-seconds 1 -- \
+	/bin/sh -ec '
 : "${LAYERX_CORE_SEQUENCER_ID:?generated sequencer identity is required}"
 m='"$authority_material"'
 LAYERX_AUTHORITY_NETWORK_ID=$LAYERX_NODE_NETWORK_NAME
-LAYERX_AUTHORITY_SEQUENCER_ID=$LAYERX_CORE_SEQUENCER_ID
-LAYERX_AUTHORITY_SEQUENCER_PUBLIC_KEY=$(tr -d "\r\n" <'"$run"'/node/sequencer-public-key)
-LAYERX_AUTHORITY_REPLICA_ID=$(cat '"$genesis"'/replica-id)
+: "${LAYERX_AUTHORITY_SEQUENCER_ID:?generation sequencer identity is required}"
+: "${LAYERX_AUTHORITY_SEQUENCER_PUBLIC_KEY:?generation sequencer public key is required}"
+: "${LAYERX_AUTHORITY_REPLICA_ID:?generation replica identity is required}"
+[ "$LAYERX_AUTHORITY_SEQUENCER_ID" = "$LAYERX_CORE_SEQUENCER_ID" ]
 LAYERX_AUTHORITY_HUMAN_AGENT_TENANT=$(jq -er .tenant "$m/authority.json")
 LAYERX_AUTHORITY_HUMAN_AGENT_PRINCIPAL=$(jq -er .principal "$m/authority.json")
 LAYERX_AUTHORITY_CORE_CLOCK_HORIZON=$(jq -er ".\"core-clock-horizon\"" "$m/authority.json")
@@ -715,7 +747,7 @@ fi
 exec /usr/local/bin/layerx-runtime-clock --runtime-dir '"$run"'/human/authority-clock -- /usr/local/bin/layerx-receipt-authority'
 else
 service receipt-authority 4021 \
-	"$genesis_files $run/node/core.env $run/node/layerxd.lni.sock $tls/receipt-authority/cert.der $tls/receipt-authority/key.der $tls/receipt-authority/ca.der $run/registry-authority/token" \
+	"$genesis_files $run/node/generation.sock $run/node/layerxd.lni.sock $tls/receipt-authority/cert.der $tls/receipt-authority/key.der $tls/receipt-authority/ca.der $run/registry-authority/token" \
 	receipt_authority_native_prepare - -- \
 	env \
 	"LAYERX_AUTHORITY_LISTEN=[::]:9445" \
@@ -729,12 +761,14 @@ service receipt-authority 4021 \
 	LAYERX_AUTHORITY_LNI_SOCKET="$run/node/layerxd.lni.sock" \
 	LAYERX_AUTHORITY_FIRST_BATCH=1 \
 	LAYERX_AUTHORITY_LAST_BATCH=18446744073709551615 \
-	/bin/sh -ec 'set -a; . '"$run"'/node/core.env; set +a
+	python3 /opt/layerx/node/generation_client.py core --socket "$run/node/generation.sock" --watch-seconds 1 -- \
+	/bin/sh -ec '
 : "${LAYERX_CORE_SEQUENCER_ID:?generated sequencer identity is required}"
 LAYERX_AUTHORITY_NETWORK_ID=$LAYERX_NODE_NETWORK_NAME
-LAYERX_AUTHORITY_SEQUENCER_ID=$LAYERX_CORE_SEQUENCER_ID
-LAYERX_AUTHORITY_SEQUENCER_PUBLIC_KEY=$(tr -d "\r\n" <'"$run"'/node/sequencer-public-key)
-LAYERX_AUTHORITY_REPLICA_ID=$(cat '"$genesis"'/replica-id)
+: "${LAYERX_AUTHORITY_SEQUENCER_ID:?generation sequencer identity is required}"
+: "${LAYERX_AUTHORITY_SEQUENCER_PUBLIC_KEY:?generation sequencer public key is required}"
+: "${LAYERX_AUTHORITY_REPLICA_ID:?generation replica identity is required}"
+[ "$LAYERX_AUTHORITY_SEQUENCER_ID" = "$LAYERX_CORE_SEQUENCER_ID" ]
 export LAYERX_AUTHORITY_NETWORK_ID LAYERX_AUTHORITY_SEQUENCER_ID LAYERX_AUTHORITY_SEQUENCER_PUBLIC_KEY LAYERX_AUTHORITY_REPLICA_ID
 exec /usr/local/bin/layerx-runtime-clock --runtime-dir '"$run"'/authority-clock -- /usr/local/bin/layerx-receipt-authority'
 fi
