@@ -13,9 +13,10 @@ use rustls::{
 use layerx_paxeer_client::{DepositProofConfig, EndpointConfig, EndpointTransport, TrackerConfig};
 use layerx_types::intent::EvmAddress;
 
-use crate::journal::read_private;
+use crate::journal::{private_directory, publish_private, read_private};
 use crate::listener::ListenerConfig;
 use crate::Error;
+use sha2::{Digest, Sha256};
 
 pub(crate) const MAX_FRAME: usize = 1_048_576;
 
@@ -74,7 +75,7 @@ impl Config {
         let confirmations = bounded("PAXEER_CONFIRMATIONS", 1, u64::MAX)?;
         let protocol =
             u16::try_from(bounded("PROTOCOL_VERSION", 2, 3)?).map_err(|_| Error::Configuration)?;
-        Ok(Self {
+        let config = Self {
             listener: ListenerConfig {
                 socket: path("SOCKET")?,
                 allowed_uid: u32::try_from(bounded("ALLOWED_UID", 0, u64::from(u32::MAX))?)
@@ -88,14 +89,26 @@ impl Config {
             state_root: path("STATE_ROOT")?,
             evidence_root: path("EVIDENCE_ROOT")?,
             custody_profile: if protocol == 3 {
-                Some(
+                let profile_path = path("CUSTODY_PROFILE")?;
+                private_directory(profile_path.parent().ok_or(Error::Configuration)?)?;
+                let profile: [u8; layerx_paxeer_client::NATIVE_CUSTODY_PROFILE_BYTES] =
                     read_private(
-                        &path("CUSTODY_PROFILE")?,
+                        &profile_path,
                         layerx_paxeer_client::NATIVE_CUSTODY_PROFILE_BYTES,
                     )?
                     .try_into()
-                    .map_err(|_| Error::Configuration)?,
-                )
+                    .map_err(|_| Error::Configuration)?;
+                let network = u32::try_from(bounded("NETWORK_ID", 1, u64::from(u32::MAX))?)
+                    .map_err(|_| Error::Configuration)?;
+                layerx_paxeer_client::validate_native_custody_profile(&profile, network)
+                    .map_err(|_| Error::Configuration)?;
+                if chain != 125
+                    || Sha256::digest(profile)[..]
+                        != hex::<32>(&required("CUSTODY_PROFILE_SHA256")?)?
+                {
+                    return Err(Error::Configuration);
+                }
+                Some(profile)
             } else {
                 None
             },
@@ -126,7 +139,24 @@ impl Config {
                     .map_err(|_| Error::Configuration)?,
                 layerx_protocol_version: protocol,
             },
-        })
+        };
+        if let Some(profile) = &config.custody_profile {
+            private_directory(&config.state_root)?;
+            let retained = config.state_root.join("custody-profile.pin");
+            if !retained.try_exists()? && config.state_root.join("journal.bin").try_exists()? {
+                return Err(Error::Conflict);
+            }
+            let mut authority_binding = b"LXMPA1".to_vec();
+            authority_binding.extend_from_slice(profile);
+            authority_binding.extend_from_slice(&config.proof.paxeer_checkpoint_authority);
+            authority_binding.extend_from_slice(&config.proof.custody_reference);
+            authority_binding.extend_from_slice(&config.checkpoint_registry.bytes());
+            publish_private(&retained, &authority_binding)?;
+            if read_private(&retained, authority_binding.len())? != authority_binding {
+                return Err(Error::Conflict);
+            }
+        }
+        Ok(config)
     }
 }
 

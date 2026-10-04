@@ -21,8 +21,18 @@ def native_bootstrap(args, root, rpc, account):
     create_profile(SimpleNamespace(**{**vars(args), 'chain_id': 125, 'vault': CUSTODY_ADDRESS,
                    'runtime_sha256': '0x' + identity, 'asset': '0x' + args.asset,
                    'output': str(root / 'custody.profile')}))
+    profile = protected_bytes(root / 'custody.profile')
+    require(len(profile) == 223 and profile[:5] == b'LXBC3'
+            and profile[5:13] == (125).to_bytes(8, 'big')
+            and profile[13:33] == unhex(CUSTODY_ADDRESS, 20)
+            and profile[33:65] == module_identity()
+            and profile[97:129] == bytes.fromhex(args.asset)
+            and profile[201:207] == args.network_id.to_bytes(4, 'big') + b'\0\3',
+            root, 'native custody profile producer binding')
     write_json(root / 'owner-custody.json', dict(vault=CUSTODY_ADDRESS, asset=args.asset,
-               runtime_sha256=identity, payer=account))
+               runtime_sha256=identity, payer=account,
+               custody_profile='custody.profile',
+               custody_profile_sha256='0x' + hashlib.sha256(profile).hexdigest()))
 
 
 def bootstrap(args):
@@ -34,7 +44,7 @@ def bootstrap(args):
     rpc = rpcs[0]
     account = signer(rpc, args.key_file)
     write_new(root / 'custody-bootstrap.started', b'preserve all artifacts; reconcile before retry\n')
-    if getattr(rpc, 'disposable', False):
+    if quantity(rpc.call('eth_chainId', [])) == 125:
         return native_bootstrap(args, root, rpc, account)
     config = '0x' + hashlib.sha256(b'LayerX/local-custody/real-weth/v1').hexdigest()
     beta = getattr(rpc, 'disposable', False)
@@ -82,14 +92,18 @@ def deposit(args):
     rpc = rpcs[0]
     account = signer(rpc, args.key_file)
     require(account == config['payer'] and args.asset == config['asset'], root, 'custody payer and asset')
-    profile = (root / 'custody.profile').read_bytes()
+    profile = protected_bytes(root / 'custody.profile')
     require(len(profile) == 223 and profile[:5] == b'LXBC3' and profile[13:33] == unhex(config['vault'], 20)
             and profile[97:129] == bytes.fromhex(args.asset) and profile[201:207] == args.network_id.to_bytes(4, 'big') + b'\0\3',
             root, 'immutable custody profile binding')
-    native = getattr(rpc, 'disposable', False)
+    native = (quantity(rpc.call('eth_chainId', [])) == 125
+              and config['vault'].lower() == CUSTODY_ADDRESS.lower())
     if native:
         require(unhex(config['vault'], 20) == unhex(CUSTODY_ADDRESS, 20) and profile[33:65] == module_identity(),
                 root, 'native custody module pin')
+        require(config.get('custody_profile') == 'custody.profile'
+                and config.get('custody_profile_sha256') == '0x' + hashlib.sha256(profile).hexdigest(),
+                root, 'retained native custody profile requires preserving reconciliation')
     else:
         for endpoint in rpcs:
             require(hashlib.sha256(unhex(endpoint.call('eth_getCode', [config['vault'], 'latest']))).digest() == profile[33:65],
@@ -106,7 +120,7 @@ def deposit(args):
         result = send(rpc, account, config['vault'], calldata('deposit(bytes32,uint256,bytes32)',
                       '0x' + args.asset, args.amount, '0x' + owner['owner_account']))
     write_json(root / 'custody-deposit.json', result)
-    if not getattr(rpc, 'disposable', False):
+    if not native:
         rpc.call('anvil_mine', ['0x80'], allow_missing=True)
     attest(SimpleNamespace(**{**vars(args), 'profile': str(root / 'custody.profile'),
         'transaction': result['transactionHash'], 'beneficiary': '0x' + owner['owner_account'],

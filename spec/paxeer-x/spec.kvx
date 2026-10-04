@@ -22050,7 +22050,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.12.3]
 title = "Deliver the authenticated protocol-3 custody profile to movement"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 4
 requires = ["0.2", "24.10", "24.11"]
@@ -22060,7 +22060,7 @@ do_2 = "Connect owner_custody.native_bootstrap output to kernel projection and t
 do_3 = "Exercise the producer-to-runtime bytes and permissions, plus absent/wrong-profile and restart cases using the actual Config loader."
 do_4 = "Add the new bounded harness tools/qualification/paxeer-x/movement-custody-profile.py to exercise this task through the named production interfaces, including the stated refusal and recovery cases, with explicit prerequisite checks and nonzero exit on any unmet acceptance. Use supplied prebuilt executables and isolated retained state; do not hide a rebuild or invoke a release-wide suite."
 do_5 = "Implement the declared focused gate through the real production types and paths; exercise every acceptance criterion including refusal, restart or boundary cases specified by this requirement. The command is a planned deliverable, not an already-run gate."
-touches = ["platform/hosted/human/owner_custody.py", "platform/hosted/human/material.py", "docker/kernel/init.sh", "docker/human-service/entrypoint.sh", "human/crates/layerx-human-movement-provider/src/config.rs", "human/crates/layerx-human-movement-provider/tests/startup.rs", "tools/qualification/paxeer-x/movement-custody-profile.py"]
+touches = ["platform/hosted/human/owner_custody.py", "human/crates/layerx-human-movement-provider/src/config.rs", "human/crates/layerx-human-movement-provider/tests/startup.rs", "tools/qualification/paxeer-x/movement-custody-profile.py", "human/crates/layerx-paxeer-client/src/native_custody.rs", "human/crates/layerx-paxeer-client/src/lib.rs", "human/crates/layerx-human-movement-provider/src/main.rs"]
 verify_cmd = "timeout 15m python3 tools/qualification/paxeer-x/movement-custody-profile.py"
 gate_kind = "planned"
 max_builds = 1
@@ -22072,6 +22072,13 @@ deployment_profile = "product"
 planned_paths = ["tools/qualification/paxeer-x/movement-custody-profile.py"]
 path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
 evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+fanout_role = "complete_migration"
+fanout_scope_delegated = ["platform/hosted/human/material.py", "docker/kernel/init.sh", "docker/human-service/entrypoint.sh"]
+fanout_basis = "Owner requested maximum parallel implementation on 2026-10-04; delegated shared file edits require root coordination and retain original acceptance criteria"
+source_status = "complete"
+completion_basis = "implementation under owner CONSTITUTION; qualification separately recorded"
+qualification_status = "UNRUN"
+source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-12.3-source-handoff.json"
 
 [task.12.5]
 title = "Assemble and relocate canonical owner policy and deployment evidence"

@@ -109,6 +109,24 @@ fn validate_profile(
     Ok(())
 }
 
+/// Validates the existing canonical native custody authority profile without admitting a credit.
+///
+/// # Errors
+/// Returns the existing typed profile refusal on any malformed or mismatched binding.
+pub fn validate_native_custody_profile(
+    profile: &[u8],
+    network_id: u32,
+) -> Result<(), NativeCustodyError> {
+    validate_profile(
+        profile,
+        NativeCustodyExpectation {
+            network_id,
+            beneficiary: [0; 32],
+            owner_key: [0; 32],
+        },
+    )
+}
+
 fn custody(
     profile: &[u8],
     credit: &[u8],

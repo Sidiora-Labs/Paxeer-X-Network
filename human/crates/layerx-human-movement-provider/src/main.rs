@@ -29,6 +29,10 @@ fn run() -> Result<(), Error> {
     if arguments.len() == 1 && arguments[0] == "probe" {
         return probe::run();
     }
+    if arguments.len() == 1 && arguments[0] == "validate-config" {
+        Config::from_environment()?;
+        return Ok(());
+    }
     let request = evidence_export::Request::arguments(arguments.into_iter())?;
     let config = Config::from_environment()?;
     if let Some(request) = request {
