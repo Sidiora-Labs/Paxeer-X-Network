@@ -33237,3 +33237,29 @@ source_ownership = "Root owns shared manifests, locks, spec and publication; pre
 source_status = "partial"
 qualification_status = "unrun_partial_source"
 remaining_source = "Genuine Programs material/disclosure/budget/decision private contract and canonical non-monetary representation; generic native52-57 consumers complete."
+
+[task.104.5.4]
+title = "Complete authenticated multi-asset custody profiles and genuine per-asset reserves"
+status = "done"
+mode = "BUILD"
+wave = 2
+requires = ["0.2"]
+reqs = ["114"]
+do_1 = "Implement a distinct closed authenticated per-asset profile version, indexed trust and actual per-asset reserve genesis accounts plus producer/publication/bootstrap plumbing, preserving legacy LXBC3/PAX bytes and state roots when no new profile is selected. Use approved external registry metadata as exact required input; never invent addresses or substitute trust. Connect the profile-selected credit verifier and canonical per-asset beneficiary to real daemon admission while preserving main-account fee and authority checks."
+touches = ["src/modules/bridge/lxp_bridge_credit.c", "include/layerx/lxp_bridge_credit.h", "src/protocol/lxp_module_ctx.c", "src/protocol/lxp_genesis.c", "cmd/layerx-genesis/lxp_genesis_builder.c", "cmd/layerx-genesis/lxp_genesis_build_cli.c", "include/layerx/lxp_genesis_builder.h", "cmd/layerx-guarantor/runtime.c", "cmd/layerx-guarantor/publication.py", "daemon/layerx-custody-proof/light.go", "custodyproof/light.go", "tools/bringup/kernel-genesis.sh", "docker/kernel/init.sh", "tests/bridge/test_credit.c", "tests/bridge/test_credit_admission.c", "tests/storage/lxp_test_maintenance_publication.c", "tests/bridge/paxeer_x_multiasset_credit.py", "daemon/layerx-custody-proof/main.go", "src/ledger/lx_account_id.c", "cmd/layerx-guarantor/authorization.py", "platform/hosted/node/bootstrap.sh", "platform/hosted/node/supervisor.sh", "tests/bridge/sign_credit.c", "cmd/layerxd/lxp_daemon_lni.c"]
+build_cmd = "timeout 20m python3 tests/bridge/paxeer_x_multiasset_credit.py --build"
+verify_cmd = "timeout 10m python3 tests/bridge/paxeer_x_multiasset_credit.py"
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop at original 30-minute cap, unrelated failure, missing genuine authority or weakening; report exact source state, command, exit code and log path."
+completion_basis_policy = "Owner CONSTITUTION: fully implemented DONE; qualification separate and partial remains in_progress."
+source_ownership = "Root owns shared manifests, locks, spec and narrow publication. Source must freeze across native owners before any qualification. No deployment."
+
+completion_basis = "implementation"
+qualification_status = "unverified"
+format_exit_code = 127
+build_status = "unrun"
+verify_status = "unrun"
+qualification_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-104.5.4/result.json"

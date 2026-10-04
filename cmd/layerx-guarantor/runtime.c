@@ -1352,17 +1352,71 @@ static lxp_result settlement_witness(gp_runtime *runtime, FILE *output,
     return status;
 }
 
+static lxp_result settlement_registry(gp_runtime *runtime, bool *present,
+    uint8_t registry_key[32], uint8_t assets[4][32], uint8_t profile_keys[4][32])
+{
+    static const char *const symbols[] = {"PAX", "SID", "USDC", "USDL"};
+    lxp_bridge_profile profiles[4];
+    size_t markers = 0U;
+    lxp_result status = lxp_bridge_registry_key(registry_key);
+    *present = false;
+    if (status != LXP_OK) return status;
+    for (size_t i = 0U; i < runtime->kernel.module_kv_count; ++i) {
+        const lxp_module_kv_entry *entry = &runtime->kernel.module_kv[i];
+        if (entry->module_id != LXP_MODULE_BRIDGE || entry->key_length != 32U ||
+            memcmp(entry->key, registry_key, 32U) != 0) continue;
+        if (++markers != 1U || entry->value_length != 5U ||
+            memcmp(entry->value, "LXBR1", 5U) != 0) return LXP_ERR_NON_CANONICAL;
+        *present = true;
+    }
+    if (!*present) return LXP_OK;
+    for (size_t asset = 0U; asset < 4U; ++asset) {
+        char name[32];
+        size_t matches = 0U;
+        int length = snprintf(name, sizeof(name), "layerx-asset:125:%s", symbols[asset]);
+        if (length <= 0 || (size_t)length >= sizeof(name)) return LXP_ERR_NON_CANONICAL;
+        status = lxp_hash_sha256(name, (size_t)length, assets[asset]);
+        if (status == LXP_OK)
+            status = lxp_bridge_profile_key_asset(assets[asset], profile_keys[asset]);
+        if (status != LXP_OK) return status;
+        for (size_t i = 0U; i < runtime->kernel.module_kv_count; ++i) {
+            const lxp_module_kv_entry *entry = &runtime->kernel.module_kv[i];
+            if (entry->module_id != LXP_MODULE_BRIDGE || entry->key_length != 32U ||
+                memcmp(entry->key, profile_keys[asset], 32U) != 0) continue;
+            if (++matches != 1U || entry->value_length != LXP_BRIDGE_PROFILE_BYTES)
+                return LXP_ERR_NON_CANONICAL;
+            memcpy(profiles[asset].bytes, entry->value, LXP_BRIDGE_PROFILE_BYTES);
+        }
+        if (matches != 1U || memcmp(profiles[asset].bytes, "LXBC4", 5U) != 0 ||
+            memcmp(profiles[asset].bytes + 97U, assets[asset], 32U) != 0)
+            return LXP_ERR_NON_CANONICAL;
+        status = lxp_bridge_profile_validate_asset(&profiles[asset]);
+        if (status != LXP_OK) return status;
+        if (asset != 0U &&
+            (memcmp(profiles[0].bytes + 5U, profiles[asset].bytes + 5U, 92U) != 0 ||
+             memcmp(profiles[0].bytes + 161U, profiles[asset].bytes + 161U, 62U) != 0))
+            return LXP_ERR_CONTEXT_MISMATCH;
+    }
+    return LXP_OK;
+}
+
 lxp_result gp_runtime_settlement_facts(gp_runtime *runtime, FILE *output)
 {
     lxp_result status = LXP_OK;
     size_t count = 0U;
+    bool registry = false;
+    uint8_t registry_key[32], assets[4][32], profile_keys[4][32];
+    static const char *const symbols[] = {"PAX", "SID", "USDC", "USDL"};
     if (runtime == NULL || output == NULL || runtime->poisoned)
         return LXP_ERR_NON_CANONICAL;
+    status = settlement_registry(runtime, &registry, registry_key, assets, profile_keys);
+    if (status != LXP_OK) return status;
     (void)fputs("{\"balances\":[", output);
     for (size_t i = 0U; status == LXP_OK && i < runtime->accounts.count; ++i) {
         const lx_account *account = &runtime->accounts.accounts[i];
         uint8_t key[33] = {4U};
-        if (account->kind != LX_ACCOUNT_AGENT_MAIN || !account->has_asset) continue;
+        if ((account->kind != LX_ACCOUNT_AGENT_MAIN &&
+             !(registry && account->kind == LX_ACCOUNT_AGENT_ASSET)) || !account->has_asset) continue;
         if (!account->has_authority_key) return LXP_ERR_UNAUTHORIZED_DEBIT;
         if (count++ != 0U) (void)fputc(',', output);
         (void)memcpy(key + 1U, account->id, 32U);
@@ -1393,11 +1447,29 @@ lxp_result gp_runtime_settlement_facts(gp_runtime *runtime, FILE *output)
         status = settlement_witness(runtime, output, entry->module_id,
                                     (lxp_byte_span){entry->key, entry->key_length});
     }
-    (void)fputs("],\"profile\":", output);
-    if (runtime->custody_credit_enabled && status == LXP_OK)
-        status = settlement_witness(runtime, output, LXP_MODULE_BRIDGE,
-                                    (lxp_byte_span){lxp_bridge_profile_key, 32U});
-    else (void)fputs("null", output);
+    if (registry) {
+        (void)fputs("],\"version\":2,\"registry\":", output);
+        if (status == LXP_OK)
+            status = settlement_witness(runtime, output, LXP_MODULE_BRIDGE,
+                                        (lxp_byte_span){registry_key, 32U});
+        (void)fputs(",\"profiles\":[", output);
+        for (size_t i = 0U; status == LXP_OK && i < 4U; ++i) {
+            if (i != 0U) (void)fputc(',', output);
+            (void)fprintf(output, "{\"symbol\":\"%s\",\"asset\":\"0x", symbols[i]);
+            for (size_t j = 0U; j < 32U; ++j) (void)fprintf(output, "%02x", assets[i][j]);
+            (void)fputs("\",\"profile\":", output);
+            status = settlement_witness(runtime, output, LXP_MODULE_BRIDGE,
+                                        (lxp_byte_span){profile_keys[i], 32U});
+            (void)fputc('}', output);
+        }
+        (void)fputc(']', output);
+    } else {
+        (void)fputs("],\"profile\":", output);
+        if (runtime->custody_credit_enabled && status == LXP_OK)
+            status = settlement_witness(runtime, output, LXP_MODULE_BRIDGE,
+                                        (lxp_byte_span){lxp_bridge_profile_key, 32U});
+        else (void)fputs("null", output);
+    }
     (void)fputc('}', output);
     return ferror(output) ? LXP_ERR_IO : status;
 }

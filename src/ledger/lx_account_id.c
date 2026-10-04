@@ -146,7 +146,11 @@ lxp_result lx_account_name_parse(const uint8_t *name, size_t name_length,
         kind = LX_ACCOUNT_SYSTEM_INSURANCE;
     else if (span_equal(name, name_length, "system:fees"))
         kind = LX_ACCOUNT_SYSTEM_FEES;
-    else if (span_equal(name, name_length, "system:paxeer-reserve"))
+    else if (span_equal(name, name_length, "system:paxeer-reserve") ||
+             span_equal(name, name_length, "system:paxeer-reserve:pax") ||
+             span_equal(name, name_length, "system:paxeer-reserve:sid") ||
+             span_equal(name, name_length, "system:paxeer-reserve:usdc") ||
+             span_equal(name, name_length, "system:paxeer-reserve:usdl"))
         kind = LX_ACCOUNT_SYSTEM_PAXEER_RESERVE;
     else if (span_equal(name, name_length, "system:paxeer-withdrawals"))
         kind = LX_ACCOUNT_SYSTEM_PAXEER_WITHDRAWALS;

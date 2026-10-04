@@ -409,14 +409,137 @@ static int keyed_compare(
     return memcmp(left_key, right_key, 32U);
 }
 
+static lxp_result validate_legacy_accounts(const lxp_genesis_manifest *manifest)
+{
+    size_t i;
+    bool fees = false, reserve = false, withdrawals = false;
+    for (i = 0U; i < manifest->account_count; ++i) {
+        const lxp_genesis_account *account = &manifest->accounts[i];
+        const char *name = fresh_system_name(account->subaccount_kind);
+        uint8_t derived[32];
+        int order = i == 0U ? -1 : memcmp(
+            manifest->accounts[i - 1U].asset_id, account->asset_id, 32U);
+        if (i != 0U && order == 0)
+            order = memcmp(manifest->accounts[i - 1U].account_id,
+                           account->account_id, 32U);
+        if (name == NULL ||
+            lx_account_id_from_string((const uint8_t *)name, strlen(name),
+                                      derived) != LXP_OK ||
+            lxp_ct_memcmp(derived, account->account_id, 32U) != 0 ||
+            lxp_ct_is_zero(account->asset_id, 32U) ||
+            !lxp_u128_is_zero(account->balance) || account->locked ||
+            !lxp_ct_is_zero(account->parent_account_id, 32U) ||
+            (i != 0U && lxp_ct_memcmp(manifest->accounts[0].asset_id,
+                                      account->asset_id, 32U) != 0) ||
+            (i != 0U && order >= 0))
+            return LXP_ERR_UNSORTED_SEQUENCE;
+        if (account->subaccount_kind == LX_ACCOUNT_SYSTEM_FEES) {
+            if (fees) return LXP_ERR_SEQUENCE_REUSED;
+            fees = true;
+        } else if (account->subaccount_kind ==
+                   LX_ACCOUNT_SYSTEM_PAXEER_RESERVE) {
+            if (reserve) return LXP_ERR_SEQUENCE_REUSED;
+            reserve = true;
+        } else if (account->subaccount_kind ==
+                   LX_ACCOUNT_SYSTEM_PAXEER_WITHDRAWALS) {
+            if (withdrawals) return LXP_ERR_SEQUENCE_REUSED;
+            withdrawals = true;
+        }
+    }
+    if (!fees || !reserve || !withdrawals) return LXP_ERR_UNKNOWN_FIELD;
+    return LXP_OK;
+}
+
+static lxp_result registry_profiles(const lxp_genesis_manifest *manifest,
+                                    lxp_bridge_profile profiles[4], bool *present)
+{
+    static const char *const ids[] = {
+        "layerx-asset:125:PAX", "layerx-asset:125:SID",
+        "layerx-asset:125:USDC", "layerx-asset:125:USDL"
+    };
+    size_t count = 0U;
+    *present = false;
+    for (size_t i = 0U; i < 4U; ++i) {
+        uint8_t asset_id[32];
+        bool found = false;
+        lxp_result status = lxp_hash_sha256((const uint8_t *)ids[i], strlen(ids[i]), asset_id);
+        if (status == LXP_OK)
+            status = lxp_bridge_registry_profile(manifest, asset_id, &profiles[i], &found);
+        if (status != LXP_OK) return status;
+        if (found) ++count;
+    }
+    if (count != 0U && count != 4U) return LXP_ERR_UNKNOWN_FIELD;
+    *present = count == 4U;
+    return LXP_OK;
+}
+
+static lxp_result validate_registry_accounts(const lxp_genesis_manifest *manifest,
+                                             const lxp_bridge_profile profiles[4])
+{
+    static const char *const symbols[] = {"PAX", "SID", "USDC", "USDL"};
+    bool reserves[4] = {false, false, false, false};
+    lxp_genesis_manifest *legacy = (lxp_genesis_manifest *)malloc(sizeof(*legacy));
+    lxp_result status = LXP_OK;
+    if (legacy == NULL) return LXP_ERR_IO;
+    *legacy = *manifest;
+    legacy->account_count = 0U;
+    for (size_t i = 0U; status == LXP_OK && i < manifest->account_count; ++i) {
+        const lxp_genesis_account *account = &manifest->accounts[i];
+        bool registry_reserve = false;
+        int order = i == 0U ? -1 : memcmp(manifest->accounts[i - 1U].asset_id, account->asset_id, 32U);
+        if (i != 0U && order == 0)
+            order = memcmp(manifest->accounts[i - 1U].account_id, account->account_id, 32U);
+        if (order >= 0) { status = LXP_ERR_UNSORTED_SEQUENCE; break; }
+        for (size_t j = 0U; j < 4U; ++j) {
+            if (memcmp(account->account_id, profiles[j].bytes + 129U, 32U) != 0) continue;
+            if (reserves[j] || account->subaccount_kind != LX_ACCOUNT_SYSTEM_PAXEER_RESERVE ||
+                memcmp(account->asset_id, profiles[j].bytes + 97U, 32U) != 0 ||
+                !lxp_u128_is_zero(account->balance) || account->locked ||
+                !lxp_ct_is_zero(account->parent_account_id, 32U)) {
+                status = LXP_ERR_NON_CANONICAL; break;
+            }
+            reserves[j] = true;
+            registry_reserve = true;
+            break;
+        }
+        if (status == LXP_OK && !registry_reserve) {
+            if (memcmp(account->asset_id, profiles[0].bytes + 97U, 32U) != 0)
+                status = LXP_ERR_ASSET_MISMATCH;
+            else legacy->accounts[legacy->account_count++] = *account;
+        }
+    }
+    if (status == LXP_OK) status = validate_legacy_accounts(legacy);
+    for (size_t j = 0U; status == LXP_OK && j < 4U; ++j) {
+        size_t matches = 0U;
+        if (!reserves[j]) { status = LXP_ERR_UNKNOWN_FIELD; break; }
+        for (size_t i = 0U; i < manifest->module_value_count; ++i) {
+            const lxp_genesis_module_value *value = &manifest->module_values[i];
+            lx_asset_record record;
+            if (value->module_id != LXP_MODULE_ASSET ||
+                memcmp(value->key, profiles[j].bytes + 97U, 32U) != 0) continue;
+            ++matches;
+            if (lx_asset_record_decode(value->value, value->value_length, &record) != LXP_OK ||
+                memcmp(record.asset_id, value->key, 32U) != 0 || record.paused ||
+                record.issuer_kind != 2U || record.custody_kind != LX_ASSET_CUSTODY_PAXEER ||
+                record.symbol_length != strlen(symbols[j]) ||
+                memcmp(record.symbol, symbols[j], strlen(symbols[j])) != 0 ||
+                record.name_length == 0U || lxp_ct_is_zero(record.issuer_did32, 32U) ||
+                lxp_ct_is_zero(record.salt, 32U) || record.custody_reference_length == 0U ||
+                lxp_ct_is_zero(record.custody_reference, record.custody_reference_length) ||
+                !lxp_u128_is_zero(record.total_units)) status = LXP_ERR_NON_CANONICAL;
+        }
+        if (status == LXP_OK && matches != 1U) status = LXP_ERR_UNKNOWN_FIELD;
+    }
+    lxp_secure_zero(legacy, sizeof(*legacy));
+    free(legacy);
+    return status;
+}
+
 static lxp_result validate(const lxp_genesis_manifest *manifest)
 {
     lxp_bridge_profile bridge;
     bool bridge_present;
     size_t i;
-    bool fees = false;
-    bool reserve = false;
-    bool withdrawals = false;
     uint8_t handover_authority[32];
     bool handover_enabled;
     lxp_result handover_status;
@@ -463,43 +586,18 @@ static lxp_result validate(const lxp_genesis_manifest *manifest)
                 manifest->guarantors[i].guarantor_id, 32U) >= 0))
             return LXP_ERR_UNSORTED_SEQUENCE;
     }
-    for (i = 0U; i < manifest->account_count; ++i) {
-        const lxp_genesis_account *account = &manifest->accounts[i];
-        const char *name = fresh_system_name(account->subaccount_kind);
-        uint8_t derived[32];
-        int order = i == 0U ? -1 : memcmp(
-            manifest->accounts[i - 1U].asset_id, account->asset_id, 32U);
-        if (i != 0U && order == 0)
-            order = memcmp(manifest->accounts[i - 1U].account_id,
-                           account->account_id, 32U);
-        if (name == NULL ||
-            lx_account_id_from_string((const uint8_t *)name, strlen(name),
-                                      derived) != LXP_OK ||
-            lxp_ct_memcmp(derived, account->account_id, 32U) != 0 ||
-            lxp_ct_is_zero(account->asset_id, 32U) ||
-            !lxp_u128_is_zero(account->balance) || account->locked ||
-            !lxp_ct_is_zero(account->parent_account_id, 32U) ||
-            (i != 0U && lxp_ct_memcmp(manifest->accounts[0].asset_id,
-                                      account->asset_id, 32U) != 0) ||
-            (i != 0U && order >= 0))
-            return LXP_ERR_UNSORTED_SEQUENCE;
-        if (account->subaccount_kind == LX_ACCOUNT_SYSTEM_FEES) {
-            if (fees) return LXP_ERR_SEQUENCE_REUSED;
-            fees = true;
-        } else if (account->subaccount_kind ==
-                   LX_ACCOUNT_SYSTEM_PAXEER_RESERVE) {
-            if (reserve) return LXP_ERR_SEQUENCE_REUSED;
-            reserve = true;
-        } else if (account->subaccount_kind ==
-                   LX_ACCOUNT_SYSTEM_PAXEER_WITHDRAWALS) {
-            if (withdrawals) return LXP_ERR_SEQUENCE_REUSED;
-            withdrawals = true;
-        }
-    }
-    if (!fees || !reserve || !withdrawals) return LXP_ERR_UNKNOWN_FIELD;
+    lxp_bridge_profile profiles[4];
+    bool registry_present = false;
+    lxp_result registry_status = registry_profiles(manifest, profiles, &registry_present);
+    if (registry_status != LXP_OK) return registry_status;
+    registry_status = registry_present ? validate_registry_accounts(manifest, profiles) :
+                                       validate_legacy_accounts(manifest);
+    if (registry_status != LXP_OK) return registry_status;
     if (lxp_bridge_genesis_profile(manifest, &bridge, &bridge_present) != LXP_OK ||
+        (registry_present && !bridge_present) ||
         (bridge_present && memcmp(bridge.bytes + 97U,
-                                  manifest->accounts[0].asset_id, 32U) != 0))
+                                  registry_present ? profiles[0].bytes + 97U :
+                                                     manifest->accounts[0].asset_id, 32U) != 0))
         return LXP_ERR_NON_CANONICAL;
     for (i = 0U; i < manifest->module_value_count; ++i) {
         if (manifest->module_values[i].module_id == 0U ||
@@ -824,7 +922,14 @@ static lxp_result materialize_account(const lxp_genesis_account *source,
 {
     const char *name = source == NULL ? NULL :
         fresh_system_name(source->subaccount_kind);
-    size_t length = name == NULL ? 0U : strlen(name);
+    uint8_t reserve_name[LX_ACCOUNT_NAME_MAX];
+    size_t reserve_length = 0U;
+    uint8_t reserve_id[32];
+    if (source != NULL && source->subaccount_kind == LX_ACCOUNT_SYSTEM_PAXEER_RESERVE &&
+        lxp_bridge_reserve_name(source->asset_id, reserve_name, sizeof(reserve_name), &reserve_length) == LXP_OK &&
+        lx_account_id_from_string(reserve_name, reserve_length, reserve_id) == LXP_OK &&
+        memcmp(reserve_id, source->account_id, 32U) == 0) name = (const char *)reserve_name;
+    size_t length = name == (const char *)reserve_name ? reserve_length : (name == NULL ? 0U : strlen(name));
     if (source == NULL || target == NULL || name == NULL ||
         length > LX_ACCOUNT_NAME_MAX)
         return LXP_ERR_NON_CANONICAL;
@@ -939,11 +1044,17 @@ lxp_result lxp_genesis_materialize(const lxp_genesis_manifest *manifest,
         status = module_value_materialize(&manifest->module_values[index],
                                           kernel);
     if (status == LXP_OK && bridge_present) {
-        uint8_t supply_key[47] = "custody-issued:";
-        const uint8_t zero[16] = {0};
-        (void)memcpy(supply_key + 15U, bridge.bytes + 97U, 32U);
-        status = kernel_insert(kernel, LXP_MODULE_BRIDGE, supply_key,
-                               sizeof(supply_key), zero, sizeof(zero));
+        lxp_bridge_profile profiles[4];
+        bool registry_present = false;
+        status = registry_profiles(manifest, profiles, &registry_present);
+        for (size_t i = 0U; status == LXP_OK && i < (registry_present ? 4U : 1U); ++i) {
+            uint8_t supply_key[47] = "custody-issued:";
+            const uint8_t zero[16] = {0};
+            const lxp_bridge_profile *profile = registry_present ? &profiles[i] : &bridge;
+            (void)memcpy(supply_key + 15U, profile->bytes + 97U, 32U);
+            status = kernel_insert(kernel, LXP_MODULE_BRIDGE, supply_key,
+                                   sizeof(supply_key), zero, sizeof(zero));
+        }
     }
     if (status == LXP_OK)
         status = lxp_genesis_manifest_commitment(manifest, arena, commitment);

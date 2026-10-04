@@ -9,6 +9,8 @@
 enum {
     LXP_BRIDGE_CREDIT = (8U << 16U) | 1U,
     LXP_BRIDGE_PROFILE_BYTES = 223,
+    LXP_BRIDGE_REGISTRY_COUNT = 4,
+    LXP_BRIDGE_REGISTRY_BYTES = 901,
     LXP_BRIDGE_CREDIT_BYTES = 363,
     LXP_BRIDGE_CREDIT_MIN_PAYLOAD_BYTES = LXP_BRIDGE_CREDIT_BYTES + 5,
     LXP_BRIDGE_LIGHT_PROOF_KIND = 2
@@ -23,6 +25,36 @@ typedef struct lxp_bridge_credit {
     const uint8_t *proof;
     size_t proof_length;
 } lxp_bridge_credit;
+
+
+lxp_result lxp_bridge_profile_beneficiary(const lxp_bridge_profile *profile,
+                                         const uint8_t *did, size_t did_length,
+                                         uint8_t *name, size_t capacity,
+                                         size_t *name_length, uint8_t beneficiary[32]);
+lxp_result lxp_bridge_registry_key(uint8_t key[32]);
+lxp_result lxp_bridge_profile_key_asset(const uint8_t asset_id[32], uint8_t key[32]);
+lxp_result lxp_bridge_light_trust_key_asset(const lxp_bridge_profile *profile, uint8_t key[32]);
+lxp_result lxp_bridge_reserve_name(const uint8_t asset_id[32], uint8_t *name,
+                                  size_t capacity, size_t *length);
+lxp_result lxp_bridge_profile_validate_asset(const lxp_bridge_profile *profile);
+lxp_result lxp_bridge_registry_decode(const uint8_t *bytes, size_t length,
+                                      lxp_bridge_profile profiles[LXP_BRIDGE_REGISTRY_COUNT]);
+lxp_result lxp_bridge_registry_append(lxp_genesis_manifest *manifest,
+                                      const lxp_bridge_profile profiles[LXP_BRIDGE_REGISTRY_COUNT]);
+lxp_result lxp_bridge_registry_profile(const lxp_genesis_manifest *manifest,
+                                       const uint8_t asset_id[32],
+                                       lxp_bridge_profile *profile, bool *present);
+lxp_result lxp_bridge_profile_load_asset(lxp_module_ctx *ctx, const uint8_t asset_id[32],
+                                        lxp_bridge_profile *profile);
+lxp_result lxp_bridge_light_trust_load_asset(lxp_module_ctx *ctx,
+                                            const lxp_bridge_profile *profile,
+                                            lxp_bridge_light_trust *trust);
+lxp_result lxp_bridge_credit_verify_asset(const lxp_bridge_profile *profile,
+                                         const lxp_bridge_credit *credit,
+                                         uint32_t network_id, uint16_t protocol_version,
+                                         const lxp_bridge_light_trust *trusted,
+                                         uint64_t now_ms, uint8_t nullifier[32],
+                                         lxp_bridge_light_trust *advanced);
 
 extern const uint8_t lxp_bridge_profile_key[32];
 extern const uint8_t lxp_bridge_light_trust_key[32];

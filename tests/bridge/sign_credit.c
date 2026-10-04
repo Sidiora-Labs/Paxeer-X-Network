@@ -48,8 +48,14 @@ int main(int argc, char **argv)
     size_t signature_length = 64U;
     int result = 1;
     int output = -1;
+    bool asset_profile = false;
+    if (argc > 1 && strcmp(argv[1], "--asset-profile") == 0) {
+        asset_profile = true;
+        --argc;
+        ++argv;
+    }
     if (argc != 8) {
-        (void)fprintf(stderr, "usage: sign-credit profile credit actor-did actor-key sequence timestamp-ms output\n");
+        (void)fprintf(stderr, "usage: sign-credit [--asset-profile] profile credit actor-did actor-key sequence timestamp-ms output\n");
         return 2;
     }
     if (read_file(argv[1], sizeof(profile.bytes), false, &profile_bytes, &profile_length) ||
@@ -73,14 +79,9 @@ int main(int argc, char **argv)
     activity.authority = (lxp_byte_span){public_key, sizeof(public_key)};
     activity.payload = (lxp_byte_span){credit_bytes, credit_length};
     activity.signature = (lxp_byte_span){signature, sizeof(signature)};
-    if (activity.actor_did.length == 0U || activity.actor_did.length > sizeof(name) - 11U)
-        goto done;
-    (void)memcpy(name, "agent:", 6U);
-    (void)memcpy(name + 6U, activity.actor_did.bytes, activity.actor_did.length);
-    name_length = 6U + activity.actor_did.length;
-    (void)memcpy(name + name_length, ":main", 5U);
-    name_length += 5U;
-    if (lx_account_id_from_string(name, name_length, beneficiary) != LXP_OK ||
+    if (lxp_bridge_profile_beneficiary(&profile, activity.actor_did.bytes,
+                                       activity.actor_did.length, name, sizeof(name),
+                                       &name_length, beneficiary) != LXP_OK ||
         memcmp(beneficiary, credit.bytes + 107U, 32U) != 0)
         goto done;
     if (number(argv[5], &activity.account_sequence) ||
@@ -91,8 +92,11 @@ int main(int argc, char **argv)
     for (size_t index = 0U; index < 8U; ++index)
         header_seconds = (header_seconds << 8U) | credit.proof[29U + index];
     if (header_seconds > UINT64_MAX / 1000U ||
-        lxp_bridge_credit_verify(&profile, &credit, activity.network_id, 3U, NULL,
-                                 header_seconds * 1000U, activity.idempotency_key, NULL) != LXP_OK ||
+        (asset_profile
+             ? lxp_bridge_credit_verify_asset(&profile, &credit, activity.network_id, 3U, NULL,
+                                               header_seconds * 1000U, activity.idempotency_key, NULL)
+             : lxp_bridge_credit_verify(&profile, &credit, activity.network_id, 3U, NULL,
+                                         header_seconds * 1000U, activity.idempotency_key, NULL)) != LXP_OK ||
         lxp_hash_payload(credit_bytes, credit_length, activity.payload_hash) != LXP_OK ||
         lxp_activity_signing_preimage(&activity, preimage) != LXP_OK ||
         EVP_DigestSignInit(context, NULL, NULL, NULL, key) != 1 ||

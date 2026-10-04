@@ -37,6 +37,15 @@ lxp_result lxp_genesis_build_fresh_custody(
     lxp_genesis_manifest *signed_manifest,
     lxp_snapshot_manifest_record *snapshot_manifest,
     lxp_byte_span *encoded_manifest, lxp_byte_span *snapshot);
+lxp_result lxp_genesis_build_fresh_custody_registry(
+    const lxp_genesis_manifest *draft, const uint8_t asset_id[32],
+    const lx_programs_metering_schedule *metering,
+    const lx_programs_fee_genesis_parameters *fees,
+    const lxp_bridge_profile profiles[4],
+    const uint8_t signer_private_key[32], lxp_arena *arena,
+    lxp_genesis_manifest *signed_manifest,
+    lxp_snapshot_manifest_record *snapshot_manifest,
+    lxp_byte_span *encoded_manifest, lxp_byte_span *snapshot);
 lxp_result lxp_genesis_deployment_descriptor_encode(
     const lxp_genesis_manifest *manifest, lxp_arena *arena,
     uint8_t encoded[LXP_GENESIS_DEPLOYMENT_DESCRIPTOR_BYTES]);

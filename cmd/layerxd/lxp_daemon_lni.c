@@ -2058,8 +2058,9 @@ lxp_result lxp_daemon_credit_admission(lxp_daemon_protocol_owner *owner,
         lxp_bridge_profile profile;
         lxp_bridge_credit credit;
         lxp_bridge_light_trust trusted;
-        const uint8_t *value;
-        size_t length;
+        uint8_t name[LX_ACCOUNT_NAME_MAX];
+        size_t name_length;
+        uint8_t beneficiary[32];
         uint8_t nullifier[32];
         uint8_t principal[32];
         lxp_u128 balance;
@@ -2072,29 +2073,40 @@ lxp_result lxp_daemon_credit_admission(lxp_daemon_protocol_owner *owner,
         status = lxp_module_ctx_init(&ctx, owner->kernel, LXP_MODULE_BRIDGE, 0U,
                                      owner->kernel->epoch, 0U, 0U, owner->scratch, false);
         if (status == LXP_OK)
-            status = lxp_ctx_kv_get(&ctx, lxp_bridge_profile_key, 32U, &value, &length);
+            status = lxp_bridge_profile_load_asset(&ctx, credit.bytes + 75U, &profile);
         if (status != LXP_OK) return status;
-        if (length != sizeof(profile.bytes)) return LXP_ERR_NON_CANONICAL;
-        (void)memcpy(profile.bytes, value, length);
-        status = lxp_bridge_light_trust_load(&ctx, &profile, &trusted);
+        status = lxp_bridge_light_trust_load_asset(&ctx, &profile, &trusted);
         if (status != LXP_OK) return status;
-        status = lxp_bridge_credit_verify(&profile, &credit, owner->network_id,
-                                          activity->protocol_version, &trusted,
-                                          batch_time_ms, nullifier, NULL);
+        status = lxp_bridge_credit_verify_asset(&profile, &credit, owner->network_id,
+                                                activity->protocol_version, &trusted,
+                                                batch_time_ms, nullifier, NULL);
+        if (status == LXP_OK)
+            status = lxp_bridge_profile_beneficiary(&profile, activity->actor_did.bytes,
+                                                   activity->actor_did.length, name, sizeof(name),
+                                                   &name_length, beneficiary);
         if (status == LXP_OK)
             status = lni_principal(owner->kernel->state->accounts, activity,
                                    activity->authority.bytes, principal,
                                    &balance);
         if (status == LXP_OK &&
             (lxp_ct_memcmp(nullifier, activity->idempotency_key, 32U) != 0 ||
-             lxp_ct_memcmp(principal, credit.bytes + 107U, 32U) != 0 ||
+             lxp_ct_memcmp(beneficiary, credit.bytes + 107U, 32U) != 0 ||
              lxp_ct_memcmp(activity->authority.bytes, credit.bytes + 139U, 32U) != 0))
             status = LXP_ERR_CONTEXT_MISMATCH;
         if (status == LXP_OK) {
             const lx_account_registry *accounts = owner->kernel->state->accounts;
             bool known = false;
-            for (size_t index = 0U; index < accounts->count && !known; ++index)
-                known = lxp_ct_memcmp(accounts->accounts[index].id, principal, 32U) == 0;
+            for (size_t index = 0U; index < accounts->count && !known; ++index) {
+                const lx_account *account = &accounts->accounts[index];
+                known = lxp_ct_memcmp(account->id, beneficiary, 32U) == 0;
+                if (known && memcmp(profile.bytes, "LXBC4", 5U) == 0 &&
+                    (account->kind != LX_ACCOUNT_AGENT_ASSET || account->frozen ||
+                     !account->has_asset ||
+                     lxp_ct_memcmp(account->asset_id, credit.bytes + 75U, 32U) != 0 ||
+                     !account->has_authority_key ||
+                     lxp_ct_memcmp(account->authority_key, activity->authority.bytes, 32U) != 0))
+                    return LXP_ERR_UNAUTHORIZED_DEBIT;
+            }
             if (!known && !lxp_bridge_credit_owner_bound(activity->actor_did.bytes,
                                                          activity->actor_did.length,
                                                          activity->authority.bytes))

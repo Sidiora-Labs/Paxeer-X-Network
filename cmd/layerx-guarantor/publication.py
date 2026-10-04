@@ -22,6 +22,8 @@ CUSTODY_RESERVE_ACCOUNT = b'system:paxeer-reserve'
 DEPOSIT_DOMAIN = b'LXP/Paxeer/custody-deposit/v1'
 MAX_TIMESTAMP_SECONDS = 253402300799
 AUTHORIZATION_WAIT_SECONDS = 30
+REGISTRY_KEY = hashlib.sha256(b'LX:CUSTODY:REGISTRY:v1').digest()
+CUSTODY_SYMBOLS = ('PAX', 'SID', 'USDC', 'USDL')
 
 
 def require(value, message):
@@ -229,6 +231,8 @@ def custody_credit(encoded, root, profile):
 
 def native_request(api, request, header, checkpoint):
     facts = request['native_facts']
+    if isinstance(facts, dict) and type(facts.get('version')) is int and facts['version'] == 2:
+        return native_request_registry(api, request, header, checkpoint)
     require(set(facts) == {'balances', 'withdrawals', 'deposits', 'profile'}, 'native facts fields')
     for name in ('balances', 'withdrawals', 'deposits'):
         require(isinstance(facts[name], list) and len(facts[name]) <= 4096, 'native facts bound')
@@ -246,6 +250,108 @@ def native_request(api, request, header, checkpoint):
     deposits.sort(key=lambda v: v['identity'])
     require(len({v['identity'] for v in deposits}) == len(deposits), 'duplicate deposit leaf')
     return balances, withdrawals, deposits, profile
+
+
+def custody_profile_registry(encoded, root, network, protocol, symbol, asset):
+    module, key, profile, _ = witness(encoded, root)
+    require(module == 8 and key == sha(b'LX:CUSTODY:PROFILE:v2' + asset) and
+            len(profile) == PROFILE_BYTES and profile[:5] == b'LXBC4',
+            'native indexed custody profile')
+    chain = profile[169:201]
+    length = chain.find(b'\0')
+    length = len(chain) if length < 0 else length
+    require(0 < length <= 32 and chain[length:] == bytes(32 - length) and
+            all(0x21 <= character <= 0x7e for character in chain[:length]),
+            'native indexed custody Comet chain identifier')
+    require(int.from_bytes(profile[5:13], 'big') == CUSTODY_EVM_CHAIN_ID and
+            profile[33:65] == sha(CUSTODY_MODULE_DOMAIN + CUSTODY_STORE + profile[13:33]) and
+            profile[97:129] == asset and
+            profile[129:161] == account_id(CUSTODY_RESERVE_ACCOUNT + b':' + symbol.lower().encode('ascii')) and
+            any(profile[13:33]) and any(profile[65:97]),
+            'native indexed custody profile identity')
+    require(protocol == CUSTODY_PROTOCOL_VERSION and
+            profile[201:205] == network.to_bytes(4, 'big') and
+            profile[205:207] == protocol.to_bytes(2, 'big'), 'native indexed custody profile domain')
+    require(0 < int.from_bytes(profile[161:169], 'big') < 2 ** 63 and
+            0 < int.from_bytes(profile[207:215], 'big') <= 2 ** 32 - 1 and
+            0 < int.from_bytes(profile[215:223], 'big') <= MAX_TIMESTAMP_SECONDS,
+            'native indexed custody profile trust state')
+    return profile
+
+
+def balance_fact_registry(encoded, root):
+    module, key, value, wire = witness(encoded, root)
+    require(module == 0 and len(key) == 33 and key[0] == 4, 'balance account witness')
+    n = int.from_bytes(value[:2], 'big')
+    at = n + 2
+    require(0 < n <= 512 and len(value) == n + 103, 'balance account encoding')
+    if value[at] == 1:
+        return balance_fact(encoded, root)
+    require(value[at] == 14 and value[at + 49] == 1 and value[at + 100] == 1,
+            'asset balance owner authority absent')
+    require(value[at + 66] <= 1 and value[at + 67] <= 1, 'balance account flags')
+    name, asset = value[2:at], value[at + 17:at + 49]
+    split = name.rsplit(b':asset:', 1)
+    require(len(split) == 2 and split[0].startswith(b'agent:did:') and
+            len(split[0]) > len(b'agent:did:') and
+            all(0x21 <= character <= 0x7e for character in split[0]) and
+            split[1] == asset.hex().encode('ascii') and account_id(name) == key[1:] and
+            any(value[at + 68:at + 100]), 'asset balance account binding')
+    return dict(account=key[1:], asset=asset, amount=value[at + 1:at + 17], authority=value[at + 68:at + 100], witness=wire)
+
+
+def native_request_registry(api, request, header, checkpoint):
+    facts = request['native_facts']
+    require(set(facts) == {'version', 'balances', 'withdrawals', 'deposits', 'registry', 'profiles'} and
+            type(facts['version']) is int and facts['version'] == 2, 'native registry facts fields')
+    module, key, marker, _ = witness(facts['registry'], header[7])
+    require(module == 8 and key == REGISTRY_KEY and marker == b'LXBR1', 'native custody registry marker')
+    require(isinstance(facts['profiles'], list) and len(facts['profiles']) == len(CUSTODY_SYMBOLS),
+            'native custody registry profile count')
+    profiles, shared = {}, None
+    for symbol, entry in zip(CUSTODY_SYMBOLS, facts['profiles']):
+        require(isinstance(entry, dict) and set(entry) == {'symbol', 'asset', 'profile'} and
+                entry['symbol'] == symbol, 'native custody registry profile fields or order')
+        asset = sha(b'layerx-asset:125:' + symbol.encode('ascii'))
+        require(raw(entry['asset'], 32) == asset and asset not in profiles,
+                'native custody registry asset mismatch or duplicate')
+        profile = custody_profile_registry(entry['profile'], header[7], header[1], header[0], symbol, asset)
+        common = profile[5:97] + profile[161:223]
+        require(shared is None or common == shared, 'native custody registry shared domain mismatch')
+        shared = common
+        profiles[asset] = profile
+    for name in ('balances', 'withdrawals', 'deposits'):
+        require(isinstance(facts[name], list) and len(facts[name]) <= 4096, 'native facts bound')
+    balances = sorted([balance_fact_registry(v, header[7]) for v in facts['balances']], key=lambda v: (v['account'], v['asset']))
+    withdrawals = sorted([withdrawal_fact(v, header[7], header[1]) for v in facts['withdrawals']], key=lambda v: v['identity'])
+    require(len({(v['account'], v['asset']) for v in balances}) == len(balances), 'duplicate balance leaf')
+    require(len({v['identity'] for v in withdrawals}) == len(withdrawals), 'duplicate withdrawal leaf')
+    deposits = []
+    for encoded in facts['deposits']:
+        _, _, candidate, _ = witness(encoded, header[7])
+        require(len(candidate) == CREDIT_BYTES and candidate[75:107] in profiles,
+                'native custody registry credit asset absent')
+        credit = custody_credit(encoded, header[7], profiles[candidate[75:107]])
+        deposits.append(dict(identity=credit[43:75], asset=credit[75:107], amount=credit[191:207], beneficiary=credit[107:139], payer=credit[171:191], nonce=int.from_bytes(credit[207:215], 'big')))
+    deposits.sort(key=lambda v: v['identity'])
+    require(len({v['identity'] for v in deposits}) == len(deposits), 'duplicate deposit leaf')
+    return balances, withdrawals, deposits, profiles
+
+
+def custody_vault_for_deposits(profiles, deposits):
+    if isinstance(profiles, bytes):
+        require(len(profiles) == PROFILE_BYTES and profiles[:5] == b'LXBC3' and deposits and
+                all(fact['asset'] == profiles[97:129] for fact in deposits),
+                'native custody deposit profile mismatch')
+        return profiles[13:33]
+    require(isinstance(profiles, dict) and deposits, 'native custody registry deposits absent')
+    vault = None
+    for fact in deposits:
+        require(fact['asset'] in profiles, 'native custody registry deposit asset absent')
+        selected = profiles[fact['asset']][13:33]
+        require(vault is None or selected == vault, 'native custody registry deposit vault mismatch')
+        vault = selected
+    return vault
 
 
 def checkpoint_wire(api, request, h, digest, anchor, proof, signed):
@@ -340,6 +446,8 @@ def verified_bindings(authorization, balances, h, digest):
 
 
 def verified_deposit(authorization, deposits, profile, h, digest):
+    if isinstance(profile, dict):
+        return verified_deposit_registry(authorization, deposits, profile, h, digest)
     if not deposits:
         require(authorization.get('deposit_registration') is None, 'deposit registration without replayed deposits')
         return None, None, [], None, None
@@ -357,6 +465,14 @@ def verified_deposit(authorization, deposits, profile, h, digest):
         level = [sha(b'LXP/v1/merkle-internal\0' + level[i] + level[min(i + 1, len(level) - 1)]) for i in range(0, len(level), 2)]
     message = b'LX:PAXEER:DEPOSIT:ROOT:v1' + digest + h[7] + level[0] + reference + h[1].to_bytes(4, 'big') + h[0].to_bytes(2, 'big')
     return message, raw(v['signature'], 64), ordering, vault, level[0]
+
+
+def verified_deposit_registry(authorization, deposits, profiles, h, digest):
+    if not deposits:
+        return verified_deposit(authorization, deposits, None, h, digest)
+    vault = custody_vault_for_deposits(profiles, deposits)
+    require(raw(authorization['deposit_registration']['vault'], 20) == vault, 'deposit registry vault mismatch')
+    return verified_deposit(authorization, deposits, profiles[deposits[0]['asset']], h, digest)
 
 
 def publish(api, rpc, request):

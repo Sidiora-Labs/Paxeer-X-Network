@@ -220,6 +220,7 @@ MIGRATIONS=""
 LAYERXD=""
 GENESIS_BUILD=""
 CUSTODY_PROFILE=""
+CUSTODY_REGISTRY=""
 GENESIS_METADATA=""
 WITHDRAWAL_FEE=""
 MODULE_FEES=""
@@ -282,6 +283,7 @@ while [ $# -gt 0 ]; do
         --layerxd) LAYERXD=$2; shift 2 ;;
         --genesis-build) GENESIS_BUILD=$2; shift 2 ;;
         --custody-profile) CUSTODY_PROFILE=$2; shift 2 ;;
+        --custody-registry) CUSTODY_REGISTRY=$2; shift 2 ;;
         --settlement-env) SETTLEMENT_ENV=$2; shift 2 ;;
         --settlement-document) SETTLEMENT_DOCUMENT=$2; shift 2 ;;
         --force) FORCE=1; shift ;;
@@ -348,6 +350,13 @@ if [ -n "$CUSTODY_PROFILE" ]; then
     [ "$(stat -c %s "$CUSTODY_PROFILE")" -eq 223 ] \
         || fail "--custody-profile must contain exactly 223 bytes"
     CUSTODY_PROFILE=$(readlink -f "$CUSTODY_PROFILE")
+fi
+if [ -n "$CUSTODY_REGISTRY" ]; then
+    [ -f "$CUSTODY_REGISTRY" ] && [ ! -L "$CUSTODY_REGISTRY" ] && [ -r "$CUSTODY_REGISTRY" ] \
+        || fail "--custody-registry must name a readable regular file, not a symlink"
+    [ "$(stat -c %s "$CUSTODY_REGISTRY")" -eq 901 ] \
+        || fail "--custody-registry must contain exactly 901 bytes"
+    CUSTODY_REGISTRY=$(readlink -f "$CUSTODY_REGISTRY")
 fi
 
 is_decimal() { [[ $1 =~ ^[0-9]+$ ]]; }
@@ -709,6 +718,9 @@ GENESIS_DIR="$DATA_DIR/genesis"
 GENESIS_ARGS=("$REQUEST" "$SIGNER_KEY" "$GENESIS_DIR")
 if [ -n "$CUSTODY_PROFILE" ]; then
     GENESIS_ARGS+=(--custody-profile "$CUSTODY_PROFILE")
+fi
+if [ -n "$CUSTODY_REGISTRY" ]; then
+    GENESIS_ARGS+=(--custody-registry "$CUSTODY_REGISTRY")
 fi
 "$GENESIS_BUILD" "${GENESIS_ARGS[@]}" || fail "layerx-genesis-build refused the genesis request"
 rm -f "$SIGNER_KEY"

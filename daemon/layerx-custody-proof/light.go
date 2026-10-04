@@ -4,12 +4,19 @@ import (
 	"bytes"
 	"context"
 	"encoding/hex"
+	"math/big"
+	"io"
 	"errors"
 	"flag"
 	"fmt"
 	"os"
 	"strings"
 	"time"
+
+	"github.com/ethereum/go-ethereum"
+	"github.com/ethereum/go-ethereum/accounts/abi"
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/ethclient"
 
 	rpcclient "github.com/sidiora-labs/paxeer-network/consensus/rpc/client"
 	rpchttp "github.com/sidiora-labs/paxeer-network/consensus/rpc/client/http"
@@ -132,10 +139,133 @@ func lightProfile(arguments []string) error {
 	return os.WriteFile(*output, profile, 0o644)
 }
 
+func verifyRegistryMetadata(ctx context.Context, endpoint string, height int64, metadata []custodyproof.LightAssetMetadata) error {
+	client, err := ethclient.DialContext(ctx, endpoint)
+	if err != nil { return err }
+	defer client.Close()
+	chain, err := client.ChainID(ctx)
+	if err != nil { return err }
+	if !chain.IsUint64() || chain.Uint64() != custodyproof.LightEVMChainID { return errors.New("registry metadata EVM chain") }
+	contractABI, err := abi.JSON(strings.NewReader(`[{
+"type":"function","name":"getAsset","inputs":[{"name":"assetId","type":"bytes32"}],"outputs":[{"name":"asset","type":"tuple","components":[{"name":"assetId","type":"bytes32"},{"name":"denom","type":"string"},{"name":"pointer","type":"address"},{"name":"enabled","type":"bool"},{"name":"paused","type":"bool"},{"name":"minimumDeposit","type":"uint256"},{"name":"custodyCap","type":"uint256"},{"name":"custodied","type":"uint256"},{"name":"released","type":"uint256"},{"name":"pending","type":"uint256"}]}]},
+{"type":"function","name":"nativeAssetId","inputs":[],"outputs":[{"type":"bytes32"}]},
+{"type":"function","name":"assetByPointer","inputs":[{"type":"address"}],"outputs":[{"type":"bytes32"}]}]`))
+	if err != nil { return err }
+	block := big.NewInt(height)
+	call := func(address common.Address, data []byte) ([]byte, error) {
+		return client.CallContract(ctx, ethereum.CallMsg{To: &address, Data: data}, block)
+	}
+	custody := common.HexToAddress(custodytypes.CustodyAddress)
+	for index, entry := range metadata {
+		asset, err := hex32("asset_id", entry.AssetID)
+		if err != nil { return err }
+		pointer := common.HexToAddress(entry.TokenPointer)
+		method := "assetByPointer"
+		arguments := []any{pointer}
+		if index == 0 { method, arguments = "nativeAssetId", nil }
+		input, err := contractABI.Pack(method, arguments...)
+		if err != nil { return err }
+		mapped, err := call(custody, input)
+		if err != nil { return err }
+		if len(mapped) != 32 || !bytes.Equal(mapped, asset[:]) { return fmt.Errorf("%s approved metadata is not the actual custody mapping", entry.Symbol) }
+		input, err = contractABI.Pack("getAsset", asset)
+		if err != nil { return err }
+		raw, err := call(custody, input)
+		if err != nil { return err }
+		values, err := contractABI.Unpack("getAsset", raw)
+		if err != nil || len(values) != 1 { return fmt.Errorf("%s custody asset record", entry.Symbol) }
+		mapping := *abi.ConvertType(values[0], new(struct {
+			AssetId [32]byte
+			Denom string
+			Pointer common.Address
+			Enabled bool
+			Paused bool
+			MinimumDeposit *big.Int
+			CustodyCap *big.Int
+			Custodied *big.Int
+			Released *big.Int
+			Pending *big.Int
+		})).(*struct {
+			AssetId [32]byte
+			Denom string
+			Pointer common.Address
+			Enabled bool
+			Paused bool
+			MinimumDeposit *big.Int
+			CustodyCap *big.Int
+			Custodied *big.Int
+			Released *big.Int
+			Pending *big.Int
+		})
+		if mapping.AssetId != asset || mapping.Pointer != pointer || !mapping.Enabled || mapping.Paused || mapping.Denom == "" { return fmt.Errorf("%s custody asset disabled, paused or mismatched", entry.Symbol) }
+		if index == 0 { continue }
+		decimals, err := call(pointer, common.FromHex("0x313ce567"))
+		if err != nil { return err }
+		if len(decimals) != 32 || new(big.Int).SetBytes(decimals).Cmp(new(big.Int).SetUint64(uint64(entry.Decimals))) != 0 { return fmt.Errorf("%s decimals metadata mismatch", entry.Symbol) }
+		symbol, err := call(pointer, common.FromHex("0x95d89b41"))
+		if err != nil { return err }
+		var decoded string
+		if len(symbol) == 32 {
+			length := bytes.IndexByte(symbol, 0)
+			if length == -1 { length = 32 }
+			if !bytes.Equal(symbol[length:], make([]byte, 32-length)) { return errors.New("token symbol padding") }
+			decoded = string(symbol[:length])
+		} else {
+			stringType, err := abi.NewType("string", "", nil)
+			if err != nil { return err }
+			arguments := abi.Arguments{{Type: stringType}}
+			values, err := arguments.Unpack(symbol)
+			if err != nil || len(values) != 1 { return errors.New("token symbol ABI") }
+			decoded = values[0].(string)
+			canonical, err := arguments.Pack(decoded)
+			if err != nil || !bytes.Equal(canonical, symbol) { return errors.New("token symbol noncanonical ABI") }
+		}
+		if decoded != entry.Symbol { return fmt.Errorf("%s token symbol metadata mismatch", entry.Symbol) }
+	}
+	return nil
+}
+
+func lightRegistry(arguments []string) error {
+	flags := flag.NewFlagSet("light-registry", flag.ContinueOnError)
+	rpc := flags.String("rpc", "", "Comet RPC URL")
+	evmRPC := flags.String("evm-rpc", "", "chain 125 EVM RPC URL")
+	metadataPath := flags.String("registry", "", "approved four-asset metadata JSON")
+	network := flags.Uint("network-id", 0, "LayerX network id")
+	trusted := flags.Int64("trusted-height", 0, "trusted header height")
+	period := flags.Uint64("trusting-period-seconds", 0, "trusting period in seconds")
+	output := flags.String("output", "", "registry file to write")
+	if err := flags.Parse(arguments); err != nil { return err }
+	if flags.NArg() != 0 || *rpc == "" || *evmRPC == "" || *metadataPath == "" || *output == "" || *trusted < 1 || *network == 0 || *network > 0xffffffff || *period < 1 || *period > custodyproof.LightMaxTrustingPeriod { return errors.New("light-registry needs --rpc, --evm-rpc, --registry, --network-id, --trusted-height, --trusting-period-seconds and --output") }
+	file, err := os.Open(*metadataPath)
+	if err != nil { return err }
+	metadataBytes, err := io.ReadAll(io.LimitReader(file, 8193))
+	closeError := file.Close()
+	if err != nil { return err }
+	if closeError != nil { return closeError }
+	metadata, err := custodyproof.ParseLightAssetMetadata(metadataBytes)
+	if err != nil { return err }
+	ctx, cancel := context.WithTimeout(context.Background(), lightTimeout)
+	defer cancel()
+	client, err := rpchttp.New(*rpc)
+	if err != nil { return err }
+	header, err := signedHeader(ctx, client, *trusted)
+	if err != nil { return err }
+	validators, err := validatorsAt(ctx, client, *trusted)
+	if err != nil { return err }
+	if !bytes.Equal(validators.Hash(), header.ValidatorsHash) { return errors.New("trusted registry header validators hash") }
+	if err := validators.VerifyCommitLightAllSignatures(header.ChainID, header.Commit.BlockID, header.Height, header.Commit); err != nil { return fmt.Errorf("trusted registry header quorum: %w", err) }
+	if err := verifyRegistryMetadata(ctx, *evmRPC, *trusted, metadata); err != nil { return err }
+	registry, err := custodyproof.BuildLightRegistry(header, metadata, uint32(*network), *period)
+	if err != nil { return err }
+	return os.WriteFile(*output, registry, 0o644)
+}
+
 func lightCredit(arguments []string) error {
 	flags := flag.NewFlagSet("light-credit", flag.ContinueOnError)
 	rpc := flags.String("rpc", "", "Comet RPC URL")
-	profilePath := flags.String("profile", "", "LXBC3 profile file")
+	profilePath := flags.String("profile", "", "LXBC3 or LXBC4 profile file")
+	registryPath := flags.String("registry", "", "LXBR1 custody registry file")
+	assetSelector := flags.String("asset", "", "32-byte registry asset id, hex")
 	deposit := flags.String("deposit-id", "", "32-byte deposit id, hex")
 	owner := flags.String("owner-key", "", "32-byte beneficiary owner ed25519 public key, hex")
 	height := flags.Int64("height", 0, "header height N; the record is proven at N-1 (default: latest canonical commit)")
@@ -144,7 +274,7 @@ func lightCredit(arguments []string) error {
 	if err := flags.Parse(arguments); err != nil {
 		return err
 	}
-	if flags.NArg() != 0 || *rpc == "" || *profilePath == "" || *output == "" || *height < 0 || *trustedHeight < 0 {
+	if flags.NArg() != 0 || *rpc == "" || (*profilePath == "" && *registryPath == "") || (*profilePath != "" && *registryPath != "") || (*registryPath != "" && *assetSelector == "") || (*profilePath != "" && *assetSelector != "") || *output == "" || *height < 0 || *trustedHeight < 0 {
 		return errors.New("light-credit needs --rpc, --profile, --deposit-id, --owner-key and --output")
 	}
 	depositID, err := hex32("deposit-id", *deposit)
@@ -155,14 +285,29 @@ func lightCredit(arguments []string) error {
 	if err != nil {
 		return err
 	}
-	profileBytes, err := os.ReadFile(*profilePath)
-	if err != nil {
-		return err
+	var profileBytes []byte
+	if *registryPath != "" {
+		asset, err := hex32("asset", *assetSelector)
+		if err != nil { return err }
+		registry, err := os.ReadFile(*registryPath)
+		if err != nil { return err }
+		profiles, err := custodyproof.DecodeLightRegistry(registry)
+		if err != nil { return err }
+		for _, candidate := range profiles {
+			if bytes.Equal(candidate[97:129], asset[:]) { profileBytes = candidate }
+		}
+		if profileBytes == nil { return errors.New("asset has no approved custody profile") }
+	} else {
+		profileBytes, err = os.ReadFile(*profilePath)
+		if err != nil { return err }
 	}
-	profile, err := custodyproof.DecodeLightProfile(profileBytes)
-	if err != nil {
-		return err
+	var profile *custodyproof.LightProfile
+	if len(profileBytes) == custodyproof.LightProfileBytes && string(profileBytes[:5]) == custodyproof.AssetLightProfileMagic {
+		profile, err = custodyproof.DecodeAssetLightProfile(profileBytes)
+	} else {
+		profile, err = custodyproof.DecodeLightProfile(profileBytes)
 	}
+	if err != nil { return err }
 	client, err := rpchttp.New(*rpc)
 	if err != nil {
 		return err

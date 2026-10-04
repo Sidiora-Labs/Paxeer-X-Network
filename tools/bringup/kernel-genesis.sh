@@ -42,7 +42,7 @@ custody=0x0000000000000000000000000000000000001013
 deposit_key=$keys/checkpoint-submitter/deposit-authority.pem
 key_files=("$keys/sequencer.key" "$keys/checkpoint-authority/key.pem" "$deposit_key" "$keys/publication/recipient.key")
 genesis_files=("$keys/publication/binding-policy.json" "$keys/publication/authorization.json"
-	"$genesis/metadata.lxgb" "$genesis/custody.profile" "$genesis/comet-url" "$genesis/asset-id" "$genesis/replica-id")
+	"$genesis/metadata.lxgb" "$genesis/custody.profile" "$genesis/custody.registry" "$genesis/custody-assets.json" "$genesis/comet-url" "$genesis/asset-id" "$genesis/replica-id")
 
 fail() {
 	printf 'kernel-genesis: %s\n' "$*" >&2
@@ -155,14 +155,17 @@ asset_id() {
 genesis_step() {
 	local argument file symbol pointer id onchain decimals pax manifest record comet="" height
 	local -A pointers=()
-	local -a records=()
+	local -a records=() approved_records=()
 	for argument in "$@"; do
 		if [[ $argument =~ ^COMET=([a-z0-9.-]+)$ ]]; then
 			comet=https://${BASH_REMATCH[1]}/comet
 			continue
 		fi
 		[[ $argument =~ ^([A-Z0-9]{1,16})=(0x[0-9a-fA-F]{40})$ ]] || fail "not SYMBOL=POINTER: $argument"
-		pointers[${BASH_REMATCH[1]}]=${BASH_REMATCH[2]}
+		symbol=${BASH_REMATCH[1]}
+		[ "$symbol" != PAX ] || fail "PAX uses the native custody mapping, not a token pointer"
+		[ -z "${pointers[$symbol]:-}" ] || fail "duplicate asset pointer input for $symbol"
+		pointers[$symbol]=${BASH_REMATCH[2],,}
 	done
 	for symbol in SID USDC USDL; do
 		[ -n "${pointers[$symbol]:-}" ] || fail "the pointer of $symbol is required"
@@ -190,6 +193,7 @@ genesis_step() {
 	[ "$pax" = "$(asset_id PAX)" ] ||
 		fail "the PAX asset id 0x$pax is not sha256(\"layerx-asset:125:PAX\") 0x$(asset_id PAX)"
 	records+=("$pax:PAX:6")
+	approved_records+=("$pax:PAX:6:0x0000000000000000000000000000000000000000")
 
 	# The PAX custody profile of the opening credit: a light-client profile
 	# trusting the Comet header one below the latest, built from the chain.
@@ -215,7 +219,36 @@ genesis_step() {
 		[ "$onchain" = "$symbol" ] || fail "$pointer is $onchain, not $symbol"
 		decimals=$(erc20 "$pointer" 313ce567) || fail "decimals() of $pointer failed"
 		records+=("$id:$symbol:$decimals")
+		case "$symbol" in
+		SID | USDC | USDL) approved_records+=("$id:$symbol:$decimals:$pointer") ;;
+		esac
 	done
+	python3 - "$genesis/custody-assets.json" "${approved_records[@]}" <<'PYMETA'
+import json
+import os
+import sys
+
+output = sys.argv[1]
+entries = {}
+for record in sys.argv[2:]:
+    asset, symbol, decimals, pointer = record.split(':')
+    if symbol in entries:
+        raise SystemExit('duplicate approved custody asset')
+    entries[symbol] = dict(symbol=symbol, asset_id=asset, token_pointer=pointer, decimals=int(decimals))
+if set(entries) != {'PAX', 'SID', 'USDC', 'USDL'}:
+    raise SystemExit('all four approved custody assets are required')
+with os.fdopen(os.open(output, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600), 'w') as handle:
+    json.dump(dict(assets=[entries[symbol] for symbol in ('PAX', 'SID', 'USDC', 'USDL')]), handle)
+    handle.write('\n')
+    handle.flush()
+    os.fsync(handle.fileno())
+PYMETA
+	layerx-custody-proof light-registry --rpc "$comet" --evm-rpc "$rpc" --registry "$genesis/custody-assets.json" \
+		--network-id "$network_id" --trusted-height "$((height - 1))" --trusting-period-seconds 1209600 \
+		--output "$genesis/custody.registry" >/dev/null || fail "approved four-asset custody registry verification refused"
+	[ "$(stat -c %s "$genesis/custody.registry")" = 901 ] || fail "the custody registry is not 901 bytes"
+	chown 4020:4020 "$genesis/custody.registry" "$genesis/custody-assets.json"
+	chmod 0444 "$genesis/custody.registry" "$genesis/custody-assets.json"
 	public_values
 
 	# The treasury signer's recipient-binding policy and the guarantor's
@@ -289,6 +322,7 @@ PY
 	echo "genesis_sha256=$(sha256sum "$manifest" | cut -d' ' -f1)"
 	echo "metadata_sha256=$(sha256sum "$genesis/metadata.lxgb" | cut -d' ' -f1)"
 	echo "custody_profile_sha256=$(sha256sum "$genesis/custody.profile" | cut -d' ' -f1)"
+	echo "custody_registry_sha256=$(sha256sum "$genesis/custody.registry" | cut -d' ' -f1)"
 	echo "sequencer_public_key=$sequencer_public"
 	echo "replica_id=$replica_id"
 	echo "publication_recipient=0x$recipient"

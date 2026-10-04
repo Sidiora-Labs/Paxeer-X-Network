@@ -2259,3 +2259,13 @@ resolution = "Root added only the existing dependency edges; gateway0.14 locked 
 area = "Gateway stream classifier owner"
 observed = "Extracting shared HTTP catalogue classification removed matches_path still used by the existing streaming path; first build failed E0425."
 resolution = "Restore the original stream helper unchanged; one scoped repair build and focused gateway route gate passed."
+
+[gotcha.668]
+area = "Canonical multi-asset reserve names"
+observed = "Existing canonical account parser forbids uppercase, so per-asset reserve names cannot copy uppercase product symbols."
+resolution = "Preserve canonical character checks and admit only four exact lowercase reserve names; uppercase symbols remain registry metadata."
+
+[gotcha.671]
+area = "Custody owner and beneficiary identity"
+observed = "The genuine daemon resolves the owner main account for authority and fees; LXBC4 credits require an independent canonical asset account for the same owner."
+resolution = "Preserve main-account authority and fee checks while binding only the credited beneficiary to the selected asset profile."

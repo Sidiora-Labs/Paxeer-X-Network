@@ -142,11 +142,44 @@ lxp_result lxp_genesis_handover_trust_build(
     return status;
 }
 
+static lxp_result registry_reserve_accounts(lxp_genesis_manifest *manifest,
+                                             const lxp_bridge_profile profiles[4])
+{
+    if (manifest->account_count > LXP_GENESIS_MAX_ACCOUNTS - 4U)
+        return LXP_ERR_LENGTH_LIMIT;
+    for (size_t i = 0U; i < 4U; ++i) {
+        uint8_t name[LX_ACCOUNT_NAME_MAX];
+        size_t length = 0U;
+        lxp_genesis_account account;
+        lxp_result status = lxp_bridge_reserve_name(profiles[i].bytes + 97U, name, sizeof(name), &length);
+        if (status != LXP_OK) return status;
+        (void)memset(&account, 0, sizeof(account));
+        status = lx_account_id_from_string(name, length, account.account_id);
+        if (status != LXP_OK || memcmp(account.account_id, profiles[i].bytes + 129U, 32U) != 0)
+            return LXP_ERR_NON_CANONICAL;
+        account.subaccount_kind = LX_ACCOUNT_SYSTEM_PAXEER_RESERVE;
+        (void)memcpy(account.asset_id, profiles[i].bytes + 97U, 32U);
+        size_t position = 0U;
+        for (; position < manifest->account_count; ++position) {
+            int order = memcmp(manifest->accounts[position].asset_id, account.asset_id, 32U);
+            if (order == 0) order = memcmp(manifest->accounts[position].account_id, account.account_id, 32U);
+            if (order == 0) return LXP_ERR_SEQUENCE_REUSED;
+            if (order > 0) break;
+        }
+        (void)memmove(&manifest->accounts[position + 1U], &manifest->accounts[position],
+                      (manifest->account_count - position) * sizeof(manifest->accounts[0]));
+        manifest->accounts[position] = account;
+        ++manifest->account_count;
+    }
+    return LXP_OK;
+}
+
 static lxp_result build_fresh(
     const lxp_genesis_manifest *draft, const uint8_t asset_id[32],
     const lx_programs_metering_schedule *metering,
     const lx_programs_fee_genesis_parameters *fees,
     const lxp_bridge_profile *profile,
+    const lxp_bridge_profile *registry,
     const uint8_t signer_private_key[32], lxp_arena *arena,
     lxp_genesis_manifest *signed_manifest,
     lxp_snapshot_manifest_record *snapshot_manifest,
@@ -220,6 +253,10 @@ static lxp_result build_fresh(
         status = lxp_programs_fee_genesis_append(candidate, fees);
     if (status == LXP_OK && profile != NULL)
         status = lxp_bridge_genesis_append(candidate, profile);
+    if (status == LXP_OK && registry != NULL)
+        status = lxp_bridge_registry_append(candidate, registry);
+    if (status == LXP_OK && registry != NULL)
+        status = registry_reserve_accounts(candidate, registry);
     if (status == LXP_OK)
         status = lxp_genesis_state_root(
             candidate, arena, candidate->genesis_state_root);
@@ -267,7 +304,7 @@ lxp_result lxp_genesis_build_fresh_empty(
     lxp_snapshot_manifest_record *snapshot_manifest,
     lxp_byte_span *encoded_manifest, lxp_byte_span *snapshot)
 {
-    return build_fresh(draft, asset_id, metering, fees, NULL, signer_private_key,
+    return build_fresh(draft, asset_id, metering, fees, NULL, NULL, signer_private_key,
                         arena, signed_manifest, snapshot_manifest, encoded_manifest, snapshot);
 }
 
@@ -283,8 +320,45 @@ lxp_result lxp_genesis_build_fresh_custody(
 {
     if (lxp_bridge_profile_validate(profile) != LXP_OK)
         return LXP_ERR_NON_CANONICAL;
-    return build_fresh(draft, asset_id, metering, fees, profile, signer_private_key,
+    return build_fresh(draft, asset_id, metering, fees, profile, NULL, signer_private_key,
                         arena, signed_manifest, snapshot_manifest, encoded_manifest, snapshot);
+}
+
+lxp_result lxp_genesis_build_fresh_custody_registry(
+    const lxp_genesis_manifest *draft, const uint8_t asset_id[32],
+    const lx_programs_metering_schedule *metering,
+    const lx_programs_fee_genesis_parameters *fees,
+    const lxp_bridge_profile profiles[4],
+    const uint8_t signer_private_key[32], lxp_arena *arena,
+    lxp_genesis_manifest *signed_manifest,
+    lxp_snapshot_manifest_record *snapshot_manifest,
+    lxp_byte_span *encoded_manifest, lxp_byte_span *snapshot)
+{
+    static const uint8_t name[] = "system:paxeer-reserve";
+    uint8_t encoded[901];
+    lxp_bridge_profile checked[4], legacy;
+    lxp_result status;
+    if (profiles == NULL || asset_id == NULL ||
+        memcmp(asset_id, profiles[0].bytes + 97U, 32U) != 0)
+        return LXP_ERR_ASSET_MISMATCH;
+    (void)memcpy(encoded, "LXBR1", 5U);
+    for (size_t i = 0U; i < 4U; ++i) {
+        encoded[5U + i * 224U] = (uint8_t)(i + 1U);
+        (void)memcpy(encoded + 6U + i * 224U, profiles[i].bytes, 223U);
+    }
+    status = lxp_bridge_registry_decode(encoded, sizeof(encoded), checked);
+    if (status != LXP_OK) return status;
+    legacy = checked[0];
+    (void)memcpy(legacy.bytes, "LXBC3", 5U);
+    status = lx_account_id_from_string(name, sizeof(name) - 1U, legacy.bytes + 129U);
+    if (status == LXP_OK) status = lxp_bridge_profile_validate(&legacy);
+    if (status == LXP_OK)
+        status = build_fresh(draft, asset_id, metering, fees, &legacy, checked,
+                             signer_private_key, arena, signed_manifest, snapshot_manifest,
+                             encoded_manifest, snapshot);
+    lxp_secure_zero(&legacy, sizeof(legacy));
+    lxp_secure_zero(checked, sizeof(checked));
+    return status;
 }
 
 lxp_result lxp_genesis_build_snapshot_migration(

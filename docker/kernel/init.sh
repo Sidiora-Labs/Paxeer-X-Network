@@ -556,7 +556,7 @@ kernel_ids() {
 
 # shellcheck disable=SC2016 # the ids expand when the service starts
 service layerxd 4020 "$genesis_files" kernel_ids clock -- \
-	/bin/sh -c 'exec /opt/layerx/supervisor.sh "$@" --asset "$(cat '"$genesis"'/asset-id)" --replica-id "$(cat '"$genesis"'/replica-id)"' layerxd \
+	/bin/sh -c 'if [ -e '"$genesis"'/custody.registry ]; then set -- "$@" --custody-registry '"$genesis"'/custody.registry; fi; exec /opt/layerx/supervisor.sh "$@" --asset "$(cat '"$genesis"'/asset-id)" --replica-id "$(cat '"$genesis"'/replica-id)"' layerxd \
 	--role sequencer --data-dir "$node_data" --run-dir "$run/node" -- \
 	--network-id "$LAYERX_NODE_NETWORK_ID" \
 	--genesis-metadata "$genesis/metadata.lxgb" \

@@ -109,6 +109,12 @@ def principal(publication, fact, root):
     require(publication.sha(b'LX:ACCOUNT:v1' + len(name).to_bytes(4, 'big') + name) == fact['account'],
             'authorization account name mismatch')
     matched = re.fullmatch(rb'agent:did:layerx:([a-z0-9_-]{1,128}):main', name)
+    if matched is None and value[2 + length:3 + length] == b'\x0e':
+        verified = publication.balance_fact_registry(publication.hx(fact['witness']), root)
+        require(verified == fact, 'authorization asset account proof mismatch')
+        matched = re.fullmatch(rb'agent:did:layerx:([a-z0-9_-]{1,128}):asset:([0-9a-f]{64})', name)
+        require(matched is not None and matched[2] == fact['asset'].hex().encode('ascii'),
+                'authorization asset namespace mismatch')
     require(matched is not None, 'authorization owner namespace unavailable')
     return matched[1].decode('ascii')
 
@@ -262,7 +268,8 @@ def authorize(api, publication, rpc, request, source, policy_path):
         publication.signature(rpc.view(vault, 'depositRootAuthority()', outputs=('bytes32',))[0], message, signed)
     elif deposits:
         vault = unhex(policy['vault'], 20)
-        require(profile is not None and profile[13:33] == vault, 'authorization native vault mismatch')
+        require(profile is not None and publication.custody_vault_for_deposits(profile, deposits) == vault,
+                'authorization native vault mismatch')
         reference = unhex(policy['custody_reference'], 32)
         message = deposit_message(publication, deposits, header, digest, reference)
         public = rpc.view(publication.hx(vault), 'depositRootAuthority()', outputs=('bytes32',))[0]

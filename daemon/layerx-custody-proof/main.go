@@ -15,12 +15,14 @@ func run(output io.Writer) error {
 		switch os.Args[1] {
 		case "light-profile":
 			return lightProfile(os.Args[2:])
+		case "light-registry":
+			return lightRegistry(os.Args[2:])
 		case "light-credit":
 			return lightCredit(os.Args[2:])
 		}
 	}
 	if len(os.Args) != 1 {
-		return fmt.Errorf("usage: layerx-custody-proof [light-profile|light-credit] (a JSON verify request on stdin otherwise)")
+		return fmt.Errorf("usage: layerx-custody-proof [light-profile|light-registry|light-credit] (a JSON verify request on stdin otherwise)")
 	}
 	input, err := io.ReadAll(io.LimitReader(os.Stdin, custodyproof.MaxInputBytes+1))
 	if err != nil {

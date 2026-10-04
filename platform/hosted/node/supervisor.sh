@@ -515,7 +515,7 @@ allowed = {'--network-id', '--asset', '--sequencer-key', '--treasury-key',
            '--withdrawal-fee', '--module-fees', '--treasury-balance', '--program-port',
            '--replica-port', '--lni-uid', '--lni-gid', '--program-token-file',
            '--replica-token-file', '--replica-id', '--genesis-timestamp-ms',
-           '--enable-module', '--migrations', '--genesis-build', '--custody-profile',
+           '--enable-module', '--migrations', '--genesis-build', '--custody-profile', '--custody-registry',
            '--settlement-env', '--settlement-document'}
 for option, value in zip(args[::2], args[1::2]):
     if (option not in allowed or not value or len(value) > 4096
@@ -525,7 +525,7 @@ for option, value in zip(args[::2], args[1::2]):
         raise ValueError('duplicate bootstrap option')
     options.setdefault(option, []).append(value)
 public_files = ['--genesis-metadata', '--module-fees', '--migrations',
-                '--settlement-document', '--custody-profile', '--settlement-env']
+                '--settlement-document', '--custody-profile', '--custody-registry', '--settlement-env']
 files = [node / name for name in ('bootstrap.sh', 'genesis_fees.py', 'genesis-modules.conf')]
 files += [daemon, Path(sys.argv[4]), Path(sys.argv[5])]
 for option in public_files:

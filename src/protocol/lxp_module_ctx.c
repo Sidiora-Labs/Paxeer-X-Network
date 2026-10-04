@@ -2219,13 +2219,11 @@ lxp_result lxp_ctx_bridge_credit(lxp_module_ctx *ctx,
         }
     if (registered_asset == NULL || !registered_asset->registered) return LXP_ERR_ASSET_MISMATCH;
     if (registered_asset->paused) return LXP_ERR_ASSET_PAUSED;
-    status = lxp_ctx_kv_get(ctx, lxp_bridge_profile_key, 32U, &stored, &stored_length);
-    if (status != LXP_OK || stored_length != sizeof(profile.bytes))
-        return LXP_ERR_DEPOSIT_PROOF_NOT_FINAL;
-    (void)memcpy(profile.bytes, stored, sizeof(profile.bytes));
-    status = lxp_bridge_light_trust_load(ctx, &profile, &trusted);
+    status = lxp_bridge_profile_load_asset(ctx, credit->bytes + 75U, &profile);
     if (status != LXP_OK) return LXP_ERR_DEPOSIT_PROOF_NOT_FINAL;
-    status = lxp_bridge_credit_verify(&profile, credit, activity->network_id,
+    status = lxp_bridge_light_trust_load_asset(ctx, &profile, &trusted);
+    if (status != LXP_OK) return LXP_ERR_DEPOSIT_PROOF_NOT_FINAL;
+    status = lxp_bridge_credit_verify_asset(&profile, credit, activity->network_id,
                                       activity->protocol_version, &trusted,
                                       lxp_ctx_batch_timestamp_ms(ctx), nullifier, &advanced);
     if (status != LXP_OK) return status;
@@ -2235,15 +2233,25 @@ lxp_result lxp_ctx_bridge_credit(lxp_module_ctx *ctx,
     status = lxp_ctx_kv_get(ctx, replay_key, sizeof(replay_key), &stored, &stored_length);
     if (status == LXP_OK) return LXP_ERR_DEPOSIT_ALREADY_CREDITED;
     if (status != LXP_ERR_UNKNOWN_FIELD) return status;
-    (void)memcpy(name, "agent:", 6U);
-    (void)memcpy(name + 6U, activity->actor_did.bytes, activity->actor_did.length);
-    name_length = 6U + activity->actor_did.length;
-    (void)memcpy(name + name_length, ":main", 5U);
-    name_length += 5U;
-    status = lx_account_id_from_string(name, name_length, beneficiary);
+    bool asset_profile = memcmp(profile.bytes, "LXBC4", 5U) == 0;
+    status = lxp_bridge_profile_beneficiary(&profile, activity->actor_did.bytes,
+                                           activity->actor_did.length, name, sizeof(name),
+                                           &name_length, beneficiary);
     if (status != LXP_OK) return status;
+    uint8_t owner_principal[32];
+    if (asset_profile) {
+        uint8_t owner_name[LX_ACCOUNT_NAME_MAX];
+        size_t owner_length = 6U + activity->actor_did.length;
+        (void)memcpy(owner_name, "agent:", 6U);
+        (void)memcpy(owner_name + 6U, activity->actor_did.bytes, activity->actor_did.length);
+        (void)memcpy(owner_name + owner_length, ":main", 5U);
+        owner_length += 5U;
+        status = lx_account_id_from_string(owner_name, owner_length, owner_principal);
+        if (status != LXP_OK) return status;
+    }
     if (lxp_ct_memcmp(beneficiary, credit->bytes + 107U, 32U) != 0 ||
-        lxp_ct_memcmp(beneficiary, authority->principal, 32U) != 0)
+        (asset_profile ? lxp_ct_memcmp(owner_principal, authority->principal, 32U) != 0 :
+                         lxp_ct_memcmp(beneficiary, authority->principal, 32U) != 0))
         return LXP_ERR_ACCOUNT_ID_MISMATCH;
     status = lxp_u128_from_be(credit->bytes + 191U, &amount);
     if (status != LXP_OK) return status;
@@ -2284,7 +2292,7 @@ lxp_result lxp_ctx_bridge_credit(lxp_module_ctx *ctx,
         (void)memcpy(recipient->id, beneficiary, 32U);
         (void)memcpy(recipient->name, name, name_length);
         recipient->name_length = (uint16_t)name_length;
-        recipient->kind = LX_ACCOUNT_AGENT_MAIN;
+        recipient->kind = asset_profile ? LX_ACCOUNT_AGENT_ASSET : LX_ACCOUNT_AGENT_MAIN;
         recipient->has_asset = true;
         (void)memcpy(recipient->asset_id, profile.bytes + 97U, 32U);
         recipient->has_authority_key = true;
@@ -2294,7 +2302,8 @@ lxp_result lxp_ctx_bridge_credit(lxp_module_ctx *ctx,
         status = lxp_state_journal_require_account_root(ctx->kernel->journal);
     }
     if (status == LXP_OK &&
-        (recipient->kind != LX_ACCOUNT_AGENT_MAIN || recipient->frozen ||
+        ((asset_profile ? recipient->kind != LX_ACCOUNT_AGENT_ASSET :
+                          recipient->kind != LX_ACCOUNT_AGENT_MAIN) || recipient->frozen ||
          !recipient->has_asset || memcmp(recipient->asset_id, profile.bytes + 97U, 32U) != 0 ||
          !recipient->has_authority_key ||
          memcmp(recipient->authority_key, authority->verified_key, 32U) != 0))
@@ -2307,9 +2316,10 @@ lxp_result lxp_ctx_bridge_credit(lxp_module_ctx *ctx,
                                 sizeof(credit->bytes));
     if (status == LXP_OK && advanced.height != trusted.height) {
         status = lxp_bridge_light_trust_encode(&advanced, trust_bytes);
+        uint8_t trust_key[32];
+        if (status == LXP_OK) status = lxp_bridge_light_trust_key_asset(&profile, trust_key);
         if (status == LXP_OK)
-            status = lxp_ctx_kv_put(ctx, lxp_bridge_light_trust_key, 32U, trust_bytes,
-                                    sizeof(trust_bytes));
+            status = lxp_ctx_kv_put(ctx, trust_key, 32U, trust_bytes, sizeof(trust_bytes));
     }
 #ifdef LXP_TESTING
     if (status == LXP_OK && ctx->bridge_credit_fail_stage == 1U) status = LXP_ERR_IO;

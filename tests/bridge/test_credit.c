@@ -5,6 +5,7 @@
 #include "layerx/lxp_kernel.h"
 #include "layerx/lxp_module_ctx.h"
 #include "layerx/lxp_state_diff.h"
+#include "layerx/lxp_snapshot.h"
 #include "layerx/lx_asset.h"
 #include "layerx/programs.h"
 #include "files.h"
@@ -108,7 +109,7 @@ static int prove_balance(const lxp_kernel *kernel, const lx_account *account,
     return 0;
 }
 
-int main(int argc, char **argv)
+static int legacy_main(int argc, char **argv)
 {
     uint8_t *manifest_bytes = NULL;
     uint8_t *activity_bytes = NULL;
@@ -381,4 +382,353 @@ int main(int argc, char **argv)
     free(manifest);
     free(arena_bytes);
     return 0;
+}
+
+
+static int multiasset_kernel(lxp_kernel *kernel, lxp_state_store *state,
+                            lxp_state_journal *journal, lx_account_registry *accounts,
+                            const lxp_genesis_manifest *manifest)
+{
+    CHECK(lx_account_registry_init(accounts) == LXP_OK);
+    CHECK(lxp_state_store_init(state, 1U) == LXP_OK);
+    CHECK(lxp_state_store_bind_accounts(state, accounts) == LXP_OK);
+    CHECK(lxp_kernel_create(kernel, state, journal, manifest, 1U) == LXP_OK);
+    CHECK(lxp_kernel_register_module(kernel, programs_module_registration_v4()) == LXP_OK);
+    CHECK(lxp_kernel_register_module(kernel, lx_asset_module_iface()) == LXP_OK);
+    CHECK(lxp_kernel_register_module(kernel, lxp_governance_module_iface()) == LXP_OK);
+    CHECK(lxp_kernel_register_module(kernel, lxp_bridge_module_iface()) == LXP_OK);
+    CHECK(lxp_kernel_set_capabilities(kernel, NULL, lxp_kernel_canonical_ledger_apply) == LXP_OK);
+    return 0;
+}
+
+static int multiasset_observe(lxp_kernel *kernel, lxp_module_ctx *ctx, lxp_arena *arena,
+                             const lxp_bridge_profile profiles[4],
+                             const lxp_bridge_credit credits[4],
+                             const lxp_bridge_light_trust advanced[4],
+                             uint8_t nullifiers[4][32], const lxp_u128 amounts[4],
+                             size_t credited)
+{
+    uint8_t root[32];
+    CHECK(lxp_state_root(kernel, root) == LXP_OK);
+    CHECK(lxp_module_ctx_init(ctx, kernel, LXP_MODULE_BRIDGE, batch_ms, 1U,
+                              kernel->state->next_sequence, 100000U, arena, false) == LXP_OK);
+    ctx->protocol_version = 3U;
+    for (size_t i = 0U; i < 4U; ++i) {
+        uint8_t profile_key[32], trust_key[32];
+        uint8_t supply_key[47] = "custody-issued:";
+        uint8_t replay_key[50] = "deposit-nullifier:";
+        const uint8_t *stored;
+        size_t length;
+        lxp_bridge_profile selected;
+        lx_account *reserve;
+        lxp_u128 issued, total = {0U, 0U};
+        CHECK(lxp_bridge_profile_load_asset(ctx, profiles[i].bytes + 97U, &selected) == LXP_OK);
+        CHECK(memcmp(selected.bytes, profiles[i].bytes, sizeof(selected.bytes)) == 0);
+        CHECK(lxp_bridge_profile_key_asset(profiles[i].bytes + 97U, profile_key) == LXP_OK);
+        CHECK(lxp_ctx_kv_get(ctx, profile_key, sizeof(profile_key), &stored, &length) == LXP_OK);
+        CHECK(length == sizeof(selected.bytes) && memcmp(stored, selected.bytes, length) == 0);
+        CHECK(lxp_ctx_account_find(ctx, profiles[i].bytes + 129U, &reserve) == LXP_OK);
+        CHECK(reserve->has_asset && memcmp(reserve->asset_id, profiles[i].bytes + 97U, 32U) == 0);
+        CHECK(prove_balance(kernel, reserve, (lxp_u128){0U, 0U}, root) == 0);
+        (void)memcpy(supply_key + 15U, profiles[i].bytes + 97U, 32U);
+        CHECK(lxp_ctx_kv_get(ctx, supply_key, sizeof(supply_key), &stored, &length) == LXP_OK && length == 16U);
+        CHECK(lxp_u128_from_be(stored, &issued) == LXP_OK);
+        CHECK(lxp_u128_cmp(issued, i < credited ? amounts[i] : (lxp_u128){0U, 0U}) == 0);
+        for (size_t a = 0U; a < kernel->state->accounts->count; ++a) {
+            const lx_account *account = &kernel->state->accounts->accounts[a];
+            if (account->has_asset && memcmp(account->asset_id, profiles[i].bytes + 97U, 32U) == 0)
+                CHECK(lxp_u128_add(total, account->balance, &total) == LXP_OK);
+        }
+        CHECK(lxp_u128_cmp(total, issued) == 0);
+        CHECK(lxp_bridge_light_trust_key_asset(&profiles[i], trust_key) == LXP_OK);
+        (void)memcpy(replay_key + 18U, nullifiers[i], 32U);
+        if (i < credited) {
+            lxp_bridge_light_trust trust;
+            lx_account *recipient;
+            CHECK(lxp_ctx_account_find(ctx, credits[i].bytes + 107U, &recipient) == LXP_OK);
+            CHECK(recipient->kind == LX_ACCOUNT_AGENT_ASSET && recipient->has_asset &&
+                  memcmp(recipient->asset_id, profiles[i].bytes + 97U, 32U) == 0);
+            CHECK(prove_balance(kernel, recipient, amounts[i], root) == 0);
+            CHECK(lxp_ctx_kv_get(ctx, replay_key, sizeof(replay_key), &stored, &length) == LXP_OK);
+            CHECK(length == sizeof(credits[i].bytes) && memcmp(stored, credits[i].bytes, length) == 0);
+            CHECK(lxp_ctx_kv_get(ctx, trust_key, sizeof(trust_key), &stored, &length) == LXP_OK);
+            CHECK(lxp_bridge_light_trust_decode(stored, length, &trust) == LXP_OK);
+            uint8_t expected[LXP_BRIDGE_LIGHT_TRUST_BYTES];
+            CHECK(lxp_bridge_light_trust_encode(&advanced[i], expected) == LXP_OK);
+            CHECK(length == sizeof(expected) && memcmp(stored, expected, length) == 0);
+        } else {
+            CHECK(lxp_ctx_kv_get(ctx, replay_key, sizeof(replay_key), &stored, &length) == LXP_ERR_UNKNOWN_FIELD);
+            CHECK(lxp_ctx_kv_get(ctx, trust_key, sizeof(trust_key), &stored, &length) == LXP_ERR_UNKNOWN_FIELD);
+        }
+    }
+    return 0;
+}
+
+static int multiasset_main(int argc, char **argv)
+{
+    static const char *symbols[4] = {"PAX", "SID", "USDC", "USDL"};
+    enum { ARENA_BYTES = 64U * 1024U * 1024U };
+    uint8_t *manifest_bytes = NULL, *activity_bytes[4] = {0}, *seeds[4] = {0};
+    size_t manifest_length, activity_lengths[4], seed_lengths[4];
+    uint8_t *arena_bytes = malloc(ARENA_BYTES), *snapshot_bytes = NULL;
+    size_t snapshot_length;
+    lxp_genesis_manifest *manifest = malloc(sizeof(*manifest));
+    lxp_state_store *state = malloc(sizeof(*state)), *restored_state = malloc(sizeof(*restored_state));
+    lxp_state_journal *journal = calloc(1U, sizeof(*journal)), *restored_journal = calloc(1U, sizeof(*restored_journal));
+    lxp_kernel *kernel = malloc(sizeof(*kernel)), *restored = malloc(sizeof(*restored));
+    lx_account_registry *accounts = malloc(sizeof(*accounts)), *restored_accounts = malloc(sizeof(*restored_accounts));
+    lxp_module_ctx *ctx = malloc(sizeof(*ctx));
+    lxp_effect_buffer *effects = malloc(sizeof(*effects));
+    lxp_arena arena;
+    lxp_activity activities[4];
+    lxp_bridge_credit credits[4];
+    lxp_bridge_profile profiles[4];
+    lxp_bridge_light_trust advanced[4];
+    uint8_t nullifiers[4][32], root[32], initial_root[32];
+    lxp_u128 amounts[4];
+    lx_asset_record records[4];
+    lxp_transfer_asset_state assets[4];
+    lx_asset_runtime runtime = {0}, restored_runtime;
+    size_t record_count;
+    bool present;
+    CHECK(argc == 11);
+    CHECK(arena_bytes && manifest && state && restored_state && journal && restored_journal &&
+          kernel && restored && accounts && restored_accounts && ctx && effects);
+    CHECK(read_file(argv[2], LXP_GENESIS_MAX_ENCODED_BYTES, false, &manifest_bytes, &manifest_length) == 0);
+    CHECK(lxp_arena_init(&arena, arena_bytes, ARENA_BYTES) == LXP_OK);
+    CHECK(lxp_genesis_parse(manifest_bytes, manifest_length, LXP_GENESIS_INPUT_MANIFEST, manifest) == LXP_OK);
+    CHECK(lxp_genesis_verify_signature(manifest, &arena) == LXP_OK);
+    for (size_t i = 0U; i < 4U; ++i) {
+        char asset_name[32];
+        uint8_t asset_id[32];
+        int n = snprintf(asset_name, sizeof(asset_name), "layerx-asset:125:%s", symbols[i]);
+        CHECK(n > 0 && (size_t)n < sizeof(asset_name));
+        CHECK(lxp_hash_sha256((const uint8_t *)asset_name, (size_t)n, asset_id) == LXP_OK);
+        CHECK(lxp_bridge_registry_profile(manifest, asset_id, &profiles[i], &present) == LXP_OK && present);
+        CHECK(lxp_bridge_profile_validate_asset(&profiles[i]) == LXP_OK);
+        CHECK(read_file(argv[3U + i * 2U], LXP_MAX_ACTIVITY_BYTES, false, &activity_bytes[i], &activity_lengths[i]) == 0);
+        CHECK(read_file(argv[4U + i * 2U], 32U, true, &seeds[i], &seed_lengths[i]) == 0 && seed_lengths[i] == 32U);
+        CHECK(lxp_activity_decode(activity_bytes[i], activity_lengths[i], &activities[i]) == LXP_OK);
+        CHECK(lxp_activity_verify_signature(&activities[i]) == LXP_OK);
+        CHECK(lxp_bridge_credit_parse(activities[i].payload.bytes, activities[i].payload.length, &credits[i]) == LXP_OK);
+        CHECK(memcmp(credits[i].bytes + 75U, asset_id, 32U) == 0);
+        batch_ms = 0U;
+        for (size_t j = 0U; j < 8U; ++j) batch_ms = (batch_ms << 8U) | credits[i].proof[29U + j];
+        CHECK(batch_ms <= UINT64_MAX / 1000U);
+        batch_ms *= 1000U;
+        CHECK(lxp_bridge_credit_verify_asset(&profiles[i], &credits[i], manifest->network_id, 3U,
+                                             NULL, batch_ms, nullifiers[i], &advanced[i]) == LXP_OK);
+        CHECK(lxp_u128_from_be(credits[i].bytes + 191U, &amounts[i]) == LXP_OK);
+        CHECK(memcmp(nullifiers[i], activities[i].idempotency_key, 32U) == 0);
+        for (size_t j = 0U; j < i; ++j) {
+            CHECK(memcmp(credits[i].bytes + 107U, credits[j].bytes + 107U, 32U) != 0);
+            CHECK(memcmp(nullifiers[i], nullifiers[j], 32U) != 0);
+        }
+        lxp_bridge_credit changed;
+        lxp_bridge_profile changed_profile;
+        for (size_t j = 0U; j < sizeof(credits[i].bytes); ++j) {
+            changed = credits[i];
+            changed.bytes[j] ^= 1U;
+            if (j >= 139U && j < 171U)
+                CHECK(!lxp_bridge_credit_owner_bound(activities[i].actor_did.bytes,
+                      activities[i].actor_did.length, changed.bytes + 139U));
+            else
+                CHECK(lxp_bridge_credit_verify_asset(&profiles[i], &changed, manifest->network_id,
+                                                     3U, NULL, batch_ms, root, NULL) != LXP_OK);
+        }
+        for (size_t j = 0U; j < sizeof(profiles[i].bytes); ++j) {
+            changed_profile = profiles[i];
+            changed_profile.bytes[j] ^= 1U;
+            CHECK(lxp_bridge_credit_verify_asset(&changed_profile, &credits[i], manifest->network_id,
+                                                 3U, NULL, batch_ms, root, NULL) != LXP_OK);
+        }
+        CHECK(lxp_bridge_credit_verify_asset(&profiles[i], &credits[i], manifest->network_id ^ 1U,
+                                             3U, NULL, batch_ms, root, NULL) != LXP_OK);
+        CHECK(lxp_bridge_credit_verify_asset(&profiles[i], &credits[i], manifest->network_id,
+                                             2U, NULL, batch_ms, root, NULL) != LXP_OK);
+    }
+    uint8_t registry_bytes[LXP_BRIDGE_REGISTRY_BYTES] = "LXBR1";
+    lxp_bridge_profile decoded_profiles[4];
+    for (size_t i = 0U; i < 4U; ++i) {
+        size_t offset = 5U + i * (1U + LXP_BRIDGE_PROFILE_BYTES);
+        registry_bytes[offset] = (uint8_t)(i + 1U);
+        (void)memcpy(registry_bytes + offset + 1U, profiles[i].bytes, sizeof(profiles[i].bytes));
+    }
+    CHECK(lxp_bridge_registry_decode(registry_bytes, sizeof(registry_bytes), decoded_profiles) == LXP_OK);
+    CHECK(memcmp(decoded_profiles, profiles, sizeof(profiles)) == 0);
+    CHECK(lxp_bridge_registry_decode(registry_bytes, sizeof(registry_bytes) - 1U, decoded_profiles) != LXP_OK);
+    registry_bytes[5U + 1U + LXP_BRIDGE_PROFILE_BYTES] = 1U;
+    CHECK(lxp_bridge_registry_decode(registry_bytes, sizeof(registry_bytes), decoded_profiles) != LXP_OK);
+    registry_bytes[5U + 1U + LXP_BRIDGE_PROFILE_BYTES] = 2U;
+    (void)memcpy(registry_bytes + 5U + (1U + LXP_BRIDGE_PROFILE_BYTES) + 1U,
+                 profiles[0].bytes, sizeof(profiles[0].bytes));
+    CHECK(lxp_bridge_registry_decode(registry_bytes, sizeof(registry_bytes), decoded_profiles) != LXP_OK);
+    CHECK(lxp_bridge_registry_append(manifest, profiles) != LXP_OK);
+    lxp_genesis_manifest *missing = malloc(sizeof(*missing));
+    CHECK(missing != NULL);
+    *missing = *manifest;
+    uint8_t missing_key[32];
+    CHECK(lxp_bridge_profile_key_asset(profiles[2].bytes + 97U, missing_key) == LXP_OK);
+    bool removed = false;
+    for (size_t i = 0U; i < missing->module_value_count; ++i) {
+        if (missing->module_values[i].module_id == LXP_MODULE_BRIDGE &&
+            memcmp(missing->module_values[i].key, missing_key, 32U) == 0) {
+            (void)memmove(&missing->module_values[i], &missing->module_values[i + 1U],
+                 (missing->module_value_count - i - 1U) * sizeof(missing->module_values[0]));
+            --missing->module_value_count;
+            removed = true;
+            break;
+        }
+    }
+    CHECK(removed);
+    CHECK(lxp_bridge_registry_profile(missing, profiles[2].bytes + 97U,
+                                      &decoded_profiles[0], &present) != LXP_OK);
+    free(missing);
+    for (size_t i = 0U; i < 4U; ++i)
+        for (size_t j = 0U; j < 4U; ++j)
+            if (i != j)
+                CHECK(lxp_bridge_credit_verify_asset(&profiles[j], &credits[i], manifest->network_id,
+                      3U, NULL, batch_ms, root, NULL) != LXP_OK);
+    CHECK(multiasset_kernel(kernel, state, journal, accounts, manifest) == 0);
+    CHECK(lxp_genesis_materialize(manifest, &arena, kernel) == LXP_OK);
+    CHECK(lx_asset_committed_records(kernel, records, 4U, &record_count) == LXP_OK && record_count == 4U);
+    for (size_t i = 0U; i < 4U; ++i) CHECK(lx_asset_transfer_state(&records[i], &assets[i]) == LXP_OK);
+    runtime.accounts = accounts;
+    runtime.assets = records;
+    runtime.asset_count = 4U;
+    runtime.transfer_assets = assets;
+    runtime.transfer_asset_count = 4U;
+    runtime.network_id = manifest->network_id;
+    runtime.protocol_version = 3U;
+    CHECK(lxp_kernel_bind_module_runtime(kernel, LXP_MODULE_ASSET, &runtime) == LXP_OK);
+    CHECK(lxp_state_root(kernel, initial_root) == LXP_OK && memcmp(initial_root, manifest->genesis_state_root, 32U) == 0);
+    CHECK(multiasset_observe(kernel, ctx, &arena, profiles, credits, advanced, nullifiers, amounts, 0U) == 0);
+    for (size_t i = 0U; i < 4U; ++i) {
+        lxp_authority_resolved authority = {0};
+        uint8_t name[LX_ACCOUNT_NAME_MAX];
+        size_t name_length;
+        uint8_t beneficiary[32];
+        CHECK(lxp_bridge_profile_beneficiary(&profiles[i], activities[i].actor_did.bytes,
+              activities[i].actor_did.length, name, sizeof(name), &name_length,
+              beneficiary) == LXP_OK);
+        CHECK(memcmp(beneficiary, credits[i].bytes + 107U, 32U) == 0);
+        CHECK(activities[i].actor_did.length <= sizeof(name) - 11U);
+        (void)memcpy(name, "agent:", 6U);
+        (void)memcpy(name + 6U, activities[i].actor_did.bytes, activities[i].actor_did.length);
+        name_length = 6U + activities[i].actor_did.length;
+        (void)memcpy(name + name_length, ":main", 5U);
+        CHECK(lx_account_id_from_string(name, name_length + 5U, authority.principal) == LXP_OK);
+        authority.kind = LXP_AUTHORITY_OWNER;
+        (void)memcpy(authority.verified_key, activities[i].authority.bytes, 32U);
+        batch_ms = 0U;
+        for (size_t j = 0U; j < 8U; ++j) batch_ms = (batch_ms << 8U) | credits[i].proof[29U + j];
+        batch_ms *= 1000U;
+        CHECK(begin(ctx, kernel, &arena, effects, state->next_sequence) == 0);
+        CHECK(lxp_activity_id(activity_bytes[i], activity_lengths[i], ctx->activity_id) == LXP_OK);
+        size_t asset_slot = 4U;
+        for (size_t a = 0U; a < 4U; ++a)
+            if (memcmp(assets[a].asset_id, profiles[i].bytes + 97U, 32U) == 0) asset_slot = a;
+        CHECK(asset_slot < 4U);
+        assets[asset_slot].paused = true;
+        CHECK(lxp_ctx_bridge_credit(ctx, &activities[i], &authority, &credits[i]) == LXP_ERR_ASSET_PAUSED);
+        assets[asset_slot].paused = false;
+        assets[asset_slot].registered = false;
+        CHECK(lxp_ctx_bridge_credit(ctx, &activities[i], &authority, &credits[i]) == LXP_ERR_ASSET_MISMATCH);
+        assets[asset_slot].registered = true;
+        authority.principal[0] ^= 1U;
+        CHECK(lxp_ctx_bridge_credit(ctx, &activities[i], &authority, &credits[i]) == LXP_ERR_ACCOUNT_ID_MISMATCH);
+        authority.principal[0] ^= 1U;
+        authority.verified_key[0] ^= 1U;
+        CHECK(lxp_ctx_bridge_credit(ctx, &activities[i], &authority, &credits[i]) == LXP_ERR_UNAUTHORIZED_DEBIT);
+        authority.verified_key[0] ^= 1U;
+        CHECK(lxp_ctx_bridge_credit(ctx, &activities[i], &authority, &credits[i]) == LXP_OK);
+        CHECK(lxp_module_ctx_prepare_commit(ctx) == LXP_OK);
+        CHECK(lxp_state_journal_commit(journal) == LXP_OK);
+        CHECK(lxp_module_ctx_commit(ctx) == LXP_OK);
+        CHECK(multiasset_observe(kernel, ctx, &arena, profiles, credits, advanced, nullifiers, amounts, i + 1U) == 0);
+        CHECK(lxp_state_root(kernel, initial_root) == LXP_OK);
+        CHECK(begin(ctx, kernel, &arena, effects, state->next_sequence) == 0);
+        lxp_activity replay = activities[i];
+        uint8_t signature[64];
+        ++replay.account_sequence;
+        CHECK(sign_activity(&replay, seeds[i], signature) == 0);
+        CHECK(lxp_ctx_bridge_credit(ctx, &replay, &authority, &credits[i]) == LXP_ERR_DEPOSIT_ALREADY_CREDITED);
+        replay.idempotency_key[0] ^= 1U;
+        CHECK(sign_activity(&replay, seeds[i], signature) == 0);
+        CHECK(lxp_ctx_bridge_credit(ctx, &replay, &authority, &credits[i]) == LXP_ERR_CONTEXT_MISMATCH);
+        lxp_module_ctx_rollback(ctx);
+        CHECK(lxp_state_journal_rollback(journal) == LXP_OK);
+        CHECK(lxp_state_root(kernel, root) == LXP_OK && memcmp(root, initial_root, 32U) == 0);
+    }
+    lxp_byte_span snapshot;
+    lxp_snapshot_manifest_record snapshot_manifest;
+    CHECK(lxp_snapshot_write(kernel, state->next_sequence - 1U, &arena, &snapshot) == LXP_OK);
+    CHECK(lxp_snapshot_manifest_build(snapshot.bytes, snapshot.length, state->next_sequence - 1U,
+                                      initial_root, kernel->current_state_root, &snapshot_manifest) == LXP_OK);
+    char path[] = "/tmp/lxp-multiasset-snapshot-XXXXXX";
+    int descriptor = mkstemp(path);
+    CHECK(descriptor >= 0);
+    size_t written = 0U;
+    while (written < snapshot.length) {
+        ssize_t count = write(descriptor, snapshot.bytes + written, snapshot.length - written);
+        CHECK(count > 0);
+        written += (size_t)count;
+    }
+    CHECK(fsync(descriptor) == 0 && close(descriptor) == 0);
+    CHECK(read_file(path, ARENA_BYTES, false, &snapshot_bytes, &snapshot_length) == 0);
+    CHECK(unlink(path) == 0);
+    CHECK(multiasset_kernel(restored, restored_state, restored_journal, restored_accounts, manifest) == 0);
+    CHECK(lxp_snapshot_load(snapshot_bytes, snapshot_length, &snapshot_manifest, restored) == LXP_OK);
+    CHECK(lxp_snapshot_verify_root(restored, &snapshot_manifest) == LXP_OK);
+    CHECK(lxp_state_root(restored, root) == LXP_OK && memcmp(root, initial_root, 32U) == 0);
+    CHECK(restored_state->next_sequence == state->next_sequence);
+    restored_runtime = runtime;
+    restored_runtime.accounts = restored_accounts;
+    CHECK(lxp_kernel_bind_module_runtime(restored, LXP_MODULE_ASSET, &restored_runtime) == LXP_OK);
+    CHECK(multiasset_observe(restored, ctx, &arena, profiles, credits, advanced, nullifiers, amounts, 4U) == 0);
+    for (size_t i = 0U; i < 4U; ++i) {
+        lxp_authority_resolved authority = {0};
+        uint8_t name[LX_ACCOUNT_NAME_MAX], signature[64];
+        size_t name_length;
+        CHECK(activities[i].actor_did.length <= sizeof(name) - 11U);
+        (void)memcpy(name, "agent:", 6U);
+        (void)memcpy(name + 6U, activities[i].actor_did.bytes, activities[i].actor_did.length);
+        name_length = 6U + activities[i].actor_did.length;
+        (void)memcpy(name + name_length, ":main", 5U);
+        CHECK(lx_account_id_from_string(name, name_length + 5U, authority.principal) == LXP_OK);
+        authority.kind = LXP_AUTHORITY_OWNER;
+        (void)memcpy(authority.verified_key, activities[i].authority.bytes, 32U);
+        batch_ms = 0U;
+        for (size_t j = 0U; j < 8U; ++j) batch_ms = (batch_ms << 8U) | credits[i].proof[29U + j];
+        batch_ms *= 1000U;
+        CHECK(begin(ctx, restored, &arena, effects, restored_state->next_sequence) == 0);
+        lxp_activity replay = activities[i];
+        ++replay.account_sequence;
+        CHECK(sign_activity(&replay, seeds[i], signature) == 0);
+        CHECK(lxp_ctx_bridge_credit(ctx, &replay, &authority, &credits[i]) == LXP_ERR_DEPOSIT_ALREADY_CREDITED);
+        lxp_module_ctx_rollback(ctx);
+        CHECK(lxp_state_journal_rollback(restored_journal) == LXP_OK);
+        CHECK(lxp_state_root(restored, root) == LXP_OK && memcmp(root, initial_root, 32U) == 0);
+    }
+    CHECK(lxp_state_store_destroy(restored_state) == LXP_OK);
+    CHECK(lxp_state_store_destroy(state) == LXP_OK);
+    lx_account_registry_release(restored_accounts);
+    lx_account_registry_release(accounts);
+    for (size_t i = 0U; i < 4U; ++i) {
+        lxp_secure_zero(seeds[i], seed_lengths[i]);
+        free(seeds[i]);
+        free(activity_bytes[i]);
+    }
+    free(snapshot_bytes); free(manifest_bytes); free(arena_bytes);
+    free(manifest); free(state); free(restored_state); free(journal); free(restored_journal);
+    free(kernel); free(restored); free(accounts); free(restored_accounts); free(ctx); free(effects);
+    (void)puts("multiasset credits: asset recipients, reserves, issuance, trust, nullifiers and persisted snapshot roots");
+    return 0;
+}
+
+int main(int argc, char **argv)
+{
+    if (argc > 1 && strcmp(argv[1], "--multiasset") == 0)
+        return multiasset_main(argc, argv);
+    return legacy_main(argc, argv);
 }

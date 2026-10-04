@@ -4,6 +4,10 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/binary"
+	"encoding/hex"
+	"encoding/json"
+	"io"
+	"strings"
 	"errors"
 	"fmt"
 	"math/big"
@@ -232,6 +236,156 @@ func DecodeLightProfile(profile []byte) (*LightProfile, error) {
 		return nil, errors.New("light profile trusting period or trusted time")
 	}
 	return out, nil
+}
+
+const AssetLightProfileMagic = "LXBC4"
+const LightRegistryMagic = "LXBR1"
+const LightRegistryBytes = 5 + 4*(1+LightProfileBytes)
+
+type LightAssetMetadata struct {
+	Symbol string `json:"symbol"`
+	AssetID string `json:"asset_id"`
+	TokenPointer string `json:"token_pointer"`
+	Decimals uint8 `json:"decimals"`
+}
+
+func LightAssetSymbol(assetID [32]byte) (string, error) {
+	for _, symbol := range []string{"PAX", "SID", "USDC", "USDL"} {
+		if assetID == sha256.Sum256([]byte("layerx-asset:125:"+symbol)) {
+			return symbol, nil
+		}
+	}
+	return "", errors.New("asset is not in the closed custody registry")
+}
+
+func rejectDuplicateMetadata(decoder *json.Decoder) error {
+	token, err := decoder.Token()
+	if err != nil { return err }
+	delim, compound := token.(json.Delim)
+	if !compound { return nil }
+	switch delim {
+	case '{':
+		seen := make(map[string]bool)
+		for decoder.More() {
+			key, err := decoder.Token()
+			if err != nil { return err }
+			name, ok := key.(string)
+			if !ok || seen[name] { return errors.New("duplicate metadata field") }
+			seen[name] = true
+			if err := rejectDuplicateMetadata(decoder); err != nil { return err }
+		}
+	case '[':
+		for decoder.More() {
+			if err := rejectDuplicateMetadata(decoder); err != nil { return err }
+		}
+	default:
+		return errors.New("metadata delimiter")
+	}
+	_, err = decoder.Token()
+	return err
+}
+
+func ParseLightAssetMetadata(data []byte) ([]LightAssetMetadata, error) {
+	if len(data) == 0 || len(data) > 8192 { return nil, errors.New("custody metadata size") }
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	if err := rejectDuplicateMetadata(decoder); err != nil { return nil, err }
+	if _, err := decoder.Token(); err != io.EOF { return nil, errors.New("trailing custody metadata") }
+	var object map[string]json.RawMessage
+	if err := json.Unmarshal(data, &object); err != nil { return nil, err }
+	if len(object) != 1 || object["assets"] == nil { return nil, errors.New("custody metadata fields") }
+	var entries []map[string]json.RawMessage
+	if err := json.Unmarshal(object["assets"], &entries); err != nil { return nil, err }
+	if len(entries) != 4 { return nil, errors.New("custody metadata requires exactly four approved assets") }
+	out := make([]LightAssetMetadata, 4)
+	pointers := make(map[string]bool)
+	for index, symbol := range []string{"PAX", "SID", "USDC", "USDL"} {
+		entry := entries[index]
+		if len(entry) != 4 || entry["symbol"] == nil || entry["asset_id"] == nil || entry["token_pointer"] == nil || entry["decimals"] == nil { return nil, errors.New("custody asset metadata fields") }
+		for _, field := range []string{"symbol", "asset_id", "token_pointer", "decimals"} {
+			if bytes.Equal(bytes.TrimSpace(entry[field]), []byte("null")) { return nil, errors.New("null custody asset metadata") }
+		}
+		encoded, err := json.Marshal(entry)
+		if err != nil { return nil, err }
+		strict := json.NewDecoder(bytes.NewReader(encoded))
+		strict.DisallowUnknownFields()
+		if err := strict.Decode(&out[index]); err != nil { return nil, err }
+		asset := sha256.Sum256([]byte("layerx-asset:125:"+symbol))
+		pointer, err := hex.DecodeString(strings.TrimPrefix(out[index].TokenPointer, "0x"))
+		if out[index].Symbol != symbol || out[index].AssetID != hex.EncodeToString(asset[:]) || out[index].Decimals > 38 ||
+			err != nil || len(pointer) != 20 || out[index].TokenPointer != "0x"+hex.EncodeToString(pointer) { return nil, errors.New("custody asset metadata identity") }
+		zero := bytes.Equal(pointer, make([]byte, 20))
+		if (index == 0 && (!zero || out[index].Decimals != 6)) || (index != 0 && zero) || pointers[out[index].TokenPointer] { return nil, errors.New("custody asset metadata pointer or decimals") }
+		pointers[out[index].TokenPointer] = true
+	}
+	return out, nil
+}
+
+func BuildAssetLightProfile(trusted *types.SignedHeader, assetID [32]byte, networkID uint32, trustingPeriod uint64) ([]byte, error) {
+	symbol, err := LightAssetSymbol(assetID)
+	if err != nil { return nil, err }
+	profile, err := BuildLightProfile(trusted, assetID, networkID, trustingPeriod)
+	if err != nil { return nil, err }
+	copy(profile[:5], AssetLightProfileMagic)
+	reserve := LightAccountID(LightReserveAccount+":"+strings.ToLower(symbol))
+	copy(profile[129:161], reserve[:])
+	if _, err := DecodeAssetLightProfile(profile); err != nil { return nil, err }
+	return profile, nil
+}
+
+func DecodeAssetLightProfile(profile []byte) (*LightProfile, error) {
+	if len(profile) != LightProfileBytes || string(profile[:5]) != AssetLightProfileMagic { return nil, errors.New("asset light profile size or magic") }
+	var asset [32]byte
+	copy(asset[:], profile[97:129])
+	symbol, err := LightAssetSymbol(asset)
+	if err != nil { return nil, err }
+	reserve := LightAccountID(LightReserveAccount+":"+strings.ToLower(symbol))
+	if !bytes.Equal(profile[129:161], reserve[:]) { return nil, errors.New("asset light profile reserve") }
+	legacy := append([]byte(nil), profile...)
+	copy(legacy[:5], LightProfileMagic)
+	legacyReserve := LightAccountID(LightReserveAccount)
+	copy(legacy[129:161], legacyReserve[:])
+	decoded, err := DecodeLightProfile(legacy)
+	if err != nil { return nil, err }
+	decoded.ReserveAccount = reserve
+	return decoded, nil
+}
+
+func BuildLightRegistry(trusted *types.SignedHeader, metadata []LightAssetMetadata, networkID uint32, trustingPeriod uint64) ([]byte, error) {
+	encoded, err := json.Marshal(struct { Assets []LightAssetMetadata `json:"assets"` }{metadata})
+	if err != nil { return nil, err }
+	approved, err := ParseLightAssetMetadata(encoded)
+	if err != nil { return nil, err }
+	out := []byte(LightRegistryMagic)
+	for index, entry := range approved {
+		asset := sha256.Sum256([]byte("layerx-asset:125:"+entry.Symbol))
+		profile, err := BuildAssetLightProfile(trusted, asset, networkID, trustingPeriod)
+		if err != nil { return nil, err }
+		out = append(out, byte(index+1))
+		out = append(out, profile...)
+	}
+	if _, err := DecodeLightRegistry(out); err != nil { return nil, err }
+	return out, nil
+}
+
+func DecodeLightRegistry(registry []byte) ([][]byte, error) {
+	if len(registry) != LightRegistryBytes || string(registry[:5]) != LightRegistryMagic { return nil, errors.New("custody registry size or magic") }
+	profiles := make([][]byte, 4)
+	for index, symbol := range []string{"PAX", "SID", "USDC", "USDL"} {
+		offset := 5+index*(1+LightProfileBytes)
+		if registry[offset] != byte(index+1) { return nil, errors.New("custody registry order") }
+		profile := registry[offset+1:offset+1+LightProfileBytes]
+		decoded, err := DecodeAssetLightProfile(profile)
+		if err != nil { return nil, err }
+		if decoded.AssetID != sha256.Sum256([]byte("layerx-asset:125:"+symbol)) { return nil, errors.New("custody registry asset") }
+		if index != 0 && (!bytes.Equal(profiles[0][:97], profile[:97]) || !bytes.Equal(profiles[0][161:], profile[161:])) { return nil, errors.New("custody registry trust mismatch") }
+		profiles[index] = append([]byte(nil), profile...)
+	}
+	return profiles, nil
+}
+
+func decodeCreditLightProfile(profile []byte) (*LightProfile, error) {
+	if len(profile) == LightProfileBytes && string(profile[:5]) == AssetLightProfileMagic { return DecodeAssetLightProfile(profile) }
+	return DecodeLightProfile(profile)
 }
 
 // TrustFromProfile seeds a verifier's trust state from its profile.
@@ -642,7 +796,7 @@ func lightNilVotes(chainID string, validators *types.ValidatorSet, commit *types
 // BuildLightCredit returns head||bundle for evidence the reference verifier
 // accepts under the profile's own trust state.
 func BuildLightCredit(profileBytes []byte, ownerKey [32]byte, networkID uint32, evidence *LightEvidence, now time.Time) ([]byte, error) {
-	profile, err := DecodeLightProfile(profileBytes)
+	profile, err := decodeCreditLightProfile(profileBytes)
 	if err != nil {
 		return nil, err
 	}
@@ -896,7 +1050,7 @@ func DecodeLightBundle(bundle []byte, chainID string) (*LightEvidence, error) {
 // now is the verifier's clock (the LayerX sealed batch timestamp), never a
 // value taken from the payload.
 func VerifyLightCredit(profileBytes, payload []byte, trust *LightTrust, now time.Time) (*LightCredit, error) {
-	profile, err := DecodeLightProfile(profileBytes)
+	profile, err := decodeCreditLightProfile(profileBytes)
 	if err != nil {
 		return nil, err
 	}

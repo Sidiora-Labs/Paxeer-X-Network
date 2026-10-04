@@ -27,7 +27,7 @@ static int begin(lxp_module_ctx *ctx, lxp_kernel *kernel, lxp_arena *arena,
     return 0;
 }
 
-int main(int argc, char **argv)
+static int legacy_main(int argc, char **argv)
 {
     uint8_t *manifest_bytes = NULL;
     uint8_t *activity_bytes = NULL;
@@ -161,4 +161,184 @@ int main(int argc, char **argv)
     free(arena_bytes);
     (void)puts("first credit on a fresh chain: admitted at the batch time, executed at the batch time");
     return 0;
+}
+
+
+static int multiasset_admission(int argc, char **argv)
+{
+    uint8_t *manifest_bytes = NULL;
+    uint8_t *activity_bytes = NULL;
+    size_t manifest_length = 0U;
+    size_t activity_length = 0U;
+    uint8_t *arena_bytes = malloc(4U * LXP_MAX_ACTIVITY_BYTES);
+    lxp_genesis_manifest *manifest = malloc(sizeof(*manifest));
+    lxp_state_store *state = malloc(sizeof(*state));
+    lxp_state_journal *journal = calloc(1U, sizeof(*journal));
+    lxp_kernel *kernel = malloc(sizeof(*kernel));
+    lx_account_registry *accounts = malloc(sizeof(*accounts));
+    lxp_daemon_protocol_owner *owner = calloc(1U, sizeof(*owner));
+    lxp_module_ctx *ctx = malloc(sizeof(*ctx));
+    lxp_effect_buffer *effects = malloc(sizeof(*effects));
+    lxp_arena arena;
+    lxp_activity activity;
+    lxp_activity other;
+    lxp_authority_resolved authority = {0};
+    lxp_bridge_profile profile;
+    lxp_bridge_credit credit;
+    lxp_transfer_asset_state assets[4];
+    lx_asset_record records[4];
+    size_t record_count;
+    lx_asset_runtime runtime = {0};
+    uint8_t name[LX_ACCOUNT_NAME_MAX];
+    size_t name_length;
+    uint8_t root[32];
+    uint8_t initial_root[32];
+    uint64_t header_ms = 0U;
+    uint64_t sealed_ms;
+    uint64_t drift_ms = LXP_BRIDGE_LIGHT_MAX_CLOCK_DRIFT_SECONDS * UINT64_C(1000);
+    bool present;
+    if (argc != 3) {
+        (void)fprintf(stderr, "usage: test-credit-admission genesis.manifest signed-credit.activity\n");
+        return 2;
+    }
+    CHECK(arena_bytes && manifest && state && journal && kernel && accounts && owner && ctx && effects);
+    CHECK(read_file(argv[1], LXP_GENESIS_MAX_ENCODED_BYTES, false, &manifest_bytes, &manifest_length) == 0);
+    CHECK(read_file(argv[2], LXP_MAX_ACTIVITY_BYTES, false, &activity_bytes, &activity_length) == 0);
+    CHECK(lxp_arena_init(&arena, arena_bytes, 4U * LXP_MAX_ACTIVITY_BYTES) == LXP_OK);
+    CHECK(lxp_genesis_parse(manifest_bytes, manifest_length, LXP_GENESIS_INPUT_MANIFEST, manifest) == LXP_OK);
+    CHECK(lxp_genesis_verify_signature(manifest, &arena) == LXP_OK);
+    CHECK(lxp_activity_decode(activity_bytes, activity_length, &activity) == LXP_OK);
+    CHECK(lxp_activity_verify_signature(&activity) == LXP_OK);
+    CHECK(activity.activity_type == LXP_BRIDGE_CREDIT);
+    CHECK(lxp_bridge_credit_parse(activity.payload.bytes, activity.payload.length, &credit) == LXP_OK);
+    CHECK(lxp_bridge_registry_profile(manifest, credit.bytes + 75U, &profile, &present) == LXP_OK && present);
+    CHECK(lxp_bridge_profile_validate_asset(&profile) == LXP_OK);
+    for (size_t index = 0U; index < 8U; ++index) header_ms = (header_ms << 8U) | credit.proof[29U + index];
+    header_ms *= 1000U;
+    CHECK(lx_account_registry_init(accounts) == LXP_OK);
+    CHECK(lxp_state_store_init(state, 1U) == LXP_OK);
+    CHECK(lxp_state_store_bind_accounts(state, accounts) == LXP_OK);
+    CHECK(lxp_kernel_create(kernel, state, journal, manifest, 1U) == LXP_OK);
+    CHECK(lxp_kernel_register_module(kernel, programs_module_registration_v4()) == LXP_OK);
+    CHECK(lxp_kernel_register_module(kernel, lx_asset_module_iface()) == LXP_OK);
+    CHECK(lxp_kernel_register_module(kernel, lxp_governance_module_iface()) == LXP_OK);
+    CHECK(lxp_kernel_register_module(kernel, lxp_bridge_module_iface()) == LXP_OK);
+    CHECK(lxp_kernel_set_capabilities(kernel, NULL, lxp_kernel_canonical_ledger_apply) == LXP_OK);
+    CHECK(lxp_genesis_materialize(manifest, &arena, kernel) == LXP_OK);
+    CHECK(lx_asset_committed_records(kernel, records, 4U, &record_count) == LXP_OK && record_count == 4U);
+    for (size_t i = 0U; i < 4U; ++i)
+        CHECK(lx_asset_transfer_state(&records[i], &assets[i]) == LXP_OK);
+    runtime.accounts = accounts;
+    runtime.assets = records;
+    runtime.asset_count = 4U;
+    runtime.transfer_assets = assets;
+    runtime.transfer_asset_count = 4U;
+    runtime.network_id = manifest->network_id;
+    runtime.protocol_version = 3U;
+    CHECK(lxp_kernel_bind_module_runtime(kernel, LXP_MODULE_ASSET, &runtime) == LXP_OK);
+    CHECK(lxp_state_root(kernel, initial_root) == LXP_OK);
+    CHECK(memcmp(initial_root, manifest->genesis_state_root, 32U) == 0);
+
+    owner->kernel = kernel;
+    owner->scratch = &arena;
+    owner->network_id = manifest->network_id;
+    owner->protocol_version = 3U;
+    owner->latest_sealed_timestamp = manifest->genesis_timestamp_ms;
+    sealed_ms = owner->latest_sealed_timestamp;
+    CHECK(state->next_sequence == 1U);
+    CHECK(sealed_ms != 0U && header_ms > sealed_ms + drift_ms + UINT64_C(1000));
+
+    CHECK(lxp_daemon_credit_admission(owner, &activity, header_ms) == LXP_OK);
+    other = activity;
+    other.protocol_version = 2U;
+    CHECK(lxp_daemon_credit_admission(owner, &other, header_ms) != LXP_OK);
+    owner->network_id ^= 1U;
+    CHECK(lxp_daemon_credit_admission(owner, &activity, header_ms) != LXP_OK);
+    owner->network_id ^= 1U;
+    uint8_t *changed_payload = malloc(activity.payload.length);
+    CHECK(changed_payload != NULL);
+    (void)memcpy(changed_payload, activity.payload.bytes, activity.payload.length);
+    other = activity;
+    other.payload.bytes = changed_payload;
+    changed_payload[75U] ^= 1U;
+    CHECK(lxp_daemon_credit_admission(owner, &other, header_ms) != LXP_OK);
+    changed_payload[75U] ^= 1U;
+    changed_payload[5U] ^= 1U;
+    CHECK(lxp_daemon_credit_admission(owner, &other, header_ms) != LXP_OK);
+    changed_payload[5U] ^= 1U;
+    changed_payload[107U] ^= 1U;
+    CHECK(lxp_daemon_credit_admission(owner, &other, header_ms) != LXP_OK);
+    changed_payload[107U] ^= 1U;
+    changed_payload[139U] ^= 1U;
+    CHECK(lxp_daemon_credit_admission(owner, &other, header_ms) != LXP_OK);
+    free(changed_payload);
+    CHECK(owner->latest_sealed_timestamp == sealed_ms);
+    CHECK(lxp_daemon_credit_admission(owner, &activity, header_ms - drift_ms) == LXP_OK);
+    CHECK(lxp_daemon_credit_admission(owner, &activity, header_ms - drift_ms - UINT64_C(1000)) ==
+          LXP_ERR_DEPOSIT_PROOF_NOT_FINAL);
+    CHECK(lxp_daemon_credit_admission(owner, &activity, sealed_ms) == LXP_ERR_DEPOSIT_PROOF_NOT_FINAL);
+    CHECK(lxp_daemon_credit_admission(owner, &activity, 0U) == LXP_ERR_MALFORMED_ENVELOPE);
+    other = activity;
+    other.activity_type = LX_ASSET_WITHDRAW;
+    CHECK(lxp_daemon_credit_admission(owner, &other, header_ms) == LXP_ERR_MALFORMED_ENVELOPE);
+    other = activity;
+    other.idempotency_key[0] ^= 1U;
+    CHECK(lxp_daemon_credit_admission(owner, &other, header_ms) == LXP_ERR_CONTEXT_MISMATCH);
+
+    uint8_t beneficiary[32];
+    CHECK(lxp_bridge_profile_beneficiary(&profile, activity.actor_did.bytes,
+          activity.actor_did.length, name, sizeof(name), &name_length,
+          beneficiary) == LXP_OK);
+    CHECK(memcmp(beneficiary, credit.bytes + 107U, 32U) == 0);
+    CHECK(activity.actor_did.length <= sizeof(name) - 11U);
+    (void)memcpy(name, "agent:", 6U);
+    (void)memcpy(name + 6U, activity.actor_did.bytes, activity.actor_did.length);
+    name_length = 6U + activity.actor_did.length;
+    (void)memcpy(name + name_length, ":main", 5U);
+    CHECK(lx_account_id_from_string(name, name_length + 5U, authority.principal) == LXP_OK);
+    authority.kind = LXP_AUTHORITY_OWNER;
+    (void)memcpy(authority.verified_key, activity.authority.bytes, 32U);
+    CHECK(begin(ctx, kernel, &arena, effects, sealed_ms) == 0);
+    CHECK(lxp_activity_id(activity_bytes, activity_length, ctx->activity_id) == LXP_OK);
+    CHECK(lxp_ctx_bridge_credit(ctx, &activity, &authority, &credit) == LXP_ERR_DEPOSIT_PROOF_NOT_FINAL);
+    lxp_module_ctx_rollback(ctx);
+    CHECK(lxp_state_journal_rollback(journal) == LXP_OK);
+    CHECK(lxp_state_root(kernel, root) == LXP_OK && memcmp(root, initial_root, 32U) == 0);
+    CHECK(begin(ctx, kernel, &arena, effects, header_ms) == 0);
+    CHECK(lxp_activity_id(activity_bytes, activity_length, ctx->activity_id) == LXP_OK);
+    CHECK(lxp_ctx_bridge_credit(ctx, &activity, &authority, &credit) == LXP_OK);
+    CHECK(lxp_module_ctx_prepare_commit(ctx) == LXP_OK);
+    CHECK(lxp_state_journal_commit(journal) == LXP_OK);
+    CHECK(lxp_module_ctx_commit(ctx) == LXP_OK);
+    CHECK(lxp_state_root(kernel, root) == LXP_OK && memcmp(root, initial_root, 32U) != 0);
+
+    CHECK(lxp_state_store_destroy(state) == LXP_OK);
+    free(activity_bytes);
+    free(manifest_bytes);
+    free(effects);
+    free(ctx);
+    free(owner);
+    lx_account_registry_release(accounts);
+    free(accounts);
+    free(kernel);
+    free(journal);
+    free(state);
+    free(manifest);
+    free(arena_bytes);
+    (void)puts("selected registry asset: admitted at the batch time, executed at the batch time");
+    return 0;
+}
+
+
+int main(int argc, char **argv)
+{
+    if (argc > 1 && strcmp(argv[1], "--multiasset") == 0) {
+        if (argc != 4) {
+            (void)fprintf(stderr, "usage: test-credit-admission --multiasset genesis.manifest signed-credit.activity\n");
+            return 2;
+        }
+        char *selected[3] = {argv[0], argv[2], argv[3]};
+        return multiasset_admission(3, selected);
+    }
+    return legacy_main(argc, argv);
 }
