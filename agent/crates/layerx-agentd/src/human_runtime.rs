@@ -5067,6 +5067,7 @@ impl<A: HumanAuthorityBoundary> UnifiedAgentOwner<A> {
         let body_digest = request.body_digest;
         let capability_id = request.operation.capability_id;
         let mut operations = self.lock_operations()?;
+        operations.require_unversioned_policy_binding(peer)?;
         let before: std::collections::BTreeSet<String> = operations
             .prepared
             .keys()
@@ -11749,6 +11750,25 @@ impl<A: HumanAuthorityBoundary> ProductionHumanOperations<A> {
         }
     }
 
+    fn require_unversioned_policy_binding(
+        &self,
+        peer: &HumanPeer,
+    ) -> Result<(), HumanOperationError> {
+        let tenant =
+            TenantId::new(peer.tenant.clone()).map_err(|_| HumanOperationError::Refused)?;
+        let policy_tenant = TenantId::new(peer.transport_tenant().to_owned())
+            .map_err(|_| HumanOperationError::Refused)?;
+        if self.policies.as_ref().is_some_and(|policies| {
+            policies.contains_key(&tenant) || policies.contains_key(&policy_tenant)
+        }) || self.native_policies.contains_key(&policy_tenant)
+            || self.native_effect_policies.contains_key(&policy_tenant)
+        {
+            return Err(HumanOperationError::Typed(
+                crate::human::HumanRefusal::IntentBindingMissing,
+            ));
+        }
+        Ok(())
+    }
     fn prepare_gated(
         &mut self,
         peer: &HumanPeer,
@@ -11772,6 +11792,9 @@ impl<A: HumanAuthorityBoundary> ProductionHumanOperations<A> {
         let authority = decode_owner_authority(&request.operation.authority)
             .map_err(|_| HumanOperationError::Refused)?;
         self.subject_owner(peer, &actor, &authority)?;
+        if gate.is_none() {
+            self.require_unversioned_policy_binding(peer)?;
+        }
         let timestamp =
             TimestampBound::new(request.operation.not_before, request.operation.not_after)
                 .map_err(|_| HumanOperationError::Refused)?;

@@ -2414,3 +2414,8 @@ resolution = "Retain the existing authenticated complete Asset inventory and sel
 area = "Source path lookup"
 observed = "Narrow inspection used historical include and plural asset module paths that do not exist in the current checkout."
 resolution = "Resolve actual filenames with rg --files before reading and preserve the current production ownership boundaries."
+
+[gotcha.703]
+area = "Scalar and native approval type boundary"
+observed = "Every genuine native ActivityType has a nonzero module in a u32, whereas the legacy scalar approval Prepared uses u16 and AgentDid counterparties; the checked conversion deliberately refuses it."
+resolution = "Preserve the refusal and use the existing explicit native_effect_v1 authority profile. Prevent unversioned configured-policy bypass without claiming the legacy scalar integration complete."
