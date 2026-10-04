@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import argparse
 import hashlib
+import importlib.util
 import json
 import os
 from pathlib import Path
@@ -17,6 +18,9 @@ DECLARED = (
     "cmd/layerxd/lxp_daemon_protocol.c", "programs/crates/layerx-programs-runtime/src/ffi_call.rs",
     "programs/crates/layerx-programs-runtime/src/lib.rs", "tests/daemon/lxp_test_arbiter_native_authority.c",
     "tools/paxeer-x/build/104.35.35.mk", "tools/qualification/paxeer-x/arbiter-native-authority.py",
+    "include/layerx/lxp_daemon.h", "tests/daemon/lxp_test_module_maintenance.c",
+    "tests/daemon/program-admission.sh", "tests/daemon/withdraw-custody.py",
+    "tests/daemon/handover-chain.py", "tests/daemon/custody_chain.py",
 )
 MARKER = "ARBITER_NATIVE_AUTHORITY real-signed-owner-index-call-frame-247-reopen-refusal"
 REQUIRED_CASES = {
@@ -39,7 +43,7 @@ def sources():
     ], cwd=ROOT, check=True, capture_output=True).stdout
     names = {os.fsdecode(value) for value in output.split(b"\0") if value} | set(DECLARED)
     return {name: sha(ROOT / name) for name in sorted(names)
-            if Path(name).suffix in {".c", ".h", ".rs", ".toml", ".lock", ".mk", ".py", ".inc"} or name == "Makefile"}
+            if Path(name).suffix in {".c", ".h", ".rs", ".toml", ".lock", ".mk", ".py", ".inc", ".sh"} or name == "Makefile"}
 
 
 def execute(command, log, environment, timeout):
@@ -66,6 +70,8 @@ def exported_inputs(directory):
         raise RuntimeError("required genuine owner/handover/reopen/refusal corpus incomplete")
     outputs = {}
     phases = set()
+    frames = set()
+    frame_batches = {}
     for item in manifest["views"]:
         path = (directory / item["view"]).resolve(strict=True)
         if path.parent != directory.resolve():
@@ -80,12 +86,37 @@ def exported_inputs(directory):
         last = int.from_bytes(data[47:55], "big")
         if not first <= batch <= last or data[183:215] == bytes(32) or data[215:247] == bytes(32):
             raise RuntimeError("actual native-pinned authorization absent")
+        identity = (item["phase"], item["frame_batch"], item["frame_sequence"])
+        if identity in frames:
+            raise RuntimeError("duplicate actual CALL frame capture")
+        frames.add(identity)
+        key = identity[:2]
+        frame_batches[key] = frame_batches.get(key, 0) + 1
+        if batch >= item["frame_batch"] or int.from_bytes(data[31:39], "big") >= item["frame_sequence"]:
+            raise RuntimeError("receipt authority is not historical to actual CALL")
         phases.add(item["phase"])
         outputs[str(path)] = sha(path)
     if not {"before", "after"} <= phases:
         raise RuntimeError("real protected reopen projection missing")
+    if not any(count == 1 for count in frame_batches.values()) or not any(count >= 2 for count in frame_batches.values()):
+        raise RuntimeError("real serial and scheduled CALL frames missing")
     outputs[str(directory / "native-authority.json")] = sha(directory / "native-authority.json")
     return outputs
+
+
+def custody_artifacts():
+    path = os.environ.get("LAYERX_CUSTODY_ARTIFACT_MANIFEST")
+    if not path:
+        raise RuntimeError("protected current-source LAYERX_CUSTODY_ARTIFACT_MANIFEST required")
+    module_path = ROOT / "tests/daemon/custody_chain.py"
+    spec = importlib.util.spec_from_file_location("native_authority_custody", module_path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError("actual custody manifest reader unavailable")
+    module = importlib.util.module_from_spec(spec)
+    sys.path.insert(0, str(ROOT / "tests/daemon"))
+    spec.loader.exec_module(module)
+    module.artifact_manifest(path)
+    return {"path": str(Path(path).resolve(strict=True)), "sha256": sha(path)}
 
 
 def main():
@@ -98,6 +129,7 @@ def main():
     environment = dict(os.environ)
     environment["PATH"] = "/root/.cargo/bin:" + environment.get("PATH", "")
     environment["CARGO_BUILD_JOBS"] = "4"
+    custody = custody_artifacts()
     if args.build:
         inputs = sources()
         execute([
@@ -117,16 +149,31 @@ def main():
             "inputs": inputs,
             "binary": {"path": str(binary), "sha256": sha(binary)},
             "archive": {"path": str(archive), "sha256": sha(archive)},
+            "custody": custody,
+            "provisioning_binaries": {
+                name: {"path": str(TARGET / "native" / name), "sha256": sha(TARGET / "native" / name)}
+                for name in ("bin/layerxd", "bin/layerx-genesis-build", "bin/layerx-handover",
+                             "tests/lxp_test_module_maintenance", "tests/lxp_test_daemon_finality_authority",
+                             "tests/lxp_test_guarantor_runtime")
+            },
         }, indent=2))
         return 0
     manifest = json.loads((EVIDENCE / "artifacts.json").read_text())
     if manifest["inputs"] != sources():
         raise RuntimeError("native authority source mismatch")
-    for key in ("binary", "archive"):
-        if sha(manifest[key]["path"]) != manifest[key]["sha256"]:
+    if custody != manifest["custody"]:
+        raise RuntimeError("protected custody artifact manifest changed")
+    for item in [manifest["binary"], manifest["archive"], *manifest["provisioning_binaries"].values()]:
+        if sha(item["path"]) != item["sha256"]:
             raise RuntimeError("native authority artifact changed")
     directory = Path(tempfile.mkdtemp(prefix="native-", dir=EVIDENCE))
-    output = execute([manifest["binary"]["path"], str(directory)], EVIDENCE / "verify.log", environment, 540)
+    environment["LAYERX_NATIVE_AUTHORITY_FIXTURE_BIN"] = manifest["binary"]["path"]
+    environment["LAYERX_NATIVE_AUTHORITY_OUTPUT"] = str(directory)
+    output = execute([
+        sys.executable, "tests/daemon/withdraw-custody.py", str(TARGET / "native"),
+        "--handover", "--native-arbiter", "--network-id", "7",
+        "--artifact-manifest", custody["path"],
+    ], EVIDENCE / "verify.log", environment, 540)
     if MARKER not in output:
         raise RuntimeError("genuine native authority corpus marker missing")
     outputs = exported_inputs(directory)

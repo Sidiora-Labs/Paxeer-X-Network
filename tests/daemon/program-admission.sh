@@ -13,6 +13,8 @@ if [[ -n ${LAYERX_TEST_NATIVE_ARBITER_NETWORK_ID:-} ]]; then
     [[ "$LAYERX_TEST_NATIVE_ARBITER_NETWORK_ID" == 7 && ${2:-} == --handover ]]
     [[ -n ${LAYERX_NATIVE_AUTHORITY_FIXTURE_BIN:-} && -n ${LAYERX_NATIVE_AUTHORITY_OUTPUT:-} ]]
     network_id=7
+    sequencer_binary="$LAYERX_NATIVE_AUTHORITY_FIXTURE_BIN"
+    export LAYERX_NATIVE_AUTHORITY_PHASE=before
 fi
 if [[ ${2:-} == --maintenance-crash ]]; then
     sequencer_binary="$build_dir/tests/lxp_test_maintenance_crash"
@@ -35,6 +37,7 @@ cleanup() {
 }
 trap cleanup EXIT
 chmod 0755 "$work"
+if [[ "$network_id" == 7 ]]; then export LAYERX_NATIVE_AUTHORITY_TARGET_RECEIPT="$work/scenario/native-target.receipt"; fi
 python3 - "$work" "${2:-}" <<'PY'
 import os, pathlib, socket, sys
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
@@ -168,6 +171,7 @@ if [[ ${2:-} == --module-maintenance || ${2:-} == --metered-allowance || ${2:-} 
     mkdir "$work/scenario"
     chown 4021:4021 "$work/scenario"
     scenario_state="$work/scenario"
+    if [[ "$network_id" == 7 ]]; then export LAYERX_NATIVE_AUTHORITY_TARGET_RECEIPT="$scenario_state/native-target.receipt"; fi
     if [[ ${2:-} == --native-onboarding || ${2:-} == --owner-rotation || ${2:-} == --paid-withdrawal ]]; then scenario_state="$work/scenario/state"; fi
     if [[ ${2:-} == --metered-allowance ]]; then
         scenario_state="$work/scenario/state"
@@ -257,6 +261,7 @@ PYWAIT
     replica_pid=$!
     IFS= read -r -n 1 -t 20 replica_ready <&"$replica_ready_fd"
     [[ "$replica_ready" == R ]]
+    if [[ "$network_id" == 7 ]]; then export LAYERX_NATIVE_AUTHORITY_PHASE=after; fi
     (source platform/hosted/node/sequencer-env.sh; layerx_sequencer_environment "$work/data/sequencer.env"; exec "$sequencer_binary" --serve "$work/data/sequencer.conf") >> "$work/sequencer.log" 2>&1 &
     sequencer_pid=$!
     python3 - "$runtime/layerxd.lni.sock" "$sequencer_pid" <<'PYWAIT'

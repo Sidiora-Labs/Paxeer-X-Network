@@ -185,7 +185,7 @@ def main():
             '--export' if args.export is not None else '--withdraw')
     programs_handover = args.handover and bool(os.environ.get('LAYERX_TEST_HANDOVER_PROGRAM_CONSUMER_BIN'))
     amount = 1000000000 if (args.metered_allowance or args.native_onboarding or
-                           args.owner_rotation or programs_handover) else 1000000
+                           args.owner_rotation or programs_handover or args.native_arbiter) else 1000000
     assert os.environ.get('LAYERX_TEST_SETTLEMENT_PUBLICATION') != '1' or mode == '--withdraw'
     if args.export is not None:
         for name in ('custody.profile', 'custody.activity', 'custody.json'):

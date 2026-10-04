@@ -1000,6 +1000,167 @@ static int authenticated_balance(int descriptor, const uint8_t account[32],
     return 0;
 }
 
+enum { DEPLOY_FIXED_BYTES=108, INTERFACE_CAPABILITIES_NONE=0,
+ INTERFACE_CAPABILITIES_STORAGE_READ=1, INTERFACE_CAPABILITIES_STAGED_TERMINAL=2,
+ INTERFACE_CAPABILITIES_EMIT_EVENT=3 };
+static const uint8_t native_program_id[32]={0x93U};
+static const uint64_t native_call_budget[LX_PROGRAMS_CALL_BUDGET_FIELDS]={1000000U,16777216U,1048576U,1048576U,64U,1048576U,4096U};
+static size_t native_candidate_module(uint8_t *out, const uint8_t *entry,
+                               size_t entry_length)
+{
+    static const uint8_t header[] = {0U, 0x61U, 0x73U, 0x6dU, 1U, 0U, 0U, 0U};
+    static const uint8_t types[] = {
+        1U, 12U, 2U, 0x60U, 1U, 0x7fU, 1U, 0x7fU,
+        0x60U, 2U, 0x7fU, 0x7fU, 1U, 0x7fU
+    };
+    static const uint8_t functions[] = {3U, 3U, 2U, 0U, 1U};
+    static const uint8_t memory[] = {5U, 4U, 1U, 1U, 1U, 1U};
+    static const uint8_t exports[] = {
+        7U, 41U, 3U,
+        14U, 'l','a','y','e','r','x','_','r','e','s','e','r','v','e', 0U, 0U,
+        11U, 'l','a','y','e','r','x','_','c','a','l','l', 0U, 1U,
+        6U, 'm','e','m','o','r','y', 2U, 0U
+    };
+    size_t cursor = 0U;
+    size_t code_payload = 1U + 5U + 2U + entry_length;
+    (void)memcpy(out + cursor, header, sizeof(header)); cursor += sizeof(header);
+    (void)memcpy(out + cursor, types, sizeof(types)); cursor += sizeof(types);
+    (void)memcpy(out + cursor, functions, sizeof(functions)); cursor += sizeof(functions);
+    (void)memcpy(out + cursor, memory, sizeof(memory)); cursor += sizeof(memory);
+    (void)memcpy(out + cursor, exports, sizeof(exports)); cursor += sizeof(exports);
+    out[cursor++] = 10U;
+    out[cursor++] = (uint8_t)code_payload;
+    out[cursor++] = 2U;
+    out[cursor++] = 4U; out[cursor++] = 0U;
+    out[cursor++] = 0x41U; out[cursor++] = 0U; out[cursor++] = 0x0bU;
+    out[cursor++] = (uint8_t)(entry_length + 1U);
+    out[cursor++] = 0U;
+    (void)memcpy(out + cursor, entry, entry_length);
+    return cursor + entry_length;
+}
+
+static size_t native_interface_payload(uint8_t *out, const uint8_t code_hash[32],
+                                uint16_t abi_version,
+                                uint8_t capability_profile)
+{
+    static const uint8_t domain[] = "LayerX/program-interface/v1";
+    size_t offset = 0U;
+    (void)memcpy(out + offset, domain, sizeof(domain));
+    offset += sizeof(domain);
+    (void)memcpy(out + offset, code_hash, 32U);
+    offset += 32U;
+    store_u16(out + offset, abi_version);
+    offset += 2U;
+    store_u16(out + offset, 1U);
+    offset += 2U;
+    store_u16(out + offset, 11U);
+    offset += 2U;
+    (void)memcpy(out + offset, "layerx_call", 11U);
+    offset += 11U;
+    (void)memset(out + offset, 0, 4U);
+    offset += 4U;
+    out[offset++] = 1U;
+    out[offset++] = 0x20U;
+    store_u32(out + offset, 64U);
+    offset += 4U;
+    out[offset++] = 1U;
+    out[offset++] = 0x20U;
+    store_u32(out + offset, 64U);
+    offset += 4U;
+    if (capability_profile == INTERFACE_CAPABILITIES_NONE) {
+        store_u16(out + offset, 0U);
+        offset += 2U;
+    } else if (capability_profile ==
+               INTERFACE_CAPABILITIES_STORAGE_READ) {
+        store_u16(out + offset, 1U);
+        offset += 2U;
+        out[offset++] = 0U;
+    } else if (capability_profile == INTERFACE_CAPABILITIES_EMIT_EVENT) {
+        store_u16(out + offset, 1U);
+        offset += 2U;
+        out[offset++] = 4U;
+    } else {
+        store_u16(out + offset, 3U);
+        offset += 2U;
+        out[offset++] = 1U;
+        out[offset++] = 4U;
+        out[offset++] = 6U;
+        (void)memset(out + offset, 9, 32U);
+        offset += 32U;
+        (void)memset(out + offset, 10, 32U);
+        offset += 32U;
+        (void)memset(out + offset, 0, 16U);
+        out[offset + 15U] = 1U;
+        offset += 16U;
+    }
+    store_u16(out + offset, 0U);
+    offset += 2U;
+    store_u16(out + offset, 0U);
+    return offset + 2U;
+}
+
+static size_t native_deploy_payload(uint8_t *out, const uint8_t program_id[32],
+                             const uint8_t authority[32], const uint8_t *wasm,
+                             size_t wasm_length, uint8_t code_hash[32],
+                             uint16_t abi_version,
+                             uint8_t capability_profile)
+{
+    size_t interface_length;
+    (void)lxp_hash_sha256(wasm, wasm_length, code_hash);
+    (void)memcpy(out, program_id, 32U);
+    store_u16(out + 32U, abi_version);
+    out[34] = 1U;
+    out[35] = 0U;
+    (void)memcpy(out + 36U, authority, 32U);
+    (void)memcpy(out + 68U, code_hash, 32U);
+    store_u32(out + 100U, (uint32_t)wasm_length);
+    interface_length = native_interface_payload(out + DEPLOY_FIXED_BYTES, code_hash,
+                                         abi_version,
+                                         capability_profile);
+    store_u32(out + 104U, (uint32_t)interface_length);
+    (void)memcpy(out + DEPLOY_FIXED_BYTES + interface_length, wasm,
+                 wasm_length);
+    return DEPLOY_FIXED_BYTES + interface_length + wasm_length;
+}
+
+static size_t native_call_payload_with_data(
+    uint8_t *out, const uint8_t program_id[32],
+    const uint8_t *capabilities, size_t capabilities_length,
+    const uint8_t *access_declaration, size_t access_declaration_length,
+    const uint8_t *calldata, size_t calldata_length)
+{
+    static const uint8_t entrypoint[] = "layerx_call";
+    size_t cursor = 0U;
+    size_t index;
+    (void)memcpy(out + cursor, program_id, 32U);
+    cursor += 32U;
+    store_u16(out + cursor, LX_PROGRAMS_ABI_VERSION);
+    cursor += 2U;
+    store_u16(out + cursor, (uint16_t)(sizeof(entrypoint) - 1U));
+    cursor += 2U;
+    store_u32(out + cursor, (uint32_t)calldata_length);
+    cursor += 4U;
+    store_u16(out + cursor, (uint16_t)capabilities_length);
+    cursor += 2U;
+    store_u32(out + cursor, (uint32_t)access_declaration_length);
+    cursor += 4U;
+    store_u32(out + cursor, 16U);
+    cursor += 4U;
+    for (index = 0U; index < LX_PROGRAMS_CALL_BUDGET_FIELDS; ++index) {
+        store_u64(out + cursor, native_call_budget[index]);
+        cursor += 8U;
+    }
+    (void)memcpy(out + cursor, entrypoint, sizeof(entrypoint) - 1U);
+    cursor += sizeof(entrypoint) - 1U;
+    if (calldata_length != 0U)
+        (void)memcpy(out + cursor, calldata, calldata_length);
+    cursor += calldata_length;
+    (void)memcpy(out + cursor, capabilities, capabilities_length);
+    cursor += capabilities_length;
+    (void)memcpy(out + cursor, access_declaration, access_declaration_length);
+    return cursor + access_declaration_length;
+}
+
 static int scenario_start(int descriptor, const char *directory, scenario_state *state,
                            const signer *owner, const signer *provider, bool handover)
 {
@@ -1017,6 +1178,18 @@ static int scenario_start(int descriptor, const char *directory, scenario_state 
     REQUIRE(length > 0U && length < sizeof(encoded) && !ferror(file) && fclose(file) == 0);
     REQUIRE(submit_encoded(descriptor, state, encoded, length, LXP_OK, &evidence) == 0);
     state->owner_sequence = 1U;
+    if (NETWORK_ID == 7U) {
+        const char *target=getenv("LAYERX_NATIVE_AUTHORITY_TARGET_RECEIPT");
+        uint8_t digest[32], batch[8];
+        REQUIRE(target != NULL);
+        lxp_receipt target_receipt;
+        REQUIRE(lxp_receipt_decode(evidence.receipts[0].bytes,evidence.receipts[0].length,true,&target_receipt)==LXP_OK);
+        REQUIRE(lxp_receipt_digest(&target_receipt,&evidence.arena,digest)==LXP_OK);
+        store_u64(batch,evidence.body.header.batch_number);
+        FILE *target_file=fopen(target,"wx");
+        REQUIRE(target_file != NULL && fwrite(batch,1U,sizeof(batch),target_file)==sizeof(batch) &&
+            fwrite(digest,1U,sizeof(digest),target_file)==sizeof(digest) && fclose(target_file)==0);
+    }
     REQUIRE(maintenance_effects_check(&evidence, false) == 0);
     REQUIRE(maintenance_refusals(&evidence) == 0);
     REQUIRE(fixture_write(directory, "empty-effects", &evidence) == 0);
@@ -1136,6 +1309,22 @@ static int scenario_start(int descriptor, const char *directory, scenario_state 
     REQUIRE(submit_release(descriptor, state, provider, &state->provider_sequence, LX_SERVICE_DELIVER,
         payload, LX_SERVICE_DELIVER_PAYLOAD_FIXED_BYTES + LX_SERVICE_DELIVER_PAYLOAD_ITEM_BYTES) == 0);
     REQUIRE(now_ms() < state->deadline);
+    if (handover && NETWORK_ID == 7U) {
+        static const uint8_t entry[]={0x41U,0U,0x0bU};
+        uint8_t wasm[512], deployed[2048], hash[32], principal[32], did[75], call[256];
+        static const char digits[]="0123456789abcdef";
+        memcpy(did,"did:layerx:",11U);
+        for(size_t i=0U;i<32U;++i){did[11U+i*2U]=(uint8_t)digits[owner->public_key[i]>>4U];did[12U+i*2U]=(uint8_t)digits[owner->public_key[i]&15U];}
+        REQUIRE(lxp_did_id_derive(did,sizeof(did),principal)==LXP_OK);
+        size_t wasm_length=native_candidate_module(wasm,entry,sizeof(entry));
+        size_t deployed_length=native_deploy_payload(deployed,native_program_id,principal,wasm,wasm_length,hash,LX_PROGRAMS_GUEST_ABI_V2_VERSION,INTERFACE_CAPABILITIES_NONE);
+        REQUIRE(submit_release(descriptor,state,owner,&state->owner_sequence,LX_PROGRAMS_DEPLOY,deployed,deployed_length)==0);
+        static const uint8_t capabilities[]={0U,0U};
+        static const uint8_t access[]="LayerX/programs/access-declaration/v1\0";
+        size_t call_length=native_call_payload_with_data(call,native_program_id,capabilities,sizeof(capabilities),access,sizeof(access),NULL,0U);
+        store_u16(call+32U,LX_PROGRAMS_GUEST_ABI_V2_VERSION);
+        REQUIRE(submit_release(descriptor,state,owner,&state->owner_sequence,LX_PROGRAMS_CALL,call,call_length)==0);
+    }
     if (handover) {
         char path[4096];
         int path_length = snprintf(path, sizeof(path), "%s/handover-ready.json", directory);
@@ -1332,6 +1521,21 @@ static int scenario_handover(int descriptor, const char *directory,
         REQUIRE(maintenance_effects_check(&evidence, false) == 0);
         REQUIRE(fixture_write(directory, "handover-recovered-spend", &evidence) == 0);
         free(evidence.storage);
+        if (NETWORK_ID == 7U) {
+            uint8_t call[256], admitted[2][ACTIVITY_CAPACITY], ids[2][32];
+            size_t admitted_length[2];
+            static const uint8_t capabilities[]={0U,0U};
+            static const uint8_t access[]="LayerX/programs/access-declaration/v1\0";
+            size_t call_length=native_call_payload_with_data(call,native_program_id,capabilities,sizeof(capabilities),access,sizeof(access),NULL,0U);
+            store_u16(call+32U,LX_PROGRAMS_GUEST_ABI_V2_VERSION);
+            for(size_t i=0U;i<2U;++i) {
+                REQUIRE(build_activity(owner,state->owner_sequence+2U+i,LX_PROGRAMS_CALL,0U,call,call_length,admitted[i],sizeof(admitted[i]),&admitted_length[i])==0);
+                REQUIRE(lxp_activity_id(admitted[i],admitted_length[i],ids[i])==LXP_OK);
+                REQUIRE(send_request(descriptor,LNI_MINOR,SUBMIT_REQUEST,3100U+i,admitted[i],admitted_length[i])==0);
+            }
+            for(size_t i=0U;i<2U;++i) REQUIRE(expect_ack(descriptor,3100U+i,admitted[i],admitted_length[i],ids[i])==0);
+            for(size_t i=0U;i<2U;++i) REQUIRE(receipt_wait_signed(descriptor,ids[i],LXP_OK,&receipt,current.public_key)==0);
+        }
     }
     free(encoded);
     free(memory);
