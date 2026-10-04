@@ -49,6 +49,7 @@ enum {
     LNI_VERSION_MAJOR = 1,
     LNI_VERSION_MINOR = 8,
     LNI_EXECUTION_PRESTATE_MINOR = 9,
+    LNI_ARBITER_PRESTATE_MINOR = 10,
     LNI_NODE_INFO_REQUEST = 1,
     LNI_NODE_INFO_RESPONSE = 2,
     LNI_SUBMIT_REQUEST = 3,
@@ -90,6 +91,8 @@ enum {
     LNI_CAPS_DISCOVERY_RESPONSE = 43,
     LNI_EXECUTION_PRESTATE_REQUEST = 44,
     LNI_EXECUTION_PRESTATE_RESPONSE = 45,
+    LNI_ARBITER_PRESTATE_REQUEST = 46,
+    LNI_ARBITER_PRESTATE_RESPONSE = 47,
     LNI_ENVELOPE_FIXED_BYTES = 22,
     LNI_NODE_INFO_FIXED_BYTES = 93,
     LNI_PREPARATION_STATE_MAX_BYTES = 4096,
@@ -1219,7 +1222,7 @@ static lxp_result decode_envelope(const uint8_t *bytes, size_t length,
     envelope->proof = bytes + cursor;
     envelope->proof_length = proof_length;
     if (envelope->major != LNI_VERSION_MAJOR ||
-        envelope->minor > LNI_EXECUTION_PRESTATE_MINOR)
+        envelope->minor > LNI_ARBITER_PRESTATE_MINOR)
         return LXP_ERR_VERSION_UNSUPPORTED;
     return LXP_OK;
 }
@@ -1408,6 +1411,14 @@ static bool execution_prestate_available(const lxp_daemon_lni_server *server)
         lxp_daemon_evidence_execution_prestate_ready(server->owner->evidence_store);
 }
 
+static bool arbiter_prestate_available(const lxp_daemon_lni_server *server)
+{
+    return server->owner->protocol_version == LXP_PROTOCOL_VERSION_STATE_COMMITMENT &&
+        server->owner->receipt_authority != NULL && server->owner->kernel != NULL &&
+        server->owner->scratch != NULL &&
+        lxp_daemon_evidence_arbiter_prestate_ready(server->owner->evidence_store);
+}
+
 static lxp_result send_node_info(lxp_daemon_lni_server *server,
                                  int descriptor, uint64_t correlation_id,
                                  uint16_t requested_minor, int64_t deadline)
@@ -1449,7 +1460,7 @@ static lxp_result send_node_info(lxp_daemon_lni_server *server,
                                   sequencer_capabilities) :
             (evidence_available ? evidence_reader_capabilities :
                                   reader_capabilities);
-    const char *capabilities[22];
+    const char *capabilities[23];
     uint8_t payload[512];
     lxp_sequencer_authorization authorization;
     uint64_t head;
@@ -1477,8 +1488,11 @@ static lxp_result send_node_info(lxp_daemon_lni_server *server,
     bool execution_prestate = requested_minor >= LNI_EXECUTION_PRESTATE_MINOR &&
         execution_prestate_available(server);
     lxp_result status = LXP_OK;
-    lni_reply_minor = execution_prestate ? LNI_EXECUTION_PRESTATE_MINOR : LNI_VERSION_MINOR;
-    if (base_count + 6U > sizeof(capabilities) / sizeof(capabilities[0]))
+    bool arbiter_prestate = requested_minor >= LNI_ARBITER_PRESTATE_MINOR &&
+        arbiter_prestate_available(server);
+    lni_reply_minor = arbiter_prestate ? LNI_ARBITER_PRESTATE_MINOR :
+        execution_prestate ? LNI_EXECUTION_PRESTATE_MINOR : LNI_VERSION_MINOR;
+    if (base_count + 7U > sizeof(capabilities) / sizeof(capabilities[0]))
         return LXP_ERR_LENGTH_LIMIT;
     for (index = 0U; index < base_count; ++index) {
         if (server->owner->protocol_version !=
@@ -1534,6 +1548,15 @@ static lxp_result send_node_info(lxp_daemon_lni_server *server,
             --at;
         }
         capabilities[at] = "execution_prestate";
+        ++capability_count;
+    }
+    if (arbiter_prestate) {
+        size_t at = capability_count;
+        while (at != 0U && strcmp(capabilities[at - 1U], "arbiter_prestate_v2") > 0) {
+            capabilities[at] = capabilities[at - 1U];
+            --at;
+        }
+        capabilities[at] = "arbiter_prestate_v2";
         ++capability_count;
     }
     for (index = 0U; index < capability_count; ++index) {
@@ -4447,6 +4470,10 @@ static lxp_result serve_connection_inner(lxp_daemon_lni_server *server,
         } else if (request.tag == LNI_EXECUTION_PRESTATE_REQUEST &&
                    lni_reply_minor >= LNI_EXECUTION_PRESTATE_MINOR) {
             status = send_execution_prestate_discovery(server, descriptor,
+                &request, execution_snapshot, deadline);
+        } else if (request.tag == LNI_ARBITER_PRESTATE_REQUEST &&
+                   lni_reply_minor >= LNI_ARBITER_PRESTATE_MINOR) {
+            status = send_arbiter_prestate_discovery(server, descriptor,
                 &request, execution_snapshot, deadline);
         } else if (request.tag == LNI_SUBMIT_REQUEST) {
             status = send_submit(server, descriptor, &request,

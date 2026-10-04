@@ -40,6 +40,11 @@ impl Version {
 
     pub const V1_9: Self = Self { major: 1, minor: 9 };
 
+    pub const V1_10: Self = Self {
+        major: 1,
+        minor: 10,
+    };
+
     /// Returns whether the two peers can interpret the same stable message set.
     #[must_use]
     pub const fn is_compatible_with(self, peer: Self) -> bool {
@@ -83,6 +88,7 @@ pub enum Capability {
     ProgramHeadAttest,
     CapsDiscovery,
     ExecutionPrestate,
+    ArbiterPrestateV2,
 }
 
 impl Capability {
@@ -112,6 +118,7 @@ impl Capability {
             Self::ProgramHeadAttest => "program_head_attest",
             Self::CapsDiscovery => "caps_discovery",
             Self::ExecutionPrestate => "execution_prestate",
+            Self::ArbiterPrestateV2 => "arbiter_prestate_v2",
         }
     }
 }
@@ -507,10 +514,38 @@ const MESSAGES: [MessageDescriptor; 45] = [
         true,
         true,
     ),
-    message("CapsDiscoveryRequest", 42, MessageKind::Request, Capability::CapsDiscovery, true, false),
-    message("CapsDiscoveryResponse", 43, MessageKind::Response, Capability::CapsDiscovery, true, true),
-    message("ExecutionPrestateRequest", 44, MessageKind::Request, Capability::ExecutionPrestate, true, false),
-    message("ExecutionPrestateResponse", 45, MessageKind::Response, Capability::ExecutionPrestate, true, true),
+    message(
+        "CapsDiscoveryRequest",
+        42,
+        MessageKind::Request,
+        Capability::CapsDiscovery,
+        true,
+        false,
+    ),
+    message(
+        "CapsDiscoveryResponse",
+        43,
+        MessageKind::Response,
+        Capability::CapsDiscovery,
+        true,
+        true,
+    ),
+    message(
+        "ExecutionPrestateRequest",
+        44,
+        MessageKind::Request,
+        Capability::ExecutionPrestate,
+        true,
+        false,
+    ),
+    message(
+        "ExecutionPrestateResponse",
+        45,
+        MessageKind::Response,
+        Capability::ExecutionPrestate,
+        true,
+        true,
+    ),
 ];
 
 const SCHEMA: Schema = Schema {
@@ -523,6 +558,53 @@ const SCHEMA: Schema = Schema {
 #[must_use]
 pub const fn lni_schema_v1() -> &'static Schema {
     &SCHEMA
+}
+
+const ARBITER_PRESTATE_CAPABILITIES: [Capability; 23] = {
+    let mut capabilities = [Capability::ArbiterPrestateV2; 23];
+    let mut index = 0;
+    while index < CAPABILITIES.len() {
+        capabilities[index] = CAPABILITIES[index];
+        index += 1;
+    }
+    capabilities
+};
+
+const ARBITER_PRESTATE_MESSAGES: [MessageDescriptor; 47] = {
+    let mut messages = [MESSAGES[0]; 47];
+    let mut index = 0;
+    while index < MESSAGES.len() {
+        messages[index] = MESSAGES[index];
+        index += 1;
+    }
+    messages[45] = message(
+        "ArbiterPrestateV2Request",
+        46,
+        MessageKind::Request,
+        Capability::ArbiterPrestateV2,
+        true,
+        false,
+    );
+    messages[46] = message(
+        "ArbiterPrestateV2Response",
+        47,
+        MessageKind::Response,
+        Capability::ArbiterPrestateV2,
+        true,
+        true,
+    );
+    messages
+};
+
+const ARBITER_PRESTATE_SCHEMA: Schema = Schema {
+    version: Version::V1_10,
+    messages: &ARBITER_PRESTATE_MESSAGES,
+    capabilities: &ARBITER_PRESTATE_CAPABILITIES,
+};
+
+#[must_use]
+pub const fn lni_schema_arbiter_prestate_v2() -> &'static Schema {
+    &ARBITER_PRESTATE_SCHEMA
 }
 
 /// One checked-in canonical encoding vector.
@@ -784,14 +866,30 @@ const GOLDENS: [GoldenVector; 45] = [
         proof_material: PROOF,
         encoded_hex: "0001000700290000000000000000000000012900000001a5",
     },
-    GoldenVector { message: "CapsDiscoveryRequest", payload: &[42], proof_material: NO_PROOF,
-        encoded_hex: "00010008002a0000000000000000000000012a00000000" },
-    GoldenVector { message: "CapsDiscoveryResponse", payload: &[43], proof_material: NO_PROOF,
-        encoded_hex: "00010008002b0000000000000000000000012b00000000" },
-    GoldenVector { message: "ExecutionPrestateRequest", payload: &[44], proof_material: NO_PROOF,
-        encoded_hex: "00010009002c0000000000000000000000012c00000000" },
-    GoldenVector { message: "ExecutionPrestateResponse", payload: &[45], proof_material: NO_PROOF,
-        encoded_hex: "00010009002d0000000000000000000000012d00000000" },
+    GoldenVector {
+        message: "CapsDiscoveryRequest",
+        payload: &[42],
+        proof_material: NO_PROOF,
+        encoded_hex: "00010008002a0000000000000000000000012a00000000",
+    },
+    GoldenVector {
+        message: "CapsDiscoveryResponse",
+        payload: &[43],
+        proof_material: NO_PROOF,
+        encoded_hex: "00010008002b0000000000000000000000012b00000000",
+    },
+    GoldenVector {
+        message: "ExecutionPrestateRequest",
+        payload: &[44],
+        proof_material: NO_PROOF,
+        encoded_hex: "00010009002c0000000000000000000000012c00000000",
+    },
+    GoldenVector {
+        message: "ExecutionPrestateResponse",
+        payload: &[45],
+        proof_material: NO_PROOF,
+        encoded_hex: "00010009002d0000000000000000000000012d00000000",
+    },
 ];
 
 impl GoldenVector {
@@ -850,7 +948,15 @@ pub enum SchemaError {
 ///
 /// Refuses unknown tags and byte strings that do not fit the u32 wire length.
 pub fn encode_envelope(envelope: Envelope<'_>) -> Result<Vec<u8>, SchemaError> {
-    if !MESSAGES
+    encode_envelope_with_schema(envelope, lni_schema_v1())
+}
+
+pub fn encode_envelope_with_schema(
+    envelope: Envelope<'_>,
+    schema: &Schema,
+) -> Result<Vec<u8>, SchemaError> {
+    if !schema
+        .messages
         .iter()
         .any(|message| message.tag == envelope.message_tag)
     {
@@ -883,11 +989,22 @@ pub fn encode_envelope(envelope: Envelope<'_>) -> Result<Vec<u8>, SchemaError> {
 /// Refuses unknown message tags, truncated lengths and payloads, arithmetic
 /// overflow, and trailing bytes outside the two declared byte strings.
 pub fn decode_envelope(bytes: &[u8]) -> Result<Envelope<'_>, SchemaError> {
+    decode_envelope_with_schema(bytes, lni_schema_v1())
+}
+
+pub fn decode_envelope_with_schema<'a>(
+    bytes: &'a [u8],
+    schema: &Schema,
+) -> Result<Envelope<'a>, SchemaError> {
     let mut cursor = 0_usize;
     let major = u16::from_be_bytes(take(bytes, &mut cursor)?);
     let minor = u16::from_be_bytes(take(bytes, &mut cursor)?);
     let message_tag = u16::from_be_bytes(take(bytes, &mut cursor)?);
-    if !MESSAGES.iter().any(|message| message.tag == message_tag) {
+    if !schema
+        .messages
+        .iter()
+        .any(|message| message.tag == message_tag)
+    {
         return Err(SchemaError::UnknownMessage(message_tag));
     }
     let correlation_id = u64::from_be_bytes(take(bytes, &mut cursor)?);

@@ -46,7 +46,8 @@ typedef enum lxp_daemon_evidence_kind {
     LXP_DAEMON_EVIDENCE_ACCOUNT = 1,
     LXP_DAEMON_EVIDENCE_ACTIVITY = 2,
     LXP_DAEMON_EVIDENCE_FINALITY = 3,
-    LXP_DAEMON_EVIDENCE_EXECUTION_PRESTATE = 4
+    LXP_DAEMON_EVIDENCE_EXECUTION_PRESTATE = 4,
+    LXP_DAEMON_EVIDENCE_ARBITER_PRESTATE = 5
 } lxp_daemon_evidence_kind;
 
 struct lxp_daemon_settlement_registration_evidence;
@@ -78,6 +79,8 @@ typedef struct lxp_daemon_evidence_store {
     void *finality_authority_context;
     bool execution_prestate_enabled;
     size_t execution_prestate_retained_bytes;
+    bool arbiter_prestate_enabled;
+    size_t arbiter_prestate_retained_bytes;
     bool initialized;
 } lxp_daemon_evidence_store;
 
@@ -227,6 +230,16 @@ typedef lxp_result (*lxp_daemon_execution_prestate_consumer)(
 lxp_result lxp_daemon_evidence_get_execution_prestate(
     const lxp_daemon_evidence_store *store, uint32_t network_id,
     const uint8_t activity_id[32], const uint8_t receipt_digest[32],
+    lxp_arena *arena, lxp_daemon_execution_prestate_consumer consume,
+    void *context);
+bool lxp_daemon_evidence_arbiter_prestate_ready(
+    const lxp_daemon_evidence_store *store);
+lxp_result lxp_daemon_evidence_retain_arbiter_prestates(
+    lxp_daemon_evidence_store *store, const lxp_kernel_prepared_batch *batch);
+lxp_result lxp_daemon_evidence_get_arbiter_prestate(
+    const lxp_daemon_evidence_store *store, uint32_t network_id,
+    const uint8_t activity_id[32], const uint8_t receipt_digest[32],
+    uint64_t execution_sequence, const uint8_t previous_state_root[32],
     lxp_arena *arena, lxp_daemon_execution_prestate_consumer consume,
     void *context);
 lxp_result lxp_daemon_activity_evidence_recover_batch(

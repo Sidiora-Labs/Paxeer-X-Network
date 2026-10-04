@@ -1635,7 +1635,7 @@ static lxp_result encode_record(
     if (key == NULL || body == NULL || body_length == NULL || digest == NULL ||
         network_id == 0U || ordinal == 0U ||
         kind < LXP_DAEMON_EVIDENCE_ACCOUNT ||
-        kind > LXP_DAEMON_EVIDENCE_EXECUTION_PRESTATE ||
+        kind > LXP_DAEMON_EVIDENCE_ARBITER_PRESTATE ||
         (payload.bytes == NULL && payload.length != 0U) ||
         (proof.bytes == NULL && proof.length != 0U) ||
         payload.length > UINT32_MAX || proof.length > UINT32_MAX ||
@@ -1698,7 +1698,7 @@ static lxp_result decode_record(const uint8_t *body, size_t body_length,
         memcmp(body, evidence_magic, sizeof(evidence_magic)) != 0 ||
         body[4] != EVIDENCE_RECORD_VERSION || body[6] != 0U || body[7] != 0U ||
         body[5] < LXP_DAEMON_EVIDENCE_ACCOUNT ||
-        body[5] > LXP_DAEMON_EVIDENCE_EXECUTION_PRESTATE || read_u32(body + 8U) == 0U ||
+        body[5] > LXP_DAEMON_EVIDENCE_ARBITER_PRESTATE || read_u32(body + 8U) == 0U ||
         read_u64(body + 12U) == 0U)
         return LXP_ERR_LOG_CORRUPT;
     status = lxp_hash_sha256(body,
@@ -2022,6 +2022,80 @@ static lxp_result execution_prestate_validate(lxp_byte_span payload,
     return status;
 }
 
+static lxp_result arbiter_prestate_validate(lxp_byte_span payload,
+                                            uint32_t network_id, uint8_t key[32])
+{
+    evidence_reader reader = {payload.bytes, payload.length, 0U};
+    lxp_byte_span legacy = {NULL, 0U};
+    uint32_t length = 0U;
+    uint16_t version = 0U, module_count = 0U, composite_count;
+    lxp_state_witness *witness = NULL;
+    size_t pass;
+    lxp_result status;
+    if (payload.bytes == NULL || payload.length > LXP_KERNEL_MAX_BLOB_TOTAL_BYTES)
+        return LXP_ERR_LENGTH_LIMIT;
+    status = reader_u16(&reader, &version);
+    if (status == LXP_OK && version != 2U) status = LXP_ERR_VERSION_UNSUPPORTED;
+    if (status == LXP_OK) status = reader_u32(&reader, &length);
+    if (status == LXP_OK) status = reader_take(&reader, length, &legacy.bytes);
+    legacy.length = length;
+    if (status == LXP_OK) status = execution_prestate_validate(legacy, network_id, key);
+    if (status == LXP_OK) status = reader_u16(&reader, &module_count);
+    if (status == LXP_OK && module_count != 2U) status = LXP_ERR_NON_CANONICAL;
+    if (status != LXP_OK) return status;
+    composite_count = read_u16(legacy.bytes + 78U);
+    witness = malloc(sizeof(*witness));
+    if (witness == NULL) return LXP_ERR_IO;
+    for (pass = 0U; status == LXP_OK && pass < 2U; ++pass) {
+        uint16_t module = 0U;
+        uint16_t expected = pass == 0U ? LXP_MODULE_PERPS : LXP_MODULE_WEB;
+        uint8_t subtree[32], calculated[32], module_key[2];
+        uint8_t previous[LXP_STATE_WITNESS_MAX_KEY];
+        uint8_t (*leaves)[32] = NULL;
+        lxp_state_proof path;
+        uint32_t count = 0U;
+        size_t index, previous_length = 0U;
+        status = reader_u16(&reader, &module);
+        if (status == LXP_OK) status = reader_copy(&reader, subtree, 32U);
+        if (status == LXP_OK) status = read_state_proof(&reader, &path);
+        if (status == LXP_OK && (module != expected || module >= composite_count ||
+            path.leaf_index != module || path.leaf_count != composite_count ||
+            memcmp(subtree, legacy.bytes + 80U + 32U * module, 32U) != 0))
+            status = LXP_ERR_CONTEXT_MISMATCH;
+        write_u16(module_key, module);
+        if (status == LXP_OK) status = state_leaf_hash(module_key, 2U, subtree, 32U, calculated);
+        if (status == LXP_OK) status = state_proof_verify(calculated, &path, legacy.bytes + 46U);
+        if (status == LXP_OK) status = reader_u32(&reader, &count);
+        if (status == LXP_OK && count > LXP_KERNEL_MAX_MODULE_KV + LXP_KERNEL_MAX_BLOBS)
+            status = LXP_ERR_LENGTH_LIMIT;
+        if (status == LXP_OK && count != 0U) {
+            leaves = calloc(count, 32U);
+            if (leaves == NULL) status = LXP_ERR_IO;
+        }
+        for (index = 0U; status == LXP_OK && index < count; ++index) {
+            status = execution_prestate_witness(&reader, witness, legacy.bytes + 46U);
+            if (status == LXP_OK && (witness->module_id != module ||
+                witness->layer_a.leaf_index != index || witness->layer_a.leaf_count != count ||
+                witness->layer_b.leaf_count != composite_count ||
+                (index != 0U && !execution_prestate_key_after(witness, previous, previous_length))))
+                status = LXP_ERR_CONTEXT_MISMATCH;
+            if (status == LXP_OK) {
+                memcpy(previous, witness->key, witness->key_length);
+                previous_length = witness->key_length;
+                status = state_leaf_hash(witness->key, witness->key_length,
+                    witness->value, witness->value_length, leaves[index]);
+            }
+        }
+        if (status == LXP_OK) status = execution_prestate_tree(leaves, count, calculated);
+        if (status == LXP_OK && memcmp(calculated, subtree, 32U) != 0)
+            status = LXP_ERR_ROOT_MISMATCH;
+        free(leaves);
+    }
+    if (status == LXP_OK) status = reader_finish(&reader);
+    free(witness);
+    return status;
+}
+
 static lxp_result validate_recovered_record(
     lxp_daemon_evidence_store *store, const decoded_record *record,
     lxp_arena *arena)
@@ -2089,6 +2163,15 @@ static lxp_result validate_recovered_record(
             status = LXP_ERR_LOG_CORRUPT;
         if (status == LXP_OK)
             store->execution_prestate_retained_bytes += record->payload.length;
+    } else if (record->kind == LXP_DAEMON_EVIDENCE_ARBITER_PRESTATE) {
+        uint8_t key[32];
+        status = record->proof.length == 0U ?
+            arbiter_prestate_validate(record->payload, store->network_id, key) :
+            LXP_ERR_NON_CANONICAL;
+        if (status == LXP_OK && (memcmp(key, record->key, 32U) != 0 ||
+            record->payload.length > LXP_KERNEL_MAX_BLOB_TOTAL_BYTES -
+                store->arbiter_prestate_retained_bytes)) status = LXP_ERR_LOG_CORRUPT;
+        if (status == LXP_OK) store->arbiter_prestate_retained_bytes += record->payload.length;
     } else {
         status = LXP_ERR_INVALID_TAG;
     }
@@ -3060,6 +3143,137 @@ lxp_result lxp_daemon_evidence_get_execution_prestate(
             if (status == LXP_OK && (record.network_id != network_id || record.proof.length != 0U ||
                 memcmp(actual_key, key, 32U) != 0 ||
                 memcmp(record.payload.bytes, identity, sizeof(identity)) != 0))
+                status = LXP_ERR_CONTEXT_MISMATCH;
+            if (status == LXP_OK) status = consume(context, record.payload);
+            free(body);
+            return status;
+        }
+        if (status == LXP_OK) {
+            if (offset > UINT64_MAX - LXP_LOG_HEADER_BYTES - (uint64_t)header.body_length)
+                status = LXP_ERR_OVERFLOW;
+            else offset += LXP_LOG_HEADER_BYTES + header.body_length;
+        }
+        free(body);
+    }
+    return status == LXP_OK ? LXP_ERR_UNKNOWN_ACTIVITY : status;
+}
+
+bool lxp_daemon_evidence_arbiter_prestate_ready(
+    const lxp_daemon_evidence_store *store)
+{
+    return store != NULL && store->initialized && store->arbiter_prestate_enabled &&
+        store->log != NULL && store->log->descriptor >= 0 &&
+        store->arbiter_prestate_retained_bytes <= LXP_KERNEL_MAX_BLOB_TOTAL_BYTES;
+}
+
+lxp_result lxp_daemon_evidence_retain_arbiter_prestates(
+    lxp_daemon_evidence_store *store, const lxp_kernel_prepared_batch *batch)
+{
+    const lxp_receipt *receipts;
+    size_t count;
+    size_t index;
+    size_t new_bytes = 0U;
+    lxp_result status = LXP_OK;
+    if (!lxp_daemon_evidence_arbiter_prestate_ready(store) || batch == NULL)
+        return LXP_ERR_MODULE_DISABLED;
+    receipts = lxp_kernel_prepared_batch_receipts(batch);
+    count = lxp_kernel_prepared_batch_count(batch);
+    if (receipts == NULL || count == 0U) return LXP_ERR_NON_CANONICAL;
+    for (index = 0U; status == LXP_OK && index < count; ++index) {
+        lxp_byte_span payload = lxp_kernel_prepared_batch_arbiter_prestate(batch, index);
+        uint8_t key[32];
+        bool present = false;
+        bool exact = false;
+        if (payload.length == 0U) {
+            if (receipts[index].protocol_version == LXP_PROTOCOL_VERSION_STATE_COMMITMENT &&
+                receipts[index].module_id == LXP_MODULE_PROGRAMS)
+                status = LXP_ERR_IO;
+            continue;
+        }
+        status = arbiter_prestate_validate(payload, store->network_id, key);
+        if (status == LXP_OK && (memcmp(payload.bytes + 12U, receipts[index].activity_id, 32U) != 0 ||
+            read_u64(payload.bytes + 44U) != receipts[index].global_sequence ||
+            memcmp(payload.bytes + 52U, receipts[index].previous_state_root, 32U) != 0))
+            status = LXP_ERR_CONTEXT_MISMATCH;
+        if (status == LXP_OK)
+            status = find_record(store, LXP_DAEMON_EVIDENCE_ARBITER_PRESTATE, key,
+                payload, (lxp_byte_span){NULL, 0U}, NULL, &present, &exact);
+        if (status == LXP_OK && present && !exact) status = LXP_ERR_LOG_CORRUPT;
+        if (status == LXP_OK && !present) {
+            if (new_bytes > LXP_KERNEL_MAX_BLOB_TOTAL_BYTES - store->arbiter_prestate_retained_bytes ||
+                payload.length > LXP_KERNEL_MAX_BLOB_TOTAL_BYTES -
+                    store->arbiter_prestate_retained_bytes - new_bytes)
+                status = LXP_ERR_LENGTH_LIMIT;
+            else new_bytes += payload.length;
+        }
+    }
+    if (status != LXP_OK) return status;
+    for (index = 0U; status == LXP_OK && index < count; ++index) {
+        lxp_byte_span payload = lxp_kernel_prepared_batch_arbiter_prestate(batch, index);
+        uint8_t key[32];
+        bool appended = false;
+        if (payload.length == 0U) continue;
+        status = arbiter_prestate_validate(payload, store->network_id, key);
+        if (status == LXP_OK)
+            status = append_record(store, LXP_DAEMON_EVIDENCE_ARBITER_PRESTATE,
+                key, payload, (lxp_byte_span){NULL, 0U}, NULL, &appended);
+        if (status == LXP_OK && appended)
+            store->arbiter_prestate_retained_bytes += payload.length;
+    }
+    if (status == LXP_OK) status = lxp_log_write_boundary(store->log);
+    if (status != LXP_OK) store->arbiter_prestate_enabled = false;
+    return status;
+}
+
+lxp_result lxp_daemon_evidence_get_arbiter_prestate(
+    const lxp_daemon_evidence_store *store, uint32_t network_id,
+    const uint8_t activity_id[32], const uint8_t receipt_digest[32],
+    uint64_t execution_sequence, const uint8_t previous_state_root[32],
+    lxp_arena *arena, lxp_daemon_execution_prestate_consumer consume,
+    void *context)
+{
+    lxp_daemon_activity_evidence evidence;
+    lxp_receipt receipt;
+    uint8_t identity[78];
+    uint8_t key[32];
+    uint64_t offset = 0U;
+    lxp_result status;
+    if (!lxp_daemon_evidence_arbiter_prestate_ready(store) || network_id != store->network_id ||
+        activity_id == NULL || receipt_digest == NULL || previous_state_root == NULL ||
+        execution_sequence == 0U || arena == NULL || consume == NULL)
+        return LXP_ERR_NON_CANONICAL;
+    status = lxp_daemon_activity_evidence_lookup(store, activity_id, arena, &evidence);
+    if (status == LXP_OK && memcmp(evidence.receipt_digest, receipt_digest, 32U) != 0)
+        status = LXP_ERR_CONTEXT_MISMATCH;
+    if (status == LXP_OK)
+        status = lxp_receipt_decode(evidence.canonical_receipt.bytes,
+            evidence.canonical_receipt.length, true, &receipt);
+    if (status == LXP_OK && (receipt.protocol_version != LXP_PROTOCOL_VERSION_STATE_COMMITMENT ||
+        receipt.module_id != LXP_MODULE_PROGRAMS || receipt.global_sequence == 0U ||
+        memcmp(receipt.activity_id, activity_id, 32U) != 0 ||
+        receipt.global_sequence != execution_sequence ||
+        memcmp(receipt.previous_state_root, previous_state_root, 32U) != 0))
+        status = LXP_ERR_CONTEXT_MISMATCH;
+    if (status == LXP_OK) {
+        write_u16(identity, 1U);
+        write_u32(identity + 2U, network_id);
+        memcpy(identity + 6U, activity_id, 32U);
+        write_u64(identity + 38U, receipt.global_sequence);
+        memcpy(identity + 46U, receipt.previous_state_root, 32U);
+        status = lxp_hash_sha256(identity, sizeof(identity), key);
+    }
+    while (status == LXP_OK && offset < store->log->write_offset) {
+        lxp_log_record_header header;
+        decoded_record record;
+        uint8_t *body = NULL;
+        status = read_log_record(store, offset, &header, &body, &record);
+        if (status == LXP_OK && record.kind == LXP_DAEMON_EVIDENCE_ARBITER_PRESTATE &&
+            memcmp(record.key, key, 32U) == 0) {
+            uint8_t actual_key[32];
+            status = arbiter_prestate_validate(record.payload, network_id, actual_key);
+            if (status == LXP_OK && (record.network_id != network_id || record.proof.length != 0U ||
+                memcmp(actual_key, key, 32U) != 0 ||
+                memcmp(record.payload.bytes + 6U, identity, sizeof(identity)) != 0))
                 status = LXP_ERR_CONTEXT_MISMATCH;
             if (status == LXP_OK) status = consume(context, record.payload);
             free(body);

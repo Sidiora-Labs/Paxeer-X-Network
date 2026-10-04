@@ -5,7 +5,7 @@ use std::fmt::Write as _;
 use layerx_types::error::LayerError;
 
 use super::capabilities::Capabilities;
-use super::schema::{lni_schema_v1, Capability};
+use super::schema::{lni_schema_v1, Capability, Schema};
 
 /// Required node capability and the layer's exact behavior when it is absent.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -107,7 +107,15 @@ impl CapabilityReport {
 /// Builds the exhaustive gap report from the negotiated intersection.
 #[must_use]
 pub fn capability_report(capabilities: &Capabilities) -> CapabilityReport {
-    let entries = lni_schema_v1()
+    capability_report_with_schema(capabilities, lni_schema_v1())
+}
+
+#[must_use]
+pub fn capability_report_with_schema(
+    capabilities: &Capabilities,
+    schema: &Schema,
+) -> CapabilityReport {
+    let entries = schema
         .capabilities
         .iter()
         .copied()
@@ -147,5 +155,6 @@ const fn absent_behavior(capability: Capability) -> &'static str {
         Capability::ProgramHeadAttest => "program_head_attestation_unavailable",
         Capability::CapsDiscovery => "complete_caps_discovery_unavailable",
         Capability::ExecutionPrestate => "execution_prestate_read_unavailable",
+        Capability::ArbiterPrestateV2 => "arbiter_prestate_v2_read_unavailable",
     }
 }

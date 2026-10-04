@@ -21,15 +21,15 @@ use crate::evidence::{
     VerifiedCheckpoint, VerifiedProofBundle,
 };
 use crate::head::{Head, HeadError, HeadTracker};
-use crate::lni::handshake::{perform, Handshake, HandshakeConfig, HandshakeError};
+use crate::lni::handshake::{perform_with_schema, Handshake, HandshakeConfig, HandshakeError};
 use crate::lni::preparation::{
     preparation_state, PreparationState, PreparationStateContext, PreparationStateError,
 };
 use crate::lni::program_read::{
     read_program, ProgramReadContext, ProgramReadError, ProgramReadResult,
 };
-use crate::lni::report::capability_report;
-use crate::lni::schema::Capability;
+use crate::lni::report::capability_report_with_schema;
+use crate::lni::schema::{lni_schema_arbiter_prestate_v2, lni_schema_v1, Capability, Schema};
 use crate::lni::simulate::{simulate, SimulateContext, SimulateError, Simulation};
 use crate::lni::transport::{ConnectionGate, Limits, TransportError, Uds};
 use crate::payments::{CommittedSnapshot, FeeEstimate, SnapshotContext};
@@ -197,39 +197,149 @@ pub struct Client {
     handshake: Handshake,
     head: HeadTracker,
     state: ConnectionState,
+    schema: &'static Schema,
 }
 
 impl Client {
+    pub fn start_arbiter_prestate_v2<'a>(
+        &'a mut self,
+        receipt: &'a layerx_proof::receipt::VerifiedReceipt,
+        correlation_id: u64,
+    ) -> Result<
+        crate::arbiter_prestate::ArbiterPrestateDiscovery<'a>,
+        crate::arbiter_prestate::ArbiterPrestateError,
+    > {
+        use crate::arbiter_prestate::{
+            ArbiterPrestateDiscovery, ArbiterPrestateError, ARBITER_PRESTATE_REQUEST_BYTES,
+            ARBITER_PRESTATE_RESPONSE_HEADER_BYTES, MAX_ARBITER_PRESTATE_PAGE_BYTES,
+        };
+        if !self
+            .handshake
+            .capabilities()
+            .contains(Capability::ArbiterPrestateV2)
+            || self.config.handshake.built_interface_version != crate::lni::schema::Version::V1_10
+        {
+            return Err(ArbiterPrestateError::Unavailable);
+        }
+        let limits = self.config.limits;
+        if limits.maximum_frame_bytes < ARBITER_PRESTATE_REQUEST_BYTES + 22 {
+            return Err(ArbiterPrestateError::Bounds);
+        }
+        let page_bytes = limits
+            .maximum_frame_bytes
+            .checked_sub(ARBITER_PRESTATE_RESPONSE_HEADER_BYTES + 22)
+            .filter(|bytes| *bytes > 0)
+            .ok_or(ArbiterPrestateError::Bounds)?
+            .min(MAX_ARBITER_PRESTATE_PAGE_BYTES);
+        let page_bytes = u32::try_from(page_bytes).map_err(|_| ArbiterPrestateError::Bounds)?;
+        let node = self.handshake.node();
+        if node.protocol_version != 3 {
+            return Err(ArbiterPrestateError::Unavailable);
+        }
+        let transport = self
+            .transport
+            .as_mut()
+            .ok_or(ArbiterPrestateError::Transport(
+                TransportError::PeerShutdown,
+            ))?;
+        ArbiterPrestateDiscovery::begin(
+            transport,
+            self.handshake.capabilities(),
+            node.interface_version,
+            node.network_id,
+            correlation_id,
+            receipt,
+            page_bytes,
+            limits.deadline,
+        )
+    }
+
+    pub fn arbiter_prestate_v2(
+        &mut self,
+        receipt: &layerx_proof::receipt::VerifiedReceipt,
+        correlation_id: u64,
+    ) -> Result<
+        crate::evidence::VerifiedArbiterPrestate,
+        crate::arbiter_prestate::ArbiterPrestateError,
+    > {
+        use crate::arbiter_prestate::{ArbiterPrestateError, ArbiterPrestateProgress};
+        let mut discovery = self.start_arbiter_prestate_v2(receipt, correlation_id)?;
+        loop {
+            match discovery.advance() {
+                ArbiterPrestateProgress::Incomplete { .. } => {}
+                ArbiterPrestateProgress::Complete(prestate) => return Ok(prestate),
+                ArbiterPrestateProgress::Refused(error) => return Err(error),
+                ArbiterPrestateProgress::Unavailable => {
+                    return Err(ArbiterPrestateError::Unavailable)
+                }
+            }
+        }
+    }
+
     pub fn start_execution_prestate<'a>(
         &'a mut self,
         receipt: &'a layerx_proof::receipt::VerifiedReceipt,
         correlation_id: u64,
-    ) -> Result<crate::execution_prestate::ExecutionPrestateDiscovery<'a>, crate::execution_prestate::ExecutionPrestateError> {
-        use crate::execution_prestate::{ExecutionPrestateDiscovery, ExecutionPrestateError,
-            CAPS_REQUEST_BYTES, CAPS_RESPONSE_HEADER_BYTES, MAX_CAPS_PAGE_BYTES};
-        if !self.handshake.capabilities().contains(Capability::CapsDiscovery)
-            || !self.handshake.capabilities().contains(Capability::ExecutionPrestate)
-        { return Err(ExecutionPrestateError::Unavailable); }
+    ) -> Result<
+        crate::execution_prestate::ExecutionPrestateDiscovery<'a>,
+        crate::execution_prestate::ExecutionPrestateError,
+    > {
+        use crate::execution_prestate::{
+            ExecutionPrestateDiscovery, ExecutionPrestateError, CAPS_REQUEST_BYTES,
+            CAPS_RESPONSE_HEADER_BYTES, MAX_CAPS_PAGE_BYTES,
+        };
+        if !self
+            .handshake
+            .capabilities()
+            .contains(Capability::CapsDiscovery)
+            || !self
+                .handshake
+                .capabilities()
+                .contains(Capability::ExecutionPrestate)
+        {
+            return Err(ExecutionPrestateError::Unavailable);
+        }
         let limits = self.config.limits;
         if limits.maximum_frame_bytes < CAPS_REQUEST_BYTES + 22 {
             return Err(ExecutionPrestateError::Bounds);
         }
-        let page_bytes = limits.maximum_frame_bytes.checked_sub(CAPS_RESPONSE_HEADER_BYTES + 22)
-            .filter(|bytes| *bytes > 0).ok_or(ExecutionPrestateError::Bounds)?.min(MAX_CAPS_PAGE_BYTES);
+        let page_bytes = limits
+            .maximum_frame_bytes
+            .checked_sub(CAPS_RESPONSE_HEADER_BYTES + 22)
+            .filter(|bytes| *bytes > 0)
+            .ok_or(ExecutionPrestateError::Bounds)?
+            .min(MAX_CAPS_PAGE_BYTES);
         let page_bytes = u32::try_from(page_bytes).map_err(|_| ExecutionPrestateError::Bounds)?;
         let node = self.handshake.node();
-        if node.protocol_version != 3 { return Err(ExecutionPrestateError::Unavailable); }
-        let transport = self.transport.as_mut()
-            .ok_or(ExecutionPrestateError::Transport(TransportError::PeerShutdown))?;
-        ExecutionPrestateDiscovery::begin(transport, self.handshake.capabilities(), node.interface_version,
-            node.network_id, correlation_id, receipt, page_bytes, limits.deadline)
+        if node.protocol_version != 3 {
+            return Err(ExecutionPrestateError::Unavailable);
+        }
+        let transport = self
+            .transport
+            .as_mut()
+            .ok_or(ExecutionPrestateError::Transport(
+                TransportError::PeerShutdown,
+            ))?;
+        ExecutionPrestateDiscovery::begin(
+            transport,
+            self.handshake.capabilities(),
+            node.interface_version,
+            node.network_id,
+            correlation_id,
+            receipt,
+            page_bytes,
+            limits.deadline,
+        )
     }
 
     pub fn execution_prestate(
         &mut self,
         receipt: &layerx_proof::receipt::VerifiedReceipt,
         correlation_id: u64,
-    ) -> Result<crate::evidence::VerifiedExecutionPrestate, crate::execution_prestate::ExecutionPrestateError> {
+    ) -> Result<
+        crate::evidence::VerifiedExecutionPrestate,
+        crate::execution_prestate::ExecutionPrestateError,
+    > {
         use crate::execution_prestate::{ExecutionPrestateError, ExecutionPrestateProgress};
         let mut discovery = self.start_execution_prestate(receipt, correlation_id)?;
         loop {
@@ -237,7 +347,9 @@ impl Client {
                 ExecutionPrestateProgress::Incomplete { .. } => {}
                 ExecutionPrestateProgress::Complete(prestate) => return Ok(prestate),
                 ExecutionPrestateProgress::Refused(error) => return Err(error),
-                ExecutionPrestateProgress::Unavailable => return Err(ExecutionPrestateError::Unavailable),
+                ExecutionPrestateProgress::Unavailable => {
+                    return Err(ExecutionPrestateError::Unavailable)
+                }
             }
         }
     }
@@ -246,32 +358,66 @@ impl Client {
         &'a mut self,
         receipt: &'a layerx_proof::receipt::VerifiedReceipt,
         correlation_id: u64,
-    ) -> Result<crate::execution_prestate::NativeExecutionPrestateDiscovery<'a>, crate::execution_prestate::ExecutionPrestateError> {
-        use crate::execution_prestate::{NativeExecutionPrestateDiscovery, ExecutionPrestateError,
-            CAPS_REQUEST_BYTES, CAPS_RESPONSE_HEADER_BYTES, MAX_CAPS_PAGE_BYTES};
-        if !self.handshake.capabilities().contains(Capability::CapsDiscovery)
-            || !self.handshake.capabilities().contains(Capability::ExecutionPrestate)
-        { return Err(ExecutionPrestateError::Unavailable); }
+    ) -> Result<
+        crate::execution_prestate::NativeExecutionPrestateDiscovery<'a>,
+        crate::execution_prestate::ExecutionPrestateError,
+    > {
+        use crate::execution_prestate::{
+            ExecutionPrestateError, NativeExecutionPrestateDiscovery, CAPS_REQUEST_BYTES,
+            CAPS_RESPONSE_HEADER_BYTES, MAX_CAPS_PAGE_BYTES,
+        };
+        if !self
+            .handshake
+            .capabilities()
+            .contains(Capability::CapsDiscovery)
+            || !self
+                .handshake
+                .capabilities()
+                .contains(Capability::ExecutionPrestate)
+        {
+            return Err(ExecutionPrestateError::Unavailable);
+        }
         let limits = self.config.limits;
         if limits.maximum_frame_bytes < CAPS_REQUEST_BYTES + 22 {
             return Err(ExecutionPrestateError::Bounds);
         }
-        let page_bytes = limits.maximum_frame_bytes.checked_sub(CAPS_RESPONSE_HEADER_BYTES + 22)
-            .filter(|bytes| *bytes > 0).ok_or(ExecutionPrestateError::Bounds)?.min(MAX_CAPS_PAGE_BYTES);
+        let page_bytes = limits
+            .maximum_frame_bytes
+            .checked_sub(CAPS_RESPONSE_HEADER_BYTES + 22)
+            .filter(|bytes| *bytes > 0)
+            .ok_or(ExecutionPrestateError::Bounds)?
+            .min(MAX_CAPS_PAGE_BYTES);
         let page_bytes = u32::try_from(page_bytes).map_err(|_| ExecutionPrestateError::Bounds)?;
         let node = self.handshake.node();
-        if node.protocol_version != 3 { return Err(ExecutionPrestateError::Unavailable); }
-        let transport = self.transport.as_mut()
-            .ok_or(ExecutionPrestateError::Transport(TransportError::PeerShutdown))?;
-        NativeExecutionPrestateDiscovery::begin(transport, self.handshake.capabilities(), node.interface_version,
-            node.network_id, correlation_id, receipt, page_bytes, limits.deadline)
+        if node.protocol_version != 3 {
+            return Err(ExecutionPrestateError::Unavailable);
+        }
+        let transport = self
+            .transport
+            .as_mut()
+            .ok_or(ExecutionPrestateError::Transport(
+                TransportError::PeerShutdown,
+            ))?;
+        NativeExecutionPrestateDiscovery::begin(
+            transport,
+            self.handshake.capabilities(),
+            node.interface_version,
+            node.network_id,
+            correlation_id,
+            receipt,
+            page_bytes,
+            limits.deadline,
+        )
     }
 
     pub fn native_execution_prestate(
         &mut self,
         receipt: &layerx_proof::receipt::VerifiedReceipt,
         correlation_id: u64,
-    ) -> Result<crate::evidence::VerifiedNativeExecutionPrestate, crate::execution_prestate::ExecutionPrestateError> {
+    ) -> Result<
+        crate::evidence::VerifiedNativeExecutionPrestate,
+        crate::execution_prestate::ExecutionPrestateError,
+    > {
         use crate::execution_prestate::{ExecutionPrestateError, NativeExecutionPrestateProgress};
         let mut discovery = self.start_native_execution_prestate(receipt, correlation_id)?;
         loop {
@@ -279,7 +425,9 @@ impl Client {
                 NativeExecutionPrestateProgress::Incomplete { .. } => {}
                 NativeExecutionPrestateProgress::Complete(prestate) => return Ok(prestate),
                 NativeExecutionPrestateProgress::Refused(error) => return Err(error),
-                NativeExecutionPrestateProgress::Unavailable => return Err(ExecutionPrestateError::Unavailable),
+                NativeExecutionPrestateProgress::Unavailable => {
+                    return Err(ExecutionPrestateError::Unavailable)
+                }
             }
         }
     }
@@ -292,24 +440,40 @@ impl Client {
         authorization: SequencerAuthorization,
         history: Option<&'a crate::handover::SequencerHistory>,
     ) -> Result<crate::caps::CapsDiscovery<'a>, crate::caps::CapsError> {
-        if !self.handshake.capabilities().contains(Capability::CapsDiscovery) {
+        if !self
+            .handshake
+            .capabilities()
+            .contains(Capability::CapsDiscovery)
+        {
             return Err(crate::caps::CapsError::Unavailable);
         }
         let limits = self.config.limits;
         if limits.maximum_frame_bytes < crate::caps::CAPS_REQUEST_BYTES + 22 {
             return Err(crate::caps::CapsError::Bounds);
         }
-        let page_bytes = limits.maximum_frame_bytes
+        let page_bytes = limits
+            .maximum_frame_bytes
             .checked_sub(crate::caps::CAPS_RESPONSE_HEADER_BYTES + 22)
             .filter(|bytes| *bytes > 0)
             .ok_or(crate::caps::CapsError::Bounds)?
             .min(crate::caps::MAX_CAPS_PAGE_BYTES);
         let page_bytes = u32::try_from(page_bytes).map_err(|_| crate::caps::CapsError::Bounds)?;
         let context = self.read_context(requested, correlation_id, authorization);
-        let transport = self.transport.as_mut()
-            .ok_or(crate::caps::CapsError::Transport(TransportError::PeerShutdown))?;
-        crate::caps::CapsDiscovery::begin(transport, self.handshake.capabilities(), context,
-            did, page_bytes, limits.deadline, history)
+        let transport = self
+            .transport
+            .as_mut()
+            .ok_or(crate::caps::CapsError::Transport(
+                TransportError::PeerShutdown,
+            ))?;
+        crate::caps::CapsDiscovery::begin(
+            transport,
+            self.handshake.capabilities(),
+            context,
+            did,
+            page_bytes,
+            limits.deadline,
+            history,
+        )
     }
 
     pub fn caps_discovery(
@@ -320,16 +484,19 @@ impl Client {
         authorization: SequencerAuthorization,
         history: Option<&crate::handover::SequencerHistory>,
     ) -> Result<crate::evidence::VerifiedCaps, crate::caps::CapsError> {
-        let mut discovery = self.start_caps_discovery(did, requested, correlation_id,
-            authorization, history)?;
+        let mut discovery =
+            self.start_caps_discovery(did, requested, correlation_id, authorization, history)?;
         loop {
             match discovery.advance() {
                 crate::caps::CapsProgress::Incomplete { .. } => {}
-                crate::caps::CapsProgress::Complete(caps) | crate::caps::CapsProgress::Empty(caps) => {
+                crate::caps::CapsProgress::Complete(caps)
+                | crate::caps::CapsProgress::Empty(caps) => {
                     return Ok(caps);
                 }
                 crate::caps::CapsProgress::Refused(error) => return Err(error),
-                crate::caps::CapsProgress::Unavailable => return Err(crate::caps::CapsError::Unavailable),
+                crate::caps::CapsProgress::Unavailable => {
+                    return Err(crate::caps::CapsError::Unavailable)
+                }
             }
         }
     }
@@ -511,13 +678,24 @@ impl Client {
     /// Returns a typed transport or startup-refusal failure before exposing a
     /// client.
     pub fn connect(config: ClientConfig) -> Result<Self, ConnectionError> {
+        Self::connect_with_schema(config, lni_schema_v1())
+    }
+
+    pub fn connect_arbiter_prestate_v2(config: ClientConfig) -> Result<Self, ConnectionError> {
+        Self::connect_with_schema(config, lni_schema_arbiter_prestate_v2())
+    }
+
+    fn connect_with_schema(
+        config: ClientConfig,
+        schema: &'static Schema,
+    ) -> Result<Self, ConnectionError> {
         let gate = ConnectionGate::new(config.limits.maximum_connections);
         let mut transport = Uds::connect(&config.endpoint, &gate, config.limits)
             .map_err(ConnectionError::Transport)?;
-        let handshake =
-            perform(&mut transport, &config.handshake, None).map_err(ConnectionError::Handshake)?;
+        let handshake = perform_with_schema(&mut transport, &config.handshake, None, schema)
+            .map_err(ConnectionError::Handshake)?;
         let head = HeadTracker::new(handshake.node());
-        let state = state_for(&handshake);
+        let state = state_for(&handshake, schema);
         Ok(Self {
             config,
             gate,
@@ -525,6 +703,7 @@ impl Client {
             handshake,
             head,
             state,
+            schema,
         })
     }
 
@@ -548,10 +727,11 @@ impl Client {
                 self.state = ConnectionState::Unreachable;
                 continue;
             };
-            let handshake = match perform(
+            let handshake = match perform_with_schema(
                 &mut transport,
                 &self.config.handshake,
                 Some(&self.handshake),
+                self.schema,
             ) {
                 Ok(handshake) => handshake,
                 Err(error) => {
@@ -565,7 +745,7 @@ impl Client {
                 self.state = error.state();
                 return Err(error);
             }
-            self.state = state_for(&handshake);
+            self.state = state_for(&handshake, self.schema);
             self.handshake = handshake;
             self.transport = Some(transport);
             return Ok(());
@@ -1308,8 +1488,8 @@ fn requires_historical_account_proofs(requested: VerificationLevel) -> bool {
     requested.wire_rank() >= VerificationLevel::CHECKPOINT_FINALISED.wire_rank()
 }
 
-fn state_for(handshake: &Handshake) -> ConnectionState {
-    if capability_report(handshake.capabilities())
+fn state_for(handshake: &Handshake, schema: &Schema) -> ConnectionState {
+    if capability_report_with_schema(handshake.capabilities(), schema)
         .gaps()
         .is_empty()
     {

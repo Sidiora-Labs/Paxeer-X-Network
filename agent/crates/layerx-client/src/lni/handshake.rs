@@ -1,7 +1,9 @@
 //! Startup-only LNI identity, version, and capability negotiation.
 
 use super::capabilities::Capabilities;
-use super::schema::{encode_envelope, Envelope, SchemaError, Version};
+use super::schema::{
+    encode_envelope_with_schema, lni_schema_v1, Capability, Envelope, Schema, SchemaError, Version,
+};
 use super::transport::{FrameTransport, TransportError};
 
 const NODE_INFO_REQUEST_TAG: u16 = 1;
@@ -129,21 +131,46 @@ pub fn perform<T: FrameTransport>(
     config: &HandshakeConfig,
     previous: Option<&Handshake>,
 ) -> Result<Handshake, HandshakeError> {
-    let request = encode_envelope(Envelope {
-        version: Version {
-            major: config.built_interface_version.major,
-            minor: if config.built_interface_version.minor >= 9 { 9 } else { 0 },
+    perform_with_schema(transport, config, previous, lni_schema_v1())
+}
+
+pub fn perform_with_schema<T: FrameTransport>(
+    transport: &mut T,
+    config: &HandshakeConfig,
+    previous: Option<&Handshake>,
+    schema: &Schema,
+) -> Result<Handshake, HandshakeError> {
+    let opt_in = schema.capabilities.contains(&Capability::ArbiterPrestateV2);
+    if opt_in && config.built_interface_version != Version::V1_10 {
+        return Err(HandshakeError::InterfaceIncompatible {
+            built: schema.version,
+            peer: config.built_interface_version,
+        });
+    }
+    let request = encode_envelope_with_schema(
+        Envelope {
+            version: Version {
+                major: config.built_interface_version.major,
+                minor: if opt_in {
+                    10
+                } else if config.built_interface_version.minor >= 9 {
+                    9
+                } else {
+                    0
+                },
+            },
+            message_tag: NODE_INFO_REQUEST_TAG,
+            correlation_id: 0,
+            canonical_payload: &[],
+            proof_material: &[],
         },
-        message_tag: NODE_INFO_REQUEST_TAG,
-        correlation_id: 0,
-        canonical_payload: &[],
-        proof_material: &[],
-    })?;
+        schema,
+    )?;
     transport.send(&request)?;
     let response = transport.receive()?;
     let payload = node_info_payload(&response)?;
     let node = decode_node_info(payload)?;
-    validate(node, config, previous)
+    validate_with_schema(node, config, previous, schema)
 }
 
 /// Validates decoded node information using the same startup refusal path as a
@@ -157,7 +184,20 @@ pub fn validate(
     config: &HandshakeConfig,
     previous: Option<&Handshake>,
 ) -> Result<Handshake, HandshakeError> {
-    if node.interface_version.major != config.built_interface_version.major {
+    validate_with_schema(node, config, previous, lni_schema_v1())
+}
+
+pub fn validate_with_schema(
+    node: NodeInfo,
+    config: &HandshakeConfig,
+    previous: Option<&Handshake>,
+    schema: &Schema,
+) -> Result<Handshake, HandshakeError> {
+    if node.interface_version.major != config.built_interface_version.major
+        || (schema.capabilities.contains(&Capability::ArbiterPrestateV2)
+            && (config.built_interface_version != Version::V1_10
+                || node.interface_version.minor < 10))
+    {
         return Err(HandshakeError::InterfaceIncompatible {
             built: config.built_interface_version,
             peer: node.interface_version,
@@ -183,7 +223,7 @@ pub fn validate(
             },
         )
     });
-    let capabilities = Capabilities::negotiate(&node.advertised_capabilities);
+    let capabilities = Capabilities::negotiate_with_schema(&node.advertised_capabilities, schema);
     Ok(Handshake {
         node,
         capabilities,

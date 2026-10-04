@@ -4,7 +4,7 @@ use std::collections::BTreeSet;
 
 use layerx_types::error::LayerError;
 
-use super::schema::{lni_schema_v1, Capability};
+use super::schema::{lni_schema_v1, Capability, Schema};
 
 /// Negotiated capability intersection with every known and unknown gap kept.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -18,16 +18,20 @@ impl Capabilities {
     /// Computes the intersection of the built-in schema and a node's names.
     #[must_use]
     pub fn negotiate(advertised: &[String]) -> Self {
+        Self::negotiate_with_schema(advertised, lni_schema_v1())
+    }
+
+    pub fn negotiate_with_schema(advertised: &[String], schema: &Schema) -> Self {
         let mut available = BTreeSet::new();
         let mut unknown_advertised = BTreeSet::new();
         for name in advertised {
-            if let Some(capability) = capability_by_name(name) {
+            if let Some(capability) = capability_by_name(name, schema) {
                 available.insert(capability);
             } else {
                 unknown_advertised.insert(name.clone());
             }
         }
-        let unavailable = lni_schema_v1()
+        let unavailable = schema
             .capabilities
             .iter()
             .copied()
@@ -80,8 +84,8 @@ impl Capabilities {
     }
 }
 
-fn capability_by_name(name: &str) -> Option<Capability> {
-    lni_schema_v1()
+fn capability_by_name(name: &str, schema: &Schema) -> Option<Capability> {
+    schema
         .capabilities
         .iter()
         .copied()
