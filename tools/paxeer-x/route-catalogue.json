@@ -44973,6 +44973,50 @@
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3,
       "upstream_path": "/readyz"
+    },
+    {
+      "id": "interop:POST:/v2/migration/accounts",
+      "service": "interop",
+      "method": "POST",
+      "path": "/v2/migration/accounts",
+      "transport": "http",
+      "authentication": "gateway-api-key",
+      "upstream": "interop",
+      "timeout_seconds": 8,
+      "retries": 0,
+      "health_predicate": "service-ready-and-network-version-bound",
+      "version": "layerx-migration-source-v2",
+      "consumers": [
+        "migration",
+        "wallet",
+        "developer"
+      ],
+      "source": "interop/crates/layerx-interop-service/src/server.rs",
+      "proxy": true,
+      "timeout_scope": "per-io",
+      "connect_timeout_seconds": 3
+    },
+    {
+      "id": "interop:POST:/v2/migration/assets",
+      "service": "interop",
+      "method": "POST",
+      "path": "/v2/migration/assets",
+      "transport": "http",
+      "authentication": "gateway-api-key",
+      "upstream": "interop",
+      "timeout_seconds": 8,
+      "retries": 0,
+      "health_predicate": "service-ready-and-network-version-bound",
+      "version": "layerx-migration-source-v2",
+      "consumers": [
+        "migration",
+        "wallet",
+        "developer"
+      ],
+      "source": "interop/crates/layerx-interop-service/src/server.rs",
+      "proxy": true,
+      "timeout_scope": "per-io",
+      "connect_timeout_seconds": 3
     }
   ],
   "denied_surfaces": [

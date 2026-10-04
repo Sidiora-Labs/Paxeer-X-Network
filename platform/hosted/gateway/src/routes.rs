@@ -327,11 +327,19 @@ impl Registry {
 
     fn health(&self, config: &Config, id: &str) -> Result<(), &'static str> {
         if id == "mcp-a2a" {
-            if self.mcp.is_empty() { return Err("not_configured"); }
+            if self.mcp.is_empty() {
+                return Err("not_configured");
+            }
             for route in self.mcp.values() {
-                let binding = route.owner_binding().map_err(|_| "owner_binding_unavailable")?;
-                let socket = binding["listener"]["socket"].as_str().ok_or("owner_socket_unavailable")?;
-                route.socket_identity(std::path::Path::new(socket)).map_err(|_| "owner_socket_unavailable")?;
+                let binding = route
+                    .owner_binding()
+                    .map_err(|_| "owner_binding_unavailable")?;
+                let socket = binding["listener"]["socket"]
+                    .as_str()
+                    .ok_or("owner_socket_unavailable")?;
+                route
+                    .socket_identity(std::path::Path::new(socket))
+                    .map_err(|_| "owner_socket_unavailable")?;
             }
         }
         let upstreams: BTreeSet<_> = catalogue()["routes"]
@@ -420,7 +428,12 @@ pub(super) fn route(config: &Config, request: &IncomingRequest) -> Option<Outgoi
     if request.headers.contains_key("origin") && config.routes.origin(request).is_none() {
         return Some(response(403, "origin_not_allowed", None));
     }
-    if request.path.split_once('?').map_or(request.path.as_str(), |(path, _)| path) == "/mcp" {
+    if request
+        .path
+        .split_once('?')
+        .map_or(request.path.as_str(), |(path, _)| path)
+        == "/mcp"
+    {
         return Some(mcp_route(config, request));
     }
     if request.path == "/v1/routes" || request.path.starts_with("/v1/routes/") {
@@ -497,6 +510,31 @@ pub(super) fn route(config: &Config, request: &IncomingRequest) -> Option<Outgoi
         }
         if let Err(refusal) = authenticate_key(config, request) {
             return Some(refusal);
+        }
+    }
+    if id == "interop"
+        && matches!(
+            request.path.as_str(),
+            "/v2/migration/accounts" | "/v2/migration/assets"
+        )
+    {
+        if !request
+            .headers
+            .get("authorization")
+            .is_some_and(|value| !value.is_empty())
+        {
+            return Some(response(
+                401,
+                "migration_customer_authorization_required",
+                None,
+            ));
+        }
+        if request
+            .headers
+            .contains_key("x-layerx-customer-authorization")
+            || request.headers.contains_key("x-layerx-expected-did")
+        {
+            return Some(response(400, "migration_internal_headers_forbidden", None));
         }
     }
     let upstream = entry["upstream"].as_str().unwrap_or(id);
@@ -793,7 +831,13 @@ fn forward_header(service: &str, name: &str) -> bool {
         ),
         "wallet-gateway" => matches!(
             name,
-            "x-agent-key" | "x-agent-nonce" | "x-agent-expires" | "x-agent-signature" | "x-agent-attestor-authorization-id" | "x-agent-attestor-authorization" | "origin"
+            "x-agent-key"
+                | "x-agent-nonce"
+                | "x-agent-expires"
+                | "x-agent-signature"
+                | "x-agent-attestor-authorization-id"
+                | "x-agent-attestor-authorization"
+                | "origin"
         ),
         "search-web" => matches!(
             name,
@@ -886,9 +930,13 @@ impl McpRoute {
     fn configured(binding: McpRouteBinding) -> Result<(String, Self), String> {
         let principal = super::PrincipalId::new(binding.principal.clone())
             .map_err(|_| "invalid MCP principal")?;
-        if binding.mcp_version.is_empty() || binding.mcp_version.len() > 64
+        if binding.mcp_version.is_empty()
+            || binding.mcp_version.len() > 64
             || binding.owner_binding_sha256.len() != 64
-            || !binding.owner_binding_sha256.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+            || !binding
+                .owner_binding_sha256
+                .bytes()
+                .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
         {
             return Err("invalid MCP owner binding pin".into());
         }
@@ -903,7 +951,8 @@ impl McpRoute {
                 deadline: std::time::Duration::from_secs(2),
             },
             clock,
-        ).map_err(|_| "invalid MCP identity authority")?;
+        )
+        .map_err(|_| "invalid MCP identity authority")?;
         let route = Self { binding, identity };
         route.owner_binding()?;
         Ok((super::principal_digest(&principal), route))
@@ -917,20 +966,32 @@ impl McpRoute {
         let before = fs::symlink_metadata(path).map_err(|_| "MCP owner binding unavailable")?;
         let bytes = protected(&policy.owner_binding_file)?;
         let after = fs::symlink_metadata(path).map_err(|_| "MCP owner binding unavailable")?;
-        if before.uid() != policy.owner_uid || before.gid() != policy.owner_gid
+        if before.uid() != policy.owner_uid
+            || before.gid() != policy.owner_gid
             || (before.dev(), before.ino(), before.len()) != (after.dev(), after.ino(), after.len())
             || super::hex(&Sha256::digest(&bytes)) != policy.owner_binding_sha256
         {
             return Err("MCP owner binding identity changed".into());
         }
-        let document: Value = serde_json::from_slice(&bytes).map_err(|_| "invalid MCP owner binding")?;
+        let document: Value =
+            serde_json::from_slice(&bytes).map_err(|_| "invalid MCP owner binding")?;
         let listener = &document["listener"];
-        let uid = fs::metadata("/proc/self").map_err(|_| "MCP gateway identity unavailable")?.uid();
+        let uid = fs::metadata("/proc/self")
+            .map_err(|_| "MCP gateway identity unavailable")?
+            .uid();
         if listener["owner_uid"].as_u64() != Some(u64::from(policy.owner_uid))
             || listener["owner_gid"].as_u64() != Some(u64::from(policy.owner_gid))
-            || !listener["admitted_uids"].as_array().is_some_and(|peers| peers.iter().any(|peer| peer.as_u64() == Some(u64::from(uid))))
-            || document["session_id"].as_str().is_none_or(|id| id.is_empty())
-            || document["capability_id"].as_str().is_none_or(|id| id.is_empty())
+            || !listener["admitted_uids"].as_array().is_some_and(|peers| {
+                peers
+                    .iter()
+                    .any(|peer| peer.as_u64() == Some(u64::from(uid)))
+            })
+            || document["session_id"]
+                .as_str()
+                .is_none_or(|id| id.is_empty())
+            || document["capability_id"]
+                .as_str()
+                .is_none_or(|id| id.is_empty())
             || document["session_generation"].as_u64().is_none()
         {
             return Err("MCP owner session or listener binding invalid".into());
@@ -942,65 +1003,101 @@ impl McpRoute {
         use std::os::unix::fs::FileTypeExt;
         protected_owner_parent(path, self.binding.owner_uid)?;
         let metadata = fs::symlink_metadata(path).map_err(|_| "MCP socket unavailable")?;
-        if !metadata.file_type().is_socket() || metadata.uid() != self.binding.owner_uid
-            || metadata.gid() != self.binding.owner_gid || metadata.mode() & !0o140660 != 0
-            || metadata.mode() & 0o600 != 0o600 || metadata.nlink() != 1
+        if !metadata.file_type().is_socket()
+            || metadata.uid() != self.binding.owner_uid
+            || metadata.gid() != self.binding.owner_gid
+            || metadata.mode() & !0o140660 != 0
+            || metadata.mode() & 0o600 != 0o600
+            || metadata.nlink() != 1
         {
             return Err("MCP socket identity refused".into());
         }
         Ok((metadata.dev(), metadata.ino()))
     }
 
-    fn exchange(&self, body: &[u8], expected: Option<&Value>, expires: std::time::Instant) -> Result<Vec<u8>, String> {
+    fn exchange(
+        &self,
+        body: &[u8],
+        expected: Option<&Value>,
+        expires: std::time::Instant,
+    ) -> Result<Vec<u8>, String> {
         use std::os::unix::net::UnixStream;
         use std::time::{Duration, Instant};
-        let remaining = || expires.checked_duration_since(Instant::now())
-            .filter(|duration| !duration.is_zero()).ok_or("MCP request deadline exceeded");
+        let remaining = || {
+            expires
+                .checked_duration_since(Instant::now())
+                .filter(|duration| !duration.is_zero())
+                .ok_or("MCP request deadline exceeded")
+        };
         remaining()?;
-        let subject = self.identity.lookup(&self.binding.principal).map_err(|_| "MCP principal binding refused")?;
+        let subject = self
+            .identity
+            .lookup(&self.binding.principal)
+            .map_err(|_| "MCP principal binding refused")?;
         let owner = self.owner_binding()?;
         if owner["tenant"].as_str() != Some(subject.agent_tenant()) {
             return Err("MCP owner principal mismatch".into());
         }
-        let path = std::path::Path::new(owner["listener"]["socket"].as_str().ok_or("MCP socket absent")?);
+        let path = std::path::Path::new(
+            owner["listener"]["socket"]
+                .as_str()
+                .ok_or("MCP socket absent")?,
+        );
         let before = self.socket_identity(path)?;
-        let socket = rustix::net::socket_with(rustix::net::AddressFamily::UNIX,
+        let socket = rustix::net::socket_with(
+            rustix::net::AddressFamily::UNIX,
             rustix::net::SocketType::STREAM,
-            rustix::net::SocketFlags::NONBLOCK | rustix::net::SocketFlags::CLOEXEC, None)
-            .map_err(|_| "MCP socket unavailable")?;
-        let address = rustix::net::SocketAddrUnix::new(path).map_err(|_| "MCP socket path invalid")?;
+            rustix::net::SocketFlags::NONBLOCK | rustix::net::SocketFlags::CLOEXEC,
+            None,
+        )
+        .map_err(|_| "MCP socket unavailable")?;
+        let address =
+            rustix::net::SocketAddrUnix::new(path).map_err(|_| "MCP socket path invalid")?;
         loop {
             remaining()?;
             match rustix::net::connect(&socket, &address) {
                 Ok(()) => break,
-                Err(error) if error == rustix::io::Errno::AGAIN || error == rustix::io::Errno::INTR => {
+                Err(error)
+                    if error == rustix::io::Errno::AGAIN || error == rustix::io::Errno::INTR =>
+                {
                     std::thread::sleep(remaining()?.min(Duration::from_millis(5)));
                 }
                 Err(_) => return Err("MCP connection refused".into()),
             }
         }
         let mut stream = UnixStream::from(socket);
-        stream.set_nonblocking(false).map_err(|_| "MCP socket unavailable")?;
-        let peer = rustix::net::sockopt::socket_peercred(&stream).map_err(|_| "MCP peer unavailable")?;
-        if peer.uid.as_raw() != self.binding.owner_uid || peer.gid.as_raw() != self.binding.owner_gid
-            || self.socket_identity(path)? != before || self.owner_binding()? != owner
+        stream
+            .set_nonblocking(false)
+            .map_err(|_| "MCP socket unavailable")?;
+        let peer =
+            rustix::net::sockopt::socket_peercred(&stream).map_err(|_| "MCP peer unavailable")?;
+        if peer.uid.as_raw() != self.binding.owner_uid
+            || peer.gid.as_raw() != self.binding.owner_gid
+            || self.socket_identity(path)? != before
+            || self.owner_binding()? != owner
         {
             return Err("MCP peer identity changed".into());
         }
         let probe_id = json!("layerx-gateway-binding-v1");
-        let probe = serde_json::to_vec(&json!({"jsonrpc":"2.0","id":probe_id,"method":"initialize",
+        let probe =
+            serde_json::to_vec(&json!({"jsonrpc":"2.0","id":probe_id,"method":"initialize",
             "params":{"protocolVersion":"2025-06-18","capabilities":{},
             "clientInfo":{"name":"layerx-gateway","version":env!("CARGO_PKG_VERSION")}}}))
             .map_err(|_| "MCP binding probe invalid")?;
         mcp_write_frame(&mut stream, &probe, expires)?;
         let observed: Value = serde_json::from_slice(&mcp_read_frame(&mut stream, expires)?)
             .map_err(|_| "MCP binding probe malformed")?;
-        if observed["jsonrpc"] != "2.0" || observed["id"] != probe_id || observed.get("error").is_some()
+        if observed["jsonrpc"] != "2.0"
+            || observed["id"] != probe_id
+            || observed.get("error").is_some()
             || observed["result"]["protocolVersion"] != "2025-06-18"
             || observed["result"]["serverInfo"]["name"] != "layerx"
             || observed["result"]["serverInfo"]["version"] != self.binding.mcp_version
-            || observed["result"]["_meta"]["layerx/loaded_binding_v1"].as_str() != Some(mcp_binding_fingerprint(&owner)?.as_str())
-        { return Err("MCP loaded session binding differs".into()); }
+            || observed["result"]["_meta"]["layerx/loaded_binding_v1"].as_str()
+                != Some(mcp_binding_fingerprint(&owner)?.as_str())
+        {
+            return Err("MCP loaded session binding differs".into());
+        }
         mcp_write_frame(&mut stream, body, expires)?;
         if expected.is_none() {
             remaining()?;
@@ -1008,10 +1105,13 @@ impl McpRoute {
         }
         let reply = mcp_read_frame(&mut stream, expires)?;
         remaining()?;
-        let document: Value = serde_json::from_slice(&reply).map_err(|_| "MCP response malformed")?;
-        if document["jsonrpc"] != "2.0" || document.get("id") != expected
+        let document: Value =
+            serde_json::from_slice(&reply).map_err(|_| "MCP response malformed")?;
+        if document["jsonrpc"] != "2.0"
+            || document.get("id") != expected
             || document.get("result").is_some() == document.get("error").is_some()
-            || self.socket_identity(path)? != before || self.owner_binding()? != owner
+            || self.socket_identity(path)? != before
+            || self.owner_binding()? != owner
         {
             return Err("MCP response identity invalid".into());
         }
@@ -1021,7 +1121,9 @@ impl McpRoute {
 
 fn protected_owner_parent(path: &std::path::Path, uid: u32) -> Result<(), String> {
     let parent = path.parent().ok_or("MCP protected parent absent")?;
-    if !path.is_absolute() || path.as_os_str().len() > 4096 || parent == std::path::Path::new("/")
+    if !path.is_absolute()
+        || path.as_os_str().len() > 4096
+        || parent == std::path::Path::new("/")
         || fs::canonicalize(parent).map_err(|_| "MCP protected parent unavailable")? != parent
         || path.file_name().is_none()
     {
@@ -1035,34 +1137,68 @@ fn protected_owner_parent(path: &std::path::Path, uid: u32) -> Result<(), String
 }
 
 fn mcp_route(config: &Config, request: &IncomingRequest) -> OutgoingResponse {
-    if request.path != "/mcp" { return response(400, "query_string_not_allowed", None); }
-    if request.method != "POST" { return response(405, "method_not_allowed", None); }
-    let key = match authenticate_key(config, request) { Ok(key) => key, Err(refusal) => return refusal };
-    if ["layerx-tenant", "layerx-agent", "x-layerx-principal", "mcp-session-id"]
-        .iter().any(|header| request.headers.contains_key(*header))
-    { return response(400, "untrusted_identity_header", None); }
+    if request.path != "/mcp" {
+        return response(400, "query_string_not_allowed", None);
+    }
+    if request.method != "POST" {
+        return response(405, "method_not_allowed", None);
+    }
+    let key = match authenticate_key(config, request) {
+        Ok(key) => key,
+        Err(refusal) => return refusal,
+    };
+    if [
+        "layerx-tenant",
+        "layerx-agent",
+        "x-layerx-principal",
+        "mcp-session-id",
+    ]
+    .iter()
+    .any(|header| request.headers.contains_key(*header))
+    {
+        return response(400, "untrusted_identity_header", None);
+    }
     if request.headers.get("content-type").map(String::as_str) != Some("application/json") {
         return response(415, "unsupported_media_type", None);
     }
-    if request.body.len() >= AGENT_RPC_MAX_BODY { return response(413, "request_too_large", None); }
+    if request.body.len() >= AGENT_RPC_MAX_BODY {
+        return response(413, "request_too_large", None);
+    }
     let document: Value = match serde_json::from_slice(&request.body) {
-        Ok(document) => document, Err(_) => return response(400, "invalid_mcp_request", None),
+        Ok(document) => document,
+        Err(_) => return response(400, "invalid_mcp_request", None),
     };
-    let id = document.get("id").filter(|id| id.is_string() || id.is_i64() || id.is_u64());
-    let notification = matches!(document["method"].as_str(), Some("notifications/initialized" | "notifications/cancelled"));
+    let id = document
+        .get("id")
+        .filter(|id| id.is_string() || id.is_i64() || id.is_u64());
+    let notification = matches!(
+        document["method"].as_str(),
+        Some("notifications/initialized" | "notifications/cancelled")
+    );
     if document["jsonrpc"] != "2.0"
         || (notification && document.get("id").is_some())
-        || (!notification && (id.is_none() || !matches!(document["method"].as_str(),
-            Some("initialize" | "ping" | "tools/list" | "tools/call"))))
-    { return response(400, "invalid_mcp_request", None); }
+        || (!notification
+            && (id.is_none()
+                || !matches!(
+                    document["method"].as_str(),
+                    Some("initialize" | "ping" | "tools/list" | "tools/call")
+                )))
+    {
+        return response(400, "invalid_mcp_request", None);
+    }
     let required_scope = if document["method"] == "tools/call" {
         match document["params"]["name"].as_str() {
-            Some("balance.get" | "history.list" | "checkpoint.get" | "proof.get" | "availability.get" | "wallet.accounts" | "wallet.balance") => "state:read",
+            Some(
+                "balance.get" | "history.list" | "checkpoint.get" | "proof.get"
+                | "availability.get" | "wallet.accounts" | "wallet.balance",
+            ) => "state:read",
             Some("receipt.get") => "receipt:read",
             Some(_) => "activity:write",
             None => return response(400, "invalid_mcp_tool", None),
         }
-    } else { "state:read" };
+    } else {
+        "state:read"
+    };
     if !super::record_scopes(&key).contains(&required_scope) {
         return response(403, "insufficient_scope", None);
     }
@@ -1070,7 +1206,8 @@ fn mcp_route(config: &Config, request: &IncomingRequest) -> OutgoingResponse {
         return response(403, "mcp_owner_binding_required", None);
     };
     let encoded = match serde_json::to_vec(&document) {
-        Ok(encoded) => encoded, Err(_) => return response(400, "invalid_mcp_request", None),
+        Ok(encoded) => encoded,
+        Err(_) => return response(400, "invalid_mcp_request", None),
     };
     let expires = std::time::Instant::now() + std::time::Duration::from_secs(8);
     let Some(binding) = config.routes.bindings.get("mcp-a2a").cloned() else {
@@ -1083,85 +1220,100 @@ fn mcp_route(config: &Config, request: &IncomingRequest) -> OutgoingResponse {
     let route = route.clone();
     let expected = id.cloned();
     let (send, receive) = std::sync::mpsc::sync_channel(1);
-    let worker = std::thread::Builder::new().name("mcp-route".into()).spawn(move || {
-        let _permit = permit;
-        let result = probe_binding(&client, &binding).map_err(str::to_owned)
-            .and_then(|()| route.exchange(&encoded, expected.as_ref(), expires));
-        let _ = send.send(result);
-    });
-    if worker.is_err() { return response(503, "mcp_capacity_unavailable", None); }
+    let worker = std::thread::Builder::new()
+        .name("mcp-route".into())
+        .spawn(move || {
+            let _permit = permit;
+            let result = probe_binding(&client, &binding)
+                .map_err(str::to_owned)
+                .and_then(|()| route.exchange(&encoded, expected.as_ref(), expires));
+            let _ = send.send(result);
+        });
+    if worker.is_err() {
+        return response(503, "mcp_capacity_unavailable", None);
+    }
     let Some(remaining) = expires.checked_duration_since(std::time::Instant::now()) else {
         return response(503, "mcp_deadline_exceeded", None);
     };
     match receive.recv_timeout(remaining) {
-        Ok(Ok(body)) => OutgoingResponse { status: if notification { 202 } else { 200 }, content_type: "application/json".into(),
-            headers: Vec::new(), body, retry_after: None },
-        Ok(Err(_)) if std::time::Instant::now() >= expires => response(503, "mcp_deadline_exceeded", None),
-        Ok(Err(reason)) => json_response(503, &json!({"ok":false,"error":{"code":"mcp_owner_unavailable","reason":reason,"automatic_retry":false}})),
+        Ok(Ok(body)) => OutgoingResponse {
+            status: if notification { 202 } else { 200 },
+            content_type: "application/json".into(),
+            headers: Vec::new(),
+            body,
+            retry_after: None,
+        },
+        Ok(Err(_)) if std::time::Instant::now() >= expires => {
+            response(503, "mcp_deadline_exceeded", None)
+        }
+        Ok(Err(reason)) => json_response(
+            503,
+            &json!({"ok":false,"error":{"code":"mcp_owner_unavailable","reason":reason,"automatic_retry":false}}),
+        ),
         Err(_) => response(503, "mcp_deadline_exceeded", None),
     }
 }
 
 fn probe_binding(client: &http::Client, binding: &Binding) -> Result<(), &'static str> {
-        let endpoint = http::Endpoint::parse(&binding.url).map_err(|_| "invalid_upstream")?;
-        let auth = match &binding.health_authorization_file {
-            Some(path) => Zeroizing::new(
-                String::from_utf8(protected(path).map_err(|_| "authority_unavailable")?)
-                    .map_err(|_| "authority_unavailable")?
-                    .trim()
-                    .to_owned(),
-            ),
-            None => Zeroizing::new(String::new()),
-        };
-        let result = client
+    let endpoint = http::Endpoint::parse(&binding.url).map_err(|_| "invalid_upstream")?;
+    let auth = match &binding.health_authorization_file {
+        Some(path) => Zeroizing::new(
+            String::from_utf8(protected(path).map_err(|_| "authority_unavailable")?)
+                .map_err(|_| "authority_unavailable")?
+                .trim()
+                .to_owned(),
+        ),
+        None => Zeroizing::new(String::new()),
+    };
+    let result = client
+        .request_authorized(
+            &endpoint,
+            &auth,
+            &http::OutboundRequest {
+                method: "GET",
+                path: &binding.health_path,
+                idempotency: None,
+                content_type: "application/json",
+                body: &[],
+            },
+        )
+        .map_err(|_| "unreachable")?;
+    if result.status != 200 || !json_media_type(&result.content_type) {
+        return Err("dependency_not_ready");
+    }
+    let body: Value =
+        serde_json::from_slice(&result.body).map_err(|_| "invalid_health_response")?;
+    let identity = if binding.identity_path == binding.health_path {
+        body.clone()
+    } else {
+        let reply = client
             .request_authorized(
                 &endpoint,
                 &auth,
                 &http::OutboundRequest {
                     method: "GET",
-                    path: &binding.health_path,
+                    path: &binding.identity_path,
                     idempotency: None,
                     content_type: "application/json",
                     body: &[],
                 },
             )
-            .map_err(|_| "unreachable")?;
-        if result.status != 200 || !json_media_type(&result.content_type) {
-            return Err("dependency_not_ready");
+            .map_err(|_| "identity_unreachable")?;
+        if reply.status != 200 || !json_media_type(&reply.content_type) {
+            return Err("identity_unavailable");
         }
-        let body: Value =
-            serde_json::from_slice(&result.body).map_err(|_| "invalid_health_response")?;
-        let identity = if binding.identity_path == binding.health_path {
-            body.clone()
-        } else {
-            let reply = client
-                .request_authorized(
-                    &endpoint,
-                    &auth,
-                    &http::OutboundRequest {
-                        method: "GET",
-                        path: &binding.identity_path,
-                        idempotency: None,
-                        content_type: "application/json",
-                        body: &[],
-                    },
-                )
-                .map_err(|_| "identity_unreachable")?;
-            if reply.status != 200 || !json_media_type(&reply.content_type) {
-                return Err("identity_unavailable");
-            }
-            serde_json::from_slice::<Value>(&reply.body).map_err(|_| "invalid_identity_response")?
-        };
-        if identity.pointer(&binding.network_pointer) != Some(&binding.network_value) {
-            return Err("wrong_network");
-        }
-        if identity.pointer(&binding.version_pointer) != Some(&binding.version_value) {
-            return Err("wrong_version");
-        }
-        if body.pointer(&binding.ready_pointer) != Some(&binding.ready_value) {
-            return Err("dependency_not_ready");
-        }
-        Ok(())
+        serde_json::from_slice::<Value>(&reply.body).map_err(|_| "invalid_identity_response")?
+    };
+    if identity.pointer(&binding.network_pointer) != Some(&binding.network_value) {
+        return Err("wrong_network");
+    }
+    if identity.pointer(&binding.version_pointer) != Some(&binding.version_value) {
+        return Err("wrong_version");
+    }
+    if body.pointer(&binding.ready_pointer) != Some(&binding.ready_value) {
+        return Err("dependency_not_ready");
+    }
+    Ok(())
 }
 
 static MCP_PROBES: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
@@ -1169,11 +1321,18 @@ struct McpProbePermit;
 impl McpProbePermit {
     fn acquire() -> Option<std::sync::Arc<Self>> {
         use std::sync::atomic::Ordering;
-        MCP_PROBES.fetch_update(Ordering::AcqRel, Ordering::Acquire, |count| (count < 32).then_some(count + 1)).ok().map(|_| std::sync::Arc::new(Self))
+        MCP_PROBES
+            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |count| {
+                (count < 32).then_some(count + 1)
+            })
+            .ok()
+            .map(|_| std::sync::Arc::new(Self))
     }
 }
 impl Drop for McpProbePermit {
-    fn drop(&mut self) { MCP_PROBES.fetch_sub(1, std::sync::atomic::Ordering::AcqRel); }
+    fn drop(&mut self) {
+        MCP_PROBES.fetch_sub(1, std::sync::atomic::Ordering::AcqRel);
+    }
 }
 
 fn json_media_type(value: &str) -> bool {
@@ -1181,41 +1340,74 @@ fn json_media_type(value: &str) -> bool {
         byte.is_ascii_alphanumeric() || b"!#$%&'*+-.^_`|~".contains(&byte)
     }
     let (base, rest) = value.split_once(';').map_or((value, ""), |parts| parts);
-    if !base.trim().eq_ignore_ascii_case("application/json") { return false; }
-    if rest.is_empty() { return !value.contains(';'); }
+    if !base.trim().eq_ignore_ascii_case("application/json") {
+        return false;
+    }
+    if rest.is_empty() {
+        return !value.contains(';');
+    }
     let mut bytes = rest.as_bytes();
     let mut parameters = BTreeSet::new();
     loop {
-        while bytes.first().is_some_and(|b| matches!(b, b' ' | b'\t')) { bytes = &bytes[1..]; }
+        while bytes.first().is_some_and(|b| matches!(b, b' ' | b'\t')) {
+            bytes = &bytes[1..];
+        }
         let length = bytes.iter().take_while(|byte| token(**byte)).count();
-        if length == 0 { return false; }
+        if length == 0 {
+            return false;
+        }
         let name = String::from_utf8_lossy(&bytes[..length]).to_ascii_lowercase();
-        if !parameters.insert(name) { return false; }
+        if !parameters.insert(name) {
+            return false;
+        }
         bytes = &bytes[length..];
-        if bytes.first() != Some(&b'=') { return false; }
+        if bytes.first() != Some(&b'=') {
+            return false;
+        }
         bytes = &bytes[1..];
         if bytes.first() == Some(&b'"') {
             bytes = &bytes[1..];
             loop {
                 match bytes.first().copied() {
-                    Some(b'"') => { bytes = &bytes[1..]; break; }
+                    Some(b'"') => {
+                        bytes = &bytes[1..];
+                        break;
+                    }
                     Some(b'\\') => {
                         bytes = &bytes[1..];
-                        if !bytes.first().is_some_and(|byte| matches!(byte, b'\t' | b' '..=b'~')) { return false; }
+                        if !bytes
+                            .first()
+                            .is_some_and(|byte| matches!(byte, b'\t' | b' '..=b'~'))
+                        {
+                            return false;
+                        }
                         bytes = &bytes[1..];
                     }
-                    Some(byte) if byte == b'\t' || (b' '..=b'~').contains(&byte) => { bytes = &bytes[1..]; }
+                    Some(byte) if byte == b'\t' || (b' '..=b'~').contains(&byte) => {
+                        bytes = &bytes[1..];
+                    }
                     _ => return false,
                 }
             }
         } else {
             let length = bytes.iter().take_while(|byte| token(**byte)).count();
-            if length == 0 { return false; }
+            if length == 0 {
+                return false;
+            }
             bytes = &bytes[length..];
         }
-        while bytes.first().is_some_and(|byte| matches!(byte, b' ' | b'\t')) { bytes = &bytes[1..]; }
-        if bytes.is_empty() { return true; }
-        if bytes.first() != Some(&b';') { return false; }
+        while bytes
+            .first()
+            .is_some_and(|byte| matches!(byte, b' ' | b'\t'))
+        {
+            bytes = &bytes[1..];
+        }
+        if bytes.is_empty() {
+            return true;
+        }
+        if bytes.first() != Some(&b';') {
+            return false;
+        }
         bytes = &bytes[1..];
     }
 }
@@ -1223,11 +1415,27 @@ fn json_media_type(value: &str) -> bool {
 fn mcp_binding_fingerprint(owner: &Value) -> Result<String, String> {
     use sha2::{Digest, Sha256};
     let tenant = owner["tenant"].as_str().ok_or("MCP tenant absent")?;
-    let generation = owner["session_generation"].as_u64().ok_or("MCP generation absent")?;
-    let session = super::decode_hex(owner["session_id"].as_str().ok_or("MCP session absent")?, 32)?;
-    let capability = super::decode_hex(owner["capability_id"].as_str().ok_or("MCP capability absent")?, 32)?;
-    let mode = match owner["mode"].as_str() { Some("full") => 1_u8, Some("read-only") => 2_u8, _ => return Err("MCP mode invalid".into()) };
-    if session.len() != 32 || capability.len() != 32 { return Err("MCP binding identifier invalid".into()); }
+    let generation = owner["session_generation"]
+        .as_u64()
+        .ok_or("MCP generation absent")?;
+    let session = super::decode_hex(
+        owner["session_id"].as_str().ok_or("MCP session absent")?,
+        32,
+    )?;
+    let capability = super::decode_hex(
+        owner["capability_id"]
+            .as_str()
+            .ok_or("MCP capability absent")?,
+        32,
+    )?;
+    let mode = match owner["mode"].as_str() {
+        Some("full") => 1_u8,
+        Some("read-only") => 2_u8,
+        _ => return Err("MCP mode invalid".into()),
+    };
+    if session.len() != 32 || capability.len() != 32 {
+        return Err("MCP binding identifier invalid".into());
+    }
     let mut hash = Sha256::new();
     hash.update(b"layerx/mcp/loaded-binding/v1\0");
     hash.update((tenant.len() as u64).to_be_bytes());
@@ -1240,36 +1448,63 @@ fn mcp_binding_fingerprint(owner: &Value) -> Result<String, String> {
 }
 
 fn mcp_remaining(expires: std::time::Instant) -> Result<std::time::Duration, String> {
-    expires.checked_duration_since(std::time::Instant::now()).filter(|value| !value.is_zero())
+    expires
+        .checked_duration_since(std::time::Instant::now())
+        .filter(|value| !value.is_zero())
         .ok_or_else(|| "MCP request deadline exceeded".into())
 }
 
-fn mcp_write_frame(stream: &mut std::os::unix::net::UnixStream, body: &[u8], expires: std::time::Instant) -> Result<(), String> {
+fn mcp_write_frame(
+    stream: &mut std::os::unix::net::UnixStream,
+    body: &[u8],
+    expires: std::time::Instant,
+) -> Result<(), String> {
     use std::io::Write;
-    if body.len() >= AGENT_RPC_MAX_BODY { return Err("MCP request oversized".into()); }
+    if body.len() >= AGENT_RPC_MAX_BODY {
+        return Err("MCP request oversized".into());
+    }
     let mut frame = body.to_vec();
     frame.push(b'\n');
     let mut offset = 0;
     while offset < frame.len() {
-        stream.set_write_timeout(Some(mcp_remaining(expires)?)).map_err(|_| "MCP deadline unavailable")?;
-        let written = stream.write(&frame[offset..]).map_err(|_| "MCP write unavailable")?;
-        if written == 0 { return Err("MCP write closed".into()); }
+        stream
+            .set_write_timeout(Some(mcp_remaining(expires)?))
+            .map_err(|_| "MCP deadline unavailable")?;
+        let written = stream
+            .write(&frame[offset..])
+            .map_err(|_| "MCP write unavailable")?;
+        if written == 0 {
+            return Err("MCP write closed".into());
+        }
         offset += written;
     }
     Ok(())
 }
 
-fn mcp_read_frame(stream: &mut std::os::unix::net::UnixStream, expires: std::time::Instant) -> Result<Vec<u8>, String> {
+fn mcp_read_frame(
+    stream: &mut std::os::unix::net::UnixStream,
+    expires: std::time::Instant,
+) -> Result<Vec<u8>, String> {
     use std::io::Read;
     let mut reply = Vec::new();
     let mut chunk = [0_u8; 4096];
     loop {
-        stream.set_read_timeout(Some(mcp_remaining(expires)?)).map_err(|_| "MCP deadline unavailable")?;
-        let count = stream.read(&mut chunk).map_err(|_| "MCP read unavailable")?;
-        if count == 0 { return Err("MCP response closed".into()); }
-        if reply.len().saturating_add(count) > AGENT_RPC_MAX_BODY { return Err("MCP response oversized".into()); }
+        stream
+            .set_read_timeout(Some(mcp_remaining(expires)?))
+            .map_err(|_| "MCP deadline unavailable")?;
+        let count = stream
+            .read(&mut chunk)
+            .map_err(|_| "MCP read unavailable")?;
+        if count == 0 {
+            return Err("MCP response closed".into());
+        }
+        if reply.len().saturating_add(count) > AGENT_RPC_MAX_BODY {
+            return Err("MCP response oversized".into());
+        }
         if let Some(end) = chunk[..count].iter().position(|byte| *byte == b'\n') {
-            if end + 1 != count { return Err("MCP response framing invalid".into()); }
+            if end + 1 != count {
+                return Err("MCP response framing invalid".into());
+            }
             reply.extend_from_slice(&chunk[..end]);
             return Ok(reply);
         }

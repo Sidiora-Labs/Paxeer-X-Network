@@ -584,6 +584,51 @@ def digest32(field, reasons):
     return value
 
 
+MIGRATION_VARIABLE = "LAYERX_INTEROP_MIGRATION_V2_CONFIG"
+
+
+def protected_migration_file(value, maximum):
+    path = pathlib.Path(value)
+    try:
+        metadata = path.lstat()
+        if (not path.is_absolute() or path.resolve() != path
+                or not path.is_file() or path.is_symlink()
+                or metadata.st_nlink != 1 or metadata.st_uid != os.geteuid()
+                or metadata.st_mode & 0o077 or metadata.st_size > maximum):
+            raise ValueError("unprotected profile")
+    except (OSError, ValueError):
+        raise Refused(["migration V2 input must be a protected canonical owner file"])
+    return path
+
+
+def migration_profile(environ):
+    value = environ.get(MIGRATION_VARIABLE)
+    if value is None:
+        return None
+    path = protected_migration_file(value, 256 * 1024)
+    try:
+        profile = json.loads(path.read_text())
+    except (OSError, ValueError):
+        raise Refused(["migration V2 profile is malformed"])
+    allowed = {"ethereum", "solana", "paxeer_binding", "mapping_journal", "ramp_intake"}
+    if (not isinstance(profile, dict) or set(profile) - allowed
+            or not isinstance(profile.get("paxeer_binding"), dict)
+            or not isinstance(profile.get("mapping_journal"), dict)
+            or not any(isinstance(profile.get(chain), dict) for chain in ("ethereum", "solana"))
+            or any(profile.get(chain) is not None and not isinstance(profile[chain], dict)
+                   for chain in ("ethereum", "solana"))):
+        raise Refused(["migration V2 profile requires actual source and binding authorities"])
+    ramp = profile.get("ramp_intake")
+    if ramp is not None:
+        if (not isinstance(ramp, dict) or set(ramp) != {"endpoint", "token_file"}
+                or not isinstance(ramp["endpoint"], str)
+                or not AUDIENCE_PATTERN.fullmatch(ramp["endpoint"])
+                or not isinstance(ramp["token_file"], str)):
+            raise Refused(["migration V2 ramp intake binding is invalid"])
+        protected_migration_file(ramp["token_file"], 4096)
+    return profile
+
+
 def render(
     root,
     environ,
@@ -594,6 +639,7 @@ def render(
 ):
     """Return the gateway configuration document or raise `Refused`."""
     reasons = []
+    migration_profile(environ)
     adapters, transports = derived(root)
     conformance_variables(environ, adapters, transports, reasons)
     beta = beta_roots(beta_roots_file, reasons) if beta_roots_file else None
@@ -622,6 +668,7 @@ def main(argv):
     parser.add_argument("--sequencer-public-key-file")
     parser.add_argument("--beta-roots-file")
     parser.add_argument("--out")
+    parser.add_argument("--migration-profile-out")
     parser.add_argument("--repo-root", default=str(repository_root()))
     arguments = parser.parse_args(argv)
     if arguments.self_test:
@@ -647,9 +694,24 @@ def main(argv):
         for reason in refusal.reasons:
             sys.stderr.write("  - %s\n" % reason)
         return 2
+    profile = None
+    migration_out = None
+    if arguments.migration_profile_out:
+        try:
+            profile = migration_profile(os.environ)
+            migration_out = pathlib.Path(arguments.migration_profile_out)
+            if profile is None or not migration_out.is_absolute() or migration_out.exists():
+                raise Refused(["migration profile output requires configured input and a new absolute owner file"])
+        except Refused as refusal:
+            for reason in refusal.reasons:
+                sys.stderr.write(reason + "\n")
+            return 2
     out = pathlib.Path(arguments.out)
     out.write_text(json.dumps(document, indent=2, sort_keys=True) + "\n")
     out.chmod(0o600)
+    if migration_out is not None:
+        with migration_out.open("x", opener=lambda name, flags: os.open(name, flags, 0o600)) as output:
+            output.write(json.dumps(profile, indent=2, sort_keys=True) + "\n")
     generated = sorted(name for name, source in sources.items() if source == BETA_SOURCE)
     if generated:
         sys.stdout.write(
