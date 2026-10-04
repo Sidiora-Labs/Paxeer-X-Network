@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 pragma solidity ^0.8.24;
 
-import {NativeStateProof} from "../contracts/libraries/NativeStateProof.sol";
+import {NativeStateProof} from "../../contracts/libraries/NativeStateProof.sol";
 
 interface NativeStateProofVm {
     function readFile(string calldata path) external view returns (string memory);

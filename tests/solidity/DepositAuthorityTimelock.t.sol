@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 pragma solidity ^0.8.24;
 
-import {LayerXTimelock, LayerXTimelockCore} from "../contracts/governance/LayerXTimelock.sol";
-import {LayerXVault} from "../contracts/custody/LayerXVault.sol";
-import {AssetRegistry} from "../contracts/custody/AssetRegistry.sol";
+import {LayerXTimelock, LayerXTimelockCore} from "../../contracts/governance/LayerXTimelock.sol";
+import {LayerXVault} from "../../contracts/custody/LayerXVault.sol";
+import {AssetRegistry} from "../../contracts/custody/AssetRegistry.sol";
 
 interface DepositAuthorityVm {
     function warp(uint256 timestamp) external;

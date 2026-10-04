@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 pragma solidity ^0.8.24;
 
-import {CanonicalCheckpoint} from "../contracts/libraries/CanonicalCheckpoint.sol";
-import {CheckpointRegistry} from "../contracts/CheckpointRegistry.sol";
-import {CheckpointChallengeManager} from "../contracts/challenge/CheckpointChallengeManager.sol";
-import {GuarantorBond} from "../contracts/GuarantorBond.sol";
-import {Constants} from "../contracts/libraries/Constants.sol";
-import {Governed} from "../contracts/security/Governed.sol";
+import {CanonicalCheckpoint} from "../../contracts/libraries/CanonicalCheckpoint.sol";
+import {CheckpointRegistry} from "../../contracts/CheckpointRegistry.sol";
+import {CheckpointChallengeManager} from "../../contracts/challenge/CheckpointChallengeManager.sol";
+import {GuarantorBond} from "../../contracts/GuarantorBond.sol";
+import {Constants} from "../../contracts/libraries/Constants.sol";
+import {Governed} from "../../contracts/security/Governed.sol";
 import {CheckpointToken, CheckpointVm} from "./CheckpointRegistry.t.sol";
 
 contract RejectingChallenger {

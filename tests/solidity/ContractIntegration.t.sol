@@ -1,36 +1,36 @@
 // SPDX-License-Identifier: Apache-2.0
 pragma solidity ^0.8.24;
 
-import {NativeStateProof} from "../contracts/libraries/NativeStateProof.sol";
+import {NativeStateProof} from "../../contracts/libraries/NativeStateProof.sol";
 import {Ed25519Signer} from "./Ed25519Signer.sol";
 
-import {AssetRegistry} from "../contracts/custody/AssetRegistry.sol";
-import {ILayerXAssetRegistry} from "../contracts/interfaces/ILayerXAssetRegistry.sol";
-import {LayerXVault} from "../contracts/custody/LayerXVault.sol";
-import {ReserveReconciler} from "../contracts/custody/ReserveReconciler.sol";
-import {CheckpointRegistry} from "../contracts/CheckpointRegistry.sol";
-import {GuarantorBond} from "../contracts/GuarantorBond.sol";
-import {CheckpointChallengeManager} from "../contracts/challenge/CheckpointChallengeManager.sol";
-import {WithdrawalNullifierRegistry} from "../contracts/storage/WithdrawalNullifierRegistry.sol";
-import {WithdrawalClaims} from "../contracts/WithdrawalClaims.sol";
-import {EmergencyExit} from "../contracts/EmergencyExit.sol";
-import {LayerXTimelock, LayerXTimelockCore} from "../contracts/governance/LayerXTimelock.sol";
-import {LayerXCustody} from "../contracts/LayerXCustody.sol";
-import {Blueprint} from "../contracts/deployment/Blueprint.sol";
-import {Predeploys} from "../contracts/deployment/Predeploys.sol";
-import {ILayerXComponent, Preinstalls} from "../contracts/deployment/Preinstalls.sol";
-import {ManagerContainer} from "../contracts/manager/ManagerContainer.sol";
-import {ManagerMigrator} from "../contracts/manager/ManagerMigrator.sol";
-import {ManagerUnauthorized} from "../contracts/manager/BlockErrors.sol";
-import {StaticConfig} from "../contracts/config/StaticConfig.sol";
-import {Features} from "../contracts/config/Features.sol";
-import {Constants} from "../contracts/libraries/Constants.sol";
-import {CanonicalCheckpoint} from "../contracts/libraries/CanonicalCheckpoint.sol";
-import {MessageTypes} from "../contracts/libraries/MessageTypes.sol";
-import {PaxeerWithdrawalCodec} from "../contracts/libraries/PaxeerWithdrawalCodec.sol";
-import {SemverComp} from "../contracts/libraries/SemverComp.sol";
-import {Governed} from "../contracts/security/Governed.sol";
-import {UUPSNotUpgradeable} from "../contracts/security/UUPSNotUpgradeable.sol";
+import {AssetRegistry} from "../../contracts/custody/AssetRegistry.sol";
+import {ILayerXAssetRegistry} from "../../contracts/interfaces/ILayerXAssetRegistry.sol";
+import {LayerXVault} from "../../contracts/custody/LayerXVault.sol";
+import {ReserveReconciler} from "../../contracts/custody/ReserveReconciler.sol";
+import {CheckpointRegistry} from "../../contracts/CheckpointRegistry.sol";
+import {GuarantorBond} from "../../contracts/GuarantorBond.sol";
+import {CheckpointChallengeManager} from "../../contracts/challenge/CheckpointChallengeManager.sol";
+import {WithdrawalNullifierRegistry} from "../../contracts/storage/WithdrawalNullifierRegistry.sol";
+import {WithdrawalClaims} from "../../contracts/WithdrawalClaims.sol";
+import {EmergencyExit} from "../../contracts/EmergencyExit.sol";
+import {LayerXTimelock, LayerXTimelockCore} from "../../contracts/governance/LayerXTimelock.sol";
+import {LayerXCustody} from "../../contracts/LayerXCustody.sol";
+import {Blueprint} from "../../contracts/deployment/Blueprint.sol";
+import {Predeploys} from "../../contracts/deployment/Predeploys.sol";
+import {ILayerXComponent, Preinstalls} from "../../contracts/deployment/Preinstalls.sol";
+import {ManagerContainer} from "../../contracts/manager/ManagerContainer.sol";
+import {ManagerMigrator} from "../../contracts/manager/ManagerMigrator.sol";
+import {ManagerUnauthorized} from "../../contracts/manager/BlockErrors.sol";
+import {StaticConfig} from "../../contracts/config/StaticConfig.sol";
+import {Features} from "../../contracts/config/Features.sol";
+import {Constants} from "../../contracts/libraries/Constants.sol";
+import {CanonicalCheckpoint} from "../../contracts/libraries/CanonicalCheckpoint.sol";
+import {MessageTypes} from "../../contracts/libraries/MessageTypes.sol";
+import {PaxeerWithdrawalCodec} from "../../contracts/libraries/PaxeerWithdrawalCodec.sol";
+import {SemverComp} from "../../contracts/libraries/SemverComp.sol";
+import {Governed} from "../../contracts/security/Governed.sol";
+import {UUPSNotUpgradeable} from "../../contracts/security/UUPSNotUpgradeable.sol";
 
 interface IntegrationVm {
     function readFile(string calldata path) external view returns (string memory);

@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 pragma solidity ^0.8.24;
 
-import {PaxeerBetaDeploymentValidator} from "../contracts/deployment/PaxeerBetaDeploymentValidator.sol";
-import {Features} from "../contracts/config/Features.sol";
-import {Constants} from "../contracts/libraries/Constants.sol";
-import {GuarantorBond} from "../contracts/GuarantorBond.sol";
-import {LayerXTimelock} from "../contracts/governance/LayerXTimelock.sol";
-import {LayerXVault} from "../contracts/custody/LayerXVault.sol";
-import {WithdrawalNullifierRegistry} from "../contracts/storage/WithdrawalNullifierRegistry.sol";
-import {PaxeerBetaDeploy} from "../scripts/PaxeerBetaDeploy.s.sol";
+import {PaxeerBetaDeploymentValidator} from "../../contracts/deployment/PaxeerBetaDeploymentValidator.sol";
+import {Features} from "../../contracts/config/Features.sol";
+import {Constants} from "../../contracts/libraries/Constants.sol";
+import {GuarantorBond} from "../../contracts/GuarantorBond.sol";
+import {LayerXTimelock} from "../../contracts/governance/LayerXTimelock.sol";
+import {LayerXVault} from "../../contracts/custody/LayerXVault.sol";
+import {WithdrawalNullifierRegistry} from "../../contracts/storage/WithdrawalNullifierRegistry.sol";
+import {PaxeerBetaDeploy} from "../../scripts/PaxeerBetaDeploy.s.sol";
 import {BetaUsdl} from "./PaxeerBetaDeploymentValidator.t.sol";
 
 interface BetaDeployVm {

@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 pragma solidity ^0.8.24;
 
-import {PaxeerBetaDeploymentValidator} from "../contracts/deployment/PaxeerBetaDeploymentValidator.sol";
-import {StaticConfig} from "../contracts/config/StaticConfig.sol";
-import {Features} from "../contracts/config/Features.sol";
-import {Blueprint} from "../contracts/deployment/Blueprint.sol";
-import {ManagerContainer} from "../contracts/manager/ManagerContainer.sol";
-import {PaxeerBetaDeploy} from "../scripts/PaxeerBetaDeploy.s.sol";
+import {PaxeerBetaDeploymentValidator} from "../../contracts/deployment/PaxeerBetaDeploymentValidator.sol";
+import {StaticConfig} from "../../contracts/config/StaticConfig.sol";
+import {Features} from "../../contracts/config/Features.sol";
+import {Blueprint} from "../../contracts/deployment/Blueprint.sol";
+import {ManagerContainer} from "../../contracts/manager/ManagerContainer.sol";
+import {PaxeerBetaDeploy} from "../../scripts/PaxeerBetaDeploy.s.sol";
 
 interface BetaDeploymentVm {
     function chainId(uint256 newChainId) external;

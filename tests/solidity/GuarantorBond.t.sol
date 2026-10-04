@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 pragma solidity ^0.8.24;
 
-import {CanonicalCheckpoint} from "../contracts/libraries/CanonicalCheckpoint.sol";
-import {GuarantorBond} from "../contracts/GuarantorBond.sol";
-import {Constants} from "../contracts/libraries/Constants.sol";
+import {CanonicalCheckpoint} from "../../contracts/libraries/CanonicalCheckpoint.sol";
+import {GuarantorBond} from "../../contracts/GuarantorBond.sol";
+import {Constants} from "../../contracts/libraries/Constants.sol";
 
 interface BondVm {
     function addr(uint256 privateKey) external returns (address);

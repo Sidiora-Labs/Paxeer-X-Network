@@ -2,7 +2,7 @@
 pragma solidity ^0.8.24;
 
 import {Ed25519Signer} from "./Ed25519Signer.sol";
-import {Ed25519} from "../contracts/crypto/Ed25519.sol";
+import {Ed25519} from "../../contracts/crypto/Ed25519.sol";
 
 interface Ed25519Vm {
     function readFile(string calldata path) external view returns (string memory);

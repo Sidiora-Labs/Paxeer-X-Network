@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 pragma solidity ^0.8.24;
 
-import {LayerXTimelock, LayerXTimelockCore} from "../contracts/governance/LayerXTimelock.sol";
+import {LayerXTimelock, LayerXTimelockCore} from "../../contracts/governance/LayerXTimelock.sol";
 
-import {LayerXBetaTimelock} from "../contracts/governance/LayerXBetaTimelock.sol";
+import {LayerXBetaTimelock} from "../../contracts/governance/LayerXBetaTimelock.sol";
 
 interface TimelockVm {
     function chainId(uint256 chain) external;

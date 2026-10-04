@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 pragma solidity ^0.8.24;
 
-import {SidioraProxyTimelock, ISidioraProxyUpgrade} from "../contracts/governance/SidioraProxyTimelock.sol";
-import {SidioraProxyGovernance} from "../scripts/SidioraProxyGovernance.s.sol";
-import {ERC1967Proxy} from "../contracts/lib/openzeppelin-contracts/contracts/proxy/ERC1967/ERC1967Proxy.sol";
-import {ERC1967Utils} from "../contracts/lib/openzeppelin-contracts/contracts/proxy/ERC1967/ERC1967Utils.sol";
-import {UUPSUpgradeable} from "../contracts/lib/openzeppelin-contracts/contracts/proxy/utils/UUPSUpgradeable.sol";
-import {Initializable} from "../contracts/lib/openzeppelin-contracts/contracts/proxy/utils/Initializable.sol";
-import {Ownable} from "../contracts/lib/openzeppelin-contracts/contracts/access/Ownable.sol";
+import {SidioraProxyTimelock, ISidioraProxyUpgrade} from "../../contracts/governance/SidioraProxyTimelock.sol";
+import {SidioraProxyGovernance} from "../../scripts/SidioraProxyGovernance.s.sol";
+import {ERC1967Proxy} from "../../contracts/lib/openzeppelin-contracts/contracts/proxy/ERC1967/ERC1967Proxy.sol";
+import {ERC1967Utils} from "../../contracts/lib/openzeppelin-contracts/contracts/proxy/ERC1967/ERC1967Utils.sol";
+import {UUPSUpgradeable} from "../../contracts/lib/openzeppelin-contracts/contracts/proxy/utils/UUPSUpgradeable.sol";
+import {Initializable} from "../../contracts/lib/openzeppelin-contracts/contracts/proxy/utils/Initializable.sol";
+import {Ownable} from "../../contracts/lib/openzeppelin-contracts/contracts/access/Ownable.sol";
 
 interface SidioraProxyVm {
     function warp(uint256 timestamp) external;

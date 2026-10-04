@@ -1,6 +1,6 @@
 [profile.default]
 src = "contracts"
-test = "test"
+test = "tests/solidity"
 out = "build/forge-artifacts"
 cache_path = "build/forge-cache"
 solc_version = "0.8.27"

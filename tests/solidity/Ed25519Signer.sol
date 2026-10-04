@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 pragma solidity ^0.8.24;
 
-import {Ed25519} from "../contracts/crypto/Ed25519.sol";
+import {Ed25519} from "../../contracts/crypto/Ed25519.sol";
 
 library Ed25519Signer {
     uint256 private constant P = 2 ** 255 - 19;

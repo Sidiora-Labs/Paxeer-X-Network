@@ -1,16 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
 pragma solidity ^0.8.24;
 
-import {Features} from "../contracts/config/Features.sol";
-import {StaticConfig} from "../contracts/config/StaticConfig.sol";
-import {Blueprint} from "../contracts/deployment/Blueprint.sol";
-import {Predeploys} from "../contracts/deployment/Predeploys.sol";
-import {ILayerXComponent, Preinstalls} from "../contracts/deployment/Preinstalls.sol";
-import {LayerXTimelock} from "../contracts/governance/LayerXTimelock.sol";
-import {ManagerContainer} from "../contracts/manager/ManagerContainer.sol";
-import {ManagerMigrator} from "../contracts/manager/ManagerMigrator.sol";
-import {Constants} from "../contracts/libraries/Constants.sol";
-import {SemverComp} from "../contracts/libraries/SemverComp.sol";
+import {Features} from "../../contracts/config/Features.sol";
+import {StaticConfig} from "../../contracts/config/StaticConfig.sol";
+import {Blueprint} from "../../contracts/deployment/Blueprint.sol";
+import {Predeploys} from "../../contracts/deployment/Predeploys.sol";
+import {ILayerXComponent, Preinstalls} from "../../contracts/deployment/Preinstalls.sol";
+import {LayerXTimelock} from "../../contracts/governance/LayerXTimelock.sol";
+import {ManagerContainer} from "../../contracts/manager/ManagerContainer.sol";
+import {ManagerMigrator} from "../../contracts/manager/ManagerMigrator.sol";
+import {Constants} from "../../contracts/libraries/Constants.sol";
+import {SemverComp} from "../../contracts/libraries/SemverComp.sol";
 
 interface DeploymentVm {
     function etch(address account, bytes calldata code) external;

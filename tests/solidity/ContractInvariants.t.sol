@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 pragma solidity ^0.8.24;
 
-import {AssetRegistry} from "../contracts/custody/AssetRegistry.sol";
-import {LayerXVault} from "../contracts/custody/LayerXVault.sol";
-import {UUPSNotUpgradeable} from "../contracts/security/UUPSNotUpgradeable.sol";
+import {AssetRegistry} from "../../contracts/custody/AssetRegistry.sol";
+import {LayerXVault} from "../../contracts/custody/LayerXVault.sol";
+import {UUPSNotUpgradeable} from "../../contracts/security/UUPSNotUpgradeable.sol";
 
 contract InvariantToken {
     mapping(address => uint256) public balanceOf;

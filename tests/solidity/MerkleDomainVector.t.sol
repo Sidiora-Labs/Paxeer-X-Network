@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 pragma solidity ^0.8.24;
 
-import {MerkleLib} from "../contracts/libraries/MerkleLib.sol";
+import {MerkleLib} from "../../contracts/libraries/MerkleLib.sol";
 
 contract MerkleVectorHarness {
     function proofRoot(bytes32 leaf, uint256 leafIndex, bytes32[] calldata siblings) external pure returns (bytes32) {
