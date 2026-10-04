@@ -36964,6 +36964,10 @@ qualification_exit_code = 0
 qualification_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-103.6.31-evidence/writable.log"
 qualification_evidence = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-103.6.31-evidence/result.json"
 repository_ci_status = "UNQUALIFIED"
+observed_ci_checkout_status = "PASS"
+observed_ci_checkout_revision = "3140ebac20f74e0f356ece12d77063984385744a"
+observed_ci_checkout_job = "https://github.com/Sidiora-Labs/Paxeer-X-Network/actions/runs/37231362624/job/111521494698"
+observed_ci_checkout_evidence = "/root/lx-ops/paxeer-x-integration-2026-10-03/ci-postrepair-20261004-2014/result.json"
 
 [task.103.6.30]
 title = "Correct hosted registry TLS and wire-error compiler integration"
