@@ -354,7 +354,10 @@ public static class LocalVerifier
             {
                 var outcome = receipt.ProgramOutcome;
                 if (outcome is null) throw VerificationFailure(ReceiptCheck.ReceiptShape);
-                if ((outcome.AbiVersion != 1 && outcome.AbiVersion != 2) || outcome.RuntimeVersion != 1) throw VerificationFailure(ReceiptCheck.ProtocolVersion);
+                var supportedAbi = receipt.ProtocolVersion == 3
+                    ? GeneratedReceiptContract.SupportsProgramGuestAbi(outcome.AbiVersion)
+                    : outcome.AbiVersion is GeneratedReceiptContract.ProgramAbiV1 or GeneratedReceiptContract.ProgramAbiV2;
+                if (!supportedAbi || outcome.RuntimeVersion != 1) throw VerificationFailure(ReceiptCheck.ProtocolVersion);
             }
         }
         if (!program && receipt.Operation == 0) throw VerificationFailure(ReceiptCheck.Operation);

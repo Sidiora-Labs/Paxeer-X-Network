@@ -1,8 +1,13 @@
 using System.Buffers.Binary;
 using System.Numerics;
 using System.Reflection;
+using System.Runtime.CompilerServices;
+using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
 using LayerX.Sdk;
+using Org.BouncyCastle.Crypto.Parameters;
+using Org.BouncyCastle.Crypto.Signers;
 using Xunit;
 
 namespace LayerX.Sdk.Tests;
@@ -123,6 +128,187 @@ public sealed class ProgramsContractTests
         var exception = Assert.Throws<TargetInvocationException>(() => Invoke("DecodeOccupancySettlement", mutated));
         Assert.IsType<InvalidDataException>(exception.InnerException);
     }
+
+    [Theory]
+    [InlineData("native-program-call-v3.json")]
+    [InlineData("native-program-call-v4.json")]
+    public async Task NativeSignedFixturesUseCanonicalBinaryGatewayTransport(string name)
+    {
+        using var document = Fixture(name);
+        var vector = document.RootElement;
+        var payload = FixtureBytes(vector, "payload_hex");
+        var signed = FixtureBytes(vector, "signed_activity_hex");
+        var native = NativeProgramCall.Decode(payload);
+        var call = new ProgramCall(native, new ProtocolAmount(vector.GetProperty("fee_limit").GetString()!), signed);
+        var encoded = Assert.IsType<JsonValue.ObjectValue>(Invoke("Encode", call));
+        var key = vector.GetProperty("idempotency_key_hex").GetString()!;
+        using var token = new AccessToken(Encoding.ASCII.GetBytes("fixture-bearer"));
+        var transport = new AgentHttpTransport(new Uri("http://127.0.0.1:8080"), accessToken: token);
+        var build = typeof(AgentHttpTransport).GetMethod("ProgramRequest", BindingFlags.Instance | BindingFlags.NonPublic)!;
+        foreach (var operation in new[] { "program.call", "program.simulate" })
+        {
+            var request = new ProgramTransportCall(operation, encoded, new Dictionary<string, string>(),
+                operation == "program.call" ? new IdempotencyKey(key) : null);
+            using var http = Assert.IsType<HttpRequestMessage>(build.Invoke(transport, [request]));
+            Assert.Equal(operation == "program.call" ? "/v1/programs/call" : "/v1/programs/simulate", http.RequestUri!.AbsolutePath);
+            Assert.Equal(HttpMethod.Post, http.Method);
+            Assert.Equal("application/octet-stream", http.Content!.Headers.ContentType!.MediaType);
+            Assert.Equal(signed, await http.Content.ReadAsByteArrayAsync());
+            if (operation == "program.call") Assert.Equal(key, Assert.Single(http.Headers.GetValues("Idempotency-Key")));
+            else Assert.False(http.Headers.Contains("Idempotency-Key"));
+            var changed = native with { ResponseCapacity = native.ResponseCapacity + 1 };
+            var changedCall = new ProgramCall(changed, call.Budget.FeeLimit, signed);
+            Assert.Throws<TargetInvocationException>(() => Invoke("DecodeSignedCall", changedCall));
+        }
+        foreach (var abi in new ushort[] { 0, 5, ushort.MaxValue })
+            Assert.Throws<ArgumentException>(() => (native with { GuestAbi = abi }).Encode());
+        foreach (var abi in new ushort[] { 3, 4 })
+        {
+            var changed = native with { GuestAbi = abi };
+            Assert.Equal(abi, NativeProgramCall.Decode(changed.Encode()).GuestAbi);
+            Assert.Throws<TargetInvocationException>(() => Invoke("DecodeSignedCall", new ProgramCall(changed, call.Budget.FeeLimit, signed)));
+        }
+    }
+
+    [Theory]
+    [InlineData("native-program-deploy-v4.json", 1)]
+    [InlineData("native-program-upgrade-v4.json", 2)]
+    public void NativeLifecycleFixturesPreserveSignedBindingAcrossNamedAbiPolicies(string name, int ordinal)
+    {
+        using var document = Fixture(name);
+        var vector = document.RootElement;
+        var payload = FixtureBytes(vector, "payload_hex");
+        INativeProgramLifecycle operation = ordinal == 1 ? NativeProgramDeploy.Decode(payload) : NativeProgramUpgrade.Decode(payload);
+        Assert.Equal((ushort)2, BinaryPrimitives.ReadUInt16BigEndian(payload.AsSpan(32)));
+        Assert.Equal(payload, operation.Encode());
+        var request = new NativeProgramLifecycleRequest(operation, FixtureBytes(vector, "signed_activity_hex"));
+        Assert.Equal(FixtureBytes(vector, "activity_id_hex"), request.ActivityId);
+        foreach (var abi in new ushort[] { 3, 4 })
+        {
+            var changed = payload.ToArray(); BinaryPrimitives.WriteUInt16BigEndian(changed.AsSpan(32), abi);
+            INativeProgramLifecycle updated = ordinal == 1 ? NativeProgramDeploy.Decode(changed) : NativeProgramUpgrade.Decode(changed);
+            Assert.Equal(changed, updated.Encode());
+            Assert.Throws<ArgumentException>(() => new NativeProgramLifecycleRequest(updated, FixtureBytes(vector, "signed_activity_hex")));
+        }
+        foreach (var abi in new ushort[] { 0, 5, ushort.MaxValue })
+        {
+            var changed = payload.ToArray(); BinaryPrimitives.WriteUInt16BigEndian(changed.AsSpan(32), abi);
+            Assert.Throws<ArgumentException>(() => ordinal == 1 ? (INativeProgramLifecycle)NativeProgramDeploy.Decode(changed) : NativeProgramUpgrade.Decode(changed));
+        }
+    }
+
+    [Fact]
+    public void SignedDiscoveryHeadsBindEveryCanonicalFieldToTheIndependentPin()
+    {
+        var signer = new Ed25519PrivateKeyParameters(Enumerable.Repeat((byte)0x42, 32).ToArray(), 0);
+        var pin = signer.GeneratePublicKey().GetEncoded();
+        var programs = new ProgramsClient(new PlatformClient(new AgentHttpTransport(new Uri("http://127.0.0.1:8080"))), pin);
+        var verify = typeof(ProgramsClient).GetMethod("VerifyDiscovery", BindingFlags.Instance | BindingFlags.NonPublic)!;
+        foreach (var abi in new ushort[] { 1, 2, 3, 4 })
+        {
+            var head = SignedHead(abi, signer);
+            ProgramDiscovery Verify(IReadOnlyDictionary<string, JsonValue> value) => Assert.IsType<ProgramDiscovery>(
+                verify.Invoke(programs, [JsonValue.Object(value), new string('1', 64), false, 2000UL]));
+            var accepted = Verify(head);
+            Assert.Equal(abi, accepted.AbiVersion);
+            Assert.Equal("sequencer-signed-discovery-head", accepted.Verification);
+            Assert.Equal(Repeat(0x44), accepted.DeploymentReceiptDigest);
+            foreach (var (field, changed) in new (string, JsonValue)[]
+            {
+                ("version", JsonValue.Integer(4)), ("code_hash", JsonValue.String(new string('9', 64))),
+                ("abi_version", JsonValue.Integer(abi == 4 ? 3 : 4)),
+                ("observed_sequence", JsonValue.String("78")), ("observed_at", JsonValue.String("1001")),
+                ("valid_through", JsonValue.String("9999")), ("state_root", JsonValue.String(new string('9', 64))),
+                ("receipt_digest", JsonValue.String(new string('9', 64))),
+                ("discovery_public_key", JsonValue.String(new string('9', 64))),
+                ("discovery_signature", JsonValue.String(new string('9', 128))),
+                ("abi_version", JsonValue.Integer(5)), ("unexpected", JsonValue.String("extra")),
+            })
+            {
+                var altered = new Dictionary<string, JsonValue>(head) { [field] = changed };
+                Assert.IsType<PlatformSdkException>(Assert.Throws<TargetInvocationException>(() => Verify(altered)).InnerException);
+            }
+            foreach (var field in new[] { "discovery_public_key", "discovery_signature", "deployment_receipt_digest" })
+            {
+                var altered = new Dictionary<string, JsonValue>(head); altered.Remove(field);
+                Assert.IsType<PlatformSdkException>(Assert.Throws<TargetInvocationException>(() => Verify(altered)).InnerException);
+            }
+            if (abi is 3 or 4)
+            {
+                var unsigned = new Dictionary<string, JsonValue>(head);
+                unsigned.Remove("discovery_public_key"); unsigned.Remove("discovery_signature");
+                Assert.IsType<PlatformSdkException>(Assert.Throws<TargetInvocationException>(() => Verify(unsigned)).InnerException);
+            }
+        }
+    }
+
+    [Fact]
+    public async Task ExecutedNativeReceiptVerifiesLocallyAndRefusesChangedBindings()
+    {
+        using var document = Fixture("receipt-programs-executed-v4.json");
+        var vector = document.RootElement; var batch = vector.GetProperty("authorized_batch");
+        var authority = new AuthorizedReceiptBatch(FixtureBytes(batch, "batch_id_hex"), FixtureBytes(batch, "asset_hex"),
+            FixtureBytes(batch, "previous_state_root_hex"), FixtureBytes(batch, "resulting_state_root_hex"), FixtureBytes(batch, "sequencer_public_key_hex"));
+        var receipt = FixtureBytes(vector, "canonical_receipt_hex"); var terminal = FixtureBytes(vector, "terminal_payload_hex");
+        var graph = FixtureBytes(vector, "call_graph_hex");
+        var activity = SHA256.HashData(Encoding.UTF8.GetBytes("LXP/v1/activity-id\0").Concat(FixtureBytes(vector, "signed_activity_hex")).ToArray());
+        var verified = await ProgramsClient.VerifyReceiptAsync(receipt, authority, activity, 2, terminal, graph, protocolVersion: 3);
+        Assert.Equal(FixtureBytes(vector, "receipt_digest_hex"), verified.ReceiptDigest);
+        Assert.Equal("sequencer-signed", verified.Level);
+        foreach (var target in new[] { "receipt", "terminal", "graph", "activity", "pin" })
+        {
+            byte[] Changed(byte[] bytes) { var changed = bytes.ToArray(); changed[^1] ^= 1; return changed; }
+            await Assert.ThrowsAsync<PlatformSdkException>(async () => await ProgramsClient.VerifyReceiptAsync(
+                target == "receipt" ? Changed(receipt) : receipt,
+                target == "pin" ? authority with { SequencerPublicKey = Changed(authority.SequencerPublicKey) } : authority,
+                target == "activity" ? Changed(activity) : activity, 2,
+                target == "terminal" ? Changed(terminal) : terminal,
+                target == "graph" ? Changed(graph) : graph, protocolVersion: 3));
+        }
+    }
+
+    [Fact]
+    public void NativeDeploymentInterfaceHeaderBindsTheActualCodeAndAbi()
+    {
+        using var document = Fixture("native-program-deploy-v3.json");
+        var payload = FixtureBytes(document.RootElement, "payload_hex");
+        var length = checked((int)BinaryPrimitives.ReadUInt32BigEndian(payload.AsSpan(104)));
+        var encoded = payload.AsSpan(108, length).ToArray(); var codeHash = payload[68..100];
+        var abi = BinaryPrimitives.ReadUInt16BigEndian(payload.AsSpan(32));
+        Assert.True((bool)Invoke("InterfaceHeaderBound", encoded, codeHash, abi)!);
+        Assert.False((bool)Invoke("InterfaceHeaderBound", encoded, Repeat(0x99), abi)!);
+        foreach (var wrongAbi in new ushort[] { 0, 1, 3, 4, 5, ushort.MaxValue })
+            Assert.False((bool)Invoke("InterfaceHeaderBound", encoded, codeHash, wrongAbi)!);
+        for (var size = 0; size < Encoding.UTF8.GetByteCount("LayerX/program-interface/v1\0") + 36; size++)
+            Assert.False((bool)Invoke("InterfaceHeaderBound", encoded[..size], codeHash, abi)!);
+        var changed = encoded.ToArray(); changed[0] ^= 1;
+        Assert.False((bool)Invoke("InterfaceHeaderBound", changed, codeHash, abi)!);
+    }
+
+    private static Dictionary<string, JsonValue> SignedHead(ushort abi, Ed25519PrivateKeyParameters signer)
+    {
+        var program = Repeat(0x11); var code = Repeat(0x22); var state = Repeat(0x33);
+        var material = Encoding.UTF8.GetBytes("LayerX/program-discovery-proof/v1\0").Concat(program).Concat(new byte[] { 1 })
+            .Concat(Be(3, 4)).Concat(code).Concat(Be(abi, 2)).Concat(Be(77, 8)).Concat(Be(1000, 8)).Concat(Be(10000, 8)).Concat(state).ToArray();
+        var digest = SHA256.HashData(material); var signature = new Ed25519Signer(); signature.Init(true, signer);
+        signature.BlockUpdate(digest, 0, digest.Length);
+        string Hex(byte[] bytes) => Convert.ToHexString(bytes).ToLowerInvariant();
+        return new()
+        {
+            ["program_id"] = JsonValue.String(Hex(program)), ["lifecycle"] = JsonValue.String("active"),
+            ["version"] = JsonValue.Integer(3), ["code_hash"] = JsonValue.String(Hex(code)), ["abi_version"] = JsonValue.Integer(abi),
+            ["receipt_digest"] = JsonValue.String(Hex(digest)), ["deployment_receipt_digest"] = JsonValue.String(Hex(Repeat(0x44))),
+            ["state_root"] = JsonValue.String(Hex(state)), ["observed_sequence"] = JsonValue.String("77"),
+            ["observed_at"] = JsonValue.String("1000"), ["valid_through"] = JsonValue.String("10000"),
+            ["verification"] = JsonValue.String("registry-receipt-and-current-head-verified"),
+            ["discovery_public_key"] = JsonValue.String(Hex(signer.GeneratePublicKey().GetEncoded())),
+            ["discovery_signature"] = JsonValue.String(Hex(signature.GenerateSignature())),
+        };
+    }
+
+    private static JsonDocument Fixture(string name, [CallerFilePath] string source = "") => JsonDocument.Parse(File.ReadAllText(
+        Path.Combine(Path.GetDirectoryName(source)!, "..", "..", "..", "conformance", "fixtures", name)));
+    private static byte[] FixtureBytes(JsonElement element, string name) => Convert.FromHexString(element.GetProperty(name).GetString()!);
 
     private static object? Invoke(string name, params object[] arguments)
     {

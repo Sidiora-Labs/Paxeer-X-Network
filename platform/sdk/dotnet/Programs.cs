@@ -48,7 +48,10 @@ public abstract record ProgramSource
 }
 public sealed record ProgramDiscovery(byte[] ProgramId, ProgramLifecycle Lifecycle, uint Version, byte[] CodeHash,
     ushort AbiVersion, byte[] ReceiptDigest, byte[] StateRoot, ulong ObservedSequence, ulong ObservedAt,
-    ulong ValidThrough, string Verification);
+    ulong ValidThrough, string Verification)
+{
+    public byte[]? DeploymentReceiptDigest { get; init; }
+}
 public sealed record ProgramInterface(byte[] ProgramId, uint Version, byte[] CodeHash, ushort AbiVersion,
     byte[] Interface, byte[] InterfaceDigest, byte[] ReceiptDigest, byte[] StateRoot, ulong ObservedSequence,
     ulong ObservedAt, ulong ValidThrough, ProgramSource Source, string Verification);
@@ -184,7 +187,18 @@ public sealed class ProgramsClient
         var value = await _client.ProgramAsync("program.interface", JsonValue.Object(new Dictionary<string, JsonValue>
         { ["program_id"] = JsonValue.String(id), ["requested_verification_level"] = JsonValue.String(Level(verificationLevel)) }),
             pathParameters: new Dictionary<string, string> { ["program_id"] = id }, cancellationToken: cancellationToken).ConfigureAwait(false);
-        return (ProgramInterface)VerifyDiscovery(value, id, true, NowMilliseconds());
+        var result = (ProgramInterface)VerifyDiscovery(value, id, true, NowMilliseconds());
+        if (result.AbiVersion is GeneratedReceiptContract.ProgramAbiV3 or GeneratedReceiptContract.ProgramAbiV4)
+        {
+            var head = await DiscoverAsync(programId, verificationLevel, cancellationToken).ConfigureAwait(false);
+            if (head.Verification != "sequencer-signed-discovery-head" || head.DeploymentReceiptDigest is null ||
+                !Fixed(head.ProgramId, result.ProgramId) || head.Version != result.Version ||
+                head.AbiVersion != result.AbiVersion || !Fixed(head.CodeHash, result.CodeHash) ||
+                !Fixed(head.StateRoot, result.StateRoot) || head.ObservedSequence != result.ObservedSequence ||
+                head.ObservedAt != result.ObservedAt || head.ValidThrough != result.ValidThrough ||
+                !Fixed(head.DeploymentReceiptDigest, result.ReceiptDigest)) throw Verify();
+        }
+        return result;
     }
     public async Task<ProgramSimulation> SimulateAsync(ProgramCall call, CancellationToken cancellationToken = default)
     {
@@ -245,7 +259,8 @@ public sealed class ProgramsClient
         byte[] expectedActivityId, ushort expectedGuestAbiVersion, byte[] terminalPayload, byte[] callGraph,
         CancellationToken cancellationToken = default, ushort protocolVersion = 2)
     {
-        if (expectedActivityId?.Length != 32 || expectedGuestAbiVersion is not (1 or 2)) throw Invalid();
+        if (expectedActivityId?.Length != 32 || !GeneratedReceiptContract.SupportsProgramGuestAbi(expectedGuestAbiVersion) ||
+            protocolVersion != 3 && expectedGuestAbiVersion is not (GeneratedReceiptContract.ProgramAbiV1 or GeneratedReceiptContract.ProgramAbiV2)) throw Invalid();
         var verified = await LocalVerifier.VerifyReceiptOutcomeAsync(canonicalReceipt, authorized, cancellationToken, protocolVersion).ConfigureAwait(false);
         var receipt = verified.Receipt;
         var outcome = receipt.ProgramOutcome;
@@ -315,7 +330,8 @@ public sealed class ProgramsClient
             expectedIdempotencyKey is not null && Text(map, "idempotency_key") != expectedIdempotencyKey) throw Verify();
         var guestAbi = Integer(map, "guest_abi_version"); var moduleVersion = Integer(map, "module_version");
         var resultCode = Integer32(map, "result_code"); var globalSequence = DecimalUInt64(map, "global_sequence");
-        if (guestAbi is not (1 or 2) || moduleVersion is < 1 or > 4 ||
+        if (guestAbi < 0 || guestAbi > ushort.MaxValue || !GeneratedReceiptContract.SupportsProgramGuestAbi((ushort)guestAbi) ||
+            _protocolVersion != 3 && guestAbi is not (GeneratedReceiptContract.ProgramAbiV1 or GeneratedReceiptContract.ProgramAbiV2) || moduleVersion is < 1 or > 4 ||
             Text(map, "verification") != "receipt-terminal-and-call-graph-verified") throw Decode();
         var authorityMap = Map(Field(map, "authority"));
         RequireFields(authorityMap, ["batch_id", "asset", "previous_state_root", "resulting_state_root", "sequencer_public_key"]);
@@ -400,7 +416,7 @@ public sealed class ProgramsClient
         return execution;
     }
 
-    private static object VerifyDiscovery(JsonValue value, string programId, bool @interface, ulong now)
+    private object VerifyDiscovery(JsonValue value, string programId, bool @interface, ulong now)
     {
         var map = Map(value);
         string[] fields = @interface
@@ -428,12 +444,13 @@ public sealed class ProgramsClient
                 "observed_at",
                 "valid_through",
                 "verification"];
-        RequireFields(map, fields);
+        string[] optional = @interface ? [] : ["deployment_receipt_digest", "discovery_public_key", "discovery_signature"];
+        RequireFields(map, fields.Concat(optional.Where(map.ContainsKey)));
         var observedAt = DecimalUInt64(map, "observed_at"); var validThrough = DecimalUInt64(map, "valid_through");
         var version = UInt32Integer(map, "version"); var abi = UInt16Integer(map, "abi_version");
-        if (Text(map, "program_id") != programId || version == 0 || abi is not (1 or 2) ||
+        if (Text(map, "program_id") != programId || version == 0 || !GeneratedReceiptContract.SupportsProgramGuestAbi(abi) ||
             !Hex32(Text(map, "code_hash")) || !Hex32(Text(map, "receipt_digest")) || !Hex32(Text(map, "state_root")) ||
-            validThrough < observedAt || now > validThrough ||
+            validThrough < observedAt || observedAt > now || now > validThrough ||
             Text(map, "verification") != (@interface ? "deployment-interface-and-current-head-verified" :
                 "registry-receipt-and-current-head-verified")) throw Verify();
         var observedSequence = DecimalUInt64(map, "observed_sequence");
@@ -442,7 +459,7 @@ public sealed class ProgramsClient
         if (@interface)
         {
             var bytes = Bytes(map, "interface", MaximumInterfaceBytes); var digest = Bytes(map, "interface_digest", 32, true);
-            if (bytes.Length == 0 || !Fixed(SHA256.HashData(bytes), digest)) throw Verify();
+            if (bytes.Length == 0 || !Fixed(SHA256.HashData(bytes), digest) || !InterfaceHeaderBound(bytes, codeHash, abi)) throw Verify();
             var source = TypedSource(Map(Field(map, "source")));
             return new ProgramInterface(program, version, codeHash, abi, bytes, digest, receiptDigest, stateRoot,
                 observedSequence, observedAt, validThrough, source, "server-side-receipt-verification-only");
@@ -454,8 +471,42 @@ public sealed class ProgramsClient
             "tombstoned" => ProgramLifecycle.Tombstoned,
             _ => throw Decode()
         };
+        var signed = map.ContainsKey("discovery_public_key") || map.ContainsKey("discovery_signature");
+        var deployment = map.ContainsKey("deployment_receipt_digest") ? Bytes(map, "deployment_receipt_digest", 32, true) : null;
+        if (deployment is not null && deployment.All(item => item == 0)) throw Verify();
+        if (signed)
+        {
+            if (deployment is null || !map.ContainsKey("discovery_public_key") || !map.ContainsKey("discovery_signature")) throw Verify();
+            var key = Bytes(map, "discovery_public_key", 32, true);
+            var signature = Bytes(map, "discovery_signature", 64, true);
+            var digest = Digest(Encoding.UTF8.GetBytes("LayerX/program-discovery-proof/v1\0"), program, [1],
+                BigEndian(version, 4), codeHash, BigEndian(abi, 2), BigEndian(observedSequence, 8),
+                BigEndian(observedAt, 8), BigEndian(validThrough, 8), stateRoot);
+            if (!Fixed(key, _sequencerPublicKey) || !Fixed(digest, receiptDigest) ||
+                !LocalVerifier.VerifyEd25519Digest(key, signature, digest)) throw Verify();
+        }
+        if (abi is GeneratedReceiptContract.ProgramAbiV3 or GeneratedReceiptContract.ProgramAbiV4 && !signed) throw Verify();
         return new ProgramDiscovery(program, lifecycle, version, codeHash, abi, receiptDigest, stateRoot,
-            observedSequence, observedAt, validThrough, "server-side-receipt-verification-only");
+            observedSequence, observedAt, validThrough, signed ? "sequencer-signed-discovery-head" : "server-side-receipt-verification-only")
+            { DeploymentReceiptDigest = deployment };
+    }
+
+    private static bool InterfaceHeaderBound(byte[] bytes, byte[] codeHash, ushort abi)
+    {
+        var domain = Encoding.UTF8.GetBytes("LayerX/program-interface/v1\0");
+        if (bytes.Length < domain.Length + 36 || bytes.Length > MaximumInterfaceBytes) return false;
+        var version = abi switch
+        {
+            GeneratedReceiptContract.ProgramAbiV1 => 1,
+            GeneratedReceiptContract.ProgramAbiV2 => Starts(bytes, "LayerX/program-interface/v2\0") ? 2 : 1,
+            GeneratedReceiptContract.ProgramAbiV3 => 3,
+            GeneratedReceiptContract.ProgramAbiV4 => 4,
+            _ => 0,
+        };
+        if (version == 0 || !Starts(bytes, "LayerX/program-interface/v" + version + "\0")) return false;
+        var entries = BinaryPrimitives.ReadUInt16BigEndian(bytes.AsSpan(domain.Length + 34));
+        return Fixed(bytes.AsSpan(domain.Length, 32).ToArray(), codeHash) &&
+            BinaryPrimitives.ReadUInt16BigEndian(bytes.AsSpan(domain.Length + 32)) == abi && entries is > 0 and <= 256;
     }
 
     private static ProgramSource TypedSource(IReadOnlyDictionary<string, JsonValue> source)

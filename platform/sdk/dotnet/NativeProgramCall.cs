@@ -9,7 +9,7 @@ public sealed record NativeProgramCall(byte[] ProgramId, ushort GuestAbi, string
 {
     public byte[] Encode()
     {
-        if (ProgramId.Length != 32 || ProgramId.All(value => value == 0) || GuestAbi is not (1 or 2)
+        if (ProgramId.Length != 32 || ProgramId.All(value => value == 0) || !GeneratedReceiptContract.SupportsProgramGuestAbi(GuestAbi)
             || !Regex.IsMatch(Entrypoint, "\\A[A-Za-z0-9_.]{1,128}\\z") || Calldata.Length > 1048576
             || Capabilities.Length > 65535 || AccessDeclaration.Length > 1048576 || ResponseCapacity > 1048576 || Resources.Length != 7)
             throw new ArgumentException("invalid native program call");

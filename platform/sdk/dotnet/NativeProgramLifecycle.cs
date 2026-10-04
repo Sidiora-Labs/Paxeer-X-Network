@@ -152,7 +152,7 @@ internal static class LifecycleWire
     internal static void Code(byte[] program, ushort abi, byte[] hash, byte[] wasm)
     {
         Bytes32(program); Bytes32(hash);
-        Require(program.Any(value => value != 0) && abi is >= 1 and <= 3 && wasm.Length is >= 8 and <= 1048576 &&
+        Require(program.Any(value => value != 0) && GeneratedReceiptContract.SupportsProgramGuestAbi(abi) && wasm.Length is >= 8 and <= 1048576 &&
             wasm.AsSpan(0, 8).SequenceEqual(new byte[] { 0, 97, 115, 109, 1, 0, 0, 0 }) && CryptographicOperations.FixedTimeEquals(hash, SHA256.HashData(wasm)));
     }
     internal static ulong Get(byte[] bytes, int offset, int length)
