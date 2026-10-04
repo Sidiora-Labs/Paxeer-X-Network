@@ -608,7 +608,7 @@ fn arbitration_engine_state_size(
     Ok(measured)
 }
 
-fn arbitration_engine_state_bytes(
+pub(crate) fn arbitration_engine_state_bytes(
     snapshot: &WasmiExecutionSnapshot,
 ) -> Result<Vec<u8>, ExecutionFault> {
     fn put_len(bytes: &mut Vec<u8>, len: usize) -> Result<(), ExecutionFault> {
@@ -5132,3 +5132,164 @@ mod lxt20_tests;
 #[cfg(test)]
 #[path = "merchant_tests.rs"]
 mod merchant_tests;
+
+pub struct PortableReplayInputs {
+    authority: Vec<u8>,
+    hosts: Vec<u8>,
+    resolver: Option<std::rc::Rc<dyn crate::ProgramResolver>>,
+    maximum: usize,
+}
+impl PortableReplayInputs {
+    pub fn new(
+        authority: &[u8],
+        hosts: &[u8],
+        resolver: Option<std::rc::Rc<dyn crate::ProgramResolver>>,
+        maximum: usize,
+    ) -> Result<Self, crate::replay::ReplayWitnessError> {
+        crate::replay::maximum_bytes(maximum)?;
+        if maximum > crate::replay_record::MAX_PROGRAM_REPLAY_BYTES as usize {
+            return Err(crate::replay::ReplayWitnessError::Bounds);
+        }
+        if authority.len() > maximum || hosts.len() > maximum {
+            return Err(crate::replay::ReplayWitnessError::Bounds);
+        }
+        let mut authority_owned = Vec::new();
+        authority_owned
+            .try_reserve_exact(authority.len())
+            .map_err(|_| crate::replay::ReplayWitnessError::Allocation)?;
+        authority_owned.extend_from_slice(authority);
+        let mut hosts_owned = Vec::new();
+        hosts_owned
+            .try_reserve_exact(hosts.len())
+            .map_err(|_| crate::replay::ReplayWitnessError::Allocation)?;
+        hosts_owned.extend_from_slice(hosts);
+        Ok(Self {
+            authority: authority_owned,
+            hosts: hosts_owned,
+            resolver,
+            maximum,
+        })
+    }
+}
+
+pub fn replay_portable_step(
+    module: &ValidatedModule,
+    pre: &crate::portable_replay::PortableBoundary,
+    post: &crate::portable_replay::PortableBoundary,
+    inputs: &PortableReplayInputs,
+) -> Result<(), RuntimeBoundaryReplayError> {
+    let pre_bytes = pre.reencode_untrusted(inputs.maximum)?;
+    let post_bytes = post.reencode_untrusted(inputs.maximum)?;
+    let identity = pre.arbitration.identity;
+    if identity != post.arbitration.identity
+        || identity.module_code_hash != module.code_hash()
+        || pre.arbitration.legacy.module_code_hash != module.code_hash()
+        || (
+            pre.arbitration.legacy.module_code_hash,
+            pre.arbitration.legacy.input_digest,
+            pre.arbitration.legacy.execution_parameters_digest,
+        ) != (
+            post.arbitration.legacy.module_code_hash,
+            post.arbitration.legacy.input_digest,
+            post.arbitration.legacy.execution_parameters_digest,
+        )
+        || identity.metering_schedule_version != module.metering_schedule_version()
+    {
+        return Err(RuntimeBoundaryReplayError::Binding);
+    }
+    let (restored, authority) = crate::replay::restore_portable_semantic(
+        &pre.semantic_bytes,
+        &inputs.authority,
+        &inputs.hosts,
+        inputs.resolver.clone(),
+        inputs.maximum,
+    )?;
+    restored
+        .recapture(inputs.maximum)?
+        .compare_boundary(module.code_hash(), &pre.replay.snapshot.supplement)?;
+    let restored_state = restored.into_runtime_state();
+    restored_state.validate_portable_bindings(identity, &authority)?;
+    let mut instance = module.instantiate_untrusted_replay(restored_state)?;
+    instance
+        .store
+        .data_mut()
+        .enable_boundary_capture(module.code_hash(), 2, inputs.maximum)?;
+    instance.store.enable_execution_replay_observer_with_limits(
+        2,
+        crate::MAX_TRACE_STATE_BYTES,
+        crate::MAX_TRACE_STATE_BYTES,
+    );
+    instance
+        .store
+        .set_execution_supplement(RuntimeState::execution_supplement);
+    let engine = instance.store.engine().clone();
+    let context = wasmi::ExecutionReplayContext::new(
+        wasmi::AsContextMut::as_context_mut(&mut instance.store),
+        instance.instance,
+    );
+    let observed = engine
+        .execute_step(context, &pre.replay)
+        .map_err(RuntimeBoundaryReplayError::Engine)?;
+    if authority.missing_portable_query() {
+        return Err(crate::replay::ReplayWitnessError::StateUnavailable.into());
+    }
+    if let Some(expected) = &pre.trap {
+        if pre_bytes != post_bytes {
+            return Err(RuntimeBoundaryReplayError::Binding);
+        }
+        let wasmi::ExecutionStepOutcome::Trapped(actual) = observed else {
+            return Err(RuntimeBoundaryReplayError::Binding);
+        };
+        if actual.pre.as_ref() != &pre.replay
+            || actual.host_trap != expected.host_trap
+            || actual.trap_code.as_ref().map(std::mem::discriminant)
+                != expected.code.as_ref().map(std::mem::discriminant)
+        {
+            return Err(RuntimeBoundaryReplayError::Binding);
+        }
+        return Ok(());
+    }
+    let transition = match observed {
+        wasmi::ExecutionStepOutcome::Boundary(transition)
+        | wasmi::ExecutionStepOutcome::Returned(transition) => transition,
+        wasmi::ExecutionStepOutcome::Trapped(_) => return Err(RuntimeBoundaryReplayError::Binding),
+    };
+    if transition.pre.as_ref() != &pre.replay || transition.post.as_ref() != &post.replay {
+        return Err(RuntimeBoundaryReplayError::Binding);
+    }
+    let captures = instance.store.data_mut().take_boundary_captures();
+    if captures.len() != 1 || captures[0].canonical_bytes(inputs.maximum)? != post.semantic_bytes {
+        return Err(RuntimeBoundaryReplayError::Binding);
+    }
+    let identities = TraceIdentities {
+        legacy: crate::ExecutionTraceIdentity {
+            module_code_hash: pre.arbitration.legacy.module_code_hash,
+            input_digest: pre.arbitration.legacy.input_digest,
+            execution_parameters_digest: pre.arbitration.legacy.execution_parameters_digest,
+        },
+        runtime_version: identity.runtime_version,
+        abi_version: identity.abi_version,
+        fee_schedule_version: identity.fee_schedule_version,
+        metering_schedule_version: identity.metering_schedule_version,
+    };
+    let mut actual = Vec::new();
+    for snapshot in [&transition.pre.snapshot, &transition.post.snapshot] {
+        let legacy = execution_state_from_snapshot(snapshot, identities.legacy)?;
+        actual.push(arbitration_state_from_snapshot(
+            snapshot,
+            identities,
+            identity.trace_policy,
+            std::sync::Arc::new(legacy),
+        )?);
+    }
+    if actual[0] != pre.arbitration || actual[1] != post.arbitration {
+        return Err(RuntimeBoundaryReplayError::Binding);
+    }
+    let ordinary = wasmi::ExecutionTransition {
+        pre: transition.pre.snapshot.clone(),
+        post: transition.post.snapshot.clone(),
+        memory_expansion_bytes: transition.memory_expansion_bytes,
+    };
+    validate_arbitration_commitments(&ordinary, &actual[0], &actual[1])?;
+    Ok(())
+}

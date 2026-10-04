@@ -1691,3 +1691,55 @@ impl RuntimeState {
         )
     }
 }
+
+impl RuntimeState {
+    pub(crate) fn validate_portable_bindings(
+        &self,
+        identity: crate::ArbitrationExecutionIdentity,
+        authority: &crate::abi::CapturedAbiReplayAuthority,
+    ) -> Result<(), crate::replay::ReplayWitnessError> {
+        use crate::replay::ReplayWitnessError as E;
+        let (root_program, abi_version, fee_version, meter_version, batch) =
+            authority.portable_binding().ok_or(E::StateUnavailable)?;
+        let abi = self.abi.as_ref().ok_or(E::StateUnavailable)?;
+        if abi_version != identity.abi_version
+            || fee_version != identity.fee_schedule_version
+            || meter_version != identity.metering_schedule_version
+            || self.meter.fee_schedule_version() != fee_version
+            || self.metering_schedule_version() != meter_version
+        {
+            return Err(E::Binding);
+        }
+        let host_identity = self
+            .v2_host_state_identity()
+            .map_err(|_| E::StateUnavailable)?;
+        if host_identity.base_state != identity.host_base_state_root
+            || host_identity.receipt_oracle != identity.receipt_oracle_root
+            || host_identity.balance_oracle != identity.balance_oracle_root
+        {
+            return Err(E::Binding);
+        }
+        let composition = self.composition.as_ref().ok_or(E::StateUnavailable)?;
+        let graph = composition.graph();
+        let current = graph.current().ok_or(E::Binding)?;
+        if graph.frames().first().map(|frame| frame.program().bytes()) != Some(root_program)
+            || current.id() != abi.frame()
+            || current.program() != abi.program()
+            || current.principal() != abi.principal()
+            || graph.principal() != abi.principal()
+        {
+            return Err(E::Binding);
+        }
+        if let Some(context) = self.protocol_context {
+            let bytes = context.canonical_bytes();
+            if bytes[8..16] != batch.to_be_bytes()
+                || bytes[16..18] != identity.runtime_version.to_be_bytes()
+                || bytes[18..20] != identity.abi_version.to_be_bytes()
+                || bytes[20..24] != fee_version.to_be_bytes()
+            {
+                return Err(E::Binding);
+            }
+        }
+        Ok(())
+    }
+}

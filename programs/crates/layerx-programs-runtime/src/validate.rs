@@ -283,6 +283,27 @@ impl ValidatedModule {
         Ok(())
     }
 
+    pub(crate) fn instantiate_untrusted_replay(
+        &self,
+        state: RuntimeState,
+    ) -> Result<ProgramInstance, ExecutionFault> {
+        let mut store = wasmi::Store::new(
+            self.module.engine(),
+            RuntimeState::isolated(Meter::declared()),
+        );
+        store.limiter(|state| state.meter_mut() as &mut dyn wasmi::ResourceLimiter);
+        let pre = self
+            .linker
+            .instantiate(&mut store, &self.module)
+            .map_err(|error| fault_from_error(&error))?;
+        let instance = pre.finish_untrusted_replay(&mut store);
+        *store.data_mut() = state;
+        let mut instance = ProgramInstance::new(store, instance);
+        instance.declare_resumable_globals(self.resumable_globals.clone());
+        instance.bind_validated_code_hash(self.code_hash());
+        Ok(instance)
+    }
+
     /// Instantiates the validated module in an isolated store.
     ///
     /// # Errors

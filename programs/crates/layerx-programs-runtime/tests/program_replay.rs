@@ -38,11 +38,12 @@ fn guest(trap: bool, start: bool) -> Vec<u8> {
         },
     );
     let initializer = func_body(&[], &[OP_I32_CONST, 7, 0x1a, OP_END]);
-    sections.push(code_section(if start {
-        &[reserve, entry, initializer]
+    let bodies = if start {
+        vec![reserve, entry, initializer]
     } else {
-        &[reserve, entry]
-    }));
+        vec![reserve, entry]
+    };
+    sections.push(code_section(&bodies));
     module(&sections)
 }
 

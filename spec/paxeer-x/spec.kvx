@@ -33445,3 +33445,31 @@ qualification_status = "unverified"
 build_exit_code = 0
 verify_exit_code = 1
 qualification_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-104.13.21-verify.log"
+
+[task.104.35.25]
+title = "Execute authenticated portable native replay steps through the real runtime"
+status = "done"
+mode = "BUILD"
+wave = 2
+requires = ["0.2", "104.35.21", "104.35.24"]
+reqs = ["1105.3", "1105.4"]
+do_1 = "Implement bounded canonical portable pre/post boundary decoding and actual Engine::execute_step restore using real explicit replay authority and host inputs; runtime remains a lower-level untrusted-input executor independent of Client."
+do_2 = "Implement the real Arbiter facade that authenticates signed receipt, exact previous-root admission inventories and result-root replay metadata before constructing runtime authority. Verify adjacent boundary Merkle proofs and postcommitments without scanning the whole disputed execution; never trust captured process authority or callbacks."
+do_3 = "Complete real native-export and runtime step/refusal/trap corpus, including the recorded temporary-array lifetime defect in the actual runtime fixture without altering its assertions. Preserve legacy consensus encodings, fuel and all bounds."
+touches = ["programs/crates/layerx-programs-runtime/src/replay_record.rs", "programs/crates/layerx-programs-runtime/src/replay.rs", "programs/crates/layerx-programs-runtime/src/execute.rs", "programs/crates/layerx-programs-runtime/src/abi/host_state.rs", "programs/crates/layerx-programs-runtime/src/host/mod.rs", "programs/crates/layerx-programs-runtime/src/portable_replay.rs", "programs/crates/layerx-programs-runtime/tests/program_replay.rs", "programs/crates/layerx-programs-arbiter/Cargo.toml", "programs/crates/layerx-programs-arbiter/src/lib.rs", "programs/crates/layerx-programs-arbiter/src/step.rs", "programs/crates/layerx-programs-arbiter/tests/verified_step.rs", "tools/qualification/paxeer-x/authenticated-replay-step.py", "programs/crates/layerx-programs-runtime/src/validate.rs", "programs/vendor/wasmi-0.31.2/src/module/instantiate/pre.rs", "programs/Cargo.toml", "programs/Cargo.lock", "programs/crates/layerx-programs-runtime/src/lib.rs", "tests/daemon/lxp_test_program_replay.c"]
+build_cmd = "timeout 20m python3 tools/qualification/paxeer-x/authenticated-replay-step.py --build"
+verify_cmd = "timeout 10m python3 tools/qualification/paxeer-x/authenticated-replay-step.py"
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop at original 30-minute cap, unrelated failure, missing genuine authority or weakening; report exact source state, command, exit code and log path."
+completion_basis_policy = "Owner CONSTITUTION: fully implemented DONE; qualification separate and partial remains in_progress."
+source_ownership = "Root owns workspace manifests, locks, module registration, spec and narrow publication. Wait for explicit prior-owner source release before editing shared files. No deployment."
+
+
+completion_basis = "implementation"
+qualification_status = "unverified"
+build_exit_code = 1
+verify_status = "UNRUN"
+qualification_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-104.35.25-build.log"

@@ -59,6 +59,15 @@ impl InstancePre {
         Ok(self.handle)
     }
 
+    pub fn finish_untrusted_replay(self, mut context: impl AsContextMut) -> Instance {
+        context
+            .as_context_mut()
+            .store
+            .inner
+            .initialize_instance(self.handle, self.builder.finish());
+        self.handle
+    }
+
     /// Finishes instantiation ensuring that no `start` function exists.
     ///
     /// # Errors

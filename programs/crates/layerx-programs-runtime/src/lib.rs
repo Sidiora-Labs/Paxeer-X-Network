@@ -89,6 +89,8 @@ pub mod occupancy;
 #[deny(unsafe_code)]
 pub mod qualification;
 #[deny(unsafe_code)]
+pub mod portable_replay;
+#[deny(unsafe_code)]
 pub mod replay;
 #[deny(unsafe_code)]
 pub mod replay_record;

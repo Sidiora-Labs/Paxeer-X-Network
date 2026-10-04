@@ -198,6 +198,20 @@ pub(crate) fn captured_leaf(
     semantic: &crate::replay::CapturedSemanticReplayV2,
     maximum: usize,
 ) -> Result<Vec<u8>, ReplayWitnessError> {
+    captured_leaf_bytes(
+        replay,
+        arbitration,
+        &semantic.canonical_bytes(maximum)?,
+        maximum,
+    )
+}
+
+pub(crate) fn captured_leaf_bytes(
+    replay: &wasmi::ExecutionReplaySnapshot,
+    arbitration: &crate::ArbitrationExecutionState,
+    semantic_bytes: &[u8],
+    maximum: usize,
+) -> Result<Vec<u8>, ReplayWitnessError> {
     fn field(bytes: &mut Vec<u8>, value: &[u8], maximum: usize) -> Result<(), ReplayWitnessError> {
         append(
             bytes,
@@ -269,7 +283,7 @@ pub(crate) fn captured_leaf(
     ] {
         append(&mut bytes, &value.to_be_bytes(), maximum)?;
     }
-    field(&mut bytes, &semantic.canonical_bytes(maximum)?, maximum)?;
+    field(&mut bytes, semantic_bytes, maximum)?;
     Ok(bytes)
 }
 

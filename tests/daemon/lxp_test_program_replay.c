@@ -151,9 +151,9 @@ int main(int argc,char **argv)
     replay_manifest=fopen(path,"wbx");CHECK(replay_manifest!=NULL);
     CHECK(fprintf(replay_manifest,"{\"admission_inputs\":\"inputs.json\",\"captures\":[")>0);
     wasm_length=candidate_module(wasm,entry,sizeof(entry));
-    length=deploy_payload(payload,program,f->authority.principal,wasm,wasm_length,hash,LX_PROGRAMS_ABI_VERSION,INTERFACE_CAPABILITIES_NONE);
+    length=deploy_payload(payload,program,f->authority.principal,wasm,wasm_length,hash,LX_PROGRAMS_GUEST_ABI_V2_VERSION,INTERFACE_CAPABILITIES_NONE);
     replay_batch=1U;CHECK(replay_publish(f,LX_PROGRAMS_DEPLOY,payload,length,1U,replay_batch,LXP_OK,true)==0);
-    length=staged_call_payload(call,program);
+    length=staged_call_payload(call,program);write_u16(call+32U,LX_PROGRAMS_GUEST_ABI_V2_VERSION);
     replay_batch=2U;CHECK(replay_publish(f,LX_PROGRAMS_CALL,call,length,1U,replay_batch,LXP_OK,true)==0);
     CHECK(replay_records==0U&&!replay_error);
     length=signed_profile(profile,call,length);
@@ -162,9 +162,9 @@ int main(int argc,char **argv)
     replay_batch=4U;CHECK(replay_publish(f,LX_PROGRAMS_CALL,profile,length,2U,replay_batch,LXP_OK,false)==0);
     CHECK(replay_records==3U&&!replay_error);
     program[0]=0x32U;wasm_length=candidate_module(wasm,trap,sizeof(trap));
-    length=deploy_payload(payload,program,f->authority.principal,wasm,wasm_length,hash,LX_PROGRAMS_ABI_VERSION,INTERFACE_CAPABILITIES_NONE);
+    length=deploy_payload(payload,program,f->authority.principal,wasm,wasm_length,hash,LX_PROGRAMS_GUEST_ABI_V2_VERSION,INTERFACE_CAPABILITIES_NONE);
     replay_batch=5U;CHECK(replay_publish(f,LX_PROGRAMS_DEPLOY,payload,length,1U,replay_batch,LXP_OK,true)==0);
-    length=staged_call_payload(call,program);length=signed_profile(profile,call,length);
+    length=staged_call_payload(call,program);write_u16(call+32U,LX_PROGRAMS_GUEST_ABI_V2_VERSION);length=signed_profile(profile,call,length);
     replay_batch=6U;CHECK(replay_publish(f,LX_PROGRAMS_CALL,profile,length,1U,replay_batch,LXP_ERR_PROGRAM_REFUSED,true)==0);
     CHECK(replay_records==4U&&!replay_error);
     write_u32(profile+34U+sizeof("LXP/program-replay-profile/v1")+2U,0U);

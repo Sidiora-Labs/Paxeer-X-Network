@@ -1578,3 +1578,63 @@ mod semantic_replay_tests {
             .is_err());
     }
 }
+
+pub(crate) fn restore_portable_semantic(
+    bytes: &[u8],
+    native_authority: &[u8],
+    native_hosts: &[u8],
+    resolver: Option<std::rc::Rc<dyn crate::ProgramResolver>>,
+    maximum: usize,
+) -> Result<
+    (
+        UntrustedRuntimeReplayState,
+        crate::abi::CapturedAbiReplayAuthority,
+    ),
+    ReplayWitnessError,
+> {
+    maximum_bytes(maximum)?;
+    if bytes.len() > maximum {
+        return Err(ReplayWitnessError::Bounds);
+    }
+    let mut cursor = ReplayCursor::new(bytes);
+    if cursor.take(SEMANTIC_DOMAIN.len())? != SEMANTIC_DOMAIN {
+        return Err(ReplayWitnessError::Encoding);
+    }
+    let host = ReplayHostWitnessV1::decode(cursor.field()?, maximum)?;
+    let storage = StorageReplayWitnessV1::decode(cursor.field()?, maximum)?;
+    let payment = cursor.field()?;
+    let composition = CompositionReplayWitnessV1::decode(cursor.field()?, maximum)?;
+    if !cursor.done() || composition.code_hash() != host.code_hash() {
+        return Err(ReplayWitnessError::Binding);
+    }
+    let authority = crate::abi::CapturedAbiReplayAuthority::from_untrusted_native(
+        host.abi_preimage()?,
+        native_authority,
+        native_hosts,
+        maximum,
+    )?;
+    if payment != authority.payment_metadata() {
+        return Err(ReplayWitnessError::Binding);
+    }
+    storage.compare_host_witness_baseline(&host, maximum)?;
+    let graphs = composition.decode_untrusted_state(maximum)?;
+    let resolver = if graphs.composition.is_some() {
+        Some(resolver.ok_or(ReplayWitnessError::StateUnavailable)?)
+    } else {
+        None
+    };
+    let state = crate::host::RuntimeState::restore_untrusted_semantic(
+        &host,
+        storage.decode_untrusted_storage_pair(maximum)?,
+        &authority,
+        graphs,
+        resolver,
+    )?;
+    Ok((
+        UntrustedRuntimeReplayState {
+            state,
+            code_hash: host.code_hash(),
+        },
+        authority,
+    ))
+}

@@ -1,0 +1,18 @@
+[package]
+name = "layerx-programs-arbiter"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+layerx-programs-runtime = { path = "../layerx-programs-runtime" }
+layerx-programs-registry = { path = "../layerx-programs-registry" }
+layerx-client = { path = "../../../agent/crates/layerx-client" }
+layerx-proof = { path = "../../../agent/crates/layerx-proof" }
+layerx-wire = { path = "../../../agent/crates/layerx-wire" }
+layerx-types = { path = "../../../agent/crates/layerx-types" }
+sha2.workspace = true
+
+[dev-dependencies]
+serde_json = "=1.0.151"
