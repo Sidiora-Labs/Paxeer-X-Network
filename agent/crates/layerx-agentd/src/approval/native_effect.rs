@@ -56,7 +56,13 @@ pub(crate) struct NativeEffectApprovalCarrier {
     requires_approval: bool,
     state: NativeEffectApprovalState,
     terminal: Option<NativeEffectTerminal>,
+    #[serde(default,skip_serializing_if="Option::is_none")]
+    queued_submission: Option<RetainedQueuedSubmission>,
 }
+
+#[derive(Clone, Serialize, Deserialize, Eq, PartialEq)]
+#[serde(deny_unknown_fields)]
+struct RetainedQueuedSubmission { submission_id:[u8;32],activity_id:[u8;32],signed_digest:[u8;32] }
 
 #[derive(Clone, Serialize, Deserialize, Eq, PartialEq)]
 #[serde(deny_unknown_fields)]
@@ -141,7 +147,7 @@ impl NativeEffectApprovalCarrier {
             created_at_sequence:prepared.observed_head_sequence,created_at_unix_seconds:reading.unix_seconds(),clock_generation:reading.generation,
             budget_expiry_sequence:reservation.expiry_sequence,envelope_not_after:prepared.envelope.timestamp_bound().not_after(),
             budget:reservation.encode().map_err(|_|NativeEffectError::Budget)?,policy_source:policy.source().to_vec(),requires_approval:required,
-            state:if required {NativeEffectApprovalState::Awaiting}else{NativeEffectApprovalState::NotRequired},terminal:None};
+            state:if required {NativeEffectApprovalState::Awaiting}else{NativeEffectApprovalState::NotRequired},terminal:None,queued_submission:None};
         result.validate()?;Ok(result)
     }
 
@@ -182,6 +188,11 @@ impl NativeEffectApprovalCarrier {
             || budget.core_deadline.is_none_or(|time|time.0!=self.envelope_not_after)
             || budget.encode().map_err(|_|NativeEffectError::Budget)?!=self.budget {return Err(NativeEffectError::Binding)}
         NativeEffectPolicy::load(&self.policy_source).map_err(|_|NativeEffectError::Policy)?;
+        if let Some(queued)=&self.queued_submission {
+            if queued.submission_id==[0;32]||queued.activity_id==[0;32]||queued.signed_digest==[0;32]
+                ||!matches!(self.state,NativeEffectApprovalState::Granted|NativeEffectApprovalState::NotRequired)
+                ||self.terminal.as_ref().is_some_and(|t|t.submission_ref!=Some(queued.submission_id)) {return Err(NativeEffectError::Binding)}
+        } else if self.terminal.as_ref().is_some_and(|t|t.submission_ref.is_some()) {return Err(NativeEffectError::Binding)}
         match (self.requires_approval,self.state,&self.terminal){
             (true,NativeEffectApprovalState::Awaiting,None)|(false,NativeEffectApprovalState::NotRequired,None)
             |(_,NativeEffectApprovalState::Expired,None)=>{},
@@ -199,9 +210,9 @@ impl NativeEffectApprovalCarrier {
     pub(crate) fn companion(&self)->Result<(TenantKey,Vec<u8>),NativeEffectError>{
         let key=TenantKey::new(TenantId::new(self.tenant.clone()).map_err(|_|NativeEffectError::Corrupt)?,ObjectKind::PreparedActivity,
             [PREFIX,self.preparation.as_slice()].concat()).map_err(|_|NativeEffectError::Corrupt)?;Ok((key,self.encoded()?))}
-    pub(crate) fn held_digest(&self)->Result<[u8;32],NativeEffectError>{let mut held=self.clone();held.terminal=None;
-        held.state=if held.requires_approval{NativeEffectApprovalState::Awaiting}else{NativeEffectApprovalState::NotRequired};
-        Ok(Sha256::digest(held.encoded()?).into())}
+    pub(crate) fn immutable_hold_bytes(&self)->Result<Vec<u8>,NativeEffectError>{let mut held=self.clone();held.terminal=None;held.queued_submission=None;
+        held.state=if held.requires_approval{NativeEffectApprovalState::Awaiting}else{NativeEffectApprovalState::NotRequired};held.encoded()}
+    pub(crate) fn held_digest(&self)->Result<[u8;32],NativeEffectError>{Ok(Sha256::digest(self.immutable_hold_bytes()?).into())}
     pub(crate) fn budget(&self)->Result<ProgramBudgetReservation,NativeEffectError>{ProgramBudgetReservation::decode(&self.budget).map_err(|_|NativeEffectError::Budget)}
     pub(crate) fn preparation_id(&self)->[u8;32]{self.preparation}
     pub(crate) fn actor(&self)->&[u8]{&self.actor}
@@ -217,7 +228,7 @@ impl NativeEffectApprovalCarrier {
     pub(crate) fn budget_expiry_sequence(&self)->u64{self.budget_expiry_sequence}
     pub(crate) fn created_at_unix_seconds(&self)->u64{self.created_at_unix_seconds}
     pub(crate) fn activity_expires_at_unix_milliseconds(&self)->u64{self.envelope_not_after}
-    pub(crate) fn submission_ref(&self)->Option<[u8;32]>{self.terminal.as_ref().and_then(|t|t.submission_ref)}
+    pub(crate) fn submission_ref(&self)->Option<[u8;32]>{self.queued_submission.as_ref().map(|q|q.submission_id)}
     pub(crate) fn release_ref(&self)->Option<[u8;32]>{self.terminal.as_ref().and_then(|t|t.release_ref)}
     pub(crate) fn canonical_bytes(&self)->&[u8]{&self.canonical_bytes}
 
@@ -238,11 +249,74 @@ impl NativeEffectApprovalCarrier {
         }
         let activity=layerx_wire::activity::decode_unsigned(&held.canonical_bytes,&held.registry()?).map_err(|_|NativeEffectError::Corrupt)?;
         if durable.payload_hash!=activity.payload_hash() || durable.tenant!=*tenant {return Err(NativeEffectError::Binding)}
+        if let Some(queued)=&held.queued_submission {held.verify_owned_queue(store,&durable,queued,None)?;}
         let budget=held.budget()?;
         if budget.allocations().is_none() && (durable.holds.len()!=budget.holds.len()
             || budget.holds.iter().any(|h|!durable.holds.iter().any(|(saved,_)|saved==&h.reservation))) {
             return Err(NativeEffectError::Binding)
         };Ok(held)
+    }
+    fn verify_owned_queue(&self,store:&Store,durable:&crate::prepare::DurablePreparation,
+        queued:&RetainedQueuedSubmission,expected:Option<&crate::sign::VerifiedSubmission>)->Result<(),NativeEffectError>{
+        let tenant=TenantId::new(self.tenant.clone()).map_err(|_|NativeEffectError::Binding)?;
+        if queued.submission_id==[0;32]||queued.activity_id==[0;32]||queued.signed_digest==[0;32]
+            || !matches!(self.state,NativeEffectApprovalState::Granted|NativeEffectApprovalState::NotRequired)
+            || durable.activity_id!=Some(queued.activity_id)||durable.preparation_id!=self.preparation
+            ||durable.session_id!=self.session||durable.generation!=self.generation {return Err(NativeEffectError::Binding)}
+        for kind in [ObjectKind::Outbox,ObjectKind::PreparedActivity] {
+            let key=TenantKey::new(tenant.clone(),kind,queued.submission_id.to_vec()).map_err(|_|NativeEffectError::Corrupt)?;
+            if store.get(&key).ok_or(NativeEffectError::Missing)?.class()!=StorageClass::LocalOnly{return Err(NativeEffectError::Binding)}
+        }
+        let mut outbox=crate::outbox::Outbox::default();outbox.restore(store,tenant.clone(),queued.submission_id).map_err(|_|NativeEffectError::Corrupt)?;
+        let origin=outbox.origin(queued.submission_id).map_err(|_|NativeEffectError::Corrupt)?.ok_or(NativeEffectError::Binding)?;
+        let status=outbox.status(queued.submission_id).ok_or(NativeEffectError::Missing)?;
+        let exact=outbox.exact_signed_bytes(queued.submission_id).map_err(|_|NativeEffectError::Corrupt)?;
+        let signed=layerx_wire::activity::decode_signed(exact,&self.registry()?).map_err(|_|NativeEffectError::Corrupt)?;
+        if origin.session.tenant!=tenant||origin.session.session_id.0!=self.session||origin.generation!=self.generation
+            ||status.submission_id!=queued.submission_id||status.activity_id!=queued.activity_id
+            ||matches!(status.state,crate::outbox::SubmissionState::Prepared|crate::outbox::SubmissionState::Signed)
+            ||Sha256::digest(exact).as_slice()!=queued.signed_digest.as_slice()
+            ||layerx_wire::activity::encode_signed(&signed).map_err(|_|NativeEffectError::Corrupt)?!=exact
+            ||layerx_wire::activity::encode_unsigned(&signed).map_err(|_|NativeEffectError::Corrupt)?!=self.canonical_bytes
+            ||layerx_wire::hash::activity_id(&signed).map_err(|_|NativeEffectError::Corrupt)?!=queued.activity_id
+            ||signed.idempotency_key()!=queued.submission_id {return Err(NativeEffectError::Binding)}
+        if let Some(expected)=expected {
+            if expected.exact_bytes()!=exact||expected.activity_id()!=queued.activity_id||expected.idempotency_key()!=queued.submission_id
+                ||durable.signed_bytes().map_err(|_|NativeEffectError::Corrupt)?.as_deref()!=Some(exact) {return Err(NativeEffectError::Binding)}
+        }
+        Ok(())
+    }
+    pub(crate) fn stage_queued_submission(&self,store:&Store,verified:&crate::sign::VerifiedSubmission)->Result<Self,NativeEffectError>{
+        let tenant=TenantId::new(self.tenant.clone()).map_err(|_|NativeEffectError::Binding)?;
+        let retained=Self::read(store,&tenant,self.preparation)?;
+        if retained.encoded()?!=self.encoded()?{return Err(NativeEffectError::Binding)}
+        let key=crate::prepare::DurablePreparation::store_key(&tenant,self.preparation).map_err(|_|NativeEffectError::Corrupt)?;
+        let raw=store.get(&key).ok_or(NativeEffectError::Missing)?;
+        let durable=crate::prepare::DurablePreparation::decode(tenant,raw.bytes()).map_err(|_|NativeEffectError::Corrupt)?;
+        let queued=RetainedQueuedSubmission{submission_id:verified.idempotency_key(),activity_id:verified.activity_id(),signed_digest:Sha256::digest(verified.exact_bytes()).into()};
+        self.verify_owned_queue(store,&durable,&queued,Some(verified))?;
+        if self.queued_submission.as_ref().is_some_and(|existing|existing!=&queued){return Err(NativeEffectError::Binding)}
+        let mut staged=self.clone();staged.queued_submission=Some(queued);
+        if let Some(terminal)=&mut staged.terminal{terminal.submission_ref=Some(verified.idempotency_key());}
+        staged.validate()?;Ok(staged)
+    }
+    pub(crate) fn stage_retained_queue(&self,store:&Store)->Result<Self,NativeEffectError>{
+        let tenant=TenantId::new(self.tenant.clone()).map_err(|_|NativeEffectError::Binding)?;
+        let retained=Self::read(store,&tenant,self.preparation)?;
+        if retained.encoded()?!=self.encoded()?{return Err(NativeEffectError::Binding)}
+        let key=crate::prepare::DurablePreparation::store_key(&tenant,self.preparation).map_err(|_|NativeEffectError::Corrupt)?;
+        let raw=store.get(&key).ok_or(NativeEffectError::Missing)?;
+        let durable=crate::prepare::DurablePreparation::decode(tenant.clone(),raw.bytes()).map_err(|_|NativeEffectError::Corrupt)?;
+        let unsigned=layerx_wire::activity::decode_unsigned(&self.canonical_bytes,&self.registry()?).map_err(|_|NativeEffectError::Corrupt)?;
+        let id=unsigned.idempotency_key();let mut outbox=crate::outbox::Outbox::default();
+        outbox.restore(store,tenant,id).map_err(|_|NativeEffectError::Missing)?;
+        let status=outbox.status(id).ok_or(NativeEffectError::Missing)?;
+        let exact=outbox.exact_signed_bytes(id).map_err(|_|NativeEffectError::Corrupt)?;
+        let queued=RetainedQueuedSubmission{submission_id:id,activity_id:status.activity_id,signed_digest:Sha256::digest(exact).into()};
+        self.verify_owned_queue(store,&durable,&queued,None)?;
+        if self.queued_submission.as_ref().is_some_and(|old|old!=&queued){return Err(NativeEffectError::Binding)}
+        let mut staged=self.clone();staged.queued_submission=Some(queued);
+        if let Some(t)=&mut staged.terminal{t.submission_ref=Some(id)};staged.validate()?;Ok(staged)
     }
     pub(crate) fn read_for_human(store:&Store,peer:&HumanPeer,id:[u8;32])->Result<Self,NativeEffectError>{
         let tenant=human_tenant(peer)?;let held=Self::read(store,&tenant,id)?;

@@ -254,6 +254,64 @@ fn read_retained_program_debit_settlement_inner(
     Ok((reservation, witness))
 }
 
+pub(crate) fn read_retained_native_effect_debit_settlement(
+    registry:&ModuleRegistry, prepared:&Prepared, submission:&VerifiedSubmission,
+    receipt:&VerifiedReceiptEvidence, authority:&AuthorizedBatch,store:&Store,tenant:&TenantId,
+)->Result<(ProgramBudgetReservation,VerifiedProgramDebitSettlement),ProgramSettlementError>{
+    use crate::prepare::{DurablePreparation,LifecycleState};
+    verify_disclosure_binding(prepared).map_err(|_|ProgramSettlementError::Preparation)?;
+    let activity=layerx_wire::activity::decode_signed(submission.exact_bytes(),registry).map_err(|_|ProgramSettlementError::Preparation)?;
+    if activity.protocol_version()!=3||activity.activity_type().module()!=ModuleId::Asset||activity.activity_type().ordinal()!=5
+        ||layerx_wire::activity::encode_unsigned(&activity).map_err(|_|ProgramSettlementError::Preparation)?!=prepared.canonical_bytes
+        ||layerx_wire::hash::activity_id(&activity).map_err(|_|ProgramSettlementError::Preparation)?!=submission.activity_id(){return Err(ProgramSettlementError::UnsupportedOperation)}
+    let id:[u8;32]=Sha256::digest(&prepared.canonical_bytes).into();
+    let carrier=crate::approval::native_effect::NativeEffectApprovalCarrier::read(store,tenant,id).map_err(|_|ProgramSettlementError::Preparation)?;
+    let restored=carrier.restore_prepared(registry).map_err(|_|ProgramSettlementError::Preparation)?;
+    if restored.canonical_bytes!=prepared.canonical_bytes||restored.disclosure_digest!=prepared.disclosure_digest{return Err(ProgramSettlementError::Preparation)}
+    let key=DurablePreparation::store_key(tenant,id).map_err(|_|ProgramSettlementError::Preparation)?;
+    let raw=store.get(&key).ok_or(ProgramSettlementError::MissingAllocation)?;
+    let durable=DurablePreparation::decode(tenant.clone(),raw.bytes()).map_err(|_|ProgramSettlementError::Preparation)?;
+    if raw.class()!=crate::store::StorageClass::LocalOnly||durable.activity_id!=Some(submission.activity_id())
+        ||!matches!(durable.state,LifecycleState::Signed|LifecycleState::Submitted|LifecycleState::Acknowledged|LifecycleState::Unknown)
+        ||durable.signed_bytes().map_err(|_|ProgramSettlementError::Preparation)?.as_deref()!=Some(submission.exact_bytes()){
+        return Err(ProgramSettlementError::Preparation)
+    }
+    let reservation=carrier.budget().map_err(|_|ProgramSettlementError::Allocation)?;
+    let decoded=layerx_wire::receipt::decode(receipt.canonical_receipt()).map_err(|_|ProgramSettlementError::Receipt)?;
+    let protocol=decoded.protocol().ok_or(ProgramSettlementError::Receipt)?;
+    if receipt.level()<VerificationLevel::BATCH_INCLUDED||receipt.activity_id()!=submission.activity_id()
+        ||protocol.activity_id()!=submission.activity_id()||protocol.protocol_version()!=3||protocol.module_id()!=1
+        ||protocol.global_sequence()!=receipt.global_sequence()||protocol.batch_id()!=authority.batch_id()
+        ||protocol.program_outcome().is_some(){return Err(ProgramSettlementError::Receipt)}
+    if reservation.allocation_state_root()!=Some(protocol.previous_state_root())
+        ||prepared.observed_head_sequence.checked_add(1)!=Some(protocol.global_sequence()){
+        return Err(ProgramSettlementError::SourceSnapshot)
+    }
+    let plan=crate::capability::derive_native_effects(&prepared.disclosure,&crate::capability::VerifiedInputs::default()).map_err(|_|ProgramSettlementError::Preparation)?;
+    let [crate::capability::Effect::Transfer{from,to,asset,amount}]=plan.effects() else{return Err(ProgramSettlementError::UnsupportedOperation)};
+    let rows=reservation.allocations().ok_or(ProgramSettlementError::MissingAllocation)?;
+    let principal=rows.iter().find(|row|row.kind==ProgramChargeKind::Principal&&row.source==*from&&row.destination==Some(*to)&&row.asset==*asset)
+        .ok_or(ProgramSettlementError::Allocation)?;
+    if principal.maximum_amount!=*amount||rows.iter().filter(|row|row.kind!=ProgramChargeKind::Fee).count()!=1{return Err(ProgramSettlementError::Allocation)}
+    let mut debits=Vec::new();
+    if protocol.result_code()==0 {
+        if protocol.from()!=*from||protocol.to()!=*to||protocol.asset()!=*asset||protocol.amount()!=*amount{return Err(ProgramSettlementError::Terminal)}
+        let mut leg=Vec::with_capacity(115);leg.push(0);leg.extend(from);leg.extend(to);leg.extend(asset);leg.extend(amount.to_be_bytes());leg.extend(1_u16.to_be_bytes());
+        layerx_programs_runtime::transfer::verify_applied_kernel_legs(&leg,protocol.transfer_set_root()).map_err(|_|ProgramSettlementError::Terminal)?;
+        debits.push(ProgramExecutedDebit{kind:ProgramChargeKind::Principal,source:*from,asset:*asset,destination:Some(*to),actual_amount:*amount});
+    }else if protocol.transfer_set_root()!=[0;32]||protocol.effects().iter().any(|effect|effect.monetary()) {return Err(ProgramSettlementError::Terminal)}
+    if protocol.fee_charged()>prepared.envelope.fee_limit().value(){return Err(ProgramSettlementError::FeeProvenance)}
+    if protocol.fee_charged()!=0 {
+        let mut fees=rows.iter().filter(|row|row.kind==ProgramChargeKind::Fee);
+        let (Some(fee),None)=(fees.next(),fees.next())else{return Err(ProgramSettlementError::FeeProvenance)};
+        if fee.asset!=carrier.fee_asset()||fee.destination.is_some()||protocol.fee_charged()>fee.maximum_amount{return Err(ProgramSettlementError::FeeProvenance)}
+        debits.push(ProgramExecutedDebit{kind:ProgramChargeKind::Fee,source:fee.source,asset:fee.asset,destination:None,actual_amount:protocol.fee_charged()});
+    }
+    let witness=VerifiedProgramDebitSettlement{reservation_id:id,reservation_digest:reservation.settlement_binding().map_err(|_|ProgramSettlementError::Allocation)?,
+        terminal_receipt:Sha256::digest(receipt.canonical_receipt()).into(),activity_id:submission.activity_id(),global_sequence:receipt.global_sequence(),debits};
+    Ok((reservation,witness))
+}
+
 fn retained_allocations(reservation: &ProgramBudgetReservation) -> Result<BTreeMap<DebitKey, u128>, ProgramSettlementError> {
     let mut retained = BTreeMap::<DebitKey, u128>::new();
     for row in reservation.allocations().ok_or(ProgramSettlementError::MissingAllocation)? {

@@ -1606,6 +1606,8 @@ impl<A: HumanAuthorityBoundary> SharedAgentOwner<A> {
 }
 
 impl<A: HumanAuthorityBoundary> HumanOperations for SharedAgentOwner<A> {
+    fn native_effect_approval_material(&mut self,peer:&HumanPeer,id:[u8;32],digest:[u8;32])->Result<HumanResponse,HumanOperationError>{self.lock()?.native_effect_approval_material(peer,id,digest)}
+    fn native_effect_approval_budget(&mut self,peer:&HumanPeer,id:[u8;32],digest:[u8;32],sequence:u64)->Result<HumanResponse,HumanOperationError>{self.lock()?.native_effect_approval_budget(peer,id,digest,sequence)}
     fn native_effect_approval_list_facts(&mut self,peer:&HumanPeer,cursor:Option<[u8;32]>,limit:u8)->Result<HumanResponse,HumanOperationError>{self.lock()?.native_effect_approval_list_facts(peer,cursor,limit)}
     fn native_effect_approval_get_facts(&mut self,peer:&HumanPeer,id:[u8;32])->Result<HumanResponse,HumanOperationError>{self.lock()?.native_effect_approval_get_facts(peer,id)}
     fn native_effect_approval_decide(&mut self,peer:&HumanPeer,id:[u8;32],digest:[u8;32],key:&str,grant:bool,sequence:u64)->Result<HumanResponse,HumanOperationError>{self.lock()?.native_effect_approval_decide(peer,id,digest,key,grant,sequence)}
@@ -2367,6 +2369,11 @@ fn native_settlement_preparation(
         if matched.is_some() {
             return Err(HumanOperationError::Refused);
         }
+        if record.extensions.contains_key(&9) && !record.extensions.contains_key(&7) {
+            if !record.extensions.contains_key(&6){return Err(HumanOperationError::Refused)}
+            crate::approval::native_effect::NativeEffectApprovalCarrier::read(store,tenant,id).map_err(|_|HumanOperationError::Refused)?;
+            matched=Some((id,true));continue;
+        }
         let native = record.extensions.contains_key(&6) || record.extensions.contains_key(&7);
         if native && (!record.extensions.contains_key(&6) || !record.extensions.contains_key(&7)) {
             return Err(HumanOperationError::Refused);
@@ -2374,6 +2381,34 @@ fn native_settlement_preparation(
         matched = Some((id, native));
     }
     Ok(matched.and_then(|(id, native)| native.then_some(id)))
+}
+
+fn settle_retained_native_effect(
+    registry:&layerx_types::payload::ModuleRegistry,budgets:&BudgetLimiter,store:&mut Store,
+    tenant:&TenantId,id:[u8;32],terminal:&crate::protocol_evidence::VerifiedReceiptEvidence,authority:&AuthorizedBatch,
+)->Result<bool,HumanOperationError>{
+    use crate::prepare::{DurablePreparation,LifecycleState};
+    let key=DurablePreparation::store_key(tenant,id).map_err(|_|HumanOperationError::Refused)?;
+    let raw=store.get(&key).ok_or(HumanOperationError::Refused)?;
+    let mut durable=DurablePreparation::decode(tenant.clone(),raw.bytes()).map_err(|_|HumanOperationError::Refused)?;
+    if durable.activity_id!=Some(terminal.activity_id())||!durable.extensions.contains_key(&9)||durable.extensions.contains_key(&7){return Err(HumanOperationError::Refused)}
+    let state=if terminal.result_code()==0{LifecycleState::Executed}else{LifecycleState::Failed};
+    if durable.terminal(){if durable.state!=state||durable.extensions.get(&10).map(Vec::as_slice)!=Some(terminal.receipt_ref().as_slice()){return Err(HumanOperationError::Refused)}return Ok(false)}
+    let carrier=crate::approval::native_effect::NativeEffectApprovalCarrier::read(store,tenant,id).map_err(|_|HumanOperationError::Refused)?;
+    let prepared=carrier.restore_prepared(registry).map_err(|_|HumanOperationError::Refused)?;
+    let layerx_types::activity::Authority::Owner(key_bytes)=prepared.envelope.authority()else{return Err(HumanOperationError::Refused)};
+    let public:[u8;32]=key_bytes.as_ref().try_into().map_err(|_|HumanOperationError::Refused)?;
+    let signed=durable.signed_bytes().map_err(|_|HumanOperationError::Refused)?.ok_or(HumanOperationError::Refused)?;
+    let submission=crate::sign::verify_before_submit(&signed,&prepared,&public,registry).map_err(|_|HumanOperationError::Refused)?;
+    let (reservation,witness)=crate::budget::program_settlement::read_retained_native_effect_debit_settlement(registry,&prepared,&submission,terminal,authority,store,tenant).map_err(|_|HumanOperationError::Refused)?;
+    if witness.terminal_receipt()!=terminal.receipt_ref(){return Err(HumanOperationError::Refused)}
+    let staged=budgets.stage_program_settlement(store,tenant,&reservation,&witness).map_err(|_|HumanOperationError::Refused)?;
+    if staged.replayed(){return Err(HumanOperationError::Refused)}
+    durable.state=state;durable.extensions.insert(10,terminal.receipt_ref().to_vec());
+    let mut updates=staged.updates().to_vec();updates.push((key,durable.encode().map_err(|_|HumanOperationError::Refused)?));
+    if let Some(update)=crate::approval::native_program::native_rate_receipt_update(store,tenant,terminal).map_err(|_|HumanOperationError::Refused)?{updates.push(update)}
+    store.apply_program_approval_batch(updates,staged.inserts().to_vec(),Vec::new()).map_err(|_|HumanOperationError::Unavailable)?;
+    staged.publish();Ok(true)
 }
 
 fn settle_retained_native_program_call(
@@ -4716,17 +4751,19 @@ impl<A: HumanAuthorityBoundary> UnifiedAgentOwner<A> {
                     } else {
                         inserts.push(replay);
                     }
-                    rate.commit_joined(store, updates, inserts)
-                        .map_err(|_| refused())?;
+                    let undo_updates = updates.iter().map(|(key,_)| {
+                        let old=store.get(key).ok_or_else(refused)?;
+                        Ok((key.clone(),old.bytes().to_vec()))
+                    }).collect::<Result<Vec<_>,SessionControlError>>()?;
+                    let mut undo_inserts=inserts.iter().map(|(key,_)|key.clone()).collect::<Vec<_>>();
+                    undo_inserts.push(TenantKey::new(context.principal().tenant.clone(),ObjectKind::PreparedActivity,
+                        [b"native-program-rate-v1:".as_slice(),preparation_id.as_slice()].concat()).map_err(|_|refused())?);
+                    rate.commit_joined(store, updates, inserts).map_err(|_| refused())?;
+                    if let Err(error)=lifecycle.register_authorized(preparation_id,&prepared,vec![preparation_id],origin){
+                        store.apply_program_approval_batch(undo_updates,Vec::new(),undo_inserts).map_err(|_|SessionControlError::Unavailable)?;
+                        return Err(SessionControlError::Lifecycle(error));
+                    }
                     staged.publish();
-                    lifecycle
-                        .register_authorized(
-                            preparation_id,
-                            &prepared,
-                            vec![preparation_id],
-                            origin,
-                        )
-                        .map_err(SessionControlError::Lifecycle)?;
                     Ok(held)
                 },
             )
@@ -5636,7 +5673,7 @@ impl<A: HumanAuthorityBoundary> UnifiedAgentOwner<A> {
                 let key = crate::prepare::DurablePreparation::store_key(&context.principal().tenant, id).map_err(|_| HumanOperationError::Refused)?;
                 let stored = store.get(&key).ok_or(HumanOperationError::Refused)?;
                 let record = crate::prepare::DurablePreparation::decode(context.principal().tenant.clone(), stored.bytes()).map_err(|_| HumanOperationError::Refused)?;
-                record.extensions.contains_key(&9)
+                record.extensions.contains_key(&9) && !record.extensions.contains_key(&7)
             };
             if effect { return self.rpc_submit_native_effect_external(context, request); }
         }
@@ -6008,22 +6045,69 @@ impl<A: HumanAuthorityBoundary> UnifiedAgentOwner<A> {
 }
 
 impl<A: HumanAuthorityBoundary> HumanOperations for UnifiedAgentOwner<A> {
+    fn native_effect_approval_material(&mut self,peer:&HumanPeer,id:[u8;32],digest:[u8;32])->Result<HumanResponse,HumanOperationError>{
+        self.lock_operations()?.authority.authorize_subject(peer)?;
+        let store=self.store.lock().map_err(|_|HumanOperationError::Unavailable)?;
+        let held=crate::approval::native_effect::NativeEffectApprovalCarrier::read_for_human(&store,peer,id).map_err(|_|HumanOperationError::Refused)?;
+        if held.held_digest().map_err(|_|HumanOperationError::Refused)?!=digest{return Err(HumanOperationError::Refused)}
+        let mut out=Encoder::new();out.u16(4)?;out.fixed(&id);out.fixed(&digest);out.text(&peer.subject.as_ref().ok_or(HumanOperationError::Refused)?.owner)?;
+        out.u8(0);out.bytes(held.canonical_bytes())?;out.bytes(&held.immutable_hold_bytes().map_err(|_|HumanOperationError::Refused)?)?;
+        out.bytes(&held.budget().map_err(|_|HumanOperationError::Refused)?.encode().map_err(|_|HumanOperationError::Refused)?)?;out.finish()
+    }
+    fn native_effect_approval_budget(&mut self,peer:&HumanPeer,id:[u8;32],digest:[u8;32],sequence:u64)->Result<HumanResponse,HumanOperationError>{
+        use crate::approval::native_effect::NativeEffectApprovalCarrier;
+        let tenant=TenantId::new(peer.tenant.clone()).map_err(|_|HumanOperationError::Refused)?;
+        let (held,terminal,owners)={
+            self.lock_operations()?.authority.authorize_subject(peer)?;
+            let store=self.store.lock().map_err(|_|HumanOperationError::Unavailable)?;
+            let held=NativeEffectApprovalCarrier::read_for_human(&store,peer,id).map_err(|_|HumanOperationError::Refused)?;
+            if held.held_digest().map_err(|_|HumanOperationError::Refused)?!=digest{return Err(HumanOperationError::Refused)}
+            let key=crate::prepare::DurablePreparation::store_key(&tenant,id).map_err(|_|HumanOperationError::Refused)?;
+            let raw=store.get(&key).ok_or(HumanOperationError::Refused)?;
+            let durable=crate::prepare::DurablePreparation::decode(tenant.clone(),raw.bytes()).map_err(|_|HumanOperationError::Refused)?;
+            (held,durable.terminal(),managed_agent::budget_owners(&store,&tenant)?)
+        };
+        let actor_text=std::str::from_utf8(held.actor()).map_err(|_|HumanOperationError::Refused)?;
+        let mut selected=owners.iter().filter(|owner|owner.agent_did==actor_text);
+        let (Some(owner),None)=(selected.next(),selected.next())else{return Err(HumanOperationError::Refused)};
+        let budget=held.budget().map_err(|_|HumanOperationError::Refused)?;
+        let pairs:std::collections::BTreeSet<_>=budget.allocations().ok_or(HumanOperationError::Refused)?.iter().map(|row|(row.asset,row.source)).collect();
+        if pairs.is_empty()||pairs.len()>100{return Err(HumanOperationError::Refused)}
+        let mut operations=self.lock_operations()?;let actor=Did::new(held.actor()).map_err(|_|HumanOperationError::Refused)?;
+        let snapshot=core_preparation_snapshot(&mut operations.node,peer,&actor)?;
+        if snapshot.observed_head_sequence!=sequence{return Err(HumanOperationError::Refused)}
+        let mut rows=Vec::new();
+        for (asset,source) in pairs {
+            let state=operations.authority.budget_state(peer,owner.active_budget_id)?;
+            if state.asset!=asset||state.observed_head_sequence!=sequence||!(4..=5).contains(&state.verification)
+                ||state.evidence_digest==[0;32]||state.receipt_digest==[0;32]||state.checkpoint_digest==[0;32]
+                ||state.maximum_age_sequences==0||state.age_sequences>state.maximum_age_sequences{return Err(HumanOperationError::Refused)}
+            let remaining=self.budgets.remaining_after_allocation_bound(&budget,asset,source,state.remaining,terminal).map_err(|_|HumanOperationError::Refused)?;
+            rows.push((asset,source,remaining,state));
+        }
+        if operations.node.head().chain_sequence!=sequence{return Err(HumanOperationError::Refused)}
+        let mut out=Encoder::new();out.u16(4)?;out.fixed(&id);out.fixed(&digest);out.text(&peer.subject.as_ref().ok_or(HumanOperationError::Refused)?.owner)?;
+        out.u64(sequence);out.fixed(&held.fee_asset());out.u16(rows.len())?;
+        for (asset,source,remaining,state) in rows {out.fixed(&asset);out.fixed(&owner.active_budget_id);out.fixed(&source);out.u128(remaining);out.u8(state.verification);
+            out.fixed(&state.evidence_digest);out.fixed(&state.receipt_digest);out.fixed(&state.checkpoint_digest);out.u64(state.age_sequences);out.u64(state.maximum_age_sequences)}
+        out.finish()
+    }
     fn native_effect_approval_list_facts(&mut self,peer:&HumanPeer,cursor:Option<[u8;32]>,limit:u8)->Result<HumanResponse,HumanOperationError>{
         if !(1..=100).contains(&limit){return Err(HumanOperationError::Refused)}
         self.lock_operations()?.authority.authorize_subject(peer)?;
-        let store=self.store.lock().map_err(|_|HumanOperationError::Unavailable)?;
+        let mut store=self.store.lock().map_err(|_|HumanOperationError::Unavailable)?;
         let mut records=crate::approval::native_effect::NativeEffectApprovalCarrier::list_for_human(&store,peer).map_err(|_|HumanOperationError::Refused)?;
         records.retain(|r|cursor.is_none_or(|id|r.preparation_id()>id));
         let more=records.len()>usize::from(limit);records.truncate(usize::from(limit));
-        let mut out=Encoder::new();out.u16(records.len())?;
-        for record in &records{encode_native_effect_approval_facts(&mut out,record,peer)?}
+        let mut out=Encoder::new();out.u8(u8::try_from(records.len()).map_err(|_|HumanOperationError::Refused)?);
+        for record in records.iter().cloned(){let record=recover_native_effect_queue(&mut store,peer,record)?;encode_native_effect_approval_facts(&mut out,&record,peer)?}
         if more{out.u8(1);out.fixed(&records.last().ok_or(HumanOperationError::Refused)?.preparation_id())}else{out.u8(0)};out.finish()
     }
     fn native_effect_approval_get_facts(&mut self,peer:&HumanPeer,id:[u8;32])->Result<HumanResponse,HumanOperationError>{
         self.lock_operations()?.authority.authorize_subject(peer)?;
-        let store=self.store.lock().map_err(|_|HumanOperationError::Unavailable)?;
+        let mut store=self.store.lock().map_err(|_|HumanOperationError::Unavailable)?;
         let record=crate::approval::native_effect::NativeEffectApprovalCarrier::read_for_human(&store,peer,id).map_err(|_|HumanOperationError::Refused)?;
-        let mut out=Encoder::new();encode_native_effect_approval_facts(&mut out,&record,peer)?;out.finish()
+        let record=recover_native_effect_queue(&mut store,peer,record)?;let mut out=Encoder::new();encode_native_effect_approval_facts(&mut out,&record,peer)?;out.finish()
     }
     fn native_effect_approval_decide(&mut self,peer:&HumanPeer,id:[u8;32],digest:[u8;32],key:&str,grant:bool,sequence:u64)->Result<HumanResponse,HumanOperationError>{
         use crate::approval::native_effect::{NativeEffectApprovalCarrier,NativeEffectApprovalState};
@@ -8786,13 +8870,23 @@ impl<A: HumanAuthorityBoundary> ProductionHumanOperations<A> {
             .or_default()
             .enqueue_with_origin(
                 &mut store,
-                tenant,
+                tenant.clone(),
                 submission_id,
                 verified,
                 origin,
                 Some(peer.principal.as_str()),
             )
             .map_err(|_| HumanOperationError::Unavailable)?;
+        let preparation_id:[u8;32]=Sha256::digest(&prepared.canonical_bytes).into();
+        let durable_key=crate::prepare::DurablePreparation::store_key(&tenant,preparation_id).map_err(|_|HumanOperationError::Refused)?;
+        if let Some(raw)=store.get(&durable_key){
+            let durable=crate::prepare::DurablePreparation::decode(tenant.clone(),raw.bytes()).map_err(|_|HumanOperationError::Refused)?;
+            if durable.extensions.contains_key(&crate::approval::native_effect::DURABLE_EXTENSION) && !durable.extensions.contains_key(&7){
+                let held=crate::approval::native_effect::NativeEffectApprovalCarrier::read(&store,&tenant,preparation_id).map_err(|_|HumanOperationError::Refused)?;
+                let queued=held.stage_retained_queue(&store).map_err(|_|HumanOperationError::Refused)?;
+                store.update_local_batch(vec![queued.companion().map_err(|_|HumanOperationError::Refused)?]).map_err(|_|HumanOperationError::Unavailable)?;
+            }
+        }
         self.prepared.remove(&prepared_key);
         self.submissions.insert(
             (
@@ -9526,6 +9620,12 @@ impl<A: HumanAuthorityBoundary> ProductionHumanOperations<A> {
                         .map_err(|_| HumanOperationError::Unavailable)?;
                     if let Some(preparation_id) = native_preparation {
                         let settlement = settlement.ok_or(HumanOperationError::Unavailable)?;
+                        let preparation_key=crate::prepare::DurablePreparation::store_key(&tenant,preparation_id).map_err(|_|HumanOperationError::Refused)?;
+                        let raw=store.get(&preparation_key).ok_or(HumanOperationError::Refused)?;
+                        let preparation=crate::prepare::DurablePreparation::decode(tenant.clone(),raw.bytes()).map_err(|_|HumanOperationError::Refused)?;
+                        if preparation.extensions.contains_key(&9)&&!preparation.extensions.contains_key(&7){
+                            settle_retained_native_effect(&registry,settlement.budgets,&mut store,&tenant,preparation_id,&terminal,authority)?;
+                        }else{
                         settle_retained_native_program_call(
                             &mut self.node,
                             settlement
@@ -9539,6 +9639,7 @@ impl<A: HumanAuthorityBoundary> ProductionHumanOperations<A> {
                             &terminal,
                             authority,
                         )?;
+                        }
                     } else if let Some(update) =
                         crate::approval::native_program::native_rate_receipt_update(
                             &store, &tenant, &terminal,
@@ -13735,6 +13836,16 @@ fn verification_level(value: &Value) -> Result<VerificationLevel, IdentityError>
     }
 }
 
+fn recover_native_effect_queue(store:&mut Store,peer:&HumanPeer,record:crate::approval::native_effect::NativeEffectApprovalCarrier)->Result<crate::approval::native_effect::NativeEffectApprovalCarrier,HumanOperationError>{
+    if record.submission_ref().is_some(){return Ok(record)}
+    let tenant=TenantId::new(peer.tenant.clone()).map_err(|_|HumanOperationError::Refused)?;
+    let disclosure=record.disclosure().map_err(|_|HumanOperationError::Refused)?;
+    let key=TenantKey::new(tenant,ObjectKind::Outbox,disclosure.idempotency_key.to_vec()).map_err(|_|HumanOperationError::Refused)?;
+    if store.get(&key).is_none(){return Ok(record)}
+    let queued=record.stage_retained_queue(store).map_err(|_|HumanOperationError::Refused)?;
+    store.update_local_batch(vec![queued.companion().map_err(|_|HumanOperationError::Refused)?]).map_err(|_|HumanOperationError::Unavailable)?;
+    Ok(queued)
+}
 fn encode_native_effect_approval_facts(out:&mut Encoder,record:&crate::approval::native_effect::NativeEffectApprovalCarrier,peer:&HumanPeer)->Result<(),HumanOperationError>{
     use crate::approval::native_effect::NativeEffectApprovalState;
     let disclosure=record.disclosure().map_err(|_|HumanOperationError::Refused)?;

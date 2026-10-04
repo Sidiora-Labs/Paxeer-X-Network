@@ -103,6 +103,39 @@ impl BudgetLimiter {
         )
     }
 
+    pub(crate) fn remaining_after_allocation_bound(
+        &self, record: &ProgramBudgetReservation, asset: [u8;32], source: [u8;32],
+        verified_protocol_remaining: u128, terminal: bool,
+    ) -> Result<u128, LimitRefusal> {
+        record.validate()?;
+        if asset==[0;32] || source==[0;32] { return Err(LimitRefusal::InvalidRequest); }
+        let rows=record.allocations().ok_or(LimitRefusal::InvalidRequest)?;
+        let selected: std::collections::BTreeSet<_>=rows.iter().filter(|row|row.asset==asset&&row.source==source)
+            .flat_map(|row|row.applicable_limits.iter().copied()).collect();
+        if selected.is_empty(){return Err(LimitRefusal::InvalidRequest)}
+        let limits=self.limits.lock().map_err(|_|LimitRefusal::Poisoned)?;
+        let mut minimum=None;let mut greatest_held=0_u128;
+        for id in selected {
+            let reserved=record.holds.iter().find(|held|held.reservation.limit_id==id).ok_or(LimitRefusal::InvalidRequest)?;
+            let original=limits.get(&id).ok_or(LimitRefusal::UnknownLimit(id))?;
+            if original.denomination!=Some(reserved.denomination)||reserved.denomination.asset!=asset
+                ||reserved.denomination.source.is_some_and(|expected|expected!=source)
+                ||original.config.scope!=reserved.reservation.scope {return Err(LimitRefusal::InvalidConfiguration)}
+            match original.held.get(&record.id) {
+                Some(hold) if !terminal && hold.allocated_program && hold.amount==reserved.reservation.amount
+                    &&hold.expiry_sequence==record.expiry_sequence&&hold.core_deadline==record.core_deadline=>{},
+                None if terminal=>{},_=>return Err(LimitRefusal::InvalidRequest),
+            }
+            let head_id=live_head(&limits,id)?;let head=limits.get(&head_id).ok_or(LimitRefusal::UnknownLimit(head_id))?;
+            if head.retired||head.denomination!=original.denomination{return Err(LimitRefusal::InvalidConfiguration)}
+            let held=lineage_held(&limits,head_id)?;greatest_held=greatest_held.max(held);
+            let local=head.config.ceiling.checked_sub(head.config.consumed.checked_add(held).ok_or(LimitRefusal::Arithmetic)?)
+                .ok_or(LimitRefusal::Arithmetic)?;
+            minimum=Some(minimum.map_or(local,|value:u128|value.min(local)));
+        }
+        Ok(minimum.ok_or(LimitRefusal::InvalidRequest)?.min(verified_protocol_remaining.checked_sub(greatest_held).ok_or(LimitRefusal::Arithmetic)?))
+    }
+
     fn remaining_after_reservation_inner(
         &self,
         reservation_id: [u8; 32],

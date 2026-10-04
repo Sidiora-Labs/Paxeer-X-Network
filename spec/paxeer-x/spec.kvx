@@ -33063,3 +33063,27 @@ qualification_status = "implemented-not-qualified"
 build_exit_code = 101
 verify_status = "unrun"
 qualification_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-104.13.16-build.log"
+
+[task.104.13.13]
+title = "Complete actual approval budget evidence settlement and durable publication owners"
+status = "in_progress"
+mode = "BUILD"
+wave = 2
+requires = ["0.2", "8.1"]
+reqs = ["1064.3", "1064.8", "1071.1", "1071.5"]
+do_1 = "Finish native typed verified budget and exact owned held/budget proof exports, including terminal reads; use actual core authority and reservations without fabricating remaining amounts."
+do_2 = "Connect ordinary non-Programs allocation receipt settlement, actual durable queue submission references and lifecycle error rollback while preserving every legacy Programs/u16/refusal/profile."
+do_3 = "Connect actual legacy configured admission to the existing owner and author the genuine production admission/reopen/decision/refusal corpus and gate."
+touches = ["agent/crates/layerx-agentd/src/capability/binding.rs", "agent/crates/layerx-agentd/src/policy/native_program.rs", "agent/crates/layerx-agentd/src/approval/native_effect.rs", "agent/crates/layerx-agentd/src/approval/mod.rs", "agent/crates/layerx-agentd/src/session_control.rs", "agent/crates/layerx-agentd/src/human_runtime.rs", "agent/crates/layerx-agentd/src/human.rs", "agent/crates/layerx-agentd/src/managed_agent.rs", "agent/crates/layerx-agentd/src/policy/approval.rs", "agent/crates/layerx-agentd/src/policy/eval.rs", "agent/crates/layerx-agentd/src/policy/operation.rs", "agent/crates/layerx-agentd/src/policy/version.rs", "agent/crates/layerx-agentd/src/policy/mod.rs", "human/crates/layerx-human-service/src/server/agent_runtime.rs", "human/crates/layerx-human-service/src/approvals/mod.rs", "agent/crates/layerx-agentd/tests/human_approval_admission.rs", "tools/qualification/paxeer-x/human-approval-admission.py", "agent/crates/layerx-agentd/src/config.rs", "agent/crates/layerx-agentd/src/main.rs", "agent/crates/layerx-agentd/src/budget/program_settlement.rs", "agent/crates/layerx-agentd/src/budget/program_sources.rs", "agent/crates/layerx-agentd/src/budget/mod.rs", "agent/crates/layerx-agentd/src/capability/effects.rs", "agent/crates/layerx-agent-api/src/identity.rs", "agent/crates/layerx-agentd/src/agent_rpc_dispatch.rs", "agent/crates/layerx-agentd/src/agent_rpc_wire.rs", "agent/schema/agent-api/v1.kvx", "agent/crates/layerx-agentd/src/agent_rpc_adapters.rs", "agent/crates/layerx-agentd/src/capability/mod.rs", "agent/crates/layerx-agentd/src/budget/reserve.rs", "agent/crates/layerx-agentd/src/approval/native_program.rs", "agent/crates/layerx-agentd/src/approval/events.rs", "agent/crates/layerx-agentd/src/store/mod.rs"]
+build_cmd = "timeout 20m env CARGO_TARGET_DIR=/root/lx-target/agent /root/.cargo/bin/cargo test --locked --manifest-path agent/Cargo.toml -p layerx-agentd --test human_approval_admission --no-run"
+verify_cmd = "timeout 10m python3 tools/qualification/paxeer-x/human-approval-admission.py"
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop at original cap, unrelated failure, missing genuine authority or weakening; record exact source state and evidence."
+completion_basis_policy = "Owner CONSTITUTION: fully implemented DONE; qualification separate and partial remains in_progress."
+source_ownership = "Root owns shared manifests, locks, schema, spec and publication; canonical Human projection files belong to a separate consumer owner."
+source_status = "partial"
+qualification_status = "unrun_partial_source"
+remaining_source = "Legacy native authority adapter, raw budget-proof intake verification, historical ordinary execution proof and complete admission corpus."

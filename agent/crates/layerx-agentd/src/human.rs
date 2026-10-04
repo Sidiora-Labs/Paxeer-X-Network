@@ -100,6 +100,8 @@ const NATIVE_APPROVAL_GET_FACTS_V2: u8 = 51;
 const NATIVE_EFFECT_APPROVAL_LIST_V3: u8 = 52;
 const NATIVE_EFFECT_APPROVAL_GET_V3: u8 = 53;
 const NATIVE_EFFECT_APPROVAL_DECIDE_V3: u8 = 54;
+const NATIVE_EFFECT_APPROVAL_MATERIAL_V4: u8 = 55;
+const NATIVE_EFFECT_APPROVAL_BUDGET_V4: u8 = 56;
 const HEAD: u8 = 7;
 const EVIDENCE: u8 = 8;
 const MAX_TEXT: usize = 255;
@@ -362,6 +364,8 @@ pub enum HumanRequest {
     NativeEffectApprovalListV3 { cursor: Option<[u8;32]>, limit: u8 },
     NativeEffectApprovalGetV3 { approval_id: [u8;32] },
     NativeEffectApprovalDecideV3 { approval_id: [u8;32], held_digest: [u8;32], idempotency_key: String, grant: bool, current_sequence: u64 },
+    NativeEffectApprovalMaterialV4 {approval_id:[u8;32],held_digest:[u8;32]},
+    NativeEffectApprovalBudgetV4 {approval_id:[u8;32],held_digest:[u8;32],current_sequence:u64},
     ApprovalApprove {
         approval_id: [u8; 32],
         held_digest: [u8; 32],
@@ -626,6 +630,12 @@ pub trait HumanOperations {
     }
     fn native_effect_approval_decide(&mut self, _peer:&HumanPeer, _approval_id:[u8;32], _held_digest:[u8;32], _idempotency_key:&str,
         _grant:bool, _current_sequence:u64)->Result<HumanResponse,HumanOperationError>{Err(HumanOperationError::Unavailable)}
+    fn native_effect_approval_material(&mut self,_peer:&HumanPeer,_approval_id:[u8;32],_held_digest:[u8;32])->Result<HumanResponse,HumanOperationError>{
+        Err(HumanOperationError::Unavailable)
+    }
+    fn native_effect_approval_budget(&mut self,_peer:&HumanPeer,_approval_id:[u8;32],_held_digest:[u8;32],_current_sequence:u64)->Result<HumanResponse,HumanOperationError>{
+        Err(HumanOperationError::Unavailable)
+    }
     fn approval_budget_after(
         &mut self,
         _peer: &HumanPeer,
@@ -1872,6 +1882,8 @@ fn dispatch_request<O: HumanOperations>(
         HumanRequest::NativeEffectApprovalGetV3 {approval_id}=>operations.native_effect_approval_get_facts(peer,approval_id),
         HumanRequest::NativeEffectApprovalDecideV3 {approval_id,held_digest,idempotency_key,grant,current_sequence}=>
             operations.native_effect_approval_decide(peer,approval_id,held_digest,&idempotency_key,grant,current_sequence),
+        HumanRequest::NativeEffectApprovalMaterialV4{approval_id,held_digest}=>operations.native_effect_approval_material(peer,approval_id,held_digest),
+        HumanRequest::NativeEffectApprovalBudgetV4{approval_id,held_digest,current_sequence}=>operations.native_effect_approval_budget(peer,approval_id,held_digest,current_sequence),
         HumanRequest::ApprovalBudgetAfterV2 {
             approval_id,
             held_digest,
@@ -2143,6 +2155,13 @@ fn decode_operation(
             let grant=match reader.u8()?{0=>false,1=>true,_=>return Err(HumanProtocolError::Malformed)};let current_sequence=reader.u64()?;
             if approval_id==[0;32]||held_digest==[0;32]||current_sequence==0{return Err(HumanProtocolError::Malformed)};
             HumanRequest::NativeEffectApprovalDecideV3{approval_id,held_digest,idempotency_key,grant,current_sequence}
+        }
+        NATIVE_EFFECT_APPROVAL_MATERIAL_V4|NATIVE_EFFECT_APPROVAL_BUDGET_V4=>{
+            let approval_id=reader.fixed()?;let held_digest=reader.fixed()?;
+            if approval_id==[0;32]||held_digest==[0;32]{return Err(HumanProtocolError::Malformed)}
+            if operation==NATIVE_EFFECT_APPROVAL_MATERIAL_V4{HumanRequest::NativeEffectApprovalMaterialV4{approval_id,held_digest}}
+            else{let current_sequence=reader.u64()?;if current_sequence==0{return Err(HumanProtocolError::Malformed)};
+                HumanRequest::NativeEffectApprovalBudgetV4{approval_id,held_digest,current_sequence}}
         }
         APPROVAL_BUDGET_AFTER_V2 => HumanRequest::ApprovalBudgetAfterV2 {
             approval_id: reader.fixed()?,

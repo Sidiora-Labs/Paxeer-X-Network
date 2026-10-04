@@ -70,6 +70,8 @@ const NATIVE_APPROVAL_GET_FACTS: u8 = 51;
 const NATIVE_EFFECT_APPROVAL_LIST: u8 = 52;
 const NATIVE_EFFECT_APPROVAL_GET: u8 = 53;
 const NATIVE_EFFECT_APPROVAL_DECIDE: u8 = 54;
+const NATIVE_EFFECT_APPROVAL_MATERIAL: u8 = 55;
+const NATIVE_EFFECT_APPROVAL_BUDGET: u8 = 56;
 const APPROVAL_LIST: u8 = 9;
 const APPROVAL_GET: u8 = 10;
 const APPROVAL_APPROVE: u8 = 11;
@@ -230,6 +232,23 @@ pub struct NativeEffectApprovalFacts {
     pub release_ref:Option<[u8;32]>,pub submission_ref:Option<[u8;32]>,
 }
 pub struct NativeEffectApprovalFactsPage {pub approvals:Vec<NativeEffectApprovalFacts>,pub next_cursor:Option<[u8;32]>}
+
+#[derive(Clone,Copy,Debug,Eq,PartialEq)]
+pub enum NativeEffectMaterialProvenance { LocalOwned }
+pub struct NativeEffectApprovalMaterial {
+    pub approval_id:[u8;32],pub held_digest:[u8;32],pub owner:String,
+    pub provenance:NativeEffectMaterialProvenance,pub canonical_unsigned_bytes:Vec<u8>,
+    pub immutable_carrier_bytes:Vec<u8>,pub canonical_budget_bytes:Vec<u8>,
+}
+pub struct NativeEffectBudgetRow {
+    pub asset:[u8;32],pub budget_id:[u8;32],pub source_account:[u8;32],pub remaining:u128,
+    pub verification:Level,pub evidence_digest:[u8;32],pub receipt_digest:[u8;32],pub checkpoint_digest:[u8;32],
+    pub age_sequences:u64,pub maximum_age_sequences:u64,
+}
+pub struct NativeEffectApprovalBudget {
+    pub approval_id:[u8;32],pub held_digest:[u8;32],pub owner:String,pub observed_at_sequence:u64,
+    pub fee_asset:[u8;32],pub rows:Vec<NativeEffectBudgetRow>,
+}
 
 pub struct AgentApprovalFacts {
     pub approval: crate::approvals::AgentApprovalRecord,
@@ -1840,6 +1859,50 @@ impl AgentRuntime {
             || (value.state!=NativeEffectApprovalFactState::Expired && (value.state==NativeEffectApprovalFactState::Granted)!=grant){
             return Err(AgentBoundaryError::CorruptResponse)
         };Ok(value)
+    }
+
+    pub fn native_effect_approval_material(&mut self,approval_id:[u8;32],held_digest:[u8;32])->Result<NativeEffectApprovalMaterial,AgentBoundaryError>{
+        if self.subject.is_none()||approval_id==[0;32]||held_digest==[0;32]{return Err(AgentBoundaryError::Refused)}
+        let mut writer=Writer::new(NATIVE_EFFECT_APPROVAL_MATERIAL);writer.fixed(&approval_id);writer.fixed(&held_digest);
+        let mut reader=self.exchange(&writer.finish())?;
+        if reader.u16()?!=4||reader.fixed::<32>()?!=approval_id||reader.fixed::<32>()?!=held_digest{return Err(AgentBoundaryError::CorruptResponse)}
+        let owner=reader.text()?;if self.subject.as_ref().is_none_or(|s|s.owner.as_bytes()!=owner.as_bytes()){return Err(AgentBoundaryError::CorruptResponse)}
+        let provenance=match reader.u8()?{0=>NativeEffectMaterialProvenance::LocalOwned,_=>return Err(AgentBoundaryError::CorruptResponse)};
+        let canonical_unsigned_bytes=reader.bytes()?;let immutable_carrier_bytes=reader.bytes()?;let canonical_budget_bytes=reader.bytes()?;reader.finish()?;
+        let actual_id:[u8;32]=sha2::Sha256::digest(&canonical_unsigned_bytes).into();
+        let actual_digest:[u8;32]=sha2::Sha256::digest(&immutable_carrier_bytes).into();
+        if actual_id!=approval_id||actual_digest!=held_digest{return Err(AgentBoundaryError::CorruptResponse)}
+        let carrier:serde_json::Value=serde_json::from_slice(&immutable_carrier_bytes).map_err(|_|AgentBoundaryError::CorruptResponse)?;
+        let bound_budget=carrier.get("budget").and_then(serde_json::Value::as_array).ok_or(AgentBoundaryError::CorruptResponse)?;
+        if bound_budget.len()!=canonical_budget_bytes.len()||bound_budget.iter().zip(&canonical_budget_bytes)
+            .any(|(value,byte)|value.as_u64()!=Some(u64::from(*byte))) {return Err(AgentBoundaryError::CorruptResponse)}
+        let bound_canonical=carrier.get("canonical_bytes").and_then(serde_json::Value::as_array).ok_or(AgentBoundaryError::CorruptResponse)?;
+        if bound_canonical.len()!=canonical_unsigned_bytes.len()||bound_canonical.iter().zip(&canonical_unsigned_bytes)
+            .any(|(value,byte)|value.as_u64()!=Some(u64::from(*byte))) {return Err(AgentBoundaryError::CorruptResponse)}
+        Ok(NativeEffectApprovalMaterial{approval_id,held_digest,owner,provenance,canonical_unsigned_bytes,immutable_carrier_bytes,canonical_budget_bytes})
+    }
+    pub fn native_effect_approval_budget(&mut self,approval_id:[u8;32],held_digest:[u8;32],current_sequence:u64)->Result<NativeEffectApprovalBudget,AgentBoundaryError>{
+        if self.subject.is_none()||approval_id==[0;32]||held_digest==[0;32]||current_sequence==0{return Err(AgentBoundaryError::Refused)}
+        let mut writer=Writer::new(NATIVE_EFFECT_APPROVAL_BUDGET);writer.fixed(&approval_id);writer.fixed(&held_digest);writer.u64(current_sequence);
+        let mut reader=self.exchange(&writer.finish())?;
+        if reader.u16()?!=4||reader.fixed::<32>()?!=approval_id||reader.fixed::<32>()?!=held_digest{return Err(AgentBoundaryError::CorruptResponse)}
+        let owner=reader.text()?;let observed_at_sequence=reader.u64()?;let fee_asset=reader.fixed()?;
+        if self.subject.as_ref().is_none_or(|s|s.owner.as_bytes()!=owner.as_bytes())||observed_at_sequence!=current_sequence||fee_asset==[0;32]{
+            return Err(AgentBoundaryError::CorruptResponse)}
+        let count=usize::from(reader.u16()?);if count==0||count>256{return Err(AgentBoundaryError::CorruptResponse)}
+        let mut rows=Vec::with_capacity(count);let mut previous=None;
+        for _ in 0..count {
+            let asset=reader.fixed()?;let budget_id=reader.fixed()?;let source_account=reader.fixed()?;let remaining=reader.u128()?;
+            let verification=match reader.u8()?{4=>Level::CheckpointFinalised,5=>Level::SettlementAnchored,_=>return Err(AgentBoundaryError::CorruptResponse)};
+            let evidence_digest=reader.fixed()?;let receipt_digest=reader.fixed()?;let checkpoint_digest=reader.fixed()?;
+            let age_sequences=reader.u64()?;let maximum_age_sequences=reader.u64()?;let key=(asset,budget_id,source_account);
+            if asset==[0;32]||budget_id==[0;32]||source_account==[0;32]||evidence_digest==[0;32]||receipt_digest==[0;32]||checkpoint_digest==[0;32]
+                ||maximum_age_sequences==0||age_sequences>maximum_age_sequences||previous.is_some_and(|old|old>=key){
+                return Err(AgentBoundaryError::CorruptResponse)}
+            previous=Some(key);rows.push(NativeEffectBudgetRow{asset,budget_id,source_account,remaining,verification,evidence_digest,receipt_digest,checkpoint_digest,
+                age_sequences,maximum_age_sequences});
+        }
+        reader.finish()?;Ok(NativeEffectApprovalBudget{approval_id,held_digest,owner,observed_at_sequence,fee_asset,rows})
     }
 
     pub fn managed_evidence(&mut self,agent_id:&str,digest:[u8;32]) -> Result<ManagedReceiptExport,AgentBoundaryError> {
