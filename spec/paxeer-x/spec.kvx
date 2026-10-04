@@ -37049,12 +37049,20 @@ max_builds = 1
 max_verify_runs = 1
 max_repair_cycles = 2
 time_limit_minutes = 30
-qualification_status = "UNRUN"
+qualification_status = "FAILED"
 stop_condition = "Stop at2026-10-04T20:54:49Z or after two task-scoped repair cycles; unrelated failures recorded, no assertion weakening."
 owner_authorization = "Direct owner request to fix all listed CI failures on2026-10-04T20:24UTC"
 source_status = "complete"
 completion_basis = "implementation under owner CONSTITUTION; qualification separately recorded"
 source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/root-ci-103.6.34-intake.json"
+qualified_revision = "041033c8cd5a76dad81446f17ff216b78d55409b"
+build_exit_code = 0
+build_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/ci-crypto-tls-041033c8-qualification/task-103.6.34/build.log"
+verify_exit_code = 101
+verify_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/ci-crypto-tls-041033c8-qualification/task-103.6.34/verify.log"
+qualification_evidence = "/root/lx-ops/paxeer-x-integration-2026-10-03/ci-crypto-tls-041033c8-qualification/task-103.6.34/result.json"
+qualification_observed = "Actual producer TLS test could not spawn redis-server; no setup repair or rerun completed within the window."
+repair_cycles_used = 0
 
 [task.103.6.33]
 title = "Correct MCP typed field and DID compiler wiring"
