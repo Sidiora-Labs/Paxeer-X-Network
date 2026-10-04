@@ -1,20 +1,20 @@
 package keeper_test
 
 import (
-	"context"
-	"os/exec"
-	"path/filepath"
 	"bytes"
+	"context"
 	"crypto/ed25519"
 	"crypto/sha256"
+	"os/exec"
+	"path/filepath"
 	"sort"
 
 	"encoding/binary"
-	"encoding/json"
 	"encoding/hex"
-	"os"
+	"encoding/json"
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"math/big"
+	"os"
 	"testing"
 	"time"
 
@@ -26,8 +26,8 @@ import (
 	custodytypes "github.com/sidiora-labs/paxeer-network/modules/layerxcustody/types"
 	"github.com/sidiora-labs/paxeer-network/modules/layerxexchange/keeper"
 	"github.com/sidiora-labs/paxeer-network/modules/layerxexchange/types"
-	"github.com/sidiora-labs/paxeer-network/sdk/store/cachemulti"
 	"github.com/sidiora-labs/paxeer-network/sdk/store"
+	"github.com/sidiora-labs/paxeer-network/sdk/store/cachemulti"
 	"github.com/sidiora-labs/paxeer-network/sdk/store/dbadapter"
 	storetypes "github.com/sidiora-labs/paxeer-network/sdk/store/types"
 	sdk "github.com/sidiora-labs/paxeer-network/sdk/types"
@@ -436,24 +436,33 @@ func signedNativeGenesis(t *testing.T, tif, oracle bool) []byte {
 	content = binary.BigEndian.AppendUint32(content, 77)
 	content = binary.BigEndian.AppendUint64(content, uint64(genesisTime.UnixMilli()))
 	parameters := []string{"module-enable:perps", "parameter-version"}
-	if oracle { parameters = append(parameters, "perps-oracle-transport") }
-	if tif { parameters = append(parameters, "perps-order-tif") }
+	if oracle {
+		parameters = append(parameters, "perps-oracle-transport")
+	}
+	if tif {
+		parameters = append(parameters, "perps-order-tif")
+	}
 	sort.Strings(parameters)
 	content = binary.BigEndian.AppendUint32(content, uint32(len(parameters)))
 	for _, name := range parameters {
 		content = binary.BigEndian.AppendUint16(content, types.GovernanceModuleID)
 		content = blob(content, key(name))
-		value := make([]byte, 32); value[31] = 1
+		value := make([]byte, 32)
+		value[31] = 1
 		content = blob(content, value)
 	}
 	content = binary.BigEndian.AppendUint32(content, 1)
 	content = blob(content, bytes.Repeat([]byte{1}, 32))
 	content = blob(content, append([]byte{2}, bytes.Repeat([]byte{3}, 32)...))
 	content = append(content, make([]byte, 16)...)
-	type accountEntry struct { id [32]byte; kind uint16 }
+	type accountEntry struct {
+		id   [32]byte
+		kind uint16
+	}
 	accounts := []accountEntry{}
 	for kind, name := range map[uint16]string{9: "system:insurance", 10: "system:fees", 11: "system:paxeer-reserve", 12: "system:paxeer-withdrawals"} {
-		id, err := codec.DeriveAccountID([]byte(name)); require.NoError(t, err)
+		id, err := codec.DeriveAccountID([]byte(name))
+		require.NoError(t, err)
 		accounts = append(accounts, accountEntry{id, kind})
 	}
 	sort.Slice(accounts, func(i, j int) bool { return bytes.Compare(accounts[i].id[:], accounts[j].id[:]) < 0 })
@@ -531,20 +540,28 @@ func TestNativeTimeInForceCapabilityRefusesBeforeNonce(t *testing.T) {
 	copy(otherSigner[len(otherSigner)-100:len(otherSigner)-68], private.Public().(ed25519.PublicKey))
 	copy(otherSigner[len(otherSigner)-64:], ed25519.Sign(private, otherSigner[:len(otherSigner)-68]))
 	wrongKey := valid
-	commitment, _, err := types.NativeGenesisCapability(valid.NativeGenesis); require.NoError(t, err)
+	commitment, _, err := types.NativeGenesisCapability(valid.NativeGenesis)
+	require.NoError(t, err)
 	wrongKey.CapabilityWitness = encodeWitness(types.GovernanceModuleID, []byte("perps-order-tif"), commitment[:],
 		[][32]byte{{0x81}, {0x82}, {0x83}, {0x84}})
-	decodedWitness, err := codec.DecodeStateWitness(wrongKey.CapabilityWitness); require.NoError(t, err)
-	wrongRoot, err := decodedWitness.Root(); require.NoError(t, err)
+	decodedWitness, err := codec.DecodeStateWitness(wrongKey.CapabilityWitness)
+	require.NoError(t, err)
+	wrongRoot, err := decodedWitness.Root()
+	require.NoError(t, err)
 	wrongKey.CapabilityBatch = 63
 	require.NoError(t, f.custody.RegisterCheckpoint(ctx, 63, wrongRoot, [32]byte{1}))
 	for name, listing := range map[string]types.Market{
 		"legacy": legacy, "oracle only": oracleOnly, "wrong state key": wrongKey,
-		"substituted signer": func() types.Market { x := valid; x.NativeGenesis = otherSigner; return x }(),
-		"unfinalized": func() types.Market { x := valid; x.CapabilityBatch = unknownBatch; return x }(),
-		"other batch root": func() types.Market { x := valid; x.CapabilityBatch = 61; return x }(),
+		"substituted signer":    func() types.Market { x := valid; x.NativeGenesis = otherSigner; return x }(),
+		"unfinalized":           func() types.Market { x := valid; x.CapabilityBatch = unknownBatch; return x }(),
+		"other batch root":      func() types.Market { x := valid; x.CapabilityBatch = 61; return x }(),
 		"other signed manifest": func() types.Market { x := valid; x.NativeGenesis = legacy.NativeGenesis; return x }(),
-		"tampered witness": func() types.Market { x := valid; x.CapabilityWitness = append([]byte(nil), valid.CapabilityWitness...); x.CapabilityWitness[len(x.CapabilityWitness)-1] ^= 1; return x }(),
+		"tampered witness": func() types.Market {
+			x := valid
+			x.CapabilityWitness = append([]byte(nil), valid.CapabilityWitness...)
+			x.CapabilityWitness[len(x.CapabilityWitness)-1] ^= 1
+			return x
+		}(),
 	} {
 		t.Run(name, func(t *testing.T) {
 			require.NoError(t, f.keeper.SetMarket(ctx, listing))
@@ -558,14 +575,15 @@ func TestNativeTimeInForceCapabilityRefusesBeforeNonce(t *testing.T) {
 		})
 	}
 	for name, encoded := range map[string][]byte{
-		"truncated": valid.NativeGenesis[:len(valid.NativeGenesis)-1],
-		"trailing": append(append([]byte(nil), valid.NativeGenesis...), 0),
-		"signature": func() []byte { x := append([]byte(nil), valid.NativeGenesis...); x[len(x)-1] ^= 1; return x }(),
-		"fixed length": func() []byte { x := append([]byte(nil), valid.NativeGenesis...); x[27] = 31; return x }(),
+		"truncated":          valid.NativeGenesis[:len(valid.NativeGenesis)-1],
+		"trailing":           append(append([]byte(nil), valid.NativeGenesis...), 0),
+		"signature":          func() []byte { x := append([]byte(nil), valid.NativeGenesis...); x[len(x)-1] ^= 1; return x }(),
+		"fixed length":       func() []byte { x := append([]byte(nil), valid.NativeGenesis...); x[27] = 31; return x }(),
 		"tif without oracle": signedNativeGenesis(t, true, false),
 	} {
 		t.Run(name, func(t *testing.T) {
-			listing := valid; listing.NativeGenesis = encoded
+			listing := valid
+			listing.NativeGenesis = encoded
 			require.Error(t, f.keeper.SetMarket(ctx, listing))
 			require.Zero(t, f.keeper.GetOwnerNonce(ctx, f.caller))
 			require.Zero(t, f.keeper.GetIntentCount(ctx))
@@ -589,7 +607,11 @@ func TestNativeCapabilityTruncationAndEvidenceBounds(t *testing.T) {
 		func() types.Market { x := valid; x.NativeGenesis = nil; return x }(),
 		func() types.Market { x := valid; x.CapabilityWitness = nil; return x }(),
 		func() types.Market { x := valid; x.CapabilityWitness = make([]byte, types.MaxWitnessBytes+1); return x }(),
-		func() types.Market { x := valid; x.NativeGenesis = make([]byte, types.MaxNativeGenesisBytes+1); return x }(),
+		func() types.Market {
+			x := valid
+			x.NativeGenesis = make([]byte, types.MaxNativeGenesisBytes+1)
+			return x
+		}(),
 	} {
 		require.Error(t, f.keeper.SetMarket(f.ctx, listing))
 	}
@@ -643,12 +665,12 @@ func TestOrderIntentSurvivesCommittedKeeperReopen(t *testing.T) {
 	dir := os.Getenv("PAXEER_X_TIF_KEEPER_DB")
 	require.NotEmpty(t, dir)
 	type checkpoint struct {
-		Intents []types.Intent
+		Intents   []types.Intent
 		Canonical [][]byte
-		Events sdk.Events
-		Commit storetypes.CommitID
-		Params []byte
-		Owner string
+		Events    sdk.Events
+		Commit    storetypes.CommitID
+		Params    []byte
+		Owner     string
 	}
 	var expected checkpoint
 	evidencePath := filepath.Join(dir, "expected.json")
@@ -662,7 +684,9 @@ func TestOrderIntentSurvivesCommittedKeeperReopen(t *testing.T) {
 		stores := map[storetypes.StoreKey]storetypes.CacheWrapper{}
 		keys := map[string]storetypes.StoreKey{}
 		for _, existing := range f.ctx.MultiStore().StoreKeys() {
-			if existing.Name() == types.StoreKey { continue }
+			if existing.Name() == types.StoreKey {
+				continue
+			}
 			if mountedStore, ok := mounted(f.ctx.MultiStore(), existing); ok {
 				stores[existing], keys[existing.Name()] = mountedStore, existing
 			}
@@ -679,23 +703,27 @@ func TestOrderIntentSurvivesCommittedKeeperReopen(t *testing.T) {
 			intent, err := first.PlaceOrder(ctx, f.caller, marketID, types.SideBuy, sdk.NewInt(17), sdk.NewInt(2), tif)
 			require.NoError(t, err)
 			expected.Intents = append(expected.Intents, intent)
-			encoded, err := intent.Marshal(); require.NoError(t, err)
+			encoded, err := intent.Marshal()
+			require.NoError(t, err)
 			expected.Canonical = append(expected.Canonical, encoded)
 		}
 		require.Equal(t, 4, f.typedEvents(ctx, eventNamespace+"EventOrderPlaced"))
 		expected.Events = append(sdk.Events(nil), ctx.EventManager().Events()...)
 		params := first.GetParams(ctx)
 		var err error
-		expected.Params, err = params.Marshal(); require.NoError(t, err)
+		expected.Params, err = params.Marshal()
+		require.NoError(t, err)
 		expected.Owner = f.caller.Hex()
 		ctx.MultiStore().(storetypes.CacheMultiStore).Write()
 		expected.Commit = committed.Commit(true)
 		require.NoError(t, committed.Close())
-		encoded, err := json.Marshal(expected); require.NoError(t, err)
+		encoded, err := json.Marshal(expected)
+		require.NoError(t, err)
 		require.NoError(t, os.WriteFile(evidencePath, encoded, 0600))
 		return
 	}
-	encodedExpected, err := os.ReadFile(evidencePath); require.NoError(t, err)
+	encodedExpected, err := os.ReadFile(evidencePath)
+	require.NoError(t, err)
 	require.NoError(t, json.Unmarshal(encodedExpected, &expected))
 	require.Len(t, expected.Intents, 4)
 	require.Len(t, expected.Canonical, 4)
@@ -707,7 +735,8 @@ func TestOrderIntentSurvivesCommittedKeeperReopen(t *testing.T) {
 	defer func() { require.NoError(t, reopened.Close()) }()
 	require.Equal(t, expected.Commit, reopened.LastCommitID())
 	params := restored.GetParams(restoredCtx)
-	paramsBytes, err := params.Marshal(); require.NoError(t, err)
+	paramsBytes, err := params.Marshal()
+	require.NoError(t, err)
 	require.Equal(t, expected.Params, paramsBytes)
 	require.Empty(t, restoredCtx.EventManager().Events())
 	rows := []map[string]interface{}{}
@@ -718,22 +747,27 @@ func TestOrderIntentSurvivesCommittedKeeperReopen(t *testing.T) {
 	require.NoError(t, err)
 	placedABI := contractABI.Events["OrderPlaced"]
 	for i, intent := range intents {
-		id, err := custodytypes.ParseNonZeroHash32(intent.IntentId); require.NoError(t, err)
+		id, err := custodytypes.ParseNonZeroHash32(intent.IntentId)
+		require.NoError(t, err)
 		stored, found := restored.GetIntent(restoredCtx, id)
 		require.True(t, found)
-		encoded, err := stored.Marshal(); require.NoError(t, err)
+		encoded, err := stored.Marshal()
+		require.NoError(t, err)
 		require.Equal(t, canonical[i], encoded)
 		expectedEvent, err := sdk.TypedEventToEvent(&types.EventOrderPlaced{IntentId: stored.IntentId,
 			Owner: stored.Owner, MarketId: stored.MarketId, Side: stored.Side, Price: stored.Price,
 			Quantity: stored.Quantity, TimeInForce: stored.TimeInForce, Nonce: stored.Nonce})
 		require.NoError(t, err)
 		require.Equal(t, expectedEvent, events[i])
-		price, ok := new(big.Int).SetString(stored.Price, 10); require.True(t, ok)
-		quantity, ok := new(big.Int).SetString(stored.Quantity, 10); require.True(t, ok)
+		price, ok := new(big.Int).SetString(stored.Price, 10)
+		require.True(t, ok)
+		quantity, ok := new(big.Int).SetString(stored.Quantity, 10)
+		require.True(t, ok)
 		data, err := placedABI.Inputs.NonIndexed().Pack(uint8(stored.Side), price, quantity, uint8(stored.TimeInForce), stored.Nonce)
 		require.NoError(t, err)
 		require.Len(t, data, 160)
-		market, err := custodytypes.ParseNonZeroHash32(stored.MarketId); require.NoError(t, err)
+		market, err := custodytypes.ParseNonZeroHash32(stored.MarketId)
+		require.NoError(t, err)
 		projectedLogs = append(projectedLogs, placedABI.ID.Bytes()...)
 		projectedLogs = append(projectedLogs, id[:]...)
 		projectedLogs = append(projectedLogs, market[:]...)
@@ -746,7 +780,8 @@ func TestOrderIntentSurvivesCommittedKeeperReopen(t *testing.T) {
 	}
 	require.Len(t, projectedLogs, 1152)
 	if output := os.Getenv("PAXEER_X_TIF_INGRESS_FILE"); output != "" {
-		encoded, err := json.Marshal(rows); require.NoError(t, err)
+		encoded, err := json.Marshal(rows)
+		require.NoError(t, err)
 		require.NoError(t, os.WriteFile(output, encoded, 0600))
 		require.NoError(t, os.WriteFile(output+".events", projectedLogs, 0600))
 	}
@@ -755,6 +790,8 @@ func TestOrderIntentSurvivesCommittedKeeperReopen(t *testing.T) {
 	next, err := restored.PlaceOrder(restoredCtx, f.caller, marketID, types.SideBuy, sdk.NewInt(17), sdk.NewInt(2), 3)
 	require.NoError(t, err)
 	require.Equal(t, uint64(5), next.Nonce)
-	for _, intent := range intents { require.NotEqual(t, intent.IntentId, next.IntentId) }
+	for _, intent := range intents {
+		require.NotEqual(t, intent.IntentId, next.IntentId)
+	}
 	require.Equal(t, 1, f.typedEvents(restoredCtx, eventNamespace+"EventOrderPlaced"))
 }

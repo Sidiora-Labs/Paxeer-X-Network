@@ -250,15 +250,27 @@ func (s *server) handleHealth(w http.ResponseWriter, _ *http.Request) {
 
 func evmChainID(chainID string) *uint64 {
 	separator := strings.LastIndexByte(chainID, '_')
-	if separator <= 0 { return nil }
+	if separator <= 0 {
+		return nil
+	}
 	parts := strings.Split(chainID[separator+1:], "-")
-	if len(parts) != 2 || parts[0] == "" || parts[1] == "" { return nil }
+	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+		return nil
+	}
 	for _, part := range parts {
-		for _, digit := range part { if digit < '0' || digit > '9' { return nil } }
+		for _, digit := range part {
+			if digit < '0' || digit > '9' {
+				return nil
+			}
+		}
 	}
 	value, err := strconv.ParseUint(parts[0], 10, 64)
-	if err != nil || value == 0 { return nil }
-	if _, err := strconv.ParseUint(parts[1], 10, 64); err != nil { return nil }
+	if err != nil || value == 0 {
+		return nil
+	}
+	if _, err := strconv.ParseUint(parts[1], 10, 64); err != nil {
+		return nil
+	}
 	return &value
 }
 

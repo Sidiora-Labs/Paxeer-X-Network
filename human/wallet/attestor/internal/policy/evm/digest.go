@@ -326,30 +326,64 @@ func DecodePersonalMessage(message []byte) *PersonalMessage {
 }
 
 const CustodyDomain = "LX:CUSTODY:v2"
+
 var CustodyAddress = common.HexToAddress("0x0000000000000000000000000000000000001013")
 var custodyArguments = abi.Arguments{
-    {Type:mustType("address",nil)}, {Type:mustType("uint256",nil)}, {Type:mustType("address",nil)},
-    {Type:mustType("uint256",nil)}, {Type:mustType("bytes",nil)}, {Type:mustType("uint64",nil)},
-    {Type:mustType("uint64",nil)}, {Type:mustType("uint64",nil)}, {Type:mustType("uint256",nil)}, {Type:mustType("uint256",nil)},
+	{Type: mustType("address", nil)}, {Type: mustType("uint256", nil)}, {Type: mustType("address", nil)},
+	{Type: mustType("uint256", nil)}, {Type: mustType("bytes", nil)}, {Type: mustType("uint64", nil)},
+	{Type: mustType("uint64", nil)}, {Type: mustType("uint64", nil)}, {Type: mustType("uint256", nil)}, {Type: mustType("uint256", nil)},
 }
-type CustodyConsent struct { Account common.Address; Deadline uint64; Transaction *Transaction; Bytes []byte }
-func DecodeCustody(raw []byte,chainID *big.Int,account common.Address,now uint64)(*CustodyConsent,error){
-    prefix:=[]byte(CustodyDomain)
-    if len(raw)>32768||!bytes.HasPrefix(raw,prefix){return nil,ErrMalformedFields}
-    values,err:=custodyArguments.Unpack(raw[len(prefix):]);if err!=nil||len(values)!=10{return nil,ErrMalformedFields}
-    canonical,err:=custodyArguments.Pack(values...);if err!=nil||!bytes.Equal(canonical,raw[len(prefix):]){return nil,ErrMalformedFields}
-    owner:=values[0].(common.Address);network:=values[1].(*big.Int);to:=values[2].(common.Address)
-    value:=values[3].(*big.Int);data:=values[4].([]byte);nonce:=values[5].(uint64);deadline:=values[6].(uint64)
-    gas:=values[7].(uint64);fee:=values[8].(*big.Int);tip:=values[9].(*big.Int)
-    if owner!=account||chainID==nil||network.Cmp(chainID)!=0||to!=CustodyAddress||deadline<now||deadline-now>600||gas==0||fee.Sign()<=0||tip.Sign()<0||tip.Cmp(fee)>0{return nil,ErrMalformedFields}
-    deposit:=crypto.Keccak256([]byte("deposit(bytes32)"))[:4];token:=crypto.Keccak256([]byte("depositToken(address,uint256,bytes32)"))[:4]
-    if len(data)==36&&bytes.Equal(data[:4],deposit){if value.Sign()<=0||bytes.Equal(data[4:],make([]byte,32)){return nil,ErrMalformedFields}}else if len(data)==100&&bytes.Equal(data[:4],token){
-        if value.Sign()!=0||!bytes.Equal(data[4:16],make([]byte,12))||bytes.Equal(data[16:36],make([]byte,20))||new(big.Int).SetBytes(data[36:68]).Sign()<=0||bytes.Equal(data[68:],make([]byte,32)){return nil,ErrMalformedFields}
-    }else{return nil,ErrMalformedFields}
-    tx:=&Transaction{Type:types.DynamicFeeTxType,ChainID:network,Nonce:nonce,Gas:gas,GasPrice:new(big.Int).Set(fee),GasTipCap:tip,GasFeeCap:fee,To:&to,Value:value,Data:data}
-    return &CustodyConsent{Account:owner,Deadline:deadline,Transaction:tx,Bytes:common.CopyBytes(raw)},nil
+
+type CustodyConsent struct {
+	Account     common.Address
+	Deadline    uint64
+	Transaction *Transaction
+	Bytes       []byte
 }
-func (c *CustodyConsent) Matches(tx *Transaction)bool{
-    expected:=c.Transaction
-    return tx.Type==types.DynamicFeeTxType&&tx.ChainID.Cmp(expected.ChainID)==0&&tx.Nonce==expected.Nonce&&tx.Gas==expected.Gas&&tx.To!=nil&&*tx.To==*expected.To&&tx.Value.Cmp(expected.Value)==0&&bytes.Equal(tx.Data,expected.Data)&&tx.GasFeeCap.Cmp(expected.GasFeeCap)==0&&tx.GasTipCap.Cmp(expected.GasTipCap)==0&&len(tx.AccessList)==0&&len(tx.Authorizations)==0
+
+func DecodeCustody(raw []byte, chainID *big.Int, account common.Address, now uint64) (*CustodyConsent, error) {
+	prefix := []byte(CustodyDomain)
+	if len(raw) > 32768 || !bytes.HasPrefix(raw, prefix) {
+		return nil, ErrMalformedFields
+	}
+	values, err := custodyArguments.Unpack(raw[len(prefix):])
+	if err != nil || len(values) != 10 {
+		return nil, ErrMalformedFields
+	}
+	canonical, err := custodyArguments.Pack(values...)
+	if err != nil || !bytes.Equal(canonical, raw[len(prefix):]) {
+		return nil, ErrMalformedFields
+	}
+	owner := values[0].(common.Address)
+	network := values[1].(*big.Int)
+	to := values[2].(common.Address)
+	value := values[3].(*big.Int)
+	data := values[4].([]byte)
+	nonce := values[5].(uint64)
+	deadline := values[6].(uint64)
+	gas := values[7].(uint64)
+	fee := values[8].(*big.Int)
+	tip := values[9].(*big.Int)
+	if owner != account || chainID == nil || network.Cmp(chainID) != 0 || to != CustodyAddress || deadline < now || deadline-now > 600 || gas == 0 || fee.Sign() <= 0 || tip.Sign() < 0 || tip.Cmp(fee) > 0 {
+		return nil, ErrMalformedFields
+	}
+	deposit := crypto.Keccak256([]byte("deposit(bytes32)"))[:4]
+	token := crypto.Keccak256([]byte("depositToken(address,uint256,bytes32)"))[:4]
+	if len(data) == 36 && bytes.Equal(data[:4], deposit) {
+		if value.Sign() <= 0 || bytes.Equal(data[4:], make([]byte, 32)) {
+			return nil, ErrMalformedFields
+		}
+	} else if len(data) == 100 && bytes.Equal(data[:4], token) {
+		if value.Sign() != 0 || !bytes.Equal(data[4:16], make([]byte, 12)) || bytes.Equal(data[16:36], make([]byte, 20)) || new(big.Int).SetBytes(data[36:68]).Sign() <= 0 || bytes.Equal(data[68:], make([]byte, 32)) {
+			return nil, ErrMalformedFields
+		}
+	} else {
+		return nil, ErrMalformedFields
+	}
+	tx := &Transaction{Type: types.DynamicFeeTxType, ChainID: network, Nonce: nonce, Gas: gas, GasPrice: new(big.Int).Set(fee), GasTipCap: tip, GasFeeCap: fee, To: &to, Value: value, Data: data}
+	return &CustodyConsent{Account: owner, Deadline: deadline, Transaction: tx, Bytes: common.CopyBytes(raw)}, nil
+}
+func (c *CustodyConsent) Matches(tx *Transaction) bool {
+	expected := c.Transaction
+	return tx.Type == types.DynamicFeeTxType && tx.ChainID.Cmp(expected.ChainID) == 0 && tx.Nonce == expected.Nonce && tx.Gas == expected.Gas && tx.To != nil && *tx.To == *expected.To && tx.Value.Cmp(expected.Value) == 0 && bytes.Equal(tx.Data, expected.Data) && tx.GasFeeCap.Cmp(expected.GasFeeCap) == 0 && tx.GasTipCap.Cmp(expected.GasTipCap) == 0 && len(tx.AccessList) == 0 && len(tx.Authorizations) == 0
 }

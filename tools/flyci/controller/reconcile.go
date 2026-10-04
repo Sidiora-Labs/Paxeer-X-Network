@@ -27,8 +27,8 @@ type pollSummary struct {
 }
 
 type reconciler struct {
-	readiness *readinessState
-	observation *readinessPass
+	readiness     *readinessState
+	observation   *readinessPass
 	qualification *qualificationRegistry
 	cfg           config
 	github        *githubClient
@@ -259,7 +259,9 @@ func (r *reconciler) reconcile(ctx context.Context) (pollSummary, error) {
 	live := make(map[int64]bool)
 	for _, m := range machines {
 		jobID, runID, managed := machineJob(m)
-		if _, claimed := m.Config.Metadata[metadataJobID]; claimed && !managed { r.observation.fail("managed_machine_identity_invalid") }
+		if _, claimed := m.Config.Metadata[metadataJobID]; claimed && !managed {
+			r.observation.fail("managed_machine_identity_invalid")
+		}
 		if !managed || m.State == "destroyed" || m.State == "destroying" {
 			continue
 		}
@@ -296,7 +298,11 @@ func (r *reconciler) reconcile(ctx context.Context) (pollSummary, error) {
 		if summary.Live >= r.cfg.MaxMachines {
 			if r.observation != nil {
 				deferred := 0
-				for _, waiting := range selected[i:] { if !live[waiting.ID] { deferred++ } }
+				for _, waiting := range selected[i:] {
+					if !live[waiting.ID] {
+						deferred++
+					}
+				}
 				r.observation.deferJobs(deferred)
 			}
 			r.log.Warn("machine ceiling reached", "max_machines", r.cfg.MaxMachines, "waiting_jobs", len(selected)-i, "job_id", job.ID)

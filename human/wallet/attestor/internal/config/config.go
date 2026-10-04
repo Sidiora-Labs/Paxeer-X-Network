@@ -15,11 +15,11 @@ import (
 )
 
 const (
-	EnvAuthorityPublicKey = "ATTESTOR_AUTHORITY_PUBLIC_KEY_FILE"
-    EnvAuthorityIssuer = "ATTESTOR_AUTHORITY_ISSUER"
-    EnvAuthorityTenant = "ATTESTOR_AUTHORITY_TENANT"
-    EnvInventoryPublicKey = "ATTESTOR_INVENTORY_PUBLIC_KEY_FILE"
-    EnvInventoryFile = "ATTESTOR_INVENTORY_FILE"
+	EnvAuthorityPublicKey   = "ATTESTOR_AUTHORITY_PUBLIC_KEY_FILE"
+	EnvAuthorityIssuer      = "ATTESTOR_AUTHORITY_ISSUER"
+	EnvAuthorityTenant      = "ATTESTOR_AUTHORITY_TENANT"
+	EnvInventoryPublicKey   = "ATTESTOR_INVENTORY_PUBLIC_KEY_FILE"
+	EnvInventoryFile        = "ATTESTOR_INVENTORY_FILE"
 	EnvNodeID               = "ATTESTOR_NODE_ID"
 	EnvRegion               = "ATTESTOR_REGION"
 	EnvListenAddr           = "ATTESTOR_LISTEN_ADDR"
@@ -46,7 +46,7 @@ const (
 	EnvAgentsFile           = "ATTESTOR_AGENTS_FILE"
 	EnvAgentMaxExpiry       = "ATTESTOR_AGENT_MAX_EXPIRY"
 	EnvKernelPolicy         = "ATTESTOR_KERNEL_POLICY_FILE"
- EnvNativePolicy = "ATTESTOR_NATIVE_POLICY_FILE"
+	EnvNativePolicy         = "ATTESTOR_NATIVE_POLICY_FILE"
 	DefaultJWTMaxAge        = time.Hour
 	DefaultAgentExpiry      = 5 * time.Minute
 	EnvSnapshotInterval     = "ATTESTOR_SNAPSHOT_INTERVAL"
@@ -67,42 +67,42 @@ type Peer struct {
 }
 
 type Config struct {
-    AuthorityPublicKey string
-    AuthorityIssuer string
-    AuthorityTenant string
-    InventoryPublicKey string
-    InventoryFile string
-	NodeID           string
-	Region           string
-	ListenAddr       string
-	PeerListenAddr   string
-	Peers            []Peer
-	NodeKeyFile      string
-	NodeKey          []byte
-	DataDir          string
-	Ceremony         bool
-	ChainID          uint64
-	JWKSURL          string
-	JWTIssuer        string
-	JWTAudience      string
-	PolicyFile       string
-	TLSCertFile      string
-	TLSKeyFile       string
-	TLSCAFile        string
-	OperatorCAFile   string
-	BackupKeyFile    string
-	BackupKey        []byte
-	BackupDir        string
-	RPCURL           string
-	PeerPins         map[string]string
-	ActivityTypes    []uint32
-	JWTMaxAge        time.Duration
-	AgentsFile       string
-	AgentMaxExpiry   time.Duration
-	KernelPolicy     string
- NativePolicy string
-	SnapshotInterval time.Duration
-	SnapshotRetain   int
+	AuthorityPublicKey string
+	AuthorityIssuer    string
+	AuthorityTenant    string
+	InventoryPublicKey string
+	InventoryFile      string
+	NodeID             string
+	Region             string
+	ListenAddr         string
+	PeerListenAddr     string
+	Peers              []Peer
+	NodeKeyFile        string
+	NodeKey            []byte
+	DataDir            string
+	Ceremony           bool
+	ChainID            uint64
+	JWKSURL            string
+	JWTIssuer          string
+	JWTAudience        string
+	PolicyFile         string
+	TLSCertFile        string
+	TLSKeyFile         string
+	TLSCAFile          string
+	OperatorCAFile     string
+	BackupKeyFile      string
+	BackupKey          []byte
+	BackupDir          string
+	RPCURL             string
+	PeerPins           map[string]string
+	ActivityTypes      []uint32
+	JWTMaxAge          time.Duration
+	AgentsFile         string
+	AgentMaxExpiry     time.Duration
+	KernelPolicy       string
+	NativePolicy       string
+	SnapshotInterval   time.Duration
+	SnapshotRetain     int
 }
 
 func Load(getenv func(string) string) (*Config, error) {
@@ -116,7 +116,7 @@ func Load(getenv func(string) string) (*Config, error) {
 	}
 
 	c := &Config{
-        AuthorityPublicKey:get(EnvAuthorityPublicKey), AuthorityIssuer:get(EnvAuthorityIssuer), AuthorityTenant:get(EnvAuthorityTenant), InventoryPublicKey:get(EnvInventoryPublicKey), InventoryFile:get(EnvInventoryFile),
+		AuthorityPublicKey: get(EnvAuthorityPublicKey), AuthorityIssuer: get(EnvAuthorityIssuer), AuthorityTenant: get(EnvAuthorityTenant), InventoryPublicKey: get(EnvInventoryPublicKey), InventoryFile: get(EnvInventoryFile),
 		Region:         get(EnvRegion),
 		JWKSURL:        get(EnvJWKSURL),
 		JWTIssuer:      get(EnvJWTIssuer),
@@ -131,7 +131,7 @@ func Load(getenv func(string) string) (*Config, error) {
 		RPCURL:         get(EnvRPCURL),
 		AgentsFile:     get(EnvAgentsFile),
 		KernelPolicy:   get(EnvKernelPolicy),
- NativePolicy: get(EnvNativePolicy),
+		NativePolicy:   get(EnvNativePolicy),
 	}
 
 	var err error

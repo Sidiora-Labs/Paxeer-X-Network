@@ -19,7 +19,9 @@ func (m Market) Validate() error {
 	if _, err := custodytypes.ParseNonZeroHash32(m.MarginAssetId); err != nil {
 		return sdkerrors.Wrapf(ErrInvalidMarket, "margin asset id: %s", err)
 	}
-	if len(m.NativeGenesis) == 0 && len(m.CapabilityWitness) == 0 && m.CapabilityBatch == 0 { return nil }
+	if len(m.NativeGenesis) == 0 && len(m.CapabilityWitness) == 0 && m.CapabilityBatch == 0 {
+		return nil
+	}
 	if len(m.NativeGenesis) == 0 || len(m.CapabilityWitness) == 0 || len(m.CapabilityWitness) > MaxWitnessBytes {
 		return sdkerrors.Wrap(ErrInvalidMarket, "native capability evidence")
 	}

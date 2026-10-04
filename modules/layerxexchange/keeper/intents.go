@@ -120,10 +120,16 @@ func (k *Keeper) PlaceOrder(ctx sdk.Context, owner common.Address, marketID [32]
 	if len(market.NativeGenesis) != 0 || len(market.CapabilityWitness) != 0 || market.CapabilityBatch != 0 {
 		proven, err := k.ProveState(ctx, market.CapabilityBatch, market.CapabilityWitness,
 			types.GovernanceModuleID, types.GenesisManifestStateKey())
-		if err != nil { return types.Intent{}, err }
+		if err != nil {
+			return types.Intent{}, err
+		}
 		commitment, enabled, err := types.NativeGenesisCapability(market.NativeGenesis)
-		if err != nil { return types.Intent{}, sdkerrors.Wrap(types.ErrInvalidProof, err.Error()) }
-		if !bytes.Equal(proven.Value, commitment[:]) { return types.Intent{}, types.ErrStateMismatch }
+		if err != nil {
+			return types.Intent{}, sdkerrors.Wrap(types.ErrInvalidProof, err.Error())
+		}
+		if !bytes.Equal(proven.Value, commitment[:]) {
+			return types.Intent{}, types.ErrStateMismatch
+		}
 		if timeInForce != types.TimeInForceGoodTillCancelled && !enabled {
 			return types.Intent{}, sdkerrors.Wrap(types.ErrInvalidIntent, "native time in force unavailable")
 		}

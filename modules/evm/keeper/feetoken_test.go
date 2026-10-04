@@ -58,7 +58,7 @@ func TestFeeTokenConversions(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, wei, restored)
 	for _, convert := range []func(sdk.Int, sdk.Dec, bool) (sdk.Int, error){keeper.ConvertFeeToDenom, keeper.ConvertFeeFromDenom} {
-		for _, invalid := range []sdk.Dec{sdk.Dec{}, sdk.ZeroDec(), sdk.NewDec(-1)} {
+		for _, invalid := range []sdk.Dec{{}, sdk.ZeroDec(), sdk.NewDec(-1)} {
 			got, err := convert(wei, invalid, true)
 			require.ErrorIs(t, err, keeper.ErrFeeTokenRateInvalid)
 			require.True(t, got.IsNil())

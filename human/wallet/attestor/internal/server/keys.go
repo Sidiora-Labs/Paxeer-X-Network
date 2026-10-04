@@ -56,26 +56,26 @@ type GenerateRequest struct {
 }
 
 type ImportRequest struct {
-    CeremonyID string `json:"ceremony_id"`
-    Epoch uint64 `json:"epoch"`
-    PublicKey string `json:"public_key"`
-    Participants []string `json:"participants"`
-    Threshold uint32 `json:"threshold"`
-	SessionID string          `json:"session_id"`
-	KeyID     string          `json:"key_id"`
-	Owner     string          `json:"owner"`
-	Account   string          `json:"account,omitempty"`
-	Share     ShareBundleJSON `json:"share"`
+	CeremonyID   string          `json:"ceremony_id"`
+	Epoch        uint64          `json:"epoch"`
+	PublicKey    string          `json:"public_key"`
+	Participants []string        `json:"participants"`
+	Threshold    uint32          `json:"threshold"`
+	SessionID    string          `json:"session_id"`
+	KeyID        string          `json:"key_id"`
+	Owner        string          `json:"owner"`
+	Account      string          `json:"account,omitempty"`
+	Share        ShareBundleJSON `json:"share"`
 }
 
 type RefreshRequest struct {
-    ExistingKey bool `json:"existing_key,omitempty"`
-    RecoverySessionID string `json:"recovery_session_id,omitempty"`
-    CeremonyID string `json:"ceremony_id,omitempty"`
-    ImportSessionID string `json:"import_session_id,omitempty"`
-    ExpectedEpoch *uint64 `json:"expected_epoch,omitempty"`
-	SessionID string `json:"session_id"`
-	KeyID     string `json:"key_id"`
+	ExistingKey       bool    `json:"existing_key,omitempty"`
+	RecoverySessionID string  `json:"recovery_session_id,omitempty"`
+	CeremonyID        string  `json:"ceremony_id,omitempty"`
+	ImportSessionID   string  `json:"import_session_id,omitempty"`
+	ExpectedEpoch     *uint64 `json:"expected_epoch,omitempty"`
+	SessionID         string  `json:"session_id"`
+	KeyID             string  `json:"key_id"`
 }
 
 type AddShareRequest struct {
@@ -96,24 +96,24 @@ type DescribeRequest struct {
 }
 
 type DescribeResponse struct {
-    CeremonyID string `json:"ceremony_id,omitempty"`
-    ImportSessionID string `json:"import_session_id,omitempty"`
-    ImportDigest string `json:"import_digest,omitempty"`
-    VerificationSessionID string `json:"verification_session_id,omitempty"`
-    VerificationState string `json:"verification_state,omitempty"`
-    RefreshSessionID string `json:"refresh_session_id,omitempty"`
-    RefreshState string `json:"refresh_state,omitempty"`
-	NodeID        string   `json:"node_id"`
-	KeyID         string   `json:"key_id"`
-	Curve         string   `json:"curve"`
-	PublicKey     string   `json:"public_key"`
-	Address       string   `json:"address,omitempty"`
-	DID           string   `json:"did,omitempty"`
-	Owner         string   `json:"owner"`
-	Account       string   `json:"account"`
-	Epoch         uint64   `json:"epoch"`
-	Participants  []string `json:"participants"`
-	AuditSequence uint64   `json:"audit_sequence"`
+	CeremonyID            string   `json:"ceremony_id,omitempty"`
+	ImportSessionID       string   `json:"import_session_id,omitempty"`
+	ImportDigest          string   `json:"import_digest,omitempty"`
+	VerificationSessionID string   `json:"verification_session_id,omitempty"`
+	VerificationState     string   `json:"verification_state,omitempty"`
+	RefreshSessionID      string   `json:"refresh_session_id,omitempty"`
+	RefreshState          string   `json:"refresh_state,omitempty"`
+	NodeID                string   `json:"node_id"`
+	KeyID                 string   `json:"key_id"`
+	Curve                 string   `json:"curve"`
+	PublicKey             string   `json:"public_key"`
+	Address               string   `json:"address,omitempty"`
+	DID                   string   `json:"did,omitempty"`
+	Owner                 string   `json:"owner"`
+	Account               string   `json:"account"`
+	Epoch                 uint64   `json:"epoch"`
+	Participants          []string `json:"participants"`
+	AuditSequence         uint64   `json:"audit_sequence"`
 }
 
 type KeyResponse struct {
@@ -498,34 +498,78 @@ func (s *Server) doImport(body []byte) (KeyResponse, *Error) {
 	}
 	unlock := s.lockKey(req.KeyID)
 	defer unlock()
-    if e:=requireIDs(req.CeremonyID,req.KeyID);e!=nil{return KeyResponse{},e}
-    participants:=b.ParticipantIDs()
-    publicKey,err:=publicKeyBytes(b.Curve,b.PublicKey);if err!=nil{return KeyResponse{},newError(CodeKeyInvalidShare,"invalid public identity")}
-    if req.Epoch!=0||req.Threshold!=dealer.Threshold||req.PublicKey!=hex.EncodeToString(publicKey)||!sameIDs(req.Participants,participants){return KeyResponse{},newError(CodeKeyInvalidShare,"ceremony public identity, epoch or membership differs from share")}
-    held:=store.ShareRecord{KeyID:req.KeyID,Curve:curveName(b.Curve),PublicKey:publicKey,Epoch:req.Epoch,Participants:participants}
-    admission:=held
-    if current,err:=s.opts.Store.Get(req.KeyID);err==nil {admission=current} else if !errors.Is(err,store.ErrNotFound){return KeyResponse{},newError(CodeStoreFailed,"%v",err)}
-    if err:=s.opts.Inventory.Check(req.KeyID,"import",req.Owner,held.Curve,&admission);err!=nil{return KeyResponse{},newError(CodeKeyInvalidShare,"current approved inventory refuses ceremony import or exact replay")}
-    enc:=EncodeBundle(b)
-    plain,err:=json.Marshal(storedShare{Owner:req.Owner,Account:account,Bundle:&enc});if err!=nil{return KeyResponse{},newError(CodeStoreFailed,"%v",err)}
-    defer func(){for n:=range plain{plain[n]=0}}()
-    identity:=store.ImportIdentity{CeremonyID:req.CeremonyID,SessionID:req.SessionID,KeyID:req.KeyID,Curve:held.Curve,PublicKey:publicKey,Participants:participants,Threshold:dealer.Threshold,Epoch:req.Epoch,Owner:req.Owner,Account:account}
-    receipt,err:=s.opts.Store.Import(held,plain,identity)
-    if err!=nil{return KeyResponse{},newError(CodeKeyExists,"durable ceremony import conflict: %v",err)}
-    if receipt.AuditSequence==0 {
-        sequence,e:=s.audit("keys.import",req.KeyID,req.Owner,"allowed","durable ceremony "+req.CeremonyID,req.SessionID);if e!=nil{return KeyResponse{},e}
-        if err:=s.opts.Store.RecordImportAudit(req.KeyID,req.CeremonyID,sequence);err!=nil{return KeyResponse{},newError(CodeStoreFailed,"%v",err)}
-        receipt.AuditSequence=sequence
-    }
-    if e:=s.requireAuditSequence(receipt.AuditSequence);e!=nil{return KeyResponse{},e}
-    current,payload,e:=s.loadShare(req.KeyID);if e!=nil{return KeyResponse{},e}
-    return s.keyResponse(req.KeyID,b.Curve,b.PublicKey,current.Epoch,current.Participants,len(payload.ECDSA)>0||current.Epoch>0,receipt.AuditSequence),nil
+	if e := requireIDs(req.CeremonyID, req.KeyID); e != nil {
+		return KeyResponse{}, e
+	}
+	participants := b.ParticipantIDs()
+	publicKey, err := publicKeyBytes(b.Curve, b.PublicKey)
+	if err != nil {
+		return KeyResponse{}, newError(CodeKeyInvalidShare, "invalid public identity")
+	}
+	if req.Epoch != 0 || req.Threshold != dealer.Threshold || req.PublicKey != hex.EncodeToString(publicKey) || !sameIDs(req.Participants, participants) {
+		return KeyResponse{}, newError(CodeKeyInvalidShare, "ceremony public identity, epoch or membership differs from share")
+	}
+	held := store.ShareRecord{KeyID: req.KeyID, Curve: curveName(b.Curve), PublicKey: publicKey, Epoch: req.Epoch, Participants: participants}
+	admission := held
+	if current, err := s.opts.Store.Get(req.KeyID); err == nil {
+		admission = current
+	} else if !errors.Is(err, store.ErrNotFound) {
+		return KeyResponse{}, newError(CodeStoreFailed, "%v", err)
+	}
+	if err := s.opts.Inventory.Check(req.KeyID, "import", req.Owner, held.Curve, &admission); err != nil {
+		return KeyResponse{}, newError(CodeKeyInvalidShare, "current approved inventory refuses ceremony import or exact replay")
+	}
+	enc := EncodeBundle(b)
+	plain, err := json.Marshal(storedShare{Owner: req.Owner, Account: account, Bundle: &enc})
+	if err != nil {
+		return KeyResponse{}, newError(CodeStoreFailed, "%v", err)
+	}
+	defer func() {
+		for n := range plain {
+			plain[n] = 0
+		}
+	}()
+	identity := store.ImportIdentity{CeremonyID: req.CeremonyID, SessionID: req.SessionID, KeyID: req.KeyID, Curve: held.Curve, PublicKey: publicKey, Participants: participants, Threshold: dealer.Threshold, Epoch: req.Epoch, Owner: req.Owner, Account: account}
+	receipt, err := s.opts.Store.Import(held, plain, identity)
+	if err != nil {
+		return KeyResponse{}, newError(CodeKeyExists, "durable ceremony import conflict: %v", err)
+	}
+	if receipt.AuditSequence == 0 {
+		sequence, e := s.audit("keys.import", req.KeyID, req.Owner, "allowed", "durable ceremony "+req.CeremonyID, req.SessionID)
+		if e != nil {
+			return KeyResponse{}, e
+		}
+		if err := s.opts.Store.RecordImportAudit(req.KeyID, req.CeremonyID, sequence); err != nil {
+			return KeyResponse{}, newError(CodeStoreFailed, "%v", err)
+		}
+		receipt.AuditSequence = sequence
+	}
+	if e := s.requireAuditSequence(receipt.AuditSequence); e != nil {
+		return KeyResponse{}, e
+	}
+	current, payload, e := s.loadShare(req.KeyID)
+	if e != nil {
+		return KeyResponse{}, e
+	}
+	return s.keyResponse(req.KeyID, b.Curve, b.PublicKey, current.Epoch, current.Participants, len(payload.ECDSA) > 0 || current.Epoch > 0, receipt.AuditSequence), nil
 }
 
-func sameIDs(a,b []string)bool {if len(a)!=len(b){return false};for n:=range a{if a[n]!=b[n]{return false}};return true}
+func sameIDs(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for n := range a {
+		if a[n] != b[n] {
+			return false
+		}
+	}
+	return true
+}
 
 func (s *Server) checkImportedScheme(b dealer.ShareBundle) *Error {
-    if len(b.ParticipantIDs())!=dealer.Participants||len(s.opts.Participants)!=dealer.Participants{return newError(CodeKeyInvalidShare,"custody import requires exactly five approved members")}
+	if len(b.ParticipantIDs()) != dealer.Participants || len(s.opts.Participants) != dealer.Participants {
+		return newError(CodeKeyInvalidShare, "custody import requires exactly five approved members")
+	}
 	if b.Threshold != dealer.Threshold {
 		return newError(CodeKeyInvalidShare, "share threshold %d is not the custody threshold %d", b.Threshold, dealer.Threshold)
 	}
@@ -587,49 +631,100 @@ func (s *Server) doRefresh(r *http.Request, body []byte) (KeyResponse, *Error) {
 	if e != nil {
 		return KeyResponse{}, e
 	}
-    if err:=s.opts.Inventory.Check(req.KeyID,"refresh",payload.Owner,rec.Curve,&rec);err!=nil{return KeyResponse{},newError(CodeKeyInvalidShare,"current approved inventory refuses held refresh epoch")}
-    var durable *store.CeremonyRefresh
-    if receipt,err:=s.opts.Store.ImportReceipt(req.KeyID);err==nil && receipt.Identity.CeremonyID!="" && req.CeremonyID=="" {return KeyResponse{},newError(CodeSessionBadRequest,"imported ceremony key requires durable refresh identity")} else if err!=nil&&!errors.Is(err,store.ErrNotFound){return KeyResponse{},newError(CodeStoreFailed,"%v",err)}
-    if req.ExistingKey||req.CeremonyID!=""||req.ImportSessionID!=""||req.ExpectedEpoch!=nil {
-        if !s.opts.Ceremony||req.CeremonyID==""||req.ExpectedEpoch==nil{return KeyResponse{},newError(CodeSessionBadRequest,"durable refresh needs ceremony_id and expected_epoch in ceremony mode")}
-        if e:=requireIDs(req.CeremonyID,req.KeyID);e!=nil{return KeyResponse{},e}
-        receipt,receiptErr:=s.opts.Store.ImportReceipt(req.KeyID)
-        if req.ExistingKey {
-            if req.ImportSessionID!=""||!errors.Is(receiptErr,store.ErrNotFound){return KeyResponse{},newError(CodeSessionBadRequest,"existing_key requires a held key without an import ceremony")}
-        } else if receiptErr!=nil||receipt.AuditSequence==0||receipt.Identity.CeremonyID!=req.CeremonyID||receipt.Identity.SessionID!=req.ImportSessionID{return KeyResponse{},newError(CodeVerificationNotImported,"refresh ceremony does not match imported identity")}
-        previous,err:=s.opts.Store.CeremonyRefresh(req.KeyID)
-        if err==nil && req.RecoverySessionID!="" && previous.SessionID!=req.SessionID {
-            if previous.ExistingKey!=req.ExistingKey||req.RecoverySessionID!=previous.SessionID||previous.CeremonyID!=req.CeremonyID||previous.ImportSessionID!=req.ImportSessionID||previous.BaseEpoch!=*req.ExpectedEpoch{return KeyResponse{},newError(CodeSessionBadRequest,"refresh recovery must name the exact previous attempt")}
-            if err:=s.recoverCeremonyRefresh(r.Context(),previous,rec,req.SessionID);err!=nil{return KeyResponse{},newError(CodeSessionFailed,"refresh recovery refused: %v",err)}
-            previous,err=s.opts.Store.CeremonyRefresh(req.KeyID)
-        }
-        if err==nil {
-            if previous.ExistingKey!=req.ExistingKey||previous.SessionID!=req.SessionID||previous.CeremonyID!=req.CeremonyID||previous.ImportSessionID!=req.ImportSessionID||previous.BaseEpoch!=*req.ExpectedEpoch||previous.Curve!=rec.Curve||!bytes.Equal(previous.PublicKey,rec.PublicKey)||!sameIDs(previous.Participants,rec.Participants){return KeyResponse{},newError(CodeSessionBadRequest,"durable refresh request conflicts with recorded attempt")}
-            durable=&previous
-            if rec.Epoch==previous.BaseEpoch+1 {
-                if previous.Decision!="commit"{return KeyResponse{},newError(CodeStoreFailed,"held refreshed epoch lacks durable commit decision")}
-                return s.finishCeremonyRefresh(rec,payload,previous)
-            }
-            if rec.Epoch!=previous.BaseEpoch{return KeyResponse{},newError(CodeKeyInvalidShare,"held refresh epoch differs from ceremony")}
-            if previous.Decision=="abort"{return KeyResponse{},newError(CodeSessionFailed,"ceremony refresh durably aborted; explicit new ceremony refresh attempt required")}
-            if staged,err:=s.opts.Store.GetStaged(req.KeyID);err==nil {
-                if staged.Epoch!=previous.BaseEpoch+1||staged.Curve!=rec.Curve||!bytes.Equal(staged.PublicKey,rec.PublicKey)||!sameIDs(staged.Participants,rec.Participants){return KeyResponse{},newError(CodeKeyInvalidShare,"retained refresh stage conflicts with ceremony")}
-                committed,err:=s.decideRefresh(r.Context(),req.KeyID,req.SessionID,staged.Epoch,rec.Participants)
-                if !committed{return KeyResponse{},newError(CodeSessionFailed,"retained ceremony stage awaits authentic coordinator decision: %v",err)}
-                if err:=s.opts.Store.CommitStaged(req.KeyID,staged.Epoch);err!=nil{return KeyResponse{},newError(CodeStoreFailed,"%v",err)}
-                next,held,e:=s.loadShare(req.KeyID);if e!=nil{return KeyResponse{},e}
-                current,err:=s.opts.Store.CeremonyRefresh(req.KeyID);if err!=nil{return KeyResponse{},newError(CodeStoreFailed,"%v",err)}
-                return s.finishCeremonyRefresh(next,held,current)
-            } else if !errors.Is(err,store.ErrNotFound){return KeyResponse{},newError(CodeStoreFailed,"%v",err)}
-            if previous.State!="prepared"{return KeyResponse{},newError(CodeSessionFailed,"refresh protocol was interrupted before durable staging; all-member abort reconciliation is required")}
-        } else if !errors.Is(err,store.ErrNotFound){return KeyResponse{},newError(CodeStoreFailed,"%v",err)} else {
-            if rec.Epoch!=*req.ExpectedEpoch||rec.Epoch==^uint64(0){return KeyResponse{},newError(CodeKeyInvalidShare,"expected refresh base epoch differs")}
-            current:=store.CeremonyRefresh{ExistingKey:req.ExistingKey,CeremonyID:req.CeremonyID,ImportSessionID:req.ImportSessionID,SessionID:req.SessionID,KeyID:req.KeyID,BaseEpoch:rec.Epoch,Curve:rec.Curve,PublicKey:rec.PublicKey,Participants:rec.Participants,State:"prepared"}
-            if err:=s.opts.Store.SaveCeremonyRefresh(current);err!=nil{return KeyResponse{},newError(CodeStoreFailed,"%v",err)};durable=&current
-        }
-        durable.State="running"
-        if err:=s.opts.Store.SaveCeremonyRefresh(*durable);err!=nil{return KeyResponse{},newError(CodeStoreFailed,"%v",err)}
-    }
+	if err := s.opts.Inventory.Check(req.KeyID, "refresh", payload.Owner, rec.Curve, &rec); err != nil {
+		return KeyResponse{}, newError(CodeKeyInvalidShare, "current approved inventory refuses held refresh epoch")
+	}
+	var durable *store.CeremonyRefresh
+	if receipt, err := s.opts.Store.ImportReceipt(req.KeyID); err == nil && receipt.Identity.CeremonyID != "" && req.CeremonyID == "" {
+		return KeyResponse{}, newError(CodeSessionBadRequest, "imported ceremony key requires durable refresh identity")
+	} else if err != nil && !errors.Is(err, store.ErrNotFound) {
+		return KeyResponse{}, newError(CodeStoreFailed, "%v", err)
+	}
+	if req.ExistingKey || req.CeremonyID != "" || req.ImportSessionID != "" || req.ExpectedEpoch != nil {
+		if !s.opts.Ceremony || req.CeremonyID == "" || req.ExpectedEpoch == nil {
+			return KeyResponse{}, newError(CodeSessionBadRequest, "durable refresh needs ceremony_id and expected_epoch in ceremony mode")
+		}
+		if e := requireIDs(req.CeremonyID, req.KeyID); e != nil {
+			return KeyResponse{}, e
+		}
+		receipt, receiptErr := s.opts.Store.ImportReceipt(req.KeyID)
+		if req.ExistingKey {
+			if req.ImportSessionID != "" || !errors.Is(receiptErr, store.ErrNotFound) {
+				return KeyResponse{}, newError(CodeSessionBadRequest, "existing_key requires a held key without an import ceremony")
+			}
+		} else if receiptErr != nil || receipt.AuditSequence == 0 || receipt.Identity.CeremonyID != req.CeremonyID || receipt.Identity.SessionID != req.ImportSessionID {
+			return KeyResponse{}, newError(CodeVerificationNotImported, "refresh ceremony does not match imported identity")
+		}
+		previous, err := s.opts.Store.CeremonyRefresh(req.KeyID)
+		if err == nil && req.RecoverySessionID != "" && previous.SessionID != req.SessionID {
+			if previous.ExistingKey != req.ExistingKey || req.RecoverySessionID != previous.SessionID || previous.CeremonyID != req.CeremonyID || previous.ImportSessionID != req.ImportSessionID || previous.BaseEpoch != *req.ExpectedEpoch {
+				return KeyResponse{}, newError(CodeSessionBadRequest, "refresh recovery must name the exact previous attempt")
+			}
+			if err := s.recoverCeremonyRefresh(r.Context(), previous, rec, req.SessionID); err != nil {
+				return KeyResponse{}, newError(CodeSessionFailed, "refresh recovery refused: %v", err)
+			}
+			previous, err = s.opts.Store.CeremonyRefresh(req.KeyID)
+		}
+		if err == nil {
+			if previous.ExistingKey != req.ExistingKey || previous.SessionID != req.SessionID || previous.CeremonyID != req.CeremonyID || previous.ImportSessionID != req.ImportSessionID || previous.BaseEpoch != *req.ExpectedEpoch || previous.Curve != rec.Curve || !bytes.Equal(previous.PublicKey, rec.PublicKey) || !sameIDs(previous.Participants, rec.Participants) {
+				return KeyResponse{}, newError(CodeSessionBadRequest, "durable refresh request conflicts with recorded attempt")
+			}
+			durable = &previous
+			if rec.Epoch == previous.BaseEpoch+1 {
+				if previous.Decision != "commit" {
+					return KeyResponse{}, newError(CodeStoreFailed, "held refreshed epoch lacks durable commit decision")
+				}
+				return s.finishCeremonyRefresh(rec, payload, previous)
+			}
+			if rec.Epoch != previous.BaseEpoch {
+				return KeyResponse{}, newError(CodeKeyInvalidShare, "held refresh epoch differs from ceremony")
+			}
+			if previous.Decision == "abort" {
+				return KeyResponse{}, newError(CodeSessionFailed, "ceremony refresh durably aborted; explicit new ceremony refresh attempt required")
+			}
+			if staged, err := s.opts.Store.GetStaged(req.KeyID); err == nil {
+				if staged.Epoch != previous.BaseEpoch+1 || staged.Curve != rec.Curve || !bytes.Equal(staged.PublicKey, rec.PublicKey) || !sameIDs(staged.Participants, rec.Participants) {
+					return KeyResponse{}, newError(CodeKeyInvalidShare, "retained refresh stage conflicts with ceremony")
+				}
+				committed, err := s.decideRefresh(r.Context(), req.KeyID, req.SessionID, staged.Epoch, rec.Participants)
+				if !committed {
+					return KeyResponse{}, newError(CodeSessionFailed, "retained ceremony stage awaits authentic coordinator decision: %v", err)
+				}
+				if err := s.opts.Store.CommitStaged(req.KeyID, staged.Epoch); err != nil {
+					return KeyResponse{}, newError(CodeStoreFailed, "%v", err)
+				}
+				next, held, e := s.loadShare(req.KeyID)
+				if e != nil {
+					return KeyResponse{}, e
+				}
+				current, err := s.opts.Store.CeremonyRefresh(req.KeyID)
+				if err != nil {
+					return KeyResponse{}, newError(CodeStoreFailed, "%v", err)
+				}
+				return s.finishCeremonyRefresh(next, held, current)
+			} else if !errors.Is(err, store.ErrNotFound) {
+				return KeyResponse{}, newError(CodeStoreFailed, "%v", err)
+			}
+			if previous.State != "prepared" {
+				return KeyResponse{}, newError(CodeSessionFailed, "refresh protocol was interrupted before durable staging; all-member abort reconciliation is required")
+			}
+		} else if !errors.Is(err, store.ErrNotFound) {
+			return KeyResponse{}, newError(CodeStoreFailed, "%v", err)
+		} else {
+			if rec.Epoch != *req.ExpectedEpoch || rec.Epoch == ^uint64(0) {
+				return KeyResponse{}, newError(CodeKeyInvalidShare, "expected refresh base epoch differs")
+			}
+			current := store.CeremonyRefresh{ExistingKey: req.ExistingKey, CeremonyID: req.CeremonyID, ImportSessionID: req.ImportSessionID, SessionID: req.SessionID, KeyID: req.KeyID, BaseEpoch: rec.Epoch, Curve: rec.Curve, PublicKey: rec.PublicKey, Participants: rec.Participants, State: "prepared"}
+			if err := s.opts.Store.SaveCeremonyRefresh(current); err != nil {
+				return KeyResponse{}, newError(CodeStoreFailed, "%v", err)
+			}
+			durable = &current
+		}
+		durable.State = "running"
+		if err := s.opts.Store.SaveCeremonyRefresh(*durable); err != nil {
+			return KeyResponse{}, newError(CodeStoreFailed, "%v", err)
+		}
+	}
 	b, _, e := payload.bundle()
 	if e != nil {
 		return KeyResponse{}, e
@@ -691,17 +786,26 @@ func (s *Server) doRefresh(r *http.Request, body []byte) (KeyResponse, *Error) {
 		_, _ = s.audit("keys.refresh", req.KeyID, payload.Owner, "failed", e.Code, req.SessionID)
 		return KeyResponse{}, e
 	}
-    if durable!=nil {durable.State="staged";if err:=s.opts.Store.SaveCeremonyRefresh(*durable);err!=nil{return KeyResponse{},newError(CodeStoreFailed,"%v",err)}}
+	if durable != nil {
+		durable.State = "staged"
+		if err := s.opts.Store.SaveCeremonyRefresh(*durable); err != nil {
+			return KeyResponse{}, newError(CodeStoreFailed, "%v", err)
+		}
+	}
 	if s.afterStage != nil {
 		s.afterStage(req.KeyID)
 	}
 	committed, err := s.decideRefresh(r.Context(), req.KeyID, req.SessionID, epoch, participants)
 	if !committed {
-        if durable!=nil {
-            state,loadErr:=s.opts.Store.CeremonyRefresh(req.KeyID)
-            if loadErr!=nil{return KeyResponse{},newError(CodeStoreFailed,"%v",loadErr)}
-            if state.Decision!="abort"{return KeyResponse{},newError(CodeSessionFailed,"ceremony stage retained pending coordinator recovery: %v",err)}
-        }
+		if durable != nil {
+			state, loadErr := s.opts.Store.CeremonyRefresh(req.KeyID)
+			if loadErr != nil {
+				return KeyResponse{}, newError(CodeStoreFailed, "%v", loadErr)
+			}
+			if state.Decision != "abort" {
+				return KeyResponse{}, newError(CodeSessionFailed, "ceremony stage retained pending coordinator recovery: %v", err)
+			}
+		}
 		if derr := s.opts.Store.DiscardStaged(req.KeyID); derr != nil {
 			err = errors.Join(err, derr)
 		}
@@ -713,11 +817,17 @@ func (s *Server) doRefresh(r *http.Request, body []byte) (KeyResponse, *Error) {
 		_, _ = s.audit("keys.refresh", req.KeyID, payload.Owner, "failed", "commit failed after the coordinator committed", req.SessionID)
 		return KeyResponse{}, newError(CodeStoreFailed, "%v", err)
 	}
-    if durable!=nil {
-        current,held,e:=s.loadShare(req.KeyID);if e!=nil{return KeyResponse{},e}
-        state,err:=s.opts.Store.CeremonyRefresh(req.KeyID);if err!=nil{return KeyResponse{},newError(CodeStoreFailed,"%v",err)}
-        return s.finishCeremonyRefresh(current,held,state)
-    }
+	if durable != nil {
+		current, held, e := s.loadShare(req.KeyID)
+		if e != nil {
+			return KeyResponse{}, e
+		}
+		state, err := s.opts.Store.CeremonyRefresh(req.KeyID)
+		if err != nil {
+			return KeyResponse{}, newError(CodeStoreFailed, "%v", err)
+		}
+		return s.finishCeremonyRefresh(current, held, state)
+	}
 	seq, e := s.audit("keys.refresh", req.KeyID, payload.Owner, "allowed", "refreshed", req.SessionID)
 	if e != nil {
 		return KeyResponse{}, e
@@ -725,17 +835,33 @@ func (s *Server) doRefresh(r *http.Request, body []byte) (KeyResponse, *Error) {
 	return s.keyResponse(req.KeyID, b.Curve, b.PublicKey, epoch, participants, true, seq), nil
 }
 
-func (s *Server) finishCeremonyRefresh(rec store.ShareRecord,payload storedShare,state store.CeremonyRefresh)(KeyResponse,*Error){
-    if state.Decision!="commit"||rec.Epoch!=state.BaseEpoch+1{return KeyResponse{},newError(CodeStoreFailed,"refresh has no durable matching commit")}
-    if state.AuditSequence==0 {
-        seq,e:=s.audit("keys.refresh",rec.KeyID,payload.Owner,"allowed","durable ceremony "+state.CeremonyID,state.SessionID);if e!=nil{return KeyResponse{},e}
-        state.AuditSequence=seq;state.State="complete"
-        if err:=s.opts.Store.SaveCeremonyRefresh(state);err!=nil{return KeyResponse{},newError(CodeStoreFailed,"%v",err)}
-    }
-    if e:=s.requireAuditSequence(state.AuditSequence);e!=nil{return KeyResponse{},e}
-    curve,ok:=parseCurve(rec.Curve);if !ok{return KeyResponse{},newError(CodeKeyCurve,"invalid stored curve")}
-    public,err:=parsePublicKey(curve,hex.EncodeToString(rec.PublicKey));if err!=nil{return KeyResponse{},newError(CodeKeyInvalidShare,"%v",err)}
-    return s.keyResponse(rec.KeyID,curve,public,rec.Epoch,rec.Participants,true,state.AuditSequence),nil
+func (s *Server) finishCeremonyRefresh(rec store.ShareRecord, payload storedShare, state store.CeremonyRefresh) (KeyResponse, *Error) {
+	if state.Decision != "commit" || rec.Epoch != state.BaseEpoch+1 {
+		return KeyResponse{}, newError(CodeStoreFailed, "refresh has no durable matching commit")
+	}
+	if state.AuditSequence == 0 {
+		seq, e := s.audit("keys.refresh", rec.KeyID, payload.Owner, "allowed", "durable ceremony "+state.CeremonyID, state.SessionID)
+		if e != nil {
+			return KeyResponse{}, e
+		}
+		state.AuditSequence = seq
+		state.State = "complete"
+		if err := s.opts.Store.SaveCeremonyRefresh(state); err != nil {
+			return KeyResponse{}, newError(CodeStoreFailed, "%v", err)
+		}
+	}
+	if e := s.requireAuditSequence(state.AuditSequence); e != nil {
+		return KeyResponse{}, e
+	}
+	curve, ok := parseCurve(rec.Curve)
+	if !ok {
+		return KeyResponse{}, newError(CodeKeyCurve, "invalid stored curve")
+	}
+	public, err := parsePublicKey(curve, hex.EncodeToString(rec.PublicKey))
+	if err != nil {
+		return KeyResponse{}, newError(CodeKeyInvalidShare, "%v", err)
+	}
+	return s.keyResponse(rec.KeyID, curve, public, rec.Epoch, rec.Participants, true, state.AuditSequence), nil
 }
 
 func (s *Server) HandleGenerate(w http.ResponseWriter, r *http.Request) {
@@ -973,7 +1099,8 @@ func (s *Server) doDescribe(body []byte) (DescribeResponse, *Error) {
 	if e := requireIDs(req.SessionID, req.KeyID); e != nil {
 		return DescribeResponse{}, e
 	}
-    unlock:=s.lockKey(req.KeyID);defer unlock()
+	unlock := s.lockKey(req.KeyID)
+	defer unlock()
 	rec, err := s.opts.Store.Get(req.KeyID)
 	if errors.Is(err, store.ErrNotFound) {
 		return DescribeResponse{}, newError(CodeKeyNotFound, "key %q is not held by this node", req.KeyID)
@@ -1001,7 +1128,7 @@ func (s *Server) doDescribe(body []byte) (DescribeResponse, *Error) {
 		return DescribeResponse{}, e
 	}
 	k := s.keyResponse(req.KeyID, c, pub, rec.Epoch, append([]string(nil), rec.Participants...), false, seq)
-    response:=DescribeResponse{
+	response := DescribeResponse{
 		NodeID:        k.NodeID,
 		KeyID:         k.KeyID,
 		Curve:         k.Curve,
@@ -1013,18 +1140,42 @@ func (s *Server) doDescribe(body []byte) (DescribeResponse, *Error) {
 		Epoch:         k.Epoch,
 		Participants:  k.Participants,
 		AuditSequence: k.AuditSequence,
-    }
-    if receipt,err:=s.opts.Store.ImportReceipt(req.KeyID);err==nil {
-        response.CeremonyID=receipt.Identity.CeremonyID;response.ImportSessionID=receipt.Identity.SessionID;response.ImportDigest=hex.EncodeToString(receipt.Identity.MaterialDigest[:])
-    } else if !errors.Is(err,store.ErrNotFound){return DescribeResponse{},newError(CodeStoreFailed,"%v",err)}
-    if state,err:=s.loadVerification(req.KeyID);err==nil{response.VerificationSessionID=state.SessionID;response.VerificationState=state.State}else if !errors.Is(err,store.ErrNotFound){return DescribeResponse{},newError(CodeStoreFailed,"%v",err)}
-    if state,err:=s.opts.Store.CeremonyRefresh(req.KeyID);err==nil{response.RefreshSessionID=state.SessionID;response.RefreshState=state.State;if state.Decision=="abort"{response.RefreshState="aborted"}}else if !errors.Is(err,store.ErrNotFound){return DescribeResponse{},newError(CodeStoreFailed,"%v",err)}
-    return response,nil
+	}
+	if receipt, err := s.opts.Store.ImportReceipt(req.KeyID); err == nil {
+		response.CeremonyID = receipt.Identity.CeremonyID
+		response.ImportSessionID = receipt.Identity.SessionID
+		response.ImportDigest = hex.EncodeToString(receipt.Identity.MaterialDigest[:])
+	} else if !errors.Is(err, store.ErrNotFound) {
+		return DescribeResponse{}, newError(CodeStoreFailed, "%v", err)
+	}
+	if state, err := s.loadVerification(req.KeyID); err == nil {
+		response.VerificationSessionID = state.SessionID
+		response.VerificationState = state.State
+	} else if !errors.Is(err, store.ErrNotFound) {
+		return DescribeResponse{}, newError(CodeStoreFailed, "%v", err)
+	}
+	if state, err := s.opts.Store.CeremonyRefresh(req.KeyID); err == nil {
+		response.RefreshSessionID = state.SessionID
+		response.RefreshState = state.State
+		if state.Decision == "abort" {
+			response.RefreshState = "aborted"
+		}
+	} else if !errors.Is(err, store.ErrNotFound) {
+		return DescribeResponse{}, newError(CodeStoreFailed, "%v", err)
+	}
+	return response, nil
 }
 
-func (s *Server) requireAuditSequence(sequence uint64)*Error {
-    if sequence==0{return newError(CodeStoreAuditFailed,"durable audit sequence is missing")}
-    if err:=s.opts.Audit.Verify();err!=nil{return newError(CodeStoreAuditFailed,"%v",err)}
-    head,_:=s.opts.Audit.Head();if head<sequence{return newError(CodeStoreAuditFailed,"durable audit sequence is absent from the log")}
-    return nil
+func (s *Server) requireAuditSequence(sequence uint64) *Error {
+	if sequence == 0 {
+		return newError(CodeStoreAuditFailed, "durable audit sequence is missing")
+	}
+	if err := s.opts.Audit.Verify(); err != nil {
+		return newError(CodeStoreAuditFailed, "%v", err)
+	}
+	head, _ := s.opts.Audit.Head()
+	if head < sequence {
+		return newError(CodeStoreAuditFailed, "durable audit sequence is absent from the log")
+	}
+	return nil
 }

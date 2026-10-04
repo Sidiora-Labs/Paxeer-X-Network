@@ -529,17 +529,17 @@ func zero(b []byte) {
 }
 
 type ImportIdentity struct {
-    CeremonyID string `json:"ceremony_id"`
-    SessionID string `json:"import_session_id"`
-    KeyID string `json:"key_id"`
-    Curve string `json:"curve"`
-    PublicKey []byte `json:"public_key"`
-    Participants []string `json:"participants"`
-    Threshold uint32 `json:"threshold"`
-    Epoch uint64 `json:"epoch"`
-    Owner string `json:"owner"`
-    Account string `json:"account"`
-    MaterialDigest [32]byte `json:"material_digest"`
+	CeremonyID     string   `json:"ceremony_id"`
+	SessionID      string   `json:"import_session_id"`
+	KeyID          string   `json:"key_id"`
+	Curve          string   `json:"curve"`
+	PublicKey      []byte   `json:"public_key"`
+	Participants   []string `json:"participants"`
+	Threshold      uint32   `json:"threshold"`
+	Epoch          uint64   `json:"epoch"`
+	Owner          string   `json:"owner"`
+	Account        string   `json:"account"`
+	MaterialDigest [32]byte `json:"material_digest"`
 }
 
 const RecordCeremony RecordKind = "ceremony-import"
@@ -547,192 +547,416 @@ const RecordVerification RecordKind = "ceremony-verification"
 const RecordRefresh RecordKind = "ceremony-refresh"
 
 type ImportReceipt struct {
-    Identity ImportIdentity `json:"identity"`
-    AuditSequence uint64 `json:"audit_sequence"`
+	Identity      ImportIdentity `json:"identity"`
+	AuditSequence uint64         `json:"audit_sequence"`
 }
 
-func (s *Store) Import(rec ShareRecord, share []byte, identity ImportIdentity) (ImportReceipt,error) {
-    var receipt ImportReceipt
-    meta:=normalize(rec)
-    if err:=validate(meta);err!=nil{return receipt,err}
-    if len(share)==0||identity.CeremonyID==""||identity.SessionID==""||identity.KeyID!=meta.KeyID||identity.Curve!=meta.Curve||identity.Epoch!=0||meta.Epoch!=identity.Epoch||identity.Threshold!=3||len(identity.Participants)!=5||!bytes.Equal(identity.PublicKey,meta.PublicKey){return receipt,ErrInvalid}
-    if !equalStrings(identity.Participants,meta.Participants){return receipt,ErrInvalid}
-    identity.MaterialDigest=sha256.Sum256(share)
-    err:=s.db.Update(func(tx *bbolt.Tx)error{
-        records:=tx.Bucket(bucketRecords);key:=recordKey(RecordCeremony,meta.KeyID)
-        if prior:=records.Get(key);prior!=nil{
-            plain,err:=s.openRecord(RecordCeremony,meta.KeyID,prior);if err!=nil{return err};defer zero(plain)
-            if err:=json.Unmarshal(plain,&receipt);err!=nil{return ErrInvalid}
-            a,_:=json.Marshal(receipt.Identity);b,_:=json.Marshal(identity)
-            if !bytes.Equal(a,b){return fmt.Errorf("%w: ceremony import identity conflict",ErrInvalid)}
-            held:=tx.Bucket(bucketShares).Get([]byte(meta.KeyID));if held==nil{return ErrInvalid}
-            current,err:=decodeRecord(meta.KeyID,held);if err!=nil{return err}
-            if current.Curve!=meta.Curve||!bytes.Equal(current.PublicKey,meta.PublicKey)||!equalStrings(current.Participants,meta.Participants)||current.Epoch<meta.Epoch{return ErrInvalid}
-            return nil
-        }
-        if tx.Bucket(bucketShares).Get([]byte(meta.KeyID))!=nil{return fmt.Errorf("%w: existing key has no matching ceremony receipt",ErrInvalid)}
-        now:=s.now().Unix();meta.CreatedAt=now;meta.RefreshedAt=now
-        ct,err:=seal(s.nodeKey,meta,share);if err!=nil{return err};meta.Ciphertext=ct
-        encoded,err:=json.Marshal(meta);if err!=nil{return err}
-        receipt=ImportReceipt{Identity:identity}
-        plain,err:=json.Marshal(receipt);if err!=nil{return err};defer zero(plain)
-        protected,err:=s.sealRecord(RecordCeremony,meta.KeyID,plain);if err!=nil{return err}
-        if err=tx.Bucket(bucketShares).Put([]byte(meta.KeyID),encoded);err!=nil{return err}
-        return records.Put(key,protected)
-    })
-    return receipt,err
+func (s *Store) Import(rec ShareRecord, share []byte, identity ImportIdentity) (ImportReceipt, error) {
+	var receipt ImportReceipt
+	meta := normalize(rec)
+	if err := validate(meta); err != nil {
+		return receipt, err
+	}
+	if len(share) == 0 || identity.CeremonyID == "" || identity.SessionID == "" || identity.KeyID != meta.KeyID || identity.Curve != meta.Curve || identity.Epoch != 0 || meta.Epoch != identity.Epoch || identity.Threshold != 3 || len(identity.Participants) != 5 || !bytes.Equal(identity.PublicKey, meta.PublicKey) {
+		return receipt, ErrInvalid
+	}
+	if !equalStrings(identity.Participants, meta.Participants) {
+		return receipt, ErrInvalid
+	}
+	identity.MaterialDigest = sha256.Sum256(share)
+	err := s.db.Update(func(tx *bbolt.Tx) error {
+		records := tx.Bucket(bucketRecords)
+		key := recordKey(RecordCeremony, meta.KeyID)
+		if prior := records.Get(key); prior != nil {
+			plain, err := s.openRecord(RecordCeremony, meta.KeyID, prior)
+			if err != nil {
+				return err
+			}
+			defer zero(plain)
+			if err := json.Unmarshal(plain, &receipt); err != nil {
+				return ErrInvalid
+			}
+			a, _ := json.Marshal(receipt.Identity)
+			b, _ := json.Marshal(identity)
+			if !bytes.Equal(a, b) {
+				return fmt.Errorf("%w: ceremony import identity conflict", ErrInvalid)
+			}
+			held := tx.Bucket(bucketShares).Get([]byte(meta.KeyID))
+			if held == nil {
+				return ErrInvalid
+			}
+			current, err := decodeRecord(meta.KeyID, held)
+			if err != nil {
+				return err
+			}
+			if current.Curve != meta.Curve || !bytes.Equal(current.PublicKey, meta.PublicKey) || !equalStrings(current.Participants, meta.Participants) || current.Epoch < meta.Epoch {
+				return ErrInvalid
+			}
+			return nil
+		}
+		if tx.Bucket(bucketShares).Get([]byte(meta.KeyID)) != nil {
+			return fmt.Errorf("%w: existing key has no matching ceremony receipt", ErrInvalid)
+		}
+		now := s.now().Unix()
+		meta.CreatedAt = now
+		meta.RefreshedAt = now
+		ct, err := seal(s.nodeKey, meta, share)
+		if err != nil {
+			return err
+		}
+		meta.Ciphertext = ct
+		encoded, err := json.Marshal(meta)
+		if err != nil {
+			return err
+		}
+		receipt = ImportReceipt{Identity: identity}
+		plain, err := json.Marshal(receipt)
+		if err != nil {
+			return err
+		}
+		defer zero(plain)
+		protected, err := s.sealRecord(RecordCeremony, meta.KeyID, plain)
+		if err != nil {
+			return err
+		}
+		if err = tx.Bucket(bucketShares).Put([]byte(meta.KeyID), encoded); err != nil {
+			return err
+		}
+		return records.Put(key, protected)
+	})
+	return receipt, err
 }
 
-func equalStrings(a,b []string)bool {if len(a)!=len(b){return false};for n:=range a{if a[n]!=b[n]{return false}};return true}
-
-func (s *Store) ImportReceipt(keyID string)(ImportReceipt,error){
-    var receipt ImportReceipt
-    err:=s.WithRecord(RecordCeremony,keyID,func(raw []byte)error{return json.Unmarshal(raw,&receipt)})
-    return receipt,err
+func equalStrings(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for n := range a {
+		if a[n] != b[n] {
+			return false
+		}
+	}
+	return true
 }
 
-func (s *Store) RecordImportAudit(keyID,ceremonyID string,sequence uint64)error{
-    if sequence==0{return ErrInvalid}
-    return s.UpdateRecord(RecordCeremony,keyID,func(raw []byte)([]byte,error){
-        var receipt ImportReceipt
-        if raw==nil||json.Unmarshal(raw,&receipt)!=nil||receipt.Identity.CeremonyID!=ceremonyID{return nil,ErrInvalid}
-        if receipt.AuditSequence==0{receipt.AuditSequence=sequence}
-        return json.Marshal(receipt)
-    })
+func (s *Store) ImportReceipt(keyID string) (ImportReceipt, error) {
+	var receipt ImportReceipt
+	err := s.WithRecord(RecordCeremony, keyID, func(raw []byte) error { return json.Unmarshal(raw, &receipt) })
+	return receipt, err
+}
+
+func (s *Store) RecordImportAudit(keyID, ceremonyID string, sequence uint64) error {
+	if sequence == 0 {
+		return ErrInvalid
+	}
+	return s.UpdateRecord(RecordCeremony, keyID, func(raw []byte) ([]byte, error) {
+		var receipt ImportReceipt
+		if raw == nil || json.Unmarshal(raw, &receipt) != nil || receipt.Identity.CeremonyID != ceremonyID {
+			return nil, ErrInvalid
+		}
+		if receipt.AuditSequence == 0 {
+			receipt.AuditSequence = sequence
+		}
+		return json.Marshal(receipt)
+	})
 }
 
 type CeremonyRefresh struct {
-    ExistingKey bool `json:"existing_key,omitempty"`
-    CeremonyID string `json:"ceremony_id"`
-    ImportSessionID string `json:"import_session_id"`
-    SessionID string `json:"session_id"`
-    KeyID string `json:"key_id"`
-    BaseEpoch uint64 `json:"base_epoch"`
-    Curve string `json:"curve"`
-    PublicKey []byte `json:"public_key"`
-    Participants []string `json:"participants"`
-    State string `json:"state"`
-    Decision string `json:"decision,omitempty"`
-    AuditSequence uint64 `json:"audit_sequence,omitempty"`
-}
-func (s *Store) CeremonyRefresh(keyID string)(CeremonyRefresh,error){
-    var state CeremonyRefresh
-    err:=s.WithRecord(RecordRefresh,keyID,func(raw []byte)error{return json.Unmarshal(raw,&state)})
-    return state,err
-}
-func (s *Store) SaveCeremonyRefresh(state CeremonyRefresh)error{
-    if state.CeremonyID==""||state.SessionID==""||state.BaseEpoch==^uint64(0)||len(state.Participants)!=5{return ErrInvalid}
-    if state.State!="prepared"&&state.State!="running"&&state.State!="staged"&&state.State!="complete"{return ErrInvalid}
-    if state.Decision!=""&&state.Decision!="commit"&&state.Decision!="abort"{return ErrInvalid}
-    if state.State=="complete"&&(state.Decision!="commit"||state.AuditSequence==0){return ErrInvalid}
-    if state.ExistingKey {
-        if state.ImportSessionID!=""{return ErrInvalid}
-        if _,err:=s.ImportReceipt(state.KeyID);!errors.Is(err,ErrNotFound){return ErrInvalid}
-        held,err:=s.Get(state.KeyID);if err!=nil{return err}
-        if (held.Epoch!=state.BaseEpoch&&held.Epoch!=state.BaseEpoch+1)||held.Curve!=state.Curve||!bytes.Equal(held.PublicKey,state.PublicKey)||!equalStrings(held.Participants,state.Participants){return ErrInvalid}
-    } else {
-        receipt,err:=s.ImportReceipt(state.KeyID);if err!=nil{return err}
-        identity:=receipt.Identity
-        if receipt.AuditSequence==0||state.CeremonyID!=identity.CeremonyID||state.ImportSessionID!=identity.SessionID||state.Curve!=identity.Curve||!bytes.Equal(state.PublicKey,identity.PublicKey)||!equalStrings(state.Participants,identity.Participants){return ErrInvalid}
-    }
-    return s.UpdateRecord(RecordRefresh,state.KeyID,func(raw []byte)([]byte,error){
-        if raw!=nil{
-            var old CeremonyRefresh;if json.Unmarshal(raw,&old)!=nil{return nil,ErrInvalid}
-            if old.ExistingKey!=state.ExistingKey||old.SessionID!=state.SessionID||old.BaseEpoch!=state.BaseEpoch||old.CeremonyID!=state.CeremonyID||old.ImportSessionID!=state.ImportSessionID||old.Curve!=state.Curve||!bytes.Equal(old.PublicKey,state.PublicKey)||!equalStrings(old.Participants,state.Participants){return nil,ErrInvalid}
-            if old.Decision!=""&&old.Decision!=state.Decision{return nil,ErrInvalid}
-            if old.State=="complete"&&state.State!="complete"{return nil,ErrInvalid}
-        }
-        return json.Marshal(state)
-    })
-}
-func (s *Store) SetCeremonyRefreshDecision(keyID,sessionID string,epoch uint64,decision string)error{
-    if decision!="commit"&&decision!="abort"{return ErrInvalid}
-    return s.db.Update(func(tx *bbolt.Tx)error{
-        records:=tx.Bucket(bucketRecords);key:=recordKey(RecordRefresh,keyID)
-        encrypted:=records.Get(key);if encrypted==nil{return ErrNotFound}
-        raw,err:=s.openRecord(RecordRefresh,keyID,encrypted);if err!=nil{return err};defer zero(raw)
-        var state CeremonyRefresh
-        if json.Unmarshal(raw,&state)!=nil||state.KeyID!=keyID||state.SessionID!=sessionID||state.BaseEpoch==^uint64(0)||state.BaseEpoch+1!=epoch||len(state.Participants)!=5{return ErrInvalid}
-        if state.Decision!=""&&state.Decision!=decision{return ErrInvalid}
-        held,err:=decodeRecord(keyID,tx.Bucket(bucketShares).Get([]byte(keyID)));if err!=nil{return err}
-        if held.Curve!=state.Curve||!bytes.Equal(held.PublicKey,state.PublicKey)||!equalStrings(held.Participants,state.Participants){return ErrInvalid}
-        heldPlain,err:=open(s.nodeKey,held);if err!=nil{return err};zero(heldPlain)
-        if decision=="commit" {
-            if held.Epoch==epoch {
-                if state.Decision!="commit"{return ErrInvalid}
-            } else {
-                if held.Epoch!=state.BaseEpoch{return ErrInvalid}
-                stage,err:=decodeRecord(keyID,tx.Bucket(bucketStaged).Get([]byte(keyID)));if err!=nil{return err}
-                if stage.Epoch!=epoch||stage.Curve!=state.Curve||!bytes.Equal(stage.PublicKey,state.PublicKey)||!equalStrings(stage.Participants,state.Participants){return ErrInvalid}
-                secret,err:=open(s.nodeKey,stage);if err!=nil{return err};zero(secret)
-            }
-        } else if held.Epoch!=state.BaseEpoch{return ErrInvalid}
-        state.Decision=decision
-        next,err:=json.Marshal(state);if err!=nil{return err};defer zero(next)
-        protected,err:=s.sealRecord(RecordRefresh,keyID,next);if err!=nil{return err}
-        return records.Put(key,protected)
-    })
+	ExistingKey     bool     `json:"existing_key,omitempty"`
+	CeremonyID      string   `json:"ceremony_id"`
+	ImportSessionID string   `json:"import_session_id"`
+	SessionID       string   `json:"session_id"`
+	KeyID           string   `json:"key_id"`
+	BaseEpoch       uint64   `json:"base_epoch"`
+	Curve           string   `json:"curve"`
+	PublicKey       []byte   `json:"public_key"`
+	Participants    []string `json:"participants"`
+	State           string   `json:"state"`
+	Decision        string   `json:"decision,omitempty"`
+	AuditSequence   uint64   `json:"audit_sequence,omitempty"`
 }
 
-func (s *Store) DiscardUnboundStaged()([]string,error){
-    var discarded []string
-    err:=s.db.Update(func(tx *bbolt.Tx)error{
-        staged:=tx.Bucket(bucketStaged)
-        if err:=staged.ForEach(func(key,raw []byte)error{
-            encrypted:=tx.Bucket(bucketRecords).Get(recordKey(RecordRefresh,string(key)))
-            if encrypted==nil {discarded=append(discarded,string(key));return nil}
-            plain,err:=s.openRecord(RecordRefresh,string(key),encrypted);if err!=nil{return err};defer zero(plain)
-            var state CeremonyRefresh;if json.Unmarshal(plain,&state)!=nil{return ErrInvalid}
-            record,err:=decodeRecord(string(key),raw);if err!=nil{return err}
-            if state.KeyID!=string(key)||state.CeremonyID==""||state.SessionID==""||state.BaseEpoch==^uint64(0)||state.BaseEpoch+1!=record.Epoch||state.Curve!=record.Curve||!bytes.Equal(state.PublicKey,record.PublicKey)||!equalStrings(state.Participants,record.Participants)||len(record.Participants)!=5{return ErrInvalid}
-            held,err:=decodeRecord(string(key),tx.Bucket(bucketShares).Get(key));if err!=nil{return err}
-            if held.Epoch!=state.BaseEpoch||held.Curve!=state.Curve||!bytes.Equal(held.PublicKey,state.PublicKey)||!equalStrings(held.Participants,state.Participants){return ErrInvalid}
-            heldSecret,err:=open(s.nodeKey,held);if err!=nil{return err};zero(heldSecret)
-            imported:=tx.Bucket(bucketRecords).Get(recordKey(RecordCeremony,string(key)))
-            if state.ExistingKey {
-                if imported!=nil||state.ImportSessionID!=""{return ErrInvalid}
-            } else {
-                if imported==nil{return ErrInvalid}
-                identityRaw,err:=s.openRecord(RecordCeremony,string(key),imported);if err!=nil{return err};defer zero(identityRaw)
-                var receipt ImportReceipt;if json.Unmarshal(identityRaw,&receipt)!=nil{return ErrInvalid}
-                identity:=receipt.Identity
-                if receipt.AuditSequence==0||state.CeremonyID!=identity.CeremonyID||state.ImportSessionID!=identity.SessionID||!bytes.Equal(identity.PublicKey,record.PublicKey)||!equalStrings(identity.Participants,record.Participants)||identity.Threshold!=3{return ErrInvalid}
-            }
-            secret,err:=open(s.nodeKey,record);if err!=nil{return err};zero(secret)
-            if state.Decision=="abort"{discarded=append(discarded,string(key));return nil}
-            if state.Decision!=""&&state.Decision!="commit"{return ErrInvalid}
-            return nil
-        });err!=nil{return err}
-        for _,key:=range discarded{if err:=staged.Delete([]byte(key));err!=nil{return err}}
-        return nil
-    })
-    return discarded,err
+func (s *Store) CeremonyRefresh(keyID string) (CeremonyRefresh, error) {
+	var state CeremonyRefresh
+	err := s.WithRecord(RecordRefresh, keyID, func(raw []byte) error { return json.Unmarshal(raw, &state) })
+	return state, err
+}
+func (s *Store) SaveCeremonyRefresh(state CeremonyRefresh) error {
+	if state.CeremonyID == "" || state.SessionID == "" || state.BaseEpoch == ^uint64(0) || len(state.Participants) != 5 {
+		return ErrInvalid
+	}
+	if state.State != "prepared" && state.State != "running" && state.State != "staged" && state.State != "complete" {
+		return ErrInvalid
+	}
+	if state.Decision != "" && state.Decision != "commit" && state.Decision != "abort" {
+		return ErrInvalid
+	}
+	if state.State == "complete" && (state.Decision != "commit" || state.AuditSequence == 0) {
+		return ErrInvalid
+	}
+	if state.ExistingKey {
+		if state.ImportSessionID != "" {
+			return ErrInvalid
+		}
+		if _, err := s.ImportReceipt(state.KeyID); !errors.Is(err, ErrNotFound) {
+			return ErrInvalid
+		}
+		held, err := s.Get(state.KeyID)
+		if err != nil {
+			return err
+		}
+		if (held.Epoch != state.BaseEpoch && held.Epoch != state.BaseEpoch+1) || held.Curve != state.Curve || !bytes.Equal(held.PublicKey, state.PublicKey) || !equalStrings(held.Participants, state.Participants) {
+			return ErrInvalid
+		}
+	} else {
+		receipt, err := s.ImportReceipt(state.KeyID)
+		if err != nil {
+			return err
+		}
+		identity := receipt.Identity
+		if receipt.AuditSequence == 0 || state.CeremonyID != identity.CeremonyID || state.ImportSessionID != identity.SessionID || state.Curve != identity.Curve || !bytes.Equal(state.PublicKey, identity.PublicKey) || !equalStrings(state.Participants, identity.Participants) {
+			return ErrInvalid
+		}
+	}
+	return s.UpdateRecord(RecordRefresh, state.KeyID, func(raw []byte) ([]byte, error) {
+		if raw != nil {
+			var old CeremonyRefresh
+			if json.Unmarshal(raw, &old) != nil {
+				return nil, ErrInvalid
+			}
+			if old.ExistingKey != state.ExistingKey || old.SessionID != state.SessionID || old.BaseEpoch != state.BaseEpoch || old.CeremonyID != state.CeremonyID || old.ImportSessionID != state.ImportSessionID || old.Curve != state.Curve || !bytes.Equal(old.PublicKey, state.PublicKey) || !equalStrings(old.Participants, state.Participants) {
+				return nil, ErrInvalid
+			}
+			if old.Decision != "" && old.Decision != state.Decision {
+				return nil, ErrInvalid
+			}
+			if old.State == "complete" && state.State != "complete" {
+				return nil, ErrInvalid
+			}
+		}
+		return json.Marshal(state)
+	})
+}
+func (s *Store) SetCeremonyRefreshDecision(keyID, sessionID string, epoch uint64, decision string) error {
+	if decision != "commit" && decision != "abort" {
+		return ErrInvalid
+	}
+	return s.db.Update(func(tx *bbolt.Tx) error {
+		records := tx.Bucket(bucketRecords)
+		key := recordKey(RecordRefresh, keyID)
+		encrypted := records.Get(key)
+		if encrypted == nil {
+			return ErrNotFound
+		}
+		raw, err := s.openRecord(RecordRefresh, keyID, encrypted)
+		if err != nil {
+			return err
+		}
+		defer zero(raw)
+		var state CeremonyRefresh
+		if json.Unmarshal(raw, &state) != nil || state.KeyID != keyID || state.SessionID != sessionID || state.BaseEpoch == ^uint64(0) || state.BaseEpoch+1 != epoch || len(state.Participants) != 5 {
+			return ErrInvalid
+		}
+		if state.Decision != "" && state.Decision != decision {
+			return ErrInvalid
+		}
+		held, err := decodeRecord(keyID, tx.Bucket(bucketShares).Get([]byte(keyID)))
+		if err != nil {
+			return err
+		}
+		if held.Curve != state.Curve || !bytes.Equal(held.PublicKey, state.PublicKey) || !equalStrings(held.Participants, state.Participants) {
+			return ErrInvalid
+		}
+		heldPlain, err := open(s.nodeKey, held)
+		if err != nil {
+			return err
+		}
+		zero(heldPlain)
+		if decision == "commit" {
+			if held.Epoch == epoch {
+				if state.Decision != "commit" {
+					return ErrInvalid
+				}
+			} else {
+				if held.Epoch != state.BaseEpoch {
+					return ErrInvalid
+				}
+				stage, err := decodeRecord(keyID, tx.Bucket(bucketStaged).Get([]byte(keyID)))
+				if err != nil {
+					return err
+				}
+				if stage.Epoch != epoch || stage.Curve != state.Curve || !bytes.Equal(stage.PublicKey, state.PublicKey) || !equalStrings(stage.Participants, state.Participants) {
+					return ErrInvalid
+				}
+				secret, err := open(s.nodeKey, stage)
+				if err != nil {
+					return err
+				}
+				zero(secret)
+			}
+		} else if held.Epoch != state.BaseEpoch {
+			return ErrInvalid
+		}
+		state.Decision = decision
+		next, err := json.Marshal(state)
+		if err != nil {
+			return err
+		}
+		defer zero(next)
+		protected, err := s.sealRecord(RecordRefresh, keyID, next)
+		if err != nil {
+			return err
+		}
+		return records.Put(key, protected)
+	})
+}
+
+func (s *Store) DiscardUnboundStaged() ([]string, error) {
+	var discarded []string
+	err := s.db.Update(func(tx *bbolt.Tx) error {
+		staged := tx.Bucket(bucketStaged)
+		if err := staged.ForEach(func(key, raw []byte) error {
+			encrypted := tx.Bucket(bucketRecords).Get(recordKey(RecordRefresh, string(key)))
+			if encrypted == nil {
+				discarded = append(discarded, string(key))
+				return nil
+			}
+			plain, err := s.openRecord(RecordRefresh, string(key), encrypted)
+			if err != nil {
+				return err
+			}
+			defer zero(plain)
+			var state CeremonyRefresh
+			if json.Unmarshal(plain, &state) != nil {
+				return ErrInvalid
+			}
+			record, err := decodeRecord(string(key), raw)
+			if err != nil {
+				return err
+			}
+			if state.KeyID != string(key) || state.CeremonyID == "" || state.SessionID == "" || state.BaseEpoch == ^uint64(0) || state.BaseEpoch+1 != record.Epoch || state.Curve != record.Curve || !bytes.Equal(state.PublicKey, record.PublicKey) || !equalStrings(state.Participants, record.Participants) || len(record.Participants) != 5 {
+				return ErrInvalid
+			}
+			held, err := decodeRecord(string(key), tx.Bucket(bucketShares).Get(key))
+			if err != nil {
+				return err
+			}
+			if held.Epoch != state.BaseEpoch || held.Curve != state.Curve || !bytes.Equal(held.PublicKey, state.PublicKey) || !equalStrings(held.Participants, state.Participants) {
+				return ErrInvalid
+			}
+			heldSecret, err := open(s.nodeKey, held)
+			if err != nil {
+				return err
+			}
+			zero(heldSecret)
+			imported := tx.Bucket(bucketRecords).Get(recordKey(RecordCeremony, string(key)))
+			if state.ExistingKey {
+				if imported != nil || state.ImportSessionID != "" {
+					return ErrInvalid
+				}
+			} else {
+				if imported == nil {
+					return ErrInvalid
+				}
+				identityRaw, err := s.openRecord(RecordCeremony, string(key), imported)
+				if err != nil {
+					return err
+				}
+				defer zero(identityRaw)
+				var receipt ImportReceipt
+				if json.Unmarshal(identityRaw, &receipt) != nil {
+					return ErrInvalid
+				}
+				identity := receipt.Identity
+				if receipt.AuditSequence == 0 || state.CeremonyID != identity.CeremonyID || state.ImportSessionID != identity.SessionID || !bytes.Equal(identity.PublicKey, record.PublicKey) || !equalStrings(identity.Participants, record.Participants) || identity.Threshold != 3 {
+					return ErrInvalid
+				}
+			}
+			secret, err := open(s.nodeKey, record)
+			if err != nil {
+				return err
+			}
+			zero(secret)
+			if state.Decision == "abort" {
+				discarded = append(discarded, string(key))
+				return nil
+			}
+			if state.Decision != "" && state.Decision != "commit" {
+				return ErrInvalid
+			}
+			return nil
+		}); err != nil {
+			return err
+		}
+		for _, key := range discarded {
+			if err := staged.Delete([]byte(key)); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	return discarded, err
 }
 
 const RecordRefreshHistory RecordKind = "ceremony-refresh-history"
 
-func (s *Store) CeremonyRefreshHistory(keyID,sessionID string)(CeremonyRefresh,error){
-    var state CeremonyRefresh
-    err:=s.WithRecord(RecordRefreshHistory,keyID+"/"+sessionID,func(raw []byte)error{return json.Unmarshal(raw,&state)})
-    return state,err
+func (s *Store) CeremonyRefreshHistory(keyID, sessionID string) (CeremonyRefresh, error) {
+	var state CeremonyRefresh
+	err := s.WithRecord(RecordRefreshHistory, keyID+"/"+sessionID, func(raw []byte) error { return json.Unmarshal(raw, &state) })
+	return state, err
 }
 
-func (s *Store) RestartCeremonyRefresh(keyID,previousSession,newSession string)error{
-    if newSession==""||newSession==previousSession{return ErrInvalid}
-    return s.db.Update(func(tx *bbolt.Tx)error{
-        records:=tx.Bucket(bucketRecords);key:=recordKey(RecordRefresh,keyID)
-        ct:=records.Get(key);if ct==nil{return ErrNotFound}
-        raw,err:=s.openRecord(RecordRefresh,keyID,ct);if err!=nil{return err};defer zero(raw)
-        var state CeremonyRefresh;if json.Unmarshal(raw,&state)!=nil||state.SessionID!=previousSession||state.Decision!="abort"{return ErrInvalid}
-        held,err:=decodeRecord(keyID,tx.Bucket(bucketShares).Get([]byte(keyID)));if err!=nil{return err}
-        if held.Epoch!=state.BaseEpoch||held.Curve!=state.Curve||!bytes.Equal(held.PublicKey,state.PublicKey)||!equalStrings(held.Participants,state.Participants){return ErrInvalid}
-        historyID:=keyID+"/"+previousSession
-        archived,err:=s.sealRecord(RecordRefreshHistory,historyID,raw);if err!=nil{return err}
-        if err=records.Put(recordKey(RecordRefreshHistory,historyID),archived);err!=nil{return err}
-        state.SessionID=newSession;state.State="prepared";state.Decision="";state.AuditSequence=0
-        next,err:=json.Marshal(state);if err!=nil{return err};defer zero(next)
-        protected,err:=s.sealRecord(RecordRefresh,keyID,next);if err!=nil{return err}
-        if err=tx.Bucket(bucketStaged).Delete([]byte(keyID));err!=nil{return err}
-        return records.Put(key,protected)
-    })
+func (s *Store) RestartCeremonyRefresh(keyID, previousSession, newSession string) error {
+	if newSession == "" || newSession == previousSession {
+		return ErrInvalid
+	}
+	return s.db.Update(func(tx *bbolt.Tx) error {
+		records := tx.Bucket(bucketRecords)
+		key := recordKey(RecordRefresh, keyID)
+		ct := records.Get(key)
+		if ct == nil {
+			return ErrNotFound
+		}
+		raw, err := s.openRecord(RecordRefresh, keyID, ct)
+		if err != nil {
+			return err
+		}
+		defer zero(raw)
+		var state CeremonyRefresh
+		if json.Unmarshal(raw, &state) != nil || state.SessionID != previousSession || state.Decision != "abort" {
+			return ErrInvalid
+		}
+		held, err := decodeRecord(keyID, tx.Bucket(bucketShares).Get([]byte(keyID)))
+		if err != nil {
+			return err
+		}
+		if held.Epoch != state.BaseEpoch || held.Curve != state.Curve || !bytes.Equal(held.PublicKey, state.PublicKey) || !equalStrings(held.Participants, state.Participants) {
+			return ErrInvalid
+		}
+		historyID := keyID + "/" + previousSession
+		archived, err := s.sealRecord(RecordRefreshHistory, historyID, raw)
+		if err != nil {
+			return err
+		}
+		if err = records.Put(recordKey(RecordRefreshHistory, historyID), archived); err != nil {
+			return err
+		}
+		state.SessionID = newSession
+		state.State = "prepared"
+		state.Decision = ""
+		state.AuditSequence = 0
+		next, err := json.Marshal(state)
+		if err != nil {
+			return err
+		}
+		defer zero(next)
+		protected, err := s.sealRecord(RecordRefresh, keyID, next)
+		if err != nil {
+			return err
+		}
+		if err = tx.Bucket(bucketStaged).Delete([]byte(keyID)); err != nil {
+			return err
+		}
+		return records.Put(key, protected)
+	})
 }

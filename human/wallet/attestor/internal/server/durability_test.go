@@ -5,7 +5,7 @@ import (
 	"crypto/ed25519"
 	"crypto/sha256"
 	"encoding/hex"
-    "encoding/json"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math/big"
@@ -489,122 +489,290 @@ func TestKernelSpendsAcrossSignerSetsCannotExceedACap(t *testing.T) {
 }
 
 func durableImportMaterial(t *testing.T, keyID string) (store.ShareRecord, []byte, store.ImportIdentity) {
-    t.Helper()
-    seed:=sha256.Sum256([]byte("durable import "+keyID))
-    scalar,err:=dealer.Ed25519ScalarFromSeed(seed[:]);if err!=nil{t.Fatal(err)}
-    defer dealer.Wipe(scalar)
-    members:=[]string{"node-1","node-2","node-3","node-4","node-5"}
-    shares,public,err:=dealer.Split(dealer.Ed25519,scalar,members);if err!=nil{t.Fatal(err)}
-    defer func(){for _,share:=range shares{dealer.Wipe(share.Share)}}()
-    pub,err:=publicKeyBytes(dealer.Ed25519,public);if err!=nil{t.Fatal(err)}
-    encoded:=EncodeBundle(shares[0])
-    plain,err:=json.Marshal(storedShare{Owner:testOwner,Account:"0x4444444444444444444444444444444444444444",Bundle:&encoded});if err!=nil{t.Fatal(err)}
-    rec:=store.ShareRecord{KeyID:keyID,Curve:store.CurveEd25519,PublicKey:pub,Participants:members}
-    identity:=store.ImportIdentity{CeremonyID:"ceremony-1",SessionID:"import-1",KeyID:keyID,Curve:rec.Curve,PublicKey:pub,Participants:members,Threshold:3,Owner:testOwner,Account:"0x4444444444444444444444444444444444444444"}
-    return rec,plain,identity
+	t.Helper()
+	seed := sha256.Sum256([]byte("durable import " + keyID))
+	scalar, err := dealer.Ed25519ScalarFromSeed(seed[:])
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer dealer.Wipe(scalar)
+	members := []string{"node-1", "node-2", "node-3", "node-4", "node-5"}
+	shares, public, err := dealer.Split(dealer.Ed25519, scalar, members)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		for _, share := range shares {
+			dealer.Wipe(share.Share)
+		}
+	}()
+	pub, err := publicKeyBytes(dealer.Ed25519, public)
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoded := EncodeBundle(shares[0])
+	plain, err := json.Marshal(storedShare{Owner: testOwner, Account: "0x4444444444444444444444444444444444444444", Bundle: &encoded})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rec := store.ShareRecord{KeyID: keyID, Curve: store.CurveEd25519, PublicKey: pub, Participants: members}
+	identity := store.ImportIdentity{CeremonyID: "ceremony-1", SessionID: "import-1", KeyID: keyID, Curve: rec.Curve, PublicKey: pub, Participants: members, Threshold: 3, Owner: testOwner, Account: "0x4444444444444444444444444444444444444444"}
+	return rec, plain, identity
 }
 
 func TestDurableImportExactReplayAndConflictsAfterRestart(t *testing.T) {
-    dir:=t.TempDir();nodeKey:=sha256.Sum256([]byte("durable import node encryption"))
-    db,err:=store.Open(dir,nodeKey[:]);if err!=nil{t.Fatal(err)}
-    rec,plain,identity:=durableImportMaterial(t,"durable-ed")
-    receipt,err:=db.Import(rec,plain,identity);if err!=nil{t.Fatal(err)}
-    log,err:=audit.Open(t.TempDir());if err!=nil{t.Fatal(err)};defer log.Close()
-    event,err:=log.Append(audit.Entry{Kind:"keys.import",KeyID:rec.KeyID,Decision:"allowed",SessionID:identity.SessionID});if err!=nil{t.Fatal(err)}
-    if err:=db.RecordImportAudit(rec.KeyID,identity.CeremonyID,event.Sequence);err!=nil{t.Fatal(err)}
-    if err:=db.Close();err!=nil{t.Fatal(err)}
-    db,err=store.Open(dir,nodeKey[:]);if err!=nil{t.Fatal(err)};defer db.Close()
-    replay,err:=db.Import(rec,plain,identity);if err!=nil{t.Fatal(err)}
-    if replay.Identity.MaterialDigest!=receipt.Identity.MaterialDigest||replay.AuditSequence!=event.Sequence{t.Fatal("exact import replay lost its durable receipt")}
-    for _,change:=range []func(*store.ImportIdentity){
-        func(x *store.ImportIdentity){x.SessionID="other-import"},
-        func(x *store.ImportIdentity){x.CeremonyID="other-ceremony"},
-        func(x *store.ImportIdentity){x.Owner="other-owner"},
-        func(x *store.ImportIdentity){x.Participants=append([]string(nil),x.Participants...);x.Participants[4]="node-6"},
-        func(x *store.ImportIdentity){x.Epoch=1},
-    } {
-        altered:=identity;change(&altered)
-        if _,err:=db.Import(rec,plain,altered);err==nil{t.Fatal("conflicting import identity was accepted")}
-    }
-    _,replacement,_:=durableImportMaterial(t,"durable-ed")
-    if bytes.Equal(plain,replacement){t.Fatal("independent dealer split unexpectedly repeated the same share")}
-    if _,err:=db.Import(rec,replacement,identity);err==nil{t.Fatal("replacement material was accepted for an existing ceremony")}
-    if err:=db.WithShare(rec.KeyID,func(held []byte)error{if !bytes.Equal(held,plain){return errors.New("original share was replaced")};return nil});err!=nil{t.Fatal(err)}
+	dir := t.TempDir()
+	nodeKey := sha256.Sum256([]byte("durable import node encryption"))
+	db, err := store.Open(dir, nodeKey[:])
+	if err != nil {
+		t.Fatal(err)
+	}
+	rec, plain, identity := durableImportMaterial(t, "durable-ed")
+	receipt, err := db.Import(rec, plain, identity)
+	if err != nil {
+		t.Fatal(err)
+	}
+	log, err := audit.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer log.Close()
+	event, err := log.Append(audit.Entry{Kind: "keys.import", KeyID: rec.KeyID, Decision: "allowed", SessionID: identity.SessionID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.RecordImportAudit(rec.KeyID, identity.CeremonyID, event.Sequence); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+	db, err = store.Open(dir, nodeKey[:])
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	replay, err := db.Import(rec, plain, identity)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if replay.Identity.MaterialDigest != receipt.Identity.MaterialDigest || replay.AuditSequence != event.Sequence {
+		t.Fatal("exact import replay lost its durable receipt")
+	}
+	for _, change := range []func(*store.ImportIdentity){
+		func(x *store.ImportIdentity) { x.SessionID = "other-import" },
+		func(x *store.ImportIdentity) { x.CeremonyID = "other-ceremony" },
+		func(x *store.ImportIdentity) { x.Owner = "other-owner" },
+		func(x *store.ImportIdentity) {
+			x.Participants = append([]string(nil), x.Participants...)
+			x.Participants[4] = "node-6"
+		},
+		func(x *store.ImportIdentity) { x.Epoch = 1 },
+	} {
+		altered := identity
+		change(&altered)
+		if _, err := db.Import(rec, plain, altered); err == nil {
+			t.Fatal("conflicting import identity was accepted")
+		}
+	}
+	_, replacement, _ := durableImportMaterial(t, "durable-ed")
+	if bytes.Equal(plain, replacement) {
+		t.Fatal("independent dealer split unexpectedly repeated the same share")
+	}
+	if _, err := db.Import(rec, replacement, identity); err == nil {
+		t.Fatal("replacement material was accepted for an existing ceremony")
+	}
+	if err := db.WithShare(rec.KeyID, func(held []byte) error {
+		if !bytes.Equal(held, plain) {
+			return errors.New("original share was replaced")
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func TestCeremonyStageRecoveryRequiresBoundIdentityAndDurableDecision(t *testing.T) {
-    dir:=t.TempDir();nodeKey:=sha256.Sum256([]byte("durable stage encryption"))
-    db,err:=store.Open(dir,nodeKey[:]);if err!=nil{t.Fatal(err)}
-    rec,plain,_:=durableImportMaterial(t,"original-held-ed")
-    if err:=db.Put(rec,plain);err!=nil{t.Fatal(err)}
-    state:=store.CeremonyRefresh{ExistingKey:true,CeremonyID:"migration-1",SessionID:"refresh-1",KeyID:rec.KeyID,BaseEpoch:0,Curve:rec.Curve,PublicKey:rec.PublicKey,Participants:rec.Participants,State:"staged"}
-    if err:=db.SaveCeremonyRefresh(state);err!=nil{t.Fatal(err)}
-    stage:=rec;stage.Epoch=1
-    if err:=db.PutStaged(stage,plain);err!=nil{t.Fatal(err)}
-    legacy:=rec;legacy.KeyID="legacy-unbound"
-    if err:=db.Put(legacy,plain);err!=nil{t.Fatal(err)};legacy.Epoch=1
-    if err:=db.PutStaged(legacy,plain);err!=nil{t.Fatal(err)}
-    if err:=db.Close();err!=nil{t.Fatal(err)}
-    db,err=store.Open(dir,nodeKey[:]);if err!=nil{t.Fatal(err)};defer db.Close()
-    discarded,err:=db.DiscardUnboundStaged();if err!=nil{t.Fatal(err)}
-    if len(discarded)!=1||discarded[0]!=legacy.KeyID{t.Fatalf("unbound stage discard changed: %v",discarded)}
-    if _,err:=db.GetStaged(rec.KeyID);err!=nil{t.Fatal("authenticated bound stage was lost",err)}
-    if err:=db.RestartCeremonyRefresh(rec.KeyID,state.SessionID,"refresh-2");err==nil{t.Fatal("replacement attempt started without a durable abort")}
-    if err:=db.SetCeremonyRefreshDecision(rec.KeyID,state.SessionID,1,PhaseAbort);err!=nil{t.Fatal(err)}
-    if err:=db.SetCeremonyRefreshDecision(rec.KeyID,state.SessionID,1,PhaseCommit);err==nil{t.Fatal("durable abort changed into commit")}
-    if err:=db.RestartCeremonyRefresh(rec.KeyID,state.SessionID,"refresh-2");err!=nil{t.Fatal(err)}
-    if _,err:=db.GetStaged(rec.KeyID);!errors.Is(err,store.ErrNotFound){t.Fatal("aborted stage remained",err)}
-    history,err:=db.CeremonyRefreshHistory(rec.KeyID,state.SessionID);if err!=nil||history.Decision!=PhaseAbort{t.Fatal("durable abort history missing",err)}
-    if _,err:=db.ImportReceipt(rec.KeyID);!errors.Is(err,store.ErrNotFound){t.Fatal("existing-key refresh manufactured an import grant",err)}
-    if err:=db.WithShare(rec.KeyID,func(held []byte)error{if !bytes.Equal(held,plain){return errors.New("refresh abort replaced original share")};return nil});err!=nil{t.Fatal(err)}
+	dir := t.TempDir()
+	nodeKey := sha256.Sum256([]byte("durable stage encryption"))
+	db, err := store.Open(dir, nodeKey[:])
+	if err != nil {
+		t.Fatal(err)
+	}
+	rec, plain, _ := durableImportMaterial(t, "original-held-ed")
+	if err := db.Put(rec, plain); err != nil {
+		t.Fatal(err)
+	}
+	state := store.CeremonyRefresh{ExistingKey: true, CeremonyID: "migration-1", SessionID: "refresh-1", KeyID: rec.KeyID, BaseEpoch: 0, Curve: rec.Curve, PublicKey: rec.PublicKey, Participants: rec.Participants, State: "staged"}
+	if err := db.SaveCeremonyRefresh(state); err != nil {
+		t.Fatal(err)
+	}
+	stage := rec
+	stage.Epoch = 1
+	if err := db.PutStaged(stage, plain); err != nil {
+		t.Fatal(err)
+	}
+	legacy := rec
+	legacy.KeyID = "legacy-unbound"
+	if err := db.Put(legacy, plain); err != nil {
+		t.Fatal(err)
+	}
+	legacy.Epoch = 1
+	if err := db.PutStaged(legacy, plain); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+	db, err = store.Open(dir, nodeKey[:])
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	discarded, err := db.DiscardUnboundStaged()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(discarded) != 1 || discarded[0] != legacy.KeyID {
+		t.Fatalf("unbound stage discard changed: %v", discarded)
+	}
+	if _, err := db.GetStaged(rec.KeyID); err != nil {
+		t.Fatal("authenticated bound stage was lost", err)
+	}
+	if err := db.RestartCeremonyRefresh(rec.KeyID, state.SessionID, "refresh-2"); err == nil {
+		t.Fatal("replacement attempt started without a durable abort")
+	}
+	if err := db.SetCeremonyRefreshDecision(rec.KeyID, state.SessionID, 1, PhaseAbort); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.SetCeremonyRefreshDecision(rec.KeyID, state.SessionID, 1, PhaseCommit); err == nil {
+		t.Fatal("durable abort changed into commit")
+	}
+	if err := db.RestartCeremonyRefresh(rec.KeyID, state.SessionID, "refresh-2"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.GetStaged(rec.KeyID); !errors.Is(err, store.ErrNotFound) {
+		t.Fatal("aborted stage remained", err)
+	}
+	history, err := db.CeremonyRefreshHistory(rec.KeyID, state.SessionID)
+	if err != nil || history.Decision != PhaseAbort {
+		t.Fatal("durable abort history missing", err)
+	}
+	if _, err := db.ImportReceipt(rec.KeyID); !errors.Is(err, store.ErrNotFound) {
+		t.Fatal("existing-key refresh manufactured an import grant", err)
+	}
+	if err := db.WithShare(rec.KeyID, func(held []byte) error {
+		if !bytes.Equal(held, plain) {
+			return errors.New("refresh abort replaced original share")
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func TestVerificationEvidenceSurvivesAuditFailureAndRestart(t *testing.T) {
-    dir:=t.TempDir();auditDir:=t.TempDir();nodeKey:=sha256.Sum256([]byte("verification evidence encryption"))
-    db,err:=store.Open(dir,nodeKey[:]);if err!=nil{t.Fatal(err)}
-    log,err:=audit.Open(auditDir);if err!=nil{t.Fatal(err)}
-    server:=&Server{opts:Options{NodeID:"node-1",Store:db,Audit:log}}
-    seed:=sha256.Sum256([]byte("real verification evidence signature"));key:=ed25519.NewKeyFromSeed(seed[:]);pub:=key.Public().(ed25519.PublicKey)
-    message:=policy.VerificationMessage("key-1",pub,"import-1")
-    signature:=ed25519.Sign(key,message)
-    state:=verificationState{CeremonyID:"ceremony-1",ImportSessionID:"import-1",SessionID:"verify-1",Epoch:1,Signers:[]string{"node-1","node-2","node-3"},State:"signed_pending_audit",Response:&SignResponse{NodeID:"node-1",KeyID:"key-1",Kind:KindOperatorVerification,Signature:hex.EncodeToString(signature),Message:hex.EncodeToString(message),SignedBytes:hex.EncodeToString(message)}}
-    if err:=server.saveVerification("key-1",state);err!=nil{t.Fatal(err)}
-    if err:=log.Close();err!=nil{t.Fatal(err)}
-    if _,e:=server.finishVerification("key-1",state);e==nil||e.Code!=CodeStoreAuditFailed{t.Fatal("closed real audit log did not refuse verification success",e)}
-    pending,err:=server.loadVerification("key-1");if err!=nil||pending.State!="signed_pending_audit"||pending.Response.AuditSequence!=0{t.Fatal("audit failure consumed the grant",err)}
-    if err:=db.Close();err!=nil{t.Fatal(err)}
-    db,err=store.Open(dir,nodeKey[:]);if err!=nil{t.Fatal(err)};defer db.Close()
-    log,err=audit.Open(auditDir);if err!=nil{t.Fatal(err)};defer log.Close()
-    server=&Server{opts:Options{NodeID:"node-1",Store:db,Audit:log}}
-    pending,err=server.loadVerification("key-1");if err!=nil{t.Fatal(err)}
-    response,e:=server.finishVerification("key-1",pending);if e!=nil{t.Fatal(e)}
-    if response.Signature!=hex.EncodeToString(signature)||response.AuditSequence==0{t.Fatal("recovery did not retain exact evidence")}
-    complete,err:=server.loadVerification("key-1");if err!=nil{t.Fatal(err)}
-    replay,e:=server.finishVerification("key-1",complete);if e!=nil||replay!=response{t.Fatal("cached verification replay changed evidence",e)}
-    head,_:=log.Head();if head!=response.AuditSequence{t.Fatal("cached response appended another successful grant")}
-    if !ed25519.Verify(pub,message,signature){t.Fatal("retained real signature no longer verifies")}
+	dir := t.TempDir()
+	auditDir := t.TempDir()
+	nodeKey := sha256.Sum256([]byte("verification evidence encryption"))
+	db, err := store.Open(dir, nodeKey[:])
+	if err != nil {
+		t.Fatal(err)
+	}
+	log, err := audit.Open(auditDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := &Server{opts: Options{NodeID: "node-1", Store: db, Audit: log}}
+	seed := sha256.Sum256([]byte("real verification evidence signature"))
+	key := ed25519.NewKeyFromSeed(seed[:])
+	pub := key.Public().(ed25519.PublicKey)
+	message := policy.VerificationMessage("key-1", pub, "import-1")
+	signature := ed25519.Sign(key, message)
+	state := verificationState{CeremonyID: "ceremony-1", ImportSessionID: "import-1", SessionID: "verify-1", Epoch: 1, Signers: []string{"node-1", "node-2", "node-3"}, State: "signed_pending_audit", Response: &SignResponse{NodeID: "node-1", KeyID: "key-1", Kind: KindOperatorVerification, Signature: hex.EncodeToString(signature), Message: hex.EncodeToString(message), SignedBytes: hex.EncodeToString(message)}}
+	if err := server.saveVerification("key-1", state); err != nil {
+		t.Fatal(err)
+	}
+	if err := log.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, e := server.finishVerification("key-1", state); e == nil || e.Code != CodeStoreAuditFailed {
+		t.Fatal("closed real audit log did not refuse verification success", e)
+	}
+	pending, err := server.loadVerification("key-1")
+	if err != nil || pending.State != "signed_pending_audit" || pending.Response.AuditSequence != 0 {
+		t.Fatal("audit failure consumed the grant", err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+	db, err = store.Open(dir, nodeKey[:])
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	log, err = audit.Open(auditDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer log.Close()
+	server = &Server{opts: Options{NodeID: "node-1", Store: db, Audit: log}}
+	pending, err = server.loadVerification("key-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	response, e := server.finishVerification("key-1", pending)
+	if e != nil {
+		t.Fatal(e)
+	}
+	if response.Signature != hex.EncodeToString(signature) || response.AuditSequence == 0 {
+		t.Fatal("recovery did not retain exact evidence")
+	}
+	complete, err := server.loadVerification("key-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	replay, e := server.finishVerification("key-1", complete)
+	if e != nil || replay != response {
+		t.Fatal("cached verification replay changed evidence", e)
+	}
+	head, _ := log.Head()
+	if head != response.AuditSequence {
+		t.Fatal("cached response appended another successful grant")
+	}
+	if !ed25519.Verify(pub, message, signature) {
+		t.Fatal("retained real signature no longer verifies")
+	}
 }
 
 func TestVerificationRecoveryEvidenceRejectsDifferentIdentity(t *testing.T) {
-    seed:=sha256.Sum256([]byte("original recovery evidence identity"))
-    key:=ed25519.NewKeyFromSeed(seed[:]);pub:=key.Public().(ed25519.PublicKey)
-    rec:=store.ShareRecord{KeyID:"original-key",Curve:store.CurveEd25519,PublicKey:pub,Epoch:1,Participants:[]string{"node-1","node-2","node-3","node-4","node-5"}}
-    message:=policy.VerificationMessage(rec.KeyID,pub,"import-1")
-    evidence:=SignResponse{NodeID:"node-2",KeyID:rec.KeyID,Kind:KindOperatorVerification,Signature:hex.EncodeToString(ed25519.Sign(key,message)),SignedBytes:hex.EncodeToString(message),Message:hex.EncodeToString(message),AuditSequence:9}
-    server:=&Server{opts:Options{NodeID:"node-1"}}
-    signers:=[]string{"node-1","node-2","node-3"}
-    accepted,e:=server.admitVerificationEvidence(rec.KeyID,rec,"import-1",signers,evidence)
-    if e!=nil||accepted.NodeID!="node-1"||accepted.AuditSequence!=0||accepted.Signature!=evidence.Signature{t.Fatal("valid evidence did not require a fresh local audit",e)}
-    for _,change:=range []func(*SignResponse){
-        func(x *SignResponse){x.NodeID="node-5"},
-        func(x *SignResponse){x.KeyID="other-key"},
-        func(x *SignResponse){x.AuditSequence=0},
-        func(x *SignResponse){x.SignedBytes="00"},
-        func(x *SignResponse){x.Message="00"},
-        func(x *SignResponse){x.Signature=hex.EncodeToString(ed25519.Sign(key,[]byte("other message")))},
-    } {
-        changed:=evidence;change(&changed)
-        if _,e:=server.admitVerificationEvidence(rec.KeyID,rec,"import-1",signers,changed);e==nil{t.Fatal("conflicting retained evidence was accepted")}
-    }
-    if _,e:=server.admitVerificationEvidence(rec.KeyID,rec,"other-import",signers,evidence);e==nil{t.Fatal("another import consumed the original evidence")}
+	seed := sha256.Sum256([]byte("original recovery evidence identity"))
+	key := ed25519.NewKeyFromSeed(seed[:])
+	pub := key.Public().(ed25519.PublicKey)
+	rec := store.ShareRecord{KeyID: "original-key", Curve: store.CurveEd25519, PublicKey: pub, Epoch: 1, Participants: []string{"node-1", "node-2", "node-3", "node-4", "node-5"}}
+	message := policy.VerificationMessage(rec.KeyID, pub, "import-1")
+	evidence := SignResponse{NodeID: "node-2", KeyID: rec.KeyID, Kind: KindOperatorVerification, Signature: hex.EncodeToString(ed25519.Sign(key, message)), SignedBytes: hex.EncodeToString(message), Message: hex.EncodeToString(message), AuditSequence: 9}
+	server := &Server{opts: Options{NodeID: "node-1"}}
+	signers := []string{"node-1", "node-2", "node-3"}
+	accepted, e := server.admitVerificationEvidence(rec.KeyID, rec, "import-1", signers, evidence)
+	if e != nil || accepted.NodeID != "node-1" || accepted.AuditSequence != 0 || accepted.Signature != evidence.Signature {
+		t.Fatal("valid evidence did not require a fresh local audit", e)
+	}
+	for _, change := range []func(*SignResponse){
+		func(x *SignResponse) { x.NodeID = "node-5" },
+		func(x *SignResponse) { x.KeyID = "other-key" },
+		func(x *SignResponse) { x.AuditSequence = 0 },
+		func(x *SignResponse) { x.SignedBytes = "00" },
+		func(x *SignResponse) { x.Message = "00" },
+		func(x *SignResponse) { x.Signature = hex.EncodeToString(ed25519.Sign(key, []byte("other message"))) },
+	} {
+		changed := evidence
+		change(&changed)
+		if _, e := server.admitVerificationEvidence(rec.KeyID, rec, "import-1", signers, changed); e == nil {
+			t.Fatal("conflicting retained evidence was accepted")
+		}
+	}
+	if _, e := server.admitVerificationEvidence(rec.KeyID, rec, "other-import", signers, evidence); e == nil {
+		t.Fatal("another import consumed the original evidence")
+	}
 }

@@ -4,13 +4,13 @@ import (
 	"context"
 	"crypto/ed25519"
 	"crypto/sha256"
-	"encoding/binary"
 	"encoding/base64"
+	"encoding/binary"
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
-    "strings"
 	"time"
 )
 
@@ -39,11 +39,11 @@ type AgentNonceStore interface {
 }
 
 type Principal struct {
-	DID string
-    OwnerSubject string
-	PublicKey [ed25519.PublicKeySize]byte
-	Frozen    bool
-	KeyIDs    []string
+	DID          string
+	OwnerSubject string
+	PublicKey    [ed25519.PublicKeySize]byte
+	Frozen       bool
+	KeyIDs       []string
 }
 
 type PrincipalSet interface {
@@ -227,52 +227,85 @@ func (v *AgentVerifier) Verify(ctx context.Context, req Request) (Principal, err
 	return principal, nil
 }
 
-
 type OriginalRequest struct {
-    Method string `json:"method"`
-    DID string `json:"did"`
-    Body string `json:"body"`
-    Nonce string `json:"nonce"`
-    Expiry uint64 `json:"expiry"`
-    Signature string `json:"signature"`
+	Method    string `json:"method"`
+	DID       string `json:"did"`
+	Body      string `json:"body"`
+	Nonce     string `json:"nonce"`
+	Expiry    uint64 `json:"expiry"`
+	Signature string `json:"signature"`
 }
 
 func (v *AgentVerifier) VerifyOriginal(ctx context.Context, publicKey [ed25519.PublicKeySize]byte, origin OriginalRequest) error {
-    if err := ctx.Err(); err != nil { return err }
-    principal, ok := v.principals.Lookup(publicKey)
-    if !ok || principal.PublicKey != publicKey { return ErrUnregistered }
-    if principal.Frozen { return ErrFrozen }
-    if principal.DID == "" || principal.DID != origin.DID { return ErrKeyMismatch }
-    if len(origin.Method) == 0 || len(origin.Method) > 1024 || len(origin.Body) > 87_384 {
-        return ErrMalformed
-    }
-    if origin.Expiry > uint64(1<<62) { return ErrExpiryOverflow }
-    expires := time.Unix(int64(origin.Expiry), 0)
-    now := v.now()
-    if !now.Before(expires.Add(v.skew)) { return ErrExpired }
-    body, err := base64.StdEncoding.Strict().DecodeString(origin.Body)
-    if err != nil || len(body) > 65_536 { return ErrMalformed }
-    nonceBytes, err := hex.DecodeString(origin.Nonce)
-    if err != nil || len(nonceBytes) != 16 { return ErrMalformed }
-    signature, err := hex.DecodeString(origin.Signature)
-    if err != nil || len(signature) != ed25519.SignatureSize { return ErrMalformed }
-    var nonce [16]byte
-    copy(nonce[:], nonceBytes)
-    digest, err := RequestDigest(origin.Method, origin.DID, nonce, origin.Expiry, body)
-    if err != nil { return err }
-    if !ed25519.Verify(ed25519.PublicKey(publicKey[:]), digest[:], signature) { return ErrBadSignature }
-    if expires.After(now.Add(v.maxExpiry + v.skew)) { return ErrExpiryTooFar }
-    return nil
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	principal, ok := v.principals.Lookup(publicKey)
+	if !ok || principal.PublicKey != publicKey {
+		return ErrUnregistered
+	}
+	if principal.Frozen {
+		return ErrFrozen
+	}
+	if principal.DID == "" || principal.DID != origin.DID {
+		return ErrKeyMismatch
+	}
+	if len(origin.Method) == 0 || len(origin.Method) > 1024 || len(origin.Body) > 87_384 {
+		return ErrMalformed
+	}
+	if origin.Expiry > uint64(1<<62) {
+		return ErrExpiryOverflow
+	}
+	expires := time.Unix(int64(origin.Expiry), 0)
+	now := v.now()
+	if !now.Before(expires.Add(v.skew)) {
+		return ErrExpired
+	}
+	body, err := base64.StdEncoding.Strict().DecodeString(origin.Body)
+	if err != nil || len(body) > 65_536 {
+		return ErrMalformed
+	}
+	nonceBytes, err := hex.DecodeString(origin.Nonce)
+	if err != nil || len(nonceBytes) != 16 {
+		return ErrMalformed
+	}
+	signature, err := hex.DecodeString(origin.Signature)
+	if err != nil || len(signature) != ed25519.SignatureSize {
+		return ErrMalformed
+	}
+	var nonce [16]byte
+	copy(nonce[:], nonceBytes)
+	digest, err := RequestDigest(origin.Method, origin.DID, nonce, origin.Expiry, body)
+	if err != nil {
+		return err
+	}
+	if !ed25519.Verify(ed25519.PublicKey(publicKey[:]), digest[:], signature) {
+		return ErrBadSignature
+	}
+	if expires.After(now.Add(v.maxExpiry + v.skew)) {
+		return ErrExpiryTooFar
+	}
+	return nil
 }
 
 func (v *AgentVerifier) OwnedBy(subject, keyID, agentOwner string) bool {
-    if subject == "" || !strings.HasPrefix(agentOwner, "agent:") { return false }
-    raw, err := hex.DecodeString(strings.TrimPrefix(agentOwner, "agent:"))
-    if err != nil || len(raw) != ed25519.PublicKeySize { return false }
-    var pub [ed25519.PublicKeySize]byte
-    copy(pub[:], raw)
-    principal, ok := v.principals.Lookup(pub)
-    if !ok || principal.PublicKey != pub || principal.OwnerSubject != subject { return false }
-    for _, id := range principal.KeyIDs { if id == keyID { return true } }
-    return false
+	if subject == "" || !strings.HasPrefix(agentOwner, "agent:") {
+		return false
+	}
+	raw, err := hex.DecodeString(strings.TrimPrefix(agentOwner, "agent:"))
+	if err != nil || len(raw) != ed25519.PublicKeySize {
+		return false
+	}
+	var pub [ed25519.PublicKeySize]byte
+	copy(pub[:], raw)
+	principal, ok := v.principals.Lookup(pub)
+	if !ok || principal.PublicKey != pub || principal.OwnerSubject != subject {
+		return false
+	}
+	for _, id := range principal.KeyIDs {
+		if id == keyID {
+			return true
+		}
+	}
+	return false
 }

@@ -27,7 +27,7 @@ import (
 	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/lxwire"
 	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/policy"
 	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/policy/lx"
- nativepolicy "github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/policy/native"
+	nativepolicy "github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/policy/native"
 	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/replica"
 	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/server"
 	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/store"
@@ -186,14 +186,22 @@ func run(ctx context.Context, getenv func(string) string, ready func(listening))
 			return err
 		}
 	}
-    authority, err := agent.NewAuthority(agent.AuthorityConfig{PublicKeyFile:cfg.AuthorityPublicKey, Issuer:cfg.AuthorityIssuer, Tenant:cfg.AuthorityTenant, Store:st, ChainID:cfg.ChainID})
-    if err != nil { return fmt.Errorf("attestor: pinned custody producer authority: %w",err) }
-    agents,err:=agent.NewAgentVerifier(agent.Config{Principals:authority,Nonces:st,MaxExpiry:cfg.AgentMaxExpiry})
-    if err!=nil{return err}
-    inventoryPins:=map[string]string{cfg.NodeID:selfPin}
-    for id,pin:=range cfg.PeerPins{inventoryPins[id]=pin}
-    inventory,err:=server.NewInventory(cfg.InventoryFile,cfg.InventoryPublicKey,cfg.AuthorityIssuer,cfg.AuthorityTenant,st,inventoryPins)
-    if err!=nil{return fmt.Errorf("attestor: approved wallet inventory: %w",err)}
+	authority, err := agent.NewAuthority(agent.AuthorityConfig{PublicKeyFile: cfg.AuthorityPublicKey, Issuer: cfg.AuthorityIssuer, Tenant: cfg.AuthorityTenant, Store: st, ChainID: cfg.ChainID})
+	if err != nil {
+		return fmt.Errorf("attestor: pinned custody producer authority: %w", err)
+	}
+	agents, err := agent.NewAgentVerifier(agent.Config{Principals: authority, Nonces: st, MaxExpiry: cfg.AgentMaxExpiry})
+	if err != nil {
+		return err
+	}
+	inventoryPins := map[string]string{cfg.NodeID: selfPin}
+	for id, pin := range cfg.PeerPins {
+		inventoryPins[id] = pin
+	}
+	inventory, err := server.NewInventory(cfg.InventoryFile, cfg.InventoryPublicKey, cfg.AuthorityIssuer, cfg.AuthorityTenant, st, inventoryPins)
+	if err != nil {
+		return fmt.Errorf("attestor: approved wallet inventory: %w", err)
+	}
 	clients, err := server.LoadClientAuthorities(cfg.TLSCAFile, cfg.OperatorCAFile)
 	if err != nil {
 		return err
@@ -274,8 +282,13 @@ func run(ctx context.Context, getenv func(string) string, ready func(listening))
 	defer tr.Close()
 
 	var nativeDoc *nativepolicy.Document
- if cfg.NativePolicy != "" { nativeDoc,err = nativepolicy.LoadFile(cfg.NativePolicy); if err != nil { return fmt.Errorf("attestor: %s: %w",config.EnvNativePolicy,err) } }
- srv, err := server.New(server.Options{
+	if cfg.NativePolicy != "" {
+		nativeDoc, err = nativepolicy.LoadFile(cfg.NativePolicy)
+		if err != nil {
+			return fmt.Errorf("attestor: %s: %w", config.EnvNativePolicy, err)
+		}
+	}
+	srv, err := server.New(server.Options{
 		NodeID:       cfg.NodeID,
 		Region:       cfg.Region,
 		ChainID:      cfg.ChainID,
@@ -286,16 +299,16 @@ func run(ctx context.Context, getenv func(string) string, ready func(listening))
 		Transport:    tr,
 		Policy:       engine,
 		Kernel:       kernel,
- NativePolicy: nativeDoc,
+		NativePolicy: nativeDoc,
 		Ledger:       ledger,
 		Clients:      clients,
 		Tokens:       tokens,
 		Agents:       agents,
-        Authority: authority, Inventory:inventory,
-		Activities:   registry,
-		PeerProbe:    server.TCPPeerProbe(probe),
-		Replica:      replicaState,
-		Snapshots:    snapshots,
+		Authority:    authority, Inventory: inventory,
+		Activities: registry,
+		PeerProbe:  server.TCPPeerProbe(probe),
+		Replica:    replicaState,
+		Snapshots:  snapshots,
 	})
 	if err != nil {
 		return err

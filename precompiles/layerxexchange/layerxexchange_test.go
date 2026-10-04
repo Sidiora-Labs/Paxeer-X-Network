@@ -1,10 +1,10 @@
 package layerxexchange_test
 
 import (
-	"os"
 	"bytes"
 	"crypto/ed25519"
 	"crypto/sha256"
+	"os"
 	"sort"
 
 	"encoding/binary"
@@ -479,24 +479,33 @@ func signedNativeGenesis(t *testing.T, tif, oracle bool) []byte {
 	content = binary.BigEndian.AppendUint32(content, 77)
 	content = binary.BigEndian.AppendUint64(content, uint64(genesisTime.UnixMilli()))
 	parameters := []string{"module-enable:perps", "parameter-version"}
-	if oracle { parameters = append(parameters, "perps-oracle-transport") }
-	if tif { parameters = append(parameters, "perps-order-tif") }
+	if oracle {
+		parameters = append(parameters, "perps-oracle-transport")
+	}
+	if tif {
+		parameters = append(parameters, "perps-order-tif")
+	}
 	sort.Strings(parameters)
 	content = binary.BigEndian.AppendUint32(content, uint32(len(parameters)))
 	for _, name := range parameters {
 		content = binary.BigEndian.AppendUint16(content, types.GovernanceModuleID)
 		content = blob(content, key(name))
-		value := make([]byte, 32); value[31] = 1
+		value := make([]byte, 32)
+		value[31] = 1
 		content = blob(content, value)
 	}
 	content = binary.BigEndian.AppendUint32(content, 1)
 	content = blob(content, bytes.Repeat([]byte{1}, 32))
 	content = blob(content, append([]byte{2}, bytes.Repeat([]byte{3}, 32)...))
 	content = append(content, make([]byte, 16)...)
-	type accountEntry struct { id [32]byte; kind uint16 }
+	type accountEntry struct {
+		id   [32]byte
+		kind uint16
+	}
 	accounts := []accountEntry{}
 	for kind, name := range map[uint16]string{9: "system:insurance", 10: "system:fees", 11: "system:paxeer-reserve", 12: "system:paxeer-withdrawals"} {
-		id, err := codec.DeriveAccountID([]byte(name)); require.NoError(t, err)
+		id, err := codec.DeriveAccountID([]byte(name))
+		require.NoError(t, err)
 		accounts = append(accounts, accountEntry{id, kind})
 	}
 	sort.Slice(accounts, func(i, j int) bool { return bytes.Compare(accounts[i].id[:], accounts[j].id[:]) < 0 })
@@ -540,7 +549,6 @@ func capabilityWitness(moduleID uint16, key, value []byte, moduleSiblings [][32]
 	}
 	return out
 }
-
 
 func TestNativeTimeInForceCapabilityPrecompile(t *testing.T) {
 	h := newHarness(t)
@@ -592,7 +600,7 @@ func TestNativeTimeInForceCapabilityPrecompile(t *testing.T) {
 			common.BytesToHash(h.caller.Bytes())}, logs[i].Topics)
 		values, err := h.precompile.GetABI().Events[layerxexchange.OrderPlacedEvent].Inputs.NonIndexed().Unpack(logs[i].Data)
 		require.NoError(t, err)
-		require.Equal(t, []interface{}{types.SideBuy, big.NewInt(17), big.NewInt(2), tif, uint64(i+1)}, values)
+		require.Equal(t, []interface{}{types.SideBuy, big.NewInt(17), big.NewInt(2), tif, uint64(i + 1)}, values)
 	}
 	_, err = h.call(layerxexchange.PlaceOrderMethod, marketID, types.SideBuy, big.NewInt(17), big.NewInt(2), uint8(4))
 	require.Error(t, err)

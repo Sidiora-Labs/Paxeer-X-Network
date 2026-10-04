@@ -3,6 +3,7 @@ package attestor
 import (
 	"bytes"
 	"context"
+	"crypto/ed25519"
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/tls"
@@ -17,12 +18,11 @@ import (
 	"net/http"
 	"net/url"
 	"os"
- "syscall"
- "path/filepath"
- "crypto/ed25519"
+	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"filippo.io/edwards25519"
@@ -45,8 +45,8 @@ const (
 	NodeCount       = 5
 	SignQuorum      = 3
 	PathImport      = "/v1/keys/import"
-	PathDescribe = "/v1/keys/describe"
- PathRefresh     = "/v1/keys/refresh"
+	PathDescribe    = "/v1/keys/describe"
+	PathRefresh     = "/v1/keys/refresh"
 	PathSign        = "/v1/sign"
 	PathHealth      = "/health"
 	KindPersonal    = "personal_message"
@@ -89,13 +89,13 @@ type Node struct {
 }
 
 type Config struct {
-	Nodes    []NodeConfig
-	CertFile string
-	KeyFile  string
-	CAFile   string
- GatewayCertFile string
- GatewayKeyFile string
- OwnerTokensFile string
+	Nodes           []NodeConfig
+	CertFile        string
+	KeyFile         string
+	CAFile          string
+	GatewayCertFile string
+	GatewayKeyFile  string
+	OwnerTokensFile string
 }
 
 type NodeConfig struct {
@@ -106,7 +106,7 @@ type NodeConfig struct {
 
 func LoadConfig(getenv func(string) string) (Config, error) {
 	get := func(name string) string { return strings.TrimSpace(getenv(name)) }
-	cfg := Config{CertFile: get(EnvTLSCertFile), KeyFile: get(EnvTLSKeyFile), CAFile: get(EnvTLSCAFile),GatewayCertFile:get("CEREMONY_GATEWAY_TLS_CERT_FILE"),GatewayKeyFile:get("CEREMONY_GATEWAY_TLS_KEY_FILE"),OwnerTokensFile:get("CEREMONY_OWNER_TOKENS_FILE")}
+	cfg := Config{CertFile: get(EnvTLSCertFile), KeyFile: get(EnvTLSKeyFile), CAFile: get(EnvTLSCAFile), GatewayCertFile: get("CEREMONY_GATEWAY_TLS_CERT_FILE"), GatewayKeyFile: get("CEREMONY_GATEWAY_TLS_KEY_FILE"), OwnerTokensFile: get("CEREMONY_OWNER_TOKENS_FILE")}
 	for name, v := range map[string]string{EnvTLSCertFile: cfg.CertFile, EnvTLSKeyFile: cfg.KeyFile, EnvTLSCAFile: cfg.CAFile} {
 		if v == "" {
 			return Config{}, fmt.Errorf("%w: %s is not set", ErrConfig, name)
@@ -172,10 +172,10 @@ func SPKIHash(cert *x509.Certificate) [32]byte {
 }
 
 type Client struct {
-	nodes  []*Node
-	tokens TokenSource
- gateway *Client
- ownerTokensFile string
+	nodes           []*Node
+	tokens          TokenSource
+	gateway         *Client
+	ownerTokensFile string
 }
 
 func New(cfg Config) (*Client, error) {
@@ -223,16 +223,26 @@ func New(cfg Config) (*Client, error) {
 		c.nodes = append(c.nodes, &Node{ID: nc.ID, URL: u, Pin: want, http: &http.Client{Transport: tr, Timeout: requestTimeout}})
 	}
 	sort.Slice(c.nodes, func(i, j int) bool { return c.nodes[i].ID < c.nodes[j].ID })
- if cfg.GatewayCertFile!=""||cfg.GatewayKeyFile!=""||cfg.OwnerTokensFile!=""{
-  if cfg.GatewayCertFile==""||cfg.GatewayKeyFile==""||cfg.OwnerTokensFile==""||cfg.GatewayCertFile==cfg.CertFile{return nil,ErrConfig}
-  gateway,e:=New(Config{Nodes:cfg.Nodes,CertFile:cfg.GatewayCertFile,KeyFile:cfg.GatewayKeyFile,CAFile:cfg.CAFile});if e!=nil{return nil,e}
-  c.gateway=gateway;c.ownerTokensFile=cfg.OwnerTokensFile
- }
- return c,nil
+	if cfg.GatewayCertFile != "" || cfg.GatewayKeyFile != "" || cfg.OwnerTokensFile != "" {
+		if cfg.GatewayCertFile == "" || cfg.GatewayKeyFile == "" || cfg.OwnerTokensFile == "" || cfg.GatewayCertFile == cfg.CertFile {
+			return nil, ErrConfig
+		}
+		gateway, e := New(Config{Nodes: cfg.Nodes, CertFile: cfg.GatewayCertFile, KeyFile: cfg.GatewayKeyFile, CAFile: cfg.CAFile})
+		if e != nil {
+			return nil, e
+		}
+		c.gateway = gateway
+		c.ownerTokensFile = cfg.OwnerTokensFile
+	}
+	return c, nil
 }
 
 func (c *Client) Membership() []NodeConfig {
- out:=make([]NodeConfig,len(c.nodes));for i,n:=range c.nodes{out[i]=NodeConfig{ID:n.ID,Pin:n.Pin}};return out
+	out := make([]NodeConfig, len(c.nodes))
+	for i, n := range c.nodes {
+		out[i] = NodeConfig{ID: n.ID, Pin: n.Pin}
+	}
+	return out
 }
 
 func (c *Client) NodeIDs() []string {
@@ -246,7 +256,9 @@ func (c *Client) NodeIDs() []string {
 func (c *Client) SetTokenSource(src TokenSource) { c.tokens = src }
 
 func (c *Client) Close() {
- if c.gateway!=nil{c.gateway.Close()}
+	if c.gateway != nil {
+		c.gateway.Close()
+	}
 	for _, n := range c.nodes {
 		n.http.CloseIdleConnections()
 	}
@@ -273,26 +285,26 @@ type ShareBundleJSON struct {
 }
 
 type ImportRequest struct {
- CeremonyID string `json:"ceremony_id,omitempty"`
- Epoch uint64 `json:"epoch"`
- PublicKey string `json:"public_key,omitempty"`
- Participants []string `json:"participants,omitempty"`
- Threshold uint32 `json:"threshold,omitempty"`
-	SessionID string          `json:"session_id"`
-	KeyID     string          `json:"key_id"`
-	Owner     string          `json:"owner"`
-	Account   string          `json:"account,omitempty"`
-	Share     ShareBundleJSON `json:"share"`
+	CeremonyID   string          `json:"ceremony_id,omitempty"`
+	Epoch        uint64          `json:"epoch"`
+	PublicKey    string          `json:"public_key,omitempty"`
+	Participants []string        `json:"participants,omitempty"`
+	Threshold    uint32          `json:"threshold,omitempty"`
+	SessionID    string          `json:"session_id"`
+	KeyID        string          `json:"key_id"`
+	Owner        string          `json:"owner"`
+	Account      string          `json:"account,omitempty"`
+	Share        ShareBundleJSON `json:"share"`
 }
 
 type RefreshRequest struct {
- ExistingKey bool `json:"existing_key,omitempty"`
- RecoverySessionID string `json:"recovery_session_id,omitempty"`
- CeremonyID string `json:"ceremony_id,omitempty"`
- ImportSessionID string `json:"import_session_id,omitempty"`
- ExpectedEpoch *uint64 `json:"expected_epoch,omitempty"`
-	SessionID string `json:"session_id"`
-	KeyID     string `json:"key_id"`
+	ExistingKey       bool    `json:"existing_key,omitempty"`
+	RecoverySessionID string  `json:"recovery_session_id,omitempty"`
+	CeremonyID        string  `json:"ceremony_id,omitempty"`
+	ImportSessionID   string  `json:"import_session_id,omitempty"`
+	ExpectedEpoch     *uint64 `json:"expected_epoch,omitempty"`
+	SessionID         string  `json:"session_id"`
+	KeyID             string  `json:"key_id"`
 }
 
 type KeyResponse struct {
@@ -324,21 +336,21 @@ type GrantJSON struct {
 }
 
 type SignRequest struct {
- RecoveryEvidence *SignResponse `json:"recovery_evidence,omitempty"`
- CeremonyID string `json:"ceremony_id,omitempty"`
- ExpectedEpoch *uint64 `json:"expected_epoch,omitempty"`
- RecoverySessionID string `json:"recovery_session_id,omitempty"`
-	SessionID       string     `json:"session_id"`
-	KeyID           string     `json:"key_id"`
-	Kind            string     `json:"kind"`
-	Signers         []string   `json:"signers"`
-	Transaction     string     `json:"transaction,omitempty"`
-	TypedData       string     `json:"typed_data,omitempty"`
-	Message         string     `json:"message,omitempty"`
-	Digest          string     `json:"digest,omitempty"`
-	Activity        string     `json:"activity,omitempty"`
-	Grant           *GrantJSON `json:"grant,omitempty"`
-	ImportSessionID string     `json:"import_session_id,omitempty"`
+	RecoveryEvidence  *SignResponse `json:"recovery_evidence,omitempty"`
+	CeremonyID        string        `json:"ceremony_id,omitempty"`
+	ExpectedEpoch     *uint64       `json:"expected_epoch,omitempty"`
+	RecoverySessionID string        `json:"recovery_session_id,omitempty"`
+	SessionID         string        `json:"session_id"`
+	KeyID             string        `json:"key_id"`
+	Kind              string        `json:"kind"`
+	Signers           []string      `json:"signers"`
+	Transaction       string        `json:"transaction,omitempty"`
+	TypedData         string        `json:"typed_data,omitempty"`
+	Message           string        `json:"message,omitempty"`
+	Digest            string        `json:"digest,omitempty"`
+	Activity          string        `json:"activity,omitempty"`
+	Grant             *GrantJSON    `json:"grant,omitempty"`
+	ImportSessionID   string        `json:"import_session_id,omitempty"`
 }
 
 type SignResponse struct {
@@ -602,11 +614,14 @@ type Imported struct {
 }
 
 func (c *Client) Import(ctx context.Context, keyID, owner, account string, bundles []dealer.ShareBundle, publicKey *pt.ECPoint) (Imported, error) {
- session,err:=NewSessionID();if err!=nil{return Imported{},err}
- return c.ImportCeremony(ctx,"",session,keyID,owner,account,bundles,publicKey)
+	session, err := NewSessionID()
+	if err != nil {
+		return Imported{}, err
+	}
+	return c.ImportCeremony(ctx, "", session, keyID, owner, account, bundles, publicKey)
 }
 
-func (c *Client) ImportCeremony(ctx context.Context,ceremonyID,session,keyID,owner,account string,bundles []dealer.ShareBundle,publicKey *pt.ECPoint)(Imported,error){
+func (c *Client) ImportCeremony(ctx context.Context, ceremonyID, session, keyID, owner, account string, bundles []dealer.ShareBundle, publicKey *pt.ECPoint) (Imported, error) {
 	if len(bundles) != len(c.nodes) {
 		return Imported{}, ErrBundle
 	}
@@ -614,12 +629,21 @@ func (c *Client) ImportCeremony(ctx context.Context,ceremonyID,session,keyID,own
 	if err != nil {
 		return Imported{}, err
 	}
-	if session==""{return Imported{},ErrConfig}
- seen:=map[string]bool{}
+	if session == "" {
+		return Imported{}, ErrConfig
+	}
+	seen := map[string]bool{}
 	out := Imported{SessionID: session, Keys: make([]KeyResponse, 0, len(bundles))}
 	for _, b := range bundles {
- if seen[b.ParticipantID] || b.Threshold!=SignQuorum || len(b.Bks)!=NodeCount || len(b.PartialPublicKeys)!=NodeCount{return Imported{},ErrBundle};seen[b.ParticipantID]=true
- for _,id:=range c.NodeIDs(){if b.Bks[id]==nil||b.PartialPublicKeys[id]==nil{return Imported{},ErrBundle}}
+		if seen[b.ParticipantID] || b.Threshold != SignQuorum || len(b.Bks) != NodeCount || len(b.PartialPublicKeys) != NodeCount {
+			return Imported{}, ErrBundle
+		}
+		seen[b.ParticipantID] = true
+		for _, id := range c.NodeIDs() {
+			if b.Bks[id] == nil || b.PartialPublicKeys[id] == nil {
+				return Imported{}, ErrBundle
+			}
+		}
 		n, err := c.node(b.ParticipantID)
 		if err != nil {
 			return Imported{}, err
@@ -631,7 +655,7 @@ func (c *Client) ImportCeremony(ctx context.Context,ceremonyID,session,keyID,own
 		if err != nil {
 			return Imported{}, err
 		}
-		req := ImportRequest{CeremonyID:ceremonyID,Epoch:0,PublicKey:want,Participants:c.NodeIDs(),Threshold:SignQuorum,SessionID: session, KeyID: keyID, Owner: owner, Account: account, Share: share}
+		req := ImportRequest{CeremonyID: ceremonyID, Epoch: 0, PublicKey: want, Participants: c.NodeIDs(), Threshold: SignQuorum, SessionID: session, KeyID: keyID, Owner: owner, Account: account, Share: share}
 		var resp KeyResponse
 		err = n.post(ctx, PathImport, "", req, &resp)
 		req.Share.Share = ""
@@ -641,7 +665,7 @@ func (c *Client) ImportCeremony(ctx context.Context,ceremonyID,session,keyID,own
 		if err := checkKeyResponse(n, resp, keyID, share.Curve, want); err != nil {
 			return Imported{}, err
 		}
-		if (!resp.Refreshed && resp.Epoch != 0) || (resp.Refreshed && (ceremonyID=="" || resp.Epoch!=1)) || !sameMembers(resp.Participants,c.NodeIDs()) || resp.AuditSequence==0 {
+		if (!resp.Refreshed && resp.Epoch != 0) || (resp.Refreshed && (ceremonyID == "" || resp.Epoch != 1)) || !sameMembers(resp.Participants, c.NodeIDs()) || resp.AuditSequence == 0 {
 			return Imported{}, fmt.Errorf("%w: node %s import response state", ErrResponse, n.ID)
 		}
 		out.Keys = append(out.Keys, resp)
@@ -663,14 +687,20 @@ func (c *Client) postAll(ctx context.Context, nodes []*Node, path, token string,
 	return errors.Join(errs...)
 }
 
-func (c *Client) Refresh(ctx context.Context,keyID string,publicKey *pt.ECPoint)([]KeyResponse,error){
- session,err:=NewSessionID();if err!=nil{return nil,err};return c.refreshWithSession(ctx,"","",session,"",keyID,publicKey,nil,false)
+func (c *Client) Refresh(ctx context.Context, keyID string, publicKey *pt.ECPoint) ([]KeyResponse, error) {
+	session, err := NewSessionID()
+	if err != nil {
+		return nil, err
+	}
+	return c.refreshWithSession(ctx, "", "", session, "", keyID, publicKey, nil, false)
 }
-func (c *Client) RefreshCeremony(ctx context.Context,ceremonyID,importSession,session,recoverySession,keyID string,publicKey *pt.ECPoint,expectedEpoch uint64)([]KeyResponse,error){
- if ceremonyID==""||importSession==""||session==""{return nil,ErrConfig}
- return c.refreshWithSession(ctx,ceremonyID,importSession,session,recoverySession,keyID,publicKey,&expectedEpoch,false)
+func (c *Client) RefreshCeremony(ctx context.Context, ceremonyID, importSession, session, recoverySession, keyID string, publicKey *pt.ECPoint, expectedEpoch uint64) ([]KeyResponse, error) {
+	if ceremonyID == "" || importSession == "" || session == "" {
+		return nil, ErrConfig
+	}
+	return c.refreshWithSession(ctx, ceremonyID, importSession, session, recoverySession, keyID, publicKey, &expectedEpoch, false)
 }
-func(c *Client) refreshWithSession(ctx context.Context,ceremonyID,importSession,session,recoverySession,keyID string,publicKey *pt.ECPoint,expectedEpoch *uint64,existingKey bool)([]KeyResponse,error){
+func (c *Client) refreshWithSession(ctx context.Context, ceremonyID, importSession, session, recoverySession, keyID string, publicKey *pt.ECPoint, expectedEpoch *uint64, existingKey bool) ([]KeyResponse, error) {
 	want, err := PublicKeyHex(publicKey)
 	if err != nil {
 		return nil, err
@@ -679,7 +709,7 @@ func(c *Client) refreshWithSession(ctx context.Context,ceremonyID,importSession,
 	if err != nil {
 		return nil, err
 	}
-		req := RefreshRequest{ExistingKey:existingKey,RecoverySessionID:recoverySession,CeremonyID:ceremonyID,ImportSessionID:importSession,ExpectedEpoch:expectedEpoch,SessionID: session, KeyID: keyID}
+	req := RefreshRequest{ExistingKey: existingKey, RecoverySessionID: recoverySession, CeremonyID: ceremonyID, ImportSessionID: importSession, ExpectedEpoch: expectedEpoch, SessionID: session, KeyID: keyID}
 	out := make([]KeyResponse, len(c.nodes))
 	if err := c.postAll(ctx, c.nodes, PathRefresh, "", req, func(i int) any { return &out[i] }); err != nil {
 		return nil, err
@@ -691,7 +721,7 @@ func(c *Client) refreshWithSession(ctx context.Context,ceremonyID,importSession,
 		if out[i].Curve != curve || !strings.EqualFold(out[i].PublicKey, want) {
 			return nil, fmt.Errorf("%w: node %s", ErrPublicKey, n.ID)
 		}
-		if !out[i].Refreshed || !sameMembers(out[i].Participants,c.NodeIDs()) || out[i].AuditSequence==0 || (expectedEpoch!=nil && out[i].Epoch!=*expectedEpoch+1) {
+		if !out[i].Refreshed || !sameMembers(out[i].Participants, c.NodeIDs()) || out[i].AuditSequence == 0 || (expectedEpoch != nil && out[i].Epoch != *expectedEpoch+1) {
 			return nil, fmt.Errorf("%w: node %s did not report the key refreshed", ErrResponse, n.ID)
 		}
 		if out[i].Epoch != out[0].Epoch {
@@ -791,14 +821,20 @@ type Verification struct {
 	AuditSeqs map[string]uint64
 }
 
-func (c *Client) SignVerification(ctx context.Context,keyID,importSession string,publicKey *pt.ECPoint)(Verification,error){
- session,err:=NewSessionID();if err!=nil{return Verification{},err};return c.signVerificationSession(ctx,"",session,"",keyID,importSession,publicKey,nil)
+func (c *Client) SignVerification(ctx context.Context, keyID, importSession string, publicKey *pt.ECPoint) (Verification, error) {
+	session, err := NewSessionID()
+	if err != nil {
+		return Verification{}, err
+	}
+	return c.signVerificationSession(ctx, "", session, "", keyID, importSession, publicKey, nil)
 }
-func(c *Client) SignVerificationCeremony(ctx context.Context,ceremonyID,session,recoverySession,keyID,importSession string,publicKey *pt.ECPoint,epoch uint64)(Verification,error){
- if ceremonyID==""||session==""{return Verification{},ErrConfig}
- return c.signVerificationSession(ctx,ceremonyID,session,recoverySession,keyID,importSession,publicKey,&epoch)
+func (c *Client) SignVerificationCeremony(ctx context.Context, ceremonyID, session, recoverySession, keyID, importSession string, publicKey *pt.ECPoint, epoch uint64) (Verification, error) {
+	if ceremonyID == "" || session == "" {
+		return Verification{}, ErrConfig
+	}
+	return c.signVerificationSession(ctx, ceremonyID, session, recoverySession, keyID, importSession, publicKey, &epoch)
 }
-func(c *Client) signVerificationSession(ctx context.Context,ceremonyID,session,recoverySession,keyID,importSession string,publicKey *pt.ECPoint,epoch *uint64)(Verification,error){
+func (c *Client) signVerificationSession(ctx context.Context, ceremonyID, session, recoverySession, keyID, importSession string, publicKey *pt.ECPoint, epoch *uint64) (Verification, error) {
 	if keyID == "" || importSession == "" {
 		return Verification{}, fmt.Errorf("%w: verification needs the key id and the import session", ErrConfig)
 	}
@@ -814,30 +850,48 @@ func(c *Client) signVerificationSession(ctx context.Context,ceremonyID,session,r
 		signed = crypto.Keccak256(msg)
 		sigLen = 65
 	}
-		signers := c.NodeIDs()[:SignQuorum]
+	signers := c.NodeIDs()[:SignQuorum]
 	nodes := c.nodes[:SignQuorum]
-	req := SignRequest{CeremonyID:ceremonyID,ExpectedEpoch:epoch,RecoverySessionID:recoverySession,SessionID: session, KeyID: keyID, Kind: KindVerify, Signers: signers, ImportSessionID: importSession}
+	req := SignRequest{CeremonyID: ceremonyID, ExpectedEpoch: epoch, RecoverySessionID: recoverySession, SessionID: session, KeyID: keyID, Kind: KindVerify, Signers: signers, ImportSessionID: importSession}
 	resps := make([]SignResponse, len(nodes))
 	if err := c.postAll(ctx, nodes, PathSign, "", req, func(i int) any { return &resps[i] }); err != nil {
-  if ceremonyID==""{return Verification{},err}
-  for i:=range resps{
-   response:=resps[i]
-   if response.NodeID!=nodes[i].ID||response.KeyID!=keyID||response.Kind!=KindVerify||response.AuditSequence==0||response.Message!=hex.EncodeToString(msg)||response.SignedBytes!=hex.EncodeToString(signed){continue}
-   signature,e:=hex.DecodeString(response.Signature);if e!=nil||len(signature)!=sigLen{continue}
-   valid:=false
-   if curve==dealer.Ed25519{valid=response.RecoveryID==nil&&ed25519.Verify(pub,msg,signature)}else if response.RecoveryID!=nil&&*response.RecoveryID<=1&&signature[64]==*response.RecoveryID{
-    recovered,e:=crypto.SigToPub(signed,signature);valid=e==nil&&recovered.X.Cmp(publicKey.GetX())==0&&recovered.Y.Cmp(publicKey.GetY())==0
-   }
-   if valid{req.RecoveryEvidence=&response;req.RecoverySessionID="";break}
-  }
-  if req.RecoveryEvidence==nil{return Verification{},err}
-  resps=make([]SignResponse,len(nodes))
-  if err=c.postAll(ctx,nodes,PathSign,"",req,func(i int)any{return &resps[i]});err!=nil{return Verification{},err}
- }
+		if ceremonyID == "" {
+			return Verification{}, err
+		}
+		for i := range resps {
+			response := resps[i]
+			if response.NodeID != nodes[i].ID || response.KeyID != keyID || response.Kind != KindVerify || response.AuditSequence == 0 || response.Message != hex.EncodeToString(msg) || response.SignedBytes != hex.EncodeToString(signed) {
+				continue
+			}
+			signature, e := hex.DecodeString(response.Signature)
+			if e != nil || len(signature) != sigLen {
+				continue
+			}
+			valid := false
+			if curve == dealer.Ed25519 {
+				valid = response.RecoveryID == nil && ed25519.Verify(pub, msg, signature)
+			} else if response.RecoveryID != nil && *response.RecoveryID <= 1 && signature[64] == *response.RecoveryID {
+				recovered, e := crypto.SigToPub(signed, signature)
+				valid = e == nil && recovered.X.Cmp(publicKey.GetX()) == 0 && recovered.Y.Cmp(publicKey.GetY()) == 0
+			}
+			if valid {
+				req.RecoveryEvidence = &response
+				req.RecoverySessionID = ""
+				break
+			}
+		}
+		if req.RecoveryEvidence == nil {
+			return Verification{}, err
+		}
+		resps = make([]SignResponse, len(nodes))
+		if err = c.postAll(ctx, nodes, PathSign, "", req, func(i int) any { return &resps[i] }); err != nil {
+			return Verification{}, err
+		}
+	}
 	out := Verification{Curve: curve, Message: msg, AuditSeqs: make(map[string]uint64, len(nodes))}
 	for i, n := range nodes {
 		resp := resps[i]
-		if resp.AuditSequence==0 || resp.NodeID != n.ID || resp.KeyID != keyID || resp.Kind != KindVerify || !strings.EqualFold(resp.Message, hex.EncodeToString(msg)) || !strings.EqualFold(resp.SignedBytes, hex.EncodeToString(signed)) {
+		if resp.AuditSequence == 0 || resp.NodeID != n.ID || resp.KeyID != keyID || resp.Kind != KindVerify || !strings.EqualFold(resp.Message, hex.EncodeToString(msg)) || !strings.EqualFold(resp.SignedBytes, hex.EncodeToString(signed)) {
 			return Verification{}, fmt.Errorf("%w: node %s verification response names another node, key, kind or message", ErrResponse, n.ID)
 		}
 		sig, err := hex.DecodeString(resp.Signature)
@@ -896,8 +950,10 @@ func (n *Node) post(ctx context.Context, path, token string, body, out any) erro
 	if err != nil {
 		return fmt.Errorf("attestor: node %s: %w", n.ID, err)
 	}
-	if len(raw)>maxResponseSize{return ErrResponse}
- if resp.StatusCode != http.StatusOK {
+	if len(raw) > maxResponseSize {
+		return ErrResponse
+	}
+	if resp.StatusCode != http.StatusOK {
 		var eb ErrorBody
 		_ = json.Unmarshal(raw, &eb)
 		return &APIError{Node: n.ID, Status: resp.StatusCode, Category: eb.Error.Category, Code: eb.Error.Code, Message: eb.Error.Message, PolicyCode: eb.Error.PolicyCode}
@@ -907,86 +963,168 @@ func (n *Node) post(ctx context.Context, path, token string, body, out any) erro
 	if err := dec.Decode(out); err != nil {
 		return fmt.Errorf("%w: node %s: %v", ErrResponse, n.ID, err)
 	}
- var extra any;if dec.Decode(&extra)!=io.EOF{return ErrResponse}
+	var extra any
+	if dec.Decode(&extra) != io.EOF {
+		return ErrResponse
+	}
 	return nil
 }
 
-func sameMembers(a,b []string)bool{
- if len(a)!=NodeCount||len(b)!=NodeCount{return false};copyA:=append([]string(nil),a...);sort.Strings(copyA);copyB:=append([]string(nil),b...);sort.Strings(copyB)
- for i:=range copyA{if copyA[i]!=copyB[i]||copyA[i]==""||(i>0&&copyA[i]==copyA[i-1]){return false}};return true
+func sameMembers(a, b []string) bool {
+	if len(a) != NodeCount || len(b) != NodeCount {
+		return false
+	}
+	copyA := append([]string(nil), a...)
+	sort.Strings(copyA)
+	copyB := append([]string(nil), b...)
+	sort.Strings(copyB)
+	for i := range copyA {
+		if copyA[i] != copyB[i] || copyA[i] == "" || (i > 0 && copyA[i] == copyA[i-1]) {
+			return false
+		}
+	}
+	return true
 }
 
 type DescribeResponse struct {
- NodeID string `json:"node_id"`
- KeyID string `json:"key_id"`
- Curve string `json:"curve"`
- PublicKey string `json:"public_key"`
- Address string `json:"address,omitempty"`
- DID string `json:"did,omitempty"`
- Owner string `json:"owner"`
- Account string `json:"account"`
- Epoch uint64 `json:"epoch"`
- Participants []string `json:"participants"`
- AuditSequence uint64 `json:"audit_sequence"`
- CeremonyID string `json:"ceremony_id,omitempty"`
- ImportSessionID string `json:"import_session_id,omitempty"`
- ImportDigest string `json:"import_digest,omitempty"`
- VerificationSessionID string `json:"verification_session_id,omitempty"`
- VerificationState string `json:"verification_state,omitempty"`
- RefreshSessionID string `json:"refresh_session_id,omitempty"`
- RefreshState string `json:"refresh_state,omitempty"`
+	NodeID                string   `json:"node_id"`
+	KeyID                 string   `json:"key_id"`
+	Curve                 string   `json:"curve"`
+	PublicKey             string   `json:"public_key"`
+	Address               string   `json:"address,omitempty"`
+	DID                   string   `json:"did,omitempty"`
+	Owner                 string   `json:"owner"`
+	Account               string   `json:"account"`
+	Epoch                 uint64   `json:"epoch"`
+	Participants          []string `json:"participants"`
+	AuditSequence         uint64   `json:"audit_sequence"`
+	CeremonyID            string   `json:"ceremony_id,omitempty"`
+	ImportSessionID       string   `json:"import_session_id,omitempty"`
+	ImportDigest          string   `json:"import_digest,omitempty"`
+	VerificationSessionID string   `json:"verification_session_id,omitempty"`
+	VerificationState     string   `json:"verification_state,omitempty"`
+	RefreshSessionID      string   `json:"refresh_session_id,omitempty"`
+	RefreshState          string   `json:"refresh_state,omitempty"`
 }
 
-func(c *Client) DescribeCeremony(ctx context.Context,keyID string)([]DescribeResponse,error){
- session,err:=NewSessionID();if err!=nil{return nil,err}
- req:=struct{SessionID string `json:"session_id"`;KeyID string `json:"key_id"`}{session,keyID}
- out:=make([]DescribeResponse,len(c.nodes));if err=c.postAll(ctx,c.nodes,PathDescribe,"",req,func(i int)any{return &out[i]});err!=nil{return nil,err}
- for i,n:=range c.nodes{if out[i].NodeID!=n.ID||out[i].KeyID!=keyID||out[i].AuditSequence==0||!sameMembers(out[i].Participants,c.NodeIDs()){return nil,ErrResponse}}
- return out,nil
+func (c *Client) DescribeCeremony(ctx context.Context, keyID string) ([]DescribeResponse, error) {
+	session, err := NewSessionID()
+	if err != nil {
+		return nil, err
+	}
+	req := struct {
+		SessionID string `json:"session_id"`
+		KeyID     string `json:"key_id"`
+	}{session, keyID}
+	out := make([]DescribeResponse, len(c.nodes))
+	if err = c.postAll(ctx, c.nodes, PathDescribe, "", req, func(i int) any { return &out[i] }); err != nil {
+		return nil, err
+	}
+	for i, n := range c.nodes {
+		if out[i].NodeID != n.ID || out[i].KeyID != keyID || out[i].AuditSequence == 0 || !sameMembers(out[i].Participants, c.NodeIDs()) {
+			return nil, ErrResponse
+		}
+	}
+	return out, nil
 }
 
-func(c *Client) ReconcileCeremony(ctx context.Context,ceremonyID,importSession,refreshSession,keyID,publicKey,curve string,epoch uint64)error{
- nodes,err:=c.DescribeCeremony(ctx,keyID);if err!=nil{return err}
- for _,node:=range nodes{if node.CeremonyID!=ceremonyID||node.ImportSessionID!=importSession||node.RefreshSessionID!=refreshSession||node.Curve!=curve||node.PublicKey!=publicKey||node.Epoch!=epoch{return ErrDisagree}}
- return nil
+func (c *Client) ReconcileCeremony(ctx context.Context, ceremonyID, importSession, refreshSession, keyID, publicKey, curve string, epoch uint64) error {
+	nodes, err := c.DescribeCeremony(ctx, keyID)
+	if err != nil {
+		return err
+	}
+	for _, node := range nodes {
+		if node.CeremonyID != ceremonyID || node.ImportSessionID != importSession || node.RefreshSessionID != refreshSession || node.Curve != curve || node.PublicKey != publicKey || node.Epoch != epoch {
+			return ErrDisagree
+		}
+	}
+	return nil
 }
 
-func(c *Client) ownerToken(owner string)(string,error){
- if c.gateway==nil||!filepath.IsAbs(c.ownerTokensFile){return "",ErrConfig}
- fd,err:=syscall.Open(c.ownerTokensFile,syscall.O_RDONLY|syscall.O_NOFOLLOW,0);if err!=nil{return "",ErrConfig};f:=os.NewFile(uintptr(fd),c.ownerTokensFile);defer f.Close()
- st,err:=f.Stat();if err!=nil{return "",ErrConfig};stat,ok:=st.Sys().(*syscall.Stat_t)
- if !ok||!st.Mode().IsRegular()||st.Mode().Perm()!=0600||stat.Uid!=uint32(os.Geteuid())||stat.Nlink!=1||st.Size()>1<<20{return "",ErrConfig}
- raw,err:=io.ReadAll(io.LimitReader(f,1<<20));if err!=nil{return "",err};defer func(){for i:=range raw{raw[i]=0}}()
- var tokens map[string]string;if json.Unmarshal(raw,&tokens)!=nil||tokens[owner]==""{return "",ErrConfig};return tokens[owner],nil
+func (c *Client) ownerToken(owner string) (string, error) {
+	if c.gateway == nil || !filepath.IsAbs(c.ownerTokensFile) {
+		return "", ErrConfig
+	}
+	fd, err := syscall.Open(c.ownerTokensFile, syscall.O_RDONLY|syscall.O_NOFOLLOW, 0)
+	if err != nil {
+		return "", ErrConfig
+	}
+	f := os.NewFile(uintptr(fd), c.ownerTokensFile)
+	defer f.Close()
+	st, err := f.Stat()
+	if err != nil {
+		return "", ErrConfig
+	}
+	stat, ok := st.Sys().(*syscall.Stat_t)
+	if !ok || !st.Mode().IsRegular() || st.Mode().Perm() != 0600 || stat.Uid != uint32(os.Geteuid()) || stat.Nlink != 1 || st.Size() > 1<<20 {
+		return "", ErrConfig
+	}
+	raw, err := io.ReadAll(io.LimitReader(f, 1<<20))
+	if err != nil {
+		return "", err
+	}
+	defer func() {
+		for i := range raw {
+			raw[i] = 0
+		}
+	}()
+	var tokens map[string]string
+	if json.Unmarshal(raw, &tokens) != nil || tokens[owner] == "" {
+		return "", ErrConfig
+	}
+	return tokens[owner], nil
 }
 
-func(c *Client) SignOriginalBinding(ctx context.Context,session,keyID,owner string,publicKey,message []byte)(Verification,error){
- if len(publicKey)!=32||len(message)!=len("LX:PAXEER-BIND:v1")+32+20+8||!bytes.HasPrefix(message,[]byte("LX:PAXEER-BIND:v1")){return Verification{},ErrConfig}
- token,err:=c.ownerToken(owner);if err!=nil{return Verification{},err}
- req:=SignRequest{SessionID:session,KeyID:keyID,Kind:"lx_bind",Signers:c.NodeIDs()[:SignQuorum],Message:hex.EncodeToString(message)}
- nodes:=c.gateway.nodes[:SignQuorum];responses:=make([]SignResponse,SignQuorum)
- if err=c.gateway.postAll(ctx,nodes,PathSign,token,req,func(i int)any{return &responses[i]});err!=nil{return Verification{},err}
- out:=Verification{Curve:dealer.Ed25519,Message:append([]byte(nil),message...),AuditSeqs:map[string]uint64{}}
- for i,n:=range nodes{
-  r:=responses[i];signature,e:=hex.DecodeString(r.Signature)
-  if e!=nil||r.NodeID!=n.ID||r.KeyID!=keyID||r.Kind!="lx_bind"||r.SignedBytes!=hex.EncodeToString(message)||r.RecoveryID!=nil||r.AuditSequence==0||!ed25519.Verify(publicKey,message,signature){return Verification{},ErrResponse}
-  if out.Signature!=nil&&!bytes.Equal(out.Signature,signature){return Verification{},ErrDisagree};out.Signature=signature;out.AuditSeqs[n.ID]=r.AuditSequence
- }
- return out,nil
+func (c *Client) SignOriginalBinding(ctx context.Context, session, keyID, owner string, publicKey, message []byte) (Verification, error) {
+	if len(publicKey) != 32 || len(message) != len("LX:PAXEER-BIND:v1")+32+20+8 || !bytes.HasPrefix(message, []byte("LX:PAXEER-BIND:v1")) {
+		return Verification{}, ErrConfig
+	}
+	token, err := c.ownerToken(owner)
+	if err != nil {
+		return Verification{}, err
+	}
+	req := SignRequest{SessionID: session, KeyID: keyID, Kind: "lx_bind", Signers: c.NodeIDs()[:SignQuorum], Message: hex.EncodeToString(message)}
+	nodes := c.gateway.nodes[:SignQuorum]
+	responses := make([]SignResponse, SignQuorum)
+	if err = c.gateway.postAll(ctx, nodes, PathSign, token, req, func(i int) any { return &responses[i] }); err != nil {
+		return Verification{}, err
+	}
+	out := Verification{Curve: dealer.Ed25519, Message: append([]byte(nil), message...), AuditSeqs: map[string]uint64{}}
+	for i, n := range nodes {
+		r := responses[i]
+		signature, e := hex.DecodeString(r.Signature)
+		if e != nil || r.NodeID != n.ID || r.KeyID != keyID || r.Kind != "lx_bind" || r.SignedBytes != hex.EncodeToString(message) || r.RecoveryID != nil || r.AuditSequence == 0 || !ed25519.Verify(publicKey, message, signature) {
+			return Verification{}, ErrResponse
+		}
+		if out.Signature != nil && !bytes.Equal(out.Signature, signature) {
+			return Verification{}, ErrDisagree
+		}
+		out.Signature = signature
+		out.AuditSeqs[n.ID] = r.AuditSequence
+	}
+	return out, nil
 }
 
-func(c *Client) RefreshOriginalIdentity(ctx context.Context,ceremonyID,session,recoverySession,keyID string,publicKey *pt.ECPoint,epoch uint64)([]KeyResponse,error){
- return c.refreshWithSession(ctx,ceremonyID,"",session,recoverySession,keyID,publicKey,&epoch,true)
+func (c *Client) RefreshOriginalIdentity(ctx context.Context, ceremonyID, session, recoverySession, keyID string, publicKey *pt.ECPoint, epoch uint64) ([]KeyResponse, error) {
+	return c.refreshWithSession(ctx, ceremonyID, "", session, recoverySession, keyID, publicKey, &epoch, true)
 }
 
-func(c *Client) RequireAbsent(ctx context.Context,keyID string)error{
- session,err:=NewSessionID();if err!=nil{return err}
- req:=struct{SessionID string `json:"session_id"`;KeyID string `json:"key_id"`}{session,keyID}
- for _,node:=range c.nodes{
-  var response DescribeResponse
-  err=node.post(ctx,PathDescribe,"",req,&response)
-  var api *APIError
-  if !errors.As(err,&api)||api.Code!="key_not_found"{return fmt.Errorf("%w: cannot create a new journal for key %s at node %s",ErrDisagree,keyID,node.ID)}
- }
- return nil
+func (c *Client) RequireAbsent(ctx context.Context, keyID string) error {
+	session, err := NewSessionID()
+	if err != nil {
+		return err
+	}
+	req := struct {
+		SessionID string `json:"session_id"`
+		KeyID     string `json:"key_id"`
+	}{session, keyID}
+	for _, node := range c.nodes {
+		var response DescribeResponse
+		err = node.post(ctx, PathDescribe, "", req, &response)
+		var api *APIError
+		if !errors.As(err, &api) || api.Code != "key_not_found" {
+			return fmt.Errorf("%w: cannot create a new journal for key %s at node %s", ErrDisagree, keyID, node.ID)
+		}
+	}
+	return nil
 }

@@ -21,23 +21,23 @@ import (
 )
 
 type agentEnvelopeCaseFile struct {
-	Endpoint           *string                                 `json:"endpoint"`
-	ServerName         *string                                 `json:"server_name"`
-	CAPEM              *string                                 `json:"ca_pem"`
-	CADER              *string                                 `json:"ca_der"`
-	GatewayAPIKeyFile  *string                                 `json:"gateway_api_key_file"`
-	ProgramBearerFile  *string                                 `json:"program_bearer_file"`
-	CredentialFile     *string                                 `json:"credential_file"`
-	Requests           map[string]json.RawMessage              `json:"requests"`
-	Operations         []string                                `json:"operations"`
-	Cases              []string                                `json:"cases"`
-	Phase              *string                                 `json:"phase"`
-	StateFile          *string                                 `json:"state_file"`
-	ResponseDir        *string                                 `json:"response_dir"`
-	DaemonEndpoint     *string                                 `json:"daemon_endpoint"`
-	ClientCertFile     *string                                 `json:"client_cert_file"`
-	ClientKeyFile      *string                                 `json:"client_key_file"`
-	ServerCAFile       *string                                 `json:"server_ca_file"`
+	Endpoint          *string                    `json:"endpoint"`
+	ServerName        *string                    `json:"server_name"`
+	CAPEM             *string                    `json:"ca_pem"`
+	CADER             *string                    `json:"ca_der"`
+	GatewayAPIKeyFile *string                    `json:"gateway_api_key_file"`
+	ProgramBearerFile *string                    `json:"program_bearer_file"`
+	CredentialFile    *string                    `json:"credential_file"`
+	Requests          map[string]json.RawMessage `json:"requests"`
+	Operations        []string                   `json:"operations"`
+	Cases             []string                   `json:"cases"`
+	Phase             *string                    `json:"phase"`
+	StateFile         *string                    `json:"state_file"`
+	ResponseDir       *string                    `json:"response_dir"`
+	DaemonEndpoint    *string                    `json:"daemon_endpoint"`
+	ClientCertFile    *string                    `json:"client_cert_file"`
+	ClientKeyFile     *string                    `json:"client_key_file"`
+	ServerCAFile      *string                    `json:"server_ca_file"`
 }
 
 type agentEnvelopeCaseRequest struct {

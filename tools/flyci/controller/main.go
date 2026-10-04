@@ -92,13 +92,17 @@ func poll(ctx context.Context, rec *reconciler, logger *slog.Logger) {
 		defer func() { observation.finish(ctx.Err()); rec.observation = nil }()
 	}
 	if rec.qualification != nil {
-		if observation != nil { observation.condition("qualification_storage", qMounted(rec.qualification.root)) }
+		if observation != nil {
+			observation.condition("qualification_storage", qMounted(rec.qualification.root))
+		}
 		qualificationErr := rec.github.qTick(ctx, rec.qualification)
 		observation.observe("qualification", qualificationErr)
 		if observation != nil {
 			records, inventoryErr := readinessQualificationSnapshot(rec.qualification)
 			observation.observe("qualification_inventory", inventoryErr)
-			if inventoryErr == nil { observation.qualificationRecords(records) }
+			if inventoryErr == nil {
+				observation.qualificationRecords(records)
+			}
 		}
 		if err := qualificationErr; err != nil {
 			logger.Error("qualification reconciliation refused", "error", err)

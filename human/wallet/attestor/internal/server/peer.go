@@ -1,7 +1,7 @@
 package server
 
 import (
-    "bytes"
+	"bytes"
 	"context"
 	"encoding/binary"
 	"encoding/json"
@@ -16,7 +16,7 @@ import (
 	"time"
 
 	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/policy"
-    "github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/store"
+	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/store"
 	"github.com/sidiora-labs/paxeer-network/human/wallet/attestor/internal/transport"
 )
 
@@ -293,10 +293,17 @@ func (s *Server) vote(keyID, sessionID string, epoch uint64) (*refreshVote, erro
 		return nil, errVotesFull
 	}
 	v := &refreshVote{epoch: epoch, created: now, acks: make(map[string]bool), changed: make(chan struct{}, 1), done: make(chan struct{}), decision: decisionPending}
-    if state,err:=s.opts.Store.CeremonyRefresh(keyID);err==nil {
-        if state.SessionID!=sessionID||state.BaseEpoch+1!=epoch{return nil,fmt.Errorf("ceremony refresh vote identity mismatch")}
-        if state.Decision!="" {v.decision=state.Decision;close(v.done)}
-    } else if !errors.Is(err,store.ErrNotFound){return nil,err}
+	if state, err := s.opts.Store.CeremonyRefresh(keyID); err == nil {
+		if state.SessionID != sessionID || state.BaseEpoch+1 != epoch {
+			return nil, fmt.Errorf("ceremony refresh vote identity mismatch")
+		}
+		if state.Decision != "" {
+			v.decision = state.Decision
+			close(v.done)
+		}
+	} else if !errors.Is(err, store.ErrNotFound) {
+		return nil, err
+	}
 	s.votes[key] = v
 	return v, nil
 }
@@ -336,19 +343,27 @@ func (s *Server) handlePeerRefresh(w http.ResponseWriter, r *http.Request) {
 		writeError(w, newError(CodeQuorumNotMember, "%q does not hold a share of key %q", sender, req.KeyID))
 		return
 	}
-    if req.Epoch!=rec.Epoch+1 {
-        state,err:=s.opts.Store.CeremonyRefresh(req.KeyID)
-        if err!=nil||state.SessionID!=req.SessionID||state.BaseEpoch+1!=req.Epoch||state.Decision!=PhaseCommit||rec.Epoch!=req.Epoch||!sameIDs(state.Participants,rec.Participants)||!bytes.Equal(state.PublicKey,rec.PublicKey){
-            writeError(w,newError(CodeSessionBadRequest,"refresh vote epoch or durable identity differs"));return
-        }
-    }
+	if req.Epoch != rec.Epoch+1 {
+		state, err := s.opts.Store.CeremonyRefresh(req.KeyID)
+		if err != nil || state.SessionID != req.SessionID || state.BaseEpoch+1 != req.Epoch || state.Decision != PhaseCommit || rec.Epoch != req.Epoch || !sameIDs(state.Participants, rec.Participants) || !bytes.Equal(state.PublicKey, rec.PublicKey) {
+			writeError(w, newError(CodeSessionBadRequest, "refresh vote epoch or durable identity differs"))
+			return
+		}
+	}
 	coordinator := coordinatorOf(rec.Participants)
-    if req.Phase=="recover_abort" {
-        if s.opts.NodeID!=coordinator{writeError(w,newError(CodeSessionBadRequest,"only the original coordinator can settle recovery"));return}
-        decision,err:=s.abortCeremonyAtCoordinator(req.KeyID,req.SessionID,req.Epoch,rec)
-        if err!=nil{writeError(w,newError(CodeStoreFailed,"%v",err));return}
-        writeJSON(w,http.StatusOK,RefreshVoteAck{NodeID:s.opts.NodeID,Decision:decision});return
-    }
+	if req.Phase == "recover_abort" {
+		if s.opts.NodeID != coordinator {
+			writeError(w, newError(CodeSessionBadRequest, "only the original coordinator can settle recovery"))
+			return
+		}
+		decision, err := s.abortCeremonyAtCoordinator(req.KeyID, req.SessionID, req.Epoch, rec)
+		if err != nil {
+			writeError(w, newError(CodeStoreFailed, "%v", err))
+			return
+		}
+		writeJSON(w, http.StatusOK, RefreshVoteAck{NodeID: s.opts.NodeID, Decision: decision})
+		return
+	}
 	v, err := s.vote(req.KeyID, req.SessionID, req.Epoch)
 	if errors.Is(err, errVotesFull) {
 		http.Error(w, err.Error(), http.StatusServiceUnavailable)
@@ -378,11 +393,20 @@ func (s *Server) handlePeerRefresh(w http.ResponseWriter, r *http.Request) {
 			writeError(w, newError(CodeSessionBadRequest, "only the coordinator %q decides refreshes of key %q", coordinator, req.KeyID))
 			return
 		}
-        if state,err:=s.opts.Store.CeremonyRefresh(req.KeyID);err==nil {
-            if state.SessionID!=req.SessionID||state.BaseEpoch+1!=req.Epoch||!sameIDs(state.Participants,rec.Participants)||!bytes.Equal(state.PublicKey,rec.PublicKey){writeError(w,newError(CodeSessionBadRequest,"ceremony decision differs from staged identity"));return}
-            if err:=s.opts.Store.SetCeremonyRefreshDecision(req.KeyID,req.SessionID,req.Epoch,req.Phase);err!=nil{writeError(w,newError(CodeStoreFailed,"%v",err));return}
-            s.acceptDurableDecision(v,req.Phase)
-        } else if !errors.Is(err,store.ErrNotFound){writeError(w,newError(CodeStoreFailed,"%v",err));return}
+		if state, err := s.opts.Store.CeremonyRefresh(req.KeyID); err == nil {
+			if state.SessionID != req.SessionID || state.BaseEpoch+1 != req.Epoch || !sameIDs(state.Participants, rec.Participants) || !bytes.Equal(state.PublicKey, rec.PublicKey) {
+				writeError(w, newError(CodeSessionBadRequest, "ceremony decision differs from staged identity"))
+				return
+			}
+			if err := s.opts.Store.SetCeremonyRefreshDecision(req.KeyID, req.SessionID, req.Epoch, req.Phase); err != nil {
+				writeError(w, newError(CodeStoreFailed, "%v", err))
+				return
+			}
+			s.acceptDurableDecision(v, req.Phase)
+		} else if !errors.Is(err, store.ErrNotFound) {
+			writeError(w, newError(CodeStoreFailed, "%v", err))
+			return
+		}
 		writeJSON(w, http.StatusOK, RefreshVoteAck{NodeID: s.opts.NodeID, Decision: s.decide(v, req.Phase)})
 	default:
 		writeError(w, newError(CodeSessionBadRequest, "unknown refresh phase %q", req.Phase))
@@ -390,9 +414,13 @@ func (s *Server) handlePeerRefresh(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) decideRefresh(ctx context.Context, keyID, sessionID string, epoch uint64, participants []string) (bool, error) {
-    if state,err:=s.opts.Store.CeremonyRefresh(keyID);err==nil && state.Decision=="" {
-        s.votesMu.Lock();if old:=s.votes[keyID+"\x00"+sessionID];old!=nil&&old.decision==PhaseAbort{delete(s.votes,keyID+"\x00"+sessionID)};s.votesMu.Unlock()
-    }
+	if state, err := s.opts.Store.CeremonyRefresh(keyID); err == nil && state.Decision == "" {
+		s.votesMu.Lock()
+		if old := s.votes[keyID+"\x00"+sessionID]; old != nil && old.decision == PhaseAbort {
+			delete(s.votes, keyID+"\x00"+sessionID)
+		}
+		s.votesMu.Unlock()
+	}
 	v, err := s.vote(keyID, sessionID, epoch)
 	if err != nil {
 		return false, err
@@ -414,11 +442,17 @@ func (s *Server) decideRefresh(ctx context.Context, keyID, sessionID string, epo
 		return false, fmt.Errorf("coordinator %s did not take the staged acknowledgement: %w", coordinator, err)
 	}
 	if ack.Decision == PhaseCommit || ack.Decision == PhaseAbort {
-        if state,loadErr:=s.opts.Store.CeremonyRefresh(keyID);loadErr==nil {
-            if state.SessionID!=sessionID{return false,fmt.Errorf("ceremony decision identity mismatch")}
-            if err:=s.opts.Store.SetCeremonyRefreshDecision(keyID,sessionID,epoch,ack.Decision);err!=nil{return false,err}
-            s.acceptDurableDecision(v,ack.Decision)
-        } else if !errors.Is(loadErr,store.ErrNotFound){return false,loadErr}
+		if state, loadErr := s.opts.Store.CeremonyRefresh(keyID); loadErr == nil {
+			if state.SessionID != sessionID {
+				return false, fmt.Errorf("ceremony decision identity mismatch")
+			}
+			if err := s.opts.Store.SetCeremonyRefreshDecision(keyID, sessionID, epoch, ack.Decision); err != nil {
+				return false, err
+			}
+			s.acceptDurableDecision(v, ack.Decision)
+		} else if !errors.Is(loadErr, store.ErrNotFound) {
+			return false, loadErr
+		}
 		s.decide(v, ack.Decision)
 	}
 	timer := time.NewTimer(3 * s.opts.PeerTimeout)
@@ -442,7 +476,7 @@ func (s *Server) coordinateRefresh(ctx context.Context, v *refreshVote, keyID, s
 wait:
 	for {
 		acks, decided := s.voteState(v)
-		if acks >= others || decided==PhaseCommit || decided==PhaseAbort {
+		if acks >= others || decided == PhaseCommit || decided == PhaseAbort {
 			break
 		}
 		select {
@@ -458,12 +492,20 @@ wait:
 	if acks >= others {
 		phase = PhaseCommit
 	}
-    if state,err:=s.opts.Store.CeremonyRefresh(keyID);err==nil {
-        if state.SessionID!=sessionID{return false,fmt.Errorf("ceremony coordinator identity mismatch")}
-        if state.Decision!=""{phase=state.Decision}
-        if err:=s.opts.Store.SetCeremonyRefreshDecision(keyID,sessionID,epoch,phase);err!=nil{return false,err}
-        s.acceptDurableDecision(v,phase)
-    } else if !errors.Is(err,store.ErrNotFound){return false,err}
+	if state, err := s.opts.Store.CeremonyRefresh(keyID); err == nil {
+		if state.SessionID != sessionID {
+			return false, fmt.Errorf("ceremony coordinator identity mismatch")
+		}
+		if state.Decision != "" {
+			phase = state.Decision
+		}
+		if err := s.opts.Store.SetCeremonyRefreshDecision(keyID, sessionID, epoch, phase); err != nil {
+			return false, err
+		}
+		s.acceptDurableDecision(v, phase)
+	} else if !errors.Is(err, store.ErrNotFound) {
+		return false, err
+	}
 	decision := s.decide(v, phase)
 	body, err := json.Marshal(RefreshVote{SessionID: sessionID, KeyID: keyID, Epoch: epoch, Phase: decision})
 	if err != nil {
@@ -489,39 +531,81 @@ wait:
 	return true, nil
 }
 
-func (s *Server) abortCeremonyAtCoordinator(keyID,sessionID string,epoch uint64,rec store.ShareRecord)(string,error){
-    if old,err:=s.opts.Store.CeremonyRefreshHistory(keyID,sessionID);err==nil {
-        if old.BaseEpoch+1!=epoch||!sameIDs(old.Participants,rec.Participants)||!bytes.Equal(old.PublicKey,rec.PublicKey)||old.Decision!=PhaseAbort{return "",store.ErrInvalid}
-        return PhaseAbort,nil
-    } else if !errors.Is(err,store.ErrNotFound){return "",err}
-    state,err:=s.opts.Store.CeremonyRefresh(keyID);if err!=nil{return "",err}
-    if state.SessionID!=sessionID||state.BaseEpoch+1!=epoch||!sameIDs(state.Participants,rec.Participants)||!bytes.Equal(state.PublicKey,rec.PublicKey){return "",store.ErrInvalid}
-    if state.Decision==PhaseCommit{return PhaseCommit,nil}
-    if rec.Epoch!=state.BaseEpoch{return "",store.ErrInvalid}
-    if err:=s.opts.Store.SetCeremonyRefreshDecision(keyID,sessionID,epoch,PhaseAbort);err!=nil{return "",err}
-    s.votesMu.Lock();v:=s.votes[keyID+"\x00"+sessionID];s.votesMu.Unlock();if v!=nil{s.acceptDurableDecision(v,PhaseAbort)}
-    return PhaseAbort,nil
+func (s *Server) abortCeremonyAtCoordinator(keyID, sessionID string, epoch uint64, rec store.ShareRecord) (string, error) {
+	if old, err := s.opts.Store.CeremonyRefreshHistory(keyID, sessionID); err == nil {
+		if old.BaseEpoch+1 != epoch || !sameIDs(old.Participants, rec.Participants) || !bytes.Equal(old.PublicKey, rec.PublicKey) || old.Decision != PhaseAbort {
+			return "", store.ErrInvalid
+		}
+		return PhaseAbort, nil
+	} else if !errors.Is(err, store.ErrNotFound) {
+		return "", err
+	}
+	state, err := s.opts.Store.CeremonyRefresh(keyID)
+	if err != nil {
+		return "", err
+	}
+	if state.SessionID != sessionID || state.BaseEpoch+1 != epoch || !sameIDs(state.Participants, rec.Participants) || !bytes.Equal(state.PublicKey, rec.PublicKey) {
+		return "", store.ErrInvalid
+	}
+	if state.Decision == PhaseCommit {
+		return PhaseCommit, nil
+	}
+	if rec.Epoch != state.BaseEpoch {
+		return "", store.ErrInvalid
+	}
+	if err := s.opts.Store.SetCeremonyRefreshDecision(keyID, sessionID, epoch, PhaseAbort); err != nil {
+		return "", err
+	}
+	s.votesMu.Lock()
+	v := s.votes[keyID+"\x00"+sessionID]
+	s.votesMu.Unlock()
+	if v != nil {
+		s.acceptDurableDecision(v, PhaseAbort)
+	}
+	return PhaseAbort, nil
 }
 
-func (s *Server) recoverCeremonyRefresh(ctx context.Context,state store.CeremonyRefresh,rec store.ShareRecord,newSession string)error{
-    coordinator:=coordinatorOf(rec.Participants)
-    decision:=""
-    if coordinator==s.opts.NodeID {
-        var err error;decision,err=s.abortCeremonyAtCoordinator(rec.KeyID,state.SessionID,state.BaseEpoch+1,rec);if err!=nil{return err}
-    } else {
-        raw,err:=json.Marshal(RefreshVote{KeyID:rec.KeyID,SessionID:state.SessionID,Epoch:state.BaseEpoch+1,Phase:"recover_abort"});if err!=nil{return err}
-        callCtx,cancel:=context.WithTimeout(ctx,s.opts.PeerTimeout);defer cancel()
-        var ack RefreshVoteAck
-        if err:=s.peerCall(callCtx,coordinator,PathPeerRefresh,raw,true,&ack);err!=nil{return err}
-        if ack.NodeID!=coordinator{return store.ErrInvalid};decision=ack.Decision
-        if decision==PhaseAbort {if err:=s.opts.Store.SetCeremonyRefreshDecision(rec.KeyID,state.SessionID,state.BaseEpoch+1,decision);err!=nil{return err}}
-    }
-    if decision!=PhaseAbort{return fmt.Errorf("original refresh committed and cannot be replaced")}
-    return s.opts.Store.RestartCeremonyRefresh(rec.KeyID,state.SessionID,newSession)
+func (s *Server) recoverCeremonyRefresh(ctx context.Context, state store.CeremonyRefresh, rec store.ShareRecord, newSession string) error {
+	coordinator := coordinatorOf(rec.Participants)
+	decision := ""
+	if coordinator == s.opts.NodeID {
+		var err error
+		decision, err = s.abortCeremonyAtCoordinator(rec.KeyID, state.SessionID, state.BaseEpoch+1, rec)
+		if err != nil {
+			return err
+		}
+	} else {
+		raw, err := json.Marshal(RefreshVote{KeyID: rec.KeyID, SessionID: state.SessionID, Epoch: state.BaseEpoch + 1, Phase: "recover_abort"})
+		if err != nil {
+			return err
+		}
+		callCtx, cancel := context.WithTimeout(ctx, s.opts.PeerTimeout)
+		defer cancel()
+		var ack RefreshVoteAck
+		if err := s.peerCall(callCtx, coordinator, PathPeerRefresh, raw, true, &ack); err != nil {
+			return err
+		}
+		if ack.NodeID != coordinator {
+			return store.ErrInvalid
+		}
+		decision = ack.Decision
+		if decision == PhaseAbort {
+			if err := s.opts.Store.SetCeremonyRefreshDecision(rec.KeyID, state.SessionID, state.BaseEpoch+1, decision); err != nil {
+				return err
+			}
+		}
+	}
+	if decision != PhaseAbort {
+		return fmt.Errorf("original refresh committed and cannot be replaced")
+	}
+	return s.opts.Store.RestartCeremonyRefresh(rec.KeyID, state.SessionID, newSession)
 }
 
-func (s *Server) acceptDurableDecision(v *refreshVote,decision string){
-    s.votesMu.Lock();defer s.votesMu.Unlock()
-    if v.decision==decisionPending{close(v.done)}
-    v.decision=decision
+func (s *Server) acceptDurableDecision(v *refreshVote, decision string) {
+	s.votesMu.Lock()
+	defer s.votesMu.Unlock()
+	if v.decision == decisionPending {
+		close(v.done)
+	}
+	v.decision = decision
 }

@@ -15,7 +15,7 @@ const (
 )
 
 type config struct {
-	Readiness *readinessConfig
+	Readiness             *readinessConfig
 	QualificationRoot     string
 	QualificationContract string
 	Owner                 string
@@ -126,7 +126,11 @@ func loadConfig(getenv func(string) string) (config, error) {
 	}
 	if len(errs) == 0 {
 		readiness, err := loadReadinessConfig(strings.TrimSpace(getenv("CI_READINESS_CONFIG_FILE")), cfg)
-		if err != nil { errs = append(errs, err) } else { cfg.Readiness = readiness }
+		if err != nil {
+			errs = append(errs, err)
+		} else {
+			cfg.Readiness = readiness
+		}
 	}
 	return cfg, errors.Join(errs...)
 }
