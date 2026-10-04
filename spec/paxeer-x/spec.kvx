@@ -26605,7 +26605,7 @@ fanout_basis = "Owner requested maximum parallel implementation on 2026-10-04; d
 source_status = "complete"
 completion_basis = "implementation under owner CONSTITUTION; qualification separately recorded"
 qualification_status = "UNRUN"
-source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-103.6.10-intake.json"
+source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/task103610-continuation-intake.json"
 
 [task.104.14.1]
 title = "Run every journey against the real stack"

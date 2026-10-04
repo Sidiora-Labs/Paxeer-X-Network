@@ -14,13 +14,15 @@ static int record_matches(const uint8_t *record, const uint8_t checkpoint_id[32]
                           lxp_daemon_anchor_ladder ladder)
 {
     json_document doc;
+    uint8_t header_digest[32];
     uint64_t submitted = 0U, finalized = 0U;
+    (void)memset(header_digest, 0x99, sizeof(header_digest));
     record_json[0] = '"';
     encode_hex(record, ANCHOR_CHECKPOINT_BYTES, record_json + 1U);
     (void)strcat(record_json, "\"");
     doc = (json_document){anchor_tokens, 0U, record_json, record_json + strlen(record_json)};
     if (parse_value(&doc, 0U) != 0) return -1;
-    return anchor_checkpoint_matches(anchor_tokens, &certificate, checkpoint_id, ladder,
+    return anchor_checkpoint_matches(anchor_tokens, &certificate, checkpoint_id, header_digest, ladder,
                                      &submitted, &finalized);
 }
 
