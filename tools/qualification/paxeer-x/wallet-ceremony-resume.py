@@ -337,8 +337,8 @@ def main():
         require(sum(item['kind'] == kind for item in services) == 1, 'one actual ' + kind + ' process required')
     require(all(item['kind'] in ('attestor', 'postgres', 'supabase', 'chain') for item in services), 'unknown service type')
     daemon_processes = []
-    def restore_nodes():
-        for item in config['retained_stores']:
+    def restore_nodes(plane):
+        for item in plane['retained_stores']:
             active = Path(item['active']).resolve()
             baseline = Path(item['baseline']).resolve()
             require(active.is_relative_to(STATE) and baseline.is_relative_to(STATE)
@@ -347,14 +347,14 @@ def main():
             if active.exists():
                 shutil.rmtree(active)
             shutil.copytree(baseline, active)
-        approved = private_file(config['initial_inventory']).read_bytes()
-        for filename in config['inventory_destinations']:
+        approved = private_file(plane['initial_inventory']).read_bytes()
+        for filename in plane['inventory_destinations']:
             path = Path(filename).resolve()
             require(path.is_relative_to(STATE), 'inventory must be isolated retained state')
             path.write_bytes(approved)
             path.chmod(0o600)
     require(len(config['retained_stores']) == 5, 'five original sealed store snapshots required')
-    restore_nodes()
+    restore_nodes(config)
     postgres_identity = None
     database_state = Path(config['postgres_data_dir']).resolve()
     database_baseline = Path(config['postgres_baseline']).resolve()
@@ -369,9 +369,22 @@ def main():
         os.chown(STATE, owner.pw_uid, owner.pw_gid)
         for path in [database_state, *database_state.rglob('*')]:
             os.chown(path, owner.pw_uid, owner.pw_gid)
-    def launch_service(index, item):
+    def launch_service(index, item, plane=config):
         environment = dict(base_env)
         environment.update(item['env'])
+        if item['kind'] == 'attestor':
+            require(not item['argv'], 'actual attestor daemon must start without alternate operation arguments')
+            active = Path(environment['ATTESTOR_DATA_DIR']).resolve()
+            inventory = Path(environment['ATTESTOR_INVENTORY_FILE']).resolve()
+            require(active.is_relative_to(STATE) and str(active) in
+                    {str(Path(store['active']).resolve()) for store in plane['retained_stores']},
+                    'attestor must use its declared isolated retained store')
+            require(inventory.is_relative_to(STATE) and str(inventory) in
+                    {str(Path(path).resolve()) for path in plane['inventory_destinations']},
+                    'attestor must use its declared isolated approved inventory')
+            for key, value in item['env'].items():
+                if value and key.endswith('_DIR'):
+                    require(Path(value).resolve().is_relative_to(STATE), 'attestor output directory must be isolated')
         for key, value in item['env'].items():
             if key.endswith('_URL') and urllib.parse.urlparse(value).hostname:
                 local_url(value)
@@ -381,10 +394,41 @@ def main():
         process = launch_service(index, item)
         if item['kind'] == 'attestor':
             daemon_processes.append((index, item, process))
-    def ready_nodes():
-        for _, _, process in daemon_processes:
+    rehearsal = config.get('rehearsal')
+    require(isinstance(rehearsal, dict), 'separate isolated original-key rehearsal plane required')
+    require(rehearsal['member_ids'] == config['member_ids'], 'rehearsal membership must match the approved original roster')
+    require(len(rehearsal['retained_stores']) == 5, 'five isolated original sealed rehearsal snapshots required')
+    active_paths = {str(Path(item['active']).resolve()) for item in config['retained_stores']}
+    rehearsal_paths = {Path(item['active']).resolve() for item in rehearsal['retained_stores']}
+    require(all(not Path(live).is_relative_to(isolated) and not isolated.is_relative_to(Path(live))
+                for live in active_paths for isolated in rehearsal_paths),
+            'rehearsal and live custody stores must be separate')
+    restore_nodes(rehearsal)
+    rehearsal_peers = []
+    for item in rehearsal['peer_relays']:
+        require(item['listen'][0] == item['target'][0] == '127.0.0.1', 'rehearsal peer relay must be loopback-only')
+        peer = PeerRelay(item['listen'], item['target'])
+        rehearsal_peers.append(peer)
+        threading.Thread(target=peer.serve_forever, daemon=True).start()
+    require(len(rehearsal_peers) == 5, 'five isolated genuine rehearsal peer relays required')
+    rehearsal_faults = Faults(rehearsal, rehearsal_peers)
+    rehearsal_proxies = []
+    require({item['id'] for item in rehearsal['operator_proxies']} == set(config['member_ids']), 'rehearsal proxy roster differs')
+    live_endpoints = {local_url(item['upstream']).netloc for item in config['operator_proxies']}
+    for item in rehearsal['operator_proxies']:
+        require(item['listen'][0] == '127.0.0.1', 'rehearsal operator relay must be loopback-only')
+        require(local_url(item['upstream']).netloc not in live_endpoints, 'rehearsal uses a live attestor endpoint')
+        proxy = OperatorProxy(item, rehearsal_faults)
+        rehearsal_proxies.append(proxy)
+        threading.Thread(target=proxy.serve_forever, daemon=True).start()
+    require(len(rehearsal['services']) == 5 and all(item['kind'] == 'attestor' for item in rehearsal['services']),
+            'five actual isolated rehearsal daemons required')
+    rehearsal_processes = [launch_service(index + len(services), item, rehearsal)
+                           for index, item in enumerate(rehearsal['services'])]
+    def ready_plane(operator_proxies, processes):
+        for process in processes:
             require(process.poll() is None, 'actual attestor exited; inspect retained private log')
-        for item in config['operator_proxies']:
+        for item in operator_proxies:
             endpoint = local_url(item['upstream'])
             connection = http.client.HTTPSConnection(endpoint.hostname, endpoint.port,
                 context=tls_context(item['operator']), timeout=2)
@@ -399,6 +443,8 @@ def main():
             finally:
                 connection.close()
         return True
+    def ready_nodes():
+        return ready_plane(config['operator_proxies'], [process for _, _, process in daemon_processes])
     def restart_nodes():
         for _, _, process in daemon_processes:
             stop(process)
@@ -409,6 +455,7 @@ def main():
     ceremony_env.update(config['ceremony_env'])
     for key in ('CEREMONY_DATABASE_URL', 'CEREMONY_RPC_URL', 'CEREMONY_SOURCE_DATABASE_URL', 'CEREMONY_REHEARSAL_ADMIN_URL'):
         local_url(ceremony_env[key])
+    local_url(ceremony_env['CEREMONY_REHEARSAL_RPC_URL'])
     ceremony = config['artifacts']['ceremony']['path']
     durability = config['artifacts']['attestor_durability_tests']['path']
     focused = start([durability, '-test.v', '-test.count=1', '-test.timeout=90s',
@@ -444,26 +491,47 @@ def main():
         except (subprocess.SubprocessError, OSError):
             return False
     wait_for(database_ready, 'real isolated database did not become ready')
+    wait_for(lambda: ready_plane(rehearsal['operator_proxies'], rehearsal_processes),
+             'real isolated rehearsal attestors did not become ready')
     require(query("select count(*) from wallets w where w.migrated_at is null and not (w.kind='funded' or exists(select 1 from funded_accounts f where f.wallet_id=w.id))") == '1',
             'focused positive fixture must have exactly one actually eligible standard wallet')
     live_journal = ceremony_env['CEREMONY_JOURNAL_DIR']
-    ceremony_env['CEREMONY_JOURNAL_DIR'] = config['rehearsal_journal_dir']
-    require(ceremony_env['CEREMONY_JOURNAL_DIR'] != live_journal, 'separate rehearsal journal required')
+    ceremony_env['CEREMONY_REHEARSAL_JOURNAL_DIR'] = config['rehearsal_journal_dir']
+    require(ceremony_env['CEREMONY_REHEARSAL_JOURNAL_DIR'] != live_journal, 'separate rehearsal journal required')
+    original_rehearsal_nodes = ceremony_env['CEREMONY_REHEARSAL_NODES']
+    ceremony_env.pop('CEREMONY_REHEARSAL_NODES')
+    invoke('missing-rehearsal-config-refusal', ['rehearse', '--report-only-counts'], False)
+    ceremony_env['CEREMONY_REHEARSAL_NODES'] = ceremony_env['CEREMONY_NODES']
+    invoke('shared-live-custody-refusal', ['rehearse', '--report-only-counts'], False)
+    require(not faults.imports and not rehearsal_faults.imports, 'shared custody refusal reached import')
+    ceremony_env['CEREMONY_REHEARSAL_NODES'] = original_rehearsal_nodes
+    ceremony_env['CEREMONY_REHEARSAL_JOURNAL_DIR'] = live_journal
+    invoke('shared-live-journal-refusal', ['rehearse', '--report-only-counts'], False)
+    ceremony_env['CEREMONY_REHEARSAL_JOURNAL_DIR'] = config['rehearsal_journal_dir']
+    original_pins = ceremony_env['CEREMONY_REHEARSAL_NODE_PINS']
+    pins = original_pins.split(',')
+    member, _, pin = pins[0].partition('=')
+    pins[0] = member + '=' + ('00' * 32 if pin.strip().removeprefix('0x') != '00' * 32 else '11' * 32)
+    ceremony_env['CEREMONY_REHEARSAL_NODE_PINS'] = ','.join(pins)
+    invoke('rehearsal-pin-substitution-refusal', ['rehearse', '--report-only-counts'], False)
+    ceremony_env['CEREMONY_REHEARSAL_NODE_PINS'] = original_pins
+    require(not faults.imports and not rehearsal_faults.imports, 'rehearsal scope refusal reached custody import')
     invoke('rehearsal', ['rehearse', '--report-only-counts'], True)
-    ceremony_env['CEREMONY_JOURNAL_DIR'] = live_journal
+    require(rehearsal_faults.failure is None, rehearsal_faults.failure or 'rehearsal relay integrity failure')
+    require(len(rehearsal_faults.imports) == 5 and not faults.imports,
+            'rehearsal must import only into its isolated five-member custody plane')
     rehearsal_output = (STATE / 'rehearsal.log').read_text()
     require(rehearsal_output.strip() and all(re.fullmatch(r'(?:(?:[a-z_]+=[0-9]+|table=[a-z_][a-z0-9_]*)(?: |$))+', line)
                                            for line in rehearsal_output.splitlines()), 'rehearsal must emit only stage counts')
     require(private_file(ceremony_env['CEREMONY_REHEARSAL_RECEIPT']).is_file(), 'durable rehearsal receipt missing')
-    for _, _, process in daemon_processes:
+    for process in rehearsal_processes:
         stop(process)
-    restore_nodes()
-    faults.imports.clear()
-    faults.verifications.clear()
-    faults.refreshes.clear()
-    for position, (index, item, _) in enumerate(daemon_processes):
-        daemon_processes[position] = (index, item, launch_service(index, item))
-    wait_for(ready_nodes, 'restored rehearsal baseline did not become ready')
+    for proxy in rehearsal_proxies:
+        proxy.shutdown()
+    for peer in rehearsal_peers:
+        peer.shutdown()
+    require(ceremony_env['CEREMONY_JOURNAL_DIR'] == live_journal, 'rehearsal changed live journal configuration')
+    wait_for(ready_nodes, 'live attestors changed during isolated rehearsal')
     unmigrated()
     original_did = query("select did from wallets where id='" + wallet_id + "'::uuid")
     require(original_did.startswith('did:') and len(original_did) <= 256, 'fixture original DID missing')
@@ -579,7 +647,8 @@ def main():
         proxy.shutdown()
     for peer in peers:
         peer.shutdown()
-    result = {'status': 'passed', 'cases': ['counts-only-rehearsal', 'changed-original-identity-refusal', 'partial-import', 'exact-import-retry',
+    result = {'status': 'passed', 'cases': ['missing-rehearsal-config-refusal', 'shared-live-custody-refusal', 'shared-live-journal-refusal',
+              'rehearsal-pin-substitution-refusal', 'isolated-rehearsal-custody', 'counts-only-rehearsal', 'changed-original-identity-refusal', 'partial-import', 'exact-import-retry',
               'import-conflict-refusals', 'lost-reply', 'node-restart', 'failed-verification-recovery', 'precommit-process-death',
               'atomic-migration', 'cached-evidence-replay', 'one-shot-refusal',
               'advanced-epoch-import-replay', 'gateway-operator-refusal', 'generated-key-grant-isolation',

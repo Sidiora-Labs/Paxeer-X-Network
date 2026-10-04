@@ -66,6 +66,8 @@ type Options struct {
  CountsOnly bool
  CeremonyOptions *migrate.Options
  AttestorConfig *attestor.Config
+ DeliveryAttestorConfig *attestor.Config
+ DeliveryJournalDir string
 }
 
 type Report struct {
@@ -109,9 +111,32 @@ func LoadOptions(getenv func(string) string) (Options, error) {
 		zero(o.Passphrase)
 		return Options{}, err
 	}
- config,err:=attestor.LoadConfig(getenv);if err!=nil{zero(o.MasterKey);zero(o.Passphrase);return Options{},err};o.AttestorConfig=&config
- ceremony,err:=migrate.LoadOptions(getenv);if err!=nil{zero(o.MasterKey);zero(o.Passphrase);return Options{},err};ceremony.Rehearsal=true;o.CeremonyOptions=&ceremony
+ delivery,err:=attestor.LoadConfig(getenv);if err!=nil{o.Wipe();return Options{},err};o.DeliveryAttestorConfig=&delivery
+ config,err:=attestor.LoadConfig(func(name string)string{return getenv(strings.Replace(name,"CEREMONY_","CEREMONY_REHEARSAL_",1))});if err!=nil{o.Wipe();return Options{},err};o.AttestorConfig=&config
+ ceremony,err:=migrate.LoadOptions(getenv);if err!=nil{o.Wipe();return Options{},err}
+ o.DeliveryJournalDir=ceremony.JournalDir
+ ceremony.JournalDir=get("CEREMONY_REHEARSAL_JOURNAL_DIR")
+ ceremony.RPCURL=get("CEREMONY_REHEARSAL_RPC_URL")
+ ceremony.Rehearsal=true;o.CeremonyOptions=&ceremony
+ if err=o.validateIsolation();err!=nil{o.Wipe();return Options{},err}
  return o, nil
+}
+
+func (o Options) validateIsolation()error{
+ if o.AttestorConfig==nil||o.DeliveryAttestorConfig==nil||o.CeremonyOptions==nil||!o.CeremonyOptions.Rehearsal||o.CeremonyOptions.RPCURL==""{return ErrConfig}
+ if len(o.AttestorConfig.Nodes)!=attestor.NodeCount||len(o.DeliveryAttestorConfig.Nodes)!=attestor.NodeCount{return ErrConfig}
+ for _,config:=range []*attestor.Config{o.AttestorConfig,o.DeliveryAttestorConfig}{if config.CertFile==""||config.KeyFile==""||config.CAFile==""||config.GatewayCertFile==""||config.GatewayKeyFile==""||config.OwnerTokensFile==""||config.GatewayCertFile==config.CertFile{return ErrConfig}}
+ authority:=func(raw string)(string,error){u,err:=url.Parse(raw);if err!=nil||u.Scheme!="https"||u.Hostname()==""||u.User!=nil||u.RawQuery!=""||u.Fragment!=""{return "",ErrConfig};port:=u.Port();if port==""{port="443"};return net.JoinHostPort(strings.TrimSuffix(strings.ToLower(u.Hostname()),"."),port),nil}
+ members:=map[string][32]byte{};live:=map[string]bool{}
+ for _,n:=range o.DeliveryAttestorConfig.Nodes{endpoint,err:=authority(n.URL);if err!=nil||n.ID==""||live[endpoint]{return ErrConfig};if _,exists:=members[n.ID];exists{return ErrConfig};members[n.ID]=n.Pin;live[endpoint]=true}
+ isolated:=map[string]bool{}
+ for _,n:=range o.AttestorConfig.Nodes{pin,exists:=members[n.ID];endpoint,err:=authority(n.URL);if err!=nil||!exists||pin!=n.Pin||live[endpoint]||isolated[endpoint]{return ErrConfig};delete(members,n.ID);isolated[endpoint]=true}
+ if len(members)!=0{return ErrConfig}
+ if !filepath.IsAbs(o.DeliveryJournalDir)||!filepath.IsAbs(o.CeremonyOptions.JournalDir){return ErrConfig}
+ delivery,err:=filepath.EvalSymlinks(o.DeliveryJournalDir);if err!=nil{return ErrConfig}
+ rehearsal,err:=filepath.EvalSymlinks(o.CeremonyOptions.JournalDir);if err!=nil||delivery==rehearsal{return ErrConfig}
+ for _,path:=range []string{o.DeliveryJournalDir,o.CeremonyOptions.JournalDir}{info,err:=os.Lstat(path);if err!=nil||!info.IsDir()||info.Mode().Perm()!=0700{return ErrConfig};stat,ok:=info.Sys().(*syscall.Stat_t);if !ok||stat.Uid!=uint32(os.Geteuid()){return ErrConfig}}
+ return nil
 }
 
 func (o Options) Wipe() {
@@ -125,6 +150,7 @@ func Rehearse(ctx context.Context, o Options) (Report, error) {
 	if o.SourceURL == "" || o.MigrationsDir == "" || o.AdminURL == "" || o.ArchivePath == "" || len(o.MasterKey) == 0 {
 		return r, ErrConfig
 	}
+ if err:=o.validateIsolation();err!=nil{return r,err}
 	dbURL, drop, err := temporaryDatabase(ctx, o.AdminURL)
 	if err != nil {
 		return r, err
@@ -151,11 +177,9 @@ func Rehearse(ctx context.Context, o Options) (Report, error) {
 	}
 	r.FundedArchived = archived.Rows
 
- var config attestor.Config
- if o.AttestorConfig!=nil{config=*o.AttestorConfig}else{config,err=attestor.LoadConfig(os.Getenv);if err!=nil{return r,err}}
+ config:=*o.AttestorConfig
  client,err:=attestor.New(config);if err!=nil{return r,err};defer client.Close()
- var ceremony migrate.Options
- if o.CeremonyOptions!=nil{ceremony=*o.CeremonyOptions}else{ceremony,err=migrate.LoadOptions(os.Getenv);if err!=nil{return r,err};defer func(){for i:=range ceremony.JournalKey{ceremony.JournalKey[i]=0}}()}
+ ceremony:=*o.CeremonyOptions
  ceremony.Rehearsal=true
 	r.Report, err = migrate.Deliver(ctx, db, client, o.MasterKey, plan,ceremony)
 	if err != nil {
