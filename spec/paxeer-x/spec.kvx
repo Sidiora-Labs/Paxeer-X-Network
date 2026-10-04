@@ -23839,7 +23839,7 @@ do_4 = "Measure against the packages as published, not against internal shortcut
 do_5 = "Record the measured line counts as build artifacts."
 do_6 = "Wire the gate into make platform-test-middleware and CI."
 do_7 = "Provide this task selector in tools/paxeer-x/gates and execute the full scoped acceptance contract using real production paths. Preserve the retained verification command coverage; move aggregate matrices to release scope and refuse an unknown or unimplemented selector."
-touches = ["platform/tools/benchmark/src/main.rs", "tools/paxeer-x/gates/104.16.5.sh", "platform/Cargo.toml", "platform/tools/benchmark/Cargo.toml", "platform/Makefile.inc", "platform/Cargo.lock", ".github/workflows/platform.yml"]
+touches = ["platform/tools/benchmark/src/main.rs", "tools/paxeer-x/gates/104.16.5.sh", "platform/Cargo.toml", "platform/tools/benchmark/Cargo.toml", "platform/Makefile.inc", "platform/Cargo.lock"]
 verify_cmd = "timeout 30m tools/paxeer-x/verify-task.sh 104.16.5"
 gate_kind = "planned-adapter"
 max_builds = 1
@@ -23867,7 +23867,7 @@ fleet_authority = "User ordered thirty agents into pending integrations within f
 source_status = "complete"
 completion_basis = "implementation under owner CONSTITUTION; qualification separately recorded"
 qualification_status = "UNRUN"
-source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/fleet-104.16.5-publication.json"
+source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/fleet-104.16.5-repair1-source.json"
 
 [task.104.17.3]
 title = "Build the deployable hosted testnet and faucet"

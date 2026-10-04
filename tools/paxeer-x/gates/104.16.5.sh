@@ -146,9 +146,34 @@ def build(manifest_path):
     executable = target / 'debug/layerx-platform-benchmark'
     require(executable.is_file() and not executable.is_symlink() and os.access(executable, os.X_OK),
             'actual benchmark executable required')
+    frozen_executable = manifest_path.parent / 'layerx-platform-benchmark'
+    source_descriptor = os.open(executable, os.O_RDONLY | os.O_NOFOLLOW)
+    with os.fdopen(source_descriptor, 'rb') as source:
+        original = os.fstat(source.fileno())
+        require(stat.S_ISREG(original.st_mode) and original.st_size <= 1024 * 1024 * 1024,
+                'bounded compiled executable required')
+        destination = os.open(frozen_executable,
+            os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o700)
+        source_hash = hashlib.sha256()
+        with os.fdopen(destination, 'wb') as output:
+            for chunk in iter(lambda: source.read(1024 * 1024), b''):
+                source_hash.update(chunk)
+                output.write(chunk)
+            output.flush()
+            os.fsync(output.fileno())
+        final = os.fstat(source.fileno())
+        require((original.st_dev, original.st_ino, original.st_size, original.st_mtime_ns, original.st_ctime_ns)
+                == (final.st_dev, final.st_ino, final.st_size, final.st_mtime_ns, final.st_ctime_ns),
+                'compiled executable changed during freezing')
+    require(digest(frozen_executable) == source_hash.hexdigest(), 'compiled artifact copy digest mismatch')
+    directory_descriptor = os.open(manifest_path.parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    try:
+        os.fsync(directory_descriptor)
+    finally:
+        os.close(directory_descriptor)
     json_write(manifest_path, {'version': 'layerx-ten-line-artifacts-v1',
                'source_revision': revision, 'source_files': sources,
-               'benchmark': {'path': str(executable), 'sha256': digest(executable)}})
+               'benchmark': {'path': str(frozen_executable), 'sha256': digest(frozen_executable)}})
 
 def sample_report(path, snapshot, passed):
     report = private_json(path)
