@@ -36212,7 +36212,7 @@ do_2 = "preserve every production implementation and assertion"
 do_3 = "Compile the real declared package once then execute only its captured focused test binary once"
 source_status = "complete"
 completion_basis = "implementation under owner CONSTITUTION; qualification separately recorded"
-qualification_status = "UNRUN_BUILD_TIMEOUT"
+qualification_status = "PASS"
 source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-103.6.22-publication-handoff.json"
 qualification_revision = "0e64c271faf571e47fbd987cd1baac57ec7b269d"
 qualification_build_exit = 124
@@ -36220,6 +36220,14 @@ qualification_build_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/qualific
 qualification_build_result = "/root/lx-ops/paxeer-x-integration-2026-10-03/qualification/task103622/build-result.json"
 qualification_verify_status = "UNRUN"
 qualification_repair_cycles = 0
+qualification_command = ["timeout", "5m", "/root/lx-ops/paxeer-x-integration-2026-10-03/qualification/task103622/node.test", "-test.run", "^(TestOverrideList|TestSidioraFeeTokenUpgradeIsRegisteredAndRunsTheFeeTokenMigration|TestXWebUpgradeKeepsExistingXWebState)$", "-test.v"]
+qualification_exit_code = 0
+qualification_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/qualification/task103622/continuation-verify.log"
+qualification_evidence = "/root/lx-ops/paxeer-x-integration-2026-10-03/qualification/task103622/continuation-final-result.json"
+build_revision = "0e64c271faf571e47fbd987cd1baac57ec7b269d"
+build_command = ["timeout", "--kill-after=5s", "900s", "/usr/local/go/bin/go", "test", "-c", "-race", "-tags=ledger,test_ledger_mock", "-p", "2", "-o", "/root/lx-ops/paxeer-x-integration-2026-10-03/qualification/task103622/node.test", "./node"]
+build_exit_code = 0
+build_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/qualification/task103622/continuation-build.log"
 
 [task.103.6.23]
 title = "Use real epoch execution for airdrop entitlement fixture progress"
