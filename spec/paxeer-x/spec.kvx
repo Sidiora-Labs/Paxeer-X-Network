@@ -33870,3 +33870,29 @@ qualification_status = "passed"
 build_exit_code = 0
 verify_exit_code = 0
 qualification_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-104.35.32-result.json"
+
+[task.104.35.13]
+title = "Bind authenticated native replay inputs to the actual single-step execution verifier"
+status = "done"
+mode = "BUILD"
+wave = 2
+requires = ["0.2", "104.35.11"]
+reqs = ["1105.3", "1105.4"]
+do_1 = "Build the actual arbiter facade over real wasmi Engine::execute_step and runtime restore; expose only authenticated inputs and deterministic bounded step/post-commitment comparison."
+do_2 = "Derive canonical runtime state from closed native v2 record proofs and authentic code/activity/authorization/funding/lifecycle/catalogue bindings at the receipt previous root. CapturedSemanticReplayV2 remains untrusted until all facts authenticate."
+do_3 = "Bind all interpreter PC/frame/value/local/memory/global/meter state and host input domains; preserve unsupported/trap/refusal behavior and integer/budget bounds."
+do_4 = "Add a real runtime-to-authenticated-arbiter positive/negative step corpus without mocked hostauthority or fabricated receipt."
+touches = ["programs/crates/layerx-programs-arbiter/Cargo.toml", "programs/crates/layerx-programs-arbiter/src/lib.rs", "programs/crates/layerx-programs-arbiter/src/step.rs", "programs/crates/layerx-programs-arbiter/tests/verified_step.rs"]
+build_cmd = "timeout 20m env CARGO_TARGET_DIR=/root/lx-target/programs cargo test --locked --manifest-path programs/Cargo.toml -p layerx-programs-arbiter --test verified_step --no-run"
+verify_cmd = "timeout 20m env CARGO_TARGET_DIR=/root/lx-target/programs cargo test --locked --manifest-path programs/Cargo.toml -p layerx-programs-arbiter --test verified_step"
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop at original dispatch cap, second failed repair, missing real authority or legacy weakening; report exact source state and evidence."
+completion_basis_policy = "Owner CONSTITUTION: fully implemented tasks DONE, actual qualification separate; partial source remains in_progress."
+source_ownership = "Root serializes shared schema contract, workspace manifests, locks, spec and publication; no deployment."
+upstream_replay_producer = "104.35.16"
+
+completion_basis = "implementation"
+source_completion_evidence = "Owner25+26 confirms facade, actual restore, historical code resolution and genuine corpus source satisfy13;17 previous-root authority and35.2 marketplace still incomplete."
