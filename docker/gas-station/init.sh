@@ -46,11 +46,18 @@ need GAS_STATION_GAS_LIMIT "$uint"
 need GAS_STATION_MAX_PRIORITY_FEE_PER_GAS "$uint"
 need GAS_STATION_RELAYER_KEY_ENV '[A-Z_][A-Z0-9_]*'
 need "$GAS_STATION_RELAYER_KEY_ENV" '(0x)?[0-9a-fA-F]{64}'
-need GAS_STATION_RATE_OWNER_KEY '(0x)?[0-9a-fA-F]{64}'
+need GAS_STATION_RATE_OWNER_KEY_ENV '[A-Z_][A-Z0-9_]*'
+need "$GAS_STATION_RATE_OWNER_KEY_ENV" '(0x)?[0-9a-fA-F]{64}'
+if [ "$GAS_STATION_RATE_OWNER_KEY_ENV" = "$GAS_STATION_RELAYER_KEY_ENV" ] ||
+   [ "${!GAS_STATION_RATE_OWNER_KEY_ENV}" = "${!GAS_STATION_RELAYER_KEY_ENV}" ]; then
+    echo 'gas-station-init: distinct sponsor and owner key sources required' >&2
+    exit 2
+fi
 need GAS_STATION_RATE_CADENCE_SECONDS "$uint"
 need GAS_STATION_RATE_GAS_BUDGET_PER_DAY "$uint"
 need GAS_STATION_RATE_BALANCE_FLOOR "$uint"
 need GAS_STATION_RATE_MAX_FEE_PER_GAS "$uint"
+need GAS_STATION_RATE_CONFIRMATION_RETRY_SECONDS "$uint"
 
 endpoints=""
 for url in $GAS_STATION_ENDPOINTS; do
@@ -67,19 +74,19 @@ printf '{"listen":"%s","gas_limit":%s,"max_priority_fee_per_gas":%s,"chain_id":%
 	"$GAS_STATION_RELAYER_KEY_ENV" >"$config.new"
 mv "$config.new" "$config"
 chmod 0644 "$config"
-printf '{"max_priority_fee_per_gas":%s,"chain_id":%s,"endpoints":[%s],"paymaster":"%s","token":"%s","decimals":%s,"max_rate_age":%s,"spread_bps":%s,"margin_bps":%s,"per_account_limit":%s,"per_interval_limit":%s,"per_quote_limit":%s,"interval_seconds":%s,"balance_floor":%s,"relayer_key_env":"%s","rate_owner_key_env":"GAS_STATION_RATE_OWNER_KEY","rate_cadence_seconds":%s,"rate_gas_budget_per_day":%s,"rate_balance_floor":%s,"rate_max_fee_per_gas":%s}\n' \
+printf '{"max_priority_fee_per_gas":%s,"chain_id":%s,"endpoints":[%s],"paymaster":"%s","token":"%s","decimals":%s,"max_rate_age":%s,"spread_bps":%s,"margin_bps":%s,"per_account_limit":%s,"per_interval_limit":%s,"per_quote_limit":%s,"interval_seconds":%s,"balance_floor":%s,"relayer_key_env":"%s","rate_owner_key_env":"%s","rate_cadence_seconds":%s,"rate_gas_budget_per_day":%s,"rate_balance_floor":%s,"rate_max_fee_per_gas":%s,"rate_confirmation_retry_seconds":%s}\n' \
 	"$GAS_STATION_MAX_PRIORITY_FEE_PER_GAS" \
 	"$GAS_STATION_CHAIN_ID" "$endpoints" "$GAS_STATION_PAYMASTER" "$GAS_STATION_TOKEN" \
 	"$GAS_STATION_DECIMALS" "$GAS_STATION_MAX_RATE_AGE" "$GAS_STATION_SPREAD_BPS" \
 	"$GAS_STATION_MARGIN_BPS" "$GAS_STATION_PER_ACCOUNT_LIMIT" "$GAS_STATION_PER_INTERVAL_LIMIT" \
 	"$GAS_STATION_PER_QUOTE_LIMIT" "$GAS_STATION_INTERVAL_SECONDS" "$GAS_STATION_BALANCE_FLOOR" \
-	"$GAS_STATION_RELAYER_KEY_ENV" "$GAS_STATION_RATE_CADENCE_SECONDS" \
+    "$GAS_STATION_RELAYER_KEY_ENV" "$GAS_STATION_RATE_OWNER_KEY_ENV" "$GAS_STATION_RATE_CADENCE_SECONDS" \
 	"$GAS_STATION_RATE_GAS_BUDGET_PER_DAY" "$GAS_STATION_RATE_BALANCE_FLOOR" \
-	"$GAS_STATION_RATE_MAX_FEE_PER_GAS" >"$dir/rate.json.new"
+    "$GAS_STATION_RATE_MAX_FEE_PER_GAS" "$GAS_STATION_RATE_CONFIRMATION_RETRY_SECONDS" >"$dir/rate.json.new"
 mv "$dir/rate.json.new" "$dir/rate.json"
 chmod 0644 "$dir/rate.json"
 chown -R 4020:4020 "$dir"
-env -u GAS_STATION_RATE_OWNER_KEY setpriv --reuid=4020 --regid=4020 --clear-groups --no-new-privs \
+env -u "$GAS_STATION_RATE_OWNER_KEY_ENV" setpriv --reuid=4020 --regid=4020 --clear-groups --no-new-privs \
 	/usr/local/bin/paxeer-gas-station --config "$config" --journal "$dir/sponsorship.jsonl" &
 station=$!
 env -u "$GAS_STATION_RELAYER_KEY_ENV" setpriv --reuid=4020 --regid=4020 --clear-groups --no-new-privs \

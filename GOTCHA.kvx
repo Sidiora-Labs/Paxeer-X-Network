@@ -2139,3 +2139,7 @@ resolution = "Resolve actual manifests/headers with rg --files; ramp target is p
 [gotcha.639]
 observed = "Genuine native pre-execution terminal receipts have no guest outcome; the existing executed-outcome verifier correctly refuses that different shape."
 resolution = "Task10435.14 adds a separate closed refusal verifier with full maintained-chain authentication, preserving all existing executed-outcome checks."
+
+[gotcha.640]
+observed = "Task20.4 real-process gate refused absent candidate inputs; historical fake-RPC assertions do not establish genuine funded rate publication and were preserved unchanged."
+resolution = "Record build0 and verify1 separately; mark fully implemented source DONE under owner authority without runtime credit or an unchanged rerun."

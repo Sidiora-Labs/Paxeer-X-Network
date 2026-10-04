@@ -1063,9 +1063,155 @@ def liability_lifecycle(material, manifest, evidence):
         liability_admission_bound(name, material['scenarios'][name], binary, evidence)
     print('PAXEER_X_GATE tests=15 skipped=0')
 
+RATE_SCENARIOS = ('prepared', 'broadcast', 'replaced', 'cancelled', 'finalized',
+                  'unfinalized', 'unreachable', 'divergent', 'changed-owner',
+                  'changed-chain', 'changed-paymaster', 'legacy-unresolved',
+                  'torn-write', 'malformed-signed-bytes', 'missing-rate',
+                  'future-rate', 'expired-rate')
+
+
+def rate_process(binary, config, state, rate, log):
+    return subprocess.Popen([str(binary), 'rate', '--config', str(config), '--journal', str(state),
+                             '--rate-file', str(rate)], cwd=ROOT, stdin=subprocess.DEVNULL,
+                            stdout=log, stderr=log, start_new_session=True)
+
+
+def rate_recovery_case(name, row, binary, evidence, keccak):
+    config_path = protected(row['config']); config = document(config_path)
+    source = protected(row['journal']); entries = journal(source)
+    rate_path = Path(row['rate_file'])
+    if name != 'missing-rate':
+        protected(rate_path)
+    else:
+        require(rate_path.is_absolute() and not rate_path.exists(), 'real missing owner input required')
+    endpoints = row['observation_endpoints']
+    require(len(endpoints) >= 3 and len(endpoints) == len(set(endpoints)), 'actual observation quorum required')
+    for endpoint in config['endpoints'] + endpoints:
+        local_url(endpoint, secure=True)
+    require(config['rate_cadence_seconds'] + config['rate_confirmation_retry_seconds'] < config['max_rate_age']
+            and config['rate_confirmation_retry_seconds'] <= 60, 'bounded governed recovery allowance required')
+    require(config['rate_owner_key_env'] != config['relayer_key_env']
+            and os.environ.get(config['rate_owner_key_env']), 'real configured owner source required')
+    prepared = [e['transaction'] for e in entries if e['kind'] == 'rate_prepared']
+    replaced = [e['transaction'] for e in entries if e['kind'] == 'rate_replaced']
+    require(prepared or name == 'legacy-unresolved', 'genuine publisher append boundary required')
+    transactions = prepared + replaced
+    for transaction in transactions:
+        p = transaction['publication']
+        require(transaction['version'] == 2 and keccak(bytes(transaction['raw'])) == bytes(p['hash'])
+                and len(transaction['raw']) <= 1024, 'genuine exact signed transaction required')
+    if transactions:
+        original = prepared[0]; current = replaced[-1] if replaced else original
+        p = current['publication']; owner = hexbytes(p['owner']); nonce = p['nonce']
+        tx_hash = hexbytes(p['hash'])
+        require(all(t['publication']['owner'] == p['owner'] and t['publication']['nonce'] == nonce
+                    and t['chain_id'] == current['chain_id'] and t['paymaster'] == current['paymaster']
+                    for t in transactions), 'one coherent owner nonce required')
+        if name == 'prepared':
+            require(rpc(endpoints, 'eth_getTransactionByHash', [tx_hash]) is None,
+                    'append-before-send boundary was not established')
+        if name == 'broadcast':
+            require(rpc(endpoints, 'eth_getTransactionByHash', [tx_hash]) is not None,
+                    'actual broadcast boundary missing')
+        if name in ('replaced', 'cancelled'):
+            require(replaced and current['cancellation'] == (name == 'cancelled'),
+                    'genuine replacement or cancellation required')
+        if name == 'unfinalized':
+            receipt = rpc(endpoints, 'eth_getTransactionReceipt', [tx_hash])
+            require(receipt and int(rpc(endpoints, 'eth_getBlockByNumber', ['finalized', False])['number'], 16)
+                    < int(receipt['blockNumber'], 16), 'actual unfinalized receipt required')
+        if name == 'finalized':
+            canonical_receipt(endpoints, tx_hash)
+    directory = evidence / ('rate-' + name); directory.mkdir(mode=0o700)
+    state = directory / 'rate.jsonl'; state.write_bytes(source.read_bytes()); state.chmod(0o600)
+    durable = state.read_bytes()
+    negative = {'changed-owner': 'NotOwner', 'changed-chain': 'Configuration',
+                'changed-paymaster': 'NotOwner', 'legacy-unresolved': 'LegacyUnresolved',
+                'torn-write': 'Corrupt', 'malformed-signed-bytes': 'Corrupt'}
+    if name == 'torn-write':
+        state.write_bytes(durable + b'{'); durable = state.read_bytes()
+    elif name == 'malformed-signed-bytes':
+        values = json.loads(json.dumps(entries))
+        item = next(e['transaction'] for e in values if e['kind'] == 'rate_prepared')
+        item['raw'][-1] ^= 1
+        state.write_text(''.join(json.dumps(e) + '\n' for e in values)); durable = state.read_bytes()
+    log_path = directory / 'process.log'
+    with log_path.open('wb') as log:
+        process = rate_process(binary, config_path, state, rate_path, log)
+        try:
+            if name in negative:
+                require(process.wait(timeout=20) != 0, 'unsafe recovery started')
+                log.flush()
+                require(negative[name] in log_path.read_text() and state.read_bytes() == durable,
+                        'unsafe history changed or refusal was unrelated')
+                return
+            refusal = {'missing-rate': 'RateFileMissing', 'future-rate': 'NotYetSet', 'expired-rate': 'Expired'}
+            deadline = time.monotonic() + config['rate_confirmation_retry_seconds'] + 20
+            while time.monotonic() < deadline:
+                if process.poll() is not None and name in ('unreachable', 'divergent'):
+                    log.flush(); output = log_path.read_text()
+                    expected = 'Unavailable' if name == 'unreachable' else 'Divergence'
+                    require(process.returncode != 0 and expected in output and state.read_bytes() == durable,
+                            'unavailable or divergent startup did not preserve exact history')
+                    return
+                require(process.poll() is None, 'publisher exited during recovery')
+                values = journal(state)
+                terminal = [e for e in values if e['kind'] == 'rate_finalized']
+                log.flush(); output = log_path.read_text()
+                if name in refusal:
+                    if refusal[name] in output:
+                        require(state.read_bytes() == durable, 'refused new rate changed durable history')
+                        return
+                elif name in ('unreachable', 'divergent', 'unfinalized'):
+                    if 'rate publication refused' in output:
+                        require(not terminal and state.read_bytes().startswith(durable),
+                                'uncertain receipt released publication liability')
+                        if name == 'divergent':
+                            require('Divergence' in output, 'divergence scenario failed for unrelated reason')
+                        return
+                elif terminal:
+                    require(len(terminal) == 1, 'one nonce finalized more than once')
+                    settled = terminal[0]; winner = hexbytes(settled['hash'])
+                    require(winner in [hexbytes(t['publication']['hash']) for t in transactions],
+                            'recovery constructed another publication before resolving original')
+                    receipt = canonical_receipt(endpoints, winner)
+                    require(settled['receipt'] == receipt
+                            and settled['canonical'] == rpc(endpoints, 'eth_getBlockByNumber', [receipt['blockNumber'], False])
+                            and settled['settlement']['cost_wei'] == str(int(receipt['gasUsed'], 16)
+                                                                      * int(receipt['effectiveGasPrice'], 16)),
+                            'settlement does not retain canonical exact finality and cost')
+                    transaction = rpc(endpoints, 'eth_getTransactionByHash', [winner])
+                    require(transaction['from'].lower() == owner and int(transaction['nonce'], 16) == nonce,
+                            'recovery changed owner nonce')
+                    require(state.read_bytes().startswith(durable), 'recovery rewrote original durable bytes')
+                    stop(process); checkpoint = state.read_bytes()
+                    process = rate_process(binary, config_path, state, rate_path, log)
+                    time.sleep(1)
+                    require(process.poll() is None and state.read_bytes() == checkpoint,
+                            'restart repeated a finalized publication or reservation')
+                    return
+                time.sleep(0.1)
+            raise RuntimeError('rate recovery exceeded governed confirmation allowance')
+        finally:
+            stop(process)
+
+
+def rate_publication_recovery(material, manifest, evidence):
+    require(material['source_revision'] == manifest['source']['revision'] and material['build_exit'] == 0,
+            'source-bound real publisher build required')
+    binary = protected(material['binary'])
+    require(os.access(binary, os.X_OK) and digest(binary) == material['binary_sha256'], 'publisher binary identity differs')
+    require(set(material['scenarios']) == set(RATE_SCENARIOS), 'rate recovery acceptance case missing')
+    from eth_hash.auto import keccak
+    for name in RATE_SCENARIOS:
+        rate_recovery_case(name, material['scenarios'][name], binary, evidence, keccak)
+        print('passed rate-' + name, flush=True)
+    print(f'PAXEER_X_GATE tests={len(RATE_SCENARIOS)} skipped=0')
+
+
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--case', required=True, choices=['station-autonomous-recovery', 'first-use-sponsorship', 'quote-liability-lifecycle'])
+    parser.add_argument('--case', required=True, choices=['station-autonomous-recovery', 'first-use-sponsorship', 'quote-liability-lifecycle', 'rate-publication-recovery'])
     parser.add_argument('--candidate-manifest', required=True)
     args = parser.parse_args()
     spec = importlib.util.spec_from_file_location('candidate', ROOT / 'tools/paxeer-x/candidate.py')
@@ -1073,6 +1219,16 @@ def main():
     manifest = candidate.load_private(args.candidate_manifest)
     candidate.validate(manifest, candidate.catalogue(ROOT / 'spec/paxeer-x/spec.kvx'), ROOT)
     require(not manifest['source']['dirty'], 'clean candidate required')
+    if args.case == 'rate-publication-recovery':
+        def interrupted(_number, _frame):
+            raise KeyboardInterrupt()
+        signal.signal(signal.SIGTERM, interrupted)
+        evidence = Path(os.environ['PAXEER_X_EVIDENCE_DIR']).resolve()
+        info = evidence.stat()
+        require(stat.S_ISDIR(info.st_mode) and info.st_uid == os.geteuid() and not info.st_mode & 0o077,
+                'private evidence directory required')
+        rate_publication_recovery(document(os.environ['PAXEER_X_RATE_RECOVERY_MATERIAL']), manifest, evidence)
+        return
     if args.case == 'quote-liability-lifecycle':
         def interrupted(_number, _frame):
             raise KeyboardInterrupt()

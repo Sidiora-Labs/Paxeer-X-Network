@@ -102,8 +102,17 @@ fn run_rate(arguments: &RateArguments) -> ExitCode {
             Ok(publication) => {
                 let state = publisher.journal().state();
                 let day = publication.signed_at / DAY_SECONDS;
+                let kind = if state
+                    .rate_transactions
+                    .get(&publication.hash)
+                    .is_some_and(|tx| tx.cancellation)
+                {
+                    "cancelled"
+                } else {
+                    "published"
+                };
                 println!(
-                    "rate published nonce={} hash={} rate={} cost_wei={} spent_wei={} spent_gas={} reserved_wei={} daily_wei_max={daily_wei}",
+                    "rate {kind} nonce={} hash={} rate={} cost_wei={} spent_wei={} spent_gas={} reserved_wei={} daily_wei_max={daily_wei}",
                     publication.nonce,
                     layerx_gas_station::rpc::hex(&publication.hash),
                     u128::from_be_bytes(publication.rate[16..].try_into().unwrap_or([0; 16])),
@@ -120,6 +129,10 @@ fn run_rate(arguments: &RateArguments) -> ExitCode {
             }
             Err(RateRefusal::Unchanged { age }) => cadence.saturating_sub(age).max(1),
             Err(error @ RateRefusal::Journal(_)) => {
+                eprintln!("{error}");
+                return ExitCode::FAILURE;
+            }
+            Err(error @ (RateRefusal::LegacyUnresolved | RateRefusal::NotOwner)) => {
                 eprintln!("{error}");
                 return ExitCode::FAILURE;
             }

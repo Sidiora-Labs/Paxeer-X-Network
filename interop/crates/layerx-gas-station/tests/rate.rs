@@ -483,3 +483,71 @@ fn settlement_records_the_actual_cost() -> TestResult {
     assert_eq!(publisher.journal().state().unsettled().len(), 1);
     Ok(())
 }
+
+#[test]
+fn real_signed_v2_publication_replays_exactly_and_refuses_identity_corruption() -> TestResult {
+    use layerx_gas_station::journal::PublicationTransaction;
+    use std::os::unix::fs::{MetadataExt as _, PermissionsExt as _};
+    let input = PathBuf::from(
+        std::env::var_os("PAXEER_X_RATE_AUTHENTICATED_TRANSACTION")
+            .ok_or("genuine private signed publisher transaction required")?,
+    );
+    let metadata = std::fs::symlink_metadata(&input)?;
+    if !input.is_absolute()
+        || !metadata.is_file()
+        || metadata.mode() & 0o077 != 0
+        || metadata.nlink() != 1
+        || metadata.len() > 16_384
+        || metadata.uid() != std::fs::metadata("/proc/self")?.uid()
+        || input.components().any(|component| {
+            component
+                .as_os_str()
+                .to_str()
+                .is_some_and(|part| part == ".env" || part.starts_with(".env."))
+        })
+    {
+        return Err("protected genuine publisher transaction required".into());
+    }
+    let transaction: PublicationTransaction = serde_json::from_slice(&std::fs::read(input)?)?;
+    let directory =
+        std::env::temp_dir().join(format!("paxeer-rate-authenticated-{}", std::process::id()));
+    std::fs::create_dir(&directory)?;
+    std::fs::set_permissions(&directory, std::fs::Permissions::from_mode(0o700))?;
+    let path = directory.join("rate.jsonl");
+    let mut journal = Journal::open(&path)?;
+    let entry = Entry::RatePrepared {
+        transaction: transaction.clone(),
+    };
+    journal.append(&entry)?;
+    let durable = std::fs::read(&path)?;
+    journal.append(&entry)?;
+    assert_eq!(std::fs::read(&path)?, durable);
+    let state = journal.state().clone();
+    for field in ["chain", "paymaster", "owner", "nonce", "rate", "fee", "raw"] {
+        let mut changed = transaction.clone();
+        match field {
+            "chain" => changed.chain_id ^= 1,
+            "paymaster" => changed.paymaster[0] ^= 1,
+            "owner" => changed.publication.owner[0] ^= 1,
+            "nonce" => changed.publication.nonce ^= 1,
+            "rate" => changed.publication.rate[0] ^= 1,
+            "fee" => changed.publication.max_fee_per_gas ^= 1,
+            _ => changed.raw[0] ^= 1,
+        }
+        assert!(
+            journal
+                .append(&Entry::RatePrepared {
+                    transaction: changed
+                })
+                .is_err(),
+            "{field}"
+        );
+        assert_eq!(journal.state(), &state);
+        assert_eq!(std::fs::read(&path)?, durable);
+    }
+    drop(journal);
+    assert_eq!(Journal::open(&path)?.state(), &state);
+    std::fs::remove_file(path)?;
+    std::fs::remove_dir(directory)?;
+    Ok(())
+}
