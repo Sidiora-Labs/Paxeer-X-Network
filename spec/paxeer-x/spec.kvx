@@ -33896,3 +33896,27 @@ upstream_replay_producer = "104.35.16"
 
 completion_basis = "implementation"
 source_completion_evidence = "Owner25+26 confirms facade, actual restore, historical code resolution and genuine corpus source satisfy13;17 previous-root authority and35.2 marketplace still incomplete."
+
+[task.104.13.25]
+title = "Run Human boundary qualification with the genuine disposable clock authority"
+status = "done"
+mode = "BUILD"
+wave = 4
+requires = ["0.2", "104.13.24"]
+reqs = ["1064.3", "1071.5"]
+do_1 = "Wire the existing real runtime clock supervisor wrapper into the focused boundary gate. Reuse unchanged source-bound task24 service and boundary artifacts, build and pin the actual clock artifact once, clear inherited bindings and create a private temporary namespace. Preserve all clock peer/PID/UID checks and cleanup; never synthesize time or deploy a service."
+touches = ["tools/qualification/paxeer-x/human-service-contract.py"]
+build_cmd = "timeout 10m python3 tools/qualification/paxeer-x/human-service-contract.py --build-clock"
+verify_cmd = "timeout 10m python3 tools/qualification/paxeer-x/human-service-contract.py"
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop at original30-minute cap, unrelated failure, missing genuine authority or weakening; retain exact source, command, exit and private evidence."
+completion_basis_policy = "Owner CONSTITUTION: fully implemented DONE; qualification separate and partial remains in_progress."
+source_ownership = "Exact declared sources only; root owns shared manifests, source lease reassignment, spec and publication. No deployment, live signing or repeated unchanged gate."
+completion_basis = "implementation"
+qualification_status = "passed"
+build_exit_code = 0
+verify_exit_code = 0
+qualification_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-104.13.25-source-handoff.json"
