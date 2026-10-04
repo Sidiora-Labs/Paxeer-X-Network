@@ -4,6 +4,7 @@
 
 #include "layerx/lxp_genesis.h"
 #include "layerx/lxp_hash.h"
+#include "layerx/lxp_crypto.h"
 #include "layerx/lxp_kernel.h"
 #include "layerx/lxp_snapshot.h"
 #include "layerx/lxp_identity.h"
@@ -531,7 +532,7 @@ static size_t admission_functions(uint8_t *out, uint32_t count,
     admission_leb(&section, count);
     for (uint32_t index = 0U; index < count; ++index) {
         admission_bytes body = {body_storage, 0U};
-        admission_byte(&body, locals == 0U ? 0U : 1U);
+        admission_byte(&body, (uint8_t)(locals == 0U ? 0U : 1U));
         if (locals != 0U) {
             admission_leb(&body, locals);
             admission_byte(&body, 0x7fU);

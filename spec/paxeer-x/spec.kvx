@@ -34652,3 +34652,22 @@ remaining_repair_cycles = 2
 source_status = "complete"
 completion_basis = "implementation under owner CONSTITUTION; qualification separately recorded"
 source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-9.4-source-handoff.json"
+
+[task.6.8]
+title = "Finish the interrupted migration compiler repair qualification"
+status = "in_progress"
+mode = "QUALIFY"
+wave = 4
+requires = ["0.2", "6.2"]
+reqs = ["118"]
+touches = ["programs/crates/layerx-programs-runtime/src/ffi.rs", "programs/crates/layerx-programs-runtime/src/execute.rs", "programs/crates/layerx-programs-runtime/src/lifecycle.rs", "tests/programs/test_lifecycle.c", "tools/qualification/paxeer-x/programs_native_migration.py", "src/modules/programs/deploy.c", "include/layerx/programs.h", "src/modules/programs/fee.c", "include/layerx/lxp_kernel.h", "src/protocol/lxp_kernel.c", "src/modules/programs/fees.c", "include/layerx/lxp_governance.h", "src/modules/governance/lxp_governance.c", "src/modules/programs/registration.c", "cmd/layerxd/lxp_daemon_process.c"]
+do_1 = "Complete only owner-approved interrupted continuation against frozen source and real task gate, retaining original DONE source status, all prior failures and remaining repair budget."
+verify_cmd = "timeout 30m python3 tools/qualification/paxeer-x/programs_native_migration.py"
+time_limit_minutes = 30
+stop_condition = "Owner-approved resumption START11:21UTC END11:51UTC; stop cap, unrelatedfailure, missinggenuineauthority orweakening."
+owner_approval = "User explicitly approved three30-minute resumptions after usage interruption. MCPtwo repairsremain, migrationone remains, languageszero. No budget reset."
+qualification_status = "UNRUN"
+remaining_repair_cycles = 1
+qualification_repair1_build_evidence = "b702973618ce764f4245cae99ba67614575c7beb | timeout 20m python3 tools/qualification/paxeer-x/programs_native_migration.py --build-artifacts | 1 | /root/lx-ops/paxeer-x-integration-2026-10-03/task-6.8-qualification-build/build-3.log"
+repair2 = "Explicit uint8_t conversion for bounded0/1 and actual lxp_crypto.h include; no assertion or bounds changes"
+remaining_repair_cycles_after_repair2 = 0
