@@ -1270,6 +1270,18 @@ fn start_sequencer(
     setup: &NodeSetup,
     actor: Actor,
 ) -> (Daemon, Actor, PathBuf, BTreeMap<&'static str, String>) {
+    start_sequencer_with_identities(root, layerxd, repository, genesis, setup, actor, &[])
+}
+
+fn start_sequencer_with_identities(
+    root: &Path,
+    layerxd: &Path,
+    repository: &Path,
+    genesis: &Genesis,
+    setup: &NodeSetup,
+    actor: Actor,
+    additional: &[Actor],
+) -> (Daemon, Actor, PathBuf, BTreeMap<&'static str, String>) {
     let node_dir = root.join("node");
     let checkpoints = node_dir.join("checkpoints");
     let logs = node_dir.join("logs");
@@ -1298,6 +1310,16 @@ fn start_sequencer(
             identities.push_str(additional);
         }
     });
+    let mut registered = std::collections::BTreeSet::from([actor.did.clone()]);
+    for identity in additional {
+        if registered.insert(identity.did.clone()) {
+            identities.push_str(&format!(
+                "{}:{}:1\n",
+                hex(identity.did.as_bytes()),
+                hex(&identity.signing_key.verifying_key().to_bytes())
+            ));
+        }
+    }
     write(
         &node_dir.join("identities.txt"),
         identities.as_bytes(),
@@ -1466,6 +1488,47 @@ fn start_cluster() -> Cluster {
 }
 
 fn start_cluster_with_custody(custody: Option<CustodySetup>) -> Cluster {
+    start_cluster_with_setup(custody, None)
+}
+
+struct RegistryGenesisSetup {
+    fixture: PathBuf,
+    asset: [u8; 32],
+    actor: Actor,
+    additional: Vec<Actor>,
+}
+
+fn build_registry_genesis(root: &Path, builder: &Path, setup: &RegistryGenesisSetup) -> Genesis {
+    let directory = root.join("genesis");
+    make_dir(&directory, 0o755);
+    let artifacts = directory.join("artifacts");
+    command(
+        &text(builder),
+        &[
+            &text(&setup.fixture.join("request.lxgb")),
+            &text(&setup.fixture.join("genesis.key")),
+            &text(&artifacts),
+            "--custody-registry",
+            &text(&setup.fixture.join("custody.registry")),
+        ],
+    );
+    let request = must(
+        fs::read(artifacts.join("paxeer-registration-request.lxrr")),
+        "multiasset native registration request",
+    );
+    assert_eq!(request.len(), 73);
+    assert_eq!(&request[..4], b"LXRR");
+    Genesis {
+        directory: artifacts,
+        asset: setup.asset,
+        receipt_state_root: must(request[41..73].try_into(), "multiasset genesis root"),
+    }
+}
+
+fn start_cluster_with_setup(
+    custody: Option<CustodySetup>,
+    registry: Option<RegistryGenesisSetup>,
+) -> Cluster {
     assert_eq!(
         effective_uid(),
         0,
@@ -1485,12 +1548,24 @@ fn start_cluster_with_custody(custody: Option<CustodySetup>) -> Cluster {
         hex(&random32()[..8])
     ));
     make_dir(&root, 0o755);
-    let genesis = build_genesis(
-        &root,
-        &builder,
-        custody.as_ref().map(|setup| setup.profile_path.as_path()),
+    assert!(
+        custody.is_none() || registry.is_none(),
+        "ambiguous genesis fixture"
     );
-    let actor = custody.map_or_else(actor, |setup| setup.actor);
+    let genesis = if let Some(setup) = &registry {
+        build_registry_genesis(&root, &builder, setup)
+    } else {
+        build_genesis(
+            &root,
+            &builder,
+            custody.as_ref().map(|setup| setup.profile_path.as_path()),
+        )
+    };
+    let (actor, additional) = if let Some(setup) = registry {
+        (setup.actor, setup.additional)
+    } else {
+        (custody.map_or_else(actor, |setup| setup.actor), Vec::new())
+    };
 
     let sequencer_seed = random32();
     let sequencer_signing = SigningKey::from_bytes(&sequencer_seed);
@@ -1507,8 +1582,19 @@ fn start_cluster_with_custody(custody: Option<CustodySetup>) -> Cluster {
         boundary_port: free_port(),
     };
     let replica = start_replica(&root, &layerxd, &setup);
-    let (sequencer, actor, socket, sequencer_environment) =
-        start_sequencer(&root, &layerxd, &repository, &genesis, &setup, actor);
+    let (sequencer, actor, socket, sequencer_environment) = if additional.is_empty() {
+        start_sequencer(&root, &layerxd, &repository, &genesis, &setup, actor)
+    } else {
+        start_sequencer_with_identities(
+            &root,
+            &layerxd,
+            &repository,
+            &genesis,
+            &setup,
+            actor,
+            &additional,
+        )
+    };
     let boundary = start_boundary(&root, &socket, &setup);
     let sequencer_config = root.join("node/config.txt");
     Cluster {

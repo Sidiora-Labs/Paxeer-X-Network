@@ -834,6 +834,525 @@ pub(super) fn start_funded_cluster() -> (Cluster, CustodyChain) {
     (cluster, chain)
 }
 
+pub(super) struct MultiassetFunding {
+    pub(super) symbol: &'static str,
+    pub(super) asset: [u8; 32],
+    pub(super) actor: Actor,
+    pub(super) account: [u8; 32],
+    pub(super) amount: u128,
+    pub(super) credit_activity: [u8; 32],
+    pub(super) credit_receipt: Vec<u8>,
+    pub(super) next_sequence: u64,
+    pub(super) asset_next_sequence: u64,
+    pub(super) fee_account: [u8; 32],
+    pub(super) fee_balance: u128,
+}
+
+fn multiasset_account(name: &str) -> [u8; 32] {
+    Sha256::new()
+        .chain_update(b"LX:ACCOUNT:v1")
+        .chain_update(must(u32::try_from(name.len()), "multiasset account name").to_be_bytes())
+        .chain_update(name.as_bytes())
+        .finalize()
+        .into()
+}
+
+pub(super) fn multiasset_identity_sequence(cluster: &Cluster, actor: &Actor) -> u64 {
+    use layerx_client::lni::handshake::{perform, HandshakeConfig};
+    use layerx_client::lni::preparation::{preparation_state, PreparationStateContext};
+    use layerx_client::lni::schema::Version;
+    let mut connection = AccountProofConnection::connect(cluster);
+    let handshake = must(
+        perform(
+            &mut connection,
+            &HandshakeConfig {
+                built_interface_version: Version::V1_7,
+                expected_protocol_version: PROTOCOL_VERSION,
+                expected_network_id: NETWORK_ID,
+            },
+            None,
+        ),
+        "multiasset identity handshake",
+    );
+    assert_eq!(
+        handshake.node().authorised_sequencer_key,
+        cluster.sequencer_key
+    );
+    let state = must(
+        preparation_state(
+            &mut connection,
+            &must(Did::new(actor.did.as_bytes()), "multiasset actor DID"),
+            PreparationStateContext {
+                interface_version: handshake.node().interface_version,
+                expected_network_id: NETWORK_ID,
+                minimum_observed_head: handshake.node().chain_head_sequence,
+                correlation_id: 2,
+            },
+        ),
+        "authenticated native identity sequence",
+    );
+    state.account_sequence
+}
+
+pub(super) fn multiasset_account_read(
+    cluster: &Cluster,
+    id: [u8; 32],
+) -> layerx_proof::state::CanonicalAccount {
+    use layerx_client::evidence::RootSelector;
+    use layerx_client::lni::handshake::{perform, HandshakeConfig};
+    use layerx_client::lni::schema::Version;
+    use layerx_client::read::{account, ReadContext, Requested};
+    use layerx_types::verify::VerificationLevel;
+    let mut connection = AccountProofConnection::connect(cluster);
+    let handshake = must(
+        perform(
+            &mut connection,
+            &HandshakeConfig {
+                built_interface_version: Version::V1_7,
+                expected_protocol_version: PROTOCOL_VERSION,
+                expected_network_id: NETWORK_ID,
+            },
+            None,
+        ),
+        "multiasset account handshake",
+    );
+    assert_eq!(
+        handshake.node().authorised_sequencer_key,
+        cluster.sequencer_key
+    );
+    let sequencer = must(
+        unhex(&cluster.sequencer_environment["LAYERX_NODE_SEQUENCER_ID"]).try_into(),
+        "multiasset actual sequencer identity",
+    );
+    let value = must(
+        account(
+            &mut connection,
+            id,
+            ReadContext {
+                interface_version: handshake.node().interface_version,
+                correlation_id: 2,
+                expected_protocol_version: PROTOCOL_VERSION,
+                expected_network_id: NETWORK_ID,
+                requested: Requested::new(VerificationLevel::STATE_PROVEN),
+                head: layerx_client::head::HeadTracker::new(handshake.node()).current(),
+                sequencer_authorization: SequencerAuthorization::new(
+                    sequencer,
+                    cluster.sequencer_key,
+                    FIRST_BATCH,
+                    LAST_BATCH,
+                ),
+                handshake_sequencer_key: cluster.sequencer_key,
+                root_selector: RootSelector::Latest,
+            },
+        ),
+        "multiasset STATE_PROVEN account",
+    );
+    assert_eq!(value.achieved(), VerificationLevel::STATE_PROVEN);
+    must(
+        layerx_proof::state::decode_account_value(id, value.canonical_bytes()),
+        "multiasset canonical account",
+    )
+}
+
+fn multiasset_submit(cluster: &Cluster, signed: &[u8], registry: &ModuleRegistry) -> Vec<u8> {
+    let activity = must(
+        decode_signed(signed, registry),
+        "multiasset signed activity",
+    );
+    let key = hex(&activity.idempotency_key());
+    let deadline = Instant::now() + Duration::from_secs(60);
+    let answer = loop {
+        let answer = cluster.client.call(&Call::submit(
+            "/v1/activities",
+            &cluster.gateway_token,
+            &key,
+            signed,
+        ));
+        if answer.status != 202 || Instant::now() >= deadline {
+            break answer;
+        }
+        thread::sleep(Duration::from_millis(100));
+    };
+    assert_eq!(answer.status, 200, "{}", answer.text());
+    let result = answer.json();
+    assert_eq!(field(&result["result"], "state"), "completed");
+    let bytes = unhex(field(&result["result"], "receipt"));
+    let receipt = must(
+        verify_sequencer_signature(&bytes, cluster.sequencer_key),
+        "multiasset receipt signature",
+    );
+    let protocol = receipt
+        .protocol()
+        .unwrap_or_else(|| panic!("multiasset native receipt required"));
+    assert_eq!(
+        protocol.activity_id(),
+        must(activity_id(&activity), "multiasset activity identity")
+    );
+    assert_eq!(protocol.result_code(), 0, "multiasset funding refused");
+    verify_funding_batch(cluster, &receipt, &bytes);
+    let replay = cluster.client.call(&Call::submit(
+        "/v1/activities",
+        &cluster.gateway_token,
+        &key,
+        signed,
+    ));
+    assert_eq!(replay.status, 200, "{}", replay.text());
+    assert_eq!(replay.text(), answer.text());
+    assert_eq!(journal_record(cluster, &key)["attempts"], 1);
+    bytes
+}
+
+pub(super) fn start_funded_multiasset_cluster() -> (Cluster, [MultiassetFunding; 4]) {
+    use std::os::unix::fs::MetadataExt as _;
+    #[derive(serde::Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct Metadata {
+        assets: Vec<AssetMetadata>,
+    }
+    #[derive(serde::Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct AssetMetadata {
+        symbol: String,
+        asset_id: String,
+        token_pointer: String,
+        decimals: u8,
+    }
+    const SYMBOLS: [&str; 4] = ["PAX", "SID", "USDC", "USDL"];
+    let fixture = PathBuf::from(
+        std::env::var_os("LAYERX_MULTI_ASSET_CUSTODY_FIXTURE")
+            .unwrap_or_else(|| panic!("genuine LAYERX_MULTI_ASSET_CUSTODY_FIXTURE required")),
+    );
+    assert!(fixture.is_absolute());
+    assert_eq!(
+        must(fs::canonicalize(&fixture), "multiasset fixture path"),
+        fixture
+    );
+    let read = |name: &str, secret: bool| {
+        let path = fixture.join(name);
+        let metadata = must(
+            fs::symlink_metadata(&path),
+            "genuine multiasset fixture input",
+        );
+        assert!(metadata.is_file() && !metadata.file_type().is_symlink());
+        assert_eq!(metadata.uid(), effective_uid());
+        assert_eq!(metadata.nlink(), 1);
+        assert_eq!(metadata.mode() & if secret { 0o077 } else { 0o022 }, 0);
+        assert!(metadata.len() > 0 && metadata.len() <= 1_048_576);
+        must(fs::read(path), "multiasset fixture bytes")
+    };
+    let metadata: Metadata = must(
+        serde_json::from_slice(&read("custody-assets.json", false)),
+        "closed custody assets",
+    );
+    assert_eq!(metadata.assets.len(), 4);
+    let custody_registry = read("custody.registry", false);
+    assert_eq!(custody_registry.len(), 901);
+    assert_eq!(&custody_registry[..5], b"LXBR1");
+    let request = read("request.lxgb", false);
+    assert!(request.len() >= 11 && &request[..5] == b"LXGB\x02");
+    assert_eq!(&request[5..7], &PROTOCOL_VERSION.to_be_bytes());
+    assert_eq!(
+        &request[7..11],
+        &NETWORK_ID.to_be_bytes(),
+        "signed fixture cannot be retargeted"
+    );
+    assert_eq!(read("genesis.key", true).len(), 32);
+    let mut rows = Vec::new();
+    let mut pointers = BTreeSet::new();
+    for (index, symbol) in SYMBOLS.into_iter().enumerate() {
+        let declared = &metadata.assets[index];
+        let asset: [u8; 32] =
+            Sha256::digest(format!("layerx-asset:125:{symbol}").as_bytes()).into();
+        assert_eq!(declared.symbol, symbol);
+        assert_eq!(declared.asset_id, hex(&asset));
+        assert!(declared.decimals <= 38);
+        assert_eq!(declared.token_pointer.len(), 42);
+        assert!(declared.token_pointer.starts_with("0x"));
+        let pointer = unhex(&declared.token_pointer[2..]);
+        assert_eq!(declared.token_pointer, format!("0x{}", hex(&pointer)));
+        if symbol == "PAX" {
+            assert_eq!(pointer, [0; 20]);
+            assert_eq!(declared.decimals, 6);
+        } else {
+            assert_ne!(pointer, [0; 20]);
+            assert!(pointers.insert(pointer));
+        }
+        let offset = 5 + index * 224;
+        assert_eq!(
+            custody_registry[offset],
+            must(u8::try_from(index + 1), "asset registry ordinal")
+        );
+        let profile = &custody_registry[offset + 1..offset + 224];
+        assert_eq!(&profile[..5], b"LXBC4");
+        assert_eq!(&profile[5..13], &125_u64.to_be_bytes());
+        assert_eq!(&profile[97..129], &asset);
+        assert_eq!(
+            &profile[129..161],
+            &multiasset_account(&format!("system:paxeer-reserve:{}", symbol.to_lowercase()))
+        );
+        assert_eq!(&profile[201..205], &NETWORK_ID.to_be_bytes());
+        assert_eq!(&profile[205..207], &PROTOCOL_VERSION.to_be_bytes());
+        if index > 0 {
+            assert_eq!(&profile[5..97], &custody_registry[6 + 5..6 + 97]);
+            assert_eq!(&profile[161..223], &custody_registry[6 + 161..6 + 223]);
+        }
+        let seed: [u8; 32] = must(
+            read(&format!("{symbol}.actor.key"), true).try_into(),
+            "actual beneficiary key",
+        );
+        let signing_key = SigningKey::from_bytes(&seed);
+        let did = format!(
+            "did:layerx:{}",
+            hex(&signing_key.verifying_key().to_bytes())
+        );
+        let source = multiasset_account(&format!("agent:{did}:main"));
+        let account = multiasset_account(&format!("agent:{did}:asset:{}", hex(&asset)));
+        let credit = read(&format!("{symbol}.credit"), false);
+        assert!(credit.len() >= 400 && &credit[..5] == b"LXDC3");
+        assert_eq!(&credit[5..37], &Sha256::digest(profile)[..]);
+        assert_eq!(&credit[37..41], &NETWORK_ID.to_be_bytes());
+        assert_eq!(&credit[75..107], &asset);
+        assert_eq!(&credit[107..139], &account);
+        assert_eq!(&credit[139..171], &signing_key.verifying_key().to_bytes());
+        assert_eq!(&credit[327..359], &Sha256::digest(&credit[363..])[..]);
+        let amount = u128::from_be_bytes(must(credit[191..207].try_into(), "actual credit amount"));
+        assert!(amount > 0);
+        rows.push(MultiassetFunding {
+            symbol,
+            asset,
+            actor: Actor {
+                signing_key,
+                did,
+                source,
+            },
+            account,
+            amount,
+            credit_activity: [0; 32],
+            credit_receipt: Vec::new(),
+            next_sequence: 0,
+            asset_next_sequence: 0,
+            fee_account: [0; 32],
+            fee_balance: 0,
+        });
+    }
+    let copy_actor = |actor: &Actor| Actor {
+        signing_key: SigningKey::from_bytes(&actor.signing_key.to_bytes()),
+        did: actor.did.clone(),
+        source: actor.source,
+    };
+    let cluster = start_cluster_with_setup(
+        None,
+        Some(RegistryGenesisSetup {
+            fixture: fixture.clone(),
+            asset: rows[0].asset,
+            actor: copy_actor(&rows[0].actor),
+            additional: rows
+                .iter()
+                .skip(1)
+                .map(|row| copy_actor(&row.actor))
+                .collect(),
+        }),
+    );
+    check_readiness(&cluster);
+    for row in &mut rows {
+        let profile = cluster.root.join(format!("{}.profile", row.symbol));
+        let index = SYMBOLS
+            .iter()
+            .position(|symbol| *symbol == row.symbol)
+            .unwrap_or_else(|| panic!("asset symbol"));
+        write(
+            &profile,
+            &custody_registry[6 + index * 224..229 + index * 224],
+            0o600,
+        );
+        let output = cluster.root.join(format!("{}.credit.activity", row.symbol));
+        let sequence = multiasset_identity_sequence(&cluster, &row.actor);
+        command(
+            &text(&repository_root().join("build/tests/bridge/sign-credit")),
+            &[
+                "--asset-profile",
+                &text(&profile),
+                &text(&fixture.join(format!("{}.credit", row.symbol))),
+                &row.actor.did,
+                &text(&fixture.join(format!("{}.actor.key", row.symbol))),
+                &sequence.to_string(),
+                &now_ms().saturating_sub(1000).to_string(),
+                &text(&output),
+            ],
+        );
+        let signed = must(fs::read(output), "actual signed multiasset credit");
+        row.credit_activity = must(
+            activity_id(&must(
+                decode_signed(&signed, &bridge_registry()),
+                "asset credit",
+            )),
+            "credit activity identity",
+        );
+        row.credit_receipt = multiasset_submit(&cluster, &signed, &bridge_registry());
+        let account = multiasset_account_read(&cluster, row.account);
+        assert_eq!(account.asset_id(), row.asset);
+        assert_eq!(account.balance(), row.amount);
+        assert_eq!(
+            account.name,
+            format!("agent:{}:asset:{}", row.actor.did, hex(&row.asset)).as_bytes()
+        );
+    }
+    let owners: BTreeMap<_, _> = rows
+        .iter()
+        .map(|row| {
+            (
+                row.actor.did.clone(),
+                multiasset_account(&format!(
+                    "agent:{}:asset:{}",
+                    row.actor.did,
+                    hex(&rows[0].asset)
+                )),
+            )
+        })
+        .collect();
+    let amount = rows[0].amount / must(u128::try_from(owners.len() + 1), "fee funding recipients");
+    assert!(amount > 0, "genuine PAX credit too small for fee accounts");
+    for destination in owners.values() {
+        if *destination == rows[0].account {
+            continue;
+        }
+        let source = multiasset_account_read(&cluster, rows[0].account);
+        let identity = multiasset_identity_sequence(&cluster, &rows[0].actor);
+        let signed = signed_multiasset_fee_send(
+            &rows[0].actor,
+            rows[0].account,
+            *destination,
+            rows[0].asset,
+            amount,
+            source.next_sequence,
+            identity,
+        );
+        let bytes = multiasset_submit(&cluster, &signed, &registry());
+        let receipt = must(
+            verify_sequencer_signature(&bytes, cluster.sequencer_key),
+            "fee funding receipt",
+        );
+        let protocol = receipt
+            .protocol()
+            .unwrap_or_else(|| panic!("fee funding protocol receipt"));
+        assert_eq!(protocol.from(), rows[0].account);
+        assert_eq!(protocol.to(), *destination);
+        assert_eq!(protocol.asset(), rows[0].asset);
+        assert_eq!(protocol.amount(), amount);
+        let after = multiasset_account_read(&cluster, rows[0].account);
+        assert_eq!(after.balance().checked_add(amount), Some(source.balance()));
+        assert_eq!(
+            after.next_sequence,
+            must(
+                source
+                    .next_sequence
+                    .checked_add(1)
+                    .ok_or("sequence overflow"),
+                "source sequence"
+            )
+        );
+        let funded = multiasset_account_read(&cluster, *destination);
+        assert_eq!(funded.asset_id(), rows[0].asset);
+        assert_eq!(funded.balance(), amount);
+    }
+    let fee_asset = rows[0].asset;
+    for row in &mut rows {
+        row.next_sequence = multiasset_identity_sequence(&cluster, &row.actor);
+        row.asset_next_sequence = multiasset_account_read(&cluster, row.account).next_sequence;
+        row.fee_account = multiasset_account(&format!(
+            "agent:{}:asset:{}",
+            row.actor.did,
+            hex(&fee_asset)
+        ));
+        row.fee_balance = multiasset_account_read(&cluster, row.fee_account).balance();
+    }
+    let rows = match rows.try_into() {
+        Ok(rows) => rows,
+        Err(_) => panic!("exact four funded assets required"),
+    };
+    (cluster, rows)
+}
+
+fn signed_multiasset_fee_send(
+    actor: &Actor,
+    from: [u8; 32],
+    to: [u8; 32],
+    asset: [u8; 32],
+    amount: u128,
+    source_sequence: u64,
+    identity_sequence: u64,
+) -> Vec<u8> {
+    let idempotency = random32();
+    let expires_at = now_ms() + 120_000;
+    let mut context = Vec::new();
+    context.extend(from);
+    context.extend(to);
+    context.extend(asset);
+    context.extend(amount.to_be_bytes());
+    context.extend(idempotency);
+    let context = domain_hash(Domain::ContextHash, &context);
+    let payload_bytes = send_payload(
+        &actor.signing_key,
+        from,
+        to,
+        asset,
+        amount,
+        source_sequence,
+        idempotency,
+        expires_at,
+        context,
+    );
+    let kind = must(
+        ActivityType::new(ModuleId::Asset, SEND_ACTIVITY),
+        "fee SEND kind",
+    );
+    let payload = must(
+        Payload::new(&registry(), kind, &payload_bytes),
+        "fee SEND payload",
+    );
+    let mut builder = EnvelopeBuilder::new();
+    must(
+        builder
+            .protocol_version(PROTOCOL_VERSION)
+            .and_then(|b| b.network_id(NETWORK_ID))
+            .and_then(|b| b.activity_type(kind))
+            .and_then(|b| b.actor_did(must(Did::new(actor.did.as_bytes()), "fee actor")))
+            .and_then(|b| {
+                b.authority(must(
+                    Authority::owner(&actor.signing_key.verifying_key().to_bytes()),
+                    "fee owner",
+                ))
+            })
+            .and_then(|b| b.account_sequence(identity_sequence))
+            .and_then(|b| {
+                b.timestamp_bound(must(
+                    TimestampBound::new(now_ms().saturating_sub(30_000), expires_at),
+                    "fee time",
+                ))
+            })
+            .and_then(|b| b.idempotency_key(IdempotencyKey::new(idempotency)))
+            .and_then(|b| b.fee_limit(Amount::from_u128(0)))
+            .and_then(|b| b.payload_hash(domain_hash(Domain::PayloadHash, payload.as_bytes())))
+            .and_then(|b| b.payload(payload))
+            .map(|_| ()),
+        "fee SEND envelope",
+    );
+    let unsigned = must(builder.build(), "fee unsigned SEND");
+    let signature = actor
+        .signing_key
+        .sign(&domain_hash(
+            Domain::SignaturePreimage,
+            &must(encode_unsigned_envelope(&unsigned), "fee signing bytes"),
+        ))
+        .to_bytes();
+    must(
+        encode_signed_envelope(
+            &unsigned.attach_signature(must(Signature::new(&signature), "fee signature")),
+        ),
+        "fee signed SEND",
+    )
+}
+
 fn produce_custody_credit(
     chain: &mut CustodyChain,
     primary: &str,
