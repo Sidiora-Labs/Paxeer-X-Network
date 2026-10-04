@@ -37103,12 +37103,22 @@ max_verify_runs = 1
 max_repair_cycles = 2
 time_limit_minutes = 30
 fanout_role = "complete_human_facts"
-qualification_status = "UNRUN"
+qualification_status = "PASS"
 stop_condition = "Stop at2026-10-04T20:54:49Z, on an unrelated failure or after two scoped repairs."
 owner_authorization = "Direct owner request to fix all listed CI failures on2026-10-04T20:24UTC"
 source_status = "complete"
 completion_basis = "implementation under owner CONSTITUTION; qualification separately recorded"
 source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-103.6.36-source-handoff.json"
+qualification_revision = "d398d802fa1cdfe54cb64f767d9189df74506dd7"
+qualification_command = "/root/.cargo/bin/cargo run --manifest-path human/tools/ui-gate/Cargo.toml --locked -- human/apps/web"
+qualification_exit_code = 0
+qualification_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/ci-human-d398d802-qualification/verify-ui-gate.log"
+qualification_evidence = "/root/lx-ops/paxeer-x-integration-2026-10-03/ci-human-d398d802-qualification/result.json"
+full_ci_status = "UNCONFIRMED; focused task pass only"
+build_revision = "d398d802fa1cdfe54cb64f767d9189df74506dd7"
+build_exit_code = 0
+build_command = "npm --prefix human/apps/web run build:ui && /root/.cargo/bin/cargo build --locked --manifest-path human/tools/ui-gate/Cargo.toml"
+build_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/ci-human-d398d802-qualification/build-ui-gate.log"
 
 [task.103.6.37]
 title = "Route Android CI to sufficient storage and bound evidence artifacts"
