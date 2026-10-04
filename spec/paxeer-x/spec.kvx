@@ -24265,8 +24265,16 @@ fleet_cutoff_utc = "2026-10-04T14:05:30Z"
 fleet_authority = "User ordered thirty agents into pending integrations within four hours; this task has a fresh bounded implementation assignment."
 source_status = "complete"
 completion_basis = "implementation under owner CONSTITUTION; qualification separately recorded"
-qualification_status = "UNRUN"
+qualification_status = "UNQUALIFIED_FINAL_BUILD_TIMED_OUT_VERIFY_UNRUN"
 source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/fleet-104.30.3-repair2-handoff.json"
+qualification_revision = "38ceecd44c4fbe9737b8ef155c8b8f69739e8463"
+qualification_command = "timeout 30m tools/paxeer-x/verify-task.sh 104.30.3"
+build_status = "TIMED_OUT"
+build_exit_code = 124
+build_command = "timeout --kill-after=2s 45s tools/paxeer-x/gates/104.30.3.sh --build"
+build_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-104.30.3-repair2-build.log"
+qualification_evidence = "/root/lx-ops/paxeer-x-integration-2026-10-03/fleet-104.30.3-result.json"
+verification_status = "UNRUN"
 
 [task.104.30.4]
 title = "Add the program spending capability with downward-only narrowing"
