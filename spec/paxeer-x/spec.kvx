@@ -26663,8 +26663,16 @@ fleet_cutoff_utc = "2026-10-04T14:48:00Z"
 fleet_authority = "User requested thirty agents to complete remaining integrations in four hours; fresh eligible task admission, no deployment operations."
 source_status = "complete"
 completion_basis = "implementation under owner CONSTITUTION; qualification separately recorded"
-qualification_status = "UNRUN"
+qualification_status = "IMPLEMENTED_NOT_QUALIFIED"
 source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/fleet-104.17.4-current-publication.json"
+qualification_revision = "9bf372c905ea9a1aa9a8ee203faeff4147ec67c0"
+qualification_command = "timeout 30m tools/paxeer-x/verify-task.sh 104.17.4"
+verify_status = "UNRUN"
+build_status = "TIMED_OUT"
+build_exit_code = 124
+build_command = "timeout 8m flock /root/lx-cargo/platform-build.lock env PATH=/root/.cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin CARGO_BUILD_JOBS=3 CARGO_TARGET_DIR=/root/lx-target/platform /root/.cargo/bin/cargo test --locked --manifest-path platform/Cargo.toml -p layerx-platform-gateway --lib --bin layerx-gateway --no-run --message-format=json"
+build_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-104.17.4-build.log"
+qualification_evidence = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-104.17.4-qualification-result.json"
 
 [task.104.18.2]
 title = "Ship the reference applications"
