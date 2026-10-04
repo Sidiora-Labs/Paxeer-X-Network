@@ -137,7 +137,10 @@ def main():
     EVIDENCE.mkdir(parents=True,mode=0o700,exist_ok=True)
     if EVIDENCE.stat().st_mode&0o077: raise RuntimeError('private evidence required')
     if args.build:
-        source=sources();environment=dict(os.environ,CARGO_TARGET_DIR=args.rust_target,CARGO_BUILD_JOBS='4')
+        source=sources();environment=dict(os.environ,CARGO_TARGET_DIR=args.rust_target)
+        environment.setdefault('CARGO_BUILD_JOBS','3')
+        if not environment['CARGO_BUILD_JOBS'].isdecimal() or not 1<=int(environment['CARGO_BUILD_JOBS'])<=4:
+            raise RuntimeError('CARGO_BUILD_JOBS must be between 1 and 4')
         output=execute([*shlex.split(args.cargo),'test','--locked','--manifest-path','programs/Cargo.toml','-p','layerx-programs-runtime','--test','program_replay','--no-run','--message-format=json'],EVIDENCE/'build-runtime-test.log',environment)
         artifacts=[json.loads(line) for line in output.splitlines() if line.startswith('{')]
         binaries={item['executable'] for item in artifacts if item.get('reason')=='compiler-artifact' and item.get('executable') and item.get('target',{}).get('name')=='program_replay'}

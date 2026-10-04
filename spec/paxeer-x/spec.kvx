@@ -33292,7 +33292,7 @@ fleet_authority = "User explicitly ordered30agents into pending integrations wit
 fleet_role = "/root/integrate_arbiter/replay_kernel"
 fleet_scope_manifest = "/root/lx-ops/paxeer-x-integration-2026-10-03/fleet-104.35.20-brief.json"
 completion_basis = "implementation under owner CONSTITUTION; qualification separately recorded"
-source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/fleet-104.35.20-publication-handoff-next.json"
+source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/fleet-104.35.20-format-publication.json"
 
 [task.0.14]
 title = "Expose native public program and naming explorer reads through the unified gateway"

@@ -5,8 +5,8 @@ use layerx_programs_runtime::test_support::{
 use layerx_programs_runtime::{
     AuthorizationContext, AuthorizedExecutionRequest, CapabilitySet, CompositionContext,
     CompositionRules, Executor, FeeSchedule, PrincipalId, ProgramCatalog, ProgramId,
-    ProgramReplayProfile, ProgramReplayRecord, ResourceBudget, Storage,
-    UnavailableReceiptOracle, V2ActivityOutcome, WasmEngine,
+    ProgramReplayProfile, ProgramReplayRecord, ResourceBudget, Storage, UnavailableReceiptOracle,
+    V2ActivityOutcome, WasmEngine,
 };
 use sha2::{Digest, Sha256};
 use std::rc::Rc;
@@ -26,14 +26,23 @@ fn actual_leaves(record: &ProgramReplayRecord) -> Vec<&[u8]> {
         PROGRAM_REPLAY_RECORD_DOMAIN, PROGRAM_REPLAY_WITNESS_DOMAIN,
     };
     let mut bytes = record.canonical_bytes();
-    assert_eq!(take(&mut bytes, PROGRAM_REPLAY_RECORD_DOMAIN.len()), PROGRAM_REPLAY_RECORD_DOMAIN);
+    assert_eq!(
+        take(&mut bytes, PROGRAM_REPLAY_RECORD_DOMAIN.len()),
+        PROGRAM_REPLAY_RECORD_DOMAIN
+    );
     take(&mut bytes, 2 + 64 + 4 + 8 + 8 + 1 + 4 + 64);
     let witness_length = u32_field(&mut bytes) as usize;
     let witness = take(&mut bytes, witness_length);
     assert!(bytes.is_empty());
-    assert_eq!(<[u8; 32]>::from(Sha256::digest(witness)), record.witness_digest());
+    assert_eq!(
+        <[u8; 32]>::from(Sha256::digest(witness)),
+        record.witness_digest()
+    );
     let mut bytes = witness;
-    assert_eq!(take(&mut bytes, PROGRAM_REPLAY_WITNESS_DOMAIN.len()), PROGRAM_REPLAY_WITNESS_DOMAIN);
+    assert_eq!(
+        take(&mut bytes, PROGRAM_REPLAY_WITNESS_DOMAIN.len()),
+        PROGRAM_REPLAY_WITNESS_DOMAIN
+    );
     assert_eq!(u32_field(&mut bytes), record.boundary_count());
     let mut leaves = Vec::new();
     let mut hashes = Vec::new();
@@ -50,13 +59,16 @@ fn actual_leaves(record: &ProgramReplayRecord) -> Vec<&[u8]> {
     }
     assert!(bytes.is_empty());
     while hashes.len() > 1 {
-        hashes = hashes.chunks(2).map(|pair| {
-            let mut hash = Sha256::new();
-            hash.update(b"LXP/program-replay-node/v1\0");
-            hash.update(pair[0]);
-            hash.update(*pair.get(1).unwrap_or(&pair[0]));
-            <[u8; 32]>::from(hash.finalize())
-        }).collect();
+        hashes = hashes
+            .chunks(2)
+            .map(|pair| {
+                let mut hash = Sha256::new();
+                hash.update(b"LXP/program-replay-node/v1\0");
+                hash.update(pair[0]);
+                hash.update(*pair.get(1).unwrap_or(&pair[0]));
+                <[u8; 32]>::from(hash.finalize())
+            })
+            .collect();
     }
     assert_eq!(hashes[0], record.boundary_root());
     leaves
@@ -68,9 +80,14 @@ fn captured_functions(leaf: &[u8]) -> Vec<u32> {
     assert_eq!(take(&mut bytes, domain.len()), domain);
     let state_length = u32_field(&mut bytes) as usize;
     let state = take(&mut bytes, state_length);
-    assert!(!layerx_programs_runtime::replay_record::decode_portable_state_bytes_untrusted(
-        state, layerx_programs_runtime::MAX_ARBITRATION_STATE_BYTES,
-    ).unwrap().is_empty());
+    assert!(
+        !layerx_programs_runtime::replay_record::decode_portable_state_bytes_untrusted(
+            state,
+            layerx_programs_runtime::MAX_ARBITRATION_STATE_BYTES,
+        )
+        .unwrap()
+        .is_empty()
+    );
     let count = u32_field(&mut bytes);
     let mut functions = Vec::new();
     for _ in 0..count {
@@ -167,9 +184,18 @@ fn actual_production_capture_is_opt_in_and_bounded() {
     assert!(!record.canonical_bytes().is_empty());
     assert!(record.canonical_bytes().len() <= 1_048_576);
     assert_eq!(record.terminal_status(), 0);
-    assert!(matches!(result.outcome(), V2ActivityOutcome::Success { .. }));
+    assert!(matches!(
+        result.outcome(),
+        V2ActivityOutcome::Success { .. }
+    ));
     assert!(!actual_leaves(record).is_empty());
-    assert_eq!(record.canonical_bytes(), run(false, false, true).replay_record().unwrap().canonical_bytes());
+    assert_eq!(
+        record.canonical_bytes(),
+        run(false, false, true)
+            .replay_record()
+            .unwrap()
+            .canonical_bytes()
+    );
 }
 #[test]
 fn actual_module_start_is_retained() {
@@ -182,10 +208,15 @@ fn actual_module_start_is_retained() {
         .find_map(|payload| match payload.unwrap() {
             wasmparser_nostd::Payload::StartSection { func, .. } => Some(func),
             _ => None,
-        }).expect("actual instrumented initializer");
-    assert!(actual_leaves(started.replay_record().unwrap()).iter()
+        })
+        .expect("actual instrumented initializer");
+    assert!(actual_leaves(started.replay_record().unwrap())
+        .iter()
         .any(|leaf| captured_functions(leaf).contains(&initializer)));
-    assert!(started.replay_record().unwrap().boundary_count() > ordinary.replay_record().unwrap().boundary_count());
+    assert!(
+        started.replay_record().unwrap().boundary_count()
+            > ordinary.replay_record().unwrap().boundary_count()
+    );
     assert_ne!(
         started.replay_record().unwrap().boundary_root(),
         ordinary.replay_record().unwrap().boundary_root()
