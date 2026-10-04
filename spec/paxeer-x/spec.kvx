@@ -23600,7 +23600,7 @@ fleet_scope_manifest = "/root/lx-ops/paxeer-x-integration-2026-10-03/fleet-104.1
 source_status = "complete"
 completion_basis = "implementation under owner CONSTITUTION; qualification separately recorded"
 qualification_status = "UNRUN"
-source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/fleet-104.13.1-intake.json"
+source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/fleet-104.13.1-format-handoff.json"
 
 [task.104.13.6]
 title = "Serve human-api through a production service boundary"

@@ -493,7 +493,9 @@ impl std::error::Error for IdentityDispatchError {
 mod profile_tests {
     use super::{profile, profile_json, update_profile, IdentityDispatchError, StoredProfile};
     use crate::store::PrincipalStore;
-    use layerx_human_test_support::{directory, install_and_open, principal, retention_uniform, tenancy};
+    use layerx_human_test_support::{
+        directory, install_and_open, principal, retention_uniform, tenancy,
+    };
     use serde_json::json;
 
     #[test]
@@ -503,45 +505,79 @@ mod profile_tests {
         let bob = principal("settings-bob");
         let (mut store, digest) = install_and_open(
             &root,
-            &tenancy(&[("settings-alice", "settings-alice-tenant"), ("settings-bob", "settings-bob-tenant")]),
+            &tenancy(&[
+                ("settings-alice", "settings-alice-tenant"),
+                ("settings-bob", "settings-bob-tenant"),
+            ]),
             retention_uniform(10_000),
         );
         let original = json!({"display_name": "Local profile", "avatar_url": "https://paxeer.network/avatar.png"});
         {
             let mut scope = store.principal(&alice).expect("Alice principal scope");
-            assert_eq!(update_profile(&mut scope, &original, 1).expect("profile with avatar"), original);
-            assert_eq!(update_profile(&mut scope, &json!({"display_name": "Renamed local profile"}), 2)
-                .expect("name-only update")["avatar_url"], original["avatar_url"]);
+            assert_eq!(
+                update_profile(&mut scope, &original, 1).expect("profile with avatar"),
+                original
+            );
+            assert_eq!(
+                update_profile(
+                    &mut scope,
+                    &json!({"display_name": "Renamed local profile"}),
+                    2
+                )
+                .expect("name-only update")["avatar_url"],
+                original["avatar_url"]
+            );
             let cleared = update_profile(&mut scope, &json!({"avatar_url": ""}), 3)
                 .expect("schema string avatar clear");
             assert_eq!(cleared, json!({"display_name": "Renamed local profile"}));
             assert_eq!(profile(&scope).expect("profile after clearing"), cleared);
-            for rejected in [json!({"avatar_url": "http://paxeer.network/avatar.png"}), json!({"avatar_url": false}),
-                json!({"avatar_url": "https://".to_owned() + &"x".repeat(2_048)})] {
-                assert!(matches!(update_profile(&mut scope, &rejected, 4), Err(IdentityDispatchError::InvalidInput)));
+            for rejected in [
+                json!({"avatar_url": "http://paxeer.network/avatar.png"}),
+                json!({"avatar_url": false}),
+                json!({"avatar_url": "https://".to_owned() + &"x".repeat(2_048)}),
+            ] {
+                assert!(matches!(
+                    update_profile(&mut scope, &rejected, 4),
+                    Err(IdentityDispatchError::InvalidInput)
+                ));
                 assert_eq!(profile(&scope).expect("profile after refusal"), cleared);
             }
         }
         {
             let scope = store.principal(&bob).expect("Bob principal scope");
-            assert!(matches!(profile(&scope), Err(IdentityDispatchError::NotFound)));
+            assert!(matches!(
+                profile(&scope),
+                Err(IdentityDispatchError::NotFound)
+            ));
         }
         drop(store);
         let mut reopened = PrincipalStore::open(&root, retention_uniform(10_000), digest)
             .expect("reopen durable profile store");
         {
             let scope = reopened.principal(&alice).expect("Alice reopened scope");
-            assert_eq!(profile(&scope).expect("persisted cleared avatar"), json!({"display_name": "Renamed local profile"}));
+            assert_eq!(
+                profile(&scope).expect("persisted cleared avatar"),
+                json!({"display_name": "Renamed local profile"})
+            );
         }
         {
             let mut scope = reopened.principal(&bob).expect("Bob reopened scope");
-            assert_eq!(update_profile(&mut scope, &original, 5).expect("Bob local profile"), original);
-            assert_eq!(update_profile(&mut scope, &json!({"avatar_url": null}), 6)
-                .expect("existing null clear remains supported"), json!({"display_name": "Local profile"}));
+            assert_eq!(
+                update_profile(&mut scope, &original, 5).expect("Bob local profile"),
+                original
+            );
+            assert_eq!(
+                update_profile(&mut scope, &json!({"avatar_url": null}), 6)
+                    .expect("existing null clear remains supported"),
+                json!({"display_name": "Local profile"})
+            );
         }
         {
             let scope = reopened.principal(&alice).expect("Alice isolation scope");
-            assert_eq!(profile(&scope).expect("Alice remains unchanged"), json!({"display_name": "Renamed local profile"}));
+            assert_eq!(
+                profile(&scope).expect("Alice remains unchanged"),
+                json!({"display_name": "Renamed local profile"})
+            );
         }
         drop(reopened);
         std::fs::remove_dir_all(root).expect("remove profile qualification directory");
