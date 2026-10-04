@@ -36992,3 +36992,25 @@ stop_condition = "Stop at2026-10-04T20:29:37Z or exact contract conflict. One co
 source_status = "complete"
 completion_basis = "implementation under owner CONSTITUTION; qualification separately recorded"
 source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/root-hour-103.6.30-intake.json"
+
+[task.103.6.32]
+title = "Fix canonical budget codec test function shadowing"
+status = "done"
+mode = "BUILD"
+wave = 5
+requires = ["0.2"]
+reqs = ["1103.1"]
+touches = ["agent/crates/layerx-crypto/tests/budget_core_codec.rs"]
+do_1 = "Call the actual canonical test helper despite a local same-named vector; preserve every signed vector and assertion."
+verify_cmd = "cargo test --locked --manifest-path agent/Cargo.toml -p layerx-crypto --test budget_core_codec"
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+fanout_role = "complete_explorer"
+qualification_status = "UNRUN"
+stop_condition = "Stop at2026-10-04T20:54:49Z, on an unrelated failure, or after two scoped repair cycles."
+owner_authorization = "Direct owner request to fix all listed CI failures on2026-10-04T20:24UTC"
+source_status = "complete"
+completion_basis = "implementation under owner CONSTITUTION; qualification separately recorded"
+source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-103.6.32-source-handoff.json"

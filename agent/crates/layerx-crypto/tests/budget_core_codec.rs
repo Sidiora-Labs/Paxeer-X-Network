@@ -297,7 +297,7 @@ fn create_v2_is_exactly_251_core_bytes_and_binds_its_source() {
     assert_eq!(disclosure.reencode(), Ok(canonical));
 
     let main = Create::v2(main_account(), 31).bytes();
-    assert!(bind(&canonical(CREATE, &main), &registry()).is_ok());
+    assert!(bind(&self::canonical(CREATE, &main), &registry()).is_ok());
     for (source, sequence) in [
         (budget_account(BUDGET_ID), 31),
         ([0x99; 32], 31),
