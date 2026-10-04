@@ -91,6 +91,10 @@ const SESSION_SEED_PREPARE: u8 = 41;
 const ACCOUNT_STATE: u8 = 42;
 const SUBJECT: u8 = 44;
 const OPERATOR: u8 = 45;
+const APPROVAL_LIST_FACTS_V2: u8 = 46;
+const APPROVAL_GET_FACTS_V2: u8 = 47;
+const APPROVAL_BUDGET_AFTER_V2: u8 = 48;
+const MANAGED_EVIDENCE_BY_DIGEST_V2: u8 = 49;
 const HEAD: u8 = 7;
 const EVIDENCE: u8 = 8;
 const MAX_TEXT: usize = 255;
@@ -325,6 +329,24 @@ pub enum HumanRequest {
         approval_id: [u8; 32],
         current_sequence: u64,
     },
+    ApprovalListFactsV2 {
+        current_sequence: u64,
+        cursor: Option<[u8; 32]>,
+        limit: u8,
+    },
+    ApprovalGetFactsV2 {
+        approval_id: [u8; 32],
+        current_sequence: u64,
+    },
+    ApprovalBudgetAfterV2 {
+        approval_id: [u8; 32],
+        held_digest: [u8; 32],
+        current_sequence: u64,
+    },
+    ManagedEvidenceByDigestV2 {
+        agent_id: String,
+        digest: [u8; 32],
+    },
     ApprovalApprove {
         approval_id: [u8; 32],
         held_digest: [u8; 32],
@@ -549,6 +571,40 @@ pub trait HumanOperations {
         approval_id: [u8; 32],
         current_sequence: u64,
     ) -> Result<HumanResponse, HumanOperationError>;
+    fn approval_list_facts(
+        &mut self,
+        _peer: &HumanPeer,
+        _current_sequence: u64,
+        _cursor: Option<[u8; 32]>,
+        _limit: u8,
+    ) -> Result<HumanResponse, HumanOperationError> {
+        Err(HumanOperationError::Unavailable)
+    }
+    fn approval_get_facts(
+        &mut self,
+        _peer: &HumanPeer,
+        _approval_id: [u8; 32],
+        _current_sequence: u64,
+    ) -> Result<HumanResponse, HumanOperationError> {
+        Err(HumanOperationError::Unavailable)
+    }
+    fn approval_budget_after(
+        &mut self,
+        _peer: &HumanPeer,
+        _approval_id: [u8; 32],
+        _held_digest: [u8; 32],
+        _current_sequence: u64,
+    ) -> Result<HumanResponse, HumanOperationError> {
+        Err(HumanOperationError::Unavailable)
+    }
+    fn managed_evidence(
+        &mut self,
+        _peer: &HumanPeer,
+        _agent_id: &str,
+        _digest: [u8; 32],
+    ) -> Result<HumanResponse, HumanOperationError> {
+        Err(HumanOperationError::Unavailable)
+    }
     /// # Errors
     /// Returns an error if authorization or operation validation fails, or required state is unavailable.
     fn approval_approve(
@@ -1759,6 +1815,23 @@ fn dispatch_request<O: HumanOperations>(
             approval_id,
             current_sequence,
         } => operations.approval_get(peer, approval_id, current_sequence),
+        HumanRequest::ApprovalListFactsV2 {
+            current_sequence,
+            cursor,
+            limit,
+        } => operations.approval_list_facts(peer, current_sequence, cursor, limit),
+        HumanRequest::ApprovalGetFactsV2 {
+            approval_id,
+            current_sequence,
+        } => operations.approval_get_facts(peer, approval_id, current_sequence),
+        HumanRequest::ApprovalBudgetAfterV2 {
+            approval_id,
+            held_digest,
+            current_sequence,
+        } => operations.approval_budget_after(peer, approval_id, held_digest, current_sequence),
+        HumanRequest::ManagedEvidenceByDigestV2 { agent_id, digest } => {
+            operations.managed_evidence(peer, &agent_id, digest)
+        }
         HumanRequest::ApprovalApprove {
             approval_id,
             held_digest,
@@ -1979,6 +2052,28 @@ fn decode_operation(
         APPROVAL_GET => HumanRequest::ApprovalGet {
             approval_id: reader.fixed()?,
             current_sequence: reader.u64()?,
+        },
+        APPROVAL_LIST_FACTS_V2 => HumanRequest::ApprovalListFactsV2 {
+            current_sequence: reader.u64()?,
+            cursor: match reader.u8()? {
+                0 => None,
+                1 => Some(reader.fixed()?),
+                _ => return Err(HumanProtocolError::Malformed),
+            },
+            limit: reader.u8()?,
+        },
+        APPROVAL_GET_FACTS_V2 => HumanRequest::ApprovalGetFactsV2 {
+            approval_id: reader.fixed()?,
+            current_sequence: reader.u64()?,
+        },
+        APPROVAL_BUDGET_AFTER_V2 => HumanRequest::ApprovalBudgetAfterV2 {
+            approval_id: reader.fixed()?,
+            held_digest: reader.fixed()?,
+            current_sequence: reader.u64()?,
+        },
+        MANAGED_EVIDENCE_BY_DIGEST_V2 => HumanRequest::ManagedEvidenceByDigestV2 {
+            agent_id: reader.text()?,
+            digest: reader.fixed()?,
         },
         APPROVAL_APPROVE | APPROVAL_REJECT => {
             let approval_id = reader.fixed()?;

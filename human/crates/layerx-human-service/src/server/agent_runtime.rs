@@ -61,6 +61,10 @@ const SUBMIT: u8 = 2;
 const TRACK: u8 = 3;
 const RECEIPT_LOOKUP: u8 = 4;
 const REGISTRY: u8 = 5;
+const APPROVAL_LIST_FACTS: u8 = 46;
+const APPROVAL_GET_FACTS: u8 = 47;
+const APPROVAL_BUDGET_AFTER: u8 = 48;
+const MANAGED_EVIDENCE: u8 = 49;
 const APPROVAL_LIST: u8 = 9;
 const APPROVAL_GET: u8 = 10;
 const APPROVAL_APPROVE: u8 = 11;
@@ -178,6 +182,22 @@ impl AgentRuntime {
     }
 }
 
+pub struct AgentApprovalFacts {
+    pub approval: crate::approvals::AgentApprovalRecord,
+    pub created_at_unix_seconds: u64,
+    pub activity_expires_at_unix_seconds: u64,
+}
+pub struct AgentApprovalFactsPage {
+    pub approvals: Vec<AgentApprovalFacts>,
+    pub next_cursor: Option<[u8;32]>,
+}
+pub struct ManagedReceiptExport {
+    pub canonical_bytes: Vec<u8>,
+    pub digest: [u8;32],
+    pub activity_id: [u8;32],
+    pub global_sequence: u64,
+    pub verification: u8,
+}
 pub struct AgentApprovalPage {
     pub approvals: Vec<crate::approvals::AgentApprovalRecord>,
     pub next_cursor: Option<[u8; 32]>,
@@ -1672,6 +1692,36 @@ impl AgentRuntime {
     }
     /// # Errors
     /// Returns a boundary refusal for invalid request fields, an unavailable transport, or a malformed response.
+    pub fn approval_get_facts(&mut self, approval_id: [u8;32], current_sequence: u64) -> Result<AgentApprovalFacts, AgentBoundaryError> {
+        let mut writer=Writer::new(APPROVAL_GET_FACTS);writer.fixed(&approval_id);writer.u64(current_sequence);
+        let mut reader=self.exchange(&writer.finish())?;let facts=decode_approval_facts(&mut reader)?;reader.finish()?;
+        if facts.approval.approval_id!=approval_id {return Err(AgentBoundaryError::CorruptResponse)};Ok(facts)
+    }
+    pub fn approval_list_facts(&mut self, current_sequence:u64,cursor:Option<[u8;32]>,limit:u8) -> Result<AgentApprovalFactsPage,AgentBoundaryError> {
+        let mut writer=Writer::new(APPROVAL_LIST_FACTS);writer.u64(current_sequence);
+        match cursor {Some(value)=>{writer.u8(1);writer.fixed(&value)},None=>writer.u8(0)};writer.u8(limit);
+        let mut reader=self.exchange(&writer.finish())?;let count=usize::from(reader.u8()?);
+        if count>100 || count>usize::from(limit) {return Err(AgentBoundaryError::CorruptResponse)};
+        let mut approvals=Vec::with_capacity(count);for _ in 0..count {approvals.push(decode_approval_facts(&mut reader)?)};
+        let next_cursor=match reader.u8()? {0=>None,1=>Some(reader.fixed()?),_=>return Err(AgentBoundaryError::CorruptResponse)};
+        reader.finish()?;Ok(AgentApprovalFactsPage{approvals,next_cursor})
+    }
+    pub fn managed_evidence(&mut self,agent_id:&str,digest:[u8;32]) -> Result<ManagedReceiptExport,AgentBoundaryError> {
+        if digest==[0;32] {return Err(AgentBoundaryError::Refused)};
+        let mut writer=Writer::new(MANAGED_EVIDENCE);writer.text(agent_id)?;writer.fixed(&digest);
+        let mut reader=self.exchange(&writer.finish())?;
+        if reader.u16()?!=2 {return Err(AgentBoundaryError::CorruptResponse)};
+        let value=ManagedReceiptExport{digest:reader.fixed()?,activity_id:reader.fixed()?,global_sequence:reader.u64()?,
+            verification:reader.u8()?,canonical_bytes:reader.bytes()?};reader.finish()?;
+        let actual_digest:[u8;32]=sha2::Sha256::digest(&value.canonical_bytes).into();
+        let receipt=layerx_wire::receipt::decode(&value.canonical_bytes).map_err(|_|AgentBoundaryError::CorruptResponse)?;
+        let protocol=receipt.protocol().ok_or(AgentBoundaryError::CorruptResponse)?;
+        if value.digest!=digest || actual_digest!=digest || value.activity_id!=protocol.activity_id()
+            || value.global_sequence!=protocol.global_sequence() || !(1..=5).contains(&value.verification)
+            || layerx_wire::receipt::encode(&receipt).map_err(|_|AgentBoundaryError::CorruptResponse)?!=value.canonical_bytes {
+            return Err(AgentBoundaryError::CorruptResponse)
+        };Ok(value)
+    }
     pub fn approval_get(
         &mut self,
         approval_id: [u8; 32],
@@ -2130,6 +2180,15 @@ fn decode_managed_challenge(
     Ok(value)
 }
 
+fn decode_approval_facts(reader:&mut Reader) -> Result<AgentApprovalFacts,AgentBoundaryError> {
+    if reader.u16()?!=2 {return Err(AgentBoundaryError::CorruptResponse)};
+    let approval=decode_approval(reader)?;let created_at_unix_seconds=reader.u64()?;
+    let activity_expires_at_unix_seconds=reader.u64()?;
+    if created_at_unix_seconds==0 || created_at_unix_seconds>=activity_expires_at_unix_seconds
+        || activity_expires_at_unix_seconds!=approval.held_activity.expiry.0 {
+        return Err(AgentBoundaryError::CorruptResponse)
+    };Ok(AgentApprovalFacts{approval,created_at_unix_seconds,activity_expires_at_unix_seconds})
+}
 fn decode_approval(
     reader: &mut Reader,
 ) -> Result<crate::approvals::AgentApprovalRecord, AgentBoundaryError> {
@@ -2374,31 +2433,22 @@ impl crate::approvals::ApprovalBoundary for AgentRuntime {
         at_sequence: u64,
     ) -> Result<crate::approvals::VerifiedBudgetAfter, crate::approvals::ApprovalBoundaryError>
     {
-        let balance = self.balance().map_err(map_approval_error)?;
-        if balance.currency != hold.held_activity.asset.as_str()
-            || balance.global_sequence < at_sequence
-        {
-            return Err(crate::approvals::ApprovalBoundaryError::VerificationFailed);
-        }
-        let level = match balance.verification {
-            0 => Level::Unverified,
-            1 => Level::SequencerSigned,
-            2 => Level::BatchIncluded,
-            3 => Level::StateProven,
-            4 => Level::CheckpointFinalised,
-            5 => Level::SettlementAnchored,
-            _ => return Err(crate::approvals::ApprovalBoundaryError::Corrupt),
-        };
-        let mut digest = sha2::Sha256::new();
-        digest.update(&balance.canonical_bytes);
-        digest.update(&balance.proof_material);
-        Ok(crate::approvals::VerifiedBudgetAfter {
-            remaining: balance.amount,
-            level,
-            evidence_digest: digest.finalize().into(),
-            observed_at_sequence: balance.global_sequence,
-        })
+        let mut writer=Writer::new(APPROVAL_BUDGET_AFTER);writer.fixed(&hold.approval_id);
+        writer.fixed(&hold.canonical_bytes_digest);writer.u64(at_sequence);
+        let mut reader=self.exchange(&writer.finish()).map_err(map_approval_error)?;
+        let decode=|reader:&mut Reader| -> Result<crate::approvals::VerifiedBudgetAfter,AgentBoundaryError> {
+            if reader.u16()?!=2 || reader.fixed::<32>()?!=hold.approval_id
+                || reader.fixed::<32>()?!=hold.canonical_bytes_digest {return Err(AgentBoundaryError::CorruptResponse)};
+            let remaining=reader.u128()?;let level=match reader.u8()? {
+                4=>Level::CheckpointFinalised,5=>Level::SettlementAnchored,
+                _=>return Err(AgentBoundaryError::CorruptResponse)};
+            let evidence_digest=reader.fixed()?;let observed_at_sequence=reader.u64()?;let asset=reader.fixed::<32>()?;
+            if evidence_digest==[0;32] || asset==[0;32] || observed_at_sequence!=at_sequence {
+                return Err(AgentBoundaryError::CorruptResponse)};
+            reader.finish()?;Ok(crate::approvals::VerifiedBudgetAfter{remaining,level,evidence_digest,observed_at_sequence})
+        };decode(&mut reader).map_err(map_approval_error)
     }
+
     fn track_released(
         &mut self,
         submission_ref: [u8; 32],

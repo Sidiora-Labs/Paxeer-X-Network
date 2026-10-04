@@ -427,6 +427,68 @@ pub fn get(
     }
     response_agent(&decode(value.bytes())?)
 }
+
+pub fn evidence_export(
+    store: &Store,
+    tenant: &TenantId,
+    agent_id: &str,
+    digest: [u8; 32],
+) -> Result<crate::receipt::ServedReceipt, HumanOperationError> {
+    if digest == [0; 32] {
+        return Err(HumanOperationError::Refused);
+    }
+    let object_key = agent_key(tenant, agent_id)?;
+    let value = store.get(&object_key).ok_or(HumanOperationError::Refused)?;
+    if value.class() != StorageClass::LocalOnly {
+        return Err(HumanOperationError::Refused);
+    }
+    let agent = decode(value.bytes())?;
+    if agent.agent_id != agent_id || !agent.verified_evidence.contains(&digest) {
+        return Err(HumanOperationError::Refused);
+    }
+    let inventory = crate::receipt::evidence_inventory(store, tenant)
+        .map_err(|_| HumanOperationError::Refused)?;
+    let idempotency_keys = inventory
+        .with_evidence
+        .iter()
+        .map(|record| record.idempotency_key)
+        .chain(
+            inventory
+                .without_evidence
+                .iter()
+                .map(|metadata| metadata.idempotency_key),
+        );
+    for idempotency_key in idempotency_keys {
+        let served = crate::receipt::serve(
+            store,
+            tenant.clone(),
+            crate::receipt::ReceiptLookupKey::Idempotency(idempotency_key),
+        )
+        .map_err(|_| HumanOperationError::Refused)?;
+        let receipt_digest: [u8; 32] = Sha256::digest(&served.canonical_bytes).into();
+        if receipt_digest != digest {
+            continue;
+        }
+        let receipt = decode_receipt(&served.canonical_bytes)
+            .map_err(|_| HumanOperationError::Refused)?;
+        let protocol = receipt.protocol().ok_or(HumanOperationError::Refused)?;
+        if layerx_wire::receipt::encode(&receipt)
+            .map_err(|_| HumanOperationError::Refused)?
+            != served.canonical_bytes
+            || served.metadata.idempotency_key != idempotency_key
+            || served.metadata.activity_id != protocol.activity_id()
+            || served.metadata.global_sequence != protocol.global_sequence()
+            || served.metadata.result
+                != crate::receipt::classify(layerx_types::result::ResultCode::from_raw(
+                    protocol.result_code(),
+                ))
+        {
+            return Err(HumanOperationError::Refused);
+        }
+        return Ok(served);
+    }
+    Err(HumanOperationError::Unavailable)
+}
 /// # Errors
 /// Returns an error when the request is invalid, authority is refused, or required state is unavailable.
 pub fn context(

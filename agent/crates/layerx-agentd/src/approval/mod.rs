@@ -1649,6 +1649,7 @@ pub use events::{
     ApprovalEmission, ApprovalEventError, ApprovalEventKind, ApprovalEvents, ApprovalLifecycle,
 };
 pub use expiry::{ApprovalExpiry, ApprovalExpiryError, DecisionKey};
+pub use crate::policy::approval::ApprovalPresentation;
 
 pub const APPROVAL_ENFORCEMENT_NOTICE: &str =
     "daemon-enforced restriction; confers no protocol authority; bypassing layerx-agentd bypasses this restriction";
@@ -1675,6 +1676,7 @@ pub struct ApprovalRecord {
     pub hold_reason: HoldReason,
     pub created_at_sequence: u64,
     pub expires_at_sequence: u64,
+    pub presentation: Option<ApprovalPresentation>,
     pub state: ApprovalState,
     pub submission_ref: Option<[u8; 32]>,
     pub enforcement: ApprovalEnforcement,
@@ -2286,6 +2288,7 @@ fn record(snapshot: ApprovalSnapshot) -> ApprovalRecord {
         },
         created_at_sequence: snapshot.created_at_sequence,
         expires_at_sequence: snapshot.expires_at_sequence,
+        presentation: snapshot.presentation,
         state: snapshot.state,
         submission_ref: snapshot.submission_ref,
         enforcement: ApprovalEnforcement::DaemonOnly,

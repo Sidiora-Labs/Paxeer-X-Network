@@ -2163,3 +2163,11 @@ resolution = "Record each compiler boundary once and repair its own source contr
 [gotcha.646]
 observed = "Explorer exact decoder requires settlement and denomination fields that an optional canonical join can represent as absent; browser typecheck and genuine fixture qualification remain unrun or refused."
 resolution = "Preserve existing decoder checks; implement a distinct honest availability contract at the producer/consumer boundary rather than inventing values or widening accepted fields."
+
+[gotcha.638]
+observed = "Human internal tags44 and45 already belong to SUBJECT and OPERATOR; initial proposed metadata tags would collide."
+resolution = "Freeze new authentic Human facts profile on separate verified-unused tags46 through49; preserve all legacy selectors."
+
+[gotcha.647]
+observed = "Codify spec implemented parses --help as a task ID; guessed identity module paths also returned exit2 before any source operation."
+resolution = "Read the actual exposed tool declaration and discover paths with rg --files; do not infer a source conclusion from a failed path read."

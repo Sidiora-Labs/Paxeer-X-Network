@@ -1605,6 +1605,19 @@ impl<A: HumanAuthorityBoundary> SharedAgentOwner<A> {
 }
 
 impl<A: HumanAuthorityBoundary> HumanOperations for SharedAgentOwner<A> {
+    fn approval_list_facts(&mut self, peer: &HumanPeer, current_sequence: u64, cursor: Option<[u8;32]>, limit: u8) -> Result<HumanResponse, HumanOperationError> {
+        self.lock()?.approval_list_facts(peer, current_sequence, cursor, limit)
+    }
+    fn approval_get_facts(&mut self, peer: &HumanPeer, approval_id: [u8;32], current_sequence: u64) -> Result<HumanResponse, HumanOperationError> {
+        self.lock()?.approval_get_facts(peer, approval_id, current_sequence)
+    }
+    fn approval_budget_after(&mut self, peer: &HumanPeer, approval_id: [u8;32], held_digest: [u8;32], current_sequence: u64) -> Result<HumanResponse, HumanOperationError> {
+        self.lock()?.approval_budget_after(peer, approval_id, held_digest, current_sequence)
+    }
+    fn managed_evidence(&mut self, peer: &HumanPeer, agent_id: &str, digest: [u8;32]) -> Result<HumanResponse, HumanOperationError> {
+        self.lock()?.managed_evidence(peer, agent_id, digest)
+    }
+
     fn session_refresh(
         &mut self,
         context: &crate::agent_rpc_peer::RpcOwnerContext<'_>,
@@ -4001,6 +4014,7 @@ impl<A: HumanAuthorityBoundary> UnifiedAgentOwner<A> {
             self.restore_native_cache(context, preparation_id)?;
         }
         let operations_shared = Arc::clone(&self.operations);
+        let presentation_clock = Arc::clone(&operations_shared.lock().map_err(|_| HumanOperationError::Unavailable)?.clock);
         let (prepared, snapshot) = {
             let mut operations = operations_shared
                 .lock()
@@ -4295,6 +4309,7 @@ impl<A: HumanAuthorityBoundary> UnifiedAgentOwner<A> {
                     let mut inserts = vec![
                         (durable_key, record.encode().map_err(|_| refused())?),
                         held.companion().map_err(|_| refused())?,
+                        held.presentation_companion(presentation_clock.as_ref()).map_err(|_| refused())?,
                     ];
                     let mut updates = Vec::new();
                     if store.get(&replay.0).is_some() {
@@ -5287,6 +5302,16 @@ impl<A: HumanAuthorityBoundary> UnifiedAgentOwner<A> {
         if snapshot.prepared.disclosure.canonical_digest != held_digest {
             return Err(HumanOperationError::Refused);
         }
+        if approve && snapshot.state == ApprovalState::AwaitingApproval {
+            if let Some(facts)=snapshot.presentation {
+                let now=self.lock_operations()?.clock.sample(Duration::from_secs(1))
+                    .map_err(|_|HumanOperationError::Unavailable)?;
+                if now.generation==[0;16] || now.unix_seconds()<facts.created_at_unix_seconds
+                    || now.unix_seconds()>=facts.activity_expires_at_unix_seconds {
+                    return Err(HumanOperationError::Refused)
+                }
+            }
+        }
         let native_program = {
             let mut operations = self.lock_operations()?;
             let registry = operations.authority.registry(peer).map_err(map_core)?;
@@ -5336,6 +5361,74 @@ impl<A: HumanAuthorityBoundary> UnifiedAgentOwner<A> {
 }
 
 impl<A: HumanAuthorityBoundary> HumanOperations for UnifiedAgentOwner<A> {
+    fn approval_list_facts(&mut self, peer: &HumanPeer, current_sequence: u64, cursor: Option<[u8;32]>, limit: u8) -> Result<HumanResponse, HumanOperationError> {
+        let tenant = TenantId::new(peer.tenant.clone()).map_err(|_| HumanOperationError::Refused)?;
+        let page = ApprovalService::new(&self.approvals, &self.budgets, &self.approval_expiry)
+            .list(&tenant, cursor, usize::from(limit), current_sequence).map_err(|_| HumanOperationError::Refused)?;
+        let mut out = Encoder::new();
+        out.u8(u8::try_from(page.approvals.len()).map_err(|_| HumanOperationError::Refused)?);
+        for record in &page.approvals { encode_approval_facts(&mut out, record)?; }
+        match page.next_cursor { Some(cursor) => {out.u8(1);out.fixed(&cursor);}, None => out.u8(0) }
+        out.finish()
+    }
+    fn approval_get_facts(&mut self, peer: &HumanPeer, approval_id: [u8;32], current_sequence: u64) -> Result<HumanResponse, HumanOperationError> {
+        let tenant = TenantId::new(peer.tenant.clone()).map_err(|_| HumanOperationError::Refused)?;
+        let record = ApprovalService::new(&self.approvals, &self.budgets, &self.approval_expiry)
+            .get(&tenant, approval_id, current_sequence).map_err(|_| HumanOperationError::Refused)?;
+        let mut out = Encoder::new(); encode_approval_facts(&mut out, &record)?; out.finish()
+    }
+    fn approval_budget_after(&mut self, peer: &HumanPeer, approval_id: [u8;32], held_digest: [u8;32], current_sequence: u64) -> Result<HumanResponse, HumanOperationError> {
+        let tenant = TenantId::new(peer.tenant.clone()).map_err(|_| HumanOperationError::Refused)?;
+        let record = ApprovalService::new(&self.approvals, &self.budgets, &self.approval_expiry)
+            .get(&tenant, approval_id, current_sequence).map_err(|_| HumanOperationError::Refused)?;
+        if record.canonical_bytes_digest != held_digest || record.state != ApprovalState::AwaitingApproval {
+            return Err(HumanOperationError::Refused);
+        }
+        let amount = record.held_activity.amounts.values().iter().try_fold(record.held_activity.fee_limit.0,
+            |total,item| total.checked_add(item.amount.0)).ok_or(HumanOperationError::Refused)?;
+        let owners = {let store=self.store.lock().map_err(|_| HumanOperationError::Unavailable)?;
+            managed_agent::budget_owners(&store, &tenant)?};
+        let mut selected=owners.iter().filter(|owner|owner.agent_did==record.held_activity.actor.as_str());
+        let (Some(owner),None)=(selected.next(),selected.next()) else {return Err(HumanOperationError::Refused)};
+        let held_limits=self.budgets.held_limits(approval_id).map_err(|_| HumanOperationError::Refused)?;
+        let mut operations=self.lock_operations()?;
+        let actor=Did::new(record.held_activity.actor.as_str().as_bytes()).map_err(|_| HumanOperationError::Refused)?;
+        let snapshot=core_preparation_snapshot(&mut operations.node, peer, &actor)?;
+        if snapshot.observed_head_sequence != current_sequence {return Err(HumanOperationError::Refused)};
+        let state=operations.authority.budget_state(peer,owner.active_budget_id)?;
+        let (_,asset,currency,_,_,_,_)=operations.authority.balance_context(peer)?;
+        if state.asset!=asset || currency!=record.held_activity.asset.as_str() || state.observed_head_sequence!=current_sequence
+            || !(4..=5).contains(&state.verification) || state.evidence_digest==[0;32] || state.receipt_digest==[0;32]
+            || state.checkpoint_digest==[0;32] || state.maximum_age_sequences==0 || state.age_sequences>state.maximum_age_sequences {
+            return Err(HumanOperationError::Refused)
+        }
+        if record.held_activity.fee_limit.0 != 0 {
+            let fee=operations.node.native_fee_policy(39).map_err(|_|HumanOperationError::Unavailable)?;
+            if fee.value.asset.asset_id!=state.asset {return Err(HumanOperationError::Refused)}
+        }
+        let limits={let store=self.store.lock().map_err(|_| HumanOperationError::Unavailable)?;
+            crate::budget::daemon_limits(&store,&tenant).map_err(|_| HumanOperationError::Refused)?};
+        if held_limits.is_empty() || held_limits.iter().any(|id| !limits.iter().any(|limit|
+            limit.limit_id==*id && limit.asset==asset && !limit.revoked && limit.expiry_ms>snapshot.protocol_timestamp
+            && limit.agent_digest==daemon_limit_agent(record.held_activity.actor.as_str()))) {return Err(HumanOperationError::Refused)};
+        let remaining=self.budgets.remaining_after_reservation_bound(approval_id,amount,current_sequence,
+            crate::budget::CoreTimestampMs(snapshot.protocol_timestamp),state.remaining).map_err(|_| HumanOperationError::Refused)?;
+        let mut digest=Sha256::new(); digest.update(b"LayerX/Human/approval-budget-after/v2\0");
+        digest.update(approval_id);digest.update(held_digest);digest.update(owner.active_budget_id);digest.update(state.asset);
+        digest.update(amount.to_be_bytes());digest.update(remaining.to_be_bytes());digest.update(state.evidence_digest);
+        digest.update(state.receipt_digest);digest.update(state.checkpoint_digest);digest.update(current_sequence.to_be_bytes());
+        let mut out=Encoder::new();out.u16(2)?;out.fixed(&approval_id);out.fixed(&held_digest);out.u128(remaining);
+        out.u8(state.verification);out.fixed(&digest.finalize());out.u64(current_sequence);out.fixed(&state.asset);out.finish()
+    }
+    fn managed_evidence(&mut self, peer: &HumanPeer, agent_id: &str, digest: [u8;32]) -> Result<HumanResponse, HumanOperationError> {
+        let tenant=TenantId::new(peer.tenant.clone()).map_err(|_| HumanOperationError::Refused)?;
+        let store=self.store.lock().map_err(|_| HumanOperationError::Unavailable)?;
+        let receipt=managed_agent::evidence_export(&store,&tenant,agent_id,digest)?;
+        let mut out=Encoder::new();out.u16(2)?;out.fixed(&digest);out.fixed(&receipt.metadata.activity_id);
+        out.u64(receipt.metadata.global_sequence);out.u8(receipt.metadata.verification_level.wire_rank());
+        out.bytes(&receipt.canonical_bytes)?;out.finish()
+    }
+
     fn session_list(
         &mut self,
         peer: &HumanPeer,
@@ -12903,6 +12996,13 @@ fn verification_level(value: &Value) -> Result<VerificationLevel, IdentityError>
     }
 }
 
+fn encode_approval_facts(out: &mut Encoder, record: &ApprovalRecord) -> Result<(), HumanOperationError> {
+    let facts=record.presentation.ok_or(HumanOperationError::Unavailable)?;
+    if facts.created_at_unix_seconds==0 || facts.activity_expires_at_unix_seconds!=record.held_activity.expiry.0
+        || facts.created_at_unix_seconds>=facts.activity_expires_at_unix_seconds {return Err(HumanOperationError::Refused)}
+    out.u16(2)?; encode_approval(out,record)?;
+    out.u64(facts.created_at_unix_seconds);out.u64(facts.activity_expires_at_unix_seconds);Ok(())
+}
 fn encode_approval(out: &mut Encoder, record: &ApprovalRecord) -> Result<(), HumanOperationError> {
     out.fixed(&record.approval_id);
     encode_disclosure(out, &record.held_activity)?;

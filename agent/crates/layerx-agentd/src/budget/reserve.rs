@@ -69,6 +69,96 @@ impl BudgetLimiter {
             .values()
             .any(|limit| limit.held.contains_key(&reservation_id)))
     }
+
+    pub fn remaining_after_reservation(
+        &self,
+        reservation_id: [u8; 32],
+        expected_amount: u128,
+        current_sequence: u64,
+        core_now: CoreTimestampMs,
+    ) -> Result<u128, LimitRefusal> {
+        self.remaining_after_reservation_inner(
+            reservation_id,
+            expected_amount,
+            current_sequence,
+            core_now,
+            None,
+        )
+    }
+
+    pub fn remaining_after_reservation_bound(
+        &self,
+        reservation_id: [u8; 32],
+        expected_amount: u128,
+        current_sequence: u64,
+        core_now: CoreTimestampMs,
+        verified_protocol_remaining: u128,
+    ) -> Result<u128, LimitRefusal> {
+        self.remaining_after_reservation_inner(
+            reservation_id,
+            expected_amount,
+            current_sequence,
+            core_now,
+            Some(verified_protocol_remaining),
+        )
+    }
+
+    fn remaining_after_reservation_inner(
+        &self,
+        reservation_id: [u8; 32],
+        expected_amount: u128,
+        current_sequence: u64,
+        core_now: CoreTimestampMs,
+        verified_protocol_remaining: Option<u128>,
+    ) -> Result<u128, LimitRefusal> {
+        if reservation_id == [0; 32] || expected_amount == 0 || core_now.0 == 0 {
+            return Err(LimitRefusal::InvalidRequest);
+        }
+        let limits = self.limits.lock().map_err(|_| LimitRefusal::Poisoned)?;
+        let mut remaining: Option<u128> = None;
+        let mut greatest_held = 0_u128;
+        for (id, limit) in &*limits {
+            let Some(hold) = limit.held.get(&reservation_id) else {
+                continue;
+            };
+            if hold.amount != expected_amount
+                || hold.expiry_sequence <= current_sequence
+                || hold.allocated_program
+                || hold.core_deadline.is_some_and(|deadline| deadline <= core_now)
+                || !limit.scalar_allowed
+            {
+                return Err(LimitRefusal::InvalidRequest);
+            }
+            let head_id = live_head(&limits, *id)?;
+            let head = limits.get(&head_id).ok_or(LimitRefusal::UnknownLimit(head_id))?;
+            if head.retired {
+                return Err(LimitRefusal::Retired(head_id));
+            }
+            if !head.scalar_allowed || head.denomination != limit.denomination {
+                return Err(LimitRefusal::InvalidConfiguration);
+            }
+            let held = lineage_held(&limits, head_id)?;
+            greatest_held = greatest_held.max(held);
+            let exposure = head.config.consumed.checked_add(held).ok_or(LimitRefusal::Arithmetic)?;
+            let available = head.config.ceiling.checked_sub(exposure).ok_or_else(|| LimitRefusal::Exceeded {
+                limit: head_id,
+                name: head.config.name.clone(),
+                ceiling: head.config.ceiling,
+                consumed: head.config.consumed,
+                held,
+                requested: 0,
+            })?;
+            remaining = Some(remaining.map_or(available, |current| current.min(available)));
+        }
+        let remaining = remaining.ok_or(LimitRefusal::InvalidRequest)?;
+        match verified_protocol_remaining {
+            Some(protocol_remaining) => Ok(remaining.min(
+                protocol_remaining.checked_sub(greatest_held).ok_or(LimitRefusal::Arithmetic)?,
+            )),
+            None => Ok(remaining),
+        }
+    }
+
     /// Builds a limiter from a complete set of limit configurations.
     ///
     /// # Errors

@@ -32495,3 +32495,25 @@ qualification_status = "unqualified"
 qualification_build_exit = 101
 qualification_build_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-0.10-build-repair2.log"
 qualification_verify_status = "unrun"
+
+[task.104.13.9]
+title = "Produce authentic approval presentation, post-activity budget and managed receipt export facts"
+status = "in_progress"
+mode = "BUILD"
+wave = 2
+requires = ["0.2", "8.1"]
+reqs = ["1064.3", "1064.8", "1071.1", "1071.5"]
+do_1 = "Persist actual trusted-clock approval creation time with exact existing sequence and held-activity wall deadlines in an explicit additive producer profile; preserve legacy records and refusals without backdating missing facts."
+do_2 = "Return genuine post-held-activity budget through the actual budget/reservation/verified-read owner, retaining asset, denomination, authority and evidence binding. Never relabel full unchanged balance as budget remaining after."
+do_3 = "Expose real managed-agent receipt bytes through authenticated tenant/session ownership and actual export/evidence store, preserving digest and canonical verification; do not fabricate evd IDs without exportable backing."
+do_4 = "Freeze and wire the distinct producer/consumer response profile to Human AgentRuntime and AgentApprovalRecord, retaining legacy encodings and checks; author genuine producer-to-consumer positive/refusal/reopen cases."
+touches = ["agent/crates/layerx-agentd/src/policy/approval.rs", "agent/crates/layerx-agentd/src/approval/mod.rs", "agent/crates/layerx-agentd/src/approval/events.rs", "agent/crates/layerx-agentd/src/human_runtime.rs", "agent/crates/layerx-agentd/src/managed_agent.rs", "human/crates/layerx-human-service/src/server/agent_runtime.rs", "human/crates/layerx-human-service/src/approvals/mod.rs", "agent/crates/layerx-agentd/tests/human_projection_facts.rs", "tools/qualification/paxeer-x/human-projection-facts.py", "agent/crates/layerx-agentd/src/human.rs", "agent/crates/layerx-agentd/src/budget/reserve.rs", "agent/crates/layerx-agentd/src/approval/native_program.rs"]
+build_cmd = "timeout 20m env CARGO_TARGET_DIR=/root/lx-target/human-facts cargo test --locked --manifest-path agent/Cargo.toml -p layerx-agentd --test human_projection_facts --no-run"
+verify_cmd = "timeout 20m python3 tools/qualification/paxeer-x/human-projection-facts.py"
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop at original dispatch cap, second failed repair, missing genuine owner or any legacy weakening; report actual source state."
+completion_basis_policy = "Fully implemented DONE by owner CONSTITUTION; actual qualification separate."
+source_ownership = "Root owns all shared schema, generation, manifests, locks, spec and publication. Source helpers use only exact disjoint producer/consumer files."

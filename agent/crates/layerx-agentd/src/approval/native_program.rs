@@ -8,6 +8,7 @@ use crate::prepare::Prepared;
 use crate::store::{ObjectKind, StorageClass, Store, TenantId, TenantKey};
 
 const PREFIX: &[u8] = b"native-program-approval-carrier-v1:";
+const PRESENTATION_PREFIX: &[u8] = b"native-program-approval-presentation-v2:";
 const MAX_CARRIER: usize = 4 * 1024 * 1024;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -42,6 +43,23 @@ pub(crate) struct NativeProgramApprovalCarrier {
     matched_rules: Vec<String>,
     state: NativeApprovalState,
     terminal: Option<NativeTerminal>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, Eq, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct NativeApprovalPresentation {
+    version: u8,
+    tenant: String,
+    principal: String,
+    actor: Vec<u8>,
+    session: [u8; 32],
+    generation: u64,
+    preparation: [u8; 32],
+    held_digest: [u8; 32],
+    pub(crate) created_at_sequence: u64,
+    pub(crate) budget_expiry_sequence: u64,
+    pub(crate) created_at_unix_seconds: u64,
+    pub(crate) activity_expires_at_unix_milliseconds: u64,
 }
 
 pub(crate) struct VerifiedUnsignedProgramCancellation {
@@ -164,6 +182,79 @@ impl NativeProgramApprovalCarrier {
         let key = TenantKey::new(tenant, ObjectKind::PreparedActivity,
             [PREFIX, self.preparation.as_slice()].concat()).map_err(|_| CarrierError::Corrupt)?;
         Ok((key, self.encoded()?))
+    }
+
+    pub(crate) fn presentation_companion(
+        &self,
+        clock: &dyn layerx_types::clock::Clock,
+    ) -> Result<(TenantKey, Vec<u8>), CarrierError> {
+        self.validate()?;
+        if self.terminal.is_some()
+            || !matches!(self.state, NativeApprovalState::Awaiting | NativeApprovalState::NotRequired)
+        {
+            return Err(CarrierError::Binding);
+        }
+        let reading = clock.sample(std::time::Duration::from_secs(1))
+            .map_err(|_| CarrierError::Binding)?;
+        if reading.generation == [0; 16] || reading.unix_milliseconds >= self.envelope_not_after {
+            return Err(CarrierError::Binding);
+        }
+        let presentation = NativeApprovalPresentation {
+            version: 2,
+            tenant: self.tenant.clone(),
+            principal: self.principal.clone(),
+            actor: self.actor.clone(),
+            session: self.session,
+            generation: self.generation,
+            preparation: self.preparation,
+            held_digest: self.held_digest()?,
+            created_at_sequence: self.created_at_sequence,
+            budget_expiry_sequence: self.budget_expiry_sequence,
+            created_at_unix_seconds: reading.unix_seconds(),
+            activity_expires_at_unix_milliseconds: self.envelope_not_after,
+        };
+        self.validate_presentation(&presentation)?;
+        let encoded = serde_json::to_vec(&presentation).map_err(|_| CarrierError::Corrupt)?;
+        if encoded.len() > MAX_CARRIER { return Err(CarrierError::Corrupt); }
+        Ok((self.presentation_key()?, encoded))
+    }
+
+    pub(crate) fn presentation(&self, store: &Store) -> Result<NativeApprovalPresentation, CarrierError> {
+        self.validate()?;
+        let stored = store.get(&self.presentation_key()?).ok_or(CarrierError::Missing)?;
+        if stored.class() != StorageClass::LocalOnly || stored.bytes().len() > MAX_CARRIER {
+            return Err(CarrierError::Corrupt);
+        }
+        let presentation: NativeApprovalPresentation = serde_json::from_slice(stored.bytes())
+            .map_err(|_| CarrierError::Corrupt)?;
+        self.validate_presentation(&presentation)?;
+        if serde_json::to_vec(&presentation).map_err(|_| CarrierError::Corrupt)?.as_slice() != stored.bytes() {
+            return Err(CarrierError::Corrupt);
+        }
+        Ok(presentation)
+    }
+
+    fn presentation_key(&self) -> Result<TenantKey, CarrierError> {
+        let tenant = TenantId::new(self.tenant.clone()).map_err(|_| CarrierError::Corrupt)?;
+        TenantKey::new(tenant, ObjectKind::PreparedActivity,
+            [PRESENTATION_PREFIX, self.preparation.as_slice()].concat())
+            .map_err(|_| CarrierError::Corrupt)
+    }
+
+    fn validate_presentation(&self, presentation: &NativeApprovalPresentation) -> Result<(), CarrierError> {
+        if presentation.version != 2 || presentation.tenant != self.tenant
+            || presentation.principal != self.principal || presentation.actor != self.actor
+            || presentation.session != self.session || presentation.generation != self.generation
+            || presentation.preparation != self.preparation || presentation.held_digest != self.held_digest()?
+            || presentation.created_at_sequence != self.created_at_sequence
+            || presentation.budget_expiry_sequence != self.budget_expiry_sequence
+            || presentation.activity_expires_at_unix_milliseconds != self.envelope_not_after
+            || presentation.created_at_unix_seconds.checked_mul(1000)
+                .is_none_or(|created| created >= presentation.activity_expires_at_unix_milliseconds)
+        {
+            return Err(CarrierError::Binding);
+        }
+        Ok(())
     }
 
     pub(crate) fn read(
