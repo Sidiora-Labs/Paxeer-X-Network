@@ -36,6 +36,8 @@ jobs:
         with:
           persist-credentials: false
           fetch-depth: 0
+      - name: Produce source-bound beta CI inputs
+        run: scripts/ci/beta-ci-inputs.sh
       - name: Check the beta contract and the executed-evidence ledger
         run: make beta-contract-check beta-ledger-check
       - name: Install Node.js for middleware conformance
@@ -124,6 +126,8 @@ jobs:
         uses: gradle/actions/setup-gradle@0723195856401067f7a2779048b490ace7a47d7c # v5
         with:
           gradle-version: "8.7"
+      - name: Install the Swift setup file utility
+        run: sudo apt-get update && sudo apt-get install --yes file
       - name: Install pinned Swift toolchain
         uses: swift-actions/setup-swift@7ca6abe6b3b0e8b5421b88be48feee39cbf52c6a # v2.4.0
         with:
