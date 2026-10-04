@@ -627,4 +627,25 @@ lxp_result lxp_kernel_prepare_terminal_rejection_with_arbiter_prestate(
 lxp_byte_span lxp_kernel_prepared_batch_arbiter_prestate(
     const lxp_kernel_prepared_batch *batch, size_t receipt_index);
 
+lxp_result lxp_kernel_encode_admission_prestate(
+    const lxp_kernel_batch_snapshot *snapshot, const lxp_activity *activity,
+    const lxp_kernel_execution *execution, size_t maximum_bytes,
+    lxp_byte_span *owned_capture);
+void lxp_kernel_admission_prestate_destroy(lxp_byte_span *owned_capture);
+lxp_result lxp_kernel_prepare_serial_activity_batch_with_admission_prestate(
+    lxp_kernel *kernel, const lxp_activity *activity,
+    const lxp_kernel_execution *execution, size_t maximum_bytes,
+    lxp_kernel_prepared_batch **batch_out);
+lxp_result lxp_kernel_prepare_activity_batch_with_admission_prestate(
+    lxp_kernel *kernel, const lxp_activity *activities,
+    const lxp_kernel_execution *executions, size_t offered_count,
+    uint32_t maximum_workers, size_t maximum_bytes,
+    lxp_kernel_prepared_batch **batch_out, size_t *retry_prefix_count);
+lxp_result lxp_kernel_prepare_terminal_rejection_with_admission_prestate(
+    lxp_kernel *kernel, const lxp_activity *activity,
+    const lxp_kernel_execution *execution, lxp_result refusal,
+    size_t maximum_bytes, lxp_kernel_prepared_batch **batch_out);
+lxp_byte_span lxp_kernel_prepared_batch_admission_prestate(
+    const lxp_kernel_prepared_batch *batch, size_t receipt_index);
+
 #endif

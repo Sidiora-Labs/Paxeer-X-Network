@@ -27,4 +27,5 @@ pub mod withdrawal;
 pub mod caps;
 pub mod execution_prestate;
 
+pub mod arbiter_admission;
 pub mod arbiter_prestate;

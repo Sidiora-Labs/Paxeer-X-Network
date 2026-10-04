@@ -276,6 +276,75 @@ impl Client {
         }
     }
 
+    pub fn start_arbiter_admission_v3<'a>(
+        &'a mut self,
+        receipt: &'a layerx_proof::receipt::VerifiedReceipt,
+        correlation_id: u64,
+    ) -> Result<
+        crate::arbiter_admission::AdmissionDiscovery<'a>,
+        crate::arbiter_admission::AdmissionError,
+    > {
+        use crate::arbiter_admission::{
+            AdmissionDiscovery, AdmissionError, ADMISSION_PRESTATE_REQUEST_BYTES,
+            ADMISSION_PRESTATE_RESPONSE_HEADER_BYTES, MAX_ADMISSION_PRESTATE_PAGE_BYTES,
+        };
+        if !self
+            .handshake
+            .capabilities()
+            .contains(Capability::ArbiterAdmissionV3)
+            || self.config.handshake.built_interface_version != crate::lni::schema::Version::V1_11
+        {
+            return Err(AdmissionError::Unavailable);
+        }
+        let limits = self.config.limits;
+        if limits.maximum_frame_bytes < ADMISSION_PRESTATE_REQUEST_BYTES + 22 {
+            return Err(AdmissionError::Bounds);
+        }
+        let page_bytes = limits
+            .maximum_frame_bytes
+            .checked_sub(ADMISSION_PRESTATE_RESPONSE_HEADER_BYTES + 22)
+            .filter(|bytes| *bytes > 0)
+            .ok_or(AdmissionError::Bounds)?
+            .min(MAX_ADMISSION_PRESTATE_PAGE_BYTES);
+        let page_bytes = u32::try_from(page_bytes).map_err(|_| AdmissionError::Bounds)?;
+        let node = self.handshake.node();
+        if node.protocol_version != 3 {
+            return Err(AdmissionError::Unavailable);
+        }
+        let transport = self
+            .transport
+            .as_mut()
+            .ok_or(AdmissionError::Transport(TransportError::PeerShutdown))?;
+        AdmissionDiscovery::begin(
+            transport,
+            self.handshake.capabilities(),
+            node.interface_version,
+            node.network_id,
+            correlation_id,
+            receipt,
+            page_bytes,
+            limits.deadline,
+        )
+    }
+
+    pub fn arbiter_admission_v3(
+        &mut self,
+        receipt: &layerx_proof::receipt::VerifiedReceipt,
+        correlation_id: u64,
+    ) -> Result<crate::evidence::VerifiedAdmissionPrestate, crate::arbiter_admission::AdmissionError>
+    {
+        use crate::arbiter_admission::{AdmissionError, AdmissionProgress};
+        let mut discovery = self.start_arbiter_admission_v3(receipt, correlation_id)?;
+        loop {
+            match discovery.advance() {
+                AdmissionProgress::Incomplete { .. } => {}
+                AdmissionProgress::Complete(prestate) => return Ok(prestate),
+                AdmissionProgress::Refused(error) => return Err(error),
+                AdmissionProgress::Unavailable => return Err(AdmissionError::Unavailable),
+            }
+        }
+    }
+
     pub fn start_execution_prestate<'a>(
         &'a mut self,
         receipt: &'a layerx_proof::receipt::VerifiedReceipt,
@@ -679,6 +748,13 @@ impl Client {
     /// client.
     pub fn connect(config: ClientConfig) -> Result<Self, ConnectionError> {
         Self::connect_with_schema(config, lni_schema_v1())
+    }
+
+    pub fn connect_arbiter_admission_v3(config: ClientConfig) -> Result<Self, ConnectionError> {
+        Self::connect_with_schema(
+            config,
+            crate::lni::schema::lni_schema_arbiter_admission_v3(),
+        )
     }
 
     pub fn connect_arbiter_prestate_v2(config: ClientConfig) -> Result<Self, ConnectionError> {

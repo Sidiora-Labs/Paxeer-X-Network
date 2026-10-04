@@ -4163,3 +4163,4 @@ $(BUILD_DIR)/bin/layerx-archive-codec: $(ARCHIVE_CODEC_OBJECTS) $(LIBRARY) \
 include tools/paxeer-x/build/104.35.11.mk
 include tools/paxeer-x/build/104.35.12.mk
 include tools/paxeer-x/build/6.6.mk
+include tools/paxeer-x/build/104.35.15.mk

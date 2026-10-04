@@ -865,4 +865,178 @@ static lxp_result send_arbiter_prestate_discovery(lxp_daemon_lni_server *server,
     return status;
 }
 
+static lxp_result lni_arbiter_admission_prestate_consume(void *context, lxp_byte_span payload)
+{
+    lni_execution_prestate_sink *sink = context;
+    const lni_envelope *request = sink->request;
+    lni_caps_snapshot *snapshot = sink->snapshot;
+    uint32_t legacy_length;
+    const uint8_t *v2;
+    if (payload.bytes == NULL || payload.length < 94U || payload.length > LNI_CAPS_MAX_BYTES ||
+        load_u16(payload.bytes) != 3U) return LXP_ERR_LENGTH_LIMIT;
+    legacy_length = load_u32(payload.bytes + 2U);
+    if (legacy_length < 86U || legacy_length > payload.length - 6U)
+        return LXP_ERR_CONTEXT_MISMATCH;
+    v2 = payload.bytes + 6U;
+    if (load_u16(v2) != 2U || load_u32(v2 + 2U) < 80U ||
+        load_u32(v2 + 2U) > legacy_length - 6U || snapshot->length != 0U ||
+        load_u16(v2 + 6U) != 1U ||
+        load_u32(v2 + 8U) != load_u32(request->payload + 3U) ||
+        memcmp(v2 + 12U, request->payload + 7U, 32U) != 0 ||
+        load_u64(v2 + 44U) != load_u64(request->payload + 71U) ||
+        memcmp(v2 + 52U, request->payload + 79U, 32U) != 0)
+        return LXP_ERR_CONTEXT_MISMATCH;
+    memcpy(snapshot->root, v2 + 52U, 32U);
+    return lni_caps_append(snapshot, payload.bytes, payload.length);
+}
+
+static lxp_result lni_arbiter_admission_prestate_capture(lxp_daemon_lni_server *server,
+                                               const lni_envelope *request,
+                                               lni_caps_snapshot *snapshot)
+{
+    lxp_daemon_protocol_owner *owner = server->owner;
+    lni_execution_prestate_sink sink = {request, snapshot};
+    size_t mark;
+    lxp_result status = lni_read_lock(owner);
+    if (status != LXP_OK) return status;
+    mark = lxp_arena_mark(owner->scratch);
+    status = lxp_daemon_evidence_get_arbiter_admission_prestate(owner->evidence_store,
+        load_u32(request->payload + 3U), request->payload + 7U, request->payload + 39U,
+        load_u64(request->payload + 71U), request->payload + 79U, owner->scratch,
+        lni_arbiter_admission_prestate_consume, &sink);
+    if (status == LXP_OK && snapshot->length == 0U) status = LXP_ERR_CONTEXT_MISMATCH;
+    if (lxp_arena_reset(owner->scratch, mark) != LXP_OK && status == LXP_OK)
+        status = LXP_FATAL_INVARIANT;
+    return lni_read_unlock(owner, status);
+}
+
+static lxp_result send_arbiter_admission_prestate_discovery(lxp_daemon_lni_server *server, int descriptor,
+                                       const lni_envelope *request,
+                                       lni_caps_snapshot **retained, int64_t deadline)
+{
+    lni_caps_snapshot *snapshot;
+    uint8_t *response = NULL;
+    uint8_t next_cursor[32] = {0};
+    uint32_t maximum = 0U;
+    size_t length;
+    size_t next;
+    int64_t now;
+    bool done;
+    lxp_result status = LXP_OK;
+    if (request->minor < LNI_ARBITER_ADMISSION_PRESTATE_MINOR ||
+        lni_reply_minor < LNI_ARBITER_ADMISSION_PRESTATE_MINOR) status = LXP_ERR_VERSION_UNSUPPORTED;
+    else if (request->proof_length != 0U || request->correlation_id == 0U ||
+        request->payload_length != 187U ||
+        load_u16(request->payload) != 3U || request->payload[2U] > 1U)
+        status = LXP_ERR_MALFORMED_ENVELOPE;
+    if (status == LXP_OK && (load_u32(request->payload + 3U) != server->owner->network_id ||
+        lxp_ct_is_zero(request->payload + 7U, 32U) ||
+        lxp_ct_is_zero(request->payload + 39U, 32U) ||
+        load_u64(request->payload + 71U) == 0U ||
+        lxp_ct_is_zero(request->payload + 79U, 32U)))
+        status = LXP_ERR_CONTEXT_MISMATCH;
+    if (status == LXP_OK) {
+        maximum = load_u32(request->payload + 111U);
+        if (maximum == 0U || maximum > LXP_KERNEL_MAX_BLOB_BYTES ||
+            server->frame_bytes <= LNI_ENVELOPE_FIXED_BYTES + 191U ||
+            maximum > server->frame_bytes - LNI_ENVELOPE_FIXED_BYTES - 191U)
+            status = LXP_ERR_LENGTH_LIMIT;
+    }
+    if (status == LXP_OK && !arbiter_admission_prestate_available(server))
+        status = LXP_ERR_MODULE_DISABLED;
+    if (status == LXP_OK) status = monotonic_milliseconds(&now);
+    if (status == LXP_OK && request->payload[2U] == 0U) {
+        lni_caps_drop(retained);
+        if (!lxp_ct_is_zero(request->payload + 115U, 72U))
+            status = LXP_ERR_MALFORMED_ENVELOPE;
+        if (status == LXP_OK) {
+            if (pthread_mutex_lock(&lni_caps_mutex) != 0) status = LXP_ERR_IO;
+            else {
+                if (lni_caps_active >= LNI_CAPS_MAX_OBJECTS) status = LXP_ERR_LENGTH_LIMIT;
+                else {
+                    *retained = calloc(1U, sizeof(**retained));
+                    if (*retained == NULL) status = LXP_ERR_ARENA_EXHAUSTED;
+                    else ++lni_caps_active;
+                }
+                (void)pthread_mutex_unlock(&lni_caps_mutex);
+            }
+        }
+        if (status == LXP_OK) {
+            snapshot = *retained;
+            snapshot->profile = LNI_ARBITER_ADMISSION_PRESTATE_REQUEST;
+            memcpy(snapshot->selection, request->payload, 115U);
+            snapshot->expires = deadline;
+            if (RAND_bytes(snapshot->identity, 32) != 1 ||
+                lxp_ct_is_zero(snapshot->identity, 32U)) status = LXP_ERR_IO;
+            if (status == LXP_OK) status = lni_arbiter_admission_prestate_capture(server, request, snapshot);
+        }
+    } else if (status == LXP_OK) {
+        snapshot = *retained;
+        if (snapshot == NULL) status = LXP_ERR_CONTEXT_MISMATCH;
+        else if (now >= snapshot->expires) status = LXP_ERR_EXPIRED;
+        else if (snapshot->profile != LNI_ARBITER_ADMISSION_PRESTATE_REQUEST ||
+            load_u16(snapshot->selection) != 3U ||
+            memcmp(request->payload + 3U, snapshot->selection + 3U, 112U) != 0 ||
+            memcmp(request->payload + 115U, snapshot->identity, 32U) != 0 ||
+            load_u32(request->payload + 147U) != snapshot->next ||
+            load_u32(request->payload + 183U) != snapshot->length ||
+            lxp_ct_memcmp(request->payload + 151U, snapshot->cursor, 32U) != 0)
+            status = LXP_ERR_CONTEXT_MISMATCH;
+    }
+    snapshot = *retained;
+    if (status == LXP_OK) status = monotonic_milliseconds(&now);
+    if (status == LXP_OK && now >= snapshot->expires) status = LXP_ERR_EXPIRED;
+    if (status != LXP_OK) {
+        lni_caps_drop(retained);
+        return evidence_refusal(server, descriptor, request->correlation_id, status, deadline);
+    }
+    length = snapshot->length - snapshot->next;
+    if (length > maximum) length = maximum;
+    if (length == 0U) {
+        lni_caps_drop(retained);
+        return evidence_refusal(server, descriptor, request->correlation_id,
+            LXP_ERR_CONTEXT_MISMATCH, deadline);
+    }
+    next = snapshot->next + length;
+    done = next == snapshot->length;
+    if (!done && (RAND_bytes(next_cursor, 32) != 1 || lxp_ct_is_zero(next_cursor, 32U)))
+        status = LXP_ERR_IO;
+    if (status == LXP_OK) {
+        response = malloc(191U + length);
+        if (response == NULL) status = LXP_ERR_ARENA_EXHAUSTED;
+    }
+    if (status != LXP_OK) {
+        free(response);
+        lni_caps_drop(retained);
+        return evidence_refusal(server, descriptor, request->correlation_id, status, deadline);
+    }
+    if (status == LXP_OK) {
+        store_u16(response, 3U);
+        memcpy(response + 2U, snapshot->identity, 32U);
+        store_u32(response + 34U, load_u32(snapshot->selection + 3U));
+        memcpy(response + 38U, snapshot->root, 32U);
+        store_u32(response + 70U, (uint32_t)snapshot->next);
+        store_u32(response + 74U, (uint32_t)snapshot->length);
+        store_u32(response + 78U, (uint32_t)next);
+        response[82U] = done ? 1U : 0U;
+        memcpy(response + 83U, next_cursor, 32U);
+        store_u32(response + 115U, (uint32_t)length);
+        memcpy(response + 119U, snapshot->selection + 7U, 32U);
+        memcpy(response + 151U, snapshot->selection + 39U, 32U);
+        store_u64(response + 183U, load_u64(snapshot->selection + 71U));
+        memcpy(response + 191U, snapshot->bytes + snapshot->next, length);
+        if (deadline > snapshot->expires) deadline = snapshot->expires;
+        status = send_envelope(descriptor, server->frame_bytes, LNI_ARBITER_ADMISSION_PRESTATE_RESPONSE,
+            request->correlation_id, response, 191U + length,
+            NULL, 0U, deadline);
+    }
+    free(response);
+    if (status != LXP_OK || done) lni_caps_drop(retained);
+    else {
+        snapshot->next = next;
+        memcpy(snapshot->cursor, next_cursor, 32U);
+    }
+    return status;
+}
+
 #endif

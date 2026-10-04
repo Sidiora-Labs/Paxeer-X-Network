@@ -1,5 +1,10 @@
 //! Production finality-evidence reads and authenticated registration.
 
+mod arbiter_admission;
+pub use arbiter_admission::{
+    verify_arbiter_admission_v3, verify_arbiter_admission_v3_bounded, AdmissionEvidenceError,
+    VerifiedAdmissionPrestate, MAX_ADMISSION_PRESTATE_BYTES,
+};
 mod arbiter_prestate;
 mod caps;
 mod execution_prestate;

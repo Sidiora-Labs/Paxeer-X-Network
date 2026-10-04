@@ -3558,6 +3558,11 @@ static lxp_result commit_prepared_batch_wal(
             &process->evidence_store, owned_prepared);
         if (status != LXP_OK) { free(prospective); return status; }
     }
+    if (process->evidence_store.arbiter_admission_prestate_enabled) {
+        status = lxp_daemon_evidence_retain_arbiter_admission_prestates(
+            &process->evidence_store, owned_prepared);
+        if (status != LXP_OK) { free(prospective); return status; }
+    }
     availability_job = (availability_store_job){
         process, &process->prepared_availability_body, LXP_OK, 0U, 0U};
     *wal_prepare_us = pay_timing_us() - started_us;
@@ -3790,7 +3795,11 @@ static lxp_result apply_canonical_batch(
     while (status == LXP_OK) {
         retry_prefix_count = 0U;
         if (activities[0].activity_type == LX_PROGRAMS_CALL)
-            status = process->evidence_store.arbiter_prestate_enabled ?
+            status = process->evidence_store.arbiter_admission_prestate_enabled ?
+                lxp_kernel_prepare_activity_batch_with_admission_prestate(
+                    &process->kernel, activities, executions, count, maximum_workers,
+                    LXP_KERNEL_MAX_BLOB_TOTAL_BYTES, &prepared_batch, &retry_prefix_count) :
+                process->evidence_store.arbiter_prestate_enabled ?
                 lxp_kernel_prepare_activity_batch_with_arbiter_prestate(
                     &process->kernel, activities, executions, count, maximum_workers,
                     LXP_KERNEL_MAX_BLOB_TOTAL_BYTES, &prepared_batch, &retry_prefix_count) :
@@ -3798,7 +3807,12 @@ static lxp_result apply_canonical_batch(
                     &process->kernel, activities, executions, count,
                     maximum_workers, &prepared_batch, &retry_prefix_count);
         else
-            status = process->evidence_store.arbiter_prestate_enabled &&
+            status = process->evidence_store.arbiter_admission_prestate_enabled &&
+                lxp_activity_module_id(activities[0].activity_type) == LXP_MODULE_PROGRAMS ?
+                lxp_kernel_prepare_serial_activity_batch_with_admission_prestate(
+                    &process->kernel, &activities[0], &executions[0],
+                    LXP_KERNEL_MAX_BLOB_TOTAL_BYTES, &prepared_batch) :
+                process->evidence_store.arbiter_prestate_enabled &&
                 lxp_activity_module_id(activities[0].activity_type) == LXP_MODULE_PROGRAMS ?
                 lxp_kernel_prepare_serial_activity_batch_with_arbiter_prestate(
                     &process->kernel, &activities[0], &executions[0],
@@ -3834,7 +3848,12 @@ static lxp_result apply_canonical_batch(
             &process->execution_arena, executions,
             &scheduling_roots, batch_id);
         if (status == LXP_OK)
-            status = process->evidence_store.arbiter_prestate_enabled &&
+            status = process->evidence_store.arbiter_admission_prestate_enabled &&
+                lxp_activity_module_id(activities[0].activity_type) == LXP_MODULE_PROGRAMS ?
+                lxp_kernel_prepare_terminal_rejection_with_admission_prestate(
+                    &process->kernel, &activities[0], &executions[0], refusal,
+                    LXP_KERNEL_MAX_BLOB_TOTAL_BYTES, &prepared_batch) :
+                process->evidence_store.arbiter_prestate_enabled &&
                 lxp_activity_module_id(activities[0].activity_type) == LXP_MODULE_PROGRAMS ?
                 lxp_kernel_prepare_terminal_rejection_with_arbiter_prestate(
                     &process->kernel, &activities[0], &executions[0], refusal,
@@ -4156,14 +4175,22 @@ static lxp_result redo_prepared_batch_wal(
             &process->execution_arena, executions, &roots, batch_id);
     if (status == LXP_OK) {
         if (activities[0].activity_type == LX_PROGRAMS_CALL)
-            status = process->evidence_store.arbiter_prestate_enabled ?
+            status = process->evidence_store.arbiter_admission_prestate_enabled ?
+                lxp_kernel_prepare_activity_batch_with_admission_prestate(&process->kernel,
+                    activities, executions, view->count, 1U, LXP_KERNEL_MAX_BLOB_TOTAL_BYTES,
+                    &prepared, &retry_count) :
+                process->evidence_store.arbiter_prestate_enabled ?
                 lxp_kernel_prepare_activity_batch_with_arbiter_prestate(&process->kernel,
                     activities, executions, view->count, 1U, LXP_KERNEL_MAX_BLOB_TOTAL_BYTES,
                     &prepared, &retry_count) :
                 lxp_kernel_prepare_activity_batch(&process->kernel, activities,
                     executions, view->count, 1U, &prepared, &retry_count);
         else
-            status = process->evidence_store.arbiter_prestate_enabled &&
+            status = process->evidence_store.arbiter_admission_prestate_enabled &&
+                lxp_activity_module_id(activities[0].activity_type) == LXP_MODULE_PROGRAMS ?
+                lxp_kernel_prepare_serial_activity_batch_with_admission_prestate(&process->kernel,
+                    &activities[0], &executions[0], LXP_KERNEL_MAX_BLOB_TOTAL_BYTES, &prepared) :
+                process->evidence_store.arbiter_prestate_enabled &&
                 lxp_activity_module_id(activities[0].activity_type) == LXP_MODULE_PROGRAMS ?
                 lxp_kernel_prepare_serial_activity_batch_with_arbiter_prestate(&process->kernel,
                     &activities[0], &executions[0], LXP_KERNEL_MAX_BLOB_TOTAL_BYTES, &prepared) :
@@ -4179,7 +4206,12 @@ static lxp_result redo_prepared_batch_wal(
             process->kernel.current_state_root, view->first_sequence, view->batch_number,
             &process->execution_arena, executions, &roots, batch_id);
         if (status == LXP_OK)
-            status = process->evidence_store.arbiter_prestate_enabled &&
+            status = process->evidence_store.arbiter_admission_prestate_enabled &&
+                lxp_activity_module_id(activities[0].activity_type) == LXP_MODULE_PROGRAMS ?
+                lxp_kernel_prepare_terminal_rejection_with_admission_prestate(&process->kernel,
+                    &activities[0], &executions[0], refusal, LXP_KERNEL_MAX_BLOB_TOTAL_BYTES,
+                    &prepared) :
+                process->evidence_store.arbiter_prestate_enabled &&
                 lxp_activity_module_id(activities[0].activity_type) == LXP_MODULE_PROGRAMS ?
                 lxp_kernel_prepare_terminal_rejection_with_arbiter_prestate(&process->kernel,
                     &activities[0], &executions[0], refusal, LXP_KERNEL_MAX_BLOB_TOTAL_BYTES,
@@ -4199,6 +4231,9 @@ static lxp_result redo_prepared_batch_wal(
             &process->evidence_store, prepared);
     if (status == LXP_OK && process->evidence_store.arbiter_prestate_enabled)
         status = lxp_daemon_evidence_retain_arbiter_prestates(
+            &process->evidence_store, prepared);
+    if (status == LXP_OK && process->evidence_store.arbiter_admission_prestate_enabled)
+        status = lxp_daemon_evidence_retain_arbiter_admission_prestates(
             &process->evidence_store, prepared);
     if (status == LXP_OK)
         status = lxp_kernel_commit_prepared_batch(&process->kernel,
@@ -5778,6 +5813,16 @@ static lxp_result open_process(lxp_daemon_process *process,
             if (process->protocol_version != LXP_PROTOCOL_VERSION_STATE_COMMITMENT)
                 status = LXP_ERR_VERSION_UNSUPPORTED;
             else process->evidence_store.arbiter_prestate_enabled = true;
+        }
+    }
+    if (status == LXP_OK) {
+        const char *prestate = getenv("LAYERX_ARBITER_ADMISSION_PRESTATE");
+        if (prestate != NULL && strcmp(prestate, "0") != 0 && strcmp(prestate, "1") != 0)
+            status = LXP_ERR_NON_CANONICAL;
+        else if (prestate != NULL && strcmp(prestate, "1") == 0) {
+            if (process->protocol_version != LXP_PROTOCOL_VERSION_STATE_COMMITMENT)
+                status = LXP_ERR_VERSION_UNSUPPORTED;
+            else process->evidence_store.arbiter_admission_prestate_enabled = true;
         }
     }
     if (status == LXP_OK &&

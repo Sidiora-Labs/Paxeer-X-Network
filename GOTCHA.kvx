@@ -2187,3 +2187,7 @@ resolution = "Retain exact canonical bytes and reset only the wrapper allocation
 [gotcha.650]
 observed = "A task selector number does not imply a shell gate exists; ramp10426.3 owns an actual Python verifier rather than a guessed numbered shell file."
 resolution = "Use discovered tools/qualification/paxeer-x/ramp-source-settlement.py for the actual connected producer contract and preserve genuine isolated authority input requirements."
+
+[gotcha.651]
+observed = "The authenticated admission build stopped at Programs registry lib.rs:324 because the runtime ABI facade did not export the SDK-owned account_profile2_guest_supported predicate."
+resolution = "Preserve the predicate and every legacy assertion; repair only its existing facade export in a distinct bounded source task."

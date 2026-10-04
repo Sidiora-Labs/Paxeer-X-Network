@@ -140,8 +140,16 @@ pub fn perform_with_schema<T: FrameTransport>(
     previous: Option<&Handshake>,
     schema: &Schema,
 ) -> Result<Handshake, HandshakeError> {
+    let admission = schema
+        .capabilities
+        .contains(&Capability::ArbiterAdmissionV3);
     let opt_in = schema.capabilities.contains(&Capability::ArbiterPrestateV2);
-    if opt_in && config.built_interface_version != Version::V1_10 {
+    let opt_in_version = if admission {
+        Version::V1_11
+    } else {
+        Version::V1_10
+    };
+    if opt_in && config.built_interface_version != opt_in_version {
         return Err(HandshakeError::InterfaceIncompatible {
             built: schema.version,
             peer: config.built_interface_version,
@@ -152,7 +160,7 @@ pub fn perform_with_schema<T: FrameTransport>(
             version: Version {
                 major: config.built_interface_version.major,
                 minor: if opt_in {
-                    10
+                    opt_in_version.minor
                 } else if config.built_interface_version.minor >= 9 {
                     9
                 } else {
@@ -193,10 +201,18 @@ pub fn validate_with_schema(
     previous: Option<&Handshake>,
     schema: &Schema,
 ) -> Result<Handshake, HandshakeError> {
+    let opt_in_version = if schema
+        .capabilities
+        .contains(&Capability::ArbiterAdmissionV3)
+    {
+        Version::V1_11
+    } else {
+        Version::V1_10
+    };
     if node.interface_version.major != config.built_interface_version.major
         || (schema.capabilities.contains(&Capability::ArbiterPrestateV2)
-            && (config.built_interface_version != Version::V1_10
-                || node.interface_version.minor < 10))
+            && (config.built_interface_version != opt_in_version
+                || node.interface_version.minor < opt_in_version.minor))
     {
         return Err(HandshakeError::InterfaceIncompatible {
             built: config.built_interface_version,

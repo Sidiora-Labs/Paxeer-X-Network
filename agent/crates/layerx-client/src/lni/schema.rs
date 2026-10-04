@@ -45,6 +45,11 @@ impl Version {
         minor: 10,
     };
 
+    pub const V1_11: Self = Self {
+        major: 1,
+        minor: 11,
+    };
+
     /// Returns whether the two peers can interpret the same stable message set.
     #[must_use]
     pub const fn is_compatible_with(self, peer: Self) -> bool {
@@ -89,6 +94,7 @@ pub enum Capability {
     CapsDiscovery,
     ExecutionPrestate,
     ArbiterPrestateV2,
+    ArbiterAdmissionV3,
 }
 
 impl Capability {
@@ -119,6 +125,7 @@ impl Capability {
             Self::CapsDiscovery => "caps_discovery",
             Self::ExecutionPrestate => "execution_prestate",
             Self::ArbiterPrestateV2 => "arbiter_prestate_v2",
+            Self::ArbiterAdmissionV3 => "arbiter_admission_v3",
         }
     }
 }
@@ -605,6 +612,49 @@ const ARBITER_PRESTATE_SCHEMA: Schema = Schema {
 #[must_use]
 pub const fn lni_schema_arbiter_prestate_v2() -> &'static Schema {
     &ARBITER_PRESTATE_SCHEMA
+}
+
+const ADMISSION_CAPABILITIES: [Capability; 24] = {
+    let mut capabilities = [Capability::ArbiterAdmissionV3; 24];
+    let mut index = 0;
+    while index < ARBITER_PRESTATE_CAPABILITIES.len() {
+        capabilities[index] = ARBITER_PRESTATE_CAPABILITIES[index];
+        index += 1;
+    }
+    capabilities
+};
+const ADMISSION_MESSAGES: [MessageDescriptor; 49] = {
+    let mut messages = [MESSAGES[0]; 49];
+    let mut index = 0;
+    while index < ARBITER_PRESTATE_MESSAGES.len() {
+        messages[index] = ARBITER_PRESTATE_MESSAGES[index];
+        index += 1;
+    }
+    messages[47] = message(
+        "ArbiterAdmissionV3Request",
+        48,
+        MessageKind::Request,
+        Capability::ArbiterAdmissionV3,
+        true,
+        false,
+    );
+    messages[48] = message(
+        "ArbiterAdmissionV3Response",
+        49,
+        MessageKind::Response,
+        Capability::ArbiterAdmissionV3,
+        true,
+        true,
+    );
+    messages
+};
+const ADMISSION_SCHEMA: Schema = Schema {
+    version: Version::V1_11,
+    messages: &ADMISSION_MESSAGES,
+    capabilities: &ADMISSION_CAPABILITIES,
+};
+pub const fn lni_schema_arbiter_admission_v3() -> &'static Schema {
+    &ADMISSION_SCHEMA
 }
 
 /// One checked-in canonical encoding vector.

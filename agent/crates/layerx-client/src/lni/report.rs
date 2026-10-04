@@ -156,5 +156,6 @@ const fn absent_behavior(capability: Capability) -> &'static str {
         Capability::CapsDiscovery => "complete_caps_discovery_unavailable",
         Capability::ExecutionPrestate => "execution_prestate_read_unavailable",
         Capability::ArbiterPrestateV2 => "arbiter_prestate_v2_read_unavailable",
+        Capability::ArbiterAdmissionV3 => "arbiter_admission_v3_read_unavailable",
     }
 }
