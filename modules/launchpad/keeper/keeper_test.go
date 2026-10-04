@@ -677,6 +677,14 @@ func airdropPaid(t *testing.T, e *env, denom string, epoch uint64) sdk.Int {
 func TestAirdropEntitlements(t *testing.T) {
 	app := testkeeper.EVMTestApp
 	bank := app.BankKeeper
+	nextEntitlementEpoch := func(h *historyEnv) uint64 {
+		h.t.Helper()
+		h.swap(h.trader, h.denom, true, 100_000_000)
+		amount, err := h.k.ExecuteAirdrop(h.ctx, h.creator, h.denom)
+		require.NoError(h.t, err)
+		require.True(h.t, amount.IsPositive())
+		return h.market(h.denom).AirdropEpoch
+	}
 
 	t.Run("basis", func(t *testing.T) {
 		h := newHistoryEnv(t)
@@ -684,7 +692,7 @@ func TestAirdropEntitlements(t *testing.T) {
 		h.swap(h.trader, h.denom, true, 1_000_000_000)
 		require.NoError(t, h.send(bank, h.trader, a, 700_000))
 		supply := bank.GetSupply(h.ctx, h.denom).Amount
-		epoch := h.nextEpoch()
+		epoch := nextEntitlementEpoch(h)
 		basis, found, err := h.k.GetAirdropBasis(h.ctx, h.denom, epoch)
 		require.NoError(t, err)
 		require.True(t, found)
@@ -705,7 +713,7 @@ func TestAirdropEntitlements(t *testing.T) {
 		h.swap(h.trader, h.denom, true, 1_000_000_000)
 		require.NoError(t, h.send(bank, h.trader, a, 600_000))
 		require.NoError(t, h.send(bank, h.trader, b2, 400_000))
-		epoch := h.nextEpoch()
+		epoch := nextEntitlementEpoch(h)
 		funded := h.k.GetAirdropEpochAmount(h.ctx, h.denom, epoch)
 		supply := bank.GetSupply(h.ctx, h.denom).Amount
 		aShare, err := h.k.ClaimAirdrop(h.ctx, a, h.denom)
@@ -744,7 +752,7 @@ func TestAirdropEntitlements(t *testing.T) {
 		a := h.account(0)
 		h.swap(h.trader, h.denom, true, 1_000_000_000)
 		require.NoError(t, h.send(bank, h.trader, a, 900_000))
-		epoch := h.nextEpoch()
+		epoch := nextEntitlementEpoch(h)
 		before, _, err := h.k.AirdropEntitlement(h.ctx, a, h.denom, epoch)
 		require.NoError(t, err)
 		tf := tokenfactorykeeper.NewMsgServerImpl(app.TokenFactoryKeeper)
@@ -770,7 +778,7 @@ func TestAirdropEntitlements(t *testing.T) {
 		require.NoError(t, h.send(bank, h.trader, a, 800_000))
 		_, err := h.k.ClaimAirdropForEpoch(h.ctx, a, h.denom, 1)
 		require.ErrorIs(t, err, types.ErrInvalidAirdropEpoch)
-		epoch := h.nextEpoch()
+		epoch := nextEntitlementEpoch(h)
 		_, err = h.k.ClaimAirdropForEpoch(h.ctx, a, h.denom, 0)
 		require.ErrorIs(t, err, types.ErrInvalidAirdropEpoch)
 		_, err = h.k.ClaimAirdropForEpoch(h.ctx, a, h.denom, epoch+1)
@@ -809,11 +817,11 @@ func TestAirdropEntitlements(t *testing.T) {
 		a, b2 := h.account(0), h.account(0)
 		h.swap(h.trader, h.denom, true, 1_000_000_000)
 		require.NoError(t, h.send(bank, h.trader, a, 500_000))
-		first := h.nextEpoch()
+		first := nextEntitlementEpoch(h)
 		want, _, err := h.k.AirdropEntitlement(h.ctx, a, h.denom, first)
 		require.NoError(t, err)
 		require.NoError(t, h.send(bank, a, b2, 500_000))
-		second := h.nextEpoch()
+		second := nextEntitlementEpoch(h)
 		_, err = h.k.ClaimAirdrop(h.ctx, a, h.denom)
 		require.ErrorIs(t, err, types.ErrZeroAmount)
 		_, err = h.k.ClaimAirdropForEpoch(h.ctx, b2, h.denom, first)
@@ -833,7 +841,7 @@ func TestAirdropEntitlements(t *testing.T) {
 		a, b2 := h.account(0), h.account(0)
 		h.swap(h.trader, h.denom, true, 1_000_000_000)
 		require.NoError(t, h.send(bank, h.trader, a, 300_000))
-		epoch := h.nextEpoch()
+		epoch := nextEntitlementEpoch(h)
 		aShare, err := h.k.ClaimAirdrop(h.ctx, a, h.denom)
 		require.NoError(t, err)
 		require.NoError(t, h.send(bank, a, b2, 300_000))

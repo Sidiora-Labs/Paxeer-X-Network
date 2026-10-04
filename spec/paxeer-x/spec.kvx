@@ -36047,3 +36047,17 @@ source_status = "complete"
 completion_basis = "implementation under owner CONSTITUTION; qualification separately recorded"
 qualification_status = "UNRUN"
 source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-103.6.22-publication-handoff.json"
+
+[task.103.6.23]
+title = "Use real epoch execution for airdrop entitlement fixture progress"
+status = "done"
+wave = 5
+verify_cmd = "timeout 5m /root/lx-ops/paxeer-x-integration-2026-10-03/qualification/task103623/keeper.test -test.run ^TestAirdropEntitlements$ -test.v"
+touches = ["modules/launchpad/keeper/keeper_test.go"]
+do_1 = "Add a task-local actual epoch helper using genuine ExecuteAirdrop and creator"
+do_2 = "replace only entitlement test nextEpoch calls and preserve legacy history helper and all refusal assertions"
+do_3 = "Compile the real declared package once then execute only its captured focused test binary once"
+source_status = "complete"
+completion_basis = "implementation under owner CONSTITUTION; qualification separately recorded"
+qualification_status = "UNRUN"
+source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-103.6.23-source-handoff.json"
