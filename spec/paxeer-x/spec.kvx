@@ -36064,8 +36064,13 @@ do_2 = "preserve all parsing and authorization checks"
 do_3 = "Compile the real declared package once then execute only its captured focused test binary once"
 source_status = "complete"
 completion_basis = "implementation under owner CONSTITUTION; qualification separately recorded"
-qualification_status = "UNRUN"
+qualification_status = "UNRUN_BUILD_TIMEOUT"
 source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-103.6.21-publication-handoff.json"
+qualification_revision = "fc353a9b5f089ae8051000e45b346d47630fcc63"
+qualification_build_exit = 124
+qualification_build_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/qualification/task103621/build.log"
+qualification_verify_status = "UNRUN"
+qualification_repair_cycles = 0
 
 [task.103.6.22]
 title = "Restore the original upgrade list after the override test"
