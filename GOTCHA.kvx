@@ -2469,3 +2469,13 @@ resolution = "Restore deterministic schema-driven generation and use an explicit
 area = "Bounded current-trust build"
 observed = "Task5.2 source was complete but its original08:32UTC deadline expired during actual Go CLI compilation; later focused and native build stages never ran."
 resolution = "Record exit1 at the cutoff and verificationUNRUN; do not infer a compiler defect, restart the build or claim the absent genuine trust fixtures were exercised."
+
+[gotcha.719]
+area = "Native Send compiler integration"
+observed = "The deposit build exposed a private effects import, unresolved native amount map type and fixed-array versus vector signing preimage in the earlier Send producer."
+resolution = "Apply the owner-approved public reexports, exact map types and byte-identical vector conversion; retain failed build evidence and use only the approved additional integration build window."
+
+[gotcha.721]
+area = "Combined caller compiler integration"
+observed = "The approved Agent and Human build each exited101 after the corrected Send preview compiled; MCP still accesses old EvaluationInput fields and omits authorization variants, while four Human native callers use the legacy error mapper."
+resolution = "Retain both exact immutable-revision logs; no repair or rerun under the exhausted build approval. Admit corrections only in their actual caller implementation scopes."
