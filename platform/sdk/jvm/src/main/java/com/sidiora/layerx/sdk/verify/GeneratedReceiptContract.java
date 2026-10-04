@@ -44,4 +44,15 @@ public final class GeneratedReceiptContract {
         ReceiptCheck.TIMESTAMP,
         ReceiptCheck.ACTIVITY_ID,
         ReceiptCheck.RESULTING_STATE_ROOT);
+
+    public static final int PROGRAM_ABI_V1 = 1;
+    public static final int PROGRAM_ABI_V2 = 2;
+    public static final int PROGRAM_ABI_V3 = 3;
+    public static final int PROGRAM_ABI_V4 = 4;
+    public static boolean supportsProgramGuestAbi(int version) {
+        return switch (version) {
+            case PROGRAM_ABI_V1, PROGRAM_ABI_V2, PROGRAM_ABI_V3, PROGRAM_ABI_V4 -> true;
+            default -> false;
+        };
+    }
 }

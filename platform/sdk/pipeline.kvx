@@ -4,11 +4,11 @@ outputs = ["agent-api-rust", "agent-rust", "agent-typescript", "agent-python", "
 
 [source.agent-api]
 root = "agent/schema/agent-api"
-digest = "66945ecff295ce51656d4f93fc836aae02b5a2c57a0828377ce86bc39134f9d5"
+digest = "7a9ee6e4663de3beefaaca57f784b4e294dfbfcabbe48fcfadc5f4f04bb06387"
 
 [source.human-api]
 root = "human/schema/human-api"
-digest = "4aa431e0a1268721d73190676399d9de48def7f0bf2d533fa59fef4a994ad1e0"
+digest = "6ea6f23951a80bd7d1781324a8eed8710ce13d1e179f4a129a9a1d96d9b1e893"
 
 [source.mirror-v2]
 root = "platform/sdk/schema"
@@ -19,7 +19,7 @@ language = "rust"
 root = "agent/crates/layerx-agent-api/src"
 
 [files.agent-api-rust]
-"operation_generated.rs" = "3f31d029d0398896adc3fdc6f7985716a19f83d1e9f070a3caac4a966c3921b4"
+"operation_generated.rs" = "15639a6bf35ae43f77291233111b0b8b8be59fb78648d49215a92498c7e76236"
 
 [output.agent-rust]
 language = "rust"
@@ -27,17 +27,17 @@ root = "agent/crates/layerx-sdk/src"
 
 [files.agent-rust]
 "mirror_generated.rs" = "36c041d89f4cb23a73ea0baec0f7a15e6568763d603716b641e3d99dff2571fa"
-"receipt_generated.rs" = "4dffdcc5edc257a338b0b95b7faa7c3971bef471d0523a8fcb96ea8c464af6de"
+"receipt_generated.rs" = "7dbd5602e6ccb8655912d6f8ed8567e70fd388fcaf389dd0fb4f5682837bd34d"
 
 [output.agent-typescript]
 language = "typescript"
 root = "agent/sdk/typescript/src/generated"
 
 [files.agent-typescript]
-"client.ts" = "b63840a52de946d56702ad945aa66e22149513545f65f553d9a35e87e2acbeb3"
+"client.ts" = "f0fb2e1929fbe7f13a886cca6eb807f7f84b3f34e810c6d060625f6e5f339907"
 "guarantees.md" = "16a010803f8a34b36a0101965f577d7884c6f05b6d5713054fb33e50ab9fff86"
 "mirror.ts" = "6f7c1968e536eec01b9a9fe91bd4f9f70fc5e9973ea0b4c908ae56af170e0b79"
-"receipt.ts" = "5ab22834d888c225291915392b0d7a3c7a79004ac56e86729fc42729e235bdf3"
+"receipt.ts" = "94c22b51f768f6875d135e454ab4eb614596ac83fd77a21ce520677edd182cb3"
 
 [output.agent-python]
 language = "python"
@@ -45,13 +45,13 @@ root = "agent/sdk/python/layerx_sdk/generated"
 
 [files.agent-python]
 "__init__.py" = "5542bf19c9f1b61d1a0a9cb748dc1f0062a9a8df1a3db4b1e525cb8dbd1f6e34"
-"client.py" = "a685f68055023378d84b969344a9c8e1503a13c28ee601bc30844e6928ca67f2"
-"client.pyi" = "51ed5412dad7758eed962fb504b8a2ef2bdb37057042d72d7124767be8eb6174"
+"client.py" = "bc8a5393dc32f5e6094139be5794753bf9be5565c87ce77493cc5d76e0af9032"
+"client.pyi" = "25f9ceb46f3adda55215e528350b12259a4df13153e7d5a4978ed53ce1d4d656"
 "guarantees.md" = "16a010803f8a34b36a0101965f577d7884c6f05b6d5713054fb33e50ab9fff86"
 "mirror.py" = "03af926da7d418275b407896b98966ad87eea3dc1ea140afdc2376c17d575ed3"
 "mirror.pyi" = "8cc2faef1d16e4768c62b7ce2bf87c4556ea391e3fec92a5704c8917cd154719"
-"receipt.py" = "de5b6405754fab76c7eff8ba90f49aa48da68fb4e660f90644e4f591648ac65e"
-"receipt.pyi" = "5922febf76f0fc2df90bb207700c6ec45eff3fadf3c5542ba2541c03bb8c1623"
+"receipt.py" = "14d4faabb0d9155042203caa54a58bfda20a8df71764f672ad24aff341b1f701"
+"receipt.pyi" = "42b67f8285c864ddd7c926dcd895ef32e9c90675ccfba697736f9456b3a914ca"
 
 [output.agent-compatibility]
 language = "markdown"
@@ -65,8 +65,8 @@ language = "typescript"
 root = "human/apps/web/src/api/generated"
 
 [files.human-typescript]
-"conformance.ts" = "ebc1b1a2a00b7fe8c9e1872686c2766b0fdb34e426a337b56ab59bd8aa99b6b3"
-"index.ts" = "f443f485812343e3399da2c3466349929a273524b6a032f2973f58719bcd3829"
+"conformance.ts" = "f05a435cb80b1ec110354b74f4eab40f7a68d3f35502873836dd3fe3ab38fc2e"
+"index.ts" = "bbed42c500e32cb3c9ee4cfc18844da8533f4e97d6d20c8ab2691dc43a0f28c5"
 
 [output.platform-go]
 language = "go"
@@ -75,7 +75,7 @@ root = "platform/sdk/go"
 [files.platform-go]
 "generated.go" = "fcdd21fe290fff3e22fb120c70c58e5590ef60012aa95201dbbf3e8415148020"
 "mirror_generated.go" = "50e24c574ac570b429db96116f52b4279e66a5e92f2fb273d847988067c45876"
-"receipt_generated.go" = "9f85988f797c7dc6a9fdb214c420718d4438a87b2df7593e5d831b7f9a97bc72"
+"receipt_generated.go" = "370d395346e479f65b4d0c6823f2da4acf13edcd9f249815a4c37939917a057b"
 "program_lifecycle_generated.go" = "67423319c2900714f1e8be16e64b251237a641753c2541cbcf12ad6de38261f7"
 
 [output.platform-jvm]
@@ -101,7 +101,7 @@ root = "platform/sdk/jvm"
 "src/main/java/com/sidiora/layerx/sdk/SchemaTypes.java" = "5dcf37401e8d747be540844550e01fcdeeb172cedc72ca25c25fe430d962ce23"
 "src/main/java/com/sidiora/layerx/sdk/SecretBytes.java" = "c651515a3541ee6d2fbbee0c348bf480844b33124ee4a40b0a4688a3e9da5ee5"
 "src/main/java/com/sidiora/layerx/sdk/verify/LocalVerifier.java" = "87a83513c042c249d42cd8d2747b2ab282f0184a41688ed9fbc6590c38a0cd36"
-"src/main/java/com/sidiora/layerx/sdk/verify/GeneratedReceiptContract.java" = "23368a29361e567777b2f386a2e9a76c86b5fafa7ca897aa892db76ce59f430d"
+"src/main/java/com/sidiora/layerx/sdk/verify/GeneratedReceiptContract.java" = "e3f478ee52d9bfd786cdf1024239d69177bf98f8ed3e6189e859e6c707939284"
 "src/conformance/java/com/sidiora/layerx/sdk/ConformanceMain.java" = "53f616fd55957f24eb3e4dd373a1b6409776ca26d6a9ba3ffc2cc4b71c509d15"
 "src/main/kotlin/com/sidiora/layerx/sdk/LayerX.kt" = "ab01badbb94d448f5fe5f379918ec2af08e124782dc3667f57a7f0007bc9d1ae"
 "src/test/java/com/sidiora/layerx/sdk/GoldenVectorTest.java" = "6ed844268786d9ec5d17e0db577f37a5d587c52cc4ccf98e76e8aba724652ead"
@@ -122,7 +122,7 @@ root = "platform/sdk/swift/Sources/LayerXSDK/Generated"
 [files.platform-swift]
 "OperationCatalog.swift" = "6807f5ed0619c417d27486b4df079176a7a44407a74dca2e93038cd9cb9dce86"
 "MirrorSchema.swift" = "422548e15055091d839d085c9115343774125d83a7a6c986ce2f4803164db1a1"
-"ReceiptContract.swift" = "00482fdaf04a26a008f664472742964707e1ba5dfa7f439f85c5d67dc3ef00a6"
+"ReceiptContract.swift" = "53d1a3dcfc29072e42c642825ac56f175fc565cb23ff5729b34b28983c7e2dc3"
 "ProgramLifecycleRoutes.swift" = "431e7e3a0d7118742963ab2b36826511f72429efacf3a771bfd1e84f98c1073b"
 
 [output.platform-dotnet]
@@ -132,7 +132,7 @@ root = "platform/sdk/dotnet/Generated"
 [files.platform-dotnet]
 "OperationCatalog.cs" = "6055a11fa8e80bcb3666f6a4caef6a65f66d9439dc52bb57c1abc9d2389056a8"
 "MirrorSchema.cs" = "16cf74fc85cd4a93cd9b394dddc59ef3bdd73a9ab2e23ee83879ae3a529f81ce"
-"ReceiptContract.cs" = "839ed8af3a44c5eadaabefb484ca47839a9ac0ca1297369c50715cfca27cb6bf"
+"ReceiptContract.cs" = "32009b07b91a3c3acd725fbcc1c5cc3b802d33a93b2061d1a3659889580eef28"
 "ProgramLifecycleRoutes.cs" = "f925a1354cbc8fd985f60d614a6898eb4ef25cbd2ffc54e629eeebbb9f32b2c8"
 
 [output.platform-portable-conformance]

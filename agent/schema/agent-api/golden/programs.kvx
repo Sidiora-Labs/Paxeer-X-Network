@@ -11,6 +11,14 @@ receipt_bytes = 1048576
 terminal_payload_bytes = 1048576
 call_graph_bytes = 1048576
 capabilities = 5
+interface_bytes = 952
+
+[type.ProgramGuestAbi]
+variants = ["ABI_V1_VERSION","ABI_V2_VERSION","ABI_V3_VERSION","ABI_V4_VERSION"]
+wire_values = ["1","2","3","4"]
+source_policy = "programs/sdk/rust/src/abi_policy.rs"
+admission = "named_versions_only_reject_every_other_u16"
+capability_encoding = ["V1","V2","V2","V2"]
 
 [type.NativeProgramDeployRequest]
 required = ["signed_activity"]
@@ -43,7 +51,7 @@ identity_binding = "exact_reencoded_payload_and_HTTP_Idempotency_Key_equals_sign
 required = ["program_id","guest_abi","policy","authority","new_hash","wasm"]
 optional = ["interface"]
 program_id = "nonzero_bytes32"
-guest_abi = "u16_inclusive_1_3"
+guest_abi = "ProgramGuestAbi"
 policy = "0_immutable_or_1_authority"
 authority = "bytes32_zero_if_and_only_if_policy_immutable"
 new_hash = "sha256_of_wasm"
@@ -56,7 +64,7 @@ fixed_bytes = [104,108]
 required = ["program_id","guest_abi","old_hash","new_hash","migration_hook","clear_interface","wasm"]
 optional = ["interface"]
 program_id = "nonzero_bytes32"
-guest_abi = "u16_inclusive_1_3"
+guest_abi = "ProgramGuestAbi"
 old_hash = "bytes32"
 new_hash = "sha256_of_wasm"
 migration_hook = "bytes_at_most_65535"
@@ -161,18 +169,21 @@ required = ["program_id","requested_verification_level"]
 program_id = "bytes32"
 
 [type.VerifiedProgramDiscovery]
-required = ["program_id","lifecycle","version","code_hash","abi_version","receipt_digest","state_root","observed_sequence","observed_at","valid_through","verification"]
-optional = ["deployment_receipt_digest","discovery_public_key","discovery_signature"]
-proof = "receipt_verified_registry_read"
+required = ["program_id","lifecycle","version","code_hash","abi_version","receipt_digest","state_root","observed_sequence","observed_at","valid_through","verification","deployment_receipt_digest"]
+optional = ["discovery_public_key","discovery_signature"]
+proof = "receipt_verified_registry_read_and_independently_pinned_signed_discovery_required_for_ABI_V3_VERSION_and_ABI_V4_VERSION"
 lifecycle = ["active","deprecated","tombstoned"]
 program_id = "bytes32"
 version = "nonzero_u32"
 code_hash = "bytes32"
-abi_version = "u16_inclusive_1_2"
+abi_version = "ProgramGuestAbi"
 receipt_digest = "sha256_of_LayerX/program-discovery-proof/v1_domain_program_id32_0x01_version_u32be_code_hash32_abi_version_u16be_observed_sequence_u64be_observed_at_u64be_valid_through_u64be_state_root32"
 deployment_receipt_digest = "bytes32"
 discovery_public_key = "bytes32_sequencer_public_key_pinned_by_the_client"
 discovery_signature = "ed25519_64_bytes_over_receipt_digest_by_discovery_public_key"
+signed_discovery_required_for = ["ABI_V3_VERSION","ABI_V4_VERSION"]
+signature_pair = "both_public_key_and_signature_present_or_both_absent_never_partial"
+signed_discovery_binding = "verify_digest_of_exact_program_id_version_code_hash_abi_current_head_window_under_independently_pinned_sequencer_key"
 state_root = "bytes32"
 observed_sequence = "u64_decimal"
 observed_at = "u64_decimal_milliseconds"
@@ -181,13 +192,15 @@ verification = "server_side_receipt_verification_only_at_sdk_boundary_sequencer_
 
 [type.VerifiedProgramInterface]
 required = ["program_id","version","code_hash","abi_version","interface","interface_digest","receipt_digest","state_root","observed_sequence","observed_at","valid_through","source","verification"]
-proof = "receipt_verified_registry_read"
+proof = "receipt_verified_registry_read_bound_to_the_previously_verified_discovery_head"
+head_binding = "program_id_version_code_hash_abi_state_root_sequence_observation_window_and_deployment_receipt_digest_equal_verified_discovery"
+interface_binding = "sha256_digest_and_canonical_interface_code_hash_abi_equal_authenticated_deployment"
 absence = "typed_absent_only_when_the_verified_version_has_no_interface"
 program_id = "bytes32"
 version = "nonzero_u32"
 code_hash = "bytes32"
-abi_version = "u16_inclusive_1_2"
-interface = "bounded_bytes"
+abi_version = "ProgramGuestAbi"
+interface = "canonical_bytes_at_most_952"
 interface_digest = "sha256_of_interface"
 receipt_digest = "bytes32"
 state_root = "bytes32"
@@ -196,6 +209,7 @@ observed_at = "u64_decimal_milliseconds"
 valid_through = "u64_decimal_milliseconds"
 source = "ProgramSource"
 verification = "server_side_receipt_verification_only_at_sdk_boundary"
+kind5_limitation = "The kind 5 program-state proof transport proves a present interface under the authenticated chain head only. It cannot establish interface absence: a kind 5 answer without an interface is refused as a missing interface and is never reported as absent. Typed absence remains only the receipt-verified registry read above."
 
 [type.ProgramSource]
 required = ["status:string"]
@@ -215,13 +229,39 @@ tags = [1,2,3,4,5]
 ordering = "ascending_unique_tag"
 
 [type.ProgramCallRequest]
+profile = "retained_legacy_call"
 required = ["program_id","calldata","budget","capabilities","signed_activity"]
 program_id = "bytes32"
-calldata = "bounded_bytes"
+calldata = "canonical_bytes_at_most_1048576"
 budget = "ProgramCallBudget"
 capabilities = "bounded_canonical_ProgramCapability_set"
 signed_activity = "bounded_bytes"
 identity_binding = "The signed Programs ordinal-3 activity must carry the exact canonical payload derived from program_id, calldata, budget and capabilities."
+
+[type.NativeProgramCallFields]
+required = ["guest_abi","entrypoint","capabilities_hex","access_declaration_hex","response_capacity","resources"]
+closed = true
+guest_abi = "ProgramGuestAbi"
+entrypoint = "nonempty_protocol_entrypoint_bytes_at_most_65535"
+capabilities_hex = "canonical_lowercase_hex_bytes_at_most_65535"
+access_declaration_hex = "canonical_lowercase_hex_bytes_at_most_1048576"
+response_capacity = "u32"
+resources = "exactly_seven_canonical_u64_decimal_strings"
+
+[type.NativeProgramCallRequest]
+required = ["payload_encoding","program_id","calldata","budget","signed_activity","native_call"]
+closed = true
+payload_encoding = "native-v1"
+program_id = "canonical_lowercase_nonzero_bytes32_hex"
+calldata = "canonical_lowercase_hex_bytes_at_most_1048576"
+budget = "ProgramCallBudget"
+signed_activity = "canonical_lowercase_signed_activity_hex_at_most_1048576_bytes"
+native_call = "NativeProgramCallFields"
+protocol_version = 3
+module_id = 9
+ordinal = 3
+identity_binding = "exact_NativeProgramCall_reencoding_equals_signed_activity_payload_and_budget_fee_limit_equals_signed_activity_fee_limit_and_nonzero_budget_fuel_equals_resources_index_zero"
+idempotency_binding = "HTTP_Idempotency_Key_equals_signed_activity_idempotency_key"
 
 [type.ProgramReceiptSelector]
 required = ["idempotency_key","expected_activity_id","requested_verification_level"]
@@ -289,6 +329,8 @@ scope = "program:read"
 method = "POST"
 path = "/v1/programs/simulate"
 request = "ProgramCallRequest"
+request_profiles = ["retained_legacy_call","native-v1"]
+native_request = "NativeProgramCallRequest"
 response = "ProgramSimulation"
 scope = "program:simulate"
 non_committing = true
@@ -297,6 +339,8 @@ non_committing = true
 method = "POST"
 path = "/v1/programs/call"
 request = "ProgramCallRequest"
+request_profiles = ["retained_legacy_call","native-v1"]
+native_request = "NativeProgramCallRequest"
 required = ["idempotency_key"]
 response = "ProgramSubmission"
 scope = "program:call"

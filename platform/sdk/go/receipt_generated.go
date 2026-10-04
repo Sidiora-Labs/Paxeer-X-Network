@@ -43,3 +43,17 @@ var RequiredNonzeroChecks = [...]ReceiptCheck{
 	ReceiptCheckActivityID,
 	ReceiptCheckResultingStateRoot,
 }
+
+const ProgramAbiV1 uint16 = 1
+const ProgramAbiV2 uint16 = 2
+const ProgramAbiV3 uint16 = 3
+const ProgramAbiV4 uint16 = 4
+
+func SupportsProgramGuestAbi(version uint16) bool {
+	switch version {
+	case ProgramAbiV1, ProgramAbiV2, ProgramAbiV3, ProgramAbiV4:
+		return true
+	default:
+		return false
+	}
+}

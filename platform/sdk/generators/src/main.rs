@@ -171,6 +171,7 @@ struct ReceiptContract {
     program_outcome_tags: [u32; 3],
     required_nonzero: Vec<String>,
     failure_checks: Vec<String>,
+    program_abis: [u16; 4],
 }
 
 fn hex_digest(bytes: &[u8]) -> Result<String, String> {
@@ -359,11 +360,60 @@ fn receipt_contract(repo_root: &Path) -> Result<ReceiptContract, String> {
             ));
         }
     }
+    let program_source = fs::read_to_string(repo_root.join("agent/schema/agent-api/programs.kvx"))
+        .map_err(|error| format!("read Programs schema: {error}"))?;
+    let programs = layerx_platform_kvx::parse(&program_source)?;
+    let names =
+        layerx_platform_kvx::string_list(programs.required("type.ProgramGuestAbi", "variants")?)?;
+    let expected_names = [
+        "ABI_V1_VERSION",
+        "ABI_V2_VERSION",
+        "ABI_V3_VERSION",
+        "ABI_V4_VERSION",
+    ];
+    if names != expected_names.map(str::to_owned) {
+        return Err("Programs guest ABI variants must match the canonical named policy".to_owned());
+    }
+    let policy_path =
+        layerx_platform_kvx::unquote(programs.required("type.ProgramGuestAbi", "source_policy")?)?;
+    if policy_path != "programs/sdk/rust/src/abi_policy.rs" {
+        return Err("Programs ABI policy provenance changed".to_owned());
+    }
+    let policy = fs::read_to_string(repo_root.join(policy_path))
+        .map_err(|error| format!("read canonical ABI policy: {error}"))?;
+    let values = layerx_platform_kvx::string_list(
+        programs.required("type.ProgramGuestAbi", "wire_values")?,
+    )?;
+    let program_abis: [u16; 4] = values
+        .iter()
+        .map(|value| value.parse::<u16>().map_err(|error| error.to_string()))
+        .collect::<Result<Vec<_>, _>>()?
+        .try_into()
+        .map_err(|_| "Programs ABI policy requires four named versions")?;
+    for (name, value) in names.iter().zip(program_abis) {
+        if !policy
+            .lines()
+            .any(|line| line.trim() == format!("pub const {name}: u16 = {value};"))
+        {
+            return Err(format!(
+                "Programs ABI {name} differs from the canonical policy"
+            ));
+        }
+    }
+    let encodings = layerx_platform_kvx::string_list(
+        programs.required("type.ProgramGuestAbi", "capability_encoding")?,
+    )?;
+    if encodings != ["V1", "V2", "V2", "V2"].map(str::to_owned) {
+        return Err(
+            "Programs ABI capability encoding differs from the canonical policy".to_owned(),
+        );
+    }
     Ok(ReceiptContract {
         programs_module_id,
         program_outcome_tags,
         required_nonzero,
         failure_checks,
+        program_abis,
     })
 }
 
@@ -440,6 +490,119 @@ fn screaming_identifier(value: &str) -> String {
         .collect()
 }
 
+fn render_program_abi_policy(contract: &ReceiptContract, language: &str) -> Result<String, String> {
+    let template = match language {
+        "rust" => {
+            r#"
+pub const PROGRAM_ABI_V1: u16 = {V1};
+pub const PROGRAM_ABI_V2: u16 = {V2};
+pub const PROGRAM_ABI_V3: u16 = {V3};
+pub const PROGRAM_ABI_V4: u16 = {V4};
+#[must_use]
+pub const fn supports_program_guest_abi(version: u16) -> bool {
+    matches!(version, PROGRAM_ABI_V1 | PROGRAM_ABI_V2 | PROGRAM_ABI_V3 | PROGRAM_ABI_V4)
+}
+"#
+        }
+        "typescript" => {
+            r#"
+export const PROGRAM_ABI_V1 = {V1};
+export const PROGRAM_ABI_V2 = {V2};
+export const PROGRAM_ABI_V3 = {V3};
+export const PROGRAM_ABI_V4 = {V4};
+export function supportsProgramGuestAbi(version: number): boolean {
+  switch (version) {
+    case PROGRAM_ABI_V1: case PROGRAM_ABI_V2: case PROGRAM_ABI_V3: case PROGRAM_ABI_V4: return true;
+    default: return false;
+  }
+}
+"#
+        }
+        "python" => {
+            r#"
+PROGRAM_ABI_V1 = {V1}
+PROGRAM_ABI_V2 = {V2}
+PROGRAM_ABI_V3 = {V3}
+PROGRAM_ABI_V4 = {V4}
+def supports_program_guest_abi(version: int) -> bool:
+    return type(version) is int and version in (PROGRAM_ABI_V1, PROGRAM_ABI_V2, PROGRAM_ABI_V3, PROGRAM_ABI_V4)
+"#
+        }
+        "python-stub" => {
+            r#"
+PROGRAM_ABI_V1: int
+PROGRAM_ABI_V2: int
+PROGRAM_ABI_V3: int
+PROGRAM_ABI_V4: int
+def supports_program_guest_abi(version: int) -> bool: ...
+"#
+        }
+        "go" => {
+            r#"
+const ProgramAbiV1 uint16 = {V1}
+const ProgramAbiV2 uint16 = {V2}
+const ProgramAbiV3 uint16 = {V3}
+const ProgramAbiV4 uint16 = {V4}
+func SupportsProgramGuestAbi(version uint16) bool {
+    switch version {
+    case ProgramAbiV1, ProgramAbiV2, ProgramAbiV3, ProgramAbiV4:
+        return true
+    default:
+        return false
+    }
+}
+"#
+        }
+        "jvm" => {
+            r#"
+    public static final int PROGRAM_ABI_V1 = {V1};
+    public static final int PROGRAM_ABI_V2 = {V2};
+    public static final int PROGRAM_ABI_V3 = {V3};
+    public static final int PROGRAM_ABI_V4 = {V4};
+    public static boolean supportsProgramGuestAbi(int version) {
+        return switch (version) {
+            case PROGRAM_ABI_V1, PROGRAM_ABI_V2, PROGRAM_ABI_V3, PROGRAM_ABI_V4 -> true;
+            default -> false;
+        };
+    }
+"#
+        }
+        "swift" => {
+            r#"
+let programAbiV1: UInt16 = {V1}
+let programAbiV2: UInt16 = {V2}
+let programAbiV3: UInt16 = {V3}
+let programAbiV4: UInt16 = {V4}
+func supportsProgramGuestAbi(_ version: UInt16) -> Bool {
+    switch version {
+    case programAbiV1, programAbiV2, programAbiV3, programAbiV4: return true
+    default: return false
+    }
+}
+"#
+        }
+        "dotnet" => {
+            r#"
+    public const ushort ProgramAbiV1 = {V1};
+    public const ushort ProgramAbiV2 = {V2};
+    public const ushort ProgramAbiV3 = {V3};
+    public const ushort ProgramAbiV4 = {V4};
+    public static bool SupportsProgramGuestAbi(ushort version) => version switch
+    {
+        ProgramAbiV1 or ProgramAbiV2 or ProgramAbiV3 or ProgramAbiV4 => true,
+        _ => false,
+    };
+"#
+        }
+        _ => return Err("unknown Programs ABI projection".to_owned()),
+    };
+    let mut output = template.to_owned();
+    for (index, value) in contract.program_abis.iter().enumerate() {
+        output = output.replace(&format!("{{V{}}}", index + 1), &value.to_string());
+    }
+    Ok(output)
+}
+
 fn render_rust_receipt_contract(contract: &ReceiptContract) -> Result<String, String> {
     let mut output = String::from(
         "//! Code generated from platform/sdk/generators/receipt.kvx. DO NOT EDIT.\n\n",
@@ -488,6 +651,7 @@ fn render_rust_receipt_contract(contract: &ReceiptContract) -> Result<String, St
         .map_err(|error| error.to_string())?;
     }
     output.push_str("];\n");
+    output.push_str(&render_program_abi_policy(contract, "rust")?);
     Ok(output)
 }
 
@@ -521,6 +685,7 @@ fn render_typescript_receipt_contract(contract: &ReceiptContract) -> Result<Stri
     }
     output = output.replace("ReceiptFailureCode::", "ReceiptFailureCode.");
     output.push_str("]);\n");
+    output.push_str(&render_program_abi_policy(contract, "typescript")?);
     Ok(output)
 }
 
@@ -574,6 +739,10 @@ fn render_python_receipt_contract(
         }
         output.push_str(")\n");
     }
+    output.push_str(&render_program_abi_policy(
+        contract,
+        if stub { "python-stub" } else { "python" },
+    )?);
     Ok(output)
 }
 
@@ -611,6 +780,7 @@ fn render_go_receipt_contract(contract: &ReceiptContract) -> Result<String, Stri
             .map_err(|error| error.to_string())?;
     }
     output.push_str("}\n");
+    output.push_str(&render_program_abi_policy(contract, "go")?);
     format_go(&output)
 }
 
@@ -662,6 +832,9 @@ fn render_jvm_receipt_contract(contract: &ReceiptContract) -> Result<String, Str
         .map_err(|error| error.to_string())?;
     }
     output.push_str("}\n");
+    output.truncate(output.len() - 2);
+    output.push_str(&render_program_abi_policy(contract, "jvm")?);
+    output.push_str("}\n");
     Ok(output)
 }
 
@@ -699,6 +872,7 @@ fn render_swift_receipt_contract(contract: &ReceiptContract) -> Result<String, S
             .map_err(|error| error.to_string())?;
     }
     output.push_str("]\n");
+    output.push_str(&render_program_abi_policy(contract, "swift")?);
     Ok(output)
 }
 
@@ -743,6 +917,9 @@ fn render_dotnet_receipt_contract(contract: &ReceiptContract) -> Result<String, 
     output.push_str(
         "        _ => throw new ArgumentOutOfRangeException(nameof(check)),\n    };\n}\n",
     );
+    output.truncate(output.len() - 2);
+    output.push_str(&render_program_abi_policy(contract, "dotnet")?);
+    output.push_str("}\n");
     Ok(output)
 }
 
@@ -1763,6 +1940,25 @@ fn lifecycle_sources(repo_root: &Path, check: bool) -> Result<(), String> {
     Ok(())
 }
 
+fn programs_contracts(repo_root: &Path, lock_path: &Path, write: bool) -> Result<(), String> {
+    let source_path = repo_root.join("agent/schema/agent-api/programs.kvx");
+    let golden_path = repo_root.join("agent/schema/agent-api/golden/programs.kvx");
+    let source = fs::read(&source_path).map_err(|error| error.to_string())?;
+    if write {
+        write_receipt_contracts(repo_root)?;
+        fs::write(golden_path, source).map_err(|error| error.to_string())?;
+        let pipeline = capture(repo_root)?;
+        fs::write(lock_path, render(&pipeline)?).map_err(|error| error.to_string())
+    } else {
+        if fs::read(golden_path).map_err(|error| error.to_string())? != source {
+            return Err("Programs schema golden drift".to_owned());
+        }
+        check_receipt_contracts(repo_root)?;
+        let committed = fs::read_to_string(lock_path).map_err(|error| error.to_string())?;
+        drift_gate(&parse_lock(&committed)?, &capture(repo_root)?)
+    }
+}
+
 fn run() -> Result<(), String> {
     let arguments = env::args().skip(1).collect::<Vec<_>>();
     let mode = arguments.first().map_or("--check", String::as_str);
@@ -1781,6 +1977,8 @@ fn run() -> Result<(), String> {
             }
             write_rust_operation_catalog(&repo_root)
         }
+        "--write-program-contracts" => programs_contracts(&repo_root, &lock_path, true),
+        "--check-program-contracts" => programs_contracts(&repo_root, &lock_path, false),
         "--write" => write_lock(&repo_root, &lock_path),
         "--check" => check(&repo_root, &lock_path),
         _ => Err(

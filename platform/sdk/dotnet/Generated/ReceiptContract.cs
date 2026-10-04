@@ -66,4 +66,14 @@ public static class GeneratedReceiptContract
         ReceiptCheck.SequencerSignature => "sequencer-signature",
         _ => throw new ArgumentOutOfRangeException(nameof(check)),
     };
+
+    public const ushort ProgramAbiV1 = 1;
+    public const ushort ProgramAbiV2 = 2;
+    public const ushort ProgramAbiV3 = 3;
+    public const ushort ProgramAbiV4 = 4;
+    public static bool SupportsProgramGuestAbi(ushort version) => version switch
+    {
+        ProgramAbiV1 or ProgramAbiV2 or ProgramAbiV3 or ProgramAbiV4 => true,
+        _ => false,
+    };
 }

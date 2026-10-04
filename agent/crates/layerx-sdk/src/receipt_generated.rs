@@ -63,3 +63,12 @@ pub const REQUIRED_NONZERO_CHECKS: &[ReceiptFailureCode] = &[
     ReceiptFailureCode::ActivityId,
     ReceiptFailureCode::ResultingStateRoot,
 ];
+
+pub const PROGRAM_ABI_V1: u16 = 1;
+pub const PROGRAM_ABI_V2: u16 = 2;
+pub const PROGRAM_ABI_V3: u16 = 3;
+pub const PROGRAM_ABI_V4: u16 = 4;
+#[must_use]
+pub const fn supports_program_guest_abi(version: u16) -> bool {
+    matches!(version, PROGRAM_ABI_V1 | PROGRAM_ABI_V2 | PROGRAM_ABI_V3 | PROGRAM_ABI_V4)
+}

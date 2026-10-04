@@ -34,3 +34,14 @@ export const REQUIRED_NONZERO_CHECKS = Object.freeze([
   ReceiptFailureCode.ActivityId,
   ReceiptFailureCode.ResultingStateRoot,
 ]);
+
+export const PROGRAM_ABI_V1 = 1;
+export const PROGRAM_ABI_V2 = 2;
+export const PROGRAM_ABI_V3 = 3;
+export const PROGRAM_ABI_V4 = 4;
+export function supportsProgramGuestAbi(version: number): boolean {
+  switch (version) {
+    case PROGRAM_ABI_V1: case PROGRAM_ABI_V2: case PROGRAM_ABI_V3: case PROGRAM_ABI_V4: return true;
+    default: return false;
+  }
+}
