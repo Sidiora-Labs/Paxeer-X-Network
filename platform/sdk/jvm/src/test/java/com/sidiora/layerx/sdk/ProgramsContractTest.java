@@ -8,6 +8,10 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.nio.ByteBuffer;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.sidiora.layerx.sdk.verify.LocalVerifier;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.List;
@@ -389,6 +393,99 @@ public final class ProgramsContractTest {
             () -> ProgramsClient.unwrapTerminal(duplicateOccupancy));
         assertThrows(IllegalArgumentException.class,
             () -> ProgramsClient.unwrapTerminal(concatenate(canonical, new byte[] {0})));
+    }
+
+    @Test
+    void nativeKernelCallFixturesReachTheBinaryGatewayAdapterWithoutReencoding() throws Exception {
+        var credential = new HttpProductionTransport.LayerXKeyCredential("test_key",
+            new SecretBytes(LAYERX_SECRET.getBytes(StandardCharsets.US_ASCII)));
+        var transport = new HttpProductionTransport(HttpClient.newHttpClient(), JSON,
+            URI.create("http://127.0.0.1:8080"), URI.create("http://127.0.0.1:9090/rpc"),
+            Duration.ofSeconds(1), credential);
+        var encoder = ProgramsClient.class.getDeclaredMethod("encode", ProgramsClient.Call.class);
+        encoder.setAccessible(true);
+        try {
+            for (String name : List.of("native-program-call-v3.json", "native-program-call-v4.json")) {
+                JsonNode fixture = fixture(name);
+                byte[] payload = fixtureBytes(fixture, "payload_hex");
+                byte[] signed = fixtureBytes(fixture, "signed_activity_hex");
+                NativeProgramCall nativeCall = NativeProgramCall.decode(payload);
+                assertArrayEquals(payload, nativeCall.encode());
+                assertArrayEquals(fixtureBytes(fixture, "idempotency_key_hex"),
+                    NativeProgramLifecycleRequest.bind(3, payload, signed));
+                var call = new ProgramsClient.Call(nativeCall,
+                    new BigInteger(fixture.path("fee_limit").asText()), signed);
+                ObjectNode body = (ObjectNode) encoder.invoke(null, call);
+                for (String operation : List.of("program.simulate", "program.call")) {
+                    HttpRequest request = transport.programRequest(new ProductionTransport.ProgramsCall(
+                        operation, body, SchemaTypes.PathParameters.none(), operation.equals("program.call")
+                            ? new IdempotencyKey(fixture.path("idempotency_key_hex").asText()) : null));
+                    assertEquals("application/octet-stream", request.headers().firstValue("Content-Type").orElseThrow());
+                    assertEquals(operation.equals("program.call") ? "/v1/programs/call" : "/v1/programs/simulate",
+                        request.uri().getPath());
+                    assertArrayEquals(signed, publishedBody(request));
+                }
+                for (int unsupported : new int[] {0, 5, 65535}) {
+                    byte[] invalidPayload = payload.clone();
+                    ByteBuffer.wrap(invalidPayload).putShort(32, (short) unsupported);
+                    assertThrows(IllegalArgumentException.class, () -> NativeProgramCall.decode(invalidPayload));
+                }
+            }
+        } finally { credential.close(); }
+    }
+
+    @Test
+    void actualKernelExecutionReceiptsKeepPinnedAuthorityAndAttachmentBindings() throws Exception {
+        for (String name : List.of("receipt-programs-executed-v3.json", "receipt-programs-executed-v4.json")) {
+            JsonNode fixture = fixture(name);
+            JsonNode batch = fixture.path("authorized_batch");
+            var authority = new LocalVerifier.AuthorizedReceiptBatch(fixtureBytes(batch, "batch_id_hex"),
+                fixtureBytes(batch, "asset_hex"), fixtureBytes(batch, "previous_state_root_hex"),
+                fixtureBytes(batch, "resulting_state_root_hex"), fixtureBytes(batch, "sequencer_public_key_hex"));
+            byte[] canonical = fixtureBytes(fixture, "canonical_receipt_hex");
+            byte[] signed = fixtureBytes(fixture, "signed_activity_hex");
+            byte[] activity = sha256("LXP/v1/activity-id\0".getBytes(StandardCharsets.UTF_8), signed);
+            byte[] terminal = fixtureBytes(fixture, "terminal_payload_hex");
+            byte[] graph = fixtureBytes(fixture, "call_graph_hex");
+            var verified = ProgramsClient.verifyReceipt(canonical, authority, activity, 2, terminal, graph, 3);
+            assertArrayEquals(fixtureBytes(fixture, "receipt_digest_hex"), verified.receiptDigest());
+            byte[] tampered = canonical.clone(); tampered[tampered.length - 1] ^= 1;
+            assertThrows(PlatformSdkException.class,
+                () -> ProgramsClient.verifyReceipt(tampered, authority, activity, 2, terminal, graph, 3));
+            byte[] wrongActivity = activity.clone(); wrongActivity[0] ^= 1;
+            assertThrows(PlatformSdkException.class,
+                () -> ProgramsClient.verifyReceipt(canonical, authority, wrongActivity, 2, terminal, graph, 3));
+            byte[] wrongTerminal = terminal.clone(); wrongTerminal[0] ^= 1;
+            assertThrows(PlatformSdkException.class,
+                () -> ProgramsClient.verifyReceipt(canonical, authority, activity, 2, wrongTerminal, graph, 3));
+            for (int unsupportedExecutionAbi : new int[] {3, 4}) {
+                assertThrows(PlatformSdkException.class, () -> ProgramsClient.verifyReceipt(
+                    canonical, authority, activity, unsupportedExecutionAbi, terminal, graph, 3));
+            }
+        }
+    }
+
+    private static JsonNode fixture(String name) throws Exception {
+        return JSON.readTree(Files.readString(Path.of(System.getProperty("layerx.repo.root", "../../.."),
+            "platform/sdk/conformance/fixtures", name)));
+    }
+
+    private static byte[] fixtureBytes(JsonNode value, String name) {
+        return HexFormat.of().parseHex(value.path(name).asText());
+    }
+
+    private static byte[] publishedBody(HttpRequest request) {
+        var result = new CompletableFuture<byte[]>();
+        var body = new java.io.ByteArrayOutputStream();
+        request.bodyPublisher().orElseThrow().subscribe(new java.util.concurrent.Flow.Subscriber<ByteBuffer>() {
+            public void onSubscribe(java.util.concurrent.Flow.Subscription subscription) { subscription.request(Long.MAX_VALUE); }
+            public void onNext(ByteBuffer buffer) {
+                byte[] part = new byte[buffer.remaining()]; buffer.get(part); body.writeBytes(part);
+            }
+            public void onError(Throwable error) { result.completeExceptionally(error); }
+            public void onComplete() { result.complete(body.toByteArray()); }
+        });
+        return result.join();
     }
 
     private static byte[] programPayload(byte[] programId, byte[] calldata, byte[] ignoredKey) {

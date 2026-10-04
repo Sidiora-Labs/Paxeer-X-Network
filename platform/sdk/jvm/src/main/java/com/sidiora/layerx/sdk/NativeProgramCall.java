@@ -3,11 +3,12 @@ package com.sidiora.layerx.sdk;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
+import com.sidiora.layerx.sdk.verify.GeneratedReceiptContract;
 
 public record NativeProgramCall(byte[] programId, int guestAbi, String entrypoint, byte[] calldata,
         byte[] capabilities, byte[] accessDeclaration, int responseCapacity, long[] resources) {
     public byte[] encode() {
-        if (programId.length != 32 || Arrays.equals(programId, new byte[32]) || (guestAbi != 1 && guestAbi != 2)
+        if (programId.length != 32 || Arrays.equals(programId, new byte[32]) || !GeneratedReceiptContract.supportsProgramGuestAbi(guestAbi)
                 || !entrypoint.matches("[A-Za-z0-9_.]{1,128}") || calldata.length > 1048576
                 || capabilities.length > 65535 || accessDeclaration.length > 1048576
                 || responseCapacity < 0 || responseCapacity > 1048576 || resources.length != 7)

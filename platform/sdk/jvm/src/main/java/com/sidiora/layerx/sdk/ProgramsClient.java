@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.sidiora.layerx.sdk.verify.LocalVerifier;
+import com.sidiora.layerx.sdk.verify.GeneratedReceiptContract;
 import java.math.BigInteger;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
@@ -36,6 +37,8 @@ public final class ProgramsClient {
     private static final BigInteger MAX_U32 = BigInteger.ONE.shiftLeft(32).subtract(BigInteger.ONE);
     private static final BigInteger MAX_U64 = BigInteger.ONE.shiftLeft(64).subtract(BigInteger.ONE);
     private static final BigInteger MAX_U128 = BigInteger.ONE.shiftLeft(128).subtract(BigInteger.ONE);
+    private static final byte[] DISCOVERY_PROOF_DOMAIN =
+        "LayerX/program-discovery-proof/v1\0".getBytes(StandardCharsets.UTF_8);
     private static final byte[] SIMULATION_BOUNDARY_DOMAIN =
         "LayerX/emulator/simulation-boundary/v1\0".getBytes(StandardCharsets.UTF_8);
     private static final byte[] SIMULATION_EVIDENCE_DOMAIN =
@@ -284,8 +287,14 @@ public final class ProgramsClient {
         return discover(programId, SEQUENCER_SIGNED);
     }
 
+    private record DiscoveryRead(Discovery head, byte[] deploymentReceiptDigest) {}
+
     public CompletionStage<Discovery> discover(byte[] programId, String verificationLevel) {
         requireSequencerSigned(verificationLevel);
+        return readDiscovery(programId).thenApply(DiscoveryRead::head);
+    }
+
+    private CompletionStage<DiscoveryRead> readDiscovery(byte[] programId) {
         String id = hex(exactArgument(programId, 32));
         ObjectNode body = object().put("program_id", id)
             .put("requested_verification_level", SEQUENCER_SIGNED);
@@ -303,7 +312,27 @@ public final class ProgramsClient {
         ObjectNode body = object().put("program_id", id)
             .put("requested_verification_level", SEQUENCER_SIGNED);
         return raw("program.interface", body, Map.of("program_id", id), null)
-            .thenApply(value -> decodeInterface(value, id, BigInteger.valueOf(clock.millis())));
+            .thenCompose(value -> {
+                Interface result = decodeInterface(value, id, BigInteger.valueOf(clock.millis()));
+                if (result.abiVersion() == GeneratedReceiptContract.PROGRAM_ABI_V1
+                        || result.abiVersion() == GeneratedReceiptContract.PROGRAM_ABI_V2) {
+                    return java.util.concurrent.CompletableFuture.completedFuture(result);
+                }
+                return readDiscovery(result.programId()).thenApply(discovery -> {
+                    Discovery head = discovery.head();
+                    if (!SEQUENCER_SIGNED.equals(head.verification())
+                            || discovery.deploymentReceiptDigest() == null
+                            || head.version() != result.version() || head.abiVersion() != result.abiVersion()
+                            || !MessageDigest.isEqual(head.programId(), result.programId())
+                            || !MessageDigest.isEqual(head.codeHash(), result.codeHash())
+                            || !MessageDigest.isEqual(discovery.deploymentReceiptDigest(), result.receiptDigest())
+                            || !MessageDigest.isEqual(head.stateRoot(), result.stateRoot())
+                            || !head.observedSequence().equals(result.observedSequence())
+                            || !head.observedAt().equals(result.observedAt())
+                            || !head.validThrough().equals(result.validThrough())) invalidVerification();
+                    return result;
+                });
+            });
     }
 
     public CompletionStage<Simulation> simulate(Call call) {
@@ -397,16 +426,21 @@ public final class ProgramsClient {
         return client.programs(operation, body, ObjectNode.class, new ProductionClient.Options(key, path));
     }
 
-    private static Discovery decodeDiscovery(ObjectNode value, String expectedProgram, BigInteger now) {
-        requireFields(value, "program_id", "lifecycle", "version", "code_hash", "abi_version",
-            "receipt_digest", "state_root", "observed_sequence", "observed_at", "valid_through",
-            "verification");
+    private DiscoveryRead decodeDiscovery(ObjectNode value, String expectedProgram, BigInteger now) {
+        if (value == null) throw decodeFailure();
+        List<String> fields = new ArrayList<>(List.of("program_id", "lifecycle", "version", "code_hash", "abi_version",
+            "receipt_digest", "state_root", "observed_sequence", "observed_at", "valid_through", "verification"));
+        boolean deployment = value.has("deployment_receipt_digest");
+        boolean proof = value.has("discovery_public_key") || value.has("discovery_signature");
+        if (deployment) fields.add("deployment_receipt_digest");
+        if (proof) { fields.add("discovery_public_key"); fields.add("discovery_signature"); }
+        requireFields(value, fields.toArray(String[]::new));
         String lifecycle = text(value, "lifecycle");
         BigInteger observedAt = unsigned(value.get("observed_at"), 64);
         int abi = requiredU16(value.get("abi_version"));
         if (!expectedProgram.equals(text(value, "program_id"))
                 || !Set.of("active", "deprecated", "tombstoned").contains(lifecycle)
-                || requiredU32(value.get("version")) == 0 || abi < 1 || abi > 2
+                || requiredU32(value.get("version")) == 0 || !GeneratedReceiptContract.supportsProgramGuestAbi(abi)
                 || !canonicalLowerHex(text(value, "code_hash"), 32)
                 || !canonicalLowerHex(text(value, "receipt_digest"), 32)
                 || !canonicalLowerHex(text(value, "state_root"), 32)
@@ -416,11 +450,30 @@ public final class ProgramsClient {
             throw decodeFailure();
         }
         unsigned(value.get("observed_sequence"), 64);
-        return new Discovery(hex32(expectedProgram), Lifecycle.valueOf(lifecycle.toUpperCase(java.util.Locale.ROOT)),
+        byte[] deploymentDigest = deployment ? hex32(text(value, "deployment_receipt_digest")) : null;
+        if (abi != GeneratedReceiptContract.PROGRAM_ABI_V1 && abi != GeneratedReceiptContract.PROGRAM_ABI_V2
+                && (!proof || !deployment)) invalidVerification();
+        String verification = "server-side-receipt-verification-only";
+        if (proof) {
+            byte[] publicKey = hex32(text(value, "discovery_public_key"));
+            byte[] signature = boundedHex(text(value, "discovery_signature"), false);
+            byte[] digest = sha256(DISCOVERY_PROOF_DOMAIN, hex32(expectedProgram), new byte[] {1},
+                fixedUnsigned(BigInteger.valueOf(requiredU32(value.get("version"))), 4),
+                hex32(text(value, "code_hash")), fixedUnsigned(BigInteger.valueOf(abi), 2),
+                fixedUnsigned(unsigned(value.get("observed_sequence"), 64), 8), fixedUnsigned(observedAt, 8),
+                fixedUnsigned(unsigned(value.get("valid_through"), 64), 8), hex32(text(value, "state_root")));
+            if (observedAt.compareTo(now) > 0 || signature.length != 64
+                    || !MessageDigest.isEqual(publicKey, sequencerPublicKey)
+                    || !MessageDigest.isEqual(digest, hex32(text(value, "receipt_digest")))
+                    || !verifyEd25519(publicKey, signature, digest)) invalidVerification();
+            verification = SEQUENCER_SIGNED;
+        }
+        Discovery head = new Discovery(hex32(expectedProgram), Lifecycle.valueOf(lifecycle.toUpperCase(java.util.Locale.ROOT)),
             requiredU32(value.get("version")), hex32(text(value, "code_hash")), abi,
             hex32(text(value, "receipt_digest")), hex32(text(value, "state_root")),
             unsigned(value.get("observed_sequence"), 64), observedAt, unsigned(value.get("valid_through"), 64),
-            "server-side-receipt-verification-only");
+            verification);
+        return new DiscoveryRead(head, deploymentDigest);
     }
 
     private static Interface decodeInterface(ObjectNode value, String expectedProgram, BigInteger now) {
@@ -430,7 +483,7 @@ public final class ProgramsClient {
         BigInteger observedAt = unsigned(value.get("observed_at"), 64);
         int abi = requiredU16(value.get("abi_version"));
         if (!expectedProgram.equals(text(value, "program_id")) || requiredU32(value.get("version")) == 0
-                || abi < 1 || abi > 2 || !canonicalLowerHex(text(value, "code_hash"), 32)
+                || !GeneratedReceiptContract.supportsProgramGuestAbi(abi) || !canonicalLowerHex(text(value, "code_hash"), 32)
                 || !canonicalLowerHex(text(value, "receipt_digest"), 32)
                 || !canonicalLowerHex(text(value, "state_root"), 32)
                 || unsigned(value.get("valid_through"), 64).compareTo(observedAt) < 0
