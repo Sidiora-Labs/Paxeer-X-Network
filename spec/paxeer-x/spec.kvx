@@ -36632,7 +36632,7 @@ build_revision = "00032eea837e67b29bc6905d2e01839e3a89e0aa"
 
 [task.104.33.7.7]
 title = "Complete Dotnet Programs client integration"
-status = "done"
+status = "in_progress"
 mode = "BUILD"
 wave = 4
 requires = ["0.2", "104.17.4"]
@@ -36648,8 +36648,8 @@ time_limit_minutes = 30
 stop_condition = "Stop at 2026-10-04T19:20:41Z, scoped repair limit, missing authentic authority or required weakening; preserve all prior results."
 fanout_role = "integrate_arbiter/authority_gate"
 parent_task = "104.33.7"
-source_status = "complete"
-completion_basis = "implementation under owner CONSTITUTION; qualification separately recorded"
+source_status = "partial"
+completion_basis = "Raw native corpus input adapter remains incomplete; original assertions and prior evidence are preserved."
 qualification_status = "UNRUN"
 source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/root-v5-104.33.7.7-intake.json"
 qualification_revision = "9ff6a40aa2f71e529a4261e13d50b8e12d96afa6"
