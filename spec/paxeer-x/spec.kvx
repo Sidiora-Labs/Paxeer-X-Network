@@ -32328,3 +32328,27 @@ stop_condition = "Stop at the original thirty-minute cap, bounded gate result, s
 source_ownership = "Owner coordinates disjoint native and closed-client helpers, completing all authored implementation before the sole bounded build and verify. Root serializes Makefile inclusion, spec, GOTCHA and publication. No Paxeer rebuild or deployment."
 completion_basis_policy = "Owner directive: mark fully implemented tasks done; preserve actual qualification results separately and leave partial implementation in_progress."
 implementation_admission_note = "Task104.35.11 conservative source window closes 2026-10-03T23:40:00Z; historical task1.3 reservation reconciled without changing its status or source."
+
+[task.0.9]
+title = "Reconcile the Interop lock graph with actual local proof and SDK dependencies"
+status = "done"
+completion_basis = "implementation"
+qualification_status = "passed"
+build_exit_code = 0
+verify_exit_code = 0
+mode = "BUILD"
+wave = 2
+requires = ["0.2", "0.7", "0.8"]
+reqs = ["1", "4"]
+do_1 = "Reconcile local package dependency records to actual manifests, preserving every external package version/checksum and every owner manifest change."
+do_2 = "Make locked Interop source compilable for current migrated and signed-transaction recovery producers; no broad dependency refresh or registry version bump."
+touches = ["interop/Cargo.lock"]
+build_cmd = "timeout 10m env CARGO_TARGET_DIR=/root/lx-target/interop-lock cargo check --locked --manifest-path interop/Cargo.toml -p x-websearch"
+verify_cmd = "timeout 2m cargo metadata --locked --manifest-path interop/Cargo.toml --no-deps --format-version 1"
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop at original dispatch cap, second failed repair, missing real interface or weakening; record exact source state and raw evidence."
+completion_basis_policy = "Owner CONSTITUTION: fully implemented tasks DONE, qualification separate; partial source in_progress."
+source_ownership = "Root owns workspace manifests, lockfiles, spec and publication; all deployment belongs to owner."

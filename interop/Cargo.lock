@@ -1028,6 +1028,7 @@ name = "layerx-agent-api"
 version = "0.1.0"
 dependencies = [
  "layerx-client",
+ "layerx-proof",
  "layerx-types",
 ]
 
@@ -1122,6 +1123,17 @@ dependencies = [
  "serde_json",
  "sha3",
  "zeroize",
+]
+
+[[package]]
+name = "layerx-identity-binding"
+version = "0.1.0"
+dependencies = [
+ "layerx-types",
+ "rustix",
+ "serde",
+ "serde_json",
+ "sha2",
 ]
 
 [[package]]
@@ -1242,12 +1254,15 @@ version = "0.1.0"
 dependencies = [
  "ed25519-dalek",
  "getrandom 0.4.3",
+ "layerx-client",
  "layerx-crypto",
+ "layerx-identity-binding",
  "layerx-platform-internal",
  "layerx-proof",
  "layerx-types",
  "layerx-wire",
  "native-tls",
+ "rustix",
  "rustls",
  "serde",
  "serde_json",
@@ -1286,12 +1301,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "layerx-program-sdk"
+version = "0.1.0"
+dependencies = [
+ "sha2",
+]
+
+[[package]]
 name = "layerx-programs-runtime"
 version = "0.1.0"
 dependencies = [
  "blake3",
  "ed25519-dalek",
  "k256",
+ "layerx-program-sdk",
  "num-bigint",
  "sha2",
  "sha3",

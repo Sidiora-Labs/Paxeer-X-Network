@@ -2131,3 +2131,7 @@ resolution = "Discover actual files with rg --files and read complete retrievabl
 [gotcha.636]
 observed = "Attestation production missed its FetchError import and exact signed-submission recovery depended on a retained answer/quorum."
 resolution = "Task19.1 restores signed bytes before any new answer/quorum and preserves request, signer ordering, membership and attestation-level binding."
+
+[gotcha.637]
+observed = "Ramp build paths and native module-id header names were initially guessed during source admission; no build ran against those guesses."
+resolution = "Resolve actual manifests/headers with rg --files; ramp target is platform/Cargo.toml package layerx-reference-ramp."
