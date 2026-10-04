@@ -395,7 +395,7 @@ export const AGENT_ENVELOPE_OPERATION_NAMES: readonly AgentOperation[] = Object.
   "read.account", "read.balance", "read.batch", "read.checkpoint", "read.history", "read.module_state", "read.proof_bundle",
   "session.close", "session.list", "session.open", "session.refresh", "sign", "submit",
   "subscription.acknowledge", "subscription.create", "subscription.delete", "subscription.health", "subscription.list",
-  "subscription.pause", "subscription.resume", "track", "wait",
+  "subscription.pause", "subscription.resume", "tenant.readiness", "track", "wait",
 ]);
 const AGENT_ENVELOPE_OPERATIONS: ReadonlySet<string> = new Set<string>(AGENT_ENVELOPE_OPERATION_NAMES);
 const ENVELOPE_MUTATIONS: ReadonlySet<string> = new Set<AgentOperation>([
@@ -466,6 +466,46 @@ export interface AgentEnvelopeSuccess<TValue = unknown> {
   readonly request_id: string;
   readonly value: TValue;
   readonly verification_status: unknown;
+}
+
+export type TenantRecoveryReasonV1 = "recovery_pending" | "store_unavailable" | "store_refused"
+  | "budget_state_unverified" | "receipt_evidence_missing" | "durable_recovery_failed"
+  | "spend_unreconciled" | "transport_unavailable" | "verified_read_unavailable";
+
+export interface TenantReadinessV1 {
+  readonly transport_ready: boolean;
+  readonly verified_reads_ready: boolean;
+  readonly writes_admitted: boolean;
+  readonly recovery_reason: TenantRecoveryReasonV1 | null;
+}
+
+const TENANT_RECOVERY_REASONS: ReadonlySet<string> = new Set<TenantRecoveryReasonV1>([
+  "recovery_pending", "store_unavailable", "store_refused", "budget_state_unverified",
+  "receipt_evidence_missing", "durable_recovery_failed", "spend_unreconciled",
+  "transport_unavailable", "verified_read_unavailable",
+]);
+
+export function decodeTenantReadiness(value: unknown): TenantReadinessV1 {
+  try {
+    const readiness = record(value);
+    exactKeys(readiness, ["transport_ready", "verified_reads_ready", "writes_admitted", "recovery_reason"]);
+    const transport = readiness.transport_ready, reads = readiness.verified_reads_ready;
+    const writes = readiness.writes_admitted, reason = readiness.recovery_reason;
+    if (typeof transport !== "boolean" || typeof reads !== "boolean" || typeof writes !== "boolean"
+      || reason !== null && (typeof reason !== "string" || !TENANT_RECOVERY_REASONS.has(reason))
+      || writes !== (reason === null) || writes && (!transport || !reads) || reads && !transport) throw decodeFailure();
+    return Object.freeze({ transport_ready: transport, verified_reads_ready: reads, writes_admitted: writes,
+      recovery_reason: reason as TenantRecoveryReasonV1 | null });
+  } catch { throw decodeFailure(); }
+}
+
+export function checkTenantReadinessResponse(response: AgentEnvelopeSuccess): TenantReadinessV1 {
+  try {
+    const status = record(response.verification_status);
+    exactKeys(status, ["state", "level"]);
+    if (status.state !== "achieved" || status.level !== "Unverified") throw decodeFailure();
+    return decodeTenantReadiness(response.value);
+  } catch { throw decodeFailure(response.request_id); }
 }
 
 export type ProofBundleVerificationLevel = "Unverified" | "SequencerSigned" | "BatchIncluded" | "StateProven" | "CheckpointFinalised" | "SettlementAnchored";
@@ -636,7 +676,17 @@ export class AgentEnvelopeTransport implements ProductionTransport {
     }
     const response = await this.dispatch<TResponse>(headers, body, mutation, requestId, proofRequest !== undefined);
     if (proofRequest !== undefined) checkProofBundleResponse(proofRequest, response as AgentEnvelopeSuccess);
+    if (operation === "tenant.readiness") {
+      const envelope = response as AgentEnvelopeSuccess;
+      return Object.freeze({ ...envelope, value: checkTenantReadinessResponse(envelope) }) as TResponse;
+    }
     return response;
+  }
+
+  public async tenantReadiness(): Promise<AgentEnvelopeSuccess<TenantReadinessV1>> {
+    return await this.call<Record<string, never>, AgentEnvelopeSuccess<TenantReadinessV1>>({
+      plane: "agent", operation: "tenant.readiness", request: {},
+    });
   }
 
   public async readProofBundle(request: ProofBundleRequest): Promise<AgentEnvelopeSuccess<ProofBundleRead>> {
@@ -774,6 +824,7 @@ export function encodeAgentEnvelope(
   idempotency: string | undefined,
 ): Buffer {
   if (!AGENT_ENVELOPE_OPERATIONS.has(operation)) throw unavailableCapability();
+  if (operation === "tenant.readiness" && Object.keys(record(request)).length !== 0) throw invalidArgument();
   if (!CANONICAL_DECIMAL.test(requestId) || BigInt(requestId) > MAX_U64) throw invalidArgument();
   const mutation = ENVELOPE_MUTATIONS.has(operation);
   if (mutation ? idempotency === undefined || !HEX32.test(idempotency) : idempotency !== undefined) throw invalidArgument();

@@ -4,6 +4,69 @@ use crate::write_contract::{PreparationRef, SignatureBytes};
 use crate::verify::Level;
 use crate::{Amount, BudgetLimit, Sequence, TimestampSeconds};
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum TenantRecoveryReason {
+    RecoveryPending,
+    StoreUnavailable,
+    StoreRefused,
+    BudgetStateUnverified,
+    ReceiptEvidenceMissing,
+    DurableRecoveryFailed,
+    SpendUnreconciled,
+    TransportUnavailable,
+    VerifiedReadUnavailable,
+}
+
+impl TenantRecoveryReason {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::RecoveryPending => "recovery_pending",
+            Self::StoreUnavailable => "store_unavailable",
+            Self::StoreRefused => "store_refused",
+            Self::BudgetStateUnverified => "budget_state_unverified",
+            Self::ReceiptEvidenceMissing => "receipt_evidence_missing",
+            Self::DurableRecoveryFailed => "durable_recovery_failed",
+            Self::SpendUnreconciled => "spend_unreconciled",
+            Self::TransportUnavailable => "transport_unavailable",
+            Self::VerifiedReadUnavailable => "verified_read_unavailable",
+        }
+    }
+
+    pub fn parse(value: &str) -> Option<Self> {
+        match value {
+            "recovery_pending" => Some(Self::RecoveryPending),
+            "store_unavailable" => Some(Self::StoreUnavailable),
+            "store_refused" => Some(Self::StoreRefused),
+            "budget_state_unverified" => Some(Self::BudgetStateUnverified),
+            "receipt_evidence_missing" => Some(Self::ReceiptEvidenceMissing),
+            "durable_recovery_failed" => Some(Self::DurableRecoveryFailed),
+            "spend_unreconciled" => Some(Self::SpendUnreconciled),
+            "transport_unavailable" => Some(Self::TransportUnavailable),
+            "verified_read_unavailable" => Some(Self::VerifiedReadUnavailable),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct TenantReadiness {
+    pub transport_ready: bool,
+    pub verified_reads_ready: bool,
+    pub writes_admitted: bool,
+    pub recovery_reason: Option<TenantRecoveryReason>,
+}
+
+impl TenantReadiness {
+    pub fn validate(&self) -> Result<(), ContractError> {
+        if self.writes_admitted != self.recovery_reason.is_none()
+            || (self.writes_admitted && (!self.transport_ready || !self.verified_reads_ready))
+            || (self.verified_reads_ready && !self.transport_ready)
+        {
+            return Err(ContractError::Mismatch("tenant_readiness"));
+        }
+        Ok(())
+    }
+}
 /// Contract construction failure before a request can cross the daemon boundary.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ContractError {

@@ -14,7 +14,11 @@ use layerx_agentd::prepare::PreparationLifecycle;
 use layerx_agentd::session::{SessionCredential, SessionId, SessionRegistry};
 use layerx_agentd::session_control::SessionControl;
 use layerx_agentd::store::{Store, TenantId};
-use serde_json::{Map, Value};
+use layerx_agent_api::error::{ErrorClass, RequestId};
+use layerx_sdk::agent_envelope::{AgentEnvelopeTransport, EnvelopeCredential, EnvelopeError};
+use layerx_sdk::production::SecretBytes;
+use layerx_sdk::programs::LayerXKeyCredential;
+use serde_json::{json, Map, Value};
 use zeroize::Zeroizing;
 
 use crate::approval::ApprovalPolicy;
@@ -45,7 +49,8 @@ const BINDING_KEYS: [&str; 12] = [
     "agent",
     "limit",
 ];
-const AGENT_KEYS: [&str; 3] = ["endpoint", "bearer_file", "probe_program"];
+const AGENT_KEYS: [&str; 4] = ["endpoint", "bearer_file", "probe_program", "readiness"];
+const READINESS_KEYS: [&str; 3] = ["endpoint", "gateway_key_file", "trust_anchors"];
 const LIMIT_KEYS: [&str; 6] = ["id", "name", "scope", "scope_id", "ceiling", "consumed"];
 const LISTENER_KEYS: [&str; 5] = ["socket", "owner_uid", "owner_gid", "mode", "admitted_uids"];
 const WEB_KEYS: [&str; 6] = [
@@ -170,6 +175,54 @@ struct AgentBinding {
     endpoint: String,
     bearer_file: PathBuf,
     probe_program: String,
+    readiness: Option<ReadinessBinding>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct ReadinessBinding {
+    endpoint: String,
+    gateway_key_file: PathBuf,
+    trust_anchors: Option<PathBuf>,
+}
+
+pub struct ReadinessBoundary {
+    transport: AgentEnvelopeTransport,
+    credential: EnvelopeCredential,
+    next_request_id: u64,
+}
+
+impl ReadinessBoundary {
+    fn execute(&mut self, arguments: &Value) -> Result<Value, BoundaryRefusal> {
+        if arguments.as_object().is_none_or(|object| !object.is_empty()) {
+            return Err(BoundaryRefusal::Malformed("tenant.readiness requires an empty object".to_owned()));
+        }
+        let request_id = self.next_request_id;
+        self.next_request_id = request_id.checked_add(1).ok_or_else(||
+            BoundaryRefusal::Unavailable("the readiness request counter is exhausted".to_owned()))?;
+        let response = self.transport.tenant_readiness(RequestId(request_id), &self.credential)
+            .map_err(readiness_refusal)?;
+        let value = response.value;
+        Ok(json!({
+            "transport_ready": value.transport_ready,
+            "verified_reads_ready": value.verified_reads_ready,
+            "writes_admitted": value.writes_admitted,
+            "recovery_reason": value.recovery_reason.map(|reason| reason.as_str()),
+            "verification_status": {"state": "achieved", "level": "unverified"},
+        }))
+    }
+}
+
+fn readiness_refusal(error: EnvelopeError) -> BoundaryRefusal {
+    match error {
+        EnvelopeError::GatewayAuthentication => BoundaryRefusal::Unauthorized,
+        EnvelopeError::Refused(error) => match error.class {
+            ErrorClass::PolicyRefusal | ErrorClass::CapabilityRefusal => BoundaryRefusal::Unauthorized,
+            ErrorClass::UnavailableCapability => BoundaryRefusal::NotServed("tenant.readiness"),
+            _ => BoundaryRefusal::Unavailable("the tenant readiness owner refused the request".to_owned()),
+        },
+        EnvelopeError::Transport { .. } => BoundaryRefusal::Unavailable("the authenticated readiness transport failed".to_owned()),
+        _ => BoundaryRefusal::Malformed("the authenticated readiness exchange was refused".to_owned()),
+    }
 }
 
 /// The search sidecar a session with the web scopes pays through.
@@ -239,6 +292,10 @@ impl WebPayer for SharedPayer {
 pub enum DaemonBoundary {
     Reads(ProgramReads),
     Web(Box<WebBoundary<ProgramReads>>),
+    Readiness {
+        inner: Box<DaemonBoundary>,
+        readiness: Option<ReadinessBoundary>,
+    },
 }
 
 impl ToolBoundary for DaemonBoundary {
@@ -248,6 +305,13 @@ impl ToolBoundary for DaemonBoundary {
         arguments: &Value,
     ) -> Result<Value, BoundaryRefusal> {
         match self {
+            Self::Readiness { inner, readiness } => {
+                if tool.name == "tenant.readiness" {
+                    readiness.as_mut().ok_or(BoundaryRefusal::NotServed("tenant.readiness"))?.execute(arguments)
+                } else {
+                    inner.execute(tool, arguments)
+                }
+            }
             Self::Reads(reads) => reads.execute(tool, arguments),
             Self::Web(web) => web.execute(tool, arguments),
         }
@@ -255,6 +319,7 @@ impl ToolBoundary for DaemonBoundary {
 
     fn observed_sequence(&mut self) -> Result<u64, BoundaryRefusal> {
         match self {
+            Self::Readiness { inner, .. } => inner.observed_sequence(),
             Self::Reads(reads) => reads.observed_sequence(),
             Self::Web(web) => web.observed_sequence(),
         }
@@ -393,6 +458,21 @@ impl Binding {
                 endpoint: text(agent, "endpoint")?.to_owned(),
                 bearer_file: absolute(agent, "bearer_file")?,
                 probe_program: text(agent, "probe_program")?.to_owned(),
+                readiness: match agent.get("readiness") {
+                    None => None,
+                    Some(value) => {
+                        let fields = value.as_object().ok_or_else(|| malformed("agent.readiness must be an object"))?;
+                        closed(fields, &READINESS_KEYS, "agent.readiness")?;
+                        Some(ReadinessBinding {
+                            endpoint: text(fields, "endpoint")?.to_owned(),
+                            gateway_key_file: absolute(fields, "gateway_key_file")?,
+                            trust_anchors: match fields.get("trust_anchors") {
+                                None => None,
+                                Some(_) => Some(absolute(fields, "trust_anchors")?),
+                            },
+                        })
+                    }
+                },
             },
             limit: LimitConfig {
                 id: LimitId(digest::<16>(limits, "id")?),
@@ -496,6 +576,7 @@ impl Binding {
             *token,
             self.session_generation,
         );
+        let readiness = self.readiness_boundary(&token)?;
         let capability = CapabilityId(self.capability_id);
         let (bound, route) = match self.mode {
             DeploymentMode::Full => {
@@ -551,7 +632,28 @@ impl Binding {
             }
             _ => DaemonBoundary::Reads(reads),
         };
-        Ok(Session::new(bound, boundary))
+        Ok(Session::new(bound, DaemonBoundary::Readiness {
+            inner: Box::new(boundary),
+            readiness,
+        }))
+    }
+
+    fn readiness_boundary(&self, token: &[u8; 32]) -> Result<Option<ReadinessBoundary>, BindingError> {
+        let Some(binding) = &self.agent.readiness else { return Ok(None); };
+        let encoded = protected_text(&binding.gateway_key_file, "agent.readiness.gateway_key_file")?;
+        let (key_id, secret) = encoded.split_once(':').ok_or_else(||
+            malformed("agent.readiness.gateway_key_file must hold key_id:lxp_live_secret"))?;
+        let suffix = secret.strip_prefix("lxp_live_").ok_or_else(|| malformed("readiness gateway credential is invalid"))?;
+        if suffix.len() != 64 || !suffix.bytes().all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte)) {
+            return Err(malformed("readiness gateway credential is invalid"));
+        }
+        let secret = SecretBytes::new(secret.as_bytes()).map_err(|_| malformed("readiness gateway credential is invalid"))?;
+        let gateway_key = LayerXKeyCredential::new(key_id, secret).map_err(|_| malformed("readiness gateway credential is invalid"))?;
+        let transport = AgentEnvelopeTransport::connect(&binding.endpoint, Some(gateway_key), binding.trust_anchors.as_deref())
+            .map_err(|_| malformed("readiness HTTPS endpoint or trust anchors are invalid"))?;
+        let credential = EnvelopeCredential::new(self.tenant.clone(), self.session_id, *token, self.session_generation)
+            .map_err(|_| malformed("readiness session credential is invalid"))?;
+        Ok(Some(ReadinessBoundary { transport, credential, next_request_id: 1 }))
     }
 
     fn web_route(&self, server: &Server) -> Result<WebRoute, BindingError> {

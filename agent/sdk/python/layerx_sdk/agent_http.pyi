@@ -1,6 +1,6 @@
 import ssl
 from collections.abc import Mapping
-from typing import Generic, TypeVar
+from typing import Generic, Literal, TypedDict, TypeVar
 
 from .generated.client import NativePrepareRequestV1, NativeApprovalDecisionV1, NativePrepareResultV1, NativeApprovalResultV1, NativeApprovalListResultV1
 from .production import IdempotencyKey, PlatformPlane, ProductionTransport, SecretBytes
@@ -32,9 +32,25 @@ class NativeEnvelopeSuccess(Generic[_NativeValue]):
     verification_status: Mapping[str, object]
     def __init__(self, request_id: str, value: _NativeValue, verification_status: Mapping[str, object]) -> None: ...
 
+TenantRecoveryReasonV1 = Literal[
+    "recovery_pending", "store_unavailable", "store_refused", "budget_state_unverified",
+    "receipt_evidence_missing", "durable_recovery_failed", "spend_unreconciled",
+    "transport_unavailable", "verified_read_unavailable",
+]
+
+class TenantReadinessV1(TypedDict):
+    transport_ready: bool
+    verified_reads_ready: bool
+    writes_admitted: bool
+    recovery_reason: TenantRecoveryReasonV1 | None
+
+def decode_tenant_readiness(value: object) -> TenantReadinessV1: ...
+def check_tenant_readiness_response(response: AgentEnvelopeSuccess) -> TenantReadinessV1: ...
+
 class AgentEnvelopeTransport(ProductionTransport):
     def __init__(self, endpoint: str, *, gateway_key: LayerXKeyCredential, session: AgentSessionCredential | None, ca_file: str | None = ..., timeout: float = ..., maximum_response_bytes: int = ...) -> None: ...
     def call(self, plane: PlatformPlane, operation: object, request: object, idempotency_key: IdempotencyKey | None) -> AgentEnvelopeSuccess: ...
+    def tenant_readiness(self) -> NativeEnvelopeSuccess[TenantReadinessV1]: ...
     def prepare_native(self, request: NativePrepareRequestV1, idempotency_key: IdempotencyKey) -> NativeEnvelopeSuccess[NativePrepareResultV1]: ...
     def prepare_native_effect(self, request: NativeEffectPrepareRequestV1, idempotency_key: IdempotencyKey) -> NativeEnvelopeSuccess[NativePrepareResultV1]: ...
     def approval_list_native(self) -> NativeEnvelopeSuccess[NativeApprovalListResultV1]: ...

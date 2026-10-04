@@ -66,7 +66,14 @@ pub const FAUCET_REQUEST: ToolDefinition = ToolDefinition {
     evidence: "the faucet claim the gateway confirmed as funded, or an honest refusal",
 };
 
-const TOOL_CATALOGUE: [ToolDefinition; 21] = [
+const TOOL_CATALOGUE: [ToolDefinition; 22] = [
+    ToolDefinition {
+        name: "tenant.readiness",
+        kind: ToolKind::Read,
+        required_scope: "read",
+        mutation: "none",
+        evidence: "daemon-local readiness, unverified protocol state",
+    },
     ToolDefinition {
         name: "balance.get",
         kind: ToolKind::Read,
@@ -775,6 +782,7 @@ impl Server {
 
 fn tool_operation(name: &str) -> Option<Operation> {
     match name {
+        "tenant.readiness" => Some(Operation::TenantReadiness),
         "balance.get" | "wallet.balance" => Some(Operation::ReadBalance),
         "wallet.accounts" => Some(Operation::ReadAccount),
         "history.list" => Some(Operation::ReadHistory),

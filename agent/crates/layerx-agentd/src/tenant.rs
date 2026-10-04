@@ -146,6 +146,7 @@ impl OperationClass {
             | Operation::ReadModuleState
             | Operation::ReadProofBundle
             | Operation::SessionList => Some(Self::Read),
+            Operation::TenantReadiness => Some(Self::Read),
             Operation::BudgetCreate
             | Operation::BudgetFund
             | Operation::BudgetRevoke

@@ -1086,6 +1086,7 @@ pub(crate) fn canonical_request_bytes(
         | Operation::ReadModuleState
         | Operation::ReadProofBundle
         | Operation::SessionList
+        | Operation::TenantReadiness
         | Operation::SubscriptionHealth
         | Operation::SubscriptionList
         | Operation::Wait => return Ok(None),
@@ -1114,6 +1115,22 @@ pub(crate) fn dispatch_operation<A: HumanAuthorityBoundary>(
     let shared = owner;
     let mut owner = owner.clone();
     match operation {
+        Operation::TenantReadiness => {
+            if !request.is_empty() {
+                return Err(rejection(ErrorClass::ProtocolIncompatibility, id, "envelope.unknown_field"));
+            }
+            let guard = shared.lock().map_err(|error| owner_error(id, error))?;
+            let value = guard.rpc_tenant_readiness(context).map_err(|error| owner_error(id, error))?;
+            Ok(Dispatched {
+                value: serde_json::json!({
+                    "transport_ready": value.transport_ready,
+                    "verified_reads_ready": value.verified_reads_ready,
+                    "writes_admitted": value.writes_admitted,
+                    "recovery_reason": value.recovery_reason.map(|reason| reason.as_str()),
+                }),
+                verification: None,
+            })
+        }
         Operation::ReadAccount => {
             let request: ReadAccountRequest = decode(request, id)?;
             let _ = (request.tenant, request.agent);

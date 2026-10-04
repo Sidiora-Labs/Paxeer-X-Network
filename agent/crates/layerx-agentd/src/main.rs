@@ -1151,7 +1151,7 @@ fn agent_rpc_health(
         Ok((ready, _, protocol_version)) => AgentRpcResponse {
             status: 200,
             body: format!(
-                "{{\"ready\":{ready},\"network_id\":\"{network}\",\"wire_version\":\"{protocol_version}\"}}"
+                "{{\"ready\":{ready},\"network_id\":\"{network}\",\"wire_version\":\"{protocol_version}\",\"transport_ready\":true,\"verified_reads_ready\":null,\"tenant_writes\":\"unknown\"}}"
             )
             .into_bytes(),
         },
@@ -1503,11 +1503,11 @@ fn route_request(
     let reply = |status: u16, body: &str| (status, body.to_owned());
     if path == "/healthz" {
         if refresh_program_authority(route, native).is_err() {
-            return reply(503, "{\"ready\":false}");
+            return reply(503, "{\"ready\":false,\"transport_ready\":true,\"verified_reads_ready\":false,\"tenant_writes\":\"unknown\"}");
         }
         return match now_ms().map(|now| route.read(probe_program, now)) {
-            Ok(Ok(_)) => reply(200, "{\"ready\":true}"),
-            _ => reply(503, "{\"ready\":false}"),
+            Ok(Ok(_)) => reply(200, "{\"ready\":true,\"transport_ready\":true,\"verified_reads_ready\":true,\"tenant_writes\":\"unknown\"}"),
+            _ => reply(503, "{\"ready\":false,\"transport_ready\":true,\"verified_reads_ready\":false,\"tenant_writes\":\"unknown\"}"),
         };
     }
     if path.starts_with("/v1/reads/") {

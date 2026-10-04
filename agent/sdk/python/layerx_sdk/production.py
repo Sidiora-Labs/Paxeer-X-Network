@@ -17,7 +17,7 @@ AGENT_OPERATIONS: tuple[Operation, ...] = (
     "read.batch", "read.checkpoint", "read.history", "read.module_state", "read.proof_bundle",
     "session.close", "session.list", "session.open", "session.refresh", "sign", "submit",
     "subscription.acknowledge", "subscription.create", "subscription.delete", "subscription.health",
-    "subscription.list", "subscription.pause", "subscription.resume", "track", "wait",
+    "subscription.list", "subscription.pause", "subscription.resume", "tenant.readiness", "track", "wait",
 )
 
 HUMAN_OPERATIONS = (

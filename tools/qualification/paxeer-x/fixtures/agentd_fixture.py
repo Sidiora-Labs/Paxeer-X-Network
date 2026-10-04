@@ -13,7 +13,8 @@ import time
 
 ROOT = Path(__file__).resolve().parents[4]
 REQUIRED = {'layerx-agentd', 'layerxd', 'layerx-receipt-authority', 'layerx-program-registry'}
-ALLOWED = REQUIRED | {'paxd', 'layerx-runtime-clock', 'layerx-human-service', 'layerxctl'}
+ALLOWED = REQUIRED | {'paxd', 'layerx-runtime-clock', 'layerx-human-service', 'layerxctl',
+                      'layerx-gateway', 'layerx-mcp'}
 
 
 class FixtureRefused(Exception):
@@ -233,6 +234,96 @@ class AgentdFixture:
         require(value.get('version') == 1 and isinstance(value.get('request'), dict)
                 and isinstance(value.get('credential'), dict), 'canonical RPC envelope required')
         return value
+
+    def provision_tenant_readiness(self):
+        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+        from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
+
+        profile = self.document.get('tenant_readiness')
+        require(isinstance(profile, dict)
+                and set(profile) in ({'schema', 'tenants', 'operator_probe'},
+                                     {'schema', 'tenants', 'operator_probe', 'mcp_binding_seeds'})
+                and profile['schema'] == 'paxeer-x.agentd-tenant-recovery.v1',
+                'genuine two-tenant recovery profile is required')
+        rows = profile['tenants']
+        require(isinstance(rows, list) and len(rows) == 2, 'exactly two provisioned tenants required')
+        tenants = []
+        for row in rows:
+            require(isinstance(row, dict) and set(row) == {
+                'read_request', 'prepare_request', 'signer_seed', 'signer_public_key',
+                'managed_agent_id'}, 'tenant recovery profile fields')
+            read = self.envelope(row['read_request'])
+            prepare = self.envelope(row['prepare_request'])
+            credential = read['credential']
+            require(read.get('operation') == 'read.account'
+                    and prepare.get('operation') == 'prepare'
+                    and prepare['credential'] == credential
+                    and set(credential) == {'tenant', 'session_id', 'token_id', 'generation'},
+                    'real same-owner read and prepare requests required')
+            require(all(isinstance(value, str) for value in credential.values())
+                    and 0 < len(credential['tenant'].encode()) <= 255
+                    and '\0' not in credential['tenant']
+                    and all(re.fullmatch('[0-9a-f]{64}', credential[name])
+                            for name in ('session_id', 'token_id'))
+                    and re.fullmatch('[1-9][0-9]{0,19}', credential['generation'])
+                    and int(credential['generation']) < 2**64,
+                    'provisioned credential is not canonical')
+            request = prepare['request']
+            require(request.get('variant') == 'native_effect_v1'
+                    and request.get('activity') == {'version': '1', 'module': '1', 'ordinal': '5'}
+                    and isinstance(request.get('purpose'), dict)
+                    and request['purpose'].get('purpose', {}).get('tenant') == credential['tenant']
+                    and request['purpose']['purpose'].get('session_id') == credential['session_id']
+                    and request['purpose']['purpose'].get('generation') == credential['generation'],
+                    'real consented native Send preparation bound to the retained session required')
+            name = row['signer_seed']
+            require(name in self.document['seeds'] and name in self.values,
+                    'registered signer key must be a copied protected seed')
+            path = Path(self.values[name])
+            info = path.lstat()
+            require(path.is_file() and not path.is_symlink() and info.st_uid == os.geteuid()
+                    and not info.st_mode & 0o077 and info.st_nlink == 1 and info.st_size == 32,
+                    'registered signer seed must be an owned private raw Ed25519 seed')
+            signer = Ed25519PrivateKey.from_private_bytes(path.read_bytes())
+            public = signer.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw).hex()
+            require(public == row['signer_public_key'], 'provisioned signer public identity mismatch')
+            require(isinstance(row['managed_agent_id'], str) and row['managed_agent_id'],
+                    'actual managed owner identifier is required')
+            tenants.append({'credential': credential, 'read': read, 'prepare': prepare,
+                            'signer': signer, 'public_key': public,
+                            'managed_agent_id': row['managed_agent_id']})
+        require(tenants[0]['credential']['tenant'] != tenants[1]['credential']['tenant'],
+                'recovery case must use different actual tenants')
+        probe = profile['operator_probe']
+        require(isinstance(probe, dict) and set(probe) == {
+            'url', 'rpc_url', 'ca_seed', 'client_cert_seed', 'client_key_seed',
+            'gateway_key_seed'}, 'real operator probe route profile required')
+        require('layerx-gateway' in self.artifacts and any(
+            row.get('artifact') == 'layerx-gateway' and row.get('oneshot') is not True
+            for row in self.document['services']), 'real candidate gateway process required for operator journey')
+        resolved = {key: value.format_map(self.values) for key, value in probe.items()
+                    if key in ('url', 'rpc_url')}
+        from urllib.parse import urlsplit
+        for name, raw in resolved.items():
+            url = urlsplit(raw)
+            require(url.scheme == 'https' and url.hostname in ('localhost', '127.0.0.1')
+                    and url.username is None and url.password is None and not url.query
+                    and not url.fragment and (name != 'rpc_url' or url.path == '/v1/agent/rpc'),
+                    'operator probe must use the actual disposable HTTPS route')
+        for key in ('ca_seed', 'client_cert_seed', 'client_key_seed', 'gateway_key_seed'):
+            name = probe[key]
+            require(name in self.document['seeds'] and name in self.values,
+                    'operator TLS and authority material must be provisioned seeds')
+            path = Path(self.values[name])
+            require(path.is_file() and self.directory in path.parents,
+                    'operator authority material must be copied disposable files')
+            resolved[key] = str(path)
+        bearer = self.directory / 'operator-program-bearer'
+        fd = os.open(bearer, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+        with os.fdopen(fd, 'w') as stream:
+            stream.write(self.values['program_bearer'] + '\n')
+        resolved['bearer_seed'] = str(bearer)
+        return tenants, resolved
 
     def secret_values(self):
         values = {value for key, value in self.values.items() if key.endswith('_bearer')}

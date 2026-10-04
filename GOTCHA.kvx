@@ -2459,3 +2459,8 @@ resolution = "Provide a typed actual bootstrap lifecycle boundary with real cano
 area = "Per-worktree sparse configuration"
 observed = "A task checkout command omitted --worktree and set common sparse configuration; its explicit local false value caused credential-named tracked paths to materialize before exclusion. No values were opened, copied, hashed or logged."
 resolution = "Set both sparse options using git config --worktree before checkout, verify path exclusions before admitting writers, and restore common values only from recorded originals."
+
+[gotcha.717]
+area = "Generated Agent operation producer and historical count"
+observed = "The operation catalogue marks itself generated but no committed producer was found; the old operation-envelope gate asserts exactly51 operations while new tenant readiness requires an additive named operation."
+resolution = "Restore deterministic schema-driven generation and use an explicit additive contract version. Preserve the old51-operation assertion and record its version conflict without rerunning or loosening it."

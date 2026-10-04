@@ -3999,6 +3999,7 @@ impl<A: HumanAuthorityBoundary> UnifiedAgentOwner<A> {
             | Operation::BudgetList
             | Operation::CapabilityList
             | Operation::SessionList
+            | Operation::TenantReadiness
             | Operation::AvailabilityFetch
             | Operation::ProgramDiscover
             | Operation::ProgramInterface
@@ -4067,6 +4068,70 @@ impl<A: HumanAuthorityBoundary> UnifiedAgentOwner<A> {
             node.network_id,
             node.protocol_version,
         ))
+    }
+
+    pub(crate) fn rpc_tenant_readiness(
+        &self,
+        context: &crate::agent_rpc_peer::RpcOwnerContext<'_>,
+    ) -> Result<layerx_agent_api::identity::TenantReadiness, HumanOperationError> {
+        use layerx_agent_api::identity::{TenantReadiness, TenantRecoveryReason};
+        if context.permit().operation() != crate::tenant::Operation::TenantReadiness
+            || context.peer().tenant != context.principal().tenant.as_str()
+        {
+            return Err(HumanOperationError::Refused);
+        }
+        context
+            .permit()
+            .boundary(&self.session_control)
+            .map_err(|_| HumanOperationError::Refused)?;
+        let transport_ready = self.degraded.status().mode == crate::degraded::Mode::Healthy;
+        let mut operations = self.lock_operations()?;
+        let recovery_reason = match operations.write_admission(&context.peer().tenant) {
+            Some(Ok(())) => None,
+            None => Some(TenantRecoveryReason::RecoveryPending),
+            Some(Err(RecoveryRefusal::Store(HumanOperationError::Unavailable))) => {
+                Some(TenantRecoveryReason::StoreUnavailable)
+            }
+            Some(Err(RecoveryRefusal::Store(_))) => Some(TenantRecoveryReason::StoreRefused),
+            Some(Err(RecoveryRefusal::BudgetState { .. })) => {
+                Some(TenantRecoveryReason::BudgetStateUnverified)
+            }
+            Some(Err(RecoveryRefusal::EvidenceMissing { .. })) => {
+                Some(TenantRecoveryReason::ReceiptEvidenceMissing)
+            }
+            Some(Err(RecoveryRefusal::Recovery { .. })) => {
+                Some(TenantRecoveryReason::DurableRecoveryFailed)
+            }
+            Some(Err(RecoveryRefusal::WritesBlocked { .. })) => {
+                Some(TenantRecoveryReason::SpendUnreconciled)
+            }
+        };
+        let verified_reads_ready = transport_ready
+            && match operations.authority.balance_context(context.peer()) {
+                Ok((account, ..)) => operations.account_state(context.peer(), account).is_ok(),
+                Err(_) => false,
+            };
+        let recovery_reason = recovery_reason.or_else(|| {
+            if !transport_ready {
+                Some(TenantRecoveryReason::TransportUnavailable)
+            } else if !verified_reads_ready {
+                Some(TenantRecoveryReason::VerifiedReadUnavailable)
+            } else {
+                None
+            }
+        });
+        let value = TenantReadiness {
+            transport_ready,
+            verified_reads_ready,
+            writes_admitted: recovery_reason.is_none(),
+            recovery_reason,
+        };
+        value.validate().map_err(|_| HumanOperationError::Refused)?;
+        context
+            .permit()
+            .boundary(&self.session_control)
+            .map_err(|_| HumanOperationError::Refused)?;
+        Ok(value)
     }
 }
 

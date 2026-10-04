@@ -119,6 +119,11 @@ pub struct EnvelopeCredential {
     generation: u64,
 }
 
+impl Drop for EnvelopeCredential {
+    fn drop(&mut self) {
+        zeroize::Zeroize::zeroize(&mut self.token_id);
+    }
+}
 impl fmt::Debug for EnvelopeCredential {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
@@ -228,6 +233,62 @@ pub struct AgentEnvelopeTransport {
 pub const DAEMON_RPC_ROUTE: &str = "/rpc";
 
 impl AgentEnvelopeTransport {
+    pub fn tenant_readiness(
+        &self,
+        request_id: RequestId,
+        credential: &EnvelopeCredential,
+    ) -> Result<ApiSuccess<layerx_agent_api::identity::TenantReadiness>, EnvelopeError> {
+        use layerx_agent_api::identity::{TenantReadiness, TenantRecoveryReason};
+        let response = self.send_operation(
+            Operation::TenantReadiness,
+            request_id,
+            &json!({}),
+            Some(credential),
+            None,
+        )?;
+        let invalid = || EnvelopeError::Decode {
+            operation: Operation::TenantReadiness,
+        };
+        let fields = response.value.as_object().ok_or_else(invalid)?;
+        if !exact_fields(
+            fields,
+            &[
+                "transport_ready",
+                "verified_reads_ready",
+                "writes_admitted",
+                "recovery_reason",
+            ],
+        ) {
+            return Err(invalid());
+        }
+        let recovery_reason = match fields.get("recovery_reason") {
+            Some(Value::Null) => None,
+            Some(Value::String(reason)) => {
+                Some(TenantRecoveryReason::parse(reason).ok_or_else(invalid)?)
+            }
+            _ => return Err(invalid()),
+        };
+        let value = TenantReadiness {
+            transport_ready: fields
+                .get("transport_ready")
+                .and_then(Value::as_bool)
+                .ok_or_else(invalid)?,
+            verified_reads_ready: fields
+                .get("verified_reads_ready")
+                .and_then(Value::as_bool)
+                .ok_or_else(invalid)?,
+            writes_admitted: fields
+                .get("writes_admitted")
+                .and_then(Value::as_bool)
+                .ok_or_else(invalid)?,
+            recovery_reason,
+        };
+        value.validate().map_err(|_| invalid())?;
+        if response.verification_status != VerificationStatus::Achieved(Level::Unverified) {
+            return Err(invalid());
+        }
+        Ok(native_success(response, value))
+    }
     /// Connects to a gateway origin. Only `https` is accepted; redirects are refused.
     ///
     /// `trust_anchors` names an explicit PEM file of trusted roots; when absent the

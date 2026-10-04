@@ -1,7 +1,7 @@
 [schema]
 name = "LayerX Agent API"
 major = 1
-minor = 9
+minor = 10
 node_interface_major = 1
 source_of_truth = "This schema and the schema files it includes define the daemon contract and every SDK surface. Generated output is never authoritative."
 compatibility = "Within one major version a release may only add sections or keys. Removing or changing an existing declaration requires a new major version."
@@ -514,6 +514,16 @@ operation_class = "Read"
 surface = "Contract"
 idempotency_key = "absent"
 disposition = "served_adapter_arm"
+
+[transport.agent_http.operation.tenant.readiness]
+request = "Exactly an empty object. Tenant and agent come exclusively from the current authenticated session credential and retained owner binding."
+access = "read"
+operation_class = "Read"
+surface = "Contract"
+idempotency_key = "absent"
+disposition = "served_adapter_arm"
+response = "TenantReadiness"
+authority = "operation_permit"
 
 [transport.agent_http.operation.session.open]
 request = "The request object of this catalogue operation; the daemon declares no typed decoder for it in this contract revision."

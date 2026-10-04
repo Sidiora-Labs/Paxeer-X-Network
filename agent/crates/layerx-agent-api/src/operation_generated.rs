@@ -52,6 +52,7 @@ pub enum Operation {
     SubscriptionList,
     SubscriptionPause,
     SubscriptionResume,
+    TenantReadiness,
     Track,
     Wait,
 }
@@ -108,6 +109,7 @@ impl Operation {
         Self::SubscriptionList,
         Self::SubscriptionPause,
         Self::SubscriptionResume,
+        Self::TenantReadiness,
         Self::Track,
         Self::Wait,
     ];
@@ -165,6 +167,7 @@ impl Operation {
             Self::SubscriptionList => "subscription.list",
             Self::SubscriptionPause => "subscription.pause",
             Self::SubscriptionResume => "subscription.resume",
+            Self::TenantReadiness => "tenant.readiness",
             Self::Track => "track",
             Self::Wait => "wait",
         }

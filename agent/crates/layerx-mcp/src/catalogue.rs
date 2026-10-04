@@ -245,6 +245,7 @@ pub const WEB_TOOLS: [ToolDefinition; 3] = [
 
 fn fields(name: &str) -> &'static [Field] {
     match name.as_bytes() {
+        b"tenant.readiness" => &NONE,
         b"balance.get" => &BALANCE_GET,
         b"history.list" => &HISTORY_LIST,
         b"receipt.get" => &RECEIPT_GET,
@@ -277,6 +278,7 @@ fn fields(name: &str) -> &'static [Field] {
 #[must_use]
 pub fn description(name: &str) -> Option<&'static str> {
     Some(match name.as_bytes() {
+        b"tenant.readiness" => "Read daemon-local tenant recovery and transport readiness through the authenticated gateway; this is unverified protocol state.",
         b"balance.get" => {
             "Read verified program-scoped balances from the daemon with their verification level and freshness."
         }
@@ -369,6 +371,9 @@ pub fn input_schema(name: &str) -> Option<Value> {
 /// Refuses a non-object, an oversized argument object, an unknown or missing field, and any
 /// value outside the field's declared shape or bound.
 pub fn validate(name: &str, arguments: &Value) -> Result<(), ArgumentError> {
+    if name == "tenant.readiness" && !arguments.is_object() {
+        return Err(ArgumentError::NotAnObject);
+    }
     let empty = Map::new();
     let object = match arguments {
         Value::Object(object) => object,

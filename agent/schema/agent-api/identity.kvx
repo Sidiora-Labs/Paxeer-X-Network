@@ -6,6 +6,23 @@ compatibility = "additive_only"
 [type.SessionContext]
 required = ["tenant","agent_did","authority_ref","permitted_activity_types","expiry","client","policy_version"]
 
+[operation.tenant.readiness]
+request = "TenantReadinessRequest"
+required = []
+response = "TenantReadiness"
+authority = "Current tenant/session/token/generation credential through the ordinary Read operation permit; no supplied tenant selector."
+
+[type.TenantReadinessRequest]
+required = []
+unknown_fields = "refused"
+
+[type.TenantReadiness]
+required = ["transport_ready:bool","verified_reads_ready:bool","writes_admitted:bool","recovery_reason:optional<TenantRecoveryReason>"]
+invariant = "writes_admitted exactly when recovery_reason is absent; admitted writes require transport and a genuine STATE_PROVEN account read for this authenticated tenant. Recovery refusal remains tenant-local across durable restart. This observation does not prove economic execution."
+
+[type.TenantRecoveryReason]
+variants = ["recovery_pending","store_unavailable","store_refused","budget_state_unverified","receipt_evidence_missing","durable_recovery_failed","spend_unreconciled","transport_unavailable","verified_read_unavailable"]
+
 [operation.agent.register]
 request = "AgentRegistration"
 required = ["tenant","agent_did","authority_ref","client","policy_version"]

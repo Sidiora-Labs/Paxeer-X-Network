@@ -261,6 +261,50 @@ class NativeEnvelopeSuccess(Generic[_NativeValue]):
     verification_status: Mapping[str, object]
 
 
+TenantRecoveryReasonV1 = Literal[
+    "recovery_pending", "store_unavailable", "store_refused", "budget_state_unverified",
+    "receipt_evidence_missing", "durable_recovery_failed", "spend_unreconciled",
+    "transport_unavailable", "verified_read_unavailable",
+]
+
+
+class TenantReadinessV1(TypedDict):
+    transport_ready: bool
+    verified_reads_ready: bool
+    writes_admitted: bool
+    recovery_reason: TenantRecoveryReasonV1 | None
+
+
+_TENANT_RECOVERY_REASONS = frozenset({
+    "recovery_pending", "store_unavailable", "store_refused", "budget_state_unverified",
+    "receipt_evidence_missing", "durable_recovery_failed", "spend_unreconciled",
+    "transport_unavailable", "verified_read_unavailable",
+})
+
+
+def decode_tenant_readiness(value: object) -> TenantReadinessV1:
+    if not isinstance(value, Mapping) or set(value) != {
+        "transport_ready", "verified_reads_ready", "writes_admitted", "recovery_reason",
+    }:
+        raise _decode_failure()
+    transport, reads, writes = value["transport_ready"], value["verified_reads_ready"], value["writes_admitted"]
+    reason = value["recovery_reason"]
+    if (type(transport) is not bool or type(reads) is not bool or type(writes) is not bool
+        or reason is not None and (not isinstance(reason, str) or reason not in _TENANT_RECOVERY_REASONS)
+        or writes != (reason is None) or writes and (not transport or not reads) or reads and not transport):
+        raise _decode_failure()
+    return cast(TenantReadinessV1, dict(value))
+
+
+def check_tenant_readiness_response(response: AgentEnvelopeSuccess) -> TenantReadinessV1:
+    if response.verification_status != {"state": "achieved", "level": "Unverified"}:
+        raise _decode_failure(response.request_id)
+    try:
+        return decode_tenant_readiness(response.value)
+    except PlatformSdkError:
+        raise _decode_failure(response.request_id) from None
+
+
 ProofBundleVerificationLevel = Literal["Unverified", "SequencerSigned", "BatchIncluded", "StateProven", "CheckpointFinalised", "SettlementAnchored"]
 
 
@@ -437,6 +481,8 @@ class AgentEnvelopeTransport(ProductionTransport):
             raise _unavailable_capability()
         if not isinstance(request, Mapping) or any(not isinstance(key, str) for key in request):
             raise _invalid_argument()
+        if operation == "tenant.readiness" and len(request) != 0:
+            raise _invalid_argument()
         proof_request = encode_proof_bundle_request(request) if operation == "read.proof_bundle" else None
         if proof_request is not None:
             request = proof_request
@@ -480,6 +526,8 @@ class AgentEnvelopeTransport(ProductionTransport):
         def checked(response: AgentEnvelopeSuccess) -> AgentEnvelopeSuccess:
             if proof_request is not None:
                 check_proof_bundle_response(proof_request, response)
+            if operation == "tenant.readiness":
+                return AgentEnvelopeSuccess(response.request_id, check_tenant_readiness_response(response), response.verification_status)
             return response
 
         outbound = Request(_route_endpoint(self._endpoint, self._path), data=body, headers=headers, method="POST")
@@ -500,6 +548,10 @@ class AgentEnvelopeTransport(ProductionTransport):
                 raise PlatformSdkError(SdkErrorCode.UNKNOWN_OUTCOME, "unknown-outcome") from None
             raise PlatformSdkError(SdkErrorCode.TRANSPORT_FAILURE, "safe") from None
 
+
+    def tenant_readiness(self) -> NativeEnvelopeSuccess[TenantReadinessV1]:
+        response = self.call("agent", "tenant.readiness", {}, None)
+        return NativeEnvelopeSuccess(response.request_id, cast(TenantReadinessV1, response.value), response.verification_status)
 
     def read_proof_bundle(self, request: ProofBundleRequest) -> NativeEnvelopeSuccess[ProofBundleRead]:
         response = self.call("agent", "read.proof_bundle", request, None)
