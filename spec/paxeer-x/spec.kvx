@@ -35124,10 +35124,14 @@ max_repair_cycles = 0
 time_limit_minutes = 20
 owner_authority = "User explicitly approved task-7.7-terminal-layout-proposal.patch and one20minute build/verification window."
 stop_condition = "START2026-10-04T12:26:59.809020+00:00 END2026-10-04T12:46:59.809020+00:00; exact wholepatch, publish, onebuild/oneverify; no furtherrepairs; preserve every previous result."
-qualification_status = "UNRUN"
+qualification_status = "FAILED"
 source_status = "complete"
 completion_basis = "implementation under owner CONSTITUTION; qualification separately recorded"
 source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-7.8-source-handoff.json"
+qualification_record = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-7.8-qualification.json"
+build_exit = 0
+verify_exit = 1
+qualification_observed = "Native protocol3 sequence8 refused with receipt -736 at retained terminal success assertion; cross-language parity incomplete."
 
 [task.9.5]
 title = "Verify the completed MCP web payer through real process boundaries"
