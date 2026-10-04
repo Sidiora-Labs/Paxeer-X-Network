@@ -2237,6 +2237,14 @@ lxp_result lxp_ctx_bridge_credit(lxp_module_ctx *ctx,
                                       activity->protocol_version, &trusted,
                                       lxp_ctx_batch_timestamp_ms(ctx), nullifier, &advanced);
     if (status != LXP_OK) return status;
+    if (advanced.height < trusted.height ||
+        (advanced.height == trusted.height &&
+         (advanced.time_seconds != trusted.time_seconds ||
+          advanced.time_nanos != trusted.time_nanos ||
+          lxp_ct_memcmp(advanced.header_hash, trusted.header_hash, 32U) != 0 ||
+          lxp_ct_memcmp(advanced.next_validators_hash,
+                        trusted.next_validators_hash, 32U) != 0)))
+        return LXP_ERR_DEPOSIT_PROOF_NOT_FINAL;
     if (lxp_ct_memcmp(nullifier, activity->idempotency_key, 32U) != 0)
         return LXP_ERR_CONTEXT_MISMATCH;
     (void)memcpy(replay_key + 18U, nullifier, 32U);

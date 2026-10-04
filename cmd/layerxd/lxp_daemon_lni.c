@@ -3940,6 +3940,157 @@ static lxp_result send_did_accounts(
     return status;
 }
 
+static lxp_result send_bridge_trust_read(
+    lxp_daemon_lni_server *server, int descriptor,
+    const lni_envelope *request, int64_t deadline)
+{
+    lxp_daemon_protocol_owner *owner = server->owner;
+    lxp_daemon_receipt_evidence head;
+    lxp_daemon_signed_header_evidence signed_header;
+    lxp_batch_header header;
+    lxp_module_ctx context;
+    lxp_bridge_profile profile;
+    lxp_bridge_light_trust trust;
+    lxp_byte_span values[2], proofs[2];
+    uint8_t keys[2][32];
+    uint8_t header_digest[32];
+    uint8_t trust_bytes[LXP_BRIDGE_LIGHT_TRUST_BYTES];
+    uint8_t *wire = NULL;
+    uint32_t witness_lengths[2] = {0U, 0U};
+    size_t wire_length = 0U;
+    size_t cursor = 5U;
+    size_t mark;
+    uint64_t epoch;
+    lxp_result status;
+    if (request->minor < 5U || request->correlation_id == 0U ||
+        request->proof_length != 0U || request->payload_length != 107U ||
+        load_u16(request->payload) != 1U || request->payload[2U] != 6U ||
+        lxp_ct_is_zero(request->payload + 3U, 32U) ||
+        load_u64(request->payload + 35U) == 0U ||
+        lxp_ct_is_zero(request->payload + 43U, 32U) ||
+        lxp_ct_is_zero(request->payload + 75U, 32U))
+        return send_refusal(descriptor, server->frame_bytes,
+            request->correlation_id, 1U, request->minor < 5U ?
+            LXP_ERR_VERSION_UNSUPPORTED : LXP_ERR_MALFORMED_ENVELOPE, deadline);
+    if (owner->protocol_version != LXP_PROTOCOL_VERSION_STATE_COMMITMENT ||
+        owner->kernel == NULL || owner->scratch == NULL ||
+        owner->evidence_store == NULL || owner->receipt_authority == NULL)
+        return evidence_refusal(server, descriptor, request->correlation_id,
+            LXP_ERR_MODULE_DISABLED, deadline);
+    status = lni_read_lock(owner);
+    if (status != LXP_OK) return status;
+    mark = lxp_arena_mark(owner->scratch);
+    status = latest_receipt_evidence(owner, owner->scratch, &head);
+    if (status == LXP_OK)
+        status = lxp_batch_header_decode(head.canonical_header.bytes,
+            head.canonical_header.length, &header);
+    if (status == LXP_OK)
+        status = lxp_batch_header_hash(&header, owner->scratch, header_digest);
+    if (status == LXP_OK &&
+        (load_u64(request->payload + 35U) != head.global_sequence ||
+         head.global_sequence != owner->feed_store.scanned_through_sequence ||
+        lxp_ct_memcmp(request->payload + 43U,
+            header_digest, 32U) != 0 ||
+        lxp_ct_memcmp(request->payload + 75U,
+            owner->feed_store.head_state_root, 32U) != 0 ||
+        lxp_ct_memcmp(request->payload + 75U,
+            owner->kernel->current_state_root, 32U) != 0))
+        status = LXP_ERR_PROJECTION_STALE;
+    if (status == LXP_OK)
+        status = lxp_module_ctx_init(&context, owner->kernel,
+            LXP_MODULE_BRIDGE, owner->feed_store.head_timestamp,
+            owner->kernel->epoch, owner->feed_store.scanned_through_sequence,
+            UINT64_MAX, owner->scratch, false);
+    if (status == LXP_OK)
+        status = lxp_bridge_profile_load_asset(&context,
+            request->payload + 3U, &profile);
+    if (status == LXP_OK && load_u32(profile.bytes + 201U) != owner->network_id)
+        status = LXP_ERR_CONTEXT_MISMATCH;
+    if (status == LXP_OK)
+        status = lxp_bridge_light_trust_load_asset(&context, &profile, &trust);
+    if (status == LXP_OK)
+        status = lxp_bridge_light_trust_encode(&trust, trust_bytes);
+    if (status == LXP_OK) {
+        if (memcmp(profile.bytes, "LXBC3", 5U) == 0)
+            memcpy(keys[0], lxp_bridge_profile_key, 32U);
+        else
+            status = lxp_bridge_profile_key_asset(request->payload + 3U, keys[0]);
+    }
+    if (status == LXP_OK)
+        status = lxp_bridge_light_trust_key_asset(&profile, keys[1]);
+    if (status == LXP_OK) {
+        signed_header.authorization = owner->evidence_store->authorization;
+        signed_header.canonical_header = head.canonical_header;
+        memcpy(signed_header.signature, head.header_signature, 64U);
+        if (status == LXP_OK && owner->evidence_store->handover_chain != NULL) {
+            status = lxp_handover_trust_authorization(
+                owner->evidence_store->handover_chain, header.batch_number,
+                &signed_header.authorization, &epoch);
+            if (status == LXP_OK && header.epoch != epoch)
+                status = LXP_ERR_AUTH_SCOPE;
+        }
+    }
+    for (size_t index = 0U; status == LXP_OK && index < 2U; ++index) {
+        status = lxp_daemon_module_evidence_wire_encode(owner->evidence_store,
+            owner->kernel, &signed_header, LXP_MODULE_BRIDGE,
+            (lxp_byte_span){keys[index], 32U}, 1U, 0U, NULL, 3U,
+            owner->scratch, &values[index], &proofs[index]);
+        if (status == LXP_OK &&
+            (proofs[index].length < 8U || load_u16(proofs[index].bytes) != 1U ||
+             proofs[index].bytes[2U] != 4U || proofs[index].bytes[3U] != 1U))
+            status = LXP_FATAL_INVARIANT;
+        if (status == LXP_OK) {
+            witness_lengths[index] = load_u32(proofs[index].bytes + 4U);
+            if (witness_lengths[index] == 0U ||
+                witness_lengths[index] > proofs[index].length - 8U)
+                status = LXP_FATAL_INVARIANT;
+        }
+    }
+    if (status == LXP_OK &&
+        (values[0].length != sizeof(profile.bytes) ||
+         lxp_ct_memcmp(values[0].bytes, profile.bytes, sizeof(profile.bytes)) != 0 ||
+         values[1].length != sizeof(trust_bytes) ||
+         lxp_ct_memcmp(values[1].bytes, trust_bytes, sizeof(trust_bytes)) != 0))
+        status = LXP_ERR_CONTEXT_MISMATCH;
+    if (status == LXP_OK) {
+        wire_length = 5U + 12U + witness_lengths[0] + witness_lengths[1] +
+            head.canonical_header.length + 64U;
+        if (wire_length > server->frame_bytes ||
+            server->frame_bytes - wire_length < LNI_ENVELOPE_FIXED_BYTES + 5U)
+            status = LXP_ERR_LENGTH_LIMIT;
+        else {
+            wire = malloc(wire_length);
+            if (wire == NULL) status = LXP_ERR_ARENA_EXHAUSTED;
+        }
+    }
+    if (status == LXP_OK) {
+        memcpy(wire, "LXTS1", 5U);
+        for (size_t index = 0U; index < 2U; ++index) {
+            store_u32(wire + cursor, witness_lengths[index]);
+            cursor += 4U;
+            memcpy(wire + cursor, proofs[index].bytes + 8U, witness_lengths[index]);
+            cursor += witness_lengths[index];
+        }
+        store_u32(wire + cursor, (uint32_t)head.canonical_header.length);
+        cursor += 4U;
+        memcpy(wire + cursor, head.canonical_header.bytes, head.canonical_header.length);
+        cursor += head.canonical_header.length;
+        memcpy(wire + cursor, head.header_signature, 64U);
+        cursor += 64U;
+        if (cursor != wire_length) status = LXP_FATAL_INVARIANT;
+    }
+    if (status == LXP_OK)
+        status = send_envelope(descriptor, server->frame_bytes,
+            LNI_ACCOUNT_READ_RESPONSE, request->correlation_id,
+            (const uint8_t *)"LXTS1", 5U, wire, wire_length, deadline);
+    else
+        status = evidence_refusal(server, descriptor, request->correlation_id,
+            status, deadline);
+    free(wire);
+    (void)lxp_arena_reset(owner->scratch, mark);
+    return lni_read_unlock(owner, status);
+}
+
 static lxp_result send_account_read(
     lxp_daemon_lni_server *server, int descriptor,
     const lni_envelope *request, int64_t deadline)
@@ -3964,6 +4115,8 @@ static lxp_result send_account_read(
             deadline);
     if (request->payload_length >= 3U && request->payload[2] == 4U)
         return send_module_read(server, descriptor, request, deadline);
+    if (request->payload_length >= 3U && request->payload[2] == 6U)
+        return send_bridge_trust_read(server, descriptor, request, deadline);
     status = parse_account_read_request(
         request, &kind, &account_id, &asset_id, &selector_kind,
         &selector_batch, &selector_checkpoint, &requested_rank);

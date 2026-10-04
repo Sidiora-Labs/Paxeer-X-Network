@@ -25395,7 +25395,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.5.2]
 title = "Build deposit proofs from authenticated current light-client trust"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 3
 requires = ["0.2", "5.1"]
@@ -25417,6 +25417,10 @@ deployment_profile = "product"
 planned_paths = ["tests/bridge/paxeer_x_advanced_trust_credit.py"]
 path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
 evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+source_status = "complete"
+completion_basis = "implementation"
+qualification_status = "UNRUN"
+handoff_path = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-5.2-source-handoff.json"
 
 [task.6.2]
 title = "Execute native upgrade migrations under the admitted ABI and metering schedule"

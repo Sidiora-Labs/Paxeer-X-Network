@@ -5,6 +5,9 @@ import (
 	"crypto/ed25519"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
+	lxverify "github.com/sidiora-labs/paxeer-network/layerxproof/verify"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -329,5 +332,174 @@ func TestLightVectorSkipAcrossValidatorChange(t *testing.T) {
 		if _, err := VerifyLightCredit(profileBytes, mutated, nil, now); err == nil {
 			t.Fatalf("mutation at %d accepted", offset)
 		}
+	}
+}
+
+func TestLightCurrentTrustRefusesUnauthenticated(t *testing.T) {
+	profileBytes := lightVector(t, "custody.profile")
+	profile, err := DecodeLightProfile(profileBytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload := lightVector(t, "custody.credit")
+	evidence, err := DecodeLightBundle(payload[LightCreditHeadBytes:], profile.CometChainID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var owner [32]byte
+	copy(owner[:], payload[139:171])
+	if _, err := BuildLightCreditWithTrust(profileBytes, owner, profile.NetworkID, evidence, nil, LightTrustValidators{}, lightNow(t, profileBytes)); err == nil {
+		t.Fatal("unauthenticated current trust accepted")
+	}
+	if _, err := AuthenticateLightTrust(profileBytes, []byte("LXTS1"), LightTrustAuthority{}); err == nil {
+		t.Fatal("missing owner authority accepted")
+	}
+}
+
+func TestLightCurrentTrustCommittedFixture(t *testing.T) {
+	path := os.Getenv("LAYERX_ADVANCED_TRUST_FIXTURE")
+	if path == "" {
+		t.Fatal("missing genuine committed current-trust fixture: LAYERX_ADVANCED_TRUST_FIXTURE")
+	}
+	var fixture struct {
+		Profile           string `json:"profile"`
+		Snapshot          string `json:"snapshot"`
+		Credit            string `json:"credit"`
+		CurrentHeaderHash string `json:"current_header_hash"`
+		SequencerID       string `json:"sequencer_id"`
+		SequencerKey      string `json:"sequencer_key"`
+		FirstBatch        uint64 `json:"first_batch"`
+		LastBatch         uint64 `json:"last_batch"`
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&fixture); err != nil {
+		t.Fatal(err)
+	}
+	if err := decoder.Decode(new(any)); err != io.EOF {
+		t.Fatal("trailing genuine fixture JSON", err)
+	}
+	read := func(path string) []byte {
+		t.Helper()
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return raw
+	}
+	pin := func(text string) [32]byte {
+		t.Helper()
+		raw, err := hex.DecodeString(text)
+		if err != nil || len(raw) != 32 {
+			t.Fatal("fixture authority pin")
+		}
+		var out [32]byte
+		copy(out[:], raw)
+		return out
+	}
+	profileBytes, snapshotBytes, payload := read(fixture.Profile), read(fixture.Snapshot), read(fixture.Credit)
+	if len(payload) <= LightCreditHeadBytes || len(payload) > MaxInputBytes || string(payload[:5]) != LightCreditMagic {
+		t.Fatal("genuine fixture credit size or magic")
+	}
+	authority := LightTrustAuthority{Authorization: lxverify.SequencerAuthorization{SequencerID: pin(fixture.SequencerID), PublicKey: pin(fixture.SequencerKey), FirstBatchNumber: fixture.FirstBatch, LastBatchNumber: fixture.LastBatch}, CurrentHeaderHash: pin(fixture.CurrentHeaderHash)}
+	snapshot, err := AuthenticateLightTrust(profileBytes, snapshotBytes, authority)
+	if err != nil {
+		t.Fatal(err)
+	}
+	profile, err := decodeCreditLightProfile(profileBytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	evidence, err := DecodeLightBundle(payload[LightCreditHeadBytes:], profile.CometChainID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	trust := snapshot.Trust()
+	matching := evidence.Validators
+	if !bytes.Equal(matching.Hash(), trust.NextValidatorsHash) {
+		matching = evidence.Trusted
+	}
+	if matching == nil || !bytes.Equal(matching.Hash(), trust.NextValidatorsHash) {
+		t.Fatal("fixture lacks real validators matching committed trust")
+	}
+	if evidence.Header.Height <= trust.Height+1 || bytes.Equal(evidence.Header.ValidatorsHash, trust.NextValidatorsHash) {
+		evidence.Trusted = nil
+	}
+	validators := LightTrustValidators{Height: trust.Height + 1, Validators: matching}
+	var owner [32]byte
+	copy(owner[:], payload[139:171])
+	now := trust.Time.Add(time.Duration(profile.TrustingPeriod-1) * time.Second)
+	if now.Unix() < int64(profile.TrustedTime+profile.TrustingPeriod) {
+		t.Fatal("fixture must exercise expired original trust")
+	}
+	if _, err := BuildLightCredit(profileBytes, owner, profile.NetworkID, evidence, now); err == nil {
+		t.Fatal("expired profile trust accepted")
+	}
+	built, err := BuildLightCreditWithTrust(profileBytes, owner, profile.NetworkID, evidence, snapshot, validators, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	verified, err := VerifyLightCredit(profileBytes, built, &trust, now)
+	if err != nil || verified == nil {
+		t.Fatal("same selected trust self verification", err)
+	}
+	if _, err := VerifyLightCredit(profileBytes, built, nil, now); err == nil {
+		t.Fatal("serialized credit reset to expired profile trust")
+	}
+	restored, err := AuthenticateLightTrust(profileBytes, read(fixture.Snapshot), authority)
+	if err != nil {
+		t.Fatal(err)
+	}
+	recovered, err := BuildLightCreditWithTrust(profileBytes, owner, profile.NetworkID, evidence, restored, validators, now)
+	if err != nil || !bytes.Equal(built, recovered) {
+		t.Fatal("restart changed committed trust", err)
+	}
+	copyTrust := snapshot.Trust()
+	copyTrust.HeaderHash[0] ^= 1
+	copyTrust.NextValidatorsHash[0] ^= 1
+	if !bytes.Equal(snapshot.Trust().HeaderHash, trust.HeaderHash) || !bytes.Equal(snapshot.Trust().NextValidatorsHash, trust.NextValidatorsHash) {
+		t.Fatal("snapshot mutable through returned trust")
+	}
+	wrongHeight := validators
+	wrongHeight.Height--
+	if _, err := BuildLightCreditWithTrust(profileBytes, owner, profile.NetworkID, evidence, snapshot, wrongHeight, now); err == nil {
+		t.Fatal("mismatched validator height accepted")
+	}
+	if _, err := BuildLightCreditWithTrust(profileBytes, owner, profile.NetworkID, evidence, snapshot, validators, trust.Time.Add(time.Duration(profile.TrustingPeriod)*time.Second)); err == nil {
+		t.Fatal("expired current trust accepted")
+	}
+	changed := authority.CurrentHeaderHash
+	changed[0] ^= 1
+	if err := snapshot.CheckCurrent(changed); err != ErrLightTrustRefresh {
+		t.Fatal("concurrent advancement did not require refresh", err)
+	}
+	staleAuthority := authority
+	staleAuthority.CurrentHeaderHash = changed
+	if _, err := AuthenticateLightTrust(profileBytes, snapshotBytes, staleAuthority); err != ErrLightTrustRefresh {
+		t.Fatal("stale committed snapshot accepted", err)
+	}
+	wrongDomain := append([]byte(nil), profileBytes...)
+	wrongDomain[97] ^= 1
+	if _, err := AuthenticateLightTrust(wrongDomain, snapshotBytes, authority); err == nil {
+		t.Fatal("substituted asset profile accepted")
+	}
+	wrongAuthority := authority
+	wrongAuthority.Authorization.PublicKey[0] ^= 1
+	if _, err := AuthenticateLightTrust(profileBytes, snapshotBytes, wrongAuthority); err == nil {
+		t.Fatal("untrusted owner signature accepted")
+	}
+	for _, offset := range []int{0, 5, len(snapshotBytes) - 1} {
+		mutated := append([]byte(nil), snapshotBytes...)
+		mutated[offset] ^= 1
+		if _, err := AuthenticateLightTrust(profileBytes, mutated, authority); err == nil {
+			t.Fatal("mutated committed snapshot accepted", offset)
+		}
+	}
+	if _, err := AuthenticateLightTrust(profileBytes, append(append([]byte(nil), snapshotBytes...), 0), authority); err == nil {
+		t.Fatal("trailing committed snapshot accepted")
 	}
 }

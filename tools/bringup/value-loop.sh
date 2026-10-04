@@ -286,6 +286,11 @@ PROFILE
 	answer=$(balance "${dids[sender]}") || failed "balance sender read failed"
 	if jq -e '.refused.result == -208' <<<"$answer" >/dev/null 2>&1; then
 		[ -n "$deposit_tx" ] || precondition deposit-tx "the sender account ${beneficiaries[sender]} is unopened; provide the owner's actual $symbol deposit to this beneficiary on chain 125 as DEPOSIT_TX"
+		[[ ${LAYERX_NODE_SEQUENCER_ID:-} =~ ^[0-9a-f]{64}$ && ${LAYERX_NODE_SEQUENCER_PUBLIC_KEY:-} =~ ^[0-9a-f]{64}$ ]] ||
+			precondition custody-trust-authority "authenticated sequencer identity and public key required"
+		[[ ${LAYERX_NODE_FIRST_BATCH:-} =~ ^[1-9][0-9]*$ && ${LAYERX_NODE_LAST_BATCH:-} =~ ^[1-9][0-9]*$ ]] ||
+			precondition custody-trust-authority "authenticated sequencer batch interval required"
+		as_lni test -r "$selected_profile" || precondition custody-profile "selected immutable profile unreadable by LNI client"
 		answer=$(curl -fsS -m 15 "$relay" -H 'content-type: application/json' \
 			-d "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"eth_getTransactionReceipt\",\"params\":[\"$deposit_tx\"]}") ||
 			failed "credit receipt of $deposit_tx unreadable through $relay"
@@ -308,10 +313,12 @@ print(logs[0]["topics"][1][2:].lower(), int.from_bytes(data[32:64], "big"))' \
 		read -r id amount <<<"$answer"
 		public=${dids[sender]#did:layerx:}
 		rm -f "$state/credit" "$state/credit.activity"
-		layerx-custody-proof light-credit --rpc "$(cat "$genesis/comet-url")" --profile "$selected_profile" \
+		as_lni layerx-custody-proof light-credit --rpc "$(cat "$genesis/comet-url")" --profile "$selected_profile" \
 			--deposit-id "0x$id" --owner-key "0x$public" \
-			--trusted-validators-height "$trusted_height" \
-			--output "$state/credit" >/dev/null 2>&1 || failed "credit deposit=$deposit_tx light-credit refused"
+			--kernel-socket "$lni" --sequencer-id "$LAYERX_NODE_SEQUENCER_ID" \
+			--sequencer-key "$LAYERX_NODE_SEQUENCER_PUBLIC_KEY" \
+			--first-authorized-batch "$LAYERX_NODE_FIRST_BATCH" --last-authorized-batch "$LAYERX_NODE_LAST_BATCH" \
+			--output "$state/credit" >/dev/null 2>&1 || failed "credit deposit=$deposit_tx current trust light-credit refused; refresh authenticated head and rebuild"
 		local -a signer_profile=("$selected_profile")
 		if [ "$registry_mode" = 1 ]; then signer_profile=(--asset-profile "$selected_profile"); fi
 		sign-credit "${signer_profile[@]}" "$state/credit" "${dids[sender]}" "$keys/value-loop/sender.key" \

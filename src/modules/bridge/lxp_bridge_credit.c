@@ -349,7 +349,11 @@ lxp_result lxp_bridge_light_trust_load(lxp_module_ctx *ctx,
     }
     if (status != LXP_OK) return status;
     status = lxp_bridge_light_trust_decode(stored, length, trust);
-    if (status == LXP_OK && trust->height <= read_u64(profile->bytes + 161U))
+    if (status == LXP_OK &&
+        (trust->height <= read_u64(profile->bytes + 161U) ||
+         trust->time_seconds < (int64_t)read_u64(profile->bytes + 215U) ||
+         (trust->time_seconds == (int64_t)read_u64(profile->bytes + 215U) &&
+          trust->time_nanos == 0U)))
         status = LXP_ERR_NON_CANONICAL;
     return status;
 }
@@ -367,7 +371,11 @@ lxp_result lxp_bridge_light_trust_load_asset(lxp_module_ctx *ctx,
     if (status == LXP_ERR_UNKNOWN_FIELD) { lxp_bridge_profile_trust(profile, trust); return LXP_OK; }
     if (status != LXP_OK) return status;
     status = lxp_bridge_light_trust_decode(stored, length, trust);
-    if (status == LXP_OK && trust->height <= read_u64(profile->bytes + 161U))
+    if (status == LXP_OK &&
+        (trust->height <= read_u64(profile->bytes + 161U) ||
+         trust->time_seconds < (int64_t)read_u64(profile->bytes + 215U) ||
+         (trust->time_seconds == (int64_t)read_u64(profile->bytes + 215U) &&
+          trust->time_nanos == 0U)))
         status = LXP_ERR_NON_CANONICAL;
     return status;
 }
