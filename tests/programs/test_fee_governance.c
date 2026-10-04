@@ -1,6 +1,7 @@
 #include "layerx/lxp_kernel.h"
 #include "layerx/programs.h"
 
+#include <stdio.h>
 #include <string.h>
 
 enum {
@@ -168,7 +169,7 @@ static int pending_and_history_vectors(void)
     return 0;
 }
 
-static int occupancy_vector(uint64_t observed, uint64_t expected,
+static int occupancy_vector(lxp_u128 observed, uint64_t expected,
                             uint32_t expected_version)
 {
     static uint8_t arena_bytes[16384];
@@ -211,7 +212,26 @@ static int occupancy_vector(uint64_t observed, uint64_t expected,
     receipt.schedule_prices[5] = initial.output_byte;
     receipt.schedule_prices[6] = initial.occupancy_byte_batch;
     (void)memset(receipt.occupancy_asset_id, 0x51, 32U);
-    receipt.byte_batches = (lxp_u128){0U, observed};
+    receipt.byte_batches = observed;
+    {
+        lxp_programs_occupancy_receipt invalid = receipt;
+        invalid.schedule_prices[0] += 1U;
+        if (lxp_programs_fee_governance_observe_batch(&ctx, &invalid) !=
+                LXP_ERR_CONTEXT_MISMATCH ||
+            lxp_programs_fee_schedule_current(&ctx, &current, asset) != LXP_OK ||
+            current.version != 1U || current.occupancy_byte_batch != 100U)
+            return 4;
+        invalid = receipt;
+        invalid.schedule_version = 2U;
+        if (lxp_programs_fee_governance_observe_batch(&ctx, &invalid) !=
+                LXP_ERR_CONTEXT_MISMATCH)
+            return 5;
+        invalid = receipt;
+        invalid.occupancy_asset_id[0] ^= 1U;
+        if (lxp_programs_fee_governance_observe_batch(&ctx, &invalid) !=
+                LXP_ERR_CONTEXT_MISMATCH)
+            return 6;
+    }
     if (lxp_programs_fee_governance_observe_batch(&ctx, &receipt) != LXP_OK ||
         lxp_programs_fee_schedule_current(&ctx, &current, asset) != LXP_OK ||
         current.version != expected_version ||
@@ -222,18 +242,102 @@ static int occupancy_vector(uint64_t observed, uint64_t expected,
         if (((const uint64_t *)&current.cpu)[index] !=
             ((const uint64_t *)&initial.cpu)[index])
             return 3;
+    if (lxp_programs_fee_governance_observe_batch(&ctx, &receipt) !=
+            LXP_ERR_CONTEXT_MISMATCH)
+        return 7;
+    if (lxp_programs_fee_schedule_at(&ctx, 1U, &current, asset) != LXP_OK ||
+        current.version != 1U || current.occupancy_byte_batch != 100U)
+        return 8;
     return 0;
 }
 
-int main(void)
+static int activation_and_authority_refusals(void)
 {
-    if (pending_and_history_vectors() != 0)
+    static uint8_t arena_bytes[16384];
+    const lx_programs_fee_schedule first = {1U, 2U, 3U, 5U, 7U, 11U, 13U, 100U};
+    const lx_programs_fee_schedule proposed = {0U, 17U, 19U, 23U, 29U, 31U, 37U, 105U};
+    uint8_t record[FEE_RECORD_BYTES], pending[FEE_PENDING_BYTES], asset[32];
+    lxp_state_store state;
+    lxp_state_journal journal;
+    lxp_kernel kernel;
+    lxp_module_ctx ctx;
+    lxp_arena arena;
+    lx_programs_fee_schedule selected;
+    uint32_t parameter_version = 77U;
+    size_t before;
+    if (lxp_state_store_init(&state, 0U) != LXP_OK ||
+        lxp_kernel_create(&kernel, &state, &journal, &parameter_version, 77U) != LXP_OK ||
+        lxp_kernel_register_module(&kernel, programs_module_registration()) != LXP_OK ||
+        lxp_arena_init(&arena, arena_bytes, sizeof(arena_bytes)) != LXP_OK ||
+        lxp_module_ctx_init(&ctx, &kernel, LXP_MODULE_PROGRAMS,
+                            20U, 77U, 8U, UINT64_MAX, &arena, true) != LXP_OK)
         return 1;
-    if (occupancy_vector(200U, 110U, 2U) != 0)
+    ctx.batch_number = 8U;
+    ctx.protocol_version = LXP_PROTOCOL_VERSION;
+    fee_record(record, &first, 0x41U, 1U, 7U, 11U);
+    put(&kernel, active_key, sizeof(active_key) - 1U, record, sizeof(record));
+    put_history(&kernel, 1U, record);
+    (void)memset(asset, 0x42, sizeof(asset));
+    before = kernel.module_kv_count;
+    if (lxp_programs_fee_governance_stage(&ctx, &proposed, asset,
+            100U, 1U, 1U, 10U, 10U, 1000U, 9U, NULL) != LXP_ERR_AUTH_SCOPE ||
+        kernel.module_kv_count != before)
         return 2;
-    if (occupancy_vector(0U, 90U, 2U) != 0)
+    fee_pending(pending, &proposed, 0x42U, 9U, 8U, 12U);
+    put(&kernel, pending_key, sizeof(pending_key) - 1U, pending, sizeof(pending));
+    if (lxp_programs_fee_governance_activate(&ctx, 8U) != LXP_ERR_NOT_YET_VALID ||
+        lxp_programs_fee_schedule_current(&ctx, &selected, asset) != LXP_OK ||
+        selected.version != 1U || selected.cpu != first.cpu)
         return 3;
-    if (occupancy_vector(100U, 100U, 1U) != 0)
+    ctx.batch_number = 10U;
+    if (lxp_programs_fee_governance_activate(&ctx, 10U) != LXP_FATAL_REPLAY_DIVERGENCE)
         return 4;
+    ctx.batch_number = 9U;
+    if (lxp_programs_fee_governance_activate(&ctx, 9U) != LXP_OK ||
+        lxp_programs_fee_schedule_current(&ctx, &selected, asset) != LXP_OK ||
+        selected.version != 2U || selected.cpu != proposed.cpu || asset[0] != 0x42U ||
+        lxp_programs_fee_schedule_at(&ctx, 1U, &selected, asset) != LXP_OK ||
+        selected.version != 1U || selected.cpu != first.cpu || asset[0] != 0x41U ||
+        lxp_programs_fee_governance_activate(&ctx, 9U) != LXP_ERR_UNKNOWN_FIELD)
+        return 5;
     return 0;
+}
+
+static int occupancy_up(void) { return occupancy_vector((lxp_u128){0U, 200U}, 110U, 2U); }
+static int occupancy_down(void) { return occupancy_vector((lxp_u128){0U, 0U}, 90U, 2U); }
+static int occupancy_target(void) { return occupancy_vector((lxp_u128){0U, 100U}, 100U, 1U); }
+static int occupancy_full_width(void) { return occupancy_vector((lxp_u128){UINT64_MAX, UINT64_MAX}, 110U, 2U); }
+
+static const struct fee_case { const char *name; int (*run)(void); } cases[] = {
+    {"native_pending_and_history", pending_and_history_vectors},
+    {"native_occupancy_up", occupancy_up},
+    {"native_occupancy_down", occupancy_down},
+    {"native_occupancy_target", occupancy_target},
+    {"native_occupancy_full_width", occupancy_full_width},
+    {"native_activation_and_authority_refusals", activation_and_authority_refusals}
+};
+
+int main(int argc, char **argv)
+{
+    size_t index;
+    if (argc == 2 && strcmp(argv[1], "--list-cases") == 0) {
+        for (index = 0U; index < sizeof(cases) / sizeof(cases[0]); ++index)
+            (void)puts(cases[index].name);
+        return 0;
+    }
+    if (argc != 1 && (argc != 3 || strcmp(argv[1], "--case") != 0))
+        return 2;
+    for (index = 0U; index < sizeof(cases) / sizeof(cases[0]); ++index) {
+        int status;
+        if (argc == 3 && strcmp(argv[2], cases[index].name) != 0)
+            continue;
+        status = cases[index].run();
+        if (status != 0) {
+            (void)fprintf(stderr, "FAIL %s code=%d\n", cases[index].name, status);
+            return 1;
+        }
+        (void)printf("PASS %s\n", cases[index].name);
+        if (argc == 3) return 0;
+    }
+    return argc == 1 ? 0 : 2;
 }
