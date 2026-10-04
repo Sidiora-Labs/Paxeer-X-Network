@@ -320,7 +320,7 @@ fn native_provider_and_sdk_real_cluster() -> Result<()> {
             NativeConsent::PreparationPurpose(&purpose),
             SignAuthorization::new(Operation::ProtocolMutation, None),
             now,
-            trace,
+            trace.clone(),
         ),
     ))??;
     let digest: [u8; 32] = Sha256::digest(
@@ -348,7 +348,7 @@ fn native_provider_and_sdk_real_cluster() -> Result<()> {
             NativeConsent::LocalGrant(&grant),
             SignAuthorization::new(Operation::SecuritySettings, None),
             now,
-            trace,
+            trace.clone(),
         ),
     ))?;
     assert!(matches!(missing, Err(CustodyError::StepUpRequired)));
@@ -503,7 +503,7 @@ fn native_provider_and_sdk_real_cluster() -> Result<()> {
             NativeConsent::LocalGrant(&changed_grant),
             SignAuthorization::new(Operation::SecuritySettings, Some(&evidence)),
             current_time()?,
-            trace,
+            trace.clone(),
         ),
     ))?;
     assert!(matches!(mismatched, Err(CustodyError::StepUpMismatch)));
@@ -516,7 +516,7 @@ fn native_provider_and_sdk_real_cluster() -> Result<()> {
             NativeConsent::LocalGrant(&grant),
             SignAuthorization::new(Operation::SecuritySettings, Some(&evidence)),
             current_time()?,
-            trace,
+            trace.clone(),
         ),
     ))??;
     assert_eq!(signed.signer_public_key(), public);
@@ -532,7 +532,7 @@ fn native_provider_and_sdk_real_cluster() -> Result<()> {
             NativeConsent::LocalGrant(&grant),
             SignAuthorization::new(Operation::SecuritySettings, Some(&evidence)),
             current_time()?,
-            trace,
+            trace.clone(),
         ),
     ))?;
     assert!(matches!(replayed, Err(CustodyError::StepUpReplayed)));
