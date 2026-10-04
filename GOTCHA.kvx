@@ -2484,3 +2484,13 @@ resolution = "Retain both exact immutable-revision logs; no repair or rerun unde
 area = "Real Programs process fixture prerequisite"
 observed = "Task6.4 single candidate build exited78 before compilation because the genuine process fixture requires anvil and it was unavailable."
 resolution = "Record the exact published source, build command, exit and log; leave verification unrun without inventing a substitute chain or repeating the unchanged gate."
+
+[gotcha.729]
+area = "Native Send shared daemon callback owner"
+observed = "Task35 first compile rejected callbacks placed on the inner unified owner because RPC requires the actual shared owner; selectors63/64/66 also needed explicit shared forwarding."
+resolution = "Move the authenticated callbacks to SharedAgentOwner and forward actual owner methods without retaining the mutex across recursive RPC; preserve the first101 and repair revision separately."
+
+[gotcha.730]
+area = "Scoped source formatting sequence"
+observed = "A task35 helper formatted authored regions before parent implementation completed and left one extra wire-file EOF blank line after final formatting."
+resolution = "Retain the sequencing deviation, perform final whole-task formatting before builds and remove only the extra blank line before publication; no assertion or qualification was changed."
