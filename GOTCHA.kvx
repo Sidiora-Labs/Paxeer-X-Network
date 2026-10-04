@@ -2849,3 +2849,39 @@ observed = "The multiasset credit entrypoint and start_funded_multiasset_cluster
 [gotcha.810]
 title = "Remote compiler export provenance"
 observed = "A scoped compiler-input export is not a full immutable qualification candidate. Preserve its exact input hashes and bind it to the full admitted candidate, the retained compiler output and the genuine native corpus without relabeling revisions."
+
+[gotcha.811]
+title = "Canonical test helper shadowing"
+observed = "The budget codec test bound a byte vector named canonical and then attempted to call the function of that name. Explicit self::canonical resolves the actual helper and preserves every vector and assertion; the fourteen-case focused test passed."
+
+[gotcha.812]
+title = "MCP compiler owner types"
+observed = "The MCP field checker requires a Field reference, and Did exposes bytes rather than an as_str method. Pass the existing reference and require strict UTF8 for the exact stored textual identity; invalid encoding retains the existing alias refusal."
+
+[gotcha.813]
+title = "Authenticated event fixture enrollment"
+observed = "The real event Service::open now consumes a signed enrollment snapshot instead of an in-memory principal map. The TLS fixture must publish the actual MAC-bound snapshot with private file modes and refresh against the genuine upstream before listening."
+
+[gotcha.814]
+title = "Human kit composition"
+observed = "The UI gate rejects direct component-library imports and raw screen-level controls. Use existing kit components while preserving GET form identities and disabled options through the real selection primitive; do not silence the gate."
+
+[gotcha.815]
+title = "Dedicated Android toolchain prerequisites"
+observed = "The pinned Swift action verified its archive signature but failed on storage exhaustion on the prior runner. Dedicated routing removed that cause and exposed the missing standard file utility. Preserve the pinned toolchain and all downstream artifact checks while supplying actual prerequisites."
+
+[gotcha.816]
+title = "Published vendor checksum coverage"
+observed = "Two published Wasmi changes left eight per-file hashes stale while the upstream package digest remained correct. Bind each correction to its actual source commit, inventory the remaining package once, and retain the original failure before the bounded corrected verifier run."
+
+[gotcha.817]
+title = "Fresh beta CI evidence inputs"
+observed = "Specification consolidation removed beta input files from clean checkouts. Recovered historical logs lack the later typed source authority and cannot be relabeled as current passes. The input producer captures a genuine current candidate command and keeps historical bytes separate."
+
+[gotcha.818]
+title = "Source inspection and fixture names"
+observed = "The strict source observer refuses tracked sensitive-looking names, including public test certificates, while full candidates omit environment paths before materialization. Preserve the existing refusal until an explicit versioned profile is approved; do not invent clean-tree evidence or read credential values."
+
+[gotcha.819]
+title = "Frozen source intake shape"
+observed = "Source intake requires complete status, worktree, base revision and a path/hash list. Normalize a worker map or complete-frozen label only from its explicit whole-source declaration and verified bytes before publication; metadata-shape failures do not count as compiler or test attempts."
