@@ -409,14 +409,58 @@ fn conformance_encode(bytes: &[u8]) -> String {
     output
 }
 
-fn conformance_verified_state(state: &serde_json::Value, key: [u8; 32]) -> Result<serde_json::Value, String> {
-    let receipt = conformance_hex(state["receipt"].as_str().ok_or("head omitted receipt")?)?;
-    let verified = checked(layerx_proof::receipt::verify_sequencer_signature(&receipt, key))?;
-    let protocol = verified.protocol().ok_or("head is not a native receipt")?;
-    if protocol.protocol_version() != PROTOCOL_VERSION
-        || protocol.resulting_state_root() != conformance_hex32(&state["root"])?
-        || Some(protocol.global_sequence()) != state["sequence"].as_u64() {
-        return Err("state observation does not match its genuine signed head receipt".to_owned());
+fn conformance_authorization(value: &serde_json::Value, key: [u8; 32]) -> Result<layerx_proof::inclusion::SequencerAuthorization, String> {
+    if conformance_hex32(&value["public_key"])? != key { return Err("independent sequencer key mismatch".to_owned()); }
+    Ok(layerx_proof::inclusion::SequencerAuthorization::new(
+        conformance_hex32(&value["sequencer_id"])?, key,
+        value["first_batch"].as_u64().ok_or("authorization range absent")?,
+        value["last_batch"].as_u64().ok_or("authorization range absent")?,
+    ))
+}
+
+fn conformance_proof(value: &serde_json::Value) -> Result<layerx_proof::merkle::Proof, String> {
+    let bytes = conformance_hex(value.as_str().ok_or("canonical proof absent")?)?;
+    let proof = checked(layerx_wire::receipt::decode_merkle_proof(&bytes))?;
+    checked(layerx_proof::merkle::Proof::new(proof.leaf_index(), proof.leaf_count(), proof.siblings().to_vec()))
+}
+
+fn conformance_verified_state(
+    state: &serde_json::Value,
+    authorization: &layerx_proof::inclusion::SequencerAuthorization,
+    network: u32,
+) -> Result<serde_json::Value, String> {
+    use sha2::{Digest as _, Sha256};
+    let head = &state["head"];
+    if head["current"] != true { return Err("current actual head required".to_owned()); }
+    let receipt = conformance_hex(head["receipt_hex"].as_str().ok_or("head omitted receipt")?)?;
+    let batch = &head["batch_evidence"];
+    let header_bytes = conformance_hex(batch["header_hex"].as_str().ok_or("head omitted header")?)?;
+    let signature: [u8; 64] = conformance_hex(batch["header_signature"].as_str().ok_or("head omitted signature")?)?
+        .try_into().map_err(|_| "head signature must be 64 bytes".to_owned())?;
+    let proof = conformance_proof(&batch["receipt_proof_hex"])?;
+    let verified = checked(layerx_proof::inclusion::verify_receipt(&receipt, &proof, &header_bytes, &signature, authorization))?;
+    let header = verified.header().header();
+    if header.protocol_version() != PROTOCOL_VERSION || header.network_id() != network {
+        return Err("head protocol or network mismatch".to_owned());
+    }
+    let (root, sequence, timestamp, digest) = if let Ok(maintenance) = layerx_wire::batch_maintenance::decode_maintenance(&receipt) {
+        checked(maintenance.verify_header(header))?;
+        let occupancy = maintenance.occupancy();
+        (occupancy.resulting_state_root, occupancy.global_sequence, header.timestamp_ms(), <[u8; 32]>::from(Sha256::digest(&receipt)))
+    } else {
+        let decoded = checked(layerx_wire::receipt::decode(&receipt))?;
+        let protocol = decoded.protocol().ok_or("head is not a native receipt")?;
+        if protocol.protocol_version() != PROTOCOL_VERSION || protocol.global_sequence() < header.first_sequence()
+            || protocol.global_sequence() > header.last_sequence() {
+            return Err("head receipt sequence or protocol mismatch".to_owned());
+        }
+        (protocol.resulting_state_root(), protocol.global_sequence(), protocol.timestamp(), checked(layerx_wire::hash::receipt_digest(&receipt))?)
+    };
+    if root != header.resulting_state_root() || sequence != header.last_sequence()
+        || root != conformance_hex32(&state["root"])? || root != conformance_hex32(&head["state_root"])?
+        || Some(sequence) != state["sequence"].as_u64() || Some(sequence) != head["observed_sequence"].as_u64()
+        || Some(timestamp) != head["observed_at"].as_u64() || digest != conformance_hex32(&head["receipt_digest"])? {
+        return Err("state observation differs from its canonical signed head inclusion".to_owned());
     }
     Ok(serde_json::json!({"root": state["root"], "sequence": state["sequence"]}))
 }
@@ -424,19 +468,46 @@ fn conformance_verified_state(state: &serde_json::Value, key: [u8; 32]) -> Resul
 fn conformance_verified_outcome(
     row: &serde_json::Value,
     observation: &serde_json::Value,
-    key: [u8; 32],
+    authorization: &layerx_proof::inclusion::SequencerAuthorization,
     network: u32,
 ) -> Result<serde_json::Value, String> {
     use layerx_types::payload::{ActivityType, ModuleId, ModuleRegistration, ModuleRegistry};
     let bytes = conformance_hex(observation["receipt"].as_str().ok_or("execution omitted receipt")?)?;
     let decoded = checked(layerx_wire::receipt::decode(&bytes))?;
     let protocol = decoded.protocol().ok_or("execution is not a native receipt")?;
-    let before = conformance_verified_state(&observation["receipt_before"], key)?;
+    let before = conformance_verified_state(&observation["receipt_before"], authorization, network)?;
+    let head = &observation["state"]["head"];
+    let batch = &head["batch_evidence"];
+    let header_bytes = conformance_hex(batch["header_hex"].as_str().ok_or("execution head omitted header")?)?;
+    let header_signature: [u8; 64] = conformance_hex(batch["header_signature"].as_str().ok_or("execution head omitted signature")?)?
+        .try_into().map_err(|_| "head signature must be 64 bytes".to_owned())?;
+    let identity = &batch["batch_identity"];
+    if identity["kind"] != "occupancy_maintenance_v2" || identity["receipt_hex"] != head["receipt_hex"]
+        || identity["receipt_proof_hex"] != batch["receipt_proof_hex"] {
+        return Err("actual maintained execution batch identity required".to_owned());
+    }
+    let maintenance = conformance_hex(identity["receipt_hex"].as_str().ok_or("maintenance absent")?)?;
+    let records = identity["activity_receipts_hex"].as_array().ok_or("complete actual receipt chain absent")?;
+    if records.is_empty() || records.len() > 64 { return Err("bounded nonempty maintained chain required".to_owned()); }
+    let records = records.iter().map(|record| conformance_hex(record.as_str().ok_or("receipt chain bytes absent")?)).collect::<Result<Vec<_>, String>>()?;
+    let index = records.iter().position(|record| record == &bytes).ok_or("execution absent from actual maintained batch")?;
+    let mut leaves = records.iter().map(Vec::as_slice).collect::<Vec<_>>();
+    leaves.push(&maintenance);
+    let (activity_proof, _) = checked(layerx_proof::merkle::build_proof(&leaves, index))?;
+    let maintenance_proof = conformance_proof(&identity["receipt_proof_hex"])?;
+    let header = checked(layerx_wire::receipt::decode_batch_header(&header_bytes))?;
+    if header.previous_state_root() != conformance_hex32(&before["root"])? {
+        return Err("actual before state differs from maintained batch authorization".to_owned());
+    }
     let authorised = layerx_proof::receipt::AuthorizedBatch::new(
-        protocol.batch_id(), protocol.asset(), conformance_hex32(&before["root"])?,
-        protocol.resulting_state_root(), key,
+        protocol.batch_id(), protocol.asset(), header.previous_state_root(),
+        header.resulting_state_root(), authorization.public_key(),
     );
-    let verified = checked(layerx_proof::receipt::verify_outcome(&bytes, &authorised))?;
+    let evidence = layerx_proof::receipt::MaintainedOutcomeEvidence {
+        header: &header_bytes, header_signature: &header_signature, activity_proof: &activity_proof,
+        maintenance: &maintenance, maintenance_proof: &maintenance_proof, authorization,
+    };
+    let verified = checked(layerx_proof::receipt::verify_outcome_maintained_chain(&bytes, &authorised, &evidence, &records))?;
     let receipt = checked(layerx_wire::receipt::decode(verified.canonical_bytes()))?;
     let protocol = receipt.protocol().ok_or("verified protocol receipt absent")?;
     let types: Vec<ActivityType> = (1..=11).map(|ordinal| checked(ActivityType::new(ModuleId::Programs, ordinal))).collect::<Result<_, _>>()?;
@@ -493,15 +564,38 @@ fn conformance_verifies_actual_signed_observations() -> Result<(), String> {
         for environment in ["emulator", "hosted"] {
             let key = conformance_hex32(&capture["pins"][environment])?;
             assert_ne!(key, [0; 32]);
+            let authorization = conformance_authorization(&capture["authorizations"][environment], key)?;
             let observed = &row[environment];
-            let state = conformance_verified_state(&observed["state"], key)?;
-            let before = conformance_verified_state(&observed["before"], key)?;
-            if index == 0 { assert_eq!(before, capture["initial_state"], "actual initial state must match its signed known head"); }
+            let state = conformance_verified_state(&observed["state"], &authorization, network)?;
+            let before = conformance_verified_state(&observed["before"], &authorization, network)?;
+            if index == 0 {
+                assert_eq!(before, capture["initial_state"], "actual initial state must match its signed known head");
+                for pointer in ["/head/receipt_hex", "/head/batch_evidence/header_hex", "/head/batch_evidence/header_signature", "/head/batch_evidence/receipt_proof_hex"] {
+                    let mut changed = observed["before"].clone();
+                    let field = changed.pointer_mut(pointer).ok_or("actual head evidence field absent")?;
+                    let mut bytes = conformance_hex(field.as_str().ok_or("actual head evidence bytes absent")?)?;
+                    *bytes.last_mut().ok_or("actual head evidence empty")? ^= 1;
+                    *field = serde_json::Value::String(conformance_encode(&bytes));
+                    assert!(conformance_verified_state(&changed, &authorization, network).is_err(), "altered actual head evidence admitted: {pointer}");
+                }
+                let mut stale = observed["before"].clone();
+                stale["head"]["current"] = serde_json::Value::Bool(false);
+                assert!(conformance_verified_state(&stale, &authorization, network).is_err());
+                let mut identity = authorization.sequencer_id();
+                identity[0] ^= 1;
+                let foreign = layerx_proof::inclusion::SequencerAuthorization::new(identity, key, authorization.first_batch_number(), authorization.last_batch_number());
+                assert!(conformance_verified_state(&observed["before"], &foreign, network).is_err());
+                let mut wrong_key = key;
+                wrong_key[0] ^= 1;
+                let foreign = layerx_proof::inclusion::SequencerAuthorization::new(authorization.sequencer_id(), wrong_key, authorization.first_batch_number(), authorization.last_batch_number());
+                assert!(conformance_verified_state(&observed["before"], &foreign, network).is_err());
+                println!("EMULATOR_CONFORMANCE_HEAD {environment}");
+            }
             let outcome = if row["kind"] == "rejection" {
                 assert_eq!(state, before, "refusal changed signed state");
                 serde_json::json!({"status":observed["status"], "error":observed["error"], "stage":observed["stage"]})
             } else {
-                let outcome = conformance_verified_outcome(row, observed, key, network)?;
+                let outcome = conformance_verified_outcome(row, observed, &authorization, network)?;
                 assert_eq!(outcome, row["expected"]["observation"], "{id}: undeclared effect or metered cost");
 
                 outcome

@@ -2472,6 +2472,39 @@ fn conformance_gateway_collects_real_receipts_and_rejects_transport_lookalikes()
     let verified = layerx_proof::receipt::verify_outcome(&receipt, &authority)
         .map_err(|error| format!("actual production verification failed: {error:?}"))?;
     assert_eq!(verified.canonical_bytes(), receipt.as_slice());
+    let head_reply = request(&setup.address, "GET", "/v1/protocol/account-state/head", "", &[])?;
+    assert_eq!(head_reply.status, 200);
+    let head = response_result(&head_reply)?;
+    assert_eq!(head["current"], true);
+    let maintenance_bytes = hex_decode(head["receipt_hex"].as_str().ok_or("actual current maintenance receipt absent")?)?;
+    let batch = &head["batch_evidence"];
+    let header_bytes = hex_decode(batch["header_hex"].as_str().ok_or("actual signed head header absent")?)?;
+    let signature: [u8; 64] = hex_decode(batch["header_signature"].as_str().ok_or("actual head signature absent")?)?
+        .try_into().map_err(|_| "actual head signature length".to_owned())?;
+    let encoded_proof = hex_decode(batch["receipt_proof_hex"].as_str().ok_or("actual head inclusion absent")?)?;
+    let path = layerx_wire::receipt::decode_merkle_proof(&encoded_proof).map_err(|error| format!("{error:?}"))?;
+    let proof = layerx_proof::merkle::Proof::new(path.leaf_index(), path.leaf_count(), path.siblings().to_vec())
+        .map_err(|error| format!("{error:?}"))?;
+    use sha2::{Digest as _, Sha256};
+    let public = ed25519_dalek::SigningKey::from_bytes(&EMULATOR_SEED).verifying_key().to_bytes();
+    let authorization = layerx_proof::inclusion::SequencerAuthorization::new(Sha256::digest(public).into(), public, 1, u64::MAX);
+    let evidence = layerx_proof::inclusion::verify_receipt(&maintenance_bytes, &proof, &header_bytes, &signature, &authorization)
+        .map_err(|error| format!("actual maintained head verification failed: {error:?}"))?;
+    let header = evidence.header().header();
+    assert_eq!(header.protocol_version(), 3);
+    assert_eq!(header.network_id(), 402);
+    let maintenance = layerx_wire::batch_maintenance::decode_maintenance(&maintenance_bytes).map_err(|error| format!("{error:?}"))?;
+    maintenance.verify_header(header).map_err(|error| format!("{error:?}"))?;
+    assert_eq!(head["state_root"], hex_encode(&maintenance.occupancy().resulting_state_root)?);
+    assert_eq!(head["observed_sequence"], maintenance.occupancy().global_sequence);
+    assert_eq!(head["observed_at"], header.timestamp_ms());
+    assert_eq!(head["receipt_digest"], hex_encode(&Sha256::digest(&maintenance_bytes))?);
+    let mut changed = maintenance_bytes.clone();
+    *changed.last_mut().ok_or("actual maintenance receipt empty")? ^= 1;
+    assert!(layerx_proof::inclusion::verify_receipt(&changed, &proof, &header_bytes, &signature, &authorization).is_err());
+    let mut changed = signature;
+    changed[0] ^= 1;
+    assert!(layerx_proof::inclusion::verify_receipt(&maintenance_bytes, &proof, &header_bytes, &changed, &authorization).is_err());
     let mut corrupted = receipt.clone();
     let last = corrupted.last_mut().ok_or("real receipt was empty")?;
     *last ^= 1;

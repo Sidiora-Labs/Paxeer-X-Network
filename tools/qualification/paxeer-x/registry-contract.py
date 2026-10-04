@@ -705,7 +705,7 @@ def conformance_artifacts(candidate_digest):
     require(private.is_file() and private.stat().st_mode & 0o077 == 0, 'private conformance artifact manifest')
     value = strict_json(private.read_bytes())
     exact_fields(value, {'schema', 'candidate_manifest_sha256', 'source_revision', 'source_files', 'artifacts',
-                         'fixture_root', 'environments', 'sequencer_public_keys', 'initialization', 'corpus_file'}, 'genuine conformance artifact manifest')
+                         'fixture_root', 'environments', 'sequencer_public_keys', 'sequencer_authorizations', 'initialization', 'corpus_file'}, 'genuine conformance artifact manifest')
     require(value['schema'] == 'paxeer-x.emulator-conformance-artifacts.v1'
             and value['candidate_manifest_sha256'] == candidate_digest, 'conformance candidate binding')
     require(value['source_revision'] == subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip()
@@ -727,6 +727,16 @@ def conformance_artifacts(candidate_digest):
             and isinstance(value['sequencer_public_keys'], dict) and set(value['sequencer_public_keys']) == {'emulator', 'hosted'}, 'two actual environment and authority bindings')
     for key in value['sequencer_public_keys'].values():
         require(isinstance(key, str) and re.fullmatch('[0-9a-f]{64}', key) is not None and key != '0' * 64, 'actual independently provisioned sequencer public key')
+    exact_fields(value['sequencer_authorizations'], {'emulator', 'hosted'}, 'independent sequencer authorization inventory')
+    for name, authorization in value['sequencer_authorizations'].items():
+        exact_fields(authorization, {'sequencer_id', 'public_key', 'first_batch', 'last_batch'}, 'independently pinned sequencer authorization')
+        require(isinstance(authorization['sequencer_id'], str)
+                and re.fullmatch('[0-9a-f]{64}', authorization['sequencer_id']) is not None
+                and authorization['sequencer_id'] != '0' * 64
+                and authorization['public_key'] == value['sequencer_public_keys'][name]
+                and type(authorization['first_batch']) is int and type(authorization['last_batch']) is int
+                and 0 < authorization['first_batch'] <= authorization['last_batch'] <= 0xffffffffffffffff,
+                'actual independent sequencer identity, key and bounded range')
     require(isinstance(value['initialization'], list), 'actual deterministic initialization activities')
     root = Path(value['fixture_root']).resolve(strict=True)
     require(root != ROOT and not root.is_relative_to(ROOT) and root.stat().st_mode & 0o077 == 0
@@ -822,16 +832,9 @@ class ConformanceProcess:
 
     def state(self, case):
         if self.name == 'emulator':
-            status, body = self.request('GET', '/v1/state', b'')
-            require(status == 200, 'real emulator state collection')
-            state = strict_json(body)['result']
-            sequence = state['next_sequence'] - 1
-            root = state['receipt_state_root']
-            path = self.config['head_receipt_paths'][case]
-            require(re.fullmatch('/v1/receipts/[0-9a-f]{64}', path) is not None, 'actual retained emulator head receipt')
-            status, body = self.request('GET', path, b'')
-            require(status == 200, 'actual retained head receipt must exist')
-            receipt = strict_json(body)['result']['receipt']
+            status, body = self.request('GET', '/v1/protocol/account-state/head', b'')
+            require(status == 200, 'actual retained emulator maintenance head must exist')
+            document = strict_json(body)['result']
         else:
             address = urlsplit(self.config['state_url'])
             require(address.scheme == 'http' and address.hostname == '127.0.0.1' and address.port
@@ -846,11 +849,17 @@ class ConformanceProcess:
                 document = strict_json(raw)
             finally:
                 connection.close()
-            require(document['current'] is True, 'fresh native head observation')
-            root, sequence, receipt = document['state_root'], document['observed_sequence'], document['receipt_hex']
+        require(document['current'] is True, 'fresh native head observation')
+        root, sequence, receipt = document['state_root'], document['observed_sequence'], document['receipt_hex']
         require(re.fullmatch('[0-9a-f]{64}', root) is not None and type(sequence) is int and sequence > 0
                 and re.fullmatch('(?:[0-9a-f]{2})+', receipt) is not None, 'canonical signed head observation')
-        return {'root': root, 'sequence': sequence, 'receipt': receipt}
+        evidence = document['batch_evidence']
+        require(isinstance(evidence, dict)
+                and all(isinstance(evidence.get(field), str)
+                        and re.fullmatch('(?:[0-9a-f]{2})+', evidence[field]) is not None
+                        for field in ('header_hex', 'header_signature', 'receipt_proof_hex')),
+                'actual retained signed head header and receipt inclusion proof')
+        return {'root': root, 'sequence': sequence, 'head': document}
 
     def restart(self, previous):
         snapshot = None
@@ -957,7 +966,8 @@ def conformance_contract(artifacts, corpus):
             observations.append(observation)
             prior_case = row['id']
         capture = {'schema': 'layerx.emulator-conformance.observations.v1', 'network_id': corpus['network_id'],
-                   'protocol_version': corpus['protocol_version'], 'initial_state': corpus['initial_state'], 'pins': artifacts['sequencer_public_keys'], 'cases': observations}
+                   'protocol_version': corpus['protocol_version'], 'initial_state': corpus['initial_state'], 'pins': artifacts['sequencer_public_keys'],
+                   'authorizations': artifacts['sequencer_authorizations'], 'cases': observations}
         path = directory / 'observations.json'
         path.write_text(json.dumps(capture, separators=(',', ':')))
         os.chmod(path, 0o600)
@@ -976,6 +986,8 @@ def conformance_contract(artifacts, corpus):
                 'all required parity cases actually verified')
         require(re.findall(r'^EMULATOR_CONFORMANCE_COMPARATOR ([a-z-]+)$', result.stdout, re.M)
                 == ['different-state'], 'actual comparator failure cases required')
+        require(re.findall(r'^EMULATOR_CONFORMANCE_HEAD ([a-z]+)$', result.stdout, re.M)
+                == ['emulator', 'hosted'], 'real canonical head proof and independent authorization refusals')
         gateway = subprocess.run([artifacts['artifacts']['gateway-tests']['path'], '--exact',
                                   'conformance_gateway_collects_real_receipts_and_rejects_transport_lookalikes',
                                   '--nocapture', '--test-threads=1'], cwd=ROOT, env=environment,

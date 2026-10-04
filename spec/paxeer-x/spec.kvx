@@ -28668,7 +28668,7 @@ do_2 = "Implement deterministic environment setup and bounded collection through
 do_3 = "Wire the comparator and its failure cases into platform/Makefile.inc and the consolidated candidate qualification plan; preserve task-level versus release-level phase separation."
 do_4 = "Create or extend the planned harness tools/qualification/paxeer-x/registry-contract.py with case emulator-conformance; exercise the real served binaries and production persistence paths against the candidate manifest, record exact assertions and nonzero refusals, and fail if required inputs, executions or cases are absent."
 do_5 = "Implement the declared focused gate through the real production types and paths; exercise every acceptance criterion including refusal, restart or boundary cases specified by this requirement. The command is a planned deliverable, not an already-run gate."
-touches = ["platform/emulator/tests/conformance.sh", "platform/emulator/tests/gateway.rs", "platform/emulator/tests/authority.rs", "tools/qualification/paxeer-x/registry-contract.py", "platform/emulator/src/main.rs", "platform/emulator/core/emulator_core.c", "platform/emulator/core/emulator_core.h"]
+touches = ["platform/emulator/tests/conformance.sh", "platform/emulator/tests/gateway.rs", "platform/emulator/tests/authority.rs", "tools/qualification/paxeer-x/registry-contract.py"]
 verify_cmd = "timeout 20m python3 tools/qualification/paxeer-x/registry-contract.py --case emulator-conformance --candidate-manifest \"$PAXEER_X_CANDIDATE_MANIFEST\""
 gate_kind = "planned"
 max_builds = 1
@@ -28687,9 +28687,13 @@ fleet_scope_manifest = "/root/lx-ops/paxeer-x-integration-2026-10-03/fleet-16.3-
 fleet_cutoff_utc = "2026-10-04T14:08:00Z"
 fleet_authority = "User ordered thirty agents into pending integrations within four hours; this task has a fresh bounded implementation assignment."
 source_status = "partial"
-completion_basis = "honest incomplete source checkpoint; original criteria remain required"
+completion_basis = "partial source published; original acceptance criteria remain required"
 qualification_status = "UNRUN"
-source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/fleet-16.3-publication.json"
+source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/fanout-16.3-intake.json"
+retained_maintenance_paths = ["platform/emulator/src/main.rs", "platform/emulator/core/emulator_core.c", "platform/emulator/core/emulator_core.h"]
+fanout_role = "complete_explorer/mirror_archive"
+fanout_scope_delegated = []
+fanout_basis = "Owner requested maximum parallel implementation on 2026-10-04; delegated shared file edits require root coordination and retain original acceptance criteria"
 
 [task.24.3]
 title = "Run the Human movement signer through the intended KMS and CA identities"
