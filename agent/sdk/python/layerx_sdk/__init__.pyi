@@ -78,6 +78,8 @@ from .mirror import MirrorPolicy as MirrorPolicy
 from .mirror import MirrorVerification as MirrorVerification
 from .mirror import MirrorVerificationError as MirrorVerificationError
 from .mirror import MirrorVerifier as MirrorVerifier
+from .native_effect import NativeEffectPrepareRequestV1 as NativeEffectPrepareRequestV1
+from .native_effect import encode_native_effect_prepare_request as encode_native_effect_prepare_request
 from .native_program_call import NativeProgramCall as NativeProgramCall
 from .native_program_call import (
     decode_native_program_call as decode_native_program_call,

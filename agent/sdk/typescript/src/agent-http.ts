@@ -2,6 +2,7 @@ import { createHash, randomBytes } from "node:crypto";
 import * as http from "node:http";
 import * as https from "node:https";
 import { bindSignedProgramLifecycle } from "./program-wire.js";
+import { encodeNativeEffectPrepareRequest, type NativeEffectPrepareRequestV1 } from "./native-effect.js";
 
 import {
   encodeNativePrepareRequest, encodeNativeApprovalDecision, encodeNativeApprovalGet,
@@ -661,6 +662,26 @@ export class AgentEnvelopeTransport implements ProductionTransport {
         || (value.approval_id !== null && value.approval_id !== value.preparation_id)) throw new TypeError("native_v1.binding");
       return {...response,value};
     } catch { throw new PlatformSdkError({code:"unknown-outcome",retry:"unknown-outcome",requestId:response.request_id}); }
+  }
+
+  public async prepareNativeEffect(request: NativeEffectPrepareRequestV1, idempotencyKey: IdempotencyKey): Promise<AgentEnvelopeSuccess<NativePrepareResultV1>> {
+    let body: NativeEffectPrepareRequestV1;
+    try { body = encodeNativeEffectPrepareRequest(request); } catch { throw invalidArgument(); }
+    const purpose = body.purpose.purpose;
+    if (this.#session === undefined || purpose.tenant !== this.#session.tenant
+      || purpose.session_id !== this.#session.sessionId || purpose.generation !== this.#session.generation.toString(10)
+      || body.idempotency_key !== idempotencyKey) throw invalidArgument();
+    const response = await this.call<NativeEffectPrepareRequestV1, AgentEnvelopeSuccess>({ plane: "agent", operation: "prepare", request: body, idempotencyKey });
+    try {
+      const value = decodeNativePrepareResult(response.value);
+      const canonical = Buffer.from(value.canonical_bytes, "hex");
+      const digest = createHash("sha256").update(canonical).digest("hex");
+      const preimage = createHash("sha256").update("LXP/v1/signature-preimage\0").update(canonical).digest("hex");
+      if (value.preparation_id !== purpose.preparation_id || digest !== purpose.canonical_digest || digest !== value.preparation_id
+        || preimage !== value.signing_preimage || value.activity.module !== body.activity.module || value.activity.ordinal !== body.activity.ordinal
+        || (value.approval_id !== null && value.approval_id !== value.preparation_id)) throw new TypeError("native_effect_v1.binding");
+      return { ...response, value };
+    } catch { throw new PlatformSdkError({ code: "unknown-outcome", retry: "unknown-outcome", requestId: response.request_id }); }
   }
 
   public async approvalListNative(): Promise<AgentEnvelopeSuccess<NativeApprovalListResultV1>> {

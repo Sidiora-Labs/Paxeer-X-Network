@@ -11,6 +11,7 @@ export * from "./verifier.js";
 export * from "./native-program-call.js";
 export * from "./program-lifecycle.js";
 export * from "./native-capabilities.js";
+export * from "./native-effect.js";
 
 export * from "./intent.js";
 export * from "./px.js";

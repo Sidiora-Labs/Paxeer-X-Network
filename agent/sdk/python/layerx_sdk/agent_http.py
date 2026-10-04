@@ -28,6 +28,7 @@ from .generated.client import (
     decode_native_prepare_result, decode_native_approval_result, decode_native_approval_list_result,
 )
 from .program_wire import bind_signed_program_lifecycle
+from .native_effect import NativeEffectPrepareRequestV1, encode_native_effect_prepare_request
 
 _MAX_RESPONSE_BYTES = 8 * 1024 * 1024
 _MAX_REQUEST_BYTES = 4 * 1024 * 1024
@@ -527,6 +528,34 @@ class AgentEnvelopeTransport(ProductionTransport):
                 or value["activity"] != body["activity"]
                 or value["approval_id"] is not None and value["approval_id"] != value["preparation_id"]):
                 raise ValueError("native_v1.binding")
+            return NativeEnvelopeSuccess(response.request_id, value, response.verification_status)
+        except (ValueError, TypeError, OverflowError):
+            raise PlatformSdkError(SdkErrorCode.UNKNOWN_OUTCOME, "unknown-outcome", request_id=response.request_id) from None
+
+    def prepare_native_effect(self, request: NativeEffectPrepareRequestV1, idempotency_key: IdempotencyKey) -> NativeEnvelopeSuccess[NativePrepareResultV1]:
+        try:
+            body = encode_native_effect_prepare_request(request)
+        except (ValueError, TypeError, OverflowError):
+            raise _invalid_argument() from None
+        purpose = body["purpose"]["purpose"]
+        if self._session is None:
+            raise _invalid_argument()
+        coordinates = self._session.coordinates()
+        if (purpose["tenant"] != coordinates["tenant"] or purpose["session_id"] != coordinates["session_id"]
+            or purpose["generation"] != coordinates["generation"]
+            or body["idempotency_key"] != str(idempotency_key)):
+            raise _invalid_argument()
+        response = self.call("agent", "prepare", body, idempotency_key)
+        try:
+            value = decode_native_prepare_result(response.value)
+            canonical = bytes.fromhex(value["canonical_bytes"])
+            digest = hashlib.sha256(canonical).hexdigest()
+            preimage = hashlib.sha256(b"LXP/v1/signature-preimage\0" + canonical).hexdigest()
+            if (value["preparation_id"] != purpose["preparation_id"] or digest != purpose["canonical_digest"]
+                or digest != value["preparation_id"] or preimage != value["signing_preimage"]
+                or value["activity"] != body["activity"]
+                or value["approval_id"] is not None and value["approval_id"] != value["preparation_id"]):
+                raise ValueError("native_effect_v1.binding")
             return NativeEnvelopeSuccess(response.request_id, value, response.verification_status)
         except (ValueError, TypeError, OverflowError):
             raise PlatformSdkError(SdkErrorCode.UNKNOWN_OUTCOME, "unknown-outcome", request_id=response.request_id) from None

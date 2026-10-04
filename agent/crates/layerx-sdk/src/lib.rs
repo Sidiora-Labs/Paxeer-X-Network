@@ -12,7 +12,9 @@ use layerx_agent_api::identity::{
     AgentRegistration, PolicyIntent, SessionClose, SessionContext, SessionList, SessionOpen,
     SessionRefresh,
 };
+use layerx_agent_api::prepare::PrepareWithCapability;
 use layerx_agent_api::prepare::{PrepareRequest, Prepared};
+use layerx_agent_api::read::FeeProjectionRequest;
 use layerx_agent_api::read::{
     BalanceSelector, BatchRef, CheckpointRef, CoreProduced, HistorySelector, ModuleStateSelector,
     ReadRequest, VerifiedRead,
@@ -30,13 +32,12 @@ use layerx_proof::export::{
     verify as verify_offline_export, ExportVerificationError, OfflineExport, VerificationReport,
 };
 use layerx_types::result::ResultCode;
-use layerx_agent_api::prepare::PrepareWithCapability;
-use layerx_agent_api::read::FeeProjectionRequest;
 
 pub mod agent_envelope;
 pub mod approval;
 pub mod mirror_generated;
 pub mod native_capabilities;
+pub mod native_effect;
 pub mod production;
 pub mod program_lifecycle;
 pub mod programs;

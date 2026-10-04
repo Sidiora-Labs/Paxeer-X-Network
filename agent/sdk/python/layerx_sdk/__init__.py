@@ -96,6 +96,7 @@ from .native_capabilities import (
     encode_native_capability_set,
     narrow_native_capability_set,
 )
+from .native_effect import NativeEffectPrepareRequestV1, encode_native_effect_prepare_request
 from .native_program_call import (
     NativeProgramCall,
     decode_native_program_call,
@@ -399,6 +400,7 @@ __all__ = [
     "NativeCall",
     "NativeCapability",
     "NativeEmitEvent",
+    "NativeEffectPrepareRequestV1",
     "NativeProgramCall",
     "NativeProgramDeploy",
     "NativeProgramLifecycleRequest",
@@ -505,6 +507,7 @@ __all__ = [
     "encode_grant_revoke",
     "encode_header",
     "encode_native_capability_set",
+    "encode_native_effect_prepare_request",
     "encode_native_program_call",
     "encode_plan_intent_request",
     "encode_receive",

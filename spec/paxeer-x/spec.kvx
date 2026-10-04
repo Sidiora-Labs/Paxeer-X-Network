@@ -33163,3 +33163,28 @@ build_exit_code = 0
 verify_exit_code = 0
 repair_cycles = 1
 qualification_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-0.15-verify.log"
+
+[task.104.13.17]
+title = "Expose the explicit native effect prepare contract in all active agent SDK callers"
+status = "done"
+mode = "BUILD"
+wave = 2
+requires = ["0.2", "8.1"]
+reqs = ["1064.3", "1071.1"]
+do_1 = "Implement separate typed native_effect_v1 prepare codecs and authenticated caller methods for the declared real signed native effect domain, preserving existing native_v1 and legacy u16/AgentDid contracts, tenant/session/generation checks, exact intent/idempotency/signature bindings and all refusal predicates. Use actual production types and no generated file hand edits."
+touches = ["agent/sdk/typescript/src/native-effect.ts", "agent/sdk/typescript/src/agent-http.ts", "agent/sdk/typescript/src/index.ts", "agent/sdk/typescript/test/native-effect.test.ts", "agent/sdk/python/layerx_sdk/native_effect.py", "agent/sdk/python/layerx_sdk/agent_http.py", "agent/sdk/python/layerx_sdk/agent_http.pyi", "agent/sdk/python/layerx_sdk/__init__.py", "agent/sdk/python/layerx_sdk/__init__.pyi", "agent/sdk/python/tests/test_native_effect.py", "agent/crates/layerx-sdk/src/agent_envelope.rs", "agent/crates/layerx-sdk/src/native_effect.rs", "agent/crates/layerx-sdk/src/lib.rs", "tools/qualification/paxeer-x/native-effect-sdk.py"]
+build_cmd = "timeout 20m python3 tools/qualification/paxeer-x/native-effect-sdk.py --build"
+verify_cmd = "timeout 10m python3 tools/qualification/paxeer-x/native-effect-sdk.py"
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop at original 30-minute cap, unrelated failure, missing genuine authority or weakening; report exact source state, command, exit code and log path."
+completion_basis_policy = "Owner CONSTITUTION: fully implemented DONE; qualification separate and partial remains in_progress."
+source_ownership = "Root owns shared manifests, locks, spec and publication; preserve all owner edits and no deployment."
+
+completion_basis = "implementation"
+qualification_status = "passed"
+build_exit_code = 0
+verify_exit_code = 0
+qualification_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-104.13.17-verify.log"
