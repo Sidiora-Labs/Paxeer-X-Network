@@ -36501,13 +36501,13 @@ fanout_role = "daemon_native_bindings"
 parent_task = "104.33.7"
 source_status = "complete"
 completion_basis = "implementation under owner CONSTITUTION; qualification separately recorded"
-qualification_status = "UNRUN"
+qualification_status = "PASS"
 source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/root-v5-104.33.7.1-intake.json"
 qualification_revision = "3d70d6036bd34c3ace344cc4ac8a12522b59ec16"
-qualification_command = "UNRUN"
-qualification_exit_code = "UNRUN"
-qualification_log = "UNRUN"
-qualification_evidence = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-104.33.7.1-v5-result.json"
+qualification_command = ["timeout", "553s", "flock", "-w", "553", "/root/lx-cargo/agent-build.lock", "python3", "-c", "import hashlib,pathlib,subprocess,sys; p=pathlib.Path(sys.argv[1]); expected=sys.argv[2]; h=hashlib.sha256(p.read_bytes()).hexdigest(); assert h==expected, 'retained compiler artifact replaced'; result=subprocess.run(sys.argv[3:]); assert hashlib.sha256(p.read_bytes()).hexdigest()==expected, 'artifact changed during gate'; sys.exit(result.returncode)", "/root/lx-target/agent/debug/deps/layerx_sdk-5aee4e6b19ed6fbb", "530da44d0d6264127d8218ec02da7ecbafe624babac373f41bba305efee14d3e", "timeout", "20m", "scripts/paxeer-x/verify-sdk-program-rust.sh"]
+qualification_exit_code = 0
+qualification_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/sdk1043371-qualification/v5-continuation/verify.log"
+qualification_evidence = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-104.33.7.1-v5-continuation-result.json"
 build_status = "PASS"
 build_exit_code = 0
 prior_qualification_status = "PASS"
@@ -36527,6 +36527,12 @@ qualification_missing_prerequisite = "Mandatory genuine ten-case native corpus, 
 continuation_approval = "/root/lx-ops/paxeer-x-integration-2026-10-03/terminal-v5-continuation-approval.json"
 continuation_deadline_utc = "2026-10-04T19:20:41Z"
 continuation_minutes = 45
+qualification_revision_basis = "Actual retained consumer compiler build revision; native corpus revision recorded separately"
+build_reused = true
+corpus_revision = "4c209dfc86a97fa56e8892cf19c30b9b35c1b56f"
+corpus_artifact = "/root/lx-ops/paxeer-x-integration-2026-10-03/native-terminal-v5-repair1-4c209dfc-qualification/build-output/terminal-v5-corpus.json"
+corpus_sha256 = "c15b5dff29ec17959e28155d39481ea4bcad7b6e806b6bd1777c04b551faa1f1"
+source_compatibility_evidence = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-104.33.7.1-v5-continuation-result.json"
 
 [task.104.33.7.8]
 title = "Unify Programs API schema and generated client contracts"
