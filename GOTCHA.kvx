@@ -2717,3 +2717,31 @@ observed = "The actual configured npm registry returned404 for @sidiora/layerx-e
 [gotcha.777]
 title = "Build lock deadlines"
 observed = "A final native build reached its cap while awaiting the shared build lock. Record exit124 and verification UNRUN; lock waiting is not compiler success."
+
+[gotcha.778]
+title = "Executable shim identity"
+observed = "Resolving the Cargo executable symlink changed argv0 to rustup and refused before compilation. Preserve the actual shim entrypoint while checking its executable target; exact repair published separately."
+
+[gotcha.779]
+title = "Credential-safe candidate materialization"
+observed = "Ordinary checkout ignored one sparse exclusion setup and materialized four task-owned tracked environment paths. Values were never read or hashed; remove only accidental private copies and use filtered checkout-index input before materialization."
+
+[gotcha.780]
+title = "Native maintenance digest contract"
+observed = "Native authority identifies canonical maintenance receipts with raw SHA256 while ordinary receipts retain their domain digest. The unified gateway used the ordinary domain for both; task16.6 corrected the typed consumer and passed genuine captured-evidence cases."
+
+[gotcha.781]
+title = "Native proof fixture shadowing"
+observed = "Two test-local Native bindings shadowed the real native fixture function, causing E0618. Keep all fixture assertions and use explicit function qualification in the dedicated compiler task."
+
+[gotcha.782]
+title = "Source handoff schema"
+observed = "A repair manifest omitted base_revision and intake stopped before copying. Bind the exact published preimage, standardize the complete manifest, and preserve the original handoff."
+
+[gotcha.783]
+title = "Qualification window consumption"
+observed = "Helper delivery, formatting publication and complete candidate preparation consumed most of several thirty-minute task windows. Freeze fully formatted source early, publish promptly, and reuse warm isolated caches; timeout or unrun checks remain unqualified."
+
+[gotcha.784]
+title = "Candidate refusal control flow"
+observed = "A private build wrapper continued to wait on its build lock after candidate admission refused. The owner cancelled it before compilation; future wrappers must stop immediately on nonzero candidate creation."
