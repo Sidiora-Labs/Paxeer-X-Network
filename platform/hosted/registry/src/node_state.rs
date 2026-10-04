@@ -117,13 +117,12 @@ impl RegistryClientIdentity {
                 certificates.push(ureq::tls::Certificate::from_der(&der).to_owned());
             }
         }
-        let private_der = zeroize::Zeroizing::new(
-            key.private_key_to_pkcs8()
+        let private_pem = zeroize::Zeroizing::new(
+            key.private_key_to_pem_pkcs8()
                 .map_err(|_| "registry client private key encoding is invalid".to_owned())?,
         );
-        let private_key =
-            ureq::tls::PrivateKey::from_der(ureq::tls::KeyKind::Pkcs8, private_der.as_slice())
-                .to_owned();
+        let private_key = ureq::tls::PrivateKey::from_pem(private_pem.as_slice())
+            .map_err(|_| "registry client private key encoding is invalid".to_owned())?;
         Ok(Self(ureq::tls::ClientCert::new_with_certs(
             &certificates,
             private_key,
@@ -512,7 +511,7 @@ impl NodeProgramStateSource {
             .map_err(|error| format!("program state bundle decoding refused: {error}"))?;
         let state = &bundle.state;
         let header = layerx_wire::receipt::decode_batch_header(&state.header)
-            .map_err(|error| format!("program signed header decoding refused: {error}"))?;
+            .map_err(|error| format!("program signed header decoding refused: {error:?}"))?;
         if header.protocol_version() != authority.protocol_version
             || header.network_id() != authority.network_id
         {
@@ -1133,7 +1132,7 @@ mod tests {
             super::RegistryClientIdentity::from_pkcs12(&archive, "test-archive-password")
                 .map_err(std::io::Error::other)?;
         assert_eq!(identity.0.certs()[0].der(), certificate.to_der()?);
-        assert_eq!(identity.0.private_key().kind(), ureq::tls::KeyKind::Pkcs8);
+        assert_eq!(format!("{:?}", identity.0.private_key().kind()), "Pkcs8");
         assert_eq!(
             format!("{identity:?}"),
             "RegistryClientIdentity([REDACTED])"

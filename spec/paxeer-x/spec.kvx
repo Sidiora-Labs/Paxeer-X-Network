@@ -36964,3 +36964,27 @@ qualification_exit_code = 0
 qualification_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-103.6.31-evidence/writable.log"
 qualification_evidence = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-103.6.31-evidence/result.json"
 repository_ci_status = "UNQUALIFIED"
+
+[task.103.6.30]
+title = "Correct hosted registry TLS and wire-error compiler integration"
+status = "done"
+mode = "BUILD"
+wave = 5
+requires = ["0.2"]
+reqs = ["1098.7", "1103.1"]
+touches = ["platform/hosted/registry/src/node_state.rs"]
+do_1 = "Use actual current ureq private-key API and existing WireError representation while retaining all TLS authentication, validation, authority predicates and assertions."
+do_2 = "Qualify the source through the single shared platform producer compile; genuine SDK behavior remains unrun until authenticated upstream fixture exists. Never fabricate evidence or relabel the known unrelated compiler failure."
+verify_cmd = "timeout 20m scripts/paxeer-x/verify-sdk-program-python.sh"
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 60
+continuation_deadline_utc = "2026-10-04T20:29:37Z"
+continuation_approval = "/root/lx-ops/paxeer-x-integration-2026-10-03/terminal-v5-one-hour-owner-approval.json"
+fanout_role = "complete_migration/generation_consumers"
+qualification_status = "UNRUN"
+stop_condition = "Stop at2026-10-04T20:29:37Z or exact contract conflict. One combined compiler pass by designated qualification owner; no duplicate build or known-missing behavior preflight."
+source_status = "complete"
+completion_basis = "implementation under owner CONSTITUTION; qualification separately recorded"
+source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/root-hour-103.6.30-intake.json"
