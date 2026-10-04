@@ -867,23 +867,63 @@ impl Server {
         })
     }
 
-    pub(crate) fn restrict_native_owners(&mut self,environment:Option<&crate::binding::OwnerEnvironment>)->Result<(),ServerError> {
-        let Some(environment)=environment else {
-            self.tools.retain(|tool|catalogue::native_alias_ordinal(tool.name).is_none());
+    pub(crate) fn restrict_native_owners(
+        &mut self,
+        environment: Option<&crate::binding::OwnerEnvironment>,
+    ) -> Result<(), ServerError> {
+        let Some(environment) = environment else {
+            self.tools
+                .retain(|tool| catalogue::native_alias_ordinal(tool.name).is_none());
             return Ok(());
         };
-        let handle=self.control.store();
-        let store=handle.lock().map_err(|_|ServerError::AuthorizationUnavailable)?;
-        let chain=layerx_agentd::capability::timed::native_active_chain(&store,self.binding.tenant(),self.binding.agent.as_str(),&self.binding.capability_id.0,environment.core_time_ms).ok();
+        let handle = self.control.store();
+        let store = handle
+            .lock()
+            .map_err(|_| ServerError::AuthorizationUnavailable)?;
+        let chain = std::str::from_utf8(self.binding.agent.as_bytes())
+            .ok()
+            .and_then(|agent| {
+                layerx_agentd::capability::timed::native_active_chain(
+                    &store,
+                    self.binding.tenant(),
+                    agent,
+                    &self.binding.capability_id.0,
+                    environment.core_time_ms,
+                )
+                .ok()
+            });
         drop(store);
-        let stage_permissions=["activity.prepare","activity.disclose","activity.sign","activity.submit","activity.track"]
-            .iter().all(|name|self.tools.iter().any(|tool|tool.name==*name) && self.tool(name).is_some_and(|tool|self.authorize_tool(environment.head_sequence,tool).is_ok()));
+        let stage_permissions = [
+            "activity.prepare",
+            "activity.disclose",
+            "activity.sign",
+            "activity.submit",
+            "activity.track",
+        ]
+        .iter()
+        .all(|name| {
+            self.tools.iter().any(|tool| tool.name == *name)
+                && self.tool(name).is_some_and(|tool| {
+                    self.authorize_tool(environment.head_sequence, tool).is_ok()
+                })
+        });
         self.tools.retain(|tool| {
-            let Some(ordinal)=catalogue::native_alias_ordinal(tool.name) else {return true;};
-            if ordinal==1 || !stage_permissions || environment.head_sequence==0 {return false;}
-            let profile=if ordinal==5 {environment.native_send_profile} else {environment.native_effect_profile};
-            let activity=layerx_agent_api::identity::NativeActivity {module:1,ordinal};
-            profile && chain.as_ref().is_some_and(|chain|!chain.is_empty() && chain.iter().all(|cap|cap.activities.contains(&activity)))
+            let Some(ordinal) = catalogue::native_alias_ordinal(tool.name) else {
+                return true;
+            };
+            if ordinal == 1 || !stage_permissions || environment.head_sequence == 0 {
+                return false;
+            }
+            let profile = if ordinal == 5 {
+                environment.native_send_profile
+            } else {
+                environment.native_effect_profile
+            };
+            let activity = layerx_agent_api::identity::NativeActivity { module: 1, ordinal };
+            profile
+                && chain.as_ref().is_some_and(|chain| {
+                    !chain.is_empty() && chain.iter().all(|cap| cap.activities.contains(&activity))
+                })
         });
         Ok(())
     }
@@ -977,8 +1017,10 @@ impl Server {
             }
             McpInvocationStart::Started(handle) => {
                 if catalogue::native_alias_ordinal(name).is_some() {
-                    if let Some(id)=crate::tools::write::preparation_id(arguments) {
-                        permit.mcp_bind_preparation(&self.control,&handle,id).map_err(ServerError::DurableInvocation)?;
+                    if let Some(id) = crate::tools::write::preparation_id(arguments) {
+                        permit
+                            .mcp_bind_preparation(&self.control, &handle, id)
+                            .map_err(ServerError::DurableInvocation)?;
                     }
                 }
                 if matches!(name, "activity.submit" | "activity.sign") {

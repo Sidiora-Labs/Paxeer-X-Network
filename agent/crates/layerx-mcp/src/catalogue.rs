@@ -385,7 +385,9 @@ pub fn input_schema(name: &str) -> Option<Value> {
             native_prepare_schema("native_v1"), native_prepare_schema("native_effect_v1"), native_prepare_schema("native_send_v1")]})),
         "activity.submit" => Some(json!({"oneOf": [legacy, native_submit_schema()]})),
         "activity.sign" => Some(json!({"oneOf": [legacy, external_sign_schema()]})),
-        name if native_alias_ordinal(name).is_some() => Some(json!({"oneOf": [legacy, native_write_schema(name)?]})),
+        name if native_alias_ordinal(name).is_some() => {
+            Some(json!({"oneOf": [legacy, native_write_schema(name)?]}))
+        }
         _ => Some(legacy),
     }
 }
@@ -1013,26 +1015,39 @@ fn native_submit_schema() -> Value {
     )
 }
 
-
 pub(crate) fn native_alias_ordinal(name: &str) -> Option<u16> {
     match name {
         "wallet.send" | "token.transfer" => Some(5),
-        "token.create" => Some(1), "token.mint" => Some(10),
-        "grant.issue" => Some(7), "grant.draw" => Some(6), _ => None,
+        "token.create" => Some(1),
+        "token.mint" => Some(10),
+        "grant.issue" => Some(7),
+        "grant.draw" => Some(6),
+        _ => None,
     }
 }
 
 pub(crate) fn canonical_owner(name: &str) -> bool {
-    name.starts_with("subscription.") || name.starts_with("approval.")
+    name.starts_with("subscription.")
+        || name.starts_with("approval.")
         || native_alias_ordinal(name).is_some()
-        || matches!(name, "tenant.readiness" | "activity.prepare" | "activity.disclose"
-            | "activity.sign" | "activity.submit" | "activity.track" | "activity.wait")
+        || matches!(
+            name,
+            "tenant.readiness"
+                | "activity.prepare"
+                | "activity.disclose"
+                | "activity.sign"
+                | "activity.submit"
+                | "activity.track"
+                | "activity.wait"
+        )
 }
 
 fn external_sign_schema() -> Value {
-    session_object(json!({"variant":{"type":"string","enum":["external_signature_v1"]},
+    session_object(
+        json!({"variant":{"type":"string","enum":["external_signature_v1"]},
         "preparation_ref":native_wire_hex(32),"signature":native_wire_hex(64)}),
-        &["variant","preparation_ref","signature"])
+        &["variant", "preparation_ref", "signature"],
+    )
 }
 
 fn native_write_schema(name: &str) -> Option<Value> {
@@ -1040,64 +1055,139 @@ fn native_write_schema(name: &str) -> Option<Value> {
     let mut props = Map::new();
     let mut names = Vec::new();
     for field in fields(name) {
-        let key = if name == "token.create" && field.name == "supply" { "supply_cap" } else { field.name };
+        let key = if name == "token.create" && field.name == "supply" {
+            "supply_cap"
+        } else {
+            field.name
+        };
         let schema = match field.shape {
             Shape::Hex32 => native_wire_hex(32),
-            Shape::Unsigned => json!({"type":"string","pattern":"^(0|[1-9][0-9]*)$","minLength":1,"maxLength":39}),
+            Shape::Unsigned => {
+                json!({"type":"string","pattern":"^(0|[1-9][0-9]*)$","minLength":1,"maxLength":39})
+            }
             _ => json!({"type":"string","minLength":1,"maxLength":field.shape.maximum_length()}),
         };
-        props.insert(key.to_owned(), schema); names.push(key);
+        props.insert(key.to_owned(), schema);
+        names.push(key);
     }
-    let preparation = native_prepare_schema(match ordinal {5=>"native_send_v1",1=>"native_registration_v1",_=>"native_effect_v1"});
-    Some(session_object(json!({"variant":{"type":"string","enum":["native_write_v1"]},
+    let preparation = native_prepare_schema(match ordinal {
+        5 => "native_send_v1",
+        1 => "native_registration_v1",
+        _ => "native_effect_v1",
+    });
+    Some(session_object(
+        json!({"variant":{"type":"string","enum":["native_write_v1"]},
         "intent":session_object(Value::Object(props),&names),"preparation":preparation,"canonical_bytes":native_wire_bytes(None),
         "signature":native_wire_hex(64),"signer_public_key":native_wire_hex(32)}),
-        &["variant","intent","preparation","canonical_bytes","signature","signer_public_key"]))
+        &[
+            "variant",
+            "intent",
+            "preparation",
+            "canonical_bytes",
+            "signature",
+            "signer_public_key",
+        ],
+    ))
 }
 
 fn strict_hex(value: Option<&Value>, bytes: usize) -> Result<(), ArgumentError> {
-    let text=value.and_then(Value::as_str).ok_or(ArgumentError::Malformed("native_request"))?;
-    if text.len()!=bytes*2 || !text.bytes().all(|b|b.is_ascii_digit() || (b'a'..=b'f').contains(&b)) {
+    let text = value
+        .and_then(Value::as_str)
+        .ok_or(ArgumentError::Malformed("native_request"))?;
+    if text.len() != bytes * 2
+        || !text
+            .bytes()
+            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+    {
         return Err(ArgumentError::Malformed("native_request"));
     }
     Ok(())
 }
 
 fn validate_native_write(name: &str, arguments: &Value) -> Result<(), ArgumentError> {
-    let object=arguments.as_object().ok_or(ArgumentError::NotAnObject)?;
-    if object.len()!=6 || !["variant","intent","preparation","canonical_bytes","signature","signer_public_key"].iter().all(|k|object.contains_key(*k)) {
+    let object = arguments.as_object().ok_or(ArgumentError::NotAnObject)?;
+    if object.len() != 6
+        || ![
+            "variant",
+            "intent",
+            "preparation",
+            "canonical_bytes",
+            "signature",
+            "signer_public_key",
+        ]
+        .iter()
+        .all(|k| object.contains_key(*k))
+    {
         return Err(ArgumentError::Malformed("native_request"));
     }
-    if serde_json::to_vec(arguments).map_or(true,|v|v.len()>MAX_ARGUMENT_BYTES) {return Err(ArgumentError::TooLarge);}
-    strict_hex(object.get("signature"),64)?;strict_hex(object.get("signer_public_key"),32)?;
-    let canonical=object.get("canonical_bytes").and_then(Value::as_str).ok_or(ArgumentError::Malformed("canonical_bytes"))?;
-    if canonical.is_empty() || canonical.len()%2!=0 || !canonical.bytes().all(|b|b.is_ascii_digit() || (b'a'..=b'f').contains(&b)) {
+    if serde_json::to_vec(arguments).map_or(true, |v| v.len() > MAX_ARGUMENT_BYTES) {
+        return Err(ArgumentError::TooLarge);
+    }
+    strict_hex(object.get("signature"), 64)?;
+    strict_hex(object.get("signer_public_key"), 32)?;
+    let canonical = object
+        .get("canonical_bytes")
+        .and_then(Value::as_str)
+        .ok_or(ArgumentError::Malformed("canonical_bytes"))?;
+    if canonical.is_empty()
+        || canonical.len() % 2 != 0
+        || !canonical
+            .bytes()
+            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+    {
         return Err(ArgumentError::Malformed("canonical_bytes"));
     }
-    let intent=object.get("intent").and_then(Value::as_object).ok_or(ArgumentError::Malformed("intent"))?;
-    if intent.len()!=fields(name).len() {return Err(ArgumentError::Malformed("intent"));}
+    let intent = object
+        .get("intent")
+        .and_then(Value::as_object)
+        .ok_or(ArgumentError::Malformed("intent"))?;
+    if intent.len() != fields(name).len() {
+        return Err(ArgumentError::Malformed("intent"));
+    }
     for field in fields(name) {
-        let key=if name=="token.create" && field.name=="supply" {"supply_cap"} else {field.name};
-        let value=intent.get(key).ok_or(ArgumentError::Missing(field.name))?;
-        let text=value.as_str().ok_or(ArgumentError::NotText(field.name))?;
+        let key = if name == "token.create" && field.name == "supply" {
+            "supply_cap"
+        } else {
+            field.name
+        };
+        let value = intent.get(key).ok_or(ArgumentError::Missing(field.name))?;
+        let text = value.as_str().ok_or(ArgumentError::NotText(field.name))?;
         match field.shape {
-            Shape::Hex32=>strict_hex(Some(value),32)?,
-            Shape::Unsigned | Shape::Decimals=>{
-                if text.is_empty() || (text.len()>1 && text.starts_with('0')) || !text.bytes().all(|b|b.is_ascii_digit()) || text.parse::<u128>().is_err() {
+            Shape::Hex32 => strict_hex(Some(value), 32)?,
+            Shape::Unsigned | Shape::Decimals => {
+                if text.is_empty()
+                    || (text.len() > 1 && text.starts_with('0'))
+                    || !text.bytes().all(|b| b.is_ascii_digit())
+                    || text.parse::<u128>().is_err()
+                {
                     return Err(ArgumentError::Malformed(field.name));
                 }
-                if field.shape==Shape::Decimals && text.parse::<u8>().map_or(true,|n|n>18) {return Err(ArgumentError::OutOfRange(field.name));}
-                if field.name=="expires_at_ms" && text.parse::<u64>().is_err() {return Err(ArgumentError::OutOfRange(field.name));}
-            },
-            _=>check(*field,text)?,
+                if field.shape == Shape::Decimals && text.parse::<u8>().map_or(true, |n| n > 18) {
+                    return Err(ArgumentError::OutOfRange(field.name));
+                }
+                if field.name == "expires_at_ms" && text.parse::<u64>().is_err() {
+                    return Err(ArgumentError::OutOfRange(field.name));
+                }
+            }
+            _ => check(field, text)?,
         }
     }
-    let preparation=object.get("preparation").ok_or(ArgumentError::Missing("preparation"))?;
-    let expected=match native_alias_ordinal(name) {Some(5)=>"native_send_v1",Some(1)=>"native_registration_v1",_=>"native_effect_v1"};
-    if preparation.get("variant").and_then(Value::as_str)!=Some(expected)
-        || preparation.get("idempotency_key")!=intent.get("idempotency_key") {
+    let preparation = object
+        .get("preparation")
+        .ok_or(ArgumentError::Missing("preparation"))?;
+    let expected = match native_alias_ordinal(name) {
+        Some(5) => "native_send_v1",
+        Some(1) => "native_registration_v1",
+        _ => "native_effect_v1",
+    };
+    if preparation.get("variant").and_then(Value::as_str) != Some(expected)
+        || preparation.get("idempotency_key") != intent.get("idempotency_key")
+    {
         return Err(ArgumentError::Malformed("preparation"));
     }
-    layerx_agentd::agent_rpc::validate_mcp_native_request(layerx_agentd::tenant::Operation::Prepare,preparation)
-        .map_err(|_|ArgumentError::Malformed("preparation"))
+    layerx_agentd::agent_rpc::validate_mcp_native_request(
+        layerx_agentd::tenant::Operation::Prepare,
+        preparation,
+    )
+    .map_err(|_| ArgumentError::Malformed("preparation"))
 }
