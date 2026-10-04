@@ -9,7 +9,7 @@ use layerx_crypto::ed25519;
 use layerx_types::intent::{
     CapabilityRequest, ProgramCallFailure, ProgramCallOutcome, ProgramLegacyValue,
 };
-use serde_json::{json, Map, Value};
+use serde_json::{Map, Value, json};
 use sha2::{Digest as _, Sha256};
 use url::{Host, Url};
 use zeroize::Zeroizing;
@@ -17,12 +17,12 @@ use zeroize::Zeroizing;
 use crate::production::SecretBytes;
 
 use super::{
-    verify_program_evidence_with_payers, AgentErrorClass, BoundProgramRequest,
+    AgentErrorClass, BoundProgramRequest, MAX_OCCUPANCY_PAYERS, MAX_SIGNED_ACTIVITY_BYTES,
     NativeProgramCallRequest, NativeProgramTransport, OccupancyPayer, ProgramCallRequest,
     ProgramExecutionEvidence, ProgramLifecycle, ProgramOperationError, ProgramServiceError,
     ProgramSimulationEvidence, ProgramSource, ProgramSubmission, ProgramTransport, Retriability,
     VerifiedProgramDiscovery, VerifiedProgramInterface, VerifiedProgramSimulation,
-    MAX_OCCUPANCY_PAYERS, MAX_SIGNED_ACTIVITY_BYTES,
+    verify_program_evidence_with_payers,
 };
 
 const MAX_HTTP_REQUEST_BYTES: usize = 4 * 1_048_576 + 4096;
@@ -437,7 +437,12 @@ impl ProgramTransport for HttpProgramTransport {
             }),
             None,
         )?;
-        decode_discovery(&value, program, (self.clock)()?)
+        decode_discovery(
+            &value,
+            program,
+            (self.clock)()?,
+            self.trusted_sequencer_public_key,
+        )
     }
 
     fn interface(
@@ -455,7 +460,11 @@ impl ProgramTransport for HttpProgramTransport {
             }),
             None,
         )?;
-        decode_interface(&value, program, (self.clock)()?)
+        let interface = decode_interface(&value, program, (self.clock)()?)?;
+        if interface.abi_version() >= 3 {
+            bind_interface_discovery(&interface, &self.discover(program)?)?;
+        }
+        Ok(interface)
     }
 
     fn simulate(
@@ -912,6 +921,7 @@ fn decode_discovery(
     value: &Value,
     expected_program: [u8; 32],
     now: u64,
+    trusted_sequencer_public_key: [u8; 32],
 ) -> Result<VerifiedProgramDiscovery, ProgramOperationError> {
     let value = object(value)?;
     if fixed(value, "program_id")? != expected_program
@@ -926,14 +936,14 @@ fn decode_discovery(
         _ => return Err(ProgramOperationError::Decode),
     };
     let version = bounded_u32(value, "version", 1, u32::MAX)?;
-    let abi_version = bounded_u16(value, "abi_version", 1, 2)?;
+    let abi_version = guest_abi(value, "abi_version")?;
     let observed_sequence = decimal_u64(value, "observed_sequence")?;
     let observed_at = decimal_u64(value, "observed_at")?;
     let valid_through = decimal_u64(value, "valid_through")?;
     if valid_through < observed_at || now > valid_through {
         return Err(ProgramOperationError::Verification);
     }
-    Ok(VerifiedProgramDiscovery {
+    let discovery = VerifiedProgramDiscovery {
         program_id: expected_program,
         lifecycle,
         version,
@@ -944,7 +954,69 @@ fn decode_discovery(
         observed_sequence,
         observed_at,
         valid_through,
-    })
+    };
+    if abi_version >= 3 {
+        verify_discovery_signature(value, &discovery, trusted_sequencer_public_key)?;
+    }
+    Ok(discovery)
+}
+
+fn guest_abi(value: &Map<String, Value>, field: &str) -> Result<u16, ProgramOperationError> {
+    let abi = bounded_u16(value, field, 1, layerx_types::guest_abi::MAX_VERSION)?;
+    if !layerx_types::guest_abi::supported(abi) {
+        return Err(ProgramOperationError::Bounds);
+    }
+    Ok(abi)
+}
+
+fn discovery_digest(discovery: &VerifiedProgramDiscovery) -> [u8; 32] {
+    let mut material = b"LayerX/program-discovery-proof/v1\0".to_vec();
+    material.extend_from_slice(&discovery.program_id());
+    material.push(1);
+    material.extend_from_slice(&discovery.version().to_be_bytes());
+    material.extend_from_slice(&discovery.code_hash());
+    material.extend_from_slice(&discovery.abi_version().to_be_bytes());
+    material.extend_from_slice(&discovery.observed_sequence().to_be_bytes());
+    material.extend_from_slice(&discovery.observed_at().to_be_bytes());
+    material.extend_from_slice(&discovery.valid_through().to_be_bytes());
+    material.extend_from_slice(&discovery.state_root());
+    Sha256::digest(material).into()
+}
+
+fn verify_discovery_signature(
+    value: &Map<String, Value>,
+    discovery: &VerifiedProgramDiscovery,
+    trusted_sequencer_public_key: [u8; 32],
+) -> Result<(), ProgramOperationError> {
+    let public_key = fixed(value, "discovery_public_key")?;
+    let signature: [u8; 64] = bounded_hex(value, "discovery_signature", 64, Some(64))?
+        .try_into()
+        .map_err(|_| ProgramOperationError::Bounds)?;
+    if public_key != trusted_sequencer_public_key
+        || discovery_digest(discovery) != discovery.receipt_digest()
+    {
+        return Err(ProgramOperationError::IdentityMismatch);
+    }
+    ed25519::verify_digest(&public_key, &signature, &discovery.receipt_digest())
+        .map_err(|_| ProgramOperationError::Verification)
+}
+
+fn bind_interface_discovery(
+    interface: &VerifiedProgramInterface,
+    discovery: &VerifiedProgramDiscovery,
+) -> Result<(), ProgramOperationError> {
+    if interface.program_id() != discovery.program_id()
+        || interface.version() != discovery.version()
+        || interface.code_hash() != discovery.code_hash()
+        || interface.abi_version() != discovery.abi_version()
+        || interface.state_root() != discovery.state_root()
+        || interface.observed_sequence() != discovery.observed_sequence()
+        || interface.observed_at() != discovery.observed_at()
+        || interface.valid_through() != discovery.valid_through()
+    {
+        return Err(ProgramOperationError::IdentityMismatch);
+    }
+    Ok(())
 }
 
 fn decode_interface(
@@ -976,7 +1048,7 @@ fn decode_interface(
         program_id: expected_program,
         version: bounded_u32(value, "version", 1, u32::MAX)?,
         code_hash: fixed(value, "code_hash")?,
-        abi_version: bounded_u16(value, "abi_version", 1, 2)?,
+        abi_version: guest_abi(value, "abi_version")?,
         interface,
         interface_digest,
         receipt_digest: fixed(value, "receipt_digest")?,
@@ -1661,14 +1733,14 @@ mod source_contract {
     use serde_json::json;
 
     use super::{
-        accepted_program_verification, decode_execution_usage, decode_service_error, exact_fields,
-        object, ProgramOperationError,
+        ProgramOperationError, accepted_program_verification, decode_execution_usage,
+        decode_service_error, exact_fields, object,
     };
 
     #[test]
     fn corrupt_lifecycle_boundary_responses_retain_c_signed_request() -> Result<(), String> {
         use crate::program_lifecycle::{
-            programs_module_registry, NativeProgramLifecycleRequest, ProgramLifecycleSubmission,
+            NativeProgramLifecycleRequest, ProgramLifecycleSubmission, programs_module_registry,
         };
         use layerx_types::program_lifecycle::NativeProgramDeploy;
         let fixture: serde_json::Value = serde_json::from_str(include_str!(
@@ -1778,8 +1850,8 @@ mod source_contract {
     }
 
     #[test]
-    fn lifecycle_boundary_errors_preserve_exact_refusals(
-    ) -> Result<(), super::ProgramOperationError> {
+    fn lifecycle_boundary_errors_preserve_exact_refusals()
+    -> Result<(), super::ProgramOperationError> {
         let refusal = json!({"code":"invalid_program_payload","retry":"never"});
         assert_eq!(
             super::decode_boundary_error(400, object(&refusal)?)?,
@@ -1937,5 +2009,332 @@ mod source_contract {
             decode_execution_usage(uncanonical),
             Err(ProgramOperationError::Decode)
         ));
+    }
+
+    fn signed_discovery(
+        abi: u16,
+        code_hash: [u8; 32],
+    ) -> Result<(Value, [u8; 32]), ProgramOperationError> {
+        use ed25519_dalek::Signer as _;
+        let key = ed25519_dalek::SigningKey::from_bytes(&[0x31; 32]);
+        let public_key = key.verifying_key().to_bytes();
+        let mut value = json!({
+            "program_id":hex(&[0x11;32]),"lifecycle":"active","version":3,
+            "code_hash":hex(&code_hash),"abi_version":abi,
+            "receipt_digest":hex(&[0;32]),"state_root":hex(&[0x33;32]),
+            "observed_sequence":"4242","observed_at":"1758200000000",
+            "valid_through":"1758200060000",
+            "verification":"registry-receipt-and-current-head-verified"
+        });
+        let discovery = VerifiedProgramDiscovery {
+            program_id: [0x11; 32],
+            lifecycle: ProgramLifecycle::Active,
+            version: 3,
+            code_hash,
+            abi_version: abi,
+            receipt_digest: [0; 32],
+            state_root: [0x33; 32],
+            observed_sequence: 4242,
+            observed_at: 1758200000000,
+            valid_through: 1758200060000,
+        };
+        let mut material = b"LayerX/program-discovery-proof/v1\0".to_vec();
+        material.extend_from_slice(&[0x11; 32]);
+        material.push(1);
+        material.extend_from_slice(&3_u32.to_be_bytes());
+        material.extend_from_slice(&code_hash);
+        material.extend_from_slice(&abi.to_be_bytes());
+        material.extend_from_slice(&4242_u64.to_be_bytes());
+        material.extend_from_slice(&1758200000000_u64.to_be_bytes());
+        material.extend_from_slice(&1758200060000_u64.to_be_bytes());
+        material.extend_from_slice(&[0x33; 32]);
+        assert_eq!(material.len(), 161);
+        let digest: [u8; 32] = Sha256::digest(material).into();
+        assert_eq!(discovery_digest(&discovery), digest);
+        value["receipt_digest"] = json!(hex(&digest));
+        value["discovery_public_key"] = json!(hex(&public_key));
+        value["discovery_signature"] = json!(hex(&key.sign(&digest).to_bytes()));
+        Ok((value, public_key))
+    }
+
+    #[test]
+    fn versioned_discovery_requires_pinned_canonical_signature() -> Result<(), ProgramOperationError>
+    {
+        for abi in [3, 4] {
+            let (value, key) = signed_discovery(abi, [0x22; 32])?;
+            let verified = decode_discovery(&value, [0x11; 32], 1758200000000, key)?;
+            assert_eq!(verified.abi_version(), abi);
+            assert_eq!(verified.observed_sequence(), 4242);
+            assert!(decode_discovery(&value, [0x11; 32], 1758200060001, key).is_err());
+            assert!(decode_discovery(&value, [0x12; 32], 1758200000000, key).is_err());
+            assert!(decode_discovery(&value, [0x11; 32], 1758200000000, [0x32; 32]).is_err());
+            for field in ["discovery_public_key", "discovery_signature"] {
+                let mut missing = value.clone();
+                missing
+                    .as_object_mut()
+                    .ok_or(ProgramOperationError::Decode)?
+                    .remove(field);
+                assert!(decode_discovery(&missing, [0x11; 32], 1758200000000, key).is_err());
+            }
+            for field in [
+                "program_id",
+                "code_hash",
+                "state_root",
+                "receipt_digest",
+                "discovery_public_key",
+            ] {
+                let mut altered = value.clone();
+                altered[field] = json!(hex(&[0x55; 32]));
+                assert!(decode_discovery(&altered, [0x11; 32], 1758200000000, key).is_err());
+            }
+            for (field, changed) in [
+                ("version", json!(4)),
+                ("abi_version", json!(if abi == 3 { 4 } else { 3 })),
+                ("observed_sequence", json!("4243")),
+                ("observed_at", json!("1758200000001")),
+                ("valid_through", json!("1758200060001")),
+                ("discovery_signature", json!(hex(&[0; 64]))),
+            ] {
+                let mut altered = value.clone();
+                altered[field] = changed;
+                assert!(decode_discovery(&altered, [0x11; 32], 1758200000000, key).is_err());
+            }
+        }
+        for abi in [1, 2] {
+            let (mut value, key) = signed_discovery(abi, [0x22; 32])?;
+            let object = value.as_object_mut().ok_or(ProgramOperationError::Decode)?;
+            object.remove("discovery_public_key");
+            object.remove("discovery_signature");
+            assert_eq!(
+                decode_discovery(&value, [0x11; 32], 1758200000000, key)?.abi_version(),
+                abi
+            );
+        }
+        for abi in [0, layerx_types::guest_abi::MAX_VERSION + 1, u16::MAX] {
+            assert!(guest_abi(object(&json!({"abi_version":abi}))?, "abi_version").is_err());
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn versioned_interface_requires_identical_signed_head() -> Result<(), ProgramOperationError> {
+        let fixture: Value = serde_json::from_str(include_str!(
+            "../../../../platform/sdk/conformance/fixtures/native-program-deploy-v3.json"
+        ))
+        .map_err(|_| ProgramOperationError::Decode)?;
+        let payload = bounded_hex(
+            object(&fixture)?,
+            "payload_hex",
+            MAX_SIGNED_ACTIVITY_BYTES,
+            None,
+        )?;
+        let deploy = layerx_types::program_lifecycle::NativeProgramDeploy::decode(&payload)
+            .map_err(|_| ProgramOperationError::Decode)?;
+        let descriptor = deploy.interface.ok_or(ProgramOperationError::Decode)?;
+        for abi in [deploy.guest_abi] {
+            let (discovery, key) = signed_discovery(abi, deploy.new_hash)?;
+            let verified = decode_discovery(&discovery, [0x11; 32], 1758200000000, key)?;
+            let mut value = discovery.clone();
+            value["verification"] = json!("deployment-interface-and-current-head-verified");
+            value["interface"] = json!(hex(descriptor));
+            value["interface_digest"] = json!(hex(&Sha256::digest(descriptor)));
+            value["receipt_digest"] = json!(hex(&[0x44; 32]));
+            value["source"] = json!({"status":"unpublished"});
+            let interface = decode_interface(&value, [0x11; 32], 1758200000000)?;
+            bind_interface_discovery(&interface, &verified)?;
+            for (field, changed) in [
+                ("version", json!(4)),
+                ("abi_version", json!(if abi == 3 { 4 } else { 3 })),
+                ("code_hash", json!(hex(&[0x55; 32]))),
+                ("state_root", json!(hex(&[0x55; 32]))),
+                ("observed_sequence", json!("4243")),
+                ("observed_at", json!("1758200000001")),
+                ("valid_through", json!("1758200060001")),
+            ] {
+                let mut changed_value = value.clone();
+                changed_value[field] = changed;
+                let changed_interface =
+                    decode_interface(&changed_value, [0x11; 32], 1758200000000)?;
+                assert!(bind_interface_discovery(&changed_interface, &verified).is_err());
+            }
+            let mut corrupt = value.clone();
+            corrupt["interface_digest"] = json!(hex(&[0; 32]));
+            assert!(decode_interface(&corrupt, [0x11; 32], 1758200000000).is_err());
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn native_call_wire_preserves_real_signed_fixture_and_all_limits()
+    -> Result<(), ProgramOperationError> {
+        let fixture: Value = serde_json::from_str(include_str!(
+            "../../../../platform/sdk/conformance/fixtures/native-program-call-v3.json"
+        ))
+        .map_err(|_| ProgramOperationError::Decode)?;
+        let document = object(&fixture)?;
+        let signed = bounded_hex(
+            document,
+            "signed_activity_hex",
+            MAX_SIGNED_ACTIVITY_BYTES,
+            None,
+        )?;
+        let payload = bounded_hex(document, "payload_hex", MAX_SIGNED_ACTIVITY_BYTES, None)?;
+        let native = layerx_types::program_call::NativeProgramCall::decode(&payload)
+            .map_err(|_| ProgramOperationError::Decode)?;
+        let registry = crate::program_lifecycle::programs_module_registry()?;
+        let request = NativeProgramCallRequest::new(&registry, native, 1000, &signed)?;
+        let wire = wire_native_call(&request)?;
+        assert_eq!(wire["payload_encoding"], "native-v1");
+        assert_eq!(wire["signed_activity"], fixture["signed_activity_hex"]);
+        assert_eq!(wire["program_id"], hex(&native.program_id.bytes()));
+        assert_eq!(wire["budget"]["fuel"], native.resources.0[0].to_string());
+        assert_eq!(wire["budget"]["fee_limit"], "1000");
+        assert_eq!(wire["calldata"], hex(native.calldata));
+        assert_eq!(
+            wire["native_call"]["capabilities_hex"],
+            hex(native.capabilities)
+        );
+        assert_eq!(
+            wire["native_call"]["access_declaration_hex"],
+            hex(native.access_declaration)
+        );
+        assert_eq!(
+            wire["native_call"]["resources"],
+            json!(native.resources.0.map(|limit| limit.to_string()))
+        );
+        assert_eq!(
+            wire["native_call"]["response_capacity"],
+            native.response_capacity
+        );
+        let activity = layerx_wire::activity::decode_signed(&signed, &registry)
+            .map_err(|_| ProgramOperationError::Decode)?;
+        let signature: [u8; 64] = activity
+            .signature()
+            .ok_or(ProgramOperationError::Decode)?
+            .try_into()
+            .map_err(|_| ProgramOperationError::Decode)?;
+        let public_key = fixed(document, "public_key_hex")?;
+        let preimage =
+            layerx_wire::sign::preimage(&activity).map_err(|_| ProgramOperationError::Decode)?;
+        ed25519::verify_digest(&public_key, &signature, preimage.as_bytes())
+            .map_err(|_| ProgramOperationError::Verification)?;
+        assert_eq!(
+            request.bound_idempotency_key(),
+            fixed(document, "idempotency_key_hex")?
+        );
+        assert_eq!(
+            request.bound_activity_id(),
+            fixed(document, "activity_id_hex")?
+        );
+        assert!(NativeProgramCallRequest::new(&registry, native, 999, &signed).is_err());
+        assert!(
+            NativeProgramCallRequest::new(
+                &registry,
+                layerx_types::program_call::NativeProgramCall {
+                    response_capacity: native.response_capacity + 1,
+                    ..native
+                },
+                1000,
+                &signed
+            )
+            .is_err()
+        );
+        for abi in 1..=layerx_types::guest_abi::MAX_VERSION {
+            assert_eq!(
+                guest_abi(
+                    object(&json!({"guest_abi_version":abi}))?,
+                    "guest_abi_version"
+                )?,
+                abi
+            );
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn native_execution_preserves_captured_receipt_authority_and_unknown_identity()
+    -> Result<(), ProgramOperationError> {
+        let fixture: Value = serde_json::from_str(include_str!(
+            "../../../../platform/sdk/conformance/fixtures/receipt-programs-executed-v3.json"
+        ))
+        .map_err(|_| ProgramOperationError::Decode)?;
+        let signed = bounded_hex(
+            object(&fixture)?,
+            "signed_activity_hex",
+            MAX_SIGNED_ACTIVITY_BYTES,
+            None,
+        )?;
+        let document = fixture
+            .get("execution_document")
+            .ok_or(ProgramOperationError::Decode)?;
+        let key = fixed(
+            object(
+                document
+                    .get("authority")
+                    .ok_or(ProgramOperationError::Decode)?,
+            )?,
+            "sequencer_public_key",
+        )?;
+        let execution = decode_execution(document, Some(ExecutionState::Executed), key, &signed)?;
+        require_native_execution(&execution.verified)?;
+        assert_eq!(
+            execution.activity_id,
+            fixed(object(document)?, "activity_id")?
+        );
+        assert!(
+            decode_execution(
+                document,
+                Some(ExecutionState::Executed),
+                [0x55; 32],
+                &signed
+            )
+            .is_err()
+        );
+        for (field, change) in [
+            ("guest_abi_version", json!(3)),
+            ("state_root", json!(hex(&[0x55; 32]))),
+            ("activity_id", json!(hex(&[0x55; 32]))),
+            ("receipt_digest", json!(hex(&[0x55; 32]))),
+            ("terminal_payload", json!("00")),
+            ("call_graph", json!("00")),
+        ] {
+            let mut altered = document.clone();
+            altered[field] = change;
+            assert!(
+                decode_execution(&altered, Some(ExecutionState::Executed), key, &signed).is_err()
+            );
+        }
+        let registry = crate::program_lifecycle::programs_module_registry()?;
+        let activity = layerx_wire::activity::decode_signed(&signed, &registry)
+            .map_err(|_| ProgramOperationError::Decode)?;
+        let native = layerx_types::program_call::NativeProgramCall::decode(activity.payload())
+            .map_err(|_| ProgramOperationError::Decode)?;
+        let request =
+            NativeProgramCallRequest::new(&registry, native, activity.fee_limit(), &signed)?;
+        let value = json!({"state":"unknown","program_id":hex(&request.program_id),
+            "activity_id":hex(&request.activity_id),"idempotency_key":hex(&request.idempotency_key),
+            "retained_signed_activity":hex(&signed)});
+        let outcome = decode_submission(
+            &value,
+            SubmissionExpectation {
+                program_id: Some(request.program_id),
+                activity_id: Some(request.activity_id),
+                idempotency_key: Some(request.idempotency_key),
+                retained_signed_activity: Some(&signed),
+                trusted_sequencer_public_key: key,
+            },
+        )?;
+        let ProgramSubmission::Unknown {
+            activity_id,
+            idempotency_key,
+            retained_signed_activity,
+        } = outcome
+        else {
+            return Err(ProgramOperationError::Verification);
+        };
+        assert_eq!(activity_id, request.activity_id);
+        assert_eq!(idempotency_key, request.idempotency_key);
+        assert_eq!(retained_signed_activity.as_deref(), Some(signed.as_slice()));
+        Ok(())
     }
 }

@@ -36398,3 +36398,26 @@ fanout_scope_delegated = []
 fanout_basis = "Owner requested maximum parallel implementation on 2026-10-04; delegated shared file edits require root coordination and retain original acceptance criteria"
 completion_basis = "partial source published; original acceptance criteria remain required"
 source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/fanout-104.13.26-intake.json"
+
+[task.104.33.7.1]
+title = "Complete Rust Programs client integration"
+status = "done"
+mode = "BUILD"
+wave = 4
+requires = ["0.2", "104.17.4"]
+reqs = ["1098.7", "1103.1", "1103.2", "1103.6"]
+do_1 = "Complete authored Programs discover/interface/simulate/call adapter wiring against actual canonical gateway and receipt owners; preserve real authority and typed refusals. Reuse conforming code, implement only demonstrated gaps."
+do_2 = "Use authoritative shared schema/generator owner for generated changes. Never hand edit generated outputs. Implement real focused corpus for affected production paths without fake authority."
+touches = ["agent/crates/layerx-sdk/src/programs.rs", "agent/crates/layerx-sdk/src/program_http.rs", "agent/crates/layerx-sdk/src/program_lifecycle.rs", "agent/crates/layerx-sdk/tests/native_programs.rs", "scripts/paxeer-x/verify-sdk-program-rust.sh"]
+verify_cmd = "timeout 20m scripts/paxeer-x/verify-sdk-program-rust.sh"
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Freeze source and stop on gate result, 30 minute cap, two repairs, or true contract conflict. Preserve original parent acceptance."
+fanout_role = "daemon_native_bindings"
+parent_task = "104.33.7"
+source_status = "complete"
+completion_basis = "implementation under owner CONSTITUTION; qualification separately recorded"
+qualification_status = "UNRUN"
+source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-104.33.7.1-source-handoff.json"
