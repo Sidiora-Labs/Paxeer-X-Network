@@ -34739,3 +34739,25 @@ title = "Organize first-party tests and scripts under canonical root directories
 ac_1 = "Standalone first-party scripts live under scripts/subsystem and standalone integration tests under tests/subsystem, preserving target names, invocation semantics, permissions, imports, fixtures and CI discovery."
 ac_2 = "Retain language-required package-private Go tests, inline Rust unit tests, generated/dependency/upstream and tool-owned layouts; do not change visibility or remove coverage for directory uniformity."
 ac_3 = "Every relocation updates all actual source/build/CI references atomically; no untracked compatibility alias or disconnected harness substitutes for correct wiring."
+
+[task.7.6]
+title = "Link the language Wasm guest without compiler debug sections"
+status = "done"
+mode = "BUILD"
+wave = 5
+requires = ["7.5"]
+reqs = ["124"]
+touches = ["tools/qualification/paxeer-x/programs_language_abi.py"]
+do_1 = "Apply the exact owner-approved strip=debuginfo compiler flag, preserve existing module bounds and all assertions, then one bounded build and focused parity gate."
+build_cmd = "python3 tools/qualification/paxeer-x/programs_language_abi.py --build"
+verify_cmd = "timeout 20m python3 tools/qualification/paxeer-x/programs_language_abi.py"
+time_limit_minutes = 20
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 0
+stop_condition = "START11:36UTC END11:56UTC; one approved correction and build/check only; preserve all previous failures and exhausted repair budget."
+owner_approval = "User explicitly approved exact task-7.5-artifact-size-proposal.patch and one additional20-minute build/check window."
+qualification_status = "UNRUN"
+source_status = "complete"
+completion_basis = "implementation under owner CONSTITUTION; qualification separately recorded"
+source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-7.6-source-handoff.json"

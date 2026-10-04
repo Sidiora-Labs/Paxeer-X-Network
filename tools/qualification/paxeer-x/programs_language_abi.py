@@ -151,7 +151,7 @@ def build(evidence, target, deadline):
     if len(rlibs) != 1:
         raise RuntimeError("exact freshly built SDK artifact required")
     run([rustc, "--edition=2021", "--target", "wasm32-unknown-unknown", "--crate-type", "cdylib",
-        "-C", "opt-level=2", "-C", "panic=abort", "--extern", "layerx_program_sdk=" + str(rlibs[0]),
+        "-C", "opt-level=2", "-C", "strip=debuginfo", "-C", "panic=abort", "--extern", "layerx_program_sdk=" + str(rlibs[0]),
         "-L", "dependency=" + str(rlibs[0].parent), ROOT / "programs/sdk/rust/tests/fixtures/language_abi.rs",
         "-o", target / "rust.wasm"], evidence, "build-rust-guest", deadline)
     run([clang, "--target=wasm32-unknown-unknown", "-std=c17", "-Oz", "-ffreestanding", "-fno-builtin",
