@@ -37017,12 +37017,22 @@ max_verify_runs = 1
 max_repair_cycles = 2
 time_limit_minutes = 30
 fanout_role = "complete_explorer"
-qualification_status = "UNRUN"
+qualification_status = "PASS"
 stop_condition = "Stop at2026-10-04T20:54:49Z, on an unrelated failure, or after two scoped repair cycles."
 owner_authorization = "Direct owner request to fix all listed CI failures on2026-10-04T20:24UTC"
 source_status = "complete"
 completion_basis = "implementation under owner CONSTITUTION; qualification separately recorded"
 source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-103.6.32-source-handoff.json"
+qualification_revision = "041033c8cd5a76dad81446f17ff216b78d55409b"
+qualification_command = "cargo test --locked --manifest-path agent/Cargo.toml -p layerx-crypto --test budget_core_codec"
+qualification_exit_code = 0
+qualification_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-103.6.32-evidence/verify.log"
+qualification_evidence = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-103.6.32-evidence/result.json"
+full_ci_status = "UNCONFIRMED; focused task pass only"
+build_revision = "041033c8cd5a76dad81446f17ff216b78d55409b"
+build_exit_code = 0
+build_command = "cargo test --locked --manifest-path agent/Cargo.toml -p layerx-crypto --test budget_core_codec --no-run"
+build_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-103.6.32-evidence/build.log"
 
 [task.103.6.34]
 title = "Connect real registry TLS fixture to authenticated event enrollment"
