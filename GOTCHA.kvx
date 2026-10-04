@@ -2215,3 +2215,8 @@ resolution = "Record once and preserve the assertion; qualify a distinct native 
 [gotcha.656]
 observed = "The legacy NativePrepareRequestV1 Programs-only validator also guards the public prepare adapter, and the guessed agent_rpc_response.rs does not exist."
 resolution = "Discover response ownership in the actual wire adapter; preserve the old Programs-only request and add a distinct authenticated native-effect request discriminator on the existing route."
+
+[gotcha.659]
+area = "Native admission SDK authentication"
+observed = "Task104.35.19 preserved native V2/V3 captures and all native assertions; first actual SDK transport page refuses Evidence(Activity), so SDK authentication remains unqualified."
+resolution = "Preserve every activity and authority check; implement the actual canonical signed activity integration in a separate bounded source task without rerunning the unchanged gate."

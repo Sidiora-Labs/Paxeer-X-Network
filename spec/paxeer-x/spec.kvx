@@ -32812,3 +32812,27 @@ source_ownership = "Root serializes shared manifests, lockfiles, spec and public
 source_status = "partial"
 qualification_status = "unrun_partial_source"
 remaining_source = "Native profile canonical consumers and exact held/budget evidence require genuine producer; terminal budget owner and focused projection case incomplete."
+
+[task.104.35.19]
+title = "Preserve deterministic authenticated admission capture through maintenance publication"
+status = "done"
+mode = "BUILD"
+wave = 2
+requires = ["0.2", "104.35.18"]
+reqs = ["1105.3", "1105.4"]
+do_1 = "Correct actual V3 fresh-versus-retained capture mismatch across serial DEPLOY maintenance publication, preserving every equality assertion, receipt previous-root binding and all V1/V2 contracts."
+touches = ["src/protocol/lxp_kernel.c", "include/layerx/lxp_kernel.h", "cmd/layerxd/lxp_daemon_evidence.c", "cmd/layerxd/lxp_daemon_process.c", "tests/daemon/lxp_test_arbiter_admission.c"]
+build_cmd = "timeout 20m make paxeer-x-arbiter-admission-build"
+verify_cmd = "timeout 10m python3 tools/qualification/paxeer-x/arbiter-admission.py"
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop at original cap, unrelated failure, missing authority or weakening; report exact source state and evidence."
+completion_basis_policy = "Owner CONSTITUTION: fully implemented DONE; qualification separate."
+source_ownership = "Root serializes shared manifests, locks, spec and publication; no deployment."
+completion_basis = "implementation"
+qualification_status = "implemented-not-qualified"
+build_exit_code = 0
+verify_exit_code = 101
+qualification_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-104.35.19-verify.log"

@@ -7165,7 +7165,8 @@ lxp_result lxp_kernel_prepare_serial_activity_batch_with_admission_prestate(
         activity->protocol_version != LXP_PROTOCOL_VERSION_STATE_COMMITMENT ||
         lxp_activity_module_id(activity->activity_type) != LXP_MODULE_PROGRAMS)
         return LXP_ERR_CONTEXT_MISMATCH;
-    return kernel_prepare_serial_activity_batch(kernel, activity, execution, 0U, maximum_bytes, batch_out);
+    return kernel_prepare_serial_activity_batch(kernel, activity, execution,
+        maximum_bytes, maximum_bytes, batch_out);
 }
 
 
@@ -7180,7 +7181,7 @@ lxp_result lxp_kernel_prepare_activity_batch_with_admission_prestate(
     if (maximum_bytes == 0U || maximum_bytes > PRESTATE_MAX_BYTES)
         return LXP_ERR_LENGTH_LIMIT;
     return kernel_prepare_activity_batch(kernel, activities, executions, offered_count,
-        maximum_workers, 0U, maximum_bytes, batch_out, retry_prefix_count);
+        maximum_workers, maximum_bytes, maximum_bytes, batch_out, retry_prefix_count);
 }
 
 
@@ -7196,7 +7197,8 @@ lxp_result lxp_kernel_prepare_terminal_rejection_with_admission_prestate(
         activity->protocol_version != LXP_PROTOCOL_VERSION_STATE_COMMITMENT ||
         lxp_activity_module_id(activity->activity_type) != LXP_MODULE_PROGRAMS)
         return LXP_ERR_CONTEXT_MISMATCH;
-    return kernel_prepare_terminal_rejection(kernel, activity, execution, refusal, 0U, maximum_bytes, batch_out);
+    return kernel_prepare_terminal_rejection(kernel, activity, execution, refusal,
+        maximum_bytes, maximum_bytes, batch_out);
 }
 
 

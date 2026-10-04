@@ -656,6 +656,10 @@ static int maintenance_publish(maintenance_fixture *f, uint32_t type,
             lxp_byte_span old = lxp_kernel_prepared_batch_execution_prestate(legacy, i);
             lxp_byte_span unchanged = lxp_kernel_prepared_batch_execution_prestate(prepared, i);
             lxp_byte_span v2 = lxp_kernel_prepared_batch_arbiter_prestate(prepared, i);
+            lxp_byte_span v3 = lxp_kernel_prepared_batch_admission_prestate(prepared, i);
+            CHECK(v3.bytes != NULL && v3.length > v2.length + 12U &&
+                v3.bytes[0] == 0U && v3.bytes[1] == 3U &&
+                memcmp(v3.bytes + 6U, v2.bytes, v2.length) == 0);
             CHECK(lxp_kernel_prepared_batch_arbiter_prestate(legacy, i).bytes == NULL);
             CHECK(old.bytes != NULL && old.length == unchanged.length &&
                 memcmp(old.bytes, unchanged.bytes, old.length) == 0);
