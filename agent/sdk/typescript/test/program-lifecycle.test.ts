@@ -124,7 +124,9 @@ for (const name of ["native-program-call-v3", "native-program-call-v4"]) {
     null as unknown as Parameters<typeof programs.verifyGatewayProgramInterface>[3]));
   assert.deepEqual(Buffer.from(nativeCodec.encodeNativeProgramCall(nativeCodec.decodeNativeProgramCall(payload))), payload);
   for (const guestAbi of [3, 4] as const) {
-    const call = { ...decoded, guestAbi };
+    const call = { ...decoded, guestAbi, programId: new Uint8Array(decoded.programId),
+      calldata: new Uint8Array(decoded.calldata), capabilities: new Uint8Array(decoded.capabilities),
+      accessDeclaration: new Uint8Array(decoded.accessDeclaration) };
     const canonical = nativeCodec.encodeNativeProgramCallV1(call);
     assert.equal(new DataView(canonical.buffer, canonical.byteOffset).getUint16(32), guestAbi);
     assert.deepEqual(nativeCodec.decodeNativeProgramCallV1(canonical), call);
