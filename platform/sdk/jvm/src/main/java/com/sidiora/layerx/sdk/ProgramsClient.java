@@ -340,8 +340,12 @@ public final class ProgramsClient {
         if (call.nativeCall() != null && protocolVersion != 3) invalid();
         ActivityBinding activity = decodeSignedCall(call);
         return raw("program.simulate", encode(call), Map.of(), null)
-            .thenApply(value -> decodeSimulation(value, call.programId(), activity, sequencerPublicKey,
-                BigInteger.valueOf(clock.millis()), maximumSimulationAgeMillis));
+            .thenApply(value -> {
+                Simulation result = decodeSimulation(value, call.programId(), activity, sequencerPublicKey,
+                    BigInteger.valueOf(clock.millis()), maximumSimulationAgeMillis, call);
+                bindGuestAbi(call, result.execution());
+                return result;
+            });
     }
 
     public CompletionStage<Submission> submit(Call call, IdempotencyKey key) {
@@ -356,8 +360,10 @@ public final class ProgramsClient {
         return raw("program.call", encode(call), Map.of(), key).handle((value, error) -> {
             if (error != null) throw new java.util.concurrent.CompletionException(error);
             try {
-                return decodeSubmission(value, call.programId(), activity.activityId(), key.value(),
-                    call.signedActivity(), sequencerPublicKey);
+                Submission result = decodeSubmission(value, call.programId(), activity.activityId(), key.value(),
+                    call.signedActivity(), sequencerPublicKey, call);
+                bindGuestAbi(call, result.execution());
+                return result;
             } catch (PlatformSdkException failure) {
                 if (failure.code() == PlatformSdkException.Code.DECODE_FAILURE
                         || failure.code() == PlatformSdkException.Code.VERIFICATION_FAILURE) {
@@ -366,6 +372,30 @@ public final class ProgramsClient {
                 throw failure;
             }
         });
+    }
+
+    private static void bindGuestAbi(Call call, VerifiedExecution execution) {
+        if (execution != null && call.nativeCall() != null
+                && execution.guestAbiVersion() != call.nativeCall().guestAbi()) invalidVerification();
+    }
+
+    public CompletionStage<Submission> receipt(Call call, IdempotencyKey key) {
+        Objects.requireNonNull(call, "call");
+        Objects.requireNonNull(key, "key");
+        if (call.nativeCall() != null && protocolVersion != 3) invalid();
+        ActivityBinding binding = decodeSignedCall(call);
+        if (!canonicalLowerHex(key.value(), 32)
+                || !MessageDigest.isEqual(binding.idempotencyKey(), hex32(key.value()))) invalid();
+        ObjectNode body = object().put("idempotency_key", key.value())
+            .put("expected_activity_id", hex(binding.activityId()))
+            .put("requested_verification_level", SEQUENCER_SIGNED);
+        return raw("program.receipt", body, Map.of("idempotency_key", key.value()), null)
+            .thenApply(value -> {
+                Submission result = decodeSubmission(value, call.programId(), binding.activityId(), key.value(),
+                    call.signedActivity(), sequencerPublicKey, call);
+                bindGuestAbi(call, result.execution());
+                return result;
+            });
     }
 
     public CompletionStage<Submission> receipt(IdempotencyKey key, byte[] expectedActivityId) {
@@ -384,7 +414,7 @@ public final class ProgramsClient {
             .put("requested_verification_level", SEQUENCER_SIGNED);
         return raw("program.receipt", body, Map.of("idempotency_key", key.value()), null)
             .thenApply(value -> decodeSubmission(value, null, expected, key.value(), null,
-                sequencerPublicKey));
+                sequencerPublicKey, null));
     }
 
     public CompletionStage<Submission> activity(byte[] activityId) {
@@ -399,7 +429,7 @@ public final class ProgramsClient {
             .put("requested_verification_level", SEQUENCER_SIGNED);
         return raw("program.activity", body, Map.of("activity_id", id), null)
             .thenApply(value -> decodeSubmission(value, null, expected, null, null,
-                sequencerPublicKey));
+                sequencerPublicKey, null));
     }
 
     public static LocalVerifier.ReceiptVerification verifyReceipt(byte[] canonicalReceipt,
@@ -542,21 +572,21 @@ public final class ProgramsClient {
 
     private Simulation decodeSimulation(ObjectNode value, byte[] expectedProgram,
                                                 ActivityBinding activity, byte[] pinnedKey,
-                                                BigInteger now, BigInteger maximumAge) {
+                                                BigInteger now, BigInteger maximumAge, Call expectedCall) {
         requireFields(value, "committed", "execution", "simulation_evidence");
         if (!value.path("committed").isBoolean() || value.path("committed").booleanValue()) {
             throw decodeFailure();
         }
         ObjectNode executionDocument = object(value, "execution");
         VerifiedExecution execution = verifyExecution(executionDocument, "simulated", false,
-            expectedProgram, activity.activityId(), null, pinnedKey);
+            expectedProgram, activity.activityId(), null, pinnedKey, expectedCall);
         verifySimulationEvidence(executionDocument, object(value, "simulation_evidence"), activity,
             pinnedKey, now, maximumAge);
         return new Simulation(value, execution);
     }
 
     private Submission decodeSubmission(ObjectNode value, byte[] expectedProgram,
-            byte[] expectedActivity, String expectedKey, byte[] expectedSignedActivity, byte[] pinnedKey) {
+            byte[] expectedActivity, String expectedKey, byte[] expectedSignedActivity, byte[] pinnedKey, Call expectedCall) {
         SubmissionState state = SubmissionState.parse(text(value, "state"));
         if (state == SubmissionState.UNKNOWN) {
             boolean retained = value.has("retained_signed_activity");
@@ -584,7 +614,7 @@ public final class ProgramsClient {
             throw decodeFailure();
         }
         VerifiedExecution execution = verifyExecution(value, state.wire(), true, expectedProgram,
-            expectedActivity, key, pinnedKey);
+            expectedActivity, key, pinnedKey, expectedCall);
         String outcomeKind = text(object(value, "outcome"), "kind");
         if (state == SubmissionState.REFUSED && !"refused".equals(outcomeKind)
                 || state == SubmissionState.EXECUTED
@@ -596,7 +626,7 @@ public final class ProgramsClient {
 
     private VerifiedExecution verifyExecution(ObjectNode document, String expectedState,
             boolean idempotent, byte[] expectedProgram, byte[] expectedActivity, String expectedKey,
-            byte[] pinnedKey) {
+            byte[] pinnedKey, Call expectedCall) {
         String[] base = {"state", "activity_id", "program_id", "guest_abi_version", "module_version",
             "batch_id", "global_sequence", "result_code", "state_root", "receipt", "receipt_digest",
             "terminal_payload", "call_graph", "authority", "usage", "outcome", "verification"};
@@ -619,7 +649,7 @@ public final class ProgramsClient {
         long moduleVersion = requiredU32(document.get("module_version"));
         int resultCode = requiredI32(document.get("result_code"));
         BigInteger globalSequence = unsigned(document.get("global_sequence"), 64);
-        if ((guestAbi != 1 && guestAbi != 2) || moduleVersion < 1 || moduleVersion > 4
+        if (!GeneratedReceiptContract.supportsProgramGuestAbi(guestAbi) || moduleVersion < 1 || moduleVersion > 4
                 || !EXECUTION_VERIFICATION.equals(text(document, "verification"))) throw decodeFailure();
         ObjectNode authority = object(document, "authority");
         requireFields(authority, "batch_id", "asset", "previous_state_root", "resulting_state_root",
@@ -652,8 +682,16 @@ public final class ProgramsClient {
         byte[] declaredReceiptDigest = hex32(text(document, "receipt_digest"));
         LocalVerifier.AuthorizedReceiptBatch authorized = new LocalVerifier.AuthorizedReceiptBatch(
             batchId, asset, previousRoot, resultingRoot, sequencerKey);
-        LocalVerifier.ReceiptVerification verified = verifyReceipt(receiptBytes, authorized, activity,
-            guestAbi, terminalPayload, callGraph, protocolVersion);
+        boolean terminalV5Guest = guestAbi == GeneratedReceiptContract.PROGRAM_ABI_V3
+            || guestAbi == GeneratedReceiptContract.PROGRAM_ABI_V4;
+        if (terminalV5Guest && (protocolVersion != 3 || expectedCall == null
+                || expectedCall.nativeCall() == null
+                || expectedCall.nativeCall().guestAbi() != guestAbi
+                || !MessageDigest.isEqual(expectedCall.programId(), program))) invalidVerification();
+        LocalVerifier.ReceiptVerification verified = terminalV5Guest
+            ? LocalVerifier.verifyProgramTerminalV5Receipt(receiptBytes, authorized, activity,
+                expectedCall.nativeCall(), expectedCall.signedActivity(), outcomeDocument, terminalPayload, callGraph)
+            : verifyReceipt(receiptBytes, authorized, activity, guestAbi, terminalPayload, callGraph, protocolVersion);
         LocalVerifier.ProtocolReceipt receipt = verified.receipt();
         LocalVerifier.ProgramReceiptOutcome receiptOutcome = receipt.programOutcome();
         String transferVerification = verifyTerminal(terminalPayload, callGraph, program, outcomeDocument, receipt.protocolVersion(),
@@ -702,15 +740,47 @@ public final class ProgramsClient {
     private record PayerAggregate(byte[] payer, BigInteger due, BigInteger paid,
                                   BigInteger arrears) {}
 
+    public static String verifyTerminalV5(byte[] encoded, byte[] availableGraph, byte[] expectedProgram,
+            ObjectNode documentOutcome, LocalVerifier.ProgramReceiptOutcome receipt) {
+        if (documentOutcome == null) invalidVerification();
+        return verifyTerminalV5Internal(encoded, availableGraph, expectedProgram, documentOutcome, receipt, false);
+    }
+
+    public static String verifyTerminalV5Capture(byte[] encoded, byte[] availableGraph, byte[] expectedProgram,
+            LocalVerifier.ProgramReceiptOutcome receipt) {
+        return verifyTerminalV5Internal(encoded, availableGraph, expectedProgram, null, receipt, true);
+    }
+
+    private static String verifyTerminalV5Internal(byte[] encoded, byte[] availableGraph, byte[] expectedProgram,
+            ObjectNode documentOutcome, LocalVerifier.ProgramReceiptOutcome receipt, boolean capturedOutcome) {
+        try {
+            if (receipt.abiVersion() != GeneratedReceiptContract.PROGRAM_ABI_V3
+                    && receipt.abiVersion() != GeneratedReceiptContract.PROGRAM_ABI_V4) invalidVerification();
+            byte[] inner = unwrapTerminal(unwrapAppliedTerminal(encoded, receipt)).inner();
+            boolean refusal = receipt.terminalKind() != 1
+                && (starts(inner, "LXP/programs/callback-failure/v1\0")
+                    || starts(inner, "LXP/programs/settlement-failure/v1\0"));
+            if (!starts(inner, "LXP/program-execution/v5\0") && !refusal) invalidVerification();
+            return verifyTerminalInternal(encoded, availableGraph, expectedProgram, documentOutcome, 3, receipt, capturedOutcome);
+        } catch (IllegalArgumentException error) { invalidVerification(); throw new AssertionError(); }
+    }
+
     static String verifyTerminal(byte[] encoded, byte[] availableGraph, byte[] expectedProgram,
             ObjectNode documentOutcome, int protocolVersion, LocalVerifier.ProgramReceiptOutcome receipt) {
+        return verifyTerminalInternal(encoded, availableGraph, expectedProgram, documentOutcome, protocolVersion, receipt, false);
+    }
+
+    private static String verifyTerminalInternal(byte[] encoded, byte[] availableGraph, byte[] expectedProgram,
+            ObjectNode documentOutcome, int protocolVersion, LocalVerifier.ProgramReceiptOutcome receipt,
+            boolean capturedOutcome) {
         try {
             if (encoded.length == 0 || encoded.length > MAX_CALLDATA_BYTES || !MessageDigest.isEqual(sha256(encoded), receipt.terminalPayloadRoot())
                     || availableGraph.length == 0 || !MessageDigest.isEqual(sha256(availableGraph), receipt.callGraphRoot())) throw new IllegalArgumentException();
             TerminalAttachments attachments = unwrapTerminal(unwrapAppliedTerminal(encoded, receipt));
             byte[] inner = attachments.inner();
             TerminalCursor cursor;
-            boolean candidate = starts(inner, "LXP/program-execution/v4\0");
+            boolean versionFive = starts(inner, "LXP/program-execution/v5\0");
+            boolean candidate = starts(inner, "LXP/program-execution/v4\0") || versionFive;
             boolean successful = false;
             if (starts(inner, "LXP/program-execution/v2\0")
                     || starts(inner, "LXP/program-execution/v3\0")) {
@@ -753,7 +823,8 @@ public final class ProgramsClient {
                 matchTerminalUsage(usage, receipt);
                 successful = true;
             } else if (candidate) {
-                cursor = new TerminalCursor(inner, "LXP/program-execution/v4\0".getBytes(StandardCharsets.UTF_8).length);
+                cursor = new TerminalCursor(inner, (versionFive ? "LXP/program-execution/v5\0"
+                    : "LXP/program-execution/v4\0").getBytes(StandardCharsets.UTF_8).length);
                 int runtime = cursor.u16();
                 long feeSchedule = cursor.u32();
                 long metering = cursor.u32();
@@ -774,11 +845,21 @@ public final class ProgramsClient {
                 } else if (traceTag != 0) throw new IllegalArgumentException();
                 byte[] program = cursor.take(32);
                 int abi = cursor.u16();
+                if (versionFive ? protocolVersion != 3
+                        || (abi != GeneratedReceiptContract.PROGRAM_ABI_V3
+                            && abi != GeneratedReceiptContract.PROGRAM_ABI_V4)
+                        : abi != GeneratedReceiptContract.PROGRAM_ABI_V2) throw new IllegalArgumentException();
                 int outcomeTag = cursor.u8();
                 String expectedKind;
                 if (outcomeTag == 0) {
                     int code = cursor.i32();
                     byte[] response = cursor.sized64();
+                    if (capturedOutcome) {
+                        documentOutcome = JsonNodeFactory.instance.objectNode();
+                        documentOutcome.put("kind", "completed");
+                        documentOutcome.put("code", code);
+                        documentOutcome.put("response", hex(response));
+                    }
                     if (code < 0 || response.length > MAX_CALLDATA_BYTES
                             || !"completed".equals(text(documentOutcome, "kind"))
                             || code != requiredI32(documentOutcome.get("code"))
@@ -805,6 +886,7 @@ public final class ProgramsClient {
                 if (outcomeTag == 0) {
                     if (receipt.terminalKind() != 1) throw new IllegalArgumentException();
                 } else {
+                    if (capturedOutcome) documentOutcome = capturedRefusal(expectedKind, receipt.resultCode());
                     requireRefusal(documentOutcome, expectedKind, receipt.resultCode());
                     if (receipt.terminalKind() == 1) throw new IllegalArgumentException();
                 }
@@ -827,12 +909,14 @@ public final class ProgramsClient {
                     throw new IllegalArgumentException();
                 }
                 cursor.finish();
+                if (capturedOutcome) documentOutcome = capturedRefusal("guest_refused", receipt.resultCode());
                 requireRefusal(documentOutcome, "guest_refused", receipt.resultCode());
             } else if (starts(inner, "LXP/programs/callback-failure/v1\0")) {
                 cursor = new TerminalCursor(inner, "LXP/programs/callback-failure/v1\0".getBytes(StandardCharsets.UTF_8).length);
                 cursor.u8();
                 cursor.i32();
                 cursor.finish();
+                if (capturedOutcome) documentOutcome = capturedRefusal("guest_refused", receipt.resultCode());
                 requireRefusal(documentOutcome, "guest_refused", receipt.resultCode());
             } else throw new IllegalArgumentException();
             return verifyTerminalAttachments(attachments, candidate, successful, protocolVersion, receipt);
@@ -841,6 +925,15 @@ public final class ProgramsClient {
             failure.initCause(error);
             throw failure;
         }
+    }
+
+    private static ObjectNode capturedRefusal(String kind, int code) {
+        ObjectNode outcome = JsonNodeFactory.instance.objectNode();
+        outcome.put("kind", "refused");
+        ObjectNode failure = outcome.putObject("failure");
+        failure.put("kind", kind);
+        if ("guest_refused".equals(kind)) failure.put("code", code);
+        return outcome;
     }
 
     private static void requireRefusal(ObjectNode outcome, String expected, int code) {

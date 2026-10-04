@@ -1,6 +1,9 @@
 package com.sidiora.layerx.sdk.verify;
 
 import com.sidiora.layerx.sdk.PlatformSdkException;
+import com.sidiora.layerx.sdk.ProgramsClient;
+import com.sidiora.layerx.sdk.NativeProgramCall;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.sidiora.layerx.sdk.verify.GeneratedReceiptContract.ReceiptCheck;
 import java.io.ByteArrayOutputStream;
 import java.math.BigInteger;
@@ -276,6 +279,53 @@ public final class LocalVerifier {
 
     public static ReceiptVerification verifyReceiptOutcome(byte[] canonicalReceipt,
                                                               AuthorizedReceiptBatch authorized, int... selectedProtocol) {
+        return verifyReceiptOutcomeInternal(canonicalReceipt, authorized, false, selectedProtocol);
+    }
+
+    public static ReceiptVerification verifyProgramTerminalV5Receipt(byte[] canonicalReceipt,
+            AuthorizedReceiptBatch authorized, byte[] expectedActivity, NativeProgramCall expectedCall,
+            byte[] signedActivity, ObjectNode outcome, byte[] terminal, byte[] graph) {
+        if (outcome == null) fail(ReceiptCheck.RECEIPT_SHAPE);
+        return verifyProgramTerminalV5ReceiptInternal(canonicalReceipt, authorized, expectedActivity,
+            expectedCall, signedActivity, outcome, terminal, graph, false);
+    }
+
+    public static ReceiptVerification verifyProgramTerminalV5Receipt(byte[] canonicalReceipt,
+            AuthorizedReceiptBatch authorized, byte[] expectedActivity, NativeProgramCall expectedCall,
+            byte[] signedActivity, byte[] terminal, byte[] graph) {
+        return verifyProgramTerminalV5ReceiptInternal(canonicalReceipt, authorized, expectedActivity,
+            expectedCall, signedActivity, null, terminal, graph, true);
+    }
+
+    private static ReceiptVerification verifyProgramTerminalV5ReceiptInternal(byte[] canonicalReceipt,
+            AuthorizedReceiptBatch authorized, byte[] expectedActivity, NativeProgramCall expectedCall,
+            byte[] signedActivity, ObjectNode outcome, byte[] terminal, byte[] graph, boolean capturedOutcome) {
+        if (expectedCall == null) fail(ReceiptCheck.RECEIPT_SHAPE);
+        int expectedGuestAbi = expectedCall.guestAbi();
+        byte[] expectedProgram = expectedCall.programId();
+        try { expectedCall.bindSignedActivity(signedActivity); }
+        catch (RuntimeException error) { fail(ReceiptCheck.RECEIPT_SHAPE); }
+        if (!equal(sha256("LXP/v1/activity-id\0".getBytes(StandardCharsets.UTF_8), signedActivity),
+                exact(expectedActivity, 32))) fail(ReceiptCheck.ACTIVITY_ID);
+        if (expectedGuestAbi != GeneratedReceiptContract.PROGRAM_ABI_V3
+                && expectedGuestAbi != GeneratedReceiptContract.PROGRAM_ABI_V4) fail(ReceiptCheck.PROTOCOL_VERSION);
+        ReceiptVerification verified = verifyReceiptOutcomeInternal(canonicalReceipt, authorized, true, 3);
+        ProtocolReceipt receipt = verified.receipt();
+        ProgramReceiptOutcome program = receipt.programOutcome();
+        if (receipt.moduleId() != 9 || receipt.operation() != 3 || program == null
+                || program.abiVersion() != expectedGuestAbi || program.resultCode() != receipt.resultCode()
+                || !equal(receipt.activityId(), exact(expectedActivity, 32))
+                || terminal == null || terminal.length == 0 || terminal.length > ProgramsClient.MAX_CALLDATA_BYTES
+                || graph == null || graph.length == 0 || graph.length > ProgramsClient.MAX_CALLDATA_BYTES
+                || !equal(sha256(terminal), program.terminalPayloadRoot())
+                || !equal(sha256(graph), program.callGraphRoot())) fail(ReceiptCheck.RECEIPT_SHAPE);
+        if (capturedOutcome) ProgramsClient.verifyTerminalV5Capture(terminal, graph, exact(expectedProgram, 32), program);
+        else ProgramsClient.verifyTerminalV5(terminal, graph, exact(expectedProgram, 32), outcome, program);
+        return verified;
+    }
+
+    private static ReceiptVerification verifyReceiptOutcomeInternal(byte[] canonicalReceipt,
+            AuthorizedReceiptBatch authorized, boolean terminalV5, int... selectedProtocol) {
         DecodedReceipt decoded = decodeProtocolReceipt(canonicalReceipt);
         ProtocolReceipt receipt = decoded.receipt();
         if (!selectedProtocolMatches(receipt.protocolVersion(), selectedProtocol)) fail(ReceiptCheck.PROTOCOL_VERSION);
@@ -290,8 +340,15 @@ public final class LocalVerifier {
             if (receipt.operation() == 3) {
                 ProgramReceiptOutcome outcome = receipt.programOutcome();
                 if (outcome == null) fail(ReceiptCheck.RECEIPT_SHAPE);
-                if ((outcome.abiVersion() != 1 && outcome.abiVersion() != 2) || outcome.runtimeVersion() != 1)
-                    fail(ReceiptCheck.PROTOCOL_VERSION);
+                if (terminalV5) {
+                    if (receipt.protocolVersion() != 3 || outcome.runtimeVersion() != 1
+                            || (outcome.abiVersion() != GeneratedReceiptContract.PROGRAM_ABI_V3
+                                && outcome.abiVersion() != GeneratedReceiptContract.PROGRAM_ABI_V4))
+                        fail(ReceiptCheck.PROTOCOL_VERSION);
+                } else {
+                    if ((outcome.abiVersion() != 1 && outcome.abiVersion() != 2) || outcome.runtimeVersion() != 1)
+                        fail(ReceiptCheck.PROTOCOL_VERSION);
+                }
             }
         }
         if (!program && receipt.operation() == 0) fail(ReceiptCheck.OPERATION);

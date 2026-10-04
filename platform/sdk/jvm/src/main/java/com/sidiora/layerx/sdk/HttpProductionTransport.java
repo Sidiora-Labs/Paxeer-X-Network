@@ -650,6 +650,15 @@ public final class HttpProductionTransport implements ProductionTransport {
     }
 
     private static boolean validProgramVerification(String operation, JsonNode value, JsonNode verification) {
+        if ("program.discover".equals(operation)
+                && exactFields(verification, "state", "level")
+                && "Achieved".equals(verification.path("state").textValue())
+                && "SequencerSigned".equals(verification.path("level").textValue())) {
+            return value.isObject()
+                && canonicalHexNode(value.get("deployment_receipt_digest"), 32, false)
+                && canonicalHexNode(value.get("discovery_public_key"), 32, false)
+                && canonicalHexNode(value.get("discovery_signature"), 64, false);
+        }
         if (Set.of("program.discover", "program.interface").contains(operation)) {
             return exactFields(verification, "state", "requested", "achieved", "reason")
                 && "Unverified".equals(verification.path("state").textValue())

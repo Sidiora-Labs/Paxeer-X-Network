@@ -21,6 +21,32 @@ public record NativeProgramCall(byte[] programId, int guestAbi, String entrypoin
         return out.put(entry).put(calldata).put(capabilities).put(accessDeclaration).array();
     }
 
+    public byte[] bindSignedActivity(byte[] signedActivity) {
+        return NativeProgramLifecycleRequest.bind(3, encode(), signedActivity);
+    }
+
+    public static NativeProgramCall decodeSignedActivity(byte[] signedActivity) {
+        if (signedActivity == null || signedActivity.length == 0 || signedActivity.length > 1048576)
+            throw new IllegalArgumentException("invalid native signed activity");
+        try {
+            ByteBuffer input = ByteBuffer.wrap(signedActivity);
+            input.position(19);
+            NativeProgramLifecycleRequest.bounded(input, 255);
+            input.get(); NativeProgramLifecycleRequest.bounded(input, 524288);
+            input.get(); input.getLong();
+            input.get(); input.getLong(); input.getLong();
+            input.get(); NativeProgramLifecycleRequest.bounded(input, 32);
+            input.get(); input.getLong(); input.getLong();
+            input.get(); NativeProgramLifecycleRequest.bounded(input, 32);
+            input.get(); byte[] payload = NativeProgramLifecycleRequest.bounded(input, 524288);
+            NativeProgramCall call = decode(payload);
+            call.bindSignedActivity(signedActivity);
+            return call;
+        } catch (java.nio.BufferUnderflowException | IndexOutOfBoundsException error) {
+            throw new IllegalArgumentException("invalid native signed activity", error);
+        }
+    }
+
     public static NativeProgramCall decode(byte[] payload) {
         if (payload.length < 106) throw new IllegalArgumentException("invalid native program call");
         ByteBuffer input = ByteBuffer.wrap(payload);
