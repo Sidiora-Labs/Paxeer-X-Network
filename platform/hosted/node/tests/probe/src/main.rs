@@ -16,7 +16,7 @@ use layerx_client::client::{Client, ClientConfig, ReconnectPolicy};
 use layerx_client::evidence::RootSelector;
 use layerx_client::head::HeadTracker;
 use layerx_client::lni::handshake::{perform, HandshakeConfig};
-use layerx_client::lni::schema::Version;
+use layerx_client::lni::schema::{Capability, Version};
 use layerx_client::lni::transport::{ConnectionGate, Limits, Uds};
 use layerx_client::read::{ReadContext, ReadError, Requested};
 use layerx_proof::inclusion::SequencerAuthorization;
@@ -28,7 +28,7 @@ const FRAME_BYTES: usize = 1_212_416;
 
 fn usage() -> ExitCode {
     eprintln!(
-        "usage: layerx-node-probe handshake --socket PATH --network-id N\n       layerx-node-probe balance --socket PATH --network-id N --account NAME --asset HEX64\n       layerx-node-probe did-accounts --socket PATH --network-id N --did DID\n       layerx-node-probe supervisor --socket PATH --request reset|status"
+        "usage: layerx-node-probe handshake --socket PATH --network-id N\n       layerx-node-probe balance --socket PATH --network-id N --account NAME --asset HEX64\n       layerx-node-probe did-accounts --socket PATH --network-id N --did DID\n       layerx-node-probe supervisor --socket PATH --request reset|status\n       layerx-node-probe custody-asset-profile --socket PATH --network-id N --asset HEX64 [--source-did DID --destination-did DID --profile-output ABS]\n       layerx-node-probe write-asset-send --socket PATH --network-id N --seed-file PATH --destination-did DID --asset HEX64 --output PATH [--source-did DID --amount N]"
     );
     ExitCode::from(2)
 }
@@ -358,6 +358,233 @@ fn write_send(parsed: &BTreeMap<String, String>) -> Result<String, String> {
     Ok(hex(&signed.activity_id))
 }
 
+struct CustodySession {
+    transport: Uds,
+    context: ReadContext,
+    state_root: [u8; 32],
+    capabilities: layerx_client::lni::Capabilities,
+}
+
+fn custody_session(parsed: &BTreeMap<String, String>) -> Result<CustodySession, String> {
+    let network_id = required(parsed, "network-id")?
+        .parse::<u32>()
+        .map_err(|error| error.to_string())?;
+    let gate = ConnectionGate::new(1);
+    let mut transport = Uds::connect(&PathBuf::from(required(parsed, "socket")?), &gate, limits())
+        .map_err(|error| format!("custody lni connect: {error:?}"))?;
+    let handshake = perform(&mut transport, &handshake_config(Version::V1_8, network_id), None)
+        .map_err(|error| format!("custody lni handshake: {error:?}"))?;
+    for capability in [Capability::AccountRead, Capability::BatchHeader, Capability::PreparationState, Capability::CapsDiscovery] {
+        if !handshake.capabilities().contains(capability) {
+            return Err(format!("custody unavailable capability: {capability:?}"));
+        }
+    }
+    let node = handshake.node();
+    if node.interface_version.minor < 8 || node.latest_sealed_batch == 0 {
+        return Err("custody requires interface 1.8 and a sealed state-proven head".to_owned());
+    }
+    let signed = batch::lookup(
+        &mut transport, node.interface_version, node.latest_sealed_batch, 2,
+        node.authorised_sequencer_key,
+    ).map_err(|error| format!("custody batch header: {error:?}"))?;
+    if signed.header.network_id() != network_id
+        || signed.header.protocol_version() != node.protocol_version
+        || signed.header.last_sequence() != node.chain_head_sequence
+    {
+        return Err("custody sealed head mismatch".to_owned());
+    }
+    let context = ReadContext {
+        interface_version: node.interface_version,
+        correlation_id: 10,
+        expected_protocol_version: node.protocol_version,
+        expected_network_id: network_id,
+        requested: Requested::new(VerificationLevel::STATE_PROVEN),
+        head: HeadTracker::new(node).current(),
+        sequencer_authorization: SequencerAuthorization::new(
+            signed.sequencer_id, node.authorised_sequencer_key,
+            signed.first_batch_number, signed.last_batch_number,
+        ),
+        handshake_sequencer_key: node.authorised_sequencer_key,
+        root_selector: RootSelector::Latest,
+    };
+    Ok(CustodySession { transport, context, state_root: signed.header.resulting_state_root(), capabilities: handshake.capabilities().clone() })
+}
+
+fn custody_effective_asset(
+    session: &mut CustodySession,
+    source_did: &str,
+    asset: [u8; 32],
+) -> Result<layerx_client::evidence::VerifiedEffectiveAsset, String> {
+    let did = Did::new(source_did.as_bytes()).map_err(|error| format!("custody DID: {error:?}"))?;
+    let did_id = layerx_wire::hash::did_id_for_protocol(&did, session.context.expected_protocol_version)
+        .map_err(|error| format!("custody DID id: {error:?}"))?;
+    let page_bytes = FRAME_BYTES.checked_sub(layerx_client::caps::CAPS_RESPONSE_HEADER_BYTES + 22)
+        .ok_or("custody caps frame bound")?.min(layerx_client::caps::MAX_CAPS_PAGE_BYTES);
+    let mut context = session.context;
+    context.correlation_id = 4;
+    let mut discovery = layerx_client::caps::CapsDiscovery::begin(
+        &mut session.transport, &session.capabilities, context, did_id,
+        u32::try_from(page_bytes).map_err(|error| error.to_string())?, Duration::from_secs(5), None,
+    ).map_err(|error| format!("custody caps discovery: {error:?}"))?;
+    let caps = loop {
+        match discovery.advance() {
+            layerx_client::caps::CapsProgress::Incomplete { .. } => {}
+            layerx_client::caps::CapsProgress::Complete(caps)
+            | layerx_client::caps::CapsProgress::Empty(caps) => break caps,
+            layerx_client::caps::CapsProgress::Refused(error) => return Err(format!("custody caps refused: {error:?}")),
+            layerx_client::caps::CapsProgress::Unavailable => return Err("custody caps unavailable".to_owned()),
+        }
+    };
+    if caps.state_root() != session.state_root
+        || caps.level() < VerificationLevel::STATE_PROVEN
+        || caps.freshness().global_sequence != session.context.head.chain_sequence
+        || caps.freshness().batch_number != session.context.head.sealed_batch
+    {
+        return Err("custody caps do not match the authenticated sealed head".to_owned());
+    }
+    let effective = caps.effective_asset(asset)
+        .map_err(|error| format!("custody effective asset: {error:?}"))?;
+    if effective.state_root() != session.state_root || effective.level() < VerificationLevel::STATE_PROVEN {
+        return Err("custody effective asset is not state proven at the sealed head".to_owned());
+    }
+    Ok(effective)
+}
+
+fn custody_preparation(
+    session: &mut CustodySession,
+    actor: &Did,
+    correlation_id: u64,
+) -> Result<layerx_client::lni::PreparationState, String> {
+    let state = layerx_client::lni::preparation::preparation_state(
+        &mut session.transport, actor,
+        layerx_client::lni::preparation::PreparationStateContext {
+            interface_version: session.context.interface_version,
+            expected_network_id: session.context.expected_network_id,
+            minimum_observed_head: session.context.head.chain_sequence,
+            correlation_id,
+        },
+    ).map_err(|error| format!("custody preparation: {error:?}"))?;
+    if state.observed_head_sequence != session.context.head.chain_sequence
+        || state.observed_state_root != session.state_root
+    {
+        return Err("custody preparation is not the authenticated sealed head; refresh required".to_owned());
+    }
+    Ok(state)
+}
+
+fn public_json_string(value: &str) -> String {
+    let mut output = String::from("\"");
+    for character in value.chars() {
+        match character {
+            '\\' => output.push_str("\\\\"),
+            '"' => output.push_str("\\\""),
+            control if control <= '\u{001f}' => { let _ = write!(output, "\\u{:04x}", u32::from(control)); }
+            other => output.push(other),
+        }
+    }
+    output.push('"');
+    output
+}
+
+fn custody_asset_profile(parsed: &BTreeMap<String, String>) -> Result<String, String> {
+    let mut session = custody_session(parsed)?;
+    let asset = hex32(required(parsed, "asset")?)?;
+    let effective = custody_effective_asset(&mut session, required(parsed, "source-did")?, asset)?;
+    let selected = layerx_platform_core::read_custody_profile(
+        &mut session.transport, session.context, asset, &effective,
+    )?;
+    let mut accounts = String::new();
+    for role in ["source", "destination"] {
+        if let Some(did) = parsed.get(&format!("{role}-did")) {
+            let name = selected.account_name(did)?;
+            let account = AccountId::parse(&name)
+                .map_err(|error| format!("custody {role} account: {error:?}"))?;
+            let id = layerx_wire::hash::account_id_for_protocol(
+                &account, session.context.expected_protocol_version,
+            ).map_err(|error| format!("custody {role} account id: {error:?}"))?;
+            let _ = write!(accounts, ",\"{role}_account\":{},\"{role}_account_id\":\"{}\"",
+                public_json_string(&name), hex(&id));
+        }
+    }
+    if let Some(profile_output) = parsed.get("profile-output") {
+        let path = PathBuf::from(profile_output);
+        if !path.is_absolute() {
+            return Err("--profile-output must be absolute".to_owned());
+        }
+        let mut output = std::fs::OpenOptions::new()
+            .write(true).create_new(true).mode(0o600)
+            .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
+            .open(&path).map_err(|error| format!("custody profile output: {error}"))?;
+        output.write_all(selected.profile()).map_err(|error| error.to_string())?;
+        output.sync_all().map_err(|error| error.to_string())?;
+        let _ = write!(accounts, ",\"profile_path\":{}", public_json_string(profile_output));
+    }
+    Ok(format!(
+        "{{\"asset\":\"{}\",\"profile_sha256\":\"{}\",\"profile_hex\":\"{}\",\"trusted_height\":{},\"trust_source\":\"authenticated_initial_profile\",\"head_sequence\":{},\"global_sequence\":{},\"batch_number\":{},\"achieved\":\"STATE_PROVEN\"{accounts}}}",
+        hex(&selected.asset()), hex(&selected.profile_hash()),
+        hex(selected.profile()), selected.trusted_height(),
+        session.context.head.chain_sequence, session.context.head.chain_sequence, session.context.head.sealed_batch,
+    ))
+}
+
+fn write_asset_send(parsed: &BTreeMap<String, String>) -> Result<String, String> {
+    let seed_file = std::fs::OpenOptions::new()
+        .read(true).custom_flags(libc::O_NONBLOCK | libc::O_NOFOLLOW)
+        .open(required(parsed, "seed-file")?).map_err(|error| error.to_string())?;
+    let metadata = seed_file.metadata().map_err(|error| error.to_string())?;
+    if !metadata.is_file() || metadata.len() != 32 {
+        return Err("test seed must be a 32-byte regular file".to_owned());
+    }
+    let mut seed_bytes = Vec::new();
+    seed_file.take(33).read_to_end(&mut seed_bytes).map_err(|error| error.to_string())?;
+    let seed: [u8; 32] = seed_bytes.try_into().map_err(|_| "test seed must be 32 bytes".to_owned())?;
+    let source_did = layerx_platform_core::treasury_did(&seed);
+    if parsed.get("source-did").is_some_and(|supplied| supplied != &source_did) {
+        return Err("source DID does not match the seed owner".to_owned());
+    }
+    let actor = Did::new(source_did.as_bytes()).map_err(|error| format!("actor: {error:?}"))?;
+    let mut session = custody_session(parsed)?;
+    let before = custody_preparation(&mut session, &actor, 3)?;
+    let asset = hex32(required(parsed, "asset")?)?;
+    let effective = custody_effective_asset(&mut session, &source_did, asset)?;
+    let selected = layerx_platform_core::read_custody_asset(
+        &mut session.transport, session.context, asset, &source_did, &effective,
+    )?;
+    if selected.state_root() != session.state_root {
+        return Err("custody account and preparation roots differ".to_owned());
+    }
+    let after = custody_preparation(&mut session, &actor, 100)?;
+    if before != after {
+        return Err("custody preparation changed during asset proof reads; refresh required".to_owned());
+    }
+    let amount = parsed.get("amount").map_or(Ok(1), |value| value.parse::<u128>())
+        .map_err(|error| format!("--amount: {error}"))?;
+    let signed = layerx_platform_core::build_asset_send_with_identity_sequence(
+        &seed,
+        before.account_sequence,
+        &layerx_platform_core::SendRequest {
+            network_id: session.context.expected_network_id,
+            source_did,
+            destination_did: required(parsed, "destination-did")?.to_owned(),
+            asset,
+            amount,
+            account_sequence: selected.account_sequence(),
+            idempotency_key: [0x62; 32],
+            not_before_ms: before.protocol_timestamp,
+            expires_at_ms: before.protocol_timestamp.checked_add(300_000).ok_or("timestamp exhausted")?,
+            fee_limit: 1000,
+        },
+        &selected,
+    )?;
+    let mut output = std::fs::OpenOptions::new()
+        .write(true).create_new(true).mode(0o600)
+        .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
+        .open(required(parsed, "output")?).map_err(|error| error.to_string())?;
+    output.write_all(&signed.canonical).map_err(|error| error.to_string())?;
+    output.sync_all().map_err(|error| error.to_string())?;
+    Ok(hex(&signed.activity_id))
+}
+
 fn main() -> ExitCode {
     let arguments: Vec<String> = std::env::args().skip(1).collect();
     let Some(command) = arguments.first() else {
@@ -376,6 +603,8 @@ fn main() -> ExitCode {
         "did-accounts" => did_accounts(&parsed),
         "supervisor" => supervisor(&parsed),
         "write-send" => write_send(&parsed),
+        "custody-asset-profile" => custody_asset_profile(&parsed),
+        "write-asset-send" => write_asset_send(&parsed),
         _ => return usage(),
     };
     match outcome {

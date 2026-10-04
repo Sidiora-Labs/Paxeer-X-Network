@@ -21700,7 +21700,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.5.1]
 title = "Verify and publish custody credits for every registered product asset"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 2
 requires = ["0.2"]
@@ -21710,8 +21710,8 @@ do_2 = "Generate profiles from approved custody registry entries and bind asset 
 do_3 = "Add real proof/admission/publication cases for the required four assets, wrong-profile swaps, duplicates, missing metadata and snapshot/restart; require external metadata as an explicit input, not placeholder addresses."
 do_4 = "Add the designated new harness tests/bridge/paxeer_x_multiasset_credit.py using real production code and durable stores; invoke prebuilt task targets, fail on any missing prerequisite, and emit revision, exact command, exit code and private evidence path. Do not substitute mocks or synthetic success responses."
 do_5 = "Implement the declared focused gate through the real production types and paths; exercise every acceptance criterion including refusal, restart or boundary cases specified by this requirement. The command is a planned deliverable, not an already-run gate."
-touches = ["src/modules/bridge/lxp_bridge_credit.c", "src/protocol/lxp_module_ctx.c", "tools/bringup/kernel-genesis.sh", "cmd/layerx-guarantor/publication.py", "custodyproof/light.go", "daemon/layerx-custody-proof/light.go", "tests/bridge/test_credit_admission.c", "tests/bridge/paxeer_x_multiasset_credit.py", "include/layerx/lxp_bridge_credit.h", "src/protocol/lxp_genesis.c", "cmd/layerx-genesis/lxp_genesis_builder.c", "cmd/layerx-genesis/lxp_genesis_build_cli.c", "cmd/layerx-guarantor/runtime.c", "cmd/layerxd/lxp_daemon_lni.c", "cmd/layerxd/lxp_daemon_process.c", "cmd/layerx-module-registry/main.c", "docker/kernel/init.sh", "tools/bringup/check-live.sh", "tools/bringup/check-live.test.sh", "tools/bringup/value-loop.sh", "tests/bridge/test_credit.c", "tests/storage/lxp_test_maintenance_publication.c"]
-verify_cmd = "timeout 1800s python3 tests/bridge/paxeer_x_multiasset_credit.py"
+touches = ["platform/hosted/core/src/lib.rs", "platform/hosted/core/tests/custody_asset_send.rs", "platform/hosted/node/tests/probe/src/main.rs", "tools/bringup/value-loop.sh", "tools/bringup/check-live.sh", "tests/bridge/paxeer_x_multiasset_credit.py", "tools/paxeer-x/gates/5.1.sh"]
+verify_cmd = "timeout 15m bash tools/paxeer-x/gates/5.1.sh verify"
 gate_kind = "planned"
 max_builds = 1
 max_verify_runs = 1
@@ -21722,6 +21722,14 @@ deployment_profile = "product"
 planned_paths = ["tests/bridge/paxeer_x_multiasset_credit.py"]
 path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
 evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+
+retained_contract_paths = ["src/modules/bridge/lxp_bridge_credit.c", "src/protocol/lxp_module_ctx.c", "tools/bringup/kernel-genesis.sh", "cmd/layerx-guarantor/publication.py", "custodyproof/light.go", "daemon/layerx-custody-proof/light.go", "tests/bridge/test_credit_admission.c", "tests/bridge/paxeer_x_multiasset_credit.py", "include/layerx/lxp_bridge_credit.h", "src/protocol/lxp_genesis.c", "cmd/layerx-genesis/lxp_genesis_builder.c", "cmd/layerx-genesis/lxp_genesis_build_cli.c", "cmd/layerx-guarantor/runtime.c", "cmd/layerxd/lxp_daemon_lni.c", "cmd/layerxd/lxp_daemon_process.c", "cmd/layerx-module-registry/main.c", "docker/kernel/init.sh", "tools/bringup/check-live.sh", "tools/bringup/check-live.test.sh", "tools/bringup/value-loop.sh", "tests/bridge/test_credit.c", "tests/storage/lxp_test_maintenance_publication.c"]
+build_cmd = "timeout 20m bash tools/paxeer-x/gates/5.1.sh build"
+do_6 = "Reuse completed104.5.4 registry/genesis/credit/publication implementation. Finish actual value-loop profile selection and additive explicit asset-account Send producer via authenticated state-proven registry reads. Preserve legacy main-account Send behavior, principal authorization, fees and existing negative assertions; never fabricate approved external metadata or fixtures."
+completion_basis = "implementation"
+source_completion_tasks = ["104.5.4", "104.5.5"]
+qualification_status = "unrun"
+qualification_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-5.1-result.json"
 
 [task.5.3]
 title = "Resume submitted checkpoints durably until challenge-window finality"

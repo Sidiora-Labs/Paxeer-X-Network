@@ -4205,6 +4205,12 @@ check_kernel_value_loop() {
 	fi
 	[ -z "${CHECK_LIVE_VALUE_LOOP_DEPOSIT_TX:-}" ] || arguments+=("DEPOSIT_TX=$CHECK_LIVE_VALUE_LOOP_DEPOSIT_TX")
 	[ -z "${CHECK_LIVE_VALUE_LOOP_CHECKPOINT_SECONDS:-}" ] || arguments+=("CHECKPOINT_SECONDS=$CHECK_LIVE_VALUE_LOOP_CHECKPOINT_SECONDS")
+	if [ -n "${CHECK_LIVE_VALUE_LOOP_ASSET:-}" ]; then
+		case "$CHECK_LIVE_VALUE_LOOP_ASSET" in
+		PAX|SID|USDC|USDL) arguments+=("ASSET=$CHECK_LIVE_VALUE_LOOP_ASSET") ;;
+		*) echo "fail kernel-value-loop asset=invalid"; finish 1 ;;
+		esac
+	fi
 	answer="$(timeout "${CHECK_LIVE_VALUE_LOOP_TIMEOUT:-840}" flyctl ssh console --quiet --app "$app" \
 		--command "sh -c 'LAYERX_KERNEL_DATA=/data/layerx/ LAYERX_KERNEL_RUN=/run/layerx/ LAYERX_KERNEL_TLS=/data/tls/ bash -s -- ${arguments[*]}'" \
 		<"$repo_root/tools/bringup/value-loop.sh" 2>/dev/null)" || status=$?

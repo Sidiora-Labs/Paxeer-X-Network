@@ -2409,3 +2409,8 @@ resolution = "Release using the actual owner before claiming a successor; keep i
 area = "Current effective asset proof"
 observed = "Genesis Asset records and mutable asset: records use distinct keys, and point membership of the genesis record cannot prove the mutable override absent."
 resolution = "Retain the existing authenticated complete Asset inventory and select the effective record only after proving override membership or absence at the same signed root."
+
+[gotcha.700]
+area = "Source path lookup"
+observed = "Narrow inspection used historical include and plural asset module paths that do not exist in the current checkout."
+resolution = "Resolve actual filenames with rg --files before reading and preserve the current production ownership boundaries."
