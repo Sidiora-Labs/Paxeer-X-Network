@@ -527,6 +527,32 @@ struct Actor {
     source: [u8; 32],
 }
 
+thread_local! {
+    static INITIAL_ADDITIONAL_IDENTITY: std::cell::RefCell<Option<String>> = const { std::cell::RefCell::new(None) };
+}
+
+fn with_genesis_identity<R>(identity: &Actor, start: impl FnOnce() -> R) -> R {
+    struct IdentityFixtureGuard;
+    impl Drop for IdentityFixtureGuard {
+        fn drop(&mut self) {
+            INITIAL_ADDITIONAL_IDENTITY.with(|value| {
+                value.borrow_mut().take();
+            });
+        }
+    }
+    INITIAL_ADDITIONAL_IDENTITY.with(|value| {
+        let mut value = value.borrow_mut();
+        assert!(value.is_none(), "nested initial identity fixture");
+        *value = Some(format!(
+            "{}:{}:1\n",
+            hex(identity.did.as_bytes()),
+            hex(&identity.signing_key.verifying_key().to_bytes())
+        ));
+    });
+    let _guard = IdentityFixtureGuard;
+    start()
+}
+
 fn actor() -> Actor {
     let signing_key = SigningKey::from_bytes(&random32());
     let did = format!(
@@ -1258,11 +1284,20 @@ fn start_sequencer(
         &registration(&genesis.receipt_state_root),
         0o600,
     );
-    let identities = format!(
+    let mut identities = format!(
         "{}:{}:1\n",
         hex(actor.did.as_bytes()),
         hex(&actor.signing_key.verifying_key().to_bytes())
     );
+    INITIAL_ADDITIONAL_IDENTITY.with(|value| {
+        if let Some(additional) = value.borrow().as_ref() {
+            assert!(
+                !additional.starts_with(&format!("{}:", hex(actor.did.as_bytes()))),
+                "additional initial identity must be distinct"
+            );
+            identities.push_str(additional);
+        }
+    });
     write(
         &node_dir.join("identities.txt"),
         identities.as_bytes(),

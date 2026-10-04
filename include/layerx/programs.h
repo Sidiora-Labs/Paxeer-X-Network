@@ -888,6 +888,8 @@ size_t lxp_programs_account_owner_key(
     const uint8_t program_id[32], uint8_t *key);
 lxp_result lxp_programs_account_profile_read(
     lxp_module_ctx *ctx, const uint8_t program_id[32], uint8_t value[33]);
+lxp_result lxp_programs_account_module_validate(lxp_module_ctx *ctx);
+bool lxp_programs_account_guest_version_supported(uint16_t abi_version);
 lxp_result lxp_programs_account_guest_validate(
     lxp_module_ctx *ctx, const uint8_t program_id[32], uint16_t abi_version);
 lxp_result lxp_programs_program_abi(

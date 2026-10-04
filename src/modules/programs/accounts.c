@@ -56,7 +56,7 @@ typedef struct value_account_iter_state {
     void *user;
 } value_account_iter_state;
 
-static lxp_result account_module_required(lxp_module_ctx *ctx)
+lxp_result lxp_programs_account_module_validate(lxp_module_ctx *ctx)
 {
     const lxp_module_registration *registration;
     lxp_result status;
@@ -423,6 +423,11 @@ lxp_result lxp_programs_account_profile_read(
         LXP_OK : LXP_ERR_AUTH_SCOPE;
 }
 
+bool lxp_programs_account_guest_version_supported(uint16_t abi_version)
+{
+    return layerx_programs_account_profile2_guest_admit(abi_version) == 0;
+}
+
 lxp_result lxp_programs_account_guest_validate(
     lxp_module_ctx *ctx, const uint8_t program_id[32], uint16_t abi_version)
 {
@@ -430,9 +435,12 @@ lxp_result lxp_programs_account_guest_validate(
     lxp_result status;
     if (ctx == NULL || program_id == NULL)
         return LXP_ERR_NON_CANONICAL;
+    status = lxp_programs_account_module_validate(ctx);
+    if (status != LXP_OK) return status;
+    if (!lxp_programs_account_guest_version_supported(abi_version))
+        return LXP_ERR_VERSION_UNSUPPORTED;
     if (abi_version == LX_PROGRAMS_ACCOUNT_ABI_VERSION) return LXP_OK;
-    if (ctx->protocol_version != LXP_PROTOCOL_VERSION_STATE_COMMITMENT ||
-        layerx_programs_account_profile2_guest_admit(abi_version) != 0)
+    if (ctx->protocol_version != LXP_PROTOCOL_VERSION_STATE_COMMITMENT)
         return LXP_ERR_VERSION_UNSUPPORTED;
     status = lxp_programs_account_profile_read(ctx, program_id, profile);
     return status == LXP_ERR_UNKNOWN_FIELD ?
@@ -628,7 +636,7 @@ lxp_result lxp_programs_account_state_head_read(
         ctx->staged_account_count != 0U || ctx->staged_count != 0U ||
         ctx->transfer_applied)
         return LXP_ERR_NON_CANONICAL;
-    status = account_module_required(ctx);
+    status = lxp_programs_account_module_validate(ctx);
     if (status != LXP_OK) return status;
     status = lxp_programs_program_abi(ctx, program_id, &abi_version);
     if (status != LXP_OK) return status;
@@ -779,7 +787,7 @@ lxp_result lxp_programs_value_account_read(
     if (ctx == NULL || account_id == NULL || receipt_digest == NULL ||
         view == NULL)
         return LXP_ERR_NON_CANONICAL;
-    status = account_module_required(ctx);
+    status = lxp_programs_account_module_validate(ctx);
     if (status == LXP_OK)
         status = lxp_programs_account_lookup_id(
             ctx, account_id, &binding, &account);
@@ -805,7 +813,7 @@ lxp_result lxp_programs_balance_read(
         ctx->staged_account_count != 0U || ctx->staged_count != 0U ||
         ctx->transfer_applied)
         return LXP_ERR_NON_CANONICAL;
-    status = account_module_required(ctx);
+    status = lxp_programs_account_module_validate(ctx);
     if (status != LXP_OK) return status;
     runtime = (const lx_programs_transfer_runtime *)
         lxp_ctx_module_runtime(ctx);
@@ -924,7 +932,7 @@ lxp_result lxp_programs_account_register(
         seed_length > LX_PROGRAMS_ACCOUNT_MAX_SEED_BYTES ||
         !lxp_protocol_version_uses_occupancy(ctx->protocol_version))
         return LXP_ERR_NON_CANONICAL;
-    status = account_module_required(ctx);
+    status = lxp_programs_account_module_validate(ctx);
     if (status == LXP_OK) status = deployed_program(ctx, program_id);
     if (status == LXP_OK) status = registered_asset(ctx, asset_id);
     if (status != LXP_OK) return status;
@@ -1005,7 +1013,7 @@ lxp_result lxp_programs_account_decode(lxp_module_ctx *ctx,
         return LXP_ERR_NON_CANONICAL;
     if (!lxp_protocol_version_uses_occupancy(ctx->protocol_version))
         return LXP_ERR_VERSION_UNSUPPORTED;
-    status = account_module_required(ctx);
+    status = lxp_programs_account_module_validate(ctx);
     if (status != LXP_OK) return status;
     if (payload_length < 37U)
         return LXP_ERR_TRUNCATED;

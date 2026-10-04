@@ -2192,9 +2192,7 @@ static lxp_result transfer_source_validate(
         if (status != LXP_OK) return status;
     }
     if (source->kind == PROGRAM_TRANSFER_SOURCE_PROGRAM_FUNDING) {
-        if ((value->abi_version != LX_PROGRAMS_GUEST_ABI_V2_VERSION &&
-             value->abi_version != LX_PROGRAMS_GUEST_ABI_V3_VERSION &&
-             value->abi_version != LX_PROGRAMS_GUEST_ABI_V4_VERSION) ||
+        if (!lxp_programs_account_guest_version_supported(value->abi_version) ||
             lxp_ct_is_zero(source->owner_program, 32U) ||
             lxp_ct_memcmp(source->owner_program, source->staging_program, 32U) != 0 ||
             source->seed_written != source->seed_length ||
@@ -2217,9 +2215,7 @@ static lxp_result transfer_source_validate(
         return LXP_OK;
     }
     if (source->kind != PROGRAM_TRANSFER_SOURCE_PROGRAM ||
-        (value->abi_version != LX_PROGRAMS_GUEST_ABI_V2_VERSION &&
-         value->abi_version != LX_PROGRAMS_GUEST_ABI_V3_VERSION &&
-         value->abi_version != LX_PROGRAMS_GUEST_ABI_V4_VERSION) ||
+        !lxp_programs_account_guest_version_supported(value->abi_version) ||
         lxp_ct_is_zero(source->owner_program, 32U) ||
         lxp_ct_memcmp(source->owner_program, source->staging_program, 32U) != 0 ||
         source->seed_written != source->seed_length ||

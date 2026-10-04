@@ -3,7 +3,7 @@ PAXEER_X_PROFILE2_RUNTIME_LIB ?= /root/lx-target/arbiter-prestate/rust/debug/lib
 
 .PHONY: paxeer-x-profile2-accounts-build paxeer-x-profile2-native
 paxeer-x-profile2-accounts-build:
-	python3 tools/qualification/paxeer-x/programs_accounts_winddown.py --build \
+	python3 tools/qualification/paxeer-x/programs_accounts_winddown.py --task 6.6 --build \
 		--build-dir='$(PAXEER_X_PROFILE2_ACCOUNTS_DIR)' --cargo='$(PROGRAMS_CARGO)'
 
 paxeer-x-profile2-native: $(LAYERXD_OBJECTS) $(LIBRARY)

@@ -715,3 +715,595 @@ fn funded_account_profile2_survives_abi_upgrades_and_winddown() {
     marker("proof-corruption-refused");
     marker("stale-head-refused");
 }
+
+struct AccountAbiConnection {
+    child: Child,
+    input: std::process::ChildStdin,
+    output: std::process::ChildStdout,
+    response: Vec<u8>,
+}
+
+impl AccountAbiConnection {
+    fn connect(cluster: &Cluster) -> Self {
+        let mut child = must(
+            Command::new("/usr/bin/setpriv")
+                .args([
+                    "--reuid",
+                    &BOUNDARY_UID.to_string(),
+                    "--regid",
+                    &BOUNDARY_GID.to_string(),
+                    "--groups",
+                    &BOUNDARY_GID.to_string(),
+                    "--",
+                    "/usr/bin/python3",
+                    "-c",
+                ])
+                .arg(include_str!("../lni_relay.py"))
+                .arg(cluster.root.join("run/layerxd.sock"))
+                .stdin(Stdio::piped())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::inherit())
+                .spawn(),
+            "real account ABI LNI connection",
+        );
+        Self {
+            input: child.stdin.take().expect("LNI input"),
+            output: child.stdout.take().expect("LNI output"),
+            child,
+            response: Vec::new(),
+        }
+    }
+}
+
+impl layerx_client::lni::transport::FrameTransport for AccountAbiConnection {
+    fn send(&mut self, bytes: &[u8]) -> Result<(), layerx_client::lni::transport::TransportError> {
+        layerx_client::lni::framing::write_frame(&mut self.input, bytes, LNI_FRAME_BYTES)
+    }
+    fn receive(&mut self) -> Result<Vec<u8>, layerx_client::lni::transport::TransportError> {
+        let bytes = layerx_client::lni::framing::read_frame(&mut self.output, LNI_FRAME_BYTES)?;
+        self.response.clone_from(&bytes);
+        Ok(bytes)
+    }
+}
+
+impl Drop for AccountAbiConnection {
+    fn drop(&mut self) {
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+    }
+}
+
+fn account_abi_operation(
+    cluster: &Cluster,
+    signer: &Actor,
+    sequence: &mut u64,
+    ordinal: u16,
+    payload: &[u8],
+    label: &str,
+    evidence: &Path,
+    expected: Option<i32>,
+) -> u128 {
+    use layerx_client::lni::handshake::{perform, HandshakeConfig};
+    use layerx_client::lni::schema::Version;
+    use layerx_client::receipt::{
+        lookup_authenticated, AuthenticatedLookup, AuthenticatedLookupContext, ReceiptWaitMode,
+    };
+    use layerx_client::submit::{submit_signed, Submission, SubmissionContext, SubmitError};
+    let fee_limit = if signer.did == cluster.actor.did {
+        FEE_LIMIT
+    } else {
+        0
+    };
+    let signed = signed_program_operation(signer, ordinal, *sequence, fee_limit, payload);
+    let activity = must(
+        decode_signed(&signed, &program_registry()),
+        "actual signed account operation",
+    );
+    let identifier = must(activity_id(&activity), "account operation identity");
+    let mut connection = AccountAbiConnection::connect(cluster);
+    let handshake = must(
+        perform(
+            &mut connection,
+            &HandshakeConfig {
+                built_interface_version: Version::V1_7,
+                expected_protocol_version: PROTOCOL_VERSION,
+                expected_network_id: NETWORK_ID,
+            },
+            None,
+        ),
+        "actual account ABI handshake",
+    );
+    assert_eq!(
+        handshake.node().authorised_sequencer_key,
+        cluster.sequencer_key
+    );
+    write(&evidence.join(format!("{label}.activity")), &signed, 0o600);
+    let submission = submit_signed(
+        &mut connection,
+        &program_registry(),
+        SubmissionContext {
+            interface_version: handshake.node().interface_version,
+            protocol_version: PROTOCOL_VERSION,
+            network_id: NETWORK_ID,
+            correlation_id: 2,
+            signer_public_key: signer.signing_key.verifying_key().to_bytes(),
+            attempt: 1,
+        },
+        &signed,
+    );
+    match submission {
+        Err(SubmitError::CoreRefusal { class, result }) => {
+            assert!(
+                expected.is_some(),
+                "{label}: expected successful native submission"
+            );
+            assert_eq!(result.raw(), expected.expect("refusal result"), "{label}");
+            write(
+                &evidence.join(format!("{label}.native-response")),
+                &connection.response,
+                0o600,
+            );
+            let record = serde_json::json!({"activity_id": hex(&identifier), "class": class,
+                "result": result.raw(), "boundary": "native-admission"});
+            write(
+                &evidence.join(format!("{label}.admission.json")),
+                &must(serde_json::to_vec(&record), "actual admission record"),
+                0o600,
+            );
+            return 0;
+        }
+        Ok(Submission::Acknowledged(ack)) => assert_eq!(ack.activity_id(), identifier),
+        other => panic!("{label}: unresolved or locally refused submission: {other:?}"),
+    }
+    let received = must(
+        lookup_authenticated(
+            &mut connection,
+            identifier,
+            AuthenticatedLookupContext {
+                interface_version: handshake.node().interface_version,
+                correlation_id: 3,
+                sequencer_public_key: cluster.sequencer_key,
+                wait_mode: ReceiptWaitMode::Published,
+            },
+        ),
+        "actual published account receipt",
+    );
+    let AuthenticatedLookup::Verified(receipt) = received else {
+        panic!("{label}: missing published receipt");
+    };
+    let protocol = receipt.receipt().protocol().expect("protocol receipt");
+    assert_eq!(protocol.activity_id(), identifier);
+    assert_eq!(protocol.protocol_version(), PROTOCOL_VERSION);
+    assert_eq!(protocol.module_id(), 9);
+    assert_eq!(protocol.result_code(), expected.unwrap_or(0), "{label}");
+    let authority = verify_lifecycle_batch(cluster, receipt.receipt(), receipt.canonical_bytes());
+    if ordinal != 3 && expected.is_none() {
+        must(
+            verify_program_state(receipt.canonical_bytes(), &authority),
+            "actual account lifecycle receipt",
+        );
+    }
+    write(
+        &evidence.join(format!("{label}.receipt")),
+        receipt.canonical_bytes(),
+        0o600,
+    );
+    let record = serde_json::json!({"activity_id": hex(&identifier), "result": protocol.result_code(),
+        "boundary": "published-native-receipt"});
+    write(
+        &evidence.join(format!("{label}.admission.json")),
+        &must(serde_json::to_vec(&record), "published admission record"),
+        0o600,
+    );
+    *sequence += 1;
+    protocol.fee_charged()
+}
+
+fn account_abi_main_balance(cluster: &Cluster, evidence: &Path, label: &str) -> u128 {
+    use layerx_client::evidence::RootSelector;
+    use layerx_client::lni::handshake::{perform, HandshakeConfig};
+    use layerx_client::lni::schema::Version;
+    use layerx_client::read::{account, ReadContext, Requested};
+    use layerx_types::verify::VerificationLevel;
+    let mut connection = AccountAbiConnection::connect(cluster);
+    let handshake = must(
+        perform(
+            &mut connection,
+            &HandshakeConfig {
+                built_interface_version: Version::V1_7,
+                expected_protocol_version: PROTOCOL_VERSION,
+                expected_network_id: NETWORK_ID,
+            },
+            None,
+        ),
+        "main account proof handshake",
+    );
+    assert_eq!(
+        handshake.node().authorised_sequencer_key,
+        cluster.sequencer_key
+    );
+    let sequencer_id = must(
+        <[u8; 32]>::try_from(unhex(
+            &cluster.sequencer_environment["LAYERX_NODE_SEQUENCER_ID"],
+        )),
+        "sequencer identity",
+    );
+    let value = must(
+        account(
+            &mut connection,
+            cluster.actor.source,
+            ReadContext {
+                interface_version: handshake.node().interface_version,
+                correlation_id: 2,
+                expected_protocol_version: PROTOCOL_VERSION,
+                expected_network_id: NETWORK_ID,
+                requested: Requested::new(VerificationLevel::STATE_PROVEN),
+                head: layerx_client::head::HeadTracker::new(handshake.node()).current(),
+                sequencer_authorization: SequencerAuthorization::new(
+                    sequencer_id,
+                    cluster.sequencer_key,
+                    FIRST_BATCH,
+                    LAST_BATCH,
+                ),
+                handshake_sequencer_key: cluster.sequencer_key,
+                root_selector: RootSelector::Latest,
+            },
+        ),
+        "STATE_PROVEN actual main account",
+    );
+    assert_eq!(value.achieved(), VerificationLevel::STATE_PROVEN);
+    let decoded = must(
+        layerx_proof::state::decode_account_value(cluster.actor.source, value.canonical_bytes()),
+        "main account identity",
+    );
+    assert_eq!(decoded.asset_id(), cluster.asset);
+    write(
+        &evidence.join(format!("{label}.main-account")),
+        value.canonical_bytes(),
+        0o600,
+    );
+    write(
+        &evidence.join(format!("{label}.main-proof")),
+        value.proof_material(),
+        0o600,
+    );
+    decoded.balance()
+}
+
+#[test]
+fn account_capable_abi_upgrades_preserve_proofs_and_authorized_winddown() {
+    funded_account_profile2_survives_abi_upgrades_and_winddown();
+    println!("ACCOUNT_ABI_CASE retained-abi2-3-4-proof-transfer-winddown");
+    let evidence = evidence_directory();
+    let wasm = escrow_wasm();
+    let stranger = actor();
+    let (mut cluster, custody) = with_genesis_identity(&stranger, custody::start_funded_cluster);
+    custody.verify_evidence();
+    check_readiness(&cluster);
+    let program = random32();
+    let account = derived_account(program);
+    make_dir(&evidence.join("account-abi-trust"), 0o700);
+    let verifier = trust(&cluster, &evidence.join("account-abi-trust"));
+    let mut registry = Registry::new();
+    let mut sequence = 2;
+    let before = account_abi_main_balance(&cluster, &evidence, "account-abi-initial");
+    let mut fees = account_abi_operation(
+        &cluster,
+        &cluster.actor,
+        &mut sequence,
+        1,
+        &deploy_payload(&cluster, program, &wasm),
+        "account-abi-deploy",
+        &evidence,
+        None,
+    );
+    let deployment: serde_json::Value = must(
+        serde_json::from_slice(&must(
+            fs::read(evidence.join("account-abi-deploy.admission.json")),
+            "actual deploy evidence",
+        )),
+        "deploy evidence JSON",
+    );
+    let deployed_activity = must(
+        fs::read(evidence.join("account-abi-deploy.activity")),
+        "actual deployed activity",
+    );
+    let deployed = must(
+        decode_signed(&deployed_activity, &program_registry()),
+        "actual deployed envelope",
+    );
+    let submitted = Submitted {
+        key: hex(&deployed.idempotency_key()),
+        activity_id: field(&deployment, "activity_id").to_owned(),
+        receipt: must(
+            fs::read(evidence.join("account-abi-deploy.receipt")),
+            "actual deployment receipt",
+        ),
+        body: must(
+            String::from_utf8(must(
+                fs::read(evidence.join("account-abi-deploy.admission.json")),
+                "actual deployment response",
+            )),
+            "actual deployment response encoding",
+        ),
+    };
+    record_deployment(
+        &cluster,
+        &submitted,
+        &mut registry,
+        &verifier,
+        &evidence,
+        "account-abi-deploy",
+    );
+    fees += account_abi_operation(
+        &cluster,
+        &cluster.actor,
+        &mut sequence,
+        6,
+        &registration(program, cluster.asset, SEED),
+        "account-abi-register",
+        &evidence,
+        None,
+    );
+    fees += account_abi_operation(
+        &cluster,
+        &cluster.actor,
+        &mut sequence,
+        3,
+        &call_payload(&cluster, program, 2, SEED, true),
+        "account-abi-fund",
+        &evidence,
+        None,
+    );
+    let funded = state(
+        &cluster,
+        program,
+        &registry,
+        &verifier,
+        &evidence,
+        "account-abi-funded",
+    );
+    balance(&funded, account, DEPOSIT);
+    assert_eq!(
+        account_abi_main_balance(&cluster, &evidence, "account-abi-funded") + DEPOSIT + fees,
+        before
+    );
+
+    let route = wind_down_payload(
+        program,
+        ProgramWindDownOperation::Route {
+            account,
+            asset: cluster.asset,
+            destination: cluster.actor.source,
+            seed: SEED,
+        },
+    );
+    let unauthorized = cluster.client.call(&Call::submit(
+        "/v1/programs/wind-down",
+        "unprovisioned-authorization",
+        &token(),
+        &signed_program_operation(&cluster.actor, 7, sequence, FEE_LIMIT, &route),
+    ));
+    assert_refusal(&unauthorized, 401, "identity_required");
+    write(
+        &evidence.join("account-abi-unauthorized-route.admission.json"),
+        &unauthorized.body,
+        0o600,
+    );
+    println!("ACCOUNT_ABI_CASE unauthorized-route-refused");
+    let mut stranger_sequence = 1;
+    account_abi_operation(
+        &cluster,
+        &stranger,
+        &mut stranger_sequence,
+        7,
+        &route,
+        "account-abi-wrong-principal",
+        &evidence,
+        Some(-204),
+    );
+    println!("ACCOUNT_ABI_CASE wrong-principal-refused");
+    let mut unsupported = upgrade(program, &wasm, &wasm, 2);
+    unsupported[32..34].copy_from_slice(&5_u16.to_be_bytes());
+    account_abi_operation(
+        &cluster,
+        &cluster.actor,
+        &mut sequence,
+        2,
+        &unsupported,
+        "account-abi-unsupported",
+        &evidence,
+        Some(-101),
+    );
+    println!("ACCOUNT_ABI_CASE unsupported-abi-refused");
+    let wrong_asset = wind_down_payload(
+        program,
+        ProgramWindDownOperation::Route {
+            account,
+            asset: random32(),
+            destination: cluster.actor.source,
+            seed: SEED,
+        },
+    );
+    fees += account_abi_operation(
+        &cluster,
+        &cluster.actor,
+        &mut sequence,
+        7,
+        &wrong_asset,
+        "account-abi-wrong-asset",
+        &evidence,
+        Some(-213),
+    );
+    let unchanged = state(
+        &cluster,
+        program,
+        &registry,
+        &verifier,
+        &evidence,
+        "account-abi-refusals",
+    );
+    balance(&unchanged, account, DEPOSIT);
+    assert_eq!(
+        unchanged.balances().bindings(),
+        funded.balances().bindings()
+    );
+    println!("ACCOUNT_ABI_CASE wrong-asset-refused");
+
+    let bytes = must(
+        fs::read(evidence.join("account-abi-refusals.LXPS2")),
+        "actual state proof bytes",
+    );
+    let head = AccountStateHead {
+        receipt_digest: unchanged.balances().receipt_digest(),
+        state_root: unchanged.balances().state_root(),
+        freshness: unchanged.balances().freshness(),
+    };
+    let mut invalid = bytes.clone();
+    let last = invalid.len() - 1;
+    invalid[last] ^= 1;
+    let refusal = ProtocolProgramStateRead::restore_verified_profile2(
+        &invalid,
+        &mut registry.clone(),
+        head,
+        head,
+        now_ms(),
+        60_000,
+    )
+    .expect_err("changed real state proof must refuse");
+    write(
+        &evidence.join("account-abi-invalid-proof.LXPS2"),
+        &invalid,
+        0o600,
+    );
+    write(
+        &evidence.join("account-abi-invalid-proof.admission.json"),
+        &must(
+            serde_json::to_vec(
+                &serde_json::json!({"boundary": "profile2-restore", "accepted": false,
+            "typed_refusal": format!("{refusal:?}")}),
+            ),
+            "actual proof refusal",
+        ),
+        0o600,
+    );
+    println!("ACCOUNT_ABI_CASE invalid-proof-refused");
+
+    fees += account_abi_operation(
+        &cluster,
+        &cluster.actor,
+        &mut sequence,
+        7,
+        &route,
+        "account-abi-route",
+        &evidence,
+        None,
+    );
+    fees += account_abi_operation(
+        &cluster,
+        &cluster.actor,
+        &mut sequence,
+        7,
+        &wind_down_payload(
+            program,
+            ProgramWindDownOperation::Deprecate {
+                exit_program: program,
+                deadline_batch: LAST_BATCH,
+            },
+        ),
+        "account-abi-deprecate",
+        &evidence,
+        None,
+    );
+    let deprecated = state(
+        &cluster,
+        program,
+        &registry,
+        &verifier,
+        &evidence,
+        "account-abi-deprecated",
+    );
+    assert_eq!(
+        deprecated.balances().lifecycle(),
+        layerx_programs::ProgramLifecycle::Deprecated
+    );
+    balance(&deprecated, account, DEPOSIT);
+    cluster.boundary.stop();
+    cluster.restart_native_sequencer();
+    cluster.boundary.start();
+    check_readiness(&cluster);
+    let restarted = state(
+        &cluster,
+        program,
+        &registry,
+        &verifier,
+        &evidence,
+        "account-abi-restart",
+    );
+    assert_eq!(
+        restarted.balances().lifecycle(),
+        layerx_programs::ProgramLifecycle::Deprecated
+    );
+    assert_eq!(
+        restarted.balances().bindings(),
+        deprecated.balances().bindings()
+    );
+    balance(&restarted, account, DEPOSIT);
+    fees += account_abi_operation(
+        &cluster,
+        &cluster.actor,
+        &mut sequence,
+        7,
+        &wind_down_payload(program, ProgramWindDownOperation::Exit { account }),
+        "account-abi-exit",
+        &evidence,
+        None,
+    );
+    let exited = state(
+        &cluster,
+        program,
+        &registry,
+        &verifier,
+        &evidence,
+        "account-abi-exited",
+    );
+    balance(&exited, account, 0);
+    println!("ACCOUNT_ABI_CASE restart-exit-eligibility");
+    fees += account_abi_operation(
+        &cluster,
+        &cluster.actor,
+        &mut sequence,
+        7,
+        &wind_down_payload(program, ProgramWindDownOperation::Tombstone),
+        "account-abi-tombstone",
+        &evidence,
+        None,
+    );
+    let final_state = state(
+        &cluster,
+        program,
+        &registry,
+        &verifier,
+        &evidence,
+        "account-abi-final",
+    );
+    balance(&final_state, account, 0);
+    assert_eq!(
+        final_state.balances().lifecycle(),
+        layerx_programs::ProgramLifecycle::Tombstoned
+    );
+    let after = account_abi_main_balance(&cluster, &evidence, "account-abi-final");
+    assert_eq!(after + fees, before);
+    write(
+        &evidence.join("account-abi-conservation.json"),
+        &must(
+            serde_json::to_vec(
+                &serde_json::json!({"before": before.to_string(), "after": after.to_string(),
+            "signed_receipt_fees": fees.to_string(), "program_balance": "0"}),
+            ),
+            "conservation evidence",
+        ),
+        0o600,
+    );
+    println!("ACCOUNT_ABI_CASE conservation");
+}

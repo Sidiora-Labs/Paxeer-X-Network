@@ -25460,7 +25460,7 @@ handoff_path = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-6.2-result.jso
 
 [task.6.4]
 title = "Preserve account proofs and legitimate wind-down across account-capable ABI upgrades"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 3
 requires = ["0.2", "6.3"]
@@ -25469,7 +25469,7 @@ do_1 = "Centralize account-capable guest-version policy and use it in native acc
 do_2 = "Trace upgraded funded accounts through authenticated reads, normal transfer and complete wind-down, retaining conservation and ownership invariants."
 do_3 = "Author the new focused harness tools/qualification/paxeer-x/programs_accounts_winddown.py to exercise these acceptance cases against real production implementations and types. It must fail on missing candidate artifacts, missing authority/configuration, skipped cases or unverifiable receipts; retain the exact candidate revision, command, case results and evidence paths. Use disposable qualification state and provisioned authority without printing secret values; no mocks, synthetic success or substitution of a library-only model for a named process boundary."
 do_4 = "Implement the declared focused gate through the real production types and paths; exercise every acceptance criterion including refusal, restart or boundary cases specified by this requirement. The command is a planned deliverable, not an already-run gate."
-touches = ["src/modules/programs/accounts.c", "src/modules/programs/winddown.c", "src/modules/programs/deploy.c", "src/modules/programs/call.c", "include/layerx/programs.h", "tools/qualification/paxeer-x/programs_accounts_winddown.py"]
+touches = ["src/modules/programs/accounts.c", "src/modules/programs/winddown.c", "src/modules/programs/deploy.c", "src/modules/programs/call.c", "include/layerx/programs.h", "tools/qualification/paxeer-x/programs_accounts_winddown.py", "platform/hosted/agent-boundary/tests/real_node/lifecycle/account_upgrades.rs", "tools/paxeer-x/build/6.6.mk", "platform/hosted/agent-boundary/tests/real_node.rs"]
 verify_cmd = "timeout 30m python3 tools/qualification/paxeer-x/programs_accounts_winddown.py"
 gate_kind = "planned"
 max_builds = 1
@@ -25481,6 +25481,12 @@ deployment_profile = "product"
 planned_paths = ["tools/qualification/paxeer-x/programs_accounts_winddown.py"]
 path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
 evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+build_cmd = "timeout 20m python3 tools/qualification/paxeer-x/programs_accounts_winddown.py --task 6.4 --build --cargo /root/.cargo/bin/cargo"
+source_status = "complete"
+completion_basis = "implementation"
+qualification_status = "UNRUN"
+source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-6.4-source-result.json"
+completion_basis_policy = "Owner CONSTITUTION: fully implemented DONE; exact build and behavior qualification recorded separately."
 
 [task.7.4]
 title = "Generate typed registry interfaces and client bindings for every supported ABI"
@@ -32779,9 +32785,9 @@ do_1 = "Implement explicit owner-authorized account profile2 opt-in on actual Pr
 do_2 = "Centralize profile2 account-capability policy for ABI2/3/4 and connect native accounts, normal transfer, proof read and owner-authorized winddown with every conservation/root/asset predicate retained."
 do_3 = "Use actual canonical LXPS1 producer and exact opt-in membership proof against independently verified head in a distinct verified profile2 consumer; preserve old ProgramStateBundle and legacy restore assertions unchanged."
 do_4 = "Author the real process fixture for funded ABI2 opt-in, upgrade3/4, authenticated read/transfer, reopen and winddown, with real production types and fail-closed missing authority inputs."
-touches = ["programs/sdk/rust/src/abi_policy.rs", "programs/crates/layerx-programs-runtime/src/ffi_interface.rs", "programs/crates/layerx-programs-runtime/src/lib.rs", "include/layerx/programs.h", "src/modules/programs/accounts.c", "src/modules/programs/winddown.c", "src/modules/programs/deploy.c", "src/modules/programs/call.c", "src/modules/programs/state_record.c", "cmd/layerxd/lxp_daemon_protocol.c", "programs/crates/layerx-programs-registry/src/lib.rs", "programs/crates/layerx-programs-registry/src/deprecate.rs", "programs/crates/layerx-programs-protocol-adapter/src/ffi.rs", "agent/crates/layerx-agentd/src/read/program_node.rs", "agent/crates/layerx-types/src/program_lifecycle.rs", "platform/hosted/agent-boundary/tests/real_node/lifecycle/account_upgrades.rs", "platform/hosted/agent-boundary/tests/real_node/lifecycle.rs", "tools/qualification/paxeer-x/programs_accounts_winddown.py", "tools/paxeer-x/build/6.6.mk", "platform/hosted/agent-boundary/Cargo.toml", "platform/Cargo.lock"]
+touches = ["programs/sdk/rust/src/abi_policy.rs", "programs/crates/layerx-programs-runtime/src/ffi_interface.rs", "programs/crates/layerx-programs-runtime/src/lib.rs", "include/layerx/programs.h", "src/modules/programs/accounts.c", "src/modules/programs/winddown.c", "src/modules/programs/deploy.c", "src/modules/programs/call.c", "src/modules/programs/state_record.c", "cmd/layerxd/lxp_daemon_protocol.c", "programs/crates/layerx-programs-registry/src/lib.rs", "programs/crates/layerx-programs-registry/src/deprecate.rs", "programs/crates/layerx-programs-protocol-adapter/src/ffi.rs", "agent/crates/layerx-agentd/src/read/program_node.rs", "agent/crates/layerx-types/src/program_lifecycle.rs", "platform/hosted/agent-boundary/tests/real_node/lifecycle/account_upgrades.rs", "platform/hosted/agent-boundary/tests/real_node/lifecycle.rs", "tools/qualification/paxeer-x/programs_accounts_winddown.py", "platform/hosted/agent-boundary/Cargo.toml", "platform/Cargo.lock"]
 build_cmd = "timeout 20m make paxeer-x-profile2-accounts-build"
-verify_cmd = "timeout 20m python3 tools/qualification/paxeer-x/programs_accounts_winddown.py"
+verify_cmd = "timeout 20m python3 tools/qualification/paxeer-x/programs_accounts_winddown.py --task 6.6"
 max_builds = 1
 max_verify_runs = 1
 max_repair_cycles = 2
@@ -32795,6 +32801,8 @@ qualification_build_status = "unrun"
 qualification_verify_status = "unrun"
 qualification_build_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-6.6-build-unrun.log"
 qualification_verify_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-6.6-verify-unrun.log"
+retained_additional_paths_6_4 = ["tools/paxeer-x/build/6.6.mk"]
+selector_compatibility = "Task6.4 explicitly selects retained6.6 behavior in future legacy invocations; all historical evidence and assertions unchanged, no historical rerun."
 
 [task.104.24.4]
 title = "Complete connected MigrationV2 Ethereum and Solana acceptance corpus"
