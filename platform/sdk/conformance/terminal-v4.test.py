@@ -61,7 +61,24 @@ class TerminalV5(unittest.TestCase):
         metadata = path.lstat()
         self.assertTrue(path.is_absolute() and path.resolve() == path and stat.S_ISREG(metadata.st_mode))
         self.assertEqual((metadata.st_uid, metadata.st_nlink, stat.S_IMODE(metadata.st_mode)), (os.geteuid(), 1, 0o600))
-        corpus = json.loads(path.read_bytes())
+        def unique(items):
+            result = {}
+            for key, value in items:
+                if key in result:
+                    raise ValueError('duplicate native corpus envelope field')
+                result[key] = value
+            return result
+        envelope = json.loads(path.read_bytes(), object_pairs_hook=unique)
+        self.assertIsInstance(envelope, dict)
+        self.assertEqual(set(envelope), {'source_revision', 'cases', 'trusted_sequencer_public_key_hex'})
+        trusted_pin = 'b4f05aee172965774743f4cd7de4c3621c9e36fd77af7139aafec25eb3fb3360'
+        self.assertEqual(envelope['trusted_sequencer_public_key_hex'], trusted_pin)
+        candidate_revision = os.environ.get('PAXEER_X_MAINLINE')
+        self.assertIsInstance(candidate_revision, str, 'native artifact candidate revision required')
+        self.assertEqual(len(candidate_revision), 40)
+        self.assertTrue(all(character in '0123456789abcdef' for character in candidate_revision))
+        self.assertEqual(envelope['source_revision'], candidate_revision)
+        corpus = {'source_revision': envelope['source_revision'], 'cases': envelope['cases']}
         self.assertEqual(set(corpus), {'source_revision', 'cases'})
         self.assertEqual(len(corpus['source_revision']), 40)
         expected = {f'abi{abi}-{outcome}' for abi in (3, 4) for outcome in ('success', 'failure', 'resource', 'callback', 'settlement')}
@@ -80,6 +97,7 @@ class TerminalV5(unittest.TestCase):
                 signatures = module.LayerXSignatureVerifier()
                 payload_hash, abi, idempotency_key = bind_retained_program_call(signed, activity_id, row['program_id_hex'], 3)
                 self.assertEqual(abi, row['guest_abi'])
+                self.assertEqual(authority.sequencer_public_key.hex(), trusted_pin)
                 self.assertEqual(authority.sequencer_public_key.hex(), row['sequencer_public_key_hex'])
                 verified = verify_program_receipt_outcome_v5(canonical, authority, signatures,
                     terminal, graph, row['program_id_hex'], signed)
