@@ -214,11 +214,12 @@ def verify():
     started = time.monotonic()
     try:
         chains = {}
+        genesis_time = int(time.time())
         for chain in (125, 126):
             port = free_port()
             log = (run / f'chain-{chain}.log').open('wb')
             streams.append(log)
-            process = subprocess.Popen([build_record['anvil'], '--host', '127.0.0.1', '--port', str(port), '--chain-id', str(chain), '--accounts', '3', '--mnemonic-random', '--silent'], env={'PATH': os.defpath, 'HOME': str(run), 'LANG': 'C.UTF-8'}, stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
+            process = subprocess.Popen([build_record['anvil'], '--host', '127.0.0.1', '--port', str(port), '--chain-id', str(chain), '--timestamp', str(genesis_time + chain - 125), '--accounts', '3', '--mnemonic-random', '--silent'], env={'PATH': os.defpath, 'HOME': str(run), 'LANG': 'C.UTF-8'}, stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
             processes.append(process)
             url = f'http://127.0.0.1:{port}'
             until = time.monotonic() + 30
