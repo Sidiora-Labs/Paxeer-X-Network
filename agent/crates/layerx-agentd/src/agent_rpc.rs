@@ -838,6 +838,139 @@ pub fn handle_rpc<A: HumanAuthorityBoundary>(
     }
 }
 
+pub fn handle_human_native_prepare<A: HumanAuthorityBoundary>(
+    owner: &SharedAgentOwner<A>,
+    peer: &crate::human::HumanPeer,
+    body: &[u8],
+) -> Result<AgentRpcResponse, crate::human::HumanOperationError> {
+    use crate::human::HumanOperationError;
+
+    let subject = peer.subject.as_ref().ok_or(HumanOperationError::Refused)?;
+    if peer.uid == 0 || peer.principal.is_empty() || peer.tenant.is_empty() {
+        return Err(HumanOperationError::Refused);
+    }
+    let envelope = decode(body).map_err(|_| HumanOperationError::Refused)?;
+    if envelope.operation != Operation::Prepare
+        || !crate::agent_rpc_dispatch::native_effect_variant(&envelope.request)
+        || envelope.credential.as_ref().is_none_or(|credential| {
+            credential.tenant().as_str() != peer.tenant
+        })
+    {
+        return Err(HumanOperationError::Refused);
+    }
+    let (permit, _, bound, control) = authorized(owner, &envelope).map_err(|error| {
+        if matches!(
+            error.class,
+            ErrorClass::InternalFault
+                | ErrorClass::TransportFailure
+                | ErrorClass::Deadline
+                | ErrorClass::UnavailableCapability
+        ) {
+            HumanOperationError::Unavailable
+        } else {
+            HumanOperationError::Refused
+        }
+    })?;
+    let context = agent_rpc_peer::from_resolved(&control, &permit, bound)
+        .map_err(|_| HumanOperationError::Refused)?;
+    if context.peer() != peer
+        || context.principal().tenant.as_str() != peer.tenant
+        || context.principal().agent.as_bytes() != subject.owner.as_bytes()
+    {
+        return Err(HumanOperationError::Refused);
+    }
+    permit.boundary(&control).map_err(|_| HumanOperationError::Refused)?;
+    drop(context);
+    drop(permit);
+    drop(control);
+    drop(envelope);
+    let response = handle_rpc(owner, body);
+    if response.body.is_empty() || response.body.len() > MAX_BODY_BYTES - 64 {
+        return Err(HumanOperationError::Refused);
+    }
+    Ok(response)
+}
+
+pub fn handle_human_native_send_prepare<A: HumanAuthorityBoundary>(
+    owner: &SharedAgentOwner<A>,
+    peer: &crate::human::HumanPeer,
+    body: &[u8],
+) -> Result<AgentRpcResponse, crate::human::HumanOperationError> {
+    use crate::human::HumanOperationError;
+
+    let subject = peer.subject.as_ref().ok_or(HumanOperationError::Refused)?;
+    if peer.uid == 0 || peer.principal.is_empty() || peer.tenant.is_empty() {
+        return Err(HumanOperationError::Refused);
+    }
+    let envelope = decode(body).map_err(|_| HumanOperationError::Refused)?;
+    if !matches!(envelope.operation, Operation::Prepare | Operation::Submit)
+        || surface_for(envelope.operation) != Surface::Contract
+        || envelope
+            .credential
+            .as_ref()
+            .is_none_or(|credential| credential.tenant().as_str() != peer.tenant)
+    {
+        return Err(HumanOperationError::Refused);
+    }
+    let preparation_id = match envelope.operation {
+        Operation::Prepare if crate::agent_rpc_dispatch::native_send_variant(&envelope.request) => {
+            None
+        }
+        Operation::Submit
+            if crate::agent_rpc_dispatch::native_send_submit_variant(&envelope.request) =>
+        {
+            let request = crate::agent_rpc_wire::decode_wire::<
+                crate::agent_rpc_wire::NativeSendSubmitV1Wire,
+            >(&envelope.request, envelope.request_id)
+            .and_then(|request| request.into_request(envelope.request_id))
+            .map_err(|_| HumanOperationError::Refused)?;
+            Some(
+                crate::agent_rpc_dispatch::hex32(&request.preparation_ref, envelope.request_id)
+                    .map_err(|_| HumanOperationError::Refused)?,
+            )
+        }
+        _ => return Err(HumanOperationError::Refused),
+    };
+    let (permit, _, bound, control) = authorized(owner, &envelope).map_err(|error| {
+        if matches!(
+            error.class,
+            ErrorClass::InternalFault
+                | ErrorClass::TransportFailure
+                | ErrorClass::Deadline
+                | ErrorClass::UnavailableCapability
+        ) {
+            HumanOperationError::Unavailable
+        } else {
+            HumanOperationError::Refused
+        }
+    })?;
+    let context = agent_rpc_peer::from_resolved(&control, &permit, bound)
+        .map_err(|_| HumanOperationError::Refused)?;
+    if context.peer() != peer
+        || context.principal().tenant.as_str() != peer.tenant
+        || context.principal().agent.as_bytes() != subject.owner.as_bytes()
+    {
+        return Err(HumanOperationError::Refused);
+    }
+    permit
+        .boundary(&control)
+        .map_err(|_| HumanOperationError::Refused)?;
+    if let Some(preparation_id) = preparation_id {
+        owner
+            .lock()?
+            .require_native_send_preparation(&context, preparation_id)?;
+    }
+    drop(context);
+    drop(permit);
+    drop(control);
+    drop(envelope);
+    let response = handle_rpc(owner, body);
+    if response.body.is_empty() || response.body.len() > MAX_BODY_BYTES - 64 {
+        return Err(HumanOperationError::Refused);
+    }
+    Ok(response)
+}
+
 #[cfg(test)]
 fn level_request(name: &str) -> serde_json::Map<String, serde_json::Value> {
     let mut request = serde_json::Map::new();

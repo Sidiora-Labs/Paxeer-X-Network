@@ -2564,28 +2564,38 @@ pub struct NativeEffectFeeV1 {
 
 pub fn native_effect_fee(
     prepared: &crate::prepare::Prepared,
-    fee_policy: &layerx_client::payments::CommittedSnapshot<layerx_client::payments::NativeFeePolicy>,
+    fee_policy: &layerx_client::payments::CommittedSnapshot<
+        layerx_client::payments::NativeFeePolicy,
+    >,
     current_head: u64,
 ) -> Result<Option<NativeEffectFeeV1>, BindingError> {
     crate::prepare::verify_disclosure_binding(prepared).map_err(|_| BindingError::Corrupt)?;
     if prepared.envelope.activity_type().module() == layerx_types::payload::ModuleId::Programs
         || fee_policy.observed_sequence != current_head
         || prepared.observed_head_sequence > current_head
-        || fee_policy.state_root == [0; 32] || fee_policy.value.asset.asset_id == [0; 32]
+        || fee_policy.state_root == [0; 32]
+        || fee_policy.value.asset.asset_id == [0; 32]
         || !matches!(fee_policy.value.version, 1 | 2)
     {
         return Err(BindingError::Conflict);
     }
     let maximum_amount = prepared.envelope.fee_limit().value();
-    if maximum_amount == 0 { return Ok(None); }
+    if maximum_amount == 0 {
+        return Ok(None);
+    }
     let actor = core::str::from_utf8(prepared.envelope.actor_did().as_bytes())
         .map_err(|_| BindingError::Corrupt)?;
     let asset = fee_policy.value.asset.asset_id;
     let account = layerx_types::account::AccountId::for_asset(actor, asset, asset)
         .map_err(|_| BindingError::Corrupt)?;
-    let source_account = layerx_wire::hash::account_id_for_protocol(
-        &account, prepared.envelope.protocol_version()).map_err(|_| BindingError::Corrupt)?;
-    Ok(Some(NativeEffectFeeV1 { source_account, asset, maximum_amount }))
+    let source_account =
+        layerx_wire::hash::account_id_for_protocol(&account, prepared.envelope.protocol_version())
+            .map_err(|_| BindingError::Corrupt)?;
+    Ok(Some(NativeEffectFeeV1 {
+        source_account,
+        asset,
+        maximum_amount,
+    }))
 }
 
 pub fn inspect_native_effect_capability(
@@ -2593,91 +2603,181 @@ pub fn inspect_native_effect_capability(
     binding: NativePreparationBindingV1,
     prepared: &crate::prepare::Prepared,
     now_ms: u64,
-    fee_policy: &layerx_client::payments::CommittedSnapshot<layerx_client::payments::NativeFeePolicy>,
+    fee_policy: &layerx_client::payments::CommittedSnapshot<
+        layerx_client::payments::NativeFeePolicy,
+    >,
     current_head: u64,
 ) -> Result<NativeCapabilityConstraintsV1, BindingError> {
     crate::prepare::verify_disclosure_binding(prepared).map_err(|_| BindingError::Corrupt)?;
     let digest: [u8; 32] = Sha256::digest(&prepared.canonical_bytes).into();
-    if digest != binding.canonical_digest || prepared.envelope.actor_did() != &binding.agent
-        || layerx_agent_api::identity::NativeActivity::from(prepared.envelope.activity_type()) != binding.activity
+    if digest != binding.canonical_digest
+        || prepared.envelope.actor_did() != &binding.agent
+        || layerx_agent_api::identity::NativeActivity::from(prepared.envelope.activity_type())
+            != binding.activity
         || prepared.envelope.activity_type().module() == layerx_types::payload::ModuleId::Programs
-        || purpose_commitment(&prepared.disclosure).is_some_and(|value| value != binding.purpose_commitment)
+        || purpose_commitment(&prepared.disclosure)
+            .is_some_and(|value| value != binding.purpose_commitment)
     {
         return Err(BindingError::Conflict);
     }
     let fee = native_effect_fee(prepared, fee_policy, current_head)?;
-    let plan = super::effects::derive_native_effects(&prepared.disclosure, &super::VerifiedInputs::default())
-        .map_err(|_| BindingError::Restricted)?;
-    if !plan.program_spend_bounds().is_empty() { return Err(BindingError::Restricted); }
-    let agent = core::str::from_utf8(binding.agent.as_bytes()).map_err(|_| BindingError::Corrupt)?;
-    let chain = timed::native_active_chain(store, &binding.tenant, agent, &binding.capability_id, now_ms)?;
+    let plan = super::effects::derive_native_effects(
+        &prepared.disclosure,
+        &super::VerifiedInputs::default(),
+    )
+    .map_err(|_| BindingError::Restricted)?;
+    if !plan.program_spend_bounds().is_empty() {
+        return Err(BindingError::Restricted);
+    }
+    let agent =
+        core::str::from_utf8(binding.agent.as_bytes()).map_err(|_| BindingError::Corrupt)?;
+    let chain = timed::native_active_chain(
+        store,
+        &binding.tenant,
+        agent,
+        &binding.capability_id,
+        now_ms,
+    )?;
     let mut principal_totals = BTreeMap::<[u8; 32], u128>::new();
     for effect in plan.effects() {
         let source = match effect {
-            Effect::Transfer { from, asset, amount, .. } => Some((*from, *asset, *amount)),
-            Effect::Destruction { account, asset, amount } => Some((*account, *asset, *amount)),
+            Effect::Transfer {
+                from,
+                asset,
+                amount,
+                ..
+            } => Some((*from, *asset, *amount)),
+            Effect::Destruction {
+                account,
+                asset,
+                amount,
+            } => Some((*account, *asset, *amount)),
             _ => None,
         };
         if let Some((source, asset, amount)) = source {
-            let account = layerx_types::account::AccountId::for_asset(agent, asset, fee_policy.value.asset.asset_id)
-                .map_err(|_| BindingError::Corrupt)?;
-            let principal = layerx_wire::hash::account_id_for_protocol(&account, prepared.envelope.protocol_version())
-                .map_err(|_| BindingError::Corrupt)?;
-            if source != principal { return Err(BindingError::Refused(Dimension::Amount)); }
+            let account = layerx_types::account::AccountId::for_asset(
+                agent,
+                asset,
+                fee_policy.value.asset.asset_id,
+            )
+            .map_err(|_| BindingError::Corrupt)?;
+            let principal = layerx_wire::hash::account_id_for_protocol(
+                &account,
+                prepared.envelope.protocol_version(),
+            )
+            .map_err(|_| BindingError::Corrupt)?;
+            if source != principal {
+                return Err(BindingError::Refused(Dimension::Amount));
+            }
             let total = principal_totals.entry(asset).or_default();
-            *total = total.checked_add(amount).ok_or(BindingError::Refused(Dimension::Amount))?;
+            *total = total
+                .checked_add(amount)
+                .ok_or(BindingError::Refused(Dimension::Amount))?;
         }
     }
     let mut gross = plan.gross_per_asset().clone();
     if let Some(fee) = fee {
         for totals in [&mut gross, &mut principal_totals] {
             let total = totals.entry(fee.asset).or_default();
-            *total = total.checked_add(fee.maximum_amount).ok_or(BindingError::Refused(Dimension::Amount))?;
+            *total = total
+                .checked_add(fee.maximum_amount)
+                .ok_or(BindingError::Refused(Dimension::Amount))?;
         }
     }
     let mut rates = BTreeMap::new();
     let mut ids = Vec::new();
     for capability in chain {
         capability.validate()?;
-        if capability.record.authority != binding.authority { return Err(BindingError::Unbound); }
-        if u128::from(binding.expires_at_ms) > capability.record.not_after_ms() || now_ms >= binding.expires_at_ms {
+        if capability.record.authority != binding.authority {
+            return Err(BindingError::Unbound);
+        }
+        if u128::from(binding.expires_at_ms) > capability.record.not_after_ms()
+            || now_ms >= binding.expires_at_ms
+        {
             return Err(BindingError::Refused(Dimension::Expiry));
         }
-        if !capability.activities.contains(&binding.activity) { return Err(BindingError::Refused(Dimension::ActivityType)); }
-        if !capability.purpose_commitments.contains(&binding.purpose_commitment) { return Err(BindingError::Refused(Dimension::Purpose)); }
+        if !capability.activities.contains(&binding.activity) {
+            return Err(BindingError::Refused(Dimension::ActivityType));
+        }
+        if !capability
+            .purpose_commitments
+            .contains(&binding.purpose_commitment)
+        {
+            return Err(BindingError::Refused(Dimension::Purpose));
+        }
         for effect in plan.effects() {
             let (account, asset, bound) = match *effect {
-                Effect::Transfer { to, asset, amount, .. } => (to, Some(asset), amount),
-                Effect::Issuance { account, asset, amount }
-                | Effect::Destruction { account, asset, amount } => (account, Some(asset), amount),
-                Effect::Authorization { account, asset, amount, .. } => (account, asset, amount),
+                Effect::Transfer {
+                    to, asset, amount, ..
+                } => (to, Some(asset), amount),
+                Effect::Issuance {
+                    account,
+                    asset,
+                    amount,
+                }
+                | Effect::Destruction {
+                    account,
+                    asset,
+                    amount,
+                } => (account, Some(asset), amount),
+                Effect::Authorization {
+                    account,
+                    asset,
+                    amount,
+                    ..
+                } => (account, asset, amount),
             };
-            if !capability.record.counterparties.contains(&account) { return Err(BindingError::Refused(Dimension::Counterparty)); }
+            if !capability.record.counterparties.contains(&account) {
+                return Err(BindingError::Refused(Dimension::Counterparty));
+            }
             if let Some(asset) = asset {
-                if !capability.record.assets.contains(&asset) { return Err(BindingError::Refused(Dimension::Asset)); }
-                if capability.record.amount_ceilings.get(&asset).is_none_or(|limit| bound > *limit) {
+                if !capability.record.assets.contains(&asset) {
+                    return Err(BindingError::Refused(Dimension::Asset));
+                }
+                if capability
+                    .record
+                    .amount_ceilings
+                    .get(&asset)
+                    .is_none_or(|limit| bound > *limit)
+                {
                     return Err(BindingError::Refused(Dimension::Amount));
                 }
             }
         }
         for (asset, total) in &gross {
-            if !capability.record.assets.contains(asset) { return Err(BindingError::Refused(Dimension::Asset)); }
-            if capability.record.amount_ceilings.get(asset).is_none_or(|limit| total > limit) {
-                return Err(BindingError::Refused(Dimension::Amount));
+            if !capability.record.assets.contains(asset) {
+                return Err(BindingError::Refused(Dimension::Asset));
             }
-        }
-        for (asset, total) in &principal_totals {
-            if capability.spend_ceilings.get(&(timed::NativeSpendSourceV1::Principal, *asset))
+            if capability
+                .record
+                .amount_ceilings
+                .get(asset)
                 .is_none_or(|limit| total > limit)
             {
                 return Err(BindingError::Refused(Dimension::Amount));
             }
         }
-        if capability.record.rate_ceilings.is_empty() { return Err(BindingError::Refused(Dimension::Rate)); }
+        for (asset, total) in &principal_totals {
+            if capability
+                .spend_ceilings
+                .get(&(timed::NativeSpendSourceV1::Principal, *asset))
+                .is_none_or(|limit| total > limit)
+            {
+                return Err(BindingError::Refused(Dimension::Amount));
+            }
+        }
+        if capability.record.rate_ceilings.is_empty() {
+            return Err(BindingError::Refused(Dimension::Rate));
+        }
         ids.push(capability.record.id);
         rates.insert(capability.record.id, capability.record.rate_ceilings);
     }
-    Ok(NativeCapabilityConstraintsV1 { binding, chain: ids, rate_obligations: rates, observed_at_ms: now_ms })
+    Ok(NativeCapabilityConstraintsV1 {
+        binding,
+        chain: ids,
+        rate_obligations: rates,
+        observed_at_ms: now_ms,
+    })
 }
 
 #[derive(Debug)]
@@ -3316,4 +3416,284 @@ fn inspect_native_route_fields(
         return Err(BindingError::Refused(Dimension::Amount));
     }
     Ok(())
+}
+
+#[derive(Debug)]
+pub struct VerifiedNativeSendPurposeV1 {
+    verified: VerifiedNativePurposeV1,
+}
+
+impl VerifiedNativeSendPurposeV1 {
+    pub const fn binding(&self) -> &NativePreparationBindingV1 {
+        &self.verified.binding
+    }
+    pub const fn owner_public_key(&self) -> [u8; 32] {
+        self.verified.owner_public_key
+    }
+    pub const fn owner_revocation_sequence(&self) -> u64 {
+        self.verified.owner_revocation_sequence
+    }
+    pub const fn observed_head_sequence(&self) -> u64 {
+        self.verified.observed_head_sequence
+    }
+    pub const fn observed_at_ms(&self) -> u64 {
+        self.verified.observed_at_ms
+    }
+    pub fn replay_update(&self, store: &Store) -> Result<(TenantKey, Vec<u8>), BindingError> {
+        self.verified.replay_update(store)
+    }
+}
+
+pub fn native_send_purpose_digest(
+    purpose: &layerx_agent_api::identity::NativeSendPurposeV1,
+) -> Result<[u8; 32], BindingError> {
+    let bytes = purpose
+        .canonical_bytes()
+        .map_err(|_| BindingError::Corrupt)?;
+    Ok(Sha256::digest(bytes).into())
+}
+
+fn verify_native_send_canonical(prepared: &crate::prepare::Prepared) -> Result<(), BindingError> {
+    crate::prepare::verify_disclosure_binding(prepared).map_err(|_| BindingError::Corrupt)?;
+    let canonical = layerx_wire::activity::encode_unsigned_envelope(&prepared.envelope)
+        .map_err(|_| BindingError::Corrupt)?;
+    let preimage = layerx_wire::sign::preimage_unsigned(&prepared.envelope)
+        .map_err(|_| BindingError::Corrupt)?;
+    if canonical != prepared.canonical_bytes
+        || *preimage.as_bytes() != prepared.signing_preimage
+        || prepared.audit.idempotency_key != prepared.envelope.idempotency_key().bytes()
+        || prepared.audit.observed_head_sequence != prepared.observed_head_sequence
+        || prepared.disclosure.activity_type != prepared.envelope.activity_type()
+        || (
+            prepared.envelope.activity_type().module(),
+            prepared.envelope.activity_type().ordinal(),
+        ) != (layerx_types::payload::ModuleId::Asset, 5)
+        || purpose_commitment(&prepared.disclosure).is_some()
+    {
+        return Err(BindingError::Conflict);
+    }
+    let plan = super::effects::derive_native_effects(
+        &prepared.disclosure,
+        &super::VerifiedInputs::default(),
+    )
+    .map_err(|_| BindingError::Restricted)?;
+    if !plan.program_spend_bounds().is_empty()
+        || plan.effects().len() != 1
+        || !matches!(plan.effects()[0], Effect::Transfer { .. })
+    {
+        return Err(BindingError::Restricted);
+    }
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn verify_native_owner_send_purpose(
+    store: &Store,
+    sessions: &crate::session::SessionRegistry,
+    session: &crate::session::NativeSessionAuthorizationV1,
+    owner: &crate::human_runtime::VerifiedNativeOwnerV1,
+    prepared: &crate::prepare::Prepared,
+    preparation_id: &[u8; 32],
+    signed: &layerx_agent_api::identity::SignedNativeSendPurposeV1,
+    core_sequence: u64,
+    core_time_ms: u64,
+) -> Result<VerifiedNativeSendPurposeV1, BindingError> {
+    verify_native_send_canonical(prepared)?;
+    let purpose = &signed.purpose;
+    let digest = native_send_purpose_digest(purpose)?;
+    let capability_id = purpose
+        .capability_id
+        .to_bytes()
+        .map_err(|_| BindingError::Corrupt)?;
+    let record = sessions
+        .get(session.tenant(), session.session_id())
+        .ok_or(BindingError::Unbound)?;
+    if owner.tenant() != session.tenant()
+        || owner.agent() != session.agent()
+        || owner.session_id() != session.session_id()
+        || owner.generation() != session.generation()
+        || owner.public_key() != signed.owner_public_key
+        || purpose.owner_public_key != signed.owner_public_key
+        || owner.head_sequence() != core_sequence
+        || owner.revocation_sequence() == 0
+        || owner.revocation_sequence() > core_sequence
+        || !record.open
+        || record.generation != session.generation()
+        || &record.request.tenant != session.tenant()
+        || record.request.session_id != session.session_id()
+        || &record.request.agent != session.agent()
+        || core_sequence >= record.request.expiry_sequence
+        || !record
+            .public_expiry_within(core_time_ms)
+            .map_err(|_| BindingError::Unbound)?
+    {
+        return Err(BindingError::Unbound);
+    }
+    let canonical_digest: [u8; 32] = Sha256::digest(&prepared.canonical_bytes).into();
+    let activity =
+        layerx_agent_api::identity::NativeActivity::from(prepared.envelope.activity_type());
+    if purpose.tenant.as_str() != session.tenant().as_str()
+        || purpose.agent_did.as_str().as_bytes() != session.agent().as_bytes()
+        || purpose.owner_did.as_str().as_bytes() != owner.agent().as_bytes()
+        || purpose
+            .session_id
+            .to_bytes()
+            .map_err(|_| BindingError::Corrupt)?
+            != session.session_id().0
+        || purpose.generation != session.generation()
+        || purpose.preparation_id != *preparation_id
+        || purpose.canonical_digest != canonical_digest
+        || purpose.preparation_id != canonical_digest
+        || purpose.protocol_version != prepared.envelope.protocol_version()
+        || purpose.network_id != prepared.envelope.network_id()
+        || purpose.activity != activity
+        || purpose.economic_action != capability_id
+        || purpose.economic_action != session.session_id().0
+        || purpose.idempotency_key != prepared.audit.idempotency_key
+        || prepared.envelope.actor_did() != session.agent()
+        || activity != session.activity()
+        || prepared.observed_head_sequence > core_sequence
+        || core_time_ms < prepared.envelope.timestamp_bound().not_before()
+        || core_time_ms >= purpose.expires_at_ms
+        || record
+            .request
+            .expiry_seconds
+            .and_then(|value| value.checked_mul(1000))
+            .is_none_or(|expiry| purpose.expires_at_ms > expiry)
+        || purpose.expires_at_ms > prepared.envelope.timestamp_bound().not_after()
+    {
+        return Err(BindingError::Conflict);
+    }
+    layerx_crypto::ed25519::verify_digest(&signed.owner_public_key, &signed.signature, &digest)
+        .map_err(|_| BindingError::Unbound)?;
+    let binding = NativePreparationBindingV1 {
+        authority: record.request.authority.clone(),
+        tenant: session.tenant().clone(),
+        agent: session.agent().clone(),
+        session_id: session.session_id(),
+        generation: session.generation(),
+        activity,
+        capability_id,
+        preparation_id: *preparation_id,
+        canonical_digest,
+        purpose_commitment: purpose.commitment,
+        purpose_digest: digest,
+        expires_at_ms: purpose.expires_at_ms,
+    };
+    let mut old_object = b"native-purpose-v1:".to_vec();
+    old_object.extend_from_slice(preparation_id);
+    let old_key = TenantKey::new(binding.tenant.clone(), ObjectKind::Capability, old_object)?;
+    if store.get(&old_key).is_some() {
+        return Err(BindingError::Conflict);
+    }
+    let mut object = b"native-send-purpose-v1:".to_vec();
+    object.extend_from_slice(preparation_id);
+    let replay_key = TenantKey::new(binding.tenant.clone(), ObjectKind::Capability, object)?;
+    let mut replay_bytes = b"LXNS\x01".to_vec();
+    replay_bytes.extend_from_slice(
+        &purpose
+            .canonical_bytes()
+            .map_err(|_| BindingError::Corrupt)?,
+    );
+    replay_bytes.extend_from_slice(&signed.owner_public_key);
+    replay_bytes.extend_from_slice(&signed.signature);
+    let verified = VerifiedNativeSendPurposeV1 {
+        verified: VerifiedNativePurposeV1 {
+            binding,
+            owner_public_key: signed.owner_public_key,
+            owner_revocation_sequence: owner.revocation_sequence(),
+            observed_head_sequence: core_sequence,
+            observed_at_ms: core_time_ms,
+            replay_key,
+            replay_bytes,
+        },
+    };
+    verified.replay_update(store)?;
+    Ok(verified)
+}
+
+pub fn inspect_native_send_capability(
+    store: &Store,
+    purpose: &VerifiedNativeSendPurposeV1,
+    prepared: &crate::prepare::Prepared,
+    now_ms: u64,
+    fee_policy: &layerx_client::payments::CommittedSnapshot<
+        layerx_client::payments::NativeFeePolicy,
+    >,
+    current_head: u64,
+) -> Result<NativeCapabilityConstraintsV1, BindingError> {
+    verify_native_send_canonical(prepared)?;
+    if purpose.observed_head_sequence() != current_head || purpose.observed_at_ms() != now_ms {
+        return Err(BindingError::Unbound);
+    }
+    purpose.replay_update(store)?;
+    let binding = purpose.binding();
+    let agent =
+        core::str::from_utf8(binding.agent.as_bytes()).map_err(|_| BindingError::Corrupt)?;
+    for capability in timed::native_active_chain(
+        store,
+        &binding.tenant,
+        agent,
+        &binding.capability_id,
+        now_ms,
+    )? {
+        if capability.record.created_at_sequence > current_head
+            || capability.record.created_at_ms > now_ms
+        {
+            return Err(BindingError::Unbound);
+        }
+    }
+    inspect_native_effect_capability(
+        store,
+        binding.clone(),
+        prepared,
+        now_ms,
+        fee_policy,
+        current_head,
+    )
+}
+
+pub fn restore_native_signed_send_purpose(
+    store: &Store,
+    tenant: &TenantId,
+    preparation_id: &[u8; 32],
+) -> Result<Option<layerx_agent_api::identity::SignedNativeSendPurposeV1>, BindingError> {
+    let mut object = b"native-send-purpose-v1:".to_vec();
+    object.extend_from_slice(preparation_id);
+    let key = TenantKey::new(tenant.clone(), ObjectKind::Capability, object)?;
+    let Some(value) = store.get(&key) else {
+        return Ok(None);
+    };
+    if value.class() != crate::store::StorageClass::LocalOnly {
+        return Err(BindingError::Corrupt);
+    }
+    let bytes = value
+        .bytes()
+        .strip_prefix(b"LXNS\x01")
+        .ok_or(BindingError::Corrupt)?;
+    let end = bytes.len().checked_sub(96).ok_or(BindingError::Corrupt)?;
+    let purpose =
+        layerx_agent_api::identity::NativeSendPurposeV1::from_canonical_bytes(&bytes[..end])
+            .map_err(|_| BindingError::Corrupt)?;
+    let owner_public_key = bytes[end..end + 32]
+        .try_into()
+        .map_err(|_| BindingError::Corrupt)?;
+    let signature = bytes[end + 32..]
+        .try_into()
+        .map_err(|_| BindingError::Corrupt)?;
+    if purpose.tenant.as_str() != tenant.as_str()
+        || purpose.preparation_id != *preparation_id
+        || purpose.owner_public_key != owner_public_key
+    {
+        return Err(BindingError::Corrupt);
+    }
+    let signed = layerx_agent_api::identity::SignedNativeSendPurposeV1 {
+        purpose,
+        owner_public_key,
+        signature,
+    };
+    let digest = native_send_purpose_digest(&signed.purpose)?;
+    layerx_crypto::ed25519::verify_digest(&signed.owner_public_key, &signed.signature, &digest)
+        .map_err(|_| BindingError::Corrupt)?;
+    Ok(Some(signed))
 }

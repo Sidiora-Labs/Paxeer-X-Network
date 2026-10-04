@@ -533,6 +533,262 @@ pub(crate) fn native_effect_human_prepare(
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
+pub(crate) struct NativeSendPurposeV1Wire {
+    version: String,
+    tenant: String,
+    agent_did: String,
+    owner_did: String,
+    owner_public_key: String,
+    session_id: String,
+    generation: String,
+    expires_at_ms: String,
+    capability_id: String,
+    protocol_version: String,
+    network_id: String,
+    activity: NativeActivityV1Wire,
+    preparation_id: String,
+    canonical_digest: String,
+    economic_action: String,
+    idempotency_key: String,
+    commitment: String,
+}
+
+impl NativeSendPurposeV1Wire {
+    pub(crate) fn into_request(
+        self,
+        id: RequestId,
+    ) -> Result<layerx_agent_api::identity::NativeSendPurposeV1, Rejection> {
+        if decimal_u64(&self.version, id)?
+            != u64::from(layerx_agent_api::identity::NativeSendPurposeV1::VERSION)
+        {
+            return Err(malformed(id));
+        }
+        layerx_agent_api::identity::NativeSendPurposeV1 {
+            tenant: text(self.tenant, id, TenantId::new)?,
+            agent_did: text(self.agent_did, id, AgentDid::new)?,
+            owner_did: text(self.owner_did, id, AgentDid::new)?,
+            owner_public_key: hex32(&self.owner_public_key, id)?,
+            session_id: text(self.session_id, id, SessionId::new)?,
+            generation: decimal_u64(&self.generation, id)?,
+            expires_at_ms: decimal_u64(&self.expires_at_ms, id)?,
+            capability_id: text(self.capability_id, id, CapabilityId::new)?,
+            protocol_version: u16::try_from(decimal_u64(&self.protocol_version, id)?)
+                .map_err(|_| noncanonical(id))?,
+            network_id: u32::try_from(decimal_u64(&self.network_id, id)?)
+                .map_err(|_| noncanonical(id))?,
+            activity: self.activity.into_activity(id)?,
+            preparation_id: hex32(&self.preparation_id, id)?,
+            canonical_digest: hex32(&self.canonical_digest, id)?,
+            economic_action: hex32(&self.economic_action, id)?,
+            idempotency_key: hex32(&self.idempotency_key, id)?,
+            commitment: hex32(&self.commitment, id)?,
+        }
+        .validate()
+        .map_err(contract(id))
+    }
+}
+
+impl Canonical for layerx_agent_api::identity::NativeSendPurposeV1 {
+    fn canonical(&self) -> Value {
+        json!({
+            "version": Self::VERSION.to_string(),
+            "tenant": self.tenant.as_str(),
+            "agent_did": self.agent_did.as_str(),
+            "owner_did": self.owner_did.as_str(),
+            "owner_public_key": lower_hex(&self.owner_public_key),
+            "session_id": self.session_id.as_str(),
+            "generation": self.generation.to_string(),
+            "expires_at_ms": self.expires_at_ms.to_string(),
+            "capability_id": self.capability_id.as_str(),
+            "protocol_version": self.protocol_version.to_string(),
+            "network_id": self.network_id.to_string(),
+            "activity": self.activity.canonical(),
+            "preparation_id": lower_hex(&self.preparation_id),
+            "canonical_digest": lower_hex(&self.canonical_digest),
+            "economic_action": lower_hex(&self.economic_action),
+            "idempotency_key": lower_hex(&self.idempotency_key),
+            "commitment": lower_hex(&self.commitment),
+        })
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct SignedNativeSendPurposeV1Wire {
+    purpose: NativeSendPurposeV1Wire,
+    owner_public_key: String,
+    signature: String,
+}
+
+impl SignedNativeSendPurposeV1Wire {
+    pub(crate) fn into_request(
+        self,
+        id: RequestId,
+    ) -> Result<layerx_agent_api::identity::SignedNativeSendPurposeV1, Rejection> {
+        if self.signature.len() != 128 {
+            return Err(malformed(id));
+        }
+        layerx_agent_api::identity::SignedNativeSendPurposeV1 {
+            purpose: self.purpose.into_request(id)?,
+            owner_public_key: hex32(&self.owner_public_key, id)?,
+            signature: hex_bytes(&self.signature, id)?
+                .try_into()
+                .map_err(|_| malformed(id))?,
+        }
+        .validate()
+        .map_err(contract(id))
+    }
+}
+
+impl Canonical for layerx_agent_api::identity::SignedNativeSendPurposeV1 {
+    fn canonical(&self) -> Value {
+        json!({
+            "purpose": self.purpose.canonical(),
+            "owner_public_key": lower_hex(&self.owner_public_key),
+            "signature": lower_hex(&self.signature),
+        })
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct NativeSendPrepareV1Wire {
+    variant: String,
+    activity: NativeActivityV1Wire,
+    actor: String,
+    authority: String,
+    account_sequence: String,
+    not_before: String,
+    not_after: String,
+    idempotency_key: String,
+    fee_limit: String,
+    payload: String,
+    payload_hash: String,
+    capability_id: String,
+    purpose: SignedNativeSendPurposeV1Wire,
+    local_grant: Option<NativeLocalGrantConsentV1Wire>,
+}
+
+impl NativeSendPrepareV1Wire {
+    pub(crate) fn into_request(
+        self,
+        id: RequestId,
+    ) -> Result<layerx_agent_api::identity::NativeSendPrepareRequestV1, Rejection> {
+        if self.variant != "native_send_v1" {
+            return Err(malformed(id));
+        }
+        if self.payload.len() > layerx_types::limits::MAX_PAYLOAD_BYTES * 2 {
+            return Err(malformed(id));
+        }
+        layerx_agent_api::identity::NativeSendPrepareRequestV1 {
+            activity: self.activity.into_activity(id)?,
+            actor: text(self.actor, id, AgentDid::new)?,
+            authority: self.authority,
+            account_sequence: decimal_u64(&self.account_sequence, id)?,
+            not_before: decimal_u64(&self.not_before, id)?,
+            not_after: decimal_u64(&self.not_after, id)?,
+            idempotency_key: hex32(&self.idempotency_key, id)?,
+            fee_limit: decimal_u128(&self.fee_limit, id)?,
+            payload: hex_bytes(&self.payload, id)?,
+            payload_hash: hex32(&self.payload_hash, id)?,
+            capability_id: text(self.capability_id, id, CapabilityId::new)?,
+            purpose: self.purpose.into_request(id)?,
+            local_grant: self
+                .local_grant
+                .map(|grant| grant.into_request(id))
+                .transpose()?,
+        }
+        .validate()
+        .map_err(contract(id))
+    }
+}
+
+impl Canonical for layerx_agent_api::identity::NativeSendPrepareRequestV1 {
+    fn canonical(&self) -> Value {
+        json!({
+            "variant": "native_send_v1",
+            "activity": self.activity.canonical(),
+            "actor": self.actor.as_str(),
+            "authority": self.authority,
+            "account_sequence": self.account_sequence.to_string(),
+            "not_before": self.not_before.to_string(),
+            "not_after": self.not_after.to_string(),
+            "idempotency_key": lower_hex(&self.idempotency_key),
+            "fee_limit": self.fee_limit.to_string(),
+            "payload": lower_hex(&self.payload),
+            "payload_hash": lower_hex(&self.payload_hash),
+            "capability_id": self.capability_id.as_str(),
+            "purpose": self.purpose.canonical(),
+            "local_grant": self.local_grant.as_ref().map(Canonical::canonical),
+        })
+    }
+}
+
+pub(crate) fn native_send_human_prepare(
+    request: &layerx_agent_api::identity::NativeSendPrepareRequestV1,
+    id: RequestId,
+) -> Result<crate::human::HumanPrepare, Rejection> {
+    let request = request.clone().validate().map_err(contract(id))?;
+    Ok(crate::human::HumanPrepare {
+        activity_type: request
+            .activity
+            .activity_type()
+            .map_err(contract(id))?
+            .value(),
+        actor: request.actor.as_str().to_owned(),
+        authority: request.authority,
+        account_sequence: request.account_sequence,
+        not_before: request.not_before,
+        not_after: request.not_after,
+        idempotency_key: lower_hex(&request.idempotency_key),
+        fee_limit: request.fee_limit,
+        payload: request.payload,
+        payload_hash: request.payload_hash,
+        capability_id: Some(request.capability_id.to_bytes().map_err(contract(id))?),
+    })
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct NativeSendSubmitV1Wire {
+    variant: String,
+    #[serde(default)]
+    tenant: Option<String>,
+    #[serde(default)]
+    agent: Option<String>,
+    preparation_ref: String,
+    signature: String,
+    signer_public_key: String,
+    approval_release_ref: Option<String>,
+}
+
+impl NativeSendSubmitV1Wire {
+    pub(crate) fn into_request(
+        self,
+        id: RequestId,
+    ) -> Result<crate::human::HumanSubmit, Rejection> {
+        if self.variant != "native_send_submit_v1" || self.signature.len() != 128 {
+            return Err(malformed(id));
+        }
+        let _ = (self.tenant, self.agent);
+        let preparation_id = hex32(&self.preparation_ref, id)?;
+        if preparation_id == [0; 32] {
+            return Err(malformed(id));
+        }
+        Ok(crate::human::HumanSubmit {
+            preparation_ref: lower_hex(&preparation_id),
+            signature: hex_bytes(&self.signature, id)?,
+            signer_public_key: hex32(&self.signer_public_key, id)?,
+            approval_release_ref: self
+                .approval_release_ref
+                .map(|value| hex32(&value, id))
+                .transpose()?,
+        })
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct NativeApprovalListV1Wire {
     variant: String,
 }
@@ -2780,6 +3036,149 @@ pub(crate) fn program_call_canonical(
                     "response_capacity": call.response_capacity,
                     "resources": call.resources.0.map(|value| value.to_string())},
             }))
+        }
+    }
+}
+
+#[cfg(test)]
+mod native_send_contract_tests {
+    use super::*;
+    use ed25519_dalek::{Signer, SigningKey};
+    use sha2::{Digest, Sha256};
+
+    fn send_body() -> Value {
+        let id = RequestId(1);
+        let payload =
+            include_str!("../../layerx-crypto/tests/fixtures/payments/native-1-5.hex").trim();
+        let key = SigningKey::from_bytes(&[7; 32]);
+        let owner_public_key = lower_hex(&key.verifying_key().to_bytes());
+        let purpose_body = json!({
+            "version":"1", "tenant":"native-effect-tenant", "agent_did":"native-effect-agent",
+            "owner_did":format!("did:layerx:{owner_public_key}"), "owner_public_key":owner_public_key,
+            "session_id":"11".repeat(32), "generation":"1", "expires_at_ms":"100000",
+            "capability_id":"22".repeat(32), "protocol_version":"3", "network_id":"1",
+            "activity":{"version":"1", "module":"1", "ordinal":"5"},
+            "preparation_id":"04".repeat(32), "canonical_digest":"04".repeat(32),
+            "economic_action":"06".repeat(32), "idempotency_key":"04".repeat(32),
+            "commitment":"05".repeat(32)
+        });
+        let purpose = serde_json::from_value::<NativeSendPurposeV1Wire>(purpose_body.clone())
+            .expect("Send purpose wire")
+            .into_request(id)
+            .expect("Send purpose contract");
+        let digest: [u8; 32] =
+            Sha256::digest(purpose.canonical_bytes().expect("canonical purpose")).into();
+        json!({
+            "variant":"native_send_v1", "activity":{"version":"1", "module":"1", "ordinal":"5"},
+            "actor":"native-effect-agent", "authority":"owner", "account_sequence":"7",
+            "not_before":"1", "not_after":"100", "idempotency_key":"04".repeat(32),
+            "fee_limit":"123", "payload":payload,
+            "payload_hash":lower_hex(&Sha256::digest(hex_bytes(payload, id).expect("real Send payload"))),
+            "capability_id":"22".repeat(32),
+            "purpose":{"purpose":purpose_body, "owner_public_key":owner_public_key,
+                "signature":lower_hex(&key.sign(&digest).to_bytes())},
+            "local_grant":Value::Null
+        })
+    }
+
+    #[test]
+    fn native_send_wire_preserves_exact_signed_request_and_distinct_digest() {
+        let body = send_body();
+        let request =
+            decode_wire::<NativeSendPrepareV1Wire>(body.as_object().expect("object"), RequestId(1))
+                .expect("Send wire")
+                .into_request(RequestId(1))
+                .expect("Send contract");
+        assert_eq!(request.canonical(), body);
+        let prepare =
+            native_send_human_prepare(&request, RequestId(1)).expect("Human Send preparation");
+        assert_eq!(prepare.activity_type, 0x0001_0005);
+        assert_eq!(prepare.payload, request.payload);
+        assert_eq!(prepare.idempotency_key, lower_hex(&request.idempotency_key));
+        let canonical = serde_json::to_vec(&body).expect("canonical Send JSON");
+        let digest: [u8; 32] = Sha256::new()
+            .chain_update(b"LXP/agent/native-send-prepare/v1\0")
+            .chain_update(&canonical)
+            .finalize()
+            .into();
+        assert_eq!(
+            crate::agent_rpc_dispatch::native_send_prepare_digest(&request).expect("Send digest"),
+            digest
+        );
+        let old: [u8; 32] = Sha256::new()
+            .chain_update(b"LXP/agent/native-effect-prepare/v1\0")
+            .chain_update(&canonical)
+            .finalize()
+            .into();
+        assert_ne!(digest, old);
+        assert!(decode_wire::<NativeEffectPrepareV1Wire>(
+            body.as_object().expect("object"),
+            RequestId(1)
+        )
+        .is_err());
+        assert!(decode_wire::<NativePrepareV1Wire>(
+            body.as_object().expect("object"),
+            RequestId(1)
+        )
+        .is_err());
+        if let Ok(path) = std::env::var("NATIVE_SEND_DAEMON_CANONICAL_OUTPUT") {
+            std::fs::write(path, canonical).expect("private Send canonical artifact");
+        }
+    }
+
+    #[test]
+    fn native_send_wire_refuses_unknown_fields_noncanonical_values_and_profile_aliases() {
+        let base = send_body();
+        let mut invalid = Vec::new();
+        for (field, value) in [
+            ("variant", Value::String("native_effect_v1".into())),
+            ("variant", Value::String("native_v1".into())),
+            ("authority", Value::String(String::new())),
+            ("account_sequence", Value::String("07".into())),
+            ("account_sequence", Value::Number(7.into())),
+            ("payload_hash", Value::String("AA".repeat(32))),
+            ("idempotency_key", Value::String("08".repeat(32))),
+            ("capability_id", Value::String("33".repeat(32))),
+            ("extra", Value::String("authority".into())),
+        ] {
+            let mut changed = base.clone();
+            changed[field] = value;
+            invalid.push(changed);
+        }
+        for (field, value) in [
+            ("version", Value::String("01".into())),
+            ("generation", Value::String("0".into())),
+            ("expires_at_ms", Value::String("0".into())),
+            ("protocol_version", Value::String("65536".into())),
+            ("network_id", Value::String("4294967296".into())),
+            ("owner_did", Value::String("different-owner".into())),
+            ("owner_public_key", Value::String("AA".repeat(32))),
+            ("economic_action", Value::String("06".repeat(31))),
+            ("idempotency_key", Value::String("08".repeat(32))),
+            ("extra", Value::Bool(true)),
+        ] {
+            let mut changed = base.clone();
+            changed["purpose"]["purpose"][field] = value;
+            invalid.push(changed);
+        }
+        for field in ["owner_public_key", "signature", "extra"] {
+            let mut changed = base.clone();
+            changed["purpose"][field] = Value::String("AA".repeat(32));
+            invalid.push(changed);
+        }
+        let mut changed = base.clone();
+        changed["activity"]["ordinal"] = json!("6");
+        invalid.push(changed);
+        let mut changed = base.clone();
+        changed["purpose"]["purpose"]["activity"]["ordinal"] = json!("6");
+        invalid.push(changed);
+        for body in invalid {
+            assert!(decode_wire::<NativeSendPrepareV1Wire>(
+                body.as_object().expect("object"),
+                RequestId(1)
+            )
+            .and_then(|wire| wire.into_request(RequestId(1)))
+            .is_err());
         }
     }
 }

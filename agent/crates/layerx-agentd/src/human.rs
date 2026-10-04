@@ -39,8 +39,10 @@ fn trace_envelope(frame: Vec<u8>) -> Result<(Option<String>, Vec<u8>), HumanProt
     reader.fixed::<8>()?;
     let bytes = reader.fixed::<36>()?;
     let trace = std::str::from_utf8(&bytes).map_err(|_| HumanProtocolError::Malformed)?;
-    if !trace.starts_with("trc_") || !trace.as_bytes()[4..].iter()
-        .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(byte))
+    if !trace.starts_with("trc_")
+        || !trace.as_bytes()[4..]
+            .iter()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(byte))
     {
         return Err(HumanProtocolError::Malformed);
     }
@@ -110,6 +112,9 @@ const NATIVE_EFFECT_APPROVAL_BUDGET_V4: u8 = 56;
 const AGENT_BUDGET_PROOF_V4: u8 = 57;
 const NATIVE_SEND_PREVIEW_V1: u8 = 63;
 const NATIVE_OWNER_CONTEXT_V1: u8 = 64;
+const NATIVE_JOURNEY_ENVELOPE_V1: u8 = 65;
+const NATIVE_SEND_OWNER_PREVIEW_V1: u8 = 66;
+const NATIVE_SEND_ENVELOPE_V1: u8 = 67;
 const HEAD: u8 = 7;
 const EVIDENCE: u8 = 8;
 const MAX_TEXT: usize = 255;
@@ -204,6 +209,35 @@ pub struct HumanNativeSendPreviewV1 {
     pub protocol_timestamp: u64,
     pub owner_public_key: [u8; 32],
     pub revocation_sequence: u64,
+}
+
+pub struct HumanNativeSendOwnerPreviewRequestV1 {
+    pub credential: crate::session::SessionCredential,
+    pub request_id: u64,
+    pub prepare: HumanPrepare,
+    pub owner_public_key: [u8; 32],
+    pub purpose_expires_at_ms: u64,
+    pub commitment: [u8; 32],
+    pub economic_action: [u8; 32],
+    pub local_grant: layerx_agent_api::identity::NativeLocalGrantConsentV1,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct HumanNativeSendOwnerPreviewV1 {
+    pub canonical_bytes: Vec<u8>,
+    pub signing_preimage: Vec<u8>,
+    pub purpose: layerx_agent_api::identity::NativeSendPurposeV1,
+    pub observed_head_sequence: u64,
+    pub protocol_timestamp: u64,
+    pub owner_public_key: [u8; 32],
+    pub revocation_sequence: u64,
+}
+
+pub struct HumanNativeJourneyEnvelopeV1 {
+    pub envelope: Zeroizing<Vec<u8>>,
+}
+pub struct HumanNativeSendEnvelopeV1 {
+    pub envelope: Zeroizing<Vec<u8>>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -347,12 +381,35 @@ pub enum HumanAgentJourneyKind {
 pub enum HumanRequest {
     NativeOwnerContextV1(HumanNativeOwnerContextRequestV1),
     NativeSendPreviewV1(HumanNativeSendPreviewRequestV1),
-    NativeProgramApprovalListV5 { cursor: Option<[u8;32]>, limit:u8 },
-    NativeProgramApprovalGetV5 { approval_id:[u8;32] },
-    NativeProgramApprovalMaterialV5 { approval_id:[u8;32], held_digest:[u8;32] },
-    NativeProgramApprovalBudgetV5 { approval_id:[u8;32], held_digest:[u8;32], current_sequence:u64 },
-    NativeProgramApprovalDecideV5 { approval_id:[u8;32], held_digest:[u8;32], idempotency_key:String, grant:bool, current_sequence:u64 },
-    AgentBudgetProofV4 { active_budget_id:[u8;32] },
+    NativeSendOwnerPreviewV1(HumanNativeSendOwnerPreviewRequestV1),
+    NativeJourneyEnvelopeV1(HumanNativeJourneyEnvelopeV1),
+    NativeSendEnvelopeV1(HumanNativeSendEnvelopeV1),
+    NativeProgramApprovalListV5 {
+        cursor: Option<[u8; 32]>,
+        limit: u8,
+    },
+    NativeProgramApprovalGetV5 {
+        approval_id: [u8; 32],
+    },
+    NativeProgramApprovalMaterialV5 {
+        approval_id: [u8; 32],
+        held_digest: [u8; 32],
+    },
+    NativeProgramApprovalBudgetV5 {
+        approval_id: [u8; 32],
+        held_digest: [u8; 32],
+        current_sequence: u64,
+    },
+    NativeProgramApprovalDecideV5 {
+        approval_id: [u8; 32],
+        held_digest: [u8; 32],
+        idempotency_key: String,
+        grant: bool,
+        current_sequence: u64,
+    },
+    AgentBudgetProofV4 {
+        active_budget_id: [u8; 32],
+    },
     Subject {
         principal: String,
         owner: String,
@@ -404,11 +461,29 @@ pub enum HumanRequest {
     NativeApprovalGetFactsV2 {
         approval_id: [u8; 32],
     },
-    NativeEffectApprovalListV3 { cursor: Option<[u8;32]>, limit: u8 },
-    NativeEffectApprovalGetV3 { approval_id: [u8;32] },
-    NativeEffectApprovalDecideV3 { approval_id: [u8;32], held_digest: [u8;32], idempotency_key: String, grant: bool, current_sequence: u64 },
-    NativeEffectApprovalMaterialV4 {approval_id:[u8;32],held_digest:[u8;32]},
-    NativeEffectApprovalBudgetV4 {approval_id:[u8;32],held_digest:[u8;32],current_sequence:u64},
+    NativeEffectApprovalListV3 {
+        cursor: Option<[u8; 32]>,
+        limit: u8,
+    },
+    NativeEffectApprovalGetV3 {
+        approval_id: [u8; 32],
+    },
+    NativeEffectApprovalDecideV3 {
+        approval_id: [u8; 32],
+        held_digest: [u8; 32],
+        idempotency_key: String,
+        grant: bool,
+        current_sequence: u64,
+    },
+    NativeEffectApprovalMaterialV4 {
+        approval_id: [u8; 32],
+        held_digest: [u8; 32],
+    },
+    NativeEffectApprovalBudgetV4 {
+        approval_id: [u8; 32],
+        held_digest: [u8; 32],
+        current_sequence: u64,
+    },
     ApprovalApprove {
         approval_id: [u8; 32],
         held_digest: [u8; 32],
@@ -583,6 +658,28 @@ pub trait HumanOperations {
         Err(HumanOperationError::Refused)
     }
 
+    fn native_send_owner_preview_v1(
+        &mut self,
+        _peer: &HumanPeer,
+        _request: HumanNativeSendOwnerPreviewRequestV1,
+    ) -> Result<HumanResponse, HumanOperationError> {
+        Err(HumanOperationError::Refused)
+    }
+
+    fn native_journey_envelope_v1(
+        &mut self,
+        _peer: &HumanPeer,
+        _request: HumanNativeJourneyEnvelopeV1,
+    ) -> Result<HumanResponse, HumanOperationError> {
+        Err(HumanOperationError::Refused)
+    }
+    fn native_send_envelope_v1(
+        &mut self,
+        _peer: &HumanPeer,
+        _request: HumanNativeSendEnvelopeV1,
+    ) -> Result<HumanResponse, HumanOperationError> {
+        Err(HumanOperationError::Refused)
+    }
     fn native_program_approval_list(
         &mut self,
         _peer: &HumanPeer,
@@ -626,7 +723,11 @@ pub trait HumanOperations {
     ) -> Result<HumanResponse, HumanOperationError> {
         Err(HumanOperationError::Refused)
     }
-    fn agent_budget_proof(&mut self,_peer:&HumanPeer,_active_budget_id:[u8;32])->Result<HumanResponse,HumanOperationError>{
+    fn agent_budget_proof(
+        &mut self,
+        _peer: &HumanPeer,
+        _active_budget_id: [u8; 32],
+    ) -> Result<HumanResponse, HumanOperationError> {
         Err(HumanOperationError::Refused)
     }
     /// # Errors
@@ -727,18 +828,47 @@ pub trait HumanOperations {
     ) -> Result<HumanResponse, HumanOperationError> {
         Err(HumanOperationError::Unavailable)
     }
-    fn native_effect_approval_list_facts(&mut self, _peer:&HumanPeer, _cursor:Option<[u8;32]>, _limit:u8)->Result<HumanResponse,HumanOperationError>{
+    fn native_effect_approval_list_facts(
+        &mut self,
+        _peer: &HumanPeer,
+        _cursor: Option<[u8; 32]>,
+        _limit: u8,
+    ) -> Result<HumanResponse, HumanOperationError> {
         Err(HumanOperationError::Unavailable)
     }
-    fn native_effect_approval_get_facts(&mut self, _peer:&HumanPeer, _approval_id:[u8;32])->Result<HumanResponse,HumanOperationError>{
+    fn native_effect_approval_get_facts(
+        &mut self,
+        _peer: &HumanPeer,
+        _approval_id: [u8; 32],
+    ) -> Result<HumanResponse, HumanOperationError> {
         Err(HumanOperationError::Unavailable)
     }
-    fn native_effect_approval_decide(&mut self, _peer:&HumanPeer, _approval_id:[u8;32], _held_digest:[u8;32], _idempotency_key:&str,
-        _grant:bool, _current_sequence:u64)->Result<HumanResponse,HumanOperationError>{Err(HumanOperationError::Unavailable)}
-    fn native_effect_approval_material(&mut self,_peer:&HumanPeer,_approval_id:[u8;32],_held_digest:[u8;32])->Result<HumanResponse,HumanOperationError>{
+    fn native_effect_approval_decide(
+        &mut self,
+        _peer: &HumanPeer,
+        _approval_id: [u8; 32],
+        _held_digest: [u8; 32],
+        _idempotency_key: &str,
+        _grant: bool,
+        _current_sequence: u64,
+    ) -> Result<HumanResponse, HumanOperationError> {
         Err(HumanOperationError::Unavailable)
     }
-    fn native_effect_approval_budget(&mut self,_peer:&HumanPeer,_approval_id:[u8;32],_held_digest:[u8;32],_current_sequence:u64)->Result<HumanResponse,HumanOperationError>{
+    fn native_effect_approval_material(
+        &mut self,
+        _peer: &HumanPeer,
+        _approval_id: [u8; 32],
+        _held_digest: [u8; 32],
+    ) -> Result<HumanResponse, HumanOperationError> {
+        Err(HumanOperationError::Unavailable)
+    }
+    fn native_effect_approval_budget(
+        &mut self,
+        _peer: &HumanPeer,
+        _approval_id: [u8; 32],
+        _held_digest: [u8; 32],
+        _current_sequence: u64,
+    ) -> Result<HumanResponse, HumanOperationError> {
         Err(HumanOperationError::Unavailable)
     }
     fn approval_budget_after(
@@ -1923,8 +2053,21 @@ fn dispatch_request<O: HumanOperations>(
     operations: &mut O,
 ) -> Result<HumanResponse, HumanOperationError> {
     match request {
-        HumanRequest::NativeOwnerContextV1(request) => operations.native_owner_context_v1(peer, request),
-        HumanRequest::NativeSendPreviewV1(request) => operations.native_send_preview_v1(peer, request),
+        HumanRequest::NativeOwnerContextV1(request) => {
+            operations.native_owner_context_v1(peer, request)
+        }
+        HumanRequest::NativeSendPreviewV1(request) => {
+            operations.native_send_preview_v1(peer, request)
+        }
+        HumanRequest::NativeSendOwnerPreviewV1(request) => {
+            operations.native_send_owner_preview_v1(peer, request)
+        }
+        HumanRequest::NativeJourneyEnvelopeV1(request) => {
+            operations.native_journey_envelope_v1(peer, request)
+        }
+        HumanRequest::NativeSendEnvelopeV1(request) => {
+            operations.native_send_envelope_v1(peer, request)
+        }
         HumanRequest::Subject {
             principal,
             owner,
@@ -1985,18 +2128,77 @@ fn dispatch_request<O: HumanOperations>(
         HumanRequest::NativeApprovalGetFactsV2 { approval_id } => {
             operations.native_approval_get_facts(peer, approval_id)
         }
-        HumanRequest::NativeEffectApprovalListV3 {cursor,limit}=>operations.native_effect_approval_list_facts(peer,cursor,limit),
-        HumanRequest::NativeEffectApprovalGetV3 {approval_id}=>operations.native_effect_approval_get_facts(peer,approval_id),
-        HumanRequest::NativeEffectApprovalDecideV3 {approval_id,held_digest,idempotency_key,grant,current_sequence}=>
-            operations.native_effect_approval_decide(peer,approval_id,held_digest,&idempotency_key,grant,current_sequence),
-        HumanRequest::NativeEffectApprovalMaterialV4{approval_id,held_digest}=>operations.native_effect_approval_material(peer,approval_id,held_digest),
-        HumanRequest::NativeEffectApprovalBudgetV4{approval_id,held_digest,current_sequence}=>operations.native_effect_approval_budget(peer,approval_id,held_digest,current_sequence),
-        HumanRequest::NativeProgramApprovalListV5{cursor,limit}=>operations.native_program_approval_list(peer,cursor,limit),
-        HumanRequest::NativeProgramApprovalGetV5{approval_id}=>operations.native_program_approval_get(peer,approval_id),
-        HumanRequest::NativeProgramApprovalMaterialV5{approval_id,held_digest}=>operations.native_program_approval_material(peer,approval_id,held_digest),
-        HumanRequest::NativeProgramApprovalBudgetV5{approval_id,held_digest,current_sequence}=>operations.native_program_approval_budget(peer,approval_id,held_digest,current_sequence),
-        HumanRequest::NativeProgramApprovalDecideV5{approval_id,held_digest,idempotency_key,grant,current_sequence}=>operations.native_program_approval_decide(peer,approval_id,held_digest,&idempotency_key,grant,current_sequence),
-        HumanRequest::AgentBudgetProofV4{active_budget_id}=>operations.agent_budget_proof(peer,active_budget_id),
+        HumanRequest::NativeEffectApprovalListV3 { cursor, limit } => {
+            operations.native_effect_approval_list_facts(peer, cursor, limit)
+        }
+        HumanRequest::NativeEffectApprovalGetV3 { approval_id } => {
+            operations.native_effect_approval_get_facts(peer, approval_id)
+        }
+        HumanRequest::NativeEffectApprovalDecideV3 {
+            approval_id,
+            held_digest,
+            idempotency_key,
+            grant,
+            current_sequence,
+        } => operations.native_effect_approval_decide(
+            peer,
+            approval_id,
+            held_digest,
+            &idempotency_key,
+            grant,
+            current_sequence,
+        ),
+        HumanRequest::NativeEffectApprovalMaterialV4 {
+            approval_id,
+            held_digest,
+        } => operations.native_effect_approval_material(peer, approval_id, held_digest),
+        HumanRequest::NativeEffectApprovalBudgetV4 {
+            approval_id,
+            held_digest,
+            current_sequence,
+        } => operations.native_effect_approval_budget(
+            peer,
+            approval_id,
+            held_digest,
+            current_sequence,
+        ),
+        HumanRequest::NativeProgramApprovalListV5 { cursor, limit } => {
+            operations.native_program_approval_list(peer, cursor, limit)
+        }
+        HumanRequest::NativeProgramApprovalGetV5 { approval_id } => {
+            operations.native_program_approval_get(peer, approval_id)
+        }
+        HumanRequest::NativeProgramApprovalMaterialV5 {
+            approval_id,
+            held_digest,
+        } => operations.native_program_approval_material(peer, approval_id, held_digest),
+        HumanRequest::NativeProgramApprovalBudgetV5 {
+            approval_id,
+            held_digest,
+            current_sequence,
+        } => operations.native_program_approval_budget(
+            peer,
+            approval_id,
+            held_digest,
+            current_sequence,
+        ),
+        HumanRequest::NativeProgramApprovalDecideV5 {
+            approval_id,
+            held_digest,
+            idempotency_key,
+            grant,
+            current_sequence,
+        } => operations.native_program_approval_decide(
+            peer,
+            approval_id,
+            held_digest,
+            &idempotency_key,
+            grant,
+            current_sequence,
+        ),
+        HumanRequest::AgentBudgetProofV4 { active_budget_id } => {
+            operations.agent_budget_proof(peer, active_budget_id)
+        }
         HumanRequest::ApprovalBudgetAfterV2 {
             approval_id,
             held_digest,
@@ -2172,10 +2374,13 @@ fn decode_operation(
             let session_id = crate::session::SessionId(reader.fixed()?);
             let mut token_id = reader.fixed()?;
             let generation = reader.u64()?;
-            let credential = crate::session::SessionCredential::new(tenant, session_id, token_id, generation);
+            let credential =
+                crate::session::SessionCredential::new(tenant, session_id, token_id, generation);
             token_id.fill(0);
             HumanRequest::NativeOwnerContextV1(HumanNativeOwnerContextRequestV1 {
-                credential, owner_public_key: reader.fixed()?, request_id: reader.u64()?,
+                credential,
+                owner_public_key: reader.fixed()?,
+                request_id: reader.u64()?,
             })
         }
         NATIVE_SEND_PREVIEW_V1 => {
@@ -2184,7 +2389,8 @@ fn decode_operation(
             let session_id = crate::session::SessionId(reader.fixed()?);
             let mut token_id = reader.fixed()?;
             let generation = reader.u64()?;
-            let credential = crate::session::SessionCredential::new(tenant, session_id, token_id, generation);
+            let credential =
+                crate::session::SessionCredential::new(tenant, session_id, token_id, generation);
             token_id.fill(0);
             let request_id = reader.u64()?;
             let prepare = HumanPrepare {
@@ -2210,11 +2416,80 @@ fn decode_operation(
                 owner_public_key: reader.fixed()?,
                 signature: reader.fixed()?,
             };
-            local_grant.validate().map_err(|_| HumanProtocolError::Malformed)?;
+            local_grant
+                .validate()
+                .map_err(|_| HumanProtocolError::Malformed)?;
             HumanRequest::NativeSendPreviewV1(HumanNativeSendPreviewRequestV1 {
-                credential, request_id, prepare, owner_public_key,
-                purpose_expires_at_ms, commitment, local_grant,
+                credential,
+                request_id,
+                prepare,
+                owner_public_key,
+                purpose_expires_at_ms,
+                commitment,
+                local_grant,
             })
+        }
+        NATIVE_SEND_OWNER_PREVIEW_V1 => {
+            if reader.u16()? != 1 {
+                return Err(HumanProtocolError::Malformed);
+            }
+            let tenant = crate::store::TenantId::new(reader.text()?)
+                .map_err(|_| HumanProtocolError::Malformed)?;
+            let session_id = crate::session::SessionId(reader.fixed()?);
+            let mut token_id = reader.fixed()?;
+            let generation = reader.u64()?;
+            let credential =
+                crate::session::SessionCredential::new(tenant, session_id, token_id, generation);
+            token_id.fill(0);
+            let request_id = reader.u64()?;
+            let prepare = HumanPrepare {
+                activity_type: reader.u32()?,
+                actor: reader.text()?,
+                authority: reader.text()?,
+                account_sequence: reader.u64()?,
+                not_before: reader.u64()?,
+                not_after: reader.u64()?,
+                idempotency_key: reader.text()?,
+                fee_limit: reader.u128()?,
+                payload: reader.bytes()?,
+                payload_hash: reader.fixed()?,
+                capability_id: Some(reader.fixed()?),
+            };
+            let owner_public_key = reader.fixed()?;
+            let purpose_expires_at_ms = reader.u64()?;
+            let commitment = reader.fixed()?;
+            let economic_action = reader.fixed()?;
+            let local_grant = layerx_agent_api::identity::NativeLocalGrantConsentV1 {
+                capability: reader.bytes()?,
+                session_scope: reader.bytes()?,
+                expires_at_ms: reader.u64()?,
+                owner_public_key: reader.fixed()?,
+                signature: reader.fixed()?,
+            };
+            local_grant
+                .validate()
+                .map_err(|_| HumanProtocolError::Malformed)?;
+            HumanRequest::NativeSendOwnerPreviewV1(HumanNativeSendOwnerPreviewRequestV1 {
+                credential,
+                request_id,
+                prepare,
+                owner_public_key,
+                purpose_expires_at_ms,
+                commitment,
+                economic_action,
+                local_grant,
+            })
+        }
+        NATIVE_JOURNEY_ENVELOPE_V1 | NATIVE_SEND_ENVELOPE_V1 => {
+            if reader.u8()? != 1 {
+                return Err(HumanProtocolError::Malformed);
+            }
+            let envelope = Zeroizing::new(reader.bytes()?);
+            if operation == NATIVE_JOURNEY_ENVELOPE_V1 {
+                HumanRequest::NativeJourneyEnvelopeV1(HumanNativeJourneyEnvelopeV1 { envelope })
+            } else {
+                HumanRequest::NativeSendEnvelopeV1(HumanNativeSendEnvelopeV1 { envelope })
+            }
         }
         PREPARE => {
             let envelope = mutation_header(reader)?;
@@ -2303,7 +2578,9 @@ fn decode_operation(
         }
         NATIVE_APPROVAL_GET_FACTS_V2 => {
             let approval_id = reader.fixed()?;
-            if approval_id == [0; 32] { return Err(HumanProtocolError::Malformed); }
+            if approval_id == [0; 32] {
+                return Err(HumanProtocolError::Malformed);
+            }
             HumanRequest::NativeApprovalGetFactsV2 { approval_id }
         }
         NATIVE_PROGRAM_APPROVAL_LIST_V5
@@ -2380,25 +2657,68 @@ fn decode_operation(
                 }
             }
         }
-        NATIVE_EFFECT_APPROVAL_LIST_V3=>{
-            let cursor=match reader.u8()?{0=>None,1=>Some(reader.fixed()?),_=>return Err(HumanProtocolError::Malformed)};
-            let limit=reader.u8()?;if !(1..=100).contains(&limit)||cursor==Some([0;32]){return Err(HumanProtocolError::Malformed)};
-            HumanRequest::NativeEffectApprovalListV3{cursor,limit}
+        NATIVE_EFFECT_APPROVAL_LIST_V3 => {
+            let cursor = match reader.u8()? {
+                0 => None,
+                1 => Some(reader.fixed()?),
+                _ => return Err(HumanProtocolError::Malformed),
+            };
+            let limit = reader.u8()?;
+            if !(1..=100).contains(&limit) || cursor == Some([0; 32]) {
+                return Err(HumanProtocolError::Malformed);
+            };
+            HumanRequest::NativeEffectApprovalListV3 { cursor, limit }
         }
-        NATIVE_EFFECT_APPROVAL_GET_V3=>{let approval_id=reader.fixed()?;if approval_id==[0;32]{return Err(HumanProtocolError::Malformed)};
-            HumanRequest::NativeEffectApprovalGetV3{approval_id}}
-        NATIVE_EFFECT_APPROVAL_DECIDE_V3=>{
-            let approval_id=reader.fixed()?;let held_digest=reader.fixed()?;let idempotency_key=reader.text()?;
-            let grant=match reader.u8()?{0=>false,1=>true,_=>return Err(HumanProtocolError::Malformed)};let current_sequence=reader.u64()?;
-            if approval_id==[0;32]||held_digest==[0;32]||current_sequence==0{return Err(HumanProtocolError::Malformed)};
-            HumanRequest::NativeEffectApprovalDecideV3{approval_id,held_digest,idempotency_key,grant,current_sequence}
+        NATIVE_EFFECT_APPROVAL_GET_V3 => {
+            let approval_id = reader.fixed()?;
+            if approval_id == [0; 32] {
+                return Err(HumanProtocolError::Malformed);
+            };
+            HumanRequest::NativeEffectApprovalGetV3 { approval_id }
         }
-        NATIVE_EFFECT_APPROVAL_MATERIAL_V4|NATIVE_EFFECT_APPROVAL_BUDGET_V4=>{
-            let approval_id=reader.fixed()?;let held_digest=reader.fixed()?;
-            if approval_id==[0;32]||held_digest==[0;32]{return Err(HumanProtocolError::Malformed)}
-            if operation==NATIVE_EFFECT_APPROVAL_MATERIAL_V4{HumanRequest::NativeEffectApprovalMaterialV4{approval_id,held_digest}}
-            else{let current_sequence=reader.u64()?;if current_sequence==0{return Err(HumanProtocolError::Malformed)};
-                HumanRequest::NativeEffectApprovalBudgetV4{approval_id,held_digest,current_sequence}}
+        NATIVE_EFFECT_APPROVAL_DECIDE_V3 => {
+            let approval_id = reader.fixed()?;
+            let held_digest = reader.fixed()?;
+            let idempotency_key = reader.text()?;
+            let grant = match reader.u8()? {
+                0 => false,
+                1 => true,
+                _ => return Err(HumanProtocolError::Malformed),
+            };
+            let current_sequence = reader.u64()?;
+            if approval_id == [0; 32] || held_digest == [0; 32] || current_sequence == 0 {
+                return Err(HumanProtocolError::Malformed);
+            };
+            HumanRequest::NativeEffectApprovalDecideV3 {
+                approval_id,
+                held_digest,
+                idempotency_key,
+                grant,
+                current_sequence,
+            }
+        }
+        NATIVE_EFFECT_APPROVAL_MATERIAL_V4 | NATIVE_EFFECT_APPROVAL_BUDGET_V4 => {
+            let approval_id = reader.fixed()?;
+            let held_digest = reader.fixed()?;
+            if approval_id == [0; 32] || held_digest == [0; 32] {
+                return Err(HumanProtocolError::Malformed);
+            }
+            if operation == NATIVE_EFFECT_APPROVAL_MATERIAL_V4 {
+                HumanRequest::NativeEffectApprovalMaterialV4 {
+                    approval_id,
+                    held_digest,
+                }
+            } else {
+                let current_sequence = reader.u64()?;
+                if current_sequence == 0 {
+                    return Err(HumanProtocolError::Malformed);
+                };
+                HumanRequest::NativeEffectApprovalBudgetV4 {
+                    approval_id,
+                    held_digest,
+                    current_sequence,
+                }
+            }
         }
         APPROVAL_BUDGET_AFTER_V2 => HumanRequest::ApprovalBudgetAfterV2 {
             approval_id: reader.fixed()?,
@@ -2439,7 +2759,9 @@ fn decode_operation_1(
     reader: &mut Reader,
 ) -> Result<HumanRequest, HumanProtocolError> {
     Ok(match operation {
-        AGENT_BUDGET_PROOF_V4=>HumanRequest::AgentBudgetProofV4{active_budget_id:reader.fixed()?},
+        AGENT_BUDGET_PROOF_V4 => HumanRequest::AgentBudgetProofV4 {
+            active_budget_id: reader.fixed()?,
+        },
         BALANCE => HumanRequest::Balance,
         NATIVE_FEE_POLICY => HumanRequest::NativeFeePolicy,
         ACCOUNT_STATE => HumanRequest::AccountState {
@@ -2911,7 +3233,9 @@ mod trace_envelope_tests {
     fn envelope(trace: &[u8; 36], request: &[u8]) -> Vec<u8> {
         let mut bytes = TRACED_MAGIC.to_vec();
         bytes.extend_from_slice(trace);
-        let Ok(length) = u32::try_from(request.len()) else { panic!("trace request bound"); };
+        let Ok(length) = u32::try_from(request.len()) else {
+            panic!("trace request bound");
+        };
         bytes.extend_from_slice(&length.to_be_bytes());
         bytes.extend_from_slice(request);
         bytes
@@ -2920,10 +3244,16 @@ mod trace_envelope_tests {
     #[test]
     fn trace_wrapper_retains_exact_legacy_bytes_and_rejects_ambiguous_envelopes() {
         let request = [MAGIC.as_slice(), &[5]].concat();
-        assert_eq!(trace_envelope(request.clone()).ok(), Some((None, request.clone())));
+        assert_eq!(
+            trace_envelope(request.clone()).ok(),
+            Some((None, request.clone()))
+        );
         let trace = b"trc_00112233445566778899aabbccddeeff";
         let bytes = envelope(trace, &request);
-        assert_eq!(trace_envelope(bytes.clone()).ok(), Some((Some(String::from_utf8_lossy(trace).into_owned()), request)));
+        assert_eq!(
+            trace_envelope(bytes.clone()).ok(),
+            Some((Some(String::from_utf8_lossy(trace).into_owned()), request))
+        );
         let mut trailing = bytes.clone();
         trailing.push(0);
         assert!(trace_envelope(trailing).is_err());

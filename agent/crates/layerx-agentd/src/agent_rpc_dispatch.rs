@@ -163,6 +163,25 @@ pub(crate) fn native_effect_prepare_digest(request: &layerx_agent_api::identity:
     Ok(Sha256::new().chain_update(b"LXP/agent/native-effect-prepare/v1\0").chain_update(serde_json::to_vec(&request.canonical())?).finalize().into())
 }
 
+pub(crate) fn native_send_variant(request: &Map<String, Value>) -> bool {
+    request.get("variant").and_then(Value::as_str) == Some("native_send_v1")
+}
+
+pub(crate) fn native_send_submit_variant(request: &Map<String, Value>) -> bool {
+    request.get("variant").and_then(Value::as_str) == Some("native_send_submit_v1")
+}
+
+pub(crate) fn native_send_prepare_digest(
+    request: &layerx_agent_api::identity::NativeSendPrepareRequestV1,
+) -> Result<[u8; 32], serde_json::Error> {
+    use sha2::{Digest, Sha256};
+    Ok(Sha256::new()
+        .chain_update(b"LXP/agent/native-send-prepare/v1\0")
+        .chain_update(serde_json::to_vec(&request.canonical())?)
+        .finalize()
+        .into())
+}
+
 pub(crate) fn native_prepare_digest(
     request: &layerx_agent_api::identity::NativePrepareRequestV1,
 ) -> Result<[u8; 32], serde_json::Error> {
@@ -960,6 +979,12 @@ pub(crate) fn canonical_request_bytes(
             }
         }
         Operation::Prepare => {
+            if native_send_variant(request) {
+                let typed = decode_wire::<NativeSendPrepareV1Wire>(request, id)?.into_request(id)?;
+                return native_send_prepare_digest(&typed)
+                    .map(|digest| Some(digest.to_vec()))
+                    .map_err(|_| malformed(id));
+            }
             if native_effect_variant(request) {
                 let typed = decode_wire::<NativeEffectPrepareV1Wire>(request, id)?.into_request(id)?;
                 return native_effect_prepare_digest(&typed).map(|digest| Some(digest.to_vec())).map_err(|_| malformed(id));
@@ -977,7 +1002,14 @@ pub(crate) fn canonical_request_bytes(
             )
             .to_vec()
         }
-        Operation::Submit => submit_digest(&human_submit(decode(request, id)?, id)?).to_vec(),
+        Operation::Submit => {
+            if native_send_submit_variant(request) {
+                let typed = decode_wire::<NativeSendSubmitV1Wire>(request, id)?.into_request(id)?;
+                submit_digest(&typed).to_vec()
+            } else {
+                submit_digest(&human_submit(decode(request, id)?, id)?).to_vec()
+            }
+        }
         Operation::BudgetCreate => {
             let wire = decode_wire::<BudgetCreateWire>(request, id)?;
             let suffix = budget_create_purpose_suffix(wire.purpose());
@@ -1201,8 +1233,42 @@ pub(crate) fn dispatch_operation<A: HumanAuthorityBoundary>(
         }
         Operation::ApprovalApprove => adapters::approval_approve(shared, context, request, ctx),
         Operation::ApprovalReject => adapters::approval_reject(shared, context, request, ctx),
-        Operation::Prepare => adapters::prepare(shared, context, request, ctx),
-        Operation::Submit => adapters::submit(shared, context, request, ctx),
+        Operation::Prepare => {
+            if native_send_variant(request) {
+                let typed = decode_wire::<NativeSendPrepareV1Wire>(request, id)?.into_request(id)?;
+                let envelope = crate::human::MutationEnvelope {
+                    request_id: id.0,
+                    key: mutation_key(ctx)?,
+                    body_digest: native_send_prepare_digest(&typed).map_err(|_| malformed(id))?,
+                    operation: typed,
+                };
+                let response = shared
+                    .lock()
+                    .and_then(|mut guard| guard.rpc_prepare_native_send(context, envelope));
+                dispatched_native(id, response, NativePrepareResultV1Wire::into_result)
+            } else {
+                adapters::prepare(shared, context, request, ctx)
+            }
+        }
+        Operation::Submit => {
+            if native_send_submit_variant(request) {
+                let typed = decode_wire::<NativeSendSubmitV1Wire>(request, id)?.into_request(id)?;
+                let preparation_id = hex32(&typed.preparation_ref, id)?;
+                let envelope = crate::human::MutationEnvelope {
+                    request_id: id.0,
+                    key: mutation_key(ctx)?,
+                    body_digest: submit_digest(&typed),
+                    operation: typed,
+                };
+                let response = shared.lock().and_then(|mut guard| {
+                    guard.require_native_send_preparation(context, preparation_id)?;
+                    guard.rpc_submit_external(context, envelope)
+                });
+                dispatched(id, response, decode_observation)
+            } else {
+                adapters::submit(shared, context, request, ctx)
+            }
+        }
         Operation::FaucetClaim => Err(rejection(
             ErrorClass::UnavailableCapability,
             id,

@@ -589,6 +589,66 @@ impl AgentEnvelopeTransport {
         Ok(native_success(response, value))
     }
 
+    pub fn prepare_native_send(
+        &self,
+        request_id: RequestId,
+        key: Key,
+        request: &layerx_agent_api::identity::NativeSendPrepareRequestV1,
+        credential: &EnvelopeCredential,
+        registry: &layerx_types::payload::ModuleRegistry,
+    ) -> Result<ApiSuccess<layerx_agent_api::identity::NativePrepareResultV1>, EnvelopeError> {
+        use sha2::{Digest, Sha256};
+        let body = crate::native_effect::encode_native_send_prepare(request)?;
+        let purpose = &request.purpose.purpose;
+        crate::native_effect::validate_send_request_binding(request, credential, key)?;
+        let response = self.send_operation(
+            Operation::Prepare,
+            request_id,
+            &body,
+            Some(credential),
+            Some(key),
+        )?;
+        let unknown = || EnvelopeError::Unknown {
+            operation: Operation::Prepare,
+        };
+        let value = decode_native_preparation(&response.value).ok_or_else(unknown)?;
+        let canonical_digest: [u8; 32] = Sha256::digest(&value.canonical_bytes).into();
+        let activity = layerx_wire::activity::decode_unsigned(&value.canonical_bytes, registry)
+            .map_err(|_| unknown())?;
+        let preimage = layerx_wire::sign::preimage(&activity).map_err(|_| unknown())?;
+        let reencoded = layerx_wire::activity::encode_unsigned(&activity).map_err(|_| unknown())?;
+        if value.preparation_id != purpose.preparation_id
+            || canonical_digest != purpose.canonical_digest
+            || value.preparation_id != canonical_digest
+            || value.activity != request.activity
+            || activity.protocol_version() != purpose.protocol_version
+            || activity.network_id() != purpose.network_id
+            || activity.authority() != request.authority.as_bytes()
+            || reencoded != value.canonical_bytes
+            || activity.activity_type().value()
+                != request
+                    .activity
+                    .activity_type()
+                    .map_err(|_| unknown())?
+                    .value()
+            || activity.actor_did() != request.actor.as_str().as_bytes()
+            || activity.account_sequence() != request.account_sequence
+            || activity.timestamp_bound().not_before != request.not_before
+            || activity.timestamp_bound().not_after != request.not_after
+            || activity.idempotency_key() != request.idempotency_key
+            || activity.fee_limit() != request.fee_limit
+            || activity.payload() != request.payload.as_slice()
+            || activity.payload_hash() != request.payload_hash
+            || preimage.as_bytes() != &value.signing_preimage
+            || value
+                .approval_id
+                .is_some_and(|id| id != value.preparation_id)
+        {
+            return Err(unknown());
+        }
+        Ok(native_success(response, value))
+    }
+
     pub fn approval_list_native(
         &self,
         request_id: RequestId,

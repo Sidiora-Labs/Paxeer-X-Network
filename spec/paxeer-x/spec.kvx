@@ -34404,3 +34404,27 @@ qualification_status = "UNRUN"
 completion_basis_policy = "Owner CONSTITUTION: fully implemented DONE, qualification separate; partial remains in_progress."
 completion_basis = "implementation"
 source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-104.13.34-source-handoff.json"
+
+[task.104.13.35]
+title = "Connect approved native Send profile to daemon preparation and durable approval"
+status = "done"
+mode = "BUILD"
+wave = 4
+requires = ["0.2"]
+reqs = ["1064.3", "1064.8", "1071.1", "1071.5"]
+do_1 = "Consume approved NativeSendPurposeV1 through distinct native_send_v1 and preview66. Implement sealed genuine owner/current-session/head/capability verifier, exact Send disclosure and canonical binding, separate replay prefix and actual atomic immutable hold/resume; retain all old native_effect_v1 and selector63/65 semantics and refusals."
+do_2 = "Compose the existing task30 frozen closed Human bridge where needed, retaining full credential/peer checks. Add actual SDK codec and genuine exact-request approval/reopen/refusal coverage; no simulated authority, grant, receipt or manual attach."
+touches = ["agent/crates/layerx-agentd/src/capability/binding.rs", "agent/crates/layerx-agentd/src/human_runtime.rs", "agent/crates/layerx-agentd/src/human.rs", "agent/crates/layerx-agentd/src/agent_rpc_wire.rs", "agent/crates/layerx-agentd/src/agent_rpc_dispatch.rs", "agent/crates/layerx-agentd/src/agent_rpc.rs", "agent/crates/layerx-sdk/src/native_effect.rs", "agent/crates/layerx-sdk/src/agent_envelope.rs", "agent/crates/layerx-agentd/tests/native_send_profile.rs", "tools/qualification/paxeer-x/native_send_profile.py"]
+build_cmd = "cargo test --locked --manifest-path agent/Cargo.toml -p layerx-agentd --test native_send_profile --no-run"
+verify_cmd = "python3 tools/qualification/paxeer-x/native_send_profile.py"
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop at 09:13 UTC, missing genuine external authority, unrelated failure or required weakening; partial source receives no gates. Root intake/publication precedes immutable candidate qualification."
+owner_approval = "2026-10-04 owner approved exact distinct Send-purpose and public-consent proposal; existing formats, refusals and security actions remain unchanged. New contract implementation scope does not reset old task30 or32 budgets."
+source_status = "complete"
+qualification_status = "UNRUN"
+completion_basis_policy = "Owner CONSTITUTION: fully implemented DONE, qualification separate; partial remains in_progress."
+completion_basis = "implementation"
+source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-104.13.35-source-handoff.json"
