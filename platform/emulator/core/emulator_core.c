@@ -80,6 +80,7 @@ typedef struct platform_emulator_balance_snapshot {
     uint16_t count;
     uint16_t abi_version;
     uint8_t proven;
+    uint8_t account_profile[33];
     platform_emulator_value_account
         accounts[PLATFORM_EMULATOR_PROGRAM_VALUE_ACCOUNTS];
 } platform_emulator_balance_snapshot;
@@ -563,6 +564,7 @@ static void capture_program_balances(platform_emulator *emulator)
         value_account_collection collection;
         lxp_module_ctx ctx;
         uint16_t abi_version = 0U;
+        uint8_t account_profile[33] = {0};
         lxp_result status;
         (void)memset(slot, 0, sizeof(*slot));
         status = lxp_arena_reset(&emulator->arena, 0U);
@@ -578,7 +580,19 @@ static void capture_program_balances(platform_emulator *emulator)
         }
         if (status != LXP_OK) continue;
         slot->abi_version = abi_version;
-        if (abi_version != LX_PROGRAMS_ACCOUNT_ABI_VERSION) continue;
+        if (abi_version != LX_PROGRAMS_ACCOUNT_ABI_VERSION) {
+            if (!lxp_programs_account_guest_version_supported(abi_version) ||
+                ctx.protocol_version != LXP_PROTOCOL_VERSION_STATE_COMMITMENT)
+                continue;
+            status = lxp_programs_account_profile_read(&ctx,
+                emulator->program_ids[index], account_profile);
+            if (status != LXP_OK) continue;
+        } else {
+            status = lxp_programs_account_profile_read(&ctx,
+                emulator->program_ids[index], account_profile);
+            if (status != LXP_OK && status != LXP_ERR_UNKNOWN_FIELD) continue;
+            if (status == LXP_ERR_UNKNOWN_FIELD) status = LXP_OK;
+        }
         ctx.verified_receipts = &emulator->verified_receipts;
         status = lxp_programs_account_state_head_read(&ctx,
             emulator->program_ids[index], emulator->latest_receipt_digest,
@@ -601,6 +615,7 @@ static void capture_program_balances(platform_emulator *emulator)
         slot->observed_sequence = head.observed_sequence;
         slot->observed_at = head.observed_at;
         slot->count = (uint16_t)collection.count;
+        (void)memcpy(slot->account_profile, account_profile, 33U);
         slot->proven = 1U;
     }
 }
@@ -650,6 +665,78 @@ int32_t platform_emulator_program_value_accounts(
     proof->observed_sequence = captured->observed_sequence;
     proof->observed_at = captured->observed_at;
     proof->count = captured->count;
+    return LXP_OK;
+}
+
+int32_t platform_emulator_program_value_accounts_profile2(
+    platform_emulator *emulator, const uint8_t program_id[32],
+    platform_emulator_value_account *accounts, size_t capacity,
+    platform_emulator_value_account_proof *proof, uint8_t profile[33]);
+
+int32_t platform_emulator_program_value_accounts_profile2(
+    platform_emulator *emulator, const uint8_t program_id[32],
+    platform_emulator_value_account *accounts, size_t capacity,
+    platform_emulator_value_account_proof *proof, uint8_t profile[33])
+{
+    const platform_emulator_balance_snapshot *captured;
+    lxp_module_ctx ctx;
+    uint8_t authenticated_profile[33];
+    uint16_t abi_version;
+    size_t program_index;
+    lxp_result status;
+    if (emulator == NULL || program_id == NULL || accounts == NULL ||
+        capacity == 0U || proof == NULL || profile == NULL)
+        return LXP_ERR_NON_CANONICAL;
+    (void)memset(proof, 0, sizeof(*proof));
+    (void)memset(profile, 0, 33U);
+    status = lxp_arena_reset(&emulator->arena, 0U);
+    if (status == LXP_OK)
+        status = lxp_module_ctx_init(&ctx, &emulator->kernel,
+            LXP_MODULE_PROGRAMS, emulator->timestamp_ms, 0U,
+            emulator->global_sequence, UINT64_MAX, &emulator->arena, false);
+    if (status == LXP_OK) {
+        ctx.protocol_version = emulator->protocol_version;
+        status = lxp_programs_program_abi(&ctx, program_id, &abi_version);
+    }
+    if (status != LXP_OK) return status;
+    if (!lxp_programs_account_guest_version_supported(abi_version))
+        return LXP_ERR_VERSION_UNSUPPORTED;
+    status = lxp_programs_account_profile_read(&ctx, program_id,
+                                              authenticated_profile);
+    if (status == LXP_ERR_UNKNOWN_FIELD &&
+        abi_version == LX_PROGRAMS_ACCOUNT_ABI_VERSION)
+        return platform_emulator_program_value_accounts(emulator, program_id,
+                                                        accounts, capacity, proof);
+    if (status != LXP_OK) return status;
+    if (ctx.protocol_version != LXP_PROTOCOL_VERSION_STATE_COMMITMENT)
+        return LXP_ERR_VERSION_UNSUPPORTED;
+    status = lxp_programs_account_guest_validate(&ctx, program_id, abi_version);
+    if (status != LXP_OK) return status;
+    for (program_index = 0U; program_index < emulator->program_count;
+         ++program_index)
+        if (lxp_ct_memcmp(emulator->program_ids[program_index], program_id,
+                          32U) == 0)
+            break;
+    if (program_index == emulator->program_count) return LXP_FATAL_INVARIANT;
+    captured = &emulator->program_balances[program_index];
+    if (captured->proven != 1U || captured->count > capacity)
+        return LXP_ERR_UNKNOWN_FIELD;
+    if (captured->abi_version != abi_version ||
+        lxp_ct_memcmp(captured->account_profile, authenticated_profile, 33U) != 0)
+        return LXP_ERR_CONTEXT_MISMATCH;
+    if (captured->observed_at > emulator->timestamp_ms ||
+        emulator->timestamp_ms - captured->observed_at >
+            PLATFORM_EMULATOR_BALANCE_STALENESS_MS)
+        return LXP_ERR_PROJECTION_STALE;
+    (void)memcpy(accounts, captured->accounts,
+                 (size_t)captured->count * sizeof(*accounts));
+    (void)memcpy(proof->receipt_digest, captured->receipt_digest, 32U);
+    (void)memcpy(proof->state_root, captured->state_root, 32U);
+    proof->observed_sequence = captured->observed_sequence;
+    proof->observed_at = captured->observed_at;
+    proof->abi_version = captured->abi_version;
+    proof->count = captured->count;
+    (void)memcpy(profile, authenticated_profile, 33U);
     return LXP_OK;
 }
 

@@ -48,6 +48,42 @@ impl FileProgramStateJournal {
         })
     }
 
+    pub fn store_profile2(
+        &self,
+        state: &ProtocolProgramStateRead,
+        verified_record: &[u8],
+    ) -> Result<(), String> {
+        if state.account_profile2().is_none()
+            || verified_record.len() < 9
+            || verified_record.len() > 64 * 1024 * 1024
+            || &verified_record[..5] != b"LXPS2"
+        {
+            return Err("verified program account profile-2 record is absent".to_owned());
+        }
+        let inner_length = usize::try_from(u32::from_be_bytes(
+            verified_record[5..9]
+                .try_into()
+                .map_err(|_| "profile-2 record length is invalid".to_owned())?,
+        ))
+        .map_err(|_| "profile-2 record length overflowed".to_owned())?;
+        let inner = verified_record
+            .get(
+                9..9_usize
+                    .checked_add(inner_length)
+                    .ok_or_else(|| "profile-2 record length overflowed".to_owned())?,
+            )
+            .ok_or_else(|| "profile-2 record is truncated".to_owned())?;
+        let canonical = state
+            .canonical_encode()
+            .map_err(|error| format!("profile-2 inner record is not canonical: {error:?}"))?;
+        if inner != canonical {
+            return Err("profile-2 persisted record differs from the verified state".to_owned());
+        }
+        let digest: [u8; 32] = Sha256::digest(verified_record).into();
+        write_atomic(&self.record_path(state.program(), digest), verified_record)
+            .map_err(|error| format!("cannot persist verified profile-2 state: {error}"))
+    }
+
     /// Hash-checks every local cache candidate. This never constructs a
     /// verified read: restart publication requires a fresh node receipt/head
     /// resolution and `ProtocolProgramStateRead::restore_verified`.

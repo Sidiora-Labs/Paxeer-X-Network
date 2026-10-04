@@ -199,6 +199,14 @@ unsafe extern "C" {
         capacity: usize,
         proof: *mut CoreValueAccountProof,
     ) -> c_int;
+    fn platform_emulator_program_value_accounts_profile2(
+        emulator: *mut c_void,
+        program_id: *const c_uchar,
+        accounts: *mut CoreValueAccount,
+        capacity: usize,
+        proof: *mut CoreValueAccountProof,
+        profile: *mut c_uchar,
+    ) -> c_int;
     fn platform_emulator_cell(
         emulator: *const c_void,
         index: usize,
@@ -4445,14 +4453,28 @@ fn program_value_accounts(
         abi_version: 0,
         count: 0,
     };
+    let mut account_profile = [0_u8; 33];
     let code = unsafe {
-        platform_emulator_program_value_accounts(
-            emulator.core,
-            program.program_id.as_ptr(),
-            accounts.as_mut_ptr(),
-            accounts.len(),
-            &raw mut proof,
-        )
+        if layerx_programs_runtime::abi_policy::account_profile2_guest_supported(
+            program.abi_version,
+        ) {
+            platform_emulator_program_value_accounts_profile2(
+                emulator.core,
+                program.program_id.as_ptr(),
+                accounts.as_mut_ptr(),
+                accounts.len(),
+                &raw mut proof,
+                account_profile.as_mut_ptr(),
+            )
+        } else {
+            platform_emulator_program_value_accounts(
+                emulator.core,
+                program.program_id.as_ptr(),
+                accounts.as_mut_ptr(),
+                accounts.len(),
+                &raw mut proof,
+            )
+        }
     };
     if code != 0 {
         return Err(refusal(
@@ -4465,13 +4487,26 @@ fn program_value_accounts(
             ),
         ));
     }
+    if proof.abi_version != program.abi_version || proof.count > accounts.len() {
+        return Err(refusal(
+            trace,
+            503,
+            "core_invalid_output",
+            "program balance proof does not match the program or account capacity",
+        ));
+    }
     if proof.abi_version == 1 && proof.count == 0 {
         return Ok(serde_json::json!({
             "status":"account-incapable-abi1",
             "accounts":[],
         }));
     }
-    if proof.abi_version != PROGRAM_ACCOUNT_ABI_VERSION {
+    let profile2 = account_profile[0] == 2
+        && account_profile[1..].iter().any(|byte| *byte != 0)
+        && layerx_programs_runtime::abi_policy::account_profile2_guest_supported(proof.abi_version);
+    let legacy_profile =
+        account_profile == [0; 33] && proof.abi_version == PROGRAM_ACCOUNT_ABI_VERSION;
+    if !profile2 && !legacy_profile {
         return Err(refusal(
             trace,
             502,
@@ -4499,7 +4534,7 @@ fn program_value_accounts(
             "the program balance proof is not current at the observed head",
         ));
     }
-    Ok(serde_json::json!({
+    let mut document = serde_json::json!({
         "status":"current",
         "lifecycle":lifecycle,
         "accounts":accounts[..proof.count].iter().map(|account| serde_json::json!({
@@ -4515,7 +4550,14 @@ fn program_value_accounts(
             "observed_at":proof.observed_at.to_string(),
             "verification":"account-primary-and-state-proof-verified",
         },
-    }))
+    });
+    if profile2 {
+        document["account_profile"] = serde_json::json!({
+            "version":2,
+            "owner":hex_encode(&account_profile[1..]),
+        });
+    }
+    Ok(document)
 }
 
 fn program_registry_document(

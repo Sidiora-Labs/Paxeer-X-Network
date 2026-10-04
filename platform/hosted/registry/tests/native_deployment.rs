@@ -1629,3 +1629,103 @@ fn cluster_producer_signs_built_program_for_live_treasury() {
     let refused = cluster_producer(&cluster, &bad_artifact);
     assert!(!refused.status.success() && refused.stdout.is_empty());
 }
+
+#[test]
+fn guest_abi_discovery_captured_native_proofs_preserve_authority() {
+    use layerx_programs::{ProgramStateBundle, ProtocolDeploymentVerifier};
+    let directory = PathBuf::from(
+        std::env::var_os("PAXEER_X_NATIVE_INTERFACE_EVIDENCE")
+            .unwrap_or_else(|| panic!("genuine native discovery capture directory required")),
+    );
+    let verifier = must(
+        ProtocolDeploymentVerifier::from_protected_history(
+            &directory.join("provisioned-trust-history.bin"),
+            60_000,
+        ),
+        "capture producer trust history",
+    );
+    for abi in 1..=4 {
+        for phase in ["before-restart", "after-restart"] {
+            let bytes = must(
+                fs::read(directory.join(format!("abi{abi}-{phase}.state"))),
+                "actual native producer state capture",
+            );
+            let bundle = must(
+                ProgramStateBundle::decode(&bytes),
+                "canonical native bundle",
+            );
+            assert_eq!(bundle.canonical_encoding(), bytes);
+            let header = must(
+                layerx_wire::receipt::decode_batch_header(&bundle.state.header),
+                "signed capture batch header",
+            );
+            let captured_at = header.timestamp_ms();
+            let chain = must(
+                verifier.verify_current_chain_head(
+                    bundle.head_kind,
+                    &bundle.state.receipt,
+                    &bundle.state.receipt_proof,
+                    &bundle.state.header,
+                    &bundle.state.header_signature,
+                    captured_at,
+                ),
+                "native head at its actual signed capture time",
+            );
+            let program = must(
+                layerx_programs::ProgramId::new(must(
+                    bundle.state.program_record.key[8..].try_into(),
+                    "captured program id",
+                )),
+                "captured program",
+            );
+            let signer = chain.sequencer_public_key();
+            let verified = must(
+                verifier.verify_current_program_bundle(
+                    &bundle,
+                    &chain,
+                    program,
+                    &signer,
+                    captured_at,
+                ),
+                "actual captured interface membership",
+            );
+            assert_eq!(verified.program_head().abi_version(), abi);
+            assert_eq!(verified.interface().interface.abi_version(), abi);
+            assert_eq!(
+                verified.interface().interface.code_hash(),
+                verified.program_head().code_hash()
+            );
+            let mut changed = bundle.clone();
+            changed.state.program_record.value[33] ^= 1;
+            assert!(verifier
+                .verify_current_program_bundle(&changed, &chain, program, &signer, captured_at)
+                .is_err());
+            let mut changed = bundle.clone();
+            changed.interface.value[36] ^= 1;
+            assert!(verifier
+                .verify_current_program_bundle(&changed, &chain, program, &signer, captured_at)
+                .is_err());
+            let mut changed = bundle.clone();
+            changed.state.program_record.proof.leaf_index ^= 1;
+            assert!(verifier
+                .verify_current_program_bundle(&changed, &chain, program, &signer, captured_at)
+                .is_err());
+            let mut foreign = signer;
+            foreign[0] ^= 1;
+            assert!(verifier
+                .verify_current_program_bundle(&bundle, &chain, program, &foreign, captured_at)
+                .is_err());
+            assert!(verifier
+                .verify_current_program_bundle(
+                    &bundle,
+                    &chain,
+                    program,
+                    &signer,
+                    captured_at
+                        .checked_add(60_001)
+                        .unwrap_or_else(|| panic!("capture time overflow")),
+                )
+                .is_err());
+        }
+    }
+}

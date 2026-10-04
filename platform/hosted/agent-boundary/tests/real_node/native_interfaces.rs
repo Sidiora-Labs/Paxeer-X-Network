@@ -17,7 +17,8 @@ use layerx_programs_runtime::test_support::{
 use layerx_types::intent::ProgramId;
 use layerx_types::program_call::{NativeProgramCall, Resources};
 use layerx_types::program_lifecycle::{
-    NativeProgramDeploy, NativeProgramUpgrade, ProgramUpgradePolicy,
+    NativeProgramDeploy, NativeProgramUpgrade, NativeProgramWindDown, ProgramUpgradePolicy,
+    ProgramWindDownOperation,
 };
 
 const FEE_LIMIT: u128 = 1_000_000_000_000;
@@ -81,7 +82,7 @@ impl Drop for NativeConnection {
 }
 
 fn registry() -> ModuleRegistry {
-    let types: Vec<_> = [1, 2, 3]
+    let types: Vec<_> = [1, 2, 3, 7]
         .into_iter()
         .map(|ordinal| {
             must(
@@ -642,6 +643,9 @@ struct HostedRegistry {
     identity: Identity,
     bearer: String,
     cgroup: PathBuf,
+    binary: PathBuf,
+    environment: BTreeMap<String, String>,
+    host_mount: PathBuf,
 }
 impl HostedRegistry {
     fn start(cluster: &Cluster, history: &Path) -> Self {
@@ -839,7 +843,54 @@ exec "$@"
             identity: tls.client_identity,
             bearer,
             cgroup,
+            binary,
+            environment,
+            host_mount,
         }
+    }
+    fn restart(&mut self) {
+        self.process.stop();
+        let script = r#"set -eu
+printf '%s' "$$" > "$1/cgroup.procs"
+shift
+exec /usr/bin/unshare --mount --cgroup /bin/sh -c '
+set -eu
+mount --make-rprivate /
+mount --bind /sys/fs/cgroup "$1"
+mount -t cgroup2 none /sys/fs/cgroup
+shift
+exec "$@"
+' registry "$@"
+"#;
+        let child = must(
+            Command::new("/bin/sh")
+                .args(["-c", script, "registry"])
+                .arg(&self.cgroup)
+                .arg(&self.host_mount)
+                .arg(&self.binary)
+                .env_clear()
+                .env("PATH", "/usr/bin:/bin")
+                .envs(&self.environment)
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::from(must(
+                    fs::OpenOptions::new()
+                        .append(true)
+                        .open(&self.process.stderr),
+                    "registry restart log",
+                )))
+                .spawn(),
+            "real registry restart",
+        );
+        self.process = Daemon {
+            child,
+            stderr: self.process.stderr.clone(),
+        };
+        wait_for_port(
+            self.client.port,
+            &mut self.process,
+            "restarted hosted registry",
+        );
     }
     fn consume(&self, signed: &[u8], interface: &ProgramInterface, label: &str, evidence: &Path) {
         let idempotency = token();
@@ -1631,4 +1682,719 @@ fn emit_typed_interface_inputs() {
         write(&directory.join("wrong-capability.bin"), &undeclared, 0o600);
         println!("TYPED_INTERFACE_INPUT abi{abi}");
     }
+}
+
+fn discovery_interface(
+    cluster: &Cluster,
+    verifier: &ProtocolDeploymentVerifier,
+    program: [u8; 32],
+    expected: &ProgramInterface,
+    evidence: &Path,
+    label: &str,
+) -> Vec<u8> {
+    let head = http_get(
+        cluster.program_port,
+        "/v1/protocol/account-state/head",
+        &cluster.program_token,
+    );
+    assert_eq!(head.status, 200, "native current head unavailable");
+    let head = head.json();
+    let sequence = head["observed_sequence"]
+        .as_u64()
+        .unwrap_or_else(|| panic!("head sequence"));
+    let response = http_get(
+        cluster.program_port,
+        &format!("/v1/programs/{}/state-proof?at={sequence}", hex(&program)),
+        &cluster.program_token,
+    );
+    assert_eq!(response.status, 200, "native program state unavailable");
+    let document = response.json();
+    let bytes = unhex(field(&document, "record_hex"));
+    let bundle = must(
+        ProgramStateBundle::decode(&bytes),
+        "native current state bundle",
+    );
+    assert_eq!(bundle.canonical_encoding(), bytes);
+    let state = &bundle.state;
+    let chain = must(
+        verifier.verify_current_chain_head(
+            bundle.head_kind,
+            &state.receipt,
+            &state.receipt_proof,
+            &state.header,
+            &state.header_signature,
+            now_ms(),
+        ),
+        "current chain proof",
+    );
+    assert_eq!(
+        chain.state_root(),
+        <[u8; 32]>::try_from(unhex(field(&head, "state_root")))
+            .unwrap_or_else(|_| panic!("head root"))
+    );
+    assert_eq!(chain.global_sequence(), sequence);
+    let program = must(
+        layerx_programs_runtime::ProgramId::new(program),
+        "runtime program",
+    );
+    let verified = must(
+        verifier.verify_current_program_bundle(
+            &bundle,
+            &chain,
+            program,
+            &cluster.sequencer_key,
+            now_ms(),
+        ),
+        "registry authenticated stored interface",
+    );
+    assert_eq!(&verified.interface().interface, expected);
+    assert_eq!(
+        verified.program_head().abi_version(),
+        expected.abi_version()
+    );
+    assert_eq!(verified.program_head().code_hash(), expected.code_hash());
+    let mut damaged = bundle.clone();
+    damaged.interface.value[0] ^= 1;
+    assert!(verifier
+        .verify_current_program_bundle(&damaged, &chain, program, &cluster.sequencer_key, now_ms())
+        .is_err());
+    let mut damaged = bundle.clone();
+    damaged.state.header_signature[0] ^= 1;
+    assert!(verifier
+        .verify_current_program_bundle(&damaged, &chain, program, &cluster.sequencer_key, now_ms())
+        .is_err());
+    write(&evidence.join(format!("{label}.state")), &bytes, 0o600);
+    println!("NATIVE_INTERFACE_CASE {label}");
+    bundle.interface.value
+}
+
+fn discovery_mark(abi: u16, case: &str) {
+    println!("REGISTRY_DISCOVERY_CASE abi{abi}-{case}");
+}
+
+fn discovery_proof_refusals(
+    cluster: &Cluster,
+    verifier: &ProtocolDeploymentVerifier,
+    program: [u8; 32],
+    abi: u16,
+    path: &Path,
+) {
+    let bundle = must(
+        ProgramStateBundle::decode(&must(fs::read(path), "native capture")),
+        "native proof",
+    );
+    let at = now_ms();
+    let chain = must(
+        verifier.verify_current_chain_head(
+            bundle.head_kind,
+            &bundle.state.receipt,
+            &bundle.state.receipt_proof,
+            &bundle.state.header,
+            &bundle.state.header_signature,
+            at,
+        ),
+        "captured live head",
+    );
+    let program = must(
+        layerx_programs_runtime::ProgramId::new(program),
+        "program identity",
+    );
+    for case in [
+        "bad-record",
+        "bad-interface",
+        "bad-membership",
+        "unknown-abi",
+    ] {
+        let mut damaged = bundle.clone();
+        match case {
+            "bad-record" => damaged.state.program_record.value[33] ^= 1,
+            "bad-interface" => damaged.interface.value[36] ^= 1,
+            "bad-membership" => damaged.state.program_record.proof.leaf_index ^= 1,
+            "unknown-abi" => {
+                damaged.state.program_record.value[65..67].copy_from_slice(&5_u16.to_be_bytes())
+            }
+            _ => unreachable!(),
+        }
+        assert!(
+            verifier
+                .verify_current_program_bundle(
+                    &damaged,
+                    &chain,
+                    program,
+                    &cluster.sequencer_key,
+                    at,
+                )
+                .is_err(),
+            "{case} became discoverable"
+        );
+        discovery_mark(abi, case);
+    }
+    let mut signer = cluster.sequencer_key;
+    signer[0] ^= 1;
+    assert!(verifier
+        .verify_current_program_bundle(&bundle, &chain, program, &signer, at)
+        .is_err());
+    discovery_mark(abi, "foreign-signer");
+    assert!(verifier
+        .verify_current_program_bundle(
+            &bundle,
+            &chain,
+            program,
+            &cluster.sequencer_key,
+            at.checked_add(60_001)
+                .unwrap_or_else(|| panic!("time overflow")),
+        )
+        .is_err());
+    discovery_mark(abi, "stale-head");
+}
+
+fn discovery_registry_document(registry: &HostedRegistry, program: [u8; 32]) -> serde_json::Value {
+    let path = format!("/v1/programs/registry/{}", hex(&program));
+    let mut request = Call::get(&path, Some(&registry.bearer));
+    request.identity = Some(&registry.identity);
+    let response = must(registry.client.try_call(&request), "live hosted discovery");
+    assert_eq!(
+        response.status,
+        200,
+        "hosted discovery: {}",
+        response.text()
+    );
+    response.json()
+}
+
+struct DiscoveryEmulator {
+    process: Daemon,
+    port: u16,
+    sequence: u64,
+    binary: PathBuf,
+    arguments: Vec<String>,
+}
+impl DiscoveryEmulator {
+    fn start(cluster: &Cluster, evidence: &Path) -> Self {
+        let binary = PathBuf::from(
+            std::env::var_os("PAXEER_X_REGISTRY_EMULATOR_BINARY")
+                .unwrap_or_else(|| panic!("candidate CLI emulator required")),
+        );
+        let seed = evidence.join("emulator-sequencer.seed");
+        write(&seed, &random32(), 0o600);
+        let port = free_port();
+        let stderr = evidence.join("emulator.stderr");
+        let arguments = vec![
+            "emulator".to_owned(),
+            "up".to_owned(),
+            "--listen".to_owned(),
+            format!("127.0.0.1:{port}"),
+            "--network-id".to_owned(),
+            NETWORK_ID.to_string(),
+            "--protocol-version".to_owned(),
+            PROTOCOL_VERSION.to_string(),
+            "--time-ms".to_owned(),
+            now_ms().to_string(),
+            "--sequencer-seed-file".to_owned(),
+            text(&seed),
+            "--prefund".to_owned(),
+            format!(
+                "{},{},1000000000000000",
+                cluster.actor.did,
+                hex(&cluster.actor.signing_key.verifying_key().to_bytes())
+            ),
+        ];
+        let child = must(
+            Command::new(&binary)
+                .args(&arguments)
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::from(must(fs::File::create(&stderr), "emulator log")))
+                .spawn(),
+            "real CLI emulator process",
+        );
+        let mut process = Daemon { child, stderr };
+        wait_for_port(port, &mut process, "CLI emulator");
+        let mut emulator = Self {
+            process,
+            port,
+            sequence: 0,
+            binary,
+            arguments,
+        };
+        let response = emulator.request(
+            "GET",
+            &format!("/v1/dids/{}/sequence", cluster.actor.did),
+            &[],
+        );
+        assert_eq!(response.status, 200);
+        emulator.sequence = response.json()["result"]["next_sequence"]
+            .as_str()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or_else(|| panic!("real emulator sequence"));
+        emulator
+    }
+    fn request(&self, method: &str, path: &str, body: &[u8]) -> HttpAnswer {
+        let mut stream = must(
+            TcpStream::connect(("127.0.0.1", self.port)),
+            "emulator connect",
+        );
+        must(
+            stream.set_read_timeout(Some(Duration::from_secs(60))),
+            "emulator timeout",
+        );
+        let media_type = if method == "GET" && !body.is_empty() {
+            "application/json"
+        } else if path == "/__emulator/snapshot" {
+            "application/vnd.layerx.emulator-snapshot"
+        } else {
+            "application/octet-stream"
+        };
+        must(stream.write_all(format!("{method} {path} HTTP/1.1\r\nHost: localhost\r\nContent-Type: {media_type}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n", body.len()).as_bytes()), "emulator request");
+        must(stream.write_all(body), "emulator activity");
+        let mut bytes = Vec::new();
+        must(stream.read_to_end(&mut bytes), "emulator response");
+        parse_http(&bytes)
+    }
+    fn submit(&mut self, cluster: &Cluster, ordinal: u16, payload: &[u8], route: &str) {
+        let signed =
+            signed_program_operation(&cluster.actor, ordinal, self.sequence, FEE_LIMIT, payload);
+        let response = self.request("POST", route, &signed);
+        assert_eq!(
+            response.status,
+            200,
+            "emulator native activity: {}",
+            response.text()
+        );
+        assert_eq!(
+            response.json()["value"]["state"],
+            "completed",
+            "emulator refused a positive native lifecycle: {}",
+            response.text()
+        );
+        self.sequence = self
+            .sequence
+            .checked_add(1)
+            .unwrap_or_else(|| panic!("sequence overflow"));
+    }
+    fn read(&self, program: [u8; 32]) -> serde_json::Value {
+        let selector = serde_json::json!({"program_id":hex(&program),
+            "requested_verification_level":"sequencer-signed"})
+        .to_string();
+        let response = self.request(
+            "GET",
+            &format!("/v1/programs/registry/{}", hex(&program)),
+            selector.as_bytes(),
+        );
+        assert_eq!(
+            response.status,
+            200,
+            "emulator discovery: {}",
+            response.text()
+        );
+        response.json()["value"].clone()
+    }
+    fn interface(&self, program: [u8; 32], expected: &ProgramInterface) {
+        let selector = serde_json::json!({"program_id":hex(&program),
+            "requested_verification_level":"sequencer-signed"})
+        .to_string();
+        let response = self.request(
+            "GET",
+            &format!("/v1/programs/registry/{}/interface", hex(&program)),
+            selector.as_bytes(),
+        );
+        assert_eq!(
+            response.status,
+            200,
+            "emulator interface: {}",
+            response.text()
+        );
+        let document = response.json();
+        assert_eq!(
+            unhex(field(&document["value"], "interface")),
+            expected.canonical_encoding()
+        );
+        assert_eq!(document["value"]["code_hash"], hex(&expected.code_hash()));
+        assert_eq!(
+            document["value"]["abi_version"].as_u64(),
+            Some(u64::from(expected.abi_version()))
+        );
+    }
+    fn restore(&mut self) {
+        let snapshot = self.request("GET", "/__emulator/snapshot", &[]);
+        assert_eq!(snapshot.status, 200);
+        self.process.stop();
+        let child = must(
+            Command::new(&self.binary)
+                .args(&self.arguments)
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::from(must(
+                    fs::OpenOptions::new()
+                        .append(true)
+                        .open(&self.process.stderr),
+                    "emulator restart log",
+                )))
+                .spawn(),
+            "real emulator restart",
+        );
+        self.process = Daemon {
+            child,
+            stderr: self.process.stderr.clone(),
+        };
+        wait_for_port(self.port, &mut self.process, "restarted CLI emulator");
+        let imported = self.request("PUT", "/__emulator/snapshot", &snapshot.body);
+        assert_eq!(
+            imported.status,
+            200,
+            "emulator snapshot import: {}",
+            imported.text()
+        );
+    }
+}
+impl Drop for DiscoveryEmulator {
+    fn drop(&mut self) {
+        self.process.stop();
+    }
+}
+
+fn discovery_attestation(
+    document: &serde_json::Value,
+    program: [u8; 32],
+    interface: &ProgramInterface,
+    version: u64,
+    signer: [u8; 32],
+) {
+    use layerx_client::lni::head_attestation::{
+        program_discovery_proof_digest, ProgramDiscoveryHead,
+    };
+    assert_eq!(unhex(field(document, "discovery_public_key")), signer);
+    let head = ProgramDiscoveryHead {
+        program_id: program,
+        version: must(u32::try_from(version), "version"),
+        code_hash: interface.code_hash(),
+        abi_version: interface.abi_version(),
+        observed_sequence: document["observed_sequence"]
+            .as_u64()
+            .unwrap_or_else(|| panic!("head sequence")),
+        observed_at: document["observed_at"]
+            .as_u64()
+            .unwrap_or_else(|| panic!("head timestamp")),
+        valid_through: document["valid_through"]
+            .as_u64()
+            .unwrap_or_else(|| panic!("head bound")),
+        state_root: must(unhex(field(document, "state_root")).try_into(), "head root"),
+    };
+    let digest = program_discovery_proof_digest(&head);
+    assert_eq!(unhex(field(document, "receipt_digest")), digest);
+    let signature: [u8; 64] = must(
+        unhex(field(document, "discovery_signature")).try_into(),
+        "signature",
+    );
+    must(
+        must(
+            ed25519_dalek::VerifyingKey::from_bytes(&signer),
+            "sequencer key",
+        )
+        .verify_strict(&digest, &ed25519_dalek::Signature::from_bytes(&signature)),
+        "exact remote head signature",
+    );
+}
+
+fn discovery_compare(
+    hosted: &serde_json::Value,
+    emulator: &serde_json::Value,
+    program: [u8; 32],
+    interface: &ProgramInterface,
+    version: u64,
+    signer: [u8; 32],
+) {
+    discovery_attestation(hosted, program, interface, version, signer);
+    assert_eq!(hosted["program_id"], hex(&program));
+    assert_eq!(hosted["program_id"], emulator["program_id"]);
+    assert_eq!(hosted["lifecycle"], emulator["lifecycle"]);
+    assert_eq!(hosted["latest_version"].as_u64(), Some(version));
+    assert_eq!(emulator["version"].as_u64(), Some(version));
+    let latest = hosted["versions"]
+        .as_array()
+        .unwrap_or_else(|| panic!("version history"))
+        .last()
+        .unwrap_or_else(|| panic!("latest version"));
+    assert_eq!(latest["code_hash"], hex(&interface.code_hash()));
+    assert_eq!(latest["code_hash"], emulator["code_hash"]);
+    assert_eq!(
+        latest["abi_version"].as_u64(),
+        Some(u64::from(interface.abi_version()))
+    );
+    assert_eq!(latest["abi_version"], emulator["abi_version"]);
+    assert_eq!(
+        hosted["value_accounts"]["accounts"],
+        emulator["value_accounts"]["accounts"]
+    );
+    if interface.abi_version() == 1 {
+        assert_eq!(hosted["value_accounts"]["status"], "account-incapable-abi1");
+        assert_eq!(
+            emulator["value_accounts"]["status"],
+            "account-incapable-abi1"
+        );
+    } else {
+        assert_eq!(hosted["value_accounts"]["status"], "current");
+        assert_eq!(emulator["value_accounts"]["status"], "current");
+        if interface.abi_version() > 2 {
+            assert_eq!(
+                hosted["value_accounts"]["account_profile"],
+                emulator["value_accounts"]["account_profile"]
+            );
+        }
+    }
+}
+
+#[test]
+fn guest_abi_discovery() {
+    let evidence = PathBuf::from(
+        std::env::var_os("PAXEER_X_NATIVE_INTERFACE_EVIDENCE")
+            .unwrap_or_else(|| panic!("private discovery evidence required")),
+    );
+    assert!(evidence.is_dir());
+    assert_eq!(
+        must(
+            fs::canonicalize(env!("CARGO_BIN_EXE_layerx-agent-boundary")),
+            "compiled boundary"
+        ),
+        must(
+            fs::canonicalize(PathBuf::from(
+                std::env::var_os("PAXEER_X_NATIVE_INTERFACE_BOUNDARY")
+                    .unwrap_or_else(|| panic!("candidate boundary identity"))
+            )),
+            "pinned boundary"
+        )
+    );
+    let (mut cluster, _custody) = custody::start_funded_cluster();
+    let history = evidence.join("provisioned-trust-history.bin");
+    provisioned_history(&cluster, &history);
+    let verifier = must(
+        ProtocolDeploymentVerifier::from_protected_history(&history, 60_000),
+        "trust owner",
+    );
+    let mut hosted = HostedRegistry::start(&cluster, &history);
+    let mut emulator = DiscoveryEmulator::start(&cluster, &evidence);
+    let mut sequence = 2;
+    let mut retained = Vec::new();
+    for abi in 1..=4 {
+        let program = random32();
+        let initial = guest(0, 0);
+        let original = interface(&initial, abi, 0, 64);
+        let payload = deploy(
+            &cluster,
+            program,
+            abi,
+            &initial,
+            &original.canonical_encoding(),
+        );
+        let signed = submit(
+            &cluster,
+            &mut sequence,
+            1,
+            &payload,
+            0,
+            &format!("abi{abi}-deploy"),
+            &evidence,
+        );
+        emulator.submit(&cluster, 1, &payload, "/v1/programs/deploy");
+        hosted.consume(
+            &signed,
+            &original,
+            &format!("abi{abi}-deployed-interface"),
+            &evidence,
+        );
+        discovery_compare(
+            &discovery_registry_document(&hosted, program),
+            &emulator.read(program),
+            program,
+            &original,
+            1,
+            cluster.sequencer_key,
+        );
+        discovery_mark(abi, "deploy");
+        let mut unknown = deploy(
+            &cluster,
+            random32(),
+            abi,
+            &initial,
+            &original.canonical_encoding(),
+        );
+        unknown[32..34].copy_from_slice(&5_u16.to_be_bytes());
+        submit(
+            &cluster,
+            &mut sequence,
+            1,
+            &unknown,
+            -101,
+            &format!("abi{abi}-unknown-refused"),
+            &evidence,
+        );
+        let changed = guest(0, 1);
+        let next = interface(&changed, abi, 0, 96);
+        let payload = upgrade(
+            program,
+            abi,
+            &initial,
+            &changed,
+            &next.canonical_encoding(),
+            false,
+        );
+        let signed = submit(
+            &cluster,
+            &mut sequence,
+            2,
+            &payload,
+            0,
+            &format!("abi{abi}-upgrade"),
+            &evidence,
+        );
+        emulator.submit(&cluster, 2, &payload, "/v1/programs/upgrade");
+        hosted.consume(
+            &signed,
+            &next,
+            &format!("abi{abi}-upgraded-interface"),
+            &evidence,
+        );
+        discovery_mark(abi, "upgrade");
+        let stored = discovery_interface(
+            &cluster,
+            &verifier,
+            program,
+            &next,
+            &evidence,
+            &format!("abi{abi}-before-restart"),
+        );
+        emulator.interface(program, &next);
+        discovery_mark(abi, "interface");
+        let document = discovery_registry_document(&hosted, program);
+        discovery_compare(
+            &document,
+            &emulator.read(program),
+            program,
+            &next,
+            2,
+            cluster.sequencer_key,
+        );
+        discovery_mark(abi, "discovery");
+        discovery_mark(abi, "account-state");
+        discovery_proof_refusals(
+            &cluster,
+            &verifier,
+            program,
+            abi,
+            &evidence.join(format!("abi{abi}-before-restart.state")),
+        );
+        let mut invalid = upgrade(
+            program,
+            abi,
+            &changed,
+            &changed,
+            &next.canonical_encoding(),
+            true,
+        );
+        invalid[32..34].copy_from_slice(&(abi - 1).to_be_bytes());
+        submit(
+            &cluster,
+            &mut sequence,
+            2,
+            &invalid,
+            -101,
+            &format!("abi{abi}-downgrade-refused"),
+            &evidence,
+        );
+        assert_eq!(
+            discovery_interface(
+                &cluster,
+                &verifier,
+                program,
+                &next,
+                &evidence,
+                &format!("abi{abi}-after-refusal")
+            ),
+            stored
+        );
+        discovery_mark(abi, "downgrade");
+        if abi != 1 {
+            let payload = must(
+                NativeProgramWindDown {
+                    program_id: ProgramId::new(program),
+                    operation: ProgramWindDownOperation::Deprecate {
+                        exit_program: program,
+                        deadline_batch: LAST_BATCH,
+                    },
+                }
+                .encode(),
+                "native wind-down",
+            );
+            submit(
+                &cluster,
+                &mut sequence,
+                7,
+                &payload,
+                0,
+                &format!("abi{abi}-deprecate"),
+                &evidence,
+            );
+            emulator.submit(&cluster, 7, &payload, "/v1/programs/wind-down");
+            let deprecated = discovery_registry_document(&hosted, program);
+            discovery_compare(
+                &deprecated,
+                &emulator.read(program),
+                program,
+                &next,
+                2,
+                cluster.sequencer_key,
+            );
+            assert_eq!(deprecated["lifecycle"], "deprecated");
+            assert!(!deprecated["lifecycle_history"]
+                .as_array()
+                .unwrap_or_else(|| panic!("lifecycle history"))
+                .is_empty());
+            discovery_interface(
+                &cluster,
+                &verifier,
+                program,
+                &next,
+                &evidence,
+                &format!("abi{abi}-before-restart"),
+            );
+            retained.push((program, abi, next, deprecated, stored));
+        } else {
+            retained.push((program, abi, next, document, stored));
+        }
+    }
+    cluster.restart_native_sequencer();
+    check_readiness(&cluster);
+    emulator.restore();
+    hosted.restart();
+    for (program, abi, interface, before, stored) in retained {
+        let current = discovery_registry_document(&hosted, program);
+        assert_eq!(current["versions"], before["versions"]);
+        assert_eq!(current["lifecycle_history"], before["lifecycle_history"]);
+        assert_eq!(
+            current["value_accounts"]["accounts"],
+            before["value_accounts"]["accounts"]
+        );
+        assert_eq!(
+            discovery_interface(
+                &cluster,
+                &verifier,
+                program,
+                &interface,
+                &evidence,
+                &format!("abi{abi}-after-restart")
+            ),
+            stored
+        );
+        discovery_compare(
+            &current,
+            &emulator.read(program),
+            program,
+            &interface,
+            2,
+            cluster.sequencer_key,
+        );
+        emulator.interface(program, &interface);
+        discovery_mark(abi, "restart");
+    }
+    println!("REGISTRY_DISCOVERY_CASE remote-attestation");
 }

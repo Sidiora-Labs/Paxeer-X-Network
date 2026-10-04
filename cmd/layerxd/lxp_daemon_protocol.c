@@ -3,6 +3,7 @@
 #include "layerx/lxp_maintenance.h"
 #include "layerx/lxp_daemon.h"
 #include "lxp_daemon_maintenance_json.h"
+#include "lxp_daemon_deployment.h"
 
 #include "layerx/lxp_crypto.h"
 
@@ -402,6 +403,42 @@ static lxp_result program_route(lxp_daemon_protocol_owner *owner,
     (void)lxp_arena_reset(owner->scratch, mark);
     (void)arena;
     return status;
+}
+
+static lxp_result program_state_proof_route(
+    lxp_daemon_protocol_owner *owner, const uint8_t program_id[32],
+    uint64_t at, json_writer *writer)
+{
+    lxp_byte_span record = {NULL, 0U};
+    uint8_t digest[32];
+    size_t mark;
+    lxp_result status, reset_status;
+    if (at == 0U || at != owner->feed_store.scanned_through_sequence ||
+        owner->receipt_authority == NULL || owner->scratch == NULL ||
+        lxp_ct_memcmp(owner->feed_store.head_state_root,
+                      owner->kernel->current_state_root, 32U) != 0)
+        return LXP_ERR_PROJECTION_STALE;
+    mark = lxp_arena_mark(owner->scratch);
+    status = lxp_daemon_program_state_encode(
+        owner->kernel, owner->receipt_authority, owner->network_id,
+        program_id, at, owner->feed_store.head_receipt_digest,
+        owner->feed_store.head_state_root, owner->scratch, &record);
+    if (status == LXP_OK)
+        status = lxp_hash_sha256(record.bytes, record.length, digest);
+    if (status == LXP_OK) {
+        json_text(writer, "{\"program_id\":\"");
+        json_hex(writer, program_id, 32U);
+        json_text(writer, "\",\"record_hex\":\"");
+        json_hex(writer, record.bytes, record.length);
+        json_text(writer, "\",\"record_digest\":\"");
+        json_hex(writer, digest, 32U);
+        json_text(writer, "\",\"receipt_digest\":\"");
+        json_hex(writer, owner->feed_store.head_receipt_digest, 32U);
+        json_text(writer, "\"}");
+        status = writer->status;
+    }
+    reset_status = lxp_arena_reset(owner->scratch, mark);
+    return reset_status == LXP_OK ? status : LXP_FATAL_INVARIANT;
 }
 
 static lxp_result changes_route(lxp_daemon_protocol_owner *owner,
@@ -920,6 +957,22 @@ static lxp_result route_inner(lxp_daemon_protocol_owner *owner,
             uint64_t after;
             lxp_result status = parse_u64(suffix + 37U, &after);
             return status == LXP_OK ? changes_route(owner, after, writer) : status;
+        }
+        {
+            const char *tail = strstr(suffix, "/state-proof?at=");
+            if (tail != NULL) {
+                char program_text[65];
+                uint8_t program_id[32];
+                uint64_t at;
+                if ((size_t)(tail - suffix) != 64U)
+                    return LXP_ERR_NON_CANONICAL;
+                (void)memcpy(program_text, suffix, 64U);
+                program_text[64U] = '\0';
+                if (parse_hex32(program_text, program_id) != LXP_OK ||
+                    parse_u64(tail + 16U, &at) != LXP_OK)
+                    return LXP_ERR_NON_CANONICAL;
+                return program_state_proof_route(owner, program_id, at, writer);
+            }
         }
         {
             const char *tail = strstr(suffix, "/account-state?at=");

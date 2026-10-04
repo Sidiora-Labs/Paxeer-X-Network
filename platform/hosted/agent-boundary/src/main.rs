@@ -2009,10 +2009,28 @@ fn relay_path_allowed(path: &str, query: Option<&str>) -> bool {
             .is_some_and(digits);
     }
     if let Some(rest) = path.strip_prefix("/v1/programs/") {
-        return rest.strip_suffix("/account-state").is_some_and(is_hex32)
-            && query
+        let canonical_sequence = |value: &str| {
+            digits(value)
+                && value
+                    .parse::<u64>()
+                    .ok()
+                    .is_some_and(|number| number != 0 && number.to_string() == value)
+        };
+        if rest.strip_suffix("/state-proof").is_some_and(is_hex32) {
+            return query
                 .and_then(|query| query.strip_prefix("at="))
-                .is_some_and(digits);
+                .is_some_and(canonical_sequence);
+        }
+        if rest.strip_suffix("/account-state").is_some_and(is_hex32) {
+            let Some(sequence) = query.and_then(|query| query.strip_prefix("at=")) else {
+                return false;
+            };
+            return digits(sequence)
+                || sequence
+                    .strip_suffix("&profile=2")
+                    .is_some_and(canonical_sequence);
+        }
+        return false;
     }
     if let Some(rest) = path.strip_prefix("/v1/batches/") {
         return rest

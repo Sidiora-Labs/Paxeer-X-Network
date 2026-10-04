@@ -18,6 +18,7 @@ import os
 from pathlib import Path
 import re
 import subprocess
+import shutil
 import sys
 
 sys.dont_write_bytecode = True
@@ -26,6 +27,7 @@ SCHEMA = 'paxeer-x.candidate.v1'
 RESULT = re.compile(r'^test (\S+) \.\.\. (\S+)$', re.M)
 
 CASES = {
+    'guest-abi-discovery': {'tests': {'native_interfaces::guest_abi_discovery': 'real native and served ABI discovery contract'}},
     'durable-verification-idempotency': {
         'tests': {
             'verified::tests::durable_verification_recovers_artifact_before_publication':
@@ -411,6 +413,198 @@ def served_cases(artifacts):
             print('registry-contract: private served log ' + path)
 
 
+
+DISCOVERY_SUFFIXES = (
+    'deploy', 'upgrade', 'interface', 'discovery', 'account-state', 'restart',
+    'bad-record', 'bad-interface', 'stale-head', 'foreign-signer',
+    'bad-membership', 'unknown-abi', 'downgrade',
+)
+DISCOVERY_CASES = {f'abi{abi}-{suffix}' for abi in range(1, 5)
+                   for suffix in DISCOVERY_SUFFIXES}
+DISCOVERY_CASES |= {'source-unpublished', 'source-mismatch', 'source-verified',
+                    'remote-attestation'}
+
+
+def discovery_artifacts(candidate_digest):
+    path = os.environ.get('PAXEER_X_REGISTRY_ARTIFACT_MANIFEST')
+    require(path, 'PAXEER_X_REGISTRY_ARTIFACT_MANIFEST is required')
+    document = json.loads(Path(path).read_bytes())
+    require(document.get('schema') == 'paxeer-x.registry-discovery-artifacts.v1',
+            'distinct registry discovery artifact contract required')
+    require(document.get('candidate_manifest_sha256') == candidate_digest,
+            'discovery artifact candidate binding')
+    revision = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip()
+    tree = subprocess.check_output(['git', 'rev-parse', 'HEAD^{tree}'], cwd=ROOT, text=True).strip()
+    require(document.get('source_revision') == revision and document.get('source_tree') == tree,
+            'immutable discovery source binding')
+    require(not subprocess.check_output(['git', 'status', '--porcelain'], cwd=ROOT),
+            'clean published discovery source required')
+    paths = {
+        'programs/crates/layerx-programs-registry/src/protocol_evidence.rs',
+        'platform/hosted/registry/src/routes.rs',
+        'platform/hosted/registry/src/node_state.rs',
+        'platform/hosted/registry/src/head_attestation.rs',
+        'platform/hosted/registry/src/program_state.rs',
+        'platform/emulator/core/emulator_core.c',
+        'platform/emulator/src/main.rs',
+        'platform/hosted/registry/tests/native_deployment.rs',
+        'tools/qualification/paxeer-x/registry-contract.py',
+        'cmd/layerxd/lxp_daemon_protocol.c',
+        'platform/hosted/agent-boundary/src/main.rs',
+        'platform/hosted/agent-boundary/tests/real_node/native_interfaces.rs',
+    }
+    require(set(document['source_files']) == paths, 'exact discovery source inventory')
+    for relative, expected in document['source_files'].items():
+        require(hashlib.sha256((ROOT / relative).read_bytes()).hexdigest() == expected,
+                'discovery source digest: ' + relative)
+    roles = {'registry', 'emulator', 'registry-tests', 'real-node-tests', 'boundary', 'layerxd',
+             'genesis-builder', 'cli', 'sign-credit', 'test-credit', 'anvil', 'forge'}
+    require(set(document['artifacts']) == roles, 'genuine discovery process artifacts required')
+    for role, entry in document['artifacts'].items():
+        binary = Path(entry['path']).resolve(strict=True)
+        require(binary.is_file() and os.access(binary, os.X_OK), role + ' executable')
+        require(hashlib.sha256(binary.read_bytes()).hexdigest() == entry['sha256'], role + ' digest')
+    return document
+
+
+def discovery_publication(artifacts):
+    server = ServedRegistry({'registry': artifacts['artifacts']['registry'],
+                             'served': artifacts['served']})
+    expected_environment = json.loads(Path(server.config['environment_file']).read_bytes())
+    request_token = Path(expected_environment['LAYERX_REGISTRY_REQUEST_TOKEN_FILE']).read_text().strip()
+    require(request_token and server.token and request_token != server.token,
+            'source publication has a distinct actual operator authority')
+    route = '/v1/programs/registry/' + server.program
+    prefix = 'discovery-' + uuid.uuid4().hex
+    mismatch = Path(server.config['mismatch_source_request_file']).resolve(strict=True).read_bytes()
+    mismatch_document = json.loads(mismatch)
+    require(set(mismatch_document) == {'source_uri', 'source_digest'}
+            and mismatch_document['source_digest'] != json.loads(server.body)['source_digest'],
+            'genuine distinct reproducible mismatch archive input')
+    mismatch_archive = server.mirror / (mismatch_document['source_digest'] + '.archive')
+    require(mismatch_archive.is_file(), 'actual mirrored mismatch source archive')
+    def read_source():
+        status, body = server.request('GET', route, b'')
+        require(status == 200, 'receipt-verified source discovery read required')
+        document = json.loads(body)
+        require(document['verification'] == 'registry-receipt-and-current-head-verified',
+                'source never substitutes for deployment receipt verification')
+        return document['versions'][-1]['source']
+    try:
+        server.start()
+        require(read_source()['status'] == 'unpublished', 'genuine initial unpublished source state')
+        print('REGISTRY_DISCOVERY_CASE source-unpublished', flush=True)
+        status, body = server.post(prefix + '-operator-refused', authenticated=False)
+        require(status in (401, 403), 'unauthenticated source publication refusal')
+        saved_token = server.token
+        server.token = request_token
+        try:
+            require(server.post(prefix + '-request-authority-refused')[0] in (401, 403),
+                    'request authority cannot publish source')
+        finally:
+            server.token = saved_token
+        status, body = server.post(prefix + '-mismatch', mismatch)
+        require(status == 409 and json.loads(body)['error']['code'] == 'source_mismatch',
+                'actual builder artifact mismatch refusal')
+        require(read_source()['status'] == 'mismatch', 'explicit mismatch discovery state')
+        print('REGISTRY_DISCOVERY_CASE source-mismatch', flush=True)
+        status, body = server.post(prefix + '-verified')
+        require(status == 200, 'actual pinned reproducible builder success')
+        verified = read_source()
+        require(verified['status'] == 'verified'
+                and verified['source_digest'] == json.loads(server.body)['source_digest']
+                and re.fullmatch('[0-9a-f]{64}', verified['environment_digest']) is not None,
+                'exact source and pinned environment publication provenance')
+        server.stop()
+        server.start()
+        require(read_source() == verified, 'source provenance survives actual registry restart')
+        print('REGISTRY_DISCOVERY_CASE source-verified', flush=True)
+    finally:
+        server.stop()
+    return 3
+
+
+def discovery_contract(artifacts):
+    environment_file = Path(artifacts['environment_file']).resolve(strict=True)
+    require(environment_file.stat().st_mode & 0o077 == 0,
+            'private genuine discovery fixture environment')
+    configured = json.loads(environment_file.read_bytes())
+    require(isinstance(configured, dict) and all(isinstance(k, str) and isinstance(v, str)
+                                               for k, v in configured.items()),
+            'discovery environment values')
+    require('PAXEER_X_REGISTRY_CONFIGURATION' in configured
+            and 'PAXEER_X_REGISTRY_CGROUP_PARENT' in configured,
+            'real pinned builder and delegated fixture cgroup required')
+    environment = dict(os.environ, **configured)
+    binaries = artifacts['artifacts']
+    environment['PAXEER_X_REGISTRY_BINARY'] = binaries['registry']['path']
+    environment['PAXEER_X_REGISTRY_EMULATOR_BINARY'] = binaries['emulator']['path']
+    environment['PAXEER_X_NATIVE_INTERFACE_BOUNDARY'] = binaries['boundary']['path']
+    environment['PYTHONDONTWRITEBYTECODE'] = '1'
+    native = Path(binaries['layerxd']['path']).resolve(strict=True).parent
+    require(Path(binaries['genesis-builder']['path']).resolve(strict=True) == native / 'layerx-genesis-build',
+            'actual native fixture builder binding')
+    require(Path(binaries['layerxd']['path']).resolve(strict=True).name == 'layerxd',
+            'actual native fixture daemon binding')
+    environment['LAYERX_TEST_NATIVE_BIN_DIR'] = str(native)
+    require(Path(binaries['cli']['path']).resolve(strict=True)
+            == Path(binaries['emulator']['path']).resolve(strict=True),
+            'emulator is the actual layerx CLI library owner')
+    for role in ('sign-credit', 'test-credit'):
+        require((ROOT / 'build/tests/bridge' / role).resolve(strict=True)
+                == Path(binaries[role]['path']).resolve(strict=True),
+                'actual custody fixture artifact binding: ' + role)
+    tool_directories = [str(Path(binaries[role]['path']).resolve(strict=True).parent)
+                        for role in ('anvil', 'forge')]
+    environment['PATH'] = os.pathsep.join(tool_directories + [environment.get('PATH', '/usr/bin:/bin')])
+    for role in ('anvil', 'forge'):
+        resolved = shutil.which(role, path=environment['PATH'])
+        require(resolved is not None and Path(resolved).resolve(strict=True)
+                == Path(binaries[role]['path']).resolve(strict=True),
+                'actual funding tool invocation binding: ' + role)
+    root = Path(artifacts['fixtures_root']).resolve(strict=True)
+    require(root != ROOT and root != Path('/')
+            and (root / '.registry-qualification-fixture').is_file(),
+            'dedicated genuine discovery fixture root')
+    output = root / ('guest-abi-discovery-' + uuid.uuid4().hex)
+    output.mkdir(mode=0o700)
+    environment['PAXEER_X_NATIVE_INTERFACE_EVIDENCE'] = str(output)
+    command = [binaries['real-node-tests']['path'], '--exact',
+               'native_interfaces::guest_abi_discovery', '--nocapture', '--test-threads=1']
+    result = subprocess.run(command, cwd=ROOT, env=environment, stdin=subprocess.DEVNULL,
+                            capture_output=True, text=True)
+    sys.stdout.write(result.stdout)
+    sys.stdout.write(result.stderr)
+    executions = re.findall(r'^test (\S+) \.\.\.', result.stdout, re.M)
+    summaries = re.findall(r'^test result: ok\. (\d+) passed; (\d+) failed; (\d+) ignored;',
+                           result.stdout, re.M)
+    require(executions == ['native_interfaces::guest_abi_discovery']
+            and summaries == [('1', '0', '0')],
+            'the genuine focused discovery test must execute once and pass')
+    markers = re.findall(r'^REGISTRY_DISCOVERY_CASE ([A-Za-z0-9_-]+)$', result.stdout, re.M)
+    require(len(markers) == len(set(markers)) and set(markers) == DISCOVERY_CASES - {'source-unpublished', 'source-mismatch', 'source-verified'},
+            'discovery cases absent, duplicated, unexpected or skipped')
+    require(result.returncode == 0, 'genuine discovery process exited ' + str(result.returncode))
+    capture_command = [binaries['registry-tests']['path'], '--exact',
+                       'guest_abi_discovery_captured_native_proofs_preserve_authority',
+                       '--nocapture', '--test-threads=1']
+    captured = subprocess.run(capture_command, cwd=ROOT, env=environment,
+                              stdin=subprocess.DEVNULL, capture_output=True, text=True)
+    sys.stdout.write(captured.stdout)
+    sys.stdout.write(captured.stderr)
+    require(captured.returncode == 0
+            and re.findall(r'^test (\S+) \.\.\.', captured.stdout, re.M)
+                == ['guest_abi_discovery_captured_native_proofs_preserve_authority']
+            and re.findall(r'^test result: ok\. (\d+) passed; (\d+) failed; (\d+) ignored;',
+                           captured.stdout, re.M) == [('1', '0', '0')],
+            'actual native capture proof contract must execute once and pass')
+    publication_count = discovery_publication(artifacts)
+    for role, entry in binaries.items():
+        require(hashlib.sha256(Path(entry['path']).read_bytes()).hexdigest() == entry['sha256'],
+                'discovery artifact changed during execution: ' + role)
+    print('registry-contract: private discovery evidence ' + str(output), flush=True)
+    return len(markers) + publication_count + 1
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument('--case', required=True, choices=sorted(CASES))
@@ -418,9 +612,12 @@ def main():
     arguments = parser.parse_args()
     digest = manifest(arguments.candidate_manifest)
     print('registry-contract: candidate manifest sha256 ' + digest)
-    artifacts = artifact_manifest(digest)
-    count = run(arguments.case, artifacts)
-    count += served_cases(artifacts)
+    if arguments.case == 'guest-abi-discovery':
+        count = discovery_contract(discovery_artifacts(digest))
+    else:
+        artifacts = artifact_manifest(digest)
+        count = run(arguments.case, artifacts)
+        count += served_cases(artifacts)
     print('registry-contract: case %s cases=%d passed=%d' % (arguments.case, count, count))
 
 
