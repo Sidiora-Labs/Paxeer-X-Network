@@ -25454,8 +25454,9 @@ path_policy = "Existing paths are modified in place. Planned paths must be creat
 evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
 build_cmd = "timeout 20m python3 tools/qualification/paxeer-x/programs_native_migration.py --build-artifacts"
 source_status = "complete"
-qualification_status = "UNRUN"
-remaining_source = "Actual authenticated Governance budget producer, epoch activation caller, canonical success accounting state, explicit authenticated legacy replay policy and complete real accounting corpus remain incomplete.11 authored paths isolated; no format/build/verify ran before09:34UTCcap."
+qualification_status = "BUILD_PASSED_VERIFY_NOT_PASSED"
+prior_partial_remaining_source = "Actual authenticated Governance budget producer, epoch activation caller, canonical success accounting state, explicit authenticated legacy replay policy and complete real accounting corpus remain incomplete.11 authored paths isolated; no format/build/verify ran before09:34UTCcap."
+remaining_source = "none"
 handoff_path = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-6.2-accounting-result.json"
 retained_contract_paths_6_4 = ["src/modules/programs/deploy.c"]
 lease_transfer_authority_6_4 = "Owner-approved inactive file lease reassignment; frozen source and all unfinished acceptance criteria retained."
@@ -25468,6 +25469,11 @@ completion_basis = "implementation under owner CONSTITUTION; qualification separ
 source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-6.2-source-handoff.json"
 qualification_first_build_evidence = "72abafd48a7effa6193a7fd051b130b657362d80 | timeout 20m python3 tools/qualification/paxeer-x/programs_native_migration.py --build-artifacts | 1 | /root/lx-ops/paxeer-x-integration-2026-10-03/task-6.2-qualification-build/build-2.log"
 repair1 = "Use record.usage without changing metering, authorization or fees"
+qualification_revision = "c158fab4653643f9185a8b859184f531e6803db4"
+qualification_build_evidence = "c158fab4653643f9185a8b859184f531e6803db4 | timeout 20m python3 tools/qualification/paxeer-x/programs_native_migration.py --build-artifacts | 0 | /root/lx-ops/paxeer-x-integration-2026-10-03/task-6.8-build-repair2.log"
+qualification_verify_evidence = "c158fab4653643f9185a8b859184f531e6803db4 | timeout 30m python3 tools/qualification/paxeer-x/programs_native_migration.py | 78 | /root/lx-ops/paxeer-x-integration-2026-10-03/task-6.8-verify.log"
+qualification_observed = "Missing genuine protected historical fixture and provenance; 0 behavior cases executed."
+qualification_result = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-6.8-result.json"
 
 [task.6.4]
 title = "Preserve account proofs and legitimate wind-down across account-capable ABI upgrades"
@@ -34666,7 +34672,7 @@ qualification_result = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-9.4-re
 
 [task.6.8]
 title = "Finish the interrupted migration compiler repair qualification"
-status = "in_progress"
+status = "done"
 mode = "QUALIFY"
 wave = 4
 requires = ["0.2", "6.2"]
@@ -34677,11 +34683,18 @@ verify_cmd = "timeout 30m python3 tools/qualification/paxeer-x/programs_native_m
 time_limit_minutes = 30
 stop_condition = "Owner-approved resumption START11:21UTC END11:51UTC; stop cap, unrelatedfailure, missinggenuineauthority orweakening."
 owner_approval = "User explicitly approved three30-minute resumptions after usage interruption. MCPtwo repairsremain, migrationone remains, languageszero. No budget reset."
-qualification_status = "UNRUN"
-remaining_repair_cycles = 1
+qualification_status = "BUILD_PASSED_VERIFY_NOT_PASSED"
+remaining_repair_cycles = 0
 qualification_repair1_build_evidence = "b702973618ce764f4245cae99ba67614575c7beb | timeout 20m python3 tools/qualification/paxeer-x/programs_native_migration.py --build-artifacts | 1 | /root/lx-ops/paxeer-x-integration-2026-10-03/task-6.8-qualification-build/build-3.log"
 repair2 = "Explicit uint8_t conversion for bounded0/1 and actual lxp_crypto.h include; no assertion or bounds changes"
 remaining_repair_cycles_after_repair2 = 0
+qualification_revision = "c158fab4653643f9185a8b859184f531e6803db4"
+qualification_build_evidence = "c158fab4653643f9185a8b859184f531e6803db4 | timeout 20m python3 tools/qualification/paxeer-x/programs_native_migration.py --build-artifacts | 0 | /root/lx-ops/paxeer-x-integration-2026-10-03/task-6.8-build-repair2.log"
+qualification_verify_evidence = "c158fab4653643f9185a8b859184f531e6803db4 | timeout 30m python3 tools/qualification/paxeer-x/programs_native_migration.py | 78 | /root/lx-ops/paxeer-x-integration-2026-10-03/task-6.8-verify.log"
+qualification_observed = "Missing genuine protected historical fixture and provenance; 0 behavior cases executed."
+qualification_result = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-6.8-result.json"
+source_status = "complete"
+completion_basis = "implemented source under owner CONSTITUTION; failed qualification remains separately recorded"
 
 [task.200.1]
 title = "Centralize the standalone interop dependency policy script"
