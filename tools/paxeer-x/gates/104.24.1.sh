@@ -47,6 +47,12 @@ def connected_history():
         root / "tools/qualification/paxeer-x/ramp-source-settlement.py")
     ramp = importlib.util.module_from_spec(specification)
     specification.loader.exec_module(ramp)
+    try:
+        return history_contract(ramp)
+    except ramp.Refusal as error:
+        raise Refusal("genuine unified history corpus refused: " + str(error)) from None
+
+def history_contract(ramp):
     fixture = ramp.document(os.environ["LAYERX_MIGRATION_HISTORY_FIXTURE"])
     ramp.closed(fixture, ("version", "execution_domain", "ramp_fixture_file", "unified_gateway", "accepted", "empty"), "history fixture")
     ramp.require(fixture["version"] == "external-history-connected-fixture-v2"
@@ -188,8 +194,6 @@ def connected_history():
             "history recovery lost provenance or principal ownership")
         contract.passed("unified-history-real-restart-recovery")
         return contract.count
-    except ramp.Refusal as error:
-        raise Refusal("genuine unified history corpus refused: " + str(error)) from None
     finally:
         if child is not None:
             child.terminate()
