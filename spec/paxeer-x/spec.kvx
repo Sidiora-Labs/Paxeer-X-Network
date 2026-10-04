@@ -23468,8 +23468,16 @@ fleet_authority = "Existing protocol3 code retained; source-only missing selecto
 module_table_resolution = "Preserve current Programs V4 plus Asset V1 plus Governance table and exact count3 assertion. Governance is the existing migration-budget authority covered by owner-approved task6.2 policy. This task adds no module or protocol policy."
 source_status = "complete"
 completion_basis = "implementation under owner CONSTITUTION; qualification separately recorded"
-qualification_status = "UNRUN"
+qualification_status = "UNRUN_BUILD_FAILED"
 source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/fleet-103.6.11-current-publication.json"
+qualification_revision = "cca5386f2e4e8ad571ca42acaa28ba5c74780367"
+qualification_command = "timeout 30m tools/paxeer-x/verify-task.sh 103.6.11"
+verify_status = "UNRUN"
+qualification_evidence = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-103.6.11-result.json"
+build_status = "FAILED"
+build_exit_code = 101
+build_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-103.6.11-build-repair1.log"
+build_failure_scope = "Existing Native fixture binding shadows native function in export_complete.rs; dedicated repair task103.6.13 preserves this failure."
 
 [task.104.5.8]
 title = "Replace the mounted root secret with a production KMS boundary"
