@@ -6,6 +6,7 @@ use layerx_proof::merkle::Proof;
 use layerx_wire::batch_maintenance::decode_maintenance;
 use layerx_wire::hash::receipt_digest;
 use layerx_wire::receipt::{decode, decode_merkle_proof, BatchHeader};
+use sha2::{Digest as _, Sha256};
 
 const MAX_RECEIPT_BYTES: usize = 524_288;
 const MAX_HEADER_BYTES: usize = 65_536;
@@ -89,7 +90,12 @@ fn verified_state(
     let evidence = verify_receipt(&receipt, &proof, &header_bytes, &signature, authorization)
         .map_err(|_| ())?;
     let header = evidence.header().header();
-    let digest = receipt_digest(&receipt).map_err(|_| ())?;
+    let digest = if let Ok(maintenance) = decode_maintenance(&receipt) {
+        maintenance.verify_header(header).map_err(|_| ())?;
+        Sha256::digest(&receipt).into()
+    } else {
+        receipt_digest(&receipt).map_err(|_| ())?
+    };
     if parse_hex32(&head.receipt_digest).map_err(|_| ())? != digest {
         return Err(());
     }
@@ -327,3 +333,7 @@ mod tests {
         assert!(!head.current);
     }
 }
+
+#[cfg(test)]
+#[path = "../../../../tests/platform/gateway_maintenance_head.rs"]
+mod native_maintenance_tests;
