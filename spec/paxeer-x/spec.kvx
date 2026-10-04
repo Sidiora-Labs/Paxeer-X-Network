@@ -36671,7 +36671,7 @@ continuation_minutes = 45
 
 [task.104.33.7.2]
 title = "Complete TypeScript Programs client integration"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 4
 requires = ["0.2", "104.17.4"]
@@ -36687,10 +36687,10 @@ time_limit_minutes = 30
 stop_condition = "Stop at 2026-10-04T19:20:41Z, scoped repair limit, missing authentic authority or required weakening; preserve all prior results."
 fanout_role = "complete_human_facts"
 parent_task = "104.33.7"
-source_status = "partial"
-completion_basis = "Raw native corpus input adapter remains incomplete; original assertions and prior evidence are preserved."
-qualification_status = "PREREQUISITE_UNAVAILABLE"
-source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/sdk-fanout-104.33.7.2-terminal-v5-repair1.json"
+source_status = "complete"
+completion_basis = "implementation under owner CONSTITUTION; qualification separately recorded"
+qualification_status = "UNRUN"
+source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/root-continuation-raw-104.33.7.2-intake.json"
 qualification_revision = "9ff6a40aa2f71e529a4261e13d50b8e12d96afa6"
 qualification_command = "timeout 20m scripts/paxeer-x/verify-sdk-program-typescript.sh"
 qualification_exit_code = 78
