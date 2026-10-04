@@ -51,17 +51,21 @@ type ProgramCall struct {
 }
 
 type ProgramDiscovery struct {
-	ProgramID        string `json:"program_id"`
-	Lifecycle        string `json:"lifecycle"`
-	Version          uint32 `json:"version"`
-	CodeHash         string `json:"code_hash"`
-	ABIVersion       uint16 `json:"abi_version"`
-	ReceiptDigest    string `json:"receipt_digest"`
-	StateRoot        string `json:"state_root"`
-	ObservedSequence string `json:"observed_sequence"`
-	ObservedAt       string `json:"observed_at"`
-	ValidThrough     string `json:"valid_through"`
-	Verification     string `json:"verification"`
+	DeploymentReceiptDigest *string         `json:"deployment_receipt_digest,omitempty"`
+	DiscoveryPublicKey      *string         `json:"discovery_public_key,omitempty"`
+	DiscoverySignature      *string         `json:"discovery_signature,omitempty"`
+	ValueAccounts           json.RawMessage `json:"value_accounts,omitempty"`
+	ProgramID               string          `json:"program_id"`
+	Lifecycle               string          `json:"lifecycle"`
+	Version                 uint32          `json:"version"`
+	CodeHash                string          `json:"code_hash"`
+	ABIVersion              uint16          `json:"abi_version"`
+	ReceiptDigest           string          `json:"receipt_digest"`
+	StateRoot               string          `json:"state_root"`
+	ObservedSequence        string          `json:"observed_sequence"`
+	ObservedAt              string          `json:"observed_at"`
+	ValidThrough            string          `json:"valid_through"`
+	Verification            string          `json:"verification"`
 }
 
 type ProgramInterface struct {
@@ -1846,10 +1850,14 @@ type Programs struct {
 }
 
 type programHeadObservation struct {
-	StateRoot    [32]byte
-	Sequence     uint64
-	ObservedAt   uint64
-	ValidThrough uint64
+	CodeHash      [32]byte
+	ABIVersion    uint16
+	Version       uint32
+	Authenticated bool
+	StateRoot     [32]byte
+	Sequence      uint64
+	ObservedAt    uint64
+	ValidThrough  uint64
 }
 
 type ProgramTrustOptions struct {
@@ -1898,10 +1906,19 @@ func (programs *Programs) Discover(ctx context.Context, program [32]byte) (Progr
 	if headError != nil {
 		return ProgramDiscovery{}, newSDKError(ErrorDecodeFailure, RetryNever)
 	}
+	authenticated, proofError := verifyProgramDiscoveryProof(out, programs.trustedSequencerPublicKey)
+	if proofError != nil {
+		return ProgramDiscovery{}, newSDKError(ErrorVerificationFailure, RetryNever)
+	}
+	head.CodeHash, _ = programHex32(out.CodeHash)
+	head.ABIVersion, head.Version, head.Authenticated = out.ABIVersion, out.Version, authenticated
 	if programs.rememberHead(program, head) != nil {
 		return ProgramDiscovery{}, newSDKError(ErrorVerificationFailure, RetryNever)
 	}
 	out.Verification = "server-side-receipt-verification-only"
+	if authenticated {
+		out.Verification = "sequencer-signed-discovery-head-verified"
+	}
 	return out, nil
 }
 
@@ -1918,6 +1935,17 @@ func (programs *Programs) Interface(ctx context.Context, program [32]byte) (Prog
 	head, headError := decodeProgramHead(out.StateRoot, out.ObservedSequence, out.ObservedAt, out.ValidThrough)
 	if headError != nil {
 		return ProgramInterface{}, newSDKError(ErrorDecodeFailure, RetryNever)
+	}
+	head.CodeHash, _ = programHex32(out.CodeHash)
+	head.ABIVersion, head.Version = out.ABIVersion, out.Version
+	prior, found := programs.rememberedHead(program)
+	if found && prior.Authenticated {
+		if prior.StateRoot != head.StateRoot || prior.Sequence != head.Sequence || prior.ObservedAt != head.ObservedAt || prior.ValidThrough != head.ValidThrough || prior.CodeHash != head.CodeHash || prior.ABIVersion != head.ABIVersion || prior.Version != head.Version {
+			return ProgramInterface{}, newSDKError(ErrorVerificationFailure, RetryNever)
+		}
+		head.Authenticated = true
+	} else if out.ABIVersion == ProgramAbiV3 || out.ABIVersion == ProgramAbiV4 {
+		return ProgramInterface{}, newSDKError(ErrorVerificationFailure, RetryNever)
 	}
 	if programs.rememberHead(program, head) != nil {
 		return ProgramInterface{}, newSDKError(ErrorVerificationFailure, RetryNever)
@@ -1938,7 +1966,7 @@ func (programs *Programs) Simulate(ctx context.Context, call ProgramCall) (Progr
 	if !found {
 		return ProgramSimulation{}, newSDKError(ErrorVerificationFailure, RetryNever)
 	}
-	if !validProgramHeadTime(prior, programs.clockMilliseconds()) {
+	if !validProgramHeadTime(prior, programs.clockMilliseconds()) || !programCallHeadAdmitted(call, prior) {
 		return ProgramSimulation{}, newSDKError(ErrorVerificationFailure, RetryNever)
 	}
 	raw, err := programs.raw(ctx, "program.simulate", false, programCallWire(call), CallOptions{})
@@ -1953,6 +1981,9 @@ func (programs *Programs) Simulate(ctx context.Context, call ProgramCall) (Progr
 		now, programs.maximumSimulationAge, programs.protocolVersion)
 	if decodeError != nil {
 		return ProgramSimulation{}, decodeError
+	}
+	if call.NativeCall != nil && result.Execution.GuestABIVersion != call.NativeCall.GuestABI {
+		return ProgramSimulation{}, newSDKError(ErrorVerificationFailure, RetryNever)
 	}
 	if !programs.headIsCurrent(call.ProgramID, prior) || !validProgramHeadTime(prior, programs.clockMilliseconds()) {
 		return ProgramSimulation{}, newSDKError(ErrorVerificationFailure, RetryNever)
@@ -1971,6 +2002,12 @@ func (programs *Programs) Submit(ctx context.Context, call ProgramCall, key Idem
 	if !canonicalProgramKey(key) || key.String() != hex.EncodeToString(binding.IdempotencyKey[:]) {
 		return ProgramSubmission{}, newSDKError(ErrorIdempotencyRequired, RetryNever)
 	}
+	if call.NativeCall != nil && (call.NativeCall.GuestABI == ProgramAbiV3 || call.NativeCall.GuestABI == ProgramAbiV4) {
+		head, found := programs.rememberedHead(call.ProgramID)
+		if !found || !programCallHeadAdmitted(call, head) || !validProgramHeadTime(head, programs.clockMilliseconds()) {
+			return ProgramSubmission{}, newSDKError(ErrorVerificationFailure, RetryNever)
+		}
+	}
 	raw, err := programs.raw(ctx, "program.call", true, programCallWire(call), CallOptions{IdempotencyKey: key})
 	if err != nil {
 		if sdkError, ok := err.(*SDKError); ok && sdkError.Code == ErrorUnknownOutcome {
@@ -1979,7 +2016,7 @@ func (programs *Programs) Submit(ctx context.Context, call ProgramCall, key Idem
 		return ProgramSubmission{}, err
 	}
 	submission, decodeError := decodeProgramSubmission(raw, &call.ProgramID, &binding.ActivityID, key.String(), call.SignedActivity, programs.trustedSequencerPublicKey, programs.protocolVersion)
-	if decodeError != nil {
+	if decodeError != nil || call.NativeCall != nil && submission.Execution != nil && submission.Execution.GuestABIVersion != call.NativeCall.GuestABI {
 		return ProgramSubmission{State: ProgramSubmissionUnknown, ActivityID: binding.ActivityID, IdempotencyKey: key.String(), RetainedSignedActivity: append([]byte(nil), call.SignedActivity...)}, nil
 	}
 	return submission, nil
@@ -2016,12 +2053,19 @@ func (programs *Programs) rememberHead(program [32]byte, head programHeadObserva
 	programs.headsMu.Lock()
 	defer programs.headsMu.Unlock()
 	if current, found := programs.heads[program]; found &&
-		(head.Sequence < current.Sequence || head.ObservedAt < current.ObservedAt ||
-			head.Sequence == current.Sequence && (head.StateRoot != current.StateRoot || head.ValidThrough < current.ValidThrough)) {
+		(current.Authenticated && !head.Authenticated || head.Sequence < current.Sequence || head.ObservedAt < current.ObservedAt ||
+			head.Sequence == current.Sequence && (head.StateRoot != current.StateRoot || head.ValidThrough < current.ValidThrough || head.CodeHash != current.CodeHash || head.ABIVersion != current.ABIVersion || head.Version != current.Version)) {
 		return errors.New("Programs head rollback or conflict")
 	}
 	programs.heads[program] = head
 	return nil
+}
+
+func programCallHeadAdmitted(call ProgramCall, head programHeadObservation) bool {
+	if call.NativeCall == nil || call.NativeCall.GuestABI == ProgramAbiV1 || call.NativeCall.GuestABI == ProgramAbiV2 {
+		return true
+	}
+	return SupportsProgramGuestAbi(call.NativeCall.GuestABI) && head.Authenticated && head.ABIVersion == call.NativeCall.GuestABI
 }
 
 func (programs *Programs) rememberedHead(program [32]byte) (programHeadObservation, bool) {
@@ -2239,12 +2283,53 @@ func (authority ProgramResponseAuthority) authorizedBatch() (AuthorizedBatch, er
 	return AuthorizedBatch{BatchID: batch, Asset: asset, PreviousStateRoot: previous, ResultingStateRoot: resulting, SequencerPublicKey: publicKey}, nil
 }
 
+func verifyProgramDiscoveryProof(value ProgramDiscovery, trustedSequencerPublicKey [32]byte) (bool, error) {
+	if value.DeploymentReceiptDigest != nil && !canonicalLowerHex(*value.DeploymentReceiptDigest, 32) {
+		return false, errors.New("invalid deployment receipt digest")
+	}
+	if value.DiscoveryPublicKey == nil && value.DiscoverySignature == nil {
+		if value.ABIVersion == ProgramAbiV3 || value.ABIVersion == ProgramAbiV4 {
+			return false, errors.New("signed discovery required for native ABI")
+		}
+		return false, nil
+	}
+	if value.DiscoveryPublicKey == nil || value.DiscoverySignature == nil || trustedSequencerPublicKey == ([32]byte{}) || !canonicalLowerHex(*value.DiscoverySignature, ed25519.SignatureSize) {
+		return false, errors.New("invalid Programs discovery authority")
+	}
+	publicKey, keyError := programHex32(*value.DiscoveryPublicKey)
+	program, programError := programHex32(value.ProgramID)
+	code, codeError := programHex32(value.CodeHash)
+	root, rootError := programHex32(value.StateRoot)
+	receiptDigest, receiptError := programHex32(value.ReceiptDigest)
+	sequence, sequenceError := strconv.ParseUint(value.ObservedSequence, 10, 64)
+	observed, observedError := strconv.ParseUint(value.ObservedAt, 10, 64)
+	validThrough, validError := strconv.ParseUint(value.ValidThrough, 10, 64)
+	if keyError != nil || publicKey != trustedSequencerPublicKey || programError != nil || codeError != nil || rootError != nil || receiptError != nil || sequenceError != nil || observedError != nil || validError != nil || !canonicalUnsigned(value.ObservedSequence, 64) || !canonicalUnsigned(value.ObservedAt, 64) || !canonicalUnsigned(value.ValidThrough, 64) || value.Version == 0 || !SupportsProgramGuestAbi(value.ABIVersion) {
+		return false, errors.New("invalid Programs discovery binding")
+	}
+	material := append([]byte("LayerX/program-discovery-proof/v1\x00"), program[:]...)
+	material = append(material, 1)
+	material = binary.BigEndian.AppendUint32(material, value.Version)
+	material = append(material, code[:]...)
+	material = binary.BigEndian.AppendUint16(material, value.ABIVersion)
+	material = binary.BigEndian.AppendUint64(material, sequence)
+	material = binary.BigEndian.AppendUint64(material, observed)
+	material = binary.BigEndian.AppendUint64(material, validThrough)
+	material = append(material, root[:]...)
+	digest := sha256.Sum256(material)
+	signature, signatureError := hex.DecodeString(*value.DiscoverySignature)
+	if signatureError != nil || digest != receiptDigest || !ed25519.Verify(ed25519.PublicKey(publicKey[:]), digest[:], signature) {
+		return false, errors.New("Programs discovery signature mismatch")
+	}
+	return true, nil
+}
+
 func validDiscovery(value ProgramDiscovery, expectedID string, now uint64) bool {
-	return value.ProgramID == expectedID && canonicalLowerHex(value.CodeHash, 32) && canonicalLowerHex(value.ReceiptDigest, 32) && canonicalLowerHex(value.StateRoot, 32) && value.Version != 0 && value.ABIVersion >= 1 && value.ABIVersion <= 2 && (value.Lifecycle == "active" || value.Lifecycle == "deprecated" || value.Lifecycle == "tombstoned") && canonicalUnsigned(value.ObservedSequence, 64) && canonicalUnsigned(value.ObservedAt, 64) && canonicalUnsigned(value.ValidThrough, 64) && decimalAtLeast(value.ValidThrough, value.ObservedAt) && decimalAtLeast(strconv.FormatUint(now, 10), value.ObservedAt) && decimalAtLeast(value.ValidThrough, strconv.FormatUint(now, 10)) && value.Verification == "registry-receipt-and-current-head-verified"
+	return value.ProgramID == expectedID && canonicalLowerHex(value.CodeHash, 32) && canonicalLowerHex(value.ReceiptDigest, 32) && canonicalLowerHex(value.StateRoot, 32) && value.Version != 0 && SupportsProgramGuestAbi(value.ABIVersion) && (value.Lifecycle == "active" || value.Lifecycle == "deprecated" || value.Lifecycle == "tombstoned") && canonicalUnsigned(value.ObservedSequence, 64) && canonicalUnsigned(value.ObservedAt, 64) && canonicalUnsigned(value.ValidThrough, 64) && decimalAtLeast(value.ValidThrough, value.ObservedAt) && decimalAtLeast(strconv.FormatUint(now, 10), value.ObservedAt) && decimalAtLeast(value.ValidThrough, strconv.FormatUint(now, 10)) && value.Verification == "registry-receipt-and-current-head-verified"
 }
 
 func validProgramInterface(value ProgramInterface, expectedID string, now uint64) bool {
-	if value.ProgramID != expectedID || !canonicalLowerHex(value.CodeHash, 32) || !canonicalLowerHex(value.ReceiptDigest, 32) || !canonicalLowerHex(value.StateRoot, 32) || value.Version == 0 || value.ABIVersion < 1 || value.ABIVersion > 2 || !canonicalUnsigned(value.ObservedSequence, 64) || !canonicalUnsigned(value.ObservedAt, 64) || !canonicalUnsigned(value.ValidThrough, 64) || !decimalAtLeast(value.ValidThrough, value.ObservedAt) || !decimalAtLeast(strconv.FormatUint(now, 10), value.ObservedAt) || !decimalAtLeast(value.ValidThrough, strconv.FormatUint(now, 10)) || value.Verification != "deployment-interface-and-current-head-verified" || value.Source.Status == "" {
+	if value.ProgramID != expectedID || !canonicalLowerHex(value.CodeHash, 32) || !canonicalLowerHex(value.ReceiptDigest, 32) || !canonicalLowerHex(value.StateRoot, 32) || value.Version == 0 || !SupportsProgramGuestAbi(value.ABIVersion) || !canonicalUnsigned(value.ObservedSequence, 64) || !canonicalUnsigned(value.ObservedAt, 64) || !canonicalUnsigned(value.ValidThrough, 64) || !decimalAtLeast(value.ValidThrough, value.ObservedAt) || !decimalAtLeast(strconv.FormatUint(now, 10), value.ObservedAt) || !decimalAtLeast(value.ValidThrough, strconv.FormatUint(now, 10)) || value.Verification != "deployment-interface-and-current-head-verified" || value.Source.Status == "" {
 		return false
 	}
 	if value.Interface == nil || value.InterfaceDigest == nil {
@@ -2252,7 +2337,38 @@ func validProgramInterface(value ProgramInterface, expectedID string, now uint64
 	}
 	decoded, err := decodeProgramHex(*value.Interface)
 	digest, digestError := programHex32(*value.InterfaceDigest)
-	return err == nil && len(decoded) != 0 && digestError == nil && sha256.Sum256(decoded) == digest
+	return err == nil && len(decoded) != 0 && len(decoded) <= 952 && digestError == nil && sha256.Sum256(decoded) == digest && programInterfaceIdentityMatches(decoded, value.CodeHash, value.ABIVersion)
+}
+
+func programInterfaceIdentityMatches(encoded []byte, codeHash string, abi uint16) bool {
+	domain := []byte("LayerX/program-interface/v1\x00")
+	if len(encoded) <= len(domain)+36 {
+		return false
+	}
+	prefix := string(encoded[:len(domain)])
+	switch abi {
+	case ProgramAbiV1:
+		if prefix != string(domain) {
+			return false
+		}
+	case ProgramAbiV2:
+		if prefix != string(domain) && prefix != "LayerX/program-interface/v2\x00" {
+			return false
+		}
+	case ProgramAbiV3:
+		if prefix != "LayerX/program-interface/v3\x00" {
+			return false
+		}
+	case ProgramAbiV4:
+		if prefix != "LayerX/program-interface/v4\x00" {
+			return false
+		}
+	default:
+		return false
+	}
+	code, err := programHex32(codeHash)
+	count := binary.BigEndian.Uint16(encoded[len(domain)+34:])
+	return err == nil && bytes.Equal(encoded[len(domain):len(domain)+32], code[:]) && binary.BigEndian.Uint16(encoded[len(domain)+32:]) == abi && count > 0 && count <= 256
 }
 
 func validProgramUsage(usage ProgramUsage) bool {

@@ -688,3 +688,134 @@ func canonicalProgramCallFixture() (ProgramCall, [32]byte, []byte) {
 	activity = append(activity, make([]byte, 64)...)
 	return ProgramCall{ProgramID: program, Calldata: calldata, Budget: ProgramBudget{Fuel: 10, FeeLimit: NewUint128(0, 20)}, Capabilities: []ProgramCapability{ProgramStorageRead}, SignedActivity: activity}, key, activity
 }
+
+func TestProgramSDKDiscoveryCanonicalProof(t *testing.T) {
+	private := ed25519.NewKeyFromSeed(bytes.Repeat([]byte{37}, ed25519.SeedSize))
+	var pinned [32]byte
+	copy(pinned[:], private.Public().(ed25519.PublicKey))
+	for _, abi := range []uint16{ProgramAbiV1, ProgramAbiV2, ProgramAbiV3, ProgramAbiV4} {
+		value := ProgramDiscovery{ProgramID: strings.Repeat("01", 32), Lifecycle: "active", Version: 2, CodeHash: strings.Repeat("02", 32), ABIVersion: abi, StateRoot: strings.Repeat("03", 32), ObservedSequence: "7", ObservedAt: "900", ValidThrough: "1100", Verification: "registry-receipt-and-current-head-verified"}
+		material := []byte("LayerX/program-discovery-proof/v1\x00")
+		program, _ := hex.DecodeString(value.ProgramID)
+		code, _ := hex.DecodeString(value.CodeHash)
+		root, _ := hex.DecodeString(value.StateRoot)
+		material = append(material, program...)
+		material = append(material, 1, 0, 0, 0, 2)
+		material = append(material, code...)
+		material = append(material, byte(abi>>8), byte(abi))
+		for _, number := range []uint64{7, 900, 1100} {
+			material = appendUint64(material, number)
+		}
+		material = append(material, root...)
+		digest := sha256.Sum256(material)
+		key, signature, deployment := hex.EncodeToString(pinned[:]), hex.EncodeToString(ed25519.Sign(private, digest[:])), strings.Repeat("04", 32)
+		value.ReceiptDigest = hex.EncodeToString(digest[:])
+		value.DiscoveryPublicKey, value.DiscoverySignature, value.DeploymentReceiptDigest = &key, &signature, &deployment
+		encoded, err := json.Marshal(value)
+		var decoded ProgramDiscovery
+		if err != nil || decodeStrict(encoded, &decoded) != nil || !validDiscovery(decoded, value.ProgramID, 1000) {
+			t.Fatalf("canonical ABI%d discovery did not decode", abi)
+		}
+		if verified, err := verifyProgramDiscoveryProof(decoded, pinned); err != nil || !verified {
+			t.Fatalf("ABI%d genuine Ed25519 proof refused: %v", abi, err)
+		}
+		for name, mutate := range map[string]func(*ProgramDiscovery){
+			"program":           func(v *ProgramDiscovery) { v.ProgramID = strings.Repeat("05", 32) },
+			"version":           func(v *ProgramDiscovery) { v.Version++ },
+			"code":              func(v *ProgramDiscovery) { v.CodeHash = strings.Repeat("06", 32) },
+			"abi":               func(v *ProgramDiscovery) { v.ABIVersion = 5 },
+			"sequence":          func(v *ProgramDiscovery) { v.ObservedSequence = "8" },
+			"observed":          func(v *ProgramDiscovery) { v.ObservedAt = "901" },
+			"expiry":            func(v *ProgramDiscovery) { v.ValidThrough = "1101" },
+			"root":              func(v *ProgramDiscovery) { v.StateRoot = strings.Repeat("07", 32) },
+			"digest":            func(v *ProgramDiscovery) { v.ReceiptDigest = strings.Repeat("08", 32) },
+			"missing signature": func(v *ProgramDiscovery) { v.DiscoverySignature = nil },
+			"bad signature":     func(v *ProgramDiscovery) { bad := strings.Repeat("00", 64); v.DiscoverySignature = &bad },
+		} {
+			changed := decoded
+			mutate(&changed)
+			if _, err := verifyProgramDiscoveryProof(changed, pinned); err == nil {
+				t.Fatalf("ABI%d accepted changed %s", abi, name)
+			}
+		}
+		wrongPin := pinned
+		wrongPin[0] ^= 1
+		if _, err := verifyProgramDiscoveryProof(decoded, wrongPin); err == nil {
+			t.Fatal("response key replaced the independently pinned sequencer")
+		}
+		decoded.DiscoveryPublicKey, decoded.DiscoverySignature = nil, nil
+		verified, err := verifyProgramDiscoveryProof(decoded, pinned)
+		if abi == ProgramAbiV3 || abi == ProgramAbiV4 {
+			if err == nil {
+				t.Fatal("new ABI accepted unsigned discovery")
+			}
+		} else if err != nil || verified {
+			t.Fatal("legacy server-only discovery was upgraded or refused")
+		}
+	}
+}
+
+func TestProgramSDKNativeABIPolicy(t *testing.T) {
+	for _, abi := range []uint16{ProgramAbiV1, ProgramAbiV2, ProgramAbiV3, ProgramAbiV4} {
+		call := NativeProgramCall{ProgramID: [32]byte{1}, GuestABI: abi, Entrypoint: "run", Resources: [7]uint64{1}}
+		encoded, err := EncodeNativeProgramCall(call)
+		decoded, decodeError := DecodeNativeProgramCall(encoded)
+		if err != nil || decodeError != nil || decoded.GuestABI != abi {
+			t.Fatalf("closed ABI%d native adapter refused", abi)
+		}
+		if abi == ProgramAbiV3 || abi == ProgramAbiV4 {
+			request := ProgramCall{NativeCall: &call}
+			if programCallHeadAdmitted(request, programHeadObservation{ABIVersion: abi}) {
+				t.Fatal("unsigned head admitted new ABI")
+			}
+			if !programCallHeadAdmitted(request, programHeadObservation{ABIVersion: abi, Authenticated: true}) {
+				t.Fatal("matched authenticated ABI head refused")
+			}
+			if programCallHeadAdmitted(request, programHeadObservation{ABIVersion: ProgramAbiV2, Authenticated: true}) {
+				t.Fatal("different ABI head admitted")
+			}
+		}
+	}
+	for _, abi := range []uint16{0, 5, 65535} {
+		if SupportsProgramGuestAbi(abi) {
+			t.Fatalf("unknown ABI%d admitted", abi)
+		}
+		if _, err := EncodeNativeProgramCall(NativeProgramCall{ProgramID: [32]byte{1}, GuestABI: abi, Entrypoint: "run"}); err == nil {
+			t.Fatalf("unknown ABI%d encoded", abi)
+		}
+	}
+}
+
+func TestProgramSDKInterfaceNativeBindingAndBound(t *testing.T) {
+	_, payload, _, _ := lifecycleFixture(t, "deploy")
+	deployment, err := DecodeNativeProgramDeploy(payload)
+	if err != nil || len(deployment.Interface) == 0 {
+		t.Fatal("genuine C deployment interface fixture required")
+	}
+	encoded := hex.EncodeToString(deployment.Interface)
+	digest := sha256.Sum256(deployment.Interface)
+	digestText := hex.EncodeToString(digest[:])
+	value := ProgramInterface{ProgramID: hex.EncodeToString(deployment.ProgramID[:]), Version: 1, CodeHash: hex.EncodeToString(deployment.NewHash[:]), ABIVersion: deployment.GuestABI, Interface: &encoded, InterfaceDigest: &digestText, ReceiptDigest: strings.Repeat("04", 32), StateRoot: strings.Repeat("05", 32), ObservedSequence: "1", ObservedAt: "1", ValidThrough: "3", Source: ProgramSource{Status: "unpublished"}, Verification: "deployment-interface-and-current-head-verified"}
+	if !validProgramInterface(value, value.ProgramID, 2) {
+		t.Fatal("canonical C deployment interface refused")
+	}
+	changed := value
+	changed.CodeHash = strings.Repeat("06", 32)
+	if validProgramInterface(changed, changed.ProgramID, 2) {
+		t.Fatal("interface code hash mismatch accepted")
+	}
+	changed = value
+	changed.ABIVersion = ProgramAbiV3
+	if validProgramInterface(changed, changed.ProgramID, 2) {
+		t.Fatal("interface ABI mismatch accepted")
+	}
+	oversized := append(append([]byte{}, deployment.Interface...), make([]byte, 953-len(deployment.Interface))...)
+	oversizedText := hex.EncodeToString(oversized)
+	oversizedDigest := sha256.Sum256(oversized)
+	oversizedDigestText := hex.EncodeToString(oversizedDigest[:])
+	changed = value
+	changed.Interface, changed.InterfaceDigest = &oversizedText, &oversizedDigestText
+	if validProgramInterface(changed, changed.ProgramID, 2) {
+		t.Fatal("oversized interface accepted despite matching digest")
+	}
+}

@@ -14,7 +14,7 @@ type NativeProgramCall struct {
 }
 
 func EncodeNativeProgramCall(call NativeProgramCall) ([]byte, error) {
-	if call.ProgramID == ([32]byte{}) || (call.GuestABI != 1 && call.GuestABI != 2) || len(call.Entrypoint) == 0 || len(call.Entrypoint) > 128 || len(call.Calldata) > 1048576 || len(call.Capabilities) > 65535 || len(call.AccessDeclaration) > 1048576 || call.ResponseCapacity > 1048576 {
+	if call.ProgramID == ([32]byte{}) || !SupportsProgramGuestAbi(call.GuestABI) || len(call.Entrypoint) == 0 || len(call.Entrypoint) > 128 || len(call.Calldata) > 1048576 || len(call.Capabilities) > 65535 || len(call.AccessDeclaration) > 1048576 || call.ResponseCapacity > 1048576 {
 		return nil, newSDKError(ErrorInvalidArgument, RetryNever)
 	}
 	for _, b := range []byte(call.Entrypoint) {

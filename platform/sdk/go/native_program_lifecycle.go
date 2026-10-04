@@ -44,7 +44,7 @@ type NativeProgramWindDown struct {
 func lifecycleInvalid() error { return newSDKError(ErrorInvalidArgument, RetryNever) }
 
 func lifecycleCodeValid(program [32]byte, abi uint16, hash [32]byte, wasm []byte) bool {
-	return program != ([32]byte{}) && abi >= 1 && abi <= 3 && len(wasm) >= 8 && len(wasm) <= 1048576 && bytes.Equal(wasm[:8], []byte{0, 97, 115, 109, 1, 0, 0, 0}) && sha256.Sum256(wasm) == hash
+	return program != ([32]byte{}) && SupportsProgramGuestAbi(abi) && len(wasm) >= 8 && len(wasm) <= 1048576 && bytes.Equal(wasm[:8], []byte{0, 97, 115, 109, 1, 0, 0, 0}) && sha256.Sum256(wasm) == hash
 }
 
 func EncodeNativeProgramDeploy(value NativeProgramDeploy) ([]byte, error) {

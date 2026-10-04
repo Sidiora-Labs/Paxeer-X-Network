@@ -36444,3 +36444,26 @@ source_status = "complete"
 completion_basis = "implementation under owner CONSTITUTION; qualification separately recorded"
 qualification_status = "UNRUN"
 source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-104.33.7.8-source-handoff.json"
+
+[task.104.33.7.4]
+title = "Complete Go Programs client integration"
+status = "in_progress"
+mode = "BUILD"
+wave = 4
+requires = ["0.2", "104.17.4"]
+reqs = ["1098.7", "1103.1", "1103.2", "1103.6"]
+do_1 = "Complete authored Programs discover/interface/simulate/call adapter wiring against actual canonical gateway and receipt owners; preserve real authority and typed refusals. Reuse conforming code, implement only demonstrated gaps."
+do_2 = "Use authoritative shared schema/generator owner for generated changes. Never hand edit generated outputs. Implement real focused corpus for affected production paths without fake authority."
+touches = ["platform/sdk/go/programs.go", "platform/sdk/go/native_program_call.go", "platform/sdk/go/native_program_lifecycle.go", "platform/sdk/go/programs_http_test.go", "scripts/paxeer-x/verify-sdk-program-go.sh", "platform/sdk/go/verify.go"]
+verify_cmd = "timeout 20m scripts/paxeer-x/verify-sdk-program-go.sh"
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Freeze source and stop on gate result, 30 minute cap, two repairs, or true contract conflict. Preserve original parent acceptance."
+fanout_role = "integrate_arbiter/replay_kernel"
+parent_task = "104.33.7"
+source_status = "partial"
+completion_basis = "partial source published; original acceptance criteria remain required"
+qualification_status = "UNRUN"
+source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/publication-normalized-104.33.7.4.json"
