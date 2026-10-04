@@ -26488,8 +26488,8 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.104.18.2]
 title = "Ship the reference applications"
-status = "pending"
-mode = "QUALIFY"
+status = "done"
+mode = "BUILD"
 wave = 3
 requires = ["0.2", "104.16.2"]
 reqs = ["1090.2"]
@@ -26500,10 +26500,10 @@ do_4 = "Ship the merchant checkout reference over the merchant middleware."
 do_5 = "Ship the marketplace reference built on LayerX Programs once the runtime lands, wired into this task's suite then."
 do_6 = "Make each reference cloneable and runnable against emulator or testnet with one command, exercised in CI."
 do_7 = "Provide this task selector in tools/paxeer-x/gates and execute the full scoped acceptance contract using real production paths. Preserve the retained verification command coverage; move aggregate matrices to release scope and refuse an unknown or unimplemented selector."
-touches = ["platform/examples", "platform/docs", "platform/release", "platform/Makefile.inc", "package*.json", ".github/workflows/platform.yml", "tools/paxeer-x/gates/104.18.2.sh"]
+touches = ["platform/examples", "tools/paxeer-x/gates/104.18.2.sh", ".github/workflows/platform.yml", "platform/Makefile.inc"]
 verify_cmd = "timeout 30m tools/paxeer-x/verify-task.sh 104.18.2"
 gate_kind = "planned-adapter"
-max_builds = 0
+max_builds = 1
 max_verify_runs = 1
 max_repair_cycles = 2
 time_limit_minutes = 30
@@ -26516,6 +26516,14 @@ completion_policy = "Existing implementation is preserved; current candidate qua
 planned_paths = ["tools/paxeer-x/gates/104.18.2.sh"]
 path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
 evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+fleet_retained_shared_paths = ["platform/examples", "platform/docs", "platform/release", "platform/Makefile.inc", "package*.json", ".github/workflows/platform.yml", "tools/paxeer-x/gates/104.18.2.sh"]
+fleet_role = "complete_human_facts"
+fleet_authority = "User ordered 30 agents to finish pending integrations within four hours. This is the next dependency-eligible source task, not deployment."
+implementation_window = "2026-10-04T12:58:50.377438+00:00 to 2026-10-04T13:28:50.377438+00:00"
+source_status = "complete"
+completion_basis = "implementation under owner CONSTITUTION; qualification separately recorded"
+qualification_status = "UNRUN"
+source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/fleet-104.18.2-publication.json"
 
 [task.104.18.3]
 title = "Enforce the five-minute first-payment gate"

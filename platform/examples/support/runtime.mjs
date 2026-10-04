@@ -35,11 +35,25 @@ export async function loadApplicationConfig(moduleUrl, application) {
   const config = applyEndpointOverride(selected.environment, exactObject(environments[selected.environment]));
   return Object.freeze({
     name: selected.environment,
+    application,
     action: selected.action,
     directory,
     ...config,
     protocolVersion: applicationProtocolVersion(config),
   });
+}
+
+export function applicationStatePath(config, relative) {
+  if (typeof relative !== "string" || relative.length === 0 || relative.startsWith("/")
+    || relative.split(/[\\/]/u).some((part) => part === "..")) {
+    throw new Error("invalid_application_state_path");
+  }
+  const stateRoot = optionalEnvironment("LAYERX_EXAMPLE_STATE_ROOT");
+  if (stateRoot === undefined) return resolve(config.directory, relative);
+  if (typeof config.application !== "string" || !/^[a-z][a-z0-9-]{0,63}$/u.test(config.application)) {
+    throw new Error("invalid_application_state_identity");
+  }
+  return resolve(stateRoot, config.application, relative);
 }
 
 export const SELECTABLE_PROTOCOL_VERSIONS = Object.freeze([2, 3]);

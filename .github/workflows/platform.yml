@@ -71,6 +71,16 @@ jobs:
         run: make platform-test-middleware
       - name: Gate the four cloneable reference application launch profiles
         run: make platform-test-reference-apps
+      - name: Build source-bound reference application artifacts
+        run: |
+          umask 077
+          reference_directory=$(mktemp -d "$RUNNER_TEMP/layerx-reference-apps.XXXXXXXX")
+          mkdir "$reference_directory/evidence"
+          printf 'PAXEER_X_REFERENCE_APP_ARTIFACTS=%s/artifacts.json\n' "$reference_directory" >> "$GITHUB_ENV"
+          printf 'PAXEER_X_EVIDENCE_DIR=%s/evidence\n' "$reference_directory" >> "$GITHUB_ENV"
+          PAXEER_X_REFERENCE_APP_ARTIFACTS="$reference_directory/artifacts.json" make platform-build-reference-apps
+      - name: Exercise the four reference applications with real emulator receipts
+        run: make platform-qualify-reference-apps
       - name: Build the documentation site and gate its executable samples
         run: make platform-test-docs
 
@@ -1643,6 +1653,9 @@ jobs:
           LAYERX_TESTNET_ASSET: ${{ vars.LAYERX_SCHEDULED_ASSET }}
           LAYERX_TESTNET_SELLER: ${{ vars.LAYERX_REFERENCE_SELLER }}
           LAYERX_TESTNET_MERCHANT: ${{ vars.LAYERX_REFERENCE_MERCHANT }}
+          LAYERX_TESTNET_SELLER_ACCOUNT: ${{ vars.LAYERX_REFERENCE_SELLER_ACCOUNT }}
+          LAYERX_TESTNET_MERCHANT_ACCOUNT: ${{ vars.LAYERX_REFERENCE_MERCHANT_ACCOUNT }}
+          LAYERX_TESTNET_CURRENCY: ${{ vars.LAYERX_REFERENCE_CURRENCY }}
           LAYERX_TESTNET_PRICE: "1"
           LAYERX_TESTNET_PAYMENT_KEY: ${{ vars.LAYERX_REFERENCE_PAYMENT_KEY }}
           LAYERX_TESTNET_MERCHANT_CHECKOUT_KEY: ${{ vars.LAYERX_REFERENCE_CHECKOUT_KEY }}

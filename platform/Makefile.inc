@@ -347,6 +347,12 @@ platform-test-middleware: platform-sample-dependencies-ready
 platform-test-reference-apps:
 	node platform/examples/run-reference-apps.mjs --check
 
+platform-build-reference-apps:
+	node platform/examples/build-reference-apps.mjs
+
+platform-qualify-reference-apps:
+	node platform/examples/qualify-reference-apps.mjs
+
 platform-test-mobile-artifacts: platform-test-android-artifact platform-test-ios-artifact
 
 platform-prime-android-dependencies: platform-gradle-qualification

@@ -11,6 +11,7 @@ import {
 import {
   LayerXApplicationStateError,
   ReceiptAuthorityClient,
+  applicationStatePath,
   exactObject,
   hex32,
   loadApplicationConfig,
@@ -337,7 +338,7 @@ const singleHeader = (request, name) => {
 export async function runMerchantApplication(moduleUrl, application) {
   const config = await loadApplicationConfig(moduleUrl, application);
   const token = requiredEnvironment(config.tokenEnvironment);
-  const state = resolve(config.directory, config.stateDirectory);
+  const state = applicationStatePath(config, config.stateDirectory);
   const orders = new FileOrders(join(state, "orders"));
   const authority = new SettlementAuthority(config.settlementUrl, token);
   const fulfillments = new FileFulfillments(join(state, "fulfillments"));

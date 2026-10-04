@@ -30,7 +30,7 @@ try {
     requiredEnvironment(config.idempotencyEnvironment),
   );
   if (result.kind === "pending" || result.kind === "unknown" || result.kind === "refused") {
-    process.stdout.write(`${JSON.stringify({ environment: config.name, state: result.kind, result })}\n`);
+    process.stdout.write(`${JSON.stringify({ application: "buyer-agent", environment: config.name, state: result.kind, result })}\n`);
     process.exitCode = result.kind === "pending" ? 2 : result.kind === "unknown" ? 3 : 4;
   } else if (result.kind === "not-payment-required") {
     await result.response.body?.cancel();
@@ -42,6 +42,7 @@ try {
     }
     const body = await result.response.text();
     process.stdout.write(`${JSON.stringify({
+      application: "buyer-agent",
       environment: config.name,
       state: "paid",
       status: result.response.status,
@@ -53,7 +54,7 @@ try {
 } catch (error) {
   const stateError = classifyBoundaryError(error);
   if (stateError === undefined) throw error;
-  process.stdout.write(`${JSON.stringify({ environment: config.name, state: stateError.state, detail: stateError.message })}\n`);
+  process.stdout.write(`${JSON.stringify({ application: "buyer-agent", environment: config.name, state: stateError.state, detail: stateError.message })}\n`);
   process.exitCode = stateError.state === "pending" ? 2 : stateError.state === "unknown" ? 3 : 4;
 } finally {
   token.destroy();

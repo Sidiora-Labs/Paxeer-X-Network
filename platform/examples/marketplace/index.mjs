@@ -14,6 +14,7 @@ import {
   optionalEnvironment,
   requiredEnvironment,
 } from "../support/runtime.mjs";
+import { referenceArtifacts } from "../support/artifacts.mjs";
 import {
   accountNameForDid,
   canonicalNativeProgramDeploy,
@@ -171,9 +172,9 @@ const signingKeyDid = async () => {
   const listed = await runCli(["key", "list"]);
   const keys = Array.isArray(listed.data) ? listed.data : undefined;
   if (keys === undefined) throw new LayerXApplicationStateError("unknown", "layerx_cli_omitted_key_list");
-  const selected = keys.find((entry) => exactObject(entry).default === true) ?? keys[0];
-  if (selected === undefined) throw new LayerXApplicationStateError("refused", "layerx_cli_has_no_signing_key");
-  const did = exactObject(selected).did;
+  const selected = keys.filter((entry) => exactObject(entry).default === true);
+  if (selected.length !== 1) throw new LayerXApplicationStateError("refused", "layerx_cli_requires_one_default_signing_key");
+  const did = exactObject(selected[0]).did;
   accountNameForDid(did);
   return did;
 };
@@ -186,10 +187,13 @@ const anchor = async () => readLifecycleAnchor({
 
 const deploy = async () => {
   const manifest = resolve(config.directory, "program/Cargo.toml");
-  const built = await runCli(["program", "build", "--manifest-path", manifest]);
-  const artifact = built.data?.artifact;
-  const codeHash = built.data?.code_hash;
-  const abiVersion = built.data?.abi_version;
+  const prebuiltPath = optionalEnvironment("PAXEER_X_REFERENCE_APP_ARTIFACTS");
+  const built = prebuiltPath === undefined
+    ? (await runCli(["program", "build", "--manifest-path", manifest])).data
+    : (await referenceArtifacts(prebuiltPath, resolve(config.directory, "../../.."))).marketplace;
+  const artifact = prebuiltPath === undefined ? built?.artifact : built?.path;
+  const codeHash = built?.code_hash;
+  const abiVersion = built?.abi_version;
   if (typeof artifact !== "string" || typeof codeHash !== "string" || !/^[0-9a-f]{64}$/u.test(codeHash)
     || !Number.isSafeInteger(abiVersion)) {
     throw new LayerXApplicationStateError("unknown", "program_build_omitted_artifact_identity");

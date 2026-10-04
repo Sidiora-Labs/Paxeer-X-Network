@@ -10,6 +10,7 @@ import {
 import {
   LayerXApplicationStateError,
   ReceiptAuthorityClient,
+  applicationStatePath,
   exactObject,
   hex32,
   loadApplicationConfig,
@@ -147,7 +148,7 @@ const middleware = new SellerMiddleware({
     }],
   },
   authority: new StatePreservingReceiptAuthority(resolver),
-  fulfillments: new FileFulfillmentRepository(resolve(config.directory, config.fulfillmentDirectory)),
+  fulfillments: new FileFulfillmentRepository(applicationStatePath(config, config.fulfillmentDirectory)),
 });
 
 const port = Number(config.port);
@@ -194,5 +195,5 @@ createServer(async (request, response) => {
     }).end(JSON.stringify({ state, error: error instanceof MiddlewareError ? error.code : "internal-fault" }));
   }
 }).listen(port, "127.0.0.1", () => {
-  process.stdout.write(`${JSON.stringify({ environment: config.name, listening: port, path: "/paid" })}\n`);
+  process.stdout.write(`${JSON.stringify({ application: "paid-api", environment: config.name, listening: port, path: "/paid" })}\n`);
 });

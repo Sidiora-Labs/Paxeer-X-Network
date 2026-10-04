@@ -16,6 +16,12 @@ import {
 } from "./support/runtime.mjs";
 
 const root = resolve(import.meta.dirname, "../..");
+const ownedServices = new Set();
+for (const [signal, code] of [["SIGTERM", 143], ["SIGINT", 130]]) {
+  process.once(signal, () => {
+    void Promise.all([...ownedServices].map(stopService)).then(() => process.exit(code));
+  });
+}
 const manifest = exactObject(JSON.parse(await readFile(resolve(import.meta.dirname, "reference-apps.json"), "utf8")));
 const expectedApplications = ["buyer-agent", "paid-api", "merchant-shop", "marketplace"];
 if (manifest.version !== 1 || !Array.isArray(manifest.applications) || manifest.applications.length !== 4) {
@@ -124,17 +130,18 @@ async function runApplications(environment, inputs) {
     services.push(await startService(paid.commands[environment], inputs));
     services.push(await startService(merchant.commands[environment], inputs));
     await command(buyer.commands[environment], inputs);
-    await merchantCheckout(environment, inputs);
-    if (environment === "emulator") {
-      await command(marketplace.commands[environment], inputs);
-      await command(["npm", "run", "list:emulator", "--workspace", marketplace.package], inputs);
-      await command(["npm", "run", "buy:emulator", "--workspace", marketplace.package], inputs);
-    } else {
-      await command(marketplace.commands[environment], inputs);
-    }
+    const merchantReceipt = await merchantCheckout(environment, inputs);
+    const marketplaceConfig = await environmentConfig("marketplace", environment);
+    const marketplaceInputs = {
+      ...inputs,
+      [marketplaceConfig.receiptDigestEnvironment]: merchantReceipt.receiptDigest,
+    };
+    await command(marketplace.commands[environment], marketplaceInputs);
+    await command(["npm", "run", `list:${environment}`, "--workspace", marketplace.package], marketplaceInputs);
+    await command(["npm", "run", `buy:${environment}`, "--workspace", marketplace.package], marketplaceInputs);
     process.stdout.write(`${JSON.stringify({ environment, state: "completed", applications: manifest.applications.map((value) => value.name) })}\n`);
   } finally {
-    for (const service of services.reverse()) stopService(service);
+    for (const service of services.reverse()) await stopService(service);
   }
 }
 
@@ -221,6 +228,7 @@ async function startEmulator() {
     stdio: ["ignore", "inherit", "inherit"],
     detached: true,
   });
+  ownedServices.add(child);
   const emulator = { child, cli, cliEnvironment, endpoint, keys, profile, anchor, owned: suppliedSeed === undefined ? profile : undefined };
   let exited;
   child.once("exit", (code, signal) => { exited = `${signal ?? code ?? "failed"}`; });
@@ -229,7 +237,7 @@ async function startEmulator() {
     if (exited !== undefined) throw new Error(`layerx_emulator_up_exited_${exited}`);
     if (await emulatorReady(endpoint)) return emulator;
     if (Date.now() >= deadline) {
-      stopService(child);
+      await stopService(child);
       throw new Error("layerx_emulator_start_timeout");
     }
     await new Promise((resolvePromise) => setTimeout(resolvePromise, EMULATOR_READY_POLL_MS));
@@ -252,7 +260,7 @@ async function emulatorReady(endpoint) {
 }
 
 async function stopEmulator(emulator) {
-  stopService(emulator.child);
+  await stopService(emulator.child);
   await rm(emulator.profile, { recursive: true, force: true });
 }
 
@@ -455,7 +463,19 @@ async function merchantCheckout(environment, inputs) {
       `${checkoutKey}-payment`,
     );
     if (result.kind !== "paid" || !result.response.ok) throw new Error(`merchant_reference_${result.kind}`);
-    await result.response.body?.cancel();
+    const checkout = exactObject(await result.response.json());
+    const order = exactObject(checkout.order);
+    if (checkout.state !== "paid" || order.state !== "paid-verified" || order.orderId !== checkoutKey) {
+      throw new Error("merchant_reference_missing_verified_order");
+    }
+    const receiptDigest = requiredHex32(result.payment.receiptDigest, "merchant_reference_missing_receipt_digest");
+    if (order.receiptDigest !== receiptDigest) throw new Error("merchant_reference_order_receipt_mismatch");
+    const outcome = {
+      application: "merchant-shop", environment, state: "paid", orderId: order.orderId,
+      receiptDigest, verification: result.settlement.verification.level,
+    };
+    process.stdout.write(`${JSON.stringify(outcome)}\n`);
+    return outcome;
   } finally {
     token.destroy();
   }
@@ -482,11 +502,11 @@ function startService(commandLine, inputs) {
       stdio: ["ignore", "pipe", "inherit"],
       detached: true,
     });
+    ownedServices.add(child);
     let started = false;
     let output = "";
     const timeout = setTimeout(() => {
-      stopService(child);
-      reject(new Error("reference_service_start_timeout"));
+      void stopService(child).then(() => reject(new Error("reference_service_start_timeout")), reject);
     }, 30_000);
     child.once("error", (error) => {
       clearTimeout(timeout);
@@ -508,13 +528,18 @@ function startService(commandLine, inputs) {
   });
 }
 
-function stopService(child) {
-  if (child.pid === undefined) return;
-  try {
-    process.kill(-child.pid, "SIGTERM");
-  } catch (error) {
-    if (error.code !== "ESRCH") throw error;
-  }
+async function stopService(child) {
+  ownedServices.delete(child);
+  if (child.pid === undefined || child.exitCode !== null || child.signalCode !== null) return;
+  await new Promise((done, reject) => {
+    const deadline = setTimeout(() => {
+      try { process.kill(-child.pid, "SIGKILL"); }
+      catch (error) { if (error.code !== "ESRCH") reject(error); }
+    }, 5_000);
+    child.once("exit", () => { clearTimeout(deadline); done(); });
+    try { process.kill(-child.pid, "SIGTERM"); }
+    catch (error) { clearTimeout(deadline); error.code === "ESRCH" ? done() : reject(error); }
+  });
 }
 
 function command(commandLine, inputs) {
