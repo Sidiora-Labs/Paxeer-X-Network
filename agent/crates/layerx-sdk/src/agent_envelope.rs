@@ -560,6 +560,34 @@ impl AgentEnvelopeTransport {
         Ok(native_success(response, value))
     }
 
+    pub fn disclose_native_preparation(
+        &self,
+        request_id: RequestId,
+        key: Key,
+        request: &layerx_agent_api::identity::NativeDisclosureRequestV1,
+        credential: &EnvelopeCredential,
+        registry: &layerx_types::payload::ModuleRegistry,
+    ) -> Result<ApiSuccess<layerx_agent_api::identity::NativeDisclosureResultV1>, EnvelopeError> {
+        use sha2::{Digest, Sha256};
+        let body = crate::native_effect::encode_native_disclosure(request)?;
+        let response = self.send_operation(Operation::Prepare, request_id, &body, Some(credential), Some(key))?;
+        let unknown = || EnvelopeError::Unknown { operation:Operation::Prepare };
+        let value = decode_native_disclosure(&response.value).ok_or_else(unknown)?;
+        let disclosure = layerx_crypto::disclosure::bind(&request.canonical_bytes, registry).map_err(|_| unknown())?;
+        if value.canonical_bytes != request.canonical_bytes
+            || value.preparation_id != <[u8;32]>::from(Sha256::digest(&request.canonical_bytes))
+            || value.disclosure_digest != disclosure.audit_digest().map_err(|_| unknown())?
+            || value.activity_type != disclosure.activity_type.value()
+            || value.actor != disclosure.actor || value.authority != disclosure.authority
+            || value.asset != disclosure.asset || value.fee_limit != disclosure.fee_limit
+            || value.not_before != disclosure.expiry.not_before || value.not_after != disclosure.expiry.not_after
+            || value.payload_expires_at != disclosure.expiry.payload_expires_at
+            || value.idempotency_key != disclosure.idempotency_key {
+            return Err(unknown());
+        }
+        Ok(native_success(response, value))
+    }
+
     pub fn prepare_native_effect(
         &self,
         request_id: RequestId,
@@ -1145,6 +1173,26 @@ fn native_optional_id(value: &Value) -> Option<Option<[u8; 32]>> {
     } else {
         native_id(value).map(Some)
     }
+}
+
+pub fn decode_native_disclosure(value: &Value) -> Option<layerx_agent_api::identity::NativeDisclosureResultV1> {
+    let value = value.as_object()?;
+    if !exact_fields(value, &["version","preparation_id","canonical_bytes","disclosure_digest","activity_type","actor","authority","asset","fee_limit","not_before","not_after","payload_expires_at","idempotency_key"])
+        || value.get("version")?.as_str()? != "1" { return None; }
+    let number = |field:&str| canonical_u64(value.get(field)?.as_str()?);
+    let amount = value.get("fee_limit")?.as_str()?;
+    if amount.is_empty() || !amount.bytes().all(|b|b.is_ascii_digit()) || (amount.len()>1 && amount.starts_with('0')) {return None;}
+    Some(layerx_agent_api::identity::NativeDisclosureResultV1 {
+        preparation_id:native_id(value.get("preparation_id")?)?,
+        canonical_bytes:native_hex(value.get("canonical_bytes")?, layerx_wire::limits::MAX_MESSAGE_BYTES)?,
+        disclosure_digest:native_id(value.get("disclosure_digest")?)?,
+        activity_type:u32::try_from(number("activity_type")?).ok()?,
+        actor:native_hex(value.get("actor")?, layerx_types::limits::MAX_DID_BYTES)?,
+        authority:native_hex(value.get("authority")?, layerx_types::limits::MAX_AUTHORITY_BYTES)?,
+        asset:native_id(value.get("asset")?)?, fee_limit:amount.parse().ok()?,
+        not_before:number("not_before")?, not_after:number("not_after")?, payload_expires_at:number("payload_expires_at")?,
+        idempotency_key:native_id(value.get("idempotency_key")?)?,
+    })
 }
 
 pub fn decode_native_preparation(

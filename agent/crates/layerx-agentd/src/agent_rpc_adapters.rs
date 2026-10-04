@@ -719,6 +719,13 @@ pub(crate) fn prepare<A: HumanAuthorityBoundary>(
 ) -> Result<Dispatched, Rejection> {
     use crate::agent_rpc_dispatch::{decode_preparation, dispatched, human_prepare, mutation_key};
     let id = ctx.request_id;
+    if request.get("variant").and_then(serde_json::Value::as_str) == Some("native_disclosure_v1") {
+        use crate::agent_rpc_wire::{Canonical, decode_wire, NativeDisclosureV1Wire};
+        let typed = decode_wire::<NativeDisclosureV1Wire>(request, id)?.into_request(id)?;
+        let value = owner.lock().and_then(|mut guard| guard.rpc_native_disclosure(context, typed))
+            .map_err(|error| crate::agent_rpc_dispatch::owner_error(id, error))?;
+        return Ok(Dispatched {value:value.canonical(), verification:None});
+    }
     if crate::agent_rpc_dispatch::native_effect_variant(request) {
         use crate::agent_rpc_dispatch::{dispatched_native, malformed, native_effect_prepare_digest};
         use crate::agent_rpc_wire::{decode_wire, NativePrepareResultV1Wire, NativeEffectPrepareV1Wire};

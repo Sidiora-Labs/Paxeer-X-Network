@@ -359,3 +359,118 @@ class AgentdFixture:
                     process.kill()
                     process.wait(timeout=10)
             log.close()
+
+    def provision_mcp_served_writes(self):
+        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+        from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
+
+        profile = self.document.get('mcp_served_writes')
+        require(isinstance(profile, dict) and set(profile) == {
+            'schema', 'participants', 'families', 'activity', 'negative_cases',
+            'transitions', 'interruption'}
+            and profile['schema'] == 'paxeer-x.mcp-served-writes.v1',
+            'genuine MCP served writes profile required')
+        transports = {'socket', 'stdio'}
+        families = {'wallet.send', 'token.create', 'token.mint', 'token.transfer',
+                    'grant.issue', 'grant.draw'}
+        negatives = {'wrong_scope', 'wrong_owner', 'altered_disclosure', 'purpose_mismatch',
+                     'signature_mismatch', 'fee_limit', 'amount_limit', 'rate_limit',
+                     'grant_limit', 'approval_denied', 'registration_asset_mismatch',
+                     'registration_zero_cap', 'registration_unbounded_cap',
+                     'legacy_register_refusal', 'unverified_receipt_refusal'}
+        require('layerx-mcp' in self.artifacts, 'source-bound actual MCP artifact required')
+        require(isinstance(profile['participants'], dict)
+                and set(profile['participants']) == transports,
+                'both actual MCP transports must be provisioned')
+        credentials = {}
+        for transport, participants in profile['participants'].items():
+            require(isinstance(participants, dict) and set(participants) == {'full', 'narrowed', 'foreign'},
+                    'actual full, narrowed and foreign sessions required')
+            credentials[transport] = {}
+            for role, row in participants.items():
+                require(isinstance(row, dict) and set(row) == {'binding_seed', 'credential_request'}
+                        and row['binding_seed'] in self.document['seeds']
+                        and row['binding_seed'] in self.values,
+                        'genuine MCP binding seed required')
+                credential = self.envelope(row['credential_request'])['credential']
+                require(set(credential) == {'tenant', 'session_id', 'token_id', 'generation'}
+                        and all(isinstance(value, str) for value in credential.values())
+                        and 0 < len(credential['tenant'].encode()) <= 255
+                        and '\0' not in credential['tenant']
+                        and all(re.fullmatch('[0-9a-f]{64}', credential[key])
+                                for key in ('session_id', 'token_id'))
+                        and re.fullmatch('[1-9][0-9]{0,19}', credential['generation'])
+                        and int(credential['generation']) < 2**64,
+                        'actual canonical daemon credential required')
+                credentials[transport][role] = credential
+            require(credentials[transport]['full']['tenant'] != credentials[transport]['foreign']['tenant'],
+                    'genuine cross-tenant authority required')
+        signers = {}
+        expected_ordinal = {'wallet.send': '5', 'token.transfer': '5', 'token.create': '1',
+                            'token.mint': '10', 'grant.issue': '7', 'grant.draw': '6'}
+        require(isinstance(profile['families'], dict) and set(profile['families']) == transports,
+                'both transports need all six genuine monetary families')
+        for transport, rows in profile['families'].items():
+            require(isinstance(rows, dict) and set(rows) == families,
+                    'all six real monetary families are mandatory')
+            signers[transport] = {}
+            for name, row in rows.items():
+                require(isinstance(row, dict) and set(row) == {
+                    'prepare_request', 'intent', 'signer_seed', 'signer_public_key'},
+                    'complete actual native write producer fields required')
+                envelope = self.envelope(row['prepare_request'])
+                request = envelope['request']
+                require(envelope.get('operation') == 'prepare'
+                        and envelope['credential'] == credentials[transport]['full']
+                        and request.get('activity') == {
+                            'version': '1', 'module': '1', 'ordinal': expected_ordinal[name]}
+                        and isinstance(request.get('purpose'), dict)
+                        and request['purpose'].get('purpose', {}).get('tenant') == envelope['credential']['tenant']
+                        and request['purpose']['purpose'].get('session_id') == envelope['credential']['session_id']
+                        and request['purpose']['purpose'].get('generation') == envelope['credential']['generation']
+                        and isinstance(row['intent'], dict)
+                        and row['intent'].get('idempotency_key') == request.get('idempotency_key'),
+                        'immutable native request must belong to the actual retained owner')
+                variant = 'native_send_v1' if expected_ordinal[name] == '5' else (
+                    'native_registration_v1' if name == 'token.create' else 'native_effect_v1')
+                require(request.get('variant') == variant, 'explicit actual family profile required')
+                seed_name = row['signer_seed']
+                require(seed_name in self.document['seeds'] and seed_name in self.values,
+                        'registered owner signing seed must be provisioned')
+                path = Path(self.values[seed_name])
+                info = path.lstat()
+                require(path.is_file() and not path.is_symlink() and info.st_uid == os.geteuid()
+                        and not info.st_mode & 0o077 and info.st_nlink == 1 and info.st_size == 32,
+                        'actual private registered Ed25519 owner seed required')
+                signer = Ed25519PrivateKey.from_private_bytes(path.read_bytes())
+                public = signer.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw).hex()
+                require(public == row['signer_public_key'], 'actual signer public identity mismatch')
+                signers[transport][name] = signer
+        for field in ('activity', 'negative_cases', 'transitions', 'interruption'):
+            require(isinstance(profile[field], dict) and set(profile[field]) == transports,
+                    'every mandatory write case must cover both transports: ' + field)
+        for transport in transports:
+            require(set(profile['negative_cases'][transport]) == negatives,
+                    'all disclosure, profile, signature and monetary refusal cases required')
+            require(set(profile['transitions'][transport]) == {'revoked', 'wrong_generation'},
+                    'genuine authenticated revocation and generation producers required')
+            require(set(profile['activity'][transport]) == {
+                'prepare_request', 'signer_seed', 'signer_public_key', 'submit_template'},
+                'genuine ordinary Prepare/disclose/sign/submit/track/wait producer required')
+            require(set(profile['interruption'][transport]) == {'family', 'paused_artifact', 'write'}
+                    and profile['interruption'][transport]['family'] in families
+                    and profile['interruption'][transport]['paused_artifact'] in self.artifacts,
+                    'genuine process transmission interruption declaration required')
+            interrupted = profile['interruption'][transport]['write']
+            require(isinstance(interrupted, dict) and set(interrupted) == {
+                'prepare_request', 'intent', 'signer_seed', 'signer_public_key'},
+                'independent genuine interruption preparation required')
+            interrupted_request = self.envelope(interrupted['prepare_request'])
+            require(interrupted_request['operation'] == 'prepare'
+                    and interrupted_request['credential'] == credentials[transport]['full']
+                    and interrupted['intent'].get('idempotency_key')
+                        == interrupted_request['request']['idempotency_key']
+                    and interrupted_request['request']['idempotency_key']
+                        not in {row['intent']['idempotency_key'] for row in profile['families'][transport].values()},
+                    'interruption must exercise a fresh real economic key, not completed replay')
+        return profile, credentials, signers

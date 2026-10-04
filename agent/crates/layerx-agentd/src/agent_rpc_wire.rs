@@ -438,6 +438,44 @@ pub(crate) fn native_human_prepare(
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
+pub(crate) struct NativeDisclosureV1Wire {
+    variant: String,
+    canonical_bytes: String,
+}
+
+impl NativeDisclosureV1Wire {
+    pub(crate) fn into_request(self, id: RequestId) -> Result<layerx_agent_api::identity::NativeDisclosureRequestV1, Rejection> {
+        if self.variant != "native_disclosure_v1" || self.canonical_bytes.is_empty()
+            || self.canonical_bytes.len() > layerx_wire::limits::MAX_MESSAGE_BYTES * 2 {
+            return Err(malformed(id));
+        }
+        Ok(layerx_agent_api::identity::NativeDisclosureRequestV1 {
+            canonical_bytes: hex_bytes(&self.canonical_bytes, id)?,
+        })
+    }
+}
+
+impl Canonical for layerx_agent_api::identity::NativeDisclosureRequestV1 {
+    fn canonical(&self) -> Value {
+        json!({"variant":"native_disclosure_v1", "canonical_bytes":lower_hex(&self.canonical_bytes)})
+    }
+}
+
+impl Canonical for layerx_agent_api::identity::NativeDisclosureResultV1 {
+    fn canonical(&self) -> Value {
+        json!({"version":"1", "preparation_id":lower_hex(&self.preparation_id),
+            "canonical_bytes":lower_hex(&self.canonical_bytes),
+            "disclosure_digest":lower_hex(&self.disclosure_digest),
+            "activity_type":self.activity_type.to_string(), "actor":lower_hex(&self.actor),
+            "authority":lower_hex(&self.authority), "asset":lower_hex(&self.asset),
+            "fee_limit":self.fee_limit.to_string(), "not_before":self.not_before.to_string(),
+            "not_after":self.not_after.to_string(), "payload_expires_at":self.payload_expires_at.to_string(),
+            "idempotency_key":lower_hex(&self.idempotency_key)})
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct NativeEffectPrepareV1Wire {
     variant: String,
     activity: NativeActivityV1Wire,

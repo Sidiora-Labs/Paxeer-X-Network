@@ -761,6 +761,27 @@ pub struct NativeApprovalDecisionV1 {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub struct NativeDisclosureRequestV1 {
+    pub canonical_bytes: Vec<u8>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct NativeDisclosureResultV1 {
+    pub preparation_id: [u8; 32],
+    pub canonical_bytes: Vec<u8>,
+    pub disclosure_digest: [u8; 32],
+    pub activity_type: u32,
+    pub actor: Vec<u8>,
+    pub authority: Vec<u8>,
+    pub asset: [u8; 32],
+    pub fee_limit: u128,
+    pub not_before: u64,
+    pub not_after: u64,
+    pub payload_expires_at: u64,
+    pub idempotency_key: [u8; 32],
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct NativePrepareResultV1 {
     pub preparation_id: [u8; 32],
     pub canonical_bytes: Vec<u8>,

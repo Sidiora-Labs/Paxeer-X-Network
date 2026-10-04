@@ -1478,6 +1478,16 @@ fn agent_rpc_exchange<S: Read>(
         idempotency_key: invocation.idempotency_key,
         request_digest,
     };
+    let environment = match agent_rpc::mcp_owner_environment(owner, id, &invocation.credential) {
+        Ok(environment) => Some(layerx_mcp::binding::OwnerEnvironment {
+            registry: environment.registry,
+            core_time_ms: environment.core_time_ms,
+            head_sequence: environment.head_sequence,
+            native_effect_profile: environment.native_effect_profile,
+            native_send_profile: environment.native_send_profile,
+        }),
+        Err(_) => None,
+    };
     match binding.daemon_invocation(
         control,
         invocation.credential,
@@ -1485,6 +1495,7 @@ fn agent_rpc_exchange<S: Read>(
         &invocation.tool,
         &invocation.arguments,
         identity,
+        environment,
         |operation, credential, arguments, key| {
             agent_rpc::dispatch_mcp_owner(owner, id, credential, operation, arguments, key)
         },

@@ -1175,7 +1175,7 @@ pub fn validate_mcp_native_request(
     let admitted = match operation {
         Operation::Prepare => matches!(
             variant,
-            Some("native_v1" | "native_effect_v1" | "native_send_v1")
+            Some("native_v1" | "native_effect_v1" | "native_send_v1" | "native_disclosure_v1")
         ),
         Operation::Submit => variant == Some("native_send_submit_v1"),
         _ => false,
@@ -1184,6 +1184,29 @@ pub fn validate_mcp_native_request(
         return Err(crate::agent_rpc_dispatch::malformed(id));
     }
     Ok(())
+}
+
+pub struct McpOwnerEnvironment {
+    pub registry: layerx_types::payload::ModuleRegistry,
+    pub core_time_ms: u64,
+    pub head_sequence: u64,
+    pub native_effect_profile: bool,
+    pub native_send_profile: bool,
+}
+
+pub fn mcp_owner_environment<A: HumanAuthorityBoundary>(
+    owner: &SharedAgentOwner<A>, request_id: RequestId,
+    credential: &SessionCredential,
+) -> Result<McpOwnerEnvironment, Rejection> {
+    let envelope = Envelope {
+        request_id, operation:Operation::ReadAuthority, idempotency_key:None,
+        request:serde_json::Map::new(), credential:Some(credential.clone()),
+    };
+    let (permit, _, bound, control) = authorized_on_surface(owner, &envelope, Surface::Mcp)?;
+    let context = agent_rpc_peer::from_resolved(&control, &permit, bound)
+        .map_err(|error| authorization_rejection(request_id, &error))?;
+    owner.lock().and_then(|mut guard| guard.rpc_mcp_owner_environment(&context))
+        .map_err(|error| crate::agent_rpc_dispatch::owner_error(request_id, error))
 }
 
 pub fn dispatch_mcp_owner<A: HumanAuthorityBoundary>(

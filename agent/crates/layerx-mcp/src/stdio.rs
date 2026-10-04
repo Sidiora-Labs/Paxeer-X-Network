@@ -600,7 +600,10 @@ fn request_key() -> Result<Key, Value> {
 }
 
 fn invocation_key(parameters: &Value, arguments: &Value) -> Result<Key, Value> {
-    let argument_key = arguments.get("idempotency_key").and_then(Value::as_str);
+    let argument_key = arguments.get("idempotency_key").or_else(|| {
+        (arguments.get("variant").and_then(Value::as_str) == Some("native_write_v1"))
+            .then(|| arguments.get("intent").and_then(|intent| intent.get("idempotency_key"))).flatten()
+    }).and_then(Value::as_str);
     let metadata_key = parameters
         .get("_meta")
         .and_then(|meta| meta.get("layerx/idempotency_key"))

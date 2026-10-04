@@ -365,7 +365,16 @@ impl ToolBoundary for DaemonBoundary {
     }
 }
 
+pub struct OwnerEnvironment {
+    pub registry: layerx_types::payload::ModuleRegistry,
+    pub core_time_ms: u64,
+    pub head_sequence: u64,
+    pub native_effect_profile: bool,
+    pub native_send_profile: bool,
+}
+
 struct OwnerBoundary<F> {
+    registry: Option<layerx_types::payload::ModuleRegistry>,
     inner: Option<DaemonBoundary>,
     credential: SessionCredential,
     core_sequence: u64,
@@ -389,6 +398,20 @@ where
     ) -> Result<Value, BoundaryRefusal> {
         if let Some(inner) = &mut self.inner {
             return inner.execute(tool, arguments);
+        }
+        if crate::catalogue::native_alias_ordinal(tool.name).is_some() {
+            let registry=self.registry.as_ref().ok_or_else(||BoundaryRefusal::Unavailable("mcp.native_owner_environment".into()))?;
+            return crate::tools::write::execute_native_alias(tool.name,arguments,registry,self.idempotency_key,
+                |operation,request|(self.owner)(operation,&self.credential,request,self.idempotency_key).map_err(owner_refusal));
+        }
+        if tool.name=="activity.disclose" {
+            let request=json!({"variant":"native_disclosure_v1","canonical_bytes":arguments.get("canonical_bytes")});
+            return (self.owner)(layerx_agentd::tenant::Operation::Prepare,&self.credential,&request,self.idempotency_key).map_err(owner_refusal);
+        }
+        if tool.name=="activity.sign" && arguments.get("variant").and_then(Value::as_str)==Some("external_signature_v1") {
+            let mut request=arguments.clone();
+            request.as_object_mut().ok_or_else(||BoundaryRefusal::Malformed("mcp.external_signature".into()))?.remove("variant");
+            return (self.owner)(layerx_agentd::tenant::Operation::Sign,&self.credential,&request,self.idempotency_key).map_err(owner_refusal);
         }
         let operation = crate::server::tool_operation(tool.name)
             .ok_or(BoundaryRefusal::NotServed(tool.name))?;
@@ -796,6 +819,7 @@ impl Binding {
         tool: &str,
         arguments: &Value,
         identity: McpInvocationIdentity,
+        environment: Option<OwnerEnvironment>,
         owner: F,
     ) -> Result<crate::server::DaemonToolResult, DaemonInvocationError>
     where
@@ -827,6 +851,7 @@ impl Binding {
             self.mode,
         )
         .map_err(DaemonInvocationError::Authority)?;
+        server.restrict_native_owners(environment.as_ref()).map_err(DaemonInvocationError::Authority)?;
         if tool == "mcp.describe" {
             if arguments
                 .as_object()
@@ -840,17 +865,7 @@ impl Binding {
                 .describe_for_release(core_sequence, identity)
                 .map_err(DaemonInvocationError::Authority);
         }
-        let canonical_owner = tool.starts_with("subscription.")
-            || tool.starts_with("approval.")
-            || matches!(
-                tool,
-                "tenant.readiness"
-                    | "activity.prepare"
-                    | "activity.submit"
-                    | "activity.sign"
-                    | "activity.track"
-                    | "activity.wait"
-            );
+        let canonical_owner=crate::catalogue::canonical_owner(tool);
         let inner = if canonical_owner {
             None
         } else {
@@ -879,6 +894,7 @@ impl Binding {
             })
         };
         let mut boundary = OwnerBoundary {
+            registry: environment.map(|environment|environment.registry),
             inner,
             credential,
             core_sequence,

@@ -349,3 +349,108 @@ fn transcript_matches(actual: &[WriteStage], required: &[WriteStage]) -> bool {
     };
     actual == &required[..3]
 }
+
+pub(crate) fn preparation_id(arguments: &serde_json::Value) -> Option<[u8; 32]> {
+    let value=arguments.get("preparation")?.get("purpose")?.get("purpose")?.get("preparation_id")?.as_str()?;
+    identifier(value)
+}
+
+fn identifier(value: &str) -> Option<[u8; 32]> {
+    if value.len()!=64 || !value.bytes().all(|b|b.is_ascii_digit() || (b'a'..=b'f').contains(&b)) {return None;}
+    let mut out=[0u8;32];
+    for (i,b) in out.iter_mut().enumerate() {*b=u8::from_str_radix(&value[i*2..i*2+2],16).ok()?;}
+    Some(out)
+}
+
+fn lower_hex(bytes: &[u8]) -> String {
+    bytes.iter().map(|b|format!("{b:02x}")).collect()
+}
+
+pub(crate) fn execute_native_alias<F>(
+    name: &str, arguments: &serde_json::Value,
+    registry: &layerx_types::payload::ModuleRegistry, key:[u8;32], mut owner:F,
+) -> Result<serde_json::Value,crate::boundary::BoundaryRefusal>
+where F:FnMut(layerx_agentd::tenant::Operation,&serde_json::Value)->Result<serde_json::Value,crate::boundary::BoundaryRefusal> {
+    use crate::boundary::BoundaryRefusal;
+    use layerx_agentd::tenant::Operation;
+    use serde_json::json;
+    let refuse=||BoundaryRefusal::Malformed("mcp.native_write_binding".into());
+    if arguments.get("variant").and_then(serde_json::Value::as_str)!=Some("native_write_v1") {return Err(BoundaryRefusal::NotServed("native_write_v1"));}
+    let intent=arguments.get("intent").ok_or_else(refuse)?;
+    let preparation=arguments.get("preparation").ok_or_else(refuse)?;
+    if intent.get("idempotency_key").and_then(serde_json::Value::as_str).and_then(identifier)!=Some(key) {return Err(refuse());}
+    let expected_id=preparation_id(arguments).ok_or_else(refuse)?;
+    let canonical_text=arguments.get("canonical_bytes").and_then(serde_json::Value::as_str).ok_or_else(refuse)?;
+    if canonical_text.is_empty() || canonical_text.len()%2!=0 || !canonical_text.bytes().all(|b|b.is_ascii_digit() || (b'a'..=b'f').contains(&b)) {return Err(refuse());}
+    let canonical=(0..canonical_text.len()).step_by(2).map(|i|u8::from_str_radix(&canonical_text[i..i+2],16).map_err(|_|refuse())).collect::<Result<Vec<_>,_>>()?;
+    let preview=layerx_crypto::disclosure::bind(&canonical,registry).map_err(|_|refuse())?;
+    use sha2::{Digest, Sha256};
+    let signed=preparation.get("purpose").ok_or_else(refuse)?;
+    let purpose=signed.get("purpose").ok_or_else(refuse)?;
+    let same_decimal=|field:&str,n:u128|preparation.get(field).and_then(serde_json::Value::as_str).and_then(|v|v.parse::<u128>().ok())==Some(n);
+    let supplied_activity=preparation.get("activity").ok_or_else(refuse)?;
+    if <[u8;32]>::from(Sha256::digest(&canonical))!=expected_id
+        || purpose.get("canonical_digest").and_then(serde_json::Value::as_str).and_then(identifier)!=Some(expected_id)
+        || supplied_activity.get("module").and_then(serde_json::Value::as_str).and_then(|s|s.parse::<u16>().ok())!=Some(preview.activity_type.module() as u16)
+        || supplied_activity.get("ordinal").and_then(serde_json::Value::as_str).and_then(|s|s.parse::<u16>().ok())!=Some(preview.activity_type.ordinal())
+        || preparation.get("actor").and_then(serde_json::Value::as_str).map(str::as_bytes)!=Some(preview.actor.as_slice())
+        || preparation.get("authority").and_then(serde_json::Value::as_str).map(str::as_bytes)!=Some(preview.authority.as_slice())
+        || !same_decimal("account_sequence",u128::from(preview.envelope_sequence()))
+        || !same_decimal("fee_limit",preview.fee_limit)
+        || !same_decimal("not_before",u128::from(preview.expiry.not_before))
+        || !same_decimal("not_after",u128::from(preview.expiry.not_after))
+        || preparation.get("payload").and_then(serde_json::Value::as_str)!=Some(lower_hex(preview.canonical_payload()).as_str())
+        || preview.idempotency_key!=key
+        || arguments.get("signer_public_key")!=signed.get("owner_public_key") {return Err(refuse());}
+    verify_native_intent(name,intent,&preview)?;
+    let prepared_value=owner(Operation::Prepare,preparation)?;
+    let prepared=layerx_sdk::agent_envelope::decode_native_preparation(&prepared_value).ok_or_else(refuse)?;
+    if prepared.preparation_id!=expected_id || prepared.canonical_bytes!=canonical {return Err(refuse());}
+    let disclosed_value=owner(Operation::Prepare,&json!({"variant":"native_disclosure_v1","canonical_bytes":lower_hex(&prepared.canonical_bytes)}))?;
+    let exported=layerx_sdk::agent_envelope::decode_native_disclosure(&disclosed_value).ok_or_else(refuse)?;
+    if exported.preparation_id!=prepared.preparation_id || exported.canonical_bytes!=prepared.canonical_bytes {return Err(refuse());}
+    let disclosure=layerx_crypto::disclosure::bind(&prepared.canonical_bytes,registry).map_err(|_|refuse())?;
+    if <[u8;32]>::from(Sha256::digest(&prepared.canonical_bytes))!=prepared.preparation_id
+        || disclosure.audit_digest().map_err(|_|refuse())?!=exported.disclosure_digest
+        || disclosure.activity_type.value()!=exported.activity_type || disclosure.actor!=exported.actor
+        || disclosure.authority!=exported.authority || disclosure.asset!=exported.asset || disclosure.fee_limit!=exported.fee_limit
+        || disclosure.expiry.not_before!=exported.not_before || disclosure.expiry.not_after!=exported.not_after
+        || disclosure.expiry.payload_expires_at!=exported.payload_expires_at || disclosure.idempotency_key!=key
+        || disclosure.idempotency_key!=exported.idempotency_key {
+        return Err(refuse());
+    }
+    verify_native_intent(name,intent,&disclosure)?;
+    if prepared.approval_required {return Ok(prepared_value);}
+    let reference=lower_hex(&prepared.preparation_id);
+    let signature=arguments.get("signature").ok_or_else(refuse)?;
+    let signer=arguments.get("signer_public_key").ok_or_else(refuse)?;
+    owner(Operation::Sign,&json!({"preparation_ref":reference,"signature":signature}))?;
+    let mut submit=json!({"preparation_ref":reference,"signature":signature,"signer_public_key":signer});
+    if matches!(name,"wallet.send"|"token.transfer") {submit["variant"]=json!("native_send_submit_v1");}
+    let observation=owner(Operation::Submit,&submit)?;
+    let submission=observation.get("submission").and_then(|value|value.get("submission_ref")).and_then(serde_json::Value::as_str).ok_or_else(||BoundaryRefusal::Unavailable("mcp.native_submit_observation".into()))?;
+    owner(Operation::Track,&json!({"submission_ref":submission}))
+}
+
+fn verify_native_intent(name:&str,intent:&serde_json::Value,d:&layerx_crypto::disclosure::Disclosure)->Result<(),crate::boundary::BoundaryRefusal> {
+    use layerx_crypto::disclosure::{CounterpartyRole,AmountRole};
+    use layerx_crypto::payments::Payment;
+    let refused=||crate::boundary::BoundaryRefusal::Malformed("mcp.native_intent_mismatch".into());
+    let id=|field:&str|intent.get(field).and_then(serde_json::Value::as_str).and_then(identifier).ok_or_else(refused);
+    let amount=|field:&str|intent.get(field).and_then(serde_json::Value::as_str).and_then(|v|v.parse::<u128>().ok()).ok_or_else(refused);
+    let ordinal=crate::catalogue::native_alias_ordinal(name).ok_or_else(refused)?;
+    if d.activity_type.module()!=layerx_types::payload::ModuleId::Asset || d.activity_type.value()!=(u32::from(1u16)<<16|u32::from(ordinal)) {return Err(refused());}
+    let matches=match name {
+        "wallet.send"|"token.transfer"=>{
+            let recipients=d.counterparties.iter().filter(|c|c.role==CounterpartyRole::Recipient).collect::<Vec<_>>();
+            let amounts=d.amounts.iter().filter(|a|a.role==AmountRole::Transfer).collect::<Vec<_>>();
+            recipients.len()==1 && amounts.len()==1 && recipients[0].account==id("destination")? && amounts[0].value==amount("amount")? && d.asset==id("asset")?
+        },
+        "token.mint"=>matches!(&d.payment,Some(Payment::Mint{asset,to,amount:value}) if *asset==id("asset")? && *to==id("destination")? && *value==amount("amount")?),
+        "grant.issue"=>matches!(&d.payment,Some(Payment::IssueGrant(g)) if g.recipient==id("beneficiary")? && g.asset==id("asset")? && g.allowance==amount("amount")? && u128::from(g.expiration)==amount("expires_at_ms")?),
+        "grant.draw"=>matches!(&d.payment,Some(Payment::Receive{grant,amount:value,..}) if *grant==id("grant_id")? && *value==amount("amount")?),
+        "token.create"=>matches!(&d.payment,Some(Payment::Register(r)) if intent.get("symbol").and_then(serde_json::Value::as_str)==Some(r.symbol.as_str()) && amount("decimals")?==u128::from(r.decimals) && amount("supply_cap")?==r.supply_cap),
+        _=>false,
+    };
+    if matches {Ok(())} else {Err(refused())}
+}

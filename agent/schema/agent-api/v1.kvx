@@ -912,3 +912,20 @@ idempotency_key = "required"
 disposition = "served_adapter_arm"
 response = "The exact daemon-owned MCP tool result, or a typed revoked/expired/unavailable refusal. No umbrella operation permit exists: the owner resolves the named tool to its original operation before execution and final release."
 authority = "exact_tool_operation_permit"
+
+
+[record.NativeDisclosureRequestV1]
+rust = "layerx_agent_api::identity::NativeDisclosureRequestV1"
+wire_type = "NativeDisclosureV1Wire"
+fields = ["variant:utf8","canonical_bytes:lowercase_hex"]
+variant = "Exactly native_disclosure_v1 on the existing authenticated prepare operation."
+canonical_bytes = "Nonempty exact unsigned canonical bytes, bounded by MAX_MESSAGE_BYTES; daemon resolves SHA256 preparation identity in the authenticated tenant and principal and restores its genuine native carrier."
+wire = "Closed request; unknown fields, noncanonical hex, missing bytes and unowned or changed preparation refuse."
+side_effects = "None: validates stored disclosure binding and current session permit without creating a preparation or consuming a rate allowance."
+
+[record.NativeDisclosureResultV1]
+rust = "layerx_agent_api::identity::NativeDisclosureResultV1"
+fields = ["version:decimal_string","preparation_id:hex32","canonical_bytes:lowercase_hex","disclosure_digest:hex32","activity_type:decimal_string","actor:lowercase_hex","authority:lowercase_hex","asset:hex32","fee_limit:decimal_string","not_before:decimal_string","not_after:decimal_string","payload_expires_at:decimal_string","idempotency_key:hex32"]
+version = "Exactly 1."
+origin = "Actual stored Prepared disclosure verified against exact canonical bytes; SDK independently binds the disclosure through the actual module registry and compares every response field and audit digest."
+verification = "No invented receipt or state proof; this is an authenticated canonical preparation disclosure."

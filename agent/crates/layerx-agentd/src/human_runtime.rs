@@ -479,6 +479,67 @@ impl<A: HumanAuthorityBoundary> UnifiedAgentOwner<A> {
         Ok(preview.purpose)
     }
 
+    pub(crate) fn rpc_mcp_owner_environment(
+        &mut self, context:&crate::agent_rpc_peer::RpcOwnerContext<'_>,
+    ) -> Result<crate::agent_rpc::McpOwnerEnvironment, HumanOperationError> {
+        let mut operations = self.lock_operations()?;
+        let registry = operations.authority.registry(context.peer()).map_err(map_core)?;
+        let snapshot = core_preparation_snapshot(&mut operations.node, context.peer(), &context.principal().agent)?;
+        if snapshot.module_registry != registry || snapshot.protocol_timestamp == 0 {
+            return Err(HumanOperationError::Refused);
+        }
+        let subject = context.peer().subject.as_ref().ok_or(HumanOperationError::Refused)?;
+        let tenant = TenantId::new(subject.transport_tenant.clone()).map_err(|_| HumanOperationError::Refused)?;
+        let profile = operations.native_effect_policies.get(&tenant)
+            .is_some_and(|policy|policy.tenant() == &tenant);
+        context.permit().boundary(&self.session_control).map_err(|_| HumanOperationError::Refused)?;
+        Ok(crate::agent_rpc::McpOwnerEnvironment {
+            registry, core_time_ms:snapshot.protocol_timestamp, head_sequence:snapshot.observed_head_sequence,
+            native_effect_profile:profile, native_send_profile:profile,
+        })
+    }
+
+    pub(crate) fn rpc_native_disclosure(
+        &mut self,
+        context: &crate::agent_rpc_peer::RpcOwnerContext<'_>,
+        request: layerx_agent_api::identity::NativeDisclosureRequestV1,
+    ) -> Result<layerx_agent_api::identity::NativeDisclosureResultV1, HumanOperationError> {
+        use sha2::{Digest, Sha256};
+        let id: [u8; 32] = Sha256::digest(&request.canonical_bytes).into();
+        let effect = {
+            let store = self.store.lock().map_err(|_| HumanOperationError::Unavailable)?;
+            let key = crate::prepare::DurablePreparation::store_key(&context.principal().tenant, id)
+                .map_err(|_| HumanOperationError::Refused)?;
+            let raw = store.get(&key).ok_or(HumanOperationError::Refused)?;
+            let record = crate::prepare::DurablePreparation::decode(context.principal().tenant.clone(), raw.bytes())
+                .map_err(|_| HumanOperationError::Refused)?;
+            if !record.extensions.contains_key(&6) && !record.extensions.contains_key(&7) {
+                return Err(HumanOperationError::Refused);
+            }
+            record.extensions.contains_key(&9) && !record.extensions.contains_key(&7)
+        };
+        if effect { self.restore_native_effect_cache(context, id)?; }
+        else { self.restore_native_cache(context, id)?; }
+        let operations = self.lock_operations()?;
+        let cached = operations.prepared.get(&(context.peer().tenant.clone(), context.peer().principal.clone(), hex(&id)))
+            .ok_or(HumanOperationError::Refused)?;
+        let prepared = &cached.prepared;
+        if prepared.canonical_bytes != request.canonical_bytes {
+            return Err(HumanOperationError::Refused);
+        }
+        crate::prepare::verify_disclosure_binding(prepared).map_err(|_| HumanOperationError::Refused)?;
+        context.permit().boundary(&self.session_control).map_err(|_| HumanOperationError::Refused)?;
+        let disclosure = &prepared.disclosure;
+        Ok(layerx_agent_api::identity::NativeDisclosureResultV1 {
+            preparation_id:id, canonical_bytes:prepared.canonical_bytes.clone(),
+            disclosure_digest:prepared.disclosure_digest.0,
+            activity_type:disclosure.activity_type.value(), actor:disclosure.actor.clone(),
+            authority:disclosure.authority.clone(), asset:disclosure.asset, fee_limit:disclosure.fee_limit,
+            not_before:disclosure.expiry.not_before, not_after:disclosure.expiry.not_after,
+            payload_expires_at:disclosure.expiry.payload_expires_at, idempotency_key:disclosure.idempotency_key,
+        })
+    }
+
     pub(crate) fn rpc_sign(
         &mut self,
         context: &crate::agent_rpc_peer::RpcOwnerContext<'_>,
@@ -493,6 +554,22 @@ impl<A: HumanAuthorityBoundary> UnifiedAgentOwner<A> {
         let (tenant, agent) = binding_coordinates(context)?;
         let reference = request.preparation_ref.as_str().to_owned();
         let preparation_id = digest_from_hex(&reference).ok_or(HumanOperationError::Refused)?;
+        let native_profile = {
+            let store = self.store.lock().map_err(|_| HumanOperationError::Unavailable)?;
+            let key = crate::prepare::DurablePreparation::store_key(&context.principal().tenant, preparation_id)
+                .map_err(|_| HumanOperationError::Refused)?;
+            store.get(&key).map(|raw| crate::prepare::DurablePreparation::decode(context.principal().tenant.clone(), raw.bytes()))
+                .transpose().map_err(|_| HumanOperationError::Refused)?
+                .and_then(|record| {
+                    (record.extensions.contains_key(&6) || record.extensions.contains_key(&7))
+                        .then_some(record.extensions.contains_key(&9) && !record.extensions.contains_key(&7))
+                })
+        };
+        match native_profile {
+            Some(true) => self.restore_native_effect_cache(context, preparation_id)?,
+            Some(false) => self.restore_native_cache(context, preparation_id)?,
+            None => {},
+        }
         let mut operations = self.lock_operations()?;
         let cached = operations
             .prepared
@@ -3161,6 +3238,7 @@ fn native_settlement_preparation(
 }
 
 fn settle_retained_native_effect(
+    node: &mut layerx_client::Client,
     registry: &layerx_types::payload::ModuleRegistry,
     budgets: &BudgetLimiter,
     store: &mut Store,
@@ -3214,17 +3292,21 @@ fn settle_retained_native_effect(
         .ok_or(HumanOperationError::Refused)?;
     let submission = crate::sign::verify_before_submit(&signed, &prepared, &public, registry)
         .map_err(|_| HumanOperationError::Refused)?;
-    let (reservation, witness) =
+    let (reservation, witness) = match
         crate::budget::program_settlement::read_retained_native_effect_debit_settlement(
-            registry,
-            &prepared,
-            &submission,
-            terminal,
-            authority,
-            store,
-            tenant,
-        )
-        .map_err(|_| HumanOperationError::Refused)?;
+            registry, &prepared, &submission, terminal, authority, store, tenant,
+        ) {
+        Ok(value) => value,
+        Err(crate::budget::program_settlement::ProgramSettlementError::SourceSnapshot) => {
+            let correlation = u64::from_be_bytes(id[..8].try_into().map_err(|_| HumanOperationError::Refused)?) | 1;
+            let prestate = node.asset_execution_prestate(terminal.execution_receipt(), correlation)
+                .map_err(|_| HumanOperationError::Unavailable)?;
+            crate::budget::program_settlement::read_retained_native_effect_debit_settlement_at_execution(
+                registry, &prepared, &submission, terminal, authority, store, tenant, &prestate,
+            ).map_err(|_| HumanOperationError::Refused)?
+        }
+        Err(_) => return Err(HumanOperationError::Refused),
+    };
     if witness.terminal_receipt() != terminal.receipt_ref() {
         return Err(HumanOperationError::Refused);
     }
@@ -12955,6 +13037,7 @@ impl<A: HumanAuthorityBoundary> ProductionHumanOperations<A> {
                             && !preparation.extensions.contains_key(&7)
                         {
                             settle_retained_native_effect(
+                                &mut self.node,
                                 &registry,
                                 settlement.budgets,
                                 &mut store,

@@ -222,7 +222,7 @@ pub(crate) fn mutation_key(ctx: &DispatchContext) -> Result<[u8; 32], Rejection>
     })
 }
 
-fn owner_error(request_id: RequestId, error: HumanOperationError) -> Rejection {
+pub(crate) fn owner_error(request_id: RequestId, error: HumanOperationError) -> Rejection {
     match error {
         HumanOperationError::Refused => {
             rejection(ErrorClass::PolicyRefusal, request_id, "owner.refused")
@@ -979,6 +979,10 @@ pub(crate) fn canonical_request_bytes(
             }
         }
         Operation::Prepare => {
+            if request.get("variant").and_then(Value::as_str) == Some("native_disclosure_v1") {
+                let typed = decode_wire::<crate::agent_rpc_wire::NativeDisclosureV1Wire>(request, id)?.into_request(id)?;
+                return serde_json::to_vec(&typed.canonical()).map(Some).map_err(|_| malformed(id));
+            }
             if native_send_variant(request) {
                 let typed = decode_wire::<NativeSendPrepareV1Wire>(request, id)?.into_request(id)?;
                 return native_send_prepare_digest(&typed)

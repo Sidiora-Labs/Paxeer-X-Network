@@ -58,3 +58,28 @@ required = ["request","capability_id"]
 request = "PrepareRequest, unchanged"
 capability_id = "64 lowercase hex characters"
 operation = "prepare"
+
+
+[type.NativeDisclosureV1]
+operation = "prepare"
+request = "NativeDisclosureRequestV1"
+response = "NativeDisclosureResultV1"
+credential = "Required current full credential and exact MCP Prepare permission; tenant and principal are resolved by the existing daemon owner."
+legacy = "Every existing prepare and sign request and refusal is retained unchanged."
+
+[type.McpExternalSignatureV1]
+operation = "sign"
+variant = "external_signature_v1"
+required = ["variant","preparation_ref","signature"]
+signature = "Exact caller-supplied 64-byte external signature; canonical MCP boundary removes only the explicit carrier variant before the unchanged SignRequest owner. No implicit signer."
+
+
+[type.McpNativeWriteV1]
+variant = "native_write_v1"
+required = ["variant","intent","preparation","canonical_bytes","signature","signer_public_key"]
+operations = ["wallet.send","token.transfer","token.mint","grant.issue","grant.draw","token.create"]
+canonical_bytes = "Actual unsigned canonical preview bytes; independently decoded with the genuine owner registry and compared to every native preparation field, signed purpose digest and preparation identity before any Prepare reservation. The actual owner Prepare bytes must subsequently equal these exact bytes."
+external_signature = "Caller-supplied signature over those exact bytes; the ordinary Sign owner verifies the real owner key."
+authorization = "Each genuine Prepare, Sign, Submit and Track stage reauthorizes the same full current MCP session credential for that exact operation. No umbrella permit or automatic signer."
+registration = "Unavailable until a distinct owner-approved native registration policy profile exists; the existing abbreviated token.create supply schema and legacy Register refusal are unchanged."
+result = "Actual ordinary Track response, or original held Prepare response when approval is required. Unknown remains pending and only genuine receipt evidence establishes execution."
