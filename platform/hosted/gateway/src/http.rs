@@ -111,7 +111,7 @@ struct OutboundHeaders<'a> {
 }
 
 impl Client {
-    pub(super) fn independent(&self) -> Self {
+    pub fn independent(&self) -> Self {
         Self {
             ca: self.ca.clone(),
             identity: self.identity.clone(),
