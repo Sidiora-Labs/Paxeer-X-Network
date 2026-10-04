@@ -69,7 +69,7 @@ COPY . .
 RUN cargo build --locked --manifest-path interop/Cargo.toml --release --package x-websearch --bin x-websearch && \
     test -x /src/.x-websearch-target/release/x-websearch
 
-FROM docker.io/ubuntu:24.04@sha256:104ae83764a5119017b8e8d6218fa0832b09df65aae7d5a6de29a85d813da2fb
+FROM docker.io/ubuntu:24.04@sha256:534baea6a22c03a63003dbc8dbe78fe34bc0d7e595d9a9dc9834884ff530eb55
 
 RUN apt-get update && \
     apt-get install -y --no-install-recommends ca-certificates libssl3t64 && \
