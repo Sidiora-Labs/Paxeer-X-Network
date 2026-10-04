@@ -42,7 +42,7 @@ def digest(path):
 
 def private_json(path, value):
     path = Path(path)
-    with path.open('w', opener=lambda name, flags: os.open(name, flags, 0o600)) as stream:
+    with open(path, 'w', opener=lambda name, flags: os.open(name, flags, 0o600)) as stream:
         json.dump(value, stream, indent=2)
         stream.write('\n')
 
@@ -145,7 +145,7 @@ def build():
     script.write_text('''import fs from 'node:fs';import path from 'node:path';import {createRequire} from 'node:module';import {pathToFileURL} from 'node:url';
 const c=JSON.parse(process.argv[2]);const req=createRequire(path.join(c.dependency_root,'../package.json'));
 const vite=await import(pathToFileURL(req.resolve('vite')).href);
-const aliases=[{find:'@paxeer/wallet',replacement:path.join(c.root,'human/wallet/sdk/src/index.ts')},{find:'@sidiora/layerx-sdk',replacement:path.join(c.root,'agent/sdk/typescript/src/index.ts')},{find:/^@\\//,replacement:path.join(c.root,'human/apps/wallet/src')+'/'}];
+const aliases=[{find:'@paxeer/wallet',replacement:path.join(c.root,'human/wallet/sdk/src/index.ts')},{find:'@sidiora/layerx-sdk/browser',replacement:path.join(c.root,'agent/sdk/typescript/src/browser.ts')},{find:'@sidiora/layerx-sdk',replacement:path.join(c.root,'agent/sdk/typescript/src/index.ts')},{find:/^@\\//,replacement:path.join(c.root,'human/apps/wallet/src')+'/'}];
 const modules=new Set();await vite.build({configFile:false,root:path.dirname(c.input),resolve:{alias:aliases,dedupe:['react','react-dom']},define:{'process.env':'{}','process.env.NODE_ENV':JSON.stringify('production')},plugins:[{name:'actual-pinned-dependencies',resolveId(id){if(!id.startsWith('.')&&!id.startsWith('/')&&!id.startsWith('\\0')){try{return req.resolve(id)}catch{return null}}},moduleParsed(info){modules.add(info.id)},closeBundle(){fs.writeFileSync(path.join(c.output,'source-modules.json'),JSON.stringify([...modules].sort()))}}],build:{outDir:c.output,emptyOutDir:true,rollupOptions:{input:c.input},minify:false}});
 const cli=req.resolve('playwright/cli');fs.writeFileSync(path.join(c.output,'playwright-cli.txt'),cli);const mod=req.resolve('@playwright/test');fs.writeFileSync(path.join(c.output,'playwright-module.txt'),mod);
 ''')

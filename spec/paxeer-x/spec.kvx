@@ -32283,7 +32283,7 @@ fleet_authority = "User ordered thirty agents into pending integrations within f
 source_status = "complete"
 completion_basis = "implementation under owner CONSTITUTION; qualification separately recorded"
 qualification_status = "UNRUN"
-source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-14.8-source-handoff.json"
+source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-14.8-repair-1.json"
 
 [task.24.14]
 status = "done"
