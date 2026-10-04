@@ -25,7 +25,7 @@ beta_qualify_focused() {
         echo 'beta-qualify: explicit spec, task, private ledger and evidence root required' >&2
         return 2
     }
-    exec bash "$root/tools/ci/beta-ledger-check.sh" --source-run --root "$root" \
+    exec bash "$root/scripts/ci/beta-ledger-check.sh" --source-run --root "$root" \
         --evidence-root "$directory" --spec "$spec" --task "$task" --ledger "$ledger" \
         --timeout "$timeout" --evidence-kind "$kind" -- "$@"
 }

@@ -3,7 +3,7 @@ set -euo pipefail
 
 usage() {
     cat <<'EOF'
-usage: tools/ci/human-web-image-build.sh [--tag REF] [--work-dir DIR] [--keep-image]
+usage: scripts/ci/human-web-image-build.sh [--tag REF] [--work-dir DIR] [--keep-image]
 
 Builds the human web image from the repository's tracked sources, using the
 same build context the beta cluster bring-up packs, so a failure here is the

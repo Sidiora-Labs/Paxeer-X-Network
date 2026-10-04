@@ -3,11 +3,11 @@ set -euo pipefail
 
 usage() {
     cat <<'EOF'
-usage: tools/ci/beta-contract-check.sh [--contract PATH] [--yaml-parser auto|pyyaml|builtin]
+usage: scripts/ci/beta-contract-check.sh [--contract PATH] [--yaml-parser auto|pyyaml|builtin]
 
 Checks the canonical beta contract (platform/docs/content/beta.md by default)
 against the sources it governs and fails on any disagreement, then runs
-tools/ci/beta-report.sh --check against the same contract so the contract and
+scripts/ci/beta-report.sh --check against the same contract so the contract and
 the rendered go/no-go report are checked together. Every violation is listed on
 stderr; the exit status is 1 when at least one violation exists here or in the
 report check, 2 on usage or environment errors, 0 otherwise.
@@ -128,7 +128,7 @@ install_package_unlisted) with their divergent values; and readiness_claim
 must be false while any contradiction exists or any surface is below its
 required rung.
 
-The report check then runs as tools/ci/beta-report.sh --check --contract with
+The report check then runs as scripts/ci/beta-report.sh --check --contract with
 this contract: it fails when build/qualification/beta-report.md on disk is not the
 report the evidence ledger renders, when this contract states a reached rung
 the evidence does not support, when the Artifact set report_path, report_status
@@ -179,8 +179,8 @@ beta_contract_check() {
     "$root"/*) contract_arg=${contract#"$root"/} ;;
     *) contract_arg=$contract ;;
     esac
-    [ -x "$root/tools/ci/beta-report.sh" ] || {
-        echo "beta-contract-check: tools/ci/beta-report.sh is required" >&2
+    [ -x "$root/scripts/ci/beta-report.sh" ] || {
+        echo "beta-contract-check: scripts/ci/beta-report.sh is required" >&2
         return 2
     }
     python3 - "$root" "$contract" "$yaml_parser" <<'PY' || status=$?
@@ -1209,7 +1209,7 @@ print(
     f"{len(computed_contradictions)} contradictions listed, readiness_claim={readiness})"
 )
 PY
-    "$root/tools/ci/beta-report.sh" --check --contract "$contract_arg" || report_status=$?
+    "$root/scripts/ci/beta-report.sh" --check --contract "$contract_arg" || report_status=$?
     if [ "$status" -ne 0 ]; then
         return "$status"
     fi

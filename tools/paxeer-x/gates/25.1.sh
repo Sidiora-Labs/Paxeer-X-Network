@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -uo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/../../.." || exit 1
-output=$(timeout 10m python3 tools/ci/tests/focused-source-identity.py 2>&1)
+output=$(timeout 10m python3 tests/ci/focused-source-identity.py 2>&1)
 code=$?
 printf '%s\n' "$output"
 tests=$(sed -n 's/^Ran \([0-9][0-9]*\) tests\{0,1\} in .*/\1/p' <<<"$output" | tail -n 1)

@@ -130,7 +130,7 @@ platform-test-tooling: platform-test-cli-production-credential-refusal public-tl
 		platform/hosted/tests/topology-check.sh \
 		platform/hosted/tests/beta-cluster.sh \
 		platform/hosted/node/bootstrap.sh platform/hosted/node/supervisor.sh \
-		platform/hosted/paxeer/deploy-contracts.sh tools/ci/beta-contract-check.sh
+		platform/hosted/paxeer/deploy-contracts.sh scripts/ci/beta-contract-check.sh
 	python3 -m py_compile platform/hosted/paxeer/settlement-domain.py platform/hosted/paxeer/prepare-beta.py
 	bash -n platform/cli/tests/clean-bootstrap.sh
 	$(PLATFORM_CARGO) build --offline --manifest-path $(PLATFORM_MANIFEST) --locked -p layerx-platform-cli

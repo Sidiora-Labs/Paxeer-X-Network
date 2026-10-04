@@ -37,7 +37,7 @@ on:
       - 'agent/sdk/python/layerx_sdk/web_search.py'
       - 'agent/sdk/python/tests/**'
       - 'agent/crates/**'
-      - 'tools/ci/xweb-forge-libs.sh'
+      - 'scripts/ci/xweb-forge-libs.sh'
       - '.github/workflows/xweb-test.yml'
   push:
     branches:
@@ -77,7 +77,7 @@ on:
       - 'agent/sdk/python/layerx_sdk/web_search.py'
       - 'agent/sdk/python/tests/**'
       - 'agent/crates/**'
-      - 'tools/ci/xweb-forge-libs.sh'
+      - 'scripts/ci/xweb-forge-libs.sh'
       - '.github/workflows/xweb-test.yml'
 
 permissions:
@@ -149,7 +149,7 @@ jobs:
           version: v1.8.1
 
       - name: Run the pinned Solidity library clone into contracts/lib
-        run: bash tools/ci/xweb-forge-libs.sh
+        run: bash scripts/ci/xweb-forge-libs.sh
 
       - name: Run forge test for contracts/test/XWebConsumer.t.sol
         run: FOUNDRY_CONFIG=foundry.paxeer.toml forge test --evm-version=prague --match-path contracts/test/XWebConsumer.t.sol

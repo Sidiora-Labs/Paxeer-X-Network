@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Runs one release gate command and records it as an executed-evidence gate
-# entry in the schema tools/ci/beta-ledger-check.sh enforces.
+# entry in the schema scripts/ci/beta-ledger-check.sh enforces.
 #
-# usage: tools/ci/release-gate.sh --job <id> --ordinal <n> [--task <task>] [--reqs <req.ac,...>] -- make <target>
+# usage: scripts/ci/release-gate.sh --job <id> --ordinal <n> [--task <task>] [--reqs <req.ac,...>] -- make <target>
 #
 # The command log and the gate record are written below
 # spec/layerx-beta/evidence/<revision>/release-gates/<job>/ so the retained

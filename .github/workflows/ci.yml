@@ -70,7 +70,7 @@ jobs:
       - name: Install state surface tooling
         run: sudo apt-get update && sudo apt-get install --yes ripgrep
       - name: Check formatting and state surface
-        run: forge fmt --check && tools/ci/solidity-state-surface.sh
+        run: forge fmt --check && scripts/ci/solidity-state-surface.sh
       - name: Bootstrap pinned Solidity libraries
         run: bash contracts/bootstrap-libs.sh
       - name: Build contracts

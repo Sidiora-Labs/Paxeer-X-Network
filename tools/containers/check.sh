@@ -150,14 +150,14 @@ reference_hits() {
     python3 /dev/fd/3 "$1" 3<<'PYTHON'
 import sys
 
-accepted = {('tools/ci/tests/ci-recipe-contract.py', '93'): "            require('tools/flyci/runner/Dockerfile' not in "
+accepted = {('tests/ci/ci-recipe-contract.py', '93'): "            require('tools/flyci/runner/Dockerfile' not in "
                                                  "command and 'tools/flyci/controller/Dockerfile' not in "
                                                  "command, 'obsolete Dockerfile in ' + name)",
- ('tools/ci/tests/ci-recipe-contract.py', '137'): "            ('capability.109.1.2', 'dockerfile', "
+ ('tests/ci/ci-recipe-contract.py', '137'): "            ('capability.109.1.2', 'dockerfile', "
                                                   "'tools/flyci/controller/Dockerfile'),",
- ('tools/ci/tests/ci-recipe-contract.py', '138'): "            ('capability.109.1.1', 'build_command', "
+ ('tests/ci/ci-recipe-contract.py', '138'): "            ('capability.109.1.1', 'build_command', "
                                                   "'docker build tools/flyci/runner'),",
- ('tools/ci/tests/ci-recipe-contract.py', '156'): '        for path, value in '
+ ('tests/ci/ci-recipe-contract.py', '156'): '        for path, value in '
                                                   "(('docker/flyci-runner/Dockerfile', 'COPY "
                                                   "tools/flyci/absent-contract-input /runner\\n'), "
                                                   "('docker/flyci-controller/Dockerfile', 'COPY ../go.mod "

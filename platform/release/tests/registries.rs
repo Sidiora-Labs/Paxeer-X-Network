@@ -686,12 +686,12 @@ fn schedule_only_release_gate_is_refused() {
 fn release_gate_run_outside_the_gate_runner_is_refused() {
     let source = replaced(
         &committed_workflow(),
-        "tools/ci/release-gate.sh --job agent-sanitizers --ordinal 2 -- make agent-test-sanitize",
+        "scripts/ci/release-gate.sh --job agent-sanitizers --ordinal 2 -- make agent-test-sanitize",
         "make agent-test-sanitize",
     );
     expect_workflow_refusal(
         &source,
-        "release gate agent-sanitizers must run through tools/ci/release-gate.sh",
+        "release gate agent-sanitizers must run through scripts/ci/release-gate.sh",
     );
 }
 

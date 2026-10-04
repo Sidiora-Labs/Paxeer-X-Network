@@ -101,5 +101,5 @@ printf '%s\n' "sanitizer=memory status=clean"
 
 build_and_run leak leak LSAN_OPTIONS exitcode=99:report_objects=1
 
-tools/ci/no-float-scan.sh "$build_dir"
+scripts/ci/no-float-scan.sh "$build_dir"
 printf '%s\n' "arithmetic proof and sanitizer qualification complete"

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Resolve the release version the source revision declares and refuse drift.
 
-usage: tools/ci/release-version.py [--tag <sdk-v...>]
+usage: scripts/ci/release-version.py [--tag <sdk-v...>]
 
 Without --tag the version is the agent workspace version and every published
 manifest must agree with it. With --tag the version is taken from the release

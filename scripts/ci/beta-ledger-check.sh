@@ -3,7 +3,7 @@ set -euo pipefail
 
 usage() {
     cat <<'EOF'
-usage: tools/ci/beta-ledger-check.sh [--ledger PATH] [--spec PATH] [--revisions]
+usage: scripts/ci/beta-ledger-check.sh [--ledger PATH] [--spec PATH] [--revisions]
 
 Validates every record of the LayerX beta executed-evidence ledger
 (spec/layerx-beta/qualification.kvx by default) and prints the set of distinct

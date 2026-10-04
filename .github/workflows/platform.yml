@@ -346,7 +346,7 @@ jobs:
       - name: Install locked AssemblyScript dependencies
         run: make programs-js-install
       - name: Run the aggregate Programs acceptance suite and record its gate
-        run: tools/ci/release-gate.sh --job programs-acceptance --ordinal 1 -- make programs-test
+        run: scripts/ci/release-gate.sh --job programs-acceptance --ordinal 1 -- make programs-test
       - name: Retain the gate record and log
         if: ${{ always() }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
@@ -395,7 +395,7 @@ jobs:
             "CARGO_PROFILE_DEV_DEBUG=$CARGO_PROFILE_DEV_DEBUG" \
             "CARGO_PROFILE_TEST_DEBUG=$CARGO_PROFILE_TEST_DEBUG" \
             "LAYERX_TEST_NATIVE_BIN_DIR=$PWD/build/bin" \
-            tools/ci/release-gate.sh --job agent-sanitizers --ordinal 2 -- make agent-test-sanitize
+            scripts/ci/release-gate.sh --job agent-sanitizers --ordinal 2 -- make agent-test-sanitize
       - name: Retain the gate record and log
         if: ${{ always() }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
@@ -420,7 +420,7 @@ jobs:
           rustup toolchain install nightly-2025-11-10 --profile minimal &&
           cargo install cargo-fuzz --locked
       - name: Run the committed long-fuzz corpus and record its gate
-        run: tools/ci/release-gate.sh --job agent-fuzz-corpus --ordinal 3 -- make agent-fuzz-long
+        run: scripts/ci/release-gate.sh --job agent-fuzz-corpus --ordinal 3 -- make agent-fuzz-long
       - name: Retain the gate record and log
         if: ${{ always() }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
@@ -455,7 +455,7 @@ jobs:
           sudo apt-get update && sudo apt-get install --yes
           build-essential clang libssl-dev libsqlite3-dev ripgrep
       - name: Replay the golden ledger on this architecture and record its gate
-        run: tools/ci/release-gate.sh --job replay-matrix-${{ matrix.machine }} --ordinal ${{ matrix.ordinal }} -- make test-replay-golden
+        run: scripts/ci/release-gate.sh --job replay-matrix-${{ matrix.machine }} --ordinal ${{ matrix.ordinal }} -- make test-replay-golden
       - name: Retain the gate record and log
         if: ${{ always() }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
@@ -500,7 +500,7 @@ jobs:
         id: version
         env:
           LAYERX_RELEASE_TAG: ${{ startsWith(github.ref, 'refs/tags/sdk-v') && github.ref_name || '' }}
-        run: tools/ci/release-version.py ${LAYERX_RELEASE_TAG:+--tag "$LAYERX_RELEASE_TAG"} | tee build/release/pipeline/version.txt
+        run: scripts/ci/release-version.py ${LAYERX_RELEASE_TAG:+--tag "$LAYERX_RELEASE_TAG"} | tee build/release/pipeline/version.txt
       - name: Retain the release plan, source digest and version
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
@@ -593,7 +593,7 @@ jobs:
             case "$location" in
               *'{'*) echo "crate download template $LAYERX_RELEASE_DOWNLOAD carries a placeholder this pipeline cannot fill" >&2; exit 1 ;;
             esac
-            $GITHUB_WORKSPACE/tools/ci/release-artifact-record.sh "$package" "$crate" built-bytes "$crate.sigstore.json" "$sbom" provenance.sigstore.json "$location"
+            $GITHUB_WORKSPACE/scripts/ci/release-artifact-record.sh "$package" "$crate" built-bytes "$crate.sigstore.json" "$sbom" provenance.sigstore.json "$location"
           done
       - name: Generate the SBOM of every published workspace
         run: |
@@ -738,7 +738,7 @@ jobs:
             tarball=$(echo "$package" | sed 's/^@//; s#/#-#')-$LAYERX_RELEASE_VERSION.tgz
             bare=${package#*/}
             encoded=$(printf '%s' "$package" | sed 's#/#%2F#')
-            $GITHUB_WORKSPACE/tools/ci/release-artifact-record.sh "$package" "$tarball" built-bytes "$tarball.sigstore.json" "$(echo "$package" | tr '/@' '-_').sbom.spdx.json" "npm-provenance:${LAYERX_RELEASE_TARGET%/}/-/npm/v1/attestations/$encoded@$LAYERX_RELEASE_VERSION" "${LAYERX_RELEASE_TARGET%/}/$package/-/$bare-$LAYERX_RELEASE_VERSION.tgz"
+            $GITHUB_WORKSPACE/scripts/ci/release-artifact-record.sh "$package" "$tarball" built-bytes "$tarball.sigstore.json" "$(echo "$package" | tr '/@' '-_').sbom.spdx.json" "npm-provenance:${LAYERX_RELEASE_TARGET%/}/-/npm/v1/attestations/$encoded@$LAYERX_RELEASE_VERSION" "${LAYERX_RELEASE_TARGET%/}/$package/-/$bare-$LAYERX_RELEASE_VERSION.tgz"
           done
       - name: Sign every tarball with sigstore keyless signing
         if: startsWith(github.ref, 'refs/tags/sdk-v')
@@ -854,7 +854,7 @@ jobs:
             test -n "$wheel"
             file=$(basename "$wheel")
             pep440=$(echo "$file" | cut -d '-' -f 2)
-            $GITHUB_WORKSPACE/tools/ci/release-artifact-record.sh "$package" "$wheel" built-bytes "signatures/$file.sigstore.json" "$package.sbom.spdx.json" "pypi-integrity:$LAYERX_RELEASE_DISTRIBUTION/integrity/$package/$pep440/$file/provenance" "simple+${LAYERX_RELEASE_TARGET%/}/$package/"
+            $GITHUB_WORKSPACE/scripts/ci/release-artifact-record.sh "$package" "$wheel" built-bytes "signatures/$file.sigstore.json" "$package.sbom.spdx.json" "pypi-integrity:$LAYERX_RELEASE_DISTRIBUTION/integrity/$package/$pep440/$file/provenance" "simple+${LAYERX_RELEASE_TARGET%/}/$package/"
           done
       - name: Generate the SBOM of every published package
         run: |
@@ -958,7 +958,7 @@ jobs:
           escaped=$(printf '%s' "$LAYERX_RELEASE_PACKAGES" | sed 's/[A-Z]/!\L&/g')
           cd "$LAYERX_RELEASE_OUTPUT"
           rm -f artifacts.kvx
-          $GITHUB_WORKSPACE/tools/ci/release-artifact-record.sh "$LAYERX_RELEASE_PACKAGES" "layerx-go-$LAYERX_RELEASE_VERSION.tar" source-archive tag-signature.txt layerx-go.sbom.spdx.json go-checksum-database:sum.golang.org "${LAYERX_RELEASE_TARGET%/}/$escaped/@v/v$LAYERX_RELEASE_VERSION.zip"
+          $GITHUB_WORKSPACE/scripts/ci/release-artifact-record.sh "$LAYERX_RELEASE_PACKAGES" "layerx-go-$LAYERX_RELEASE_VERSION.tar" source-archive tag-signature.txt layerx-go.sbom.spdx.json go-checksum-database:sum.golang.org "${LAYERX_RELEASE_TARGET%/}/$escaped/@v/v$LAYERX_RELEASE_VERSION.zip"
       - name: Generate the SBOM of the module
         run: syft scan dir:platform/sdk/go -o spdx-json="$LAYERX_RELEASE_OUTPUT/layerx-go.sbom.spdx.json"
       - name: Import the release signing key
@@ -1020,7 +1020,7 @@ jobs:
           escaped=$(printf '%s' "$module" | sed 's/[A-Z]/!\L&/g')
           cd "$output"
           rm -f artifacts.kvx
-          $GITHUB_WORKSPACE/tools/ci/release-artifact-record.sh "$module" "layerx-go-v$LAYERX_RELEASE_VERSION.zip" registry-bytes tag-signature.txt layerx-go.sbom.spdx.json "go-checksum-database:sum.golang.org $checksum" "${LAYERX_RELEASE_TARGET%/}/$escaped/@v/v$LAYERX_RELEASE_VERSION.zip"
+          $GITHUB_WORKSPACE/scripts/ci/release-artifact-record.sh "$module" "layerx-go-v$LAYERX_RELEASE_VERSION.zip" registry-bytes tag-signature.txt layerx-go.sbom.spdx.json "go-checksum-database:sum.golang.org $checksum" "${LAYERX_RELEASE_TARGET%/}/$escaped/@v/v$LAYERX_RELEASE_VERSION.zip"
           echo install_check=pass >> publication.txt
       - name: Retain the archives, digests, SBOM, tag signature, artifact record and publication record
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
@@ -1094,7 +1094,7 @@ jobs:
             directory=$(printf '%s' "$group" | tr '.' '/')/$name/$LAYERX_RELEASE_VERSION
             for extension in jar pom; do
               file=staging/$directory/$name-$LAYERX_RELEASE_VERSION.$extension
-              $GITHUB_WORKSPACE/tools/ci/release-artifact-record.sh "$coordinate" "$file" built-bytes "$file.asc" "$name.sbom.spdx.json" provenance.sigstore.json "${LAYERX_RELEASE_TARGET%/}/$directory/$name-$LAYERX_RELEASE_VERSION.$extension"
+              $GITHUB_WORKSPACE/scripts/ci/release-artifact-record.sh "$coordinate" "$file" built-bytes "$file.asc" "$name.sbom.spdx.json" provenance.sigstore.json "${LAYERX_RELEASE_TARGET%/}/$directory/$name-$LAYERX_RELEASE_VERSION.$extension"
             done
           done
       - name: Generate the SBOM of every published module
@@ -1230,7 +1230,7 @@ jobs:
           } > publication.txt
           echo "LAYERX_RELEASE_PACKAGE_COMMIT=$commit" >> "$GITHUB_ENV"
           rm -f artifacts.kvx
-          $GITHUB_WORKSPACE/tools/ci/release-artifact-record.sh LayerXSDK "LayerXSDK-$LAYERX_RELEASE_VERSION.tar" built-bytes tag-signature.txt LayerXSDK.sbom.spdx.json provenance.sigstore.json "${LAYERX_RELEASE_TARGET:+git+${LAYERX_RELEASE_TARGET%/}#$LAYERX_RELEASE_VERSION}"
+          $GITHUB_WORKSPACE/scripts/ci/release-artifact-record.sh LayerXSDK "LayerXSDK-$LAYERX_RELEASE_VERSION.tar" built-bytes tag-signature.txt LayerXSDK.sbom.spdx.json provenance.sigstore.json "${LAYERX_RELEASE_TARGET:+git+${LAYERX_RELEASE_TARGET%/}#$LAYERX_RELEASE_VERSION}"
       - name: Generate the SBOM of the package
         run: syft scan dir:platform/sdk/swift -o spdx-json="$LAYERX_RELEASE_OUTPUT/LayerXSDK.sbom.spdx.json"
       - name: Import the release signing key
@@ -1371,7 +1371,7 @@ jobs:
           cd ..
           lower=$(printf '%s' "$LAYERX_RELEASE_VERSION" | tr '[:upper:]' '[:lower:]')
           rm -f artifacts.kvx
-          $GITHUB_WORKSPACE/tools/ci/release-artifact-record.sh LayerX.Sdk "dist/LayerX.Sdk.$LAYERX_RELEASE_VERSION.nupkg" built-bytes "LayerX.Sdk.$LAYERX_RELEASE_VERSION.nupkg.sigstore.json" LayerX.Sdk.sbom.spdx.json provenance.sigstore.json "${LAYERX_RELEASE_NUGET_BASE}layerx.sdk/$lower/layerx.sdk.$lower.nupkg"
+          $GITHUB_WORKSPACE/scripts/ci/release-artifact-record.sh LayerX.Sdk "dist/LayerX.Sdk.$LAYERX_RELEASE_VERSION.nupkg" built-bytes "LayerX.Sdk.$LAYERX_RELEASE_VERSION.nupkg.sigstore.json" LayerX.Sdk.sbom.spdx.json provenance.sigstore.json "${LAYERX_RELEASE_NUGET_BASE}layerx.sdk/$lower/layerx.sdk.$lower.nupkg"
       - name: Generate the SBOM of the package
         run: syft scan dir:platform/sdk/dotnet -o spdx-json="$LAYERX_RELEASE_OUTPUT/LayerX.Sdk.sbom.spdx.json"
       - name: Sign the package with sigstore keyless signing
@@ -1435,7 +1435,7 @@ jobs:
           cp "$fetched" "$install/../LayerX.Sdk.$LAYERX_RELEASE_VERSION.registry.nupkg"
           cd "$install/.."
           rm -f artifacts.kvx
-          $GITHUB_WORKSPACE/tools/ci/release-artifact-record.sh LayerX.Sdk "LayerX.Sdk.$LAYERX_RELEASE_VERSION.registry.nupkg" registry-bytes repository-signature.txt LayerX.Sdk.sbom.spdx.json provenance.sigstore.json "${LAYERX_RELEASE_NUGET_BASE}layerx.sdk/$lower/layerx.sdk.$lower.nupkg"
+          $GITHUB_WORKSPACE/scripts/ci/release-artifact-record.sh LayerX.Sdk "LayerX.Sdk.$LAYERX_RELEASE_VERSION.registry.nupkg" registry-bytes repository-signature.txt LayerX.Sdk.sbom.spdx.json provenance.sigstore.json "${LAYERX_RELEASE_NUGET_BASE}layerx.sdk/$lower/layerx.sdk.$lower.nupkg"
           echo install_check=pass >> publication.txt
       - name: Retain the packages, digests, SBOM, signatures, attestation, artifact record and publication record
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4

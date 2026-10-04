@@ -51,7 +51,7 @@ const HEX: &[u8; 16] = b"0123456789abcdef";
 const RELEASE_CONDITION: &str =
     "github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/sdk-v')";
 const TAG_CONDITION: &str = "startsWith(github.ref, 'refs/tags/sdk-v')";
-const GATE_RUNNER: &str = "tools/ci/release-gate.sh";
+const GATE_RUNNER: &str = "scripts/ci/release-gate.sh";
 const REGISTRY_ENV: &str = "LAYERX_RELEASE_REGISTRY";
 const DISTRIBUTION_ENV: &str = "LAYERX_RELEASE_DISTRIBUTION";
 const PACKAGES_ENV: &str = "LAYERX_RELEASE_PACKAGES";

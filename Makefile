@@ -338,7 +338,7 @@ $(BUILD_DIR)/tests/lxp_test_module_ctx: \
 
 test-module-ctx: $(BUILD_DIR)/tests/lxp_test_module_ctx
 	$(RUN_PREFIX) $(BUILD_DIR)/tests/lxp_test_module_ctx
-	tools/ci/symbol-allowlist.sh "$(BUILD_DIR)"
+	scripts/ci/symbol-allowlist.sh "$(BUILD_DIR)"
 
 $(BUILD_DIR)/tests/lxp_test_dispatch: tests/protocol/lxp_test_dispatch.c \
 		$(LIBRARY) $(PROGRAMS_RUNTIME_LIB) | programs-build
@@ -376,10 +376,10 @@ $(BUILD_DIR)/tests/lxp_test_golden_replay: \
 
 test-replay-golden-local: $(BUILD_DIR)/tests/lxp_test_golden_replay
 	$(RUN_PREFIX) $(BUILD_DIR)/tests/lxp_test_golden_replay
-	tools/ci/symbol-allowlist.sh "$(BUILD_DIR)"
+	scripts/ci/symbol-allowlist.sh "$(BUILD_DIR)"
 
 test-replay-golden:
-	tools/ci/replay-matrix.sh
+	scripts/ci/replay-matrix.sh
 
 $(BUILD_DIR)/tests/test_account_id: tests/ledger/test_account_id.c $(LIBRARY)
 	@mkdir -p $(@D)
@@ -1624,7 +1624,7 @@ test-shadow: $(BUILD_DIR)/tests/test_shadow_replay
 	$(RUN_PREFIX) $(BUILD_DIR)/tests/test_shadow_replay
 
 test-contract-state-surface:
-	tools/ci/solidity-state-surface.sh
+	scripts/ci/solidity-state-surface.sh
 
 test-contracts: test-contract-state-surface
 	forge test --offline --root .
@@ -1813,7 +1813,7 @@ test-crypto-sanitizers:
 
 test-crypto-ct: $(BUILD_DIR)/tests/lxp_test_ct
 	$(RUN_PREFIX) $(BUILD_DIR)/tests/lxp_test_ct
-	tools/ci/symbol-allowlist.sh "$(BUILD_DIR)"
+	scripts/ci/symbol-allowlist.sh "$(BUILD_DIR)"
 	$(MAKE) --no-print-directory test-crypto-sanitizers
 
 $(BUILD_DIR)/tests/lxp_test_u128: tests/arith/lxp_test_u128.c $(LIBRARY)
@@ -1890,7 +1890,7 @@ test-arith-nofloat: build $(BUILD_DIR)/tests/lxp_test_nofloat
 		echo "bare amount addition compile-fail test unexpectedly compiled" >&2; \
 		exit 1; \
 	fi
-	tools/ci/no-float-scan.sh "$(BUILD_DIR)"
+	scripts/ci/no-float-scan.sh "$(BUILD_DIR)"
 
 $(BUILD_DIR)/tests/lxp_test_log: tests/storage/lxp_test_log.c $(LIBRARY)
 	@mkdir -p $(@D)
@@ -1926,7 +1926,7 @@ $(BUILD_DIR)/tests/lxp_test_projection: tests/storage/lxp_test_projection.c \
 
 test-projection: $(BUILD_DIR)/tests/lxp_test_projection build
 	$(RUN_PREFIX) $(BUILD_DIR)/tests/lxp_test_projection
-	tools/ci/symbol-allowlist.sh "$(BUILD_DIR)"
+	scripts/ci/symbol-allowlist.sh "$(BUILD_DIR)"
 
 $(BUILD_DIR)/tests/lxp_test_rebuild: tests/storage/lxp_test_rebuild.c \
 		src/storage/lxp_projection.c $(LIBRARY) migrations/0001_projection.sql
@@ -2247,11 +2247,11 @@ test-sanitizer-suite: test-result test-protocol test-harness \
 	$(RUN_PREFIX) $(BUILD_DIR)/tests/lxp_test_arena
 
 scan-consensus: build
-	tools/ci/no-float-scan.sh "$(BUILD_DIR)"
-	tools/ci/symbol-allowlist.sh "$(BUILD_DIR)"
+	scripts/ci/no-float-scan.sh "$(BUILD_DIR)"
+	scripts/ci/symbol-allowlist.sh "$(BUILD_DIR)"
 
 public-audit:
-	tools/ci/public-repo-audit.sh
+	scripts/ci/public-repo-audit.sh
 
 agent-build:
 	$(AGENT_CARGO) build --manifest-path $(AGENT_MANIFEST) --locked --workspace
@@ -3205,7 +3205,7 @@ paxeer-manifest-lint: workspace-inventory-check paxeer-npm-static-test
 	@set -eu; for directory in $(PAXEER_NESTED_GO_DIRS); do (cd "$$directory" && test -z "$$(gofmt -l .)" && GOPROXY=off go vet ./... && go mod verify); done
 
 developer-dashboard-install:
-	node tools/ci/developer-dashboard-lock.mjs
+	node scripts/ci/developer-dashboard-lock.mjs
 	$(MAKE) human-js-install
 	@test ! -e platform/hosted/dashboard/web/node_modules || \
 		test "$$(readlink platform/hosted/dashboard/web/node_modules)" = "../../../../human/apps/web/node_modules"
@@ -3665,13 +3665,13 @@ programs-quickstart:
 .PHONY: beta-ledger-check beta-contract-check beta-report
 
 beta-ledger-check:
-	tools/ci/beta-ledger-check.sh
+	scripts/ci/beta-ledger-check.sh
 
 beta-contract-check: beta-report
-	tools/ci/beta-contract-check.sh
+	scripts/ci/beta-contract-check.sh
 
 beta-report:
-	tools/ci/beta-report.sh
+	scripts/ci/beta-report.sh
 
 # LayerX beta: qualification runner gate and in-repository driver
 .PHONY: beta-qualify beta-driver-test
@@ -3684,7 +3684,7 @@ beta-driver-test:
 
 .PHONY: test-lni-version-parity
 test-lni-version-parity:
-	tools/ci/lni-version-parity.sh
+	scripts/ci/lni-version-parity.sh
 
 $(BUILD_DIR)/tests/lxp_test_program_admission: tests/daemon/lxp_test_program_admission.c $(LIBRARY) $(PROGRAMS_RUNTIME_LIB) | programs-build
 	@mkdir -p $(@D)
@@ -3885,7 +3885,7 @@ test-daemon-allowance: $(BUILD_DIR)/tests/lxp_test_daemon_allowance
 
 .PHONY: beta-qualify-focused
 beta-qualify-focused:
-	tools/ci/beta-qualify.sh \
+	scripts/ci/beta-qualify.sh \
 		'make build layerxd layerx-genesis-build' \
 		'make agent-build' \
 		'make human-build' \

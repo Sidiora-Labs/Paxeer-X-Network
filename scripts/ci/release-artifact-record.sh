@@ -3,7 +3,7 @@ set -euo pipefail
 
 usage() {
     cat <<'USAGE'
-usage: tools/ci/release-artifact-record.sh <name> <file> <digest_of> <signature> <sbom> <attestation> <location>
+usage: scripts/ci/release-artifact-record.sh <name> <file> <digest_of> <signature> <sbom> <attestation> <location>
 
 Appends one [artifact.<n>] section to artifacts.kvx in the current directory,
 recording the retained artifact <file> (a path relative to the current

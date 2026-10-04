@@ -138,12 +138,12 @@ audit_rg() {
 }
 
 private_refs='(/root/(Layerx-protocol|project-Quorum|private-neo-v1|matrix|layerX)(/|$)|147\.93\.139\.18)'
-if audit_rg '^tools/ci/public-repo-audit\.sh$' "$private_refs"; then
+if audit_rg '^scripts/ci/public-repo-audit\.sh$' "$private_refs"; then
     echo "private workspace or infrastructure reference found" >&2
     exit 1
 fi
 
-secret_scan_allowlist='^tools/ci/public-repo-audit\.sh$'
+secret_scan_allowlist='^scripts/ci/public-repo-audit\.sh$'
 secret_scan_allowlist="$secret_scan_allowlist"'|^rpc/tests/mock_data/transactions/0x99d895ea71e5ce3a8b949ba7979a27c08080210a4ba9b46b0bb06f8126b6957d\.json$'
 secret_scan_allowlist="$secret_scan_allowlist"'|^rpc/tests/mock_data/transactions/0x1b9ceaabadfc635aa8eb5e6d4a66ee60c826980805fa93af3913872f7b565586\.json$'
 secret_scan_allowlist="$secret_scan_allowlist"'|^platform/integrations/ios/Sources/LayerXMobile/EmbeddedSecretDetector\.swift$'
@@ -155,7 +155,7 @@ if audit_rg "$secret_scan_allowlist" -i "$secret_shapes"; then
     exit 1
 fi
 
-for script in tools/*.sh tools/ci/*.sh; do
+for script in tools/*.sh scripts/ci/*.sh; do
     IFS= read -r interpreter < "$script"
     case "$interpreter" in
         '#!/bin/sh' | '#!/usr/bin/env sh') sh -n "$script" ;;

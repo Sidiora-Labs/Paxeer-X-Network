@@ -3,8 +3,8 @@ WORKDIR /src
 COPY human/apps/web/package.json human/apps/web/package-lock.json /src/human/apps/web/
 COPY human/apps/web/packages/layerx-ui /src/human/apps/web/packages/layerx-ui
 COPY platform/hosted/dashboard/web /src/platform/hosted/dashboard/web
-COPY tools/ci/developer-dashboard-lock.mjs /src/tools/ci/developer-dashboard-lock.mjs
-RUN node tools/ci/developer-dashboard-lock.mjs
+COPY scripts/ci/developer-dashboard-lock.mjs /src/scripts/ci/developer-dashboard-lock.mjs
+RUN node scripts/ci/developer-dashboard-lock.mjs
 RUN npm --prefix /src/human/apps/web ci --ignore-scripts --no-audit --no-fund && \
     npm --prefix /src/human/apps/web run build:ui && \
     ln -s ../../../../human/apps/web/node_modules /src/platform/hosted/dashboard/web/node_modules

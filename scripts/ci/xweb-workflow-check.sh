@@ -86,7 +86,7 @@ FILTERS = [
     "agent/sdk/python/layerx_sdk/web_search.py",
     "agent/sdk/python/tests/**",
     "agent/crates/**",
-    "tools/ci/xweb-forge-libs.sh",
+    "scripts/ci/xweb-forge-libs.sh",
     WORKFLOW_PATH,
 ]
 TRIGGERS = ["pull_request", "push"]

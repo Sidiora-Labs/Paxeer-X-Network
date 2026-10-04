@@ -7,7 +7,7 @@ import shlex
 import subprocess
 import unittest
 
-ROOT = Path(__file__).resolve().parents[3]
+ROOT = Path(__file__).resolve().parents[2]
 SPEC = 'spec/paxeer-x/spec.kvx'
 CHECK = 'tools/bringup/check-live.sh'
 CANARY = '.github/workflows/runner-canary.yml'
@@ -92,7 +92,7 @@ def validate_contract(records, sources):
             require(not re.search(r'docker build[^\n]*\s+tools/flyci/(?:runner|controller)(?:[\s\x27\x22;&]|$)', command), 'obsolete build context in ' + name)
             require('tools/flyci/runner/Dockerfile' not in command and 'tools/flyci/controller/Dockerfile' not in command, 'obsolete Dockerfile in ' + name)
     task = records['task.25.4']
-    require(task['verify_cmd'] == 'timeout 10m python3 tools/ci/tests/ci-recipe-contract.py', 'source gate command')
+    require(task['verify_cmd'] == 'timeout 10m python3 tests/ci/ci-recipe-contract.py', 'source gate command')
     require(task['source_only'] is True and task['recipe_resolution'] == 'resolution.63', 'source-only qualification')
     source = sources[CHECK]
     check = shell_function(source, 'check_ci')

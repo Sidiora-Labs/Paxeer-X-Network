@@ -15,7 +15,7 @@
 #
 # Run from anywhere:
 #
-#   tools/ci/path-length-check.sh
+#   scripts/ci/path-length-check.sh
 #
 # Exit codes: 0 when every tracked path is inside both bounds, 1 when one is
 # not, 2 when the check cannot run.

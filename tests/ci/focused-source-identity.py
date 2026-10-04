@@ -9,7 +9,7 @@ import subprocess
 import tempfile
 import unittest
 
-ROOT = Path(__file__).resolve().parents[3]
+ROOT = Path(__file__).resolve().parents[2]
 SCRIPTS = ('beta-qualify.sh', 'beta-ledger-check.sh', 'beta-report.sh')
 
 
@@ -23,16 +23,16 @@ class FocusedSourceIdentity(unittest.TestCase):
         self.run_command(['git', 'init', '-b', 'main', str(self.origin)])
         self.git('config', 'user.email', 'source-test@example.invalid', origin=True)
         self.git('config', 'user.name', 'Source Identity Test', origin=True)
-        (self.origin / 'tools/ci').mkdir(parents=True)
+        (self.origin / 'scripts/ci').mkdir(parents=True)
         for name in SCRIPTS:
-            shutil.copy2(ROOT / 'tools/ci' / name, self.origin / 'tools/ci' / name)
+            shutil.copy2(ROOT / 'scripts/ci' / name, self.origin / 'scripts/ci' / name)
         (self.origin / 'source.txt').write_text('original source\n')
         (self.origin / 'operation.py').write_text('''import hashlib,json,os,pathlib,subprocess,sys
 mode=sys.argv[1]
 p=pathlib.Path('dependency/source.txt' if mode=='submodule-restore' else 'source.txt')
 if mode=='syntax':
  for name in ('beta-qualify.sh','beta-ledger-check.sh','beta-report.sh'):
-  subprocess.run(['bash','-n','tools/ci/'+name],check=True)
+  subprocess.run(['bash','-n','scripts/ci/'+name],check=True)
 elif mode=='persistent': p.write_text('changed source')
 elif mode in ('restore','submodule-restore'):
  old=p.read_bytes();p.write_text('transient change');p.write_bytes(old)
@@ -51,7 +51,7 @@ elif mode=='runner':
         (self.origin / 'Makefile').write_text(''.join(
             f'source-{name}:\n\tpython3 operation.py {name}\n' for name in targets) +
             'platform-beta-cluster-up:\n\tpython3 operation.py failure\n')
-        self.git('add', 'tools', 'source.txt', 'operation.py', 'Makefile', origin=True)
+        self.git('add', 'scripts', 'source.txt', 'operation.py', 'Makefile', origin=True)
         self.git('-c', 'core.hooksPath=/dev/null', 'commit', '-m', 'Real source identity corpus', origin=True)
         self.tree = self.base / 'worktree'
         self.git('worktree', 'add', '--detach', str(self.tree), 'HEAD', origin=True)
@@ -68,7 +68,7 @@ elif mode=='runner':
 ## Surfaces and journeys
 | Surface | Journey | Class | Required rung | Reached rung | Source |
 | --- | --- | --- | --- | --- | --- |
-| human-web | source evidence | functional | statically_coherent | source_present | tools/ci |
+| human-web | source evidence | functional | statically_coherent | source_present | scripts/ci |
 ## Artifact set
 | Ecosystem | Registry | Surface | Packages | Publication job |
 | --- | --- | --- | --- | --- |
@@ -78,7 +78,7 @@ elif mode=='runner':
 | artifact_manifest_path | unavailable.json |
 | artifact_manifest_status | unavailable |
 | report_status | no-go |
-| report_generator | tools/ci/beta-report.sh |
+| report_generator | scripts/ci/beta-report.sh |
 ''')
 
     def run_command(self, command, cwd=None, expected=0):
@@ -96,7 +96,7 @@ elif mode=='runner':
         self.spec.write_text('[req.209]\n' + ''.join(f'ac_{i} = "source criterion"\n' for i in range(1, 5)) +
                              '[task.25.1]\nreqs = ["209"]\nverify_cmd = ' + json.dumps(command) + '\n' +
                              '[task.5.4]\nreqs = ["209"]\nverify_cmd = ' + json.dumps(command) + '\n')
-        result = self.run_command(['bash', self.tree / 'tools/ci/beta-qualify.sh', '--spec', self.spec,
+        result = self.run_command(['bash', self.tree / 'scripts/ci/beta-qualify.sh', '--spec', self.spec,
                                   '--task', '25.1', '--ledger', self.ledger, '--evidence-root', self.private,
                                   '--evidence-kind', kind, '--', command], expected=expected)
         record = {}
@@ -120,10 +120,10 @@ elif mode=='runner':
 
     def consumers(self, eligible, revision=None, mode='stdout'):
         revision = revision or self.revision
-        ledger = self.run_command(['bash', self.tree / 'tools/ci/beta-ledger-check.sh', '--ledger', self.ledger,
+        ledger = self.run_command(['bash', self.tree / 'scripts/ci/beta-ledger-check.sh', '--ledger', self.ledger,
                                    '--spec', self.spec, '--evidence-root', self.private, '--candidate', revision],
                                   expected=0 if eligible else 1)
-        args = ['bash', self.tree / 'tools/ci/beta-report.sh', '--ledger', self.ledger, '--spec', self.spec,
+        args = ['bash', self.tree / 'scripts/ci/beta-report.sh', '--ledger', self.ledger, '--spec', self.spec,
                 '--contract', self.contract, '--revision', revision, '--evidence-root', self.private]
         if mode == 'stdout': args.append('--stdout')
         else:
@@ -187,9 +187,9 @@ elif mode=='runner':
         self.git('add', 'source.txt')
         self.git('-c', 'core.hooksPath=/dev/null', 'commit', '-m', 'Later candidate')
         later = self.git('rev-parse', 'HEAD')
-        self.run_command(['bash', self.tree / 'tools/ci/beta-ledger-check.sh', '--ledger', self.ledger,
+        self.run_command(['bash', self.tree / 'scripts/ci/beta-ledger-check.sh', '--ledger', self.ledger,
                           '--spec', self.spec, '--evidence-root', self.private, '--candidate', later], expected=1)
-        result = self.run_command(['bash', self.tree / 'tools/ci/beta-report.sh', '--ledger', self.ledger,
+        result = self.run_command(['bash', self.tree / 'scripts/ci/beta-report.sh', '--ledger', self.ledger,
                                   '--spec', self.spec, '--contract', self.contract, '--revision', later,
                                   '--evidence-root', self.private, '--stdout'])
         self.assertIn('| eligible_release_gate_records | 0 |', result.stdout)
