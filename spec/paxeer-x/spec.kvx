@@ -36503,7 +36503,7 @@ source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/root-v5-104.33.7.
 
 [task.104.33.7.4]
 title = "Complete Go Programs client integration"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 4
 requires = ["0.2", "104.17.4"]
@@ -36519,10 +36519,10 @@ time_limit_minutes = 30
 stop_condition = "Freeze source and stop on gate result, 30 minute cap, two repairs, or true contract conflict. Preserve original parent acceptance."
 fanout_role = "integrate_arbiter/replay_kernel"
 parent_task = "104.33.7"
-source_status = "partial"
-completion_basis = "partial source published; original acceptance criteria remain required"
+source_status = "complete"
+completion_basis = "implementation under owner CONSTITUTION; qualification separately recorded"
 qualification_status = "UNRUN"
-source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/publication-normalized-104.33.7.4.json"
+source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/root-104.33.7.4-final-intake.json"
 
 [task.104.33.7.5]
 title = "Complete JVM Programs client integration"

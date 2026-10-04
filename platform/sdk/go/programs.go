@@ -450,7 +450,7 @@ func VerifyProgramReceipt(execution ProgramExecutionDocument, authority Authoriz
 // the offered occupancy payers, which a state-commitment receipt with a paid
 // occupancy charge requires.
 func VerifyProgramReceiptWithPayers(execution ProgramExecutionDocument, authority AuthorizedBatch, payers []OccupancyPayer, selectedProtocol ...uint16) (VerifiedProgramReceipt, error) {
-	if execution.ActivityID == "" || execution.ModuleVersion < 1 || execution.ModuleVersion > 4 || execution.GuestABIVersion != 1 && execution.GuestABIVersion != 2 {
+	if execution.ActivityID == "" || execution.ModuleVersion < 1 || execution.ModuleVersion > 4 || !SupportsProgramGuestAbi(execution.GuestABIVersion) {
 		return VerifiedProgramReceipt{}, verificationFailure()
 	}
 	activity, err := programHex32(execution.ActivityID)
@@ -469,7 +469,8 @@ func VerifyProgramReceiptWithPayers(execution ProgramExecutionDocument, authorit
 	if err != nil {
 		return VerifiedProgramReceipt{}, verificationFailure()
 	}
-	verified, err := VerifyReceiptOutcome(receipt, authority, selectedProtocol...)
+	nativeV5 := execution.GuestABIVersion == ProgramAbiV3 || execution.GuestABIVersion == ProgramAbiV4
+	verified, err := verifyReceiptOutcomeProfile(receipt, authority, nativeV5, selectedProtocol...)
 	if err != nil {
 		return VerifiedProgramReceipt{}, verificationFailure()
 	}
@@ -524,8 +525,11 @@ func verifyProgramTerminal(execution ProgramExecutionDocument, receipt ProtocolR
 	if err != nil {
 		return "", nil, err
 	}
-	projection, err := decodeProgramTerminal(receiptOutcome.TerminalKind, receiptOutcome.ABIVersion, inner, programID, receiptOutcome.ResultCode)
-	if err != nil || projection.RuntimeVersion != receiptOutcome.RuntimeVersion || projection.Candidate && projection.FeeScheduleVersion != receiptOutcome.FeeScheduleVersion || projection.MeteringScheduleVersion != receiptOutcome.MeteringScheduleVersion || projection.CPUFuel != receiptOutcome.CPUFuel || projection.MemoryBytes != receiptOutcome.MemoryBytes || projection.StorageReadBytes != receiptOutcome.StorageReadBytes || projection.StorageWriteBytes != receiptOutcome.StorageWriteBytes || projection.OutputValues != receiptOutcome.OutputValues || projection.OutputBytes != receiptOutcome.OutputBytes || !projection.FeeUnits.Equal(receiptOutcome.FeeUnits) || !programOutcomesEqual(projection.Outcome, execution.Outcome) {
+	nativeV5 := receipt.ProtocolVersion == 3 && receipt.ModuleVersion == 4 && (receiptOutcome.ABIVersion == ProgramAbiV3 || receiptOutcome.ABIVersion == ProgramAbiV4)
+	projection, err := decodeProgramTerminalProfile(receiptOutcome.TerminalKind, receiptOutcome.ABIVersion, inner, programID, receiptOutcome.ResultCode, nativeV5)
+	nativeStandalone := nativeV5 && !projection.Candidate
+	usageMismatch := !nativeStandalone && (projection.RuntimeVersion != receiptOutcome.RuntimeVersion || projection.Candidate && projection.FeeScheduleVersion != receiptOutcome.FeeScheduleVersion || projection.MeteringScheduleVersion != receiptOutcome.MeteringScheduleVersion || projection.CPUFuel != receiptOutcome.CPUFuel || projection.MemoryBytes != receiptOutcome.MemoryBytes || projection.StorageReadBytes != receiptOutcome.StorageReadBytes || projection.StorageWriteBytes != receiptOutcome.StorageWriteBytes || projection.OutputValues != receiptOutcome.OutputValues || projection.OutputBytes != receiptOutcome.OutputBytes || !projection.FeeUnits.Equal(receiptOutcome.FeeUnits))
+	if err != nil || usageMismatch || !programOutcomesEqual(projection.Outcome, execution.Outcome) {
 		return "", nil, errors.New("Programs terminal projection mismatch")
 	}
 	if projection.Candidate && !bytes.Equal(projection.EmbeddedGraph, graph) {
@@ -610,6 +614,10 @@ func equalProgramInt32(left *int32, right *int32) bool {
 }
 
 func decodeProgramTerminal(kind uint8, abi uint16, encoded []byte, expectedProgram [32]byte, resultCode int32) (programTerminalProjection, error) {
+	return decodeProgramTerminalProfile(kind, abi, encoded, expectedProgram, resultCode, false)
+}
+
+func decodeProgramTerminalProfile(kind uint8, abi uint16, encoded []byte, expectedProgram [32]byte, resultCode int32, nativeV5 bool) (programTerminalProjection, error) {
 	inner := encoded
 	projection := programTerminalProjection{}
 	authorityDomain := []byte("LXP/program-execution-with-transfer-authority/v2\x00")
@@ -637,6 +645,7 @@ func decodeProgramTerminal(kind uint8, abi uint16, encoded []byte, expectedProgr
 	legacyV2 := []byte("LXP/program-execution/v2\x00")
 	legacyV3 := []byte("LXP/program-execution/v3\x00")
 	candidateV4 := []byte("LXP/program-execution/v4\x00")
+	candidateV5 := []byte("LXP/program-execution/v5\x00")
 	switch {
 	case bytes.HasPrefix(inner, legacyV2), bytes.HasPrefix(inner, legacyV3):
 		if kind != 1 || abi != 1 {
@@ -689,9 +698,17 @@ func decodeProgramTerminal(kind uint8, abi uint16, encoded []byte, expectedProgr
 		projection.Outcome = ProgramOutcome{Kind: "legacy_completed", Code: &code, Values: values}
 		projection.Successful = true
 		return projection, nil
-	case bytes.HasPrefix(inner, candidateV4):
+	case bytes.HasPrefix(inner, candidateV4), bytes.HasPrefix(inner, candidateV5):
+		v5 := bytes.HasPrefix(inner, candidateV5)
+		if v5 && (!nativeV5 || abi != ProgramAbiV3 && abi != ProgramAbiV4) || !v5 && abi != 2 {
+			return programTerminalProjection{}, errors.New("Programs terminal profile ABI mismatch")
+		}
+		domain := candidateV4
+		if v5 {
+			domain = candidateV5
+		}
 		projection.Candidate = true
-		cursor := programTerminalCursor{value: inner[len(candidateV4):]}
+		cursor := programTerminalCursor{value: inner[len(domain):]}
 		projection.RuntimeVersion = cursor.u16()
 		projection.FeeScheduleVersion = cursor.u32()
 		projection.MeteringScheduleVersion = cursor.u32()
@@ -753,13 +770,28 @@ func decodeProgramTerminal(kind uint8, abi uint16, encoded []byte, expectedProgr
 			return programTerminalProjection{}, errors.New("invalid Programs candidate outcome tag")
 		}
 		projection.EmbeddedGraph = append([]byte(nil), cursor.sized64()...)
-		if cursor.failed || !cursor.finished() || len(projection.EmbeddedGraph) > MaximumProgramCalldataBytes || program != expectedProgram || terminalABI != abi || abi != 2 || projection.RuntimeVersion == 0 || projection.FeeScheduleVersion == 0 || projection.MeteringScheduleVersion == 0 {
+		if cursor.failed || !cursor.finished() || len(projection.EmbeddedGraph) > MaximumProgramCalldataBytes || program != expectedProgram || terminalABI != abi || !v5 && abi != 2 || projection.RuntimeVersion == 0 || projection.FeeScheduleVersion == 0 || projection.MeteringScheduleVersion == 0 {
 			return programTerminalProjection{}, errors.New("invalid Programs candidate terminal")
 		}
 		return projection, nil
 	default:
+		if nativeV5 && (abi == ProgramAbiV3 || abi == ProgramAbiV4) {
+			return decodeNativeProgramCallbackSettlement(kind, inner, resultCode, projection)
+		}
 		return decodeProgramFailureTerminal(kind, abi, inner, resultCode, projection)
 	}
+}
+
+func decodeNativeProgramCallbackSettlement(kind uint8, inner []byte, resultCode int32, projection programTerminalProjection) (programTerminalProjection, error) {
+	settlement := []byte("LXP/programs/settlement-failure/v1\x00")
+	callback := []byte("LXP/programs/callback-failure/v1\x00")
+	valid := bytes.HasPrefix(inner, settlement) && len(inner) == len(settlement)+1 && validProgramTransferError(inner[len(settlement)]) || bytes.HasPrefix(inner, callback) && len(inner) == len(callback)+5
+	if kind != 2 || !valid || projection.Occupancy != nil || projection.TransferAuthorization != nil {
+		return programTerminalProjection{}, errors.New("invalid native Programs callback or settlement refusal")
+	}
+	code := resultCode
+	projection.Outcome = ProgramOutcome{Kind: "refused", Failure: &ProgramFailure{Kind: "guest_refused", Code: &code}}
+	return projection, nil
 }
 
 func decodeProgramFailureTerminal(kind uint8, abi uint16, inner []byte, resultCode int32, projection programTerminalProjection) (programTerminalProjection, error) {

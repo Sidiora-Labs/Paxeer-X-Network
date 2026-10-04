@@ -147,6 +147,10 @@ type decodedReceipt struct {
 }
 
 func VerifyReceiptOutcome(canonicalReceipt []byte, authorized AuthorizedBatch, selectedProtocol ...uint16) (VerifiedReceipt, error) {
+	return verifyReceiptOutcomeProfile(canonicalReceipt, authorized, false, selectedProtocol...)
+}
+
+func verifyReceiptOutcomeProfile(canonicalReceipt []byte, authorized AuthorizedBatch, nativeV5 bool, selectedProtocol ...uint16) (VerifiedReceipt, error) {
 	receipt, err := decodeProtocolReceipt(canonicalReceipt)
 	if err != nil {
 		return VerifiedReceipt{}, err
@@ -169,7 +173,8 @@ func VerifyReceiptOutcome(canonicalReceipt []byte, authorized AuthorizedBatch, s
 			if outcome == nil {
 				return VerifiedReceipt{}, receiptFailure(ReceiptCheckReceiptShape)
 			}
-			if (outcome.ABIVersion != 1 && outcome.ABIVersion != 2) || outcome.RuntimeVersion != 1 {
+			nativeABI := nativeV5 && receipt.protocolVersion == 3 && module == 4 && (outcome.ABIVersion == ProgramAbiV3 || outcome.ABIVersion == ProgramAbiV4)
+			if (!nativeABI && outcome.ABIVersion != 1 && outcome.ABIVersion != 2) || outcome.RuntimeVersion != 1 {
 				return VerifiedReceipt{}, receiptFailure(ReceiptCheckProtocolVersion)
 			}
 		}

@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"reflect"
 	"strconv"
 	"strings"
@@ -818,4 +819,236 @@ func TestProgramSDKInterfaceNativeBindingAndBound(t *testing.T) {
 	if validProgramInterface(changed, changed.ProgramID, 2) {
 		t.Fatal("oversized interface accepted despite matching digest")
 	}
+}
+
+func TestProgramTerminalV5NativeCorpus(t *testing.T) {
+	path := os.Getenv("PAXEER_X_PROGRAM_TERMINAL_V5_CORPUS")
+	if path == "" {
+		t.Fatal("real native terminal-v5 signed corpus required")
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var corpus struct {
+		SourceRevision   string `json:"source_revision"`
+		TrustedSequencer string `json:"trusted_sequencer_public_key_hex"`
+		Cases            []struct {
+			Name      string                   `json:"name"`
+			GuestABI  uint16                   `json:"guest_abi"`
+			Outcome   string                   `json:"outcome"`
+			Execution ProgramExecutionDocument `json:"execution"`
+			Activity  string                   `json:"signed_activity_hex"`
+			Sequencer string                   `json:"sequencer_public_key_hex"`
+			Canonical string                   `json:"canonical_receipt_hex"`
+			Digest    string                   `json:"receipt_digest_hex"`
+			Terminal  string                   `json:"terminal_payload_hex"`
+			Graph     string                   `json:"call_graph_hex"`
+			Program   string                   `json:"program_id_hex"`
+			Authority receiptFixtureAuthority  `json:"authorized_batch"`
+		} `json:"cases"`
+	}
+	if err := json.Unmarshal(raw, &corpus); err != nil {
+		t.Fatal(err)
+	}
+	if corpus.TrustedSequencer != "b4f05aee172965774743f4cd7de4c3621c9e36fd77af7139aafec25eb3fb3360" {
+		t.Fatal("native corpus sequencer differs from independently pinned producer")
+	}
+	if len(corpus.SourceRevision) != 40 || len(corpus.Cases) != 10 {
+		t.Fatal("complete native source revision and ten ABI3/4 cases required")
+	}
+	if _, err := hex.DecodeString(corpus.SourceRevision); err != nil {
+		t.Fatal("invalid native source revision")
+	}
+	seen := make(map[string]bool)
+	for _, vector := range corpus.Cases {
+		key := strconv.Itoa(int(vector.GuestABI)) + ":" + vector.Outcome
+		if vector.GuestABI != ProgramAbiV3 && vector.GuestABI != ProgramAbiV4 || seen[key] {
+			t.Fatalf("invalid or duplicate native case %s", key)
+		}
+		seen[key] = true
+		t.Run(vector.Name, func(t *testing.T) {
+			authority := AuthorizedBatch{
+				BatchID: fixture32(t, vector.Authority.BatchIDHex), Asset: fixture32(t, vector.Authority.AssetHex),
+				PreviousStateRoot: fixture32(t, vector.Authority.PreviousStateRootHex), ResultingStateRoot: fixture32(t, vector.Authority.ResultingStateRootHex),
+				SequencerPublicKey: fixture32(t, corpus.TrustedSequencer),
+			}
+			if authority.SequencerPublicKey != fixture32(t, vector.Authority.SequencerPublicKeyHex) {
+				t.Fatal("native sequencer pin differs from authorized batch")
+			}
+			canonical := fixtureBytes(t, vector.Canonical)
+			signedReceipt, err := verifyReceiptOutcomeProfile(canonical, authority, true, 3)
+			if err != nil || signedReceipt.Receipt.ProgramOutcome == nil {
+				t.Fatalf("actual native signed receipt: %v", err)
+			}
+			if signedReceipt.ReceiptDigest != fixture32(t, vector.Digest) {
+				t.Fatal("native receipt digest differs from signed canonical bytes")
+			}
+			receiptOutcome := signedReceipt.Receipt.ProgramOutcome
+			actualTerminal := fixtureBytes(t, vector.Terminal)
+			actualInner, err := unwrapAppliedProgramTerminal(actualTerminal, *receiptOutcome)
+			if err != nil {
+				t.Fatal(err)
+			}
+			projection, err := decodeProgramTerminalProfile(receiptOutcome.TerminalKind, receiptOutcome.ABIVersion, actualInner, fixture32(t, vector.Program), receiptOutcome.ResultCode, true)
+			if err != nil {
+				t.Fatal(err)
+			}
+			execution := ProgramExecutionDocument{
+				ActivityID: hex.EncodeToString(signedReceipt.Receipt.ActivityID[:]), ProgramID: vector.Program,
+				ModuleVersion: signedReceipt.Receipt.ModuleVersion, GuestABIVersion: receiptOutcome.ABIVersion,
+				Receipt: vector.Canonical, ReceiptDigest: hex.EncodeToString(signedReceipt.ReceiptDigest[:]),
+				TerminalPayload: vector.Terminal, CallGraph: vector.Graph,
+				ResultCode: receiptOutcome.ResultCode, Outcome: projection.Outcome,
+			}
+			if execution.GuestABIVersion != vector.GuestABI {
+				t.Fatal("native signed receipt guest ABI mismatch")
+			}
+			signed := fixtureBytes(t, vector.Activity)
+			payload := programV5CorpusCallPayload(t, signed)
+			call, err := DecodeNativeProgramCall(payload)
+			if err != nil || call.GuestABI != vector.GuestABI || call.ProgramID != fixture32(t, vector.Program) {
+				t.Fatal("native signed request ABI or program mismatch")
+			}
+			binding, err := bindNativeProgramActivity(3, payload, signed)
+			if err != nil || binding.ActivityID != fixture32(t, execution.ActivityID) {
+				t.Fatal("native signed activity identity mismatch")
+			}
+			if _, err := VerifyReceiptOutcome(canonical, authority, 3); err == nil {
+				t.Fatal("generic ABI1/2 receipt verifier admitted ABI3/4")
+			}
+			verified, err := VerifyProgramReceipt(execution, authority, 3)
+			if err != nil {
+				t.Fatalf("real native %s verification: %v", key, err)
+			}
+			outcome := verified.Verification.Receipt.ProgramOutcome
+			if outcome == nil || outcome.ABIVersion != call.GuestABI {
+				t.Fatal("signed receipt ABI differs from request")
+			}
+			terminal, graph := fixtureBytes(t, vector.Terminal), fixtureBytes(t, vector.Graph)
+			inner, err := unwrapAppliedProgramTerminal(terminal, *outcome)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if vector.Outcome == "success" || vector.Outcome == "failure" || vector.Outcome == "resource" {
+				v5 := []byte("LXP/program-execution/v5\x00")
+				at := bytes.Index(inner, v5)
+				if at < 0 {
+					t.Fatal("native execution lacks v5 domain")
+				}
+				old := append([]byte(nil), inner...)
+				copy(old[at:], []byte("LXP/program-execution/v4\x00"))
+				if _, err := decodeProgramTerminalProfile(outcome.TerminalKind, outcome.ABIVersion, old, call.ProgramID, outcome.ResultCode, true); err == nil {
+					t.Fatal("historical v4 admitted ABI3/4")
+				}
+				for _, abi := range []uint16{0, 1, 2, 5, 65535} {
+					if _, err := decodeProgramTerminalProfile(outcome.TerminalKind, abi, inner, call.ProgramID, outcome.ResultCode, true); err == nil {
+						t.Fatalf("v5 admitted unsupported or mismatched ABI %d", abi)
+					}
+				}
+				for _, mutate := range []func(*ProgramReceiptOutcome){
+					func(o *ProgramReceiptOutcome) { o.RuntimeVersion++ },
+					func(o *ProgramReceiptOutcome) { o.FeeScheduleVersion++ },
+					func(o *ProgramReceiptOutcome) { o.MeteringScheduleVersion++ },
+					func(o *ProgramReceiptOutcome) { o.CPUFuel++ },
+					func(o *ProgramReceiptOutcome) { o.MemoryBytes++ },
+					func(o *ProgramReceiptOutcome) { o.StorageReadBytes++ },
+					func(o *ProgramReceiptOutcome) { o.StorageWriteBytes++ },
+					func(o *ProgramReceiptOutcome) { o.OutputValues++ },
+					func(o *ProgramReceiptOutcome) { o.OutputBytes++ },
+					func(o *ProgramReceiptOutcome) { o.FeeUnits = NewUint128(0, 18446744073709551615) },
+				} {
+					changedReceipt := verified.Verification.Receipt
+					changedOutcome := *outcome
+					mutate(&changedOutcome)
+					changedReceipt.ProgramOutcome = &changedOutcome
+					if _, _, err := verifyProgramTerminal(execution, changedReceipt, terminal, graph, nil); err == nil {
+						t.Fatal("v5 admitted changed signed accounting projection")
+					}
+				}
+				wrongProgram := call.ProgramID
+				wrongProgram[0] ^= 1
+				if _, err := decodeProgramTerminalProfile(outcome.TerminalKind, outcome.ABIVersion, inner, wrongProgram, outcome.ResultCode, true); err == nil {
+					t.Fatal("v5 admitted wrong program")
+				}
+			}
+			for length := 0; length < len(terminal); length++ {
+				if _, _, err := verifyProgramTerminal(execution, verified.Verification.Receipt, terminal[:length], graph, nil); err == nil {
+					t.Fatalf("accepted terminal truncation %d", length)
+				}
+			}
+			if _, _, err := verifyProgramTerminal(execution, verified.Verification.Receipt, append(append([]byte{}, terminal...), 0), graph, nil); err == nil {
+				t.Fatal("accepted trailing terminal byte")
+			}
+			badGraph := append([]byte(nil), graph...)
+			badGraph[0] ^= 1
+			if _, _, err := verifyProgramTerminal(execution, verified.Verification.Receipt, terminal, badGraph, nil); err == nil {
+				t.Fatal("accepted changed graph")
+			}
+			badAuthority := authority
+			badAuthority.SequencerPublicKey[0] ^= 1
+			if _, err := VerifyProgramReceipt(execution, badAuthority, 3); err == nil {
+				t.Fatal("accepted unpinned sequencer")
+			}
+			bad := execution
+			bad.GuestABIVersion = ProgramAbiV3 + ProgramAbiV4 - vector.GuestABI
+			if _, err := VerifyProgramReceipt(bad, authority, 3); err == nil {
+				t.Fatal("accepted request and receipt ABI mismatch")
+			}
+			bad = execution
+			bad.ModuleVersion = 3
+			if _, err := VerifyProgramReceipt(bad, authority, 3); err == nil {
+				t.Fatal("accepted module mismatch")
+			}
+			changed := append([]byte(nil), canonical...)
+			changed[len(changed)-1] ^= 1
+			bad = execution
+			bad.Receipt = hex.EncodeToString(changed)
+			if _, err := VerifyProgramReceipt(bad, authority, 3); err == nil {
+				t.Fatal("accepted receipt signature mutation")
+			}
+		})
+	}
+	for _, abi := range []uint16{ProgramAbiV3, ProgramAbiV4} {
+		for _, outcome := range []string{"success", "failure", "resource", "callback", "settlement"} {
+			if !seen[strconv.Itoa(int(abi))+":"+outcome] {
+				t.Fatalf("missing actual native ABI%d %s case", abi, outcome)
+			}
+		}
+	}
+}
+
+func programV5CorpusCallPayload(t *testing.T, signed []byte) []byte {
+	t.Helper()
+	d := wireDecoder{value: signed}
+	_ = d.u16()
+	_ = d.u16()
+	_ = d.u8()
+	_ = d.u8()
+	_ = d.u16()
+	_ = d.u8()
+	_ = d.u32()
+	_ = d.u8()
+	_ = d.u32()
+	_ = d.u8()
+	_ = d.bounded(255)
+	_ = d.u8()
+	_ = d.bounded(524288)
+	_ = d.u8()
+	_ = d.u64()
+	_ = d.u8()
+	_ = d.u64()
+	_ = d.u64()
+	_ = d.u8()
+	_ = d.array32()
+	_ = d.u8()
+	_ = d.u128()
+	_ = d.u8()
+	_ = d.array32()
+	_ = d.u8()
+	payload := d.bounded(524288)
+	if d.failed || len(payload) == 0 {
+		t.Fatal("invalid real signed CALL")
+	}
+	return payload
 }
