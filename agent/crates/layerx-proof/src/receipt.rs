@@ -755,6 +755,101 @@ pub fn verify_program_outcome(
     verify_program_outcome_selected(receipt_bytes, authorised, false)
 }
 
+pub fn verify_program_preexecution_rejection(
+    receipt_bytes: &[u8],
+    authorised: &AuthorizedBatch,
+) -> Result<VerifiedReceipt, VerificationFailure> {
+    use layerx_types::result::{KnownResult, ResultCode, ResultDomain};
+
+    let receipt = verify_sequencer_signature(receipt_bytes, authorised.sequencer_public_key)?;
+    let protocol = receipt
+        .protocol()
+        .ok_or_else(|| VerificationFailure::at(ReceiptCheck::ReceiptShape))?;
+    if protocol.protocol_version() != layerx_wire::limits::STATE_COMMITMENT_PROTOCOL_VERSION {
+        return Err(VerificationFailure::at(ReceiptCheck::ProtocolVersion));
+    }
+    if u32::from(protocol.module_id()) != PROGRAMS_MODULE_ID
+        || protocol.module_version() != programs_module_abi::SANDBOX_DESTROY
+        || u16::from(protocol.operation()) != PROGRAMS_CALL_OPERATION
+    {
+        return Err(VerificationFailure::at(ReceiptCheck::Module));
+    }
+    let result = ResultCode::from_raw(protocol.result_code());
+    if result.known().is_none()
+        || result.known() == Some(KnownResult::IdempotentReplay)
+        || !matches!(
+            result.domain(),
+            ResultDomain::Codec
+                | ResultDomain::Envelope
+                | ResultDomain::Authority
+                | ResultDomain::Sequencing
+                | ResultDomain::Ledger
+                | ResultDomain::Arithmetic
+                | ResultDomain::Metering
+                | ResultDomain::Module
+        )
+    {
+        return Err(VerificationFailure::at(ReceiptCheck::ResultCode));
+    }
+    if protocol.program_outcome().is_some()
+        || protocol.total_units().is_some()
+        || !protocol.effects().is_empty()
+        || protocol.fee_charged() != 0
+        || protocol.asset() != [0; 32]
+        || authorised.asset != [0; 32]
+        || protocol.amount() != 0
+        || protocol.from() != [0; 32]
+        || protocol.debit_balance_before() != 0
+        || protocol.debit_balance_after() != 0
+        || protocol.debit_sequence() != 0
+        || protocol.to() != [0; 32]
+        || protocol.credit_balance_before() != 0
+        || protocol.credit_balance_after() != 0
+        || protocol.transfer_set_root() != [0; 32]
+        || protocol.authorization_hash() != [0; 32]
+        || protocol.context_hash() != [0; 32]
+    {
+        return Err(VerificationFailure::at(ReceiptCheck::ReceiptShape));
+    }
+    if protocol.global_sequence() == 0 || protocol.activity_root() == [0; 32] {
+        return Err(VerificationFailure::at(ReceiptCheck::ActivityId));
+    }
+    if protocol.batch_id() == [0; 32] || protocol.batch_id() != authorised.batch_id {
+        return Err(VerificationFailure::at(ReceiptCheck::BatchId));
+    }
+    if protocol.previous_state_root() == [0; 32]
+        || protocol.previous_state_root() != authorised.previous_state_root
+    {
+        return Err(VerificationFailure::at(ReceiptCheck::PreviousStateRoot));
+    }
+    if protocol.resulting_state_root() == [0; 32]
+        || protocol.resulting_state_root() != authorised.resulting_state_root
+    {
+        return Err(VerificationFailure::at(ReceiptCheck::ResultingStateRoot));
+    }
+    let unsigned = encode_unsigned(&receipt)
+        .map_err(|_| VerificationFailure::at(ReceiptCheck::CanonicalEncoding))?;
+    let digest = receipt_digest(&unsigned)
+        .map_err(|_| VerificationFailure::at(ReceiptCheck::CanonicalEncoding))?;
+    Ok(VerifiedReceipt {
+        receipt,
+        canonical_bytes: receipt_bytes.to_vec(),
+        evidence: Evidence::sequencer(digest),
+    })
+}
+
+pub fn verify_program_preexecution_rejection_maintained_chain(
+    receipt_bytes: &[u8],
+    authorised: &AuthorizedBatch,
+    evidence: &MaintainedOutcomeEvidence<'_>,
+    receipts: &[Vec<u8>],
+) -> Result<VerifiedReceipt, MaintainedOutcomeFailure> {
+    let batch =
+        authorized_maintained_activity_batch_chain(receipt_bytes, authorised, evidence, receipts)?;
+    verify_program_preexecution_rejection(receipt_bytes, &batch)
+        .map_err(|failure| MaintainedOutcomeFailure::Receipt(failure.check))
+}
+
 /// Verifies a stored protocol-1 Programs receipt with historical module binding.
 ///
 /// # Errors

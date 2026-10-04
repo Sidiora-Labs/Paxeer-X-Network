@@ -2135,3 +2135,7 @@ resolution = "Task19.1 restores signed bytes before any new answer/quorum and pr
 [gotcha.637]
 observed = "Ramp build paths and native module-id header names were initially guessed during source admission; no build ran against those guesses."
 resolution = "Resolve actual manifests/headers with rg --files; ramp target is platform/Cargo.toml package layerx-reference-ramp."
+
+[gotcha.639]
+observed = "Genuine native pre-execution terminal receipts have no guest outcome; the existing executed-outcome verifier correctly refuses that different shape."
+resolution = "Task10435.14 adds a separate closed refusal verifier with full maintained-chain authentication, preserving all existing executed-outcome checks."

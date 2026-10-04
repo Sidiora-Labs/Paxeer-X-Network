@@ -32352,3 +32352,30 @@ time_limit_minutes = 30
 stop_condition = "Stop at original dispatch cap, second failed repair, missing real interface or weakening; record exact source state and raw evidence."
 completion_basis_policy = "Owner CONSTITUTION: fully implemented tasks DONE, qualification separate; partial source in_progress."
 source_ownership = "Root owns workspace manifests, lockfiles, spec and publication; all deployment belongs to owner."
+
+[task.104.35.14]
+title = "Verify canonical native pre-execution rejection receipts as a distinct closed outcome class"
+status = "done"
+mode = "BUILD"
+wave = 2
+requires = ["0.2", "104.35.11"]
+reqs = ["1105.3", "1105.4"]
+do_1 = "Preserve existing verify_program_outcome and maintained-chain checks unchanged; add separate closed verification for actual native pre-execution rejection shape produced by lxp_kernel_terminal_rejection."
+do_2 = "Require exact canonical encoding, supported protocol/module/operation, allowed genuine refusal domain, zero unattained guest outcome and absent execution effects/fees, plus real complete maintained inclusion/root/signature chain; never accept successful or malformed no-outcome ProgramCall."
+do_3 = "Use genuine existing native capture to prove terminal acceptance and ordinary executed outcome verification through a distinct caller API; retain every old refusal and negative check. This upstream verifier does not rerun old10435.11 gate."
+touches = ["agent/crates/layerx-proof/src/receipt.rs", "agent/crates/layerx-proof/tests/native_terminal_outcome.rs", "tools/qualification/paxeer-x/native-terminal-outcome.py"]
+build_cmd = "timeout 20m env CARGO_TARGET_DIR=/root/lx-target/agent cargo test --locked --manifest-path agent/Cargo.toml -p layerx-proof --test native_terminal_outcome --no-run"
+verify_cmd = "timeout 20m python3 tools/qualification/paxeer-x/native-terminal-outcome.py"
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop at original dispatch cap, second failed repair, missing real authority or legacy weakening; report exact source state and evidence."
+completion_basis_policy = "Owner CONSTITUTION: fully implemented tasks DONE, actual qualification separate; partial source remains in_progress."
+source_ownership = "Root serializes shared schema contract, workspace manifests, locks, spec and publication; no deployment."
+completion_basis = "implementation"
+qualification_status = "passed"
+qualification_build_exit = 0
+qualification_verify_exit = 0
+qualification_build_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-104.35.14-build.log"
+qualification_verify_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-104.35.14-verify.log"
