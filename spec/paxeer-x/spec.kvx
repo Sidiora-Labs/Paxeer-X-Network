@@ -27598,8 +27598,17 @@ fleet_role = "/root/complete_indexer"
 fleet_scope_manifest = "/root/lx-ops/paxeer-x-integration-2026-10-03/fleet-16.1-brief.json"
 source_status = "complete"
 completion_basis = "implementation under owner CONSTITUTION; qualification separately recorded"
-qualification_status = "UNRUN"
+qualification_status = "UNQUALIFIED"
 source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/fleet-16.1-source-handoff.json"
+qualification_revision = "2a0942f65778242d0cc805cdcf1d5fa07a0199fc"
+qualification_command = "timeout 20m python3 tools/qualification/paxeer-x/registry-contract.py --case guest-abi-discovery --candidate-manifest \"$PAXEER_X_CANDIDATE_MANIFEST\""
+qualification_exit_code = "UNRUN"
+qualification_log = "UNRUN"
+build_status = "TIMED_OUT"
+build_exit_code = 124
+qualification_evidence = "/root/lx-ops/paxeer-x-integration-2026-10-03/fleet-16.1-qualification-result.json"
+build_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/fleet-16.1-build-2a0942f657.log"
+qualification_note = "UNRUN: required composite build timed out before producing all current scoped artifacts"
 
 [task.16.4]
 title = "Expose registry serving readiness through the authenticated health contract"
