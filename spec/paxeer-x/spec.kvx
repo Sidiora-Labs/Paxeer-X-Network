@@ -36040,8 +36040,18 @@ time_limit_minutes = 30
 stop_condition = "Stop at 16:34 UTC, focused result, unrelated error, or authorization conflict; preserve every existing assertion and authority check."
 source_status = "complete"
 completion_basis = "implementation under owner CONSTITUTION; qualification separately recorded"
-qualification_status = "UNRUN"
+qualification_status = "FAILED_UNRELATED_TENANT_RESOLVE_CONTRACTS"
 source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-103.6.19-publication-handoff.json"
+qualification_revision = "7129ae8357b9db15ae6fb2fe44d20efb075c0692"
+qualification_command = "timeout --kill-after=5s 600s /root/lx-ops/paxeer-x-integration-2026-10-03/task-103.6.19-7129ae835-qualification/tenant_resolve --test-threads=1"
+qualification_exit = 101
+qualification_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-103.6.19-7129ae835-qualification/verify.log"
+qualification_build_exit = 0
+qualification_build_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-103.6.19-7129ae835-qualification/build.log"
+qualification_result = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-103.6.19-7129ae835-qualification/verify.json"
+qualification_passed = 4
+qualification_failed = 4
+qualification_ignored = 0
 
 [task.103.6.21]
 title = "Declare the chain ID flag before custody proposal transaction flags"
