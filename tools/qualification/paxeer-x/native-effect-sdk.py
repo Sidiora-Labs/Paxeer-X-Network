@@ -22,7 +22,7 @@ SOURCES = (
     'agent/sdk/python/layerx_sdk/agent_http.pyi',
     'agent/sdk/python/layerx_sdk/__init__.py',
     'agent/sdk/python/layerx_sdk/__init__.pyi',
-    'agent/sdk/python/tests/test_native_effect.py',
+    'tests/agent/sdk/python/test_native_effect.py',
     'agent/crates/layerx-sdk/src/agent_envelope.rs',
     'agent/crates/layerx-sdk/src/native_effect.rs',
     'agent/crates/layerx-sdk/src/lib.rs',
@@ -64,7 +64,7 @@ def build(environment):
     sys.pycache_prefix = environment['PYTHONPYCACHEPREFIX']
     artifacts = []
     for relative in SOURCES:
-        if relative.startswith('agent/sdk/python/') and relative.endswith('.py'):
+        if (relative.startswith('agent/sdk/python/') or relative == 'tests/agent/sdk/python/test_native_effect.py') and relative.endswith('.py'):
             compiled = py_compile.compile(str(ROOT / relative), doraise=True)
             artifacts.append(Path(compiled))
     print('EXIT 0 LOG Python codecs compiled', flush=True)
@@ -113,7 +113,7 @@ def verify(environment):
         raise RuntimeError('all three focused actual Rust codec cases must execute')
     run(['node', 'dist/test/native-effect.test.js'], TS, environment,
         PRIVATE / 'verify-typescript.log', 120)
-    run(['python3', '-m', 'unittest', 'discover', '-s', 'tests', '-p', 'test_native_effect.py'],
+    run(['python3', '-m', 'unittest', 'discover', '-s', str(ROOT / 'tests/agent/sdk/python'), '-p', 'test_native_effect.py'],
         PYTHON, environment, PRIVATE / 'verify-python.log', 120)
     original = rust.read_bytes()
     for path in (typescript, python):

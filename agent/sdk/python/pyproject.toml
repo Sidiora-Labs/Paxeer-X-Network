@@ -26,4 +26,4 @@ source-date-epoch = 315532800
 
 [tool.pytest.ini_options]
 pythonpath = ["."]
-testpaths = ["tests"]
+testpaths = ["../../../tests/agent/sdk/python"]

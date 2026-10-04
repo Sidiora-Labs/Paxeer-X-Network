@@ -11,7 +11,7 @@ from urllib.error import HTTPError
 from urllib.parse import urlsplit
 from urllib.request import HTTPSHandler, Request, build_opener
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "agent/sdk/python"))
 
 from layerx_sdk.agent_http import (  # noqa: E402
     AgentDaemonEnvelopeTransport,

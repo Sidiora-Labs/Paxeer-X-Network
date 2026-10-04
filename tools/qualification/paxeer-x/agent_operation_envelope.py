@@ -281,10 +281,10 @@ def build(manifest):
     dlls = sorted(dotnet.glob('bin/Release/*/LayerX.Sdk.Tests.dll'))
     require(len(dlls) == 1, 'dotnet test assembly not unique')
     artifacts['csharp_probe'] = str(dlls[0])
-    for name in ('agent/sdk/python/layerx_sdk/agent_http.py', 'agent/sdk/python/tests/test_agent_operation_envelope.py',
+    for name in ('agent/sdk/python/layerx_sdk/agent_http.py', 'tests/agent/sdk/python/test_agent_operation_envelope.py',
                  'tools/qualification/paxeer-x/agent_operation_envelope.py'):
         step([sys.executable, '-m', 'py_compile', name])
-    artifacts['python_probe'] = str(ROOT / 'agent/sdk/python/tests/test_agent_operation_envelope.py')
+    artifacts['python_probe'] = str(ROOT / 'tests/agent/sdk/python/test_agent_operation_envelope.py')
     log.close()
     toolchains = {}
     for name, argv in (('rustc', ['rustc', '-vV']), ('cargo', ['cargo', '--version']), ('node', ['node', '--version']),

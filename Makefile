@@ -3010,7 +3010,7 @@ agent-test-sdk-ts:
 
 agent-test-sdk-py:
 	$(MAKE) agent-test-sdk-generate
-	PYTHONPATH=agent/sdk/python python3 -m unittest discover -s agent/sdk/python/tests -p 'test_*.py'
+	PYTHONPATH=agent/sdk/python python3 -m unittest discover -s tests/agent/sdk/python -p 'test_*.py'
 	PYTHONPATH=agent/sdk/python python3 -m compileall -q agent/sdk/python/layerx_sdk agent/sdk/python/examples
 
 agent-test-sdk-parity: $(BUILD_DIR)/agent/layerxd-lni

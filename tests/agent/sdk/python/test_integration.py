@@ -51,7 +51,7 @@ from layerx_sdk import (
 from layerx_sdk.program_wire import OccupancyPayer, decode_and_verify_program_terminal
 from layerx_sdk.verifier import ProgramReceiptOutcome
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[4] / "agent/sdk/python"
 
 
 def canonical_program_call(program_id: str, idempotency: str) -> bytes:

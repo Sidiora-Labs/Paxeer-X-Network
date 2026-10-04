@@ -84,7 +84,7 @@ FILTERS = [
     "agent/sdk/typescript/src/web-search.ts",
     "agent/sdk/typescript/test/**",
     "agent/sdk/python/layerx_sdk/web_search.py",
-    "agent/sdk/python/tests/**",
+    "tests/agent/sdk/python/**",
     "agent/crates/**",
     "scripts/ci/xweb-forge-libs.sh",
     WORKFLOW_PATH,
@@ -944,8 +944,8 @@ MUTATIONS = {
         1,
     ),
     "bare-cd": (
-        "        run: (cd agent/sdk/python && python3 -m pytest -q tests/test_web_search.py)\n",
-        "        run: cd agent/sdk/python && python3 -m pytest -q tests/test_web_search.py\n",
+        "        run: (cd agent/sdk/python && python3 -m pytest -q ../../../tests/agent/sdk/python/test_web_search.py)\n",
+        "        run: cd agent/sdk/python && python3 -m pytest -q ../../../tests/agent/sdk/python/test_web_search.py\n",
         1,
     ),
     "missing-installer": (

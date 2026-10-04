@@ -35,7 +35,7 @@ on:
       - 'agent/sdk/typescript/src/web-search.ts'
       - 'agent/sdk/typescript/test/**'
       - 'agent/sdk/python/layerx_sdk/web_search.py'
-      - 'agent/sdk/python/tests/**'
+      - 'tests/agent/sdk/python/**'
       - 'agent/crates/**'
       - 'scripts/ci/xweb-forge-libs.sh'
       - '.github/workflows/xweb-test.yml'
@@ -75,7 +75,7 @@ on:
       - 'agent/sdk/typescript/src/web-search.ts'
       - 'agent/sdk/typescript/test/**'
       - 'agent/sdk/python/layerx_sdk/web_search.py'
-      - 'agent/sdk/python/tests/**'
+      - 'tests/agent/sdk/python/**'
       - 'agent/crates/**'
       - 'scripts/ci/xweb-forge-libs.sh'
       - '.github/workflows/xweb-test.yml'
@@ -206,4 +206,4 @@ jobs:
         run: (cd agent/sdk/typescript && npm ci && npm run build && node dist/test/web-search.test.js)
 
       - name: Run pytest for the Python web search client test
-        run: (cd agent/sdk/python && python3 -m pytest -q tests/test_web_search.py)
+        run: (cd agent/sdk/python && python3 -m pytest -q ../../../tests/agent/sdk/python/test_web_search.py)
