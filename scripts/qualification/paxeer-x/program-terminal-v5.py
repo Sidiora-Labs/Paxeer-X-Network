@@ -39,14 +39,14 @@ def build(output):
     projection = generated / 'terminal-v5-language-fixture.inc'
     projection.write_text(renamed + ';\n' + original.replace(entry, renamed, 1))
     cargo_dir = Path(os.environ['CARGO_TARGET_DIR']).absolute()
-    environment = dict(os.environ, CARGO_BUILD_JOBS='3', CARGO_PROFILE_DEV_DEBUG='0',
+    environment = dict(os.environ, CARGO_BUILD_JOBS='2', CARGO_PROFILE_DEV_DEBUG='0',
         CARGO_PROFILE_TEST_DEBUG='0', CARGO_INCREMENTAL='0', PYTHONDONTWRITEBYTECODE='1')
     library = native_dir / 'liblayerx.a'
     header = generated / 'lxp_checkpoint_settlement.h'
     sandbox = cargo_dir / 'debug/liblayerx_programs_sandbox.a'
     native = directory / 'program-terminal-v5-native'
     commands = [
-        ['make', '--no-print-directory', '-j3', 'BUILD_DIR=' + str(native_dir),
+        ['make', '--no-print-directory', '-j2', 'BUILD_DIR=' + str(native_dir),
             'LXP_REVISION=' + source['revision'], str(library), str(header)],
         ['cargo', '+1.91.1', 'build', '--locked', '--manifest-path', 'programs/Cargo.toml',
             '-p', 'layerx-programs-sandbox', '--features', 'host-ffi'],
