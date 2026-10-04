@@ -23469,7 +23469,7 @@ module_table_resolution = "Preserve current Programs V4 plus Asset V1 plus Gover
 source_status = "complete"
 completion_basis = "implementation under owner CONSTITUTION; qualification separately recorded"
 qualification_status = "UNRUN"
-source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/fleet-103.6.11-publication.json"
+source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/fleet-103.6.11-current-publication.json"
 
 [task.104.5.8]
 title = "Replace the mounted root secret with a production KMS boundary"

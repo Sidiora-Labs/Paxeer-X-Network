@@ -135,7 +135,7 @@ def tool(name, override=None):
     value = os.environ.get(override) if override else None
     value = value or shutil.which(name)
     require(value, 'actual ' + name + ' tool required before any task build')
-    path = Path(value).resolve(strict=True)
+    path = Path(value).absolute()
     require(path.is_file() and os.access(path, os.X_OK), 'executable tool required: ' + name)
     return str(path)
 
