@@ -72,6 +72,7 @@ const NATIVE_EFFECT_APPROVAL_GET: u8 = 53;
 const NATIVE_EFFECT_APPROVAL_DECIDE: u8 = 54;
 const NATIVE_EFFECT_APPROVAL_MATERIAL: u8 = 55;
 const NATIVE_EFFECT_APPROVAL_BUDGET: u8 = 56;
+const AGENT_BUDGET_PROOF: u8 = 57;
 const APPROVAL_LIST: u8 = 9;
 const APPROVAL_GET: u8 = 10;
 const APPROVAL_APPROVE: u8 = 11;
@@ -520,6 +521,13 @@ pub struct AgentBudgetState {
     pub remaining: u128,
     pub asset: [u8; 32],
 }
+
+pub struct AgentBudgetProof {
+    pub owner:String,pub budget_id:[u8;32],pub asset:[u8;32],pub source_account:[u8;32],
+    pub observed_head_sequence:u64,pub remaining:u128,pub verification:Level,
+    pub evidence_digest:[u8;32],pub receipt_digest:[u8;32],pub checkpoint_digest:[u8;32],
+    pub age_sequences:u64,pub maximum_age_sequences:u64,pub digest:[u8;32],pub canonical_export_bytes:Vec<u8>,
+}
 pub struct AgentKeyPolicy {
     pub agent_did: String,
     pub recovery: bool,
@@ -925,6 +933,26 @@ impl AgentRuntime {
             return Err(AgentBoundaryError::CorruptResponse);
         }
         reader.finish()?;
+        Ok(value)
+    }
+    pub fn agent_budget_proof(&mut self,budget_id:[u8;32])->Result<AgentBudgetProof,AgentBoundaryError>{
+        if self.subject.is_none()||budget_id==[0;32]{return Err(AgentBoundaryError::Refused)}
+        let mut writer=Writer::new(AGENT_BUDGET_PROOF);writer.fixed(&budget_id);
+        let mut reader=self.exchange(&writer.finish())?;
+        if reader.u16()?!=4{return Err(AgentBoundaryError::CorruptResponse)}
+        let value=AgentBudgetProof{owner:reader.text()?,budget_id:reader.fixed()?,asset:reader.fixed()?,source_account:reader.fixed()?,
+            observed_head_sequence:reader.u64()?,remaining:reader.u128()?,verification:decode_level(reader.u8()?)?,
+            evidence_digest:reader.fixed()?,receipt_digest:reader.fixed()?,checkpoint_digest:reader.fixed()?,
+            age_sequences:reader.u64()?,maximum_age_sequences:reader.u64()?,digest:reader.fixed()?,canonical_export_bytes:reader.bytes()?};
+        reader.finish()?;
+        let actual_digest:[u8;32]=sha2::Sha256::digest(&value.canonical_export_bytes).into();
+        if self.subject.as_ref().is_none_or(|subject|subject.owner!=value.owner)||value.budget_id!=budget_id
+            ||value.asset==[0;32]||value.source_account==[0;32]||value.observed_head_sequence==0
+            ||!matches!(value.verification,Level::CheckpointFinalised|Level::SettlementAnchored)
+            ||value.evidence_digest==[0;32]||value.receipt_digest==[0;32]||value.checkpoint_digest==[0;32]
+            ||value.maximum_age_sequences==0||value.age_sequences>value.maximum_age_sequences||actual_digest!=value.digest{
+            return Err(AgentBoundaryError::CorruptResponse)
+        }
         Ok(value)
     }
     /// # Errors

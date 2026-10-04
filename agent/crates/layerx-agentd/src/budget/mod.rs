@@ -7,6 +7,7 @@ mod daemon;
 #[path = "divergence.rs"]
 mod divergence_reporting;
 mod mutate;
+pub mod budget_proof;
 mod program_sources;
 pub mod program_settlement;
 pub use program_sources::{

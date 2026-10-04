@@ -327,6 +327,9 @@ pub trait HumanAuthorityBoundary {
         peer: &HumanPeer,
         active_budget_id: [u8; 32],
     ) -> Result<CoreBudgetState, HumanOperationError>;
+    fn budget_proof_export(&mut self, _peer:&HumanPeer, _budget_id:[u8;32], _owner:&Did)->Result<Vec<u8>,HumanOperationError>{
+        Err(HumanOperationError::Refused)
+    }
     /// # Errors
     /// Returns an error when the request is invalid, authority is refused, or required state is unavailable.
     fn key_rotation_policy(
@@ -704,6 +707,10 @@ impl RemoteHumanAuthority {
     }
 
     fn get(&self, path: &str) -> Result<Value, HumanOperationError> {
+        serde_json::from_slice(&self.get_raw(path)?).map_err(|_| HumanOperationError::Refused)
+    }
+
+    fn get_raw(&self, path:&str)->Result<Vec<u8>,HumanOperationError>{
         let mut response = self
             .agent
             .get(format!("{}{path}", self.endpoint))
@@ -729,7 +736,7 @@ impl RemoteHumanAuthority {
         if body.len() > self.maximum_response_bytes {
             return Err(HumanOperationError::Refused);
         }
-        serde_json::from_str(&body).map_err(|_| HumanOperationError::Refused)
+        Ok(body.into_bytes())
     }
 
     fn registry_from(value: &Value) -> Result<ModuleRegistry, HumanOperationError> {
@@ -775,6 +782,11 @@ impl RemoteHumanAuthority {
 }
 
 impl HumanAuthorityBoundary for RemoteHumanAuthority {
+    fn budget_proof_export(&mut self,peer:&HumanPeer,budget_id:[u8;32],owner:&Did)->Result<Vec<u8>,HumanOperationError>{
+        let owner=std::str::from_utf8(owner.as_bytes()).map_err(|_|HumanOperationError::Refused)?;
+        self.get_raw(&format!("/v1/agent/budget-proof?tenant={}&principal={}&budget_id={}&did={}",
+            query(peer.transport_tenant()),subject::principal_query(peer),hex(&budget_id),query(owner)))
+    }
     fn authorize_subject(&mut self, peer: &HumanPeer) -> Result<(), HumanOperationError> {
         subject::verify_context(
             peer,
@@ -1606,6 +1618,7 @@ impl<A: HumanAuthorityBoundary> SharedAgentOwner<A> {
 }
 
 impl<A: HumanAuthorityBoundary> HumanOperations for SharedAgentOwner<A> {
+    fn agent_budget_proof(&mut self,peer:&HumanPeer,id:[u8;32])->Result<HumanResponse,HumanOperationError>{self.lock()?.agent_budget_proof(peer,id)}
     fn native_effect_approval_material(&mut self,peer:&HumanPeer,id:[u8;32],digest:[u8;32])->Result<HumanResponse,HumanOperationError>{self.lock()?.native_effect_approval_material(peer,id,digest)}
     fn native_effect_approval_budget(&mut self,peer:&HumanPeer,id:[u8;32],digest:[u8;32],sequence:u64)->Result<HumanResponse,HumanOperationError>{self.lock()?.native_effect_approval_budget(peer,id,digest,sequence)}
     fn native_effect_approval_list_facts(&mut self,peer:&HumanPeer,cursor:Option<[u8;32]>,limit:u8)->Result<HumanResponse,HumanOperationError>{self.lock()?.native_effect_approval_list_facts(peer,cursor,limit)}
@@ -6045,6 +6058,43 @@ impl<A: HumanAuthorityBoundary> UnifiedAgentOwner<A> {
 }
 
 impl<A: HumanAuthorityBoundary> HumanOperations for UnifiedAgentOwner<A> {
+    fn agent_budget_proof(&mut self,peer:&HumanPeer,budget_id:[u8;32])->Result<HumanResponse,HumanOperationError>{
+        use crate::budget::budget_proof::{verify_budget_proof,BudgetProofTrust};
+        let subject=peer.subject.as_ref().ok_or(HumanOperationError::Refused)?;
+        if budget_id==[0;32]{return Err(HumanOperationError::Refused)}
+        let tenant=TenantId::new(peer.tenant.clone()).map_err(|_|HumanOperationError::Refused)?;
+        let owner_did={
+            let store=self.store.lock().map_err(|_|HumanOperationError::Unavailable)?;
+            let owners=managed_agent::budget_owners(&store,&tenant)?;
+            let mut matching=owners.iter().filter(|owner|owner.active_budget_id==budget_id);
+            let (Some(owner),None)=(matching.next(),matching.next())else{return Err(HumanOperationError::Refused)};
+            Did::new(owner.agent_did.as_bytes()).map_err(|_|HumanOperationError::Refused)?
+        };
+        let mut operations=self.lock_operations()?;
+        operations.authority.authorize_subject(peer)?;
+        let registry=operations.authority.registry(peer).map_err(map_core)?;
+        let bound=subject::for_did(&operations.store,peer,&owner_did,&registry)?;
+        let snapshot=core_preparation_snapshot(&mut operations.node,peer,&owner_did)?;
+        let head=operations.node.head();
+        if snapshot.observed_head_sequence!=head.chain_sequence{return Err(HumanOperationError::Refused)}
+        let node=operations.node.handshake().node().clone();
+        let (_,_,_,_,age_seconds,maximum_age_seconds,_)=operations.authority.balance_context(peer)?;
+        if maximum_age_seconds==0||age_seconds>maximum_age_seconds{return Err(HumanOperationError::Refused)}
+        let checkpoint=operations.node.checkpoint_evidence(CheckpointSelector::Identifier(head.finalised_checkpoint),
+            boundary_correlation(peer,&budget_id,b"budget-proof-checkpoint")).map_err(|_|HumanOperationError::Refused)?;
+        let raw=operations.authority.budget_proof_export(&bound,budget_id,&owner_did)?;
+        let now_ms=u64::try_from(std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)
+            .map_err(|_|HumanOperationError::Unavailable)?.as_millis()).map_err(|_|HumanOperationError::Unavailable)?;
+        let trust=BudgetProofTrust{tenant:peer.transport_tenant(),principal:&subject.transport_principal,owner:&owner_did,
+            protocol_version:node.protocol_version,network_id:node.network_id,sequencer_key:node.authorised_sequencer_key,
+            head,checkpoint:&checkpoint,now_ms,maximum_age_seconds};
+        let proof=verify_budget_proof(&raw,budget_id,&trust).map_err(|_|HumanOperationError::Refused)?;
+        if operations.node.head()!=head{return Err(HumanOperationError::Refused)}
+        let mut out=Encoder::new();out.u16(4)?;out.text(&subject.owner)?;out.fixed(&proof.budget_id());out.fixed(&proof.asset());
+        out.fixed(&proof.source_account());out.u64(proof.observed_head_sequence());out.u128(proof.remaining());out.u8(proof.verification().wire_rank());
+        out.fixed(&proof.evidence_digest());out.fixed(&proof.receipt_digest());out.fixed(&proof.checkpoint_digest());
+        out.u64(proof.age_sequences());out.u64(proof.maximum_age_sequences());out.fixed(&proof.digest());out.bytes(proof.canonical_export_bytes())?;out.finish()
+    }
     fn native_effect_approval_material(&mut self,peer:&HumanPeer,id:[u8;32],digest:[u8;32])->Result<HumanResponse,HumanOperationError>{
         self.lock_operations()?.authority.authorize_subject(peer)?;
         let store=self.store.lock().map_err(|_|HumanOperationError::Unavailable)?;

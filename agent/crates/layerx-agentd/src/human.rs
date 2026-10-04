@@ -102,6 +102,7 @@ const NATIVE_EFFECT_APPROVAL_GET_V3: u8 = 53;
 const NATIVE_EFFECT_APPROVAL_DECIDE_V3: u8 = 54;
 const NATIVE_EFFECT_APPROVAL_MATERIAL_V4: u8 = 55;
 const NATIVE_EFFECT_APPROVAL_BUDGET_V4: u8 = 56;
+const AGENT_BUDGET_PROOF_V4: u8 = 57;
 const HEAD: u8 = 7;
 const EVIDENCE: u8 = 8;
 const MAX_TEXT: usize = 255;
@@ -310,6 +311,7 @@ pub enum HumanAgentJourneyKind {
 }
 
 pub enum HumanRequest {
+    AgentBudgetProofV4 { active_budget_id:[u8;32] },
     Subject {
         principal: String,
         owner: String,
@@ -524,6 +526,9 @@ impl HumanResponse {
 /// Narrow adapter over the existing daemon operation owners. It deliberately
 /// has no sign method: Human custody supplies the public signature to submit.
 pub trait HumanOperations {
+    fn agent_budget_proof(&mut self,_peer:&HumanPeer,_active_budget_id:[u8;32])->Result<HumanResponse,HumanOperationError>{
+        Err(HumanOperationError::Refused)
+    }
     /// # Errors
     /// Refuses a subject without provider binding and current native checkpoint authority.
     fn authorize_subject(&mut self, peer: &HumanPeer) -> Result<(), HumanOperationError>;
@@ -1884,6 +1889,7 @@ fn dispatch_request<O: HumanOperations>(
             operations.native_effect_approval_decide(peer,approval_id,held_digest,&idempotency_key,grant,current_sequence),
         HumanRequest::NativeEffectApprovalMaterialV4{approval_id,held_digest}=>operations.native_effect_approval_material(peer,approval_id,held_digest),
         HumanRequest::NativeEffectApprovalBudgetV4{approval_id,held_digest,current_sequence}=>operations.native_effect_approval_budget(peer,approval_id,held_digest,current_sequence),
+        HumanRequest::AgentBudgetProofV4{active_budget_id}=>operations.agent_budget_proof(peer,active_budget_id),
         HumanRequest::ApprovalBudgetAfterV2 {
             approval_id,
             held_digest,
@@ -2202,6 +2208,7 @@ fn decode_operation_1(
     reader: &mut Reader,
 ) -> Result<HumanRequest, HumanProtocolError> {
     Ok(match operation {
+        AGENT_BUDGET_PROOF_V4=>HumanRequest::AgentBudgetProofV4{active_budget_id:reader.fixed()?},
         BALANCE => HumanRequest::Balance,
         NATIVE_FEE_POLICY => HumanRequest::NativeFeePolicy,
         ACCOUNT_STATE => HumanRequest::AccountState {

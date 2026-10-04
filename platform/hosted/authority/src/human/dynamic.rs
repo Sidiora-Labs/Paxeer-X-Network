@@ -349,7 +349,8 @@ fn validate_parameters(name: &str, params: &BTreeMap<String, String>) -> Result<
         "identity" => &["did"],
         "key-policy" => &["did", "recovery"],
         "capability-scope" => &["did", "authority", "action_key", "capability_id"],
-        "budget-state" | "budget-proof" => &["budget_id"],
+        "budget-state" => &["budget_id"],
+        "budget-proof" => &["budget_id", "did"],
         _ => return Err(refusal(404, "not_found", None)),
     };
     let base = [
@@ -372,7 +373,11 @@ fn validate_parameters(name: &str, params: &BTreeMap<String, String>) -> Result<
         || (params.contains_key("registration")
             && !matches!(
                 name,
-                "identity" | "key-policy" | "capability-scope" | "authorized-batch"
+                "identity"
+                    | "key-policy"
+                    | "capability-scope"
+                    | "authorized-batch"
+                    | "budget-proof"
             ))
     {
         return Err(refusal(400, "invalid_query", None));
