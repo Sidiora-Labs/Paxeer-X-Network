@@ -97,6 +97,11 @@ const APPROVAL_BUDGET_AFTER_V2: u8 = 48;
 const MANAGED_EVIDENCE_BY_DIGEST_V2: u8 = 49;
 const NATIVE_APPROVAL_LIST_FACTS_V2: u8 = 50;
 const NATIVE_APPROVAL_GET_FACTS_V2: u8 = 51;
+const NATIVE_PROGRAM_APPROVAL_LIST_V5: u8 = 58;
+const NATIVE_PROGRAM_APPROVAL_GET_V5: u8 = 59;
+const NATIVE_PROGRAM_APPROVAL_MATERIAL_V5: u8 = 60;
+const NATIVE_PROGRAM_APPROVAL_BUDGET_V5: u8 = 61;
+const NATIVE_PROGRAM_APPROVAL_DECIDE_V5: u8 = 62;
 const NATIVE_EFFECT_APPROVAL_LIST_V3: u8 = 52;
 const NATIVE_EFFECT_APPROVAL_GET_V3: u8 = 53;
 const NATIVE_EFFECT_APPROVAL_DECIDE_V3: u8 = 54;
@@ -311,6 +316,11 @@ pub enum HumanAgentJourneyKind {
 }
 
 pub enum HumanRequest {
+    NativeProgramApprovalListV5 { cursor: Option<[u8;32]>, limit:u8 },
+    NativeProgramApprovalGetV5 { approval_id:[u8;32] },
+    NativeProgramApprovalMaterialV5 { approval_id:[u8;32], held_digest:[u8;32] },
+    NativeProgramApprovalBudgetV5 { approval_id:[u8;32], held_digest:[u8;32], current_sequence:u64 },
+    NativeProgramApprovalDecideV5 { approval_id:[u8;32], held_digest:[u8;32], idempotency_key:String, grant:bool, current_sequence:u64 },
     AgentBudgetProofV4 { active_budget_id:[u8;32] },
     Subject {
         principal: String,
@@ -526,6 +536,49 @@ impl HumanResponse {
 /// Narrow adapter over the existing daemon operation owners. It deliberately
 /// has no sign method: Human custody supplies the public signature to submit.
 pub trait HumanOperations {
+    fn native_program_approval_list(
+        &mut self,
+        _peer: &HumanPeer,
+        _cursor: Option<[u8; 32]>,
+        _limit: u8,
+    ) -> Result<HumanResponse, HumanOperationError> {
+        Err(HumanOperationError::Refused)
+    }
+    fn native_program_approval_get(
+        &mut self,
+        _peer: &HumanPeer,
+        _id: [u8; 32],
+    ) -> Result<HumanResponse, HumanOperationError> {
+        Err(HumanOperationError::Refused)
+    }
+    fn native_program_approval_material(
+        &mut self,
+        _peer: &HumanPeer,
+        _id: [u8; 32],
+        _digest: [u8; 32],
+    ) -> Result<HumanResponse, HumanOperationError> {
+        Err(HumanOperationError::Refused)
+    }
+    fn native_program_approval_budget(
+        &mut self,
+        _peer: &HumanPeer,
+        _id: [u8; 32],
+        _digest: [u8; 32],
+        _sequence: u64,
+    ) -> Result<HumanResponse, HumanOperationError> {
+        Err(HumanOperationError::Refused)
+    }
+    fn native_program_approval_decide(
+        &mut self,
+        _peer: &HumanPeer,
+        _id: [u8; 32],
+        _digest: [u8; 32],
+        _key: &str,
+        _grant: bool,
+        _sequence: u64,
+    ) -> Result<HumanResponse, HumanOperationError> {
+        Err(HumanOperationError::Refused)
+    }
     fn agent_budget_proof(&mut self,_peer:&HumanPeer,_active_budget_id:[u8;32])->Result<HumanResponse,HumanOperationError>{
         Err(HumanOperationError::Refused)
     }
@@ -1889,6 +1942,11 @@ fn dispatch_request<O: HumanOperations>(
             operations.native_effect_approval_decide(peer,approval_id,held_digest,&idempotency_key,grant,current_sequence),
         HumanRequest::NativeEffectApprovalMaterialV4{approval_id,held_digest}=>operations.native_effect_approval_material(peer,approval_id,held_digest),
         HumanRequest::NativeEffectApprovalBudgetV4{approval_id,held_digest,current_sequence}=>operations.native_effect_approval_budget(peer,approval_id,held_digest,current_sequence),
+        HumanRequest::NativeProgramApprovalListV5{cursor,limit}=>operations.native_program_approval_list(peer,cursor,limit),
+        HumanRequest::NativeProgramApprovalGetV5{approval_id}=>operations.native_program_approval_get(peer,approval_id),
+        HumanRequest::NativeProgramApprovalMaterialV5{approval_id,held_digest}=>operations.native_program_approval_material(peer,approval_id,held_digest),
+        HumanRequest::NativeProgramApprovalBudgetV5{approval_id,held_digest,current_sequence}=>operations.native_program_approval_budget(peer,approval_id,held_digest,current_sequence),
+        HumanRequest::NativeProgramApprovalDecideV5{approval_id,held_digest,idempotency_key,grant,current_sequence}=>operations.native_program_approval_decide(peer,approval_id,held_digest,&idempotency_key,grant,current_sequence),
         HumanRequest::AgentBudgetProofV4{active_budget_id}=>operations.agent_budget_proof(peer,active_budget_id),
         HumanRequest::ApprovalBudgetAfterV2 {
             approval_id,
@@ -2148,6 +2206,80 @@ fn decode_operation(
             let approval_id = reader.fixed()?;
             if approval_id == [0; 32] { return Err(HumanProtocolError::Malformed); }
             HumanRequest::NativeApprovalGetFactsV2 { approval_id }
+        }
+        NATIVE_PROGRAM_APPROVAL_LIST_V5
+        | NATIVE_PROGRAM_APPROVAL_GET_V5
+        | NATIVE_PROGRAM_APPROVAL_MATERIAL_V5
+        | NATIVE_PROGRAM_APPROVAL_BUDGET_V5
+        | NATIVE_PROGRAM_APPROVAL_DECIDE_V5 => {
+            if reader.u16()? != 5 {
+                return Err(HumanProtocolError::Malformed);
+            }
+            if operation == NATIVE_PROGRAM_APPROVAL_LIST_V5 {
+                let cursor = match reader.u8()? {
+                    0 => None,
+                    1 => Some(reader.fixed()?),
+                    _ => return Err(HumanProtocolError::Malformed),
+                };
+                let limit = reader.u8()?;
+                if !(1..=100).contains(&limit) || cursor == Some([0; 32]) {
+                    return Err(HumanProtocolError::Malformed);
+                }
+                HumanRequest::NativeProgramApprovalListV5 { cursor, limit }
+            } else {
+                let approval_id = reader.fixed()?;
+                if approval_id == [0; 32] {
+                    return Err(HumanProtocolError::Malformed);
+                }
+                if operation == NATIVE_PROGRAM_APPROVAL_GET_V5 {
+                    HumanRequest::NativeProgramApprovalGetV5 { approval_id }
+                } else {
+                    let held_digest = reader.fixed()?;
+                    if held_digest == [0; 32] {
+                        return Err(HumanProtocolError::Malformed);
+                    }
+                    if operation == NATIVE_PROGRAM_APPROVAL_MATERIAL_V5 {
+                        HumanRequest::NativeProgramApprovalMaterialV5 {
+                            approval_id,
+                            held_digest,
+                        }
+                    } else {
+                        let idempotency_key = if operation == NATIVE_PROGRAM_APPROVAL_DECIDE_V5 {
+                            Some(reader.text()?)
+                        } else {
+                            None
+                        };
+                        let grant = if operation == NATIVE_PROGRAM_APPROVAL_DECIDE_V5 {
+                            match reader.u8()? {
+                                0 => false,
+                                1 => true,
+                                _ => return Err(HumanProtocolError::Malformed),
+                            }
+                        } else {
+                            false
+                        };
+                        let current_sequence = reader.u64()?;
+                        if current_sequence == 0 {
+                            return Err(HumanProtocolError::Malformed);
+                        }
+                        if let Some(idempotency_key) = idempotency_key {
+                            HumanRequest::NativeProgramApprovalDecideV5 {
+                                approval_id,
+                                held_digest,
+                                idempotency_key,
+                                grant,
+                                current_sequence,
+                            }
+                        } else {
+                            HumanRequest::NativeProgramApprovalBudgetV5 {
+                                approval_id,
+                                held_digest,
+                                current_sequence,
+                            }
+                        }
+                    }
+                }
+            }
         }
         NATIVE_EFFECT_APPROVAL_LIST_V3=>{
             let cursor=match reader.u8()?{0=>None,1=>Some(reader.fixed()?),_=>return Err(HumanProtocolError::Malformed)};

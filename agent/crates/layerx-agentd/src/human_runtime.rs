@@ -225,6 +225,83 @@ use crate::sign::{
 use crate::store::{key, ObjectKind, StorageClass, Store, TenantId, TenantKey};
 
 impl<A: HumanAuthorityBoundary> UnifiedAgentOwner<A> {
+    fn verified_program_budget_proof(
+        &mut self,
+        peer: &HumanPeer,
+        budget_id: [u8; 32],
+    ) -> Result<crate::budget::budget_proof::VerifiedBudgetProof, HumanOperationError> {
+        use crate::budget::budget_proof::{verify_budget_proof, BudgetProofTrust};
+        let subject = peer.subject.as_ref().ok_or(HumanOperationError::Refused)?;
+        if budget_id == [0; 32] {
+            return Err(HumanOperationError::Refused);
+        }
+        let tenant =
+            TenantId::new(peer.tenant.clone()).map_err(|_| HumanOperationError::Refused)?;
+        let owner_did = {
+            let store = self
+                .store
+                .lock()
+                .map_err(|_| HumanOperationError::Unavailable)?;
+            let owners = managed_agent::budget_owners(&store, &tenant)?;
+            let mut matching = owners
+                .iter()
+                .filter(|owner| owner.active_budget_id == budget_id);
+            let (Some(owner), None) = (matching.next(), matching.next()) else {
+                return Err(HumanOperationError::Refused);
+            };
+            Did::new(owner.agent_did.as_bytes()).map_err(|_| HumanOperationError::Refused)?
+        };
+        let mut operations = self.lock_operations()?;
+        operations.authority.authorize_subject(peer)?;
+        let registry = operations.authority.registry(peer).map_err(map_core)?;
+        let bound = subject::for_did(&operations.store, peer, &owner_did, &registry)?;
+        let snapshot = core_preparation_snapshot(&mut operations.node, peer, &owner_did)?;
+        let head = operations.node.head();
+        if snapshot.observed_head_sequence != head.chain_sequence {
+            return Err(HumanOperationError::Refused);
+        }
+        let node = operations.node.handshake().node().clone();
+        let (_, _, _, _, age_seconds, maximum_age_seconds, _) =
+            operations.authority.balance_context(peer)?;
+        if maximum_age_seconds == 0 || age_seconds > maximum_age_seconds {
+            return Err(HumanOperationError::Refused);
+        }
+        let checkpoint = operations
+            .node
+            .checkpoint_evidence(
+                CheckpointSelector::Identifier(head.finalised_checkpoint),
+                boundary_correlation(peer, &budget_id, b"budget-proof-checkpoint"),
+            )
+            .map_err(|_| HumanOperationError::Refused)?;
+        let raw = operations
+            .authority
+            .budget_proof_export(&bound, budget_id, &owner_did)?;
+        let now_ms = u64::try_from(
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_err(|_| HumanOperationError::Unavailable)?
+                .as_millis(),
+        )
+        .map_err(|_| HumanOperationError::Unavailable)?;
+        let trust = BudgetProofTrust {
+            tenant: peer.transport_tenant(),
+            principal: &subject.transport_principal,
+            owner: &owner_did,
+            protocol_version: node.protocol_version,
+            network_id: node.network_id,
+            sequencer_key: node.authorised_sequencer_key,
+            head,
+            checkpoint: &checkpoint,
+            now_ms,
+            maximum_age_seconds,
+        };
+        let proof = verify_budget_proof(&raw, budget_id, &trust)
+            .map_err(|_| HumanOperationError::Refused)?;
+        if operations.node.head() != head {
+            return Err(HumanOperationError::Refused);
+        }
+        Ok(proof)
+    }
     /// The tenant capability derivation graph, restored under the owner lock from
     /// the shared durable store on first use; a tenant with no persisted graph
     /// starts empty.
@@ -1618,6 +1695,53 @@ impl<A: HumanAuthorityBoundary> SharedAgentOwner<A> {
 }
 
 impl<A: HumanAuthorityBoundary> HumanOperations for SharedAgentOwner<A> {
+    fn native_program_approval_list(
+        &mut self,
+        peer: &HumanPeer,
+        cursor: Option<[u8; 32]>,
+        limit: u8,
+    ) -> Result<HumanResponse, HumanOperationError> {
+        self.lock()?
+            .native_program_approval_list(peer, cursor, limit)
+    }
+    fn native_program_approval_get(
+        &mut self,
+        peer: &HumanPeer,
+        id: [u8; 32],
+    ) -> Result<HumanResponse, HumanOperationError> {
+        self.lock()?.native_program_approval_get(peer, id)
+    }
+    fn native_program_approval_material(
+        &mut self,
+        peer: &HumanPeer,
+        id: [u8; 32],
+        digest: [u8; 32],
+    ) -> Result<HumanResponse, HumanOperationError> {
+        self.lock()?
+            .native_program_approval_material(peer, id, digest)
+    }
+    fn native_program_approval_budget(
+        &mut self,
+        peer: &HumanPeer,
+        id: [u8; 32],
+        digest: [u8; 32],
+        sequence: u64,
+    ) -> Result<HumanResponse, HumanOperationError> {
+        self.lock()?
+            .native_program_approval_budget(peer, id, digest, sequence)
+    }
+    fn native_program_approval_decide(
+        &mut self,
+        peer: &HumanPeer,
+        id: [u8; 32],
+        digest: [u8; 32],
+        key: &str,
+        grant: bool,
+        sequence: u64,
+    ) -> Result<HumanResponse, HumanOperationError> {
+        self.lock()?
+            .native_program_approval_decide(peer, id, digest, key, grant, sequence)
+    }
     fn agent_budget_proof(&mut self,peer:&HumanPeer,id:[u8;32])->Result<HumanResponse,HumanOperationError>{self.lock()?.agent_budget_proof(peer,id)}
     fn native_effect_approval_material(&mut self,peer:&HumanPeer,id:[u8;32],digest:[u8;32])->Result<HumanResponse,HumanOperationError>{self.lock()?.native_effect_approval_material(peer,id,digest)}
     fn native_effect_approval_budget(&mut self,peer:&HumanPeer,id:[u8;32],digest:[u8;32],sequence:u64)->Result<HumanResponse,HumanOperationError>{self.lock()?.native_effect_approval_budget(peer,id,digest,sequence)}
@@ -6058,6 +6182,270 @@ impl<A: HumanAuthorityBoundary> UnifiedAgentOwner<A> {
 }
 
 impl<A: HumanAuthorityBoundary> HumanOperations for UnifiedAgentOwner<A> {
+    fn native_program_approval_list(
+        &mut self,
+        peer: &HumanPeer,
+        cursor: Option<[u8; 32]>,
+        limit: u8,
+    ) -> Result<HumanResponse, HumanOperationError> {
+        use crate::approval::native_program::NativeProgramApprovalCarrier;
+        if !(1..=100).contains(&limit) || cursor == Some([0; 32]) {
+            return Err(HumanOperationError::Refused);
+        }
+        let registry = {
+            let mut ops = self.lock_operations()?;
+            ops.authority.authorize_subject(peer)?;
+            ops.authority.registry(peer).map_err(map_core)?
+        };
+        let store = self
+            .store
+            .lock()
+            .map_err(|_| HumanOperationError::Unavailable)?;
+        let mut records = NativeProgramApprovalCarrier::list_for_human(&store, peer)
+            .map_err(|_| HumanOperationError::Refused)?;
+        records.retain(|r| cursor.is_none_or(|id| r.preparation_id() > id));
+        let more = records.len() > usize::from(limit);
+        records.truncate(usize::from(limit));
+        let mut out = Encoder::new();
+        out.u16(5)?;
+        out.u8(u8::try_from(records.len()).map_err(|_| HumanOperationError::Refused)?);
+        for record in &records {
+            let presentation = crate::approval::native_program_presentation::read_owned(
+                &store,
+                peer,
+                record.preparation_id(),
+                &registry,
+            )
+            .map_err(|_| HumanOperationError::Refused)?;
+            encode_program_approval_v5(&mut out, &presentation)?;
+        }
+        if more {
+            out.u8(1);
+            out.fixed(
+                &records
+                    .last()
+                    .ok_or(HumanOperationError::Refused)?
+                    .preparation_id(),
+            )
+        } else {
+            out.u8(0)
+        }
+        out.finish()
+    }
+    fn native_program_approval_get(
+        &mut self,
+        peer: &HumanPeer,
+        id: [u8; 32],
+    ) -> Result<HumanResponse, HumanOperationError> {
+        let registry = {
+            let mut ops = self.lock_operations()?;
+            ops.authority.authorize_subject(peer)?;
+            ops.authority.registry(peer).map_err(map_core)?
+        };
+        let store = self
+            .store
+            .lock()
+            .map_err(|_| HumanOperationError::Unavailable)?;
+        let held =
+            crate::approval::native_program_presentation::read_owned(&store, peer, id, &registry)
+                .map_err(|_| HumanOperationError::Refused)?;
+        let mut out = Encoder::new();
+        encode_program_approval_v5(&mut out, &held)?;
+        out.finish()
+    }
+    fn native_program_approval_material(
+        &mut self,
+        peer: &HumanPeer,
+        id: [u8; 32],
+        digest: [u8; 32],
+    ) -> Result<HumanResponse, HumanOperationError> {
+        let registry = {
+            let mut ops = self.lock_operations()?;
+            ops.authority.authorize_subject(peer)?;
+            ops.authority.registry(peer).map_err(map_core)?
+        };
+        let store = self
+            .store
+            .lock()
+            .map_err(|_| HumanOperationError::Unavailable)?;
+        let held =
+            crate::approval::native_program_presentation::read_owned(&store, peer, id, &registry)
+                .map_err(|_| HumanOperationError::Refused)?;
+        if held.held_digest() != digest {
+            return Err(HumanOperationError::Refused);
+        }
+        let mut out = Encoder::new();
+        out.u16(5)?;
+        out.fixed(&id);
+        out.fixed(&digest);
+        out.text(held.owner())?;
+        out.u8(0);
+        out.bytes(held.canonical_unsigned_bytes())?;
+        out.bytes(held.immutable_carrier_bytes())?;
+        out.bytes(
+            &held
+                .reservation()
+                .encode()
+                .map_err(|_| HumanOperationError::Refused)?,
+        )?;
+        out.finish()
+    }
+    fn native_program_approval_budget(
+        &mut self,
+        peer: &HumanPeer,
+        id: [u8; 32],
+        digest: [u8; 32],
+        sequence: u64,
+    ) -> Result<HumanResponse, HumanOperationError> {
+        let registry = {
+            let mut ops = self.lock_operations()?;
+            ops.authority.authorize_subject(peer)?;
+            ops.authority.registry(peer).map_err(map_core)?
+        };
+        let budget_id = {
+            let store = self
+                .store
+                .lock()
+                .map_err(|_| HumanOperationError::Unavailable)?;
+            let held = crate::approval::native_program_presentation::read_owned(
+                &store, peer, id, &registry,
+            )
+            .map_err(|_| HumanOperationError::Refused)?;
+            if held.held_digest() != digest {
+                return Err(HumanOperationError::Refused);
+            }
+            let tenant =
+                TenantId::new(peer.tenant.clone()).map_err(|_| HumanOperationError::Refused)?;
+            let owners = managed_agent::budget_owners(&store, &tenant)?;
+            let actor =
+                std::str::from_utf8(held.actor()).map_err(|_| HumanOperationError::Refused)?;
+            let mut selected = owners.iter().filter(|owner| owner.agent_did == actor);
+            let (Some(owner), None) = (selected.next(), selected.next()) else {
+                return Err(HumanOperationError::Refused);
+            };
+            owner.active_budget_id
+        };
+        let proof = self.verified_program_budget_proof(peer, budget_id)?;
+        if proof.observed_head_sequence() != sequence {
+            return Err(HumanOperationError::Refused);
+        }
+        let store = self
+            .store
+            .lock()
+            .map_err(|_| HumanOperationError::Unavailable)?;
+        let row = crate::budget::program_settlement::read_owned_program_budget(
+            &store,
+            peer,
+            id,
+            digest,
+            &registry,
+            &self.budgets,
+            &proof,
+            sequence,
+        )
+        .map_err(|_| HumanOperationError::Refused)?;
+        let mut out = Encoder::new();
+        out.u16(5)?;
+        out.fixed(&id);
+        out.fixed(&digest);
+        out.text(
+            &peer
+                .subject
+                .as_ref()
+                .ok_or(HumanOperationError::Refused)?
+                .owner,
+        )?;
+        out.fixed(&row.budget_id());
+        out.fixed(&row.asset());
+        out.fixed(&row.source());
+        out.u64(row.observed_sequence());
+        out.u128(row.remaining_after_reservations());
+        out.u8(u8::from(row.terminal()));
+        out.u8(row.verification().wire_rank());
+        out.fixed(&row.evidence_digest());
+        out.fixed(&row.receipt_digest());
+        out.fixed(&row.checkpoint_digest());
+        out.u64(row.age_sequences());
+        out.u64(row.maximum_age_sequences());
+        out.fixed(&row.proof_digest());
+        out.bytes(row.verified_proof_bytes())?;
+        out.finish()
+    }
+    fn native_program_approval_decide(
+        &mut self,
+        peer: &HumanPeer,
+        id: [u8; 32],
+        digest: [u8; 32],
+        key: &str,
+        grant: bool,
+        sequence: u64,
+    ) -> Result<HumanResponse, HumanOperationError> {
+        use crate::approval::native_program::NativeProgramApprovalCarrier;
+        let key = digest_from_hex(key)
+            .filter(|key| *key != [0; 32])
+            .ok_or(HumanOperationError::Refused)?;
+        let tenant =
+            TenantId::new(peer.tenant.clone()).map_err(|_| HumanOperationError::Refused)?;
+        let held = {
+            self.lock_operations()?.authority.authorize_subject(peer)?;
+            let store = self
+                .store
+                .lock()
+                .map_err(|_| HumanOperationError::Unavailable)?;
+            NativeProgramApprovalCarrier::read_for_human(&store, peer, id)
+                .map_err(|_| HumanOperationError::Refused)?
+        };
+        let actor = Did::new(held.retained_actor()).map_err(|_| HumanOperationError::Refused)?;
+        let (observation, registry, network_id) = self
+            .lock_operations()?
+            .native_expiry_observation(peer, &actor)?;
+        if observation.through_sequence() != sequence {
+            return Err(HumanOperationError::Refused);
+        }
+        let sessions = self.session_control.registry();
+        let sessions = sessions
+            .read()
+            .map_err(|_| HumanOperationError::Unavailable)?;
+        let session = sessions
+            .get(&tenant, SessionId(held.retained_session()))
+            .ok_or(HumanOperationError::Refused)?;
+        let mut store = self
+            .store
+            .lock()
+            .map_err(|_| HumanOperationError::Unavailable)?;
+        let current = NativeProgramApprovalCarrier::read_for_human(&store, peer, id)
+            .map_err(|_| HumanOperationError::Refused)?;
+        if current
+            .encoded()
+            .map_err(|_| HumanOperationError::Refused)?
+            != held.encoded().map_err(|_| HumanOperationError::Refused)?
+        {
+            return Err(HumanOperationError::Refused);
+        }
+        crate::approval::native_program_presentation::read_owned(&store, peer, id, &registry)
+            .map_err(|_| HumanOperationError::Refused)?;
+        NativeProgramApprovalCarrier::decide_for_human(
+            &mut store,
+            &self.budgets,
+            peer,
+            session,
+            id,
+            digest,
+            key,
+            grant,
+            &observation,
+            &registry,
+            network_id,
+            &self.preparation_lifecycle,
+        )
+        .map_err(|_| HumanOperationError::Refused)?;
+        let presentation =
+            crate::approval::native_program_presentation::read_owned(&store, peer, id, &registry)
+                .map_err(|_| HumanOperationError::Refused)?;
+        let mut out = Encoder::new();
+        encode_program_approval_v5(&mut out, &presentation)?;
+        out.finish()
+    }
     fn agent_budget_proof(&mut self,peer:&HumanPeer,budget_id:[u8;32])->Result<HumanResponse,HumanOperationError>{
         use crate::budget::budget_proof::{verify_budget_proof,BudgetProofTrust};
         let subject=peer.subject.as_ref().ok_or(HumanOperationError::Refused)?;
@@ -13910,6 +14298,89 @@ fn encode_native_effect_approval_facts(out:&mut Encoder,record:&crate::approval:
     out.u16(disclosure.amounts.len())?;for amount in &disclosure.amounts{out.u8(match amount.role{layerx_crypto::disclosure::AmountRole::Transfer=>0,layerx_crypto::disclosure::AmountRole::SpendingLimit=>1,layerx_crypto::disclosure::AmountRole::SupplyCap=>2,layerx_crypto::disclosure::AmountRole::PerDrawMaximum=>3,layerx_crypto::disclosure::AmountRole::GrantAllowance=>4});out.u128(amount.value)}
     for reference in [record.release_ref(),record.submission_ref()]{match reference{Some(value)=>{out.u8(1);out.fixed(&value)},None=>out.u8(0)}};Ok(())
 }
+fn encode_program_approval_v5(
+    out: &mut Encoder,
+    held: &crate::approval::native_program_presentation::OwnedNativeProgramPresentation,
+) -> Result<(), HumanOperationError> {
+    use crate::approval::native_program_presentation::{
+        ProgramPresentationOperation as Op, ProgramPresentationSemantics as Sem,
+        ProgramPresentationState as State,
+    };
+    out.u16(5)?;
+    out.fixed(&held.id());
+    out.fixed(&held.held_digest());
+    out.text(held.owner())?;
+    out.bytes(held.actor())?;
+    out.u16(usize::from(held.activity_module()))?;
+    out.u16(usize::from(held.activity_ordinal()))?;
+    out.u8(match held.state() {
+        State::Awaiting => 0,
+        State::Granted => 1,
+        State::Rejected => 2,
+        State::Expired => 3,
+        State::Defective => 4,
+        State::NotRequired => 5,
+    });
+    out.u64(held.created_at_sequence());
+    out.u64(held.budget_expiry_sequence());
+    out.u64(held.created_at_unix_seconds());
+    out.u64(held.activity_expires_at_unix_milliseconds());
+    match held.release_ref() {
+        Some(value) => {
+            out.u8(1);
+            out.fixed(&value)
+        }
+        None => out.u8(0),
+    }
+    match held.fee_asset() {
+        Some(value) => {
+            out.u8(1);
+            out.fixed(&value)
+        }
+        None => out.u8(0),
+    }
+    let payload = match held.operation() {
+        Op::Deploy(value) => value
+            .native()
+            .encode()
+            .map_err(|_| HumanOperationError::Refused)?,
+        Op::Upgrade(value) => value
+            .native()
+            .encode()
+            .map_err(|_| HumanOperationError::Refused)?,
+        Op::Call(value) => value
+            .native()
+            .encode()
+            .map_err(|_| HumanOperationError::Refused)?,
+        Op::WindDown(value) => value
+            .native()
+            .encode()
+            .map_err(|_| HumanOperationError::Refused)?,
+    };
+    out.bytes(&payload)?;
+    match held.semantics() {
+        Sem::OperationOnly => out.u8(0),
+        Sem::AuthorizedLimits(rows) => {
+            out.u8(1);
+            out.u16(rows.len())?;
+            for row in rows {
+                out.u8(row.kind as u8);
+                out.fixed(&row.source);
+                out.fixed(&row.asset);
+                match row.destination {
+                    Some(value) => {
+                        out.u8(1);
+                        out.fixed(&value)
+                    }
+                    None => out.u8(0),
+                }
+                out.u128(row.maximum_amount);
+            }
+        }
+    }
+    Ok(())
+}
+
 fn encode_native_approval_facts(out:&mut Encoder,record:&crate::approval::native_program::NativeProgramApprovalCarrier,store:&Store,owner:&str)->Result<(),HumanOperationError>{
     use crate::approval::native_program::NativeApprovalState;
     let response=record.response().map_err(|_|HumanOperationError::Refused)?;

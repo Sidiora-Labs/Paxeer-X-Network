@@ -33336,7 +33336,7 @@ qualification_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-104.13.20
 
 [task.104.13.19]
 title = "Produce truthful native Programs approval material and budget disclosures"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 2
 requires = ["0.2", "8.1"]
@@ -33353,14 +33353,17 @@ stop_condition = "Stop at original30-minute cap, unrelated failure, missing genu
 completion_basis_policy = "Owner CONSTITUTION: fully implemented DONE; qualification separate and partial remains in_progress."
 source_ownership = "Runtime private dispatch belongs to separate owner18; root serializes source freeze, manifests/spec/publication. No deployment."
 
-source_status = "partial_missing_allocation_identity_bindings"
+source_status = "complete"
 qualification_status = "unverified"
 format_status = "unrun"
 build_exit_code = 0
 verify_exit_code = 1
 qualification_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-1041319-verify.log"
-remaining_source = "Bind allocation actor, preparation digest and original head before exposing Programs presentation through task104.13.21."
+remaining_source = "none; completed by104.13.21"
 
+
+completion_basis = "implementation"
+source_completion_task = "104.13.21 closes all three missing allocation lineage checks"
 [task.104.13.15]
 title = "Retain authenticated historical execution prestate for ordinary native Asset Send"
 status = "done"
@@ -33412,3 +33415,33 @@ qualification_status = "passed"
 build_exit_code = 0
 verify_exit_code = 0
 qualification_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-0.16-verify-repair-2.log"
+
+[task.104.13.21]
+title = "Connect truthful native Programs approvals to the authenticated Human peer"
+status = "done"
+mode = "BUILD"
+wave = 2
+requires = ["0.2", "8.1"]
+reqs = ["1064.3", "1064.8", "1071.5"]
+do_1 = "Wire the owned Programs presentation and verified budget producers into additive closed private peer operations for real facts, material, budget and decisions. Keep nonmonetary calls and authorized limits distinct; never fabricate amount, counterparty, fee asset or settlement."
+do_2 = "Preserve tenant, owner, session, digest, generation, current-head, expiry, replay and atomic decision/release checks. Reuse actual retained carrier and SessionControl paths; source material remains LocalOwned unless independently authenticated."
+touches = ["agent/crates/layerx-agentd/src/human.rs", "agent/crates/layerx-agentd/src/human_runtime.rs", "agent/crates/layerx-agentd/src/approval/native_program.rs", "agent/crates/layerx-agentd/tests/native_program_human_peer.rs", "tools/qualification/paxeer-x/native-program-human-peer.py", "agent/crates/layerx-agentd/src/approval/native_program_presentation.rs"]
+build_cmd = "timeout 20m python3 tools/qualification/paxeer-x/native-program-human-peer.py --build"
+verify_cmd = "timeout 10m python3 tools/qualification/paxeer-x/native-program-human-peer.py"
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop at original 30-minute cap, unrelated failure, missing genuine authority or weakening; report exact source state, command, exit code and log path."
+completion_basis_policy = "Owner CONSTITUTION: fully implemented DONE; qualification separate and partial remains in_progress."
+source_ownership = "Root owns workspace manifests, locks, module registration, spec and narrow publication. Wait for explicit prior-owner source release before editing shared files. No deployment."
+
+upstream_source_checkpoint = "104.13.19"
+do_3 = "Close the explicit allocation actor, preparation digest and original head binding checks in the actual retained presentation producer before exposing it over the private peer; never manufacture missing carrier facts."
+
+
+completion_basis = "implementation"
+qualification_status = "unverified"
+build_exit_code = 0
+verify_exit_code = 1
+qualification_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-104.13.21-verify.log"

@@ -443,6 +443,9 @@ impl NativeProgramApprovalCarrier {
 
     pub(crate) fn retained_principal(&self) -> &str { &self.principal }
     pub(crate) fn retained_actor(&self) -> &[u8] { &self.actor }
+    pub(crate) fn retained_session(&self) -> [u8; 32] {
+        self.session
+    }
 
     pub(crate) fn unsigned_admission(&self, store: &Store, tenant: &TenantId) -> Result<bool, CarrierError> {
         if !matches!(self.state, NativeApprovalState::Awaiting | NativeApprovalState::NotRequired | NativeApprovalState::Granted) {
@@ -642,6 +645,161 @@ impl NativeProgramApprovalCarrier {
                 Vec::new(), vec![native_rate_key(tenant, id)?]).map_err(|_| CarrierError::Corrupt)?;
             let _ = staged.publish();
             lifecycle.invalidate_preparations(&std::collections::BTreeSet::from([id]), sequence, budgets)
+                .map_err(|_| CarrierError::Corrupt)?;
+        }
+        Ok(held)
+    }
+
+    pub(crate) fn decide_for_human(
+        store: &mut Store,
+        budgets: &crate::budget::BudgetLimiter,
+        peer: &crate::human::HumanPeer,
+        session: &crate::session::SessionRecord,
+        id: [u8; 32],
+        held_digest: [u8; 32],
+        key: [u8; 32],
+        grant: bool,
+        observation: &crate::protocol_evidence::AuthenticatedCoreTime,
+        registry: &layerx_types::payload::ModuleRegistry,
+        network_id: u32,
+        lifecycle: &crate::prepare::PreparationLifecycle,
+    ) -> Result<Self, CarrierError> {
+        let sequence = observation.through_sequence();
+        let core_ms = observation.observed_core_ms();
+        let tenant = Self::human_tenant(peer)?;
+        let mut held = Self::read_for_human(store, peer, id)?;
+        if key == [0; 32]
+            || !session.open
+            || session.request.tenant != tenant
+            || session.request.session_id.0 != held.session
+            || session.request.agent.as_bytes() != held.actor
+            || session.generation != held.generation
+            || sequence >= session.request.expiry_sequence
+            || session
+                .request
+                .expiry_seconds
+                .is_some_and(|expiry| core_ms / 1000 >= expiry)
+        {
+            return Err(CarrierError::Binding);
+        }
+        if held.held_digest()? != held_digest || sequence < held.created_at_sequence {
+            return Err(CarrierError::Binding);
+        }
+        if let Some(terminal) = &held.terminal {
+            if terminal.key == key
+                && terminal.principal == peer.principal
+                && terminal.session == held.session
+                && terminal.generation == held.generation
+                && terminal.grant == grant
+            {
+                return Ok(held);
+            }
+            return Err(CarrierError::Binding);
+        }
+        if held.expired_at(sequence, core_ms) {
+            if let Some(expired) = Self::expire_unsigned(
+                store,
+                budgets,
+                lifecycle,
+                &tenant,
+                id,
+                observation,
+                registry,
+                network_id,
+            )? {
+                return Ok(expired);
+            }
+            return Err(CarrierError::Binding);
+        }
+        if held.state != NativeApprovalState::Awaiting {
+            return Err(CarrierError::Binding);
+        }
+        let rejection = if grant {
+            if held
+                .verified_unsigned_material(store, lifecycle, &tenant, registry, network_id)?
+                .is_none()
+            {
+                return Err(CarrierError::Binding);
+            }
+            None
+        } else {
+            Some(
+                held.verified_unsigned_material(store, lifecycle, &tenant, registry, network_id)?
+                    .ok_or(CarrierError::Binding)?,
+            )
+        };
+        held.state = if grant {
+            NativeApprovalState::Granted
+        } else {
+            NativeApprovalState::Rejected
+        };
+        let submission_ref = if held.state == NativeApprovalState::Granted {
+            let mut digest = Sha256::new();
+            digest.update(b"layerx/native-program-release/v1\0");
+            digest.update(held_digest);
+            digest.update(id);
+            Some(digest.finalize().into())
+        } else {
+            None
+        };
+        let decision_session = held.session;
+        let decision_generation = held.generation;
+        held.terminal = Some(NativeTerminal {
+            key,
+            principal: peer.principal.clone(),
+            session: decision_session,
+            generation: decision_generation,
+            sequence,
+            core_ms,
+            grant,
+            submission_ref,
+        });
+        let (carrier_key, carrier_bytes) = held.companion()?;
+        if held.state == NativeApprovalState::Granted {
+            store
+                .apply_program_approval_batch(
+                    vec![(carrier_key, carrier_bytes)],
+                    Vec::new(),
+                    Vec::new(),
+                )
+                .map_err(|_| CarrierError::Corrupt)?;
+        } else {
+            let tenant = &tenant;
+            let (durable_key, mut durable, reservation) = rejection.ok_or(CarrierError::Binding)?;
+            durable.state = crate::prepare::LifecycleState::Failed;
+            let staged = if reservation.allocations().is_some() {
+                let proof = VerifiedUnsignedProgramRejection {
+                    reservation_id: id,
+                    reservation_digest: reservation
+                        .settlement_binding()
+                        .map_err(|_| CarrierError::Budget)?,
+                };
+                budgets.stage_program_unsigned_rejection(&reservation, &proof)
+            } else {
+                crate::budget::stage_release(
+                    budgets,
+                    id,
+                    crate::budget::ReleaseKind::Failed,
+                    sequence,
+                )
+            }
+            .map_err(|_| CarrierError::Budget)?;
+            store
+                .apply_program_approval_batch(
+                    vec![
+                        (carrier_key, carrier_bytes),
+                        (
+                            durable_key,
+                            durable.encode().map_err(|_| CarrierError::Corrupt)?,
+                        ),
+                    ],
+                    Vec::new(),
+                    vec![native_rate_key(tenant, id)?],
+                )
+                .map_err(|_| CarrierError::Corrupt)?;
+            let _ = staged.publish();
+            lifecycle
+                .invalidate_preparations(&std::collections::BTreeSet::from([id]), sequence, budgets)
                 .map_err(|_| CarrierError::Corrupt)?;
         }
         Ok(held)

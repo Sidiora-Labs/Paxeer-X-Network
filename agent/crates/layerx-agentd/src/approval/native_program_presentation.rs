@@ -108,6 +108,19 @@ pub fn read_owned(store: &Store, peer: &HumanPeer, id: [u8; 32], registry: &Modu
             _ => ProgramPresentationError::Corrupt,
         })?;
     let reservation = carrier.budget()?;
+    let preparation_digest: [u8; 32] = Sha256::digest(&prepared.canonical_bytes).into();
+    let actor = layerx_wire::hash::did_id_for_protocol(
+        prepared.envelope.actor_did(),
+        prepared.envelope.protocol_version(),
+    )
+    .map_err(|_| ProgramPresentationError::Binding)?;
+    if reservation.id != preparation_digest
+        || reservation.allocation_preparation_digest() != Some(preparation_digest)
+        || reservation.allocation_sequence() != Some(prepared.observed_head_sequence)
+        || reservation.allocation_actor() != Some(actor)
+    {
+        return Err(ProgramPresentationError::Binding);
+    }
     let allocations = reservation.allocations().ok_or(ProgramPresentationError::MissingAuthority)?;
     let mut actual = BTreeMap::<AllocationKey, u128>::new();
     let mut fee_asset = None;
