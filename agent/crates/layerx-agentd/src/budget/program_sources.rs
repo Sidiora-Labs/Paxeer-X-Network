@@ -264,6 +264,75 @@ pub fn read_program_budget_sources(
         preparation_digest: Sha256::digest(&prepared.canonical_bytes).into(), charges })
 }
 
+pub fn read_native_effect_budget_sources(
+    node: &mut layerx_client::Client,
+    prepared: &Prepared,
+    caps: &VerifiedCaps,
+    now: u64,
+    fee_correlation_id: u64,
+) -> Result<VerifiedResolvedProgramCharges, ProgramSourceError> {
+    validate_prepared(prepared)?;
+    if prepared.envelope.activity_type().module() == layerx_types::payload::ModuleId::Programs { return Err(ProgramSourceError::Unsupported); }
+    let actor = did_id_for_protocol(prepared.envelope.actor_did(), 3).map_err(|_| ProgramSourceError::Preparation)?;
+    let header = layerx_wire::receipt::decode_batch_header(&caps.signed_header().canonical_bytes)
+        .map_err(|_| ProgramSourceError::Snapshot)?;
+    let freshness = caps.freshness();
+    if now == 0 || caps.did() != actor || caps.state_root() == [0; 32]
+        || caps.level() < layerx_types::verify::VerificationLevel::STATE_PROVEN
+        || header.resulting_state_root() != caps.state_root()
+        || header.protocol_version() != 3 || header.network_id() != prepared.envelope.network_id()
+        || header.last_sequence() != prepared.observed_head_sequence
+        || freshness.global_sequence != prepared.observed_head_sequence
+        || freshness.observed_head_sequence != prepared.observed_head_sequence
+        || freshness.batch_number != header.batch_number()
+        || node.head().chain_sequence != prepared.observed_head_sequence
+        || node.head().sealed_batch != header.batch_number()
+    { return Err(ProgramSourceError::Snapshot); }
+    let plan = crate::capability::derive_native_effects(&prepared.disclosure, &VerifiedInputs::default())
+        .map_err(|_| ProgramSourceError::Preparation)?;
+    let mut charges = Vec::new();
+    let mut gross = BTreeMap::new();
+    for effect in plan.effects() {
+        match effect {
+            crate::capability::Effect::Transfer { from, to, asset, amount } => {
+                let account = principal_source(caps.all_accounts(), prepared.envelope.actor_did(), prepared.envelope.protocol_version(), *asset)?;
+                if account != *from || *to == [0; 32] || *amount == 0 { return Err(ProgramSourceError::SourceOwnership); }
+                let total = gross.entry(*asset).or_insert(0_u128);
+                *total = total.checked_add(*amount).ok_or(ProgramSourceError::Arithmetic)?;
+                charges.push(ResolvedProgramCharge { source: ResolvedProgramSource::Principal { account }, asset: *asset, destination: Some(*to), maximum_amount: *amount });
+            }
+            crate::capability::Effect::Destruction { account, asset, amount } => {
+                let source = principal_source(caps.all_accounts(), prepared.envelope.actor_did(), prepared.envelope.protocol_version(), *asset)?;
+                if source != *account || *amount == 0 { return Err(ProgramSourceError::SourceOwnership); }
+                let total = gross.entry(*asset).or_insert(0_u128);
+                *total = total.checked_add(*amount).ok_or(ProgramSourceError::Arithmetic)?;
+                charges.push(ResolvedProgramCharge { source: ResolvedProgramSource::Principal { account: source }, asset: *asset, destination: None, maximum_amount: *amount });
+            }
+            crate::capability::Effect::Issuance { .. } => return Err(ProgramSourceError::Unsupported),
+            crate::capability::Effect::Authorization { .. } => {}
+        }
+    }
+    if &gross != plan.gross_per_asset() { return Err(ProgramSourceError::Preparation); }
+    let maximum_fee = prepared.envelope.fee_limit().value();
+    if maximum_fee != 0 {
+        let fee = node.native_fee_policy(fee_correlation_id).map_err(|_| ProgramSourceError::FeeUnavailable)?;
+        if fee.state_root != caps.state_root() || fee.observed_sequence != prepared.observed_head_sequence {
+            return Err(ProgramSourceError::Snapshot);
+        }
+        let asset = fee.value.asset.asset_id;
+        let account = principal_source(caps.all_accounts(), prepared.envelope.actor_did(),
+            prepared.envelope.protocol_version(), asset)?;
+        charges.push(ResolvedProgramCharge { source: ResolvedProgramSource::Fee { account }, asset,
+            destination: None, maximum_amount: maximum_fee });
+    }
+    if node.head().chain_sequence != prepared.observed_head_sequence || node.head().sealed_batch != header.batch_number() {
+        return Err(ProgramSourceError::Snapshot);
+    }
+    Ok(VerifiedResolvedProgramCharges { actor, state_root: caps.state_root(), batch_number: header.batch_number(),
+        global_sequence: prepared.observed_head_sequence,
+        preparation_digest: Sha256::digest(&prepared.canonical_bytes).into(), charges })
+}
+
 fn validate_prepared(prepared: &Prepared) -> Result<(), ProgramSourceError> {
     verify_disclosure_binding(prepared).map_err(|_| ProgramSourceError::Preparation)?;
     if layerx_wire::activity::encode_unsigned_envelope(&prepared.envelope).map_err(|_| ProgramSourceError::Preparation)? != prepared.canonical_bytes

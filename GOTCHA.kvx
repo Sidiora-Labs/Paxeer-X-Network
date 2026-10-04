@@ -2211,3 +2211,7 @@ resolution = "Retain the existing prefix refusal and all cryptographic bounds; i
 [gotcha.657]
 observed = "The complete-inventory build passed but native V3 verification stopped at unchanged fresh-versus-retained sidecar equality during serial DEPLOY maintenance publication, before any SDK case."
 resolution = "Record once and preserve the assertion; qualify a distinct native capture correction only after its relevant source change."
+
+[gotcha.656]
+observed = "The legacy NativePrepareRequestV1 Programs-only validator also guards the public prepare adapter, and the guessed agent_rpc_response.rs does not exist."
+resolution = "Discover response ownership in the actual wire adapter; preserve the old Programs-only request and add a distinct authenticated native-effect request discriminator on the existing route."

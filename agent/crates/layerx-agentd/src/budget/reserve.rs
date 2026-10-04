@@ -1546,6 +1546,16 @@ impl BudgetLimiter {
         self.stage_program_unsigned_allocation(record)
     }
 
+    pub(crate) fn stage_native_effect_unsigned_release(
+        &self, record: &ProgramBudgetReservation,
+        proof: &crate::approval::native_effect::VerifiedUnsignedNativeEffectRelease,
+    ) -> Result<StagedRelease<'_>, LimitRefusal> {
+        if proof.reservation_id() != record.id || proof.reservation_digest() != record.settlement_binding()? {
+            return Err(LimitRefusal::InvalidRequest);
+        }
+        self.stage_program_unsigned_allocation(record)
+    }
+
     pub(crate) fn stage_program_unsigned_rejection(
         &self, record: &ProgramBudgetReservation,
         proof: &crate::approval::native_program::VerifiedUnsignedProgramRejection,

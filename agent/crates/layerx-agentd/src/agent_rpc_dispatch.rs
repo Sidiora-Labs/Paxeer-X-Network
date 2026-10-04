@@ -154,6 +154,15 @@ pub(crate) fn native_variant(
     }
 }
 
+pub(crate) fn native_effect_variant(request: &Map<String, Value>) -> bool {
+    request.get("variant").and_then(Value::as_str) == Some("native_effect_v1")
+}
+
+pub(crate) fn native_effect_prepare_digest(request: &layerx_agent_api::identity::NativeEffectPrepareRequestV1) -> Result<[u8;32], serde_json::Error> {
+    use sha2::{Digest, Sha256};
+    Ok(Sha256::new().chain_update(b"LXP/agent/native-effect-prepare/v1\0").chain_update(serde_json::to_vec(&request.canonical())?).finalize().into())
+}
+
 pub(crate) fn native_prepare_digest(
     request: &layerx_agent_api::identity::NativePrepareRequestV1,
 ) -> Result<[u8; 32], serde_json::Error> {
@@ -951,6 +960,10 @@ pub(crate) fn canonical_request_bytes(
             }
         }
         Operation::Prepare => {
+            if native_effect_variant(request) {
+                let typed = decode_wire::<NativeEffectPrepareV1Wire>(request, id)?.into_request(id)?;
+                return native_effect_prepare_digest(&typed).map(|digest| Some(digest.to_vec())).map_err(|_| malformed(id));
+            }
             if native_variant(request, id)? {
                 let typed = decode_wire::<NativePrepareV1Wire>(request, id)?.into_request(id)?;
                 return native_prepare_digest(&typed)

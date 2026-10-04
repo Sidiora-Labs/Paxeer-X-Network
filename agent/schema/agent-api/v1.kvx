@@ -843,3 +843,29 @@ decoder = "NativePreparationPurposeV1::from_canonical_bytes is the exact inverse
 
 [encoding.NativePrepareV1_request_digest]
 digest = "SHA-256 of bytes LXP/agent/native-prepare/v1 followed by NUL and serde_json::to_vec of the validated native request Canonical value, including explicit local_grant null or full object. Digest production is daemon-owned; the API has no hashing dependency."
+
+[record.NativeEffectPrepareRequestV1]
+rust = "layerx_agent_api::identity::NativeEffectPrepareRequestV1"
+wire_type = "NativeEffectPrepareV1Wire"
+fields = ["variant:utf8","activity:NativeActivityV1","actor:utf8","authority:utf8","account_sequence:decimal_string","not_before:decimal_string","not_after:decimal_string","idempotency_key:hex32","fee_limit:decimal_string","payload:lowercase_hex","payload_hash:hex32","capability_id:hex32","purpose:SignedNativePreparationPurposeV1","local_grant:NativeLocalGrantConsentV1?"]
+variant = "Required exact string native_effect_v1. An explicit native variant of prepare on the same Agent operation route, never a standalone endpoint."
+activity = "Required NativeActivityV1 with a registered non-Programs module and nonzero ordinal; Programs is refused by this separate profile and the existing native_v1 Programs-only validator remains unchanged. Admission derives only supported genuine effects; module and ordinal survive checked packed-u32 conversion."
+actor = "Nonempty UTF-8 accepted by the real layerx_types::ids::Did byte bound; exactly equal to purpose.purpose.agent_did."
+authority = "Nonempty UTF-8 with byte length at most layerx_types::limits::MAX_AUTHORITY_BYTES; actual authority is validated by the existing runtime owner."
+account_sequence = "Canonical decimal u64 string."
+not_before = "Canonical decimal u64 string preserving the native prepare timestamp unit."
+not_after = "Canonical decimal u64 string greater than or equal to not_before; preserving the native prepare timestamp unit."
+idempotency_key = "Exactly 64 lowercase hexadecimal characters decoded to 32 bytes."
+fee_limit = "Canonical decimal u128 string."
+payload = "Required nonempty lowercase hexadecimal decoded to at most layerx_types::limits::MAX_PAYLOAD_BYTES; the encoded byte count is bounded before hex allocation."
+payload_hash = "Exactly 64 lowercase hexadecimal characters decoded to 32 bytes. API validation does not authenticate the hash; the real runtime must verify it against the payload."
+capability_id = "Exactly 64 lowercase hexadecimal characters naming the same capability as purpose.purpose.capability_id; supplied explicitly to HumanPrepare as Some(bytes)."
+purpose = "Required SignedNativePreparationPurposeV1. Its current owner signature, authenticated principal, retained preparation coordinates and expiry must be verified by the existing runtime before native prepare admission."
+local_grant = "Optional NativeLocalGrantConsentV1 for owner-approved first local grant installation. Canonical JSON always includes local_grant, either its full versioned object or null."
+canonical_json = "Exactly these fields including variant native_effect_v1, nested native activity, nested signed purpose and local_grant; all numeric values are canonical decimal strings and bytes lowercase hex."
+wire = "All fields except optional local_grant are required. Unknown fields, legacy activity_type substitution, omitted variant, wrong native version, numeric JSON integers and noncanonical decimal or hexadecimal forms are refused."
+conversion = "native_effect_human_prepare validates the typed request and produces the existing HumanPrepare with real ActivityType.value(), exact actor and authority, account sequence, timestamp bounds, idempotency bytes encoded as lowercase hex, fee limit, payload, payload hash and explicit capability bytes. The signed purpose remains separately available on the native request for runtime verification and admission."
+serving_status = "Source request and conversion contract only. Integration uses the existing authenticated Agent prepare route with the explicit native_effect_v1 discriminant. No legacy decoder or dispatch path is changed by this declaration."
+
+[encoding.NativeEffectPrepareV1_request_digest]
+digest = "SHA-256 of bytes LXP/agent/native-effect-prepare/v1 followed by NUL and serde_json::to_vec of the validated NativeEffectPrepareRequestV1 canonical JSON value, including exact native_effect_v1 discriminator and explicit local_grant null or full object. Existing native prepare digest remains unchanged."

@@ -390,6 +390,62 @@ impl NativePrepareRequestV1 {
     }
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct NativeEffectPrepareRequestV1 {
+    pub activity: NativeActivity,
+    pub actor: AgentDid,
+    pub authority: String,
+    pub account_sequence: u64,
+    pub not_before: u64,
+    pub not_after: u64,
+    pub idempotency_key: [u8; 32],
+    pub fee_limit: u128,
+    pub payload: Vec<u8>,
+    pub payload_hash: [u8; 32],
+    pub capability_id: CapabilityId,
+    pub purpose: SignedNativePreparationPurposeV1,
+    pub local_grant: Option<NativeLocalGrantConsentV1>,
+}
+
+impl NativeEffectPrepareRequestV1 {
+    pub fn validate(self) -> Result<Self, ContractError> {
+        if self.activity.activity_type()?.module() == layerx_types::payload::ModuleId::Programs {
+            return Err(ContractError::Mismatch("native_effect_prepare.module"));
+        }
+        layerx_types::ids::Did::new(self.actor.as_str().as_bytes())
+            .map_err(|_| ContractError::Malformed("actor"))?;
+        if self.authority.is_empty() {
+            return Err(ContractError::Empty("authority"));
+        }
+        if self.authority.len() > layerx_types::limits::MAX_AUTHORITY_BYTES {
+            return Err(ContractError::OutOfRange("authority"));
+        }
+        if self.not_after < self.not_before {
+            return Err(ContractError::OutOfRange("timestamp_bound"));
+        }
+        if self.payload.is_empty() {
+            return Err(ContractError::Empty("payload"));
+        }
+        if self.payload.len() > layerx_types::limits::MAX_PAYLOAD_BYTES {
+            return Err(ContractError::OutOfRange("payload"));
+        }
+        self.capability_id.to_bytes()?;
+        if self.actor != self.purpose.purpose.agent_did {
+            return Err(ContractError::Mismatch("actor"));
+        }
+        if self.capability_id != self.purpose.purpose.capability_id {
+            return Err(ContractError::Mismatch("capability_id"));
+        }
+        if let Some(local_grant) = &self.local_grant {
+            local_grant.validate()?;
+        }
+        Ok(Self {
+            purpose: self.purpose.validate()?,
+            ..self
+        })
+    }
+}
+
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct NativeApprovalListV1;
 

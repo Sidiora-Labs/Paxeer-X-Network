@@ -438,6 +438,101 @@ pub(crate) fn native_human_prepare(
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
+pub(crate) struct NativeEffectPrepareV1Wire {
+    variant: String,
+    activity: NativeActivityV1Wire,
+    actor: String,
+    authority: String,
+    account_sequence: String,
+    not_before: String,
+    not_after: String,
+    idempotency_key: String,
+    fee_limit: String,
+    payload: String,
+    payload_hash: String,
+    capability_id: String,
+    purpose: SignedNativePreparationPurposeV1Wire,
+    local_grant: Option<NativeLocalGrantConsentV1Wire>,
+}
+
+impl NativeEffectPrepareV1Wire {
+    pub(crate) fn into_request(self, id: RequestId) -> Result<layerx_agent_api::identity::NativeEffectPrepareRequestV1, Rejection> {
+        if self.variant != "native_effect_v1" {
+            return Err(malformed(id));
+        }
+        if self.payload.len() > layerx_types::limits::MAX_PAYLOAD_BYTES * 2 {
+            return Err(malformed(id));
+        }
+        layerx_agent_api::identity::NativeEffectPrepareRequestV1 {
+            activity: self.activity.into_activity(id)?,
+            actor: text(self.actor, id, AgentDid::new)?,
+            authority: self.authority,
+            account_sequence: decimal_u64(&self.account_sequence, id)?,
+            not_before: decimal_u64(&self.not_before, id)?,
+            not_after: decimal_u64(&self.not_after, id)?,
+            idempotency_key: hex32(&self.idempotency_key, id)?,
+            fee_limit: decimal_u128(&self.fee_limit, id)?,
+            payload: hex_bytes(&self.payload, id)?,
+            payload_hash: hex32(&self.payload_hash, id)?,
+            capability_id: text(self.capability_id, id, CapabilityId::new)?,
+            purpose: self.purpose.into_request(id)?,
+            local_grant: self
+                .local_grant
+                .map(|grant| grant.into_request(id))
+                .transpose()?,
+        }
+        .validate()
+        .map_err(contract(id))
+    }
+}
+
+impl Canonical for layerx_agent_api::identity::NativeEffectPrepareRequestV1 {
+    fn canonical(&self) -> Value {
+        json!({
+            "variant": "native_effect_v1",
+            "activity": self.activity.canonical(),
+            "actor": self.actor.as_str(),
+            "authority": self.authority,
+            "account_sequence": self.account_sequence.to_string(),
+            "not_before": self.not_before.to_string(),
+            "not_after": self.not_after.to_string(),
+            "idempotency_key": lower_hex(&self.idempotency_key),
+            "fee_limit": self.fee_limit.to_string(),
+            "payload": lower_hex(&self.payload),
+            "payload_hash": lower_hex(&self.payload_hash),
+            "capability_id": self.capability_id.as_str(),
+            "purpose": self.purpose.canonical(),
+            "local_grant": self.local_grant.as_ref().map(Canonical::canonical),
+        })
+    }
+}
+
+pub(crate) fn native_effect_human_prepare(
+    request: &layerx_agent_api::identity::NativeEffectPrepareRequestV1,
+    id: RequestId,
+) -> Result<crate::human::HumanPrepare, Rejection> {
+    let request = request.clone().validate().map_err(contract(id))?;
+    Ok(crate::human::HumanPrepare {
+        activity_type: request
+            .activity
+            .activity_type()
+            .map_err(contract(id))?
+            .value(),
+        actor: request.actor.as_str().to_owned(),
+        authority: request.authority,
+        account_sequence: request.account_sequence,
+        not_before: request.not_before,
+        not_after: request.not_after,
+        idempotency_key: lower_hex(&request.idempotency_key),
+        fee_limit: request.fee_limit,
+        payload: request.payload,
+        payload_hash: request.payload_hash,
+        capability_id: Some(request.capability_id.to_bytes().map_err(contract(id))?),
+    })
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct NativeApprovalListV1Wire {
     variant: String,
 }

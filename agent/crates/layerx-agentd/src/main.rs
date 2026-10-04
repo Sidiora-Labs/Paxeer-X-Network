@@ -264,6 +264,7 @@ struct Config {
     probe_program: ProgramId,
     policy_sources: BTreeMap<TenantId, PathBuf>,
     native_policy_sources: BTreeMap<TenantId, PathBuf>,
+    native_effect_policy_sources: BTreeMap<TenantId, PathBuf>,
     program_budget_denomination_sources: BTreeMap<TenantId, PathBuf>,
 }
 
@@ -793,6 +794,7 @@ fn start_human_owner(mcp: Option<McpBoot>) -> Result<OwnerStatus, String> {
         .map_err(|error| format!("runtime clock unavailable: {error}"))?;
     let tenants = human_policy_tenants(&human_peers()?)?;
     let native_policy_sources = native_policy_sources(&tenants)?;
+    let native_effect_policy_sources = native_effect_policy_sources(&tenants)?;
     let denomination_sources = program_budget_denomination_sources(&tenants)?;
     start_shared_owner(
         mcp,
@@ -800,6 +802,7 @@ fn start_human_owner(mcp: Option<McpBoot>) -> Result<OwnerStatus, String> {
         None,
         None,
         &native_policy_sources,
+        &native_effect_policy_sources,
         &denomination_sources,
         runtime_clock,
     )
@@ -814,6 +817,7 @@ fn start_shared_owner(
 
     policy_sources: Option<&BTreeMap<TenantId, PathBuf>>,
     native_policy_sources: &BTreeMap<TenantId, PathBuf>,
+    native_effect_policy_sources: &BTreeMap<TenantId, PathBuf>,
     program_budget_denomination_sources: &BTreeMap<TenantId, PathBuf>,
 
     clock: Arc<dyn layerx_types::clock::Clock>,
@@ -904,6 +908,8 @@ fn start_shared_owner(
     operations
         .attach_native_policies(native_policy_sources)
         .map_err(|error| format!("native tenant policies are invalid: {error}"))?;
+    operations.attach_native_effect_policies(native_effect_policy_sources)
+        .map_err(|error| format!("native effect policy source invalid: {error}"))?;
 
     operations
         .attach_program_budget_denominations(program_budget_denomination_sources)
@@ -1187,6 +1193,22 @@ fn native_policy_sources(
         .map_err(|error| format!("LAYERX_NATIVE_POLICY_SOURCES is invalid: {error}"))
 }
 
+fn native_effect_policy_sources(tenants: &BTreeSet<TenantId>) -> Result<BTreeMap<TenantId, PathBuf>, String> {
+    const SETTING: &str = "LAYERX_NATIVE_EFFECT_POLICY_SOURCES";
+    let value = match env::var(SETTING) {
+        Ok(value) => value,
+        Err(env::VarError::NotPresent) => return Ok(BTreeMap::new()),
+        Err(env::VarError::NotUnicode(_)) => return Err(format!("{SETTING} is not UTF-8")),
+    };
+    let mut declared = BTreeSet::new();
+    for declaration in value.split(',') {
+        let (tenant, _) = declaration.split_once(':').ok_or_else(|| format!("{SETTING} requires tenant:absolute-path entries"))?;
+        let tenant = TenantId::new(tenant.trim().to_owned()).map_err(|_| format!("{SETTING} contains an invalid tenant"))?;
+        if !tenants.contains(&tenant) || !declared.insert(tenant) { return Err(format!("{SETTING} contains an unknown or duplicate tenant")); }
+    }
+    layerx_agentd::config::parse_policy_sources(&value, &declared).map_err(|error| format!("{SETTING} is invalid: {error}"))
+}
+
 fn program_budget_denomination_sources(
     tenants: &BTreeSet<TenantId>,
 ) -> Result<BTreeMap<TenantId, PathBuf>, String> {
@@ -1236,11 +1258,13 @@ fn config() -> Result<Config, String> {
         layerx_agentd::config::parse_policy_sources(&required("LAYERX_POLICY_SOURCES")?, &tenants)
             .map_err(|error| format!("human policy sources are invalid: {error}"))?;
     let native_policy_sources = native_policy_sources(&tenants)?;
+    let native_effect_policy_sources = native_effect_policy_sources(&tenants)?;
     let program_budget_denomination_sources = program_budget_denomination_sources(&tenants)?;
     Ok(Config {
         listen,
         policy_sources,
         native_policy_sources,
+        native_effect_policy_sources,
         program_budget_denomination_sources,
         bearer,
         node_endpoint: required("LAYERX_AGENT_NODE_ENDPOINT")?,
@@ -1681,6 +1705,7 @@ fn serve(config: Config) -> Result<(), String> {
         export_trust,
         Some(&config.policy_sources),
         &config.native_policy_sources,
+        &config.native_effect_policy_sources,
         &config.program_budget_denomination_sources,
         runtime_clock,
     )?;

@@ -97,6 +97,9 @@ const APPROVAL_BUDGET_AFTER_V2: u8 = 48;
 const MANAGED_EVIDENCE_BY_DIGEST_V2: u8 = 49;
 const NATIVE_APPROVAL_LIST_FACTS_V2: u8 = 50;
 const NATIVE_APPROVAL_GET_FACTS_V2: u8 = 51;
+const NATIVE_EFFECT_APPROVAL_LIST_V3: u8 = 52;
+const NATIVE_EFFECT_APPROVAL_GET_V3: u8 = 53;
+const NATIVE_EFFECT_APPROVAL_DECIDE_V3: u8 = 54;
 const HEAD: u8 = 7;
 const EVIDENCE: u8 = 8;
 const MAX_TEXT: usize = 255;
@@ -356,6 +359,9 @@ pub enum HumanRequest {
     NativeApprovalGetFactsV2 {
         approval_id: [u8; 32],
     },
+    NativeEffectApprovalListV3 { cursor: Option<[u8;32]>, limit: u8 },
+    NativeEffectApprovalGetV3 { approval_id: [u8;32] },
+    NativeEffectApprovalDecideV3 { approval_id: [u8;32], held_digest: [u8;32], idempotency_key: String, grant: bool, current_sequence: u64 },
     ApprovalApprove {
         approval_id: [u8; 32],
         held_digest: [u8; 32],
@@ -612,6 +618,14 @@ pub trait HumanOperations {
     ) -> Result<HumanResponse, HumanOperationError> {
         Err(HumanOperationError::Unavailable)
     }
+    fn native_effect_approval_list_facts(&mut self, _peer:&HumanPeer, _cursor:Option<[u8;32]>, _limit:u8)->Result<HumanResponse,HumanOperationError>{
+        Err(HumanOperationError::Unavailable)
+    }
+    fn native_effect_approval_get_facts(&mut self, _peer:&HumanPeer, _approval_id:[u8;32])->Result<HumanResponse,HumanOperationError>{
+        Err(HumanOperationError::Unavailable)
+    }
+    fn native_effect_approval_decide(&mut self, _peer:&HumanPeer, _approval_id:[u8;32], _held_digest:[u8;32], _idempotency_key:&str,
+        _grant:bool, _current_sequence:u64)->Result<HumanResponse,HumanOperationError>{Err(HumanOperationError::Unavailable)}
     fn approval_budget_after(
         &mut self,
         _peer: &HumanPeer,
@@ -1854,6 +1868,10 @@ fn dispatch_request<O: HumanOperations>(
         HumanRequest::NativeApprovalGetFactsV2 { approval_id } => {
             operations.native_approval_get_facts(peer, approval_id)
         }
+        HumanRequest::NativeEffectApprovalListV3 {cursor,limit}=>operations.native_effect_approval_list_facts(peer,cursor,limit),
+        HumanRequest::NativeEffectApprovalGetV3 {approval_id}=>operations.native_effect_approval_get_facts(peer,approval_id),
+        HumanRequest::NativeEffectApprovalDecideV3 {approval_id,held_digest,idempotency_key,grant,current_sequence}=>
+            operations.native_effect_approval_decide(peer,approval_id,held_digest,&idempotency_key,grant,current_sequence),
         HumanRequest::ApprovalBudgetAfterV2 {
             approval_id,
             held_digest,
@@ -2112,6 +2130,19 @@ fn decode_operation(
             let approval_id = reader.fixed()?;
             if approval_id == [0; 32] { return Err(HumanProtocolError::Malformed); }
             HumanRequest::NativeApprovalGetFactsV2 { approval_id }
+        }
+        NATIVE_EFFECT_APPROVAL_LIST_V3=>{
+            let cursor=match reader.u8()?{0=>None,1=>Some(reader.fixed()?),_=>return Err(HumanProtocolError::Malformed)};
+            let limit=reader.u8()?;if !(1..=100).contains(&limit)||cursor==Some([0;32]){return Err(HumanProtocolError::Malformed)};
+            HumanRequest::NativeEffectApprovalListV3{cursor,limit}
+        }
+        NATIVE_EFFECT_APPROVAL_GET_V3=>{let approval_id=reader.fixed()?;if approval_id==[0;32]{return Err(HumanProtocolError::Malformed)};
+            HumanRequest::NativeEffectApprovalGetV3{approval_id}}
+        NATIVE_EFFECT_APPROVAL_DECIDE_V3=>{
+            let approval_id=reader.fixed()?;let held_digest=reader.fixed()?;let idempotency_key=reader.text()?;
+            let grant=match reader.u8()?{0=>false,1=>true,_=>return Err(HumanProtocolError::Malformed)};let current_sequence=reader.u64()?;
+            if approval_id==[0;32]||held_digest==[0;32]||current_sequence==0{return Err(HumanProtocolError::Malformed)};
+            HumanRequest::NativeEffectApprovalDecideV3{approval_id,held_digest,idempotency_key,grant,current_sequence}
         }
         APPROVAL_BUDGET_AFTER_V2 => HumanRequest::ApprovalBudgetAfterV2 {
             approval_id: reader.fixed()?,

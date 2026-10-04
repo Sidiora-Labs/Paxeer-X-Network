@@ -689,3 +689,48 @@ pub(crate) fn load_native_program_policy(
         policy,
     })
 }
+
+pub(crate) struct VerifiedNativeEffectPolicy {
+    tenant: TenantId,
+    policy: crate::policy::native_program::NativeEffectPolicy,
+}
+
+impl VerifiedNativeEffectPolicy {
+    pub(crate) fn tenant(&self) -> &TenantId {
+        &self.tenant
+    }
+    pub(crate) fn policy(&self) -> &crate::policy::native_program::NativeEffectPolicy {
+        &self.policy
+    }
+}
+
+pub(crate) fn load_native_effect_policy(
+    path: &Path,
+    tenant: &TenantId,
+) -> Result<VerifiedNativeEffectPolicy, ConfigError> {
+    #[derive(serde::Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct Source {
+        version: String,
+        tenant: String,
+        policy: String,
+    }
+    let bytes = read_protected_source(path, 2 * 1024 * 1024)
+        .map_err(|_| error("native_effect_policy_sources", RejectionReason::Unprotected))?;
+    let source: Source = serde_json::from_slice(&bytes)
+        .map_err(|_| error("native_effect_policy_sources", RejectionReason::InvalidEncoding))?;
+    if source.version != "layerx.native-effect-policy-source.v1"
+        || source.tenant != tenant.as_str()
+    {
+        return Err(error(
+            "native_effect_policy_sources",
+            RejectionReason::InvalidTenant,
+        ));
+    }
+    let policy = crate::policy::native_program::NativeEffectPolicy::load(source.policy.as_bytes())
+        .map_err(|_| error("native_effect_policy_sources", RejectionReason::InvalidEncoding))?;
+    Ok(VerifiedNativeEffectPolicy {
+        tenant: tenant.clone(),
+        policy,
+    })
+}

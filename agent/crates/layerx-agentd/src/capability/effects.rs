@@ -54,6 +54,7 @@ pub enum EffectsError {
     Overflow,
     InvalidProgramCapabilities,
     InvalidProgramDisclosure,
+    InvalidNativeDisclosure,
     ProgramExitContextRequired,
     UnboundedProgramExit,
     UnboundedLegacyProgramCall,
@@ -201,6 +202,40 @@ pub fn derive(
         disclosure.native_operation.as_ref(),
         verified,
     )
+}
+
+pub fn derive_native_effects(
+    disclosure: &Disclosure,
+    verified: &VerifiedInputs,
+) -> Result<SemanticPlan, EffectsError> {
+    use layerx_crypto::disclosure::{AmountRole, CounterpartyRole};
+    use layerx_types::payload::ModuleId;
+    if disclosure.activity_type.module() == ModuleId::Programs {
+        return Err(EffectsError::Unsupported("Programs"));
+    }
+    disclosure.reencode().map_err(|_| EffectsError::InvalidNativeDisclosure)?;
+    if (disclosure.activity_type.module(), disclosure.activity_type.ordinal()) != (ModuleId::Asset, 5) {
+        return derive(disclosure, verified);
+    }
+    if verified.revoke_balance.is_some() { return Err(EffectsError::UnexpectedRevokeBalance); }
+    if disclosure.payment.is_some() || disclosure.native_operation.is_some()
+        || disclosure.counterparties.len() != 2 || disclosure.amounts.len() != 1
+        || disclosure.amounts[0].role != AmountRole::Transfer || disclosure.amounts[0].value == 0
+        || disclosure.asset == [0; 32]
+    {
+        return Err(EffectsError::Unsupported("Send"));
+    }
+    let mut payers = disclosure.counterparties.iter().filter(|party| party.role == CounterpartyRole::Payer);
+    let mut recipients = disclosure.counterparties.iter().filter(|party| party.role == CounterpartyRole::Recipient);
+    let (Some(payer), None, Some(recipient), None) =
+        (payers.next(), payers.next(), recipients.next(), recipients.next())
+    else { return Err(EffectsError::Unsupported("Send")); };
+    if payer.account == [0; 32] || recipient.account == [0; 32] || payer.account == recipient.account {
+        return Err(EffectsError::Unsupported("Send"));
+    }
+    let mut plan = SemanticPlan::write();
+    plan.transfer(payer.account, recipient.account, disclosure.asset, disclosure.amounts[0].value)?;
+    Ok(plan)
 }
 
 const fn untyped_kind(disclosure: &Disclosure) -> &'static str {
@@ -438,6 +473,55 @@ mod tests {
 
     fn none() -> VerifiedInputs {
         VerifiedInputs::default()
+    }
+
+    fn signed_native_send() -> Disclosure {
+        use ed25519_dalek::{Signer as _, SigningKey};
+        use layerx_crypto::send::{encode_send_envelope, EnvelopeOptions, SendDebit};
+        let signer = SigningKey::from_bytes(&[42; 32]);
+        let debit = SendDebit {
+            from: PAYER, to: PAYEE, asset: ASSET, amount: 40,
+            source_sequence: 7, idempotency_key: [4; 32], expires_at: 100,
+            context_hash: layerx_crypto::send::send_context_hash(&PAYER, &PAYEE, &ASSET, 40, &[4; 32]),
+            conditions: Vec::new(), authorization_kind: 1, network_id: 17, protocol_version: 3,
+        };
+        let canonical = must(debit.authorization_message());
+        let message = must(layerx_crypto::SignatureMessage::new(
+            layerx_wire::hash::Domain::SignaturePreimage, 3, 17, &canonical));
+        let public_key = signer.verifying_key().to_bytes();
+        let payload = must(debit.encode_signed(public_key, signer.sign(&message.digest()).to_bytes()));
+        must(encode_send_envelope(&payload, &EnvelopeOptions {
+            actor: "did:layerx:alice", public_key, network_id: 17, protocol_version: 3,
+            identity_sequence: 19, idempotency_key: [4; 32], fee_limit: 20,
+            not_before: 10, not_after: 100,
+        })).disclosure
+    }
+
+    #[test]
+    fn native_effect_send_uses_real_signed_disclosure_and_preserves_legacy_refusal() {
+        let disclosure = signed_native_send();
+        assert_eq!(derive(&disclosure, &none()), Err(EffectsError::Unsupported("Send")));
+        let plan = must(derive_native_effects(&disclosure, &none()));
+        assert_eq!(plan.effects(), &[Effect::Transfer { from: PAYER, to: PAYEE, asset: ASSET, amount: 40 }]);
+        assert_eq!(plan.gross_per_asset(), &BTreeMap::from([(ASSET, 40)]));
+        assert_eq!(plan.participants(), &BTreeSet::from([PAYER, PAYEE]));
+        assert_eq!(plan.rate_actions(), 1);
+        assert!(plan.program_spend_bounds().is_empty());
+        assert_eq!(derive_native_effects(&disclosure, &VerifiedInputs { revoke_balance: Some(40) }),
+            Err(EffectsError::UnexpectedRevokeBalance));
+    }
+
+    #[test]
+    fn native_effect_send_refuses_changed_canonical_semantics() {
+        let original = signed_native_send();
+        let mut changed = original.clone(); changed.amounts[0].value += 1;
+        assert_eq!(derive_native_effects(&changed, &none()), Err(EffectsError::InvalidNativeDisclosure));
+        let mut changed = original.clone(); changed.counterparties[0].account[0] ^= 1;
+        assert_eq!(derive_native_effects(&changed, &none()), Err(EffectsError::InvalidNativeDisclosure));
+        let mut changed = original.clone(); changed.counterparties.push(changed.counterparties[0]);
+        assert_eq!(derive_native_effects(&changed, &none()), Err(EffectsError::InvalidNativeDisclosure));
+        let mut changed = original; changed.asset[0] ^= 1;
+        assert_eq!(derive_native_effects(&changed, &none()), Err(EffectsError::InvalidNativeDisclosure));
     }
 
     fn grant() -> Grant {

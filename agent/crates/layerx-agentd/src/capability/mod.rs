@@ -16,7 +16,7 @@ mod narrowing;
 
 mod effects;
 pub use effects::{
-    derive as derive_effects, AuthorizationKind, Effect, EffectsError, ProgramValueSource,
+    derive as derive_effects, derive_native_effects, AuthorizationKind, Effect, EffectsError, ProgramValueSource,
     ProgramSpendBound, SemanticPlan, VerifiedInputs,
 };
 pub mod timed;

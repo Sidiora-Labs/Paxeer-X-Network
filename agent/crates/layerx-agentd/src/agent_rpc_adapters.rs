@@ -719,6 +719,21 @@ pub(crate) fn prepare<A: HumanAuthorityBoundary>(
 ) -> Result<Dispatched, Rejection> {
     use crate::agent_rpc_dispatch::{decode_preparation, dispatched, human_prepare, mutation_key};
     let id = ctx.request_id;
+    if crate::agent_rpc_dispatch::native_effect_variant(request) {
+        use crate::agent_rpc_dispatch::{dispatched_native, malformed, native_effect_prepare_digest};
+        use crate::agent_rpc_wire::{decode_wire, NativePrepareResultV1Wire, NativeEffectPrepareV1Wire};
+        let typed = decode_wire::<NativeEffectPrepareV1Wire>(request, id)?.into_request(id)?;
+        let envelope = crate::human::MutationEnvelope {
+            request_id: id.0,
+            key: mutation_key(ctx)?,
+            body_digest: native_effect_prepare_digest(&typed).map_err(|_| malformed(id))?,
+            operation: typed,
+        };
+        let response = owner
+            .lock()
+            .and_then(|mut guard| guard.rpc_prepare_native_effect(context, envelope));
+        return dispatched_native(id, response, NativePrepareResultV1Wire::into_result);
+    }
     if crate::agent_rpc_dispatch::native_variant(request, id)? {
         use crate::agent_rpc_dispatch::{dispatched_native, malformed, native_prepare_digest};
         use crate::agent_rpc_wire::{decode_wire, NativePrepareResultV1Wire, NativePrepareV1Wire};
