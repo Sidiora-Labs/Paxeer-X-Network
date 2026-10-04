@@ -204,6 +204,7 @@ impl Response {
 type Handler = Box<dyn Fn(&Request) -> Response + Send + Sync>;
 type AttestationHandler = Box<dyn Fn(u64) -> Response + Send + Sync>;
 type ProgramAttestationHandler = Box<dyn Fn([u8; 32], u64) -> Response + Send + Sync>;
+type ServingEligibility = Box<dyn Fn() -> bool + Send + Sync>;
 
 /// The path prefix of the signature-exchange route
 /// `GET /attestations/<request id>`.
@@ -237,6 +238,8 @@ impl std::error::Error for RouteError {}
 #[derive(Default)]
 pub struct RouteTable {
     health: Option<Handler>,
+    readiness: Option<Handler>,
+    serving_eligibility: Option<ServingEligibility>,
     handlers: BTreeMap<Route, Handler>,
     attestations: Option<AttestationHandler>,
     program_attestations: Option<ProgramAttestationHandler>,
@@ -276,6 +279,34 @@ impl RouteTable {
         Ok(())
     }
 
+    pub fn set_readiness(
+        &mut self,
+        handler: impl Fn(&Request) -> Response + Send + Sync + 'static,
+    ) -> Result<(), RouteError> {
+        if self.readiness.is_some() {
+            return Err(RouteError::AlreadySet);
+        }
+        self.readiness = Some(Box::new(handler));
+        Ok(())
+    }
+
+    pub fn set_serving_eligibility(
+        &mut self,
+        eligibility: impl Fn() -> bool + Send + Sync + 'static,
+    ) -> Result<(), RouteError> {
+        if self.serving_eligibility.is_some() {
+            return Err(RouteError::AlreadySet);
+        }
+        self.serving_eligibility = Some(Box::new(eligibility));
+        Ok(())
+    }
+
+    fn is_serving_eligible(&self) -> bool {
+        self.serving_eligibility.as_ref().is_none_or(|eligibility| {
+            catch_unwind(AssertUnwindSafe(|| eligibility())).unwrap_or(false)
+        })
+    }
+
     /// Sets the handler of `GET /attestations/<request id>`.
     ///
     /// # Errors
@@ -308,6 +339,9 @@ impl RouteTable {
     }
 
     fn dispatch_program_attestation(&self, program_id: [u8; 32], request_id: u64) -> Response {
+        if !self.is_serving_eligible() {
+            return Response::error(503, "service_not_ready");
+        }
         let Some(handler) = &self.program_attestations else {
             return Response::error(404, "not_found");
         };
@@ -316,6 +350,9 @@ impl RouteTable {
     }
 
     fn dispatch_attestation(&self, request_id: u64) -> Response {
+        if !self.is_serving_eligible() {
+            return Response::error(503, "service_not_ready");
+        }
         let Some(handler) = &self.attestations else {
             return Response::error(404, "not_found");
         };
@@ -325,12 +362,22 @@ impl RouteTable {
 
     #[must_use]
     pub fn dispatch(&self, request: &Request) -> Response {
+        if request.route == Route::Health && request.path == "/readyz" {
+            let Some(handler) = &self.readiness else {
+                return Response::error(503, "service_not_ready");
+            };
+            return catch_unwind(AssertUnwindSafe(|| handler(request)))
+                .unwrap_or_else(|_| Response::error(500, "internal_error"));
+        }
         if request.route == Route::Health {
             if let Some(handler) = &self.health {
                 return catch_unwind(AssertUnwindSafe(|| handler(request)))
                     .unwrap_or_else(|_| Response::error(500, "internal_error"));
             }
             return Response::json(200, b"{\"status\":\"ok\"}".to_vec());
+        }
+        if !self.is_serving_eligible() {
+            return Response::error(503, "service_not_ready");
         }
         let Some(handler) = self.handlers.get(&request.route) else {
             return Response::error(503, "route_unavailable");
@@ -660,6 +707,7 @@ fn header_value(text: &str) -> bool {
 fn route_of(path: &str) -> Result<(Route, Option<[u8; 32]>), Response> {
     match path {
         "/health" | "/xweb/health" => Ok((Route::Health, None)),
+        "/readyz" => Ok((Route::Health, None)),
         "/search" => Ok((Route::Search, None)),
         "/fetch" => Ok((Route::Fetch, None)),
         _ => {

@@ -1253,10 +1253,541 @@ class KernelHarness:
         self.journal.close()
 
 
+class ReadinessCandidate(Candidate):
+    def start(self, boundary=None):
+        require(boundary is None, 'readiness debugger accepts no fabricated boundary')
+        self.stopped.clear()
+        self.log = (self.h.evidence / ('process-' + str(self.h.launches) + '.log')).open('w')
+        self.h.launches += 1
+        self.process = subprocess.Popen(['gdb', '--quiet', '--nx', '--interpreter=mi2', '--args',
+            str(self.h.binary), '--config', str(self.h.config_path)], cwd=self.h.isolated,
+            env={'PATH': '/usr/local/bin:/usr/bin:/bin', 'RUST_BACKTRACE': '0', **self.h.runtime_env},
+            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+            text=True, start_new_session=True)
+        self.reader = threading.Thread(target=self.read_debugger, daemon=True)
+        self.reader.start()
+        self.command('-gdb-set pagination off')
+        self.command('-gdb-set non-stop on')
+        self.command('-gdb-set breakpoint pending off')
+        self.command('-exec-run')
+        deadline = time.monotonic() + 30
+        while time.monotonic() < deadline:
+            require(self.process.poll() is None, 'debugged candidate exited before listening')
+            if self.pid and self.listening():
+                require((Path('/proc') / str(self.pid) / 'exe').resolve() == self.h.binary.resolve(),
+                        'debugged served executable identity mismatch')
+                return
+            time.sleep(.05)
+        raise Refusal('debugged candidate did not listen')
+
+
+class ReadinessHarness:
+    ROLES = {
+        'paid_delivery': {'index', 'content_storage', 'payment_journal', 'settlement_authority'},
+        'evm_attestor': {'evm_chain', 'registered_peer_quorum', 'attestor_progress', 'attestation_journal'},
+        'kernel_relay': {'evm_chain', 'registered_peer_quorum', 'kernel_authority', 'relay_progress', 'kernel_journal'},
+    }
+    REMOTE = {'settlement_authority', 'evm_chain', 'registered_peer_quorum', 'kernel_authority'}
+
+    def __init__(self, manifest):
+        from types import SimpleNamespace
+        self.paid = Harness(manifest)
+        self.loader = self.paid.loader
+        candidate = self.loader(manifest)
+        service = next(row for row in candidate['services'] if row['id'] == 'search-web')
+        self.m = self.paid.reference(service['bindings']['roles_ref'])
+        require(self.m['schema'] == 'paxeer-x.paid-web-readiness.v1', 'genuine readiness fixture binding absent')
+        self.revision = self.paid.revision
+        _, self.source = source_identity()
+        require(self.m['source_revision'] == self.revision and self.m['source_digest'] == self.source,
+                'readiness fixture source identity mismatch')
+        self.isolated, self.evidence = self.paid.isolated, self.paid.evidence
+        self.journal = self.paid.journal
+        self.count = 0
+        self.fronts = []
+        self.services = []
+        self.paused = []
+        require(self.m['services'], 'configured readiness roles absent')
+        ids, directories, listeners = set(), set(), set()
+        for row in self.m['services']:
+            require(row['id'] not in ids, 'duplicate readiness service')
+            ids.add(row['id'])
+            path = private(row['config']['path'])
+            require(digest(path) == row['config']['sha256'], 'readiness configuration binding mismatch')
+            config = self.loader(path)
+            data = private(config['data_dir'], True)
+            require(data.is_relative_to(self.isolated) and data != self.isolated
+                    and data not in directories, 'readiness data directory overlap or escape')
+            directories.add(data)
+            url = endpoint(row['endpoint'])
+            require(url.port not in listeners and config['listen'] == '127.0.0.1:' + str(url.port),
+                    'readiness listener overlap or mismatch')
+            listeners.add(url.port)
+            env = {name: str(private(value)) for name, value in row['key_files'].items()}
+            require(set(env).issubset({'X_WEBSEARCH_RECEIVER_KEY_FILE', 'X_WEBSEARCH_ATTESTOR_KEY_FILE',
+                                      'X_WEBSEARCH_SUBMITTER_KEY_FILE'})
+                    and 'X_WEBSEARCH_RECEIVER_KEY_FILE' in env, 'role key references absent or unsupported')
+            roles = {'paid_delivery'}
+            if 'X_WEBSEARCH_ATTESTOR_KEY_FILE' in env:
+                roles.add('evm_attestor')
+            if config.get('kernel') is not None:
+                roles.add('kernel_relay')
+            require(set(row['roles']) == roles, 'configured role roster mismatch')
+            if path != self.paid.config_path:
+                require(not (data / 'payments').exists(), 'additional role payment journal must be fresh')
+                evidence = self.evidence / row['id']
+                evidence.mkdir(mode=0o700)
+            else:
+                evidence = self.evidence
+            driver = ReadinessCandidate(SimpleNamespace(binary=self.paid.binary, config_path=path,
+                isolated=self.isolated, evidence=evidence, launches=0, url=url, runtime_env=env))
+            if path == self.paid.config_path:
+                self.paid.candidate = driver
+            faulted = set()
+            require(row['faults'], 'owned dependency fault roster absent')
+            for fault in row['faults']:
+                require(fault['dependencies'] and fault['processes'], 'dependency fault lacks real processes')
+                for binding in fault['dependencies']:
+                    pair = (binding['role'], binding['dependency'])
+                    require(pair[0] in roles and pair[1] in self.ROLES[pair[0]] & self.REMOTE,
+                            'fault names an unconfigured remote dependency')
+                    faulted.add(pair)
+                for process in fault['processes']:
+                    self.process_identity(process)
+            expected = {(role, dependency) for role in roles for dependency in self.ROLES[role] & self.REMOTE}
+            require(faulted == expected, 'a configured remote dependency has no real loss/restoration case')
+            self.services.append((row, config, data, roles, driver))
+        require(self.paid.config_path in {driver.h.config_path for _, _, _, _, driver in self.services},
+                'actual paid delivery fixture omitted')
+        require(set().union(*(roles for _, _, _, roles, _ in self.services)) == set(self.ROLES),
+                'serving, EVM attestor and kernel relay role cases are all required')
+        self.front = self.front_fixture(self.m['frontend'])
+        self.empty_front = self.front_fixture(self.m['empty_frontend'])
+        require(self.m['frontend']['alternate_service_ids']
+                and set(self.m['frontend']['alternate_service_ids']).issubset(ids)
+                and all(next(driver for row, _, _, _, driver in self.services if row['id'] == name)
+                        is not self.paid.candidate for name in self.m['frontend']['alternate_service_ids']),
+                'sticky-route refusal requires genuinely eligible alternate backends')
+        negatives = self.m['refused_configs']
+        require({row['case'] for row in negatives} == {'unbound-settlement-trust', 'insufficient-registered-peers'}
+                and len(negatives) == 2, 'negative authority and registered-peer cases absent')
+        self.negatives = []
+        for row in negatives:
+            base = next(service for service in self.services if service[0]['id'] == row['base_service_id'])
+            path = private(row['config']['path'])
+            require(path.is_relative_to(self.isolated) and digest(path) == row['config']['sha256'],
+                    'negative configuration isolation or digest mismatch')
+            config = self.loader(path)
+            expected = json.loads(json.dumps(base[1]))
+            expected['listen'] = config['listen']
+            expected['data_dir'] = config['data_dir']
+            if row['case'] == 'unbound-settlement-trust':
+                require(config['gateway']['sequencer_public_key'] != base[1]['gateway']['sequencer_public_key'],
+                        'negative authority case did not change sequencer trust')
+                expected['gateway']['sequencer_public_key'] = config['gateway']['sequencer_public_key']
+            else:
+                require('evm_attestor' in base[3] and config['peers'] == [] and base[1]['peers'],
+                        'negative registered-peer case requires a real registered quorum and empty peer routes')
+                expected['peers'] = []
+            require(config == expected, 'negative configuration changed fields outside its exact refusal')
+            data = private(config['data_dir'], True)
+            url = endpoint(row['endpoint'])
+            require(data.is_relative_to(self.isolated) and data not in directories
+                    and url.port not in listeners and config['listen'] == '127.0.0.1:' + str(url.port),
+                    'negative role isolation or listener mismatch')
+            directories.add(data)
+            listeners.add(url.port)
+            evidence = self.evidence / row['case']
+            evidence.mkdir(mode=0o700)
+            driver = ReadinessCandidate(SimpleNamespace(binary=self.paid.binary, config_path=path,
+                isolated=self.isolated, evidence=evidence, launches=0, url=url, runtime_env=base[4].h.runtime_env))
+            self.negatives.append((row, config, data, base[3], driver))
+        self.observations = (self.evidence / 'readiness-observations.jsonl').open('x')
+
+    def process_identity(self, row):
+        from types import SimpleNamespace
+        binary = artifact(row['artifact'], self.revision, self.source)
+        pid = int(row['pid'])
+        proc = Path('/proc') / str(pid)
+        require(pid > 1 and (proc / 'exe').resolve() == binary.resolve()
+                and (proc / 'cwd').resolve().is_relative_to(self.isolated), 'foreign dependency process refused')
+        url = endpoint(row['endpoint'])
+        require(Candidate.listening(SimpleNamespace(pid=pid, h=SimpleNamespace(url=url))),
+                'dependency process does not own its actual listener')
+        require(not re.search(r'^State:\s+[TZ]', (proc / 'status').read_text(), re.M),
+                'dependency is already paused or dead')
+        return pid, binary
+
+    def record(self, name):
+        self.count += 1
+        self.journal.write(json.dumps({'revision': self.revision, 'case': name, 'passed': True}) + '\n')
+        self.journal.flush()
+        os.fsync(self.journal.fileno())
+        print('PAXEER_X_PROGRESS cases=' + str(self.count), flush=True)
+
+    def read_ready(self, service):
+        row, config, _, roles, driver = service
+        require(driver.process.poll() is None, 'role process exited during readiness')
+        code, headers, raw = exchange(driver.h.url, '/readyz')
+        document = json.loads(raw)
+        require(code in (200, 503) and 'payment-response' not in headers
+                and document['version'] == 1 and type(document['ready']) is bool,
+                'free readiness status or version mismatch')
+        now = time.time_ns() // 1_000_000
+        require(type(document['checked_at_unix_ms']) is int
+                and abs(now - document['checked_at_unix_ms']) <= 30_000
+                and document['network_id'] == config['kernel_network_id']
+                and document['protocol_version'] == 3, 'readiness clock or network/protocol binding mismatch')
+        entries = document['roles']
+        require(len(entries) == len(roles) and {entry['role'] for entry in entries} == roles,
+                'configured readiness role omitted or duplicated')
+        states = {'starting', 'ready', 'unavailable', 'stale'}
+        for entry in entries:
+            role = entry['role']
+            require(entry['state'] in states and type(entry['freshness_budget_ms']) is int
+                    and entry['freshness_budget_ms'] == (max(60_000, 3 * config['kernel']['poll_interval_ms'])
+                        if role == 'kernel_relay' else 60_000), 'role freshness budget or state mismatch')
+            require(type(entry['first_use_deadline_unix_ms']) is int
+                    and entry['first_use_deadline_unix_ms'] > 0, 'bounded first-use deadline absent')
+            dependencies = entry['dependencies']
+            require(len(dependencies) == len(self.ROLES[role])
+                    and {dependency['dependency'] for dependency in dependencies} == self.ROLES[role],
+                    'critical dependency roster omitted or duplicated')
+            for dependency in dependencies:
+                require(dependency['critical'] is True and dependency['state'] in states,
+                        'dependency state or criticality mismatch')
+                last = dependency['last_success_unix_ms']
+                require(last is None or (type(last) is int and 0 < last <= now + 30_000),
+                        'dependency last observation invalid')
+                if dependency['state'] == 'ready':
+                    require(last is not None and now - last <= entry['freshness_budget_ms'] + 1000,
+                            'stale or absent successful observation advertised ready')
+            require((entry['state'] == 'ready') == all(item['state'] == 'ready' for item in dependencies),
+                    'role readiness does not reflect its critical dependencies')
+            if entry['state'] == 'starting':
+                require(now <= entry['first_use_deadline_unix_ms'], 'first-use starting state exceeded bound')
+        require(document['ready'] == all(entry['state'] == 'ready' for entry in entries)
+                and (code == 200) == document['ready'], 'aggregate readiness status mismatch')
+        self.observations.write(json.dumps({'revision': self.revision, 'service': row.get('id', row.get('case')),
+            'http_status': code, 'readiness': document}) + '\n')
+        self.observations.flush()
+        health, health_headers, _ = exchange(driver.h.url, '/health')
+        require(health == 200 and 'payment-response' not in health_headers, 'dependency loss changed free liveness')
+        return {entry['role']: entry for entry in entries}
+
+    def wait_ready(self, service, predicate, seconds):
+        deadline = time.monotonic() + seconds
+        while True:
+            roles = self.read_ready(service)
+            if predicate(roles):
+                return roles
+            require(time.monotonic() < deadline, 'role readiness did not transition within declared bound')
+            time.sleep(.2)
+
+    def payment_snapshot(self, data):
+        payments = data / 'payments'
+        return {str(path.relative_to(payments)): digest(path)
+                for path in payments.rglob('*') if path.is_file()}
+
+    def stale_progress(self, service, role, dependency):
+        driver = service[4]
+        self.wait_ready(service, lambda roles: roles[role]['state'] == 'ready', 210)
+        source = ROOT / 'interop/crates/x-websearch/src/main.rs'
+        function = 'attest_round' if role == 'evm_attestor' else 'relay_round'
+        lines = [line for line, text in enumerate(source.read_text().splitlines(), 1)
+                 if text.startswith('fn ' + function + '(')]
+        require(len(lines) == 1, 'actual progress worker source boundary absent')
+        location = str(source) + ':' + str(lines[0])
+        driver.stopped.clear()
+        answer = driver.command('-break-insert ' + json.dumps(location))
+        match = re.search(r'number="([0-9]+)"', answer)
+        require(match is not None and 'addr="<PENDING>"' not in answer, 'progress worker breakpoint unresolved')
+        require(driver.stopped.wait(65), 'actual progress worker did not reach its bounded loop')
+        require('fullname=' + json.dumps(str(source)) in driver.frame
+                and function in driver.frame, 'progress fault stopped a foreign worker')
+        before, state = self.paid.sequences(), self.payment_snapshot(service[2])
+        try:
+            roles = self.wait_ready(service, lambda roles: next(item for item in roles[role]['dependencies']
+                if item['dependency'] == dependency)['state'] == 'stale', 210)
+            require(roles[role]['state'] != 'ready', 'stalled real worker advertised role readiness')
+            require(all(item['state'] == 'ready' for item in roles[role]['dependencies']
+                        if item['dependency'] in self.REMOTE), 'stale-worker case lost its genuine live upstream')
+        finally:
+            driver.command('-break-delete ' + match[1])
+            driver.command('-exec-continue --all')
+            driver.stopped.clear()
+        self.wait_ready(service, lambda roles: roles[role]['state'] == 'ready', 210)
+        require(self.paid.sequences() == before and self.payment_snapshot(service[2]) == state,
+                'progress fault or readiness polling charged a payment')
+        self.record(service[0]['id'] + ':' + dependency + ':stale-fresh-recovery')
+
+    def paid_refusal(self, service, before):
+        _, _, data, _, driver = service
+        name = 'search-SID-metered'
+        case = self.paid.cases[name]
+        response = exchange(driver.h.url, case['target'], {'PAYMENT-SIGNATURE': self.paid.headers[name],
+            'LAYERX-PAYER-DID': case['payer_did']})
+        self.paid.no_content(response, {503})
+        require(self.payment_snapshot(data) == before, 'ineligible paid request changed durable payment state')
+
+    def pause(self, row):
+        pid, binary = self.process_identity(row)
+        os.kill(pid, signal.SIGSTOP)
+        self.paused.append((pid, binary))
+        deadline = time.monotonic() + 5
+        while not re.search(r'^State:\s+T', (Path('/proc') / str(pid) / 'status').read_text(), re.M):
+            require(time.monotonic() < deadline, 'owned dependency did not pause')
+            time.sleep(.02)
+
+    def resume(self):
+        while self.paused:
+            pid, binary = self.paused[-1]
+            require((Path('/proc') / str(pid) / 'exe').resolve() == binary.resolve(),
+                    'foreign process refused during dependency restoration')
+            os.kill(pid, signal.SIGCONT)
+            self.paused.pop()
+
+    def front_fixture(self, row):
+        binary = Path(row['binary']['path'])
+        require(binary.is_absolute() and binary.is_file() and not binary.is_symlink()
+                and os.access(binary, os.X_OK) and digest(binary) == row['binary']['sha256'],
+                'actual nginx tool identity absent')
+        version = subprocess.run([str(binary), '-v'], capture_output=True, timeout=10)
+        require(version.returncode == 0 and b'nginx/' in version.stderr, 'frontend tool is not nginx')
+        source = ROOT / 'interop/deploy/search-front/nginx.conf'
+        require(row['source_sha256'] == digest(source), 'frontend source identity mismatch')
+        config = private(row['config']['path'])
+        require(config.is_relative_to(self.isolated) and digest(config) == row['config']['sha256'],
+                'frontend isolated configuration binding mismatch')
+        permitted = {'/var/log/nginx/error.log', '/var/log/nginx/access.log', '/var/run/nginx.pid',
+                     '/etc/nginx/search/upstreams.conf', '/etc/nginx/mime.types',
+                     '/etc/ssl/certs/ca-certificates.crt', 'listen [::]:8080 ipv6only=off;',
+                     'resolver [fdaa::3] valid=30s;'}
+        rendered = source.read_text()
+        required = {'/var/log/nginx/error.log', '/var/log/nginx/access.log', '/var/run/nginx.pid',
+                    '/etc/nginx/search/upstreams.conf', 'listen [::]:8080 ipv6only=off;'}
+        require(required.issubset(row['substitutions']) and set(row['substitutions']).issubset(permitted),
+                'frontend requires isolated logs, PID, selector and listener with unchanged policy')
+        for old, new in row['substitutions'].items():
+            require(isinstance(new, str) and '\n' not in new and '\r' not in new, 'frontend substitution invalid')
+            if old.startswith('/'):
+                path = Path(new)
+                require(re.fullmatch(r'[A-Za-z0-9_/.-]+', new)
+                        and path.is_absolute() and path.resolve().is_relative_to(self.isolated),
+                        'frontend path escapes isolated fixture')
+            elif old.startswith('resolver '):
+                require(re.fullmatch(r'resolver 127\.0\.0\.1(?::[1-9][0-9]{0,4})? valid=30s;', new),
+                        'isolated resolver substitution changed frontend policy')
+            rendered = rendered.replace(old, new)
+        require(config.read_text() == rendered, 'frontend must execute the actual source policy unchanged')
+        upstream = private(row['upstreams']['path'])
+        require(digest(upstream) == row['upstreams']['sha256']
+                and row['substitutions'].get('/etc/nginx/search/upstreams.conf') == str(upstream),
+                'frontend selector binding mismatch')
+        selector = '\n'.join(line for line in upstream.read_text().splitlines()
+                             if line.strip() and not line.lstrip().startswith('#'))
+        if row['backends']:
+            require(len(row['backends']) >= 2 and len(set(row['backends'])) == len(row['backends'])
+                    and all(re.fullmatch(r'127\.0\.0\.1:[1-9][0-9]{0,4}', name) for name in row['backends']),
+                    'frontend qualification requires multiple real isolated TLS backend routes')
+            split, separator, eligibility = selector.partition('map $xweb_node $xweb_eligible')
+            require(separator and re.fullmatch(r'split_clients\s+"\$\{xweb_client\}"\s+\$xweb_node\s*\{\s*'
+                    r'(?:(?:[0-9]+\.[0-9]{2}%|\*)\s+127\.0\.0\.1:[1-9][0-9]{0,4};\s*)+\}\s*', split)
+                    and re.fullmatch(r'\s*\{\s*default\s+0;\s*'
+                    r'(?:127\.0\.0\.1:[1-9][0-9]{0,4}\s+[01];\s*)+\}\s*', eligibility),
+                    'frontend selector must contain only the real stable split and admission map')
+            selected = re.findall(r'(127\.0\.0\.1:[1-9][0-9]{0,4});', split)
+            admitted = re.findall(r'(127\.0\.0\.1:[1-9][0-9]{0,4})\s+([01]);', eligibility)
+            require(selected == row['backends'] and len(admitted) == len(selected)
+                    and {name for name, _ in admitted} == set(selected)
+                    and all(state == '1' for _, state in admitted),
+                    'frontend topology or usable interface admission map omitted a backend')
+            require(set(row['backend_processes']) == set(selected), 'real isolated TLS backend process bindings absent')
+            for name, process in row['backend_processes'].items():
+                self.process_identity(process)
+                route = endpoint(process['endpoint'])
+                require(name == route.hostname + ':' + str(route.port),
+                        'frontend selected route is not owned by its bound real process')
+        else:
+            require(re.fullmatch(r'map\s+\$xweb_client\s+\$xweb_node\s*\{\s*default\s+"";\s*\}\s*'
+                    r'map\s+\$xweb_node\s+\$xweb_eligible\s*\{\s*default\s+0;\s*\}', selector),
+                    'empty upstream case must execute the actual empty selector policy')
+        url = endpoint(row['endpoint'])
+        require(row['substitutions'].get('listen [::]:8080 ipv6only=off;')
+                == 'listen 127.0.0.1:' + str(url.port) + ';', 'isolated frontend listener required')
+        prefix = private(row['prefix'], True)
+        require(prefix.is_relative_to(self.isolated), 'frontend prefix escapes isolation')
+        return {'row': row, 'binary': binary, 'config': config, 'url': url, 'prefix': prefix,
+                'process': None, 'log': None}
+
+    def start_front(self, front):
+        from types import SimpleNamespace
+        front['log'] = (self.evidence / ('frontend-' + str(len(self.fronts)) + '.log')).open('x')
+        process = subprocess.Popen([str(front['binary']), '-p', str(front['prefix']) + '/',
+            '-c', str(front['config']), '-g', 'daemon off;'], cwd=self.isolated,
+            env={'PATH': '/usr/local/bin:/usr/bin:/bin'}, stdout=front['log'], stderr=subprocess.STDOUT,
+            start_new_session=True)
+        front['process'] = process
+        self.fronts.append(front)
+        deadline = time.monotonic() + 10
+        owner = SimpleNamespace(pid=process.pid, h=SimpleNamespace(url=front['url']))
+        while not Candidate.listening(owner):
+            require(process.poll() is None and time.monotonic() < deadline, 'actual nginx did not listen')
+            time.sleep(.05)
+        require((Path('/proc') / str(process.pid) / 'exe').resolve() == front['binary'].resolve(),
+                'frontend served tool identity mismatch')
+
+    def front_request(self, front, paid=False):
+        name = 'search-SID-metered'
+        case = self.paid.cases[name]
+        headers = {'X-Real-IP': self.m['frontend']['client_ip'], 'LAYERX-PAYER-DID': case['payer_did']}
+        if paid:
+            headers['PAYMENT-SIGNATURE'] = self.paid.headers[name]
+        return exchange(front['url'], case['target'], headers)
+
+    def run(self):
+        for service in self.services:
+            service[4].start()
+        expected = 0
+        for service in self.services:
+            row, _, data, _, driver = service
+            initial = self.read_ready(service)
+            self.wait_ready(service, lambda roles: all(item['state'] == 'ready' for item in roles.values()),
+                            max(item['freshness_budget_ms'] for item in initial.values()) / 1000 + 30)
+            self.record(row['id'] + ':authenticated-first-use')
+            expected += 1
+            for fault in row['faults']:
+                before, state = self.paid.sequences(), self.payment_snapshot(data)
+                try:
+                    for process in fault['processes']:
+                        self.pause(process)
+                    pairs = [(item['role'], item['dependency']) for item in fault['dependencies']]
+                    roles = self.wait_ready(service, lambda roles: all(
+                        next(dep for dep in roles[role]['dependencies'] if dep['dependency'] == name)['state'] != 'ready'
+                        for role, name in pairs), max(item['freshness_budget_ms'] for item in initial.values()) / 1000 + 30)
+                    if roles['paid_delivery']['state'] != 'ready':
+                        self.paid_refusal(service, state)
+                    driver.stop(crash=True)
+                    driver.start()
+                    recovered = self.read_ready(service)
+                    require(all(recovered[role]['state'] != 'ready' for role, _ in pairs),
+                            'restart trusted retained dependency readiness without fresh success')
+                    if recovered['paid_delivery']['state'] != 'ready':
+                        self.paid_refusal(service, state)
+                finally:
+                    self.resume()
+                self.wait_ready(service, lambda roles: all(item['state'] == 'ready' for item in roles.values()),
+                                max(item['freshness_budget_ms'] for item in initial.values()) / 1000 + 30)
+                require(self.paid.sequences() == before and self.payment_snapshot(data) == state,
+                        'readiness polling, restart or refused request charged a payment')
+                self.record(row['id'] + ':' + fault['id'] + ':loss-restart-restoration')
+                expected += 1
+            for directory, dependency in (('content', 'content_storage'), ('index', 'index')):
+                path = data / directory
+                held = data / (directory + '.readiness-held')
+                require(path.is_dir() and not held.exists(), 'owned storage fault boundary absent')
+                before, state = self.paid.sequences(), self.payment_snapshot(data)
+                path.rename(held)
+                try:
+                    roles = self.wait_ready(service, lambda roles: next(dep for dep in roles['paid_delivery']['dependencies']
+                        if dep['dependency'] == dependency)['state'] != 'ready', 90)
+                    require(roles['paid_delivery']['state'] != 'ready', 'unavailable storage advertised serving-ready')
+                    self.paid_refusal(service, state)
+                finally:
+                    require(not path.exists(), 'storage readiness probe fabricated the missing directory')
+                    held.rename(path)
+                self.wait_ready(service, lambda roles: all(item['state'] == 'ready' for item in roles.values()), 210)
+                require(self.paid.sequences() == before and self.payment_snapshot(data) == state,
+                        'unavailable storage consumed a payment')
+                self.record(row['id'] + ':' + dependency + ':loss-restoration')
+                expected += 1
+            for role, dependency in (('evm_attestor', 'attestor_progress'), ('kernel_relay', 'relay_progress')):
+                if role in service[3]:
+                    self.stale_progress(service, role, dependency)
+                    expected += 1
+        for service in self.negatives:
+            self.services.append(service)
+            service[4].start()
+            row = service[0]
+            role, dependency = (('paid_delivery', 'settlement_authority') if row['case'] == 'unbound-settlement-trust'
+                                else ('evm_attestor', 'registered_peer_quorum'))
+            before, state = self.paid.sequences(), self.payment_snapshot(service[2])
+            roles = self.wait_ready(service, lambda roles: next(item for item in roles[role]['dependencies']
+                if item['dependency'] == dependency)['state'] in ('unavailable', 'stale'), 210)
+            require(roles[role]['state'] != 'ready', 'invalid authority or absent registered quorum advertised ready')
+            if role == 'paid_delivery':
+                self.paid_refusal(service, state)
+            require(self.paid.sequences() == before and self.payment_snapshot(service[2]) == state,
+                    'invalid authority or quorum readiness check charged a payment')
+            self.record(row['case'])
+            expected += 1
+        self.start_front(self.empty_front)
+        before, state = self.paid.sequences(), self.paid.snapshot()
+        require(exchange(self.empty_front['url'], '/healthz')[0] == 200
+                and exchange(self.empty_front['url'], '/readyz')[0] == 503,
+                'empty upstream frontend confused liveness and readiness')
+        require(self.front_request(self.empty_front, True)[0] == 503
+                and self.paid.sequences() == before and self.paid.snapshot() == state,
+                'empty upstream selection charged or served paid content')
+        self.record('frontend:empty-upstream-refusal')
+        expected += 1
+        self.start_front(self.front)
+        alternatives = [service for service in self.services
+                        if service[0]['id'] in self.m['frontend']['alternate_service_ids']]
+        for service in alternatives:
+            self.wait_ready(service, lambda roles: roles['paid_delivery']['state'] == 'ready', 210)
+        challenge = self.front_request(self.front)
+        require(challenge[0] == 402 and 'payment-required' in challenge[1], 'eligible frontend did not price actual payment')
+        selected = challenge[1].get('x-search-node')
+        require(selected == self.m['frontend']['selected_backend'] and selected,
+                'frontend challenge selected a different configured backend')
+        body = self.paid.success('search-SID-metered', self.front_request(self.front, True))
+        after, paid_state = self.paid.sequences(), self.paid.snapshot()
+        alternate_state = {service[0]['id']: self.payment_snapshot(service[2]) for service in alternatives}
+        delivery = next(service for service in self.services if service[4] is self.paid.candidate)
+        self.paid.candidate.stop(crash=True)
+        try:
+            for _ in range(3):
+                response = self.front_request(self.front, True)
+                require(response[0] == 503 and response[1].get('x-search-node') in (None, selected),
+                        'failed selected backend triggered paid failover or released content')
+            require(self.paid.sequences() == after and self.paid.snapshot() == paid_state,
+                    'sticky paid retry charged or changed its durable entitlement')
+            require(all(self.payment_snapshot(service[2]) == alternate_state[service[0]['id']]
+                        for service in alternatives), 'failed sticky paid retry reached another payment journal')
+        finally:
+            self.paid.candidate.start()
+        self.wait_ready(delivery, lambda roles: all(item['state'] == 'ready' for item in roles.values()), 90)
+        response = self.front_request(self.front, True)
+        require(response[1].get('x-search-node') == selected
+                and self.paid.success('search-SID-metered', response) == body
+                and self.paid.sequences() == after, 'restoration lost sticky route, result or exactly-once settlement')
+        self.record('frontend:paid-sticky-route-loss-restart-restoration')
+        expected += 1
+        require(self.count == expected and self.count > 0, 'required readiness cases did not all execute')
+        print('PAXEER_X_GATE tests=' + str(self.count) + ' skipped=0', flush=True)
+
+    def close(self):
+        self.resume()
+        for front in reversed(self.fronts):
+            process = front['process']
+            if process.poll() is None:
+                require((Path('/proc') / str(process.pid) / 'exe').resolve() == front['binary'].resolve(),
+                        'foreign frontend cleanup refused')
+                process.terminate()
+                process.wait(timeout=10)
+            front['log'].close()
+        for _, _, _, _, driver in reversed(self.services):
+            driver.stop()
+        os.fsync(self.observations.fileno())
+        self.observations.close()
+        self.journal.close()
+
+
 def main():
     os.umask(0o077)
     parser = argparse.ArgumentParser()
-    parser.add_argument('--case', required=True, choices=['paid-resource-delivery', 'evm-attestation-recovery', 'kernel-web-relay-recovery'])
+    parser.add_argument('--case', required=True, choices=['paid-resource-delivery', 'evm-attestation-recovery', 'kernel-web-relay-recovery', 'paid-web-readiness'])
     parser.add_argument('--candidate-manifest', required=True)
     args = parser.parse_args()
     if args.case == 'evm-attestation-recovery':
@@ -1271,7 +1802,8 @@ def main():
     harness = None
     try:
         require(bool(args.candidate_manifest), 'candidate manifest absent')
-        harness = (KernelHarness(args.candidate_manifest) if args.case == "kernel-web-relay-recovery"
+        harness = (ReadinessHarness(args.candidate_manifest) if args.case == 'paid-web-readiness' else
+                   KernelHarness(args.candidate_manifest) if args.case == "kernel-web-relay-recovery"
                    else Harness(args.candidate_manifest))
         harness.run()
         return 0
@@ -1289,7 +1821,7 @@ def main():
         return 1
     finally:
         if harness is not None:
-            if isinstance(harness, KernelHarness):
+            if isinstance(harness, (KernelHarness, ReadinessHarness)):
                 harness.close()
             else:
                 harness.candidate.stop()

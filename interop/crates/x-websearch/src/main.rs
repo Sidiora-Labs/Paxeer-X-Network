@@ -1,10 +1,13 @@
+use std::collections::BTreeMap;
 use std::ffi::OsString;
+use std::net::ToSocketAddrs as _;
 use std::path::PathBuf;
 use std::process::ExitCode;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
+use serde::Serialize;
 use signal_hook::consts::{SIGINT, SIGTERM};
 use signal_hook::iterator::{Handle, Signals};
 use x_websearch::attest::{self, Attestor, SignatureExchange};
@@ -16,7 +19,394 @@ use x_websearch::kernel::{
     self, KernelAttestor, KernelRelay, KernelWatcher, ObservationSubmitter, ProgramExchange, Step,
 };
 use x_websearch::keys::ATTESTOR_KEY_FILE;
-use x_websearch::payment::{system_clock, PaymentGate};
+use x_websearch::payment::{system_clock, GatewayRpc, PaymentGate, RpcAnswer};
+
+#[derive(Clone, Copy, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+enum DependencyState {
+    Starting,
+    Ready,
+    Unavailable,
+    Stale,
+}
+
+#[derive(Clone, Serialize)]
+struct DependencyReadiness {
+    dependency: &'static str,
+    state: DependencyState,
+    critical: bool,
+    last_success_unix_ms: Option<u64>,
+}
+
+#[derive(Clone, Serialize)]
+struct RoleReadiness {
+    role: &'static str,
+    state: DependencyState,
+    dependencies: Vec<DependencyReadiness>,
+    freshness_budget_ms: u64,
+    first_use_deadline_unix_ms: u64,
+}
+
+struct Readiness {
+    roles: Mutex<BTreeMap<&'static str, RoleReadiness>>,
+    network_id: u32,
+}
+
+impl Readiness {
+    fn new(config: &Config, evm: bool, kernel: bool) -> Self {
+        let mut roles = BTreeMap::new();
+        let mut add = |role, names: &[&'static str], budget| {
+            roles.insert(
+                role,
+                RoleReadiness {
+                    role,
+                    state: DependencyState::Starting,
+                    dependencies: names
+                        .iter()
+                        .map(|dependency| DependencyReadiness {
+                            dependency,
+                            state: DependencyState::Starting,
+                            critical: true,
+                            last_success_unix_ms: None,
+                        })
+                        .collect(),
+                    freshness_budget_ms: budget,
+                    first_use_deadline_unix_ms: now_ms().saturating_add(budget),
+                },
+            );
+        };
+        add(
+            "paid_delivery",
+            &[
+                "index",
+                "content_storage",
+                "payment_journal",
+                "settlement_authority",
+            ],
+            60_000,
+        );
+        if evm {
+            add(
+                "evm_attestor",
+                &[
+                    "evm_chain",
+                    "registered_peer_quorum",
+                    "attestor_progress",
+                    "attestation_journal",
+                ],
+                60_000,
+            );
+        }
+        if kernel {
+            add(
+                "kernel_relay",
+                &[
+                    "evm_chain",
+                    "registered_peer_quorum",
+                    "kernel_authority",
+                    "relay_progress",
+                    "kernel_journal",
+                ],
+                config.kernel.as_ref().map_or(60_000, |settings| {
+                    settings.poll_interval_ms.saturating_mul(3).max(60_000)
+                }),
+            );
+        }
+        Self {
+            roles: Mutex::new(roles),
+            network_id: config.kernel_network_id,
+        }
+    }
+
+    fn update(&self, role: &str, dependency: &str, usable: bool) {
+        if let Ok(mut roles) = self.roles.lock() {
+            if let Some(row) = roles.get_mut(role).and_then(|row| {
+                row.dependencies
+                    .iter_mut()
+                    .find(|row| row.dependency == dependency)
+            }) {
+                row.state = if usable {
+                    DependencyState::Ready
+                } else {
+                    DependencyState::Unavailable
+                };
+                if usable {
+                    row.last_success_unix_ms = Some(now_ms());
+                }
+            }
+        }
+    }
+
+    fn snapshot(&self) -> (bool, serde_json::Value) {
+        let now = now_ms();
+        let Ok(roles) = self.roles.lock() else {
+            return (false, serde_json::json!({"error":"readiness_unavailable"}));
+        };
+        let mut roles: Vec<_> = roles.values().cloned().collect();
+        for role in &mut roles {
+            for dependency in &mut role.dependencies {
+                if dependency.state == DependencyState::Ready
+                    && !dependency.last_success_unix_ms.is_some_and(|last| {
+                        now >= last && now.saturating_sub(last) <= role.freshness_budget_ms
+                    })
+                {
+                    dependency.state = DependencyState::Stale;
+                } else if dependency.state == DependencyState::Starting
+                    && now > role.first_use_deadline_unix_ms
+                {
+                    dependency.state = DependencyState::Unavailable;
+                }
+            }
+            role.state = if role
+                .dependencies
+                .iter()
+                .all(|row| row.state == DependencyState::Ready)
+            {
+                DependencyState::Ready
+            } else if role
+                .dependencies
+                .iter()
+                .any(|row| row.state == DependencyState::Unavailable)
+            {
+                DependencyState::Unavailable
+            } else if role
+                .dependencies
+                .iter()
+                .any(|row| row.state == DependencyState::Stale)
+            {
+                DependencyState::Stale
+            } else {
+                DependencyState::Starting
+            };
+        }
+        let ready =
+            !roles.is_empty() && roles.iter().all(|row| row.state == DependencyState::Ready);
+        (
+            ready,
+            serde_json::json!({"version":1,"ready":ready,"roles":roles,"checked_at_unix_ms":now,"network_id":self.network_id,"protocol_version":x_websearch::payment::PROTOCOL_VERSION}),
+        )
+    }
+}
+
+struct ReadinessProbe {
+    config: Config,
+    readiness: Arc<Readiness>,
+    gate: Arc<PaymentGate>,
+    index: Arc<WebIndex>,
+    store: Arc<ContentStore>,
+    signer: Option<[u8; 20]>,
+}
+
+fn directory_usable(path: &std::path::Path) -> bool {
+    std::fs::metadata(path).is_ok_and(|row| row.is_dir() && !row.permissions().readonly())
+        && std::fs::read_dir(path).is_ok()
+        && std::fs::File::open(path)
+            .and_then(|file| file.sync_all())
+            .is_ok()
+}
+
+fn settlement_usable(config: &Config, endpoint: &str) -> bool {
+    let Ok(rpc) = GatewayRpc::new(endpoint) else {
+        return false;
+    };
+    let rpc = match config.gateway.authorization_file.as_deref() {
+        Some(path) => match rpc.with_authorization_file(path) {
+            Ok(rpc) => rpc,
+            Err(_) => return false,
+        },
+        None => return false,
+    };
+    let Some(RpcAnswer::Result(node)) = rpc.call("lx_getNodeInfo", &serde_json::json!([])) else {
+        return false;
+    };
+    node.get("network_id").and_then(serde_json::Value::as_u64)
+        == Some(u64::from(config.kernel_network_id))
+        && node
+            .get("protocol_version")
+            .and_then(serde_json::Value::as_u64)
+            == Some(u64::from(x_websearch::payment::PROTOCOL_VERSION))
+        && node
+            .get("authorised_sequencer_key")
+            .and_then(serde_json::Value::as_str)
+            == Some(x_websearch::payment::hex(&config.gateway.sequencer.public_key).as_str())
+        && layerx_wire::handover::sequencer_id(&config.gateway.sequencer.public_key).ok()
+            == Some(config.gateway.sequencer.sequencer_id)
+}
+
+fn peer_quorum_usable(config: &Config, set: &attest::AttestorSet, signer: [u8; 20]) -> bool {
+    use x_websearch::fetch::{HttpClient, Url};
+    if set.threshold == 0 || !set.contains(&signer) || set.threshold as usize > set.signers.len() {
+        return false;
+    }
+    let Ok(client) = HttpClient::new(Duration::from_secs(2)) else {
+        return false;
+    };
+    let deadline = Instant::now() + Duration::from_secs(10);
+    let mut reachable = std::collections::BTreeSet::from([signer]);
+    for peer in &config.peers {
+        if Instant::now() >= deadline {
+            break;
+        }
+        let Ok(mut url) = Url::parse(peer) else {
+            continue;
+        };
+        let nonce = x_websearch::watch::keccak(
+            &[
+                b"LayerX/xweb/readiness-nonce/v1\0".as_slice(),
+                &now_ms().to_be_bytes(),
+                &signer,
+            ]
+            .concat(),
+        );
+        url.target = format!(
+            "{}/health?readiness_nonce={}",
+            url.target.trim_end_matches('/'),
+            x_websearch::payment::hex(&nonce)
+        );
+        let Ok(mut addresses) = (url.bare_host(), url.port).to_socket_addrs() else {
+            continue;
+        };
+        let Some(address) = addresses.next() else {
+            continue;
+        };
+        let Ok(response) = client.get(&url, address, deadline, 65_536, &[]) else {
+            continue;
+        };
+        let Ok(value) = serde_json::from_slice::<serde_json::Value>(&response.body) else {
+            continue;
+        };
+        if response.status != 200
+            || value
+                .get("peer_exchange_usable")
+                .and_then(serde_json::Value::as_bool)
+                != Some(true)
+        {
+            continue;
+        }
+        let Some(peer_signer) = value
+            .get("attestor_signer")
+            .and_then(serde_json::Value::as_str)
+            .and_then(x_websearch::payment::unhex)
+            .and_then(|bytes| <[u8; 20]>::try_from(bytes).ok())
+        else {
+            continue;
+        };
+        let checked = value["peer_readiness"]["checked_at_unix_ms"].as_u64();
+        let signature = value["peer_readiness"]["signature"]
+            .as_str()
+            .and_then(x_websearch::payment::unhex)
+            .and_then(|bytes| <[u8; 65]>::try_from(bytes).ok());
+        if let (Some(checked), Some(signature)) = (checked, signature) {
+            if set.contains(&peer_signer)
+                && value["peer_readiness"]["nonce"] == x_websearch::payment::hex(&nonce)
+                && value["peer_readiness"]["network_id"].as_u64()
+                    == Some(u64::from(config.kernel_network_id))
+                && now_ms() >= checked
+                && now_ms().saturating_sub(checked) <= 60_000
+                && attest::recover_signer(
+                    &peer_readiness_digest(
+                        config.kernel_network_id,
+                        peer_signer,
+                        nonce,
+                        true,
+                        checked,
+                    ),
+                    &signature,
+                )
+                .ok()
+                    == Some(peer_signer)
+            {
+                reachable.insert(peer_signer);
+            }
+        }
+    }
+    reachable.len() >= set.threshold as usize
+}
+
+fn peer_readiness_digest(
+    network: u32,
+    signer: [u8; 20],
+    nonce: [u8; 32],
+    usable: bool,
+    checked: u64,
+) -> [u8; 32] {
+    x_websearch::watch::keccak(
+        &[
+            b"LayerX/xweb/readiness/v1\0".as_slice(),
+            &network.to_be_bytes(),
+            &signer,
+            &nonce,
+            &[u8::from(usable)],
+            &checked.to_be_bytes(),
+        ]
+        .concat(),
+    )
+}
+
+impl ReadinessProbe {
+    fn check(&self) {
+        self.readiness.update(
+            "paid_delivery",
+            "index",
+            directory_usable(self.index.directory())
+                && self.index.num_docs() > 0
+                && search::search(&self.index, "readiness").is_ok(),
+        );
+        self.readiness.update(
+            "paid_delivery",
+            "content_storage",
+            directory_usable(self.store.directory()),
+        );
+        self.readiness.update(
+            "paid_delivery",
+            "payment_journal",
+            directory_usable(&self.config.data_dir.join("payments"))
+                && self.gate.recover_pending_deliveries().is_ok(),
+        );
+        self.readiness.update(
+            "paid_delivery",
+            "settlement_authority",
+            settlement_usable(&self.config, &self.config.gateway.endpoint),
+        );
+        if let Some(signer) = self.signer {
+            let rpc = EvmRpc::new(&self.config.evm.endpoint);
+            let chain = rpc.as_ref().is_ok_and(|rpc| {
+                rpc.quantity("eth_chainId", &serde_json::json!([])).ok()
+                    == Some(u128::from(self.config.evm.chain_id))
+                    && rpc.block_number().is_ok()
+            });
+            let quorum = rpc
+                .as_ref()
+                .ok()
+                .and_then(|rpc| submit::attestor_set(rpc).ok())
+                .is_some_and(|set| peer_quorum_usable(&self.config, &set, signer));
+            for role in ["evm_attestor", "kernel_relay"] {
+                self.readiness.update(role, "evm_chain", chain);
+                self.readiness
+                    .update(role, "registered_peer_quorum", quorum);
+            }
+            self.readiness.update(
+                "evm_attestor",
+                "attestation_journal",
+                directory_usable(&self.config.data_dir.join("attest"))
+                    && directory_usable(&self.config.data_dir.join("watch")),
+            );
+        }
+        if let Some(kernel) = &self.config.kernel {
+            self.readiness.update(
+                "kernel_relay",
+                "kernel_authority",
+                settlement_usable(&self.config, &kernel.endpoint),
+            );
+            self.readiness.update(
+                "kernel_relay",
+                "kernel_journal",
+                directory_usable(&self.config.data_dir.join("kernel"))
+                    && directory_usable(&self.config.data_dir.join("kernel-attest")),
+            );
+        }
+    }
+}
 use x_websearch::server::Stopper;
 use x_websearch::submit::{self, Outcome, Submitter};
 use x_websearch::watch::{Canonical, EvmRpc, RequestWatcher, WebRequest, WorkStage};
@@ -59,6 +449,7 @@ struct Assembled {
     index: Arc<WebIndex>,
     pipeline: Option<Pipeline>,
     relay: Option<RelayLoop>,
+    probe: ReadinessProbe,
 }
 
 /// The routes and the crawler built from the configuration and the keys.
@@ -92,10 +483,25 @@ fn assemble(config: &Config, keys: &Keys) -> Result<Assembled, String> {
         .map_err(|error| format!("route /fetch or /content: {error}"))?;
     let pipeline = pipeline(config, keys, &mut routes, &fetcher, &index, &store)?;
     let relay = relay(config, keys, &mut routes, &fetcher, &index, &store)?;
-    let health = serde_json::to_vec(&serde_json::json!({
+    let readiness = Arc::new(Readiness::new(config, pipeline.is_some(), relay.is_some()));
+    let eligibility = Arc::clone(&readiness);
+    routes
+        .set_serving_eligibility(move || eligibility.snapshot().0)
+        .map_err(|error| format!("readiness eligibility: {error}"))?;
+    let ready_view = Arc::clone(&readiness);
+    routes
+        .set_readiness(move |_| {
+            let (ready, body) = ready_view.snapshot();
+            x_websearch::server::Response::json(
+                if ready { 200 } else { 503 },
+                body.to_string().into_bytes(),
+            )
+        })
+        .map_err(|error| format!("readiness route: {error}"))?;
+    let mut health = serde_json::json!({
         "status": "ok",
-        "ready": true,
-        "readiness_scope": "initialized-local-resources",
+        "live": true,
+        "readiness_scope": "process-liveness",
         "upstream_payment_verified": false,
         "network_id": config.kernel_network_id,
         "wire_version": x_websearch::payment::PROTOCOL_VERSION.to_string(),
@@ -103,17 +509,49 @@ fn assemble(config: &Config, keys: &Keys) -> Result<Assembled, String> {
         "source_revision": option_env!("PAXEER_X_SOURCE_REVISION"),
         "evm_attestation_enabled": pipeline.is_some(),
         "kernel_attestation_enabled": relay.is_some()
-    }))
-    .map_err(|error| format!("health identity: {error}"))?;
+    });
+    let attestor_key = keys.attestor().cloned();
+    let signer = attestor_key.as_ref().map(attest::signer_address);
+    health["attestor_signer"] = signer.map_or(serde_json::Value::Null, |signer| {
+        serde_json::json!(x_websearch::payment::hex(&signer))
+    });
+    let health_view = Arc::clone(&readiness);
+    let network = config.kernel_network_id;
     routes
-        .set_health(move |_| x_websearch::server::Response::json(200, health.clone()))
+        .set_health(move |request| {
+            let mut body = health.clone();
+            let (_, view) = health_view.snapshot();
+            let usable = view["roles"].as_array().is_some_and(|roles| roles.iter().any(|role| {
+                role["role"] == "evm_attestor" && role["dependencies"].as_array().is_some_and(|dependencies| dependencies.iter()
+                    .filter(|row| row["dependency"] != "registered_peer_quorum").all(|row| row["state"] == "ready"))
+            }));
+            body["peer_exchange_usable"] = serde_json::json!(usable);
+            if let (Some(key), Some(signer), Ok(Some(nonce))) = (&attestor_key, signer, request.query_param("readiness_nonce")) {
+                if let Some(nonce) = x_websearch::payment::unhex(&nonce).and_then(|bytes| <[u8;32]>::try_from(bytes).ok()) {
+                    let checked = now_ms();
+                    let digest = peer_readiness_digest(network, signer, nonce, usable, checked);
+                    if let Ok(signature) = attest::sign_digest(key, &digest) {
+                        body["peer_readiness"] = serde_json::json!({"nonce":x_websearch::payment::hex(&nonce),"checked_at_unix_ms":checked,"network_id":network,"signature":x_websearch::payment::hex(&signature)});
+                    }
+                }
+            }
+            x_websearch::server::Response::json(200, body.to_string().into_bytes())
+        })
         .map_err(|error| format!("health route: {error}"))?;
     Ok(Assembled {
         routes,
         crawler,
-        index,
+        index: Arc::clone(&index),
         pipeline,
         relay,
+        probe: ReadinessProbe {
+            config: config.clone(),
+            readiness,
+            gate,
+            index: Arc::clone(&index),
+            store,
+            signer,
+        },
     })
 }
 
@@ -251,10 +689,14 @@ fn pipeline(
 
 /// One attestation round: answer the newly confirmed requests, drop the
 /// timed-out ones, exchange signatures and submit or settle each request.
-fn attest_round(pipeline: &mut Pipeline) {
-    if let Err(error) = pipeline.watcher.poll() {
-        eprintln!("x-websearch request watch failed: {error}");
-    }
+fn attest_round(pipeline: &mut Pipeline) -> bool {
+    let watched = match pipeline.watcher.poll() {
+        Ok(_) => true,
+        Err(error) => {
+            eprintln!("x-websearch request watch failed: {error}");
+            false
+        }
+    };
     let head = pipeline.watcher.last_head();
     for request in pipeline.watcher.work() {
         let request_id = request.request_id;
@@ -380,7 +822,7 @@ fn attest_round(pipeline: &mut Pipeline) {
         Ok(set) => set,
         Err(error) => {
             eprintln!("x-websearch could not read the attestor set: {error}");
-            return;
+            return false;
         }
     };
     let journal = pipeline.watcher.journal();
@@ -469,6 +911,7 @@ fn attest_round(pipeline: &mut Pipeline) {
             }
         }
     }
+    watched
 }
 
 /// Re-validates a journalled request against the current head before any
@@ -586,13 +1029,18 @@ fn settle(
 
 /// Reconciles canonical requests and journalled fulfilments in each attestation
 /// round, every [`ATTEST_INTERVAL`] until `stop` is raised.
-fn start_attestor(mut pipeline: Pipeline, stop: StopSignal) -> std::io::Result<JoinHandle<()>> {
+fn start_attestor(
+    mut pipeline: Pipeline,
+    stop: StopSignal,
+    readiness: Arc<Readiness>,
+) -> std::io::Result<JoinHandle<()>> {
     thread::Builder::new()
         .name("x-websearch-attestor".to_owned())
         .spawn(move || {
             while !stop.is_raised() {
                 let started = Instant::now();
-                attest_round(&mut pipeline);
+                let usable = attest_round(&mut pipeline);
+                readiness.update("evm_attestor", "attestor_progress", usable);
                 if stop.wait_timeout(ATTEST_INTERVAL.saturating_sub(started.elapsed())) {
                     break;
                 }
@@ -611,15 +1059,19 @@ fn now_ms() -> u64 {
 
 /// One relay step: refresh the registered attestor set, then answer, exchange
 /// and post the program requests.
-fn relay_round(relay: &mut RelayLoop) {
-    match submit::attestor_set(&relay.rpc) {
-        Ok(set) => relay.relay.set = set,
+fn relay_round(relay: &mut RelayLoop) -> bool {
+    let set_usable = match submit::attestor_set(&relay.rpc) {
+        Ok(set) => {
+            relay.relay.set = set;
+            true
+        }
         Err(error) => {
             relay.relay.set = attest::AttestorSet::default();
             eprintln!("x-websearch could not read the attestor set: {error}");
+            false
         }
-    }
-    match relay.relay.step(now_ms()) {
+    };
+    let progressed = match relay.relay.step(now_ms()) {
         Ok(steps) => {
             for step in steps {
                 match step {
@@ -668,15 +1120,24 @@ fn relay_round(relay: &mut RelayLoop) {
                     ),
                 }
             }
+            true
         }
-        Err(error) => eprintln!("x-websearch kernel relay step failed: {error}"),
-    }
+        Err(error) => {
+            eprintln!("x-websearch kernel relay step failed: {error}");
+            false
+        }
+    };
+    set_usable && progressed
 }
 
 /// Runs a relay step every interval on its own thread until `stop` is
 /// raised. The journalled requests and submissions were loaded when the
 /// relay opened, before this loop takes any new work.
-fn start_relay(mut relay: RelayLoop, stop: StopSignal) -> std::io::Result<JoinHandle<()>> {
+fn start_relay(
+    mut relay: RelayLoop,
+    stop: StopSignal,
+    readiness: Arc<Readiness>,
+) -> std::io::Result<JoinHandle<()>> {
     thread::Builder::new()
         .name("x-websearch-kernel-relay".to_owned())
         .spawn(move || {
@@ -692,7 +1153,8 @@ fn start_relay(mut relay: RelayLoop, stop: StopSignal) -> std::io::Result<JoinHa
             );
             while !stop.is_raised() {
                 let started = Instant::now();
-                relay_round(&mut relay);
+                let usable = relay_round(&mut relay);
+                readiness.update("kernel_relay", "relay_progress", usable);
                 if stop.wait_timeout(relay.interval.saturating_sub(started.elapsed())) {
                     break;
                 }
@@ -814,6 +1276,7 @@ fn main() -> ExitCode {
         index,
         pipeline,
         relay,
+        probe,
     } = match assembled {
         Ok(assembled) => assembled,
         Err(error) => {
@@ -852,6 +1315,7 @@ fn main() -> ExitCode {
         relay,
         config.seeds.clone(),
         config.crawl_interval(),
+        probe,
         &stop,
     );
     match &started {
@@ -883,21 +1347,37 @@ fn start_loops(
     relay: Option<RelayLoop>,
     seeds: Vec<String>,
     interval: Duration,
+    probe: ReadinessProbe,
     stop: &StopSignal,
 ) -> (Vec<JoinHandle<()>>, Result<(), String>) {
-    let mut loops = Vec::with_capacity(3);
+    let mut loops = Vec::with_capacity(4);
+    let readiness = Arc::clone(&probe.readiness);
+    let probe_stop = stop.clone();
+    match thread::Builder::new()
+        .name("x-websearch-readiness".to_owned())
+        .spawn(move || {
+            while !probe_stop.is_raised() {
+                probe.check();
+                if probe_stop.wait_timeout(Duration::from_secs(5)) {
+                    break;
+                }
+            }
+        }) {
+        Ok(handle) => loops.push(handle),
+        Err(error) => return (loops, Err(format!("readiness thread: {error}"))),
+    }
     match start_crawler(crawler, seeds, interval, stop.clone()) {
         Ok(handle) => loops.push(handle),
         Err(error) => return (loops, Err(format!("crawler thread: {error}"))),
     }
     if let Some(pipeline) = pipeline {
-        match start_attestor(pipeline, stop.clone()) {
+        match start_attestor(pipeline, stop.clone(), Arc::clone(&readiness)) {
             Ok(handle) => loops.push(handle),
             Err(error) => return (loops, Err(format!("attestor thread: {error}"))),
         }
     }
     if let Some(relay) = relay {
-        match start_relay(relay, stop.clone()) {
+        match start_relay(relay, stop.clone(), Arc::clone(&readiness)) {
             Ok(handle) => loops.push(handle),
             Err(error) => return (loops, Err(format!("kernel relay thread: {error}"))),
         }
