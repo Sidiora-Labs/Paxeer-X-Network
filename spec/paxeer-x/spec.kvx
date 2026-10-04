@@ -25484,9 +25484,13 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 build_cmd = "timeout 20m python3 tools/qualification/paxeer-x/programs_accounts_winddown.py --task 6.4 --build --cargo /root/.cargo/bin/cargo"
 source_status = "complete"
 completion_basis = "implementation"
-qualification_status = "UNRUN"
+qualification_status = "BUILD_EXIT78_MISSING_ANVIL_VERIFY_UNRUN"
 source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-6.4-source-result.json"
 completion_basis_policy = "Owner CONSTITUTION: fully implemented DONE; exact build and behavior qualification recorded separately."
+qualification_revision = "56cab6f8cd2e4248345addaeec58cfaa9ccecd3a"
+qualification_build_exit = 78
+qualification_build_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-6.4-build.log"
+qualification_result = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-6.4-result.json"
 
 [task.7.4]
 title = "Generate typed registry interfaces and client bindings for every supported ABI"

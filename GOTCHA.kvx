@@ -2479,3 +2479,8 @@ resolution = "Apply the owner-approved public reexports, exact map types and byt
 area = "Combined caller compiler integration"
 observed = "The approved Agent and Human build each exited101 after the corrected Send preview compiled; MCP still accesses old EvaluationInput fields and omits authorization variants, while four Human native callers use the legacy error mapper."
 resolution = "Retain both exact immutable-revision logs; no repair or rerun under the exhausted build approval. Admit corrections only in their actual caller implementation scopes."
+
+[gotcha.728]
+area = "Real Programs process fixture prerequisite"
+observed = "Task6.4 single candidate build exited78 before compilation because the genuine process fixture requires anvil and it was unavailable."
+resolution = "Record the exact published source, build command, exit and log; leave verification unrun without inventing a substitute chain or repeating the unchanged gate."
