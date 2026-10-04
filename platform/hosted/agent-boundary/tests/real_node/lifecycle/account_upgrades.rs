@@ -410,6 +410,52 @@ fn state(
     state
 }
 
+#[derive(Clone)]
+struct ProductionStateJournal(Vec<layerx_programs::VerifiedProgramBalanceRead>);
+
+impl layerx_programs::AccountStateJournal for ProductionStateJournal {
+    fn account_state_head(
+        &self,
+        digest: [u8; 32],
+    ) -> Result<AccountStateHead, layerx_programs::AccountStateError> {
+        let read = self.0.iter().find(|read| read.receipt_digest() == digest)
+            .ok_or(layerx_programs::AccountStateError::UnverifiedReceipt)?;
+        Ok(AccountStateHead {
+            receipt_digest: read.receipt_digest(),
+            state_root: read.state_root(),
+            freshness: read.freshness(),
+        })
+    }
+
+    fn current_account_state_head(
+        &self,
+    ) -> Result<AccountStateHead, layerx_programs::AccountStateError> {
+        let read = self.0.iter().max_by_key(|read| read.freshness().observed_sequence)
+            .ok_or(layerx_programs::AccountStateError::JournalUnavailable)?;
+        self.account_state_head(read.receipt_digest())
+    }
+}
+
+fn production_authority(
+    states: &[&ProtocolProgramStateRead],
+) -> layerx_programs::JournalAccountStateAuthority<ProductionStateJournal> {
+    must(layerx_programs::JournalAccountStateAuthority::new(
+        ProductionStateJournal(states.iter().map(|state| state.balances().clone()).collect()),
+        now_ms(),
+        60_000,
+    ), "independently verified native receipt journal")
+}
+
+fn projection_registry(base: &Registry, state: &ProtocolProgramStateRead) -> Registry {
+    let mut registry = base.clone();
+    let profile = state.account_profile2().expect("authenticated profile2 proof");
+    must(registry.replay_protocol_state_profile2(
+        state.program(), state.balances().bindings(), state.routes(),
+        state.balances().lifecycle(), state.history(), profile,
+    ), "production native registry projection");
+    registry
+}
+
 fn balance(state: &ProtocolProgramStateRead, account: [u8; 32], expected: u128) {
     let balances = state.balances();
     let value = balances
@@ -634,6 +680,39 @@ fn funded_account_profile2_survives_abi_upgrades_and_winddown() {
             .iter()
             .any(|binding| binding == &original_binding[0]));
     }
+    let before_deprecate = state(
+        &cluster, program, &registry, &verifier, &evidence, "registry-before-deprecate",
+    );
+    let active_registry = projection_registry(&registry, &before_deprecate);
+    let mut projected_registry = active_registry.clone();
+    let mut projection = layerx_programs::Deprecation::new();
+    let native_program = before_deprecate.program();
+    let transition = layerx_programs::DeprecationRequest {
+        program: native_program,
+        expected: layerx_programs::ProgramLifecycle::Active,
+        target: layerx_programs::ProgramLifecycle::Deprecated,
+        authority: cluster.actor.source,
+        effective_sequence: before_deprecate.balances().freshness().observed_sequence + 1,
+        wind_down: layerx_programs::WindDownPolicy {
+            exit_program: program,
+            deadline: LAST_BATCH,
+            state_access: layerx_programs::WindDownStateAccess::ReadOnly,
+        },
+        exits: before_deprecate.routes().to_vec(),
+        account_snapshot: before_deprecate.account_snapshot().clone(),
+    };
+    let profile = before_deprecate.account_profile2().expect("actual admitted native profile");
+    let mut incomplete = transition.clone();
+    incomplete.exits.pop();
+    assert!(matches!(projection.transition_profile2(
+        &mut projected_registry, &incomplete, &production_authority(&[&before_deprecate]), profile,
+    ), Err(layerx_programs::DeprecationRefusal::MissingExit { .. })));
+    assert_eq!(projected_registry.entry_for_wind_down(native_program).unwrap().lifecycle,
+        layerx_programs::ProgramLifecycle::Active);
+    must(projection.transition_profile2(
+        &mut projected_registry, &transition, &production_authority(&[&before_deprecate]), profile,
+    ), "real multiaccount deprecation projection");
+    println!("REGISTRY_WINDDOWN_CASE complete-real-account-exits");
     submit(
         &cluster,
         7,
@@ -662,7 +741,54 @@ fn funded_account_profile2_survives_abi_upgrades_and_winddown() {
         deprecated.balances().lifecycle(),
         layerx_programs::ProgramLifecycle::Deprecated
     );
+    assert_eq!(deprecated.history(), projected_registry.entry_for_wind_down(native_program).unwrap().lifecycle_history);
+    let deprecated_view = must(projection.read_profile2(
+        &projected_registry, native_program, deprecated.account_snapshot(),
+        &production_authority(&[&deprecated]), deprecated.account_profile2().unwrap(),
+    ), "receipt-backed registry deprecation read");
+    assert_eq!(deprecated_view.value_accounts, deprecated.balances().value_accounts());
+    assert_eq!(deprecated_view.reachable_value_by_asset(), Some(vec![(cluster.asset, DEPOSIT * 3)]));
+    let mut replay_registry = active_registry;
+    let mut replayed = layerx_programs::Deprecation::new();
+    must(replayed.replay_profile2(
+        &mut replay_registry, &[(transition.clone(), profile.clone())],
+        &production_authority(&[&before_deprecate, &deprecated]),
+    ), "historical production receipt replay");
+    assert_eq!(must(replayed.read_profile2(
+        &replay_registry, native_program, deprecated.account_snapshot(),
+        &production_authority(&[&deprecated]), deprecated.account_profile2().unwrap(),
+    ), "replayed genuine registry read"), deprecated_view);
+    println!("REGISTRY_WINDDOWN_CASE authenticated-read-and-replay");
+    cluster.boundary.stop();
+    cluster.restart_native_sequencer();
+    cluster.boundary.start();
+    check_readiness(&cluster);
+    let after_deprecate_restart = state(
+        &cluster, program, &registry, &verifier, &evidence, "registry-deprecated-restart",
+    );
+    assert_eq!(after_deprecate_restart.balances().value_accounts(), deprecated.balances().value_accounts());
+    assert_eq!(after_deprecate_restart.history(), deprecated.history());
+    must(projection.read_profile2(
+        &projected_registry, native_program, after_deprecate_restart.account_snapshot(),
+        &production_authority(&[&after_deprecate_restart]),
+        after_deprecate_restart.account_profile2().unwrap(),
+    ), "retained native wind-down after process restart");
+    println!("REGISTRY_WINDDOWN_CASE native-restart-retains-value-and-history");
+    let mut current_exit_state = after_deprecate_restart;
     for (index, (_, label, account_id, _)) in accounts.iter().enumerate() {
+        let exit = must(projection.authorize_exit_profile2(
+            &projected_registry, native_program, *account_id, current_exit_state.account_snapshot(),
+            &production_authority(&[&current_exit_state]), current_exit_state.account_profile2().unwrap(),
+        ), "current authenticated full-balance exit");
+        assert_eq!(exit.account.balance, DEPOSIT);
+        assert_eq!(exit.account.asset_id, cluster.asset);
+        assert_eq!(exit.destination, cluster.actor.source);
+        assert_eq!(exit.protocol_activity.payload,
+            wind_down_payload(program, ProgramWindDownOperation::Exit { account: *account_id }));
+        assert!(projection.read_profile2(
+            &projected_registry, native_program, current_exit_state.account_snapshot(),
+            &production_authority(&[&current_exit_state]), profile,
+        ).is_err());
         submit(
             &cluster,
             7,
@@ -686,7 +812,20 @@ fn funded_account_profile2_survives_abi_upgrades_and_winddown() {
                 if position <= index { 0 } else { DEPOSIT },
             );
         }
+        current_exit_state = current;
     }
+    let before_tombstone = state(
+        &cluster, program, &registry, &verifier, &evidence, "registry-before-tombstone",
+    );
+    let mut tombstone_transition = transition.clone();
+    tombstone_transition.expected = layerx_programs::ProgramLifecycle::Deprecated;
+    tombstone_transition.target = layerx_programs::ProgramLifecycle::Tombstoned;
+    tombstone_transition.effective_sequence = before_tombstone.balances().freshness().observed_sequence + 1;
+    tombstone_transition.account_snapshot = before_tombstone.account_snapshot().clone();
+    must(projection.transition_profile2(
+        &mut projected_registry, &tombstone_transition, &production_authority(&[&before_tombstone]),
+        before_tombstone.account_profile2().unwrap(),
+    ), "authenticated tombstone projection");
     submit(
         &cluster,
         7,
@@ -712,6 +851,13 @@ fn funded_account_profile2_survives_abi_upgrades_and_winddown() {
     for (_, _, identifier, _) in accounts {
         balance(&tombstoned, identifier, 0);
     }
+    let tombstone_view = must(projection.read_profile2(
+        &projected_registry, native_program, tombstoned.account_snapshot(),
+        &production_authority(&[&tombstoned]), tombstoned.account_profile2().unwrap(),
+    ), "tombstone remains readable at genuine current head");
+    assert_eq!(tombstone_view.transition_history, tombstoned.history());
+    assert_eq!(tombstone_view.reachable_value_by_asset(), Some(vec![(cluster.asset, 0)]));
+    println!("REGISTRY_WINDDOWN_CASE tombstone-current-state-and-history");
     marker("proof-corruption-refused");
     marker("stale-head-refused");
 }

@@ -26892,8 +26892,8 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.104.30.5]
 title = "Bind registry value accounts to real program balances"
-status = "pending"
-mode = "QUALIFY"
+status = "in_progress"
+mode = "BUILD"
 wave = 3
 requires = ["0.2", "104.30.2", "104.30.3"]
 reqs = ["1100.5", "1092.6"]
@@ -26904,10 +26904,10 @@ do_4 = "Keep a tombstoned program's history readable and its state reachable und
 do_5 = "Surface program-held balances wherever the program is shown, under the standard freshness and honesty rules."
 do_6 = "Test wind-down against a program holding live balances across several assets and several derived accounts."
 do_7 = "Provide this task selector in tools/paxeer-x/gates and execute the full scoped acceptance contract using real production paths. Preserve the retained verification command coverage; move aggregate matrices to release scope and refuse an unknown or unimplemented selector."
-touches = ["programs/crates/layerx-programs-registry/src/deprecate.rs", "programs/crates/layerx-programs-registry/tests/winddown.rs", "tools/paxeer-x/gates/104.30.5.sh"]
+touches = ["programs/crates/layerx-programs-registry/src/deprecate.rs", "programs/crates/layerx-programs-registry/tests/winddown.rs", "tools/paxeer-x/gates/104.30.5.sh", "programs/crates/layerx-programs-protocol-adapter/src/ffi.rs", "platform/hosted/agent-boundary/tests/real_node/lifecycle/account_upgrades.rs", "platform/hosted/agent-boundary/tests/real_node.rs", "platform/hosted/agent-boundary/tests/real_node/custody.rs"]
 verify_cmd = "timeout 30m tools/paxeer-x/verify-task.sh 104.30.5"
 gate_kind = "planned-adapter"
-max_builds = 0
+max_builds = 1
 max_verify_runs = 1
 max_repair_cycles = 2
 time_limit_minutes = 30
@@ -26920,6 +26920,15 @@ completion_policy = "Existing implementation is preserved; current candidate qua
 planned_paths = ["tools/paxeer-x/gates/104.30.5.sh"]
 path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
 evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+fleet_retained_shared_paths = []
+fleet_shared_writer = "Root serializes shared paths; all original criteria and inactive source assertions preserved."
+fleet_role = "/root/complete_migration"
+fleet_cutoff_utc = "2026-10-04T14:48:00Z"
+fleet_authority = "User requested thirty agents to complete remaining integrations in four hours; fresh eligible task admission, no deployment operations."
+source_status = "partial"
+completion_basis = "honest incomplete source checkpoint; original criteria remain required"
+qualification_status = "UNRUN"
+source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/fleet-104.30.5-source-handoff.json"
 
 [task.104.30.6]
 title = "Extend the hostile-program gauntlet to program custody"

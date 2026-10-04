@@ -111,6 +111,16 @@ impl WindDownView {
         )
     }
 
+    #[must_use]
+    pub fn reachable_value_by_asset(&self) -> Option<Vec<([u8; 32], u128)>> {
+        let mut totals = std::collections::BTreeMap::<[u8; 32], u128>::new();
+        for account in &self.value_accounts {
+            let total = totals.entry(account.asset_id).or_default();
+            *total = total.checked_add(account.balance)?;
+        }
+        Some(totals.into_iter().collect())
+    }
+
     /// Returns the sum of current proof-backed balances, or `None` rather than
     /// wrapping if distinct asset quantities exceed `u128` when aggregated for
     /// display. Per-asset balances remain available in `value_accounts`.
@@ -471,6 +481,20 @@ impl Deprecation {
         })
     }
 
+    pub fn read_profile2(
+        &self,
+        registry: &Registry,
+        program: ProgramId,
+        snapshot: &VerifiedAccountSnapshot,
+        state_authority: &JournalAccountStateAuthority<impl AccountStateJournal>,
+        profile: &crate::VerifiedProgramAccountProfile2,
+    ) -> Result<WindDownView, DeprecationRefusal> {
+        if !profile.admits(registry, program) || !profile.matches_snapshot(program, snapshot) {
+            return Err(AccountStateError::LegacyProtocol.into());
+        }
+        self.read(registry, program, snapshot, state_authority)
+    }
+
     /// Reads frozen ABI-one lifecycle history. It is unavailable once a
     /// program has any derived-account binding, preventing an empty balance
     /// presentation from concealing ABI-two value.
@@ -556,6 +580,46 @@ impl Deprecation {
             destination: route.destination,
             protocol_activity: WindDownExitActivity::new(program, account_id),
         })
+    }
+
+    pub fn authorize_exit_profile2(
+        &self,
+        registry: &Registry,
+        program: ProgramId,
+        account_id: [u8; 32],
+        snapshot: &VerifiedAccountSnapshot,
+        state_authority: &JournalAccountStateAuthority<impl AccountStateJournal>,
+        profile: &crate::VerifiedProgramAccountProfile2,
+    ) -> Result<AuthorizedExit, DeprecationRefusal> {
+        if !profile.admits(registry, program) || !profile.matches_snapshot(program, snapshot) {
+            return Err(AccountStateError::LegacyProtocol.into());
+        }
+        self.authorize_exit(registry, program, account_id, snapshot, state_authority)
+    }
+
+    pub fn replay_profile2(
+        &mut self,
+        registry: &mut Registry,
+        log: &[(DeprecationRequest, crate::VerifiedProgramAccountProfile2)],
+        state_authority: &JournalAccountStateAuthority<impl AccountStateJournal>,
+    ) -> Result<Vec<LifecycleReceipt>, DeprecationRefusal> {
+        let mut ordered: Vec<_> = log.iter().collect();
+        ordered.sort_by_key(|(request, _)| (request.program.bytes(), request.effective_sequence));
+        let mut candidate_registry = registry.clone();
+        let mut candidate = self.clone();
+        let mut receipts = Vec::with_capacity(ordered.len());
+        for (request, profile) in ordered {
+            receipts.push(candidate.transition_profile2_with_head(
+                &mut candidate_registry,
+                request,
+                state_authority,
+                false,
+                profile,
+            )?);
+        }
+        *registry = candidate_registry;
+        *self = candidate;
+        Ok(receipts)
     }
 
     /// Replays the append-only deprecation journal in canonical order while

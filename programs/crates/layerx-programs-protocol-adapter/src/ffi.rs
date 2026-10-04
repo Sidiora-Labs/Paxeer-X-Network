@@ -280,6 +280,11 @@ impl ProtocolProgramStateRead {
         )
     }
 
+    #[must_use]
+    pub const fn account_snapshot(&self) -> &VerifiedAccountSnapshot {
+        &self.snapshot
+    }
+
     pub fn account_profile2(&self) -> Option<&VerifiedProgramAccountProfile2> {
         self.account_profile2.as_ref()
     }
