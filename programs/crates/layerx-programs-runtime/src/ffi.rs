@@ -134,7 +134,9 @@ pub extern "C" fn layerx_programs_migration_execute_activity(
             | RuntimeArtifactOwnerRefusal::SynchronizationPoisoned,
         ) => return RESULT_FATAL_INVARIANT,
     };
-    match Executor::declared().execute(module.validated(), &hook, &[]) {
+    match Executor::declared().execute_migration(
+        module.validated(), &hook, abi_version, schedule,
+    ) {
         Ok(_) => RESULT_OK,
         Err(crate::ExecutionError::Resource(_)) => RESULT_GAS_EXHAUSTED,
         Err(crate::ExecutionError::Fault(crate::ExecutionFault::UnknownExport { .. })) => {

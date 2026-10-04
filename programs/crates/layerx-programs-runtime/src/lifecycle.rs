@@ -266,10 +266,11 @@ impl Lifecycle {
             self.retain_upgrade(&activity, &refusal.to_string());
             return Err(refusal);
         }
-        let migration_executor = self.executor.for_abi(activity.abi_version);
         let migration = match &activity.migration {
-            Some(migration) => match migration_executor.execute(&validated, &migration.export, &[])
-            {
+            Some(migration) => match self.executor.execute_migration(
+                &validated, &migration.export, activity.abi_version,
+                validated.meter_injection().schedule(),
+            ) {
                 Ok(record) => Some(record),
                 Err(error) => {
                     self.retain_upgrade(&activity, &error.to_string());

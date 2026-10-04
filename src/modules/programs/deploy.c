@@ -49,6 +49,8 @@ typedef struct programs_lifecycle_decoded {
     uint8_t interface_framed;
     const uint8_t *prior_interface_encoding;
     uint32_t prior_interface_length;
+    lx_programs_metering_schedule admitted_metering;
+    uint8_t metering_admitted;
 } programs_lifecycle_decoded;
 
 static uint16_t read_u16(const uint8_t *bytes)
@@ -106,7 +108,7 @@ static void program_interface_key(const uint8_t program_id[32], uint8_t key[42])
 }
 
 static lxp_result validate_wasm(lxp_module_ctx *ctx,
-                                 const programs_lifecycle_decoded *value)
+                                 programs_lifecycle_decoded *value)
 {
     static const uint8_t wasm_header[8] = {
         0x00U, 0x61U, 0x73U, 0x6dU, 0x01U, 0x00U, 0x00U, 0x00U
@@ -124,6 +126,8 @@ static lxp_result validate_wasm(lxp_module_ctx *ctx,
     status = lxp_programs_metering_schedule_current(
         ctx->kernel, lxp_ctx_batch_number(ctx), &metering_schedule);
     if (status != LXP_OK) return status;
+    value->admitted_metering = metering_schedule;
+    value->metering_admitted = 1U;
     return layerx_programs_deployment_validate(
         (uint64_t)(uintptr_t)value, value->wasm_length, value->abi_version,
         metering_schedule.version,
@@ -369,7 +373,7 @@ lxp_result lxp_programs_lifecycle_validate(
             read_u16(current + 65U), value->abi_version);
     }
     if (status != LXP_OK) return status;
-    status = validate_wasm(ctx, value);
+    status = validate_wasm(ctx, (programs_lifecycle_decoded *)value);
     if (status != LXP_OK) return status;
     status = validate_interface(ctx, (programs_lifecycle_decoded *)value);
     if (status != LXP_OK) return status;
@@ -515,6 +519,18 @@ static lxp_result execute_upgrade(lxp_module_ctx *ctx,
         status = lxp_programs_metering_schedule_current(
             ctx->kernel, lxp_ctx_batch_number(ctx), &metering_schedule);
         if (status != LXP_OK) return status;
+        if (!value->metering_admitted ||
+            value->admitted_metering.version != metering_schedule.version ||
+            value->admitted_metering.activation_batch !=
+                metering_schedule.activation_batch ||
+            value->admitted_metering.authority_kind !=
+                metering_schedule.authority_kind ||
+            memcmp(value->admitted_metering.authority_digest,
+                   metering_schedule.authority_digest, 32U) != 0 ||
+            memcmp(value->admitted_metering.coefficients,
+                   metering_schedule.coefficients,
+                   sizeof(metering_schedule.coefficients)) != 0)
+            return LXP_ERR_CONTEXT_MISMATCH;
         status = layerx_programs_migration_execute_activity(
             (uint64_t)(uintptr_t)value, value->wasm_length,
             value->migration_hook_length, value->abi_version,

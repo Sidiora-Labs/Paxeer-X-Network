@@ -3401,6 +3401,26 @@ impl Executor {
         Self::new(ResourceBudget::declared(), FeeSchedule::declared())
     }
 
+    pub(crate) fn execute_migration(
+        &self,
+        module: &ValidatedModule,
+        export: &str,
+        abi_version: u16,
+        schedule: crate::FuelSchedule,
+    ) -> Result<ExecutionRecord, ExecutionError> {
+        if crate::admit_abi_version(abi_version).is_err()
+            || recorded_abi_version(module.abi_revision()) != abi_version
+        {
+            return Err(ExecutionError::Abi(AbiError::WrongVersion));
+        }
+        if module.meter_injection().schedule() != schedule {
+            return Err(ExecutionError::Fault(ExecutionFault::EngineFault {
+                reason: "migration metering differs from the admitted compiled schedule".into(),
+            }));
+        }
+        self.for_abi(abi_version).execute(module, export, &[])
+    }
+
     /// Admits one activity declaration before program lookup or guest execution.
     ///
     /// # Errors

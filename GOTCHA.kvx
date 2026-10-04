@@ -2454,3 +2454,8 @@ resolution = "Keep the refusal and all predicates; record that Rust custody/pass
 area = "Actual daemon replay lifecycle access"
 observed = "The new native authority fixture cannot use the private process replay callback through a real owner, while an older helper directly sets attached."
 resolution = "Provide a typed actual bootstrap lifecycle boundary with real canonical replay and signed handover inputs; do not copy the attached assignment or supply a no-op callback."
+
+[gotcha.716]
+area = "Per-worktree sparse configuration"
+observed = "A task checkout command omitted --worktree and set common sparse configuration; its explicit local false value caused credential-named tracked paths to materialize before exclusion. No values were opened, copied, hashed or logged."
+resolution = "Set both sparse options using git config --worktree before checkout, verify path exclusions before admitting writers, and restore common values only from recorded originals."
