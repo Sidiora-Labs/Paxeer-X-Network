@@ -1353,11 +1353,23 @@ impl OperationPermit {
         self.admit_write_authorized(control, admission)
     }
 
+    pub(crate) fn admit_write_with_companions<'a>(
+        &self,control:&SessionControl,admission:WriteAdmission<'a>,companion:AdmissionCompanionBuilder<'a>,
+    )->Result<DurablePreparation,SessionControlError>{
+        self.require_operation(Operation::Prepare)?;
+        if !matches!(admission.stage,AdmissionStage::Prepare{..}) {return Err(SessionControlError::Unavailable)};
+        self.admit_write_authorized_with_companions(control,admission,Some(companion))
+    }
     fn admit_write_authorized(
         &self,
         control: &SessionControl,
         admission: WriteAdmission<'_>,
     ) -> Result<DurablePreparation, SessionControlError> {
+        self.admit_write_authorized_with_companions(control,admission,None)
+    }
+    fn admit_write_authorized_with_companions<'a>(
+        &self,control:&SessionControl,admission:WriteAdmission<'a>,companion:Option<AdmissionCompanionBuilder<'a>>,
+    )->Result<DurablePreparation,SessionControlError>{
         let lifecycle = SessionControlError::Lifecycle;
         let registry = control
             .registry
@@ -1442,8 +1454,16 @@ impl OperationPermit {
                 )
                 .map_err(|refusal| lifecycle(LifecycleError::Reservation(refusal)))
             };
+            let extra = match companion {
+                Some(builder) => match builder(&store,&record) {Ok(value)=>Some(value),Err(error)=>{release_holds()?;return Err(error)}},
+                None=>None,
+            };
+            let extra_keys=extra.as_ref().map(|items|items.iter().map(|(key,_)|key.clone()).collect::<Vec<_>>());
             let published = record.encode().map_err(lifecycle).and_then(|bytes| {
-                let result = if plan.updates.is_empty() {
+                let result = if let Some(extra)=extra {
+                    let mut inserts=plan.companions;inserts.extend(extra);inserts.push((key.clone(),bytes));
+                    store.apply_program_approval_batch(plan.updates,inserts,Vec::new())
+                } else if plan.updates.is_empty() {
                     store.put_local(key.clone(), bytes)
                 } else {
                     let mut companions = plan.companions;
@@ -1466,9 +1486,10 @@ impl OperationPermit {
                 // so restart restores no hold, and release the in-memory hold.
                 record.state = LifecycleState::Failed;
                 let bytes = record.encode().map_err(lifecycle)?;
-                store
-                    .update_local_batch(vec![(key, bytes)])
-                    .map_err(|_| SessionControlError::Unavailable)?;
+                match extra_keys {
+                    Some(keys)=>store.apply_program_approval_batch(vec![(key,bytes)],Vec::new(),keys),
+                    None=>store.update_local_batch(vec![(key,bytes)]),
+                }.map_err(|_|SessionControlError::Unavailable)?;
                 release_holds()?;
                 return Err(lifecycle(error));
             }
@@ -2121,6 +2142,9 @@ pub struct AdmissionPlan {
 }
 
 /// Computes an [`AdmissionPlan`] against the locked store.
+pub(crate) type AdmissionCompanionBuilder<'a> = Box<dyn FnOnce(&Store,&DurablePreparation)
+    ->Result<Vec<(TenantKey,Vec<u8>)>,SessionControlError>+'a>;
+
 pub type AdmissionPlanner<'a> =
     Box<dyn FnOnce(&Store) -> Result<AdmissionPlan, SessionControlError> + 'a>;
 

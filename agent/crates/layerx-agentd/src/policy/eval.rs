@@ -9,7 +9,7 @@ use layerx_types::ids::Did;
 use crate::budget::ReconciliationState;
 use crate::capability::timed::TimedCapability;
 use crate::capability::{Capability, CapabilityId, Dimension, RateCeiling};
-use crate::protocol_evidence::AuthenticatedCumulativeUse;
+use crate::protocol_evidence::{AuthenticatedCoreTime, AuthenticatedCumulativeUse, AuthenticatedTimeWindowUse};
 use crate::session::{SessionId, SessionRecord};
 use crate::store::TenantId;
 
@@ -504,6 +504,140 @@ fn purpose_listed(purposes: &BTreeSet<String>, purpose: &Purpose) -> bool {
 
 pub(crate) fn evaluate_policy(policy: &PolicySet, input: &EvaluationInput<'_>) -> Decision {
     evaluate_with(policy, input, &DeterministicMatcher)
+}
+
+pub(crate) fn evaluate_admission(policy: &PolicySet, input: &EvaluationInput<'_>) -> Decision {
+    if input.intent.core_sequence >= input.session.request.expiry_sequence
+        || input.intent.effects.iter().any(|effect| {
+            !input.session.request.permitted_activity_types.contains(&effect.activity_type)
+        })
+    {
+        return Decision::deny(&policy.version, DecisionReason::InvalidContext);
+    }
+    let evaluated = catch_unwind(AssertUnwindSafe(|| -> Result<Decision, EvaluationFailure> {
+        if !valid_context(policy, input)? {
+            return Ok(Decision::deny(&policy.version, DecisionReason::InvalidContext));
+        }
+        let mut covered = vec![false; input.intent.effects.len()];
+        let decision = decide(policy, input.intent.effects.len(), &mut |rule, index| {
+            let hit = DeterministicMatcher.matches(rule, &input.focused(index))?;
+            if hit && rule.effect == RuleEffect::Permit { covered[index] = true; }
+            Ok(hit)
+        })?;
+        Ok(admission_coverage(policy, decision, &covered))
+    }));
+    match evaluated {
+        Ok(Ok(decision)) => decision,
+        Ok(Err(_)) | Err(_) => Decision::deny(&policy.version, DecisionReason::EvaluationFailure),
+    }
+}
+
+fn admission_coverage(policy: &PolicySet, decision: Decision, covered: &[bool]) -> Decision {
+    if decision.reason == DecisionReason::ApprovalRequired && covered.iter().any(|covered| !covered) {
+        Decision::deny(&policy.version, DecisionReason::NoPermittingRule)
+    } else {
+        decision
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn evaluate_timed_admission(
+    policy: &PolicySet,
+    intent: &PolicyIntentRequest,
+    session: &SessionRecord,
+    capability: &TimedCapability,
+    observed: &AuthenticatedCoreTime,
+    usage: &[AuthenticatedTimeWindowUse],
+    budget: Option<&ReconciliationState>,
+) -> Decision {
+    let evaluated = catch_unwind(AssertUnwindSafe(|| -> Result<Decision, EvaluationFailure> {
+        let view = CapabilityView::try_from(capability)
+            .map_err(|_| EvaluationFailure::InvalidRule)?;
+        let request = &session.request;
+        let now = observed.observed_core_ms();
+        if !session.open || policy.version.is_empty() || request.policy_version != policy.version
+            || request.tenant != capability.tenant
+            || request.agent.as_bytes() != capability.agent.as_bytes()
+            || request.authority != capability.authority
+            || intent.effects.is_empty()
+            || intent.core_sequence != observed.through_sequence()
+            || intent.core_sequence >= request.expiry_sequence
+            || !session.public_expiry_within(now).map_err(|_| EvaluationFailure::Internal)?
+            || now < capability.created_at_ms
+            || observed.through_sequence() < capability.created_at_sequence
+            || capability.is_expired(now)
+            || usage.len() > 4096 || usage.len() != capability.rate_ceilings.len()
+            || budget.is_some_and(|value| value.observed_head_sequence() != observed.through_sequence())
+        {
+            return Ok(Decision::deny(&policy.version, DecisionReason::InvalidContext));
+        }
+        let mut windows = BTreeSet::new();
+        for evidence in usage {
+            let Some(maximum) = capability.rate_ceilings.get(&evidence.window_seconds()) else {
+                return Ok(Decision::deny(&policy.version, DecisionReason::InvalidContext));
+            };
+            if !windows.insert(evidence.window_seconds()) || evidence.window_seconds() == 0
+                || evidence.actor() != &request.agent
+                || evidence.observed_batch_id() != observed.observed_batch_id()
+                || evidence.observed_core_ms() != now
+                || evidence.through_sequence() != observed.through_sequence()
+                || evidence.count() >= *maximum
+            {
+                return Ok(Decision::deny(&policy.version, DecisionReason::InvalidContext));
+            }
+        }
+        let mut per_asset = BTreeMap::<[u8; 32], u128>::new();
+        let mut aggregate = 0_u128;
+        for effect in &intent.effects {
+            if !request.permitted_activity_types.contains(&effect.activity_type)
+                || !view.activity_types.contains(&effect.activity_type)
+                || !view.counterparties.contains(&effect.counterparty)
+                || !view.assets.contains(&effect.asset)
+            {
+                return Ok(Decision::deny(&policy.version, DecisionReason::InvalidContext));
+            }
+            let total = per_asset.entry(effect.asset).or_default();
+            *total = total.checked_add(effect.amount).ok_or(EvaluationFailure::Internal)?;
+            aggregate = aggregate.checked_add(effect.amount).ok_or(EvaluationFailure::Internal)?;
+        }
+        if !purpose_listed(&view.purposes, &intent.purpose)
+            || per_asset.iter().any(|(asset, total)| {
+                capability.amount_ceilings.get(asset).is_none_or(|ceiling| total > ceiling)
+            })
+        {
+            return Ok(Decision::deny(&policy.version, DecisionReason::InvalidContext));
+        }
+        let mut covered = vec![false; intent.effects.len()];
+        let decision = decide(policy, intent.effects.len(), &mut |rule, index| {
+            if rule.id.is_empty() { return Err(EvaluationFailure::InvalidRule); }
+            let constraints = &rule.constraints;
+            if constraints.maximum_cumulative_count.is_some() {
+                return Err(EvaluationFailure::CumulativeCountUnavailable);
+            }
+            let cumulative_admitted = match constraints.maximum_cumulative_amount {
+                Some(maximum) => budget.ok_or(EvaluationFailure::ProtocolBudgetUnavailable)?
+                    .protocol_consumed().checked_add(aggregate).is_some_and(|value| value <= maximum),
+                None => true,
+            };
+            let effect = intent.effects.get(index).ok_or(EvaluationFailure::Internal)?;
+            let hit = effect_admitted(constraints, effect) && cumulative_admitted
+                && (constraints.purposes.is_empty() || purpose_listed(&constraints.purposes, &intent.purpose))
+                && (constraints.capability_ids.is_empty() || constraints.capability_ids.contains(&view.id))
+                && (constraints.session_ids.is_empty() || constraints.session_ids.contains(&request.session_id))
+                && (constraints.agents.is_empty() || constraints.agents.contains(&request.agent))
+                && (constraints.tenants.is_empty() || constraints.tenants.contains(&request.tenant))
+                && constraints.sequence_window.is_none_or(|window| {
+                    intent.core_sequence >= window.first && intent.core_sequence <= window.last
+                });
+            if hit && rule.effect == RuleEffect::Permit { covered[index] = true; }
+            Ok(hit)
+        })?;
+        Ok(admission_coverage(policy, decision, &covered))
+    }));
+    match evaluated {
+        Ok(Ok(decision)) => decision,
+        Ok(Err(_)) | Err(_) => Decision::deny(&policy.version, DecisionReason::EvaluationFailure),
+    }
 }
 
 pub(crate) fn evaluate_with(

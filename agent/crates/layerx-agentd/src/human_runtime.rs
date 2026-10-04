@@ -1605,6 +1605,13 @@ impl<A: HumanAuthorityBoundary> SharedAgentOwner<A> {
 }
 
 impl<A: HumanAuthorityBoundary> HumanOperations for SharedAgentOwner<A> {
+    fn native_approval_list_facts(&mut self, peer:&HumanPeer,cursor:Option<[u8;32]>,limit:u8)->Result<HumanResponse,HumanOperationError>{
+        self.lock()?.native_approval_list_facts(peer,cursor,limit)
+    }
+    fn native_approval_get_facts(&mut self,peer:&HumanPeer,approval_id:[u8;32])->Result<HumanResponse,HumanOperationError>{
+        self.lock()?.native_approval_get_facts(peer,approval_id)
+    }
+
     fn approval_list_facts(&mut self, peer: &HumanPeer, current_sequence: u64, cursor: Option<[u8;32]>, limit: u8) -> Result<HumanResponse, HumanOperationError> {
         self.lock()?.approval_list_facts(peer, current_sequence, cursor, limit)
     }
@@ -5361,6 +5368,25 @@ impl<A: HumanAuthorityBoundary> UnifiedAgentOwner<A> {
 }
 
 impl<A: HumanAuthorityBoundary> HumanOperations for UnifiedAgentOwner<A> {
+    fn native_approval_list_facts(&mut self,peer:&HumanPeer,cursor:Option<[u8;32]>,limit:u8)->Result<HumanResponse,HumanOperationError>{
+        if limit==0 || limit>100{return Err(HumanOperationError::Refused)};
+        let store=self.store.lock().map_err(|_|HumanOperationError::Unavailable)?;
+        let mut records=crate::approval::native_program::NativeProgramApprovalCarrier::list_for_human(&store,peer)
+            .map_err(|_|HumanOperationError::Refused)?;
+        records.sort_by_key(|record|record.preparation_id());records.retain(|record|cursor.is_none_or(|cursor|record.preparation_id()>cursor));
+        let more=records.len()>usize::from(limit);records.truncate(usize::from(limit));
+        let mut out=Encoder::new();out.u8(u8::try_from(records.len()).map_err(|_|HumanOperationError::Refused)?);
+        for record in &records{encode_native_approval_facts(&mut out,record,&store,peer.subject.as_ref().ok_or(HumanOperationError::Refused)?.owner.as_str())?}
+        if more{out.u8(1);out.fixed(&records.last().ok_or(HumanOperationError::Refused)?.preparation_id())}else{out.u8(0)};
+        out.finish()
+    }
+    fn native_approval_get_facts(&mut self,peer:&HumanPeer,approval_id:[u8;32])->Result<HumanResponse,HumanOperationError>{
+        let store=self.store.lock().map_err(|_|HumanOperationError::Unavailable)?;
+        let record=crate::approval::native_program::NativeProgramApprovalCarrier::read_for_human(&store,peer,approval_id)
+            .map_err(|_|HumanOperationError::Refused)?;
+        let mut out=Encoder::new();encode_native_approval_facts(&mut out,&record,&store,peer.subject.as_ref().ok_or(HumanOperationError::Refused)?.owner.as_str())?;out.finish()
+    }
+
     fn approval_list_facts(&mut self, peer: &HumanPeer, current_sequence: u64, cursor: Option<[u8;32]>, limit: u8) -> Result<HumanResponse, HumanOperationError> {
         let tenant = TenantId::new(peer.tenant.clone()).map_err(|_| HumanOperationError::Refused)?;
         let page = ApprovalService::new(&self.approvals, &self.budgets, &self.approval_expiry)
@@ -12996,6 +13022,19 @@ fn verification_level(value: &Value) -> Result<VerificationLevel, IdentityError>
     }
 }
 
+fn encode_native_approval_facts(out:&mut Encoder,record:&crate::approval::native_program::NativeProgramApprovalCarrier,store:&Store,owner:&str)->Result<(),HumanOperationError>{
+    use crate::approval::native_program::NativeApprovalState;
+    let response=record.response().map_err(|_|HumanOperationError::Refused)?;
+    let facts=record.presentation(store).map_err(|_|HumanOperationError::Unavailable)?;
+    out.u16(2)?;out.fixed(&response.approval_id);out.fixed(&response.held_digest);out.text(owner)?;
+    out.text(std::str::from_utf8(record.retained_actor()).map_err(|_|HumanOperationError::Refused)?)?;
+    out.u16(usize::from(response.activity.module))?;out.u16(usize::from(response.activity.ordinal))?;
+    out.u8(match record.state(){NativeApprovalState::Awaiting=>0,NativeApprovalState::Granted=>1,NativeApprovalState::Rejected=>2,
+        NativeApprovalState::Expired=>3,NativeApprovalState::Defective=>4,NativeApprovalState::NotRequired=>5});
+    out.u64(facts.created_at_sequence);out.u64(facts.budget_expiry_sequence);out.u64(facts.created_at_unix_seconds);
+    out.u64(facts.activity_expires_at_unix_milliseconds);
+    match response.submission_ref{Some(value)=>{out.u8(1);out.fixed(&value)},None=>out.u8(0)};Ok(())
+}
 fn encode_approval_facts(out: &mut Encoder, record: &ApprovalRecord) -> Result<(), HumanOperationError> {
     let facts=record.presentation.ok_or(HumanOperationError::Unavailable)?;
     if facts.created_at_unix_seconds==0 || facts.activity_expires_at_unix_seconds!=record.held_activity.expiry.0

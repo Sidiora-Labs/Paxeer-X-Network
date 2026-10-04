@@ -392,6 +392,51 @@ impl NativeProgramApprovalCarrier {
         }).collect()
     }
 
+    fn human_tenant(peer: &crate::human::HumanPeer) -> Result<TenantId, CarrierError> {
+        let subject = peer.subject.as_ref().ok_or(CarrierError::Binding)?;
+        let namespace = layerx_identity_binding::subject_namespace(&subject.transport_tenant, &peer.principal)
+            .map_err(|_| CarrierError::Binding)?;
+        let owner = layerx_types::ids::Did::new(subject.owner.as_bytes()).map_err(|_| CarrierError::Binding)?;
+        let account = layerx_types::account::AccountId::parse(&subject.account).map_err(|_| CarrierError::Binding)?;
+        if peer.uid == 0 || subject.transport_principal.is_empty() || namespace != peer.tenant
+            || account.canonical() != subject.account
+            || !subject.account.starts_with(&format!("agent:{}:", std::str::from_utf8(owner.as_bytes()).map_err(|_| CarrierError::Binding)?)) {
+            return Err(CarrierError::Binding);
+        }
+        TenantId::new(peer.tenant.clone()).map_err(|_| CarrierError::Binding)
+    }
+
+    pub(crate) fn read_for_human(store: &Store, peer: &crate::human::HumanPeer, id: [u8; 32]) -> Result<Self, CarrierError> {
+        let tenant = Self::human_tenant(peer)?;
+        let record = Self::read_retained(store, &tenant, id)?;
+        let subject = peer.subject.as_ref().ok_or(CarrierError::Binding)?;
+        if record.principal != peer.principal || !record.human_owner_matches(store, &tenant, subject)? {
+            return Err(CarrierError::Binding);
+        }
+        record.presentation(store)?;
+        Ok(record)
+    }
+
+    pub(crate) fn list_for_human(store: &Store, peer: &crate::human::HumanPeer) -> Result<Vec<Self>, CarrierError> {
+        let tenant = Self::human_tenant(peer)?;
+        let subject = peer.subject.as_ref().ok_or(CarrierError::Binding)?;
+        let mut result = Vec::new();
+        for record in Self::retained_for_tenant(store, &tenant)? {
+            if record.principal == peer.principal && record.human_owner_matches(store, &tenant, subject)? {
+                record.presentation(store)?;
+                result.push(record);
+            }
+        }
+        result.sort_by_key(Self::preparation_id);
+        Ok(result)
+    }
+
+    fn human_owner_matches(&self, store: &Store, tenant: &TenantId, subject: &crate::human::HumanSubject) -> Result<bool, CarrierError> {
+        if self.actor == subject.owner.as_bytes() { return Ok(true); }
+        crate::managed_agent::authenticates_native_owner(store, tenant, &subject.owner, &subject.account, &self.actor)
+            .map_err(|_| CarrierError::Binding)
+    }
+
     pub(crate) fn retained_principal(&self) -> &str { &self.principal }
     pub(crate) fn retained_actor(&self) -> &[u8] { &self.actor }
 

@@ -9,13 +9,13 @@ use sha2::{Digest as _, Sha256};
 
 use crate::budget::ReconciliationState;
 use crate::capability::CapabilityId;
-use crate::protocol_evidence::AuthenticatedCumulativeUse;
+use crate::protocol_evidence::{AuthenticatedCoreTime, AuthenticatedCumulativeUse, AuthenticatedTimeWindowUse};
 use crate::session::{SessionId, SessionRecord};
 use crate::store::TenantId;
 
 use super::eval::{CapabilityView, PolicyIntentRequest, Purpose};
 use super::{
-    dry_run, DryRunResult, EvaluationInput, PolicyRegistry, PolicyRequest,
+    dry_run, Decision, DryRunResult, EvaluationInput, PolicyRegistry, PolicyRequest, PolicySnapshot,
     PolicySourceError, PolicyValidationError, MAX_POLICY_SOURCE_BYTES,
 };
 
@@ -214,4 +214,32 @@ pub fn dry_run_intent_with_context(
     let snapshot = registry.begin_request();
     let input = EvaluationInput::for_intent(intent.clone(), session, capability, context);
     dry_run(registry, request_id, snapshot.policy(), &input)
+}
+
+#[must_use]
+pub fn evaluate_admission_with_context(
+    snapshot: &PolicySnapshot,
+    intent: &PolicyIntentRequest,
+    session: &SessionRecord,
+    capability: CapabilityView,
+    context: VerifiedPolicyContext<'_>,
+) -> Decision {
+    let input = EvaluationInput::for_intent(intent.clone(), session, capability, context);
+    super::eval::evaluate_admission(snapshot.policy(), &input)
+}
+
+#[must_use]
+#[allow(clippy::too_many_arguments)]
+pub fn evaluate_timed_admission_with_context(
+    snapshot: &PolicySnapshot,
+    intent: &PolicyIntentRequest,
+    session: &SessionRecord,
+    capability: &crate::capability::timed::TimedCapability,
+    observed: &AuthenticatedCoreTime,
+    usage: &[AuthenticatedTimeWindowUse],
+    budget: Option<&ReconciliationState>,
+) -> Decision {
+    super::eval::evaluate_timed_admission(
+        snapshot.policy(), intent, session, capability, observed, usage, budget,
+    )
 }

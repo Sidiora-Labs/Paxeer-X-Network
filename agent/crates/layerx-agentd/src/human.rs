@@ -95,6 +95,8 @@ const APPROVAL_LIST_FACTS_V2: u8 = 46;
 const APPROVAL_GET_FACTS_V2: u8 = 47;
 const APPROVAL_BUDGET_AFTER_V2: u8 = 48;
 const MANAGED_EVIDENCE_BY_DIGEST_V2: u8 = 49;
+const NATIVE_APPROVAL_LIST_FACTS_V2: u8 = 50;
+const NATIVE_APPROVAL_GET_FACTS_V2: u8 = 51;
 const HEAD: u8 = 7;
 const EVIDENCE: u8 = 8;
 const MAX_TEXT: usize = 255;
@@ -347,6 +349,13 @@ pub enum HumanRequest {
         agent_id: String,
         digest: [u8; 32],
     },
+    NativeApprovalListFactsV2 {
+        cursor: Option<[u8; 32]>,
+        limit: u8,
+    },
+    NativeApprovalGetFactsV2 {
+        approval_id: [u8; 32],
+    },
     ApprovalApprove {
         approval_id: [u8; 32],
         held_digest: [u8; 32],
@@ -585,6 +594,21 @@ pub trait HumanOperations {
         _peer: &HumanPeer,
         _approval_id: [u8; 32],
         _current_sequence: u64,
+    ) -> Result<HumanResponse, HumanOperationError> {
+        Err(HumanOperationError::Unavailable)
+    }
+    fn native_approval_list_facts(
+        &mut self,
+        _peer: &HumanPeer,
+        _cursor: Option<[u8; 32]>,
+        _limit: u8,
+    ) -> Result<HumanResponse, HumanOperationError> {
+        Err(HumanOperationError::Unavailable)
+    }
+    fn native_approval_get_facts(
+        &mut self,
+        _peer: &HumanPeer,
+        _approval_id: [u8; 32],
     ) -> Result<HumanResponse, HumanOperationError> {
         Err(HumanOperationError::Unavailable)
     }
@@ -1824,6 +1848,12 @@ fn dispatch_request<O: HumanOperations>(
             approval_id,
             current_sequence,
         } => operations.approval_get_facts(peer, approval_id, current_sequence),
+        HumanRequest::NativeApprovalListFactsV2 { cursor, limit } => {
+            operations.native_approval_list_facts(peer, cursor, limit)
+        }
+        HumanRequest::NativeApprovalGetFactsV2 { approval_id } => {
+            operations.native_approval_get_facts(peer, approval_id)
+        }
         HumanRequest::ApprovalBudgetAfterV2 {
             approval_id,
             held_digest,
@@ -2066,6 +2096,23 @@ fn decode_operation(
             approval_id: reader.fixed()?,
             current_sequence: reader.u64()?,
         },
+        NATIVE_APPROVAL_LIST_FACTS_V2 => {
+            let cursor = match reader.u8()? {
+                0 => None,
+                1 => Some(reader.fixed()?),
+                _ => return Err(HumanProtocolError::Malformed),
+            };
+            let limit = reader.u8()?;
+            if !(1..=100).contains(&limit) || cursor == Some([0; 32]) {
+                return Err(HumanProtocolError::Malformed);
+            }
+            HumanRequest::NativeApprovalListFactsV2 { cursor, limit }
+        }
+        NATIVE_APPROVAL_GET_FACTS_V2 => {
+            let approval_id = reader.fixed()?;
+            if approval_id == [0; 32] { return Err(HumanProtocolError::Malformed); }
+            HumanRequest::NativeApprovalGetFactsV2 { approval_id }
+        }
         APPROVAL_BUDGET_AFTER_V2 => HumanRequest::ApprovalBudgetAfterV2 {
             approval_id: reader.fixed()?,
             held_digest: reader.fixed()?,

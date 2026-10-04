@@ -2191,3 +2191,7 @@ resolution = "Use discovered tools/qualification/paxeer-x/ramp-source-settlement
 [gotcha.651]
 observed = "The authenticated admission build stopped at Programs registry lib.rs:324 because the runtime ABI facade did not export the SDK-owned account_profile2_guest_supported predicate."
 resolution = "Preserve the predicate and every legacy assertion; repair only its existing facade export in a distinct bounded source task."
+
+[gotcha.652]
+observed = "Native activities use a module/ordinal u32 code; legacy approval, policy and timed-session u16 contracts and the existing native capability binding explicitly cannot admit non-Programs modules."
+resolution = "Retain every legacy bound and Programs-only refusal; provide an explicit authenticated module/ordinal native profile rather than truncate activity identity or fabricate account DIDs."

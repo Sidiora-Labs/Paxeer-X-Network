@@ -428,6 +428,67 @@ pub fn get(
     response_agent(&decode(value.bytes())?)
 }
 
+pub(crate) fn authenticates_native_owner(
+    store: &Store,
+    tenant: &TenantId,
+    owner: &str,
+    owner_account: &str,
+    actor: &[u8],
+) -> Result<bool, HumanOperationError> {
+    let kind = layerx_types::payload::ActivityType::new(ModuleId::Governance, 1)
+        .map_err(|_| HumanOperationError::Refused)?;
+    let registration = layerx_types::payload::ModuleRegistration::new(ModuleId::Governance, &[kind])
+        .map_err(|_| HumanOperationError::Refused)?;
+    let registry = layerx_types::payload::ModuleRegistry::new(&[registration])
+        .map_err(|_| HumanOperationError::Refused)?;
+    let mut found = false;
+    for object_id in store.list_object_ids(tenant, ObjectKind::Configuration) {
+        if !object_id.starts_with(PREFIX) { continue; }
+        let object_key = key(tenant.clone(), ObjectKind::Configuration, object_id)
+            .map_err(|_| HumanOperationError::Refused)?;
+        let value = store.get(&object_key).ok_or(HumanOperationError::Unavailable)?;
+        if value.class() != StorageClass::LocalOnly { return Err(HumanOperationError::Refused); }
+        let agent = decode(value.bytes())?;
+        if agent_key(tenant, &agent.agent_id)? != object_key { return Err(HumanOperationError::Refused); }
+        if agent.agent_did.as_bytes() != actor { continue; }
+        if found || agent.context.actor != owner || agent.context.owner_account != owner_account {
+            return Err(HumanOperationError::Refused);
+        }
+        let digest = *agent.context.creation_receipt_roots.first().ok_or(HumanOperationError::Refused)?;
+        if !agent.context.verified_evidence.contains(&digest) { return Err(HumanOperationError::Refused); }
+        let served = evidence_export(store, tenant, &agent.agent_id, digest)?;
+        let receipt = decode_receipt(&served.canonical_bytes).map_err(|_| HumanOperationError::Refused)?;
+        let protocol = receipt.protocol().ok_or(HumanOperationError::Refused)?;
+        if protocol.module_id() != ModuleId::Governance as u16 || protocol.operation() != 0
+            || protocol.result_code() != 0 || served.metadata.result.code.raw() != 0
+            || served.metadata.verification_level < VerificationLevel::SEQUENCER_SIGNED {
+            return Err(HumanOperationError::Refused);
+        }
+        let action_key = served.metadata.idempotency_key;
+        for object_kind in [ObjectKind::Outbox, ObjectKind::PreparedActivity] {
+            let stored_key = key(tenant.clone(), object_kind, action_key.to_vec()).map_err(|_| HumanOperationError::Refused)?;
+            let stored = store.get(&stored_key).ok_or(HumanOperationError::Unavailable)?;
+            if stored.class() != StorageClass::LocalOnly { return Err(HumanOperationError::Refused); }
+        }
+        let mut outbox = crate::outbox::Outbox::default();
+        outbox.restore(store, tenant.clone(), action_key).map_err(|_| HumanOperationError::Refused)?;
+        let exact = outbox.exact_signed_bytes(action_key).map_err(|_| HumanOperationError::Refused)?;
+        let activity = layerx_intents::owner_activity::verify(exact, &registry).map_err(|_| HumanOperationError::Refused)?;
+        let consent = layerx_crypto::onboarding::SponsoredRegistration::decode(activity.payload())
+            .map_err(|_| HumanOperationError::Refused)?;
+        consent.validate_outer(&activity).map_err(|_| HumanOperationError::Refused)?;
+        if activity.actor_did() != owner.as_bytes() || activity.network_id() != agent.context.network_id
+            || activity.idempotency_key() != action_key
+            || layerx_intents::canonical::activity_id(&activity).map_err(|_| HumanOperationError::Refused)? != served.metadata.activity_id
+            || consent.consent.target.as_bytes() != actor
+            || consent.consent.target_public_key != agent.context.custody_public_key {
+            return Err(HumanOperationError::Refused);
+        }
+        found = true;
+    }
+    Ok(found)
+}
+
 pub fn evidence_export(
     store: &Store,
     tenant: &TenantId,

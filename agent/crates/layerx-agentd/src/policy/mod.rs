@@ -16,6 +16,7 @@ pub use eval::{
     PurposeText, RateBound, Rule, RuleConstraints, RuleEffect, RuleMatcher, SequenceWindow,
 };
 pub use operation::{
+    evaluate_admission_with_context, evaluate_timed_admission_with_context,
     dry_run_intent_request_id, dry_run_intent_with_context, dry_run_request_id,
     dry_run_with_context, load_tenant_registries, PolicyDryRunRefusal,
     PolicyLoadError, TenantPolicyRegistries, VerifiedPolicyContext,

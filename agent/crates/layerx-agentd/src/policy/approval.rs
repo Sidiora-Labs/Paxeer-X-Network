@@ -592,6 +592,27 @@ pub fn hold_reserved(
     )
 }
 
+pub(crate) struct StagedApproval { held:HeldApproval }
+impl StagedApproval {
+    pub(crate) fn companion(&self)->Result<(TenantKey,Vec<u8>),ApprovalError>{
+        Ok((hold_storage_key(&self.held.context.tenant,self.held.context.request_id)?,encode_hold(&self.held)?))
+    }
+    pub(crate) fn publish(self,registry:&ApprovalRegistry,store:&Store)->Result<(),ApprovalError>{
+        let (key,bytes)=self.companion()?;
+        let persisted=store.get(&key).ok_or(ApprovalError::CorruptRecord)?;
+        if persisted.class()!=crate::store::StorageClass::LocalOnly || persisted.bytes()!=bytes {return Err(ApprovalError::CorruptRecord)};
+        let mut holds=registry.holds.lock().map_err(|_|ApprovalError::Unavailable)?;
+        if holds.contains_key(&self.held.context.request_id){return Err(ApprovalError::DuplicateHold)};
+        holds.insert(self.held.context.request_id,self.held);Ok(())
+    }
+}
+pub(crate) fn stage_hold_reserved_at(context:ApprovalContext,prepared:Prepared,current_sequence:u64,
+    expires_at_sequence:u64,reservation:&BudgetReservation,clock:&dyn layerx_types::clock::Clock)->Result<StagedApproval,ApprovalError>{
+    let registry=ApprovalRegistry::default();
+    hold_reserved_at(&registry,context,prepared,current_sequence,expires_at_sequence,reservation,clock)?;
+    let mut holds=registry.holds.lock().map_err(|_|ApprovalError::Unavailable)?;
+    let (_,held)=holds.pop_first().ok_or(ApprovalError::CorruptRecord)?;Ok(StagedApproval{held})
+}
 pub fn hold_reserved_at(
     registry: &ApprovalRegistry,
     context: ApprovalContext,
