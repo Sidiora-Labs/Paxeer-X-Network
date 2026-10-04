@@ -59,7 +59,8 @@ public struct ProgramDiscovery: Sendable {
     public let programID: Data; public let lifecycle: ProgramLifecycle; public let version: UInt32
     public let codeHash: Data; public let abiVersion: UInt16; public let receiptDigest: Data; public let stateRoot: Data
     public let observedSequence: UInt64; public let observedAt: UInt64; public let validThrough: UInt64
-    public let verification = "server-side-receipt-verification-only"
+    public let deploymentReceiptDigest: Data?
+    public let verification: String
 }
 public struct ProgramInterface: Sendable {
     public let programID: Data; public let version: UInt32; public let codeHash: Data; public let abiVersion: UInt16
@@ -193,14 +194,19 @@ public struct ProgramsClient: Sendable {
         let id = try identifier(programID); let value = try await client.program("program.discover", request:
             .object(["program_id": .string(id), "requested_verification_level": .string(try level(verificationLevel))]),
             pathParameters: ["program_id": id])
-        return try verifiedDiscovery(value, programID: id, interface: false, now: nowMilliseconds()).discovery!
+        return try verifiedDiscovery(value, programID: id, interface: false, now: nowMilliseconds(), pinnedKey: sequencerPublicKey).discovery!
     }
     public func interface(programID: Data, verificationLevel: String) async throws -> ProgramInterface {
         let id = try identifier(programID)
         let value = try await client.program("program.interface", request: .object(["program_id": .string(id),
             "requested_verification_level": .string(try level(verificationLevel))]),
             pathParameters: ["program_id": id])
-        return try verifiedDiscovery(value, programID: id, interface: true, now: nowMilliseconds()).interface!
+        let result = try verifiedDiscovery(value, programID: id, interface: true, now: nowMilliseconds(), pinnedKey: sequencerPublicKey).interface!
+        if result.abiVersion == ProgramGuestABI.v3.rawValue || result.abiVersion == ProgramGuestABI.v4.rawValue {
+            let head = try await discover(programID: programID, verificationLevel: verificationLevel)
+            try bindProgramInterface(result, discovery: head)
+        }
+        return result
     }
     public func simulate(_ call: ProgramCall) async throws -> ProgramSimulation {
         guard call.nativeCall == nil || protocolVersion == 3 else { throw programInvalid() }
@@ -443,19 +449,25 @@ private func verifiedSimulation(_ value: JSONValue, expectedProgramID: Data, bin
     return verified
 }
 
-private func verifiedDiscovery(_ value: JSONValue, programID: String, interface: Bool, now: UInt64)
+func verifiedDiscovery(_ value: JSONValue, programID: String, interface: Bool, now: UInt64, pinnedKey: Data)
     throws -> (discovery: ProgramDiscovery?, interface: ProgramInterface?) {
     guard let object = value.objectValue else { throw programVerification() }
-    let fields: Set<String> = interface
+    var fields: Set<String> = interface
         ? ["program_id", "version", "code_hash", "abi_version", "interface", "interface_digest",
             "receipt_digest", "state_root", "observed_sequence", "observed_at", "valid_through", "source", "verification"]
         : ["program_id", "lifecycle", "version", "code_hash", "abi_version", "receipt_digest", "state_root",
             "observed_sequence", "observed_at", "valid_through", "verification"]
+    if !interface {
+        for name in ["deployment_receipt_digest", "discovery_public_key", "discovery_signature"] where object[name] != nil {
+            fields.insert(name)
+        }
+    }
     try requireFields(object, fields)
     let observedAt = try decimalUInt64Field(object, "observed_at")
     let validThrough = try decimalUInt64Field(object, "valid_through")
     guard object["program_id"]?.stringValue == programID, try uint32Field(object, "version") > 0,
-          let abi = object["abi_version"]?.integerValue, abi == 1 || abi == 2,
+          let abi = object["abi_version"]?.integerValue, let exactABI = UInt16(exactly: abi),
+          ProgramGuestABI(rawValue: exactABI) != nil,
           hex32(try text(object, "code_hash")), hex32(try text(object, "receipt_digest")),
           hex32(try text(object, "state_root")), validThrough >= observedAt, now <= validThrough,
           object["verification"]?.stringValue == (interface ? "deployment-interface-and-current-head-verified" :
@@ -481,10 +493,40 @@ private func verifiedDiscovery(_ value: JSONValue, programID: String, interface:
     } else {
         guard let lifecycle = object["lifecycle"]?.stringValue,
               let typedLifecycle = ProgramLifecycle(rawValue: lifecycle) else { throw programDecode() }
+        var proof = Data("LayerX/program-discovery-proof/v1\0".utf8)
+        proof.append(program); proof.append(1); proof.append(bigEndian(version)); proof.append(codeHash)
+        proof.append(bigEndian(abiVersion)); proof.append(bigEndian(observedSequence)); proof.append(bigEndian(observedAt))
+        proof.append(bigEndian(validThrough)); proof.append(stateRoot)
+        guard Data(SHA256.hash(data: proof)) == receiptDigest else { throw programVerification() }
+        let deployment = object["deployment_receipt_digest"] == nil ? nil
+            : try hexData(object, "deployment_receipt_digest", exactBytes: 32)
+        let signed = object["discovery_public_key"] != nil || object["discovery_signature"] != nil
+        var verification = "server-side-receipt-verification-only"
+        if signed {
+            let publicKey = try hexData(object, "discovery_public_key", exactBytes: 32)
+            let signature = try hexData(object, "discovery_signature", exactBytes: 64)
+            guard pinnedKey.count == 32, publicKey == pinnedKey,
+                  try Curve25519.Signing.PublicKey(rawRepresentation: publicKey).isValidSignature(signature, for: receiptDigest)
+            else { throw programVerification() }
+            verification = "sequencer-signed"
+        }
+        guard signed || abiVersion == ProgramGuestABI.v1.rawValue || abiVersion == ProgramGuestABI.v2.rawValue else {
+            throw programVerification()
+        }
         return (ProgramDiscovery(programID: program, lifecycle: typedLifecycle, version: version,
             codeHash: codeHash, abiVersion: abiVersion, receiptDigest: receiptDigest, stateRoot: stateRoot,
-            observedSequence: observedSequence, observedAt: observedAt, validThrough: validThrough), nil)
+            observedSequence: observedSequence, observedAt: observedAt, validThrough: validThrough,
+            deploymentReceiptDigest: deployment, verification: verification), nil)
     }
+}
+
+func bindProgramInterface(_ value: ProgramInterface, discovery: ProgramDiscovery) throws {
+    guard discovery.verification == "sequencer-signed", value.programID == discovery.programID,
+          value.version == discovery.version, value.codeHash == discovery.codeHash,
+          value.abiVersion == discovery.abiVersion, value.stateRoot == discovery.stateRoot,
+          value.observedSequence == discovery.observedSequence, value.observedAt == discovery.observedAt,
+          value.validThrough == discovery.validThrough, value.receiptDigest == discovery.deploymentReceiptDigest
+    else { throw programVerification() }
 }
 
 private func typedSource(_ source: [String: JSONValue]) throws -> ProgramSource {

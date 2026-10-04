@@ -262,7 +262,7 @@ func bindNativeProgramActivity(_ ordinal: UInt16, _ expected: Data, _ signed: Da
 }
 
 private func lifecycleCode(_ program: Data, _ abi: UInt16, _ hash: Data, _ wasm: Data) throws {
-  guard program.count == 32, program.contains(where: { $0 != 0 }), (1...3).contains(abi),
+  guard program.count == 32, program.contains(where: { $0 != 0 }), ProgramGuestABI(rawValue: abi) != nil,
     hash.count == 32, wasm.count >= 8, wasm.count <= 1_048_576,
     wasm.prefix(8) == Data([0, 97, 115, 109, 1, 0, 0, 0]), hash == lifecycleHash(wasm)
   else { throw NativeProgramCallError.invalid }

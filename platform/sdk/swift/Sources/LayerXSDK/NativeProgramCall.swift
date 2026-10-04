@@ -1,5 +1,15 @@
 import Foundation
 
+public enum ProgramGuestABI: UInt16, Sendable {
+    case v1 = 1
+    case v2 = 2
+    case v3 = 3
+    case v4 = 4
+
+    public var capabilityEncoding: UInt16 { self == .v1 ? 1 : 2 }
+    public var accountProfile2Supported: Bool { self != .v1 }
+}
+
 public struct NativeProgramCall: Sendable {
     public let programID: Data
     public let guestABI: UInt16
@@ -19,7 +29,7 @@ public struct NativeProgramCall: Sendable {
 
     public func encode() throws -> Data {
         let entry = Data(entrypoint.utf8)
-        guard programID.count == 32, programID.contains(where: { $0 != 0 }), guestABI == 1 || guestABI == 2,
+        guard programID.count == 32, programID.contains(where: { $0 != 0 }), ProgramGuestABI(rawValue: guestABI) != nil,
               !entry.isEmpty, entry.count <= 128,
               entry.allSatisfy({ (65...90).contains($0) || (97...122).contains($0) || (48...57).contains($0) || $0 == 95 || $0 == 46 }),
               calldata.count <= 1048576, capabilities.count <= 65535, accessDeclaration.count <= 1048576,

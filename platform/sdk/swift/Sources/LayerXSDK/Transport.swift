@@ -321,6 +321,14 @@ public final class AgentHTTPTransport: PlatformTransport, @unchecked Sendable {
     static func validVerification(_ operation: String, value: JSONValue, status: JSONValue?) -> Bool {
         guard let object = status?.objectValue else { return false }
         if operation == "program.discover" || operation == "program.interface" {
+            if operation == "program.discover", let discovery = value.objectValue,
+               canonicalHex(discovery["discovery_public_key"], bytes: 32, empty: false),
+               canonicalHex(discovery["discovery_signature"], bytes: 64, empty: false),
+               canonicalHex(discovery["receipt_digest"], bytes: 32, empty: false),
+               exact(object, ["state", "level"]), object["state"]?.stringValue == "Achieved",
+               object["level"]?.stringValue == "SequencerSigned" {
+                return true
+            }
             return exact(object, ["state", "requested", "achieved", "reason"])
                 && object["state"]?.stringValue == "Unverified"
                 && object["requested"]?.stringValue == "SequencerSigned"
