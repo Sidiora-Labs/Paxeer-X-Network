@@ -855,6 +855,41 @@ fn canonical_program_id(value: &str) -> bool {
             .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum NativeExplorerPublicRoute {
+    Program(layerx_programs_runtime::ProgramId),
+    Resolve(layerx_programs_runtime::ProgramId),
+}
+
+pub fn native_explorer_public_route(
+    method: &str,
+    target: &str,
+) -> Option<NativeExplorerPublicRoute> {
+    if method != "GET" {
+        return None;
+    }
+    let (path, query) = http::split_target(target).ok()?;
+    let remainder = path.strip_prefix("/v1/programs/")?;
+    let (identifier, resolve) = match remainder.strip_suffix("/reads/resolve") {
+        Some(identifier) => (identifier, true),
+        None if query.is_none() => (remainder, false),
+        None => return None,
+    };
+    if !canonical_program_id(identifier) {
+        return None;
+    }
+    let mut bytes = [0; 32];
+    for (index, byte) in bytes.iter_mut().enumerate() {
+        *byte = u8::from_str_radix(&identifier[index * 2..index * 2 + 2], 16).ok()?;
+    }
+    let program = layerx_programs_runtime::ProgramId::new(bytes).ok()?;
+    Some(if resolve {
+        NativeExplorerPublicRoute::Resolve(program)
+    } else {
+        NativeExplorerPublicRoute::Program(program)
+    })
+}
+
 /// Parses the exact production route set shared with the emulator. Emulator
 /// administration paths are never accepted.
 ///

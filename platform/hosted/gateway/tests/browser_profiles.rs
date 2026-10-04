@@ -7,6 +7,10 @@ use layerx_platform_gateway::http::{
     unified_account_preflight, write_response_connection_with_browser_profile,
     write_response_connection_with_origin, BrowserRouteProfile, IncomingRequest, OutgoingResponse,
 };
+use layerx_platform_gateway::{
+    native_explorer_public_route, production_route, NativeExplorerPublicRoute, ProductionRoute,
+};
+use layerx_programs_runtime::ProgramId;
 use serde_json::Value;
 
 const ORIGIN: &str = "https://api-mainnet-beta.paxeer.network";
@@ -183,7 +187,10 @@ fn explorer_account_profile_is_exact_scoped_and_keeps_public_data_admission() {
     let routes = catalogue["routes"].as_array().expect("routes");
     let entries = routes
         .iter()
-        .filter(|route| route["upstream"] == "layerx-explorer")
+        .filter(|route| {
+            route["upstream"] == "layerx-explorer"
+                && route["path"] == "/v1/accounts/{accountId}/unified"
+        })
         .collect::<Vec<_>>();
     assert_eq!(entries.len(), 1);
     let entry = entries[0];
@@ -270,6 +277,120 @@ fn explorer_account_profile_is_exact_scoped_and_keeps_public_data_admission() {
             header,
             "2"
         ));
+    }
+}
+
+#[test]
+fn native_program_and_name_reads_use_exact_public_owner_routes() {
+    let id = "11".repeat(32);
+    let program = ProgramId::new([0x11; 32]).expect("actual nonzero program identifier");
+    let record = format!("/v1/programs/{id}");
+    let resolve = format!("{record}/reads/resolve?name=alice.layerx");
+    assert_eq!(
+        native_explorer_public_route("GET", &record),
+        Some(NativeExplorerPublicRoute::Program(program))
+    );
+    assert_eq!(
+        native_explorer_public_route("GET", &resolve),
+        Some(NativeExplorerPublicRoute::Resolve(program))
+    );
+    let catalogue: Value = serde_json::from_str(CATALOGUE).expect("actual production catalogue");
+    let entries = catalogue["routes"]
+        .as_array()
+        .expect("routes")
+        .iter()
+        .filter(|route| route["upstream"] == "layerx-explorer")
+        .collect::<Vec<_>>();
+    assert_eq!(entries.len(), 3);
+    let account = entries
+        .iter()
+        .find(|entry| entry["path"] == "/v1/accounts/{accountId}/unified")
+        .expect("existing native account owner");
+    for path in [
+        "/v1/programs/{program_id}",
+        "/v1/programs/{program_id}/reads/resolve",
+    ] {
+        let routes = entries
+            .iter()
+            .filter(|entry| entry["path"] == path)
+            .collect::<Vec<_>>();
+        assert_eq!(routes.len(), 1, "one exact native public route");
+        let route = routes[0];
+        assert_eq!(route["method"], "GET");
+        assert_eq!(route["authentication"], "public-read");
+        assert_eq!(route["upstream_path"], path);
+        for field in [
+            "service",
+            "upstream",
+            "transport",
+            "timeout_seconds",
+            "retries",
+            "health_predicate",
+            "timeout_scope",
+            "connect_timeout_seconds",
+            "source",
+            "proxy",
+        ] {
+            assert_eq!(route[field], account[field], "same genuine owner {field}");
+        }
+    }
+    for path in [&record, &resolve] {
+        assert_eq!(browser_route_profile(path), BrowserRouteProfile::Legacy);
+        assert!(!browser_profile_request_header(
+            "GET",
+            path,
+            "layerx-unified-profile",
+            "2"
+        ));
+        for method in ["POST", "PUT", "DELETE", "OPTIONS"] {
+            assert_eq!(native_explorer_public_route(method, path), None);
+        }
+    }
+    for path in [
+        format!("/v1/programs/{}", "00".repeat(32)),
+        format!("/v1/programs/{}", "AA".repeat(32)),
+        "/v1/programs/11".to_owned(),
+        format!("{record}?name=alice.layerx"),
+        format!("{record}/"),
+        format!("{record}/reads"),
+        format!("{record}/reads/resolve/extra"),
+        format!("{record}/reads/../resolve"),
+        format!("/v1/programs/%31{}/reads/resolve", "1".repeat(63)),
+        "/v1/programs/registry".to_owned(),
+        format!("/v1/programs/registry/{id}"),
+        format!("/v1/programs/registry/{id}/interface"),
+        format!("/v1/programs/activities/{id}"),
+        format!("/v1/programs/receipts/by-idempotency/{id}"),
+    ] {
+        assert_eq!(
+            native_explorer_public_route("GET", &path),
+            None,
+            "closed native selector {path}"
+        );
+    }
+    assert_eq!(
+        production_route("GET", "/v1/programs/registry"),
+        Ok(ProductionRoute::ProgramCatalog)
+    );
+    assert_eq!(
+        production_route("GET", &format!("/v1/programs/registry/{id}")),
+        Ok(ProductionRoute::ProgramRegistry(id.as_str()))
+    );
+    assert_eq!(
+        production_route("GET", &format!("/v1/programs/registry/{id}/interface")),
+        Ok(ProductionRoute::ProgramInterface(id.as_str()))
+    );
+    for (path, owner) in [
+        ("/v1/programs/call", ProductionRoute::ProgramCall),
+        ("/v1/programs/simulate", ProductionRoute::ProgramSimulation),
+        ("/v1/programs/read", ProductionRoute::ProgramRead),
+        ("/v1/programs/deploy", ProductionRoute::ProgramDeploy),
+        ("/v1/programs/upgrade", ProductionRoute::ProgramUpgrade),
+        ("/v1/programs/wind-down", ProductionRoute::ProgramWindDown),
+    ] {
+        assert_eq!(production_route("POST", path), Ok(owner));
+        assert_eq!(native_explorer_public_route("GET", path), None);
+        assert_eq!(native_explorer_public_route("POST", path), None);
     }
 }
 

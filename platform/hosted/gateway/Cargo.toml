@@ -20,6 +20,7 @@ layerx-proof.workspace = true
 layerx-crypto = { path = "../../../agent/crates/layerx-crypto" }
 layerx-types = { path = "../../../agent/crates/layerx-types" }
 layerx-wire = { path = "../../../agent/crates/layerx-wire" }
+layerx-programs-runtime = { path = "../../../programs/crates/layerx-programs-runtime" }
 native-tls.workspace = true
 rustls.workspace = true
 serde.workspace = true

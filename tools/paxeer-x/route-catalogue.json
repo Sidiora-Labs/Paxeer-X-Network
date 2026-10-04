@@ -45127,6 +45127,50 @@
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3
+    },
+    {
+      "id": "layerx-explorer:GET:/v1/programs/{program_id}",
+      "service": "explorer",
+      "method": "GET",
+      "path": "/v1/programs/{program_id}",
+      "transport": "http",
+      "authentication": "public-read",
+      "upstream": "layerx-explorer",
+      "upstream_path": "/v1/programs/{program_id}",
+      "timeout_seconds": 8,
+      "retries": 0,
+      "health_predicate": "service-ready-and-network-version-bound",
+      "version": "1",
+      "consumers": [
+        "wallet",
+        "explorer"
+      ],
+      "source": "human/crates/layerx-explorer-index/src/main.rs",
+      "proxy": true,
+      "timeout_scope": "per-io",
+      "connect_timeout_seconds": 3
+    },
+    {
+      "id": "layerx-explorer:GET:/v1/programs/{program_id}/reads/resolve",
+      "service": "explorer",
+      "method": "GET",
+      "path": "/v1/programs/{program_id}/reads/resolve",
+      "transport": "http",
+      "authentication": "public-read",
+      "upstream": "layerx-explorer",
+      "upstream_path": "/v1/programs/{program_id}/reads/resolve",
+      "timeout_seconds": 8,
+      "retries": 0,
+      "health_predicate": "service-ready-and-network-version-bound",
+      "version": "1",
+      "consumers": [
+        "wallet",
+        "explorer"
+      ],
+      "source": "human/crates/layerx-explorer-index/src/main.rs",
+      "proxy": true,
+      "timeout_scope": "per-io",
+      "connect_timeout_seconds": 3
     }
   ],
   "denied_surfaces": [

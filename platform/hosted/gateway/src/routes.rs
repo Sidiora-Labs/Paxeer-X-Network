@@ -514,9 +514,24 @@ pub(super) fn route(config: &Config, request: &IncomingRequest) -> Option<Outgoi
         r["proxy"] == true
             && r["method"] == request.method
             && r["path"].as_str().is_some_and(|p| {
-                matches_path(p, &request.path)
-                    || (r["upstream"] == "layerx-explorer"
-                        && browser_profile == http::BrowserRouteProfile::UnifiedAccount)
+                if r["upstream"] == "layerx-explorer" {
+                    match p {
+                        "/v1/accounts/{accountId}/unified" => {
+                            browser_profile == http::BrowserRouteProfile::UnifiedAccount
+                        }
+                        "/v1/programs/{program_id}" => matches!(
+                            super::native_explorer_public_route(&request.method, &request.path),
+                            Some(super::NativeExplorerPublicRoute::Program(_))
+                        ),
+                        "/v1/programs/{program_id}/reads/resolve" => matches!(
+                            super::native_explorer_public_route(&request.method, &request.path),
+                            Some(super::NativeExplorerPublicRoute::Resolve(_))
+                        ),
+                        _ => false,
+                    }
+                } else {
+                    matches_path(p, &request.path)
+                }
             })
     })?;
     let id = entry["service"].as_str()?;
@@ -524,13 +539,15 @@ pub(super) fn route(config: &Config, request: &IncomingRequest) -> Option<Outgoi
         return Some(response(403, "private_service", None));
     }
     if entry["upstream"] == "layerx-explorer" {
-        if browser_profile != http::BrowserRouteProfile::UnifiedAccount
+        let account = browser_profile == http::BrowserRouteProfile::UnifiedAccount;
+        if (!account
+            && super::native_explorer_public_route(&request.method, &request.path).is_none())
             || request.method != "GET"
             || !request.body.is_empty()
             || request
                 .headers
                 .get("layerx-unified-profile")
-                .is_some_and(|value| !matches!(value.as_str(), "1" | "2"))
+                .is_some_and(|value| !account || !matches!(value.as_str(), "1" | "2"))
         {
             return Some(response(400, "invalid_explorer_profile_request", None));
         }

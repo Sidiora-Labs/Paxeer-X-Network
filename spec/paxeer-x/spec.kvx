@@ -32941,3 +32941,27 @@ qualification_status = "implemented-not-qualified"
 build_exit_code = 2
 verify_status = "unrun"
 qualification_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-104.35.20-build.log"
+
+[task.0.14]
+title = "Expose native public program and naming explorer reads through the unified gateway"
+status = "done"
+mode = "BUILD"
+wave = 2
+requires = ["0.2", "0.13"]
+reqs = ["1078"]
+do_1 = "Connect exact real standalone public protocol Program and naming GET handlers through existing protected layerx-explorer upstream and mandatory identity/readiness pins; retain all legacy route authentication, POST authority and decoder refusal contracts."
+touches = ["interop/Cargo.lock", "platform/hosted/gateway/Cargo.toml", "platform/Cargo.lock", "tools/paxeer-x/route-catalogue.json", "platform/hosted/gateway/src/lib.rs", "platform/hosted/gateway/src/routes.rs", "platform/hosted/gateway/src/main.rs", "platform/hosted/gateway/tests/browser_profiles.rs"]
+build_cmd = "timeout 15m env CARGO_TARGET_DIR=/root/lx-target/migration-gateway /root/.cargo/bin/cargo test --locked --manifest-path platform/Cargo.toml -p layerx-platform-gateway --test browser_profiles --no-run"
+verify_cmd = "timeout 15m env CARGO_TARGET_DIR=/root/lx-target/migration-gateway /root/.cargo/bin/cargo test --locked --manifest-path platform/Cargo.toml -p layerx-platform-gateway --test browser_profiles"
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop at original cap, unrelated failure, missing genuine authority or weakening; report exact source state and exit/log."
+completion_basis_policy = "Owner CONSTITUTION: fully implemented DONE; qualification separate."
+source_ownership = "Root owns manifests/spec/publication; browser client belongs to separate owner22.10 and must remain source-frozen during its build."
+completion_basis = "implementation"
+qualification_status = "passed"
+build_exit_code = 0
+verify_exit_code = 0
+qualification_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-0.14-verify.log"
