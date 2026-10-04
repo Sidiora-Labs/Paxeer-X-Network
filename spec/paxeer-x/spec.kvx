@@ -32281,7 +32281,7 @@ evidence_policy = "Private source-bound artifacts, generated identities and raw 
 
 [task.24.19]
 title = "Commit replay-safe reset activation without post-effect journal dependency"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 4
 requires = ["24.17", "24.18", "4.4"]
@@ -32305,12 +32305,14 @@ path_policy = "Exact declared paths only; protect4.4 bootstrap lease until quali
 evidence_policy = "Private source-bound artifacts, generated identities and raw logs outside the repository; no credential collection or public operational records."
 
 
-source_status = "partial"
-qualification_status = "unrun_partial_source"
-remaining_source = "Read-only peer-authenticated generation transport preserving separate guarantor identity capabilities and DATA0700 access."
+source_status = "complete"
+qualification_status = "UNRUN"
 retained_contract_paths = ["platform/hosted/node/supervisor.sh", "platform/hosted/node/reset_state.py", "platform/hosted/node/data_directory.py", "platform/hosted/node/bootstrap.sh", "platform/hosted/node/tests/test_data_directory.py", "platform/hosted/node/tests/reset_recovery.py", "platform/hosted/core/src/main.rs", "platform/hosted/core/tests/boundary.rs", "tools/qualification/paxeer-x/supervisor-reset-recovery.py", "tools/paxeer-x/gates/24.19.sh", "platform/hosted/node/guarantor.sh", "platform/hosted/node/deployment.yaml", "docker/kernel/init.sh"]
 delegated_source_task = "24.20"
 delegated_source_paths = ["platform/hosted/node/supervisor.sh", "platform/hosted/node/bootstrap.sh", "platform/hosted/node/tests/reset_recovery.py", "platform/hosted/node/guarantor.sh", "platform/hosted/node/deployment.yaml", "docker/kernel/init.sh"]
+
+completion_basis = "implementation"
+source_completion_evidence = "Owner24.20 confirms actual generation transport closes all remaining parent implementation."
 
 [task.108.2.5]
 title = "Inventory and produce shared registry and router material"
