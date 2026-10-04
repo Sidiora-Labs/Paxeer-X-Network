@@ -25628,8 +25628,15 @@ fleet_cutoff_utc = "2026-10-04T14:06:30Z"
 fleet_authority = "User ordered thirty agents into pending integrations within four hours; this task has a fresh bounded implementation assignment."
 source_status = "complete"
 completion_basis = "implementation under owner CONSTITUTION; qualification separately recorded"
-qualification_status = "UNRUN"
+qualification_status = "UNRUN_BUILD_FAILED"
 source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-2.4-publication.json"
+qualification_revision = "0fbc7e4ead6dd43104d62c9e0da1fb01e3291ff4"
+build_status = "FAILED"
+build_exit_code = 2
+build_command = "PATH=/root/.cargo/bin:$PATH timeout --kill-after=5s 600s flock /root/lx-cargo/native-build.lock make -j4 BUILD_DIR=/root/lx-ops/paxeer-x-integration-2026-10-03/qualification/task24/artifacts PROGRAMS_TARGET_DIR=/root/lx-target/arbiter-prestate/rust PROGRAMS_RUNTIME_LIB=/root/lx-target/arbiter-prestate/rust/debug/liblayerx_programs_sandbox.a paxeer-x-finality-recordings-build"
+build_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/qualification/task24/build-repair1.log"
+qualification_evidence = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-2.4-source-handoff.json"
+verification_status = "UNRUN"
 
 [task.5.2]
 title = "Build deposit proofs from authenticated current light-client trust"
