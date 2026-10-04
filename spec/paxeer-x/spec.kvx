@@ -34936,3 +34936,25 @@ source_status = "complete"
 completion_basis = "implementation complete; declared relocation gate passed"
 qualification_evidence = "5f8b77cef4d015af0288d8d63d1aebc0e7a6f73e | timeout 10m python3 /root/lx-ops/paxeer-x-integration-2026-10-03/task-200.7-layout-verify.py | 0 | /root/lx-ops/paxeer-x-integration-2026-10-03/task-200.7-layout-verify.log"
 source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-200.7-source-handoff.json"
+
+[task.7.8]
+title = "Align the language fixture with canonical terminal usage and guest response codes"
+status = "done"
+mode = "BUILD"
+wave = 7
+requires = ["7.7"]
+reqs = ["124"]
+touches = ["tests/programs/test_language_abi.c"]
+do_1 = "Apply owner-approved exact2line terminal layout proposal: real60byte usage cursor and exact code7 from all three authentic guests; preserve every other bound/assertion and producer."
+build_cmd = "python3 tools/qualification/paxeer-x/programs_language_abi.py --build"
+verify_cmd = "timeout 20m python3 tools/qualification/paxeer-x/programs_language_abi.py"
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 0
+time_limit_minutes = 20
+owner_authority = "User explicitly approved task-7.7-terminal-layout-proposal.patch and one20minute build/verification window."
+stop_condition = "START2026-10-04T12:26:59.809020+00:00 END2026-10-04T12:46:59.809020+00:00; exact wholepatch, publish, onebuild/oneverify; no furtherrepairs; preserve every previous result."
+qualification_status = "UNRUN"
+source_status = "complete"
+completion_basis = "implementation under owner CONSTITUTION; qualification separately recorded"
+source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-7.8-source-handoff.json"

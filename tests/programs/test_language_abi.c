@@ -388,12 +388,12 @@ static int language_terminal(const lxp_receipt *receipt,lxp_byte_span *response,
             LANG_CHECK(language_take(&r,1U,&bytes)==0 && (bytes[0]==1U || bytes[0]==2U));
             LANG_CHECK(language_take(&r,bytes[0]==1U?4U:8U,&bytes)==0);
         }
-        LANG_CHECK(language_take(&r,64U,&bytes)==0);
+        LANG_CHECK(language_take(&r,60U,&bytes)==0);
         LANG_CHECK(language_take(&r,1U,&bytes)==0 && bytes[0]<=1U);
         if(bytes[0]==1U) LANG_CHECK(language_blob(&r,8U,&trace)==0);
         LANG_CHECK(language_take(&r,34U,&bytes)==0 && bytes[32U]==0U && bytes[33U]==4U);
         LANG_CHECK(language_take(&r,1U,&bytes)==0 && bytes[0]==0U);
-        LANG_CHECK(language_take(&r,4U,&bytes)==0 && language_u32(bytes)==0U);
+        LANG_CHECK(language_take(&r,4U,&bytes)==0 && language_u32(bytes)==7U);
         LANG_CHECK(language_blob(&r,8U,response)==0);
         LANG_CHECK(language_blob(&r,8U,&graph)==0 && r.offset==r.length);
         LANG_CHECK(graph.length==receipt->program_outcome.call_graph_payload.length &&
