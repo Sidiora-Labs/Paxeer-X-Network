@@ -47,7 +47,11 @@ mod ffi;
 #[allow(unsafe_code)]
 mod ffi_call;
 #[cfg(feature = "host-ffi")]
-pub use ffi_call::{settle_host_sandbox_escrow_charge, settle_reserved_host_sandbox_escrow_charge};
+pub use ffi_call::{
+    read_native_receipt_authority, settle_host_sandbox_escrow_charge,
+    settle_reserved_host_sandbox_escrow_charge, RawNativeReceiptAuthorityV1,
+    RAW_NATIVE_RECEIPT_AUTHORITY_V1_BYTES,
+};
 #[cfg(feature = "host-ffi")]
 #[allow(unsafe_code)]
 mod ffi_interface;

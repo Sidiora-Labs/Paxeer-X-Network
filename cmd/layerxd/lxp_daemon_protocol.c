@@ -1109,6 +1109,9 @@ lxp_result lxp_daemon_protocol_owner_attach(
                     receipt_authority, &header, &authorization);
                 if (status == LXP_OK) status = lxp_verified_receipt_index_add(
                     verified_receipts, &receipt, authorization.public_key, scratch);
+                if (status == LXP_OK) status = lxp_verified_receipt_index_add_authority(
+                    verified_receipts, evidence.canonical_receipt, evidence.canonical_header,
+                    evidence.header_signature, &evidence.receipt_proof, &authorization, scratch);
             }
             (void)lxp_arena_reset(scratch, mark);
         }
@@ -1284,6 +1287,10 @@ lxp_result lxp_daemon_protocol_publish_receipt(
             owner->receipt_authority, &header, &authorization);
         if (status == LXP_OK) status = lxp_verified_receipt_index_add(
             owner->verified_receipts, &receipt, authorization.public_key, owner->scratch);
+        if (status == LXP_OK) status = lxp_verified_receipt_index_add_authority(
+            owner->verified_receipts, (lxp_byte_span){canonical_receipt, receipt_length},
+            (lxp_byte_span){canonical_header, header_length}, header_signature,
+            receipt_proof, &authorization, owner->scratch);
     }
     if (status == LXP_OK) owner->latest_sealed_timestamp = receipt.timestamp;
     (void)lxp_arena_reset(owner->scratch, mark);

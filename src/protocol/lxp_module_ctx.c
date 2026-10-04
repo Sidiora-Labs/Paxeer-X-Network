@@ -454,6 +454,16 @@ lxp_result lxp_ctx_verified_receipt_facts(
                                               receipt_digest, facts);
 }
 
+lxp_result lxp_ctx_verified_receipt_authority_facts(
+    const lxp_module_ctx *ctx, const uint8_t receipt_digest[32],
+    lxp_verified_receipt_authority_facts *facts)
+{
+    if (ctx == NULL || ctx->verified_receipts == NULL)
+        return LXP_ERR_UNKNOWN_FIELD;
+    return lxp_verified_receipt_index_lookup_authority(ctx->verified_receipts,
+                                                       receipt_digest, facts);
+}
+
 lxp_result lxp_ctx_kv_get(lxp_module_ctx *ctx, const uint8_t *key,
                           size_t key_length, const uint8_t **value,
                           size_t *value_length)

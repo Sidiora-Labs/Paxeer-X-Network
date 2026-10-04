@@ -22,7 +22,8 @@ enum {
     PROGRAM_CALL_FIXED_BYTES = 32 + 2 + 2 + 4 + 2 + 4 + 4 +
                                LX_PROGRAMS_CALL_BUDGET_FIELDS * 8,
     PROGRAM_RECORD_BYTES = 71,
-    PROGRAM_KEY_BYTES = 40
+    PROGRAM_KEY_BYTES = 40,
+    ARBITER_AUTHORITY_BYTES = 247
 };
 
 enum {
@@ -66,6 +67,7 @@ typedef struct lxp_programs_call_catalog_entry {
 
 struct lxp_programs_call_activity {
     lxp_module_ctx *ctx;
+    uint32_t network_id;
     uint32_t replay_prefix_length;
     lxp_programs_replay_capture replay;
     uint8_t *replay_runtime, *replay_authority, *replay_hosts;
@@ -102,6 +104,8 @@ struct lxp_programs_call_activity {
     uint32_t catalog_cursor;
     bool receipt_view_active;
     lxp_verified_receipt_facts receipt_view;
+    bool arbiter_authority_active;
+    uint8_t arbiter_authority[ARBITER_AUTHORITY_BYTES];
     struct {
         bool active;
         uint8_t account[32];
@@ -741,6 +745,111 @@ lxp_result layerx_programs_call_receipt_view_byte(
     }
     if (offset >= length) return LXP_ERR_TRUNCATED;
     return (lxp_result)bytes[offset];
+}
+
+lxp_result layerx_programs_call_arbiter_authority_begin(
+    uint64_t token, uint64_t d0, uint64_t d1, uint64_t d2, uint64_t d3,
+    uint64_t expected_batch)
+{
+    lxp_programs_call_activity *value =
+        (lxp_programs_call_activity *)(uintptr_t)token;
+    lxp_verified_receipt_authority_facts facts;
+    uint8_t digest[32];
+    uint8_t *bytes;
+    size_t offset = 0U;
+    lxp_result status;
+    if (value == NULL) return LXP_ERR_NON_CANONICAL;
+    value->arbiter_authority_active = false;
+    (void)memset(value->arbiter_authority, 0,
+                 sizeof(value->arbiter_authority));
+    if (value->ctx == NULL || value->authority == NULL ||
+        value->network_id == 0U || expected_batch == 0U)
+        return LXP_ERR_NON_CANONICAL;
+    write_u64(digest, d0);
+    write_u64(digest + 8U, d1);
+    write_u64(digest + 16U, d2);
+    write_u64(digest + 24U, d3);
+    if (lxp_ct_is_zero(digest, sizeof(digest)))
+        return LXP_ERR_NON_CANONICAL;
+    (void)memset(&facts, 0, sizeof(facts));
+    status = lxp_ctx_verified_receipt_authority_facts(
+        value->ctx, digest, &facts);
+    if (status != LXP_OK) return status;
+    if (facts.version != 1U)
+        return LXP_ERR_VERSION_UNSUPPORTED;
+    if (facts.network_id != value->network_id)
+        return LXP_ERR_WRONG_NETWORK;
+    if (lxp_ct_memcmp(facts.receipt_digest, digest, sizeof(digest)) != 0)
+        return LXP_ERR_ROOT_MISMATCH;
+    if (facts.batch_number != expected_batch)
+        return LXP_ERR_ROOT_MISMATCH;
+    if (facts.batch_number >= value->ctx->batch_number ||
+        facts.global_sequence == 0U ||
+        facts.global_sequence >= value->ctx->global_sequence)
+        return LXP_ERR_NOT_YET_VALID;
+    if (facts.authorization_first_batch_number > facts.batch_number ||
+        facts.authorization_last_batch_number < facts.batch_number)
+        return LXP_ERR_AUTH_SCOPE;
+    bytes = value->arbiter_authority;
+#define AUTHORITY_U16(field) do { \
+    bytes[offset++] = (uint8_t)((field) >> 8U); \
+    bytes[offset++] = (uint8_t)(field); \
+} while (0)
+#define AUTHORITY_U32(field) do { \
+    const uint32_t scalar = (uint32_t)(field); \
+    bytes[offset++] = (uint8_t)(scalar >> 24U); \
+    bytes[offset++] = (uint8_t)(scalar >> 16U); \
+    bytes[offset++] = (uint8_t)(scalar >> 8U); \
+    bytes[offset++] = (uint8_t)scalar; \
+} while (0)
+#define AUTHORITY_U64(field) do { \
+    write_u64(bytes + offset, (field)); \
+    offset += 8U; \
+} while (0)
+#define AUTHORITY_HASH(field) do { \
+    (void)memcpy(bytes + offset, (field), 32U); \
+    offset += 32U; \
+} while (0)
+    AUTHORITY_U16(facts.version);
+    AUTHORITY_U32(facts.network_id);
+    AUTHORITY_U16(facts.protocol_version);
+    AUTHORITY_U16(facts.module_id);
+    bytes[offset++] = facts.operation;
+    AUTHORITY_U32(facts.result_code);
+    AUTHORITY_U64(facts.batch_number);
+    AUTHORITY_U64(facts.epoch);
+    AUTHORITY_U64(facts.global_sequence);
+    AUTHORITY_U64(facts.authorization_first_batch_number);
+    AUTHORITY_U64(facts.authorization_last_batch_number);
+    AUTHORITY_HASH(facts.receipt_digest);
+    AUTHORITY_HASH(facts.activity_id);
+    AUTHORITY_HASH(facts.previous_state_root);
+    AUTHORITY_HASH(facts.resulting_state_root);
+    AUTHORITY_HASH(facts.sequencer_id);
+    AUTHORITY_HASH(facts.sequencer_public_key);
+#undef AUTHORITY_HASH
+#undef AUTHORITY_U64
+#undef AUTHORITY_U32
+#undef AUTHORITY_U16
+    if (offset != sizeof(value->arbiter_authority)) {
+        (void)memset(value->arbiter_authority, 0,
+                     sizeof(value->arbiter_authority));
+        return LXP_FATAL_INVARIANT;
+    }
+    value->arbiter_authority_active = true;
+    return LXP_OK;
+}
+
+lxp_result layerx_programs_call_arbiter_authority_byte(
+    uint64_t token, uint32_t offset)
+{
+    const lxp_programs_call_activity *value =
+        (const lxp_programs_call_activity *)(uintptr_t)token;
+    if (value == NULL || !value->arbiter_authority_active)
+        return LXP_ERR_UNKNOWN_FIELD;
+    if (offset >= sizeof(value->arbiter_authority))
+        return LXP_ERR_TRUNCATED;
+    return (lxp_result)value->arbiter_authority[offset];
 }
 
 lxp_result layerx_programs_call_balance_view_begin(
@@ -2353,6 +2462,7 @@ lxp_result lxp_programs_call_validate(
         lxp_ct_is_zero(authority->authority_hash, sizeof(authority->authority_hash)))
         return LXP_ERR_NON_CANONICAL;
     value->authority = authority;
+    value->network_id = activity->network_id;
     program_key(value->program_id, key);
     status = lxp_ctx_kv_get(ctx, key, sizeof(key), &record, &record_length);
     if (status != LXP_OK) return status;
@@ -2511,6 +2621,7 @@ lxp_result lxp_programs_call_execute(
         return LXP_ERR_NON_CANONICAL;
     value->authority = authority;
     value->effects = effects;
+    value->network_id = activity->network_id;
     status = lxp_ctx_bind_activity_state(ctx, value, call_activity_release);
     if (status != LXP_OK) return status;
     if (value->catalog == NULL) {

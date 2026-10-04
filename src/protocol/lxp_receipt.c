@@ -1011,3 +1011,161 @@ lxp_result lxp_verified_receipt_index_lookup(
     *facts = index->entries[left];
     return LXP_OK;
 }
+
+
+static bool verified_authority_facts_equal(
+    const lxp_verified_receipt_authority_facts *left,
+    const lxp_verified_receipt_authority_facts *right)
+{
+    return left->version == right->version &&
+        left->network_id == right->network_id &&
+        left->protocol_version == right->protocol_version &&
+        left->module_id == right->module_id &&
+        left->operation == right->operation &&
+        left->result_code == right->result_code &&
+        left->batch_number == right->batch_number &&
+        left->epoch == right->epoch &&
+        left->global_sequence == right->global_sequence &&
+        left->authorization_first_batch_number == right->authorization_first_batch_number &&
+        left->authorization_last_batch_number == right->authorization_last_batch_number &&
+        lxp_ct_memcmp(left->receipt_digest, right->receipt_digest, 32U) == 0 &&
+        lxp_ct_memcmp(left->activity_id, right->activity_id, 32U) == 0 &&
+        lxp_ct_memcmp(left->previous_state_root, right->previous_state_root, 32U) == 0 &&
+        lxp_ct_memcmp(left->resulting_state_root, right->resulting_state_root, 32U) == 0 &&
+        lxp_ct_memcmp(left->sequencer_id, right->sequencer_id, 32U) == 0 &&
+        lxp_ct_memcmp(left->sequencer_public_key, right->sequencer_public_key, 32U) == 0;
+}
+
+lxp_result lxp_verified_receipt_index_add_authority(
+    lxp_verified_receipt_index *index, lxp_byte_span canonical_receipt,
+    lxp_byte_span canonical_header, const uint8_t header_signature[64],
+    const lxp_merkle_proof *receipt_proof,
+    const lxp_sequencer_authorization *authorization, lxp_arena *arena)
+{
+    lxp_receipt receipt;
+    lxp_batch_header header;
+    lxp_verified_receipt_authority_facts facts;
+    uint8_t leaf[32];
+    size_t mark, at;
+    lxp_result status;
+    if (index == NULL || canonical_receipt.bytes == NULL ||
+        canonical_receipt.length == 0U ||
+        canonical_receipt.length > LXP_MAX_ACTIVITY_BYTES ||
+        canonical_header.bytes == NULL ||
+        canonical_header.length != LXP_BATCH_HEADER_ENCODED_SIZE ||
+        header_signature == NULL || receipt_proof == NULL ||
+        authorization == NULL || arena == NULL ||
+        index->authority_count > LXP_VERIFIED_RECEIPT_INDEX_MAX)
+        return LXP_ERR_NON_CANONICAL;
+    (void)memset(&facts, 0, sizeof(facts));
+    mark = lxp_arena_mark(arena);
+    status = lxp_receipt_decode(canonical_receipt.bytes,
+        canonical_receipt.length, true, &receipt);
+    if (status == LXP_OK)
+        status = lxp_batch_header_decode(canonical_header.bytes,
+            canonical_header.length, &header);
+    if (status == LXP_OK)
+        status = lxp_batch_verify_signature(&header, header_signature, 64U,
+            authorization, arena);
+    if (status == LXP_OK)
+        status = lxp_receipt_verify(&receipt, authorization->public_key, arena);
+    if (status == LXP_OK)
+        status = lxp_receipt_digest(&receipt, arena, facts.receipt_digest);
+    if (status == LXP_OK)
+        status = lxp_merkle_leaf_hash(canonical_receipt.bytes,
+            canonical_receipt.length, leaf);
+    if (status == LXP_OK)
+        status = lxp_merkle_proof_verify(leaf, receipt_proof,
+            header.receipt_merkle_root);
+    if (status == LXP_OK &&
+        (header.network_id == 0U || header.batch_number == 0U ||
+         header.first_sequence == 0U ||
+         header.last_sequence < header.first_sequence ||
+         header.last_sequence - header.first_sequence >= UINT32_MAX ||
+         receipt.global_sequence < header.first_sequence ||
+         receipt.global_sequence > header.last_sequence ||
+         receipt.protocol_version != header.protocol_version ||
+         receipt.timestamp != header.timestamp_ms ||
+         receipt_proof->leaf_index != receipt.global_sequence - header.first_sequence ||
+         receipt_proof->leaf_count != header.last_sequence - header.first_sequence + 1U ||
+         lxp_ct_memcmp(receipt.activity_root, header.activity_merkle_root, 32U) != 0 ||
+         (receipt.global_sequence == header.first_sequence &&
+          lxp_ct_memcmp(receipt.previous_state_root, header.previous_state_root, 32U) != 0) ||
+         (receipt.global_sequence == header.last_sequence &&
+          lxp_ct_memcmp(receipt.resulting_state_root, header.resulting_state_root, 32U) != 0) ||
+         lxp_ct_is_zero(receipt.batch_id, 32U)))
+        status = LXP_ERR_ROOT_MISMATCH;
+    if (status == LXP_OK) {
+        facts.version = 1U;
+        facts.network_id = header.network_id;
+        facts.protocol_version = receipt.protocol_version;
+        facts.module_id = receipt.module_id;
+        facts.operation = receipt.operation;
+        facts.result_code = receipt.result_code;
+        facts.batch_number = header.batch_number;
+        facts.epoch = header.epoch;
+        facts.global_sequence = receipt.global_sequence;
+        facts.authorization_first_batch_number = authorization->first_batch_number;
+        facts.authorization_last_batch_number = authorization->last_batch_number;
+        (void)memcpy(facts.activity_id, receipt.activity_id, 32U);
+        (void)memcpy(facts.previous_state_root, receipt.previous_state_root, 32U);
+        (void)memcpy(facts.resulting_state_root, receipt.resulting_state_root, 32U);
+        (void)memcpy(facts.sequencer_id, authorization->sequencer_id, 32U);
+        (void)memcpy(facts.sequencer_public_key, authorization->public_key, 32U);
+    }
+    if (lxp_arena_reset(arena, mark) != LXP_OK) return LXP_FATAL_INVARIANT;
+    if (status != LXP_OK) return status;
+    for (at = 0U; at < index->authority_count; ++at) {
+        int order = memcmp(index->authority_entries[at].receipt_digest,
+            facts.receipt_digest, 32U);
+        if (order == 0)
+            return verified_authority_facts_equal(&index->authority_entries[at], &facts) ?
+                LXP_OK : LXP_FATAL_INVARIANT;
+        if (order > 0) break;
+    }
+    if (index->authority_count == LXP_VERIFIED_RECEIPT_INDEX_MAX) {
+        size_t oldest = 0U;
+        for (size_t candidate = 1U; candidate < index->authority_count; ++candidate)
+            if (index->authority_entries[candidate].global_sequence <
+                index->authority_entries[oldest].global_sequence)
+                oldest = candidate;
+        if (oldest + 1U != index->authority_count)
+            (void)memmove(&index->authority_entries[oldest],
+                &index->authority_entries[oldest + 1U],
+                (index->authority_count - oldest - 1U) * sizeof(index->authority_entries[0]));
+        --index->authority_count;
+        for (at = 0U; at < index->authority_count; ++at)
+            if (memcmp(index->authority_entries[at].receipt_digest,
+                facts.receipt_digest, 32U) > 0) break;
+    }
+    if (at != index->authority_count)
+        (void)memmove(&index->authority_entries[at + 1U],
+            &index->authority_entries[at],
+            (index->authority_count - at) * sizeof(index->authority_entries[0]));
+    index->authority_entries[at] = facts;
+    ++index->authority_count;
+    return LXP_OK;
+}
+
+lxp_result lxp_verified_receipt_index_lookup_authority(
+    const lxp_verified_receipt_index *index,
+    const uint8_t receipt_digest[32], lxp_verified_receipt_authority_facts *facts)
+{
+    size_t left = 0U, right;
+    if (index == NULL || receipt_digest == NULL || facts == NULL ||
+        index->authority_count > LXP_VERIFIED_RECEIPT_INDEX_MAX ||
+        lxp_ct_is_zero(receipt_digest, 32U)) return LXP_ERR_NON_CANONICAL;
+    right = index->authority_count;
+    while (left < right) {
+        size_t middle = left + (right - left) / 2U;
+        int order = memcmp(index->authority_entries[middle].receipt_digest,
+            receipt_digest, 32U);
+        if (order < 0) left = middle + 1U;
+        else right = middle;
+    }
+    if (left == index->authority_count ||
+        memcmp(index->authority_entries[left].receipt_digest, receipt_digest, 32U) != 0)
+        return LXP_ERR_UNKNOWN_FIELD;
+    *facts = index->authority_entries[left];
+    return LXP_OK;
+}

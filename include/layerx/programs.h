@@ -560,6 +560,14 @@ lxp_result layerx_programs_call_receipt_view_begin(
     uint64_t token, uint64_t d0, uint64_t d1, uint64_t d2, uint64_t d3);
 lxp_result layerx_programs_call_receipt_view_byte(
     uint64_t token, uint16_t section, uint32_t offset);
+lxp_result layerx_programs_call_arbiter_authority_begin(
+    uint64_t token, uint64_t d0, uint64_t d1, uint64_t d2, uint64_t d3,
+    uint64_t expected_batch);
+lxp_result layerx_programs_call_arbiter_authority_byte(
+    uint64_t token, uint32_t offset);
+lxp_result layerx_programs_call_arbiter_authority_check(
+    uint64_t token, uint64_t d0, uint64_t d1, uint64_t d2, uint64_t d3,
+    uint64_t expected_batch);
 lxp_result layerx_programs_call_balance_view_begin(
     uint64_t token,
     uint64_t a0, uint64_t a1, uint64_t a2, uint64_t a3,

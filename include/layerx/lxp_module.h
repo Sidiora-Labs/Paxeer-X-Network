@@ -34,6 +34,7 @@ typedef struct lxp_transfer_set lxp_transfer_set;
 typedef struct lxp_receipt lxp_receipt;
 typedef struct lxp_ledger_receipt_input lxp_ledger_receipt_input;
 typedef struct lxp_verified_receipt_facts lxp_verified_receipt_facts;
+typedef struct lxp_verified_receipt_authority_facts lxp_verified_receipt_authority_facts;
 typedef struct lxp_prepared_module_transition lxp_prepared_module_transition;
 typedef struct lx_account lx_account;
 typedef struct lxp_module_savepoint {
@@ -168,6 +169,9 @@ void *lxp_ctx_module_runtime(const lxp_module_ctx *ctx);
 lxp_result lxp_ctx_verified_receipt_facts(
     const lxp_module_ctx *ctx, const uint8_t receipt_digest[32],
     lxp_verified_receipt_facts *facts);
+lxp_result lxp_ctx_verified_receipt_authority_facts(
+    const lxp_module_ctx *ctx, const uint8_t receipt_digest[32],
+    lxp_verified_receipt_authority_facts *facts);
 
 /* Detaches the deterministic result of one module invocation from its private
  * execution context.  The returned transition owns every copied byte and
