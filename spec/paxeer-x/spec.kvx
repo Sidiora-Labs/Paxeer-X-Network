@@ -25068,8 +25068,17 @@ fleet_cutoff_utc = "2026-10-04T14:48:00Z"
 fleet_authority = "User requested thirty agents to complete remaining integrations in four hours; fresh eligible task admission, no deployment operations."
 source_status = "complete"
 completion_basis = "implementation under owner CONSTITUTION; qualification separately recorded"
-qualification_status = "UNRUN"
+qualification_status = "NOT_PASSED"
 source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/fleet-108.1.1-publication.json"
+qualification_revision = "c849a0b1399d21b0c30816eecca30d18f1124ad5"
+qualification_command = "timeout 30m tools/paxeer-x/verify-task.sh 108.1.1"
+qualification_exit_code = 8
+qualification_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/qualification/task10811/verify.log"
+build_status = "TIMED_OUT"
+build_exit_code = 124
+build_command = "timeout --kill-after=5s 131s /root/lx-ops/paxeer-x-integration-2026-10-03/qualification/task10811/build.sh /root/lx-ops/paxeer-x-integration-2026-10-03/qualification/task10811/source-repair1 /root/lx-ops/paxeer-x-integration-2026-10-03/qualification/task10811/artifacts"
+build_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/qualification/task10811/build.log"
+qualification_evidence = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-108.1.1-source-handoff.json"
 
 [task.108.1.10]
 title = "Give the custody module a governance proposal type, handler and submit-proposal command so the asset map and the deposit root authority can be set on chain 125"
