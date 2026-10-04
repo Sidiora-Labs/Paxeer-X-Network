@@ -299,6 +299,7 @@ public sealed class ProgramsContractTests
         Assert.Equal(revision, root.GetProperty("source_revision").GetString());
         var pin = FixtureBytes(root, "trusted_sequencer_public_key_hex");
         Assert.Equal(32, pin.Length); Assert.Contains(pin, value => value != 0);
+        Assert.Equal(Convert.FromHexString("b4f05aee172965774743f4cd7de4c3621c9e36fd77af7139aafec25eb3fb3360"), pin);
         var programs = new ProgramsClient(new PlatformClient(new AgentHttpTransport(new Uri("http://127.0.0.1:8080"))), pin, protocolVersion: 3);
         var method = typeof(ProgramsClient).GetMethod("VerifyExecutionAsync", BindingFlags.Instance | BindingFlags.NonPublic)!;
         var expected = new HashSet<string>(new[] { 3, 4 }.SelectMany(abi =>
@@ -310,22 +311,31 @@ public sealed class ProgramsContractTests
             var selector = $"{abi}:{kind}";
             Assert.Contains(selector, expected); Assert.True(present.Add(selector), "duplicate native corpus case");
             Assert.Equal(pin, FixtureBytes(row, "sequencer_public_key_hex"));
-            var document = Assert.IsType<JsonValue.ObjectValue>(JsonSerializer.Deserialize<JsonValue>(row.GetProperty("execution").GetRawText()));
-            var map = document.Value; var signed = FixtureBytes(row, "signed_activity_hex");
+            var signed = FixtureBytes(row, "signed_activity_hex");
             var call = NativeCallFromSignedActivity(signed);
             var native = Assert.IsType<NativeProgramCall>(call.NativeCall);
             Assert.Equal(abi, native.GuestAbi);
+            Assert.Equal(FixtureBytes(row, "native_call_payload_hex"), native.Encode());
             Assert.Equal(FixtureBytes(row, "program_id_hex"), call.ProgramId);
             var binding = Invoke("DecodeSignedCall", call)!;
             var activity = Property<byte[]>(binding, "ActivityId");
             var program = call.ProgramId;
+            var map = await ProjectVerifiedNativeExecution(row, pin, activity, program, abi, Property<byte[]>(binding, "IdempotencyKey"));
+            var rawKind = (byte)(kind == "success" ? 1 : kind == "resource" ? 3 : 2);
             Task<VerifiedProgramExecution> Check(IReadOnlyDictionary<string, JsonValue> value, byte[]? wantedActivity = null) =>
                 Assert.IsAssignableFrom<Task<VerifiedProgramExecution>>(method.Invoke(programs,
                     [value, kind == "success" ? "executed" : "refused", value.ContainsKey("idempotency_key"), program,
                         wantedActivity ?? activity, null, CancellationToken.None]));
             var verified = await Check(map);
             Assert.Equal(abi, verified.Receipt.Receipt.ProgramOutcome!.AbiVersion);
+            Assert.Equal(rawKind, verified.Receipt.Receipt.ProgramOutcome.TerminalKind);
             Assert.Equal("sequencer-signed", verified.Receipt.Level);
+            if (kind is "callback" or "settlement")
+            {
+                var unwrapped = Assert.IsType<byte[]>(Invoke("UnwrapAppliedTerminal", verified.TerminalPayload, verified.Receipt.Receipt.ProgramOutcome));
+                var inner = Property<byte[]>(Invoke("UnwrapTerminal", unwrapped)!, "Inner");
+                Assert.True(inner.AsSpan().StartsWith(Encoding.UTF8.GetBytes($"LXP/programs/{kind}-failure/v1\0")));
+            }
             _ = Invoke("VerifyRequestedAbi", call, verified);
             var crossedCall = new ProgramCall(native with { GuestAbi = (ushort)(abi == 3 ? 4 : 3) }, call.Budget.FeeLimit, signed);
             Assert.IsType<PlatformSdkException>(Assert.Throws<TargetInvocationException>(() => Invoke("VerifyRequestedAbi", crossedCall, verified)).InnerException);
@@ -410,6 +420,83 @@ public sealed class ProgramsContractTests
         }
         Assert.Equal(signed.Length, offset);
         return new ProgramCall(NativeProgramCall.Decode(payload!), new ProtocolAmount(fee.ToString()), signed);
+    }
+
+    private static AuthorizedReceiptBatch NativeBatch(JsonElement row, byte[] pin)
+    {
+        var batch = row.GetProperty("authorized_batch");
+        Assert.Equal(pin, FixtureBytes(batch, "sequencer_public_key_hex"));
+        return new(FixtureBytes(batch, "batch_id_hex"), FixtureBytes(batch, "asset_hex"),
+            FixtureBytes(batch, "previous_state_root_hex"), FixtureBytes(batch, "resulting_state_root_hex"), pin);
+    }
+
+    private static async Task<IReadOnlyDictionary<string, JsonValue>> ProjectVerifiedNativeExecution(JsonElement row,
+        byte[] pin, byte[] activity, byte[] program, ushort abi, byte[] idempotency)
+    {
+        var canonical = FixtureBytes(row, "canonical_receipt_hex");
+        var terminal = FixtureBytes(row, "terminal_payload_hex"); var graph = FixtureBytes(row, "call_graph_hex");
+        var batch = NativeBatch(row, pin);
+        var verified = await ProgramsClient.VerifyReceiptAsync(canonical, batch, activity, abi, terminal, graph, protocolVersion: 3);
+        var receipt = verified.Receipt; var outcome = receipt.ProgramOutcome!;
+        JsonValue Hex(byte[] bytes) => JsonValue.String(Convert.ToHexString(bytes).ToLowerInvariant());
+        JsonValue Number(ulong value) => JsonValue.String(value.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        var fee = ((new BigInteger(outcome.FeeUnits.High) << 64) + outcome.FeeUnits.Low).ToString(System.Globalization.CultureInfo.InvariantCulture);
+        return new Dictionary<string, JsonValue>
+        {
+            ["state"] = JsonValue.String(outcome.TerminalKind == 1 ? "executed" : "refused"),
+            ["activity_id"] = Hex(receipt.ActivityId), ["program_id"] = Hex(program),
+            ["guest_abi_version"] = JsonValue.Integer(outcome.AbiVersion), ["module_version"] = JsonValue.Integer(receipt.ModuleVersion),
+            ["batch_id"] = Hex(receipt.BatchId), ["global_sequence"] = Number(receipt.GlobalSequence),
+            ["result_code"] = JsonValue.Integer(receipt.ResultCode), ["state_root"] = Hex(receipt.ResultingStateRoot),
+            ["receipt"] = Hex(verified.CanonicalBytes), ["receipt_digest"] = Hex(verified.ReceiptDigest),
+            ["terminal_payload"] = Hex(terminal), ["call_graph"] = Hex(graph), ["idempotency_key"] = Hex(idempotency),
+            ["authority"] = JsonValue.Object(new Dictionary<string, JsonValue>
+            {
+                ["batch_id"] = Hex(batch.BatchId), ["asset"] = Hex(batch.Asset), ["previous_state_root"] = Hex(batch.PreviousStateRoot),
+                ["resulting_state_root"] = Hex(batch.ResultingStateRoot), ["sequencer_public_key"] = Hex(pin),
+            }),
+            ["usage"] = JsonValue.Object(new Dictionary<string, JsonValue>
+            {
+                ["cpu_fuel"] = Number(outcome.CpuFuel), ["memory_bytes"] = Number(outcome.MemoryBytes),
+                ["storage_read_bytes"] = Number(outcome.StorageReadBytes), ["storage_write_bytes"] = Number(outcome.StorageWriteBytes),
+                ["output_values"] = JsonValue.Integer(outcome.OutputValues), ["output_bytes"] = Number(outcome.OutputBytes), ["fee_units"] = JsonValue.String(fee),
+            }),
+            ["outcome"] = NativeTerminalOutcome(terminal, outcome),
+            ["verification"] = JsonValue.String("receipt-terminal-and-call-graph-verified"),
+        };
+    }
+
+    private static JsonValue NativeTerminalOutcome(byte[] terminal, ProgramReceiptOutcome receipt)
+    {
+        var unwrapped = Assert.IsType<byte[]>(Invoke("UnwrapAppliedTerminal", terminal, receipt));
+        var inner = Property<byte[]>(Invoke("UnwrapTerminal", unwrapped)!, "Inner");
+        var domain = Encoding.UTF8.GetBytes("LXP/program-execution/v5\0");
+        if (inner.AsSpan().StartsWith(domain))
+        {
+            var offset = CandidateTerminalAbiOffset(inner, domain.Length);
+            Assert.Equal(receipt.AbiVersion, BinaryPrimitives.ReadUInt16BigEndian(inner.AsSpan(offset)));
+            var tag = inner[offset + 2]; offset += 3;
+            if (tag == 0)
+            {
+                Assert.Equal((byte)1, receipt.TerminalKind);
+                var code = BinaryPrimitives.ReadInt32BigEndian(inner.AsSpan(offset)); offset += 4;
+                Assert.Equal(receipt.ResultCode, code);
+                var length = checked((int)BinaryPrimitives.ReadUInt64BigEndian(inner.AsSpan(offset))); offset += 8;
+                var response = inner.AsSpan(offset, length).ToArray();
+                return JsonValue.Object(new Dictionary<string, JsonValue> { ["kind"] = JsonValue.String("completed"),
+                    ["code"] = JsonValue.Integer(code), ["response"] = JsonValue.String(Convert.ToHexString(response).ToLowerInvariant()) });
+            }
+            Assert.True(tag is 1 or 2); Assert.Equal((byte)(tag == 1 ? 2 : 3), receipt.TerminalKind);
+        }
+        else
+        {
+            Assert.True(inner.AsSpan().StartsWith(Encoding.UTF8.GetBytes("LXP/programs/callback-failure/v1\0")) ||
+                inner.AsSpan().StartsWith(Encoding.UTF8.GetBytes("LXP/programs/settlement-failure/v1\0")), "unknown genuine native terminal domain");
+            Assert.Equal((byte)2, receipt.TerminalKind);
+        }
+        var failure = new Dictionary<string, JsonValue> { ["kind"] = JsonValue.String(receipt.TerminalKind == 3 ? "resource" : "guest_refused") };
+        if (receipt.TerminalKind == 2) failure["code"] = JsonValue.Integer(receipt.ResultCode);
+        return JsonValue.Object(new Dictionary<string, JsonValue> { ["kind"] = JsonValue.String("refused"), ["failure"] = JsonValue.Object(failure) });
     }
 
     private static int CandidateTerminalAbiOffset(byte[] terminal, int offset)
