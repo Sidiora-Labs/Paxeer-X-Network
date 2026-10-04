@@ -4498,8 +4498,9 @@ impl Executor {
             && matches!(
                 instance.state().refusal(),
                 Some(
-                    CompositionRefusal::Authority(AbiError::CapabilityEscalation)
-                        | CompositionRefusal::Reentrancy { .. }
+                    CompositionRefusal::Authority(
+                        AbiError::CapabilityEscalation | AbiError::CapabilityDenied
+                    ) | CompositionRefusal::Reentrancy { .. }
                         | CompositionRefusal::DepthExceeded { .. }
                         | CompositionRefusal::EdgesExceeded { .. }
                         | CompositionRefusal::FanoutExceeded { .. }
@@ -4514,19 +4515,18 @@ impl Executor {
                 .ok_or(ExecutionError::Composition(
                     CompositionRefusal::NotComposable,
                 ))?;
-            let (class, reason) = if matches!(
-                instance.state().refusal(),
-                Some(CompositionRefusal::Authority(
-                    AbiError::CapabilityEscalation
-                ))
-            ) {
-                (
+            let (class, reason) = match instance.state().refusal() {
+                Some(CompositionRefusal::Authority(AbiError::CapabilityEscalation)) => (
                     RefusalClass::Unauthorized,
                     RefusalReason::new(b"LXP/programs/authority-refusal/v1\0\x05")
                         .unwrap_or_else(|_| unreachable!("bounded canonical authority refusal")),
-                )
-            } else {
-                (RefusalClass::RuntimeFault, RefusalReason::empty())
+                ),
+                Some(CompositionRefusal::Authority(AbiError::CapabilityDenied)) => (
+                    RefusalClass::Unauthorized,
+                    RefusalReason::new(b"LXP/programs/authority-refusal/v1\0\x04")
+                        .unwrap_or_else(|_| unreachable!("bounded canonical authority refusal")),
+                ),
+                _ => (RefusalClass::RuntimeFault, RefusalReason::empty()),
             };
             (
                 CANDIDATE_REFUSAL_SENTINEL,

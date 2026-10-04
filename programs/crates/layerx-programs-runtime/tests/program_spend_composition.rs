@@ -1,8 +1,7 @@
 use layerx_programs_runtime::{
-    derive_program_account, AbiError, Capability, CapabilitySet, ProgramId,
-    AuthorizationContext, AuthorizedExecutionRequest, CompositionContext,
-    CompositionRules, ProgramCatalog, PrincipalId, Storage, Executor, WasmEngine,
-    ExecutionError, CompositionRefusal, CALL_ENTRY_EXPORT,
+    derive_program_account, AbiError, AuthorizationContext, AuthorizedExecutionRequest, Capability,
+    CapabilitySet, CompositionContext, CompositionRefusal, CompositionRules, ExecutionError,
+    Executor, PrincipalId, ProgramCatalog, ProgramId, Storage, WasmEngine, CALL_ENTRY_EXPORT,
 };
 
 fn spend(owner: ProgramId, asset: [u8; 32], to: [u8; 32], maximum: u128) -> Capability {
@@ -10,7 +9,9 @@ fn spend(owner: ProgramId, asset: [u8; 32], to: [u8; 32], maximum: u128) -> Capa
     Capability::ProgramSpend {
         owner_program: owner,
         seed: seed.to_vec(),
-        source_account: derive_program_account(owner, seed).expect("derived account").bytes(),
+        source_account: derive_program_account(owner, seed)
+            .expect("derived account")
+            .bytes(),
         asset,
         to,
         maximum_amount: maximum,
@@ -20,20 +21,29 @@ fn spend(owner: ProgramId, asset: [u8; 32], to: [u8; 32], maximum: u128) -> Capa
 #[test]
 fn canonical_program_grants_narrow_at_every_depth_and_repeated_visit() {
     let owner = ProgramId::new([1; 32]).expect("owner");
-    let mut inherited = CapabilitySet::new([spend(owner, [2; 32], [3; 32], 100)])
-        .expect("root grant");
+    let mut inherited =
+        CapabilitySet::new([spend(owner, [2; 32], [3; 32], 100)]).expect("root grant");
     for maximum in (1..100).rev() {
         let bytes = inherited.canonical_encoding();
-        let decoded = CapabilitySet::new(CapabilitySet::decode_v2_canonical(&bytes)
-            .expect("canonical grant")).expect("decoded grant");
+        let decoded = CapabilitySet::new(
+            CapabilitySet::decode_v2_canonical(&bytes).expect("canonical grant"),
+        )
+        .expect("decoded grant");
         assert_eq!(decoded, inherited);
-        assert_eq!(decoded.narrow([spend(owner, [2; 32], [3; 32], maximum + 2)]),
-            Err(AbiError::CapabilityEscalation));
-        assert_eq!(decoded.narrow([spend(owner, [4; 32], [3; 32], maximum)]),
-            Err(AbiError::CapabilityEscalation));
-        assert_eq!(decoded.narrow([spend(owner, [2; 32], [4; 32], maximum)]),
-            Err(AbiError::CapabilityEscalation));
-        inherited = decoded.narrow([spend(owner, [2; 32], [3; 32], maximum)])
+        assert_eq!(
+            decoded.narrow([spend(owner, [2; 32], [3; 32], maximum + 2)]),
+            Err(AbiError::CapabilityEscalation)
+        );
+        assert_eq!(
+            decoded.narrow([spend(owner, [4; 32], [3; 32], maximum)]),
+            Err(AbiError::CapabilityEscalation)
+        );
+        assert_eq!(
+            decoded.narrow([spend(owner, [2; 32], [4; 32], maximum)]),
+            Err(AbiError::CapabilityEscalation)
+        );
+        inherited = decoded
+            .narrow([spend(owner, [2; 32], [3; 32], maximum)])
             .expect("strictly downward grant");
     }
 }
@@ -43,19 +53,34 @@ fn fanout_does_not_merge_distinct_principal_or_program_authority() {
     let owner = ProgramId::new([5; 32]).expect("owner");
     let child = ProgramId::new([6; 32]).expect("child");
     let root = CapabilitySet::new([
-        Capability::Transfer402 { asset: [7; 32], to: [8; 32], maximum_amount: 200 },
+        Capability::Transfer402 {
+            asset: [7; 32],
+            to: [8; 32],
+            maximum_amount: 200,
+        },
         spend(owner, [7; 32], [8; 32], 100),
-    ]).expect("distinct grants");
+    ])
+    .expect("distinct grants");
     for maximum in [20, 30, 40] {
-        let branch = root.narrow([spend(owner, [7; 32], [8; 32], maximum)])
+        let branch = root
+            .narrow([spend(owner, [7; 32], [8; 32], maximum)])
             .expect("branch");
-        assert_eq!(branch.narrow([spend(owner, [7; 32], [8; 32], maximum + 1)]),
-            Err(AbiError::CapabilityEscalation));
-        assert_eq!(branch.narrow([spend(child, [7; 32], [8; 32], maximum)]),
-            Err(AbiError::CapabilityEscalation));
-        assert_eq!(branch.narrow([Capability::Transfer402 {
-            asset: [7; 32], to: [8; 32], maximum_amount: maximum,
-        }]), Err(AbiError::CapabilityDenied));
+        assert_eq!(
+            branch.narrow([spend(owner, [7; 32], [8; 32], maximum + 1)]),
+            Err(AbiError::CapabilityEscalation)
+        );
+        assert_eq!(
+            branch.narrow([spend(child, [7; 32], [8; 32], maximum)]),
+            Err(AbiError::CapabilityEscalation)
+        );
+        assert_eq!(
+            branch.narrow([Capability::Transfer402 {
+                asset: [7; 32],
+                to: [8; 32],
+                maximum_amount: maximum,
+            }]),
+            Err(AbiError::CapabilityDenied)
+        );
     }
     assert!(root.narrow([spend(owner, [7; 32], [8; 32], 100)]).is_ok());
 }
@@ -63,62 +88,126 @@ fn fanout_does_not_merge_distinct_principal_or_program_authority() {
 #[test]
 fn encoded_program_grants_never_change_legacy_or_accept_unknown_tags() {
     let owner = ProgramId::new([9; 32]).expect("owner");
-    let legacy = CapabilitySet::new([Capability::StorageRead,
-        Capability::Transfer402 { asset: [10; 32], to: [11; 32], maximum_amount: 5 }])
-        .expect("legacy").canonical_encoding();
-    assert_eq!(CapabilitySet::decode_canonical(&legacy),
-        CapabilitySet::decode_v2_canonical(&legacy));
+    let legacy = CapabilitySet::new([
+        Capability::StorageRead,
+        Capability::Transfer402 {
+            asset: [10; 32],
+            to: [11; 32],
+            maximum_amount: 5,
+        },
+    ])
+    .expect("legacy")
+    .canonical_encoding();
+    assert_eq!(
+        CapabilitySet::decode_canonical(&legacy),
+        CapabilitySet::decode_v2_canonical(&legacy)
+    );
     let encoded = CapabilitySet::new([spend(owner, [10; 32], [11; 32], 5)])
-        .expect("program grant").canonical_encoding();
-    assert_eq!(CapabilitySet::decode_canonical(&encoded), Err(AbiError::InvalidEncoding));
+        .expect("program grant")
+        .canonical_encoding();
+    assert_eq!(
+        CapabilitySet::decode_canonical(&encoded),
+        Err(AbiError::InvalidEncoding)
+    );
     for tag in [0, 11, 255] {
-        let mut unknown = encoded.clone(); unknown[2] = tag;
-        assert_eq!(CapabilitySet::decode_v2_canonical(&unknown), Err(AbiError::InvalidEncoding));
+        let mut unknown = encoded.clone();
+        unknown[2] = tag;
+        assert_eq!(
+            CapabilitySet::decode_v2_canonical(&unknown),
+            Err(AbiError::InvalidEncoding)
+        );
     }
     for end in 0..encoded.len() {
         assert!(CapabilitySet::decode_v2_canonical(&encoded[..end]).is_err());
     }
-    let mut trailing = encoded; trailing.push(0);
-    assert_eq!(CapabilitySet::decode_v2_canonical(&trailing), Err(AbiError::InvalidEncoding));
+    let mut trailing = encoded;
+    trailing.push(0);
+    assert_eq!(
+        CapabilitySet::decode_v2_canonical(&trailing),
+        Err(AbiError::InvalidEncoding)
+    );
 }
 
-fn actual_guest(variant: u8) -> (Result<layerx_programs_runtime::V2AuthorizedExecutionRecord, ExecutionError>, Storage) {
-    let directory = std::path::PathBuf::from(std::env::var("PAXEER_X_SPEND_GUESTS")
-        .expect("source-bound native guest producer is required"));
-    let mut owner_bytes = [0; 32]; owner_bytes[0] = 0x61;
-    let mut child_bytes = [0; 32]; child_bytes[0] = 0x62;
-    let mut descendant_bytes = [0; 32]; descendant_bytes[0] = 0x63;
+fn actual_guest(
+    variant: u8,
+) -> (
+    Result<layerx_programs_runtime::V2AuthorizedExecutionRecord, ExecutionError>,
+    Storage,
+) {
+    let directory = std::path::PathBuf::from(
+        std::env::var("PAXEER_X_SPEND_GUESTS")
+            .expect("source-bound native guest producer is required"),
+    );
+    let mut owner_bytes = [0; 32];
+    owner_bytes[0] = 0x61;
+    let mut child_bytes = [0; 32];
+    child_bytes[0] = 0x62;
+    let mut descendant_bytes = [0; 32];
+    descendant_bytes[0] = 0x63;
     let owner = ProgramId::new(owner_bytes).expect("owner");
     let child = ProgramId::new(child_bytes).expect("child");
     let descendant = ProgramId::new(descendant_bytes).expect("descendant");
-    let mut asset = [0; 32]; asset[0] = 9;
+    let mut asset = [0; 32];
+    asset[0] = 9;
     let payee: [u8; 32] = std::fs::read(directory.join("payee.bin"))
-        .expect("actual native payee").try_into().expect("payee width");
+        .expect("actual native payee")
+        .try_into()
+        .expect("payee width");
     let seed = b"composition/vault";
-    let grants = CapabilitySet::new([Capability::Call { program: child }, Capability::Call { program: descendant }, Capability::ProgramSpend {
-        owner_program: owner, seed: seed.to_vec(),
-        source_account: derive_program_account(owner, seed).expect("source").bytes(),
-        asset, to: payee, maximum_amount: 20,
-    }]).expect("grants");
+    let grants = CapabilitySet::new([
+        Capability::Call { program: child },
+        Capability::Call {
+            program: descendant,
+        },
+        Capability::ProgramSpend {
+            owner_program: owner,
+            seed: seed.to_vec(),
+            source_account: derive_program_account(owner, seed).expect("source").bytes(),
+            asset,
+            to: payee,
+            maximum_amount: 20,
+        },
+    ])
+    .expect("grants");
     let engine = WasmEngine::declared().expect("real engine");
-    let module = engine.validate_candidate_v2(&std::fs::read(directory.join(
-        format!("case{variant}.owner.wasm"))).expect("owner guest")).expect("owner module");
-    let callee = engine.validate_candidate_v2(&std::fs::read(directory.join(
-        format!("case{variant}.child.wasm"))).expect("child guest")).expect("child module");
+    let module = engine
+        .validate_candidate_v2(
+            &std::fs::read(directory.join(format!("case{variant}.owner.wasm")))
+                .expect("owner guest"),
+        )
+        .expect("owner module");
+    let callee = engine
+        .validate_candidate_v2(
+            &std::fs::read(directory.join(format!("case{variant}.child.wasm")))
+                .expect("child guest"),
+        )
+        .expect("child module");
     let mut catalog = ProgramCatalog::new();
     assert!(catalog.insert(child, callee).is_none());
-    let descendant_module = engine.validate_candidate_v2(&std::fs::read(directory.join(
-        format!("case{variant}.descendant.wasm"))).expect("descendant guest")).expect("descendant module");
+    let descendant_module = engine
+        .validate_candidate_v2(
+            &std::fs::read(directory.join(format!("case{variant}.descendant.wasm")))
+                .expect("descendant guest"),
+        )
+        .expect("descendant module");
     assert!(catalog.insert(descendant, descendant_module).is_none());
     let mut storage = Storage::default();
-    let result = Executor::declared().execute_authorized_candidate(&mut storage,
-        AuthorizedExecutionRequest { module: &module, program: owner,
-            authorization: AuthorizationContext::new(PrincipalId::new([3; 32]).expect("principal"), grants),
+    let result = Executor::declared().execute_authorized_candidate(
+        &mut storage,
+        AuthorizedExecutionRequest {
+            module: &module,
+            program: owner,
+            authorization: AuthorizationContext::new(
+                PrincipalId::new([3; 32]).expect("principal"),
+                grants,
+            ),
             receipts: &layerx_programs_runtime::abi::UnavailableReceiptOracle,
-            entrypoint: CALL_ENTRY_EXPORT, calldata: &[],
+            entrypoint: CALL_ENTRY_EXPORT,
+            calldata: &[],
             composition: CompositionContext::catalog(catalog, CompositionRules::declared()),
             response_capacity: 0,
-        });
+        },
+    );
     (result, storage)
 }
 
@@ -127,7 +216,8 @@ fn actual_guest_narrowing_preserves_owner_leg_and_repeated_visits() {
     for variant in [0, 4] {
         let (result, storage) = actual_guest(variant);
         let record = result.expect("real composed guest succeeds");
-        let layerx_programs_runtime::V2ActivityOutcome::Success { effects, .. } = record.outcome() else {
+        let layerx_programs_runtime::V2ActivityOutcome::Success { effects, .. } = record.outcome()
+        else {
             panic!("actual guest did not succeed");
         };
         assert_eq!(effects.transfers.len(), 1);
@@ -141,28 +231,116 @@ fn actual_guest_narrowing_preserves_owner_leg_and_repeated_visits() {
 fn actual_guest_escalation_rolls_back_the_preceding_owner_leg() {
     for variant in [1, 2, 3, 5, 6, 7] {
         let (result, storage) = actual_guest(variant);
-        assert_eq!(result, Err(ExecutionError::Composition(
-            CompositionRefusal::Authority(AbiError::CapabilityEscalation))));
+        assert_eq!(
+            result,
+            Err(ExecutionError::Composition(CompositionRefusal::Authority(
+                AbiError::CapabilityEscalation
+            )))
+        );
         assert_eq!(storage, Storage::default());
     }
 }
 
 #[test]
 fn actual_native_failure_terminal_retains_class_reason_and_rejecting_frame() {
-    use layerx_programs_runtime::terminal::{decode_terminal_payload, TerminalDetail,
-        ExecutionTerminal, CandidateTerminalOutcome};
-    let directory = std::path::PathBuf::from(std::env::var("PAXEER_X_SPEND_RESULTS")
-        .expect("actual native signed receipt terminal evidence is required"));
+    use layerx_programs_runtime::terminal::{
+        decode_terminal_payload, CandidateTerminalOutcome, ExecutionTerminal, TerminalDetail,
+    };
+    let directory = std::path::PathBuf::from(
+        std::env::var("PAXEER_X_SPEND_RESULTS")
+            .expect("actual native signed receipt terminal evidence is required"),
+    );
     for variant in [1, 2, 3, 5, 6, 7] {
         let encoded = std::fs::read(directory.join(format!("case{variant}.terminal.bin")))
             .expect("actual native terminal");
         let decoded = decode_terminal_payload(2, 2, &encoded).expect("canonical failure terminal");
         let TerminalDetail::Execution(ExecutionTerminal::CandidateV4 {
-            outcome: CandidateTerminalOutcome::Failure(failure), ..
-        }) = decoded.detail else { panic!("actual native terminal has the wrong outcome"); };
-        let mut frame = [0; 32]; frame[0] = if variant == 5 { 0x62 } else { 0x61 };
-        assert_eq!(failure.program(), ProgramId::new(frame).expect("rejecting frame"));
-        assert_eq!(failure.class(), layerx_programs_runtime::RefusalClass::Unauthorized);
-        assert_eq!(failure.reason().bytes(), b"LXP/programs/authority-refusal/v1\0\x05");
+            outcome: CandidateTerminalOutcome::Failure(failure),
+            ..
+        }) = decoded.detail
+        else {
+            panic!("actual native terminal has the wrong outcome");
+        };
+        let mut frame = [0; 32];
+        frame[0] = if variant == 5 { 0x62 } else { 0x61 };
+        assert_eq!(
+            failure.program(),
+            ProgramId::new(frame).expect("rejecting frame")
+        );
+        assert_eq!(
+            failure.class(),
+            layerx_programs_runtime::RefusalClass::Unauthorized
+        );
+        assert_eq!(
+            failure.reason().bytes(),
+            b"LXP/programs/authority-refusal/v1\0\x05"
+        );
     }
+}
+
+#[test]
+fn actual_returned_proposals_are_staged_by_owner_after_child_return() {
+    for (variant, amount, legs, calls) in [(8, 7, 1, 1), (9, 7, 1, 2), (10, 7, 2, 2), (11, 8, 8, 8)]
+    {
+        let (result, storage) = actual_guest(variant);
+        let record = result.expect("owner-mediated real guest succeeds");
+        let layerx_programs_runtime::V2ActivityOutcome::Success { effects, .. } = record.outcome()
+        else {
+            panic!("owner-mediated guest did not succeed");
+        };
+        assert_eq!(effects.transfers.len(), legs);
+        assert_eq!(
+            effects.transfers.iter().map(|leg| leg.amount).sum::<u128>(),
+            amount
+        );
+        assert_eq!(effects.calls.len(), calls);
+        assert_eq!(storage, Storage::default());
+    }
+}
+
+#[test]
+fn actual_late_returned_proposal_cannot_escape_atomic_owner_budget() {
+    let (result, storage) = actual_guest(12);
+    assert_eq!(
+        result,
+        Err(ExecutionError::Composition(CompositionRefusal::Authority(
+            AbiError::CapabilityDenied
+        )))
+    );
+    assert_eq!(storage, Storage::default());
+}
+
+#[test]
+fn actual_native_owner_budget_denial_has_authenticated_failure_terminal() {
+    use layerx_programs_runtime::terminal::{
+        decode_terminal_payload, CandidateTerminalOutcome, ExecutionTerminal, TerminalDetail,
+    };
+    let directory = std::path::PathBuf::from(
+        std::env::var("PAXEER_X_SPEND_RESULTS")
+            .expect("actual native signed receipt terminal evidence is required"),
+    );
+    let encoded = std::fs::read(directory.join("case12.terminal.bin"))
+        .expect("actual owner budget denial terminal");
+    let decoded = decode_terminal_payload(2, 2, &encoded).expect("canonical failure terminal");
+    let TerminalDetail::Execution(ExecutionTerminal::CandidateV4 {
+        outcome: CandidateTerminalOutcome::Failure(failure),
+        ..
+    }) = decoded.detail
+    else {
+        panic!("actual native terminal has the wrong outcome");
+    };
+    let mut owner = [0; 32];
+    owner[0] = 0x61;
+    assert_eq!(
+        failure.program(),
+        ProgramId::new(owner).expect("actual owner frame")
+    );
+    assert_eq!(
+        failure.class(),
+        layerx_programs_runtime::RefusalClass::Unauthorized
+    );
+    assert_eq!(
+        failure.reason().bytes(),
+        b"LXP/programs/authority-refusal/v1\0\x04"
+    );
 }

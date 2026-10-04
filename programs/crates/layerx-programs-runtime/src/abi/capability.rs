@@ -1049,24 +1049,265 @@ mod tests {
         let grants = CapabilitySet::new([
             Capability::Call { program: child },
             program_spend(owner, seed, asset, to, 100),
-        ]).unwrap_or_else(|error| panic!("grants: {error}"));
+        ])
+        .unwrap_or_else(|error| panic!("grants: {error}"));
         let mut root = Abi::new(
-            ABI_VERSION, owner, AuthorizationContext::new(actor, grants),
-            Storage::new(), &super::super::UnavailableReceiptOracle,
-        ).unwrap_or_else(|error| panic!("root: {error}"));
-        let frame = CallFrameId::root().child(1)
+            ABI_VERSION,
+            owner,
+            AuthorizationContext::new(actor, grants),
+            Storage::new(),
+            &super::super::UnavailableReceiptOracle,
+        )
+        .unwrap_or_else(|error| panic!("root: {error}"));
+        let frame = CallFrameId::root()
+            .child(1)
             .unwrap_or_else(|error| panic!("frame: {error}"));
         for requested in [
             program_spend(owner, seed, asset, to, 101),
             program_spend(owner, seed, [55; 32], to, 100),
             program_spend(owner, seed, asset, [56; 32], 100),
         ] {
-            assert_eq!(root.stage_call(child, b"", vec![requested], frame),
-                Err(AbiError::CapabilityEscalation));
+            assert_eq!(
+                root.stage_call(child, b"", vec![requested], frame),
+                Err(AbiError::CapabilityEscalation)
+            );
         }
         let effects = root.commit().effects;
         assert!(effects.calls.is_empty());
         assert!(effects.transfers.is_empty());
     }
 
+    #[test]
+    fn owner_mediated_proposals_preserve_narrowed_tag9_and_child_debit_refusal() {
+        let owner = program(60);
+        let child = program(61);
+        let actor = principal(62);
+        let seed = b"owner/proposals";
+        let asset = [63; 32];
+        let to = [64; 32];
+        let source = derive_program_account(owner, seed)
+            .unwrap_or_else(|error| panic!("source: {error}"))
+            .bytes();
+        let parent = CapabilitySet::new([program_spend(owner, seed, asset, to, 100)])
+            .unwrap_or_else(|error| panic!("parent: {error}"));
+        let bounded = parent
+            .narrow_for_program_edge(owner, [program_spend(owner, seed, asset, to, 70)])
+            .unwrap_or_else(|error| panic!("bounded: {error}"));
+        assert!(parent.contains_narrowed_for_program_edge(owner, &bounded));
+        let encoded = bounded.canonical_encoding();
+        assert_eq!(encoded[2], 9);
+        assert_eq!(
+            CapabilitySet::decode_v2_canonical(&encoded).and_then(CapabilitySet::new),
+            Ok(bounded.clone())
+        );
+        assert_eq!(
+            CapabilitySet::decode_canonical(&encoded),
+            Err(AbiError::InvalidEncoding)
+        );
+        let mut unknown_tag = encoded.clone();
+        unknown_tag[2] = 11;
+        assert_eq!(
+            CapabilitySet::decode_v2_canonical(&unknown_tag),
+            Err(AbiError::InvalidEncoding)
+        );
+        let request = |staging_program, amount| ProgramSpendAuthorization {
+            staging_program,
+            owner_program: owner,
+            seed,
+            source_account: source,
+            asset,
+            to,
+            amount,
+        };
+        assert!(bounded.permits_program_spend(request(owner, 70)));
+        assert!(!bounded.permits_program_spend(request(owner, 71)));
+        assert!(!bounded.permits_program_spend(request(owner, 0)));
+        assert!(!bounded.permits_program_spend(request(child, 1)));
+        let frame = CallFrameId::root()
+            .child(1)
+            .unwrap_or_else(|error| panic!("frame: {error}"));
+        let mut callee = Abi::nested(
+            super::super::manifest::ABI_V2_VERSION,
+            child,
+            AuthorizationContext::nested(actor, bounded, frame),
+            Storage::new(),
+            BTreeMap::new(),
+            BTreeMap::new(),
+        )
+        .unwrap_or_else(|error| panic!("callee: {error}"));
+        assert_eq!(
+            callee.request_program_transfer(seed, source, asset, to, 1),
+            Err(AbiError::CapabilityEscalation)
+        );
+        assert!(callee.commit().effects.transfers.is_empty());
+    }
+
+    #[test]
+    fn owner_mediated_proposal_fields_cannot_acquire_foreign_authority() {
+        let owner = program(70);
+        let foreign = program(71);
+        let seed = b"owner/exact";
+        let asset = [72; 32];
+        let to = [73; 32];
+        let source = derive_program_account(owner, seed)
+            .unwrap_or_else(|error| panic!("source: {error}"))
+            .bytes();
+        let foreign_source = derive_program_account(foreign, seed)
+            .unwrap_or_else(|error| panic!("foreign source: {error}"))
+            .bytes();
+        let grants = CapabilitySet::new([program_spend(owner, seed, asset, to, 20)])
+            .unwrap_or_else(|error| panic!("grants: {error}"));
+        let exact = ProgramSpendAuthorization {
+            staging_program: owner,
+            owner_program: owner,
+            seed,
+            source_account: source,
+            asset,
+            to,
+            amount: 20,
+        };
+        assert!(grants.permits_program_spend(exact));
+        for request in [
+            ProgramSpendAuthorization {
+                source_account: foreign_source,
+                ..exact
+            },
+            ProgramSpendAuthorization {
+                seed: b"owner/other",
+                ..exact
+            },
+            ProgramSpendAuthorization {
+                staging_program: foreign,
+                owner_program: foreign,
+                source_account: foreign_source,
+                ..exact
+            },
+            ProgramSpendAuthorization {
+                asset: [74; 32],
+                ..exact
+            },
+            ProgramSpendAuthorization {
+                to: [75; 32],
+                ..exact
+            },
+            ProgramSpendAuthorization {
+                amount: 21,
+                ..exact
+            },
+        ] {
+            assert!(!grants.permits_program_spend(request));
+        }
+        for unowned in [
+            CapabilitySet::empty(),
+            CapabilitySet::new([Capability::Transfer402 {
+                asset,
+                to,
+                maximum_amount: 20,
+            }])
+            .unwrap_or_else(|error| panic!("principal grant: {error}")),
+            CapabilitySet::new([Capability::BalanceView {
+                account: source,
+                asset,
+                receipt_digest: [76; 32],
+            }])
+            .unwrap_or_else(|error| panic!("balance sight: {error}")),
+        ] {
+            assert!(!unowned.permits_program_spend(exact));
+        }
+    }
+
+    #[test]
+    fn owner_mediated_returned_proposals_stage_only_in_owner_frame_with_cumulative_limit() {
+        let owner = program(80);
+        let actor = principal(81);
+        let seed = b"owner/aggregate";
+        let asset = [82; 32];
+        let to = [83; 32];
+        let source = derive_program_account(owner, seed)
+            .unwrap_or_else(|error| panic!("source: {error}"))
+            .bytes();
+        let parent = CapabilitySet::new([program_spend(owner, seed, asset, to, 100)])
+            .unwrap_or_else(|error| panic!("parent: {error}"));
+        let bounded = parent
+            .narrow_for_program_edge(owner, [program_spend(owner, seed, asset, to, 70)])
+            .unwrap_or_else(|error| panic!("bounded: {error}"));
+        let mut owner_abi = Abi::new(
+            super::super::manifest::ABI_V2_VERSION,
+            owner,
+            AuthorizationContext::new(actor, bounded),
+            Storage::new(),
+            &super::super::UnavailableReceiptOracle,
+        )
+        .unwrap_or_else(|error| panic!("owner: {error}"));
+        assert_eq!(
+            owner_abi.request_program_transfer(seed, source, asset, to, 30),
+            Ok(())
+        );
+        assert_eq!(
+            owner_abi.request_program_transfer(seed, source, asset, to, 40),
+            Ok(())
+        );
+        assert_eq!(
+            owner_abi.request_program_transfer(seed, source, asset, to, 1),
+            Err(AbiError::CapabilityEscalation)
+        );
+        let effects = owner_abi.commit().effects;
+        assert_eq!(effects.transfers.len(), 2);
+        assert_eq!(
+            effects
+                .transfers
+                .iter()
+                .map(|request| request.amount)
+                .sum::<u128>(),
+            70
+        );
+        for transfer in effects.transfers {
+            assert_eq!(transfer.program, owner);
+            assert_eq!(transfer.principal, actor);
+            assert_eq!(transfer.frame, CallFrameId::root());
+            let crate::transfer::TransferSource::Program(authority) = transfer.source else {
+                panic!("owner program authority required")
+            };
+            assert_eq!(authority.owner_program(), owner);
+            assert_eq!(authority.staging_frame(), CallFrameId::root());
+            assert_eq!(authority.source_account(), source);
+            assert_eq!(authority.seed(), seed);
+            assert_eq!(authority.amount(), transfer.amount);
+        }
+    }
+
+    #[test]
+    fn owner_mediated_returned_proposal_overflow_never_stages_an_extra_leg() {
+        let owner = program(90);
+        let actor = principal(91);
+        let seed = b"owner/overflow";
+        let asset = [92; 32];
+        let to = [93; 32];
+        let source = derive_program_account(owner, seed)
+            .unwrap_or_else(|error| panic!("source: {error}"))
+            .bytes();
+        let grants = CapabilitySet::new([program_spend(owner, seed, asset, to, u128::MAX)])
+            .unwrap_or_else(|error| panic!("grants: {error}"));
+        let mut owner_abi = Abi::new(
+            super::super::manifest::ABI_V2_VERSION,
+            owner,
+            AuthorizationContext::new(actor, grants),
+            Storage::new(),
+            &super::super::UnavailableReceiptOracle,
+        )
+        .unwrap_or_else(|error| panic!("owner: {error}"));
+        assert_eq!(
+            owner_abi.request_program_transfer(seed, source, asset, to, u128::MAX),
+            Ok(())
+        );
+        assert_eq!(
+            owner_abi.request_program_transfer(seed, source, asset, to, 1),
+            Err(AbiError::AmountBounds)
+        );
+        let effects = owner_abi.commit().effects;
+        assert_eq!(effects.transfers.len(), 1);
+        assert_eq!(effects.transfers[0].amount, u128::MAX);
+        assert_eq!(effects.transfers[0].program, owner);
+        assert_eq!(effects.transfers[0].frame, CallFrameId::root());
+    }
 }

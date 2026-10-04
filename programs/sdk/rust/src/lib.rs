@@ -64,6 +64,7 @@ pub mod lxt721;
 pub mod naming;
 pub mod oracle;
 pub mod payments;
+pub mod proposal;
 pub mod receipt;
 pub mod storage;
 pub mod transfer;

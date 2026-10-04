@@ -20,7 +20,16 @@ MAKEFILE = 'tools/qualification/paxeer-x/program_spend_composition.mk'
 NATIVE_CASES = ['owner_transfer_and_narrowed_edge', 'amount_escalation_atomic',
     'asset_escalation_atomic', 'destination_escalation_atomic', 'repeated_visits_owner_fee_once',
     'depth_escalation_atomic', 'fanout_escalation_atomic', 'repeated_late_escalation_atomic']
+NATIVE_CASES += ['owner_consumes_child_proposal', 'depth_forwarded_owner_proposal',
+    'fanout_owner_proposals', 'repeated_owner_proposals', 'late_owner_proposal_atomic']
 RUST_CASES = {
+    'layerx_program_sdk': [
+        'proposal::tests::owner_proposal_maximum_canonical_roundtrip',
+        'proposal::tests::owner_proposal_decoder_refuses_noncanonical_carriers',
+        'proposal::tests::owner_proposal_encoding_refuses_short_buffers_without_writing',
+        'proposal::tests::owner_proposal_budget_keeps_original_ceiling_across_call_edges',
+        'proposal::tests::owner_proposal_budget_requires_exact_tag9_authority',
+        'proposal::tests::owner_proposal_budget_cumulative_and_overflow_refusals_are_atomic'],
     'layerx_programs_runtime': [
         'abi::capability::tests::frozen_v1_encoding_remains_exact_and_refuses_the_v2_tag',
         'abi::capability::tests::v2_decoder_rejects_unknown_noncanonical_and_unbound_grants',
@@ -28,14 +37,21 @@ RUST_CASES = {
         'abi::capability::tests::program_spend_handoff_requires_the_exact_owner_frame_and_aggregate_limit',
         'abi::capability::tests::inherited_escalation_never_stages_a_descendant_edge_or_transfer',
         'abi::capability::tests::owner_origin_cannot_replace_an_inherited_program_spend_limit',
-        'abi::capability::tests::owner_escalation_never_stages_an_edge_or_transfer'],
+        'abi::capability::tests::owner_escalation_never_stages_an_edge_or_transfer',
+        'abi::capability::tests::owner_mediated_proposals_preserve_narrowed_tag9_and_child_debit_refusal',
+        'abi::capability::tests::owner_mediated_proposal_fields_cannot_acquire_foreign_authority',
+        'abi::capability::tests::owner_mediated_returned_proposals_stage_only_in_owner_frame_with_cumulative_limit',
+        'abi::capability::tests::owner_mediated_returned_proposal_overflow_never_stages_an_extra_leg'],
     'program_spend_composition': [
         'canonical_program_grants_narrow_at_every_depth_and_repeated_visit',
         'fanout_does_not_merge_distinct_principal_or_program_authority',
         'encoded_program_grants_never_change_legacy_or_accept_unknown_tags',
         'actual_guest_narrowing_preserves_owner_leg_and_repeated_visits',
         'actual_guest_escalation_rolls_back_the_preceding_owner_leg',
-        'actual_native_failure_terminal_retains_class_reason_and_rejecting_frame'],
+        'actual_native_failure_terminal_retains_class_reason_and_rejecting_frame',
+        'actual_returned_proposals_are_staged_by_owner_after_child_return',
+        'actual_late_returned_proposal_cannot_escape_atomic_owner_budget',
+        'actual_native_owner_budget_denial_has_authenticated_failure_terminal'],
     'isolation': ['capability_narrowing_rejects_missing_grants_and_limit_widening_without_effects',
         'program_spend_capability_binds_owner_seed_account_asset_and_destination'],
     'monetary_law': ['candidate_program_transfer_host_issues_exact_owner_frame_authority',
@@ -167,7 +183,7 @@ def build(args, evidence):
             'PAXEER_SPEND_RUNTIME_LIB=' + str(sandbox), 'paxeer-x-native-104.30.4'],
             directory, environment, deadline, 'native'))
         command = ['cargo', '+1.91.1', 'test', '--locked', '--manifest-path', 'programs/Cargo.toml',
-            '-p', 'layerx-programs-runtime', '--lib']
+            '-p', 'layerx-programs-runtime', '-p', 'layerx-program-sdk', '--lib']
         for name in ('program_spend_composition', 'isolation', 'monetary_law'):
             command.extend(['--test', name])
         command.extend(['--no-run', '--message-format=json'])
@@ -190,13 +206,17 @@ def build(args, evidence):
         guests = directory / 'guests'; guests.mkdir(mode=0o700)
         record['steps'].append(launch([str(native), '--emit-wasm', str(guests)],
             directory, environment, deadline, 'guests'))
-        required = {f'case{i}.{kind}.wasm' for i in range(8) for kind in ('owner', 'child', 'descendant')} | {'payee.bin'}
+        required = {f'case{i}.{kind}.wasm' for i in range(len(NATIVE_CASES)) for kind in ('owner', 'child', 'descendant')} | {'payee.bin'}
         require({p.name for p in guests.iterdir()} == required, 'incomplete actual guest inventory')
         record['artifacts'] = {'native': artifact(native), 'sandbox': artifact(sandbox),
             'library': artifact(build_dir / 'liblayerx.a'), 'rust': found,
             'headers': [artifact(p) for p in sorted((build_dir / 'generated').glob('*.h'))],
             'guests': [artifact(p) for p in sorted(guests.iterdir())]}
         require(record['artifacts']['headers'], 'generated native headers missing')
+        record['steps'].append(launch(['cargo', '+1.91.1', 'build', '--locked',
+            '--manifest-path', 'programs/Cargo.toml', '-p', 'layerx-program-sdk',
+            '--target', 'wasm32-unknown-unknown'], directory, environment, deadline, 'sdk-wasm'))
+        record['artifacts']['sdk_wasm'] = artifact(target / 'wasm32-unknown-unknown/debug/liblayerx_program_sdk.rlib')
         require(source() == candidate, 'candidate changed during build')
         record['completed'] = True
     finally:
@@ -222,15 +242,15 @@ def qualify(evidence):
     require(manifest['toolchain'] == capture(['rustc', '+1.91.1', '-vV']), 'toolchain changed')
     require(manifest['compiler'] == capture([*manifest['compiler_command'], '--version']), 'native compiler changed')
     expected_runtime = ['cargo', '+1.91.1', 'test', '--locked', '--manifest-path', 'programs/Cargo.toml',
-        '-p', 'layerx-programs-runtime', '--lib', '--test', 'program_spend_composition',
+        '-p', 'layerx-programs-runtime', '-p', 'layerx-program-sdk', '--lib', '--test', 'program_spend_composition',
         '--test', 'isolation', '--test', 'monetary_law', '--no-run', '--message-format=json']
     expected_sandbox = ['cargo', '+1.91.1', 'build', '--locked', '--manifest-path',
         'programs/Cargo.toml', '-p', 'layerx-programs-sandbox', '--features', 'host-ffi']
-    require(len(manifest['steps']) == 4 and manifest['steps'][0]['argv'] == expected_sandbox
+    require(len(manifest['steps']) == 5 and manifest['steps'][0]['argv'] == expected_sandbox
         and manifest['steps'][2]['argv'] == expected_runtime, 'declared real compiler invocation missing')
     for step in manifest['steps']:
         require(step['exit_code'] == 0, 'producer step failed'); checked(step['log'])
-    require(len(manifest['steps']) == 4, 'complete producer steps required')
+    require(len(manifest['steps']) == 5, 'complete producer steps required')
     artifacts = manifest['artifacts']
     native = checked(artifacts['native'], elf=True)
     build_dir = Path(manifest['native_build_directory'])
@@ -246,13 +266,18 @@ def qualify(evidence):
     require(artifacts['headers'], 'native generated headers absent')
     for header in artifacts['headers']: checked(header)
     guests = [checked(saved) for saved in artifacts['guests']]
-    required = {f'case{i}.{kind}.wasm' for i in range(8) for kind in ('owner', 'child', 'descendant')} | {'payee.bin'}
+    required = {f'case{i}.{kind}.wasm' for i in range(len(NATIVE_CASES)) for kind in ('owner', 'child', 'descendant')} | {'payee.bin'}
     require({p.name for p in guests} == required and len({p.parent for p in guests}) == 1,
         'native guest artifact inventory changed')
     for path in guests:
         if path.suffix == '.wasm': require(path.read_bytes()[:8] == b'\0asm\1\0\0\0', 'real Wasm required')
     require(manifest['steps'][3]['argv'] == [str(native), '--emit-wasm', str(guests[0].parent)],
         'genuine native guest producer invocation missing')
+    require(manifest['steps'][4]['argv'] == ['cargo', '+1.91.1', 'build', '--locked',
+        '--manifest-path', 'programs/Cargo.toml', '-p', 'layerx-program-sdk',
+        '--target', 'wasm32-unknown-unknown'], 'actual guest SDK compiler invocation missing')
+    require(checked(artifacts['sdk_wasm']) == target / 'wasm32-unknown-unknown/debug/liblayerx_program_sdk.rlib',
+        'guest SDK artifact identity mismatch')
     directory = evidence / ('spend-verify-' + str(time.time_ns())); directory.mkdir(mode=0o700)
     outputs = directory / 'native-results'; outputs.mkdir(mode=0o700)
     environment = dict(os.environ, PAXEER_X_SPEND_GUESTS=str(guests[0].parent),
@@ -265,8 +290,8 @@ def qualify(evidence):
         record['steps'].append(step)
         output = Path(step['log']['path']).read_text()
         require(re.findall(r'^CASE (\S+) ok$', output, re.M) == NATIVE_CASES
-            and re.findall(r'^PASSED (\d+)$', output, re.M) == ['8'], 'native cases missing')
-        require({p.name for p in outputs.iterdir()} == {f'case{i}.terminal.bin' for i in range(8)},
+            and re.findall(r'^PASSED (\d+)$', output, re.M) == [str(len(NATIVE_CASES))], 'native cases missing')
+        require({p.name for p in outputs.iterdir()} == {f'case{i}.terminal.bin' for i in range(len(NATIVE_CASES))},
             'actual native receipt terminal inventory incomplete')
         record['native_terminals'] = [artifact(p) for p in sorted(outputs.iterdir())]
         record['cases'].extend('native:' + name for name in NATIVE_CASES)

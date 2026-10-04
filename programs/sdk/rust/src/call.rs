@@ -303,6 +303,39 @@ pub fn publish_response(result: CallResult, bytes: &[u8]) -> Result<(), ProgramE
     host::response_write(result.code(), bytes).map(|_| ())
 }
 
+#[cfg(target_arch = "wasm32")]
+pub fn publish_spending_proposals(
+    proposals: &crate::proposal::ProposalSet<'_>,
+    output: &mut [u8],
+) -> Result<(), ProgramError> {
+    let length = proposals.encode_into(output)?;
+    publish_response(CallResult::OK, &output[..length])
+}
+
+#[cfg(target_arch = "wasm32")]
+pub fn invoke_owner_spending_proposals<const ROOT: usize, const EDGE: usize>(
+    owner: ProgramId,
+    callee: ProgramId,
+    input: CallInput<'_>,
+    edge: &crate::payments::ProgramPaymentCapabilities<'_, EDGE>,
+    budget: &mut crate::proposal::ProposalBudget<'_, ROOT>,
+    capability_scratch: &mut [u8],
+    output: &mut [u8],
+) -> Result<(), ProgramError> {
+    let encoded = edge.encode_into(capability_scratch)?;
+    let granted = GrantedCapabilities::new(&capability_scratch[..encoded])?;
+    let response = invoke_response(callee, input, granted, output)?;
+    if response.code() != CallResult::OK.code() {
+        return Err(ProgramError::value(Field::CallResult, Reason::Malformed));
+    }
+    let proposals = crate::proposal::ProposalSet::decode(response.bytes())?;
+    let validated = budget.validate(owner, edge, &proposals)?;
+    for payment in validated.payments() {
+        crate::transfer::pay_from_program_account(payment)?;
+    }
+    Ok(())
+}
+
 /// Publishes a candidate program refusal synchronously.
 #[cfg(target_arch = "wasm32")]
 pub fn publish_refusal(refusal: crate::ProgramRefusal<'_>) -> Result<(), ProgramError> {

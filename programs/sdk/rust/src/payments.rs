@@ -38,6 +38,21 @@ impl<'a> PreparedProgramAccount<'a> {
         self.account
     }
 
+    #[must_use]
+    pub const fn program(self) -> ProgramId {
+        self.program
+    }
+
+    #[must_use]
+    pub const fn seed(self) -> ProgramAccountSeed<'a> {
+        self.seed
+    }
+
+    #[must_use]
+    pub const fn asset(self) -> AssetId {
+        self.asset
+    }
+
     /// Produces the native `ProgramAccount` registration payload. Submission requires
     /// the deployment's registration authority and a signed activity envelope.
     /// # Errors
@@ -224,6 +239,11 @@ impl<'a, const N: usize> ProgramPaymentCapabilities<'a, N> {
     #[must_use]
     pub const fn is_empty(&self) -> bool {
         self.length == 0
+    }
+
+    #[must_use]
+    pub fn grants(&self) -> &[PaymentGrant<'a>] {
+        &self.grants[..self.length]
     }
 
     #[must_use]
