@@ -695,8 +695,14 @@ pub fn start_installed(
         process_start_ticks,
         launch_digest: digest,
     };
+    if let Err(error) = wait_installed_ready(&mut child, arguments) {
+        let _ = child.kill();
+        let _ = child.wait();
+        return Err(error);
+    }
     if let Err(error) = write_state(&state_path, &state) {
         let _ = child.kill();
+        let _ = child.wait();
         return Err(error);
     }
     Ok(json!({
@@ -705,6 +711,43 @@ pub fn start_installed(
         "changed": true,
         "state_file": state_path.display().to_string(),
     }))
+}
+
+fn wait_installed_ready(child: &mut std::process::Child, arguments: &[String]) -> Result<(), String> {
+    let argument = |name: &str| arguments.windows(2)
+        .find(|pair| pair[0] == name).map(|pair| pair[1].as_str());
+    let listen = argument("--listen").ok_or_else(|| "installed runtime omitted its listen address".to_owned())?;
+    let environment = argument("--environment").ok_or_else(|| "installed runtime omitted its environment".to_owned())?;
+    let address = endpoint(listen)?;
+    let mode = if arguments.iter().any(|arg| arg == "--read-only") {
+        DeploymentMode::ReadOnly
+    } else { DeploymentMode::Full };
+    let expected = agent_card(environment, listen, mode, &toolset::surface(mode)?);
+    let deadline = std::time::Instant::now() + Duration::from_secs(5);
+    while std::time::Instant::now() < deadline {
+        if child.try_wait().map_err(|error| format!("could not inspect installed runtime: {error}"))?.is_some() {
+            return Err("the installed A2A runtime exited before readiness".to_owned());
+        }
+        if let Ok(mut stream) = TcpStream::connect_timeout(&address, Duration::from_millis(250)) {
+            stream.set_read_timeout(Some(Duration::from_millis(250))).map_err(|error| error.to_string())?;
+            stream.set_write_timeout(Some(Duration::from_millis(250))).map_err(|error| error.to_string())?;
+            let request = format!("GET /.well-known/agent-card.json HTTP/1.1\r\nHost: {listen}\r\nConnection: close\r\n\r\n");
+            if stream.write_all(request.as_bytes()).is_ok() {
+                let mut response = Vec::new();
+                if stream.take(65_537).read_to_end(&mut response).is_ok() && response.len() <= 65_536 {
+                    if let Some(end) = response.windows(4).position(|bytes| bytes == b"\r\n\r\n") {
+                        let matches = response.starts_with(b"HTTP/1.1 200 ") &&
+                            serde_json::from_slice::<Value>(&response[end + 4..]).ok().as_ref() == Some(&expected);
+                        if matches && child.try_wait().map_err(|error| error.to_string())?.is_none() {
+                            return Ok(());
+                        }
+                    }
+                }
+            }
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    Err("the installed A2A runtime did not publish its exact bound agent card before readiness deadline".to_owned())
 }
 
 pub fn start_from_manifest() -> Result<Value, String> {

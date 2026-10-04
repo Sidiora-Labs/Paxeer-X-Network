@@ -97,3 +97,18 @@ fn payment_installation_requires_a_fixed_real_source_and_asset() {
     );
     assert!(error(&output).contains("--source-account"));
 }
+
+#[test]
+fn a2a_installation_rejects_public_or_unassigned_listener_before_credentials() {
+    for (address, reason) in [("0.0.0.0:19433", "loopback"), ("127.0.0.1:0", "fixed port"), ("localhost:19433", "host:port")] {
+        let source = "11".repeat(32);
+        let asset = "22".repeat(32);
+        let output = run("listener", &[
+            "--json", "install", "a2a", "--environment", "beta",
+            "--source-account", &source, "--asset", &asset, "--listen", address,
+        ]);
+        let detail = error(&output);
+        assert!(detail.contains(reason), "{address}: {detail}");
+        assert!(!detail.contains("credential"), "listener was admitted before credentials: {detail}");
+    }
+}

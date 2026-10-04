@@ -52,7 +52,7 @@ a2a_authorization=$(tr -d '\r\n' <"$a2a_authorization_file")
 ready=false
 for _ in $(seq 1 50); do
   if curl --silent --fail "http://127.0.0.1:$a2a_port/.well-known/agent-card.json" \
-    | jq -e '.name == "LayerX Payment Agent"' >/dev/null; then
+    | jq -e '.name == "LayerX"' >/dev/null; then
     ready=true
     break
   fi

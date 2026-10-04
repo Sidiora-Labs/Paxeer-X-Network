@@ -28145,7 +28145,7 @@ source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/fanout-104.17.5-i
 
 [task.104.17.6]
 title = "Ship one-command MCP and A2A installation"
-status = "pending"
+status = "in_progress"
 mode = "QUALIFY"
 wave = 4
 requires = ["0.2", "104.17.4"]
@@ -28157,7 +28157,7 @@ do_4 = "Verify both installations end to end in CI against a real agent runtime 
 do_5 = "Document both in the quickstarts with their five-minute paths."
 do_6 = "Keep installed credentials in credential storage with least scope."
 do_7 = "Provide this task selector in tools/paxeer-x/gates and execute the full scoped acceptance contract using real production paths. Preserve the retained verification command coverage; move aggregate matrices to release scope and refuse an unknown or unimplemented selector."
-touches = ["platform/cli/src", "platform/cli/tests/install.rs", "platform/cli/tests/install-journey.sh", "platform/cli/Cargo.toml", "platform/Cargo.lock", "platform/hosted/gateway", "platform/docs", "platform/Makefile.inc", ".github/workflows/platform.yml", "spec/paxeer-x/qualification.kvx", "tools/paxeer-x/gates/104.17.6.sh"]
+touches = ["platform/cli/src", "platform/cli/tests/install.rs", "platform/cli/tests/install-journey.sh", "platform/cli/Cargo.toml", "tools/paxeer-x/gates/104.17.6.sh"]
 verify_cmd = "timeout 30m tools/paxeer-x/verify-task.sh 104.17.6"
 gate_kind = "planned-adapter"
 max_builds = 0
@@ -28173,6 +28173,13 @@ completion_policy = "Existing implementation is preserved; current candidate qua
 planned_paths = ["spec/paxeer-x/qualification.kvx", "tools/paxeer-x/gates/104.17.6.sh"]
 path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
 evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+fanout_role = "integrate_sdk"
+fanout_scope_delegated = ["platform/Cargo.lock", "platform/hosted/gateway", "platform/docs", "platform/Makefile.inc", ".github/workflows/platform.yml", "spec/paxeer-x/qualification.kvx"]
+fanout_basis = "Owner requested maximum parallel implementation on 2026-10-04; delegated shared file edits require root coordination and retain original acceptance criteria"
+source_status = "partial"
+completion_basis = "partial source published; original acceptance criteria remain required"
+qualification_status = "UNRUN"
+source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/fanout-104.17.6-intake.json"
 
 [task.104.19.4]
 title = "Register the programs module in the core"

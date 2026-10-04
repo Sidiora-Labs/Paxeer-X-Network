@@ -3,7 +3,7 @@ use std::env;
 use std::path::{Path, PathBuf};
 
 use layerx_mcp::binding::Binding;
-use layerx_mcp::server::DeploymentMode;
+use layerx_mcp::server::{DeploymentMode, ToolKind};
 use serde_json::{json, Value};
 
 use crate::config;
@@ -39,19 +39,40 @@ pub fn platform_install_mcp(request: &Request) -> Result<(String, Value), String
         Some(explicit) => absolute_binding_path(explicit)?,
         None => daemon_binding_path()?,
     };
-    let binding = Binding::open(&daemon_binding).map_err(|error| {
+    let mut binding = Binding::open(&daemon_binding).map_err(|error| {
         format!(
             "the daemon binding document at {} could not be used: {}; agent-daemon enrolment writes it before the MCP server is installed",
             daemon_binding.display(),
             error.detail()
         )
     })?;
-    let mode = if request.read_only {
-        DeploymentMode::ReadOnly
-    } else {
-        binding.mode()
-    };
-    let tools = toolset::daemon_surface(mode)?;
+    let declared_mode = binding.mode();
+    if request.read_only {
+        binding.restrict_to_read_only();
+    }
+    let mode = binding.mode();
+    let mut session = binding.open_daemon_client().map_err(|_| {
+        "the authenticated agent daemon did not admit this installation binding".to_owned()
+    })?;
+    let description = session
+        .handle(r#"{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}"#)
+        .ok_or_else(|| "the authenticated daemon returned no tool catalogue".to_owned())?;
+    let listings = description.pointer("/result/tools").and_then(Value::as_array)
+        .ok_or_else(|| "the authenticated daemon refused its tool catalogue".to_owned())?;
+    let mut definitions = toolset::daemon_surface(mode)?;
+    definitions.extend(layerx_mcp::catalogue::web_surface().into_iter()
+        .filter(|tool| mode == DeploymentMode::Full || tool.kind == ToolKind::Read));
+    let tools = listings.iter().map(|listing| {
+        let name = listing.get("name").and_then(Value::as_str)
+            .ok_or_else(|| "the daemon catalogue omitted a tool name".to_owned())?;
+        definitions.iter().find(|tool| tool.name == name).copied()
+            .ok_or_else(|| "the daemon returned a tool outside its installation catalogue".to_owned())
+    }).collect::<Result<Vec<_>, String>>()?;
+    if mode == DeploymentMode::Full &&
+        ["activity.prepare", "activity.disclose", "activity.sign", "activity.submit", "activity.track"]
+            .iter().any(|name| !tools.iter().any(|tool| tool.name == *name)) {
+        return Err("the authenticated daemon has not admitted the complete payment journey".to_owned());
+    }
     let command = executable()?;
     let variables: BTreeMap<String, String> = BTreeMap::new();
     let agent_endpoint = binding.agent_endpoint().to_owned();
@@ -84,7 +105,7 @@ pub fn platform_install_mcp(request: &Request) -> Result<(String, Value), String
         "daemon_binding": {
             "path": binding_path,
             "tenant": binding.tenant(),
-            "declared_mode": toolset::mode_name(binding.mode()),
+            "declared_mode": toolset::mode_name(declared_mode),
             "agent_endpoint": &agent_endpoint,
             "store": path_text(binding.store())?,
             "session_generation": binding.session_generation(),
