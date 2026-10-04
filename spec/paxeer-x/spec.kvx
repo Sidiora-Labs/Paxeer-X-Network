@@ -34460,3 +34460,25 @@ qualification_status = "UNRUN"
 completion_basis_policy = "Owner CONSTITUTION: fully implemented DONE, qualification separate; partial remains in_progress."
 completion_basis = "implementation"
 source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-104.13.36-source-handoff.json"
+
+[task.104.13.37]
+title = "Apply approved Human byte-type corrections and finish sequential Send qualification"
+status = "done"
+mode = "BUILD"
+wave = 4
+requires = ["0.2", "104.13.34", "104.13.35", "104.13.36"]
+reqs = ["1064.3", "1064.8", "1071.1", "1071.5"]
+do_1 = "Apply only approved five Human runtime expressions preserving exact scalar and full-byte comparisons. Preserve every authorization/refusal and prior failed/timeout result."
+do_2 = "Coordinate owner-approved additional20-minute window for original34 and36: each one remaining build sequentially, each focused verify atmostonce after actual complete artifacts, atmosttwo scoped repairs total. No daemon re-verification; preserve authenticfixture requirements."
+touches = ["human/crates/layerx-human-service/src/server/agent_runtime.rs", "human/crates/layerx-human-service/tests/native_journey_approval.rs", "human/crates/layerx-human-service/tests/native_send_purpose.rs", "human/crates/layerx-human-service/src/custody/provider.rs", "human/crates/layerx-human-service/src/custody/signer.rs", "human/crates/layerx-human-kms/src/attestor.rs", "human/wallet/attestor/internal/server/native_purpose.go", "human/wallet/attestor/internal/server/native_purpose_test.go", "human/wallet/attestor/internal/policy/native/native.go", "tools/qualification/paxeer-x/native_send_purpose.py", "tools/qualification/paxeer-x/native-journey-approval.py"]
+build_cmd = "Owner-approved sequential original36 Human journey compile then original34 native_send_purpose.py --build; one peroriginaltask, sameimmutablecandidate."
+verify_cmd = "Original36 native-journey-approval.py and original34 native_send_purpose.py, each once only with actual built candidate and realauthority."
+max_builds = 2
+max_verify_runs = 2
+max_repair_cycles = 2
+time_limit_minutes = 20
+stop_condition = "Owner-approved windowSTART09:18UTC END09:38UTC; stop after exact allowed gates, cap, unrelatedfailure or weakening."
+owner_approval = "User explicitly approved exact task104.13.36-compiler-proposal.patch and additional20-minute sequential qualification window for34and36 withatmosttwo scopedrepairs. Thistrackpreserves originalimplementedDONEtasks andallpriorresults; itdoesnotresetunapprovedwindows."
+source_status = "done"
+qualification_status = "UNRUN"
+completion_basis = "implementation"

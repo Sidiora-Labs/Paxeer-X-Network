@@ -4741,11 +4741,11 @@ impl AgentRuntime {
             || activity.account_sequence() != request.account_sequence.0
             || activity.timestamp_bound().not_before != request.timestamp_bound.not_before.0
             || activity.timestamp_bound().not_after != request.timestamp_bound.not_after.0
-            || activity.fee_limit().value() != request.fee_limit.0
-            || activity.payload().as_bytes() != request.payload.as_bytes()
+            || activity.fee_limit() != request.fee_limit.0
+            || activity.payload() != request.payload.as_bytes()
             || activity.payload_hash() != request.payload_hash
             || activity.idempotency_key() != decode_hex32(request.idempotency_key.as_str())?
-            || actual_preimage != preimage
+            || actual_preimage.as_bytes().as_slice() != preimage.as_slice()
         {
             return Err(AgentBoundaryError::CorruptResponse);
         }
@@ -4885,7 +4885,7 @@ impl AgentRuntime {
                 let preparation = self.native_journey_preparation(
                     request,
                     material.canonical_unsigned_bytes,
-                    preimage,
+                    preimage.as_bytes().to_vec(),
                 )?;
                 return Ok(crate::journeys::NativeJourneyAdmission {
                     preparation,
@@ -4976,7 +4976,8 @@ impl AgentRuntime {
                 .ok_or(AgentBoundaryError::CorruptResponse)?;
             if value.preparation_id != id
                 || value.canonical_bytes != preview.preparation.unsigned_canonical_bytes
-                || value.signing_preimage != preview.preparation.signing_preimage
+                || value.signing_preimage.as_slice()
+                    != preview.preparation.signing_preimage.as_slice()
             {
                 return Err(AgentBoundaryError::CorruptResponse);
             }
