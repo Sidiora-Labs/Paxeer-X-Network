@@ -2464,3 +2464,8 @@ resolution = "Set both sparse options using git config --worktree before checkou
 area = "Generated Agent operation producer and historical count"
 observed = "The operation catalogue marks itself generated but no committed producer was found; the old operation-envelope gate asserts exactly51 operations while new tenant readiness requires an additive named operation."
 resolution = "Restore deterministic schema-driven generation and use an explicit additive contract version. Preserve the old51-operation assertion and record its version conflict without rerunning or loosening it."
+
+[gotcha.720]
+area = "Bounded current-trust build"
+observed = "Task5.2 source was complete but its original08:32UTC deadline expired during actual Go CLI compilation; later focused and native build stages never ran."
+resolution = "Record exit1 at the cutoff and verificationUNRUN; do not infer a compiler defect, restart the build or claim the absent genuine trust fixtures were exercised."

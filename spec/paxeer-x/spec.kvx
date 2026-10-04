@@ -25419,8 +25419,15 @@ path_policy = "Existing paths are modified in place. Planned paths must be creat
 evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
 source_status = "complete"
 completion_basis = "implementation"
-qualification_status = "UNRUN"
+qualification_status = "implemented-not-qualified"
 handoff_path = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-5.2-source-handoff.json"
+qualification_revision = "621ae9f30d51e398c8fabd84b8f2c52d37092c0e"
+build_exit_code = 1
+verify_status = "UNRUN"
+repair_cycles_used = 0
+build_log_path = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-5.2-build.log"
+qualification_note = "Original08:32UTC cutoff terminated actual Go CLI compilation; focused Go/native builds and verification never ran. Genuine advanced-trust/restart inputs absent."
+
 
 [task.6.2]
 title = "Execute native upgrade migrations under the admitted ABI and metering schedule"
