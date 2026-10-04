@@ -567,6 +567,23 @@ export interface UnifiedAccountRecord {
   readonly freshness: ExplorerFreshness;
 }
 
+export type ReportedAvailability<T> =
+  | Readonly<{ state: "present"; value: T; evidence: "gateway-reported" }>
+  | Readonly<{ state: "unavailable"; reason: "not_reported"; evidence: "gateway-reported" }>;
+
+export interface UnifiedAccountAvailabilityRecord extends Omit<UnifiedAccountRecord, "balances" | "settlement"> {
+  readonly profile: 2;
+  readonly balances: Readonly<{
+    items: readonly (Omit<UnifiedBalanceRecord, "denom"> & { readonly denom: ReportedAvailability<string> })[];
+    joinedLimit: string;
+  }>;
+  readonly settlement: Omit<UnifiedSettlement, "finalizedBatch" | "anchorStatus" | "anchorStatusName"> & {
+    readonly finalizedBatch: ReportedAvailability<string>;
+    readonly anchorStatus: ReportedAvailability<string>;
+    readonly anchorStatusName: ReportedAvailability<string>;
+  };
+}
+
 function evmAddress(value: unknown, at: string): string {
   const candidate = text(value, at).toLowerCase();
   if (!/^0x[0-9a-f]{40}$/u.test(candidate)) {
@@ -736,6 +753,134 @@ export function decodeUnifiedAccount(value: unknown, at = "unified_account"): Un
       joinedLimit: decimal(balances.joined_limit, `${at}.balances.joined_limit`),
     }),
     settlement: decodeSettlement(item.settlement, `${at}.settlement`),
+    freshness: decodeFreshness(item.freshness, `${at}.freshness`),
+    layerxActivity: Object.freeze({
+      items: Object.freeze(layerxActivity.items.map((entry, index) =>
+        decodeUnifiedActivity(entry, `${at}.layerx_activity.items[${String(index)}]`))),
+      ...(nextBefore === undefined ? {} : { nextBefore }),
+    }),
+    paxeerActivity: Object.freeze({
+      items: Object.freeze(activity.items.map((entry, index) =>
+        decodePaxeerActivity(entry, `${at}.paxeer_activity.items[${String(index)}]`))),
+      fromBlock: decimal(activity.from_block, `${at}.paxeer_activity.from_block`),
+      toBlock: decimal(activity.to_block, `${at}.paxeer_activity.to_block`),
+      ...(nextBeforeBlock === undefined ? {} : { nextBeforeBlock }),
+    }),
+  });
+}
+
+function closedAvailabilityKeys(value: JsonRecord, expected: readonly string[], at: string): void {
+  if (Object.keys(value).sort().join(",") !== [...expected].sort().join(",")) {
+    throw new TypeError(`${at} has undeclared or missing fields`);
+  }
+}
+
+function decodeReportedAvailability(value: unknown, legacy: unknown, decode: (value: unknown, at: string) => string, at: string): ReportedAvailability<string> {
+  const item = record(value, at);
+  if (item.evidence !== "gateway-reported") throw new TypeError(`${at}.evidence is undeclared`);
+  if (item.state === "present") {
+    closedAvailabilityKeys(item, ["state", "value", "evidence"], at);
+    const decoded = decode(item.value, `${at}.value`);
+    if (decoded !== legacy) throw new TypeError(`${at}.value differs from the reported legacy value`);
+    return Object.freeze({ state: "present", value: decoded, evidence: "gateway-reported" });
+  }
+  if (item.state === "unavailable") {
+    closedAvailabilityKeys(item, ["state", "reason", "evidence"], at);
+    if (item.reason !== "not_reported" || legacy !== null) throw new TypeError(`${at} is not a reported absence`);
+    return Object.freeze({ state: "unavailable", reason: "not_reported", evidence: "gateway-reported" });
+  }
+  throw new TypeError(`${at}.state is undeclared`);
+}
+
+export function decodeUnifiedAccountUnavailable(value: unknown): "gateway_unavailable" | "index_incomplete" {
+  const item = record(value, "unified_unavailable");
+  closedAvailabilityKeys(item, ["profile", "availability"], "unified_unavailable");
+  if (item.profile !== 2) throw new TypeError("unified_unavailable.profile is not 2");
+  const availability = record(item.availability, "unified_unavailable.availability");
+  closedAvailabilityKeys(availability, ["account"], "unified_unavailable.availability");
+  const account = record(availability.account, "unified_unavailable.availability.account");
+  closedAvailabilityKeys(account, ["state", "reason"], "unified_unavailable.availability.account");
+  if (account.state !== "unavailable" || (account.reason !== "gateway_unavailable" && account.reason !== "index_incomplete")) {
+    throw new TypeError("unified_unavailable reason is undeclared");
+  }
+  return account.reason;
+}
+
+export function decodeUnifiedAccountAvailability(value: unknown, at = "unified_account_v2"): UnifiedAccountAvailabilityRecord {
+  const item = record(value, at);
+  if (item.profile !== 2) throw new TypeError(`${at}.profile is not 2`);
+  const availability = record(item.availability, `${at}.availability`);
+  closedAvailabilityKeys(availability, ["denominations", "settlement"], `${at}.availability`);
+  const settlementAvailability = record(availability.settlement, `${at}.availability.settlement`);
+  closedAvailabilityKeys(settlementAvailability, ["anchor_status", "anchor_status_name", "finalized_batch"], `${at}.availability.settlement`);
+  if (!Array.isArray(availability.denominations) || availability.denominations.length > 1_024) {
+    throw new TypeError(`${at}.availability.denominations must be bounded`);
+  }
+  const denominations = availability.denominations;
+  if (item.evidence !== "gateway-reported") {
+    throw new TypeError(`${at}.evidence is not a declared provenance`);
+  }
+  const requested = parseAccountIdentifier(text(item.requested, `${at}.requested`));
+  const canonical = parseAccountIdentifier(text(item.canonical, `${at}.canonical`));
+  if (requested === undefined || canonical === undefined) {
+    throw new TypeError(`${at} must name accounts of this network`);
+  }
+  const balances = record(item.balances, `${at}.balances`);
+  if (!Array.isArray(balances.items) || balances.items.length > 1_024) {
+    throw new TypeError(`${at}.balances.items must be a bounded array`);
+  }
+  if (denominations.length !== balances.items.length) throw new TypeError(`${at}.availability denomination coverage differs`);
+  const settlement = record(item.settlement, `${at}.settlement`);
+  const activity = record(item.paxeer_activity, `${at}.paxeer_activity`);
+  if (!Array.isArray(activity.items) || activity.items.length > 100) {
+    throw new TypeError(`${at}.paxeer_activity.items must be a bounded array`);
+  }
+  const nextBeforeBlock = optionalDecimal(activity.next_before_block, `${at}.paxeer_activity.next_before_block`);
+  const layerxActivity = record(item.layerx_activity, `${at}.layerx_activity`);
+  if (!Array.isArray(layerxActivity.items) || layerxActivity.items.length > 100) {
+    throw new TypeError(`${at}.layerx_activity.items must be a bounded array`);
+  }
+  const nextBefore = optionalDecimal(layerxActivity.next_before, `${at}.layerx_activity.next_before`);
+  if (nextBefore === "0" || (nextBefore !== undefined && layerxActivity.items.length === 0)) {
+    throw new TypeError(`${at}.layerx_activity.next_before is invalid`);
+  }
+  return Object.freeze({
+    profile: 2 as const,
+    requested: requested.canonical,
+    canonical: canonical.canonical,
+    evidence: "gateway-reported",
+    identities: decodeIdentities(item.identities, `${at}.identities`),
+    balances: Object.freeze({
+      items: Object.freeze(balances.items.map((entry, index) => {
+        const balance = record(entry, `${at}.balances.items[${String(index)}]`);
+        const denomination = record(denominations[index], `${at}.availability.denominations[${String(index)}]`);
+        closedAvailabilityKeys(denomination, ["asset_id", "denom"], `${at}.availability.denominations[${String(index)}]`);
+        const assetId = hex(balance.asset_id, `${at}.balances.items[${String(index)}].asset_id`);
+        if (hex(denomination.asset_id, `${at}.availability.denominations[${String(index)}].asset_id`) !== assetId) {
+          throw new TypeError(`${at}.availability denomination names another asset`);
+        }
+        const custody = optionalDecimal(balance.custody, `${at}.balances.items[${String(index)}].custody`);
+        const paxeer = optionalDecimal(balance.paxeer, `${at}.balances.items[${String(index)}].paxeer`);
+        const layerx = optionalDecimal(balance.layerx, `${at}.balances.items[${String(index)}].layerx`);
+        return Object.freeze({
+          assetId,
+          denom: decodeReportedAvailability(denomination.denom, balance.denom, text, `${at}.availability.denominations[${String(index)}].denom`),
+          ...(custody === undefined ? {} : { custody }),
+          ...(paxeer === undefined ? {} : { paxeer }),
+          ...(layerx === undefined ? {} : { layerx }),
+        });
+      })),
+      joinedLimit: decimal(balances.joined_limit, `${at}.balances.joined_limit`),
+    }),
+    settlement: Object.freeze({
+      networkId: text(settlement.network_id, `${at}.settlement.network_id`),
+      chainId: decimal(settlement.chain_id, `${at}.settlement.chain_id`),
+      instantBlock: decimal(settlement.instant_block, `${at}.settlement.instant_block`),
+      sealedBatch: decimal(settlement.sealed_batch, `${at}.settlement.sealed_batch`),
+      finalizedBatch: decodeReportedAvailability(settlementAvailability.finalized_batch, settlement.finalized_batch, decimal, `${at}.availability.settlement.finalized_batch`),
+      anchorStatus: decodeReportedAvailability(settlementAvailability.anchor_status, settlement.anchor_status, decimal, `${at}.availability.settlement.anchor_status`),
+      anchorStatusName: decodeReportedAvailability(settlementAvailability.anchor_status_name, settlement.anchor_status_name, text, `${at}.availability.settlement.anchor_status_name`),
+    }),
     freshness: decodeFreshness(item.freshness, `${at}.freshness`),
     layerxActivity: Object.freeze({
       items: Object.freeze(layerxActivity.items.map((entry, index) =>

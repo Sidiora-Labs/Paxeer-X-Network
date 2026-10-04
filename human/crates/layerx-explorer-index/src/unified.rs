@@ -903,6 +903,78 @@ pub fn unified_account_json(view: &UnifiedAccountView, freshness: Freshness) -> 
     .to_string()
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum UnifiedAccountProfile {
+    Legacy,
+    AvailabilityV2,
+}
+
+impl UnifiedAccountProfile {
+    pub fn from_headers(request: &str) -> Result<Self, UnifiedQueryError> {
+        let mut profile = None;
+        for line in request.lines().skip(1).take_while(|line| !line.is_empty()) {
+            let Some((name, value)) = line.split_once(':') else {
+                continue;
+            };
+            if name.eq_ignore_ascii_case("LayerX-Unified-Profile") {
+                if profile.is_some() {
+                    return Err(UnifiedQueryError::InvalidQuery);
+                }
+                profile = Some(match value.trim() {
+                    "1" => Self::Legacy,
+                    "2" => Self::AvailabilityV2,
+                    _ => return Err(UnifiedQueryError::InvalidQuery),
+                });
+            }
+        }
+        Ok(profile.unwrap_or(Self::Legacy))
+    }
+}
+
+fn reported_availability(value: Option<String>) -> Value {
+    match value {
+        Some(value) => {
+            serde_json::json!({"state":"present","value":value,"evidence":"gateway-reported"})
+        }
+        None => {
+            serde_json::json!({"state":"unavailable","reason":"not_reported","evidence":"gateway-reported"})
+        }
+    }
+}
+
+pub fn unified_account_availability_json(
+    view: &UnifiedAccountView,
+    freshness: Freshness,
+) -> Result<String, serde_json::Error> {
+    let mut document: Value = serde_json::from_str(&unified_account_json(view, freshness))?;
+    document["profile"] = serde_json::json!(2);
+    document["availability"] = serde_json::json!({
+        "settlement": {
+            "finalized_batch": reported_availability(view.join.settlement.finalized_batch.map(|value| value.to_string())),
+            "anchor_status": reported_availability(view.join.settlement.anchor_status.map(|value| value.to_string())),
+            "anchor_status_name": reported_availability(view.join.settlement.anchor_status_name.clone()),
+        },
+        "denominations": view.join.balances.items.iter().map(|balance| serde_json::json!({
+            "asset_id": hex::encode(&balance.asset_id),
+            "denom": reported_availability(balance.denom.clone()),
+        })).collect::<Vec<_>>(),
+    });
+    Ok(document.to_string())
+}
+
+pub fn unified_account_unavailable_json(reason: UnifiedAvailabilityFailure) -> String {
+    serde_json::json!({"profile":2,"availability":{"account":{"state":"unavailable","reason": match reason {
+        UnifiedAvailabilityFailure::GatewayUnavailable => "gateway_unavailable",
+        UnifiedAvailabilityFailure::IndexIncomplete => "index_incomplete",
+    }}}}).to_string()
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum UnifiedAvailabilityFailure {
+    GatewayUnavailable,
+    IndexIncomplete,
+}
+
 #[cfg(test)]
 mod tests {
     #![allow(clippy::expect_used)]

@@ -28,8 +28,9 @@ use layerx_explorer_index::reads::{
 };
 use layerx_explorer_index::receipt_authority::{ReadOutcome, ReceiptAuthorityReader};
 use layerx_explorer_index::unified::{
-    unified_account_json, AccountIdentifier, ActivityWindow, GatewayEndpoint, UnifiedAccountQuery,
-    UnifiedAccountReader, UnifiedQueryError,
+    unified_account_availability_json, unified_account_json, unified_account_unavailable_json,
+    AccountIdentifier, ActivityWindow, GatewayEndpoint, UnifiedAccountProfile, UnifiedAccountQuery,
+    UnifiedAccountReader, UnifiedAvailabilityFailure, UnifiedQueryError,
 };
 use layerx_explorer_index::{Indexer, ProtocolProgramIngestor, QueryError, RecordId};
 use layerx_programs::{
@@ -843,6 +844,7 @@ fn serve_unified_account(
     index: &Indexer,
     identifier_text: &str,
     query: &str,
+    profile: UnifiedAccountProfile,
 ) -> Result<(), String> {
     let Some(decoded) = percent_decode(identifier_text) else {
         return response(stream, 400, "{\"error\":\"invalid_account\"}");
@@ -865,13 +867,42 @@ fn serve_unified_account(
         }
     };
     let Ok(reader) = UnifiedAccountReader::new(&config.gateway, ACTIVITY_WINDOW) else {
-        return response(stream, 503, "{\"error\":\"network_gateway_unavailable\"}");
+        return response(
+            stream,
+            503,
+            &match profile {
+                UnifiedAccountProfile::Legacy => {
+                    "{\"error\":\"network_gateway_unavailable\"}".to_owned()
+                }
+                UnifiedAccountProfile::AvailabilityV2 => {
+                    unified_account_unavailable_json(UnifiedAvailabilityFailure::GatewayUnavailable)
+                }
+            },
+        );
     };
     let Ok(join) = reader.join(identifier, page.before_block) else {
-        return response(stream, 503, "{\"error\":\"network_gateway_unavailable\"}");
+        return response(
+            stream,
+            503,
+            &match profile {
+                UnifiedAccountProfile::Legacy => {
+                    "{\"error\":\"network_gateway_unavailable\"}".to_owned()
+                }
+                UnifiedAccountProfile::AvailabilityV2 => {
+                    unified_account_unavailable_json(UnifiedAvailabilityFailure::GatewayUnavailable)
+                }
+            },
+        );
     };
     match index.unified_account(join, page.before_sequence, page.limit) {
-        Ok(view) => response(stream, 200, &unified_account_json(&view.value, view.freshness)),
+        Ok(view) => response(stream, 200, &match profile {
+            UnifiedAccountProfile::Legacy => unified_account_json(&view.value, view.freshness),
+            UnifiedAccountProfile::AvailabilityV2 => unified_account_availability_json(&view.value, view.freshness)
+                .map_err(|_| "profile2 serialization failed".to_owned())?,
+        }),
+        Err(failure) if profile == UnifiedAccountProfile::AvailabilityV2
+            && matches!(failure.error, QueryError::IncompleteFromHead { .. } | QueryError::AccountIndexIncomplete { .. }) =>
+            response(stream, 503, &unified_account_unavailable_json(UnifiedAvailabilityFailure::IndexIncomplete)),
         Err(failure) => match failure.error {
             QueryError::InvalidPageSize => response(stream, 400, "{\"error\":\"invalid_page_size\"}"),
             QueryError::InvalidCursor => response(stream, 400, "{\"error\":\"invalid_cursor\"}"),
@@ -1292,6 +1323,17 @@ fn serve_connection(
     {
         return response(stream, 401, "{\"error\":\"unauthorized\"}");
     }
+    if path == "/v1/identity" {
+        return response(
+            stream,
+            200,
+            &serde_json::json!({
+                "network_id": config.name_reads.scope.network_id.to_string(),
+                "wire_version": config.name_reads.scope.protocol_version.to_string(),
+            })
+            .to_string(),
+        );
+    }
     if path == "/healthz" {
         let now = now_ms(clock)?;
         let ready = refresh_program(config, index, config.probe_program, now).is_ok()
@@ -1312,7 +1354,11 @@ fn serve_connection(
         let Some(identifier) = route.strip_suffix("/unified") else {
             return response(stream, 404, "{\"error\":\"not_found\"}");
         };
-        return serve_unified_account(stream, config, index, identifier, query);
+        let profile = match UnifiedAccountProfile::from_headers(request) {
+            Ok(profile) => profile,
+            Err(_) => return response(stream, 400, "{\"error\":\"invalid_profile\"}"),
+        };
+        return serve_unified_account(stream, config, index, identifier, query, profile);
     }
     let Some(program_text) = path.strip_prefix("/v1/programs/") else {
         return response(stream, 404, "{\"error\":\"not_found\"}");

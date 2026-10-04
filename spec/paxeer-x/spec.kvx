@@ -32836,3 +32836,26 @@ qualification_status = "implemented-not-qualified"
 build_exit_code = 0
 verify_exit_code = 101
 qualification_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-104.35.19-verify.log"
+
+[task.22.9]
+title = "Connect explicit verified availability across the unified explorer account API and browser"
+status = "done"
+mode = "BUILD"
+wave = 3
+requires = ["0.2", "22.4"]
+reqs = ["194"]
+do_1 = "Add an explicit closed profile2 availability producer and browser decoder through the same account handler; preserve old settlement and denomination decoder checks and legacy null encoding."
+touches = ["human/crates/layerx-explorer-index/src/main.rs", "human/crates/layerx-explorer-index/src/unified.rs", "human/crates/layerx-explorer-index/src/query.rs", "human/apps/web/src/explorer/model.ts", "human/apps/web/src/explorer/client.ts", "human/apps/web/src/app/explorer/accounts/[accountId]/page.tsx", "human/crates/layerx-explorer-index/tests/unified_availability.rs", "tools/qualification/paxeer-x/explorer-availability.py"]
+build_cmd = "timeout 20m env CARGO_TARGET_DIR=/root/lx-target/human /root/.cargo/bin/cargo test --locked --manifest-path human/Cargo.toml -p layerx-explorer-index --test unified_availability --no-run"
+verify_cmd = "timeout 10m python3 tools/qualification/paxeer-x/explorer-availability.py"
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop at original cap, missing authority, unrelated failure or weakening; report exact source state and evidence."
+completion_basis_policy = "Owner CONSTITUTION: fully implemented DONE; qualification separate."
+source_ownership = "Root owns shared manifests, spec and publication; no deployment."
+completion_basis = "implementation"
+qualification_status = "unrun"
+format_exit_code = 0
+qualification_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-22.9-qualification-unrun.log"

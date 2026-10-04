@@ -9,6 +9,8 @@ import {
   decodeReceipt,
   decodeRecord,
   decodeUnifiedAccount,
+  decodeUnifiedAccountAvailability,
+  decodeUnifiedAccountUnavailable,
   decodeVerificationReport,
   parseAccountIdentifier,
   validExplorerCoordinate,
@@ -22,6 +24,7 @@ import {
   type ProgramRecord,
   type ReceiptRecord,
   type UnifiedAccountRecord,
+  type UnifiedAccountAvailabilityRecord,
 } from "./model";
 
 const FETCH_TIMEOUT_MS = 8_000;
@@ -233,6 +236,64 @@ export async function unifiedAccount(
     throw new ExplorerUnavailableError();
   }
 }
+
+export async function unifiedAccountAvailability(
+  identifier: string,
+  beforeBlock?: string,
+  before?: string,
+  limit = 25,
+): Promise<UnifiedAccountAvailabilityRecord | undefined> {
+  const account = parseAccountIdentifier(identifier);
+  if (account === undefined
+    || (beforeBlock !== undefined && !validExplorerCoordinate(beforeBlock))
+    || (before !== undefined && (!validExplorerCoordinate(before) || before === "0"))
+    || !Number.isSafeInteger(limit) || limit < 1 || limit > 100) {
+    throw new TypeError("Invalid unified account query");
+  }
+  const { origin, bearer } = programExplorerOrigin();
+  const url = new URL(`/v1/accounts/${encodeURIComponent(account.canonical)}/unified`, origin);
+  if (beforeBlock !== undefined) {
+    url.searchParams.set("before_block", beforeBlock);
+  }
+  if (before !== undefined) {
+    url.searchParams.set("before", before);
+  }
+  url.searchParams.set("limit", String(limit));
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      headers: { Accept: "application/json", Authorization: `Bearer ${bearer}`, "LayerX-Unified-Profile": "2" },
+      cache: "no-store",
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+    });
+  } catch {
+    throw new ExplorerUnavailableError();
+  }
+  if (response.status === 404) {
+    return undefined;
+  }
+  if (response.status === 503) {
+    throw new UnifiedAccountUnavailableError(decodeUnifiedAccountUnavailable(await response.json()));
+  }
+  if (!response.ok) {
+    throw new ExplorerUnavailableError();
+  }
+  try {
+    return decodeUnifiedAccountAvailability(await response.json());
+  } catch (error) {
+    if (error instanceof TypeError) {
+      throw error;
+    }
+    throw new ExplorerUnavailableError();
+  }
+}
+
+export class UnifiedAccountUnavailableError extends ExplorerUnavailableError {
+  constructor(readonly reason: "gateway_unavailable" | "index_incomplete") {
+    super();
+  }
+}
+
 
 function namingProgram(): string {
   const configured = process.env.LAYERX_EXPLORER_NAMING_PROGRAM;

@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 
 import { copyEntry } from "../../../../../copy/runtime";
 import { formatCopy } from "../../../../../copy/format";
-import { unifiedAccount } from "../../../../explorer/client";
+import { unifiedAccountAvailability } from "../../../../explorer/client";
 import {
   ExplorerFrame,
   ExplorerUnavailable,
@@ -13,7 +13,7 @@ import {
   accountIdentifierPath,
   parseAccountIdentifier,
   type PaxeerActivityEvent,
-  type UnifiedAccountRecord,
+  type UnifiedAccountAvailabilityRecord,
 } from "../../../../explorer/model";
 import { ExplorerLink, ExplorerPanel, ExplorerTable, ExplorerVerificationBadge } from "../../../../kit/explorer";
 
@@ -25,7 +25,7 @@ function absentValue(): string {
   return copyEntry("explorer.value.none").message;
 }
 
-function IdentitiesPanel({ account }: Readonly<{ account?: UnifiedAccountRecord }>) {
+function IdentitiesPanel({ account }: Readonly<{ account?: UnifiedAccountAvailabilityRecord }>) {
   const identities = account?.identities;
   return (
     <ExplorerPanel title={copyEntry("explorer.account.identities").message}>
@@ -72,7 +72,7 @@ function IdentitiesPanel({ account }: Readonly<{ account?: UnifiedAccountRecord 
   );
 }
 
-function BalancesPanel({ account }: Readonly<{ account?: UnifiedAccountRecord }>) {
+function BalancesPanel({ account }: Readonly<{ account?: UnifiedAccountAvailabilityRecord }>) {
   return (
     <ExplorerPanel title={copyEntry("explorer.account.balances").message}>
       <ExplorerTable
@@ -86,7 +86,7 @@ function BalancesPanel({ account }: Readonly<{ account?: UnifiedAccountRecord }>
         rows={(account?.balances.items ?? []).map((balance) => ({
           id: balance.assetId,
           cells: [
-            balance.denom,
+            <span data-availability={balance.denom.state}>{balance.denom.state === "present" ? balance.denom.value : copyEntry("explorer.verify.unavailable").message}</span>,
             balance.paxeer ?? absentValue(),
             balance.layerx ?? absentValue(),
             balance.custody ?? absentValue(),
@@ -100,7 +100,7 @@ function BalancesPanel({ account }: Readonly<{ account?: UnifiedAccountRecord }>
   );
 }
 
-function SettlementPanel({ account }: Readonly<{ account?: UnifiedAccountRecord }>) {
+function SettlementPanel({ account }: Readonly<{ account?: UnifiedAccountAvailabilityRecord }>) {
   const settlement = account?.settlement;
   return (
     <ExplorerPanel title={copyEntry("explorer.account.settlement").message}>
@@ -133,11 +133,11 @@ function SettlementPanel({ account }: Readonly<{ account?: UnifiedAccountRecord 
             id: "final",
             cells: [
               copyEntry("explorer.settlement.final").message,
-              settlement === undefined
-                ? absentValue()
+              settlement === undefined || settlement.finalizedBatch.state === "unavailable" || settlement.anchorStatusName.state === "unavailable"
+                ? copyEntry("explorer.verify.unavailable").message
                 : formatCopy("explorer.settlement.final.detail", {
-                    batch: settlement.finalizedBatch,
-                    status: settlement.anchorStatusName,
+                    batch: settlement.finalizedBatch.value,
+                    status: settlement.anchorStatusName.value,
                   }),
             ],
           },
@@ -147,7 +147,7 @@ function SettlementPanel({ account }: Readonly<{ account?: UnifiedAccountRecord 
   );
 }
 
-function PaxeerActivityPanel({ account }: Readonly<{ account?: UnifiedAccountRecord }>) {
+function PaxeerActivityPanel({ account }: Readonly<{ account?: UnifiedAccountAvailabilityRecord }>) {
   const activity = account?.paxeerActivity;
   return (
     <ExplorerPanel title={copyEntry("explorer.account.paxeer_activity").message}>
@@ -213,9 +213,9 @@ export default async function AccountPage({
   if (identifier.canonical !== requested) {
     redirect(accountPagePath(identifier.canonical, query.before, query.beforeBlock));
   }
-  let account: UnifiedAccountRecord | undefined;
+  let account: UnifiedAccountAvailabilityRecord | undefined;
   try {
-    account = await unifiedAccount(identifier.canonical, query.beforeBlock, query.before);
+    account = await unifiedAccountAvailability(identifier.canonical, query.beforeBlock, query.before);
   } catch {
     account = undefined;
   }
