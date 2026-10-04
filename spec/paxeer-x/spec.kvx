@@ -28037,8 +28037,8 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.104.19.4]
 title = "Register the programs module in the core"
-status = "pending"
-mode = "QUALIFY"
+status = "done"
+mode = "BUILD"
 wave = 4
 requires = ["0.2", "104.19.3"]
 reqs = ["1091.1", "1091.5", "1093.6"]
@@ -28049,10 +28049,10 @@ do_4 = "Apply module failure semantics exactly: failed program activities consum
 do_5 = "Emit program events only through the kernel event stream under the module namespace, committed in the batch event root."
 do_6 = "Run the protocol conformance suite proving no existing behaviour changed with the module registered."
 do_7 = "Provide this task selector in tools/paxeer-x/gates and execute the full scoped acceptance contract using real production paths. Preserve the retained verification command coverage; move aggregate matrices to release scope and refuse an unknown or unimplemented selector."
-touches = ["src/modules/programs", "include/layerx/programs.h", "tests/programs", "tools/paxeer-x/gates/104.19.4.sh"]
+touches = ["src/modules/programs/registration.c", "tools/paxeer-x/gates/104.19.4.sh", "tests/programs/test_module_registration.c"]
 verify_cmd = "timeout 30m tools/paxeer-x/verify-task.sh 104.19.4"
 gate_kind = "planned-adapter"
-max_builds = 0
+max_builds = 1
 max_verify_runs = 1
 max_repair_cycles = 2
 time_limit_minutes = 30
@@ -28065,6 +28065,16 @@ completion_policy = "Existing implementation is preserved; current candidate qua
 planned_paths = ["tools/paxeer-x/gates/104.19.4.sh"]
 path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
 evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+retained_migration_accounting_paths_6_2 = ["include/layerx/programs.h"]
+fleet_retained_shared_paths = ["src/modules/programs", "tests/programs"]
+fleet_shared_writer = "Root serializes shared paths; all original criteria and inactive source assertions preserved."
+fleet_role = "/root/daemon_native_bindings"
+fleet_cutoff_utc = "2026-10-04T14:48:00Z"
+fleet_authority = "User requested thirty agents to complete remaining integrations in four hours; fresh eligible task admission, no deployment operations."
+source_status = "complete"
+completion_basis = "implementation under owner CONSTITUTION; qualification separately recorded"
+qualification_status = "UNRUN"
+source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/fleet-104.19.4-publication.json"
 
 [task.104.21.1]
 title = "Enforce the 402LXP-only monetary law for programs"
