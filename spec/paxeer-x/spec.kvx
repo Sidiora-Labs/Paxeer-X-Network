@@ -26015,8 +26015,6 @@ completion_basis = "implementation"
 qualification_status = "unverified"
 implemented_revision = "9913377e3"
 build_status = "passed"
-completion_basis = "implementation"
-qualification_status = "unverified"
 mode = "BUILD"
 wave = 3
 requires = ["0.2", "13.1"]
@@ -35974,3 +35972,26 @@ owner_authority = "Explicit user request to fix failing CI separately while impl
 stop_condition = "Full source first, one scoped build and focused verification, at most two task repairs, thirty-minute cap. No deployment or check weakening."
 completion_basis = "implementation under owner CONSTITUTION; qualification separately recorded"
 source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-103.6.15-publication-handoff.json"
+
+[task.103.6.18]
+title = "Remove identical duplicate custody task fields from the canonical spec"
+status = "done"
+wave = 5
+verify_cmd = "timeout 5m go test ./tools/specgen -run TestRepositorySpecIsValidAndCurrent -count=1"
+touches = ["spec/paxeer-x/spec.kvx"]
+do_1 = "Remove only the second identical completion_basis and qualification_status fields in task13.4, preserving all values and evidence"
+do_2 = "Run the existing focused repository parser test once and preserve unrelated failures"
+mode = "BUILD"
+max_builds = 0
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop on the one focused specgen parser result, unrelated defect, or 30-minute cutoff; preserve all checks and do not broaden source changes."
+source_status = "complete"
+completion_basis = "implementation under owner CONSTITUTION; qualification separately recorded"
+qualification_status = "failed_unrelated_spec_validation"
+qualification_command = "timeout 5m go test ./tools/specgen -run TestRepositorySpecIsValidAndCurrent -count=1"
+qualification_exit = 1
+qualification_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-103.6.18-verify-repair1.log"
+qualification_result = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-103.6.18-result.json"
+observed = "Duplicate fields resolved; existing task22.10/103.6.2 dependency-wave contradictions and task104.13.33 empty touches fail unchanged repository validation."
