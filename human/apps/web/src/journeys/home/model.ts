@@ -5,6 +5,7 @@ import {
   type ActivityEntryDetail,
   type Agent,
   type ApprovalSummary,
+  type ProgramApprovalSummary,
   type HumanApiClient,
 } from "../../api/index.ts";
 import {
@@ -58,6 +59,7 @@ export interface HomeData {
   readonly balance: AccountBalance;
   readonly agents: readonly Agent[];
   readonly approvals: readonly ApprovalSummary[];
+  readonly programApprovals: readonly ProgramApprovalSummary[];
   readonly entries: readonly ActivityEntryDetail[];
 }
 
@@ -67,6 +69,7 @@ export async function loadHome(client: HumanApiClient): Promise<HomeData> {
     balance: summary.balance,
     agents: summary.agents,
     approvals: summary.approvals,
+    programApprovals: summary.program_approvals ?? [],
     entries: summary.recent_activity.slice(0, HOME_ACTIVITY_LIMIT),
   };
 }
@@ -79,15 +82,15 @@ export function classifyHomeFailure(error: unknown): HomeLoadFailure {
 
 export type HomeBalance =
   | Readonly<{
-      kind: "verified";
-      label: string;
-      amount: ProtocolAmount;
-      currency: string;
-      verification: string;
-      freshness: string;
-      current: boolean;
-    }>
-  | Readonly<{ kind: "unavailable"; label: string; message: string }>;
+    kind: "verified";
+    label: string;
+    amount: ProtocolAmount;
+    currency: string;
+    verification: string;
+    freshness: string;
+    current: boolean;
+  }>
+  | Readonly<{ kind: "unavailable"; label: string; message: string; }>;
 
 export function homeBalance(balance?: AccountBalance): HomeBalance {
   const label = copyEntry("home.balance.label").message;
@@ -105,9 +108,8 @@ export function homeBalance(balance?: AccountBalance): HomeBalance {
     currency: balance.money.currency,
     verification: verificationWord(balance.verification),
     freshness: formatCopy("home.balance.freshness", {
-      when: `${String(balance.freshness.age_seconds)} seconds ago against ${balance.freshness.source_head}${
-        balance.freshness.within_bound ? "" : " (out of date)"
-      }`,
+      when: `${String(balance.freshness.age_seconds)} seconds ago against ${balance.freshness.source_head}${balance.freshness.within_bound ? "" : " (out of date)"
+        }`,
     }),
     current: balance.freshness.within_bound,
   };
@@ -115,8 +117,9 @@ export function homeBalance(balance?: AccountBalance): HomeBalance {
 
 export function approvalBadge(
   approvals: readonly ApprovalSummary[],
-): Readonly<{ count: number; label: string }> {
-  const count = approvals.filter((approval) => approval.state === "pending").length;
+  programs: readonly ProgramApprovalSummary[] = [],
+): Readonly<{ count: number; label: string; }> {
+  const count = [...approvals, ...programs].filter((approval) => approval.state === "pending").length;
   return { count, label: formatCopy("approval.count", { count }) };
 }
 
@@ -185,8 +188,8 @@ export function homeActivityRows(entries: readonly ActivityEntryDetail[]): reado
       title: activityTitle(entry),
       status:
         (entry.state === "done" || entry.state === "done-finalised") &&
-        receiptRequired &&
-        !outcomeBacked
+          receiptRequired &&
+          !outcomeBacked
           ? "processing"
           : statusKeyFromCopyKey(entry.state),
       when: timestampWords(entry.occurred_at),

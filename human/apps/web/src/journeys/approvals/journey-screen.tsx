@@ -5,6 +5,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 
@@ -12,6 +13,8 @@ import type {
   ActivityEntryDetail,
   ApprovalDetail,
   ApprovalSummary,
+  ProgramApprovalSummary,
+  ProgramApprovalDetail,
   HumanApiClient,
 } from "../../api";
 import { humanApi } from "../../api";
@@ -20,7 +23,7 @@ import { errorPresentation, ErrorSurface } from "../../states/error";
 import { LoadingSurface, OfflineSurface } from "../../states/surfaces";
 import { browserPasskeyAuthenticator } from "./ceremony";
 import { Approvals } from "./controller";
-import { approvalRoute, type ApprovalOutcome } from "./model";
+import { approvalRoute, programApprovalRoute, type ApprovalOutcome } from "./model";
 import { useNotificationCenter } from "../notifications/store";
 import {
   ApprovalDecisionConfirmations,
@@ -29,16 +32,20 @@ import {
   MobileApprovalInbox,
 } from "./screens";
 
+import { ProgramApprovalDetailCard } from "./programs";
+
 type LoadState =
-  | Readonly<{ status: "loading" }>
-  | Readonly<{ status: "offline" }>
-  | Readonly<{ status: "error"; error: unknown }>
+  | Readonly<{ status: "loading"; }>
+  | Readonly<{ status: "offline"; }>
+  | Readonly<{ status: "error"; error: unknown; }>
   | Readonly<{
-      status: "ready";
-      approvals: readonly ApprovalSummary[];
-      detail?: ApprovalDetail;
-      released?: ActivityEntryDetail;
-    }>;
+    status: "ready";
+    approvals: readonly ApprovalSummary[];
+    programApprovals: readonly ProgramApprovalSummary[];
+    programDetail?: ProgramApprovalDetail;
+    detail?: ApprovalDetail;
+    released?: ActivityEntryDetail;
+  }>;
 
 type DecisionAction = "approve" | "reject";
 
@@ -67,8 +74,9 @@ function clearDecisionKey(approvalId: string, action: DecisionAction): void {
 
 export function ApprovalsJourneyScreen({
   approvalId,
+  program = false,
   client: suppliedClient,
-}: Readonly<{ approvalId?: string; client?: HumanApiClient }>) {
+}: Readonly<{ approvalId?: string; program?: boolean; client?: HumanApiClient; }>) {
   const client = useMemo(() => suppliedClient ?? humanApi(), [suppliedClient]);
   const approvals = useMemo(() => new Approvals({
     client,
@@ -77,6 +85,7 @@ export function ApprovalsJourneyScreen({
   const { shell } = useAuthenticatedShell();
   const notificationCenter = useNotificationCenter();
   const router = useRouter();
+  const loadGeneration = useRef(0);
   const [loadState, setLoadState] = useState<LoadState>({ status: "loading" });
   const [at, setAt] = useState(() => new Date());
   const [outcome, setOutcome] = useState<ApprovalOutcome | undefined>(undefined);
@@ -85,30 +94,37 @@ export function ApprovalsJourneyScreen({
   const [rejectOpen, setRejectOpen] = useState(false);
 
   const load = useCallback(async () => {
+    const generation = ++loadGeneration.current;
     setLoadState({ status: "loading" });
     try {
-      const [inbox, detail] = await Promise.all([
-        approvals.inbox(),
-        approvalId === undefined ? Promise.resolve(undefined) : approvals.detail(approvalId),
+      const [inbox, programApprovals, detail, programDetail] = await Promise.all([
+        approvals.inbox(), approvals.programInbox(),
+        approvalId === undefined || program ? Promise.resolve(undefined) : approvals.detail(approvalId),
+        approvalId === undefined || !program ? Promise.resolve(undefined) : approvals.programDetail(approvalId),
       ]);
       const released = detail?.state === "approved"
         ? await approvals.released(detail.approval_id)
         : undefined;
+      if (generation !== loadGeneration.current) return;
       setLoadState({
         status: "ready",
         approvals: inbox,
+        programApprovals,
+        ...(programDetail === undefined ? {} : { programDetail }),
         ...(detail === undefined ? {} : { detail }),
         ...(released === undefined ? {} : { released }),
       });
     } catch (error) {
+      if (generation !== loadGeneration.current) return;
       setLoadState(navigator.onLine ? { status: "error", error } : { status: "offline" });
     }
-  }, [approvalId, approvals]);
+  }, [approvalId, approvals, program]);
 
   useEffect(() => {
     setOutcome(undefined);
     void load();
-  }, [load]);
+    return () => { loadGeneration.current += 1; };
+  }, [load, notificationCenter.revision]);
 
   useEffect(() => {
     const timer = window.setInterval(() => { setAt(new Date()); }, 1_000);
@@ -191,6 +207,7 @@ export function ApprovalsJourneyScreen({
   }
 
   const open = (id: string) => { router.push(approvalRoute(id)); };
+  const openProgram = (id: string) => { router.push(programApprovalRoute(id)); };
   const detail = loadState.detail;
 
   const decide = async (action: DecisionAction) => {
@@ -217,7 +234,10 @@ export function ApprovalsJourneyScreen({
     }
   };
 
-  const detailCard = detail === undefined ? undefined : (
+  const detailCard = loadState.programDetail !== undefined ? (
+    <ProgramApprovalDetailCard detail={loadState.programDetail} controller={approvals} at={at} shell={shell}
+      onChanged={async () => { await Promise.all([load(), notificationCenter.refresh()]); }} />
+  ) : detail === undefined ? undefined : (
     <>
       <ApprovalDetailCard
         detail={detail}
@@ -244,13 +264,15 @@ export function ApprovalsJourneyScreen({
   );
 
   return shell === "mobile" ? (
-    detailCard ?? <MobileApprovalInbox approvals={loadState.approvals} at={at} onOpen={open} />
+    detailCard ?? <MobileApprovalInbox approvals={loadState.approvals} programApprovals={loadState.programApprovals} at={at} onOpen={open} onOpenProgram={openProgram} />
   ) : (
     <DesktopApprovalSplit
       approvals={loadState.approvals}
+      programApprovals={loadState.programApprovals}
+      onOpenProgram={openProgram}
       at={at}
       onOpen={open}
-      selectedId={detail?.approval_id}
+      selectedId={detail?.approval_id ?? loadState.programDetail?.approval_id}
     >
       {detailCard}
     </DesktopApprovalSplit>

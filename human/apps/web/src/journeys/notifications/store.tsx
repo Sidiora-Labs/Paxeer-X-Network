@@ -18,17 +18,18 @@ import { Notifications, type NotificationLanding } from "./controller";
 import { unreadNotificationCount, type PresentedNotification } from "./model";
 
 export type NotificationCenterState =
-  | Readonly<{ status: "loading"; notifications: readonly []; unreadCount: 0; approvalCount: 0 }>
-  | Readonly<{ status: "error"; notifications: readonly PresentedNotification[]; unreadCount: number; approvalCount: number; error: unknown }>
+  | Readonly<{ status: "loading"; notifications: readonly []; unreadCount: 0; approvalCount: 0; }>
+  | Readonly<{ status: "error"; notifications: readonly PresentedNotification[]; unreadCount: number; approvalCount: number; error: unknown; }>
   | Readonly<{
-      status: "ready";
-      notifications: readonly PresentedNotification[];
-      unreadCount: number;
-      approvalCount: number;
-    }>;
+    status: "ready";
+    notifications: readonly PresentedNotification[];
+    unreadCount: number;
+    approvalCount: number;
+  }>;
 
 interface NotificationCenterValue {
   readonly state: NotificationCenterState;
+  readonly revision: number;
   readonly refresh: () => Promise<void>;
   readonly open: (notification: PresentedNotification) => Promise<NotificationLanding>;
 }
@@ -38,11 +39,12 @@ const NotificationCenterContext = createContext<NotificationCenterValue | undefi
 export function NotificationCenterProvider({
   children,
   client: suppliedClient,
-}: Readonly<{ children: ReactNode; client?: HumanApiClient }>) {
+}: Readonly<{ children: ReactNode; client?: HumanApiClient; }>) {
   const client = useMemo(() => suppliedClient ?? humanApi(), [suppliedClient]);
   const notifications = useMemo(() => new Notifications({ client }), [client]);
   const generation = useRef(0);
   const [connection, setConnection] = useState(0);
+  const [revision, setRevision] = useState(0);
   const [state, setState] = useState<NotificationCenterState>({
     status: "loading",
     notifications: [],
@@ -63,6 +65,7 @@ export function NotificationCenterProvider({
       unreadCount: unreadNotificationCount(archive),
       approvalCount,
     });
+    setRevision((current) => current + 1);
   }, [notifications]);
 
   const refresh = useCallback(async () => {
@@ -138,7 +141,7 @@ export function NotificationCenterProvider({
     return landing;
   }, [notifications, refresh]);
 
-  const value = useMemo(() => ({ state, refresh, open }), [state, refresh, open]);
+  const value = useMemo(() => ({ state, revision, refresh, open }), [state, revision, refresh, open]);
   return (
     <NotificationCenterContext.Provider value={value}>
       {children}

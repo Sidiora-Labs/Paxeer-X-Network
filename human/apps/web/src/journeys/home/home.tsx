@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { copyEntry } from "../../../copy/runtime.ts";
 import { humanApi } from "../../api/index.ts";
@@ -13,6 +13,7 @@ import { protocolAmount } from "../../kit/model";
 import { useShellSelection } from "../../shell/app-shell";
 import { PrivateFigure, usePrivacyMode } from "../../settings/privacy";
 import { LoadingSurface, OfflineSurface } from "../../states/surfaces";
+import { useNotificationCenter } from "../notifications/store";
 import { AMOUNT_LOCALE } from "../move/model.ts";
 import {
   HOME_DESTINATIONS,
@@ -28,32 +29,38 @@ import {
 } from "./model.ts";
 
 type HomeLoad =
-  | Readonly<{ kind: "loading" }>
-  | Readonly<{ kind: "loaded"; data: HomeData }>
-  | Readonly<{ kind: "offline" }>
-  | Readonly<{ kind: "error" }>;
+  | Readonly<{ kind: "loading"; }>
+  | Readonly<{ kind: "loaded"; data: HomeData; }>
+  | Readonly<{ kind: "offline"; }>
+  | Readonly<{ kind: "error"; }>;
 
 export function Home() {
   const router = useRouter();
   const shell = useShellSelection().shell;
   const client = useMemo(() => humanApi(), []);
+  const { revision } = useNotificationCenter();
+  const generation = useRef(0);
   const [load, setLoad] = useState<HomeLoad>({ kind: "loading" });
   const { masked, setMasked } = usePrivacyMode();
 
   const refresh = useCallback(() => {
+    const current = ++generation.current;
     setLoad({ kind: "loading" });
     loadHome(client)
       .then((data) => {
+        if (current !== generation.current) return;
         setLoad({ kind: "loaded", data });
       })
       .catch((error: unknown) => {
+        if (current !== generation.current) return;
         setLoad({ kind: classifyHomeFailure(error) });
       });
   }, [client]);
 
   useEffect(() => {
     refresh();
-  }, [refresh]);
+    return () => { generation.current += 1; };
+  }, [refresh, revision]);
 
   if (load.kind === "loading") {
     return <LoadingSurface rows={4} />;
@@ -77,7 +84,7 @@ export function Home() {
   }
 
   const balance = homeBalance(load.data.balance);
-  const approvals = approvalBadge(load.data.approvals);
+  const approvals = approvalBadge(load.data.approvals, load.data.programApprovals);
   const agents = homeAgentRows(load.data.agents);
   const activity = homeActivityRows(load.data.entries);
   const dense = shell === "desktop";

@@ -33785,3 +33785,32 @@ source_ownership = "Root serializes shared manifests, locks, spec, GOTCHA and pu
 retained_contract_paths = ["human/crates/layerx-human-service/src/server/production_components.rs", "human/crates/layerx-human-service/src/server/mod.rs", "human/crates/layerx-human-service/src/server/projection.rs", "tools/qualification/paxeer-x/human-canonical-projections.py"]
 delegated_source_task = "104.13.22"
 delegated_source_paths = ["human/crates/layerx-human-service/src/server/production_components.rs", "human/crates/layerx-human-service/src/server/mod.rs", "human/crates/layerx-human-service/src/server/projection.rs"]
+
+[task.104.13.23]
+title = "Connect native Programs decisions to the unified Human approval and home screens"
+status = "done"
+mode = "BUILD"
+wave = 4
+requires = ["0.2", "104.13.21"]
+reqs = ["1064.3", "1064.8", "1071.1", "1071.5"]
+do_1 = "Consume the frozen104.13.22 canonical schema and real generated client in existing approval inbox, detail route and home summary. Merge actual paginated Programs approvals without fabricating monetary values, and distinguish operation permissions from execution or settlement."
+do_2 = "Wire actual held material and verified budget disclosure, real step-up and idempotent approve/reject decisions, and push-driven refresh through the durable Programs approval stream. Preserve existing monetary routes and all authorization, current-session and unknown-outcome refusals."
+do_3 = "Exercise actual generated client and source-bound UI behavior with explicit protected genuine process/browser prerequisites; no mock provider, synthetic receipt or aggregate browser matrix."
+touches = ["human/apps/web/src/journeys/approvals/controller.ts", "human/apps/web/src/journeys/approvals/model.ts", "human/apps/web/src/journeys/approvals/screens.tsx", "human/apps/web/src/journeys/approvals/journey-screen.tsx", "human/apps/web/src/journeys/approvals/programs.tsx", "human/apps/web/src/journeys/home/model.ts", "human/apps/web/src/journeys/home/home.tsx", "human/apps/web/src/journeys/notifications/controller.ts", "human/apps/web/src/journeys/notifications/store.tsx", "human/apps/web/src/app/app/approvals/[approvalId]/page.tsx", "human/apps/web/e2e/program-approvals.test.ts", "tools/qualification/paxeer-x/human-program-approvals.py"]
+root_integration_paths = ["human/apps/web/copy/catalog.ts", "human/apps/web/copy/messages.generated.ts"]
+source_dependency = "Task104.13.22 schema is frozen and generated; root serializes copy and generated artifacts. Wait for current SDK14.7 source/artifact freeze before UI build."
+build_cmd = "timeout 20m env PATH=/root/lx-toolchains/node24/bin:/root/.cargo/bin:/usr/local/bin:/usr/bin:/bin npm --prefix human/apps/web run build"
+verify_cmd = "timeout 10m python3 tools/qualification/paxeer-x/human-program-approvals.py"
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop at original30-minute cap, missing frozen interface or genuine authority, unrelated failure or weakening; record exact command, exit and log."
+completion_basis_policy = "Owner CONSTITUTION: fully implemented DONE; qualification separate and partial remains in_progress."
+source_ownership = "Exclusive declared UI sources only. Root owns canonical API/copy generation, spec and publication; no deployments or live signing."
+
+completion_basis = "implementation"
+qualification_status = "unverified"
+build_exit_code = 0
+verify_exit_code = 1
+qualification_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-104.13.23-verify.log"

@@ -9,6 +9,7 @@ import type {
   ApprovalDetail,
   ApprovalState,
   ApprovalSummary,
+  ProgramApprovalSummary,
   Timestamp,
 } from "../../api/index.ts";
 import { Badge, List, ListItem } from "../../kit/collection";
@@ -37,6 +38,8 @@ import {
   type ApprovalTone,
 } from "./model.ts";
 
+import { ProgramApprovalInboxRows } from "./programs";
+
 const NOTICE_CLASS: Readonly<Record<ApprovalTone, string>> = Object.freeze({
   destructive: "border-destructive bg-destructive-soft text-destructive",
   neutral: "border-border bg-surface text-foreground",
@@ -47,7 +50,7 @@ const NOTICE_CLASS: Readonly<Record<ApprovalTone, string>> = Object.freeze({
 function DecisionNotice({
   tone,
   children,
-}: Readonly<{ tone: ApprovalTone; children: ReactNode }>) {
+}: Readonly<{ tone: ApprovalTone; children: ReactNode; }>) {
   return (
     <p
       role={tone === "destructive" ? "alert" : "status"}
@@ -61,7 +64,7 @@ function DecisionNotice({
 export function ApprovalCountdown({
   expiresAt,
   at,
-}: Readonly<{ expiresAt: Timestamp; at: Date }>) {
+}: Readonly<{ expiresAt: Timestamp; at: Date; }>) {
   const countdown = expiryCountdown(expiresAt, at);
   return (
     <span role="timer" aria-live="off" className="text-sm font-medium text-foreground-secondary">
@@ -73,7 +76,7 @@ export function ApprovalCountdown({
 export function ApprovalStateBadge({
   state,
   stateCopyKey,
-}: Readonly<{ state: ApprovalState; stateCopyKey?: string }>) {
+}: Readonly<{ state: ApprovalState; stateCopyKey?: string; }>) {
   const presentation = approvalStatePresentation(state, stateCopyKey);
   return (
     <Badge variant={presentation.tone} size="sm">
@@ -84,16 +87,20 @@ export function ApprovalStateBadge({
 
 export function ApprovalInboxList({
   approvals,
+  programApprovals = [],
+  onOpenProgram,
   at,
   onOpen,
   selectedId,
 }: Readonly<{
   approvals: readonly ApprovalSummary[];
+  programApprovals?: readonly ProgramApprovalSummary[];
+  onOpenProgram?: ((approvalId: string) => void) | undefined;
   at: Date;
   onOpen?: ((approvalId: string) => void) | undefined;
   selectedId?: string | undefined;
 }>) {
-  if (approvals.length === 0) {
+  if (approvals.length === 0 && programApprovals.length === 0) {
     return (
       <StateEmpty
         title={copyEntry("approval.inbox.title").message}
@@ -133,16 +140,21 @@ export function ApprovalInboxList({
           />
         );
       })}
+      <ProgramApprovalInboxRows approvals={programApprovals} at={at} onOpen={onOpenProgram} selectedId={selectedId} />
     </List>
   );
 }
 
 export function MobileApprovalInbox({
   approvals,
+  programApprovals = [],
+  onOpenProgram,
   at,
   onOpen,
 }: Readonly<{
   approvals: readonly ApprovalSummary[];
+  programApprovals?: readonly ProgramApprovalSummary[];
+  onOpenProgram?: ((approvalId: string) => void) | undefined;
   at: Date;
   onOpen?: ((approvalId: string) => void) | undefined;
 }>) {
@@ -152,19 +164,23 @@ export function MobileApprovalInbox({
       title={copyEntry("approval.inbox.title").message}
       description={copyEntry("approval.inbox.description").message}
     >
-      <ApprovalInboxList approvals={approvals} at={at} onOpen={onOpen} />
+      <ApprovalInboxList approvals={approvals} programApprovals={programApprovals} at={at} onOpen={onOpen} onOpenProgram={onOpenProgram} />
     </ScreenCard>
   );
 }
 
 export function DesktopApprovalSplit({
   approvals,
+  programApprovals = [],
+  onOpenProgram,
   at,
   onOpen,
   selectedId,
   children,
 }: Readonly<{
   approvals: readonly ApprovalSummary[];
+  programApprovals?: readonly ProgramApprovalSummary[];
+  onOpenProgram?: ((approvalId: string) => void) | undefined;
   at: Date;
   onOpen?: ((approvalId: string) => void) | undefined;
   selectedId?: string | undefined;
@@ -177,7 +193,7 @@ export function DesktopApprovalSplit({
         title={copyEntry("approval.inbox.title").message}
         description={copyEntry("approval.inbox.description").message}
       >
-        <ApprovalInboxList approvals={approvals} at={at} onOpen={onOpen} selectedId={selectedId} />
+        <ApprovalInboxList approvals={approvals} programApprovals={programApprovals} at={at} onOpen={onOpen} onOpenProgram={onOpenProgram} selectedId={selectedId} />
       </ScreenCard>
       {children ?? (
         <ScreenCard landmark="section" title={copyEntry("approval.detail.title").message}>
@@ -188,7 +204,7 @@ export function DesktopApprovalSplit({
   );
 }
 
-export function ReleasedActivitySection({ entry }: Readonly<{ entry?: ActivityEntryDetail | undefined }>) {
+export function ReleasedActivitySection({ entry }: Readonly<{ entry?: ActivityEntryDetail | undefined; }>) {
   return (
     <section className="flex flex-col gap-2">
       <h2 className="text-base font-bold text-foreground">
@@ -229,13 +245,13 @@ export function ReleasedActivitySection({ entry }: Readonly<{ entry?: ActivityEn
 export function ApprovalOutcomePanel({
   outcome,
   released,
-}: Readonly<{ outcome: ApprovalOutcome; released?: ActivityEntryDetail | undefined }>) {
+}: Readonly<{ outcome: ApprovalOutcome; released?: ActivityEntryDetail | undefined; }>) {
   const tone: ApprovalTone =
     outcome.kind === "decided"
       ? outcome.decision.state === "approved" ? "success" : "neutral"
       : outcome.kind === "converged"
         ? outcome.detail.state === "approved" ? "success" : "neutral"
-      : outcome.kind === "defective" ? "destructive" : "warning";
+        : outcome.kind === "defective" ? "destructive" : "warning";
   return (
     <div className="flex flex-col gap-3">
       {outcome.kind === "already-decided" ? (
@@ -257,8 +273,8 @@ export function ApprovalOutcomePanel({
       {(
         outcome.kind === "decided" && outcome.decision.state === "approved"
       ) || (
-        outcome.kind === "converged" && outcome.detail.state === "approved"
-      ) ? (
+          outcome.kind === "converged" && outcome.detail.state === "approved"
+        ) ? (
         <ReleasedActivitySection entry={released} />
       ) : null}
     </div>
@@ -388,7 +404,7 @@ export function ApprovalDetailCard({
   );
 }
 
-function ApprovalEvidence({ detail, shell }: Readonly<{ detail: ApprovalDetail; shell: Shell }>) {
+function ApprovalEvidence({ detail, shell }: Readonly<{ detail: ApprovalDetail; shell: Shell; }>) {
   const [open, setOpen] = useState(false);
   const Detail = shell === "mobile" ? MobileDetail : DesktopDetail;
   return (

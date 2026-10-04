@@ -12,6 +12,11 @@ import type {
   JourneyState,
   Money,
   OperationDigest,
+  ProgramApprovalSummary,
+  ProgramApprovalDetail,
+  ProgramApprovalDecision,
+  ProgramApprovalBudget,
+  ProgramApprovalState,
   StepUpEvidence,
   Timestamp,
   VerificationLevel,
@@ -35,7 +40,7 @@ export function activityRoute(entryId: string): string {
   return `/app/activity/${encodeURIComponent(entryId)}`;
 }
 
-export function protocolMoney(money: Money): Readonly<{ value: ProtocolAmount; currency: string }> {
+export function protocolMoney(money: Money): Readonly<{ value: ProtocolAmount; currency: string; }> {
   if (
     money.amount > BigInt(Number.MAX_SAFE_INTEGER)
     || money.amount < BigInt(Number.MIN_SAFE_INTEGER)
@@ -201,13 +206,13 @@ export function canApprove(detail: ApprovalDetail, at: Date): boolean {
 }
 
 export type ApprovalOutcome =
-  | Readonly<{ kind: "already-decided"; message: string }>
-  | Readonly<{ kind: "converged"; detail: ApprovalDetail; message: string }>
-  | Readonly<{ kind: "decided"; decision: ApprovalDecision; message: string }>
-  | Readonly<{ kind: "defective"; message: string }>
-  | Readonly<{ kind: "expired"; message: string }>
-  | Readonly<{ kind: "still-checking"; message: string }>
-  | Readonly<{ kind: "step-up-required"; message: string }>;
+  | Readonly<{ kind: "already-decided"; message: string; }>
+  | Readonly<{ kind: "converged"; detail: ApprovalDetail; message: string; }>
+  | Readonly<{ kind: "decided"; decision: ApprovalDecision; message: string; }>
+  | Readonly<{ kind: "defective"; message: string; }>
+  | Readonly<{ kind: "expired"; message: string; }>
+  | Readonly<{ kind: "still-checking"; message: string; }>
+  | Readonly<{ kind: "step-up-required"; message: string; }>;
 
 export function decidedOutcome(decision: ApprovalDecision): ApprovalOutcome {
   if (
@@ -317,4 +322,62 @@ const JOURNEY_STATUS: Readonly<Record<JourneyState, StatusKey>> = Object.freeze(
 
 export function journeyStatus(state: JourneyState): StatusKey {
   return JOURNEY_STATUS[state];
+}
+
+export function programApprovalRoute(approvalId: string): string {
+  return `${approvalRoute(approvalId)}?kind=program`;
+}
+
+export function validateProgramApproval(summary: ProgramApprovalSummary): void {
+  const operation = summary.operation;
+  const selected = operation.kind === "wind-down" ? "wind_down" : operation.kind;
+  const variants = [operation.deploy, operation.upgrade, operation.call, operation.wind_down];
+  if (!/^[0-9a-f]{64}$/u.test(summary.held_digest)
+    || !/^[0-9a-f]{64}$/u.test(operation.program_id)
+    || variants.filter((value) => value !== undefined).length !== 1
+    || operation[selected] === undefined
+    || (summary.semantics === "operation-only" && summary.authorized_limits.length !== 0)
+    || (summary.semantics === "authorized-limits" && summary.authorized_limits.length === 0)
+    || summary.authorized_limits.some((row) => row.maximum_amount < 0n)) {
+    throw new TypeError("The actual Programs approval has contradictory disclosure fields");
+  }
+}
+
+export function programApprovalTitle(summary: ProgramApprovalSummary): string {
+  validateProgramApproval(summary);
+  return copyEntry(`approval.program.${summary.operation.kind}`).message;
+}
+
+export function programApprovalState(state: ProgramApprovalState): ApprovalStatePresentation {
+  if (state === "not-required") {
+    return { label: copyEntry("approval.program.not-required").message, tone: "neutral" };
+  }
+  return approvalStatePresentation(state);
+}
+
+export function canDecideProgram(detail: ProgramApprovalDetail, at: Date): boolean {
+  validateProgramApproval(detail);
+  return detail.state === "pending" && !expiryCountdown(detail.expires_at, at).expired;
+}
+
+export function validateProgramBudget(detail: ProgramApprovalDetail, budget: ProgramApprovalBudget): void {
+  if (budget.approval_id !== detail.approval_id || budget.held_digest !== detail.held_digest
+    || budget.remaining < 0n || budget.maximum_age_sequences <= 0n
+    || budget.age_sequences < 0n || budget.age_sequences > budget.maximum_age_sequences
+    || !budget.within_bound || budget.verification === "unverified"
+    || budget.verification === "receipt-verified"
+    || !budget.evidence.some((item) => item.class === "checkpoint-proof"
+      && item.verification === budget.verification)) {
+    throw new TypeError("The available Programs budget is not bound to genuine current proof material");
+  }
+}
+
+export function programDecisionMessage(decision: ProgramApprovalDecision): string {
+  if (decision.money_moved || !["approved", "rejected", "expired"].includes(decision.state)
+    || (decision.state === "approved" && decision.release_ref === undefined)
+    || (decision.state !== "approved" && decision.release_ref !== undefined)) {
+    throw new TypeError("A Programs permission cannot claim execution or money movement");
+  }
+  return copyEntry(decision.state === "approved" ? "approval.program.approved"
+    : decision.state === "rejected" ? "approval.program.rejected" : "error.approval.hold-expired").message;
 }
