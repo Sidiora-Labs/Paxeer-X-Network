@@ -15,22 +15,7 @@ import {
 } from "@layerx/ui";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
-type Verification = "unverified" | "receipt-verified" | "checkpoint-finalised" | "paxeer-finalised";
-type KeyView = { key_id: string; disabled: boolean; requests_per_window: number; window_seconds: number; used_in_window: number; remaining_in_window: number };
-type RequestRecord = { at: number; operation_digest: string; outcome: string; verification: Verification };
-type Endpoint = { endpoint: string; url: string; suspended: boolean; pending: number; in_flight: number; retrying: number; delivered_total: number; dead_lettered_total: number; last_failure?: string };
-type Delivery = { delivery: string; endpoint: string; event: string; state: { state: string }; verification: Verification; receipt_digest?: string };
-type Fact = { name: string; value: string; verification: Verification; receipt_digest?: string };
-type Payment = { event: string; subject: string; amount?: string; asset?: string; verification: Verification; settlement_verification: Verification; receipt_digest?: string; settled: boolean; facts: Fact[] };
-type Overview = {
-  principal: string;
-  usage: { keys: number; live_keys: number; requests_allowed: number; requests_used: number; requests_remaining: number; utilisation_per_mille: number };
-  keys: KeyView[];
-  recent_requests: RequestRecord[];
-  endpoints: Endpoint[];
-  dead_letters: Delivery[];
-  payments: Payment[];
-};
+import { decodeOverview, decodeRequests, decodeDeliveries, decodeReceipt, type Verification, type KeyView, type RequestRecord, type Endpoint, type Delivery, type Payment, type Overview, type Receipt } from "./data";
 
 const tabs = [
   { value: "overview", label: "Overview" },
@@ -44,10 +29,10 @@ function verificationBadge(level: Verification) {
   return <Badge size="sm" variant={level === "unverified" ? "warning" : "success"}>{level}</Badge>;
 }
 
-async function read<T>(path: string, signal?: AbortSignal): Promise<T> {
+async function read<T>(path: string, decode: (value: unknown) => T, signal?: AbortSignal): Promise<T> {
   const response = await fetch(`/v1/dashboard${path}`, { credentials: "include", cache: "no-store", signal });
   if (!response.ok) throw new Error(`Dashboard dependency returned ${response.status}`);
-  return response.json() as Promise<T>;
+  return decode(await response.json());
 }
 
 export default function DeveloperDashboard() {
@@ -56,20 +41,21 @@ export default function DeveloperDashboard() {
   const [requests, setRequests] = useState<RequestRecord[]>([]);
   const [deliveries, setDeliveries] = useState<Delivery[]>([]);
   const [error, setError] = useState<string>();
+  const [receipt, setReceipt] = useState<Receipt>();
 
   const refresh = useCallback(async (signal?: AbortSignal) => {
     try {
       const [summary, requestLog, webhookLog] = await Promise.all([
-        read<Overview>("/overview", signal),
-        read<RequestRecord[]>("/requests?limit=100", signal),
-        read<Delivery[]>("/webhook-deliveries?limit=100", signal),
+        read("/overview", decodeOverview, signal),
+        read("/requests?limit=100", decodeRequests, signal),
+        read("/webhook-deliveries?limit=100", decodeDeliveries, signal),
       ]);
       setOverview(summary);
       setRequests(requestLog);
       setDeliveries(webhookLog);
       setError(undefined);
     } catch (cause) {
-      if ((cause as Error).name !== "AbortError") setError((cause as Error).message);
+      if ((cause as Error).name !== "AbortError") { setError((cause as Error).message); setOverview(undefined); setRequests([]); setDeliveries([]); setReceipt(undefined); }
     }
   }, []);
 
@@ -102,7 +88,15 @@ export default function DeveloperDashboard() {
         {overview && active === "keys" ? <KeysPanel keys={overview.keys} /> : null}
         {overview && active === "requests" ? <RequestsPanel requests={requests} /> : null}
         {overview && active === "webhooks" ? <WebhooksPanel endpoints={overview.endpoints} deliveries={deliveries} /> : null}
-        {overview && active === "payments" ? <PaymentsPanel payments={overview.payments} /> : null}
+        {overview && active === "payments" ? <PaymentsPanel payments={overview.payments} onReceipt={async (activity) => {
+          try {
+            const value = await read(`/receipts/${encodeURIComponent(activity)}`, decodeReceipt);
+            if (value.activity_id !== activity) throw new Error("Receipt activity mismatch");
+            setReceipt(value);
+            setError(undefined);
+          } catch (cause) { setReceipt(undefined); setError((cause as Error).message); }
+        }} /> : null}
+        {receipt && active === "payments" ? <Card><SectionHeader title="Verified receipt" /><List><ListItem title={receipt.activity_id} subtitle={`${receipt.event} · ${receipt.receipt_digest}`} trailing={verificationBadge(receipt.verification)} /></List></Card> : null}
       </div>
     </AppShell>
   );
@@ -132,6 +126,6 @@ function WebhooksPanel({ endpoints, deliveries }: { endpoints: Endpoint[]; deliv
   return <div className="grid gap-5 lg:grid-cols-2"><Card><SectionHeader title="Webhook endpoints" /><List>{endpoints.map((endpoint) => <ListItem key={endpoint.endpoint} title={endpoint.url} subtitle={`${endpoint.pending} pending · ${endpoint.in_flight} in flight · ${endpoint.retrying} retrying`} trailing={<Badge variant={endpoint.suspended ? "destructive" : "success"}>{endpoint.suspended ? "suspended" : "active"}</Badge>} trailingCaption={`${endpoint.delivered_total} delivered / ${endpoint.dead_lettered_total} dead-lettered`} />)}</List></Card><Card><SectionHeader title="Delivery log" /><List>{deliveries.map((delivery) => <ListItem key={delivery.delivery} title={delivery.event} subtitle={`${delivery.endpoint} · ${delivery.delivery}`} trailing={verificationBadge(delivery.verification)} trailingCaption={delivery.state.state} />)}</List></Card></div>;
 }
 
-function PaymentsPanel({ payments }: { payments: Payment[] }) {
-  return <Card><SectionHeader title="Real test payments and verified receipts" />{payments.length === 0 ? <EmptyState title="No test payments" description="Payments appear only after the canonical payment source and independent receipt authority agree." /> : <List>{payments.map((payment) => <ListItem key={payment.event} title={`${payment.amount ?? "—"} ${payment.asset ?? ""}`} subtitle={`${payment.event} · ${payment.facts.map((fact) => `${fact.name}=${fact.value} [${fact.verification}]`).join(" · ")} · receipt ${payment.receipt_digest ?? "not available"} · all facts ${payment.verification}`} trailing={verificationBadge(payment.settlement_verification)} trailingCaption={payment.settled ? "settlement receipt verified" : "settlement not verified"} />)}</List>}</Card>;
+function PaymentsPanel({ payments, onReceipt }: { payments: Payment[]; onReceipt: (activity: string) => Promise<void> }) {
+  return <Card><SectionHeader title="Real test payments and verified receipts" />{payments.length === 0 ? <EmptyState title="No test payments" description="Payments appear only after the canonical payment source and independent receipt authority agree." /> : <List>{payments.map((payment) => <ListItem key={payment.event} title={`${payment.amount ?? "—"} ${payment.asset ?? ""}`} subtitle={`${payment.event} · ${payment.facts.map((fact) => `${fact.name}=${fact.value} [${fact.verification}]`).join(" · ")} · receipt ${payment.receipt_digest ?? "not available"} · all facts ${payment.verification}`} trailing={<div>{verificationBadge(payment.settlement_verification)}{payment.settled ? payment.facts.filter((fact) => fact.name === "activity_id" && fact.verification !== "unverified" && fact.receipt_digest === payment.receipt_digest).map((fact) => <button key={fact.value} type="button" onClick={() => void onReceipt(fact.value)}>View receipt</button>) : null}</div>} trailingCaption={payment.settled ? "settlement receipt verified" : "settlement not verified"} />)}</List>}</Card>;
 }
