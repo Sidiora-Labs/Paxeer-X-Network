@@ -693,28 +693,54 @@ fn environment() -> BuildEnvironment {
 #[test]
 fn registry_replay_applies_every_supported_abi_transition_without_rewriting_history() {
     use layerx_programs_runtime::{AbiVersionRefusal, ABI_V3_VERSION, ABI_V4_VERSION};
-    for current in [ABI_V1_VERSION, ABI_V2_VERSION, ABI_V3_VERSION, ABI_V4_VERSION] {
-        for requested in [ABI_V1_VERSION, ABI_V2_VERSION, ABI_V3_VERSION, ABI_V4_VERSION] {
+    for current in [
+        ABI_V1_VERSION,
+        ABI_V2_VERSION,
+        ABI_V3_VERSION,
+        ABI_V4_VERSION,
+    ] {
+        for requested in [
+            ABI_V1_VERSION,
+            ABI_V2_VERSION,
+            ABI_V3_VERSION,
+            ABI_V4_VERSION,
+        ] {
             let id = program();
             let policy = UpgradePolicy::Authority([0x51; 32]);
             let first = record_with_abi(id, 1, None, WASM_V1, policy, 80, current);
-            let next = record_with_abi(id, 2, Some(first.new_code_hash), WASM_V2,
-                policy, 81, requested);
+            let next = record_with_abi(
+                id,
+                2,
+                Some(first.new_code_hash),
+                WASM_V2,
+                policy,
+                81,
+                requested,
+            );
             let mut registry = Registry::new();
             let result = registry.replay_journal(&[first.clone(), next]);
             if requested < current {
-                assert_eq!(result, Err(RegistryError::AbiVersion(AbiVersionRefusal::Downgrade {
-                    current, requested,
-                })));
+                assert_eq!(
+                    result,
+                    Err(RegistryError::AbiVersion(AbiVersionRefusal::Downgrade {
+                        current,
+                        requested,
+                    }))
+                );
                 assert_eq!(registry.latest_version(id), Ok(1));
             } else {
                 assert_eq!(result, Ok(()));
                 assert_eq!(registry.latest_version(id), Ok(2));
             }
-            let entry = registry.entry_for_wind_down(id).unwrap_or_else(|error| panic!("retained history: {error}"));
+            let entry = registry
+                .entry_for_wind_down(id)
+                .unwrap_or_else(|error| panic!("retained history: {error}"));
             assert_eq!(entry.versions[0].abi_version, current);
             assert_eq!(entry.versions[0].code_hash, first.new_code_hash);
-            assert_eq!(entry.versions.len(), if requested < current { 1 } else { 2 });
+            assert_eq!(
+                entry.versions.len(),
+                if requested < current { 1 } else { 2 }
+            );
             if requested >= current {
                 assert_eq!(entry.versions[1].abi_version, requested);
             }

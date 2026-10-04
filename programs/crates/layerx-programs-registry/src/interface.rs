@@ -1,5 +1,5 @@
-use layerx_program_sdk::abi_policy::{admit_abi_version, capability_encoding, CapabilityEncoding};
 use core::fmt::{self, Display};
+use layerx_program_sdk::abi_policy::{admit_abi_version, capability_encoding, CapabilityEncoding};
 use std::collections::BTreeSet;
 
 use layerx_programs_runtime::abi::{EncodingConvention, TypeTag};
@@ -316,9 +316,7 @@ impl ProgramInterface {
         abi_version: u16,
         entries: Vec<InterfaceEntryPoint>,
     ) -> Result<Self, InterfaceRefusal> {
-        if code_hash == [0; 32]
-            || admit_abi_version(abi_version).is_err()
-        {
+        if code_hash == [0; 32] || admit_abi_version(abi_version).is_err() {
             return Err(InterfaceRefusal::Invalid);
         }
         validate_entries(&entries)?;
@@ -326,7 +324,9 @@ impl ProgramInterface {
             .iter()
             .flat_map(|entry| &entry.capabilities)
             .any(|capability| match capability {
-                InterfaceCapability::CallerAuthorizedSpend { .. } => capability_encoding(abi_version) != Ok(CapabilityEncoding::V2),
+                InterfaceCapability::CallerAuthorizedSpend { .. } => {
+                    capability_encoding(abi_version) != Ok(CapabilityEncoding::V2)
+                }
                 InterfaceCapability::OracleRead => {
                     !matches!(abi_version, ABI_V3_VERSION | ABI_V4_VERSION)
                 }
@@ -1567,8 +1567,18 @@ mod conformance_vectors {
     }
     #[test]
     fn every_supported_abi_transition_binds_the_recorded_interface_version() {
-        for current in [ABI_V1_VERSION, ABI_V2_VERSION, ABI_V3_VERSION, ABI_V4_VERSION] {
-            for requested in [ABI_V1_VERSION, ABI_V2_VERSION, ABI_V3_VERSION, ABI_V4_VERSION] {
+        for current in [
+            ABI_V1_VERSION,
+            ABI_V2_VERSION,
+            ABI_V3_VERSION,
+            ABI_V4_VERSION,
+        ] {
+            for requested in [
+                ABI_V1_VERSION,
+                ABI_V2_VERSION,
+                ABI_V3_VERSION,
+                ABI_V4_VERSION,
+            ] {
                 let prior = ProgramInterface::from_parts([1; 32], current, vec![entry(64)])
                     .unwrap_or_else(|error| panic!("historical interface: {error}"));
                 let next = ProgramInterface::from_parts([2; 32], requested, vec![entry(64)])
@@ -1576,7 +1586,8 @@ mod conformance_vectors {
                 for breaking in [false, true] {
                     let expected = if requested < current {
                         Err(InterfaceRefusal::AbiVersion(AbiVersionRefusal::Downgrade {
-                            current, requested,
+                            current,
+                            requested,
                         }))
                     } else {
                         Ok(())
@@ -1593,7 +1604,12 @@ mod conformance_vectors {
 
     #[test]
     fn every_abi_refuses_substituted_domains_and_noncanonical_capabilities() {
-        for abi in [ABI_V1_VERSION, ABI_V2_VERSION, ABI_V3_VERSION, ABI_V4_VERSION] {
+        for abi in [
+            ABI_V1_VERSION,
+            ABI_V2_VERSION,
+            ABI_V3_VERSION,
+            ABI_V4_VERSION,
+        ] {
             let plain = ProgramInterface::from_parts([1; 32], abi, vec![entry(80)])
                 .unwrap_or_else(|error| panic!("plain interface: {error}"));
             for domain in [DOMAIN, DOMAIN_V2, DOMAIN_V3, DOMAIN_V4] {
@@ -1606,7 +1622,10 @@ mod conformance_vectors {
             let mut trailing = plain.canonical_encoding().to_vec();
             trailing.push(0);
             assert!(ProgramInterface::decode(&trailing).is_err());
-            for capability in [InterfaceCapability::OracleRead, InterfaceCapability::WebRead] {
+            for capability in [
+                InterfaceCapability::OracleRead,
+                InterfaceCapability::WebRead,
+            ] {
                 let mut declared = entry(80);
                 declared.capabilities = vec![capability.clone()];
                 let admitted = match capability {
@@ -1628,12 +1647,18 @@ mod conformance_vectors {
             ] {
                 let mut dynamic = entry(80);
                 dynamic.capabilities = vec![InterfaceCapability::CallerAuthorizedSpend {
-                    asset, maximum_amount, recipient_offset, amount_offset,
+                    asset,
+                    maximum_amount,
+                    recipient_offset,
+                    amount_offset,
                 }];
                 let admitted = ProgramInterface::from_parts([1; 32], abi, vec![dynamic.clone()]);
                 assert_eq!(admitted.is_ok(), valid && abi != ABI_V1_VERSION);
                 if let Ok(interface) = admitted {
-                    assert_eq!(ProgramInterface::decode(interface.canonical_encoding()), Ok(interface));
+                    assert_eq!(
+                        ProgramInterface::decode(interface.canonical_encoding()),
+                        Ok(interface)
+                    );
                 }
                 dynamic.capabilities.push(dynamic.capabilities[0].clone());
                 assert!(ProgramInterface::from_parts([1; 32], abi, vec![dynamic]).is_err());
@@ -1647,15 +1672,23 @@ mod conformance_vectors {
             let published = ProgramInterface::bind(CALLABLE_MODULE, abi, vec![entry(64)])
                 .unwrap_or_else(|error| panic!("binding: {error}"));
             assert_eq!(published.require_module(CALLABLE_MODULE, abi), Ok(()));
-            assert_eq!(published.require_module(CALL_ONLY_MODULE, abi), Err(InterfaceRefusal::CodeHashMismatch));
-            assert_eq!(published.require_module(CALLABLE_MODULE, if abi == 4 { 3 } else { abi + 1 }),
-                Err(InterfaceRefusal::VersionMismatch));
+            assert_eq!(
+                published.require_module(CALL_ONLY_MODULE, abi),
+                Err(InterfaceRefusal::CodeHashMismatch)
+            );
+            assert_eq!(
+                published.require_module(CALLABLE_MODULE, if abi == 4 { 3 } else { abi + 1 }),
+                Err(InterfaceRefusal::VersionMismatch)
+            );
             let mut declared = entry(64);
             declared.capabilities = vec![InterfaceCapability::StorageRead];
-            let mismatched = ProgramInterface::from_parts(sha256(CALLABLE_MODULE), abi, vec![declared])
-                .unwrap_or_else(|error| panic!("canonical description: {error}"));
-            assert_eq!(mismatched.require_module(CALLABLE_MODULE, abi), Err(InterfaceRefusal::Invalid));
+            let mismatched =
+                ProgramInterface::from_parts(sha256(CALLABLE_MODULE), abi, vec![declared])
+                    .unwrap_or_else(|error| panic!("canonical description: {error}"));
+            assert_eq!(
+                mismatched.require_module(CALLABLE_MODULE, abi),
+                Err(InterfaceRefusal::Invalid)
+            );
         }
     }
-
 }

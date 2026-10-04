@@ -327,33 +327,66 @@ fn abi_upgrades_are_monotonic_and_historical_versions_remain_admitted() {
 
 #[test]
 fn every_supported_abi_transition_preserves_lifecycle_history() {
-    use layerx_programs_runtime::{AbiVersionRefusal, ABI_V1_VERSION, ABI_V2_VERSION,
-        ABI_V3_VERSION, ABI_V4_VERSION};
-    for current in [ABI_V1_VERSION, ABI_V2_VERSION, ABI_V3_VERSION, ABI_V4_VERSION] {
-        for requested in [ABI_V1_VERSION, ABI_V2_VERSION, ABI_V3_VERSION, ABI_V4_VERSION] {
+    use layerx_programs_runtime::{
+        AbiVersionRefusal, ABI_V1_VERSION, ABI_V2_VERSION, ABI_V3_VERSION, ABI_V4_VERSION,
+    };
+    for current in [
+        ABI_V1_VERSION,
+        ABI_V2_VERSION,
+        ABI_V3_VERSION,
+        ABI_V4_VERSION,
+    ] {
+        for requested in [
+            ABI_V1_VERSION,
+            ABI_V2_VERSION,
+            ABI_V3_VERSION,
+            ABI_V4_VERSION,
+        ] {
             let id = program(0x61);
-            let mut lifecycle = Lifecycle::declared().unwrap_or_else(|error| panic!("declared lifecycle: {error}"));
+            let mut lifecycle =
+                Lifecycle::declared().unwrap_or_else(|error| panic!("declared lifecycle: {error}"));
             let initial = add_module();
             let initial_hash = code_hash(&initial);
-            lifecycle.deploy(Deploy {
-                program: id, code_hash: initial_hash, wasm: initial,
-                abi_version: current, upgrade_policy: UpgradePolicy::Authority([9; 32]),
-            }).unwrap_or_else(|error| panic!("historical ABI deployment: {error}"));
+            lifecycle
+                .deploy(Deploy {
+                    program: id,
+                    code_hash: initial_hash,
+                    wasm: initial,
+                    abi_version: current,
+                    upgrade_policy: UpgradePolicy::Authority([9; 32]),
+                })
+                .unwrap_or_else(|error| panic!("historical ABI deployment: {error}"));
             let next = migration_module();
             let next_hash = code_hash(&next);
             let result = lifecycle.upgrade(Upgrade {
-                program: id, authority: [9; 32], code_hash: next_hash, wasm: next,
-                abi_version: requested, migration: None,
+                program: id,
+                authority: [9; 32],
+                code_hash: next_hash,
+                wasm: next,
+                abi_version: requested,
+                migration: None,
             });
             if requested < current {
-                assert_eq!(result, Err(LifecycleRefusal::AbiVersion(AbiVersionRefusal::Downgrade {
-                    current, requested,
-                })));
+                assert_eq!(
+                    result,
+                    Err(LifecycleRefusal::AbiVersion(AbiVersionRefusal::Downgrade {
+                        current,
+                        requested,
+                    }))
+                );
                 let retained = add_module();
-                let receipt = lifecycle.upgrade(Upgrade {
-                    program: id, authority: [9; 32], code_hash: code_hash(&retained),
-                    wasm: retained, abi_version: current, migration: None,
-                }).unwrap_or_else(|error| panic!("refused downgrade retained the original version: {error}"));
+                let receipt = lifecycle
+                    .upgrade(Upgrade {
+                        program: id,
+                        authority: [9; 32],
+                        code_hash: code_hash(&retained),
+                        wasm: retained,
+                        abi_version: current,
+                        migration: None,
+                    })
+                    .unwrap_or_else(|error| {
+                        panic!("refused downgrade retained the original version: {error}")
+                    });
                 assert_eq!(receipt.version(), 2);
                 assert_eq!(receipt.old_code_hash(), Some(initial_hash));
             } else {

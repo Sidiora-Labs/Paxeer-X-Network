@@ -26946,7 +26946,7 @@ implementation_window = "2026-10-04T12:58:50.377438+00:00 to 2026-10-04T13:28:50
 source_status = "complete"
 completion_basis = "implementation under owner CONSTITUTION; qualification separately recorded"
 qualification_status = "UNRUN"
-source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/fleet-104.38.9-publication-current.json"
+source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/fleet-104.38.9-format-publication.json"
 
 [task.104.38.10]
 title = "Align Programs event metering and capability transport bounds"
