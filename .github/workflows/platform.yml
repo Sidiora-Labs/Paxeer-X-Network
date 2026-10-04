@@ -26,6 +26,11 @@ jobs:
     runs-on: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) && 'ubuntu-24.04' || vars.CI_LINUX_RUNNER || 'ubuntu-24.04' }}
     timeout-minutes: 45
     steps:
+      - name: Initialize private Platform evidence directory
+        run: |
+          umask 077
+          evidence_directory=$(mktemp -d "$RUNNER_TEMP/layerx-platform-evidence.XXXXXXXX")
+          printf 'PAXEER_X_EVIDENCE_DIR=%s\n' "$evidence_directory" >> "$GITHUB_ENV"
       - name: Check out source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -103,7 +108,7 @@ jobs:
         run: make platform-test-docs
 
   android-application-artifact:
-    runs-on: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) && 'ubuntu-24.04' || vars.CI_LINUX_RUNNER || 'ubuntu-24.04' }}
+    runs-on: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) && 'ubuntu-24.04' || 'layerx-b200' }}
     timeout-minutes: 45
     steps:
       - name: Check out source
