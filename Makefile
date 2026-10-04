@@ -309,7 +309,7 @@ $(BUILD_DIR)/tests/lxp_test_kernel: tests/protocol/lxp_test_kernel.c \
 		$(LIBRARY) $(PROGRAMS_RUNTIME_LIB) | programs-build
 	@mkdir -p $(@D)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $< $(LIBRARY) $(PROGRAMS_RUNTIME_LIB) \
-		$(LIBRARY) $(EXTRA_LDFLAGS) -lcrypto -pthread -ldl -lm -o $@
+		$(LIBRARY) $(EXTRA_LDFLAGS) $(PROGRAMS_NATIVE_LDLIBS) -lcrypto -pthread -ldl -lm -o $@
 
 $(BUILD_DIR)/tests/lxp_test_module_custody: \
 		tests/daemon/lxp_test_module_custody.c \
@@ -319,7 +319,7 @@ $(BUILD_DIR)/tests/lxp_test_module_custody: \
 	@mkdir -p $(@D)
 	$(CC) $(CPPFLAGS) -Icmd/layerxd $(CFLAGS) $< $(LIBRARY) \
 		$(PROGRAMS_RUNTIME_LIB) $(LIBRARY) $(EXTRA_LDFLAGS) \
-		-lcrypto -pthread -ldl -lm -o $@
+		$(PROGRAMS_NATIVE_LDLIBS) -lcrypto -pthread -ldl -lm -o $@
 
 test-kernel: $(BUILD_DIR)/tests/lxp_test_kernel \
 		$(BUILD_DIR)/tests/lxp_test_module_custody
@@ -334,7 +334,7 @@ $(BUILD_DIR)/tests/lxp_test_module_ctx: \
 		$(PROGRAMS_RUNTIME_LIB) | programs-build
 	@mkdir -p $(@D)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $< $(LIBRARY) $(PROGRAMS_RUNTIME_LIB) \
-		$(LIBRARY) $(EXTRA_LDFLAGS) -lcrypto -pthread -ldl -lm -o $@
+		$(LIBRARY) $(EXTRA_LDFLAGS) $(PROGRAMS_NATIVE_LDLIBS) -lcrypto -pthread -ldl -lm -o $@
 
 test-module-ctx: $(BUILD_DIR)/tests/lxp_test_module_ctx
 	$(RUN_PREFIX) $(BUILD_DIR)/tests/lxp_test_module_ctx
@@ -344,7 +344,7 @@ $(BUILD_DIR)/tests/lxp_test_dispatch: tests/protocol/lxp_test_dispatch.c \
 		$(LIBRARY) $(PROGRAMS_RUNTIME_LIB) | programs-build
 	@mkdir -p $(@D)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $< $(LIBRARY) $(PROGRAMS_RUNTIME_LIB) \
-		$(LIBRARY) $(EXTRA_LDFLAGS) -lcrypto -pthread -ldl -lm -o $@
+		$(LIBRARY) $(EXTRA_LDFLAGS) $(PROGRAMS_NATIVE_LDLIBS) -lcrypto -pthread -ldl -lm -o $@
 
 test-dispatch: $(BUILD_DIR)/tests/lxp_test_dispatch
 	$(RUN_PREFIX) $(BUILD_DIR)/tests/lxp_test_dispatch
@@ -362,7 +362,7 @@ $(BUILD_DIR)/tests/lxp_test_state_root: tests/state/lxp_test_state_root.c \
 		$(LIBRARY) $(PROGRAMS_RUNTIME_LIB) | programs-build
 	@mkdir -p $(@D)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $< $(LIBRARY) $(PROGRAMS_RUNTIME_LIB) \
-		$(LIBRARY) $(EXTRA_LDFLAGS) -lcrypto -pthread -ldl -lm -o $@
+		$(LIBRARY) $(EXTRA_LDFLAGS) $(PROGRAMS_NATIVE_LDLIBS) -lcrypto -pthread -ldl -lm -o $@
 
 test-state-root: $(BUILD_DIR)/tests/lxp_test_state_root
 	$(RUN_PREFIX) $(BUILD_DIR)/tests/lxp_test_state_root
@@ -372,7 +372,7 @@ $(BUILD_DIR)/tests/lxp_test_golden_replay: \
 		tests/replay/golden/history.lxl $(PROGRAMS_RUNTIME_LIB) | programs-build
 	@mkdir -p $(@D)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $< $(LIBRARY) $(PROGRAMS_RUNTIME_LIB) \
-		$(LIBRARY) $(EXTRA_LDFLAGS) -lcrypto -pthread -ldl -lm -o $@
+		$(LIBRARY) $(EXTRA_LDFLAGS) $(PROGRAMS_NATIVE_LDLIBS) -lcrypto -pthread -ldl -lm -o $@
 
 test-replay-golden-local: $(BUILD_DIR)/tests/lxp_test_golden_replay
 	$(RUN_PREFIX) $(BUILD_DIR)/tests/lxp_test_golden_replay
@@ -392,7 +392,7 @@ $(BUILD_DIR)/tests/test_apply_transfer: tests/ledger/test_apply_transfer.c \
 		$(LIBRARY) $(PROGRAMS_RUNTIME_LIB) | programs-build
 	@mkdir -p $(@D)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $< $(LIBRARY) $(PROGRAMS_RUNTIME_LIB) \
-		$(LIBRARY) $(EXTRA_LDFLAGS) -lcrypto -pthread -ldl -lm -o $@
+		$(LIBRARY) $(EXTRA_LDFLAGS) $(PROGRAMS_NATIVE_LDLIBS) -lcrypto -pthread -ldl -lm -o $@
 
 test-ledger-transfer: $(BUILD_DIR)/tests/test_apply_transfer
 	$(RUN_PREFIX) $(BUILD_DIR)/tests/test_apply_transfer
@@ -402,7 +402,7 @@ $(BUILD_DIR)/tests/test_transfer_set: tests/ledger/test_transfer_set.c \
 	@mkdir -p $(@D)
 	$(CC) $(CPPFLAGS) -DLXP_TESTING $(CFLAGS) $< $(TEST_LIBRARY) \
 		$(PROGRAMS_RUNTIME_LIB) $(TEST_LIBRARY) $(EXTRA_LDFLAGS) \
-		-lcrypto -pthread -ldl -lm -o $@
+		$(PROGRAMS_NATIVE_LDLIBS) -lcrypto -pthread -ldl -lm -o $@
 
 test-ledger-set: $(BUILD_DIR)/tests/test_transfer_set
 	$(RUN_PREFIX) $(BUILD_DIR)/tests/test_transfer_set
@@ -412,7 +412,7 @@ $(BUILD_DIR)/tests/test_send: tests/ledger/test_send.c fuzz/fuzz_lxp_send.c \
 	@mkdir -p $(@D)
 	$(CC) $(CPPFLAGS) $(CFLAGS) tests/ledger/test_send.c fuzz/fuzz_lxp_send.c \
 		$(LIBRARY) $(PROGRAMS_RUNTIME_LIB) $(LIBRARY) $(EXTRA_LDFLAGS) \
-		-lcrypto -pthread -ldl -lm -o $@
+		$(PROGRAMS_NATIVE_LDLIBS) -lcrypto -pthread -ldl -lm -o $@
 
 test-ledger-send: $(BUILD_DIR)/tests/test_send
 	$(RUN_PREFIX) $(BUILD_DIR)/tests/test_send
@@ -421,7 +421,7 @@ $(BUILD_DIR)/tests/test_receive: tests/ledger/test_receive.c \
 		$(LIBRARY) $(PROGRAMS_RUNTIME_LIB) | programs-build
 	@mkdir -p $(@D)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $< $(LIBRARY) $(PROGRAMS_RUNTIME_LIB) \
-		$(LIBRARY) $(EXTRA_LDFLAGS) -lcrypto -pthread -ldl -lm -o $@
+		$(LIBRARY) $(EXTRA_LDFLAGS) $(PROGRAMS_NATIVE_LDLIBS) -lcrypto -pthread -ldl -lm -o $@
 
 test-ledger-receive: $(BUILD_DIR)/tests/test_receive
 	$(RUN_PREFIX) $(BUILD_DIR)/tests/test_receive
@@ -430,7 +430,7 @@ $(BUILD_DIR)/tests/test_send_allowance: tests/ledger/test_send_allowance.c \
 		$(LIBRARY) $(PROGRAMS_RUNTIME_LIB) | programs-build
 	@mkdir -p $(@D)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $< $(LIBRARY) $(PROGRAMS_RUNTIME_LIB) \
-		$(LIBRARY) $(EXTRA_LDFLAGS) -lcrypto -pthread -ldl -lm -o $@
+		$(LIBRARY) $(EXTRA_LDFLAGS) $(PROGRAMS_NATIVE_LDLIBS) -lcrypto -pthread -ldl -lm -o $@
 
 test-ledger-send-allowance: $(BUILD_DIR)/tests/test_send_allowance
 	$(RUN_PREFIX) $(BUILD_DIR)/tests/test_send_allowance
@@ -440,7 +440,7 @@ $(BUILD_DIR)/tests/test_receipt: tests/ledger/test_receipt.c \
 	@mkdir -p $(@D)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $< $(LIBRARY) $(PROGRAMS_RUNTIME_LIB) \
 		$(LIBRARY) $(EXTRA_LDFLAGS) \
-		-lcrypto -pthread -ldl -lm -o $@
+		$(PROGRAMS_NATIVE_LDLIBS) -lcrypto -pthread -ldl -lm -o $@
 
 test-ledger-receipt: $(BUILD_DIR)/tests/test_receipt
 	$(RUN_PREFIX) $(BUILD_DIR)/tests/test_receipt
@@ -451,13 +451,13 @@ $(BUILD_DIR)/tests/test_asset_registry: tests/modules/test_asset_registry.c \
 	@mkdir -p $(@D)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $< $(LIBRARY) $(PROGRAMS_RUNTIME_LIB) \
 		$(LIBRARY) $(EXTRA_LDFLAGS) \
-		-lcrypto -pthread -ldl -lm -o $@
+		$(PROGRAMS_NATIVE_LDLIBS) -lcrypto -pthread -ldl -lm -o $@
 
 $(BUILD_DIR)/tests/test_state_commitment_transition: tests/test_state_commitment_transition.c \
 		$(LIBRARY) $(PROGRAMS_RUNTIME_LIB) | programs-build
 	@mkdir -p $(@D)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $< $(LIBRARY) $(PROGRAMS_RUNTIME_LIB) \
-		$(LIBRARY) $(EXTRA_LDFLAGS) -lcrypto -pthread -ldl -lm -o $@
+		$(LIBRARY) $(EXTRA_LDFLAGS) $(PROGRAMS_NATIVE_LDLIBS) -lcrypto -pthread -ldl -lm -o $@
 
 .PHONY: test-state-commitment-transition
 test-state-commitment-transition: $(BUILD_DIR)/tests/test_state_commitment_transition
@@ -471,7 +471,7 @@ $(BUILD_DIR)/tests/test_asset_state: tests/modules/test_asset_state.c $(LIBRARY)
 	@mkdir -p $(@D)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $< $(LIBRARY) $(PROGRAMS_RUNTIME_LIB) \
 		$(LIBRARY) $(EXTRA_LDFLAGS) \
-		-lcrypto -pthread -ldl -lm -o $@
+		$(PROGRAMS_NATIVE_LDLIBS) -lcrypto -pthread -ldl -lm -o $@
 
 test-asset-balance: $(BUILD_DIR)/tests/test_asset_state
 	$(RUN_PREFIX) $(BUILD_DIR)/tests/test_asset_state
@@ -480,7 +480,7 @@ $(BUILD_DIR)/tests/test_asset_transfer: tests/modules/test_asset_transfer.c \
 		$(LIBRARY) $(PROGRAMS_RUNTIME_LIB) | programs-build
 	@mkdir -p $(@D)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $< $(LIBRARY) $(PROGRAMS_RUNTIME_LIB) \
-		$(LIBRARY) $(EXTRA_LDFLAGS) -lcrypto -pthread -ldl -lm -o $@
+		$(LIBRARY) $(EXTRA_LDFLAGS) $(PROGRAMS_NATIVE_LDLIBS) -lcrypto -pthread -ldl -lm -o $@
 
 test-asset-transfer: $(BUILD_DIR)/tests/test_asset_transfer
 	$(RUN_PREFIX) $(BUILD_DIR)/tests/test_asset_transfer
@@ -491,7 +491,7 @@ $(BUILD_DIR)/tests/test_asset_deposit: tests/modules/test_asset_deposit.c \
 	@mkdir -p $(@D)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $< $(LIBRARY) $(PROGRAMS_RUNTIME_LIB) \
 		$(LIBRARY) $(EXTRA_LDFLAGS) \
-		-lcrypto -pthread -ldl -lm -o $@
+		$(PROGRAMS_NATIVE_LDLIBS) -lcrypto -pthread -ldl -lm -o $@
 
 test-asset-deposit: $(BUILD_DIR)/tests/test_asset_deposit
 	$(RUN_PREFIX) $(BUILD_DIR)/tests/test_asset_deposit
@@ -500,7 +500,7 @@ $(BUILD_DIR)/tests/test_asset_withdraw: tests/modules/test_asset_withdraw.c \
 		$(LIBRARY) $(PROGRAMS_RUNTIME_LIB) | programs-build
 	@mkdir -p $(@D)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $< $(LIBRARY) $(PROGRAMS_RUNTIME_LIB) \
-		$(LIBRARY) $(EXTRA_LDFLAGS) -lcrypto -pthread -ldl -lm -o $@
+		$(LIBRARY) $(EXTRA_LDFLAGS) $(PROGRAMS_NATIVE_LDLIBS) -lcrypto -pthread -ldl -lm -o $@
 
 test-asset-withdraw: $(BUILD_DIR)/tests/test_asset_withdraw
 	$(RUN_PREFIX) $(BUILD_DIR)/tests/test_asset_withdraw
@@ -510,7 +510,7 @@ $(BUILD_DIR)/tests/test_asset_reserve: tests/modules/test_asset_reserve.c \
 	@mkdir -p $(@D)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $< $(LIBRARY) $(PROGRAMS_RUNTIME_LIB) \
 		$(LIBRARY) $(EXTRA_LDFLAGS) \
-		-lcrypto -pthread -ldl -lm -o $@
+		$(PROGRAMS_NATIVE_LDLIBS) -lcrypto -pthread -ldl -lm -o $@
 
 test-asset-reserve: $(BUILD_DIR)/tests/test_asset_reserve
 	$(RUN_PREFIX) $(BUILD_DIR)/tests/test_asset_reserve
@@ -520,7 +520,7 @@ $(BUILD_DIR)/tests/test_escrow_open: tests/modules/test_escrow_open.c \
 	@mkdir -p $(@D)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $< $(LIBRARY) $(PROGRAMS_RUNTIME_LIB) \
 		$(LIBRARY) $(EXTRA_LDFLAGS) \
-		-lcrypto -pthread -ldl -lm -o $@
+		$(PROGRAMS_NATIVE_LDLIBS) -lcrypto -pthread -ldl -lm -o $@
 
 test-escrow-open: $(BUILD_DIR)/tests/test_escrow_open
 	$(RUN_PREFIX) $(BUILD_DIR)/tests/test_escrow_open
@@ -531,7 +531,7 @@ $(BUILD_DIR)/tests/test_escrow_capture: tests/modules/test_escrow_capture.c \
 	@mkdir -p $(@D)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $< $(LIBRARY) $(PROGRAMS_RUNTIME_LIB) \
 		$(LIBRARY) $(EXTRA_LDFLAGS) \
-		-lcrypto -pthread -ldl -lm -o $@
+		$(PROGRAMS_NATIVE_LDLIBS) -lcrypto -pthread -ldl -lm -o $@
 
 test-escrow-capture: $(BUILD_DIR)/tests/test_escrow_capture
 	$(RUN_PREFIX) $(BUILD_DIR)/tests/test_escrow_capture
@@ -542,7 +542,7 @@ $(BUILD_DIR)/tests/test_escrow_timeout: tests/modules/test_escrow_timeout.c \
 	@mkdir -p $(@D)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $< $(LIBRARY) $(PROGRAMS_RUNTIME_LIB) \
 		$(LIBRARY) $(EXTRA_LDFLAGS) \
-		-lcrypto -pthread -ldl -lm -o $@
+		$(PROGRAMS_NATIVE_LDLIBS) -lcrypto -pthread -ldl -lm -o $@
 
 $(BUILD_DIR)/tests/lxp_test_epoch_escrow_timeout: \
 		tests/daemon/lxp_test_epoch_escrow_timeout.c \
@@ -552,7 +552,7 @@ $(BUILD_DIR)/tests/lxp_test_epoch_escrow_timeout: \
 	@mkdir -p $(@D)
 	$(CC) $(CPPFLAGS) -Icmd/layerxd $(CFLAGS) $< $(LIBRARY) \
 		$(PROGRAMS_RUNTIME_LIB) $(LIBRARY) $(EXTRA_LDFLAGS) \
-		-lcrypto -pthread -ldl -lm -o $@
+		$(PROGRAMS_NATIVE_LDLIBS) -lcrypto -pthread -ldl -lm -o $@
 
 test-escrow-timeout: $(BUILD_DIR)/tests/test_escrow_timeout \
 		$(BUILD_DIR)/tests/lxp_test_epoch_escrow_timeout
@@ -565,7 +565,7 @@ $(BUILD_DIR)/tests/test_escrow_dispute: tests/modules/test_escrow_dispute.c \
 	@mkdir -p $(@D)
 	$(CC) $(CPPFLAGS) -DLXP_TESTING $(CFLAGS) $< $(TEST_LIBRARY) \
 		$(PROGRAMS_RUNTIME_LIB) $(TEST_LIBRARY) $(EXTRA_LDFLAGS) \
-		-lcrypto -pthread -ldl -lm -o $@
+		$(PROGRAMS_NATIVE_LDLIBS) -lcrypto -pthread -ldl -lm -o $@
 
 test-escrow-dispute: $(BUILD_DIR)/tests/test_escrow_dispute
 	$(RUN_PREFIX) $(BUILD_DIR)/tests/test_escrow_dispute
@@ -577,7 +577,7 @@ $(BUILD_DIR)/tests/test_escrow_invariants: \
 	@mkdir -p $(@D)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $< $(LIBRARY) $(PROGRAMS_RUNTIME_LIB) \
 		$(LIBRARY) $(EXTRA_LDFLAGS) \
-		-lcrypto -pthread -ldl -lm -o $@
+		$(PROGRAMS_NATIVE_LDLIBS) -lcrypto -pthread -ldl -lm -o $@
 
 test-escrow-invariants: $(BUILD_DIR)/tests/test_escrow_invariants
 	$(RUN_PREFIX) $(BUILD_DIR)/tests/test_escrow_invariants
@@ -588,7 +588,7 @@ $(BUILD_DIR)/tests/test_budget_create: tests/modules/test_budget_create.c \
 	@mkdir -p $(@D)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $< $(LIBRARY) $(PROGRAMS_RUNTIME_LIB) \
 		$(LIBRARY) $(EXTRA_LDFLAGS) \
-		-lcrypto -pthread -ldl -lm -o $@
+		$(PROGRAMS_NATIVE_LDLIBS) -lcrypto -pthread -ldl -lm -o $@
 
 test-budget-create: $(BUILD_DIR)/tests/test_budget_create
 	$(RUN_PREFIX) $(BUILD_DIR)/tests/test_budget_create
@@ -599,7 +599,7 @@ $(BUILD_DIR)/tests/test_budget_period: tests/modules/test_budget_period.c \
 	@mkdir -p $(@D)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $< $(LIBRARY) $(PROGRAMS_RUNTIME_LIB) \
 		$(LIBRARY) $(EXTRA_LDFLAGS) \
-		-lcrypto -pthread -ldl -lm -o $@
+		$(PROGRAMS_NATIVE_LDLIBS) -lcrypto -pthread -ldl -lm -o $@
 
 $(BUILD_DIR)/tests/lxp_test_epoch_budget_rollback: \
 		tests/daemon/lxp_test_epoch_budget_rollback.c \
@@ -609,7 +609,7 @@ $(BUILD_DIR)/tests/lxp_test_epoch_budget_rollback: \
 	@mkdir -p $(@D)
 	$(CC) $(CPPFLAGS) -Icmd/layerxd $(CFLAGS) $< $(LIBRARY) \
 		$(PROGRAMS_RUNTIME_LIB) $(LIBRARY) $(EXTRA_LDFLAGS) \
-		-lcrypto -pthread -ldl -lm -o $@
+		$(PROGRAMS_NATIVE_LDLIBS) -lcrypto -pthread -ldl -lm -o $@
 
 test-budget-period: $(BUILD_DIR)/tests/test_budget_period \
 		$(BUILD_DIR)/tests/lxp_test_epoch_budget_rollback
@@ -621,7 +621,7 @@ $(BUILD_DIR)/tests/test_budget_spend: tests/modules/test_budget_spend.c \
 	@mkdir -p $(@D)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $< $(LIBRARY) $(PROGRAMS_RUNTIME_LIB) \
 		$(LIBRARY) $(EXTRA_LDFLAGS) \
-		-lcrypto -pthread -ldl -lm -o $@
+		$(PROGRAMS_NATIVE_LDLIBS) -lcrypto -pthread -ldl -lm -o $@
 
 test-budget-spend: $(BUILD_DIR)/tests/test_budget_spend
 	$(RUN_PREFIX) $(BUILD_DIR)/tests/test_budget_spend
@@ -632,7 +632,7 @@ $(BUILD_DIR)/tests/test_budget_delegate: tests/modules/test_budget_delegate.c \
 	@mkdir -p $(@D)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $< $(LIBRARY) $(PROGRAMS_RUNTIME_LIB) \
 		$(LIBRARY) $(EXTRA_LDFLAGS) \
-		-lcrypto -pthread -ldl -lm -o $@
+		$(PROGRAMS_NATIVE_LDLIBS) -lcrypto -pthread -ldl -lm -o $@
 
 test-budget-delegate: $(BUILD_DIR)/tests/test_budget_delegate
 	$(RUN_PREFIX) $(BUILD_DIR)/tests/test_budget_delegate
@@ -643,7 +643,7 @@ $(BUILD_DIR)/tests/test_budget_close: tests/modules/test_budget_close.c \
 	@mkdir -p $(@D)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $< $(LIBRARY) $(PROGRAMS_RUNTIME_LIB) \
 		$(LIBRARY) $(EXTRA_LDFLAGS) \
-		-lcrypto -pthread -ldl -lm -o $@
+		$(PROGRAMS_NATIVE_LDLIBS) -lcrypto -pthread -ldl -lm -o $@
 
 test-budget-revoke: $(BUILD_DIR)/tests/test_budget_close
 	$(RUN_PREFIX) $(BUILD_DIR)/tests/test_budget_close
@@ -654,7 +654,7 @@ $(BUILD_DIR)/tests/test_stream_open: tests/modules/test_stream_open.c \
 	@mkdir -p $(@D)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $< $(LIBRARY) $(PROGRAMS_RUNTIME_LIB) \
 		$(LIBRARY) $(EXTRA_LDFLAGS) \
-		-lcrypto -pthread -ldl -lm -o $@
+		$(PROGRAMS_NATIVE_LDLIBS) -lcrypto -pthread -ldl -lm -o $@
 
 test-stream-open: $(BUILD_DIR)/tests/test_stream_open
 	$(RUN_PREFIX) $(BUILD_DIR)/tests/test_stream_open
@@ -674,7 +674,7 @@ $(BUILD_DIR)/tests/test_stream_meter: tests/modules/test_stream_meter.c \
 	@mkdir -p $(@D)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $< $(LIBRARY) $(PROGRAMS_RUNTIME_LIB) \
 		$(LIBRARY) $(EXTRA_LDFLAGS) \
-		-lcrypto -pthread -ldl -lm -o $@
+		$(PROGRAMS_NATIVE_LDLIBS) -lcrypto -pthread -ldl -lm -o $@
 
 test-stream-meter: $(BUILD_DIR)/tests/test_stream_meter
 	$(RUN_PREFIX) $(BUILD_DIR)/tests/test_stream_meter
@@ -684,7 +684,7 @@ $(BUILD_DIR)/tests/test_stream_settle: tests/modules/test_stream_settle.c \
 	@mkdir -p $(@D)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $< $(LIBRARY) $(PROGRAMS_RUNTIME_LIB) \
 		$(LIBRARY) $(EXTRA_LDFLAGS) \
-		-lcrypto -pthread -ldl -lm -o $@
+		$(PROGRAMS_NATIVE_LDLIBS) -lcrypto -pthread -ldl -lm -o $@
 
 test-stream-settle: $(BUILD_DIR)/tests/test_stream_settle
 	$(RUN_PREFIX) $(BUILD_DIR)/tests/test_stream_settle
@@ -696,7 +696,7 @@ $(BUILD_DIR)/tests/test_stream_lifecycle: \
 	@mkdir -p $(@D)
 	$(CC) $(CPPFLAGS) -DLXP_TESTING $(CFLAGS) $< $(TEST_LIBRARY) \
 		$(PROGRAMS_RUNTIME_LIB) $(TEST_LIBRARY) $(EXTRA_LDFLAGS) \
-		-lcrypto -pthread -ldl -lm -o $@
+		$(PROGRAMS_NATIVE_LDLIBS) -lcrypto -pthread -ldl -lm -o $@
 
 test-stream-lifecycle: $(BUILD_DIR)/tests/test_stream_lifecycle
 	$(RUN_PREFIX) $(BUILD_DIR)/tests/test_stream_lifecycle
@@ -708,7 +708,7 @@ $(BUILD_DIR)/tests/test_service_offer: tests/modules/test_service_offer.c \
 	@mkdir -p $(@D)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $< $(LIBRARY) $(PROGRAMS_RUNTIME_LIB) \
 		$(LIBRARY) $(EXTRA_LDFLAGS) \
-		-lcrypto -pthread -ldl -lm -o $@
+		$(PROGRAMS_NATIVE_LDLIBS) -lcrypto -pthread -ldl -lm -o $@
 
 test-service-offer: $(BUILD_DIR)/tests/test_service_offer
 	$(RUN_PREFIX) $(BUILD_DIR)/tests/test_service_offer
@@ -720,7 +720,7 @@ $(BUILD_DIR)/tests/test_service_commit: tests/modules/test_service_commit.c \
 	@mkdir -p $(@D)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $< $(LIBRARY) $(PROGRAMS_RUNTIME_LIB) \
 		$(LIBRARY) $(EXTRA_LDFLAGS) \
-		-lcrypto -pthread -ldl -lm -o $@
+		$(PROGRAMS_NATIVE_LDLIBS) -lcrypto -pthread -ldl -lm -o $@
 
 test-service-commit: $(BUILD_DIR)/tests/test_service_commit
 	$(RUN_PREFIX) $(BUILD_DIR)/tests/test_service_commit
@@ -732,7 +732,7 @@ $(BUILD_DIR)/tests/test_service_attest: tests/modules/test_service_attest.c \
 	@mkdir -p $(@D)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $< $(LIBRARY) $(PROGRAMS_RUNTIME_LIB) \
 		$(LIBRARY) $(EXTRA_LDFLAGS) \
-		-lcrypto -pthread -ldl -lm -o $@
+		$(PROGRAMS_NATIVE_LDLIBS) -lcrypto -pthread -ldl -lm -o $@
 
 test-service-attest: $(BUILD_DIR)/tests/test_service_attest
 	$(RUN_PREFIX) $(BUILD_DIR)/tests/test_service_attest
@@ -744,7 +744,7 @@ $(BUILD_DIR)/tests/test_service_deliver: tests/modules/test_service_deliver.c \
 	@mkdir -p $(@D)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $< $(LIBRARY) $(PROGRAMS_RUNTIME_LIB) \
 		$(LIBRARY) $(EXTRA_LDFLAGS) \
-		-lcrypto -pthread -ldl -lm -o $@
+		$(PROGRAMS_NATIVE_LDLIBS) -lcrypto -pthread -ldl -lm -o $@
 
 test-service-deliver: $(BUILD_DIR)/tests/test_service_deliver
 	$(RUN_PREFIX) $(BUILD_DIR)/tests/test_service_deliver
@@ -757,7 +757,7 @@ $(BUILD_DIR)/tests/test_service_acceptance: \
 	@mkdir -p $(@D)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $< $(LIBRARY) $(PROGRAMS_RUNTIME_LIB) \
 		$(LIBRARY) $(EXTRA_LDFLAGS) \
-		-lcrypto -pthread -ldl -lm -o $@
+		$(PROGRAMS_NATIVE_LDLIBS) -lcrypto -pthread -ldl -lm -o $@
 
 $(BUILD_DIR)/tests/lxp_test_epoch_service_acceptance: \
 		tests/daemon/lxp_test_epoch_service_acceptance.c \
@@ -767,7 +767,7 @@ $(BUILD_DIR)/tests/lxp_test_epoch_service_acceptance: \
 	@mkdir -p $(@D)
 	$(CC) $(CPPFLAGS) -Icmd/layerxd $(CFLAGS) $< $(LIBRARY) \
 		$(PROGRAMS_RUNTIME_LIB) $(LIBRARY) $(EXTRA_LDFLAGS) \
-		-lcrypto -pthread -ldl -lm -o $@
+		$(PROGRAMS_NATIVE_LDLIBS) -lcrypto -pthread -ldl -lm -o $@
 
 test-service-acceptance: $(BUILD_DIR)/tests/test_service_acceptance \
 		$(BUILD_DIR)/tests/lxp_test_epoch_service_acceptance
@@ -782,7 +782,7 @@ $(BUILD_DIR)/tests/test_service_dispute: \
 	@mkdir -p $(@D)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $< $(LIBRARY) $(PROGRAMS_RUNTIME_LIB) \
 		$(LIBRARY) $(EXTRA_LDFLAGS) \
-		-lcrypto -pthread -ldl -lm -o $@
+		$(PROGRAMS_NATIVE_LDLIBS) -lcrypto -pthread -ldl -lm -o $@
 
 test-service-dispute: $(BUILD_DIR)/tests/test_service_dispute
 	$(RUN_PREFIX) $(BUILD_DIR)/tests/test_service_dispute
@@ -813,7 +813,7 @@ $(BUILD_DIR)/tests/test_oracle_intake: tests/modules/test_oracle_intake.c \
 	@mkdir -p $(@D)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $< $(LIBRARY) $(PROGRAMS_RUNTIME_LIB) \
 		$(LIBRARY) $(EXTRA_LDFLAGS) \
-		-lcrypto -pthread -ldl -lm -o $@
+		$(PROGRAMS_NATIVE_LDLIBS) -lcrypto -pthread -ldl -lm -o $@
 
 test-oracle-intake: $(BUILD_DIR)/tests/test_oracle_intake
 	$(RUN_PREFIX) $(BUILD_DIR)/tests/test_oracle_intake
@@ -825,7 +825,7 @@ $(BUILD_DIR)/tests/test_oracle_checks: tests/modules/test_oracle_checks.c \
 	@mkdir -p $(@D)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $< $(LIBRARY) $(PROGRAMS_RUNTIME_LIB) \
 		$(LIBRARY) $(EXTRA_LDFLAGS) \
-		-lcrypto -pthread -ldl -lm -o $@
+		$(PROGRAMS_NATIVE_LDLIBS) -lcrypto -pthread -ldl -lm -o $@
 
 test-oracle-bounds: $(BUILD_DIR)/tests/test_oracle_checks
 	$(RUN_PREFIX) $(BUILD_DIR)/tests/test_oracle_checks
@@ -836,7 +836,7 @@ $(BUILD_DIR)/tests/test_oracle_root: tests/sequencer/test_oracle_root.c \
 	@mkdir -p $(@D)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $< $(LIBRARY) $(PROGRAMS_RUNTIME_LIB) \
 		$(LIBRARY) $(EXTRA_LDFLAGS) \
-		-lcrypto -pthread -ldl -lm -o $@
+		$(PROGRAMS_NATIVE_LDLIBS) -lcrypto -pthread -ldl -lm -o $@
 
 test-oracle-root: $(BUILD_DIR)/tests/test_oracle_root
 	$(RUN_PREFIX) $(BUILD_DIR)/tests/test_oracle_root
@@ -846,7 +846,7 @@ $(BUILD_DIR)/tests/test_oracle_halt: tests/modules/test_oracle_halt.c \
 	@mkdir -p $(@D)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $< $(LIBRARY) $(PROGRAMS_RUNTIME_LIB) \
 		$(LIBRARY) $(EXTRA_LDFLAGS) \
-		-lcrypto -pthread -ldl -lm -o $@
+		$(PROGRAMS_NATIVE_LDLIBS) -lcrypto -pthread -ldl -lm -o $@
 
 test-oracle-failclosed: $(BUILD_DIR)/tests/test_oracle_halt
 	$(RUN_PREFIX) $(BUILD_DIR)/tests/test_oracle_halt
@@ -858,7 +858,7 @@ $(BUILD_DIR)/tests/test_web_adapter: tests/network/test_web_adapter.c \
 	@mkdir -p $(@D)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $< $(LIBRARY) $(PROGRAMS_RUNTIME_LIB) \
 		$(LIBRARY) $(EXTRA_LDFLAGS) \
-		-lcrypto -pthread -ldl -lm -o $@
+		$(PROGRAMS_NATIVE_LDLIBS) -lcrypto -pthread -ldl -lm -o $@
 
 test-web-adapter: $(BUILD_DIR)/tests/test_web_adapter
 	$(RUN_PREFIX) $(BUILD_DIR)/tests/test_web_adapter
@@ -869,7 +869,7 @@ $(BUILD_DIR)/tests/test_web_intake: tests/modules/test_web_intake.c \
 	@mkdir -p $(@D)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $< $(LIBRARY) $(PROGRAMS_RUNTIME_LIB) \
 		$(LIBRARY) $(EXTRA_LDFLAGS) \
-		-lcrypto -pthread -ldl -lm -o $@
+		$(PROGRAMS_NATIVE_LDLIBS) -lcrypto -pthread -ldl -lm -o $@
 
 test-web-intake: $(BUILD_DIR)/tests/test_web_intake
 	$(RUN_PREFIX) $(BUILD_DIR)/tests/test_web_intake
@@ -881,7 +881,7 @@ $(BUILD_DIR)/tests/test_web_root: tests/sequencer/test_web_root.c \
 	@mkdir -p $(@D)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $< $(LIBRARY) $(PROGRAMS_RUNTIME_LIB) \
 		$(LIBRARY) $(EXTRA_LDFLAGS) \
-		-lcrypto -pthread -ldl -lm -o $@
+		$(PROGRAMS_NATIVE_LDLIBS) -lcrypto -pthread -ldl -lm -o $@
 
 test-web-root: $(BUILD_DIR)/tests/test_web_root
 	$(RUN_PREFIX) $(BUILD_DIR)/tests/test_web_root
@@ -891,7 +891,7 @@ $(BUILD_DIR)/tests/test_perps_market: tests/modules/test_perps_market.c \
 	@mkdir -p $(@D)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $< $(LIBRARY) $(PROGRAMS_RUNTIME_LIB) \
 		$(LIBRARY) $(EXTRA_LDFLAGS) \
-		-lcrypto -pthread -ldl -lm -o $@
+		$(PROGRAMS_NATIVE_LDLIBS) -lcrypto -pthread -ldl -lm -o $@
 
 test-perps-market: $(BUILD_DIR)/tests/test_perps_market
 	$(RUN_PREFIX) $(BUILD_DIR)/tests/test_perps_market
@@ -902,7 +902,7 @@ $(BUILD_DIR)/tests/test_perps_book: tests/modules/test_perps_book.c \
 	@mkdir -p $(@D)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $< $(LIBRARY) $(PROGRAMS_RUNTIME_LIB) \
 		$(LIBRARY) $(EXTRA_LDFLAGS) \
-		-lcrypto -pthread -ldl -lm -o $@
+		$(PROGRAMS_NATIVE_LDLIBS) -lcrypto -pthread -ldl -lm -o $@
 
 test-perps-book: $(BUILD_DIR)/tests/test_perps_book
 	$(RUN_PREFIX) $(BUILD_DIR)/tests/test_perps_book
@@ -913,7 +913,7 @@ $(BUILD_DIR)/tests/test_spot_book: tests/modules/test_spot_book.c \
 	@mkdir -p $(@D)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $< $(LIBRARY) $(PROGRAMS_RUNTIME_LIB) \
 		$(LIBRARY) $(EXTRA_LDFLAGS) \
-		-lcrypto -pthread -ldl -lm -o $@
+		$(PROGRAMS_NATIVE_LDLIBS) -lcrypto -pthread -ldl -lm -o $@
 
 test-spot-book: $(BUILD_DIR)/tests/test_spot_book
 	$(RUN_PREFIX) $(BUILD_DIR)/tests/test_spot_book
@@ -924,7 +924,7 @@ $(BUILD_DIR)/tests/test_perps_position: tests/modules/test_perps_position.c \
 	@mkdir -p $(@D)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $< $(LIBRARY) $(PROGRAMS_RUNTIME_LIB) \
 		$(LIBRARY) $(EXTRA_LDFLAGS) \
-		-lcrypto -pthread -ldl -lm -o $@
+		$(PROGRAMS_NATIVE_LDLIBS) -lcrypto -pthread -ldl -lm -o $@
 
 test-perps-margin: $(BUILD_DIR)/tests/test_perps_position
 	$(RUN_PREFIX) $(BUILD_DIR)/tests/test_perps_position
@@ -935,7 +935,7 @@ $(BUILD_DIR)/tests/test_perps_funding: tests/modules/test_perps_funding.c \
 	@mkdir -p $(@D)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $< $(LIBRARY) $(PROGRAMS_RUNTIME_LIB) \
 		$(LIBRARY) $(EXTRA_LDFLAGS) \
-		-lcrypto -pthread -ldl -lm -o $@
+		$(PROGRAMS_NATIVE_LDLIBS) -lcrypto -pthread -ldl -lm -o $@
 
 test-perps-funding: $(BUILD_DIR)/tests/test_perps_funding
 	$(RUN_PREFIX) $(BUILD_DIR)/tests/test_perps_funding
@@ -947,7 +947,7 @@ $(BUILD_DIR)/tests/test_perps_liquidate: \
 	@mkdir -p $(@D)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $< $(LIBRARY) $(PROGRAMS_RUNTIME_LIB) \
 		$(LIBRARY) $(EXTRA_LDFLAGS) \
-		-lcrypto -pthread -ldl -lm -o $@
+		$(PROGRAMS_NATIVE_LDLIBS) -lcrypto -pthread -ldl -lm -o $@
 
 test-perps-liquidation: $(BUILD_DIR)/tests/test_perps_liquidate
 	$(RUN_PREFIX) $(BUILD_DIR)/tests/test_perps_liquidate
@@ -959,7 +959,7 @@ $(BUILD_DIR)/tests/test_perps_insurance: \
 	@mkdir -p $(@D)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $< $(LIBRARY) $(PROGRAMS_RUNTIME_LIB) \
 		$(LIBRARY) $(EXTRA_LDFLAGS) \
-		-lcrypto -pthread -ldl -lm -o $@
+		$(PROGRAMS_NATIVE_LDLIBS) -lcrypto -pthread -ldl -lm -o $@
 
 test-perps-insurance: $(BUILD_DIR)/tests/test_perps_insurance
 	$(RUN_PREFIX) $(BUILD_DIR)/tests/test_perps_insurance
@@ -1026,7 +1026,7 @@ $(BUILD_DIR)/tests/test_replica_ingest: tests/test_replica_ingest.c \
 	@mkdir -p $(@D)
 	$(CC) $(CPPFLAGS) -Itests $(CFLAGS) $< $(LIBRARY) \
 		$(PROGRAMS_RUNTIME_LIB) $(LIBRARY) $(EXTRA_LDFLAGS) \
-		-lcrypto -pthread -ldl -lm -o $@
+		$(PROGRAMS_NATIVE_LDLIBS) -lcrypto -pthread -ldl -lm -o $@
 
 test-replica: $(BUILD_DIR)/tests/test_replica_ingest
 	$(RUN_PREFIX) $(BUILD_DIR)/tests/test_replica_ingest
@@ -1034,7 +1034,7 @@ test-replica: $(BUILD_DIR)/tests/test_replica_ingest
 $(BUILD_DIR)/tests/test_replica_replay: tests/test_replica_replay.c $(LIBRARY) $(PROGRAMS_RUNTIME_LIB) tests/support/lxp_real_replay.h | programs-build
 	@mkdir -p $(@D)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $< $(LIBRARY) $(PROGRAMS_RUNTIME_LIB) $(LIBRARY) $(EXTRA_LDFLAGS) \
-		-lcrypto -pthread -ldl -lm -o $@
+		$(PROGRAMS_NATIVE_LDLIBS) -lcrypto -pthread -ldl -lm -o $@
 
 test-replay: $(BUILD_DIR)/tests/test_replica_replay
 	$(RUN_PREFIX) $(BUILD_DIR)/tests/test_replica_replay
@@ -1053,7 +1053,7 @@ $(BUILD_DIR)/tests/test_snapshot: tests/test_snapshot.c $(LIBRARY) \
 		$(PROGRAMS_RUNTIME_LIB) | programs-build
 	@mkdir -p $(@D)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $< $(LIBRARY) $(PROGRAMS_RUNTIME_LIB) \
-		$(LIBRARY) $(EXTRA_LDFLAGS) -lcrypto -pthread -ldl -lm -o $@
+		$(LIBRARY) $(EXTRA_LDFLAGS) $(PROGRAMS_NATIVE_LDLIBS) -lcrypto -pthread -ldl -lm -o $@
 
 test-snapshot: $(BUILD_DIR)/tests/test_snapshot
 	$(RUN_PREFIX) $(BUILD_DIR)/tests/test_snapshot
@@ -1077,7 +1077,7 @@ $(BUILD_DIR)/tests/test_guarantor_duties: \
 		tests/test_guarantor_duties.c $(LIBRARY) $(PROGRAMS_RUNTIME_LIB) tests/support/lxp_real_replay.h | programs-build
 	@mkdir -p $(@D)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $< $(LIBRARY) $(PROGRAMS_RUNTIME_LIB) $(LIBRARY) $(EXTRA_LDFLAGS) \
-		-lcrypto -pthread -ldl -lm -o $@
+		$(PROGRAMS_NATIVE_LDLIBS) -lcrypto -pthread -ldl -lm -o $@
 
 test-guarantor: $(BUILD_DIR)/tests/test_guarantor_duties
 	$(RUN_PREFIX) $(BUILD_DIR)/tests/test_guarantor_duties
@@ -1145,7 +1145,7 @@ $(BUILD_DIR)/tests/test_da_retrieval: tests/test_da_retrieval.c \
 	@mkdir -p $(@D)
 	$(CC) $(CPPFLAGS) $(CFLAGS) tests/test_da_retrieval.c \
 		cmd/layerx-verify/lxp_verify_fetch.c $(LIBRARY) $(PROGRAMS_RUNTIME_LIB) $(LIBRARY) $(EXTRA_LDFLAGS) \
-		-lcrypto -pthread -ldl -lm -o $@
+		$(PROGRAMS_NATIVE_LDLIBS) -lcrypto -pthread -ldl -lm -o $@
 
 test-da-retrieval: $(BUILD_DIR)/tests/test_da_retrieval
 	$(RUN_PREFIX) $(BUILD_DIR)/tests/test_da_retrieval
@@ -1198,21 +1198,21 @@ $(BUILD_DIR)/tests/test_fees: tests/test_fees.c $(LIBRARY) \
 	@mkdir -p $(@D)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $< $(LIBRARY) $(PROGRAMS_RUNTIME_LIB) \
 		$(LIBRARY) $(EXTRA_LDFLAGS) \
-		-lcrypto -pthread -ldl -lm -o $@
+		$(PROGRAMS_NATIVE_LDLIBS) -lcrypto -pthread -ldl -lm -o $@
 
 $(BUILD_DIR)/tests/test_fees_v3: tests/test_fees_v3.c $(LIBRARY) \
         $(PROGRAMS_RUNTIME_LIB) | programs-build
 	@mkdir -p $(@D)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $< $(LIBRARY) $(PROGRAMS_RUNTIME_LIB) \
 		$(LIBRARY) $(EXTRA_LDFLAGS) \
-		-lcrypto -pthread -ldl -lm -o $@
+		$(PROGRAMS_NATIVE_LDLIBS) -lcrypto -pthread -ldl -lm -o $@
 
 $(BUILD_DIR)/tests/test_fees_v4: tests/test_fees_v4.c $(LIBRARY) \
         $(PROGRAMS_RUNTIME_LIB) | programs-build
 	@mkdir -p $(@D)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $< $(LIBRARY) $(PROGRAMS_RUNTIME_LIB) \
 		$(LIBRARY) $(EXTRA_LDFLAGS) \
-		-lcrypto -pthread -ldl -lm -o $@
+		$(PROGRAMS_NATIVE_LDLIBS) -lcrypto -pthread -ldl -lm -o $@
 
 test-fees: $(BUILD_DIR)/tests/test_fees $(BUILD_DIR)/tests/test_fees_v3 $(BUILD_DIR)/tests/test_fees_v4
 	$(RUN_PREFIX) $(BUILD_DIR)/tests/test_fees
@@ -1224,7 +1224,7 @@ $(BUILD_DIR)/tests/test_metering: tests/test_metering.c fuzz/fuzz_meter.c \
 	@mkdir -p $(@D)
 	$(CC) $(CPPFLAGS) $(CFLAGS) tests/test_metering.c fuzz/fuzz_meter.c \
 		$(LIBRARY) $(PROGRAMS_RUNTIME_LIB) \
-		$(LIBRARY) $(EXTRA_LDFLAGS) -lcrypto -pthread -ldl -lm -o $@
+		$(LIBRARY) $(EXTRA_LDFLAGS) $(PROGRAMS_NATIVE_LDLIBS) -lcrypto -pthread -ldl -lm -o $@
 
 test-metering: $(BUILD_DIR)/tests/test_metering
 	$(RUN_PREFIX) $(BUILD_DIR)/tests/test_metering
@@ -1233,7 +1233,7 @@ $(BUILD_DIR)/tests/test_fee_replay: tests/test_fee_replay.c \
 		$(LIBRARY) $(PROGRAMS_RUNTIME_LIB) | programs-build
 	@mkdir -p $(@D)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $< $(LIBRARY) $(PROGRAMS_RUNTIME_LIB) \
-		$(LIBRARY) $(EXTRA_LDFLAGS) -lcrypto -pthread -ldl -lm -o $@
+		$(LIBRARY) $(EXTRA_LDFLAGS) $(PROGRAMS_NATIVE_LDLIBS) -lcrypto -pthread -ldl -lm -o $@
 
 test-fee-replay: $(BUILD_DIR)/tests/test_fee_replay test-dispatch
 	$(RUN_PREFIX) $(BUILD_DIR)/tests/test_fee_replay
@@ -1272,7 +1272,7 @@ $(BUILD_DIR)/tests/test_bridge_deposit: tests/test_bridge_deposit.c \
 		$(LIBRARY) $(PROGRAMS_RUNTIME_LIB) | programs-build
 	@mkdir -p $(@D)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $< $(LIBRARY) $(PROGRAMS_RUNTIME_LIB) \
-		$(LIBRARY) $(EXTRA_LDFLAGS) -lcrypto -pthread -ldl -lm -o $@
+		$(LIBRARY) $(EXTRA_LDFLAGS) $(PROGRAMS_NATIVE_LDLIBS) -lcrypto -pthread -ldl -lm -o $@
 
 test-bridge-deposit: $(BUILD_DIR)/tests/test_bridge_deposit test-contracts
 	$(RUN_PREFIX) $(BUILD_DIR)/tests/test_bridge_deposit
@@ -1281,19 +1281,19 @@ $(BUILD_DIR)/tests/bridge/sign-credit: tests/bridge/sign_credit.c tests/bridge/f
 		$(LIBRARY) $(PROGRAMS_RUNTIME_LIB) | programs-build
 	@mkdir -p $(@D)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $< $(LIBRARY) $(PROGRAMS_RUNTIME_LIB) \
-		$(LIBRARY) $(EXTRA_LDFLAGS) -lcrypto -pthread -ldl -lm -o $@
+		$(LIBRARY) $(EXTRA_LDFLAGS) $(PROGRAMS_NATIVE_LDLIBS) -lcrypto -pthread -ldl -lm -o $@
 
 $(BUILD_DIR)/tests/bridge/test-credit: tests/bridge/test_credit.c tests/bridge/files.h \
 		$(TEST_LIBRARY) $(PROGRAMS_RUNTIME_LIB) | programs-build
 	@mkdir -p $(@D)
 	$(CC) $(CPPFLAGS) $(CFLAGS) -DLXP_TESTING $< $(TEST_LIBRARY) $(PROGRAMS_RUNTIME_LIB) \
-		$(TEST_LIBRARY) $(EXTRA_LDFLAGS) -lcrypto -pthread -ldl -lm -o $@
+		$(TEST_LIBRARY) $(EXTRA_LDFLAGS) $(PROGRAMS_NATIVE_LDLIBS) -lcrypto -pthread -ldl -lm -o $@
 
 $(BUILD_DIR)/tests/test_bridge_withdraw: tests/test_bridge_withdraw.c \
 		$(LIBRARY) $(PROGRAMS_RUNTIME_LIB) | programs-build
 	@mkdir -p $(@D)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $< $(LIBRARY) $(PROGRAMS_RUNTIME_LIB) \
-		$(LIBRARY) $(EXTRA_LDFLAGS) -lcrypto -pthread -ldl -lm -o $@
+		$(LIBRARY) $(EXTRA_LDFLAGS) $(PROGRAMS_NATIVE_LDLIBS) -lcrypto -pthread -ldl -lm -o $@
 
 test-bridge-withdraw: $(BUILD_DIR)/tests/test_bridge_withdraw test-contracts
 	$(RUN_PREFIX) $(BUILD_DIR)/tests/test_bridge_withdraw
@@ -1303,7 +1303,7 @@ $(BUILD_DIR)/tests/test_emergency_exit: tests/test_emergency_exit.c $(LIBRARY) \
 	@mkdir -p $(@D)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $< $(LIBRARY) $(PROGRAMS_RUNTIME_LIB) \
 		$(LIBRARY) $(EXTRA_LDFLAGS) \
-		-lcrypto -pthread -ldl -lm -o $@
+		$(PROGRAMS_NATIVE_LDLIBS) -lcrypto -pthread -ldl -lm -o $@
 
 test-emergency-exit: $(BUILD_DIR)/tests/test_emergency_exit test-contracts
 	$(RUN_PREFIX) $(BUILD_DIR)/tests/test_emergency_exit
@@ -1313,7 +1313,7 @@ $(BUILD_DIR)/tests/test_reserve_reconcile: \
 	@mkdir -p $(@D)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $< $(LIBRARY) $(PROGRAMS_RUNTIME_LIB) \
 		$(LIBRARY) $(EXTRA_LDFLAGS) \
-		-lcrypto -pthread -ldl -lm -o $@
+		$(PROGRAMS_NATIVE_LDLIBS) -lcrypto -pthread -ldl -lm -o $@
 
 $(BUILD_DIR)/tools/lxp-reserve-report: tools/lxp_reserve_report.c
 	@mkdir -p $(@D)
@@ -1343,7 +1343,7 @@ $(BUILD_DIR)/tests/test_gateway_send: tests/test_gateway_send.c \
 	@mkdir -p $(@D)
 	$(CC) $(CPPFLAGS) -DLXP_TESTING $(CFLAGS) $< $(TEST_LIBRARY) \
 		$(PROGRAMS_RUNTIME_LIB) $(TEST_LIBRARY) $(EXTRA_LDFLAGS) \
-		-lcrypto -pthread -ldl -lm -o $@
+		$(PROGRAMS_NATIVE_LDLIBS) -lcrypto -pthread -ldl -lm -o $@
 
 test-gateway-send: $(BUILD_DIR)/tests/test_gateway_send
 	$(RUN_PREFIX) $(BUILD_DIR)/tests/test_gateway_send
@@ -1353,7 +1353,7 @@ $(BUILD_DIR)/tests/test_gateway_receive: tests/test_gateway_receive.c \
 	@mkdir -p $(@D)
 	$(CC) $(CPPFLAGS) -DLXP_TESTING $(CFLAGS) $< $(TEST_LIBRARY) \
 		$(PROGRAMS_RUNTIME_LIB) $(TEST_LIBRARY) $(EXTRA_LDFLAGS) \
-		-lcrypto -pthread -ldl -lm -o $@
+		$(PROGRAMS_NATIVE_LDLIBS) -lcrypto -pthread -ldl -lm -o $@
 
 test-gateway-receive: $(BUILD_DIR)/tests/test_gateway_receive
 	$(RUN_PREFIX) $(BUILD_DIR)/tests/test_gateway_receive
@@ -1363,7 +1363,7 @@ $(BUILD_DIR)/tests/test_gateway_kv: tests/network/test_gateway_kv.c \
 	@mkdir -p $(@D)
 	$(CC) $(CPPFLAGS) -DLXP_TESTING $(CFLAGS) $< $(TEST_LIBRARY) \
 		$(PROGRAMS_RUNTIME_LIB) $(TEST_LIBRARY) $(EXTRA_LDFLAGS) \
-		-lcrypto -pthread -ldl -lm -o $@
+		$(PROGRAMS_NATIVE_LDLIBS) -lcrypto -pthread -ldl -lm -o $@
 
 test-gateway-kv: $(BUILD_DIR)/tests/test_gateway_kv
 	$(RUN_PREFIX) $(BUILD_DIR)/tests/test_gateway_kv
@@ -1411,7 +1411,7 @@ $(BUILD_DIR)/bin/layerxd: $(LAYERXD_OBJECTS) $(LIBRARY) \
 	@mkdir -p $(@D)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(LAYERXD_OBJECTS) \
 		$(LIBRARY) $(PROGRAMS_RUNTIME_LIB) $(EXTRA_LDFLAGS) \
-		-lcrypto -lsqlite3 -pthread -ldl -lm -o $@
+		$(PROGRAMS_NATIVE_LDLIBS) -lcrypto -lsqlite3 -pthread -ldl -lm -o $@
 
 layerxd: $(BUILD_DIR)/bin/layerxd
 
@@ -1425,7 +1425,7 @@ $(BUILD_DIR)/bin/layerx-genesis-build: \
 		cmd/layerx-genesis/lxp_genesis_build_cli.c \
 		cmd/layerx-genesis/lxp_genesis_builder.c $(LIBRARY) \
 		$(PROGRAMS_RUNTIME_LIB) $(LIBRARY) $(EXTRA_LDFLAGS) \
-		-lcrypto -pthread -ldl -lm -o $@
+		$(PROGRAMS_NATIVE_LDLIBS) -lcrypto -pthread -ldl -lm -o $@
 
 layerx-genesis-build: $(BUILD_DIR)/bin/layerx-genesis-build
 
@@ -1436,7 +1436,7 @@ $(BUILD_DIR)/bin/layerx-handover: cmd/layerx-handover/main.c $(HANDOVER_OBJECTS)
 	@mkdir -p $(@D)
 	$(CC) $(CPPFLAGS) $(CFLAGS) cmd/layerx-handover/main.c $(HANDOVER_OBJECTS) \
 		$(LIBRARY) $(PROGRAMS_RUNTIME_LIB) $(EXTRA_LDFLAGS) \
-		-lcrypto -lsqlite3 -pthread -ldl -lm -o $@
+		$(PROGRAMS_NATIVE_LDLIBS) -lcrypto -lsqlite3 -pthread -ldl -lm -o $@
 
 .PHONY: layerx-handover
 layerx-handover: $(BUILD_DIR)/bin/layerx-handover
@@ -1449,7 +1449,7 @@ $(BUILD_DIR)/tests/test_layerxd: tests/test_layerxd.c $(LAYERXD_SOURCES) \
 	$(CC) $(CPPFLAGS) -Icmd/layerxd $(CFLAGS) \
 		tests/test_layerxd.c $(LAYERXD_SOURCES) \
 		$(LIBRARY) $(PROGRAMS_RUNTIME_LIB) $(EXTRA_LDFLAGS) \
-		-lcrypto -lsqlite3 -pthread -ldl -lm -o $@
+		$(PROGRAMS_NATIVE_LDLIBS) -lcrypto -lsqlite3 -pthread -ldl -lm -o $@
 
 test-layerxd: $(BUILD_DIR)/tests/test_layerxd
 	$(RUN_PREFIX) $(BUILD_DIR)/tests/test_layerxd
@@ -1463,7 +1463,7 @@ $(BUILD_DIR)/tests/test_daemon_lni_admission: \
 		tests/test_daemon_lni_admission.c $(LAYERXD_SOURCES) \
 		$(LIBRARY) $(PROGRAMS_RUNTIME_LIB) $(EXTRA_LDFLAGS) \
 		-Wl,--wrap=fdatasync -Wl,--wrap=pwrite -Wl,--wrap=send \
-		-lcrypto -lsqlite3 -pthread -ldl -lm -o $@
+		$(PROGRAMS_NATIVE_LDLIBS) -lcrypto -lsqlite3 -pthread -ldl -lm -o $@
 
 test-daemon-lni-admission: $(BUILD_DIR)/tests/test_daemon_lni_admission
 	$(RUN_PREFIX) $(BUILD_DIR)/tests/test_daemon_lni_admission
@@ -1486,7 +1486,7 @@ test-layerxctl: layerxctl
 $(BUILD_DIR)/tests/test_tools: tests/test_tools.c $(TOOL_SOURCES) $(LIBRARY) $(PROGRAMS_RUNTIME_LIB) tests/support/lxp_real_replay.h | programs-build
 	@mkdir -p $(@D)
 	$(CC) $(CPPFLAGS) $(CFLAGS) tests/test_tools.c $(TOOL_SOURCES) \
-		$(LIBRARY) $(PROGRAMS_RUNTIME_LIB) $(LIBRARY) $(EXTRA_LDFLAGS) -lcrypto -pthread -ldl -lm -o $@
+		$(LIBRARY) $(PROGRAMS_RUNTIME_LIB) $(LIBRARY) $(EXTRA_LDFLAGS) $(PROGRAMS_NATIVE_LDLIBS) -lcrypto -pthread -ldl -lm -o $@
 
 test-tools: $(BUILD_DIR)/tests/test_tools
 	$(RUN_PREFIX) $(BUILD_DIR)/tests/test_tools
@@ -1501,7 +1501,7 @@ $(BUILD_DIR)/bin/layerx-verify: cmd/layerx-verify/main.c \
 	$(CC) $(CPPFLAGS) $(CFLAGS) cmd/layerx-verify/main.c \
 		cmd/layerx-verify/lxp_verify_cli.c $(LIBRARY) \
 		$(PROGRAMS_RUNTIME_LIB) $(LIBRARY) $(EXTRA_LDFLAGS) \
-		-lcrypto -pthread -ldl -lm -o $@
+		$(PROGRAMS_NATIVE_LDLIBS) -lcrypto -pthread -ldl -lm -o $@
 
 layerx-verify: $(BUILD_DIR)/bin/layerx-verify
 
@@ -1517,7 +1517,7 @@ $(BUILD_DIR)/tests/test_verify_cli: tests/tools/test_verify_cli.c \
 		tests/tools/test_verify_cli.c cmd/layerx-verify/lxp_verify_cli.c \
 		cmd/layerx-genesis/lxp_genesis_builder.c \
 		$(LAYERXD_SOURCES) $(LIBRARY) $(PROGRAMS_RUNTIME_LIB) $(LIBRARY) \
-		$(EXTRA_LDFLAGS) -lcrypto -lsqlite3 -pthread -ldl -lm -o $@
+		$(EXTRA_LDFLAGS) $(PROGRAMS_NATIVE_LDLIBS) -lcrypto -lsqlite3 -pthread -ldl -lm -o $@
 
 test-verify-cli: $(BUILD_DIR)/tests/test_verify_cli
 	$(RUN_PREFIX) $(BUILD_DIR)/tests/test_verify_cli
@@ -1535,7 +1535,7 @@ $(BUILD_DIR)/tests/test_genesis_manifest: tests/test_genesis_manifest.c \
 		cmd/layerx-genesis/lxp_genesis_build_cli.c \
 		cmd/layerx-genesis/lxp_genesis_builder.c $(LIBRARY) \
 		$(PROGRAMS_RUNTIME_LIB) $(LIBRARY) $(EXTRA_LDFLAGS) \
-		-lcrypto -pthread -ldl -lm -o $@
+		$(PROGRAMS_NATIVE_LDLIBS) -lcrypto -pthread -ldl -lm -o $@
 
 $(BUILD_DIR)/tests/test_genesis_module_table: \
 		tests/test_genesis_module_table.c \
@@ -1547,7 +1547,7 @@ $(BUILD_DIR)/tests/test_genesis_module_table: \
 		cmd/layerx-genesis/lxp_genesis_build_cli.c \
 		cmd/layerx-genesis/lxp_genesis_builder.c $(LIBRARY) \
 		$(PROGRAMS_RUNTIME_LIB) $(LIBRARY) $(EXTRA_LDFLAGS) \
-		-lcrypto -pthread -ldl -lm -o $@
+		$(PROGRAMS_NATIVE_LDLIBS) -lcrypto -pthread -ldl -lm -o $@
 
 $(BUILD_DIR)/tests/test_genesis_builder_cli: \
 		tests/test_genesis_builder_cli.c \
@@ -1559,7 +1559,7 @@ $(BUILD_DIR)/tests/test_genesis_builder_cli: \
 		cmd/layerx-genesis/lxp_genesis_build_cli.c \
 		cmd/layerx-genesis/lxp_genesis_builder.c $(LIBRARY) \
 		$(PROGRAMS_RUNTIME_LIB) $(LIBRARY) $(EXTRA_LDFLAGS) \
-		-lcrypto -pthread -ldl -lm -o $@
+		$(PROGRAMS_NATIVE_LDLIBS) -lcrypto -pthread -ldl -lm -o $@
 
 $(BUILD_DIR)/tests/test_daemon_bootstrap_artifact: \
 		tests/test_daemon_bootstrap_artifact.c \
@@ -1641,7 +1641,7 @@ $(BUILD_DIR)/tests/test_qual_recovery: tests/test_qual_recovery.c \
 		tests/qualification/lxp_qual_faults.c \
 		src/storage/lxp_projection.c $(LIBRARY) $(PROGRAMS_RUNTIME_LIB) \
 		$(LIBRARY) $(EXTRA_LDFLAGS) \
-		-lcrypto -lsqlite3 -pthread -ldl -lm -o $@
+		$(PROGRAMS_NATIVE_LDLIBS) -lcrypto -lsqlite3 -pthread -ldl -lm -o $@
 
 qualify-faults: $(BUILD_DIR)/tests/test_qual_recovery
 	$(RUN_PREFIX) $(BUILD_DIR)/tests/test_qual_recovery
@@ -1654,7 +1654,7 @@ $(BUILD_DIR)/tests/test_fuzz_smoke: tests/test_fuzz_smoke.c \
 		fuzz/fuzz_activity.c fuzz/fuzz_signature.c \
 		fuzz/fuzz_transfer_set.c $(LIBRARY) $(PROGRAMS_RUNTIME_LIB) \
 		$(LIBRARY) $(EXTRA_LDFLAGS) \
-		-lcrypto -pthread -ldl -lm -o $@
+		$(PROGRAMS_NATIVE_LDLIBS) -lcrypto -pthread -ldl -lm -o $@
 
 qualify-fuzz-run: $(BUILD_DIR)/tests/test_fuzz_smoke
 	test -r "$(QUALIFICATION_CORPUS)"
@@ -1951,7 +1951,7 @@ $(BUILD_DIR)/tests/lxp_test_batch_wal_recovery: \
 		tests/storage/lxp_test_batch_wal_recovery.c \
 		cmd/layerxd/lxp_daemon_batch_wal.c $(LIBRARY) \
 		$(PROGRAMS_RUNTIME_LIB) $(LIBRARY) \
-		$(EXTRA_LDFLAGS) -lcrypto -pthread -o $@
+		$(EXTRA_LDFLAGS) $(PROGRAMS_NATIVE_LDLIBS) -lcrypto -pthread -o $@
 
 $(BUILD_DIR)/tests/lxp_test_maintenance_publication: \
 		tests/storage/lxp_test_maintenance_publication.c \
@@ -1963,7 +1963,7 @@ $(BUILD_DIR)/tests/lxp_test_maintenance_publication: \
 		tests/storage/lxp_test_maintenance_publication.c \
 		cmd/layerxd/lxp_daemon_batch_wal.c cmd/layerxd/lxp_daemon_receipt_authority.c \
 		cmd/layerxd/lxp_daemon_evidence.c $(LIBRARY) $(PROGRAMS_RUNTIME_LIB) $(LIBRARY) \
-		$(EXTRA_LDFLAGS) -lcrypto -pthread -lsqlite3 -ldl -lm -o $@
+		$(EXTRA_LDFLAGS) $(PROGRAMS_NATIVE_LDLIBS) -lcrypto -pthread -lsqlite3 -ldl -lm -o $@
 
 test-maintenance-publication: $(BUILD_DIR)/tests/lxp_test_maintenance_publication
 	$(RUN_PREFIX) $(BUILD_DIR)/tests/lxp_test_maintenance_publication
@@ -1976,7 +1976,7 @@ $(BUILD_DIR)/tests/lxp_test_terminal_rejection: \
 	$(CC) $(CPPFLAGS) -Icmd/layerxd $(CFLAGS) \
 		tests/protocol/lxp_test_terminal_rejection.c \
 		cmd/layerxd/lxp_daemon_batch_wal.c $(LIBRARY) $(PROGRAMS_RUNTIME_LIB) \
-		$(LIBRARY) $(EXTRA_LDFLAGS) -lcrypto -pthread -lsqlite3 -ldl -lm -o $@
+		$(LIBRARY) $(EXTRA_LDFLAGS) $(PROGRAMS_NATIVE_LDLIBS) -lcrypto -pthread -lsqlite3 -ldl -lm -o $@
 
 test-terminal-rejection: $(BUILD_DIR)/tests/lxp_test_terminal_rejection
 	$(RUN_PREFIX) $(BUILD_DIR)/tests/lxp_test_terminal_rejection
@@ -1993,7 +1993,7 @@ $(BUILD_DIR)/tests/lxp_test_batch_identity: \
 	$(CC) $(CPPFLAGS) -Icmd/layerxd $(CFLAGS) \
 		tests/protocol/lxp_test_batch_identity.c \
 		cmd/layerxd/lxp_daemon_batch_wal.c $(LIBRARY) $(PROGRAMS_RUNTIME_LIB) \
-		$(LIBRARY) $(EXTRA_LDFLAGS) -lcrypto -pthread -lsqlite3 -ldl -lm -o $@
+		$(LIBRARY) $(EXTRA_LDFLAGS) $(PROGRAMS_NATIVE_LDLIBS) -lcrypto -pthread -lsqlite3 -ldl -lm -o $@
 
 test-batch-identity: $(BUILD_DIR)/tests/lxp_test_batch_identity
 	$(RUN_PREFIX) $(BUILD_DIR)/tests/lxp_test_batch_identity
@@ -2012,7 +2012,7 @@ $(BUILD_DIR)/tests/lxp_test_finality_evidence: \
 		cmd/layerxd/lxp_daemon_evidence.c \
 		cmd/layerxd/lxp_daemon_receipt_authority.c $(LIBRARY) \
 		$(PROGRAMS_RUNTIME_LIB) $(LIBRARY) \
-		$(EXTRA_LDFLAGS) -lcrypto -pthread -ldl -lm -o $@
+		$(EXTRA_LDFLAGS) $(PROGRAMS_NATIVE_LDLIBS) -lcrypto -pthread -ldl -lm -o $@
 
 test-finality-evidence: $(BUILD_DIR)/tests/lxp_test_finality_evidence
 	$(RUN_PREFIX) $(BUILD_DIR)/tests/lxp_test_finality_evidence
@@ -2033,7 +2033,7 @@ $(BUILD_DIR)/tests/lxp_test_daemon_finality_authority: \
 		cmd/layerxd/lxp_daemon_evidence.c \
 		cmd/layerxd/lxp_daemon_receipt_authority.c $(LIBRARY) \
 		$(PROGRAMS_RUNTIME_LIB) $(LIBRARY) \
-		$(EXTRA_LDFLAGS) -lcrypto -pthread -ldl -lm -o $@
+		$(EXTRA_LDFLAGS) $(PROGRAMS_NATIVE_LDLIBS) -lcrypto -pthread -ldl -lm -o $@
 
 .PHONY: test-daemon-finality-authority
 .PHONY: test-program-artifacts
@@ -2046,7 +2046,7 @@ $(BUILD_DIR)/tests/lxp_test_program_artifacts: \
 	$(CC) $(CPPFLAGS) $(CFLAGS) tests/daemon/lxp_test_program_artifacts.c \
 		cmd/layerxd/lxp_daemon_receipt_authority.c cmd/layerxd/lxp_daemon_protocol.c \
 		cmd/layerxd/lxp_daemon_evidence.c $(LIBRARY) $(PROGRAMS_RUNTIME_LIB) \
-		$(LIBRARY) $(EXTRA_LDFLAGS) -lcrypto -lsqlite3 -pthread -ldl -lm -o $@
+		$(LIBRARY) $(EXTRA_LDFLAGS) $(PROGRAMS_NATIVE_LDLIBS) -lcrypto -lsqlite3 -pthread -ldl -lm -o $@
 
 test-program-artifacts: $(BUILD_DIR)/tests/lxp_test_program_artifacts programs-reference-escrow \
 		programs-reference-web-reader \
@@ -2063,7 +2063,7 @@ $(BUILD_DIR)/tests/lxp_test_maintenance_protocol: \
 	$(CC) $(CPPFLAGS) $(CFLAGS) tests/daemon/lxp_test_maintenance_protocol.c \
 		cmd/layerxd/lxp_daemon_receipt_authority.c cmd/layerxd/lxp_daemon_protocol.c \
 		cmd/layerxd/lxp_daemon_evidence.c $(LIBRARY) $(PROGRAMS_RUNTIME_LIB) \
-		$(LIBRARY) $(EXTRA_LDFLAGS) -lcrypto -lsqlite3 -pthread -ldl -lm -o $@
+		$(LIBRARY) $(EXTRA_LDFLAGS) $(PROGRAMS_NATIVE_LDLIBS) -lcrypto -lsqlite3 -pthread -ldl -lm -o $@
 
 test-daemon-maintenance-protocol: $(BUILD_DIR)/tests/lxp_test_maintenance_protocol
 	python3 tests/daemon/maintenance-protocol.py $(BUILD_DIR)/tests/lxp_test_maintenance_protocol
@@ -2079,7 +2079,7 @@ $(BUILD_DIR)/tests/lxp_test_finality_json: tests/daemon/lxp_test_finality_json.c
 		cmd/layerxd/lxp_daemon_evidence.c \
 		cmd/layerxd/lxp_daemon_receipt_authority.c $(LIBRARY) \
 		$(PROGRAMS_RUNTIME_LIB) $(LIBRARY) \
-		$(EXTRA_LDFLAGS) -lcrypto -pthread -ldl -lm -o $@
+		$(EXTRA_LDFLAGS) $(PROGRAMS_NATIVE_LDLIBS) -lcrypto -pthread -ldl -lm -o $@
 
 test-daemon-finality-authority: $(BUILD_DIR)/tests/lxp_test_daemon_finality_authority $(BUILD_DIR)/tests/lxp_test_finality_json layerxd layerx-genesis-build
 	$(RUN_PREFIX) $(BUILD_DIR)/tests/lxp_test_finality_json
@@ -2165,7 +2165,7 @@ $(BUILD_DIR)/tests/lxp_test_idempotency: tests/state/lxp_test_idempotency.c \
 		$(LIBRARY) $(PROGRAMS_RUNTIME_LIB) | programs-build
 	@mkdir -p $(@D)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $< $(LIBRARY) $(PROGRAMS_RUNTIME_LIB) \
-		$(LIBRARY) $(EXTRA_LDFLAGS) -lcrypto -pthread -ldl -lm -o $@
+		$(LIBRARY) $(EXTRA_LDFLAGS) $(PROGRAMS_NATIVE_LDLIBS) -lcrypto -pthread -ldl -lm -o $@
 
 test-idempotency: $(BUILD_DIR)/tests/lxp_test_idempotency
 	$(RUN_PREFIX) $(BUILD_DIR)/tests/lxp_test_idempotency
@@ -2174,7 +2174,7 @@ $(BUILD_DIR)/tests/lxp_test_fee_gate: tests/protocol/lxp_test_fee_gate.c \
 		$(LIBRARY) $(PROGRAMS_RUNTIME_LIB) | programs-build
 	@mkdir -p $(@D)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $< $(LIBRARY) $(PROGRAMS_RUNTIME_LIB) \
-		$(LIBRARY) $(EXTRA_LDFLAGS) -lcrypto -pthread -ldl -lm -o $@
+		$(LIBRARY) $(EXTRA_LDFLAGS) $(PROGRAMS_NATIVE_LDLIBS) -lcrypto -pthread -ldl -lm -o $@
 
 test-fee-gate: $(BUILD_DIR)/tests/lxp_test_fee_gate
 	$(RUN_PREFIX) $(BUILD_DIR)/tests/lxp_test_fee_gate
@@ -2692,7 +2692,7 @@ $(BUILD_DIR)/agent/layerxd-lni: agent/tests/boundary/node/layerxd_lni.c \
 	mkdir -p $(dir $@)
 	$(CC) $(CPPFLAGS) $(CFLAGS) agent/tests/boundary/node/layerxd_lni.c \
 		$(LAYERXD_SOURCES) $(LIBRARY) $(PROGRAMS_RUNTIME_LIB) \
-		$(EXTRA_LDFLAGS) -lcrypto -lsqlite3 -pthread -ldl -lm -o $@
+		$(EXTRA_LDFLAGS) $(PROGRAMS_NATIVE_LDLIBS) -lcrypto -lsqlite3 -pthread -ldl -lm -o $@
 
 $(BUILD_DIR)/agent/lni-preparation-state: \
 		agent/tests/boundary/node/preparation_state.c \
@@ -2701,7 +2701,7 @@ $(BUILD_DIR)/agent/lni-preparation-state: \
 	$(CC) $(CPPFLAGS) $(CFLAGS) \
 		agent/tests/boundary/node/preparation_state.c \
 		$(LAYERXD_SOURCES) $(LIBRARY) $(PROGRAMS_RUNTIME_LIB) \
-		$(EXTRA_LDFLAGS) -lcrypto -lsqlite3 -pthread -ldl -lm -o $@
+		$(EXTRA_LDFLAGS) $(PROGRAMS_NATIVE_LDLIBS) -lcrypto -lsqlite3 -pthread -ldl -lm -o $@
 
 agent-test-boundary: $(BUILD_DIR)/agent/layerxd-lni \
 		$(BUILD_DIR)/agent/lni-preparation-state
@@ -3378,6 +3378,7 @@ PROGRAMS_CARGO ?= cargo
 PROGRAMS_TARGET_DIR := $(CURDIR)/programs/target
 PROGRAMS_WORKSPACE_CARGO = env CARGO_TARGET_DIR='$(PROGRAMS_TARGET_DIR)' $(PROGRAMS_CARGO)
 PROGRAMS_RUNTIME_LIB := programs/target/debug/liblayerx_programs_sandbox.a
+PROGRAMS_NATIVE_LDLIBS := -lssl
 
 .PHONY: programs-build programs-lint programs-test programs-core-test programs-protocol-regression programs-adversarial programs-conservation programs-qualify programs-module-boundaries programs-abi-drift programs-porting-v2-references \
 	programs-fuzz-smoke programs-differential programs-interpreter-conformance programs-bench programs-interpreter-bench programs-quickstart programs-sdk-rust programs-sdk-c programs-sdk-assemblyscript
@@ -3422,31 +3423,31 @@ $(BUILD_DIR)/tests/programs_registration: tests/programs/test_registration.c \
 		$(LIBRARY) $(PROGRAMS_RUNTIME_LIB) | programs-build
 	@mkdir -p $(@D)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $< $(LIBRARY) $(PROGRAMS_RUNTIME_LIB) \
-		$(EXTRA_LDFLAGS) -lcrypto -pthread -ldl -lm -o $@
+		$(EXTRA_LDFLAGS) $(PROGRAMS_NATIVE_LDLIBS) -lcrypto -pthread -ldl -lm -o $@
 
 $(BUILD_DIR)/tests/programs_lifecycle: tests/programs/test_lifecycle.c \
 		$(LIBRARY) $(PROGRAMS_RUNTIME_LIB) | programs-build
 	@mkdir -p $(@D)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $< $(LIBRARY) $(PROGRAMS_RUNTIME_LIB) \
-		$(EXTRA_LDFLAGS) -lcrypto -pthread -ldl -lm -o $@
+		$(EXTRA_LDFLAGS) $(PROGRAMS_NATIVE_LDLIBS) -lcrypto -pthread -ldl -lm -o $@
 
 $(BUILD_DIR)/tests/programs_monetary_law: tests/programs/test_monetary_law.c \
 		$(TEST_LIBRARY) $(PROGRAMS_RUNTIME_LIB) | programs-build
 	@mkdir -p $(@D)
 	$(CC) $(CPPFLAGS) -DLXP_TESTING $(CFLAGS) $< $(TEST_LIBRARY) $(PROGRAMS_RUNTIME_LIB) \
-		$(EXTRA_LDFLAGS) -lcrypto -pthread -ldl -lm -o $@
+		$(EXTRA_LDFLAGS) $(PROGRAMS_NATIVE_LDLIBS) -lcrypto -pthread -ldl -lm -o $@
 
 $(BUILD_DIR)/tests/programs_call_activity: tests/programs/test_call_activity.c \
 		$(LIBRARY) $(PROGRAMS_RUNTIME_LIB) | programs-build
 	@mkdir -p $(@D)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $< $(LIBRARY) $(PROGRAMS_RUNTIME_LIB) \
-		$(EXTRA_LDFLAGS) -lcrypto -pthread -ldl -lm -o $@
+		$(EXTRA_LDFLAGS) $(PROGRAMS_NATIVE_LDLIBS) -lcrypto -pthread -ldl -lm -o $@
 
 $(BUILD_DIR)/tests/programs_metered_call: tests/programs/test_metered_call.c \
 		tests/programs/test_call_activity.c $(LIBRARY) $(PROGRAMS_RUNTIME_LIB) | programs-build
 	@mkdir -p $(@D)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $< $(LIBRARY) $(PROGRAMS_RUNTIME_LIB) \
-		$(EXTRA_LDFLAGS) -lcrypto -pthread -ldl -lm -o $@
+		$(EXTRA_LDFLAGS) $(PROGRAMS_NATIVE_LDLIBS) -lcrypto -pthread -ldl -lm -o $@
 
 .PHONY: test-programs-metered-call
 test-programs-metered-call: $(BUILD_DIR)/tests/programs_metered_call
@@ -3458,7 +3459,7 @@ $(BUILD_DIR)/tests/test_programs_oracle_read: tests/test_programs_oracle_read.c 
 	@mkdir -p $(@D)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $< $(LIBRARY) $(PROGRAMS_RUNTIME_LIB) \
 		$(LIBRARY) $(EXTRA_LDFLAGS) \
-		-lcrypto -pthread -ldl -lm -o $@
+		$(PROGRAMS_NATIVE_LDLIBS) -lcrypto -pthread -ldl -lm -o $@
 
 .PHONY: test-programs-oracle-read
 test-programs-oracle-read: $(BUILD_DIR)/tests/test_programs_oracle_read
@@ -3472,7 +3473,7 @@ $(BUILD_DIR)/tests/test_programs_web_read: tests/test_programs_web_read.c \
 	@mkdir -p $(@D)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $< $(LIBRARY) $(PROGRAMS_RUNTIME_LIB) \
 		$(LIBRARY) $(EXTRA_LDFLAGS) \
-		-lcrypto -pthread -ldl -lm -o $@
+		$(PROGRAMS_NATIVE_LDLIBS) -lcrypto -pthread -ldl -lm -o $@
 
 .PHONY: test-programs-web-read
 test-programs-web-read: $(BUILD_DIR)/tests/test_programs_web_read
@@ -3484,7 +3485,7 @@ $(BUILD_DIR)/tests/test_web_program_path: tests/test_web_program_path.c \
 	@mkdir -p $(@D)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $< $(LIBRARY) $(PROGRAMS_RUNTIME_LIB) \
 		$(LIBRARY) $(EXTRA_LDFLAGS) \
-		-lcrypto -pthread -ldl -lm -o $@
+		$(PROGRAMS_NATIVE_LDLIBS) -lcrypto -pthread -ldl -lm -o $@
 
 .PHONY: test-web-program-path
 test-web-program-path: $(BUILD_DIR)/tests/test_web_program_path programs-reference-web-reader
@@ -3519,31 +3520,31 @@ $(BUILD_DIR)/tests/programs_occupancy_batch: tests/programs/test_occupancy_batch
 		$(LIBRARY) $(PROGRAMS_RUNTIME_LIB) | programs-build
 	@mkdir -p $(@D)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $< $(LIBRARY) $(PROGRAMS_RUNTIME_LIB) \
-		$(EXTRA_LDFLAGS) -lcrypto -pthread -ldl -lm -o $@
+		$(EXTRA_LDFLAGS) $(PROGRAMS_NATIVE_LDLIBS) -lcrypto -pthread -ldl -lm -o $@
 
 $(BUILD_DIR)/tests/programs_metering_schedule: tests/programs/test_metering_schedule.c \
 		$(LIBRARY) $(PROGRAMS_RUNTIME_LIB) | programs-build
 	@mkdir -p $(@D)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $< -Wl,--start-group $(LIBRARY) $(PROGRAMS_RUNTIME_LIB) -Wl,--end-group \
-		$(EXTRA_LDFLAGS) -lcrypto -pthread -ldl -lm -o $@
+		$(EXTRA_LDFLAGS) $(PROGRAMS_NATIVE_LDLIBS) -lcrypto -pthread -ldl -lm -o $@
 
 $(BUILD_DIR)/tests/programs_fee_governance: tests/programs/test_fee_governance.c \
 		$(LIBRARY) $(PROGRAMS_RUNTIME_LIB) | programs-build
 	@mkdir -p $(@D)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $< -Wl,--start-group $(LIBRARY) $(PROGRAMS_RUNTIME_LIB) -Wl,--end-group \
-		$(EXTRA_LDFLAGS) -lcrypto -pthread -ldl -lm -o $@
+		$(EXTRA_LDFLAGS) $(PROGRAMS_NATIVE_LDLIBS) -lcrypto -pthread -ldl -lm -o $@
 
 $(BUILD_DIR)/tests/programs_accounts: tests/programs/test_accounts.c \
 		$(LIBRARY) $(PROGRAMS_RUNTIME_LIB) | programs-build
 	@mkdir -p $(@D)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $< $(LIBRARY) $(PROGRAMS_RUNTIME_LIB) \
-		$(EXTRA_LDFLAGS) -lcrypto -lsqlite3 -pthread -ldl -lm -o $@
+		$(EXTRA_LDFLAGS) $(PROGRAMS_NATIVE_LDLIBS) -lcrypto -lsqlite3 -pthread -ldl -lm -o $@
 
 $(BUILD_DIR)/tests/programs_winddown: tests/programs/test_winddown.c \
 		$(LIBRARY) $(PROGRAMS_RUNTIME_LIB) | programs-build
 	@mkdir -p $(@D)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $< $(LIBRARY) $(PROGRAMS_RUNTIME_LIB) \
-		$(EXTRA_LDFLAGS) -lcrypto -pthread -ldl -lm -o $@
+		$(EXTRA_LDFLAGS) $(PROGRAMS_NATIVE_LDLIBS) -lcrypto -pthread -ldl -lm -o $@
 
 programs-core-test: $(BUILD_DIR)/tests/programs_registration \
 		$(BUILD_DIR)/tests/programs_lifecycle \
@@ -3591,7 +3592,7 @@ $(BUILD_DIR)/tests/programs_parallel_differential: programs/tests/differential/p
 	@mkdir -p $(@D)
 	$(CC) $(CPPFLAGS) $(CFLAGS) programs/tests/differential/parallel.c \
 		cmd/layerxd/lxp_daemon_batch_wal.c $(LIBRARY) $(PROGRAMS_RUNTIME_LIB) \
-		$(EXTRA_LDFLAGS) -lcrypto -pthread -ldl -lm -o $@
+		$(EXTRA_LDFLAGS) $(PROGRAMS_NATIVE_LDLIBS) -lcrypto -pthread -ldl -lm -o $@
 
 programs-differential: $(BUILD_DIR)/tests/programs_parallel_differential
 	cd programs && $(PROGRAMS_CARGO) test --locked -p layerx-programs-runtime --test replay --test determinism
@@ -3687,11 +3688,11 @@ test-lni-version-parity:
 
 $(BUILD_DIR)/tests/lxp_test_program_admission: tests/daemon/lxp_test_program_admission.c $(LIBRARY) $(PROGRAMS_RUNTIME_LIB) | programs-build
 	@mkdir -p $(@D)
-	$(CC) $(CPPFLAGS) $(CFLAGS) $< $(LIBRARY) $(PROGRAMS_RUNTIME_LIB) $(LIBRARY) $(EXTRA_LDFLAGS) -lcrypto -pthread -ldl -lm -o $@
+	$(CC) $(CPPFLAGS) $(CFLAGS) $< $(LIBRARY) $(PROGRAMS_RUNTIME_LIB) $(LIBRARY) $(EXTRA_LDFLAGS) $(PROGRAMS_NATIVE_LDLIBS) -lcrypto -pthread -ldl -lm -o $@
 
 $(BUILD_DIR)/tests/lxp_test_metered_allowance: tests/daemon/lxp_test_metered_allowance.c tests/daemon/lxp_test_program_admission.c $(LIBRARY) $(PROGRAMS_RUNTIME_LIB) | programs-build
 	@mkdir -p $(@D)
-	$(CC) $(CPPFLAGS) $(CFLAGS) $< $(LIBRARY) $(PROGRAMS_RUNTIME_LIB) $(LIBRARY) $(EXTRA_LDFLAGS) -lcrypto -pthread -ldl -lm -o $@
+	$(CC) $(CPPFLAGS) $(CFLAGS) $< $(LIBRARY) $(PROGRAMS_RUNTIME_LIB) $(LIBRARY) $(EXTRA_LDFLAGS) $(PROGRAMS_NATIVE_LDLIBS) -lcrypto -pthread -ldl -lm -o $@
 
 .PHONY: test-daemon-metered-allowance
 test-daemon-metered-allowance: $(BUILD_DIR)/tests/lxp_test_metered_allowance $(BUILD_DIR)/tests/bridge/sign-credit $(BUILD_DIR)/bin/layerxd $(BUILD_DIR)/bin/layerx-genesis-build
@@ -3699,7 +3700,7 @@ test-daemon-metered-allowance: $(BUILD_DIR)/tests/lxp_test_metered_allowance $(B
 
 $(BUILD_DIR)/tests/lxp_test_native_onboarding: tests/daemon/lxp_test_native_onboarding.c tests/daemon/lxp_test_program_admission.c $(LIBRARY) $(PROGRAMS_RUNTIME_LIB) | programs-build
 	@mkdir -p $(@D)
-	$(CC) $(CPPFLAGS) $(CFLAGS) $< $(LIBRARY) $(PROGRAMS_RUNTIME_LIB) $(LIBRARY) $(EXTRA_LDFLAGS) -lcrypto -pthread -ldl -lm -o $@
+	$(CC) $(CPPFLAGS) $(CFLAGS) $< $(LIBRARY) $(PROGRAMS_RUNTIME_LIB) $(LIBRARY) $(EXTRA_LDFLAGS) $(PROGRAMS_NATIVE_LDLIBS) -lcrypto -pthread -ldl -lm -o $@
 
 .PHONY: test-daemon-native-onboarding
 test-daemon-native-onboarding: $(BUILD_DIR)/tests/lxp_test_native_onboarding $(BUILD_DIR)/tests/bridge/sign-credit $(BUILD_DIR)/bin/layerxd $(BUILD_DIR)/bin/layerx-genesis-build
@@ -3707,7 +3708,7 @@ test-daemon-native-onboarding: $(BUILD_DIR)/tests/lxp_test_native_onboarding $(B
 
 $(BUILD_DIR)/tests/lxp_test_module_maintenance: tests/daemon/lxp_test_module_maintenance.c $(LIBRARY) $(PROGRAMS_RUNTIME_LIB) | programs-build
 	@mkdir -p $(@D)
-	$(CC) $(CPPFLAGS) $(CFLAGS) $< $(LIBRARY) $(PROGRAMS_RUNTIME_LIB) $(LIBRARY) $(EXTRA_LDFLAGS) -lcrypto -pthread -ldl -lm -o $@
+	$(CC) $(CPPFLAGS) $(CFLAGS) $< $(LIBRARY) $(PROGRAMS_RUNTIME_LIB) $(LIBRARY) $(EXTRA_LDFLAGS) $(PROGRAMS_NATIVE_LDLIBS) -lcrypto -pthread -ldl -lm -o $@
 
 .PHONY: test-daemon-module-maintenance
 test-daemon-module-maintenance: $(BUILD_DIR)/tests/lxp_test_module_maintenance $(BUILD_DIR)/tests/bridge/sign-credit $(BUILD_DIR)/bin/layerxd $(BUILD_DIR)/bin/layerx-genesis-build
@@ -3761,7 +3762,7 @@ $(BUILD_DIR)/tests/lxp_test_replica_prefix: tests/daemon/lxp_test_replica_prefix
 
 $(BUILD_DIR)/tests/lxp_test_paid_withdrawal: tests/daemon/lxp_test_paid_withdrawal.c tests/daemon/lxp_test_program_admission.c $(LIBRARY) $(PROGRAMS_RUNTIME_LIB) | programs-build
 	@mkdir -p $(@D)
-	$(CC) $(CPPFLAGS) $(CFLAGS) $< $(LIBRARY) $(PROGRAMS_RUNTIME_LIB) $(LIBRARY) $(EXTRA_LDFLAGS) -lcrypto -pthread -ldl -lm -o $@
+	$(CC) $(CPPFLAGS) $(CFLAGS) $< $(LIBRARY) $(PROGRAMS_RUNTIME_LIB) $(LIBRARY) $(EXTRA_LDFLAGS) $(PROGRAMS_NATIVE_LDLIBS) -lcrypto -pthread -ldl -lm -o $@
 
 .PHONY: test-daemon-paid-withdrawal
 test-daemon-paid-withdrawal: $(BUILD_DIR)/tests/lxp_test_paid_withdrawal $(BUILD_DIR)/tests/lxp_test_guarantor_runtime $(BUILD_DIR)/tests/bridge/sign-credit $(BUILD_DIR)/bin/layerxd $(BUILD_DIR)/bin/layerx-genesis-build
@@ -3790,7 +3791,7 @@ custody-proof-build:
 
 $(BUILD_DIR)/tests/bridge/test-light-credit: tests/bridge/test_light_credit.c tests/bridge/files.h $(LIBRARY) $(PROGRAMS_RUNTIME_LIB)
 	@mkdir -p $(@D)
-	$(CC) $(CPPFLAGS) $(CFLAGS) $< $(LIBRARY) $(PROGRAMS_RUNTIME_LIB) $(LIBRARY) $(EXTRA_LDFLAGS) -lcrypto -pthread -ldl -lm -o $@
+	$(CC) $(CPPFLAGS) $(CFLAGS) $< $(LIBRARY) $(PROGRAMS_RUNTIME_LIB) $(LIBRARY) $(EXTRA_LDFLAGS) $(PROGRAMS_NATIVE_LDLIBS) -lcrypto -pthread -ldl -lm -o $@
 
 LIGHT_CREDIT_FIXTURES := tests/fixtures/custody/paxeer-light-v1
 .PHONY: test-light-credit
@@ -3805,7 +3806,7 @@ $(BUILD_DIR)/tests/bridge/test-credit-admission: tests/bridge/test_credit_admiss
 		$(filter-out $(BUILD_DIR)/obj/cmd/layerxd/main.o,$(LAYERXD_OBJECTS)) $(LIBRARY) $(PROGRAMS_RUNTIME_LIB) | programs-build
 	@mkdir -p $(@D)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $< $(filter-out $(BUILD_DIR)/obj/cmd/layerxd/main.o,$(LAYERXD_OBJECTS)) \
-		$(LIBRARY) $(PROGRAMS_RUNTIME_LIB) $(LIBRARY) $(EXTRA_LDFLAGS) -lcrypto -lsqlite3 -pthread -ldl -lm -o $@
+		$(LIBRARY) $(PROGRAMS_RUNTIME_LIB) $(LIBRARY) $(EXTRA_LDFLAGS) $(PROGRAMS_NATIVE_LDLIBS) -lcrypto -lsqlite3 -pthread -ldl -lm -o $@
 
 .PHONY: test-bridge-credit
 test-bridge-credit: $(BUILD_DIR)/tests/bridge/sign-credit $(BUILD_DIR)/tests/bridge/test-credit $(BUILD_DIR)/tests/bridge/test-credit-admission build/bin/layerx-genesis-build
@@ -3817,7 +3818,7 @@ test-daemon-maintenance-publication: $(BUILD_DIR)/tests/lxp_test_program_admissi
 
 $(BUILD_DIR)/tests/lxp_test_maintenance_crash: tests/daemon/lxp_test_maintenance_crash.c $(filter-out $(BUILD_DIR)/obj/cmd/layerxd/main.o,$(LAYERXD_OBJECTS)) $(LIBRARY) $(PROGRAMS_RUNTIME_LIB) | programs-build
 	@mkdir -p $(@D)
-	$(CC) $(CPPFLAGS) $(CFLAGS) $< $(filter-out $(BUILD_DIR)/obj/cmd/layerxd/main.o,$(LAYERXD_OBJECTS)) $(LIBRARY) $(PROGRAMS_RUNTIME_LIB) $(EXTRA_LDFLAGS) -Wl,--wrap=lxp_daemon_start_protocol_batch -Wl,--wrap=lxp_fault_inject_point -lcrypto -lsqlite3 -pthread -ldl -lm -o $@
+	$(CC) $(CPPFLAGS) $(CFLAGS) $< $(filter-out $(BUILD_DIR)/obj/cmd/layerxd/main.o,$(LAYERXD_OBJECTS)) $(LIBRARY) $(PROGRAMS_RUNTIME_LIB) $(EXTRA_LDFLAGS) -Wl,--wrap=lxp_daemon_start_protocol_batch -Wl,--wrap=lxp_fault_inject_point $(PROGRAMS_NATIVE_LDLIBS) -lcrypto -lsqlite3 -pthread -ldl -lm -o $@
 
 .PHONY: test-daemon-maintenance-crash
 test-daemon-maintenance-crash: $(BUILD_DIR)/tests/lxp_test_maintenance_crash $(BUILD_DIR)/tests/lxp_test_program_admission $(BUILD_DIR)/bin/layerxd $(BUILD_DIR)/bin/layerx-genesis-build
@@ -3836,7 +3837,7 @@ $(BUILD_DIR)/tests/lxp_test_lni_account: tests/daemon/lxp_test_lni_account.c \
 	$(CC) $(CPPFLAGS) -Icmd/layerxd $(CFLAGS) tests/daemon/lxp_test_lni_account.c \
 		cmd/layerxd/lxp_daemon_receipt_authority.c cmd/layerxd/lxp_daemon_evidence.c \
 		$(LIBRARY) $(PROGRAMS_RUNTIME_LIB) $(LIBRARY) $(EXTRA_LDFLAGS) \
-		-lcrypto -lsqlite3 -pthread -ldl -lm -o $@
+		$(PROGRAMS_NATIVE_LDLIBS) -lcrypto -lsqlite3 -pthread -ldl -lm -o $@
 
 test-daemon-lni-account: $(BUILD_DIR)/tests/lxp_test_lni_account
 	python3 tests/daemon/lni-account.py $(BUILD_DIR)/tests/lxp_test_lni_account
@@ -3850,7 +3851,7 @@ $(BUILD_DIR)/tests/lxp_test_lni_module: tests/daemon/lxp_test_lni_module.c \
 	$(CC) $(CPPFLAGS) -Icmd/layerxd $(CFLAGS) tests/daemon/lxp_test_lni_module.c \
 		cmd/layerxd/lxp_daemon_receipt_authority.c cmd/layerxd/lxp_daemon_evidence.c \
 		$(LIBRARY) $(PROGRAMS_RUNTIME_LIB) $(LIBRARY) $(EXTRA_LDFLAGS) \
-		-lcrypto -lsqlite3 -pthread -ldl -lm -o $@
+		$(PROGRAMS_NATIVE_LDLIBS) -lcrypto -lsqlite3 -pthread -ldl -lm -o $@
 
 test-daemon-lni-module: $(BUILD_DIR)/tests/lxp_test_lni_module
 	$(RUN_PREFIX) $(BUILD_DIR)/tests/lxp_test_lni_module
@@ -3877,7 +3878,7 @@ $(BUILD_DIR)/tests/lxp_test_daemon_allowance: tests/daemon/lxp_test_daemon_allow
 	$(CC) $(CPPFLAGS) -Icmd/layerxd $(CFLAGS) tests/daemon/lxp_test_daemon_allowance.c \
 		cmd/layerxd/lxp_daemon_allowance.c \
 		$(LIBRARY) $(PROGRAMS_RUNTIME_LIB) $(LIBRARY) $(EXTRA_LDFLAGS) \
-		-lcrypto -lsqlite3 -pthread -ldl -lm -o $@
+		$(PROGRAMS_NATIVE_LDLIBS) -lcrypto -lsqlite3 -pthread -ldl -lm -o $@
 
 test-daemon-allowance: $(BUILD_DIR)/tests/lxp_test_daemon_allowance
 	$(RUN_PREFIX) $(BUILD_DIR)/tests/lxp_test_daemon_allowance
@@ -3916,7 +3917,7 @@ test-state-diff: $(BUILD_DIR)/tests/lxp_test_state_diff
 
 $(BUILD_DIR)/tests/lxp_test_state_diff: tests/state/lxp_test_state_diff.c $(LIBRARY) $(PROGRAMS_RUNTIME_LIB) | programs-build
 	@mkdir -p $(@D)
-	$(CC) $(CPPFLAGS) $(CFLAGS) $< $(LIBRARY) $(PROGRAMS_RUNTIME_LIB) $(LIBRARY) $(EXTRA_LDFLAGS) -lcrypto -pthread -ldl -lm -o $@
+	$(CC) $(CPPFLAGS) $(CFLAGS) $< $(LIBRARY) $(PROGRAMS_RUNTIME_LIB) $(LIBRARY) $(EXTRA_LDFLAGS) $(PROGRAMS_NATIVE_LDLIBS) -lcrypto -pthread -ldl -lm -o $@
 
 .PHONY: test-daemon-availability
 test-daemon-availability: $(BUILD_DIR)/tests/lxp_test_daemon_finality_authority $(BUILD_DIR)/tests/lxp_test_program_admission $(BUILD_DIR)/bin/layerxd $(BUILD_DIR)/bin/layerx-genesis-build
@@ -3940,13 +3941,13 @@ $(BUILD_DIR)/bin/layerx-guarantor: $(GUARANTOR_OBJECTS) \
 	$(LIBRARY) $(PROGRAMS_RUNTIME_LIB) | programs-build
 	@mkdir -p $(@D)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $^ $(LIBRARY) $(EXTRA_LDFLAGS) \
-		-lssl -lcrypto -lsqlite3 -pthread -ldl -lm -o $@
+		$(PROGRAMS_NATIVE_LDLIBS) -lcrypto -lsqlite3 -pthread -ldl -lm -o $@
 $(BUILD_DIR)/tests/lxp_test_guarantor_core: tests/daemon/guarantor-core.c \
 	cmd/layerx-guarantor/producer.c cmd/layerx-guarantor/lni.c \
 	$(LIBRARY) $(PROGRAMS_RUNTIME_LIB) | programs-build
 	@mkdir -p $(@D)
 	$(CC) $(CPPFLAGS) -Itests $(CFLAGS) $^ $(LIBRARY) $(EXTRA_LDFLAGS) \
-		-lcrypto -pthread -ldl -lm -o $@
+		$(PROGRAMS_NATIVE_LDLIBS) -lcrypto -pthread -ldl -lm -o $@
 $(BUILD_DIR)/tests/lxp_test_guarantor_exchange: tests/daemon/guarantor-exchange.c \
 	cmd/layerx-guarantor/exchange.c cmd/layerx-guarantor/exchange.h
 	@mkdir -p $(@D)
@@ -3958,7 +3959,7 @@ $(BUILD_DIR)/tests/lxp_test_guarantor_integration: tests/daemon/guarantor-integr
 	cmd/layerx-verify/lxp_verify_main.c cmd/layerx-verify/lxp_verify_fetch.c \
 	$(LIBRARY) $(PROGRAMS_RUNTIME_LIB) | programs-build
 	@mkdir -p $(@D)
-	$(CC) $(CPPFLAGS) $(CFLAGS) $^ $(LIBRARY) $(EXTRA_LDFLAGS) -lssl -lcrypto -lsqlite3 -pthread -ldl -lm -o $@
+	$(CC) $(CPPFLAGS) $(CFLAGS) $^ $(LIBRARY) $(EXTRA_LDFLAGS) $(PROGRAMS_NATIVE_LDLIBS) -lcrypto -lsqlite3 -pthread -ldl -lm -o $@
 test-daemon-guarantor-unit: $(BUILD_DIR)/tests/lxp_test_guarantor_core \
 	$(BUILD_DIR)/tests/lxp_test_guarantor_exchange
 	$(RUN_PREFIX) $(BUILD_DIR)/tests/lxp_test_guarantor_core
@@ -3987,14 +3988,14 @@ $(BUILD_DIR)/tests/lxp_test_guarantor_runtime: tests/daemon/guarantor-runtime.c 
 	$(LIBRARY) $(PROGRAMS_RUNTIME_LIB) | programs-build
 	@mkdir -p $(@D)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $^ $(LIBRARY) $(EXTRA_LDFLAGS) \
-		-lcrypto -lsqlite3 -pthread -ldl -lm -o $@
+		$(PROGRAMS_NATIVE_LDLIBS) -lcrypto -lsqlite3 -pthread -ldl -lm -o $@
 test-daemon-guarantor-integration: $(BUILD_DIR)/tests/lxp_test_guarantor_runtime
 
 $(BUILD_DIR)/tests/lxp_test_guarantor_feedback: tests/daemon/guarantor-feedback.c \
 	$(BUILD_DIR)/obj/cmd/layerx-guarantor/lni.o $(LIBRARY) $(PROGRAMS_RUNTIME_LIB) | programs-build
 	@mkdir -p $(@D)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $^ $(LIBRARY) $(EXTRA_LDFLAGS) \
-		-lcrypto -pthread -ldl -lm -o $@
+		$(PROGRAMS_NATIVE_LDLIBS) -lcrypto -pthread -ldl -lm -o $@
 
 .PHONY: test-guarantor-receipt
 $(BUILD_DIR)/tests/lxp_test_guarantor_receipt: tests/daemon/guarantor-receipt.c \
@@ -4003,7 +4004,7 @@ $(BUILD_DIR)/tests/lxp_test_guarantor_receipt: tests/daemon/guarantor-receipt.c 
 	$(LIBRARY) $(PROGRAMS_RUNTIME_LIB) | programs-build
 	@mkdir -p $(@D)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $< $(filter-out %.c,$^) $(LIBRARY) $(EXTRA_LDFLAGS) \
-		-lcrypto -lsqlite3 -pthread -ldl -lm -o $@
+		$(PROGRAMS_NATIVE_LDLIBS) -lcrypto -lsqlite3 -pthread -ldl -lm -o $@
 test-guarantor-receipt: $(BUILD_DIR)/tests/lxp_test_guarantor_receipt test-guarantor-terminal-rejection
 	$(RUN_PREFIX) $<
 
@@ -4014,7 +4015,7 @@ $(BUILD_DIR)/tests/lxp_test_guarantor_terminal_rejection: tests/daemon/guarantor
 	$(LIBRARY) $(PROGRAMS_RUNTIME_LIB) | programs-build
 	@mkdir -p $(@D)
 	$(CC) $(CPPFLAGS) -Icmd/layerxd $(CFLAGS) $< $(filter-out %.c,$^) $(LIBRARY) $(EXTRA_LDFLAGS) \
-		-lcrypto -lsqlite3 -pthread -ldl -lm -o $@
+		$(PROGRAMS_NATIVE_LDLIBS) -lcrypto -lsqlite3 -pthread -ldl -lm -o $@
 test-guarantor-terminal-rejection: $(BUILD_DIR)/tests/lxp_test_guarantor_terminal_rejection
 	$(RUN_PREFIX) $<
 
@@ -4023,7 +4024,7 @@ $(BUILD_DIR)/tests/lxp_test_state_proof: tests/state/lxp_test_state_proof.c \
 	$(LIBRARY) $(PROGRAMS_RUNTIME_LIB) | programs-build
 	@mkdir -p $(@D)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $< $(LIBRARY) $(PROGRAMS_RUNTIME_LIB) \
-		$(LIBRARY) $(EXTRA_LDFLAGS) -lcrypto -pthread -ldl -lm -o $@
+		$(LIBRARY) $(EXTRA_LDFLAGS) $(PROGRAMS_NATIVE_LDLIBS) -lcrypto -pthread -ldl -lm -o $@
 test-state-proof: $(BUILD_DIR)/tests/lxp_test_state_proof
 	$(RUN_PREFIX) $(BUILD_DIR)/tests/lxp_test_state_proof
 	$(BUILD_DIR)/tests/lxp_test_state_proof --vectors > $(BUILD_DIR)/tests/native-state-proofs.json
@@ -4038,7 +4039,7 @@ $(BUILD_DIR)/tests/test_asset_withdraw_activity: tests/modules/test_asset_withdr
 		$(LIBRARY) $(PROGRAMS_RUNTIME_LIB) | programs-build
 	@mkdir -p $(@D)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $< $(LIBRARY) $(PROGRAMS_RUNTIME_LIB) \
-		$(LIBRARY) $(EXTRA_LDFLAGS) -lcrypto -pthread -ldl -lm -o $@
+		$(LIBRARY) $(EXTRA_LDFLAGS) $(PROGRAMS_NATIVE_LDLIBS) -lcrypto -pthread -ldl -lm -o $@
 
 .PHONY: test-native-withdrawal-proof
 test-native-withdrawal-proof: $(BUILD_DIR)/tests/test_asset_withdraw_activity
@@ -4053,7 +4054,7 @@ layerx-module-registry: $(BUILD_DIR)/bin/layerx-module-registry
 
 $(BUILD_DIR)/bin/layerx-module-registry: cmd/layerx-module-registry/main.c cmd/layerx-module-registry/node.c $(LIBRARY) $(PROGRAMS_RUNTIME_LIB) | programs-build
 	@mkdir -p $(@D)
-	$(CC) $(CPPFLAGS) $(CFLAGS) cmd/layerx-module-registry/main.c cmd/layerx-module-registry/node.c $(LIBRARY) $(PROGRAMS_RUNTIME_LIB) $(LIBRARY) $(EXTRA_LDFLAGS) -lcrypto -pthread -ldl -lm -o $@
+	$(CC) $(CPPFLAGS) $(CFLAGS) cmd/layerx-module-registry/main.c cmd/layerx-module-registry/node.c $(LIBRARY) $(PROGRAMS_RUNTIME_LIB) $(LIBRARY) $(EXTRA_LDFLAGS) $(PROGRAMS_NATIVE_LDLIBS) -lcrypto -pthread -ldl -lm -o $@
 
 test-module-registry: layerx-module-registry
 	python3 cmd/layerx-module-registry/test_registry.py $(BUILD_DIR)/bin/layerx-module-registry
@@ -4088,7 +4089,7 @@ $(BUILD_DIR)/tests/lxp_test_paxeer_membership_sync: tests/paxeer/membership_sync
 		$(LIBRARY) $(PROGRAMS_RUNTIME_LIB) | programs-build
 	@mkdir -p $(@D)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $^ $(LIBRARY) $(EXTRA_LDFLAGS) \
-		-lssl -lcrypto -lsqlite3 -pthread -ldl -lm -o $@
+		$(PROGRAMS_NATIVE_LDLIBS) -lcrypto -lsqlite3 -pthread -ldl -lm -o $@
 
 test-paxeer-membership-chain: $(BUILD_DIR)/tests/lxp_test_paxeer_membership_sync
 	$(GUARANTOR_PYTHON) tests/paxeer/membership-sync-chain.py \
@@ -4096,7 +4097,7 @@ test-paxeer-membership-chain: $(BUILD_DIR)/tests/lxp_test_paxeer_membership_sync
 
 $(BUILD_DIR)/tests/lxp_test_grant_issuance: tests/daemon/lxp_test_grant_issuance.c tests/daemon/lxp_test_program_admission.c $(LIBRARY) $(PROGRAMS_RUNTIME_LIB) | programs-build
 	@mkdir -p $(@D)
-	$(CC) $(CPPFLAGS) $(CFLAGS) $< $(LIBRARY) $(PROGRAMS_RUNTIME_LIB) $(LIBRARY) $(EXTRA_LDFLAGS) -lcrypto -pthread -ldl -lm -o $@
+	$(CC) $(CPPFLAGS) $(CFLAGS) $< $(LIBRARY) $(PROGRAMS_RUNTIME_LIB) $(LIBRARY) $(EXTRA_LDFLAGS) $(PROGRAMS_NATIVE_LDLIBS) -lcrypto -pthread -ldl -lm -o $@
 
 .PHONY: test-daemon-grant-issuance authority-grant-fixtures authority-grant-fixtures-check
 test-daemon-grant-issuance: $(BUILD_DIR)/tests/lxp_test_grant_issuance $(BUILD_DIR)/bin/layerxd $(BUILD_DIR)/bin/layerx-genesis-build
@@ -4111,7 +4112,7 @@ authority-grant-fixtures-check: $(BUILD_DIR)/tests/lxp_test_grant_issuance
 .PHONY: test-program-call-builders
 $(BUILD_DIR)/tests/test_call_builders: tests/programs/test_call_builders.c src/modules/programs/call.c $(LIBRARY) $(PROGRAMS_RUNTIME_LIB)
 	@mkdir -p $(@D)
-	$(CC) $(CPPFLAGS) $(CFLAGS) $< $(LIBRARY) $(PROGRAMS_RUNTIME_LIB) $(LIBRARY) $(EXTRA_LDFLAGS) -lcrypto -pthread -ldl -lm -o $@
+	$(CC) $(CPPFLAGS) $(CFLAGS) $< $(LIBRARY) $(PROGRAMS_RUNTIME_LIB) $(LIBRARY) $(EXTRA_LDFLAGS) $(PROGRAMS_NATIVE_LDLIBS) -lcrypto -pthread -ldl -lm -o $@
 
 test-program-call-builders: $(BUILD_DIR)/tests/test_call_builders
 	$(RUN_PREFIX) $(BUILD_DIR)/tests/test_call_builders
@@ -4120,7 +4121,7 @@ test: test-program-call-builders
 
 $(BUILD_DIR)/tests/lxp_test_owner_rotation_unit: tests/protocol/lxp_test_owner_rotation.c $(LIBRARY) $(PROGRAMS_RUNTIME_LIB) | programs-build
 	@mkdir -p $(@D)
-	$(CC) $(CPPFLAGS) $(CFLAGS) $< $(LIBRARY) $(PROGRAMS_RUNTIME_LIB) $(LIBRARY) $(EXTRA_LDFLAGS) -lcrypto -pthread -ldl -lm -o $@
+	$(CC) $(CPPFLAGS) $(CFLAGS) $< $(LIBRARY) $(PROGRAMS_RUNTIME_LIB) $(LIBRARY) $(EXTRA_LDFLAGS) $(PROGRAMS_NATIVE_LDLIBS) -lcrypto -pthread -ldl -lm -o $@
 
 .PHONY: test-owner-rotation
 test-owner-rotation: $(BUILD_DIR)/tests/lxp_test_owner_rotation_unit
@@ -4130,7 +4131,7 @@ test: test-owner-rotation
 
 $(BUILD_DIR)/tests/lxp_test_owner_rotation: tests/daemon/lxp_test_owner_rotation.c tests/daemon/lxp_test_native_onboarding.c tests/daemon/lxp_test_program_admission.c $(LIBRARY) $(PROGRAMS_RUNTIME_LIB) | programs-build
 	@mkdir -p $(@D)
-	$(CC) $(CPPFLAGS) $(CFLAGS) $< $(LIBRARY) $(PROGRAMS_RUNTIME_LIB) $(LIBRARY) $(EXTRA_LDFLAGS) -lcrypto -pthread -ldl -lm -o $@
+	$(CC) $(CPPFLAGS) $(CFLAGS) $< $(LIBRARY) $(PROGRAMS_RUNTIME_LIB) $(LIBRARY) $(EXTRA_LDFLAGS) $(PROGRAMS_NATIVE_LDLIBS) -lcrypto -pthread -ldl -lm -o $@
 
 .PHONY: test-daemon-owner-rotation
 test-daemon-owner-rotation: $(BUILD_DIR)/tests/lxp_test_owner_rotation $(BUILD_DIR)/tests/bridge/sign-credit $(BUILD_DIR)/bin/layerxd $(BUILD_DIR)/bin/layerx-genesis-build
@@ -4138,7 +4139,7 @@ test-daemon-owner-rotation: $(BUILD_DIR)/tests/lxp_test_owner_rotation $(BUILD_D
 
 $(BUILD_DIR)/tests/relay-archive-sign: tests/relay-archive/sign_activity.c tests/daemon/lxp_test_program_admission.c $(LIBRARY) $(PROGRAMS_RUNTIME_LIB) | programs-build
 	@mkdir -p $(dir $@)
-	$(CC) $(CPPFLAGS) $(CFLAGS) $< $(LIBRARY) $(PROGRAMS_RUNTIME_LIB) $(LIBRARY) $(EXTRA_LDFLAGS) -lcrypto -pthread -ldl -lm -o $@
+	$(CC) $(CPPFLAGS) $(CFLAGS) $< $(LIBRARY) $(PROGRAMS_RUNTIME_LIB) $(LIBRARY) $(EXTRA_LDFLAGS) $(PROGRAMS_NATIVE_LDLIBS) -lcrypto -pthread -ldl -lm -o $@
 
 .PHONY: relay-archive-build relay-archive-e2e
 relay-archive-build: $(BUILD_DIR)/bin/layerxd $(BUILD_DIR)/bin/layerx-genesis-build $(BUILD_DIR)/bin/layerx-archive-codec $(BUILD_DIR)/tests/relay-archive-sign
@@ -4158,7 +4159,7 @@ $(BUILD_DIR)/bin/layerx-archive-codec: $(ARCHIVE_CODEC_OBJECTS) $(LIBRARY) \
 	@mkdir -p $(@D)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(ARCHIVE_CODEC_OBJECTS) $(LIBRARY) \
 		$(PROGRAMS_RUNTIME_LIB) $(LIBRARY) $(EXTRA_LDFLAGS) \
-		-lcrypto -pthread -ldl -lm -o $@
+		$(PROGRAMS_NATIVE_LDLIBS) -lcrypto -pthread -ldl -lm -o $@
 
 include tools/paxeer-x/build/104.35.11.mk
 include tools/paxeer-x/build/104.35.12.mk

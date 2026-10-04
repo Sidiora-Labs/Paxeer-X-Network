@@ -2369,3 +2369,8 @@ resolution = "Tighten only the owned private candidate directory before its boun
 area = "Native candidate build tool PATH"
 observed = "The isolated generation candidate reached the mandatory Programs build but its environment did not include the installed cargo binary."
 resolution = "Use the existing absolute toolchain PATH and record the failed attempt without changing compiler or source verification checks."
+
+[gotcha.692]
+area = "Historical replay Client corpus imports"
+observed = "The Programs SSL linker prerequisite built all seven production binaries, then the actual Client corpus failed compilation with duplicate imports in replay_catalogue.rs."
+resolution = "Preserve every real corpus assertion and correct only the recorded test-source compile boundary in its own bounded owner task."

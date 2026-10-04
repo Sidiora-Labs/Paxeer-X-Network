@@ -23190,7 +23190,7 @@ do_4 = "Assert subscription lag returns to baseline after induced stalls and tha
 do_5 = "Record resource curves and attach them to the qualification report."
 do_6 = "Wire the soak into a scheduled CI job with the report as its artefact."
 do_7 = "Provide this task selector in tools/paxeer-x/gates and execute the full scoped acceptance contract using real production paths. Preserve the retained verification command coverage; move aggregate matrices to release scope and refuse an unknown or unimplemented selector."
-touches = ["agent/tests/qualify/soak.rs", ".github/workflows/agent-soak.yml", "tools/paxeer-x/gates/101.23.6.sh", "agent/tests/qualify/src/main.rs", "agent/tests/qualify/Cargo.toml", "agent/tests/qualify/Cargo.lock", "Makefile"]
+touches = ["agent/tests/qualify/soak.rs", ".github/workflows/agent-soak.yml", "tools/paxeer-x/gates/101.23.6.sh", "agent/tests/qualify/src/main.rs", "agent/tests/qualify/Cargo.toml", "agent/tests/qualify/Cargo.lock"]
 verify_cmd = "timeout 30m tools/paxeer-x/verify-task.sh 101.23.6"
 gate_kind = "planned-adapter"
 max_builds = 1
@@ -23207,6 +23207,11 @@ planned_paths = ["agent/tests/qualify/soak.rs", ".github/workflows/agent-soak.ym
 path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
 evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
 
+
+retained_contract_paths = ["agent/tests/qualify/soak.rs", ".github/workflows/agent-soak.yml", "tools/paxeer-x/gates/101.23.6.sh", "agent/tests/qualify/src/main.rs", "agent/tests/qualify/Cargo.toml", "agent/tests/qualify/Cargo.lock", "Makefile"]
+delegated_source_task = "104.35.28"
+delegated_source_paths = ["Makefile"]
+lease_transfer_authority = "Owner explicitly approved inactive file lease reassignment for the current integration sweep; preserve every unfinished task and assertion."
 [task.103.6.1]
 title = "Build the layerx-node image and the genesis-bootstrapped node pod"
 status = "done"
@@ -24500,7 +24505,7 @@ do_4 = "Implement lxp_rounding_direction_check to assert every rounding site rou
 do_5 = "Assert by build-time check that no floating-point instruction or libm symbol appears anywhere in consensus-critical code."
 do_6 = "Run the entire test, fuzz and replay corpus under address, undefined-behaviour, thread and memory sanitizers plus a leak checker, failing on any suppressed finding without a recorded justification."
 do_7 = "Provide this task selector in tools/paxeer-x/gates and execute the full scoped acceptance contract using real production paths. Preserve the retained verification command coverage; move aggregate matrices to release scope and refuse an unknown or unimplemented selector."
-touches = ["tests/qualification/lxp_qual_arith.c", "tools/lxp_arith_proof.sh", "tests/test_qual_arith.c", "tools/paxeer-x/gates/105.25.4.sh", "tools/qualification/paxeer-x-protocol-release.py", "tools/lxp_qual_replay_matrix.sh", "Makefile"]
+touches = ["tests/qualification/lxp_qual_arith.c", "tools/lxp_arith_proof.sh", "tests/test_qual_arith.c", "tools/paxeer-x/gates/105.25.4.sh", "tools/qualification/paxeer-x-protocol-release.py", "tools/lxp_qual_replay_matrix.sh"]
 verify_cmd = "timeout 30m tools/paxeer-x/verify-task.sh 105.25.4"
 gate_kind = "planned-adapter"
 max_builds = 1
@@ -24517,6 +24522,11 @@ planned_paths = ["tools/paxeer-x/gates/105.25.4.sh"]
 path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
 evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
 
+
+retained_contract_paths = ["tests/qualification/lxp_qual_arith.c", "tools/lxp_arith_proof.sh", "tests/test_qual_arith.c", "tools/paxeer-x/gates/105.25.4.sh", "tools/qualification/paxeer-x-protocol-release.py", "tools/lxp_qual_replay_matrix.sh", "Makefile"]
+delegated_source_task = "104.35.28"
+delegated_source_paths = ["Makefile"]
+lease_transfer_authority = "Owner explicitly approved inactive file lease reassignment for the current integration sweep; preserve every unfinished task and assertion."
 [task.105.25.5]
 title = "Drill settlement, exits, unavailability and reserve audit"
 status = "in_progress"
@@ -24531,7 +24541,7 @@ do_4 = "Implement lxp_qual_exit_drill to execute an emergency exit end to end ag
 do_5 = "Assert the exit needs only a finalised checkpoint certificate, a balance proof against its state root and an unspent withdrawal nullifier."
 do_6 = "Implement lxp_qual_reserve_audit to show per asset that all account classes sum exactly to the Paxeer custody balance with zero tolerance and that every historical batch preserved debits equal to credits."
 do_7 = "Provide this task selector in tools/paxeer-x/gates and execute the full scoped acceptance contract using real production paths. Preserve the retained verification command coverage; move aggregate matrices to release scope and refuse an unknown or unimplemented selector."
-touches = ["tests/qualification/lxp_qual_settlement.c", "tools/lxp_reserve_audit.c", "tests/test_qual_settlement.c", "tools/paxeer-x/gates/105.25.5.sh", "Makefile", "tests/qualification/settlement_runtime.py"]
+touches = ["tests/qualification/lxp_qual_settlement.c", "tools/lxp_reserve_audit.c", "tests/test_qual_settlement.c", "tools/paxeer-x/gates/105.25.5.sh", "tests/qualification/settlement_runtime.py"]
 verify_cmd = "timeout 30m tools/paxeer-x/verify-task.sh 105.25.5"
 gate_kind = "planned-adapter"
 max_builds = 1
@@ -24548,6 +24558,11 @@ planned_paths = ["tests/qualification/lxp_qual_settlement.c", "tools/lxp_reserve
 path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
 evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
 
+
+retained_contract_paths = ["tests/qualification/lxp_qual_settlement.c", "tools/lxp_reserve_audit.c", "tests/test_qual_settlement.c", "tools/paxeer-x/gates/105.25.5.sh", "Makefile", "tests/qualification/settlement_runtime.py"]
+delegated_source_task = "104.35.28"
+delegated_source_paths = ["Makefile"]
+lease_transfer_authority = "Owner explicitly approved inactive file lease reassignment for the current integration sweep; preserve every unfinished task and assertion."
 [task.106.4.9]
 title = "Expose anchor and launchpad parameter messages through registered module services"
 status = "done"
@@ -32995,7 +33010,7 @@ do_1 = "Activate a distinct replay profile only through an authenticated signed 
 do_2 = "Capture genuine interpreter and semantic witnesses through authorized execution including module start; commit a bounded boundary Merkle root and actual native-checked admission/host-input facts in module9 protocol KV metadata before receipt postroot preview."
 do_3 = "Retain record staging across actual serial, scheduled and rollback paths; record no resulting root or final receipt digest inside committed metadata, avoiding a hash cycle. Exact receipt/resultroot binding occurs through real postcommit StateWitness and signed receipt."
 do_4 = "Provide actual native runtime positive/refusal/trap/reopen producer cases; unrecorded historical inputs remain missing-proof refusals and callbacks never become proof authority."
-touches = ["Makefile", "programs/crates/layerx-programs-runtime/src/lib.rs", "programs/crates/layerx-programs-runtime/src/execute.rs", "programs/crates/layerx-programs-runtime/src/replay.rs", "programs/crates/layerx-programs-runtime/src/validate.rs", "programs/crates/layerx-programs-runtime/src/ffi_call.rs", "src/modules/programs/call.c", "src/modules/programs/state_record.c", "include/layerx/programs.h", "src/protocol/lxp_kernel.c", "include/layerx/lxp_kernel.h", "tests/daemon/lxp_test_program_replay.c", "programs/crates/layerx-programs-runtime/tests/program_replay.rs", "tools/qualification/paxeer-x/program-replay-record.py", "tools/paxeer-x/build/104.35.20.mk", "programs/crates/layerx-programs-runtime/src/replay_record.rs", "src/modules/programs/registration.c", "programs/crates/layerx-programs-runtime/src/host/mod.rs"]
+touches = ["programs/crates/layerx-programs-runtime/src/lib.rs", "programs/crates/layerx-programs-runtime/src/execute.rs", "programs/crates/layerx-programs-runtime/src/replay.rs", "programs/crates/layerx-programs-runtime/src/validate.rs", "programs/crates/layerx-programs-runtime/src/ffi_call.rs", "src/modules/programs/call.c", "src/modules/programs/state_record.c", "include/layerx/programs.h", "src/protocol/lxp_kernel.c", "include/layerx/lxp_kernel.h", "tests/daemon/lxp_test_program_replay.c", "programs/crates/layerx-programs-runtime/tests/program_replay.rs", "tools/qualification/paxeer-x/program-replay-record.py", "tools/paxeer-x/build/104.35.20.mk", "programs/crates/layerx-programs-runtime/src/replay_record.rs", "src/modules/programs/registration.c", "programs/crates/layerx-programs-runtime/src/host/mod.rs"]
 build_cmd = "timeout 20m make paxeer-x-program-replay-build"
 verify_cmd = "timeout 10m python3 tools/qualification/paxeer-x/program-replay-record.py"
 max_builds = 1
@@ -33011,6 +33026,11 @@ build_exit_code = 2
 verify_status = "unrun"
 qualification_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-104.35.20-build.log"
 
+
+retained_contract_paths = ["Makefile", "programs/crates/layerx-programs-runtime/src/lib.rs", "programs/crates/layerx-programs-runtime/src/execute.rs", "programs/crates/layerx-programs-runtime/src/replay.rs", "programs/crates/layerx-programs-runtime/src/validate.rs", "programs/crates/layerx-programs-runtime/src/ffi_call.rs", "src/modules/programs/call.c", "src/modules/programs/state_record.c", "include/layerx/programs.h", "src/protocol/lxp_kernel.c", "include/layerx/lxp_kernel.h", "tests/daemon/lxp_test_program_replay.c", "programs/crates/layerx-programs-runtime/tests/program_replay.rs", "tools/qualification/paxeer-x/program-replay-record.py", "tools/paxeer-x/build/104.35.20.mk", "programs/crates/layerx-programs-runtime/src/replay_record.rs", "src/modules/programs/registration.c", "programs/crates/layerx-programs-runtime/src/host/mod.rs"]
+delegated_source_task = "104.35.28"
+delegated_source_paths = ["Makefile"]
+lease_transfer_authority = "Owner explicitly approved inactive file lease reassignment for the current integration sweep; preserve every unfinished task and assertion."
 [task.0.14]
 title = "Expose native public program and naming explorer reads through the unified gateway"
 status = "done"
@@ -33634,3 +33654,29 @@ qualification_status = "unverified"
 build_exit_code = 2
 verify_status = "UNRUN"
 qualification_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-24.20-build-repair-2.log"
+
+[task.104.35.28]
+title = "Link native Programs consumers against the genuine SSL dependency closure"
+status = "done"
+mode = "BUILD"
+wave = 4
+requires = ["0.2", "104.35.26", "104.35.27"]
+reqs = ["1105.3", "1105.4"]
+do_1 = "Declare the actual Programs native SSL library dependency and consume it after static archives and before existing crypto flags in every Programs-linked native recipe. Preserve all other library flags and order, unrelated targets and compiler checks."
+do_2 = "Build the seven genuine production consumers and actual historical replay transport corpus in one bounded pass, then verify production ELF dependencies and real authenticated native/client replay behavior against those source-bound artifacts. No unchanged task26 rerun or release aggregate."
+touches = ["Makefile", "tools/qualification/paxeer-x/native-programs-link.py"]
+build_cmd = "timeout 20m python3 tools/qualification/paxeer-x/native-programs-link.py --build"
+verify_cmd = "timeout 10m python3 tools/qualification/paxeer-x/native-programs-link.py"
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop at original30-minute cap, unrelated failure, missing genuine authority or weakening; record actual source, command, exit and log."
+completion_basis_policy = "Owner CONSTITUTION: fully implemented DONE; qualification separate and partial remains in_progress."
+source_ownership = "Root owns spec, publication and clean candidate integration. No source changes beyond exact declared paths, deployment or live signing."
+
+completion_basis = "implementation"
+qualification_status = "unverified"
+build_exit_code = 101
+verify_status = "UNRUN"
+qualification_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/qualification/task1043528/result.json"
