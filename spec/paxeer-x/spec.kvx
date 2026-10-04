@@ -36992,6 +36992,12 @@ stop_condition = "Stop at2026-10-04T20:29:37Z or exact contract conflict. One co
 source_status = "complete"
 completion_basis = "implementation under owner CONSTITUTION; qualification separately recorded"
 source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/root-hour-103.6.30-intake.json"
+build_revision = "3140ebac20f74e0f356ece12d77063984385744a"
+build_command = "/root/.cargo/bin/cargo build --locked --manifest-path platform/Cargo.toml -p layerx-platform-agent-boundary -p layerx-platform-gateway -p layerx-platform-identity -p layerx-platform-registry -p layerx-platform-authority --bins --tests --message-format=json"
+build_exit_code = 101
+build_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/python-http-registry-3140ebac-qualification/shared-build.log"
+qualification_evidence = "/root/lx-ops/paxeer-x-integration-2026-10-03/python-http-registry-3140ebac-qualification/shared-build-result.json"
+qualification_stop = "Registry production library compiled; combined build failed on separate producer_tls test API. New CI task103.6.34 owns that failure. No runtime pass claimed."
 
 [task.103.6.32]
 title = "Fix canonical budget codec test function shadowing"
