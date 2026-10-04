@@ -2890,7 +2890,7 @@ mod tests {
         assert_eq!(set.legs(), effects.transfers.as_slice());
         assert_eq!(set.total_amount(), 8);
         assert_ne!(set.kernel_root(), [0; 32]);
-        assert_eq!(AtomicTransferSet::canonical_decode(set.canonical()), Ok(set.clone()));
+        assert_eq!(AtomicTransferSet::canonical_decode(set.canonical()).as_ref(), Ok(&set));
         assert_eq!(set.kernel_root(), canonical_kernel_root(set.kernel_canonical(), 2)
             .unwrap_or_else(|error| panic!("kernel root: {error}")));
         let mut tampered = set.canonical().to_vec();

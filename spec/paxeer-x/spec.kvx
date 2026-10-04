@@ -35295,3 +35295,26 @@ verify_exit = 101
 qualification_revision = "6e177a3e2b0acab372b7f6803df311ab3e6f810b"
 qualification_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/qualification/fleet1043517/verify.log"
 qualification_observed = "Full dependency checkout corrected two setup failures; both real test cases require absent LAYERX_AUTHENTICATED_REPLAY_INPUTS. No cases passed."
+
+[task.104.30.8]
+title = "Correct ownership in the canonical atomic transfer round-trip fixture"
+status = "done"
+mode = "BUILD"
+wave = 2
+requires = ["0.2", "104.30.2"]
+reqs = ["1100.2", "1100.3"]
+do_1 = "Preserve the complete canonical-decode equality assertion using borrowed comparison instead of cloning the intentionally non-Clone AtomicTransferSet; do not add Clone or alter transfer authorization."
+touches = ["programs/crates/layerx-programs-runtime/src/transfer.rs"]
+build_cmd = "timeout 20m cargo test --locked --manifest-path programs/Cargo.toml -p layerx-programs-runtime --lib --no-run"
+verify_cmd = "timeout 10m cargo test --locked --manifest-path programs/Cargo.toml -p layerx-programs-runtime --lib transfer::tests::real_guest_mixed_effects_seal_exact_dual_authority_kernel_set -- --exact"
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+fleet_role = "integrate_arbiter/authority_gate"
+implementation_window = "2026-10-04T13:28:34.704223+00:00 to 2026-10-04T13:58:34.704223+00:00"
+stop_condition = "Stop on scoped result, actual unrelated failure, second failed repair or30-minute cap. Root publishes source and exact result; no deployment."
+source_status = "complete"
+completion_basis = "implementation under owner CONSTITUTION; qualification separately recorded"
+qualification_status = "UNRUN"
+source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/fleet-104.30.8-publication.json"
