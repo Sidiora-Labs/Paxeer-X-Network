@@ -46,7 +46,7 @@ function keepPreviousPage<Resource extends PaginatedResourceName>(
   stub: QueryOptions<Resource>['placeholderData'],
 ): QueryOptions<Resource>['placeholderData'] {
   if (typeof stub === 'function') {
-    return stub;
+    return (previousPageData, previousQuery) => previousPageData ?? stub(previousPageData, previousQuery);
   }
 
   return (previousPageData) => previousPageData ?? stub;

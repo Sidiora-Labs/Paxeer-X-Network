@@ -115,6 +115,40 @@ describe('useQueryWithPages placeholder data', () => {
     expect(result.current.pagination.isLoading).toBe(true);
   });
 
+  it('holds the previous rows when the caller computes its first-page placeholder', async() => {
+    const stub = generateListStub<'general:address_txs'>(TX, 1, { next_page_params: null });
+    const page2 = Promise.withResolvers<{ body: string; headers: Record<string, string> }>();
+
+    fetchMock.mockResponse(() => page2.promise);
+    fetchMock.once(JSON.stringify(responses.page_1), responseInit);
+
+    const { result } = renderHook(() => useQueryWithPages({
+      ...params,
+      options: { placeholderData: () => stub },
+    }), { wrapper });
+    await waitForApiResponse();
+
+    expect(result.current.data).toEqual(responses.page_1);
+    expect(result.current.isPlaceholderData).toBe(false);
+
+    await act(() => {
+      result.current.pagination.onNextPageClick();
+    });
+    await flushPromises();
+
+    expect(result.current.data).toEqual(responses.page_1);
+    expect(result.current.isPlaceholderData).toBe(true);
+    expect(result.current.pagination.page).toBe(2);
+    expect(result.current.pagination.isLoading).toBe(true);
+
+    page2.resolve({ body: JSON.stringify(responses.page_2), ...responseInit });
+    await waitForApiResponse();
+
+    expect(result.current.data).toEqual(responses.page_2);
+    expect(result.current.isPlaceholderData).toBe(false);
+    expect(result.current.pagination.isLoading).toBe(false);
+  });
+
   it('leaves a placeholder the caller computes itself alone', async() => {
     const stub = generateListStub<'general:address_txs'>(TX, 1, { next_page_params: null });
     const placeholderData = vi.fn(() => stub);
