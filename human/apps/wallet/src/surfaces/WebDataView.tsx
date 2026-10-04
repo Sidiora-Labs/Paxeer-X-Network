@@ -64,7 +64,7 @@ export function WebDataView({ sidRate, caps, refreshCaps, legs }: WebDataViewPro
     const { provider, address } = useSurfaceWallet();
     const surfaceModule = useMemo(() => (provider ? webData(provider) : null), [provider]);
     const fee = useFeeSelection(provider, address);
-    const state = useModuleSend(surfaceModule, provider, address);
+    const state = useModuleSend(surfaceModule, provider, address, fee);
     useEffect(() => {
         if (state.sent?.status === 'confirmed') refreshCaps();
     }, [state.sent?.hash, state.sent?.status, refreshCaps]);

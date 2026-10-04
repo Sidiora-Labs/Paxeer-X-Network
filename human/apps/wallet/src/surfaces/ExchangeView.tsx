@@ -31,7 +31,7 @@ export function ExchangeView({ sidRate, legs }: ExchangeViewProps) {
     const { provider, address } = useSurfaceWallet();
     const surfaceModule = useMemo(() => (provider ? exchange(provider) : null), [provider]);
     const fee = useFeeSelection(provider, address);
-    const state = useModuleSend(surfaceModule, provider, address);
+    const state = useModuleSend(surfaceModule, provider, address, fee);
     const [action, setAction] = useState<ExchangeAction>('order');
     const [marketId, setMarketId] = useState('');
     const [side, setSide] = useState<'0' | '1'>('0');

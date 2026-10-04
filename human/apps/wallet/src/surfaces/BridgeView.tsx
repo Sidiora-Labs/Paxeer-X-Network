@@ -17,7 +17,7 @@ export function BridgeView({ sidRate, legs }: BridgeViewProps) {
     const { provider, address } = useSurfaceWallet();
     const surfaceModule = useMemo(() => (provider ? bridge(provider) : null), [provider]);
     const fee = useFeeSelection(provider, address);
-    const state = useModuleSend(surfaceModule, provider, address);
+    const state = useModuleSend(surfaceModule, provider, address, fee);
     const [chain, setChain] = useState('');
     const [asset, setAsset] = useState('');
     const [decimals, setDecimals] = useState('18');

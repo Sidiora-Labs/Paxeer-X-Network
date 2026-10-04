@@ -27045,7 +27045,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.14.3]
 title = "Offer consent-bound SID sponsorship through the wallet fee selector"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 4
 requires = ["0.2", "13.4", "20.1", "20.2", "20.3", "20.5"]
@@ -27055,7 +27055,7 @@ do_2 = "Wire FeeChoice and useModuleSend to the canonical adapter and retain exa
 do_3 = "Add a real browser-to-gateway/station qualification flow, including first-use, cancellation, expiry, retry and recovery."
 do_4 = "Add the new bounded harness tools/qualification/paxeer-x/wallet-sponsored-fees.py to exercise this task through the named production interfaces, including the stated refusal and recovery cases, with explicit prerequisite checks and nonzero exit on any unmet acceptance. Use supplied prebuilt executables and isolated retained state; do not hide a rebuild or invoke a release-wide suite."
 do_5 = "Implement the declared focused gate through the real production types and paths; exercise every acceptance criterion including refusal, restart or boundary cases specified by this requirement. The command is a planned deliverable, not an already-run gate."
-touches = ["human/apps/wallet/src/surfaces/useSurface.ts", "human/apps/wallet/src/surfaces/FeeChoice.tsx", "human/wallet/sdk/src/modules/gas-station.ts", "human/wallet/sdk/src/provider.ts", "human/wallet/gateway/src/routes/sign.ts", "tools/qualification/paxeer-x/wallet-sponsored-fees.py"]
+touches = ["human/apps/wallet/src/surfaces/useSurface.ts", "human/apps/wallet/src/surfaces/FeeChoice.tsx", "human/wallet/sdk/src/modules/gas-station.ts", "human/wallet/sdk/src/provider.ts", "human/wallet/gateway/src/routes/sign.ts", "tools/qualification/paxeer-x/wallet-sponsored-fees.py", "human/apps/wallet/src/surfaces/BridgeView.tsx", "human/apps/wallet/src/surfaces/ExchangeView.tsx", "human/apps/wallet/src/surfaces/LaunchpadView.tsx", "human/apps/wallet/src/surfaces/WebDataView.tsx"]
 verify_cmd = "timeout 15m python3 tools/qualification/paxeer-x/wallet-sponsored-fees.py"
 gate_kind = "planned"
 max_builds = 1
@@ -27068,6 +27068,13 @@ planned_paths = ["tools/qualification/paxeer-x/wallet-sponsored-fees.py"]
 path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
 evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
 
+build_cmd = "timeout 20m python3 tools/qualification/paxeer-x/wallet-sponsored-fees.py --build"
+
+completion_basis = "implementation"
+qualification_status = "unverified"
+build_exit_code = 2
+verify_status = "UNRUN"
+qualification_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-14.3-result.json"
 [task.14.5]
 title = "Adapt retained private Human web custody requests to the supported provider contract"
 status = "pending"

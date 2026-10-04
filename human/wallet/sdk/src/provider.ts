@@ -176,6 +176,10 @@ export class PaxeerProvider implements Eip1193Provider {
         return this.requestAccounts();
       case 'eth_accounts':
         return [...this.accounts];
+      case 'paxeer_submitSponsored':
+        return this.sponsoredGateway(params, false);
+      case 'paxeer_sponsoredStatus':
+        return this.sponsoredGateway(params, true);
       case 'eth_chainId':
         return toQuantity(BigInt(this.chainId));
       case 'net_version':
@@ -341,8 +345,31 @@ export class PaxeerProvider implements Eip1193Provider {
     return response.signature;
   }
 
+  private async sponsoredGateway(params:readonly unknown[],readOnly:boolean):Promise<unknown> {
+    const account=this.requireAccount();const generation=this.capsGeneration;const chain=this.chainId;const token=await this.token();
+    if(!token)throw new UnauthorizedError('no_token','no signed-in session');
+    if(params.length!==1||!isRecord(params[0]))throw new InvalidParamsError('sponsored','complete sponsored construction required');
+    let body:Record<string,unknown>;try{body=freezeRequest(structuredClone(params[0]));}catch{throw new InvalidParamsError('sponsored','immutable construction required');}
+    this.requireSameAccount(body.account,account,'account');
+    if(readOnly){exactKeys(body,['account','sponsor','quoteNonce','relayerSignature'],'status');addressField(body.sponsor,'sponsor');uintField(body.quoteNonce as UintInput,'quoteNonce');signatureField(body.relayerSignature);}
+    else {
+      exactKeys(body,['chain_id','account','to','data','value','construction','account_signature','relayer_signature','authorization','quote_decimals'],'sponsored');
+      if(!isRecord(body.construction)||body.construction.kind!=='sponsored_batch'||!isRecord(body.authorization)||body.quote_decimals!==6)throw new InvalidParamsError('sponsored','complete batch and authorization required');
+      this.wireConstruction(body.construction,account);this.requireChain(String(body.chain_id));this.requireSameAccount(body.to,account,'to');
+      signatureField(body.account_signature);signatureField(body.relayer_signature);bytesField(body.data,'data');
+      if(uintField(body.value as UintInput,'value')!==0n)throw new InvalidParamsError('value','sponsored adapter value must be zero');
+      this.requireChain(String(body.authorization.chainId));addressField(body.authorization.address,'authorization.address');
+    }
+    if(generation!==this.capsGeneration||token!==await this.token()||account!==this.accounts[0]||chain!==this.chainId)throw new UnauthorizedError('session_changed','the wallet session changed');
+    const answer=await this.gateway<unknown>('POST',readOnly?'/v1/wallet/sponsored/status':'/v1/wallet/sponsored/submit',body);
+    if(generation!==this.capsGeneration||token!==await this.token()||account!==this.accounts[0]||chain!==this.chainId)throw new UnauthorizedError('session_changed','the wallet session changed');
+    return answer;
+  }
+
   private async ethSign(params: readonly unknown[]): Promise<Hex> {
     const account = this.requireAccount();
+    const generation=this.capsGeneration;const chain=this.chainId;const sessionToken=await this.token();
+    if(!sessionToken)throw new UnauthorizedError("no_token","no signed-in session");
     if (params.length !== 3) throw new InvalidParamsError('params', 'eth_sign requires account, digest and complete construction');
     const [address, digest, construction] = params;
     this.requireSameAccount(address, account, 'address');
@@ -361,7 +388,10 @@ export class PaxeerProvider implements Eip1193Provider {
     if (recomputed.toLowerCase() !== digest.toLowerCase()) {
       throw new UnauthorizedError('digest_mismatch', 'the supplied digest does not match its construction');
     }
+    if(generation!==this.capsGeneration||sessionToken!==await this.token()||account!==this.accounts[0]||chain!==this.chainId)throw new UnauthorizedError('session_changed','the wallet session changed');
     const response = await this.gateway<SignDigestResponse>('POST', '/v1/wallet/sign-digest', { construction: wire });
+    if(generation!==this.capsGeneration||sessionToken!==await this.token()||account!==this.accounts[0]||chain!==this.chainId)throw new UnauthorizedError('session_changed','the wallet session changed');
+    if(wire.kind==='sponsored_batch'&&BigInt(wire.quote.deadline)<=BigInt(Math.floor(Date.now()/1000)))throw new InvalidParamsError('deadline','sponsored consent has expired');
     this.requireSameAccount(response.address, account, 'response.address');
     const signature = signatureField(response.signature);
     this.requireSameAccount(await recoverAddress({ hash: recomputed, signature }), account, 'signature');

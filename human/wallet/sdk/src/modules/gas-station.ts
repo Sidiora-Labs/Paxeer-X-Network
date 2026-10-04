@@ -19,7 +19,9 @@ import {
   type SponsoredBatch,
 } from '@sidiora/layerx-sdk/browser';
 
-import { sponsoredBatchDigest, wireSponsoredBatch } from '../provider.js';
+import { recoverAddress } from 'viem';
+import { constructionDigest, sponsoredBatchDigest, wireSponsoredBatch } from '../provider.js';
+export type { SponsoredBatch, SponsoredConsent, SignedGasQuote, GasQuoteRequest } from '@sidiora/layerx-sdk/browser';
 import type {
   Hex,
   SponsoredBatchConstruction,
@@ -116,6 +118,7 @@ export interface GasStationModule {
   submitFirstUse(batch: SponsoredBatch, relayerSignature: string, options?: SponsoredSubmitOptions): Promise<string>;
   status(batch: SponsoredBatch, relayerSignature: string, signal?: AbortSignal): Promise<SponsoredSubmissionEvidence>;
   resume(batch: SponsoredBatch, relayerSignature: string, signal?: AbortSignal): Promise<SponsoredSubmissionEvidence>;
+  pending(account: string): Promise<{ readonly batch: SponsoredBatch; readonly relayerSignature: string } | null>;
 }
 
 function unwrap<T>(result: GasResult<T>): T {
@@ -222,7 +225,10 @@ export function gasStation(provider: ModuleProvider, options: GasStationOptions)
   const digest = (batch: SponsoredBatch): Hex => sponsoredBatchDigest(construction(batch));
 
   const sign = async (batch: SponsoredBatch): Promise<string> => {
+    if ((provider as ModuleProvider & { isPaxeer?: boolean }).isPaxeer !== true) throw new GasStationError({ code:'refused', field:'safe_first_delegation' });
+    await assertSession(batch.account);
     const fields = construction(batch);
+    if (BigInt(fields.quote.deadline) <= BigInt(Math.floor(Date.now()/1000))) throw new GasStationError({code:'expired_quote',field:'deadline'});
     const answer = await provider.request({
       method: 'eth_sign',
       params: [fields.account, sponsoredBatchDigest(fields), fields],
@@ -271,6 +277,13 @@ export function gasStation(provider: ModuleProvider, options: GasStationOptions)
   };
   const identityKey = (batch: SponsoredBatch): string =>
     `paxeer:sponsored:v1:${config.chainId}:${hexAddress(batch.account,'account')}:${hexAddress(batch.quote.sponsor,'sponsor')}:${decimal(batch.quote.quoteNonce)}`;
+  const pendingKey = (account:string):string => `paxeer:sponsored:pending:v1:${config.chainId}:${hexAddress(account,'account')}`;
+  const assertSession = async (account:string):Promise<void> => {
+    const accounts=await provider.request({method:'eth_accounts',params:[]});
+    const chain=await provider.request({method:'eth_chainId',params:[]});
+    if(!Array.isArray(accounts)||accounts.length!==1||typeof accounts[0]!=='string'||accounts[0].toLowerCase()!==hexAddress(account,'account')||
+      typeof chain!=='string'||!/^0x[0-9a-fA-F]+$/u.test(chain)||BigInt(chain)!==config.chainId)throw new GasStationError({code:'refused',field:'session_changed'});
+  };
   const headers = async (): Promise<Record<string,string>> => {
     if (!options.gatewayUrl) throw new ModuleError('unavailable','gatewayUrl');
     const token = options.accessToken === undefined ? null : await options.accessToken();
@@ -282,8 +295,18 @@ export function gasStation(provider: ModuleProvider, options: GasStationOptions)
     return { 'content-type':'application/json',Authorization:`Bearer ${token}` };
   };
   const post = async (path: string, body: unknown, signal?: AbortSignal): Promise<unknown> => {
-    const authorization = await headers();
     const account = (body as {account?:unknown}).account;
+    if(typeof account!=='string') throw new ModuleError('refused','account');
+    await assertSession(account);
+    if(options.accessToken===undefined){
+      if((provider as ModuleProvider & {isPaxeer?:boolean}).isPaxeer!==true)throw new GasStationError({code:'refused',field:'safe_first_delegation'});
+      if(signal?.aborted)throw new GasStationError({code:'cancelled',field:'submission_status_unknown'});
+      const answer=await provider.request({method:path===SPONSORED_SUBMIT_PATH?'paxeer_submitSponsored':'paxeer_sponsoredStatus',params:[body]});
+      await assertSession(account);
+      if(signal?.aborted)throw new GasStationError({code:'cancelled',field:'submission_status_unknown'});
+      return answer;
+    }
+    const authorization = await headers();
     const accounts = await provider.request({method:'eth_accounts',params:[]});
     if (!Array.isArray(accounts)||typeof accounts[0]!=='string'||typeof account!=='string'||accounts[0].toLowerCase()!==account.toLowerCase()) throw new ModuleError('refused','account');
     let response:Response;
@@ -319,9 +342,12 @@ export function gasStation(provider: ModuleProvider, options: GasStationOptions)
     }
     return Object.freeze(out as unknown as SponsoredSubmissionEvidence);
   };
-  const submissionStatus = async (batch:SponsoredBatch,relayerSignature:string,signal?:AbortSignal):Promise<SponsoredSubmissionEvidence> =>
-    evidence(await post('/v1/wallet/sponsored/status',{account:hexAddress(batch.account,'account'),sponsor:hexAddress(batch.quote.sponsor,'sponsor'),
+  const submissionStatus = async (batch:SponsoredBatch,relayerSignature:string,signal?:AbortSignal):Promise<SponsoredSubmissionEvidence> => {
+    const report=evidence(await post('/v1/wallet/sponsored/status',{account:hexAddress(batch.account,'account'),sponsor:hexAddress(batch.quote.sponsor,'sponsor'),
       quoteNonce:decimal(batch.quote.quoteNonce),relayerSignature:signature(relayerSignature,'relayerSignature')},signal));
+    if(report.status!=='pending')await store().setItem(pendingKey(batch.account),'null');
+    return report;
+  };
   const retained = async (batch:SponsoredBatch,relayerSignature:string):Promise<SponsoredAdapterRequest|null> => {
     const raw=await store().getItem(identityKey(batch));if(raw===null)return null;
     let record:unknown;try{record=JSON.parse(raw);}catch{throw new ModuleError('invalid_answer','retained_submission');}
@@ -335,16 +361,22 @@ export function gasStation(provider: ModuleProvider, options: GasStationOptions)
     const saved=await retained(batch,relayerSignature);if(!saved)throw new ModuleError('unavailable','retained_submission');
     const current=await submissionStatus(batch,relayerSignature,signal);
     if(current.tx_hash!==null||current.station?.state!=='quoted')return current;
+    if(batch.quote.deadline<=BigInt(Math.floor(Date.now()/1000)))throw new GasStationError({code:'expired_quote',field:'deadline'});
     return evidence(await post(SPONSORED_SUBMIT_PATH,saved,signal));
   };
   const submitApproved = async (input:SponsoredBatch,relayerSignature:string,submitOptions:SponsoredSubmitOptions={}):Promise<string> => {
     const batch:SponsoredBatch=Object.freeze({...input,quote:Object.freeze({...input.quote}),calls:Object.freeze(input.calls.map(call=>Object.freeze({...call})))});
     const persistence=store();
+    await assertSession(batch.account);
+    if(submitOptions.signal?.aborted)throw new GasStationError({code:"cancelled",field:"consent"});
     const prior=await retained(batch,relayerSignature);
     if(prior){const resumed=await resumeSubmission(batch,relayerSignature,submitOptions.signal);if(!resumed.tx_hash)throw new ModuleError('unavailable','submission_pending');return resumed.tx_hash;}
-    const consent=unwrap(sponsoredConsent(config,batch,submitOptions.now));
+    const currentTime=():bigint=>{const wall=BigInt(Math.floor(Date.now()/1000));return submitOptions.now!==undefined&&submitOptions.now>wall?submitOptions.now:wall;};
+    const consent=unwrap(sponsoredConsent(config,batch,currentTime()));
     if(submitOptions.confirm===undefined||!await submitOptions.confirm(consent))throw new GasStationError({code:'refused',field:'consent'});
-    if(unwrap(sponsoredConsent(config,batch,submitOptions.now)).batchDigest!==consent.batchDigest)throw new GasStationError({code:'refused',field:'consent_changed'});
+    await assertSession(batch.account);
+    if(submitOptions.signal?.aborted)throw new GasStationError({code:"cancelled",field:"consent"});
+    if(unwrap(sponsoredConsent(config,batch,currentTime())).batchDigest!==consent.batchDigest)throw new GasStationError({code:'refused',field:'consent_changed'});
     if(batch.nonce!==await batchNonce(batch.account))throw new GasStationError({code:'refused',field:'nonce'});
     const account=hexAddress(batch.account,'account');
     const pending=await provider.request({method:'eth_getTransactionCount',params:[account,'pending']});
@@ -352,15 +384,37 @@ export function gasStation(provider: ModuleProvider, options: GasStationOptions)
     const nonce=BigInt(pending);const authorizationFields={chainId:config.chainId,address:config.paymaster,nonce};
     const authorizationDigest=unwrap(eip7702AuthorizationDigest(authorizationFields));
     const accountSignature=await sign(batch);
-    executeCall(batch,accountSignature,relayerSignature,submitOptions.now);
+    await assertSession(batch.account);
+    executeCall(batch,accountSignature,relayerSignature,currentTime());
+    if(submitOptions.signal?.aborted)throw new GasStationError({code:'cancelled',field:'consent'});
     const answer=await provider.request({method:'eth_sign',params:[account,authorizationDigest,{kind:'eip7702_authorization',chainId:decimal(config.chainId),address:hexAddress(config.paymaster,'paymaster'),nonce:decimal(nonce)}]});
+    await assertSession(batch.account);
+    unwrap(sponsoredConsent(config,batch,currentTime()));
+    if(submitOptions.signal?.aborted)throw new GasStationError({code:'cancelled',field:'consent'});
     const authorization=unwrap(assembleEip7702Authorization(config,account,nonce,signature(answer,'authorization')));
     const body=adapterRequest(batch,accountSignature,relayerSignature,
-      {chainId:decimal(authorization.chainId),address:hexAddress(authorization.address,'authorization.address'),nonce:decimal(authorization.nonce),yParity:authorization.yParity as 0|1,r:hexData(authorization.r,'r'),s:hexData(authorization.s,'s')},submitOptions.now);
+      {chainId:decimal(authorization.chainId),address:hexAddress(authorization.address,'authorization.address'),nonce:decimal(authorization.nonce),yParity:authorization.yParity as 0|1,r:hexData(authorization.r,'r'),s:hexData(authorization.s,'s')},currentTime());
     await persistence.setItem(identityKey(batch),JSON.stringify(body));
+    await persistence.setItem(pendingKey(batch.account),identityKey(batch));
     const response=evidence(await post(SPONSORED_SUBMIT_PATH,body,submitOptions.signal));
     if(response.tx_hash===null)throw new ModuleError('unavailable','submission_pending');
     return response.tx_hash;
+  };
+
+  const pending = async (account:string):Promise<{readonly batch:SponsoredBatch;readonly relayerSignature:string}|null> => {
+    const persistence=store();const key=await persistence.getItem(pendingKey(account));if(key===null||key==='null')return null;
+    const raw=await persistence.getItem(key);if(raw===null)throw new ModuleError('invalid_answer','retained_submission');
+    let saved:SponsoredAdapterRequest;try{saved=JSON.parse(raw) as SponsoredAdapterRequest;}catch{throw new ModuleError('invalid_answer','retained_submission');}
+    const wire=wireSponsoredBatch(saved.construction);
+    const batch:SponsoredBatch={chainId:BigInt(wire.chainId),account:wire.account,nonce:BigInt(wire.nonce),calls:wire.calls.map(call=>({to:call.to,value:BigInt(call.value),data:call.data})),
+      quote:{sponsor:wire.quote.sponsor,token:wire.quote.token,maxTokenAmount:BigInt(wire.quote.maxTokenAmount),tokenAmount:BigInt(wire.quote.tokenAmount),deadline:BigInt(wire.quote.deadline),quoteNonce:BigInt(wire.quote.quoteNonce),gasCost:BigInt(wire.quote.gasCost),decimals:6}};
+    if(key!==identityKey(batch)||batch.account!==hexAddress(account,'account')||saved.chain_id!==decimal(config.chainId)||saved.quote_decimals!==6||!saved.authorization||
+      saved.authorization.chainId!==saved.chain_id||saved.authorization.address.toLowerCase()!==config.paymaster.toLowerCase())throw new ModuleError('refused','retained_submission_conflict');
+    if((await recoverAddress({hash:sponsoredBatchDigest(wire),signature:signature(saved.account_signature,'account_signature')})).toLowerCase()!==batch.account)throw new ModuleError('refused','retained_submission_conflict');
+    const authorization={kind:'eip7702_authorization' as const,chainId:saved.authorization.chainId,address:saved.authorization.address,nonce:saved.authorization.nonce};
+    const authSignature=`${saved.authorization.r}${saved.authorization.s.slice(2)}${(saved.authorization.yParity+27).toString(16)}` as Hex;
+    if((await recoverAddress({hash:constructionDigest(authorization),signature:authSignature})).toLowerCase()!==batch.account)throw new ModuleError('refused','retained_submission_conflict');
+    return {batch,relayerSignature:signature(saved.relayer_signature,'relayer_signature')};
   };
 
   const submissions = new Map<string,{identity:string;promise:Promise<string>}>();
@@ -407,5 +461,6 @@ export function gasStation(provider: ModuleProvider, options: GasStationOptions)
     submit: serializedSubmit,
     status: submissionStatus,
     resume: resumeSubmission,
+    pending,
   };
 }

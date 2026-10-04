@@ -56,6 +56,7 @@ export function FeeChoice({ provider, address, transaction, selection, sidRate, 
     const helper = useMemo(() => feeChoice(), []);
     const [estimate, setEstimate] = useState<GasEstimate | null>(null);
     const [estimateError, setEstimateError] = useState<string | null>(null);
+    const [maximumSid,setMaximumSid]=useState('');
 
     useEffect(() => {
         let alive = true;
@@ -81,6 +82,15 @@ export function FeeChoice({ provider, address, transaction, selection, sidRate, 
             alive = false;
         };
     }, [provider, address, transaction]);
+
+    useEffect(()=>{
+        if(selection.choice!=='sid_sponsored'||!transaction||!estimate)return;
+        const match=/^(0|[1-9][0-9]*)(?:\.([0-9]{1,6}))?$/u.exec(maximumSid);
+        if(!match)return;
+        const maximum=BigInt(match[1]??'0')*1_000_000n+BigInt((match[2]??'').padEnd(6,'0'));
+        if(maximum<=0n||maximum>=(1n<<256n))return;
+        void selection.prepare(transaction,maximum,estimate.gasLimit*estimate.gasPrice);
+    },[selection.choice,selection.prepare,transaction,estimate,maximumSid]);
 
     const gasText = (entry: FeeChoiceEntry): string => {
         if (estimateError) return `gas estimate failed: ${estimateError}`;
@@ -152,6 +162,29 @@ export function FeeChoice({ provider, address, transaction, selection, sidRate, 
                 <p data-role="fee-blocked" className="text-xs text-pax-muted">
                     {blocked}
                 </p>
+            )}
+            {choice==='sid_sponsored'&&(
+                <section aria-label="SID sponsored quote" className="space-y-2">
+                    <label className="block text-xs text-pax-muted">Maximum SID (6 decimals)
+                        <input aria-label="Maximum SID" inputMode="decimal" value={maximumSid} onChange={event=>{selection.cancel();setMaximumSid(event.target.value);}} disabled={['signing','submitted','recovering','unknown'].includes(selection.sponsored.phase)} />
+                    </label>
+                    <p data-role="sponsored-phase">{selection.sponsored.phase}</p>
+                    {selection.sponsored.reason&&<p role="alert" data-role="sponsored-reason">{selection.sponsored.reason}</p>}
+                    {selection.sponsored.batch&&(
+                        <div data-role="sponsored-construction">
+                            <p data-role="sponsored-sid">SID payment: {helper.denominate('sid_sponsored',selection.sponsored.batch.quote.tokenAmount).display}</p>
+                            <p data-role="sponsored-maximum">Maximum: {helper.denominate('sid_sponsored',selection.sponsored.batch.quote.maxTokenAmount).display}</p>
+                            <p data-role="sponsored-pax">PAX gas: {helper.denominate('pax_gas',selection.sponsored.batch.quote.gasCost).display}</p>
+                            <p>Account {selection.sponsored.batch.account} · chain {selection.sponsored.batch.chainId.toString()} · expires {selection.sponsored.batch.quote.deadline.toString()}</p>
+                            {selection.sponsored.batch.calls.map((call,index)=><p key={index}>Call {index}: {call.to} · {call.value.toString()} PAX atomic units · {call.data}</p>)}
+                            <p data-role="sponsored-digest">{selection.sponsored.digest}</p>
+                        </div>
+                    )}
+                    <Button data-action="sponsored-consent" disabled={selection.sponsored.phase!=='quoted'} onClick={selection.approve}>Approve this exact SID construction</Button>
+                    <Button variant="secondary" data-action="sponsored-cancel" onClick={selection.cancel}>Cancel consent</Button>
+                    <Button variant="secondary" data-action="sponsored-recover" onClick={()=>void selection.recover()}>Refresh retained station status</Button>
+                    {selection.sponsored.txHash&&<p data-role="sponsored-hash">{selection.sponsored.txHash}</p>}
+                </section>
             )}
             <h2 className="text-sm font-semibold text-pax-light">LayerX fees</h2>
             {layerxLegs.length === 0 ? (

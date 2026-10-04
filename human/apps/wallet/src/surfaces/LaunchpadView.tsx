@@ -27,7 +27,7 @@ export function LaunchpadView({ sidRate, legs, now = Date.now }: LaunchpadViewPr
     const { provider, address } = useSurfaceWallet();
     const surfaceModule = useMemo(() => (provider ? launchpad(provider) : null), [provider]);
     const fee = useFeeSelection(provider, address);
-    const state = useModuleSend(surfaceModule, provider, address);
+    const state = useModuleSend(surfaceModule, provider, address, fee);
     const [action, setAction] = useState<LaunchpadAction>('buy');
     const [token, setToken] = useState('');
     const [amountIn, setAmountIn] = useState('');

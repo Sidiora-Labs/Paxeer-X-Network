@@ -2279,3 +2279,13 @@ resolution = "Use the existing absolute toolchain path in bounded follow-up work
 area = "HPX real TLS fixture identity"
 observed = "The first HPX ingress gate offered an IP-literal fixture URL to a production endpoint parser that requires a DNS name."
 resolution = "Keep the endpoint identity check and provision genuine localhost TLS identity for the actual fixture."
+
+[gotcha.676]
+area = "Private wallet package preparation"
+observed = "The standalone wallet app has a config-only pnpm workspace file; frozen preparation needs --ignore-workspace, and an interactive prompt can exit zero without installing."
+resolution = "Use the retained pnpm9.15.9 with CI=true and the exact workspace mode; verify actual dependency entrypoints without running package scripts."
+
+[gotcha.678]
+area = "Gateway serialized transaction type"
+observed = "Task14.3 SDK compiled, but gateway compilation failed TS2322 at agent/actions/orchestrator.ts:540 because the signer returns Hex while recovery requires the concrete serialized transaction union."
+resolution = "Retain parsing and exact transaction checks; verify the actual EIP1559 discriminant before passing its narrowed serialized type to signature recovery in the explicit follow-up."
