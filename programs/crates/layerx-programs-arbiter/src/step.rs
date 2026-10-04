@@ -12,6 +12,7 @@ use layerx_programs_runtime::{
 use layerx_proof::receipt::VerifiedReceipt;
 use layerx_proof::state_range::ModuleRangeWitness;
 use layerx_proof::state_witness::StateWitness;
+use layerx_proof::{inclusion::VerifiedBatchHeader, merkle::Proof};
 use sha2::{Digest, Sha256};
 
 const MAX_BYTES: usize = 1_048_576;
@@ -405,6 +406,29 @@ impl VerifiedStep {
     }
 }
 impl VerifiedReplay {
+    pub fn verify_with_batch_context(
+        receipt: &VerifiedReceipt,
+        admission: &VerifiedAdmissionPrestate,
+        header: &VerifiedBatchHeader,
+        receipt_proof: &Proof,
+        metadata_proof: &StateWitness,
+        authority_bytes: &[u8],
+        hosts_bytes: &[u8],
+        catalogue: AuthenticatedCatalogue,
+    ) -> Result<Self, ReplayError> {
+        let authority =
+            crate::VerifiedReplayAuthority::derive(receipt, admission, header, receipt_proof)?;
+        authority.verify_native(authority_bytes)?;
+        Self::verify(
+            receipt,
+            admission,
+            metadata_proof,
+            authority.canonical_bytes(),
+            hosts_bytes,
+            catalogue,
+        )
+    }
+
     pub fn verify(
         receipt: &VerifiedReceipt,
         admission: &VerifiedAdmissionPrestate,

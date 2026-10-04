@@ -33920,3 +33920,27 @@ qualification_status = "passed"
 build_exit_code = 0
 verify_exit_code = 0
 qualification_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-104.13.25-source-handoff.json"
+
+[task.104.35.29]
+title = "Derive portable replay authority from authenticated historical admission facts"
+status = "done"
+mode = "BUILD"
+wave = 4
+requires = ["0.2", "104.35.26", "104.35.32"]
+reqs = ["1105.3", "1105.4"]
+do_1 = "Derive exact authorization, capabilities, payer, available balance, signed limits and historical fee/meter facts from sealed V3 previous-root records, signed CALL and sealed batch context. Compare against the recorded native authority before runtime construction. Preserve all existing metadata/boundary proofs and transition checks. A distinct genuine canonical admission fixture must use the actual authority resolver; do not weaken old fixture assertions or trust opaque supplied authority."
+touches = ["Makefile", "programs/crates/layerx-programs-arbiter/src/authority.rs", "programs/crates/layerx-programs-arbiter/src/step.rs", "programs/crates/layerx-programs-arbiter/src/lib.rs", "programs/crates/layerx-programs-arbiter/tests/authority_from_prestate.rs", "tests/daemon/lxp_test_replay_authority.c", "tools/paxeer-x/build/104.35.29.mk", "tools/qualification/paxeer-x/replay-authority.py"]
+build_cmd = "timeout 20m python3 tools/qualification/paxeer-x/replay-authority.py --build"
+verify_cmd = "timeout 10m python3 tools/qualification/paxeer-x/replay-authority.py"
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop at original30-minute cap, unrelated failure, missing genuine authority or weakening; retain exact source, command, exit and private evidence."
+completion_basis_policy = "Owner CONSTITUTION: fully implemented DONE; qualification separate and partial remains in_progress."
+source_ownership = "Exact declared sources only; root owns shared manifests, source lease reassignment, spec and publication. No deployment, live signing or repeated unchanged gate."
+completion_basis = "implementation"
+qualification_status = "implemented-not-qualified"
+build_exit_code = 143
+verify_status = "unrun"
+qualification_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-104.35.29-source-handoff.json"

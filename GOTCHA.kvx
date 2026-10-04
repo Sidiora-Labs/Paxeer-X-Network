@@ -2389,3 +2389,8 @@ resolution = "Classify existing and new task sections explicitly before staging,
 area = "Genuine replay first deployment"
 observed = "After the Client corpus import correction compiled, the real native replay fixture failed its first DEPLOY journal assertion before any SDK case."
 resolution = "Preserve the literal assertion and authenticate the real producer and capture boundary in a distinct bounded native task; do not manufacture a successful receipt."
+
+[gotcha.696]
+area = "Native replay predicate placement"
+observed = "A first scoped retention correction matched the older execution-prestate helper rather than the separate historical replay catalogue helper."
+resolution = "Restore the old helper exactly and scope the CALL-only predicate to the actual catalogue producer and getter; preserve both original assertion sets."
