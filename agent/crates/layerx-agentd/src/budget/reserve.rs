@@ -103,6 +103,67 @@ impl BudgetLimiter {
         )
     }
 
+    pub fn remaining_after_retained_reservation_bound(
+        &self,
+        reservation_id: [u8; 32],
+        expected_amount: u128,
+        durable_holds: &[DurableBudgetReservation],
+        terminal: bool,
+        verified_protocol_remaining: u128,
+    ) -> Result<u128, LimitRefusal> {
+        if !terminal || reservation_id == [0; 32] || expected_amount == 0 || durable_holds.is_empty() {
+            return Err(LimitRefusal::InvalidRequest);
+        }
+        let mut expected = std::collections::BTreeSet::new();
+        for hold in durable_holds {
+            if hold.reservation_id != reservation_id || hold.amount != expected_amount
+                || hold.expiry_sequence == 0 || hold.ceiling == 0
+                || hold.digest != hold.canonical_digest() || !expected.insert(hold.limit_id)
+            {
+                return Err(LimitRefusal::InvalidRequest);
+            }
+        }
+        let limits = self.limits.lock().map_err(|_| LimitRefusal::Poisoned)?;
+        if limits.iter().any(|(id, limit)| limit.held.contains_key(&reservation_id) && !expected.contains(id)) {
+            return Err(LimitRefusal::InvalidRequest);
+        }
+        let mut retained = None;
+        let mut remaining: Option<u128> = None;
+        let mut greatest_held = 0_u128;
+        for hold in durable_holds {
+            let original = limits.get(&hold.limit_id).ok_or(LimitRefusal::UnknownLimit(hold.limit_id))?;
+            if original.config.scope != hold.scope || original.config.ceiling != hold.ceiling
+                || !original.scalar_allowed
+            {
+                return Err(LimitRefusal::InvalidConfiguration);
+            }
+            let present = match original.held.get(&reservation_id) {
+                Some(current) if !current.allocated_program && current.amount == hold.amount
+                    && current.expiry_sequence == hold.expiry_sequence => true,
+                None => false,
+                _ => return Err(LimitRefusal::InvalidRequest),
+            };
+            if retained.is_some_and(|prior| prior != present) {
+                return Err(LimitRefusal::InvalidRequest);
+            }
+            retained = Some(present);
+            let head_id = live_head(&limits, hold.limit_id)?;
+            let head = limits.get(&head_id).ok_or(LimitRefusal::UnknownLimit(head_id))?;
+            if head.retired || !head.scalar_allowed || head.denomination != original.denomination {
+                return Err(LimitRefusal::InvalidConfiguration);
+            }
+            let held = lineage_held(&limits, head_id)?;
+            greatest_held = greatest_held.max(held);
+            let available = head.config.ceiling.checked_sub(
+                head.config.consumed.checked_add(held).ok_or(LimitRefusal::Arithmetic)?,
+            ).ok_or(LimitRefusal::Arithmetic)?;
+            remaining = Some(remaining.map_or(available, |current| current.min(available)));
+        }
+        Ok(remaining.ok_or(LimitRefusal::InvalidRequest)?.min(
+            verified_protocol_remaining.checked_sub(greatest_held).ok_or(LimitRefusal::Arithmetic)?,
+        ))
+    }
+
     pub(crate) fn remaining_after_allocation_bound(
         &self, record: &ProgramBudgetReservation, asset: [u8;32], source: [u8;32],
         verified_protocol_remaining: u128, terminal: bool,
@@ -2112,4 +2173,118 @@ mod program_actual_allocation_tests {
         assert!(limiter.stage_program_unsigned_allocation(&record).is_err());
     }
 
+}
+
+#[cfg(test)]
+mod retained_terminal_budget_tests {
+    use super::*;
+
+    fn must<T>(value: Result<T, LimitRefusal>) -> T {
+        value.unwrap_or_else(|error| panic!("retained terminal budget: {error:?}"))
+    }
+
+    fn limiter() -> BudgetLimiter {
+        must(BudgetLimiter::new(vec![
+            LimitConfig { id: LimitId([1; 16]), name: "tenant".into(),
+                scope: LimitScope::Tenant([1; 32]), ceiling: 100, consumed: 0 },
+            LimitConfig { id: LimitId([2; 16]), name: "agent".into(),
+                scope: LimitScope::Agent([2; 32]), ceiling: 90, consumed: 0 },
+        ]))
+    }
+
+    fn request(id: u8, amount: u128, expiry: u64, limits: Vec<LimitId>) -> ReservationRequest {
+        ReservationRequest { id: [id; 32], amount, expiry_sequence: expiry,
+            current_sequence: 1, applicable_limits: limits }
+    }
+
+    #[test]
+    fn terminal_budget_read_preserves_unresolved_and_released_exposure() {
+        let limiter = limiter();
+        let ids = vec![LimitId([1; 16]), LimitId([2; 16])];
+        let held = must(reserve_all(&limiter, &request(3, 20, 20, ids.clone())));
+        let other = must(reserve_all(&limiter, &request(4, 10, 30, ids)));
+        assert_eq!(limiter.remaining_after_retained_reservation_bound(
+            held.id, 20, &held.durable, true, 80), Ok(50));
+        assert!(limiter.remaining_after_retained_reservation_bound(
+            held.id, 20, &held.durable, false, 80).is_err());
+        assert!(must(release_all(&limiter, held.id, ReleaseKind::Failed, 2)));
+        assert_eq!(limiter.remaining_after_retained_reservation_bound(
+            held.id, 20, &held.durable, true, 80), Ok(70));
+        assert!(must(release_all(&limiter, other.id, ReleaseKind::Executed, 2)));
+        assert_eq!(limiter.remaining_after_retained_reservation_bound(
+            held.id, 20, &held.durable, true, 80), Ok(80));
+        assert_eq!(limiter.consumed(LimitId([1; 16])), Ok(10));
+        assert_eq!(limiter.consumed(LimitId([2; 16])), Ok(10));
+    }
+
+    #[test]
+    fn terminal_budget_read_refuses_incomplete_or_forged_owned_holds() {
+        let limiter = limiter();
+        let held = must(reserve_all(&limiter, &request(3, 20, 20,
+            vec![LimitId([1; 16]), LimitId([2; 16])])));
+        assert!(limiter.remaining_after_retained_reservation_bound(
+            held.id, 20, &held.durable[..1], true, 80).is_err());
+        let mut changed = held.durable.clone();
+        changed[0].amount += 1;
+        assert!(limiter.remaining_after_retained_reservation_bound(
+            held.id, 20, &changed, true, 80).is_err());
+        let mut changed = held.durable.clone();
+        changed[0].scope = LimitScope::Agent([8; 32]);
+        changed[0].digest = changed[0].canonical_digest();
+        assert!(limiter.remaining_after_retained_reservation_bound(
+            held.id, 20, &changed, true, 80).is_err());
+        let mut changed = held.durable.clone();
+        changed[0].ceiling += 1;
+        changed[0].digest = changed[0].canonical_digest();
+        assert!(limiter.remaining_after_retained_reservation_bound(
+            held.id, 20, &changed, true, 80).is_err());
+        assert!(limiter.remaining_after_retained_reservation_bound(
+            [9; 32], 20, &held.durable, true, 80).is_err());
+        assert!(limiter.remaining_after_retained_reservation_bound(
+            held.id, 20, &held.durable, true, 19).is_err());
+        assert_eq!(limiter.held_exposure(LimitId([1; 16])), Ok(20));
+        assert_eq!(limiter.consumed(LimitId([1; 16])), Ok(0));
+    }
+
+    #[test]
+    fn terminal_budget_read_refuses_partially_released_state_and_recovers_from_real_holds() {
+        let limiter = limiter();
+        let first = must(reserve_all(&limiter, &request(3, 20, 10, vec![LimitId([1; 16])])));
+        let second = must(reserve_all(&limiter, &request(3, 20, 20, vec![LimitId([2; 16])])));
+        let mut durable = first.durable;
+        durable.extend(second.durable);
+        assert!(must(release_all(&limiter, [3; 32], ReleaseKind::Expired, 10)));
+        assert!(limiter.remaining_after_retained_reservation_bound(
+            [3; 32], 20, &durable, true, 80).is_err());
+        assert!(must(release_all(&limiter, [3; 32], ReleaseKind::Expired, 20)));
+        assert_eq!(limiter.remaining_after_retained_reservation_bound(
+            [3; 32], 20, &durable, true, 80), Ok(80));
+        let restarted = self::limiter();
+        must(restore_all(&restarted, &durable));
+        assert_eq!(restarted.remaining_after_retained_reservation_bound(
+            [3; 32], 20, &durable, true, 80), Ok(60));
+    }
+
+    #[test]
+    fn terminal_budget_read_uses_current_successor_exposure_and_refuses_retirement() {
+        let limiter = limiter();
+        let held = must(reserve_all(&limiter, &request(3, 20, 20,
+            vec![LimitId([1; 16]), LimitId([2; 16])])));
+        let predecessor = LimitConfig { id: LimitId([2; 16]), name: "agent".into(),
+            scope: LimitScope::Agent([2; 32]), ceiling: 90, consumed: 0 };
+        let successor = LimitConfig { id: LimitId([5; 16]), name: "renewed-agent".into(),
+            scope: predecessor.scope, ceiling: 70, consumed: 0 };
+        must(limiter.renew_locked(&predecessor, &successor, |_| Ok::<_, LimitRefusal>(())));
+        assert_eq!(limiter.remaining_after_retained_reservation_bound(
+            held.id, 20, &held.durable, true, 80), Ok(50));
+        must(reserve_all(&limiter, &request(4, 10, 30, vec![successor.id])));
+        assert_eq!(limiter.remaining_after_retained_reservation_bound(
+            held.id, 20, &held.durable, true, 80), Ok(40));
+        assert!(must(release_all(&limiter, held.id, ReleaseKind::Failed, 2)));
+        assert_eq!(limiter.remaining_after_retained_reservation_bound(
+            held.id, 20, &held.durable, true, 80), Ok(60));
+        must(limiter.retire(successor.id));
+        assert!(limiter.remaining_after_retained_reservation_bound(
+            held.id, 20, &held.durable, true, 80).is_err());
+    }
 }
