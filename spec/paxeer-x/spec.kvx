@@ -24080,8 +24080,12 @@ fleet_role = "/root/integrate_sdk/private_custody_corpus"
 fleet_scope_manifest = "/root/lx-ops/paxeer-x-integration-2026-10-03/fleet-104.26.2-brief.json"
 source_status = "complete"
 completion_basis = "implementation under owner CONSTITUTION; qualification separately recorded"
-qualification_status = "UNRUN"
+qualification_status = "FAILED"
 source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/fleet-104.26.2-intake.json"
+build_exit = 0
+verify_exit = 8
+qualification_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-104.26.2-qualification/verify.log"
+qualification_observed = "Fifteen lint cases passed; real live copy scan found pre-existing uncatalogued or disallowed vocabulary. Ramp receipt verification not reached."
 
 [task.104.30.2]
 title = "Authorise transfer legs under program authority"
