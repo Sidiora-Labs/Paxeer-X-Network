@@ -1457,10 +1457,238 @@ def unified_pagination():
 
 
 
+def receipt_refresh():
+    import stat
+    import urllib.parse
+
+    location = os.environ.get("LAYERX_RECEIPT_REFRESH_FIXTURE")
+    if not location:
+        raise MissingPrerequisite("LAYERX_RECEIPT_REFRESH_FIXTURE (genuine disposable receipt, proof advancement and browser profile)")
+    fixture_path = Path(location)
+    info = fixture_path.lstat()
+    require(stat.S_ISREG(info.st_mode) and info.st_uid == os.geteuid() and not info.st_mode & 0o077,
+            "receipt refresh fixture must be an owned private regular file")
+    fixture = json.loads(fixture_path.read_text())
+    require(fixture.get("version") == 1 and fixture.get("disposable") is True,
+            "receipt refresh requires the genuine disposable producer profile")
+    for key in ("frontend", "api"):
+        parsed = urllib.parse.urlsplit(fixture[key])
+        require(parsed.scheme in ("http", "https") and parsed.hostname in ("localhost", "127.0.0.1", "::1")
+                and parsed.username is None and parsed.password is None and not parsed.query and not parsed.fragment,
+                "receipt refresh endpoints must be isolated loopback services")
+    receipt_id = fixture["receipt_id"]
+    require(isinstance(receipt_id, str) and len(receipt_id) == 66 and receipt_id.startswith("0x")
+            and all(character in "0123456789abcdefABCDEF" for character in receipt_id[2:]),
+            "genuine receipt digest is required")
+    canonical = fixture["canonical_receipt"]
+    canonical_path = Path(canonical["path"])
+    require(canonical_path.is_absolute() and canonical_path.is_file() and not canonical_path.is_symlink(),
+            "actual canonical receipt artifact is missing")
+    require(hashlib.sha256(canonical_path.read_bytes()).hexdigest() == canonical["sha256"]
+            and canonical_path.stat().st_size > 0, "canonical receipt provenance changed")
+    require(set(fixture["producers"]) == {"advance", "historical", "reconnect", "terminal"},
+            "real verification, historical projection, reconnection and final settlement producers are required")
+    for producer in fixture["producers"].values():
+        argv = producer["argv"]
+        require(isinstance(argv, list) and argv and all(isinstance(argument, str) and argument for argument in argv),
+                "actual proof producer needs explicit argv")
+        executable = Path(argv[0])
+        require(executable.is_absolute() and executable.is_file() and not executable.is_symlink()
+                and os.access(executable, os.X_OK), "actual proof producer executable is missing")
+        require(hashlib.sha256(executable.read_bytes()).hexdigest() == producer["sha256"],
+                "actual proof producer revision changed")
+    node = os.environ.get("LAYERX_RECEIPT_REFRESH_NODE", "/root/lx-toolchains/node24/bin/node")
+    frontend_root = KERNEL_ROOT / "explorer/frontend"
+    missing = []
+    if not Path(node).is_file():
+        missing.append("pinned Node executable")
+    if not (frontend_root / "node_modules/@playwright/test").exists():
+        missing.append("preinstalled @playwright/test")
+    if not os.environ.get("DISPLAY"):
+        missing.append("DISPLAY for a real Chromium hidden-tab session")
+    if missing:
+        raise MissingPrerequisite(", ".join(missing))
+    browser = r"""
+    const assert = require('node:assert/strict');
+    const fs = require('node:fs');
+    const crypto = require('node:crypto');
+    const { spawnSync } = require('node:child_process');
+    const { chromium } = require('@playwright/test');
+    const input = JSON.parse(fs.readFileSync(0, 'utf8'));
+    const statuses = ['pending', 'instant', 'sealed', 'final'];
+    const verification = ['unverified', 'sequencer_signed', 'batch_included', 'state_proven', 'checkpoint_finalised', 'settlement_anchored'];
+    const receiptPath = '/api/v2/paxeer-x/receipts/' + input.receipt_id;
+    const pageUrl = input.frontend.replace(/\/$/, '') + '/paxeer-x/receipts/' + input.receipt_id;
+    const wait = milliseconds => new Promise(resolve => setTimeout(resolve, milliseconds));
+    const hash = path => crypto.createHash('sha256').update(fs.readFileSync(path)).digest('hex');
+    const validate = row => {
+      assert.equal(row.id.toLowerCase(), input.receipt_id.toLowerCase());
+      assert(statuses.includes(row.status));
+      assert(verification.includes(row.verification_status));
+      for (const field of ['account', 'payload_hash', 'transaction_hash']) assert(row[field] === null || typeof row[field] === 'string');
+      assert(row.block_number === null || Number.isSafeInteger(row.block_number) && row.block_number >= 0);
+      assert(row.timestamp === null || typeof row.timestamp === 'string' && Number.isFinite(Date.parse(row.timestamp)));
+      return row;
+    };
+    const projection = row => Object.fromEntries(['id', 'account', 'payload_hash', 'transaction_hash', 'block_number', 'timestamp', 'status', 'verification_status'].map(key => [key, row[key]]));
+    const api = async () => {
+      const response = await fetch(input.api.replace(/\/$/, '') + receiptPath, { signal: AbortSignal.timeout(15000) });
+      assert.equal(response.status, 200);
+      return validate(await response.json());
+    };
+    const produce = async stage => {
+      const producer = input.producers[stage];
+      assert.equal(hash(producer.argv[0]), producer.sha256);
+      const result = spawnSync(producer.argv[0], producer.argv.slice(1), { timeout: 60000, encoding: 'utf8', maxBuffer: 4 * 1024 * 1024 });
+      assert.ifError(result.error);
+      assert.equal(result.status, 0, 'genuine ' + stage + ' proof producer failed');
+      const evidence = JSON.parse(result.stdout);
+      const row = validate(evidence.receipt);
+      assert.equal(evidence.canonical_receipt_sha256, input.canonical_receipt.sha256);
+      assert.equal(hash(input.canonical_receipt.path), input.canonical_receipt.sha256);
+      assert.deepEqual(projection(await api()), projection(row), 'proof producer and actual receipt API differ');
+      return row;
+    };
+    (async () => {
+      const baseline = await api();
+      assert(!(baseline.status === 'final' && baseline.verification_status === 'settlement_anchored'), 'initial receipt must be nonterminal');
+      const browser = await chromium.launch({ headless: false });
+      const context = await browser.newContext();
+      const page = await context.newPage();
+      const errors = [];
+      const active = new Set();
+      const requests = [];
+      const answers = [];
+      const responseTasks = [];
+      let maximumActive = 0;
+      const isReceipt = request => new URL(request.url()).pathname.toLowerCase() === receiptPath.toLowerCase();
+      page.on('pageerror', error => errors.push(error.message));
+      page.on('request', request => {
+        if (!isReceipt(request)) return;
+        requests.push({ time: Date.now(), method: request.method() });
+        active.add(request);
+        maximumActive = Math.max(maximumActive, active.size);
+      });
+      page.on('requestfinished', request => active.delete(request));
+      page.on('requestfailed', request => active.delete(request));
+      page.on('response', response => {
+        if (!isReceipt(response.request()) || response.status() !== 200) return;
+        responseTasks.push(response.json().then(validate).then(row => answers.push(projection(row))).catch(error => {
+          if (!response.request().failure()) errors.push('Invalid actual receipt response: ' + error.message);
+        }));
+      });
+      const details = page.locator('[data-receipt-details]');
+      const shown = async () => ({ status: await details.getAttribute('data-settlement-status'), verification_status: await details.getAttribute('data-verification-status') });
+      const waitRow = async row => {
+        await page.waitForFunction(row => {
+          const details = document.querySelector('[data-receipt-details]');
+          return details && details.getAttribute('data-settlement-status') === row.status && details.getAttribute('data-verification-status') === row.verification_status;
+        }, row, { timeout: 45000 });
+        assert.deepEqual(await shown(), { status: row.status, verification_status: row.verification_status });
+        assert.equal(await page.locator('[data-field="id"]').innerText(), row.id);
+      };
+      const stopped = async label => {
+        await wait(1000);
+        const count = requests.length;
+        await wait(6500);
+        assert.equal(requests.length, count, label + ' view continued refreshing');
+      };
+      try {
+        await page.goto(pageUrl);
+        await page.bringToFront();
+        await page.waitForFunction(() => document.visibilityState === 'visible');
+        await waitRow(baseline);
+        await page.locator('[data-receipt-checked-at]').waitFor();
+        const checked = await page.locator('[data-receipt-checked-at]').getAttribute('datetime');
+        await wait(6500);
+        assert.deepEqual(await shown(), { status: baseline.status, verification_status: baseline.verification_status }, 'elapsed time upgraded receipt evidence');
+        assert(requests.length >= 2 && requests.length <= 3, 'open-page poll cadence is not bounded at five seconds');
+        assert.notEqual(await page.locator('[data-receipt-checked-at]').getAttribute('datetime'), checked);
+        const advanced = await produce('advance');
+        assert.equal(advanced.status, baseline.status, 'verification advancement must be independent of settlement');
+        assert(verification.indexOf(advanced.verification_status) > verification.indexOf(baseline.verification_status));
+        assert(!(advanced.status === 'final' && advanced.verification_status === 'settlement_anchored'));
+        await waitRow(advanced);
+        assert.equal(page.url(), pageUrl, 'receipt required navigation to advance');
+        const historical = await produce('historical');
+        assert.equal(historical.status, advanced.status);
+        assert(verification.indexOf(historical.verification_status) < verification.indexOf(advanced.verification_status), 'historical fixture did not expose genuine older indexed evidence');
+        await page.getByText('Conflicting or unsupported receipt evidence. Retaining the last accepted response.', { exact: true }).waitFor({ timeout: 45000 });
+        assert.deepEqual(await shown(), { status: advanced.status, verification_status: advanced.verification_status }, 'older indexed response downgraded stronger receipt evidence');
+        await page.locator('[data-receipt-freshness="stale"]').waitFor();
+        const hidden = await context.newPage();
+        await hidden.goto('about:blank');
+        await hidden.bringToFront();
+        await page.waitForFunction(() => document.visibilityState === 'hidden');
+        await stopped('hidden');
+        await hidden.close();
+        await page.bringToFront();
+        await page.waitForFunction(() => document.visibilityState === 'visible');
+        await waitRow(advanced);
+        await context.setOffline(true);
+        await page.waitForFunction(() => navigator.onLine === false);
+        await page.locator('[data-receipt-freshness="stale"]').waitFor();
+        assert.deepEqual(await shown(), { status: advanced.status, verification_status: advanced.verification_status });
+        await stopped('offline');
+        const reconnected = await produce('reconnect');
+        assert.equal(reconnected.status, advanced.status);
+        assert(verification.indexOf(reconnected.verification_status) > verification.indexOf(advanced.verification_status));
+        assert(!(reconnected.status === 'final' && reconnected.verification_status === 'settlement_anchored'));
+        await context.setOffline(false);
+        await page.waitForFunction(() => navigator.onLine === true);
+        await waitRow(reconnected);
+        await page.locator('[data-receipt-freshness="stale"]').waitFor({ state: 'detached' });
+        const beforeUnmount = requests.length;
+        await page.goto(input.frontend.replace(/\/$/, '') + '/');
+        await stopped('unmounted');
+        assert(requests.length >= beforeUnmount);
+        await page.goto(pageUrl);
+        await page.bringToFront();
+        await waitRow(reconnected);
+        const final = await produce('terminal');
+        assert.equal(final.status, 'final');
+        assert.equal(final.verification_status, 'settlement_anchored');
+        await waitRow(final);
+        await page.locator('[data-receipt-freshness="complete"]').waitFor();
+        await stopped('terminal');
+        await Promise.all(responseTasks);
+        for (const row of [advanced, reconnected, final]) assert(answers.some(answer => JSON.stringify(answer) === JSON.stringify(projection(row))), 'page did not receive the actual indexed projection');
+        assert.equal(maximumActive, 1, 'receipt refresh requests overlapped');
+        assert(requests.every(request => request.method === 'GET'), 'receipt page attempted a mutating API request');
+        assert.deepEqual(errors, [], 'production page threw an unhandled exception');
+        console.log(JSON.stringify({ case: 'receipt-refresh', status: 'passed', requests: requests.length, maximum_active: maximumActive, checks: ['real_receipt_projection', 'open_page_advance', 'independent_rungs', 'timer_stasis', 'freshness', 'stronger_row_retention', 'hidden', 'offline_retention', 'reconnect', 'unmount', 'terminal', 'bounded_requests'], skips: 0 }));
+      } finally {
+        await context.close();
+        await browser.close();
+      }
+    })().catch(error => { console.error(error.message); process.exit(1); });
+    """
+    result = subprocess.run([node, "-e", browser], cwd=frontend_root, input=json.dumps(fixture),
+                            text=True, capture_output=True, timeout=600)
+    print(result.stdout, end="", flush=True)
+    if result.returncode:
+        print(result.stderr, end="", file=sys.stderr)
+        raise AssertionError("real receipt-refresh browser gate failed (exit=" + str(result.returncode) + ")")
+    require(hashlib.sha256(canonical_path.read_bytes()).hexdigest() == canonical["sha256"],
+            "actual canonical receipt changed during refresh qualification")
+    return 12
+
+
 def main():
     parser = argparse.ArgumentParser(description="Paxeer X explorer data-boundary gates")
     parser.add_argument("--case", required=True, choices=CASES)
     args = parser.parse_args()
+    if args.case == "receipt-refresh":
+        try:
+            tests = receipt_refresh()
+        except MissingPrerequisite as error:
+            print("missing prerequisite: " + str(error), file=sys.stderr)
+            return 3
+        except (AssertionError, RuntimeError, OSError, ValueError, KeyError, subprocess.SubprocessError) as error:
+            print("FAIL receipt-refresh: " + str(error), file=sys.stderr)
+            return 1
+        print(f"PAXEER_X_GATE tests={tests} skipped=0", flush=True)
+        return 0
     if args.case == "unified-pagination":
         try:
             tests = unified_pagination()

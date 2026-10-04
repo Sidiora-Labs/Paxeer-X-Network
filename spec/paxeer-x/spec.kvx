@@ -26012,7 +26012,7 @@ qualification_verify_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-22
 
 [task.23.3]
 title = "Refresh receipt evidence while verification is advancing"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 3
 requires = ["0.2", "22.1"]
@@ -26033,6 +26033,15 @@ deployment_profile = "product"
 planned_paths = ["tests/explorer/paxeer-x-data-boundary.py"]
 path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
 evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+retained_layout_200_6_paths = ["tests/explorer/paxeer-x-data-boundary.py"]
+layout_200_6_lease_authority = "User approved inactive lease reassignment; live Codify state has no task23.3 owner. Source and all unfinished criteria retained; only path relocation admitted."
+fleet_authority = "User explicitly ordered30agents into pending integrations within4hours; fresh bounded source implementation resumes. Preserve prior source/evidence and every assertion."
+fleet_role = "/root/integrate_dependencies/native_authority_fixture"
+fleet_scope_manifest = "/root/lx-ops/paxeer-x-integration-2026-10-03/fleet-23.3-brief.json"
+source_status = "complete"
+completion_basis = "implementation under owner CONSTITUTION; qualification separately recorded"
+qualification_status = "UNRUN"
+source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/fleet-23.3-intake.json"
 
 [task.24.8]
 title = "Deliver one authenticated kernel identity generation to the registry"
