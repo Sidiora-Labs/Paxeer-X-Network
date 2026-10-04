@@ -72,10 +72,12 @@ pub fn platform_testnet() -> TestnetConfig {
         package_semver: env!("CARGO_PKG_VERSION").to_owned(),
         wire_protocol_version: LXP_WIRE_PROTOCOL_VERSION,
         network_id: TESTNET_NETWORK_ID,
-        public_endpoint: "https://beta.paxeer.network".to_owned(),
-        gateway_endpoint: "https://api-mainnet-beta.paxeer.network".to_owned(),
-        faucet_endpoint: "https://faucet.paxeer.network".to_owned(),
-        status_endpoint: "https://status.paxeer.network".to_owned(),
+        public_endpoint: "https://layerx-testnet-public.layerx-testnet.svc.cluster.local"
+            .to_owned(),
+        gateway_endpoint: "https://layerx-gateway.layerx-testnet.svc.cluster.local".to_owned(),
+        faucet_endpoint: "https://layerx-faucet-public.layerx-testnet.svc.cluster.local".to_owned(),
+        status_endpoint: "https://layerx-testnet-public.layerx-testnet.svc.cluster.local"
+            .to_owned(),
         reset_schedule: "09:00 UTC on the first Tuesday of every month".to_owned(),
         snapshot_interval: Duration::from_secs(15),
     }
@@ -84,6 +86,23 @@ pub fn platform_testnet() -> TestnetConfig {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn retained_testnet_defaults_are_private_service_origins() {
+        let config = platform_testnet();
+        for endpoint in [
+            config.public_endpoint,
+            config.gateway_endpoint,
+            config.faucet_endpoint,
+            config.status_endpoint,
+        ] {
+            assert!(canonical_https_origin(&endpoint));
+            assert!(endpoint.ends_with(".layerx-testnet.svc.cluster.local"));
+            assert!(!endpoint.contains("paxeer.network"));
+        }
+        assert_eq!(config.network_id, TESTNET_NETWORK_ID);
+        assert_eq!(config.wire_protocol_version, LXP_WIRE_PROTOCOL_VERSION);
+    }
 
     #[test]
     fn package_and_wire_versions_are_independent_release_gates() {

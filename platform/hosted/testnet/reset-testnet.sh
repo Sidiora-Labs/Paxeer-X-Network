@@ -7,6 +7,7 @@ command -v jq >/dev/null
 : "${LAYERX_TESTNET_CA_FILE:?LAYERX_TESTNET_CA_FILE is required}"
 test -r "$LAYERX_TESTNET_RESET_TOKEN_FILE"
 test -r "$LAYERX_TESTNET_CA_FILE"
+test "$(date -u +%u)" -eq 2 || exit 0
 day_of_month=$(date -u +%d)
 day_of_month=${day_of_month#0}
 test "$day_of_month" -le 7 || exit 0

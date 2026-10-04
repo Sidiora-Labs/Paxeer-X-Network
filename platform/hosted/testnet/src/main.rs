@@ -625,6 +625,17 @@ impl HostedReadiness {
     }
 
     fn public_status<'a>(&self, release: &'a ReleaseGate) -> PublicStatus<'a> {
+        let testnet_ready = self.release_ready()
+            && [
+                Dependency::Identity,
+                Dependency::Faucet,
+                Dependency::CoreAdmin,
+                Dependency::ReceiptAuthority,
+                Dependency::Registry,
+                Dependency::Redis,
+            ]
+            .into_iter()
+            .all(|dependency| self.dependency_ready(dependency));
         let component = |dependency: Dependency| ComponentStatus {
             name: dependency.name(),
             state: if self.dependency_ready(dependency) {
@@ -642,11 +653,7 @@ impl HostedReadiness {
             components: vec![
                 ComponentStatus {
                     name: "testnet",
-                    state: if self.release_ready() {
-                        "ready"
-                    } else {
-                        "degraded"
-                    },
+                    state: if testnet_ready { "ready" } else { "degraded" },
                 },
                 component(Dependency::Gateway),
                 component(Dependency::Core),
@@ -1651,6 +1658,53 @@ mod tests {
         }
         assert_eq!(components[1]["state"], "unavailable");
         assert_eq!(components[2]["state"], "ready");
+        Ok(())
+    }
+
+    #[test]
+    fn public_status_distinguishes_each_chain_and_gateway_failure() -> Result<(), String> {
+        for (failed, component) in [
+            (Dependency::Core, "core"),
+            (Dependency::Gateway, "gateway"),
+            (Dependency::Paxeer, "paxeer"),
+        ] {
+            let readiness = HostedReadiness::assemble(&reports(&[failed]), &release());
+            let status = json(readiness.public_status(&release()))?;
+            assert_eq!(status["state"], "degraded");
+            let components = status["components"]
+                .as_array()
+                .ok_or_else(|| "components missing".to_owned())?;
+            for entry in components {
+                if entry["name"] == component {
+                    assert_eq!(entry["state"], "unavailable");
+                } else if entry["name"] != "testnet" {
+                    assert_eq!(entry["state"], "ready");
+                }
+            }
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn private_dependencies_degrade_the_testnet_component_without_hiding_chain_health(
+    ) -> Result<(), String> {
+        for failed in [
+            Dependency::Identity,
+            Dependency::Faucet,
+            Dependency::CoreAdmin,
+            Dependency::ReceiptAuthority,
+            Dependency::Registry,
+            Dependency::Redis,
+        ] {
+            let readiness = HostedReadiness::assemble(&reports(&[failed]), &release());
+            let status = json(readiness.public_status(&release()))?;
+            assert_eq!(status["state"], "degraded");
+            assert_eq!(status["components"][0]["name"], "testnet");
+            assert_eq!(status["components"][0]["state"], "degraded");
+            for index in 1..4 {
+                assert_eq!(status["components"][index]["state"], "ready");
+            }
+        }
         Ok(())
     }
 

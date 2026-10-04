@@ -178,27 +178,9 @@ apiVersion: v1
 kind: Service
 metadata: {name: layerx-faucet-public, namespace: layerx-testnet}
 spec:
-  type: LoadBalancer
-  externalTrafficPolicy: Local
+  type: ClusterIP
   selector: {app: layerx-faucet}
   ports: [{name: https, port: 443, targetPort: https}]
----
-apiVersion: networking.k8s.io/v1
-kind: Ingress
-metadata:
-  name: layerx-testnet-public
-  namespace: layerx-testnet
-  annotations: {nginx.ingress.kubernetes.io/backend-protocol: HTTPS}
-spec:
-  ingressClassName: nginx
-  tls: [{hosts: [beta.paxeer.network], secretName: layerx-testnet-ingress-tls}]
-  rules:
-    - host: beta.paxeer.network
-      http:
-        paths:
-          - path: /
-            pathType: Prefix
-            backend: {service: {name: layerx-testnet-public, port: {name: https}}}
 ---
 apiVersion: batch/v1
 kind: CronJob

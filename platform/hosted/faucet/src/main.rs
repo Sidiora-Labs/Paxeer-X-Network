@@ -202,6 +202,27 @@ fn valid_hex32(value: &str) -> bool {
     value.len() == 64 && value.bytes().all(|byte| byte.is_ascii_hexdigit())
 }
 
+fn address_quota_key(window: u64, address: &str) -> String {
+    format!(
+        "faucet:quota:{window}:address:{}",
+        sha256(&[&address.to_ascii_lowercase()])
+    )
+}
+
+fn validate_quota_bounds(amount: u64, limits: [u64; 3]) -> Result<(), String> {
+    const MAX_EXACT_REDIS_INTEGER: u64 = (1_u64 << 53) - 1;
+    if amount == 0
+        || limits
+            .iter()
+            .any(|limit| *limit < amount || *limit > MAX_EXACT_REDIS_INTEGER)
+    {
+        return Err(
+            "claim amount must fit every positive, exactly representable Redis quota".to_owned(),
+        );
+    }
+    Ok(())
+}
+
 fn read_secret(path_variable: &str) -> Result<Zeroizing<String>, String> {
     let path = env::var(path_variable).map_err(|_| format!("{path_variable} is required"))?;
     let mut value = fs::read_to_string(path).map_err(|error| error.to_string())?;
@@ -253,6 +274,10 @@ fn config() -> Result<Config, String> {
     let window_seconds = parse_u64("LAYERX_FAUCET_WINDOW_SECONDS", 86_400)?;
     let idempotency_seconds = parse_u64("LAYERX_FAUCET_IDEMPOTENCY_SECONDS", 604_800)?;
     let amount = parse_u64("LAYERX_FAUCET_CLAIM_AMOUNT", 1_000_000)?;
+    let identity_limit = parse_u64("LAYERX_FAUCET_IDENTITY_LIMIT", 10_000_000)?;
+    let address_limit = parse_u64("LAYERX_FAUCET_ADDRESS_LIMIT", 10_000_000)?;
+    let network_limit = parse_u64("LAYERX_FAUCET_NETWORK_LIMIT", 50_000_000)?;
+    validate_quota_bounds(amount, [identity_limit, address_limit, network_limit])?;
     if window_seconds == 0 || idempotency_seconds < window_seconds || amount == 0 {
         return Err(
             "window and claim amount must be positive and idempotency retention must cover the window"
@@ -294,9 +319,9 @@ fn config() -> Result<Config, String> {
         )?,
         redis_username: read_secret("LAYERX_FAUCET_REDIS_USERNAME_FILE")?,
         redis_password: read_secret("LAYERX_FAUCET_REDIS_PASSWORD_FILE")?,
-        identity_limit: parse_u64("LAYERX_FAUCET_IDENTITY_LIMIT", 10_000_000)?,
-        address_limit: parse_u64("LAYERX_FAUCET_ADDRESS_LIMIT", 10_000_000)?,
-        network_limit: parse_u64("LAYERX_FAUCET_NETWORK_LIMIT", 50_000_000)?,
+        identity_limit,
+        address_limit,
+        network_limit,
         network_request_limit: parse_u64("LAYERX_FAUCET_NETWORK_REQUEST_LIMIT", 60)?,
         network_request_window_seconds: parse_u64(
             "LAYERX_FAUCET_NETWORK_REQUEST_WINDOW_SECONDS",
@@ -674,9 +699,9 @@ local identity = tonumber(redis.call('GET', KEYS[2]) or '0')
 local address = tonumber(redis.call('GET', KEYS[3]) or '0')
 local network = tonumber(redis.call('GET', KEYS[4]) or '0')
 local quota = ''
-if identity + tonumber(ARGV[2]) > tonumber(ARGV[3]) then quota = 'identity_quota'
-elseif address + tonumber(ARGV[2]) > tonumber(ARGV[4]) then quota = 'address_quota'
-elseif network + tonumber(ARGV[2]) > tonumber(ARGV[5]) then quota = 'network_quota' end
+if tonumber(ARGV[2]) > tonumber(ARGV[3]) - identity then quota = 'identity_quota'
+elseif tonumber(ARGV[2]) > tonumber(ARGV[4]) - address then quota = 'address_quota'
+elseif tonumber(ARGV[2]) > tonumber(ARGV[5]) - network then quota = 'network_quota' end
 if quota ~= '' then
   redis.call('XADD', KEYS[5], '*', 'event', ARGV[9], 'result', quota, 'chain', ARGV[11])
   redis.call('SET', KEYS[6], ARGV[11])
@@ -704,7 +729,7 @@ fn reserve(
     let window = now / config.window_seconds;
     let retry = config.window_seconds - now % config.window_seconds;
     let identity_key = format!("faucet:quota:{window}:identity:{}", sha256(&[identity]));
-    let address_key = format!("faucet:quota:{window}:address:{}", sha256(&[address]));
+    let address_key = address_quota_key(window, address);
     let network_key = format!("faucet:quota:{window}:network:{}", sha256(&[peer]));
     let idem_key = format!("faucet:idem:{}", sha256(&[idempotency]));
     let funding_id = sha256(&[idempotency, digest]);
@@ -1230,6 +1255,39 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn address_quotas_follow_key_bytes_across_hex_case_and_replicas() {
+        let address = "ab".repeat(32);
+        assert_eq!(
+            address_quota_key(7, &address),
+            address_quota_key(7, &address.to_ascii_uppercase())
+        );
+        assert_ne!(
+            address_quota_key(7, &address),
+            address_quota_key(8, &address)
+        );
+        assert_ne!(
+            address_quota_key(7, &address),
+            address_quota_key(7, &"ac".repeat(32))
+        );
+    }
+
+    #[test]
+    fn redis_quota_limits_refuse_inexact_or_unusable_bounds() {
+        let max = (1_u64 << 53) - 1;
+        assert!(validate_quota_bounds(1, [max; 3]).is_ok());
+        assert!(validate_quota_bounds(max, [max; 3]).is_ok());
+        for (amount, limits) in [
+            (0, [1; 3]),
+            (2, [1; 3]),
+            (1, [0, 1, 1]),
+            (1, [max + 1, max, max]),
+            (u64::MAX, [u64::MAX; 3]),
+        ] {
+            assert!(validate_quota_bounds(amount, limits).is_err());
+        }
+    }
 
     fn body(principal: &str, did: &str, public_key: &str) -> Vec<u8> {
         serde_json::json!({

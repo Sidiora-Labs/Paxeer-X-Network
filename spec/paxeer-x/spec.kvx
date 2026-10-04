@@ -23871,8 +23871,8 @@ source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/fleet-104.16.5-pu
 
 [task.104.17.3]
 title = "Build the deployable hosted testnet and faucet"
-status = "in_progress"
-mode = "QUALIFY"
+status = "done"
+mode = "BUILD"
 wave = 2
 requires = ["0.2", "0.7"]
 reqs = ["1089.3", "1089.7"]
@@ -23883,7 +23883,7 @@ do_4 = "Publish testnet endpoints, chain parameters and reset calendar in the do
 do_5 = "Monitor testnet health on the status page, distinguishing testnet, gateway and core degradation."
 do_6 = "Exercise the faucet and a full test payment through the hosted surface in the scheduled CI run."
 do_7 = "Provide this task selector in tools/paxeer-x/gates and execute the full scoped acceptance contract using real production paths. Preserve the retained verification command coverage; move aggregate matrices to release scope and refuse an unknown or unimplemented selector."
-touches = ["platform/hosted/testnet", "platform/hosted/faucet", "platform/docs", "tools/paxeer-x/gates/104.17.3.sh", ".github/workflows/platform.yml"]
+touches = ["platform/hosted/testnet", "platform/hosted/faucet", "tools/paxeer-x/gates/104.17.3.sh", "platform/docs", ".github/workflows/platform.yml"]
 verify_cmd = "timeout 30m tools/paxeer-x/verify-task.sh 104.17.3"
 gate_kind = "planned-adapter"
 max_builds = 1
@@ -23901,6 +23901,16 @@ path_policy = "Existing paths are modified in place. Planned paths must be creat
 evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
 retained_shared_touch_paths = ["platform/Cargo.lock"]
 shared_dependency_owner = "0.7 reconciles the local locked graph before task qualification; every original acceptance criterion remains unchanged."
+retained_layout_200_2_paths = ["platform/docs", ".github/workflows/platform.yml"]
+layout_200_2_lease_authority = "Temporary inactive lease transfer completed after a82df7384 publication; original unfinished paths restored. Original source and criteria preserved."
+fleet_role = "/root/complete_indexer"
+fleet_scope_manifest = "/root/lx-ops/paxeer-x-integration-2026-10-03/fleet-104.17.3-brief.json"
+fleet_cutoff_utc = "2026-10-04T14:06:30Z"
+fleet_authority = "User ordered thirty agents into pending integrations within four hours; this task has a fresh bounded implementation assignment."
+source_status = "complete"
+completion_basis = "implementation under owner CONSTITUTION; qualification separately recorded"
+qualification_status = "UNRUN"
+source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-104.17.3-publication.json"
 
 [task.104.19.2]
 title = "Implement deterministic execution and metering"
