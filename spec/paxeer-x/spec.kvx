@@ -23253,7 +23253,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.103.6.2]
 title = "Implement the layerx-pending-core boundary and its admin plane"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 2
 requires = ["0.2", "24.19"]
@@ -23283,6 +23283,13 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 source_scope = "Reuse the existing core crate and canonical docker/platform-core/Dockerfile; no duplicate service or Docker recipe. Shared Cargo manifests, lockfile, bootstrap producer and Docker recipe are read-only. Preserve full real TLS, admin funding, reset, durability, refusal and strict all-target lint coverage. Missing producer or shared-source changes require a separately scoped prerequisite."
 readiness_obligation = "Requirements 1053.3 and 1053.4 remain required in full under RELEASE task 103.3.7 and candidate-bound runtime assembly task 70.8. This component task proves only the core contribution; it cannot discharge per-journey or global readiness."
+fleet_authority = "User explicitly ordered30agents into pending integrations within4hours; fresh bounded source implementation resumes. Preserve prior source/evidence and every assertion."
+fleet_role = "/root/integrate_dependencies"
+fleet_scope_manifest = "/root/lx-ops/paxeer-x-integration-2026-10-03/fleet-103.6.2-brief.json"
+source_status = "complete"
+completion_basis = "implementation under owner CONSTITUTION; qualification separately recorded"
+qualification_status = "UNRUN"
+source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/fleet-103.6.2-intake.json"
 
 [task.103.6.3]
 title = "Implement the layerx-receipt-authority service over the independent replica"
