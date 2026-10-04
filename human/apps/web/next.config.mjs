@@ -1,6 +1,7 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   output: "standalone",
+  assetPrefix: "/human-ui",
   reactStrictMode: true,
   // src/api/sdk.ts imports the agent SDK's TypeScript sources, and those modules
   // name each other with the .js specifier their own NodeNext compiler requires.

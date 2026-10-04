@@ -348,6 +348,9 @@ impl Registry {
     }
 
     fn health(&self, config: &Config, id: &str) -> Result<(), &'static str> {
+        if id == "human-web" {
+            return super::ui_proxy::human_web_health();
+        }
         if id == "mcp-a2a" {
             if self.mcp.is_empty() {
                 return Err("not_configured");

@@ -153,13 +153,22 @@ impl MirrorVerifier {
     /// # Errors
     /// Refuses legacy archives, invalid native evidence, wrong authority, non-FINAL state or reorgs.
     pub fn checkpoint_with_native_authority(
-        &self, policy: &crate::node::NativeCheckpointPolicy,
+        &self,
+        policy: &crate::node::NativeCheckpointPolicy,
     ) -> Result<CheckpointCoordinate, MirrorVerifyError> {
-        let archived = self.archive.checkpoint.as_ref().ok_or(MirrorVerifyError::CheckpointTrustUnavailable)?;
+        let archived = self
+            .archive
+            .checkpoint
+            .as_ref()
+            .ok_or(MirrorVerifyError::CheckpointTrustUnavailable)?;
         let candidate = crate::publisher::native_archive_candidate(&archived.canonical_certificate)
             .map_err(MirrorVerifyError::Archive)?;
-        crate::node::native_candidate_publication(&candidate, policy, self.trust.sequencer_public_key)
-            .map_err(|_| MirrorVerifyError::CheckpointTrustUnavailable)?;
+        crate::node::native_candidate_publication(
+            &candidate,
+            policy,
+            self.trust.sequencer_public_key,
+        )
+        .map_err(|_| MirrorVerifyError::CheckpointTrustUnavailable)?;
         if candidate.checkpoint_id() != archived.coordinate.checkpoint_id {
             return Err(MirrorVerifyError::CheckpointTrustUnavailable);
         }
@@ -399,5 +408,80 @@ impl MirrorVerifier {
     /// Returns `MirrorVerifyError::CheckpointTrustUnavailable` without independent authority; use `checkpoint_with_native_authority` for retained native evidence.
     pub const fn checkpoint_level() -> Result<(), MirrorVerifyError> {
         Err(MirrorVerifyError::CheckpointTrustUnavailable)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        MirrorEvidenceLevel, MirrorVerificationFreshness, MirrorVerifier, MirrorVerifyError,
+        SignedHeaderTrust,
+    };
+    use crate::{ArchiveData, ArchiveError};
+
+    const ARCHIVE: &[u8] =
+        include_bytes!("../../../contracts/solana-mirror/tests/fixtures/native.archive");
+    const SEQUENCER_ID: &[u8; 32] =
+        include_bytes!("../tests/fixtures/native-publisher/sequencer.id");
+    const SEQUENCER_KEY: &[u8; 32] =
+        include_bytes!("../tests/fixtures/native-publisher/sequencer.public");
+
+    #[test]
+    fn native_fixture_receipt_verifies_and_altered_bytes_are_refused(
+    ) -> Result<(), MirrorVerifyError> {
+        let archive = ArchiveData::decode(ARCHIVE).map_err(MirrorVerifyError::Archive)?;
+        let trust = SignedHeaderTrust {
+            sequencer_id: *SEQUENCER_ID,
+            sequencer_public_key: *SEQUENCER_KEY,
+            first_batch_number: 1,
+            last_batch_number: u64::MAX,
+        };
+        let freshness = MirrorVerificationFreshness::offline(
+            archive.batch_number,
+            archive
+                .checkpoint
+                .as_ref()
+                .map(|checkpoint| checkpoint.coordinate),
+        );
+        let verifier = MirrorVerifier::admit(ARCHIVE, trust, freshness, None)?;
+        let canonical = archive
+            .records
+            .receipts
+            .first()
+            .ok_or(MirrorVerifyError::ReceiptMissing)?;
+        let verified = verifier.receipt(canonical)?;
+        assert_eq!(verified.level(), MirrorEvidenceLevel::BatchIncluded);
+        assert_eq!(verified.batch_number(), archive.batch_number);
+        assert!(verified.value().evidence().receipt_digest().is_some());
+        assert!(matches!(
+            MirrorVerifier::checkpoint_level(),
+            Err(MirrorVerifyError::CheckpointTrustUnavailable)
+        ));
+
+        let mut changed_receipt = canonical.clone();
+        let last = changed_receipt
+            .last_mut()
+            .ok_or(MirrorVerifyError::ReceiptMissing)?;
+        *last ^= 1;
+        assert!(matches!(
+            verifier.receipt(&changed_receipt),
+            Err(MirrorVerifyError::ReceiptMissing)
+        ));
+
+        let mut changed_archive = ARCHIVE.to_vec();
+        let signature_offset = 24 + 4 + archive.canonical_batch_header.len() + 32 + 32 + 8 + 8;
+        changed_archive[signature_offset] ^= 1;
+        assert!(matches!(
+            MirrorVerifier::admit(&changed_archive, trust, freshness, None),
+            Err(MirrorVerifyError::Archive(ArchiveError::BatchAuthorization))
+        ));
+
+        let mut changed_trust = trust;
+        changed_trust.sequencer_public_key[0] ^= 1;
+        assert!(matches!(
+            MirrorVerifier::admit(ARCHIVE, changed_trust, freshness, None),
+            Err(MirrorVerifyError::HeaderAuthority)
+        ));
+        Ok(())
     }
 }

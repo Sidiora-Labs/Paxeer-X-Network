@@ -696,6 +696,29 @@
       "aliases": [],
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3
+    },
+    {
+      "id": "human-web",
+      "purpose": "Public native program evidence verification page and API",
+      "exposure": "product",
+      "discovery_path": "/v1/routes/human-web",
+      "transport": "http",
+      "authentication": "gateway-api-key",
+      "upstream": "human-web",
+      "timeout_seconds": 8,
+      "retries": 0,
+      "health_predicate": "protected-human-web-profile-and-actual-page-response",
+      "version": "paxeer-x.ui-bindings.v2",
+      "consumers": [
+        "explorer"
+      ],
+      "dependencies": "Human web native evidence verifier",
+      "aliases": [],
+      "timeout_scope": "per-io",
+      "connect_timeout_seconds": 3,
+      "transports": [
+        "http"
+      ]
     }
   ],
   "routes": [
@@ -45922,6 +45945,162 @@
       "proxy": true,
       "timeout_scope": "per-io",
       "connect_timeout_seconds": 3
+    },
+    {
+      "id": "human-web:GET:/explorer/verify",
+      "service": "human-web",
+      "method": "GET",
+      "path": "/explorer/verify",
+      "transport": "http",
+      "authentication": "public-read",
+      "upstream": "human-web",
+      "timeout_seconds": 8,
+      "retries": 0,
+      "health_predicate": "protected-human-web-profile-and-actual-page-response",
+      "version": "1",
+      "consumers": [
+        "explorer"
+      ],
+      "source": "platform/hosted/gateway/src/ui_proxy.rs",
+      "proxy": true,
+      "timeout_scope": "per-io",
+      "connect_timeout_seconds": 3,
+      "upstream_path": "/explorer/verify",
+      "http_protocol": "next-ui",
+      "ui_route_kind": "page",
+      "request_body_max_bytes": 0
+    },
+    {
+      "id": "human-web:HEAD:/explorer/verify",
+      "service": "human-web",
+      "method": "HEAD",
+      "path": "/explorer/verify",
+      "transport": "http",
+      "authentication": "public-read",
+      "upstream": "human-web",
+      "timeout_seconds": 8,
+      "retries": 0,
+      "health_predicate": "protected-human-web-profile-and-actual-page-response",
+      "version": "1",
+      "consumers": [
+        "explorer"
+      ],
+      "source": "platform/hosted/gateway/src/ui_proxy.rs",
+      "proxy": true,
+      "timeout_scope": "per-io",
+      "connect_timeout_seconds": 3,
+      "upstream_path": "/explorer/verify",
+      "http_protocol": "next-ui",
+      "ui_route_kind": "page",
+      "request_body_max_bytes": 0
+    },
+    {
+      "id": "human-web:POST:/api/explorer/verify",
+      "service": "human-web",
+      "method": "POST",
+      "path": "/api/explorer/verify",
+      "transport": "http",
+      "authentication": "public-evidence",
+      "upstream": "human-web",
+      "timeout_seconds": 8,
+      "retries": 0,
+      "health_predicate": "protected-human-web-profile-and-actual-page-response",
+      "version": "1",
+      "consumers": [
+        "explorer"
+      ],
+      "source": "platform/hosted/gateway/src/ui_proxy.rs",
+      "proxy": true,
+      "timeout_scope": "per-io",
+      "connect_timeout_seconds": 3,
+      "upstream_path": "/api/explorer/verify",
+      "http_protocol": "next-ui",
+      "ui_route_kind": "api",
+      "request_body_max_bytes": 1100000
+    },
+    {
+      "id": "human-web:GET:/human-ui/_next/static/{asset}",
+      "service": "human-web",
+      "method": "GET",
+      "path": "/human-ui/_next/static/{asset}",
+      "transport": "http",
+      "authentication": "public-read",
+      "upstream": "human-web",
+      "timeout_seconds": 8,
+      "retries": 0,
+      "health_predicate": "protected-human-web-profile-and-actual-page-response",
+      "version": "1",
+      "consumers": [
+        "explorer"
+      ],
+      "source": "platform/hosted/gateway/src/ui_proxy.rs",
+      "proxy": true,
+      "timeout_scope": "per-io",
+      "connect_timeout_seconds": 3,
+      "upstream_path": "/_next/static/{asset}",
+      "http_protocol": "next-ui",
+      "ui_route_kind": "generated-asset",
+      "request_body_max_bytes": 0,
+      "asset_prefix": "/human-ui/_next/static/",
+      "asset_suffixes": [
+        ".js",
+        ".json",
+        ".css",
+        ".woff",
+        ".woff2",
+        ".ttf",
+        ".otf",
+        ".png",
+        ".jpg",
+        ".jpeg",
+        ".webp",
+        ".avif",
+        ".svg",
+        ".ico"
+      ],
+      "asset_max_path_bytes": 1023
+    },
+    {
+      "id": "human-web:HEAD:/human-ui/_next/static/{asset}",
+      "service": "human-web",
+      "method": "HEAD",
+      "path": "/human-ui/_next/static/{asset}",
+      "transport": "http",
+      "authentication": "public-read",
+      "upstream": "human-web",
+      "timeout_seconds": 8,
+      "retries": 0,
+      "health_predicate": "protected-human-web-profile-and-actual-page-response",
+      "version": "1",
+      "consumers": [
+        "explorer"
+      ],
+      "source": "platform/hosted/gateway/src/ui_proxy.rs",
+      "proxy": true,
+      "timeout_scope": "per-io",
+      "connect_timeout_seconds": 3,
+      "upstream_path": "/_next/static/{asset}",
+      "http_protocol": "next-ui",
+      "ui_route_kind": "generated-asset",
+      "request_body_max_bytes": 0,
+      "asset_prefix": "/human-ui/_next/static/",
+      "asset_suffixes": [
+        ".js",
+        ".json",
+        ".css",
+        ".woff",
+        ".woff2",
+        ".ttf",
+        ".otf",
+        ".png",
+        ".jpg",
+        ".jpeg",
+        ".webp",
+        ".avif",
+        ".svg",
+        ".ico"
+      ],
+      "asset_max_path_bytes": 1023
     }
   ],
   "denied_surfaces": [

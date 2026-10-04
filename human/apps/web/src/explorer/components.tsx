@@ -60,7 +60,33 @@ export function FreshnessDisplay({ freshness }: Readonly<{ freshness?: ExplorerF
   );
 }
 
-export function MirrorFreshnessDisplay({ mirror }:Readonly<{mirror:MirrorVerificationProvenance}>){const lag=mirror.batchLag.kind==="known"?formatCopy("explorer.mirror.lag.known",{batches:mirror.batchLag.batches}):copyEntry("explorer.mirror.lag.unknown").message;return <ExplorerFreshnessView title={copyEntry(mirror.degraded?"explorer.mirror.degraded":"explorer.mirror.canonical").message} description={formatCopy("explorer.mirror.detail",{source:mirror.sourceId,target:mirror.target,position:mirror.canonicalPosition,lag,failovers:mirror.failoverCount,agreement:mirror.agreeingSources})} current={!mirror.degraded}/>;}
+export function MirrorFreshnessDisplay({ mirror }: Readonly<{ mirror: MirrorVerificationProvenance }>) {
+  const lag = mirror.batchLag.kind === "known"
+    ? formatCopy("explorer.mirror.lag.known", { batches: mirror.batchLag.batches })
+    : copyEntry("explorer.mirror.lag.unknown").message;
+  const latestBatch = mirror.latestBatch === undefined
+    ? copyEntry("explorer.mirror.latest_batch.unknown").message
+    : formatCopy("explorer.mirror.latest_batch", { batch: mirror.latestBatch });
+  const checkpoint = copyEntry(`explorer.mirror.checkpoint.${mirror.checkpointLevel}`).message;
+  return (
+    <ExplorerFreshnessView
+      title={copyEntry(mirror.degraded ? "explorer.mirror.degraded" : "explorer.mirror.canonical").message}
+      description={[
+        formatCopy("explorer.mirror.detail", {
+          source: mirror.sourceId,
+          target: mirror.target,
+          position: mirror.canonicalPosition,
+          lag,
+          failovers: mirror.failoverCount,
+          agreement: mirror.agreeingSources,
+        }),
+        latestBatch,
+        checkpoint,
+      ].join(" ")}
+      current={!mirror.degraded}
+    />
+  );
+}
 
 export function ExplorerUnavailable() {
   return (

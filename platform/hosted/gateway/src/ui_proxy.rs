@@ -10,39 +10,119 @@ const HOST: &str = "api-mainnet-beta.paxeer.network";
 const ORIGIN: &str = "https://api-mainnet-beta.paxeer.network";
 const EXPLORER: &str = "https://explorer-frontend-production-6eef.up.railway.app";
 static WALLET: OnceLock<Option<http::Endpoint>> = OnceLock::new();
+static HUMAN_WEB: OnceLock<Option<http::Endpoint>> = OnceLock::new();
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-struct Bindings { schema: String, wallet_origin: String }
+struct Bindings {
+    schema: String,
+    wallet_origin: String,
+    human_web_origin: Option<String>,
+}
 
 pub(super) fn configure() -> Result<(), String> {
-    let endpoint = if let Some(path) = std::env::var_os("LAYERX_GATEWAY_UI_BINDINGS_FILE") {
-        let before = std::fs::symlink_metadata(&path).map_err(|_| "UI bindings unavailable")?;
-        if !before.is_file() || before.nlink() != 1 || before.uid() != 0 || before.mode() & 0o077 != 0 || before.len() > 8192 {
-            return Err("UI bindings are not protected".into());
-        }
-        let mut file = std::fs::File::open(&path).map_err(|_| "UI bindings unavailable")?;
-        let after = file.metadata().map_err(|_| "UI bindings unavailable")?;
-        if before.dev() != after.dev() || before.ino() != after.ino() || before.uid() != after.uid()
-            || before.mode() != after.mode() || before.len() != after.len() {
-            return Err("UI binding identity changed".into());
-        }
-        let mut bytes = Vec::new();
-        (&mut file).take(8193).read_to_end(&mut bytes).map_err(|_| "UI bindings unreadable")?;
-        if bytes.len() > 8192 { return Err("UI bindings exceed bound".into()); }
-        let binding: Bindings = serde_json::from_slice(&bytes).map_err(|_| "UI bindings malformed")?;
-        if binding.schema != "paxeer-x.ui-bindings.v1" { return Err("UI binding schema refused".into()); }
-        let endpoint = http::Endpoint::parse(&binding.wallet_origin)?;
-        if endpoint.port != 443 || !endpoint.base_path.is_empty() || endpoint.host == HOST
-            || endpoint.host.len() > 253 || !endpoint.host.contains('.')
-            || endpoint.host.split('.').any(|label| label.is_empty() || label.len() > 63
-                || label.starts_with('-') || label.ends_with('-')
-                || !label.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')) {
-            return Err("UI origin refused".into());
-        }
-        Some(endpoint)
-    } else { None };
-    WALLET.set(endpoint).map_err(|_| "UI bindings already configured".into())
+    let (endpoint, human_web) =
+        if let Some(path) = std::env::var_os("LAYERX_GATEWAY_UI_BINDINGS_FILE") {
+            let before = std::fs::symlink_metadata(&path).map_err(|_| "UI bindings unavailable")?;
+            if !before.is_file()
+                || before.nlink() != 1
+                || before.uid() != 0
+                || before.mode() & 0o077 != 0
+                || before.len() > 8192
+            {
+                return Err("UI bindings are not protected".into());
+            }
+            let mut file = std::fs::File::open(&path).map_err(|_| "UI bindings unavailable")?;
+            let after = file.metadata().map_err(|_| "UI bindings unavailable")?;
+            if before.dev() != after.dev()
+                || before.ino() != after.ino()
+                || before.uid() != after.uid()
+                || before.mode() != after.mode()
+                || before.len() != after.len()
+            {
+                return Err("UI binding identity changed".into());
+            }
+            let mut bytes = Vec::new();
+            (&mut file)
+                .take(8193)
+                .read_to_end(&mut bytes)
+                .map_err(|_| "UI bindings unreadable")?;
+            if bytes.len() > 8192 {
+                return Err("UI bindings exceed bound".into());
+            }
+            let binding: Bindings =
+                serde_json::from_slice(&bytes).map_err(|_| "UI bindings malformed")?;
+            let document: serde_json::Value =
+                serde_json::from_slice(&bytes).map_err(|_| "UI bindings malformed")?;
+            if !matches!(
+                binding.schema.as_str(),
+                "paxeer-x.ui-bindings.v1" | "paxeer-x.ui-bindings.v2"
+            ) || (binding.schema == "paxeer-x.ui-bindings.v1"
+                && document.get("human_web_origin").is_some())
+            {
+                return Err("UI binding schema refused".into());
+            }
+            let endpoint = ui_origin(&binding.wallet_origin)?;
+            let human_web = binding
+                .human_web_origin
+                .as_deref()
+                .map(ui_origin)
+                .transpose()?;
+            (Some(endpoint), human_web)
+        } else {
+            (None, None)
+        };
+    WALLET
+        .set(endpoint)
+        .map_err(|_| "UI bindings already configured")?;
+    HUMAN_WEB
+        .set(human_web)
+        .map_err(|_| "UI bindings already configured".into())
+}
+
+fn ui_origin(origin: &str) -> Result<http::Endpoint, String> {
+    let endpoint = http::Endpoint::parse(origin)?;
+    if endpoint.port != 443
+        || !endpoint.base_path.is_empty()
+        || endpoint.host == HOST
+        || endpoint.host.len() > 253
+        || !endpoint.host.contains('.')
+        || endpoint.host.split('.').any(|label| {
+            label.is_empty()
+                || label.len() > 63
+                || label.starts_with('-')
+                || label.ends_with('-')
+                || !label
+                    .bytes()
+                    .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
+        })
+    {
+        return Err("UI origin refused".into());
+    }
+    Ok(endpoint)
+}
+
+pub(super) fn human_web_health() -> Result<(), &'static str> {
+    let endpoint = HUMAN_WEB
+        .get()
+        .and_then(Option::as_ref)
+        .ok_or("not_configured")?;
+    let request = http::OutboundRequest {
+        method: "GET",
+        path: "/explorer/verify",
+        idempotency: None,
+        content_type: "",
+        body: &[],
+    };
+    let answer =
+        http::human_web_request(endpoint, &request, &[]).map_err(|_| "upstream_unavailable")?;
+    if answer.response.status != 200
+        || answer.response.content_type.split(';').next() != Some("text/html")
+        || answer.response.body.is_empty()
+    {
+        return Err("invalid_health_response");
+    }
+    Ok(())
 }
 
 fn matches_path(template: &str, path: &str) -> bool {
@@ -52,87 +132,203 @@ fn matches_path(template: &str, path: &str) -> bool {
         match (expected.next(), actual.next()) {
             (None, None) => return true,
             (Some(want), Some(got)) if want.contains('[') => {
-                let Some((prefix, tail)) = want.split_once('[') else { return false; };
-                let Some((_, suffix)) = tail.split_once(']') else { return false; };
-                let Some(value) = got.strip_prefix(prefix).and_then(|v| v.strip_suffix(suffix)) else { return false; };
-                if value.is_empty() || value.len() > 256 || matches!(value, "." | "..")
-                    || !value.bytes().all(|b| b.is_ascii_alphanumeric() || b"-._~".contains(&b)) { return false; }
+                let Some((prefix, tail)) = want.split_once('[') else {
+                    return false;
+                };
+                let Some((_, suffix)) = tail.split_once(']') else {
+                    return false;
+                };
+                let Some(value) = got
+                    .strip_prefix(prefix)
+                    .and_then(|v| v.strip_suffix(suffix))
+                else {
+                    return false;
+                };
+                if value.is_empty()
+                    || value.len() > 256
+                    || matches!(value, "." | "..")
+                    || !value
+                        .bytes()
+                        .all(|b| b.is_ascii_alphanumeric() || b"-._~".contains(&b))
+                {
+                    return false;
+                }
             }
-            (Some(want), Some(got)) if want == got => {},
+            (Some(want), Some(got)) if want == got => {}
             _ => return false,
         }
     }
 }
 
 fn asset(path: &str) -> bool {
-    if ASSETS.contains(&path) { return true; }
-    ["/wallet/_next/static/", "/explorer/_next/static/", "/wallet/icons/app/", "/explorer/assets/configs/", "/explorer/assets/favicon/", "/explorer/assets/multichain/", "/explorer/assets/essential-dapps/", "/explorer/icons/"].iter().any(|prefix| {
-        path.strip_prefix(prefix).is_some_and(|tail| !tail.is_empty() && tail.len() < 1024
-            && tail.split('/').all(|p| !p.is_empty() && !p.starts_with('.')
-                && p.bytes().all(|b| b.is_ascii_alphanumeric() || b"-._[]()".contains(&b)))
-            && [".js", ".json", ".css", ".woff", ".woff2", ".ttf", ".otf", ".png", ".jpg", ".jpeg", ".webp", ".avif", ".svg", ".ico"].iter().any(|ext| tail.ends_with(ext)))
+    if ASSETS.contains(&path) {
+        return true;
+    }
+    [
+        "/wallet/_next/static/",
+        "/explorer/_next/static/",
+        "/wallet/icons/app/",
+        "/explorer/assets/configs/",
+        "/explorer/assets/favicon/",
+        "/explorer/assets/multichain/",
+        "/explorer/assets/essential-dapps/",
+        "/explorer/icons/",
+    ]
+    .iter()
+    .any(|prefix| {
+        path.strip_prefix(prefix).is_some_and(|tail| {
+            !tail.is_empty()
+                && tail.len() < 1024
+                && tail.split('/').all(|p| {
+                    !p.is_empty()
+                        && !p.starts_with('.')
+                        && p.bytes()
+                            .all(|b| b.is_ascii_alphanumeric() || b"-._[]()".contains(&b))
+                })
+                && [
+                    ".js", ".json", ".css", ".woff", ".woff2", ".ttf", ".otf", ".png", ".jpg",
+                    ".jpeg", ".webp", ".avif", ".svg", ".ico",
+                ]
+                .iter()
+                .any(|ext| tail.ends_with(ext))
+        })
     })
 }
 
 fn data_page(path: &str) -> bool {
-    let Some(tail) = path.strip_prefix("/explorer/_next/data/") else { return false; };
-    let Some((build, page)) = tail.split_once('/') else { return false; };
-    if build.is_empty() || build.len() > 128 || !build.bytes().all(|b| b.is_ascii_alphanumeric() || b"-_".contains(&b)) { return false; }
-    let Some(page) = page.strip_suffix(".json") else { return false; };
-    let page = if page == "index" { "/explorer".to_owned() } else { format!("/explorer/{page}") };
+    let Some(tail) = path.strip_prefix("/explorer/_next/data/") else {
+        return false;
+    };
+    let Some((build, page)) = tail.split_once('/') else {
+        return false;
+    };
+    if build.is_empty()
+        || build.len() > 128
+        || !build
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b"-_".contains(&b))
+    {
+        return false;
+    }
+    let Some(page) = page.strip_suffix(".json") else {
+        return false;
+    };
+    let page = if page == "index" {
+        "/explorer".to_owned()
+    } else {
+        format!("/explorer/{page}")
+    };
     PAGES.iter().any(|p| matches_path(p, &page))
 }
 
 fn admitted(method: &str, path: &str) -> bool {
-    API.iter().any(|(m, p)| *m == method && matches_path(p, path))
-        || (matches!(method, "GET" | "HEAD") && (PAGES.iter().any(|p| matches_path(p, path)) || asset(path) || data_page(path)))
+    API.iter()
+        .any(|(m, p)| *m == method && matches_path(p, path))
+        || (matches!(method, "GET" | "HEAD")
+            && (PAGES.iter().any(|p| matches_path(p, path)) || asset(path) || data_page(path)))
 }
 
 fn cookie_name(name: &str) -> bool {
-    matches!(name, "nav_bar_collapsed" | "_explorer_key" | "api_temp_token" | "rewards_api_token"
-        | "rewards_ref_code" | "txs_sort" | "chakra-ui-color-mode" | "chakra-ui-color-theme"
-        | "address_identicon_type" | "address_format" | "time_format" | "local_time" | "indexing_alert"
-        | "adblock_detected" | "_mixpanel_debug" | "address_nft_display_type" | "hide_add_to_wallet_button"
-        | "uuid" | "show_scam_tokens" | "show_poor_reputation_tokens" | "app_profile" | "table_view_on_mobile")
+    matches!(
+        name,
+        "nav_bar_collapsed"
+            | "_explorer_key"
+            | "api_temp_token"
+            | "rewards_api_token"
+            | "rewards_ref_code"
+            | "txs_sort"
+            | "chakra-ui-color-mode"
+            | "chakra-ui-color-theme"
+            | "address_identicon_type"
+            | "address_format"
+            | "time_format"
+            | "local_time"
+            | "indexing_alert"
+            | "adblock_detected"
+            | "_mixpanel_debug"
+            | "address_nft_display_type"
+            | "hide_add_to_wallet_button"
+            | "uuid"
+            | "show_scam_tokens"
+            | "show_poor_reputation_tokens"
+            | "app_profile"
+            | "table_view_on_mobile"
+    )
 }
 
 fn cookie_value(value: &str) -> bool {
-    value.bytes().all(|b| b > 0x20 && b < 0x7f && !b"\";,\\".contains(&b))
+    value
+        .bytes()
+        .all(|b| b > 0x20 && b < 0x7f && !b"\";,\\".contains(&b))
 }
 
 fn cookies(raw: &str) -> Result<Zeroizing<String>, String> {
     let mut output = Zeroizing::new(String::new());
     let mut seen = BTreeSet::new();
-    if raw.len() > 4096 { return Err("UI cookies exceed bound".into()); }
+    if raw.len() > 4096 {
+        return Err("UI cookies exceed bound".into());
+    }
     for part in raw.split(';') {
         let (name, value) = part.trim().split_once('=').ok_or("UI cookie malformed")?;
-        if !cookie_name(name) { continue; }
-        if !seen.insert(name) || !cookie_value(value) { return Err("UI cookie refused".into()); }
-        if !output.is_empty() { output.push_str("; "); }
-        output.push_str(name); output.push('='); output.push_str(value);
+        if !cookie_name(name) {
+            continue;
+        }
+        if !seen.insert(name) || !cookie_value(value) {
+            return Err("UI cookie refused".into());
+        }
+        if !output.is_empty() {
+            output.push_str("; ");
+        }
+        output.push_str(name);
+        output.push('=');
+        output.push_str(value);
     }
     Ok(output)
 }
 
 fn scoped_cookie(raw: &str) -> Result<Option<String>, String> {
-    if raw.len() > 4096 || !raw.bytes().all(|b| b.is_ascii_graphic() || b == b' ') { return Err("UI response cookie refused".into()); }
+    if raw.len() > 4096 || !raw.bytes().all(|b| b.is_ascii_graphic() || b == b' ') {
+        return Err("UI response cookie refused".into());
+    }
     let mut parts = raw.split(';');
     let first = parts.next().ok_or("UI cookie empty")?.trim();
     let (name, value) = first.split_once('=').ok_or("UI cookie malformed")?;
-    if !cookie_name(name) { return Ok(None); }
-    if !cookie_value(value) { return Err("UI cookie value refused".into()); }
+    if !cookie_name(name) {
+        return Ok(None);
+    }
+    if !cookie_value(value) {
+        return Err("UI cookie value refused".into());
+    }
     let mut output = first.to_owned();
     let mut seen = BTreeSet::new();
     for attribute in parts {
         let attribute = attribute.trim();
-        let key = attribute.split('=').next().unwrap_or_default().to_ascii_lowercase();
-        if !seen.insert(key.clone()) { return Err("UI duplicate cookie attribute".into()); }
+        let key = attribute
+            .split('=')
+            .next()
+            .unwrap_or_default()
+            .to_ascii_lowercase();
+        if !seen.insert(key.clone()) {
+            return Err("UI duplicate cookie attribute".into());
+        }
         match key.as_str() {
-            "domain" | "path" => {},
-            "secure" if !attribute.contains('=') => {},
-            "httponly" if !attribute.contains('=') => { output.push_str("; HttpOnly"); },
-            "samesite" if attribute.split_once('=').is_some_and(|(_, v)| matches!(v.to_ascii_lowercase().as_str(), "lax" | "strict" | "none")) => { output.push_str("; "); output.push_str(attribute); },
-            "expires" | "max-age" if attribute.contains('=') => { output.push_str("; "); output.push_str(attribute); },
+            "domain" | "path" => {}
+            "secure" if !attribute.contains('=') => {}
+            "httponly" if !attribute.contains('=') => {
+                output.push_str("; HttpOnly");
+            }
+            "samesite"
+                if attribute.split_once('=').is_some_and(|(_, v)| {
+                    matches!(v.to_ascii_lowercase().as_str(), "lax" | "strict" | "none")
+                }) =>
+            {
+                output.push_str("; ");
+                output.push_str(attribute);
+            }
+            "expires" | "max-age" if attribute.contains('=') => {
+                output.push_str("; ");
+                output.push_str(attribute);
+            }
             _ => return Err("UI cookie attribute refused".into()),
         }
     }
@@ -141,81 +337,263 @@ fn scoped_cookie(raw: &str) -> Result<Option<String>, String> {
 }
 
 fn confined(value: &str, prefix: &str) -> bool {
-    http::ui_split_target(value).is_ok_and(|(path, _)| path == prefix || path.strip_prefix(prefix).is_some_and(|s| s.starts_with('/')))
+    http::ui_split_target(value).is_ok_and(|(path, _)| {
+        path == prefix
+            || path
+                .strip_prefix(prefix)
+                .is_some_and(|s| s.starts_with('/'))
+    })
 }
 
-fn prepare(request: &IncomingRequest) -> Result<(http::Endpoint, Vec<(String, Zeroizing<String>)>), u16> {
-    let (path, _) = http::ui_split_target(&request.path).map_err(|_| 400_u16)?;
+fn prepare(
+    request: &IncomingRequest,
+) -> Result<(http::Endpoint, Vec<(String, Zeroizing<String>)>), u16> {
+    let (path, query) = http::ui_split_target(&request.path).map_err(|_| 400_u16)?;
+    let human_web = http::human_web_owns_target(path);
     let wallet = path == "/wallet" || path.starts_with("/wallet/");
-    let prefix = if wallet { "/wallet" } else { "/explorer" };
-    if path.starts_with("/wallet/api/wallet/") && !matches!(request.method.as_str(), "GET" | "HEAD") { return Err(405); }
-    if !admitted(&request.method, path) { return Err(if API.iter().any(|(_, p)| matches_path(p, path)) || PAGES.iter().any(|p| matches_path(p, path)) || asset(path) || data_page(path) { 405 } else { 404 }); }
+    let prefix = if wallet {
+        "/wallet"
+    } else if path.starts_with("/human-ui/") {
+        "/human-ui"
+    } else if human_web {
+        "/explorer/verify"
+    } else {
+        "/explorer"
+    };
+    if path.starts_with("/wallet/api/wallet/") && !matches!(request.method.as_str(), "GET" | "HEAD")
+    {
+        return Err(405);
+    }
+    if human_web {
+        if query.is_some() && path == "/api/explorer/verify" {
+            return Err(400);
+        }
+        if !http::human_web_admitted(&request.method, path) {
+            return Err(405);
+        }
+    } else if !admitted(&request.method, path) {
+        return Err(
+            if API.iter().any(|(_, p)| matches_path(p, path))
+                || PAGES.iter().any(|p| matches_path(p, path))
+                || asset(path)
+                || data_page(path)
+            {
+                405
+            } else {
+                404
+            },
+        );
+    }
     if request.headers.get("host").is_none_or(|v| v != HOST)
-        || request.headers.contains_key("x-layerx-principal") || request.headers.contains_key("x-layerx-api-key")
-        || request.headers.contains_key("upgrade") || request.body.len() > 32768
-        || (matches!(request.method.as_str(), "GET" | "HEAD") && !request.body.is_empty()) { return Err(400); }
+        || request.headers.contains_key("x-layerx-principal")
+        || request.headers.contains_key("x-layerx-api-key")
+        || request.headers.contains_key("upgrade")
+        || request.body.len()
+            > if request.method == "POST" && path == "/api/explorer/verify" {
+                1_100_000
+            } else {
+                32768
+            }
+        || (matches!(request.method.as_str(), "GET" | "HEAD") && !request.body.is_empty())
+    {
+        return Err(400);
+    }
     let mutating = !matches!(request.method.as_str(), "GET" | "HEAD");
     if request.headers.get("origin").is_some_and(|v| v != ORIGIN)
         || (mutating && request.headers.get("origin").is_none_or(|v| v != ORIGIN))
-        || request.headers.get("sec-fetch-site").is_some_and(|v| v == "cross-site" && (mutating || path.contains("/api/"))) { return Err(403); }
-    if mutating && request.headers.get("content-type").is_none_or(|v| v.split(';').next() != Some("application/json")) { return Err(415); }
-    let endpoint = if wallet { WALLET.get().and_then(Option::as_ref).cloned().ok_or(503_u16)? } else { http::Endpoint::parse(EXPLORER).map_err(|_| 503_u16)? };
-    let mut headers = vec![("x-forwarded-host".to_owned(), Zeroizing::new(HOST.to_owned())), ("x-forwarded-proto".to_owned(), Zeroizing::new("https".to_owned()))];
+        || request
+            .headers
+            .get("sec-fetch-site")
+            .is_some_and(|v| v == "cross-site" && (mutating || path.contains("/api/")))
+    {
+        return Err(403);
+    }
+    if mutating
+        && request
+            .headers
+            .get("content-type")
+            .is_none_or(|v| v.split(';').next() != Some("application/json"))
+    {
+        return Err(415);
+    }
+    let endpoint = if human_web {
+        HUMAN_WEB
+            .get()
+            .and_then(Option::as_ref)
+            .cloned()
+            .ok_or(503_u16)?
+    } else if wallet {
+        WALLET
+            .get()
+            .and_then(Option::as_ref)
+            .cloned()
+            .ok_or(503_u16)?
+    } else {
+        http::Endpoint::parse(EXPLORER).map_err(|_| 503_u16)?
+    };
+    let mut headers = vec![
+        (
+            "x-forwarded-host".to_owned(),
+            Zeroizing::new(HOST.to_owned()),
+        ),
+        (
+            "x-forwarded-proto".to_owned(),
+            Zeroizing::new("https".to_owned()),
+        ),
+    ];
     for (name, value) in &request.headers {
-        if matches!(name.as_str(), "accept" | "accept-language" | "accept-encoding" | "rsc" | "next-router-state-tree" | "next-router-prefetch" | "if-none-match" | "if-modified-since" | "user-agent" | "origin" | "x-csrf-token") {
-            if value.len() > 8192 { return Err(400); }
+        if matches!(
+            name.as_str(),
+            "accept"
+                | "accept-language"
+                | "accept-encoding"
+                | "rsc"
+                | "next-router-state-tree"
+                | "next-router-prefetch"
+                | "if-none-match"
+                | "if-modified-since"
+                | "user-agent"
+                | "origin"
+                | "x-csrf-token"
+        ) {
+            if value.len() > 8192 {
+                return Err(400);
+            }
             headers.push((name.clone(), Zeroizing::new(value.clone())));
         } else if name == "next-url" {
-            if !confined(value, prefix) { return Err(400); }
+            if !confined(value, prefix) {
+                return Err(400);
+            }
             headers.push((name.clone(), Zeroizing::new(value.clone())));
         } else if name == "referer" {
             if let Some(target) = value.strip_prefix(ORIGIN) {
-                if confined(target, prefix) { headers.push((name.clone(), Zeroizing::new(value.clone()))); }
+                if confined(target, prefix) {
+                    headers.push((name.clone(), Zeroizing::new(value.clone())));
+                }
             }
-        } else if name == "cookie" && !wallet {
+        } else if name == "cookie" && !wallet && !human_web {
             let value = cookies(value).map_err(|_| 400_u16)?;
-            if !value.is_empty() { headers.push((name.clone(), value)); }
+            if !value.is_empty() {
+                headers.push((name.clone(), value));
+            }
         }
     }
     Ok((endpoint, headers))
 }
 
-fn safe_response(answer: &mut http::UiResponse, endpoint: &http::Endpoint, prefix: &str) -> Result<(), String> {
+fn safe_response(
+    answer: &mut http::UiResponse,
+    endpoint: &http::Endpoint,
+    prefix: &str,
+) -> Result<(), String> {
     let upstream_origin = format!("https://{}", endpoint.host);
     let mut output = Vec::new();
     for (name, value) in std::mem::take(&mut answer.response.headers) {
         if name == "location" {
-            let target = value.strip_prefix(&upstream_origin).or_else(|| value.strip_prefix(ORIGIN)).unwrap_or(&value);
-            if !confined(target, prefix) { return Err("UI redirect escapes mount".into()); }
+            let target = value
+                .strip_prefix(&upstream_origin)
+                .or_else(|| value.strip_prefix(ORIGIN))
+                .unwrap_or(&value);
+            if !confined(target, prefix) {
+                return Err("UI redirect escapes mount".into());
+            }
             output.push((name, target.to_owned()));
         } else if name == "set-cookie" {
-            if prefix == "/explorer" { if let Some(value) = scoped_cookie(&value)? { output.push((name, value)); } }
+            if prefix == "/explorer" {
+                if let Some(value) = scoped_cookie(&value)? {
+                    output.push((name, value));
+                }
+            }
         } else if name == "service-worker-allowed" {
-            if !confined(&value, prefix) { return Err("UI worker scope escapes mount".into()); }
+            if !confined(&value, prefix) {
+                return Err("UI worker scope escapes mount".into());
+            }
             output.push((name, value));
-        } else { output.push((name, value)); }
+        } else {
+            output.push((name, value));
+        }
     }
     answer.response.headers = output;
     Ok(())
 }
 
-pub(super) fn exchange(request: &IncomingRequest, downstream: &mut impl Write) -> Option<Result<(), String>> {
-    if !http::ui_owns_target(&request.path) || request.path.split('?').next().is_some_and(|p| p == "/explorer/backend" || p.starts_with("/explorer/backend/")) { return None; }
+pub(super) fn exchange(
+    request: &IncomingRequest,
+    downstream: &mut impl Write,
+) -> Option<Result<(), String>> {
+    if !http::ui_owns_target(&request.path)
+        || request
+            .path
+            .split('?')
+            .next()
+            .is_some_and(|p| p == "/explorer/backend" || p.starts_with("/explorer/backend/"))
+    {
+        return None;
+    }
     Some(serve(request, downstream))
 }
 
-fn refusal(request: &IncomingRequest, downstream: &mut impl Write, status: u16) -> Result<(), String> {
-    http::write_ui_failure(downstream, response(status, "ui_request_refused", None), request.method == "HEAD")
+fn refusal(
+    request: &IncomingRequest,
+    downstream: &mut impl Write,
+    status: u16,
+) -> Result<(), String> {
+    http::write_ui_failure(
+        downstream,
+        response(status, "ui_request_refused", None),
+        request.method == "HEAD",
+    )
 }
 
 fn serve(request: &IncomingRequest, downstream: &mut impl Write) -> Result<(), String> {
-    let (endpoint, headers) = match prepare(request) { Ok(value) => value, Err(status) => return refusal(request, downstream, status) };
-    let headers: Vec<(&str, &str)> = headers.iter().map(|(n, v)| (n.as_str(), v.as_str())).collect();
-    let outbound = http::OutboundRequest { method: &request.method, path: &request.path, idempotency: None,
-        content_type: request.headers.get("content-type").map_or("", String::as_str), body: &request.body };
-    let mut answer = match http::ui_request(&endpoint, &outbound, &headers) { Ok(value) => value, Err(_) => return refusal(request, downstream, 502) };
-    let prefix = if request.path.starts_with("/wallet") { "/wallet" } else { "/explorer" };
-    if safe_response(&mut answer, &endpoint, prefix).is_err() { return refusal(request, downstream, 502); }
+    let (endpoint, headers) = match prepare(request) {
+        Ok(value) => value,
+        Err(status) => return refusal(request, downstream, status),
+    };
+    let headers: Vec<(&str, &str)> = headers
+        .iter()
+        .map(|(n, v)| (n.as_str(), v.as_str()))
+        .collect();
+    let human_web = http::human_web_owns_target(&request.path);
+    let upstream_path = if request.path.starts_with("/human-ui/_next/static/") {
+        request
+            .path
+            .strip_prefix("/human-ui")
+            .unwrap_or(&request.path)
+    } else {
+        &request.path
+    };
+    let outbound = http::OutboundRequest {
+        method: &request.method,
+        path: upstream_path,
+        idempotency: None,
+        content_type: request
+            .headers
+            .get("content-type")
+            .map_or("", String::as_str),
+        body: &request.body,
+    };
+    let answer = if human_web {
+        http::human_web_request(&endpoint, &outbound, &headers)
+    } else {
+        http::ui_request(&endpoint, &outbound, &headers)
+    };
+    let mut answer = match answer {
+        Ok(value) => value,
+        Err(_) => return refusal(request, downstream, 502),
+    };
+    let prefix = if request.path.starts_with("/wallet") {
+        "/wallet"
+    } else if request.path.starts_with("/human-ui/") {
+        "/human-ui"
+    } else if human_web {
+        request.path.split('?').next().unwrap_or(&request.path)
+    } else {
+        "/explorer"
+    };
+    if safe_response(&mut answer, &endpoint, prefix).is_err() {
+        return refusal(request, downstream, 502);
+    }
     http::write_ui_response(downstream, answer, request.method == "HEAD")
 }
 
@@ -852,13 +1230,19 @@ const API: &[(&str, &str)] = &[
     ("GET", "/explorer/api/healthz"),
     ("GET", "/explorer/api/log"),
     ("GET", "/explorer/api/metrics"),
-    ("GET", "/explorer/api/tokens/[hash]/instances/[id]/media-type"),
+    (
+        "GET",
+        "/explorer/api/tokens/[hash]/instances/[id]/media-type",
+    ),
     ("GET", "/explorer/node-api/config"),
     ("GET", "/explorer/node-api/csrf"),
     ("GET", "/explorer/node-api/healthz"),
     ("GET", "/explorer/node-api/log"),
     ("GET", "/explorer/node-api/metrics"),
-    ("GET", "/explorer/node-api/tokens/[hash]/instances/[id]/media-type"),
+    (
+        "GET",
+        "/explorer/node-api/tokens/[hash]/instances/[id]/media-type",
+    ),
     ("GET", "/wallet/api/candle/cv/bnb/history"),
     ("GET", "/wallet/api/candle/cv/bnb/price/"),
     ("GET", "/wallet/api/candle/cv/eth/history"),
@@ -879,9 +1263,15 @@ const API: &[(&str, &str)] = &[
     ("GET", "/wallet/api/pns/api/v1/domains:lookup"),
     ("GET", "/wallet/api/points/balance/[address]"),
     ("GET", "/wallet/api/sdk/candles/history"),
-    ("GET", "/wallet/api/sdk/metadata/metadata/[tokenAddress].json"),
+    (
+        "GET",
+        "/wallet/api/sdk/metadata/metadata/[tokenAddress].json",
+    ),
     ("GET", "/wallet/api/sdk/stats/stats/[poolAddress]"),
-    ("GET", "/wallet/api/sdk/stats/stats/[poolAddress]/holders/distribution"),
+    (
+        "GET",
+        "/wallet/api/sdk/stats/stats/[poolAddress]/holders/distribution",
+    ),
     ("GET", "/wallet/api/sdk/stats/stats/batch"),
     ("GET", "/wallet/api/sidiora/logo/[address].png"),
     ("GET", "/wallet/api/sidiora/metadata"),
@@ -892,34 +1282,88 @@ const API: &[(&str, &str)] = &[
     ("GET", "/wallet/api/wallet/api/v1/[address]/profile"),
     ("GET", "/wallet/api/wallet/api/v1/[address]/rank"),
     ("GET", "/wallet/api/wallet/api/v1/charts/[symbol]"),
-    ("GET", "/wallet/api/wallet/api/v1/portfolio/[address]/charts/holdings"),
-    ("GET", "/wallet/api/wallet/api/v1/portfolio/[address]/charts/pnl"),
-    ("GET", "/wallet/api/wallet/api/v1/portfolio/[address]/charts/tx-volume"),
-    ("GET", "/wallet/api/wallet/api/v1/portfolio/[address]/charts/value"),
+    (
+        "GET",
+        "/wallet/api/wallet/api/v1/portfolio/[address]/charts/holdings",
+    ),
+    (
+        "GET",
+        "/wallet/api/wallet/api/v1/portfolio/[address]/charts/pnl",
+    ),
+    (
+        "GET",
+        "/wallet/api/wallet/api/v1/portfolio/[address]/charts/tx-volume",
+    ),
+    (
+        "GET",
+        "/wallet/api/wallet/api/v1/portfolio/[address]/charts/value",
+    ),
     ("GET", "/wallet/api/wallet/api/v1/portfolio/[address]/pnl"),
     ("GET", "/wallet/api/wallet/api/v1/trending"),
     ("GET", "/wallet/api/wallet/api/v2/addresses/[addressHash]"),
-    ("GET", "/wallet/api/wallet/api/v2/addresses/[addressHash]/coin-balance-history"),
-    ("GET", "/wallet/api/wallet/api/v2/addresses/[addressHash]/coin-balance-history-by-day"),
-    ("GET", "/wallet/api/wallet/api/v2/addresses/[addressHash]/counters"),
-    ("GET", "/wallet/api/wallet/api/v2/addresses/[addressHash]/logs"),
-    ("GET", "/wallet/api/wallet/api/v2/addresses/[addressHash]/nft"),
-    ("GET", "/wallet/api/wallet/api/v2/addresses/[addressHash]/nft/collections"),
-    ("GET", "/wallet/api/wallet/api/v2/addresses/[addressHash]/tabs-counters"),
-    ("GET", "/wallet/api/wallet/api/v2/addresses/[addressHash]/token-balances"),
-    ("GET", "/wallet/api/wallet/api/v2/addresses/[addressHash]/token-transfers"),
-    ("GET", "/wallet/api/wallet/api/v2/addresses/[addressHash]/tokens"),
-    ("GET", "/wallet/api/wallet/api/v2/addresses/[addressHash]/transactions"),
+    (
+        "GET",
+        "/wallet/api/wallet/api/v2/addresses/[addressHash]/coin-balance-history",
+    ),
+    (
+        "GET",
+        "/wallet/api/wallet/api/v2/addresses/[addressHash]/coin-balance-history-by-day",
+    ),
+    (
+        "GET",
+        "/wallet/api/wallet/api/v2/addresses/[addressHash]/counters",
+    ),
+    (
+        "GET",
+        "/wallet/api/wallet/api/v2/addresses/[addressHash]/logs",
+    ),
+    (
+        "GET",
+        "/wallet/api/wallet/api/v2/addresses/[addressHash]/nft",
+    ),
+    (
+        "GET",
+        "/wallet/api/wallet/api/v2/addresses/[addressHash]/nft/collections",
+    ),
+    (
+        "GET",
+        "/wallet/api/wallet/api/v2/addresses/[addressHash]/tabs-counters",
+    ),
+    (
+        "GET",
+        "/wallet/api/wallet/api/v2/addresses/[addressHash]/token-balances",
+    ),
+    (
+        "GET",
+        "/wallet/api/wallet/api/v2/addresses/[addressHash]/token-transfers",
+    ),
+    (
+        "GET",
+        "/wallet/api/wallet/api/v2/addresses/[addressHash]/tokens",
+    ),
+    (
+        "GET",
+        "/wallet/api/wallet/api/v2/addresses/[addressHash]/transactions",
+    ),
     ("GET", "/wallet/api/wallet/api/v2/main-page/blocks"),
     ("GET", "/wallet/api/wallet/api/v2/main-page/transactions"),
     ("GET", "/wallet/api/wallet/api/v2/search"),
     ("GET", "/wallet/api/wallet/api/v2/stats"),
     ("GET", "/wallet/api/wallet/api/v2/tokens"),
     ("GET", "/wallet/api/wallet/api/v2/tokens/[tokenHash]"),
-    ("GET", "/wallet/api/wallet/api/v2/tokens/[tokenHash]/holders"),
+    (
+        "GET",
+        "/wallet/api/wallet/api/v2/tokens/[tokenHash]/holders",
+    ),
     ("GET", "/wallet/api/wallet/api/v2/transactions/[txHash]"),
-    ("GET", "/wallet/api/wallet/api/v2/transactions/[txHash]/logs"),
-    ("GET", "/wallet/api/wallet/api/v2/transactions/[txHash]/token-transfers"),
+    (
+        "GET",
+        "/wallet/api/wallet/api/v2/transactions/[txHash]/logs",
+    ),
+    (
+        "GET",
+        "/wallet/api/wallet/api/v2/transactions/[txHash]/token-transfers",
+    ),
     ("GET", "/wallet/api/wallet/health"),
     ("HEAD", "/explorer/api/config"),
     ("HEAD", "/explorer/api/healthz"),
@@ -932,34 +1376,88 @@ const API: &[(&str, &str)] = &[
     ("HEAD", "/wallet/api/wallet/api/v1/[address]/profile"),
     ("HEAD", "/wallet/api/wallet/api/v1/[address]/rank"),
     ("HEAD", "/wallet/api/wallet/api/v1/charts/[symbol]"),
-    ("HEAD", "/wallet/api/wallet/api/v1/portfolio/[address]/charts/holdings"),
-    ("HEAD", "/wallet/api/wallet/api/v1/portfolio/[address]/charts/pnl"),
-    ("HEAD", "/wallet/api/wallet/api/v1/portfolio/[address]/charts/tx-volume"),
-    ("HEAD", "/wallet/api/wallet/api/v1/portfolio/[address]/charts/value"),
+    (
+        "HEAD",
+        "/wallet/api/wallet/api/v1/portfolio/[address]/charts/holdings",
+    ),
+    (
+        "HEAD",
+        "/wallet/api/wallet/api/v1/portfolio/[address]/charts/pnl",
+    ),
+    (
+        "HEAD",
+        "/wallet/api/wallet/api/v1/portfolio/[address]/charts/tx-volume",
+    ),
+    (
+        "HEAD",
+        "/wallet/api/wallet/api/v1/portfolio/[address]/charts/value",
+    ),
     ("HEAD", "/wallet/api/wallet/api/v1/portfolio/[address]/pnl"),
     ("HEAD", "/wallet/api/wallet/api/v1/trending"),
     ("HEAD", "/wallet/api/wallet/api/v2/addresses/[addressHash]"),
-    ("HEAD", "/wallet/api/wallet/api/v2/addresses/[addressHash]/coin-balance-history"),
-    ("HEAD", "/wallet/api/wallet/api/v2/addresses/[addressHash]/coin-balance-history-by-day"),
-    ("HEAD", "/wallet/api/wallet/api/v2/addresses/[addressHash]/counters"),
-    ("HEAD", "/wallet/api/wallet/api/v2/addresses/[addressHash]/logs"),
-    ("HEAD", "/wallet/api/wallet/api/v2/addresses/[addressHash]/nft"),
-    ("HEAD", "/wallet/api/wallet/api/v2/addresses/[addressHash]/nft/collections"),
-    ("HEAD", "/wallet/api/wallet/api/v2/addresses/[addressHash]/tabs-counters"),
-    ("HEAD", "/wallet/api/wallet/api/v2/addresses/[addressHash]/token-balances"),
-    ("HEAD", "/wallet/api/wallet/api/v2/addresses/[addressHash]/token-transfers"),
-    ("HEAD", "/wallet/api/wallet/api/v2/addresses/[addressHash]/tokens"),
-    ("HEAD", "/wallet/api/wallet/api/v2/addresses/[addressHash]/transactions"),
+    (
+        "HEAD",
+        "/wallet/api/wallet/api/v2/addresses/[addressHash]/coin-balance-history",
+    ),
+    (
+        "HEAD",
+        "/wallet/api/wallet/api/v2/addresses/[addressHash]/coin-balance-history-by-day",
+    ),
+    (
+        "HEAD",
+        "/wallet/api/wallet/api/v2/addresses/[addressHash]/counters",
+    ),
+    (
+        "HEAD",
+        "/wallet/api/wallet/api/v2/addresses/[addressHash]/logs",
+    ),
+    (
+        "HEAD",
+        "/wallet/api/wallet/api/v2/addresses/[addressHash]/nft",
+    ),
+    (
+        "HEAD",
+        "/wallet/api/wallet/api/v2/addresses/[addressHash]/nft/collections",
+    ),
+    (
+        "HEAD",
+        "/wallet/api/wallet/api/v2/addresses/[addressHash]/tabs-counters",
+    ),
+    (
+        "HEAD",
+        "/wallet/api/wallet/api/v2/addresses/[addressHash]/token-balances",
+    ),
+    (
+        "HEAD",
+        "/wallet/api/wallet/api/v2/addresses/[addressHash]/token-transfers",
+    ),
+    (
+        "HEAD",
+        "/wallet/api/wallet/api/v2/addresses/[addressHash]/tokens",
+    ),
+    (
+        "HEAD",
+        "/wallet/api/wallet/api/v2/addresses/[addressHash]/transactions",
+    ),
     ("HEAD", "/wallet/api/wallet/api/v2/main-page/blocks"),
     ("HEAD", "/wallet/api/wallet/api/v2/main-page/transactions"),
     ("HEAD", "/wallet/api/wallet/api/v2/search"),
     ("HEAD", "/wallet/api/wallet/api/v2/stats"),
     ("HEAD", "/wallet/api/wallet/api/v2/tokens"),
     ("HEAD", "/wallet/api/wallet/api/v2/tokens/[tokenHash]"),
-    ("HEAD", "/wallet/api/wallet/api/v2/tokens/[tokenHash]/holders"),
+    (
+        "HEAD",
+        "/wallet/api/wallet/api/v2/tokens/[tokenHash]/holders",
+    ),
     ("HEAD", "/wallet/api/wallet/api/v2/transactions/[txHash]"),
-    ("HEAD", "/wallet/api/wallet/api/v2/transactions/[txHash]/logs"),
-    ("HEAD", "/wallet/api/wallet/api/v2/transactions/[txHash]/token-transfers"),
+    (
+        "HEAD",
+        "/wallet/api/wallet/api/v2/transactions/[txHash]/logs",
+    ),
+    (
+        "HEAD",
+        "/wallet/api/wallet/api/v2/transactions/[txHash]/token-transfers",
+    ),
     ("HEAD", "/wallet/api/wallet/health"),
     ("POST", "/explorer/api/log"),
     ("POST", "/explorer/api/monitoring/invalid-api-schema"),

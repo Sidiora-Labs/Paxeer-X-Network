@@ -1848,12 +1848,45 @@ pub fn explorer_request(
     Ok(answer)
 }
 
-pub fn ui_owns_target(target: &str) -> bool {
-    ["/wallet", "/explorer"].iter().any(|prefix| {
-        target
-            .strip_prefix(prefix)
-            .is_some_and(|tail| tail.is_empty() || tail.starts_with('/') || tail.starts_with('?'))
+fn next_static_path(path: &str, prefix: &str) -> bool {
+    path.strip_prefix(prefix).is_some_and(|tail| {
+        !tail.is_empty()
+            && tail.len() < 1024
+            && tail.split('/').all(|part| {
+                !part.is_empty()
+                    && !part.starts_with('.')
+                    && part
+                        .bytes()
+                        .all(|byte| byte.is_ascii_alphanumeric() || b"-._[]()".contains(&byte))
+            })
+            && [
+                ".js", ".json", ".css", ".woff", ".woff2", ".ttf", ".otf", ".png", ".jpg", ".jpeg",
+                ".webp", ".avif", ".svg", ".ico",
+            ]
+            .iter()
+            .any(|extension| tail.ends_with(extension))
     })
+}
+
+pub fn human_web_owns_target(target: &str) -> bool {
+    let path = target.split('?').next().unwrap_or(target);
+    matches!(path, "/explorer/verify" | "/api/explorer/verify")
+        || next_static_path(path, "/human-ui/_next/static/")
+}
+
+pub fn human_web_admitted(method: &str, path: &str) -> bool {
+    (matches!(method, "GET" | "HEAD")
+        && (path == "/explorer/verify" || next_static_path(path, "/human-ui/_next/static/")))
+        || (method == "POST" && path == "/api/explorer/verify")
+}
+
+pub fn ui_owns_target(target: &str) -> bool {
+    human_web_owns_target(target)
+        || ["/wallet", "/explorer"].iter().any(|prefix| {
+            target.strip_prefix(prefix).is_some_and(|tail| {
+                tail.is_empty() || tail.starts_with('/') || tail.starts_with('?')
+            })
+        })
 }
 
 pub fn ui_split_target(target: &str) -> Result<(&str, Option<&str>), String> {
@@ -1951,16 +1984,45 @@ pub fn ui_request(
     request: &OutboundRequest<'_>,
     forwarded: &[(&str, &str)],
 ) -> Result<UiResponse, String> {
-    let (path, _) = ui_split_target(request.path)?;
-    if !ui_owns_target(path)
-        || !matches!(request.method, "GET" | "HEAD" | "POST" | "DELETE")
-        || request.body.len() > 32768
+    ui_request_profile(endpoint, request, forwarded, false)
+}
+
+pub fn human_web_request(
+    endpoint: &Endpoint,
+    request: &OutboundRequest<'_>,
+    forwarded: &[(&str, &str)],
+) -> Result<UiResponse, String> {
+    ui_request_profile(endpoint, request, forwarded, true)
+}
+
+fn ui_request_profile(
+    endpoint: &Endpoint,
+    request: &OutboundRequest<'_>,
+    forwarded: &[(&str, &str)],
+    human_web: bool,
+) -> Result<UiResponse, String> {
+    let (path, query) = ui_split_target(request.path)?;
+    let verify = human_web && request.method == "POST" && path == "/api/explorer/verify";
+    let admitted = if human_web {
+        (verify && query.is_none())
+            || (matches!(request.method, "GET" | "HEAD")
+                && (path == "/explorer/verify" || next_static_path(path, "/_next/static/"))
+                && request.body.is_empty())
+    } else {
+        ["/wallet", "/explorer"].iter().any(|prefix| {
+            path.strip_prefix(prefix)
+                .is_some_and(|tail| tail.is_empty() || tail.starts_with('/'))
+        }) && matches!(request.method, "GET" | "HEAD" | "POST" | "DELETE")
+    };
+    if !admitted
+        || request.body.len() > if verify { 1_100_000 } else { 32768 }
+        || (verify && request.content_type.split(';').next() != Some("application/json"))
         || request.idempotency.is_some()
         || request.content_type.len() > 256
         || !request
             .content_type
             .bytes()
-            .all(|b| b.is_ascii_graphic() || b == b' ')
+            .all(|byte| byte.is_ascii_graphic() || byte == b' ')
     {
         return Err("UI outbound request refused".into());
     }
