@@ -33736,13 +33736,13 @@ qualification_note = "Original owner confirms explicit native effect admission c
 
 [task.104.13.12]
 title = "Connect actual native approval facts to shared canonical Human API projections"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 3
 requires = ["0.2", "104.13.7"]
 reqs = ["1064.3", "1064.8", "1071.1", "1071.5"]
 do_1 = "Project actual authenticated records into distinct canonical summaries, details, decisions, home and durable push; use genuine wall timestamps, managed association, evidence export and postreservation budget without raising verification status."
-touches = ["tools/qualification/paxeer-x/human-canonical-projections.py", "human/apps/web/copy/catalog.ts", "human/apps/web/copy/messages.generated.ts"]
+touches = ["tools/qualification/paxeer-x/human-canonical-projections.py", "human/apps/web/copy/messages.generated.ts", "human/apps/web/copy/catalog.ts", "scripts/paxeer-x/builders/104.13.12.py"]
 build_cmd = "timeout 20m env CARGO_TARGET_DIR=/root/lx-target/human /root/.cargo/bin/cargo build --locked --manifest-path human/Cargo.toml -p layerx-human-service"
 verify_cmd = "timeout 20m python3 tools/qualification/paxeer-x/human-canonical-projections.py --candidate-manifest \"$PAXEER_X_CANDIDATE_MANIFEST\""
 max_builds = 1
@@ -33752,14 +33752,22 @@ time_limit_minutes = 30
 stop_condition = "Stop at original dispatch cap, missing authority, unrelated failure or any weakening; record exact source state and evidence."
 completion_basis_policy = "Owner CONSTITUTION: fully implemented DONE; qualification separate and partial remains in_progress."
 source_ownership = "Root serializes shared manifests, lockfiles, spec and publication; no deployment."
-source_status = "partial"
-qualification_status = "unrun_partial_source"
+source_status = "complete"
+qualification_status = "UNRUN"
 remaining_source = "Native profile canonical consumers and exact held/budget evidence require genuine producer; terminal budget owner and focused projection case incomplete."
 
 
 retained_contract_paths = ["human/crates/layerx-human-service/src/server/production_components.rs", "human/crates/layerx-human-service/src/server/mod.rs", "human/crates/layerx-human-service/src/server/projection.rs", "tools/qualification/paxeer-x/human-canonical-projections.py", "human/apps/web/copy/catalog.ts", "human/apps/web/copy/messages.generated.ts"]
 delegated_source_task = "104.13.22"
 delegated_source_paths = ["human/crates/layerx-human-service/src/server/production_components.rs", "human/crates/layerx-human-service/src/server/mod.rs", "human/crates/layerx-human-service/src/server/projection.rs"]
+retained_fleet_20261004_paths = ["human/apps/web/copy/catalog.ts"]
+fleet_lease_authority = "Owner approved inactive lease reassignment; all unfinished source/criteria/status preserved."
+fanout_role = "complete_program_accounts/gateway_readiness_document"
+fanout_scope_delegated = []
+fanout_basis = "Owner requested maximum parallel implementation on 2026-10-04; delegated shared file edits require root coordination and retain original acceptance criteria"
+completion_basis = "implementation under owner CONSTITUTION; qualification separately recorded"
+source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/fanout-104.13.12-intake.json"
+
 [task.104.35.19]
 title = "Preserve deterministic authenticated admission capture through maintenance publication"
 status = "done"

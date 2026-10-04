@@ -21,9 +21,16 @@ const [root, manifestPath, outputPath] = process.argv.slice(2);
 const fixture = JSON.parse(await readFile(manifestPath, 'utf8'));
 const {createHumanApiClient, HumanApiError} = await import(pathToFileURL(root + '/human/apps/web/src/api/generated/index.ts').href);
 const {conformance} = await import(pathToFileURL(root + '/human/apps/web/src/api/generated/conformance.ts').href);
+const {copyEntry} = await import(pathToFileURL(root + '/human/apps/web/copy/runtime.ts').href);
+const {copyEntries} = await import(pathToFileURL(root + '/human/apps/web/copy/catalog.ts').href);
+const {runtimeMessages} = await import(pathToFileURL(root + '/human/apps/web/copy/messages.generated.ts').href);
 let tests = 0;
 const stable = (value) => JSON.stringify(value, (_, item) => typeof item === 'bigint' ? item.toString() : item);
 function check(value, message) { if (!value) throw new Error(message); tests += 1; }
+check(stable(runtimeMessages) === stable(copyEntries.map(({key,message}) => [key,message])), 'runtime copy is generated from the actual authoritative catalog');
+function copy(key) {
+  check(typeof key === 'string' && copyEntry(key).message.length > 0, 'actual service projection copy resolves through the production catalog');
+}
 const clients = new Map();
 for (const [name, session] of Object.entries(fixture.sessions)) {
   const jar = new Map(Object.entries(session.cookies));
@@ -32,7 +39,7 @@ for (const [name, session] of Object.entries(fixture.sessions)) {
       const headers = new Headers(init.headers);
       headers.set('Origin', fixture.origin);
       headers.set('Cookie', [...jar].map(([key,value]) => key + '=' + value).join('; '));
-      const response = await fetch(url, {...init, headers, redirect:'error'});
+      const response = await fetch(url, {...init, headers, redirect:'error', signal:init.signal ?? AbortSignal.timeout(20000)});
       for (const cookie of response.headers.getSetCookie()) {
         const pair = cookie.split(';')[0], index = pair.indexOf('=');
         jar.set(pair.slice(0,index), pair.slice(index+1));
@@ -57,12 +64,16 @@ function summary(value) {
   check(/^apr_[a-f0-9]{64}$/.test(value.approval_id) && /^agt_[a-f0-9]{64}$/.test(value.agent_id), 'strict approval and actual managed child IDs');
   timestamp(value.expires_at);
   check(value.reason_copy_key === 'approval.reason.policy-required', 'actual policy reason preserved');
+  copy(value.reason_copy_key);
   check(['receipt-verified','checkpoint-finalised','settlement-anchored'].includes(value.budget_remaining_after.verification), 'native verified post-reservation budget label');
+  check(value.budget_remaining_after.money.currency === value.amount.currency, 'remaining budget retains the actual held asset currency');
 }
 async function exportEvidence(ref, supplied = client) {
   check(/^evd_[a-f0-9]{64}$/.test(ref.evidence_id), 'strict genuine evidence ID');
   const material = await supplied.evidenceGet(ref.evidence_id);
+  check(material.evidence_id === ref.evidence_id, 'actual evidence response retains the requested owned identifier');
   const bytes = Buffer.from(material.bytes_base64, 'base64');
+  check(bytes.toString('base64') === material.bytes_base64, 'export uses canonical complete base64 bytes');
   check(bytes.length > 0 && 'evd_' + createHash('sha256').update(bytes).digest('hex') === ref.evidence_id, 'exported actual evidence bytes bind exact digest');
   check(material.verification === ref.verification && material.class === ref.class, 'export retains actual verification and class');
   await denied(() => foreign.evidenceGet(ref.evidence_id), ['not-found','forbidden']);
@@ -72,6 +83,8 @@ const agents = (await client.agentList()).agents;
 check(agents.length > 0, 'actual managed agent producer required');
 for (const value of agents) {
   check(/^agt_[a-f0-9]{64}$/.test(value.agent_id), 'actual managed ID');
+  copy(value.state_copy_key);
+  copy(value.limit.enforcement_copy_key);
   for (const key of ['created_at','updated_at']) timestamp(value[key]);
   timestamp(value.spend.period_start); timestamp(value.spend.period_end);
   check(value.spend.verification === 'receipt-verified' || value.spend.verification === 'checkpoint-finalised' || value.spend.verification === 'settlement-anchored', 'native managed verification mapping');
@@ -88,8 +101,11 @@ for (const value of inventory.approvals) {
   summary(value); seen.set(value.approval_id, value);
   const detail = await client.approvalGet(value.approval_id);
   fields(detail, detailFields);
+  copy(detail.state_copy_key);
+  copy(detail.reason_copy_key);
   check(detail.agent_id === value.agent_id && detail.agent_name === value.agent_name && detail.state === value.state, 'shared list and detail actual association');
   check(detail.facts.amount.amount === value.amount.amount && detail.facts.amount.currency === value.amount.currency && detail.facts.counterparty === value.counterparty && detail.facts.expires_at === value.expires_at, 'same held disclosure facts across distinct projections');
+  check(stable(detail.budget_remaining_after) === stable(value.budget_remaining_after), 'shared detail and summary use the same genuine post-reservation budget');
   timestamp(detail.created_at);
   check(detail.evidence.length > 0, 'real hold or budget evidence required');
   for (const ref of detail.evidence) await exportEvidence(ref);
@@ -124,7 +140,7 @@ const page = await client.streamNext(opened.cursor);
 let delivered = 0;
 for (const event of page.events) {
   timestamp(event.observed_at);
-  if (event.approval) { summary(event.approval); check(seen.has(event.approval.approval_id), 'durable approval stream uses canonical summary'); delivered += 1; }
+  if (event.approval) { summary(event.approval); check(seen.has(event.approval.approval_id), 'durable approval stream uses canonical summary'); check(stable(event.approval) === stable(seen.get(event.approval.approval_id)), 'durable push retains the exact canonical approval facts'); delivered += 1; }
 }
 check(delivered > 0, 'real durable approval producer append observed');
 check(Array.isArray(fixture.decisions) && fixture.decisions.length > 0, 'actual winning and repeated decision cases required');
@@ -134,9 +150,24 @@ for (const row of fixture.decisions) {
   const decision = await conformance[row.operation](input);
   fields(decision,['approval_id','state','state_copy_key','money_moved','moved_copy_key','evidence']);
   check(decision.approval_id === row.approval_id && decision.state === row.state && decision.money_moved === false, 'actual decision never claims money moved');
+  copy(decision.state_copy_key);
+  copy(decision.moved_copy_key);
+  check(decision.moved_copy_key === 'approval.decision.no-money-moved', 'decision wording states authorization without claiming execution');
   check(stable(await conformance[row.operation](input)) === stable(decision), 'same decision replay returns exact original outcome');
   const terminal = await client.approvalGet(row.approval_id);
   check(terminal.state === decision.state, 'terminal owner record remains readable through canonical detail');
+  fields(terminal, detailFields);
+  copy(terminal.state_copy_key);
+  check(['receipt-verified','checkpoint-finalised','settlement-anchored'].includes(terminal.budget_remaining_after.verification), 'terminal budget retains its actual achieved verification level');
+  for (const reference of terminal.evidence) await exportEvidence(reference);
+  const terminalInventory = await client.approvalList();
+  const terminalSummary = terminalInventory.approvals.find((value) => value.approval_id === row.approval_id);
+  check(terminalSummary !== undefined, 'actual terminal approval remains present in canonical inventory');
+  summary(terminalSummary);
+  check(terminalSummary.state === terminal.state && stable(terminalSummary.budget_remaining_after) === stable(terminal.budget_remaining_after), 'terminal list and detail share genuine state and budget');
+  const terminalHome = await client.homeSummary();
+  check(stable(terminalHome.approvals) === stable(terminalInventory.approvals), 'terminal home retains canonical owner inventory');
+  await denied(() => foreign.approvalGet(row.approval_id), ['not-found','forbidden']);
 }
 await writeFile(outputPath, stable({tests}), {mode:0o600});
 '''
