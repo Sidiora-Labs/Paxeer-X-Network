@@ -1209,9 +1209,219 @@ def rate_publication_recovery(material, manifest, evidence):
     print(f'PAXEER_X_GATE tests={len(RATE_SCENARIOS)} skipped=0')
 
 
+BROWSER_SPONSOR_DRIVER = r"""
+import { readFileSync, writeFileSync } from 'node:fs';
+import { pathToFileURL } from 'node:url';
+const input = JSON.parse(readFileSync(process.argv[2], 'utf8'));
+const { chromium } = await import(pathToFileURL(input.playwright_module));
+const browser = await chromium.launch({ executablePath: input.browser, headless: true });
+const require = (value, reason) => { if (!value) throw new Error(reason); };
+try {
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  await page.goto(input.wallet_page, { waitUntil: 'domcontentloaded', timeout: 15000 });
+  const result = await page.evaluate(async input => {
+    const require = (value, reason) => { if (!value) throw new Error(reason); };
+    const encoded = value => JSON.stringify(value, (_, item) => typeof item === 'bigint' ? item.toString() : item);
+    require(location.origin === input.wallet_origin, 'actual wallet origin differs');
+    for (const artifact of input.modules) {
+      const response = await fetch(artifact.url, {redirect:'error'});
+      require(response.ok, 'production browser module unavailable');
+      const bytes = new Uint8Array(await response.arrayBuffer());
+      const digest = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', bytes)), byte => byte.toString(16).padStart(2,'0')).join('');
+      require(digest === artifact.sha256, 'served production SDK identity differs');
+    }
+    const sdk = await import(input.modules[0].url);
+    const { gasStation } = await import(input.modules[1].url);
+    const { PaxeerProvider } = await import(input.modules[2].url);
+    const token = input.token;
+    if(input.mode === 'unavailable') {
+      const config = {chainId:125n,sponsor:input.sponsor,paymaster:input.paymaster,token:sdk.SIDIORA_TOKEN,decimals:6,
+        quoteUrl:input.unified_url+'/gas-station/quote'};
+      const request = {account:input.account,nonce:BigInt(input.expected_nonce),calls:input.calls.map(call=>({...call,value:BigInt(call.value)})),maxTokenAmount:BigInt(input.maximum),gasCost:BigInt(input.gas_cost)};
+      const outcome = await sdk.requestGasQuote(config,request);
+      require(!outcome.ok && outcome.refusal.code === 'unavailable','offline station did not produce typed browser unavailability');
+      return {unavailable:true};
+    }
+    const provider = new PaxeerProvider({ gatewayUrl:input.unified_url, rpcUrl:input.rpc_url, chainId:125,
+      token:()=>token, confirm:()=>true });
+    const station = gasStation(provider, { gatewayUrl:input.unified_url, accessToken:()=>token,
+      chainId:125n, sponsor:input.sponsor, paymaster:input.paymaster });
+    require(station.config.quoteUrl === input.unified_url + '/gas-station/quote', 'wallet escaped unified endpoint');
+    if (input.mode === 'resume') {
+      localStorage.setItem(input.retained_key,input.retained);
+      const saved = JSON.parse(localStorage.getItem(input.retained_key));
+      require(saved, 'actual retained SDK submission missing');
+      const batch = { chainId:BigInt(saved.construction.chainId), account:saved.account,
+        nonce:BigInt(saved.construction.nonce), calls:saved.construction.calls.map(call=>({...call,value:BigInt(call.value)})),
+        quote:{...saved.construction.quote,decimals:6,maxTokenAmount:BigInt(saved.construction.quote.maxTokenAmount),
+          tokenAmount:BigInt(saved.construction.quote.tokenAmount),deadline:BigInt(saved.construction.quote.deadline),
+          quoteNonce:BigInt(saved.construction.quote.quoteNonce),gasCost:BigInt(saved.construction.quote.gasCost)} };
+      let status = await station.resume(batch,saved.relayer_signature);
+      const deadline = Date.now()+90000;
+      while(status.status === 'pending' && Date.now()<deadline) {
+        await new Promise(resolve=>setTimeout(resolve,200));
+        status = await station.status(batch,saved.relayer_signature);
+      }
+      require(status.status !== 'pending' && status.station?.state === 'completed','real browser status never reached finality');
+      return JSON.parse(encoded(status));
+    }
+    const accounts = await provider.request({method:'eth_requestAccounts'});
+    require(accounts.some(account=>account.toLowerCase() === input.account.toLowerCase()), 'wallet principal differs');
+    const nonce = await station.batchNonce(input.account);
+    const request = { account:input.account, nonce, calls:input.calls.map(call=>({...call,value:BigInt(call.value)})),
+      maxTokenAmount:BigInt(input.maximum),gasCost:BigInt(input.gas_cost) };
+    const abort = new AbortController(); abort.abort();
+    const cancelled = await sdk.requestGasQuote(station.config,request,{signal:abort.signal});
+    require(!cancelled.ok && cancelled.refusal.code === 'cancelled','cancelled browser request was not typed');
+    const signed = await station.requestQuote(request);
+    require(signed.quote.decimals === 6 && signed.quote.maxTokenAmount === request.maxTokenAmount &&
+      signed.quote.tokenAmount > 0n && signed.quote.tokenAmount <= request.maxTokenAmount &&
+      signed.quote.sponsor.toLowerCase() === input.sponsor.toLowerCase(), 'browser quote identity or SID maximum changed');
+    const batch = {chainId:125n,account:input.account,nonce,calls:request.calls,quote:signed.quote};
+    let refused = false;
+    try { await station.submitFirstUse(batch,signed.relayerSignature,{confirm:()=>false}); }
+    catch(error) { refused = error.refusal?.code === 'refused' && error.refusal.field === 'consent'; }
+    require(refused,'declined browser consent was not refused');
+    const malformed = await fetch(input.unified_url+'/gas-station/quote',{method:'POST',headers:{'content-type':'application/json'},body:'{}',redirect:'error'});
+    require(malformed.status === 400 && (await malformed.json()).error === 'malformed', 'browser cannot read actual JSON refusal');
+    const unauthorized = await fetch(input.unified_url+'/v1/wallet/sponsored/status', {method:'POST',headers:{'content-type':'application/json'},
+      body:encoded({account:input.account,sponsor:input.sponsor,quoteNonce:signed.quote.quoteNonce,relayerSignature:signed.relayerSignature}),redirect:'error'});
+    require(unauthorized.status === 401 || unauthorized.status === 403,'browser status bypassed principal authentication');
+    const transactionHash = await station.submitFirstUse(batch,signed.relayerSignature,{confirm:consent=>{
+      require(consent.maximum === request.maxTokenAmount && consent.deadline === signed.quote.deadline &&
+        consent.symbol === 'SID' && consent.decimals === 6 && consent.amount <= consent.maximum,'signed browser consent changed');
+      return true;
+    }});
+    const status = await station.status(batch,signed.relayerSignature);
+    require(status.status === 'pending' && status.tx_hash === transactionHash && status.station?.completion === null,
+      'restart fixture was not truly pending or hash was promoted to completion');
+    const key = `paxeer:sponsored:v1:125:${input.account.toLowerCase()}:${input.sponsor.toLowerCase()}:${signed.quote.quoteNonce}`;
+    return {status,retained_key:key,retained:localStorage.getItem(key),quote:JSON.parse(encoded(signed))};
+  }, input);
+  const foreign = await context.newPage();
+  await foreign.goto(input.foreign_page,{waitUntil:'domcontentloaded',timeout:15000});
+  const denied = await foreign.evaluate(async input=>{
+    if(location.origin !== input.foreign_origin)throw new Error('actual foreign origin differs');
+    try { await fetch(input.unified_url+'/gas-station/quote',{method:'POST',headers:{'content-type':'application/json'},body:'{}',redirect:'error'});return false; }
+    catch { return true; }
+  },input);
+  require(denied,'foreign browser origin was admitted');
+  writeFileSync(input.output, JSON.stringify(result),{mode:0o600});
+} finally { await browser.close(); }
+"""
+
+
+def browser_origin_request(url, origin, method='POST', headers='content-type'):
+    request = urllib.request.Request(url, method='OPTIONS', headers={'Origin': origin,
+        'Access-Control-Request-Method': method, 'Access-Control-Request-Headers': headers})
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    try:
+        response = opener.open(request, timeout=10)
+    except urllib.error.HTTPError as error:
+        response = error
+    with response:
+        return response.status, dict((key.lower(), value) for key, value in response.headers.items()), response.read(1025)
+
+
+def browser_sponsorship_origin(material, manifest, evidence):
+    require(material['source_revision'] == manifest['source']['revision'] and material['build_exit'] == 0,
+            'source-bound real station build required')
+    binary = protected(material['binary'])
+    require(os.access(binary, os.X_OK) and digest(binary) == material['binary_sha256'], 'station binary identity differs')
+    browser = protected(material['browser']); module = protected(material['playwright_module'])
+    require(os.access(browser, os.X_OK) and digest(browser) == material['browser_sha256']
+            and digest(module) == material['playwright_sha256'], 'real browser/tool identity differs')
+    local_url(material['station_url'])
+    base = material['unified_url'].rstrip('/'); wallet = material['wallet_origin']; foreign = material['foreign_origin']
+    require(wallet != foreign and wallet != base, 'actual allowed/foreign cross-origin fixtures required')
+    for url in [base, wallet, foreign, material['wallet_page'], material['foreign_page'], material['rpc_url']]:
+        local_url(url, secure=urllib.parse.urlsplit(url).scheme == 'https')
+    require(urllib.parse.urlsplit(material['wallet_page']).netloc == urllib.parse.urlsplit(wallet).netloc
+            and urllib.parse.urlsplit(material['foreign_page']).netloc == urllib.parse.urlsplit(foreign).netloc,
+            'served browser pages differ from configured origins')
+    require(material['observation_endpoints'], 'independent chain observation authority required')
+    require(len(material['modules']) == 3, 'actual agent, wallet and provider browser modules required')
+    for artifact in material['modules']:
+        local_url(artifact['url'], secure=urllib.parse.urlsplit(artifact['url']).scheme == 'https')
+        require(digest(protected(artifact['file'])) == artifact['sha256'], 'production module artifact differs')
+    config_path = protected(material['config']); config = document(config_path)
+    require(os.environ.get(config['relayer_key_env']) and os.environ.get(material['token_env']), 'real sponsor and principal authority required')
+    for endpoint in config['endpoints'] + material['observation_endpoints']:
+        local_url(endpoint, secure=True)
+    directory = evidence / 'browser-sponsorship-origin'; directory.mkdir(mode=0o700)
+    state = directory / 'journal.jsonl'; state.touch(mode=0o600)
+    driver = directory / 'browser.mjs'; driver.write_text(BROWSER_SPONSOR_DRIVER); driver.chmod(0o600)
+    input_path = directory / 'browser-input.json'; output = directory / 'browser-result.json'
+    request = dict(material, unified_url=base, mode='submit', output=str(output), token=os.environ[material['token_env']])
+    env = dict(os.environ, GAS_STATION_BROWSER_ORIGINS=wallet)
+    with (directory / 'station.log').open('wb') as log:
+        process = subprocess.Popen([str(binary),'--config',str(config_path),'--journal',str(state)],cwd=ROOT,
+            env=env,stdin=subprocess.DEVNULL,stdout=log,stderr=log,start_new_session=True)
+        try:
+            deadline = time.monotonic()+45
+            while time.monotonic()<deadline:
+                require(process.poll() is None,'station exited before real unified browser readiness')
+                try:
+                    if browser_origin_request(base+'/gas-station/quote',wallet)[0] == 204: break
+                except (OSError,urllib.error.URLError): pass
+                time.sleep(.1)
+            else: raise RuntimeError('real unified browser boundary unavailable')
+            untouched = state.read_bytes()
+            for route in ('quote','submit','status','retry'):
+                url = base+'/gas-station/'+route
+                code, headers, body = browser_origin_request(url,wallet)
+                require(code == 204 and not body and headers.get('access-control-allow-origin') == wallet
+                    and headers.get('access-control-allow-methods') == 'POST'
+                    and headers.get('access-control-allow-headers') == 'content-type'
+                    and 'access-control-allow-credentials' not in headers
+                    and set(value.strip().lower() for value in headers.get('vary','').split(',')) >=
+                    {'origin','access-control-request-method','access-control-request-headers'}, 'preflight policy differs')
+                for origin, method, names in ((foreign,'POST','content-type'),(wallet,'DELETE','content-type'),
+                        (wallet,'POST','content-type,x-untrusted'),('null','POST','content-type')):
+                    code, headers, body = browser_origin_request(url,origin,method,names)
+                    require(code in (400,403,405) and 'access-control-allow-origin' not in headers,
+                            'foreign/unsupported preflight admitted')
+            require(state.read_bytes() == untouched, 'preflight changed durable sponsorship liabilities')
+            for phase in ('submit','resume'):
+                input_path.write_text(json.dumps(request)); input_path.chmod(0o600)
+                with (directory / (phase+'.log')).open('wb') as browser_log:
+                    result = subprocess.run(['node',str(driver),str(input_path)],cwd=ROOT,stdin=subprocess.DEVNULL,
+                        stdout=browser_log,stderr=browser_log,timeout=120,check=False)
+                require(result.returncode == 0,'real browser SDK '+phase+' failed')
+                answer = document(output)
+                if phase == 'submit':
+                    entries = journal(state); candidates = [(quote,identity) for quote,identity in identities(entries)
+                        if any(entry['kind']=='prepared' and entry['key']==quote['key'] for entry in entries)]
+                    require(len(candidates)==1,'browser created more than one sponsorship identity')
+                    quote, identity = candidates[0]; original = submitted(entries,quote['key']); durable=state.read_bytes()
+                    require(hexbytes(original['hash']) == answer['status']['tx_hash'],'browser hash differs from durable bytes')
+                    stop(process)
+                    offline = dict(request,mode='unavailable',expected_nonce=json.loads(answer['retained'])['construction']['nonce'])
+                    input_path.write_text(json.dumps(offline)); input_path.chmod(0o600)
+                    with (directory / 'unavailable.log').open('wb') as browser_log:
+                        failure = subprocess.run(['node',str(driver),str(input_path)],cwd=ROOT,stdin=subprocess.DEVNULL,
+                            stdout=browser_log,stderr=browser_log,timeout=30,check=False)
+                    require(failure.returncode==0,'actual offline browser refusal failed')
+                    process = subprocess.Popen([str(binary),'--config',str(config_path),'--journal',str(state)],cwd=ROOT,
+                        env=env,stdin=subprocess.DEVNULL,stdout=log,stderr=log,start_new_session=True)
+                    ready(process, material['station_url'], identity)
+                    request.update(mode='resume',retained_key=answer['retained_key'],retained=answer['retained'])
+                else:
+                    require(state.read_bytes().startswith(durable) and submitted(journal(state),quote['key'])==original,
+                            'browser restart changed signed bytes or sponsor nonce')
+                    require(answer['status'] in ('pending','confirmed','reverted','cancelled'),'typed browser outcome missing')
+                    report = answer['station']
+                    require(report['state']=='completed','browser restart did not reach actual finality')
+                    from eth_hash.auto import keccak
+                    prove_completion(material['observation_endpoints'],journal(state),quote,report,keccak)
+        finally: stop(process)
+    print('PAXEER_X_GATE tests=23 skipped=0')
+
+
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--case', required=True, choices=['station-autonomous-recovery', 'first-use-sponsorship', 'quote-liability-lifecycle', 'rate-publication-recovery'])
+    parser.add_argument('--case', required=True, choices=['station-autonomous-recovery', 'first-use-sponsorship', 'quote-liability-lifecycle', 'rate-publication-recovery', 'browser-sponsorship-origin'])
     parser.add_argument('--candidate-manifest', required=True)
     args = parser.parse_args()
     spec = importlib.util.spec_from_file_location('candidate', ROOT / 'tools/paxeer-x/candidate.py')
@@ -1219,6 +1429,13 @@ def main():
     manifest = candidate.load_private(args.candidate_manifest)
     candidate.validate(manifest, candidate.catalogue(ROOT / 'spec/paxeer-x/spec.kvx'), ROOT)
     require(not manifest['source']['dirty'], 'clean candidate required')
+    if args.case == 'browser-sponsorship-origin':
+        evidence = Path(os.environ['PAXEER_X_EVIDENCE_DIR']).resolve()
+        info = evidence.stat()
+        require(stat.S_ISDIR(info.st_mode) and info.st_uid == os.geteuid() and not info.st_mode & 0o077,
+                'private evidence directory required')
+        browser_sponsorship_origin(document(os.environ['PAXEER_X_STATION_BROWSER_MATERIAL']), manifest, evidence)
+        return
     if args.case == 'rate-publication-recovery':
         def interrupted(_number, _frame):
             raise KeyboardInterrupt()

@@ -1,6 +1,6 @@
 import {
   SIDIORA_DECIMALS,
-  GAS_STATION_QUOTE_URL,
+  gasStationQuoteUrl,
   SIDIORA_TOKEN,
   assembleEip7702Authorization,
   eip7702AuthorizationDigest,
@@ -177,7 +177,7 @@ function signature(value: unknown, field: string): `0x${string}` {
 
 export function gasStation(provider: ModuleProvider, options: GasStationOptions): GasStationModule {
   const config: GasStationConfig = Object.freeze({
-    quoteUrl: options.quoteUrl ?? GAS_STATION_QUOTE_URL,
+    quoteUrl: gasStationQuoteUrl(options.quoteUrl, options.gatewayUrl),
     chainId: options.chainId,
     sponsor: moduleAddress(options.sponsor, 'sponsor'),
     token: SIDIORA_TOKEN,
@@ -288,9 +288,12 @@ export function gasStation(provider: ModuleProvider, options: GasStationOptions)
     if (!Array.isArray(accounts)||typeof accounts[0]!=='string'||typeof account!=='string'||accounts[0].toLowerCase()!==account.toLowerCase()) throw new ModuleError('refused','account');
     let response:Response;
     try { response=await fetchImpl(`${options.gatewayUrl!.replace(/\/$/u,'')}${path}`,{
-      method:'POST',headers:authorization,body:JSON.stringify(body),redirect:'error',
+      method:'POST',headers:authorization,body:JSON.stringify(body),redirect:'error',credentials:'omit',mode:'cors',
       signal:signal ? AbortSignal.any([signal,AbortSignal.timeout(30_000)]) : AbortSignal.timeout(30_000),
-    }); } catch { throw new ModuleError('unavailable','submission_status_unknown'); }
+    }); } catch {
+      if (signal?.aborted) throw new GasStationError({code:'cancelled',field:'submission_status_unknown'});
+      throw new ModuleError('unavailable','submission_status_unknown');
+    }
     if (!response.ok) throw new ModuleError(response.status>=500?'unavailable':'refused',`status ${response.status}`);
     try { return await response.json(); } catch { throw new ModuleError('invalid_answer','sponsored submit'); }
   };

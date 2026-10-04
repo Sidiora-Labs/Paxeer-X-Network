@@ -42,6 +42,12 @@ Environment:
   EDGE_CERT_DIR       certbot live directory, default /etc/letsencrypt/live
   EDGE_RESOLVER       resolver nginx uses for the upstreams, default 127.0.0.53
 
+Browser sponsorship uses this same public name for /gas-station/quote and
+/v1/wallet/sponsored/{submit,status}. The station process must set
+GAS_STATION_BROWSER_ORIGINS to comma-separated exact wallet origins; HTTPS
+origins or loopback HTTP are accepted. Origin and preflight headers pass to
+the serving upstream, which owns the refusal policy. No wildcard CORS is added.
+
 Exits 1 when a step fails or a name is refused, 2 on a usage error.
 EOF
 }
@@ -150,6 +156,9 @@ $listen
 		proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
 		proxy_set_header X-Real-IP \$remote_addr;
 		proxy_set_header X-Forwarded-Proto \$scheme;
+		proxy_set_header Origin \$http_origin;
+		proxy_set_header Access-Control-Request-Method \$http_access_control_request_method;
+		proxy_set_header Access-Control-Request-Headers \$http_access_control_request_headers;
 		proxy_set_header Upgrade \$http_upgrade;
 		proxy_set_header Connection \$http_connection;
 		proxy_ssl_server_name on;

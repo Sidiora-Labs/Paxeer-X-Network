@@ -25,7 +25,10 @@ impl<'de> serde::Deserialize<'de> for StrictValue {
             fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
                 formatter.write_str("JSON without duplicate object keys")
             }
-            fn visit_map<M: serde::de::MapAccess<'de>>(self, mut source: M) -> Result<Self::Value, M::Error> {
+            fn visit_map<M: serde::de::MapAccess<'de>>(
+                self,
+                mut source: M,
+            ) -> Result<Self::Value, M::Error> {
                 let mut fields = Map::new();
                 while let Some((key, value)) = source.next_entry::<String, StrictValue>()? {
                     if fields.insert(key, value.0).is_some() {
@@ -34,18 +37,37 @@ impl<'de> serde::Deserialize<'de> for StrictValue {
                 }
                 Ok(StrictValue(Value::Object(fields)))
             }
-            fn visit_seq<M: serde::de::SeqAccess<'de>>(self, mut source: M) -> Result<Self::Value, M::Error> {
+            fn visit_seq<M: serde::de::SeqAccess<'de>>(
+                self,
+                mut source: M,
+            ) -> Result<Self::Value, M::Error> {
                 let mut values = Vec::new();
-                while let Some(value) = source.next_element::<StrictValue>()? { values.push(value.0); }
+                while let Some(value) = source.next_element::<StrictValue>()? {
+                    values.push(value.0);
+                }
                 Ok(StrictValue(Value::Array(values)))
             }
-            fn visit_bool<E: serde::de::Error>(self, value: bool) -> Result<Self::Value, E> { Ok(StrictValue(json!(value))) }
-            fn visit_i64<E: serde::de::Error>(self, value: i64) -> Result<Self::Value, E> { Ok(StrictValue(json!(value))) }
-            fn visit_u64<E: serde::de::Error>(self, value: u64) -> Result<Self::Value, E> { Ok(StrictValue(json!(value))) }
-            fn visit_f64<E: serde::de::Error>(self, value: f64) -> Result<Self::Value, E> { Ok(StrictValue(json!(value))) }
-            fn visit_str<E: serde::de::Error>(self, value: &str) -> Result<Self::Value, E> { Ok(StrictValue(json!(value))) }
-            fn visit_string<E: serde::de::Error>(self, value: String) -> Result<Self::Value, E> { Ok(StrictValue(json!(value))) }
-            fn visit_unit<E: serde::de::Error>(self) -> Result<Self::Value, E> { Ok(StrictValue(Value::Null)) }
+            fn visit_bool<E: serde::de::Error>(self, value: bool) -> Result<Self::Value, E> {
+                Ok(StrictValue(json!(value)))
+            }
+            fn visit_i64<E: serde::de::Error>(self, value: i64) -> Result<Self::Value, E> {
+                Ok(StrictValue(json!(value)))
+            }
+            fn visit_u64<E: serde::de::Error>(self, value: u64) -> Result<Self::Value, E> {
+                Ok(StrictValue(json!(value)))
+            }
+            fn visit_f64<E: serde::de::Error>(self, value: f64) -> Result<Self::Value, E> {
+                Ok(StrictValue(json!(value)))
+            }
+            fn visit_str<E: serde::de::Error>(self, value: &str) -> Result<Self::Value, E> {
+                Ok(StrictValue(json!(value)))
+            }
+            fn visit_string<E: serde::de::Error>(self, value: String) -> Result<Self::Value, E> {
+                Ok(StrictValue(json!(value)))
+            }
+            fn visit_unit<E: serde::de::Error>(self) -> Result<Self::Value, E> {
+                Ok(StrictValue(Value::Null))
+            }
         }
         deserializer.deserialize_any(Visitor)
     }
@@ -68,6 +90,7 @@ pub enum ServiceError {
     LengthRequired,
     TooLarge,
     Refused,
+    OriginRefused,
     ExpiredQuote,
     IncompatibleDelegation,
     ReplayStateUnavailable,
@@ -81,13 +104,17 @@ impl ServiceError {
     pub const fn status(self) -> u16 {
         match self {
             Self::Malformed => 400,
+            Self::OriginRefused => 403,
             Self::NotFound => 404,
             Self::MethodNotAllowed => 405,
             Self::Timeout => 408,
             Self::Conflict => 409,
             Self::LengthRequired => 411,
             Self::TooLarge => 413,
-            Self::Refused | Self::ExpiredQuote | Self::IncompatibleDelegation | Self::ReplayStateUnavailable => 422,
+            Self::Refused
+            | Self::ExpiredQuote
+            | Self::IncompatibleDelegation
+            | Self::ReplayStateUnavailable => 422,
             Self::Accept | Self::Internal => 500,
             Self::Unavailable | Self::BalanceFloor | Self::SigningUnknown => 503,
         }
@@ -103,6 +130,7 @@ impl ServiceError {
             Self::LengthRequired => "length_required",
             Self::TooLarge => "too_large",
             Self::Refused => "refused",
+            Self::OriginRefused => "origin_refused",
             Self::ExpiredQuote => "expired_quote",
             Self::IncompatibleDelegation => "incompatible_delegation",
             Self::ReplayStateUnavailable => "replay_state_unavailable",
@@ -124,7 +152,9 @@ impl From<&StationError> for ServiceError {
     fn from(error: &StationError) -> Self {
         match error {
             StationError::SigningUnknown => Self::SigningUnknown,
-            StationError::Quote(QuoteError::Policy(PolicyRefusal::BalanceFloor)) => Self::BalanceFloor,
+            StationError::Quote(QuoteError::Policy(PolicyRefusal::BalanceFloor)) => {
+                Self::BalanceFloor
+            }
             StationError::IncompatibleDelegation => Self::IncompatibleDelegation,
             StationError::ReplayStateUnavailable => Self::ReplayStateUnavailable,
             StationError::Rpc(RpcFault::Rejected { .. })
@@ -153,8 +183,7 @@ impl From<&StationError> for ServiceError {
             )
             | StationError::Price(_)
             | StationError::Quote(
-                QuoteError::Price(_)
-                | QuoteError::Policy(PolicyRefusal::ClockRegression),
+                QuoteError::Price(_) | QuoteError::Policy(PolicyRefusal::ClockRegression),
             ) => Self::Unavailable,
             StationError::Rpc(RpcFault::Configuration)
             | StationError::Journal(_)
@@ -191,6 +220,7 @@ pub struct Service<S, R, P, C> {
     max_priority_fee_per_gas: u128,
     clock: C,
     limits: Limits,
+    browser_origins: Option<Vec<String>>,
 }
 
 impl<S, R, P, C> Service<S, R, P, C>
@@ -219,6 +249,9 @@ where
             max_priority_fee_per_gas: config.max_priority_fee_per_gas,
             clock,
             limits,
+            browser_origins: std::env::var("GAS_STATION_BROWSER_ORIGINS")
+                .ok()
+                .and_then(|value| browser_origins(&value)),
         }
     }
 
@@ -231,7 +264,9 @@ where
     /// # Errors
     /// Returns the refusal whose status the response carries.
     pub fn respond(&mut self, route: &str, body: &[u8]) -> Result<Value, ServiceError> {
-        let body = serde_json::from_slice::<StrictValue>(body).map_err(|_| ServiceError::Malformed)?.0;
+        let body = serde_json::from_slice::<StrictValue>(body)
+            .map_err(|_| ServiceError::Malformed)?
+            .0;
         match route {
             "/quote" => self.quote(&body),
             "/submit" => self.submit(&body),
@@ -290,7 +325,12 @@ where
         )?;
         let account = address(&request["account"])?;
         let nonce = decimal_word(&request["nonce"])?;
-        if self.station.batch_nonce(account).map_err(|error| ServiceError::from(&error))? != nonce {
+        if self
+            .station
+            .batch_nonce(account)
+            .map_err(|error| ServiceError::from(&error))?
+            != nonce
+        {
             return Err(ServiceError::Conflict);
         }
         calls(&request["calls"])?;
@@ -305,17 +345,31 @@ where
         }
         let fees = self.fees(gas_cost)?;
         self.now()?;
-        let now = self.station.chain_time().map_err(|error| ServiceError::from(&error))?;
+        let now = self
+            .station
+            .chain_time()
+            .map_err(|error| ServiceError::from(&error))?;
         let deadline = (now - now % self.interval)
             .checked_add(self.interval - 1)
             .ok_or(ServiceError::Unavailable)?;
         let interval = now / self.interval;
         let identity = Admission::identity(account, nonce, interval);
-        let request_digest = keccak(&serde_json::to_vec(body).map_err(|_| ServiceError::Malformed)?);
-        let existing = self.station.admission(identity, request_digest, account, interval)
+        let request_digest =
+            keccak(&serde_json::to_vec(body).map_err(|_| ServiceError::Malformed)?);
+        let existing = self
+            .station
+            .admission(identity, request_digest, account, interval)
             .map_err(|error| ServiceError::from(&error))?;
-        let mut quote_nonce = match existing { Some(key) => key.quote_nonce, None => self.next_quote_nonce()? };
-        let admission = Admission { identity, request_digest, batch_nonce: nonce, interval };
+        let mut quote_nonce = match existing {
+            Some(key) => key.quote_nonce,
+            None => self.next_quote_nonce()?,
+        };
+        let admission = Admission {
+            identity,
+            request_digest,
+            batch_nonce: nonce,
+            interval,
+        };
         for _ in 0..QUOTE_NONCE_ATTEMPTS {
             let outcome = self
                 .station
@@ -405,13 +459,30 @@ where
             return Err(ServiceError::Refused);
         }
         let local_now = self.now()?;
-        if deadline < local_now && self.station.journal().state().items.get(&key)
-            .is_some_and(|item| item.submission.is_none() && item.completion.is_none()) {
+        if deadline < local_now
+            && self
+                .station
+                .journal()
+                .state()
+                .items
+                .get(&key)
+                .is_some_and(|item| item.submission.is_none() && item.completion.is_none())
+        {
             return Err(ServiceError::ExpiredQuote);
         }
-        let now = self.station.chain_time().map_err(|error| ServiceError::from(&error))?;
-        if deadline < now && self.station.journal().state().items.get(&key)
-            .is_some_and(|item| item.submission.is_none() && item.completion.is_none()) {
+        let now = self
+            .station
+            .chain_time()
+            .map_err(|error| ServiceError::from(&error))?;
+        if deadline < now
+            && self
+                .station
+                .journal()
+                .state()
+                .items
+                .get(&key)
+                .is_some_and(|item| item.submission.is_none() && item.completion.is_none())
+        {
             return Err(ServiceError::ExpiredQuote);
         }
         let progress = self
@@ -533,33 +604,77 @@ where
         self.report(key, account, &relayer)
     }
 
-    fn answer(&mut self, stream: &mut TcpStream) -> (&'static str, Result<Value, ServiceError>) {
+    fn answer(
+        &mut self,
+        stream: &mut TcpStream,
+    ) -> (
+        &'static str,
+        Result<Value, ServiceError>,
+        Option<String>,
+        bool,
+    ) {
         let deadline = Instant::now() + self.limits.read_time;
         let head = match read_head(stream, deadline) {
             Ok(head) => head,
-            Err(error) => return ("-", Err(error)),
+            Err(error) => return ("-", Err(error), None, false),
         };
         let route = match head.path.as_str() {
             "/quote" => "/quote",
             "/submit" => "/submit",
             "/status" => "/status",
             "/retry" => "/retry",
-            _ => return ("-", Err(ServiceError::NotFound)),
+            _ => return ("-", Err(ServiceError::NotFound), None, false),
         };
+        let origin = match head.origin.as_ref() {
+            Some(origin)
+                if self
+                    .browser_origins
+                    .as_ref()
+                    .is_some_and(|allowed| allowed.contains(origin)) =>
+            {
+                Some(origin.clone())
+            }
+            Some(_) => return (route, Err(ServiceError::OriginRefused), None, false),
+            None => None,
+        };
+        if head.method == "OPTIONS" {
+            if origin.is_none()
+                || head.request_method.as_deref() != Some("POST")
+                || head.request_headers.as_deref().is_none_or(|headers| {
+                    let names: Vec<_> = headers.split(',').map(str::trim).collect();
+                    names.len() != 1 || !names[0].eq_ignore_ascii_case("content-type")
+                })
+                || head.length.is_some_and(|length| length != 0)
+                || !head.rest.is_empty()
+            {
+                return (route, Err(ServiceError::OriginRefused), None, false);
+            }
+            return (route, Ok(Value::Null), origin, true);
+        }
         if head.method != "POST" {
-            return (route, Err(ServiceError::MethodNotAllowed));
+            return (route, Err(ServiceError::MethodNotAllowed), origin, false);
+        }
+        if head.request_method.is_some()
+            || head.request_headers.is_some()
+            || (origin.is_some()
+                && head
+                    .content_type
+                    .as_deref()
+                    .is_none_or(|value| !value.eq_ignore_ascii_case("application/json")))
+        {
+            return (route, Err(ServiceError::Malformed), origin, false);
         }
         let Some(length) = head.length else {
-            return (route, Err(ServiceError::LengthRequired));
+            return (route, Err(ServiceError::LengthRequired), origin, false);
         };
         if length > self.limits.max_body {
-            return (route, Err(ServiceError::TooLarge));
+            return (route, Err(ServiceError::TooLarge), origin, false);
         }
         let body = match read_body(stream, head.rest, length, deadline) {
             Ok(body) => body,
-            Err(error) => return (route, Err(error)),
+            Err(error) => return (route, Err(error), origin, false),
         };
-        (route, self.respond(route, &body))
+        (route, self.respond(route, &body), origin, false)
     }
 }
 
@@ -581,16 +696,17 @@ where
 {
     loop {
         let (mut stream, _) = listener.accept().map_err(|_| ServiceError::Accept)?;
-        let (route, result) = service.answer(&mut stream);
+        let (route, result, origin, preflight) = service.answer(&mut stream);
         let (status, body) = match result {
-            Ok(value) => (200, value),
+            Ok(value) => (if preflight { 204 } else { 200 }, value),
             Err(error) => (error.status(), json!({ "error": error.code() })),
         };
-        let delivered = if write_response(&mut stream, status, &body).is_ok() {
-            ""
-        } else {
-            " undelivered"
-        };
+        let delivered =
+            if write_response(&mut stream, status, &body, origin.as_deref(), preflight).is_ok() {
+                ""
+            } else {
+                " undelivered"
+            };
         let _ = writeln!(log, "{route} {status}{delivered}").and_then(|()| log.flush());
     }
 }
@@ -653,7 +769,8 @@ where
                     )
                     .and_then(|()| log.flush());
                     wait = if recovery.completed > 0
-                        || (!recovery.liability_unreachable && recovery.pending + recovery.unreachable + recovery.deferred == 0)
+                        || (!recovery.liability_unreachable
+                            && recovery.pending + recovery.unreachable + recovery.deferred == 0)
                     {
                         schedule.interval
                     } else {
@@ -690,16 +807,17 @@ where
         stream
             .set_nonblocking(false)
             .map_err(|_| ServiceError::Accept)?;
-        let (route, result) = service.answer(&mut stream);
+        let (route, result, origin, preflight) = service.answer(&mut stream);
         let (status, body) = match result {
-            Ok(value) => (200, value),
+            Ok(value) => (if preflight { 204 } else { 200 }, value),
             Err(error) => (error.status(), json!({ "error": error.code() })),
         };
-        let delivered = if write_response(&mut stream, status, &body).is_ok() {
-            ""
-        } else {
-            " undelivered"
-        };
+        let delivered =
+            if write_response(&mut stream, status, &body, origin.as_deref(), preflight).is_ok() {
+                ""
+            } else {
+                " undelivered"
+            };
         let _ = writeln!(log, "{route} {status}{delivered}").and_then(|()| log.flush());
     }
 }
@@ -709,6 +827,10 @@ struct Head {
     path: String,
     length: Option<usize>,
     rest: Vec<u8>,
+    origin: Option<String>,
+    request_method: Option<String>,
+    request_headers: Option<String>,
+    content_type: Option<String>,
 }
 
 fn read_some(
@@ -769,8 +891,34 @@ fn read_head(stream: &mut TcpStream, deadline: Instant) -> Result<Head, ServiceE
         return Err(ServiceError::Malformed);
     }
     let mut length = None;
+    let mut origin = None;
+    let mut request_method = None;
+    let mut request_headers = None;
+    let mut content_type = None;
     for line in lines {
         let (name, value) = line.split_once(':').ok_or(ServiceError::Malformed)?;
+        if name.is_empty()
+            || !name.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-')
+            || value.bytes().any(|b| b < 32 && b != b'\t' || b == 127)
+        {
+            return Err(ServiceError::Malformed);
+        }
+        let slot = if name.eq_ignore_ascii_case("origin") {
+            Some(&mut origin)
+        } else if name.eq_ignore_ascii_case("access-control-request-method") {
+            Some(&mut request_method)
+        } else if name.eq_ignore_ascii_case("access-control-request-headers") {
+            Some(&mut request_headers)
+        } else if name.eq_ignore_ascii_case("content-type") {
+            Some(&mut content_type)
+        } else {
+            None
+        };
+        if let Some(slot) = slot {
+            if slot.replace(value.trim().to_owned()).is_some() {
+                return Err(ServiceError::Malformed);
+            }
+        }
         if name.eq_ignore_ascii_case("transfer-encoding") {
             return Err(ServiceError::LengthRequired);
         }
@@ -787,6 +935,10 @@ fn read_head(stream: &mut TcpStream, deadline: Instant) -> Result<Head, ServiceE
         path: path.to_owned(),
         length,
         rest: received[split + 4..].to_vec(),
+        origin,
+        request_method,
+        request_headers,
+        content_type,
     })
 }
 
@@ -887,6 +1039,8 @@ fn submitted(body: &Value) -> Result<Submitted, ServiceError> {
 fn reason(status: u16) -> &'static str {
     match status {
         200 => "OK",
+        204 => "No Content",
+        403 => "Forbidden",
         400 => "Bad Request",
         404 => "Not Found",
         405 => "Method Not Allowed",
@@ -900,15 +1054,98 @@ fn reason(status: u16) -> &'static str {
     }
 }
 
-fn write_response(stream: &mut TcpStream, status: u16, body: &Value) -> std::io::Result<()> {
-    let body = body.to_string();
+fn browser_origins(value: &str) -> Option<Vec<String>> {
+    let origins: Vec<String> = value.split(',').map(str::trim).map(str::to_owned).collect();
+    if origins.is_empty()
+        || origins.len() > 16
+        || origins.iter().any(|origin| {
+            let authority = origin
+                .strip_prefix("https://")
+                .or_else(|| origin.strip_prefix("http://"));
+            let Some(authority) = authority else {
+                return true;
+            };
+            if authority.is_empty()
+                || authority.len() > 253
+                || authority.contains(['/', '?', '#', '@'])
+                || !authority.bytes().all(|b| {
+                    b.is_ascii_alphanumeric() || matches!(b, b'.' | b'-' | b':' | b'[' | b']')
+                })
+            {
+                return true;
+            }
+            let host = if authority.starts_with('[') {
+                let Some(end) = authority.find(']') else {
+                    return true;
+                };
+                if authority[1..end].parse::<std::net::Ipv6Addr>().is_err() {
+                    return true;
+                }
+                let tail = &authority[end + 1..];
+                if !tail.is_empty()
+                    && (!tail.starts_with(':')
+                        || tail[1..].parse::<u16>().ok().is_none_or(|p| p == 0))
+                {
+                    return true;
+                }
+                &authority[..=end]
+            } else {
+                let (host, port) = authority
+                    .split_once(':')
+                    .map_or((authority, None), |(host, port)| (host, Some(port)));
+                if port.is_some_and(|port| port.parse::<u16>().ok().is_none_or(|p| p == 0)) {
+                    return true;
+                }
+                if host.split('.').any(|label| {
+                    label.is_empty()
+                        || label.len() > 63
+                        || label.starts_with('-')
+                        || label.ends_with('-')
+                        || !label
+                            .bytes()
+                            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
+                }) {
+                    return true;
+                }
+                host
+            };
+            host.is_empty()
+                || origin.starts_with("http://")
+                    && !matches!(host, "localhost" | "127.0.0.1" | "[::1]")
+        })
+    {
+        return None;
+    }
+    let mut unique = origins.clone();
+    unique.sort();
+    unique.dedup();
+    if unique.len() != origins.len() {
+        return None;
+    }
+    Some(origins)
+}
+
+fn write_response(
+    stream: &mut TcpStream,
+    status: u16,
+    body: &Value,
+    origin: Option<&str>,
+    preflight: bool,
+) -> std::io::Result<()> {
+    let body = if preflight {
+        String::new()
+    } else {
+        body.to_string()
+    };
     stream.set_write_timeout(Some(Duration::from_secs(10)))?;
-    write!(
-        stream,
-        "HTTP/1.1 {status} {}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
-        reason(status),
-        body.len()
-    )?;
+    write!(stream, "HTTP/1.1 {status} {}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\nCache-Control: no-store\r\nVary: Origin, Access-Control-Request-Method, Access-Control-Request-Headers\r\n", reason(status), body.len())?;
+    if let Some(origin) = origin {
+        write!(stream, "Access-Control-Allow-Origin: {origin}\r\n")?;
+        if preflight {
+            write!(stream, "Access-Control-Allow-Methods: POST\r\nAccess-Control-Allow-Headers: content-type\r\n")?;
+        }
+    }
+    write!(stream, "\r\n{body}")?;
     stream.flush()?;
     stream.shutdown(Shutdown::Write)
 }
@@ -1072,6 +1309,32 @@ mod tests {
     use super::*;
 
     #[test]
+    fn browser_policy_is_explicit_exact_and_has_no_wildcards() {
+        assert_eq!(
+            browser_origins("https://wallet.paxeer.network,http://127.0.0.1:3000"),
+            Some(vec![
+                "https://wallet.paxeer.network".to_owned(),
+                "http://127.0.0.1:3000".to_owned()
+            ])
+        );
+        for value in [
+            "",
+            "*",
+            "null",
+            "http://wallet.paxeer.network",
+            "https://wallet.paxeer.network/",
+            "https://wallet.paxeer.network?x",
+            "https://user@wallet.paxeer.network",
+            "https://wallet.paxeer.network:0",
+            "https://wallet.paxeer.network,https://wallet.paxeer.network",
+            "https://wallet.paxeer.network\r\nX-Allow: *",
+        ] {
+            assert!(browser_origins(value).is_none());
+        }
+        assert_eq!(ServiceError::OriginRefused.status(), 403);
+    }
+
+    #[test]
     fn decimal_words_round_trip_and_refuse_noncanonical_text() -> Result<(), ServiceError> {
         for value in [0, 1, 7, 3_145_140, u128::from(u64::MAX), u128::MAX] {
             let rendered = decimal(&word(value));
@@ -1169,7 +1432,8 @@ mod tests {
         Ok(())
     }
     #[test]
-    fn issuance_json_rejects_duplicate_keys_at_every_depth() -> Result<(), Box<dyn std::error::Error>> {
+    fn issuance_json_rejects_duplicate_keys_at_every_depth(
+    ) -> Result<(), Box<dyn std::error::Error>> {
         for input in [
             br#"{"account":"one","account":"two"}"#.as_slice(),
             br#"{"calls":[{"to":"one","to":"two"}]}"#.as_slice(),
@@ -1182,5 +1446,4 @@ mod tests {
         assert_eq!(strict.0, serde_json::from_slice::<Value>(input)?);
         Ok(())
     }
-
 }

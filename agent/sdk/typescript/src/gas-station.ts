@@ -91,6 +91,21 @@ class Refusal extends Error {
   }
 }
 
+export function gasStationQuoteUrl(quoteUrl?: string, gatewayUrl?: string): string {
+  let base: URL | undefined;
+  let url: URL;
+  try {
+    if (gatewayUrl !== undefined) base = new URL(gatewayUrl);
+    url = new URL(quoteUrl ?? (base ? "/gas-station/quote" : GAS_STATION_QUOTE_URL), base);
+  } catch { throw new Refusal("invalid_value", "quoteUrl"); }
+  if (!["https:", "http:"].includes(url.protocol) || url.username || url.password || url.hash || url.search
+      || !url.pathname.endsWith("/quote") || (base && (base.username || base.password || base.hash || base.search
+      || !["https:", "http:"].includes(base.protocol) || url.origin !== base.origin))) {
+    throw new Refusal("invalid_value", "quoteUrl");
+  }
+  return url.toString();
+}
+
 function result<T>(build: () => T): GasResult<T> {
   try {
     return { ok: true, value: build() };
@@ -349,7 +364,7 @@ export async function requestGasQuote(
       throw new Refusal("invalid_value", "request");
     }
     let url: URL;
-    try { url = new URL(config.quoteUrl ?? GAS_STATION_QUOTE_URL); } catch { throw new Refusal("invalid_value", "quoteUrl"); }
+    try { url = new URL(gasStationQuoteUrl(config.quoteUrl)); } catch { throw new Refusal("invalid_value", "quoteUrl"); }
     if (!["https:", "http:"].includes(url.protocol) || url.username || url.password || url.hash) {
       throw new Refusal("invalid_value", "quoteUrl");
     }
@@ -359,10 +374,10 @@ export async function requestGasQuote(
   if (!prepared.ok) return prepared;
   let response: Response;
   try {
-    response = await (options.fetch ?? fetch)(config.quoteUrl ?? GAS_STATION_QUOTE_URL, {
+    response = await (options.fetch ?? fetch)(gasStationQuoteUrl(config.quoteUrl), {
       method: "POST", headers: { "content-type": "application/json" }, body: prepared.value,
       signal: options.signal ? AbortSignal.any([options.signal, AbortSignal.timeout(15_000)]) : AbortSignal.timeout(15_000),
-      redirect: "error",
+      redirect: "error", credentials: "omit", mode: "cors",
     });
   } catch {
     return { ok: false, refusal: { code: options.signal?.aborted ? "cancelled" : "unavailable", field: "quoteUrl" } };
@@ -467,6 +482,7 @@ async function submissionRequest(
   config: GasStationConfig,
   identity: GasSubmissionIdentity,
   signal: AbortSignal | undefined,
+  fetchImpl: typeof fetch,
 ): Promise<GasResult<GasSubmissionStatus>> {
   const prepared = result(() => {
     validateConfig(config);
@@ -475,7 +491,7 @@ async function submissionRequest(
     uint(identity.quoteNonce, "quoteNonce");
     if (bytes(identity.relayerSignature, "relayerSignature").length !== 130) throw new Refusal("invalid_signature", "relayerSignature");
     let url: URL;
-    try { url = new URL(config.quoteUrl ?? GAS_STATION_QUOTE_URL); } catch { throw new Refusal("invalid_value", "quoteUrl"); }
+    try { url = new URL(gasStationQuoteUrl(config.quoteUrl)); } catch { throw new Refusal("invalid_value", "quoteUrl"); }
     if (!["https:", "http:"].includes(url.protocol) || url.username || url.password || url.hash || !url.pathname.endsWith("/quote")) {
       throw new Refusal("invalid_value", "quoteUrl");
     }
@@ -491,10 +507,10 @@ async function submissionRequest(
   if (!prepared.ok) return prepared;
   let response: Response;
   try {
-    response = await fetch(prepared.value.url, {
+    response = await fetchImpl(prepared.value.url, {
       method: "POST", headers: { "content-type": "application/json" }, body: prepared.value.body,
       signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(15_000)]) : AbortSignal.timeout(15_000),
-      redirect: "error",
+      redirect: "error", credentials: "omit", mode: "cors",
     });
   } catch {
     return { ok: false, refusal: { code: signal?.aborted ? "cancelled" : "unavailable", field: route } };
@@ -509,18 +525,18 @@ async function submissionRequest(
 export function requestGasSubmissionStatus(
   config: GasStationConfig,
   identity: GasSubmissionIdentity,
-  options: { readonly signal?: AbortSignal } = {},
+  options: { readonly signal?: AbortSignal; readonly fetch?: typeof fetch } = {},
 ): Promise<GasResult<GasSubmissionStatus>> {
-  return submissionRequest("status", config, identity, options.signal);
+  return submissionRequest("status", config, identity, options.signal, options.fetch ?? fetch);
 }
 
 /** Asks the station to resume an already submitted identity from its durable bytes, without signing anything new. */
 export function retryGasSubmission(
   config: GasStationConfig,
   identity: GasSubmissionIdentity,
-  options: { readonly signal?: AbortSignal } = {},
+  options: { readonly signal?: AbortSignal; readonly fetch?: typeof fetch } = {},
 ): Promise<GasResult<GasSubmissionStatus>> {
-  return submissionRequest("retry", config, identity, options.signal);
+  return submissionRequest("retry", config, identity, options.signal, options.fetch ?? fetch);
 }
 
 export async function submitSponsoredGasBatch(
@@ -545,7 +561,7 @@ export async function submitSponsoredGasBatch(
     const call = sponsoredBatchCall(config, batch, accountSignature, relayerSignature, options.now);
     if (!call.ok) throw new Refusal(call.refusal.code, call.refusal.field);
     let url: URL;
-    try { url = new URL(config.quoteUrl ?? GAS_STATION_QUOTE_URL); } catch { throw new Refusal("invalid_value", "quoteUrl"); }
+    try { url = new URL(gasStationQuoteUrl(config.quoteUrl)); } catch { throw new Refusal("invalid_value", "quoteUrl"); }
     if (!["https:", "http:"].includes(url.protocol) || url.username || url.password || url.hash || url.search || !url.pathname.endsWith("/quote")) {
       throw new Refusal("invalid_value", "quoteUrl");
     }
@@ -562,7 +578,7 @@ export async function submitSponsoredGasBatch(
     response = await (options.fetch ?? fetch)(prepared.value.url, {
       method: "POST", headers: { "content-type": "application/json" }, body: prepared.value.body,
       signal: options.signal ? AbortSignal.any([options.signal, AbortSignal.timeout(15_000)]) : AbortSignal.timeout(15_000),
-      redirect: "error",
+      redirect: "error", credentials: "omit", mode: "cors",
     });
   } catch {
     return { ok: false, refusal: { code: options.signal?.aborted ? "cancelled" : "unavailable", field: "submit" } };
