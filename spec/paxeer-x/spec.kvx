@@ -32236,7 +32236,7 @@ verify_cmd = "timeout 10m python3 tools/bringup/tests/foundation-artifacts.py --
 completion_policy = "Only source-bound executable production and artifact integrity are qualified. No runtime readiness, deployment, real dependency operation or full Human completion is inferred."
 
 [task.14.8]
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 2
 requires = ["0.2"]
@@ -32258,6 +32258,14 @@ touches = ["tools/qualification/paxeer-x/wallet-injected-fixture.py", "tools/qua
 planned_paths = ["tools/qualification/paxeer-x/wallet-injected-fixture.py", "tools/qualification/paxeer-x/wallet-injected-fixture.mjs", "tools/qualification/paxeer-x/wallet-injected-entry.tsx", "tools/paxeer-x/gates/14.8.sh"]
 verify_cmd = "timeout 15m python3 tools/qualification/paxeer-x/wallet-injected-fixture.py --verify-baseline"
 completion_policy = "Qualifies fixture readiness and observed baseline behavior only. Task14.2 retains every chain-admission, stale confirmation, reconnect and no-other-chain-broadcast criterion and its unchanged final gate."
+fleet_role = "/root/complete_program_accounts"
+fleet_scope_manifest = "/root/lx-ops/paxeer-x-integration-2026-10-03/fleet-14.8-brief.json"
+fleet_cutoff_utc = "2026-10-04T14:05:30Z"
+fleet_authority = "User ordered thirty agents into pending integrations within four hours; this task has a fresh bounded implementation assignment."
+source_status = "complete"
+completion_basis = "implementation under owner CONSTITUTION; qualification separately recorded"
+qualification_status = "UNRUN"
+source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-14.8-source-handoff.json"
 
 [task.24.14]
 status = "done"
