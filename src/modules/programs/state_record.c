@@ -2,6 +2,7 @@
 
 #include "layerx/lxp_crypto.h"
 #include "layerx/lxp_kernel.h"
+#include "layerx/lxp_hash.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -481,4 +482,68 @@ lxp_result lxp_programs_state_record_profile2_encode(
     encoded->bytes = writer.bytes;
     encoded->length = writer.length;
     return LXP_OK;
+}
+
+
+static const uint8_t replay_record_domain[] = "LXP/program-replay-native/v1";
+enum { REPLAY_RECORD_BODY_BYTES = 365 };
+
+void lxp_programs_replay_record_key(const uint8_t activity_id[32],
+    uint8_t key[LXP_PROGRAMS_REPLAY_KEY_BYTES])
+{
+    static const uint8_t prefix[] = "progreplay/v1/";
+    (void)memcpy(key, prefix, sizeof(prefix) - 1U);
+    (void)memcpy(key + sizeof(prefix) - 1U, activity_id, 32U);
+}
+
+lxp_result lxp_programs_replay_record_blob_key(lxp_byte_span record, uint8_t blob_key[32])
+{
+    if (record.bytes == NULL || blob_key == NULL ||
+        record.length != sizeof(replay_record_domain) + REPLAY_RECORD_BODY_BYTES ||
+        lxp_ct_memcmp(record.bytes, replay_record_domain, sizeof(replay_record_domain)) != 0 ||
+        record.bytes[sizeof(replay_record_domain)] != 0U ||
+        record.bytes[sizeof(replay_record_domain) + 1U] != 1U)
+        return LXP_ERR_NON_CANONICAL;
+    (void)memcpy(blob_key, record.bytes + record.length - 32U, 32U);
+    if (lxp_ct_is_zero(blob_key, 32U)) return LXP_ERR_NON_CANONICAL;
+    return LXP_OK;
+}
+
+lxp_result lxp_programs_replay_capture_stage(lxp_module_ctx *ctx,
+    const lxp_programs_replay_capture *capture, lxp_result settled_result)
+{
+    uint8_t key[LXP_PROGRAMS_REPLAY_KEY_BYTES], digest[32];
+    uint8_t record[sizeof(replay_record_domain) + REPLAY_RECORD_BODY_BYTES];
+    record_writer writer = {record, sizeof(record), 0U, LXP_OK};
+    lxp_result status;
+    if (capture == NULL) return LXP_OK;
+    if (ctx == NULL || ctx->module_id != LXP_MODULE_PROGRAMS ||
+        capture->bytes == NULL || capture->length == 0U ||
+        capture->length > capture->max_bytes || capture->max_bytes > LXP_PROGRAMS_REPLAY_MAX_BYTES ||
+        capture->max_boundaries == 0U || capture->boundary_count == 0U ||
+        capture->boundary_count > capture->max_boundaries ||
+        capture->terminal_status > 2U ||
+        ctx->global_sequence != capture->sequence ||
+        lxp_ct_memcmp(ctx->activity_id, capture->activity_id, 32U) != 0)
+        return LXP_ERR_NON_CANONICAL;
+    status = lxp_hash_sha256(capture->bytes, capture->length, digest);
+    if (status != LXP_OK) return status;
+    put(&writer, replay_record_domain, sizeof(replay_record_domain));
+    put_u16(&writer, 1U); put_u32(&writer, capture->network_id);
+    put(&writer, capture->activity_id, 32U); put_u64(&writer, capture->sequence);
+    put(&writer, capture->previous_root, 32U); put(&writer, capture->program_id, 32U);
+    put(&writer, capture->code_hash, 32U); put(&writer, capture->input_digest, 32U);
+    put_u16(&writer, capture->runtime_version); put_u16(&writer, capture->abi_version);
+    put_u32(&writer, capture->fee_version); put_u32(&writer, capture->metering_version);
+    put_u16(&writer, 1U); put_u32(&writer, capture->max_boundaries); put_u32(&writer, capture->max_bytes);
+    put_u8(&writer, capture->terminal_status); put_u32(&writer, capture->boundary_count);
+    put(&writer, capture->authority_root, 32U); put(&writer, capture->host_root, 32U);
+    put(&writer, capture->boundary_root, 32U); put(&writer, capture->witness_digest, 32U);
+    put_u32(&writer, (uint32_t)settled_result); put(&writer, digest, 32U);
+    if (writer.status != LXP_OK) return writer.status;
+    if (writer.length != sizeof(record)) return LXP_FATAL_INVARIANT;
+    lxp_programs_replay_record_key(capture->activity_id, key);
+    status = lxp_ctx_blob_put(ctx, digest, capture->bytes, capture->length);
+    if (status == LXP_OK) status = lxp_ctx_kv_put(ctx, key, sizeof(key), record, sizeof(record));
+    return status;
 }

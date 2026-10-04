@@ -91,6 +91,8 @@ pub mod qualification;
 #[deny(unsafe_code)]
 pub mod replay;
 #[deny(unsafe_code)]
+pub mod replay_record;
+#[deny(unsafe_code)]
 pub mod schedule;
 #[deny(unsafe_code)]
 pub mod storage;
@@ -204,6 +206,7 @@ pub use qualification::{
     FuzzTarget, RecordedExecution, ReplayRefusal, TraceRunnerArtifact, TraceRunnerSubmission,
     TraceRunnerTrust,
 };
+pub use replay_record::{ProgramReplayProfile, ProgramReplayRecord};
 pub use schedule::{
     ConflictGraph, ParallelScheduler, ScheduleAccess, ScheduleError, SchedulePlan,
     SchedulingStrategy, DEFAULT_MAXIMUM_SCHEDULER_WORKERS,

@@ -1565,6 +1565,52 @@ struct CCommittedWeb {
     token: u64,
 }
 
+extern "C" {
+    fn layerx_programs_call_replay_profile(token: u64, section: u16) -> i32;
+    fn layerx_programs_call_replay_record_begin(token: u64, length: u32) -> i32;
+    fn layerx_programs_call_replay_record_byte(token: u64, offset: u32, byte: u8) -> i32;
+    fn layerx_programs_call_replay_record_finish(token: u64) -> i32;
+}
+
+fn replay_profile(token: u64) -> Result<Option<crate::ProgramReplayProfile>, i32> {
+    match unsafe { layerx_programs_call_replay_profile(token, 0) } {
+        0 => Ok(None),
+        1 => {
+            let maximum_boundaries =
+                u32::try_from(unsafe { layerx_programs_call_replay_profile(token, 1) })
+                    .map_err(|_| NON_CANONICAL)?;
+            let maximum_bytes =
+                u32::try_from(unsafe { layerx_programs_call_replay_profile(token, 2) })
+                    .map_err(|_| NON_CANONICAL)?;
+            crate::ProgramReplayProfile::new(maximum_boundaries, maximum_bytes)
+                .map(Some)
+                .map_err(|_| NON_CANONICAL)
+        }
+        status if status < 0 => Err(status),
+        _ => Err(NON_CANONICAL),
+    }
+}
+
+fn publish_replay_record(token: u64, record: &crate::ProgramReplayRecord) -> Result<(), i32> {
+    let bytes = record.canonical_bytes();
+    c_ok(unsafe {
+        layerx_programs_call_replay_record_begin(
+            token,
+            u32::try_from(bytes.len()).map_err(|_| LENGTH_LIMIT)?,
+        )
+    })?;
+    for (offset, byte) in bytes.iter().copied().enumerate() {
+        c_ok(unsafe {
+            layerx_programs_call_replay_record_byte(
+                token,
+                u32::try_from(offset).map_err(|_| LENGTH_LIMIT)?,
+                byte,
+            )
+        })?;
+    }
+    c_ok(unsafe { layerx_programs_call_replay_record_finish(token) })
+}
+
 impl CommittedWeb for CCommittedWeb {
     fn committed_answer(
         &self,
@@ -2761,6 +2807,11 @@ pub extern "C" fn layerx_programs_call_begin(
             crate::RUNTIME_VERSION,
             abi_version,
         );
+        let profile = replay_profile(token)?;
+        let executor = match profile {
+            Some(profile) => executor.with_program_replay_profile(profile),
+            None => executor,
+        };
         let signed_fee = (u128::from(signed_fee_hi) << 64) | u128::from(signed_fee_lo);
         let available_fee = (u128::from(available_fee_hi) << 64) | u128::from(available_fee_lo);
         let maximum_fee =
@@ -3024,6 +3075,11 @@ pub extern "C" fn layerx_programs_call_begin(
                         .with_authenticated_execution_context(execution_context),
                 )
                 .map_err(|_| NON_CANONICAL)?;
+            match (profile, record.replay_record()) {
+                (Some(_), Some(replay)) => publish_replay_record(token, replay)?,
+                (None, None) => {}
+                _ => return Err(NON_CANONICAL),
+            }
             match record.outcome() {
                 V2ActivityOutcome::Success { effects, .. } => {
                     if sandbox && !effects.transfers.is_empty() {

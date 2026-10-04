@@ -48,6 +48,7 @@ struct lxp_kernel_batch_snapshot {
 
 struct lxp_prepared_transition {
     lxp_prepared_module_transition *module;
+    lxp_programs_replay_capture *replay_capture;
     lxp_result result_code;
     lxp_u128 fee_charged;
     uint8_t activity_id[32];
@@ -71,6 +72,8 @@ struct lxp_kernel_prepared_batch {
     lxp_byte_span *execution_prestates;
     lxp_byte_span *arbiter_prestates;
     lxp_byte_span *admission_prestates;
+    lxp_byte_span *replay_witnesses;
+    lxp_byte_span *replay_metadata_proofs;
     uint8_t publication_digest[32];
     uint8_t *maintenance_storage;
     lxp_byte_span maintenance;
@@ -82,6 +85,80 @@ struct lxp_kernel_prepared_batch {
 };
 
 enum { KERNEL_OUTCOME_ARTIFACTS = 3 };
+
+static lxp_result kernel_capture_replay_metadata_proof(
+    lxp_programs_replay_capture *capture, const lxp_kernel *kernel,
+    const lxp_receipt *receipt)
+{
+    enum { MAX_BYTES = 35 + LXP_STATE_WITNESS_MAX_KEY +
+        LXP_MODULE_MAX_VALUE_BYTES + 96 * LXP_STATE_PROOF_MAX_DEPTH };
+    lxp_state_witness *proof;
+    lxp_byte_span witness = {NULL, 0U};
+    uint8_t *encoded;
+    size_t length = 0U;
+    lxp_result status;
+    if (capture == NULL) return LXP_OK;
+    proof = malloc(sizeof(*proof));
+    encoded = malloc(MAX_BYTES);
+    if (proof == NULL || encoded == NULL) {
+        free(proof);
+        free(encoded);
+        return LXP_ERR_ARENA_EXHAUSTED;
+    }
+    status = lxp_kernel_program_replay_proof(kernel, receipt, proof, &witness);
+    if (status == LXP_OK && proof->value_length > LXP_MODULE_MAX_VALUE_BYTES)
+        status = LXP_ERR_LENGTH_LIMIT;
+    if (status == LXP_OK)
+        status = lxp_state_proof_encode(proof, encoded, MAX_BYTES, &length);
+    free(proof);
+    if (status != LXP_OK) {
+        free(encoded);
+        return status;
+    }
+    free(capture->metadata_proof);
+    capture->metadata_proof = encoded;
+    capture->metadata_proof_length = (uint32_t)length;
+    return LXP_OK;
+}
+
+static lxp_result kernel_batch_own_replay(
+    lxp_kernel_prepared_batch *batch, size_t index,
+    const lxp_prepared_transition *prepared)
+{
+    lxp_byte_span captured = {NULL, 0U};
+    uint8_t *owned;
+    lxp_result status;
+    if (prepared == NULL || prepared->replay_capture == NULL) return LXP_OK;
+    if (batch == NULL || index >= batch->count) return LXP_ERR_NON_CANONICAL;
+    status = lxp_programs_replay_capture_bytes(prepared->replay_capture, &captured);
+    if (status != LXP_OK) return status;
+    if (captured.bytes == NULL || captured.length == 0U ||
+        captured.length > LXP_KERNEL_MAX_BLOB_BYTES)
+        return LXP_ERR_LENGTH_LIMIT;
+    if (batch->replay_witnesses == NULL) {
+        batch->replay_witnesses = calloc(batch->count, sizeof(*batch->replay_witnesses));
+        if (batch->replay_witnesses == NULL) return LXP_ERR_ARENA_EXHAUSTED;
+    }
+    if (batch->replay_witnesses[index].bytes != NULL) return LXP_FATAL_INVARIANT;
+    owned = malloc(captured.length);
+    if (owned == NULL) return LXP_ERR_ARENA_EXHAUSTED;
+    (void)memcpy(owned, captured.bytes, captured.length);
+    batch->replay_witnesses[index] = (lxp_byte_span){owned, captured.length};
+    if (prepared->replay_capture->metadata_proof == NULL ||
+        prepared->replay_capture->metadata_proof_length == 0U)
+        return LXP_ERR_CONTEXT_MISMATCH;
+    if (batch->replay_metadata_proofs == NULL) {
+        batch->replay_metadata_proofs = calloc(batch->count, sizeof(*batch->replay_metadata_proofs));
+        if (batch->replay_metadata_proofs == NULL) return LXP_ERR_ARENA_EXHAUSTED;
+    }
+    owned = malloc(prepared->replay_capture->metadata_proof_length);
+    if (owned == NULL) return LXP_ERR_ARENA_EXHAUSTED;
+    (void)memcpy(owned, prepared->replay_capture->metadata_proof,
+        prepared->replay_capture->metadata_proof_length);
+    batch->replay_metadata_proofs[index] = (lxp_byte_span){owned,
+        prepared->replay_capture->metadata_proof_length};
+    return LXP_OK;
+}
 
 /* A prepared batch owns its receipts' outcome artifacts: every span the
  * receipt carries beside its committed bytes is copied out of the arena the
@@ -3214,6 +3291,7 @@ void lxp_prepared_transition_destroy(lxp_prepared_transition *prepared)
 {
     if (prepared == NULL) return;
     lxp_prepared_module_transition_destroy(prepared->module);
+    lxp_programs_replay_capture_release(prepared->replay_capture);
     free(prepared);
 }
 
@@ -3367,6 +3445,10 @@ lxp_result lxp_kernel_prepare_activity(
             status = lxp_kernel_dispatch(registration, &module_ctx, activity,
                                          execution->authority, &effects,
                                          &module_result);
+        if (status == LXP_OK && module_admitted &&
+            activity->activity_type == LX_PROGRAMS_CALL)
+            status = lxp_programs_call_replay_take(
+                &module_ctx, &prepared->replay_capture);
         program_outcome = status == LXP_OK ?
             lxp_ctx_program_outcome(&module_ctx) : NULL;
         if (status == LXP_OK && program_outcome == NULL &&
@@ -4138,6 +4220,13 @@ static lxp_result kernel_snapshot_apply_prepared_with_capture(
             status = kernel_settlement_refusal(&module_ctx, prepared, settlement_result);
         }
     }
+    if (status == LXP_OK && prepared->replay_capture != NULL) {
+        module_ctx.commit_prepared = false;
+        status = lxp_programs_replay_capture_stage(
+            &module_ctx, prepared->replay_capture, settlement_result);
+        if (status == LXP_OK)
+            status = lxp_module_ctx_prepare_commit(&module_ctx);
+    }
     if (status == LXP_OK) {
         (void)memset(receipt, 0, sizeof(*receipt));
         receipt->protocol_version = prepared->protocol_version;
@@ -4223,6 +4312,9 @@ static lxp_result kernel_snapshot_apply_prepared_with_capture(
     }
     if (status == LXP_OK)
         status = receipt_committed_state_check(&candidate->kernel, receipt);
+    if (status == LXP_OK && prepared->replay_capture != NULL)
+        status = kernel_capture_replay_metadata_proof(
+            prepared->replay_capture, &candidate->kernel, receipt);
     if (status == LXP_OK) {
         (void)memcpy(candidate->kernel.current_state_root,
                      receipt->resulting_state_root, 32U);
@@ -5620,6 +5712,8 @@ assemble_batch:
         status = kernel_batch_own_artifacts(
             &staged_receipts[index].program_outcome,
             batch->artifact_bytes + index * KERNEL_OUTCOME_ARTIFACTS);
+    for (index = 0U; status == LXP_OK && index < count; ++index)
+        status = kernel_batch_own_replay(batch, index, prepared[index]);
     for (index = 0U; status == LXP_OK && index < count; ++index) {
         if (staged_events[index].length == 0U) continue;
         if (staged_events[index].bytes == NULL) {
@@ -5778,6 +5872,8 @@ lxp_result lxp_kernel_simulate_activity(
     if (status == LXP_OK)
         status = kernel_batch_own_artifacts(
             &batch->receipts[0].program_outcome, batch->artifact_bytes);
+    if (status == LXP_OK)
+        status = kernel_batch_own_replay(batch, 0U, prepared);
     if (status == LXP_OK)
         status = lxp_state_snapshot_seal_level(batch->settled->state);
     if (status == LXP_OK)
@@ -6204,6 +6300,65 @@ lxp_byte_span lxp_kernel_prepared_batch_execution_prestate(
     return batch->execution_prestates[receipt_index];
 }
 
+lxp_byte_span lxp_kernel_prepared_batch_replay_witness(
+    const lxp_kernel_prepared_batch *batch, size_t receipt_index)
+{
+    if (batch == NULL || receipt_index >= batch->count ||
+        batch->replay_witnesses == NULL)
+        return (lxp_byte_span){NULL, 0U};
+    return batch->replay_witnesses[receipt_index];
+}
+
+lxp_byte_span lxp_kernel_prepared_batch_replay_metadata_proof(
+    const lxp_kernel_prepared_batch *batch, size_t receipt_index)
+{
+    if (batch == NULL || receipt_index >= batch->count ||
+        batch->replay_metadata_proofs == NULL)
+        return (lxp_byte_span){NULL, 0U};
+    return batch->replay_metadata_proofs[receipt_index];
+}
+
+lxp_result lxp_kernel_program_replay_proof(
+    const lxp_kernel *kernel, const lxp_receipt *receipt,
+    lxp_state_witness *metadata_proof, lxp_byte_span *full_witness)
+{
+    uint8_t key[45];
+    uint8_t blob_key[32];
+    uint8_t digest[32];
+    lxp_result status;
+    size_t index;
+    if (full_witness != NULL) *full_witness = (lxp_byte_span){NULL, 0U};
+    if (kernel == NULL || receipt == NULL || metadata_proof == NULL ||
+        full_witness == NULL || receipt->module_id != LXP_MODULE_PROGRAMS ||
+        receipt->protocol_version != LXP_PROTOCOL_VERSION_STATE_COMMITMENT)
+        return LXP_ERR_NON_CANONICAL;
+    lxp_programs_replay_record_key(receipt->activity_id, key);
+    status = lxp_state_proof_build(kernel, LXP_MODULE_PROGRAMS,
+        (lxp_byte_span){key, sizeof(key)}, metadata_proof);
+    if (status == LXP_OK)
+        status = lxp_state_proof_verify(metadata_proof, receipt->resulting_state_root);
+    if (status == LXP_OK)
+        status = lxp_programs_replay_record_blob_key(
+            (lxp_byte_span){metadata_proof->value, metadata_proof->value_length}, blob_key);
+    if (status != LXP_OK) return status;
+    for (index = 0U; index < kernel->blob_count; ++index) {
+        const lxp_module_blob *blob = &kernel->blobs[index];
+        if (blob->module_id != LXP_MODULE_PROGRAMS ||
+            lxp_ct_memcmp(blob->key, blob_key, sizeof(blob_key)) != 0)
+            continue;
+        if (blob->bytes == NULL || blob->length == 0U ||
+            blob->length > LXP_KERNEL_MAX_BLOB_BYTES)
+            return LXP_ERR_LENGTH_LIMIT;
+        status = lxp_hash_sha256(blob->bytes, blob->length, digest);
+        if (status != LXP_OK) return status;
+        if (lxp_ct_memcmp(digest, blob_key, sizeof(digest)) != 0)
+            return LXP_ERR_CONTEXT_MISMATCH;
+        *full_witness = (lxp_byte_span){blob->bytes, blob->length};
+        return LXP_OK;
+    }
+    return LXP_ERR_UNKNOWN_FIELD;
+}
+
 void lxp_kernel_prepared_batch_destroy(lxp_kernel_prepared_batch *batch)
 {
     size_t index;
@@ -6227,6 +6382,14 @@ void lxp_kernel_prepared_batch_destroy(lxp_kernel_prepared_batch *batch)
         for (index = 0U; index < batch->count; ++index)
             free((void *)batch->admission_prestates[index].bytes);
     free(batch->admission_prestates);
+    if (batch->replay_witnesses != NULL)
+        for (index = 0U; index < batch->count; ++index)
+            free((void *)batch->replay_witnesses[index].bytes);
+    free(batch->replay_witnesses);
+    if (batch->replay_metadata_proofs != NULL)
+        for (index = 0U; index < batch->count; ++index)
+            free((void *)batch->replay_metadata_proofs[index].bytes);
+    free(batch->replay_metadata_proofs);
     free(batch->maintenance_storage);
     free(batch->artifact_bytes);
     free(batch->event_bytes);
@@ -6246,6 +6409,8 @@ static lxp_result kernel_execute_prepared_call(
     lxp_kernel_batch_snapshot *settled = NULL;
     lxp_prepared_transition *prepared = NULL;
     lxp_byte_span events = {NULL, 0U};
+    lxp_byte_span replay_witness = {NULL, 0U};
+    lxp_byte_span replay_proof = {NULL, 0U};
     lxp_result status;
     size_t arena_mark = lxp_arena_mark(execution->arena);
     lxp_kernel_execution normalized = *execution;
@@ -6283,9 +6448,40 @@ static lxp_result kernel_execute_prepared_call(
             status = lookup;
         }
     }
+    if (status == LXP_OK && execution->replay_witness_out != NULL &&
+        prepared->replay_capture != NULL) {
+        lxp_byte_span captured = {NULL, 0U};
+        void *allocation = NULL;
+        status = lxp_programs_replay_capture_bytes(prepared->replay_capture, &captured);
+        if (status == LXP_OK && (captured.bytes == NULL || captured.length == 0U ||
+            captured.length > LXP_KERNEL_MAX_BLOB_BYTES))
+            status = LXP_ERR_LENGTH_LIMIT;
+        if (status == LXP_OK)
+            status = lxp_arena_alloc(execution->arena, captured.length, 1U, &allocation);
+        if (status == LXP_OK) {
+            (void)memcpy(allocation, captured.bytes, captured.length);
+            replay_witness = (lxp_byte_span){allocation, captured.length};
+        }
+    }
     if (status == LXP_OK)
         status = lxp_kernel_snapshot_apply_prepared(
             settled, activity, &normalized, prepared, receipt, &events);
+    if (status == LXP_OK && execution->replay_metadata_proof_out != NULL &&
+        prepared->replay_capture != NULL) {
+        void *allocation = NULL;
+        if (prepared->replay_capture->metadata_proof == NULL ||
+            prepared->replay_capture->metadata_proof_length == 0U)
+            status = LXP_ERR_CONTEXT_MISMATCH;
+        if (status == LXP_OK)
+            status = lxp_arena_alloc(execution->arena,
+                prepared->replay_capture->metadata_proof_length, 1U, &allocation);
+        if (status == LXP_OK) {
+            (void)memcpy(allocation, prepared->replay_capture->metadata_proof,
+                prepared->replay_capture->metadata_proof_length);
+            replay_proof = (lxp_byte_span){allocation,
+                prepared->replay_capture->metadata_proof_length};
+        }
+    }
     if (status == LXP_OK)
         status = lxp_state_snapshot_seal_level(settled->state);
     if (status == LXP_OK)
@@ -6315,6 +6511,10 @@ static lxp_result kernel_execute_prepared_call(
     }
     if (status == LXP_OK && execution->canonical_events_out != NULL)
         *execution->canonical_events_out = events;
+    if (status == LXP_OK && execution->replay_witness_out != NULL)
+        *execution->replay_witness_out = replay_witness;
+    if (status == LXP_OK && execution->replay_metadata_proof_out != NULL)
+        *execution->replay_metadata_proof_out = replay_proof;
     lxp_prepared_transition_destroy(prepared);
     lxp_kernel_batch_snapshot_destroy(settled);
     lxp_kernel_batch_snapshot_destroy(base);
@@ -6360,6 +6560,10 @@ lxp_result lxp_kernel_execute_activity(lxp_kernel *kernel,
     uint8_t programs_occupancy_asset_id[32];
     if (execution != NULL && execution->canonical_events_out != NULL)
         *execution->canonical_events_out = (lxp_byte_span){NULL, 0U};
+    if (execution != NULL && execution->replay_witness_out != NULL)
+        *execution->replay_witness_out = (lxp_byte_span){NULL, 0U};
+    if (execution != NULL && execution->replay_metadata_proof_out != NULL)
+        *execution->replay_metadata_proof_out = (lxp_byte_span){NULL, 0U};
     if (kernel == NULL || activity == NULL || execution == NULL ||
         receipt == NULL || execution->identities == NULL ||
         execution->authority == NULL || execution->fee_parameters == NULL ||

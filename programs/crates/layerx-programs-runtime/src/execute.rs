@@ -176,6 +176,7 @@ pub struct ProgramInstance {
     instance: Instance,
     resumable_globals: Option<Vec<String>>,
     validated_code_hash: [u8; 32],
+    program_replay_trap: Option<wasmi::ExecutionTrapRecord>,
 }
 
 fn commitment_fault(error: &crate::CommitmentError) -> ExecutionFault {
@@ -1049,7 +1050,137 @@ fn convert_execution_transitions(
     Ok(trace)
 }
 
+fn capture_program_record_from_store(
+    store: &mut Store<RuntimeState>,
+    profile: crate::replay_record::ProgramReplayProfile,
+    identities: TraceIdentities,
+    terminal_status: u8,
+    trap: Option<wasmi::ExecutionTrapRecord>,
+) -> Result<crate::replay_record::ProgramReplayRecord, ExecutionFault> {
+    fn refused(error: crate::replay::ReplayWitnessError) -> ExecutionFault {
+        ExecutionFault::EngineFault {
+            reason: format!("program replay record refused: {error:?}"),
+        }
+    }
+    let transitions = store.take_execution_replay_transitions();
+    let captures = store.data_mut().take_boundary_captures();
+    let mut snapshots: Vec<std::sync::Arc<wasmi::ExecutionReplaySnapshot>> = Vec::new();
+    for transition in transitions {
+        for snapshot in [transition.pre, transition.post] {
+            if !snapshots
+                .last()
+                .is_some_and(|last| std::sync::Arc::ptr_eq(last, &snapshot))
+            {
+                if snapshots.len() >= profile.maximum_boundaries() as usize {
+                    return Err(refused(crate::replay::ReplayWitnessError::Bounds));
+                }
+                snapshots
+                    .try_reserve(1)
+                    .map_err(|_| refused(crate::replay::ReplayWitnessError::Allocation))?;
+                snapshots.push(snapshot);
+            }
+        }
+    }
+    if let Some(trap) = &trap {
+        if !snapshots
+            .last()
+            .is_some_and(|last| std::sync::Arc::ptr_eq(last, &trap.pre))
+        {
+            snapshots
+                .try_reserve(1)
+                .map_err(|_| refused(crate::replay::ReplayWitnessError::Allocation))?;
+            snapshots.push(trap.pre.clone());
+        }
+    }
+    if snapshots.len() != captures.len() || snapshots.is_empty() {
+        return Err(refused(crate::replay::ReplayWitnessError::Binding));
+    }
+    let maximum = profile.maximum_bytes() as usize;
+    let mut leaves = Vec::new();
+    let mut remaining = maximum;
+    for (index, (replay, semantic)) in snapshots.iter().zip(&captures).enumerate() {
+        semantic
+            .compare_boundary(
+                identities.legacy.module_code_hash,
+                &replay.snapshot.supplement,
+            )
+            .map_err(refused)?;
+        let legacy = execution_state_from_snapshot(&replay.snapshot, identities.legacy)?;
+        let arbitration = arbitration_state_from_snapshot(
+            &replay.snapshot,
+            identities,
+            profile.trace_policy(),
+            std::sync::Arc::new(legacy),
+        )?;
+        let ordinary = wasmi::ExecutionTransition {
+            pre: replay.snapshot.clone(),
+            post: replay.snapshot.clone(),
+            memory_expansion_bytes: 0,
+        };
+        validate_arbitration_commitments(&ordinary, &arbitration, &arbitration)?;
+        let mut leaf =
+            crate::replay_record::captured_leaf(replay, &arbitration, semantic, remaining)
+                .map_err(refused)?;
+        let final_trap = trap.as_ref().filter(|_| index + 1 == snapshots.len());
+        match final_trap {
+            None => crate::replay::append(&mut leaf, &[0], remaining).map_err(refused)?,
+            Some(trap) => {
+                let code = match trap.trap_code {
+                    None => 0,
+                    Some(TrapCode::UnreachableCodeReached) => 1,
+                    Some(TrapCode::MemoryOutOfBounds) => 2,
+                    Some(TrapCode::TableOutOfBounds) => 3,
+                    Some(TrapCode::IndirectCallToNull) => 4,
+                    Some(TrapCode::IntegerDivisionByZero) => 5,
+                    Some(TrapCode::IntegerOverflow) => 6,
+                    Some(TrapCode::BadConversionToInteger) => 7,
+                    Some(TrapCode::StackOverflow) => 8,
+                    Some(TrapCode::BadSignature) => 9,
+                    Some(TrapCode::OutOfFuel) => 10,
+                    Some(TrapCode::GrowthOperationLimited) => 11,
+                };
+                crate::replay::append(&mut leaf, &[1, code, u8::from(trap.host_trap)], remaining)
+                    .map_err(refused)?;
+            }
+        }
+        remaining = remaining
+            .checked_sub(leaf.len() + 4)
+            .ok_or_else(|| refused(crate::replay::ReplayWitnessError::Bounds))?;
+        leaves
+            .try_reserve(1)
+            .map_err(|_| refused(crate::replay::ReplayWitnessError::Allocation))?;
+        leaves.push(leaf);
+    }
+    crate::replay_record::ProgramReplayRecord::from_captured(
+        profile,
+        identities.legacy.module_code_hash,
+        identities.legacy.input_digest,
+        identities.runtime_version,
+        identities.abi_version,
+        identities.fee_schedule_version,
+        identities.metering_schedule_version,
+        terminal_status,
+        leaves,
+    )
+    .map_err(refused)
+}
+
 impl ProgramInstance {
+    fn take_program_replay_record(
+        &mut self,
+        profile: crate::replay_record::ProgramReplayProfile,
+        identities: TraceIdentities,
+        terminal_status: u8,
+    ) -> Result<crate::replay_record::ProgramReplayRecord, ExecutionFault> {
+        capture_program_record_from_store(
+            &mut self.store,
+            profile,
+            identities,
+            terminal_status,
+            self.program_replay_trap.take(),
+        )
+    }
+
     pub fn call_with_boundary_witnesses(
         &mut self,
         module: &ValidatedModule,
@@ -1219,6 +1350,7 @@ impl ProgramInstance {
             instance,
             resumable_globals: None,
             validated_code_hash: [0; 32],
+            program_replay_trap: None,
         }
     }
 
@@ -2233,6 +2365,7 @@ pub struct V2AuthorizedExecutionRecord {
     execution: V2ExecutionRecord,
     outcome: V2ActivityOutcome,
     call_graph: CallGraph,
+    replay_record: Option<crate::replay_record::ProgramReplayRecord>,
 }
 
 /// Mutually exclusive ABI-v2 activity result carried into receipt projection.
@@ -2293,6 +2426,11 @@ pub type CandidateExecutionRecord = V2ExecutionRecord;
 pub type CandidateReceiptOutcome = V2ReceiptOutcome;
 
 impl V2AuthorizedExecutionRecord {
+    #[must_use]
+    pub fn replay_record(&self) -> Option<&crate::replay_record::ProgramReplayRecord> {
+        self.replay_record.as_ref()
+    }
+
     #[must_use]
     pub const fn root_program(&self) -> ProgramId {
         self.root_program
@@ -3174,6 +3312,7 @@ pub struct Executor {
     runtime_version: u16,
     abi_version: u16,
     trace_policy: Option<crate::TracePolicy>,
+    program_replay_profile: Option<crate::replay_record::ProgramReplayProfile>,
 }
 
 impl Executor {
@@ -3186,6 +3325,7 @@ impl Executor {
             runtime_version: RUNTIME_VERSION,
             abi_version: crate::abi::manifest::ABI_V1_VERSION,
             trace_policy: None,
+            program_replay_profile: None,
         }
     }
 
@@ -3201,6 +3341,7 @@ impl Executor {
             runtime_version,
             abi_version,
             trace_policy: None,
+            program_replay_profile: None,
         }
     }
 
@@ -3218,6 +3359,25 @@ impl Executor {
             trace_policy: Some(trace_policy),
             ..self
         }
+    }
+
+    #[must_use]
+    pub const fn with_program_replay_profile(
+        self,
+        profile: crate::replay_record::ProgramReplayProfile,
+    ) -> Self {
+        Self {
+            program_replay_profile: Some(profile),
+            trace_policy: Some(profile.trace_policy()),
+            ..self
+        }
+    }
+
+    #[must_use]
+    pub const fn program_replay_profile(
+        &self,
+    ) -> Option<crate::replay_record::ProgramReplayProfile> {
+        self.program_replay_profile
     }
 
     #[must_use]
@@ -4152,29 +4312,6 @@ impl Executor {
             CallGraph::root(request.composition.rules(), request.program, principal),
             self.selected_revision()?,
         );
-        let retained = request
-            .module
-            .instantiate_composed_response_context_retained(
-                meter,
-                abi,
-                composition,
-                request.response_capacity,
-                execution_context,
-            )
-            .map_err(ExecutionError::Response)?;
-        let mut instance = match retained {
-            Ok(instance) => instance,
-            Err(error) => {
-                let (fault, state) = *error;
-                return self.finish_v2_start(
-                    request.program,
-                    fault,
-                    state,
-                    active_budget,
-                    budgeted,
-                );
-            }
-        };
         let identity = self
             .trace_policy
             .map(|policy| {
@@ -4190,14 +4327,85 @@ impl Executor {
             })
             .transpose()
             .map_err(ExecutionError::Fault)?;
-        if let Some(policy) = self.trace_policy {
-            instance
-                .enable_execution_trace(policy)
-                .map_err(ExecutionError::Fault)?;
+        if self
+            .program_replay_profile
+            .is_some_and(|profile| Some(profile.trace_policy()) != self.trace_policy)
+        {
+            return Err(ExecutionError::Fault(ExecutionFault::EngineFault {
+                reason: "program replay profile and trace policy diverged".to_string(),
+            }));
+        }
+        let retained = request
+            .module
+            .instantiate_composed_response_context_replay_retained(
+                meter,
+                abi,
+                composition,
+                request.response_capacity,
+                execution_context,
+                self.program_replay_profile,
+            )
+            .map_err(ExecutionError::Response)?;
+        let mut instance = match retained {
+            Ok(instance) => instance,
+            Err(error) => {
+                let (fault, mut store) = *error;
+                let replay_record = if let Some(profile) = self.program_replay_profile {
+                    let trap = store.take_execution_trap_record();
+                    if trap.is_none() {
+                        return Err(ExecutionError::Fault(fault));
+                    }
+                    let identities = identity.ok_or_else(|| {
+                        ExecutionError::Fault(ExecutionFault::EngineFault {
+                            reason: "program start replay identity missing".to_string(),
+                        })
+                    })?;
+                    let terminal_status = if budgeted
+                        && (store.data().meter().budget_exhaustion().is_some()
+                            || v2_composition_budget_refusal(store.data()).is_some())
+                    {
+                        2
+                    } else {
+                        1
+                    };
+                    Some(
+                        capture_program_record_from_store(
+                            &mut store,
+                            profile,
+                            identities,
+                            terminal_status,
+                            trap,
+                        )
+                        .map_err(ExecutionError::Fault)?,
+                    )
+                } else {
+                    None
+                };
+                let state = store.into_data();
+                let mut record =
+                    self.finish_v2_start(request.program, fault, state, active_budget, budgeted)?;
+                record.replay_record = replay_record;
+                return Ok(record);
+            }
+        };
+        if self.program_replay_profile.is_none() {
+            if let Some(policy) = self.trace_policy {
+                instance
+                    .enable_execution_trace(policy)
+                    .map_err(ExecutionError::Fault)?;
+            }
         }
         let invocation = entrypoint::invoke(&mut instance, request.entrypoint, request.calldata);
+        if self.program_replay_profile.is_some() {
+            instance.program_replay_trap = instance.store.take_execution_trap_record();
+        }
         if let Some(observer) = instance.execution_observer_fault() {
-            return Err(ExecutionError::Fault(observer));
+            if instance.program_replay_trap.is_none()
+                || instance.store.execution_observer_error()
+                    != Some(wasmi::ExecutionObserverError::UnsupportedState)
+            {
+                return Err(ExecutionError::Fault(observer));
+            }
         }
         if budgeted {
             if let Some(resource) = instance
@@ -4205,24 +4413,31 @@ impl Executor {
                 .budget_exhaustion()
                 .or_else(|| v2_composition_budget_refusal(instance.state()))
             {
-                let trace = match (self.trace_policy, identity) {
-                    (Some(policy), Some(identity)) => Some(
-                        instance
-                            .take_execution_trace(policy, identity)
-                            .map_err(ExecutionError::Fault)?,
-                    ),
-                    (None, None) => None,
-                    _ => {
-                        return Err(ExecutionError::Fault(ExecutionFault::EngineFault {
-                            reason: "execution trace identity and policy diverged".to_string(),
-                        }))
+                let trace = if instance.program_replay_trap.is_some() {
+                    None
+                } else {
+                    match (self.trace_policy, identity) {
+                        (Some(policy), Some(identity)) => Some(
+                            instance
+                                .take_execution_trace(policy, identity)
+                                .map_err(ExecutionError::Fault)?,
+                        ),
+                        (None, None) => None,
+                        _ => {
+                            return Err(ExecutionError::Fault(ExecutionFault::EngineFault {
+                                reason: "execution trace identity and policy diverged".to_string(),
+                            }))
+                        }
                     }
                 };
+                let replay_record =
+                    self.capture_program_replay_record(&mut instance, identity, 2)?;
                 return self.v2_resource_from_state(
                     request.program,
                     resource,
                     instance.into_state(),
                     trace,
+                    replay_record,
                 );
             }
         }
@@ -4343,25 +4558,34 @@ impl Executor {
                             .budget_exhaustion()
                             .or_else(|| BudgetMeterRefusal::try_from(refusal).ok())
                             .ok_or(ExecutionError::Resource(refusal))?;
-                        let trace = match (self.trace_policy, identity) {
-                            (Some(policy), Some(identity)) => Some(
-                                instance
-                                    .take_execution_trace(policy, identity)
-                                    .map_err(ExecutionError::Fault)?,
-                            ),
-                            (None, None) => None,
-                            _ => {
-                                return Err(ExecutionError::Fault(ExecutionFault::EngineFault {
-                                    reason: "execution trace identity and policy diverged"
-                                        .to_string(),
-                                }))
+                        let trace = if instance.program_replay_trap.is_some() {
+                            None
+                        } else {
+                            match (self.trace_policy, identity) {
+                                (Some(policy), Some(identity)) => Some(
+                                    instance
+                                        .take_execution_trace(policy, identity)
+                                        .map_err(ExecutionError::Fault)?,
+                                ),
+                                (None, None) => None,
+                                _ => {
+                                    return Err(ExecutionError::Fault(
+                                        ExecutionFault::EngineFault {
+                                            reason: "execution trace identity and policy diverged"
+                                                .to_string(),
+                                        },
+                                    ))
+                                }
                             }
                         };
+                        let replay_record =
+                            self.capture_program_replay_record(&mut instance, identity, 2)?;
                         return self.v2_resource_from_state(
                             request.program,
                             refusal,
                             instance.into_state(),
                             trace,
+                            replay_record,
                         );
                     }
                     if let Some(CompositionRefusal::Program(failure)) = instance.state().refusal() {
@@ -4388,19 +4612,24 @@ impl Executor {
                 .meter()
                 .finish_published_failure()
                 .map_err(ExecutionError::Resource)?;
-            let trace = match (self.trace_policy, identity) {
-                (Some(policy), Some(identity)) => Some(
-                    instance
-                        .take_execution_trace(policy, identity)
-                        .map_err(ExecutionError::Fault)?,
-                ),
-                (None, None) => None,
-                _ => {
-                    return Err(ExecutionError::Fault(ExecutionFault::EngineFault {
-                        reason: "execution trace identity and policy diverged".to_string(),
-                    }))
+            let trace = if instance.program_replay_trap.is_some() {
+                None
+            } else {
+                match (self.trace_policy, identity) {
+                    (Some(policy), Some(identity)) => Some(
+                        instance
+                            .take_execution_trace(policy, identity)
+                            .map_err(ExecutionError::Fault)?,
+                    ),
+                    (None, None) => None,
+                    _ => {
+                        return Err(ExecutionError::Fault(ExecutionFault::EngineFault {
+                            reason: "execution trace identity and policy diverged".to_string(),
+                        }))
+                    }
                 }
             };
+            let replay_record = self.capture_program_replay_record(&mut instance, identity, 1)?;
             let mut state = instance.into_state();
             let failure_graph = state.take_failure_graph();
             let (_, _, composition) = state.into_parts();
@@ -4422,6 +4651,7 @@ impl Executor {
                 },
                 outcome: V2ActivityOutcome::Failure(failure),
                 call_graph,
+                replay_record,
             });
         }
         let response = match instance.state().finalize_response(code) {
@@ -4432,24 +4662,31 @@ impl Executor {
                     .budget_exhaustion()
                     .or_else(|| BudgetMeterRefusal::try_from(refusal).ok())
                     .ok_or(ExecutionError::Resource(refusal))?;
-                let trace = match (self.trace_policy, identity) {
-                    (Some(policy), Some(identity)) => Some(
-                        instance
-                            .take_execution_trace(policy, identity)
-                            .map_err(ExecutionError::Fault)?,
-                    ),
-                    (None, None) => None,
-                    _ => {
-                        return Err(ExecutionError::Fault(ExecutionFault::EngineFault {
-                            reason: "execution trace identity and policy diverged".to_string(),
-                        }))
+                let trace = if instance.program_replay_trap.is_some() {
+                    None
+                } else {
+                    match (self.trace_policy, identity) {
+                        (Some(policy), Some(identity)) => Some(
+                            instance
+                                .take_execution_trace(policy, identity)
+                                .map_err(ExecutionError::Fault)?,
+                        ),
+                        (None, None) => None,
+                        _ => {
+                            return Err(ExecutionError::Fault(ExecutionFault::EngineFault {
+                                reason: "execution trace identity and policy diverged".to_string(),
+                            }))
+                        }
                     }
                 };
+                let replay_record =
+                    self.capture_program_replay_record(&mut instance, identity, 2)?;
                 return self.v2_resource_from_state(
                     request.program,
                     refusal,
                     instance.into_state(),
                     trace,
+                    replay_record,
                 );
             }
             Err(ResponseRefusal::Meter(refusal)) => return Err(ExecutionError::Resource(refusal)),
@@ -4459,19 +4696,24 @@ impl Executor {
             .meter()
             .finish()
             .map_err(ExecutionError::Resource)?;
-        let trace = match (self.trace_policy, identity) {
-            (Some(policy), Some(identity)) => Some(
-                instance
-                    .take_execution_trace(policy, identity)
-                    .map_err(ExecutionError::Fault)?,
-            ),
-            (None, None) => None,
-            _ => {
-                return Err(ExecutionError::Fault(ExecutionFault::EngineFault {
-                    reason: "execution trace identity and policy diverged".to_string(),
-                }))
+        let trace = if instance.program_replay_trap.is_some() {
+            None
+        } else {
+            match (self.trace_policy, identity) {
+                (Some(policy), Some(identity)) => Some(
+                    instance
+                        .take_execution_trace(policy, identity)
+                        .map_err(ExecutionError::Fault)?,
+                ),
+                (None, None) => None,
+                _ => {
+                    return Err(ExecutionError::Fault(ExecutionFault::EngineFault {
+                        reason: "execution trace identity and policy diverged".to_string(),
+                    }))
+                }
             }
         };
+        let replay_record = self.capture_program_replay_record(&mut instance, identity, 0)?;
         let (_, abi, composition) = instance.into_state().into_parts();
         let committed = abi
             .ok_or(ExecutionError::Abi(AbiError::CapabilityDenied))?
@@ -4498,7 +4740,28 @@ impl Executor {
                 effects: committed.effects,
             },
             call_graph,
+            replay_record,
         })
+    }
+
+    fn capture_program_replay_record(
+        &self,
+        instance: &mut ProgramInstance,
+        identities: Option<TraceIdentities>,
+        terminal_status: u8,
+    ) -> Result<Option<crate::replay_record::ProgramReplayRecord>, ExecutionError> {
+        let Some(profile) = self.program_replay_profile else {
+            return Ok(None);
+        };
+        let identities = identities.ok_or_else(|| {
+            ExecutionError::Fault(ExecutionFault::EngineFault {
+                reason: "program replay identity missing".to_string(),
+            })
+        })?;
+        instance
+            .take_program_replay_record(profile, identities, terminal_status)
+            .map(Some)
+            .map_err(ExecutionError::Fault)
     }
 
     fn finish_v2_start(
@@ -4515,7 +4778,7 @@ impl Executor {
                 .budget_exhaustion()
                 .or_else(|| v2_composition_budget_refusal(&state))
             {
-                return self.v2_resource_from_state(program, resource, state, None);
+                return self.v2_resource_from_state(program, resource, state, None, None);
             }
         }
         if let Some(refusal) = state.refusal() {
@@ -4572,6 +4835,7 @@ impl Executor {
             },
             outcome: V2ActivityOutcome::Failure(failure),
             call_graph,
+            replay_record: None,
         })
     }
 
@@ -4581,6 +4845,7 @@ impl Executor {
         refusal: BudgetMeterRefusal,
         mut state: RuntimeState,
         trace: Option<crate::ExecutionTrace>,
+        replay_record: Option<crate::replay_record::ProgramReplayRecord>,
     ) -> Result<V2AuthorizedExecutionRecord, ExecutionError> {
         let usage = state
             .meter()
@@ -4607,6 +4872,7 @@ impl Executor {
             },
             outcome: V2ActivityOutcome::Resource(refusal),
             call_graph,
+            replay_record,
         })
     }
 

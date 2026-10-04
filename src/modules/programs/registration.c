@@ -70,7 +70,7 @@ static lxp_result programs_decode(lxp_module_ctx *ctx, uint16_t ordinal,
         return lxp_programs_lifecycle_decode(ctx, ordinal, payload, length,
                                              decoded);
     if (ordinal == lxp_activity_type_ordinal(LX_PROGRAMS_CALL))
-        return lxp_programs_call_decode(ctx, payload, length, decoded);
+        return lxp_programs_call_profile_decode(ctx, payload, length, decoded);
     if (ordinal == lxp_activity_type_ordinal(LX_PROGRAMS_TRANSFER))
         return lxp_programs_transfer_decode(ctx, payload, length, decoded);
     if (ordinal == lxp_activity_type_ordinal(LX_PROGRAMS_ACCOUNT))

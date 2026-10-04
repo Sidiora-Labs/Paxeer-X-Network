@@ -66,6 +66,11 @@ typedef struct lxp_programs_call_catalog_entry {
 
 struct lxp_programs_call_activity {
     lxp_module_ctx *ctx;
+    uint32_t replay_prefix_length;
+    lxp_programs_replay_capture replay;
+    uint8_t *replay_runtime, *replay_authority, *replay_hosts;
+    uint32_t replay_runtime_length, replay_runtime_written, replay_authority_length, replay_hosts_length;
+    bool replay_finished;
     uint8_t program_id[32];
     uint8_t code_hash[32];
     uint32_t wasm_length;
@@ -181,10 +186,25 @@ struct lxp_programs_call_activity {
     } web_request;
 };
 
+static lxp_result replay_host_fact(lxp_programs_call_activity *value, uint8_t tag,
+    const uint8_t *first, size_t first_length, const uint8_t *second, size_t second_length);
+static lxp_result replay_host_failure(lxp_programs_call_activity *value, uint8_t tag,
+    lxp_result checked_status, const uint8_t *input, size_t input_length);
+static lxp_result replay_capture_authority(lxp_programs_call_activity *value,
+    const lxp_activity *activity, const lxp_authority_resolved *authority);
+
 static void call_activity_release(void *state)
 {
     lxp_programs_call_activity *value = state;
     if (value == NULL) return;
+    free(value->replay.bytes);
+    free(value->replay_runtime);
+    free(value->replay_authority);
+    free(value->replay_hosts);
+    value->replay.bytes = NULL;
+    value->replay_runtime = NULL;
+    value->replay_authority = NULL;
+    value->replay_hosts = NULL;
     free(value->terminal.graph);
     free(value->terminal.terminal);
     free(value->terminal.events);
@@ -665,11 +685,23 @@ lxp_result layerx_programs_call_receipt_view_begin(
     if (status != LXP_OK) {
         value->receipt_view_active = false;
         (void)memset(&value->receipt_view, 0, sizeof(value->receipt_view));
-        return status;
+        return replay_host_failure(value, 1U, status, digest, sizeof(digest));
     }
     if (lxp_ct_memcmp(value->receipt_view.receipt_digest, digest, 32U) != 0)
-        return LXP_FATAL_INVARIANT;
+        return replay_host_failure(value, 1U, LXP_FATAL_INVARIANT, digest, sizeof(digest));
     value->receipt_view_active = true;
+    if (value->replay.max_bytes != 0U) {
+        uint8_t facts[116];
+        (void)memcpy(facts, value->receipt_view.receipt_digest, 32U);
+        facts[32] = (uint8_t)((uint32_t)value->receipt_view.result_code >> 24U);
+        facts[33] = (uint8_t)((uint32_t)value->receipt_view.result_code >> 16U);
+        facts[34] = (uint8_t)((uint32_t)value->receipt_view.result_code >> 8U);
+        facts[35] = (uint8_t)(uint32_t)value->receipt_view.result_code;
+        (void)memcpy(facts + 36U, value->receipt_view.asset, 32U);
+        (void)lxp_u128_to_be(value->receipt_view.amount, facts + 68U);
+        (void)memcpy(facts + 84U, value->receipt_view.resulting_state_root, 32U);
+        return replay_host_fact(value, 1U, facts, sizeof(facts), NULL, 0U);
+    }
     return LXP_OK;
 }
 
@@ -722,6 +754,7 @@ lxp_result layerx_programs_call_balance_view_begin(
     uint8_t account[32];
     uint8_t asset[32];
     uint8_t digest[32];
+    uint8_t input[96];
     lx_programs_balance_view verified;
     lxp_result status;
     if (value == NULL || value->ctx == NULL) return LXP_ERR_NON_CANONICAL;
@@ -738,15 +771,18 @@ lxp_result layerx_programs_call_balance_view_begin(
     write_u64(digest + 8U, d1);
     write_u64(digest + 16U, d2);
     write_u64(digest + 24U, d3);
+    (void)memcpy(input, account, 32U);
+    (void)memcpy(input + 32U, asset, 32U);
+    (void)memcpy(input + 64U, digest, 32U);
     status = lxp_programs_balance_read(
         value->ctx, account, asset, digest, &verified);
-    if (status != LXP_OK) return status;
+    if (status != LXP_OK) return replay_host_failure(value, 2U, status, input, sizeof(input));
     if (lxp_ct_memcmp(verified.account.id, account, 32U) != 0 ||
         lxp_ct_memcmp(verified.account.asset_id, asset, 32U) != 0 ||
         lxp_ct_memcmp(verified.receipt_digest, digest, 32U) != 0 ||
         lxp_ct_is_zero(verified.state_root, 32U) ||
         verified.observed_sequence == 0U)
-        return LXP_ERR_ROOT_MISMATCH;
+        return replay_host_failure(value, 2U, LXP_ERR_ROOT_MISMATCH, input, sizeof(input));
     (void)memcpy(value->balance_view.account, verified.account.id, 32U);
     (void)memcpy(value->balance_view.asset, verified.account.asset_id, 32U);
     value->balance_view.balance = verified.balance;
@@ -755,6 +791,16 @@ lxp_result layerx_programs_call_balance_view_begin(
     (void)memcpy(value->balance_view.state_root, verified.state_root, 32U);
     value->balance_view.observed_sequence = verified.observed_sequence;
     value->balance_view.active = true;
+    if (value->replay.max_bytes != 0U) {
+        uint8_t facts[152];
+        (void)memcpy(facts, value->balance_view.account, 32U);
+        (void)memcpy(facts + 32U, value->balance_view.asset, 32U);
+        (void)lxp_u128_to_be(value->balance_view.balance, facts + 64U);
+        (void)memcpy(facts + 80U, value->balance_view.receipt_digest, 32U);
+        (void)memcpy(facts + 112U, value->balance_view.state_root, 32U);
+        write_u64(facts + 144U, value->balance_view.observed_sequence);
+        return replay_host_fact(value, 2U, facts, sizeof(facts), NULL, 0U);
+    }
     return LXP_OK;
 }
 
@@ -811,14 +857,15 @@ lxp_result layerx_programs_call_oracle_view_begin(
     write_u64(market_id + 16U, m2);
     write_u64(market_id + 24U, m3);
     status = lx_oracle_committed_read(value->ctx, market_id, &committed);
-    if (status != LXP_OK) return status;
+    if (status != LXP_OK) return replay_host_failure(value, 3U, status, market_id, sizeof(market_id));
     if (lxp_ct_memcmp(committed.market_id, market_id, 32U) != 0)
-        return LXP_ERR_ROOT_MISMATCH;
+        return replay_host_failure(value, 3U, LXP_ERR_ROOT_MISMATCH, market_id, sizeof(market_id));
     status = lx_oracle_committed_encode(&committed, value->oracle_view.record);
-    if (status != LXP_OK) return status;
+    if (status != LXP_OK) return replay_host_failure(value, 3U, status, market_id, sizeof(market_id));
     (void)memcpy(value->oracle_view.market_id, market_id, 32U);
     value->oracle_view.active = true;
-    return LXP_OK;
+    return replay_host_fact(value, 3U, value->oracle_view.market_id, 32U,
+        value->oracle_view.record, LX_ORACLE_COMMITTED_BYTES);
 }
 
 lxp_result layerx_programs_call_oracle_view_byte(
@@ -850,6 +897,7 @@ lxp_result layerx_programs_call_web_view_begin(
     lxp_programs_call_activity *value =
         (lxp_programs_call_activity *)(uintptr_t)token;
     uint8_t program_id[32];
+    uint8_t input[40];
     lx_web_answer answer;
     size_t index;
     lxp_result status;
@@ -859,14 +907,16 @@ lxp_result layerx_programs_call_web_view_begin(
     write_u64(program_id + 8U, p1);
     write_u64(program_id + 16U, p2);
     write_u64(program_id + 24U, p3);
+    (void)memcpy(input, program_id, 32U);
+    write_u64(input + 32U, request_id);
     status = lx_web_committed_read(value->ctx, program_id, request_id,
                                    &answer);
-    if (status != LXP_OK) return status;
+    if (status != LXP_OK) return replay_host_failure(value, 4U, status, input, sizeof(input));
     if (lxp_ct_memcmp(answer.program_id, program_id, 32U) != 0 ||
         answer.request_id != request_id ||
         answer.response_length > LX_WEB_MAX_RESPONSE_BYTES ||
         answer.response_length > answer.full_length)
-        return LXP_ERR_ROOT_MISMATCH;
+        return replay_host_failure(value, 4U, LXP_ERR_ROOT_MISMATCH, input, sizeof(input));
     (void)memcpy(value->web_view.program_id, program_id, 32U);
     (void)memcpy(value->web_view.header, answer.content_digest, 32U);
     for (index = 0U; index < 4U; ++index) {
@@ -879,6 +929,14 @@ lxp_result layerx_programs_call_web_view_begin(
     (void)memcpy(value->web_view.response, answer.response,
                  answer.response_length);
     value->web_view.active = true;
+    if (value->replay.max_bytes != 0U) {
+        uint8_t facts[32U + 8U + LX_WEB_ANSWER_HEADER_BYTES];
+        (void)memcpy(facts, program_id, 32U);
+        write_u64(facts + 32U, request_id);
+        (void)memcpy(facts + 40U, value->web_view.header, LX_WEB_ANSWER_HEADER_BYTES);
+        return replay_host_fact(value, 4U, facts, sizeof(facts),
+            value->web_view.response, value->web_view.response_length);
+    }
     return LXP_OK;
 }
 
@@ -2350,7 +2408,7 @@ lxp_result lxp_programs_call_schedule_decode(
     if (activity->payload.length > UINTPTR_MAX - payload_begin)
         return LXP_ERR_LENGTH_LIMIT;
     payload_end = payload_begin + activity->payload.length;
-    capabilities_offset = PROGRAM_CALL_FIXED_BYTES;
+    capabilities_offset = PROGRAM_CALL_FIXED_BYTES + value->replay_prefix_length;
     if (!checked_size_add(capabilities_offset, value->entrypoint_length,
                           &capabilities_offset) ||
         !checked_size_add(capabilities_offset, value->calldata_length,
@@ -2472,6 +2530,365 @@ lxp_result lxp_programs_call_execute(
     if (status != LXP_OK) return status;
     /* The Rust boundary consumes this exact arena-owned activity once. It must
      * publish into the existing C journal before reporting success. */
+    status = replay_capture_authority(value, activity, authority);
+    if (status != LXP_OK) return status;
     status = call_scalar_begin(value, authority);
     return status;
+}
+
+
+static lxp_result replay_append(uint8_t **bytes, uint32_t *length,
+    uint32_t maximum, const void *data, size_t count)
+{
+    uint8_t *next;
+    if (count > maximum || *length > maximum - count)
+        return LXP_ERR_LENGTH_LIMIT;
+    if (count == 0U) return LXP_OK;
+    if (data == NULL) return LXP_ERR_NON_CANONICAL;
+    next = realloc(*bytes, (size_t)*length + count);
+    if (next == NULL) return LXP_ERR_LENGTH_LIMIT;
+    (void)memcpy(next + *length, data, count);
+    *bytes = next;
+    *length += (uint32_t)count;
+    return LXP_OK;
+}
+
+static void replay_write_u32(uint8_t *bytes, uint32_t value)
+{
+    bytes[0] = (uint8_t)(value >> 24U); bytes[1] = (uint8_t)(value >> 16U);
+    bytes[2] = (uint8_t)(value >> 8U); bytes[3] = (uint8_t)value;
+}
+
+static lxp_result replay_host_fact(lxp_programs_call_activity *value, uint8_t tag,
+    const uint8_t *first, size_t first_length, const uint8_t *second, size_t second_length)
+{
+    uint8_t header[9];
+    lxp_result status;
+    if (value->replay.max_bytes == 0U) return LXP_OK;
+    if (first_length > UINT32_MAX || second_length > UINT32_MAX - first_length)
+        return LXP_ERR_LENGTH_LIMIT;
+    header[0] = tag;
+    replay_write_u32(header + 1U, 0U);
+    replay_write_u32(header + 5U, (uint32_t)(first_length + second_length));
+    status = replay_append(&value->replay_hosts, &value->replay_hosts_length,
+        value->replay.max_bytes, header, sizeof(header));
+    if (status == LXP_OK) status = replay_append(&value->replay_hosts,
+        &value->replay_hosts_length, value->replay.max_bytes, first, first_length);
+    if (status == LXP_OK) status = replay_append(&value->replay_hosts,
+        &value->replay_hosts_length, value->replay.max_bytes, second, second_length);
+    return status;
+}
+
+static lxp_result replay_host_failure(lxp_programs_call_activity *value, uint8_t tag,
+    lxp_result checked_status, const uint8_t *input, size_t input_length)
+{
+    uint8_t header[9];
+    lxp_result status;
+    if (value->replay.max_bytes == 0U) return checked_status;
+    if (checked_status == LXP_OK || input_length > UINT32_MAX)
+        return LXP_ERR_NON_CANONICAL;
+    header[0] = tag;
+    replay_write_u32(header + 1U, (uint32_t)checked_status);
+    replay_write_u32(header + 5U, (uint32_t)input_length);
+    status = replay_append(&value->replay_hosts, &value->replay_hosts_length,
+        value->replay.max_bytes, header, sizeof(header));
+    if (status == LXP_OK) status = replay_append(&value->replay_hosts,
+        &value->replay_hosts_length, value->replay.max_bytes, input, input_length);
+    return status == LXP_OK ? checked_status : status;
+}
+
+static lxp_result replay_capture_authority(lxp_programs_call_activity *value,
+    const lxp_activity *activity, const lxp_authority_resolved *authority)
+{
+    static const uint8_t domain[] = "LXP/program-replay-authority/v1";
+    static const uint8_t hosts_domain[] = "LXP/program-replay-hosts/v1";
+    const lxp_call_admission_facts *admission;
+    const lxp_authority_scope *scope = authority->scope;
+    lxp_byte_span encoded;
+    uint8_t scalar[8];
+    lxp_result status;
+    size_t index;
+    if (value->replay.max_bytes == 0U) return LXP_OK;
+    admission = lxp_ctx_call_admission(value->ctx);
+    if (admission == NULL || !admission->present) return LXP_FATAL_INVARIANT;
+    if (value->replay_authority != NULL) return LXP_ERR_DUPLICATE_ENTRY;
+    value->replay.network_id = activity->network_id;
+    value->replay.sequence = value->ctx->global_sequence;
+    value->replay.abi_version = value->abi_version;
+    value->replay.fee_version = admission->fee_schedule_version;
+    value->replay.metering_version = admission->metering_schedule_version;
+    (void)memcpy(value->replay.activity_id, value->ctx->activity_id, 32U);
+    (void)memcpy(value->replay.previous_root, value->ctx->kernel->current_state_root, 32U);
+    (void)memcpy(value->replay.program_id, value->program_id, 32U);
+    (void)memcpy(value->replay.code_hash, value->code_hash, 32U);
+    status = lxp_activity_encode(activity, value->ctx->arena, &encoded);
+    if (status != LXP_OK || encoded.length > UINT32_MAX)
+        return status == LXP_OK ? LXP_ERR_LENGTH_LIMIT : status;
+#define REPLAY_AUTH_BYTES(data, size) do { \
+    status = replay_append(&value->replay_authority, &value->replay_authority_length, \
+        value->replay.max_bytes, (data), (size)); \
+    if (status != LXP_OK) return status; \
+} while (0)
+#define REPLAY_AUTH_U64(number) do { write_u64(scalar, (uint64_t)(number)); REPLAY_AUTH_BYTES(scalar, 8U); } while (0)
+#define REPLAY_AUTH_U128(number) do { REPLAY_AUTH_U64((number).hi); REPLAY_AUTH_U64((number).lo); } while (0)
+    REPLAY_AUTH_BYTES(domain, sizeof(domain));
+    replay_write_u32(scalar, (uint32_t)encoded.length);
+    REPLAY_AUTH_BYTES(scalar, 4U); REPLAY_AUTH_BYTES(encoded.bytes, encoded.length);
+    REPLAY_AUTH_BYTES(authority->actor, 32U); REPLAY_AUTH_BYTES(authority->principal, 32U);
+    REPLAY_AUTH_U64(authority->kind); REPLAY_AUTH_BYTES(authority->verified_key, 32U);
+    REPLAY_AUTH_BYTES(authority->authority_hash, 32U); REPLAY_AUTH_BYTES(authority->grant_id, 32U);
+    REPLAY_AUTH_U64(scope != NULL);
+    if (scope != NULL) {
+        if (scope->signer_count > LXP_AUTHORITY_MULTISIG_MAX_SIGNERS ||
+            scope->approval_count > LXP_AUTHORITY_MULTISIG_MAX_SIGNERS)
+            return LXP_ERR_NON_CANONICAL;
+        REPLAY_AUTH_U64(scope->module_mask); REPLAY_AUTH_U64(scope->activity_ordinal_min);
+        REPLAY_AUTH_U64(scope->activity_ordinal_max); REPLAY_AUTH_BYTES(scope->asset_id, 32U);
+        REPLAY_AUTH_U128(scope->maximum_per_activity); REPLAY_AUTH_U128(scope->maximum_total);
+        REPLAY_AUTH_U128(scope->spent_total); REPLAY_AUTH_U64(scope->period_length);
+        REPLAY_AUTH_U128(scope->maximum_per_period); REPLAY_AUTH_U128(scope->spent_this_period);
+        REPLAY_AUTH_U64(scope->period_start); REPLAY_AUTH_BYTES(scope->purpose_hash, 32U);
+        REPLAY_AUTH_U64(scope->earliest_sequence); REPLAY_AUTH_U64(scope->earliest_timestamp);
+        REPLAY_AUTH_U64(scope->signer_threshold); REPLAY_AUTH_U64(scope->signer_count);
+        REPLAY_AUTH_BYTES(scope->signers, (size_t)scope->signer_count * 32U);
+        REPLAY_AUTH_U64(scope->approval_count);
+        REPLAY_AUTH_BYTES(scope->approvals, (size_t)scope->approval_count * 32U);
+    }
+    REPLAY_AUTH_BYTES(admission->activity_binding, 32U); REPLAY_AUTH_BYTES(admission->payer, 32U);
+    REPLAY_AUTH_U128(admission->available_fee_units); REPLAY_AUTH_U128(admission->signed_fee_limit);
+    REPLAY_AUTH_U64(admission->fee_schedule_version); REPLAY_AUTH_U64(admission->metering_schedule_version);
+    REPLAY_AUTH_U64(admission->parameter_version);
+    for (index = 0U; index < 9U; ++index) REPLAY_AUTH_U64(admission->metering_schedule_coefficients[index]);
+    for (index = 0U; index < 7U; ++index) REPLAY_AUTH_U64(admission->fee_schedule_prices[index]);
+    REPLAY_AUTH_U64(value->ctx->protocol_version); REPLAY_AUTH_U64(value->ctx->batch_number);
+    REPLAY_AUTH_U64(value->ctx->epoch);
+#undef REPLAY_AUTH_U128
+#undef REPLAY_AUTH_U64
+#undef REPLAY_AUTH_BYTES
+    status = replay_append(&value->replay_hosts, &value->replay_hosts_length,
+        value->replay.max_bytes, hosts_domain, sizeof(hosts_domain));
+    return status;
+}
+
+lxp_result lxp_programs_call_profile_decode(lxp_module_ctx *ctx,
+    const uint8_t *payload, size_t payload_length, void **decoded)
+{
+    static const uint8_t domain[] = "LXP/program-replay-profile/v1";
+    const size_t prefix = 34U + sizeof(domain) + 2U + 12U;
+    size_t cursor;
+    uint32_t maximum_boundaries, maximum_bytes, original_length;
+    lxp_programs_call_activity *value;
+    lxp_result status;
+    if (payload == NULL || payload_length < 34U || !lxp_ct_is_zero(payload, 34U))
+        return lxp_programs_call_decode(ctx, payload, payload_length, decoded);
+    if (payload_length < prefix) return LXP_ERR_TRUNCATED;
+    if (lxp_ct_memcmp(payload + 34U, domain, sizeof(domain)) != 0)
+        return LXP_ERR_NON_CANONICAL;
+    cursor = 34U + sizeof(domain);
+    if (read_u16(payload + cursor) != 1U) return LXP_ERR_VERSION_UNSUPPORTED;
+    cursor += 2U;
+    maximum_boundaries = read_u32(payload + cursor); cursor += 4U;
+    maximum_bytes = read_u32(payload + cursor); cursor += 4U;
+    original_length = read_u32(payload + cursor); cursor += 4U;
+    if (maximum_boundaries == 0U || maximum_boundaries > LXP_PROGRAMS_REPLAY_MAX_BOUNDARIES ||
+        maximum_bytes < 512U || maximum_bytes > LXP_PROGRAMS_REPLAY_MAX_BYTES ||
+        original_length != payload_length - cursor)
+        return LXP_ERR_NON_CANONICAL;
+    status = lxp_programs_call_decode(ctx, payload + cursor, original_length, decoded);
+    if (status != LXP_OK) return status;
+    value = *decoded;
+    value->replay_prefix_length = (uint32_t)cursor;
+    value->replay.max_boundaries = maximum_boundaries;
+    value->replay.max_bytes = maximum_bytes;
+    return LXP_OK;
+}
+
+lxp_result layerx_programs_call_replay_profile(uint64_t token, uint16_t section)
+{
+    const lxp_programs_call_activity *value = (const lxp_programs_call_activity *)(uintptr_t)token;
+    if (value == NULL) return LXP_ERR_NON_CANONICAL;
+    if (section == 0U) return value->replay.max_bytes != 0U ? 1 : 0;
+    if (section == 1U) return (lxp_result)value->replay.max_boundaries;
+    if (section == 2U) return (lxp_result)value->replay.max_bytes;
+    return LXP_ERR_UNKNOWN_FIELD;
+}
+
+lxp_result layerx_programs_call_replay_record_begin(uint64_t token, uint32_t length)
+{
+    lxp_programs_call_activity *value = (lxp_programs_call_activity *)(uintptr_t)token;
+    if (value == NULL || value->replay.max_bytes == 0U || length == 0U ||
+        length > value->replay.max_bytes || value->replay_runtime != NULL || value->replay_finished)
+        return LXP_ERR_NON_CANONICAL;
+    value->replay_runtime = malloc(length);
+    if (value->replay_runtime == NULL) return LXP_ERR_LENGTH_LIMIT;
+    value->replay_runtime_length = length;
+    return LXP_OK;
+}
+
+lxp_result layerx_programs_call_replay_record_byte(uint64_t token, uint32_t offset, uint8_t byte)
+{
+    lxp_programs_call_activity *value = (lxp_programs_call_activity *)(uintptr_t)token;
+    if (value == NULL || value->replay_runtime == NULL || value->replay_finished ||
+        offset >= value->replay_runtime_length || offset != value->replay_runtime_written)
+        return LXP_ERR_NON_CANONICAL;
+    value->replay_runtime[offset] = byte;
+    ++value->replay_runtime_written;
+    return LXP_OK;
+}
+
+static lxp_result replay_boundary_root(const uint8_t *bytes, size_t length,
+    uint32_t expected_count, uint8_t root[32])
+{
+    static const uint8_t witness_domain[] = "LXP/program-replay-witness/v1";
+    static const uint8_t leaf_domain[] = "LXP/program-replay-leaf/v1";
+    static const uint8_t node_domain[] = "LXP/program-replay-node/v1";
+    uint8_t *hashes;
+    size_t cursor, index, count;
+    lxp_result status = LXP_OK;
+    if (length < sizeof(witness_domain) + 4U || expected_count == 0U ||
+        expected_count > LXP_PROGRAMS_REPLAY_MAX_BOUNDARIES ||
+        lxp_ct_memcmp(bytes, witness_domain, sizeof(witness_domain)) != 0)
+        return LXP_ERR_NON_CANONICAL;
+    cursor = sizeof(witness_domain);
+    count = read_u32(bytes + cursor); cursor += 4U;
+    if (count != expected_count) return LXP_ERR_NON_CANONICAL;
+    hashes = malloc(count * 32U);
+    if (hashes == NULL) return LXP_ERR_LENGTH_LIMIT;
+    for (index = 0U; index < count; ++index) {
+        lxp_hash_context hash;
+        uint8_t fields[8];
+        uint32_t leaf_length;
+        if (length - cursor < 4U) { status = LXP_ERR_TRUNCATED; break; }
+        leaf_length = read_u32(bytes + cursor); cursor += 4U;
+        if (leaf_length == 0U || leaf_length > length - cursor) { status = LXP_ERR_TRUNCATED; break; }
+        replay_write_u32(fields, (uint32_t)index); replay_write_u32(fields + 4U, leaf_length);
+        lxp_hash_init(&hash);
+        status = lxp_hash_update(&hash, leaf_domain, sizeof(leaf_domain));
+        if (status == LXP_OK) status = lxp_hash_update(&hash, fields, sizeof(fields));
+        if (status == LXP_OK) status = lxp_hash_update(&hash, bytes + cursor, leaf_length);
+        if (status == LXP_OK) status = lxp_hash_final(&hash, hashes + index * 32U);
+        if (status != LXP_OK) break;
+        cursor += leaf_length;
+    }
+    if (status == LXP_OK && cursor != length) status = LXP_ERR_NON_CANONICAL;
+    while (status == LXP_OK && count > 1U) {
+        size_t next_count = (count + 1U) / 2U;
+        for (index = 0U; index < next_count; ++index) {
+            lxp_hash_context hash;
+            size_t right = index * 2U + 1U < count ? index * 2U + 1U : index * 2U;
+            uint8_t children[64];
+            (void)memcpy(children, hashes + index * 2U * 32U, 32U);
+            (void)memcpy(children + 32U, hashes + right * 32U, 32U);
+            lxp_hash_init(&hash);
+            status = lxp_hash_update(&hash, node_domain, sizeof(node_domain));
+            if (status == LXP_OK) status = lxp_hash_update(&hash, children, sizeof(children));
+            if (status == LXP_OK) status = lxp_hash_final(&hash, hashes + index * 32U);
+            if (status != LXP_OK) break;
+        }
+        count = next_count;
+    }
+    if (status == LXP_OK) (void)memcpy(root, hashes, 32U);
+    free(hashes);
+    return status;
+}
+
+lxp_result layerx_programs_call_replay_record_finish(uint64_t token)
+{
+    static const uint8_t domain[] = "LXP/program-replay-record/v1";
+    static const uint8_t native_domain[] = "LXP/program-replay-native-blob/v1";
+    lxp_programs_call_activity *value = (lxp_programs_call_activity *)(uintptr_t)token;
+    const uint8_t *bytes;
+    uint8_t digest[32], root[32], length_bytes[4];
+    size_t cursor, fixed = sizeof(domain) + 2U + 64U + 4U + 8U + 8U + 1U + 4U + 64U + 4U;
+    uint32_t witness_length;
+    lxp_result status;
+    if (value == NULL || value->replay_runtime == NULL || value->replay_finished ||
+        value->replay_runtime_written != value->replay_runtime_length ||
+        value->replay_runtime_length < fixed || value->replay_authority == NULL || value->replay_hosts == NULL)
+        return LXP_ERR_NON_CANONICAL;
+    bytes = value->replay_runtime;
+    if (lxp_ct_memcmp(bytes, domain, sizeof(domain)) != 0) return LXP_ERR_NON_CANONICAL;
+    cursor = sizeof(domain);
+    if (read_u16(bytes + cursor) != 1U) return LXP_ERR_VERSION_UNSUPPORTED;
+    cursor += 2U;
+    if (lxp_ct_memcmp(bytes + cursor, value->code_hash, 32U) != 0) return LXP_ERR_ROOT_MISMATCH;
+    (void)memcpy(value->replay.input_digest, bytes + cursor + 32U, 32U);
+    cursor += 64U;
+    value->replay.runtime_version = read_u16(bytes + cursor); cursor += 2U;
+    if (value->replay.runtime_version == 0U || read_u16(bytes + cursor) != value->replay.abi_version)
+        return LXP_ERR_VERSION_UNSUPPORTED;
+    cursor += 2U;
+    if (read_u32(bytes + cursor) != value->replay.fee_version ||
+        read_u32(bytes + cursor + 4U) != value->replay.metering_version)
+        return LXP_ERR_VERSION_UNSUPPORTED;
+    cursor += 8U;
+    if (read_u32(bytes + cursor) != value->replay.max_boundaries ||
+        read_u32(bytes + cursor + 4U) != value->replay.max_bytes)
+        return LXP_ERR_NON_CANONICAL;
+    cursor += 8U;
+    value->replay.terminal_status = bytes[cursor++];
+    if (value->replay.terminal_status > 2U) return LXP_ERR_NON_CANONICAL;
+    value->replay.boundary_count = read_u32(bytes + cursor); cursor += 4U;
+    if (value->replay.boundary_count == 0U || value->replay.boundary_count > value->replay.max_boundaries)
+        return LXP_ERR_LENGTH_LIMIT;
+    (void)memcpy(value->replay.boundary_root, bytes + cursor, 32U); cursor += 32U;
+    (void)memcpy(value->replay.witness_digest, bytes + cursor, 32U); cursor += 32U;
+    witness_length = read_u32(bytes + cursor); cursor += 4U;
+    if (witness_length != value->replay_runtime_length - cursor) return LXP_ERR_NON_CANONICAL;
+    status = lxp_hash_sha256(bytes + cursor, witness_length, digest);
+    if (status != LXP_OK) return status;
+    if (lxp_ct_memcmp(digest, value->replay.witness_digest, 32U) != 0) return LXP_ERR_ROOT_MISMATCH;
+    status = replay_boundary_root(bytes + cursor, witness_length, value->replay.boundary_count, root);
+    if (status != LXP_OK) return status;
+    if (lxp_ct_memcmp(root, value->replay.boundary_root, 32U) != 0) return LXP_ERR_ROOT_MISMATCH;
+    status = lxp_hash_sha256(value->replay_authority, value->replay_authority_length, value->replay.authority_root);
+    if (status == LXP_OK) status = lxp_hash_sha256(value->replay_hosts, value->replay_hosts_length, value->replay.host_root);
+#define REPLAY_BLOB(data, count) do { if (status == LXP_OK) status = replay_append(&value->replay.bytes, &value->replay.length, value->replay.max_bytes, (data), (count)); } while (0)
+    REPLAY_BLOB(native_domain, sizeof(native_domain));
+    replay_write_u32(length_bytes, value->replay_runtime_length); REPLAY_BLOB(length_bytes, 4U);
+    REPLAY_BLOB(value->replay_runtime, value->replay_runtime_length);
+    replay_write_u32(length_bytes, value->replay_authority_length); REPLAY_BLOB(length_bytes, 4U);
+    REPLAY_BLOB(value->replay_authority, value->replay_authority_length);
+    replay_write_u32(length_bytes, value->replay_hosts_length); REPLAY_BLOB(length_bytes, 4U);
+    REPLAY_BLOB(value->replay_hosts, value->replay_hosts_length);
+#undef REPLAY_BLOB
+    if (status == LXP_OK) value->replay_finished = true;
+    return status;
+}
+
+lxp_result lxp_programs_call_replay_take(lxp_module_ctx *ctx, lxp_programs_replay_capture **capture)
+{
+    lxp_programs_call_activity *value;
+    lxp_programs_replay_capture *owned;
+    if (ctx == NULL || capture == NULL) return LXP_ERR_NON_CANONICAL;
+    *capture = NULL;
+    if (ctx->module_id != LXP_MODULE_PROGRAMS || ctx->activity_state == NULL ||
+        ctx->activity_state_release != call_activity_release) return LXP_OK;
+    value = ctx->activity_state;
+    if (value->replay.max_bytes == 0U) return LXP_OK;
+    if (!value->replay_finished || value->replay.bytes == NULL) return LXP_ERR_NON_CANONICAL;
+    owned = malloc(sizeof(*owned));
+    if (owned == NULL) return LXP_ERR_LENGTH_LIMIT;
+    *owned = value->replay;
+    value->replay.bytes = NULL;
+    value->replay.length = 0U;
+    *capture = owned;
+    return LXP_OK;
+}
+
+void lxp_programs_replay_capture_release(lxp_programs_replay_capture *capture)
+{
+    if (capture == NULL) return;
+    free(capture->bytes);
+    free(capture->metadata_proof);
+    free(capture);
+}
+
+lxp_result lxp_programs_replay_capture_bytes(const lxp_programs_replay_capture *capture, lxp_byte_span *bytes)
+{
+    if (capture == NULL || bytes == NULL || capture->bytes == NULL || capture->length == 0U)
+        return LXP_ERR_NON_CANONICAL;
+    bytes->bytes = capture->bytes;
+    bytes->length = capture->length;
+    return LXP_OK;
 }

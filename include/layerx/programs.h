@@ -705,6 +705,38 @@ lxp_result layerx_programs_module_cache_invalidate_abi(
     uint16_t retired_abi_version);
 
 typedef struct lxp_programs_call_activity lxp_programs_call_activity;
+enum {
+    LXP_PROGRAMS_REPLAY_MAX_BOUNDARIES = 4096,
+    LXP_PROGRAMS_REPLAY_MAX_BYTES = 1048576,
+    LXP_PROGRAMS_REPLAY_KEY_BYTES = 45
+};
+typedef struct lxp_programs_replay_capture {
+    uint32_t network_id;
+    uint64_t sequence;
+    uint8_t activity_id[32], previous_root[32], program_id[32], code_hash[32], input_digest[32];
+    uint16_t runtime_version, abi_version;
+    uint32_t fee_version, metering_version, max_boundaries, max_bytes;
+    uint8_t terminal_status;
+    uint32_t boundary_count;
+    uint8_t authority_root[32], host_root[32], boundary_root[32], witness_digest[32];
+    uint8_t *bytes;
+    uint32_t length;
+    uint8_t *metadata_proof;
+    uint32_t metadata_proof_length;
+} lxp_programs_replay_capture;
+lxp_result lxp_programs_call_profile_decode(lxp_module_ctx *ctx,
+    const uint8_t *payload, size_t payload_length, void **decoded);
+lxp_result layerx_programs_call_replay_profile(uint64_t token, uint16_t section);
+lxp_result layerx_programs_call_replay_record_begin(uint64_t token, uint32_t length);
+lxp_result layerx_programs_call_replay_record_byte(uint64_t token, uint32_t offset, uint8_t byte);
+lxp_result layerx_programs_call_replay_record_finish(uint64_t token);
+lxp_result lxp_programs_call_replay_take(lxp_module_ctx *ctx, lxp_programs_replay_capture **capture);
+void lxp_programs_replay_capture_release(lxp_programs_replay_capture *capture);
+lxp_result lxp_programs_replay_capture_bytes(const lxp_programs_replay_capture *capture, lxp_byte_span *bytes);
+lxp_result lxp_programs_replay_capture_stage(lxp_module_ctx *ctx, const lxp_programs_replay_capture *capture, lxp_result settled_result);
+void lxp_programs_replay_record_key(const uint8_t activity_id[32], uint8_t key[LXP_PROGRAMS_REPLAY_KEY_BYTES]);
+lxp_result lxp_programs_replay_record_blob_key(lxp_byte_span record, uint8_t blob_key[32]);
+
 
 lxp_result lxp_programs_call_decode(lxp_module_ctx *ctx,
                                     const uint8_t *payload,

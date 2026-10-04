@@ -350,32 +350,100 @@ impl ValidatedModule {
         Result<ProgramInstance, Box<(ExecutionFault, RuntimeState)>>,
         crate::abi::response::ResponseRefusal,
     > {
+        self.instantiate_composed_response_context_replay_retained(
+            meter,
+            abi,
+            composition,
+            capacity,
+            context,
+            None,
+        )
+        .map(|result| {
+            result.map_err(|error| {
+                let (fault, store) = *error;
+                Box::new(retained_failure(store, fault))
+            })
+        })
+    }
+
+    pub(crate) fn instantiate_composed_response_context_replay_retained(
+        &self,
+        meter: Meter,
+        abi: Abi,
+        composition: Composition,
+        capacity: usize,
+        context: Option<crate::abi::context::ExecutionContext>,
+        replay_profile: Option<crate::replay_record::ProgramReplayProfile>,
+    ) -> Result<
+        Result<ProgramInstance, Box<(ExecutionFault, wasmi::Store<RuntimeState>)>>,
+        crate::abi::response::ResponseRefusal,
+    > {
         let mut state = RuntimeState::composed_with_response(meter, abi, composition, capacity)?;
         if let Some(context) = context {
             state.authenticate_protocol_context(context);
         }
-        Ok(self.instantiate_state_retained(state))
+        Ok(self.instantiate_state_replay_retained(state, replay_profile))
     }
 
     fn instantiate_state_retained(
         &self,
-        mut state: RuntimeState,
+        state: RuntimeState,
     ) -> Result<ProgramInstance, Box<(ExecutionFault, RuntimeState)>> {
+        self.instantiate_state_replay_retained(state, None)
+            .map_err(|error| {
+                let (fault, store) = *error;
+                Box::new(retained_failure(store, fault))
+            })
+    }
+
+    fn instantiate_state_replay_retained(
+        &self,
+        mut state: RuntimeState,
+        replay_profile: Option<crate::replay_record::ProgramReplayProfile>,
+    ) -> Result<ProgramInstance, Box<(ExecutionFault, wasmi::Store<RuntimeState>)>> {
         state.bind_metering_schedule(self.meter_injection.schedule());
+        if let Some(profile) = replay_profile {
+            if let Err(error) = state.enable_boundary_capture(
+                self.code_hash(),
+                profile.maximum_boundaries() as usize,
+                profile.maximum_bytes() as usize,
+            ) {
+                return Err(Box::new((
+                    ExecutionFault::EngineFault {
+                        reason: format!("program replay capture refused: {error:?}"),
+                    },
+                    wasmi::Store::new(self.module.engine(), state),
+                )));
+            }
+        }
         let mut store = wasmi::Store::new(self.module.engine(), state);
         store.limiter(|state| state.meter_mut() as &mut dyn wasmi::ResourceLimiter);
+        if let Some(profile) = replay_profile {
+            store.enable_execution_replay_observer_with_limits(
+                profile.maximum_boundaries() as usize,
+                crate::MAX_TRACE_STATE_BYTES,
+                crate::MAX_TRACE_STATE_BYTES,
+            );
+            store.set_execution_supplement(RuntimeState::execution_supplement);
+        }
         let pre = match self.linker.instantiate(&mut store, &self.module) {
             Ok(pre) => pre,
             Err(error) => {
                 let fault = fault_from_error(&error);
-                return Err(Box::new(retained_failure(store, fault)));
+                if fault == ExecutionFault::OutOfFuel {
+                    store.data_mut().meter_mut().mark_cpu_exhausted();
+                }
+                return Err(Box::new((fault, store)));
             }
         };
         let instance = match pre.start(&mut store) {
             Ok(instance) => instance,
             Err(error) => {
                 let fault = fault_from_error(&error);
-                return Err(Box::new(retained_failure(store, fault)));
+                if fault == ExecutionFault::OutOfFuel {
+                    store.data_mut().meter_mut().mark_cpu_exhausted();
+                }
+                return Err(Box::new((fault, store)));
             }
         };
         let mut instance = ProgramInstance::new(store, instance);

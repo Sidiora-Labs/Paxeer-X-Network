@@ -364,6 +364,8 @@ typedef struct lxp_kernel_execution {
      * envelope projection that the replay transition must publish as that
      * activity's canonical_events span. */
     lxp_byte_span *canonical_events_out;
+    lxp_byte_span *replay_witness_out;
+    lxp_byte_span *replay_metadata_proof_out;
 } lxp_kernel_execution;
 #define lxp_kernel_execution lxp_kernel_execution
 
@@ -477,6 +479,14 @@ const lxp_receipt *lxp_kernel_prepared_batch_receipts(
     const lxp_kernel_prepared_batch *batch);
 lxp_byte_span lxp_kernel_prepared_batch_execution_prestate(
     const lxp_kernel_prepared_batch *batch, size_t receipt_index);
+lxp_byte_span lxp_kernel_prepared_batch_replay_witness(
+    const lxp_kernel_prepared_batch *batch, size_t receipt_index);
+lxp_byte_span lxp_kernel_prepared_batch_replay_metadata_proof(
+    const lxp_kernel_prepared_batch *batch, size_t receipt_index);
+struct lxp_state_witness;
+lxp_result lxp_kernel_program_replay_proof(
+    const lxp_kernel *kernel, const lxp_receipt *receipt,
+    struct lxp_state_witness *metadata_proof, lxp_byte_span *full_witness);
 const lxp_byte_span *lxp_kernel_prepared_batch_events(
     const lxp_kernel_prepared_batch *batch);
 uint32_t lxp_kernel_prepared_batch_fee_schedule_version(const lxp_kernel_prepared_batch *batch);

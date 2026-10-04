@@ -2230,3 +2230,12 @@ resolution = "Record once without unchanged rerun; qualify only after complete d
 area = "Explorer legacy fixture shape"
 observed = "Task22.10 webbuild passed; focused explorer gate has two existing explorer-account.test.ts inputs omitting mandatory layerx_activity, independent of the changed profile2 caller."
 resolution = "Preserve existing checks and fixtures; record once without unrelated repair or rerun. Source implementation and qualification remain separate."
+
+[gotcha.658]
+observed = "Captured CPU boundaries and historical host caches were not committed by existing receipt outcome fields; replay KV metadata also cannot contain final receipt digest or resulting root without a hash cycle."
+resolution = "Retain all legacy bytes; activate a signed additive replay profile, commit actual bounded roots/native checked facts before postroot preview, then bind the exact receipt through a genuine postcommit state witness."
+
+[gotcha.662]
+area = "Replay canonical key buffer"
+observed = "Task104.35.20 build exit2 at state_record.c:496: exact progreplay/v1/ prefix is14bytes plus32-byte activity ID, while the new fixed buffer declares45."
+resolution = "Original task stopped at cap; finish exact46-byte serialization and proof buffers under a separate bounded owner, preserving every external bound and legacy encoding."
