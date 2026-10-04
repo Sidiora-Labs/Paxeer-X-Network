@@ -2404,3 +2404,8 @@ resolution = "Build and pin the real clock once, clear inherited bindings and in
 area = "Codify task lease ownership"
 observed = "A source-complete task can retain its Codify lease; release also refuses a coordinator name that differs from the actual recorded owner."
 resolution = "Release using the actual owner before claiming a successor; keep implementation status and graph ownership distinct."
+
+[gotcha.699]
+area = "Current effective asset proof"
+observed = "Genesis Asset records and mutable asset: records use distinct keys, and point membership of the genesis record cannot prove the mutable override absent."
+resolution = "Retain the existing authenticated complete Asset inventory and select the effective record only after proving override membership or absence at the same signed root."

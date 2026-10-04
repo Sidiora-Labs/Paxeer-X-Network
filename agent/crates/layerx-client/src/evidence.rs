@@ -6,11 +6,15 @@ pub use arbiter_admission::{
     VerifiedAdmissionPrestate, MAX_ADMISSION_PRESTATE_BYTES,
 };
 mod arbiter_prestate;
+mod asset_record;
 mod caps;
 mod execution_prestate;
 pub use arbiter_prestate::{
     verify_arbiter_prestate_v2, verify_arbiter_prestate_v2_bounded, ArbiterPrestateEvidenceError,
     VerifiedArbiterPrestate, MAX_ARBITER_PRESTATE_BYTES,
+};
+pub use asset_record::{
+    AssetEvidenceError, AssetRecordMetadata, AssetSourceKind, VerifiedEffectiveAsset,
 };
 pub use caps::{verify_caps_object, CapsEvidenceError, VerifiedCaps};
 pub use execution_prestate::{
