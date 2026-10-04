@@ -19,6 +19,7 @@ static lxp_guarantor_cert certificate;
 static lxp_guarantor_set bonded_set;
 static lxp_finalisation_requirements requirements;
 static lxp_daemon_settlement_registration_evidence registration;
+static bool recording_mode;
 
 static int log_bootstrap(void)
 {
@@ -312,6 +313,26 @@ static int refused(lxp_daemon_finality_authority *authority, const char *name, l
     return 0;
 }
 
+static int recorded_contents_refused(lxp_daemon_finality_authority *authority,
+    uint32_t network_id, lxp_byte_span payload, lxp_byte_span proof,
+    lxp_byte_span header, const uint8_t checkpoint_id[32], lxp_arena *arena,
+    const char *name)
+{
+    lxp_finalisation_state before = store.registry.finalisation;
+    size_t mark = lxp_arena_mark(arena);
+    lxp_result status = lxp_daemon_finality_contents_verify(network_id, payload,
+        proof, header, checkpoint_id, lxp_finality_authority_verify_history,
+        authority, arena);
+    if (lxp_arena_reset(arena, mark) != LXP_OK || status == LXP_OK ||
+        memcmp(&before, &store.registry.finalisation, sizeof(before)) != 0) {
+        (void)fprintf(stderr, "%s: unexpected status %d or mutated frontier\n",
+            name, (int)status);
+        FAIL();
+    }
+    (void)printf("%s refused status=%d\n", name, (int)status);
+    return 0;
+}
+
 /* Actual producer payloads: the guarantor's %020batch.checkpoint/.finality
  * files and its <checkpoint-id>.header go through the production finality
  * decoder and verifier against the live anchor. */
@@ -325,6 +346,8 @@ static int actual_payload(const char *state, const char *batch, const char *chec
     char path[4096];
     lxp_arena arena;
     lxp_result status;
+    lxp_result fresh_status;
+    uint8_t payload_digest[32], proof_digest[32], header_digest[32];
     int failed = 0;
     if (decode(checkpoint_hex, checkpoint_id, 32U) != 0 ||
         snprintf(path, sizeof(path), "%s/%020llu.checkpoint", state, strtoull(batch, NULL, 10)) >= (int)sizeof(path) ||
@@ -349,6 +372,10 @@ static int actual_payload(const char *state, const char *batch, const char *chec
         (void)fprintf(stderr, "historical recovery refused: %d\n", (int)status);
         FAIL();
     }
+    if (recording_mode &&
+        (lxp_hash_sha256(payload, payload_length, payload_digest) != LXP_OK ||
+         lxp_hash_sha256(proof, proof_length, proof_digest) != LXP_OK ||
+         lxp_hash_sha256(saved_header, header_length, header_digest) != LXP_OK)) FAIL();
     if (lxp_ct_is_zero(actual.registration.observed_block_hash, 32U) || proof[0] != 0U || proof[1] != 2U) FAIL();
     (void)printf("historical recovery passed set_version=%" PRIu64 " block=%" PRIu64 " guarantors=%zu threshold=%u\n",
         actual.bonded_set.version, actual.registration.observed_block_number,
@@ -356,6 +383,7 @@ static int actual_payload(const char *state, const char *batch, const char *chec
     status = lxp_daemon_finality_contents_verify(header.network_id, (lxp_byte_span){payload, payload_length},
         (lxp_byte_span){proof, proof_length}, (lxp_byte_span){saved_header, LXP_BATCH_HEADER_ENCODED_SIZE},
         checkpoint_id, lxp_finality_authority_verify, &authority, &arena);
+    fresh_status = status;
     if ((admit && status != LXP_OK) || (!admit && status == LXP_OK) ||
         memcmp(&before, &store.registry.finalisation, sizeof(before)) != 0) {
         (void)fprintf(stderr, "fresh admission: unexpected status %d\n", (int)status);
@@ -398,6 +426,34 @@ static int actual_payload(const char *state, const char *batch, const char *chec
     bonded_set = actual.bonded_set;
     requirements = actual.requirements;
     registration = actual.registration;
+    if (recording_mode) {
+        lxp_byte_span payload_span = {payload, payload_length};
+        lxp_byte_span proof_span = {proof, proof_length};
+        lxp_byte_span header_span = {saved_header, LXP_BATCH_HEADER_ENCODED_SIZE};
+        uint8_t original_byte;
+        if (payload_length < 2U || proof_length < 3U) FAIL();
+        failed |= recorded_contents_refused(&authority, header.network_id,
+            (lxp_byte_span){payload, payload_length - 1U}, proof_span,
+            header_span, checkpoint_id, &arena, "truncated checkpoint");
+        failed |= recorded_contents_refused(&authority, header.network_id,
+            payload_span, (lxp_byte_span){proof, proof_length - 1U},
+            header_span, checkpoint_id, &arena, "truncated proof");
+        original_byte = payload[0]; payload[0] ^= 0x80U;
+        failed |= recorded_contents_refused(&authority, header.network_id,
+            payload_span, proof_span, header_span, checkpoint_id, &arena,
+            "corrupted checkpoint");
+        payload[0] = original_byte;
+        original_byte = proof[0]; proof[0] ^= 0x80U;
+        failed |= recorded_contents_refused(&authority, header.network_id,
+            payload_span, proof_span, header_span, checkpoint_id, &arena,
+            "corrupted proof");
+        proof[0] = original_byte;
+        failed |= recorded_contents_refused(&authority, header.network_id ^ 1U,
+            payload_span, proof_span, header_span, checkpoint_id, &arena,
+            "wrong payload network");
+        certificate.attestations[0].guarantor_id[0] ^= 1U;
+        failed |= refused(&authority, "unknown signer", LXP_OK);
+    }
     registration.observed_block_hash[0] ^= 1U;
     failed |= refused(&authority, "wrong block hash", LXP_ERR_CONTEXT_MISMATCH);
     ++registration.observed_block_number;
@@ -429,6 +485,26 @@ static int actual_payload(const char *state, const char *batch, const char *chec
     failed |= refused(&authority, "wrong checkpoint id", LXP_OK);
     authority.rpc_port = 1U;
     failed |= refused(&authority, "unavailable history", LXP_ERR_IO);
+    if (recording_mode && failed == 0) {
+        if (memcmp(&before, &store.registry.finalisation, sizeof(before)) != 0) FAIL();
+        (void)printf("FINALITY_RECORDINGS_CASES {\"version\":1,\"batch\":%" PRIu64
+            ",\"network_id\":%u,\"paxeer_chain_id\":%" PRIu64 ",\"observed_block\":%" PRIu64
+            ",\"bonded_set_version\":%" PRIu64 ",\"historical_status\":0,\"fresh_status\":%d,"
+            "\"frontier_unchanged\":true,\"cases\":{\"finalized-history\":true,\"short-signer-list\":true,"
+            "\"unknown-signer\":true,\"altered-checkpoint\":true,\"altered-receipt\":true,\"wrong-domain\":true,"
+            "\"truncated-proof\":true,\"corrupted-proof\":true,\"truncated-checkpoint\":true,"
+            "\"corrupted-checkpoint\":true,\"wrong-network\":true},\"checkpoint_id\":\"",
+            header.batch_number, header.network_id, authority.paxeer_chain_id, actual.registration.observed_block_number,
+            actual.bonded_set.version, (int)fresh_status);
+        hex(checkpoint_id, 32U);
+        (void)printf("\",\"observed_block_hash\":\""); hex(actual.registration.observed_block_hash, 32U);
+        (void)printf("\",\"payload_sha256\":\""); hex(payload_digest, 32U);
+        (void)printf("\",\"proof_sha256\":\""); hex(proof_digest, 32U);
+        (void)printf("\",\"header_sha256\":\""); hex(header_digest, 32U);
+        (void)printf("\",\"settlement_anchor\":\""); hex(before.settlement_anchor, 32U);
+        (void)printf("\",\"settlement_contract\":\""); hex(authority.settlement_contract, 20U);
+        (void)printf("\"}\n");
+    }
     free(memory); free(saved_header); free(proof); free(payload);
     return failed;
 }
@@ -475,6 +551,11 @@ int main(int argc, char **argv)
         return 0;
     }
     if (argc == 3 && strcmp(argv[1], "records") == 0) return records(argv[2]);
+    if (argc == 6 && strcmp(argv[1], "recorded") == 0 &&
+        (strcmp(argv[5], "admit") == 0 || strcmp(argv[5], "refuse") == 0)) {
+        recording_mode = true;
+        return actual_payload(argv[2], argv[3], argv[4], strcmp(argv[5], "admit") == 0);
+    }
     if (argc == 6 && strcmp(argv[1], "actual") == 0 &&
         (strcmp(argv[5], "admit") == 0 || strcmp(argv[5], "refuse") == 0))
         return actual_payload(argv[2], argv[3], argv[4], strcmp(argv[5], "admit") == 0);

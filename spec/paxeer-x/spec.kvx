@@ -25555,7 +25555,7 @@ delegated_source_task_104_35_32 = "104.35.32"
 delegated_source_paths_104_35_32 = ["src/protocol/lxp_kernel.c", "cmd/layerxd/lxp_daemon_process.c"]
 [task.2.4]
 title = "Maintain finalized-history evidence for authority-verifier qualification"
-status = "pending"
+status = "done"
 mode = "BUILD"
 wave = 3
 requires = ["0.2", "2.2"]
@@ -25577,6 +25577,14 @@ deployment_profile = "product"
 planned_paths = ["tests/daemon/paxeer_x_finality_recordings.py"]
 path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
 evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+fleet_role = "/root/integrate_arbiter"
+fleet_scope_manifest = "/root/lx-ops/paxeer-x-integration-2026-10-03/fleet-2.4-brief.json"
+fleet_cutoff_utc = "2026-10-04T14:06:30Z"
+fleet_authority = "User ordered thirty agents into pending integrations within four hours; this task has a fresh bounded implementation assignment."
+source_status = "complete"
+completion_basis = "implementation under owner CONSTITUTION; qualification separately recorded"
+qualification_status = "UNRUN"
+source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-2.4-publication.json"
 
 [task.5.2]
 title = "Build deposit proofs from authenticated current light-client trust"

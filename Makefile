@@ -4167,3 +4167,6 @@ include tools/paxeer-x/build/6.6.mk
 include tools/paxeer-x/build/104.35.15.mk
 include tools/paxeer-x/build/104.35.20.mk
 include tools/paxeer-x/build/104.35.29.mk
+
+.PHONY: paxeer-x-finality-recordings-build
+paxeer-x-finality-recordings-build: $(BUILD_DIR)/tests/lxp_test_daemon_finality_authority
