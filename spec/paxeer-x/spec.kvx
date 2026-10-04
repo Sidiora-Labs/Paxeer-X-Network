@@ -23289,7 +23289,7 @@ fleet_scope_manifest = "/root/lx-ops/paxeer-x-integration-2026-10-03/fleet-103.6
 source_status = "complete"
 completion_basis = "implementation under owner CONSTITUTION; qualification separately recorded"
 qualification_status = "UNRUN"
-source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/fleet-103.6.2-intake.json"
+source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/fleet-103.6.2-publication-handoff-next.json"
 
 [task.103.6.3]
 title = "Implement the layerx-receipt-authority service over the independent replica"

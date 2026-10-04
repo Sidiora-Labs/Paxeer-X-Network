@@ -161,7 +161,9 @@ def build():
     require(not destination.exists(), 'build manifest already exists; use fresh task evidence')
     revision = git('rev-parse', 'HEAD')
     tree = git('rev-parse', 'HEAD^{tree}')
-    environment = dict(os.environ, CARGO_BUILD_JOBS='4', PYTHONDONTWRITEBYTECODE='1',
+    jobs = int(os.environ.get('CARGO_BUILD_JOBS', '4'))
+    require(1 <= jobs <= 4, 'core compilation requires one to four jobs')
+    environment = dict(os.environ, CARGO_BUILD_JOBS=str(jobs), PYTHONDONTWRITEBYTECODE='1',
                        CARGO_TARGET_DIR=os.environ.get('CARGO_TARGET_DIR', '/root/lx-target/platform'),
                        PATH='/root/.cargo/bin:' + os.environ.get('PATH', ''))
     cargo = os.environ.get('CARGO', '/root/.cargo/bin/cargo')
