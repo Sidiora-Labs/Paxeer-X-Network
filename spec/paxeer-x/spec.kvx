@@ -32308,8 +32308,15 @@ fleet_cutoff_utc = "2026-10-04T14:05:30Z"
 fleet_authority = "User ordered thirty agents into pending integrations within four hours; this task has a fresh bounded implementation assignment."
 source_status = "complete"
 completion_basis = "implementation under owner CONSTITUTION; qualification separately recorded"
-qualification_status = "UNRUN"
+qualification_status = "NOT QUALIFIED"
 source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-14.8-repair-2.json"
+qualification_revision = "186f027a8a8c2f4a02287a188205336ffdac252d"
+build_status = "TIMED_OUT"
+build_exit_code = 124
+build_command = "timeout --signal=TERM --kill-after=5s 29s bash tools/paxeer-x/gates/14.8.sh --build"
+build_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-14.8-build-repair-2.log"
+qualification_evidence = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-14.8-final-result.json"
+verification_status = "UNRUN"
 
 [task.24.14]
 status = "done"
