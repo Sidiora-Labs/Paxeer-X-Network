@@ -35771,8 +35771,20 @@ fleet_cutoff_utc = "2026-10-04T15:19:00Z"
 fleet_authority = "New concrete native-to-unified-gateway integration defect found during the user-authorized sweep; no protocol policy changes."
 source_status = "complete"
 completion_basis = "implementation under owner CONSTITUTION; qualification separately recorded"
-qualification_status = "UNRUN"
+qualification_status = "PASSED"
 source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/fleet-16.6-source-handoff.json"
+qualification_revision = "a934f90cac4c2a4a8b489d9ba103f60bc320e88f"
+qualification_command = "PAXEER_X_GATEWAY_MAINTENANCE_ARTIFACTS=/root/lx-ops/paxeer-x-integration-2026-10-03/task-16.6-artifacts.json timeout 15m tools/paxeer-x/gates/16.6.sh"
+qualification_exit_code = 0
+qualification_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-16.6-verify.log"
+qualification_evidence = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-16.6-result.json"
+build_status = "PASSED"
+build_command = "timeout 15m flock /root/lx-cargo/platform-build.lock env CARGO_TARGET_DIR=/root/lx-target/platform CARGO_BUILD_JOBS=4 /root/.cargo/bin/cargo test --locked --manifest-path platform/Cargo.toml -p layerx-platform-gateway --bin layerx-gateway --no-run --message-format=json"
+build_exit_code = 0
+build_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-16.6-build.log"
+verified_cases = 16
+skipped_cases = 0
+repair_cycles = 0
 
 [task.103.6.13]
 title = "Restore native proof export fixture calls without changing proof assertions"
