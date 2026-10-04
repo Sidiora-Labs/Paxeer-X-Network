@@ -1,4 +1,4 @@
-import { useId } from "react";
+import { KitOptionList } from "../../kit/display";
 
 export function ChoiceField({
   label,
@@ -11,26 +11,19 @@ export function ChoiceField({
   options: readonly Readonly<{ value: string; label: string; disabled?: boolean }>[];
   onChange: (value: string) => void;
 }>) {
-  const id = useId();
   return (
     <div className="flex flex-col gap-1.5">
-      <label htmlFor={id} className="text-sm font-semibold text-foreground">
-        {label}
-      </label>
-      <select
-        id={id}
+      <span className="text-sm font-semibold text-foreground">{label}</span>
+      <KitOptionList
+        aria-label={label}
         value={value}
-        onChange={(event) => {
-          onChange(event.target.value);
-        }}
-        className="h-11 rounded-md border border-border-strong bg-surface px-3 text-[15px] text-foreground"
-      >
-        {options.map((option) => (
-          <option key={option.value} value={option.value} disabled={option.disabled === true}>
-            {option.label}
-          </option>
-        ))}
-      </select>
+        onValueChange={onChange}
+        items={options.map((option) => ({
+          value: option.value,
+          label: option.label,
+          disabled: option.disabled === true,
+        }))}
+      />
     </div>
   );
 }

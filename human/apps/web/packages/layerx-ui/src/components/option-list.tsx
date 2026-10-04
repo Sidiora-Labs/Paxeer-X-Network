@@ -8,6 +8,7 @@ export interface OptionListItem {
   value: string;
   label: React.ReactNode;
   description?: React.ReactNode;
+  disabled?: boolean;
 }
 
 /**
@@ -40,7 +41,8 @@ export function OptionList({
           <RadioGroup.Item
             key={item.value}
             value={item.value}
-            className="group flex w-full cursor-pointer items-center justify-between gap-3 py-4 text-left outline-none"
+            disabled={item.disabled === true}
+            className="group flex w-full cursor-pointer items-center justify-between gap-3 py-4 text-left outline-none disabled:cursor-not-allowed disabled:opacity-50"
           >
             <span className="flex min-w-0 flex-col gap-0.5">
               <span className="text-[15px] font-medium text-foreground">{item.label}</span>

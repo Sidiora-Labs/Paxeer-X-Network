@@ -1,4 +1,4 @@
-import { Badge } from "@layerx/ui/components/badge";
+import { Badge } from "../../kit/collection";
 
 import { GatewayRpcError, GatewayUnavailableError, surfaceCapability } from "../../api/gateway";
 import {
@@ -15,8 +15,11 @@ import {
   type ObservedEvent,
 } from "../../api/precompiles";
 import { PrecompileAbiError } from "../../api/sdk";
+import { KitButton } from "../../kit/control";
 import { ExplorerPanel, ExplorerTable } from "../../kit/explorer";
+import { TextField } from "../../kit/field";
 import { LabelValue } from "../../kit/money";
+import { SettingsTextInput } from "../../kit/settings";
 import { InlineNotice, StateEmpty } from "../../kit/surface";
 import { ActivityFeed, activitySide } from "../_markets/activity-feed";
 import { SurfaceCapabilityGate } from "../_markets/capability";
@@ -125,18 +128,26 @@ export default async function BridgePage({ searchParams }: Readonly<{ searchPara
       {problem === undefined ? null : <MarketUnavailable detail={problem} />}
       <ExplorerPanel title="Bridge status">
         <form method="get" action="/bridge" className="flex flex-wrap items-end gap-3">
-          {account === undefined ? null : <input type="hidden" name="account" value={account} />}
-          <label className="flex flex-col gap-1 text-sm font-semibold">
-            Chain id
-            <input name="chain" defaultValue={chainId.toString()} inputMode="numeric" className="h-11 rounded-md border border-border-strong bg-surface px-3" />
-          </label>
-          <label className="flex flex-1 flex-col gap-1 text-sm font-semibold">
-            Asset address on that chain
-            <input name="asset" defaultValue={asset ?? ""} spellCheck={false} placeholder="0x…" className="h-11 rounded-md border border-border-strong bg-surface px-3" />
-          </label>
-          <button type="submit" className="h-11 rounded-full border border-border-strong bg-surface px-5 text-sm font-semibold">
+          {account === undefined ? null : (
+            <SettingsTextInput type="hidden" name="account" value={account} readOnly className="hidden" />
+          )}
+          <TextField
+            label="Chain id"
+            name="chain"
+            defaultValue={chainId.toString()}
+            inputMode="numeric"
+          />
+          <TextField
+            label="Asset address on that chain"
+            name="asset"
+            defaultValue={asset ?? ""}
+            spellCheck={false}
+            placeholder="0x…"
+            className="flex-1"
+          />
+          <KitButton type="submit" className="h-11 rounded-full border border-border-strong bg-surface px-5 text-sm font-semibold">
             Show
-          </button>
+          </KitButton>
         </form>
         <div className="flex flex-wrap gap-6">
           <LabelValue

@@ -37067,3 +37067,25 @@ owner_authorization = "Direct owner request to fix all listed CI failures on2026
 source_status = "complete"
 completion_basis = "implementation under owner CONSTITUTION; qualification separately recorded"
 source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/root-ci-103.6.33-intake.json"
+
+[task.103.6.36]
+title = "Use the Human UI kit for market and bridge controls"
+status = "done"
+mode = "BUILD"
+wave = 5
+requires = ["0.2"]
+reqs = ["1103.1"]
+touches = ["human/apps/web/src/app/_markets/activity-feed.tsx", "human/apps/web/src/app/_markets/select.tsx", "human/apps/web/src/app/bridge/page.tsx", "human/apps/web/src/app/exchange/page.tsx", "human/apps/web/src/app/launchpad/page.tsx", "human/apps/web/packages/layerx-ui/src/components/option-list.tsx"]
+do_1 = "Route the five rejected screens through actual existing kit components and preserve hidden form identity, controlled selection, callbacks and disabled options through the real radio primitive. Retain the unchanged UI architecture checker."
+verify_cmd = "cargo run --manifest-path human/tools/ui-gate/Cargo.toml --locked -- human/apps/web"
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+fanout_role = "complete_human_facts"
+qualification_status = "UNRUN"
+stop_condition = "Stop at2026-10-04T20:54:49Z, on an unrelated failure or after two scoped repairs."
+owner_authorization = "Direct owner request to fix all listed CI failures on2026-10-04T20:24UTC"
+source_status = "complete"
+completion_basis = "implementation under owner CONSTITUTION; qualification separately recorded"
+source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-103.6.36-source-handoff.json"

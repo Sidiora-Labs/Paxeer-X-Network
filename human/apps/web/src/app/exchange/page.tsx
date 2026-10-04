@@ -1,4 +1,4 @@
-import { Badge } from "@layerx/ui/components/badge";
+import { Badge } from "../../kit/collection";
 
 import {
   GatewayRpcError,
