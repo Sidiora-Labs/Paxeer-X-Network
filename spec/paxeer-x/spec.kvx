@@ -35630,3 +35630,28 @@ build_exit_code = 0
 build_command = "PATH=/root/.cargo/bin:$PATH CARGO_BUILD_JOBS=4 timeout --kill-after=5s 900s flock /root/lx-cargo/native-build.lock make -j4 BUILD_DIR=/root/lx-ops/paxeer-x-integration-2026-10-03/qualification/task25/artifacts PROGRAMS_TARGET_DIR=/root/lx-target/arbiter-prestate/rust PROGRAMS_RUNTIME_LIB=/root/lx-target/arbiter-prestate/rust/debug/liblayerx_programs_sandbox.a paxeer-x-finality-recordings-build"
 build_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/qualification/task25/build.log"
 qualification_evidence = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-2.5-source-handoff.json"
+
+[task.16.5]
+title = "Seal emulator maintenance heads and wire genuine batch evidence to the native verifier"
+status = "done"
+mode = "BUILD"
+wave = 5
+requires = ["0.2", "16.1"]
+reqs = ["164"]
+do_1 = "Use existing canonical batch sealing and genuine configured emulator sequencer authority to retain maintenance batch headers, signatures and inclusion evidence after actual occupancy and state maintenance. Preserve original activity receipts and their history."
+do_2 = "Connect the account-state head response to current signed batch evidence and the existing production verifier; refuse unsigned, stale or tampered evidence without inventing authority or changing native encoding."
+do_3 = "Exercise actual maintenance, restart, tamper and stale activity receipt refusal using real emulator artifacts and the production verifier. Preserve the broader hosted parity contract in task 16.3."
+touches = ["platform/emulator/src/main.rs", "platform/emulator/core/emulator_core.c", "platform/emulator/core/emulator_core.h", "tests/platform/emulator_maintenance_head.py"]
+verify_cmd = "timeout 15m python3 tests/platform/emulator_maintenance_head.py --artifacts \"$PAXEER_X_EMULATOR_MAINTENANCE_ARTIFACTS\""
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop at declared gate result, exact existing-contract conflict, or thirty-minute cutoff. Never substitute unsigned state or weaken proof verification."
+fleet_role = "/root/complete_human_facts/facts_dispatch"
+fleet_cutoff_utc = "2026-10-04T14:48:00Z"
+fleet_authority = "User ordered parallel completion of all remaining integration code; inactive maintenance paths reassigned under existing owner approval."
+source_status = "complete"
+completion_basis = "implementation under owner CONSTITUTION; qualification separately recorded"
+qualification_status = "UNRUN"
+source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/fleet-16.5-publication.json"

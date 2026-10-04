@@ -36,6 +36,27 @@ typedef struct platform_emulator_state {
     size_t account_count;
 } platform_emulator_state;
 
+typedef struct platform_emulator_head {
+    uint8_t state_root[32];
+    uint8_t receipt_digest[32];
+    uint8_t sequencer_id[32];
+    uint8_t sequencer_public_key[32];
+    uint8_t header_signature[64];
+    uint64_t observed_sequence;
+    uint64_t observed_at;
+    uint64_t batch_number;
+    uint64_t authorization_first_batch;
+    uint64_t authorization_last_batch;
+    const uint8_t *receipt_bytes;
+    size_t receipt_length;
+    const uint8_t *header_bytes;
+    size_t header_length;
+    const uint8_t *proof_bytes;
+    size_t proof_length;
+    const uint8_t *activity_receipt_bytes;
+    size_t activity_receipt_length;
+} platform_emulator_head;
+
 typedef struct platform_emulator_authority {
     uint8_t actor[32];
     uint8_t principal[32];
@@ -117,6 +138,8 @@ int32_t platform_emulator_simulate(platform_emulator *emulator,
                                    platform_emulator_receipt *receipt);
 int32_t platform_emulator_inspect(const platform_emulator *emulator,
                                   platform_emulator_state *state);
+int32_t platform_emulator_head_read(platform_emulator *emulator,
+                                   platform_emulator_head *head);
 int32_t platform_emulator_resolve_authority(
     platform_emulator *emulator, const uint8_t *activity, size_t length,
     platform_emulator_authority *authority);

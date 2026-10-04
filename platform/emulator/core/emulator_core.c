@@ -22,6 +22,7 @@
 #include "layerx/lxp_ledger.h"
 #include "layerx/lxp_module_ctx.h"
 #include "layerx/lxp_receipt.h"
+#include "layerx/lxp_maintenance.h"
 #include "layerx/lxp_snapshot.h"
 #include "layerx/lxp_transfer.h"
 
@@ -40,6 +41,7 @@ enum {
     PLATFORM_EMULATOR_SNAPSHOT_BYTES = 24 * 1024 * 1024,
     PLATFORM_EMULATOR_SNAPSHOT_VERSION = 3,
     PLATFORM_EMULATOR_NATIVE_SNAPSHOT_VERSION = 4,
+    PLATFORM_EMULATOR_HEAD_SNAPSHOT_VERSION = 5,
     PLATFORM_EMULATOR_FAULT_REJECT = 1,
     PLATFORM_EMULATOR_FAULT_DROP_RECEIPT = 2,
     PLATFORM_EMULATOR_FAULT_CORRUPT_RECEIPT = 3
@@ -84,6 +86,18 @@ typedef struct platform_emulator_balance_snapshot {
     platform_emulator_value_account
         accounts[PLATFORM_EMULATOR_PROGRAM_VALUE_ACCOUNTS];
 } platform_emulator_balance_snapshot;
+
+typedef struct platform_emulator_retained_head {
+    uint64_t receipt_length;
+    uint64_t proof_length;
+    uint64_t activity_receipt_length;
+    uint8_t activity_receipt[PLATFORM_EMULATOR_RECEIPT_BYTES];
+    uint8_t receipt[LXP_BATCH_MAINTENANCE_MAX_BYTES];
+    uint8_t header[LXP_BATCH_HEADER_ENCODED_SIZE];
+    uint8_t signature[64];
+    uint8_t proof_bytes[1050];
+    lxp_merkle_proof proof;
+} platform_emulator_retained_head;
 
 struct platform_emulator {
     uint32_t network_id;
@@ -130,8 +144,105 @@ struct platform_emulator {
     size_t program_count;
     lxp_verified_receipt_index verified_receipts;
     uint8_t latest_receipt_digest[32];
+    platform_emulator_retained_head head;
+    lxp_log head_log;
     platform_emulator_balance_snapshot *program_balances;
 };
+
+static lxp_result head_authorization(const platform_emulator *emulator,
+    lxp_sequencer_authorization *authorization)
+{
+    (void)memset(authorization, 0, sizeof(*authorization));
+    (void)memcpy(authorization->public_key, emulator->sequencer_public_key, 32U);
+    authorization->first_batch_number = 1U;
+    authorization->last_batch_number = UINT64_MAX;
+    authorization->authorized = 1U;
+    return lxp_hash_sha256(emulator->sequencer_public_key, 32U,
+        authorization->sequencer_id);
+}
+
+static lxp_result validate_head(platform_emulator *emulator,
+    const platform_emulator_retained_head *head, lxp_batch_header *header,
+    lxp_programs_occupancy_receipt *occupancy)
+{
+    lxp_sequencer_authorization authorization;
+    lxp_codec_writer writer;
+    lxp_byte_span canonical;
+    lxp_receipt activity;
+    uint8_t leaf[32], activity_leaf[32];
+    size_t mark = lxp_arena_mark(&emulator->arena);
+    lxp_result status;
+    if (head->receipt_length == 0U ||
+        head->receipt_length > sizeof(head->receipt) ||
+        head->activity_receipt_length == 0U ||
+        head->activity_receipt_length > sizeof(head->activity_receipt) ||
+        head->proof_length > sizeof(head->proof_bytes)) return LXP_ERR_NON_CANONICAL;
+    status = head_authorization(emulator, &authorization);
+    if (status == LXP_OK)
+        status = lxp_batch_header_decode(head->header, sizeof(head->header), header);
+    if (status == LXP_OK)
+        status = lxp_batch_header_encode(header, &emulator->arena, &canonical);
+    if (status == LXP_OK && (canonical.length != sizeof(head->header) ||
+        lxp_ct_memcmp(canonical.bytes, head->header, canonical.length) != 0))
+        status = LXP_ERR_NON_CANONICAL;
+    if (status == LXP_OK)
+        status = lxp_batch_verify_signature(header, head->signature, 64U,
+            &authorization, &emulator->arena);
+    if (status == LXP_OK)
+        status = lxp_batch_maintenance_occupancy_decode(head->receipt,
+            (size_t)head->receipt_length, occupancy);
+    if (status == LXP_OK)
+        status = lxp_programs_occupancy_receipt_encode(occupancy,
+            &emulator->arena, &canonical);
+    if (status == LXP_OK && (canonical.length != head->receipt_length ||
+        lxp_ct_memcmp(canonical.bytes, head->receipt, canonical.length) != 0))
+        status = LXP_ERR_NON_CANONICAL;
+    if (status == LXP_OK && (header->network_id != emulator->network_id ||
+        header->protocol_version != emulator->protocol_version ||
+        header->last_sequence <= header->first_sequence ||
+        header->last_sequence - header->first_sequence != 1U ||
+        occupancy->batch_number != header->batch_number ||
+        occupancy->global_sequence != header->last_sequence ||
+        lxp_ct_memcmp(occupancy->resulting_state_root,
+            header->resulting_state_root, 32U) != 0 ||
+        head->proof.leaf_index != 1U || head->proof.leaf_count != 2U))
+        status = LXP_ERR_CONTEXT_MISMATCH;
+    if (status == LXP_OK)
+        status = lxp_merkle_leaf_hash(head->receipt,
+            (size_t)head->receipt_length, leaf);
+    if (status == LXP_OK)
+        status = lxp_merkle_proof_verify(leaf, &head->proof, header->receipt_merkle_root);
+    if (status == LXP_OK)
+        status = lxp_receipt_decode(head->activity_receipt,
+            (size_t)head->activity_receipt_length, true, &activity);
+    if (status == LXP_OK)
+        status = lxp_receipt_verify(&activity, authorization.public_key, &emulator->arena);
+    if (status == LXP_OK)
+        status = lxp_receipt_encode(&activity, true, &emulator->arena, &canonical);
+    if (status == LXP_OK && (canonical.length != head->activity_receipt_length ||
+        lxp_ct_memcmp(canonical.bytes, head->activity_receipt, canonical.length) != 0))
+        status = LXP_ERR_NON_CANONICAL;
+    if (status == LXP_OK)
+        status = lxp_merkle_leaf_hash(head->activity_receipt,
+            (size_t)head->activity_receipt_length, activity_leaf);
+    if (status == LXP_OK && (head->proof.depth != 1U ||
+        lxp_ct_memcmp(activity_leaf, head->proof.siblings[0], 32U) != 0 ||
+        activity.protocol_version != header->protocol_version ||
+        activity.global_sequence != header->first_sequence ||
+        activity.timestamp != header->timestamp_ms ||
+        lxp_ct_memcmp(activity.activity_root, header->activity_merkle_root, 32U) != 0 ||
+        lxp_ct_memcmp(activity.previous_state_root, header->previous_state_root, 32U) != 0 ||
+        lxp_ct_memcmp(activity.resulting_state_root, occupancy->previous_state_root, 32U) != 0))
+        status = LXP_ERR_CONTEXT_MISMATCH;
+    if (status == LXP_OK)
+        status = lxp_codec_writer_init(&writer, &emulator->arena, sizeof(head->proof_bytes));
+    if (status == LXP_OK) status = lxp_merkle_proof_encode(&writer, &head->proof);
+    if (status == LXP_OK && (writer.length != head->proof_length ||
+        lxp_ct_memcmp(writer.bytes, head->proof_bytes, writer.length) != 0))
+        status = LXP_ERR_NON_CANONICAL;
+    if (lxp_arena_reset(&emulator->arena, mark) != LXP_OK) return LXP_FATAL_INVARIANT;
+    return status;
+}
 
 static uint8_t emulator_fee_token;
 
@@ -286,6 +397,89 @@ static lxp_result temporary_log(lxp_log *log)
     return status;
 }
 
+static lxp_result seal_maintenance_head(platform_emulator *emulator,
+    lxp_byte_span activity, lxp_byte_span activity_receipt,
+    const lxp_receipt *receipt, lxp_byte_span maintenance,
+    const lxp_programs_occupancy_receipt *occupancy)
+{
+    lxp_batch_root_inputs inputs = {0};
+    lxp_batch_roots roots;
+    lxp_batch_seal_input input = {0};
+    lxp_batch_header header;
+    lxp_sequencer_authorization authorization;
+    lxp_byte_span receipts[2] = {activity_receipt, maintenance};
+    lxp_byte_span events[2] = {{NULL, 0U}, {NULL, 0U}};
+    lxp_byte_span availability[3] = {activity, activity_receipt, maintenance};
+    lxp_byte_span encoded;
+    lxp_codec_writer writer;
+    uint8_t leaves[2][32], proof_root[32];
+    platform_emulator_retained_head *head = calloc(1U, sizeof(*head));
+    lxp_result status;
+    if (head == NULL) return LXP_ERR_ARENA_EXHAUSTED;
+    status = head_authorization(emulator, &authorization);
+    if (status == LXP_OK)
+        status = lxp_programs_project_receipt_events(receipt, &emulator->arena, &events[0]);
+    if (status == LXP_OK)
+        status = lxp_batch_maintenance_events(maintenance, NULL, &events[1]);
+    inputs.activities = &activity; inputs.activity_count = 1U;
+    inputs.receipts = receipts; inputs.receipt_count = 2U;
+    if (events[0].length != 0U) {
+        inputs.events = events; inputs.event_count = events[1].length != 0U ? 2U : 1U;
+    } else if (events[1].length != 0U) {
+        inputs.events = &events[1]; inputs.event_count = 1U;
+    }
+    inputs.availability_chunks = availability; inputs.availability_chunk_count = 3U;
+    if (status == LXP_OK)
+        status = lxp_batch_roots_compute(&inputs, &emulator->arena, &roots);
+    if (status == LXP_OK && (maintenance.length > sizeof(head->receipt) ||
+        activity_receipt.length > sizeof(head->activity_receipt) ||
+        occupancy->global_sequence <= receipt->global_sequence ||
+        occupancy->global_sequence - receipt->global_sequence != 1U ||
+        lxp_ct_memcmp(receipt->activity_root, roots.activity_merkle_root, 32U) != 0 ||
+        lxp_ct_memcmp(occupancy->previous_state_root, receipt->resulting_state_root, 32U) != 0 ||
+        lxp_ct_memcmp(occupancy->resulting_state_root, emulator->kernel.current_state_root, 32U) != 0))
+        status = LXP_ERR_CONTEXT_MISMATCH;
+    input.protocol_version = emulator->protocol_version; input.network_id = emulator->network_id;
+    input.epoch = emulator->kernel.epoch; input.batch_number = occupancy->batch_number;
+    input.first_sequence = receipt->global_sequence; input.last_sequence = occupancy->global_sequence;
+    input.timestamp_ms = receipt->timestamp;
+    (void)memcpy(input.previous_state_root, receipt->previous_state_root, 32U);
+    (void)memcpy(input.resulting_state_root, occupancy->resulting_state_root, 32U);
+    (void)memcpy(input.sequencer_id, authorization.sequencer_id, 32U);
+    if (status == LXP_OK && emulator->head_log.descriptor < 0)
+        status = temporary_log(&emulator->head_log);
+    if (status == LXP_OK)
+        status = lxp_batch_seal(&header, &input, &roots, &emulator->head_log, &emulator->arena);
+    if (status == LXP_OK)
+        status = lxp_batch_sign(&header, emulator->sequencer_private_key,
+            &authorization, head->signature, &emulator->arena);
+    if (status == LXP_OK)
+        status = lxp_batch_header_encode(&header, &emulator->arena, &encoded);
+    if (status == LXP_OK && encoded.length != sizeof(head->header)) status = LXP_FATAL_INVARIANT;
+    if (status == LXP_OK) (void)memcpy(head->header, encoded.bytes, encoded.length);
+    for (size_t i = 0U; i < 2U && status == LXP_OK; ++i)
+        status = lxp_merkle_leaf_hash(receipts[i].bytes, receipts[i].length, leaves[i]);
+    if (status == LXP_OK)
+        status = lxp_merkle_proof_generate((const uint8_t (*)[32])leaves, 2U, 1U,
+            &emulator->arena, &head->proof, proof_root);
+    if (status == LXP_OK && lxp_ct_memcmp(proof_root, roots.receipt_merkle_root, 32U) != 0)
+        status = LXP_ERR_ROOT_MISMATCH;
+    if (status == LXP_OK)
+        status = lxp_codec_writer_init(&writer, &emulator->arena, sizeof(head->proof_bytes));
+    if (status == LXP_OK) status = lxp_merkle_proof_encode(&writer, &head->proof);
+    if (status == LXP_OK) {
+        head->proof_length = writer.length;
+        (void)memcpy(head->proof_bytes, writer.bytes, writer.length);
+        head->receipt_length = maintenance.length;
+        (void)memcpy(head->receipt, maintenance.bytes, maintenance.length);
+        head->activity_receipt_length = activity_receipt.length;
+        (void)memcpy(head->activity_receipt, activity_receipt.bytes, activity_receipt.length);
+        emulator->head = *head;
+    }
+    free(head);
+    return status;
+}
+
 static void close_native_feed(platform_emulator *emulator)
 {
     if (emulator->history.database != NULL) (void)lxp_history_close(&emulator->history);
@@ -351,7 +545,8 @@ static lxp_result isolated_snapshot(const platform_emulator *emulator,
     (void)memset(&header, 0, sizeof(header));
     (void)memcpy(header.magic, snapshot_magic, sizeof(snapshot_magic));
     header.version = emulator->protocol_version == LXP_PROTOCOL_VERSION_STATE_COMMITMENT
-        ? PLATFORM_EMULATOR_NATIVE_SNAPSHOT_VERSION : PLATFORM_EMULATOR_SNAPSHOT_VERSION;
+        ? (emulator->head.receipt_length != 0U ? PLATFORM_EMULATOR_HEAD_SNAPSHOT_VERSION
+            : PLATFORM_EMULATOR_NATIVE_SNAPSHOT_VERSION) : PLATFORM_EMULATOR_SNAPSHOT_VERSION;
     header.network_id = emulator->network_id;
     header.timestamp_ms = emulator->timestamp_ms; header.batch_number = emulator->batch_number;
     header.global_sequence = emulator->global_sequence; header.identity_count = emulator->identities.count;
@@ -365,6 +560,8 @@ static lxp_result isolated_snapshot(const platform_emulator *emulator,
     account_bytes = emulator->accounts.count * sizeof(lx_account);
     program_bytes = emulator->program_count * 64U;
     total = sizeof(header) + identity_bytes + account_bytes + program_bytes + core.length;
+    if (header.version == PLATFORM_EMULATOR_HEAD_SNAPSHOT_VERSION)
+        total += sizeof(emulator->head);
     if (status == LXP_OK && total <= PLATFORM_EMULATOR_SNAPSHOT_BYTES) {
         (void)memcpy(*snapshot, &header, sizeof(header));
         (void)memcpy(*snapshot + sizeof(header), emulator->identities.identities, identity_bytes);
@@ -374,6 +571,8 @@ static lxp_result isolated_snapshot(const platform_emulator *emulator,
         (void)memcpy(*snapshot + sizeof(header) + identity_bytes + account_bytes + program_bytes / 2U,
                      emulator->program_receipt_digests, program_bytes / 2U);
         (void)memcpy(*snapshot + sizeof(header) + identity_bytes + account_bytes + program_bytes, core.bytes, core.length);
+        if (header.version == PLATFORM_EMULATOR_HEAD_SNAPSHOT_VERSION)
+            (void)memcpy(*snapshot + total - sizeof(emulator->head), &emulator->head, sizeof(emulator->head));
         status = lxp_hash_domain(LXP_DOMAIN_SNAPSHOT, *snapshot, total, header.wrapper_digest);
         if (status == LXP_OK) (void)memcpy(*snapshot + offsetof(platform_snapshot_header, wrapper_digest), header.wrapper_digest, 32U);
     } else if (status == LXP_OK) status = LXP_ERR_LENGTH_LIMIT;
@@ -778,6 +977,7 @@ platform_emulator *platform_emulator_create_for_protocol(
     if (emulator == NULL) return NULL;
     emulator->feed_log.descriptor = -1;
     emulator->canonical_log.descriptor = -1;
+    emulator->head_log.descriptor = -1;
     emulator->arena_bytes = malloc(PLATFORM_EMULATOR_ARENA_BYTES);
     emulator->snapshot_bytes = malloc(PLATFORM_EMULATOR_SNAPSHOT_BYTES);
     emulator->program_balances = calloc(1024U,
@@ -912,6 +1112,7 @@ void platform_emulator_destroy(platform_emulator *emulator)
 {
     if (emulator == NULL) return;
     close_native_feed(emulator);
+    if (emulator->head_log.descriptor >= 0) (void)lxp_log_close(&emulator->head_log);
     if (emulator->feed_mutex_initialized) (void)pthread_mutex_destroy(&emulator->feed_mutex);
     free(emulator->feed_bytes);
     if (emulator->state_initialized) {
@@ -1282,6 +1483,9 @@ int32_t platform_emulator_execute(platform_emulator *emulator,
             status = emulator->kernel.observe_maintenance(
                 emulator->kernel.commit_observer_context, &emulator->kernel,
                 encoded, execution.batch_timestamp_ms);
+        if (status == LXP_OK)
+            status = seal_maintenance_head(emulator, canonical_activity,
+                canonical_receipt, &receipt, encoded, &maintenance);
         if (status != LXP_OK) return status;
     }
     emulator->global_sequence = emulator->state.next_sequence;
@@ -1310,6 +1514,46 @@ int32_t platform_emulator_inspect(const platform_emulator *emulator,
     state->timestamp_ms = emulator->timestamp_ms;
     state->cell_count = emulator->state.count;
     state->account_count = emulator->accounts.count;
+    return LXP_OK;
+}
+
+int32_t platform_emulator_head_read(platform_emulator *emulator,
+                                   platform_emulator_head *head)
+{
+    lxp_batch_header header;
+    lxp_programs_occupancy_receipt occupancy;
+    lxp_kernel_batch_boundary boundary;
+    lxp_sequencer_authorization authorization;
+    lxp_result status;
+    if (emulator == NULL || head == NULL) return LXP_ERR_NON_CANONICAL;
+    if (emulator->protocol_version != LXP_PROTOCOL_VERSION_STATE_COMMITMENT ||
+        emulator->head.receipt_length == 0U) return LXP_ERR_CONTEXT_MISMATCH;
+    status = validate_head(emulator, &emulator->head, &header, &occupancy);
+    if (status == LXP_OK) status = lxp_kernel_batch_boundary_read(&emulator->kernel, &boundary);
+    if (status == LXP_OK && (emulator->state.next_sequence == 0U ||
+        header.last_sequence != emulator->state.next_sequence - 1U ||
+        header.batch_number != emulator->batch_number ||
+        lxp_ct_memcmp(header.resulting_state_root, boundary.canonical_state_root, 32U) != 0))
+        status = LXP_ERR_CONTEXT_MISMATCH;
+    if (status == LXP_OK) status = head_authorization(emulator, &authorization);
+    if (status != LXP_OK) return status;
+    (void)memset(head, 0, sizeof(*head));
+    (void)memcpy(head->state_root, header.resulting_state_root, 32U);
+    status = lxp_hash_sha256(emulator->head.receipt,
+        (size_t)emulator->head.receipt_length, head->receipt_digest);
+    if (status != LXP_OK) return status;
+    (void)memcpy(head->sequencer_id, authorization.sequencer_id, 32U);
+    (void)memcpy(head->sequencer_public_key, authorization.public_key, 32U);
+    (void)memcpy(head->header_signature, emulator->head.signature, 64U);
+    head->observed_sequence = header.last_sequence; head->observed_at = header.timestamp_ms;
+    head->batch_number = header.batch_number;
+    head->authorization_first_batch = authorization.first_batch_number;
+    head->authorization_last_batch = authorization.last_batch_number;
+    head->receipt_bytes = emulator->head.receipt; head->receipt_length = (size_t)emulator->head.receipt_length;
+    head->header_bytes = emulator->head.header; head->header_length = sizeof(emulator->head.header);
+    head->proof_bytes = emulator->head.proof_bytes; head->proof_length = (size_t)emulator->head.proof_length;
+    head->activity_receipt_bytes = emulator->head.activity_receipt;
+    head->activity_receipt_length = (size_t)emulator->head.activity_receipt_length;
     return LXP_OK;
 }
 
@@ -1437,7 +1681,8 @@ int32_t platform_emulator_snapshot_export(platform_emulator *emulator,
     (void)memset(&header, 0, sizeof(header));
     (void)memcpy(header.magic, snapshot_magic, sizeof(snapshot_magic));
     header.version = emulator->protocol_version == LXP_PROTOCOL_VERSION_STATE_COMMITMENT
-        ? PLATFORM_EMULATOR_NATIVE_SNAPSHOT_VERSION : PLATFORM_EMULATOR_SNAPSHOT_VERSION;
+        ? (emulator->head.receipt_length != 0U ? PLATFORM_EMULATOR_HEAD_SNAPSHOT_VERSION
+            : PLATFORM_EMULATOR_NATIVE_SNAPSHOT_VERSION) : PLATFORM_EMULATOR_SNAPSHOT_VERSION;
     header.network_id = emulator->network_id;
     header.timestamp_ms = emulator->timestamp_ms;
     header.batch_number = emulator->batch_number;
@@ -1454,6 +1699,8 @@ int32_t platform_emulator_snapshot_export(platform_emulator *emulator,
     account_bytes = emulator->accounts.count * sizeof(lx_account);
     program_bytes = emulator->program_count * 64U;
     total = sizeof(header) + identity_bytes + account_bytes + program_bytes + core.length;
+    if (header.version == PLATFORM_EMULATOR_HEAD_SNAPSHOT_VERSION)
+        total += sizeof(emulator->head);
     if (status != LXP_OK || total > PLATFORM_EMULATOR_SNAPSHOT_BYTES)
         return status != LXP_OK ? status : LXP_ERR_LENGTH_LIMIT;
     (void)memcpy(emulator->snapshot_bytes, &header, sizeof(header));
@@ -1468,6 +1715,9 @@ int32_t platform_emulator_snapshot_export(platform_emulator *emulator,
                  emulator->program_receipt_digests, program_bytes / 2U);
     (void)memcpy(emulator->snapshot_bytes + sizeof(header) + identity_bytes +
                  account_bytes + program_bytes, core.bytes, core.length);
+    if (header.version == PLATFORM_EMULATOR_HEAD_SNAPSHOT_VERSION)
+        (void)memcpy(emulator->snapshot_bytes + total - sizeof(emulator->head),
+            &emulator->head, sizeof(emulator->head));
     status = lxp_hash_domain(LXP_DOMAIN_SNAPSHOT, emulator->snapshot_bytes,
                              total, header.wrapper_digest);
     if (status != LXP_OK) return status;
@@ -1497,8 +1747,10 @@ int32_t platform_emulator_snapshot_import(platform_emulator *emulator,
         return LXP_ERR_TRUNCATED;
     (void)memcpy(&header, bytes, sizeof(header));
     if (memcmp(header.magic, snapshot_magic, sizeof(snapshot_magic)) != 0 ||
-        header.version != (emulator->protocol_version == LXP_PROTOCOL_VERSION_STATE_COMMITMENT
-            ? PLATFORM_EMULATOR_NATIVE_SNAPSHOT_VERSION : PLATFORM_EMULATOR_SNAPSHOT_VERSION) ||
+        (emulator->protocol_version == LXP_PROTOCOL_VERSION_STATE_COMMITMENT
+            ? (header.version != PLATFORM_EMULATOR_NATIVE_SNAPSHOT_VERSION &&
+               header.version != PLATFORM_EMULATOR_HEAD_SNAPSHOT_VERSION)
+            : header.version != PLATFORM_EMULATOR_SNAPSHOT_VERSION) ||
         header.network_id != emulator->network_id ||
         header.identity_count > LXP_IDENTITY_STORE_CAPACITY ||
         header.account_count > LX_ACCOUNT_REGISTRY_CAPACITY)
@@ -1519,6 +1771,10 @@ int32_t platform_emulator_snapshot_import(platform_emulator *emulator,
             account_bytes - program_bytes) return LXP_ERR_LENGTH_LIMIT;
     expected = sizeof(header) + identity_bytes + account_bytes + program_bytes +
                (size_t)header.core_length;
+    if (header.version == PLATFORM_EMULATOR_HEAD_SNAPSHOT_VERSION) {
+        if (expected > SIZE_MAX - sizeof(emulator->head)) return LXP_ERR_LENGTH_LIMIT;
+        expected += sizeof(emulator->head);
+    }
     if (expected != length) return LXP_ERR_TRAILING_BYTES;
     if (length > PLATFORM_EMULATOR_SNAPSHOT_BYTES)
         return LXP_ERR_LENGTH_LIMIT;
@@ -1533,6 +1789,21 @@ int32_t platform_emulator_snapshot_import(platform_emulator *emulator,
     if (status != LXP_OK ||
         lxp_ct_memcmp(expected_digest, actual_digest, 32U) != 0)
         return status != LXP_OK ? status : LXP_ERR_SNAPSHOT_MISMATCH;
+    if (header.version == PLATFORM_EMULATOR_HEAD_SNAPSHOT_VERSION) {
+        platform_emulator_retained_head *retained = malloc(sizeof(*retained));
+        lxp_batch_header sealed;
+        lxp_programs_occupancy_receipt occupancy;
+        if (retained == NULL) return LXP_ERR_ARENA_EXHAUSTED;
+        (void)memcpy(retained, bytes + length - sizeof(*retained), sizeof(*retained));
+        status = validate_head(emulator, retained, &sealed, &occupancy);
+        if (status == LXP_OK && (sealed.last_sequence != header.manifest.global_sequence ||
+            sealed.batch_number != header.batch_number ||
+            lxp_ct_memcmp(sealed.resulting_state_root,
+                header.manifest.canonical_state_root, 32U) != 0))
+            status = LXP_ERR_SNAPSHOT_MISMATCH;
+        free(retained);
+        if (status != LXP_OK) return status;
+    }
     core = emulator->snapshot_bytes + sizeof(header) + identity_bytes +
            account_bytes + program_bytes;
     status = lxp_snapshot_load(core, (size_t)header.core_length,
@@ -1563,6 +1834,9 @@ int32_t platform_emulator_snapshot_import(platform_emulator *emulator,
     emulator->timestamp_ms = header.timestamp_ms;
     emulator->batch_number = header.batch_number;
     emulator->global_sequence = header.global_sequence;
+    (void)memset(&emulator->head, 0, sizeof(emulator->head));
+    if (header.version == PLATFORM_EMULATOR_HEAD_SNAPSHOT_VERSION)
+        (void)memcpy(&emulator->head, bytes + length - sizeof(emulator->head), sizeof(emulator->head));
     if (emulator->protocol_version == LXP_PROTOCOL_VERSION_STATE_COMMITMENT) {
         lx_programs_fee_schedule fees;
         lx_programs_metering_schedule metering;
