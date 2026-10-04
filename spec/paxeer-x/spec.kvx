@@ -36503,6 +36503,27 @@ source_status = "complete"
 completion_basis = "implementation under owner CONSTITUTION; qualification separately recorded"
 qualification_status = "UNRUN"
 source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/root-v5-104.33.7.1-intake.json"
+qualification_revision = "3d70d6036bd34c3ace344cc4ac8a12522b59ec16"
+qualification_command = "UNRUN"
+qualification_exit_code = "UNRUN"
+qualification_log = "UNRUN"
+qualification_evidence = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-104.33.7.1-v5-result.json"
+build_status = "PASS"
+build_exit_code = 0
+prior_qualification_status = "PASS"
+prior_qualification_revision = "03d8593803e59f94e0ee9b82dc66513598b9bfca"
+prior_qualification_command = ["timeout", "20m", "scripts/paxeer-x/verify-sdk-program-rust.sh"]
+prior_qualification_exit_code = 0
+prior_qualification_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/sdk1043371-qualification/repair2/verify.log"
+prior_qualification_evidence = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-104.33.7.1-repair2-result.json"
+prior_build_command = ["cargo", "test", "--locked", "--manifest-path", "agent/Cargo.toml", "-p", "layerx-sdk", "--lib", "--no-run", "--message-format=json"]
+prior_build_exit_code = 0
+prior_build_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/sdk1043371-qualification/repair2/build.log"
+build_revision = "3d70d6036bd34c3ace344cc4ac8a12522b59ec16"
+build_command = ["timeout", "116s", "flock", "-w", "116", "/root/lx-cargo/agent-build.lock", "cargo", "test", "--locked", "--manifest-path", "agent/Cargo.toml", "-p", "layerx-sdk", "--lib", "--no-run", "--message-format=json"]
+build_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/sdk1043371-qualification/v5-dependency/build.log"
+build_json_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/sdk1043371-qualification/v5-dependency/build.jsonl"
+qualification_missing_prerequisite = "Mandatory genuine ten-case native corpus, including callback/settlement, unavailable"
 
 [task.104.33.7.8]
 title = "Unify Programs API schema and generated client contracts"
