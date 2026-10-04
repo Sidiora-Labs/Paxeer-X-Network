@@ -2813,3 +2813,39 @@ observed = "A retained genuine corpus does not satisfy a newer repaired consumer
 [gotcha.801]
 title = "Swift container build mountpoint"
 observed = "A read-only source container refused before compilation because the ignored .build mountpoint did not exist. Creating only that private mountpoint allowed the original bounded build; retain initialization125 separately from the successful compiler result."
+
+[gotcha.802]
+title = "Root-required CI build outputs"
+observed = "Native CI builds requiring root left build and .lane-target owned by root and prevented later runner checkouts. The published wrapper waits for build completion, restores the actual checkout owner on exit, and preserves the primary failure code; the scoped helper refuses unsafe links and unrelated paths."
+
+[gotcha.803]
+title = "CI host SSH identity"
+observed = "The owner supplied an ubuntu SSH login for the dedicated CI worker. A root login failed; use the explicitly provided login and retain actual worker service UID ownership rather than guessing an account."
+
+[gotcha.804]
+title = "Codify subcommand help parsing"
+observed = "cg spec claim --help was parsed as a task claim instead of help. Use cg help; do not treat a malformed help invocation as task admission."
+
+[gotcha.805]
+title = "JVM generated operation catalogue"
+observed = "The actual generated Kotlin client exposes OperationCatalog.agent rather than the obsolete helper called by the probe. The scoped source correction uses the real catalogue; the retained assertions and closed operation set stay unchanged."
+
+[gotcha.806]
+title = "JVM v5 receipt asset authority"
+observed = "The JVM v5 native mutation case requires exact equality between the receipt Asset and independently authorized batch Asset. The scoped explicit-v5 verifier now enforces that equality while retaining the generic legacy Program exception."
+
+[gotcha.807]
+title = "Cargo executable preparation"
+observed = "A qualification launcher without the actual Cargo directory in PATH failed before any compiler started. Record that preparation failure separately and use the verified Cargo executable for the single admitted compiler pass."
+
+[gotcha.808]
+title = "Hosted registry public TLS API"
+observed = "ureq 3.4.0 defines its key-kind enum in a private module without re-exporting it. Parse the same zeroized OpenSSL PKCS8 material through public PrivateKey::from_pem; retain exact key-kind, certificate equality and TLS validation. WireError provides Debug rather than Display."
+
+[gotcha.809]
+title = "Funded custody fixture producer gap"
+observed = "The multiasset credit entrypoint and start_funded_multiasset_cluster consume an existing protected fixture. They do not provision genuine native Comet125 custody at 0x1013. A random Solidity vault or an Anvil balance cannot substitute for the missing real four-asset bootstrap producer."
+
+[gotcha.810]
+title = "Remote compiler export provenance"
+observed = "A scoped compiler-input export is not a full immutable qualification candidate. Preserve its exact input hashes and bind it to the full admitted candidate, the retained compiler output and the genuine native corpus without relabeling revisions."
