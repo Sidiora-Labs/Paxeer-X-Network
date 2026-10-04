@@ -401,9 +401,9 @@ impl<B: HumanApiComponents> Router<B> {
             if budget.accept_failure(&failure, trace.as_str()).is_err() {
                 return Ok(());
             }
-            let envelope = error_response(trace, &failure).body;
+            let envelope = error_response(trace, &failure);
             stream.write_all(b"event:stream.error\ndata:")?;
-            stream.write_all(&envelope)?;
+            stream.write_all(&envelope.body)?;
             stream.write_all(b"\n\n")?;
             stream.flush()?;
         }

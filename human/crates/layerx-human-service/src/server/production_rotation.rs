@@ -121,19 +121,24 @@ impl Rotation {
             .announced
             .as_ref()
             .ok_or_else(ApiFailure::upstream_degraded)?;
-        Ok(managed_challenge_json(
-            &super::super::agent_runtime::ManagedAgentChallenge {
-                agent_id: self.agent_id.clone(),
-                kind: 0,
-                delay_seconds: self.delay,
-                ready_at: (self.begin / 1000).to_string(),
-                evidence: vec![super::super::agent_runtime::ManagedAgentEvidence {
-                    evidence_id: hex_bytes(&evidence.receipt_digest),
-                    class: "rotate".to_owned(),
-                    verification: evidence.verification,
-                }],
+        if !(4..=5).contains(&evidence.verification) {
+            return Err(ApiFailure::upstream_degraded());
+        }
+        let receipt = super::super::projection::managed_evidence(
+            &super::super::agent_runtime::ManagedAgentEvidence {
+                evidence_id: hex_bytes(&evidence.receipt_digest),
+                class: "rotate".to_owned(),
+                verification: evidence.verification,
             },
-        ))
+        )?;
+        Ok(json!({
+            "agent_id": self.agent_id,
+            "kind": "rotate",
+            "delay_copy_key": "agent.keys.rotate-delay",
+            "delay_seconds": self.delay,
+            "ready_at": super::super::projection::unix_milliseconds(self.begin)?,
+            "evidence": [receipt],
+        }))
     }
 }
 fn rotation_id(action: [u8; 32]) -> Result<crate::notify::JourneyId, ApiFailure> {

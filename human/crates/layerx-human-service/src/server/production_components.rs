@@ -892,7 +892,7 @@ impl HumanApiComponents for ProductionComponents {
                     return Err(ApiFailure::forbidden());
                 }
                 Passkeys::list_sessions_authorized(&scope, &context.session_id)
-                    .map_err(|error| auth_failure(&error))?;
+                    .map_err(|error| auth_api_failure(&error))?;
                 self.stream.next_push(&scope, &cursor)?
             };
             let events = page
@@ -921,7 +921,7 @@ impl HumanApiComponents for ProductionComponents {
                         return Err(ApiFailure::forbidden());
                     }
                     Passkeys::list_sessions_authorized(&scope, &context.session_id)
-                        .map_err(|error| auth_failure(&error))?;
+                        .map_err(|error| auth_api_failure(&error))?;
                 }
                 let next = event
                     .get("cursor")

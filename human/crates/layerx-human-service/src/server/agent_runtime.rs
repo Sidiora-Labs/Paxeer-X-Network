@@ -1296,7 +1296,7 @@ impl AgentRuntime {
         if self
             .subject
             .as_ref()
-            .is_none_or(|subject| subject.owner != value.owner)
+            .is_none_or(|subject| subject.owner.as_bytes() != value.owner.as_bytes())
             || value.budget_id != budget_id
             || value.asset == [0; 32]
             || value.source_account == [0; 32]
