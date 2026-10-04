@@ -2175,3 +2175,11 @@ resolution = "Read the actual exposed tool declaration and discover paths with r
 [gotcha.648]
 observed = "Runtime boundary identity must bind the actual governed meter fee-schedule version; a declared default does not establish that fact."
 resolution = "Use the read-only actual Meter version accessor; task10435.16 preserves legacy trace/fuel encodings and keeps captured process authority explicitly untrusted."
+
+[gotcha.641]
+observed = "Task6.4 found an ABI3 legacy-negative assertion and differing LXPS1 versus ProgramStateBundle consumers; neither may be loosened to qualify new wiring."
+resolution = "Record both contradictions once; require an explicit additive authenticated profile preserving legacy checks and actual producer formats."
+
+[gotcha.649]
+observed = "Native account-state encoding consumes bounded arena capacity; the additive profile2 wrapper must preserve canonical bytes before adding its root and opt-in proofs."
+resolution = "Retain exact canonical bytes and reset only the wrapper allocation mark; preserve old LXPS1/profile refusal, ownership and conservation checks."

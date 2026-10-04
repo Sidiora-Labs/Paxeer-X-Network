@@ -4,8 +4,8 @@ use layerx_programs::{
     AccountStateError, AccountStateHead, AccountStateJournal, CanonicalAccountLeaf, ExitRoute,
     JournalAccountStateAuthority, LifecycleReceipt, ProgramId, ProgramLifecycle,
     ProgramValueAccountBinding, ProvenAccountLeaf, ProvenProgramBinding, ReadFreshness, Registry,
-    RegistryError, StateProof, VerifiedAccountSnapshot, VerifiedProgramBalanceRead, WindDownPolicy,
-    WindDownStateAccess,
+    RegistryError, StateProof, VerifiedAccountSnapshot, VerifiedProgramAccountProfile2,
+    VerifiedProgramBalanceRead, WindDownPolicy, WindDownStateAccess,
 };
 
 const RESULT_OK: i32 = 0;
@@ -15,6 +15,8 @@ const MAX_ACCOUNT_NAME_BYTES: usize = 512;
 const MAX_PROOF_DEPTH: usize = 32;
 const PROTOCOL_VERSION_ACCOUNT_TREE: u16 = 2;
 const RECORD_MAGIC: &[u8; 5] = b"LXPS1";
+const PROFILE2_RECORD_MAGIC: &[u8; 5] = b"LXPS2";
+const MAX_PROFILE2_RECORD_BYTES: usize = 64 * 1024 * 1024;
 const MAX_RECORD_ITEMS: usize = 4_096;
 
 #[repr(C)]
@@ -204,6 +206,7 @@ pub struct ProtocolProgramStateRead {
     lifecycle: ProgramLifecycle,
     routes: Vec<ExitRoute>,
     history: Vec<LifecycleReceipt>,
+    account_profile2: Option<VerifiedProgramAccountProfile2>,
 }
 
 impl ProtocolProgramStateRead {
@@ -277,6 +280,121 @@ impl ProtocolProgramStateRead {
         )
     }
 
+    pub fn account_profile2(&self) -> Option<&VerifiedProgramAccountProfile2> {
+        self.account_profile2.as_ref()
+    }
+
+    pub fn restore_verified_profile2(
+        bytes: &[u8],
+        registry: &mut Registry,
+        verified_receipt: AccountStateHead,
+        current_head: AccountStateHead,
+        now: u64,
+        staleness_limit: u64,
+    ) -> Result<Self, ProtocolAdapterError> {
+        if now == 0 || staleness_limit == 0 || bytes.len() > MAX_PROFILE2_RECORD_BYTES {
+            return Err(ProtocolAdapterError::CorruptRecord);
+        }
+        let mut wrapper = Cursor::new(bytes);
+        if wrapper.take(PROFILE2_RECORD_MAGIC.len())? != PROFILE2_RECORD_MAGIC {
+            return Err(ProtocolAdapterError::CorruptRecord);
+        }
+        let inner_length =
+            usize::try_from(wrapper.u32()?).map_err(|_| ProtocolAdapterError::CorruptRecord)?;
+        let inner = wrapper.take(inner_length)?;
+        let mut cursor = Cursor::new(inner);
+        if cursor.take(RECORD_MAGIC.len())? != RECORD_MAGIC {
+            return Err(ProtocolAdapterError::CorruptRecord);
+        }
+        let program =
+            ProgramId::new(cursor.array()?).map_err(|_| ProtocolAdapterError::CorruptRecord)?;
+        let lifecycle = lifecycle(i32::from(cursor.byte()?))?;
+        let bindings = take_bindings(&mut cursor, program)?;
+        let routes = take_routes(&mut cursor)?;
+        let history = take_history(&mut cursor, program)?;
+        let snapshot = take_snapshot(&mut cursor)?;
+        if !cursor.is_empty() {
+            return Err(ProtocolAdapterError::CorruptRecord);
+        }
+        let profile_key_length = usize::from(wrapper.u16()?);
+        let profile_key = wrapper.take(profile_key_length)?;
+        let mut expected_profile_key = b"program-account-profile\0".to_vec();
+        expected_profile_key.extend_from_slice(&program.bytes());
+        let profile_value_length = usize::from(wrapper.u16()?);
+        let profile_value = wrapper.take(profile_value_length)?;
+        if profile_key != expected_profile_key || profile_value.len() != 33 || profile_value[0] != 2
+        {
+            return Err(ProtocolAdapterError::CorruptRecord);
+        }
+        let owner: [u8; 32] = profile_value[1..]
+            .try_into()
+            .map_err(|_| ProtocolAdapterError::CorruptRecord)?;
+        let programs_root: [u8; 32] = wrapper.array()?;
+        let programs_root_proof = take_proof(&mut wrapper)?;
+        let profile_proof = take_proof(&mut wrapper)?;
+        let owner_key_length = usize::from(wrapper.u16()?);
+        let owner_key = wrapper.take(owner_key_length)?;
+        let owner_value_length = usize::from(wrapper.u16()?);
+        let owner_value = wrapper.take(owner_value_length)?;
+        let mut expected_owner_key = b"program-owner\0".to_vec();
+        expected_owner_key.extend_from_slice(&program.bytes());
+        let mut expected_owner_value = vec![1];
+        expected_owner_value.extend_from_slice(&owner);
+        let owner_proof = take_proof(&mut wrapper)?;
+        if !wrapper.is_empty()
+            || owner_key != expected_owner_key
+            || owner_value != expected_owner_value
+            || programs_root != snapshot.programs_root
+        {
+            return Err(ProtocolAdapterError::CorruptRecord);
+        }
+        let snapshot_head = AccountStateHead {
+            receipt_digest: snapshot.receipt_digest,
+            state_root: snapshot.state_root,
+            freshness: snapshot.freshness,
+        };
+        if verified_receipt != snapshot_head {
+            return Err(AccountStateError::UnverifiedReceipt.into());
+        }
+        if current_head != verified_receipt {
+            return Err(AccountStateError::StaleRead.into());
+        }
+        let authority = JournalAccountStateAuthority::new(
+            ProtocolJournal { head: current_head },
+            now,
+            staleness_limit,
+        )?;
+        let profile = VerifiedProgramAccountProfile2::verify(
+            program,
+            owner,
+            &snapshot,
+            &programs_root_proof,
+            &profile_proof,
+            &owner_proof,
+            &authority,
+        )?;
+        let mut candidate = registry.clone();
+        candidate.replay_protocol_state_profile2(
+            program, &bindings, &routes, lifecycle, &history, &profile,
+        )?;
+        let balances =
+            candidate.read_value_accounts_profile2(program, &snapshot, &authority, &profile)?;
+        let state = Self {
+            balances,
+            snapshot,
+            bindings,
+            lifecycle,
+            routes,
+            history,
+            account_profile2: Some(profile),
+        };
+        if state.canonical_encode()? != inner {
+            return Err(ProtocolAdapterError::CorruptRecord);
+        }
+        *registry = candidate;
+        Ok(state)
+    }
+
     fn restore_inner(
         bytes: &[u8],
         registry: &mut Registry,
@@ -325,6 +443,7 @@ impl ProtocolProgramStateRead {
             lifecycle,
             routes,
             history,
+            account_profile2: None,
         })
     }
 }
@@ -1113,5 +1232,6 @@ pub unsafe fn read_program_state(
         lifecycle: program_lifecycle,
         routes,
         history,
+        account_profile2: None,
     })
 }

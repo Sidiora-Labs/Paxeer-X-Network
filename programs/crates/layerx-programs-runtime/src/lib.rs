@@ -72,6 +72,7 @@ pub fn retain_host_ffi_exports() {
         ffi_transfer::layerx_programs_settle_wind_down_402lxp_leg as *const (),
         ffi_interface::layerx_programs_interface_validate as *const (),
         ffi_interface::layerx_programs_abi_transition_admit as *const (),
+        ffi_interface::layerx_programs_account_profile2_guest_admit as *const (),
     ];
     let _ = std::hint::black_box(exports);
 }

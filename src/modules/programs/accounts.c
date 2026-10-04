@@ -22,18 +22,25 @@ enum {
 static const uint8_t account_magic[ACCOUNT_MAGIC_BYTES] = {
     'L', 'X', 'P', 'A', '1'
 };
+static const uint8_t account_profile_magic[ACCOUNT_MAGIC_BYTES] = {
+    'L', 'X', 'P', 'A', '2'
+};
 static const uint8_t account_domain[] =
     "LayerX/programs/program-account/v1";
 static const uint8_t account_primary_prefix[] = "program-account\0p";
 static const uint8_t account_reverse_prefix[] = "program-account\0r";
 static const uint8_t program_prefix[] = "program\0";
 static const uint8_t program_owner_prefix[] = "program-owner\0";
+static const uint8_t account_profile_prefix[] = "program-account-profile\0";
+
+int32_t layerx_programs_account_profile2_guest_admit(uint16_t requested);
 
 typedef struct programs_account_activity {
     uint8_t program_id[32];
     uint8_t asset_id[32];
     const uint8_t *seed;
     uint32_t seed_length;
+    uint8_t profile;
 } programs_account_activity;
 
 typedef struct account_iter_state {
@@ -288,8 +295,8 @@ static lxp_result deployed_program(lxp_module_ctx *ctx,
     lxp_result status = lxp_programs_program_abi(ctx, program_id,
                                                  &abi_version);
     if (status != LXP_OK) return status;
-    if (abi_version != LX_PROGRAMS_ACCOUNT_ABI_VERSION)
-        return LXP_ERR_VERSION_UNSUPPORTED;
+    status = lxp_programs_account_guest_validate(ctx, program_id, abi_version);
+    if (status != LXP_OK) return status;
     return lxp_programs_program_active(ctx, program_id);
 }
 
@@ -299,6 +306,14 @@ static void owner_key(const uint8_t program_id[32],
     (void)memcpy(key, program_owner_prefix,
                  sizeof(program_owner_prefix) - 1U);
     (void)memcpy(key + sizeof(program_owner_prefix) - 1U, program_id, 32U);
+}
+
+size_t lxp_programs_account_owner_key(
+    const uint8_t program_id[32], uint8_t *key)
+{
+    if (program_id == NULL || key == NULL) return 0U;
+    owner_key(program_id, key);
+    return sizeof(program_owner_prefix) - 1U + 32U;
 }
 
 lxp_result lxp_programs_account_owner_bind(
@@ -372,6 +387,85 @@ static lxp_result registration_authorized(
         return LXP_ERR_AUTH_SCOPE;
     return lxp_ct_memcmp(program + 1U, principal, 32U) == 0 ?
            LXP_OK : LXP_ERR_AUTH_SCOPE;
+}
+
+size_t lxp_programs_account_profile_key(
+    const uint8_t program_id[32], uint8_t *key)
+{
+    if (program_id == NULL || key == NULL) return 0U;
+    (void)memcpy(key, account_profile_prefix,
+                 sizeof(account_profile_prefix) - 1U);
+    (void)memcpy(key + sizeof(account_profile_prefix) - 1U, program_id, 32U);
+    return sizeof(account_profile_prefix) - 1U + 32U;
+}
+
+lxp_result lxp_programs_account_profile_read(
+    lxp_module_ctx *ctx, const uint8_t program_id[32], uint8_t value[33])
+{
+    uint8_t key[sizeof(account_profile_prefix) - 1U + 32U];
+    uint8_t owner[32];
+    const uint8_t *record;
+    size_t record_length;
+    lxp_result status;
+    if (ctx == NULL || program_id == NULL || value == NULL ||
+        lxp_ct_is_zero(program_id, 32U))
+        return LXP_ERR_NON_CANONICAL;
+    (void)lxp_programs_account_profile_key(program_id, key);
+    status = lxp_ctx_kv_get(ctx, key, sizeof(key), &record, &record_length);
+    if (status != LXP_OK) return status;
+    if (record_length != 33U || record[0] != 2U ||
+        lxp_ct_is_zero(record + 1U, 32U))
+        return LXP_FATAL_INVARIANT;
+    (void)memcpy(value, record, 33U);
+    status = lxp_programs_account_owner_read(ctx, program_id, owner);
+    if (status != LXP_OK) return status;
+    return lxp_ct_memcmp(value + 1U, owner, 32U) == 0 ?
+        LXP_OK : LXP_ERR_AUTH_SCOPE;
+}
+
+lxp_result lxp_programs_account_guest_validate(
+    lxp_module_ctx *ctx, const uint8_t program_id[32], uint16_t abi_version)
+{
+    uint8_t profile[33];
+    lxp_result status;
+    if (ctx == NULL || program_id == NULL)
+        return LXP_ERR_NON_CANONICAL;
+    if (abi_version == LX_PROGRAMS_ACCOUNT_ABI_VERSION) return LXP_OK;
+    if (ctx->protocol_version != LXP_PROTOCOL_VERSION_STATE_COMMITMENT ||
+        layerx_programs_account_profile2_guest_admit(abi_version) != 0)
+        return LXP_ERR_VERSION_UNSUPPORTED;
+    status = lxp_programs_account_profile_read(ctx, program_id, profile);
+    return status == LXP_ERR_UNKNOWN_FIELD ?
+        LXP_ERR_VERSION_UNSUPPORTED : status;
+}
+
+static lxp_result account_profile_opt_in_validate(
+    lxp_module_ctx *ctx, const uint8_t program_id[32],
+    const uint8_t principal[32])
+{
+    uint8_t profile[33];
+    uint8_t owner[32];
+    uint16_t abi_version;
+    lxp_result status;
+    if (ctx->protocol_version != LXP_PROTOCOL_VERSION_STATE_COMMITMENT)
+        return LXP_ERR_VERSION_UNSUPPORTED;
+    status = lxp_programs_program_abi(ctx, program_id, &abi_version);
+    if (status != LXP_OK) return status;
+    if (abi_version != LX_PROGRAMS_ACCOUNT_ABI_VERSION)
+        return LXP_ERR_VERSION_UNSUPPORTED;
+    status = lxp_programs_program_active(ctx, program_id);
+    if (status == LXP_OK)
+        status = registration_authorized(ctx, program_id, principal);
+    if (status != LXP_OK) return status;
+    status = lxp_programs_account_owner_read(ctx, program_id, owner);
+    if (status != LXP_OK) return status;
+    if (lxp_ct_memcmp(owner, principal, 32U) != 0)
+        return LXP_ERR_AUTH_SCOPE;
+    status = lxp_programs_account_profile_read(ctx, program_id, profile);
+    if (status == LXP_ERR_UNKNOWN_FIELD) return LXP_OK;
+    if (status != LXP_OK) return status;
+    return lxp_ct_memcmp(profile + 1U, principal, 32U) == 0 ?
+        LXP_OK : LXP_ERR_AUTH_SCOPE;
 }
 
 static lxp_result registered_asset(lxp_module_ctx *ctx,
@@ -538,8 +632,8 @@ lxp_result lxp_programs_account_state_head_read(
     if (status != LXP_OK) return status;
     status = lxp_programs_program_abi(ctx, program_id, &abi_version);
     if (status != LXP_OK) return status;
-    if (abi_version != LX_PROGRAMS_ACCOUNT_ABI_VERSION)
-        return LXP_ERR_VERSION_UNSUPPORTED;
+    status = lxp_programs_account_guest_validate(ctx, program_id, abi_version);
+    if (status != LXP_OK) return status;
     runtime = (const lx_programs_transfer_runtime *)
         lxp_ctx_module_runtime(ctx);
     if (runtime == NULL || runtime->accounts == NULL ||
@@ -611,8 +705,9 @@ static lxp_result value_account_fill(
         return LXP_ERR_MODULE_DISABLED;
     status = lxp_programs_program_abi(ctx, binding->program_id, &abi_version);
     if (status != LXP_OK) return status;
-    if (abi_version != LX_PROGRAMS_ACCOUNT_ABI_VERSION)
-        return LXP_ERR_VERSION_UNSUPPORTED;
+    status = lxp_programs_account_guest_validate(
+        ctx, binding->program_id, abi_version);
+    if (status != LXP_OK) return status;
     status = lxp_programs_account_lookup_id(
         ctx, binding->account_id, &indexed, &account);
     if (status != LXP_OK) return status;
@@ -914,8 +1009,12 @@ lxp_result lxp_programs_account_decode(lxp_module_ctx *ctx,
     if (status != LXP_OK) return status;
     if (payload_length < 37U)
         return LXP_ERR_TRUNCATED;
-    if (memcmp(payload + 32U, account_magic, ACCOUNT_MAGIC_BYTES) != 0)
+    if (memcmp(payload + 32U, account_magic, ACCOUNT_MAGIC_BYTES) != 0 &&
+        memcmp(payload + 32U, account_profile_magic, ACCOUNT_MAGIC_BYTES) != 0)
         return LXP_ERR_INVALID_TAG;
+    if (memcmp(payload + 32U, account_profile_magic, ACCOUNT_MAGIC_BYTES) == 0 &&
+        ctx->protocol_version != LXP_PROTOCOL_VERSION_STATE_COMMITMENT)
+        return LXP_ERR_VERSION_UNSUPPORTED;
     if (payload_length < 73U) return LXP_ERR_TRUNCATED;
     seed_length = read_u32(payload + 69U);
     if (seed_length > LX_PROGRAMS_ACCOUNT_MAX_SEED_BYTES)
@@ -931,6 +1030,7 @@ lxp_result lxp_programs_account_decode(lxp_module_ctx *ctx,
     (void)memcpy(value->asset_id, payload + 37U, 32U);
     value->seed_length = seed_length;
     value->seed = payload + 73U;
+    value->profile = payload[36U] == '2' ? 2U : 1U;
     *decoded = value;
     return LXP_OK;
 }
@@ -951,6 +1051,9 @@ lxp_result lxp_programs_account_validate(
         return LXP_ERR_NON_CANONICAL;
     status = registration_authorized(ctx, value->program_id,
                                      authority->principal);
+    if (status == LXP_OK && value->profile == 2U)
+        status = account_profile_opt_in_validate(
+            ctx, value->program_id, authority->principal);
     if (status == LXP_OK) status = registered_asset(ctx, value->asset_id);
     if (status == LXP_OK)
         status = lxp_programs_account_derive(
@@ -969,11 +1072,26 @@ lxp_result lxp_programs_account_execute(
         (const programs_account_activity *)decoded;
     lx_account *account;
     bool created;
+    lxp_result status;
     (void)activity;
     (void)effects;
     if (ctx == NULL || authority == NULL || value == NULL)
         return LXP_ERR_NON_CANONICAL;
-    return lxp_programs_account_register(
+    if (value->profile == 2U) {
+        status = account_profile_opt_in_validate(
+            ctx, value->program_id, authority->principal);
+        if (status != LXP_OK) return status;
+    }
+    status = lxp_programs_account_register(
         ctx, value->program_id, value->seed, value->seed_length,
         value->asset_id, &account, &created);
+    if (status == LXP_OK && value->profile == 2U) {
+        uint8_t key[sizeof(account_profile_prefix) - 1U + 32U];
+        uint8_t profile[33];
+        profile[0] = 2U;
+        (void)memcpy(profile + 1U, authority->principal, 32U);
+        (void)lxp_programs_account_profile_key(value->program_id, key);
+        status = lxp_ctx_kv_put(ctx, key, sizeof(key), profile, sizeof(profile));
+    }
+    return status;
 }

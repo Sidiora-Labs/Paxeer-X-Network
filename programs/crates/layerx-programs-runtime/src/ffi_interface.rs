@@ -233,7 +233,8 @@ fn decode(input: &[u8]) -> Result<Interface, i32> {
         let mut capabilities = Vec::with_capacity(cn);
         for _ in 0..cn {
             let decoded = capability(input, &mut c)?;
-            if matches!(decoded.first(), Some(10)) && (abi_policy::capability_encoding(abi) != Ok(CapabilityEncoding::V2))
+            if matches!(decoded.first(), Some(10))
+                && (abi_policy::capability_encoding(abi) != Ok(CapabilityEncoding::V2))
                 || matches!(decoded.first(), Some(11)) && !matches!(abi, 3 | 4)
                 || matches!(decoded.first(), Some(12)) && abi != 4
             {
@@ -419,6 +420,11 @@ fn widening(new: &Interface, old: &Interface) -> bool {
                         && o.failures.iter().all(|x| n.failures.contains(x))
                 })
         })
+}
+
+#[no_mangle]
+pub extern "C" fn layerx_programs_account_profile2_guest_admit(requested: u16) -> i32 {
+    i32::from(!layerx_program_sdk::abi_policy::account_profile2_guest_supported(requested))
 }
 
 #[no_mangle]

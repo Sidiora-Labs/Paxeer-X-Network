@@ -832,12 +832,24 @@ lxp_result lxp_programs_state_record_encode(
     lxp_module_ctx *ctx, const uint8_t program_id[32],
     const uint8_t receipt_digest[32], lxp_arena *arena,
     lxp_byte_span *encoded);
+lxp_result lxp_programs_state_record_profile2_encode(
+    lxp_module_ctx *ctx, const uint8_t program_id[32],
+    const uint8_t receipt_digest[32], lxp_arena *arena,
+    lxp_byte_span *encoded);
 lxp_result lxp_programs_account_owner_bind(
     lxp_module_ctx *ctx, const uint8_t program_id[32],
     const uint8_t owner[32]);
 lxp_result lxp_programs_account_owner_read(
     lxp_module_ctx *ctx, const uint8_t program_id[32],
     uint8_t owner[32]);
+size_t lxp_programs_account_profile_key(
+    const uint8_t program_id[32], uint8_t *key);
+size_t lxp_programs_account_owner_key(
+    const uint8_t program_id[32], uint8_t *key);
+lxp_result lxp_programs_account_profile_read(
+    lxp_module_ctx *ctx, const uint8_t program_id[32], uint8_t value[33]);
+lxp_result lxp_programs_account_guest_validate(
+    lxp_module_ctx *ctx, const uint8_t program_id[32], uint16_t abi_version);
 lxp_result lxp_programs_program_abi(
     lxp_module_ctx *ctx, const uint8_t program_id[32], uint16_t *abi_version);
 lxp_result lxp_programs_program_active(

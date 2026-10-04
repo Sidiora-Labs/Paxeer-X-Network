@@ -5,8 +5,7 @@ use std::time::Duration;
 use layerx_programs::{
     hex, AccountStateHead, ProgramBundleError, ProgramHeadKind, ProgramId, ProgramStateBundle,
     ProtocolDeploymentVerifier, ProtocolEvidenceError, ProtocolHeadMaintenanceProof,
-    ProtocolHeadProof, Registry, VerifiedChainHead, VerifiedMaintenanceHead,
-    VerifiedProgramBundle,
+    ProtocolHeadProof, Registry, VerifiedChainHead, VerifiedMaintenanceHead, VerifiedProgramBundle,
 };
 use layerx_programs_protocol_adapter::{ProtocolAdapterError, ProtocolProgramStateRead};
 use layerx_proof::merkle::Proof;
@@ -107,19 +106,30 @@ impl LayerxdProgramBalanceReader {
     ) -> Result<ProgramArtifacts, ProgramArtifactsError> {
         let url = format!(
             "{}/v1/programs/activities/{}/artifacts?receipt_digest={}",
-            self.endpoint, hex::encode(&activity_id), hex::encode(&receipt_digest),
+            self.endpoint,
+            hex::encode(&activity_id),
+            hex::encode(&receipt_digest),
         );
-        let mut response = self.agent.get(&url)
+        let mut response = self
+            .agent
+            .get(&url)
             .header("Authorization", &format!("Bearer {}", self.authorization))
-            .call().map_err(|_| ProgramArtifactsError::Unavailable)?;
+            .call()
+            .map_err(|_| ProgramArtifactsError::Unavailable)?;
         if !response.status().is_success() {
             return Err(ProgramArtifactsError::Unavailable);
         }
-        let body = response.body_mut().with_config().limit(4_194_560).read_to_string()
+        let body = response
+            .body_mut()
+            .with_config()
+            .limit(4_194_560)
+            .read_to_string()
             .map_err(|_| ProgramArtifactsError::Malformed)?;
-        let wire: ProgramArtifactsWire = serde_json::from_str(&body)
-            .map_err(|_| ProgramArtifactsError::Malformed)?;
-        if wire.activity_id != hex::encode(&activity_id) || wire.receipt_digest != hex::encode(&receipt_digest) {
+        let wire: ProgramArtifactsWire =
+            serde_json::from_str(&body).map_err(|_| ProgramArtifactsError::Malformed)?;
+        if wire.activity_id != hex::encode(&activity_id)
+            || wire.receipt_digest != hex::encode(&receipt_digest)
+        {
             return Err(ProgramArtifactsError::Malformed);
         }
         Ok(ProgramArtifacts {
@@ -203,6 +213,23 @@ impl LayerxdProgramBalanceReader {
         program: ProgramId,
         now: u64,
     ) -> Result<ProtocolProgramStateRead, ProtocolAdapterError> {
+        self.read_protocol_state_selected(program, now, false)
+    }
+
+    pub fn read_protocol_state_profile2(
+        &mut self,
+        program: ProgramId,
+        now: u64,
+    ) -> Result<ProtocolProgramStateRead, ProtocolAdapterError> {
+        self.read_protocol_state_selected(program, now, true)
+    }
+
+    fn read_protocol_state_selected(
+        &mut self,
+        program: ProgramId,
+        now: u64,
+        request_profile2: bool,
+    ) -> Result<ProtocolProgramStateRead, ProtocolAdapterError> {
         if now == 0 {
             return Err(ProtocolAdapterError::NonCanonicalView);
         }
@@ -212,10 +239,18 @@ impl LayerxdProgramBalanceReader {
             "/v1/protocol/account-state/head",
         )?;
         let (head, _, _) = self.verify_head(&head_document, now)?;
+        let profile2 = request_profile2
+            || self
+                .registry
+                .entry_for_wind_down(program)?
+                .versions
+                .last()
+                .is_some_and(|version| matches!(version.abi_version, 3 | 4));
         let path = format!(
-            "/v1/programs/{}/account-state?at={}",
+            "/v1/programs/{}/account-state?at={}{}",
             hex::encode(&program.bytes()),
-            head.freshness.observed_sequence
+            head.freshness.observed_sequence,
+            if profile2 { "&profile=2" } else { "" },
         );
         let document = self.get(&self.endpoint, &self.authorization, &path)?;
         let bytes = hex::decode(field(&document, "record_hex")?)
@@ -229,14 +264,25 @@ impl LayerxdProgramBalanceReader {
         {
             return Err(ProtocolAdapterError::CorruptRecord);
         }
-        ProtocolProgramStateRead::restore_verified(
-            &bytes,
-            &mut self.registry,
-            head,
-            head,
-            now,
-            self.staleness_limit,
-        )
+        if profile2 {
+            ProtocolProgramStateRead::restore_verified_profile2(
+                &bytes,
+                &mut self.registry,
+                head,
+                head,
+                now,
+                self.staleness_limit,
+            )
+        } else {
+            ProtocolProgramStateRead::restore_verified(
+                &bytes,
+                &mut self.registry,
+                head,
+                head,
+                now,
+                self.staleness_limit,
+            )
+        }
     }
 
     /// Serves the agent's balance model only from the verified protocol read.
@@ -462,15 +508,21 @@ impl LayerxdProgramBalanceReader {
 }
 
 fn program_artifact_hex(text: &str) -> Result<Vec<u8>, ProgramArtifactsError> {
-    if text.len() > 2_097_152 || text.len() % 2 != 0
-        || !text.bytes().all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'f'))
+    if text.len() > 2_097_152
+        || text.len() % 2 != 0
+        || !text
+            .bytes()
+            .all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'f'))
     {
         return Err(ProgramArtifactsError::Malformed);
     }
-    text.as_bytes().chunks_exact(2).map(|pair| {
-        let pair = std::str::from_utf8(pair).map_err(|_| ProgramArtifactsError::Malformed)?;
-        u8::from_str_radix(pair, 16).map_err(|_| ProgramArtifactsError::Malformed)
-    }).collect()
+    text.as_bytes()
+        .chunks_exact(2)
+        .map(|pair| {
+            let pair = std::str::from_utf8(pair).map_err(|_| ProgramArtifactsError::Malformed)?;
+            u8::from_str_radix(pair, 16).map_err(|_| ProgramArtifactsError::Malformed)
+        })
+        .collect()
 }
 
 /// Agent service route that always refreshes from layerxd at request time.

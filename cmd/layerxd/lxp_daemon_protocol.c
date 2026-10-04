@@ -361,7 +361,8 @@ static lxp_result head_route(lxp_daemon_protocol_owner *owner,
 
 static lxp_result program_route(lxp_daemon_protocol_owner *owner,
                                 const uint8_t program_id[32], uint64_t at,
-                                lxp_arena *arena, json_writer *writer)
+                                bool profile2, lxp_arena *arena,
+                                json_writer *writer)
 {
     lxp_module_ctx context;
     lxp_byte_span record;
@@ -379,7 +380,9 @@ static lxp_result program_route(lxp_daemon_protocol_owner *owner,
     if (status == LXP_OK) {
         context.protocol_version = owner->protocol_version;
         context.verified_receipts = owner->verified_receipts;
-        status = lxp_programs_state_record_encode(
+        status = profile2 ? lxp_programs_state_record_profile2_encode(
+            &context, program_id, owner->feed_store.head_receipt_digest,
+            owner->scratch, &record) : lxp_programs_state_record_encode(
             &context, program_id, owner->feed_store.head_receipt_digest,
             owner->scratch, &record);
     }
@@ -923,13 +926,29 @@ static lxp_result route_inner(lxp_daemon_protocol_owner *owner,
             char program_text[65];
             uint8_t program_id[32];
             uint64_t at;
+            bool profile2 = false;
+            char sequence_text[21];
+            const char *sequence;
+            const char *profile;
             if (tail == NULL || (size_t)(tail - suffix) != 64U)
                 return LXP_ERR_NON_CANONICAL;
             (void)memcpy(program_text, suffix, 64U); program_text[64] = '\0';
+            sequence = tail + 18U;
+            profile = strstr(sequence, "&profile=");
+            if (profile != NULL) {
+                size_t sequence_length = (size_t)(profile - sequence);
+                if (strcmp(profile, "&profile=2") != 0 ||
+                    sequence_length == 0U || sequence_length > 20U)
+                    return LXP_ERR_NON_CANONICAL;
+                (void)memcpy(sequence_text, sequence, sequence_length);
+                sequence_text[sequence_length] = '\0';
+                sequence = sequence_text;
+                profile2 = true;
+            }
             if (parse_hex32(program_text, program_id) != LXP_OK ||
-                parse_u64(tail + 18U, &at) != LXP_OK)
+                parse_u64(sequence, &at) != LXP_OK)
                 return LXP_ERR_NON_CANONICAL;
-            return program_route(owner, program_id, at, arena, writer);
+            return program_route(owner, program_id, at, profile2, arena, writer);
         }
     }
     if (strncmp(path, batch_prefix, sizeof(batch_prefix) - 1U) == 0) {

@@ -552,8 +552,9 @@ lxp_result lxp_programs_wind_down_validate(
         return LXP_ERR_NON_CANONICAL;
     status = lxp_programs_program_abi(ctx, value->program_id, &abi_version);
     if (status != LXP_OK) return status;
-    if (abi_version != LX_PROGRAMS_ACCOUNT_ABI_VERSION)
-        return LXP_ERR_VERSION_UNSUPPORTED;
+    status = lxp_programs_account_guest_validate(
+        ctx, value->program_id, abi_version);
+    if (status != LXP_OK) return status;
     status = lxp_programs_wind_down_read(ctx, value->program_id, &current);
     if (value->operation == WIND_DOWN_ROUTE) {
         if (status != LXP_ERR_UNKNOWN_FIELD) return LXP_ERR_PROGRAM_REFUSED;

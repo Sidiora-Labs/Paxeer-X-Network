@@ -243,6 +243,92 @@ pub struct ReadFreshness {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub struct VerifiedProgramAccountProfile2 {
+    program: ProgramId,
+    owner: [u8; 32],
+    head: AccountStateHead,
+    programs_root: [u8; 32],
+}
+
+impl VerifiedProgramAccountProfile2 {
+    pub fn verify(
+        program: ProgramId,
+        owner: [u8; 32],
+        snapshot: &VerifiedAccountSnapshot,
+        programs_root_proof: &StateProof,
+        profile_proof: &StateProof,
+        owner_proof: &StateProof,
+        authority: &JournalAccountStateAuthority<impl AccountStateJournal>,
+    ) -> Result<Self, AccountStateError> {
+        if owner == [0; 32] {
+            return Err(AccountStateError::InvalidProof);
+        }
+        snapshot.verify(authority)?;
+        verify_state_membership(
+            &9_u16.to_be_bytes(),
+            &snapshot.programs_root,
+            programs_root_proof,
+            snapshot.state_root,
+        )?;
+        let mut profile_key = b"program-account-profile\0".to_vec();
+        profile_key.extend_from_slice(&program.bytes());
+        let mut profile_value = vec![2];
+        profile_value.extend_from_slice(&owner);
+        verify_state_membership(
+            &profile_key,
+            &profile_value,
+            profile_proof,
+            snapshot.programs_root,
+        )?;
+        let mut owner_key = b"program-owner\0".to_vec();
+        owner_key.extend_from_slice(&program.bytes());
+        let mut owner_value = vec![1];
+        owner_value.extend_from_slice(&owner);
+        verify_state_membership(
+            &owner_key,
+            &owner_value,
+            owner_proof,
+            snapshot.programs_root,
+        )?;
+        Ok(Self {
+            program,
+            owner,
+            programs_root: snapshot.programs_root,
+            head: AccountStateHead {
+                receipt_digest: snapshot.receipt_digest,
+                state_root: snapshot.state_root,
+                freshness: snapshot.freshness,
+            },
+        })
+    }
+
+    pub(crate) fn matches_snapshot(
+        &self,
+        program: ProgramId,
+        snapshot: &VerifiedAccountSnapshot,
+    ) -> bool {
+        self.program == program
+            && self.head.receipt_digest == snapshot.receipt_digest
+            && self.head.state_root == snapshot.state_root
+            && self.head.freshness == snapshot.freshness
+            && self.programs_root == snapshot.programs_root
+    }
+
+    pub(crate) fn admits(&self, registry: &Registry, program: ProgramId) -> bool {
+        self.program == program
+            && registry
+                .entries
+                .get(&program)
+                .and_then(|entry| entry.versions.last())
+                .is_some_and(|version| {
+                    layerx_programs_runtime::abi_policy::account_profile2_guest_supported(
+                        version.abi_version,
+                    )
+                })
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct VerifiedRegistryRead {
     pub entry: RegistryEntry,
     pub receipt_digest: [u8; 32],
@@ -631,6 +717,47 @@ impl Registry {
         Ok(())
     }
 
+    pub fn record_value_account_profile2(
+        &mut self,
+        binding: ProgramValueAccountBinding,
+        profile: &VerifiedProgramAccountProfile2,
+    ) -> Result<(), AccountStateError> {
+        binding.validate()?;
+        let entry = self
+            .entries
+            .get(&binding.program)
+            .ok_or(AccountStateError::UnknownProgram)?;
+        if !profile.admits(self, binding.program) {
+            return Err(AccountStateError::LegacyProtocol);
+        }
+        if entry.lifecycle != ProgramLifecycle::Active {
+            return entry
+                .value_accounts
+                .iter()
+                .any(|existing| existing == &binding)
+                .then_some(())
+                .ok_or(AccountStateError::InactiveProgram);
+        }
+        let entry = self
+            .entries
+            .get_mut(&binding.program)
+            .ok_or(AccountStateError::UnknownProgram)?;
+        if let Some(existing) = entry.value_accounts.iter().find(|existing| {
+            existing.seed == binding.seed || existing.account_id == binding.account_id
+        }) {
+            return if existing == &binding {
+                Ok(())
+            } else {
+                Err(AccountStateError::BindingConflict)
+            };
+        }
+        entry.value_accounts.push(binding);
+        entry
+            .value_accounts
+            .sort_by_key(|binding| binding.account_id);
+        Ok(())
+    }
+
     /// Returns the append-only derived-account enumeration for a program.
     ///
     /// # Errors
@@ -783,6 +910,101 @@ impl Registry {
         Ok(())
     }
 
+    pub fn replay_protocol_state_profile2(
+        &mut self,
+        program: ProgramId,
+        bindings: &[ProgramValueAccountBinding],
+        routes: &[ExitRoute],
+        lifecycle: ProgramLifecycle,
+        history: &[LifecycleReceipt],
+        profile: &VerifiedProgramAccountProfile2,
+    ) -> Result<(), RegistryError> {
+        let mut candidate = self.clone();
+        let _entry = candidate
+            .entries
+            .get(&program)
+            .ok_or(RegistryError::UnknownProgram)?;
+        if !profile.admits(self, program) {
+            return Err(RegistryError::ProtocolStateMismatch);
+        }
+        for binding in bindings {
+            if binding.program != program || binding.validate().is_err() {
+                return Err(RegistryError::ProtocolStateMismatch);
+            }
+        }
+        let mut ordered_bindings = bindings.to_vec();
+        ordered_bindings.sort_by_key(|binding| binding.account_id);
+        if ordered_bindings
+            .windows(2)
+            .any(|pair| pair[0].account_id == pair[1].account_id || pair[0].seed == pair[1].seed)
+        {
+            return Err(RegistryError::ProtocolStateMismatch);
+        }
+        let mut ordered_routes = routes.to_vec();
+        ordered_routes.sort_by_key(|route| route.account_id);
+        if ordered_routes
+            .windows(2)
+            .any(|pair| pair[0].account_id == pair[1].account_id)
+            || ordered_routes.iter().any(|route| {
+                route.destination == [0; 32]
+                    || !ordered_bindings.iter().any(|binding| {
+                        binding.account_id == route.account_id
+                            && binding.asset_id == route.asset_id
+                            && binding.seed == route.seed
+                    })
+            })
+        {
+            return Err(RegistryError::ProtocolStateMismatch);
+        }
+        let prior = Self::validate_protocol_history(program, history)?;
+        if prior != lifecycle
+            || (lifecycle == ProgramLifecycle::Active
+                && (!history.is_empty() || !ordered_routes.is_empty()))
+            || (lifecycle != ProgramLifecycle::Active
+                && (history.is_empty() || ordered_routes.len() != ordered_bindings.len()))
+        {
+            return Err(RegistryError::ProtocolStateMismatch);
+        }
+        let entry = candidate
+            .entries
+            .get_mut(&program)
+            .ok_or(RegistryError::UnknownProgram)?;
+        let retains_bindings = entry
+            .value_accounts
+            .iter()
+            .all(|existing| ordered_bindings.iter().any(|value| value == existing));
+        let retains_routes = entry
+            .exit_routes
+            .iter()
+            .all(|existing| ordered_routes.iter().any(|value| value == existing));
+        let retains_history = history.starts_with(&entry.lifecycle_history);
+        let lifecycle_does_not_regress = matches!(
+            (entry.lifecycle, lifecycle),
+            (ProgramLifecycle::Active, _)
+                | (
+                    ProgramLifecycle::Deprecated,
+                    ProgramLifecycle::Deprecated | ProgramLifecycle::Tombstoned,
+                )
+                | (ProgramLifecycle::Tombstoned, ProgramLifecycle::Tombstoned)
+        );
+        let inactive_indexes_immutable = entry.lifecycle == ProgramLifecycle::Active
+            || (entry.value_accounts == ordered_bindings && entry.exit_routes == ordered_routes);
+        if !retains_bindings
+            || !retains_routes
+            || !retains_history
+            || !lifecycle_does_not_regress
+            || !inactive_indexes_immutable
+        {
+            return Err(RegistryError::ProtocolStateMismatch);
+        }
+        entry.value_accounts = ordered_bindings;
+        entry.exit_routes = ordered_routes;
+        entry.lifecycle_history = history.to_vec();
+        entry.lifecycle = lifecycle;
+        *self = candidate;
+        Ok(())
+    }
+
     /// Resolves the complete ABI-two primary enumeration into current,
     /// receipt-bound balances suitable for agent, explorer and CLI surfaces.
     ///
@@ -801,6 +1023,32 @@ impl Registry {
             .get(&program)
             .ok_or(AccountStateError::UnknownProgram)?;
         if entry.versions.last().map(|version| version.abi_version) != Some(2) {
+            return Err(AccountStateError::LegacyProtocol);
+        }
+        let value_accounts = snapshot.resolve_program(program, &entry.value_accounts, authority)?;
+        Ok(VerifiedProgramBalanceRead {
+            program,
+            lifecycle: entry.lifecycle,
+            bindings: entry.value_accounts.clone(),
+            value_accounts,
+            receipt_digest: snapshot.receipt_digest,
+            state_root: snapshot.state_root,
+            freshness: snapshot.freshness,
+        })
+    }
+
+    pub fn read_value_accounts_profile2(
+        &self,
+        program: ProgramId,
+        snapshot: &VerifiedAccountSnapshot,
+        authority: &JournalAccountStateAuthority<impl AccountStateJournal>,
+        profile: &VerifiedProgramAccountProfile2,
+    ) -> Result<VerifiedProgramBalanceRead, AccountStateError> {
+        let entry = self
+            .entries
+            .get(&program)
+            .ok_or(AccountStateError::UnknownProgram)?;
+        if !profile.admits(self, program) || !profile.matches_snapshot(program, snapshot) {
             return Err(AccountStateError::LegacyProtocol);
         }
         let value_accounts = snapshot.resolve_program(program, &entry.value_accounts, authority)?;

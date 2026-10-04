@@ -293,6 +293,103 @@ impl Deprecation {
         Ok(receipt)
     }
 
+    pub fn transition_profile2(
+        &mut self,
+        registry: &mut Registry,
+        request: &DeprecationRequest,
+        state_authority: &JournalAccountStateAuthority<impl AccountStateJournal>,
+        profile: &crate::VerifiedProgramAccountProfile2,
+    ) -> Result<LifecycleReceipt, DeprecationRefusal> {
+        self.transition_profile2_with_head(registry, request, state_authority, true, profile)
+    }
+
+    fn transition_profile2_with_head(
+        &mut self,
+        registry: &mut Registry,
+        request: &DeprecationRequest,
+        state_authority: &JournalAccountStateAuthority<impl AccountStateJournal>,
+        current: bool,
+        profile: &crate::VerifiedProgramAccountProfile2,
+    ) -> Result<LifecycleReceipt, DeprecationRefusal> {
+        validate_transition(request)?;
+        let _entry = registry.entry_for_wind_down(request.program)?;
+        if !profile.admits(registry, request.program)
+            || !profile.matches_snapshot(request.program, &request.account_snapshot)
+        {
+            return Err(AccountStateError::LegacyProtocol.into());
+        }
+        let bindings = registry.value_account_bindings(request.program)?;
+        let accounts = if current {
+            request
+                .account_snapshot
+                .resolve_program(request.program, bindings, state_authority)?
+        } else {
+            request.account_snapshot.resolve_program_historical(
+                request.program,
+                bindings,
+                state_authority,
+            )?
+        };
+        if request
+            .account_snapshot
+            .freshness
+            .observed_sequence
+            .checked_add(1)
+            != Some(request.effective_sequence)
+        {
+            return Err(DeprecationRefusal::SnapshotSequenceMismatch);
+        }
+        let exits = validate_exits(request, bindings, &accounts)?;
+        if let Some(existing) = self
+            .wind_downs
+            .iter()
+            .find(|record| record.program == request.program)
+        {
+            if existing.exits != exits || existing.policy != request.wind_down {
+                return Err(DeprecationRefusal::ExitMismatch {
+                    account_id: [0; 32],
+                });
+            }
+        }
+        let live_count = u32::try_from(
+            accounts
+                .iter()
+                .filter(|account| account.balance != 0)
+                .count(),
+        )
+        .map_err(|_| DeprecationRefusal::InvalidTransition)?;
+
+        let mut candidate_registry = registry.clone();
+        let mut candidate = self.clone();
+        let receipt = candidate_registry.transition_lifecycle(LifecycleTransition {
+            program: request.program,
+            expected: request.expected,
+            target: request.target,
+            authority: request.authority,
+            effective_sequence: request.effective_sequence,
+            wind_down: request.wind_down,
+            live_value_accounts: live_count,
+        })?;
+        match candidate
+            .wind_downs
+            .iter_mut()
+            .find(|record| record.program == request.program)
+        {
+            Some(record) => {
+                record.policy = request.wind_down;
+                record.exits = exits;
+            }
+            None => candidate.wind_downs.push(WindDownRecord {
+                program: request.program,
+                policy: request.wind_down,
+                exits,
+            }),
+        }
+        *registry = candidate_registry;
+        *self = candidate;
+        Ok(receipt)
+    }
+
     /// Preserves ABI-one lifecycle history behind an explicit version gate.
     /// ABI one had no program-account registration activity; therefore this
     /// path is admitted only while the durable enumeration is empty.

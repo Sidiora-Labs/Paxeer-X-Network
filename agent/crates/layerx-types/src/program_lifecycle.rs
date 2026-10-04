@@ -63,6 +63,49 @@ pub struct NativeProgramWindDown<'a> {
     pub operation: ProgramWindDownOperation<'a>,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct NativeProgramAccountProfile2<'a> {
+    pub program_id: ProgramId,
+    pub asset: [u8; 32],
+    pub seed: &'a [u8],
+}
+
+impl<'a> NativeProgramAccountProfile2<'a> {
+    pub fn encode(&self) -> Result<Vec<u8>, InvalidNativeLifecycle> {
+        if self.program_id.is_zero() || self.asset == [0; 32] || self.seed.len() > MAX_SEED_BYTES {
+            return Err(InvalidNativeLifecycle);
+        }
+        let mut bytes = self.program_id.bytes().to_vec();
+        bytes.extend_from_slice(b"LXPA2");
+        bytes.extend_from_slice(&self.asset);
+        append_length(&mut bytes, self.seed.len())?;
+        bytes.extend_from_slice(self.seed);
+        Ok(bytes)
+    }
+
+    pub fn decode(payload: &'a [u8]) -> Result<Self, InvalidNativeLifecycle> {
+        let mut remaining = payload;
+        let program_id = ProgramId::new(take(&mut remaining)?);
+        if take::<5>(&mut remaining)? != *b"LXPA2" {
+            return Err(InvalidNativeLifecycle);
+        }
+        let asset = take(&mut remaining)?;
+        let length = length32(&mut remaining)?;
+        if program_id.is_zero() || asset == [0; 32] || length > MAX_SEED_BYTES {
+            return Err(InvalidNativeLifecycle);
+        }
+        let seed = body(&mut remaining, length)?;
+        if !remaining.is_empty() {
+            return Err(InvalidNativeLifecycle);
+        }
+        Ok(Self {
+            program_id,
+            asset,
+            seed,
+        })
+    }
+}
+
 fn body<'a>(remaining: &mut &'a [u8], length: usize) -> Result<&'a [u8], InvalidNativeLifecycle> {
     let (head, tail) = remaining
         .split_at_checked(length)
@@ -390,6 +433,48 @@ mod tests {
     use super::*;
 
     #[test]
+    fn account_profile2_preserves_exact_versioned_native_framing(
+    ) -> Result<(), InvalidNativeLifecycle> {
+        let value = NativeProgramAccountProfile2 {
+            program_id: ProgramId::new([1; 32]),
+            asset: [2; 32],
+            seed: b"escrow",
+        };
+        let bytes = value.encode()?;
+        assert_eq!(&bytes[32..37], b"LXPA2");
+        assert_eq!(bytes.len(), 73 + value.seed.len());
+        assert_eq!(NativeProgramAccountProfile2::decode(&bytes)?, value);
+        for prefix in 0..bytes.len() {
+            assert!(NativeProgramAccountProfile2::decode(&bytes[..prefix]).is_err());
+        }
+        let mut trailing = bytes.clone();
+        trailing.push(0);
+        assert!(NativeProgramAccountProfile2::decode(&trailing).is_err());
+        let mut legacy = bytes;
+        legacy[36] = b'1';
+        assert!(NativeProgramAccountProfile2::decode(&legacy).is_err());
+        assert!(NativeProgramAccountProfile2 {
+            asset: [0; 32],
+            ..value
+        }
+        .encode()
+        .is_err());
+        assert!(NativeProgramAccountProfile2 {
+            program_id: ProgramId::new([0; 32]),
+            ..value
+        }
+        .encode()
+        .is_err());
+        assert!(NativeProgramAccountProfile2 {
+            seed: &[0; MAX_SEED_BYTES + 1],
+            ..value
+        }
+        .encode()
+        .is_err());
+        Ok(())
+    }
+
+    #[test]
     fn native_c_lifecycle_vectors_reencode_exactly() -> Result<(), String> {
         for (name, ordinal) in [
             ("deploy", 1),
@@ -668,7 +753,10 @@ mod tests {
             assert_eq!(bytes, expected);
             assert_eq!(bytes.len(), 81);
             if maximum_exit_amount == 0x0102_0304_0506_0708_090a_0b0c_0d0e_0f10 {
-                assert_eq!(&bytes[65..], &[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]);
+                assert_eq!(
+                    &bytes[65..],
+                    &[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
+                );
             }
             assert_eq!(NativeProgramWindDown::decode(&bytes)?, bounded);
             assert_eq!(NativeProgramWindDown::decode(&bytes)?.encode()?, bytes);
@@ -691,7 +779,8 @@ mod tests {
     }
 
     #[test]
-    fn bounded_exit_zero_bound_and_unknown_operation_refusals() -> Result<(), InvalidNativeLifecycle> {
+    fn bounded_exit_zero_bound_and_unknown_operation_refusals() -> Result<(), InvalidNativeLifecycle>
+    {
         let zero_bound = NativeProgramWindDown {
             program_id: ProgramId::new([1; 32]),
             operation: ProgramWindDownOperation::BoundedExit {

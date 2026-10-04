@@ -1,6 +1,7 @@
 #include "layerx/programs.h"
 
 #include "layerx/lxp_crypto.h"
+#include "layerx/lxp_kernel.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -364,6 +365,115 @@ lxp_result lxp_programs_state_record_encode(
         put_u8(&writer, account->has_authority_key ? 1U : 0U);
         put_proof(&writer, &value->account_proof);
     }
+    if (writer.status != LXP_OK) {
+        (void)lxp_arena_reset(arena, mark);
+        return writer.status;
+    }
+    encoded->bytes = writer.bytes;
+    encoded->length = writer.length;
+    return LXP_OK;
+}
+
+lxp_result lxp_programs_state_record_profile2_encode(
+    lxp_module_ctx *ctx, const uint8_t program_id[32],
+    const uint8_t receipt_digest[32], lxp_arena *arena,
+    lxp_byte_span *encoded)
+{
+    static const uint8_t magic[] = {'L', 'X', 'P', 'S', '2'};
+    static const uint8_t owner_prefix[] = "program-owner\0";
+    uint8_t key[128], owner_key[sizeof(owner_prefix) - 1U + 32U];
+    uint8_t value[33], owner_value[33], programs_root[32], owner_root[32];
+    uint8_t state_root[32];
+    lx_programs_account_state_head head;
+    lxp_state_proof profile_proof, owner_proof;
+    lxp_byte_span legacy;
+    record_writer writer;
+    uint8_t *saved = NULL;
+    void *memory = NULL;
+    size_t key_length, length, capacity, mark;
+    lxp_result status;
+    if (ctx == NULL || ctx->kernel == NULL || program_id == NULL ||
+        receipt_digest == NULL || arena == NULL || encoded == NULL ||
+        ctx->protocol_version != LXP_PROTOCOL_VERSION_STATE_COMMITMENT)
+        return LXP_ERR_VERSION_UNSUPPORTED;
+    encoded->bytes = NULL;
+    encoded->length = 0U;
+    mark = lxp_arena_mark(arena);
+    key_length = lxp_programs_account_profile_key(program_id, key);
+    if (key_length == 0U || key_length > sizeof(key))
+        return LXP_ERR_NON_CANONICAL;
+    status = lxp_programs_account_profile_read(ctx, program_id, value);
+    if (status == LXP_OK)
+        status = lxp_programs_account_owner_read(ctx, program_id,
+                                               owner_value + 1U);
+    owner_value[0] = 1U;
+    if (status == LXP_OK &&
+        (value[0] != 2U || lxp_ct_memcmp(value + 1U,
+                                       owner_value + 1U, 32U) != 0))
+        status = LXP_ERR_AUTH_SCOPE;
+    (void)memcpy(owner_key, owner_prefix, sizeof(owner_prefix) - 1U);
+    (void)memcpy(owner_key + sizeof(owner_prefix) - 1U, program_id, 32U);
+    if (status == LXP_OK)
+        status = lxp_programs_account_state_head_read(
+            ctx, program_id, receipt_digest, &head);
+    if (status == LXP_OK)
+        status = lxp_state_subtree_proof(ctx->kernel, LXP_MODULE_PROGRAMS,
+            key, key_length, programs_root, &profile_proof);
+    if (status == LXP_OK)
+        status = lxp_state_subtree_proof(ctx->kernel, LXP_MODULE_PROGRAMS,
+            owner_key, sizeof(owner_key), owner_root, &owner_proof);
+    if (status == LXP_OK)
+        status = lxp_state_root(ctx->kernel, state_root);
+    if (status == LXP_OK &&
+        (lxp_ct_memcmp(programs_root, head.programs_root, 32U) != 0 ||
+         lxp_ct_memcmp(owner_root, programs_root, 32U) != 0 ||
+         lxp_ct_memcmp(state_root, head.state_root, 32U) != 0))
+        status = LXP_ERR_ROOT_MISMATCH;
+    if (status == LXP_OK)
+        status = lxp_programs_state_record_encode(
+            ctx, program_id, receipt_digest, arena, &legacy);
+    if (status != LXP_OK) {
+        (void)lxp_arena_reset(arena, mark);
+        return status;
+    }
+    length = legacy.length;
+    if (length > 16U * 1024U * 1024U) {
+        (void)lxp_arena_reset(arena, mark);
+        return LXP_ERR_LENGTH_LIMIT;
+    }
+    saved = malloc(length);
+    if (saved == NULL) {
+        (void)lxp_arena_reset(arena, mark);
+        return LXP_ERR_ARENA_EXHAUSTED;
+    }
+    (void)memcpy(saved, legacy.bytes, length);
+    (void)lxp_arena_reset(arena, mark);
+    capacity = sizeof(magic) + 4U + length + 2U + key_length +
+        2U + sizeof(value) + 32U + 3U *
+        (9U + (size_t)LXP_STATE_PROOF_MAX_DEPTH * 32U) +
+        2U + sizeof(owner_key) + 2U + sizeof(owner_value);
+    status = lxp_arena_alloc(arena, capacity, 1U, &memory);
+    if (status != LXP_OK) {
+        free(saved);
+        return status;
+    }
+    writer = (record_writer){memory, capacity, 0U, LXP_OK};
+    put(&writer, magic, sizeof(magic));
+    put_u32(&writer, (uint32_t)length);
+    put(&writer, saved, length);
+    free(saved);
+    put_u16(&writer, (uint16_t)key_length);
+    put(&writer, key, key_length);
+    put_u16(&writer, (uint16_t)sizeof(value));
+    put(&writer, value, sizeof(value));
+    put(&writer, programs_root, 32U);
+    put_proof(&writer, &head.programs_root_proof);
+    put_proof(&writer, &profile_proof);
+    put_u16(&writer, (uint16_t)sizeof(owner_key));
+    put(&writer, owner_key, sizeof(owner_key));
+    put_u16(&writer, (uint16_t)sizeof(owner_value));
+    put(&writer, owner_value, sizeof(owner_value));
+    put_proof(&writer, &owner_proof);
     if (writer.status != LXP_OK) {
         (void)lxp_arena_reset(arena, mark);
         return writer.status;

@@ -16,6 +16,10 @@ pub const ABI_V3_VERSION: u16 = 3;
 /// Frozen version-four program ABI.
 pub const ABI_V4_VERSION: u16 = 4;
 
+pub const fn account_profile2_guest_supported(requested: u16) -> bool {
+    matches!(requested, ABI_V2_VERSION | ABI_V3_VERSION | ABI_V4_VERSION)
+}
+
 /// The sole typed refusal for an invalid ABI version transition.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum AbiVersionRefusal {

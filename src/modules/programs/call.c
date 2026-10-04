@@ -2014,6 +2014,16 @@ static lxp_result transfer_source_validate(
             return LXP_ERR_AUTH_SCOPE;
         return LXP_OK;
     }
+    if (source->kind == PROGRAM_TRANSFER_SOURCE_PROGRAM_FUNDING ||
+        source->kind == PROGRAM_TRANSFER_SOURCE_PROGRAM) {
+        uint16_t account_abi;
+        status = lxp_programs_program_abi(
+            value->ctx, source->owner_program, &account_abi);
+        if (status == LXP_OK)
+            status = lxp_programs_account_guest_validate(
+                value->ctx, source->owner_program, account_abi);
+        if (status != LXP_OK) return status;
+    }
     if (source->kind == PROGRAM_TRANSFER_SOURCE_PROGRAM_FUNDING) {
         if ((value->abi_version != LX_PROGRAMS_GUEST_ABI_V2_VERSION &&
              value->abi_version != LX_PROGRAMS_GUEST_ABI_V3_VERSION &&
