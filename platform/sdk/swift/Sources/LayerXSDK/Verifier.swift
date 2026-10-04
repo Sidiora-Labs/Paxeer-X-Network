@@ -418,14 +418,28 @@ public enum LocalVerifier {
         protocolVersion: UInt16, expectedActivityID: Data, expectedProgramID: Data, expectedGuestABI: UInt16,
         terminalPayload: Data, callGraph: Data, documentOutcome: [String: JSONValue]) async throws -> ReceiptVerification {
         let binding = ProgramReceiptV5Binding(activity: expectedActivityID, program: expectedProgramID,
-            abi: expectedGuestABI, terminal: terminalPayload, graph: callGraph, outcome: documentOutcome)
+            abi: expectedGuestABI, terminal: terminalPayload, graph: callGraph, outcome: .document(documentOutcome))
         return try await verifyReceiptOutcomeCore(canonicalReceipt, authorized: authorized,
             protocolVersion: protocolVersion, v5: binding)
     }
 
+    static func verifyRawProgramReceiptV5(_ canonicalReceipt: Data, authorized: AuthorizedReceiptBatch,
+        protocolVersion: UInt16, expectedActivityID: Data, expectedProgramID: Data, expectedGuestABI: UInt16,
+        terminalPayload: Data, callGraph: Data) async throws -> ReceiptVerification {
+        let binding = ProgramReceiptV5Binding(activity: expectedActivityID, program: expectedProgramID,
+            abi: expectedGuestABI, terminal: terminalPayload, graph: callGraph, outcome: .raw)
+        return try await verifyReceiptOutcomeCore(canonicalReceipt, authorized: authorized,
+            protocolVersion: protocolVersion, v5: binding)
+    }
+
+    private enum ProgramReceiptV5OutcomeSource {
+        case document([String: JSONValue])
+        case raw
+    }
+
     private struct ProgramReceiptV5Binding {
         let activity: Data; let program: Data; let abi: UInt16; let terminal: Data; let graph: Data
-        let outcome: [String: JSONValue]
+        let outcome: ProgramReceiptV5OutcomeSource
     }
 
     private static func verifyReceiptOutcomeCore(_ canonicalReceipt: Data, authorized: AuthorizedReceiptBatch,
@@ -480,8 +494,13 @@ public enum LocalVerifier {
             guard program, receipt.operation == 3, let outcome = receipt.programOutcome,
                 isProgramTerminalV5(binding.terminal, receipt: outcome)
             else { throw receiptFailure(.receiptShape) }
+            let document: [String: JSONValue]
+            switch binding.outcome {
+            case let .document(value): document = value
+            case .raw: document = try deriveProgramTerminalV5Outcome(binding.terminal, receipt: outcome)
+            }
             _ = try verifyTerminal(binding.terminal, availableGraph: binding.graph, expectedProgram: binding.program,
-                documentOutcome: binding.outcome, protocolVersion: protocolVersion, receipt: outcome)
+                documentOutcome: document, protocolVersion: protocolVersion, receipt: outcome)
         }
         return ReceiptVerification(level: "sequencer-signed", receipt: receipt, canonicalBytes: canonicalReceipt, receiptDigest: receiptDigest)
     }

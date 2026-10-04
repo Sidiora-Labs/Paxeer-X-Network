@@ -279,6 +279,19 @@ public struct ProgramsClient: Sendable {
               Data(SHA256.hash(data: callGraph)) == outcome.callGraphRoot else { throw programVerification() }
         return verified
     }
+
+    public static func verifyRawV5Receipt(_ canonicalReceipt: Data, authorized: AuthorizedReceiptBatch,
+        call: ProgramCall, terminalPayload: Data, callGraph: Data, protocolVersion: UInt16 = 3) async throws -> ReceiptVerification {
+        guard protocolVersion == 3, let native = call.nativeCall,
+            native.guestABI == 3 || native.guestABI == 4,
+            !terminalPayload.isEmpty, terminalPayload.count <= 1_048_576,
+            !callGraph.isEmpty, callGraph.count <= maximumCallGraphBytes else { throw programInvalid() }
+        let binding = try verifySignedNativeCall(call)
+        return try await LocalVerifier.verifyRawProgramReceiptV5(canonicalReceipt, authorized: authorized,
+            protocolVersion: protocolVersion, expectedActivityID: binding.activityID,
+            expectedProgramID: native.programID, expectedGuestABI: native.guestABI,
+            terminalPayload: terminalPayload, callGraph: callGraph)
+    }
 }
 
 struct ActivityBinding {
@@ -620,6 +633,60 @@ func isProgramTerminalV5(_ encoded: Data, receipt: ProgramReceiptOutcome) -> Boo
     return starts(attachments.inner, "LXP/program-execution/v5\0")
         || starts(attachments.inner, "LXP/programs/callback-failure/v1\0")
         || starts(attachments.inner, "LXP/programs/settlement-failure/v1\0")
+}
+
+func deriveProgramTerminalV5Outcome(_ encoded: Data, receipt: ProgramReceiptOutcome) throws -> [String: JSONValue] {
+    guard encoded.count <= 1_048_576, Data(SHA256.hash(data: encoded)) == receipt.terminalPayloadRoot,
+        receipt.encodingVersion == 4, receipt.abiVersion == 3 || receipt.abiVersion == 4 else { throw programVerification() }
+    let attachments = try unwrapTerminal(unwrapAppliedTerminal(encoded, receipt: receipt))
+    let inner = attachments.inner
+    if starts(inner, "LXP/program-execution/v5\0") {
+        var cursor = try TerminalCursor(inner, offset: Data("LXP/program-execution/v5\0".utf8).count)
+        let runtime = try cursor.u16(), feeSchedule = try cursor.u32(), metering = try cursor.u32()
+        let count = try cursor.u64()
+        guard count <= UInt64(cursor.remaining / 5) else { throw programVerification() }
+        for _ in 0..<Int(count) {
+            switch try cursor.u8() {
+            case 1: _ = try cursor.i32()
+            case 2: _ = try cursor.i64()
+            default: throw programVerification()
+            }
+        }
+        let usage = TerminalUsage(cpu: try cursor.u64(), memory: try cursor.u64(), read: try cursor.u64(),
+            write: try cursor.u64(), values: try cursor.u32(), outputBytes: try cursor.u64(), fee: try cursor.u128())
+        let trace = try cursor.u8()
+        if trace == 1 { guard try cursor.sized64().count <= 34 + 65_536 * 52 else { throw programVerification() } }
+        else if trace != 0 { throw programVerification() }
+        _ = try cursor.take(32)
+        guard try cursor.u16() == receipt.abiVersion, runtime == receipt.runtimeVersion,
+            feeSchedule == receipt.feeScheduleVersion, metering == receipt.meteringScheduleVersion else { throw programVerification() }
+        let document: [String: JSONValue]
+        switch try cursor.u8() {
+        case 0:
+            let code = try cursor.i32(), response = try cursor.sized64()
+            guard code >= 0, response.count <= 1_048_576 else { throw programVerification() }
+            document = ["kind": .string("completed"), "code": .integer(Int64(code)), "response": .string(response.hex)]
+        case 1:
+            try validateAuthenticatedProgramFailure(cursor.sized64())
+            document = ["kind": .string("refused"), "failure": .object([
+                "kind": .string("guest_refused"), "code": .integer(Int64(receipt.resultCode))])]
+        case 2:
+            try validateCandidateResource(&cursor, usage: usage)
+            document = ["kind": .string("refused"), "failure": .object(["kind": .string("resource")])]
+        default: throw programVerification()
+        }
+        _ = try cursor.sized64(); try cursor.finish(); try matchUsage(usage, receipt)
+        return document
+    }
+    if starts(inner, "LXP/programs/callback-failure/v1\0") {
+        var cursor = try TerminalCursor(inner, offset: Data("LXP/programs/callback-failure/v1\0".utf8).count)
+        _ = try cursor.u8(); _ = try cursor.i32(); try cursor.finish()
+    } else if starts(inner, "LXP/programs/settlement-failure/v1\0") {
+        var cursor = try TerminalCursor(inner, offset: Data("LXP/programs/settlement-failure/v1\0".utf8).count)
+        guard (1...12).contains(try cursor.u8()) else { throw programVerification() }; try cursor.finish()
+    } else { throw programVerification() }
+    return ["kind": .string("refused"), "failure": .object([
+        "kind": .string("guest_refused"), "code": .integer(Int64(receipt.resultCode))])]
 }
 
 func verifyTerminal(_ encoded: Data, availableGraph: Data, expectedProgram: Data,
@@ -1294,6 +1361,30 @@ func decodeSignedCall(_ call: ProgramCall) throws -> ActivityBinding {
     } catch { throw programInvalid() }
 }
 
+private func verifySignedNativeCall(_ call: ProgramCall) throws -> ActivityBinding {
+    guard call.nativeCall != nil else { throw programInvalid() }
+    let binding = try decodeSignedCall(call)
+    var cursor = BinaryCursor(call.signedActivity)
+    guard try cursor.u16() == 3, try cursor.u16() == 0x1001, try cursor.u8() == 12 else { throw programInvalid() }
+    try cursor.tag(1); _ = try cursor.u16(); try cursor.tag(2); _ = try cursor.u32()
+    try cursor.tag(3); _ = try cursor.u32(); try cursor.tag(4); _ = try cursor.bounded(maximum: 255, empty: true)
+    try cursor.tag(5); let authority = try cursor.bounded(maximum: 32, empty: false)
+    guard authority.count == 32 else { throw programInvalid() }
+    try cursor.tag(6); _ = try cursor.u64(); try cursor.tag(7); _ = try cursor.u64(); _ = try cursor.u64()
+    try cursor.tag(8); _ = try cursor.bounded(maximum: 32, empty: false)
+    try cursor.tag(9); _ = try cursor.u64(); _ = try cursor.u64()
+    try cursor.tag(10); _ = try cursor.bounded(maximum: 32, empty: false)
+    try cursor.tag(11); _ = try cursor.bounded(maximum: 524_288, empty: false)
+    let unsignedLength = cursor.position
+    try cursor.tag(12); let signature = try cursor.bounded(maximum: 64, empty: false); try cursor.finish()
+    guard signature.count == 64 else { throw programInvalid() }
+    var unsigned = Data(call.signedActivity.prefix(unsignedLength)); unsigned[4] = 11
+    let preimage = digest(Data("LXP/v1/signature-preimage\0".utf8), unsigned)
+    guard try Curve25519.Signing.PublicKey(rawRepresentation: authority).isValidSignature(signature, for: preimage)
+    else { throw programVerification() }
+    return binding
+}
+
 private func canonicalCallPayload(_ call: ProgramCall) throws -> Data {
     if let native = call.nativeCall {
         guard native.programID == call.programID, native.calldata == call.calldata, native.resources[0] == call.budget.fuel, call.capabilities.isEmpty else { throw programInvalid() }
@@ -1423,6 +1514,7 @@ private struct BinaryCursor {
     private let bytes: Data
     private var offset = 0
     init(_ bytes: Data) { self.bytes = bytes }
+    var position: Int { offset }
     mutating func u8() throws -> UInt8 { try take(1)[0] }
     mutating func u16() throws -> UInt16 { UInt16(try unsigned(2)) }
     mutating func u32() throws -> UInt32 { UInt32(try unsigned(4)) }

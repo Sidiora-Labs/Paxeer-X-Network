@@ -300,8 +300,12 @@ final class ProgramsContractTests: XCTestCase {
         let path = try XCTUnwrap(ProcessInfo.processInfo.environment["PAXEER_X_PROGRAM_TERMINAL_V5_CORPUS"])
         let corpus = try JSONDecoder().decode(JSONValue.self, from: Data(contentsOf: URL(fileURLWithPath: path)))
         let root = try XCTUnwrap(corpus.objectValue)
+        XCTAssertEqual(Set(root.keys), ["source_revision", "trusted_sequencer_public_key_hex", "cases"])
         let revision = try XCTUnwrap(root["source_revision"]?.stringValue)
         XCTAssertEqual(revision.count, 40)
+        XCTAssertEqual(revision, ProcessInfo.processInfo.environment["PAXEER_X_MAINLINE"])
+        let pin = try nativeTransportHex(root["trusted_sequencer_public_key_hex"]?.stringValue)
+        XCTAssertEqual(pin.hexString, "b4f05aee172965774743f4cd7de4c3621c9e36fd77af7139aafec25eb3fb3360")
         guard case let .array(cases)? = root["cases"] else { return XCTFail("actual native corpus cases absent") }
         let required = Set(["abi3-success", "abi3-failure", "abi3-resource", "abi3-callback", "abi3-settlement",
             "abi4-success", "abi4-failure", "abi4-resource", "abi4-callback", "abi4-settlement"])
@@ -318,97 +322,91 @@ final class ProgramsContractTests: XCTestCase {
                 feeLimit: ProtocolAmount(XCTUnwrap(vector["fee_limit"]?.stringValue)), signedActivity: signed)
             let binding = try decodeSignedCall(call)
             XCTAssertEqual(native.guestABI, abi, name)
-            let execution = try XCTUnwrap(vector["execution"]?.objectValue)
-            let program = try nativeTransportHex(vector["program_id_hex"]?.stringValue)
-            let pin = try nativeTransportHex(vector["sequencer_public_key_hex"]?.stringValue)
-            let state = try XCTUnwrap(execution["state"]?.stringValue)
-            let idempotent = execution["idempotency_key"] != nil
-            XCTAssertEqual(execution["receipt"]?.stringValue, vector["canonical_receipt_hex"]?.stringValue)
-            XCTAssertEqual(execution["terminal_payload"]?.stringValue, vector["terminal_payload_hex"]?.stringValue)
-            XCTAssertEqual(execution["call_graph"]?.stringValue, vector["call_graph_hex"]?.stringValue)
-            XCTAssertEqual(native.programID, program, name)
-            let verified = try await verifiedExecution(execution, state: state, idempotent: idempotent,
-                expectedProgramID: program, expectedActivityID: binding.activityID,
-                expectedIdempotencyKey: idempotent ? binding.idempotencyKey.hexString : nil,
-                pinnedKey: pin, protocolVersion: 3, expectedGuestABI: abi)
-            XCTAssertEqual(verified.guestABIVersion, abi, name)
-            let outcome = try XCTUnwrap(verified.receipt.receipt.programOutcome)
+            XCTAssertEqual(native.programID, try nativeTransportHex(vector["program_id_hex"]?.stringValue), name)
+            XCTAssertEqual(try nativeTransportHex(vector["sequencer_public_key_hex"]?.stringValue), pin, name)
+            let receipt = try nativeTransportHex(vector["canonical_receipt_hex"]?.stringValue)
             let terminal = try nativeTransportHex(vector["terminal_payload_hex"]?.stringValue)
             let graph = try nativeTransportHex(vector["call_graph_hex"]?.stringValue)
-            let receipt = try nativeTransportHex(vector["canonical_receipt_hex"]?.stringValue)
-            let document = try XCTUnwrap(execution["outcome"]?.objectValue)
-            let authority = try XCTUnwrap(execution["authority"]?.objectValue)
-            let batch = AuthorizedReceiptBatch(batchID: try nativeTransportHex(authority["batch_id"]?.stringValue),
-                asset: try nativeTransportHex(authority["asset"]?.stringValue),
-                previousStateRoot: try nativeTransportHex(authority["previous_state_root"]?.stringValue),
-                resultingStateRoot: try nativeTransportHex(authority["resulting_state_root"]?.stringValue),
+            let authority = try XCTUnwrap(vector["authorized_batch"]?.objectValue)
+            XCTAssertEqual(Set(authority.keys), ["batch_id_hex", "asset_hex", "previous_state_root_hex",
+                "resulting_state_root_hex", "sequencer_public_key_hex"])
+            XCTAssertEqual(try nativeTransportHex(authority["sequencer_public_key_hex"]?.stringValue), pin)
+            let batch = AuthorizedReceiptBatch(batchID: try nativeTransportHex(authority["batch_id_hex"]?.stringValue),
+                asset: try nativeTransportHex(authority["asset_hex"]?.stringValue),
+                previousStateRoot: try nativeTransportHex(authority["previous_state_root_hex"]?.stringValue),
+                resultingStateRoot: try nativeTransportHex(authority["resulting_state_root_hex"]?.stringValue),
                 sequencerPublicKey: pin)
+            let verified = try await ProgramsClient.verifyRawV5Receipt(receipt, authorized: batch,
+                call: call, terminalPayload: terminal, callGraph: graph)
+            XCTAssertEqual(verified.receipt.activityID, binding.activityID, name)
+            let outcome = try XCTUnwrap(verified.receipt.programOutcome)
+            XCTAssertEqual(outcome.abiVersion, abi, name)
+            let document = try deriveProgramTerminalV5Outcome(terminal, receipt: outcome)
+            XCTAssertEqual(try verifyTerminal(terminal, availableGraph: graph, expectedProgram: native.programID,
+                documentOutcome: document, protocolVersion: 3, receipt: outcome), "reconstructed", name)
+            let category = try XCTUnwrap(vector["outcome"]?.stringValue)
+            switch category {
+            case "success":
+                XCTAssertEqual(outcome.terminalKind, 1, name); XCTAssertEqual(outcome.resultCode, 0, name)
+                XCTAssertEqual(document["kind"]?.stringValue, "completed", name)
+            case "resource":
+                XCTAssertEqual(outcome.terminalKind, 3, name); XCTAssertLessThan(outcome.resultCode, 0, name)
+                XCTAssertEqual(document["failure"]?.objectValue?["kind"]?.stringValue, "resource", name)
+            case "failure", "callback", "settlement":
+                XCTAssertEqual(outcome.terminalKind, 2, name); XCTAssertLessThan(outcome.resultCode, 0, name)
+                XCTAssertEqual(document["failure"]?.objectValue?["kind"]?.stringValue, "guest_refused", name)
+            default: XCTFail("unknown actual corpus outcome: \(category)")
+            }
             do {
                 _ = try await LocalVerifier.verifyReceiptOutcome(receipt, authorized: batch, protocolVersion: 3)
-                XCTFail("low-level receipt API accepted guest ABI3/4 without the full terminal profile", file: #filePath, line: #line)
+                XCTFail("low-level receipt API accepted guest ABI3/4 without the full terminal profile")
+            } catch {}
+            do {
+                _ = try await ProgramsClient.verifyReceipt(receipt, authorized: batch,
+                    expectedActivityID: binding.activityID, expectedGuestABIVersion: abi,
+                    terminalPayload: terminal, callGraph: graph, protocolVersion: 3,
+                    expectedProgramID: native.programID)
+                XCTFail("document API accepted absent outcome")
             } catch {}
             for other: UInt16 in [0, 1, 2, 3, 4, 5, UInt16.max] where other != abi {
                 do {
-                    _ = try await verifiedExecution(execution, state: state, idempotent: idempotent,
-                        expectedProgramID: program, expectedActivityID: binding.activityID,
-                        expectedIdempotencyKey: idempotent ? binding.idempotencyKey.hexString : nil,
-                        pinnedKey: pin, protocolVersion: 3, expectedGuestABI: other)
+                    let changed = try ProgramCall(nativeCall: nativeCall(native, abi: other),
+                        feeLimit: call.budget.feeLimit, signedActivity: signed)
+                    _ = try await ProgramsClient.verifyRawV5Receipt(receipt, authorized: batch,
+                        call: changed, terminalPayload: terminal, callGraph: graph)
                     XCTFail("request ABI cross-substitution accepted: \(name) / \(other)")
                 } catch {}
             }
-            var changedGraph = graph; changedGraph[changedGraph.count - 1] ^= 1
-            XCTAssertThrowsError(try verifyTerminal(terminal, availableGraph: changedGraph, expectedProgram: program,
-                documentOutcome: document, protocolVersion: 3, receipt: outcome), name)
-            do {
-                _ = try await verifiedExecution(execution, state: state, idempotent: idempotent,
-                    expectedProgramID: Data(repeating: 0, count: 32), expectedActivityID: binding.activityID,
-                    expectedIdempotencyKey: idempotent ? binding.idempotencyKey.hexString : nil,
-                    pinnedKey: pin, protocolVersion: 3, expectedGuestABI: abi)
-                XCTFail("wrong expected native program accepted: \(name)")
-            } catch {}
-            for length in [0, terminal.count / 2, terminal.count - 1] {
-                XCTAssertThrowsError(try verifyTerminal(Data(terminal.prefix(length)), availableGraph: graph,
-                    expectedProgram: program, documentOutcome: document, protocolVersion: 3, receipt: outcome), name)
-            }
+            var badGraph = graph; badGraph[badGraph.count - 1] ^= 1
+            await assertRawV5Refusal(receipt, batch: batch, call: call, terminal: terminal, graph: badGraph)
             var trailing = terminal; trailing.append(0)
-            XCTAssertThrowsError(try verifyTerminal(trailing, availableGraph: graph, expectedProgram: program,
-                documentOutcome: document, protocolVersion: 3, receipt: outcome), name)
-            var changed = execution; changed["terminal_payload"] = .string(trailing.hexString)
-            do {
-                _ = try await verifiedExecution(changed, state: state, idempotent: idempotent,
-                    expectedProgramID: program, expectedActivityID: binding.activityID,
-                    expectedIdempotencyKey: idempotent ? binding.idempotencyKey.hexString : nil,
-                    pinnedKey: pin, protocolVersion: 3, expectedGuestABI: abi)
-                XCTFail("altered terminal accepted: \(name)")
-            } catch {}
-            var badReceipt = receipt; badReceipt[badReceipt.count - 1] ^= 1
-            var badActivity = binding.activityID; badActivity[0] ^= 1
-            var mutations = [execution, execution, execution, execution]
-            mutations[0]["receipt"] = .string(badReceipt.hexString)
-            mutations[1]["activity_id"] = .string(badActivity.hexString)
-            var badUsage = try XCTUnwrap(execution["usage"]?.objectValue)
-            badUsage["fee_units"] = .string("340282366920938463463374607431768211455")
-            mutations[2]["usage"] = .object(badUsage)
-            var badAuthority = authority
-            badAuthority["resulting_state_root"] = .string(Data(repeating: 0, count: 32).hexString)
-            mutations[3]["authority"] = .object(badAuthority)
-            for mutation in mutations {
-                do {
-                    _ = try await verifiedExecution(mutation, state: state, idempotent: idempotent,
-                        expectedProgramID: program, expectedActivityID: binding.activityID,
-                        expectedIdempotencyKey: idempotent ? binding.idempotencyKey.hexString : nil,
-                        pinnedKey: pin, protocolVersion: 3, expectedGuestABI: abi)
-                    XCTFail("altered signed execution commitment accepted: \(name)")
-                } catch {}
+            await assertRawV5Refusal(receipt, batch: batch, call: call, terminal: trailing, graph: graph)
+            for length in [0, terminal.count / 2, terminal.count - 1] {
+                await assertRawV5Refusal(receipt, batch: batch, call: call, terminal: Data(terminal.prefix(length)), graph: graph)
             }
-            do {
-                _ = try await verifiedExecution(execution, state: state, idempotent: idempotent,
-                    expectedProgramID: program, expectedActivityID: binding.activityID,
-                    expectedIdempotencyKey: idempotent ? binding.idempotencyKey.hexString : nil,
-                    pinnedKey: Data(repeating: 0x43, count: 32), protocolVersion: 3, expectedGuestABI: abi)
-                XCTFail("wrong independent sequencer pin accepted: \(name)")
-            } catch {}
+            var badReceipt = receipt; badReceipt[badReceipt.count - 1] ^= 1
+            await assertRawV5Refusal(badReceipt, batch: batch, call: call, terminal: terminal, graph: graph)
+            var badSigned = signed; badSigned[badSigned.count - 1] ^= 1
+            let alteredCall = try ProgramCall(nativeCall: native, feeLimit: call.budget.feeLimit, signedActivity: badSigned)
+            await assertRawV5Refusal(receipt, batch: batch, call: alteredCall, terminal: terminal, graph: graph)
+            let wrongPin = AuthorizedReceiptBatch(batchID: batch.batchID, asset: batch.asset,
+                previousStateRoot: batch.previousStateRoot, resultingStateRoot: batch.resultingStateRoot,
+                sequencerPublicKey: Data(repeating: 0x43, count: 32))
+            await assertRawV5Refusal(receipt, batch: wrongPin, call: call, terminal: terminal, graph: graph)
+            let wrongHead = AuthorizedReceiptBatch(batchID: batch.batchID, asset: batch.asset,
+                previousStateRoot: batch.previousStateRoot, resultingStateRoot: Data(repeating: 0, count: 32),
+                sequencerPublicKey: pin)
+            await assertRawV5Refusal(receipt, batch: wrongHead, call: call, terminal: terminal, graph: graph)
         }
+    }
+
+    private func assertRawV5Refusal(_ receipt: Data, batch: AuthorizedReceiptBatch, call: ProgramCall,
+        terminal: Data, graph: Data, file: StaticString = #filePath, line: UInt = #line) async {
+        do {
+            _ = try await ProgramsClient.verifyRawV5Receipt(receipt, authorized: batch,
+                call: call, terminalPayload: terminal, callGraph: graph)
+            XCTFail("altered genuine raw v5 proof accepted", file: file, line: line)
+        } catch {}
     }
 
     private func nativeCallFixture() throws -> [String: Any] {
