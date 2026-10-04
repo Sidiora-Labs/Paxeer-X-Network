@@ -27303,7 +27303,7 @@ qualification_note = "E0599: existing transfer.rs:2893 assertion calls AtomicTra
 
 [task.104.38.10]
 title = "Align Programs event metering and capability transport bounds"
-status = "pending"
+status = "done"
 mode = "QUALIFY"
 wave = 3
 requires = ["0.2", "104.32.4"]
@@ -27315,7 +27315,7 @@ do_4 = "Define one capability-encoding byte ceiling and derive the guest reads, 
 do_5 = "Keep capability count and encoded-byte ceilings mutually satisfiable for every constructible canonical capability set."
 do_6 = "Write boundary and exhaustion cases for event count, event bytes and maximum capability sets without running qualification."
 do_7 = "Provide this task selector in tools/paxeer-x/gates and execute the full scoped acceptance contract using real production paths. Preserve the retained verification command coverage; move aggregate matrices to release scope and refuse an unknown or unimplemented selector."
-touches = ["programs/crates/layerx-programs-runtime/src", "programs/sdk", "programs/crates/layerx-programs-runtime/tests", "include/layerx/programs.h", "src/modules/programs/call.c", "src/modules/programs/event.h", "tests/programs/test_call_activity.c", "Makefile", "spec/paxeer-x/qualification.kvx", "tools/paxeer-x/gates/104.38.10.sh"]
+touches = ["programs/crates/layerx-programs-runtime/src/host/events.rs", "programs/crates/layerx-programs-runtime/src/abi/event_tests.rs", "programs/sdk/rust/src", "src/modules/programs/call.c", "src/modules/programs/event.h", "tests/programs/test_call_activity.c", "tools/paxeer-x/gates/104.38.10.sh", "include/layerx/programs.h", "scripts/qualification/paxeer-x/program-event-bounds.py", "scripts/build/paxeer-x/104.38.10.mk"]
 verify_cmd = "timeout 30m tools/paxeer-x/verify-task.sh 104.38.10"
 gate_kind = "planned-adapter"
 max_builds = 0
@@ -27331,6 +27331,14 @@ completion_policy = "Existing implementation is preserved; current candidate qua
 planned_paths = ["spec/paxeer-x/qualification.kvx", "tools/paxeer-x/gates/104.38.10.sh"]
 path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
 evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+retained_migration_accounting_paths_6_2 = ["include/layerx/programs.h"]
+fanout_role = "daemon_native_bindings/arbiter_daemon"
+fanout_scope_delegated = ["programs/crates/layerx-programs-runtime/src", "programs/sdk", "programs/crates/layerx-programs-runtime/tests", "Makefile", "spec/paxeer-x/qualification.kvx"]
+fanout_basis = "Owner requested maximum parallel implementation on 2026-10-04; delegated shared file edits require root coordination and retain original acceptance criteria"
+source_status = "complete"
+completion_basis = "implementation under owner CONSTITUTION; qualification separately recorded"
+qualification_status = "UNRUN"
+source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/fanout-104.38.10-intake.json"
 
 [task.105.25.6]
 title = "Run the canary and the independent conformance suites"

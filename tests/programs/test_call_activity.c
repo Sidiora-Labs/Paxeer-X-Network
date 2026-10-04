@@ -22,6 +22,7 @@ static bool dump_principal_v4;
 static bool dump_mutated_leg_v4;
 static bool post_upgrade_batch_regression;
 static bool per_asset_call;
+static unsigned int event_bounds_case;
 static const uint8_t executed_sequencer_seed[32] = {0x45U};
 static int lifecycle_vector_signature(lxp_activity *activity,
                                       uint8_t public_key[32], uint8_t signature[64]);
@@ -1297,6 +1298,109 @@ static int post_upgrade_maintenance_case(
     return 0;
 }
 
+
+static void event_bounds_i32(uint8_t *body, size_t *length, uint32_t value)
+{
+    body[(*length)++] = 0x41U;
+    do {
+        uint8_t byte = (uint8_t)(value & 127U);
+        value >>= 7U;
+        if (value != 0U || (byte & 64U) != 0U) byte |= 128U;
+        body[(*length)++] = byte;
+        if (value == 0U && (byte & 128U) != 0U) { body[(*length)++] = 0U; break; }
+    } while (value != 0U);
+}
+
+static size_t event_bounds_module(uint8_t *out)
+{
+    static const uint8_t header[] = {0U,97U,115U,109U,1U,0U,0U,0U};
+    static const uint8_t types[] = {3U,0x60U,4U,0x7fU,0x7fU,0x7fU,0x7fU,1U,0x7fU,
+        0x60U,1U,0x7fU,1U,0x7fU,0x60U,2U,0x7fU,0x7fU,1U,0x7fU};
+    static const uint8_t functions[] = {2U,1U,2U};
+    static const uint8_t memory[] = {1U,1U,2U,2U};
+    uint8_t section[256],body[128];
+    size_t cursor=0U,length=0U,body_length=0U;
+    append_bytes(out,&cursor,header,sizeof(header));
+    append_section(out,&cursor,1U,types,sizeof(types));
+    section[length++]=1U; append_name(section,&length,"layerx_v1");
+    append_name(section,&length,"event_emit"); section[length++]=0U; section[length++]=0U;
+    append_section(out,&cursor,2U,section,length);
+    append_section(out,&cursor,3U,functions,sizeof(functions));
+    append_section(out,&cursor,5U,memory,sizeof(memory));
+    length=0U; section[length++]=3U;
+    append_name(section,&length,"layerx_reserve"); section[length++]=0U; section[length++]=1U;
+    append_name(section,&length,"layerx_call"); section[length++]=0U; section[length++]=2U;
+    append_name(section,&length,"memory"); section[length++]=2U; section[length++]=0U;
+    append_section(out,&cursor,7U,section,length);
+    body[body_length++]=1U; body[body_length++]=1U; body[body_length++]=0x7fU;
+    event_bounds_i32(body,&body_length,event_bounds_case==1U ? 64U : event_bounds_case==2U ? 65U : 1U);
+    body[body_length++]=0x21U; body[body_length++]=2U;
+    body[body_length++]=0x02U; body[body_length++]=0x40U;
+    body[body_length++]=0x03U; body[body_length++]=0x40U;
+    event_bounds_i32(body,&body_length,0U);
+    event_bounds_i32(body,&body_length,event_bounds_case<=2U ? 1U : 64U);
+    event_bounds_i32(body,&body_length,64U);
+    event_bounds_i32(body,&body_length,event_bounds_case<=2U ? 0U : 65536U);
+    body[body_length++]=0x10U; body[body_length++]=0U; body[body_length++]=0x1aU;
+    body[body_length++]=0x20U; body[body_length++]=2U; event_bounds_i32(body,&body_length,1U);
+    body[body_length++]=0x6bU; body[body_length++]=0x22U; body[body_length++]=2U;
+    body[body_length++]=0x45U; body[body_length++]=0x0dU; body[body_length++]=1U;
+    body[body_length++]=0x0cU; body[body_length++]=0U;
+    body[body_length++]=0x0bU; body[body_length++]=0x0bU;
+    event_bounds_i32(body,&body_length,0U); body[body_length++]=0x0bU;
+    length=0U; section[length++]=2U;
+    section[length++]=4U; section[length++]=0U; section[length++]=0x41U; section[length++]=0U; section[length++]=0x0bU;
+    append_u32_leb(section,&length,(uint32_t)body_length); append_bytes(section,&length,body,body_length);
+    append_section(out,&cursor,10U,section,length);
+    return cursor;
+}
+
+static int event_bounds_execute(lxp_kernel *kernel,lxp_activity *activity,
+    lxp_kernel_execution *execution,lxp_receipt *receipt,const uint8_t program_id[32],
+    lx_account *actor,lx_account *treasury,lxp_identity *identity)
+{
+    uint8_t call[512],public_key[32];
+    static const uint8_t capabilities[]={0U,1U,3U};
+    lxp_u128 actor_before,treasury_before;
+    if(execute_artifact_fixture_activity(kernel,activity,execution,receipt)!=LXP_OK ||
+        receipt->result_code!=LXP_OK || identity->next_sequence!=1U) return 1;
+    size_t length=call_payload_with_capabilities(call,program_id,capabilities,sizeof(capabilities));
+    write_u16(call+32U,LX_PROGRAMS_ACCOUNT_ABI_VERSION);
+    uint64_t output_limit=event_bounds_case<=2U ? 64U : event_bounds_case==3U ? 65600U : 65599U;
+    write_u64(call+50U+5U*8U,output_limit);
+    fill_activity(activity,LX_PROGRAMS_CALL,call,length,activity->actor_did.bytes,
+        activity->actor_did.length,activity->authority.bytes);
+    activity->protocol_version=LXP_PROTOCOL_VERSION_STATE_COMMITMENT;
+    activity->account_sequence=1U; activity->idempotency_key[31]=2U;
+    activity->fee_limit=actor->balance; execution->fee_balance=actor->balance;
+    execution->global_sequence=kernel->state->next_sequence;
+    actor_before=actor->balance; treasury_before=treasury->balance;
+    uint64_t sequence=kernel->state->next_sequence;
+    size_t kv_count=kernel->module_kv_count,blob_count=kernel->blob_count;
+    if(lxp_arena_reset(execution->arena,0U)!=LXP_OK ||
+        execute_artifact_fixture_activity(kernel,activity,execution,receipt)!=LXP_OK ||
+        !receipt->program_outcome.present || identity->next_sequence!=2U ||
+        kernel->state->next_sequence!=sequence+1U || lxp_u128_is_zero(receipt->fee_charged) ||
+        exact_fee_applied(actor_before,treasury_before,actor,treasury,receipt->fee_charged)!=0 ||
+        executed_public_key(executed_sequencer_seed,public_key)!=0 ||
+        lxp_receipt_verify(receipt,public_key,execution->arena)!=LXP_OK) return 1;
+    if(event_bounds_case==1U || event_bounds_case==3U){
+        size_t count=event_bounds_case==1U ? 64U : 1U;
+        if(receipt->result_code!=LXP_OK || receipt->effects.count!=count+1U ||
+            receipt->program_outcome.terminal_kind!=LXP_PROGRAM_TERMINAL_SUCCESS ||
+            receipt->program_outcome.output_bytes!=output_limit) return 1;
+        for(size_t i=0U;i<count;++i)
+            if(receipt->effects.effects[i].module_id!=LXP_MODULE_PROGRAMS ||
+                receipt->effects.effects[i].event_type!=LX_PROGRAMS_EVENT_GUEST_ENVELOPE) return 1;
+    }else{
+        if(receipt->result_code!=(event_bounds_case==2U ? LXP_ERR_PROGRAM_REFUSED : LXP_ERR_GAS_EXHAUSTED) ||
+            receipt->program_outcome.terminal_kind!=(event_bounds_case==2U ? LXP_PROGRAM_TERMINAL_FAILURE : LXP_PROGRAM_TERMINAL_RESOURCE) ||
+            receipt->effects.count!=0U || kernel->module_kv_count!=kv_count || kernel->blob_count!=blob_count ||
+            !lxp_ct_is_zero(receipt->program_outcome.transfer_root,32U)) return 1;
+    }
+    return 0;
+}
+
 static int deploy_and_upgrade_artifacts_case(uint16_t protocol_version,
                                             bool separate_counters)
 {
@@ -1438,10 +1542,11 @@ static int deploy_and_upgrade_artifacts_case(uint16_t protocol_version,
     (void)memcpy(runtime.occupancy_asset_id, fee_asset, 32U);
     runtime.resolve_occupancy_parameters = occupancy_parameters;
     runtime.occupancy_parameter_context = &runtime;
+    if (event_bounds_case != 0U) wasm_length = event_bounds_module(wasm);
     payload_length = deploy_payload(payload, program_id, authority.principal,
                                     wasm, wasm_length, code_hash,
-                                    LX_PROGRAMS_ABI_VERSION,
-                                    INTERFACE_CAPABILITIES_NONE);
+                                    event_bounds_case != 0U ? LX_PROGRAMS_ACCOUNT_ABI_VERSION : LX_PROGRAMS_ABI_VERSION,
+                                    event_bounds_case != 0U ? INTERFACE_CAPABILITIES_EMIT_EVENT : INTERFACE_CAPABILITIES_NONE);
     if (separate_counters) {
         (void)memcpy(payload + 104U, wasm, wasm_length);
         payload_length = 104U + wasm_length;
@@ -1529,6 +1634,13 @@ static int deploy_and_upgrade_artifacts_case(uint16_t protocol_version,
         int result = post_upgrade_maintenance_case(&kernel, &activity, &execution,
             program_id, code_hash, upgraded_wasm, upgraded_wasm_length);
         free(publication_storage);
+        while (kernel.blob_count != 0U) free(kernel.blobs[--kernel.blob_count].bytes);
+        if (lxp_state_store_destroy(&state) != LXP_OK) result = 1;
+        return result;
+    }
+    if (event_bounds_case != 0U) {
+        execution.sequencer_private_key = executed_sequencer_seed;
+        int result = event_bounds_execute(&kernel,&activity,&execution,&receipt,program_id,actor,treasury,identity);
         while (kernel.blob_count != 0U) free(kernel.blobs[--kernel.blob_count].bytes);
         if (lxp_state_store_destroy(&state) != LXP_OK) result = 1;
         return result;
@@ -3194,6 +3306,19 @@ static int program_owned_spend_case(void)
 
 int main(int argc, char **argv)
 {
+    if (argc == 2 && strcmp(argv[1], "--event-capability-bounds") == 0) {
+        static const char *names[] = {"event-count64", "event-count65", "event-byte-exact", "event-byte-exhaustion"};
+        for (unsigned int i = 1U; i <= 4U; ++i) {
+            event_bounds_case = i;
+            if (deploy_and_upgrade_artifacts_case(LXP_PROTOCOL_VERSION_STATE_COMMITMENT, false) != 0) return 1;
+            (void)printf("PROGRAM_EVENT_BOUNDS_CASE name=%s\n", names[i - 1U]);
+        }
+        event_bounds_case = 0U;
+        if (maximum_capability_transport_only_boundary() != 0) return 1;
+        (void)puts("PROGRAM_EVENT_BOUNDS_CASE name=capability-transport65535");
+        return 0;
+    }
+
     if (stored_fixture_hex_nesting_case() != 0) return 1;
     if (argc == 3 && strcmp(argv[1], "--stored-historical-lifecycle") == 0)
         return stored_historical_lifecycle(argv[2]);

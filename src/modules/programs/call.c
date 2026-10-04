@@ -18,6 +18,11 @@
 #include <stdlib.h>
 #include <string.h>
 
+_Static_assert(LX_PROGRAMS_MAX_CAPABILITY_BYTES == UINT16_MAX,
+               "CALL capability length and transport ceiling must agree");
+_Static_assert(LX_PROGRAMS_MAX_CANONICAL_CAPABILITY_SET_BYTES <= LX_PROGRAMS_MAX_CAPABILITY_BYTES,
+               "every maximum grant set must fit CALL transport");
+
 enum {
     PROGRAM_CALL_FIXED_BYTES = 32 + 2 + 2 + 4 + 2 + 4 + 4 +
                                LX_PROGRAMS_CALL_BUDGET_FIELDS * 8,

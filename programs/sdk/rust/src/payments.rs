@@ -301,3 +301,39 @@ impl<const N: usize> Default for ProgramPaymentCapabilities<'_, N> {
         Self::empty()
     }
 }
+
+
+#[cfg(test)]
+mod transport_boundary_tests {
+    use alloc::vec;
+    use super::{PaymentGrant, PreparedProgramAccount, ProgramPaymentCapabilities};
+    use crate::{AccountId, Amount, AssetId, ProgramId, MAX_CAPABILITIES,
+        MAX_CANONICAL_CAPABILITY_SET_BYTES, MAX_CAPABILITY_ENCODING_BYTES, MAX_PROGRAM_ACCOUNT_SEED_BYTES};
+
+    #[test]
+    fn maximum_program_spend_set_fits_the_canonical_transport() {
+        let owner = ProgramId::new([3; 32]).unwrap_or_else(|error| panic!("owner: {error}"));
+        let asset = AssetId::new([4; 32]).unwrap_or_else(|error| panic!("asset: {error}"));
+        let to = AccountId::new([5; 32]).unwrap_or_else(|error| panic!("destination: {error}"));
+        let mut seeds = [[7; MAX_PROGRAM_ACCOUNT_SEED_BYTES]; MAX_CAPABILITIES + 1];
+        for (index, seed) in seeds.iter_mut().enumerate() {
+            let ordinal = u16::try_from(index).unwrap_or_else(|error| panic!("ordinal: {error}"));
+            seed[..2].copy_from_slice(&ordinal.to_be_bytes());
+        }
+        let mut capabilities = ProgramPaymentCapabilities::<{ MAX_CAPABILITIES + 1 }>::empty();
+        for seed in seeds.iter().take(MAX_CAPABILITIES) {
+            let account = PreparedProgramAccount::new(owner, seed, asset)
+                .unwrap_or_else(|error| panic!("derived account: {error}"));
+            capabilities.insert(PaymentGrant::ProgramSpend { account, to, maximum: Amount::from_u128(1) })
+                .unwrap_or_else(|error| panic!("largest grant: {error}"));
+        }
+        let mut encoded = vec![0; MAX_CAPABILITY_ENCODING_BYTES];
+        assert_eq!(capabilities.encoded_len(), MAX_CANONICAL_CAPABILITY_SET_BYTES);
+        assert_eq!(capabilities.encode_into(&mut encoded)
+            .unwrap_or_else(|error| panic!("maximum encoding: {error}")), MAX_CANONICAL_CAPABILITY_SET_BYTES);
+        let account = PreparedProgramAccount::new(owner, &seeds[MAX_CAPABILITIES], asset)
+            .unwrap_or_else(|error| panic!("extra derived account: {error}"));
+        assert!(capabilities.insert(PaymentGrant::ProgramSpend { account, to, maximum: Amount::from_u128(1) }).is_err());
+        assert!(capabilities.encode_into(&mut encoded[..MAX_CANONICAL_CAPABILITY_SET_BYTES - 1]).is_err());
+    }
+}

@@ -110,3 +110,37 @@ fn maximum_largest_grant_set_fits_the_transport_ceiling() {
         Err(AbiError::InvalidCapability)
     );
 }
+
+
+#[test]
+fn inherited_event_count_refuses_before_metering_or_staging() {
+    let mut abi = event_abi();
+    abi.inherit_emitted_event_count(MAX_EVENTS_PER_ACTIVITY - 1)
+        .unwrap_or_else(|error| panic!("inherit count: {error}"));
+    let mut meter = Meter::declared();
+    abi.emit_event(&mut meter, 1, 0)
+        .unwrap_or_else(|error| panic!("last graph event: {error}"));
+    abi.stage_reserved_event(vec![1], Vec::new())
+        .unwrap_or_else(|error| panic!("last graph stage: {error}"));
+    let usage = meter.qualification_snapshot();
+    assert_eq!(abi.emit_event(&mut meter, 1, 0), Err(AbiError::EventBounds));
+    assert_eq!(meter.qualification_snapshot(), usage);
+    assert_eq!(abi.commit().effects.events.len(), 1);
+}
+
+#[test]
+fn event_exhaustion_and_invalid_lengths_never_stage_or_charge_bytes() {
+    let mut abi = event_abi();
+    let mut meter = Meter::new(ResourceBudget::declared().with_output_bytes(1), FeeSchedule::declared());
+    assert!(matches!(abi.emit_event(&mut meter, 1, 1), Err(AbiError::Meter(_))));
+    assert_eq!(meter.qualification_snapshot().output_bytes, 0);
+    assert_eq!(abi.commit().effects.events.len(), 0);
+    for (topic, data) in [(0, 0), (MAX_EVENT_TOPIC_BYTES + 1, 0), (1, MAX_EVENT_DATA_BYTES + 1)] {
+        let abi = event_abi();
+        let mut meter = Meter::declared();
+        let usage = meter.qualification_snapshot();
+        assert_eq!(abi.emit_event(&mut meter, topic, data), Err(AbiError::EventBounds));
+        assert_eq!(meter.qualification_snapshot(), usage);
+        assert_eq!(abi.commit().effects.events.len(), 0);
+    }
+}
