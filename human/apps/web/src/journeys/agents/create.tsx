@@ -1,10 +1,11 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { copyEntry } from "../../../copy/runtime.ts";
 import { humanApi } from "../../api/index.ts";
+import { useActiveAccountId } from "../../auth/use-active-account.ts";
 import { NativeFeeBudgetFields, useNativeFeeBudget } from "../../auth/native-fee-budget-fields.tsx";
 import { DesktopWizard, MobileWizard } from "../../kit/pattern-wizard";
 import { InlineNotice, ScreenCard } from "../../kit/surface";
@@ -114,6 +115,11 @@ function CreationProgressCard({
 }
 
 export function AgentCreateJourney() {
+  const accountId = useActiveAccountId();
+  return <BoundAgentCreateJourney key={accountId ?? "no-account"} />;
+}
+
+function BoundAgentCreateJourney() {
   const router = useRouter();
   const shell = useAgentsShell();
   const agents = useMemo(() => new Agents(), []);
@@ -129,14 +135,22 @@ export function AgentCreateJourney() {
   const [submitting, setSubmitting] = useState(false);
   const [errorSentence, setErrorSentence] = useState<string | undefined>(undefined);
   const [outcomeUnknown, setOutcomeUnknown] = useState(false);
+  const submittedDraft = useRef<CreationDraft | undefined>(undefined);
+  const submitPending = useRef(false);
 
   const submit = async () => {
     const budget = feeLimits.budget;
-    if (budget === undefined) return;
+    if (budget === undefined || submitPending.current) return;
+    submitPending.current = true;
+    const request = Object.freeze({
+      ...draft,
+      nativeFeeBudget: Object.freeze({ ...budget }),
+    });
+    submittedDraft.current = request;
     setSubmitting(true);
     setErrorSentence(undefined);
     try {
-      setProgress(journeyProgress(await agents.create({ ...draft, nativeFeeBudget: budget })));
+      setProgress(journeyProgress(await agents.create(request)));
     } catch (error) {
       if (mutationOutcomeUnknown(error)) {
         setOutcomeUnknown(true);
@@ -145,6 +159,7 @@ export function AgentCreateJourney() {
         setErrorSentence(apiErrorSentence(error));
       }
     } finally {
+      submitPending.current = false;
       setSubmitting(false);
     }
   };
@@ -198,8 +213,11 @@ export function AgentCreateJourney() {
   };
 
   const lookupUnknownOutcome = useCallback(async (): Promise<"pending" | "resolved"> => {
+    const request = submittedDraft.current;
+    if (request === undefined || submitPending.current) return "pending";
+    submitPending.current = true;
     try {
-      setProgress(journeyProgress(await agents.create(draft)));
+      setProgress(journeyProgress(await agents.create(request)));
       setOutcomeUnknown(false);
       setErrorSentence(undefined);
       return "resolved";
@@ -210,8 +228,10 @@ export function AgentCreateJourney() {
         return "resolved";
       }
       return "pending";
+    } finally {
+      submitPending.current = false;
     }
-  }, [agents, draft]);
+  }, [agents]);
 
   const unknownOutcomeResolved = useCallback(() => {
     setOutcomeUnknown(false);

@@ -22,6 +22,7 @@ import {
 import { browserPasskeyAuthenticator, performStepUp } from "../approvals/ceremony.ts";
 import { type ConfirmationKind, type StatusKey } from "../../kit/model.ts";
 import { nativeFeeBudgetIdentity } from "../../auth/native-fee-budget.ts";
+import { authorizeMoveNativeAccess } from "../move/model.ts";
 
 export type {
   Agent,
@@ -541,9 +542,10 @@ export function quotePresentation(quote: MoveQuote, locale: string): QuotePresen
 }
 
 class RotationPreparationError extends Error {}
+class FundingPreparationError extends Error {}
 
 export function apiErrorSentence(error: unknown): string {
-  if (error instanceof RotationPreparationError) {
+  if (error instanceof RotationPreparationError || error instanceof FundingPreparationError) {
     return apiErrorSentence(error.cause);
   }
   if (error instanceof HumanApiError) {
@@ -560,7 +562,9 @@ export function apiErrorCode(error: unknown): string | undefined {
 }
 
 export function mutationOutcomeUnknown(error: unknown): boolean {
-  return !(error instanceof HumanApiError) && !(error instanceof RotationPreparationError);
+  if (error instanceof RotationPreparationError || error instanceof FundingPreparationError) return false;
+  return !(error instanceof HumanApiError)
+    || error.detail.retry === "retriable" || error.detail.retry === "retriable-after";
 }
 
 export interface AgentListItemView {
@@ -609,6 +613,7 @@ export class Agents {
   readonly #idempotencyKey: () => string;
   readonly #pendingKeys = new Map<string, string>();
   readonly #rotationRequests = new Map<string, OwnerRotationRequest>();
+  readonly #fundingAccess = new Map<string, string>();
 
   constructor(options: AgentsOptions = {}) {
     this.#client = options.client ?? humanApi();
@@ -677,10 +682,34 @@ export class Agents {
     return this.#client.moveQuote({ source: ownerAccount, destination: agentId, money });
   }
 
-  fundCommit(quoteId: string): Promise<Journey> {
+  fundCommit(quote: MoveQuote): Promise<Journey> {
     return this.#mutate(
-      mutationScope("fund", quoteId),
-      (key) => this.#client.moveCommit({ quote_id: quoteId }, key),
+      mutationScope("fund", quote.quote_id),
+      async (key) => {
+        let nativeAccessId = this.#fundingAccess.get(key);
+        if (quote.native_send_access !== undefined && nativeAccessId === undefined) {
+          try {
+            nativeAccessId = await authorizeMoveNativeAccess(this.#client, quote.native_send_access);
+            this.#fundingAccess.set(key, nativeAccessId);
+          } catch (error) {
+            throw new FundingPreparationError("Funding confirmation did not complete", { cause: error });
+          }
+        }
+        try {
+          const result = await this.#client.moveCommit({
+            quote_id: quote.quote_id,
+            ...(nativeAccessId === undefined ? {} : { native_access_id: nativeAccessId }),
+          }, key);
+          this.#fundingAccess.delete(key);
+          return result;
+        } catch (error) {
+          if (error instanceof HumanApiError
+            && (error.detail.retry === "final" || error.detail.retry === "structural")) {
+            this.#fundingAccess.delete(key);
+          }
+          throw error;
+        }
+      },
     );
   }
 

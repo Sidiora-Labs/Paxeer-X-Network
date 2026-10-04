@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { HumanApiError } from "../src/api/index.ts";
 
 import { copyEntry } from "../copy/catalog.ts";
 import { formatCopy } from "../copy/format.ts";
@@ -17,6 +18,7 @@ import {
   formatPlainTimestamp,
   journeyProgress,
   keyChallengePresentation,
+  mutationOutcomeUnknown,
   parseMonthlyLimit,
   parseRotationTiming,
   spendPresentation,
@@ -648,4 +650,16 @@ test("rotation timing preserves explicit bounded seconds and rejects ambiguous i
     assert.equal(parseRotationTiming(invalid, "1"), undefined);
     assert.equal(parseRotationTiming("1", invalid), undefined);
   }
+});
+
+test("agent mutations retain uncertain retryable outcomes and separate terminal refusals", () => {
+  for (const retry of ["retriable", "retriable-after", "structural", "final"] as const) {
+    const error = new HumanApiError(503, "agent-mutation-retry", {
+      code: "upstream-degraded",
+      copy_key: "state.error.body",
+      retry,
+    });
+    assert.equal(mutationOutcomeUnknown(error), retry === "retriable" || retry === "retriable-after");
+  }
+  assert.equal(mutationOutcomeUnknown(new TypeError("Connection closed before response")), true);
 });

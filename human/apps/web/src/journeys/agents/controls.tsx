@@ -190,7 +190,7 @@ function BoundAgentControls({
           setUnknownControl(undefined);
           return "resolved";
         }
-        setLastJourney(journeyProgress(await currentResult(agents.fundCommit(unknownControl.quote.quote_id))));
+        setLastJourney(journeyProgress(await currentResult(agents.fundCommit(unknownControl.quote))));
         onChanged();
       } else if (unknownControl.id === "archive") {
         if (unknownControl.phase !== "confirm") {
@@ -326,7 +326,7 @@ function BoundAgentControls({
             setOpen({ id: "fund", input: open.input, quote });
           }
         } else {
-          setLastJourney(journeyProgress(await currentResult(agents.fundCommit(open.quote.quote_id))));
+          setLastJourney(journeyProgress(await currentResult(agents.fundCommit(open.quote))));
           close(true);
           onChanged();
         }
