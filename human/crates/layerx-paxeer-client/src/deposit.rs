@@ -887,6 +887,9 @@ fn encode_credit_fault(out: &mut Vec<u8>, fault: &CreditFault) -> Result<(), Dep
                     put_static_field(out, field)?;
                 }
                 ContractError::DaemonLimitFunding => out.push(2),
+                ContractError::Malformed(_)
+                | ContractError::OutOfRange(_)
+                | ContractError::Mismatch(_) => return Err(DepositNativeError::Encoding),
             }
         }
     }
