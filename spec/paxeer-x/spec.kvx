@@ -34120,3 +34120,25 @@ source_ownership = "Only these two paths; root owns clean candidate, shared task
 completion_basis = "implementation"
 qualification = "UNRUN"
 qualification_note = "Real passkey issuance, custody grant signing and refusal corpus complete; bounded qualification pending clean candidate."
+
+[task.104.13.31]
+title = "Complete native custody signing compiler interfaces and actual consent qualification"
+status = "done"
+mode = "BUILD"
+wave = 4
+requires = ["0.2", "104.13.28", "104.13.29"]
+reqs = ["1064.3", "1064.8", "1071.1", "1071.5"]
+do_1 = "Correct the actual AuditChain::append ownership mismatch in native custody signing by borrowing the same request TraceId. Preserve audit identity, request binding, consent bytes, authorization, every assertion and v1 behavior."
+do_2 = "Qualify the complete existing genuine native custody signer and passkey provider corpus after the integrated compiler interface correction; permit only direct native custody interface repairs within the exact three paths. No fake StepUpEvidence or substitute attestors."
+touches = ["human/crates/layerx-human-service/src/custody/signer.rs", "human/crates/layerx-human-kms/tests/attestor_native_profile.rs", "tools/qualification/paxeer-x/human_native_custody.py"]
+build_cmd = "timeout 20m python3 tools/qualification/paxeer-x/human_native_custody.py --build"
+verify_cmd = "timeout 20m python3 tools/qualification/paxeer-x/human_native_custody.py --candidate-manifest \"$PAXEER_X_CANDIDATE_MANIFEST\""
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop at original30-minute cap, missing genuine authority, unrelated failure or weakening; preserve exact source and evidence."
+completion_basis_policy = "Owner CONSTITUTION: fully implemented DONE; qualification separate and partial remains in_progress."
+source_ownership = "Exact three paths only; root owns clean candidate, task state and publication. No production signing or deployment."
+completion_basis = "implementation"
+qualification = "UNRUN"
