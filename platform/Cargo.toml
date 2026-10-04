@@ -23,6 +23,7 @@ members = [
     "release",
     "tools/kvx",
     "tools/workspace-gate",
+    "tools/benchmark",
 ]
 resolver = "2"
 

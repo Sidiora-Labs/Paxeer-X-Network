@@ -319,6 +319,13 @@ platform-build-jvm-conformance:
 platform-test-jvm-sdk:
 	tools/paxeer-x/gates/104.15.4.sh
 
+.PHONY: platform-build-ten-line platform-test-ten-line
+platform-build-ten-line:
+	tools/paxeer-x/gates/104.16.5.sh --build-artifacts
+
+platform-test-ten-line:
+	tools/paxeer-x/gates/104.16.5.sh
+
 platform-test-middleware: platform-sample-dependencies-ready
 	npm run build --workspace @sidiora/layerx-seller-middleware
 	npm run build --workspace @sidiora/layerx-buyer-middleware
@@ -343,6 +350,7 @@ platform-test-middleware: platform-sample-dependencies-ready
 	npm run build --workspace @sidiora/layerx-agent-integrations
 	mvn -o -q -f platform/integrations/android/pom.xml -DskipTests verify
 	swift build --disable-automatic-resolution --package-path platform/integrations/ios
+	$(MAKE) platform-test-ten-line
 
 platform-test-reference-apps:
 	node platform/examples/run-reference-apps.mjs --check

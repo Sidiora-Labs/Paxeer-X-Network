@@ -18,6 +18,8 @@ permissions:
 
 env:
   CARGO_TERM_COLOR: always
+  LAYERX_TEN_LINE_REGISTRY_SNAPSHOT: ${{ vars.LAYERX_TEN_LINE_REGISTRY_SNAPSHOT }}
+  LAYERX_TEN_LINE_REGISTRY_URL: ${{ vars.LAYERX_TEN_LINE_REGISTRY_URL }}
 
 jobs:
   build-lint-test:
@@ -67,8 +69,24 @@ jobs:
         run: make platform-verify-sdks
       - name: Exercise the developer CLI end to end against the emulator
         run: make platform-test-tooling
+      - name: Build the source-bound published quickstart benchmark
+        run: |
+          umask 077
+          ten_line_directory=$(mktemp -d "$RUNNER_TEMP/layerx-ten-line.XXXXXXXX")
+          mkdir "$ten_line_directory/evidence"
+          printf 'PAXEER_X_TEN_LINE_ARTIFACTS=%s/artifacts.json\n' "$ten_line_directory" >> "$GITHUB_ENV"
+          printf 'PAXEER_X_EVIDENCE_DIR=%s/evidence\n' "$ten_line_directory" >> "$GITHUB_ENV"
+          PAXEER_X_TEN_LINE_ARTIFACTS="$ten_line_directory/artifacts.json" make platform-build-ten-line
       - name: Build the framework integrations and scan client bundles for secrets
         run: make platform-test-middleware
+      - name: Retain the actual published-package integration line counts
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: ten-line-counts-${{ github.job }}-${{ github.run_attempt }}
+          path: ${{ env.PAXEER_X_EVIDENCE_DIR }}/**/published-measurement/ten-line-counts.json
+          if-no-files-found: error
+          retention-days: 14
       - name: Gate the four cloneable reference application launch profiles
         run: make platform-test-reference-apps
       - name: Build source-bound reference application artifacts
@@ -1503,6 +1521,28 @@ jobs:
         run: rustup toolchain install 1.91.1 --profile minimal && rustup default 1.91.1
       - name: Fetch locked platform workspace crates
         run: cargo fetch --locked --manifest-path platform/Cargo.toml
+      - name: Install Node.js for actual published quickstart imports
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
+        with:
+          node-version: 22
+      - name: Build the source-bound published quickstart benchmark
+        run: |
+          umask 077
+          ten_line_directory=$(mktemp -d "$RUNNER_TEMP/layerx-ten-line.XXXXXXXX")
+          mkdir "$ten_line_directory/evidence"
+          printf 'PAXEER_X_TEN_LINE_ARTIFACTS=%s/artifacts.json\n' "$ten_line_directory" >> "$GITHUB_ENV"
+          printf 'PAXEER_X_EVIDENCE_DIR=%s/evidence\n' "$ten_line_directory" >> "$GITHUB_ENV"
+          PAXEER_X_TEN_LINE_ARTIFACTS="$ten_line_directory/artifacts.json" make platform-build-ten-line
+      - name: Gate seller and buyer quickstarts against the actual public registry snapshot
+        run: make platform-test-ten-line
+      - name: Retain the actual published-package integration line counts
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: ten-line-counts-${{ github.job }}-${{ github.run_attempt }}
+          path: ${{ env.PAXEER_X_EVIDENCE_DIR }}/**/published-measurement/ten-line-counts.json
+          if-no-files-found: error
+          retention-days: 14
       - name: Collect every retained publication bundle
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
