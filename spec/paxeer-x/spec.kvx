@@ -36861,24 +36861,27 @@ qualification = "PASS"
 continuation_approval = "/root/lx-ops/paxeer-x-integration-2026-10-03/terminal-v5-one-hour-owner-approval.json"
 continuation_deadline_utc = "2026-10-04T20:29:37Z"
 continuation_minutes = 60
-qualification_revision = "4c209dfc86a97fa56e8892cf19c30b9b35c1b56f"
-qualification_command = "timeout 15m flock -w 60 /root/lx-cargo/native-build.lock env PAXEER_X_PROGRAM_TERMINAL_V5_ARTIFACTS=/root/lx-ops/paxeer-x-integration-2026-10-03/native-terminal-v5-repair1-4c209dfc-qualification/build-output/manifest.json PAXEER_X_MAINLINE=4c209dfc86a97fa56e8892cf19c30b9b35c1b56f python3 scripts/qualification/paxeer-x/program-terminal-v5.py"
+qualification_revision = "5f475ec5ee2ba4e9fd85bf825f9d9d15c27a7001"
+qualification_command = "timeout 20m flock -w 60 /root/lx-cargo/native-build.lock env PAXEER_X_MAINLINE=5f475ec5ee2ba4e9fd85bf825f9d9d15c27a7001 python3 scripts/qualification/paxeer-x/program-terminal-v5.py --manifest /root/lx-ops/paxeer-x-integration-2026-10-03/native-terminal-v5-common-5f475ec5-qualification/build-output/manifest.json"
 qualification_exit_code = 0
-qualification_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/native-terminal-v5-repair1-4c209dfc-qualification/declared-verify.log"
-qualification_evidence = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-104.33.7.9-continuation-final-result.json"
-build_revision = "4c209dfc86a97fa56e8892cf19c30b9b35c1b56f"
-build_command = "timeout 14m flock -w 60 /root/lx-cargo/native-build.lock env PATH=/root/.cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin CARGO_TARGET_DIR=/root/lx-target/programs PAXEER_X_MAINLINE=4c209dfc86a97fa56e8892cf19c30b9b35c1b56f python3 scripts/qualification/paxeer-x/program-terminal-v5.py --build --output /root/lx-ops/paxeer-x-integration-2026-10-03/native-terminal-v5-repair1-4c209dfc-qualification/build-output"
+qualification_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/native-terminal-v5-common-5f475ec5-qualification/declared-verify.log"
+qualification_evidence = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-104.33.7.9-common-5f475ec5-result.json"
+build_revision = "5f475ec5ee2ba4e9fd85bf825f9d9d15c27a7001"
+build_command = "timeout 20m flock -w 60 /root/lx-cargo/native-build.lock env PATH=/root/.cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin CARGO_TARGET_DIR=/root/lx-target/programs PAXEER_X_MAINLINE=5f475ec5ee2ba4e9fd85bf825f9d9d15c27a7001 python3 scripts/qualification/paxeer-x/program-terminal-v5.py --build --output /root/lx-ops/paxeer-x-integration-2026-10-03/native-terminal-v5-common-5f475ec5-qualification/build-output"
 build_exit_code = 0
-build_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/native-terminal-v5-repair1-4c209dfc-qualification/declared-build.log"
-corpus_revision = "4c209dfc86a97fa56e8892cf19c30b9b35c1b56f"
-corpus_artifact = "/root/lx-ops/paxeer-x-integration-2026-10-03/native-terminal-v5-repair1-4c209dfc-qualification/build-output/terminal-v5-corpus.json"
-corpus_sha256 = "c15b5dff29ec17959e28155d39481ea4bcad7b6e806b6bd1777c04b551faa1f1"
+build_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/native-terminal-v5-common-5f475ec5-qualification/declared-build.log"
+corpus_revision = "5f475ec5ee2ba4e9fd85bf825f9d9d15c27a7001"
+corpus_artifact = "/root/lx-ops/paxeer-x-integration-2026-10-03/native-terminal-v5-common-5f475ec5-qualification/build-output/terminal-v5-corpus.json"
+corpus_sha256 = "4634ccfc80560f1ba093ccc863f95dc8c1f74f087cc38ed0ff6b46bf9565ceb2"
 prior_build_revision = "c82dd4d57e7d498d74876bb8fc86918856f6825f"
 prior_build_command = "python3 scripts/qualification/paxeer-x/program-terminal-v5.py --build --output PRIVATE_EMPTY_DIR"
 prior_build_exit_code = 78
 prior_build_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/native-terminal-v5-continuation-c82dd4d5-qualification/declared-build.log"
 qualification_repairs = 1
 continuation_scope = "Generate a new genuine signed corpus for changed SDK consumers at their common published revision; retain prior passing4c209 qualification."
+prior_qualified_evidence = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-104.33.7.9-continuation-final-result.json"
+qualification_case_count = 12
+continuation_repairs = 0
 
 [task.103.6.29]
 title = "Preserve CI checkout ownership after root-required native tests"
