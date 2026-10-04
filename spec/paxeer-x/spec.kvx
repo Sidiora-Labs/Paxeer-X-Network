@@ -25440,7 +25440,7 @@ do_1 = "Thread admitted ABI and metering inputs into migration executor construc
 do_2 = "Exercise valid migration exports with imports specific to each ABI and negative upgrades through native lifecycle decode/validate/execute."
 do_3 = "Author the new focused harness tools/qualification/paxeer-x/programs_native_migration.py to exercise these acceptance cases against real production implementations and types. It must fail on missing candidate artifacts, missing authority/configuration, skipped cases or unverifiable receipts; retain the exact candidate revision, command, case results and evidence paths. Use disposable qualification state and provisioned authority without printing secret values; no mocks, synthetic success or substitution of a library-only model for a named process boundary."
 do_4 = "Implement the declared focused gate through the real production types and paths; exercise every acceptance criterion including refusal, restart or boundary cases specified by this requirement. The command is a planned deliverable, not an already-run gate."
-touches = ["programs/crates/layerx-programs-runtime/src/ffi.rs", "programs/crates/layerx-programs-runtime/src/execute.rs", "programs/crates/layerx-programs-runtime/src/lifecycle.rs", "src/modules/programs/deploy.c", "tests/programs/test_lifecycle.c", "tools/qualification/paxeer-x/programs_native_migration.py"]
+touches = ["programs/crates/layerx-programs-runtime/src/ffi.rs", "programs/crates/layerx-programs-runtime/src/execute.rs", "programs/crates/layerx-programs-runtime/src/lifecycle.rs", "tests/programs/test_lifecycle.c", "tools/qualification/paxeer-x/programs_native_migration.py", "src/modules/programs/deploy.c", "include/layerx/programs.h", "src/modules/programs/fee.c", "include/layerx/lxp_kernel.h", "src/protocol/lxp_kernel.c", "src/modules/programs/fees.c"]
 verify_cmd = "timeout 30m python3 tools/qualification/paxeer-x/programs_native_migration.py"
 gate_kind = "planned"
 max_builds = 1
@@ -25453,10 +25453,15 @@ planned_paths = ["tools/qualification/paxeer-x/programs_native_migration.py"]
 path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
 evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
 build_cmd = "timeout 20m python3 tools/qualification/paxeer-x/programs_native_migration.py --build-artifacts"
-source_status = "partial"
+source_status = "partial_frozen"
 qualification_status = "UNRUN"
-remaining_source = "ABI1-4 and exact admitted metering execution are wired; native migration usage accounting still needs an explicit authenticated budget, payer, fee and failure/replay policy. No CPU-to-native-gas conversion invented. Whole-task phase separation keeps all gates unrun."
-handoff_path = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-6.2-result.json"
+remaining_source = "Actual authenticated Governance budget producer, epoch activation caller, canonical success accounting state, explicit authenticated legacy replay policy and complete real accounting corpus remain incomplete.11 authored paths isolated; no format/build/verify ran before09:34UTCcap."
+handoff_path = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-6.2-accounting-result.json"
+retained_contract_paths_6_4 = ["src/modules/programs/deploy.c"]
+lease_transfer_authority_6_4 = "Owner-approved inactive file lease reassignment; frozen source and all unfinished acceptance criteria retained."
+owner_accounting_approval = "2026-10-04 owner approved task-6.2-concrete-owner-decision.json: explicit bounded recorded migration budget, current/recorded governed prices, existing authenticated payer and signed fee ceiling, success-only actual usage billing and replay accounting; preserve zero-fee terminal rejection, rollback, legacy receipt bytes and no historical repricing. No deployment."
+owner_extension_accounting = "Owner-approved additional30-minute window START09:04UTC END09:34UTC after6.4released; maxonebuild+singleverify with atmosttwo directrepairs. Original partialsource and failures retained."
+continuation_proposal = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-6.2-accounting-continuation.json"
 
 [task.6.4]
 title = "Preserve account proofs and legitimate wind-down across account-capable ABI upgrades"

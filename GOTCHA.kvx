@@ -2504,3 +2504,8 @@ resolution = "Keep production authorization checks intact and record build0 veri
 area = "Human native Send type and constructor integration"
 observed = "Human runtime used legacy native amount and signing-preimage representations; the approved correction then exposed an uncalled ApiFailure constructor."
 resolution = "Apply the five approved byte-identical conversions and one exact constructor call; retain the original build failures and separate successful builds from failed behavior gates."
+
+[gotcha.734]
+area = "Governed migration budget authority"
+observed = "The actual daemon installs a null numeric parameter reader, and no existing Governance producer emits the new exact LXMB1 budget state."
+resolution = "Retain the distinct authenticated budget consumer and keep migration partial; require a real governed producer, production activation and explicit historical replay policy before source completion."
