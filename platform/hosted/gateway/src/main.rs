@@ -4178,7 +4178,7 @@ fn parse_program_head(
         .get("abi_version")
         .and_then(serde_json::Value::as_u64)
         .and_then(|abi| u16::try_from(abi).ok())
-        .filter(|abi| matches!(abi, 1 | 2))
+        .filter(|abi| layerx_programs_runtime::admit_abi_version(*abi).is_ok())
         .ok_or_else(|| response(503, "program_registry_invalid", Some(5)))?;
     let code_hash = version
         .get("code_hash")
@@ -4262,6 +4262,9 @@ fn parse_program_head(
         }
         _ => return Err(response(503, "program_registry_unverified", Some(5))),
     };
+    if abi_version > layerx_programs_runtime::ABI_V2_VERSION && discovery_proof.is_none() {
+        return Err(response(503, "program_registry_unverified", Some(5)));
+    }
     Ok(ProgramHead {
         discovery_proof,
         ..head
@@ -4930,6 +4933,9 @@ fn render_program_interface(
     let (Some(interface), Some(interface_digest)) = (interface, interface_digest) else {
         return response(503, "program_registry_unverified", Some(5));
     };
+    let Ok(decoded_interface) = layerx_programs::ProgramInterface::decode(&interface) else {
+        return response(503, "program_registry_unverified", Some(5));
+    };
     let expected_interface_digest = <[u8; 32]>::from(Sha256::digest(&interface));
     if value
         .get("program_id")
@@ -4945,11 +4951,13 @@ fn render_program_interface(
         || observed_at != head.observed_at
         || valid_through != Some(head.valid_through)
         || interface_digest != expected_interface_digest
+        || decoded_interface.code_hash() != head.code_hash
+        || decoded_interface.abi_version() != head.abi_version
         || value
             .get("verification")
             .and_then(serde_json::Value::as_str)
             != Some("deployment-interface-and-current-head-verified")
-        || source.is_none()
+        || source.as_ref().is_none_or(|value| !value.is_object())
     {
         return response(503, "program_registry_unverified", Some(5));
     }
@@ -5310,6 +5318,151 @@ mod programs_wire_tests {
             "discovery_signature": hex(&signature),
             "receipt": {"verification": "receipt-verified"},
         })
+    }
+
+    #[test]
+    fn interface_bytes_must_decode_and_bind_the_exact_code_and_abi() {
+        use layerx_programs::{InterfaceEntryPoint, ProgramInterface, ValueSchema, ValueType};
+        let module = [
+            0, 97, 115, 109, 1, 0, 0, 0, 1, 12, 2, 96, 2, 127, 127, 1, 127, 96, 1, 127, 1, 127, 3,
+            3, 2, 0, 1, 5, 3, 1, 0, 1, 7, 34, 3, 4, b'c', b'a', b'l', b'l', 0, 0, 14, b'l', b'a',
+            b'y', b'e', b'r', b'x', b'_', b'r', b'e', b's', b'e', b'r', b'v', b'e', 0, 1, 6, b'm',
+            b'e', b'm', b'o', b'r', b'y', 2, 0, 10, 11, 2, 4, 0, 65, 0, 11, 4, 0, 65, 0, 11,
+        ];
+        let entry = InterfaceEntryPoint {
+            name: "call".to_owned(),
+            discriminator: [1, 2, 3, 4],
+            calldata: ValueSchema::layerx(ValueType::U8),
+            response: ValueSchema::layerx(ValueType::U8),
+            capabilities: Vec::new(),
+            event_topics: Vec::new(),
+            failures: Vec::new(),
+        };
+        let interface = ProgramInterface::bind(&module, 1, vec![entry.clone()])
+            .unwrap_or_else(|error| panic!("validated interface refused: {error:?}"));
+        let observed_at = now_millis().unwrap_or_else(|error| panic!("{error}")) - 1_000;
+        let mut discovery = discovery_head(observed_at, observed_at + 300_000);
+        discovery.abi_version = 1;
+        discovery.code_hash = interface.code_hash();
+        let key = SigningKey::from_bytes(&TEST_SEQUENCER_SEED);
+        let mut document = signed_registry_document(observed_at, observed_at + 300_000);
+        document["versions"][0]["abi_version"] = serde_json::json!(1);
+        document["versions"][0]["code_hash"] = serde_json::json!(hex(&discovery.code_hash));
+        document["discovery_signature"] = serde_json::json!(hex(&key
+            .sign(&program_discovery_proof_digest(&discovery))
+            .to_bytes()));
+        let head = parse_program_head(
+            &document,
+            discovery.program_id,
+            &hex(&discovery.program_id),
+            &test_sequencer_public_key(),
+        )
+        .unwrap_or_else(|_| panic!("signed head refused"));
+        let value = serde_json::json!({"program_id":hex(&head.program_id),"version":head.version,
+            "code_hash":hex(&head.code_hash),"abi_version":head.abi_version,
+            "interface":hex(interface.canonical_encoding()),"interface_digest":hex(interface.digest().as_bytes()),
+            "deployment_receipt_digest":hex(&head.receipt_digest),"state_root":head.state_root.map(|root|hex(&root)),
+            "observed_sequence":head.observed_sequence,"observed_at":head.observed_at,"valid_through":head.valid_through,
+            "source":{"status":"unpublished"},"verification":"deployment-interface-and-current-head-verified"});
+        assert_eq!(
+            super::render_program_interface(&value, &head, "interface-contract").status,
+            200
+        );
+        let mut wrong_code = interface.canonical_encoding().to_vec();
+        let code_offset = wrong_code
+            .iter()
+            .position(|byte| *byte == 0)
+            .expect("interface domain")
+            + 1;
+        wrong_code[code_offset] ^= 1;
+        let wrong_abi = ProgramInterface::bind(&module, 2, vec![entry])
+            .unwrap_or_else(|error| panic!("validated ABI2 interface refused: {error:?}"));
+        for encoded in [
+            &[0][..],
+            wrong_code.as_slice(),
+            wrong_abi.canonical_encoding(),
+        ] {
+            let mut altered = value.clone();
+            altered["interface"] = serde_json::json!(hex(encoded));
+            altered["interface_digest"] =
+                serde_json::json!(hex(&<[u8; 32]>::from(Sha256::digest(encoded))));
+            assert_eq!(
+                super::render_program_interface(&altered, &head, "interface-contract").status,
+                503
+            );
+        }
+    }
+
+    #[test]
+    fn canonical_guest_abis_require_the_exact_signed_discovery_binding() {
+        let observed_at = now_millis().unwrap_or_else(|error| panic!("{error}")) - 1_000;
+        let key = SigningKey::from_bytes(&TEST_SEQUENCER_SEED);
+        for abi_version in [1, 2, 3, 4] {
+            let mut head = discovery_head(observed_at, observed_at + 300_000);
+            head.abi_version = abi_version;
+            let mut document = signed_registry_document(observed_at, observed_at + 300_000);
+            document["versions"][0]["abi_version"] = serde_json::json!(abi_version);
+            document["discovery_signature"] = serde_json::json!(hex(&key
+                .sign(&program_discovery_proof_digest(&head))
+                .to_bytes(),));
+            let program = hex(&head.program_id);
+            let admitted = parse_program_head(
+                &document,
+                head.program_id,
+                &program,
+                &test_sequencer_public_key(),
+            )
+            .unwrap_or_else(|_| panic!("signed ABI {abi_version} refused"));
+            assert_eq!(admitted.abi_version, abi_version);
+            for changed in [0, 5, u16::MAX] {
+                let mut altered = document.clone();
+                altered["versions"][0]["abi_version"] = serde_json::json!(changed);
+                assert!(parse_program_head(
+                    &altered,
+                    head.program_id,
+                    &program,
+                    &test_sequencer_public_key()
+                )
+                .is_err());
+            }
+            let mut substituted = document.clone();
+            substituted["versions"][0]["code_hash"] = serde_json::json!(hex(&[0x99; 32]));
+            assert!(parse_program_head(
+                &substituted,
+                head.program_id,
+                &program,
+                &test_sequencer_public_key()
+            )
+            .is_err());
+            if abi_version >= 3 {
+                let mut unsigned = document.clone();
+                unsigned
+                    .as_object_mut()
+                    .expect("registry object")
+                    .remove("discovery_signature");
+                unsigned
+                    .as_object_mut()
+                    .expect("registry object")
+                    .remove("discovery_public_key");
+                assert!(parse_program_head(
+                    &unsigned,
+                    head.program_id,
+                    &program,
+                    &test_sequencer_public_key()
+                )
+                .is_err());
+                let mut wrong_abi = document.clone();
+                wrong_abi["versions"][0]["abi_version"] =
+                    serde_json::json!(if abi_version == 3 { 4 } else { 3 });
+                assert!(parse_program_head(
+                    &wrong_abi,
+                    head.program_id,
+                    &program,
+                    &test_sequencer_public_key()
+                )
+                .is_err());
+            }
+        }
     }
 
     #[test]

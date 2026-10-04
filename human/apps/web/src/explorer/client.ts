@@ -5,7 +5,7 @@ import {
   decodeAccountActivity,
   decodeNameResolution,
   decodePage,
-  decodeProgram,
+  decodeProgramForIdentifier,
   decodeReceipt,
   decodeRecord,
   decodeUnifiedAccount,
@@ -161,12 +161,12 @@ export async function programRecord(identifier: string): Promise<ProgramRecord |
   if (!validExplorerIdentifier(identifier)) {
     throw new TypeError("Invalid program identifier");
   }
-  const origin = explorerOrigin();
+  const { origin, bearer } = programExplorerOrigin();
   const url = new URL(`/v1/programs/${encodeURIComponent(identifier.toLowerCase())}`, origin);
   let response: Response;
   try {
     response = await fetch(url, {
-      headers: { Accept: "application/json" },
+      headers: { Accept: "application/json", Authorization: `Bearer ${bearer}` },
       cache: "no-store",
       signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
     });
@@ -180,7 +180,7 @@ export async function programRecord(identifier: string): Promise<ProgramRecord |
     throw new ExplorerUnavailableError();
   }
   try {
-    return decodeProgram(await response.json());
+    return decodeProgramForIdentifier(await response.json(), identifier);
   } catch (error) {
     if (error instanceof TypeError) {
       throw error;
@@ -307,13 +307,13 @@ export async function resolveName(name: string): Promise<NameResolutionRecord | 
   if (!validExplorerName(name)) {
     throw new TypeError("Invalid name");
   }
-  const origin = explorerOrigin();
+  const { origin, bearer } = programExplorerOrigin();
   const url = new URL(`/v1/programs/${namingProgram()}/reads/resolve`, origin);
   url.searchParams.set("name", name);
   let response: Response;
   try {
     response = await fetch(url, {
-      headers: { Accept: "application/json" },
+      headers: { Accept: "application/json", Authorization: `Bearer ${bearer}` },
       cache: "no-store",
       signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
     });
@@ -327,7 +327,11 @@ export async function resolveName(name: string): Promise<NameResolutionRecord | 
     throw new ExplorerUnavailableError();
   }
   try {
-    return decodeNameResolution(await response.json());
+    const resolution = decodeNameResolution(await response.json());
+    if (resolution.name !== name) {
+      throw new TypeError("Name projection names another name");
+    }
+    return resolution;
   } catch (error) {
     if (error instanceof TypeError) {
       throw error;

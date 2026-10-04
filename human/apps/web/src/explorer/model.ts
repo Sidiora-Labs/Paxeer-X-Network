@@ -378,6 +378,17 @@ export function decodeProgram(value: unknown, at = "program"): ProgramRecord {
   });
 }
 
+export function decodeProgramForIdentifier(value: unknown, identifier: string): ProgramRecord {
+  if (!validExplorerIdentifier(identifier)) {
+    throw new TypeError("Invalid program identifier");
+  }
+  const program = decodeProgram(value);
+  if (program.program !== identifier.toLowerCase()) {
+    throw new TypeError("Program projection names another program");
+  }
+  return program;
+}
+
 export function decodePage<T>(
   value: unknown,
   decodeItem: (value: unknown, at: string) => T,
