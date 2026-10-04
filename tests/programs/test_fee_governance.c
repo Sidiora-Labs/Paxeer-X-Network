@@ -1,6 +1,13 @@
 #include "layerx/lxp_kernel.h"
 #include "layerx/programs.h"
+#include "layerx/lxp_genesis.h"
+#include "layerx/lxp_handover.h"
+#include "layerx/lxp_hash.h"
+#include "layerx/lxp_crypto.h"
+#include "layerx/lxp_governance.h"
+#include "layerx/lxp_module_ctx.h"
 
+#include <openssl/evp.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -303,6 +310,280 @@ static int activation_and_authority_refusals(void)
     return 0;
 }
 
+static int fee_public_key(const uint8_t seed[32], uint8_t key_bytes[32])
+{
+    EVP_PKEY *key = EVP_PKEY_new_raw_private_key(EVP_PKEY_ED25519, NULL, seed, 32U);
+    size_t length = 32U;
+    int ok = key != NULL && EVP_PKEY_get_raw_public_key(key, key_bytes, &length) == 1 && length == 32U;
+    EVP_PKEY_free(key);
+    return ok ? 0 : 1;
+}
+
+static int fee_sign(const uint8_t seed[32], const uint8_t *bytes, size_t length,
+                    uint8_t signature[64])
+{
+    EVP_PKEY *key = EVP_PKEY_new_raw_private_key(EVP_PKEY_ED25519, NULL, seed, 32U);
+    EVP_MD_CTX *ctx = EVP_MD_CTX_new();
+    size_t signature_length = 64U;
+    int ok = key != NULL && ctx != NULL &&
+        EVP_DigestSignInit(ctx, NULL, NULL, NULL, key) == 1 &&
+        EVP_DigestSign(ctx, signature, &signature_length, bytes, length) == 1 &&
+        signature_length == 64U;
+    EVP_MD_CTX_free(ctx);
+    EVP_PKEY_free(key);
+    return ok ? 0 : 1;
+}
+
+static int fee_actor(lxp_kernel *kernel, lxp_identity *identity,
+                     const uint8_t *did, size_t did_length, const uint8_t seed[32],
+                     uint32_t type, const uint8_t *payload, size_t length,
+                     uint64_t sequence, uint8_t nonce, uint8_t signature[64],
+                     lxp_activity *activity, lxp_authority_grant *grant,
+                     lxp_authority_resolved *authority)
+{
+    uint8_t digest[32];
+    (void)memset(activity, 0, sizeof(*activity));
+    activity->protocol_version = LXP_PROTOCOL_VERSION_STATE_COMMITMENT;
+    activity->network_id = 1U;
+    activity->activity_type = type;
+    activity->actor_did = (lxp_byte_span){did, did_length};
+    activity->authority = (lxp_byte_span){identity->primary_key, 32U};
+    activity->account_sequence = identity->next_sequence;
+    activity->timestamp_bound = (lxp_timestamp_bound){1U, 100U};
+    activity->idempotency_key[31] = nonce;
+    activity->fee_limit = (lxp_u128){0U, 100000000U};
+    activity->payload = (lxp_byte_span){payload, length};
+    activity->signature = (lxp_byte_span){signature, 64U};
+    if (lxp_hash_payload(payload, length, activity->payload_hash) != LXP_OK ||
+        lxp_activity_signing_preimage(activity, digest) != LXP_OK ||
+        fee_sign(seed, digest, sizeof(digest), signature) != 0 ||
+        lxp_activity_check_envelope(activity, 1U) != LXP_OK) return 1;
+    bool signature_valid = lxp_activity_verify_signature(activity) == LXP_OK;
+    bool owner_key_valid = lxp_identity_key_valid(identity, identity->primary_key, 10U, sequence);
+    return !signature_valid || !owner_key_valid ||
+        lxp_authority_resolve_activity(kernel, identity, activity, owner_key_valid,
+            signature_valid, 10U, 100U, sequence, grant, authority) != LXP_OK;
+}
+
+static int fee_dispatch(lxp_kernel *kernel, lxp_arena *arena,
+                        const lxp_activity *activity,
+                        const lxp_authority_resolved *authority,
+                        const lxp_verified_receipt_index *index,
+                        uint64_t sequence, lxp_result expected,
+                        lxp_effect_buffer *effects)
+{
+    const lxp_module_registration *registration;
+    lxp_module_ctx ctx;
+    lxp_result result;
+    if (lxp_kernel_module_for_activity(kernel, activity->activity_type, kernel->epoch,
+            &registration) != LXP_OK ||
+        lxp_module_ctx_init(&ctx, kernel, lxp_activity_module_id(activity->activity_type),
+            10U, kernel->epoch, sequence, 1000000U, arena, false) != LXP_OK ||
+        lxp_effect_buffer_init(effects) != LXP_OK ||
+        lxp_module_ctx_bind_effects(&ctx, effects) != LXP_OK) return 1;
+    ctx.protocol_version = activity->protocol_version;
+    ctx.batch_number = 1U;
+    ctx.verified_receipts = index;
+    if (lxp_kernel_dispatch(registration, &ctx, activity, authority, effects, &result) != LXP_OK ||
+        result != expected || (expected != LXP_OK &&
+            (ctx.staged_count != 0U || effects->count != 0U))) {
+        lxp_module_ctx_rollback(&ctx);
+        return 1;
+    }
+    if (expected != LXP_OK) {
+        lxp_module_ctx_rollback(&ctx);
+        return 0;
+    }
+    return lxp_module_ctx_commit(&ctx) != LXP_OK;
+}
+
+static int native_signed_governance_producer_consumer(void)
+{
+    static const uint8_t sequencer_seed[32] = {7U};
+    static const uint8_t governor_seed[32] = {9U};
+    static const uint8_t owner_did[] = "did:lxp:native-fee-owner";
+    static const uint8_t governor_did[] = "did:lxp:native-fee-governor";
+    static uint8_t arena_bytes[4U * LXP_GENESIS_MAX_ENCODED_BYTES];
+    static lxp_genesis_manifest genesis;
+    static lxp_kernel kernel;
+    static lxp_verified_receipt_index index;
+    lxp_state_store store;
+    lxp_state_journal journal;
+    lxp_identity_store identities = {0};
+    lxp_identity *owner, *governor;
+    lxp_arena arena;
+    lxp_byte_span encoded;
+    lxp_module_ctx ctx;
+    lxp_effect_buffer effects;
+    lxp_activity activity;
+    lxp_authority_grant grant;
+    lxp_authority_resolved authority;
+    lxp_receipt receipt = {0}, decoded_receipt, corrupt;
+    lx_programs_fee_genesis_parameters fees = {0};
+    lx_programs_fee_schedule selected;
+    const lx_programs_fee_schedule proposed = {0U, 17U, 19U, 23U, 29U, 31U, 37U, 105U};
+    uint64_t parameters = 1U, activation;
+    uint8_t public_key[32], governor_key[32], signature[64], before[32], after[32];
+    uint8_t activity_id[32], zero[32] = {0}, asset[32] = {1U}, digest[32], pending_digest[32];
+    uint8_t proposal[LX_PROGRAMS_FEE_GOVERNANCE_PROPOSAL_BYTES];
+    uint8_t intake[LXP_MAX_ACTIVITY_BYTES], malformed[sizeof(proposal)];
+    size_t intake_length;
+    if (fee_public_key(sequencer_seed, public_key) != 0 ||
+        fee_public_key(governor_seed, governor_key) != 0 ||
+        lxp_arena_init(&arena, arena_bytes, sizeof(arena_bytes)) != LXP_OK ||
+        lxp_state_store_init(&store, 1U) != LXP_OK ||
+        lxp_kernel_create(&kernel, &store, &journal, &parameters, 0U) != LXP_OK ||
+        lxp_kernel_register_module(&kernel, programs_module_registration_v4()) != LXP_OK ||
+        lxp_kernel_register_module(&kernel, lxp_governance_module_iface_for_handover(true)) != LXP_OK)
+        return 1;
+    (void)memset(&genesis, 0, sizeof(genesis));
+    genesis.protocol_version = LXP_PROTOCOL_VERSION_STATE_COMMITMENT;
+    genesis.network_id = 1U;
+    genesis.genesis_timestamp_ms = 1U;
+    genesis.parameter_count = 2U;
+    genesis.parameters[0].module_id = LXP_MODULE_GOVERNANCE;
+    (void)memcpy(genesis.parameters[0].key, "parameter-version", 17U);
+    genesis.parameters[0].value[31] = 1U;
+    genesis.parameters[1].module_id = LXP_MODULE_GOVERNANCE;
+    (void)memcpy(genesis.parameters[1].key, "handover-authority", 18U);
+    (void)memcpy(genesis.parameters[1].value, governor_key, 32U);
+    genesis.guarantor_count = 1U;
+    genesis.guarantors[0].guarantor_id[0] = 1U;
+    (void)memcpy(genesis.guarantors[0].public_key, public_key, 32U);
+    (void)memcpy(genesis.signer_public_key, public_key, 32U);
+    fees.schedule = (lx_programs_fee_schedule){1U, 2U, 3U, 5U, 7U, 11U, 13U, 100U};
+    (void)memcpy(fees.occupancy_asset_id, asset, 32U);
+    fees.target_occupancy_byte_batches = 100U;
+    fees.response_denominator = 1U;
+    fees.maximum_change_numerator = 1U;
+    fees.maximum_change_denominator = 10U;
+    fees.minimum_fee_units_per_occupancy_byte_batch = 10U;
+    fees.maximum_fee_units_per_occupancy_byte_batch = 1000U;
+    if (lxp_genesis_fresh_empty_accounts(&genesis, asset) != LXP_OK ||
+        lxp_programs_fee_genesis_append(&genesis, &fees) != LXP_OK ||
+        lxp_genesis_state_root(&genesis, &arena, genesis.genesis_state_root) != LXP_OK ||
+        lxp_genesis_receipt_state_root(1U, genesis.genesis_state_root,
+            genesis.genesis_receipt_state_root) != LXP_OK ||
+        lxp_genesis_encode(&genesis, false, &arena, &encoded) != LXP_OK ||
+        fee_sign(sequencer_seed, encoded.bytes, encoded.length, genesis.signature) != 0 ||
+        lxp_arena_reset(&arena, 0U) != LXP_OK ||
+        lxp_genesis_verify_signature(&genesis, &arena) != LXP_OK ||
+        lxp_programs_fee_genesis_project(&genesis, &arena, &kernel) != LXP_OK ||
+        lxp_handover_kernel_initialize(&kernel, &genesis, NULL, NULL) != LXP_OK ||
+        lxp_identity_register(&identities, governor_did, sizeof(governor_did) - 1U,
+            governor_key, &governor) != LXP_OK ||
+        lxp_identity_register(&identities, owner_did, sizeof(owner_did) - 1U,
+            public_key, &owner) != LXP_OK ||
+        lxp_verified_receipt_index_init(&index) != LXP_OK) return 2;
+    (void)memcpy(proposal, "LXFG1", 5U);
+    prices(proposal + 5U, &proposed);
+    (void)memcpy(proposal + 61U, asset, 32U);
+    policy(proposal + 93U);
+    write_u64(proposal + 141U, 9U);
+    if (lxp_programs_fee_governance_proposal_validate(proposal, sizeof(proposal)) != LXP_OK ||
+        lxp_arena_reset(&arena, 0U) != LXP_OK ||
+        fee_actor(&kernel, owner, owner_did, sizeof(owner_did) - 1U, sequencer_seed,
+            LXP_GOVERNANCE_PROGRAMS_FEE, proposal, sizeof(proposal), 1U, 1U,
+            signature, &activity, &grant, &authority) != 0 ||
+        fee_dispatch(&kernel, &arena, &activity, &authority, NULL, 1U,
+            LXP_ERR_AUTH_SCOPE, &effects) != 0) return 3;
+    (void)memcpy(malformed, proposal, sizeof(proposal));
+    malformed[0] ^= 1U;
+    if (lxp_arena_reset(&arena, 0U) != LXP_OK ||
+        fee_actor(&kernel, governor, governor_did, sizeof(governor_did) - 1U, governor_seed,
+            LXP_GOVERNANCE_PROGRAMS_FEE, malformed, sizeof(malformed), 1U, 2U,
+            signature, &activity, &grant, &authority) != 0 ||
+        fee_dispatch(&kernel, &arena, &activity, &authority, NULL, 1U,
+            LXP_ERR_NON_CANONICAL, &effects) != 0) return 4;
+    if (lxp_arena_reset(&arena, 0U) != LXP_OK ||
+        fee_actor(&kernel, governor, governor_did, sizeof(governor_did) - 1U, governor_seed,
+            LXP_GOVERNANCE_PROGRAMS_FEE, proposal, sizeof(proposal), 1U, 3U,
+            signature, &activity, &grant, &authority) != 0 ||
+        lxp_state_root(&kernel, before) != LXP_OK ||
+        lxp_activity_encode(&activity, &arena, &encoded) != LXP_OK ||
+        lxp_activity_id(encoded.bytes, encoded.length, activity_id) != LXP_OK ||
+        fee_dispatch(&kernel, &arena, &activity, &authority, NULL, 1U, LXP_OK, &effects) != 0 ||
+        effects.count != 1U || effects.effects[0].kind != LXP_EFFECT_STATE ||
+        effects.effects[0].module_id != LXP_MODULE_GOVERNANCE ||
+        effects.effects[0].body_length != sizeof(proposal) ||
+        memcmp(effects.effects[0].body, proposal, sizeof(proposal)) != 0 ||
+        lxp_state_root(&kernel, after) != LXP_OK || memcmp(before, after, 32U) == 0 ||
+        lxp_receipt_build(&receipt, activity_id, 1U, before, after, zero, LXP_OK,
+            &effects, (lxp_u128){0U, 0U}, zero, LXP_MODULE_GOVERNANCE, 1U, 1U) != LXP_OK)
+        return 5;
+    receipt.protocol_version = LXP_PROTOCOL_VERSION_STATE_COMMITMENT;
+    receipt.timestamp = 10U;
+    receipt.operation = lxp_activity_type_ordinal(LXP_GOVERNANCE_PROGRAMS_FEE);
+    if (lxp_receipt_sign(&receipt, sequencer_seed, &arena) != LXP_OK ||
+        lxp_receipt_verify(&receipt, public_key, &arena) != LXP_OK ||
+        lxp_receipt_encode(&receipt, true, &arena, &encoded) != LXP_OK ||
+        encoded.length > sizeof(intake) - sizeof(proposal) - 4U) return 6;
+    (void)memcpy(intake, proposal, sizeof(proposal));
+    write_u32(intake + sizeof(proposal), (uint32_t)encoded.length);
+    (void)memcpy(intake + sizeof(proposal) + 4U, encoded.bytes, encoded.length);
+    intake_length = sizeof(proposal) + 4U + encoded.length;
+    if (lxp_arena_reset(&arena, 0U) != LXP_OK ||
+        lxp_receipt_decode(intake + sizeof(proposal) + 4U,
+            intake_length - sizeof(proposal) - 4U, true, &decoded_receipt) != LXP_OK ||
+        lxp_receipt_digest(&decoded_receipt, &arena, digest) != LXP_OK) return 7;
+    corrupt = decoded_receipt;
+    corrupt.sequencer_signature[0] ^= 1U;
+    if (lxp_verified_receipt_index_add(&index, &corrupt, public_key, &arena) != LXP_ERR_BAD_SIGNATURE ||
+        index.count != 0U ||
+        fee_actor(&kernel, owner, owner_did, sizeof(owner_did) - 1U, sequencer_seed,
+            LX_PROGRAMS_FEE_GOVERNANCE, intake, intake_length, 2U, 4U,
+            signature, &activity, &grant, &authority) != 0 ||
+        fee_dispatch(&kernel, &arena, &activity, &authority, &index, 2U,
+            LXP_ERR_UNKNOWN_FIELD, &effects) != 0 ||
+        lxp_verified_receipt_index_add(&index, &decoded_receipt, public_key, &arena) != LXP_OK ||
+        index.count != 1U) return 8;
+    if (lxp_arena_reset(&arena, 0U) != LXP_OK ||
+        fee_actor(&kernel, owner, owner_did, sizeof(owner_did) - 1U, sequencer_seed,
+            LX_PROGRAMS_FEE_GOVERNANCE, intake, intake_length, 2U, 5U,
+            signature, &activity, &grant, &authority) != 0 ||
+        fee_dispatch(&kernel, &arena, &activity, &authority, &index, 2U, LXP_OK, &effects) != 0 ||
+        lxp_module_ctx_init(&ctx, &kernel, LXP_MODULE_PROGRAMS, 10U, kernel.epoch,
+            3U, 1000000U, &arena, true) != LXP_OK) return 9;
+    ctx.protocol_version = LXP_PROTOCOL_VERSION_STATE_COMMITMENT;
+    ctx.batch_number = 1U;
+    ctx.verified_receipts = &index;
+    if (lxp_programs_fee_governance_pending(&ctx, &selected, &activation, pending_digest) != LXP_OK ||
+        selected.version != 0U || selected.cpu != proposed.cpu || activation != 9U ||
+        memcmp(digest, pending_digest, 32U) != 0 ||
+        lxp_programs_fee_schedule_current(&ctx, &selected, asset) != LXP_OK ||
+        selected.version != 1U || selected.cpu != fees.schedule.cpu ||
+        lxp_programs_fee_governance_activate(&ctx, 1U) != LXP_ERR_NOT_YET_VALID ||
+        lxp_programs_fee_governance_stage(&ctx, &proposed, asset,
+            100U, 1U, 1U, 10U, 10U, 1000U, 9U, &decoded_receipt) != LXP_ERR_SEQUENCE_REUSED)
+        return 10;
+    lxp_module_ctx_rollback(&ctx);
+    if (lxp_arena_reset(&arena, 0U) != LXP_OK ||
+        fee_actor(&kernel, governor, governor_did, sizeof(governor_did) - 1U, governor_seed,
+            LXP_GOVERNANCE_PROGRAMS_FEE, proposal, sizeof(proposal), 3U, 6U,
+            signature, &activity, &grant, &authority) != 0 ||
+        fee_dispatch(&kernel, &arena, &activity, &authority, NULL, 3U,
+            LXP_ERR_SEQUENCE_REUSED, &effects) != 0 ||
+        lxp_module_ctx_init(&ctx, &kernel, LXP_MODULE_PROGRAMS, 10U, kernel.epoch,
+            3U, 1000000U, &arena, true) != LXP_OK) return 11;
+    ctx.protocol_version = LXP_PROTOCOL_VERSION_STATE_COMMITMENT;
+    ctx.batch_number = 9U;
+    ctx.verified_receipts = &index;
+    if (lxp_programs_fee_governance_activate(&ctx, 9U) != LXP_OK ||
+        lxp_programs_fee_schedule_current(&ctx, &selected, asset) != LXP_OK ||
+        selected.version != 2U || selected.cpu != proposed.cpu ||
+        selected.occupancy_byte_batch != proposed.occupancy_byte_batch ||
+        lxp_programs_fee_schedule_at(&ctx, 1U, &selected, asset) != LXP_OK ||
+        selected.version != 1U || selected.cpu != fees.schedule.cpu ||
+        lxp_module_ctx_commit(&ctx) != LXP_OK) return 12;
+    if (lxp_arena_reset(&arena, 0U) != LXP_OK ||
+        fee_actor(&kernel, owner, owner_did, sizeof(owner_did) - 1U, sequencer_seed,
+            LX_PROGRAMS_FEE_GOVERNANCE, intake, intake_length, 3U, 7U,
+            signature, &activity, &grant, &authority) != 0 ||
+        fee_dispatch(&kernel, &arena, &activity, &authority, &index, 3U,
+            LXP_ERR_SEQUENCE_MISMATCH, &effects) != 0) return 13;
+    return 0;
+}
+
 static int occupancy_up(void) { return occupancy_vector((lxp_u128){0U, 200U}, 110U, 2U); }
 static int occupancy_down(void) { return occupancy_vector((lxp_u128){0U, 0U}, 90U, 2U); }
 static int occupancy_target(void) { return occupancy_vector((lxp_u128){0U, 100U}, 100U, 1U); }
@@ -314,7 +595,8 @@ static const struct fee_case { const char *name; int (*run)(void); } cases[] = {
     {"native_occupancy_down", occupancy_down},
     {"native_occupancy_target", occupancy_target},
     {"native_occupancy_full_width", occupancy_full_width},
-    {"native_activation_and_authority_refusals", activation_and_authority_refusals}
+    {"native_activation_and_authority_refusals", activation_and_authority_refusals},
+    {"native_signed_governance_producer_consumer", native_signed_governance_producer_consumer}
 };
 
 int main(int argc, char **argv)

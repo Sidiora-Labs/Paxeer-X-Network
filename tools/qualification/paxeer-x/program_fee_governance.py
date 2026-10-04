@@ -19,6 +19,7 @@ NATIVE_CASES = (
     "native_pending_and_history", "native_occupancy_up", "native_occupancy_down",
     "native_occupancy_target", "native_occupancy_full_width",
     "native_activation_and_authority_refusals",
+    "native_signed_governance_producer_consumer",
 )
 FEE_CASES = (
     "recorded_schedule_prices_real_meter_without_current_head_fallback",
@@ -60,7 +61,8 @@ def source():
     if dirty:
         raise RuntimeError("source checkout must be clean before build and verification")
     names = run(["git", "ls-files", "-z", "--", *SOURCE_PATHS], capture_output=True).stdout.split(b"\0")
-    paths = sorted(os.fsdecode(name) for name in names if name)
+    paths = sorted(os.fsdecode(name) for name in names
+                   if name and not Path(os.fsdecode(name)).name.startswith(".env"))
     if not paths:
         raise RuntimeError("empty source dependency inventory")
     return {"revision": revision, "inputs": {name: digest(ROOT / name) for name in paths}}

@@ -24505,7 +24505,7 @@ conditional_write_scope = "Production cache enable/disable control and observati
 
 [task.104.32.4]
 title = "Move the fee schedule into governed protocol state"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 2
 requires = ["0.2"]
@@ -24517,7 +24517,7 @@ do_4 = "Change the schedule only through a governed activity that is itself rece
 do_5 = "Add a demand-responsive component adjusting a base price per unit of the scarce resource by a deterministic rule over recent batch occupancy, computed from protocol state alone with no node-local input."
 do_6 = "Prove monotonic bounds on the adjustment so the price cannot move more than a declared fraction per batch, and prove replay of a multi-schedule history reprices every activity correctly."
 do_7 = "Provide this task selector in tools/paxeer-x/gates and execute the full scoped acceptance contract using real production paths. Preserve the retained verification command coverage; move aggregate matrices to release scope and refuse an unknown or unimplemented selector."
-touches = ["programs/crates/layerx-programs-runtime/src/meter.rs", "tools/paxeer-x/gates/104.32.4.sh", "tools/qualification/paxeer-x/program_fee_governance.py", "tools/paxeer-x/build/104.32.4.mk", "tests/programs/test_fee_governance.c", "programs/crates/layerx-programs-runtime/tests/fee_governance.rs"]
+touches = ["programs/crates/layerx-programs-runtime/src/meter.rs", "tools/paxeer-x/gates/104.32.4.sh", "tools/qualification/paxeer-x/program_fee_governance.py", "tools/paxeer-x/build/104.32.4.mk", "tests/programs/test_fee_governance.c", "programs/crates/layerx-programs-runtime/tests/fee_governance.rs", "include/layerx/lxp_governance.h", "include/layerx/programs.h", "src/modules/programs/fees.c", "src/modules/governance/lxp_governance.c"]
 verify_cmd = "timeout 30m tools/paxeer-x/verify-task.sh 104.32.4"
 gate_kind = "planned-adapter"
 max_builds = 1
@@ -24541,10 +24541,15 @@ retained_budget_producer_6_2 = "src/modules/programs/fees.c; originalcriteria pr
 fleet_authority = "User explicitly ordered30agents into pending integrations within4hours; fresh bounded source implementation resumes. Preserve prior source/evidence and every assertion."
 fleet_role = "/root/daemon_native_bindings/asset_client"
 fleet_scope_manifest = "/root/lx-ops/paxeer-x-integration-2026-10-03/fleet-104.32.4-brief.json"
-source_status = "partial"
-completion_basis = "honest incomplete source checkpoint; original criteria remain required"
+source_status = "complete"
+completion_basis = "implementation under owner CONSTITUTION; qualification separately recorded"
 qualification_status = "UNRUN"
-source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/fleet-104.32.4-partial-publication.json"
+source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-104.32.4-approved-source-freeze.json"
+owner_continuation_agent = "/root/daemon_native_bindings/asset_client"
+owner_continuation_cutoff_utc = "2026-10-04T15:57:00Z"
+owner_continuation_minutes = 30
+owner_continuation_authority = "Explicit owner approval in current session; existing assertions and original repair counts retained. No deployment."
+owner_fee_producer_resolution = "Existing genesis-designated governance key authorizes selector0x0007000b via exact approved producer patch; existing fee encoding, activation bounds and migration authorization stay intact."
 
 [task.104.33.1]
 title = "Publish program interfaces as protocol state"

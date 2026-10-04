@@ -1065,6 +1065,27 @@ static lxp_result migration_governance_decode(
     return LXP_OK;
 }
 
+lxp_result lxp_programs_fee_governance_proposal_validate(
+    const uint8_t *payload, size_t payload_length)
+{
+    lx_programs_fee_schedule proposed;
+    programs_fee_demand_policy demand;
+    uint8_t canonical[PROGRAMS_FEE_PROPOSAL_BYTES];
+    lxp_result status;
+    if (payload == NULL || payload_length != PROGRAMS_FEE_PROPOSAL_BYTES ||
+        memcmp(payload, fee_proposal_magic, sizeof(fee_proposal_magic)) != 0)
+        return LXP_ERR_NON_CANONICAL;
+    (void)memset(&proposed, 0, sizeof(proposed));
+    decode_prices(payload + sizeof(fee_proposal_magic), &proposed);
+    decode_policy(payload + sizeof(fee_proposal_magic) + 56U + 32U, &demand);
+    status = proposal_encode(&proposed,
+        payload + sizeof(fee_proposal_magic) + 56U, &demand,
+        read_u64(payload + sizeof(fee_proposal_magic) + 56U + 32U + 48U), canonical);
+    if (status != LXP_OK) return status;
+    return memcmp(canonical, payload, sizeof(canonical)) == 0 ?
+        LXP_OK : LXP_ERR_NON_CANONICAL;
+}
+
 lxp_result lxp_programs_fee_governance_decode(
     lxp_module_ctx *ctx, const uint8_t *payload, size_t payload_length,
     void **decoded)

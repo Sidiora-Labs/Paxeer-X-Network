@@ -336,6 +336,8 @@ enum {
     LX_PROGRAMS_FEE_GOVERNANCE_PROPOSAL_BYTES = 149
 };
 
+lxp_result lxp_programs_fee_governance_proposal_validate(
+    const uint8_t *payload, size_t payload_length);
 lxp_result lxp_programs_fee_governance_decode(
     lxp_module_ctx *ctx, const uint8_t *payload, size_t payload_length,
     void **decoded);
