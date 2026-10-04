@@ -2509,3 +2509,13 @@ resolution = "Apply the five approved byte-identical conversions and one exact c
 area = "Governed migration budget authority"
 observed = "The actual daemon installs a null numeric parameter reader, and no existing Governance producer emits the new exact LXMB1 budget state."
 resolution = "Retain the distinct authenticated budget consumer and keep migration partial; require a real governed producer, production activation and explicit historical replay policy before source completion."
+
+[gotcha.724]
+area = "Connected MCP effect authority ownership"
+observed = "MCP executes web/payment effects under a separately restored local session registry and serializes results after that scope; remote status polling cannot linearize those boundaries with daemon revocation."
+resolution = "Implement the actual canonical effect owner and protected result writer under authoritative daemon session control; preserve the unmet requirement and never qualify an authorization-only proxy."
+
+[gotcha.733]
+area = "Bounded source lookup output"
+observed = "A generator lookup included all build-script filenames and exceeded tool output capacity; two searches also named nonexistent candidate paths."
+resolution = "Use exact known directory and filename queries; recover the full truncated listing through a read-only helper before inferring generator availability."
