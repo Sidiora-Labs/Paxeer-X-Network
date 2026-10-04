@@ -26,7 +26,9 @@ use crate::boundary::{AgentSurface, BoundaryRefusal, ProgramReads, ToolBoundary}
 use crate::listener::ListenerConfig;
 use crate::server::{DeploymentMode, ReadOnly, Server, ToolDefinition, WebBoundary, WebRoute};
 use crate::stdio::{Bound, DaemonClientSession, Session};
-use crate::tools::web::{ExactTerms, GrantTerms, WebConfig, WebPayer, WebPayerError, WebToolError};
+use crate::tools::web::{
+    ExactTerms, GrantTerms, SidecarEndpoint, WebConfig, WebPayer, WebPayerError, WebToolError,
+};
 
 const MAX_DOCUMENT_BYTES: usize = 65_536;
 const MAX_SECRET_BYTES: usize = 4_096;
@@ -295,6 +297,17 @@ impl Eq for WebAuthority {}
 struct SharedPayer(Arc<Mutex<Box<dyn WebPayer + Send>>>);
 
 impl WebPayer for SharedPayer {
+    fn validate_search_quote(
+        &mut self,
+        asset: [u8; 32],
+        amount: u128,
+    ) -> Result<(), WebPayerError> {
+        self.0
+            .lock()
+            .map_err(|_| WebPayerError::Unavailable)?
+            .validate_search_quote(asset, amount)
+    }
+
     fn grant(&mut self, terms: &GrantTerms) -> Result<Vec<u8>, WebPayerError> {
         self.0
             .lock()
@@ -1070,12 +1083,42 @@ fn web_binding(declared: &Value) -> Result<WebBinding, BindingError> {
     closed(web, &WEB_KEYS, "web")?;
     let pending_attempts = u8::try_from(unsigned(web, "pending_attempts")?)
         .map_err(|_| malformed("field web.pending_attempts is outside its unsigned range"))?;
-    Ok(WebBinding {
+    let binding = WebBinding {
         endpoint: text(web, "endpoint")?.to_owned(),
         network: text(web, "network")?.to_owned(),
         sequencer_public_key: digest::<32>(web, "sequencer_public_key")?,
         timeout: Duration::from_millis(unsigned(web, "timeout_ms")?),
         pending_attempts,
         approval_threshold: wide(web, "approval_threshold")?,
-    })
+    };
+    SidecarEndpoint::parse(&binding.endpoint)
+        .map_err(|_| malformed("field web.endpoint is invalid"))?;
+    if let Some(rest) = binding.endpoint.strip_prefix("http://[") {
+        let (_, tail) = rest
+            .split_once(']')
+            .ok_or_else(|| malformed("field web.endpoint is invalid"))?;
+        let tail = tail.strip_suffix('/').unwrap_or(tail);
+        if !tail.is_empty() && !tail.starts_with(':') {
+            return Err(malformed("field web.endpoint is invalid"));
+        }
+    }
+    if !binding
+        .network
+        .strip_prefix("layerx:")
+        .is_some_and(|network| {
+            !network.is_empty() && network.bytes().all(|byte| byte.is_ascii_alphanumeric())
+        })
+    {
+        return Err(malformed("field web.network is invalid"));
+    }
+    if binding.sequencer_public_key == [0; 32] {
+        return Err(malformed("field web.sequencer_public_key is invalid"));
+    }
+    if binding.timeout.is_zero() || binding.timeout > Duration::from_secs(60) {
+        return Err(malformed("field web.timeout_ms is outside 1 to 60000"));
+    }
+    if binding.pending_attempts == 0 || binding.pending_attempts > 10 {
+        return Err(malformed("field web.pending_attempts is outside 1 to 10"));
+    }
+    Ok(binding)
 }

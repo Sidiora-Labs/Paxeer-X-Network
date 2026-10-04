@@ -42,6 +42,8 @@ const MAX_SOCKET_PATH_BYTES: usize = 107;
 const MAX_ADMITTED_PEERS: usize = 64;
 const LISTENER_MODE_MASK: u32 = 0o660;
 const LISTENER_OWNER_ACCESS: u32 = 0o600;
+const MAX_WEB_TIMEOUT_MS: u64 = 60_000;
+const MAX_WEB_PENDING_ATTEMPTS: u8 = 10;
 
 /// Deployment mode the binding document declares.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -157,7 +159,10 @@ impl DaemonSurface {
             ));
         }
         let bearer = Zeroizing::new(bearer);
-        if bearer.len() < MINIMUM_BEARER_BYTES || bearer.len() >= 4_096 || bearer.trim() != bearer.as_str() {
+        if bearer.len() < MINIMUM_BEARER_BYTES
+            || bearer.len() >= 4_096
+            || bearer.trim() != bearer.as_str()
+        {
             return Err(EnrolmentError::InvalidSurface(
                 "the agent daemon bearer is shorter than the daemon accepts or carries whitespace",
             ));
@@ -218,7 +223,9 @@ impl ListenerDeclaration {
             .components()
             .any(|component| !matches!(component, Component::RootDir | Component::Normal(_)))
             || socket.file_name().is_none()
-            || socket.parent().is_none_or(|parent| parent == Path::new("/"))
+            || socket
+                .parent()
+                .is_none_or(|parent| parent == Path::new("/"))
             || text.ends_with('/')
         {
             return Err(EnrolmentError::InvalidListener(
@@ -326,8 +333,9 @@ impl WebDeclaration {
     ///
     /// # Errors
     ///
-    /// Refuses empty or over-long text, an all-zero sequencer key, a zero timeout, and zero
-    /// pending attempts.
+    /// Refuses an invalid or over-long HTTP sidecar endpoint or LayerX network, an all-zero
+    /// sequencer key, a timeout outside 1 to 60,000 milliseconds, and pending attempts outside
+    /// 1 to 10.
     pub fn new(
         endpoint: String,
         network: String,
@@ -343,6 +351,18 @@ impl WebDeclaration {
                 ));
             }
         }
+        if !valid_web_endpoint(&endpoint) {
+            return Err(EnrolmentError::InvalidWeb(
+                "the web endpoint is not an HTTP sidecar authority",
+            ));
+        }
+        if !network.strip_prefix("layerx:").is_some_and(|rest| {
+            !rest.is_empty() && rest.bytes().all(|byte| byte.is_ascii_alphanumeric())
+        }) {
+            return Err(EnrolmentError::InvalidWeb(
+                "the web network is not a LayerX network",
+            ));
+        }
         if sequencer_public_key == [0; 32] {
             return Err(EnrolmentError::InvalidWeb(
                 "the sequencer public key is not a key",
@@ -351,9 +371,19 @@ impl WebDeclaration {
         if timeout_ms == 0 {
             return Err(EnrolmentError::InvalidWeb("the web timeout is zero"));
         }
+        if timeout_ms > MAX_WEB_TIMEOUT_MS {
+            return Err(EnrolmentError::InvalidWeb(
+                "the web timeout must be 1 to 60,000 milliseconds",
+            ));
+        }
         if pending_attempts == 0 {
             return Err(EnrolmentError::InvalidWeb(
                 "the web pending attempts are zero",
+            ));
+        }
+        if pending_attempts > MAX_WEB_PENDING_ATTEMPTS {
+            return Err(EnrolmentError::InvalidWeb(
+                "the web pending attempts must be 1 to 10",
             ));
         }
         Ok(Self {
@@ -376,6 +406,42 @@ impl WebDeclaration {
             "approval_threshold": self.approval_threshold.to_string(),
         })
     }
+}
+
+fn valid_web_endpoint(text: &str) -> bool {
+    let Some(authority) = text.strip_prefix("http://") else {
+        return false;
+    };
+    let authority = authority.strip_suffix('/').unwrap_or(authority);
+    let (host, port) = if let Some(rest) = authority.strip_prefix('[') {
+        let Some((host, tail)) = rest.split_once(']') else {
+            return false;
+        };
+        if !tail.is_empty() && !tail.starts_with(':') {
+            return false;
+        }
+        (host, tail.strip_prefix(':'))
+    } else {
+        match authority.split_once(':') {
+            Some((host, port)) => (host, Some(port)),
+            None => (authority, None),
+        }
+    };
+    let port = match port {
+        Some(port) if port.bytes().all(|byte| byte.is_ascii_digit()) => {
+            let Ok(port) = port.parse::<u16>() else {
+                return false;
+            };
+            port
+        }
+        Some(_) => return false,
+        None => 80,
+    };
+    !host.is_empty()
+        && port != 0
+        && host
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || b".-:".contains(&byte))
 }
 
 /// One opened session together with the coordinates the binding document records.
@@ -659,16 +725,22 @@ impl BindingPublisher {
     ) -> Result<(), EnrolmentError> {
         self.check_listener()?;
         let metadata = fs::symlink_metadata(&self.root)?;
-        if !metadata.is_dir() || metadata.uid() != fs::metadata("/proc/self")?.uid()
-            || metadata.mode() & 0o777 != 0o700 || fs::canonicalize(&self.root)? != self.root
+        if !metadata.is_dir()
+            || metadata.uid() != fs::metadata("/proc/self")?.uid()
+            || metadata.mode() & 0o777 != 0o700
+            || fs::canonicalize(&self.root)? != self.root
         {
-            return Err(EnrolmentError::InvalidPath("the binding directory is not owner-only"));
+            return Err(EnrolmentError::InvalidPath(
+                "the binding directory is not owner-only",
+            ));
         }
-        let record = sessions.get(identity.tenant(), request.session_id)
+        let record = sessions
+            .get(identity.tenant(), request.session_id)
             .ok_or(EnrolmentError::Session(SessionError::NotFound))?;
         if !record.open
             || &record.request.agent != identity.did()
-            || record.request.authority != ProtocolAuthority::CapabilityGrant(request.capability_id.0)
+            || record.request.authority
+                != ProtocolAuthority::CapabilityGrant(request.capability_id.0)
             || record.request.permitted_activity_types != request.permitted_activity_types
             || record.request.scopes != request.scopes
             || record.request.expiry_sequence != request.expiry_sequence
@@ -698,11 +770,15 @@ impl BindingPublisher {
             (SESSION_TOKEN_FILE, token.as_bytes()),
             (DAEMON_BEARER_FILE, self.surface.bearer.as_bytes()),
         ] {
-            let bytes = Zeroizing::new(crate::config::read_protected_source(
-                &self.root.join(name), 4_096,
-            ).map_err(|_| EnrolmentError::InvalidPath("a binding secret is not protected"))?);
+            let bytes = Zeroizing::new(
+                crate::config::read_protected_source(&self.root.join(name), 4_096).map_err(
+                    |_| EnrolmentError::InvalidPath("a binding secret is not protected"),
+                )?,
+            );
             if bytes.strip_suffix(b"\n") != Some(expected) {
-                return Err(EnrolmentError::InvalidPath("a binding secret differs from current authority"));
+                return Err(EnrolmentError::InvalidPath(
+                    "a binding secret differs from current authority",
+                ));
             }
         }
         Ok(())
@@ -970,7 +1046,9 @@ fn prepare_root(root: &Path) -> Result<(), EnrolmentError> {
             if metadata.uid() != fs::metadata("/proc/self")?.uid()
                 || metadata.mode() & 0o777 != 0o700
             {
-                return Err(EnrolmentError::InvalidPath("the binding directory is not owner-only"));
+                return Err(EnrolmentError::InvalidPath(
+                    "the binding directory is not owner-only",
+                ));
             }
         }
         Err(error) if error.kind() == io::ErrorKind::NotFound => {
@@ -1007,10 +1085,16 @@ fn read_document(path: &Path) -> Result<Option<Value>, EnrolmentError> {
 }
 
 fn create_private(path: &Path, contents: &[u8]) -> Result<(), EnrolmentError> {
-    let parent = path.parent().ok_or(EnrolmentError::InvalidPath("the file has no directory"))?;
+    let parent = path
+        .parent()
+        .ok_or(EnrolmentError::InvalidPath("the file has no directory"))?;
     let nonce = fresh_token()?;
     let temporary = parent.join(format!(".pending-{}", hex::encode(nonce.as_slice())));
-    let mut file = OpenOptions::new().write(true).create_new(true).mode(0o600).open(&temporary)?;
+    let mut file = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .mode(0o600)
+        .open(&temporary)?;
     let mut linked = false;
     let result = (|| {
         file.write_all(contents)?;
@@ -1400,21 +1484,37 @@ impl VerifiedProgramBudgetDenominations {
         source_digest: [u8; 32],
     ) -> Result<Self, EnrolmentError> {
         bindings.sort_unstable_by_key(|(id, _)| *id);
-        if bindings.is_empty() || bindings.len() > 1024 || source_digest == [0; 32]
-            || bindings.iter().any(|(id, denomination)| *id == [0; 32] || !denomination.valid())
+        if bindings.is_empty()
+            || bindings.len() > 1024
+            || source_digest == [0; 32]
+            || bindings
+                .iter()
+                .any(|(id, denomination)| *id == [0; 32] || !denomination.valid())
             || bindings.windows(2).any(|pair| pair[0].0 == pair[1].0)
         {
-            return Err(EnrolmentError::InvalidLimit("invalid explicit Program denomination"));
+            return Err(EnrolmentError::InvalidLimit(
+                "invalid explicit Program denomination",
+            ));
         }
-        Ok(Self { tenant, bindings, source_digest })
+        Ok(Self {
+            tenant,
+            bindings,
+            source_digest,
+        })
     }
 
     #[must_use]
-    pub fn tenant(&self) -> &crate::store::TenantId { &self.tenant }
+    pub fn tenant(&self) -> &crate::store::TenantId {
+        &self.tenant
+    }
 
     #[must_use]
-    pub fn bindings(&self) -> &[([u8; 32], crate::budget::ProgramLimitDenomination)] { &self.bindings }
+    pub fn bindings(&self) -> &[([u8; 32], crate::budget::ProgramLimitDenomination)] {
+        &self.bindings
+    }
 
     #[must_use]
-    pub fn source_digest(&self) -> [u8; 32] { self.source_digest }
+    pub fn source_digest(&self) -> [u8; 32] {
+        self.source_digest
+    }
 }

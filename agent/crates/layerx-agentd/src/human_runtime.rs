@@ -133,6 +133,100 @@ impl<A: HumanAuthorityBoundary> UnifiedAgentOwner<A> {
         Ok(registry)
     }
 
+    fn mcp_native_web_search_quote(
+        &mut self,
+        credential: &crate::session::SessionCredential,
+        owner_public_key: [u8; 32],
+        asset_id: [u8; 32],
+    ) -> Result<u128, HumanOperationError> {
+        if asset_id == [0; 32] {
+            return Err(HumanOperationError::Refused);
+        }
+        let head = self.lock_operations()?.node.head().chain_sequence;
+        let control = self.session_control.clone();
+        let permit = control
+            .authorize(
+                credential,
+                crate::tenant::Operation::Prepare,
+                crate::tenant::Surface::Mcp,
+                head,
+                None,
+            )
+            .map_err(|_| HumanOperationError::Refused)?;
+        let context = crate::agent_rpc_peer::bind_registered_mcp_owner(
+            self,
+            &permit,
+            owner_public_key,
+            head,
+        )?;
+        let amount = {
+            let mut ops = self.lock_operations()?;
+            ops.require_write_admission(&context.peer().tenant)?;
+            ops.subject_owner(
+                context.peer(),
+                &context.principal().agent,
+                &Authority::owner(&owner_public_key).map_err(|_| HumanOperationError::Refused)?,
+            )?;
+            let protocol = ops.node.handshake().node().protocol_version;
+            let actor = layerx_wire::hash::did_id_for_protocol(
+                context.principal().agent.as_bytes(),
+                protocol,
+            )
+            .map_err(|_| HumanOperationError::Refused)?;
+            let (_, _, authorization) = ops.budget_read_parts(context.peer())?;
+            let caps = ops
+                .node
+                .caps_discovery(
+                    actor,
+                    VerificationLevel::STATE_PROVEN,
+                    boundary_correlation(context.peer(), &asset_id, b"mcp-web-search-asset"),
+                    authorization,
+                    None,
+                )
+                .map_err(|_| HumanOperationError::Unavailable)?;
+            let asset = caps
+                .effective_asset(asset_id)
+                .map_err(|_| HumanOperationError::Refused)?;
+            let fee = ops
+                .node
+                .native_fee_policy(boundary_correlation(
+                    context.peer(),
+                    &asset_id,
+                    b"mcp-web-search-native",
+                ))
+                .map_err(|_| HumanOperationError::Unavailable)?;
+            if caps.freshness().observed_head_sequence != head
+                || asset.freshness().observed_head_sequence != head
+                || caps.state_root() == [0; 32]
+                || asset.state_root() != caps.state_root()
+                || asset.level() < VerificationLevel::STATE_PROVEN
+                || !asset.registered()
+                || asset.paused()
+                || asset.metadata().symbol.as_slice() != b"PAX"
+                || fee.value.asset.symbol.as_slice() != b"PAX"
+                || fee.value.asset.asset_id != asset_id
+                || fee.value.asset.paused
+                || fee.observed_sequence != head
+                || fee.state_root != caps.state_root()
+                || fee.value.asset.decimals != asset.metadata().decimals
+                || ops.node.head().chain_sequence != head
+            {
+                return Err(HumanOperationError::Refused);
+            }
+            let units = 10_u128
+                .checked_pow(u32::from(asset.metadata().decimals))
+                .ok_or(HumanOperationError::Refused)?;
+            units
+                .checked_add(13_439)
+                .ok_or(HumanOperationError::Refused)?
+                / 13_440
+        };
+        permit
+            .boundary(&control)
+            .map_err(|_| HumanOperationError::Refused)?;
+        Ok(amount)
+    }
+
     fn mcp_native_web_context(
         &mut self,
         credential: &crate::session::SessionCredential,
@@ -2028,6 +2122,16 @@ impl<A: HumanAuthorityBoundary> SharedAgentOwner<A> {
     ) -> Result<ModuleRegistry, HumanOperationError> {
         self.lock()?
             .mcp_native_web_registry(credential, owner_public_key)
+    }
+
+    pub fn mcp_native_web_search_quote(
+        &self,
+        credential: &crate::session::SessionCredential,
+        owner_public_key: [u8; 32],
+        asset_id: [u8; 32],
+    ) -> Result<u128, HumanOperationError> {
+        self.lock()?
+            .mcp_native_web_search_quote(credential, owner_public_key, asset_id)
     }
 
     #[allow(clippy::too_many_arguments)]

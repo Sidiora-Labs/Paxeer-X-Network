@@ -256,7 +256,12 @@ impl SidecarEndpoint {
         let authority = authority.strip_suffix('/').unwrap_or(authority);
         let (host, port) = if let Some(rest) = authority.strip_prefix('[') {
             let (host, tail) = rest.split_once(']').ok_or_else(refuse)?;
-            (host, tail.strip_prefix(':'))
+            let port = if tail.is_empty() {
+                None
+            } else {
+                Some(tail.strip_prefix(':').ok_or_else(refuse)?)
+            };
+            (host, port)
         } else {
             match authority.split_once(':') {
                 Some((host, port)) => (host, Some(port)),
@@ -388,6 +393,14 @@ pub enum WebPayerError {
 /// the payer for a signed canonical grant or for the canonical receipt of a
 /// payment, and checks what it receives against the approved offer.
 pub trait WebPayer {
+    fn validate_search_quote(
+        &mut self,
+        _asset: [u8; 32],
+        _amount: u128,
+    ) -> Result<(), WebPayerError> {
+        Err(WebPayerError::Refused)
+    }
+
     /// The payer-signed 346-byte canonical grant for a metered offer.
     ///
     /// # Errors
@@ -687,6 +700,15 @@ fn select_offer(
     let mut required: PaymentRequired =
         decode_header(header).ok_or(WebToolError::Protocol("payment_required_malformed"))?;
     required.validate().map_err(WebToolError::Payment)?;
+    if required.resource.url
+        != format!(
+            "http://{}{}",
+            config.endpoint.authority,
+            call.operation.target()
+        )
+    {
+        return Err(WebToolError::OfferMismatch("resource"));
+    }
     required.accepts.retain(|offer| {
         offer.scheme == call.scheme.code()
             && offer.network == config.network
@@ -785,7 +807,21 @@ impl WebPlane<'_, '_> {
         key: [u8; 32],
     ) -> Result<Value, WebToolError> {
         let facts = offer_facts(self.config, self.call, offer)?;
+        if matches!(self.call.operation, WebOperation::Search(_))
+            && self.call.currency == Currency::Pax
+        {
+            self.payer
+                .validate_search_quote(facts.asset, facts.amount)
+                .map_err(WebToolError::Payer)?;
+        }
         self.approve(offer, &facts, key)?;
+        if matches!(self.call.operation, WebOperation::Search(_))
+            && self.call.currency == Currency::Pax
+        {
+            self.payer
+                .validate_search_quote(facts.asset, facts.amount)
+                .map_err(WebToolError::Payer)?;
+        }
         match self.call.scheme {
             Scheme::Metered => {
                 let terms = GrantTerms {

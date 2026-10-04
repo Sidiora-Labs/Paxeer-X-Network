@@ -58,6 +58,7 @@ pub struct ProductionWebPayer {
     native_purpose: NativePurposeSource,
     request_id: u64,
     owner_check: Box<dyn FnMut() -> Result<(), WebPayerError> + Send>,
+    search_quote: Box<dyn FnMut([u8; 32]) -> Result<u128, WebPayerError> + Send>,
 }
 
 impl ProductionWebPayer {
@@ -150,6 +151,13 @@ impl ProductionWebPayer {
                     .map_err(human_error)
             },
         );
+        let quote_owner = owner.clone();
+        let quote_credential = credential.clone();
+        let search_quote = Box::new(move |asset| {
+            quote_owner
+                .mcp_native_web_search_quote(&quote_credential, public_key, asset)
+                .map_err(human_error)
+        });
         let owner_check = Box::new(move || {
             owner
                 .mcp_native_web_registry(&credential, public_key)
@@ -170,6 +178,7 @@ impl ProductionWebPayer {
             context_source,
             purpose_source,
             owner_check,
+            search_quote,
         )
     }
 
@@ -188,6 +197,7 @@ impl ProductionWebPayer {
         native_context: NativeContextSource,
         native_purpose: NativePurposeSource,
         owner_check: Box<dyn FnMut() -> Result<(), WebPayerError> + Send>,
+        search_quote: Box<dyn FnMut([u8; 32]) -> Result<u128, WebPayerError> + Send>,
     ) -> Result<Self, WebPayerError> {
         let owner_did = format!("did:layerx:{}", hex(&signer.public_key()));
         if payer_did != owner_did
@@ -216,6 +226,7 @@ impl ProductionWebPayer {
             native_purpose,
             request_id: 0,
             owner_check,
+            search_quote,
         };
         let _assertion = payer.assertion()?;
         Ok(payer)
@@ -331,6 +342,18 @@ impl ProductionWebPayer {
 }
 
 impl WebPayer for ProductionWebPayer {
+    fn validate_search_quote(
+        &mut self,
+        asset: [u8; 32],
+        amount: u128,
+    ) -> Result<(), WebPayerError> {
+        (self.owner_check)()?;
+        if amount == 0 || (self.search_quote)(asset)? != amount {
+            return Err(WebPayerError::Refused);
+        }
+        Ok(())
+    }
+
     fn grant(&mut self, terms: &GrantTerms) -> Result<Vec<u8>, WebPayerError> {
         (self.owner_check)()?;
         if terms.payer_did != self.payer_did || terms.idempotency_key == [0; 32] {

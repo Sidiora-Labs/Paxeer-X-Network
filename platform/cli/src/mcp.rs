@@ -13,7 +13,9 @@ pub fn serve(binding: &Path, read_only: bool) -> Result<(), String> {
     if read_only {
         declared.restrict_to_read_only();
     }
-    let mut session = declared.open_session().map_err(|error| error.detail())?;
+    let mut session = declared
+        .open_daemon_client()
+        .map_err(|error| error.detail())?;
     let stdin = io::stdin();
     let mut reader = stdin.lock();
     let stdout = io::stdout();
