@@ -13,6 +13,7 @@ mod identity_services;
 mod limits;
 pub mod movement_provider;
 mod privileged;
+mod projection;
 pub mod production_auth;
 pub mod production_components;
 mod production_reads;

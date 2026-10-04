@@ -694,6 +694,7 @@ export const copyEntries = [
   { key: "approval.state.rejected", message: "Rejected", context: "Service-named state of a hold that was rejected.", surface: "default", kind: "body", moneyAdjacent: true },
   { key: "approval.state.expired", message: "Expired", context: "Service-named state of a hold that expired unactioned.", surface: "default", kind: "body", moneyAdjacent: true },
   { key: "approval.state.defective", message: "Cannot be approved", context: "Service-named state of a hold whose disclosure cannot back its facts.", surface: "default", kind: "body", moneyAdjacent: true },
+  { key: "approval.reason.policy-required", message: "Held because your policy requires approval.", context: "Service-named reason that the configured policy requires approval.", surface: "default", kind: "body", moneyAdjacent: true },
   { key: "approval.reason.over-per-item-limit", message: "Held because it is over the per-item limit", context: "Service-named reason a hold is waiting for the user.", surface: "default", kind: "body", moneyAdjacent: true },
   { key: "approval.approve.released", message: "Approved. The held activity was released and is tracked to its receipt.", context: "Decision confirmation after an approval releases the hold.", surface: "default", kind: "body", moneyAdjacent: true },
   { key: "approval.reject.nothing-moved", message: "Rejected. Nothing moved.", context: "Decision confirmation that a rejection moved no money.", surface: "default", kind: "body", moneyAdjacent: true },

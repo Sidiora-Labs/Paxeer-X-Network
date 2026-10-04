@@ -663,6 +663,7 @@ export const runtimeMessages: readonly (readonly [string, string])[] = [
   ["approval.state.rejected","Rejected"],
   ["approval.state.expired","Expired"],
   ["approval.state.defective","Cannot be approved"],
+  ["approval.reason.policy-required","Held because your policy requires approval."],
   ["approval.reason.over-per-item-limit","Held because it is over the per-item limit"],
   ["approval.approve.released","Approved. The held activity was released and is tracked to its receipt."],
   ["approval.reject.nothing-moved","Rejected. Nothing moved."],

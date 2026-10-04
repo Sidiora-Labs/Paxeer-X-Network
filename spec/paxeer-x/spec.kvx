@@ -32790,3 +32790,25 @@ source_ownership = "Root serializes shared manifests, lockfiles, spec and public
 source_status = "partial"
 qualification_status = "unrun_partial_source"
 remaining_source = "Verified native budget and evidence export, ordinary allocation settlement, actual submission reference, legacy policy admission, lifecycle rollback and genuine admission corpus."
+
+[task.104.13.12]
+title = "Connect actual native approval facts to shared canonical Human API projections"
+status = "in_progress"
+mode = "BUILD"
+wave = 3
+requires = ["0.2", "104.13.7"]
+reqs = ["1064.3", "1064.8", "1071.1", "1071.5"]
+do_1 = "Project actual authenticated records into distinct canonical summaries, details, decisions, home and durable push; use genuine wall timestamps, managed association, evidence export and postreservation budget without raising verification status."
+touches = ["human/crates/layerx-human-service/src/server/production_components.rs", "human/crates/layerx-human-service/src/server/mod.rs", "human/crates/layerx-human-service/src/server/projection.rs", "tools/qualification/paxeer-x/human-canonical-projections.py", "human/apps/web/copy/catalog.ts", "human/apps/web/copy/messages.generated.ts"]
+build_cmd = "timeout 20m env CARGO_TARGET_DIR=/root/lx-target/human /root/.cargo/bin/cargo build --locked --manifest-path human/Cargo.toml -p layerx-human-service"
+verify_cmd = "timeout 20m python3 tools/qualification/paxeer-x/human-canonical-projections.py --candidate-manifest \"$PAXEER_X_CANDIDATE_MANIFEST\""
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop at original dispatch cap, missing authority, unrelated failure or any weakening; record exact source state and evidence."
+completion_basis_policy = "Owner CONSTITUTION: fully implemented DONE; qualification separate and partial remains in_progress."
+source_ownership = "Root serializes shared manifests, lockfiles, spec and publication; no deployment."
+source_status = "partial"
+qualification_status = "unrun_partial_source"
+remaining_source = "Native profile canonical consumers and exact held/budget evidence require genuine producer; terminal budget owner and focused projection case incomplete."
