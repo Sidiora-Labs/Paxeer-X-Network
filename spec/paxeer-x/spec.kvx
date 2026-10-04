@@ -36653,8 +36653,22 @@ fanout_role = "complete_human_facts"
 parent_task = "104.33.7"
 source_status = "complete"
 completion_basis = "implementation under owner CONSTITUTION; qualification separately recorded"
-qualification_status = "UNRUN"
+qualification_status = "PREREQUISITE_UNAVAILABLE"
 source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/sdk-fanout-104.33.7.2-terminal-v5-repair1.json"
+qualification_revision = "9ff6a40aa2f71e529a4261e13d50b8e12d96afa6"
+qualification_command = "timeout 20m scripts/paxeer-x/verify-sdk-program-typescript.sh"
+qualification_exit_code = 78
+qualification_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/sdk-typescript-v5-3dff2ee31-qualification/verify-repair1.log"
+qualification_evidence = "/root/lx-ops/paxeer-x-integration-2026-10-03/sdk-typescript-v5-3dff2ee31-qualification/result.json"
+qualification_missing_prerequisite = "Native producer lacks four mandatory ABI3/4 callback and standalone settlement refusal cases; successful transfer extras do not satisfy those outcomes."
+build_revision = "9ff6a40aa2f71e529a4261e13d50b8e12d96afa6"
+build_command = "timeout 45s npm run build --workspace @sidiora/layerx-sdk"
+build_exit_code = 0
+build_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/sdk-typescript-v5-3dff2ee31-qualification/build-repair1.log"
+qualification_repairs = 1
+prior_qualification_revision = "3dff2ee3129731e3fec8f7b7880495aef73f1a04"
+prior_qualification_exit_code = 1
+prior_qualification_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/sdk-typescript-v5-3dff2ee31-qualification/verify.log"
 
 [task.104.33.7.3]
 title = "Complete Python Programs client integration"
