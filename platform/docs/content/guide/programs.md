@@ -57,7 +57,15 @@ The refusal taxonomy is closed and each variant means one thing:
 | `KernelRefused` | The kernel refused the set |
 | `ReceiptInvalid` / `ReceiptMismatch` | The settlement receipt is invalid, or does not bind this exact set |
 
-`CapabilityEscalation` is what makes composition safe. Calling another program hands it a narrowed authority, and a callee that tries to spend beyond it is refused rather than trusted.
+`CapabilityEscalation` makes composition safe. Principal-scoped transfer authority
+can narrow across calls. Program-owned spending stays in the deriving program's
+frame: a child returns bounded typed proposals through the ordinary call response,
+and the owner validates their exact account, seed, asset, destination and amount
+against both the call-edge grant and its original cumulative ceiling before
+staging them. The SDK's `ProposalBudget` retains that ceiling across repeated
+calls; `invoke_owner_spending_proposals` validates the response and stages each
+accepted payment through `pay_from_program_account` after the child returns.
+Receiving a proposal or a narrowed grant never gives a child debit authority.
 
 ## Determinism
 

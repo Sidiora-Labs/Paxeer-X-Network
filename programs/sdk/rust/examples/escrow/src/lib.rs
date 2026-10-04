@@ -181,6 +181,9 @@ fn open(mut cursor: Cursor<'_>) -> Result<CallResult, ProgramError> {
     let release_receipt = ReceiptDigest::new(cursor.array()?)?;
     let refund_receipt = ReceiptDigest::new(cursor.array()?)?;
     cursor.finish()?;
+    if release_receipt == refund_receipt {
+        return Err(malformed());
+    }
     let (key, length) = state_key(account)?;
     let mut existing = [0; RECORD_CAPACITY];
     if shared::read(shared::SharedStorageKey::new(&key[..length])?, &mut existing)?.is_some() {
