@@ -1730,11 +1730,16 @@ fn require_native_execution(
 
 #[cfg(test)]
 mod source_contract {
-    use serde_json::json;
+    use serde_json::{Value, json};
+    use sha2::{Digest as _, Sha256};
 
     use super::{
-        ProgramOperationError, accepted_program_verification, decode_execution_usage,
-        decode_service_error, exact_fields, object,
+        ExecutionState, MAX_SIGNED_ACTIVITY_BYTES, NativeProgramCallRequest, ProgramLifecycle,
+        ProgramOperationError, ProgramSubmission, SubmissionExpectation, VerifiedProgramDiscovery,
+        accepted_program_verification, bind_interface_discovery, bounded_hex, decode_discovery,
+        decode_execution, decode_execution_usage, decode_interface, decode_service_error,
+        decode_submission, discovery_digest, ed25519, exact_fields, fixed, guest_abi, hex, object,
+        require_native_execution, wire_native_call,
     };
 
     #[test]
