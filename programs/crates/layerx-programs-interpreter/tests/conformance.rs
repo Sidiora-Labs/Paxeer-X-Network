@@ -440,3 +440,56 @@ fn fixed_refusals_cover_structure_arithmetic_amount_and_depth_without_effects() 
         );
     }
 }
+
+#[test]
+fn complete_submission_validation_refuses_unbounded_and_noncanonical_data() {
+    fn script(registers: u8, ceiling: u16, code: &[u8]) -> Vec<u8> {
+        let mut bytes = b"LXSI".to_vec();
+        bytes.extend_from_slice(&[1, registers]);
+        bytes.extend_from_slice(&ceiling.to_be_bytes());
+        bytes.extend_from_slice(
+            &u16::try_from(code.len())
+                .unwrap_or_else(|error| panic!("script width: {error}"))
+                .to_be_bytes(),
+        );
+        bytes.extend_from_slice(code);
+        bytes
+    }
+    let valid = script(1, 1, &[0]);
+    Interpreter::validate(&valid).unwrap_or_else(|error| panic!("canonical halt: {error}"));
+    let mut refused = vec![
+        script(0, 1, &[0]),
+        script(17, 1, &[0]),
+        script(1, 0, &[0]),
+        script(1, 4_097, &[0]),
+        script(1, 1, &[]),
+        script(1, 1, &[0xff]),
+        script(1, 1, &[1, 0]),
+        script(1, 1, &[1, 1, 0, 0, 0, 0, 0, 0, 0, 0]),
+        script(1, 1, &[8, 0, 0]),
+        script(1, 1, &[9, 0, 0]),
+        script(1, 1, &[10, 0]),
+        script(1, 4_096, &[0, 12, 0xff, 0xff, 0, 1, 0]),
+        script(1, 4_096, &[12, 0xff, 0xff, 0, 1, 0]),
+        script(1, 4_096, &vec![0; 4_087]),
+    ];
+    let mut wrong_magic = valid.clone();
+    wrong_magic[0] ^= 1;
+    refused.push(wrong_magic);
+    let mut wrong_version = valid.clone();
+    wrong_version[4] = 2;
+    refused.push(wrong_version);
+    let mut trailing = valid.clone();
+    trailing.push(0);
+    refused.push(trailing);
+    let mut transfer = vec![11, 0];
+    transfer.extend_from_slice(&[0; 32]);
+    transfer.extend_from_slice(&[2; 32]);
+    refused.push(script(1, 1, &transfer));
+    transfer[2..34].fill(1);
+    transfer[34..66].fill(0);
+    refused.push(script(1, 1, &transfer));
+    for (index, bytes) in refused.iter().enumerate() {
+        assert!(Interpreter::validate(bytes).is_err(), "submission {index}");
+    }
+}
