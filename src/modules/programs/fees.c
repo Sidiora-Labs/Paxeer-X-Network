@@ -60,6 +60,8 @@ typedef struct programs_fee_governance_activity {
     programs_fee_demand_policy demand;
     uint64_t activation_batch;
     lxp_receipt governance_receipt;
+    bool migration_profile_present;
+    lxp_migration_profile migration_profile;
 } programs_fee_governance_activity;
 
 static uint32_t read_u32(const uint8_t *bytes)
@@ -645,6 +647,424 @@ static lxp_result governance_receipt_unused(lxp_module_ctx *ctx,
     return check.found ? LXP_ERR_SEQUENCE_REUSED : LXP_OK;
 }
 
+
+enum { MIGRATION_PROPOSAL_BYTES = 81, MIGRATION_RECORD_BYTES = 129 };
+static const uint8_t migration_magic[5] = {'L', 'X', 'M', 'B', '1'};
+static const uint8_t migration_active_key[] = "progmig/active/v1";
+static const uint8_t migration_pending_key[] = "progmig/pending/v1";
+static const uint8_t migration_history_prefix[] = "progmig/history/v1/";
+static const uint64_t migration_limits[7] = {
+    1000000U, 16777216U, 1048576U, 1048576U, 64U, 1048576U, 4096U
+};
+typedef struct migration_record {
+    lxp_migration_profile profile;
+    uint64_t governance_sequence;
+    uint64_t staged_epoch;
+} migration_record;
+
+lxp_result lxp_programs_migration_proposal_encode(
+    const lxp_migration_profile *profile, uint8_t encoded[MIGRATION_PROPOSAL_BYTES])
+{
+    size_t index;
+    if (profile == NULL || encoded == NULL || profile->version != 1U ||
+        profile->module_version == 0U || profile->parameter_version == 0U ||
+        profile->activation_epoch == 0U)
+        return LXP_ERR_PARAMETER_BOUNDS;
+    for (index = 0U; index < 7U; ++index)
+        if (profile->limits[index] != migration_limits[index])
+            return LXP_ERR_PARAMETER_BOUNDS;
+    (void)memcpy(encoded, migration_magic, 5U);
+    write_u32(encoded + 5U, profile->version);
+    write_u32(encoded + 9U, profile->module_version);
+    write_u32(encoded + 13U, profile->parameter_version);
+    write_u64(encoded + 17U, profile->activation_epoch);
+    for (index = 0U; index < 7U; ++index)
+        write_u64(encoded + 25U + index * 8U, profile->limits[index]);
+    return LXP_OK;
+}
+
+lxp_result lxp_programs_migration_proposal_decode(
+    const uint8_t *encoded, size_t length, lxp_migration_profile *profile)
+{
+    uint8_t canonical[MIGRATION_PROPOSAL_BYTES];
+    size_t index;
+    lxp_result status;
+    if (encoded == NULL || profile == NULL || length != MIGRATION_PROPOSAL_BYTES ||
+        memcmp(encoded, migration_magic, 5U) != 0)
+        return LXP_ERR_NON_CANONICAL;
+    (void)memset(profile, 0, sizeof(*profile));
+    profile->version = read_u32(encoded + 5U);
+    profile->module_version = read_u32(encoded + 9U);
+    profile->parameter_version = read_u32(encoded + 13U);
+    profile->activation_epoch = read_u64(encoded + 17U);
+    for (index = 0U; index < 7U; ++index)
+        profile->limits[index] = read_u64(encoded + 25U + index * 8U);
+    status = lxp_programs_migration_proposal_encode(profile, canonical);
+    if (status != LXP_OK) return status;
+    return memcmp(encoded, canonical, sizeof(canonical)) == 0 ? LXP_OK :
+                                                              LXP_ERR_NON_CANONICAL;
+}
+
+static lxp_result migration_record_decode(
+    const uint8_t *encoded, size_t length, migration_record *record)
+{
+    lxp_result status;
+    if (record == NULL || encoded == NULL || length != MIGRATION_RECORD_BYTES)
+        return LXP_FATAL_REPLAY_DIVERGENCE;
+    status = lxp_programs_migration_proposal_decode(encoded, MIGRATION_PROPOSAL_BYTES,
+                                       &record->profile);
+    if (status != LXP_OK) return status;
+    (void)memcpy(record->profile.authority_digest, encoded + 81U, 32U);
+    record->governance_sequence = read_u64(encoded + 113U);
+    record->staged_epoch = read_u64(encoded + 121U);
+    if (lxp_ct_is_zero(record->profile.authority_digest, 32U) ||
+        record->governance_sequence == 0U ||
+        record->staged_epoch >= record->profile.activation_epoch)
+        return LXP_FATAL_REPLAY_DIVERGENCE;
+    return LXP_OK;
+}
+
+static void migration_history_key(
+    const lxp_migration_profile *profile,
+    uint8_t key[sizeof(migration_history_prefix) - 1U + 16U])
+{
+    size_t offset = sizeof(migration_history_prefix) - 1U;
+    (void)memcpy(key, migration_history_prefix, offset);
+    write_u32(key + offset, profile->module_version);
+    write_u32(key + offset + 4U, profile->parameter_version);
+    write_u64(key + offset + 8U, profile->activation_epoch);
+}
+
+static lxp_result verified_migration_receipt(
+    lxp_module_ctx *ctx, const lxp_receipt *receipt,
+    const uint8_t proposal[MIGRATION_PROPOSAL_BYTES], uint8_t digest[32])
+{
+    lxp_verified_receipt_facts facts;
+    size_t arena_mark, index, matches = 0U;
+    lxp_result status, reset_status;
+    if (ctx == NULL || receipt == NULL || proposal == NULL || digest == NULL ||
+        ctx->arena == NULL || ctx->module_id != LXP_MODULE_PROGRAMS ||
+        ctx->global_sequence == 0U || ctx->protocol_version != 3U ||
+        receipt->protocol_version != ctx->protocol_version ||
+        receipt->module_id != LXP_MODULE_GOVERNANCE ||
+        receipt->result_code != LXP_OK || receipt->global_sequence == 0U ||
+        receipt->global_sequence >= ctx->global_sequence ||
+        receipt->timestamp == 0U || receipt->program_outcome.present ||
+        receipt->effects.count != 1U ||
+        lxp_ct_is_zero(receipt->resulting_state_root, 32U))
+        return LXP_ERR_AUTH_SCOPE;
+    arena_mark = lxp_arena_mark(ctx->arena);
+    status = lxp_receipt_digest(receipt, ctx->arena, digest);
+    reset_status = lxp_arena_reset(ctx->arena, arena_mark);
+    if (reset_status != LXP_OK) return LXP_FATAL_INVARIANT;
+    if (status != LXP_OK) return status;
+    status = lxp_ctx_verified_receipt_facts(ctx, digest, &facts);
+    if (status != LXP_OK) return status;
+    if (facts.result_code != LXP_OK || facts.global_sequence != receipt->global_sequence ||
+        facts.timestamp != receipt->timestamp ||
+        lxp_ct_memcmp(facts.receipt_digest, digest, 32U) != 0 ||
+        lxp_ct_memcmp(facts.resulting_state_root, receipt->resulting_state_root, 32U) != 0)
+        return LXP_ERR_ROOT_MISMATCH;
+    for (index = 0U; index < receipt->effects.count; ++index) {
+        const lxp_effect *effect = &receipt->effects.effects[index];
+        if (effect->module_id == LXP_MODULE_GOVERNANCE &&
+            effect->kind == LXP_EFFECT_STATE && !effect->monetary &&
+            effect->ordinal == 0U && effect->event_type == 0U &&
+            lxp_ct_is_zero(effect->transfer_set_root, 32U) &&
+            effect->body_length == MIGRATION_PROPOSAL_BYTES &&
+            memcmp(effect->body, proposal, MIGRATION_PROPOSAL_BYTES) == 0)
+            ++matches;
+    }
+    return matches == 1U ? LXP_OK : LXP_ERR_AUTH_SCOPE;
+}
+
+typedef struct migration_history_search {
+    uint32_t module_version;
+    uint32_t parameter_version;
+    uint64_t execution_epoch;
+    const uint8_t *receipt_digest;
+    bool reused;
+    bool found;
+    migration_record selected;
+} migration_history_search;
+
+static lxp_result migration_history_visit(
+    const uint8_t *key, size_t key_length, const uint8_t *value,
+    size_t value_length, void *user)
+{
+    migration_history_search *search = (migration_history_search *)user;
+    migration_record record;
+    uint8_t expected[sizeof(migration_history_prefix) - 1U + 16U];
+    lxp_result status;
+    if (search == NULL || key == NULL || key_length != sizeof(expected))
+        return LXP_FATAL_REPLAY_DIVERGENCE;
+    status = migration_record_decode(value, value_length, &record);
+    if (status != LXP_OK) return status;
+    migration_history_key(&record.profile, expected);
+    if (memcmp(key, expected, sizeof(expected)) != 0)
+        return LXP_FATAL_REPLAY_DIVERGENCE;
+    if (search->receipt_digest != NULL &&
+        lxp_ct_memcmp(record.profile.authority_digest, search->receipt_digest, 32U) == 0)
+        search->reused = true;
+    if (record.profile.module_version == search->module_version &&
+        record.profile.parameter_version == search->parameter_version &&
+        record.profile.activation_epoch <= search->execution_epoch &&
+        (!search->found || record.profile.activation_epoch >
+                          search->selected.profile.activation_epoch)) {
+        search->selected = record;
+        search->found = true;
+    }
+    return LXP_OK;
+}
+
+lxp_result lxp_programs_migration_profile_at(
+    lxp_module_ctx *ctx, uint32_t module_version, uint32_t parameter_version,
+    uint64_t execution_epoch, lxp_migration_profile *out)
+{
+    migration_history_search search;
+    lxp_result status;
+    if (ctx == NULL || out == NULL || ctx->module_id != LXP_MODULE_PROGRAMS ||
+        module_version == 0U || parameter_version == 0U || execution_epoch > ctx->epoch)
+        return LXP_ERR_NON_CANONICAL;
+    (void)memset(&search, 0, sizeof(search));
+    search.module_version = module_version;
+    search.parameter_version = parameter_version;
+    search.execution_epoch = execution_epoch;
+    status = lxp_ctx_kv_iter(ctx, migration_history_prefix,
+        sizeof(migration_history_prefix) - 1U, migration_history_visit, &search);
+    if (status != LXP_OK) return status;
+    if (!search.found) return LXP_ERR_VERSION_UNSUPPORTED;
+    *out = search.selected.profile;
+    return LXP_OK;
+}
+
+lxp_result lxp_programs_migration_profile_stage(
+    lxp_module_ctx *ctx, const lxp_migration_profile *profile,
+    const lxp_receipt *governance_receipt)
+{
+    uint8_t encoded[MIGRATION_RECORD_BYTES], digest[32];
+    const uint8_t *existing;
+    size_t existing_length;
+    migration_record current;
+    migration_history_search search;
+    lxp_result status;
+    if (ctx == NULL || profile == NULL || governance_receipt == NULL ||
+        !ctx->mutable || ctx->module_id != LXP_MODULE_PROGRAMS ||
+        profile->activation_epoch <= ctx->epoch ||
+        !lxp_ct_is_zero(profile->authority_digest, 32U))
+        return LXP_ERR_NON_CANONICAL;
+    status = lxp_programs_migration_proposal_encode(profile, encoded);
+    if (status != LXP_OK) return status;
+    status = lxp_ctx_kv_get(ctx, migration_pending_key,
+        sizeof(migration_pending_key) - 1U, &existing, &existing_length);
+    if (status == LXP_OK) return LXP_ERR_SEQUENCE_REUSED;
+    if (status != LXP_ERR_UNKNOWN_FIELD) return status;
+    status = verified_migration_receipt(ctx, governance_receipt, encoded, digest);
+    if (status != LXP_OK) return status;
+    status = lxp_ctx_kv_get(ctx, migration_active_key,
+        sizeof(migration_active_key) - 1U, &existing, &existing_length);
+    if (status == LXP_OK) {
+        status = migration_record_decode(existing, existing_length, &current);
+        if (status != LXP_OK) return status;
+        if (governance_receipt->global_sequence <= current.governance_sequence ||
+            profile->activation_epoch <= current.profile.activation_epoch)
+            return LXP_ERR_SEQUENCE_MISMATCH;
+    } else if (status != LXP_ERR_UNKNOWN_FIELD) return status;
+    (void)memset(&search, 0, sizeof(search));
+    search.receipt_digest = digest;
+    status = lxp_ctx_kv_iter(ctx, migration_history_prefix,
+        sizeof(migration_history_prefix) - 1U, migration_history_visit, &search);
+    if (status != LXP_OK) return status;
+    if (search.reused) return LXP_ERR_SEQUENCE_REUSED;
+    (void)memcpy(encoded + 81U, digest, 32U);
+    write_u64(encoded + 113U, governance_receipt->global_sequence);
+    write_u64(encoded + 121U, ctx->epoch);
+    return lxp_ctx_kv_put(ctx, migration_pending_key,
+        sizeof(migration_pending_key) - 1U, encoded, sizeof(encoded));
+}
+
+lxp_result lxp_programs_migration_profile_activate(lxp_module_ctx *ctx, uint64_t epoch)
+{
+    const uint8_t *pending, *existing;
+    size_t pending_length, existing_length;
+    uint8_t encoded[MIGRATION_RECORD_BYTES];
+    uint8_t key[sizeof(migration_history_prefix) - 1U + 16U];
+    migration_record record, current;
+    lxp_result status;
+    if (ctx == NULL || !ctx->mutable || ctx->module_id != LXP_MODULE_PROGRAMS ||
+        epoch == 0U || epoch != ctx->epoch)
+        return LXP_ERR_NON_CANONICAL;
+    status = lxp_ctx_kv_get(ctx, migration_pending_key,
+        sizeof(migration_pending_key) - 1U, &pending, &pending_length);
+    if (status != LXP_OK) return status;
+    status = migration_record_decode(pending, pending_length, &record);
+    if (status != LXP_OK) return status;
+    if (epoch < record.profile.activation_epoch) return LXP_ERR_NOT_YET_VALID;
+    if (epoch > record.profile.activation_epoch) return LXP_FATAL_REPLAY_DIVERGENCE;
+    (void)memcpy(encoded, pending, sizeof(encoded));
+    status = lxp_ctx_kv_get(ctx, migration_active_key,
+        sizeof(migration_active_key) - 1U, &existing, &existing_length);
+    if (status == LXP_OK) {
+        status = migration_record_decode(existing, existing_length, &current);
+        if (status != LXP_OK) return status;
+        if (record.governance_sequence <= current.governance_sequence ||
+            record.profile.activation_epoch <= current.profile.activation_epoch)
+            return LXP_FATAL_REPLAY_DIVERGENCE;
+    } else if (status != LXP_ERR_UNKNOWN_FIELD) return status;
+    migration_history_key(&record.profile, key);
+    status = lxp_ctx_kv_get(ctx, key, sizeof(key), &existing, &existing_length);
+    if (status == LXP_OK) return LXP_FATAL_REPLAY_DIVERGENCE;
+    if (status != LXP_ERR_UNKNOWN_FIELD) return status;
+    status = lxp_ctx_kv_put(ctx, key, sizeof(key), encoded, sizeof(encoded));
+    if (status == LXP_OK)
+        status = lxp_ctx_kv_put(ctx, migration_active_key,
+            sizeof(migration_active_key) - 1U, encoded, sizeof(encoded));
+    if (status == LXP_OK)
+        status = lxp_ctx_kv_del(ctx, migration_pending_key,
+            sizeof(migration_pending_key) - 1U);
+    return status;
+}
+
+lxp_result lxp_programs_migration_profile_epoch_begin(
+    lxp_module_ctx *ctx, uint64_t epoch)
+{
+    const uint8_t *pending;
+    size_t length;
+    migration_record record;
+    lxp_result status;
+    if (ctx == NULL || !ctx->mutable || ctx->module_id != LXP_MODULE_PROGRAMS ||
+        epoch != ctx->epoch)
+        return LXP_ERR_NON_CANONICAL;
+    status = lxp_ctx_kv_get(ctx, migration_pending_key,
+        sizeof(migration_pending_key) - 1U, &pending, &length);
+    if (status == LXP_ERR_UNKNOWN_FIELD) return LXP_OK;
+    if (status != LXP_OK) return status;
+    status = migration_record_decode(pending, length, &record);
+    if (status != LXP_OK) return status;
+    if (record.staged_epoch > epoch || record.governance_sequence >= ctx->global_sequence)
+        return LXP_FATAL_REPLAY_DIVERGENCE;
+    if (epoch < record.profile.activation_epoch) return LXP_OK;
+    if (epoch > record.profile.activation_epoch) return LXP_FATAL_REPLAY_DIVERGENCE;
+    return lxp_programs_migration_profile_activate(ctx, epoch);
+}
+
+typedef struct migration_preactivation_history {
+    uint64_t epoch;
+    uint64_t global_sequence;
+    uint64_t maximum_governance_sequence;
+    bool found;
+    migration_record latest;
+    uint8_t encoded[MIGRATION_RECORD_BYTES];
+} migration_preactivation_history;
+
+static lxp_result migration_preactivation_visit(
+    const uint8_t *key, size_t key_length, const uint8_t *value,
+    size_t length, void *user)
+{
+    migration_preactivation_history *history = user;
+    migration_record record;
+    uint8_t expected[sizeof(migration_history_prefix) - 1U + 16U];
+    lxp_result status;
+    if (history == NULL || key == NULL || key_length != sizeof(expected))
+        return LXP_FATAL_REPLAY_DIVERGENCE;
+    status = migration_record_decode(value, length, &record);
+    if (status != LXP_OK) return status;
+    migration_history_key(&record.profile, expected);
+    if (memcmp(key, expected, sizeof(expected)) != 0 ||
+        record.profile.activation_epoch > history->epoch ||
+        record.governance_sequence >= history->global_sequence)
+        return LXP_FATAL_REPLAY_DIVERGENCE;
+    if (history->found && record.profile.activation_epoch ==
+        history->latest.profile.activation_epoch)
+        return LXP_FATAL_REPLAY_DIVERGENCE;
+    if (!history->found || record.profile.activation_epoch >
+        history->latest.profile.activation_epoch) {
+        history->latest = record;
+        (void)memcpy(history->encoded, value, sizeof(history->encoded));
+    }
+    if (record.governance_sequence > history->maximum_governance_sequence)
+        history->maximum_governance_sequence = record.governance_sequence;
+    history->found = true;
+    return LXP_OK;
+}
+
+lxp_result lxp_programs_migration_preactivation(
+    lxp_module_ctx *ctx, bool *preactivation)
+{
+    migration_preactivation_history history = {0};
+    migration_record active, pending;
+    const uint8_t *value;
+    size_t length;
+    bool active_present = false;
+    lxp_result status;
+    if (ctx == NULL || ctx->kernel == NULL || preactivation == NULL ||
+        ctx->module_id != LXP_MODULE_PROGRAMS || ctx->global_sequence == 0U)
+        return LXP_ERR_NON_CANONICAL;
+    *preactivation = false;
+    history.epoch = ctx->epoch;
+    history.global_sequence = ctx->global_sequence;
+    status = lxp_ctx_kv_iter(ctx, migration_history_prefix,
+        sizeof(migration_history_prefix) - 1U, migration_preactivation_visit, &history);
+    if (status != LXP_OK) return status;
+    if (history.found && history.latest.governance_sequence !=
+        history.maximum_governance_sequence)
+        return LXP_FATAL_REPLAY_DIVERGENCE;
+    status = lxp_ctx_kv_get(ctx, migration_active_key,
+        sizeof(migration_active_key) - 1U, &value, &length);
+    if (status == LXP_OK) {
+        status = migration_record_decode(value, length, &active);
+        if (status != LXP_OK) return status;
+        if (!history.found || memcmp(value, history.encoded, sizeof(history.encoded)) != 0)
+            return LXP_FATAL_REPLAY_DIVERGENCE;
+        active_present = true;
+    } else if (status != LXP_ERR_UNKNOWN_FIELD) return status;
+    else if (history.found) return LXP_FATAL_REPLAY_DIVERGENCE;
+    status = lxp_ctx_kv_get(ctx, migration_pending_key,
+        sizeof(migration_pending_key) - 1U, &value, &length);
+    if (status == LXP_OK) {
+        status = migration_record_decode(value, length, &pending);
+        if (status != LXP_OK) return status;
+        if (pending.staged_epoch > ctx->epoch ||
+            pending.profile.activation_epoch <= ctx->epoch ||
+            pending.governance_sequence >= ctx->global_sequence ||
+            (active_present && (pending.governance_sequence <= active.governance_sequence ||
+                pending.profile.activation_epoch <= active.profile.activation_epoch ||
+                memcmp(pending.profile.authority_digest, active.profile.authority_digest, 32U) == 0)))
+            return LXP_FATAL_REPLAY_DIVERGENCE;
+    } else if (status != LXP_ERR_UNKNOWN_FIELD) return status;
+    *preactivation = !active_present;
+    return LXP_OK;
+}
+
+static lxp_result migration_governance_decode(
+    lxp_module_ctx *ctx, const uint8_t *payload, size_t payload_length, void **decoded)
+{
+    programs_fee_governance_activity *value;
+    lxp_migration_profile profile;
+    uint32_t receipt_length;
+    void *allocation;
+    lxp_result status;
+    if (payload_length < MIGRATION_PROPOSAL_BYTES + 4U) return LXP_ERR_TRUNCATED;
+    receipt_length = read_u32(payload + MIGRATION_PROPOSAL_BYTES);
+    if (receipt_length == 0U || (size_t)receipt_length !=
+        payload_length - MIGRATION_PROPOSAL_BYTES - 4U)
+        return LXP_ERR_NON_CANONICAL;
+    status = lxp_programs_migration_proposal_decode(payload, MIGRATION_PROPOSAL_BYTES, &profile);
+    if (status != LXP_OK) return status;
+    status = lxp_ctx_arena_alloc(ctx, sizeof(*value),
+        _Alignof(programs_fee_governance_activity), &allocation);
+    if (status != LXP_OK) return status;
+    value = (programs_fee_governance_activity *)allocation;
+    (void)memset(value, 0, sizeof(*value));
+    value->migration_profile_present = true;
+    value->migration_profile = profile;
+    status = lxp_receipt_decode(payload + MIGRATION_PROPOSAL_BYTES + 4U,
+        receipt_length, true, &value->governance_receipt);
+    if (status != LXP_OK) return status;
+    *decoded = value;
+    return LXP_OK;
+}
+
 lxp_result lxp_programs_fee_governance_decode(
     lxp_module_ctx *ctx, const uint8_t *payload, size_t payload_length,
     void **decoded)
@@ -658,6 +1078,9 @@ lxp_result lxp_programs_fee_governance_decode(
     lxp_result status;
     if (ctx == NULL || decoded == NULL || payload == NULL)
         return LXP_ERR_NON_CANONICAL;
+    if (payload_length >= sizeof(migration_magic) &&
+        memcmp(payload, migration_magic, sizeof(migration_magic)) == 0)
+        return migration_governance_decode(ctx, payload, payload_length, decoded);
     if (payload_length < PROGRAMS_FEE_PROPOSAL_BYTES + 4U)
         return LXP_ERR_TRUNCATED;
     receipt_length = read_u32(payload + PROGRAMS_FEE_PROPOSAL_BYTES);
@@ -712,6 +1135,16 @@ lxp_result lxp_programs_fee_governance_validate(
         return LXP_ERR_NON_CANONICAL;
     if (lxp_ct_is_zero(authority->principal, sizeof(authority->principal)))
         return LXP_ERR_AUTH_SCOPE;
+    if (value->migration_profile_present) {
+        uint8_t migration_proposal[MIGRATION_PROPOSAL_BYTES];
+        status = lxp_programs_migration_proposal_encode(&value->migration_profile, migration_proposal);
+        if (status == LXP_OK)
+            status = verified_migration_receipt(ctx, &value->governance_receipt,
+                migration_proposal, receipt_digest);
+        if (status != LXP_OK) return status;
+        return lxp_ctx_charge_gas(ctx, MIGRATION_PROPOSAL_BYTES +
+            (size_t)value->governance_receipt.effects.count);
+    }
     status = proposal_encode(&value->proposed, value->occupancy_asset_id,
                              &value->demand, value->activation_batch,
                              proposal);
@@ -736,6 +1169,9 @@ lxp_result lxp_programs_fee_governance_execute(
         activity->activity_type != LX_PROGRAMS_FEE_GOVERNANCE ||
         lxp_ct_is_zero(authority->principal, sizeof(authority->principal)))
         return LXP_ERR_NON_CANONICAL;
+    if (value->migration_profile_present)
+        return lxp_programs_migration_profile_stage(
+            ctx, &value->migration_profile, &value->governance_receipt);
     return lxp_programs_fee_governance_stage(
         ctx, &value->proposed, value->occupancy_asset_id,
         value->demand.target_occupancy_byte_batches,

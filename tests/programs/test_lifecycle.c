@@ -7,6 +7,10 @@
 #include "layerx/lxp_kernel.h"
 #include "layerx/lxp_snapshot.h"
 #include "layerx/lxp_identity.h"
+#include "layerx/lxp_governance.h"
+#include "layerx/lxp_handover.h"
+#include "layerx/lxp_fee.h"
+#include "layerx/lxp_module_ctx.h"
 
 #include <openssl/evp.h>
 #include <string.h>
@@ -46,6 +50,10 @@ static int sign_raw(const uint8_t private_key[32], const uint8_t *message,
 }
 
 static int migration_directory_fd = -1;
+static uint8_t migration_governor_seed[32];
+static lxp_genesis_manifest migration_genesis;
+static lxp_u128 migration_funding = {0U, UINT64_C(1000000000)};
+static uint32_t migration_u32(const uint8_t bytes[4]);
 
 static int migration_write(const char *name, const void *bytes, size_t length)
 {
@@ -83,6 +91,14 @@ static int project_metering_genesis_with(lxp_kernel *kernel,
     manifest.parameters[0].module_id = LXP_MODULE_GOVERNANCE;
     (void)memcpy(manifest.parameters[0].key, "parameter-version", 17U);
     manifest.parameters[0].value[31] = 1U;
+    if (migration) {
+        manifest.protocol_version = LXP_PROTOCOL_VERSION_STATE_COMMITMENT;
+        manifest.parameter_count = 2U;
+        manifest.parameters[1].module_id = LXP_MODULE_GOVERNANCE;
+        (void)memcpy(manifest.parameters[1].key, "handover-authority", 18U);
+        if (public_key_for(migration_governor_seed, manifest.parameters[1].value) != 0)
+            return 1;
+    }
     manifest.guarantor_count = 1U;
     manifest.guarantors[0].guarantor_id[0] = 1U;
     (void)memset(manifest.guarantors[0].public_key, 1,
@@ -129,6 +145,13 @@ static int project_metering_genesis_with(lxp_kernel *kernel,
         lxp_programs_metering_genesis_project(&manifest, &arena, kernel) !=
             LXP_OK)
         return 1;
+    if (migration) {
+        if (lxp_arena_reset(&arena, 0U) != LXP_OK ||
+            lxp_programs_fee_genesis_project(&manifest, &arena, kernel) != LXP_OK ||
+            lxp_handover_kernel_initialize(kernel, &manifest, NULL, NULL) != LXP_OK)
+            return 1;
+        migration_genesis = manifest;
+    }
     if (migration && migration_directory_fd >= 0) {
         static int retained = 0;
         if (!retained) {
@@ -945,7 +968,7 @@ static int migration_activity(lxp_kernel *kernel, lxp_activity *activity,
     activity->account_sequence = identity->next_sequence;
     activity->timestamp_bound = (lxp_timestamp_bound){1U, 100U};
     activity->idempotency_key[0] = (uint8_t)ordinal;
-    activity->fee_limit = (lxp_u128){0U, 1000000U};
+    activity->fee_limit = (lxp_u128){0U, 100000000U};
     activity->payload = (lxp_byte_span){payload, length};
     activity->signature = (lxp_byte_span){signature, 64U};
     if (lxp_hash_payload(payload, length, activity->payload_hash) != LXP_OK ||
@@ -956,6 +979,220 @@ static int migration_activity(lxp_kernel *kernel, lxp_activity *activity,
         !lxp_identity_key_valid(identity, identity->primary_key, 10U, 1U) ||
         lxp_authority_resolve_activity(kernel, identity, activity, true, true,
             10U, 100U, 1U, grant, authority) != LXP_OK) return 1;
+    return 0;
+}
+
+static int migration_actor(lxp_kernel *kernel, lxp_activity *activity,
+                            lxp_identity *identity, const uint8_t seed[32],
+                            uint8_t signature[64], uint32_t type,
+                            const uint8_t *payload, size_t length,
+                            uint64_t limit, uint8_t nonce,
+                            lxp_authority_grant *grant,
+                            lxp_authority_resolved *authority)
+{
+    static const char *dids[] = {"did:lxp:native-migration-owner",
+        "did:lxp:native-migration-other", "did:lxp:native-migration-governor"};
+    uint8_t digest[32], did_id[32];
+    const char *did = NULL;
+    for (size_t i = 0U; i < sizeof(dids) / sizeof(dids[0]); ++i) {
+        if (lxp_did_id_derive((const uint8_t *)dids[i], strlen(dids[i]), did_id) != LXP_OK)
+            return 1;
+        if (memcmp(identity->did_id, did_id, 32U) == 0) did = dids[i];
+    }
+    if (did == NULL) return 1;
+    (void)memset(activity, 0, sizeof(*activity));
+    activity->protocol_version = LXP_PROTOCOL_VERSION_STATE_COMMITMENT;
+    activity->network_id = 1U;
+    activity->activity_type = type;
+    activity->actor_did = (lxp_byte_span){(const uint8_t *)did, strlen(did)};
+    activity->authority = (lxp_byte_span){identity->primary_key, 32U};
+    activity->account_sequence = identity->next_sequence;
+    activity->timestamp_bound = (lxp_timestamp_bound){1U, 100U};
+    activity->idempotency_key[31] = nonce;
+    activity->fee_limit = (lxp_u128){0U, limit};
+    activity->payload = (lxp_byte_span){payload, length};
+    activity->signature = (lxp_byte_span){signature, 64U};
+    return lxp_hash_payload(payload, length, activity->payload_hash) != LXP_OK ||
+        lxp_activity_signing_preimage(activity, digest) != LXP_OK ||
+        sign_raw(seed, digest, sizeof(digest), signature) != 0 ||
+        lxp_activity_verify_signature(activity) != LXP_OK ||
+        lxp_authority_resolve_activity(kernel, identity, activity, true, true,
+            10U, 100U, kernel->state->next_sequence, grant, authority) != LXP_OK;
+}
+
+static int migration_runtime(lxp_kernel *kernel)
+{
+    static const char *names[] = {"agent:did:lxp:native-migration-owner:main",
+        "agent:did:lxp:native-migration-other:main",
+        "agent:did:lxp:native-migration-governor:main", "system:fees"};
+    uint8_t asset[32] = {1U}, id[32];
+    lx_programs_transfer_runtime *runtime;
+    lxp_transfer_asset_state *asset_state;
+    if (kernel->module_runtime[LXP_MODULE_PROGRAMS] != NULL) return 0;
+    runtime = calloc(1U, sizeof(*runtime));
+    if (runtime == NULL) return 1;
+    runtime->accounts = kernel->state->accounts;
+    if (runtime->accounts == NULL) {
+        runtime->accounts = calloc(1U, sizeof(*runtime->accounts));
+        if (runtime->accounts == NULL || lx_account_registry_init(runtime->accounts) != LXP_OK ||
+            lxp_state_store_bind_accounts(kernel->state, runtime->accounts) != LXP_OK)
+            return 1;
+    }
+    asset_state = calloc(1U, sizeof(*asset_state));
+    if (asset_state == NULL) return 1;
+    (void)memcpy(asset_state->asset_id, asset, 32U);
+    asset_state->registered = true;
+    runtime->assets = asset_state;
+    runtime->asset_count = 1U;
+    (void)memcpy(runtime->occupancy_asset_id, asset, 32U);
+    runtime->resolve_occupancy_parameters = lxp_programs_fee_governance_resolve_runtime;
+    runtime->occupancy_parameter_context = kernel;
+    runtime->resolve_metering_schedule = lxp_programs_metering_resolve_runtime;
+    runtime->metering_schedule_context = kernel;
+    for (size_t i = 0U; i < sizeof(names) / sizeof(names[0]); ++i) {
+        lx_account *account;
+        size_t slot;
+        if (lx_account_id_from_string((const uint8_t *)names[i], strlen(names[i]), id) != LXP_OK)
+            return 1;
+        if (lx_account_registry_index_lookup(runtime->accounts, id, &slot) == LXP_OK)
+            continue;
+        if (lx_account_open(runtime->accounts, (const uint8_t *)names[i], strlen(names[i]),
+                id, i == 3U ? 2U : 1U, LX_ACCOUNT_OPEN_GENESIS, NULL, &account) != LXP_OK ||
+            lxp_ledger_bootstrap_balance(account, asset,
+                i == 3U ? (lxp_u128){0U, 0U} : migration_funding, 0U) != LXP_OK)
+            return 1;
+    }
+    return lxp_state_store_require_account_root(kernel->state) != LXP_OK ||
+        lxp_kernel_bind_module_runtime(kernel, LXP_MODULE_PROGRAMS, runtime) != LXP_OK ||
+        lxp_programs_bind_fee_transaction(kernel) != LXP_OK ||
+        lxp_kernel_set_capabilities(kernel, NULL, lxp_kernel_canonical_ledger_apply) != LXP_OK;
+}
+
+static void migration_execution(lxp_kernel *kernel, lxp_kernel_execution *execution,
+                                 lxp_identity_store *identities,
+                                 const lxp_authority_resolved *authority,
+                                 const lxp_fee_params *fees, lxp_arena *arena,
+                                 const uint8_t seed[32], uint32_t module_version)
+{
+    (void)memset(execution, 0, sizeof(*execution));
+    execution->network_id = 1U;
+    execution->batch_number = 1U;
+    execution->batch_timestamp_ms = 10U;
+    execution->maximum_timestamp_window = 100U;
+    execution->epoch = kernel->epoch;
+    execution->global_sequence = kernel->state->next_sequence;
+    execution->recorded_module_version = module_version;
+    execution->parameter_version = 1U;
+    execution->signature_valid = true;
+    execution->identities = identities;
+    execution->authority = authority;
+    execution->fee_parameters = fees;
+    execution->fee_balance = (lxp_u128){0U, UINT64_C(1000000000)};
+    execution->gas_limit = UINT64_C(1000000);
+    execution->arena = arena;
+    execution->sequencer_private_key = seed;
+}
+
+static int migration_activate(lxp_kernel *kernel, const uint8_t seed[32],
+                                lxp_identity_store *identities,
+                                lxp_identity *owner, lxp_identity *governor)
+{
+    static uint8_t arena_bytes[4U * LXP_MAX_ACTIVITY_BYTES];
+    uint8_t proposal[81], intake[LXP_MAX_ACTIVITY_BYTES], signature[64], public_key[32];
+    lxp_authority_grant grant;
+    lxp_authority_resolved authority;
+    lxp_activity activity;
+    lxp_kernel_execution execution;
+    lxp_receipt receipt, governance_proof;
+    lxp_verified_receipt_index index;
+    lxp_migration_profile profile = {0};
+    lxp_fee_params fees = {0};
+    lxp_arena arena;
+    lxp_byte_span encoded;
+    static const uint64_t limits[7] = {
+        1000000U,16777216U,1048576U,1048576U,64U,1048576U,4096U};
+    profile.version = 1U;
+    profile.module_version = LX_PROGRAMS_SANDBOX_DESTROY_ABI_VERSION;
+    profile.parameter_version = 1U;
+    profile.activation_epoch = 1U;
+    (void)memcpy(profile.limits, limits, sizeof(limits));
+    fees.version = 1U;
+    fees.multiplier_basis_points = 10000U;
+    if (migration_runtime(kernel) != 0 ||
+        lxp_kernel_register_module(kernel, lxp_governance_module_iface_for_handover(true)) != LXP_OK ||
+        public_key_for(seed, public_key) != 0 ||
+        lxp_programs_migration_proposal_encode(&profile, proposal) != LXP_OK ||
+        lxp_arena_init(&arena, arena_bytes, sizeof(arena_bytes)) != LXP_OK ||
+        lxp_state_root(kernel, kernel->current_state_root) != LXP_OK ||
+        migration_actor(kernel, &activity, governor, migration_governor_seed, signature,
+            LXP_GOVERNANCE_MIGRATION_BUDGET, proposal, sizeof(proposal), 100000000U,
+            0x71U, &grant, &authority) != 0) return 1;
+    migration_execution(kernel, &execution, identities, &authority, &fees,
+        &arena, seed, 1U);
+    if (lxp_kernel_execute_activity(kernel, &activity, &execution, &receipt) != LXP_OK ||
+        receipt.result_code != LXP_OK || receipt.effects.count != 1U ||
+        receipt.effects.effects[0].kind != LXP_EFFECT_STATE ||
+        receipt.effects.effects[0].body_length != sizeof(proposal) ||
+        memcmp(receipt.effects.effects[0].body, proposal, sizeof(proposal)) != 0 ||
+        lxp_receipt_encode(&receipt, true, &arena, &encoded) != LXP_OK ||
+        encoded.length > sizeof(intake) - 85U) return 1;
+    (void)memcpy(intake, proposal, sizeof(proposal));
+    write_u32(intake + 81U, (uint32_t)encoded.length);
+    (void)memcpy(intake + 85U, encoded.bytes, encoded.length);
+    size_t intake_length = 85U + encoded.length;
+    if (lxp_arena_reset(&arena, 0U) != LXP_OK ||
+        lxp_receipt_decode(intake + 85U, intake_length - 85U, true, &receipt) != LXP_OK ||
+        lxp_verified_receipt_index_init(&index) != LXP_OK ||
+        lxp_verified_receipt_index_add(&index, &receipt, public_key, &arena) != LXP_OK ||
+        lxp_arena_reset(&arena, 0U) != LXP_OK ||
+        migration_actor(kernel, &activity, owner, seed, signature,
+            LX_PROGRAMS_FEE_GOVERNANCE, intake, intake_length, 100000000U,
+            0x72U, &grant, &authority) != 0) return 1;
+    migration_execution(kernel, &execution, identities, &authority, &fees,
+        &arena, seed, LX_PROGRAMS_SANDBOX_DESTROY_ABI_VERSION);
+    execution.verified_receipts = &index;
+    if (lxp_kernel_execute_activity(kernel, &activity, &execution, &receipt) != LXP_OK ||
+        receipt.result_code != LXP_OK ||
+        lxp_arena_reset(&arena, 0U) != LXP_OK)
+        return 1;
+    lxp_module_ctx ctx;
+    lxp_effect_buffer effects;
+    lxp_result module_result;
+    const lxp_module_registration *registration;
+    if (lxp_receipt_decode(intake + 85U, intake_length - 85U, true, &governance_proof) != LXP_OK ||
+        lxp_module_ctx_init(&ctx, kernel, LXP_MODULE_PROGRAMS, 10U, 0U,
+            kernel->state->next_sequence, 1000000U, &arena, false) != LXP_OK ||
+        lxp_programs_migration_profile_epoch_begin(&ctx, 0U) != LXP_OK ||
+        ctx.staged_count != 0U ||
+        lxp_programs_migration_profile_stage(&ctx, &profile,
+            &governance_proof) != LXP_ERR_SEQUENCE_REUSED) return 1;
+    lxp_module_ctx_rollback(&ctx);
+    if (lxp_module_ctx_init(&ctx, kernel, LXP_MODULE_PROGRAMS, 10U, 2U,
+            kernel->state->next_sequence, 1000000U, &arena, false) != LXP_OK ||
+        lxp_programs_migration_profile_activate(&ctx, 2U) != LXP_FATAL_REPLAY_DIVERGENCE ||
+        ctx.staged_count != 0U) return 1;
+    lxp_module_ctx_rollback(&ctx);
+    if (migration_actor(kernel, &activity, governor, migration_governor_seed, signature,
+            LXP_GOVERNANCE_MIGRATION_BUDGET, proposal, sizeof(proposal), 100000000U,
+            0x73U, &grant, &authority) != 0 ||
+        lxp_kernel_module_for_activity(kernel, activity.activity_type, 0U, &registration) != LXP_OK ||
+        lxp_module_ctx_init(&ctx, kernel, LXP_MODULE_GOVERNANCE, 10U, kernel->epoch,
+            kernel->state->next_sequence, 1000000U, &arena, false) != LXP_OK ||
+        lxp_effect_buffer_init(&effects) != LXP_OK || lxp_module_ctx_bind_effects(&ctx, &effects) != LXP_OK)
+        return 1;
+    ctx.protocol_version = LXP_PROTOCOL_VERSION_STATE_COMMITMENT; ctx.identities = identities;
+    if (lxp_kernel_dispatch(registration, &ctx, &activity, &authority,
+            &effects, &module_result) != LXP_OK || module_result != LXP_ERR_SEQUENCE_REUSED ||
+        effects.count != 0U || ctx.staged_count != 0U) return 1;
+    lxp_module_ctx_rollback(&ctx);
+    if (lxp_arena_reset(&arena, 0U) != LXP_OK ||
+        lxp_kernel_epoch_transition(kernel, 1U, 10U, &arena) != LXP_OK ||
+        lxp_module_ctx_init(&ctx, kernel, LXP_MODULE_PROGRAMS, 10U, 1U,
+            kernel->state->next_sequence, 1000000U, &arena, false) != LXP_OK ||
+        lxp_programs_migration_profile_activate(&ctx, 1U) != LXP_ERR_UNKNOWN_FIELD ||
+        lxp_programs_migration_profile_epoch_begin(&ctx, 1U) != LXP_OK ||
+        ctx.staged_count != 0U) return 1;
+    lxp_module_ctx_rollback(&ctx);
     return 0;
 }
 
@@ -993,21 +1230,25 @@ static int migration_snapshot(lxp_kernel *kernel, lxp_kernel *restored,
     lxp_snapshot_manifest_record manifest;
     uint8_t root[32];
     static uint64_t parameters = 1U;
+    uint64_t sequence = kernel->state->next_sequence - 1U;
     if (lxp_arena_init(&arena, storage, sizeof(storage)) != LXP_OK ||
         lxp_state_root(kernel, root) != LXP_OK ||
-        lxp_snapshot_write(kernel, 0U, &arena, &encoded) != LXP_OK ||
+        lxp_snapshot_write(kernel, sequence, &arena, &encoded) != LXP_OK ||
         migration_write(name, encoded.bytes, encoded.length) != 0 ||
-        lxp_snapshot_manifest_build(encoded.bytes, encoded.length, 0U, root,
+        lxp_snapshot_manifest_build(encoded.bytes, encoded.length, sequence, root,
             kernel->current_state_root, &manifest) != LXP_OK ||
         lxp_state_store_init(store, 1U) != LXP_OK ||
         lxp_kernel_create(restored, store, journal, &parameters, 0U) != LXP_OK ||
         lxp_kernel_register_module(restored, programs_module_registration_v4()) != LXP_OK ||
+        migration_runtime(restored) != 0 ||
+        lxp_handover_kernel_initialize(restored, &migration_genesis, NULL, NULL) != LXP_OK ||
         lxp_snapshot_load(encoded.bytes, encoded.length, &manifest, restored) != LXP_OK ||
         lxp_snapshot_verify_root(restored, &manifest) != LXP_OK) return 1;
     return 0;
 }
 
-static int migration_attempt(lxp_kernel *kernel, lxp_identity *identity,
+static int migration_attempt(lxp_kernel *kernel, lxp_identity_store *identities,
+                              lxp_identity *identity,
                               const uint8_t seed[32], uint8_t *payload,
                               size_t length, uint16_t abi, const char *name,
                               const char *phase, lxp_result expected, FILE *results,
@@ -1028,27 +1269,31 @@ static int migration_attempt(lxp_kernel *kernel, lxp_identity *identity,
     const lxp_module_registration *registration;
     const lxp_module_kv_entry *record;
     lxp_result result = LXP_OK, status;
-    static lx_account_registry accounts;
-    static lx_programs_transfer_runtime runtime;
+    lxp_kernel_execution execution;
+    lxp_fee_params fees = {0};
     size_t blobs_before = kernel->blob_count, staged;
     lx_programs_metering_schedule recorded_schedule;
     int success = expected == LXP_OK;
-    if (lx_account_registry_init(&accounts) != LXP_OK) return 1;
-    (void)memset(&runtime, 0, sizeof(runtime));
-    runtime.accounts = &accounts;
-    if (lxp_kernel_bind_module_runtime(kernel, LXP_MODULE_PROGRAMS, &runtime) != LXP_OK ||
+    fees.version = 1U;
+    fees.base_fee = (lxp_u128){0U, 1U};
+    fees.multiplier_basis_points = 10000U;
+    if (migration_runtime(kernel) != 0 ||
         lxp_state_root(kernel, before) != LXP_OK ||
         lxp_programs_metering_schedule_current(kernel, 1U, &recorded_schedule) != LXP_OK ||
         migration_activity(kernel, &activity, identity, seed, signature, payload,
                            length, 2U, &grant, &authority) != 0 ||
         lxp_arena_init(&arena, arena_bytes, sizeof(arena_bytes)) != LXP_OK ||
         lxp_kernel_module_for_activity(kernel, activity.activity_type, 0U, &registration) != LXP_OK ||
-        lxp_module_ctx_init(&ctx, kernel, LXP_MODULE_PROGRAMS, 1U, 0U,
-                            1U, 1000000U, &arena, false) != LXP_OK ||
+        lxp_module_ctx_init(&ctx, kernel, LXP_MODULE_PROGRAMS, 10U, kernel->epoch,
+                            kernel->state->next_sequence, 1000000U, &arena, false) != LXP_OK ||
         lxp_effect_buffer_init(&effects) != LXP_OK ||
         lxp_module_ctx_bind_effects(&ctx, &effects) != LXP_OK) return 1;
     ctx.protocol_version = LXP_PROTOCOL_VERSION_STATE_COMMITMENT;
     ctx.batch_number = 1U;
+    migration_execution(kernel, &execution, identities, &authority, &fees,
+        &arena, seed, LX_PROGRAMS_SANDBOX_DESTROY_ABI_VERSION);
+    if (lxp_kernel_bind_migration_admission(&ctx, &activity, &execution) != LXP_OK)
+        return 1;
     if (strcmp(name, "incompatible_schedule") == 0 || strcmp(name, "unknown_schedule") == 0) {
         void *decoded = NULL;
         lx_programs_metering_schedule schedule;
@@ -1126,8 +1371,499 @@ static int migration_attempt(lxp_kernel *kernel, lxp_identity *identity,
 
 static void migration_destroy(lxp_kernel *kernel, lxp_state_store *store)
 {
+    lx_programs_transfer_runtime *runtime = kernel->module_runtime[LXP_MODULE_PROGRAMS];
     while (kernel->blob_count != 0U) free(kernel->blobs[--kernel->blob_count].bytes);
+    if (runtime != NULL) {
+        free((void *)runtime->assets);
+        lx_account_registry_release(runtime->accounts);
+        free(runtime->accounts);
+        free(runtime);
+    }
     (void)lxp_state_store_destroy(store);
+}
+
+static lx_account *migration_account(lxp_kernel *kernel, const char *name)
+{
+    uint8_t id[32];
+    size_t slot;
+    lx_programs_transfer_runtime *runtime = kernel->module_runtime[LXP_MODULE_PROGRAMS];
+    if (runtime == NULL || lx_account_id_from_string((const uint8_t *)name,
+            strlen(name), id) != LXP_OK ||
+        lx_account_registry_index_lookup(runtime->accounts, id, &slot) != LXP_OK)
+        return NULL;
+    return &runtime->accounts->accounts[slot];
+}
+
+static int migration_accounting_record(lxp_kernel *kernel,
+    const uint8_t activity_id[32], uint8_t record[613])
+{
+    uint8_t storage[4096];
+    lxp_arena arena;
+    lxp_module_ctx ctx;
+    if (lxp_arena_init(&arena, storage, sizeof(storage)) != LXP_OK ||
+        lxp_module_ctx_init(&ctx, kernel, LXP_MODULE_PROGRAMS, 10U, kernel->epoch,
+            kernel->state->next_sequence, 1000000U, &arena, false) != LXP_OK)
+        return LXP_ERR_NON_CANONICAL;
+    return lxp_programs_migration_accounting_read(&ctx, activity_id, record);
+}
+
+static int migration_accounting_row(FILE *results, const char *name, uint16_t abi,
+    lxp_result status, lxp_result result, lxp_result expected, lxp_u128 fee,
+    bool ledger_unchanged, bool program_unchanged, bool accounting_present,
+    const uint8_t before[32], const uint8_t after[32])
+{
+    char before_hex[65], after_hex[65], row[1024];
+    migration_hex(before, before_hex); migration_hex(after, after_hex);
+    int count = snprintf(row, sizeof(row),
+        "{\"name\":\"%s\",\"abi\":%u,\"status\":%d,\"result\":%d,\"expected\":%d,\"fee_hi\":%llu,\"fee_lo\":%llu,\"ledger_unchanged\":%s,\"program_unchanged\":%s,\"accounting_present\":%s,\"root_before\":\"%s\",\"root_after\":\"%s\"}",
+        name, (unsigned)abi, (int)status, (int)result, (int)expected,
+        (unsigned long long)fee.hi, (unsigned long long)fee.lo,
+        ledger_unchanged ? "true" : "false", program_unchanged ? "true" : "false",
+        accounting_present ? "true" : "false", before_hex, after_hex);
+    return count < 0 || (size_t)count >= sizeof(row) ||
+        fprintf(results, "%s\n", row) < 0 ||
+        printf("%s %s\n", strcmp(name, "authenticated_legacy_replay") == 0 ?
+            "NATIVE_MIGRATION_LEGACY_CASE" : "NATIVE_MIGRATION_ACCOUNTING_CASE", row) < 0;
+}
+
+static int migration_accounting(const uint8_t seed[32])
+{
+    static const char *names[] = {"combined_fee_once", "trap_zero_fee",
+        "exhaustion_zero_fee", "signed_limit", "available_funds", "frozen_payer",
+        "wrong_asset", "checked_overflow", "missing_profile"};
+    static const lxp_result expected[] = {LXP_OK, LXP_ERR_NON_CANONICAL,
+        LXP_ERR_GAS_EXHAUSTED, LXP_ERR_FEE_UNPAYABLE, LXP_ERR_FEE_UNPAYABLE,
+        LXP_ERR_FEE_UNPAYABLE, LXP_ERR_ASSET_MISMATCH, LXP_ERR_OVERFLOW,
+        LXP_ERR_VERSION_UNSUPPORTED};
+    static lxp_kernel kernel, restored, restarted;
+    static uint8_t arena_bytes[4U * LXP_MAX_ACTIVITY_BYTES];
+    uint8_t old_wasm[512], wasm[512], deploy[1024], upgrade[1024], signature[64];
+    uint8_t public_key[32], before[32], after[32], record[613], replay_record[613];
+    lxp_state_store store, restored_store, restarted_store;
+    lxp_state_journal journal, restored_journal, restarted_journal;
+    lxp_identity_store identities, replay_identities;
+    lxp_identity *owner, *other, *governor;
+    lxp_authority_grant grant;
+    lxp_authority_resolved authority;
+    lxp_activity activity;
+    lxp_kernel_execution execution;
+    lxp_receipt receipt, replay_receipt;
+    lxp_fee_params fees;
+    lxp_arena arena;
+    lxp_byte_span encoded;
+    uint64_t parameters = 1U;
+    unsigned int cases = 0U;
+    int output_fd = openat(migration_directory_fd, "accounting.jsonl",
+        O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW, 0600);
+    FILE *results = output_fd < 0 ? NULL : fdopen(output_fd, "w");
+    if (results == NULL) return 1;
+    for (uint16_t abi = 1U; abi <= 4U; ++abi) {
+        for (size_t index = 0U; index < sizeof(names) / sizeof(names[0]); ++index) {
+            char filename[128];
+            (void)memset(&identities, 0, sizeof(identities));
+            (void)memset(&fees, 0, sizeof(fees));
+            migration_funding = index == 7U ? (lxp_u128){UINT64_MAX, UINT64_MAX} :
+                (lxp_u128){0U, UINT64_C(1000000000)};
+            if (public_key_for(seed, public_key) != 0 ||
+                lxp_identity_register(&identities, (const uint8_t *)"did:lxp:native-migration-owner", 30U,
+                    public_key, &owner) != LXP_OK ||
+                lxp_identity_register(&identities, (const uint8_t *)"did:lxp:native-migration-other", 30U,
+                    public_key, &other) != LXP_OK ||
+                public_key_for(migration_governor_seed, public_key) != 0 ||
+                lxp_identity_register(&identities, (const uint8_t *)"did:lxp:native-migration-governor", 33U,
+                    public_key, &governor) != LXP_OK ||
+                lxp_state_store_init(&store, 1U) != LXP_OK ||
+                lxp_kernel_create(&kernel, &store, &journal, &parameters, 0U) != LXP_OK ||
+                project_metering_genesis_with(&kernel, seed, 1) != 0 ||
+                lxp_kernel_register_module(&kernel, programs_module_registration_v4()) != LXP_OK ||
+                migration_runtime(&kernel) != 0) return 1;
+            if (index != 8U && migration_activate(&kernel, seed, &identities, owner, governor) != 0)
+                return 1;
+            size_t old_length = migration_module(old_wasm, abi, 4U);
+            size_t wasm_length = migration_module(wasm, abi, index == 1U ? 1U : index == 2U ? 2U : 0U);
+            (void)memset(deploy, 0, sizeof(deploy));
+            (void)memset(upgrade, 0, sizeof(upgrade));
+            deploy[0] = (uint8_t)(0xa0U + abi); deploy[31] = (uint8_t)(index + 1U);
+            write_u16(deploy + 32U, abi); deploy[34] = 1U;
+            (void)memcpy(deploy + 36U, owner->did_id, 32U);
+            if (lxp_hash_sha256(old_wasm, old_length, deploy + 68U) != LXP_OK) return 1;
+            write_u32(deploy + 100U, (uint32_t)old_length);
+            (void)memcpy(deploy + 104U, old_wasm, old_length);
+            if (migration_activity(&kernel, &activity, owner, seed, signature, deploy,
+                    104U + old_length, 1U, &grant, &authority) != 0 ||
+                migration_deploy(&kernel, &activity, &authority) != 0) return 1;
+            (void)memcpy(upgrade, deploy, 32U); write_u16(upgrade + 32U, abi);
+            upgrade[34] = 1U; (void)memcpy(upgrade + 36U, deploy + 68U, 32U);
+            if (lxp_hash_sha256(wasm, wasm_length, upgrade + 68U) != LXP_OK) return 1;
+            write_u16(upgrade + 100U, 7U); write_u32(upgrade + 102U, (uint32_t)wasm_length);
+            (void)memcpy(upgrade + 106U, "migrate", 7U);
+            (void)memcpy(upgrade + 113U, wasm, wasm_length);
+            lx_account *payer = migration_account(&kernel, "agent:did:lxp:native-migration-owner:main");
+            lx_account *treasury = migration_account(&kernel, "system:fees");
+            if (payer == NULL || treasury == NULL) return 1;
+            if (index == 4U) payer->balance = (lxp_u128){0U, 100U};
+            if (index == 5U) payer->frozen = true;
+            if (index == 6U) {
+                lx_programs_transfer_runtime *runtime = kernel.module_runtime[LXP_MODULE_PROGRAMS];
+                runtime->occupancy_asset_id[0] = 2U;
+            }
+            lx_account payer_before = *payer, treasury_before = *treasury;
+            size_t blob_count = kernel.blob_count;
+            fees.version = 1U; fees.multiplier_basis_points = 10000U;
+            fees.base_fee = index == 7U ? (lxp_u128){UINT64_MAX, UINT64_MAX} : (lxp_u128){0U, 1U};
+            if (lxp_arena_init(&arena, arena_bytes, sizeof(arena_bytes)) != LXP_OK ||
+                migration_actor(&kernel, &activity, owner, seed, signature,
+                    LX_PROGRAMS_UPGRADE, upgrade, 113U + wasm_length,
+                    index == 3U ? 100U : 100000000U, (uint8_t)(0x80U + index),
+                    &grant, &authority) != 0) return 1;
+            if (index == 7U) {
+                uint8_t digest[32];
+                activity.fee_limit = (lxp_u128){UINT64_MAX, UINT64_MAX};
+                if (lxp_activity_signing_preimage(&activity, digest) != LXP_OK ||
+                    sign_raw(seed, digest, sizeof(digest), signature) != 0) return 1;
+            }
+            migration_execution(&kernel, &execution, &identities, &authority, &fees,
+                &arena, seed, LX_PROGRAMS_SANDBOX_DESTROY_ABI_VERSION);
+            execution.fee_balance = payer->balance;
+            execution.recorded_fee_schedule_version = 1U;
+            execution.recorded_metering_schedule_version = 1U;
+            if (lxp_state_root(&kernel, before) != LXP_OK) return 1;
+            (void)memcpy(kernel.current_state_root, before, 32U);
+            if (index == 0U) {
+                replay_identities = identities;
+                (void)snprintf(filename, sizeof(filename), "accounting.abi%u.prestate.snapshot.bin", (unsigned)abi);
+                if (migration_snapshot(&kernel, &restored, &restored_store,
+                        &restored_journal, filename) != 0) return 1;
+            }
+            (void)memset(&receipt, 0, sizeof(receipt));
+            lxp_result status = lxp_kernel_execute_activity(&kernel, &activity, &execution, &receipt);
+            lxp_result result = status == LXP_OK ? receipt.result_code : status;
+            lxp_u128 charged = status == LXP_OK ? receipt.fee_charged : (lxp_u128){0U, 0U};
+            int found = migration_accounting_record(&kernel, receipt.activity_id, record);
+            const lxp_module_kv_entry *program = migration_record(&kernel, deploy);
+            if (program == NULL || lxp_state_root(&kernel, after) != LXP_OK || result != expected[index]) return 1;
+            bool ledger_unchanged = lxp_u128_cmp(payer->balance, payer_before.balance) == 0 &&
+                lxp_u128_cmp(treasury->balance, treasury_before.balance) == 0 &&
+                payer->next_sequence == payer_before.next_sequence &&
+                treasury->next_sequence == treasury_before.next_sequence;
+            bool program_unchanged = memcmp(program->value + 33U, deploy + 68U, 32U) == 0 &&
+                kernel.blob_count == blob_count;
+            if (index == 0U) {
+                lxp_u128 debit, credit, runtime_fee = {0U, 0U}, combined;
+                static const uint64_t limits[7] = {1000000U,16777216U,1048576U,1048576U,64U,1048576U,4096U};
+                static const uint64_t prices[7] = {1U,1U,2U,4U,1U,1U,100U};
+                static const uint64_t coefficients[9] = {1U,1U,1U,1U,1U,8U,8U,64U,8U};
+                if (status != LXP_OK || found != LXP_OK || memcmp(record, "LXMA1", 5U) != 0 ||
+                    migration_u32(record + 5U) != 1U || record[9] != 0U || record[10] != 1U ||
+                    record[11] != 0U || record[12] != abi ||
+                    migration_u32(record + 13U) != LX_PROGRAMS_SANDBOX_DESTROY_ABI_VERSION ||
+                    migration_u32(record + 17U) != 1U || migration_u32(record + 21U) != 1U ||
+                    migration_u32(record + 25U) != 1U ||
+                    memcmp(record + 61U, receipt.activity_id, 32U) != 0 ||
+                    memcmp(record + 93U, upgrade, 32U) != 0 ||
+                    memcmp(record + 125U, upgrade + 36U, 32U) != 0 ||
+                    memcmp(record + 157U, upgrade + 68U, 32U) != 0 ||
+                    memcmp(record + 189U, payer->id, 32U) != 0 ||
+                    memcmp(record + 221U, payer->asset_id, 32U) != 0 ||
+                    lxp_ct_is_zero(record + 253U, 32U) ||
+                    migration_word(record + 29U) != 1U ||
+                    migration_word(record + 37U) != kernel.epoch ||
+                    migration_word(record + 45U) != execution.batch_number ||
+                    migration_word(record + 53U) != execution.global_sequence ||
+                    migration_word(record + 517U) != 0U || migration_word(record + 525U) != 100000000U ||
+                    migration_word(record + 533U) != payer_before.balance.hi ||
+                    migration_word(record + 541U) != payer_before.balance.lo ||
+                    migration_word(record + 565U) != 0U || migration_word(record + 573U) != 1U ||
+                    lxp_u128_sub(payer_before.balance, payer->balance, &debit) != LXP_OK ||
+                    lxp_u128_sub(treasury->balance, treasury_before.balance, &credit) != LXP_OK ||
+                    lxp_u128_cmp(debit, charged) != 0 || lxp_u128_cmp(credit, charged) != 0 ||
+                    payer->next_sequence != payer_before.next_sequence + 1U || program_unchanged)
+                    return 1;
+                for (size_t i = 0U; i < 7U; ++i)
+                    if (migration_word(record + 285U + i * 8U) != limits[i] ||
+                        migration_word(record + 341U + i * 8U) != prices[i]) return 1;
+                for (size_t i = 0U; i < 9U; ++i)
+                    if (migration_word(record + 397U + i * 8U) != coefficients[i]) return 1;
+                for (size_t i = 0U; i < 6U; ++i) {
+                    lxp_u256 product;
+                    if (migration_word(record + 469U + i * 8U) > limits[i] ||
+                        lxp_u128_mul((lxp_u128){0U, migration_word(record + 469U + i * 8U)},
+                            (lxp_u128){0U, prices[i]}, &product) != LXP_OK ||
+                        product.words[2] != 0U || product.words[3] != 0U ||
+                        lxp_u128_add(runtime_fee, (lxp_u128){product.words[1], product.words[0]},
+                            &runtime_fee) != LXP_OK) return 1;
+                }
+                if (lxp_u128_is_zero(runtime_fee) ||
+                    lxp_u128_add(runtime_fee, (lxp_u128){0U,1U}, &combined) != LXP_OK ||
+                    lxp_u128_cmp(combined, charged) != 0 ||
+                    migration_word(record + 581U) != runtime_fee.hi ||
+                    migration_word(record + 589U) != runtime_fee.lo ||
+                    migration_word(record + 597U) != combined.hi ||
+                    migration_word(record + 605U) != combined.lo ||
+                    lxp_receipt_verify(&receipt, migration_genesis.signer_public_key, &arena) != LXP_OK ||
+                    lxp_receipt_encode(&receipt, true, &arena, &encoded) != LXP_OK) return 1;
+                (void)snprintf(filename, sizeof(filename), "accounting.abi%u.receipt.bin", (unsigned)abi);
+                if (migration_write(filename, encoded.bytes, encoded.length) != 0) return 1;
+                uint8_t *saved = malloc(encoded.length);
+                if (saved == NULL) return 1;
+                (void)memcpy(saved, encoded.bytes, encoded.length);
+                if (lxp_receipt_decode(saved, encoded.length, true, &replay_receipt) != LXP_OK) return 1;
+                (void)snprintf(filename, sizeof(filename), "accounting.abi%u.record.bin", (unsigned)abi);
+                if (migration_write(filename, record, sizeof(record)) != 0 ||
+                    migration_accounting_row(results, names[index], abi, status, result,
+                        expected[index], charged, false, false, true, before, after) != 0)
+                    return 1;
+                ++cases;
+                if (lxp_arena_reset(&arena, 0U) != LXP_OK) return 1;
+                execution.identities = &replay_identities;
+                execution.sequencer_private_key = NULL;
+                execution.replay_receipt = &replay_receipt;
+                execution.replay_public_key = migration_genesis.signer_public_key;
+                lx_account rollback_payer = *migration_account(&restored, "agent:did:lxp:native-migration-owner:main");
+                lx_account rollback_treasury = *migration_account(&restored, "system:fees");
+                uint8_t rollback_root[32];
+                if (lxp_state_root(&restored, rollback_root) != LXP_OK) return 1;
+                lxp_receipt divergent = replay_receipt;
+                divergent.resulting_state_root[0] ^= 1U;
+                if (lxp_receipt_sign(&divergent, seed, &arena) != LXP_OK ||
+                    lxp_arena_reset(&arena, 0U) != LXP_OK) return 1;
+                execution.replay_receipt = &divergent;
+                status = lxp_kernel_execute_activity(&restored, &activity, &execution, &receipt);
+                lx_account *rollback_payer_after = migration_account(&restored, "agent:did:lxp:native-migration-owner:main");
+                lx_account *rollback_treasury_after = migration_account(&restored, "system:fees");
+                const lxp_module_kv_entry *rollback_program = migration_record(&restored, deploy);
+                if (status != LXP_FATAL_REPLAY_DIVERGENCE ||
+                    rollback_payer_after == NULL || rollback_treasury_after == NULL || rollback_program == NULL ||
+                    lxp_u128_cmp(rollback_payer_after->balance, rollback_payer.balance) != 0 ||
+                    lxp_u128_cmp(rollback_treasury_after->balance, rollback_treasury.balance) != 0 ||
+                    rollback_payer_after->next_sequence != rollback_payer.next_sequence ||
+                    rollback_treasury_after->next_sequence != rollback_treasury.next_sequence ||
+                    memcmp(rollback_program->value + 33U, deploy + 68U, 32U) != 0 ||
+                    migration_accounting_record(&restored, replay_receipt.activity_id, replay_record) == LXP_OK ||
+                    lxp_state_root(&restored, before) != LXP_OK || memcmp(before, rollback_root, 32U) != 0 ||
+                    migration_accounting_row(results, "downstream_rollback", abi, status, status,
+                        LXP_FATAL_REPLAY_DIVERGENCE, (lxp_u128){0U,0U}, true, true, false,
+                        rollback_root, before) != 0 || lxp_arena_reset(&arena, 0U) != LXP_OK) return 1;
+                ++cases;
+                execution.replay_receipt = &replay_receipt;
+                status = lxp_kernel_execute_activity(&restored, &activity, &execution, &receipt);
+                if (status != LXP_OK || receipt.result_code != LXP_OK ||
+                    lxp_u128_cmp(receipt.fee_charged, charged) != 0 ||
+                    migration_accounting_record(&restored, receipt.activity_id, replay_record) != LXP_OK ||
+                    memcmp(record, replay_record, sizeof(record)) != 0 ||
+                    lxp_state_root(&restored, before) != LXP_OK || memcmp(before, after, 32U) != 0 ||
+                    migration_accounting_row(results, "recorded_profile_replay", abi, status,
+                        receipt.result_code, LXP_OK, charged, false, false, true,
+                        replay_receipt.previous_state_root, before) != 0) return 1;
+                ++cases;
+                (void)snprintf(filename, sizeof(filename), "accounting.abi%u.committed.snapshot.bin", (unsigned)abi);
+                if (migration_snapshot(&kernel, &restarted, &restarted_store,
+                        &restarted_journal, filename) != 0 ||
+                    migration_accounting_record(&restarted, replay_receipt.activity_id, replay_record) != LXP_OK ||
+                    memcmp(record, replay_record, sizeof(record)) != 0) return 1;
+                lx_account *loaded_payer = migration_account(&restarted, "agent:did:lxp:native-migration-owner:main");
+                lx_account *loaded_treasury = migration_account(&restarted, "system:fees");
+                if (loaded_payer == NULL || loaded_treasury == NULL ||
+                    lxp_u128_cmp(loaded_payer->balance, payer->balance) != 0 ||
+                    lxp_u128_cmp(loaded_treasury->balance, treasury->balance) != 0 ||
+                    loaded_payer->next_sequence != payer->next_sequence ||
+                    migration_accounting_row(results, "restart_record_and_ledger", abi, LXP_OK,
+                        LXP_OK, LXP_OK, (lxp_u128){0U,0U}, true, true, true, after, after) != 0)
+                    return 1;
+                ++cases;
+                execution.identities = &identities;
+                execution.global_sequence = restarted.state->next_sequence;
+                execution.sequencer_private_key = seed;
+                execution.replay_receipt = NULL; execution.replay_public_key = NULL;
+                if (lxp_arena_reset(&arena, 0U) != LXP_OK) return 1;
+                status = lxp_kernel_execute_activity(&restarted, &activity, &execution, &receipt);
+                if (status != LXP_ERR_IDEMPOTENT_REPLAY ||
+                    lxp_u128_cmp(loaded_payer->balance, payer->balance) != 0 ||
+                    lxp_u128_cmp(loaded_treasury->balance, treasury->balance) != 0 ||
+                    migration_accounting_record(&restarted, replay_receipt.activity_id, replay_record) != LXP_OK ||
+                    memcmp(record, replay_record, sizeof(record)) != 0 ||
+                    migration_accounting_row(results, "duplicate_no_second_fee", abi,
+                        status, status, LXP_ERR_IDEMPOTENT_REPLAY, (lxp_u128){0U,0U},
+                        true, true, true, after, after) != 0) return 1;
+                ++cases;
+                lxp_programs_occupancy_receipt occupancy;
+                if (lxp_arena_reset(&arena, 0U) != LXP_OK ||
+                    lxp_programs_finalize_occupancy_batch_selected(&restarted,
+                        LXP_PROTOCOL_VERSION_STATE_COMMITMENT, 1U, 1U, 10U,
+                        restarted.state->next_sequence, 1U, &arena, &occupancy, &encoded) != LXP_OK ||
+                    !lxp_u128_is_zero(occupancy.byte_batches) ||
+                    !lxp_u128_is_zero(occupancy.fee_units)) return 1;
+                (void)snprintf(filename, sizeof(filename), "accounting.abi%u.occupancy.bin", (unsigned)abi);
+                if (migration_write(filename, encoded.bytes, encoded.length) != 0 ||
+                    migration_accounting_record(&restarted, replay_receipt.activity_id, replay_record) != LXP_OK ||
+                    memcmp(record, replay_record, sizeof(record)) != 0) return 1;
+                lxp_module_ctx pricing_ctx;
+                lx_programs_fee_schedule current_prices, old_prices;
+                uint8_t current_asset[32], old_asset[32];
+                if (lxp_arena_reset(&arena, 0U) != LXP_OK ||
+                    lxp_module_ctx_init(&pricing_ctx, &restarted, LXP_MODULE_PROGRAMS,
+                        10U, restarted.epoch, restarted.state->next_sequence,
+                        1000000U, &arena, false) != LXP_OK ||
+                    lxp_programs_fee_schedule_current(&pricing_ctx, &current_prices, current_asset) != LXP_OK ||
+                    lxp_programs_fee_schedule_at(&pricing_ctx, 1U, &old_prices, old_asset) != LXP_OK ||
+                    current_prices.version != 2U || old_prices.version != 1U ||
+                    current_prices.occupancy_byte_batch != 90U || old_prices.occupancy_byte_batch != 100U ||
+                    memcmp(current_asset, old_asset, 32U) != 0 ||
+                    lxp_u128_cmp(loaded_payer->balance, payer->balance) != 0 ||
+                    lxp_u128_cmp(loaded_treasury->balance, treasury->balance) != 0 ||
+                    lxp_state_root(&restarted, before) != LXP_OK ||
+                    migration_accounting_row(results, "historical_record_not_repriced", abi,
+                        LXP_OK, LXP_OK, LXP_OK, (lxp_u128){0U,0U}, true, true, true,
+                        before, before) != 0) return 1;
+                lxp_module_ctx_rollback(&pricing_ctx);
+                ++cases;
+                free(saved);
+                migration_destroy(&restored, &restored_store);
+                migration_destroy(&restarted, &restarted_store);
+            } else {
+                if (!ledger_unchanged || !program_unchanged || found == LXP_OK ||
+                    !lxp_u128_is_zero(charged) ||
+                    (status == LXP_OK && receipt.effects.count != 0U) ||
+                    migration_accounting_row(results, names[index], abi, status, result,
+                        expected[index], charged, ledger_unchanged, program_unchanged,
+                        false, before, after) != 0) return 1;
+                ++cases;
+            }
+            migration_destroy(&kernel, &store);
+        }
+    }
+    migration_funding = (lxp_u128){0U, UINT64_C(1000000000)};
+    if (fflush(results) != 0 || fsync(output_fd) != 0 || fclose(results) != 0) return 1;
+    return printf("NATIVE_MIGRATION_ACCOUNTING_SUMMARY {\"cases\":%u,\"skipped\":0}\n", cases) < 0;
+}
+
+static uint32_t migration_u32(const uint8_t bytes[4])
+{
+    return ((uint32_t)bytes[0] << 24U) | ((uint32_t)bytes[1] << 16U) |
+        ((uint32_t)bytes[2] << 8U) | bytes[3];
+}
+
+static int migration_legacy(void)
+{
+    const char *fd_text = getenv("PAXEER_X_NATIVE_MIGRATION_LEGACY_FIXTURE_FD");
+    const char *source_revision = getenv("PAXEER_X_NATIVE_MIGRATION_LEGACY_SOURCE_REVISION");
+    struct stat info;
+    char *end;
+    long input_fd;
+    if (fd_text == NULL || source_revision == NULL ||
+        strcmp(source_revision, "9e0e098bc429e6209a4e8a153001217fbcc84d6b") != 0)
+        return 78;
+    errno = 0; input_fd = strtol(fd_text, &end, 10);
+    if (errno != 0 || *end != '\0' || input_fd < 0 || input_fd > 1048576L ||
+        fstat((int)input_fd, &info) != 0 || !S_ISREG(info.st_mode) ||
+        info.st_uid != geteuid() || (info.st_mode & 0777U) != 0600U ||
+        info.st_nlink != 1 || info.st_size < 237 || info.st_size > 16777216)
+        return 78;
+    size_t length = (size_t)info.st_size;
+    uint8_t *bytes = malloc(length);
+    if (bytes == NULL || pread((int)input_fd, bytes, length, 0) != (ssize_t)length)
+        return 78;
+    if (memcmp(bytes, "LXLF1", 5U) != 0 || memcmp(bytes + 5U, source_revision, 40U) != 0 ||
+        lxp_ct_is_zero(bytes + 45U, 32U) || lxp_ct_is_zero(bytes + 77U, 32U) ||
+        lxp_ct_is_zero(bytes + 109U, 32U)) return 78;
+    size_t sizes[4];
+    size_t total = 237U;
+    for (size_t i = 0U; i < 4U; ++i) {
+        sizes[i] = migration_u32(bytes + 189U + i * 4U);
+        if (sizes[i] == 0U || sizes[i] > length - total) return 78;
+        total += sizes[i];
+    }
+    if (total != length) return 78;
+    const uint8_t *genesis_bytes = bytes + 237U;
+    const uint8_t *snapshot_bytes = genesis_bytes + sizes[0];
+    const uint8_t *activity_bytes = snapshot_bytes + sizes[1];
+    const uint8_t *receipt_bytes = activity_bytes + sizes[2];
+    static lxp_genesis_manifest manifest;
+    static lxp_kernel kernel;
+    static uint8_t storage[8U * LXP_MAX_ACTIVITY_BYTES];
+    lxp_state_store store;
+    lxp_state_journal journal;
+    lxp_identity_store identities = {0};
+    lxp_identity *identity;
+    lxp_authority_grant grant;
+    lxp_authority_resolved authority;
+    lxp_activity activity;
+    lxp_receipt expected, actual;
+    lxp_snapshot_manifest_record snapshot_manifest;
+    lxp_kernel_execution execution;
+    lxp_fee_params fees = {0};
+    lxp_arena arena;
+    uint64_t parameters = 1U;
+    uint8_t root[32], record[613];
+    if (lxp_arena_init(&arena, storage, sizeof(storage)) != LXP_OK ||
+        lxp_genesis_parse(genesis_bytes, sizes[0], LXP_GENESIS_INPUT_MANIFEST, &manifest) != LXP_OK ||
+        manifest.protocol_version != LXP_PROTOCOL_VERSION_STATE_COMMITMENT ||
+        lxp_genesis_verify_signature(&manifest, &arena) != LXP_OK ||
+        lxp_receipt_decode(receipt_bytes, sizes[3], true, &expected) != LXP_OK ||
+        lxp_activity_decode(activity_bytes, sizes[2], &activity) != LXP_OK ||
+        activity.activity_type != LX_PROGRAMS_UPGRADE || activity.payload.length < 113U ||
+        activity.payload.bytes[32] != 0U || activity.payload.bytes[33] != 1U ||
+        activity.payload.bytes[34] != 1U || activity.authority.length != 32U ||
+        expected.result_code != LXP_OK || expected.fee_charged.hi != 0U || expected.fee_charged.lo != 1U ||
+        lxp_activity_verify_signature(&activity) != LXP_OK ||
+        lxp_receipt_verify(&expected, manifest.signer_public_key, &arena) != LXP_OK ||
+        lxp_state_store_init(&store, 1U) != LXP_OK ||
+        lxp_kernel_create(&kernel, &store, &journal, &parameters, 0U) != LXP_OK ||
+        lxp_kernel_register_module(&kernel, programs_module_registration_v4()) != LXP_OK ||
+        migration_runtime(&kernel) != 0 ||
+        lxp_handover_kernel_initialize(&kernel, &manifest, NULL, NULL) != LXP_OK ||
+        expected.global_sequence == 0U ||
+        lxp_snapshot_manifest_build(snapshot_bytes, sizes[1], expected.global_sequence - 1U,
+            expected.previous_state_root, bytes + 205U, &snapshot_manifest) != LXP_OK ||
+        lxp_snapshot_load(snapshot_bytes, sizes[1], &snapshot_manifest, &kernel) != LXP_OK ||
+        lxp_snapshot_verify_root(&kernel, &snapshot_manifest) != LXP_OK ||
+        lxp_identity_register(&identities, activity.actor_did.bytes, activity.actor_did.length,
+            activity.authority.bytes, &identity) != LXP_OK) return 1;
+    identity->next_sequence = activity.account_sequence;
+    fees.version = 1U; fees.base_fee = (lxp_u128){0U, 1U}; fees.multiplier_basis_points = 10000U;
+    if (lxp_authority_resolve_activity(&kernel, identity, &activity, true, true,
+            migration_word(bytes + 165U), 100U, migration_word(bytes + 157U),
+            &grant, &authority) != LXP_OK ||
+        lxp_arena_reset(&arena, 0U) != LXP_OK) return 1;
+    migration_execution(&kernel, &execution, &identities, &authority, &fees,
+        &arena, NULL, migration_u32(bytes + 173U));
+    execution.epoch = migration_word(bytes + 141U);
+    execution.batch_number = migration_word(bytes + 149U);
+    execution.global_sequence = migration_word(bytes + 157U);
+    execution.batch_timestamp_ms = migration_word(bytes + 165U);
+    execution.parameter_version = migration_u32(bytes + 177U);
+    execution.recorded_fee_schedule_version = migration_u32(bytes + 181U);
+    execution.recorded_metering_schedule_version = migration_u32(bytes + 185U);
+    execution.replay_receipt = &expected; execution.replay_public_key = manifest.signer_public_key;
+    (void)memcpy(execution.batch_id, expected.batch_id, 32U);
+    if (execution.epoch != kernel.epoch || execution.global_sequence != kernel.state->next_sequence ||
+        execution.recorded_module_version != expected.module_version ||
+        execution.parameter_version != expected.parameter_version ||
+        execution.batch_timestamp_ms != expected.timestamp) return 1;
+    lxp_module_ctx ctx;
+    bool preactivation = false;
+    if (lxp_module_ctx_init(&ctx, &kernel, LXP_MODULE_PROGRAMS,
+            execution.batch_timestamp_ms, execution.epoch, execution.global_sequence,
+            execution.gas_limit, &arena, false) != LXP_OK ||
+        lxp_programs_migration_preactivation(&ctx, &preactivation) != LXP_OK || !preactivation)
+        return 1;
+    lxp_result status = lxp_kernel_execute_activity(&kernel, &activity, &execution, &actual);
+    if (status != LXP_OK || actual.result_code != LXP_OK ||
+        lxp_u128_cmp(actual.fee_charged, expected.fee_charged) != 0 ||
+        migration_accounting_record(&kernel, actual.activity_id, record) == LXP_OK ||
+        lxp_state_root(&kernel, root) != LXP_OK ||
+        memcmp(root, expected.resulting_state_root, 32U) != 0 ||
+        migration_write("legacy.verified-input.bin", bytes, length) != 0) return 1;
+    int result_fd = openat(migration_directory_fd, "legacy.jsonl",
+        O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW, 0600);
+    FILE *results = result_fd < 0 ? NULL : fdopen(result_fd, "w");
+    if (results == NULL || migration_accounting_row(results, "authenticated_legacy_replay", 1U,
+            status, actual.result_code, LXP_OK, actual.fee_charged, false, false, false,
+            expected.previous_state_root, root) != 0 || fflush(results) != 0 ||
+        fsync(result_fd) != 0 || fclose(results) != 0) return 1;
+    migration_destroy(&kernel, &store);
+    free(bytes);
+    return printf("NATIVE_MIGRATION_LEGACY_SUMMARY {\"cases\":1,\"skipped\":0}\n") < 0;
 }
 
 static int native_migration(void)
@@ -1143,7 +1879,7 @@ static int native_migration(void)
     lxp_state_store store, restored_store, restarted_store;
     lxp_state_journal journal, restored_journal, restarted_journal;
     lxp_identity_store identities = {0};
-    lxp_identity *owner, *other;
+    lxp_identity *owner, *other, *governor;
     lxp_authority_resolved authority;
     lxp_authority_grant grant;
     lxp_activity activity;
@@ -1151,29 +1887,41 @@ static int native_migration(void)
     uint8_t deploy[1024], upgrade[1024], root[32], replay_root[32];
     uint64_t parameters = 1U;
     const char *fd_text = getenv("PAXEER_X_NATIVE_MIGRATION_AUTHORITY_FD");
+    const char *governor_fd_text = getenv("PAXEER_X_NATIVE_MIGRATION_GOVERNOR_FD");
     const char *directory = getenv("PAXEER_X_NATIVE_MIGRATION_RUN");
     struct stat info;
     char *end;
     long key_fd;
     FILE *results;
     unsigned int cases = 0U;
-    if (fd_text == NULL || directory == NULL) return 78;
+    if (fd_text == NULL || governor_fd_text == NULL || directory == NULL) return 78;
     errno = 0; key_fd = strtol(fd_text, &end, 10);
     if (errno != 0 || *end != '\0' || key_fd < 0 || key_fd > 1048576L ||
         fstat((int)key_fd, &info) != 0 || !S_ISREG(info.st_mode) ||
         (info.st_mode & 0777U) != 0600U || info.st_uid != geteuid() || info.st_size != 32 ||
         pread((int)key_fd, seed, 32U, 0) != 32 || public_key_for(seed, public_key) != 0) return 78;
+    errno = 0; key_fd = strtol(governor_fd_text, &end, 10);
+    if (errno != 0 || *end != '\0' || key_fd < 0 || key_fd > 1048576L ||
+        fstat((int)key_fd, &info) != 0 || !S_ISREG(info.st_mode) ||
+        (info.st_mode & 0777U) != 0600U || info.st_uid != geteuid() || info.st_size != 32 ||
+        pread((int)key_fd, migration_governor_seed, 32U, 0) != 32 ||
+        memcmp(seed, migration_governor_seed, 32U) == 0) return 78;
     migration_directory_fd = open(directory, O_RDONLY | O_DIRECTORY | O_NOFOLLOW);
     if (migration_directory_fd < 0 || fstat(migration_directory_fd, &info) != 0 ||
         info.st_uid != geteuid() || (info.st_mode & 0777U) != 0700U) return 78;
     int results_fd = openat(migration_directory_fd, "results.jsonl", O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW, 0600);
     if (results_fd < 0 || (results = fdopen(results_fd, "w")) == NULL) return 1;
-    if (lxp_identity_register(&identities, (const uint8_t *)"did:lxp:native-migration-owner", 30U,
-            public_key, &owner) != LXP_OK ||
-        lxp_identity_register(&identities, (const uint8_t *)"did:lxp:native-migration-other", 30U,
-            public_key, &other) != LXP_OK) return 1;
     for (uint16_t abi = 1U; abi <= 4U; ++abi) {
         for (size_t index = 0U; index < sizeof(names) / sizeof(names[0]); ++index) {
+            (void)memset(&identities, 0, sizeof(identities));
+            if (public_key_for(seed, public_key) != 0 ||
+                lxp_identity_register(&identities, (const uint8_t *)"did:lxp:native-migration-owner", 30U,
+                    public_key, &owner) != LXP_OK ||
+                lxp_identity_register(&identities, (const uint8_t *)"did:lxp:native-migration-other", 30U,
+                    public_key, &other) != LXP_OK ||
+                public_key_for(migration_governor_seed, public_key) != 0 ||
+                lxp_identity_register(&identities, (const uint8_t *)"did:lxp:native-migration-governor", 33U,
+                    public_key, &governor) != LXP_OK) return 1;
             uint16_t baseline_abi = index == 2U && abi == 1U ? 2U : abi;
             uint16_t requested_abi = index == 1U ? 5U : index == 2U ?
                 (abi == 1U ? 1U : (uint16_t)(abi - 1U)) : abi;
@@ -1199,21 +1947,22 @@ static int native_migration(void)
                 lxp_kernel_create(&kernel, &store, &journal, &parameters, 0U) != LXP_OK ||
                 project_metering_genesis_with(&kernel, seed, 1) != 0 ||
                 lxp_kernel_register_module(&kernel, programs_module_registration_v4()) != LXP_OK ||
+                migration_activate(&kernel, seed, &identities, owner, governor) != 0 ||
                 migration_activity(&kernel, &activity, owner, seed, signature, deploy,
                     104U + old_length, 1U, &grant, &authority) != 0 ||
                 migration_deploy(&kernel, &activity, &authority) != 0) return 1;
             (void)snprintf(snapshot_name, sizeof(snapshot_name), "baseline.abi%u.%s.snapshot.bin", (unsigned)abi, names[index]);
             if (migration_snapshot(&kernel, &restored, &restored_store, &restored_journal, snapshot_name) != 0 ||
-                migration_attempt(&kernel, index == 5U ? other : owner, seed, upgrade, 113U + wasm_length,
+                migration_attempt(&kernel, &identities, index == 5U ? other : owner, seed, upgrade, 113U + wasm_length,
                     abi, names[index], "initial", expected[index], results, root) != 0 ||
-                migration_attempt(&restored, index == 5U ? other : owner, seed, upgrade, 113U + wasm_length,
+                migration_attempt(&restored, &identities, index == 5U ? other : owner, seed, upgrade, 113U + wasm_length,
                     abi, names[index], "snapshot_replay", expected[index], results, replay_root) != 0 ||
                 memcmp(root, replay_root, 32U) != 0) return 1;
             cases += 2U;
             if (index == 0U) {
                 (void)snprintf(snapshot_name, sizeof(snapshot_name), "committed.abi%u.snapshot.bin", (unsigned)abi);
                 if (migration_snapshot(&kernel, &restarted, &restarted_store, &restarted_journal, snapshot_name) != 0 ||
-                    migration_attempt(&restarted, owner, seed, upgrade, 113U + wasm_length,
+                    migration_attempt(&restarted, &identities, owner, seed, upgrade, 113U + wasm_length,
                         abi, "replay_upgrade", "restart", LXP_ERR_CONTEXT_MISMATCH, results, replay_root) != 0 ||
                     memcmp(root, replay_root, 32U) != 0) return 1;
                 ++cases; migration_destroy(&restarted, &restarted_store);
@@ -1221,7 +1970,11 @@ static int native_migration(void)
             migration_destroy(&kernel, &store); migration_destroy(&restored, &restored_store);
         }
     }
+    if (migration_accounting(seed) != 0) return 1;
+    int legacy_status = migration_legacy();
+    if (legacy_status != 0) return legacy_status;
     (void)memset(seed, 0, sizeof(seed));
+    (void)memset(migration_governor_seed, 0, sizeof(migration_governor_seed));
     if (fflush(results) != 0 || fsync(results_fd) != 0 || fclose(results) != 0 ||
         fsync(migration_directory_fd) != 0 || close(migration_directory_fd) != 0) return 1;
     return printf("NATIVE_MIGRATION_SUMMARY {\"cases\":%u,\"skipped\":0,\"authority_provisioned\":true,\"incompatible_schedule_refused\":true,\"snapshot_verified\":true}\n", cases) < 0;

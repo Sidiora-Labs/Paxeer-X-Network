@@ -87,6 +87,48 @@ typedef struct lxp_call_admission_facts {
     bool present;
 } lxp_call_admission_facts;
 
+typedef struct lxp_migration_profile {
+    uint32_t version;
+    uint32_t module_version;
+    uint32_t parameter_version;
+    uint64_t activation_epoch;
+    uint8_t authority_digest[32];
+    uint64_t limits[7];
+} lxp_migration_profile;
+
+typedef struct lxp_migration_admission_facts {
+    uint8_t activity_binding[32];
+    uint8_t payer[32];
+    uint8_t fee_asset[32];
+    uint8_t profile_authority[32];
+    uint32_t profile_version;
+    uint32_t module_version;
+    uint32_t parameter_version;
+    uint32_t fee_schedule_version;
+    uint32_t metering_schedule_version;
+    uint64_t activation_epoch;
+    uint64_t limits[7];
+    uint64_t prices[7];
+    uint64_t metering_coefficients[9];
+    uint64_t usage[6];
+    lxp_u128 available_fee_units;
+    lxp_u128 signed_fee_limit;
+    lxp_u128 validation_fee;
+    lxp_u128 coverage;
+    lxp_u128 maximum_fee;
+    lxp_u128 runtime_fee;
+    lxp_u128 combined_fee;
+    bool present;
+    bool usage_present;
+    bool replay_prestate_authenticated;
+    bool legacy_replay_authenticated;
+    lxp_result replay_result_code;
+    lxp_u128 replay_fee;
+    uint8_t replay_prestate_root[32];
+    uint8_t replay_receipt_digest[32];
+} lxp_migration_admission_facts;
+
+
 struct lxp_kernel;
 typedef lxp_result (*lxp_kernel_parameter_reader)(const void *parameter_set,
                                                   uint32_t parameter_id,
@@ -172,6 +214,7 @@ struct lxp_module_ctx {
     lxp_ledger_receipt_input ledger_receipt;
     bool ledger_receipt_present;
     lxp_call_admission_facts call_admission;
+    lxp_migration_admission_facts migration_admission;
     lxp_ledger_admission_facts ledger_admission;
     const lxp_verified_receipt_index *verified_receipts;
     lxp_module_blob staged_blobs[LXP_KERNEL_MAX_STAGED_BLOBS];
@@ -370,6 +413,10 @@ typedef struct lxp_kernel_execution {
     lxp_byte_span *replay_metadata_proof_out;
 } lxp_kernel_execution;
 #define lxp_kernel_execution lxp_kernel_execution
+
+lxp_result lxp_kernel_bind_migration_admission(
+    lxp_module_ctx *ctx, const lxp_activity *activity,
+    const lxp_kernel_execution *execution);
 
 /* A batch snapshot is an isolated, privately owned execution view.  It is the
  * only kernel object that may be presented to speculative workers; live

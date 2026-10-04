@@ -207,6 +207,13 @@ static lxp_result programs_epoch(lxp_module_ctx *ctx, uint64_t epoch,
     return ctx == NULL ? LXP_ERR_NON_CANONICAL : LXP_OK;
 }
 
+static lxp_result programs_epoch_begin(lxp_module_ctx *ctx, uint64_t epoch,
+                                       uint64_t timestamp)
+{
+    (void)timestamp;
+    return lxp_programs_migration_profile_epoch_begin(ctx, epoch);
+}
+
 static lxp_result programs_state_root(lxp_module_ctx *ctx, uint8_t root[32])
 {
     if (ctx == NULL || root == NULL) return LXP_ERR_NON_CANONICAL;
@@ -225,7 +232,7 @@ const lxp_module_iface *programs_module_registration(void)
         programs_decode,
         programs_validate,
         programs_execute,
-        programs_epoch,
+        programs_epoch_begin,
         programs_epoch,
         programs_state_root,
         NULL
@@ -245,7 +252,7 @@ const lxp_module_iface *programs_module_registration_v2(void)
         programs_decode,
         programs_validate,
         programs_execute,
-        programs_epoch,
+        programs_epoch_begin,
         programs_epoch,
         programs_state_root,
         NULL
@@ -265,7 +272,7 @@ const lxp_module_iface *programs_module_registration_v3(void)
         programs_decode,
         programs_validate,
         programs_execute,
-        programs_epoch,
+        programs_epoch_begin,
         programs_epoch,
         programs_state_root,
         NULL
@@ -284,7 +291,7 @@ const lxp_module_iface *programs_module_registration_v4(void)
         LXP_MODULE_PROGRAMS, LX_PROGRAMS_SANDBOX_DESTROY_ABI_VERSION, "programs",
         activity_types_v4, sizeof(activity_types_v4)/sizeof(activity_types_v4[0]),
         programs_genesis, programs_decode, programs_validate, programs_execute,
-        programs_epoch, programs_epoch, programs_state_root, NULL
+        programs_epoch_begin, programs_epoch, programs_state_root, NULL
     };
     return &iface;
 }

@@ -25431,7 +25431,7 @@ qualification_note = "Original08:32UTC cutoff terminated actual Go CLI compilati
 
 [task.6.2]
 title = "Execute native upgrade migrations under the admitted ABI and metering schedule"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 3
 requires = ["0.2", "6.3", "6.5"]
@@ -25453,7 +25453,7 @@ planned_paths = ["tools/qualification/paxeer-x/programs_native_migration.py"]
 path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
 evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
 build_cmd = "timeout 20m python3 tools/qualification/paxeer-x/programs_native_migration.py --build-artifacts"
-source_status = "partial_continuation_authorized"
+source_status = "complete"
 qualification_status = "UNRUN"
 remaining_source = "Actual authenticated Governance budget producer, epoch activation caller, canonical success accounting state, explicit authenticated legacy replay policy and complete real accounting corpus remain incomplete.11 authored paths isolated; no format/build/verify ran before09:34UTCcap."
 handoff_path = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-6.2-accounting-result.json"
@@ -25464,6 +25464,8 @@ owner_extension_accounting = "Owner-approved additional30-minute window START09:
 continuation_proposal = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-6.2-accounting-continuation.json"
 owner_extension_60m = "Owner explicitly approved60-minute continuation START09:48UTC END10:48UTC from frozen handoff; whole source first then one build and declaredfocusedverify, atmosttwo taskscopedrepairs. Preserveallpriorrecords."
 owner_replay_governance_approval = "Owner explicitly approved existing genesis governance key budget authority; preserve original validation-fee-only behavior solely for authenticated preactivation replay with proven original executor semantics. Missing provenance refuses; no historical repricing."
+completion_basis = "implementation under owner CONSTITUTION; qualification separately recorded"
+source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-6.2-source-handoff.json"
 
 [task.6.4]
 title = "Preserve account proofs and legitimate wind-down across account-capable ABI upgrades"

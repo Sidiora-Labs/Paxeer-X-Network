@@ -285,6 +285,145 @@ static lxp_result receipt_execution_signature(lxp_receipt *receipt,
     return status;
 }
 
+static lxp_result migration_replay_prestate(
+    lxp_kernel *kernel, const lxp_activity *activity,
+    const lxp_kernel_execution *execution,
+    lxp_migration_admission_facts *facts)
+{
+    const lxp_receipt *expected = execution->replay_receipt;
+    lxp_sequencer_authorization authorization;
+    lxp_byte_span encoded;
+    uint8_t activity_id[32], state_root[32], receipt_digest[32];
+    uint64_t epoch;
+    size_t mark;
+    lxp_result status, reset;
+    if (expected == NULL && execution->replay_public_key == NULL)
+        return LXP_OK;
+    if (expected == NULL || execution->replay_public_key == NULL ||
+        execution->sequencer_private_key != NULL || !kernel->handover.enabled)
+        return LXP_ERR_AUTH_SCOPE;
+    mark = lxp_arena_mark(execution->arena);
+    status = lxp_handover_history_resolve(kernel, execution->batch_number,
+        &authorization, &epoch, execution->arena);
+    if (status == LXP_OK &&
+        (epoch != execution->epoch ||
+         lxp_ct_memcmp(authorization.public_key,
+                       execution->replay_public_key, 32U) != 0))
+        status = LXP_ERR_AUTH_SCOPE;
+    if (status == LXP_OK)
+        status = lxp_receipt_verify(expected, authorization.public_key,
+                                    execution->arena);
+    if (status == LXP_OK)
+        status = lxp_activity_encode(activity, execution->arena, &encoded);
+    if (status == LXP_OK)
+        status = lxp_activity_id(encoded.bytes, encoded.length, activity_id);
+    if (status == LXP_OK) status = lxp_state_root(kernel, state_root);
+    if (status == LXP_OK &&
+        (expected->protocol_version != activity->protocol_version ||
+         expected->module_id != LXP_MODULE_PROGRAMS ||
+         expected->module_version != execution->recorded_module_version ||
+         expected->parameter_version != execution->parameter_version ||
+         expected->global_sequence != execution->global_sequence ||
+         expected->timestamp != execution->batch_timestamp_ms ||
+         expected->program_outcome.present ||
+         lxp_ct_memcmp(expected->activity_id, activity_id, 32U) != 0 ||
+         lxp_ct_memcmp(expected->batch_id, execution->batch_id, 32U) != 0 ||
+         lxp_ct_memcmp(expected->previous_state_root, state_root, 32U) != 0 ||
+         lxp_ct_memcmp(kernel->current_state_root, state_root, 32U) != 0))
+        status = LXP_ERR_CONTEXT_MISMATCH;
+    if (status == LXP_OK)
+        status = lxp_receipt_digest(expected, execution->arena, receipt_digest);
+    reset = lxp_arena_reset(execution->arena, mark);
+    if (reset != LXP_OK) return reset;
+    if (status != LXP_OK) return status;
+    facts->replay_result_code = expected->result_code;
+    facts->replay_fee = expected->fee_charged;
+    (void)memcpy(facts->replay_prestate_root, state_root, 32U);
+    (void)memcpy(facts->replay_receipt_digest, receipt_digest, 32U);
+    facts->replay_prestate_authenticated = true;
+    return LXP_OK;
+}
+
+lxp_result lxp_kernel_bind_migration_admission(
+    lxp_module_ctx *ctx, const lxp_activity *activity,
+    const lxp_kernel_execution *execution)
+{
+    lxp_migration_admission_facts facts;
+    const lxp_module_registration *registration;
+    lx_programs_fee_schedule fee_schedule;
+    lx_programs_metering_schedule metering;
+    lxp_byte_span canonical;
+    uint8_t activity_id[32], asset[32];
+    size_t mark;
+    lxp_result status, reset;
+    if (ctx == NULL || ctx->kernel == NULL || activity == NULL ||
+        execution == NULL || execution->authority == NULL ||
+        execution->fee_parameters == NULL || execution->arena == NULL ||
+        ctx->arena != execution->arena || ctx->module_id != LXP_MODULE_PROGRAMS ||
+        activity->activity_type != LX_PROGRAMS_UPGRADE ||
+        ctx->epoch != execution->epoch ||
+        ctx->batch_number != execution->batch_number ||
+        ctx->global_sequence != execution->global_sequence ||
+        ctx->protocol_version != activity->protocol_version ||
+        ctx->migration_admission.present ||
+        !execution->signature_valid ||
+        lxp_ct_is_zero(execution->authority->principal, 32U) ||
+        lxp_ct_is_zero(execution->authority->authority_hash, 32U))
+        return LXP_ERR_CONTEXT_MISMATCH;
+    (void)memset(&facts, 0, sizeof(facts));
+    status = lxp_activity_check_envelope(activity, execution->network_id);
+    if (status == LXP_OK) status = lxp_activity_verify_payload_hash(activity);
+    if (status == LXP_OK) status = lxp_activity_verify_signature(activity);
+    if (status != LXP_OK) return status;
+    mark = lxp_arena_mark(execution->arena);
+    status = lxp_activity_encode(activity, execution->arena, &canonical);
+    if (status == LXP_OK)
+        status = lxp_activity_id(canonical.bytes, canonical.length, activity_id);
+    reset = lxp_arena_reset(execution->arena, mark);
+    if (reset != LXP_OK) return reset;
+    if (status != LXP_OK) return status;
+    if (!lxp_ct_is_zero(ctx->activity_id, 32U) &&
+        lxp_ct_memcmp(ctx->activity_id, activity_id, 32U) != 0)
+        return LXP_ERR_CONTEXT_MISMATCH;
+    status = lxp_module_version_for_epoch(ctx->kernel, LXP_MODULE_PROGRAMS,
+        execution->epoch, execution->recorded_module_version, &registration);
+    if (status != LXP_OK) return status;
+    status = execution->replay_receipt == NULL ||
+             execution->recorded_fee_schedule_version == 0U ?
+        lxp_programs_fee_schedule_current(ctx, &fee_schedule, asset) :
+        lxp_programs_fee_schedule_at(ctx, execution->recorded_fee_schedule_version,
+                                    &fee_schedule, asset);
+    if (status != LXP_OK) return status;
+    if (execution->replay_receipt == NULL &&
+        execution->recorded_fee_schedule_version != 0U &&
+        execution->recorded_fee_schedule_version != fee_schedule.version)
+        return LXP_ERR_CONTEXT_MISMATCH;
+    status = execution->replay_receipt == NULL ||
+             execution->recorded_metering_schedule_version == 0U ?
+        lxp_programs_metering_schedule_current(ctx->kernel,
+            execution->batch_number, &metering) :
+        lxp_programs_metering_schedule_at(ctx->kernel,
+            execution->recorded_metering_schedule_version,
+            execution->batch_number, &metering);
+    if (status != LXP_OK) return status;
+    if (execution->replay_receipt == NULL &&
+        execution->recorded_metering_schedule_version != 0U &&
+        execution->recorded_metering_schedule_version != metering.version)
+        return LXP_ERR_CONTEXT_MISMATCH;
+    status = migration_replay_prestate(ctx->kernel, activity, execution, &facts);
+    if (status != LXP_OK) return status;
+    status = lxp_fee_compute(execution->fee_parameters, activity->activity_type,
+                             execution->fee_meter, &facts.validation_fee);
+    if (status != LXP_OK) return status;
+    facts.module_version = registration->abi_version;
+    facts.parameter_version = execution->parameter_version;
+    facts.fee_schedule_version = fee_schedule.version;
+    facts.metering_schedule_version = metering.version;
+    (void)memcpy(ctx->activity_id, activity_id, 32U);
+    ctx->migration_admission = facts;
+    return LXP_OK;
+}
+
 lxp_result lxp_kernel_bind_ledger_admission(
     lxp_module_ctx *ctx, const lxp_authority_resolved *authority,
     uint32_t activity_type)
@@ -6836,6 +6975,7 @@ lxp_result lxp_kernel_execute_activity(lxp_kernel *kernel,
     bool fee_transaction_open = false;
     void *fee_transaction = NULL;
     bool programs_call;
+    bool programs_migration;
     bool programs_state_activity;
     const lx_programs_transfer_runtime *programs_runtime = NULL;
     lx_programs_fee_schedule programs_fee_schedule;
@@ -6890,6 +7030,9 @@ lxp_result lxp_kernel_execute_activity(lxp_kernel *kernel,
     programs_state_activity =
         activity->activity_type == LX_PROGRAMS_ACCOUNT ||
         activity->activity_type == LX_PROGRAMS_WIND_DOWN;
+    programs_migration = activity->activity_type == LX_PROGRAMS_UPGRADE &&
+        activity->payload.bytes != NULL && activity->payload.length >= 106U &&
+        (activity->payload.bytes[34U] & 1U) != 0U;
     if (programs_state_activity &&
         (!lxp_protocol_version_uses_occupancy(activity->protocol_version) ||
          kernel->module_runtime[LXP_MODULE_PROGRAMS] == NULL ||
@@ -6972,7 +7115,7 @@ lxp_result lxp_kernel_execute_activity(lxp_kernel *kernel,
     status = lxp_fee_compute(execution->fee_parameters, activity->activity_type,
                              execution->fee_meter, &fee);
     if (status == LXP_OK) pre_runtime_fee = fee;
-    if (status == LXP_OK && programs_call)
+    if (status == LXP_OK && (programs_call || programs_migration))
         fee = (lxp_u128){0U, 0U};
     if (status == LXP_OK)
         status = lxp_fee_rejection_policy(
@@ -6988,12 +7131,13 @@ lxp_result lxp_kernel_execute_activity(lxp_kernel *kernel,
                                     execution->global_sequence,
                                     kernel->journal);
     if (status != LXP_OK) return status;
-    if (fee_policy.charge_fee && !programs_call)
+    if (fee_policy.charge_fee && !programs_call && !programs_migration)
         status = kernel->fee_transaction.prepare == NULL ?
                  LXP_FATAL_INVARIANT :
                  kernel_fee_prepare(kernel, activity, execution,
                      fee_policy.fee_charged, &fee_transaction);
-    if (status == LXP_OK && fee_policy.charge_fee && !programs_call)
+    if (status == LXP_OK && fee_policy.charge_fee &&
+        !programs_call && !programs_migration)
         fee_transaction_open = true;
     if (status == LXP_OK && fee_transaction_open && fee_transaction == NULL)
         status = LXP_FATAL_INVARIANT;
@@ -7022,6 +7166,10 @@ lxp_result lxp_kernel_execute_activity(lxp_kernel *kernel,
         if (status == LXP_OK) module_ctx.identities = execution->identities;
         if (status == LXP_OK)
             (void)memcpy(module_ctx.activity_id, canonical_activity_id, 32U);
+        if (status == LXP_OK && programs_migration) {
+            status = lxp_kernel_bind_migration_admission(
+                &module_ctx, activity, execution);
+        }
         if (status == LXP_OK &&
             (activity->activity_type == LX_PROGRAMS_CALL ||
              activity->activity_type == LX_PROGRAMS_WIND_DOWN ||
@@ -7117,18 +7265,52 @@ lxp_result lxp_kernel_execute_activity(lxp_kernel *kernel,
                 fee = pre_runtime_fee;
             }
         }
+        if (status == LXP_OK && programs_migration) {
+            const lxp_migration_admission_facts *migration =
+                &module_ctx.migration_admission;
+            fee = pre_runtime_fee;
+            if (module_result == LXP_OK) {
+                if (!migration->present ||
+                    (!migration->legacy_replay_authenticated &&
+                     !migration->usage_present) ||
+                    (migration->legacy_replay_authenticated &&
+                     (!migration->replay_prestate_authenticated ||
+                      execution->replay_receipt == NULL ||
+                      execution->replay_public_key == NULL ||
+                      migration->profile_version != 0U ||
+                      migration->usage_present ||
+                      !lxp_u128_is_zero(migration->runtime_fee))) ||
+                    lxp_ct_memcmp(migration->activity_binding,
+                                  canonical_activity_id, 32U) != 0 ||
+                    migration->module_version !=
+                        execution->recorded_module_version ||
+                    migration->parameter_version !=
+                        execution->parameter_version ||
+                    lxp_u128_cmp(migration->validation_fee,
+                                  pre_runtime_fee) != 0)
+                    status = LXP_ERR_CONTEXT_MISMATCH;
+                if (status == LXP_OK)
+                    status = lxp_u128_add(pre_runtime_fee,
+                        migration->runtime_fee, &fee);
+                if (status == LXP_OK &&
+                    lxp_u128_cmp(fee, migration->combined_fee) != 0)
+                    status = LXP_ERR_CONTEXT_MISMATCH;
+            }
+        }
         if (status == LXP_OK)
             status = lxp_fee_rejection_policy(
                 &admission_policy, module_result, fee, activity->fee_limit,
                 &fee_policy);
         if (status == LXP_OK && !fee_policy.apply_module_effects)
             lxp_module_ctx_rollback(&module_ctx);
-        if (status == LXP_OK && programs_call && fee_policy.charge_fee)
+        if (status == LXP_OK && (programs_call || programs_migration) &&
+            fee_policy.charge_fee)
             status = kernel->fee_transaction.prepare == NULL ?
                      LXP_FATAL_INVARIANT :
                      kernel_fee_prepare(kernel, activity, execution,
                          fee_policy.fee_charged, &fee_transaction);
-        if (status == LXP_OK && programs_call && fee_policy.charge_fee)
+        if (status == LXP_OK && (programs_call || programs_migration) &&
+            fee_policy.charge_fee)
             fee_transaction_open = true;
         if (status == LXP_OK && fee_transaction_open &&
             fee_transaction == NULL)
@@ -7136,8 +7318,12 @@ lxp_result lxp_kernel_execute_activity(lxp_kernel *kernel,
     }
     if (status != LXP_OK) {
         if (module_ctx_initialized) lxp_module_ctx_rollback(&module_ctx);
-        if (fee_transaction_open)
-            close_failed_fee_transaction(kernel, fee_transaction, status);
+        if (fee_transaction_open) {
+            if (programs_migration)
+                kernel_fee_rollback(kernel, fee_transaction);
+            else
+                close_failed_fee_transaction(kernel, fee_transaction, status);
+        }
         (void)lxp_state_journal_rollback(kernel->journal);
         return status;
     }
@@ -7145,8 +7331,12 @@ lxp_result lxp_kernel_execute_activity(lxp_kernel *kernel,
         status = lxp_module_ctx_prepare_commit(&module_ctx);
     if (status != LXP_OK) {
         lxp_module_ctx_rollback(&module_ctx);
-        if (fee_transaction_open)
-            close_failed_fee_transaction(kernel, fee_transaction, status);
+        if (fee_transaction_open) {
+            if (programs_migration)
+                kernel_fee_rollback(kernel, fee_transaction);
+            else
+                close_failed_fee_transaction(kernel, fee_transaction, status);
+        }
         (void)lxp_state_journal_rollback(kernel->journal);
         return status;
     }
@@ -7238,8 +7428,12 @@ lxp_result lxp_kernel_execute_activity(lxp_kernel *kernel,
     if (status != LXP_OK) {
         if (identity_sequence_consumed)
             identity->next_sequence = identity_sequence_before;
-        if (fee_transaction_open)
-            close_failed_fee_transaction(kernel, fee_transaction, status);
+        if (fee_transaction_open) {
+            if (programs_migration && kernel->journal->open)
+                kernel_fee_rollback(kernel, fee_transaction);
+            else
+                close_failed_fee_transaction(kernel, fee_transaction, status);
+        }
         if (kernel->journal->open)
             (void)lxp_state_journal_rollback(kernel->journal);
         return status;

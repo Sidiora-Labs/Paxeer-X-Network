@@ -3421,6 +3421,39 @@ impl Executor {
         self.for_abi(abi_version).execute(module, export, &[])
     }
 
+    pub(crate) fn execute_legacy_migration(
+        module: &ValidatedModule,
+        export: &str,
+        schedule: crate::FuelSchedule,
+    ) -> Result<ExecutionRecord, ExecutionError> {
+        if module.meter_injection().schedule() != schedule {
+            return Err(ExecutionError::Fault(ExecutionFault::EngineFault {
+                reason: "legacy migration metering differs from recorded compilation".into(),
+            }));
+        }
+        Self::legacy_migration_executor().execute(module, export, &[])
+    }
+
+    pub(crate) const fn legacy_migration_executor() -> Self {
+        Self::new_versioned(
+            ResourceBudget::new_complete(
+                1_000_000, 16_777_216, 1_048_576, 1_048_576, 64, 1_048_576, 4096,
+            ),
+            FeeSchedule::new_complete(crate::FeeScheduleParameters {
+                version: 1,
+                fee_units_per_cpu_fuel: 1,
+                fee_units_per_memory_byte: 1,
+                fee_units_per_storage_read_byte: 2,
+                fee_units_per_storage_write_byte: 4,
+                fee_units_per_output_value: 1,
+                fee_units_per_output_byte: 1,
+                fee_units_per_occupancy_byte_batch: 1,
+            }),
+            1,
+            crate::ABI_V1_VERSION,
+        )
+    }
+
     /// Admits one activity declaration before program lookup or guest execution.
     ///
     /// # Errors

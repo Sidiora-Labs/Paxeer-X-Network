@@ -31,6 +31,7 @@ static const uint8_t program_prefix[PROGRAM_KEY_PREFIX_LENGTH] = {
 static const uint8_t program_interface_prefix[PROGRAM_INTERFACE_KEY_PREFIX_LENGTH] = {
     'i', 'n', 't', 'e', 'r', 'f', 'a', 'c', 'e', 0
 };
+static const uint8_t migration_accounting_prefix[] = "progmig/account/v1/";
 
 typedef struct programs_lifecycle_decoded {
     uint16_t ordinal;
@@ -51,6 +52,7 @@ typedef struct programs_lifecycle_decoded {
     uint32_t prior_interface_length;
     lx_programs_metering_schedule admitted_metering;
     uint8_t metering_admitted;
+    lxp_module_ctx *migration_ctx;
 } programs_lifecycle_decoded;
 
 static uint16_t read_u16(const uint8_t *bytes)
@@ -82,6 +84,105 @@ static void write_u32(uint8_t *bytes, uint32_t value)
     bytes[1] = (uint8_t)(value >> 16U);
     bytes[2] = (uint8_t)(value >> 8U);
     bytes[3] = (uint8_t)value;
+}
+
+static void write_u64(uint8_t *bytes, uint64_t value)
+{
+    size_t i;
+    for (i = 0U; i < 8U; ++i)
+        bytes[i] = (uint8_t)(value >> (56U - i * 8U));
+}
+
+size_t lxp_programs_migration_accounting_key(
+    const uint8_t activity_id[32], uint8_t key[51])
+{
+    if (activity_id == NULL || key == NULL) return 0U;
+    (void)memcpy(key, migration_accounting_prefix,
+                 sizeof(migration_accounting_prefix) - 1U);
+    (void)memcpy(key + sizeof(migration_accounting_prefix) - 1U,
+                 activity_id, 32U);
+    return sizeof(migration_accounting_prefix) - 1U + 32U;
+}
+
+lxp_result lxp_programs_migration_accounting_read(
+    lxp_module_ctx *ctx, const uint8_t activity_id[32], uint8_t record[613])
+{
+    uint8_t key[51];
+    const uint8_t *value;
+    size_t length;
+    lxp_result status;
+    if (ctx == NULL || activity_id == NULL || record == NULL ||
+        ctx->module_id != LXP_MODULE_PROGRAMS || lxp_ct_is_zero(activity_id, 32U))
+        return LXP_ERR_NON_CANONICAL;
+    if (lxp_programs_migration_accounting_key(activity_id, key) != sizeof(key))
+        return LXP_FATAL_INVARIANT;
+    status = lxp_ctx_kv_get(ctx, key, sizeof(key), &value, &length);
+    if (status != LXP_OK) return status;
+    if (length != 613U || memcmp(value, "LXMA1", 5U) != 0 ||
+        read_u32(value + 5U) != 1U ||
+        read_u16(value + 9U) != layerx_programs_migration_runtime_version() ||
+        read_u16(value + 11U) == 0U || read_u16(value + 11U) > 4U ||
+        read_u32(value + 13U) == 0U || read_u32(value + 17U) == 0U ||
+        read_u32(value + 21U) == 0U || read_u32(value + 25U) == 0U ||
+        memcmp(value + 61U, activity_id, 32U) != 0 ||
+        lxp_ct_is_zero(value + 93U, 32U) || lxp_ct_is_zero(value + 253U, 32U))
+        return LXP_FATAL_REPLAY_DIVERGENCE;
+    (void)memcpy(record, value, length);
+    return LXP_OK;
+}
+
+static lxp_result migration_accounting_stage(lxp_module_ctx *ctx,
+    const programs_lifecycle_decoded *request)
+{
+    const lxp_migration_admission_facts *facts = &ctx->migration_admission;
+    uint8_t key[51], record[613];
+    const uint8_t *existing;
+    size_t existing_length, i;
+    lxp_result status;
+    if (facts->legacy_replay_authenticated) return LXP_OK;
+    if (!facts->present || !facts->usage_present || facts->profile_version != 1U ||
+        memcmp(facts->activity_binding, ctx->activity_id, 32U) != 0)
+        return LXP_ERR_CONTEXT_MISMATCH;
+    if (lxp_programs_migration_accounting_key(ctx->activity_id, key) != sizeof(key))
+        return LXP_FATAL_INVARIANT;
+    status = lxp_ctx_kv_get(ctx, key, sizeof(key), &existing, &existing_length);
+    if (status == LXP_OK) return LXP_FATAL_REPLAY_DIVERGENCE;
+    if (status != LXP_ERR_UNKNOWN_FIELD) return status;
+    (void)memset(record, 0, sizeof(record));
+    (void)memcpy(record, "LXMA1", 5U);
+    write_u32(record + 5U, facts->profile_version);
+    write_u16(record + 9U, layerx_programs_migration_runtime_version());
+    write_u16(record + 11U, request->abi_version);
+    write_u32(record + 13U, facts->module_version);
+    write_u32(record + 17U, facts->parameter_version);
+    write_u32(record + 21U, facts->fee_schedule_version);
+    write_u32(record + 25U, facts->metering_schedule_version);
+    write_u64(record + 29U, facts->activation_epoch);
+    write_u64(record + 37U, ctx->epoch);
+    write_u64(record + 45U, ctx->batch_number);
+    write_u64(record + 53U, ctx->global_sequence);
+    (void)memcpy(record + 61U, ctx->activity_id, 32U);
+    (void)memcpy(record + 93U, request->program_id, 32U);
+    (void)memcpy(record + 125U, request->old_hash, 32U);
+    (void)memcpy(record + 157U, request->new_hash, 32U);
+    (void)memcpy(record + 189U, facts->payer, 32U);
+    (void)memcpy(record + 221U, facts->fee_asset, 32U);
+    (void)memcpy(record + 253U, facts->profile_authority, 32U);
+    for (i = 0U; i < 7U; ++i) {
+        write_u64(record + 285U + i * 8U, facts->limits[i]);
+        write_u64(record + 341U + i * 8U, facts->prices[i]);
+    }
+    for (i = 0U; i < 9U; ++i)
+        write_u64(record + 397U + i * 8U, facts->metering_coefficients[i]);
+    for (i = 0U; i < 6U; ++i)
+        write_u64(record + 469U + i * 8U, facts->usage[i]);
+    status = lxp_u128_to_be(facts->signed_fee_limit, record + 517U);
+    if (status == LXP_OK) status = lxp_u128_to_be(facts->available_fee_units, record + 533U);
+    if (status == LXP_OK) status = lxp_u128_to_be(facts->maximum_fee, record + 549U);
+    if (status == LXP_OK) status = lxp_u128_to_be(facts->validation_fee, record + 565U);
+    if (status == LXP_OK) status = lxp_u128_to_be(facts->runtime_fee, record + 581U);
+    if (status == LXP_OK) status = lxp_u128_to_be(facts->combined_fee, record + 597U);
+    return status == LXP_OK ? lxp_ctx_kv_put(ctx, key, sizeof(key), record, sizeof(record)) : status;
 }
 
 int32_t layerx_programs_abi_transition_admit(uint16_t current,
@@ -528,6 +629,14 @@ static lxp_result execute_upgrade(lxp_module_ctx *ctx,
                    metering_schedule.coefficients,
                    sizeof(metering_schedule.coefficients)) != 0)
             return LXP_ERR_CONTEXT_MISMATCH;
+        status = lxp_programs_migration_admit(ctx, activity, authority,
+            ctx->migration_admission.validation_fee,
+            ctx->migration_admission.module_version,
+            ctx->migration_admission.parameter_version,
+            ctx->migration_admission.fee_schedule_version,
+            ctx->migration_admission.metering_schedule_version);
+        if (status != LXP_OK) return status;
+        ((programs_lifecycle_decoded *)value)->migration_ctx = ctx;
         status = layerx_programs_migration_execute_activity(
             (uint64_t)(uintptr_t)value, value->wasm_length,
             value->migration_hook_length, value->abi_version,
@@ -543,7 +652,11 @@ static lxp_result execute_upgrade(lxp_module_ctx *ctx,
             metering_schedule.coefficients[8],
             read_u64(value->new_hash), read_u64(value->new_hash + 8U),
             read_u64(value->new_hash + 16U), read_u64(value->new_hash + 24U));
+        ((programs_lifecycle_decoded *)value)->migration_ctx = NULL;
         if (status != LXP_OK) return status;
+        if (!ctx->migration_admission.usage_present &&
+            !ctx->migration_admission.legacy_replay_authenticated)
+            return LXP_FATAL_INVARIANT;
     }
     version = read_u32(current + 67U);
     if (version == UINT32_MAX) return LXP_ERR_OVERFLOW;
@@ -568,11 +681,87 @@ static lxp_result execute_upgrade(lxp_module_ctx *ctx,
     }
     (void)memcpy(event, value->old_hash, 32U);
     (void)memcpy(event + 32U, value->new_hash, 32U);
+    if ((value->policy_or_flags & 1U) != 0U) {
+        status = migration_accounting_stage(ctx, value);
+        if (status != LXP_OK) return status;
+    }
     status = lxp_ctx_emit_event(ctx, PROGRAM_EVENT_UPGRADED, event, sizeof(event));
     if (status != LXP_OK) return status;
     return layerx_programs_module_cache_invalidate_upgrade(
         read_u64(value->old_hash), read_u64(value->old_hash + 8U),
         read_u64(value->old_hash + 16U), read_u64(value->old_hash + 24U));
+}
+
+lxp_result layerx_programs_migration_admission_byte(uint64_t token, uint32_t offset)
+{
+    const programs_lifecycle_decoded *value = (const programs_lifecycle_decoded *)(uintptr_t)token;
+    const lxp_migration_admission_facts *facts;
+    uint8_t bytes[140];
+    size_t i, j;
+    if (value == NULL || value->migration_ctx == NULL || offset >= sizeof(bytes))
+        return LXP_ERR_NON_CANONICAL;
+    facts = &value->migration_ctx->migration_admission;
+    if (!facts->present || facts->usage_present ||
+        memcmp(facts->activity_binding, value->migration_ctx->activity_id, 32U) != 0)
+        return LXP_ERR_CONTEXT_MISMATCH;
+    if (facts->profile_version == 0U && !facts->legacy_replay_authenticated)
+        return LXP_ERR_AUTH_SCOPE;
+    write_u32(bytes, facts->profile_version);
+    write_u32(bytes + 4U, facts->fee_schedule_version);
+    write_u16(bytes + 8U, layerx_programs_migration_runtime_version());
+    write_u16(bytes + 10U, value->abi_version);
+    for (i = 0U; i < 7U; ++i) {
+        for (j = 0U; j < 8U; ++j) {
+            bytes[12U + i * 8U + j] = (uint8_t)(facts->limits[i] >> (56U - j * 8U));
+            bytes[68U + i * 8U + j] = (uint8_t)(facts->prices[i] >> (56U - j * 8U));
+        }
+    }
+    if (lxp_u128_to_be(facts->coverage, bytes + 124U) != LXP_OK)
+        return LXP_FATAL_INVARIANT;
+    return (lxp_result)bytes[offset];
+}
+
+lxp_result layerx_programs_migration_usage_commit(uint64_t token,
+    uint64_t cpu, uint64_t memory, uint64_t read, uint64_t write,
+    uint32_t output_values, uint64_t output_bytes, uint64_t fee_hi, uint64_t fee_lo)
+{
+    const programs_lifecycle_decoded *value = (const programs_lifecycle_decoded *)(uintptr_t)token;
+    lxp_migration_admission_facts *facts;
+    uint64_t usage[6] = {cpu, memory, read, write, output_values, output_bytes};
+    lxp_u128 computed = {0U, 0U}, supplied = {fee_hi, fee_lo}, combined;
+    size_t i;
+    lxp_result status;
+    if (value == NULL || value->migration_ctx == NULL) return LXP_ERR_NON_CANONICAL;
+    facts = &value->migration_ctx->migration_admission;
+    if (!facts->present || facts->usage_present ||
+        memcmp(facts->activity_binding, value->migration_ctx->activity_id, 32U) != 0)
+        return LXP_ERR_CONTEXT_MISMATCH;
+    if (facts->profile_version != 1U || facts->legacy_replay_authenticated)
+        return LXP_ERR_AUTH_SCOPE;
+    for (i = 0U; i < 6U; ++i) {
+        lxp_u256 product;
+        lxp_u128 part;
+        if (usage[i] > facts->limits[i]) return LXP_ERR_GAS_EXHAUSTED;
+        status = lxp_u128_mul((lxp_u128){0U, usage[i]},
+            (lxp_u128){0U, facts->prices[i]}, &product);
+        if (status != LXP_OK) return status;
+        if (product.words[2] != 0U || product.words[3] != 0U) return LXP_ERR_OVERFLOW;
+        part = (lxp_u128){product.words[1], product.words[0]};
+        status = lxp_u128_add(computed, part, &computed);
+        if (status != LXP_OK) return status;
+    }
+    if (lxp_u128_cmp(computed, supplied) != 0) return LXP_ERR_CONTEXT_MISMATCH;
+    if (lxp_u128_cmp(computed, facts->maximum_fee) > 0 ||
+        lxp_u128_cmp(computed, facts->coverage) > 0) return LXP_ERR_FEE_LIMIT;
+    status = lxp_u128_add(facts->validation_fee, computed, &combined);
+    if (status != LXP_OK) return status;
+    if (lxp_u128_cmp(combined, facts->signed_fee_limit) > 0 ||
+        lxp_u128_cmp(combined, facts->available_fee_units) > 0) return LXP_ERR_FEE_LIMIT;
+    (void)memcpy(facts->usage, usage, sizeof(usage));
+    facts->runtime_fee = computed;
+    facts->combined_fee = combined;
+    facts->usage_present = true;
+    return LXP_OK;
 }
 
 lxp_result layerx_programs_migration_activity_byte(uint64_t token,

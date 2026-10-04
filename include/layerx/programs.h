@@ -686,6 +686,36 @@ lxp_result layerx_programs_interface_validate(
     uint64_t h0, uint64_t h1, uint64_t h2, uint64_t h3);
 
 /* Synchronous lifecycle bridge matching the same arena-token rule. */
+typedef struct lxp_migration_profile lxp_migration_profile;
+enum {
+    LX_PROGRAMS_MIGRATION_ACCOUNTING_BYTES = 613,
+    LX_PROGRAMS_MIGRATION_ACCOUNTING_KEY_BYTES = 51
+};
+size_t lxp_programs_migration_accounting_key(
+    const uint8_t activity_id[32], uint8_t key[51]);
+lxp_result lxp_programs_migration_accounting_read(
+    lxp_module_ctx *ctx, const uint8_t activity_id[32], uint8_t record[613]);
+lxp_result lxp_programs_migration_proposal_encode(
+    const lxp_migration_profile *profile, uint8_t encoded[81]);
+lxp_result lxp_programs_migration_proposal_decode(
+    const uint8_t *encoded, size_t length, lxp_migration_profile *profile);
+lxp_result lxp_programs_migration_profile_epoch_begin(lxp_module_ctx *ctx, uint64_t epoch);
+lxp_result lxp_programs_migration_preactivation(lxp_module_ctx *ctx, bool *preactivation);
+lxp_result lxp_programs_migration_profile_stage(lxp_module_ctx *ctx,
+    const lxp_migration_profile *profile, const lxp_receipt *receipt);
+lxp_result lxp_programs_migration_profile_activate(lxp_module_ctx *ctx, uint64_t epoch);
+lxp_result lxp_programs_migration_profile_at(lxp_module_ctx *ctx,
+    uint32_t module_version, uint32_t parameter_version, uint64_t execution_epoch,
+    lxp_migration_profile *profile);
+lxp_result lxp_programs_migration_admit(lxp_module_ctx *ctx,
+    const lxp_activity *activity, const lxp_authority_resolved *authority,
+    lxp_u128 validation_fee, uint32_t module_version, uint32_t parameter_version,
+    uint32_t recorded_fee_version, uint32_t recorded_metering_version);
+uint16_t layerx_programs_migration_runtime_version(void);
+lxp_result layerx_programs_migration_admission_byte(uint64_t token, uint32_t offset);
+lxp_result layerx_programs_migration_usage_commit(uint64_t token,
+    uint64_t cpu, uint64_t memory, uint64_t read, uint64_t write,
+    uint32_t output_values, uint64_t output_bytes, uint64_t fee_hi, uint64_t fee_lo);
 lxp_result layerx_programs_migration_execute_activity(uint64_t token,
                                                        uint32_t wasm_length,
                                                        uint16_t hook_length,

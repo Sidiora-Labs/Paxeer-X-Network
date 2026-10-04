@@ -3,6 +3,7 @@
 #include "layerx/lxp_hash.h"
 #include "layerx/programs.h"
 #include "layerx/lxp_handover.h"
+#include "layerx/lxp_governance.h"
 #include <string.h>
 
 enum { STATE_BYTES = 223, DID = 5, PRIMARY = 37, REVOCATION = 69,
@@ -18,6 +19,9 @@ typedef struct governance_payload {
     uint8_t bytes[1024];
     lxp_byte_span handover;
 } governance_payload;
+
+enum { MIGRATION_BUDGET_BYTES = 81 };
+static const uint8_t migration_proposal_prefix[] = "govmig/proposal/v1/";
 
 static uint64_t read64(const uint8_t *p)
 {
@@ -35,7 +39,8 @@ bool lxp_governance_activity(uint32_t type)
 {
     return type == 0x00070001U || type == 0x00070002U ||
            type == 0x00070003U || type == 0x00070005U || type == 0x00070006U ||
-           type == 0x00070008U || type == LXP_GOVERNANCE_HANDOVER;
+           type == 0x00070008U || type == LXP_GOVERNANCE_HANDOVER ||
+           type == LXP_GOVERNANCE_MIGRATION_BUDGET;
 }
 
 lxp_result lxp_governance_identity_refresh(const lxp_kernel *kernel,
@@ -98,6 +103,22 @@ static lxp_result decode(lxp_module_ctx *ctx, uint16_t ordinal,
 {
     governance_payload *p;
     void *memory = NULL;
+    if (ordinal == lxp_activity_type_ordinal(LXP_GOVERNANCE_MIGRATION_BUDGET)) {
+        lxp_migration_profile profile;
+        lxp_result status;
+        if (ctx == NULL || decoded == NULL) return LXP_ERR_NON_CANONICAL;
+        status = lxp_programs_migration_proposal_decode(bytes, length, &profile);
+        if (status == LXP_OK)
+            status = lxp_ctx_arena_alloc(ctx, sizeof(*p), _Alignof(governance_payload), &memory);
+        if (status != LXP_OK) return status;
+        p = memory;
+        (void)memset(p, 0, sizeof(*p));
+        p->ordinal = ordinal;
+        p->length = length;
+        (void)memcpy(p->bytes, bytes, length);
+        *decoded = p;
+        return LXP_OK;
+    }
     if (ordinal == 9U) {
         lxp_handover_evidence evidence;
         lxp_result status;
@@ -160,7 +181,65 @@ static lxp_result validate(lxp_module_ctx *ctx, const lxp_activity *activity,
         p->handover.length != activity->payload.length ||
         memcmp(p->handover.bytes, activity->payload.bytes, p->handover.length) != 0))
         return LXP_ERR_AUTH_SCOPE;
+    if (p->ordinal == lxp_activity_type_ordinal(LXP_GOVERNANCE_MIGRATION_BUDGET)) {
+        lxp_migration_profile profile;
+        lxp_result status;
+        if (ctx == NULL || ctx->kernel == NULL || ctx->module_id != LXP_MODULE_GOVERNANCE ||
+            ctx->protocol_version != activity->protocol_version ||
+            activity->activity_type != LXP_GOVERNANCE_MIGRATION_BUDGET ||
+            !ctx->kernel->handover.enabled ||
+            ctx->kernel->handover.network_id != activity->network_id ||
+            !lxp_ed25519_pubkey_is_canonical(ctx->kernel->handover.governance_public_key) ||
+            activity->authority.length != 32U || activity->authority.bytes == NULL ||
+            activity->payload.bytes == NULL ||
+            memcmp(authority->verified_key, ctx->kernel->handover.governance_public_key, 32U) != 0 ||
+            memcmp(activity->authority.bytes, authority->verified_key, 32U) != 0 ||
+            p->length != MIGRATION_BUDGET_BYTES ||
+            activity->payload.length != p->length ||
+            memcmp(activity->payload.bytes, p->bytes, p->length) != 0)
+            return LXP_ERR_AUTH_SCOPE;
+        status = lxp_activity_verify_payload_hash(activity);
+        if (status == LXP_OK) status = lxp_activity_verify_signature(activity);
+        if (status == LXP_OK)
+            status = lxp_programs_migration_proposal_decode(p->bytes, p->length, &profile);
+        if (status != LXP_OK) return status;
+        if (profile.activation_epoch <= ctx->epoch) return LXP_ERR_PARAMETER_BOUNDS;
+    }
     return lxp_ctx_charge_gas(ctx, p->length);
+}
+
+static lxp_result migration_budget_execute(
+    lxp_module_ctx *ctx, const lxp_activity *activity,
+    const lxp_authority_resolved *authority, const governance_payload *p,
+    lxp_effect_buffer *effects)
+{
+    uint8_t key[sizeof(migration_proposal_prefix) - 1U + 32U];
+    const uint8_t *prior;
+    size_t length;
+    lxp_effect effect = {0};
+    lxp_result status;
+    if (ctx == NULL || !ctx->mutable || ctx->effects != effects || effects == NULL ||
+        ctx->global_sequence == 0U || ctx->next_effect_ordinal != 0U || effects->count != 0U)
+        return LXP_ERR_NON_CANONICAL;
+    status = validate(ctx, activity, authority, p);
+    if (status != LXP_OK) return status;
+    (void)memcpy(key, migration_proposal_prefix, sizeof(migration_proposal_prefix) - 1U);
+    status = lxp_hash_sha256(p->bytes, p->length,
+        key + sizeof(migration_proposal_prefix) - 1U);
+    if (status != LXP_OK) return status;
+    status = lxp_ctx_kv_get(ctx, key, sizeof(key), &prior, &length);
+    if (status != LXP_ERR_UNKNOWN_FIELD)
+        return status == LXP_OK ? LXP_ERR_SEQUENCE_REUSED : status;
+    status = lxp_ctx_kv_put(ctx, key, sizeof(key), p->bytes, p->length);
+    if (status != LXP_OK) return status;
+    effect.module_id = LXP_MODULE_GOVERNANCE;
+    effect.ordinal = ctx->next_effect_ordinal;
+    effect.kind = LXP_EFFECT_STATE;
+    effect.body_length = MIGRATION_BUDGET_BYTES;
+    (void)memcpy(effect.body, p->bytes, p->length);
+    status = lxp_effect_buffer_add(effects, &effect);
+    if (status == LXP_OK) ++ctx->next_effect_ordinal;
+    return status;
 }
 
 static lxp_result grant_scope_validate(lxp_module_ctx *ctx,
@@ -386,6 +465,8 @@ static lxp_result execute(lxp_module_ctx *ctx, const lxp_activity *activity,
                            lxp_effect_buffer *effects)
 {
     const governance_payload *p = decoded;
+    if (p != NULL && p->ordinal == lxp_activity_type_ordinal(LXP_GOVERNANCE_MIGRATION_BUDGET))
+        return migration_budget_execute(ctx, activity, authority, p, effects);
     const uint8_t *prior;
     size_t length;
     uint8_t state[STATE_BYTES] = {0};
@@ -499,10 +580,11 @@ static lxp_result root(lxp_module_ctx *ctx, uint8_t digest[32])
 }
 const lxp_module_iface *lxp_governance_module_iface_for_handover(bool enabled)
 {
-    static const uint32_t types[] = {0x00070001U, 0x00070002U, 0x00070003U, 0x00070005U, 0x00070006U, 0x00070008U, LXP_GOVERNANCE_HANDOVER};
-    static const lxp_module_iface legacy = {LXP_MODULE_GOVERNANCE, 1U, "governance", types, 6U,
+    static const uint32_t legacy_types[] = {0x00070001U, 0x00070002U, 0x00070003U, 0x00070005U, 0x00070006U, 0x00070008U, LXP_GOVERNANCE_MIGRATION_BUDGET};
+    static const uint32_t handover_types[] = {0x00070001U, 0x00070002U, 0x00070003U, 0x00070005U, 0x00070006U, 0x00070008U, LXP_GOVERNANCE_HANDOVER, LXP_GOVERNANCE_MIGRATION_BUDGET};
+    static const lxp_module_iface legacy = {LXP_MODULE_GOVERNANCE, 1U, "governance", legacy_types, 7U,
         genesis, decode, validate, execute, epoch, epoch, root, NULL};
-    static const lxp_module_iface handover = {LXP_MODULE_GOVERNANCE, 1U, "governance", types, 7U,
+    static const lxp_module_iface handover = {LXP_MODULE_GOVERNANCE, 1U, "governance", handover_types, 8U,
         genesis, decode, validate, execute, epoch, epoch, root, NULL};
     return enabled ? &handover : &legacy;
 }

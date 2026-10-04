@@ -1365,6 +1365,15 @@ static lxp_result replay_execute_activity(
         return LXP_ERR_VERSION_UNSUPPORTED;
     status = process_batch_authorization(process, batch_number, &authorization, &trusted_epoch);
     if (status != LXP_OK) return status;
+    {
+        size_t receipt_mark = lxp_arena_mark(&process->execution_arena);
+        lxp_result reset_status;
+        status = lxp_receipt_verify(expected, authorization.public_key,
+                                    &process->execution_arena);
+        reset_status = lxp_arena_reset(&process->execution_arena, receipt_mark);
+        if (reset_status != LXP_OK) return reset_status;
+        if (status != LXP_OK) return status;
+    }
     status = lxp_fee_replay_schedule_verify(&process->kernel,
         expected->parameter_version, &process->fees);
     if (status != LXP_OK) return status;

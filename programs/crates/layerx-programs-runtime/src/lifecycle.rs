@@ -268,7 +268,9 @@ impl Lifecycle {
         }
         let migration = match &activity.migration {
             Some(migration) => match self.executor.execute_migration(
-                &validated, &migration.export, activity.abi_version,
+                &validated,
+                &migration.export,
+                activity.abi_version,
                 validated.meter_injection().schedule(),
             ) {
                 Ok(record) => Some(record),
