@@ -4,6 +4,7 @@ import importlib.util
 import json
 import os
 import stat
+import time
 import unittest
 from dataclasses import replace
 from hashlib import sha256
@@ -170,12 +171,48 @@ class ProgramHttp(unittest.TestCase):
         unknown = self.request(self.fixture["unknown_call"])
         self.operations.discover(unknown.program_id)
         bound = decode_signed_program_call(unknown)
+        control_path = os.environ.get("PAXEER_X_PROGRAM_HTTP_CONTROL")
+        if not control_path:
+            raise RuntimeError("genuine disposable native disconnect controller required")
+        control = json.loads(protected(control_path), object_pairs_hook=unique)
+        self.assertEqual(set(control), {"refused_activity_id", "node_pid", "node_disconnect_request_file", "node_disconnected_file"})
+        self.assertEqual(control["refused_activity_id"], result["activity_id"])
+        requested = Path(control["node_disconnect_request_file"])
+        acknowledged = Path(control["node_disconnected_file"])
+        self.assertTrue(requested.is_absolute() and requested.resolve() == requested)
+        self.assertEqual((requested.parent.stat().st_uid, stat.S_IMODE(requested.parent.stat().st_mode)), (os.geteuid(), 0o700))
+        fd = os.open(requested, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+        with os.fdopen(fd, "wb") as stream:
+            stream.write(bytes.fromhex(result["activity_id"]))
+            stream.flush()
+            os.fsync(stream.fileno())
+        deadline = time.monotonic() + 30
+        while not acknowledged.exists():
+            if time.monotonic() >= deadline:
+                raise RuntimeError("actual native disconnection was not acknowledged")
+            time.sleep(0.05)
+        acknowledgment = json.loads(protected(acknowledged), object_pairs_hook=unique)
+        self.assertEqual(set(acknowledgment), {"node_pid", "refused_activity_id", "refused_receipt_file", "state"})
+        self.assertEqual(acknowledgment["node_pid"], control["node_pid"])
+        self.assertEqual(acknowledgment["refused_activity_id"], result["activity_id"])
+        self.assertEqual(acknowledgment["state"], "native-node-disconnected-after-verified-refusal")
+        self.assertEqual(protected(acknowledgment["refused_receipt_file"]).hex(), result["receipt"])
+        self.assertFalse(Path(f'/proc/{control["node_pid"]}').exists())
         result = self.operations.submit(unknown, IdempotencyKey(bound.idempotency_key))
         self.assertEqual(result, {"state": "unknown", "activity_id": bound.activity_id, "idempotency_key": bound.idempotency_key,
                                   "retained_signed_activity": bound.canonical_bytes.hex()})
         recovered = self.operations.receipt(bound.idempotency_key, bound.activity_id)
         self.assertEqual(recovered["state"], "unknown")
         self.assertEqual(recovered["retained_signed_activity"], bound.canonical_bytes.hex())
+
+
+def load_tests(loader, tests, pattern):
+    del loader, tests, pattern
+    return unittest.TestSuite(ProgramHttp(name) for name in (
+        "test_real_discovery_signature_pin_and_signed_call_refusals",
+        "test_real_unified_http_discovery_interface_simulation_call_and_recovery",
+        "test_real_native_refused_and_unknown_calls_keep_exact_binding",
+    ))
 
 
 if __name__ == "__main__":

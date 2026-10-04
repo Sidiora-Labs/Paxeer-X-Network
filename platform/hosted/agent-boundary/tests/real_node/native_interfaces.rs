@@ -2398,3 +2398,365 @@ fn guest_abi_discovery() {
     }
     println!("REGISTRY_DISCOVERY_CASE remote-attestation");
 }
+
+fn python_http_publish(path: &Path, bytes: &[u8]) {
+    let pending = path.with_extension("pending");
+    write(&pending, bytes, 0o600);
+    must(fs::rename(&pending, path), "publish complete protected native fixture artifact");
+}
+
+fn python_http_control_file(path: &Path) -> bool {
+    use std::os::unix::fs::MetadataExt;
+    let metadata = match fs::symlink_metadata(path) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return false,
+        Err(error) => panic!("private Python HTTP control: {error}"),
+    };
+    assert!(metadata.is_file() && !metadata.file_type().is_symlink());
+    assert_eq!(metadata.uid(), effective_uid());
+    assert_eq!(metadata.nlink(), 1);
+    assert_eq!(metadata.mode() & 0o777, 0o600);
+    assert!(metadata.len() <= 256);
+    true
+}
+
+fn python_http_refusal_receipt(cluster: &Cluster, signed: &[u8], evidence: &Path) -> [u8; 32] {
+    let activity = must(decode_signed(signed, &registry()), "actual refused activity");
+    let identifier = must(activity_id(&activity), "actual refused activity identity");
+    let mut connection = NativeConnection::connect(cluster);
+    let handshake = must(
+        perform(
+            &mut connection,
+            &HandshakeConfig {
+                built_interface_version: Version::V1_7,
+                expected_protocol_version: PROTOCOL_VERSION,
+                expected_network_id: NETWORK_ID,
+            },
+            None,
+        ),
+        "refusal observer native handshake",
+    );
+    assert_eq!(handshake.node().authorised_sequencer_key, cluster.sequencer_key);
+    let result = must(
+        lookup_authenticated(
+            &mut connection,
+            identifier,
+            AuthenticatedLookupContext {
+                interface_version: handshake.node().interface_version,
+                correlation_id: 2,
+                sequencer_public_key: cluster.sequencer_key,
+                wait_mode: ReceiptWaitMode::Published,
+            },
+        ),
+        "genuine refused receipt observation",
+    );
+    let AuthenticatedLookup::Verified(receipt) = result else {
+        panic!("native disconnection refused without genuine signed refusal receipt")
+    };
+    let protocol = receipt.receipt().protocol().unwrap_or_else(|| panic!("native refusal receipt"));
+    assert_eq!(protocol.activity_id(), identifier);
+    assert_eq!(activity.network_id(), NETWORK_ID);
+    assert_eq!(protocol.protocol_version(), PROTOCOL_VERSION);
+    assert_eq!(protocol.module_id(), 9);
+    assert_eq!(protocol.operation(), 3);
+    assert_eq!(protocol.result_code(), -101);
+    super::lifecycle::verify_lifecycle_batch(cluster, receipt.receipt(), receipt.canonical_bytes());
+    write(&evidence.join("refused-call.receipt"), receipt.canonical_bytes(), 0o600);
+    identifier
+}
+
+#[test]
+fn emit_python_program_http_fixture() {
+    use std::os::unix::fs::MetadataExt;
+    assert_eq!(effective_uid(), 0, "disposable native fixture requires its existing root-owned process isolation");
+    let evidence = PathBuf::from(
+        std::env::var_os("PAXEER_X_PROGRAM_HTTP_PRODUCER_DIR")
+            .unwrap_or_else(|| panic!("protected Python HTTP producer directory required")),
+    );
+    assert!(evidence.is_absolute());
+    assert_eq!(must(fs::canonicalize(&evidence), "producer directory"), evidence);
+    let metadata = must(fs::symlink_metadata(&evidence), "producer directory metadata");
+    assert!(metadata.is_dir() && !metadata.file_type().is_symlink());
+    assert_eq!(metadata.uid(), effective_uid());
+    assert_eq!(metadata.mode() & 0o777, 0o700);
+    assert!(must(fs::read_dir(&evidence), "empty producer directory").next().is_none());
+    let deadline = Instant::now() + Duration::from_secs(1200);
+    let (mut cluster, funding) = custody::start_funded_multiasset_cluster();
+    assert_eq!(cluster.actor.did, funding[0].actor.did);
+    assert_eq!(cluster.actor.source, funding[0].actor.source);
+    assert!(funding[0].fee_balance > 0);
+    let mut sequence = custody::multiasset_identity_sequence(&cluster, &cluster.actor);
+    assert_eq!(sequence, funding[0].next_sequence);
+    let history = evidence.join("provisioned-trust-history.bin");
+    provisioned_history(&cluster, &history);
+    let verifier = must(
+        ProtocolDeploymentVerifier::from_protected_history(&history, 60_000),
+        "genuine provisioned program trust",
+    );
+    let mut hosted = HostedRegistry::start(&cluster, &history);
+    for (name, source, environment_key) in [
+        ("python-http-server.der", &cluster.tls.server_der, "LAYERX_REGISTRY_TLS_CERT_DER"),
+        ("python-http-server-key.der", &cluster.tls.server_key_der, "LAYERX_REGISTRY_TLS_KEY_DER"),
+        ("python-http-client-ca.der", &cluster.tls.client_ca_der, "LAYERX_REGISTRY_CLIENT_CA_DER"),
+    ] {
+        let destination = cluster.root.join("hosted-registry").join(name);
+        write(&destination, &must(fs::read(source), "actual common registry TLS"), 0o600);
+        chown(&destination, 4030, 4030);
+        hosted.environment.insert(environment_key.to_owned(), text(&destination));
+    }
+    hosted.client.certificate = cluster.tls.server_certificate.clone();
+    hosted.identity = cluster.tls.client_identity.clone();
+    hosted.restart();
+    let mut programs = Vec::new();
+    let mut future_calls = Vec::new();
+    let mut deployed = Vec::new();
+    for abi in 1_u16..=4 {
+        let program = random32();
+        let wasm = guest(0, must(u8::try_from(abi), "ABI distinct guest"));
+        let interface = interface(&wasm, abi, 0, 64);
+        let label = format!("abi{abi}");
+        let signed = submit(
+            &cluster,
+            &mut sequence,
+            1,
+            &deploy(&cluster, program, abi, &wasm, &interface.canonical_encoding()),
+            0,
+            &format!("{label}-deploy"),
+            &evidence,
+        );
+        current_interface(&cluster, &verifier, program, &interface, &evidence, &format!("{label}-head"));
+        hosted.consume(&signed, &interface, &format!("{label}-registry"), &evidence);
+        let payload = call(program, abi, &interface);
+        let payload_file = evidence.join(format!("{label}-call.payload"));
+        let signed_file = evidence.join(format!("{label}-call.activity"));
+        write(&payload_file, &payload, 0o600);
+        programs.push(serde_json::json!({
+            "guest_abi_version": abi,
+            "program_id": hex(&program),
+            "payload_file": text(&payload_file),
+            "signed_activity_file": text(&signed_file),
+            "fee_limit": FEE_LIMIT.to_string(),
+            "expected_result_code": 0,
+        }));
+        future_calls.push((payload, signed_file));
+        deployed.push((program, interface));
+    }
+    assert_eq!(custody::multiasset_identity_sequence(&cluster, &cluster.actor), sequence);
+    let refused_payload = call(deployed[1].0, 1, &deployed[1].1);
+    let unknown_payload = call(deployed[0].0, 1, &deployed[0].1);
+    let refused_payload_file = evidence.join("refused-call.payload");
+    let refused_signed_file = evidence.join("refused-call.activity");
+    let unknown_payload_file = evidence.join("unknown-call.payload");
+    let unknown_signed_file = evidence.join("unknown-call.activity");
+    write(&refused_payload_file, &refused_payload, 0o600);
+    write(&unknown_payload_file, &unknown_payload, 0o600);
+    future_calls.push((refused_payload, refused_signed_file.clone()));
+    future_calls.push((unknown_payload, unknown_signed_file.clone()));
+    let export = |name: &str, bytes: &[u8]| {
+        let path = evidence.join(name);
+        write(&path, bytes, 0o600);
+        path
+    };
+    let copy = |name: &str, source: &Path| export(name, &must(fs::read(source), "genuine fixture material"));
+    let actor_key = export("actor.key", &cluster.actor.signing_key.to_bytes());
+    let boundary_token = export("boundary.token", cluster.gateway_token.as_bytes());
+    let program_token = export("program.token", cluster.program_token.as_bytes());
+    let replica_token = export("replica.token", cluster.sequencer_environment["LAYERX_NODE_AUTHORITY_REPLICA_BEARER_TOKEN"].as_bytes());
+    let registry_token = export("registry.token", hosted.bearer.as_bytes());
+    let cert_der = copy("server.der", &cluster.tls.server_der);
+    let key_der = copy("server-key.der", &cluster.tls.server_key_der);
+    let client_ca_der = copy("client-ca.der", &cluster.tls.client_ca_der);
+    let cert_pem = copy("server.pem", &cluster.root.join("tls/server.pem"));
+    let key_pem = copy("server-key.pem", &cluster.root.join("tls/server-key.pem"));
+    let client_ca_pem = copy("client-ca.pem", &cluster.root.join("tls/client-ca.pem"));
+    let client_cert = copy("gateway-client.pem", &cluster.root.join("tls/gateway-client.pem"));
+    let client_key = copy("gateway-client-key.pem", &cluster.root.join("tls/gateway-client-key.pem"));
+    let password = export("client-password", token().as_bytes());
+    let pkcs12 = evidence.join("client.p12");
+    command("openssl", &[
+        "pkcs12", "-export", "-in", &text(&client_cert), "-inkey", &text(&client_key),
+        "-out", &text(&pkcs12), "-passout", &format!("file:{}", text(&password)),
+    ]);
+    must(fs::set_permissions(&pkcs12, fs::Permissions::from_mode(0o600)), "private actual client P12");
+    let module_binary = PathBuf::from(
+        std::env::var_os("PAXEER_X_PROGRAM_HTTP_MODULE_REGISTRY_BINARY")
+            .unwrap_or_else(|| panic!("actual candidate layerx-module-registry binary required")),
+    );
+    assert!(module_binary.is_absolute());
+    assert_eq!(must(fs::canonicalize(&module_binary), "module registry binary"), module_binary);
+    let accessible_module_binary = cluster.root.join("layerx-module-registry");
+    write(&accessible_module_binary, &must(fs::read(&module_binary), "actual candidate module registry executable"), 0o755);
+    let output = must(
+        Command::new("/usr/bin/setpriv")
+            .args(["--reuid", &BOUNDARY_UID.to_string(), "--regid", &BOUNDARY_GID.to_string(), "--groups", &BOUNDARY_GID.to_string(), "--"])
+            .arg(&accessible_module_binary)
+            .args(["read-node", "--socket", &text(&cluster.root.join("run/layerxd.sock")), "--network-id", &NETWORK_ID.to_string(), "--protocol-version", &PROTOCOL_VERSION.to_string(), "--actor", &cluster.actor.did])
+            .stdin(Stdio::null())
+            .output(),
+        "actual committed module registry producer",
+    );
+    write(&evidence.join("module-registry.stderr"), &output.stderr, 0o600);
+    assert!(output.status.success(), "committed module registry producer refused; see private module-registry.stderr");
+    let mut module_document: serde_json::Value = must(serde_json::from_slice(&output.stdout), "actual committed module registry JSON");
+    assert!(module_document["modules"].is_array());
+    export("module-registry-native.json", &output.stdout);
+    #[derive(serde::Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct CustodyAssets {
+        assets: Vec<CustodyAsset>,
+    }
+    #[derive(serde::Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct CustodyAsset {
+        symbol: String,
+        asset_id: String,
+        token_pointer: String,
+        decimals: u8,
+    }
+    let custody_fixture = PathBuf::from(std::env::var_os("LAYERX_MULTI_ASSET_CUSTODY_FIXTURE")
+        .unwrap_or_else(|| panic!("genuine custody metadata required for gateway registry")));
+    assert!(custody_fixture.is_absolute());
+    assert_eq!(must(fs::canonicalize(&custody_fixture), "genuine custody directory"), custody_fixture);
+    let custody_metadata_path = custody_fixture.join("custody-assets.json");
+    let custody_metadata = must(fs::symlink_metadata(&custody_metadata_path), "genuine custody metadata file");
+    assert!(custody_metadata.is_file() && !custody_metadata.file_type().is_symlink());
+    assert_eq!(custody_metadata.uid(), effective_uid());
+    assert_eq!(custody_metadata.nlink(), 1);
+    assert_eq!(custody_metadata.mode() & 0o022, 0);
+    assert!(custody_metadata.len() > 0 && custody_metadata.len() <= 1_048_576);
+    let custody_bytes = must(fs::read(&custody_metadata_path), "actual custody asset declarations");
+    let declared: CustodyAssets = must(serde_json::from_slice(&custody_bytes), "closed actual custody assets");
+    assert_eq!(declared.assets.len(), funding.len());
+    let mut assets = Vec::new();
+    for (asset, actual) in declared.assets.iter().zip(&funding) {
+        assert_eq!(asset.symbol, actual.symbol);
+        assert_eq!(asset.asset_id, hex(&actual.asset));
+        assert!(asset.decimals <= 38);
+        assert_eq!(asset.token_pointer.len(), 42);
+        assert!(asset.token_pointer.starts_with("0x"));
+        assets.push(serde_json::json!({
+            "asset": asset.asset_id,
+            "currency": asset.symbol,
+            "symbol": asset.symbol,
+            "decimals": asset.decimals,
+        }));
+    }
+    export("custody-assets.json", &custody_bytes);
+    module_document["schema_version"] = serde_json::json!(2);
+    module_document["assets"] = serde_json::json!(assets);
+    let modules = export("module-registry.json", &must(serde_json::to_vec(&module_document), "actual gateway custody registry projection"));
+    let sign_request = evidence.join("calls-sign.request");
+    let signed_ack = evidence.join("calls-signed.json");
+    let disconnect_request = evidence.join("node-disconnect.request");
+    let disconnected = evidence.join("node-disconnected.json");
+    let stop = evidence.join("stop.request");
+    let row = |program: [u8; 32], payload: &Path, signed: &Path, expected: i32| serde_json::json!({
+        "guest_abi_version": 1,
+        "program_id": hex(&program),
+        "payload_file": text(payload),
+        "signed_activity_file": text(signed),
+        "fee_limit": FEE_LIMIT.to_string(),
+        "expected_result_code": expected,
+    });
+    let mut owner = serde_json::json!({
+        "version": 1,
+        "producer_pid": std::process::id(),
+        "node_pid": cluster.sequencer.child.id(),
+        "boundary_pid": cluster.boundary.process.as_ref().unwrap_or_else(|| panic!("live boundary required")).child.id(),
+        "registry_pid": hosted.process.child.id(),
+        "node_root": text(&cluster.root),
+        "node_socket": text(&cluster.root.join("run/layerxd.sock")),
+        "network_id": NETWORK_ID,
+        "protocol_version": PROTOCOL_VERSION,
+        "actor_did": cluster.actor.did,
+        "actor_account": hex(&cluster.actor.source),
+        "actor_public_key": hex(&cluster.actor.signing_key.verifying_key().to_bytes()),
+        "actor_key_file": text(&actor_key),
+        "sequencer_public_key": hex(&cluster.sequencer_key),
+        "sequencer_id": cluster.sequencer_environment["LAYERX_NODE_SEQUENCER_ID"],
+        "first_batch": FIRST_BATCH,
+        "last_batch": LAST_BATCH,
+        "boundary_endpoint": format!("https://localhost:{}", cluster.client.port),
+        "boundary_authorization_file": text(&boundary_token),
+        "program_endpoint": format!("http://127.0.0.1:{}", cluster.program_port),
+        "program_authorization_file": text(&program_token),
+        "replica_endpoint": format!("http://127.0.0.1:{}", cluster.sequencer_environment["LAYERX_NODE_AUTHORITY_REPLICA_PORT"]),
+        "replica_authorization_file": text(&replica_token),
+        "replica_id": cluster.sequencer_environment["LAYERX_NODE_AUTHORITY_REPLICA_ID"],
+        "registry_endpoint": format!("https://localhost:{}", hosted.client.port),
+        "registry_authorization_file": text(&registry_token),
+        "tls": {
+            "boundary_ca_der": text(&cert_der),
+            "boundary_ca_pem": text(&cert_pem),
+            "boundary_cert_der": text(&cert_der),
+            "boundary_key_der": text(&key_der),
+            "boundary_cert_pem": text(&cert_pem),
+            "boundary_key_pem": text(&key_pem),
+            "boundary_client_ca_der": text(&client_ca_der),
+            "client_ca_pem": text(&client_ca_pem),
+            "client_certificate_pem": text(&client_cert),
+            "client_key_pem": text(&client_key),
+            "client_pkcs12": text(&pkcs12),
+            "client_password_file": text(&password),
+            "registry_ca_der": text(&cert_der),
+        },
+        "module_registry_file": text(&modules),
+        "programs": programs,
+        "refused_call": row(deployed[1].0, &refused_payload_file, &refused_signed_file, -101),
+        "unknown_call": row(deployed[0].0, &unknown_payload_file, &unknown_signed_file, 0),
+        "control": {
+            "refused_activity_id": serde_json::Value::Null,
+            "calls_sign_request_file": text(&sign_request),
+            "calls_signed_file": text(&signed_ack),
+            "node_disconnect_request_file": text(&disconnect_request),
+            "node_disconnected_file": text(&disconnected),
+            "stop_file": text(&stop),
+        },
+    });
+    let owner_path = evidence.join("native-owner.json");
+    python_http_publish(&owner_path, &must(serde_json::to_vec(&owner), "actual native owner export"));
+    while !python_http_control_file(&sign_request) {
+        if python_http_control_file(&stop) { return; }
+        assert!(Instant::now() < deadline, "Python HTTP producer signing request deadline");
+        thread::sleep(Duration::from_millis(50));
+    }
+    assert_eq!(custody::multiasset_identity_sequence(&cluster, &cluster.actor), sequence);
+    let mut refused_signed = Vec::new();
+    for (index, (payload, path)) in future_calls.iter().enumerate() {
+        let nonce = must(sequence.checked_add(must(u64::try_from(index), "actual call index")).ok_or("call nonce overflow"), "actual future call sequence");
+        let signed = signed_program_operation(&cluster.actor, 3, nonce, FEE_LIMIT, payload);
+        let decoded = must(decode_signed(&signed, &registry()), "actual signed HTTP fixture activity");
+        assert_eq!(decoded.payload(), payload);
+        assert_eq!(decoded.account_sequence(), nonce);
+        assert_eq!(decoded.network_id(), NETWORK_ID);
+        write(path, &signed, 0o600);
+        if index == 4 {
+            let id = must(activity_id(&decoded), "actual refused identity");
+            owner["control"]["refused_activity_id"] = serde_json::json!(hex(&id));
+            refused_signed = signed;
+        }
+    }
+    assert!(!refused_signed.is_empty());
+    python_http_publish(&owner_path, &must(serde_json::to_vec(&owner), "signed native owner export"));
+    python_http_publish(&signed_ack, &must(serde_json::to_vec(&owner["control"]), "actual fresh signing acknowledgment"));
+    while !python_http_control_file(&stop) {
+        assert!(Instant::now() < deadline, "Python HTTP producer stop deadline");
+        if python_http_control_file(&disconnect_request) && !disconnected.exists() {
+            let requested: [u8; 32] = must(
+                must(fs::read(&disconnect_request), "actual disconnection request").try_into(),
+                "exact 32-byte refused identity disconnection request",
+            );
+            let refused_id = python_http_refusal_receipt(&cluster, &refused_signed, &evidence);
+            assert_eq!(requested, refused_id, "disconnection requires the authenticated refused activity identity");
+            cluster.sequencer.stop_gracefully();
+            assert!(must(cluster.sequencer.child.try_wait(), "disconnected native process").is_some());
+            python_http_publish(&disconnected, &must(serde_json::to_vec(&serde_json::json!({
+                "node_pid": owner["node_pid"],
+                "refused_activity_id": owner["control"]["refused_activity_id"],
+                "refused_receipt_file": text(&evidence.join("refused-call.receipt")),
+                "state": "native-node-disconnected-after-verified-refusal",
+            })), "genuine node disconnection acknowledgment"));
+        }
+        thread::sleep(Duration::from_millis(50));
+    }
+}
