@@ -45,15 +45,10 @@ pub const MAX_EVENTS_PER_ACTIVITY: usize = crate::DEFAULT_MAX_CALL_GRAPH_EDGES a
 pub const MAX_CALL_INPUT_BYTES: usize = 1_048_576;
 /// Maximum canonical grants. This is derived so even the largest grant encoding
 /// fits the single transport ceiling used by the guest and C boundaries.
-pub const MAX_CAPABILITY_ENCODING_BYTES: usize = 65_535;
-pub const MAX_CAPABILITY_ENCODING_HEADER_BYTES: usize = 2;
-pub const MAX_CAPABILITY_ENCODING_GRANT_BYTES: usize =
-    1 + 32 + 2 + crate::MAX_PROGRAM_ACCOUNT_SEED_BYTES + 32 + 32 + 32 + 16;
-pub const MAX_CAPABILITIES: usize = (MAX_CAPABILITY_ENCODING_BYTES
-    - MAX_CAPABILITY_ENCODING_HEADER_BYTES)
-    / MAX_CAPABILITY_ENCODING_GRANT_BYTES;
-pub const MAX_CANONICAL_CAPABILITY_SET_BYTES: usize =
-    MAX_CAPABILITY_ENCODING_HEADER_BYTES + MAX_CAPABILITIES * MAX_CAPABILITY_ENCODING_GRANT_BYTES;
+pub use layerx_program_sdk::abi::{
+    MAX_CAPABILITIES, MAX_CANONICAL_CAPABILITY_SET_BYTES, MAX_CAPABILITY_ENCODING_BYTES,
+    MAX_CAPABILITY_ENCODING_GRANT_BYTES, MAX_CAPABILITY_ENCODING_HEADER_BYTES,
+};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct HostFunction {

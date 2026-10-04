@@ -11,6 +11,7 @@ import sys
 ROOT = Path(__file__).resolve().parents[3]
 DECLARED = (
     "programs/crates/layerx-programs-runtime/src/calls.rs",
+    "programs/crates/layerx-programs-runtime/src/abi/mod.rs",
     "programs/crates/layerx-programs-runtime/tests/step_conformance.rs",
     "tools/qualification/paxeer-x/single-step-conformance.py",
     "tools/paxeer-x/gates/104.35.2.sh",
@@ -23,16 +24,22 @@ UNIT_NAMES = {
     UNIT_PREFIX + "fixed_integer_width_and_sign_extension_vectors_replay_real_steps",
     UNIT_PREFIX + "fixed_integer_memory_width_growth_fill_and_copy_vectors_replay_real_steps",
     UNIT_PREFIX + "fixed_control_flow_local_global_and_internal_call_vectors_replay_real_steps",
+    UNIT_PREFIX + "fixed_table_and_passive_segment_vectors_replay_actual_mutations",
+    UNIT_PREFIX + "fixed_hash_and_wide_integer_host_successes_replay_actual_output_and_metering",
+    UNIT_PREFIX + "committed_web_answer_success_replays_real_guest_output_and_metering",
     UNIT_PREFIX + "every_frozen_host_import_replays_its_real_bounds_or_authorization_refusal",
 }
 INTEGRATION_NAMES = {
     "fixed_unreachable_memory_division_overflow_and_indirect_call_traps_replay_exactly",
     "reference_operand_and_float_instructions_preserve_real_admission_refusals",
+    "fixed_indirect_signature_and_stack_exhaustion_traps_replay_exactly",
+    "fixed_bulk_memory_and_passive_element_bounds_traps_replay_exactly",
+    "reference_stack_table_operations_preserve_declared_integer_profile_refusals",
+    "actual_runtime_meter_exhaustion_before_capture_preserves_resource_refusal",
 }
 MISSING_COVERAGE = (
     "successful authenticated native fixtures for every host import",
-    "complete permitted table and passive data/element instruction golden inventory",
-    "bad-signature, stack-exhaustion and metered-fuel trap golden inventory",
+    "metered-fuel trap golden inventory through authenticated runtime authority",
 )
 
 

@@ -1511,9 +1511,6 @@ mod single_step_conformance {
     }
 
     fn check_module(bytes: &[u8], abi_version: u16, expected: Option<WasmValue>) {
-        let engine = WasmEngine::declared().unwrap_or_else(|error| panic!("engine: {error}"));
-        let validated = engine.validate_versioned(abi_version, bytes)
-            .unwrap_or_else(|error| panic!("validation: {error}"));
         let abi = Abi::new(abi_version,
             ProgramId::new([0x11; 32]).unwrap_or_else(|error| panic!("program: {error}")),
             AuthorizationContext::new(
@@ -1521,6 +1518,13 @@ mod single_step_conformance {
                 CapabilitySet::empty()),
             Storage::new(), &UnavailableReceiptOracle)
             .unwrap_or_else(|error| panic!("ABI: {error}"));
+        check_with_abi(bytes, abi_version, expected, abi);
+    }
+
+    fn check_with_abi(bytes: &[u8], abi_version: u16, expected: Option<WasmValue>, abi: Abi) {
+        let engine = WasmEngine::declared().unwrap_or_else(|error| panic!("engine: {error}"));
+        let validated = engine.validate_versioned(abi_version, bytes)
+            .unwrap_or_else(|error| panic!("validation: {error}"));
         let declared = ResourceBudget::declared();
         let budget = ResourceBudget::new_complete(200_000_000, declared.memory_bytes(),
             declared.storage_read_bytes(), declared.storage_write_bytes(), declared.output_values(),
@@ -1661,6 +1665,154 @@ mod single_step_conformance {
             ]),
         ]);
         check_module(&bytes, 2, Some(WasmValue::I32(42)));
+    }
+
+    #[test]
+    fn fixed_table_and_passive_segment_vectors_replay_actual_mutations() {
+        let table = raw_section(4, &[1, 0x70, 1, 2, 2]);
+        let active = raw_section(9, &[1, 0, 0x41, 0, 0x0b, 1, 1]);
+        let passive = raw_section(9, &[1, 1, 0, 1, 1]);
+        for (element, body, expected) in [
+            (active.clone(), vec![0x41, 0, 0x11, 0, 0, 0x0b], 42),
+            (active.clone(), vec![0xfc, 16, 0, 0x0b], 2),
+            (active, vec![0x41, 1, 0x41, 0, 0x41, 1, 0xfc, 14, 0, 0,
+                0x41, 1, 0x11, 0, 0, 0x0b], 42),
+            (passive, vec![0x41, 0, 0x41, 0, 0x41, 1, 0xfc, 12, 0, 0,
+                0xfc, 13, 0, 0x41, 0, 0x11, 0, 0, 0x0b], 42),
+        ] {
+            let bytes = module(&[
+                type_section(&[(&[], &[TYPE_I32])]), function_section(&[0, 0]),
+                table.clone(), export_section(&[("run", 0)]), element,
+                code_section(&[func_body(&[], &body), func_body(&[], &[0x41, 42, 0x0b])]),
+            ]);
+            check_module(&bytes, 2, Some(WasmValue::I32(expected)));
+        }
+        let bytes = module(&[
+            type_section(&[(&[], &[TYPE_I32])]), function_section(&[0]),
+            raw_section(5, &[1, 1, 1, 1]), export_section(&[("run", 0)]),
+            raw_section(12, &[1]),
+            code_section(&[func_body(&[], &[0x41, 0, 0x41, 0, 0x41, 1,
+                0xfc, 8, 0, 0, 0xfc, 9, 0, 0x41, 0, 0x2d, 0, 0, 0x0b])]),
+            raw_section(11, &[1, 1, 1, 42]),
+        ]);
+        check_module(&bytes, 2, Some(WasmValue::I32(42)));
+    }
+
+    #[test]
+    fn committed_web_answer_success_replays_real_guest_output_and_metering() {
+        use crate::abi::{CommittedWebAnswers, WebAnswer};
+        use sha2::Digest;
+        let program = ProgramId::new([0x11; 32]).unwrap();
+        let mut answers = CommittedWebAnswers::new();
+        answers.commit(program, 0, WebAnswer {
+            content_digest: sha2::Sha256::digest([42_u8]).into(),
+            full_length: 1, response: vec![42],
+        }).unwrap();
+        let abi = Abi::new(4, program,
+            AuthorizationContext::new(PrincipalId::new([0x22; 32]).unwrap(), CapabilitySet::empty()),
+            Storage::new(), &UnavailableReceiptOracle).unwrap()
+            .with_committed_web(std::sync::Arc::new(answers));
+        let mut exports = export_section(&[("run", 1)]);
+        exports[1] += 9;
+        exports[2] += 1;
+        exports.extend_from_slice(&[6, b'm', b'e', b'm', b'o', b'r', b'y', 2, 0]);
+        let bytes = module(&[
+            type_section(&[(&[TYPE_I32, TYPE_I32, TYPE_I32, TYPE_I32], &[TYPE_I32]),
+                (&[], &[TYPE_I32])]),
+            import_section(&[("layerx_v4", "web_read", 0)]), function_section(&[1]),
+            raw_section(5, &[1, 1, 1, 1]), exports,
+            code_section(&[func_body(&[], &[0x41, 0, 0x41, 8, 0x41, 16, 0x41, 41,
+                0x10, 0, 0x41, 41, 0x47, 0x04, 0x40, 0, 0x0b,
+                0x41, 56, 0x2d, 0, 0, 0x0b])]),
+        ]);
+        check_with_abi(&bytes, 4, Some(WasmValue::I32(42)), abi);
+    }
+
+    fn push_i32(body: &mut Vec<u8>, mut value: i32) {
+        body.push(0x41);
+        loop {
+            let byte = (value & 0x7f) as u8;
+            value >>= 7;
+            if (value == 0 && byte & 0x40 == 0) || (value == -1 && byte & 0x40 != 0) {
+                body.push(byte);
+                return;
+            }
+            body.push(byte | 0x80);
+        }
+    }
+
+    fn push_i64(body: &mut Vec<u8>, mut value: i64) {
+        body.push(0x42);
+        loop {
+            let byte = (value & 0x7f) as u8;
+            value >>= 7;
+            if (value == 0 && byte & 0x40 == 0) || (value == -1 && byte & 0x40 != 0) {
+                body.push(byte);
+                return;
+            }
+            body.push(byte | 0x80);
+        }
+    }
+
+    fn check_integer_host(name: &str, arguments: &[i32], result_status: i32,
+        input: &[u8], expected: &[u8]) {
+        let parameters = vec![TYPE_I32; arguments.len()];
+        let mut exports = export_section(&[("run", 1)]);
+        exports[1] += 9;
+        exports[2] += 1;
+        exports.extend_from_slice(&[6, b'm', b'e', b'm', b'o', b'r', b'y', 2, 0]);
+        let mut body = Vec::new();
+        for argument in arguments { push_i32(&mut body, *argument); }
+        body.extend_from_slice(&[0x10, 0]);
+        push_i32(&mut body, result_status);
+        body.extend_from_slice(&[0x47, 0x04, 0x40, 0, 0x0b]);
+        assert!(!expected.is_empty());
+        assert_eq!(expected.len() % 8, 0);
+        for (index, chunk) in expected.chunks_exact(8).enumerate() {
+            push_i32(&mut body, 128 + (index as i32) * 8);
+            body.extend_from_slice(&[0x29, 0, 0]);
+            push_i64(&mut body, i64::from_le_bytes(chunk.try_into().unwrap()));
+            body.extend_from_slice(&[0x52, 0x04, 0x40, 0, 0x0b]);
+        }
+        body.extend_from_slice(&[0x41, 42, 0x0b]);
+        let mut data = vec![1, 0, 0x41, 0, 0x0b];
+        data.extend(crate::test_support::unsigned_leb(input.len() as u64));
+        data.extend_from_slice(input);
+        let bytes = module(&[
+            type_section(&[(&parameters, &[TYPE_I32]), (&[], &[TYPE_I32])]),
+            import_section(&[("layerx_v2", name, 0)]), function_section(&[1]),
+            raw_section(5, &[1, 1, 1, 1]), exports,
+            code_section(&[func_body(&[], &body)]), raw_section(11, &data),
+        ]);
+        check_module(&bytes, 2, Some(WasmValue::I32(42)));
+    }
+
+    #[test]
+    fn fixed_hash_and_wide_integer_host_successes_replay_actual_output_and_metering() {
+        let digests: [&[u8]; 3] = [
+            &[0xe3, 0xb0, 0xc4, 0x42, 0x98, 0xfc, 0x1c, 0x14, 0x9a, 0xfb, 0xf4, 0xc8, 0x99, 0x6f, 0xb9, 0x24, 0x27, 0xae, 0x41, 0xe4, 0x64, 0x9b, 0x93, 0x4c, 0xa4, 0x95, 0x99, 0x1b, 0x78, 0x52, 0xb8, 0x55],
+            &[0xc5, 0xd2, 0x46, 0x01, 0x86, 0xf7, 0x23, 0x3c, 0x92, 0x7e, 0x7d, 0xb2, 0xdc, 0xc7, 0x03, 0xc0, 0xe5, 0x00, 0xb6, 0x53, 0xca, 0x82, 0x27, 0x3b, 0x7b, 0xfa, 0xd8, 0x04, 0x5d, 0x85, 0xa4, 0x70],
+            &[0xaf, 0x13, 0x49, 0xb9, 0xf5, 0xf9, 0xa1, 0xa6, 0xa0, 0x40, 0x4d, 0xea, 0x36, 0xdc, 0xc9, 0x49, 0x9b, 0xcb, 0x25, 0xc9, 0xad, 0xc1, 0x12, 0xb7, 0xcc, 0x9a, 0x93, 0xca, 0xe4, 0x1f, 0x32, 0x62],
+        ];
+        for (index, digest) in digests.into_iter().enumerate() {
+            check_integer_host("hash", &[index as i32 + 1, 0, 0, 128], 0, &[], digest);
+        }
+        let mut operands = [0; 96];
+        operands[31] = 12;
+        operands[63] = 3;
+        operands[95] = 5;
+        for (name, width, expected) in [
+            ("bigint_mul_256", 64, 36), ("bigint_div_256", 32, 4),
+            ("bigint_rem_256", 32, 0),
+        ] {
+            let mut output = vec![0; width as usize];
+            output[width as usize - 1] = expected;
+            check_integer_host(name, &[0, 32, 32, 32, 128, width], width, &operands, &output);
+        }
+        let mut output = [0; 32];
+        output[31] = 3;
+        check_integer_host("bigint_modexp_256", &[0, 32, 32, 32, 64, 32, 128, 32], 32,
+            &operands, &output);
     }
 
     #[test]
