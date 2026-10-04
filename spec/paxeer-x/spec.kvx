@@ -37158,13 +37158,20 @@ max_verify_runs = 1
 max_repair_cycles = 2
 time_limit_minutes = 30
 fanout_role = "complete_indexer"
-qualification_status = "UNRUN"
+qualification_status = "PASS"
 stop_condition = "Stop at2026-10-04T20:54:49Z or any source provenance mismatch; no disabling integrity checks."
 owner_authorization = "Direct owner request to fix all listed CI failures on2026-10-04T20:24UTC"
 source_status = "complete"
 completion_basis = "implementation under owner CONSTITUTION; qualification separately recorded"
 source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-103.6.38-repair1-source-handoff.json"
 build_status = "NOT_APPLICABLE_METADATA_ONLY"
+qualification_revision = "040f72d452ecf1bf6981fa0851b5a1748eabb909"
+qualification_command = "python3 platform/hosted/registry/builder-environment/verify-vendor.py /root/lx-ops/paxeer-x-integration-2026-10-03/ci-wasmi-checksum-repair1-qualification/vendor /root/lx-ops/paxeer-x-integration-2026-10-03/ci-wasmi-checksum-repair1-qualification/verified-vendor"
+qualification_exit_code = 0
+qualification_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/ci-wasmi-checksum-repair1-qualification/verify.log"
+qualification_evidence = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-103.6.38-final-result.json"
+repair_cycles_used = 1
+full_ci_status = "UNCONFIRMED; genuine vendor verifier passed"
 
 [task.103.6.35]
 title = "Produce genuine private beta CI inputs on the current candidate"
