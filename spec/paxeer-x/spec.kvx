@@ -25988,7 +25988,7 @@ do_2 = "Implement resumable import and verification transitions with exact epoch
 do_3 = "Add real-node partial-import, lost-response, failed-verification, pre-commit and restart scenarios; make rehearsal report each stage and fail unless every original address matches."
 do_4 = "Add the new bounded harness tools/qualification/paxeer-x/wallet-ceremony-resume.py to exercise this task through the named production interfaces, including the stated refusal and recovery cases, with explicit prerequisite checks and nonzero exit on any unmet acceptance. Use supplied prebuilt executables and isolated retained state; do not hide a rebuild or invoke a release-wide suite."
 do_5 = "Implement the declared focused gate through the real production types and paths; exercise every acceptance criterion including refusal, restart or boundary cases specified by this requirement. The command is a planned deliverable, not an already-run gate."
-touches = ["human/wallet/attestor/internal/server/verification.go", "human/wallet/attestor/internal/server/keys.go", "human/wallet/attestor/internal/store/store.go", "human/wallet/ceremony/internal/migrate/migrate.go", "human/wallet/ceremony/internal/attestor/client.go", "human/wallet/schema/attestor-api/v1.kvx", "human/wallet/ceremony/internal/migrate/migrate_test.go", "human/wallet/attestor/internal/server/durability_test.go", "tools/qualification/paxeer-x/wallet-ceremony-resume.py", "human/wallet/attestor/internal/server/authority.go", "human/wallet/attestor/internal/server/peer.go", "human/wallet/ceremony/cmd/ceremony/main.go", "human/wallet/ceremony/internal/rehearsal/rehearsal.go"]
+touches = ["human/wallet/schema/attestor-api/v1.kvx", "tools/qualification/paxeer-x/wallet-ceremony-resume.py"]
 verify_cmd = "timeout 15m python3 tools/qualification/paxeer-x/wallet-ceremony-resume.py"
 gate_kind = "planned"
 max_builds = 1
@@ -26007,6 +26007,8 @@ source_status = "partial"
 completion_basis = "honest incomplete source checkpoint; original criteria remain required"
 qualification_status = "UNRUN"
 source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/fleet-13.3-partial-publication.json"
+lease_formatter_103_6_27_paths = ["human/wallet/attestor/internal/server/verification.go", "human/wallet/attestor/internal/server/keys.go", "human/wallet/attestor/internal/store/store.go", "human/wallet/ceremony/internal/migrate/migrate.go", "human/wallet/ceremony/internal/attestor/client.go", "human/wallet/ceremony/internal/migrate/migrate_test.go", "human/wallet/attestor/internal/server/durability_test.go", "human/wallet/attestor/internal/server/authority.go", "human/wallet/attestor/internal/server/peer.go", "human/wallet/ceremony/cmd/ceremony/main.go", "human/wallet/ceremony/internal/rehearsal/rehearsal.go"]
+lease_formatter_103_6_27_basis = "Owner-approved inactive file-lease reassignment; formatting only; all unfinished task requirements and assertions retained"
 
 [task.13.4]
 title = "Serve authenticated wallet custody, constrained signing and sponsored submission adapters"
