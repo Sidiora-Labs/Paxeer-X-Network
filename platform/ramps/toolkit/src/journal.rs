@@ -6,6 +6,7 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest as _, Sha256};
 
+use crate::migration::SourceSettlementRecordV2;
 use crate::{AggregateStatus, EXTERNAL_CUSTODY_LABEL, RampError, RampOrder, RampPresentation};
 
 const JOURNAL_DOMAIN: &[u8] = b"LXP/market-maker-ramp/journal/v1\0";
@@ -19,6 +20,7 @@ pub enum WorkflowStage {
     ManualReview,
     ComplianceRefused,
     AwaitingExternalCredit,
+    SourceSettledV2,
     AwaitingLayerxPayment,
     ProviderSubmissionPlanned,
     ProviderSubmittedUnknown,
@@ -136,6 +138,9 @@ pub enum Event {
         next: WorkflowStage,
         evidence: TransitionEvidence,
     },
+    SourceSettlementVerifiedV2 {
+        settlement: SourceSettlementRecordV2,
+    },
     PaxeerPlanned {
         idempotency_key: [u8; 32],
         asset: [u8; 32],
@@ -212,6 +217,7 @@ impl OrderSnapshot {
             | WorkflowStage::AwaitingLayerxPayment
             | WorkflowStage::ProviderPending
             | WorkflowStage::ProviderSettled
+            | WorkflowStage::SourceSettledV2
             | WorkflowStage::LayerxPending
             | WorkflowStage::LayerxVerified => AggregateStatus::Pending,
         };
@@ -254,6 +260,8 @@ pub struct Projection {
     order_ids: BTreeMap<String, [u8; 32]>,
     callbacks: BTreeMap<String, CallbackIdentity>,
     provider_sequences: BTreeMap<[u8; 32], u64>,
+    source_claims: BTreeMap<[u8; 32], SourceSettlementRecordV2>,
+    source_orders: BTreeMap<[u8; 32], [u8; 32]>,
     paxeer: BTreeMap<[u8; 32], PaxeerSnapshot>,
 }
 
@@ -293,6 +301,22 @@ impl Projection {
     #[must_use]
     pub const fn provider_sequences(&self) -> &BTreeMap<[u8; 32], u64> {
         &self.provider_sequences
+    }
+
+    #[must_use]
+    pub fn source_settlement(&self, order_digest: &[u8; 32]) -> Option<&SourceSettlementRecordV2> {
+        self.source_orders
+            .get(order_digest)
+            .and_then(|claim| self.source_claims.get(claim))
+    }
+
+    #[must_use]
+    pub fn source_claim(&self, claim_id: &[u8; 32]) -> Option<&SourceSettlementRecordV2> {
+        self.source_claims.get(claim_id)
+    }
+
+    pub fn source_settlements(&self) -> impl Iterator<Item = &SourceSettlementRecordV2> {
+        self.source_claims.values()
     }
 
     #[must_use]
@@ -339,6 +363,9 @@ impl Projection {
                 },
             )
             .map(StagedMutation::Callback),
+            Event::SourceSettlementVerifiedV2 { settlement } => {
+                self.stage_source_settlement(settlement)
+            }
             Event::PaxeerPlanned {
                 idempotency_key,
                 asset,
@@ -413,16 +440,61 @@ impl Projection {
         if snapshot.stage != expected {
             return Err(RampError::Conflict);
         }
+        if self.source_settlement(order_digest).is_some()
+            && (evidence.provider_operation_id.is_some()
+                || evidence.provider_evidence_digest.is_some())
+        {
+            return Err(RampError::IllegalTransition);
+        }
         validate_resulting_evidence(next, &snapshot.evidence, evidence)?;
         if evidence_conflicts(&snapshot.evidence, evidence) {
             return Err(RampError::Conflict);
         }
         merge_evidence(&mut snapshot.evidence, evidence);
-        if next == WorkflowStage::Done && completion_missing(&snapshot.evidence) {
-            return Err(RampError::IllegalTransition);
+        if next == WorkflowStage::Done {
+            if let Some(settlement) = self.source_settlement(order_digest) {
+                settlement.validate_order(&snapshot.order)?;
+                if snapshot.evidence.activity_id.is_none()
+                    || snapshot.evidence.canonical_activity.is_none()
+                    || snapshot.evidence.receipt_digest.is_none()
+                {
+                    return Err(RampError::IllegalTransition);
+                }
+            } else if completion_missing(&snapshot.evidence) {
+                return Err(RampError::IllegalTransition);
+            }
         }
         snapshot.stage = next;
         Ok(StagedMutation::UpdateOrder(snapshot))
+    }
+
+    fn stage_source_settlement(
+        &self,
+        settlement: &SourceSettlementRecordV2,
+    ) -> Result<StagedMutation, RampError> {
+        let mut snapshot = self
+            .orders
+            .get(&settlement.order_digest)
+            .cloned()
+            .ok_or(RampError::InvalidOrder)?;
+        settlement.validate_order(&snapshot.order)?;
+        if self.source_claims.contains_key(&settlement.source_claim_id)
+            || self.source_orders.contains_key(&settlement.order_digest)
+        {
+            return Err(RampError::Conflict);
+        }
+        if snapshot.order.quote.direction != crate::RampDirection::OnRamp
+            || snapshot.stage != WorkflowStage::AwaitingExternalCredit
+            || snapshot.evidence.provider_operation_id.is_some()
+            || snapshot.evidence.provider_evidence_digest.is_some()
+            || snapshot.evidence.activity_id.is_some()
+            || snapshot.evidence.canonical_activity.is_some()
+            || snapshot.evidence.receipt_digest.is_some()
+        {
+            return Err(RampError::IllegalTransition);
+        }
+        snapshot.stage = WorkflowStage::SourceSettledV2;
+        Ok(StagedMutation::Source(settlement.clone(), snapshot))
     }
 
     fn stage_paxeer_planned(
@@ -537,6 +609,13 @@ impl Projection {
                     .insert(identity.order_digest, identity.provider_sequence);
                 self.orders.insert(identity.order_digest, staged.order);
             }
+            StagedMutation::Source(settlement, snapshot) => {
+                self.source_orders
+                    .insert(settlement.order_digest, settlement.source_claim_id);
+                self.source_claims
+                    .insert(settlement.source_claim_id, settlement);
+                self.orders.insert(snapshot.order.order_digest, snapshot);
+            }
             StagedMutation::Paxeer(snapshot) => {
                 self.paxeer.insert(snapshot.idempotency_key, snapshot);
             }
@@ -562,6 +641,9 @@ impl StagedCallback {
             next,
             evidence,
         } = write;
+        if projection.source_settlement(&order_digest).is_some() {
+            return Err(RampError::IllegalTransition);
+        }
         if !safe_identifier(callback_id) || provider_sequence == 0 || evidence_digest == [0; 32] {
             return Err(RampError::Provider);
         }
@@ -623,6 +705,7 @@ enum StagedMutation {
     CreateOrder(OrderSnapshot),
     UpdateOrder(OrderSnapshot),
     Callback(StagedCallback),
+    Source(SourceSettlementRecordV2, OrderSnapshot),
     Paxeer(PaxeerSnapshot),
 }
 
@@ -1108,6 +1191,49 @@ impl Journal {
     #[must_use]
     pub fn provider_sequence(&self, order_digest: &[u8; 32]) -> Option<u64> {
         self.projection.provider_sequence(order_digest)
+    }
+
+    #[must_use]
+    pub fn source_settlement(&self, order_digest: &[u8; 32]) -> Option<&SourceSettlementRecordV2> {
+        self.projection.source_settlement(order_digest)
+    }
+
+    pub fn apply_source_settlement(
+        &mut self,
+        verified: crate::migration::VerifiedSourceSettlement,
+        now: u64,
+    ) -> Result<bool, RampError> {
+        let settlement = verified.into_record();
+        self.require_operational()?;
+        let order = self
+            .projection
+            .orders
+            .get(&settlement.order_digest)
+            .ok_or(RampError::InvalidOrder)?;
+        settlement.validate_order(&order.order)?;
+        if let Some(existing) = self
+            .projection
+            .source_claims
+            .get(&settlement.source_claim_id)
+        {
+            return if existing == &settlement
+                && self.projection.source_orders.get(&settlement.order_digest)
+                    == Some(&settlement.source_claim_id)
+            {
+                Ok(false)
+            } else {
+                Err(RampError::Conflict)
+            };
+        }
+        if self
+            .projection
+            .source_orders
+            .contains_key(&settlement.order_digest)
+        {
+            return Err(RampError::Conflict);
+        }
+        self.append(Event::SourceSettlementVerifiedV2 { settlement }, now)?;
+        Ok(true)
     }
 
     #[must_use]
@@ -1752,6 +1878,9 @@ const fn allowed(from: WorkflowStage, to: WorkflowStage) -> bool {
         ) | (
             S::ProviderSettled,
             S::LayerxSubmissionPlanned | S::LayerxPending | S::ProviderReversed | S::Done
+        ) | (
+            S::SourceSettledV2,
+            S::LayerxSubmissionPlanned | S::LayerxPending
         ) | (
             S::AwaitingLayerxPayment,
             S::LayerxSubmissionPlanned | S::LayerxPending | S::LayerxVerified | S::LayerxRefused

@@ -3,6 +3,7 @@
 pub mod clients;
 pub mod engine;
 pub mod journal;
+pub mod migration;
 
 use layerx_intents::{DisclosureCheck, Intent, IntentKind, LxpReceive, LxpSend, compile};
 use layerx_proof::receipt::{AuthorizedBatch, ReceiptCheck, verify};
@@ -482,6 +483,7 @@ pub struct RampPresentation {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum RampError {
+    SourceSettlement(layerx_migrate::MigrationError),
     InvalidPrincipal,
     InvalidOrder,
     OrderBinding,

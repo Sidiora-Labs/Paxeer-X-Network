@@ -20,6 +20,10 @@ use layerx_ramp_toolkit::clients::{
 };
 use layerx_ramp_toolkit::engine::{InventoryRebalancer, RampEngine};
 use layerx_ramp_toolkit::journal::{Journal, WorkflowStage};
+use layerx_ramp_toolkit::migration::{
+    SOURCE_SETTLEMENT_VERSION, SourceSettlementConfig, SourceSettlementRequest,
+    SourceSettlementResult, SourceSettlementService, SourceSettlementState,
+};
 use layerx_ramp_toolkit::{
     CreateOrder, EXTERNAL_CUSTODY_LABEL, OperatorIdentity, QuoteTerms, RampDirection, RampError,
     RampOrder, platform_ramp_toolkit,
@@ -55,6 +59,19 @@ struct Config {
     paxeer: PaxeerConfig,
     provider_callback_public_key: String,
     operator_control_token_file: PathBuf,
+    source_settlement: Option<SourceIntakeConfig>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SourceIntakeConfig {
+    migration_service_token_file: PathBuf,
+    verification: SourceSettlementConfig,
+}
+
+struct SourceIntake {
+    token: String,
+    service: SourceSettlementService,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -148,6 +165,7 @@ struct State {
     lease_seconds: u64,
     provider_callback_public_key: [u8; 32],
     operator_control_token: String,
+    source_settlement: Option<SourceIntake>,
 }
 
 struct ConnectionGate {
@@ -471,6 +489,30 @@ fn build_state(config: &Config) -> Result<State, String> {
             return Err("duplicate quote id".to_owned());
         }
     }
+    let source_settlement = config
+        .source_settlement
+        .as_ref()
+        .map(|intake| {
+            let service = SourceSettlementService::new(intake.verification.clone())
+                .map_err(|_| "source settlement configuration rejected".to_owned())?;
+            service
+                .validate_catalogue(&quotes)
+                .map_err(|_| "source quote catalogue rejected".to_owned())?;
+            let token = secret_text(&intake.migration_service_token_file)?;
+            Ok::<_, String>(SourceIntake { token, service })
+        })
+        .transpose()?;
+    let operator_control_token = secret_text(&config.operator_control_token_file)?;
+    if source_settlement.as_ref().is_some_and(|intake| {
+        intake
+            .token
+            .as_bytes()
+            .ct_eq(operator_control_token.as_bytes())
+            .unwrap_u8()
+            == 1
+    }) {
+        return Err("source and operator credentials must be distinct".to_owned());
+    }
     let state = State {
         journal: Mutex::new(
             Journal::open(&config.journal_path).map_err(|_| "journal rejected".to_owned())?,
@@ -491,7 +533,8 @@ fn build_state(config: &Config) -> Result<State, String> {
             &config.provider_callback_public_key,
             "provider callback",
         )?,
-        operator_control_token: secret_text(&config.operator_control_token_file)?,
+        operator_control_token,
+        source_settlement,
     };
     if verified_recovery(&state).is_err() {
         eprintln!("ramp journal recovery requires verified external settlement");
@@ -755,6 +798,9 @@ fn route(state: &State, request: &Request) -> Result<Response, Response> {
     if request.method == "POST" && request.path == "/v1/orders" {
         return create_order(state, request);
     }
+    if request.method == "POST" && request.path == "/internal/v2/source-settlements" {
+        return source_settlement(state, request);
+    }
     if request.method == "POST" && request.path == "/v1/provider-callbacks" {
         let callback: ProviderCallback =
             serde_json::from_slice(&request.body).map_err(|_| error(400, "callback_invalid"))?;
@@ -850,6 +896,132 @@ fn create_order(state: &State, request: &Request) -> Result<Response, Response> 
         .create_order(order, now())
         .map_err(|error| map_error(&error))?;
     Ok(created(snapshot.presentation()))
+}
+
+fn source_settlement(state: &State, request: &Request) -> Result<Response, Response> {
+    let intake = state
+        .source_settlement
+        .as_ref()
+        .ok_or_else(|| error(503, "source_settlement_unconfigured"))?;
+    let presented = request
+        .headers
+        .get("authorization")
+        .and_then(|value| value.strip_prefix("Bearer "))
+        .ok_or_else(|| error(401, "migration_authentication_required"))?;
+    if presented
+        .as_bytes()
+        .ct_eq(intake.token.as_bytes())
+        .unwrap_u8()
+        != 1
+    {
+        return Err(error(403, "migration_authentication_refused"));
+    }
+    let customer_authorization = request
+        .headers
+        .get("x-layerx-customer-authorization")
+        .ok_or_else(|| error(401, "customer_authentication_required"))?;
+    let customer = state
+        .identity
+        .authenticate(customer_authorization, now())
+        .map_err(|_| error(401, "customer_authentication_refused"))?;
+    let expected_did = request
+        .headers
+        .get("x-layerx-expected-did")
+        .ok_or_else(|| error(400, "customer_binding_required"))?;
+    if expected_did.len() != 64
+        || !expected_did
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+    {
+        return Err(error(400, "customer_binding_invalid"));
+    }
+    let body: SourceSettlementRequest = serde_json::from_slice(&request.body)
+        .map_err(|_| error(400, "source_settlement_invalid"))?;
+    let evidence = SourceSettlementService::evidence(&body).map_err(|value| map_error(&value))?;
+    let mut journal = state
+        .journal
+        .lock()
+        .map_err(|_| error(503, "journal_unavailable"))?;
+    if !journal.health().ready {
+        return Err(error(503, "journal_recovery_required"));
+    }
+    let snapshot = journal
+        .order(&body.order_digest)
+        .cloned()
+        .ok_or_else(|| error(404, "order_not_found"))?;
+    if snapshot.order.customer != customer
+        || snapshot.order.customer.account != format!("agent:did:layerx:{expected_did}:main")
+    {
+        return Err(error(404, "order_not_found"));
+    }
+    if state.quotes.get(&snapshot.order.quote.quote_id) != Some(&snapshot.order.quote) {
+        return Err(error(409, "quote_binding_conflict"));
+    }
+    if let Some(retained) = journal.source_settlement(&body.order_digest) {
+        if retained.evidence_digest() != evidence.digest() {
+            return Err(error(409, "source_claim_conflict"));
+        }
+        let expected_chain = match body.chain {
+            layerx_ramp_toolkit::migration::SourceChainKind::Ethereum => "ethereum",
+            layerx_ramp_toolkit::migration::SourceChainKind::Solana => "solana",
+        };
+        if retained.chain_name() != expected_chain {
+            return Err(error(409, "source_claim_conflict"));
+        }
+        let state = match snapshot.stage {
+            WorkflowStage::SourceSettledV2 => SourceSettlementState::SourceSettled,
+            WorkflowStage::LayerxSubmissionPlanned
+            | WorkflowStage::LayerxSubmittedUnknown
+            | WorkflowStage::LayerxPending
+            | WorkflowStage::LayerxVerified => SourceSettlementState::LayerxPending,
+            WorkflowStage::LayerxRefused => SourceSettlementState::LayerxRefused,
+            WorkflowStage::Done => SourceSettlementState::Done,
+            _ => return Err(error(409, "source_state_conflict")),
+        };
+        return Ok(ok(SourceSettlementResult {
+            version: SOURCE_SETTLEMENT_VERSION.to_owned(),
+            order_digest: body.order_digest,
+            state,
+            source_evidence_digest: evidence.digest(),
+            source_claim_id: Some(retained.source_claim_id()),
+        }));
+    }
+    if snapshot.stage != WorkflowStage::AwaitingExternalCredit {
+        return Err(error(409, "source_settlement_not_admitted"));
+    }
+    if now() >= snapshot.order.quote.expires_at {
+        return Err(error(409, "quote_expired"));
+    }
+    let trace = layerx_ramp_toolkit::migration::source_trace(
+        request.headers.get("x-layerx-trace").map(String::as_str),
+        body.order_digest,
+    );
+    let record = match intake.service.verify(&snapshot.order, &body, &trace) {
+        Ok(record) => record,
+        Err(RampError::SourceSettlement(
+            layerx_ramp_toolkit::migration::SourceVerificationError::SourcePending,
+        )) => {
+            return Ok(accepted(SourceSettlementResult {
+                version: SOURCE_SETTLEMENT_VERSION.to_owned(),
+                order_digest: body.order_digest,
+                state: SourceSettlementState::SourcePending,
+                source_evidence_digest: evidence.digest(),
+                source_claim_id: None,
+            }));
+        }
+        Err(value) => return Err(map_error(&value)),
+    };
+    let source_claim_id = record.source_claim_id();
+    journal
+        .apply_source_settlement(record, now())
+        .map_err(|value| map_error(&value))?;
+    Ok(ok(SourceSettlementResult {
+        version: SOURCE_SETTLEMENT_VERSION.to_owned(),
+        order_digest: body.order_digest,
+        state: SourceSettlementState::SourceSettled,
+        source_evidence_digest: evidence.digest(),
+        source_claim_id: Some(source_claim_id),
+    }))
 }
 
 fn perform_work(state: &State, request: &Request) -> Result<Response, Response> {
@@ -1073,6 +1245,22 @@ fn require_operator(state: &State, request: &Request) -> Result<(), Response> {
 fn verified_recovery(state: &State) -> Result<(), RampError> {
     let mut journal = state.journal.lock().map_err(|_| RampError::Journal)?;
     journal.recover_verified(|projection| {
+        for record in projection.source_settlements() {
+            let snapshot = projection
+                .order(&record.order_digest())
+                .ok_or(RampError::Journal)?;
+            if state.quotes.get(&snapshot.order.quote.quote_id) != Some(&snapshot.order.quote) {
+                return Err(RampError::OrderBinding);
+            }
+            let intake = state
+                .source_settlement
+                .as_ref()
+                .ok_or(RampError::Configuration)?;
+            let trace = layerx_ramp_toolkit::migration::source_trace(None, record.order_digest());
+            intake
+                .service
+                .verify_retained(&snapshot.order, record, &trace)?;
+        }
         layerx_ramp_toolkit::clients::verify_recovery_settlement(
             projection,
             &state.operator,
@@ -1207,6 +1395,10 @@ fn json_response(status: u16, value: impl Serialize) -> Response {
 
 fn map_error(error_value: &RampError) -> Response {
     match error_value {
+        RampError::SourceSettlement(value) => error(
+            layerx_ramp_toolkit::migration::source_error_status(*value),
+            value.code(),
+        ),
         RampError::InvalidOrder | RampError::InvalidPrincipal | RampError::OrderBinding => {
             error(400, "request_refused")
         }

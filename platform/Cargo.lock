@@ -1542,6 +1542,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "layerx-migrate"
+version = "0.1.0"
+dependencies = [
+ "base64 0.23.1",
+ "ed25519-dalek",
+ "k256",
+ "layerx-interop-gateway",
+ "layerx-proof",
+ "rustls",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "sha3",
+ "subtle",
+ "zeroize",
+]
+
+[[package]]
 name = "layerx-mirror"
 version = "0.1.0"
 dependencies = [
@@ -1965,6 +1983,8 @@ dependencies = [
  "ed25519-dalek",
  "layerx-crypto",
  "layerx-intents",
+ "layerx-interop-gateway",
+ "layerx-migrate",
  "layerx-paxeer-client",
  "layerx-proof",
  "layerx-types",

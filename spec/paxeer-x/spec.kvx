@@ -32435,3 +32435,31 @@ time_limit_minutes = 30
 stop_condition = "Stop at original dispatch thirty-minute cap, two failed repairs, missing genuine interface or any legacy weakening; report exact source state and evidence."
 completion_basis_policy = "Owner CONSTITUTION: fully implemented tasks DONE, actual qualification separate; partial implementation remains in_progress."
 source_ownership = "Root serializes shared manifests, locks, spec, GOTCHA and publication. No deployment or live economic execution."
+
+[task.104.26.3]
+title = "Bind verified source-custody settlement into the real funded ramp producer"
+status = "done"
+mode = "BUILD"
+wave = 2
+requires = ["0.2", "104.26.1"]
+reqs = ["1096.1", "1096.2", "1097.5", "1097.6"]
+do_1 = "Add an authenticated versioned source-settlement intake in the actual producer using sealed Ethereum/Solana finality verification, actual configured custody destinations and operator-owned immutable QuoteTerms. No signed quote format is assumed."
+do_2 = "Freeze source network/transaction/custody/asset/amount/recipient with the exact authorized order and actual quote before any external settlement transition; deduplicate exact claims, refuse conflicts and retain uncertain liabilities."
+do_3 = "Use an explicit V2 journal/evidence transition without impersonating or weakening existing signed ProviderCallback, legacy order digest or v1 records. Existing funded LayerxClient prepare/submit and independent resolve remain the transfer authority."
+do_4 = "Coordinate exact closed intake/result types with migration10424.2 and implement genuine realprocess/source finality/funded receipt/replay/refusal cases. No reserve mint and no fabricated authority."
+touches = ["platform/ramps/reference/src/main.rs", "platform/ramps/toolkit/src/lib.rs", "platform/ramps/toolkit/src/clients.rs", "platform/ramps/toolkit/src/engine.rs", "platform/ramps/toolkit/src/journal.rs", "platform/ramps/toolkit/src/migration.rs", "platform/ramps/toolkit/tests/source_settlement.rs", "tools/qualification/paxeer-x/ramp-source-settlement.py", "platform/ramps/toolkit/Cargo.toml", "platform/Cargo.lock"]
+build_cmd = "timeout 20m env CARGO_TARGET_DIR=/root/lx-target/ramps cargo build --locked --manifest-path platform/Cargo.toml -p layerx-reference-ramp"
+verify_cmd = "timeout 20m python3 tools/qualification/paxeer-x/ramp-source-settlement.py"
+max_builds = 1
+max_verify_runs = 1
+max_repair_cycles = 2
+time_limit_minutes = 30
+stop_condition = "Stop at original dispatch cap, second failed repair, missing real interface or weakening; record exact source state and raw evidence."
+completion_basis_policy = "Owner CONSTITUTION: fully implemented tasks DONE, qualification separate; partial source in_progress."
+source_ownership = "Root owns workspace manifests, lockfiles, spec and publication; all deployment belongs to owner."
+completion_basis = "implementation"
+qualification_status = "unqualified"
+qualification_build_exit = 101
+qualification_build_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-104.26.3-build-repair-1.log"
+qualification_verify_exit = 1
+qualification_verify_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-104.26.3-verify.log"

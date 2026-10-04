@@ -2151,3 +2151,7 @@ resolution = "Create only the lock directory and use verified native/rust artifa
 [gotcha.643]
 observed = "A missing program outcome also occurs on successful native DEPLOY, so the new transport probe initially routed a DEPLOY into the terminal CALL verifier."
 resolution = "Retain the assertion and classify exact module9/operation3/nonzero no-outcome receipts; one task-scoped repair passed the genuine transport gate."
+
+[gotcha.644]
+observed = "The root command PATH lacked cargo during metadata resolution; the launchers returned127 without resolving or compiling."
+resolution = "Use the installed /root/.cargo/bin/cargo explicitly; record launcher failures separately from source qualification."

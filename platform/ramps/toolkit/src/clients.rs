@@ -1558,7 +1558,7 @@ const fn nibble(value: u8) -> Option<u8> {
 const BASE64_ALPHABET: &[u8; 64] =
     b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
-fn base64_encode(bytes: &[u8]) -> String {
+pub(crate) fn base64_encode(bytes: &[u8]) -> String {
     let mut encoded = String::with_capacity(bytes.len().div_ceil(3).saturating_mul(4));
     for chunk in bytes.chunks(3) {
         let first = u32::from(chunk.first().copied().unwrap_or(0));
@@ -1585,7 +1585,7 @@ fn base64_encode(bytes: &[u8]) -> String {
     encoded
 }
 
-fn base64_decode(encoded: &str) -> Result<Vec<u8>, RampError> {
+pub(crate) fn base64_decode(encoded: &str) -> Result<Vec<u8>, RampError> {
     if encoded.is_empty() || !encoded.len().is_multiple_of(4) {
         return Err(RampError::Layerx);
     }
@@ -2404,18 +2404,21 @@ pub fn verify_recovery_settlement(
         if &snapshot.order.operator != operator {
             return Err(RampError::OrderBinding);
         }
-        if snapshot.evidence.provider_operation_id.is_some()
-            || matches!(
-                snapshot.stage,
-                WorkflowStage::ProviderSubmissionPlanned
-                    | WorkflowStage::ProviderSubmittedUnknown
-                    | WorkflowStage::ProviderPending
-                    | WorkflowStage::ProviderSettled
-                    | WorkflowStage::ProviderReversed
-                    | WorkflowStage::Done
-                    | WorkflowStage::ReversalPending
-                    | WorkflowStage::Reversed
-            )
+        if projection
+            .source_settlement(&snapshot.order.order_digest)
+            .is_none()
+            && (snapshot.evidence.provider_operation_id.is_some()
+                || matches!(
+                    snapshot.stage,
+                    WorkflowStage::ProviderSubmissionPlanned
+                        | WorkflowStage::ProviderSubmittedUnknown
+                        | WorkflowStage::ProviderPending
+                        | WorkflowStage::ProviderSettled
+                        | WorkflowStage::ProviderReversed
+                        | WorkflowStage::Done
+                        | WorkflowStage::ReversalPending
+                        | WorkflowStage::Reversed
+                ))
         {
             let key = format!("idempotency:{}", hex(&snapshot.order.order_digest));
             let id = snapshot

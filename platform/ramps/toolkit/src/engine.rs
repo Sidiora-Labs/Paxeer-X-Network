@@ -207,6 +207,7 @@ impl RampEngine<'_> {
         if !matches!(
             (snapshot.order.direction(), expected),
             (RampDirection::OnRamp, WorkflowStage::ProviderSettled)
+                | (RampDirection::OnRamp, WorkflowStage::SourceSettledV2)
                 | (RampDirection::OffRamp, WorkflowStage::AwaitingLayerxPayment)
         ) {
             return Err(RampError::IllegalTransition);
