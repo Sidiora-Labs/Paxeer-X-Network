@@ -36230,3 +36230,21 @@ qualification_scope = "Exact declared file manifest verified by assigned owner; 
 qualification_exit = 0
 qualification_command = ["/usr/local/go/bin/gofmt", "-s", "-l", "hpx/registry/main.go", "human/wallet/attestor/cmd/attestor/main.go", "human/wallet/attestor/internal/auth/agent/agent.go", "human/wallet/attestor/internal/auth/agent/authority.go", "human/wallet/attestor/internal/auth/agent/principals.go", "human/wallet/attestor/internal/config/config.go", "human/wallet/attestor/internal/policy/evm/digest.go", "human/wallet/attestor/internal/server/authority.go", "human/wallet/attestor/internal/server/durability_test.go", "human/wallet/attestor/internal/server/keys.go", "human/wallet/attestor/internal/server/peer.go", "human/wallet/attestor/internal/server/server.go", "human/wallet/attestor/internal/server/verification.go", "human/wallet/attestor/internal/store/store.go", "human/wallet/ceremony/cmd/ceremony/main.go", "human/wallet/ceremony/internal/attestor/client.go", "human/wallet/ceremony/internal/migrate/migrate.go", "human/wallet/ceremony/internal/migrate/migrate_test.go", "human/wallet/ceremony/internal/rehearsal/rehearsal.go", "modules/evm/keeper/feetoken_test.go", "modules/layerxanchor/keeper/keeper_test.go", "modules/layerxexchange/keeper/intents.go", "modules/layerxexchange/keeper/keeper_test.go", "modules/layerxexchange/types/params.go", "modules/layerxexchange/types/state.go", "platform/sdk/go/agent_operation_envelope_test.go", "precompiles/layerxexchange/layerxexchange_test.go", "tools/flyci/controller/config.go", "tools/flyci/controller/main.go", "tools/flyci/controller/readiness.go", "tools/flyci/controller/readiness_test.go", "tools/flyci/controller/reconcile.go"]
 qualification_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-103.6.27-verify.log"
+
+[task.103.6.28]
+title = "Regenerate the exchange parameter binding from its authoritative schema"
+status = "done"
+wave = 5
+verify_cmd = "python3 /root/lx-ops/paxeer-x-integration-2026-10-03/task-103.6.28-verify.py"
+touches = ["modules/layerxexchange/types/params.pb.go"]
+do_1 = "Use the actual pinned gocosmos producer and unchanged api/layerxexchange/params.proto"
+do_2 = "Regenerate only the parameter binding using the repository generator options"
+do_3 = "Verify an independent genuine scoped regeneration matches the published artifact exactly"
+source_status = "complete"
+completion_basis = "implementation under owner CONSTITUTION; qualification separately recorded"
+qualification_status = "PASS"
+source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-103.6.28-intake.json"
+qualification_scope = "Exact declared file manifest verified by assigned owner; no aggregate CI claim"
+qualification_exit = 0
+qualification_command = "python3 /root/lx-ops/paxeer-x-integration-2026-10-03/task-103.6.28-verify.py"
+qualification_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-103.6.28-verify.log"
