@@ -4,9 +4,6 @@ Operational notes for the Paxeer X Network explorer's PostgreSQL 16 instance: wh
 migrations change, why range partitioning of `logs` and `token_transfers` cannot be delivered
 without application changes, and how the read-only API endpoint is wired.
 
-Everything below was checked against a postgres:16 instance carrying the full Blockscout
-migration set, not read off the migration files.
-
 ## 1. The hot tables as they actually are
 
 | table | primary key | foreign keys | access path on block number |
@@ -22,9 +19,9 @@ Nothing references `logs`, `token_transfers` or `internal_transactions` by forei
 `block_number` is `NOT NULL` only on `address_coin_balances`; on `transactions`, `logs`,
 `token_transfers` and `internal_transactions` it is nullable `integer`.
 
-## 2. Migrations delivered
+## 2. Storage migrations
 
-Three migrations, all idempotent and all with a real `down`. None of them takes a lock
+Three migrations under `backend/apps/explorer/priv/repo/migrations/`, all idempotent and all with a real `down`. None of them takes a lock
 stronger than `SHARE UPDATE EXCLUSIVE`, so they can run against a live indexer.
 
 ### `..._hot_tables_storage_parameters`
@@ -92,7 +89,7 @@ mix ecto.rollback -r Explorer.Repo -n 3
 
 `down` resets the storage parameters to the cluster defaults, drops the BRIN index
 concurrently, and returns the statistics targets to `-1` (meaning
-`default_statistics_target`). Verified on postgres:16 against the full migration set: after
+`default_statistics_target`): after
 the rollback `pg_class.reloptions` is null on all six tables, the BRIN index is gone and every
 touched column is back to `-1`.
 
@@ -109,13 +106,13 @@ not be run at the same time as another migrator against the same database.
 
 ## 3. Range partitioning of `logs` and `token_transfers`: blocked
 
-The brief was to deliver a migration path to `PARTITION BY RANGE (block_number)` **if and only
-if** the ORM and the existing unique constraints allow it without touching application code.
-They do not. The blockers are structural.
+Moving either table to `PARTITION BY RANGE (block_number)` is not possible without changing
+application code: the ORM and the existing unique constraints do not allow it. The blockers are
+structural.
 
 **A. The primary keys do not contain the partition key.** PostgreSQL requires every unique
-constraint on a partitioned table to include all partition key columns. Reproduced on
-postgres:16 against the real schema:
+constraint on a partitioned table to include all partition key columns, so PostgreSQL refuses
+it against this schema:
 
 ```
 CREATE TABLE logs_partitioned (LIKE logs INCLUDING ALL) PARTITION BY RANGE (block_number);
@@ -131,8 +128,8 @@ DETAIL:  PRIMARY KEY constraint on table "logs_partitioned" lacks column "block_
 `conflict_target: [:transaction_hash, :index, :block_hash]` and
 `Explorer.Chain.Import.Runner.TokenTransfers` passes
 `[:transaction_hash, :log_index, :block_hash]`. PostgreSQL matches `ON CONFLICT (cols)` to a
-unique index on exactly those columns, and after (A) no such index can exist. Reproduced
-against a partitioned table whose key is widened as (A) demands:
+unique index on exactly those columns, and after (A) no such index can exist. Against a
+partitioned table whose key is widened as (A) demands, PostgreSQL answers:
 
 ```
 INSERT INTO logs_part VALUES (...) ON CONFLICT (transaction_hash, index, block_hash) DO NOTHING;
@@ -168,7 +165,7 @@ to keep appearing ahead of the chain head forever. At 500k blocks per day a 10-m
 partition is used up in under three weeks. That needs a scheduled maintenance job (pg_partman
 or an application-side task), which this deployment does not have and which is code as well.
 
-Conclusion: only item (1) of the brief is delivered. Partitioning remains a deliberate
+Only the storage migrations of section 2 are in the tree. Partitioning remains a deliberate
 fork-level change to `apps/explorer/lib/explorer/chain/{log,token_transfer}.ex` and
 `apps/explorer/lib/explorer/chain/import/runner/{logs,token_transfers}.ex`, with its own
 migration of the existing data. It should not be slipped in under a storage-tuning change.
@@ -203,12 +200,6 @@ at either table — so the foreign keys are not an obstacle, only the keys and t
   `REPLICA_MAX_LAG` (`config/runtime.exs`, default five minutes) it sets
   `:replica_inaccessible?`, which makes `Explorer.Repo.replica/0` fall back to the primary
   until the replica catches up.
-
-This was exercised against the local postgres:16 instance with a role holding only `SELECT`:
-`get_api_db_url/0` returned the read-only URL, `init_repo_module/2` merged it into the
-`Replica1` configuration, `Replica1` connected and served reads against `blocks`, `logs` and
-`token_transfers`, an `INSERT` through the same connection was refused with
-`insufficient_privilege`, and `Replica1` exports no `insert/2` or `insert_all/3` at all.
 
 Size `POOL_SIZE_API` against the replica's own `max_connections` rather than the primary's —
 the two pools are independent.

@@ -92,7 +92,7 @@ suite is deliberately run twice over one database.
 | `MIX_IN_BUILDER_IMAGE` | the same override as `--image` |
 | `MIX_IN_BUILDER_BROWSER_DRIVER` | unset, which lets the script decide from the mix arguments; `1` always installs the driver, `0` never does |
 
-## Fleet gates
+## Pre-merge gates
 
 Two scripts gate a branch before it lands, and both run from the repository
 root:
@@ -137,20 +137,22 @@ scripts/explorer/gate-test.sh --check
 ## Running the whole stack locally
 
 `deploy/docker-compose.local.yml` brings up Postgres, the backend, the
-frontend, the smart contract verifier and the signature provider, each built
-from the sources in this directory. Four values have no sensible default and
-come from your shell:
+frontend, the smart contract verifier and the signature provider. The four
+explorer services run the images `.github/workflows/explorer-images.yml`
+publishes to `ghcr.io/sidiora-labs/`, so nothing is compiled locally;
+`EXPLORER_IMAGE_TAG` picks the tag (`latest` by default, `main`, or
+`sha-<short commit>` to pin one build).
 
 | Variable | What it is |
 | --- | --- |
-| `RPC_HTTP_URL` | JSON-RPC HTTP endpoint of the node to index |
-| `RPC_WS_URL` | JSON-RPC websocket endpoint of the same node |
-| `CHAIN_ID` | EIP-155 chain id of that network |
-| `SECRET_KEY_BASE` | Phoenix signing secret, at least 64 bytes; `openssl rand -base64 48` produces one |
+| `RPC_HTTP_URL` | JSON-RPC HTTP endpoint of the node to index; defaults to port 8545 on the Docker host gateway |
+| `RPC_WS_URL` | JSON-RPC websocket endpoint of the same node; same default |
+| `CHAIN_ID` | EIP-155 chain id of that network; no default |
+| `SECRET_KEY_BASE` | Phoenix signing secret, at least 64 bytes; no default, `openssl rand -base64 48` produces one |
 
 ```
 RPC_HTTP_URL=... RPC_WS_URL=... CHAIN_ID=... SECRET_KEY_BASE=... \
-  docker compose -f explorer/deploy/docker-compose.local.yml up --build
+  docker compose -f explorer/deploy/docker-compose.local.yml up
 ```
 
 The backend answers on port 4000 and the frontend on 3000; both are published
@@ -161,10 +163,11 @@ Everything else the two applications read lives in
 `deploy/env/backend.example.env` and `deploy/env/frontend.example.env`, which
 the compose file loads directly.
 
-The first build compiles the Elixir release, the Next.js bundle and two Rust
-services from scratch and takes a long time; after that,
-`docker compose -f explorer/deploy/docker-compose.local.yml up` reuses the
-layers. To check the definition without building anything:
+The `fixture` profile adds `rpc-fixture`, a recorded JSON-RPC server
+(`deploy/tools/rpc-fixture-server.py` serving `deploy/tools/fixtures/`), in
+place of a node; `deploy/tools/tests/compose-smoke-test.sh` brings the
+database, that server and the backend up under it. To check the definition
+without starting anything:
 
 ```
 docker compose -f explorer/deploy/docker-compose.local.yml config
@@ -174,8 +177,8 @@ docker compose -f explorer/deploy/docker-compose.local.yml config
 
 `deploy/railway/` holds the per-service build and deploy configuration for a
 Railway project together with the variable names the backend and the frontend
-need. `deploy/railway/README.md` also records the root directory and config
-file path each service has to be given, because neither is expressible in
+need. `deploy/railway/README.md` also records the image and the config file path
+each service has to be given, because neither is expressible in
 `railway.json`.
 
 `deploy/tools/copy-blockscout-11-to-10.sh` copies the core chain tables out of
@@ -186,8 +189,8 @@ which columns each table would gain and lose.
 
 ## Test ratio and lint scripts
 
-Every pull request that touches this directory, or the gate scripts under
-`tools/explorer/`, runs two gates besides the builds: `explorer-lint`, one leg
+Every pull request that touches this directory, the scripts under
+`scripts/explorer/` or the tests under `tests/explorer/` runs two gates besides the builds: `explorer-lint`, one leg
 per language, and `explorer-test-ratio`.
 Neither is marked `continue-on-error` and neither is skipped by a condition, so
 a red leg is a red pull request.

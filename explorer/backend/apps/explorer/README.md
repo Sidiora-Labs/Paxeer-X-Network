@@ -4,9 +4,8 @@ The Explorer component of Blockscout stores, processes, and serves blockchain da
 
 ## Machine Requirements
 
-* Erlang/OTP 21+
-* Elixir 1.9+
-* Postgres 10.3
+* Erlang/OTP and Elixir at the versions pinned in `../../.tool-versions`
+* PostgreSQL (the explorer's own Docker setups run version 16)
 
 ## Required Accounts
 

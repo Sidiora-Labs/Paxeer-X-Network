@@ -2,6 +2,8 @@
 
 A comprehensive collection of reusable Chakra UI components and theme system for Blockscout's projects. This toolkit provides a consistent design system and UI components to maintain visual consistency across Blockscout applications.
 
+This directory is upstream's `@blockscout/ui-toolkit` package source, kept with the imported explorer frontend. This repository does not publish it; the publishing steps below are upstream's.
+
 ## Features
 
 - 🎨 Pre-configured Chakra UI theme with Blockscout's design system
@@ -159,7 +161,7 @@ npm publish --access public
 
 #### Automated Publishing
 
-Use the `toolkit-npm-publisher.yml` GitHub Actions workflow for automated publishing.
+Upstream publishes the package from its own `toolkit-npm-publisher.yml` GitHub Actions workflow; that workflow is not part of this repository.
 
 ## Contributing
 

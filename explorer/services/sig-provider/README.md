@@ -23,7 +23,7 @@ Set the following ENVs on blockscout instance:
 - `MICROSERVICE_SIG_PROVIDER_URL={service_url}`
 
 ## Envs
-Here, we describe variables specific to this service. Variables common to all services can be found [here](../docs/common-envs.md).
+Here, we describe variables specific to this service. Variables common to all services (server, metrics, tracing) are defined in [`blockscout-service-launcher`](../libs/blockscout-service-launcher).
 
 [anchor]: <> (anchors.envs.start)
 
@@ -36,7 +36,10 @@ Here, we describe variables specific to this service. Variables common to all se
 
 [anchor]: <> (anchors.envs.end)
 
-## Links
+## In this repository
+The service is built from `docker/explorer-sig-provider/Dockerfile` at the repository root and published by `.github/workflows/explorer-images.yml` as `ghcr.io/sidiora-labs/paxeer-x-explorer-sig-provider`. `cargo check` in this directory builds it against the shared crates in `../libs`; [the explorer README](../../README.md) covers the lint script and the local stack.
+
+## Upstream links
 - Demo - https://sig-provider.services.blockscout.com
 - [Swagger](https://blockscout.github.io/swaggers/services/sig-provider/index.html)
 - [Packages](https://github.com/blockscout/blockscout-rs/pkgs/container/sig-provider)

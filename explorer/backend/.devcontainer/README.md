@@ -1,17 +1,16 @@
-# Blockscout Backend Development with VSCode Devcontainers and GitHub Codespaces
+# Explorer Backend Development with VSCode Devcontainers
 
 ## Table of Contents
 1. [Motivation](#motivation)
 2. [Setting Up VSCode Devcontainer Locally](#setting-up-vscode-devcontainer-locally)
-3. [Using GitHub Codespaces in the Browser](#using-github-codespaces-in-the-browser)
-4. [Configuring Postgres DB Access](#configuring-postgres-db-access)
-5. [Developing Blockscout Backend](#developing-blockscout-backend)
-6. [Upgrading Elixir Version](#upgrading-elixir-version)
-7. [Contributing](#contributing)
+3. [Configuring Postgres DB Access](#configuring-postgres-db-access)
+4. [Developing the Explorer Backend](#developing-the-explorer-backend)
+5. [Upgrading Elixir Version](#upgrading-elixir-version)
+6. [Contributing](#contributing)
 
 ## Motivation
 
-Setting up a local development environment for Blockscout can be time-consuming and error-prone. This devcontainer setup streamlines the process by providing a pre-configured environment with all necessary dependencies. It ensures consistency across development environments, reduces setup time, and allows developers to focus on coding rather than configuration.
+Setting up a local development environment for the Blockscout-based explorer backend can be time-consuming and error-prone. This devcontainer setup streamlines the process by providing a pre-configured environment with all necessary dependencies. It ensures consistency across development environments, reduces setup time, and allows developers to focus on coding rather than configuration.
 
 Key benefits include:
 - Pre-configured environment with Elixir, Phoenix, and Node.js
@@ -22,13 +21,13 @@ Key benefits include:
 
 ## Setting Up VSCode Devcontainer Locally
 
-1. Clone the Blockscout repository:
+1. Clone the Paxeer X Network repository and change into the explorer backend, the directory that holds this `.devcontainer`:
    ```
-   git clone https://github.com/blockscout/blockscout.git
-   cd blockscout
+   git clone https://github.com/Sidiora-Labs/Paxeer-X-Network.git
+   cd Paxeer-X-Network/explorer/backend
    ```
 
-2. Open the project in VS Code:
+2. Open the backend in VS Code:
    ```
    code .
    ```
@@ -96,22 +95,6 @@ Remember, you may need to repeat these steps each time you start a new Cursor.ai
 1. In the devcontainer, click on the GitHub icon in the Primary sidebar.
 2. Click on "Sign in to GitHub" and follow the prompts to authenticate.
 
-## Using GitHub Codespaces in the Browser
-
-To open the project in GitHub Codespaces:
-
-1. Navigate to the Blockscout repository on GitHub.
-2. Switch to the branch you want to work on.
-3. Click the "Code" button.
-4. Instead of clicking "Create codespace on [branch]" (which would use the default machine type that may not be sufficient for this Elixir-based project), click on the three dots (...) next to it.
-5. Select "New with options".
-6. Choose the "4-core/16GB RAM" machine type for optimal performance.
-7. Click "Create codespace".
-
-This will create a new Codespace with the specified resources, ensuring adequate performance for the Elixir-based project.
-
-Note: After the container opens, you may see an error about the inability to use "GitHub Copilot Chat". This Copilot functionality will not be accessible in the Codespace environment.
-
 ## Configuring Postgres DB Access
 
 To configure access to the PostgreSQL database using the VS Code extension:
@@ -129,14 +112,14 @@ To configure access to the PostgreSQL database using the VS Code extension:
 
 These credentials are derived from the `DATABASE_URL` in the `bs` script.
 
-## Developing Blockscout Backend
+## Developing the Explorer Backend
 
 ### Configuration
 
 Before running the Blockscout server, you need to set up the configuration:
 
-1. Copy the `.devcontainer/.blockscout_config.example` file to `.devcontainer/.blockscout_config`.
-2. Adjust the settings in `.devcontainer/.blockscout_config` as needed for your development environment.
+1. Create `.devcontainer/.blockscout_config`; the `bs` script loads it when it is present. Upstream's `.blockscout_config.example` is not tracked in this repository.
+2. Put the environment variables your development setup needs in it, for example `CHAIN_TYPE=paxeer_x` and `ETHEREUM_JSONRPC_VARIANT=paxeer_x`.
 
 For a comprehensive list of environment variables that can be set in this configuration file, refer to the [Blockscout documentation](https://docs.blockscout.com/setup/env-variables).
 
@@ -155,11 +138,11 @@ For a full list of options, run `bs --help`.
 
 ### Interacting with the Blockscout API
 
-For local devcontainer setups (not applicable to GitHub Codespaces), you can use API testing tools like Postman or Insomnia on your host machine to interact with the Blockscout API running in the container:
+For local devcontainer setups, you can use API testing tools like Postman or Insomnia on your host machine to interact with the Blockscout API running in the container:
 
 1. Ensure the Blockscout server is running in the devcontainer.
-2. In the API testing tool on your host machine, use `http://127.0.0.1:4000` as the base URL.
-3. Example endpoint: `GET http://127.0.0.1:4000/api/v2/blocks`
+2. In the API testing tool on your host machine, use `http://localhost:4000` as the base URL.
+3. Example endpoint: `GET http://localhost:4000/api/v2/blocks`
 
 This allows testing API endpoints directly from your host machine while the server runs in the container.
 
@@ -187,7 +170,7 @@ To upgrade the Elixir version:
 
 Note: Ensure that the version you choose is compatible with the project dependencies.
 
-After testing the new Elixir version, propagate the corresponding changes in the Dockerfile to the repo https://github.com/blockscout/devcontainer-elixir. Once a new release tag is published there and a new docker image `ghcr.io/blockscout/devcontainer-elixir` appears in the GitHub registry, modify the `docker-compose.yml` file in the `.devcontainer` directory to reflect the proper docker image tag.
+The devcontainer runs upstream's prebuilt `ghcr.io/blockscout/devcontainer-elixir` image named in `.devcontainer/docker-compose.yml`. To try a new Elixir version before such an image exists, uncomment the `build` section of that file so it builds from `.devcontainer/Dockerfile` instead, and change the image tag once upstream publishes a matching one.
 
 ## Contributing
 

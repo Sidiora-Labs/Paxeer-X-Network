@@ -16,7 +16,7 @@ This directory contains modules that provide structured access to Arbitrum-speci
 
 ## Important Usage Note
 
-Functions in the `indexer/` modules should not be called directly. Instead, use the corresponding wrapper functions provided in the `Explorer.Chain.Indexer.Fetcher.Arbitrum.Utils.Db` module. The wrapper functions provide:
+Functions in the `indexer/` modules should not be called directly. Instead, use the corresponding wrapper functions provided in the `Indexer.Fetcher.Arbitrum.Utils.Db.*` modules (`apps/indexer/lib/indexer/fetcher/arbitrum/utils/db/`). The wrapper functions provide:
 
 - Additional data transformation specific to indexer needs
 - Enhanced error handling

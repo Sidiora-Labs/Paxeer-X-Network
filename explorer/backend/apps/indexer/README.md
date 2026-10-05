@@ -25,6 +25,7 @@ Some data has to be extracted from already fetched data, and there're several tr
 - `address_token_balances`: creates token balance entities for further fetching, based on detected token transfers
 - `blocks`: extracts block signer hash from additional data for Clique chains
 - `optimism_withdrawals`: parses logs to extract L2 withdrawal messages
+- `paxeer_x_logs`: decodes Paxeer X kernel precompile logs into the `lx_*` rows the `Explorer.Chain.PaxeerX` import runners accept
 
 ### Root fetchers
 
@@ -32,12 +33,13 @@ Some data has to be extracted from already fetched data, and there're several tr
 - `block/realtime`: listens for new blocks from websocket and polls node for new blocks, imports new ones one by one
 - `block/catchup`: gets unfetched ranges of blocks, imports them in batches
 - `transaction_action`: optionally fetches/rewrites transaction actions for old blocks (in a given range of blocks for given protocols)
-- `optimism/txn_batch`: fetches transaction batches of Optimism chain
+- `optimism/transaction_batch`: fetches transaction batches of Optimism chain
 - `optimism/output_root`: fetches output roots of Optimism chain
 - `optimism/deposit`: fetches deposits to Optimism chain
 - `optimism/withdrawal`: fetches withdrawals from Optimism chain
 - `optimism/withdrawal_event`: fetches withdrawal events on L1 chain
 - `withdrawals`: optionally fetches withdrawals for old blocks (in the given from boundary of block numbers)
+- `paxeer_x_kernel_receipts`: projects LayerX kernel receipts from a relay or archive into `lx_receipts`; started only when `INDEXER_PAXEER_X_KERNEL_RECEIPTS_RELAY_URL` is set
 
 Both block fetchers retrieve/extract the blocks themselves and the following additional data:
 
@@ -110,7 +112,7 @@ After all deployed instances get all needed data, these fetchers should be depre
 
 ## Memory Usage
 
-The work queues for building the index of all blocks, balances (coin and token), and internal transactions can grow quite large.  The soft-limit is `INDEXER_MEMORY_LIMIT` when that variable is set; see https://docs.blockscout.com/for-developers/developer-faqs/how-do-i-update-memory-consumption-to-fix-indexer-memory-errors#updating-memory-consumption. When it is not set, the limit is a share of the memory the host reports: `INDEXER_SYSTEM_MEMORY_PERCENTAGE` of total system memory, 60 by default, or 100 percent of it in `indexer` mode. A host whose total memory `:memsup` cannot report falls back to a fixed 4 GiB.
+The work queues for building the index of all blocks, balances (coin and token), and internal transactions can grow quite large.  The soft-limit is `INDEXER_MEMORY_LIMIT` when that variable is set. When it is not set, the limit is a share of the memory the host reports: `INDEXER_SYSTEM_MEMORY_PERCENTAGE` of total system memory, 60 by default, or 100 percent of it in `indexer` mode. A host whose total memory `:memsup` cannot report falls back to a fixed 4 GiB.
 
 Memory usage is checked once per minute.  If the soft-limit is reached, the shrinkable work queues will shed half their load.  The shed load will be restored from the database, the same as when a restart of the server occurs, so rebuilding the work queue will be slower, but use less memory.
 

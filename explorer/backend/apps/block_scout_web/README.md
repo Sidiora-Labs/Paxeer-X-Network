@@ -4,9 +4,8 @@ BlockScoutWeb is the API and presentation layer of BlockScout built on the Phoen
 
 ## Machine Requirements
 
-* Erlang/OTP 21+
-* Elixir 1.9+
-* Postgres 10.3
+* Erlang/OTP and Elixir at the versions pinned in `../../.tool-versions`
+* PostgreSQL (the explorer's own Docker setups run version 16)
 
 ## Required Accounts
 
@@ -22,7 +21,7 @@ To get BlockScout Web interface up and running locally:
 * Install Node.js dependencies with `$ cd assets && npm install && cd ..`
 * Start Phoenix with `$ mix phx.server` (This can be run from this directory or the project root: the project root is recommended.)
 
-Now you can visit [`localhost:4000`](http://localhost:4000) from your browser.
+Now you can visit `http://localhost:4000` from your browser.
 
 You can also run IEx (Interactive Elixir): `$ iex -S mix phx.server` (This can be run from this directory or the project root: the project root is recommended.)
 

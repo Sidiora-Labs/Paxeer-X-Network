@@ -1,20 +1,12 @@
 # Railway service definitions
 
-The explorer runs on Railway as four services in one project: a Postgres
-database, the Blockscout backend, the Next.js frontend, and (optionally) the
+The explorer runs on Railway as services in one project: a Postgres
+database, the Blockscout backend, the Next.js frontend, and optionally the
 two Rust microservices under `explorer/services`. No service builds from this
 repository any more: each runs the image `.github/workflows/explorer-images.yml`
 publishes. The two JSON files beside this one hold the deploy configuration for
 the backend and the frontend; everything else is a per-service setting or a
 variable and is listed below.
-
-Railway's config-as-code format (`railway.json` / `railway.toml`) is on its way
-out in favour of Infrastructure as Code (`.railway/railway.ts`). Existing
-services keep reading these files until the cutoff Railway announces in its own
-documentation; the fields used here are the ones both formats express, so the
-move is a mechanical translation — `deploy.startCommand` becomes `start`,
-`deploy.healthcheckPath` becomes `healthcheck`, and the image below becomes
-`source: image("…")`.
 
 ## Images
 
@@ -76,8 +68,9 @@ endpoint answers.
 `ENTRYPOINT` (`entrypoint.sh`) that validates the `NEXT_PUBLIC_*` variables,
 generates the client-side env script, the favicon and the sitemap, and then runs
 `node server.js`. Overriding the start command would skip that. The health check
-is `GET /api/healthz`, the Next.js route in
-`explorer/frontend/pages/api/healthz.tsx`.
+is `GET /explorer/api/healthz`: the Next.js route in
+`explorer/frontend/pages/api/healthz.tsx`, served under the `/explorer` base path
+that `explorer/frontend/next.config.js` sets.
 
 ## Proving the definitions
 
@@ -197,7 +190,7 @@ frontend's own catalogue, `explorer/frontend/docs/ENVS.md`:
 `NEXT_PUBLIC_AD_TEXT_PROVIDER`.
 
 The frontend image validates this set on start against
-`deploy/tools/envs-validator`. A name the schema does not know, or a required
+`explorer/frontend/deploy/tools/envs-validator`. A name the schema does not know, or a required
 name left empty, stops the container rather than being ignored, so a typo in
 the Railway variable store surfaces as a failed deploy and not as a subtly
 wrong page.

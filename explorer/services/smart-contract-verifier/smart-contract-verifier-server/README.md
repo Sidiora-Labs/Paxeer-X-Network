@@ -15,22 +15,20 @@ default values are used (if possible).
 Service uses a configuration file the path to which is specified via `SMART_CONTRACT_VERIFIER__CONFIG=[path]` environment variable.
 The base configuration file with all available options could be found at [config/base.toml](./config/base.toml).
 
-Below is an example of a simple configuration file which is filled with default values.
+Below is an annotated copy of the main sections of that file, with its values; the listen addresses are described in comments rather than repeated.
 
 ```toml
 [server.http]
 # When disabled, HTTP server is not running
 enabled = true
-# IP address and port number the HTTP server should listen to
-addr = "0.0.0.0:8050"
+# Address the HTTP server listens on; config/base.toml binds every IPv4 interface on port 8050
 # The maximum JSON payload is able to be processed
 max_body_size = 2097152
 
 [server.grpc]
 # (Disabled by default) When disabled, GRPC server is not running
 enabled = false
-# IP address and port number the GRPC server should listen to
-addr = "0.0.0.0:8051"
+# Address the GRPC server listens on; config/base.toml binds every IPv4 interface on port 8051
 
 [solidity]
 # When disabled, solidity related handlers are not available
@@ -64,7 +62,7 @@ api_url = "https://sourcify.dev/server/"
 # Number of failing attempts the server makes to Sourcify API
 verification_attempts = 3
 # The maximum period (in seconds) the service is waiting for the Sourcify response
-request_timeout = 10
+request_timeout = 15
 
 [compilers]
 # Maximum number of concurrent compilations. If omitted, number of CPU cores would be used
@@ -73,8 +71,7 @@ max_threads = 8
 [metrics]
 # When disabled, metrics are not available
 enabled = false
-# IP address and port number metrics related endpoint should listen to
-addr = "0.0.0.0:6060"
+# Address the metrics endpoint listens on; config/base.toml binds every IPv4 interface on port 6060
 # A route at which metrics related endpoint is available
 route = "/metrics"
 

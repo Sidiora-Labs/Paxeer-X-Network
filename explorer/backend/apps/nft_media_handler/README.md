@@ -4,7 +4,7 @@ The NFT Media Handler is an Elixir component in Blockscout responsible for fetch
 
 ## Configuration
 
-You can modify the application settings in the `config/config.exs` file. Key parameters include:
+The application settings are read from `NFT_MEDIA_HANDLER_*` environment variables in the umbrella's `config/runtime.exs`. Key parameters include:
 
 - `:enabled?` - Enable/disable the application.
 - `:remote?` - Use remote mode.

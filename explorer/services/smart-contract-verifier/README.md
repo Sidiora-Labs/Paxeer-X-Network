@@ -14,7 +14,7 @@ Set the following ENVs on blockscout instance:
 - `MICROSERVICE_SC_VERIFIER_TYPE=sc_verifier`
 
 ## Envs
-Here, we describe variables specific to this service. Variables common to all services can be found [here](../docs/common-envs.md).
+Here, we describe variables specific to this service. Variables common to all services (server, metrics, tracing) are defined in [`blockscout-service-launcher`](../libs/blockscout-service-launcher).
 
 [anchor]: <> (anchors.envs.start)
 
@@ -32,11 +32,14 @@ Here, we describe variables specific to this service. Variables common to all se
 | `SMART_CONTRACT_VERIFIER__SOURCIFY__API_URL`                   |          | Sourcify API url                                                        | `https://sourcify.dev/server/`                                               |
 | `SMART_CONTRACT_VERIFIER__SOURCIFY__VERIFICATION_ATTEMPTS`     |          | Number of attempts the server makes to Sourcify API. Must be at least 1 | `3`                                                                          |
 | `SMART_CONTRACT_VERIFIER__SOURCIFY__REQUEST_TIMEOUT`           |          | Timeout in seconds for a single request to Sourcify API                 | `15`                                                                         |
-| `SMART_CONTRACT_VERIFIER__COMPILERS__MAX_THREADS`              |          | Maximum number of concurrent compilations                               | `8`                                                                          |
+| `SMART_CONTRACT_VERIFIER__COMPILERS__MAX_THREADS`              |          | Maximum number of concurrent compilations                               | number of available CPU threads                                              |
 
 [anchor]: <> (anchors.envs.end)
 
-## Links
+## In this repository
+The service is built from `docker/explorer-smart-contract-verifier/Dockerfile` at the repository root and published by `.github/workflows/explorer-images.yml` as `ghcr.io/sidiora-labs/paxeer-x-explorer-smart-contract-verifier`. `cargo check` in this directory builds it against the shared crates in `../libs`; [the explorer README](../../README.md) covers the lint script and the local stack.
+
+## Upstream links
 - Demo - https://http.sc-verifier.services.blockscout.com
 - [Swagger](https://blockscout.github.io/swaggers/services/smart-contract-verifier/index.html)
 - [Packages](https://github.com/blockscout/blockscout-rs/pkgs/container/smart-contract-verifier)
