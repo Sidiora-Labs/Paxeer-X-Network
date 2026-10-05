@@ -3568,11 +3568,389 @@ sign "$1" "$5" "$6"
     return code
 
 
+def service_roster():
+    """Requirement 203: the kernel app is ready only with the complete service
+    roster of its launch contract. The roster check-live.sh declares is
+    derived again from the full-profile launches of docker/kernel/init.sh (the
+    selected image's kernel-init when PAXEER_X_RUNTIME_IMAGE names one). The
+    production init steps and service supervisor then run as the root init of
+    a disposable namespace and the check-live probe and verdict judge the
+    real process, status and material tree: the complete roster, each role
+    omitted in turn, and wrong-uid, duplicate, unexpected, waiting, forged,
+    dead and broken-material roles."""
+    import shlex
+    quote = shlex.quote
+    checker = ROOT / 'tools/bringup/check-live.sh'
+    variables = ('layerx=/data/layerx\n', 'node_data=$layerx/node\n', 'keys=$layerx/keys\n', 'genesis=$layerx/genesis\n',
+                 'human_state=/data/human-state\n', 'tls=${LAYERX_FLY_TLS_DIR:-/data/tls}\n', 'run=/run/layerx\n',
+                 'status=$run/init\n', 'mirror_material=/run/mirror-material\n', 'mirror_run=/run/mirror-publisher\n',
+                 'human_policy=$keys/human-policy/policy.json\n')
+    functions = ('log', 'fresh', 'memory', 'missing', 'service', 'tls_for', 'private_runtime_directories')
+    security = ('human_security_waits', 'human_security_prerequisite')
+    steps = (
+        'memory "$run" 0755\n', 'memory /run/authority-private 0700\n', 'memory /run/human-private 0755\n',
+        'memory /run/mirror-signer 0700\n', 'memory "$mirror_material" 0700\n', 'memory "$mirror_run" 0700\n',
+        'chown 4020:4020 "$run"\nchmod 2775 "$run"\n',
+        'chown 4021:4020 /run/authority-private /run/mirror-signer "$mirror_material" "$mirror_run"\n',
+        'mkdir -p "$status" "$run/clock"\ninstall -d -o 4020 -g 4020 -m 0750 "$run/node"\nchmod 0755 "$status"\n'
+        'echo "$$" >"$status/pid"\n',
+        'install -d -o 0 -g 4020 -m 2775 "$layerx" "$layerx/settlement"\ninstall -d -o 0 -g 4020 -m 0750 "$genesis"\n'
+        'chmod g-s "$genesis"\n',
+        'install -d -o 0 -g 4020 -m 0750 "$keys" "$keys/tokens"\n'
+        'install -d -o 0 -g 0 -m 0700 "$keys/checkpoint-authority" "$keys/publication"\n',
+        'install -d -o 0 -g 4020 -m 0711 "$tls"\n',
+        'install -d -o 4020 -g 4020 -m 2770 "$layerx/guarantor-submitter"\nfor identity in 1 2; do\n'
+        '\tinstall -d -o 4020 -g 4020 -m 0750 "$layerx/guarantor-$identity" "$layerx/guarantor-$identity/identity"\n'
+        '\tinstall -d -o 4020 -g 4020 -m 2770 "$layerx/guarantor-$identity/state"\ndone\n',
+        'private_runtime_directories\n',
+        'install -d -o 0 -g 4020 -m 0750 "$human_state"\n'
+        'install -d -o 4020 -g 4020 -m 0700 "$human_state/components" "$human_state/identity" "$human_state/security" \\\n'
+        '\t"$human_state/movement" "$human_state/movement/evidence"\n'
+        'install -d -o 4021 -g 4020 -m 0700 "$human_state/agent" "$human_state/authority"\n'
+        'install -d -o 4026 -g 4020 -m 0700 "$human_state/kms"\n',
+        'human_material=$run/human-material\ninstall -d -o 0 -g 4020 -m 0751 "$human_material"\n'
+        'install -d -m 0755 /run/human-material /var/lib/layerx/human\n',
+        'fresh "$keys/treasury.key" 4020:4020 0400 openssl rand -hex 32\n',
+        'install -d -o 4021 -g 4020 -m 0700 "$layerx/core" "$layerx/agent-boundary"\n',
+        '    install -d -o 4020 -g 4020 -m 0700 "$layerx/relay-archive" "$run/relay-archive" || return 1\n',
+    )
+    project = '\tinstall -d -o "$uid" -g 4020 -m 0500 "$dir"\n'
+    cases, scenarios, unqualified = [], {}, []
+
+    def require(condition, message):
+        if not condition:
+            raise RuntimeError(message)
+
+    def case(name):
+        cases.append(name)
+        print('PAXEER_X_CASE %s ok' % name, flush=True)
+
+    raw = os.environ.get('PAXEER_X_EVIDENCE_DIR')
+    if raw:
+        evidence = Path(raw)
+        evidence.mkdir(mode=0o700, parents=True, exist_ok=False)
+    else:
+        evidence = Path(tempfile.mkdtemp(prefix='paxeer-x-service-roster-evidence-'))
+    evidence.chmod(0o700)
+    scratch = Path(tempfile.mkdtemp(prefix='paxeer-x-service-roster-'))
+    scratch.chmod(0o755)
+    print('PAXEER_X_EVIDENCE dir=%s' % evidence, flush=True)
+    result = {'case': 'service-roster'}
+
+    def checked(script, *arguments, stdin=None):
+        """Runs script with check-live.sh sourced as ca.sh sources it."""
+        answer = subprocess.run(['bash', '-c', 'set -euo pipefail\n. ' + quote(str(checker)) + '\n' + script,
+                                 'service-roster', *arguments], input=stdin, capture_output=True, text=True,
+                                timeout=120, env={'PATH': os.environ.get('PATH', '/usr/bin:/bin'), 'LC_ALL': 'C'})
+        require(answer.returncode == 0, 'check-live.sh %s failed exit=%d: %s' % (script.split()[0], answer.returncode,
+                                                                                 answer.stderr.strip()[-600:]))
+        return answer.stdout
+
+    def function(text, name):
+        found = re.findall(r'^' + name + r'\(\) \{(?:[^\n]*\}\n|\n.*?^\}\n)', text, re.M | re.S)
+        require(len(found) == 1, 'production function extraction boundary changed: ' + name)
+        return found[0]
+
+    try:
+        require(os.geteuid() == 0, 'the service roster namespace requires real root')
+        for executable in ('unshare', 'mount', 'mountpoint', 'chroot', 'setpriv', 'bash', 'python3', 'openssl', 'sleep'):
+            require(shutil.which(executable) is not None, 'missing namespace prerequisite: ' + executable)
+        revision = command(['git', '-C', str(ROOT), 'rev-parse', 'HEAD']).stdout.strip()
+        require(not command(['git', '-C', str(ROOT), 'status', '--porcelain']).stdout.strip(),
+                'source must be committed before namespace qualification')
+        image = os.environ.get('PAXEER_X_RUNTIME_IMAGE', '')
+        if image:
+            identity = docker('image', 'inspect', '--format', '{{.Id}}', image, timeout=120).stdout.strip()
+            container = docker('create', image, timeout=120).stdout.strip()
+            try:
+                docker('cp', container + ':/usr/local/bin/kernel-init', str(scratch / 'kernel-init'), timeout=120)
+            finally:
+                docker('rm', '-f', container, timeout=120, check=False)
+            source = (scratch / 'kernel-init').read_text()
+            candidate = '%s@%s' % (image.split('@', 1)[0], identity)
+        else:
+            source = (ROOT / 'docker/kernel/init.sh').read_text()
+            candidate = 'source:%s:init-sha256:%s' % (revision, hashlib.sha256(source.encode()).hexdigest())
+            unqualified.append('no PAXEER_X_RUNTIME_IMAGE: the init and launch contract are the committed '
+                               'docker/kernel/init.sh, not a selected image')
+        require(re.fullmatch(r'\S+', candidate) is not None, 'the candidate identity is not one token')
+        result.update(revision=revision, candidate=candidate,
+                      init_sha256=hashlib.sha256(source.encode()).hexdigest(),
+                      check_live_sha256=hashlib.sha256(checker.read_bytes()).hexdigest())
+        print('service-roster revision=%s candidate=%s' % (revision, candidate), flush=True)
+
+        # The chosen launch contract: human.toml builds docker/kernel/Dockerfile
+        # whose final stage leaves the init on its default full profile.
+        toml = (ROOT / 'human/wallet/deploy/human.toml').read_text()
+        app = re.search(r'^app = "([^"]+)"$', toml, re.M)
+        require(app is not None and re.search(r'^\s*dockerfile = "docker/kernel/Dockerfile"$', toml, re.M),
+                'human.toml no longer builds the kernel image')
+        app = app.group(1)
+        dockerfile = (ROOT / 'docker/kernel/Dockerfile').read_text()
+        final = dockerfile[dockerfile.rindex('\nFROM '):]
+        require('LAYERX_KERNEL_PROFILE' not in final and 'ENTRYPOINT ["/usr/local/bin/kernel-init"]' in final
+                and 'COPY --chmod=0555 docker/kernel/init.sh /usr/local/bin/kernel-init' in final,
+                'the final kernel stage no longer runs the init on its default profile')
+        require('\nkernel_profile=${LAYERX_KERNEL_PROFILE:-full}\n' in source, 'the init default profile is not full')
+
+        # ac_1: the explicit roster equals the full-profile launches of the init.
+        roster = {}
+        for row in checked('kernel_roster').splitlines():
+            name, uid, genesis, material = row.split(' ')
+            require(name not in roster, 'kernel_roster repeats ' + name)
+            items = [] if material == '-' else [item.split('=', 1) for item in material.split(',')]
+            roster[name] = (int(uid), genesis == 'genesis', [(path, spec) for path, spec in items])
+        paths = checked('kernel_roster_paths').split()
+        require(paths == list(dict.fromkeys(path for row in roster.values() for path, _ in row[2])),
+                'kernel_roster_paths is not the roster material')
+        probe = checked('printf %s "$kernel_app_probe"')
+        native = re.findall(r'\nelse\nservice receipt-authority 4021 \\\n.*?\nfi\n', source, re.S)
+        require(len(native) == 1, 'the native receipt-authority branch boundary changed')
+        full = source.replace(native[0], '\n')
+        genesis_line = re.findall(r'^genesis_files="([^"]+)"$', full, re.M)
+        require(len(genesis_line) == 1, 'genesis_files boundary changed')
+        genesis_tokens = genesis_line[0].split()
+        require('$genesis_files' in function(source, 'human_security_waits'),
+                'human_security_waits no longer starts from the genesis outputs')
+        boundaries = re.findall(r'^paxeer_boundaries=\(([^)]*)\)$', full, re.M)
+        require(len(boundaries) == 1 and '\nstart_paxeer\n' in full and '\tfor k in 0 1; do\n' in full
+                and re.search(r'^guarantor 1 ', full, re.M) and re.search(r'^guarantor 2 ', full, re.M),
+                'the guarantor or Paxeer launch boundary changed')
+        launched, prefixes = {}, {}
+        for match in re.finditer(r'^[ \t]*((?:\w+=\S+ )*)service ("[^"\n]+"|[^\s"]+) (\S+) ', full, re.M):
+            prefix, name, uid = match.group(1), match.group(2).strip('"'), match.group(3)
+            require(uid.isdigit(), 'service %s launches under uid %s' % (name, uid))
+            waits = full[match.start():full.index(' -- ', match.start())]
+            permitted = ('$genesis_files' in waits or '$(human_security_waits)' in waits
+                         or any(token in waits for token in genesis_tokens))
+            if name == 'guarantor-$identity':
+                require(prefix == 'guarantor_identity=$identity ', 'the guarantor launch prefix changed')
+                names = {'guarantor-1': 'guarantor_identity=1 ', 'guarantor-2': 'guarantor_identity=2 '}
+            elif name == 'paxeer-hop-$((k + 1))':
+                names = {'paxeer-hop-1': prefix, 'paxeer-hop-2': prefix}
+            elif name == '$boundary':
+                names = {item: prefix for item in boundaries[0].split()}
+            else:
+                require('$' not in name, 'service name %s is not resolvable' % name)
+                names = {name: prefix}
+            for item, item_prefix in names.items():
+                require(item not in launched, 'the init launches %s twice' % item)
+                launched[item] = (int(uid), permitted)
+                prefixes[item] = item_prefix
+        require(launched == {name: row[:2] for name, row in roster.items()},
+                'kernel_roster is not the init launch contract: roster=%s launched=%s' % (
+                    sorted((name, row[:2]) for name, row in roster.items()), sorted(launched.items())))
+        require(len(roster) == 24 and sum(row[1] for row in roster.values()) == 17,
+                'the roster is not 24 roles with 17 genesis waits')
+        case('roster-is-the-full-profile-launch-contract')
+        wiring = function(checker.read_text(), 'check_kernel_app')
+        for line in ('fly_ssh "$app" - "python3 - /run/layerx/init $(kernel_roster_paths)"',
+                     'kernel_app_verdict "$app" "$candidate" <<<"$answer"',
+                     'if [ "$failures" -eq 0 ] && [ "$waiting" -gt 0 ]; then', '\t\texit 3\n', 'finish "$failures"'):
+            require(line in wiring, 'check_kernel_app no longer carries: ' + line.strip())
+        case('check-kernel-app-judges-through-probe-and-verdict')
+
+        production_variables = ''.join(variables) + 'genesis_files="%s"\n' % genesis_line[0]
+        for text in variables + steps + (project,):
+            require(source.count('\n' + text) == 1, 'production step boundary changed: ' + text.splitlines()[0])
+        require(project in function(source, 'human_project'), 'human_project no longer installs the role material')
+        human_roles = [name for name, row in roster.items()
+                       if any(path == '/run/layerx/human-material/' + name for path, _ in row[2])]
+        tls_roles = {}
+        for name, row in roster.items():
+            for path, spec in row[2]:
+                if path.startswith('/data/tls/'):
+                    require(tls_roles.get(path[10:], spec) == spec, 'tls %s has two owners' % path)
+                    tls_roles[path[10:]] = spec
+        materials = ('for entry in %s; do\nuid=${entry#*:}\ndir=$human_material/${entry%%:*}\n%sdone\n' % (
+            ' '.join('%s:%d' % (name, roster[name][0]) for name in human_roles), project))
+        materials += ''.join('install -d -o 0 -g 0 -m 0700 "$tls/%s"\ntls_for %s %s\n' % (name, name, spec.split(':')[0])
+                             for name, spec in sorted(tls_roles.items()))
+        fixture = scratch / 'fixture'
+        fixture.mkdir(mode=0o755)
+        (fixture / 'probe.py').write_text(probe)
+        (fixture / 'probe.py').chmod(0o444)
+        namespace = os.readlink('/proc/self/ns/mnt')
+        pid_namespace = os.readlink('/proc/self/ns/pid')
+
+        def run_init(label, omit=(), uids=None, waits=None, twice=(), extra='', extra_records=0, after='',
+                     real_security=False):
+            """One disposable kernel machine: the production init steps and
+            supervisor as pid 1 under the kernel-init name, every launched
+            role running sleep under its real wrappers, then the probe."""
+            sandbox = scratch / ('root-' + label)
+            durable = scratch / ('durable-' + label)
+            sandbox.mkdir(mode=0o700)
+            durable.mkdir(mode=0o755)
+            uids, waits = uids or {}, waits or {}
+            body = 'set -euo pipefail\n' + production_variables + ''.join(
+                function(source, name) for name in functions + (security if real_security else ()))
+            body += ''.join(steps) + materials
+            records = 0
+            for name in launched:
+                if name in omit:
+                    continue
+                for _ in range(2 if name in twice else 1):
+                    body += '%sservice %s %d %s - - -- sleep infinity\n' % (
+                        prefixes[name], name, uids.get(name, roster[name][0]), waits.get(name, '""'))
+                records += 1
+            body += extra
+            records += extra_records
+            body += ('for _ in $(seq 200); do [ "$(ls "$status" | wc -l)" -lt %d ] || break; sleep 0.1; done\n'
+                     '[ "$(ls "$status" | wc -l)" -eq %d ]\nsleep 3\n' % (records + 1, records + 1))
+            body += after
+            body += ('python3 - /run/layerx/init %s </fixture/probe.py >/tmp/probe.json\n'
+                     'printf "PROBE %%s\\n" "$(cat /tmp/probe.json)"\n' % ' '.join(quote(path) for path in paths))
+            scaffold = '''set -euo pipefail
+root=ROOT_PATH
+[ "$(readlink /proc/self/ns/mnt)" != ORIGINAL_MOUNT ]
+[ "$(readlink /proc/self/ns/pid)" != ORIGINAL_PID ]
+mount --make-rprivate /
+mount -t tmpfs -o mode=0755,nosuid tmpfs "$root"
+for directory in usr bin sbin lib lib64 etc; do
+    [ ! -d "/$directory" ] || {
+        mkdir -p "$root/$directory"
+        mount --bind "/$directory" "$root/$directory"
+        mount -o remount,bind,ro "$root/$directory"
+    }
+done
+mkdir -m0755 "$root/proc" "$root/dev" "$root/run" "$root/data" "$root/fixture"
+mkdir -m1777 "$root/tmp"
+for device in null urandom; do
+    touch "$root/dev/$device"
+    mount --bind "/dev/$device" "$root/dev/$device"
+done
+mount -t proc -o nosuid,nodev proc "$root/proc"
+mount --bind DURABLE_PATH "$root/data"
+mount --bind FIXTURE_PATH "$root/fixture"
+mount -o remount,bind,ro "$root/fixture"
+exec chroot "$root" /bin/bash -c 'exec -a /usr/local/bin/kernel-init /bin/bash -se' <<'PAXEER_X_SERVICE_ROSTER_CASE'
+'''
+            for name, value in (('ROOT_PATH', str(sandbox)), ('DURABLE_PATH', str(durable)),
+                                ('FIXTURE_PATH', str(fixture)),
+                                ('ORIGINAL_MOUNT', namespace), ('ORIGINAL_PID', pid_namespace)):
+                scaffold = scaffold.replace(name, quote(value))
+            argv = ['unshare', '--mount', '--pid', '--fork', '--kill-child=KILL', '--net',
+                    '--ipc', '--uts', '--propagation', 'private', '--mount-proc', '/bin/bash', '-se']
+            try:
+                answer = subprocess.run(argv, input=scaffold + body + 'PAXEER_X_SERVICE_ROSTER_CASE\n',
+                                        capture_output=True, text=True, timeout=180,
+                                        env={'PATH': '/usr/sbin:/usr/bin:/sbin:/bin', 'LC_ALL': 'C'})
+            except subprocess.TimeoutExpired:
+                raise RuntimeError('the %s namespace exceeded 180 seconds' % label)
+            require(os.readlink('/proc/self/ns/mnt') == namespace and os.readlink('/proc/self/ns/pid') == pid_namespace,
+                    'the namespace case leaked into the host')
+            probed = [line[6:] for line in answer.stdout.splitlines() if line.startswith('PROBE ')]
+            require(answer.returncode == 0 and len(probed) == 1, 'the %s init failed exit=%d: %s' % (
+                label, answer.returncode, (answer.stdout + answer.stderr).strip()[-1200:]))
+            verdict = checked('kernel_app_verdict "$1" "$2"', app, candidate, stdin=probed[0]).splitlines()
+            require(verdict and re.fullmatch(r'verdict \d+ \d+', verdict[-1]), 'the %s verdict is unreadable' % label)
+            failures, waiting = map(int, verdict[-1].split()[1:])
+            fails = [line for line in verdict if line.startswith('fail ')]
+            require(all(line.endswith(' candidate=' + candidate) for line in fails),
+                    '%s: a failure does not record the candidate' % label)
+            scenarios[label] = {'lines': verdict, 'probe': json.loads(probed[0])}
+            return verdict, failures, waiting, [line[5:-len(' candidate=' + candidate)] for line in fails]
+
+        def refused(label, expected, **arguments):
+            verdict, failures, waiting, fails = run_init(label, **arguments)
+            require(failures == len(fails) == len(expected) and waiting == 0
+                    and all(sum(re.fullmatch(pattern, line) is not None for line in fails) == 1 for pattern in expected),
+                    '%s: expected %s, observed %s' % (label, expected, fails))
+            require(not any(line.startswith(('pass roster', 'bootstrap ')) for line in verdict),
+                    '%s: a refused roster was reported ready' % label)
+            return verdict
+
+        # ac_2, ac_4: the complete roster passes on its processes and material.
+        verdict, failures, waiting, fails = run_init('complete')
+        passed = {}
+        for line in verdict:
+            match = re.fullmatch(r'pass role (\S+) uid=(\d+) state=running pid=\d+ processes=(\d+) material=(\d+) candidate=(\S+)', line)
+            if match:
+                passed[match.group(1)] = (int(match.group(2)), int(match.group(3)), int(match.group(4)), match.group(5))
+        require(failures == waiting == 0 and not fails
+                and passed == {name: (row[0], 1, len(row[2]), candidate) for name, row in roster.items()}
+                and verdict.count('pass roster app=%s candidate=%s roles=24 running=24 operational=yes' % (app, candidate)) == 1
+                and re.fullmatch(r'pass init app=%s uid=0 entrypoint=kernel-init pid=1' % re.escape(app), verdict[0]),
+                'the complete roster did not pass: %s' % verdict)
+        case('complete-roster-passes-on-process-and-material')
+
+        # ac_1, ac_4: each required role omitted in turn fails by name.
+        for name, row in roster.items():
+            refused('missing-' + name, [r'role %s uid=%d state=missing reason=no-status' % (re.escape(name), row[0])],
+                    omit=(name,))
+            case('missing-role-refused-' + name)
+        refused('wrong-uid', [r'role human-kms uid=4020 want=4026 state=running reason=wrong-uid'], uids={'human-kms': 4020})
+        case('wrong-uid-role-refused')
+        refused('duplicate', [r'role - state=running pid=\d+ uids=4020,4020,4020,4020 comm=sleep reason=unrecorded-role-process'],
+                twice=('human-movement',))
+        case('duplicate-role-process-refused')
+        refused('unexpected', [r'role human-kms-admin state=unexpected status=4026_running_\d+ reason=not-in-roster'],
+                extra='service human-kms-admin 4026 "" - - -- sleep infinity\n', extra_records=1)
+        case('unexpected-role-refused')
+
+        # ac_2: one status file cannot establish readiness.
+        refused('forged-status', [r'role paxeer-relay uid=4020 state=running pid=\d+ reason=unsupervised'],
+                omit=('paxeer-relay',),
+                extra=('setpriv --reuid=4020 --regid=4020 --clear-groups --no-new-privs sleep infinity &\n'
+                       'echo "4020 running $!" >"$status/paxeer-relay"\n'), extra_records=1)
+        case('status-without-supervised-process-refused')
+        refused('dead-process', [r'role layerxd uid=4020 state=running pid=\d+ reason=process-absent'],
+                after='read -r _ _ victim <"$status/layerxd"\nkill -KILL "$victim"\nsleep 0.5\n')
+        case('status-of-dead-process-refused')
+        refused('material', [r'role human-movement uid=4020 state=running pid=\d+ reason=material '
+                             r'path=/run/human-private/movement want=4020:4020:700 observed=dir:4020:4020:755'],
+                after='chmod 0755 /run/human-private/movement\n')
+        case('broken-material-boundary-refused')
+
+        # ac_3: the genesis wait is permitted only to the roles whose launch
+        # waits on a genesis output and is never operational.
+        genesis_waits = {name: '"$genesis_files"' for name, row in roster.items() if row[1]}
+        verdict, failures, waiting, fails = run_init('pre-genesis', waits=genesis_waits, real_security=True)
+        waited = {re.fullmatch(r'wait role (\S+) uid=\d+ state=waiting-genesis candidate=\S+', line).group(1)
+                  for line in verdict if line.startswith('wait ')}
+        require(failures == 0 and not fails and waiting == 17 and waited == set(genesis_waits)
+                and verdict.count('bootstrap app=%s candidate=%s state=pre-genesis roles=24 running=7 waiting-genesis=17 '
+                                  'operational=no' % (app, candidate)) == 1
+                and not any('operational=yes' in line for line in verdict),
+                'the pre-genesis roster was not a non-operational bootstrap: %s' % verdict)
+        require(scenarios['pre-genesis']['probe']['status']['human-security'] == '4020 waiting genesis',
+                'human-security did not wait on the genesis through its real prerequisite')
+        case('pre-genesis-wait-permitted-and-not-operational')
+        refused('genesis-wait-not-permitted', [r'role human uid=4020 state=waiting on=genesis reason=genesis-wait-not-permitted'],
+                waits={'human': '"$genesis_files"'})
+        case('genesis-wait-of-non-genesis-role-refused')
+        refused('waiting', [r'role human-tls uid=4020 state=waiting on=/data/tls/human/cert\.der reason=waiting'],
+                waits={'human-tls': '"$tls/human/cert.der $tls/human/key.der"'})
+        case('non-genesis-wait-refused')
+        unqualified.append('role payloads are sleep under the real service supervisor, setpriv and namespace wrappers: '
+                           'the role binaries and their prepare steps and runtime clock need the selected image')
+        unqualified.append('outside the pre-genesis scenario human-security launches without its genesis prerequisite '
+                           '(identity generation, genesis projection, owner-policy bundle), which needs the image tooling')
+        for line in unqualified:
+            print('PAXEER_X_UNQUALIFIED %s' % line, flush=True)
+        code = 0
+    except (OSError, ValueError, KeyError, AttributeError, RuntimeError, subprocess.SubprocessError) as error:
+        code = 1
+        result['observed'] = str(error)
+        print('service-roster refused: %s; evidence %s' % (error, evidence), file=sys.stderr, flush=True)
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+    result.update(tests=len(cases), exit_code=code, cases=cases, unqualified=unqualified, scenarios=scenarios)
+    with open(evidence / 'service-roster.json', 'x') as handle:
+        json.dump(result, handle, indent=2)
+    if code == 0:
+        print('PAXEER_X_GATE tests=%d skipped=0 evidence=%s' % (len(cases), evidence), flush=True)
+    return code
+
+
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--case', required=True, choices=['role-directories', 'role-directory-prerequisite', 'export-recovery', 'fixture-foundation', 'kms-service-prerequisite', 'registry-material', 'policy-graph', 'identity-rotation', 'movement-kms', 'ca-roster'])
+    parser.add_argument('--case', required=True, choices=['role-directories', 'role-directory-prerequisite', 'export-recovery', 'fixture-foundation', 'kms-service-prerequisite', 'registry-material', 'policy-graph', 'identity-rotation', 'movement-kms', 'ca-roster', 'service-roster'])
     arguments = parser.parse_args()
     os.umask(0o077)
+    if arguments.case == 'service-roster':
+        return service_roster()
     if arguments.case == 'ca-roster':
         return ca_roster()
     if arguments.case == 'movement-kms':

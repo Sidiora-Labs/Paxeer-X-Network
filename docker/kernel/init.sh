@@ -1034,14 +1034,10 @@ exec "$@"' sh "$run/generation-isolation" "$mask_one" "$mask_two" \
 			# shellcheck disable=SC2086
 			if { [ "$name" = human-security ] && absent="$(human_security_prerequisite)"; } ||
 				{ [ "$name" != human-security ] && absent="$(missing $waits)"; }; then
-				if [ "$name" = human-security ]; then
-					echo "$uid waiting $absent" >"$status/$name"
-				else
-					case " $genesis_files " in
-					*" $absent "*) echo "$uid waiting genesis" ;;
-					*) echo "$uid waiting $absent" ;;
-					esac >"$status/$name"
-				fi
+				case " $genesis_files " in
+				*" $absent "*) echo "$uid waiting genesis" ;;
+				*) echo "$uid waiting $absent" ;;
+				esac >"$status/$name"
 				sleep 5
 				continue
 			fi

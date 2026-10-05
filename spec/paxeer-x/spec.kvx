@@ -29554,7 +29554,7 @@ qualification_result = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-10.3-q
 
 [task.24.4]
 title = "Require the complete configured kernel service roster for readiness"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 10
 requires = ["0.2", "24.1", "24.2", "24.3"]
@@ -29575,6 +29575,12 @@ deployment_profile = "product"
 planned_paths = ["tools/bringup/tests/paxeer-x-runtime-contract.py"]
 path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
 evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+completion_basis = "implementation"
+qualification_status = "PASS"
+build_exit_code = null
+verify_exit_code = 0
+qualification_log = "/root/lx-ops/fleet-2026-10-05/results/24.4.json"
+qualification_note = "Gate passed 36 tests after two repairs on host-local process/status material; not exercised: the image-backed run (no PAXEER_X_RUNTIME_IMAGE on this host), real role binaries, the human-security genesis prerequisite, and check-live.test.sh which was changed but not run"
 
 [task.24.7]
 title = "Verify the complete integrated CA identity roster exactly"

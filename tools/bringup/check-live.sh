@@ -2709,17 +2709,289 @@ print(json.loads(base64.urlsafe_b64decode(ceremony + "=" * (-len(ceremony) % 4))
 	finish "$failures"
 }
 
+# kernel_roster: the expected service roster of the kernel app's launch
+# contract, the full profile docker/kernel/init.sh runs from the final stage of
+# docker/kernel/Dockerfile that human/wallet/deploy/human.toml builds. One row
+# per role: name, uid, "genesis" when the role's waits name a genesis output
+# (so waiting on the genesis is its permitted bootstrap state) or "-", and the
+# role's material boundary as comma-separated path=uid:gid[:mode] entries, or
+# "-" for a role that holds no private material.
+kernel_roster() {
+	cat <<'ROSTER'
+treasury-signer 4020 genesis /data/layerx/keys/treasury.key=4020:4020:400
+layerxd 4020 genesis /run/layerx/node=4020:4020:2750
+layerxd-authority 4020 genesis /run/layerx/node=4020:4020:2750
+guarantor-1 4021 genesis /data/layerx/guarantor-1/state=4020:4020:2770,/data/tls/guarantor=4021:4020
+guarantor-2 4021 genesis /data/layerx/guarantor-2/state=4020:4020:2770,/data/tls/guarantor=4021:4020
+paxeer-hop-1 4020 - -
+paxeer-boundary-loopback 4020 - /data/tls/paxeer-boundary-loopback=4020:4020
+paxeer-hop-2 4020 - -
+paxeer-boundary-public 4020 - /data/tls/paxeer-boundary-public=4020:4020
+paxeer-relay 4020 - -
+core-boundary 4021 genesis /data/layerx/core=4021:4020:2700,/data/tls/pending-core=4021:4020,/data/tls/pending-core-admin=4021:4020
+receipt-authority 4021 genesis /run/authority-private=4021:4020:700,/data/tls/receipt-authority=4021:4020
+agent-boundary 4021 genesis /data/layerx/agent-boundary=4021:4020:2700,/data/tls/agent-boundary=4021:4020
+human-kms 4026 genesis /run/human-private/kms=4026:4020:700,/data/human-state/kms=4026:4020:700,/run/layerx/human-material/human-kms=4026:4020:2500
+human-components 4020 genesis /run/human-private/components=4020:4020:700,/data/human-state/components=4020:4020:700,/run/layerx/human-material/human-components=4020:4020:2500
+human-identity 4020 genesis /run/human-private/identity=4020:4020:700,/data/human-state/identity=4020:4020:700,/run/layerx/human-material/human-identity=4020:4020:2500
+human-security 4020 genesis /run/human-private/security=4020:4020:700,/data/human-state/security=4020:4020:700,/run/layerx/human-material/human-security=4020:4020:2500
+human-movement 4020 genesis /run/human-private/movement=4020:4020:700,/data/human-state/movement=4020:4020:700,/run/layerx/human-material/human-movement=4020:4020:2500
+human-owner 4021 genesis /run/human-private/agent=4021:4020:700,/data/human-state/agent=4021:4020:700,/run/layerx/human-material/human-owner=4021:4020:2500
+human 4020 - /run/human-private/service=4020:4020:700
+human-tls 4020 - /run/human-private/service=4020:4020:700,/data/tls/human=4020:4020
+mirror-signer 4021 genesis /run/mirror-signer=4021:4020:700
+mirror-publisher 4021 genesis /run/mirror-publisher=4021:4020:700
+relay-archive 4020 genesis /data/layerx/relay-archive=4020:4020:2700,/data/tls/relay-archive=4020:4020
+ROSTER
+}
+
+# kernel_roster_paths: every material path of the roster once, space separated.
+kernel_roster_paths() {
+	kernel_roster | awk '$4 != "-" { n = split($4, items, ","); for (i = 1; i <= n; i++) { sub(/=.*/, "", items[i]); if (!seen[items[i]]++) printf "%s%s", (out++ ? " " : ""), items[i] } }'
+}
+
+# kernel_app_probe: run as root inside the kernel machine with the init status
+# directory and the roster's material paths as arguments, prints one JSON
+# object: the init pid, every status record, every process descending from the
+# init with its uids, gids, groups, no_new_privs flag and parent, and the
+# owner, group, mode and type of each material path (not followed). A zombie
+# or dead process is reported with its state and never counts as running.
+# shellcheck disable=SC2016 # Python source
+kernel_app_probe='import json, os, stat, sys
+status, paths = sys.argv[1], sys.argv[2:]
+out = {"init": None, "status": {}, "procs": {}, "material": {}}
+def proc(pid):
+    try:
+        fields = {}
+        with open("/proc/%d/status" % pid) as handle:
+            for line in handle:
+                key, _, value = line.partition(":")
+                fields[key] = value.strip()
+        with open("/proc/%d/cmdline" % pid, "rb") as handle:
+            cmdline = handle.read(4096).replace(b"\0", b" ").decode("utf-8", "replace").strip()
+        return {"ppid": int(fields["PPid"]), "uids": [int(x) for x in fields["Uid"].split()],
+                "gids": [int(x) for x in fields["Gid"].split()], "groups": [int(x) for x in fields.get("Groups", "").split()],
+                "nnp": int(fields.get("NoNewPrivs", "0")), "comm": fields.get("Name", ""), "state": fields.get("State", "?")[:1],
+                "cmdline": cmdline[:240]}
+    except (OSError, ValueError, KeyError):
+        return None
+try:
+    with open(os.path.join(status, "pid")) as handle:
+        out["init"] = int(handle.read(64).strip())
+except (OSError, ValueError):
+    pass
+try:
+    names = sorted(os.listdir(status))
+except OSError:
+    names = []
+for name in names:
+    if name == "pid":
+        continue
+    path = os.path.join(status, name)
+    try:
+        if not stat.S_ISREG(os.lstat(path).st_mode):
+            out["status"][name] = "!not-a-file"
+            continue
+        with open(path) as handle:
+            out["status"][name] = handle.read(4096).split("\n", 1)[0]
+    except OSError:
+        out["status"][name] = "!unreadable"
+table = {}
+for entry in os.listdir("/proc"):
+    if entry.isdigit():
+        info = proc(int(entry))
+        if info is not None:
+            table[int(entry)] = info
+if out["init"] in table:
+    keep, frontier = {out["init"]}, [out["init"]]
+    while frontier:
+        parent = frontier.pop()
+        for pid, info in table.items():
+            if info["ppid"] == parent and pid not in keep:
+                keep.add(pid)
+                frontier.append(pid)
+    out["procs"] = {str(pid): table[pid] for pid in sorted(keep)}
+for path in paths:
+    try:
+        info = os.lstat(path)
+    except OSError:
+        out["material"][path] = None
+        continue
+    kind = "dir" if stat.S_ISDIR(info.st_mode) else "file" if stat.S_ISREG(info.st_mode) else "link" if stat.S_ISLNK(info.st_mode) else "other"
+    out["material"][path] = [kind, info.st_uid, info.st_gid, format(stat.S_IMODE(info.st_mode), "o")]
+print(json.dumps(out, sort_keys=True))
+'
+
+# kernel_app_verdict <app> <candidate>: reads the kernel_app_probe JSON on
+# stdin and compares it to kernel_roster. Prints one line per check, the
+# candidate identity and the role-specific reason on every role line, then
+# "verdict <failures> <waiting-genesis>". A role passes when its status names
+# its roster uid, its recorded process is alive under a service supervisor of
+# the init, every process of its tree runs under exactly that uid with gid 4020,
+# no supplementary group and no_new_privs (the pid-namespace unshare wrapper of
+# the recorded pid alone excepted), and every material path of its row has
+# the row's type, owner, group and mode. A missing, unexpected or wrong-UID
+# role, a live role process no status records (a duplicate launch), a
+# non-genesis wait, and a genesis wait of a role whose row does not permit it
+# each fail; a permitted genesis wait is counted, never passed as running.
+kernel_app_verdict() {
+	python3 -c '
+import json, sys
+app, candidate, roster_text = sys.argv[1], sys.argv[2], sys.argv[3]
+lines, failures, waiting, running = [], 0, 0, 0
+def fail(text):
+    global failures
+    failures += 1
+    lines.append("fail " + text + " candidate=" + candidate)
+roster = {}
+for row in roster_text.splitlines():
+    fields = row.split()
+    if len(fields) != 4 or not fields[1].isdigit() or fields[2] not in ("genesis", "-"):
+        fail("roster row=%s reason=malformed-row" % (fields[0] if fields else "empty"))
+        continue
+    if fields[0] in roster:
+        fail("roster row=%s reason=duplicate-row" % fields[0])
+        continue
+    material = []
+    if fields[3] != "-":
+        for item in fields[3].split(","):
+            path, _, spec = item.partition("=")
+            want = spec.split(":")
+            if not path.startswith("/") or len(want) not in (2, 3) or not all(x.isdigit() for x in want):
+                fail("roster row=%s reason=malformed-material item=%s" % (fields[0], item))
+                continue
+            material.append((path, want))
+    roster[fields[0]] = (int(fields[1]), fields[2] == "genesis", material)
+try:
+    probe = json.loads(sys.stdin.read())
+    init = probe["init"]
+    procs = {int(pid): info for pid, info in probe["procs"].items()}
+    records = probe["status"]
+    found = probe["material"]
+except (ValueError, KeyError, TypeError, AttributeError):
+    probe = None
+if probe is None or init not in procs:
+    fail("init app=%s status=absent" % app)
+    print("\n".join(lines))
+    print("verdict %d 0" % failures)
+    sys.exit(0)
+info = procs[init]
+if info["uids"][1] == 0 and any(word.endswith("kernel-init") for word in info["cmdline"].split(" ")[:2]):
+    lines.append("pass init app=%s uid=0 entrypoint=kernel-init pid=%d" % (app, init))
+else:
+    fail("init app=%s uid=%d entrypoint=%s" % (app, info["uids"][1], info["cmdline"].split(" ", 1)[0] or "none"))
+children = {}
+for pid, value in procs.items():
+    children.setdefault(value["ppid"], []).append(pid)
+def tree(root):
+    seen, frontier = [root], [root]
+    while frontier:
+        for child in children.get(frontier.pop(), []):
+            seen.append(child)
+            frontier.append(child)
+    return seen
+recorded = {}
+for name in sorted(set(records) - set(roster)):
+    fields = records[name].split(" ")
+    if len(fields) == 3 and fields[1] == "running" and fields[2].isdigit():
+        recorded.setdefault(int(fields[2]), []).append(name)
+    fail("role %s state=unexpected status=%s reason=not-in-roster" % (name, records[name].replace(" ", "_") or "empty"))
+for name, (want, genesis, material) in roster.items():
+    head = "role %s uid=%d" % (name, want)
+    if name not in records:
+        fail(head + " state=missing reason=no-status")
+        continue
+    fields = records[name].split(" ", 2)
+    if len(fields) < 3 or not fields[0].isdigit():
+        fail(head + " state=malformed status=%s reason=malformed-status" % (records[name].replace(" ", "_") or "empty"))
+        continue
+    uid, state, detail = int(fields[0]), fields[1], fields[2]
+    if uid != want:
+        if state == "running" and detail.isdigit():
+            recorded.setdefault(int(detail), []).append(name)
+        fail("role %s uid=%d want=%d state=%s reason=wrong-uid" % (name, uid, want, state))
+        continue
+    if state == "waiting":
+        if detail == "genesis" and genesis:
+            waiting += 1
+            lines.append("wait " + head + " state=waiting-genesis candidate=" + candidate)
+        elif detail == "genesis":
+            fail(head + " state=waiting on=genesis reason=genesis-wait-not-permitted")
+        else:
+            fail(head + " state=waiting on=%s reason=waiting" % detail.replace(" ", "_"))
+        continue
+    if state != "running" or not detail.isdigit():
+        fail(head + " state=%s reason=malformed-status" % state)
+        continue
+    pid = int(detail)
+    recorded.setdefault(pid, []).append(name)
+    if pid not in procs or procs[pid]["state"] in ("Z", "X"):
+        fail(head + " state=running pid=%d reason=process-absent" % pid)
+        continue
+    supervisor = procs[pid]["ppid"]
+    if supervisor not in procs or procs[supervisor]["ppid"] != init:
+        fail(head + " state=running pid=%d reason=unsupervised" % pid)
+        continue
+    problems = []
+    members = tree(pid)
+    role = [p for p in members if not (p == pid and procs[p]["comm"] == "unshare" and set(procs[p]["uids"]) == {0})]
+    if not role:
+        problems.append("reason=no-role-process")
+    for p in role:
+        value = procs[p]
+        if set(value["uids"]) != {want}:
+            problems.append("reason=process-uid pid=%d uids=%s comm=%s" % (p, ",".join(map(str, value["uids"])), value["comm"]))
+        elif set(value["gids"]) != {4020} or value["groups"] or value["nnp"] != 1:
+            problems.append("reason=process-privileges pid=%d gids=%s groups=%s no_new_privs=%d" % (
+                p, ",".join(map(str, value["gids"])), ",".join(map(str, value["groups"])) or "none", value["nnp"]))
+    for path, spec in material:
+        seen = found.get(path)
+        if seen is None:
+            problems.append("reason=material-absent path=%s" % path)
+            continue
+        observed = [str(seen[1]), str(seen[2]), seen[3]][:len(spec)]
+        if seen[0] not in ("dir", "file") or observed != spec:
+            problems.append("reason=material path=%s want=%s observed=%s:%s" % (path, ":".join(spec), seen[0], ":".join(map(str, seen[1:]))))
+    if problems:
+        for problem in problems:
+            fail(head + " state=running pid=%d " % pid + problem)
+        continue
+    running += 1
+    lines.append("pass " + head + " state=running pid=%d processes=%d material=%d candidate=%s" % (pid, len(role), len(material), candidate))
+for pid, names in sorted(recorded.items()):
+    if len(names) > 1:
+        fail("role %s state=running pid=%d reason=duplicate-process shared=%s" % (names[0], pid, ",".join(names)))
+for pid, value in sorted(procs.items()):
+    parent = procs.get(value["ppid"])
+    if (pid not in recorded and pid != init and parent is not None and parent["ppid"] == init
+            and (set(value["uids"]) != {0} or value["comm"] in ("unshare", "setpriv"))):
+        fail("role - state=running pid=%d uids=%s comm=%s reason=unrecorded-role-process" % (
+            pid, ",".join(map(str, value["uids"])), value["comm"]))
+if failures == 0 and waiting:
+    lines.append("bootstrap app=%s candidate=%s state=pre-genesis roles=%d running=%d waiting-genesis=%d operational=no" % (
+        app, candidate, len(roster), running, waiting))
+elif failures == 0:
+    lines.append("pass roster app=%s candidate=%s roles=%d running=%d operational=yes" % (app, candidate, len(roster), running))
+print("\n".join(lines))
+print("verdict %d %d" % (failures, waiting))
+' "$1" "$2" "$(kernel_roster)"
+}
+
 # Sourced by tools/bringup/ca.sh for the Fly helpers and the CA settings: the
 # probe's own dispatch below runs only when this file is executed.
 [ "${BASH_SOURCE[0]}" = "$0" ] || return 0
 
 # check_kernel_app: the kernel app of human/wallet/deploy/human.toml runs
-# exactly one machine, started, with its one volume mounted at /data; the
-# init of docker/kernel/init.sh runs as root as the entrypoint; and every
-# service the init records under /run/layerx/init either runs under its uid
-# or waits on the genesis. One line per check.
+# exactly one machine, started, with its one volume mounted at /data, from one
+# candidate image whose identity every line records; the init of
+# docker/kernel/init.sh runs as root as the entrypoint; and the roles the init
+# records under /run/layerx/init are exactly the kernel_roster, each with its
+# process and material boundary (kernel_app_verdict). One line per check.
+# Exits 0 when every role runs, 3 when the only roles not running are roster
+# roles permitted to wait on the genesis (the pre-genesis bootstrap state,
+# never reported as operational), and 1 on any failure.
 check_kernel_app() {
-	local app answer n_machines n_started n_data line kind name want state detail uid services=0 failures=0
+	local app answer n_machines n_started n_data candidate verdict failures waiting
 	if ! command -v flyctl >/dev/null 2>&1; then
 		echo "check-live: flyctl is required" >&2
 		exit 2
@@ -2733,51 +3005,32 @@ import json, sys
 ms = json.load(sys.stdin)
 started = [m for m in ms if m.get("state") == "started"]
 data = [x for m in started for x in (m.get("config") or {}).get("mounts") or [] if x.get("path") == "/data" and x.get("volume")]
-print(len(ms), len(started), len(data))
+def identity(m):
+    ref = m.get("image_ref") or {}
+    if ref.get("digest"):
+        return "%s@%s" % (ref.get("repository") or "image", ref["digest"])
+    return (m.get("config") or {}).get("image") or "none"
+ids = sorted({identity(m) for m in started})
+print(len(ms), len(started), len(data), ids[0] if len(ids) == 1 and " " not in ids[0] else "none")
 ' 2>/dev/null)" || answer=""
-	read -r n_machines n_started n_data <<<"${answer:-none none none}"
-	if [ "$n_machines" = 1 ] && [ "$n_started" = 1 ] && [ "$n_data" = 1 ]; then
-		echo "pass machines app=$app machines=1 started=1 volume=/data"
+	read -r n_machines n_started n_data candidate <<<"${answer:-none none none none}"
+	if [ "$n_machines" = 1 ] && [ "$n_started" = 1 ] && [ "$n_data" = 1 ] && [ "$candidate" != none ]; then
+		echo "pass machines app=$app machines=1 started=1 volume=/data candidate=$candidate"
 	else
-		echo "fail machines app=$app machines=$n_machines started=$n_started volume-at-data=$n_data"
-		finish $((failures + 1))
+		echo "fail machines app=$app machines=$n_machines started=$n_started volume-at-data=$n_data candidate=$candidate"
+		finish 1
 	fi
-	# shellcheck disable=SC2016 # the command expands on the machine
-	answer="$(fly_ssh "$app" - 'cd /run/layerx/init/ && p=$(cat pid) && echo init init 0 $(stat -c %u /proc/$p 2>/dev/null || echo -) $(tr "\000" " " </proc/$p/cmdline 2>/dev/null) && for f in *; do [ "$f" != pid ] || continue; read -r u s d <"$f"; a=-; [ "$s" != running ] || a=$(stat -c %u /proc/$d 2>/dev/null || echo -); echo svc "$f" $u $s $d $a; done' </dev/null)" || answer=""
-	if ! grep -q '^init ' <<<"$answer"; then
-		echo "fail init app=$app status=absent"
-		finish $((failures + 1))
+	answer="$(printf '%s' "$kernel_app_probe" | fly_ssh "$app" - "python3 - /run/layerx/init $(kernel_roster_paths)")" || answer=""
+	verdict="$(kernel_app_verdict "$app" "$candidate" <<<"$answer")" || verdict=""
+	read -r _ failures waiting <<<"$(grep '^verdict ' <<<"$verdict" || true)" || true
+	if ! [[ "${failures:-}" =~ ^[0-9]+$ && "${waiting:-}" =~ ^[0-9]+$ ]]; then
+		echo "fail roster app=$app candidate=$candidate verdict=unreadable"
+		finish 1
 	fi
-	while read -r kind name want state detail; do
-		case "$kind" in
-		init)
-			if [ "$state" = 0 ] && [[ " $detail " == *kernel-init* ]]; then
-				echo "pass init app=$app uid=0 entrypoint=kernel-init"
-			else
-				echo "fail init app=$app uid=$state entrypoint=${detail%% *}"
-				failures=$((failures + 1))
-			fi
-			;;
-		svc)
-			services=$((services + 1))
-			read -r detail uid <<<"$detail"
-			if [ "$state" = running ] && [ "$uid" = "$want" ]; then
-				echo "pass service $name uid=$want state=running"
-			elif [ "$state" = waiting ] && [ "$detail" = genesis ]; then
-				echo "pass service $name uid=$want state=waiting-genesis"
-			elif [ "$state" = running ]; then
-				echo "fail service $name uid=$uid want=$want state=running"
-				failures=$((failures + 1))
-			else
-				echo "fail service $name uid=$want state=$state on=$detail"
-				failures=$((failures + 1))
-			fi
-			;;
-		esac
-	done <<<"$answer"
-	if [ "$services" -eq 0 ]; then
-		echo "fail services app=$app count=0"
-		failures=$((failures + 1))
+	sed '/^verdict /d' <<<"$verdict"
+	if [ "$failures" -eq 0 ] && [ "$waiting" -gt 0 ]; then
+		echo "check-live: pre-genesis bootstrap, $waiting role(s) waiting on the genesis; not operational"
+		exit 3
 	fi
 	finish "$failures"
 }

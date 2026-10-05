@@ -39,6 +39,7 @@ cleanup() {
 		# shellcheck disable=SC2086
 		wait $bridge_pids 2>/dev/null || true
 	fi
+	[ -z "${kernel_init_pgid:-}" ] || kill -TERM -- "-$kernel_init_pgid" 2>/dev/null || true
 	rm -rf "$work"
 }
 trap cleanup EXIT
@@ -190,6 +191,10 @@ case "$sub" in
 	command="${command//\/var\/lib\//$root/$group/var/lib/}"
 	command="${command//\/usr\/local\/bin\//$root/$group/usr/local/bin/}"
 	command="${command//\/run\/human-material/$root/$group/run/human-material}"
+	command="${command//\/run\/human-private\//$root/$group/run/human-private/}"
+	command="${command//\/run\/authority-private/$root/$group/run/authority-private}"
+	command="${command//\/run\/mirror-signer/$root/$group/run/mirror-signer}"
+	command="${command//\/run\/mirror-publisher/$root/$group/run/mirror-publisher}"
 	tee -a "$CHECK_LIVE_TEST_STDIN" | bash -c "$command"
 	;;
 "secrets import")
@@ -1228,40 +1233,112 @@ wait "$agentd_pid" 2>/dev/null || true
 agentd_pid=""
 unset CHECK_LIVE_TEST_IPS CHECK_LIVE_TEST_AGENT_RPC CHECK_LIVE_TEST_AGENT_RPC_CODE
 # kernel-app: the fixture machine list and the init status directory of the
-# kernel app; the init and each running service are live local processes, so
-# their uid is this test's uid.
-me="$(id -u)"
-kinit="$CHECK_LIVE_TEST_FLY/$kernel/app/run/layerx/init"
-mkdir -p "$kinit"
-bash -c 'exec -a /usr/local/bin/kernel-init sleep 300' &
-kernel_init_pid=$!
-sleep 300 &
-kernel_service_pid=$!
-echo "$kernel_init_pid" >"$kinit/pid"
-echo "$me running $kernel_service_pid" >"$kinit/human"
-echo "$me running $kernel_service_pid" >"$kinit/human-tls"
-echo "4020 waiting genesis" >"$kinit/layerxd"
-printf '[{"state":"started","config":{"mounts":[{"volume":"vol_kernel","path":"/data"}]}}]' \
-	>"$CHECK_LIVE_TEST_FLY/$kernel/machines.json"
+# kernel app. A kernel-init process supervises one subshell per planned role,
+# which runs the role's process under its uid with gid 4020, no supplementary
+# group and no_new_privs through setpriv as docker/kernel/init.sh does, or
+# records the wait the plan names; the checker's roster material is made under
+# the fixture volume and run directories with each row's owner and mode.
+kinit_root="$CHECK_LIVE_TEST_FLY/$kernel/app"
+kinit="$kinit_root/run/layerx/init"
+kernel_rows="$(bash -c 'source "$1" && kernel_roster' bash "$fx_checker")"
+while read -r _ _ _ material; do
+	[ "$material" != - ] || continue
+	IFS=, read -r -a items <<<"$material"
+	for item in "${items[@]}"; do
+		IFS=: read -r owner group mode <<<"${item#*=}"
+		target="$kinit_root${item%%=*}"
+		if [ "${target##*/}" = treasury.key ]; then
+			mkdir -p "${target%/*}"
+			: >"$target"
+		else
+			mkdir -p "$target"
+		fi
+		chown "$owner:$group" "$target"
+		[ -z "$mode" ] || chmod "$mode" "$target"
+	done
+done <<<"$kernel_rows"
+cat >"$work/kernel-init.sh" <<'SH'
+status=$1
+echo "$$" >"$status/pid"
+while read -r name uid state detail; do
+	if [ "$state" = run ]; then
+		(
+			setpriv --reuid="$uid" --regid=4020 --clear-groups --no-new-privs sleep 300 &
+			echo "$uid running $!" >"$status/$name"
+			wait
+		) &
+	else
+		echo "$uid waiting $detail" >"$status/$name"
+	fi
+done
+wait
+SH
+kernel_init_pgid=""
+# kernel_fixture <plan file>: replaces the running fixture init with one that
+# follows the plan ("name uid run" or "name uid wait <detail>" lines) and waits
+# until every planned role is recorded and running under its uid.
+kernel_fixture() {
+	local names
+	[ -z "$kernel_init_pgid" ] || kill -TERM -- "-$kernel_init_pgid" 2>/dev/null || true
+	rm -rf "$kinit"
+	mkdir -p "$kinit"
+	setsid bash -c 'exec -a /usr/local/bin/kernel-init bash "$0" "$1"' "$work/kernel-init.sh" "$kinit" <"$1" &
+	names="$(awk '{print $1}' "$1" | sort -u)"
+	for _ in $(seq 100); do
+		if [ -s "$kinit/pid" ] && ! grep -qv -x -F -f <(ls "$kinit") <<<"$names"; then
+			break
+		fi
+		sleep 0.1
+	done
+	kernel_init_pgid="$(cat "$kinit/pid")"
+	sleep 1
+}
+kernel_candidate="registry.fly.io/$kernel@sha256:$(printf '%064d' 7)"
+awk '{print $1, $2, "run"}' <<<"$kernel_rows" >"$work/kernel-plan-running"
+awk '$3 == "genesis" {print $1, $2, "wait genesis"; next} {print $1, $2, "run"}' <<<"$kernel_rows" >"$work/kernel-plan-genesis"
+awk '$1 == "human-kms" {next}
+	$1 == "human" {print $1, 4021, "run"; next}
+	$1 == "human-components" {print $1, $2, "wait /data/tls/human-attestor-client/ca.der"; next}
+	$1 == "human-tls" {print $1, $2, "wait genesis"; next}
+	$1 == "human-movement" {print $1, $2, "run"}
+	{print $1, $2, "run"}
+	END {print "human-kms-admin 4026 run"}' <<<"$kernel_rows" >"$work/kernel-plan-failing"
+printf '[{"state":"started","image_ref":{"repository":"registry.fly.io/%s","digest":"sha256:%064d"},"config":{"image":"registry.fly.io/%s:deployment-fixture","mounts":[{"volume":"vol_kernel","path":"/data"}]}}]' \
+	"$kernel" 7 "$kernel" >"$CHECK_LIVE_TEST_FLY/$kernel/machines.json"
+kernel_fixture "$work/kernel-plan-running"
 CHECK_LIVE_TEST_PROGRAM="$fx_checker" expect check_live_kernel_app_passing "$work/hosts-good.env" 0 kernel-app -- \
-	"pass machines app=$kernel machines=1 started=1 volume=/data" \
+	"pass machines app=$kernel machines=1 started=1 volume=/data candidate=$kernel_candidate" \
 	"pass init app=$kernel uid=0 entrypoint=kernel-init" \
-	"pass service human uid=$me state=running" \
-	"pass service human-tls uid=$me state=running" \
-	"pass service layerxd uid=4020 state=waiting-genesis" \
+	"pass role human-kms uid=4026 state=running" \
+	"pass role human-owner uid=4021 state=running" \
+	"pass role human uid=4020 state=running" \
+	"pass role human-tls uid=4020 state=running" \
+	"pass role layerxd uid=4020 state=running" \
+	"pass roster app=$kernel candidate=$kernel_candidate roles=24 running=24 operational=yes" \
 	"check-live: all checks passed"
-echo "4020 running $kernel_service_pid" >"$kinit/human"
-echo "4020 waiting /data/layerx/keys/publication/binding-policy.json" >"$kinit/treasury-signer"
-echo "4020 waiting /data/tls/human-attestor-client/ca.der" >"$kinit/human-components"
+kernel_fixture "$work/kernel-plan-genesis"
+CHECK_LIVE_TEST_PROGRAM="$fx_checker" expect check_live_kernel_app_pre_genesis "$work/hosts-good.env" 3 kernel-app -- \
+	"pass role human uid=4020 state=running" \
+	"wait role layerxd uid=4020 state=waiting-genesis candidate=$kernel_candidate" \
+	"wait role human-kms uid=4026 state=waiting-genesis candidate=$kernel_candidate" \
+	"bootstrap app=$kernel candidate=$kernel_candidate state=pre-genesis roles=24 running=7 waiting-genesis=17 operational=no" \
+	"check-live: pre-genesis bootstrap, 17 role(s) waiting on the genesis; not operational"
+kernel_fixture "$work/kernel-plan-failing"
+chmod 0755 "$kinit_root/run/human-private/movement"
 CHECK_LIVE_TEST_PROGRAM="$fx_checker" expect check_live_kernel_app_failing "$work/hosts-good.env" 1 kernel-app -- \
-	"fail service human uid=$me want=4020 state=running" \
-	"fail service human-components uid=4020 state=waiting on=/data/tls/human-attestor-client/ca.der" \
-	"fail service treasury-signer uid=4020 state=waiting on=/data/layerx/keys/publication/binding-policy.json" \
-	"check-live: 3 check(s) failed"
+	"fail role human uid=4021 want=4020 state=running reason=wrong-uid candidate=$kernel_candidate" \
+	"fail role human-components uid=4020 state=waiting on=/data/tls/human-attestor-client/ca.der reason=waiting candidate=$kernel_candidate" \
+	"fail role human-kms uid=4026 state=missing reason=no-status candidate=$kernel_candidate" \
+	"fail role human-tls uid=4020 state=waiting on=genesis reason=genesis-wait-not-permitted candidate=$kernel_candidate" \
+	"fail role human-kms-admin state=unexpected status=4026_running_" \
+	"reason=unrecorded-role-process candidate=$kernel_candidate" \
+	"reason=material path=/run/human-private/movement want=4020:4020:700 observed=dir:4020:4020:755 candidate=$kernel_candidate" \
+	"check-live: 7 check(s) failed"
+chmod 0700 "$kinit_root/run/human-private/movement"
 printf '[{"state":"started","config":{"mounts":[]}},{"state":"stopped","config":{}}]' \
 	>"$CHECK_LIVE_TEST_FLY/$kernel/machines.json"
 CHECK_LIVE_TEST_PROGRAM="$fx_checker" expect check_live_kernel_app_volumeless "$work/hosts-good.env" 1 kernel-app -- \
-	"fail machines app=$kernel machines=2 started=1 volume-at-data=0" \
+	"fail machines app=$kernel machines=2 started=1 volume-at-data=0 candidate=none" \
 	"check-live: 1 check(s) failed"
 kn_report="$work/kernel-node-real"
 if ! PATH="$real_path" python3 "$root/tests/daemon/paxeer_x_kernel_readiness.py" \
@@ -1317,7 +1394,7 @@ expect_kernel_evidence check_live_kernel_node_no_kernel_image no_kernel_image 1 
 	"fail replica head=absent" \
 	"fail clock layerxd exec=absent" \
 	"check-live: 10 check(s) failed"
-kill "$kernel_init_pid" "$kernel_service_pid" 2>/dev/null || true
+kill -TERM -- "-$kernel_init_pgid" 2>/dev/null || true
 
 # The gas cases run the probe of the fixture tree against the gas station
 # app's fixture machine, whose volume holds the rendered station.json, with a
