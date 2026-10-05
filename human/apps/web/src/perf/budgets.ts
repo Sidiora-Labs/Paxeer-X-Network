@@ -1,7 +1,7 @@
 export const WEB_VITAL_NAMES = ["LCP", "INP", "CLS"] as const;
 export type WebVitalName = (typeof WEB_VITAL_NAMES)[number];
 
-export const PERFORMANCE_ROUTES = ["root", "explorer", "app"] as const;
+export const PERFORMANCE_ROUTES = ["root", "explorer", "app", "bridge", "exchange", "launchpad"] as const;
 export type PerformanceRoute = (typeof PERFORMANCE_ROUTES)[number];
 
 export const WEB_VITAL_BUDGETS = Object.freeze({
@@ -13,14 +13,18 @@ export const WEB_VITAL_BUDGETS = Object.freeze({
 const ROOT_ROUTE_SCRIPT_BUDGET_BYTES = 900 * 1_024;
 const EXPLORER_ROUTE_SCRIPT_BUDGET_BYTES = 900 * 1_024;
 const APP_ROUTE_SCRIPT_BUDGET_BYTES = 1_100 * 1_024;
+const MARKET_ROUTE_SCRIPT_BUDGET_BYTES = 1_100 * 1_024;
 
 export const ROUTE_SCRIPT_BUDGETS = Object.freeze({
   "/": ROOT_ROUTE_SCRIPT_BUDGET_BYTES,
+  "/bridge": MARKET_ROUTE_SCRIPT_BUDGET_BYTES,
+  "/exchange": MARKET_ROUTE_SCRIPT_BUDGET_BYTES,
   "/explorer": EXPLORER_ROUTE_SCRIPT_BUDGET_BYTES,
   "/explorer/accounts/[accountId]": EXPLORER_ROUTE_SCRIPT_BUDGET_BYTES,
   "/explorer/programs/[programId]": EXPLORER_ROUTE_SCRIPT_BUDGET_BYTES,
   "/explorer/receipts/[receiptId]": EXPLORER_ROUTE_SCRIPT_BUDGET_BYTES,
   "/explorer/verify": EXPLORER_ROUTE_SCRIPT_BUDGET_BYTES,
+  "/launchpad": MARKET_ROUTE_SCRIPT_BUDGET_BYTES,
   "/app": APP_ROUTE_SCRIPT_BUDGET_BYTES,
   "/app/activity": APP_ROUTE_SCRIPT_BUDGET_BYTES,
   "/app/activity/[entryId]": APP_ROUTE_SCRIPT_BUDGET_BYTES,
@@ -85,6 +89,15 @@ export function classifyPerformanceRoute(pathname: string): PerformanceRoute | u
   }
   if (pathname === "/app" || pathname.startsWith("/app/")) {
     return "app";
+  }
+  if (pathname === "/bridge" || pathname.startsWith("/bridge/")) {
+    return "bridge";
+  }
+  if (pathname === "/exchange" || pathname.startsWith("/exchange/")) {
+    return "exchange";
+  }
+  if (pathname === "/launchpad" || pathname.startsWith("/launchpad/")) {
+    return "launchpad";
   }
   return undefined;
 }

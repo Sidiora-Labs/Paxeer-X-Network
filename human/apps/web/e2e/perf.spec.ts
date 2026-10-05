@@ -7,6 +7,7 @@ import { test } from "./production-fixture.ts";
 import { human_test_harness } from "./harness.ts";
 
 import {
+  classifyPerformanceRoute,
   PERFORMANCE_SAMPLE_COUNT,
   percentile75,
   ROUTE_SCRIPT_BUDGETS,
@@ -17,6 +18,7 @@ import {
 const WEB_ROOT = fileURLToPath(new URL("../", import.meta.url));
 const NEXT_ROOT = path.join(WEB_ROOT, ".next");
 const APP_ROOT = path.join(WEB_ROOT, "src/app");
+const MARKET_PLANES = ["bridge", "exchange", "launchpad"] as const;
 
 interface LabMetrics {
   LCP: number;
@@ -205,6 +207,15 @@ test("redacted RUM, cache controls, and 3G journey progress use the production s
       reason: "delivery-confirmed",
     },
   });
+  for (const plane of MARKET_PLANES) {
+    expect(classifyPerformanceRoute(`/${plane}`)).toBe(plane);
+    const market = await request.post("/api/performance/vitals", {
+      headers: rumHeaders,
+      data: { version: 1, route: plane, metric: "LCP", observed: 1_500_000 },
+    });
+    expect(market.status(), `${plane} RUM admission`).toBe(202);
+    expect((await market.json()) as unknown).toMatchObject({ accepted: true, durable: true });
+  }
   const refused = await request.post("/api/performance/vitals", {
     headers: rumHeaders,
     data: {
@@ -245,6 +256,15 @@ test("redacted RUM, cache controls, and 3G journey progress use the production s
   expect(cls?.samples).toBeGreaterThanOrEqual(1);
   expect(cls?.percentile75).toBe(50_000);
   expect(cls?.withinBudget).toBe(true);
+  for (const plane of MARKET_PLANES) {
+    const lcp = rum.aggregates.find(
+      (aggregate) => aggregate.route === plane && aggregate.metric === "LCP",
+    );
+    expect(lcp, `${plane} RUM aggregate`).toBeDefined();
+    expect(lcp?.samples).toBeGreaterThanOrEqual(1);
+    expect(lcp?.percentile75).toBe(1_500_000);
+    expect(lcp?.withinBudget).toBe(true);
+  }
   const explorer = await request.get("/explorer");
   expect(explorer.headers()["cache-control"]).toContain("s-maxage=60");
 

@@ -31,9 +31,9 @@ import {
 
 const RECORD_LIMIT_BYTES = 512;
 const RECORD_PATTERN =
-  /^v1-(root|explorer|app)-(lcp|inp|cls)-(\d{13})-([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.json$/u;
+  /^v1-(root|explorer|app|bridge|exchange|launchpad)-(lcp|inp|cls)-(\d{13})-([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.json$/u;
 const TEMPORARY_PATTERN =
-  /^\.v1-(?:root|explorer|app)-(?:lcp|inp|cls)-(\d{13})-[0-9a-f-]{36}\.json\.tmp$/u;
+  /^\.v1-(?:root|explorer|app|bridge|exchange|launchpad)-(?:lcp|inp|cls)-(\d{13})-[0-9a-f-]{36}\.json\.tmp$/u;
 const ACTIVE_TEMPORARY_MS = 60_000;
 
 type SinkMode = "durable-file" | "development-fallback" | "unconfigured";
