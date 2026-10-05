@@ -2447,12 +2447,17 @@ done
 # The search cases put a curl stand-in for the serving sidecars ahead of the
 # harness's: /xweb/health answers status ok except on the names of
 # CHECK_LIVE_TEST_SEARCH_DOWN; an unpaid /search answers 402 with a metered
-# PAYMENT-REQUIRED offer in CHECK_LIVE_TEST_SEARCH_CURRENCY to the payer the
-# LAYERX-PAYER-DID header names, and a /search with a PAYMENT-SIGNATURE
-# answers 200 with a PAYMENT-RESPONSE only when its grant matches that offer,
-# its id is the domain digest of its fields and its Ed25519 signature
-# verifies under its public key; every other request goes to the harness's
-# stand-in.
+# PAYMENT-REQUIRED offer of CHECK_LIVE_TEST_SEARCH_AMOUNT (default the
+# approved 1/13440 PAX at 18 decimals) in CHECK_LIVE_TEST_SEARCH_CURRENCY to
+# the payer the LAYERX-PAYER-DID header names, and a /search with a
+# PAYMENT-SIGNATURE answers 200 with a PAYMENT-RESPONSE only when its grant
+# matches that offer, its id is the domain digest of its fields and its
+# Ed25519 signature verifies under its public key; search.paxeer.network
+# names its backend in x-search-node, another one on the paid retry when
+# CHECK_LIVE_TEST_SEARCH_NODE_SWITCH is set; the router's lx_getAsset answers
+# the registered PAX record of 18 decimals, paused when
+# CHECK_LIVE_TEST_SEARCH_ASSET_PAUSED is set; every other request goes to the
+# harness's stand-in.
 mkdir -p "$work/search-bin"
 cat >"$work/search-bin/curl" <<'SH'
 #!/usr/bin/env bash
@@ -2462,11 +2467,13 @@ wout=""
 prev=""
 did=""
 payment=""
+data=""
 for arg in "$@"; do
 	case "$arg" in
 	https://*) url="$arg" ;;
 	esac
 	[ "$prev" != -w ] || wout="$arg"
+	[ "$prev" != -d ] || data="$arg"
 	if [ "$prev" = -H ]; then
 		case "$arg" in
 		"LAYERX-PAYER-DID: "*) did="${arg#*: }" ;;
@@ -2488,13 +2495,26 @@ case "$path" in
 	[ -z "$wout" ] || printf '\n200'
 	exit 0
 	;;
+/rpc)
+	case "$data" in
+	*'"lx_getAsset"'*)
+		printf '%s rpc lx_getAsset\n' "${name%%.*}" >>"$CHECK_LIVE_TEST_CALLS"
+		printf '{"jsonrpc":"2.0","id":1,"result":{"asset":{"asset_id":"%064d","symbol":"PAX","name":"Paxeer","decimals":18,"paused":%s},"observed_head_sequence":"9","state_root":"%064d","verification":"authenticated_committed_snapshot"}}' 7 \
+			"$([ -n "${CHECK_LIVE_TEST_SEARCH_ASSET_PAUSED:-}" ] && echo true || echo false)" 3
+		exit 0
+		;;
+	esac
+	;;
 /search\?*)
 	printf '%s search\n' "${name%%.*}" >>"$CHECK_LIVE_TEST_CALLS"
-	accepted="$(printf '{"scheme":"metered","network":"layerx:125","amount":"2000000000000000","asset":"%064d","payTo":"%064d","maxTimeoutSeconds":60,"extra":{"layerx":{"commitment":"executed","account":"fixture-receiver","currency":"%s","payer":"%s","purposeHash":"%064d"}}}' 7 9 "${CHECK_LIVE_TEST_SEARCH_CURRENCY:-PAX}" "$(printf '%s' "$did" | sha256sum | cut -c1-64)" 5)"
+	node=""
+	[ "$name" != search.paxeer.network ] || node="x-search-node: 127.0.0.1:8482\r\n"
+	accepted="$(printf '{"scheme":"metered","network":"layerx:125","amount":"%s","asset":"%064d","payTo":"%064d","maxTimeoutSeconds":60,"extra":{"layerx":{"commitment":"executed","account":"fixture-receiver","currency":"%s","payer":"%s","purposeHash":"%064d"}}}' "${CHECK_LIVE_TEST_SEARCH_AMOUNT:-74404761904762}" 7 9 "${CHECK_LIVE_TEST_SEARCH_CURRENCY:-PAX}" "$(printf '%s' "$did" | sha256sum | cut -c1-64)" 5)"
 	if [ -z "$payment" ]; then
-		printf 'HTTP/2 402\r\npayment-required: %s\r\n\r\n' "$(printf '{"x402Version":2,"accepts":[%s]}' "$accepted" | base64 -w 0)"
+		printf 'HTTP/2 402\r\n%bpayment-required: %s\r\n\r\n' "$node" "$(printf '{"x402Version":2,"accepts":[%s]}' "$accepted" | base64 -w 0)"
 		exit 0
 	fi
+	[ -z "$node" ] || [ -z "${CHECK_LIVE_TEST_SEARCH_NODE_SWITCH:-}" ] || node="x-search-node: 127.0.0.1:8483\r\n"
 	if python3 - "$payment" "$accepted" <<'PY'; then
 import base64
 import hashlib
@@ -2516,9 +2536,9 @@ digest = hashlib.sha256(b"LXP/v1/authority-hash\0LXP:GRANT:v1" + grant[32:282]).
 assert grant[:32] == digest
 Ed25519PublicKey.from_public_bytes(grant[250:282]).verify(grant[282:], digest)
 PY
-		printf 'HTTP/2 200\r\npayment-response: fixture\r\n\r\n'
+		printf 'HTTP/2 200\r\n%bpayment-response: fixture\r\n\r\n' "$node"
 	else
-		printf 'HTTP/2 402\r\n\r\n'
+		printf 'HTTP/2 402\r\n%b\r\n' "$node"
 	fi
 	exit 0
 	;;
@@ -2534,24 +2554,54 @@ PATH="$work/search-bin:$PATH" expect check_live_search_passing "$work/hosts-good
 	"pass health https://api1.mainnet-beta.paxeer.network/xweb/health http=200 status=ok" \
 	"pass health https://api2.mainnet-beta.paxeer.network/xweb/health http=200 status=ok" \
 	"pass health https://api3.mainnet-beta.paxeer.network/xweb/health http=200 status=ok" \
-	"pass offer https://api1.mainnet-beta.paxeer.network/search http=402 pax=metered amount=2000000000000000" \
-	"pass paid https://api1.mainnet-beta.paxeer.network/search http=200 currency=PAX payment-response=present" \
-	"pass offer https://search.paxeer.network/search http=402 pax=metered amount=2000000000000000" \
-	"pass paid https://search.paxeer.network/search http=200 currency=PAX payment-response=present" \
+	"pass offer https://api1.mainnet-beta.paxeer.network/search http=402 pax=metered amount=74404761904762" \
+	"pass price https://api1.mainnet-beta.paxeer.network/search asset=PAX decimals=18 amount=74404761904762 approved=74404761904762" \
+	"pass paid https://api1.mainnet-beta.paxeer.network/search http=200 currency=PAX payment-response=present node=direct" \
+	"pass offer https://api2.mainnet-beta.paxeer.network/search http=402 pax=metered amount=74404761904762" \
+	"pass paid https://api2.mainnet-beta.paxeer.network/search http=200 currency=PAX payment-response=present node=direct" \
+	"pass offer https://search.paxeer.network/search http=402 pax=metered amount=74404761904762" \
+	"pass price https://search.paxeer.network/search asset=PAX decimals=18 amount=74404761904762 approved=74404761904762" \
+	"pass paid https://search.paxeer.network/search http=200 currency=PAX payment-response=present node=127.0.0.1:8482" \
 	"check-live: all checks passed"
 
 CHECK_LIVE_TEST_SEARCH_DOWN="api2" CHECK_LIVE_TEST_SEARCH_CURRENCY="USDC" PATH="$work/search-bin:$PATH" expect check_live_search_failing "$work/hosts-good.env" 1 search -- \
 	"pass health https://api1.mainnet-beta.paxeer.network/xweb/health http=200 status=ok" \
 	"fail health https://api2.mainnet-beta.paxeer.network/xweb/health http=none" \
 	"fail offer https://api1.mainnet-beta.paxeer.network/search http=402 pax=none amount=none" \
+	"fail offer https://api2.mainnet-beta.paxeer.network/search http=402 pax=none amount=none" \
 	"fail offer https://search.paxeer.network/search http=402 pax=none amount=none" \
+	"check-live: 4 check(s) failed"
+
+CHECK_LIVE_TEST_SEARCH_AMOUNT=2000000000000000 PATH="$work/search-bin:$PATH" expect check_live_search_unapproved_price "$work/hosts-good.env" 1 search -- \
+	"pass offer https://api1.mainnet-beta.paxeer.network/search http=402 pax=metered amount=2000000000000000" \
+	"fail price https://api1.mainnet-beta.paxeer.network/search asset=PAX decimals=18 amount=2000000000000000 approved=74404761904762" \
+	"fail price https://api2.mainnet-beta.paxeer.network/search asset=PAX decimals=18 amount=2000000000000000 approved=74404761904762" \
+	"fail price https://search.paxeer.network/search asset=PAX decimals=18 amount=2000000000000000 approved=74404761904762" \
+	"check-live: 3 check(s) failed"
+if [ "$(grep -c " search$" "$CHECK_LIVE_TEST_CALLS")" -ne 6 ] || [ "$(grep -c " rpc lx_getAsset$" "$CHECK_LIVE_TEST_CALLS")" -ne 3 ]; then
+	echo "FAIL check_live_search_unapproved_price_never_pays: want three health, three unpaid challenges and three asset reads, no paid retry"
+	cat "$CHECK_LIVE_TEST_CALLS"
+	failures=$((failures + 1))
+else
+	echo "ok   check_live_search_unapproved_price_never_pays"
+fi
+
+CHECK_LIVE_TEST_SEARCH_ASSET_PAUSED=1 PATH="$work/search-bin:$PATH" expect check_live_search_unregistered_asset "$work/hosts-good.env" 1 search -- \
+	"fail price https://api1.mainnet-beta.paxeer.network/search asset=0000000000000000000000000000000000000000000000000000000000000007 registered=no" \
+	"fail price https://search.paxeer.network/search asset=0000000000000000000000000000000000000000000000000000000000000007 registered=no" \
 	"check-live: 3 check(s) failed"
 
+CHECK_LIVE_TEST_SEARCH_NODE_SWITCH=1 PATH="$work/search-bin:$PATH" expect check_live_search_retry_changes_backend "$work/hosts-good.env" 1 search -- \
+	"pass paid https://api2.mainnet-beta.paxeer.network/search http=200 currency=PAX payment-response=present node=direct" \
+	"fail paid https://search.paxeer.network/search node=127.0.0.1:8483 challenge-node=127.0.0.1:8482" \
+	"check-live: 1 check(s) failed"
+
 CHECK_LIVE_SEARCH_PAYER_KEY_FILE="$work/absent.pem" PATH="$work/search-bin:$PATH" expect check_live_search_no_payer_key "$work/hosts-good.env" 1 search -- \
-	"pass offer https://api1.mainnet-beta.paxeer.network/search http=402 pax=metered amount=2000000000000000" \
+	"pass offer https://api1.mainnet-beta.paxeer.network/search http=402 pax=metered amount=74404761904762" \
 	"fail paid https://api1.mainnet-beta.paxeer.network/search signature=unavailable" \
+	"fail paid https://api2.mainnet-beta.paxeer.network/search signature=unavailable" \
 	"fail paid https://search.paxeer.network/search signature=unavailable" \
-	"check-live: 2 check(s) failed"
+	"check-live: 3 check(s) failed"
 
 CHECK_LIVE_SEARCH_PAYER_DID="" PATH="$work/search-bin:$PATH" expect check_live_search_no_payer_did "$work/hosts-good.env" 2 search -- \
 	"check-live: CHECK_LIVE_SEARCH_PAYER_DID is unset"
@@ -2968,12 +3018,23 @@ xweb_machine='[{"state":"started","region":"ams","config":{"mounts":[{"volume":"
 { cat "$work/hosts-good.env"; echo "XWEB_ATTESTORS_ON_FLY=yes"; } >"$work/hosts-xweb-fly.env"
 sed 's/^VALIDATOR_HOSTS=.*/VALIDATOR_HOSTS="down-validator-a"/' "$work/hosts-good.env" >"$work/hosts-xweb-down.env"
 
+for n in 1 2 3 4; do
+	keys="$fly/$(fx_app "interop/deploy/x-websearch/attestor-$n.toml")/app/data/keys"
+	mkdir -p "$keys"
+	for role in attestor submitter receiver; do
+		(umask 077 && openssl rand -hex 32 >"$keys/$role.key")
+	done
+done
+xweb2_keys="$fly/$xweb2/app/data/keys"
+
 CHECK_LIVE_TEST_MACHINES="$xweb_machine" CHECK_LIVE_TEST_IPS='[]' CHECK_LIVE_TEST_PROGRAM="$fx_checker" PATH="$work/xweb-bin:$PATH" expect check_live_xweb_attestors_passing "$work/hosts-good.env" 0 xweb-attestors -- \
 	"pass machines app=$xweb1 machines=1 started=1 volumes=1" \
 	"pass public-ips app=$xweb1 count=0" \
 	"pass health app=$xweb1 http=200" \
 	"pass hop app=$xweb1 peer=$xweb2 port=8492 http=200" \
 	"pass hop app=$xweb4 peer=$xweb1 port=8491 http=200" \
+	"pass keys app=$xweb1 roles=attestor,submitter,receiver private=yes distinct=yes" \
+	"pass keys app=$xweb4 roles=attestor,submitter,receiver private=yes distinct=yes" \
 	"pass VALIDATOR_HOSTS[0] x-websearch-units=0" \
 	"pass VALIDATOR_HOSTS[1] x-websearch-units=0" \
 	"check-live: all checks passed"
@@ -2986,6 +3047,21 @@ CHECK_LIVE_TEST_XWEB_DOWN="8480 8493" CHECK_LIVE_TEST_XWEB_UNITS=2 CHECK_LIVE_TE
 	"pass hop app=$xweb1 peer=$xweb2 port=8492 http=200" \
 	"fail VALIDATOR_HOSTS[0] x-websearch-units=2" \
 	"check-live: 17 check(s) failed"
+
+cp -p "$xweb2_keys/submitter.key" "$work/xweb2-submitter.key"
+cp -p "$xweb2_keys/attestor.key" "$xweb2_keys/submitter.key"
+chmod 644 "$xweb2_keys/receiver.key"
+CHECK_LIVE_TEST_MACHINES="$xweb_machine" CHECK_LIVE_TEST_IPS='[]' CHECK_LIVE_TEST_PROGRAM="$fx_checker" PATH="$work/xweb-bin:$PATH" expect check_live_xweb_attestors_shared_or_open_key "$work/hosts-good.env" 1 xweb-attestors -- \
+	"pass keys app=$xweb1 roles=attestor,submitter,receiver private=yes distinct=yes" \
+	"fail keys app=$xweb2 roles=attestor,submitter,receiver private=no:receiver distinct=no" \
+	"check-live: 1 check(s) failed"
+rm "$xweb2_keys/attestor.key"
+CHECK_LIVE_TEST_MACHINES="$xweb_machine" CHECK_LIVE_TEST_IPS='[]' CHECK_LIVE_TEST_PROGRAM="$fx_checker" PATH="$work/xweb-bin:$PATH" expect check_live_xweb_attestors_absent_key "$work/hosts-good.env" 1 xweb-attestors -- \
+	"fail keys app=$xweb2 roles=attestor,submitter,receiver absent=attestor" \
+	"check-live: 1 check(s) failed"
+cp -p "$xweb2_keys/submitter.key" "$xweb2_keys/attestor.key"
+mv "$work/xweb2-submitter.key" "$xweb2_keys/submitter.key"
+chmod 600 "$xweb2_keys/receiver.key"
 
 mv "$fx/interop/deploy/x-websearch/attestor-2.toml" "$work/attestor-2.toml"
 CHECK_LIVE_TEST_MACHINES="$xweb_machine" CHECK_LIVE_TEST_IPS='[]' CHECK_LIVE_TEST_PROGRAM="$fx_checker" PATH="$work/xweb-bin:$PATH" expect check_live_xweb_attestors_missing_toml "$work/hosts-xweb-down.env" 1 xweb-attestors -- \

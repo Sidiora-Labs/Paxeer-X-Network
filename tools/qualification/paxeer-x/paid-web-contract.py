@@ -16,6 +16,7 @@ import subprocess
 import sys
 import threading
 import time
+from fractions import Fraction
 from urllib.parse import parse_qs, quote, urlsplit
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -1784,10 +1785,301 @@ class ReadinessHarness:
         self.journal.close()
 
 
+class OperationalHarness(Harness):
+    USD_PER_REQUEST = Fraction(1, 1000)
+    USD_PER_PAX = Fraction(1344, 100)
+    PRECOMPILE = '0x' + '00' * 18 + '1019'
+    REFUSALS = ('wrong-asset', 'wrong-price', 'insufficient-funding')
+
+    def __init__(self, manifest):
+        import importlib.util
+        sys.dont_write_bytecode = True
+        spec = importlib.util.spec_from_file_location('candidate_contract', ROOT / 'tools/paxeer-x/candidate.py')
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        self.loader = module.load_private
+        candidate = self.loader(manifest)
+        require(candidate['schema'] == 'paxeer-x.candidate.v1', 'operational gate requires candidate manifest')
+        self.revision, source = source_identity()
+        require(candidate['source']['revision'] == self.revision and not candidate['source']['dirty'],
+                'candidate source revision mismatch')
+        services = [row for row in candidate['services'] if row['id'] == 'search-web']
+        require(len(services) == 1, 'one search-web service binding required')
+        self.m = self.reference(services[0]['bindings']['operational_ref'])
+        require(self.m['schema'] == 'paxeer-x.paid-web-operational.v1', 'operational assembly metadata absent')
+        require(self.m['source_revision'] == self.revision and self.m['source_digest'] == source,
+                'operational metadata source identity mismatch')
+        self.binary = artifact(self.m['artifacts']['websearch'], self.revision, source)
+        self.isolated = private(self.m['isolated_root'], True).resolve()
+        self.evidence = private(self.m['evidence_dir'], True).resolve()
+        require(self.evidence.is_relative_to(self.isolated), 'evidence must remain in isolated root')
+        self.config_path = private(self.m['config']['path'])
+        self.config_digest = digest(self.config_path)
+        require(self.config_digest == self.m['config']['sha256'], 'configuration binding mismatch')
+        self.config = load(self.config_path)
+        self.runtime_env = {name: str(private(value)) for name, value in self.m['key_files'].items()}
+        require(set(self.runtime_env) == {'X_WEBSEARCH_RECEIVER_KEY_FILE'},
+                'operational serving candidate requires its protected receiver key reference only')
+        require(self.config.get('kernel') is None, 'serving candidate must not run the kernel relay')
+        private(self.config['gateway']['authorization_file'])
+        self.authorization_file = private(self.m['caller_authorization_file'])
+        self.gateway_headers()
+        self.data = Path(self.config['data_dir']).resolve()
+        require(self.data.is_relative_to(self.isolated) and self.data != self.isolated,
+                'candidate data directory escapes isolation')
+        private(self.data, True)
+        require(not (self.data / 'payments').exists(), 'payment state must be fresh before the gate')
+        self.url = endpoint(self.m['endpoint'])
+        require(self.config['listen'] == '127.0.0.1:' + str(self.url.port), 'listen/config mismatch')
+        self.gateway = endpoint(self.config['gateway']['endpoint'])
+        self.gateway_pid, self.gateway_binary = self.process(self.m['gateway_process'], self.gateway, source)
+        self.evm = endpoint(self.m['evm_process']['endpoint'])
+        self.process(self.m['evm_process'], self.evm, source)
+        require(re.fullmatch(r'[1-9][0-9]*(\.[0-9]+)?', self.m['sid_per_pax']), 'owner-set SID per PAX absent')
+        self.sid_per_pax = Fraction(self.m['sid_per_pax'])
+        require(self.m['sequence_probes'] and all(isinstance(row['params'], list)
+                for row in self.m['sequence_probes']), 'real charge observation probes missing')
+        self.identities = self.m['identities']
+        attestors = self.identities['attestors']
+        require(len(attestors) == 4, 'the four private web-attestor slots are required')
+        for field, pattern in (('receiver_did', r'did:layerx:[0-9a-f]{64}'), ('payout_account', r'[0-9a-f]{64}'),
+                               ('signer', r'0x[0-9a-f]{40}'), ('submitter', r'0x[0-9a-f]{40}')):
+            values = [row[field] for row in attestors]
+            require(all(isinstance(v, str) and re.fullmatch(pattern, v) for v in values)
+                    and len(set(values)) == 4, 'attestor slot ' + field + ' absent, malformed or shared')
+        require(not {row['signer'] for row in attestors} & {row['submitter'] for row in attestors},
+                'web signer and EVM submitter roles share a key')
+        threshold = self.identities['threshold']
+        require(type(threshold) is int and 2 < threshold <= 4, 'approved web-attestor majority absent')
+        for field in ('payer_min_balance', 'submitter_min_wei', 'kernel_fee'):
+            require(re.fullmatch(r'[1-9][0-9]*', self.identities[field]), field + ' is an explicit input')
+        require(self.identities['fee_asset'] in ASSETS and self.identities['payer_asset'] in ASSETS,
+                'fee and payer asset symbols absent')
+        cases = self.m['cases']
+        require(set(cases) == {'paid'} | set(self.REFUSALS), 'operational paid and refusal cases absent')
+        self.cases, self.headers = cases, {}
+        for name, row in cases.items():
+            require(row['route'] == 'search' and row['target'].startswith('/search?')
+                    and row['asset'] in ASSETS and row['scheme'] in SCHEMES, 'unsupported operational case')
+            header = private(row['payment_signature_file']).read_text().strip()
+            require(header and '\r' not in header and '\n' not in header, 'invalid private payment header')
+            self.headers[name] = header
+        require(len(set(self.headers.values())) == len(self.headers), 'cases require independent real payments')
+        paid = cases['paid']
+        require(paid['amount'] == self.config['assets'][paid['asset']]['price']
+                and paid['asset_id'] == self.config['assets'][paid['asset']]['asset_id'], 'paid case is not the configured offer')
+        wrong = cases['wrong-asset']
+        require(wrong['asset_id'] not in {row['asset_id'] for row in self.config['assets'].values()},
+                'wrong-asset case must pay an asset the receiver does not accept')
+        price = cases['wrong-price']
+        require(price['asset_id'] == self.config['assets'][price['asset']]['asset_id']
+                and int(price['amount']) < int(self.config['assets'][price['asset']]['price']),
+                'wrong-price case must underpay a configured asset')
+        self.fulfilment = self.m['evm_fulfilment']
+        require(re.fullmatch(r'0x[0-9a-f]{64}', self.fulfilment['transaction']), 'real EVM fulfilment transaction absent')
+        self.observation = self.m['kernel_observation']
+        require(re.fullmatch(r'[0-9a-f]{64}', self.observation['activity_id']), 'real kernel observation activity absent')
+        from Crypto.Hash import keccak
+        self.keccak = lambda data: keccak.new(digest_bits=256, data=data).digest()
+        self.launches = 0
+        self.count = 0
+        self.refusals = []
+        self.candidate = Candidate(self)
+        self.journal = (self.evidence / 'operational-assertions.jsonl').open('x')
+
+    def process(self, row, url, source):
+        from types import SimpleNamespace
+        binary = artifact(row['artifact'], self.revision, source)
+        pid = int(row['pid'])
+        proc = Path('/proc') / str(pid)
+        require(pid > 1 and (proc / 'exe').resolve() == binary.resolve()
+                and (proc / 'cwd').resolve().is_relative_to(self.isolated), 'real isolated process binding absent')
+        require(Candidate.listening(SimpleNamespace(pid=pid, h=SimpleNamespace(url=url))),
+                'process does not own its configured listener')
+        return pid, binary
+
+    def evm_call(self, method, params):
+        return rpc(self.evm, method, params)
+
+    def approved(self, symbol, decimals):
+        pax = self.USD_PER_REQUEST / self.USD_PER_PAX
+        require(pax == Fraction(1, 13440), 'approved rational price changed')
+        units = {'SID': pax * self.sid_per_pax, 'PAX': pax}.get(symbol, self.USD_PER_REQUEST) * 10 ** decimals
+        return max(1, -(-units.numerator // units.denominator))
+
+    def pricing(self):
+        for symbol, row in self.config['assets'].items():
+            record = self.call('lx_getAsset', [row['asset_id']])
+            asset = record['asset']
+            require(record['verification'] == 'authenticated_committed_snapshot' and asset['asset_id'] == row['asset_id']
+                    and asset['symbol'] == symbol and asset['paused'] is False
+                    and type(asset['decimals']) is int and 0 <= asset['decimals'] <= 38,
+                    'configured asset is not the registered unpaused ' + symbol + ' record')
+            want = self.approved(symbol, asset['decimals'])
+            require(row['price'] == str(want), symbol + ' price is not the approved ceiling conversion')
+        self.record('approved-price-registered-metadata')
+
+    def balance(self, account, symbol):
+        row = self.call('lx_getBalance', [account])
+        require(row['asset_id'] == self.config['assets'][symbol]['asset_id']
+                and re.fullmatch(r'0|[1-9][0-9]*', row['balance']), 'balance read-back asset mismatch')
+        return int(row['balance'])
+
+    def attestor_set(self):
+        selector = self.keccak(b'getAttestors()')[:4].hex()
+        raw = bytes.fromhex(self.evm_call('eth_call', [{'to': self.PRECOMPILE, 'data': '0x' + selector}, 'latest'])[2:])
+        word = lambda at: int.from_bytes(raw[at:at + 32], 'big')
+        threshold, array = word(32), word(0)
+        signers = []
+        for index in range(word(array)):
+            at = array + 32 + word(array + 32 + 32 * index)
+            require(raw[at:at + 12] == bytes(12) and len(raw) >= at + 32, 'getAttestors signer word malformed')
+            signers.append('0x' + raw[at + 12:at + 32].hex())
+        return signers, threshold
+
+    def inventory(self):
+        ids = self.identities
+        payer = self.cases['paid']['payer_did']
+        require(payer == ids['payer_did'], 'paid case payer is not the inventoried payer')
+        require(self.balance(ids['payer_account'], ids['payer_asset']) >= int(ids['payer_min_balance']),
+                'payer balance below the explicit funding input')
+        signers, threshold = self.attestor_set()
+        registered = sorted(row['signer'] for row in ids['attestors'])
+        require(sorted(signers) == registered and threshold == ids['threshold']
+                and len(signers) // 2 < threshold <= len(signers),
+                'registered web signer membership or approved majority differs')
+        readback = {'signers': signers, 'threshold': threshold, 'payout': [], 'submitter_wei': []}
+        for row in ids['attestors']:
+            sequence = self.call('lx_getSequence', [row['receiver_did'], 'identity'])['next_sequence']
+            require(isinstance(sequence, str) and re.fullmatch(r'0|[1-9][0-9]*', sequence), 'kernel DID read-back')
+            readback['payout'].append(self.balance(row['payout_account'], ids['fee_asset']))
+            wei = int(self.evm_call('eth_getBalance', [row['submitter'], 'latest']), 16)
+            require(wei >= int(ids['submitter_min_wei']), 'EVM submitter funding below the explicit input')
+            readback['submitter_wei'].append(wei)
+        self.record('inventory-registration-funding-readback')
+        return readback
+
+    def challenge(self):
+        before, state = self.sequences(), self.snapshot()
+        paid = self.cases['paid']
+        status, headers, _ = exchange(self.url, paid['target'], {'LAYERX-PAYER-DID': paid['payer_did']})
+        require(status == 402, 'unpaid request did not challenge')
+        offers = json.loads(base64.b64decode(headers['payment-required'], validate=True))['accepts']
+        expected = {(scheme, row['asset_id'], row['price']) for row in self.config['assets'].values() for scheme in SCHEMES}
+        require(len(offers) == 8 and {(row['scheme'], row['asset'], row['amount']) for row in offers} == expected,
+                'challenge offers differ from the approved prices')
+        receivers = {row['payTo'] for row in offers}
+        require(len(receivers) == 1, 'challenge names more than one serving receiver')
+        require(self.sequences() == before and self.snapshot() == state, 'unpaid challenge changed payment state')
+        self.record('approved-price-challenge')
+        return receivers.pop()
+
+    def fulfilled(self, signers):
+        receipt = self.evm_call('eth_getTransactionReceipt', [self.fulfilment['transaction']])
+        require(receipt and receipt['status'] == '0x1', 'real EVM fulfilment did not execute')
+        topic = '0x' + self.keccak(b'XWebFulfilled(uint64,address,bytes32,uint32,uint8,uint8,uint64)').hex()
+        logs = [row for row in receipt['logs'] if row['address'].lower() == self.PRECOMPILE and row['topics'][0] == topic]
+        require(len(logs) == 1, 'fulfilment transaction lacks exactly one XWebFulfilled')
+        log = logs[0]
+        require(int(log['topics'][1], 16) == int(self.fulfilment['request_id']), 'XWebFulfilled names another request')
+        data = bytes.fromhex(log['data'][2:])
+        level, callback = int.from_bytes(data[64:96], 'big'), int.from_bytes(data[96:128], 'big')
+        require(level == 0 and callback in (0, 1, 2), 'fulfilment is not a verified majority with a callback disposition')
+        transaction = self.evm_call('eth_getTransactionByHash', [self.fulfilment['transaction']])
+        require(transaction['from'].lower() in {row['submitter'] for row in self.identities['attestors']},
+                'fulfilment was not posted by an inventoried EVM submitter')
+        require(sorted(signers) == sorted(row['signer'] for row in self.identities['attestors']),
+                'fulfilment signer membership changed')
+        self.record('evm-xweb-fulfilled')
+        return {'transaction': self.fulfilment['transaction'], 'level': level, 'callback': callback}
+
+    def observed(self):
+        sys.path.insert(0, str(ROOT / 'agent/sdk/python'))
+        from layerx_sdk.verifier import _decode_protocol_receipt
+        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+        from cryptography.exceptions import InvalidSignature
+        row = self.call('lx_getReceipt', [self.observation['activity_id']])
+        require(row['activity_id'] == self.observation['activity_id'] and row['receipt']
+                and row.get('state', 'completed') == 'completed', 'kernel observation not committed')
+        facts, unsigned = _decode_protocol_receipt(bytes.fromhex(row['receipt']))
+        try:
+            Ed25519PublicKey.from_public_bytes(bytes.fromhex(self.config['gateway']['sequencer_public_key'])).verify(
+                facts.sequencer_signature, hashlib.sha256(b'LXP/v1/receipt\0' + unsigned).digest())
+        except InvalidSignature:
+            raise Refusal('kernel observation receipt signature invalid') from None
+        require(facts.module_id == 11 and facts.result_code == 0
+                and facts.activity_id.hex() == self.observation['activity_id'], 'kernel observation receipt facts mismatch')
+        self.record('kernel-committed-observation')
+        return row['receipt']
+
+    def payout(self, before):
+        fee = int(self.identities['kernel_fee'])
+        signers = sorted(self.observation['signers'])
+        registered = [row['signer'] for row in self.identities['attestors']]
+        require(signers == sorted(set(signers)) and set(signers) <= set(registered)
+                and len(signers) >= self.identities['threshold'], 'observation quorum is not registered majority')
+        after = [self.balance(row['payout_account'], self.identities['fee_asset']) for row in self.identities['attestors']]
+        quotient, remainder = divmod(fee, len(signers))
+        expected = list(before)
+        for index, signer in enumerate(signers):
+            expected[registered.index(signer)] += quotient + (remainder if index == 0 else 0)
+        require(after == expected, 'kernel payout differs from the exact fee split')
+        self.record('kernel-payout-split')
+        return after
+
+    def run(self):
+        self.pricing()
+        readback = self.inventory()
+        self.candidate.start()
+        receiver = self.challenge()
+        before = self.sequences()
+        body = self.success('paid', self.request('paid'))
+        after = self.sequences()
+        require(after != before, 'paid search did not charge')
+        self.record('paid-search')
+        for name in self.REFUSALS:
+            state = self.snapshot()
+            self.no_content(self.request(name), {400, 402, 403, 409, 422, 503})
+            require(self.sequences() == after and self.snapshot() == state, name + ' refusal charged or persisted')
+            self.record('refusal-' + name)
+        self.candidate.stop()
+        self.candidate.start()
+        require(digest(self.config_path) == self.config_digest and digest(self.binary) == self.m['artifacts']['websearch']['sha256'],
+                'candidate image or configuration identity changed across restart')
+        require(self.success('paid', self.request('paid')) == body and self.sequences() == after,
+                'restart lost the retained receipt or charged again')
+        require(self.challenge() == receiver, 'restart changed the serving receiver')
+        self.record('restart-retained-receipt')
+        fulfilment = self.fulfilled(readback['signers'])
+        observation = self.observed()
+        payouts = self.payout(self.observation_before())
+        retained = {'revision': self.revision, 'config_sha256': self.config_digest,
+                    'binary_sha256': self.m['artifacts']['websearch']['sha256'], 'receiver': receiver,
+                    'signers': readback['signers'], 'threshold': readback['threshold'],
+                    'submitter_wei': readback['submitter_wei'], 'payouts': payouts,
+                    'fulfilment': fulfilment, 'observation_receipt_sha256': hashlib.sha256(bytes.fromhex(observation)).hexdigest()}
+        with (self.evidence / 'operational-retained.json').open('x') as handle:
+            json.dump(retained, handle)
+            handle.flush()
+            os.fsync(handle.fileno())
+        require(self.count == 4 + len(self.REFUSALS) + 5, 'required operational cases were not executed')
+        print('PAXEER_X_GATE tests=' + str(self.count) + ' skipped=0', flush=True)
+
+    def observation_before(self):
+        before = self.observation['payout_before_ref']
+        record = self.reference(before)
+        require(record['schema'] == 'paxeer-x.kernel-payout-readback.v1' and record['revision'] == self.revision
+                and record['activity_id'] == self.observation['activity_id']
+                and len(record['balances']) == 4 and all(type(v) is int for v in record['balances']),
+                'pre-observation payout read-back absent')
+        return record['balances']
+
+
 def main():
     os.umask(0o077)
     parser = argparse.ArgumentParser()
-    parser.add_argument('--case', required=True, choices=['paid-resource-delivery', 'evm-attestation-recovery', 'kernel-web-relay-recovery', 'paid-web-readiness'])
+    parser.add_argument('--case', required=True, choices=['paid-resource-delivery', 'evm-attestation-recovery', 'kernel-web-relay-recovery', 'paid-web-readiness',
+                                                             'paid-web-operational-assembly'])
     parser.add_argument('--candidate-manifest', required=True)
     args = parser.parse_args()
     if args.case == 'evm-attestation-recovery':
@@ -1803,7 +2095,8 @@ def main():
     try:
         require(bool(args.candidate_manifest), 'candidate manifest absent')
         harness = (ReadinessHarness(args.candidate_manifest) if args.case == 'paid-web-readiness' else
-                   KernelHarness(args.candidate_manifest) if args.case == "kernel-web-relay-recovery"
+                   KernelHarness(args.candidate_manifest) if args.case == "kernel-web-relay-recovery" else
+                   OperationalHarness(args.candidate_manifest) if args.case == 'paid-web-operational-assembly'
                    else Harness(args.candidate_manifest))
         harness.run()
         return 0

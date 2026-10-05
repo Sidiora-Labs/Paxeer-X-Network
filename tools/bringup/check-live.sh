@@ -3493,11 +3493,17 @@ for d in json.load(open(sys.argv[1])):
 # that tools/bringup/search-front.sh names lists. /xweb/health answers 200
 # with status ok on every serving RPC name, and an unpaid /search answers 402
 # with a PAYMENT-REQUIRED metered offer in PAX to the payer
-# CHECK_LIVE_SEARCH_PAYER_DID on the first serving RPC name and through
-# search.paxeer.network; the retry carrying a PAYMENT-SIGNATURE with the
-# payer's grant for that offer, signed with the Ed25519 PEM key of
-# CHECK_LIVE_SEARCH_PAYER_KEY_FILE (never printed), answers 200 with a
-# PAYMENT-RESPONSE. One line per check.
+# CHECK_LIVE_SEARCH_PAYER_DID on the first serving RPC name, on the second
+# (the client's redundant path) when there is one and through
+# search.paxeer.network; the offer's amount is the approved price, 0.001 US
+# dollars at 13.44 US dollars per PAX, exactly 1/13440 PAX rounded up to a
+# whole base unit of the decimals the router's lx_getAsset reports for the
+# offer's asset, which must be the registered, unpaused PAX record; the retry
+# carrying a PAYMENT-SIGNATURE with the payer's grant for that offer, signed
+# with the Ed25519 PEM key of CHECK_LIVE_SEARCH_PAYER_KEY_FILE (never
+# printed), answers 200 with a PAYMENT-RESPONSE from the backend whose
+# x-search-node answered the challenge. The router is CHECK_LIVE_ROUTER_URL,
+# default https://api-mainnet-beta.paxeer.network. One line per check.
 search_offer_py='
 import base64
 import json
@@ -3516,6 +3522,35 @@ print(("pass" if ok else "fail") + " http=%s pax=%s amount=%s" % (code or "none"
 metered = [o for o in offers if o.get("scheme") == "metered"]
 if ok and metered:
     print(base64.b64encode(json.dumps(metered[0], separators=(",", ":")).encode()).decode())
+'
+# search_price_py <offer b64> <lx_getAsset reply>: checks the offer's amount
+# against the approved 1/13440 PAX, rounded up to a whole base unit of the
+# registered decimals of the offer's asset, and prints one result line.
+search_price_py='
+import base64
+import json
+import re
+import sys
+from fractions import Fraction
+
+APPROVED = Fraction(1, 1000) / Fraction(1344, 100)
+assert APPROVED == Fraction(1, 13440)
+offer = json.loads(base64.b64decode(sys.argv[1]))
+try:
+    asset = json.loads(sys.argv[2])["result"]["asset"]
+    decimals = asset["decimals"]
+    registered = (asset["asset_id"] == offer["asset"] and asset["symbol"] == "PAX" and asset["paused"] is False
+                  and type(decimals) is int and 0 <= decimals <= 38)
+except (ValueError, KeyError, TypeError):
+    registered, decimals = False, None
+if not registered:
+    print("fail asset=%s registered=no" % offer.get("asset", "none"))
+    sys.exit()
+units = APPROVED * 10 ** decimals
+want = max(1, -(-units.numerator // units.denominator))
+amount = str(offer.get("amount", ""))
+ok = re.fullmatch(r"[1-9][0-9]*", amount) is not None and int(amount) == want
+print(("pass" if ok else "fail") + " asset=PAX decimals=%d amount=%s approved=%d" % (decimals, amount or "none", want))
 '
 # search_grant_py <offer b64> <public key hex> <sig hex|->: with - prints the
 # grant id to sign (the digest of the grant fields under the authority-hash
@@ -3551,8 +3586,9 @@ header = {"x402Version": 2, "accepted": offer, "payload": {"grant": grant.hex(),
 print(base64.b64encode(json.dumps(header, separators=(",", ":")).encode()).decode())
 '
 check_search() {
-	local listing name code body headers first="" line reply offer public signature payment work v failures=0
-	local -a names=()
+	local listing name code body headers first="" second="" line reply offer public signature payment work v node asset failures=0
+	local router="${CHECK_LIVE_ROUTER_URL:-https://api-mainnet-beta.paxeer.network}"
+	local -a names=() paths=()
 	for v in CHECK_LIVE_SEARCH_PAYER_KEY_FILE CHECK_LIVE_SEARCH_PAYER_DID; do
 		if [ -z "${!v:-}" ]; then
 			echo "check-live: $v is unset" >&2
@@ -3569,7 +3605,11 @@ check_search() {
 		finish 1
 	fi
 	for name in "${names[@]}"; do
-		[ -n "$first" ] || first="$name"
+		if [ -z "$first" ]; then
+			first="$name"
+		elif [ -z "$second" ]; then
+			second="$name"
+		fi
 		body="$(curl -sS --max-time "$timeout" -w '\n%{http_code}' "https://$name/xweb/health" 2>/dev/null)" || body=""
 		code="${body##*$'\n'}"
 		body="${body%$'\n'*}"
@@ -3580,19 +3620,32 @@ check_search() {
 			failures=$((failures + 1))
 		fi
 	done
+	paths=("$first")
+	[ -z "$second" ] || paths+=("$second")
+	paths+=(search.paxeer.network)
 	work="$(mktemp -d)"
 	# shellcheck disable=SC2064
 	trap "rm -rf '$work'" EXIT
 	public="$(openssl pkey -in "$CHECK_LIVE_SEARCH_PAYER_KEY_FILE" -pubout -outform DER 2>/dev/null | tail -c 32 | od -An -tx1 | tr -d ' \n')" || public=""
-	for name in "$first" search.paxeer.network; do
+	for name in "${paths[@]}"; do
 		headers="$(curl -sS --max-time "$timeout" -H "LAYERX-PAYER-DID: $CHECK_LIVE_SEARCH_PAYER_DID" -D - -o /dev/null "https://$name/search?q=paxeer" 2>/dev/null)" || headers=""
 		code="$(sed -n '1s/^HTTP\/[0-9.]* \([0-9]*\).*/\1/p' <<<"$headers")"
+		node="$(sed -n 's/^x-search-node:[[:space:]]*//Ip' <<<"$headers" | tr -d '\r' | head -n 1)"
 		reply="$(python3 -c "$search_offer_py" "$code" "$(sed -n 's/^payment-required:[[:space:]]*//Ip' <<<"$headers" | tr -d '\r' | head -n 1)")"
 		line="$(head -n 1 <<<"$reply")"
 		offer="$(sed -n 2p <<<"$reply")"
 		echo "${line%% *} offer https://$name/search ${line#* }"
 		if [ "${line%% *}" != pass ] || [ -z "$offer" ]; then
 			[ "${line%% *}" != pass ] || echo "fail paid https://$name/search metered=none"
+			failures=$((failures + 1))
+			continue
+		fi
+		asset="$(python3 -c 'import base64, json, re, sys; a = str(json.loads(base64.b64decode(sys.argv[1])).get("asset", "")); print(a if re.fullmatch(r"[0-9a-f]{64}", a) else "")' "$offer")"
+		reply="$(curl -sS --max-time "$timeout" -H "content-type: application/json" \
+			-d "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"lx_getAsset\",\"params\":[\"$asset\"]}" "$router/rpc" 2>/dev/null)" || reply=""
+		line="$(python3 -c "$search_price_py" "$offer" "$reply")"
+		echo "${line%% *} price https://$name/search ${line#* }"
+		if [ "${line%% *}" != pass ]; then
 			failures=$((failures + 1))
 			continue
 		fi
@@ -3609,8 +3662,12 @@ check_search() {
 		payment="$(search_grant_state="$work/grant" python3 -c "$search_grant_py" "$offer" "$public" "$signature")"
 		headers="$(curl -sS --max-time "$timeout" -H "LAYERX-PAYER-DID: $CHECK_LIVE_SEARCH_PAYER_DID" -H "PAYMENT-SIGNATURE: $payment" -D - -o /dev/null "https://$name/search?q=paxeer" 2>/dev/null)" || headers=""
 		code="$(sed -n '1s/^HTTP\/[0-9.]* \([0-9]*\).*/\1/p' <<<"$headers")"
-		if [ "$code" = 200 ] && grep -qi '^payment-response:' <<<"$headers"; then
-			echo "pass paid https://$name/search http=200 currency=PAX payment-response=present"
+		v="$(sed -n 's/^x-search-node:[[:space:]]*//Ip' <<<"$headers" | tr -d '\r' | head -n 1)"
+		if [ "$v" != "$node" ]; then
+			echo "fail paid https://$name/search node=${v:-none} challenge-node=${node:-none}"
+			failures=$((failures + 1))
+		elif [ "$code" = 200 ] && grep -qi '^payment-response:' <<<"$headers"; then
+			echo "pass paid https://$name/search http=200 currency=PAX payment-response=present node=${node:-direct}"
 		else
 			echo "fail paid https://$name/search http=${code:-none} payment-response=$(grep -qi '^payment-response:' <<<"$headers" && echo present || echo absent)"
 			failures=$((failures + 1))
@@ -4134,12 +4191,17 @@ PY
 # interop/deploy/x-websearch/attestor-<N>.toml runs one started machine with
 # its volume and holds no public IP; inside it, through flyctl ssh console,
 # the attestor answers /health on 8480 and every other attestor answers
-# /health through its loopback hop 849<M>; no VALIDATOR_HOSTS destination
-# runs an x-websearch unit. One line per check:
+# /health through its loopback hop 849<M>, and its volume holds the three
+# key roles of the toml (/data/keys/attestor.key the web signer,
+# submitter.key the EVM submitter, receiver.key the kernel receiver and
+# submitter DID) as regular files readable by the owner only, no two of the
+# same digest (compared on the machine, never printed); no VALIDATOR_HOSTS
+# destination runs an x-websearch unit. One line per check:
 #   "pass machines app=<app> machines=1 started=1 volumes=1"
 #   "pass public-ips app=<app> count=0"
 #   "pass health app=<app> http=200"
 #   "pass hop app=<app> peer=<peer app> port=849<M> http=200"
+#   "pass keys app=<app> roles=attestor,submitter,receiver private=yes distinct=yes"
 #   "pass VALIDATOR_HOSTS[k] x-websearch-units=0"
 # with fail and the observed values (ssh=<exit> when a host did not answer).
 check_xweb_attestors() {
@@ -4195,6 +4257,27 @@ print(len(ms), len(started), len(mounts))
 				failures=$((failures + 1))
 			fi
 		done
+		answer="$(fly_ssh "${apps[n]}" - "for r in attestor submitter receiver; do f=/data/keys/\$r.key; if [ -f \$f ] && [ ! -L \$f ]; then echo \$r \$(stat -c %a \$f) \$(sha256sum <\$f | cut -c1-64); else echo \$r absent; fi; done")" || answer=""
+		answer="$(python3 -c '
+import sys
+rows = {}
+for line in sys.argv[1].splitlines():
+    parts = line.split()
+    if parts and parts[0] in ("attestor", "submitter", "receiver"):
+        rows[parts[0]] = parts[1:]
+roles = ("attestor", "submitter", "receiver")
+missing = [r for r in roles if len(rows.get(r, [])) != 2]
+if missing:
+    print("fail roles=%s absent=%s" % (",".join(roles), ",".join(missing)))
+    sys.exit()
+open_ = [r for r in roles if rows[r][0] not in ("600", "400")]
+distinct = len({rows[r][1] for r in roles}) == 3
+ok = not open_ and distinct
+print("%s roles=%s private=%s distinct=%s" % ("pass" if ok else "fail", ",".join(roles),
+      "yes" if not open_ else "no:" + ",".join(open_), "yes" if distinct else "no"))
+' "$answer")"
+		echo "${answer%% *} keys app=${apps[n]} ${answer#* }"
+		[ "${answer%% *}" = pass ] || failures=$((failures + 1))
 	done
 	read -r -a dests <<<"$VALIDATOR_HOSTS"
 	for n in "${!dests[@]}"; do

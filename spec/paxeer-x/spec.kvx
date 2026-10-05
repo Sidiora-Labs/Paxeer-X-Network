@@ -28096,7 +28096,7 @@ verify_status = "UNRUN"
 qualification_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-18.1/result.json"
 [task.19.5]
 title = "Provision priced paid search and authorized web-attestor settlement identities"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 4
 requires = ["0.2", "19.1", "19.2", "19.3", "19.4", "24.9"]
@@ -28118,6 +28118,11 @@ deployment_profile = "product"
 planned_paths = ["tools/qualification/paxeer-x/paid-web-contract.py"]
 path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
 evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+completion_basis = "implementation under owner CONSTITUTION; qualification separately recorded"
+qualification_status = "UNQUALIFIED_MISSING_PREREQUISITE"
+build_exit_code = 0
+verify_exit_code = 1
+qualification_log = "/root/lx-ops/fleet-2026-10-05/results/19.5.json"
 
 [task.24.2]
 title = "Produce and order the complete Human policy and authority material graph"
