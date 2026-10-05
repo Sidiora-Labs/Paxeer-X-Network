@@ -701,4 +701,294 @@ mod tests {
             Err(EscrowRefusal::InvalidStateEncoding)
         );
     }
+
+    fn production_lease(id: u8, amount: u128) -> Lease {
+        Lease::request(
+            LeaseId::new([id; 32]).unwrap_or_else(|error| panic!("lease: {error:?}")),
+            PrincipalId::new([2; 32]).unwrap_or_else(|error| panic!("principal: {error:?}")),
+            ProgramId::new([3; 32]).unwrap_or_else(|error| panic!("program: {error:?}")),
+            [4; 32],
+            [5; 32],
+            amount,
+            LeaseLimits {
+                cpu_fuel: 10,
+                memory_bytes: 10,
+                storage_read_bytes: 10,
+                storage_write_bytes: 10,
+                output_values: 10,
+                output_bytes: 10,
+                table_elements: 10,
+                namespace_bytes: 10,
+            },
+            1,
+            10,
+        )
+        .unwrap_or_else(|error| panic!("lease: {error:?}"))
+    }
+
+    fn funded_active(id: u8, amount: u128) -> (Lease, Escrow) {
+        let mut lease = production_lease(id, amount);
+        lease
+            .apply_host_activity(crate::LeaseActivity::Fund, [id ^ 0x10; 32], 1)
+            .unwrap_or_else(|error| panic!("fund: {error:?}"));
+        let escrow = Escrow::funded_genesis(&lease, [id ^ 0x20; 32])
+            .unwrap_or_else(|error| panic!("genesis: {error:?}"));
+        lease
+            .apply_host_activity(crate::LeaseActivity::Activate, [id ^ 0x30; 32], 2)
+            .unwrap_or_else(|error| panic!("activate: {error:?}"));
+        (lease, escrow)
+    }
+
+    fn assert_conserved(escrow: Escrow) {
+        assert!(escrow.finalized);
+        assert_eq!(escrow.remaining(), Ok(0));
+        assert_eq!(
+            escrow.funded(),
+            escrow
+                .spent()
+                .checked_add(escrow.refunded())
+                .unwrap_or_else(|| panic!("conservation overflow"))
+        );
+    }
+
+    #[test]
+    fn funding_lands_in_the_host_derived_account_and_unfunded_leases_never_execute() {
+        let requested = production_lease(31, 100);
+        let derived = layerx_programs_runtime::derive_program_account(
+            requested.host_program(),
+            &escrow_seed(requested.id()),
+        )
+        .unwrap_or_else(|error| panic!("derive: {error:?}"))
+        .bytes();
+        assert_eq!(requested.escrow_account(), derived);
+        assert_eq!(
+            Escrow::funded_genesis(&requested, [9; 32]),
+            Err(EscrowRefusal::FundingMismatch)
+        );
+        let mut funded = requested.clone();
+        funded
+            .apply_host_activity(crate::LeaseActivity::Fund, [8; 32], 1)
+            .unwrap_or_else(|error| panic!("fund: {error:?}"));
+        assert_eq!(
+            Escrow::funded_genesis(&funded, [0; 32]),
+            Err(EscrowRefusal::FundingMismatch)
+        );
+        let escrow = Escrow::funded_genesis(&funded, [9; 32])
+            .unwrap_or_else(|error| panic!("genesis: {error:?}"));
+        assert_eq!(escrow.account(), derived);
+        assert_eq!(escrow.asset(), funded.escrow_asset());
+        assert_eq!(escrow.funded(), 100);
+        assert_eq!(escrow.funding_root(), [9; 32]);
+        assert_eq!(
+            escrow.permits_execution(&requested, 1),
+            Err(EscrowRefusal::LeaseNotExecutable)
+        );
+        assert_eq!(escrow.permits_execution(&funded, 100), Ok(()));
+        assert_eq!(
+            escrow.permits_execution(&funded, 101),
+            Err(EscrowRefusal::EscrowExhausted {
+                requested: 101,
+                remaining: 100
+            })
+        );
+        let foreign = production_lease(32, 100);
+        assert_eq!(
+            escrow.permits_execution(&foreign, 1),
+            Err(EscrowRefusal::LeaseMismatch)
+        );
+        assert_eq!(
+            ProgramAuthority::validate_owner_frame(
+                funded.host_program(),
+                &escrow_seed(funded.id()),
+                funded.escrow_account(),
+                funded.escrow_asset(),
+                funded.tenant().bytes(),
+                100,
+            ),
+            Ok(())
+        );
+        assert!(ProgramAuthority::validate_owner_frame(
+            funded.host_program(),
+            &escrow_seed(foreign.id()),
+            funded.escrow_account(),
+            funded.escrow_asset(),
+            funded.tenant().bytes(),
+            100,
+        )
+        .is_err());
+        assert_eq!(
+            Escrow::decode_state(&funded, &escrow.canonical_state()),
+            Ok(escrow)
+        );
+    }
+
+    #[cfg(feature = "host-ffi")]
+    #[test]
+    fn escrow_exhaustion_mid_execution_stops_every_later_charge() {
+        let (mut lease, mut escrow) = funded_active(33, 10);
+        let mut usage = crate::LeaseUsage::default();
+        escrow
+            .permits_execution(&lease, 6)
+            .unwrap_or_else(|error| panic!("admit: {error:?}"));
+        usage.cpu_fuel += 1;
+        lease
+            .record_usage(usage, 6, 3, None)
+            .unwrap_or_else(|error| panic!("usage: {error:?}"));
+        escrow = escrow
+            .projected_spend(&lease, 6)
+            .unwrap_or_else(|error| panic!("spend: {error:?}"));
+        assert_eq!(escrow.remaining(), Ok(4));
+        let before = escrow;
+        let over = Err(EscrowRefusal::EscrowExhausted {
+            requested: 5,
+            remaining: 4,
+        });
+        assert_eq!(escrow.permits_execution(&lease, 5), over);
+        assert_eq!(escrow.projected_spend(&lease, 5).map(|_| ()), over);
+        assert_eq!(escrow, before);
+        assert_eq!(
+            escrow.permits_execution(&lease, 0),
+            Err(EscrowRefusal::EscrowExhausted {
+                requested: 0,
+                remaining: 4
+            })
+        );
+        usage.cpu_fuel += 1;
+        lease
+            .record_usage(usage, 10, 4, None)
+            .unwrap_or_else(|error| panic!("final usage: {error:?}"));
+        escrow = escrow
+            .projected_spend(&lease, 4)
+            .unwrap_or_else(|error| panic!("exhausting spend: {error:?}"));
+        assert_eq!(escrow.remaining(), Ok(0));
+        assert_eq!(escrow.spent(), lease.escrow_consumed());
+        let exhausted = Err(EscrowRefusal::EscrowExhausted {
+            requested: 1,
+            remaining: 0,
+        });
+        assert_eq!(escrow.permits_execution(&lease, 1), exhausted);
+        assert_eq!(escrow.projected_spend(&lease, 1).map(|_| ()), exhausted);
+        usage.cpu_fuel += 1;
+        assert_eq!(
+            lease.record_usage(usage, 11, 5, None),
+            Err(crate::LeaseRefusal::MissingClosureActivity)
+        );
+        assert_eq!(lease.escrow_consumed(), 10);
+        lease
+            .terminalize_by_sweep([34; 32], [35; 32], 10)
+            .unwrap_or_else(|error| panic!("terminalize: {error:?}"));
+        assert_eq!(
+            escrow.finalize_refund(&lease, 1, [36; 32]),
+            Err(EscrowRefusal::RefundMismatch {
+                expected: 0,
+                actual: 1
+            })
+        );
+        escrow
+            .finalize_refund(&lease, 0, [0; 32])
+            .unwrap_or_else(|error| panic!("zero refund: {error:?}"));
+        assert_eq!(escrow.settlement_root(), None);
+        assert_conserved(escrow);
+        assert_eq!(
+            Escrow::decode_state(&lease, &escrow.canonical_state()),
+            Ok(escrow)
+        );
+    }
+
+    #[test]
+    fn zero_usage_lease_refunds_the_entire_escrow_through_one_transfer() {
+        let (mut lease, mut escrow) = funded_active(37, 100);
+        assert_eq!(escrow.spent(), 0);
+        lease
+            .terminalize_by_sweep([38; 32], [39; 32], 10)
+            .unwrap_or_else(|error| panic!("terminalize: {error:?}"));
+        let before = escrow;
+        assert_eq!(
+            escrow.finalize_refund(&lease, 0, [0; 32]),
+            Err(EscrowRefusal::RefundMismatch {
+                expected: 100,
+                actual: 0
+            })
+        );
+        assert_eq!(
+            escrow.finalize_refund(&lease, 99, [40; 32]),
+            Err(EscrowRefusal::RefundMismatch {
+                expected: 100,
+                actual: 99
+            })
+        );
+        assert_eq!(
+            escrow.finalize_refund(&lease, 100, [0; 32]),
+            Err(EscrowRefusal::RefundMismatch {
+                expected: 100,
+                actual: 100
+            })
+        );
+        assert_eq!(escrow, before);
+        escrow
+            .finalize_refund(&lease, 100, [40; 32])
+            .unwrap_or_else(|error| panic!("refund: {error:?}"));
+        assert_eq!(escrow.spent(), 0);
+        assert_eq!(escrow.refunded(), 100);
+        assert_eq!(escrow.settlement_root(), Some([40; 32]));
+        assert_conserved(escrow);
+        assert_eq!(
+            Escrow::decode_state(&lease, &escrow.canonical_state()),
+            Ok(escrow)
+        );
+    }
+
+    #[test]
+    fn refund_attempted_twice_is_refused_and_leaves_conservation_intact() {
+        let (mut lease, mut escrow) = funded_active(41, 100);
+        lease
+            .record_expiry_usage(lease.usage(), 30, 10)
+            .unwrap_or_else(|error| panic!("expiry usage: {error:?}"));
+        escrow = escrow
+            .projected_expiry_spend(&lease, 30)
+            .unwrap_or_else(|error| panic!("charge: {error:?}"));
+        assert_eq!(escrow.remaining(), Ok(70));
+        lease
+            .terminalize_by_sweep([42; 32], [43; 32], 10)
+            .unwrap_or_else(|error| panic!("terminalize: {error:?}"));
+        escrow
+            .finalize_refund(&lease, 70, [44; 32])
+            .unwrap_or_else(|error| panic!("first refund: {error:?}"));
+        assert_conserved(escrow);
+        let settled = escrow;
+        assert_eq!(
+            escrow.finalize_refund(&lease, 70, [44; 32]),
+            Err(EscrowRefusal::RefundMismatch {
+                expected: 0,
+                actual: 70
+            })
+        );
+        assert_eq!(
+            escrow.finalize_refund(&lease, 0, [0; 32]),
+            Err(EscrowRefusal::RefundMismatch {
+                expected: 0,
+                actual: 0
+            })
+        );
+        assert_eq!(escrow, settled);
+        let mut replayed = Escrow::decode_state(&lease, &settled.canonical_state())
+            .unwrap_or_else(|error| panic!("decode: {error:?}"));
+        assert_eq!(
+            replayed.finalize_refund(&lease, 70, [45; 32]),
+            Err(EscrowRefusal::RefundMismatch {
+                expected: 0,
+                actual: 70
+            })
+        );
+        assert_eq!(replayed, settled);
+        assert_eq!(
+            replayed.permits_execution(&lease, 1),
+            Err(EscrowRefusal::LeaseNotExecutable)
+        );
+        assert_eq!(
+            replayed.projected_expiry_spend(&lease, 1),
+            Err(EscrowRefusal::LeaseNotExecutable)
+        );
+        assert_conserved(replayed);
+    }
 }
