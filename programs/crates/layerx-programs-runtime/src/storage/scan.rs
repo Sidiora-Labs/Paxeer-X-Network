@@ -286,7 +286,10 @@ pub(crate) fn scan_cells(
     };
     let start = match after {
         Some(key) => Bound::Excluded(StorageAddress { namespace, key }),
-        None => Bound::Included(StorageAddress { namespace, key: prefix.to_vec() }),
+        None => Bound::Included(StorageAddress {
+            namespace,
+            key: prefix.to_vec(),
+        }),
     };
     let mut matching = cells
         .range((start, Bound::Unbounded))
@@ -368,8 +371,8 @@ fn page(entries: Vec<ScanEntry>, cursor: Option<Vec<u8>>) -> Result<StorageScan,
 mod tests {
     use super::*;
     use crate::abi::{
-        Abi, AbiError, AuthorizationContext, Capability, CapabilitySet, UnavailableReceiptOracle,
-        StorageSelector,
+        Abi, AbiError, AuthorizationContext, Capability, CapabilitySet, StorageSelector,
+        UnavailableReceiptOracle,
     };
     use crate::meter::{FeeSchedule, Meter, MeterRefusal, ResourceBudget, ResourceKind};
     use crate::storage::{PrincipalId, ProgramId, Storage};
@@ -753,24 +756,28 @@ mod tests {
         ] {
             let mut transaction = populated.transaction(other);
             for key in [b"p/a".as_slice(), b"p/b", b"p/c", b"\xff"] {
-                transaction.write(key, b"foreign")
+                transaction
+                    .write(key, b"foreign")
                     .unwrap_or_else(|error| panic!("foreign seed: {error}"));
             }
             assert_eq!(transaction.commit(), 4);
         }
         let mut transaction = populated.transaction(namespace);
-        transaction.write(b"o", b"before")
+        transaction
+            .write(b"o", b"before")
             .unwrap_or_else(|error| panic!("before: {error}"));
-        transaction.write(b"q", b"after")
+        transaction
+            .write(b"q", b"after")
             .unwrap_or_else(|error| panic!("after: {error}"));
         assert_eq!(transaction.commit(), 2);
-        let limits = ScanLimits::new(1, 256)
-            .unwrap_or_else(|error| panic!("limits: {error}"));
+        let limits = ScanLimits::new(1, 256).unwrap_or_else(|error| panic!("limits: {error}"));
         let mut cursor = Vec::new();
         for expected_key in [b"p/a", b"p/b", b"p/c"] {
-            let expected = baseline.scan(namespace, b"p/", &cursor, limits)
+            let expected = baseline
+                .scan(namespace, b"p/", &cursor, limits)
                 .unwrap_or_else(|error| panic!("baseline: {error}"));
-            let actual = populated.scan(namespace, b"p/", &cursor, limits)
+            let actual = populated
+                .scan(namespace, b"p/", &cursor, limits)
                 .unwrap_or_else(|error| panic!("populated: {error}"));
             assert_eq!(actual, expected);
             assert_eq!(actual.entries()[0].key.as_slice(), expected_key.as_slice());
@@ -778,13 +785,106 @@ mod tests {
         }
         assert!(cursor.is_empty());
         for prefix in [b"p/z".as_slice(), b"\xff"] {
-            let empty = populated.scan(namespace, prefix, b"", limits)
+            let empty = populated
+                .scan(namespace, prefix, b"", limits)
                 .unwrap_or_else(|error| panic!("empty: {error}"));
             assert!(empty.entries().is_empty());
             assert_eq!(empty.cursor(), None);
             assert_eq!(empty.metered_bytes(), 5);
         }
-        assert_eq!(populated.protocol_prefix_entries(namespace, b"p/"),
-            baseline.protocol_prefix_entries(namespace, b"p/"));
+        assert_eq!(
+            populated.protocol_prefix_entries(namespace, b"p/"),
+            baseline.protocol_prefix_entries(namespace, b"p/")
+        );
+    }
+
+    const ORDERED_PAGES: [(&[u8], &[u8]); 7] = [
+        (b"k/03", b"ccc"),
+        (b"k/01", b"a"),
+        (b"k/10", b"dddddddd"),
+        (b"k/02", b"bb"),
+        (b"j", b"x"),
+        (b"k/", b"root"),
+        (b"l", b"y"),
+    ];
+
+    const ORDERED_PAGES_DIGEST: [u8; 32] = [
+        0xd1, 0x73, 0xa7, 0x4e, 0xe0, 0xb6, 0x99, 0xe9, 0xea, 0xb9, 0x42, 0x3d, 0x9a, 0xa0, 0x04,
+        0x5e, 0x9a, 0xf7, 0x1b, 0x53, 0x7a, 0xf0, 0x1f, 0xa4, 0xb9, 0xd6, 0x17, 0xe3, 0x81, 0x05,
+        0x78, 0x38,
+    ];
+
+    fn drain_pages(storage: &Storage, namespace: StorageNamespace) -> Vec<Vec<u8>> {
+        let limits = ScanLimits::new(2, 4096).unwrap_or_else(|error| panic!("limits: {error}"));
+        let mut cursor = Vec::new();
+        let mut pages = Vec::new();
+        loop {
+            let page = storage
+                .scan(namespace, b"k/", &cursor, limits)
+                .unwrap_or_else(|error| panic!("scan: {error}"));
+            pages.push(
+                page.encode_for_guest()
+                    .unwrap_or_else(|error| panic!("encode: {error}")),
+            );
+            assert_eq!(
+                page.metered_bytes(),
+                u64::try_from(pages[pages.len() - 1].len())
+                    .unwrap_or_else(|error| panic!("length: {error}"))
+            );
+            match page.cursor() {
+                Some(next) => cursor = next.to_vec(),
+                None => return pages,
+            }
+        }
+    }
+
+    #[test]
+    fn pages_are_independent_of_insertion_order_and_allocation_history_and_frozen() {
+        use sha2::{Digest, Sha256};
+
+        let namespace = StorageNamespace::principal(program(1), principal(2));
+        let mut forward = Storage::new();
+        let mut transaction = forward.transaction(namespace);
+        for (key, value) in ORDERED_PAGES {
+            transaction
+                .write(key, value)
+                .unwrap_or_else(|error| panic!("forward: {error}"));
+        }
+        assert_eq!(transaction.commit(), ORDERED_PAGES.len());
+
+        let mut churned = Storage::new();
+        let padding = vec![0xa5; 4096];
+        for (key, _) in ORDERED_PAGES.iter().rev() {
+            let mut transaction = churned.transaction(namespace);
+            transaction
+                .write(key, &padding)
+                .unwrap_or_else(|error| panic!("padding: {error}"));
+            transaction
+                .write(b"k/05", &padding[..17])
+                .unwrap_or_else(|error| panic!("transient: {error}"));
+            let _ = transaction.commit();
+        }
+        let mut transaction = churned.transaction(namespace);
+        transaction
+            .delete(b"k/05")
+            .unwrap_or_else(|error| panic!("delete: {error}"));
+        for (key, value) in ORDERED_PAGES.iter().rev() {
+            transaction
+                .write(key, value)
+                .unwrap_or_else(|error| panic!("churned: {error}"));
+        }
+        let _ = transaction.commit();
+
+        let forward_pages = drain_pages(&forward, namespace);
+        assert_eq!(forward_pages, drain_pages(&churned, namespace));
+        assert_eq!(
+            forward_pages.iter().map(Vec::len).collect::<Vec<_>>(),
+            vec![113, 115, 23]
+        );
+        let mut digest = Sha256::new();
+        for page in &forward_pages {
+            digest.update(page);
+        }
+        assert_eq!(<[u8; 32]>::from(digest.finalize()), ORDERED_PAGES_DIGEST);
     }
 }
