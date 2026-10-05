@@ -34,6 +34,33 @@ const SOURCES: [(&str, &str); 3] = [
     ("mirror-v2", "platform/sdk/schema"),
 ];
 
+const GENERATORS: [(&str, &str, &[&str]); 3] = [
+    (
+        "platform-sdkgen",
+        "platform/sdk/generators",
+        &[
+            "Cargo.toml",
+            "generate_jvm.py",
+            "generate_lifecycle.py",
+            "generate_portable.py",
+            "receipt.kvx",
+            "src",
+        ],
+    ),
+    (
+        "agent-sdk-gen",
+        "agent/tools/sdk-gen",
+        &["Cargo.lock", "Cargo.toml", "src", "templates"],
+    ),
+    (
+        "human-api-gen",
+        "human/tools/api-gen",
+        &["Cargo.lock", "Cargo.toml", "src"],
+    ),
+];
+
+const HANDWRITTEN: &str = "handwritten";
+
 pub const JVM_FILES: &[&str] = &[
     "pom.xml",
     "src/main/java/com/sidiora/layerx/sdk/HttpProductionTransport.java",
@@ -64,7 +91,7 @@ const OUTPUTS: [(&str, &str, &str, Option<&[&str]>); 12] = [
         "agent-api-rust",
         "rust",
         "agent/crates/layerx-agent-api/src",
-        Some(&["operation_generated.rs"]),
+        Some(&["operation_generated.rs", "generated.rs"]),
     ),
     (
         "agent-rust",
@@ -157,11 +184,13 @@ pub struct OutputState {
     pub language: String,
     pub root: String,
     pub files: Vec<(String, String)>,
+    pub handwritten: Vec<String>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Pipeline {
     pub sources: Vec<SourceState>,
+    pub generators: Vec<SourceState>,
     pub outputs: Vec<OutputState>,
 }
 
@@ -239,6 +268,100 @@ fn source_digest(root: &Path) -> Result<String, String> {
             .map_err(|error| format!("render source manifest: {error}"))?;
     }
     hex_digest(manifest.as_bytes())
+}
+
+fn generator_digest(root: &Path, inputs: &[&str]) -> Result<String, String> {
+    let mut manifest = String::new();
+    for input in inputs {
+        let path = root.join(input);
+        let files = if path.is_dir() {
+            tree_files(&path)?
+                .into_iter()
+                .map(|relative| format!("{input}/{relative}"))
+                .collect()
+        } else if path.is_file() {
+            vec![(*input).to_owned()]
+        } else {
+            return Err(format!("generator input missing: {}", path.display()));
+        };
+        for relative in files {
+            let digest = file_digest(&root.join(&relative))?;
+            writeln!(manifest, "{relative}\n{digest}")
+                .map_err(|error| format!("render generator manifest: {error}"))?;
+        }
+    }
+    hex_digest(manifest.as_bytes())
+}
+
+fn shipped_files(repo_root: &Path, roots: &[&str]) -> Result<Vec<String>, String> {
+    let output = Command::new("git")
+        .arg("-C")
+        .arg(repo_root)
+        .args([
+            "ls-files",
+            "-z",
+            "--cached",
+            "--others",
+            "--exclude-standard",
+            "--",
+        ])
+        .args(roots)
+        .output()
+        .map_err(|error| format!("list shipped files under generated roots: {error}"))?;
+    if !output.status.success() {
+        return Err(format!(
+            "list shipped files under generated roots: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        ));
+    }
+    let listing = String::from_utf8(output.stdout)
+        .map_err(|_| "non-unicode path under a generated root".to_owned())?;
+    let mut files = listing
+        .split('\0')
+        .filter(|path| !path.is_empty() && repo_root.join(path).is_file())
+        .map(str::to_owned)
+        .collect::<Vec<_>>();
+    files.sort();
+    files.dedup();
+    Ok(files)
+}
+
+fn classify(repo_root: &Path, outputs: &mut [OutputState]) -> Result<(), String> {
+    let generated = outputs
+        .iter()
+        .flat_map(|output| {
+            output
+                .files
+                .iter()
+                .map(move |(relative, _)| format!("{}/{relative}", output.root))
+        })
+        .collect::<BTreeSet<_>>();
+    let explicit = OUTPUTS
+        .iter()
+        .enumerate()
+        .filter(|(_, (_, _, _, list))| list.is_some())
+        .map(|(index, (_, _, root, _))| (index, *root))
+        .collect::<Vec<_>>();
+    let roots = explicit.iter().map(|(_, root)| *root).collect::<Vec<_>>();
+    for path in shipped_files(repo_root, &roots)? {
+        if generated.contains(&path) {
+            continue;
+        }
+        let mut owner: Option<(usize, &str)> = None;
+        for &(index, root) in &explicit {
+            if path.starts_with(&format!("{root}/"))
+                && owner.is_none_or(|(_, held)| root.len() > held.len())
+            {
+                owner = Some((index, root));
+            }
+        }
+        let (index, root) =
+            owner.ok_or_else(|| format!("shipped file outside every generated root: {path}"))?;
+        outputs[index]
+            .handwritten
+            .push(path[root.len() + 1..].to_owned());
+    }
+    Ok(())
 }
 
 type Sections = BTreeMap<String, BTreeMap<String, String>>;
@@ -1710,7 +1833,8 @@ fn write_jvm_conformance(repo_root: &Path) -> Result<(), String> {
         .map_err(|error| format!("write {}: {error}", path.display()))
 }
 
-/// Hashes both schema sources and every generated SDK tree as they exist on disk.
+/// Hashes the schema sources, the generator revision and every generated SDK tree as they exist
+/// on disk, and classifies every other shipped file inside an explicit output root as handwritten.
 ///
 /// # Errors
 ///
@@ -1726,6 +1850,14 @@ pub fn capture(repo_root: &Path) -> Result<Pipeline, String> {
             name: name.to_owned(),
             root: root.to_owned(),
             digest: source_digest(&path)?,
+        });
+    }
+    let mut generators = Vec::new();
+    for (name, root, inputs) in GENERATORS {
+        generators.push(SourceState {
+            name: name.to_owned(),
+            root: root.to_owned(),
+            digest: generator_digest(&repo_root.join(root), inputs)?,
         });
     }
     let mut outputs = Vec::new();
@@ -1753,9 +1885,15 @@ pub fn capture(repo_root: &Path) -> Result<Pipeline, String> {
             language: language.to_owned(),
             root: root.to_owned(),
             files,
+            handwritten: Vec::new(),
         });
     }
-    Ok(Pipeline { sources, outputs })
+    classify(repo_root, &mut outputs)?;
+    Ok(Pipeline {
+        sources,
+        generators,
+        outputs,
+    })
 }
 
 /// Renders the pipeline lock document.
@@ -1773,6 +1911,12 @@ pub fn render(pipeline: &Pipeline) -> Result<String, String> {
         .map(|source| layerx_platform_kvx::quote(&source.name))
         .collect::<Vec<_>>()
         .join(", ");
+    let generators = pipeline
+        .generators
+        .iter()
+        .map(|generator| layerx_platform_kvx::quote(&generator.name))
+        .collect::<Vec<_>>()
+        .join(", ");
     let outputs = pipeline
         .outputs
         .iter()
@@ -1780,16 +1924,22 @@ pub fn render(pipeline: &Pipeline) -> Result<String, String> {
         .collect::<Vec<_>>()
         .join(", ");
     writeln!(text, "sources = [{sources}]").map_err(fail)?;
+    writeln!(text, "generators = [{generators}]").map_err(fail)?;
     writeln!(text, "outputs = [{outputs}]").map_err(fail)?;
-    for source in &pipeline.sources {
-        writeln!(text, "\n[source.{}]", source.name).map_err(fail)?;
-        writeln!(text, "root = {}", layerx_platform_kvx::quote(&source.root)).map_err(fail)?;
-        writeln!(
-            text,
-            "digest = {}",
-            layerx_platform_kvx::quote(&source.digest)
-        )
-        .map_err(fail)?;
+    for (kind, states) in [
+        ("source", &pipeline.sources),
+        ("generator", &pipeline.generators),
+    ] {
+        for state in states {
+            writeln!(text, "\n[{kind}.{}]", state.name).map_err(fail)?;
+            writeln!(text, "root = {}", layerx_platform_kvx::quote(&state.root)).map_err(fail)?;
+            writeln!(
+                text,
+                "digest = {}",
+                layerx_platform_kvx::quote(&state.digest)
+            )
+            .map_err(fail)?;
+        }
     }
     for output in &pipeline.outputs {
         writeln!(text, "\n[output.{}]", output.name).map_err(fail)?;
@@ -1810,6 +1960,18 @@ pub fn render(pipeline: &Pipeline) -> Result<String, String> {
             )
             .map_err(fail)?;
         }
+        if !output.handwritten.is_empty() {
+            writeln!(text, "\n[handwritten.{}]", output.name).map_err(fail)?;
+            for relative in &output.handwritten {
+                writeln!(
+                    text,
+                    "{} = {}",
+                    layerx_platform_kvx::quote(relative),
+                    layerx_platform_kvx::quote(HANDWRITTEN)
+                )
+                .map_err(fail)?;
+            }
+        }
     }
     Ok(text)
 }
@@ -1822,16 +1984,32 @@ pub fn render(pipeline: &Pipeline) -> Result<String, String> {
 pub fn parse_lock(source: &str) -> Result<Pipeline, String> {
     let document = layerx_platform_kvx::parse(source)?;
     let source_names = layerx_platform_kvx::string_list(document.required("pipeline", "sources")?)?;
+    let generator_names =
+        layerx_platform_kvx::string_list(document.required("pipeline", "generators")?)?;
     let output_names = layerx_platform_kvx::string_list(document.required("pipeline", "outputs")?)?;
-    let mut sources = Vec::new();
-    for name in source_names {
-        let section = format!("source.{name}");
-        sources.push(SourceState {
-            root: layerx_platform_kvx::unquote(document.required(&section, "root")?)?,
-            digest: layerx_platform_kvx::unquote(document.required(&section, "digest")?)?,
-            name,
-        });
+    for section in document.sections() {
+        if let Some(name) = section.strip_prefix("handwritten.") {
+            if !output_names.iter().any(|output| output == name) {
+                return Err(structure_error(&format!(
+                    "handwritten declarations for undeclared output {name}"
+                )));
+            }
+        }
     }
+    let states = |kind: &str, names: Vec<String>| -> Result<Vec<SourceState>, String> {
+        let mut states = Vec::new();
+        for name in names {
+            let section = format!("{kind}.{name}");
+            states.push(SourceState {
+                root: layerx_platform_kvx::unquote(document.required(&section, "root")?)?,
+                digest: layerx_platform_kvx::unquote(document.required(&section, "digest")?)?,
+                name,
+            });
+        }
+        Ok(states)
+    };
+    let sources = states("source", source_names)?;
+    let generators = states("generator", generator_names)?;
     let mut outputs = Vec::new();
     for name in output_names {
         let section = format!("output.{name}");
@@ -1841,14 +2019,38 @@ pub fn parse_lock(source: &str) -> Result<Pipeline, String> {
         for (relative, digest) in document.section_entries(&format!("files.{name}")) {
             files.push((relative.to_owned(), layerx_platform_kvx::unquote(digest)?));
         }
+        let handwritten = handwritten_declarations(&document, &name)?;
         outputs.push(OutputState {
             name,
             language,
             root,
             files,
+            handwritten,
         });
     }
-    Ok(Pipeline { sources, outputs })
+    Ok(Pipeline {
+        sources,
+        generators,
+        outputs,
+    })
+}
+
+fn handwritten_declarations(
+    document: &layerx_platform_kvx::Document,
+    output: &str,
+) -> Result<Vec<String>, String> {
+    let section = format!("handwritten.{output}");
+    let mut files = Vec::new();
+    for (relative, value) in document.section_entries(&section) {
+        if layerx_platform_kvx::unquote(value)? != HANDWRITTEN {
+            return Err(format!(
+                "{section}.{relative} must be declared {}",
+                layerx_platform_kvx::quote(HANDWRITTEN)
+            ));
+        }
+        files.push(relative.to_owned());
+    }
+    Ok(files)
 }
 
 fn structure_error(detail: &str) -> String {
@@ -1872,6 +2074,22 @@ pub fn drift_gate(committed: &Pipeline, live: &Pipeline) -> Result<(), String> {
             return Err(format!(
                 "stale generated SDKs: schema {} at {} changed after the last generation; run make platform-sdk-generate",
                 live_source.name, live_source.root
+            ));
+        }
+    }
+    if committed.generators.len() != live.generators.len() {
+        return Err(structure_error("generator list changed"));
+    }
+    for (committed_generator, live_generator) in committed.generators.iter().zip(&live.generators) {
+        if committed_generator.name != live_generator.name
+            || committed_generator.root != live_generator.root
+        {
+            return Err(structure_error("generator list changed"));
+        }
+        if committed_generator.digest != live_generator.digest {
+            return Err(format!(
+                "stale generated SDKs: generator {} at {} changed after the last generation; run make platform-sdk-generate",
+                live_generator.name, live_generator.root
             ));
         }
     }
@@ -1918,6 +2136,22 @@ pub fn drift_gate(committed: &Pipeline, live: &Pipeline) -> Result<(), String> {
                 ));
             }
         }
+        for relative in &live_output.handwritten {
+            if !committed_output.handwritten.contains(relative) {
+                return Err(format!(
+                    "untracked file in generated {} root: {}/{relative}; generate it or declare it under [handwritten.{}] in the pipeline lock",
+                    live_output.language, live_output.root, live_output.name
+                ));
+            }
+        }
+        for relative in &committed_output.handwritten {
+            if !live_output.handwritten.contains(relative) {
+                return Err(format!(
+                    "declared handwritten file {}/{relative} is not a shipped handwritten file of the {} root; run make platform-sdk-generate",
+                    live_output.root, live_output.language
+                ));
+            }
+        }
     }
     Ok(())
 }
@@ -1945,11 +2179,13 @@ pub fn check(repo_root: &Path, lock_path: &Path) -> Result<(), String> {
     check_receipt_contracts(repo_root)
 }
 
-/// Captures the live schema and generated-tree state into the lock.
+/// Captures the live schema, generator revision and generated-tree state into the lock in one
+/// atomic replacement, preserving the explicit handwritten declarations.
 ///
 /// # Errors
 ///
-/// Fails when a tree is unreadable or the lock cannot be written.
+/// Fails when a tree is unreadable, a shipped file inside an explicit output root is neither
+/// generated nor declared handwritten, or the lock cannot be written.
 pub fn write_lock(repo_root: &Path, lock_path: &Path) -> Result<(), String> {
     lifecycle_sources(repo_root, false)?;
     write_rust_operation_catalog(repo_root)?;
@@ -1957,13 +2193,56 @@ pub fn write_lock(repo_root: &Path, lock_path: &Path) -> Result<(), String> {
     write_jvm_contract(repo_root)?;
     write_jvm_conformance(repo_root)?;
     write_receipt_contracts(repo_root)?;
+    replace_lock(lock_path, &classified_lock(repo_root, lock_path)?)
+}
+
+fn declared_handwritten(lock_path: &Path) -> Result<BTreeMap<String, Vec<String>>, String> {
+    let source = match fs::read_to_string(lock_path) {
+        Ok(source) => source,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(BTreeMap::new()),
+        Err(error) => return Err(format!("read {}: {error}", lock_path.display())),
+    };
+    let document = layerx_platform_kvx::parse(&source)?;
+    let mut declared = BTreeMap::new();
+    for (name, _, _, _) in OUTPUTS {
+        declared.insert(name.to_owned(), handwritten_declarations(&document, name)?);
+    }
+    Ok(declared)
+}
+
+fn classified_lock(repo_root: &Path, lock_path: &Path) -> Result<String, String> {
+    let declared = declared_handwritten(lock_path)?;
     let pipeline = capture(repo_root)?;
-    let text = render(&pipeline)?;
+    for output in &pipeline.outputs {
+        for relative in &output.handwritten {
+            if !declared
+                .get(&output.name)
+                .is_some_and(|files| files.contains(relative))
+            {
+                return Err(format!(
+                    "unclassified file in generated {} root: {}/{relative}; generate it or declare it under [handwritten.{}] in {}",
+                    output.language,
+                    output.root,
+                    output.name,
+                    lock_path.display()
+                ));
+            }
+        }
+    }
+    render(&pipeline)
+}
+
+fn replace_lock(lock_path: &Path, text: &str) -> Result<(), String> {
     if let Some(parent) = lock_path.parent() {
         fs::create_dir_all(parent)
             .map_err(|error| format!("create {}: {error}", parent.display()))?;
     }
-    fs::write(lock_path, text).map_err(|error| format!("write {}: {error}", lock_path.display()))
+    let mut staging = lock_path.as_os_str().to_owned();
+    staging.push(".partial");
+    let staging = PathBuf::from(staging);
+    fs::write(&staging, text).map_err(|error| format!("write {}: {error}", staging.display()))?;
+    fs::rename(&staging, lock_path)
+        .map_err(|error| format!("replace {}: {error}", lock_path.display()))
 }
 
 fn lifecycle_sources(repo_root: &Path, check: bool) -> Result<(), String> {
@@ -1992,8 +2271,7 @@ fn programs_contracts(repo_root: &Path, lock_path: &Path, write: bool) -> Result
     if write {
         write_receipt_contracts(repo_root)?;
         fs::write(golden_path, source).map_err(|error| error.to_string())?;
-        let pipeline = capture(repo_root)?;
-        fs::write(lock_path, render(&pipeline)?).map_err(|error| error.to_string())
+        replace_lock(lock_path, &classified_lock(repo_root, lock_path)?)
     } else {
         if fs::read(golden_path).map_err(|error| error.to_string())? != source {
             return Err("Programs schema golden drift".to_owned());

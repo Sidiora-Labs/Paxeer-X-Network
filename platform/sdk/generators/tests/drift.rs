@@ -4,6 +4,7 @@ mod pipeline;
 
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::process::Command;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use pipeline::{capture, check, parse_lock, render, write_lock};
@@ -29,6 +30,63 @@ fn place(root: &Path, relative: &str, contents: &str) {
 
 fn repo_fixture(label: &str) -> PathBuf {
     let root = directory(label);
+    fs::create_dir_all(&root).unwrap_or_else(|error| panic!("create fixture: {error}"));
+    let status = Command::new("git")
+        .arg("-C")
+        .arg(&root)
+        .args(["init", "-q"])
+        .status()
+        .unwrap_or_else(|error| panic!("git init fixture: {error}"));
+    assert!(status.success(), "git init fixture failed");
+    place(
+        &root,
+        "platform/sdk/generators/Cargo.toml",
+        include_str!("../Cargo.toml"),
+    );
+    place(
+        &root,
+        "platform/sdk/generators/src/main.rs",
+        include_str!("../src/main.rs"),
+    );
+    place(
+        &root,
+        "platform/sdk/generators/generate_jvm.py",
+        include_str!("../generate_jvm.py"),
+    );
+    place(
+        &root,
+        "platform/sdk/generators/generate_portable.py",
+        include_str!("../generate_portable.py"),
+    );
+    place(
+        &root,
+        "agent/tools/sdk-gen/Cargo.toml",
+        "[package]\nname = \"layerx-sdk-gen\"\n",
+    );
+    place(&root, "agent/tools/sdk-gen/Cargo.lock", "version = 4\n");
+    place(&root, "agent/tools/sdk-gen/src/main.rs", "fn main() {}\n");
+    place(
+        &root,
+        "agent/tools/sdk-gen/templates/typescript.tpl",
+        "// typescript template\n",
+    );
+    place(
+        &root,
+        "human/tools/api-gen/Cargo.toml",
+        "[package]\nname = \"layerx-human-api-gen\"\n",
+    );
+    place(&root, "human/tools/api-gen/Cargo.lock", "version = 4\n");
+    place(&root, "human/tools/api-gen/src/main.rs", "fn main() {}\n");
+    place(
+        &root,
+        "programs/sdk/rust/src/abi_policy.rs",
+        "pub const ABI_V1_VERSION: u16 = 1;\npub const ABI_V2_VERSION: u16 = 2;\npub const ABI_V3_VERSION: u16 = 3;\npub const ABI_V4_VERSION: u16 = 4;\n",
+    );
+    place(
+        &root,
+        "programs/crates/layerx-programs-runtime/src/terminal.rs",
+        "const EXECUTION_V4: &[u8] = b\"LXP/program-execution/v4\\0\";\nconst EXECUTION_V5: &[u8] = b\"LXP/program-execution/v5\\0\";\n",
+    );
     place(
         &root,
         "platform/sdk/generators/generate_lifecycle.py",
@@ -54,7 +112,7 @@ fn repo_fixture(label: &str) -> PathBuf {
     place(
         &root,
         "agent/schema/agent-api/programs.kvx",
-        "[operation.program.discover]\nrequest = \"ProgramSelector\"\nresponse = \"VerifiedProgramDiscovery\"\n\n[operation.program.interface]\nrequest = \"ProgramSelector\"\nresponse = \"VerifiedProgramInterface\"\n\n[operation.program.simulate]\nrequest = \"ProgramCallRequest\"\nresponse = \"ProgramSimulation\"\n\n[operation.program.call]\nrequest = \"ProgramCallRequest\"\nrequired = [\"idempotency_key\"]\nresponse = \"ProgramSubmission\"\n\n[operation.program.receipt]\nrequest = \"ProgramReceiptSelector\"\nresponse = \"ProgramSubmission\"\n\n[operation.program.activity]\nrequest = \"ProgramActivitySelector\"\nresponse = \"ProgramSubmission\"\n",
+        "[operation.program.discover]\nrequest = \"ProgramSelector\"\nresponse = \"VerifiedProgramDiscovery\"\n\n[operation.program.interface]\nrequest = \"ProgramSelector\"\nresponse = \"VerifiedProgramInterface\"\n\n[operation.program.simulate]\nrequest = \"ProgramCallRequest\"\nresponse = \"ProgramSimulation\"\n\n[operation.program.call]\nrequest = \"ProgramCallRequest\"\nrequired = [\"idempotency_key\"]\nresponse = \"ProgramSubmission\"\n\n[operation.program.receipt]\nrequest = \"ProgramReceiptSelector\"\nresponse = \"ProgramSubmission\"\n\n[operation.program.activity]\nrequest = \"ProgramActivitySelector\"\nresponse = \"ProgramSubmission\"\n\n[type.ProgramGuestAbi]\nvariants = [\"ABI_V1_VERSION\",\"ABI_V2_VERSION\",\"ABI_V3_VERSION\",\"ABI_V4_VERSION\"]\nwire_values = [\"1\",\"2\",\"3\",\"4\"]\nsource_policy = \"programs/sdk/rust/src/abi_policy.rs\"\ncapability_encoding = [\"V1\",\"V2\",\"V2\",\"V2\"]\n\n[type.ProgramExecutionV4]\nencoding_version = 4\ndomain = \"LXP/program-execution/v4\"\ndomain_terminator_hex = \"00\"\nallowed_guest_abis = [\"ABI_V2_VERSION\"]\n\n[type.ProgramExecutionV5]\nencoding_version = 5\ndomain = \"LXP/program-execution/v5\"\ndomain_terminator_hex = \"00\"\nallowed_guest_abis = [\"ABI_V3_VERSION\",\"ABI_V4_VERSION\"]\n",
     );
     place(
         &root,
@@ -122,6 +180,11 @@ fn place_generated_fixture(root: &Path) {
         root,
         "agent/crates/layerx-agent-api/src/operation_generated.rs",
         "// generated Rust operations\n",
+    );
+    place(
+        root,
+        "agent/crates/layerx-agent-api/src/generated.rs",
+        "// generated Rust contract\n",
     );
     place(
         root,
@@ -358,5 +421,127 @@ fn lock_missing_an_output_fails_the_gate() {
     assert_ne!(tampered, text);
     fs::write(&path, tampered).unwrap_or_else(|error| panic!("tamper lock: {error}"));
     expect_failure(&root, "does not match the wired pipeline");
+    cleanup(&root);
+}
+
+fn declare_handwritten(root: &Path, output: &str, relative: &str) {
+    let path = lock_path(root);
+    let mut text = fs::read_to_string(&path).unwrap_or_else(|error| panic!("read lock: {error}"));
+    text.push_str(&format!(
+        "\n[handwritten.{output}]\n\"{relative}\" = \"handwritten\"\n"
+    ));
+    fs::write(&path, text).unwrap_or_else(|error| panic!("declare handwritten: {error}"));
+}
+
+#[test]
+fn undeclared_file_in_an_explicit_output_root_fails_the_gate() {
+    let root = repo_fixture("explicit-untracked");
+    generate(&root);
+    place(
+        &root,
+        "platform/sdk/jvm/src/main/java/com/sidiora/layerx/sdk/Unlisted.java",
+        "final class Unlisted {}\n",
+    );
+    expect_failure(
+        &root,
+        "untracked file in generated jvm root: platform/sdk/jvm/src/main/java/com/sidiora/layerx/sdk/Unlisted.java",
+    );
+    cleanup(&root);
+}
+
+#[test]
+fn regeneration_refuses_an_unclassified_file() {
+    let root = repo_fixture("explicit-unclassified");
+    generate(&root);
+    place(&root, "platform/sdk/go/client.go", "package layerx\n");
+    let error = write_lock(&root, &lock_path(&root))
+        .err()
+        .unwrap_or_else(|| panic!("regeneration must refuse an unclassified file"));
+    assert!(
+        error.contains("unclassified file in generated go root: platform/sdk/go/client.go"),
+        "{error}"
+    );
+    cleanup(&root);
+}
+
+#[test]
+fn declared_handwritten_file_passes_and_survives_regeneration() {
+    let root = repo_fixture("explicit-handwritten");
+    generate(&root);
+    place(&root, "platform/sdk/conformance/README.md", "conformance\n");
+    expect_failure(
+        &root,
+        "untracked file in generated kvx root: platform/sdk/conformance/README.md",
+    );
+    declare_handwritten(&root, "platform-conformance", "README.md");
+    check(&root, &lock_path(&root)).unwrap_or_else(|error| panic!("declared file: {error}"));
+    generate(&root);
+    let lock = fs::read_to_string(lock_path(&root))
+        .unwrap_or_else(|error| panic!("read regenerated lock: {error}"));
+    assert!(
+        lock.contains("[handwritten.platform-conformance]\n\"README.md\" = \"handwritten\"\n"),
+        "{lock}"
+    );
+    check(&root, &lock_path(&root)).unwrap_or_else(|error| panic!("regenerated: {error}"));
+    place(
+        &root,
+        "platform/sdk/conformance/README.md",
+        "edited freely\n",
+    );
+    check(&root, &lock_path(&root)).unwrap_or_else(|error| panic!("edited handwritten: {error}"));
+    fs::remove_file(root.join("platform/sdk/conformance/README.md"))
+        .unwrap_or_else(|error| panic!("remove handwritten: {error}"));
+    expect_failure(
+        &root,
+        "declared handwritten file platform/sdk/conformance/README.md",
+    );
+    cleanup(&root);
+}
+
+#[test]
+fn generated_file_declared_handwritten_fails_the_gate() {
+    let root = repo_fixture("explicit-overlap");
+    generate(&root);
+    declare_handwritten(&root, "platform-jvm", "pom.xml");
+    expect_failure(&root, "declared handwritten file platform/sdk/jvm/pom.xml");
+    cleanup(&root);
+}
+
+#[test]
+fn handwritten_declaration_for_an_unknown_output_fails_the_gate() {
+    let root = repo_fixture("explicit-unknown");
+    generate(&root);
+    declare_handwritten(&root, "platform-unknown", "README.md");
+    expect_failure(&root, "does not match the wired pipeline");
+    cleanup(&root);
+}
+
+#[test]
+fn ignored_build_output_is_not_a_shipped_file() {
+    let root = repo_fixture("explicit-ignored");
+    place(&root, ".gitignore", "/platform/sdk/jvm/target/\n");
+    generate(&root);
+    place(
+        &root,
+        "platform/sdk/jvm/target/classes/com/sidiora/layerx/sdk/PlatformSdk.class",
+        "class\n",
+    );
+    check(&root, &lock_path(&root)).unwrap_or_else(|error| panic!("ignored output: {error}"));
+    cleanup(&root);
+}
+
+#[test]
+fn generator_edit_fails_the_gate_as_stale() {
+    let root = repo_fixture("stale-generator");
+    generate(&root);
+    let lock =
+        fs::read_to_string(lock_path(&root)).unwrap_or_else(|error| panic!("read lock: {error}"));
+    assert!(lock.contains("[generator.platform-sdkgen]"), "{lock}");
+    place(
+        &root,
+        "platform/sdk/generators/generate_portable.py",
+        "raise SystemExit(1)\n",
+    );
+    expect_failure(&root, "stale generated SDKs: generator platform-sdkgen");
     cleanup(&root);
 }
