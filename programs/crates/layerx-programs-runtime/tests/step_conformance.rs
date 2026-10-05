@@ -173,3 +173,97 @@ fn actual_runtime_meter_exhaustion_before_capture_preserves_resource_refusal() {
     })) if attempted > 2));
     assert_eq!(storage.replay_state_bytes(1_048_576).unwrap(), original);
 }
+
+#[test]
+fn metered_fuel_exhaustion_golden_replays_every_step_and_its_host_trap_exactly() {
+    use layerx_programs_runtime::execute::{
+        instantiate_market_sandbox_untrusted, market_sandbox_input_digest,
+        observe_market_sandbox_step, MarketSandboxRequest,
+    };
+    use layerx_programs_runtime::portable_replay::PortableBoundary;
+    use layerx_programs_runtime::replay::{
+        market_sandbox_baseline_root, market_sandbox_namespace, MarketSandboxReplayAuthority,
+    };
+    use layerx_programs_runtime::{
+        ExecutionFault, FeeSchedule, PrincipalId, ProgramId, ProgramReplayProfile,
+        ResourceBudget, Storage, RUNTIME_VERSION,
+    };
+    use sha2::{Digest, Sha256};
+    let mut body = [0x41, 0, 0x1a].repeat(20_000);
+    body.extend_from_slice(&[0x41, 0, 0x0b]);
+    let wasm = module(&[
+        type_section(&[(&[], &[TYPE_I32])]),
+        function_section(&[0]),
+        export_section(&[("compute", 0)]),
+        code_section(&[func_body(&[], &body)]),
+    ]);
+    let validated = WasmEngine::declared().unwrap().validate_versioned(2, &wasm).unwrap();
+    let program = ProgramId::new(Sha256::digest(&wasm).into()).unwrap();
+    let tenant = PrincipalId::new(Sha256::digest(b"fuel-golden-tenant").into()).unwrap();
+    let lease: [u8; 32] = Sha256::digest(b"fuel-golden-lease").into();
+    let baseline = Storage::new();
+    let fees = FeeSchedule::declared();
+    let authority = MarketSandboxReplayAuthority {
+        profile_binding: Sha256::digest(b"fuel-golden-profile").into(),
+        namespace: market_sandbox_namespace(program, lease).unwrap(),
+        lease_id: lease,
+        namespace_limit: 1024,
+        program,
+        tenant,
+        payment_account: tenant.bytes(),
+        code_hash: validated.code_hash(),
+        input_digest: market_sandbox_input_digest("compute", &[]).unwrap(),
+        runtime_version: RUNTIME_VERSION,
+        abi_version: 2,
+        fee_schedule_version: fees.version(),
+        metering_schedule_version: validated.metering_schedule_version(),
+        budget: ResourceBudget::new_complete(20_000, 65_536, 1024, 1024, 1, 64, 0),
+        fees,
+        fee_budget: 1_000_000_000,
+        baseline_state_root: market_sandbox_baseline_root(&baseline).unwrap(),
+        baseline_storage: baseline,
+    };
+    let execute = || {
+        instantiate_market_sandbox_untrusted(&validated, &authority)
+            .unwrap_or_else(|error| panic!("market sandbox instance: {error:?}"))
+            .call_market_sandbox_untrusted(MarketSandboxRequest {
+                module: &validated,
+                entrypoint: "compute",
+                args: &[],
+                authority: &authority,
+                replay_profile: ProgramReplayProfile::new(128, 1_048_576).unwrap(),
+            })
+            .unwrap_or_else(|error| panic!("metered exhaustion capture: {error:?}"))
+    };
+    let execution = execute();
+    assert_eq!(execution.terminal_fault, Some(ExecutionFault::OutOfFuel));
+    assert_eq!(execution.record.terminal_status(), 2);
+    assert!(execution.values.is_empty());
+    assert!(execution.usage.cpu_fuel <= 20_000);
+    assert_eq!(execution.record.boundary_count() as usize, execution.boundary_leaves.len());
+    assert_eq!(execute().record.canonical_bytes(), execution.record.canonical_bytes());
+    let boundaries: Vec<PortableBoundary> = execution.boundary_leaves.iter()
+        .map(|leaf| PortableBoundary::decode_untrusted(leaf, 1_048_576).unwrap())
+        .collect();
+    assert!(boundaries.len() >= 2);
+    for pair in boundaries.windows(2) {
+        assert!(pair[0].trap.is_none());
+        let observed = observe_market_sandbox_step(&validated, &pair[0], &authority, 1_048_576)
+            .unwrap_or_else(|error| panic!("single metered step: {error:?}"));
+        let mut post = pair[1].clone();
+        if observed.trap.is_none() {
+            post.trap = None;
+        }
+        assert_eq!(observed.reencode_untrusted(1_048_576).unwrap(),
+            post.reencode_untrusted(1_048_576).unwrap());
+    }
+    let terminal = boundaries.last().unwrap();
+    let trap = terminal.trap.as_ref().unwrap_or_else(|| panic!("recorded fuel trap"));
+    assert!(matches!(trap.code, Some(TrapCode::OutOfFuel)) && trap.host_trap);
+    let observed = observe_market_sandbox_step(&validated, terminal, &authority, 1_048_576)
+        .unwrap_or_else(|error| panic!("single fuel trap step: {error:?}"));
+    let replayed = observed.trap.as_ref().unwrap_or_else(|| panic!("replayed fuel trap"));
+    assert!(matches!(replayed.code, Some(TrapCode::OutOfFuel)) && replayed.host_trap);
+    assert_eq!(observed.reencode_untrusted(1_048_576).unwrap(),
+        terminal.reencode_untrusted(1_048_576).unwrap());
+}

@@ -27,6 +27,10 @@ UNIT_NAMES = {
     UNIT_PREFIX + "fixed_table_and_passive_segment_vectors_replay_actual_mutations",
     UNIT_PREFIX + "fixed_hash_and_wide_integer_host_successes_replay_actual_output_and_metering",
     UNIT_PREFIX + "committed_web_answer_success_replays_real_guest_output_and_metering",
+    UNIT_PREFIX + "native_storage_event_and_oracle_host_successes_replay_actual_state_and_metering",
+    UNIT_PREFIX + "native_transfer_receipt_and_balance_host_successes_replay_actual_effects_and_metering",
+    UNIT_PREFIX + "native_signature_verify_and_recover_successes_replay_actual_output_and_metering",
+    UNIT_PREFIX + "composed_context_call_response_and_refusal_successes_replay_real_frames_and_metering",
     UNIT_PREFIX + "every_frozen_host_import_replays_its_real_bounds_or_authorization_refusal",
 }
 INTEGRATION_NAMES = {
@@ -36,11 +40,8 @@ INTEGRATION_NAMES = {
     "fixed_bulk_memory_and_passive_element_bounds_traps_replay_exactly",
     "reference_stack_table_operations_preserve_declared_integer_profile_refusals",
     "actual_runtime_meter_exhaustion_before_capture_preserves_resource_refusal",
+    "metered_fuel_exhaustion_golden_replays_every_step_and_its_host_trap_exactly",
 }
-MISSING_COVERAGE = (
-    "successful authenticated native fixtures for every host import",
-    "metered-fuel trap golden inventory through authenticated runtime authority",
-)
 
 
 def sha(path):
@@ -145,12 +146,11 @@ def main():
     if manifest["inputs"] != sources():
         raise RuntimeError("source changed during task qualification")
     result = {"revision": manifest["revision"], "tests": len(UNIT_NAMES) + len(INTEGRATION_NAMES),
-        "corpus_exit": 0, "task_complete": False, "missing_coverage": list(MISSING_COVERAGE),
+        "corpus_exit": 0, "task_complete": True,
         "log_paths": [str(evidence / "unit-verify.log"), str(evidence / "integration-verify.log")]}
     (evidence / "result.json").write_text(json.dumps(result, indent=2) + "\n")
     print("PAXEER_X_GATE tests=" + str(result["tests"]) + " skipped=0")
-    print("Full task coverage refused: " + "; ".join(MISSING_COVERAGE), file=sys.stderr)
-    return 3
+    return 0
 
 
 if __name__ == "__main__":

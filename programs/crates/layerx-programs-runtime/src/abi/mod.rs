@@ -359,6 +359,43 @@ impl CommittedOracle for UnavailableCommittedOracle {
     }
 }
 
+/// Immutable set of committed oracle observations keyed by market.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct CommittedOracleObservations {
+    observations: BTreeMap<[u8; 32], OracleObservation>,
+}
+
+impl CommittedOracleObservations {
+    #[must_use]
+    pub const fn new() -> Self {
+        Self {
+            observations: BTreeMap::new(),
+        }
+    }
+
+    /// Records the observation committed for one market.
+    ///
+    /// # Errors
+    ///
+    /// Refuses a second observation for the same market.
+    pub fn commit(&mut self, observation: OracleObservation) -> Result<(), AbiError> {
+        if self.observations.contains_key(&observation.market) {
+            return Err(AbiError::InvalidEncoding);
+        }
+        self.observations.insert(observation.market, observation);
+        Ok(())
+    }
+}
+
+impl CommittedOracle for CommittedOracleObservations {
+    fn committed_observation(&self, market: [u8; 32]) -> Result<OracleObservation, AbiError> {
+        self.observations
+            .get(&market)
+            .copied()
+            .ok_or(AbiError::OracleUnknownMarket)
+    }
+}
+
 /// Fixed bytes preceding the response in one committed web answer record:
 /// content digest, full response length and returned response length.
 pub const WEB_ANSWER_HEADER_BYTES: usize = 40;
@@ -891,6 +928,13 @@ impl Abi {
     #[must_use]
     pub fn with_committed_web(mut self, web: Arc<dyn CommittedWeb + Send + Sync>) -> Self {
         self.web = web;
+        self
+    }
+
+    /// Attaches the boundary serving oracle observations already committed under `oracle_root`.
+    #[must_use]
+    pub fn with_committed_oracle(mut self, oracle: Arc<dyn CommittedOracle + Send + Sync>) -> Self {
+        self.oracle = oracle;
         self
     }
 

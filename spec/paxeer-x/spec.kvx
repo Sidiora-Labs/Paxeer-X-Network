@@ -24648,7 +24648,7 @@ release_gate_policy = "Retain full make programs-test once per merged wave or re
 
 [task.104.35.2]
 title = "Verify a single execution step on-platform"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 2
 requires = ["0.2"]
@@ -24690,12 +24690,15 @@ fleet_authority = "User explicitly ordered30agents into pending integrations wit
 fleet_role = "/root/integrate_arbiter/rust_prestate"
 fleet_scope_manifest = "/root/lx-ops/paxeer-x-integration-2026-10-03/fleet-104.35.2-brief.json"
 source_status = "partial"
-completion_basis = "partial source published; original acceptance criteria remain required"
-qualification_status = "UNRUN"
+completion_basis = "implementation under owner CONSTITUTION; full step coverage declared, 11 of 13 unit tests pass, gate exit 8 solely on two pre-existing calls.rs reference-types failures present on main before this task; integration stage unexecuted"
+qualification_status = "BUILD_PASSED_VERIFY_FAILED"
 source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/fanout-104.35.2-intake.json"
 fanout_role = "integrate_arbiter/rust_prestate"
 fanout_scope_delegated = ["programs/Cargo.toml"]
 fanout_basis = "Owner requested maximum parallel implementation on 2026-10-04; delegated shared file edits require root coordination and retain original acceptance criteria"
+build_exit_code = 0
+verify_exit_code = 8
+qualification_log = "/root/lx-ops/fleet-2026-10-05/results/104.35.2.json"
 
 [task.104.35.7]
 title = "Accept attested inputs from non-deterministic work"

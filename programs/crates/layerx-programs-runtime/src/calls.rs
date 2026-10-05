@@ -1525,15 +1525,24 @@ mod single_step_conformance {
         let engine = WasmEngine::declared().unwrap_or_else(|error| panic!("engine: {error}"));
         let validated = engine.validate_versioned(abi_version, bytes)
             .unwrap_or_else(|error| panic!("validation: {error}"));
-        let declared = ResourceBudget::declared();
-        let budget = ResourceBudget::new_complete(200_000_000, declared.memory_bytes(),
-            declared.storage_read_bytes(), declared.storage_write_bytes(), declared.output_values(),
-            declared.output_bytes(), declared.table_elements());
-        let mut instance = validated.instantiate_sandbox(
+        let budget = conformance_budget();
+        let instance = validated.instantiate_sandbox(
             Meter::new(budget, FeeSchedule::declared()), abi)
             .unwrap_or_else(|error| panic!("sandbox: {error}"));
+        check_instance(&validated, instance, expected, bytes);
+    }
+
+    fn conformance_budget() -> ResourceBudget {
+        let declared = ResourceBudget::declared();
+        ResourceBudget::new_complete(200_000_000, declared.memory_bytes(),
+            declared.storage_read_bytes(), declared.storage_write_bytes(), declared.output_values(),
+            declared.output_bytes(), declared.table_elements())
+    }
+
+    fn check_instance(validated: &crate::ValidatedModule, mut instance: crate::ProgramInstance,
+        expected: Option<WasmValue>, bytes: &[u8]) {
         let trace = TracePolicy::new(1, 512).unwrap_or_else(|error| panic!("trace policy: {error}"));
-        let capture = instance.call_with_boundary_witnesses(&validated, "run", &[], trace,
+        let capture = instance.call_with_boundary_witnesses(validated, "run", &[], trace,
             64 * 1024 * 1024).unwrap_or_else(|error| panic!("capture: {error:?}"));
         if let Some(expected) = expected {
             assert_eq!(capture.values, vec![expected], "fixed integer vector {bytes:02x?}");
@@ -1545,7 +1554,7 @@ mod single_step_conformance {
         assert!(!capture.boundaries.is_empty());
         assert_eq!(capture.boundaries.len(), capture.trace.arbitration_steps().len());
         for boundary in capture.boundaries {
-            boundary.replay(&validated)
+            boundary.replay(validated)
                 .unwrap_or_else(|error| panic!("single-step: {error:?}"));
         }
     }
@@ -1726,6 +1735,296 @@ mod single_step_conformance {
                 0x41, 56, 0x2d, 0, 0, 0x0b])]),
         ]);
         check_with_abi(&bytes, 4, Some(WasmValue::I32(42)), abi);
+    }
+
+    #[test]
+    fn native_storage_event_and_oracle_host_successes_replay_actual_state_and_metering() {
+        use crate::abi::{CommittedOracleObservations, OracleObservation};
+        use crate::Capability;
+        let program = ProgramId::new([0x11; 32]).unwrap();
+        let market = [0x33; 32];
+        let mut observations = CommittedOracleObservations::new();
+        observations.commit(OracleObservation {
+            market, price: 42, observed_at: 7, sequence: 3, source_set_digest: [0x44; 32],
+        }).unwrap();
+        let capabilities = CapabilitySet::new([Capability::StorageRead, Capability::StorageWrite,
+            Capability::SharedStorageRead, Capability::SharedStorageWrite, Capability::EmitEvent])
+            .unwrap();
+        let abi = Abi::new(3, program,
+            AuthorizationContext::new(PrincipalId::new([0x22; 32]).unwrap(), capabilities),
+            Storage::new(), &UnavailableReceiptOracle).unwrap()
+            .with_committed_oracle(std::sync::Arc::new(observations));
+        let mut body = Vec::new();
+        let call = |body: &mut Vec<u8>, arguments: &[i32], function: u8, status: i32| {
+            for argument in arguments { push_i32(body, *argument); }
+            body.extend_from_slice(&[0x10, function]);
+            push_i32(body, status);
+            body.extend_from_slice(&[0x47, 0x04, 0x40, 0, 0x0b]);
+        };
+        let byte_at = |body: &mut Vec<u8>, address: i32, expected: i32| {
+            push_i32(body, address);
+            body.extend_from_slice(&[0x2d, 0, 0]);
+            push_i32(body, expected);
+            body.extend_from_slice(&[0x47, 0x04, 0x40, 0, 0x0b]);
+        };
+        call(&mut body, &[0, 1, 1, 1], 0, 0);
+        call(&mut body, &[0, 1, 128, 16], 1, 2);
+        byte_at(&mut body, 128, i32::from(b'v'));
+        call(&mut body, &[2, 1, 1, 1], 3, 0);
+        call(&mut body, &[0, 1], 2, 0);
+        call(&mut body, &[0, 1, 128, 16], 1, 0);
+        call(&mut body, &[2, 0, 1, 1, 1], 4, 0);
+        call(&mut body, &[2, 0, 1, 160, 16], 5, 2);
+        byte_at(&mut body, 160, i32::from(b'v'));
+        for argument in [2, 0, 1, 0, 0, 4, 256, 256, 512] { push_i32(&mut body, argument); }
+        body.extend_from_slice(&[0x10, 6, 0x41, 0, 0x4c, 0x04, 0x40, 0, 0x0b]);
+        call(&mut body, &[1, 0, 1, 1, 1], 4, 0);
+        call(&mut body, &[1, 0, 1, 192, 16], 5, 2);
+        call(&mut body, &[1, 0, 1], 7, 0);
+        call(&mut body, &[1, 0, 1, 192, 16], 5, 0);
+        call(&mut body, &[2], 8, 0);
+        call(&mut body, &[2, 0, 1, 160, 16], 5, 0);
+        call(&mut body, &[32, 32, 1024, 64], 9, 64);
+        byte_at(&mut body, 1024, 42);
+        byte_at(&mut body, 1040, 7);
+        byte_at(&mut body, 1048, 3);
+        byte_at(&mut body, 1056, 0x44);
+        body.extend_from_slice(&[0x41, 42, 0x0b]);
+        let mut exports = export_section(&[("run", 10)]);
+        exports[1] += 9;
+        exports[2] += 1;
+        exports.extend_from_slice(&[6, b'm', b'e', b'm', b'o', b'r', b'y', 2, 0]);
+        let mut data = vec![1, 0, 0x41, 0, 0x0b, 64, b'k', b'v', b't'];
+        data.resize(9 + 29, 0);
+        data.extend_from_slice(&market);
+        let bytes = module(&[
+            type_section(&[(&[TYPE_I32; 4], &[TYPE_I32]), (&[TYPE_I32; 2], &[TYPE_I32]),
+                (&[TYPE_I32; 5], &[TYPE_I32]), (&[TYPE_I32; 3], &[TYPE_I32]),
+                (&[TYPE_I32], &[TYPE_I32]), (&[TYPE_I32; 9], &[TYPE_I32]), (&[], &[TYPE_I32])]),
+            import_section(&[("layerx_v1", "storage_write", 0), ("layerx_v1", "storage_read", 0),
+                ("layerx_v1", "storage_delete", 1), ("layerx_v1", "event_emit", 0),
+                ("layerx_v2", "storage_write_scoped", 2), ("layerx_v2", "storage_read_scoped", 2),
+                ("layerx_v2", "storage_scan_scoped", 5), ("layerx_v2", "storage_delete_scoped", 3),
+                ("layerx_v2", "storage_drop_scoped", 4), ("layerx_v3", "oracle_read", 0)]),
+            function_section(&[6]), raw_section(5, &[1, 1, 1, 1]), exports,
+            code_section(&[func_body(&[], &body)]), raw_section(11, &data),
+        ]);
+        check_with_abi(&bytes, 3, Some(WasmValue::I32(42)), abi);
+    }
+
+    fn with_memory(mut exports: Vec<u8>) -> Vec<u8> {
+        exports[1] += 9;
+        exports[2] += 1;
+        exports.extend_from_slice(&[6, b'm', b'e', b'm', b'o', b'r', b'y', 2, 0]);
+        exports
+    }
+
+    fn data_section(segments: &[(i32, &[u8])]) -> Vec<u8> {
+        let mut payload = crate::test_support::unsigned_leb(segments.len() as u64);
+        for (offset, bytes) in segments {
+            payload.push(0);
+            push_i32(&mut payload, *offset);
+            payload.push(0x0b);
+            payload.extend(crate::test_support::unsigned_leb(bytes.len() as u64));
+            payload.extend_from_slice(bytes);
+        }
+        raw_section(11, &payload)
+    }
+
+    fn push_value(body: &mut Vec<u8>, value: WasmValue) {
+        match value {
+            WasmValue::I32(value) => push_i32(body, value),
+            WasmValue::I64(value) => push_i64(body, value),
+        }
+    }
+
+    fn expect_call(body: &mut Vec<u8>, arguments: &[WasmValue], function: u8, status: WasmValue) {
+        for argument in arguments { push_value(body, *argument); }
+        body.extend_from_slice(&[0x10, function]);
+        push_value(body, status);
+        body.push(if matches!(status, WasmValue::I64(_)) { 0x52 } else { 0x47 });
+        body.extend_from_slice(&[0x04, 0x40, 0, 0x0b]);
+    }
+
+    fn expect_byte(body: &mut Vec<u8>, address: i32, expected: u8) {
+        push_i32(body, address);
+        body.extend_from_slice(&[0x2d, 0, 0]);
+        push_i32(body, i32::from(expected));
+        body.extend_from_slice(&[0x47, 0x04, 0x40, 0, 0x0b]);
+    }
+
+    #[test]
+    fn native_transfer_receipt_and_balance_host_successes_replay_actual_effects_and_metering() {
+        use crate::WasmValue::{I32, I64};
+        use crate::{derive_program_account, BalanceView, Capability, ReceiptView};
+        let program = ProgramId::new([0x11; 32]).unwrap();
+        let principal = PrincipalId::new([0x22; 32]).unwrap();
+        let (asset, recipient, digest, account) = ([0xa1; 32], [0xb2; 32], [0xd3; 32], [0xc4; 32]);
+        let source = derive_program_account(program, b"vault").unwrap().bytes();
+        let pool = derive_program_account(program, b"pool").unwrap().bytes();
+        let capabilities = CapabilitySet::new([
+            Capability::Transfer402 { asset, to: recipient, maximum_amount: 100 },
+            Capability::Transfer402 { asset, to: pool, maximum_amount: 100 },
+            Capability::ProgramSpend { owner_program: program, seed: b"vault".to_vec(),
+                source_account: source, asset, to: recipient, maximum_amount: 100 },
+            Capability::ReceiptRead { receipt_digest: digest },
+            Capability::BalanceView { account, asset, receipt_digest: digest },
+        ]).unwrap();
+        let receipts = [(digest, ReceiptView { receipt_digest: digest, result_code: 1, asset,
+            amount: 500, state_root: [0xe5; 32] })].into_iter().collect();
+        let balances = [((account, asset), Ok(BalanceView { account, asset, balance: 777,
+            receipt_digest: digest, state_root: [0xe5; 32], observed_sequence: 9 }))]
+            .into_iter().collect();
+        let abi = Abi::nested(2, program, AuthorizationContext::new(principal, capabilities),
+            Storage::new(), receipts, balances).unwrap();
+        let mut body = Vec::new();
+        expect_call(&mut body, &[I64(0), I64(40), I32(0), I32(32), I32(32), I32(32)], 0, I32(0));
+        expect_call(&mut body, &[I32(64), I32(32), I32(1024), I32(116)], 1, I32(116));
+        for (address, expected) in [(1024, 0xd3), (1059, 1), (1060, 0xa1), (1106, 1), (1107, 0xf4),
+            (1108, 0xe5)] {
+            expect_byte(&mut body, address, expected);
+        }
+        expect_call(&mut body, &[I32(96), I32(32), I32(0), I32(32), I32(1280), I32(16)], 2,
+            I32(16));
+        expect_byte(&mut body, 1294, 0x03);
+        expect_byte(&mut body, 1295, 0x09);
+        expect_call(&mut body, &[I64(0), I64(30), I32(128), I32(5), I32(160), I32(32), I32(0),
+            I32(32), I32(32), I32(32)], 3, I32(0));
+        expect_call(&mut body, &[I64(0), I64(20), I32(192), I32(4), I32(224), I32(32), I32(0),
+            I32(32)], 4, I32(0));
+        body.extend_from_slice(&[0x41, 42, 0x0b]);
+        let bytes = module(&[
+            type_section(&[
+                (&[TYPE_I64, TYPE_I64, TYPE_I32, TYPE_I32, TYPE_I32, TYPE_I32], &[TYPE_I32]),
+                (&[TYPE_I32; 4], &[TYPE_I32]), (&[TYPE_I32; 6], &[TYPE_I32]),
+                (&[TYPE_I64, TYPE_I64, TYPE_I32, TYPE_I32, TYPE_I32, TYPE_I32, TYPE_I32, TYPE_I32,
+                    TYPE_I32, TYPE_I32], &[TYPE_I32]),
+                (&[TYPE_I64, TYPE_I64, TYPE_I32, TYPE_I32, TYPE_I32, TYPE_I32, TYPE_I32, TYPE_I32],
+                    &[TYPE_I32]),
+                (&[], &[TYPE_I32])]),
+            import_section(&[("layerx_v1", "transfer_402", 0), ("layerx_v1", "receipt_read", 1),
+                ("layerx_v2", "balance_read", 2), ("layerx_v2", "transfer_program_402", 3),
+                ("layerx_v2", "fund_program_402", 4)]),
+            function_section(&[5]), raw_section(5, &[1, 1, 1, 1]),
+            with_memory(export_section(&[("run", 5)])), code_section(&[func_body(&[], &body)]),
+            data_section(&[(0, &asset), (32, &recipient), (64, &digest), (96, &account),
+                (128, b"vault"), (160, &source), (192, b"pool"), (224, &pool)]),
+        ]);
+        check_with_abi(&bytes, 2, Some(WasmValue::I32(42)), abi);
+    }
+
+    #[test]
+    fn native_signature_verify_and_recover_successes_replay_actual_output_and_metering() {
+        use crate::WasmValue::I32;
+        use ed25519_dalek::Signer;
+        use sha2::Digest;
+        let message = b"layerx single step";
+        let ed_key = ed25519_dalek::SigningKey::from_bytes(&[7; 32]);
+        let ed_signature = ed_key.sign(message).to_bytes();
+        let ed_public = ed_key.verifying_key().to_bytes();
+        let digest: [u8; 32] = sha2::Sha256::digest(b"layerx secp256k1 step").into();
+        let secp_key = k256::ecdsa::SigningKey::from_slice(&[9; 32]).unwrap();
+        let (secp_signature, recovery) = secp_key.sign_prehash_recoverable(&digest).unwrap();
+        let secp_signature = secp_signature.to_bytes();
+        let compressed = secp_key.verifying_key().to_encoded_point(true);
+        let uncompressed = secp_key.verifying_key().to_encoded_point(false);
+        assert_eq!((compressed.as_bytes().len(), uncompressed.as_bytes().len()), (33, 65));
+        let mut body = Vec::new();
+        expect_call(&mut body, &[I32(1), I32(0), I32(18), I32(32), I32(32), I32(64), I32(64)], 0,
+            I32(0));
+        expect_call(&mut body, &[I32(2), I32(128), I32(32), I32(160), I32(33), I32(200), I32(64)],
+            0, I32(0));
+        expect_call(&mut body, &[I32(128), I32(32), I32(200), I32(64),
+            I32(i32::from(recovery.to_byte())), I32(512), I32(65)], 1, I32(65));
+        for offset in (0..64).step_by(8) {
+            push_i32(&mut body, 512 + offset);
+            body.extend_from_slice(&[0x29, 0, 0]);
+            push_i32(&mut body, 272 + offset);
+            body.extend_from_slice(&[0x29, 0, 0, 0x52, 0x04, 0x40, 0, 0x0b]);
+        }
+        push_i32(&mut body, 576);
+        body.extend_from_slice(&[0x2d, 0, 0]);
+        push_i32(&mut body, 336);
+        body.extend_from_slice(&[0x2d, 0, 0, 0x47, 0x04, 0x40, 0, 0x0b, 0x41, 42, 0x0b]);
+        let bytes = module(&[
+            type_section(&[(&[TYPE_I32; 7], &[TYPE_I32]), (&[], &[TYPE_I32])]),
+            import_section(&[("layerx_v2", "signature_verify", 0),
+                ("layerx_v2", "signature_recover", 0)]),
+            function_section(&[1]), raw_section(5, &[1, 1, 1, 1]),
+            with_memory(export_section(&[("run", 2)])), code_section(&[func_body(&[], &body)]),
+            data_section(&[(0, message), (32, &ed_public), (64, &ed_signature), (128, &digest),
+                (160, compressed.as_bytes()), (200, secp_signature.as_slice()),
+                (272, uncompressed.as_bytes())]),
+        ]);
+        check_module(&bytes, 2, Some(WasmValue::I32(42)));
+    }
+
+    fn check_composed(bytes: &[u8], capabilities: CapabilitySet, catalog: super::ProgramCatalog) {
+        use crate::abi::context::ExecutionContext;
+        let validated = WasmEngine::declared().unwrap().validate_versioned(2, bytes).unwrap();
+        let program = ProgramId::new([0x11; 32]).unwrap();
+        let principal = PrincipalId::new([0x22; 32]).unwrap();
+        let abi = Abi::new(2, program, AuthorizationContext::new(principal, capabilities),
+            Storage::new(), &UnavailableReceiptOracle).unwrap();
+        let composition = super::Composition::new(std::rc::Rc::new(catalog),
+            super::CallGraph::root(super::CompositionRules::declared(), program, principal),
+            crate::AbiRevision::V2);
+        let fees = FeeSchedule::declared();
+        let context = ExecutionContext::authenticated(5, 9, crate::RUNTIME_VERSION, 2,
+            fees.version()).unwrap();
+        let instance = validated.instantiate_composed_response_context_replay_retained(
+            Meter::new(conformance_budget(), fees), abi, composition, 64, Some(context), None)
+            .unwrap_or_else(|refusal| panic!("response region: {refusal:?}"))
+            .unwrap_or_else(|error| panic!("composed instance: {:?}", error.0));
+        check_instance(&validated, instance, Some(WasmValue::I32(42)), bytes);
+    }
+
+    #[test]
+    fn composed_context_call_response_and_refusal_successes_replay_real_frames_and_metering() {
+        use crate::WasmValue::{I32, I64};
+        let callee = ProgramId::new([0x55; 32]).unwrap();
+        let callee_bytes = module(&[
+            type_section(&[(&[TYPE_I32, TYPE_I32], &[TYPE_I32])]), function_section(&[0]),
+            raw_section(5, &[1, 1, 1, 1]),
+            with_memory(export_section(&[(super::CALL_ENTRY_EXPORT, 0)])),
+            code_section(&[func_body(&[], &[0x41, 7, 0x0b])]),
+        ]);
+        let mut catalog = super::ProgramCatalog::new();
+        catalog.insert(callee,
+            WasmEngine::declared().unwrap().validate_versioned(2, &callee_bytes).unwrap());
+        let mut body = Vec::new();
+        for (field, length, address, expected) in [(1, 32, 256, 0x11), (2, 1, 256, 0),
+            (3, 32, 256, 0x22), (4, 8, 263, 5)] {
+            expect_call(&mut body, &[I32(field), I32(256), I32(33)], 2, I32(length));
+            expect_byte(&mut body, address, expected);
+        }
+        expect_call(&mut body, &[I32(0), I32(32), I32(0), I32(0), I32(32), I32(2)], 0, I32(7));
+        expect_call(&mut body, &[I32(0), I32(32), I32(0), I32(0), I32(32), I32(2), I32(512),
+            I32(16)], 1, I64(7 << 32));
+        expect_call(&mut body, &[I32(42), I32(40), I32(2)], 3, I32(0));
+        body.extend_from_slice(&[0x41, 42, 0x0b]);
+        let caller = module(&[
+            type_section(&[(&[TYPE_I32; 6], &[TYPE_I32]), (&[TYPE_I32; 8], &[TYPE_I64]),
+                (&[TYPE_I32; 3], &[TYPE_I32]), (&[], &[TYPE_I32])]),
+            import_section(&[("layerx_v1", "program_call", 0),
+                ("layerx_v2", "program_call_response", 1), ("layerx_v2", "context_read", 2),
+                ("layerx_v2", "response_write", 2)]),
+            function_section(&[3]), raw_section(5, &[1, 1, 1, 1]),
+            with_memory(export_section(&[("run", 4)])), code_section(&[func_body(&[], &body)]),
+            data_section(&[(0, &callee.bytes()), (32, &[0, 0]), (40, b"ok")]),
+        ]);
+        check_composed(&caller,
+            CapabilitySet::new([crate::Capability::Call { program: callee }]).unwrap(), catalog);
+        let mut body = Vec::new();
+        expect_call(&mut body, &[I32(1), I32(0), I32(6)], 0, I32(0));
+        body.extend_from_slice(&[0x41, 42, 0x0b]);
+        let refusal = module(&[
+            type_section(&[(&[TYPE_I32; 3], &[TYPE_I32]), (&[], &[TYPE_I32])]),
+            import_section(&[("layerx_v2", "refusal_write", 0)]), function_section(&[1]),
+            raw_section(5, &[1, 1, 1, 1]), with_memory(export_section(&[("run", 1)])),
+            code_section(&[func_body(&[], &body)]), data_section(&[(0, b"denied")]),
+        ]);
+        check_composed(&refusal, CapabilitySet::empty(), super::ProgramCatalog::new());
     }
 
     fn push_i32(body: &mut Vec<u8>, mut value: i32) {
