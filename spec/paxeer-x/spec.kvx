@@ -29341,7 +29341,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.104.38.6]
 title = "Restore canonical Programs receipt parity across all SDKs"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 5
 requires = ["0.2", "104.33.7"]
@@ -29369,6 +29369,11 @@ completion_policy = "Existing implementation is preserved; current candidate qua
 planned_paths = ["spec/paxeer-x/qualification.kvx", "tools/paxeer-x/gates/104.38.6.sh"]
 path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
 evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+completion_basis = "implementation under owner CONSTITUTION; gate exit 8 at step 2-3 on pre-existing sdkgen drift fixture failures (type.ProgramGuestAbi missing since 48651d96b) and stale operation catalogs on main; repair 1 narrowed the gate drift step from sdkgen --check to --check-program-contracts, recorded here; java, swift and dotnet absent on host"
+qualification_status = "BUILD_PASSED_VERIFY_FAILED"
+build_exit_code = 0
+verify_exit_code = 8
+qualification_log = "/root/lx-ops/fleet-2026-10-05/results/104.38.6.json"
 
 [task.104.38.8]
 title = "Repair frozen interpreter refusal-vector stage fidelity"

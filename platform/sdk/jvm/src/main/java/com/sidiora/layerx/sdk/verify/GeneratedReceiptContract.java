@@ -10,6 +10,7 @@ public final class GeneratedReceiptContract {
     public static final long PROGRAM_OUTCOME_V1 = 0x50524731L;
     public static final long PROGRAM_OUTCOME_V2 = 0x50524732L;
     public static final long PROGRAM_OUTCOME_V3 = 0x50524733L;
+    public static final long PROGRAM_OUTCOME_V4 = 0x50524734L;
 
     public enum ReceiptCheck {
         DECODE("decode"),

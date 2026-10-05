@@ -30,7 +30,7 @@ _MAX_EFFECT_BODY = 256
 _MAX_U128 = 0xFFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF
 _ALL_AVAILABILITY_CLASSES = 0x1F
 _CURRENT_PROTOCOL_VERSION = 2
-_PROGRAM_OUTCOME_V1, _PROGRAM_OUTCOME_V2, _PROGRAM_OUTCOME_V3 = PROGRAM_OUTCOME_TAGS
+_PROGRAM_OUTCOME_V1, _PROGRAM_OUTCOME_V2, _PROGRAM_OUTCOME_V3, _PROGRAM_OUTCOME_V4 = PROGRAM_OUTCOME_TAGS
 
 
 class ReceiptVerificationError(PlatformSdkError):
@@ -616,7 +616,7 @@ def _decode_program_receipt_outcome_from(
         _PROGRAM_OUTCOME_V1: 1,
         _PROGRAM_OUTCOME_V2: 2,
         _PROGRAM_OUTCOME_V3: 3,
-        0x50524734: 4,
+        _PROGRAM_OUTCOME_V4: 4,
     }
     encoding_value = tags.get(decoder.u32())
     if encoding_value is None:

@@ -175,16 +175,17 @@ public final class ReceiptFixtureTest {
 
     @Test
     void refusalVectorsExposeSharedTaxonomy() throws Exception {
-        JsonNode fixture = JSON.readTree(Files.readString(
-            FIXTURE_ROOT.resolve("receipt-refusals-v2.json")));
-        for (JsonNode vector : fixture.get("vectors")) {
-            PlatformSdkException failure = assertThrows(PlatformSdkException.class,
-                () -> LocalVerifier.verifyReceipt(
-                    hexDecode(vector.get("canonical_receipt_hex").asText()),
-                    authorizedBatch(fixture)), vector.get("name").asText());
-            assertNotNull(failure.receiptCheck());
-            assertEquals(vector.get("expected_check").asText(),
-                failure.receiptCheck().wire());
+        for (String name : new String[] {"receipt-refusals-v2.json", "receipt-programs-refusals-v2.json"}) {
+            JsonNode fixture = JSON.readTree(Files.readString(FIXTURE_ROOT.resolve(name)));
+            for (JsonNode vector : fixture.get("vectors")) {
+                PlatformSdkException failure = assertThrows(PlatformSdkException.class,
+                    () -> LocalVerifier.verifyReceipt(
+                        hexDecode(vector.get("canonical_receipt_hex").asText()),
+                        authorizedBatch(fixture)), vector.get("name").asText());
+                assertNotNull(failure.receiptCheck());
+                assertEquals(vector.get("expected_check").asText(),
+                    failure.receiptCheck().wire(), vector.get("name").asText());
+            }
         }
     }
 

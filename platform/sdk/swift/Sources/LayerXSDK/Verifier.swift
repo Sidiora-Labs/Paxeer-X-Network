@@ -633,7 +633,7 @@ private func decodeProgramReceiptOutcomeFrom(_ decoder: inout WireDecoder,
     case programOutcomeV1: encodingVersion = 1
     case programOutcomeV2: encodingVersion = 2
     case programOutcomeV3: encodingVersion = 3
-    case 0x50524734: encodingVersion = 4
+    case programOutcomeV4: encodingVersion = 4
     default: throw verificationFailure()
     }
     let terminalKind = try decoder.u8()

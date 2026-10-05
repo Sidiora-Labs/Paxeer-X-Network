@@ -238,6 +238,15 @@ func TestVerifyProgramsReceiptFixturePreservesOutcome(t *testing.T) {
 }
 
 func TestReceiptRefusalVectorsExposeSharedTaxonomy(t *testing.T) {
+	assertReceiptRefusalTaxonomy(t, "receipt-refusals-v2.json")
+}
+
+func TestProgramsReceiptRefusalVectorsExposeSharedTaxonomy(t *testing.T) {
+	assertReceiptRefusalTaxonomy(t, "receipt-programs-refusals-v2.json")
+}
+
+func assertReceiptRefusalTaxonomy(t *testing.T, name string) {
+	t.Helper()
 	var fixture struct {
 		AuthorizedBatch receiptFixtureAuthority `json:"authorized_batch"`
 		Vectors         []struct {
@@ -246,7 +255,7 @@ func TestReceiptRefusalVectorsExposeSharedTaxonomy(t *testing.T) {
 			CanonicalReceiptHex string `json:"canonical_receipt_hex"`
 		} `json:"vectors"`
 	}
-	raw, err := os.ReadFile("../conformance/fixtures/receipt-refusals-v2.json")
+	raw, err := os.ReadFile("../conformance/fixtures/" + name)
 	if err != nil {
 		t.Fatalf("read refusal fixture: %v", err)
 	}

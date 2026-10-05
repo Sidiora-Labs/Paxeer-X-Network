@@ -158,17 +158,19 @@ export async function verifyReceiptFixture(): Promise<void> {
   assert(embedded.occupancyTransferRoot.some((byte) => byte !== 0), "embedded occupancy transfer root is zero");
   assert(embedded.feeUnits === 16n, "embedded fee units diverged");
 
-  const refusals = loadFixture("receipt-refusals-v2.json") as unknown as ReceiptRefusalFixture;
-  for (const vector of refusals.vectors) {
-    try {
-      await verifyReceipt(
-        hexBytes(vector.canonical_receipt_hex),
-        authorizedBatch(refusals as unknown as ReceiptFixture),
-      );
-      throw new Error(`${vector.name} verified`);
-    } catch (error) {
-      assert(error instanceof ReceiptVerificationError, `${vector.name} returned an untyped failure`);
-      assert(error.check === (vector.expected_check as ReceiptFailureCode), `${vector.name} taxonomy diverged`);
+  for (const name of ["receipt-refusals-v2.json", "receipt-programs-refusals-v2.json"]) {
+    const refusals = loadFixture(name) as unknown as ReceiptRefusalFixture;
+    for (const vector of refusals.vectors) {
+      try {
+        await verifyReceipt(
+          hexBytes(vector.canonical_receipt_hex),
+          authorizedBatch(refusals as unknown as ReceiptFixture),
+        );
+        throw new Error(`${vector.name} verified`);
+      } catch (error) {
+        assert(error instanceof ReceiptVerificationError, `${vector.name} returned an untyped failure`);
+        assert(error.check === (vector.expected_check as ReceiptFailureCode), `${vector.name} taxonomy diverged`);
+      }
     }
   }
 }

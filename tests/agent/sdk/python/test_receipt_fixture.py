@@ -163,17 +163,18 @@ class ReceiptFixtureTest(unittest.TestCase):
         self.assertEqual(outcome.fee_units, 16)
 
     def test_core_refusal_vectors_expose_shared_taxonomy(self) -> None:
-        fixture = _load_shared_fixture("receipt-refusals-v2.json")
-        authorized = _authorized(fixture)
-        for vector in fixture["vectors"]:
-            with self.subTest(vector=vector["name"]):
-                with self.assertRaises(ReceiptVerificationError) as refused:
-                    verify_receipt(
-                        bytes.fromhex(vector["canonical_receipt_hex"]),
-                        authorized,
-                        LayerXSignatureVerifier(),
-                    )
-                self.assertEqual(refused.exception.check.value, vector["expected_check"])
+        for name in ("receipt-refusals-v2.json", "receipt-programs-refusals-v2.json"):
+            fixture = _load_shared_fixture(name)
+            authorized = _authorized(fixture)
+            for vector in fixture["vectors"]:
+                with self.subTest(fixture=name, vector=vector["name"]):
+                    with self.assertRaises(ReceiptVerificationError) as refused:
+                        verify_receipt(
+                            bytes.fromhex(vector["canonical_receipt_hex"]),
+                            authorized,
+                            LayerXSignatureVerifier(),
+                        )
+                    self.assertEqual(refused.exception.check.value, vector["expected_check"])
 
 
 if __name__ == "__main__":

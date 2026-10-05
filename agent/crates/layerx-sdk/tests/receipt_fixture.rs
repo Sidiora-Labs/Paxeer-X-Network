@@ -254,9 +254,8 @@ fn core_programs_fixture_preserves_the_optional_outcome() {
     assert_eq!(outcome.terminal_payload_root(), [0x22; 32]);
 }
 
-#[test]
-fn core_refusal_vectors_expose_the_shared_taxonomy() {
-    let fixture = shared_fixture("receipt-refusals-v2.json");
+fn assert_refusal_taxonomy(name: &str) {
+    let fixture = shared_fixture(name);
     let authorised = value_authorised(&fixture);
     for vector in fixture["vectors"]
         .as_array()
@@ -264,13 +263,25 @@ fn core_refusal_vectors_expose_the_shared_taxonomy() {
     {
         let canonical = value_hex(vector, "canonical_receipt_hex");
         let Err(failure) = verify_receipt(&canonical, &authorised) else {
-            panic!("non-canonical receipt verified");
+            panic!("non-canonical receipt verified: {}", vector["name"]);
         };
         assert_eq!(
             failure.check.as_str(),
             vector["expected_check"]
                 .as_str()
-                .unwrap_or_else(|| panic!("expected check missing"))
+                .unwrap_or_else(|| panic!("expected check missing")),
+            "{}",
+            vector["name"]
         );
     }
+}
+
+#[test]
+fn core_refusal_vectors_expose_the_shared_taxonomy() {
+    assert_refusal_taxonomy("receipt-refusals-v2.json");
+}
+
+#[test]
+fn programs_refusal_vectors_expose_the_shared_taxonomy() {
+    assert_refusal_taxonomy("receipt-programs-refusals-v2.json");
 }

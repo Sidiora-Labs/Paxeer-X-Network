@@ -266,11 +266,13 @@ public sealed class ReceiptFixtureTests
         Assert.Equal(new UInt128Value(0, 16), outcome.FeeUnits);
     }
 
-    [Fact]
-    public async Task RefusalVectorsExposeSharedTaxonomy()
+    [Theory]
+    [InlineData("receipt-refusals-v2.json")]
+    [InlineData("receipt-programs-refusals-v2.json")]
+    public async Task RefusalVectorsExposeSharedTaxonomy(string fixtureName)
     {
         using var document = JsonDocument.Parse(File.ReadAllText(
-            FixturePath("receipt-refusals-v2.json")));
+            FixturePath(fixtureName)));
         var root = document.RootElement;
         var authority = root.GetProperty("authorized_batch");
         var batch = new AuthorizedReceiptBatch(

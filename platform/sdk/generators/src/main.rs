@@ -168,7 +168,7 @@ pub struct Pipeline {
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct ReceiptContract {
     programs_module_id: u16,
-    program_outcome_tags: [u32; 3],
+    program_outcome_tags: [u32; 4],
     required_nonzero: Vec<String>,
     failure_checks: Vec<String>,
     program_abis: [u16; 4],
@@ -312,7 +312,7 @@ fn receipt_contract(repo_root: &Path) -> Result<ReceiptContract, String> {
     }
     let tags =
         layerx_platform_kvx::string_list(document.required("receipt", "program_outcome_tags")?)?;
-    let program_outcome_tags: [u32; 3] = tags
+    let program_outcome_tags: [u32; 4] = tags
         .iter()
         .map(|tag| {
             u32::from_str_radix(tag, 16)
@@ -322,7 +322,7 @@ fn receipt_contract(repo_root: &Path) -> Result<ReceiptContract, String> {
         .try_into()
         .map_err(|values: Vec<u32>| {
             format!(
-                "receipt.program_outcome_tags requires exactly three tags, found {}",
+                "receipt.program_outcome_tags requires exactly four tags, found {}",
                 values.len()
             )
         })?;
@@ -651,13 +651,15 @@ fn render_rust_receipt_contract(contract: &ReceiptContract) -> Result<String, St
     .map_err(|error| error.to_string())?;
     writeln!(
         output,
-        "pub const PROGRAM_OUTCOME_TAGS: [u32; 3] = [0x{:04x}_{:04x}, 0x{:04x}_{:04x}, 0x{:04x}_{:04x}];\n",
+        "pub const PROGRAM_OUTCOME_TAGS: [u32; 4] = [0x{:04x}_{:04x}, 0x{:04x}_{:04x}, 0x{:04x}_{:04x}, 0x{:04x}_{:04x}];\n",
         contract.program_outcome_tags[0] >> 16,
         contract.program_outcome_tags[0] & 0xffff,
         contract.program_outcome_tags[1] >> 16,
         contract.program_outcome_tags[1] & 0xffff,
         contract.program_outcome_tags[2] >> 16,
-        contract.program_outcome_tags[2] & 0xffff
+        contract.program_outcome_tags[2] & 0xffff,
+        contract.program_outcome_tags[3] >> 16,
+        contract.program_outcome_tags[3] & 0xffff
     )
     .map_err(|error| error.to_string())?;
     output
@@ -703,10 +705,11 @@ fn render_typescript_receipt_contract(contract: &ReceiptContract) -> Result<Stri
     .map_err(|error| error.to_string())?;
     writeln!(
         output,
-        "export const PROGRAM_OUTCOME_TAGS = [0x{:08x}, 0x{:08x}, 0x{:08x}] as const;\n",
+        "export const PROGRAM_OUTCOME_TAGS = [0x{:08x}, 0x{:08x}, 0x{:08x}, 0x{:08x}] as const;\n",
         contract.program_outcome_tags[0],
         contract.program_outcome_tags[1],
-        contract.program_outcome_tags[2]
+        contract.program_outcome_tags[2],
+        contract.program_outcome_tags[3]
     )
     .map_err(|error| error.to_string())?;
     output.push_str("export enum ReceiptFailureCode {\n");
@@ -733,16 +736,18 @@ fn render_python_receipt_contract(
         "# Code generated from platform/sdk/generators/receipt.kvx. DO NOT EDIT.\n\nfrom enum import Enum\n",
     );
     if stub {
-        output
-            .push_str("\nPROGRAMS_MODULE_ID: int\nPROGRAM_OUTCOME_TAGS: tuple[int, int, int]\n\n");
+        output.push_str(
+            "\nPROGRAMS_MODULE_ID: int\nPROGRAM_OUTCOME_TAGS: tuple[int, int, int, int]\n\n",
+        );
     } else {
         writeln!(
             output,
-            "\nPROGRAMS_MODULE_ID = {}\nPROGRAM_OUTCOME_TAGS = ({}, {}, {})\n",
+            "\nPROGRAMS_MODULE_ID = {}\nPROGRAM_OUTCOME_TAGS = ({}, {}, {}, {})\n",
             contract.programs_module_id,
             contract.program_outcome_tags[0],
             contract.program_outcome_tags[1],
-            contract.program_outcome_tags[2]
+            contract.program_outcome_tags[2],
+            contract.program_outcome_tags[3]
         )
         .map_err(|error| error.to_string())?;
     }
@@ -794,10 +799,11 @@ fn render_go_receipt_contract(contract: &ReceiptContract) -> Result<String, Stri
     .map_err(|error| error.to_string())?;
     writeln!(
         output,
-        "const (\n\tProgramOutcomeTagV1 uint32 = 0x{:08x}\n\tProgramOutcomeTagV2 uint32 = 0x{:08x}\n\tProgramOutcomeTagV3 uint32 = 0x{:08x}\n)\n",
+        "const (\n\tProgramOutcomeTagV1 uint32 = 0x{:08x}\n\tProgramOutcomeTagV2 uint32 = 0x{:08x}\n\tProgramOutcomeTagV3 uint32 = 0x{:08x}\n\tProgramOutcomeTagV4 uint32 = 0x{:08x}\n)\n",
         contract.program_outcome_tags[0],
         contract.program_outcome_tags[1],
-        contract.program_outcome_tags[2]
+        contract.program_outcome_tags[2],
+        contract.program_outcome_tags[3]
     )
     .map_err(|error| error.to_string())?;
     output.push_str("type ReceiptCheck string\n\nconst (\n");
@@ -832,10 +838,11 @@ fn render_jvm_receipt_contract(contract: &ReceiptContract) -> Result<String, Str
     .map_err(|error| error.to_string())?;
     writeln!(
         output,
-        "    public static final long PROGRAM_OUTCOME_V1 = 0x{:08x}L;\n    public static final long PROGRAM_OUTCOME_V2 = 0x{:08x}L;\n    public static final long PROGRAM_OUTCOME_V3 = 0x{:08x}L;\n",
+        "    public static final long PROGRAM_OUTCOME_V1 = 0x{:08x}L;\n    public static final long PROGRAM_OUTCOME_V2 = 0x{:08x}L;\n    public static final long PROGRAM_OUTCOME_V3 = 0x{:08x}L;\n    public static final long PROGRAM_OUTCOME_V4 = 0x{:08x}L;\n",
         contract.program_outcome_tags[0],
         contract.program_outcome_tags[1],
-        contract.program_outcome_tags[2]
+        contract.program_outcome_tags[2],
+        contract.program_outcome_tags[3]
     )
     .map_err(|error| error.to_string())?;
     output.push_str("    public enum ReceiptCheck {\n");
@@ -886,10 +893,11 @@ fn render_swift_receipt_contract(contract: &ReceiptContract) -> Result<String, S
     .map_err(|error| error.to_string())?;
     writeln!(
         output,
-        "let programOutcomeV1: UInt32 = 0x{:08x}\nlet programOutcomeV2: UInt32 = 0x{:08x}\nlet programOutcomeV3: UInt32 = 0x{:08x}\n",
+        "let programOutcomeV1: UInt32 = 0x{:08x}\nlet programOutcomeV2: UInt32 = 0x{:08x}\nlet programOutcomeV3: UInt32 = 0x{:08x}\nlet programOutcomeV4: UInt32 = 0x{:08x}\n",
         contract.program_outcome_tags[0],
         contract.program_outcome_tags[1],
-        contract.program_outcome_tags[2]
+        contract.program_outcome_tags[2],
+        contract.program_outcome_tags[3]
     )
     .map_err(|error| error.to_string())?;
     output.push_str("public enum ReceiptCheck: String, Sendable, CaseIterable {\n");
@@ -929,10 +937,11 @@ fn render_dotnet_receipt_contract(contract: &ReceiptContract) -> Result<String, 
     .map_err(|error| error.to_string())?;
     writeln!(
         output,
-        "    public const uint ProgramOutcomeV1 = 0x{:08x};\n    public const uint ProgramOutcomeV2 = 0x{:08x};\n    public const uint ProgramOutcomeV3 = 0x{:08x};",
+        "    public const uint ProgramOutcomeV1 = 0x{:08x};\n    public const uint ProgramOutcomeV2 = 0x{:08x};\n    public const uint ProgramOutcomeV3 = 0x{:08x};\n    public const uint ProgramOutcomeV4 = 0x{:08x};",
         contract.program_outcome_tags[0],
         contract.program_outcome_tags[1],
-        contract.program_outcome_tags[2]
+        contract.program_outcome_tags[2],
+        contract.program_outcome_tags[3]
     )
     .map_err(|error| error.to_string())?;
     output.push_str("    public static readonly ReceiptCheck[] RequiredNonzeroChecks = [\n");

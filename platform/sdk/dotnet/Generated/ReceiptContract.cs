@@ -33,6 +33,7 @@ public static class GeneratedReceiptContract
     public const uint ProgramOutcomeV1 = 0x50524731;
     public const uint ProgramOutcomeV2 = 0x50524732;
     public const uint ProgramOutcomeV3 = 0x50524733;
+    public const uint ProgramOutcomeV4 = 0x50524734;
     public static readonly ReceiptCheck[] RequiredNonzeroChecks = [
         ReceiptCheck.GlobalSequence,
         ReceiptCheck.ModuleId,

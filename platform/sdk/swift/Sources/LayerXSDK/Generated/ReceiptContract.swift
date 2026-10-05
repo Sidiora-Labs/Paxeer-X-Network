@@ -4,6 +4,7 @@ let programsModuleID: UInt16 = 9
 let programOutcomeV1: UInt32 = 0x50524731
 let programOutcomeV2: UInt32 = 0x50524732
 let programOutcomeV3: UInt32 = 0x50524733
+let programOutcomeV4: UInt32 = 0x50524734
 
 public enum ReceiptCheck: String, Sendable, CaseIterable {
     case decode = "decode"

@@ -24,10 +24,14 @@ use layerx_proof::receipt::{
     verify_outcome, AuthorizedBatch, ReceiptCheck as ProofReceiptCheck,
     VerificationFailure as ProofVerificationFailure, VerifiedReceipt,
 };
+use layerx_wire::decode::Decoder;
+use layerx_wire::limits::MAX_MESSAGE_BYTES;
 use layerx_wire::receipt::{decode as decode_receipt, Receipt};
 use zeroize::Zeroize;
 
-use crate::{Client, Deployment, ReceiptFailureCode};
+use crate::{
+    Client, Deployment, ReceiptFailureCode, PROGRAM_OUTCOME_TAGS, REQUIRED_NONZERO_CHECKS,
+};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ReceiptVerificationFailure {
@@ -74,30 +78,135 @@ fn proof_receipt_failure(failure: ProofVerificationFailure) -> ReceiptVerificati
     ReceiptVerificationFailure::at(check)
 }
 
+const RECEIPT_STRUCTURE_TAG: u16 = 0x5201;
+const RECEIPT_MAX_EFFECTS: usize = 512;
+const RECEIPT_MAX_EFFECT_BODY: usize = 256;
+const RECEIPT_SIGNATURE_TAIL_BYTES: usize = 69;
+const PROGRAM_OUTCOME_ENCODED_BYTES: [usize; 4] = [185, 381, 385, 421];
+
+struct ReceiptNonzeroFacts {
+    global_sequence: u64,
+    module_id: u16,
+    module_version: u32,
+    timestamp: u64,
+    activity_id: [u8; 32],
+    resulting_state_root: [u8; 32],
+}
+
+impl ReceiptNonzeroFacts {
+    fn failure(&self) -> Option<ReceiptFailureCode> {
+        REQUIRED_NONZERO_CHECKS
+            .iter()
+            .copied()
+            .find(|check| match check {
+                ReceiptFailureCode::GlobalSequence => self.global_sequence == 0,
+                ReceiptFailureCode::ModuleId => self.module_id == 0,
+                ReceiptFailureCode::ModuleVersion => self.module_version == 0,
+                ReceiptFailureCode::Timestamp => self.timestamp == 0,
+                ReceiptFailureCode::ActivityId => self.activity_id == [0; 32],
+                ReceiptFailureCode::ResultingStateRoot => self.resulting_state_root == [0; 32],
+                _ => false,
+            })
+    }
+}
+
+fn receipt_array(decoder: &mut Decoder<'_>) -> Option<[u8; 32]> {
+    decoder.bytes(32).ok()?.try_into().ok()
+}
+
+fn receipt_prefix(canonical_receipt: &[u8]) -> Option<(ReceiptNonzeroFacts, usize)> {
+    let mut decoder = Decoder::new(canonical_receipt, MAX_MESSAGE_BYTES);
+    decoder
+        .structure_header_version(RECEIPT_STRUCTURE_TAG)
+        .ok()?;
+    decoder.u16().ok()?;
+    let activity_id = receipt_array(&mut decoder)?;
+    let global_sequence = decoder.u64().ok()?;
+    receipt_array(&mut decoder)?;
+    let resulting_state_root = receipt_array(&mut decoder)?;
+    receipt_array(&mut decoder)?;
+    decoder.i32().ok()?;
+    for _ in 0..decoder.sequence_length(RECEIPT_MAX_EFFECTS).ok()? {
+        decoder.fixed(8).ok()?;
+        receipt_array(&mut decoder)?;
+        decoder.bytes(RECEIPT_MAX_EFFECT_BODY).ok()?;
+    }
+    decoder.u128().ok()?;
+    receipt_array(&mut decoder)?;
+    let module_id = decoder.u16().ok()?;
+    let module_version = decoder.u32().ok()?;
+    decoder.u32().ok()?;
+    decoder.u8().ok()?;
+    receipt_array(&mut decoder)?;
+    decoder.u128().ok()?;
+    receipt_array(&mut decoder)?;
+    decoder.fixed(40).ok()?;
+    receipt_array(&mut decoder)?;
+    decoder.fixed(32).ok()?;
+    for _ in 0..3 {
+        receipt_array(&mut decoder)?;
+    }
+    let timestamp = decoder.u64().ok()?;
+    Some((
+        ReceiptNonzeroFacts {
+            global_sequence,
+            module_id,
+            module_version,
+            timestamp,
+            activity_id,
+            resulting_state_root,
+        },
+        decoder.offset(),
+    ))
+}
+
+fn receipt_decode_failure(canonical_receipt: &[u8], failure_offset: usize) -> ReceiptFailureCode {
+    let Some((facts, outcome_offset)) = receipt_prefix(canonical_receipt) else {
+        return ReceiptFailureCode::Decode;
+    };
+    if failure_offset < outcome_offset {
+        return ReceiptFailureCode::Decode;
+    }
+    if let Some(check) = facts.failure() {
+        return check;
+    }
+    if canonical_receipt.len() - outcome_offset <= RECEIPT_SIGNATURE_TAIL_BYTES {
+        return ReceiptFailureCode::Decode;
+    }
+    let tag = canonical_receipt
+        .get(outcome_offset..outcome_offset + 4)
+        .and_then(|bytes| <[u8; 4]>::try_from(bytes).ok())
+        .map(u32::from_be_bytes);
+    let outcome_end = PROGRAM_OUTCOME_TAGS
+        .iter()
+        .position(|candidate| Some(*candidate) == tag)
+        .map(|index| outcome_offset + PROGRAM_OUTCOME_ENCODED_BYTES[index]);
+    match outcome_end {
+        Some(end) if failure_offset > end => ReceiptFailureCode::Decode,
+        _ => ReceiptFailureCode::ProgramOutcome,
+    }
+}
+
 fn decode_receipt_invariants(canonical_receipt: &[u8]) -> Result<(), ReceiptVerificationFailure> {
-    let decoded = decode_receipt(canonical_receipt)
-        .map_err(|_| ReceiptVerificationFailure::at(ReceiptFailureCode::Decode))?;
+    let decoded = decode_receipt(canonical_receipt).map_err(|error| {
+        ReceiptVerificationFailure::at(receipt_decode_failure(canonical_receipt, error.offset))
+    })?;
     let Receipt::Protocol(protocol) = decoded else {
         return Err(ReceiptVerificationFailure::at(
             ReceiptFailureCode::ReceiptShape,
         ));
     };
-    let check = if protocol.global_sequence() == 0 {
-        Some(ReceiptFailureCode::GlobalSequence)
-    } else if protocol.module_id() == 0 {
-        Some(ReceiptFailureCode::ModuleId)
-    } else if protocol.module_version() == 0 {
-        Some(ReceiptFailureCode::ModuleVersion)
-    } else if protocol.timestamp() == 0 {
-        Some(ReceiptFailureCode::Timestamp)
-    } else if protocol.activity_id() == [0; 32] {
-        Some(ReceiptFailureCode::ActivityId)
-    } else if protocol.resulting_state_root() == [0; 32] {
-        Some(ReceiptFailureCode::ResultingStateRoot)
-    } else {
-        None
+    let facts = ReceiptNonzeroFacts {
+        global_sequence: protocol.global_sequence(),
+        module_id: protocol.module_id(),
+        module_version: protocol.module_version(),
+        timestamp: protocol.timestamp(),
+        activity_id: protocol.activity_id(),
+        resulting_state_root: protocol.resulting_state_root(),
     };
-    check.map_or(Ok(()), |check| Err(ReceiptVerificationFailure::at(check)))
+    facts
+        .failure()
+        .map_or(Ok(()), |check| Err(ReceiptVerificationFailure::at(check)))
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

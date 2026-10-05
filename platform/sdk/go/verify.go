@@ -386,7 +386,7 @@ func decodeProgramReceiptOutcomeFrom(decoder *wireDecoder, protocolVersion uint1
 		outcome.EncodingVersion = 2
 	case ProgramOutcomeTagV3:
 		outcome.EncodingVersion = 3
-	case 0x50524734:
+	case ProgramOutcomeTagV4:
 		outcome.EncodingVersion = 4
 	default:
 		return ProgramReceiptOutcome{}, false

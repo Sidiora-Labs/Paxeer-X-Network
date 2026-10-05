@@ -318,7 +318,15 @@ final class ReceiptFixtureTests: XCTestCase {
     }
 
     func testRefusalVectorsExposeSharedTaxonomy() async throws {
-        let raw = try Data(contentsOf: fixtureURL("receipt-refusals-v2.json"))
+        try await assertRefusalTaxonomy("receipt-refusals-v2.json")
+    }
+
+    func testProgramsRefusalVectorsExposeSharedTaxonomy() async throws {
+        try await assertRefusalTaxonomy("receipt-programs-refusals-v2.json")
+    }
+
+    private func assertRefusalTaxonomy(_ fixtureName: String) async throws {
+        let raw = try Data(contentsOf: fixtureURL(fixtureName))
         let json = try XCTUnwrap(
             try JSONSerialization.jsonObject(with: raw) as? [String: Any])
         let authority = try XCTUnwrap(json["authorized_batch"] as? [String: Any])

@@ -22,7 +22,7 @@ export const DEFAULT_PROTOCOL_VERSION = 2;
 export const STATE_COMMITMENT_PROTOCOL_VERSION = 3;
 const PROGRAMS_STATE_OPERATION = 0;
 const PROGRAMS_CALL_OPERATION = 3;
-const [PROGRAM_OUTCOME_V1, PROGRAM_OUTCOME_V2, PROGRAM_OUTCOME_V3] = PROGRAM_OUTCOME_TAGS;
+const [PROGRAM_OUTCOME_V1, PROGRAM_OUTCOME_V2, PROGRAM_OUTCOME_V3, PROGRAM_OUTCOME_V4] = PROGRAM_OUTCOME_TAGS;
 
 export type SelectableProtocolVersion = typeof DEFAULT_PROTOCOL_VERSION | typeof STATE_COMMITMENT_PROTOCOL_VERSION;
 
@@ -737,7 +737,7 @@ function allZero(value: Uint8Array): boolean {
 
 function decodeProgramReceiptOutcomeFrom(decoder: Decoder, protocolVersion: number): ProgramReceiptOutcome {
   const tag = decoder.u32();
-  const encodingVersion = tag === PROGRAM_OUTCOME_V1 ? 1 : tag === PROGRAM_OUTCOME_V2 ? 2 : tag === PROGRAM_OUTCOME_V3 ? 3 : tag === 0x50524734 ? 4 : 0;
+  const encodingVersion = tag === PROGRAM_OUTCOME_V1 ? 1 : tag === PROGRAM_OUTCOME_V2 ? 2 : tag === PROGRAM_OUTCOME_V3 ? 3 : tag === PROGRAM_OUTCOME_V4 ? 4 : 0;
   if (encodingVersion === 0) {
     return receiptFailure(ReceiptFailureCode.ProgramOutcome);
   }

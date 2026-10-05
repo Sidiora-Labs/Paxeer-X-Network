@@ -8,6 +8,7 @@ const (
 	ProgramOutcomeTagV1 uint32 = 0x50524731
 	ProgramOutcomeTagV2 uint32 = 0x50524732
 	ProgramOutcomeTagV3 uint32 = 0x50524733
+	ProgramOutcomeTagV4 uint32 = 0x50524734
 )
 
 type ReceiptCheck string

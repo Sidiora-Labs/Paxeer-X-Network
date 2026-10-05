@@ -3,7 +3,7 @@
 from enum import Enum
 
 PROGRAMS_MODULE_ID: int
-PROGRAM_OUTCOME_TAGS: tuple[int, int, int]
+PROGRAM_OUTCOME_TAGS: tuple[int, int, int, int]
 
 class ReceiptFailureCode(str, Enum):
     DECODE: str

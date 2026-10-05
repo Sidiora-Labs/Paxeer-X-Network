@@ -47,6 +47,7 @@ public final class LocalVerifier {
     private static final long PROGRAM_OUTCOME_V1 = GeneratedReceiptContract.PROGRAM_OUTCOME_V1;
     private static final long PROGRAM_OUTCOME_V2 = GeneratedReceiptContract.PROGRAM_OUTCOME_V2;
     private static final long PROGRAM_OUTCOME_V3 = GeneratedReceiptContract.PROGRAM_OUTCOME_V3;
+    private static final long PROGRAM_OUTCOME_V4 = GeneratedReceiptContract.PROGRAM_OUTCOME_V4;
     private static final BigInteger MAX_U128 = BigInteger.ONE.shiftLeft(128).subtract(BigInteger.ONE);
 
     public record MerkleProof(long leafIndex, long leafCount, List<byte[]> siblings) {
@@ -476,7 +477,7 @@ public final class LocalVerifier {
     private static ProgramReceiptOutcome decodeProgramReceiptOutcomeFrom(Decoder d, int protocolVersion) {
         long tag = d.u32();
         int encodingVersion = tag == PROGRAM_OUTCOME_V1 ? 1
-            : tag == PROGRAM_OUTCOME_V2 ? 2 : tag == PROGRAM_OUTCOME_V3 ? 3 : tag == 0x50524734L ? 4 : 0;
+            : tag == PROGRAM_OUTCOME_V2 ? 2 : tag == PROGRAM_OUTCOME_V3 ? 3 : tag == PROGRAM_OUTCOME_V4 ? 4 : 0;
         if (encodingVersion == 0) fail();
         int terminalKind = d.u8(); int resultCode = d.i32(); int runtimeVersion = d.u16();
         int abiVersion = d.u16(); long feeScheduleVersion = d.u32();

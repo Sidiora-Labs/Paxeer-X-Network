@@ -215,6 +215,7 @@ public static class LocalVerifier
     private const uint ProgramOutcomeV1 = GeneratedReceiptContract.ProgramOutcomeV1;
     private const uint ProgramOutcomeV2 = GeneratedReceiptContract.ProgramOutcomeV2;
     private const uint ProgramOutcomeV3 = GeneratedReceiptContract.ProgramOutcomeV3;
+    private const uint ProgramOutcomeV4 = GeneratedReceiptContract.ProgramOutcomeV4;
 
     public static void VerifyMerkleInclusion(ReadOnlySpan<byte> canonicalLeaf, MerkleProof proof, ReadOnlySpan<byte> expectedRoot)
     {
@@ -488,7 +489,7 @@ public static class LocalVerifier
             ProgramOutcomeV1 => (byte)1,
             ProgramOutcomeV2 => (byte)2,
             ProgramOutcomeV3 => (byte)3,
-            0x50524734 => (byte)4,
+            ProgramOutcomeV4 => (byte)4,
             _ => throw VerificationFailure(),
         };
         var terminalKind = decoder.U8();
