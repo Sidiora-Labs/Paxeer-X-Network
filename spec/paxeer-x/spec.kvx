@@ -29618,7 +29618,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.104.29.2]
 title = "Grant and enforce shared-namespace access through explicit capabilities"
-status = "pending"
+status = "in_progress"
 mode = "QUALIFY"
 wave = 6
 requires = ["0.2", "104.29.1"]
@@ -29649,7 +29649,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.104.29.3]
 title = "Implement ordered iteration with a resumable cursor"
-status = "pending"
+status = "in_progress"
 mode = "QUALIFY"
 wave = 6
 requires = ["0.2", "104.29.1"]
@@ -29711,7 +29711,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.104.29.5]
 title = "Charge storage occupancy over time as its own resource class"
-status = "pending"
+status = "in_progress"
 mode = "QUALIFY"
 wave = 6
 requires = ["0.2", "104.29.1"]
@@ -29742,7 +29742,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.104.32.5]
 title = "Declare access sets ahead of execution"
-status = "pending"
+status = "in_progress"
 mode = "QUALIFY"
 wave = 6
 requires = ["0.2", "104.29.1"]
