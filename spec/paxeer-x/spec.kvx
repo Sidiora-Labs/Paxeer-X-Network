@@ -30544,7 +30544,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.104.34.4]
 title = "Settle usage incrementally as work is performed"
-status = "pending"
+status = "in_progress"
 mode = "QUALIFY"
 wave = 9
 requires = ["0.2", "104.34.2", "104.34.3"]
