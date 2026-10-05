@@ -1,14 +1,15 @@
-# Code generation
+# Protobuf API definitions
 
-Protobuf code for the API and chain modules is generated with `buf`, configured by
-[`buf.yaml`](../buf.yaml) and [`buf.gen.yaml`](../buf.gen.yaml) at the repository root.
+This directory holds the protobuf definitions for the Go modules of the Paxeer X chain (`paxd`): `epoch`, `eth`, `evm`, `launchpad`, `layerxanchor`, `layerxbridge`, `layerxcustody`, `layerxexchange`, `layerxgov`, `mint`, `oracle`, `pax`, `tokenfactory` and `xweb`. Each file's `go_package` points at the `types` package of the matching module under [`modules/`](../modules).
 
-To regenerate the code, run the following command from the repository root:
+The root [`buf.yaml`](../buf.yaml) declares this directory as one buf module next to `sdk/proto`, `interchain/proto`, `consensus/proto`, `consensus/internal` and `wasm/proto`, and the root [`buf.gen.yaml`](../buf.gen.yaml) lists it as a generation input.
+
+## Regenerate the Go code
+
+From the repository root:
 
 ```bash
 ./scripts/protoc.sh
 ```
 
-The script builds the pinned `protoc-gen-gocosmos` plugin, runs `buf generate` (via
-`go run github.com/bufbuild/buf/cmd/buf`) against the root and `consensus/internal`
-templates, and copies the generated Go files into their module directories.
+[`scripts/protoc.sh`](../scripts/protoc.sh) builds the pinned `protoc-gen-gocosmos` plugin into `build/proto/gocosmos`, runs `buf generate` (through `go run github.com/bufbuild/buf/cmd/buf`) with the root template and the `consensus/internal/buf.gen.yaml` and `consensus/internal/wireguard.buf.gen.yaml` templates, then copies the generated Go files from `build/proto/` into their module directories. The same script is the first `go:generate` directive in [`gen.go`](../gen.go).

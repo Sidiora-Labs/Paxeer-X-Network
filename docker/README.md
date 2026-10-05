@@ -1,24 +1,16 @@
+# Docker
+
+This directory holds the Docker build contexts and compose files of the repository. Every subdirectory with a `Dockerfile` is the build context of one image: `localnode/` and `rpcnode/` for the local cluster below, `hpx-registry/` for the node registry described in [`hpx/README.md`](../hpx/README.md), and the other directories for the remaining node and service images (kernel, explorer, platform, wallet, interop, CI runner and others). `monitornode/` and `docker_compose_monitoring/` hold the Prometheus and Grafana setup. Images are built from the repository root.
+
+The rest of this page covers the local `paxd` cluster defined by [`docker-compose.yml`](docker-compose.yml).
+
 ## Prerequisite
 
-### Install Docker and Docker Compose
-MacOS:
-```sh
-# The easiest and recommended way to get Docker and
-# Docker Compose is to install Docker Desktop here:
-https://docs.docker.com/desktop/install/mac-install/
-```
-
-Ubuntu:
-```sh
-# Follow the below link to install docker on ubuntu
-https://docs.docker.com/engine/install/ubuntu/#install-using-the-repository
-# Follow the below link to install standalone docker compose
-https://docs.docker.com/compose/install/other/
-```
+Install Docker with the Docker Compose plugin (`docker compose`). On macOS, Docker Desktop provides both.
 
 ## Local Cluster
 
-Detailed instruction: see the [`Makefile`](../Makefile) in the repository root
+The make targets below are defined in [`chain.mk`](../chain.mk). The root [`Makefile`](../Makefile) forwards them, so run them from the repository root.
 
 **To start a single local node (Not Recommended)**
 
@@ -28,7 +20,7 @@ make build-docker-node && make run-local-node
 
 **To start 4 node cluster**
 
-This will start a 4 node pax chain cluster.
+This starts a 4 node `paxd` cluster (chain ID `pax`).
 ```sh
 # If this is the first time or you want to rebuild the binary:
 make docker-cluster-start
@@ -87,8 +79,8 @@ Requirement: Follow the above steps to start a 4 node docker cluster before star
 ```sh
 # Be sure to start up a 4-node cluster before you start a state sync node
 make docker-cluster-start
-# Wait for at least a few minutes till the latest block height exceed 500 (this can be changed via app.toml)
-paxd status |jq
+# Wait until the cluster has passed block 100, the first state sync snapshot
+# (snapshot-interval in docker/localnode/config/app.toml)
 # Start up a state sync node
 make run-rpc-node
 ```

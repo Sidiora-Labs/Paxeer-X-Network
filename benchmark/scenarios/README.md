@@ -1,11 +1,11 @@
 # Benchmark Scenarios
 
-This folder contains benchmark scenario configurations for `benchmark/benchmark.sh`.
+This folder contains the scenario configurations for [`benchmark/benchmark.sh`](../benchmark.sh), which builds and starts a local `paxd` that generates its own load. The script passes the file named by `BENCHMARK_CONFIG` to `paxd`, and [`node/benchmark`](../../node/benchmark/config.go) reads it. `paxd` refuses to run the benchmark generator on a live EVM chain ID.
 
 ## Usage
 
 ```bash
-# Use default scenario (EVMTransfer)
+# Use the default scenario (evm.json, EVMTransfer)
 ./benchmark/benchmark.sh
 
 # Use ERC20 scenario
@@ -17,10 +17,13 @@ BENCHMARK_CONFIG=benchmark/scenarios/mixed.json ./benchmark/benchmark.sh
 
 ## Available Scenarios
 
-### `default.json`
+### `evm.json` (used when `BENCHMARK_CONFIG` is unset)
 Simple EVM native token transfers. No contract deployment required.
 - **Scenarios**: EVMTransfer (weight: 1)
 - **Accounts**: 5000
+
+### `default.json`
+Same content as `evm.json`.
 
 ### `erc20.json`
 ERC20 token transfers. Requires contract deployment during setup phase.
@@ -34,7 +37,7 @@ Combination of native transfers and ERC20 transfers.
 
 ## Configuration Format
 
-Configurations follow the pax-load `LoadConfig` format:
+Configurations follow the `LoadConfig` format of the `github.com/paxeer-network/pax-load` module. The chain IDs are always overridden with the running chain's values, and contract deployment is handled in-process:
 
 ```json
 {
@@ -65,7 +68,7 @@ Configurations follow the pax-load `LoadConfig` format:
 
 ## Two-Phase Execution
 
-Scenarios that require deployment go through a **setup phase** before load generation:
+The generator first waits for 3 warmup blocks. Scenarios that require deployment then go through a **setup phase** before load generation:
 
 1. **Setup Phase**: Deployment transactions are created and processed. After each block,
    receipts are checked for deployed contract addresses.
@@ -76,9 +79,10 @@ Scenarios that require deployment go through a **setup phase** before load gener
 You'll see log messages indicating phase transitions:
 ```
 benchmark generator config txsPerBatch=1000
-Scenario doesn't need deployment, attaching with zero address scenario=evmtransfer
-Created deployment transaction scenario=erc20 txHash=0x...
-Contract deployed scenario=erc20 address=0x...
-All scenarios deployed, transitioning to load phase
-Load generator initialized scenarios=2
+benchmark: Warmup complete, transitioning to setup phase
+benchmark: Scenario doesn't need deployment, attaching with zero address scenario=...
+benchmark: Created deployment transaction (will only deploy once) scenario=...
+benchmark: Contract deployed successfully scenario=... address=0x...
+benchmark: All scenarios deployed, transitioning to load phase
+benchmark: Load generator initialized and ready scenarios=2
 ```

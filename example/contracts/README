@@ -1,18 +1,17 @@
-# Install solc (on Mac)
-brew update
-brew tap ethereum/ethereum
-brew install solidity
+Example Solidity contracts with their compiled artifacts and Go bindings, used by
+Go tests of the Paxeer X chain (for example modules/evm, rpc and engine tests).
 
-# Install abigen
-go get -u github.com/ethereum/go-ethereum
-cd $GOPATH/src/github.com/ethereum/go-ethereum/
-make
-make devtools
+Directories: echo, erc1155, erc20, erc2981, erc721, sendall, simplestorage.
+Each holds the .sol source, the .abi and .bin produced by solc, and, where the
+tests use one, a Go binding produced by abigen.
 
-# Compile sol
-solc --bin -o example/contracts/simplestorage example/contracts/simplestorage/SimpleStorage.sol
-solc @openzeppelin=contracts/lib/openzeppelin-contracts --bin -o modules/evm/artifacts/cw721 contracts/src/CW721ERC721Pointer.sol
+Tools: solc (Solidity compiler) and abigen (the go-ethereum binding generator).
 
-# Generate ABI in Go
-solc --abi -o example/contracts/simplestorage example/contracts/simplestorage/SimpleStorage.sol
+Regenerate an example from the repository root (simplestorage as the example):
+
+solc --overwrite --bin -o example/contracts/simplestorage example/contracts/simplestorage/SimpleStorage.sol
+solc --overwrite --abi -o example/contracts/simplestorage example/contracts/simplestorage/SimpleStorage.sol
 abigen --abi=example/contracts/simplestorage/SimpleStorage.abi --pkg=simplestorage --out=example/contracts/simplestorage/SimpleStorage.go
+
+The pointer contract artifacts under modules/evm/artifacts are regenerated from
+contracts/src; see modules/evm/artifacts/README.

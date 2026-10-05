@@ -1,5 +1,7 @@
 ## RPC Test Overview
-An RPC test under `rpc/tests` involves generating the chain state as if the chain started from a specified genesis state and processed a number of specified blocks. This is encapsulated in one `SetupTestServer` call. Specifically, the first argument to `SetupTestServer` is a `[][][]byte` which represents a list of blocks (note that `[]byte` represents a transaction and `[][]byte` represents a block), and the second argument is a series of `func(sdk.Context, *app.App)` which represents the genesis state initialiers and allows test writers to set genesis state directly through keeper functions without having to write it as a json file. Once a test server is set up, test writers can call `Run` with a function parameter `func(port int)`, within which requests can be made via calls like `sendRequestWithNamespace(<namespace e.g. eth>, port, <endpoint e.g. getTransactionByHash>, parameters...)`. 
+An RPC test under `rpc/tests` involves generating the chain state as if the chain started from a specified genesis state and processed a number of specified blocks. This is encapsulated in one `SetupTestServer` call (in `utils.go`). After the `*testing.T`, its second argument is a `[][][]byte` which represents a list of blocks (note that `[]byte` represents a transaction and `[][]byte` represents a block), and the remaining arguments are a series of `func(sdk.Context, *app.App)` which represent the genesis state initializers and allows test writers to set genesis state directly through keeper functions without having to write it as a json file. Once a test server is set up, test writers can call `Run` with a function parameter `func(port int)`, within which requests can be made via calls like `sendRequestWithNamespace(<namespace e.g. eth>, port, <endpoint e.g. getTransactionByHash>, parameters...)`. 
+
+Run the suite from the repository root with `go test ./rpc/tests/`. The tests read `ERC20.bin`, `mock_data/` and other files by paths relative to this directory, which `go test` uses as the working directory.
 
 ### Transaction Generation
 To generate a transaction to feed into `SetupTestServer`, it follows a three-step process:
@@ -13,11 +15,11 @@ The "genesis state" of the chain backing a test server can be initialized via a 
 - `mnemonicInitializer` sets address association and initial funds for an account specified by the mnemonic.
 - `erc20Initializer` creates an ERC20 contract with `ERC20.bin`
     - the ERC20 created this way has a deterministic address stored in `erc20Addr`
-- `cw20Initializer` creates a CW20 contract with `cw20_base.wasm`
+- `cw20Initializer` creates a CW20 contract with `contracts/wasm/cw20_base.wasm`
     - the CW20 created this way has a deterministic address `pax18cszlvm6pze0x9sz32qnjq4vtd45xehqs8dq7cwy8yhq35wfnn3qcm2ty5`
 
 ### Regression Tests
-Tests under `regression_test.go` are a special variant of RPC tests. It's used to reproduce states on pacific-1 and check correctness of `debug_traceTransaction`. Specifically, if one wants to write a regression test for a transaction of hash 0xABCDEF on pacific-1, they would need to first call `debug_traceStateAccess` with params being `["0xABCDEF"]` against a live pacific RPC node, and store the entirety of the json response under `rpc/tests/mock_data/transactions/0xABCDEF.json`. If the transaction accesses any WASM code, it needs to be retrieved via `paxd q wasm code [code_id] rpc/tests/mock_data/[code_id].code --node <live pacific node>` as well. Once the state files are in place, the actual regression test is a simple one-liner like:
+Tests under `regression_test.go` are a special variant of RPC tests. They replay recorded transaction state through `SetupMockPacificTestServer`, which initializes the app with chain ID `pacific-1`, and check the result of `debug_traceTransaction` (with the `callTracer`). To add a regression test for a transaction of hash 0xABCDEF, call `debug_traceStateAccess` with params `["0xABCDEF"]` against an RPC node that holds that transaction, and store the entire JSON response under `rpc/tests/mock_data/transactions/0xABCDEF.json`. If the transaction accesses any WASM code, store that code as `rpc/tests/mock_data/[code_id].code` as well (for example with `paxd q wasm code [code_id] rpc/tests/mock_data/[code_id].code --node <rpc node>`). Once the state files are in place, the actual regression test is a simple one-liner like:
 ```golang
 testTx(t,
 	"0xABCDEF",

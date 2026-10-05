@@ -1,9 +1,10 @@
-# HyperPax Node Distribution and Peer Registry (`hpx`)
+# Node distribution and peer registry (`hpx`)
 
 HPX is the public installer, node manager, immutable artifact publisher and peer
-registry for HyperPax (`hyperpax_125-1`). Nodes run a native `paxd` binary under
-systemd. Generated executables, native libraries, live chain configuration,
-registry data and TLS material are published outside Git.
+registry for Paxeer X chain nodes (consensus chain ID `hyperpax_125-1`, EVM chain
+ID 125). Nodes run a native `paxd` binary under systemd. Generated executables,
+native libraries, live chain configuration, registry data and TLS material are
+published outside Git.
 
 Public origin: `https://node.hyperpaxeer.com`
 
@@ -14,19 +15,26 @@ curl -sSL https://node.hyperpaxeer.com/get-hpx.sh | sudo bash
 ```
 
 The installer verifies the HPX CLI against `checksums.txt`. The setup flow then
-verifies `paxd`, all three architecture-specific libwasmvm runtimes, genesis and
-the selected fullnode or validator configuration before installing them.
+verifies `paxd`, the three libwasmvm runtimes for the host architecture, genesis
+and the selected fullnode or validator configuration before installing them.
+Run `hpx` with no arguments for an interactive menu, or use the subcommands:
 
 ```bash
 HPX_TYPE=fullnode hpx setup
 hpx status
 hpx info
 hpx logs
+hpx start
+hpx stop
+hpx restart
 hpx update
 hpx peers show
 hpx peers refresh
 hpx register
 hpx statesync
+hpx validator keygen
+hpx validator stake
+hpx validator status
 hpx remove
 ```
 
@@ -84,7 +92,7 @@ Changes under `hpx/registry` trigger the repository workflow
 GitHub release assets and publishes the same source as a multi-architecture GHCR
 image. Generated registry executables are never committed.
 
-The Fly app runs the image of `docker/hpx-registry`: nginx on `[::]:8080` with
+The Fly app runs the image of `docker/hpx-registry`: nginx with
 `hpx/hosting/nginx-fly.conf`, which serves the landing page, overwrites
 forwarded-address headers from `Fly-Client-IP` and rate-limits registration,
 in front of the registry on loopback under its own user. Build the image from
@@ -97,10 +105,9 @@ flyctl deploy -c hpx/hosting/fly.toml --app paxeer-hpx-registry \
 
 The registry persists its state at `/srv/hpx/data/registry.json` on the
 volume, and Fly checks `/healthz`. `HPX_REGISTER_TOKEN` is a Fly secret of the
-app; when it is set, registration requires `X-HPX-Token`. The edge proxies
-`node.hyperpaxeer.com` to `https://paxeer-hpx-registry.fly.dev` through
-`tools/bringup/edge.sh`, and `tools/bringup/check-live.sh hpx` checks that the
-name is served by the app.
+app; when it is set, registration requires `X-HPX-Token`. The public name is
+proxied to the Fly app through `tools/bringup/edge.sh`, and
+`tools/bringup/check-live.sh hpx` checks that the name is served by the app.
 
 ## Public surface
 

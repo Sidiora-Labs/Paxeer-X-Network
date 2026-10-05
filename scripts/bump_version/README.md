@@ -1,6 +1,6 @@
 # bump_version
 
-Precompile version management tool, triggered via `go generate`.
+Precompile version management tool for the Paxeer X chain. It runs as the second `go:generate` directive of [`gen.go`](../../gen.go) at the repository root (after `./scripts/protoc.sh`), and can be run on its own from the repository root with `go run ./scripts/bump_version`.
 
 ## What it does
 
@@ -9,8 +9,6 @@ When a new upgrade version is added to `node/tags`, this tool:
 1. Detects which precompile modules changed (via go-git)
 2. Archives their current code into `precompiles/<module>/legacy/<folder>/`
 3. Regenerates all `precompiles/<module>/setup.go` files from the `versions` files
-
-It replaces the old `scripts/bump-version.sh` shell script.
 
 ## Developer workflow
 
@@ -25,7 +23,7 @@ git commit -m "bank: add new functionality"
 echo "v7.0" >> node/tags
 
 # 3. Regenerate
-go generate ./...
+go run ./scripts/bump_version
 
 # 4. Commit the generated archives + setup.go changes
 git add node/tags precompiles/
@@ -59,7 +57,7 @@ The tool compares **committed tree hashes**, not the working tree:
 2. For each module directory, compares its tree hash between that commit and HEAD
 3. Only modules whose tree hash changed are archived
 
-> **Important:** Commit your precompile changes before running `go generate`. Uncommitted changes are not detected by the diff.
+> **Important:** Commit your precompile changes before running the tool. Uncommitted changes are not detected by the diff.
 
 If `common/` changed, all modules are archived (they depend on it).
 
@@ -76,7 +74,7 @@ git add precompiles/bank/bank.go && git commit -m "test"
 
 # Add a new version and generate
 echo "v7.0" >> node/tags
-go generate ./...
+go run ./scripts/bump_version
 
 # Verify: only bank + common got archived
 ls precompiles/bank/legacy/v70/    # exists
@@ -92,7 +90,7 @@ git checkout -- precompiles/bank/bank.go
 
 ## Error handling
 
-Git failures cause the tool to **exit with an error** rather than silently proceeding. This matches the behavior of the old `bump-version.sh` script (`set -e`).
+Git failures cause the tool to **exit with an error** rather than silently proceeding.
 
 | Failure | Behavior |
 |---------|----------|
