@@ -1010,7 +1010,7 @@ pub(crate) fn execute_nested_call_response(
 const fn uses_response_context(revision: AbiRevision) -> bool {
     matches!(
         revision,
-        AbiRevision::V2 | AbiRevision::V3 | AbiRevision::V4
+        AbiRevision::V2 | AbiRevision::V3 | AbiRevision::V4 | AbiRevision::V5
     )
 }
 
@@ -1122,6 +1122,7 @@ fn execute_nested(
             AbiRevision::V2 => crate::abi::manifest::ABI_V2_VERSION,
             AbiRevision::V3 => crate::abi::manifest::ABI_V3_VERSION,
             AbiRevision::V4 => crate::abi::manifest::ABI_V4_VERSION,
+            AbiRevision::V5 => crate::abi::manifest::ABI_V5_VERSION,
         },
         callee,
         authorization,
@@ -2117,11 +2118,12 @@ mod single_step_conformance {
     #[test]
     fn every_frozen_host_import_replays_its_real_bounds_or_authorization_refusal() {
         use crate::abi::{manifest, AbiValueType};
-        let banks: [(u16, &str, &[crate::abi::HostFunction]); 4] = [
+        let banks: [(u16, &str, &[crate::abi::HostFunction]); 5] = [
             (1, manifest::ABI_V1_MODULE, &crate::abi::HOST_FUNCTIONS),
             (2, manifest::ABI_V2_MODULE, &manifest::ABI_V2_HOST_FUNCTIONS),
             (3, manifest::ABI_V3_MODULE, &manifest::ABI_V3_HOST_FUNCTIONS),
             (4, manifest::ABI_V4_MODULE, &manifest::ABI_V4_HOST_FUNCTIONS),
+            (5, manifest::ABI_V5_MODULE, &manifest::ABI_V5_HOST_FUNCTIONS),
         ];
         let mut checked = 0;
         for (version, namespace, functions) in banks {
@@ -2153,6 +2155,6 @@ mod single_step_conformance {
                 checked += 1;
             }
         }
-        assert_eq!(checked, 28);
+        assert_eq!(checked, 29);
     }
 }

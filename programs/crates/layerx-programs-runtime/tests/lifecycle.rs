@@ -4,7 +4,7 @@ use layerx_programs_runtime::test_support::{
 };
 use layerx_programs_runtime::{
     hash_bytes, Deploy, HashAlgorithm, Lifecycle, LifecycleRefusal, Migration, ProgramId, Upgrade,
-    UpgradePolicy, ABI_VERSION,
+    UpgradePolicy, ABI_V5_VERSION, ABI_VERSION,
 };
 
 fn program(byte: u8) -> ProgramId {
@@ -293,14 +293,14 @@ fn unknown_program_and_incompatible_abi_are_typed() {
         program: program(15),
         code_hash: [16; 32],
         wasm: add_module(),
-        abi_version: ABI_VERSION + 1,
+        abi_version: ABI_V5_VERSION + 1,
         upgrade_policy: UpgradePolicy::default(),
     });
     assert_eq!(
         incompatible,
         Err(LifecycleRefusal::AbiVersion(
             layerx_programs_runtime::AbiVersionRefusal::Unsupported {
-                requested: ABI_VERSION + 1,
+                requested: ABI_V5_VERSION + 1,
             },
         ))
     );

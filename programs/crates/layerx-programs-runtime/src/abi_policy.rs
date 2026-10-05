@@ -3,7 +3,7 @@
 pub use layerx_program_sdk::abi_policy::{
     account_profile2_guest_supported, admit_abi_upgrade, admit_abi_version, capability_encoding,
     AbiVersionRefusal, CapabilityEncoding, ABI_V1_VERSION, ABI_V2_VERSION, ABI_V3_VERSION,
-    ABI_V4_VERSION,
+    ABI_V4_VERSION, ABI_V5_VERSION,
 };
 
 use crate::AbiRevision;
@@ -22,6 +22,7 @@ pub const fn abi_revision(requested: u16) -> Result<AbiRevision, AbiVersionRefus
         ABI_V2_VERSION => Ok(AbiRevision::V2),
         ABI_V3_VERSION => Ok(AbiRevision::V3),
         ABI_V4_VERSION => Ok(AbiRevision::V4),
+        ABI_V5_VERSION => Ok(AbiRevision::V5),
         _ => Err(AbiVersionRefusal::Unsupported { requested }),
     }
 }
@@ -34,6 +35,7 @@ pub const fn abi_version(revision: AbiRevision) -> u16 {
         AbiRevision::V2 => ABI_V2_VERSION,
         AbiRevision::V3 => ABI_V3_VERSION,
         AbiRevision::V4 => ABI_V4_VERSION,
+        AbiRevision::V5 => ABI_V5_VERSION,
     }
 }
 
@@ -58,9 +60,10 @@ mod tests {
         assert_eq!(capability_encoding(2), Ok(CapabilityEncoding::V2));
         assert_eq!(capability_encoding(3), Ok(CapabilityEncoding::V2));
         assert_eq!(capability_encoding(4), Ok(CapabilityEncoding::V2));
+        assert_eq!(capability_encoding(5), Ok(CapabilityEncoding::V2));
         assert_eq!(
-            capability_encoding(5),
-            Err(AbiVersionRefusal::Unsupported { requested: 5 })
+            capability_encoding(6),
+            Err(AbiVersionRefusal::Unsupported { requested: 6 })
         );
         for requested in 0..=u16::from(u8::MAX) {
             assert_eq!(
@@ -78,6 +81,7 @@ mod tests {
             AbiRevision::V2,
             AbiRevision::V3,
             AbiRevision::V4,
+            AbiRevision::V5,
         ] {
             let recorded = abi_version(revision);
             assert!(admit_abi_version(recorded).is_ok());

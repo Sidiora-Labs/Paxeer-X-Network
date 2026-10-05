@@ -152,6 +152,15 @@ impl WasmEngine {
         validate::validate_module(self, wasm, AbiRevision::V4)
     }
 
+    /// Validates the version-five ABI for qualification under historical
+    /// metering schedule one. Consensus admission supplies its schedule explicitly.
+    ///
+    /// # Errors
+    /// Returns deterministic validation refusals for violations of the ABI-v5 rules.
+    pub fn validate_v5(&self, wasm: &[u8]) -> Result<ValidatedModule, ValidationRefusal> {
+        validate::validate_module(self, wasm, AbiRevision::V5)
+    }
+
     /// Replays legacy schedule-one validation from the recorded ABI version.
     /// New protocol execution must use [`Self::validate_versioned_metered`].
     ///

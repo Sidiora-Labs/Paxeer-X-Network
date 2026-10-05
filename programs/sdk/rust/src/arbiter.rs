@@ -322,6 +322,137 @@ impl MarketBillingCommitment {
     }
 }
 
+/// Opens one boundary of the committed provider trace.
+pub const MARKET_STEP_OPEN: u8 = 1;
+/// Judges the transition from one committed boundary to the next.
+pub const MARKET_STEP_TRANSITION: u8 = 2;
+/// Judges the last committed boundary as the end of the execution.
+pub const MARKET_STEP_TERMINAL: u8 = 3;
+pub const MARKET_STEP_HOLDS: u8 = 1;
+pub const MARKET_STEP_FAILS: u8 = 2;
+pub const MARKET_STEP_OUTCOME_BYTES: usize = 65;
+pub const MARKET_STEP_HEADER_CAPACITY: usize =
+    1 + 4 + 2 + MARKET_SANDBOX_PROFILE_CAPACITY + MARKET_SANDBOX_BILLING_CAPACITY;
+
+/// The step a market program asks the host to adjudicate: the mode, the trace position and the
+/// market's own authorized profile and billing commitment rows.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct MarketStepRequest<'a> {
+    pub mode: u8,
+    pub position: u32,
+    pub profile: &'a [u8],
+    pub billing: &'a [u8],
+}
+
+impl<'a> MarketStepRequest<'a> {
+    pub fn encode(&self, output: &mut [u8]) -> Result<usize, ProgramError> {
+        if !(MARKET_STEP_OPEN..=MARKET_STEP_TERMINAL).contains(&self.mode)
+            || self.profile.len() > MARKET_SANDBOX_PROFILE_CAPACITY
+            || self.billing.len() > MARKET_SANDBOX_BILLING_CAPACITY
+        {
+            return Err(malformed());
+        }
+        let profile_length = u16::try_from(self.profile.len()).map_err(|_| malformed())?;
+        let mut writer = Writer {
+            bytes: output,
+            offset: 0,
+        };
+        writer.append(&[self.mode])?;
+        writer.append(&self.position.to_be_bytes())?;
+        writer.append(&profile_length.to_be_bytes())?;
+        writer.append(self.profile)?;
+        writer.append(self.billing)?;
+        Ok(writer.offset)
+    }
+
+    pub fn decode(input: &'a [u8]) -> Result<Self, ProgramError> {
+        let mut reader = Reader(input);
+        let mode = reader.array::<1>()?[0];
+        let position = reader.u32()?;
+        let profile_length = usize::from(reader.u16()?);
+        if !(MARKET_STEP_OPEN..=MARKET_STEP_TERMINAL).contains(&mode)
+            || profile_length > MARKET_SANDBOX_PROFILE_CAPACITY
+        {
+            return Err(malformed());
+        }
+        let profile = reader.take(profile_length)?;
+        let billing = reader.0;
+        if billing.len() > MARKET_SANDBOX_BILLING_CAPACITY {
+            return Err(malformed());
+        }
+        Ok(Self {
+            mode,
+            position,
+            profile,
+            billing,
+        })
+    }
+}
+
+/// The host-authenticated result of one market-step adjudication.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct MarketStepOutcome {
+    pub holds: bool,
+    pub leaf_digest: [u8; 32],
+    pub commitment: [u8; 32],
+}
+
+impl MarketStepOutcome {
+    #[must_use]
+    pub fn encode(&self) -> [u8; MARKET_STEP_OUTCOME_BYTES] {
+        let mut output = [0; MARKET_STEP_OUTCOME_BYTES];
+        output[0] = if self.holds {
+            MARKET_STEP_HOLDS
+        } else {
+            MARKET_STEP_FAILS
+        };
+        output[1..33].copy_from_slice(&self.leaf_digest);
+        output[33..].copy_from_slice(&self.commitment);
+        output
+    }
+
+    pub fn decode(input: &[u8]) -> Result<Self, ProgramError> {
+        if input.len() != MARKET_STEP_OUTCOME_BYTES {
+            return Err(malformed());
+        }
+        let mut reader = Reader(&input[1..]);
+        let holds = match input[0] {
+            MARKET_STEP_HOLDS => true,
+            MARKET_STEP_FAILS => false,
+            _ => return Err(malformed()),
+        };
+        let leaf_digest = reader.array()?;
+        if leaf_digest == [0; 32] {
+            return Err(malformed());
+        }
+        Ok(Self {
+            holds,
+            leaf_digest,
+            commitment: reader.array()?,
+        })
+    }
+}
+
+/// Asks the host to adjudicate one step of the committed provider trace for the calling market.
+///
+/// # Errors
+/// Returns the host refusal for a malformed request, an unauthorized caller or sandbox module,
+/// evidence that does not open against the committed trace, or exhausted fuel.
+#[cfg(target_arch = "wasm32")]
+pub fn adjudicate_market_step(
+    request: &MarketStepRequest<'_>,
+    evidence: &[u8],
+) -> Result<MarketStepOutcome, ProgramError> {
+    let mut header = [0; MARKET_STEP_HEADER_CAPACITY];
+    let length = request.encode(&mut header)?;
+    let mut output = [0; MARKET_STEP_OUTCOME_BYTES];
+    let written = crate::host::market_step_adjudicate(&header[..length], evidence, &mut output)?;
+    if usize::try_from(written).map_err(|_| malformed())? != MARKET_STEP_OUTCOME_BYTES {
+        return Err(malformed());
+    }
+    MarketStepOutcome::decode(&output)
+}
+
 fn malformed() -> ProgramError {
     ProgramError::value(Field::CallInput, Reason::Malformed)
 }
@@ -361,5 +492,62 @@ impl<'a> Reader<'a> {
     }
     fn u128(&mut self) -> Result<u128, ProgramError> {
         Ok(u128::from_be_bytes(self.array()?))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn market_step_request_and_outcome_round_trip_and_refuse_malformed_framing() {
+        let profile = [7u8; 40];
+        let billing = [9u8; 20];
+        let request = MarketStepRequest {
+            mode: MARKET_STEP_TRANSITION,
+            position: 513,
+            profile: &profile,
+            billing: &billing,
+        };
+        let mut header = [0; MARKET_STEP_HEADER_CAPACITY];
+        let length = request
+            .encode(&mut header)
+            .unwrap_or_else(|error| panic!("encoded request: {error}"));
+        assert_eq!(length, 7 + profile.len() + billing.len());
+        assert_eq!(
+            MarketStepRequest::decode(&header[..length])
+                .unwrap_or_else(|error| panic!("decoded request: {error}")),
+            request
+        );
+        for mode in [0, MARKET_STEP_TERMINAL + 1] {
+            let mut forged = header;
+            forged[0] = mode;
+            assert!(MarketStepRequest::decode(&forged[..length]).is_err());
+            assert!(MarketStepRequest { mode, ..request }
+                .encode(&mut [0; MARKET_STEP_HEADER_CAPACITY])
+                .is_err());
+        }
+        assert!(MarketStepRequest::decode(&header[..6]).is_err());
+        let mut long = header;
+        long[5..7].copy_from_slice(&u16::MAX.to_be_bytes());
+        assert!(MarketStepRequest::decode(&long[..length]).is_err());
+        let outcome = MarketStepOutcome {
+            holds: false,
+            leaf_digest: [3; 32],
+            commitment: [4; 32],
+        };
+        let encoded = outcome.encode();
+        assert_eq!(encoded[0], MARKET_STEP_FAILS);
+        assert_eq!(
+            MarketStepOutcome::decode(&encoded).unwrap_or_else(|error| panic!("outcome: {error}")),
+            outcome
+        );
+        let mut forged = encoded;
+        forged[0] = 0;
+        assert!(MarketStepOutcome::decode(&forged).is_err());
+        let mut empty = encoded;
+        empty[1..33].fill(0);
+        assert!(MarketStepOutcome::decode(&empty).is_err());
+        assert!(MarketStepOutcome::decode(&encoded[..64]).is_err());
     }
 }

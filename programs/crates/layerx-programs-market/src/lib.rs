@@ -7,6 +7,7 @@ use layerx_program_sdk::{AccountId, Amount, AssetId, Field, ProgramError, Reason
 
 pub mod arbitration;
 pub mod attest;
+pub mod dispute;
 pub mod stake;
 pub use stake::{slash, Stake};
 
@@ -435,7 +436,7 @@ fn decode_operation(cursor: &mut Cursor<'_>) -> Result<u8, ProgramError> {
         return Err(malformed());
     }
     match cursor.byte()? {
-        operation @ (1 | 2 | 4..=14) => Ok(operation),
+        operation @ (1 | 2 | 4..=17) => Ok(operation),
         _ => Err(malformed()),
     }
 }
@@ -460,6 +461,9 @@ impl<'a> Cursor<'a> {
     }
     fn byte(&mut self) -> Result<u8, ProgramError> {
         Ok(self.take(1)?[0])
+    }
+    fn u32(&mut self) -> Result<u32, ProgramError> {
+        Ok(u32::from_be_bytes(self.array()?))
     }
     fn u64(&mut self) -> Result<u64, ProgramError> {
         Ok(u64::from_be_bytes(self.array()?))
@@ -699,6 +703,141 @@ fn publish_settlement(record: SettlementRecord) -> Result<(), ProgramError> {
 }
 
 #[cfg(target_arch = "wasm32")]
+fn sandbox_commitments(
+    lease_id: [u8; ID_BYTES],
+) -> Result<
+    (
+        layerx_program_sdk::arbiter::MarketSandboxProfile,
+        layerx_program_sdk::arbiter::MarketBillingCommitment,
+    ),
+    ProgramError,
+> {
+    use layerx_program_sdk::arbiter::{
+        MarketBillingCommitment, MarketSandboxProfile, MARKET_SANDBOX_BILLING_CAPACITY,
+        MARKET_SANDBOX_PROFILE_CAPACITY,
+    };
+    let mut profile_bytes = [0; MARKET_SANDBOX_PROFILE_CAPACITY];
+    let profile = MarketSandboxProfile::decode(read_state(
+        arbitration::PROFILE_PREFIX,
+        lease_id,
+        &mut profile_bytes,
+    )?)?;
+    let mut billing_bytes = [0; MARKET_SANDBOX_BILLING_CAPACITY];
+    let billing = MarketBillingCommitment::decode(read_state(
+        arbitration::BILLING_PREFIX,
+        lease_id,
+        &mut billing_bytes,
+    )?)?;
+    Ok((profile, billing))
+}
+
+/// Forwards one step of the committed trace to the host arbiter with the market's own stored
+/// profile and billing rows, so the verdict is authenticated by the host and never chosen by the
+/// caller.
+#[cfg(target_arch = "wasm32")]
+fn adjudicate(
+    lease_id: [u8; ID_BYTES],
+    mode: u8,
+    position: u32,
+    evidence: &[u8],
+) -> Result<layerx_program_sdk::arbiter::MarketStepOutcome, ProgramError> {
+    use layerx_program_sdk::arbiter::{
+        MarketStepRequest, MARKET_SANDBOX_BILLING_CAPACITY, MARKET_SANDBOX_PROFILE_CAPACITY,
+    };
+    let mut profile_bytes = [0; MARKET_SANDBOX_PROFILE_CAPACITY];
+    let profile = read_state(arbitration::PROFILE_PREFIX, lease_id, &mut profile_bytes)?;
+    let mut billing_bytes = [0; MARKET_SANDBOX_BILLING_CAPACITY];
+    let billing = read_state(arbitration::BILLING_PREFIX, lease_id, &mut billing_bytes)?;
+    layerx_program_sdk::arbiter::adjudicate_market_step(
+        &MarketStepRequest {
+            mode,
+            position,
+            profile,
+            billing,
+        },
+        evidence,
+    )
+}
+
+#[cfg(target_arch = "wasm32")]
+fn absorb(
+    mut current: dispute::Dispute,
+    record: &dispute::Move,
+) -> Result<dispute::Dispute, ProgramError> {
+    current.transcript = layerx_program_sdk::crypto::hash(
+        layerx_program_sdk::crypto::HashAlgorithm::Sha256,
+        layerx_program_sdk::crypto::HashInput::new(&current.transcript_preimage(record))?,
+    )?;
+    Ok(current)
+}
+
+/// Persists one dispute move and, once the bisection has settled, settles the lease, the claim,
+/// the challenge stake and the provider stake atomically in the same call.
+#[cfg(target_arch = "wasm32")]
+fn advance(
+    lease: &ComputeLease<'_>,
+    previous: dispute::Dispute,
+    record: &dispute::Move,
+    height: u64,
+) -> Result<CallResult, ProgramError> {
+    let current = absorb(previous, record)?;
+    let mut dispute_bytes = [0; dispute::DISPUTE_CAPACITY];
+    if let Some(verdict) = current.verdict() {
+        let mut offer_bytes = [0; OFFER_CAPACITY];
+        let offer = decode_offer(read_state(OFFER_PREFIX, lease.offer_id, &mut offer_bytes)?)?;
+        let mut claim_bytes = [0; settle::CLAIM_CAPACITY];
+        let claim = settle::decode_claim(read_state(CLAIM_PREFIX, lease.id, &mut claim_bytes)?)?;
+        let mut challenge_bytes = [0; settle::CHALLENGE_CAPACITY];
+        let challenge = settle::decode_challenge(read_state(
+            CHALLENGE_PREFIX,
+            lease.id,
+            &mut challenge_bytes,
+        )?)?;
+        let mut stake_bytes = [0; stake::STAKE_CAPACITY];
+        let posted =
+            stake::decode_stake(read_state(stake::STAKE_PREFIX, offer.id, &mut stake_bytes)?)?;
+        let (offer, settled, claim, plan) = settle::resolve(
+            offer,
+            *lease,
+            claim,
+            &challenge,
+            settle::ArbiterResolution {
+                claim_id: claim.id,
+                challenge_id: challenge.id,
+                dispute_commitment: current.transcript,
+                verdict,
+            },
+        )?;
+        let (stake, movements) = stake::slash(posted, &offer, &settled, &claim, &challenge, plan)?;
+        stake::execute(&movements)?;
+        publish_settlement(SettlementRecord::new(
+            &settled,
+            claim.id,
+            plan.provider,
+            plan.tenant,
+            height,
+        )?)?;
+        let mut offer_output = [0; OFFER_CAPACITY];
+        let mut lease_output = [0; LEASE_CAPACITY];
+        let offer_written = encode_offer(offer, &mut offer_output)?;
+        let lease_written = encode_lease(&settled, &mut lease_output)?;
+        let claim_written = settle::encode_claim(&claim, &mut claim_bytes)?;
+        let stake_written = stake::encode_stake(&stake, &mut stake_bytes)?;
+        write_state(OFFER_PREFIX, offer.id, &offer_output[..offer_written])?;
+        write_state(LEASE_PREFIX, settled.id, &lease_output[..lease_written])?;
+        write_state(CLAIM_PREFIX, settled.id, &claim_bytes[..claim_written])?;
+        write_state(stake::STAKE_PREFIX, offer.id, &stake_bytes[..stake_written])?;
+        emit(TOPIC_OFFER, &offer_output[..offer_written])?;
+        emit(TOPIC_LEASE, &lease_output[..lease_written])?;
+        emit(TOPIC_CLAIM, &claim_bytes[..claim_written])?;
+    }
+    let written = dispute::encode_dispute(&current, &mut dispute_bytes)?;
+    write_state(dispute::DISPUTE_PREFIX, lease.id, &dispute_bytes[..written])?;
+    emit(dispute::TOPIC_DISPUTE, &dispute_bytes[..written])?;
+    Ok(CallResult::OK)
+}
+
+#[cfg(target_arch = "wasm32")]
 fn invoke(input: &[u8]) -> Result<CallResult, ProgramError> {
     let mut cursor = Cursor::new(input);
     let operation = decode_operation(&mut cursor)?;
@@ -731,8 +870,12 @@ fn invoke(input: &[u8]) -> Result<CallResult, ProgramError> {
                 offer.asset,
                 offer.stake,
             )?)?;
+            let mut stake_bytes = [0; stake::STAKE_CAPACITY];
+            absent(stake::STAKE_PREFIX, offer.id, &mut stake_bytes)?;
+            let stake_written = stake::encode_stake(&Stake::post(&offer)?, &mut stake_bytes)?;
             let written = encode_offer(offer, &mut scratch)?;
             write_state(OFFER_PREFIX, offer.id, &scratch[..written])?;
+            write_state(stake::STAKE_PREFIX, offer.id, &stake_bytes[..stake_written])?;
             emit(TOPIC_OFFER, &scratch[..written])?;
             Ok(CallResult::OK)
         }
@@ -758,6 +901,10 @@ fn invoke(input: &[u8]) -> Result<CallResult, ProgramError> {
             let mut lease_bytes = [0; LEASE_CAPACITY];
             absent(LEASE_PREFIX, request.id, &mut lease_bytes)?;
             let (offer, lease) = open(offer, request, caller, height)?;
+            let mut stake_bytes = [0; stake::STAKE_CAPACITY];
+            let stake =
+                stake::decode_stake(read_state(stake::STAKE_PREFIX, offer.id, &mut stake_bytes)?)?
+                    .lock(&offer, &lease, height)?;
             transfer::fund_program_account(ProgramDeposit::new(
                 ProgramAccountSeed::new(lease.escrow_seed)?,
                 lease.escrow_account,
@@ -767,8 +914,10 @@ fn invoke(input: &[u8]) -> Result<CallResult, ProgramError> {
             let mut offer_output = [0; OFFER_CAPACITY];
             let offer_written = encode_offer(offer, &mut offer_output)?;
             let lease_written = encode_lease(&lease, &mut lease_bytes)?;
+            let stake_written = stake::encode_stake(&stake, &mut stake_bytes)?;
             write_state(OFFER_PREFIX, offer.id, &offer_output[..offer_written])?;
             write_state(LEASE_PREFIX, lease.id, &lease_bytes[..lease_written])?;
+            write_state(stake::STAKE_PREFIX, offer.id, &stake_bytes[..stake_written])?;
             emit(TOPIC_LEASE, &lease_bytes[..lease_written])?;
             Ok(CallResult::OK)
         }
@@ -966,9 +1115,28 @@ fn invoke(input: &[u8]) -> Result<CallResult, ProgramError> {
                 },
                 height,
             )?;
+            let (profile, billing) = sandbox_commitments(lease.id)?;
+            arbitration::matches_claim(&profile, &billing, &claim)?;
+            let mut dispute_bytes = [0; dispute::DISPUTE_CAPACITY];
+            absent(dispute::DISPUTE_PREFIX, lease.id, &mut dispute_bytes)?;
+            let (opened, record) = dispute::Dispute::open(
+                &claim,
+                &challenge,
+                billing.provider_trace_root,
+                billing.boundary_count,
+                height,
+            )?;
+            let opened = absorb(opened, &record)?;
             settle::fund_challenge(challenge, lease.asset)?;
             let claim_written = settle::encode_claim(&claim, &mut claim_bytes)?;
             let challenge_written = settle::encode_challenge(&challenge, &mut challenge_bytes)?;
+            let dispute_written = dispute::encode_dispute(&opened, &mut dispute_bytes)?;
+            write_state(
+                dispute::DISPUTE_PREFIX,
+                lease.id,
+                &dispute_bytes[..dispute_written],
+            )?;
+            emit(dispute::TOPIC_DISPUTE, &dispute_bytes[..dispute_written])?;
             write_state(CLAIM_PREFIX, lease.id, &claim_bytes[..claim_written])?;
             write_state(
                 CHALLENGE_PREFIX,
@@ -992,7 +1160,13 @@ fn invoke(input: &[u8]) -> Result<CallResult, ProgramError> {
                 settle::decode_claim(read_state(CLAIM_PREFIX, lease.id, &mut claim_bytes)?)?;
             let (offer, lease, claim, plan) =
                 settle::finalize_unchallenged(offer, lease, claim, height)?;
+            let mut stake_bytes = [0; stake::STAKE_CAPACITY];
+            let stake =
+                stake::decode_stake(read_state(stake::STAKE_PREFIX, offer.id, &mut stake_bytes)?)?
+                    .release(&lease, Some(&claim), height)?;
             settle::execute_settlement(&lease, None, plan)?;
+            let stake_written = stake::encode_stake(&stake, &mut stake_bytes)?;
+            write_state(stake::STAKE_PREFIX, offer.id, &stake_bytes[..stake_written])?;
             publish_settlement(SettlementRecord::new(
                 &lease,
                 claim.id,
@@ -1025,7 +1199,16 @@ fn invoke(input: &[u8]) -> Result<CallResult, ProgramError> {
                 let claim = settle::decode_claim(bytes)?;
                 let (offer, lease, claim, plan) =
                     settle::finalize_unchallenged(offer, lease, claim, height)?;
+                let mut stake_bytes = [0; stake::STAKE_CAPACITY];
+                let stake = stake::decode_stake(read_state(
+                    stake::STAKE_PREFIX,
+                    offer.id,
+                    &mut stake_bytes,
+                )?)?
+                .release(&lease, Some(&claim), height)?;
                 settle::execute_settlement(&lease, None, plan)?;
+                let stake_written = stake::encode_stake(&stake, &mut stake_bytes)?;
+                write_state(stake::STAKE_PREFIX, offer.id, &stake_bytes[..stake_written])?;
                 publish_settlement(SettlementRecord::new(
                     &lease,
                     claim.id,
@@ -1046,6 +1229,15 @@ fn invoke(input: &[u8]) -> Result<CallResult, ProgramError> {
                 emit(TOPIC_CLAIM, &claim_bytes[..claim_written])?;
             } else {
                 let (offer, lease) = expire(offer, lease, height)?;
+                let mut stake_bytes = [0; stake::STAKE_CAPACITY];
+                let stake = stake::decode_stake(read_state(
+                    stake::STAKE_PREFIX,
+                    offer.id,
+                    &mut stake_bytes,
+                )?)?
+                .release(&lease, None, height)?;
+                let stake_written = stake::encode_stake(&stake, &mut stake_bytes)?;
+                write_state(stake::STAKE_PREFIX, offer.id, &stake_bytes[..stake_written])?;
                 transfer::pay_from_program_account(ProgramAccountPayment::new(
                     ProgramAccountSeed::new(lease.escrow_seed)?,
                     lease.escrow_account,
@@ -1079,18 +1271,99 @@ fn invoke(input: &[u8]) -> Result<CallResult, ProgramError> {
                 decode_offer(read_state(OFFER_PREFIX, offer_id, &mut bytes)?)?,
                 caller,
             )?;
-            transfer::pay_from_program_account(ProgramAccountPayment::new(
-                ProgramAccountSeed::new(offer.stake_seed)?,
-                offer.stake_account,
-                offer.asset,
-                offer.provider,
-                offer.stake,
-            )?)?;
+            let mut stake_bytes = [0; stake::STAKE_CAPACITY];
+            let (stake, withdrawal) =
+                stake::decode_stake(read_state(stake::STAKE_PREFIX, offer.id, &mut stake_bytes)?)?
+                    .withdraw(&offer, caller)?;
+            stake::execute(&withdrawal)?;
+            let stake_written = stake::encode_stake(&stake, &mut stake_bytes)?;
             let mut output = [0; OFFER_CAPACITY];
             let written = encode_offer(offer, &mut output)?;
             write_state(OFFER_PREFIX, offer.id, &output[..written])?;
+            write_state(stake::STAKE_PREFIX, offer.id, &stake_bytes[..stake_written])?;
             emit(TOPIC_OFFER, &output[..written])?;
             Ok(CallResult::OK)
+        }
+        dispute::REVEAL_BOUNDARY => {
+            let lease_id = cursor.array()?;
+            let position = cursor.u32()?;
+            let evidence = cursor.remainder();
+            let mut lease_bytes = [0; LEASE_CAPACITY];
+            let lease = decode_lease(read_state(LEASE_PREFIX, lease_id, &mut lease_bytes)?)?;
+            if caller != lease.provider {
+                return Err(malformed());
+            }
+            let mut dispute_bytes = [0; dispute::DISPUTE_CAPACITY];
+            let current = dispute::decode_dispute(read_state(
+                dispute::DISPUTE_PREFIX,
+                lease.id,
+                &mut dispute_bytes,
+            )?)?;
+            let (profile, _) = sandbox_commitments(lease.id)?;
+            let opened = adjudicate(
+                lease.id,
+                layerx_program_sdk::arbiter::MARKET_STEP_OPEN,
+                position,
+                evidence,
+            )?;
+            let (next, record) = current.reveal(
+                height,
+                position,
+                &opened,
+                profile.initial_execution_state_root,
+            )?;
+            advance(&lease, next, &record, height)
+        }
+        dispute::RESPOND_BOUNDARY => {
+            let lease_id = cursor.array()?;
+            let agree = match cursor.byte()? {
+                0 => false,
+                1 => true,
+                _ => return Err(malformed()),
+            };
+            cursor.finish()?;
+            let mut lease_bytes = [0; LEASE_CAPACITY];
+            let lease = decode_lease(read_state(LEASE_PREFIX, lease_id, &mut lease_bytes)?)?;
+            let mut challenge_bytes = [0; settle::CHALLENGE_CAPACITY];
+            let challenge = settle::decode_challenge(read_state(
+                CHALLENGE_PREFIX,
+                lease.id,
+                &mut challenge_bytes,
+            )?)?;
+            if caller != challenge.challenger {
+                return Err(malformed());
+            }
+            let mut dispute_bytes = [0; dispute::DISPUTE_CAPACITY];
+            let current = dispute::decode_dispute(read_state(
+                dispute::DISPUTE_PREFIX,
+                lease.id,
+                &mut dispute_bytes,
+            )?)?;
+            let (next, record) = current.respond(height, agree)?;
+            advance(&lease, next, &record, height)
+        }
+        dispute::RESOLVE_DISPUTE => {
+            let lease_id = cursor.array()?;
+            let evidence = cursor.remainder();
+            let mut lease_bytes = [0; LEASE_CAPACITY];
+            let lease = decode_lease(read_state(LEASE_PREFIX, lease_id, &mut lease_bytes)?)?;
+            let mut dispute_bytes = [0; dispute::DISPUTE_CAPACITY];
+            let current = dispute::decode_dispute(read_state(
+                dispute::DISPUTE_PREFIX,
+                lease.id,
+                &mut dispute_bytes,
+            )?)?;
+            let (next, record) = if height > current.deadline {
+                if !evidence.is_empty() {
+                    return Err(malformed());
+                }
+                current.timeout(height)?
+            } else {
+                let (mode, position) = current.adjudication()?;
+                let judged = adjudicate(lease.id, mode, position, evidence)?;
+                current.adjudicate(height, &judged)?
+            };
+            advance(&lease, next, &record, height)
         }
         CONFIGURE_ATTESTERS => {
             let lease_id = cursor.array()?;
@@ -1531,7 +1804,7 @@ mod tests {
         for operation in 0..=255 {
             let bytes = [VERSION, operation];
             let result = decode_operation(&mut Cursor::new(&bytes));
-            assert_eq!(result.is_ok(), matches!(operation, 1 | 2 | 4..=14));
+            assert_eq!(result.is_ok(), matches!(operation, 1 | 2 | 4..=17));
         }
         for bytes in [vec![], vec![VERSION], vec![0, 1], vec![2, 1], vec![255, 1]] {
             assert!(decode_operation(&mut Cursor::new(&bytes)).is_err());

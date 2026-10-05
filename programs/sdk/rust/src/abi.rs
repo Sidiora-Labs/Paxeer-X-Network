@@ -65,6 +65,11 @@ pub const V4_ABI_MODULE: &str = "layerx_v4";
 /// followed by the v4 namespace.
 pub const V4_ABI_MANIFEST: &str = "layerx_v1\0storage_read(i32,i32,i32,i32)->i32\0storage_write(i32,i32,i32,i32)->i32\0storage_delete(i32,i32)->i32\0event_emit(i32,i32,i32,i32)->i32\0program_call(i32,i32,i32,i32,i32,i32)->i32\0transfer_402(i64,i64,i32,i32,i32,i32)->i32\0receipt_read(i32,i32,i32,i32)->i32\0layerx_v2\0response_write(i32,i32,i32)->i32\0program_call_response(i32,i32,i32,i32,i32,i32,i32,i32)->i64\0refusal_write(i32,i32,i32)->i32\0storage_read_scoped(i32,i32,i32,i32,i32)->i32\0storage_write_scoped(i32,i32,i32,i32,i32)->i32\0storage_delete_scoped(i32,i32,i32)->i32\0storage_drop_scoped(i32)->i32\0storage_scan_scoped(i32,i32,i32,i32,i32,i32,i32,i32,i32)->i32\0transfer_program_402(i64,i64,i32,i32,i32,i32,i32,i32,i32,i32)->i32\0fund_program_402(i64,i64,i32,i32,i32,i32,i32,i32)->i32\0context_read(i32,i32,i32)->i32\0balance_read(i32,i32,i32,i32,i32,i32)->i32\0hash(i32,i32,i32,i32)->i32\0signature_verify(i32,i32,i32,i32,i32,i32,i32)->i32\0signature_recover(i32,i32,i32,i32,i32,i32,i32)->i32\0bigint_mul_256(i32,i32,i32,i32,i32,i32)->i32\0bigint_div_256(i32,i32,i32,i32,i32,i32)->i32\0bigint_rem_256(i32,i32,i32,i32,i32,i32)->i32\0bigint_modexp_256(i32,i32,i32,i32,i32,i32,i32,i32)->i32\0layerx_v3\0oracle_read(i32,i32,i32,i32)->i32\0layerx_v4\0web_read(i32,i32,i32,i32)->i32\0";
 pub const ABI_MANIFEST: &str = V4_ABI_MANIFEST;
+/// ABI-v5 host module for the authenticated market-step adjudication.
+pub const V5_ABI_MODULE: &str = "layerx_v5";
+/// Exact ABI-v5 manifest. It carries the immutable v1, v2, v3 and v4
+/// namespaces followed by the v5 namespace.
+pub const V5_ABI_MANIFEST: &str = "layerx_v1\0storage_read(i32,i32,i32,i32)->i32\0storage_write(i32,i32,i32,i32)->i32\0storage_delete(i32,i32)->i32\0event_emit(i32,i32,i32,i32)->i32\0program_call(i32,i32,i32,i32,i32,i32)->i32\0transfer_402(i64,i64,i32,i32,i32,i32)->i32\0receipt_read(i32,i32,i32,i32)->i32\0layerx_v2\0response_write(i32,i32,i32)->i32\0program_call_response(i32,i32,i32,i32,i32,i32,i32,i32)->i64\0refusal_write(i32,i32,i32)->i32\0storage_read_scoped(i32,i32,i32,i32,i32)->i32\0storage_write_scoped(i32,i32,i32,i32,i32)->i32\0storage_delete_scoped(i32,i32,i32)->i32\0storage_drop_scoped(i32)->i32\0storage_scan_scoped(i32,i32,i32,i32,i32,i32,i32,i32,i32)->i32\0transfer_program_402(i64,i64,i32,i32,i32,i32,i32,i32,i32,i32)->i32\0fund_program_402(i64,i64,i32,i32,i32,i32,i32,i32)->i32\0context_read(i32,i32,i32)->i32\0balance_read(i32,i32,i32,i32,i32,i32)->i32\0hash(i32,i32,i32,i32)->i32\0signature_verify(i32,i32,i32,i32,i32,i32,i32)->i32\0signature_recover(i32,i32,i32,i32,i32,i32,i32)->i32\0bigint_mul_256(i32,i32,i32,i32,i32,i32)->i32\0bigint_div_256(i32,i32,i32,i32,i32,i32)->i32\0bigint_rem_256(i32,i32,i32,i32,i32,i32)->i32\0bigint_modexp_256(i32,i32,i32,i32,i32,i32,i32,i32)->i32\0layerx_v3\0oracle_read(i32,i32,i32,i32)->i32\0layerx_v4\0web_read(i32,i32,i32,i32)->i32\0layerx_v5\0market_step_adjudicate(i32,i32,i32,i32,i32,i32)->i32\0";
 /// Exact frozen ABI-v2 response extension table.
 pub const V2_HOST_FUNCTIONS: [HostFunction; 19] = [
     HostFunction {
@@ -211,6 +216,12 @@ pub const V4_HOST_FUNCTIONS: [HostFunction; 1] = [HostFunction {
     signature: "(i32,i32,i32,i32)->i32",
 }];
 
+/// Exact ABI-v5 host-function table.
+pub const V5_HOST_FUNCTIONS: [HostFunction; 1] = [HostFunction {
+    name: "market_step_adjudicate",
+    signature: "(i32,i32,i32,i32,i32,i32)->i32",
+}];
+
 /// Compatibility spelling for the frozen ABI-v2 response namespace.
 pub const CANDIDATE_ABI_MODULE: &str = V2_ABI_MODULE;
 /// Compatibility spelling retained for one release.
@@ -259,6 +270,20 @@ mod tests {
                 super::V4_HOST_FUNCTIONS[0].signature
             ),
             ("web_read", "(i32,i32,i32,i32)->i32")
+        );
+        assert!(!super::V4_ABI_MANIFEST.contains("layerx_v5"));
+        assert!(super::V5_ABI_MANIFEST.starts_with(super::V4_ABI_MANIFEST));
+        assert_eq!(
+            &super::V5_ABI_MANIFEST[super::V4_ABI_MANIFEST.len()..],
+            "layerx_v5\0market_step_adjudicate(i32,i32,i32,i32,i32,i32)->i32\0"
+        );
+        assert_eq!(super::V5_ABI_MODULE, "layerx_v5");
+        assert_eq!(
+            (
+                super::V5_HOST_FUNCTIONS[0].name,
+                super::V5_HOST_FUNCTIONS[0].signature
+            ),
+            ("market_step_adjudicate", "(i32,i32,i32,i32,i32,i32)->i32")
         );
         assert_eq!(
             super::CANDIDATE_REFUSAL_SENTINEL,

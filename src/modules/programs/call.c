@@ -475,7 +475,7 @@ static lxp_result catalog_count_visit(const uint8_t *key, size_t key_length,
         key_length != PROGRAM_KEY_BYTES || record_length != PROGRAM_RECORD_BYTES ||
         memcmp(key, "program\0", 8U) != 0 || lxp_ct_is_zero(key + 8U, 32U) ||
         read_u16(record + 65U) == 0U ||
-        read_u16(record + 65U) > LX_PROGRAMS_GUEST_ABI_V4_VERSION ||
+        read_u16(record + 65U) > LX_PROGRAMS_GUEST_ABI_V5_VERSION ||
         (read_u16(record + 65U) >= LX_PROGRAMS_GUEST_ABI_V2_VERSION &&
          !lxp_protocol_version_uses_occupancy(value->ctx->protocol_version)) ||
         lxp_ct_is_zero(record + 33U, 32U) || value->catalog_count == UINT32_MAX)
@@ -2415,7 +2415,7 @@ lxp_result lxp_programs_call_decode(lxp_module_ctx *ctx,
         value->response_capacity > LX_PROGRAMS_MAX_RESPONSE_BYTES)
         return LXP_ERR_NON_CANONICAL;
     if (value->abi_version > registration->abi_version ||
-        value->abi_version > LX_PROGRAMS_GUEST_ABI_V4_VERSION ||
+        value->abi_version > LX_PROGRAMS_GUEST_ABI_V5_VERSION ||
         (value->abi_version >= LX_PROGRAMS_GUEST_ABI_V2_VERSION &&
          !lxp_protocol_version_uses_occupancy(ctx->protocol_version)))
         return LXP_ERR_VERSION_UNSUPPORTED;

@@ -210,6 +210,20 @@ mod v4_raw {
     }
 }
 
+mod v5_raw {
+    #[link(wasm_import_module = "layerx_v5")]
+    unsafe extern "C" {
+        pub(super) fn market_step_adjudicate(
+            header_pointer: i32,
+            header_length: i32,
+            evidence_pointer: i32,
+            evidence_length: i32,
+            output_pointer: i32,
+            output_capacity: i32,
+        ) -> i32;
+    }
+}
+
 mod v3_raw {
     #[link(wasm_import_module = "layerx_v3")]
     unsafe extern "C" {
@@ -757,4 +771,22 @@ pub(crate) fn web_read(request_id: u64, output: &mut [u8]) -> Result<Option<i32>
         return Ok(None);
     }
     ProgramError::from_status(status).map(Some)
+}
+
+pub(crate) fn market_step_adjudicate(
+    header: &[u8],
+    evidence: &[u8],
+    output: &mut [u8],
+) -> Result<i32, ProgramError> {
+    let status = unsafe {
+        v5_raw::market_step_adjudicate(
+            pointer(header)?,
+            length(header)?,
+            pointer(evidence)?,
+            length(evidence)?,
+            pointer_mut(output)?,
+            length(output)?,
+        )
+    };
+    ProgramError::from_status(status)
 }

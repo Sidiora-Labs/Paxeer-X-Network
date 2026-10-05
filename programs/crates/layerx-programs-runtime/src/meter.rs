@@ -1079,6 +1079,10 @@ impl Meter {
         self.prices.version()
     }
 
+    pub(crate) const fn prices(&self) -> FeeSchedule {
+        self.prices
+    }
+
     pub const fn cpu_budget(&self) -> u64 {
         self.budget.cpu_fuel
     }

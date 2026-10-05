@@ -1198,6 +1198,7 @@ impl CompositionReplayWitnessV1 {
                     crate::AbiRevision::V2 => 2,
                     crate::AbiRevision::V3 => 3,
                     crate::AbiRevision::V4 => 4,
+                    crate::AbiRevision::V5 => 5,
                 };
                 append(&mut out, &[1, version], maximum)?;
                 field(&mut out, graph, maximum)?;
@@ -1237,6 +1238,7 @@ impl CompositionReplayWitnessV1 {
                     2 => crate::AbiRevision::V2,
                     3 => crate::AbiRevision::V3,
                     4 => crate::AbiRevision::V4,
+                    5 => crate::AbiRevision::V5,
                     _ => return Err(ReplayWitnessError::Encoding),
                 };
                 let bytes = cursor.field()?;

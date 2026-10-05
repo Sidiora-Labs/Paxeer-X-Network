@@ -594,6 +594,7 @@ fn differential_observation(
         crate::validate::AbiRevision::V2 => crate::ABI_V2_VERSION,
         crate::validate::AbiRevision::V3 => crate::ABI_V3_VERSION,
         crate::validate::AbiRevision::V4 => crate::ABI_V4_VERSION,
+        crate::validate::AbiRevision::V5 => crate::ABI_V5_VERSION,
     };
     success_observation(
         abi_version,
@@ -653,6 +654,7 @@ fn legacy_reference_observation(
         crate::ABI_V2_VERSION => crate::validate::AbiRevision::V2,
         crate::ABI_V3_VERSION => crate::validate::AbiRevision::V3,
         crate::ABI_V4_VERSION => crate::validate::AbiRevision::V4,
+        crate::ABI_V5_VERSION => crate::validate::AbiRevision::V5,
         _ => return validation_observation(&format!("unsupported ABI version {abi_version}")),
     };
     let module =
@@ -902,7 +904,7 @@ pub fn replay_recorded_execution_with_fee_history(
 mod tests {
     use super::*;
     use crate::test_support::add_module;
-    use crate::{FeeSchedule, ResourceBudget, ABI_VERSION, RUNTIME_VERSION};
+    use crate::{FeeSchedule, ResourceBudget, ABI_V5_VERSION, ABI_VERSION, RUNTIME_VERSION};
 
     #[test]
     fn dispatcher_keeps_v1_replay_stable_after_a_real_v2_revision_is_present() {
@@ -958,13 +960,13 @@ mod tests {
         );
         let unsupported_abi = RecordedExecution {
             runtime_version: RUNTIME_VERSION,
-            abi_version: ABI_VERSION + 1,
+            abi_version: ABI_V5_VERSION + 1,
             ..unknown_runtime
         };
         assert_eq!(
             replay_with_revisions(&unsupported_abi, &revisions, None),
             Err(ReplayRefusal::UnknownAbiVersion {
-                version: ABI_VERSION + 1,
+                version: ABI_V5_VERSION + 1,
             })
         );
     }

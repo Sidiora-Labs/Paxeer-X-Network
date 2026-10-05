@@ -395,7 +395,8 @@ static int abi_transition_matrix(void)
 {
     static const uint16_t versions[] = {
         LX_PROGRAMS_ABI_VERSION, LX_PROGRAMS_ACCOUNT_ABI_VERSION,
-        LX_PROGRAMS_SANDBOX_ABI_VERSION, LX_PROGRAMS_GUEST_ABI_V4_VERSION
+        LX_PROGRAMS_SANDBOX_ABI_VERSION, LX_PROGRAMS_GUEST_ABI_V4_VERSION,
+        LX_PROGRAMS_GUEST_ABI_V5_VERSION
     };
     size_t current;
     size_t requested;
@@ -448,7 +449,14 @@ int main(int argc, char **argv)
                                              LX_PROGRAMS_SANDBOX_ABI_VERSION) !=
             LXP_ERR_VERSION_UNSUPPORTED ||
         lxp_programs_abi_transition_validate(0U,
-                                             LX_PROGRAMS_GUEST_ABI_V4_VERSION + 1U) !=
+                                             LX_PROGRAMS_GUEST_ABI_V5_VERSION) != LXP_OK ||
+        lxp_programs_abi_transition_validate(LX_PROGRAMS_GUEST_ABI_V4_VERSION,
+                                             LX_PROGRAMS_GUEST_ABI_V5_VERSION) != LXP_OK ||
+        lxp_programs_abi_transition_validate(LX_PROGRAMS_GUEST_ABI_V5_VERSION,
+                                             LX_PROGRAMS_GUEST_ABI_V4_VERSION) !=
+            LXP_ERR_VERSION_UNSUPPORTED ||
+        lxp_programs_abi_transition_validate(0U,
+                                             LX_PROGRAMS_GUEST_ABI_V5_VERSION + 1U) !=
             LXP_ERR_VERSION_UNSUPPORTED)
         return 1;
     if (abi_transition_matrix() != 0) return 1;

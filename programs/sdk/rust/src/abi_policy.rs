@@ -15,9 +15,14 @@ pub const ABI_V2_VERSION: u16 = 2;
 pub const ABI_V3_VERSION: u16 = 3;
 /// Frozen version-four program ABI.
 pub const ABI_V4_VERSION: u16 = 4;
+/// Frozen version-five program ABI.
+pub const ABI_V5_VERSION: u16 = 5;
 
 pub const fn account_profile2_guest_supported(requested: u16) -> bool {
-    matches!(requested, ABI_V2_VERSION | ABI_V3_VERSION | ABI_V4_VERSION)
+    matches!(
+        requested,
+        ABI_V2_VERSION | ABI_V3_VERSION | ABI_V4_VERSION | ABI_V5_VERSION
+    )
 }
 
 /// The sole typed refusal for an invalid ABI version transition.
@@ -45,7 +50,9 @@ impl core::error::Error for AbiVersionRefusal {}
 
 const fn supported(requested: u16) -> Result<(), AbiVersionRefusal> {
     match requested {
-        ABI_V1_VERSION | ABI_V2_VERSION | ABI_V3_VERSION | ABI_V4_VERSION => Ok(()),
+        ABI_V1_VERSION | ABI_V2_VERSION | ABI_V3_VERSION | ABI_V4_VERSION | ABI_V5_VERSION => {
+            Ok(())
+        }
         _ => Err(AbiVersionRefusal::Unsupported { requested }),
     }
 }
@@ -98,7 +105,9 @@ pub enum CapabilityEncoding {
 pub const fn capability_encoding(requested: u16) -> Result<CapabilityEncoding, AbiVersionRefusal> {
     match requested {
         ABI_V1_VERSION => Ok(CapabilityEncoding::V1),
-        ABI_V2_VERSION | ABI_V3_VERSION | ABI_V4_VERSION => Ok(CapabilityEncoding::V2),
+        ABI_V2_VERSION | ABI_V3_VERSION | ABI_V4_VERSION | ABI_V5_VERSION => {
+            Ok(CapabilityEncoding::V2)
+        }
         _ => Err(AbiVersionRefusal::Unsupported { requested }),
     }
 }
@@ -123,16 +132,17 @@ mod tests {
         assert_eq!(capability_encoding(2), Ok(CapabilityEncoding::V2));
         assert_eq!(capability_encoding(3), Ok(CapabilityEncoding::V2));
         assert_eq!(capability_encoding(4), Ok(CapabilityEncoding::V2));
+        assert_eq!(capability_encoding(5), Ok(CapabilityEncoding::V2));
         assert_eq!(
-            capability_encoding(5),
-            Err(AbiVersionRefusal::Unsupported { requested: 5 })
+            capability_encoding(6),
+            Err(AbiVersionRefusal::Unsupported { requested: 6 })
         );
     }
 
     #[test]
     fn upgrades_are_monotonic_across_admitted_versions() {
-        for current in 1..=4 {
-            for requested in 1..=4 {
+        for current in 1..=5 {
+            for requested in 1..=5 {
                 assert_eq!(
                     admit_abi_upgrade(current, requested),
                     if requested < current {
@@ -148,8 +158,8 @@ mod tests {
             Err(AbiVersionRefusal::Unsupported { requested: 0 })
         );
         assert_eq!(
-            admit_abi_upgrade(4, 5),
-            Err(AbiVersionRefusal::Unsupported { requested: 5 })
+            admit_abi_upgrade(5, 6),
+            Err(AbiVersionRefusal::Unsupported { requested: 6 })
         );
     }
 }

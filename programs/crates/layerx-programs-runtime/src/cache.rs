@@ -130,6 +130,7 @@ impl ModuleCacheKey {
             crate::ABI_V2_VERSION => Ok(AbiRevision::V2),
             crate::ABI_V3_VERSION => Ok(AbiRevision::V3),
             crate::ABI_V4_VERSION => Ok(AbiRevision::V4),
+            crate::ABI_V5_VERSION => Ok(AbiRevision::V5),
             requested => Err(CompiledModuleRefusal::UnsupportedAbiVersion { requested }),
         }
     }
@@ -918,12 +919,12 @@ mod tests {
         let unknown_abi = ModuleCacheKey::new(
             key(&wasm, crate::ABI_V1_VERSION).code_hash(),
             crate::RUNTIME_VERSION,
-            crate::ABI_VERSION + 1,
+            crate::ABI_V5_VERSION + 1,
         );
         assert_eq!(
             CompiledModule::compile(&engine, unknown_abi, &wasm).map(|compiled| compiled.key()),
             Err(CompiledModuleRefusal::UnsupportedAbiVersion {
-                requested: crate::ABI_VERSION + 1,
+                requested: crate::ABI_V5_VERSION + 1,
             })
         );
     }

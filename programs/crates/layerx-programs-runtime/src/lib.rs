@@ -91,9 +91,9 @@ pub mod meter;
 #[deny(unsafe_code)]
 pub mod occupancy;
 #[deny(unsafe_code)]
-pub mod qualification;
-#[deny(unsafe_code)]
 pub mod portable_replay;
+#[deny(unsafe_code)]
+pub mod qualification;
 #[deny(unsafe_code)]
 pub mod replay;
 #[deny(unsafe_code)]
@@ -245,7 +245,8 @@ pub use abi::manifest::{
     manifest as abi_manifest, ABI_V1_MANIFEST, ABI_V1_MODULE, ABI_V1_VERSION,
     ABI_V2_HOST_FUNCTIONS, ABI_V2_MANIFEST, ABI_V2_MODULE, ABI_V2_VERSION, ABI_V3_HOST_FUNCTIONS,
     ABI_V3_MANIFEST, ABI_V3_MODULE, ABI_V3_VERSION, ABI_V4_HOST_FUNCTIONS, ABI_V4_MANIFEST,
-    ABI_V4_MODULE, ABI_V4_VERSION,
+    ABI_V4_MODULE, ABI_V4_VERSION, ABI_V5_HOST_FUNCTIONS, ABI_V5_MANIFEST, ABI_V5_MODULE,
+    ABI_V5_VERSION,
 };
 pub use abi::{
     Abi, AbiCommit, AbiEffects, AbiError, AuthorizationContext, BalanceView, CallFrameId,

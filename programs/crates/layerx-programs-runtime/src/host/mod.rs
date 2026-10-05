@@ -5,6 +5,7 @@ mod calls;
 mod context;
 mod crypto;
 mod events;
+mod market;
 pub(crate) mod memory;
 mod oracle;
 mod scan;
@@ -188,6 +189,7 @@ fn abi_revision_byte(revision: AbiRevision) -> u8 {
         AbiRevision::V2 => 2,
         AbiRevision::V3 => 3,
         AbiRevision::V4 => 4,
+        AbiRevision::V5 => 5,
     }
 }
 
@@ -1194,6 +1196,7 @@ pub(crate) fn linker(engine: &Engine) -> Result<HostLinker, ExecutionFault> {
     balance::register_v2(&mut linker)?;
     oracle::register_v3(&mut linker)?;
     web::register_v4(&mut linker)?;
+    market::register_v5(&mut linker)?;
     transfer::register(&mut linker)?;
     linker
         .func_wrap(
@@ -1234,7 +1237,8 @@ pub(crate) fn linker(engine: &Engine) -> Result<HostLinker, ExecutionFault> {
     let registered_function_count = crate::abi::HOST_FUNCTIONS.len()
         + crate::abi::manifest::ABI_V2_HOST_FUNCTIONS.len()
         + crate::abi::manifest::ABI_V3_HOST_FUNCTIONS.len()
-        + crate::abi::manifest::ABI_V4_HOST_FUNCTIONS.len();
+        + crate::abi::manifest::ABI_V4_HOST_FUNCTIONS.len()
+        + crate::abi::manifest::ABI_V5_HOST_FUNCTIONS.len();
     Ok(HostLinker {
         linker,
         construction_count: 1,
@@ -1447,6 +1451,7 @@ fn replay_composition_refusal(
             2 => Ok(AbiRevision::V2),
             3 => Ok(AbiRevision::V3),
             4 => Ok(AbiRevision::V4),
+            5 => Ok(AbiRevision::V5),
             _ => Err(E::Encoding),
         }
     }

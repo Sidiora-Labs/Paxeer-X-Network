@@ -49,8 +49,8 @@ def audit_surface(runtime_source):
     v1_manifest = rust_string(runtime_source, "ABI_V1_MANIFEST")
     crate_root = CRATE_ROOT.read_text()
     policy = SDK_POLICY.read_text()
-    versions = {version: rust_u16(policy, f"ABI_V{version}_VERSION") for version in range(1, 5)}
-    if versions != {1: 1, 2: 2, 3: 3, 4: 4}:
+    versions = {version: rust_u16(policy, f"ABI_V{version}_VERSION") for version in range(1, 6)}
+    if versions != {1: 1, 2: 2, 3: 3, 4: 4, 5: 5}:
         raise ValueError("canonical SDK policy changed an allocated ABI version")
     reexport = re.search(
         r"^pub use layerx_program_sdk::abi_policy::\{([^}]+)\};$",
@@ -71,6 +71,7 @@ def audit_surface(runtime_source):
     v4_manifest = rust_string(crate_root, "ABI_MANIFEST")
     v2_manifest = rust_string(runtime_source, "ABI_V2_MANIFEST")
     v3_manifest = rust_string(runtime_source, "ABI_V3_MANIFEST")
+    v5_manifest = rust_string(runtime_source, "ABI_V5_MANIFEST")
     if "pub const ABI_V4_MANIFEST: &str = crate::ABI_MANIFEST;" not in runtime_source:
         raise ValueError("ABI v4 manifest is not owned by the crate-root ABI_MANIFEST")
     if versions[4] != current_version:
@@ -83,20 +84,25 @@ def audit_surface(runtime_source):
     v2 = table(runtime_source, "ABI_V2_HOST_FUNCTIONS")
     v3 = table(runtime_source, "ABI_V3_HOST_FUNCTIONS")
     v4 = table(runtime_source, "ABI_V4_HOST_FUNCTIONS")
+    v5 = table(runtime_source, "ABI_V5_HOST_FUNCTIONS")
     expected_v1 = [("layerx_v1", name, signature) for name, signature in v1]
     expected_v2 = expected_v1 + [("layerx_v2", name, signature) for name, signature in v2]
     expected_v3 = expected_v2 + [("layerx_v3", name, signature) for name, signature in v3]
     expected_v4 = expected_v3 + [("layerx_v4", name, signature) for name, signature in v4]
+    expected_v5 = expected_v4 + [("layerx_v5", name, signature) for name, signature in v5]
     if manifest_surface(v1_manifest) != expected_v1: raise ValueError("ABI v1 manifest and host table diverge")
     if manifest_surface(v2_manifest) != expected_v2: raise ValueError("ABI v2 composite manifest and host tables diverge")
     if manifest_surface(v3_manifest) != expected_v3: raise ValueError("ABI v3 composite manifest and host tables diverge")
     if manifest_surface(v4_manifest) != expected_v4: raise ValueError("ABI v4 composite manifest and host tables diverge")
+    if manifest_surface(v5_manifest) != expected_v5: raise ValueError("ABI v5 composite manifest and host tables diverge")
     type_entries = function_types(runtime_source, "ABI_V2_FUNCTION_TYPES")
     if len(type_entries) != len(v2): raise ValueError("ABI v2 function table and types diverge")
     v3_type_entries = function_types(runtime_source, "ABI_V3_FUNCTION_TYPES")
     if len(v3_type_entries) != len(v3): raise ValueError("ABI v3 function table and types diverge")
     v4_type_entries = function_types(runtime_source, "ABI_V4_FUNCTION_TYPES")
     if len(v4_type_entries) != len(v4): raise ValueError("ABI v4 function table and types diverge")
+    v5_type_entries = function_types(runtime_source, "ABI_V5_FUNCTION_TYPES")
+    if len(v5_type_entries) != len(v5): raise ValueError("ABI v5 function table and types diverge")
     parameter_types = {
         "I32_1": ["i32"], "I32_3": ["i32"] * 3, "I32_4": ["i32"] * 4,
         "I32_5": ["i32"] * 5, "I32_6": ["i32"] * 6, "I32_7": ["i32"] * 7,
@@ -120,6 +126,8 @@ def audit_surface(runtime_source):
         raise ValueError("ABI v3 signatures and function types diverge")
     if typed(v4_type_entries, 4) != [signature for _, signature in v4]:
         raise ValueError("ABI v4 signatures and function types diverge")
+    if typed(v5_type_entries, 5) != [signature for _, signature in v5]:
+        raise ValueError("ABI v5 signatures and function types diverge")
     validate = (RUNTIME / "validate.rs").read_text()
     if "manifest::permitted_import" not in validate or "pub(crate) fn permitted_import" not in runtime_source: raise ValueError("validator does not derive its allowlist from the frozen table")
     sdk = SDK_ABI.read_text()
@@ -129,7 +137,9 @@ def audit_surface(runtime_source):
     if table(sdk, "V3_HOST_FUNCTIONS") != v3: raise ValueError("Rust SDK ABI v3 table diverges")
     if rust_string(sdk, "V4_ABI_MANIFEST") != v4_manifest: raise ValueError("Rust SDK ABI v4 manifest diverges")
     if table(sdk, "V4_HOST_FUNCTIONS") != v4: raise ValueError("Rust SDK ABI v4 table diverges")
-    return {1: v1_manifest, 2: v2_manifest, 3: v3_manifest, current_version: v4_manifest}
+    if rust_string(sdk, "V5_ABI_MANIFEST") != v5_manifest: raise ValueError("Rust SDK ABI v5 manifest diverges")
+    if table(sdk, "V5_HOST_FUNCTIONS") != v5: raise ValueError("Rust SDK ABI v5 table diverges")
+    return {1: v1_manifest, 2: v2_manifest, 3: v3_manifest, current_version: v4_manifest, versions[5]: v5_manifest}
 
 def terminal_schema():
     native = (ROOT / "src/protocol/lxp_receipt.c").read_text()

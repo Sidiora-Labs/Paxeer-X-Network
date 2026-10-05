@@ -372,6 +372,7 @@ const fn recorded_abi_version(revision: AbiRevision) -> u16 {
         AbiRevision::V2 => crate::ABI_V2_VERSION,
         AbiRevision::V3 => crate::ABI_V3_VERSION,
         AbiRevision::V4 => crate::ABI_V4_VERSION,
+        AbiRevision::V5 => crate::ABI_V5_VERSION,
     }
 }
 
@@ -1213,6 +1214,7 @@ impl ProgramInstance {
             AbiRevision::V2 => 2,
             AbiRevision::V3 => 3,
             AbiRevision::V4 => 4,
+            AbiRevision::V5 => 5,
         };
         let identities = trace_identity(
             module,
@@ -2465,6 +2467,7 @@ impl V2AuthorizedExecutionRecord {
                 AbiRevision::V2 => crate::ABI_V2_VERSION,
                 AbiRevision::V3 => crate::ABI_V3_VERSION,
                 AbiRevision::V4 => crate::ABI_V4_VERSION,
+                AbiRevision::V5 => crate::ABI_V5_VERSION,
             },
             runtime_version: self.execution.runtime_version,
             fee_schedule_version: self.execution.fee_schedule_version,
@@ -2516,7 +2519,9 @@ impl V2AuthorizedExecutionRecord {
     #[must_use]
     pub fn canonical_evidence(&self) -> Vec<u8> {
         let mut evidence = match self.abi_revision {
-            AbiRevision::V3 | AbiRevision::V4 => b"LXP/program-execution/v5\0".to_vec(),
+            AbiRevision::V3 | AbiRevision::V4 | AbiRevision::V5 => {
+                b"LXP/program-execution/v5\0".to_vec()
+            }
             AbiRevision::V1 | AbiRevision::V2 => b"LXP/program-execution/v4\0".to_vec(),
         };
         evidence.extend_from_slice(&self.execution.runtime_version.to_be_bytes());
@@ -2557,6 +2562,7 @@ impl V2AuthorizedExecutionRecord {
             AbiRevision::V2 => 2,
             AbiRevision::V3 => 3,
             AbiRevision::V4 => 4,
+            AbiRevision::V5 => 5,
         };
         evidence.extend_from_slice(&abi_revision.to_be_bytes());
         match &self.outcome {
@@ -2587,7 +2593,7 @@ impl V2AuthorizedExecutionRecord {
     pub(crate) fn write_canonical_evidence(&self, evidence: &mut Vec<u8>, graph: &mut Vec<u8>) {
         evidence.clear();
         evidence.extend_from_slice(match self.abi_revision {
-            AbiRevision::V3 | AbiRevision::V4 => b"LXP/program-execution/v5\0",
+            AbiRevision::V3 | AbiRevision::V4 | AbiRevision::V5 => b"LXP/program-execution/v5\0",
             AbiRevision::V1 | AbiRevision::V2 => b"LXP/program-execution/v4\0",
         });
         evidence.extend_from_slice(&self.execution.runtime_version.to_be_bytes());
@@ -2642,6 +2648,7 @@ impl V2AuthorizedExecutionRecord {
                 AbiRevision::V2 => 2,
                 AbiRevision::V3 => 3,
                 AbiRevision::V4 => 4,
+                AbiRevision::V5 => 5,
             }
             .to_be_bytes(),
         );
@@ -3397,6 +3404,7 @@ impl Executor {
             crate::ABI_V2_VERSION => Ok(AbiRevision::V2),
             crate::ABI_V3_VERSION => Ok(AbiRevision::V3),
             crate::ABI_V4_VERSION => Ok(AbiRevision::V4),
+            crate::ABI_V5_VERSION => Ok(AbiRevision::V5),
             _ => Err(ExecutionError::Abi(AbiError::WrongVersion)),
         }
     }
@@ -4311,7 +4319,7 @@ impl Executor {
         let budgeted = activity_binding.is_some();
         if !matches!(
             request.module.abi_revision(),
-            AbiRevision::V2 | AbiRevision::V3 | AbiRevision::V4
+            AbiRevision::V2 | AbiRevision::V3 | AbiRevision::V4 | AbiRevision::V5
         ) || self.abi_version != recorded_abi_version(request.module.abi_revision())
         {
             return Err(ExecutionError::Abi(AbiError::WrongVersion));
@@ -5442,6 +5450,7 @@ impl ProgramInstance {
             AbiRevision::V2 => 2,
             AbiRevision::V3 => 3,
             AbiRevision::V4 => 4,
+            AbiRevision::V5 => 5,
         };
         if request.module.code_hash() != inputs.code_hash
             || inputs.runtime_version != RUNTIME_VERSION
@@ -5746,6 +5755,7 @@ pub fn instantiate_market_sandbox_untrusted(
         AbiRevision::V2 => 2,
         AbiRevision::V3 => 3,
         AbiRevision::V4 => 4,
+        AbiRevision::V5 => 5,
     };
     if module.code_hash() != inputs.code_hash
         || abi_version != inputs.abi_version
@@ -5759,6 +5769,416 @@ pub fn instantiate_market_sandbox_untrusted(
         return Err(crate::replay::ReplayWitnessError::StateUnavailable.into());
     }
     Ok(instance)
+}
+
+/// Fixed fuel charged for every market-step adjudication before any evidence is opened.
+pub const MARKET_STEP_BASE_FUEL: u64 = 1_024;
+/// Fuel charged per header and evidence byte: decoding, Merkle opening, state restoration and
+/// re-encoding each pass over the evidence once.
+pub const MARKET_STEP_FUEL_PER_BYTE: u64 = 4;
+const MAX_MARKET_STEP_SIBLINGS: usize = 12;
+/// Upper bound on one adjudication's evidence: a baseline and two leaves of at most one replay
+/// boundary each, plus their bounded Merkle paths and framing.
+pub const MAX_MARKET_STEP_EVIDENCE_BYTES: usize =
+    3 * crate::replay_record::MAX_PROGRAM_REPLAY_BYTES as usize + 4_096;
+
+/// Why the host refused to adjudicate a market step. A refusal is never a verdict.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MarketStepRefusal {
+    /// The request header or evidence framing is malformed.
+    Encoding,
+    /// The calling program, sandbox module, runtime or fee schedule is not the profile's.
+    Denied,
+    /// The evidence does not open against the committed trace or the authorized baseline.
+    Evidence,
+    /// The executing meter refused the adjudication fuel.
+    Meter,
+}
+
+/// One Merkle-opened boundary of a committed provider trace.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct MarketStepProof<'a> {
+    pub index: u32,
+    pub leaf: &'a [u8],
+    pub siblings: &'a [[u8; 32]],
+}
+
+/// Encodes the evidence a market program forwards to the market-step adjudication host call.
+///
+/// # Errors
+/// Returns [`MarketStepRefusal::Encoding`] for more than two proofs, an oversized field or
+/// evidence beyond [`MAX_MARKET_STEP_EVIDENCE_BYTES`].
+pub fn encode_market_step_evidence(
+    baseline_storage: &[u8],
+    proofs: &[MarketStepProof<'_>],
+) -> Result<Vec<u8>, MarketStepRefusal> {
+    if proofs.is_empty() || proofs.len() > 2 {
+        return Err(MarketStepRefusal::Encoding);
+    }
+    let mut output = Vec::new();
+    output.extend(
+        u32::try_from(baseline_storage.len())
+            .map_err(|_| MarketStepRefusal::Encoding)?
+            .to_be_bytes(),
+    );
+    output.extend(baseline_storage);
+    output.push(u8::try_from(proofs.len()).map_err(|_| MarketStepRefusal::Encoding)?);
+    for proof in proofs {
+        if proof.siblings.len() > MAX_MARKET_STEP_SIBLINGS {
+            return Err(MarketStepRefusal::Encoding);
+        }
+        output.extend(proof.index.to_be_bytes());
+        output.extend(
+            u32::try_from(proof.leaf.len())
+                .map_err(|_| MarketStepRefusal::Encoding)?
+                .to_be_bytes(),
+        );
+        output.extend(proof.leaf);
+        output.push(u8::try_from(proof.siblings.len()).map_err(|_| MarketStepRefusal::Encoding)?);
+        for sibling in proof.siblings {
+            output.extend(sibling);
+        }
+    }
+    if output.len() > MAX_MARKET_STEP_EVIDENCE_BYTES {
+        return Err(MarketStepRefusal::Encoding);
+    }
+    Ok(output)
+}
+
+struct MarketStepReader<'a>(&'a [u8]);
+
+impl<'a> MarketStepReader<'a> {
+    fn take(&mut self, length: usize) -> Result<&'a [u8], MarketStepRefusal> {
+        if self.0.len() < length {
+            return Err(MarketStepRefusal::Encoding);
+        }
+        let (head, tail) = self.0.split_at(length);
+        self.0 = tail;
+        Ok(head)
+    }
+
+    fn byte(&mut self) -> Result<u8, MarketStepRefusal> {
+        Ok(self.take(1)?[0])
+    }
+
+    fn u32(&mut self) -> Result<u32, MarketStepRefusal> {
+        let mut bytes = [0; 4];
+        bytes.copy_from_slice(self.take(4)?);
+        Ok(u32::from_be_bytes(bytes))
+    }
+}
+
+struct OpenedMarketProof<'a> {
+    index: u32,
+    leaf: &'a [u8],
+    siblings: Vec<[u8; 32]>,
+}
+
+fn decode_market_step_evidence(
+    evidence: &[u8],
+) -> Result<(&[u8], Vec<OpenedMarketProof<'_>>), MarketStepRefusal> {
+    let mut reader = MarketStepReader(evidence);
+    let baseline_length =
+        usize::try_from(reader.u32()?).map_err(|_| MarketStepRefusal::Encoding)?;
+    let baseline = reader.take(baseline_length)?;
+    let count = reader.byte()?;
+    if count == 0 || count > 2 {
+        return Err(MarketStepRefusal::Encoding);
+    }
+    let mut proofs = Vec::with_capacity(usize::from(count));
+    for _ in 0..count {
+        let index = reader.u32()?;
+        let leaf_length =
+            usize::try_from(reader.u32()?).map_err(|_| MarketStepRefusal::Encoding)?;
+        let leaf = reader.take(leaf_length)?;
+        let sibling_count = usize::from(reader.byte()?);
+        if sibling_count > MAX_MARKET_STEP_SIBLINGS {
+            return Err(MarketStepRefusal::Encoding);
+        }
+        let mut siblings = Vec::with_capacity(sibling_count);
+        for _ in 0..sibling_count {
+            let mut sibling = [0; 32];
+            sibling.copy_from_slice(reader.take(32)?);
+            siblings.push(sibling);
+        }
+        proofs.push(OpenedMarketProof {
+            index,
+            leaf,
+            siblings,
+        });
+    }
+    if !reader.0.is_empty() {
+        return Err(MarketStepRefusal::Encoding);
+    }
+    Ok((baseline, proofs))
+}
+
+fn open_market_boundary(
+    proof: &OpenedMarketProof<'_>,
+    trace_root: [u8; 32],
+    boundary_count: u32,
+    maximum: usize,
+) -> Result<crate::portable_replay::PortableBoundary, MarketStepRefusal> {
+    if proof.index >= boundary_count || proof.leaf.is_empty() || proof.leaf.len() > maximum {
+        return Err(MarketStepRefusal::Evidence);
+    }
+    let mut node = crate::portable_replay::replay_leaf_hash(proof.index, proof.leaf)
+        .map_err(|_| MarketStepRefusal::Evidence)?;
+    let mut index = proof.index;
+    let mut count = boundary_count;
+    for sibling in &proof.siblings {
+        if count <= 1 || ((index ^ 1) >= count && sibling != &node) {
+            return Err(MarketStepRefusal::Evidence);
+        }
+        node = if index & 1 == 0 {
+            crate::portable_replay::replay_node_hash(node, *sibling)
+        } else {
+            crate::portable_replay::replay_node_hash(*sibling, node)
+        };
+        index /= 2;
+        count = count.div_ceil(2);
+    }
+    if count != 1 || node != trace_root {
+        return Err(MarketStepRefusal::Evidence);
+    }
+    crate::portable_replay::PortableBoundary::decode_untrusted(proof.leaf, maximum)
+        .map_err(|_| MarketStepRefusal::Evidence)
+}
+
+fn market_boundary_identity_holds(
+    profile: &layerx_program_sdk::arbiter::MarketSandboxProfile,
+    boundary: &crate::portable_replay::PortableBoundary,
+) -> bool {
+    let identity = boundary.arbitration.identity;
+    let Ok(replay) =
+        crate::ProgramReplayProfile::new(profile.maximum_boundaries, profile.maximum_bytes)
+    else {
+        return false;
+    };
+    identity.module_code_hash == profile.code_hash
+        && identity.input_digest == profile.input_digest
+        && identity.runtime_version == profile.runtime_version
+        && identity.abi_version == profile.abi_version
+        && identity.fee_schedule_version == profile.fee_schedule_version
+        && identity.metering_schedule_version == profile.metering_schedule_version
+        && identity.host_base_state_root == profile.baseline_state_root
+        && identity.trace_policy == replay.trace_policy()
+}
+
+fn market_step_holds(
+    module: &ValidatedModule,
+    authority: &crate::replay::MarketSandboxReplayAuthority,
+    pre: &crate::portable_replay::PortableBoundary,
+    mut post: crate::portable_replay::PortableBoundary,
+    final_trap: bool,
+    maximum: usize,
+) -> bool {
+    if final_trap != pre.trap.is_some() {
+        return false;
+    }
+    let Ok(observed) = observe_market_sandbox_step(module, pre, authority, maximum) else {
+        return false;
+    };
+    if !final_trap && observed.trap.is_none() {
+        post.trap = None;
+    }
+    matches!(
+        (observed.reencode_untrusted(maximum), post.reencode_untrusted(maximum)),
+        (Ok(observed), Ok(claimed)) if observed == claimed
+    )
+}
+
+/// Adjudicates one step of a provider's committed sandbox trace for the calling market program.
+///
+/// The header names the mode, the trace position and the market's own authorized sandbox profile
+/// and billing commitment. The evidence carries the baseline storage and the Merkle openings of
+/// the boundaries at that position. The verdict is computed here from the committed trace root,
+/// the resolved sandbox module and the replayed step; nothing the caller supplies can choose it.
+/// `charge` meters the adjudication against the executing program before any evidence is opened.
+///
+/// # Errors
+/// Returns a [`MarketStepRefusal`] for malformed framing, a caller or module the profile does not
+/// authorize, evidence that does not belong to the committed trace, or refused fuel.
+#[allow(clippy::too_many_lines)]
+pub fn adjudicate_market_step(
+    header: &[u8],
+    evidence: &[u8],
+    executing_program: ProgramId,
+    fees: FeeSchedule,
+    resolver: &dyn crate::ProgramResolver,
+    charge: &mut dyn FnMut(u64) -> Result<(), MarketStepRefusal>,
+) -> Result<[u8; layerx_program_sdk::arbiter::MARKET_STEP_OUTCOME_BYTES], MarketStepRefusal> {
+    use layerx_program_sdk::arbiter::{
+        MarketBillingCommitment, MarketSandboxProfile, MarketStepOutcome, MarketStepRequest,
+        MARKET_STEP_HEADER_CAPACITY, MARKET_STEP_OPEN, MARKET_STEP_TERMINAL,
+        MARKET_STEP_TRANSITION,
+    };
+    if header.len() > MARKET_STEP_HEADER_CAPACITY || evidence.len() > MAX_MARKET_STEP_EVIDENCE_BYTES
+    {
+        return Err(MarketStepRefusal::Encoding);
+    }
+    let bytes =
+        u64::try_from(header.len() + evidence.len()).map_err(|_| MarketStepRefusal::Encoding)?;
+    charge(
+        bytes
+            .checked_mul(MARKET_STEP_FUEL_PER_BYTE)
+            .and_then(|fuel| fuel.checked_add(MARKET_STEP_BASE_FUEL))
+            .ok_or(MarketStepRefusal::Encoding)?,
+    )?;
+    let request = MarketStepRequest::decode(header).map_err(|_| MarketStepRefusal::Encoding)?;
+    let profile =
+        MarketSandboxProfile::decode(request.profile).map_err(|_| MarketStepRefusal::Encoding)?;
+    let billing = MarketBillingCommitment::decode(request.billing)
+        .map_err(|_| MarketStepRefusal::Encoding)?;
+    let profile_digest = crate::hash_bytes(crate::HashAlgorithm::Sha256, request.profile)
+        .map_err(|_| MarketStepRefusal::Encoding)?;
+    let program = ProgramId::new(profile.sandbox_program).map_err(|_| MarketStepRefusal::Denied)?;
+    if billing.profile_digest != profile_digest
+        || billing.boundary_count == 0
+        || billing.boundary_count > profile.maximum_boundaries
+        || profile.market_program != executing_program.bytes()
+        || profile.runtime_version != crate::RUNTIME_VERSION
+        || fees.version() != profile.fee_schedule_version
+    {
+        return Err(MarketStepRefusal::Denied);
+    }
+    let module = resolver
+        .program_module(program)
+        .ok_or(MarketStepRefusal::Denied)?;
+    let module_abi = match module.abi_revision() {
+        AbiRevision::V1 => 1,
+        AbiRevision::V2 => 2,
+        AbiRevision::V3 => 3,
+        AbiRevision::V4 => 4,
+        AbiRevision::V5 => 5,
+    };
+    if module.code_hash() != profile.code_hash
+        || module_abi != profile.abi_version
+        || module.metering_schedule_version() != profile.metering_schedule_version
+    {
+        return Err(MarketStepRefusal::Denied);
+    }
+    let (baseline_bytes, proofs) = decode_market_step_evidence(evidence)?;
+    let maximum = usize::try_from(profile.maximum_bytes).map_err(|_| MarketStepRefusal::Denied)?;
+    let count = billing.boundary_count;
+    let indices: &[u32] = match request.mode {
+        MARKET_STEP_OPEN if request.position < count => &[request.position],
+        MARKET_STEP_TRANSITION
+            if request
+                .position
+                .checked_add(1)
+                .is_some_and(|next| next < count) =>
+        {
+            &[request.position, request.position + 1]
+        }
+        MARKET_STEP_TERMINAL if request.position.checked_add(1) == Some(count) => {
+            &[request.position]
+        }
+        _ => return Err(MarketStepRefusal::Evidence),
+    };
+    if proofs.len() != indices.len()
+        || proofs
+            .iter()
+            .zip(indices)
+            .any(|(proof, index)| proof.index != *index)
+    {
+        return Err(MarketStepRefusal::Evidence);
+    }
+    if baseline_bytes.len() > maximum {
+        return Err(MarketStepRefusal::Evidence);
+    }
+    let baseline = Storage::decode_untrusted_replay_state(baseline_bytes, maximum)
+        .map_err(|_| MarketStepRefusal::Evidence)?;
+    if crate::replay::market_sandbox_baseline_root(&baseline)
+        .map_err(|_| MarketStepRefusal::Evidence)?
+        != profile.baseline_state_root
+    {
+        return Err(MarketStepRefusal::Evidence);
+    }
+    let scope = PrincipalId::new(profile.namespace).map_err(|_| MarketStepRefusal::Denied)?;
+    let namespace = crate::StorageNamespace::principal(program, scope);
+    for (candidate, size) in baseline
+        .namespace_sizes()
+        .map_err(|_| MarketStepRefusal::Evidence)?
+    {
+        if candidate != namespace || size > profile.limits.namespace_bytes {
+            return Err(MarketStepRefusal::Evidence);
+        }
+    }
+    let mut boundaries = Vec::with_capacity(proofs.len());
+    for proof in &proofs {
+        boundaries.push(open_market_boundary(
+            proof,
+            billing.provider_trace_root,
+            count,
+            maximum,
+        )?);
+    }
+    let leaf_digest = crate::hash_bytes(crate::HashAlgorithm::Sha256, proofs[0].leaf)
+        .map_err(|_| MarketStepRefusal::Evidence)?;
+    let commitment = crate::ArbitrationStepCommitment::from_state(&boundaries[0].arbitration)
+        .ok()
+        .map(|commitment| commitment.digest);
+    let limits = profile.limits;
+    let authority = crate::replay::MarketSandboxReplayAuthority {
+        profile_binding: billing.profile_digest,
+        namespace: profile.namespace,
+        lease_id: profile.lease_id,
+        namespace_limit: limits.namespace_bytes,
+        program,
+        tenant: PrincipalId::new(profile.tenant).map_err(|_| MarketStepRefusal::Denied)?,
+        payment_account: profile.tenant,
+        code_hash: profile.code_hash,
+        input_digest: profile.input_digest,
+        runtime_version: profile.runtime_version,
+        abi_version: profile.abi_version,
+        fee_schedule_version: profile.fee_schedule_version,
+        metering_schedule_version: profile.metering_schedule_version,
+        budget: crate::ResourceBudget::new_complete(
+            limits.cpu_fuel,
+            limits.memory_bytes,
+            limits.storage_read_bytes,
+            limits.storage_write_bytes,
+            u32::try_from(limits.output_values).map_err(|_| MarketStepRefusal::Denied)?,
+            limits.output_bytes,
+            u32::try_from(limits.table_elements).map_err(|_| MarketStepRefusal::Denied)?,
+        ),
+        fees,
+        fee_budget: profile.fee_budget,
+        baseline_storage: baseline,
+        baseline_state_root: profile.baseline_state_root,
+    };
+    let holds = match request.mode {
+        MARKET_STEP_OPEN => commitment.is_some(),
+        MARKET_STEP_TRANSITION => {
+            market_boundary_identity_holds(&profile, &boundaries[0])
+                && market_boundary_identity_holds(&profile, &boundaries[1])
+                && market_step_holds(
+                    module,
+                    &authority,
+                    &boundaries[0],
+                    boundaries[1].clone(),
+                    false,
+                    maximum,
+                )
+        }
+        _ => {
+            let last = &boundaries[0];
+            market_boundary_identity_holds(&profile, last)
+                && commitment == Some(billing.final_execution_state_root)
+                && if last.trap.is_some() {
+                    market_step_holds(module, &authority, last, last.clone(), true, maximum)
+                } else {
+                    last.replay.snapshot.call_frames.is_empty()
+                }
+        }
+    };
+    Ok(MarketStepOutcome {
+        holds,
+        leaf_digest,
+        commitment: commitment.unwrap_or([0; 32]),
+    }
+    .encode())
 }
 
 #[cfg(test)]

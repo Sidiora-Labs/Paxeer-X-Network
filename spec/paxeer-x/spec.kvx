@@ -27682,7 +27682,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.7.2]
 title = "Resolve compute disputes through authenticated arbiter outcomes and atomic settlement"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 4
 requires = ["0.2", "6.4", "104.35.2", "104.35.3"]
@@ -27705,6 +27705,12 @@ deployment_profile = "product"
 planned_paths = ["tools/qualification/paxeer-x/programs_market_resolution.py"]
 path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
 evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+completion_basis = "implementation"
+qualification_status = "BUILD_PASSED_VERIFY_FAILED"
+build_exit_code = 0
+verify_exit_code = 1
+qualification_log = "/root/lx-ops/fleet-2026-10-05/results/7.2.json"
+qualification_note = "Ruling 10 implemented as ABI V5 market-step host call with on-chain bisection and atomic verdict settlement; build exit 0 after two repairs; verify exit 1: SDK and market unit suites pass, all 8 compiled-market runtime cases fail module validation because the harness runs cargo from the repo root and misses programs/.cargo/config.toml target-feature=-reference-types; dispute scenarios unproven; cross-task: market wasm now needs validate_v5/for_abi(5) (104.35.5, 104.30.3, 104.35.6, market capture and attestation harnesses), challenges require committed sandbox billing, offers registered before this change have no stake row"
 
 [task.7.3]
 title = "Provide current versioned program capabilities in Rust, C and AssemblyScript"

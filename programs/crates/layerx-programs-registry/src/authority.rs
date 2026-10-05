@@ -226,6 +226,7 @@ impl DeploymentRecord {
                     | layerx_programs_runtime::ABI_V2_VERSION
                     | layerx_programs_runtime::ABI_V3_VERSION
                     | layerx_programs_runtime::ABI_V4_VERSION
+                    | layerx_programs_runtime::ABI_V5_VERSION
             )
             || self.new_code_hash == [0; 32]
             || self.sequence == 0

@@ -347,7 +347,7 @@ static size_t call_payload(fixture *f, uint8_t *out, const uint8_t *data, size_t
     capabilities[c++] = 7U;
     capabilities[c++] = 8U;
     bytes(out, &n, f->program, 32U);
-    write_u16(out+n, LX_PROGRAMS_GUEST_ABI_V4_VERSION); n += 2U;
+    write_u16(out+n, LX_PROGRAMS_GUEST_ABI_V5_VERSION); n += 2U;
     write_u16(out+n, sizeof("layerx_call")-1U); n += 2U;
     write_u32(out+n, (uint32_t)length); n += 4U;
     write_u16(out+n, (uint16_t)c); n += 2U;
@@ -1089,7 +1089,7 @@ int main(int argc, char **argv)
     if (fread(wasm, 1U, length, artifact) != length || fclose(artifact) != 0 ||
         executed_public_key(attester_seed, attester_key) != 0 || initialize(f) != 0) return 2;
     (void)memcpy(payload, f->program, 32U);
-    write_u16(payload+32U, LX_PROGRAMS_GUEST_ABI_V4_VERSION);
+    write_u16(payload+32U, LX_PROGRAMS_GUEST_ABI_V5_VERSION);
     payload[34U] = 1U;
     (void)memcpy(payload+36U, f->principals[0], 32U);
     if (lxp_hash_sha256(wasm, length, payload+68U) != LXP_OK) return 2;

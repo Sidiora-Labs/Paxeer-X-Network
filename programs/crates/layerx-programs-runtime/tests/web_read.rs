@@ -11,7 +11,7 @@ use layerx_programs_runtime::{
     ResourceBudget, Storage, StorageNamespace, ValidationRefusal, WasmEngine, WasmValue, WebAnswer,
     ABI_MANIFEST, ABI_MODULE, ABI_V1_MANIFEST, ABI_V1_VERSION, ABI_V2_MANIFEST, ABI_V2_VERSION,
     ABI_V3_MANIFEST, ABI_V3_VERSION, ABI_V4_HOST_FUNCTIONS, ABI_V4_MANIFEST, ABI_V4_MODULE,
-    ABI_V4_VERSION, ABI_VERSION, WEB_ANSWER_HEADER_BYTES,
+    ABI_V4_VERSION, ABI_V5_MANIFEST, ABI_V5_VERSION, ABI_VERSION, WEB_ANSWER_HEADER_BYTES,
 };
 use sha2::{Digest, Sha256};
 
@@ -381,6 +381,7 @@ fn frozen_manifests_are_unchanged_and_v4_only_appends_web_read() {
         (ABI_V2_VERSION, ABI_V2_MANIFEST),
         (ABI_V3_VERSION, ABI_V3_MANIFEST),
         (ABI_V4_VERSION, ABI_V4_MANIFEST),
+        (ABI_V5_VERSION, ABI_V5_MANIFEST),
     ] {
         let vector = vector(version);
         assert_eq!(vector, encoded(version, manifest), "ABI v{version} vector");
@@ -401,7 +402,12 @@ fn frozen_manifests_are_unchanged_and_v4_only_appends_web_read() {
     );
     assert!(!ABI_V3_MANIFEST.contains("layerx_v4"));
     assert_eq!(ABI_V4_HOST_FUNCTIONS.len(), 1);
-    assert_eq!(abi_manifest(5), None);
+    assert_eq!(
+        ABI_V5_MANIFEST.strip_prefix(ABI_V4_MANIFEST),
+        Some("layerx_v5\0market_step_adjudicate(i32,i32,i32,i32,i32,i32)->i32\0")
+    );
+    assert_eq!(ABI_V5_VERSION, 5);
+    assert_eq!(abi_manifest(6), None);
 
     let engine = WasmEngine::declared().unwrap_or_else(|error| panic!("engine: {error}"));
     let guest = web_guest();

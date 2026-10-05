@@ -420,6 +420,7 @@ impl VerifiedMarketSandbox {
             AbiRevision::V2 => 2,
             AbiRevision::V3 => 3,
             AbiRevision::V4 => 4,
+            AbiRevision::V5 => 5,
         };
         if module.code_hash() != profile.code_hash
             || module_abi != profile.abi_version

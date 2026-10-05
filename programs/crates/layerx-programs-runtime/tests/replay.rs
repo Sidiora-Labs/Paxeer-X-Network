@@ -25,7 +25,8 @@ use layerx_programs_runtime::{
     replay_recorded_execution, replay_recorded_execution_with_fee_history, Deploy, Executor,
     FeeSchedule, FeeScheduleHistory, HashAlgorithm, Lifecycle, LifecycleRefusal, ProgramId,
     RecordedExecution, ReplayRefusal, UpgradePolicy, ValidationLimits, ValidationRefusal,
-    WasmEngine, WasmValue, ABI_V1_VERSION, ABI_V2_VERSION, ABI_VERSION, RUNTIME_VERSION,
+    WasmEngine, WasmValue, ABI_V1_VERSION, ABI_V2_VERSION, ABI_V5_VERSION, ABI_VERSION,
+    RUNTIME_VERSION,
 };
 
 #[test]
@@ -171,13 +172,13 @@ fn unknown_runtime_and_abi_artifacts_are_preserved_without_execution() {
     );
     let abi = RecordedExecution {
         runtime_version: RUNTIME_VERSION,
-        abi_version: ABI_VERSION + 1,
+        abi_version: ABI_V5_VERSION + 1,
         ..runtime
     };
     assert_eq!(
         replay_recorded_execution(&abi),
         Err(ReplayRefusal::UnknownAbiVersion {
-            version: ABI_VERSION + 1
+            version: ABI_V5_VERSION + 1
         })
     );
 }

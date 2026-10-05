@@ -394,6 +394,7 @@ const INSUFFICIENT_BALANCE: i32 = -400;
 const FATAL_INVARIANT: i32 = -1001;
 use crate::abi_policy::{
     capability_encoding, CapabilityEncoding, ABI_V2_VERSION, ABI_V3_VERSION, ABI_V4_VERSION,
+    ABI_V5_VERSION,
 };
 const PROTOCOL_LEGACY: u16 = 1;
 const PROTOCOL_OCCUPANCY: u16 = 2;
@@ -563,6 +564,7 @@ const fn revision_tag(value: AbiRevision) -> u8 {
         AbiRevision::V2 => 2,
         AbiRevision::V3 => 3,
         AbiRevision::V4 => 4,
+        AbiRevision::V5 => 5,
     }
 }
 const fn meter_kind(value: ResourceKind) -> u8 {
@@ -2712,7 +2714,10 @@ pub extern "C" fn layerx_programs_call_begin(
             || fee_schedule_version == 0
             || metering_schedule_version == 0
             || !protocol_admits_abi(protocol_version, abi_version)
-            || matches!(abi_version, ABI_V3_VERSION | ABI_V4_VERSION) && protocol_version != 3
+            || matches!(
+                abi_version,
+                ABI_V3_VERSION | ABI_V4_VERSION | ABI_V5_VERSION
+            ) && protocol_version != 3
             || entrypoint_length == 0
             || entrypoint_length > 128
             || calldata_length > 1_048_576
@@ -2726,7 +2731,7 @@ pub extern "C" fn layerx_programs_call_begin(
             && (!protocol_uses_occupancy(protocol_version)
                 || !matches!(
                     abi_version,
-                    ABI_V2_VERSION | ABI_V3_VERSION | ABI_V4_VERSION
+                    ABI_V2_VERSION | ABI_V3_VERSION | ABI_V4_VERSION | ABI_V5_VERSION
                 ))
         {
             return Err(NON_CANONICAL);
@@ -3014,7 +3019,7 @@ pub extern "C" fn layerx_programs_call_begin(
             .with_payment_account(payment_account);
         let v2_transfer = if matches!(
             root_module.validated().abi_revision(),
-            AbiRevision::V2 | AbiRevision::V3 | AbiRevision::V4
+            AbiRevision::V2 | AbiRevision::V3 | AbiRevision::V4 | AbiRevision::V5
         ) {
             Some(
                 TransferCapability::from_root_authorization(
@@ -3055,7 +3060,7 @@ pub extern "C" fn layerx_programs_call_begin(
             .map_err(|_| LENGTH_LIMIT)?;
         if matches!(
             root_module.validated().abi_revision(),
-            AbiRevision::V2 | AbiRevision::V3 | AbiRevision::V4
+            AbiRevision::V2 | AbiRevision::V3 | AbiRevision::V4 | AbiRevision::V5
         ) {
             let execution_context = crate::abi::context::ExecutionContext::authenticated(
                 activity_sequence,

@@ -45,7 +45,7 @@ CASES = {
 
 def inventory():
     paths = [ROOT / 'programs/abi-frozen.sha256']
-    paths += [ROOT / f'programs/tests/vectors/abi-v{version}.hex' for version in range(1, 5)]
+    paths += [ROOT / f'programs/tests/vectors/abi-v{version}.hex' for version in range(1, 6)]
     return [producer.artifact(path) for path in paths]
 
 
