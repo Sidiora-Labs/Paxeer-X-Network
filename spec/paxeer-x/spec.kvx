@@ -28913,7 +28913,7 @@ fanout_basis = "Owner requested maximum parallel implementation on 2026-10-04; d
 
 [task.24.3]
 title = "Run the Human movement signer through the intended KMS and CA identities"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 8
 requires = ["0.2", "24.10", "24.2", "12.3", "12.2", "12.4"]
@@ -29982,7 +29982,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.10.4]
 title = "Execute every advertised unified custody plan with durable multi-stage journeys"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 8
 requires = ["0.2", "10.1", "10.2", "10.3", "12.2", "12.3"]
