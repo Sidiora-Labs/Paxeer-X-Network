@@ -30071,7 +30071,7 @@ retained_migration_accounting_paths_6_2 = ["include/layerx/lxp_kernel.h", "inclu
 
 [task.104.34.1]
 title = "Model the sandbox lease as protocol state"
-status = "pending"
+status = "in_progress"
 mode = "QUALIFY"
 wave = 7
 requires = ["0.2", "104.29.4", "104.30.2"]
