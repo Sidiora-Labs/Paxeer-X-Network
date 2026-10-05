@@ -1,4 +1,6 @@
 #include "reference-custody-fixture-base.inc"
+#include "layerx/lx_asset.h"
+#include "layerx/lxp_ledger.h"
 
 #define CUSTODY_CHECK(c) do { if (!(c)) { fprintf(stderr, "Reference custody line %d\n", __LINE__); return 1; } } while (0)
 
@@ -6,12 +8,15 @@ static const uint8_t custody_other_seed[32] = {0x58U};
 static const uint8_t custody_other_did[] = "did:lxp:reference-vault-other";
 static const uint8_t custody_seed[] = "reference/custody";
 static const uint8_t custody_second_seed[] = "reference/equal-condition";
+static const uint8_t custody_release_seed[] = "reference/release";
 static lxp_verified_receipt_index custody_index;
 static lxp_identity *custody_other_identity;
 static lx_account *custody_other_account;
 static uint8_t custody_other_key[32];
 static unsigned int custody_nonce;
 static const char *custody_evidence_directory;
+static lx_asset_record custody_asset_record;
+static lx_asset_runtime custody_asset_runtime;
 
 static int custody_write(const char *name, const uint8_t *bytes, size_t length)
 {
@@ -58,6 +63,8 @@ static int custody_execute(spend_fixture *f, uint32_t type,
                 true, 10U, 100U, f->state.next_sequence, &f->grant, &f->authority) == LXP_OK);
         f->execution.fee_balance = custody_other_account->balance;
     }
+    if (type == LX_ASSET_SEND)
+        f->execution.recorded_module_version = lx_asset_module_iface()->abi_version;
     f->execution.verified_receipts = &custody_index;
     CUSTODY_CHECK(lxp_kernel_execute_activity(&f->kernel, &f->activity,
         &f->execution, &f->receipt) == LXP_OK && f->receipt.result_code == expected);
@@ -178,6 +185,81 @@ static size_t custody_vault_input(uint8_t *out, uint8_t operation,
     return offset + 16U;
 }
 
+static int custody_send(spend_fixture *f, const uint8_t to[32], uint64_t amount,
+    uint8_t digest[32])
+{
+    lxp_send send;
+    uint8_t material[144], message[512], preimage[32], payload[1024], public_key[32];
+    size_t message_length = 0U, payload_length = 0U, signature_length = 64U;
+    (void)memset(&send, 0, sizeof(send));
+    memcpy(send.from, f->actor->id, 32U);
+    memcpy(send.to, to, 32U);
+    memcpy(send.asset, f->asset.asset_id, 32U);
+    send.amount = (lxp_u128){0U, amount};
+    send.sequence = f->actor->next_sequence;
+    send.idempotency_key[31] = (uint8_t)(custody_nonce + 1U);
+    send.expires_at = 100U;
+    send.authorization.kind = LXP_AUTH_OWNER;
+    send.authorization.network_id = 7U;
+    send.authorization.protocol_version = LXP_PROTOCOL_VERSION_STATE_COMMITMENT;
+    memcpy(send.authorization.controller, send.from, 32U);
+    memcpy(send.authorization.public_key, f->key, 32U);
+    memcpy(material, send.from, 32U);
+    memcpy(material + 32U, send.to, 32U);
+    memcpy(material + 64U, send.asset, 32U);
+    CUSTODY_CHECK(lxp_u128_to_be(send.amount, material + 96U) == LXP_OK);
+    memcpy(material + 112U, send.idempotency_key, 32U);
+    CUSTODY_CHECK(lxp_hash_context_value(material, sizeof(material), send.context_hash) == LXP_OK);
+    memcpy(send.authorization.signed_context_hash, send.context_hash, 32U);
+    CUSTODY_CHECK(lxp_send_authorization_message(&send, message, sizeof(message), &message_length) == LXP_OK &&
+        lxp_hash_domain(LXP_DOMAIN_SIGNATURE_PREIMAGE, message, message_length, preimage) == LXP_OK);
+    EVP_PKEY *key = EVP_PKEY_new_raw_private_key(EVP_PKEY_ED25519, NULL, spend_seed, 32U);
+    EVP_MD_CTX *context = EVP_MD_CTX_new();
+    int signed_ok = key != NULL && context != NULL &&
+        EVP_DigestSignInit(context, NULL, NULL, NULL, key) == 1 &&
+        EVP_DigestSign(context, send.authorization.signature, &signature_length, preimage, 32U) == 1;
+    EVP_MD_CTX_free(context);
+    EVP_PKEY_free(key);
+    CUSTODY_CHECK(signed_ok && signature_length == 64U &&
+        lxp_send_encode(&send, payload, sizeof(payload), &payload_length) == LXP_OK &&
+        custody_execute(f, LX_ASSET_SEND, payload, payload_length, false, LXP_OK) == 0 &&
+        f->receipt.operation == lxp_activity_type_ordinal(LX_ASSET_SEND) &&
+        memcmp(f->receipt.asset, send.asset, 32U) == 0 &&
+        lxp_u128_cmp(f->receipt.amount, send.amount) == 0 &&
+        executed_public_key(executed_sequencer_seed, public_key) == 0 &&
+        lxp_receipt_digest(&f->receipt, &f->arena, digest) == LXP_OK &&
+        lxp_verified_receipt_index_add(&custody_index, &f->receipt, public_key, &f->arena) == LXP_OK);
+    return 0;
+}
+
+static size_t custody_escrow_open(uint8_t *out, const uint8_t *seed, size_t seed_length,
+    const uint8_t account[32], const uint8_t asset[32], const uint8_t beneficiary[32],
+    const uint8_t refund[32], uint64_t amount, const uint8_t release_receipt[32],
+    const uint8_t refund_receipt[32])
+{
+    size_t offset = 0U;
+    out[offset++] = 1U; out[offset++] = 1U;
+    write_u16(out + offset, (uint16_t)seed_length); offset += 2U;
+    memcpy(out + offset, seed, seed_length); offset += seed_length;
+    memcpy(out + offset, account, 32U); offset += 32U;
+    memcpy(out + offset, asset, 32U); offset += 32U;
+    memcpy(out + offset, beneficiary, 32U); offset += 32U;
+    memcpy(out + offset, refund, 32U); offset += 32U;
+    write_u64(out + offset, 0U); write_u64(out + offset + 8U, amount); offset += 16U;
+    memcpy(out + offset, release_receipt, 32U); offset += 32U;
+    memcpy(out + offset, refund_receipt, 32U);
+    return offset + 32U;
+}
+
+static size_t custody_escrow_settle(uint8_t *out, uint8_t operation,
+    const uint8_t account[32], const uint8_t condition[32])
+{
+    out[0] = 1U; out[1] = operation;
+    memcpy(out + 2U, account, 32U);
+    memcpy(out + 34U, condition, 32U);
+    return 66U;
+}
+
 static void custody_hex(const uint8_t bytes[32], char text[65])
 {
     static const char alphabet[] = "0123456789abcdef";
@@ -199,6 +281,14 @@ int main(int argc, char **argv)
     spend_fixture *f = calloc(1U, sizeof(*f));
     CUSTODY_CHECK(f != NULL && spend_init(f) == 0 &&
         lxp_verified_receipt_index_init(&custody_index) == LXP_OK);
+    memcpy(custody_asset_record.asset_id, f->asset.asset_id, 32U);
+    custody_asset_runtime = (lx_asset_runtime){&f->accounts, &custody_asset_record, 1U,
+        &f->asset, 1U, 7U, LXP_PROTOCOL_VERSION_STATE_COMMITMENT};
+    f->actor->has_authority_key = true;
+    memcpy(f->actor->authority_key, f->key, 32U);
+    CUSTODY_CHECK(lxp_kernel_register_module(&f->kernel, lx_asset_module_iface()) == LXP_OK &&
+        lxp_kernel_bind_module_runtime(&f->kernel, LXP_MODULE_ASSET, &custody_asset_runtime) == LXP_OK &&
+        lxp_state_store_require_account_root(&f->state) == LXP_OK);
     static const uint8_t other_name[] = "agent:did:lxp:reference-vault-other:main";
     uint8_t other_id[32];
     CUSTODY_CHECK(executed_public_key(custody_other_seed, custody_other_key) == 0 &&
@@ -285,6 +375,59 @@ int main(int argc, char **argv)
     CUSTODY_CHECK(custody_call(f, f->child, custody_seed, sizeof(custody_seed) - 1U,
         vault_account, f->payee->id, NULL, input, length, false, LXP_ERR_PROGRAM_REFUSED) == 0 &&
         lxp_u128_is_zero(vault->balance) && f->payee->balance.lo == 50U);
+    uint8_t release_send[32], refund_send[32], release_account[32];
+    CUSTODY_CHECK(custody_send(f, custody_other_account->id, 20U, release_send) == 0 &&
+        custody_send(f, custody_other_account->id, 20U, refund_send) == 0 &&
+        memcmp(release_send, refund_send, 32U) != 0 &&
+        custody_register(f, f->owner, custody_release_seed, sizeof(custody_release_seed) - 1U,
+            release_account) == 0);
+    lx_account *released = program_spend_account(&f->accounts, release_account);
+    length = custody_escrow_open(input, custody_release_seed, sizeof(custody_release_seed) - 1U,
+        release_account, f->asset.asset_id, f->payee->id, custody_other_account->id, 20U,
+        release_send, refund_send);
+    CUSTODY_CHECK(released != NULL && custody_call(f, f->owner, custody_release_seed,
+        sizeof(custody_release_seed) - 1U, release_account, f->payee->id, NULL, input, length,
+        false, LXP_OK) == 0 && released->balance.hi == 0U && released->balance.lo == 20U);
+    length = custody_escrow_settle(input, 2U, release_account, refund_send);
+    CUSTODY_CHECK(custody_call(f, f->owner, custody_release_seed, sizeof(custody_release_seed) - 1U,
+        release_account, f->payee->id, refund_send, input, length, false, LXP_ERR_PROGRAM_REFUSED) == 0 &&
+        released->balance.lo == 20U && f->payee->balance.lo == 50U);
+    length = custody_escrow_settle(input, 2U, release_account, release_send);
+    CUSTODY_CHECK(custody_call(f, f->owner, custody_release_seed, sizeof(custody_release_seed) - 1U,
+        release_account, f->payee->id, release_send, input, length, false, LXP_OK) == 0 &&
+        lxp_u128_is_zero(released->balance) && f->payee->balance.hi == 0U &&
+        f->payee->balance.lo == 70U);
+    CUSTODY_CHECK(custody_call(f, f->owner, custody_release_seed, sizeof(custody_release_seed) - 1U,
+        release_account, f->payee->id, release_send, input, length, false, LXP_ERR_PROGRAM_REFUSED) == 0 &&
+        lxp_u128_is_zero(released->balance) && f->payee->balance.lo == 70U);
+    lxp_u128 other_before = custody_other_account->balance;
+    length = custody_escrow_settle(input, 3U, release_account, refund_send);
+    CUSTODY_CHECK(custody_call(f, f->owner, custody_release_seed, sizeof(custody_release_seed) - 1U,
+        release_account, custody_other_account->id, refund_send, input, length, false,
+        LXP_ERR_PROGRAM_REFUSED) == 0 && lxp_u128_is_zero(released->balance) &&
+        lxp_u128_cmp(custody_other_account->balance, other_before) == 0);
+    lx_account *refunded = program_spend_account(&f->accounts, second_account);
+    length = custody_escrow_open(input, custody_second_seed, sizeof(custody_second_seed) - 1U,
+        second_account, f->asset.asset_id, f->payee->id, custody_other_account->id, 20U,
+        release_send, refund_send);
+    CUSTODY_CHECK(refunded != NULL && custody_call(f, f->owner, custody_second_seed,
+        sizeof(custody_second_seed) - 1U, second_account, f->payee->id, NULL, input, length,
+        false, LXP_OK) == 0 && refunded->balance.hi == 0U && refunded->balance.lo == 20U);
+    lxp_u128 expected_other;
+    CUSTODY_CHECK(lxp_u128_add(other_before, (lxp_u128){0U, 20U}, &expected_other) == LXP_OK);
+    length = custody_escrow_settle(input, 3U, second_account, refund_send);
+    CUSTODY_CHECK(custody_call(f, f->owner, custody_second_seed, sizeof(custody_second_seed) - 1U,
+        second_account, custody_other_account->id, refund_send, input, length, false, LXP_OK) == 0 &&
+        lxp_u128_is_zero(refunded->balance) &&
+        lxp_u128_cmp(custody_other_account->balance, expected_other) == 0);
+    CUSTODY_CHECK(custody_call(f, f->owner, custody_second_seed, sizeof(custody_second_seed) - 1U,
+        second_account, custody_other_account->id, refund_send, input, length, false,
+        LXP_ERR_PROGRAM_REFUSED) == 0 && lxp_u128_is_zero(refunded->balance) &&
+        lxp_u128_cmp(custody_other_account->balance, expected_other) == 0);
+    length = custody_escrow_settle(input, 2U, second_account, release_send);
+    CUSTODY_CHECK(custody_call(f, f->owner, custody_second_seed, sizeof(custody_second_seed) - 1U,
+        second_account, f->payee->id, release_send, input, length, false, LXP_ERR_PROGRAM_REFUSED) == 0 &&
+        lxp_u128_is_zero(refunded->balance) && f->payee->balance.lo == 70U);
     char escrow_text[65], vault_text[65];
     custody_hex(escrow_hash, escrow_text); custody_hex(vault_hash, vault_text);
     CUSTODY_CHECK(printf("{\"schema\":\"paxeer-x.reference-custody-native.v1\",\"cases\":["
@@ -295,14 +438,17 @@ int main(int argc, char **argv)
         "{\"name\":\"vault-two-principal-pool\",\"passed\":true},"
         "{\"name\":\"vault-principal-isolation\",\"passed\":true},"
         "{\"name\":\"vault-full-withdrawals\",\"passed\":true},"
-        "{\"name\":\"vault-overwithdraw-rollback\",\"passed\":true}],"
-        "\"programs\":{\"escrow\":{\"code_hash\":\"%s\"},\"vault\":{\"code_hash\":\"%s\"}},"
-        "\"missing\":[\"escrow-successful-release\",\"escrow-successful-refund\","
-        "\"escrow-duplicate-settlement\",\"authenticated-source-verification\"]}\n",
+        "{\"name\":\"vault-overwithdraw-rollback\",\"passed\":true},"
+        "{\"name\":\"escrow-asset-send-condition-receipts\",\"passed\":true},"
+        "{\"name\":\"escrow-mismatched-condition-rollback\",\"passed\":true},"
+        "{\"name\":\"escrow-successful-release\",\"passed\":true},"
+        "{\"name\":\"escrow-successful-refund\",\"passed\":true},"
+        "{\"name\":\"escrow-duplicate-settlement\",\"passed\":true}],"
+        "\"programs\":{\"escrow\":{\"code_hash\":\"%s\"},\"vault\":{\"code_hash\":\"%s\"}}}\n",
         escrow_text, vault_text) > 0);
     while (f->kernel.blob_count != 0U) free(f->kernel.blobs[--f->kernel.blob_count].bytes);
     CUSTODY_CHECK(lxp_state_store_destroy(&f->state) == LXP_OK);
     lx_account_registry_release(&f->accounts);
     free(f);
-    return 78;
+    return 0;
 }

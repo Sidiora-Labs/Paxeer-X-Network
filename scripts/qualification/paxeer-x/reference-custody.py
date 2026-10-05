@@ -3,6 +3,7 @@ import argparse
 import importlib.util
 import json
 import os
+import shutil
 from pathlib import Path
 import sys
 import time
@@ -12,6 +13,22 @@ ROOT = Path(__file__).resolve().parents[3]
 TASK = '104.30.7'
 SCHEMA = 'paxeer-x.reference-custody-build.v1'
 GUESTS = ('escrow', 'vault')
+NATIVE_TARGET = 'tests/programs_reference_custody'
+NATIVE_CASES = ['escrow-open-real-funding', 'escrow-duplicate-open',
+    'escrow-bad-condition-rollback', 'escrow-equal-condition-refusal',
+    'vault-two-principal-pool', 'vault-principal-isolation', 'vault-full-withdrawals',
+    'vault-overwithdraw-rollback', 'escrow-asset-send-condition-receipts',
+    'escrow-mismatched-condition-rollback', 'escrow-successful-release',
+    'escrow-successful-refund', 'escrow-duplicate-settlement']
+UNQUALIFIED = ['authenticated-source-verification']
+NATIVE_RULE = (
+    '$(BUILD_DIR)/' + NATIVE_TARGET + ': tests/programs/test_reference_custody.c '
+    'tests/programs/test_spend_capability_composition.c tests/programs/test_call_activity.c '
+    '$(BUILD_DIR)/generated/reference-custody-fixture-base.inc $(LIBRARY) $(CHECKPOINT_SETTLEMENT_HEADER)\n'
+    '\t@mkdir -p $(@D)\n'
+    '\t$(CC) $(CPPFLAGS) -Itests/programs $(CFLAGS) $< -Wl,--start-group $(LIBRARY) '
+    '$(PAXEER_REFERENCE_RUNTIME_LIB) -Wl,--end-group $(EXTRA_LDFLAGS) '
+    '-lssl -lcrypto -lsqlite3 -pthread -ldl -lm -o $@\n')
 spec = importlib.util.spec_from_file_location('spending_evidence',
     ROOT / 'tools/qualification/paxeer-x/program_spend_composition.py')
 evidence = importlib.util.module_from_spec(spec)
@@ -51,7 +68,8 @@ def build(args, directory):
                 'programs/sdk/rust/examples/' + guest + '/Cargo.toml']
             record['steps'].append(evidence.launch(command, run, environment,
                 deadline, guest))
-            artifact = target / ('wasm32-unknown-unknown/release/layerx_reference_' + guest + '.wasm')
+            artifact = run / (guest + '.wasm')
+            shutil.copyfile(target / ('wasm32-unknown-unknown/release/layerx_reference_' + guest + '.wasm'), artifact)
             record['artifacts'][guest] = evidence.artifact(artifact)
         record['steps'].append(evidence.launch(['cargo', '+1.91.1', 'build', '--locked',
             '--manifest-path', 'programs/Cargo.toml', '-p', 'layerx-programs-sandbox',
@@ -75,15 +93,17 @@ def build(args, directory):
         with os.fdopen(fd, 'w') as stream:
             stream.write(replacement + ';\n' + fixture.replace(original, replacement, 1))
         record['artifacts']['fixture_projection'] = evidence.artifact(projection)
-        record['steps'].append(evidence.launch(['make', '-j4',
+        rule = run / 'reference-custody.mk'
+        fd = os.open(rule, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+        with os.fdopen(fd, 'w') as stream:
+            stream.write(NATIVE_RULE)
+        record['artifacts']['native_rule'] = evidence.artifact(rule)
+        record['steps'].append(evidence.launch(['make', '-j4', '-f', 'Makefile', '-f', str(rule),
             'BUILD_DIR=' + str(native_dir), 'CC=' + args.cc,
             'LXP_REVISION=' + candidate['revision'],
             'PAXEER_REFERENCE_RUNTIME_LIB=' + str(sandbox),
-            'PROGRAMS_RUNTIME_LIB=' + str(sandbox),
-            'PROGRAMS_TARGET_DIR=' + str(target),
-            str(native_dir / 'tests/programs_reference_custody')], run,
-            environment, deadline, 'native'))
-        record['artifacts']['native'] = evidence.artifact(native_dir / 'tests/programs_reference_custody')
+            str(native_dir / NATIVE_TARGET)], run, environment, deadline, 'native'))
+        record['artifacts']['native'] = evidence.artifact(native_dir / NATIVE_TARGET)
         record['artifacts']['library'] = evidence.artifact(native_dir / 'liblayerx.a')
         evidence.require(source() == candidate, 'source changed during declared build')
         record['completed'] = True
@@ -106,10 +126,13 @@ def qualify(directory):
         evidence.checked(artifact)
     run = directory / ('reference-custody-verify-' + str(time.time_ns()))
     run.mkdir(mode=0o700)
+    evidence.require(manifest['artifacts']['native_rule']['sha256']
+        == evidence.digest(artifacts['native_rule']['path'])
+        and Path(artifacts['native_rule']['path']).read_text() == NATIVE_RULE,
+        'declared native compiler rule changed')
     result = {'schema': 'paxeer-x.reference-custody-result.v1',
-        'source': candidate, 'steps': [], 'passed': False,
-        'unqualified_criteria': ['escrow-successful-release', 'escrow-successful-refund',
-            'escrow-duplicate-settlement', 'authenticated-source-verification']}
+        'source': candidate, 'steps': [], 'passed': False, 'cases': [],
+        'unqualified_criteria': list(UNQUALIFIED)}
     deadline = time.monotonic() + 1800
     try:
         for guest in GUESTS:
@@ -125,7 +148,18 @@ def qualify(directory):
         result['native_evidence'] = [evidence.artifact(p) for p in sorted(output.iterdir())
             if p.is_file()]
         evidence.require(result['native_evidence'], 'actual custody receipt evidence missing')
+        report = None
+        for line in Path(result['steps'][-1]['log']['path']).read_text().splitlines():
+            if line.startswith('{'):
+                evidence.require(report is None, 'duplicate native custody report')
+                report = json.loads(line)
+        evidence.require(report is not None
+            and report['schema'] == 'paxeer-x.reference-custody-native.v1'
+            and [case['name'] for case in report['cases']] == NATIVE_CASES
+            and all(case['passed'] is True for case in report['cases'])
+            and set(report['programs']) == set(GUESTS), 'native custody cases incomplete')
         evidence.require(source() == candidate, 'source changed during qualification')
+        result['cases'] = ['native:' + name for name in NATIVE_CASES]
         result['native_passed'] = True
     finally:
         error = sys.exc_info()[1]
@@ -150,7 +184,7 @@ def main():
             build(args, directory)
         else:
             qualify(directory)
-            print('custody native evidence recorded; registered source verification remains unqualified',
+            print('custody native evidence recorded; unqualified: ' + ', '.join(UNQUALIFIED),
                 file=sys.stderr)
             return 2
     except (OSError, ValueError, KeyError, TypeError) as error:
