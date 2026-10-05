@@ -59,6 +59,7 @@ typedef struct differential_run {
     uint8_t canonical_root[32];
     uint8_t prepared_root[32];
     uint64_t elapsed_ns;
+    size_t level_count;
 } differential_run;
 
 typedef struct differential_checkpoint {
@@ -322,6 +323,43 @@ static uint64_t elapsed_ns(const struct timespec *start,
             (uint64_t)finish->tv_nsec - (uint64_t)start->tv_nsec;
     }
     return seconds * UINT64_C(1000000000) + nanoseconds;
+}
+
+static int observe_schedule_levels(differential_fixture *fixture,
+                                   const lxp_activity *activities,
+                                   const lxp_kernel_execution *executions,
+                                   size_t count, size_t *level_count)
+{
+    static lxp_programs_schedule_item items[DIFFERENTIAL_BATCH_SIZE];
+    uint16_t levels[DIFFERENTIAL_BATCH_SIZE];
+    uint16_t maximum_level = 0U;
+    lxp_kernel_batch_snapshot *snapshot = NULL;
+    size_t index;
+    lxp_result status;
+    if (count == 0U || count > DIFFERENTIAL_BATCH_SIZE) return 1;
+    status = lxp_kernel_batch_snapshot_create(
+        &fixture->kernel, executions[0].identities,
+        executions[0].verified_receipts, &executions[0], &snapshot);
+    for (index = 0U; status == LXP_OK && index < count; ++index) {
+        size_t mark = lxp_arena_mark(executions[index].arena);
+        status = lxp_kernel_batch_schedule_item(
+            snapshot, &activities[index], &executions[index],
+            executions[index].arena, &items[index]);
+        if (lxp_arena_reset(executions[index].arena, mark) != LXP_OK)
+            status = LXP_FATAL_INVARIANT;
+    }
+    lxp_kernel_batch_snapshot_destroy(snapshot);
+    if (status == LXP_OK)
+        status = layerx_programs_schedule_plan(items, count, levels,
+                                               &maximum_level);
+    if (status != LXP_OK || levels[0] != 0U) return 1;
+    for (index = 1U; index < count; ++index)
+        if (levels[index] < levels[index - 1U] ||
+            levels[index] > (uint16_t)(levels[index - 1U] + 1U))
+            return 1;
+    if (levels[count - 1U] != maximum_level) return 1;
+    *level_count = (size_t)maximum_level + 1U;
+    return 0;
 }
 
 static int differential_fixture_init_balanced(
@@ -627,6 +665,13 @@ static int execute_workload(differential_fixture *fixture,
     (void)memcpy(offered_activity_root,
                  scheduling_roots.activity_merkle_root, 32U);
     (void)memcpy(offered_batch_id, batch_id, 32U);
+    if (workload != DIFFERENTIAL_PLANNING_REFUSAL && !expect_retry &&
+        observe_schedule_levels(fixture, activities, executions,
+                                activity_count, &run->level_count) != 0) {
+        cleanup_differential_directory(
+            directory, &checkpoint, wal_record, prepared);
+        return 1;
+    }
     if (clock_gettime(CLOCK_MONOTONIC, &start) != 0) {
         cleanup_differential_directory(
             directory, &checkpoint, wal_record, prepared);
@@ -1016,11 +1061,17 @@ static int qualify_workload(differential_workload workload)
     /* Elapsed values are source-harness measurements only. They are excluded
      * from every consensus comparison and no baseline number is embedded. */
     (void)fprintf(stderr,
-                  "program batch differential workload=%s serial_ns=%llu parallel_ns=%llu\n",
+                  "program batch differential workload=%s activities=%u levels=%zu workers=%u serial_ns=%llu parallel_ns=%llu\n",
                   workload == DIFFERENTIAL_LOW_CONFLICT ? "low-conflict" :
                   "all-conflicting",
+                  (unsigned)DIFFERENTIAL_BATCH_SIZE, serial.level_count,
+                  (unsigned)DIFFERENTIAL_WORKERS,
                   (unsigned long long)serial.elapsed_ns,
                   (unsigned long long)parallel.elapsed_ns);
+    if (serial.level_count != parallel.level_count ||
+        serial.level_count != (workload == DIFFERENTIAL_LOW_CONFLICT ?
+                               1U : (size_t)DIFFERENTIAL_BATCH_SIZE))
+        return 1;
     return differential_fixture_destroy(&serial_fixture) == LXP_OK &&
            differential_fixture_destroy(&parallel_fixture) == LXP_OK ? 0 : 1;
 }

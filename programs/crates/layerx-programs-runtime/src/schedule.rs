@@ -515,8 +515,306 @@ impl<E: std::error::Error + 'static> std::error::Error for ScheduleError<E> {}
 
 #[cfg(all(test, feature = "host-ffi"))]
 mod tests {
-    use super::{ConflictGraph, ProtocolScheduleEffects, ScheduleAccess};
-    use crate::{AccessDeclaration, AccessSet};
+    use std::collections::BTreeMap;
+    use std::num::NonZeroUsize;
+
+    use super::{
+        ConflictGraph, ParallelScheduler, ProtocolScheduleEffects, ScheduleAccess, ScheduleError,
+        SchedulingStrategy,
+    };
+    use crate::{AccessDeclaration, AccessMode, AccessSet, AccountAccess};
+
+    const ASSET: [u8; 32] = [0x5a; 32];
+
+    type State = BTreeMap<u8, u64>;
+
+    #[derive(Clone, Debug, Eq, PartialEq)]
+    struct Activity {
+        reads: Vec<u8>,
+        writes: Vec<u8>,
+    }
+
+    #[derive(Clone, Debug, Eq, PartialEq)]
+    struct Outcome {
+        writes: Vec<(u8, u64)>,
+        fuel: u64,
+    }
+
+    fn account(tag: u8) -> [u8; 32] {
+        let mut account = [0; 32];
+        account[0] = 1;
+        account[31] = tag;
+        account
+    }
+
+    fn access(activity: &Activity) -> ScheduleAccess {
+        let mut modes = BTreeMap::new();
+        for &tag in &activity.reads {
+            modes.entry(tag).or_insert(AccessMode::Read);
+        }
+        for &tag in &activity.writes {
+            modes.insert(tag, AccessMode::Write);
+        }
+        ScheduleAccess::explicit(
+            AccessSet::new(
+                [],
+                modes.into_iter().map(|(tag, mode)| {
+                    AccountAccess::new(account(tag), ASSET, mode).expect("nonzero account")
+                }),
+            )
+            .expect("bounded access set"),
+        )
+    }
+
+    fn accesses(activities: &[Activity]) -> Vec<ScheduleAccess> {
+        activities.iter().map(access).collect()
+    }
+
+    fn batch(length: usize, accounts: u8, seed: u64) -> Vec<Activity> {
+        let mut state = seed;
+        let mut next = move || {
+            state = state
+                .wrapping_mul(6_364_136_223_846_793_005)
+                .wrapping_add(1_442_695_040_888_963_407);
+            (state >> 33) as u8
+        };
+        (0..length)
+            .map(|_| Activity {
+                reads: vec![next() % accounts, next() % accounts],
+                writes: vec![next() % accounts],
+            })
+            .collect()
+    }
+
+    fn execute(state: &State, index: usize, activity: &Activity) -> Outcome {
+        let mut digest = index as u64;
+        let mut fuel = 1u64;
+        for tag in activity.reads.iter().chain(&activity.writes) {
+            let value = state.get(tag).copied().unwrap_or(u64::from(*tag));
+            digest = digest.wrapping_mul(0x0100_0000_01b3).wrapping_add(value);
+            fuel += value % 7 + 1;
+        }
+        Outcome {
+            writes: activity
+                .writes
+                .iter()
+                .map(|&tag| (tag, digest ^ u64::from(tag)))
+                .collect(),
+            fuel,
+        }
+    }
+
+    fn apply(state: &mut State, outcome: &Outcome) {
+        for &(tag, value) in &outcome.writes {
+            state.insert(tag, value);
+        }
+    }
+
+    fn canonical_serial(activities: &[Activity]) -> (State, Vec<(usize, Outcome)>) {
+        let mut state = State::new();
+        let mut commits = Vec::with_capacity(activities.len());
+        for (index, activity) in activities.iter().enumerate() {
+            let outcome = execute(&state, index, activity);
+            apply(&mut state, &outcome);
+            commits.push((index, outcome));
+        }
+        (state, commits)
+    }
+
+    fn strategies() -> Vec<ParallelScheduler> {
+        let mut strategies = vec![ParallelScheduler::serial(), ParallelScheduler::parallel()];
+        for workers in [1, 2, 3, 8, 64] {
+            strategies.push(ParallelScheduler::parallel_with_workers(
+                NonZeroUsize::new(workers).expect("nonzero workers"),
+            ));
+        }
+        strategies
+    }
+
+    #[test]
+    fn partition_is_a_pure_canonical_function_of_batch_contents() {
+        for (accounts, seed) in [(3, 11), (12, 7), (40, 5), (250, 3)] {
+            let activities = batch(64, accounts, seed);
+            let scheduled = accesses(&activities);
+            let plan = ParallelScheduler::plan(&scheduled);
+            assert_eq!(
+                plan,
+                ParallelScheduler::plan(&accesses(&batch(64, accounts, seed)))
+            );
+            let mut levels = vec![usize::MAX; activities.len()];
+            let mut next = 0;
+            for (level, members) in plan.dependency_levels().iter().enumerate() {
+                assert!(!members.is_empty());
+                for &member in members {
+                    assert_eq!(member, next, "levels must be canonical contiguous ranges");
+                    next += 1;
+                    levels[member] = level;
+                    for &predecessor in plan.graph().predecessors(member).expect("member") {
+                        assert!(levels[predecessor] < level);
+                    }
+                }
+                for (position, &left) in members.iter().enumerate() {
+                    for &right in &members[position + 1..] {
+                        assert!(!scheduled[left].conflicts_with(&scheduled[right]));
+                    }
+                }
+            }
+            assert_eq!(next, activities.len());
+            for later in 0..activities.len() {
+                for earlier in 0..later {
+                    assert_eq!(
+                        plan.graph().conflicts(earlier, later),
+                        scheduled[later].conflicts_with(&scheduled[earlier])
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn disjoint_batches_share_one_level_and_all_conflicting_batches_serialise() {
+        let disjoint: Vec<_> = (0..64)
+            .map(|tag| Activity {
+                reads: vec![],
+                writes: vec![tag],
+            })
+            .collect();
+        assert_eq!(
+            ParallelScheduler::plan(&accesses(&disjoint))
+                .dependency_levels()
+                .to_vec(),
+            vec![(0..64).collect::<Vec<_>>()]
+        );
+        let readers: Vec<_> = (0..64)
+            .map(|_| Activity {
+                reads: vec![0],
+                writes: vec![],
+            })
+            .collect();
+        assert_eq!(
+            ParallelScheduler::plan(&accesses(&readers))
+                .dependency_levels()
+                .len(),
+            1
+        );
+        let conflicting: Vec<_> = (0..64)
+            .map(|_| Activity {
+                reads: vec![],
+                writes: vec![0],
+            })
+            .collect();
+        assert_eq!(
+            ParallelScheduler::plan(&accesses(&conflicting))
+                .dependency_levels()
+                .to_vec(),
+            (0..64).map(|index| vec![index]).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn unresolved_absent_declaration_is_a_barrier() {
+        let mut scheduled: Vec<_> = (0..6)
+            .map(|tag| {
+                access(&Activity {
+                    reads: vec![],
+                    writes: vec![tag],
+                })
+            })
+            .collect();
+        scheduled[3] = ScheduleAccess::conservative_absent();
+        assert_eq!(
+            ParallelScheduler::plan(&scheduled)
+                .dependency_levels()
+                .to_vec(),
+            vec![vec![0, 1, 2], vec![3], vec![4, 5]]
+        );
+    }
+
+    #[test]
+    fn parallel_and_refused_parallelism_commit_the_canonical_serial_result() {
+        for (accounts, seed) in [(1, 1), (4, 2), (16, 3), (64, 4), (250, 5)] {
+            let activities = batch(64, accounts, seed);
+            let scheduled = accesses(&activities);
+            let (expected_state, expected_commits) = canonical_serial(&activities);
+            for scheduler in strategies() {
+                let mut commits = Vec::new();
+                let state = scheduler
+                    .execute_staged(
+                        &activities,
+                        &scheduled,
+                        State::new(),
+                        |view, index, activity| Ok::<_, u8>(execute(view, index, activity)),
+                        |state, _, outcome| {
+                            apply(state, outcome);
+                            Ok(())
+                        },
+                        |index, outcome| commits.push((index, outcome)),
+                    )
+                    .expect("staged batch");
+                assert_eq!(state, expected_state, "{scheduler:?}");
+                assert_eq!(commits, expected_commits, "{scheduler:?}");
+            }
+        }
+        assert_eq!(
+            ParallelScheduler::serial().strategy(),
+            SchedulingStrategy::Serial
+        );
+        assert_eq!(
+            ParallelScheduler::parallel().strategy(),
+            SchedulingStrategy::Parallel
+        );
+    }
+
+    #[test]
+    fn failed_activity_commits_nothing_under_every_strategy() {
+        let activities = batch(32, 8, 9);
+        let scheduled = accesses(&activities);
+        for scheduler in strategies() {
+            let mut commits = 0usize;
+            let result = scheduler.execute_staged(
+                &activities,
+                &scheduled,
+                State::new(),
+                |view, index, activity| {
+                    if index == 17 {
+                        Err(17u8)
+                    } else {
+                        Ok(execute(view, index, activity))
+                    }
+                },
+                |state, _, outcome| {
+                    apply(state, outcome);
+                    Ok(())
+                },
+                |_, _| commits += 1,
+            );
+            assert_eq!(
+                result,
+                Err(ScheduleError::Activity {
+                    index: 17,
+                    source: 17
+                })
+            );
+            assert_eq!(commits, 0);
+        }
+        assert_eq!(
+            ParallelScheduler::parallel().execute_staged(
+                &activities,
+                &scheduled[1..],
+                State::new(),
+                |view, index, activity| Ok::<_, u8>(execute(view, index, activity)),
+                |state, _, outcome| {
+                    apply(state, outcome);
+                    Ok(())
+                },
+                |_, _: Outcome| {},
+            ),
+            Err(ScheduleError::LengthMismatch {
+                activities: 32,
+                accesses: 31
+            })
+        );
+    }
 
     fn scheduled(effects: ProtocolScheduleEffects) -> ScheduleAccess {
         ScheduleAccess::from_admitted(

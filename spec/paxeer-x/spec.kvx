@@ -30082,6 +30082,10 @@ planned_paths = ["tools/paxeer-x/gates/104.32.6.sh"]
 path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
 evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
 retained_migration_accounting_paths_6_2 = ["include/layerx/lxp_kernel.h", "include/layerx/programs.h", "src/protocol/lxp_kernel.c"]
+qualification_status = "OWNER_DECISION_PENDING"
+build_exit_code = 0
+verify_exit_code = 8
+qualification_log = "/root/lx-ops/fleet-2026-10-05/results/104.32.6.json"
 
 [task.104.34.1]
 title = "Model the sandbox lease as protocol state"
