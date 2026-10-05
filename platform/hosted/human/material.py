@@ -17,6 +17,9 @@ from urllib.parse import urlsplit
 # withdrawal claims and forced exits are all calls on it, so the four custody bindings are this
 # constant address and no longer come from the Solidity deployment record.
 CUSTODY_PRECOMPILE = '0x0000000000000000000000000000000000001013'
+HUMAN_KMS_ENDPOINT = '127.0.0.1:9450'
+HUMAN_KMS_SERVER_NAME = 'layerx-human-kms'
+HUMAN_KMS_PROVIDER = 'layerx-human-kms'
 
 
 def write(directory, name, value):
@@ -651,8 +654,8 @@ def component_defaults(network, chain, web_origin=''):
         'RETENTION_NOTIFICATIONS_SECONDS': 604800, 'RETENTION_AUDIT_SECONDS': 7776000,
         'RETENTION_TELEMETRY_SECONDS': 604800, 'RETENTION_CACHE_SECONDS': 300,
         'CAPABILITY_TTL_SECONDS': 30, 'AGENT_SOCKET': '/run/layerx/human/owner/agent.sock',
-        'KMS_PROVIDER_REFERENCE': 'layerx-human-kms', 'KMS_ENDPOINT': '127.0.0.1:9450',
-        'KMS_SERVER_NAME': 'layerx-human-kms',
+        'KMS_PROVIDER_REFERENCE': HUMAN_KMS_PROVIDER, 'KMS_ENDPOINT': HUMAN_KMS_ENDPOINT,
+        'KMS_SERVER_NAME': HUMAN_KMS_SERVER_NAME,
         'KMS_ROOT_CERTIFICATE_DER': '/run/human-private/components/ca.der',
         'KMS_CLIENT_CERTIFICATE_DER': '/run/human-private/components/kms-client.der',
         'KMS_CLIENT_PRIVATE_KEY_DER': '/run/human-private/components/kms-client-key.der',
@@ -668,6 +671,26 @@ def component_defaults(network, chain, web_origin=''):
         'EXIT_POLL_CADENCE_SECONDS': 5, 'EXIT_DELAYED_AFTER_POLLS': 12,
         'CONTINUATION_UNKNOWN_DEADLINE_SECONDS': 300,
     }
+
+def movement_defaults(network, chain):
+    return {
+        'MODE': 'movement', 'ALLOWED_GID': 4020, 'MAX_FRAME_BYTES': 1048576,
+        'DEADLINE_SECONDS': 5,
+        'EVIDENCE_ROOT': '/var/lib/layerx/human/evidence',
+        'PAXEER_RPC_URLS': json.dumps([
+            'https://paxeer-boundary.layerx-testnet.svc.cluster.local:9443',
+            'https://paxeer-observer-boundary.layerx-testnet.svc.cluster.local:9443']),
+        'PAXEER_CA_DER': '/run/human-private/movement/ca.der',
+        'PAXEER_CHAIN_ID': chain, 'PAXEER_MINIMUM_AGREEMENT': 2,
+        'NETWORK_ID': network, 'PROTOCOL_VERSION': 3,
+        'POLL_SECONDS': 5, 'DELAYED_AFTER_POLLS': 12,
+        'KMS_ENDPOINT': HUMAN_KMS_ENDPOINT, 'KMS_SERVER_NAME': HUMAN_KMS_SERVER_NAME,
+        'KMS_PROVIDER_REFERENCE': HUMAN_KMS_PROVIDER,
+        'KMS_CA_DER': '/run/human-private/movement/ca.der',
+        'KMS_CLIENT_CERT_DER': '/run/human-private/movement/kms-executor.der',
+        'KMS_CLIENT_KEY_DER': '/run/human-private/movement/kms-executor-key.der',
+    }
+
 
 def main():
     root = Path(sys.argv[1])
@@ -797,23 +820,7 @@ def main():
                     bytes(recovery['root'])).decode().rstrip('=')
                 or int(policy['components']['AGENT_RECOVERY_THRESHOLD']) != recovery['threshold']):
             raise ValueError('Human recovery policy binding differs')
-        movement = {
-            'MODE': 'movement', 'ALLOWED_GID': 4020, 'MAX_FRAME_BYTES': 1048576,
-            'DEADLINE_SECONDS': 5,
-            'EVIDENCE_ROOT': '/var/lib/layerx/human/evidence',
-            'PAXEER_RPC_URLS': json.dumps([
-                'https://paxeer-boundary.layerx-testnet.svc.cluster.local:9443',
-                'https://paxeer-observer-boundary.layerx-testnet.svc.cluster.local:9443']),
-            'PAXEER_CA_DER': '/run/human-private/movement/ca.der',
-            'PAXEER_CHAIN_ID': chain, 'PAXEER_MINIMUM_AGREEMENT': 2,
-            'NETWORK_ID': network, 'PROTOCOL_VERSION': 3,
-            'POLL_SECONDS': 5, 'DELAYED_AFTER_POLLS': 12,
-            'KMS_ENDPOINT': '127.0.0.1:9450', 'KMS_SERVER_NAME': 'layerx-human-kms',
-            'KMS_PROVIDER_REFERENCE': 'layerx-human-kms',
-            'KMS_CA_DER': '/run/human-private/movement/ca.der',
-            'KMS_CLIENT_CERT_DER': '/run/human-private/movement/kms-executor.der',
-            'KMS_CLIENT_KEY_DER': '/run/human-private/movement/kms-executor-key.der',
-        }
+        movement = movement_defaults(network, chain)
         movement_keys = {'PAXEER_VAULT', 'PAXEER_CHECKPOINT_REGISTRY',
                          'PAXEER_CLAIMS_CONTRACT', 'PAXEER_EXIT_CONTRACT',
                          'CUSTODY_PROFILE', 'CUSTODY_PROFILE_SHA256',

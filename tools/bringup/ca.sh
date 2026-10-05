@@ -299,8 +299,31 @@ row_ca_dir() {
 }
 
 certificate_usage_matches() {
-	local service="$1" cert="$2" row_ca="$3" app="$4" roles
+	local service="$1" cert="$2" row_ca="$3" app="$4" roles cn eku sans want_cn want_eku
 	case "$service" in
+	human-kms | human-kms-client | human-kms-executor)
+		# Each Human KMS identity is exactly its own row: the server, the
+		# components' service client and movement's restricted executor never
+		# stand in for one another.
+		read -r _ _ _ _ want_cn want_eku _ <<<"$(service_row "$service")"
+		cn="$(openssl x509 -noout -subject -nameopt multiline <<<"$cert" 2>/dev/null | sed -n 's/^ *commonName *= //p')"
+		eku="$(openssl x509 -noout -ext extendedKeyUsage <<<"$cert" 2>/dev/null | tail -n +2 | sed 's/^ *//')"
+		sans="$(openssl x509 -noout -ext subjectAltName <<<"$cert" 2>/dev/null | tail -n +2 | sed 's/^ *//')"
+		[ "$cn" = "$want_cn" ] || return 1
+		case "$want_eku" in
+		serverAuth)
+			[ "$eku" = "TLS Web Server Authentication" ] &&
+				[[ ", $sans, " == *", DNS:layerx-human-kms, "* ]] &&
+				openssl verify -purpose sslserver -verify_hostname layerx-human-kms -verify_ip 127.0.0.1 \
+					-CAfile "$row_ca/ca.pem" <<<"$cert" >/dev/null 2>&1
+			;;
+		clientAuth)
+			[ "$eku" = "TLS Web Client Authentication" ] && [ -z "$sans" ] &&
+				openssl verify -purpose sslclient -CAfile "$row_ca/ca.pem" <<<"$cert" >/dev/null 2>&1
+			;;
+		*) return 1 ;;
+		esac
+		;;
 	human-event-client | gateway-client | registry-event-client)
 		roles="$(openssl x509 -noout -ext subjectAltName <<<"$cert" 2>/dev/null |
 			tr ',' '\n' | sed 's/^[[:space:]]*//' | grep '^URI:urn:layerx:webhooks:role:' || true)"
