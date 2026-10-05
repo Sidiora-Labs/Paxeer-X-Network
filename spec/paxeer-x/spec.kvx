@@ -27826,7 +27826,7 @@ retained_additional_paths_104_13_36 = ["human/schema/human-api/intent.kvx"]
 
 [task.12.4]
 title = "Report movement readiness only with an authenticated usable executor"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 6
 requires = ["0.2", "24.12", "12.3", "24.2"]
@@ -28974,7 +28974,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.104.28.2]
 title = "Carry calldata into the invoked entry point"
-status = "pending"
+status = "in_progress"
 mode = "QUALIFY"
 wave = 5
 requires = ["0.2", "104.28.1"]
@@ -29036,7 +29036,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.104.28.4]
 title = "Carry typed failure payloads and program refusal reasons"
-status = "pending"
+status = "in_progress"
 mode = "QUALIFY"
 wave = 5
 requires = ["0.2", "104.28.1"]
@@ -29067,7 +29067,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.104.28.5]
 title = "Admit a caller-declared execution budget"
-status = "pending"
+status = "in_progress"
 mode = "QUALIFY"
 wave = 5
 requires = ["0.2", "104.28.1"]
@@ -29129,7 +29129,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.104.29.1]
 title = "Extend the namespace model with a program-shared namespace"
-status = "pending"
+status = "in_progress"
 mode = "QUALIFY"
 wave = 5
 requires = ["0.2", "104.28.1"]
@@ -29160,7 +29160,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.104.32.2]
 title = "Build the host linker once per engine"
-status = "pending"
+status = "in_progress"
 mode = "QUALIFY"
 wave = 5
 requires = ["0.2", "104.28.1"]
@@ -29191,7 +29191,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.104.32.3]
 title = "Make metering an engine-independent property of the module"
-status = "pending"
+status = "in_progress"
 mode = "QUALIFY"
 wave = 5
 requires = ["0.2", "104.28.1"]
@@ -29290,7 +29290,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.104.38.6]
 title = "Restore canonical Programs receipt parity across all SDKs"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 5
 requires = ["0.2", "104.33.7"]
