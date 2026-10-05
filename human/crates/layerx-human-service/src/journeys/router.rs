@@ -149,6 +149,117 @@ impl LegMechanism {
     }
 }
 
+/// The one explicit executable shape contract shared by the planner and the
+/// submission classifier. Every sealed plan has exactly one shape; a leg
+/// sequence outside this contract is refused while planning.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ExecutableShape {
+    /// One or more `LayerX` sends and budget operations.
+    Kernel,
+    /// A Paxeer custody deposit credited to the home account.
+    CustodyDeposit,
+    /// A custody deposit credited home and then forwarded by `LayerX` legs.
+    DepositForward,
+    /// A withdrawal request from the home account finalised to the wallet.
+    WithdrawToWallet,
+    /// `LayerX` legs that settle into the home account, then a withdrawal.
+    TransferThenWithdraw,
+}
+
+impl ExecutableShape {
+    /// Classifies an ordered leg sequence against the shape contract. Every
+    /// leg must start where the previous leg delivered, except the paired
+    /// custody legs, which carry the same endpoints.
+    ///
+    /// # Errors
+    ///
+    /// Refuses an empty, reordered, discontinuous or undeclared combination.
+    pub fn classify(legs: &[PlannedLeg]) -> Result<Self, Refusal> {
+        let mechanisms = legs.iter().map(PlannedLeg::mechanism).collect::<Vec<_>>();
+        let shape = Self::of_mechanisms(&mechanisms).ok_or(Refusal::UnsupportedShape)?;
+        for pair in legs.windows(2) {
+            let (before, after) = (&pair[0], &pair[1]);
+            let paired = matches!(
+                (before.mechanism, after.mechanism),
+                (
+                    LegMechanism::PaxeerCustodyDeposit,
+                    LegMechanism::Protocol(Mechanism::BridgeDepositCredit)
+                ) | (
+                    LegMechanism::Protocol(Mechanism::BridgeWithdrawRequest),
+                    LegMechanism::PaxeerWithdrawFinalise
+                )
+            );
+            let continuous = if paired {
+                before.source == after.source && before.destination == after.destination
+            } else {
+                after.source == before.destination
+            };
+            if !continuous || after.index != before.index.saturating_add(1) {
+                return Err(Refusal::UnsupportedShape);
+            }
+        }
+        if legs.first().is_some_and(|leg| leg.index != 0) {
+            return Err(Refusal::UnsupportedShape);
+        }
+        Ok(shape)
+    }
+
+    /// Classifies a mechanism sequence, returning `None` outside the contract.
+    #[must_use]
+    pub fn of_mechanisms(mechanisms: &[LegMechanism]) -> Option<Self> {
+        const DEPOSIT: LegMechanism = LegMechanism::PaxeerCustodyDeposit;
+        const CREDIT: LegMechanism = LegMechanism::Protocol(Mechanism::BridgeDepositCredit);
+        const REQUEST: LegMechanism = LegMechanism::Protocol(Mechanism::BridgeWithdrawRequest);
+        const FINALISE: LegMechanism = LegMechanism::PaxeerWithdrawFinalise;
+        let kernel = |legs: &[LegMechanism]| {
+            !legs.is_empty() && legs.iter().all(|mechanism| Self::is_kernel(*mechanism))
+        };
+        match mechanisms {
+            [DEPOSIT, CREDIT] => Some(Self::CustodyDeposit),
+            [DEPOSIT, CREDIT, rest @ ..] if kernel(rest) => Some(Self::DepositForward),
+            [REQUEST, FINALISE] => Some(Self::WithdrawToWallet),
+            [rest @ .., REQUEST, FINALISE] if kernel(rest) => Some(Self::TransferThenWithdraw),
+            legs if kernel(legs) => Some(Self::Kernel),
+            _ => None,
+        }
+    }
+
+    /// Returns whether one mechanism executes as an ordinary `LayerX` leg.
+    #[must_use]
+    pub const fn is_kernel(mechanism: LegMechanism) -> bool {
+        matches!(
+            mechanism,
+            LegMechanism::Protocol(
+                Mechanism::Send | Mechanism::BudgetFund | Mechanism::BudgetDefund
+            )
+        )
+    }
+
+    /// Returns the stable label used in APIs, journeys and evidence.
+    #[must_use]
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Kernel => "kernel",
+            Self::CustodyDeposit => "custody-deposit",
+            Self::DepositForward => "deposit-forward",
+            Self::WithdrawToWallet => "withdraw-to-wallet",
+            Self::TransferThenWithdraw => "transfer-then-withdraw",
+        }
+    }
+
+    /// Returns the half-open range of `LayerX` kernel legs the shape runs
+    /// through the native journey engine, given its total leg count.
+    #[must_use]
+    pub const fn kernel_legs(self, total: usize) -> (usize, usize) {
+        match self {
+            Self::Kernel => (0, total),
+            Self::CustodyDeposit | Self::WithdrawToWallet => (0, 0),
+            Self::DepositForward => (2, total),
+            Self::TransferThenWithdraw => (0, total.saturating_sub(2)),
+        }
+    }
+}
+
 /// The authority that must sign one planned leg.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum RequiredAuthority {
@@ -920,6 +1031,7 @@ pub struct UnifiedPlan {
     legs: Vec<PlannedLeg>,
     total_fee: u128,
     digest: [u8; 32],
+    shape: ExecutableShape,
 }
 
 impl UnifiedPlan {
@@ -952,11 +1064,13 @@ impl UnifiedPlan {
                 top_up: draft.top_up,
             });
         }
+        let shape = ExecutableShape::classify(&legs)?;
         let mut plan = Self {
             intent,
             legs,
             total_fee,
             digest: [0; 32],
+            shape,
         };
         let mut digest = Sha256::new();
         digest.update(PLAN_DOMAIN);
@@ -981,6 +1095,12 @@ impl UnifiedPlan {
     #[must_use]
     pub const fn total_fee(&self) -> u128 {
         self.total_fee
+    }
+
+    /// Returns the executable shape the plan was sealed under.
+    #[must_use]
+    pub const fn executable_shape(&self) -> ExecutableShape {
+        self.shape
     }
 
     /// Returns the plan digest that binds the intent and every leg.
@@ -1391,7 +1511,14 @@ fn candidates(
         for prefix in prefixes {
             let mut drafts = prefix;
             drafts.extend(base_drafts.clone());
-            built.push(UnifiedPlan::seal(intent.clone(), drafts)?);
+            match UnifiedPlan::seal(intent.clone(), drafts) {
+                Ok(candidate) => built.push(candidate),
+                Err(Refusal::UnsupportedShape) => {}
+                Err(refusal) => return Err(refusal),
+            }
+        }
+        if built.is_empty() {
+            return Err(Refusal::UnsupportedShape);
         }
     }
     let cheapest = built
@@ -2034,6 +2161,8 @@ pub enum Refusal {
     Route(RouteError),
     /// The engine refused the derived journey plan.
     InvalidJourneyPlan,
+    /// The leg sequence is outside the executable shape contract.
+    UnsupportedShape,
     /// A bounded arithmetic operation overflowed.
     Arithmetic,
 }
@@ -2099,6 +2228,9 @@ impl Display for Refusal {
             ),
             Self::Route(error) => write!(formatter, "route refused: {error}"),
             Self::InvalidJourneyPlan => formatter.write_str("the engine refused the plan"),
+            Self::UnsupportedShape => {
+                formatter.write_str("the plan combines legs no journey executes")
+            }
             Self::Arithmetic => formatter.write_str("a bounded amount overflowed"),
         }
     }

@@ -1961,6 +1961,542 @@ impl From<layerx_paxeer_client::TrackerConfigError> for WithdrawalJourneyError {
     }
 }
 
+const INTENT_PREFIX: &str = "intent-withdraw-";
+const INTENT_VERSION: u8 = 1;
+const PRELUDE_DOMAIN: &[u8] = b"layerx-human-intent-withdraw-prelude/v1\0";
+
+/// Parent timeline of a unified withdrawal plan. The withdrawal itself starts
+/// only after every `LayerX` prelude leg carries verified receipt evidence,
+/// and `PaidOut` exists only with the child's verified payout evidence.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum IntentWithdrawalStage {
+    Transferring,
+    TransferRefused,
+    AwaitingAuthorization,
+    Withdrawing(WithdrawalStage),
+}
+
+/// Receipt-grounded status of one unified withdrawal parent.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct IntentWithdrawalStatus {
+    journey_id: JourneyId,
+    prelude_journey_id: Option<JourneyId>,
+    withdrawal_journey_id: JourneyId,
+    stage: IntentWithdrawalStage,
+    prelude_receipts: Vec<([u8; 32], [u8; 32])>,
+    debit_claimed: bool,
+    started_at: u64,
+    updated_at: u64,
+}
+
+impl IntentWithdrawalStatus {
+    #[must_use]
+    pub const fn journey_id(&self) -> &JourneyId {
+        &self.journey_id
+    }
+
+    #[must_use]
+    pub const fn prelude_journey_id(&self) -> Option<&JourneyId> {
+        self.prelude_journey_id.as_ref()
+    }
+
+    #[must_use]
+    pub const fn withdrawal_journey_id(&self) -> &JourneyId {
+        &self.withdrawal_journey_id
+    }
+
+    #[must_use]
+    pub const fn stage(&self) -> &IntentWithdrawalStage {
+        &self.stage
+    }
+
+    /// The verified activity and receipt digest of every prelude leg, in leg
+    /// order, present once the withdrawal has started.
+    #[must_use]
+    pub fn prelude_receipts(&self) -> &[([u8; 32], [u8; 32])] {
+        &self.prelude_receipts
+    }
+
+    /// Whether the verified withdrawal debit receipt is claimed by this parent.
+    #[must_use]
+    pub const fn debit_claimed(&self) -> bool {
+        self.debit_claimed
+    }
+
+    #[must_use]
+    pub const fn started_at(&self) -> u64 {
+        self.started_at
+    }
+
+    #[must_use]
+    pub const fn updated_at(&self) -> u64 {
+        self.updated_at
+    }
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+enum IntentPhase {
+    Transferring,
+    TransferRefused,
+    Withdrawing,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+struct IntentRecord {
+    version: u8,
+    journey_id: String,
+    plan_digest: [u8; 32],
+    prelude_key: Option<[u8; 32]>,
+    prelude_journey_id: Option<String>,
+    prelude_legs: usize,
+    withdrawal_plan: Vec<u8>,
+    withdrawal_idempotency_key: [u8; 32],
+    withdrawal_journey_id: String,
+    phase: IntentPhase,
+    prelude_receipts: Vec<([u8; 32], [u8; 32])>,
+    debit_claimed: bool,
+    started_at: u64,
+    updated_at: u64,
+}
+
+/// Durable parent of a unified plan that ends in a withdrawal request and its
+/// Paxeer finalisation, optionally preceded by `LayerX` transfer legs into the
+/// owner's home account.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct IntentWithdrawalJourney {
+    record: IntentRecord,
+}
+
+impl IntentWithdrawalJourney {
+    /// Persists the parent, its immutable withdrawal plan and either its
+    /// prelude engine or, without a prelude, the withdrawal journey itself.
+    /// Repeating the same parent returns the original only when the plan, the
+    /// withdrawal request and every prelude leg agree.
+    ///
+    /// # Errors
+    ///
+    /// Refuses invalid or changed plans, a withdrawal already started outside
+    /// this parent and storage failures.
+    #[allow(clippy::too_many_arguments)]
+    pub fn start(
+        scope: &mut PrincipalScope<'_>,
+        journey_id: JourneyId,
+        plan_digest: [u8; 32],
+        prelude_legs: Vec<JourneyLeg>,
+        custody_key: KeyId,
+        registry: &ModuleRegistry,
+        withdrawal: &WithdrawalPlan,
+        now: u64,
+    ) -> Result<Self, WithdrawalJourneyError> {
+        validate_plan(withdrawal)?;
+        if plan_digest == [0; 32] || journey_id == withdrawal.journey_id {
+            return Err(WithdrawalJourneyError::InvalidPlan);
+        }
+        let encoded = encode_withdrawal_plan(withdrawal)?;
+        let leg_count = prelude_legs.len();
+        let prelude = if prelude_legs.is_empty() {
+            None
+        } else {
+            let key = derive_key(PRELUDE_DOMAIN, &plan_digest);
+            let id = JourneyId::new(derived_journey_id("prelude", key)?)
+                .map_err(|_| WithdrawalJourneyError::Corrupt("invalid prelude journey id"))?;
+            let plan = JourneyPlan::new(
+                id.clone(),
+                super::engine::JourneyKind::Move,
+                key,
+                custody_key,
+                Operation::ProtocolMutation,
+                prelude_legs,
+            )?;
+            Some((key, id, plan))
+        };
+        let row = intent_row(&journey_id)?;
+        if let Some(existing) = scope.get(Table::Journeys, &row) {
+            let record = decode_intent(existing.bytes())?;
+            if record.journey_id != journey_id.as_str()
+                || record.plan_digest != plan_digest
+                || record.withdrawal_plan != encoded
+                || record.prelude_key != prelude.as_ref().map(|(key, _, _)| *key)
+                || record.prelude_legs != leg_count
+            {
+                return Err(WithdrawalJourneyError::IdempotencyConflict);
+            }
+            if let Some((_, _, plan)) = &prelude {
+                JourneyEngine::start(scope, plan, registry, now)?;
+            }
+            return Ok(Self { record });
+        }
+        let record =
+            scope.transaction(|staged| -> Result<IntentRecord, WithdrawalJourneyError> {
+                if latest_for_key(staged, withdrawal.idempotency_key)?.is_some() {
+                    return Err(WithdrawalJourneyError::IdempotencyConflict);
+                }
+                let phase = if let Some((_, _, plan)) = &prelude {
+                    JourneyEngine::start(staged, plan, registry, now)?;
+                    IntentPhase::Transferring
+                } else {
+                    WithdrawalJourney::start(staged, withdrawal, now)?;
+                    IntentPhase::Withdrawing
+                };
+                let record = IntentRecord {
+                    version: INTENT_VERSION,
+                    journey_id: journey_id.as_str().to_owned(),
+                    plan_digest,
+                    prelude_key: prelude.as_ref().map(|(key, _, _)| *key),
+                    prelude_journey_id: prelude.as_ref().map(|(_, id, _)| id.as_str().to_owned()),
+                    prelude_legs: leg_count,
+                    withdrawal_plan: encoded,
+                    withdrawal_idempotency_key: withdrawal.idempotency_key,
+                    withdrawal_journey_id: withdrawal.journey_id.as_str().to_owned(),
+                    phase,
+                    prelude_receipts: Vec::new(),
+                    debit_claimed: false,
+                    started_at: now,
+                    updated_at: now,
+                };
+                staged.put(
+                    Table::Journeys,
+                    intent_row(&journey_id)?,
+                    now,
+                    encode_intent(&record)?,
+                )?;
+                Ok(record)
+            })?;
+        Ok(Self { record })
+    }
+
+    /// Loads one unified withdrawal parent by its returned journey id.
+    ///
+    /// # Errors
+    ///
+    /// Refuses a corrupt or misfiled parent record.
+    pub fn load(
+        scope: &PrincipalScope<'_>,
+        journey_id: &JourneyId,
+    ) -> Result<Option<Self>, WithdrawalJourneyError> {
+        let Some(row) = scope.get(Table::Journeys, &intent_row(journey_id)?) else {
+            return Ok(None);
+        };
+        let record = decode_intent(row.bytes())?;
+        if record.journey_id != journey_id.as_str() {
+            return Err(WithdrawalJourneyError::Corrupt(
+                "intent withdrawal row binding mismatch",
+            ));
+        }
+        Ok(Some(Self { record }))
+    }
+
+    /// Advances the `LayerX` prelude by one engine phase. When every prelude
+    /// leg is verified, the receipts are claimed and the withdrawal journey is
+    /// started in the same atomic write.
+    ///
+    /// # Errors
+    ///
+    /// Refuses reused prelude receipts, a withdrawal started elsewhere under
+    /// the same key, and the engine's typed failures.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn advance_prelude(
+        &mut self,
+        scope: &mut PrincipalScope<'_>,
+        agent_contract: &AgentClient,
+        agent: &mut dyn AgentBoundary,
+        custody: &CustodySigner,
+        registry: &ModuleRegistry,
+        trace: &TraceId,
+        now: u64,
+    ) -> Result<IntentWithdrawalStatus, WithdrawalJourneyError> {
+        if self.record.phase != IntentPhase::Transferring {
+            return self.status(scope);
+        }
+        if now < self.record.updated_at {
+            return Err(WithdrawalJourneyError::TimeRegressed);
+        }
+        let id = self
+            .prelude_journey_id()?
+            .ok_or(WithdrawalJourneyError::Corrupt(
+                "transferring without prelude",
+            ))?;
+        let mut engine = JourneyEngine::load(scope, &id)?
+            .ok_or(WithdrawalJourneyError::Corrupt("prelude journey missing"))?;
+        let status = engine
+            .advance(scope, agent_contract, agent, custody, registry, trace, now)
+            .await?;
+        let mut next = self.record.clone();
+        next.updated_at = now;
+        match status.state() {
+            JourneyState::Refused => {
+                next.phase = IntentPhase::TransferRefused;
+                self.commit(scope, next, &[], None, now)?;
+            }
+            JourneyState::Done => {
+                let mut receipts = Vec::with_capacity(self.record.prelude_legs);
+                for index in 0..self.record.prelude_legs {
+                    let evidence = engine
+                        .verified_leg_evidence(index)?
+                        .ok_or(WithdrawalJourneyError::EvidencePending)?;
+                    receipts.push((evidence.activity_id, evidence.receipt_digest));
+                }
+                let plan = decode_withdrawal_plan(&self.record.withdrawal_plan)?;
+                next.phase = IntentPhase::Withdrawing;
+                next.prelude_receipts.clone_from(&receipts);
+                self.commit(scope, next, &receipts, Some(&plan), now)?;
+            }
+            JourneyState::GettingReady
+            | JourneyState::Sending
+            | JourneyState::Processing
+            | JourneyState::StillChecking => {}
+        }
+        self.status(scope)
+    }
+
+    /// Loads the withdrawal child once the prelude has settled.
+    ///
+    /// # Errors
+    ///
+    /// Refuses a missing or rebound withdrawal child.
+    pub fn withdrawal(
+        &self,
+        scope: &mut PrincipalScope<'_>,
+    ) -> Result<Option<WithdrawalJourney>, WithdrawalJourneyError> {
+        if self.record.phase != IntentPhase::Withdrawing {
+            return Ok(None);
+        }
+        let child = WithdrawalJourney::load(scope, &self.withdrawal_journey_id()?)?
+            .ok_or(WithdrawalJourneyError::Corrupt("withdrawal child missing"))?;
+        if child.record.idempotency_key != self.record.withdrawal_idempotency_key {
+            return Err(WithdrawalJourneyError::EvidenceConflict);
+        }
+        Ok(Some(child))
+    }
+
+    /// Claims the withdrawal debit receipt for this parent once the child has
+    /// verified it, so the debit cannot be counted by another journey.
+    ///
+    /// # Errors
+    ///
+    /// Refuses a foreign child, a debit receipt claimed elsewhere and storage
+    /// failures.
+    pub fn observe_withdrawal(
+        &mut self,
+        scope: &mut PrincipalScope<'_>,
+        child: &WithdrawalJourney,
+        now: u64,
+    ) -> Result<(), WithdrawalJourneyError> {
+        if self.record.phase != IntentPhase::Withdrawing || self.record.debit_claimed {
+            return Ok(());
+        }
+        if child.record.idempotency_key != self.record.withdrawal_idempotency_key
+            || child.record.journey_id != self.record.withdrawal_journey_id
+        {
+            return Err(WithdrawalJourneyError::EvidenceConflict);
+        }
+        let Some(activity) = child.record.debit_activity_id else {
+            return Ok(());
+        };
+        let debit_id = child
+            .inner_journey_id()
+            .ok_or(WithdrawalJourneyError::Corrupt("invalid debit journey id"))?;
+        let debit = JourneyEngine::load(scope, &debit_id)?
+            .ok_or(WithdrawalJourneyError::Corrupt("debit journey missing"))?;
+        let evidence = debit
+            .verified_leg_evidence(0)?
+            .ok_or(WithdrawalJourneyError::EvidenceConflict)?;
+        if evidence.activity_id != activity {
+            return Err(WithdrawalJourneyError::EvidenceConflict);
+        }
+        let mut next = self.record.clone();
+        next.debit_claimed = true;
+        next.updated_at = now.max(self.record.updated_at);
+        self.commit(
+            scope,
+            next,
+            &[(evidence.activity_id, evidence.receipt_digest)],
+            None,
+            now,
+        )
+    }
+
+    /// Advances the parent by one durable stage. A prepared withdrawal debit
+    /// without fresh step-up evidence stops in `AwaitingAuthorization`; it is
+    /// never signed by a continuation on its own.
+    ///
+    /// # Errors
+    ///
+    /// Returns the prelude, withdrawal and evidence failures of the stage.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn advance<A: AgentBoundary, R: WithdrawalRuntime>(
+        &mut self,
+        scope: &mut PrincipalScope<'_>,
+        runtime: &mut R,
+        boundary: &WithdrawalBoundary,
+        agent_contract: &AgentClient,
+        agent: &mut A,
+        custody: &CustodySigner,
+        registry: &ModuleRegistry,
+        trace: &TraceId,
+        step_up: Option<&StepUpEvidence>,
+        now: u64,
+    ) -> Result<IntentWithdrawalStatus, WithdrawalJourneyError> {
+        match self.record.phase {
+            IntentPhase::Transferring => {
+                return self
+                    .advance_prelude(scope, agent_contract, agent, custody, registry, trace, now)
+                    .await;
+            }
+            IntentPhase::TransferRefused => {}
+            IntentPhase::Withdrawing => {
+                let mut child = self
+                    .withdrawal(scope)?
+                    .ok_or(WithdrawalJourneyError::Corrupt("withdrawal child missing"))?;
+                if step_up.is_none()
+                    && child
+                        .prepared_debit_disclosure_digest(scope, agent_contract, agent, registry)?
+                        .is_some()
+                {
+                    return self.awaiting_authorization(scope);
+                }
+                child
+                    .advance(
+                        scope,
+                        runtime,
+                        boundary,
+                        agent_contract,
+                        agent,
+                        custody,
+                        registry,
+                        trace,
+                        step_up,
+                        now,
+                    )
+                    .await?;
+                self.observe_withdrawal(scope, &child, now)?;
+            }
+        }
+        self.status(scope)
+    }
+
+    /// Returns the parent stage, reading the withdrawal child once it runs.
+    ///
+    /// # Errors
+    ///
+    /// Refuses corrupt identifiers and a missing withdrawal child.
+    pub fn status(
+        &self,
+        scope: &PrincipalScope<'_>,
+    ) -> Result<IntentWithdrawalStatus, WithdrawalJourneyError> {
+        let stage = match self.record.phase {
+            IntentPhase::Transferring => IntentWithdrawalStage::Transferring,
+            IntentPhase::TransferRefused => IntentWithdrawalStage::TransferRefused,
+            IntentPhase::Withdrawing => {
+                let child =
+                    WithdrawalJourney::load_readonly(scope, &self.withdrawal_journey_id()?)?
+                        .ok_or(WithdrawalJourneyError::Corrupt("withdrawal child missing"))?;
+                IntentWithdrawalStage::Withdrawing(child.status()?.stage().clone())
+            }
+        };
+        Ok(IntentWithdrawalStatus {
+            journey_id: JourneyId::new(self.record.journey_id.clone())
+                .map_err(|_| WithdrawalJourneyError::Corrupt("invalid intent withdrawal id"))?,
+            prelude_journey_id: self.prelude_journey_id()?,
+            withdrawal_journey_id: self.withdrawal_journey_id()?,
+            stage,
+            prelude_receipts: self.record.prelude_receipts.clone(),
+            debit_claimed: self.record.debit_claimed,
+            started_at: self.record.started_at,
+            updated_at: self.record.updated_at,
+        })
+    }
+
+    /// Returns the status of a withdrawal whose debit is prepared and waits
+    /// for fresh step-up evidence bound to its exact disclosure.
+    ///
+    /// # Errors
+    ///
+    /// Refuses a parent that is not withdrawing and corrupt identifiers.
+    pub fn awaiting_authorization(
+        &self,
+        scope: &PrincipalScope<'_>,
+    ) -> Result<IntentWithdrawalStatus, WithdrawalJourneyError> {
+        if self.record.phase != IntentPhase::Withdrawing {
+            return Err(WithdrawalJourneyError::InvalidPlan);
+        }
+        let mut status = self.status(scope)?;
+        status.stage = IntentWithdrawalStage::AwaitingAuthorization;
+        Ok(status)
+    }
+
+    fn prelude_journey_id(&self) -> Result<Option<JourneyId>, WithdrawalJourneyError> {
+        self.record
+            .prelude_journey_id
+            .clone()
+            .map(JourneyId::new)
+            .transpose()
+            .map_err(|_| WithdrawalJourneyError::Corrupt("invalid prelude journey id"))
+    }
+
+    fn withdrawal_journey_id(&self) -> Result<JourneyId, WithdrawalJourneyError> {
+        JourneyId::new(self.record.withdrawal_journey_id.clone())
+            .map_err(|_| WithdrawalJourneyError::Corrupt("invalid withdrawal journey id"))
+    }
+
+    fn commit(
+        &mut self,
+        scope: &mut PrincipalScope<'_>,
+        next: IntentRecord,
+        receipts: &[([u8; 32], [u8; 32])],
+        withdrawal: Option<&WithdrawalPlan>,
+        now: u64,
+    ) -> Result<(), WithdrawalJourneyError> {
+        let owner = next.journey_id.clone();
+        let row = intent_row(
+            &JourneyId::new(owner.clone())
+                .map_err(|_| WithdrawalJourneyError::Corrupt("invalid intent withdrawal id"))?,
+        )?;
+        let bytes = encode_intent(&next)?;
+        scope.transaction(|staged| -> Result<(), WithdrawalJourneyError> {
+            for (activity, digest) in receipts {
+                if !super::claim_receipt(staged, *activity, *digest, &owner, now)? {
+                    return Err(WithdrawalJourneyError::EvidenceConflict);
+                }
+            }
+            if let Some(plan) = withdrawal {
+                if latest_for_key(staged, plan.idempotency_key)?.is_some() {
+                    return Err(WithdrawalJourneyError::IdempotencyConflict);
+                }
+                WithdrawalJourney::start(staged, plan, now)?;
+            }
+            staged.put(Table::Journeys, row, now, bytes)?;
+            Ok(())
+        })?;
+        self.record = next;
+        Ok(())
+    }
+}
+
+fn intent_row(journey_id: &JourneyId) -> Result<RowKey, StoreError> {
+    RowKey::new(format!("{INTENT_PREFIX}{}", journey_id.as_str()))
+}
+
+fn encode_intent(record: &IntentRecord) -> Result<Vec<u8>, WithdrawalJourneyError> {
+    serde_json::to_vec(record)
+        .map_err(|_| WithdrawalJourneyError::Corrupt("intent withdrawal cannot be encoded"))
+}
+
+fn decode_intent(bytes: &[u8]) -> Result<IntentRecord, WithdrawalJourneyError> {
+    let record: IntentRecord = serde_json::from_slice(bytes)
+        .map_err(|_| WithdrawalJourneyError::Corrupt("invalid intent withdrawal encoding"))?;
+    if record.version != INTENT_VERSION
+        || (record.prelude_legs == 0) != record.prelude_key.is_none()
+        || record.prelude_key.is_some() != record.prelude_journey_id.is_some()
+    {
+        return Err(WithdrawalJourneyError::Corrupt(
+            "unsupported intent withdrawal record",
+        ));
+    }
+    Ok(record)
+}
+
 #[cfg(test)]
 mod material_persistence_tests {
     use super::*;

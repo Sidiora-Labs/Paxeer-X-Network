@@ -1783,6 +1783,567 @@ impl From<DepositBoundaryError> for DepositJourneyError {
     }
 }
 
+const FORWARD_PREFIX: &str = "deposit-forward-";
+const FORWARD_VERSION: u8 = 1;
+const FORWARD_ENGINE_DOMAIN: &[u8] = b"layerx-human-deposit-forward/v1\0";
+const RECEIPT_CLAIM_PREFIX: &str = "custody-receipt-claim-";
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+struct ReceiptClaim {
+    owner: String,
+    receipt_digest: [u8; 32],
+}
+
+/// Binds one verified `LayerX` receipt to the single parent journey allowed
+/// to advance on it. Repeating the same owner and digest is idempotent.
+/// Returns `false` when the activity was already claimed by another parent or
+/// under another receipt digest, so no credit, debit or forward transfer can
+/// be counted twice.
+///
+/// # Errors
+///
+/// Returns storage failures and refuses a corrupt claim row.
+pub fn claim_receipt(
+    scope: &mut PrincipalScope<'_>,
+    activity_id: [u8; 32],
+    receipt_digest: [u8; 32],
+    owner: &str,
+    now: u64,
+) -> Result<bool, StoreError> {
+    let row = RowKey::new(format!("{RECEIPT_CLAIM_PREFIX}{}", hex(&activity_id)))?;
+    if let Some(existing) = scope.get(Table::Journeys, &row) {
+        let claim = serde_json::from_slice::<ReceiptClaim>(existing.bytes())
+            .map_err(|_| StoreError::Corrupt("invalid receipt claim"))?;
+        return Ok(claim.owner == owner && claim.receipt_digest == receipt_digest);
+    }
+    let claim = ReceiptClaim {
+        owner: owner.to_owned(),
+        receipt_digest,
+    };
+    let bytes = serde_json::to_vec(&claim)
+        .map_err(|_| StoreError::Corrupt("receipt claim cannot be encoded"))?;
+    scope.put(Table::Journeys, row, now, bytes)?;
+    Ok(true)
+}
+
+/// Why a deposit-forwarding journey stopped without completing.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum DepositForwardFailure {
+    DepositFailed(DepositFailureKind),
+    ForwardRefused,
+}
+
+/// Parent timeline of a deposit into the home account followed by `LayerX`
+/// forwarding legs. `Done` exists only after every forward leg carries
+/// verified receipt evidence.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum DepositForwardStage {
+    Depositing(DepositStage),
+    Forwarding,
+    Done,
+    Failed(DepositForwardFailure),
+}
+
+/// Receipt-grounded status of one deposit-forwarding parent.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DepositForwardStatus {
+    journey_id: JourneyId,
+    deposit_journey_id: JourneyId,
+    forward_journey_id: JourneyId,
+    stage: DepositForwardStage,
+    credit: Option<([u8; 32], [u8; 32])>,
+    forward_receipts: Vec<([u8; 32], [u8; 32])>,
+    started_at: u64,
+    updated_at: u64,
+}
+
+impl DepositForwardStatus {
+    #[must_use]
+    pub const fn journey_id(&self) -> &JourneyId {
+        &self.journey_id
+    }
+
+    #[must_use]
+    pub const fn deposit_journey_id(&self) -> &JourneyId {
+        &self.deposit_journey_id
+    }
+
+    #[must_use]
+    pub const fn forward_journey_id(&self) -> &JourneyId {
+        &self.forward_journey_id
+    }
+
+    #[must_use]
+    pub const fn stage(&self) -> &DepositForwardStage {
+        &self.stage
+    }
+
+    /// The verified credit activity and receipt digest the forward legs are
+    /// gated on.
+    #[must_use]
+    pub const fn credit(&self) -> Option<([u8; 32], [u8; 32])> {
+        self.credit
+    }
+
+    /// The verified activity and receipt digest of every forward leg, in leg
+    /// order, present only once the parent is done.
+    #[must_use]
+    pub fn forward_receipts(&self) -> &[([u8; 32], [u8; 32])] {
+        &self.forward_receipts
+    }
+
+    #[must_use]
+    pub const fn started_at(&self) -> u64 {
+        self.started_at
+    }
+
+    #[must_use]
+    pub const fn updated_at(&self) -> u64 {
+        self.updated_at
+    }
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+enum ForwardPhase {
+    Depositing,
+    Forwarding,
+    Done,
+    DepositFailed,
+    ForwardRefused,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+struct ForwardRecord {
+    version: u8,
+    journey_id: String,
+    plan_digest: [u8; 32],
+    deposit_idempotency_key: [u8; 32],
+    deposit_journey_id: String,
+    forward_key: [u8; 32],
+    forward_journey_id: String,
+    forward_legs: usize,
+    phase: ForwardPhase,
+    credit_activity_id: Option<[u8; 32]>,
+    credit_receipt_digest: Option<[u8; 32]>,
+    forward_receipts: Vec<([u8; 32], [u8; 32])>,
+    started_at: u64,
+    updated_at: u64,
+}
+
+/// Durable parent of a deposit-to-home followed by `LayerX` forwarding legs.
+/// The deposit child, the forward engine and this parent are created in one
+/// atomic write; the forward engine advances only after the parent verified
+/// and claimed the deposit's credit receipt.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DepositForwardJourney {
+    record: ForwardRecord,
+}
+
+impl DepositForwardJourney {
+    /// Persists the deposit child, the immutable forward legs and the parent
+    /// binding between them. Repeating the same parent returns the original
+    /// journey only when the deposit plan and every forward leg agree.
+    ///
+    /// # Errors
+    ///
+    /// Refuses empty or changed forward legs, a deposit already started
+    /// outside this parent, an unbound wallet and storage failures.
+    #[allow(clippy::too_many_arguments)]
+    pub fn start(
+        scope: &mut PrincipalScope<'_>,
+        binding: &BindingJourney,
+        deposit: &DepositPlan,
+        forward_legs: Vec<JourneyLeg>,
+        custody_key: KeyId,
+        registry: &ModuleRegistry,
+        journey_id: JourneyId,
+        plan_digest: [u8; 32],
+        now: u64,
+    ) -> Result<Self, DepositJourneyError> {
+        if forward_legs.is_empty() || plan_digest == [0; 32] || journey_id == deposit.journey_id {
+            return Err(DepositJourneyError::InvalidPlan);
+        }
+        let leg_count = forward_legs.len();
+        let forward_key = derive_key(FORWARD_ENGINE_DOMAIN, &plan_digest);
+        let forward_journey_id = JourneyId::new(format!("jrn_forward{}", &hex(&forward_key)[..32]))
+            .map_err(|_| DepositJourneyError::Corrupt("invalid forward journey id"))?;
+        let forward_plan = JourneyPlan::new(
+            forward_journey_id.clone(),
+            super::engine::JourneyKind::Move,
+            forward_key,
+            custody_key,
+            Operation::ProtocolMutation,
+            forward_legs,
+        )?;
+        let row = forward_row(&journey_id)?;
+        if let Some(existing) = scope.get(Table::Journeys, &row) {
+            let record = decode_forward(existing.bytes())?;
+            if record.journey_id != journey_id.as_str()
+                || record.plan_digest != plan_digest
+                || record.deposit_idempotency_key != deposit.idempotency_key
+                || record.deposit_journey_id != deposit.journey_id.as_str()
+                || record.forward_key != forward_key
+                || record.forward_legs != leg_count
+            {
+                return Err(DepositJourneyError::IdempotencyConflict);
+            }
+            DepositJourney::start(scope, binding, deposit, now)?;
+            JourneyEngine::start(scope, &forward_plan, registry, now)?;
+            return Ok(Self { record });
+        }
+        let record = scope.transaction(|staged| -> Result<ForwardRecord, DepositJourneyError> {
+            if DepositJourney::load_by_idempotency(staged, deposit.idempotency_key)?.is_some() {
+                return Err(DepositJourneyError::IdempotencyConflict);
+            }
+            DepositJourney::start(staged, binding, deposit, now)?;
+            JourneyEngine::start(staged, &forward_plan, registry, now)?;
+            let record = ForwardRecord {
+                version: FORWARD_VERSION,
+                journey_id: journey_id.as_str().to_owned(),
+                plan_digest,
+                deposit_idempotency_key: deposit.idempotency_key,
+                deposit_journey_id: deposit.journey_id.as_str().to_owned(),
+                forward_key,
+                forward_journey_id: forward_journey_id.as_str().to_owned(),
+                forward_legs: leg_count,
+                phase: ForwardPhase::Depositing,
+                credit_activity_id: None,
+                credit_receipt_digest: None,
+                forward_receipts: Vec::new(),
+                started_at: now,
+                updated_at: now,
+            };
+            staged.put(
+                Table::Journeys,
+                forward_row(&journey_id)?,
+                now,
+                encode_forward(&record)?,
+            )?;
+            Ok(record)
+        })?;
+        Ok(Self { record })
+    }
+
+    /// Loads one deposit-forwarding parent by its returned journey id.
+    ///
+    /// # Errors
+    ///
+    /// Refuses a corrupt or misfiled parent record.
+    pub fn load(
+        scope: &PrincipalScope<'_>,
+        journey_id: &JourneyId,
+    ) -> Result<Option<Self>, DepositJourneyError> {
+        let Some(row) = scope.get(Table::Journeys, &forward_row(journey_id)?) else {
+            return Ok(None);
+        };
+        let record = decode_forward(row.bytes())?;
+        if record.journey_id != journey_id.as_str() {
+            return Err(DepositJourneyError::Corrupt("forward row binding mismatch"));
+        }
+        Ok(Some(Self { record }))
+    }
+
+    /// Loads the deposit child this parent owns.
+    ///
+    /// # Errors
+    ///
+    /// Refuses a missing or rebound deposit child.
+    pub fn deposit(
+        &self,
+        scope: &PrincipalScope<'_>,
+    ) -> Result<DepositJourney, DepositJourneyError> {
+        let child =
+            DepositJourney::load_by_idempotency(scope, self.record.deposit_idempotency_key)?
+                .ok_or(DepositJourneyError::Corrupt("deposit child missing"))?;
+        if child.record.journey_id != self.record.deposit_journey_id {
+            return Err(DepositJourneyError::EvidenceConflict);
+        }
+        Ok(child)
+    }
+
+    /// Records the deposit child's terminal outcome. A done deposit opens the
+    /// forward stage only when its credit activity and receipt digest equal the
+    /// verified evidence of the credit journey and the receipt is claimed by
+    /// this parent alone.
+    ///
+    /// # Errors
+    ///
+    /// Refuses a foreign child, mismatched or reused credit evidence, time
+    /// regression and storage failures.
+    pub fn observe_deposit(
+        &mut self,
+        scope: &mut PrincipalScope<'_>,
+        child: &DepositJourney,
+        now: u64,
+    ) -> Result<(), DepositJourneyError> {
+        if self.record.phase != ForwardPhase::Depositing {
+            return Ok(());
+        }
+        if child.record.idempotency_key != self.record.deposit_idempotency_key
+            || child.record.journey_id != self.record.deposit_journey_id
+        {
+            return Err(DepositJourneyError::EvidenceConflict);
+        }
+        if now < self.record.updated_at {
+            return Err(DepositJourneyError::TimeRegressed);
+        }
+        let mut next = self.record.clone();
+        next.updated_at = now;
+        match child.record.phase {
+            Phase::Done => {
+                let activity =
+                    child
+                        .record
+                        .activity
+                        .as_ref()
+                        .ok_or(DepositJourneyError::Corrupt(
+                            "deposit done without activity",
+                        ))?;
+                let credit_id = child
+                    .inner_journey_id()
+                    .ok_or(DepositJourneyError::Corrupt("invalid credit journey id"))?;
+                let credit = JourneyEngine::load(scope, &credit_id)?
+                    .ok_or(DepositJourneyError::Corrupt("credit journey missing"))?;
+                let evidence = credit
+                    .verified_leg_evidence(0)?
+                    .ok_or(DepositJourneyError::EvidenceConflict)?;
+                if evidence.activity_id != activity.credit_activity_id
+                    || evidence.receipt_digest != activity.credit_receipt_digest
+                {
+                    return Err(DepositJourneyError::EvidenceConflict);
+                }
+                next.phase = ForwardPhase::Forwarding;
+                next.credit_activity_id = Some(evidence.activity_id);
+                next.credit_receipt_digest = Some(evidence.receipt_digest);
+                self.commit(
+                    scope,
+                    next,
+                    &[(evidence.activity_id, evidence.receipt_digest)],
+                    now,
+                )
+            }
+            Phase::Failed => {
+                next.phase = ForwardPhase::DepositFailed;
+                self.commit(scope, next, &[], now)
+            }
+            Phase::Ready
+            | Phase::WalletOpening
+            | Phase::Confirming
+            | Phase::Proving
+            | Phase::Crediting => Ok(()),
+        }
+    }
+
+    /// Advances the forward legs by one engine phase. Nothing is prepared
+    /// before the credit receipt is verified and claimed, and the parent is
+    /// done only when every forward leg carries verified receipt evidence.
+    ///
+    /// # Errors
+    ///
+    /// Refuses a forward stage whose credit claim is absent or foreign,
+    /// reused forward receipts, and the engine's typed failures.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn advance_forward(
+        &mut self,
+        scope: &mut PrincipalScope<'_>,
+        agent_contract: &AgentClient,
+        agent: &mut dyn AgentBoundary,
+        custody: &CustodySigner,
+        registry: &ModuleRegistry,
+        trace: &TraceId,
+        now: u64,
+    ) -> Result<(), DepositJourneyError> {
+        if self.record.phase != ForwardPhase::Forwarding {
+            return Ok(());
+        }
+        if now < self.record.updated_at {
+            return Err(DepositJourneyError::TimeRegressed);
+        }
+        let (Some(activity), Some(digest)) = (
+            self.record.credit_activity_id,
+            self.record.credit_receipt_digest,
+        ) else {
+            return Err(DepositJourneyError::Corrupt(
+                "forwarding without credit evidence",
+            ));
+        };
+        if !claim_receipt(scope, activity, digest, &self.record.journey_id, now)? {
+            return Err(DepositJourneyError::EvidenceConflict);
+        }
+        let mut engine = JourneyEngine::load(scope, &self.forward_journey_id()?)?
+            .ok_or(DepositJourneyError::Corrupt("forward journey missing"))?;
+        let status = engine
+            .advance(scope, agent_contract, agent, custody, registry, trace, now)
+            .await?;
+        let mut next = self.record.clone();
+        next.updated_at = now;
+        match status.state() {
+            JourneyState::Refused => {
+                next.phase = ForwardPhase::ForwardRefused;
+                self.commit(scope, next, &[], now)
+            }
+            JourneyState::Done => {
+                let mut receipts = Vec::with_capacity(self.record.forward_legs);
+                for index in 0..self.record.forward_legs {
+                    let evidence = engine
+                        .verified_leg_evidence(index)?
+                        .ok_or(DepositJourneyError::EvidenceConflict)?;
+                    receipts.push((evidence.activity_id, evidence.receipt_digest));
+                }
+                next.phase = ForwardPhase::Done;
+                next.forward_receipts.clone_from(&receipts);
+                self.commit(scope, next, &receipts, now)
+            }
+            JourneyState::GettingReady
+            | JourneyState::Sending
+            | JourneyState::Processing
+            | JourneyState::StillChecking => Ok(()),
+        }
+    }
+
+    /// Advances the parent by one durable stage through its deposit child or
+    /// its forward engine.
+    ///
+    /// # Errors
+    ///
+    /// Returns the deposit, engine and evidence failures of the stage.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn advance<R: DepositRuntime, A: DepositAgentBoundary>(
+        &mut self,
+        scope: &mut PrincipalScope<'_>,
+        runtime: &mut R,
+        agent_contract: &AgentClient,
+        agent: &mut A,
+        custody: &CustodySigner,
+        registry: &ModuleRegistry,
+        trace: &TraceId,
+        now: u64,
+    ) -> Result<DepositForwardStatus, DepositJourneyError> {
+        match self.record.phase {
+            ForwardPhase::Depositing => {
+                let mut child = self.deposit(scope)?;
+                child
+                    .advance(
+                        scope,
+                        runtime,
+                        agent_contract,
+                        agent,
+                        custody,
+                        registry,
+                        trace,
+                        now,
+                    )
+                    .await?;
+                self.observe_deposit(scope, &child, now)?;
+            }
+            ForwardPhase::Forwarding => {
+                self.advance_forward(scope, agent_contract, agent, custody, registry, trace, now)
+                    .await?;
+            }
+            ForwardPhase::Done | ForwardPhase::DepositFailed | ForwardPhase::ForwardRefused => {}
+        }
+        self.status(scope)
+    }
+
+    /// Returns the parent stage, reading the deposit child while it runs.
+    ///
+    /// # Errors
+    ///
+    /// Refuses corrupt identifiers and a missing deposit child.
+    pub fn status(
+        &self,
+        scope: &PrincipalScope<'_>,
+    ) -> Result<DepositForwardStatus, DepositJourneyError> {
+        let stage = match self.record.phase {
+            ForwardPhase::Depositing => {
+                DepositForwardStage::Depositing(self.deposit(scope)?.status()?.stage().clone())
+            }
+            ForwardPhase::DepositFailed => match self.deposit(scope)?.status()?.stage() {
+                DepositStage::Failed(kind) => {
+                    DepositForwardStage::Failed(DepositForwardFailure::DepositFailed(*kind))
+                }
+                _ => {
+                    return Err(DepositJourneyError::Corrupt(
+                        "deposit failure without reason",
+                    ))
+                }
+            },
+            ForwardPhase::Forwarding => DepositForwardStage::Forwarding,
+            ForwardPhase::Done => DepositForwardStage::Done,
+            ForwardPhase::ForwardRefused => {
+                DepositForwardStage::Failed(DepositForwardFailure::ForwardRefused)
+            }
+        };
+        Ok(DepositForwardStatus {
+            journey_id: JourneyId::new(self.record.journey_id.clone())
+                .map_err(|_| DepositJourneyError::Corrupt("invalid forward parent id"))?,
+            deposit_journey_id: JourneyId::new(self.record.deposit_journey_id.clone())
+                .map_err(|_| DepositJourneyError::Corrupt("invalid deposit journey id"))?,
+            forward_journey_id: self.forward_journey_id()?,
+            stage,
+            credit: self
+                .record
+                .credit_activity_id
+                .zip(self.record.credit_receipt_digest),
+            forward_receipts: self.record.forward_receipts.clone(),
+            started_at: self.record.started_at,
+            updated_at: self.record.updated_at,
+        })
+    }
+
+    fn forward_journey_id(&self) -> Result<JourneyId, DepositJourneyError> {
+        JourneyId::new(self.record.forward_journey_id.clone())
+            .map_err(|_| DepositJourneyError::Corrupt("invalid forward journey id"))
+    }
+
+    fn commit(
+        &mut self,
+        scope: &mut PrincipalScope<'_>,
+        next: ForwardRecord,
+        receipts: &[([u8; 32], [u8; 32])],
+        now: u64,
+    ) -> Result<(), DepositJourneyError> {
+        let owner = next.journey_id.clone();
+        let row = forward_row(
+            &JourneyId::new(owner.clone())
+                .map_err(|_| DepositJourneyError::Corrupt("invalid forward parent id"))?,
+        )?;
+        let bytes = encode_forward(&next)?;
+        scope.transaction(|staged| -> Result<(), DepositJourneyError> {
+            for (activity, digest) in receipts {
+                if !claim_receipt(staged, *activity, *digest, &owner, now)? {
+                    return Err(DepositJourneyError::EvidenceConflict);
+                }
+            }
+            staged.put(Table::Journeys, row, now, bytes)?;
+            Ok(())
+        })?;
+        self.record = next;
+        Ok(())
+    }
+}
+
+fn forward_row(journey_id: &JourneyId) -> Result<RowKey, StoreError> {
+    RowKey::new(format!("{FORWARD_PREFIX}{}", journey_id.as_str()))
+}
+
+fn encode_forward(record: &ForwardRecord) -> Result<Vec<u8>, DepositJourneyError> {
+    serde_json::to_vec(record)
+        .map_err(|_| DepositJourneyError::Corrupt("forward journey cannot be encoded"))
+}
+
+fn decode_forward(bytes: &[u8]) -> Result<ForwardRecord, DepositJourneyError> {
+    let record: ForwardRecord = serde_json::from_slice(bytes)
+        .map_err(|_| DepositJourneyError::Corrupt("invalid forward journey encoding"))?;
+    if record.version != FORWARD_VERSION || record.forward_legs == 0 {
+        return Err(DepositJourneyError::Corrupt(
+            "unsupported forward journey record",
+        ));
+    }
+    Ok(record)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -29987,7 +29987,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.10.4]
 title = "Execute every advertised unified custody plan with durable multi-stage journeys"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 8
 requires = ["0.2", "10.1", "10.2", "10.3", "12.2", "12.3"]
@@ -30011,6 +30011,12 @@ path_policy = "Existing paths are modified in place. Planned paths must be creat
 evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
 retained_contract_paths_104_13_36 = ["human/crates/layerx-human-service/src/journeys/intent_submit.rs", "human/crates/layerx-human-service/src/server/production_components.rs", "human/crates/layerx-human-service/src/journeys/engine.rs"]
 lease_transfer_authority_104_13_36 = "Owner approved inactive lease reassignment and distinct Send contract; original unfinished criteria and source checkpoints remain preserved."
+completion_basis = "implementation"
+qualification_status = "PASS"
+build_exit_code = 0
+verify_exit_code = 0
+qualification_log = "/root/lx-ops/fleet-2026-10-05/results/10.4.json"
+qualification_note = "Gate passed 5 of 5 unified shapes after one repair; gaps recorded: journey.get cannot serve parent journey id (public_journeys hides parents), no real deposit proof producer so deposit-forward never reaches Done, withdrawal not run across layerxd/paxd processes; SubmitPlanRequest has no step_up field so a production withdrawal debit from intent submit stops at awaiting-authorization; touched retained contract paths intent_submit.rs and production_components.rs"
 
 [task.103.5.4]
 title = "Generate the go/no-go report and reconcile the beta contract"

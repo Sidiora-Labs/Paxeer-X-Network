@@ -12,8 +12,9 @@ mod wire;
 mod withdraw;
 
 pub use deposit::{
-    DepositActivity, DepositAgentBoundary, DepositAgentPlan, DepositBoundaryError,
-    DepositFailureKind, DepositJourney, DepositJourneyError, DepositNotification, DepositPlan,
+    claim_receipt, DepositActivity, DepositAgentBoundary, DepositAgentPlan, DepositBoundaryError,
+    DepositFailureKind, DepositForwardFailure, DepositForwardJourney, DepositForwardStage,
+    DepositForwardStatus, DepositJourney, DepositJourneyError, DepositNotification, DepositPlan,
     DepositProofIdentity, DepositRuntime, DepositStage, DepositStatus, FinalityDelay,
     WalletCustodyOutcome, WalletCustodyRequest,
 };
@@ -26,10 +27,10 @@ pub use engine::{
 };
 
 pub use intent_submit::{
-    authority_label, drive_intent_journey, intent_journey_id, start_deposit_journey,
-    start_kernel_journey, start_native_kernel_journey, verify_bindings, BindingExpectation,
-    IntentDriver, IntentLegBinding, IntentShape, IntentSubmission, KernelStart, SubmitPlanRequest,
-    SubmitRefusal,
+    authority_label, drive_intent_journey, intent_journey_id, start_deposit_forward_journey,
+    start_deposit_journey, start_kernel_journey, start_native_kernel_journey,
+    start_withdrawal_intent, verify_bindings, BindingExpectation, IntentDriver, IntentLegBinding,
+    IntentShape, IntentSubmission, KernelStart, SubmitPlanRequest, SubmitRefusal,
 };
 
 pub use move_money::{
@@ -57,12 +58,13 @@ pub use resolver::{
 pub use router::{
     plan, plan_with_advisor, Advice, AdvisedPlan, AllowanceId, AllowanceKind, AllowanceScope,
     Annotation, BalanceEntry, BudgetBinding, CandidateRef, CandidateSet, Constraints,
-    CustodyContext, Domain, FeeSchedule, LegBinding, LegMechanism, ObservedState, PlannedLeg,
-    Refusal, RequiredAuthority, RouteAdvisor, SignedAllowance, SignedPlan, SigningRequirement,
-    TopUpRecord, UnifiedIntent, UnifiedPlan,
+    CustodyContext, Domain, ExecutableShape, FeeSchedule, LegBinding, LegMechanism, ObservedState,
+    PlannedLeg, Refusal, RequiredAuthority, RouteAdvisor, SignedAllowance, SignedPlan,
+    SigningRequirement, TopUpRecord, UnifiedIntent, UnifiedPlan,
 };
 pub use withdraw::{
-    CancellationPolicy, PaxeerAction, PaxeerActionOutcome, SettlementConfig, SettlementExpectation,
+    CancellationPolicy, IntentWithdrawalJourney, IntentWithdrawalStage, IntentWithdrawalStatus,
+    PaxeerAction, PaxeerActionOutcome, SettlementConfig, SettlementExpectation,
     WithdrawalAgentPlan, WithdrawalBoundaryError, WithdrawalJourney, WithdrawalJourneyError,
     WithdrawalPlan, WithdrawalReminder, WithdrawalRuntime, WithdrawalStage, WithdrawalStatus,
     WithdrawalTransactionRequest,

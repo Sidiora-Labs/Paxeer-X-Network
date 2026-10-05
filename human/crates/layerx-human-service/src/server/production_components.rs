@@ -1394,6 +1394,45 @@ impl ProductionComponents {
                         | crate::journeys::WithdrawalStage::Cancelled(_)
                 ))
             }
+            "intent-deposit-forward" => {
+                let mut journey = crate::journeys::DepositForwardJourney::load(scope, id)
+                    .map_err(deposit_journey_failure)?
+                    .ok_or_else(ApiFailure::not_found)?;
+                let status = self.advance_deposit_forward(
+                    scope,
+                    &mut journey,
+                    &mut agent,
+                    &registry,
+                    trace,
+                    observed_at,
+                )?;
+                Ok(matches!(
+                    status.stage(),
+                    crate::journeys::DepositForwardStage::Done
+                        | crate::journeys::DepositForwardStage::Failed(_)
+                ))
+            }
+            "intent-withdraw" => {
+                let mut journey = crate::journeys::IntentWithdrawalJourney::load(scope, id)
+                    .map_err(withdrawal_journey_failure)?
+                    .ok_or_else(ApiFailure::not_found)?;
+                let status = self.advance_intent_withdrawal(
+                    scope,
+                    &mut journey,
+                    &mut agent,
+                    &registry,
+                    trace,
+                    observed_at,
+                )?;
+                Ok(matches!(
+                    status.stage(),
+                    crate::journeys::IntentWithdrawalStage::TransferRefused
+                        | crate::journeys::IntentWithdrawalStage::Withdrawing(
+                            crate::journeys::WithdrawalStage::PaidOut(_)
+                                | crate::journeys::WithdrawalStage::Cancelled(_)
+                        )
+                ))
+            }
             "agent-rotation" => {
                 drop(agent);
                 self.advance_owner_rotation(scope, id, trace, observed_at)
@@ -5069,18 +5108,17 @@ impl ProductionComponents {
         };
         crate::journeys::verify_bindings(&planned, &submitted, &expectation)
             .map_err(submit_failure)?;
-        let submission = match crate::journeys::IntentShape::of(&planned).map_err(submit_failure)? {
-            crate::journeys::IntentShape::Kernel => self.submit_kernel_intent(
-                request,
-                scope,
-                &KernelSubmission {
-                    planned: &planned,
-                    submitted: &submitted,
-                    expectation: &expectation,
-                    context: &context,
-                    idempotency: &idempotency,
-                },
-            )?,
+        let kernel_submission = KernelSubmission {
+            planned: &planned,
+            submitted: &submitted,
+            expectation: &expectation,
+            context: &context,
+            idempotency: &idempotency,
+        };
+        let submission = match planned.executable_shape() {
+            crate::journeys::IntentShape::Kernel => {
+                self.submit_kernel_intent(request, scope, &kernel_submission)?
+            }
             crate::journeys::IntentShape::CustodyDeposit => {
                 let held_request = ScopedRequest {
                     operation: request.operation,
@@ -5110,6 +5148,52 @@ impl ProductionComponents {
                 .map_err(submit_failure)?;
                 let status = journey.status().map_err(deposit_journey_failure)?;
                 crate::journeys::IntentSubmission::from_deposit(&status, planned.digest())
+            }
+            crate::journeys::IntentShape::DepositForward => {
+                let held_request = ScopedRequest {
+                    operation: request.operation,
+                    principal: None,
+                    path_parameters: request.path_parameters.clone(),
+                    body,
+                    idempotency_key: request.idempotency_key.clone(),
+                    trace: request.trace.clone(),
+                };
+                let planning = movement_request(self, &held_request, scope, now)?;
+                let deposit = self
+                    .movement
+                    .lock()
+                    .map_err(|_| ApiFailure::unavailable())?
+                    .deposit_plan(planning)
+                    .map_err(movement_failure)?;
+                self.submit_deposit_forward_intent(request, scope, &kernel_submission, &deposit)?
+            }
+            crate::journeys::IntentShape::WithdrawToWallet
+            | crate::journeys::IntentShape::TransferThenWithdraw => {
+                let held_request = ScopedRequest {
+                    operation: request.operation,
+                    principal: None,
+                    path_parameters: request.path_parameters.clone(),
+                    body,
+                    idempotency_key: request.idempotency_key.clone(),
+                    trace: request.trace.clone(),
+                };
+                let debit_binding = submitted
+                    .bindings
+                    .get(planned.legs().len().saturating_sub(2))
+                    .ok_or_else(ApiFailure::forbidden)?;
+                let mut planning = movement_request(self, &held_request, scope, now)?;
+                planning.context.account_sequence = debit_binding.account_sequence;
+                planning.context.not_before = debit_binding.not_before;
+                planning.context.not_after = debit_binding.not_after;
+                planning.context.fee_limit =
+                    planning.context.fee_limit.min(debit_binding.fee_limit);
+                let withdrawal = self
+                    .movement
+                    .lock()
+                    .map_err(|_| ApiFailure::unavailable())?
+                    .withdrawal_plan(planning)
+                    .map_err(movement_failure)?;
+                self.submit_withdrawal_intent(request, scope, &kernel_submission, &withdrawal)?
             }
         };
         let result = submission.to_json();
@@ -5148,21 +5232,7 @@ impl ProductionComponents {
         } = *submission;
         let mut agent = self.principal_agent(scope)?;
         let registry = agent.registry().clone();
-        let mut routes = Vec::with_capacity(planned.legs().len());
-        for (leg, binding) in planned.legs().iter().zip(&submitted.bindings) {
-            routes.push(intent_leg_route(
-                self,
-                scope,
-                &mut agent,
-                context,
-                leg,
-                binding,
-                request
-                    .principal
-                    .as_ref()
-                    .and_then(PrincipalContext::assertion),
-            )?);
-        }
+        let routes = self.intent_routes(request, scope, &mut agent, submission)?;
         let journey_id = crate::journeys::intent_journey_id(idempotency, planned.digest())
             .map_err(submit_failure)?;
         let native = request
@@ -5211,6 +5281,242 @@ impl ProductionComponents {
             &status,
             planned.digest(),
         ))
+    }
+
+    fn intent_routes(
+        &self,
+        request: &ScopedRequest<'_>,
+        scope: &crate::store::PrincipalScope<'_>,
+        agent: &mut AgentRuntime,
+        submission: &KernelSubmission<'_>,
+    ) -> Result<Vec<crate::journeys::RouteRequest>, ApiFailure> {
+        let planned = submission.planned;
+        let (first, end) = planned.executable_shape().kernel_legs(planned.legs().len());
+        let legs = planned.legs().get(first..end).unwrap_or_default();
+        let bindings = submission
+            .submitted
+            .bindings
+            .get(first..end)
+            .unwrap_or_default();
+        let mut routes = Vec::with_capacity(legs.len());
+        for (leg, binding) in legs.iter().zip(bindings) {
+            routes.push(intent_leg_route(
+                self,
+                scope,
+                agent,
+                submission.context,
+                leg,
+                binding,
+                request
+                    .principal
+                    .as_ref()
+                    .and_then(PrincipalContext::assertion),
+            )?);
+        }
+        Ok(routes)
+    }
+
+    fn submit_deposit_forward_intent(
+        &self,
+        request: &ScopedRequest<'_>,
+        scope: &mut crate::store::PrincipalScope<'_>,
+        submission: &KernelSubmission<'_>,
+        deposit: &crate::journeys::DepositPlan,
+    ) -> Result<crate::journeys::IntentSubmission, ApiFailure> {
+        let mut agent = self.principal_agent(scope)?;
+        let registry = agent.registry().clone();
+        let routes = self.intent_routes(request, scope, &mut agent, submission)?;
+        let journey_id =
+            crate::journeys::intent_journey_id(submission.idempotency, submission.planned.digest())
+                .map_err(submit_failure)?;
+        let binding = crate::binding::BindingJourney::new(registry.clone());
+        let journey = crate::journeys::start_deposit_forward_journey(
+            scope,
+            submission.planned,
+            submission.submitted,
+            submission.expectation,
+            deposit,
+            &binding,
+            crate::journeys::KernelStart {
+                routes: &routes,
+                journey_id,
+                custody_key: submission.context.custody_key.clone(),
+                registry: &registry,
+            },
+        )
+        .map_err(submit_failure)?;
+        let status = journey.status(scope).map_err(deposit_journey_failure)?;
+        schedule_continuation(
+            scope,
+            "intent-deposit-forward",
+            status.journey_id(),
+            submission.expectation.now,
+        )?;
+        Ok(crate::journeys::IntentSubmission::from_deposit_forward(
+            &status,
+            submission.planned.digest(),
+        ))
+    }
+
+    fn submit_withdrawal_intent(
+        &self,
+        request: &ScopedRequest<'_>,
+        scope: &mut crate::store::PrincipalScope<'_>,
+        submission: &KernelSubmission<'_>,
+        withdrawal: &crate::journeys::WithdrawalPlan,
+    ) -> Result<crate::journeys::IntentSubmission, ApiFailure> {
+        let mut agent = self.principal_agent(scope)?;
+        let registry = agent.registry().clone();
+        let routes = self.intent_routes(request, scope, &mut agent, submission)?;
+        let journey_id =
+            crate::journeys::intent_journey_id(submission.idempotency, submission.planned.digest())
+                .map_err(submit_failure)?;
+        let mut journey = crate::journeys::start_withdrawal_intent(
+            scope,
+            submission.planned,
+            submission.submitted,
+            submission.expectation,
+            withdrawal,
+            crate::journeys::KernelStart {
+                routes: &routes,
+                journey_id,
+                custody_key: submission.context.custody_key.clone(),
+                registry: &registry,
+            },
+        )
+        .map_err(submit_failure)?;
+        let trace =
+            TraceId::parse(&request.trace).map_err(|_| ApiFailure::invalid_request(None))?;
+        let status = self.advance_intent_withdrawal(
+            scope,
+            &mut journey,
+            &mut agent,
+            &registry,
+            &trace,
+            submission.expectation.now,
+        )?;
+        schedule_continuation(
+            scope,
+            "intent-withdraw",
+            status.journey_id(),
+            submission.expectation.now,
+        )?;
+        Ok(crate::journeys::IntentSubmission::from_withdrawal(
+            &status,
+            submission.planned.digest(),
+        ))
+    }
+
+    fn advance_deposit_forward(
+        &self,
+        scope: &mut crate::store::PrincipalScope<'_>,
+        journey: &mut crate::journeys::DepositForwardJourney,
+        agent: &mut AgentRuntime,
+        registry: &layerx_types::payload::ModuleRegistry,
+        trace: &TraceId,
+        now: u64,
+    ) -> Result<crate::journeys::DepositForwardStatus, ApiFailure> {
+        match journey
+            .status(scope)
+            .map_err(deposit_journey_failure)?
+            .stage()
+        {
+            crate::journeys::DepositForwardStage::Depositing(_) => {
+                let mut child = journey.deposit(scope).map_err(deposit_journey_failure)?;
+                self.movement
+                    .lock()
+                    .map_err(|_| ApiFailure::unavailable())?
+                    .advance_deposit(
+                        scope,
+                        &mut child,
+                        &self.agent_contract,
+                        agent,
+                        &self.custody,
+                        registry,
+                        trace,
+                        now,
+                    )
+                    .map_err(deposit_journey_failure)?;
+                journey
+                    .observe_deposit(scope, &child, now)
+                    .map_err(deposit_journey_failure)?;
+            }
+            crate::journeys::DepositForwardStage::Forwarding => {
+                crate::server::poll_once_ready(journey.advance_forward(
+                    scope,
+                    &self.agent_contract,
+                    agent,
+                    &self.custody,
+                    registry,
+                    trace,
+                    now,
+                ))
+                .map_err(|_| ApiFailure::upstream_degraded())?
+                .map_err(deposit_journey_failure)?;
+            }
+            crate::journeys::DepositForwardStage::Done
+            | crate::journeys::DepositForwardStage::Failed(_) => {}
+        }
+        journey.status(scope).map_err(deposit_journey_failure)
+    }
+
+    /// Advances a unified withdrawal parent without step-up evidence. The
+    /// intent submission contract carries no step-up, so a prepared debit
+    /// stops in awaiting-authorization and is never signed here.
+    fn advance_intent_withdrawal(
+        &self,
+        scope: &mut crate::store::PrincipalScope<'_>,
+        journey: &mut crate::journeys::IntentWithdrawalJourney,
+        agent: &mut AgentRuntime,
+        registry: &layerx_types::payload::ModuleRegistry,
+        trace: &TraceId,
+        now: u64,
+    ) -> Result<crate::journeys::IntentWithdrawalStatus, ApiFailure> {
+        let status = crate::server::poll_once_ready(journey.advance_prelude(
+            scope,
+            &self.agent_contract,
+            agent,
+            &self.custody,
+            registry,
+            trace,
+            now,
+        ))
+        .map_err(|_| ApiFailure::upstream_degraded())?
+        .map_err(withdrawal_journey_failure)?;
+        let Some(mut child) = journey
+            .withdrawal(scope)
+            .map_err(withdrawal_journey_failure)?
+        else {
+            return Ok(status);
+        };
+        if child
+            .prepared_debit_disclosure_digest(scope, &self.agent_contract, agent, registry)
+            .map_err(withdrawal_journey_failure)?
+            .is_some()
+        {
+            return journey
+                .awaiting_authorization(scope)
+                .map_err(withdrawal_journey_failure);
+        }
+        self.movement
+            .lock()
+            .map_err(|_| ApiFailure::unavailable())?
+            .advance_withdrawal(
+                scope,
+                &mut child,
+                &self.agent_contract,
+                agent,
+                &self.custody,
+                registry,
+                trace,
+                None,
+                now,
+            )
+            .map_err(withdrawal_journey_failure)?;
+        journey
+            .observe_withdrawal(scope, &child, now)
+            .map_err(withdrawal_journey_failure)?;
+        journey.status(scope).map_err(withdrawal_journey_failure)
     }
 
     fn execute_move_quote(

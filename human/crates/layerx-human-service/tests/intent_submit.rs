@@ -34,13 +34,17 @@ use layerx_human_service::custody::{
     CustodySigner, EnvelopeKms, KeyClass, KeyEntropy, KeyId, Keystore, SigningLimits,
 };
 use layerx_human_service::journeys::{
-    authority_label, drive_intent_journey, intent_journey_id, plan, start_deposit_journey,
-    start_kernel_journey, verify_bindings, AgentBoundary, AgentBoundaryError, AgentObservation,
-    AgentPreparation, BalanceEntry, BindingExpectation, Constraints, CustodyContext,
-    DepositAgentPlan, DepositPlan, Endpoint, FeeSchedule, IntentDriver, IntentLegBinding,
-    IntentSubmission, JourneyState, KernelStart, LegMechanism, Mechanism, ObservedState,
-    ReceiptLookup, ReceiptMaterial, Relationship, RouteRequest, SendRoute, SubmitPlanRequest,
-    SubmitRefusal, UnifiedIntent, UnifiedPlan,
+    authority_label, claim_receipt, drive_intent_journey, intent_journey_id, plan,
+    start_deposit_forward_journey, start_deposit_journey, start_kernel_journey,
+    start_withdrawal_intent, verify_bindings, AgentBoundary, AgentBoundaryError, AgentObservation,
+    AgentPreparation, AllowanceId, AllowanceKind, AllowanceScope, BalanceEntry, BindingExpectation,
+    Constraints, CustodyContext, DepositAgentPlan, DepositForwardJourney, DepositForwardStage,
+    DepositPlan, Domain, Endpoint, ExecutableShape, FeeSchedule, IntentDriver, IntentLegBinding,
+    IntentSubmission, IntentWithdrawalJourney, IntentWithdrawalStage, JourneyEngine, JourneyState,
+    KernelStart, LegMechanism, Mechanism, ObservedState, PlannedLeg, ReceiptLookup,
+    ReceiptMaterial, Refusal, Relationship, RouteRequest, SendRoute, SettlementConfig,
+    SignedAllowance, SubmitPlanRequest, SubmitRefusal, UnifiedIntent, UnifiedPlan,
+    WithdrawalAgentPlan, WithdrawalJourney, WithdrawalPlan,
 };
 use layerx_human_service::notify::JourneyId;
 use layerx_human_service::store::{PrincipalId, PrincipalStore, TenancyDigest};
@@ -71,6 +75,8 @@ const SEND_FEE: u128 = 2;
 const CREDIT_FEE: u128 = 3;
 const DEPOSIT_GAS: u128 = 4;
 const MAX_FEE: u128 = 20;
+const WITHDRAW_FEE: u128 = 3;
+const FINALISE_GAS: u128 = 4;
 
 struct NoopWake;
 
@@ -161,17 +167,32 @@ fn fees() -> FeeSchedule {
             CREDIT_FEE,
         ),
         (LegMechanism::PaxeerCustodyDeposit, DEPOSIT_GAS),
+        (
+            LegMechanism::Protocol(Mechanism::BridgeWithdrawRequest),
+            WITHDRAW_FEE,
+        ),
+        (LegMechanism::PaxeerWithdrawFinalise, FINALISE_GAS),
     ])
     .unwrap_or_else(|error| panic!("fees: {error:?}"))
 }
 
 fn observed(now: u64, custody: Option<EvmAddress>) -> ObservedState {
+    observed_with(now, custody, Vec::new(), Vec::new())
+}
+
+fn observed_with(
+    now: u64,
+    custody: Option<EvmAddress>,
+    extra: Vec<BalanceEntry>,
+    allowances: Vec<SignedAllowance>,
+) -> ObservedState {
     let home = Endpoint::human(account(HOME)).unwrap_or_else(|error| panic!("home: {error:?}"));
     let mut balances = vec![BalanceEntry::new(
         home,
         AssetId::new(ASSET),
         Amount::from_u128(500),
     )];
+    balances.extend(extra);
     let context = custody.map(|wallet| {
         balances.push(BalanceEntry::new(
             Endpoint::PaxeerWallet,
@@ -190,7 +211,7 @@ fn observed(now: u64, custody: Option<EvmAddress>) -> ObservedState {
         account(HOME),
         context,
         balances,
-        Vec::new(),
+        allowances,
         Vec::new(),
         fees(),
     )
@@ -297,11 +318,17 @@ struct RealAgentLayer {
     preparations: BTreeMap<[u8; 32], Prepared>,
     receipts: BTreeMap<[u8; 32], ReceiptMaterial>,
     submissions: BTreeMap<String, [u8; 32]>,
+    owner_public_key: [u8; 32],
 }
 
 impl RealAgentLayer {
-    fn new(root: &std::path::Path, specifications: BTreeMap<[u8; 32], ReceiptSpec>) -> Self {
+    fn new(
+        root: &std::path::Path,
+        owner_public_key: [u8; 32],
+        specifications: BTreeMap<[u8; 32], ReceiptSpec>,
+    ) -> Self {
         Self {
+            owner_public_key,
             store: AgentStore::open(root).unwrap_or_else(|error| panic!("agent store: {error}")),
             outbox: Outbox::default(),
             tenant: TenantId::new("tenant-a").unwrap_or_else(|error| panic!("tenant: {error}")),
@@ -373,7 +400,7 @@ impl AgentBoundary for RealAgentLayer {
                 PrepareRequest {
                     actor: Did::new(request.actor.as_str().as_bytes())
                         .map_err(|_| AgentBoundaryError::CorruptResponse)?,
-                    authority: Authority::owner(request.authority.as_str().as_bytes())
+                    authority: Authority::owner(&self.owner_public_key)
                         .map_err(|_| AgentBoundaryError::CorruptResponse)?,
                     activity_type: specification.activity,
                     expected_account_sequence: Some(request.account_sequence.get()),
@@ -831,21 +858,36 @@ impl Fixture {
     }
 
     fn send_route(&self, plan: &UnifiedPlan, request: &SubmitPlanRequest) -> RouteRequest {
-        let binding = &request.bindings[0];
+        self.send_route_at(plan, request, 0)
+    }
+
+    fn send_route_at(
+        &self,
+        plan: &UnifiedPlan,
+        request: &SubmitPlanRequest,
+        index: usize,
+    ) -> RouteRequest {
+        let binding = &request.bindings[index];
+        let leg = &plan.legs()[index];
+        let protocol_account = |endpoint: &Endpoint| {
+            let named = match endpoint {
+                Endpoint::Human(named) | Endpoint::Agent(named) | Endpoint::AgentBudget(named) => {
+                    named
+                }
+                Endpoint::PaxeerWallet => panic!("a send leg never touches the Paxeer wallet"),
+            };
+            layerx_intents::canonical::account_id_for_protocol(
+                named,
+                layerx_intents::canonical::PROTOCOL_VERSION,
+            )
+            .unwrap_or_else(|error| panic!("protocol account: {error:?}"))
+        };
         let signer = layerx_crypto::local::LocalSigner::new([0x51; 32]);
         let debit = layerx_crypto::send::SendDebit {
-            from: layerx_intents::canonical::account_id_for_protocol(
-                &account(HOME),
-                layerx_intents::canonical::PROTOCOL_VERSION,
-            )
-            .unwrap_or_else(|error| panic!("source account: {error:?}")),
-            to: layerx_intents::canonical::account_id_for_protocol(
-                &account(WORKER),
-                layerx_intents::canonical::PROTOCOL_VERSION,
-            )
-            .unwrap_or_else(|error| panic!("destination account: {error:?}")),
+            from: protocol_account(leg.source()),
+            to: protocol_account(leg.destination()),
             asset: ASSET,
-            amount: 90,
+            amount: leg.amount().value(),
             source_sequence: binding.account_sequence,
             idempotency_key: binding.action_key,
             expires_at: binding.not_after,
@@ -855,29 +897,33 @@ impl Fixture {
             network_id: NETWORK_ID,
             protocol_version: layerx_intents::canonical::PROTOCOL_VERSION,
         };
-        let leg = &plan.legs()[0];
+        let route = SendRoute {
+            account_sequence: Sequence::from_u64(binding.account_sequence),
+            idempotency_key: IdempotencyKey::new(binding.action_key),
+            expires_at: TimestampSeconds::from_u64(binding.not_after),
+            context_hash: ContextHash::new([0x55; 32]),
+            authorization: support::sign_send(
+                &signer,
+                &debit,
+                SendAuthorization::new(
+                    SendAuthorizationKind::Owner,
+                    PublicKey::new(self.public_key),
+                    AuthorizationSignature::new([0x77; 64]),
+                ),
+            ),
+            network_id: NetworkId::new(NETWORK_ID)
+                .unwrap_or_else(|error| panic!("network: {error:?}")),
+            protocol_version: ProtocolVersion::new(layerx_intents::canonical::PROTOCOL_VERSION)
+                .unwrap_or_else(|error| panic!("protocol: {error:?}")),
+        };
         RouteRequest {
             source: leg.source().clone(),
             destination: leg.destination().clone(),
-            relationship: Relationship::Direct(SendRoute {
-                account_sequence: Sequence::from_u64(binding.account_sequence),
-                idempotency_key: IdempotencyKey::new(binding.action_key),
-                expires_at: TimestampSeconds::from_u64(binding.not_after),
-                context_hash: ContextHash::new([0x55; 32]),
-                authorization: support::sign_send(
-                    &signer,
-                    &debit,
-                    SendAuthorization::new(
-                        SendAuthorizationKind::Owner,
-                        PublicKey::new(self.public_key),
-                        AuthorizationSignature::new([0x77; 64]),
-                    ),
-                ),
-                network_id: NetworkId::new(NETWORK_ID)
-                    .unwrap_or_else(|error| panic!("network: {error:?}")),
-                protocol_version: ProtocolVersion::new(layerx_intents::canonical::PROTOCOL_VERSION)
-                    .unwrap_or_else(|error| panic!("protocol: {error:?}")),
-            }),
+            relationship: if matches!(leg.source(), Endpoint::Agent(_)) {
+                Relationship::AgentAuthorized(route)
+            } else {
+                Relationship::Direct(route)
+            },
             asset: leg.asset(),
             amount: leg.amount(),
         }
@@ -1007,6 +1053,7 @@ fn intent_submit_kernel_send_creates_a_journey_that_progresses_past_getting_read
         .unwrap_or_else(|error| panic!("key: {error:?}"));
     let mut agent = RealAgentLayer::new(
         &fixture.root.join("agent-store"),
+        fixture.public_key,
         BTreeMap::from([(
             key,
             ReceiptSpec {
@@ -1295,4 +1342,940 @@ fn intent_submit_response_matches_the_golden_field_set() {
     let binding = IntentLegBinding::from_json(&binding_document(&plan, 0, SEQUENCE, (995, 1_100)))
         .unwrap_or_else(|error| panic!("binding: {error}"));
     assert_eq!(binding.fee_currency, "LXP");
+}
+
+fn home() -> Endpoint {
+    Endpoint::human(account(HOME)).unwrap_or_else(|error| panic!("home: {error:?}"))
+}
+
+fn worker() -> Endpoint {
+    Endpoint::agent(account(WORKER)).unwrap_or_else(|error| panic!("worker: {error:?}"))
+}
+
+fn worker_funded(now: u64, custody: Option<EvmAddress>) -> ObservedState {
+    observed_with(
+        now,
+        custody,
+        vec![BalanceEntry::new(
+            worker(),
+            AssetId::new(ASSET),
+            Amount::from_u128(500),
+        )],
+        Vec::new(),
+    )
+}
+
+fn mechanisms(plan: &UnifiedPlan) -> Vec<LegMechanism> {
+    plan.legs().iter().map(PlannedLeg::mechanism).collect()
+}
+
+fn sequenced_request(plan: &UnifiedPlan, window: (u64, u64)) -> SubmitPlanRequest {
+    let mut sequence = SEQUENCE;
+    let mut bindings = Vec::with_capacity(plan.legs().len());
+    for (index, leg) in plan.legs().iter().enumerate() {
+        bindings.push(binding_document(plan, index, sequence, window));
+        if leg.mechanism().domain() == Domain::LayerX {
+            sequence += 1;
+        }
+    }
+    SubmitPlanRequest::from_json(&submission_body(plan, plan.digest(), bindings))
+        .unwrap_or_else(|error| panic!("submission: {error}"))
+}
+
+fn kernel_start<'a>(
+    routes: &'a [RouteRequest],
+    journey_id: JourneyId,
+    registry: &'a ModuleRegistry,
+) -> KernelStart<'a> {
+    KernelStart {
+        routes,
+        journey_id,
+        custody_key: custody_key(),
+        registry,
+    }
+}
+
+fn withdrawal_for(
+    plan: &UnifiedPlan,
+    request: &SubmitPlanRequest,
+    wallet: EvmAddress,
+) -> WithdrawalPlan {
+    let index = plan.legs().len() - 2;
+    let debit = &plan.legs()[index];
+    let binding = &request.bindings[index];
+    WithdrawalPlan {
+        journey_id: intent_journey_id("withdraw-child", plan.digest())
+            .unwrap_or_else(|error| panic!("withdrawal id: {error}")),
+        idempotency_key: plan.digest(),
+        network: NetworkId::new(NETWORK_ID).unwrap_or_else(|error| panic!("network: {error:?}")),
+        layerx_protocol_version: layerx_intents::canonical::STATE_COMMITMENT_PROTOCOL_VERSION,
+        request_anchor: layerx_types::ids::CheckpointId::new([18; 32]),
+        owner: account(HOME),
+        withdrawals_account: account("system:paxeer-withdrawals"),
+        payout_address: wallet,
+        asset: debit.asset(),
+        amount: debit.amount(),
+        currency: "LXP".to_owned(),
+        settlement: SettlementConfig {
+            checkpoint_interval_seconds: 600,
+            paxeer_block_seconds: 12,
+            required_confirmations: 2,
+        },
+        reminder_interval_seconds: 30,
+        agent: WithdrawalAgentPlan {
+            actor: actor(),
+            authority: authority(),
+            account_sequence: binding.account_sequence,
+            not_before: binding.not_before,
+            not_after: binding.not_after,
+            fee_limit: debit.fee(),
+            custody_key: custody_key(),
+        },
+    }
+}
+
+#[test]
+fn unified_shape_planner_and_submit_classifier_share_one_contract() {
+    let wallet = evm_address(&evm_key());
+    let send = LegMechanism::Protocol(Mechanism::Send);
+    let deposit = LegMechanism::PaxeerCustodyDeposit;
+    let credit = LegMechanism::Protocol(Mechanism::BridgeDepositCredit);
+    let request = LegMechanism::Protocol(Mechanism::BridgeWithdrawRequest);
+    let finalise = LegMechanism::PaxeerWithdrawFinalise;
+    let cases = [
+        (kernel_plan(), ExecutableShape::Kernel, vec![send], (0, 1)),
+        (
+            deposit_plan_of(wallet),
+            ExecutableShape::CustodyDeposit,
+            vec![deposit, credit],
+            (0, 0),
+        ),
+        (
+            planned(
+                Endpoint::PaxeerWallet,
+                worker(),
+                25,
+                &observed(200, Some(wallet)),
+            ),
+            ExecutableShape::DepositForward,
+            vec![deposit, credit, send],
+            (2, 3),
+        ),
+        (
+            planned(
+                home(),
+                Endpoint::PaxeerWallet,
+                40,
+                &observed(1_000, Some(wallet)),
+            ),
+            ExecutableShape::WithdrawToWallet,
+            vec![request, finalise],
+            (0, 0),
+        ),
+        (
+            planned(
+                worker(),
+                Endpoint::PaxeerWallet,
+                40,
+                &worker_funded(1_000, Some(wallet)),
+            ),
+            ExecutableShape::TransferThenWithdraw,
+            vec![send, request, finalise],
+            (0, 1),
+        ),
+    ];
+    let mut labels = std::collections::BTreeSet::new();
+    for (plan, shape, expected, kernel) in &cases {
+        assert_eq!(&mechanisms(plan), expected, "{}", shape.label());
+        assert_eq!(plan.executable_shape(), *shape);
+        assert_eq!(ExecutableShape::classify(plan.legs()), Ok(*shape));
+        assert_eq!(ExecutableShape::of_mechanisms(expected), Some(*shape));
+        assert_eq!(shape.kernel_legs(plan.legs().len()), *kernel);
+        for (index, leg) in plan.legs().iter().enumerate() {
+            assert_eq!(leg.index(), index);
+            assert_eq!(
+                ExecutableShape::is_kernel(leg.mechanism()),
+                (kernel.0..kernel.1).contains(&index),
+                "{} leg {index}",
+                shape.label()
+            );
+        }
+        labels.insert(shape.label());
+    }
+    assert_eq!(labels.len(), cases.len());
+}
+
+#[test]
+fn unified_shape_refuses_unsupported_reordered_and_discontinuous_legs() {
+    let wallet = evm_address(&evm_key());
+    let send = LegMechanism::Protocol(Mechanism::Send);
+    let deposit = LegMechanism::PaxeerCustodyDeposit;
+    let credit = LegMechanism::Protocol(Mechanism::BridgeDepositCredit);
+    let request = LegMechanism::Protocol(Mechanism::BridgeWithdrawRequest);
+    let finalise = LegMechanism::PaxeerWithdrawFinalise;
+    for combination in [
+        vec![],
+        vec![deposit],
+        vec![request],
+        vec![credit, deposit],
+        vec![finalise, request],
+        vec![deposit, send, credit],
+        vec![request, finalise, send],
+        vec![send, deposit, credit],
+        vec![deposit, credit, request, finalise],
+    ] {
+        assert_eq!(
+            ExecutableShape::of_mechanisms(&combination),
+            None,
+            "{combination:?}"
+        );
+    }
+
+    let forward = planned(
+        Endpoint::PaxeerWallet,
+        worker(),
+        25,
+        &observed(200, Some(wallet)),
+    );
+    let mut reordered = forward.legs().to_vec();
+    reordered.swap(1, 2);
+    assert_eq!(
+        ExecutableShape::classify(&reordered),
+        Err(Refusal::UnsupportedShape)
+    );
+    let mut skipped = forward.legs().to_vec();
+    skipped.remove(1);
+    assert_eq!(
+        ExecutableShape::classify(&skipped),
+        Err(Refusal::UnsupportedShape)
+    );
+    assert_eq!(
+        ExecutableShape::classify(&forward.legs()[1..]),
+        Err(Refusal::UnsupportedShape)
+    );
+
+    let transfer = planned(
+        worker(),
+        Endpoint::PaxeerWallet,
+        40,
+        &worker_funded(1_000, Some(wallet)),
+    );
+    let mut broken = kernel_plan().legs().to_vec();
+    broken.extend(transfer.legs()[1..].iter().cloned());
+    assert_eq!(
+        ExecutableShape::of_mechanisms(
+            &broken.iter().map(PlannedLeg::mechanism).collect::<Vec<_>>()
+        ),
+        Some(ExecutableShape::TransferThenWithdraw)
+    );
+    assert_eq!(
+        ExecutableShape::classify(&broken),
+        Err(Refusal::UnsupportedShape)
+    );
+
+    let topped_up = UnifiedIntent::new(
+        home(),
+        Endpoint::PaxeerWallet,
+        AssetId::new(ASSET),
+        Amount::from_u128(600),
+        Constraints::new(TimestampSeconds::from_u64(1_200), MAX_FEE, true),
+    )
+    .unwrap_or_else(|error| panic!("intent: {error:?}"));
+    let allowance = |seed: u8, mechanism: LegMechanism| {
+        SignedAllowance::new(
+            AllowanceId::new([seed; 32]).unwrap_or_else(|error| panic!("allowance id: {error}")),
+            AllowanceKind::BudgetAllowance,
+            AllowanceScope::new(
+                Endpoint::PaxeerWallet,
+                home(),
+                AssetId::new(ASSET),
+                mechanism,
+            ),
+            Amount::from_u128(1_000),
+            Amount::from_u128(1_000),
+            TimestampSeconds::from_u64(5_000),
+        )
+        .unwrap_or_else(|error| panic!("allowance: {error}"))
+    };
+    assert_eq!(
+        plan(&topped_up, &observed(1_000, Some(wallet))).err(),
+        Some(Refusal::TopUpNotAuthorized { shortfall: 107 })
+    );
+    let authorised = observed_with(
+        1_000,
+        Some(wallet),
+        Vec::new(),
+        vec![allowance(0x61, deposit), allowance(0x62, credit)],
+    );
+    assert_eq!(
+        plan(&topped_up, &authorised).err(),
+        Some(Refusal::UnsupportedShape)
+    );
+}
+
+#[test]
+fn unified_shape_deposit_forward_keeps_one_parent_and_gates_forwarding_on_the_credit() {
+    let fixture = Fixture::new("unified-shape-forward");
+    let key = evm_key();
+    let wallet = evm_address(&key);
+    let binding = fixture.bind_wallet(&key);
+    let plan = planned(
+        Endpoint::PaxeerWallet,
+        worker(),
+        25,
+        &observed(200, Some(wallet)),
+    );
+    assert_eq!(plan.executable_shape(), ExecutableShape::DepositForward);
+    let request = sequenced_request(&plan, (195, 1_010));
+    assert_eq!(request.bindings[2].account_sequence, SEQUENCE + 1);
+    let expectation = expectation(200);
+    let deposit = deposit_for(&plan, &request, wallet);
+    let routes = vec![fixture.send_route_at(&plan, &request, 2)];
+    let registry = registry();
+    let journey_id = intent_journey_id("forward-submit", plan.digest())
+        .unwrap_or_else(|error| panic!("journey id: {error}"));
+
+    let (deposit_id, forward_id) = {
+        let mut store = fixture.store();
+        let mut scope = store
+            .principal(&fixture.principal)
+            .unwrap_or_else(|error| panic!("scope: {error}"));
+        assert_eq!(
+            start_deposit_journey(
+                &mut scope,
+                &plan,
+                &request,
+                &expectation,
+                &deposit,
+                &binding
+            )
+            .err(),
+            Some(SubmitRefusal::UnsupportedPlan)
+        );
+        assert_eq!(
+            start_kernel_journey(
+                &mut scope,
+                &plan,
+                &request,
+                &expectation,
+                kernel_start(&routes, journey_id.clone(), &registry),
+            )
+            .err(),
+            Some(SubmitRefusal::UnsupportedPlan)
+        );
+        let forward_with = |scope: &mut layerx_human_service::store::PrincipalScope<'_>,
+                            request: &SubmitPlanRequest,
+                            deposit: &DepositPlan,
+                            routes: &[RouteRequest]| {
+            start_deposit_forward_journey(
+                scope,
+                &plan,
+                request,
+                &expectation,
+                deposit,
+                &binding,
+                kernel_start(routes, journey_id.clone(), &registry),
+            )
+            .err()
+        };
+        let mut altered = deposit.clone();
+        altered.amount = Amount::from_u128(deposit.amount.value() + 1);
+        assert_eq!(
+            forward_with(&mut scope, &request, &altered, &routes),
+            Some(SubmitRefusal::DepositMismatch)
+        );
+        let mut forged = request.clone();
+        forged.bindings[2].action_key[0] ^= 0x01;
+        assert_eq!(
+            forward_with(&mut scope, &forged, &deposit, &routes),
+            Some(SubmitRefusal::LegMismatch { index: 2 })
+        );
+        let mut reordered = request.clone();
+        reordered.bindings.swap(1, 2);
+        assert_eq!(
+            forward_with(&mut scope, &reordered, &deposit, &routes),
+            Some(SubmitRefusal::LegMismatch { index: 1 })
+        );
+        let mut changed = routes.clone();
+        changed[0].amount = Amount::from_u128(changed[0].amount.value() + 1);
+        assert_eq!(
+            forward_with(&mut scope, &request, &deposit, &changed),
+            Some(SubmitRefusal::RouteMismatch { index: 2 })
+        );
+        assert_eq!(
+            forward_with(&mut scope, &request, &deposit, &[]),
+            Some(SubmitRefusal::UnboundLegs {
+                expected: 1,
+                bound: 0
+            })
+        );
+        assert!(DepositForwardJourney::load(&scope, &journey_id)
+            .unwrap_or_else(|error| panic!("load: {error:?}"))
+            .is_none());
+
+        let parent = start_deposit_forward_journey(
+            &mut scope,
+            &plan,
+            &request,
+            &expectation,
+            &deposit,
+            &binding,
+            kernel_start(&routes, journey_id.clone(), &registry),
+        )
+        .unwrap_or_else(|error| panic!("start forward: {error}"));
+        let status = parent
+            .status(&scope)
+            .unwrap_or_else(|error| panic!("status: {error:?}"));
+        assert_eq!(status.journey_id(), &journey_id);
+        assert_eq!(status.deposit_journey_id(), &deposit.journey_id);
+        assert!(matches!(status.stage(), DepositForwardStage::Depositing(_)));
+        assert_eq!(status.credit(), None);
+        assert!(status.forward_receipts().is_empty());
+        let submission = IntentSubmission::from_deposit_forward(&status, plan.digest());
+        assert_eq!(submission.journey_id(), &journey_id);
+        assert_eq!(submission.state(), "waiting-for-you");
+
+        let repeated = start_deposit_forward_journey(
+            &mut scope,
+            &plan,
+            &request,
+            &expectation,
+            &deposit,
+            &binding,
+            kernel_start(&routes, journey_id.clone(), &registry),
+        )
+        .unwrap_or_else(|error| panic!("repeat forward: {error}"));
+        assert_eq!(
+            repeated
+                .status(&scope)
+                .unwrap_or_else(|error| panic!("repeat status: {error:?}")),
+            status
+        );
+
+        let other = intent_journey_id("forward-other", plan.digest())
+            .unwrap_or_else(|error| panic!("journey id: {error}"));
+        assert_eq!(
+            start_deposit_forward_journey(
+                &mut scope,
+                &plan,
+                &request,
+                &expectation,
+                &deposit,
+                &binding,
+                kernel_start(&routes, other.clone(), &registry),
+            )
+            .err(),
+            Some(SubmitRefusal::AlreadySubmitted)
+        );
+        assert!(DepositForwardJourney::load(&scope, &other)
+            .unwrap_or_else(|error| panic!("load: {error:?}"))
+            .is_none());
+
+        let resized = planned(
+            Endpoint::PaxeerWallet,
+            worker(),
+            26,
+            &observed(200, Some(wallet)),
+        );
+        let resized_request = sequenced_request(&resized, (195, 1_010));
+        let resized_routes = vec![fixture.send_route_at(&resized, &resized_request, 2)];
+        assert_eq!(
+            start_deposit_forward_journey(
+                &mut scope,
+                &resized,
+                &resized_request,
+                &expectation,
+                &deposit_for(&resized, &resized_request, wallet),
+                &binding,
+                kernel_start(&resized_routes, journey_id.clone(), &registry),
+            )
+            .err(),
+            Some(SubmitRefusal::AlreadySubmitted)
+        );
+        (
+            status.deposit_journey_id().clone(),
+            status.forward_journey_id().clone(),
+        )
+    };
+
+    let mut store = fixture.store();
+    let mut scope = store
+        .principal(&fixture.principal)
+        .unwrap_or_else(|error| panic!("restarted scope: {error}"));
+    let mut parent = DepositForwardJourney::load(&scope, &journey_id)
+        .unwrap_or_else(|error| panic!("load: {error:?}"))
+        .unwrap_or_else(|| panic!("the returned parent is missing after a restart"));
+    let status = parent
+        .status(&scope)
+        .unwrap_or_else(|error| panic!("restarted status: {error:?}"));
+    assert_eq!(status.deposit_journey_id(), &deposit_id);
+    assert_eq!(status.forward_journey_id(), &forward_id);
+    assert!(matches!(status.stage(), DepositForwardStage::Depositing(_)));
+
+    let forward_key = plan
+        .action_key(2)
+        .unwrap_or_else(|error| panic!("key: {error:?}"));
+    let mut agent = RealAgentLayer::new(
+        &fixture.root.join("agent-store"),
+        fixture.public_key,
+        BTreeMap::from([(
+            forward_key,
+            ReceiptSpec {
+                activity: asset_send(),
+                amount: 25,
+                fee: SEND_FEE,
+            },
+        )]),
+    );
+    ready(parent.advance_forward(
+        &mut scope,
+        &fixture.contract,
+        &mut agent,
+        &fixture.signer,
+        &registry,
+        &fixture.trace,
+        300,
+    ))
+    .unwrap_or_else(|error| panic!("advance forward: {error:?}"));
+    assert!(agent.preparations.is_empty());
+    assert!(agent.submissions.is_empty());
+    let engine = JourneyEngine::load(&scope, &forward_id)
+        .unwrap_or_else(|error| panic!("forward engine: {error}"))
+        .unwrap_or_else(|| panic!("forward engine missing"));
+    assert_eq!(
+        engine
+            .status()
+            .unwrap_or_else(|error| panic!("forward status: {error}"))
+            .state(),
+        JourneyState::GettingReady
+    );
+    assert!(engine
+        .verified_leg_evidence(0)
+        .unwrap_or_else(|error| panic!("evidence: {error}"))
+        .is_none());
+    assert_eq!(
+        parent
+            .status(&scope)
+            .unwrap_or_else(|error| panic!("gated status: {error:?}")),
+        status
+    );
+    let child = parent
+        .deposit(&scope)
+        .unwrap_or_else(|error| panic!("deposit child: {error:?}"));
+    assert_eq!(
+        child
+            .status()
+            .unwrap_or_else(|error| panic!("deposit status: {error:?}"))
+            .journey_id(),
+        &deposit_id
+    );
+}
+
+#[test]
+fn unified_shape_withdraw_to_wallet_starts_one_parent_bound_to_the_signed_debit() {
+    let fixture = Fixture::new("unified-shape-withdraw");
+    let wallet = evm_address(&evm_key());
+    let plan = planned(
+        home(),
+        Endpoint::PaxeerWallet,
+        40,
+        &observed(1_000, Some(wallet)),
+    );
+    assert_eq!(plan.executable_shape(), ExecutableShape::WithdrawToWallet);
+    let request = sequenced_request(&plan, (995, 1_100));
+    assert_eq!(request.bindings[1].account_sequence, SEQUENCE + 1);
+    let expectation = expectation(1_000);
+    let withdrawal = withdrawal_for(&plan, &request, wallet);
+    let registry = registry();
+    let journey_id = intent_journey_id("withdraw-submit", plan.digest())
+        .unwrap_or_else(|error| panic!("journey id: {error}"));
+
+    let status = {
+        let mut store = fixture.store();
+        let mut scope = store
+            .principal(&fixture.principal)
+            .unwrap_or_else(|error| panic!("scope: {error}"));
+        assert_eq!(
+            start_kernel_journey(
+                &mut scope,
+                &plan,
+                &request,
+                &expectation,
+                kernel_start(&[], journey_id.clone(), &registry),
+            )
+            .err(),
+            Some(SubmitRefusal::UnsupportedPlan)
+        );
+        let binding = &request.bindings[0];
+        let mut mismatches = Vec::new();
+        let mut amount = withdrawal.clone();
+        amount.amount = Amount::from_u128(withdrawal.amount.value() + 1);
+        mismatches.push(amount);
+        let mut sequence = withdrawal.clone();
+        sequence.agent.account_sequence += 1;
+        mismatches.push(sequence);
+        let mut window = withdrawal.clone();
+        window.agent.not_after = binding.not_after + 1;
+        mismatches.push(window);
+        let mut fee = withdrawal.clone();
+        fee.agent.fee_limit = binding.fee_limit + 1;
+        mismatches.push(fee);
+        let mut owner = withdrawal.clone();
+        owner.owner = account(WORKER);
+        mismatches.push(owner);
+        for mismatch in &mismatches {
+            assert_eq!(
+                start_withdrawal_intent(
+                    &mut scope,
+                    &plan,
+                    &request,
+                    &expectation,
+                    mismatch,
+                    kernel_start(&[], journey_id.clone(), &registry),
+                )
+                .err(),
+                Some(SubmitRefusal::WithdrawalMismatch)
+            );
+        }
+        let mut forged = request.clone();
+        forged.bindings[1].action_key[0] ^= 0x01;
+        assert_eq!(
+            start_withdrawal_intent(
+                &mut scope,
+                &plan,
+                &forged,
+                &expectation,
+                &withdrawal,
+                kernel_start(&[], journey_id.clone(), &registry),
+            )
+            .err(),
+            Some(SubmitRefusal::LegMismatch { index: 1 })
+        );
+        assert!(IntentWithdrawalJourney::load(&scope, &journey_id)
+            .unwrap_or_else(|error| panic!("load: {error:?}"))
+            .is_none());
+        assert!(WithdrawalJourney::list_readonly(&scope)
+            .unwrap_or_else(|error| panic!("list: {error:?}"))
+            .is_empty());
+
+        let parent = start_withdrawal_intent(
+            &mut scope,
+            &plan,
+            &request,
+            &expectation,
+            &withdrawal,
+            kernel_start(&[], journey_id.clone(), &registry),
+        )
+        .unwrap_or_else(|error| panic!("start withdrawal: {error}"));
+        let status = parent
+            .status(&scope)
+            .unwrap_or_else(|error| panic!("status: {error:?}"));
+        assert_eq!(status.journey_id(), &journey_id);
+        assert_eq!(status.prelude_journey_id(), None);
+        assert_eq!(status.withdrawal_journey_id(), &withdrawal.journey_id);
+        assert!(matches!(
+            status.stage(),
+            IntentWithdrawalStage::Withdrawing(_)
+        ));
+        assert!(!status.debit_claimed());
+        let submission = IntentSubmission::from_withdrawal(&status, plan.digest());
+        assert_eq!(submission.journey_id(), &journey_id);
+        assert_ne!(submission.state(), "done");
+
+        let repeated = start_withdrawal_intent(
+            &mut scope,
+            &plan,
+            &request,
+            &expectation,
+            &withdrawal,
+            kernel_start(&[], journey_id.clone(), &registry),
+        )
+        .unwrap_or_else(|error| panic!("repeat withdrawal: {error}"));
+        assert_eq!(
+            repeated
+                .status(&scope)
+                .unwrap_or_else(|error| panic!("repeat status: {error:?}")),
+            status
+        );
+        let other = intent_journey_id("withdraw-other", plan.digest())
+            .unwrap_or_else(|error| panic!("journey id: {error}"));
+        assert_eq!(
+            start_withdrawal_intent(
+                &mut scope,
+                &plan,
+                &request,
+                &expectation,
+                &withdrawal,
+                kernel_start(&[], other.clone(), &registry),
+            )
+            .err(),
+            Some(SubmitRefusal::AlreadySubmitted)
+        );
+        let resized = planned(
+            home(),
+            Endpoint::PaxeerWallet,
+            41,
+            &observed(1_000, Some(wallet)),
+        );
+        let resized_request = sequenced_request(&resized, (995, 1_100));
+        assert_eq!(
+            start_withdrawal_intent(
+                &mut scope,
+                &resized,
+                &resized_request,
+                &expectation,
+                &withdrawal_for(&resized, &resized_request, wallet),
+                kernel_start(&[], journey_id.clone(), &registry),
+            )
+            .err(),
+            Some(SubmitRefusal::AlreadySubmitted)
+        );
+        status
+    };
+
+    let mut store = fixture.store();
+    let scope = store
+        .principal(&fixture.principal)
+        .unwrap_or_else(|error| panic!("restarted scope: {error}"));
+    let parent = IntentWithdrawalJourney::load(&scope, &journey_id)
+        .unwrap_or_else(|error| panic!("load: {error:?}"))
+        .unwrap_or_else(|| panic!("the returned parent is missing after a restart"));
+    assert_eq!(
+        parent
+            .status(&scope)
+            .unwrap_or_else(|error| panic!("restarted status: {error:?}")),
+        status
+    );
+    let children =
+        WithdrawalJourney::list_readonly(&scope).unwrap_or_else(|error| panic!("list: {error:?}"));
+    assert_eq!(children.len(), 1);
+    assert!(
+        WithdrawalJourney::load_readonly(&scope, &withdrawal.journey_id)
+            .unwrap_or_else(|error| panic!("child: {error:?}"))
+            .is_some()
+    );
+}
+
+#[test]
+fn unified_shape_transfer_then_withdraw_resumes_one_parent_and_claims_each_receipt_once() {
+    let fixture = Fixture::new("unified-shape-transfer-withdraw");
+    let wallet = evm_address(&evm_key());
+    let plan = planned(
+        worker(),
+        Endpoint::PaxeerWallet,
+        40,
+        &worker_funded(1_000, Some(wallet)),
+    );
+    assert_eq!(
+        plan.executable_shape(),
+        ExecutableShape::TransferThenWithdraw
+    );
+    let request = sequenced_request(&plan, (995, 1_100));
+    assert_eq!(request.bindings[1].account_sequence, SEQUENCE + 1);
+    let expectation = expectation(1_000);
+    let withdrawal = withdrawal_for(&plan, &request, wallet);
+    let routes = vec![fixture.send_route_at(&plan, &request, 0)];
+    let registry = registry();
+    let journey_id = intent_journey_id("transfer-withdraw-submit", plan.digest())
+        .unwrap_or_else(|error| panic!("journey id: {error}"));
+    let prelude_key = plan
+        .action_key(0)
+        .unwrap_or_else(|error| panic!("key: {error:?}"));
+    let mut agent = RealAgentLayer::new(
+        &fixture.root.join("agent-store"),
+        fixture.public_key,
+        BTreeMap::from([(
+            prelude_key,
+            ReceiptSpec {
+                activity: asset_send(),
+                amount: plan.legs()[0].amount().value(),
+                fee: SEND_FEE,
+            },
+        )]),
+    );
+
+    let prelude_id = {
+        let mut store = fixture.store();
+        let mut scope = store
+            .principal(&fixture.principal)
+            .unwrap_or_else(|error| panic!("scope: {error}"));
+        let mut changed = routes.clone();
+        changed[0].amount = Amount::from_u128(changed[0].amount.value() + 1);
+        assert_eq!(
+            start_withdrawal_intent(
+                &mut scope,
+                &plan,
+                &request,
+                &expectation,
+                &withdrawal,
+                kernel_start(&changed, journey_id.clone(), &registry),
+            )
+            .err(),
+            Some(SubmitRefusal::RouteMismatch { index: 0 })
+        );
+        let mut prelude_sequence = withdrawal.clone();
+        prelude_sequence.agent.account_sequence = request.bindings[0].account_sequence;
+        assert_eq!(
+            start_withdrawal_intent(
+                &mut scope,
+                &plan,
+                &request,
+                &expectation,
+                &prelude_sequence,
+                kernel_start(&routes, journey_id.clone(), &registry),
+            )
+            .err(),
+            Some(SubmitRefusal::WithdrawalMismatch)
+        );
+
+        let mut parent = start_withdrawal_intent(
+            &mut scope,
+            &plan,
+            &request,
+            &expectation,
+            &withdrawal,
+            kernel_start(&routes, journey_id.clone(), &registry),
+        )
+        .unwrap_or_else(|error| panic!("start transfer-then-withdraw: {error}"));
+        let status = parent
+            .status(&scope)
+            .unwrap_or_else(|error| panic!("status: {error:?}"));
+        assert_eq!(status.journey_id(), &journey_id);
+        assert_eq!(status.stage(), &IntentWithdrawalStage::Transferring);
+        assert_eq!(
+            IntentSubmission::from_withdrawal(&status, plan.digest()).state(),
+            "processing"
+        );
+        assert!(
+            WithdrawalJourney::load_readonly(&scope, &withdrawal.journey_id)
+                .unwrap_or_else(|error| panic!("child: {error:?}"))
+                .is_none()
+        );
+        let first = ready(parent.advance_prelude(
+            &mut scope,
+            &fixture.contract,
+            &mut agent,
+            &fixture.signer,
+            &registry,
+            &fixture.trace,
+            1_000,
+        ))
+        .unwrap_or_else(|error| panic!("first prelude phase: {error:?}"));
+        assert_eq!(first.stage(), &IntentWithdrawalStage::Transferring);
+        assert!(
+            WithdrawalJourney::load_readonly(&scope, &withdrawal.journey_id)
+                .unwrap_or_else(|error| panic!("child: {error:?}"))
+                .is_none()
+        );
+        status
+            .prelude_journey_id()
+            .cloned()
+            .unwrap_or_else(|| panic!("prelude journey id"))
+    };
+
+    let mut store = fixture.store();
+    let mut scope = store
+        .principal(&fixture.principal)
+        .unwrap_or_else(|error| panic!("restarted scope: {error}"));
+    let repeated = start_withdrawal_intent(
+        &mut scope,
+        &plan,
+        &request,
+        &expectation,
+        &withdrawal,
+        kernel_start(&routes, journey_id.clone(), &registry),
+    )
+    .unwrap_or_else(|error| panic!("repeat after restart: {error}"));
+    assert_eq!(
+        repeated
+            .status(&scope)
+            .unwrap_or_else(|error| panic!("repeat status: {error:?}"))
+            .journey_id(),
+        &journey_id
+    );
+    let mut parent = IntentWithdrawalJourney::load(&scope, &journey_id)
+        .unwrap_or_else(|error| panic!("load: {error:?}"))
+        .unwrap_or_else(|| panic!("the returned parent is missing after a restart"));
+    let mut status = parent
+        .status(&scope)
+        .unwrap_or_else(|error| panic!("restarted status: {error:?}"));
+    for now in 1_001..1_011 {
+        if status.stage() != &IntentWithdrawalStage::Transferring {
+            break;
+        }
+        status = ready(parent.advance_prelude(
+            &mut scope,
+            &fixture.contract,
+            &mut agent,
+            &fixture.signer,
+            &registry,
+            &fixture.trace,
+            now,
+        ))
+        .unwrap_or_else(|error| panic!("prelude phase at {now}: {error:?}"));
+    }
+    assert!(
+        matches!(status.stage(), IntentWithdrawalStage::Withdrawing(_)),
+        "prelude did not settle: {:?}",
+        status.stage()
+    );
+    assert_eq!(agent.preparations.len(), 1);
+    assert_eq!(agent.submissions.len(), 1);
+    let engine = JourneyEngine::load(&scope, &prelude_id)
+        .unwrap_or_else(|error| panic!("prelude engine: {error}"))
+        .unwrap_or_else(|| panic!("prelude engine missing"));
+    let evidence = engine
+        .verified_leg_evidence(0)
+        .unwrap_or_else(|error| panic!("evidence: {error}"))
+        .unwrap_or_else(|| panic!("the prelude leg has no verified receipt"));
+    assert_eq!(
+        status.prelude_receipts(),
+        &[(evidence.activity_id, evidence.receipt_digest)]
+    );
+    assert!(!status.debit_claimed());
+    assert!(
+        WithdrawalJourney::load_readonly(&scope, &withdrawal.journey_id)
+            .unwrap_or_else(|error| panic!("child: {error:?}"))
+            .is_some()
+    );
+    assert_eq!(
+        WithdrawalJourney::list_readonly(&scope)
+            .unwrap_or_else(|error| panic!("list: {error:?}"))
+            .len(),
+        1
+    );
+
+    let claim = |scope: &mut layerx_human_service::store::PrincipalScope<'_>,
+                 digest: [u8; 32],
+                 owner: &str| {
+        claim_receipt(scope, evidence.activity_id, digest, owner, 1_020)
+            .unwrap_or_else(|error| panic!("claim: {error:?}"))
+    };
+    assert!(claim(
+        &mut scope,
+        evidence.receipt_digest,
+        journey_id.as_str()
+    ));
+    assert!(!claim(
+        &mut scope,
+        evidence.receipt_digest,
+        "jrn_otherparent"
+    ));
+    let mut forged = evidence.receipt_digest;
+    forged[0] ^= 0x01;
+    assert!(!claim(&mut scope, forged, journey_id.as_str()));
+
+    let again = ready(parent.advance_prelude(
+        &mut scope,
+        &fixture.contract,
+        &mut agent,
+        &fixture.signer,
+        &registry,
+        &fixture.trace,
+        1_030,
+    ))
+    .unwrap_or_else(|error| panic!("settled prelude: {error:?}"));
+    assert_eq!(again, status);
+    assert_eq!(agent.preparations.len(), 1);
+    assert_eq!(agent.submissions.len(), 1);
 }

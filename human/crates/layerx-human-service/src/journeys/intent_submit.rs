@@ -15,11 +15,17 @@ use crate::store::PrincipalScope;
 use crate::trace::TraceId;
 
 use super::{
-    AgentBoundary, DepositJourney, DepositJourneyError, DepositPlan, DepositStage, DepositStatus,
-    Domain, Endpoint, JourneyEngine, JourneyError, JourneyLeg, JourneyPlan, JourneyState,
-    JourneyStatus, LegMechanism, Mechanism, RequiredAuthority, RouteRequest, RouteResolver,
-    UnifiedPlan,
+    AgentBoundary, DepositForwardFailure, DepositForwardJourney, DepositForwardStage,
+    DepositForwardStatus, DepositJourney, DepositJourneyError, DepositPlan, DepositStage,
+    DepositStatus, Domain, Endpoint, ExecutableShape, IntentWithdrawalJourney,
+    IntentWithdrawalStage, IntentWithdrawalStatus, JourneyEngine, JourneyError, JourneyLeg,
+    JourneyPlan, JourneyState, JourneyStatus, LegMechanism, Mechanism, RequiredAuthority,
+    RouteRequest, RouteResolver, UnifiedPlan, WithdrawalJourneyError, WithdrawalPlan,
+    WithdrawalStage,
 };
+
+/// The submit classifier is the planner's executable shape contract.
+pub use super::ExecutableShape as IntentShape;
 
 const JOURNEY_DOMAIN: &[u8] = b"layerx-human-intent-journey/v1";
 const SELF_RELATIONSHIP: &str = "self";
@@ -134,49 +140,6 @@ pub struct BindingExpectation {
     pub account_sequence: u64,
     pub currency: String,
     pub now: u64,
-}
-
-/// The journey family a signed plan executes through.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum IntentShape {
-    Kernel,
-    CustodyDeposit,
-}
-
-impl IntentShape {
-    /// Classifies a plan by the movement journey that executes it.
-    ///
-    /// # Errors
-    ///
-    /// Refuses a plan no existing movement journey executes.
-    pub fn of(plan: &UnifiedPlan) -> Result<Self, SubmitRefusal> {
-        let mechanisms = plan
-            .legs()
-            .iter()
-            .map(super::PlannedLeg::mechanism)
-            .collect::<Vec<_>>();
-        if mechanisms.as_slice()
-            == [
-                LegMechanism::PaxeerCustodyDeposit,
-                LegMechanism::Protocol(Mechanism::BridgeDepositCredit),
-            ]
-        {
-            return Ok(Self::CustodyDeposit);
-        }
-        if !mechanisms.is_empty()
-            && mechanisms.iter().all(|mechanism| {
-                matches!(
-                    mechanism,
-                    LegMechanism::Protocol(
-                        Mechanism::Send | Mechanism::BudgetFund | Mechanism::BudgetDefund
-                    )
-                )
-            })
-        {
-            return Ok(Self::Kernel);
-        }
-        Err(SubmitRefusal::UnsupportedPlan)
-    }
 }
 
 /// Verifies the signed digest and every leg binding against the plan the
@@ -316,18 +279,61 @@ fn start_kernel_profile(
     native: bool,
 ) -> Result<JourneyEngine, SubmitRefusal> {
     verify_bindings(plan, request, expectation)?;
-    if IntentShape::of(plan)? != IntentShape::Kernel {
+    if plan.executable_shape() != ExecutableShape::Kernel {
         return Err(SubmitRefusal::UnsupportedPlan);
     }
-    if start.routes.len() != plan.legs().len() {
+    let legs = kernel_journey_legs(plan, request, expectation, start.routes)?;
+    let journey_plan = JourneyPlan::new(
+        start.journey_id,
+        plan.journey_kind(),
+        plan.digest(),
+        start.custody_key,
+        Operation::ProtocolMutation,
+        legs,
+    )
+    .map_err(|_| SubmitRefusal::JourneyUnavailable)?;
+    let engine = if native {
+        if plan
+            .legs()
+            .iter()
+            .any(|leg| leg.mechanism() != LegMechanism::Protocol(Mechanism::Send))
+        {
+            return Err(SubmitRefusal::UnsupportedPlan);
+        }
+        JourneyEngine::start_native(scope, &journey_plan, start.registry, expectation.now)
+    } else {
+        JourneyEngine::start(scope, &journey_plan, start.registry, expectation.now)
+    };
+    engine.map_err(|error| match error {
+        JourneyError::IdempotencyConflict => SubmitRefusal::AlreadySubmitted,
+        _ => SubmitRefusal::JourneyUnavailable,
+    })
+}
+
+/// Resolves the kernel legs the plan's shape runs through the native journey
+/// engine. Each route must resolve to exactly the planned mechanism, term,
+/// endpoints, asset and amount of the leg at the same position.
+fn kernel_journey_legs(
+    plan: &UnifiedPlan,
+    request: &SubmitPlanRequest,
+    expectation: &BindingExpectation,
+    routes: &[RouteRequest],
+) -> Result<Vec<JourneyLeg>, SubmitRefusal> {
+    let (first, end) = plan.executable_shape().kernel_legs(plan.legs().len());
+    let planned = plan.legs().get(first..end).unwrap_or_default();
+    let bound = request.bindings.get(first..end).unwrap_or_default();
+    if planned.is_empty() || routes.len() != planned.len() || bound.len() != planned.len() {
         return Err(SubmitRefusal::UnboundLegs {
-            expected: plan.legs().len(),
-            bound: start.routes.len(),
+            expected: planned.len(),
+            bound: routes.len(),
         });
     }
-    let mut legs = Vec::with_capacity(plan.legs().len());
-    for ((leg, binding), route) in plan.legs().iter().zip(&request.bindings).zip(start.routes) {
+    let mut legs = Vec::with_capacity(planned.len());
+    for ((leg, binding), route) in planned.iter().zip(bound).zip(routes) {
         let index = leg.index();
+        if !ExecutableShape::is_kernel(leg.mechanism()) || binding.leg_index != index {
+            return Err(SubmitRefusal::LegMismatch { index });
+        }
         if &route.source != leg.source()
             || &route.destination != leg.destination()
             || route.asset != leg.asset()
@@ -357,31 +363,7 @@ fn start_kernel_profile(
             .map_err(|_| SubmitRefusal::LegMismatch { index })?,
         );
     }
-    let journey_plan = JourneyPlan::new(
-        start.journey_id,
-        plan.journey_kind(),
-        plan.digest(),
-        start.custody_key,
-        Operation::ProtocolMutation,
-        legs,
-    )
-    .map_err(|_| SubmitRefusal::JourneyUnavailable)?;
-    let engine = if native {
-        if plan
-            .legs()
-            .iter()
-            .any(|leg| leg.mechanism() != LegMechanism::Protocol(Mechanism::Send))
-        {
-            return Err(SubmitRefusal::UnsupportedPlan);
-        }
-        JourneyEngine::start_native(scope, &journey_plan, start.registry, expectation.now)
-    } else {
-        JourneyEngine::start(scope, &journey_plan, start.registry, expectation.now)
-    };
-    engine.map_err(|error| match error {
-        JourneyError::IdempotencyConflict => SubmitRefusal::AlreadySubmitted,
-        _ => SubmitRefusal::JourneyUnavailable,
-    })
+    Ok(legs)
 }
 
 /// The service boundaries one kernel journey advances through.
@@ -447,12 +429,165 @@ pub fn start_deposit_journey(
     binding: &BindingJourney,
 ) -> Result<DepositJourney, SubmitRefusal> {
     verify_bindings(plan, request, expectation)?;
-    if IntentShape::of(plan)? != IntentShape::CustodyDeposit {
+    if plan.executable_shape() != ExecutableShape::CustodyDeposit {
         return Err(SubmitRefusal::UnsupportedPlan);
     }
-    let (Some(credit), Some(credit_binding)) = (plan.legs().get(1), request.bindings.get(1)) else {
+    check_deposit(plan, request, expectation, deposit)?;
+    DepositJourney::start(scope, binding, deposit, expectation.now).map_err(|error| match error {
+        DepositJourneyError::IdempotencyConflict => SubmitRefusal::AlreadySubmitted,
+        DepositJourneyError::BindingUnavailable => SubmitRefusal::WalletNotBound,
+        _ => SubmitRefusal::JourneyUnavailable,
+    })
+}
+
+/// Starts the durable deposit-forwarding parent for a verified plan that
+/// deposits into the home account and then forwards through `LayerX` legs.
+/// The deposit child, the forward engine and the parent row are persisted
+/// together; the forward legs cannot prepare until the parent has verified
+/// the credit receipt.
+///
+/// # Errors
+///
+/// Refuses any binding defect, a plan of another shape, a deposit plan that
+/// differs from the signed credit leg, a forward route that does not resolve to
+/// its planned leg, a submission already used under another key, and a journey
+/// that cannot be persisted.
+pub fn start_deposit_forward_journey(
+    scope: &mut PrincipalScope<'_>,
+    plan: &UnifiedPlan,
+    request: &SubmitPlanRequest,
+    expectation: &BindingExpectation,
+    deposit: &DepositPlan,
+    binding: &BindingJourney,
+    forward: KernelStart<'_>,
+) -> Result<DepositForwardJourney, SubmitRefusal> {
+    verify_bindings(plan, request, expectation)?;
+    if plan.executable_shape() != ExecutableShape::DepositForward {
+        return Err(SubmitRefusal::UnsupportedPlan);
+    }
+    check_deposit(plan, request, expectation, deposit)?;
+    let legs = kernel_journey_legs(plan, request, expectation, forward.routes)?;
+    DepositForwardJourney::start(
+        scope,
+        binding,
+        deposit,
+        legs,
+        forward.custody_key,
+        forward.registry,
+        forward.journey_id,
+        plan.digest(),
+        expectation.now,
+    )
+    .map_err(|error| match error {
+        DepositJourneyError::IdempotencyConflict
+        | DepositJourneyError::Journey(JourneyError::IdempotencyConflict) => {
+            SubmitRefusal::AlreadySubmitted
+        }
+        DepositJourneyError::BindingUnavailable => SubmitRefusal::WalletNotBound,
+        _ => SubmitRefusal::JourneyUnavailable,
+    })
+}
+
+/// Starts the durable withdrawal parent for a verified plan that ends in a
+/// withdrawal request and its Paxeer finalisation. A transfer-then-withdraw
+/// plan persists its `LayerX` prelude first; the withdrawal itself starts only
+/// after every prelude leg carries verified receipt evidence.
+///
+/// # Errors
+///
+/// Refuses any binding defect, a plan of another shape, a withdrawal plan that
+/// differs from the signed request leg, a prelude route that does not resolve
+/// to its planned leg, a submission already used under another key, and a
+/// journey that cannot be persisted.
+pub fn start_withdrawal_intent(
+    scope: &mut PrincipalScope<'_>,
+    plan: &UnifiedPlan,
+    request: &SubmitPlanRequest,
+    expectation: &BindingExpectation,
+    withdrawal: &WithdrawalPlan,
+    prelude: KernelStart<'_>,
+) -> Result<IntentWithdrawalJourney, SubmitRefusal> {
+    verify_bindings(plan, request, expectation)?;
+    let shape = plan.executable_shape();
+    if !matches!(
+        shape,
+        ExecutableShape::WithdrawToWallet | ExecutableShape::TransferThenWithdraw
+    ) {
+        return Err(SubmitRefusal::UnsupportedPlan);
+    }
+    let count = plan.legs().len();
+    let (Some(debit), Some(debit_binding), Some(finalise)) = (
+        plan.legs().get(count.saturating_sub(2)),
+        request.bindings.get(count.saturating_sub(2)),
+        plan.legs().last(),
+    ) else {
         return Err(SubmitRefusal::UnsupportedPlan);
     };
+    let Endpoint::Human(owner) = debit.source() else {
+        return Err(SubmitRefusal::WithdrawalMismatch);
+    };
+    if debit.mechanism() != LegMechanism::Protocol(Mechanism::BridgeWithdrawRequest)
+        || finalise.mechanism() != LegMechanism::PaxeerWithdrawFinalise
+        || withdrawal.amount != debit.amount()
+        || withdrawal.asset != debit.asset()
+        || &withdrawal.owner != owner
+        || withdrawal.currency != expectation.currency
+        || withdrawal.agent.actor != expectation.actor
+        || withdrawal.agent.authority != expectation.authority
+        || withdrawal.agent.account_sequence != debit_binding.account_sequence
+        || withdrawal.agent.fee_limit > debit_binding.fee_limit
+        || withdrawal.agent.not_before < debit_binding.not_before
+        || withdrawal.agent.not_after > debit_binding.not_after
+    {
+        return Err(SubmitRefusal::WithdrawalMismatch);
+    }
+    let prelude_legs = if shape == ExecutableShape::TransferThenWithdraw {
+        kernel_journey_legs(plan, request, expectation, prelude.routes)?
+    } else if prelude.routes.is_empty() {
+        Vec::new()
+    } else {
+        return Err(SubmitRefusal::UnboundLegs {
+            expected: 0,
+            bound: prelude.routes.len(),
+        });
+    };
+    IntentWithdrawalJourney::start(
+        scope,
+        prelude.journey_id,
+        plan.digest(),
+        prelude_legs,
+        prelude.custody_key,
+        prelude.registry,
+        withdrawal,
+        expectation.now,
+    )
+    .map_err(|error| match error {
+        WithdrawalJourneyError::IdempotencyConflict
+        | WithdrawalJourneyError::Journey(JourneyError::IdempotencyConflict) => {
+            SubmitRefusal::AlreadySubmitted
+        }
+        _ => SubmitRefusal::JourneyUnavailable,
+    })
+}
+
+fn check_deposit(
+    plan: &UnifiedPlan,
+    request: &SubmitPlanRequest,
+    expectation: &BindingExpectation,
+    deposit: &DepositPlan,
+) -> Result<(), SubmitRefusal> {
+    let (Some(custody), Some(credit), Some(credit_binding)) = (
+        plan.legs().first(),
+        plan.legs().get(1),
+        request.bindings.get(1),
+    ) else {
+        return Err(SubmitRefusal::UnsupportedPlan);
+    };
+    if custody.mechanism() != LegMechanism::PaxeerCustodyDeposit
+        || credit.mechanism() != LegMechanism::Protocol(Mechanism::BridgeDepositCredit)
+    {
+        return Err(SubmitRefusal::UnsupportedPlan);
+    }
     let Endpoint::Human(recipient) = credit.destination() else {
         return Err(SubmitRefusal::DepositMismatch);
     };
@@ -467,11 +602,7 @@ pub fn start_deposit_journey(
     {
         return Err(SubmitRefusal::DepositMismatch);
     }
-    DepositJourney::start(scope, binding, deposit, expectation.now).map_err(|error| match error {
-        DepositJourneyError::IdempotencyConflict => SubmitRefusal::AlreadySubmitted,
-        DepositJourneyError::BindingUnavailable => SubmitRefusal::WalletNotBound,
-        _ => SubmitRefusal::JourneyUnavailable,
-    })
+    Ok(())
 }
 
 /// The `IntentSubmission` the submit operation returns.
@@ -509,6 +640,57 @@ impl IntentSubmission {
             DepositStage::ConfirmingPaxeer { .. } | DepositStage::CreditingLayerX => "processing",
             DepositStage::Done => "done",
             DepositStage::Failed(_) => "refused",
+        };
+        Self {
+            journey_id: status.journey_id().clone(),
+            plan_digest,
+            state,
+        }
+    }
+
+    /// Describes a deposit-forwarding parent journey at its current stage.
+    #[must_use]
+    pub fn from_deposit_forward(status: &DepositForwardStatus, plan_digest: [u8; 32]) -> Self {
+        let state = match status.stage() {
+            DepositForwardStage::Depositing(DepositStage::WaitingForWallet) => "waiting-for-you",
+            DepositForwardStage::Depositing(DepositStage::Failed(_))
+            | DepositForwardStage::Failed(
+                DepositForwardFailure::DepositFailed(_) | DepositForwardFailure::ForwardRefused,
+            ) => "refused",
+            DepositForwardStage::Depositing(
+                DepositStage::ConfirmingPaxeer { .. }
+                | DepositStage::CreditingLayerX
+                | DepositStage::Done,
+            )
+            | DepositForwardStage::Forwarding => "processing",
+            DepositForwardStage::Done => "done",
+        };
+        Self {
+            journey_id: status.journey_id().clone(),
+            plan_digest,
+            state,
+        }
+    }
+
+    /// Describes a withdrawal parent journey at its current stage.
+    #[must_use]
+    pub fn from_withdrawal(status: &IntentWithdrawalStatus, plan_digest: [u8; 32]) -> Self {
+        let state = match status.stage() {
+            IntentWithdrawalStage::Transferring => "processing",
+            IntentWithdrawalStage::Withdrawing(
+                WithdrawalStage::ReadyToClaim | WithdrawalStage::ReadyToFinalise,
+            )
+            | IntentWithdrawalStage::AwaitingAuthorization => "waiting-for-you",
+            IntentWithdrawalStage::Withdrawing(
+                WithdrawalStage::Processing
+                | WithdrawalStage::WaitingForSettlement { .. }
+                | WithdrawalStage::ClaimSubmitting
+                | WithdrawalStage::WaitingForChallengeWindow { .. }
+                | WithdrawalStage::VerifyingPayout,
+            ) => "processing",
+            IntentWithdrawalStage::Withdrawing(WithdrawalStage::PaidOut(_)) => "done",
+            IntentWithdrawalStage::Withdrawing(WithdrawalStage::Cancelled(_))
+            | IntentWithdrawalStage::TransferRefused => "refused",
         };
         Self {
             journey_id: status.journey_id().clone(),
@@ -561,6 +743,7 @@ pub enum SubmitRefusal {
     WindowExpired { index: usize },
     RouteMismatch { index: usize },
     DepositMismatch,
+    WithdrawalMismatch,
     UnsupportedPlan,
     WalletNotBound,
     AlreadySubmitted,
@@ -585,6 +768,7 @@ impl SubmitRefusal {
             | Self::FeeLimitMismatch { .. }
             | Self::RouteMismatch { .. }
             | Self::DepositMismatch
+            | Self::WithdrawalMismatch
             | Self::UnsupportedPlan => 403,
         }
     }
@@ -605,6 +789,7 @@ impl SubmitRefusal {
             | Self::FeeLimitMismatch { .. }
             | Self::RouteMismatch { .. }
             | Self::DepositMismatch
+            | Self::WithdrawalMismatch
             | Self::UnsupportedPlan => "forbidden",
         }
     }
@@ -626,6 +811,7 @@ impl SubmitRefusal {
             | Self::FeeLimitMismatch { .. }
             | Self::RouteMismatch { .. }
             | Self::DepositMismatch
+            | Self::WithdrawalMismatch
             | Self::UnsupportedPlan => "error.request.forbidden",
         }
     }
@@ -647,6 +833,7 @@ impl SubmitRefusal {
             | Self::FeeLimitMismatch { .. }
             | Self::RouteMismatch { .. }
             | Self::DepositMismatch
+            | Self::WithdrawalMismatch
             | Self::UnsupportedPlan => "final",
         }
     }
@@ -705,6 +892,9 @@ impl Display for SubmitRefusal {
             }
             Self::DepositMismatch => {
                 formatter.write_str("the deposit plan differs from the signed plan")
+            }
+            Self::WithdrawalMismatch => {
+                formatter.write_str("the withdrawal plan differs from the signed plan")
             }
             Self::UnsupportedPlan => {
                 formatter.write_str("no movement journey executes this plan shape")
