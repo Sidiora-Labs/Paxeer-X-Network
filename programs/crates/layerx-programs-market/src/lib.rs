@@ -7,6 +7,8 @@ use layerx_program_sdk::{AccountId, Amount, AssetId, Field, ProgramError, Reason
 
 pub mod arbitration;
 pub mod attest;
+pub mod stake;
+pub use stake::{slash, Stake};
 
 #[cfg(target_arch = "wasm32")]
 use layerx_program_sdk::{

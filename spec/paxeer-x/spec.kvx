@@ -29346,7 +29346,7 @@ qualification_log = "/root/lx-ops/fleet-2026-10-05/results/104.33.5.json"
 
 [task.104.35.6]
 title = "Stake and slash providers through the ordinary monetary law"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 5
 requires = ["0.2", "104.35.3", "104.35.5"]
@@ -29374,6 +29374,11 @@ completion_policy = "Existing implementation is preserved; current candidate qua
 planned_paths = ["programs/crates/layerx-programs-market/src/stake.rs", "tools/paxeer-x/gates/104.35.6.sh"]
 path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
 evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+completion_basis = "implementation"
+qualification_status = "PASS"
+build_exit_code = 0
+verify_exit_code = 0
+qualification_log = "/root/lx-ops/fleet-2026-10-05/results/104.35.6.json"
 
 [task.104.38.6]
 title = "Restore canonical Programs receipt parity across all SDKs"
