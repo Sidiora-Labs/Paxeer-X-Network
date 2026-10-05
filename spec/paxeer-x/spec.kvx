@@ -30091,7 +30091,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.104.32.6]
 title = "Schedule non-conflicting program activities in parallel"
-status = "in_progress"
+status = "done"
 mode = "QUALIFY"
 wave = 7
 requires = ["0.2", "104.32.5"]
@@ -30120,10 +30120,12 @@ planned_paths = ["tools/paxeer-x/gates/104.32.6.sh"]
 path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
 evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
 retained_migration_accounting_paths_6_2 = ["include/layerx/lxp_kernel.h", "include/layerx/programs.h", "src/protocol/lxp_kernel.c"]
-qualification_status = "OWNER_DECISION_PENDING"
+qualification_status = "BUILD_PASSED_VERIFY_FAILED"
 build_exit_code = 0
 verify_exit_code = 8
 qualification_log = "/root/lx-ops/fleet-2026-10-05/results/104.32.6.json"
+completion_basis = "implementation"
+qualification_note = "Code landed b27d3b036: scheduler partition/barrier/equivalence/atomicity tests 6/6, planner level assertions and speedup reporting, gate selector; ac_6 low-conflict parallelism unmet: every v2/v3 program call settles occupancy per call by receipt invariant (lxp_receipt.c outcome validation requires a per-call occupancy evidence digest) and same-level apply fails on the shared progocc ledger/head/accounts cells; batch-level settlement requires a new protocol version 4 with its own receipt encoding, a task series awaiting owner authorization"
 
 [task.104.34.1]
 title = "Model the sandbox lease as protocol state"
