@@ -27279,7 +27279,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.104.35.3]
 title = "Arbitrate disputes by bisection"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 3
 requires = ["0.2", "104.35.2"]
@@ -29039,7 +29039,7 @@ qualification_log = "/root/lx-ops/fleet-2026-10-05/results/104.28.2.json"
 
 [task.104.28.3]
 title = "Return response bytes across the call boundary"
-status = "pending"
+status = "in_progress"
 mode = "QUALIFY"
 wave = 5
 requires = ["0.2", "104.28.1"]
@@ -29718,7 +29718,7 @@ qualification_log = "/root/lx-ops/fleet-2026-10-05/results/104.29.3.json"
 
 [task.104.29.4]
 title = "Implement namespace drop and reclamation"
-status = "pending"
+status = "in_progress"
 mode = "QUALIFY"
 wave = 6
 requires = ["0.2", "104.29.1"]
