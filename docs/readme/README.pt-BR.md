@@ -36,11 +36,7 @@
 
 A Paxeer X Network é uma única rede com dois domínios de execução: a cadeia Paxeer X (`paxd`, Go, ID de cadeia EVM 125) e o kernel LayerX (`layerxd`, C17), o domínio de execução e contabilidade determinística para agentes autônomos. Site oficial: [paxeer.network](https://paxeer.network/). Documentação: [docs.paxeer.app](https://docs.paxeer.app/).
 
-Dentro do kernel LayerX, toda operação que altera o estado entra como uma `Activity` assinada e codificada de forma canônica. O kernel verifica o ator e sua autoridade, consome a sequência da conta, ordena a atividade em uma única sequência global, aplica uma transição de estado determinística e devolve um recibo assinado vinculado à raiz de estado resultante.
-
-O log de atividades, somente de acréscimo, é a autoridade. Os índices de banco de dados são projeções descartáveis e podem ser reconstruídos reproduzindo esse log. A execução crítica para o consenso exclui ponto flutuante, decisões baseadas no relógio local, ordem de iteração do banco de dados e outras fontes de não determinismo. `402LXP` é o único componente autorizado a escrever saldos. Os módulos do protocolo emitem conjuntos de transferências validados em vez de alterar fundos por conta própria.
-
-A atividade comum dos agentes é executada e ordenada dentro do kernel LayerX. Checkpoints periódicos são liquidados na cadeia Paxeer X, que mantém a custódia, o registro de checkpoints, as cauções dos garantidores, as contestações, os saques, as disputas e as saídas de emergência. Uma ação comum do kernel não exige uma transação na cadeia Paxeer X.
+A cadeia Paxeer X executa a EVM sobre consenso Tendermint e contém os módulos `layerxcustody`, `layerxexchange`, `layerxbridge` e `launchpad`, que os contratos acessam pelos pré-compilados em `0x1013`, `0x1015`, `0x1016` e `0x1017`. O kernel LayerX executa e contabiliza a atividade dos agentes de forma determinística e devolve um recibo assinado para cada atividade; seus checkpoints são liquidados na cadeia pelo pré-compilado `layerxAnchor` em `0x1014`.
 
 Este repositório é o monorepo da Sidiora Labs para a Paxeer X Network: a cadeia Paxeer X e o kernel LayerX em um só repositório. Mantê-los juntos permite auditar o kernel, a cadeia, os contratos e as superfícies para desenvolvedores em um único lugar. Cada subsistema mantém seu próprio limite de build, release, implantação e confiança. A especificação que o rege é [`spec/paxeer-x/spec.kvx`](../../spec/paxeer-x/spec.kvx), renderizada como [`spec/paxeer-x/design.md`](../../spec/paxeer-x/design.md); as notas de versão estão em [`CHANGELOG.md`](../../CHANGELOG.md).
 
@@ -48,48 +44,15 @@ Este repositório é o monorepo da Sidiora Labs para a Paxeer X Network: a cadei
 
 O beta limitado ainda não foi aberto. A API do gateway fica disponível quando ele abrir. Este é um beta de mainnet com valor real, então não há faucet para uso geral; desenvolvedores aprovados recebem alocações de teste da equipe.
 
-Os nomes públicos de JSON-RPC EVM para o ID de cadeia 125 estão em [`docs/site/docs/reference/public-rpc.md`](../../docs/site/docs/reference/public-rpc.md). A lista de verificação do endpoint público é [`docs/wiki/Getting-Started-Beta.md`](../../docs/wiki/Getting-Started-Beta.md). O caminho de carteira, financiamento por crédito de custódia, Asset, Programs e HTTP 402 é [`docs/wiki/PaymentsQuickstart.md`](../../docs/wiki/PaymentsQuickstart.md). Os comandos `layerx wallet` e `layerx token` ficam em `platform/cli`, e a interface de token LXT-20 para programas fica em `programs/crates/layerx-programs-registry/src/lxt20.rs`. Codificações: [`docs/wiki/Assets.md`](../../docs/wiki/Assets.md). Métodos RPC: [`docs/wiki/PublicRpc.md`](../../docs/wiki/PublicRpc.md). Níveis de evidência: [`docs/wiki/CommitmentLevels.md`](../../docs/wiki/CommitmentLevels.md). A API pública de pagamentos: [`docs/wiki/PublicAPI.md`](../../docs/wiki/PublicAPI.md).
+Para se conectar à cadeia Paxeer X (ID de cadeia 125), use um dos nomes públicos de JSON-RPC listados em [`docs/site/docs/reference/public-rpc.md`](../../docs/site/docs/reference/public-rpc.md). A lista de verificação do endpoint público é [`docs/wiki/Getting-Started-Beta.md`](../../docs/wiki/Getting-Started-Beta.md). O caminho de carteira, financiamento e pagamentos é [`docs/wiki/PaymentsQuickstart.md`](../../docs/wiki/PaymentsQuickstart.md). Assets: [`docs/wiki/Assets.md`](../../docs/wiki/Assets.md). Métodos RPC: [`docs/wiki/PublicRpc.md`](../../docs/wiki/PublicRpc.md). Níveis de compromisso: [`docs/wiki/CommitmentLevels.md`](../../docs/wiki/CommitmentLevels.md). API pública de pagamentos: [`docs/wiki/PublicAPI.md`](../../docs/wiki/PublicAPI.md).
 
-Para executar tudo localmente, siga [`docs/wiki/Quickstart.md`](../../docs/wiki/Quickstart.md): instale a CLI `layerx` a partir de `platform/cli`, suba um cluster beta descartável com `make platform-beta-cluster-up`, carregue `build/beta-cluster/env` e então crie uma chave, solicite fundos ao faucet privado desse cluster, envie um pagamento, verifique o recibo e implante um programa.
-
-```sh
-layerx key create quickstart
-```
-
-```sh
-layerx --json payment test \
-  --from "$LAYERX_TEST_SOURCE_DID" \
-  --to "$LAYERX_TEST_DESTINATION_DID" \
-  --currency "$LAYERX_TEST_ASSET" \
-  --amount "$LAYERX_TEST_AMOUNT" \
-  --idempotency-key paymentquickstart1
-```
-
-```sh
-layerx --json receipt verify \
-  --receipt receipt.hex \
-  --batch-id "$batch_id" \
-  --asset "$asset" \
-  --previous-state-root "$previous_root" \
-  --resulting-state-root "$resulting_root" \
-  --sequencer-public-key "$sequencer_key"
-```
-
-```sh
-layerx --json program deploy \
-  quickstart-program/target/wasm32-unknown-unknown/release/quickstart_program.wasm \
-  --program-id <program_id> \
-  --idempotency-key <idempotency_key> \
-  --key quickstart \
-  --account-sequence 0 \
-  --not-before-ms <not_before_ms> \
-  --expires-at-ms <expires_at_ms> \
-  --previous-state-root <previous_state_root>
-```
+Desenvolvedores do kernel começam pela documentação hospedada em [docs.paxeer.app](https://docs.paxeer.app/); o guia do cluster local é [`docs/wiki/Quickstart.md`](../../docs/wiki/Quickstart.md).
 
 ## Compilar a partir do código-fonte
 
-O runtime principal é C17 (`-std=c17` no `Makefile` raiz). Os workspaces agent, human e platform usam Rust 1.91.1 (`rust-toolchain.toml`). Os contratos de liquidação do kernel em `contracts/` usam Solidity 0.8.27 (`foundry.toml`). A qualificação por replay exige GCC 13, Clang 18, Docker, um runner amd64 com musl e um compilador cruzado AArch64 com QEMU; consulte [`docs/QUALIFICATION.md`](../../docs/QUALIFICATION.md).
+O nó da cadeia Paxeer X é escrito em Go 1.25.6 (`go.mod`). O kernel LayerX é C17 (`-std=c17` no `Makefile` raiz). Os workspaces agent, human e platform usam Rust 1.91.1 (`rust-toolchain.toml`). Os contratos de liquidação do kernel em `contracts/` usam Solidity 0.8.27 (`foundry.toml`). A qualificação por replay exige GCC 13, Clang 18, Docker, um runner amd64 com musl e um compilador cruzado AArch64 com QEMU; consulte [`docs/QUALIFICATION.md`](../../docs/QUALIFICATION.md).
+
+Targets do kernel LayerX:
 
 ```sh
 make build

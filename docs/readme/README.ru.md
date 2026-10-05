@@ -36,11 +36,7 @@
 
 Paxeer X Network — одна сеть с двумя доменами исполнения: цепочкой Paxeer X (`paxd`, Go, EVM chain ID 125) и ядром LayerX (`layerxd`, C17) — детерминированным доменом исполнения и учёта для автономных агентов. Официальный сайт: [paxeer.network](https://paxeer.network/). Документация: [docs.paxeer.app](https://docs.paxeer.app/).
 
-В ядре LayerX каждая операция, изменяющая состояние, поступает как подписанная, канонически закодированная `Activity`. Ядро проверяет участника и его полномочия, расходует последовательность счёта, упорядочивает активность в единой глобальной последовательности, применяет детерминированный переход состояния и возвращает подписанную квитанцию, привязанную к итоговому корню состояния.
-
-Журнал активностей, допускающий только добавление, является источником истины. Индексы базы данных — одноразовые проекции, их можно перестроить повторным воспроизведением этого журнала. Исполнение, критичное для консенсуса, исключает арифметику с плавающей точкой, решения по локальным часам, порядок обхода базы данных и другие источники недетерминизма. `402LXP` — единственный компонент, которому разрешено записывать балансы. Модули протокола выдают проверенные наборы переводов, а не изменяют средства сами.
-
-Обычная активность агентов исполняется и упорядочивается внутри ядра LayerX. Периодические контрольные точки проводятся в цепочке Paxeer X, которая держит хранение средств, регистрацию контрольных точек, залоги гарантов, оспаривания, выводы, споры и экстренные выходы. Обычное действие в ядре не требует транзакции в цепочке Paxeer X.
+Цепочка Paxeer X выполняет EVM на консенсусе Tendermint и содержит модули `layerxcustody`, `layerxexchange`, `layerxbridge` и `launchpad`, к которым контракты обращаются через прекомпиляты по адресам `0x1013`, `0x1015`, `0x1016` и `0x1017`. Ядро LayerX детерминированно исполняет и учитывает активность агентов и возвращает подписанную квитанцию для каждой активности; его контрольные точки проводятся в цепочке через прекомпилят `layerxAnchor` по адресу `0x1014`.
 
 Этот репозиторий — монорепозиторий Sidiora Labs для Paxeer X Network: цепочка Paxeer X и ядро LayerX в одном репозитории. Совместное размещение позволяет проверять ядро, цепочку, контракты и инструменты для разработчиков в одном месте. Каждая подсистема сохраняет собственные границы сборки, выпуска, развёртывания и доверия. Определяющая спецификация — [`spec/paxeer-x/spec.kvx`](../../spec/paxeer-x/spec.kvx), её отрисованная версия — [`spec/paxeer-x/design.md`](../../spec/paxeer-x/design.md); заметки о выпусках — в [`CHANGELOG.md`](../../CHANGELOG.md).
 
@@ -48,48 +44,15 @@ Paxeer X Network — одна сеть с двумя доменами испол
 
 Ограниченная бета ещё не открыта. API шлюза станет доступен, когда она откроется. Это бета основной сети с реальной стоимостью, поэтому крана для общего пользования нет; одобренные разработчики получают тестовые средства от команды.
 
-Публичные имена EVM JSON-RPC для chain ID 125 перечислены в [`docs/site/docs/reference/public-rpc.md`](../../docs/site/docs/reference/public-rpc.md). Контрольный список для публичной точки доступа — [`docs/wiki/Getting-Started-Beta.md`](../../docs/wiki/Getting-Started-Beta.md). Путь для кошелька, пополнения через custody credit, Asset, Programs и HTTP 402 — [`docs/wiki/PaymentsQuickstart.md`](../../docs/wiki/PaymentsQuickstart.md). Команды `layerx wallet` и `layerx token` находятся в `platform/cli`, а интерфейс токена LXT-20 для программ — в `programs/crates/layerx-programs-registry/src/lxt20.rs`. Кодировки: [`docs/wiki/Assets.md`](../../docs/wiki/Assets.md). Методы RPC: [`docs/wiki/PublicRpc.md`](../../docs/wiki/PublicRpc.md). Уровни доказательств: [`docs/wiki/CommitmentLevels.md`](../../docs/wiki/CommitmentLevels.md). Публичный платёжный API: [`docs/wiki/PublicAPI.md`](../../docs/wiki/PublicAPI.md).
+Чтобы подключиться к цепочке Paxeer X (chain ID 125), используйте одно из публичных имён JSON-RPC, перечисленных в [`docs/site/docs/reference/public-rpc.md`](../../docs/site/docs/reference/public-rpc.md). Контрольный список для публичной точки доступа — [`docs/wiki/Getting-Started-Beta.md`](../../docs/wiki/Getting-Started-Beta.md). Путь для кошелька, пополнения и платежей — [`docs/wiki/PaymentsQuickstart.md`](../../docs/wiki/PaymentsQuickstart.md). Активы: [`docs/wiki/Assets.md`](../../docs/wiki/Assets.md). Методы RPC: [`docs/wiki/PublicRpc.md`](../../docs/wiki/PublicRpc.md). Уровни подтверждения: [`docs/wiki/CommitmentLevels.md`](../../docs/wiki/CommitmentLevels.md). Публичный платёжный API: [`docs/wiki/PublicAPI.md`](../../docs/wiki/PublicAPI.md).
 
-Чтобы запустить всё локально, следуйте [`docs/wiki/Quickstart.md`](../../docs/wiki/Quickstart.md): установите CLI `layerx` из `platform/cli`, поднимите одноразовый бета-кластер командой `make platform-beta-cluster-up`, подключите `build/beta-cluster/env`, затем создайте ключ, получите средства из приватного крана этого кластера, отправьте платёж, проверьте квитанцию и разверните программу.
-
-```sh
-layerx key create quickstart
-```
-
-```sh
-layerx --json payment test \
-  --from "$LAYERX_TEST_SOURCE_DID" \
-  --to "$LAYERX_TEST_DESTINATION_DID" \
-  --currency "$LAYERX_TEST_ASSET" \
-  --amount "$LAYERX_TEST_AMOUNT" \
-  --idempotency-key paymentquickstart1
-```
-
-```sh
-layerx --json receipt verify \
-  --receipt receipt.hex \
-  --batch-id "$batch_id" \
-  --asset "$asset" \
-  --previous-state-root "$previous_root" \
-  --resulting-state-root "$resulting_root" \
-  --sequencer-public-key "$sequencer_key"
-```
-
-```sh
-layerx --json program deploy \
-  quickstart-program/target/wasm32-unknown-unknown/release/quickstart_program.wasm \
-  --program-id <program_id> \
-  --idempotency-key <idempotency_key> \
-  --key quickstart \
-  --account-sequence 0 \
-  --not-before-ms <not_before_ms> \
-  --expires-at-ms <expires_at_ms> \
-  --previous-state-root <previous_state_root>
-```
+Разработчикам ядра стоит начать с размещённой документации на [docs.paxeer.app](https://docs.paxeer.app/); пошаговое руководство по локальному кластеру — [`docs/wiki/Quickstart.md`](../../docs/wiki/Quickstart.md).
 
 ## Сборка из исходного кода
 
-Основная среда исполнения написана на C17 (`-std=c17` в корневом `Makefile`). Рабочие пространства agent, human и platform используют Rust 1.91.1 (`rust-toolchain.toml`). Расчётные контракты ядра в `contracts/` используют Solidity 0.8.27 (`foundry.toml`). Для квалификации воспроизведением нужны GCC 13, Clang 18, Docker, раннер amd64 с musl, а также кросс-компилятор AArch64 и QEMU; см. [`docs/QUALIFICATION.md`](../../docs/QUALIFICATION.md).
+Узел цепочки Paxeer X написан на Go 1.25.6 (`go.mod`). Ядро LayerX написано на C17 (`-std=c17` в корневом `Makefile`). Рабочие пространства agent, human и platform используют Rust 1.91.1 (`rust-toolchain.toml`). Расчётные контракты ядра в `contracts/` используют Solidity 0.8.27 (`foundry.toml`). Для квалификации воспроизведением нужны GCC 13, Clang 18, Docker, раннер amd64 с musl, а также кросс-компилятор AArch64 и QEMU; см. [`docs/QUALIFICATION.md`](../../docs/QUALIFICATION.md).
+
+Цели ядра LayerX:
 
 ```sh
 make build

@@ -36,11 +36,7 @@
 
 Paxeer X Network 是一个拥有两个执行域的网络：Paxeer X 链（`paxd`，Go，EVM 链 ID 125）和 LayerX 内核（`layerxd`，C17）。LayerX 内核是面向自主代理的确定性执行与记账域。官方网站：[paxeer.network](https://paxeer.network/)。文档：[docs.paxeer.app](https://docs.paxeer.app/)。
 
-在 LayerX 内核中，每一个改变状态的操作都以经过签名、规范编码的 `Activity` 进入。内核验证参与者及其权限，消耗账户序列号，将该活动排入唯一的全局序列，执行确定性的状态转换，并返回与结果状态根绑定的签名收据。
-
-只追加的活动日志是权威来源。数据库索引是可丢弃的投影，可以通过重放该日志重建。共识关键的执行排除浮点运算、基于本地时钟的决策、数据库迭代顺序以及其他非确定性来源。`402LXP` 是唯一允许写入余额的组件。协议模块输出经过验证的转账集合，而不是自行修改资金。
-
-普通的代理活动在 LayerX 内核中执行和排序。定期检查点结算到 Paxeer X 链，由 Paxeer X 链负责托管、检查点登记、担保人保证金、挑战、提款、争议和紧急退出。普通的内核操作不需要 Paxeer X 链交易。
+Paxeer X 链在 Tendermint 共识之上运行 EVM 执行，并包含 `layerxcustody`、`layerxexchange`、`layerxbridge` 和 `launchpad` 模块，合约通过位于 `0x1013`、`0x1015`、`0x1016` 和 `0x1017` 的预编译合约访问它们。LayerX 内核以确定性方式执行代理活动并记账，为每个活动返回签名收据；其检查点通过位于 `0x1014` 的 `layerxAnchor` 预编译合约在链上结算。
 
 本仓库是 Sidiora Labs 为 Paxeer X Network 维护的单一仓库：Paxeer X 链和 LayerX 内核位于同一个仓库中。放在一起使内核、链、合约和开发者接口可以在同一处审计。每个子系统保留各自的构建、发布、部署和信任边界。规范性说明是 [`spec/paxeer-x/spec.kvx`](../../spec/paxeer-x/spec.kvx)，渲染版本为 [`spec/paxeer-x/design.md`](../../spec/paxeer-x/design.md)；发布说明见 [`CHANGELOG.md`](../../CHANGELOG.md)。
 
@@ -48,48 +44,15 @@ Paxeer X Network 是一个拥有两个执行域的网络：Paxeer X 链（`paxd`
 
 有限测试版尚未开放。网关 API 将在开放时可用。这是承载真实价值的主网测试版，因此没有面向公众的水龙头；获批的开发者会从团队获得测试额度。
 
-链 ID 125 的公共 EVM JSON-RPC 名称列在 [`docs/site/docs/reference/public-rpc.md`](../../docs/site/docs/reference/public-rpc.md)。公共端点检查清单是 [`docs/wiki/Getting-Started-Beta.md`](../../docs/wiki/Getting-Started-Beta.md)。钱包、托管信用注资、Asset、Programs 和 HTTP 402 的完整流程是 [`docs/wiki/PaymentsQuickstart.md`](../../docs/wiki/PaymentsQuickstart.md)。`layerx wallet` 和 `layerx token` 命令位于 `platform/cli`，程序使用的 LXT-20 代币接口位于 `programs/crates/layerx-programs-registry/src/lxt20.rs`。编码：[`docs/wiki/Assets.md`](../../docs/wiki/Assets.md)。RPC 方法：[`docs/wiki/PublicRpc.md`](../../docs/wiki/PublicRpc.md)。证据级别：[`docs/wiki/CommitmentLevels.md`](../../docs/wiki/CommitmentLevels.md)。公共支付 API：[`docs/wiki/PublicAPI.md`](../../docs/wiki/PublicAPI.md)。
+要连接 Paxeer X 链（链 ID 125），请使用 [`docs/site/docs/reference/public-rpc.md`](../../docs/site/docs/reference/public-rpc.md) 中列出的任一公共 JSON-RPC 名称。公共端点检查清单是 [`docs/wiki/Getting-Started-Beta.md`](../../docs/wiki/Getting-Started-Beta.md)。钱包、注资和支付流程见 [`docs/wiki/PaymentsQuickstart.md`](../../docs/wiki/PaymentsQuickstart.md)。资产：[`docs/wiki/Assets.md`](../../docs/wiki/Assets.md)。RPC 方法：[`docs/wiki/PublicRpc.md`](../../docs/wiki/PublicRpc.md)。承诺级别：[`docs/wiki/CommitmentLevels.md`](../../docs/wiki/CommitmentLevels.md)。公共支付 API：[`docs/wiki/PublicAPI.md`](../../docs/wiki/PublicAPI.md)。
 
-如需在本地运行全部内容，请按照 [`docs/wiki/Quickstart.md`](../../docs/wiki/Quickstart.md) 操作：从 `platform/cli` 安装 `layerx` CLI，用 `make platform-beta-cluster-up` 启动一个可丢弃的测试集群，加载 `build/beta-cluster/env`，然后创建密钥、从该集群的私有水龙头领取资金、提交一笔支付、验证收据并部署一个程序。
-
-```sh
-layerx key create quickstart
-```
-
-```sh
-layerx --json payment test \
-  --from "$LAYERX_TEST_SOURCE_DID" \
-  --to "$LAYERX_TEST_DESTINATION_DID" \
-  --currency "$LAYERX_TEST_ASSET" \
-  --amount "$LAYERX_TEST_AMOUNT" \
-  --idempotency-key paymentquickstart1
-```
-
-```sh
-layerx --json receipt verify \
-  --receipt receipt.hex \
-  --batch-id "$batch_id" \
-  --asset "$asset" \
-  --previous-state-root "$previous_root" \
-  --resulting-state-root "$resulting_root" \
-  --sequencer-public-key "$sequencer_key"
-```
-
-```sh
-layerx --json program deploy \
-  quickstart-program/target/wasm32-unknown-unknown/release/quickstart_program.wasm \
-  --program-id <program_id> \
-  --idempotency-key <idempotency_key> \
-  --key quickstart \
-  --account-sequence 0 \
-  --not-before-ms <not_before_ms> \
-  --expires-at-ms <expires_at_ms> \
-  --previous-state-root <previous_state_root>
-```
+内核开发者请从 [docs.paxeer.app](https://docs.paxeer.app/) 上的托管文档开始；本地集群操作指南见 [`docs/wiki/Quickstart.md`](../../docs/wiki/Quickstart.md)。
 
 ## 从源码构建
 
-核心运行时使用 C17（根目录 `Makefile` 中的 `-std=c17`）。agent、human 和 platform 工作区使用 Rust 1.91.1（`rust-toolchain.toml`）。`contracts/` 中的内核结算合约使用 Solidity 0.8.27（`foundry.toml`）。重放资格验证需要 GCC 13、Clang 18、Docker、amd64 musl 运行器，以及 AArch64 交叉编译器和 QEMU；参见 [`docs/QUALIFICATION.md`](../../docs/QUALIFICATION.md)。
+Paxeer X 链节点使用 Go 1.25.6（`go.mod`）。LayerX 内核使用 C17（根目录 `Makefile` 中的 `-std=c17`）。agent、human 和 platform 工作区使用 Rust 1.91.1（`rust-toolchain.toml`）。`contracts/` 中的内核结算合约使用 Solidity 0.8.27（`foundry.toml`）。重放资格验证需要 GCC 13、Clang 18、Docker、amd64 musl 运行器，以及 AArch64 交叉编译器和 QEMU；参见 [`docs/QUALIFICATION.md`](../../docs/QUALIFICATION.md)。
+
+LayerX 内核目标：
 
 ```sh
 make build

@@ -36,11 +36,7 @@
 
 Paxeer X Network は、二つの実行ドメインを持つ一つのネットワークです。Paxeer X チェーン（`paxd`、Go、EVM チェーン ID 125）と、自律エージェントのための決定的な実行・会計ドメインである LayerX カーネル（`layerxd`、C17）から成ります。公式サイト: [paxeer.network](https://paxeer.network/)。ドキュメント: [docs.paxeer.app](https://docs.paxeer.app/)。
 
-LayerX カーネルでは、状態を変更するすべての操作が、署名済みで正規エンコードされた `Activity` として入ります。カーネルはアクターとその権限を検証し、アカウントのシーケンスを消費し、アクティビティを単一のグローバルシーケンス上に並べ、決定的な状態遷移を適用し、結果の状態ルートに結び付いた署名付きレシートを返します。
-
-追記専用のアクティビティログが唯一の正です。データベースのインデックスは使い捨てのプロジェクションで、このログを再生すれば再構築できます。コンセンサスに関わる実行では、浮動小数点、ローカル時計に基づく判断、データベースの走査順序など、非決定性の原因をすべて排除します。残高を書き込めるのは `402LXP` だけです。プロトコルモジュールは資金を直接変更せず、検証済みの送金セットを出力します。
-
-通常のエージェントのアクティビティは LayerX カーネル内で実行・順序付けされます。定期的なチェックポイントは Paxeer X チェーンで決済され、Paxeer X チェーンがカストディ、チェックポイント登録、保証人のボンド、チャレンジ、出金、紛争、緊急退出を担います。通常のカーネル操作に Paxeer X チェーンのトランザクションは必要ありません。
+Paxeer X チェーンは Tendermint コンセンサス上で EVM を実行し、`layerxcustody`、`layerxexchange`、`layerxbridge`、`launchpad` の各モジュールを備えています。コントラクトはこれらに `0x1013`、`0x1015`、`0x1016`、`0x1017` のプリコンパイルを通じてアクセスします。LayerX カーネルはエージェントのアクティビティを決定的に実行・会計処理し、アクティビティごとに署名付きレシートを返します。カーネルのチェックポイントは `0x1014` の `layerxAnchor` プリコンパイルを通じてチェーン上で決済されます。
 
 このリポジトリは、Sidiora Labs による Paxeer X Network のモノレポです。Paxeer X チェーンと LayerX カーネルを一つのリポジトリにまとめています。同じ場所に置くことで、カーネル、チェーン、コントラクト、開発者向け機能を一か所で監査できます。各サブシステムは、それぞれ独自のビルド、リリース、デプロイ、信頼の境界を保ちます。基準となる仕様は [`spec/paxeer-x/spec.kvx`](../../spec/paxeer-x/spec.kvx) で、[`spec/paxeer-x/design.md`](../../spec/paxeer-x/design.md) として描画されています。リリースノートは [`CHANGELOG.md`](../../CHANGELOG.md) にあります。
 
@@ -48,48 +44,15 @@ LayerX カーネルでは、状態を変更するすべての操作が、署名�
 
 限定ベータはまだ開始していません。ゲートウェイ API は開始時に利用可能になります。これは実際の価値を扱うメインネットベータのため、一般向けのフォーセットはありません。承認された開発者にはチームからテスト用の割り当てが提供されます。
 
-チェーン ID 125 の公開 EVM JSON-RPC 名は [`docs/site/docs/reference/public-rpc.md`](../../docs/site/docs/reference/public-rpc.md) に掲載されています。公開エンドポイントのチェックリストは [`docs/wiki/Getting-Started-Beta.md`](../../docs/wiki/Getting-Started-Beta.md) です。ウォレット、カストディクレジットによる入金、Asset、Programs、HTTP 402 の手順は [`docs/wiki/PaymentsQuickstart.md`](../../docs/wiki/PaymentsQuickstart.md) です。`layerx wallet` と `layerx token` のコマンドは `platform/cli` にあり、プログラム用の LXT-20 トークンインターフェースは `programs/crates/layerx-programs-registry/src/lxt20.rs` にあります。エンコーディング: [`docs/wiki/Assets.md`](../../docs/wiki/Assets.md)。RPC メソッド: [`docs/wiki/PublicRpc.md`](../../docs/wiki/PublicRpc.md)。証拠レベル: [`docs/wiki/CommitmentLevels.md`](../../docs/wiki/CommitmentLevels.md)。公開決済 API: [`docs/wiki/PublicAPI.md`](../../docs/wiki/PublicAPI.md)。
+Paxeer X チェーン（チェーン ID 125）に接続するには、[`docs/site/docs/reference/public-rpc.md`](../../docs/site/docs/reference/public-rpc.md) に掲載されている公開 JSON-RPC 名のいずれかを使ってください。公開エンドポイントのチェックリストは [`docs/wiki/Getting-Started-Beta.md`](../../docs/wiki/Getting-Started-Beta.md) です。ウォレット、入金、決済の手順は [`docs/wiki/PaymentsQuickstart.md`](../../docs/wiki/PaymentsQuickstart.md) です。Asset: [`docs/wiki/Assets.md`](../../docs/wiki/Assets.md)。RPC メソッド: [`docs/wiki/PublicRpc.md`](../../docs/wiki/PublicRpc.md)。コミットメントレベル: [`docs/wiki/CommitmentLevels.md`](../../docs/wiki/CommitmentLevels.md)。公開決済 API: [`docs/wiki/PublicAPI.md`](../../docs/wiki/PublicAPI.md)。
 
-すべてをローカルで動かすには [`docs/wiki/Quickstart.md`](../../docs/wiki/Quickstart.md) に従ってください。`platform/cli` から `layerx` CLI をインストールし、`make platform-beta-cluster-up` で使い捨てのベータクラスタを起動し、`build/beta-cluster/env` を読み込みます。その後、鍵を作成し、そのクラスタのプライベートフォーセットから請求し、支払いを送信し、レシートを検証し、プログラムをデプロイします。
-
-```sh
-layerx key create quickstart
-```
-
-```sh
-layerx --json payment test \
-  --from "$LAYERX_TEST_SOURCE_DID" \
-  --to "$LAYERX_TEST_DESTINATION_DID" \
-  --currency "$LAYERX_TEST_ASSET" \
-  --amount "$LAYERX_TEST_AMOUNT" \
-  --idempotency-key paymentquickstart1
-```
-
-```sh
-layerx --json receipt verify \
-  --receipt receipt.hex \
-  --batch-id "$batch_id" \
-  --asset "$asset" \
-  --previous-state-root "$previous_root" \
-  --resulting-state-root "$resulting_root" \
-  --sequencer-public-key "$sequencer_key"
-```
-
-```sh
-layerx --json program deploy \
-  quickstart-program/target/wasm32-unknown-unknown/release/quickstart_program.wasm \
-  --program-id <program_id> \
-  --idempotency-key <idempotency_key> \
-  --key quickstart \
-  --account-sequence 0 \
-  --not-before-ms <not_before_ms> \
-  --expires-at-ms <expires_at_ms> \
-  --previous-state-root <previous_state_root>
-```
+カーネル開発者は [docs.paxeer.app](https://docs.paxeer.app/) のホスト型ドキュメントから始めてください。ローカルクラスタの手順は [`docs/wiki/Quickstart.md`](../../docs/wiki/Quickstart.md) です。
 
 ## ソースからビルドする
 
-コアランタイムは C17 です（ルートの `Makefile` に `-std=c17`）。agent、human、platform の各ワークスペースは Rust 1.91.1 を使います（`rust-toolchain.toml`）。`contracts/` にあるカーネルの決済コントラクトは Solidity 0.8.27 を使います（`foundry.toml`）。リプレイ検定には GCC 13、Clang 18、Docker、amd64 の musl ランナー、AArch64 クロスコンパイラと QEMU が必要です。詳しくは [`docs/QUALIFICATION.md`](../../docs/QUALIFICATION.md) を参照してください。
+Paxeer X チェーンのノードは Go 1.25.6 です（`go.mod`）。LayerX カーネルは C17 です（ルートの `Makefile` に `-std=c17`）。agent、human、platform の各ワークスペースは Rust 1.91.1 を使います（`rust-toolchain.toml`）。`contracts/` にあるカーネルの決済コントラクトは Solidity 0.8.27 を使います（`foundry.toml`）。リプレイ検定には GCC 13、Clang 18、Docker、amd64 の musl ランナー、AArch64 クロスコンパイラと QEMU が必要です。詳しくは [`docs/QUALIFICATION.md`](../../docs/QUALIFICATION.md) を参照してください。
+
+LayerX カーネルのターゲット:
 
 ```sh
 make build

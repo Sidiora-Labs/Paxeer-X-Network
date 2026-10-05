@@ -36,11 +36,7 @@ English · [Español](docs/readme/README.es.md) · [日本語](docs/readme/READM
 ## What Paxeer X Network is
 Paxeer X Network is one network with two execution domains: the Paxeer X chain (`paxd`, Go, EVM chain ID 125) and the LayerX kernel (`layerxd`, C17), the deterministic execution and accounting domain for autonomous agents. Official site: [paxeer.network](https://paxeer.network/). Documentation: [docs.paxeer.app](https://docs.paxeer.app/).
 
-Inside the LayerX kernel, every state-changing operation enters as a signed, canonically encoded `Activity`. The kernel verifies the actor and its authority, consumes the account sequence, orders the activity on one global sequence, applies a deterministic state transition, and returns a signed receipt tied to the resulting state root.
-
-The append-only activity log is the authority. Database indexes are disposable projections and can be rebuilt by replaying that log. Consensus-critical execution excludes floating point, local clock decisions, database iteration order, and other sources of nondeterminism. `402LXP` is the only component allowed to write balances. Protocol modules emit validated transfer sets rather than mutating funds themselves.
-
-Ordinary agent activity is executed and ordered inside the LayerX kernel. Periodic checkpoints settle to the Paxeer X chain, which holds custody, checkpoint registration, guarantor bonds, challenges, withdrawals, disputes, and emergency exits. An ordinary kernel action does not require a Paxeer X chain transaction.
+The Paxeer X chain runs EVM execution on Tendermint consensus and carries the `layerxcustody`, `layerxexchange`, `layerxbridge` and `launchpad` modules, which contracts reach through the precompiles at `0x1013`, `0x1015`, `0x1016` and `0x1017`. The LayerX kernel executes and accounts for agent activity deterministically and returns a signed receipt for each activity; its checkpoints settle on the chain through the `layerxAnchor` precompile at `0x1014`.
 
 This repository is the Sidiora Labs monorepo for Paxeer X Network: the Paxeer X chain and the LayerX kernel in one repository. Co-location keeps the kernel, the chain, contracts, and developer surfaces auditable in one place. Each subsystem keeps its own build, release, deployment, and trust boundary. The governing specification is [`spec/paxeer-x/spec.kvx`](spec/paxeer-x/spec.kvx), rendered as [`spec/paxeer-x/design.md`](spec/paxeer-x/design.md); release notes are in [`CHANGELOG.md`](CHANGELOG.md).
 
@@ -48,60 +44,24 @@ This repository is the Sidiora Labs monorepo for Paxeer X Network: the Paxeer X 
 
 The limited beta has not opened yet. The gateway API becomes available when it does. This is a mainnet beta on real value, so there is no faucet for general use; approved developers receive test allocations from the team.
 
-The public EVM JSON-RPC names for chain ID 125 are listed in
+To connect to the Paxeer X chain (chain ID 125), use one of the public JSON-RPC names listed in
 [`docs/site/docs/reference/public-rpc.md`](docs/site/docs/reference/public-rpc.md).
 The public endpoint checklist is
 [`docs/wiki/Getting-Started-Beta.md`](docs/wiki/Getting-Started-Beta.md).
-The wallet, custody-credit funding, Asset, Programs, and HTTP 402 path is
-[`docs/wiki/PaymentsQuickstart.md`](docs/wiki/PaymentsQuickstart.md). The
-`layerx wallet` and `layerx token` commands are in `platform/cli`, and the
-LXT-20 program token interface is in
-`programs/crates/layerx-programs-registry/src/lxt20.rs`. Encodings:
+The wallet, funding, and payments path is
+[`docs/wiki/PaymentsQuickstart.md`](docs/wiki/PaymentsQuickstart.md). Assets:
 [`docs/wiki/Assets.md`](docs/wiki/Assets.md). RPC methods:
-[`docs/wiki/PublicRpc.md`](docs/wiki/PublicRpc.md). Evidence levels:
-[`docs/wiki/CommitmentLevels.md`](docs/wiki/CommitmentLevels.md). The public
-payment API is [`docs/wiki/PublicAPI.md`](docs/wiki/PublicAPI.md).
+[`docs/wiki/PublicRpc.md`](docs/wiki/PublicRpc.md). Commitment levels:
+[`docs/wiki/CommitmentLevels.md`](docs/wiki/CommitmentLevels.md). Public
+payment API: [`docs/wiki/PublicAPI.md`](docs/wiki/PublicAPI.md).
 
-To run everything locally, follow [`docs/wiki/Quickstart.md`](docs/wiki/Quickstart.md): install the `layerx` CLI from `platform/cli`, bring up a disposable beta cluster with `make platform-beta-cluster-up`, source `build/beta-cluster/env`, then create a key, claim from that cluster's private-network faucet, submit a payment, verify the receipt, and deploy a program.
-
-```sh
-layerx key create quickstart
-```
-
-```sh
-layerx --json payment test \
-  --from "$LAYERX_TEST_SOURCE_DID" \
-  --to "$LAYERX_TEST_DESTINATION_DID" \
-  --currency "$LAYERX_TEST_ASSET" \
-  --amount "$LAYERX_TEST_AMOUNT" \
-  --idempotency-key paymentquickstart1
-```
-
-```sh
-layerx --json receipt verify \
-  --receipt receipt.hex \
-  --batch-id "$batch_id" \
-  --asset "$asset" \
-  --previous-state-root "$previous_root" \
-  --resulting-state-root "$resulting_root" \
-  --sequencer-public-key "$sequencer_key"
-```
-
-```sh
-layerx --json program deploy \
-  quickstart-program/target/wasm32-unknown-unknown/release/quickstart_program.wasm \
-  --program-id <program_id> \
-  --idempotency-key <idempotency_key> \
-  --key quickstart \
-  --account-sequence 0 \
-  --not-before-ms <not_before_ms> \
-  --expires-at-ms <expires_at_ms> \
-  --previous-state-root <previous_state_root>
-```
+Kernel developers start at the hosted documentation at [docs.paxeer.app](https://docs.paxeer.app/); the local cluster walkthrough is [`docs/wiki/Quickstart.md`](docs/wiki/Quickstart.md).
 
 ## Build from source
 
-The core runtime is C17 (`-std=c17` in the root `Makefile`). Agent, human, and platform workspaces use Rust 1.91.1 (`rust-toolchain.toml`). The kernel settlement contracts in `contracts/` use Solidity 0.8.27 (`foundry.toml`). Replay qualification needs GCC 13, Clang 18, Docker, an amd64 musl runner, and an AArch64 cross-compiler plus QEMU; see [`docs/QUALIFICATION.md`](docs/QUALIFICATION.md).
+The Paxeer X chain node is Go 1.25.6 (`go.mod`). The LayerX kernel is C17 (`-std=c17` in the root `Makefile`). Agent, human, and platform workspaces use Rust 1.91.1 (`rust-toolchain.toml`). The kernel settlement contracts in `contracts/` use Solidity 0.8.27 (`foundry.toml`). Replay qualification needs GCC 13, Clang 18, Docker, an amd64 musl runner, and an AArch64 cross-compiler plus QEMU; see [`docs/QUALIFICATION.md`](docs/QUALIFICATION.md).
+
+LayerX kernel targets:
 
 ```sh
 make build
