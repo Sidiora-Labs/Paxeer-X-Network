@@ -200,6 +200,17 @@ router    requires protected material and registry-bootstrap records under
           missing=program_registry when the router's program_registry backend
           is absent or not configured.
 
+relay     reads the relay archive of platform/relay_archive/fly.toml against
+          its origin in the kernel app of human/wallet/deploy/human.toml and
+          prints one line per check: relay-origin (ready, fresh, genesis equal
+          to the kernel's manifest), relay-public and one relay-replica per
+          started machine (ready, fresh, pins equal, head within one batch of
+          the origin read before and no further than the one after, exact
+          batch bytes), machines (two started in two regions),
+          relay-origin-recheck, relay-forward (the original signed activity
+          answered with the router's verdict) and relay-altered (the flipped
+          bytes refused with a 4xx). Needs no host map.
+
 Environment:
   BRINGUP_HOSTS_FILE   private env file assigning EDGE_HOST, ARCHIVE_HOST,
                        VALIDATOR_HOSTS, RPC_HOSTS and OLD_WALLET_HOST;
@@ -227,6 +238,12 @@ Environment:
   CHECK_LIVE_KERNEL_DATA_DIR, CHECK_LIVE_KERNEL_RUN_DIR, CHECK_LIVE_KERNEL_INIT_DIR
                        explicit local node, sockets and service PID directories
   CHECK_LIVE_KERNEL_CTL  path of the actual prebuilt layerxctl operator executable
+  CHECK_LIVE_RELAY_ORIGIN  public relay archive route, default
+                       https://archive.paxeer.network
+  CHECK_LIVE_RELAY_CA  optional CA file for that route
+  CHECK_LIVE_RELAY_ACTIVITY  file of original signed activity bytes, required by relay
+  CHECK_LIVE_RELAY_ACTIVITY_ID  the activity id the router answers for it
+  CHECK_LIVE_RELAY_KEY_FILE  file holding the router API key; never printed
   CHECK_LIVE_TIMEOUT   seconds per request, ssh or flyctl call, default 30
   LAYERX_CA_DIR        the internal CA directory on this host, default
                        /etc/layerx/ca
@@ -2847,6 +2864,225 @@ else:
 	finish "$failures"
 }
 
+# check_relay: the relay archive of platform/relay_archive/fly.toml against
+# its origin, the relay-archive service the kernel app of
+# human/wallet/deploy/human.toml runs beside the sequencer. Reads the origin
+# inside the kernel machine over its internal-CA TLS listener (head, pins,
+# readiness, the genesis.manifest digest and the bytes of the batch one below
+# its head), then the public route CHECK_LIVE_RELAY_ORIGIN, then every
+# started relay machine through flyctl ssh console --machine, then the origin
+# again: the app runs at least two started machines in two regions, and each
+# replica and the public route answer ready and fresh, carry the origin's
+# network, genesis and sequencer pins with the genesis equal to the kernel's
+# manifest, hold a head no more than one batch behind the first origin read
+# and no further than the second, and serve the origin's exact batch bytes.
+# The original signed activity CHECK_LIVE_RELAY_ACTIVITY is forwarded to the
+# router with the key in CHECK_LIVE_RELAY_KEY_FILE and must be answered with
+# CHECK_LIVE_RELAY_ACTIVITY_ID; the same bytes with the last byte flipped must
+# be refused with a 4xx. One line per check.
+relay_listen=127.0.0.1:8080
+relay_origin_listen=127.0.0.1:9457
+relay_probe='import hashlib, json, ssl, sys, urllib.error, urllib.request
+base, cafile, manifest, target, limit = sys.argv[1:6]
+context = None
+if base.startswith("https:"):
+    context = ssl.create_default_context(cafile=None if cafile == "-" else cafile)
+def get(path):
+    try:
+        with urllib.request.urlopen(base + path, timeout=float(limit), context=context) as answer:
+            return answer.status, answer.read(16777216)
+    except urllib.error.HTTPError as error:
+        return error.code, error.read(1048576)
+out = {}
+try:
+    code, body = get("/readyz")
+    ready = json.loads(body)
+    out.update(readyz=code, ready=ready.get("ready") is True, freshness=ready.get("freshness"))
+    head = json.loads(get("/v1/sync/head")[1])
+    out.update(network=head.get("network_id"), genesis=head.get("genesis_sha256"), head=head.get("head_batch"))
+    out["sequencer"] = json.loads(get("/v1/sync/readiness")[1]).get("sequencer_public_key")
+    if manifest != "-":
+        with open(manifest, "rb") as source:
+            out["manifest"] = hashlib.sha256(source.read()).hexdigest()
+    if target == "-" and out["head"] is not None:
+        target = str(max(int(out["head"]) - 1, 1))
+    if target != "-":
+        code, body = get("/v1/sync/batches/" + target)
+        out.update(target=target, batch=hashlib.sha256(body).hexdigest() if code == 200 else None)
+except (OSError, ValueError, TypeError, AttributeError) as error:
+    out["error"] = type(error).__name__
+print("@@relay " + json.dumps(out, sort_keys=True))'
+
+check_relay() {
+	local origin="${CHECK_LIVE_RELAY_ORIGIN:-https://archive.paxeer.network}"
+	local ca="${CHECK_LIVE_RELAY_CA:--}"
+	local name app kernel records ids id region reply target answer code activity refusal failures=0
+	for name in CHECK_LIVE_RELAY_ACTIVITY CHECK_LIVE_RELAY_KEY_FILE; do
+		if [ -z "${!name:-}" ]; then
+			echo "check-live: $name is unset" >&2
+			exit 2
+		elif [ ! -r "${!name}" ] || [ ! -s "${!name}" ]; then
+			echo "check-live: $name does not name a readable file" >&2
+			exit 2
+		fi
+	done
+	if ! [[ "${CHECK_LIVE_RELAY_ACTIVITY_ID:-}" =~ ^[A-Za-z0-9_:-]{1,256}$ ]]; then
+		echo "check-live: CHECK_LIVE_RELAY_ACTIVITY_ID is unset or malformed" >&2
+		exit 2
+	fi
+	if ! [[ "$origin" =~ ^https://[a-z0-9.-]+(:[0-9]+)?$ || "$origin" =~ ^http://(127\.0\.0\.1|\[::1\]):[0-9]+(/[a-z0-9]+)?$ ]]; then
+		echo "check-live: CHECK_LIVE_RELAY_ORIGIN must be an https origin or a loopback http origin" >&2
+		exit 2
+	fi
+	if [ "$ca" != - ] && [ ! -r "$ca" ]; then
+		echo "check-live: CHECK_LIVE_RELAY_CA does not name a readable file" >&2
+		exit 2
+	fi
+	if ! app="$(fly_app platform/relay_archive/fly.toml)" || ! kernel="$(fly_app human/wallet/deploy/human.toml)"; then
+		echo "fail relay toml=absent"
+		finish 1
+	fi
+
+	reply="$(printf '%s\n' "$relay_probe" | fly_ssh "$kernel" - "python3 - https://$relay_origin_listen /data/tls/relay-archive/ca.pem /data/layerx/node/genesis/genesis.manifest - $timeout")" || reply=""
+	records="origin1 $(sed -n 's/^@@relay //p' <<<"$reply" | head -n 1)"
+	target="$(python3 -c 'import json, sys; print(json.loads(sys.argv[1] or "{}").get("target") or "-")' "${records#origin1 }" 2>/dev/null)" || target=-
+	reply="$(python3 -c "$relay_probe" "$origin" "$ca" - "$target" "$timeout" 2>/dev/null)" || reply=""
+	records+=$'\n'"public $(sed -n 's/^@@relay //p' <<<"$reply" | head -n 1)"
+
+	fly_regions "$app" || failures=$((failures + 1))
+	ids="$(timeout "$timeout" flyctl machines list --app "$app" --json 2>/dev/null | python3 -c '
+import json, sys
+for m in json.load(sys.stdin):
+    if m.get("state") == "started":
+        print(m.get("id", ""), m.get("region", "") or "none")
+' 2>/dev/null)" || ids=""
+	while read -r id region; do
+		[ -n "$id" ] || continue
+		reply="$(printf '%s\n' "$relay_probe" | timeout "$timeout" flyctl ssh console --quiet --app "$app" --machine "$id" \
+			--command "sh -c 'python3 - http://$relay_listen - - $target $timeout'" 2>/dev/null)" || reply=""
+		records+=$'\n'"replica:$id:$region $(sed -n 's/^@@relay //p' <<<"$reply" | head -n 1)"
+	done <<<"$ids"
+
+	reply="$(printf '%s\n' "$relay_probe" | fly_ssh "$kernel" - "python3 - https://$relay_origin_listen /data/tls/relay-archive/ca.pem /data/layerx/node/genesis/genesis.manifest - $timeout")" || reply=""
+	records+=$'\n'"origin2 $(sed -n 's/^@@relay //p' <<<"$reply" | head -n 1)"
+
+	answer="$(python3 -c '
+import json, sys
+origin1, public, origin2, replicas = {}, {}, {}, []
+for line in sys.argv[3].splitlines():
+    tag, _, doc = line.partition(" ")
+    try:
+        value = json.loads(doc)
+    except ValueError:
+        value = {}
+    value = value if isinstance(value, dict) else {}
+    if tag.startswith("replica:"):
+        replicas.append((tag.split(":")[1], tag.split(":")[2], value))
+    else:
+        {"origin1": origin1, "public": public, "origin2": origin2}[tag].update(value)
+def number(value):
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+def fresh(row):
+    return row.get("readyz") == 200 and row.get("ready") is True and row.get("freshness") == "fresh"
+failures = 0
+def emit(ok, text):
+    global failures
+    failures += 0 if ok else 1
+    print(("pass " if ok else "fail ") + text)
+first, last, target = number(origin1.get("head")), number(origin2.get("head")), number(origin1.get("target"))
+kernel = origin1.get("manifest")
+genesis = "unreadable" if not kernel or not origin1.get("genesis") else "match" if origin1.get("genesis") == kernel else "mismatch"
+origin_ok = fresh(origin1) and genesis == "match" and first is not None and origin1.get("batch") is not None
+emit(origin_ok, "relay-origin app=%s head=%s ready=%s freshness=%s genesis=%s" % (
+    sys.argv[1], first if first is not None else "none", str(origin1.get("ready") is True).lower(),
+    origin1.get("freshness") or "none", genesis))
+def replica(label, row):
+    head = number(row.get("head"))
+    pins = "match" if (row.get("network") == origin1.get("network") and row.get("genesis") == kernel
+                       and row.get("sequencer") == origin1.get("sequencer") and kernel) else "mismatch"
+    within = head is not None and target is not None and head >= target and (last is None or head <= last)
+    same = row.get("batch") is not None and row.get("target") == origin1.get("target") and row.get("batch") == origin1.get("batch")
+    lag = first - head if first is not None and head is not None else "none"
+    emit(origin_ok and fresh(row) and pins == "match" and within and same,
+         "%s head=%s lag=%s ready=%s freshness=%s pins=%s bytes=%s" % (
+             label, head if head is not None else "none", lag, str(row.get("ready") is True).lower(),
+             row.get("freshness") or "none", pins, "match" if same else "mismatch"))
+replica("relay-public origin=%s" % sys.argv[2], public)
+for machine, region, row in replicas:
+    replica("relay-replica machine=%s region=%s" % (machine, region), row)
+recheck = fresh(origin2) and origin2.get("genesis") == kernel and last is not None and first is not None and last >= first
+emit(recheck, "relay-origin-recheck app=%s head=%s ready=%s freshness=%s" % (
+    sys.argv[1], last if last is not None else "none", str(origin2.get("ready") is True).lower(),
+    origin2.get("freshness") or "none"))
+print("@@failures %d" % failures)
+' "$kernel" "$origin" "$records")" || answer="fail relay-judge error=unreadable"$'\n'"@@failures 1"
+	grep -v '^@@' <<<"$answer"
+	failures=$((failures + $(sed -n 's/^@@failures //p' <<<"$answer")))
+
+	for name in original altered; do
+		reply="$(python3 - "$origin" "$ca" "$CHECK_LIVE_RELAY_ACTIVITY" "$CHECK_LIVE_RELAY_KEY_FILE" "$name" "$timeout" 2>/dev/null <<'PY'
+import json
+import ssl
+import sys
+import urllib.error
+import urllib.request
+
+origin, cafile, path, key_file, mode, limit = sys.argv[1:7]
+with open(path, "rb") as source:
+    body = source.read()
+if mode == "altered":
+    body = body[:-1] + bytes([body[-1] ^ 1])
+with open(key_file, encoding="utf-8") as source:
+    key = source.read().strip()
+context = None
+if origin.startswith("https:"):
+    context = ssl.create_default_context(cafile=None if cafile == "-" else cafile)
+request = urllib.request.Request(
+    origin + "/v1/activities",
+    data=body,
+    method="POST",
+    headers={"Content-Type": "application/octet-stream", "Authorization": "LayerX-Key " + key},
+)
+try:
+    with urllib.request.urlopen(request, timeout=float(limit), context=context) as answer:
+        code, raw = answer.status, answer.read(1048576)
+except urllib.error.HTTPError as error:
+    code, raw = error.code, error.read(1048576)
+except OSError:
+    print("@@submit 000 none none")
+    sys.exit(0)
+try:
+    value = json.loads(raw)
+except ValueError:
+    value = {}
+value = value if isinstance(value, dict) else {}
+result = value["result"] if isinstance(value.get("result"), dict) else value
+error = value["error"] if isinstance(value.get("error"), dict) else {}
+print("@@submit %03d %s %s" % (code, result.get("activity_id") or "none", error.get("code") or "none"))
+PY
+		)" || reply=""
+		read -r code activity refusal <<<"$(sed -n 's/^@@submit //p' <<<"$reply" | head -n 1)"
+		code="${code:-000}"
+		if [ "$name" = original ]; then
+			if { [ "$code" = 200 ] || [ "$code" = 202 ]; } && [ "${activity:-}" = "$CHECK_LIVE_RELAY_ACTIVITY_ID" ]; then
+				echo "pass relay-forward http=$code activity=match"
+			else
+				echo "fail relay-forward http=$code activity=${activity:-none} error=${refusal:-none}"
+				failures=$((failures + 1))
+			fi
+		elif [ "$code" -ge 400 ] && [ "$code" -lt 500 ] && [ "${activity:-}" != "$CHECK_LIVE_RELAY_ACTIVITY_ID" ]; then
+			echo "pass relay-altered http=$code refused=${refusal:-yes}"
+		else
+			echo "fail relay-altered http=$code activity=${activity:-none} refused=no"
+			failures=$((failures + 1))
+		fi
+	done
+	finish "$failures"
+}
+
 # check_interop: the interop gateway app of platform/hosted/interop/fly.toml
 # runs at least two started machines in at least two regions; /readyz at
 # CHECK_LIVE_INTEROP_ORIGIN (default https://interchain.paxeer.network)
@@ -4435,6 +4671,7 @@ internal) ;;
 bridge) ;;
 wallet) ;;
 mirrors) ;;
+relay) ;;
 interop) ;;
 ramp) ;;
 indexer) ;;
@@ -4464,6 +4701,7 @@ tools=(ssh timeout curl python3 openssl sha256sum)
 [ "$mode" != explorer ] || tools=(curl python3 psql)
 [ "$mode" != ca ] || tools+=(flyctl)
 [ "$mode" != gas ] || tools+=(flyctl cast)
+[ "$mode" != relay ] || tools+=(flyctl)
 [ "$mode" != interop-adapters ] || tools+=(make)
 [ "$mode" != registry-plan ] || tools=(grep)
 if [ "$mode" = kernel-node ] && [ "${CHECK_LIVE_KERNEL_LOCAL:-0}" = 1 ]; then tools=(timeout python3 sha256sum); fi
@@ -4476,6 +4714,7 @@ done
 
 case "$mode" in
 explorer | registry-plan) ;;
+relay) ;;
 kernel-node) [ "${CHECK_LIVE_KERNEL_LOCAL:-0}" = 1 ] || load_hosts ;;
 *) load_hosts ;;
 esac

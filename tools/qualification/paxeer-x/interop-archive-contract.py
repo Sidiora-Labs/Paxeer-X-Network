@@ -18,11 +18,12 @@ import tempfile
 import threading
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 
 ROOT = Path(__file__).resolve().parents[3]
 CASES = ("archive-origin-freshness", "ramp-journal-readiness", "mirror-checkpoint-acquisition",
-         "interop-settlement-readiness")
+         "interop-settlement-readiness", "relay-fly-assembly")
 BUDGET_SECONDS = 3.0
 POLL_SECONDS = 0.2
 
@@ -588,6 +589,337 @@ class Contract:
         self.offline_restart()
         self.hostile()
         self.recovery()
+
+
+class RouterInterposer:
+    def __init__(self, upstream, context, cert, key):
+        self.upstream = urllib.parse.urlsplit(upstream)
+        self.context = context
+        self.received = []
+        self.answers = []
+        interposer = self
+
+        class Handler(http.server.BaseHTTPRequestHandler):
+            def log_message(self, format, *args):
+                pass
+
+            def do_POST(self):
+                body = self.rfile.read(int(self.headers.get("Content-Length", "0")))
+                headers = {name: value for name, value in self.headers.items()
+                           if name.lower() in ("authorization", "content-type", "accept", "idempotency-key")}
+                interposer.received.append({"path": self.path, "body": body, "headers": headers})
+                connection = http.client.HTTPSConnection(interposer.upstream.hostname, interposer.upstream.port,
+                                                         context=interposer.context, timeout=30)
+                try:
+                    connection.request("POST", self.path, body=body, headers=headers)
+                    answer = connection.getresponse()
+                    status, kind, data = answer.status, answer.getheader("Content-Type", "application/json"), answer.read()
+                finally:
+                    connection.close()
+                interposer.answers.append({"status": status, "body": data})
+                self.send_response(status)
+                self.send_header("Content-Type", kind)
+                self.send_header("Content-Length", str(len(data)))
+                self.end_headers()
+                self.wfile.write(data)
+
+        self.server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        server_context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        server_context.load_cert_chain(cert, key)
+        self.server.socket = server_context.wrap_socket(self.server.socket, server_side=True)
+        self.url = f"https://127.0.0.1:{self.server.server_address[1]}"
+        threading.Thread(target=self.server.serve_forever, daemon=True).start()
+
+    def close(self):
+        self.server.shutdown()
+        self.server.server_close()
+
+
+class RelayFlyContract(Contract):
+    MANIFEST = ROOT / "platform/relay_archive/fly.toml"
+    DOCKERFILE = ROOT / "docker/relay-archive/Dockerfile"
+
+    def __init__(self, build, candidate):
+        super().__init__(build, candidate)
+        self.router = None
+        self.replicas = {}
+
+    def close(self):
+        if self.router is not None:
+            self.router.close()
+        super().close()
+
+    def manifest_contract(self):
+        import tomllib
+        with self.MANIFEST.open("rb") as source:
+            fly = tomllib.load(source)
+        env = fly["env"]
+        self.fly_env = env
+        require(fly["app"] == "paxeer-relay-archive" and fly["primary_region"] == "ams",
+                "relay archive app or primary region differs from the decided paxeer-relay-archive/ams")
+        text = self.MANIFEST.read_text()
+        require("--region ams" in text and "--region fra" in text and "fly scale count 2 --region ams,fra" in text,
+                "manifest does not document one volume and one machine in each of ams and fra")
+        require(fly["build"]["dockerfile"] == "../../docker/relay-archive/Dockerfile"
+                and fly["build"]["build-target"] == "fly", "manifest does not build the relay archive fly target")
+        dockerfile = self.DOCKERFILE.read_text()
+        require("FROM base AS fly" in dockerfile
+                and 'ENTRYPOINT ["/opt/layerx/relay_archive/install.sh", "--fly-start"]' in dockerfile
+                and "/src/platform/relay_archive/install.sh /opt/layerx/relay_archive/install.sh" in dockerfile,
+                "Dockerfile fly target does not start through install.sh --fly-start")
+        mounts = fly["mounts"] if isinstance(fly["mounts"], list) else [fly["mounts"]]
+        require(len(mounts) == 1 and mounts[0]["source"] == "relay_archive_data"
+                and mounts[0]["destination"] == env["LAYERX_RELAY_ARCHIVE_DATA_DIR"],
+                "each machine does not mount its own relay_archive_data volume at the data directory")
+        service = fly["http_service"]
+        require(service["internal_port"] == int(env["LAYERX_RELAY_ARCHIVE_LISTEN"].rsplit(":", 1)[1])
+                and service["min_machines_running"] >= 2 and service["auto_stop_machines"] == "off",
+                "public route does not keep two machines on the relay listener")
+        require(any(check["path"] == "/readyz" for check in service["checks"]), "public route is not gated on /readyz")
+        require(service["concurrency"]["hard_limit"] >= service["concurrency"]["soft_limit"] > 0,
+                "public route concurrency is unbounded")
+        vm = fly["vm"][0]
+        require(vm["cpus"] >= 1 and vm["memory"].endswith("gb"), "machine resources are unbounded")
+        upstream = urllib.parse.urlsplit(env["LAYERX_RELAY_ARCHIVE_UPSTREAM"])
+        require(upstream.scheme == "https" and upstream.hostname == "paxeer-human-service.internal"
+                and upstream.port == 9457, "replica origin is not the kernel app's TLS relay-archive listener")
+        require(env.get("LAYERX_RELAY_ARCHIVE_ALLOW_FLY_PRIVATE_NETWORK") == "1"
+                and "LAYERX_RELAY_ARCHIVE_ALLOW_LOOPBACK_DEV" not in env,
+                "replica does not admit exactly the Fly private network for its .internal origin")
+        rows = [line.split() for line in (ROOT / "tools/bringup/ca.sh").read_text().splitlines()
+                if line.startswith("relay-archive ")]
+        require(len(rows) == 1 and rows[0][1] == "human/wallet/deploy/human.toml"
+                and "DNS:<app>.internal" in rows[0][6].split(","),
+                "relay-archive certificate is not issued for the kernel app's .internal name")
+        require(env["LAYERX_RELAY_ARCHIVE_SUBMISSION_UPSTREAM"] == "https://api-mainnet-beta.paxeer.network/v1/activities",
+                "replica submissions do not go to the router")
+        require(env["LAYERX_RELAY_ARCHIVE_PUBLIC_URL"] == "https://archive.paxeer.network",
+                "replica public URL is not archive.paxeer.network")
+        require({(item["secret_name"], item["guest_path"]) for item in fly["files"]}
+                == {("LAYERX_INTERNAL_CA_ROOT", env["LAYERX_RELAY_ARCHIVE_INTERNAL_CA"])},
+                "replica holds secret files beyond the internal CA root")
+        self.passed("Fly manifest declares bounded replicas in ams and fra with their own volumes behind /readyz",
+                    ["app=paxeer-relay-archive primary_region=ams second=fra",
+                     f"mount relay_archive_data -> {env['LAYERX_RELAY_ARCHIVE_DATA_DIR']}",
+                     f"min_machines_running={service['min_machines_running']} vm={vm['cpus']}cpu/{vm['memory']}",
+                     "origin=https://paxeer-human-service.internal:9457 submission=router"])
+
+    def replica_env(self, name, **override):
+        port = unused_port()
+        base = self.work / name
+        env = dict(self.runtime_env(), PATH=f"{self.bin}:{os.environ['PATH']}",
+                   LAYERX_RELAY_ARCHIVE_NETWORK_ID=str(self.pins["network_id"]),
+                   LAYERX_RELAY_ARCHIVE_GENESIS_SHA256=self.pins["genesis_sha256"],
+                   LAYERX_RELAY_ARCHIVE_SEQUENCER_ID=self.pins["sequencer_id"],
+                   LAYERX_RELAY_ARCHIVE_SEQUENCER_PUBLIC_KEY=self.pins["sequencer_public_key"],
+                   LAYERX_RELAY_ARCHIVE_UPSTREAM=self.relay_origin,
+                   LAYERX_RELAY_ARCHIVE_SUBMISSION_UPSTREAM=self.router.url + "/v1/activities",
+                   LAYERX_RELAY_ARCHIVE_INTERNAL_CA=str(self.work / "tls.crt"),
+                   LAYERX_RELAY_ARCHIVE_PUBLIC_ROOTS=self.fly_env["LAYERX_RELAY_ARCHIVE_PUBLIC_ROOTS"],
+                   LAYERX_RELAY_ARCHIVE_DATA_DIR=str(base / "data"),
+                   LAYERX_RELAY_ARCHIVE_RUN_DIR=str(base / "run"),
+                   LAYERX_RELAY_ARCHIVE_LISTEN=f"127.0.0.1:{port}",
+                   LAYERX_RELAY_ARCHIVE_PUBLIC_URL=f"http://127.0.0.1:{port}",
+                   LAYERX_RELAY_ARCHIVE_CODEC=str(self.bin / "layerx-archive-codec"),
+                   LAYERX_RELAY_ARCHIVE_ALLOW_LOOPBACK_DEV="1")
+        env.update(override)
+        return {key: value for key, value in env.items() if value is not None}
+
+    def start_replica(self, name, env):
+        process = self.start(name, ["bash", self.runtime / "install.sh", "--fly-start"], env=env)
+        url = "http://" + env["LAYERX_RELAY_ARCHIVE_LISTEN"]
+        self.replicas[name] = (url, process, env)
+        return url, process
+
+    def origin_contract(self):
+        self.token = self.work / "submission-token"
+        self.token.write_text("relay-fly-" + os.urandom(32).hex())
+        self.token.chmod(0o600)
+        port = unused_port()
+        self.relay_origin = f"https://127.0.0.1:{port}"
+        config = dict(self.pins, data_dir=str(self.work / "relay-origin"), listen=f"127.0.0.1:{port}",
+                      public_url=self.relay_origin, genesis_manifest=str(self.manifest),
+                      genesis_snapshot=str(self.snapshot), source_log=str(self.source_log), sync_mode="local",
+                      source_lni_socket=str(self.fixture.directory / "run/layerxd.lni.sock"),
+                      source_submission_token_file=str(self.token),
+                      tls_cert=str(self.work / "tls.crt"), tls_key=str(self.work / "tls.key"))
+        self.origin_process = self.launch("relay-origin", config)
+        self.until(lambda: self.ready(self.relay_origin)[0] == 200, "sequencer-colocated TLS origin readiness")
+        self.router = RouterInterposer(self.relay_origin, self.context, str(self.work / "tls.crt"),
+                                       str(self.work / "tls.key"))
+
+    def start_refusals(self):
+        refused = []
+        roots = self.fly_env["LAYERX_RELAY_ARCHIVE_PUBLIC_ROOTS"].split()
+        variants = {
+            "origin-unset": ({"LAYERX_RELAY_ARCHIVE_UPSTREAM": None}, "LAYERX_RELAY_ARCHIVE_UPSTREAM is unset"),
+            "internal-ca-unset": ({"LAYERX_RELAY_ARCHIVE_INTERNAL_CA": None},
+                                  "LAYERX_RELAY_ARCHIVE_INTERNAL_CA is unset"),
+            "one-public-root": ({"LAYERX_RELAY_ARCHIVE_PUBLIC_ROOTS": roots[0]},
+                                "public roots must be exactly ISRG Root X1 and ISRG Root X2"),
+            "foreign-public-root": ({"LAYERX_RELAY_ARCHIVE_PUBLIC_ROOTS": f"{roots[0]} {self.work / 'tls.crt'}"},
+                                    "is not ISRG Root X1 or ISRG Root X2"),
+            "plain-origin": ({"LAYERX_RELAY_ARCHIVE_UPSTREAM": "http://127.0.0.1:9"},
+                             "the relay origin upstream must be HTTPS"),
+            "malformed-pin": ({"LAYERX_RELAY_ARCHIVE_GENESIS_SHA256": "00" * 32},
+                              "--genesis-sha256 must be a non-zero lowercase SHA-256"),
+        }
+        for name, (override, message) in variants.items():
+            env = self.replica_env("refused-" + name, **override)
+            result = self.execute(["bash", self.runtime / "install.sh", "--fly-start"], env=env, success=False)
+            stderr = result.stderr.decode(errors="replace")
+            require(message in stderr, f"{name}: refusal did not name the violated contract: {stderr[-500:]}")
+            require(not (self.work / ("refused-" + name) / "run/relay-archive.json").exists(),
+                    f"{name}: refused start rendered a config")
+            require(not (self.work / ("refused-" + name) / "data/archive.sqlite3").exists(),
+                    f"{name}: refused start created archive state")
+            refused.append({"variant": name, "exit_code": result.returncode, "message": message})
+        self.refusals.extend(refused)
+        self.passed("Fly replica start refuses an incomplete environment, foreign roots and a plain origin",
+                    [f"{item['variant']} exits {item['exit_code']}" for item in refused])
+
+    def replicas_ready(self):
+        origin_head = self.request(self.relay_origin, "/v1/sync/head")[1]
+        evidence = []
+        for name in ("replica-ams", "replica-fra"):
+            url, _process = self.start_replica(name, self.replica_env(name))
+            self.until(lambda: self.ready(url)[0] == 200, name + " pinned readiness")
+            code, status = self.ready(url)
+            head = self.request(url, "/v1/sync/head")[1]
+            readiness = self.request(url, "/v1/sync/readiness")[1]
+            require(status["freshness"] == "fresh" and status["mode"] == "remote",
+                    f"{name} is not a fresh remote replica")
+            require(head["genesis_sha256"] == self.pins["genesis_sha256"] and head["network_id"] == self.pins["network_id"]
+                    and readiness["sequencer_public_key"] == self.pins["sequencer_public_key"],
+                    f"{name} serves different pins")
+            require(head["head_batch_id"] == origin_head["head_batch_id"]
+                    and head["head_raw_sha256"] == origin_head["head_raw_sha256"],
+                    f"{name} head is not the origin head")
+            number = origin_head["head_batch"]
+            require(self.request(url, f"/v1/sync/batches/{number}", raw=True)[1]
+                    == self.request(self.relay_origin, f"/v1/sync/batches/{number}", raw=True)[1],
+                    f"{name} batch bytes differ from the origin")
+            config = json.loads((self.work / name / "run/relay-archive.json").read_text())
+            require(config["listener"] == "plain" and config["upstreams"] == [self.relay_origin]
+                    and config["ca_file"] == str(self.work / name / "run/ca.pem"),
+                    f"{name} config does not pin the TLS origin through the CA bundle")
+            evidence.append(f"{name} readyz=200 head={number} batch bytes match origin")
+        self.passed("two replicas validate pins and continuity against the TLS origin before readiness", evidence)
+
+    def wrong_pin(self):
+        env = self.replica_env("replica-wrong-pin", LAYERX_RELAY_ARCHIVE_GENESIS_SHA256="11" * 32)
+        url, process = self.start_replica("replica-wrong-pin", env)
+        self.until(lambda: self.ready(url)[1].get("last_attempt") is not None, "wrong-pin replica attempt")
+        code, status = self.ready(url)
+        codes = {item["code"] for item in status["last_attempt"]["refusals"]}
+        require(code == 503 and status["ready"] is False and codes == {"pin_mismatch"},
+                "replica with a wrong genesis pin did not refuse the origin")
+        require(self.request(url, "/v1/sync/head")[1]["head_batch"] is None, "wrong-pin replica archived a batch")
+        self.stop(process)
+        self.passed("a replica with a wrong genesis pin refuses the origin and never becomes ready",
+                    ["readyz=503", "refusal=pin_mismatch", "head_batch=null"])
+
+    def post(self, url, body, authorization):
+        request = urllib.request.Request(url + "/v1/activities", data=body, method="POST", headers={
+            "Content-Type": "application/octet-stream", "Authorization": authorization})
+        try:
+            response = urllib.request.urlopen(request, timeout=30)
+        except urllib.error.HTTPError as error:
+            response = error
+        with response:
+            return response.status, response.read()
+
+    def forwarding(self):
+        url = self.replicas["replica-ams"][0]
+        activity = self.execute([self.build / "tests/relay-archive-sign", "1"]).stdout
+        authorization = "Bearer " + self.token.read_text()
+        status, body = self.post(url, activity, authorization)
+        require(len(self.router.received) == 1, "replica did not forward exactly one submission to the router")
+        forwarded = self.router.received[0]
+        require(forwarded["path"] == "/v1/activities" and forwarded["body"] == activity,
+                "replica did not forward the original signed activity bytes")
+        require(forwarded["headers"].get("Authorization") == authorization,
+                "replica did not carry the submitter's credential to the router")
+        verdict = self.router.answers[0]
+        require(verdict["status"] not in (408, 425, 429, 500, 502, 503, 504),
+                f"router answered a retryable {verdict['status']}, no definitive verdict to relay")
+        require(status == verdict["status"] and body == verdict["body"],
+                "replica did not return the router's verdict unchanged")
+        self.passed("replica forwards the original signed bytes and returns the router's verdict unchanged",
+                    [f"forwarded {len(activity)} bytes byte-exact", f"verdict HTTP {status} relayed verbatim"])
+        altered = bytearray(activity)
+        altered[-1] ^= 1
+        before = len(self.router.received)
+        status, body = self.post(url, bytes(altered), authorization)
+        require(400 <= status < 500, f"altered activity bytes were not refused: HTTP {status}")
+        require(all(item["body"] != activity for item in self.router.received[before:]),
+                "altered submission forwarded the original bytes")
+        if len(self.router.received) > before:
+            require(self.router.received[-1]["body"] == bytes(altered)
+                    and self.router.answers[-1]["status"] == status,
+                    "altered submission verdict was not the router's")
+        self.passed("altered activity bytes are refused with a 4xx and never replaced by the original",
+                    [f"altered verdict HTTP {status}",
+                     "refused before forwarding" if len(self.router.received) == before else "router refused"])
+
+    def restart(self):
+        url, process, env = self.replicas["replica-fra"]
+        before = self.request(url, "/v1/sync/head")[1]
+        self.stop(process)
+        restarted = now_ms()
+        url, _process = self.start_replica("replica-fra", env)
+
+        def revalidated():
+            value = self.ready(url)
+            return value if value[0] == 200 and value[1]["last_observation"]["at_ms"] > restarted else None
+        self.until(lambda: self.request(url, "/healthz")[0] == 200, "restarted replica listener")
+        require(self.request(url, "/v1/sync/head")[1]["head_batch"] is not None,
+                "restart lost the archived history on the volume")
+        code, status = self.until(revalidated, "restarted replica freshness revalidation")
+        after = self.request(url, "/v1/sync/head")[1]
+        require(int(after["head_batch"]) >= int(before["head_batch"]), "restart regressed the archived head")
+        readiness = self.request(url, "/v1/sync/readiness")[1]
+        require(readiness["recovered_current_process"] is True, "readiness was not re-proved by this process")
+        self.passed("restart keeps the volume history and revalidates freshness before readiness",
+                    [f"head_batch {before['head_batch']} retained", "observation.at_ms after restart",
+                     "recovered_current_process=true"])
+
+    def failed_replica(self):
+        dead = f"https://127.0.0.1:{unused_port()}"
+        env = self.replica_env("replica-isolated", LAYERX_RELAY_ARCHIVE_UPSTREAM=dead)
+        url, process = self.start_replica("replica-isolated", env)
+        self.until(lambda: self.ready(url)[1].get("last_attempt") is not None, "isolated replica attempt")
+        token = self.token.read_text().encode()
+        key = (self.work / "tls.key").read_bytes()
+        answers = [self.ready(url)[1], self.request(url, "/v1/sync/readiness")[1],
+                   self.request(url, "/v1/sync/network")[1], self.request(url, "/v1/sync/head")[1]]
+        served = json.dumps(answers).encode()
+        require(self.ready(url)[0] == 503 and answers[0]["ready"] is False, "replica without its origin became ready")
+        require(token not in served and b"PRIVATE KEY" not in served and str(self.source_log).encode() not in served,
+                "failed replica exposed origin material or credentials")
+        run = self.work / "replica-isolated/run"
+        require(sorted(path.name for path in run.iterdir()) == ["ca.pem", "relay-archive.json"],
+                "replica runtime directory holds more than its config and CA bundle")
+        for path in run.iterdir():
+            text = path.read_bytes()
+            require(token not in text and b"PRIVATE KEY" not in text, f"{path.name} carries origin material")
+        self.stop(process)
+        self.passed("a replica without its origin is unready and exposes no origin key, source or credential",
+                    ["readyz=503", "no submission token, private key or source log in served documents",
+                     "run directory = relay-archive.json + ca.pem"])
+
+    def run(self):
+        self.manifest_contract()
+        self.setup()
+        sign = self.build / "tests/relay-archive-sign"
+        require(sign.is_file() and os.access(sign, os.X_OK), "tests/relay-archive-sign is not built")
+        self.origin_contract()
+        self.start_refusals()
+        self.replicas_ready()
+        self.wrong_pin()
+        self.forwarding()
+        self.restart()
+        self.failed_replica()
 
 
 def revision():
@@ -1951,9 +2283,11 @@ def main():
                      "tests/relay-archive-sign"):
             require((build / path).is_file() and os.access(build / path, os.X_OK),
                     f"required built executable {path} is absent; run make relay-archive-build")
-        contract = Contract(build, candidate)
+        relay = arguments.case == "relay-fly-assembly"
+        contract = (RelayFlyContract if relay else Contract)(build, candidate)
         contract.run()
-        require(len(contract.cases) == 17, f"expected 17 executed cases, ran {len(contract.cases)}")
+        expected = 8 if relay else 17
+        require(len(contract.cases) == expected, f"expected {expected} executed cases, ran {len(contract.cases)}")
         result = {"status": "passed", "case": arguments.case, "revision": revision(),
                   "candidate": candidate, "cases": contract.cases, "config_refusals": contract.refusals,
                   "binaries": "built from this checkout; candidate archive bindings are recorded as declared"}

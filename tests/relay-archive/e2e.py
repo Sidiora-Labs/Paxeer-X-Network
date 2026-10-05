@@ -450,7 +450,20 @@ class Scenario:
             except ValueError:
                 continue
             raise AssertionError("unsafe or incompatible peer advertisement accepted")
-        self.passed("peer-discovered bootstrap and live-compatible history; foreign, expired and private peers refused")
+        from protocol import ProtocolError, resolve_safe_addresses
+        require(resolve_safe_addresses("fdaa::3", 9457, False, True) == ("fdaa::3",),
+                "Fly private network refused with its allowance set")
+        refused = [("fdaa::3", False, False), ("fd00::1", False, True), ("fc00::1", False, True),
+                   ("fdab::1", False, True), ("10.0.0.1", False, True), ("::1", False, True),
+                   ("127.0.0.1", False, True)]
+        for host, loopback, fly_private in refused:
+            try:
+                resolve_safe_addresses(host, 9457, loopback, fly_private)
+            except ProtocolError:
+                continue
+            raise AssertionError(f"non-global endpoint {host} admitted")
+        self.passed("peer-discovered bootstrap and live-compatible history; foreign, expired and private peers refused; "
+                    "only the Fly 6PN range is admitted by its allowance")
 
     def run_all(self):
         self.setup()

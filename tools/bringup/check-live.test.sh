@@ -148,6 +148,10 @@ while [ "$#" -gt 0 ]; do
 		group="$2"
 		shift 2
 		;;
+	--machine)
+		group="$2"
+		shift 2
+		;;
 	--command)
 		command="$2"
 		shift 2
@@ -176,6 +180,10 @@ root="$CHECK_LIVE_TEST_FLY/$app"
 case "$sub" in
 "ssh console")
 	mkdir -p "$root/$group/data" "$root/secrets"
+	if [ -f "$root/$group/loopback" ]; then
+		read -r from to <"$root/$group/loopback"
+		command="${command//$from/$to}"
+	fi
 	command="${command//\/data\//$root/$group/data/}"
 	command="${command//\/run\/secrets\//$root/secrets/}"
 	command="${command//\/run\/layerx\//$root/$group/run/layerx/}"
@@ -3476,6 +3484,187 @@ CHECK_LIVE_HUMAN_BASE="$origin/good" expect check_live_human_no_probe_email "$wo
 	"pass readyz http=200 ready=true" \
 	"fail rp-id email=unset" \
 	"check-live: 1 check(s) failed"
+
+# The relay cases read a TLS origin in the kernel fixture machine, two relay
+# machines and the public route, all answered by one loopback responder whose
+# scenario file picks the fault: a stale origin, a replica with a wrong
+# genesis pin, a replica two batches behind, or a route that accepts flipped
+# activity bytes. The machines list of the relay app names the started
+# machines; one machine stands for a missing replica.
+relay_app=fx-relay-archive
+mkdir -p "$fx/platform/relay_archive" "$work/relay"
+printf 'app = "%s"\n' "$relay_app" >"$fx/platform/relay_archive/fly.toml"
+openssl req -x509 -newkey rsa:2048 -nodes -days 2 -subj /CN=relay-test-ca \
+	-keyout "$work/relay/ca.key" -out "$work/relay/ca.pem" \
+	-addext basicConstraints=critical,CA:TRUE -addext keyUsage=critical,keyCertSign >/dev/null 2>&1
+openssl req -newkey rsa:2048 -nodes -subj /CN=layerx-relay-archive \
+	-keyout "$work/relay/key.pem" -out "$work/relay/req.pem" >/dev/null 2>&1
+printf 'subjectAltName=DNS:layerx-relay-archive,IP:127.0.0.1\nextendedKeyUsage=serverAuth\n' >"$work/relay/ext"
+openssl x509 -req -in "$work/relay/req.pem" -CA "$work/relay/ca.pem" -CAkey "$work/relay/ca.key" \
+	-CAcreateserial -days 2 -extfile "$work/relay/ext" -out "$work/relay/cert.pem" >/dev/null 2>&1
+mkdir -p "$fly/$kernel/app/data/tls/relay-archive" "$fly/$kernel/app/data/layerx/node/genesis"
+cp "$work/relay/ca.pem" "$fly/$kernel/app/data/tls/relay-archive/ca.pem"
+printf 'relay fixture genesis\n' >"$fly/$kernel/app/data/layerx/node/genesis/genesis.manifest"
+relay_genesis="$(sha256sum "$fly/$kernel/app/data/layerx/node/genesis/genesis.manifest" | cut -d' ' -f1)"
+printf 'signed relay fixture activity' >"$work/relay/activity"
+printf 'fixture-key\n' >"$work/relay/key"
+cat >"$work/relay/responder.py" <<'PY'
+import hashlib
+import http.server
+import json
+import ssl
+import sys
+import threading
+
+ports, genesis, scenario_file, activity_file, cert, key = sys.argv[1:7]
+with open(activity_file, "rb") as source:
+    activity = source.read()
+SEQUENCER = "ab" * 32
+HEADS = {"origin": 10, "public": 10, "m1": 10, "m2": 9}
+
+
+def scenario():
+    with open(scenario_file, encoding="utf-8") as source:
+        return source.read().strip()
+
+
+class Relay(http.server.BaseHTTPRequestHandler):
+    def log_message(self, *_):
+        pass
+
+    def answer(self, code, value, raw=None):
+        body = raw if raw is not None else json.dumps(value).encode()
+        self.send_response(code)
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def role(self):
+        if self.server.role == "origin":
+            return "origin", self.path
+        role, _, rest = self.path.lstrip("/").partition("/")
+        return role, "/" + rest
+
+    def do_GET(self):
+        role, path = self.role()
+        mode = scenario()
+        head = HEADS[role] - (2 if mode == "lagging" and role == "m2" else 0)
+        pin = "00" * 31 + "01" if mode == "wrong-pin" and role == "m2" else genesis
+        if path == "/readyz":
+            stale = mode == "stale" and role == "origin"
+            self.answer(503 if stale else 200, {"ready": not stale, "freshness": "stale" if stale else "fresh"})
+        elif path == "/v1/sync/head":
+            self.answer(200, {"version": 1, "network_id": 125, "genesis_sha256": pin, "head_batch": str(head)})
+        elif path == "/v1/sync/readiness":
+            self.answer(200, {"ready": True, "sequencer_public_key": SEQUENCER})
+        elif path.startswith("/v1/sync/batches/") and int(path.rsplit("/", 1)[1]) <= head:
+            self.answer(200, None, b"batch-" + path.rsplit("/", 1)[1].encode())
+        else:
+            self.answer(404, {"error": {"code": "not_found"}})
+
+    def do_POST(self):
+        role, path = self.role()
+        body = self.rfile.read(int(self.headers.get("Content-Length", "0")))
+        keyed = self.headers.get("Authorization") == "LayerX-Key fixture-key"
+        if role == "public" and path == "/v1/activities" and keyed and (body == activity or scenario() == "altered-accepted"):
+            self.answer(200, {"ok": True, "result": {"activity_id": hashlib.sha256(activity).hexdigest()}})
+        else:
+            self.answer(400, {"ok": False, "error": {"code": "activity_refused"}})
+
+
+servers = []
+for role in ("origin", "plain"):
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Relay)
+    server.role = role
+    if role == "origin":
+        context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        context.load_cert_chain(cert, key)
+        server.socket = context.wrap_socket(server.socket, server_side=True)
+    servers.append(server)
+with open(ports, "w", encoding="ascii") as handle:
+    handle.write(" ".join(str(s.server_address[1]) for s in servers))
+for server in servers[1:]:
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+servers[0].serve_forever()
+PY
+echo good >"$work/relay/scenario"
+python3 "$work/relay/responder.py" "$work/relay/ports" "$relay_genesis" "$work/relay/scenario" \
+	"$work/relay/activity" "$work/relay/cert.pem" "$work/relay/key.pem" 2>/dev/null &
+internal_pids="$internal_pids $!"
+for _ in $(seq 50); do
+	[ -s "$work/relay/ports" ] && break
+	sleep 0.1
+done
+if [ ! -s "$work/relay/ports" ]; then
+	echo "check-live.test: the relay responder did not start" >&2
+	exit 2
+fi
+read -r relay_tls relay_plain <"$work/relay/ports"
+echo "127.0.0.1:9457 127.0.0.1:$relay_tls" >"$fly/$kernel/app/loopback"
+for machine in m1 m2; do
+	mkdir -p "$fly/$relay_app/$machine"
+	echo "127.0.0.1:8080 127.0.0.1:$relay_plain/$machine" >"$fly/$relay_app/$machine/loopback"
+done
+relay_machines='[{"id":"m1","region":"ams","state":"started"},{"id":"m2","region":"fra","state":"started"}]'
+relay_activity_id="$(sha256sum "$work/relay/activity" | cut -d' ' -f1)"
+export CHECK_LIVE_RELAY_ORIGIN="http://127.0.0.1:$relay_plain/public" CHECK_LIVE_RELAY_ACTIVITY="$work/relay/activity"
+export CHECK_LIVE_RELAY_ACTIVITY_ID="$relay_activity_id" CHECK_LIVE_RELAY_KEY_FILE="$work/relay/key"
+
+CHECK_LIVE_TEST_MACHINES="$relay_machines" CHECK_LIVE_TEST_PROGRAM="$fx_checker" \
+	expect check_live_relay_passing - 0 relay -- \
+	"pass relay-origin app=$kernel head=10 ready=true freshness=fresh genesis=match" \
+	"pass relay-public origin=http://127.0.0.1:$relay_plain/public head=10 lag=0 ready=true freshness=fresh pins=match bytes=match" \
+	"pass machines started=2 regions=ams,fra app=$relay_app" \
+	"pass relay-replica machine=m1 region=ams head=10 lag=0" \
+	"pass relay-replica machine=m2 region=fra head=9 lag=1 ready=true freshness=fresh pins=match bytes=match" \
+	"pass relay-origin-recheck app=$kernel head=10" \
+	"pass relay-forward http=200 activity=match" \
+	"pass relay-altered http=400 refused=activity_refused" \
+	"check-live: all checks passed"
+if grep -q 'fixture-key' "$CHECK_LIVE_TEST_CALLS" "$CHECK_LIVE_TEST_STDIN"; then
+	echo "FAIL check_live_relay_key_stays_local: the router key reached a machine"
+	failures=$((failures + 1))
+else
+	echo "ok   check_live_relay_key_stays_local"
+fi
+
+CHECK_LIVE_TEST_MACHINES='[{"id":"m1","region":"ams","state":"started"},{"id":"m2","region":"fra","state":"stopped"}]' \
+	CHECK_LIVE_TEST_PROGRAM="$fx_checker" expect check_live_relay_missing_replica - 1 relay -- \
+	"fail machines started=1 regions=ams app=$relay_app" \
+	"pass relay-replica machine=m1 region=ams" \
+	"check-live: 1 check(s) failed"
+
+echo wrong-pin >"$work/relay/scenario"
+CHECK_LIVE_TEST_MACHINES="$relay_machines" CHECK_LIVE_TEST_PROGRAM="$fx_checker" \
+	expect check_live_relay_wrong_pin - 1 relay -- \
+	"pass relay-replica machine=m1 region=ams" \
+	"fail relay-replica machine=m2 region=fra head=9 lag=1 ready=true freshness=fresh pins=mismatch" \
+	"check-live: 1 check(s) failed"
+
+echo lagging >"$work/relay/scenario"
+CHECK_LIVE_TEST_MACHINES="$relay_machines" CHECK_LIVE_TEST_PROGRAM="$fx_checker" \
+	expect check_live_relay_lagging_replica - 1 relay -- \
+	"fail relay-replica machine=m2 region=fra head=7 lag=3" \
+	"check-live: 1 check(s) failed"
+
+echo stale >"$work/relay/scenario"
+CHECK_LIVE_TEST_MACHINES="$relay_machines" CHECK_LIVE_TEST_PROGRAM="$fx_checker" \
+	expect check_live_relay_stale_origin - 1 relay -- \
+	"fail relay-origin app=$kernel head=10 ready=false freshness=stale genesis=match" \
+	"fail relay-replica machine=m1 region=ams" \
+	"fail relay-origin-recheck app=$kernel head=10 ready=false freshness=stale"
+
+echo altered-accepted >"$work/relay/scenario"
+CHECK_LIVE_TEST_MACHINES="$relay_machines" CHECK_LIVE_TEST_PROGRAM="$fx_checker" \
+	expect check_live_relay_altered_bytes_accepted - 1 relay -- \
+	"pass relay-forward http=200 activity=match" \
+	"fail relay-altered http=200 activity=$relay_activity_id refused=no" \
+	"check-live: 1 check(s) failed"
+echo good >"$work/relay/scenario"
+
+CHECK_LIVE_RELAY_ACTIVITY_ID= CHECK_LIVE_TEST_PROGRAM="$fx_checker" \
+	expect check_live_relay_no_activity_id - 2 relay -- \
+	"check-live: CHECK_LIVE_RELAY_ACTIVITY_ID is unset or malformed"
 
 # The fleet script shares the host map and the ssh helpers, so its own test
 # runs as the last case, with this test's stand-ins off the PATH.

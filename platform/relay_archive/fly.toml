@@ -1,0 +1,87 @@
+app = "paxeer-relay-archive"
+primary_region = "ams"
+kill_signal = "SIGTERM"
+kill_timeout = "30s"
+
+[build]
+  dockerfile = "../../docker/relay-archive/Dockerfile"
+  build-target = "fly"
+
+[deploy]
+  strategy = "rolling"
+
+# Redundant pinned relay archive replicas: two machines, one in ams and one
+# in fra, each with its own relay_archive_data volume. The origin is the
+# relay-archive service colocated with the sequencer in the kernel app
+# paxeer-human-service (docker/kernel/init.sh), serving the pinned
+# genesis/network/sequencer data over TLS on :9457 with a certificate issued
+# by the internal CA. Each replica validates that certificate against the
+# LAYERX_INTERNAL_CA_ROOT secret, validates the pins and batch continuity, and
+# reports ready only once it is fresh. Replicas hold no origin key, no source
+# log and no submission token: signed activities are forwarded unchanged to
+# the router, which authenticates them and answers with its verdict.
+#
+# Order, inventory first: `fly apps list`, `fly volumes list -a
+# paxeer-relay-archive`, `fly image show -a paxeer-relay-archive` and `fly
+# secrets list -a paxeer-relay-archive` are recorded before any change, and an
+# existing app, volume or secret is reused, never recreated. Then:
+#   fly volumes create relay_archive_data --region ams -a paxeer-relay-archive
+#   fly volumes create relay_archive_data --region fra -a paxeer-relay-archive
+#   fly secrets import -a paxeer-relay-archive   (stdin, never printed)
+#   fly deploy -c platform/relay_archive/fly.toml
+#   fly scale count 2 --region ams,fra -a paxeer-relay-archive
+#   tools/bringup/edge.sh add archive.paxeer.network paxeer-relay-archive
+#   tools/bringup/check-live.sh relay
+# Secrets: LAYERX_RELAY_ARCHIVE_GENESIS_SHA256 (sha256 of the kernel's
+# genesis.manifest), LAYERX_RELAY_ARCHIVE_SEQUENCER_ID and
+# LAYERX_RELAY_ARCHIVE_SEQUENCER_PUBLIC_KEY (the kernel's core.env and
+# sequencer-public-key), and LAYERX_INTERNAL_CA_ROOT (the internal CA root
+# certificate of tools/bringup/ca.sh). A restart keeps the volume history and
+# revalidates freshness against the origin before readiness returns.
+[env]
+  LAYERX_RELAY_ARCHIVE_NETWORK_ID = "125"
+  LAYERX_RELAY_ARCHIVE_DATA_DIR = "/var/lib/layerx/relay-archive"
+  LAYERX_RELAY_ARCHIVE_RUN_DIR = "/run/layerx/relay-archive"
+  LAYERX_RELAY_ARCHIVE_LISTEN = "[::]:8080"
+  LAYERX_RELAY_ARCHIVE_PUBLIC_URL = "https://archive.paxeer.network"
+  LAYERX_RELAY_ARCHIVE_UPSTREAM = "https://paxeer-human-service.internal:9457"
+  LAYERX_RELAY_ARCHIVE_ALLOW_FLY_PRIVATE_NETWORK = "1"
+  LAYERX_RELAY_ARCHIVE_SUBMISSION_UPSTREAM = "https://api-mainnet-beta.paxeer.network/v1/activities"
+  LAYERX_RELAY_ARCHIVE_INTERNAL_CA = "/etc/layerx/trust/ca.crt"
+  LAYERX_RELAY_ARCHIVE_PUBLIC_ROOTS = "/usr/share/ca-certificates/mozilla/ISRG_Root_X1.crt /usr/share/ca-certificates/mozilla/ISRG_Root_X2.crt"
+  LAYERX_RELAY_ARCHIVE_CODEC = "/usr/local/bin/layerx-archive-codec"
+
+[[files]]
+  guest_path = "/etc/layerx/trust/ca.crt"
+  secret_name = "LAYERX_INTERNAL_CA_ROOT"
+
+[[mounts]]
+  source = "relay_archive_data"
+  destination = "/var/lib/layerx/relay-archive"
+  initial_size = "50gb"
+  snapshot_retention = 14
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = "off"
+  auto_start_machines = false
+  min_machines_running = 2
+
+  [http_service.concurrency]
+    type = "requests"
+    soft_limit = 200
+    hard_limit = 250
+
+  [[http_service.checks]]
+    method = "GET"
+    path = "/readyz"
+    interval = "15s"
+    timeout = "5s"
+    grace_period = "300s"
+
+[[vm]]
+  size = "shared-cpu-2x"
+  memory = "2gb"
+  cpus = 2
+  cpu_kind = "shared"

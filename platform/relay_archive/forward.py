@@ -108,6 +108,7 @@ class SafeHTTPClient:
             endpoint.host,
             endpoint.port,
             self.config.allow_loopback_dev and endpoint.loopback,
+            self.config.allow_fly_private_network,
         )
         last_error: BaseException | None = None
         for address in addresses[:4]:

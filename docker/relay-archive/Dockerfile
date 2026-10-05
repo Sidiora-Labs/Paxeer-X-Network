@@ -11,7 +11,7 @@ RUN rustup show active-toolchain \
     && test -x build/bin/layerxd \
     && test -x build/bin/layerx-archive-codec
 
-FROM debian:bookworm-slim@sha256:88200866dfff7ea7f5cbcb6ec7c8a701889efe6fe859fe64d6990e4b07ea4171
+FROM debian:bookworm-slim@sha256:88200866dfff7ea7f5cbcb6ec7c8a701889efe6fe859fe64d6990e4b07ea4171 AS base
 RUN apt-get update && apt-get install -y --no-install-recommends \
         ca-certificates libssl3 libsqlite3-0 python3 \
     && rm -rf /var/lib/apt/lists/* \
@@ -27,10 +27,18 @@ COPY --from=build /src/platform/relay_archive/store.py /opt/layerx/relay_archive
 COPY --from=build /src/platform/relay_archive/protocol.py /opt/layerx/relay_archive/protocol.py
 COPY --from=build /src/platform/relay_archive/forward.py /opt/layerx/relay_archive/forward.py
 COPY --from=build /src/platform/relay_archive/peers.py /opt/layerx/relay_archive/peers.py
+COPY --from=build --chmod=0555 /src/platform/relay_archive/install.sh /opt/layerx/relay_archive/install.sh
 ENV LAYERX_RELAY_ARCHIVE_RUNTIME=/opt/layerx/relay_archive/runtime.py \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
 VOLUME ["/var/lib/layerx/relay-archive"]
+
+FROM base AS fly
+EXPOSE 8080
+ENTRYPOINT ["/opt/layerx/relay_archive/install.sh", "--fly-start"]
+CMD []
+
+FROM base
 EXPOSE 9443
 USER 4027:4027
 ENTRYPOINT ["/usr/local/bin/layerxd"]

@@ -22,6 +22,7 @@ DECIMAL = re.compile(r"^(0|[1-9][0-9]*)$")
 SYNC_MODES = ("remote", "local")
 DEFAULT_FRESHNESS_BUDGET_SECONDS = 30.0
 MAX_FRESHNESS_BUDGET_SECONDS = 86_400.0
+FLY_PRIVATE_NETWORK = ipaddress.ip_network("fdaa::/16")
 
 
 class RelayArchiveError(Exception):
@@ -102,6 +103,7 @@ class RelayConfig:
     max_history_page_limit: int
     max_concurrency: int
     allow_loopback_dev: bool
+    allow_fly_private_network: bool
     peer_discovery: Mapping[str, Any]
     sync_mode: str
     sync_mode_configured: bool
@@ -352,7 +354,9 @@ def host_is_loopback(host: str) -> bool:
         return False
 
 
-def resolve_safe_addresses(host: str, port: int, allow_loopback: bool) -> tuple[str, ...]:
+def resolve_safe_addresses(
+    host: str, port: int, allow_loopback: bool, allow_fly_private: bool = False
+) -> tuple[str, ...]:
     try:
         answers = socket.getaddrinfo(host, port, type=socket.SOCK_STREAM)
     except OSError as error:
@@ -364,7 +368,11 @@ def resolve_safe_addresses(host: str, port: int, allow_loopback: bool) -> tuple[
             parsed = ipaddress.ip_address(address)
         except ValueError as error:
             raise ProtocolError("resolver returned a non-IP address") from error
-        allowed = parsed.is_global or (allow_loopback and parsed.is_loopback)
+        allowed = (
+            parsed.is_global
+            or (allow_loopback and parsed.is_loopback)
+            or (allow_fly_private and parsed.version == 6 and parsed in FLY_PRIVATE_NETWORK)
+        )
         if not allowed:
             raise ProtocolError(f"endpoint {host} resolves to a non-public address")
         normalized = str(parsed)
@@ -515,6 +523,7 @@ def load_config(path: str | os.PathLike[str]) -> RelayConfig:
         "max_history_page_limit",
         "max_concurrency",
         "allow_loopback_dev",
+        "allow_fly_private_network",
         "peer_discovery",
         "sync_mode",
         "freshness_budget_seconds",
@@ -545,6 +554,9 @@ def load_config(path: str | os.PathLike[str]) -> RelayConfig:
     allow_loopback = document.get("allow_loopback_dev", True)
     if not isinstance(allow_loopback, bool):
         raise ConfigError("allow_loopback_dev must be boolean")
+    allow_fly_private = document.get("allow_fly_private_network", False)
+    if not isinstance(allow_fly_private, bool):
+        raise ConfigError("allow_fly_private_network must be boolean")
     upstream_values = document.get("upstreams", [])
     submission_values = document.get("submission_upstreams", [])
     if not isinstance(upstream_values, list) or not isinstance(submission_values, list):
@@ -712,6 +724,7 @@ def load_config(path: str | os.PathLike[str]) -> RelayConfig:
             document.get("max_concurrency", 16), "max_concurrency", 1, 128
         ),
         allow_loopback_dev=allow_loopback,
+        allow_fly_private_network=allow_fly_private,
         peer_discovery=peer_discovery,
         sync_mode=sync_mode,
         sync_mode_configured=sync_mode_value is not None,
