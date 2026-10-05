@@ -23046,7 +23046,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.24.1]
 title = "Create isolated Human role runtime directories before privilege drop"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 9
 requires = ["0.2", "24.10", "24.11", "24.8", "24.2", "12.3", "12.2", "24.3", "22.8"]
@@ -29571,7 +29571,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.24.7]
 title = "Verify the complete integrated CA identity roster exactly"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 9
 requires = ["0.2", "24.3"]
