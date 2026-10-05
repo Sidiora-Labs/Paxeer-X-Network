@@ -156,6 +156,19 @@ impl SettlementPlan {
             .checked_add(self.challenger)?
             .checked_add(self.stake_for_provider)
     }
+
+    /// # Errors
+    /// Returns an error unless the escrow and the challenge stake are each paid out exactly,
+    /// with the stake going to one side only.
+    pub fn conserves(self, escrow: Amount, stake: Amount) -> Result<(), ProgramError> {
+        if self.provider.checked_add(self.tenant)? != escrow
+            || self.challenger.checked_add(self.stake_for_provider)? != stake
+            || (!self.challenger.is_zero() && !self.stake_for_provider.is_zero())
+        {
+            return Err(malformed());
+        }
+        Ok(())
+    }
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -456,20 +469,17 @@ pub fn finalize_unchallenged<'a>(
         return Err(malformed());
     }
     let refund = lease.funded.checked_sub(claim.payable)?;
+    let plan = SettlementPlan {
+        provider: claim.payable,
+        tenant: refund,
+        challenger: Amount::ZERO,
+        stake_for_provider: Amount::ZERO,
+    };
+    plan.conserves(lease.funded, Amount::ZERO)?;
     let offer = release_capacity(offer, &lease)?;
     lease.status = LeaseStatus::Settled;
     claim.status = ClaimStatus::Finalized;
-    Ok((
-        offer,
-        lease,
-        claim,
-        SettlementPlan {
-            provider: claim.payable,
-            tenant: refund,
-            challenger: Amount::ZERO,
-            stake_for_provider: Amount::ZERO,
-        },
-    ))
+    Ok((offer, lease, claim, plan))
 }
 
 #[cfg(any(test, target_arch = "wasm32"))]
@@ -488,6 +498,7 @@ pub(crate) fn resolve<'a>(
         || challenge.offer_id != offer.id
         || challenge.provider != lease.provider
         || challenge.tenant != lease.tenant
+        || challenge.stake != claim.challenger_stake
         || resolution.claim_id != claim.id
         || resolution.challenge_id != challenge.id
         || resolution.dispute_commitment == [0; 32]
@@ -520,6 +531,7 @@ pub(crate) fn resolve<'a>(
     if plan.total()? != expected {
         return Err(malformed());
     }
+    plan.conserves(lease.funded, challenge.stake)?;
     Ok((offer, lease, claim, plan))
 }
 
@@ -573,12 +585,17 @@ pub fn fund_challenge(challenge: UsageChallenge<'_>, asset: AssetId) -> Result<(
 
 #[cfg(target_arch = "wasm32")]
 /// # Errors
-/// Returns an error for invalid payment fields, a missing required challenge or a refused host transfer.
+/// Returns an error for a non-conserving plan, invalid payment fields, a missing required challenge
+/// or a refused host transfer.
 pub fn execute_settlement(
     lease: &ComputeLease<'_>,
     challenge: Option<UsageChallenge<'_>>,
     plan: SettlementPlan,
 ) -> Result<(), ProgramError> {
+    plan.conserves(
+        lease.funded,
+        challenge.map_or(Amount::ZERO, |dispute| dispute.stake),
+    )?;
     let escrow_seed = ProgramAccountSeed::new(lease.escrow_seed)?;
     if !plan.provider.is_zero() {
         transfer::pay_from_program_account(ProgramAccountPayment::new(
@@ -624,7 +641,9 @@ fn malformed() -> ProgramError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{open, register, OpenLease, RegisterOffer, VerificationModel};
+    use crate::{
+        expire, open, register, OpenLease, RegisterOffer, SettlementRecord, VerificationModel,
+    };
 
     fn account(byte: u8) -> AccountId {
         AccountId::new([byte; 32]).unwrap_or_else(|error| panic!("settlement fixture: {error}"))
@@ -817,5 +836,318 @@ mod tests {
                 .checked_add(dispute.stake)
                 .unwrap_or_else(|error| panic!("settlement fixture: {error}"))
         );
+    }
+
+    fn ok<T>(result: Result<T, ProgramError>) -> T {
+        result.unwrap_or_else(|error| panic!("settlement fixture: {error}"))
+    }
+    fn priced(units: u64) -> ProviderCommitment {
+        ProviderCommitment {
+            usage: MeteredUsageClaim {
+                compute_units: units,
+                ..commitment().usage
+            },
+            payable: Amount::from_integer(units * 4),
+            ..commitment()
+        }
+    }
+    fn contradicting(claim: &UsageClaim) -> ContradictingCommitment {
+        ContradictingCommitment {
+            input_commitment: claim.input_commitment,
+            output_digest: [11; 32],
+            execution_state_root: claim.execution_state_root,
+            usage: claim.usage,
+        }
+    }
+    fn request(
+        challenger: AccountId,
+        stake: Amount,
+        contradictory: ContradictingCommitment,
+    ) -> ChallengeRequest<'static> {
+        ChallengeRequest {
+            challenge_id: [12; 32],
+            challenger,
+            stake_account: account(14),
+            stake_seed: b"challenge/12",
+            stake,
+            contradictory,
+        }
+    }
+
+    #[test]
+    fn unchallenged_claim_is_final_and_its_settlement_irreversible() {
+        let (offer, lease) = fixture();
+        let (claim, window) = ok(commit_usage(offer, &lease, priced(6), account(1), 20));
+        let (_, dispute) = ok(challenge(
+            offer,
+            &lease,
+            claim,
+            &request(account(13), claim.challenger_stake, contradicting(&claim)),
+            window.last_challenge_height,
+        ));
+        let (settled_offer, settled_lease, final_claim, plan) = ok(finalize_unchallenged(
+            offer,
+            lease,
+            claim,
+            window.last_challenge_height + 1,
+        ));
+        assert_eq!(final_claim.status, ClaimStatus::Finalized);
+        assert_eq!(settled_lease.status, LeaseStatus::Settled);
+        assert_eq!(
+            settled_offer.available_capacity,
+            offer.available_capacity + lease.units
+        );
+        assert_eq!(plan.provider, Amount::from_integer(24u64));
+        assert_eq!(plan.tenant, Amount::from_integer(16u64));
+        let late = request(account(13), claim.challenger_stake, contradicting(&claim));
+        assert!(challenge(
+            offer,
+            &lease,
+            final_claim,
+            &late,
+            window.last_challenge_height
+        )
+        .is_err());
+        assert!(challenge(
+            settled_offer,
+            &settled_lease,
+            final_claim,
+            &late,
+            window.last_challenge_height
+        )
+        .is_err());
+        assert!(finalize_unchallenged(offer, lease, final_claim, 40).is_err());
+        assert!(finalize_unchallenged(settled_offer, settled_lease, final_claim, 40).is_err());
+        assert!(finalize_unchallenged(settled_offer, settled_lease, claim, 40).is_err());
+        assert!(expire(settled_offer, settled_lease, lease.expires_at).is_err());
+        let resolution = ArbiterResolution {
+            claim_id: claim.id,
+            challenge_id: dispute.id,
+            dispute_commitment: [15; 32],
+            verdict: ArbiterVerdict::Challenger,
+        };
+        assert!(resolve(offer, lease, final_claim, &dispute, resolution).is_err());
+    }
+
+    #[test]
+    fn dispute_requires_stake_and_contradiction_and_freezes_settlement() {
+        let (offer, lease) = fixture();
+        let (claim, window) = ok(commit_usage(offer, &lease, priced(6), account(1), 20));
+        let agreeing = ContradictingCommitment {
+            input_commitment: claim.input_commitment,
+            output_digest: claim.output_digest,
+            execution_state_root: claim.execution_state_root,
+            usage: claim.usage,
+        };
+        assert!(challenge(
+            offer,
+            &lease,
+            claim,
+            &request(account(13), claim.challenger_stake, agreeing),
+            25
+        )
+        .is_err());
+        let underfunded = ok(claim
+            .challenger_stake
+            .checked_sub(Amount::from_integer(1u64)));
+        assert!(challenge(
+            offer,
+            &lease,
+            claim,
+            &request(account(13), underfunded, contradicting(&claim)),
+            25
+        )
+        .is_err());
+        assert!(challenge(
+            offer,
+            &lease,
+            claim,
+            &request(
+                claim.provider,
+                claim.challenger_stake,
+                contradicting(&claim)
+            ),
+            25
+        )
+        .is_err());
+        assert!(challenge(
+            offer,
+            &lease,
+            claim,
+            &request(account(13), claim.challenger_stake, contradicting(&claim)),
+            window.opened_at - 1
+        )
+        .is_err());
+        let (frozen, dispute) = ok(challenge(
+            offer,
+            &lease,
+            claim,
+            &request(account(13), claim.challenger_stake, contradicting(&claim)),
+            window.opened_at,
+        ));
+        assert_eq!(frozen.status, ClaimStatus::Frozen);
+        assert_eq!(dispute.stake, claim.challenger_stake);
+        assert!(challenge(
+            offer,
+            &lease,
+            frozen,
+            &request(account(16), claim.challenger_stake, contradicting(&claim)),
+            25
+        )
+        .is_err());
+        assert!(
+            finalize_unchallenged(offer, lease, frozen, window.last_challenge_height + 1).is_err()
+        );
+        assert!(finalize_unchallenged(offer, lease, frozen, lease.expires_at).is_err());
+        let resolution = ArbiterResolution {
+            claim_id: claim.id,
+            challenge_id: dispute.id,
+            dispute_commitment: [15; 32],
+            verdict: ArbiterVerdict::Provider,
+        };
+        let restaked = UsageChallenge {
+            stake: Amount::from_integer(24u64),
+            ..dispute
+        };
+        assert!(resolve(offer, lease, frozen, &restaked, resolution).is_err());
+        let (_, settled_lease, resolved, _) =
+            ok(resolve(offer, lease, frozen, &dispute, resolution));
+        assert_eq!(resolved.status, ClaimStatus::ProviderWon);
+        assert!(resolve(offer, settled_lease, resolved, &dispute, resolution).is_err());
+        assert!(finalize_unchallenged(offer, settled_lease, resolved, lease.expires_at).is_err());
+    }
+
+    #[test]
+    fn settlement_conserves_value_on_honest_challenged_and_expiry_paths() {
+        let (offer, lease) = fixture();
+        let stake = Amount::from_integer(25u64);
+        let (claim, window) = ok(commit_usage(offer, &lease, priced(6), account(1), 20));
+
+        let (_, honest_lease, honest_claim, honest) = ok(finalize_unchallenged(
+            offer,
+            lease,
+            claim,
+            window.last_challenge_height + 1,
+        ));
+        ok(honest.conserves(lease.funded, Amount::ZERO));
+        assert!(honest.conserves(lease.funded, stake).is_err());
+        let record = ok(SettlementRecord::new(
+            &honest_lease,
+            honest_claim.id,
+            honest.provider,
+            honest.tenant,
+            window.last_challenge_height + 1,
+        ));
+        assert_eq!(
+            ok(record.provider_paid.checked_add(record.tenant_paid)),
+            lease.funded
+        );
+
+        let (frozen, dispute) = ok(challenge(
+            offer,
+            &lease,
+            claim,
+            &request(account(13), stake, contradicting(&claim)),
+            window.last_challenge_height,
+        ));
+        let resolution = ArbiterResolution {
+            claim_id: claim.id,
+            challenge_id: dispute.id,
+            dispute_commitment: [15; 32],
+            verdict: ArbiterVerdict::Challenger,
+        };
+        let (_, won_lease, won_claim, won) =
+            ok(resolve(offer, lease, frozen, &dispute, resolution));
+        assert_eq!(won_claim.status, ClaimStatus::ChallengerWon);
+        assert_eq!(won.provider, Amount::ZERO);
+        assert_eq!(won.tenant, lease.funded);
+        assert_eq!(won.challenger, stake);
+        ok(won.conserves(lease.funded, stake));
+        ok(SettlementRecord::new(
+            &won_lease,
+            won_claim.id,
+            won.provider,
+            won.tenant,
+            window.last_challenge_height,
+        ));
+
+        let (_, lost_lease, lost_claim, lost) = ok(resolve(
+            offer,
+            lease,
+            frozen,
+            &dispute,
+            ArbiterResolution {
+                verdict: ArbiterVerdict::Provider,
+                ..resolution
+            },
+        ));
+        assert_eq!(lost_claim.status, ClaimStatus::ProviderWon);
+        assert_eq!(lost.provider, claim.payable);
+        assert_eq!(lost.stake_for_provider, stake);
+        assert_eq!(lost.challenger, Amount::ZERO);
+        ok(lost.conserves(lease.funded, stake));
+        ok(SettlementRecord::new(
+            &lost_lease,
+            lost_claim.id,
+            lost.provider,
+            lost.tenant,
+            window.last_challenge_height,
+        ));
+
+        let (_, claimed_expiry_lease, claimed_expiry, at_expiry) =
+            ok(finalize_unchallenged(offer, lease, claim, lease.expires_at));
+        assert_eq!(at_expiry, honest);
+        ok(SettlementRecord::new(
+            &claimed_expiry_lease,
+            claimed_expiry.id,
+            at_expiry.provider,
+            at_expiry.tenant,
+            lease.expires_at,
+        ));
+
+        assert!(expire(offer, lease, lease.expires_at - 1).is_err());
+        let (expired_offer, expired) = ok(expire(offer, lease, lease.expires_at));
+        assert_eq!(expired.status, LeaseStatus::ExpiredRefunded);
+        assert_eq!(
+            expired_offer.available_capacity,
+            offer.available_capacity + lease.units
+        );
+        let refund = ok(SettlementRecord::new(
+            &expired,
+            [0; 32],
+            Amount::ZERO,
+            lease.funded,
+            lease.expires_at,
+        ));
+        assert_eq!(refund.tenant_paid, lease.funded);
+        assert!(SettlementRecord::new(
+            &expired,
+            [0; 32],
+            claim.payable,
+            honest.tenant,
+            lease.expires_at
+        )
+        .is_err());
+        assert!(SettlementRecord::new(
+            &expired,
+            [0; 32],
+            Amount::ZERO,
+            honest.tenant,
+            lease.expires_at
+        )
+        .is_err());
+
+        assert!(SettlementPlan {
+            stake_for_provider: stake,
+            ..won
+        }
+        .conserves(lease.funded, ok(stake.checked_add(stake)))
+        .is_err());
+        assert!(SettlementPlan {
+            tenant: ok(honest.tenant.checked_add(Amount::from_integer(1u64))),
+            ..honest
+        }
+        .conserves(lease.funded, Amount::ZERO)
+        .is_err());
     }
 }
