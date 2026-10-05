@@ -1,4 +1,5 @@
 mod authority;
+pub mod bisect;
 pub mod market;
 mod step;
 
