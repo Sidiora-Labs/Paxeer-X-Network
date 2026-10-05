@@ -30910,7 +30910,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.104.34.5]
 title = "Destroy the sandbox and reclaim its state"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 10
 requires = ["0.2", "104.34.4", "104.29.4"]
