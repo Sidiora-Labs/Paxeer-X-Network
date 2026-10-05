@@ -845,6 +845,42 @@ human_policy_bundle_install() {
 		"$LAYERX_NODE_NETWORK_ID" "$LAYERX_NODE_PAXEER_CHAIN_ID"
 }
 
+# human_authority_publish: the producer of the receipt authority's Human role
+# material. The policy graph orders the kernel identity generation that
+# trust_history publishes under $kernel_registry_material and the assembled
+# owner bundle before it; until both are valid the graph status keeps the
+# affected roles waiting, and any inconsistent input is a logged refusal. It
+# then publishes one typed authority generation under
+# $human_state/authority-graph, resumed unchanged on restart, and places
+# principal-policy.json, registry.json and authority.json in
+# $keys/human-authority, where human_authority_ready consumes them.
+human_authority_publish() {
+	local status bundle=${human_policy%/*}
+	while :; do
+		status=$(python3 /usr/local/lib/layerx-human/material.py --policy-graph-status "$bundle/inputs" "$bundle/journal" \
+			"$bundle/inputs/deployment.json" "$bundle/inputs/module-registry.json" "$bundle" "$kernel_registry_material" \
+			"$human_state/authority-graph" "$LAYERX_NODE_NETWORK_ID" "$LAYERX_NODE_PAXEER_CHAIN_ID") || return 1
+		if printf '%s' "$status" | jq -e 'any(.nodes[]; .state == "refused")' >/dev/null; then
+			log "human policy graph refused: $(printf '%s' "$status" | jq -c '[.nodes | to_entries[] | select(.value.state == "refused") | {(.key): .value.reason}]')"
+			return 1
+		fi
+		if printf '%s' "$status" | jq -e '.nodes["assembled-policy"].state == "ready" and .nodes["registry-material"].state == "ready"' >/dev/null; then
+			break
+		fi
+		sleep 5
+	done
+	python3 /usr/local/lib/layerx-human/material.py --publish-authority-material "$bundle" "$kernel_registry_material" \
+		"$human_state/authority-graph" "$LAYERX_NODE_NETWORK_ID" "$LAYERX_NODE_PAXEER_CHAIN_ID" "$keys/human-authority" >/dev/null || {
+		log "human role authority publication refused"
+		return 1
+	}
+	log "human role authority generation published"
+}
+
+if [ "$kernel_profile" = full ]; then
+	human_authority_publish &
+fi
+
 human_genesis_project() {
 	{ flock 8 && python3 - "$genesis" "$human_state/genesis-binding" <<'PY_GENESIS_PROJECT'
 import ctypes

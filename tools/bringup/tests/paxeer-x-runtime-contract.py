@@ -1330,11 +1330,314 @@ def registry_material():
     return code
 
 
+def policy_graph():
+    import importlib.util
+    os.umask(0o077)
+    sys.dont_write_bytecode = True
+    specification = importlib.util.spec_from_file_location('policy_material', ROOT / 'platform/hosted/human/material.py')
+    material = importlib.util.module_from_spec(specification)
+    sys.path.insert(0, str(ROOT / 'platform/hosted/human'))
+    specification.loader.exec_module(material)
+    evidence = None
+    container = None
+    volume = None
+    result = {'task': '24.2', 'cases': [], 'tests': 0, 'skipped': 0, 'exit_code': 1}
+
+    def require(condition, message):
+        if not condition:
+            raise RuntimeError(message)
+
+    def case(name):
+        result['cases'].append(name)
+        print('PASS ' + name, flush=True)
+
+    def refused(action, fragment):
+        try:
+            action()
+        except ValueError as error:
+            require(fragment in str(error), 'refusal reason differs: ' + str(error))
+            return
+        raise RuntimeError('accepted: ' + fragment)
+
+    def copy_tree(source, destination):
+        destination.mkdir(mode=0o700)
+        for path in sorted(source.rglob('*')):
+            target = destination / path.relative_to(source)
+            if path.is_symlink():
+                raise RuntimeError('producer output symlink refused: ' + str(path))
+            if path.is_dir():
+                target.mkdir(mode=0o700)
+            else:
+                material.write_bytes(target, path.read_bytes())
+
+    try:
+        raw = os.environ.get('PAXEER_X_POLICY_GRAPH_EVIDENCE')
+        if not raw:
+            raise FileNotFoundError('PAXEER_X_POLICY_GRAPH_EVIDENCE owned0700 directory required')
+        evidence = Path(raw)
+        material.protected_file(evidence, 0o700)
+        revision = command(['git', '-C', str(ROOT), 'rev-parse', 'HEAD']).stdout.strip()
+        require(not command(['git', '-C', str(ROOT), 'status', '--porcelain']).stdout.strip(), 'published clean candidate required')
+        require(os.geteuid() == 0, 'root-controlled disposable qualification required')
+        order = material.policy_graph_order()
+        position = {name: index for index, name in enumerate(order)}
+        chain = ['genesis', 'sequencer-identity', 'registry-material', 'module-registry', 'deployment-journal',
+                 'assembled-policy', 'role-authority']
+        require(all(position[a] < position[b] for a, b in zip(chain, chain[1:])), 'bootstrap order differs from genesis-to-authority')
+        for name, (producer, requires) in material.POLICY_GRAPH.items():
+            require(all(position[r] < position[name] for r in requires), 'graph order violates ' + name)
+            if producer.startswith('owner-input:'):
+                require(len(producer) > len('owner-input:'), 'unnamed owner input ' + name)
+                continue
+            sources = [ROOT / 'platform/hosted/human/provision.sh', ROOT / 'platform/hosted/tests/beta-cluster.sh']
+            require(hasattr(material, producer) or __import__('provision').__dict__.get(producer) is not None
+                    or any(re.search('^' + re.escape(producer) + r'\(\) *[({]', path.read_text(), re.M) for path in sources),
+                    'declared producer absent from source: ' + producer)
+        consumed = set(material.EVIDENCE_INPUTS.values()) | {'producer-records/' + n for n in material.PRODUCER_FILES}
+        declared = {n for files in material.POLICY_GRAPH_FILES.values() for n in files}
+        require(consumed == declared, 'consumed evidence without declared producer: ' + ','.join(sorted(consumed ^ declared)))
+        case('every-consumed-document-has-declared-producer-or-owner-input')
+        cyclic = dict(material.POLICY_GRAPH, genesis=(material.POLICY_GRAPH['genesis'][0], ('role-authority',)))
+        refused(lambda: material.policy_graph_order(cyclic), 'policy graph cycle')
+        dangling = dict(material.POLICY_GRAPH, genesis=(material.POLICY_GRAPH['genesis'][0], ('undeclared',)))
+        refused(lambda: material.policy_graph_order(dangling), 'without declared producer')
+        unproduced = dict(material.POLICY_GRAPH, genesis=('', ()))
+        refused(lambda: material.policy_graph_order(unproduced), 'without declared producer')
+        case('acyclic-order-and-cycle-detection')
+        raw = os.environ.get('PAXEER_X_FOUNDATION_MANIFEST')
+        if not raw:
+            raise FileNotFoundError('genuine qualified24.11 PAXEER_X_FOUNDATION_MANIFEST required')
+        manifest_path = Path(raw)
+        material.protected_file(manifest_path, 0o600)
+        foundation = material.protected_json(manifest_path)
+        proof = material.protected_json(manifest_path.parent / 'qualification.json')
+        require(foundation.get('stage') == 'dependency-foundation' and foundation.get('purpose') == 'disposable-test-only'
+                and proof.get('exit_code') == 0 and proof.get('tests', 0) > 0 and proof.get('skipped') == 0
+                and foundation.get('producers') and all(p.get('exit_code') == 0 and p.get('command') for p in foundation['producers']),
+                'actual qualified foundation producer provenance required')
+        network, chain_id = foundation['network_id'], foundation['chain_id']
+        raw = os.environ.get('PAXEER_X_HUMAN_EVIDENCE_WORK')
+        if not raw:
+            raise FileNotFoundError('PAXEER_X_HUMAN_EVIDENCE_WORK produced by the actual owner/native/naming/journal producers on this foundation required')
+        work = Path(raw).resolve(strict=True)
+        provenance = json.loads((work / 'provenance.json').read_text())
+        produced = {item.get('producer'): item for item in provenance.get('producers', [])}
+        required = {producer for producer, _ in material.POLICY_GRAPH.values()
+                    if not producer.startswith('owner-input:') and not hasattr(material, producer)
+                    and __import__('provision').__dict__.get(producer) is None}
+        require(provenance.get('purpose') == 'disposable-test-only' and provenance.get('source_revision') == revision
+                and provenance.get('foundation_sha256') == hashlib.sha256(manifest_path.read_bytes()).hexdigest()
+                and required <= set(produced)
+                and all(produced[name].get('command') and produced[name].get('exit_code') == 0 for name in required),
+                'owner/native/naming/journal evidence requires selected-source producer provenance on this foundation')
+        image = os.environ.get('PAXEER_X_NODE_IMAGE', '')
+        if not re.fullmatch(r'sha256:[0-9a-f]{64}', image):
+            raise FileNotFoundError('PAXEER_X_NODE_IMAGE actual source-bound packaged image required')
+        metadata = json.loads(docker('image', 'inspect', image).stdout)[0]
+        require(metadata['Id'] == image and (metadata['Config'].get('Labels') or {}).get('org.opencontainers.image.revision') == revision,
+                'node packaged image source identity mismatch')
+        packaged = docker('run', '--rm', '--pull=never', '--network=none', '--entrypoint', '/usr/bin/sha256sum', image,
+                          '/usr/local/lib/layerx-human/material.py').stdout.split()[0]
+        require(packaged == hashlib.sha256((ROOT / 'platform/hosted/human/material.py').read_bytes()).hexdigest(),
+                'packaged material producer differs')
+        state = Path(tempfile.mkdtemp(prefix='policy-graph-', dir=evidence))
+        volume = 'paxeer-x-policy-graph-' + uuid.uuid4().hex
+        docker('volume', 'create', volume)
+        container = volume + '-node'
+        docker('run', '--detach', '--pull=never', '--network=none', '--user', '0:0', '--name', container,
+               '--mount', 'type=volume,src=' + volume + ',dst=/case',
+               '--mount', 'type=bind,src=' + str(manifest_path.parent) + ',dst=/foundation,readonly',
+               '--entrypoint', '/bin/sh', image, '-ec', 'exec sleep 1800')
+        docker('exec', '--user', '0:0', container, 'bash', '-euc',
+               'umask 077; cp -a /foundation/node /case/node; chown -R 4020:4020 /case/node; chmod 0700 /case/node; '
+               'mkdir /case/producer; chown 4020:4020 /case/producer; chmod 0700 /case/producer')
+        helper = '/usr/local/lib/layerx-human/material.py'
+        created = json.loads(docker('exec', '--user', '4020:4020', container, 'python3', helper,
+                                    '--hosted-registry-material-produce', '/case/node', '/case/producer/kernel-material').stdout)
+        exported = docker('exec', '--user', '4020:4020', container, 'python3', helper,
+                          '--export-registry-material', '/case/producer/kernel-material').stdout
+        material.write_bytes(state / 'export.json', exported.encode())
+        kernel = state / 'registry-kernel'
+        imported = material.import_registry_material(state / 'export.json', kernel, network,
+                                                     foundation['sequencer_id'], foundation['sequencer_public_key'])
+        require(imported['generation'] == created['generation'], 'authenticated handoff selected another kernel generation')
+        case('kernel-identity-generation-before-registry-and-policy')
+        source = state / 'work'
+        source.mkdir(mode=0o700)
+        copy_tree(work / 'human-evidence', source / 'human-evidence')
+        (source / 'paxeer').mkdir(mode=0o700)
+        material.write_bytes(source / 'paxeer/deployment.json', (work / 'paxeer/deployment.json').read_bytes())
+        material.write_bytes(source / 'module-registry.json', (work / 'module-registry.json').read_bytes())
+        if (work / 'human').is_dir():
+            copy_tree(work / 'human', source / 'human')
+        journal = source / 'human-evidence/journal'
+        records = material.journal_records(journal)
+        require(any(name.endswith('.admission') for name in records) and any(name.endswith('.deployment') for name in records),
+                'nonempty admitted/deployed Programs journal required')
+
+        def status(root, bundle, authority, registry=kernel, net=network):
+            return material.policy_graph_status(root / 'human-evidence', root / 'human-evidence/journal',
+                                                root / 'paxeer/deployment.json', root / 'module-registry.json',
+                                                bundle, registry, authority, net, chain_id)
+
+        bundle = source / 'bundle'
+        authority = state / 'authority-graph'
+        placement = state / 'human-authority'
+        placement.mkdir(mode=0o700)
+        before = status(source, bundle, authority)
+        require(before['nodes']['assembled-policy']['state'] == 'waiting'
+                and all(before['nodes'][n]['state'] == 'ready' for n in order if n not in ('assembled-policy', 'role-authority'))
+                and before['roles']['receipt-authority'] == 'waiting', 'producer inputs not complete before assembly')
+        refused(lambda: material.publish_authority_material(bundle, kernel, authority, network, chain_id), '')
+        require(not authority.exists() or not (authority / 'current').is_symlink(), 'authority published before assembled policy')
+        bundle.mkdir(mode=0o700)
+        material.assemble_policy(source / 'human-evidence', source / 'paxeer/deployment.json', source / 'module-registry.json',
+                                 bundle / 'policy.json', network, chain_id)
+        published = material.publish_authority_material(bundle, kernel, authority, network, chain_id, placement)
+        complete = status(source, bundle, authority)
+        require(all(node['state'] == 'ready' for node in complete['nodes'].values())
+                and all(state_ == 'ready' for state_ in complete['roles'].values()), 'complete graph not ready: ' + json.dumps(complete))
+        selected = material.verify_authority_material(authority)
+        policy = material.parse(material.read_bytes(bundle / 'policy.json'))
+        require(material.parse(material.read_bytes(placement / 'principal-policy.json')) == policy['principal_policy']
+                and material.parse(material.read_bytes(placement / 'authority.json')) == policy['authority']
+                and material.read_bytes(placement / 'registry.json') == material.read_bytes(bundle / 'inputs/module-registry.json')
+                and selected['registry_generation'] == imported['generation'] and selected['generation'] == published['generation'],
+                'placed role authority differs from validated generation')
+        case('complete-graph-publishes-validated-policy-and-role-authority')
+        missing = [('paxeer-deployment', lambda r: (r / 'paxeer/deployment.json').unlink()),
+                   ('module-registry', lambda r: (r / 'module-registry.json').unlink()),
+                   ('deployment-journal', lambda r: shutil.rmtree(r / 'human-evidence/journal'))]
+        for node in ('owner-evidence', 'native-evidence', 'naming-evidence', 'principal-policy'):
+            for name in material.POLICY_GRAPH_FILES[node]:
+                missing.append((node, lambda r, name=name: (r / 'human-evidence' / name).unlink()))
+        for node, remove in missing + [('registry-material', None)]:
+            root = Path(tempfile.mkdtemp(prefix='missing-', dir=state))
+            os.rmdir(root)
+            copy_tree(source, root)
+            shutil.rmtree(root / 'bundle')
+            registry = kernel if remove else root / 'absent-registry'
+            if remove:
+                remove(root)
+            observed = status(root, root / 'bundle', root / 'authority', registry)
+            require(observed['nodes'][node]['state'] == 'waiting', node + ' missing input not typed waiting')
+            require(all(observed['nodes'][n]['state'] == 'waiting' for n in ('assembled-policy', 'role-authority')),
+                    node + ' missing input admitted downstream policy')
+            require(observed['roles']['receipt-authority'] == 'waiting' and not any(s == 'ready' for r, s in observed['roles'].items()
+                    if r != 'human-security' or node in ('genesis', 'sequencer-identity', 'registry-material')),
+                    node + ' missing input readied an affected role')
+            (root / 'bundle').mkdir(mode=0o700)
+            if remove:
+                refused(lambda: material.assemble_policy(root / 'human-evidence', root / 'paxeer/deployment.json',
+                                                         root / 'module-registry.json', root / 'bundle/policy.json',
+                                                         network, chain_id), '')
+                require(not any((root / 'bundle').iterdir()), node + ' partial bundle written from missing input')
+            shutil.rmtree(root)
+        case('each-missing-input-keeps-affected-roles-waiting')
+        root = Path(tempfile.mkdtemp(prefix='inconsistent-', dir=state))
+        os.rmdir(root)
+        copy_tree(source, root)
+        shutil.rmtree(root / 'bundle')
+        (root / 'bundle').mkdir(mode=0o700)
+        context = root / 'human-evidence/producer-records/native-context.json'
+        value = material.parse(material.read_bytes(context))
+        value['sequencer_public_key'] = hashlib.sha256(b'foreign sequencer').hexdigest()
+        context.unlink()
+        material.write_bytes(context, json.dumps(value, sort_keys=True).encode())
+        observed = status(root, root / 'bundle', root / 'authority')
+        require(observed['nodes']['native-evidence']['state'] == 'refused'
+                and all(observed['roles'][r] == 'refused' for r in ('human-components', 'human-owner', 'receipt-authority')),
+                'inconsistent native sequencer evidence admitted')
+        observed = status(source, bundle, authority, net=network + 1)
+        require(observed['nodes']['registry-material']['state'] == 'refused'
+                and all(s == 'refused' for s in observed['roles'].values()), 'wrong network kernel generation admitted')
+        refused(lambda: material.assemble_policy(root / 'human-evidence', root / 'paxeer/deployment.json', root / 'module-registry.json',
+                                                 root / 'bundle/policy.json', network, chain_id), '')
+        require(not any((root / 'bundle').iterdir()), 'inconsistent evidence wrote a policy bundle')
+        refused(lambda: material.publish_authority_material(root / 'bundle', kernel, root / 'authority', network, chain_id), '')
+        require(not (root / 'authority/current').is_symlink(), 'inconsistent input published authority')
+        shutil.rmtree(root)
+        case('inconsistent-inputs-refused-without-placeholder-or-bypass')
+        generations = sorted((authority / 'generations').iterdir())
+        replay = material.publish_authority_material(bundle, kernel, authority, network, chain_id, placement)
+        require(replay == published and sorted((authority / 'generations').iterdir()) == generations
+                and material.import_registry_material(state / 'export.json', kernel, network, foundation['sequencer_id'],
+                                                      foundation['sequencer_public_key']) == imported,
+                'restart regenerated identity or authority generation')
+        material.assemble_policy(source / 'human-evidence', source / 'paxeer/deployment.json', source / 'module-registry.json',
+                                 bundle / 'policy.json', network, chain_id)
+        case('restart-resumes-existing-generation')
+        pending = authority / '.pending-interrupted'
+        pending.mkdir(mode=0o700)
+        material.write_bytes(pending / 'registry.json', material.read_bytes(placement / 'registry.json'))
+        require(material.publish_authority_material(bundle, kernel, authority, network, chain_id, placement) == published
+                and not pending.exists(), 'consistent interrupted publication not resumed')
+        pending.mkdir(mode=0o700)
+        material.write_bytes(pending / 'authority.json', b'{"tenant":"foreign"}')
+        refused(lambda: material.publish_authority_material(bundle, kernel, authority, network, chain_id), 'inconsistent partial authority publication')
+        require(material.verify_authority_material(authority)['generation'] == published['generation'], 'refusal abandoned retained generation')
+        shutil.rmtree(pending)
+        target = Path(published['directory'])
+        retained = material.read_bytes(target / 'authority.json')
+        (target / 'authority.json').unlink()
+        refused(lambda: material.verify_authority_material(authority), 'inconsistent partial authority publication')
+        require(status(source, bundle, authority)['nodes']['role-authority']['state'] == 'refused', 'partial generation not typed refused')
+        refused(lambda: material.publish_authority_material(bundle, kernel, authority, network, chain_id), 'inconsistent partial authority publication')
+        material.write_bytes(target / 'authority.json', retained)
+        moved = placement / 'authority.json'
+        moved.unlink()
+        material.write_bytes(moved, b'{"tenant":"placeholder"}')
+        refused(lambda: material.publish_authority_material(bundle, kernel, authority, network, chain_id, placement), 'placed role authority differs')
+        moved.unlink()
+        material.write_bytes(moved, retained)
+        lock = bundle.parent / ('.' + bundle.name + '-publish')
+        lock.mkdir(mode=0o700)
+        refused(lambda: material.assemble_policy(source / 'human-evidence', source / 'paxeer/deployment.json', source / 'module-registry.json',
+                                                 bundle / 'policy.json', network, chain_id), 'bundle publication interrupted')
+        lock.rmdir()
+        require(material.publish_authority_material(bundle, kernel, authority, network, chain_id, placement) == published,
+                'durable generation lost after interrupted publication')
+        case('interrupted-and-inconsistent-partial-publication-detected')
+        init = (ROOT / 'docker/kernel/init.sh').read_text()
+        body = init.split('human_authority_publish() {', 1)[1].split('\n}\n', 1)[0]
+        require('--policy-graph-status' in body and body.index('--policy-graph-status') < body.index('--publish-authority-material')
+                and '$kernel_registry_material' in body and '"$keys/human-authority"' in body, 'kernel authority producer absent')
+        provision = (ROOT / 'platform/hosted/human/provision.sh').read_text()
+        flow = provision.split('human_evidence_provision() (', 1)[1].split('\n)\n', 1)[0]
+        require(flow.index('human_native_owner_prepare') < flow.index('human_journal_deploy') < flow.index('human_policy_graph_inputs')
+                and 'registry_kernel_material' in provision.split('human_native_owner_prepare() (', 1)[1].split('\n)\n', 1)[0],
+                'provision order does not place registry and deployment evidence before policy consumers')
+        case('production-init-and-provision-order')
+        result.update(revision=revision, image=image, foundation_manifest=str(manifest_path), generation=published['generation'],
+                      tests=len(result['cases']), exit_code=0)
+        material.write_bytes(evidence / 'policy-graph.json', json.dumps(result, sort_keys=True).encode())
+        print('PAXEER_X_GATE tests=' + str(result['tests']) + ' skipped=0', flush=True)
+        return 0
+    except FileNotFoundError as error:
+        code = 78
+        result['observed'] = str(error)
+    except Exception as error:
+        code = 1
+        result['observed'] = str(error)
+    finally:
+        if container is not None:
+            docker('rm', '-f', container, check=False)
+        if volume is not None:
+            docker('volume', 'rm', volume, check=False)
+    result.update(exit_code=code, tests=len(result['cases']))
+    if evidence is not None:
+        material.write_bytes(evidence / ('policy-graph-' + uuid.uuid4().hex + '.json'), json.dumps(result, sort_keys=True).encode())
+    print('Human policy graph refused: ' + result['observed'], file=sys.stderr, flush=True)
+    return code
+
+
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--case', required=True, choices=['role-directories', 'role-directory-prerequisite', 'export-recovery', 'fixture-foundation', 'kms-service-prerequisite', 'registry-material'])
+    parser.add_argument('--case', required=True, choices=['role-directories', 'role-directory-prerequisite', 'export-recovery', 'fixture-foundation', 'kms-service-prerequisite', 'registry-material', 'policy-graph'])
     arguments = parser.parse_args()
     os.umask(0o077)
+    if arguments.case == 'policy-graph':
+        return policy_graph()
     if arguments.case == 'registry-material':
         return registry_material()
     if arguments.case == 'kms-service-prerequisite':

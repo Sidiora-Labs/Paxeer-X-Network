@@ -1237,6 +1237,296 @@ def hosted_registry_material_produce(data, destination):
     return publish_registry_material(destination, files)
 
 
+POLICY_GRAPH = {
+    'genesis': ('owner-input:signed native genesis request and sequencer seed', ()),
+    'sequencer-identity': ('kernel_registry_material_produce', ('genesis',)),
+    'registry-material': ('import_registry_material', ('sequencer-identity',)),
+    'paxeer-deployment': ('paxeer_contracts_deploy', ()),
+    'owner-policy': ('owner-input:beta-owner-policy.json', ()),
+    'module-registry': ('registry_deployment_produce', ('registry-material',)),
+    'owner-evidence': ('human_owner_provision', ('sequencer-identity', 'owner-policy', 'paxeer-deployment')),
+    'native-evidence': ('human_native_provision', ('owner-evidence', 'module-registry')),
+    'deployment-journal': ('human_journal_deploy', ('module-registry',)),
+    'naming-evidence': ('naming_program_deploy', ('deployment-journal',)),
+    'principal-policy': ('principal_policy', ('native-evidence', 'owner-policy')),
+    'assembled-policy': ('assemble_policy', ('paxeer-deployment', 'module-registry', 'owner-evidence', 'native-evidence',
+                                             'deployment-journal', 'naming-evidence', 'principal-policy')),
+    'role-authority': ('publish_authority_material', ('assembled-policy', 'registry-material')),
+}
+POLICY_GRAPH_FILES = {
+    'owner-evidence': tuple(n for n in EVIDENCE_INPUTS.values() if n != 'principal-policy.json') + tuple(
+        'producer-records/' + n for n in ('source-binding.json', 'owner-result.json', 'owner-registration.json',
+                                          'owner-custody.json', 'custody.profile', 'treasury.json', 'sequencer.json')),
+    'native-evidence': ('producer-records/native-context.json',) + tuple(
+        'producer-records/' + label + suffix for label in ('credit', 'identity', 'rotation', 'recovery')
+        for suffix in ('.activity', '.receipt')),
+    'naming-evidence': ('producer-records/naming-deployment-result.json',),
+    'principal-policy': ('principal-policy.json',),
+}
+POLICY_GRAPH_ROLES = {
+    'human-security': ('registry-material',),
+    'human-components': ('assembled-policy',),
+    'human-identity': ('assembled-policy',),
+    'human-movement': ('assembled-policy',),
+    'human-owner': ('assembled-policy', 'registry-material'),
+    'receipt-authority': ('role-authority',),
+}
+AUTHORITY_GENERATION_SCHEMA = 'layerx.human.authority-generation.v1'
+AUTHORITY_FILES = ('principal-policy.json', 'registry.json', 'authority.json')
+
+
+def policy_graph_order(graph=None):
+    graph = POLICY_GRAPH if graph is None else graph
+    for name, (producer, requires) in graph.items():
+        if type(producer) is not str or not producer or any(r not in graph for r in requires):
+            refuse('policy graph node without declared producer or requirement: ' + name)
+    order, done = [], set()
+    pending = dict(graph)
+    while pending:
+        ready = sorted(name for name, (_, requires) in pending.items() if set(requires) <= done)
+        if not ready:
+            refuse('policy graph cycle: ' + ','.join(sorted(pending)))
+        for name in ready:
+            order.append(name)
+            done.add(name)
+            del pending[name]
+    return order
+
+
+def policy_graph_status(evidence, journal, deployment, module_registry, bundle, registry, authority, network, chain):
+    evidence, journal, bundle, registry, authority = map(Path, (evidence, journal, bundle, registry, authority))
+    nodes, facts = {}, {}
+
+    class Waiting(Exception):
+        pass
+
+    def present(path):
+        if not os.path.lexists(path):
+            raise Waiting('missing ' + str(path))
+        return read_bytes(path)
+
+    def generation():
+        if not os.path.lexists(registry / 'current') and not os.path.lexists(registry / 'generation.json'):
+            raise Waiting('kernel registry generation not yet produced')
+        selected = verify_registry_material(registry)
+        if selected['manifest']['network_id'] != network:
+            refuse('registry generation network differs')
+        facts['registry'] = selected['manifest']
+        return selected['manifest']
+
+    def owner_policy():
+        authority = parse(present(evidence / 'authority.json'))
+        agent = parse(present(evidence / 'agent.json'))
+        if (type(authority) is not dict or type(authority.get('core-clock-horizon')) is not int
+                or authority['core-clock-horizon'] <= 0 or type(agent) is not dict
+                or type(agent.get('HUMAN_LIMIT_CEILING')) is not int or agent['HUMAN_LIMIT_CEILING'] <= 0
+                or type(agent.get('HUMAN_LIMIT_ID')) is not str or not re.fullmatch('[0-9a-f]{64}', agent['HUMAN_LIMIT_ID'])):
+            refuse('owner policy horizon or limit binding')
+
+    def module():
+        value = parse(present(Path(module_registry)))
+        if (type(value) is not dict or value.get('network_id') != network or value.get('schema_version') != 2
+                or not value.get('assets') or not value.get('modules')):
+            refuse('module registry network or content')
+        if not any(asset.get('asset') == facts['registry']['asset_id'] for asset in value['assets']):
+            refuse('module registry does not carry the kernel genesis asset')
+
+    def files(node):
+        for name in POLICY_GRAPH_FILES[node]:
+            present(evidence / name)
+
+    def native():
+        files('native-evidence')
+        context = parse(read_bytes(evidence / 'producer-records/native-context.json'))
+        if (type(context) is not dict or context.get('network_id') != network
+                or context.get('sequencer_public_key') != facts['registry']['sequencer_public_key']):
+            refuse('native evidence sequencer or network differs from the kernel identity generation')
+
+    def journal_check():
+        if not os.path.lexists(journal) or (journal.is_dir() and not journal.is_symlink() and not any(journal.iterdir())):
+            raise Waiting('admitted/deployed Programs journal not yet produced')
+        records = journal_records(journal)
+        if not any(name.endswith('.deployment') for name in records):
+            refuse('deployment journal without deployed records')
+        facts['journal'] = records
+
+    def naming():
+        files('naming-evidence')
+        value = parse(read_bytes(evidence / 'producer-records/naming-deployment-result.json'))
+        if (type(value) is not dict or value.get('state') != 'deployed' or type(value.get('receipt_digest')) is not str
+                or any(value['receipt_digest'] + suffix not in facts['journal'] for suffix in ('.admission', '.deployment'))):
+            refuse('naming evidence not bound to an admitted/deployed journal pair')
+
+    def assembled():
+        present(bundle / 'policy.json')
+        present(bundle / 'bundle-manifest.json')
+        facts['bundle'] = verify_bundle(bundle, network, chain)
+
+    def role_authority():
+        if not os.path.lexists(authority / 'current'):
+            raise Waiting('role authority generation not yet published')
+        manifest = verify_authority_material(authority)
+        if (manifest['bundle_sha256'] != facts['bundle']['bundle_sha256']
+                or manifest['registry_generation'] != facts['registry']['generation']):
+            refuse('published role authority differs from the assembled policy or kernel identity generation')
+
+    checks = {'genesis': lambda: generation()['genesis_metadata_sha256'], 'sequencer-identity': generation,
+              'registry-material': generation, 'paxeer-deployment': lambda: present(Path(deployment)),
+              'owner-policy': owner_policy, 'module-registry': module,
+              'owner-evidence': lambda: files('owner-evidence'), 'native-evidence': native,
+              'deployment-journal': journal_check, 'naming-evidence': naming,
+              'principal-policy': lambda: files('principal-policy'), 'assembled-policy': assembled,
+              'role-authority': role_authority}
+    order = policy_graph_order()
+    for name in order:
+        producer, requires = POLICY_GRAPH[name]
+        node = {'producer': producer, 'requires': list(requires)}
+        refused = [r for r in requires if nodes[r]['state'] == 'refused']
+        waiting = [r for r in requires if nodes[r]['state'] == 'waiting']
+        if refused:
+            node.update(state='refused', reason='requires refused ' + ','.join(refused))
+        elif waiting:
+            node.update(state='waiting', reason='waiting on ' + ','.join(waiting))
+        else:
+            try:
+                checks[name]()
+                node.update(state='ready', reason=None)
+            except Waiting as error:
+                node.update(state='waiting', reason=str(error))
+            except (ValueError, OSError, KeyError, TypeError, AttributeError) as error:
+                node.update(state='refused', reason=str(error) or type(error).__name__)
+        nodes[name] = node
+    roles = {}
+    for role, requires in POLICY_GRAPH_ROLES.items():
+        states = {nodes[r]['state'] for r in requires}
+        roles[role] = 'refused' if 'refused' in states else 'waiting' if 'waiting' in states else 'ready'
+    return {'schema': 'layerx.human.policy-graph-status.v1', 'order': order, 'nodes': nodes, 'roles': roles}
+
+
+def authority_manifest(files):
+    if set(files) != set(AUTHORITY_FILES) | {'generation.json'}:
+        refuse('authority generation file inventory')
+    manifest = parse(files['generation.json'])
+    fields = {'schema', 'generation', 'network_id', 'chain_id', 'bundle_sha256', 'policy_sha256', 'authority_sha256',
+              'registry_generation', 'files'}
+    if type(manifest) is not dict or set(manifest) != fields or manifest['schema'] != AUTHORITY_GENERATION_SCHEMA:
+        refuse('authority generation schema')
+    unsigned = {key: value for key, value in manifest.items() if key != 'generation'}
+    if manifest['generation'] != digest(json.dumps(unsigned, sort_keys=True, separators=(',', ':')).encode()):
+        refuse('authority generation digest')
+    if manifest['files'] != [entry(name, files[name]) for name in AUTHORITY_FILES]:
+        refuse('authority generation bytes differ from manifest')
+    return manifest
+
+
+def authority_directory(directory):
+    directory = Path(directory)
+    protected_file(directory, 0o700)
+    if {path.name for path in directory.iterdir()} != set(AUTHORITY_FILES) | {'generation.json'}:
+        refuse('inconsistent partial authority publication: ' + directory.name)
+    files = {name: read_bytes(directory / name) for name in (*AUTHORITY_FILES, 'generation.json')}
+    manifest = authority_manifest(files)
+    if directory.name != manifest['generation']:
+        refuse('authority generation directory name')
+    return manifest, files
+
+
+def verify_authority_material(destination):
+    destination = Path(destination)
+    marker = destination / 'current'
+    if not marker.is_symlink():
+        refuse('authority generation selector')
+    selected = marker.resolve(strict=True)
+    if selected.parent != destination / 'generations' or not re.fullmatch('[0-9a-f]{64}', selected.name):
+        refuse('authority generation selector target')
+    return authority_directory(selected)[0]
+
+
+def publish_authority_material(bundle, registry, destination, network, chain, placement=None):
+    import fcntl
+    bundle, destination = Path(bundle), Path(destination)
+    binding = verify_bundle(bundle, network, chain)
+    selected = verify_registry_material(registry)['manifest']
+    if selected['network_id'] != network:
+        refuse('kernel identity generation network differs')
+    context = parse(read_bytes(bundle / 'inputs/producer-records/native-context.json'))
+    if context.get('sequencer_public_key') != selected['sequencer_public_key']:
+        refuse('assembled policy sequencer differs from the kernel identity generation')
+    module_registry = read_bytes(bundle / 'inputs/module-registry.json')
+    if not any(asset.get('asset') == selected['asset_id'] for asset in parse(module_registry)['assets']):
+        refuse('assembled module registry does not carry the kernel genesis asset')
+    policy = parse(read_bytes(bundle / 'policy.json'))
+    files = {'principal-policy.json': json.dumps(policy['principal_policy'], sort_keys=True, separators=(',', ':')).encode(),
+             'registry.json': module_registry,
+             'authority.json': json.dumps(policy['authority'], sort_keys=True, separators=(',', ':')).encode()}
+    manifest = {'schema': AUTHORITY_GENERATION_SCHEMA, 'network_id': network, 'chain_id': chain,
+                'bundle_sha256': binding['bundle_sha256'], 'policy_sha256': binding['policy_sha256'],
+                'authority_sha256': binding['authority_sha256'], 'registry_generation': selected['generation'],
+                'files': [entry(name, files[name]) for name in AUTHORITY_FILES]}
+    manifest['generation'] = digest(json.dumps(manifest, sort_keys=True, separators=(',', ':')).encode())
+    files['generation.json'] = json.dumps(manifest, sort_keys=True, separators=(',', ':')).encode()
+    if not destination.is_absolute() or destination.resolve() != destination:
+        refuse('authority generation destination')
+    try:
+        destination.mkdir(mode=0o700)
+    except FileExistsError:
+        pass
+    protected_file(destination, 0o700)
+    lock_fd = os.open(destination / '.authority.lock', os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
+    with os.fdopen(lock_fd, 'r+b') as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        generations = destination / 'generations'
+        marker = destination / 'current'
+        if marker.is_symlink():
+            retained = verify_authority_material(destination)
+            if retained['generation'] != manifest['generation']:
+                refuse('retained authority generation differs; owner reconciliation required')
+        elif marker.exists():
+            refuse('authority generation selector type')
+        for pending in destination.glob('.pending-*'):
+            protected_file(pending, 0o700)
+            for path in pending.iterdir():
+                if path.name not in files or read_bytes(path) != files[path.name]:
+                    refuse('inconsistent partial authority publication: ' + pending.name)
+            shutil.rmtree(pending)
+        try:
+            generations.mkdir(mode=0o700)
+        except FileExistsError:
+            pass
+        protected_file(generations, 0o700)
+        target = generations / manifest['generation']
+        if os.path.lexists(target):
+            if authority_directory(target)[1] != files:
+                refuse('authority generation replay conflict')
+        else:
+            pending = Path(tempfile.mkdtemp(prefix='.pending-', dir=destination))
+            for name in (*AUTHORITY_FILES, 'generation.json'):
+                write_bytes(pending / name, files[name])
+            sync_directory(pending)
+            os.rename(pending, target)
+            sync_directory(generations)
+        if not marker.is_symlink():
+            temporary = destination / ('.current-' + secrets.token_hex(8))
+            os.symlink('generations/' + manifest['generation'], temporary)
+            os.replace(temporary, marker)
+            sync_directory(destination)
+        if placement is not None:
+            placement = Path(placement)
+            protected_file(placement, 0o700)
+            for name in AUTHORITY_FILES:
+                path = placement / name
+                if os.path.lexists(path):
+                    if read_bytes(path) != files[name]:
+                        refuse('placed role authority differs from published generation: ' + name)
+                    continue
+                temporary = placement / ('.' + name + '.' + secrets.token_hex(8))
+                write_bytes(temporary, files[name])
+                os.rename(temporary, path)
+            sync_directory(placement)
+    return {'directory': str(target), 'generation': manifest['generation'],
+            'bundle_sha256': manifest['bundle_sha256'], 'registry_generation': manifest['registry_generation']}
+
+
 if __name__ == '__main__':
     os.umask(0o077)
     try:
@@ -1246,6 +1536,13 @@ if __name__ == '__main__':
             print(json.dumps(import_registry_material(sys.argv[2], sys.argv[3], int(sys.argv[4]), sys.argv[5], sys.argv[6]), sort_keys=True))
         elif len(sys.argv) == 4 and sys.argv[1] == '--hosted-registry-material-produce':
             print(json.dumps(hosted_registry_material_produce(sys.argv[2], sys.argv[3]), sort_keys=True))
+        elif len(sys.argv) == 11 and sys.argv[1] == '--policy-graph-status':
+            print(json.dumps(policy_graph_status(*sys.argv[2:9], int(sys.argv[9]), int(sys.argv[10])), sort_keys=True))
+        elif len(sys.argv) in (7, 8) and sys.argv[1] == '--publish-authority-material':
+            print(json.dumps(publish_authority_material(sys.argv[2], sys.argv[3], sys.argv[4], int(sys.argv[5]), int(sys.argv[6]),
+                                                        sys.argv[7] if len(sys.argv) == 8 else None), sort_keys=True))
+        elif len(sys.argv) == 3 and sys.argv[1] == '--verify-authority-material':
+            print(json.dumps(verify_authority_material(sys.argv[2]), sort_keys=True))
         elif len(sys.argv) == 3 and sys.argv[1] == '--verify-registry-material':
             result = verify_registry_material(sys.argv[2])
             print(json.dumps({key: value for key, value in result.items() if key != 'files'}, sort_keys=True))

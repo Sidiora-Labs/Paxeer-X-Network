@@ -285,6 +285,32 @@ human_evidence_provision() (
     python3 "$provision" --assemble --work-dir "$WORK_DIR" \
         --registry "$SECRETS_DIR/module-registry.json" --asset "$NODE_ASSET_ID" \
         --journal "$WORK_DIR/registry-journal"
+    human_policy_graph_inputs
+)
+
+# human_policy_graph_inputs: the ordering gate between the evidence producers and the policy and authority
+# consumers. The kernel identity generation, module registry, deployment journal and owner/native/naming
+# evidence must all be ready in the declared acyclic graph before human_policy_publish assembles the bundle;
+# a missing input leaves its dependants waiting and an inconsistent one refuses, naming the producer.
+human_policy_graph_inputs() (
+    set -euo pipefail
+    umask 077
+    local status="$WORK_DIR/human-policy-graph.json"
+    python3 "$REPO_ROOT/platform/hosted/human/material.py" --policy-graph-status \
+        "$WORK_DIR/human-evidence" "$WORK_DIR/human-evidence/journal" "$WORK_DIR/paxeer/deployment.json" \
+        "$SECRETS_DIR/module-registry.json" "$WORK_DIR/human-policy" "$SECRETS_DIR/registry-kernel" \
+        "$WORK_DIR/human-authority-graph" "$NODE_NETWORK_ID" "$PAXEER_CHAIN_ID" > "$status.pending"
+    mv "$status.pending" "$status"
+    python3 - "$status" <<'PY_POLICY_GRAPH'
+import json
+import sys
+value = json.load(open(sys.argv[1]))
+blocked = {name: (node['state'], node['producer'], node['reason']) for name, node in value['nodes'].items()
+           if name not in ('assembled-policy', 'role-authority') and node['state'] != 'ready'}
+refused = {name: node['reason'] for name, node in value['nodes'].items() if node['state'] == 'refused'}
+if blocked or refused:
+    raise SystemExit('human policy graph inputs not ready: ' + json.dumps(dict(blocked, **refused), sort_keys=True))
+PY_POLICY_GRAPH
 )
 
 human_custody_step() (
