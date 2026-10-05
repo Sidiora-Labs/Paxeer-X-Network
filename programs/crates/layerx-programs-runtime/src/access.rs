@@ -2201,4 +2201,140 @@ mod tests {
             reachable.charge()
         );
     }
+
+    fn sdk_encode<const N: usize>(access: &layerx_program_sdk::ActivityAccess<'_, N>) -> Vec<u8> {
+        let mut output = vec![0; 4_096];
+        let executing = layerx_program_sdk::ProgramId::new(program(1).bytes())
+            .unwrap_or_else(|error| panic!("sdk program: {error:?}"));
+        let payer = layerx_program_sdk::Principal::new(principal(2).bytes())
+            .unwrap_or_else(|error| panic!("sdk principal: {error:?}"));
+        let length = access
+            .encode_canonical(executing, payer, &mut output)
+            .unwrap_or_else(|error| panic!("sdk encode: {error:?}"));
+        output.truncate(length);
+        output
+    }
+
+    fn sdk_orders_recipe<'a>(
+        calldata: &'a [u8],
+        recipe: &mut layerx_program_sdk::AccessRecipe<'a, 8>,
+    ) -> Result<(), layerx_program_sdk::ProgramError> {
+        use layerx_program_sdk::{
+            AccessEntry, AccessMode as SdkMode, AccessScope, AccountId, AssetId,
+            KeyAccess as SdkKeys, ProgramId as SdkProgram, StorageKey,
+        };
+        let callee = SdkProgram::new([9; 32])?;
+        recipe.push(AccessEntry::Call { callee })?;
+        recipe.push(AccessEntry::Account {
+            account: AccountId::new([3; 32])?,
+            asset: AssetId::new([4; 32])?,
+            mode: SdkMode::Write,
+        })?;
+        recipe.push(AccessEntry::Storage {
+            program: Some(callee),
+            scope: AccessScope::Shared,
+            mode: SdkMode::Write,
+            keys: SdkKeys::prefix(b"book/")?,
+        })?;
+        recipe.push(AccessEntry::Storage {
+            program: None,
+            scope: AccessScope::Shared,
+            mode: SdkMode::Read,
+            keys: SdkKeys::range(StorageKey::new(b"a")?, StorageKey::new(b"m")?)?,
+        })?;
+        recipe.push(AccessEntry::Storage {
+            program: None,
+            scope: AccessScope::Principal,
+            mode: SdkMode::Read,
+            keys: SdkKeys::Exact(StorageKey::new(calldata)?),
+        })
+    }
+
+    fn runtime_orders_declaration(calldata: &[u8]) -> AccessDeclaration {
+        AccessDeclaration::derive_from_calldata(calldata, |calldata, builder| {
+            builder
+                .read_key(
+                    StorageNamespace::principal(program(1), principal(2)),
+                    calldata,
+                )?
+                .read_range(StorageNamespace::shared(program(1)), b"a", b"m")?
+                .write_prefix(StorageNamespace::shared(program(9)), b"book/")?
+                .write_account([3; 32], [4; 32])?
+                .call(program(9))
+                .map(|_| ())
+        })
+        .unwrap_or_else(|error| panic!("runtime derive: {error:?}"))
+    }
+
+    #[test]
+    fn sdk_calldata_derivation_is_byte_identical_to_the_runtime_commitment() {
+        for calldata in [&b"orders/7"[..], &b"orders/8"[..], &b"z"[..]] {
+            let recipe = layerx_program_sdk::AccessRecipe::<8>::derive_from_calldata(
+                calldata,
+                sdk_orders_recipe,
+            )
+            .unwrap_or_else(|error| panic!("sdk derive: {error:?}"));
+            let encoded = sdk_encode(&layerx_program_sdk::ActivityAccess::Explicit(recipe));
+            let expected = runtime_orders_declaration(calldata);
+            assert_eq!(
+                encoded,
+                expected
+                    .canonical_bytes()
+                    .unwrap_or_else(|error| panic!("runtime bytes: {error:?}"))
+            );
+            let decoded = AccessDeclaration::canonical_decode(&encoded)
+                .unwrap_or_else(|error| panic!("runtime decode of sdk bytes: {error:?}"));
+            assert_eq!(decoded, expected);
+            assert_eq!(decoded.commitment(), expected.commitment());
+            assert_eq!(
+                decoded.charge(&AccessSet::empty()),
+                expected.charge(&AccessSet::empty())
+            );
+            let payer_namespace = StorageNamespace::principal(program(1), principal(2));
+            assert!(decoded
+                .enforce_storage_key(payer_namespace, AccessMode::Read, calldata)
+                .is_ok());
+            assert!(matches!(
+                decoded.enforce_storage_key(payer_namespace, AccessMode::Read, b"orders/9"),
+                Err(AccessRefusal::UndeclaredStorage { .. })
+            ));
+            assert!(matches!(
+                decoded.enforce_storage_key(payer_namespace, AccessMode::Write, calldata),
+                Err(AccessRefusal::UndeclaredStorage { .. })
+            ));
+            assert!(decoded.enforce_call(program(9)).is_ok());
+            assert!(decoded.enforce_call(program(8)).is_err());
+        }
+    }
+
+    #[test]
+    fn sdk_absent_and_whole_namespace_declarations_match_runtime_bytes() {
+        assert_eq!(
+            sdk_encode(&layerx_program_sdk::ActivityAccess::<1>::Absent),
+            AccessDeclaration::absent()
+                .canonical_bytes()
+                .unwrap_or_else(|error| panic!("absent: {error:?}"))
+        );
+        let mut recipe = layerx_program_sdk::AccessRecipe::<1>::explicit();
+        recipe
+            .push(layerx_program_sdk::AccessEntry::Storage {
+                program: None,
+                scope: layerx_program_sdk::AccessScope::Principal,
+                mode: layerx_program_sdk::AccessMode::Write,
+                keys: layerx_program_sdk::KeyAccess::WholeNamespace,
+            })
+            .unwrap_or_else(|error| panic!("push: {error:?}"));
+        let mut builder = AccessSet::builder();
+        builder
+            .write_namespace(StorageNamespace::principal(program(1), principal(2)))
+            .unwrap_or_else(|error| panic!("write namespace: {error:?}"));
+        let explicit = AccessDeclaration::explicit_builder(builder)
+            .unwrap_or_else(|error| panic!("explicit: {error:?}"));
+        assert_eq!(
+            sdk_encode(&layerx_program_sdk::ActivityAccess::Explicit(recipe)),
+            explicit
+                .canonical_bytes()
+                .unwrap_or_else(|error| panic!("explicit bytes: {error:?}"))
+        );
+    }
 }
