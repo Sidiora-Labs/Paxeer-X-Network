@@ -1576,6 +1576,267 @@ mod response_tests {
     }
 }
 
+#[cfg(test)]
+mod declared_budget_tests {
+    use super::{
+        FeeSchedule, Meter, MeterRefusal, MeteredUsage, ResourceBudget, ResourceKind,
+        ResourceLimiter,
+    };
+    use crate::budget::{maximum_fee_units, DeclaredBudget, MIN_ACTIVITY_CPU_FUEL};
+
+    const PAGE: u64 = 65_536;
+
+    #[derive(Debug, Clone, Copy)]
+    enum Charge {
+        Cpu(u64),
+        MemoryPages(u64),
+        StorageRead(u64),
+        StorageWrite(u64),
+        OutputValues(usize),
+        OutputBytes(usize),
+    }
+
+    struct Sequence {
+        state: u64,
+    }
+
+    impl Sequence {
+        fn next(&mut self, bound: u64) -> u64 {
+            self.state = self
+                .state
+                .wrapping_mul(6_364_136_223_846_793_005)
+                .wrapping_add(1_442_695_040_888_963_407);
+            (self.state >> 33) % bound
+        }
+    }
+
+    fn charges(seed: u64) -> Vec<Charge> {
+        let mut sequence = Sequence { state: seed };
+        let length = 1 + sequence.next(24);
+        (0..length)
+            .map(|_| match sequence.next(6) {
+                0 => Charge::Cpu(1 + sequence.next(2_000)),
+                1 => Charge::MemoryPages(1 + sequence.next(4)),
+                2 => Charge::StorageRead(sequence.next(4_096)),
+                3 => Charge::StorageWrite(sequence.next(4_096)),
+                4 => Charge::OutputValues(
+                    usize::try_from(1 + sequence.next(2))
+                        .unwrap_or_else(|error| panic!("values: {error}")),
+                ),
+                _ => Charge::OutputBytes(
+                    usize::try_from(sequence.next(4_096))
+                        .unwrap_or_else(|error| panic!("bytes: {error}")),
+                ),
+            })
+            .collect()
+    }
+
+    fn execute(budget: ResourceBudget, charges: &[Charge]) -> Result<MeteredUsage, MeterRefusal> {
+        let mut meter = Meter::new_activity(budget, FeeSchedule::declared());
+        let mut memory = 0_usize;
+        for charge in charges {
+            match *charge {
+                Charge::Cpu(fuel) => meter.charge_cpu(fuel)?,
+                Charge::MemoryPages(pages) => {
+                    let desired = memory
+                        + usize::try_from(pages * PAGE)
+                            .unwrap_or_else(|error| panic!("pages: {error}"));
+                    if meter.memory_growing(memory, desired, None).is_err() {
+                        return meter.finish();
+                    }
+                    memory = desired;
+                }
+                Charge::StorageRead(bytes) => meter.charge_storage_read(bytes)?,
+                Charge::StorageWrite(bytes) => meter.charge_storage_write(bytes)?,
+                Charge::OutputValues(values) => {
+                    meter.charge_output(values)?;
+                }
+                Charge::OutputBytes(bytes) => meter.charge_output_bytes(bytes)?,
+            }
+        }
+        meter.finish()
+    }
+
+    fn exact_fit(charges: &[Charge]) -> DeclaredBudget {
+        let mut totals = [0_u64; 6];
+        for charge in charges {
+            let (index, amount) = match *charge {
+                Charge::Cpu(fuel) => (0, fuel),
+                Charge::MemoryPages(pages) => (1, pages * PAGE),
+                Charge::StorageRead(bytes) => (2, bytes),
+                Charge::StorageWrite(bytes) => (3, bytes),
+                Charge::OutputValues(values) => (
+                    4,
+                    u64::try_from(values).unwrap_or_else(|error| panic!("values: {error}")),
+                ),
+                Charge::OutputBytes(bytes) => (
+                    5,
+                    u64::try_from(bytes).unwrap_or_else(|error| panic!("bytes: {error}")),
+                ),
+            };
+            totals[index] += amount;
+        }
+        DeclaredBudget::new(
+            totals[0].max(MIN_ACTIVITY_CPU_FUEL),
+            totals[1].max(PAGE),
+            totals[2],
+            totals[3],
+            u32::try_from(totals[4].max(1)).unwrap_or_else(|error| panic!("values: {error}")),
+            totals[5],
+            0,
+        )
+        .unwrap_or_else(|error| panic!("exact-fit declaration: {error}"))
+    }
+
+    fn widened(exact: DeclaredBudget, sequence: &mut Sequence) -> DeclaredBudget {
+        let maximum = DeclaredBudget::protocol_maximum();
+        let mut widen =
+            |declared: u64, ceiling: u64| declared + sequence.next(ceiling - declared + 1);
+        let output_values = widen(
+            u64::from(exact.output_values()),
+            u64::from(maximum.output_values()),
+        );
+        let table_elements = widen(0, u64::from(maximum.table_elements()));
+        DeclaredBudget::new(
+            widen(exact.cpu_fuel(), maximum.cpu_fuel()),
+            widen(exact.memory_bytes(), maximum.memory_bytes()),
+            widen(exact.storage_read_bytes(), maximum.storage_read_bytes()),
+            widen(exact.storage_write_bytes(), maximum.storage_write_bytes()),
+            u32::try_from(output_values).unwrap_or_else(|error| panic!("values: {error}")),
+            widen(exact.output_bytes(), maximum.output_bytes()),
+            u32::try_from(table_elements).unwrap_or_else(|error| panic!("table: {error}")),
+        )
+        .unwrap_or_else(|error| panic!("widened declaration: {error}"))
+    }
+
+    fn priced(usage: MeteredUsage) -> u128 {
+        let schedule = FeeSchedule::declared();
+        u128::from(usage.cpu_fuel) * u128::from(schedule.cpu_price())
+            + u128::from(usage.memory_bytes) * u128::from(schedule.memory_byte_price())
+            + u128::from(usage.storage_read_bytes) * u128::from(schedule.storage_read_byte_price())
+            + u128::from(usage.storage_write_bytes)
+                * u128::from(schedule.storage_write_byte_price())
+            + u128::from(usage.output_values) * u128::from(schedule.output_value_price())
+            + u128::from(usage.output_bytes) * u128::from(schedule.output_byte_price())
+    }
+
+    #[test]
+    fn declared_ceiling_never_changes_consumed_usage_or_billed_fee() {
+        let maximum_fee = maximum_fee_units(
+            DeclaredBudget::protocol_maximum().resource_budget(),
+            FeeSchedule::declared(),
+        )
+        .unwrap_or_else(|error| panic!("maximum fee: {error}"));
+        for seed in 0_u64..512 {
+            let charges = charges(seed);
+            let exact = exact_fit(&charges);
+            let baseline = execute(exact.resource_budget(), &charges)
+                .unwrap_or_else(|error| panic!("seed {seed} exact fit: {error}"));
+            assert_eq!(baseline.fee_units, priced(baseline), "seed {seed}");
+            assert!(baseline.fee_units < maximum_fee, "seed {seed}");
+            let mut sequence = Sequence {
+                state: seed ^ 0x5eed,
+            };
+            let mut ceilings = vec![DeclaredBudget::protocol_maximum()];
+            ceilings.extend((0..8).map(|_| widened(exact, &mut sequence)));
+            for ceiling in ceilings {
+                let usage = execute(ceiling.resource_budget(), &charges)
+                    .unwrap_or_else(|error| panic!("seed {seed} widened: {error}"));
+                assert_eq!(usage, baseline, "seed {seed} ceiling {ceiling:?}");
+                let ceiling_fee =
+                    maximum_fee_units(ceiling.resource_budget(), FeeSchedule::declared())
+                        .unwrap_or_else(|error| panic!("seed {seed} ceiling fee: {error}"));
+                assert!(usage.fee_units <= ceiling_fee, "seed {seed}");
+            }
+        }
+    }
+
+    #[test]
+    fn one_short_declared_ceiling_is_a_typed_refusal_at_the_exact_dimension() {
+        for seed in 0_u64..512 {
+            let charges = charges(seed);
+            let budget = exact_fit(&charges).resource_budget();
+            let baseline = execute(budget, &charges)
+                .unwrap_or_else(|error| panic!("seed {seed} exact fit: {error}"));
+            let shortened = [
+                (
+                    ResourceKind::Cpu,
+                    baseline.cpu_fuel,
+                    budget.cpu_fuel(),
+                    ResourceBudget::new_complete(
+                        baseline.cpu_fuel.saturating_sub(1),
+                        budget.memory_bytes(),
+                        budget.storage_read_bytes(),
+                        budget.storage_write_bytes(),
+                        budget.output_values(),
+                        budget.output_bytes(),
+                        budget.table_elements(),
+                    ),
+                ),
+                (
+                    ResourceKind::StorageRead,
+                    baseline.storage_read_bytes,
+                    budget.storage_read_bytes(),
+                    ResourceBudget::new_complete(
+                        budget.cpu_fuel(),
+                        budget.memory_bytes(),
+                        baseline.storage_read_bytes.saturating_sub(1),
+                        budget.storage_write_bytes(),
+                        budget.output_values(),
+                        budget.output_bytes(),
+                        budget.table_elements(),
+                    ),
+                ),
+                (
+                    ResourceKind::StorageWrite,
+                    baseline.storage_write_bytes,
+                    budget.storage_write_bytes(),
+                    ResourceBudget::new_complete(
+                        budget.cpu_fuel(),
+                        budget.memory_bytes(),
+                        budget.storage_read_bytes(),
+                        baseline.storage_write_bytes.saturating_sub(1),
+                        budget.output_values(),
+                        budget.output_bytes(),
+                        budget.table_elements(),
+                    ),
+                ),
+                (
+                    ResourceKind::OutputBytes,
+                    baseline.output_bytes,
+                    budget.output_bytes(),
+                    ResourceBudget::new_complete(
+                        budget.cpu_fuel(),
+                        budget.memory_bytes(),
+                        budget.storage_read_bytes(),
+                        budget.storage_write_bytes(),
+                        budget.output_values(),
+                        baseline.output_bytes.saturating_sub(1),
+                        budget.table_elements(),
+                    ),
+                ),
+            ];
+            for (resource, used, declared, short) in shortened {
+                if used == 0 || used != declared {
+                    continue;
+                }
+                match execute(short, &charges) {
+                    Err(MeterRefusal::BudgetExceeded {
+                        resource: refused,
+                        limit,
+                        attempted,
+                    }) => {
+                        assert_eq!(refused, resource, "seed {seed}");
+                        assert_eq!(limit, used - 1, "seed {seed}");
+                        assert!(attempted > limit, "seed {seed}");
+                    }
+                    other => panic!("seed {seed} {resource}: expected refusal, got {other:?}"),
+                }
+            }
+        }
+    }
+}
+
 const REPLAY_METER_DOMAIN: &[u8] = b"LayerX/programs/replay-meter/v1\0";
 const MAX_REPLAY_METER_BYTES: usize = REPLAY_METER_DOMAIN.len() + 48 + 60 + 68 + 1 + 19;
 
