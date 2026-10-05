@@ -1,20 +1,21 @@
 # Tendermint Tests
 
-The unit tests (ie. the `go test` s) can be run with `make test`.
-The integration tests can be run with `make test_integrations`.
+The unit tests (ie. the `go test` s) live next to the packages they cover. Run them from the repository root with:
 
-Running the integrations test will build a docker container with local version of tendermint
-and run the following tests in docker containers:
+```sh
+go test ./consensus/...
+```
 
-- go tests, with --race
-    - includes test coverage
-- app tests
-    - kvstore app over socket
-- persistence tests
-    - crash tendermint at each of many predefined points, restart, and ensure it syncs properly with the app
+From the `consensus` directory, `make test` runs the same packages with `go test -p 1 -tags deadlock` (target defined in [`Makefile`](./Makefile)).
+
+The upstream integration targets are not runnable in this tree: `make test_integrations` depends on `tools` and `test_libs` targets and an `abci/tests/test_app/test.sh` script that do not exist here, [`test_cover.sh`](./test_cover.sh) lists packages under the upstream `github.com/tendermint/tendermint` module path, and [`docker/Dockerfile`](./docker/Dockerfile) builds a standalone `tendermint` binary that this tree does not provide.
 
 ## Fuzzing
 
 [Fuzzing](https://en.wikipedia.org/wiki/Fuzzing) of various system inputs.
 
-See `./fuzz/README.md` for more details.
+See [`./fuzz/README.md`](./fuzz/README.md) for more details.
+
+## End-to-end tests
+
+See [`./e2e/README.md`](./e2e/README.md).

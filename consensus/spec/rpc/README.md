@@ -8,6 +8,7 @@ parent:
 # RPC spec
 
 This file defines the JSON-RPC spec of Tendermint. This is meant to be implemented by all clients.
+In this repository the server routes are registered in [`internal/rpc/core/routes.go`](../../internal/rpc/core/routes.go). The examples assume a node with its RPC listener on the default port 26657 of the local machine.
 
 ## Support
 
@@ -66,7 +67,7 @@ None
 ##### HTTP
 
 ```sh
-curl http://127.0.0.1:26657/health
+curl http://localhost:26657/health
 ```
 
 ##### JSONRPC
@@ -98,7 +99,7 @@ None
 ##### HTTP
 
 ```sh
-curl http://127.0.0.1:26657/status
+curl http://localhost:26657/status
 ```
 
 ##### JSONRPC
@@ -121,14 +122,14 @@ curl -X POST https://localhost:26657 -d "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\
         "app": "0"
       },
       "id": "b93270b358a72a2db30089f3856475bb1f918d6d",
-      "listen_addr": "tcp://0.0.0.0:26656",
+      "listen_addr": "tcp://localhost:26656",
       "network": "cosmoshub-4",
       "version": "v0.34.8",
       "channels": "40202122233038606100",
       "moniker": "aib-hub-node",
       "other": {
         "tx_index": "on",
-        "rpc_address": "tcp://0.0.0.0:26657"
+        "rpc_address": "tcp://localhost:26657"
       }
     },
     "sync_info": {
@@ -167,7 +168,7 @@ None
 ##### HTTP
 
 ```sh
-curl http://127.0.0.1:26657/net_info
+curl http://localhost:26657/net_info
 ```
 
 ##### JSONRPC
@@ -191,7 +192,7 @@ curl -X POST https://localhost:26657 -d "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\
 	"peers": [
 	  {
 		  "node_id": "5576458aef205977e18fd50b274e9b5d9014525a",
-		  "url": "tcp://5576458aef205977e18fd50b274e9b5d9014525a@95.179.155.35:26656"
+		  "url": "tcp://5576458aef205977e18fd50b274e9b5d9014525a@peer.example.com:26656"
 	  }
 	]
   }
@@ -212,9 +213,9 @@ Get block headers. Returned in descending order. May be limited in quantity.
 ##### HTTP
 
 ```sh
-curl http://127.0.0.1:26657/blockchain
+curl http://localhost:26657/blockchain
 
-curl http://127.0.0.1:26657/blockchain?minHeight=1&maxHeight=2
+curl http://localhost:26657/blockchain?minHeight=1&maxHeight=2
 ```
 
 ##### JSONRPC
@@ -286,9 +287,9 @@ Get a header at a specified height.
 ##### HTTP
 
 ```sh
-curl http://127.0.0.1:26657/header
+curl http://localhost:26657/header
 
-curl http://127.0.0.1:26657/header?height=1
+curl http://localhost:26657/header?height=1
 ```
 
 ##### JSONRPC
@@ -344,7 +345,7 @@ curl -X POST https://localhost:26657 -d "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\
 ##### HTTP
 
 ```sh
-curl http://127.0.0.1:26657/header_by_hash?hash=0xD70952032620CC4E2737EB8AC379806359D8E0B17B0488F627997A0B043ABDED
+curl http://localhost:26657/header_by_hash?hash=0xD70952032620CC4E2737EB8AC379806359D8E0B17B0488F627997A0B043ABDED
 ```
 
 ##### JSONRPC
@@ -403,9 +404,9 @@ Get block at a specified height.
 ##### HTTP
 
 ```sh
-curl http://127.0.0.1:26657/block
+curl http://localhost:26657/block
 
-curl http://127.0.0.1:26657/block?height=1
+curl http://localhost:26657/block?height=1
 ```
 
 ##### JSONRPC
@@ -518,7 +519,7 @@ curl -X POST https://localhost:26657 -d "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\
 ##### HTTP
 
 ```sh
-curl http://127.0.0.1:26657/block_by_hash?hash=0xD70952032620CC4E2737EB8AC379806359D8E0B17B0488F627997A0B043ABDED
+curl http://localhost:26657/block_by_hash?hash=0xD70952032620CC4E2737EB8AC379806359D8E0B17B0488F627997A0B043ABDED
 ```
 
 ##### JSONRPC
@@ -631,10 +632,10 @@ curl -X POST https://localhost:26657 -d "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\
 ##### HTTP
 
 ```sh
-curl  http://127.0.0.1:26657/block_results
+curl  http://localhost:26657/block_results
 
 
-curl  http://127.0.0.1:26657/block_results?height=1
+curl  http://localhost:26657/block_results?height=1
 ```
 
 ##### JSONRPC
@@ -739,10 +740,10 @@ curl -X POST https://localhost:26657 -d "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\
 ##### HTTP
 
 ```sh
-curl  http://127.0.0.1:26657/commit
+curl  http://localhost:26657/commit
 
 
-curl  http://127.0.0.1:26657/commit?height=1
+curl  http://localhost:26657/commit?height=1
 ```
 
 ##### JSONRPC
@@ -822,7 +823,7 @@ curl -X POST https://localhost:26657 -d "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\
 ##### HTTP
 
 ```sh
-curl  http://127.0.0.1:26657/validators
+curl  http://localhost:26657/validators
 ```
 
 ##### JSONRPC
@@ -866,7 +867,7 @@ will return an error: use `genesis_chunked` instead.
 ##### HTTP
 
 ```sh
-curl  http://127.0.0.1:26657/genesis
+curl  http://localhost:26657/genesis
 ```
 
 ##### JSONRPC
@@ -933,7 +934,7 @@ Get the genesis document in a chunks to support easily transfering larger docume
 ##### HTTP
 
 ```sh
-curl  http://127.0.0.1:26657/genesis_chunked?chunk=0
+curl  http://localhost:26657/genesis_chunked?chunk=0
 ```
 
 ##### JSONRPC
@@ -969,7 +970,7 @@ Get the consensus parameters.
 ##### HTTP
 
 ```sh
-curl  http://127.0.0.1:26657/consensus_params
+curl  http://localhost:26657/consensus_params
 ```
 
 ##### JSONRPC
@@ -1018,7 +1019,7 @@ Get a list of unconfirmed transactions.
 ##### HTTP
 
 ```sh
-curl  http://127.0.0.1:26657/unconfirmed_txs
+curl  http://localhost:26657/unconfirmed_txs
 ```
 
 ##### JSONRPC
@@ -1057,7 +1058,7 @@ None
 ##### HTTP
 
 ```sh
-curl  http://127.0.0.1:26657/num_unconfirmed_txs
+curl  http://localhost:26657/num_unconfirmed_txs
 ```
 
 ##### JSONRPC
@@ -1092,13 +1093,13 @@ curl -X POST https://localhost:26657 -d "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\
 ##### HTTP
 
 ```sh
-curl  http://127.0.0.1:26657/num_unconfirmed_txs
+curl  "http://localhost:26657/tx?hash=0xD70952032620CC4E2737EB8AC379806359D8E0B17B0488F627997A0B043ABDED&prove=false"
 ```
 
 ##### JSONRPC
 
 ```sh
-curl -X POST https://localhost:26657 -d "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"num_unconfirmed_txs\"}"
+curl -X POST https://localhost:26657 -d "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tx\",\"params\":{\"hash\":\"D70952032620CC4E2737EB8AC379806359D8E0B17B0488F627997A0B043ABDED\",\"prove\":false}}"
 ```
 
 #### Response
@@ -1143,7 +1144,7 @@ Returns with the response from CheckTx. Does not wait for DeliverTx result.
 ##### HTTP
 
 ```sh
-curl  http://127.0.0.1:26657/broadcast_tx_sync?tx=encoded_tx
+curl  http://localhost:26657/broadcast_tx_sync?tx=encoded_tx
 ```
 
 ##### JSONRPC
@@ -1182,7 +1183,7 @@ Returns right away, with no response. Does not wait for CheckTx nor DeliverTx re
 ##### HTTP
 
 ```sh
-curl  http://127.0.0.1:26657/broadcast_tx_async?tx=encoded_tx
+curl  http://localhost:26657/broadcast_tx_async?tx=encoded_tx
 ```
 
 ##### JSONRPC
@@ -1221,7 +1222,7 @@ Checks the transaction without executing it.
 ##### HTTP
 
 ```sh
-curl  http://127.0.0.1:26657/check_tx?tx=encoded_tx
+curl  http://localhost:26657/check_tx?tx=encoded_tx
 ```
 
 ##### JSONRPC
@@ -1276,7 +1277,7 @@ None
 ##### HTTP
 
 ```sh
-curl  http://127.0.0.1:26657/abci_info
+curl  http://localhost:26657/abci_info
 ```
 
 ##### JSONRPC
@@ -1317,7 +1318,7 @@ Query the application for some information.
 ##### HTTP
 
 ```sh
-curl  http://127.0.0.1:26657/abci_query?path="a/b/c"=IHAVENOIDEA&height=1&prove=true
+curl  http://localhost:26657/abci_query?path="a/b/c"=IHAVENOIDEA&height=1&prove=true
 ```
 
 ##### JSONRPC

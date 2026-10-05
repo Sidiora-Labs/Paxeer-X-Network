@@ -11,7 +11,7 @@ parent:
 This directory contains work-in-progress English and TLA+ specifications for the Light Client
 protocol. Implementations of the light client can be found in
 [Rust](https://github.com/informalsystems/tendermint-rs/tree/master/light-client) and
-[Go](https://github.com/tendermint/tendermint/tree/master/light).
+Go, in this repository under [`light`](../../light/).
 
 Light clients are assumed to be initialized once from a trusted source
 with a trusted header and validator set. The light client
@@ -32,8 +32,8 @@ In case a lightclient attack is detected, the lightclient submits evidence to a 
 
 The [English specification](verification/verification_001_published.md) describes the light client
 commit verification problem in terms of the temporal properties
-[LCV-DIST-SAFE.1](https://github.com/informalsystems/tendermint-rs/blob/master/docs/spec/lightclient/verification/verification_001_published.md#lcv-dist-safe1) and
-[LCV-DIST-LIVE.1](https://github.com/informalsystems/tendermint-rs/blob/master/docs/spec/lightclient/verification/verification_001_published.md#lcv-dist-live1).
+[LCV-DIST-SAFE.1](verification/verification_001_published.md) and
+[LCV-DIST-LIVE.1](verification/verification_001_published.md).
 Commit verification is assumed to operate within the Tendermint Failure Model, where +2/3 of validators are correct for some time period and
 validator sets can change arbitrarily at each height.
 
@@ -137,7 +137,7 @@ termination, which can be model checked with Apalache.
 The `LCD_MC*.tla` files contain concrete parameters for the
 [TLA+ specification](detection/LCDetector_003_draft.tla),
 in order to run the model checker.
-For instance, [LCD_MC4_4_faulty.tla](detection/MC4_4_faulty.tla)
+For instance, [LCD_MC4_4_faulty.tla](detection/LCD_MC4_4_faulty.tla)
 contains the following parameters
 for the nodes, heights, the trusting period, the clock drifts,
 correctness of the nodes, and the ratio of the faulty processes:

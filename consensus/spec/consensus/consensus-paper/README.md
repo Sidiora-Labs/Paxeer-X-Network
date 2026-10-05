@@ -1,6 +1,6 @@
 # Tendermint-spec
 
-The repository contains the specification (and the proofs) of the Tendermint
+This directory contains the LaTeX source of the specification (and the proofs) of the Tendermint
 consensus protocol.
 
 ## How to install Latex on Mac OS

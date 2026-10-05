@@ -1,28 +1,26 @@
 # crypto
 
-crypto is the cryptographic package adapted for Tendermint's uses
+crypto is the cryptographic package adapted for Tendermint's uses. In this tree it provides Ed25519 keys ([`ed25519`](./ed25519/)), SHA-256 hashing ([`tmhash`](./tmhash/)) and simple Merkle trees ([`merkle`](./merkle/)).
 
 ## Importing it
 
 To get the interfaces,
-`import "github.com/tendermint/tendermint/crypto"`
+`import "github.com/sidiora-labs/paxeer-network/consensus/crypto"`
 
 For any specific algorithm, use its specific module e.g.
-`import "github.com/tendermint/tendermint/crypto/ed25519"`
+`import "github.com/sidiora-labs/paxeer-network/consensus/crypto/ed25519"`
 
 ## Binary encoding
 
-For Binary encoding, please refer to the [Tendermint encoding specification](https://docs.tendermint.com/master/spec/core/encoding.html).
+For Binary encoding, please refer to the [encoding specification](../spec/core/encoding.md).
 
 ## JSON Encoding
 
-JSON encoding is done using tendermint's internal json encoder. For more information on JSON encoding, please refer to [Tendermint JSON encoding](https://github.com/tendermint/tendermint/blob/ccc990498df70f5a3df06d22476c9bb83812cbe3/libs/json/doc.go)
+JSON encoding is done using the engine's internal json encoder ([`libs/json`](../libs/json/doc.go)); key types register their type tags with [`internal/jsontypes`](../internal/jsontypes/).
 
 ```go
 Example JSON encodings:
 
-ed25519.PrivKey     - {"type":"tendermint/PrivKeyEd25519","value":"EVkqJO/jIXp3rkASXfh9YnyToYXRXhBr6g9cQVxPFnQBP/5povV4HTjvsy530kybxKHwEi85iU8YL0qQhSYVoQ=="}
-ed25519.PubKey      - {"type":"tendermint/PubKeyEd25519","value":"AT/+aaL1eB0477Mud9JMm8Sh8BIvOYlPGC9KkIUmFaE="}
-crypto.PrivKeySecp256k1   - {"type":"tendermint/PrivKeySecp256k1","value":"zx4Pnh67N+g2V+5vZbQzEyRerX9c4ccNZOVzM9RvJ0Y="}
-crypto.PubKeySecp256k1    - {"type":"tendermint/PubKeySecp256k1","value":"A8lPKJXcNl5VHt1FK8a244K9EJuS4WX1hFBnwisi0IJx"}
+ed25519.SecretKey   - {"type":"tendermint/PrivKeyEd25519","value":"EVkqJO/jIXp3rkASXfh9YnyToYXRXhBr6g9cQVxPFnQBP/5povV4HTjvsy530kybxKHwEi85iU8YL0qQhSYVoQ=="}
+ed25519.PublicKey   - {"type":"tendermint/PubKeyEd25519","value":"AT/+aaL1eB0477Mud9JMm8Sh8BIvOYlPGC9KkIUmFaE="}
 ```

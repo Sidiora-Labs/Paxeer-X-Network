@@ -16,6 +16,9 @@ ABCI application by sending the `Request*` messages and receiving the `Response*
 
 All ABCI messages and methods are defined in [protocol buffers](../../proto/tendermint/abci/types.proto).
 This allows Tendermint to run with applications written in many programming languages.
+In this repository the engine calls the application in-process through the Go interface in
+[`abci/types/application.go`](../../abci/types/application.go); the socket and gRPC transports
+described in the client and server document are not implemented here.
 
 This specification is split as follows:
 

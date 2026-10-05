@@ -1,6 +1,6 @@
 # End-to-End Tests
 
-Spins up and tests Tendermint networks in Docker Compose based on a testnet manifest. To run the CI testnet:
+Spins up and tests networks of the consensus engine in Docker Compose based on a testnet manifest. To run the CI testnet:
 
 ```sh
 make
@@ -8,6 +8,8 @@ make
 ```
 
 This creates and runs a testnet named `ci` under `networks/ci/`.
+
+This harness is inherited from upstream Tendermint. In this tree, `make generator runner tests node` build the Go tools, but `make docker` does not build the `tendermint/e2e-node` image: [`docker/Dockerfile`](docker/Dockerfile) copies `go.mod` and `go.sum` from the `consensus` directory, which has none (the Go module root is the repository root), and runs `make build`, which produces no binary here (see [`../../README.md`](../../README.md)). Until that image builds, the Docker stages (`start` onward) cannot run.
 
 ## Conceptual Overview
 
@@ -59,6 +61,10 @@ The test runner has the following stages, which can also be executed explicitly 
 * `start`: starts Docker containers.
 
 * `load`: generates a transaction load against the testnet nodes.
+
+* `evidence [amount]`: generates and broadcasts evidence to a random node.
+
+* `pause` / `resume`: pauses or resumes the Docker testnet.
 
 * `perturb`: runs any requested perturbations (e.g. node restarts or network disconnects).
 
@@ -158,8 +164,7 @@ The E2E test harness is designed to run several nodes of varying configurations 
 
 ```bash
 make node
-tendermint init validator
 TMHOME=$HOME/.tendermint ./build/node ./node/built-in.toml
 ```
 
-Check `node/config.go` to see how the settings of the test application can be tweaked.
+The node reads its engine configuration from `$TMHOME/config/config.toml`, which must already exist; this tree has no standalone `tendermint init` command to create it. Check `node/config.go` to see how the settings of the test application can be tweaked.

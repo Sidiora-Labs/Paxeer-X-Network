@@ -8,7 +8,7 @@ parent:
 
 # Tendermint Specifications
 
-This directory hosts the canonical Markdown specifications of the Tendermint Protocol.
+This directory hosts the canonical Markdown specifications of the Tendermint Protocol, kept beside the fork of the engine that runs the Paxeer X chain (see [`../README.md`](../README.md)). Where this fork differs from upstream, for example ABCI being called in-process with no socket or gRPC transport, the code in this tree is authoritative.
 
 It shall be used to describe protocol semantics, namely the BFT consensus engine, leader election, block propagation and light client verification. The specification includes encoding descriptions used in interprocess communication to comply with the protocol. It defines the interface between the application and Tendermint. The english specifications are often accompanies with a TLA+ specification.
 
@@ -33,13 +33,13 @@ It shall be used to describe protocol semantics, namely the BFT consensus engine
 
 Contributions are welcome.
 
-Proposals at an early stage can first be drafted as Github issues. To progress, a proposal will often need to be written out and approved as a [Request For Comment (RFC)](../docs/rfc/README.md).
+Proposals at an early stage can first be drafted as GitHub issues on the [repository](https://github.com/Sidiora-Labs/Paxeer-X-Network).
 
 The standard language for coding blocks is Golang.
 
 If you find discrepancies between the spec and the code that
-do not have an associated issue or pull request on github,
-please submit them to our [bug bounty](https://tendermint.com/security)!
+have security impact, report them as described in the repository
+[security policy](../../SECURITY.md).
 
 ## Overview
 

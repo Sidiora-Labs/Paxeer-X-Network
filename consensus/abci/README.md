@@ -3,34 +3,24 @@
 Blockchains are systems for multi-master state machine replication.
 **ABCI** is an interface that defines the boundary between the replication engine (the blockchain),
 and the state machine (the application).
-Using a socket protocol, a consensus engine running in one process
-can manage an application state running in another.
 
-Previously, the ABCI was referred to as TMSP.
+In this tree the engine calls the application in-process through the Go `Application` interface in [`types/application.go`](./types/application.go); [`../internal/proxy`](../internal/proxy/) wraps it for the node. There is no socket or gRPC transport and no `abci-cli`. On the Paxeer X chain the application is `paxd`'s own app.
 
-The community has provided a number of additional implementations, see the [Tendermint Ecosystem](https://github.com/tendermint/awesome#ecosystem)
+## Contents
 
-
-## Installation & Usage
-
-To get up and running quickly, see the [getting started guide](../docs/app-dev/getting-started.md) along with the [abci-cli documentation](../docs/app-dev/abci-cli.md) which will go through the examples found in the [examples](./example/) directory.
+- [`types/`](./types/) - the `Application` interface and the request and response types
+- [`example/kvstore`](./example/kvstore/README.md) - an in-memory key-value application used by the engine's tests
+- [`example/code`](./example/code/) - response codes used by the example application
 
 ## Specification
 
 A detailed description of the ABCI methods and message types is contained in:
 
 - [The main spec](../spec/abci/abci.md)
+- [The ABCI++ spec](../spec/abci++/README.md)
 - [A protobuf file](../proto/tendermint/abci/types.proto)
 - [A Go interface](./types/application.go)
 
 ## Protocol Buffers
 
-To compile the protobuf file, run (from the root of the repo):
-
-```sh
-make protoc_abci
-```
-
-See `protoc --help` and [the Protocol Buffers site](https://developers.google.com/protocol-buffers)
-for details on compiling for other languages. Note we also include a [GRPC](https://www.grpc.io/docs)
-service definition.
+The Go types in [`types/types.pb.go`](./types/types.pb.go) are generated with `protoc-gen-gogo` from [`../proto/tendermint/abci/types.proto`](../proto/tendermint/abci/types.proto). See [the Protocol Buffers site](https://developers.google.com/protocol-buffers) for details on compiling for other languages.
