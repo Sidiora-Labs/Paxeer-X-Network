@@ -29553,7 +29553,7 @@ qualification_result = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-10.3-q
 
 [task.24.4]
 title = "Require the complete configured kernel service roster for readiness"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 10
 requires = ["0.2", "24.1", "24.2", "24.3"]
