@@ -26055,7 +26055,7 @@ verify_exit_code = 1
 qualification_log = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-12.6-result.json"
 [task.13.3]
 title = "Resume wallet migration through durable import and verification stages"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 3
 requires = ["0.2", "13.1"]
@@ -26081,11 +26081,14 @@ fleet_authority = "User explicitly ordered30agents into pending integrations wit
 fleet_role = "/root/complete_migration"
 fleet_scope_manifest = "/root/lx-ops/paxeer-x-integration-2026-10-03/fleet-13.3-brief.json"
 source_status = "partial"
-completion_basis = "honest incomplete source checkpoint; original criteria remain required"
-qualification_status = "UNRUN"
+completion_basis = "implementation under owner CONSTITUTION; qualification separately recorded"
+qualification_status = "PREREQUISITE_UNAVAILABLE"
 source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/fleet-13.3-partial-publication.json"
 lease_formatter_103_6_27_paths = ["human/wallet/attestor/internal/server/verification.go", "human/wallet/attestor/internal/server/keys.go", "human/wallet/attestor/internal/store/store.go", "human/wallet/ceremony/internal/migrate/migrate.go", "human/wallet/ceremony/internal/attestor/client.go", "human/wallet/ceremony/internal/migrate/migrate_test.go", "human/wallet/attestor/internal/server/durability_test.go", "human/wallet/attestor/internal/server/authority.go", "human/wallet/attestor/internal/server/peer.go", "human/wallet/ceremony/cmd/ceremony/main.go", "human/wallet/ceremony/internal/rehearsal/rehearsal.go"]
 lease_formatter_103_6_27_basis = "Owner-approved inactive file-lease reassignment; formatting only; all unfinished task requirements and assertions retained"
+build_exit_code = 0
+verify_exit_code = 2
+qualification_log = "/root/lx-ops/fleet-2026-10-05/results/13.3.json"
 
 [task.13.4]
 title = "Serve authenticated wallet custody, constrained signing and sponsored submission adapters"

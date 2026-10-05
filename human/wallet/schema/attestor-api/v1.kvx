@@ -214,6 +214,17 @@ recovery_id    = "uint8 optional: present for secp256k1"
 audit_sequence = "uint64: this node's audit record for the allowed decision"
 message        = "hex optional: present for operator_verification; the verification message the node built"
 
+[state.ceremony]
+summary           = "One operator-authorized ceremony migrates a wallet's original secp256k1 address key and ed25519 DID key to the five approved members at threshold three. Every stage is durable on the operator and node side before the next starts; a retry or restart at any boundary resumes the same identity and never generates replacement shares for a partially imported key."
+identity          = "ceremony_id, import session_id, key_id, curve, original public_key, sorted participants and epoch, bound at the first durable keys.import and compared exactly on every later request; plaintext keys and shares are never persisted outside the sealed node store and the sealed operator journal"
+operator_journal  = "per wallet, sealed with the journal key before delivery: ceremony_id, wallet digest, approved members with pins and, per curve, key_id, import, refresh, verify and recovery session ids, captured base epoch, sealed share bundles, imported, refreshed, epoch and verification evidence, then matched"
+operator_stages   = "planned -> imported (every member holds the exact receipt) -> refreshed (committed at base epoch + 1) -> verified (at least three members return complete durable evidence that recovers the original address or DID) -> matched -> migrated (one transaction locks the wallet row, rechecks the original identity and key ids and sets migrated_at)"
+node_import       = "absent -> imported: the receipt and its audit record commit with the share; an exact replay returns the receipt at the current epoch, a different session or ceremony is refused with key_exists and a different epoch, threshold, roster or public key with key_invalid_share"
+node_refresh      = "prepared -> running -> staged -> complete with decision commit, or discarded on an authenticated coordinator abort; session_id is the idempotency token, a retry after commit returns the durable result and a new session must name the aborted attempt in recovery_session_id"
+node_verification = "signing -> signed_pending_audit -> complete, or signing -> failed; session_id is the idempotency token, a failed or interrupted attempt recovers only through a new session naming recovery_session_id or the exact session carrying recovery_evidence, signed_pending_audit finishes its audit without signing again, and only complete is reported as success"
+resume            = "deliver reopens the sealed journal, replays the identical import bytes, reconciles refresh and verification through the retained session ids and repeats only the database mark when the process stopped before commit"
+rehearsal         = "rehearse --report-only-counts runs every stage on an isolated database copy against an independent five-member custody plane with the same member ids and pins, emits only stage counts and seals a rehearsal receipt; it fails unless matched equals eligible, and deliver refuses to start without a receipt for the same ceremony, membership and eligible wallets"
+
 [op.health]
 method   = "GET"
 path     = "/health"

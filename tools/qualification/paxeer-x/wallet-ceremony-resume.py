@@ -523,6 +523,10 @@ def main():
     rehearsal_output = (STATE / 'rehearsal.log').read_text()
     require(rehearsal_output.strip() and all(re.fullmatch(r'(?:(?:[a-z_]+=[0-9]+|table=[a-z_][a-z0-9_]*)(?: |$))+', line)
                                            for line in rehearsal_output.splitlines()), 'rehearsal must emit only stage counts')
+    stages = dict(item.split('=', 1) for item in rehearsal_output.splitlines()[0].split())
+    require(int(stages.get('eligible', '0')) >= 1, 'rehearsal reported no eligible wallet')
+    for stage in ('read', 'verified', 'imported', 'refreshed', 'test_signed', 'matched'):
+        require(stages.get(stage) == stages['eligible'], 'rehearsal stage ' + stage + ' did not reach every eligible wallet')
     require(private_file(ceremony_env['CEREMONY_REHEARSAL_RECEIPT']).is_file(), 'durable rehearsal receipt missing')
     for process in rehearsal_processes:
         stop(process)
@@ -534,6 +538,8 @@ def main():
     wait_for(ready_nodes, 'live attestors changed during isolated rehearsal')
     unmigrated()
     original_did = query("select did from wallets where id='" + wallet_id + "'::uuid")
+    original_address = query("select address from wallets where id='" + wallet_id + "'::uuid")
+    require(re.fullmatch('0x[0-9a-fA-F]{40}', original_address), 'fixture original address missing')
     require(original_did.startswith('did:') and len(original_did) <= 256, 'fixture original DID missing')
     query("update wallets set did='did:layerx:" + '00' * 32 + "' where id='" + wallet_id + "'::uuid")
     invoke('changed-original-identity', ['deliver'], False)
@@ -614,6 +620,19 @@ def main():
     require(query("select count(*) from wallets where id='" + wallet_id + "'::uuid and migrated_at is not null") == '1',
             'verified wallet was not atomically marked')
     require(faults.replayed >= 2, 'exact import bytes were not retried')
+    migrated = query("select address || ' ' || did || ' ' || attestor_key_id || ' ' || layerx_key_id from wallets where id='" + wallet_id + "'::uuid").split(' ')
+    require(migrated[:2] == [original_address, original_did], 'migration changed the original address or DID')
+    for key_id, field, expected in ((migrated[2], 'address', original_address.lower()), (migrated[3], 'did', original_did)):
+        matching = 0
+        for item in config['operator_proxies']:
+            status, described = request(item['upstream'], tls_context(item['operator']), '/v1/keys/describe',
+                                        {'session_id': 'gate-identity-' + uuid.uuid4().hex, 'key_id': key_id})
+            require(status == 200 and sorted(described.get('participants', [])) == sorted(config['member_ids']),
+                    'migrated key is not held by the exact approved five-member roster')
+            value = described.get(field, '')
+            if (value.lower() if field == 'address' else value) == expected:
+                matching += 1
+        require(matching == 5, 'migrated ' + field + ' does not match the original identity on every member')
     with faults.lock:
         captured = copy.deepcopy(faults.verifications)
     for item in config['operator_proxies']:
@@ -643,14 +662,17 @@ def main():
     require(status == 409 and refused.get('error', {}).get('code') == 'verification_not_imported',
             'original generated identity acquired an import-only verification grant')
     invoke('final-counts', ['deliver', '--report-only-counts'], True)
+    final_counts = dict(item.split('=', 1) for item in (STATE / 'final-counts.log').read_text().split() if '=' in item)
+    require(final_counts.get('eligible_not_migrated') == '0' and int(final_counts.get('migrated', '0')) >= 1,
+            'final counts report an eligible wallet that is not migrated')
     for proxy in proxies:
         proxy.shutdown()
     for peer in peers:
         peer.shutdown()
     result = {'status': 'passed', 'cases': ['missing-rehearsal-config-refusal', 'shared-live-custody-refusal', 'shared-live-journal-refusal',
-              'rehearsal-pin-substitution-refusal', 'isolated-rehearsal-custody', 'counts-only-rehearsal', 'changed-original-identity-refusal', 'partial-import', 'exact-import-retry',
+              'rehearsal-pin-substitution-refusal', 'isolated-rehearsal-custody', 'counts-only-rehearsal', 'rehearsal-every-stage-matched', 'changed-original-identity-refusal', 'partial-import', 'exact-import-retry',
               'import-conflict-refusals', 'lost-reply', 'node-restart', 'failed-verification-recovery', 'precommit-process-death',
-              'atomic-migration', 'cached-evidence-replay', 'one-shot-refusal',
+              'atomic-migration', 'original-address-did-match', 'cached-evidence-replay', 'one-shot-refusal',
               'advanced-epoch-import-replay', 'gateway-operator-refusal', 'generated-key-grant-isolation',
               'durable-stage-decision-recovery', 'audit-failure-evidence-recovery'], 'exit_code': 0}
     (STATE / 'result.json').write_text(json.dumps(result, indent=2))
