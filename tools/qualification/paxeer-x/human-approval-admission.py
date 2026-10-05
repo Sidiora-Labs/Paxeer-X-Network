@@ -20,6 +20,8 @@ SOURCES = ('agent/crates/layerx-agentd/src/human_runtime.rs',
            'agent/crates/layerx-agentd/src/policy/native_program.rs',
            'agent/crates/layerx-agentd/src/budget/reserve.rs',
            'agent/crates/layerx-agentd/src/budget/program_sources.rs',
+           'agent/crates/layerx-agentd/src/budget/program_settlement.rs',
+           'agent/crates/layerx-agentd/src/budget/budget_proof.rs',
            'agent/crates/layerx-agentd/src/agent_rpc_wire.rs',
            'agent/crates/layerx-agentd/tests/human_approval_admission.rs',
            'tools/qualification/paxeer-x/human-approval-admission.py')

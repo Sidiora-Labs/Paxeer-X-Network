@@ -341,6 +341,47 @@ fn real_native_effect_prepare_human_owner_decision_and_reopen() {
         let rows = private(&fixture, &list, owner, principal);
         let mut rows = decode(&rows);
         assert!(rows.u8() >= 1);
+        let budget_sequence = node(&fixture).head().chain_sequence;
+        let mut budget = operation(56, Some(approval));
+        budget.extend_from_slice(&digest);
+        budget.extend_from_slice(&budget_sequence.to_be_bytes());
+        assert_eq!(
+            private(&fixture, &budget, foreign, principal),
+            b"LXHAGT01\x01"
+        );
+        assert_eq!(
+            private(&fixture, &budget, owner, foreign_principal),
+            b"LXHAGT01\x01"
+        );
+        let mut stale = operation(56, Some(approval));
+        stale.extend_from_slice(&digest);
+        stale.extend_from_slice(&(budget_sequence - 1).to_be_bytes());
+        assert_eq!(private(&fixture, &stale, owner, principal), b"LXHAGT01\x01");
+        let presented = private(&fixture, &budget, owner, principal);
+        let mut decoded = decode(&presented);
+        assert_eq!(decoded.u16(), 4);
+        assert_eq!(decoded.take(32), approval);
+        assert_eq!(decoded.take(32), digest);
+        assert_eq!(decoded.bytes(), owner.as_bytes());
+        assert_eq!(
+            u64::from_be_bytes(decoded.take(8).try_into().expect("u64")),
+            budget_sequence
+        );
+        assert_ne!(decoded.take(32), &[0; 32]);
+        assert_eq!(decoded.u16(), 1);
+        assert_eq!(decoded.take(32), id(text(&fixture, "asset_id")));
+        assert_ne!(decoded.take(32), &[0; 32]);
+        assert_ne!(decoded.take(32), &[0; 32]);
+        decoded.take(16);
+        assert!((4..=5).contains(&decoded.u8()));
+        assert_ne!(decoded.take(32), &[0; 32]);
+        assert_ne!(decoded.take(32), &[0; 32]);
+        assert_ne!(decoded.take(32), &[0; 32]);
+        let age = u64::from_be_bytes(decoded.take(8).try_into().expect("u64"));
+        let maximum_age = u64::from_be_bytes(decoded.take(8).try_into().expect("u64"));
+        assert!(maximum_age > 0 && age <= maximum_age);
+        assert!(decoded.0.is_empty());
+        assert_eq!(durable(&fixture, approval).1, carrier);
         let sequence = node(&fixture).head().chain_sequence;
         let mut decision = operation(54, Some(approval));
         decision.extend_from_slice(&digest);

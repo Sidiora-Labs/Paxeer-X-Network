@@ -9001,10 +9001,12 @@ impl<A: HumanAuthorityBoundary> HumanOperations for UnifiedAgentOwner<A> {
         sequence: u64,
     ) -> Result<HumanResponse, HumanOperationError> {
         use crate::approval::native_effect::NativeEffectApprovalCarrier;
-        let tenant =
-            TenantId::new(peer.tenant.clone()).map_err(|_| HumanOperationError::Refused)?;
-        let (held, terminal, owners) = {
-            self.lock_operations()?.authority.authorize_subject(peer)?;
+        let registry = {
+            let mut ops = self.lock_operations()?;
+            ops.authority.authorize_subject(peer)?;
+            ops.authority.registry(peer).map_err(map_core)?
+        };
+        let budget_id = {
             let store = self
                 .store
                 .lock()
@@ -9018,64 +9020,38 @@ impl<A: HumanAuthorityBoundary> HumanOperations for UnifiedAgentOwner<A> {
             {
                 return Err(HumanOperationError::Refused);
             }
-            let key = crate::prepare::DurablePreparation::store_key(&tenant, id)
-                .map_err(|_| HumanOperationError::Refused)?;
-            let raw = store.get(&key).ok_or(HumanOperationError::Refused)?;
-            let durable = crate::prepare::DurablePreparation::decode(tenant.clone(), raw.bytes())
-                .map_err(|_| HumanOperationError::Refused)?;
-            (
-                held,
-                durable.terminal(),
-                managed_agent::budget_owners(&store, &tenant)?,
-            )
-        };
-        let actor_text =
-            std::str::from_utf8(held.actor()).map_err(|_| HumanOperationError::Refused)?;
-        let mut selected = owners.iter().filter(|owner| owner.agent_did == actor_text);
-        let (Some(owner), None) = (selected.next(), selected.next()) else {
-            return Err(HumanOperationError::Refused);
-        };
-        let budget = held.budget().map_err(|_| HumanOperationError::Refused)?;
-        let pairs: std::collections::BTreeSet<_> = budget
-            .allocations()
-            .ok_or(HumanOperationError::Refused)?
-            .iter()
-            .map(|row| (row.asset, row.source))
-            .collect();
-        if pairs.is_empty() || pairs.len() > 100 {
-            return Err(HumanOperationError::Refused);
-        }
-        let mut operations = self.lock_operations()?;
-        let actor = Did::new(held.actor()).map_err(|_| HumanOperationError::Refused)?;
-        let snapshot = core_preparation_snapshot(&mut operations.node, peer, &actor)?;
-        if snapshot.observed_head_sequence != sequence {
-            return Err(HumanOperationError::Refused);
-        }
-        let mut rows = Vec::new();
-        for (asset, source) in pairs {
-            let state = operations
-                .authority
-                .budget_state(peer, owner.active_budget_id)?;
-            if state.asset != asset
-                || state.observed_head_sequence != sequence
-                || !(4..=5).contains(&state.verification)
-                || state.evidence_digest == [0; 32]
-                || state.receipt_digest == [0; 32]
-                || state.checkpoint_digest == [0; 32]
-                || state.maximum_age_sequences == 0
-                || state.age_sequences > state.maximum_age_sequences
-            {
+            let tenant =
+                TenantId::new(peer.tenant.clone()).map_err(|_| HumanOperationError::Refused)?;
+            let owners = managed_agent::budget_owners(&store, &tenant)?;
+            let actor =
+                std::str::from_utf8(held.actor()).map_err(|_| HumanOperationError::Refused)?;
+            let mut selected = owners.iter().filter(|owner| owner.agent_did == actor);
+            let (Some(owner), None) = (selected.next(), selected.next()) else {
                 return Err(HumanOperationError::Refused);
-            }
-            let remaining = self
-                .budgets
-                .remaining_after_allocation_bound(&budget, asset, source, state.remaining, terminal)
-                .map_err(|_| HumanOperationError::Refused)?;
-            rows.push((asset, source, remaining, state));
-        }
-        if operations.node.head().chain_sequence != sequence {
+            };
+            owner.active_budget_id
+        };
+        let proof = self.verified_program_budget_proof(peer, budget_id)?;
+        if proof.observed_head_sequence() != sequence {
             return Err(HumanOperationError::Refused);
         }
+        let store = self
+            .store
+            .lock()
+            .map_err(|_| HumanOperationError::Unavailable)?;
+        let row = crate::budget::program_settlement::read_owned_native_effect_budget(
+            &store,
+            peer,
+            id,
+            digest,
+            &registry,
+            &self.budgets,
+            &proof,
+            sequence,
+        )
+        .map_err(|_| HumanOperationError::Refused)?;
+        let held = NativeEffectApprovalCarrier::read_for_human(&store, peer, id)
+            .map_err(|_| HumanOperationError::Refused)?;
         let mut out = Encoder::new();
         out.u16(4)?;
         out.fixed(&id);
@@ -9087,21 +9063,19 @@ impl<A: HumanAuthorityBoundary> HumanOperations for UnifiedAgentOwner<A> {
                 .ok_or(HumanOperationError::Refused)?
                 .owner,
         )?;
-        out.u64(sequence);
+        out.u64(row.observed_sequence());
         out.fixed(&held.fee_asset());
-        out.u16(rows.len())?;
-        for (asset, source, remaining, state) in rows {
-            out.fixed(&asset);
-            out.fixed(&owner.active_budget_id);
-            out.fixed(&source);
-            out.u128(remaining);
-            out.u8(state.verification);
-            out.fixed(&state.evidence_digest);
-            out.fixed(&state.receipt_digest);
-            out.fixed(&state.checkpoint_digest);
-            out.u64(state.age_sequences);
-            out.u64(state.maximum_age_sequences)
-        }
+        out.u16(1)?;
+        out.fixed(&row.asset());
+        out.fixed(&row.budget_id());
+        out.fixed(&row.source());
+        out.u128(row.remaining_after_reservations());
+        out.u8(row.verification().wire_rank());
+        out.fixed(&row.evidence_digest());
+        out.fixed(&row.receipt_digest());
+        out.fixed(&row.checkpoint_digest());
+        out.u64(row.age_sequences());
+        out.u64(row.maximum_age_sequences());
         out.finish()
     }
     fn native_effect_approval_list_facts(
