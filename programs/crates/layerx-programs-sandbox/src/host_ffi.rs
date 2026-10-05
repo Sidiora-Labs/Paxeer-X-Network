@@ -878,7 +878,7 @@ fn execution_fee(
     })
 }
 
-fn cumulative_usage(
+pub(crate) fn cumulative_usage(
     lease: &Lease,
     usage: MeteredUsage,
     outcome: u8,

@@ -1418,4 +1418,650 @@ mod tests {
             state.escrow.spent() + state.escrow.refunded()
         );
     }
+
+    #[cfg(feature = "host-ffi")]
+    mod incremental {
+        use super::*;
+        use crate::LeaseCapabilities;
+        use layerx_programs_runtime::test_support::{
+            code_section, func_body, function_section, import_section, module, raw_section,
+            type_section, unsigned_leb, OP_CALL, OP_DROP, OP_END, OP_I32_CONST, OP_LOCAL_GET,
+            TYPE_I32,
+        };
+        use layerx_programs_runtime::{
+            AbiError, AuthorizationContext, AuthorizedExecutionRequest,
+            BudgetedAuthorizedExecutionRequest, BudgetedV1ActivityOutcome, CompositionContext,
+            DeclaredBudget, Executor, FeeScheduleParameters, ReceiptOracle, ReceiptView,
+            ResourceBudget, Storage, ValidatedModule, WasmEngine, ABI_MODULE, CALL_ENTRY_EXPORT,
+        };
+
+        const OP_SELECT: u8 = 0x1b;
+        const FUNDED: u128 = 1_000_000_000_000_000;
+        const WRITE_BUDGET: u64 = 64;
+
+        struct NoReceipts;
+
+        impl ReceiptOracle for NoReceipts {
+            fn verified_receipt(&self, _digest: [u8; 32]) -> Result<ReceiptView, AbiError> {
+                Err(AbiError::ReceiptMismatch)
+            }
+        }
+
+        fn writer() -> ValidatedModule {
+            let mut exports = unsigned_leb(3);
+            for (name, kind, index) in [
+                ("layerx_reserve", 0_u8, 1_u8),
+                (CALL_ENTRY_EXPORT, 0, 2),
+                ("memory", 2, 0),
+            ] {
+                exports.extend(unsigned_leb(name.len() as u64));
+                exports.extend_from_slice(name.as_bytes());
+                exports.extend_from_slice(&[kind, index]);
+            }
+            let mut data = vec![1, 0, OP_I32_CONST, 16, OP_END, 7];
+            data.extend_from_slice(b"keydata");
+            let image = module(&[
+                type_section(&[
+                    (&[TYPE_I32, TYPE_I32, TYPE_I32, TYPE_I32], &[TYPE_I32]),
+                    (&[TYPE_I32], &[TYPE_I32]),
+                    (&[TYPE_I32, TYPE_I32], &[TYPE_I32]),
+                ]),
+                import_section(&[(ABI_MODULE, "storage_write", 0)]),
+                function_section(&[1, 2]),
+                raw_section(5, &[1, 1, 1, 1]),
+                raw_section(7, &exports),
+                code_section(&[
+                    func_body(&[], &[OP_I32_CONST, 32, OP_END]),
+                    func_body(
+                        &[],
+                        &[
+                            OP_I32_CONST,
+                            16,
+                            OP_I32_CONST,
+                            3,
+                            OP_I32_CONST,
+                            19,
+                            OP_I32_CONST,
+                            4,
+                            OP_CALL,
+                            0,
+                            OP_DROP,
+                            OP_I32_CONST,
+                            0x7f,
+                            OP_I32_CONST,
+                            0,
+                            OP_LOCAL_GET,
+                            1,
+                            OP_SELECT,
+                            OP_END,
+                        ],
+                    ),
+                ]),
+                raw_section(11, &data),
+            ]);
+            WasmEngine::declared()
+                .unwrap_or_else(|error| panic!("engine: {error:?}"))
+                .validate(&image)
+                .unwrap_or_else(|error| panic!("writer image: {error:?}"))
+        }
+
+        fn priced_lease(image: &ValidatedModule, escrow_amount: u128) -> DurableUsageState {
+            let schedule = FeeSchedule::new_complete(FeeScheduleParameters {
+                version: 1,
+                fee_units_per_cpu_fuel: 3,
+                fee_units_per_memory_byte: 1,
+                fee_units_per_storage_read_byte: 5,
+                fee_units_per_storage_write_byte: 7,
+                fee_units_per_output_value: 11,
+                fee_units_per_output_byte: 13,
+                fee_units_per_occupancy_byte_batch: 2,
+            });
+            let mut lease = Lease::request_with_schedule(
+                LeaseId::new([0x31; 32]).unwrap_or_else(|error| panic!("lease: {error:?}")),
+                PrincipalId::new([0x32; 32]).unwrap_or_else(|error| panic!("tenant: {error:?}")),
+                ProgramId::new([0x33; 32]).unwrap_or_else(|error| panic!("program: {error:?}")),
+                image.code_hash(),
+                [0x34; 32],
+                escrow_amount,
+                LeaseLimits {
+                    cpu_fuel: 1_000_000_000,
+                    memory_bytes: 131_072,
+                    storage_read_bytes: 1 << 20,
+                    storage_write_bytes: 1 << 20,
+                    output_values: 65_536,
+                    output_bytes: 1 << 20,
+                    table_elements: 1,
+                    namespace_bytes: 1 << 20,
+                },
+                1,
+                1_000,
+                schedule,
+            )
+            .unwrap_or_else(|error| panic!("lease: {error:?}"));
+            lease
+                .apply_host_activity(LeaseActivity::Fund, [0x35; 32], 1)
+                .unwrap_or_else(|error| panic!("fund: {error:?}"));
+            let escrow = Escrow::funded_genesis(&lease, [0x36; 32])
+                .unwrap_or_else(|error| panic!("escrow: {error:?}"));
+            lease
+                .apply_host_activity(LeaseActivity::Activate, [0x37; 32], 2)
+                .unwrap_or_else(|error| panic!("activate: {error:?}"));
+            DurableUsageState {
+                lease,
+                escrow,
+                ledger: UsageLedger::new(),
+            }
+        }
+
+        fn activity(index: u8) -> ActivityBudgetBinding {
+            let mut bytes = [0x40; 32];
+            bytes[0] = index;
+            ActivityBudgetBinding::new(bytes).unwrap_or_else(|error| panic!("binding: {error:?}"))
+        }
+
+        fn run(
+            storage: &mut Storage,
+            lease: &Lease,
+            image: &ValidatedModule,
+            binding: ActivityBudgetBinding,
+            write_budget: u64,
+            calldata: &[u8],
+        ) -> (BudgetedV1ActivityOutcome, u128) {
+            let capabilities = LeaseCapabilities::derive(lease)
+                .unwrap_or_else(|error| panic!("capabilities: {error:?}"));
+            let executor = Executor::new(ResourceBudget::declared(), lease.fee_schedule());
+            let declared = DeclaredBudget::new(100_000, 65_536, 64, write_budget, 4, 64, 0)
+                .unwrap_or_else(|error| panic!("declared budget: {error:?}"));
+            let admitted = executor
+                .admit_activity_budget_for_qualification(
+                    declared,
+                    capabilities.principal(),
+                    binding,
+                    u128::MAX,
+                )
+                .unwrap_or_else(|error| panic!("admission: {error:?}"));
+            let maximum_fee_units = admitted.maximum_fee_units();
+            let outcome = executor
+                .execute_authorized_budgeted_for_qualification(
+                    storage,
+                    BudgetedAuthorizedExecutionRequest::new(
+                        AuthorizedExecutionRequest {
+                            module: image,
+                            program: lease.host_program(),
+                            authorization: AuthorizationContext::new(
+                                capabilities.principal(),
+                                capabilities.grants().clone(),
+                            ),
+                            receipts: &NoReceipts,
+                            entrypoint: CALL_ENTRY_EXPORT,
+                            calldata,
+                            composition: CompositionContext::isolated(),
+                            response_capacity: 0,
+                        },
+                        admitted,
+                        capabilities.principal(),
+                        binding,
+                    ),
+                )
+                .unwrap_or_else(|error| panic!("execution: {error:?}"));
+            (outcome, maximum_fee_units)
+        }
+
+        fn charge_root(lease: &Lease, activity_id: [u8; 32], amount: u128) -> [u8; 32] {
+            sandbox_escrow_charge_root(&layerx_programs_runtime::transfer::SandboxEscrowCharge {
+                host_program: lease.host_program(),
+                execution_principal: lease
+                    .namespace()
+                    .execution_principal()
+                    .unwrap_or_else(|error| panic!("principal: {error:?}")),
+                invocation_authority: activity_id,
+                lease_id: lease.id().bytes(),
+                expected_lease_digest: lease
+                    .state_digest()
+                    .unwrap_or_else(|error| panic!("lease digest: {error:?}")),
+                escrow_account: lease.escrow_account(),
+                asset: lease.escrow_asset(),
+                fee_destination: lease.fee_destination(),
+                amount,
+            })
+            .unwrap_or_else(|error| panic!("charge root: {error:?}"))
+        }
+
+        fn settle(
+            state: &mut DurableUsageState,
+            outcome: ActivityOutcome,
+            metered: MeteredUsage,
+            observed_batch: u64,
+            binding: ActivityBudgetBinding,
+            final_namespace_bytes: u64,
+        ) -> Result<(UsageReceipt, Vec<u8>), UsageRefusal> {
+            let prior_batch = state
+                .ledger
+                .latest()
+                .map_or(state.lease.opened_at(), UsageReceipt::observed_batch);
+            let elapsed = observed_batch
+                .checked_sub(prior_batch)
+                .unwrap_or_else(|| panic!("observed batch regressed"));
+            let occupancy = occupancy_byte_batches(state.lease.usage().namespace_bytes, elapsed)?;
+            let occupancy_fee_units =
+                occupancy * u128::from(state.lease.fee_schedule().occupancy_byte_batch_price());
+            let usage = MeteredUsage {
+                occupancy_byte_batches: occupancy,
+                occupancy_fee_units,
+                ..metered
+            };
+            let cumulative = crate::host_ffi::cumulative_usage(
+                &state.lease,
+                usage,
+                outcome as u8,
+                final_namespace_bytes,
+            )
+            .unwrap_or_else(|code| panic!("cumulative usage: {code}"));
+            let bindings = SettlementBindings {
+                lease_terms_digest: state
+                    .lease
+                    .request_binding_digest()
+                    .map_err(UsageRefusal::Lease)?,
+                expected_lease_digest: state.lease.state_digest().map_err(UsageRefusal::Lease)?,
+            };
+            let transfer_root = charge_root(
+                &state.lease,
+                binding.bytes(),
+                usage.fee_units + occupancy_fee_units,
+            );
+            let observation =
+                UsageObservation::host_sealed(outcome, state.lease.host_program(), binding, usage);
+            let mut lease_state = Vec::new();
+            let mut canonical = Vec::new();
+            let receipt = record_host_settlement_reserved(
+                state,
+                observation,
+                cumulative,
+                observed_batch,
+                transfer_root,
+                bindings,
+                SettlementBuffers {
+                    lease_state: &mut lease_state,
+                    receipt_bytes: &mut canonical,
+                },
+            )?;
+            Ok((receipt, canonical))
+        }
+
+        fn committed_running_total(state: &DurableUsageState) -> u128 {
+            let escrow = Escrow::decode_state(&state.lease, &state.escrow.canonical_state())
+                .unwrap_or_else(|error| panic!("decode escrow: {error:?}"));
+            let ledger = UsageLedger::decode_state(
+                &state
+                    .ledger
+                    .canonical_state()
+                    .unwrap_or_else(|error| panic!("ledger state: {error:?}")),
+                &state.lease,
+                &escrow,
+            )
+            .unwrap_or_else(|error| panic!("decode ledger: {error:?}"));
+            assert_eq!(state.lease.escrow_consumed(), ledger.running_total());
+            assert_eq!(escrow.spent(), ledger.running_total());
+            ledger.running_total()
+        }
+
+        fn classify(outcome: BudgetedV1ActivityOutcome) -> (ActivityOutcome, MeteredUsage) {
+            match outcome {
+                BudgetedV1ActivityOutcome::Success(record) => {
+                    (ActivityOutcome::Success, record.execution.usage)
+                }
+                BudgetedV1ActivityOutcome::Failure(record) => {
+                    (ActivityOutcome::ProgramFailure, record.usage())
+                }
+                BudgetedV1ActivityOutcome::Resource(record) => {
+                    (ActivityOutcome::ResourceExhaustion, record.usage())
+                }
+                unclassified => {
+                    panic!("activity outcome has no usage settlement: {unclassified:?}")
+                }
+            }
+        }
+
+        #[test]
+        fn each_activity_debits_the_escrow_in_its_own_settlement_and_publishes_the_running_total() {
+            let image = writer();
+            let mut state = priced_lease(&image, FUNDED);
+            let namespace = LeaseCapabilities::derive(&state.lease)
+                .unwrap_or_else(|error| panic!("capabilities: {error:?}"))
+                .namespace();
+            let mut storage = Storage::new();
+            let mut total = 0_u128;
+            for (index, observed_batch) in [(1_u8, 3_u64), (2, 7)] {
+                let binding = activity(index);
+                let (outcome, _) = run(
+                    &mut storage,
+                    &state.lease,
+                    &image,
+                    binding,
+                    WRITE_BUDGET,
+                    &[],
+                );
+                let (kind, metered) = classify(outcome);
+                assert_eq!(kind, ActivityOutcome::Success);
+                let occupied = storage
+                    .namespace_persistent_bytes(namespace)
+                    .unwrap_or_else(|error| panic!("occupancy: {error:?}"));
+                let prior_bytes = state.lease.usage().namespace_bytes;
+                let prior_batch = state
+                    .ledger
+                    .latest()
+                    .map_or(state.lease.opened_at(), UsageReceipt::observed_batch);
+                let spent_before = state.escrow.spent();
+                let (receipt, canonical) =
+                    settle(&mut state, kind, metered, observed_batch, binding, occupied)
+                        .unwrap_or_else(|error| panic!("settle {index}: {error:?}"));
+                let occupancy_fee =
+                    u128::from(prior_bytes) * u128::from(observed_batch - prior_batch) * 2;
+                assert_eq!(receipt.charged(), metered.fee_units + occupancy_fee);
+                assert_eq!(
+                    execution_fee(receipt.usage(), receipt.prices()),
+                    Ok(metered.fee_units)
+                );
+                assert_eq!(state.escrow.spent() - spent_before, receipt.charged());
+                total += receipt.charged();
+                assert_eq!(receipt.cumulative_spent(), total);
+                assert_eq!(state.lease.escrow_consumed(), total);
+                assert_eq!(state.ledger.running_total(), total);
+                assert_eq!(state.ledger.receipt_count(), u64::from(index));
+                assert_eq!(state.lease.usage().namespace_bytes, occupied);
+                assert_eq!(committed_running_total(&state), total);
+                assert_eq!(receipt.outcome(), ActivityOutcome::Success);
+                assert_eq!(receipt.activity_id(), binding.bytes());
+                assert_eq!(
+                    receipt.prices(),
+                    UsagePrices::from_schedule(state.lease.fee_schedule())
+                );
+                assert_eq!(
+                    UsageReceipt::decode(&canonical, receipt.digest()),
+                    Ok(receipt.clone())
+                );
+                let mut tampered = canonical;
+                let last = tampered.len() - 1;
+                tampered[last] ^= 1;
+                assert!(UsageReceipt::decode(&tampered, receipt.digest()).is_err());
+                if index == 2 {
+                    assert!(occupancy_fee > 0);
+                    assert_eq!(
+                        receipt.usage().occupancy_byte_batches,
+                        u128::from(prior_bytes) * 4
+                    );
+                }
+            }
+            assert_eq!(state.escrow.remaining(), Ok(FUNDED - total));
+        }
+
+        #[test]
+        fn failed_activity_charges_the_work_performed_before_failure_and_nothing_beyond() {
+            let image = writer();
+            let mut state = priced_lease(&image, FUNDED);
+            let mut storage = Storage::new();
+            let binding = activity(1);
+            let (outcome, maximum_fee_units) = run(
+                &mut storage,
+                &state.lease,
+                &image,
+                binding,
+                WRITE_BUDGET,
+                b"f",
+            );
+            let BudgetedV1ActivityOutcome::Failure(failure) = outcome else {
+                panic!("refusing writer did not fail as a program failure");
+            };
+            let performed = failure.usage();
+            assert_eq!(storage, Storage::new());
+            assert_eq!(performed.storage_write_bytes, 7);
+            assert!(performed.cpu_fuel > 0);
+            let prices = UsagePrices::from_schedule(state.lease.fee_schedule());
+            assert_eq!(execution_fee(performed, prices), Ok(performed.fee_units));
+
+            let committed = state.clone();
+            for inflated in [performed.fee_units + 1, performed.fee_units - 1] {
+                assert_eq!(
+                    settle(
+                        &mut state,
+                        ActivityOutcome::ProgramFailure,
+                        MeteredUsage {
+                            fee_units: inflated,
+                            ..performed
+                        },
+                        3,
+                        binding,
+                        0,
+                    ),
+                    Err(UsageRefusal::UsageMismatch)
+                );
+                assert_eq!(state, committed);
+            }
+
+            let (receipt, canonical) = settle(
+                &mut state,
+                ActivityOutcome::ProgramFailure,
+                performed,
+                3,
+                binding,
+                0,
+            )
+            .unwrap_or_else(|error| panic!("failure settlement: {error:?}"));
+            assert_eq!(receipt.outcome(), ActivityOutcome::ProgramFailure);
+            assert_eq!(receipt.usage(), performed);
+            assert_eq!(receipt.charged(), performed.fee_units);
+            assert!(receipt.charged() < maximum_fee_units);
+            assert_eq!(state.lease.usage().storage_write_bytes, 7);
+            assert_eq!(state.lease.usage().namespace_bytes, 0);
+            assert_eq!(state.escrow.spent(), performed.fee_units);
+            assert_eq!(state.escrow.remaining(), Ok(FUNDED - performed.fee_units));
+            assert_eq!(committed_running_total(&state), performed.fee_units);
+            assert_eq!(
+                UsageReceipt::decode(&canonical, receipt.digest()),
+                Ok(receipt)
+            );
+        }
+
+        #[test]
+        fn exhausted_activity_charges_only_the_work_metered_before_its_ceiling() {
+            let image = writer();
+            let mut state = priced_lease(&image, FUNDED);
+            let mut storage = Storage::new();
+            let binding = activity(1);
+            let (outcome, maximum_fee_units) =
+                run(&mut storage, &state.lease, &image, binding, 6, &[]);
+            let BudgetedV1ActivityOutcome::Resource(exhausted) = outcome else {
+                panic!("write past the declared ceiling did not exhaust");
+            };
+            let performed = exhausted.usage();
+            assert_eq!(storage, Storage::new());
+            assert_eq!(performed.storage_write_bytes, 0);
+            assert!(performed.cpu_fuel > 0);
+            let (receipt, canonical) = settle(
+                &mut state,
+                ActivityOutcome::ResourceExhaustion,
+                performed,
+                3,
+                binding,
+                0,
+            )
+            .unwrap_or_else(|error| panic!("exhaustion settlement: {error:?}"));
+            assert_eq!(receipt.outcome(), ActivityOutcome::ResourceExhaustion);
+            assert_eq!(receipt.usage(), performed);
+            assert_eq!(receipt.charged(), performed.fee_units);
+            assert!(receipt.charged() < maximum_fee_units);
+            assert_eq!(state.lease.usage().storage_write_bytes, 0);
+            assert_eq!(state.lease.usage().namespace_bytes, 0);
+            assert_eq!(state.escrow.remaining(), Ok(FUNDED - performed.fee_units));
+            assert_eq!(committed_running_total(&state), performed.fee_units);
+            assert_eq!(
+                UsageReceipt::decode(&canonical, receipt.digest()),
+                Ok(receipt)
+            );
+        }
+
+        #[test]
+        fn long_lease_usage_receipts_sum_exactly_to_the_escrow_debit() {
+            let image = writer();
+            let mut state = priced_lease(&image, FUNDED);
+            let namespace = LeaseCapabilities::derive(&state.lease)
+                .unwrap_or_else(|error| panic!("capabilities: {error:?}"))
+                .namespace();
+            let mut storage = Storage::new();
+            let mut archive = Vec::new();
+            let mut sum = 0_u128;
+            for index in 0..96_u8 {
+                let binding = activity(index);
+                let calldata: &[u8] = if index % 3 == 2 { b"f" } else { &[] };
+                let (outcome, _) = run(
+                    &mut storage,
+                    &state.lease,
+                    &image,
+                    binding,
+                    WRITE_BUDGET,
+                    calldata,
+                );
+                let (kind, metered) = classify(outcome);
+                let occupied = storage
+                    .namespace_persistent_bytes(namespace)
+                    .unwrap_or_else(|error| panic!("occupancy: {error:?}"));
+                let observed_batch = 3 + u64::from(index) * 5;
+                let (receipt, canonical) =
+                    settle(&mut state, kind, metered, observed_batch, binding, occupied)
+                        .unwrap_or_else(|error| panic!("settle {index}: {error:?}"));
+                let decoded = UsageReceipt::decode(&canonical, receipt.digest())
+                    .unwrap_or_else(|error| panic!("offline receipt {index}: {error:?}"));
+                assert_eq!(decoded, receipt);
+                sum += decoded.charged();
+                assert_eq!(committed_running_total(&state), sum);
+                archive.push(decoded);
+            }
+            assert!(archive
+                .iter()
+                .any(|entry| entry.outcome() == ActivityOutcome::ProgramFailure));
+
+            let last_batch = state
+                .ledger
+                .latest()
+                .map_or(state.lease.opened_at(), UsageReceipt::observed_batch);
+            let closing_fee = u128::from(state.lease.usage().namespace_bytes)
+                * u128::from(state.lease.expiry() - last_batch)
+                * 2;
+            let closing_root = charge_root(&state.lease, [0x3f; 32], closing_fee);
+            let mut lease_state = Vec::new();
+            let mut canonical = Vec::new();
+            let closing = record_expiry_occupancy_settlement(
+                &mut state,
+                [0x3f; 32],
+                closing_root,
+                &mut lease_state,
+                &mut canonical,
+            )
+            .unwrap_or_else(|error| panic!("expiry settlement: {error:?}"));
+            assert_eq!(closing.charged(), closing_fee);
+            assert_eq!(
+                UsageReceipt::decode(&canonical, closing.digest()),
+                Ok(closing.clone())
+            );
+            sum += closing.charged();
+            archive.push(closing);
+
+            assert_eq!(state.ledger.receipt_count(), 97);
+            assert_eq!(state.escrow.spent(), sum);
+            assert_eq!(state.lease.escrow_consumed(), sum);
+            assert_eq!(state.ledger.running_total(), sum);
+            assert_eq!(
+                archive.iter().map(UsageReceipt::charged).sum::<u128>(),
+                state.escrow.spent()
+            );
+            assert_eq!(
+                state
+                    .ledger
+                    .verify_archive(&state.lease, &state.escrow, &archive),
+                Ok(())
+            );
+            assert!(state
+                .ledger
+                .verify_archive(&state.lease, &state.escrow, &archive[1..])
+                .is_err());
+
+            let remaining = state
+                .escrow
+                .remaining()
+                .unwrap_or_else(|error| panic!("remaining: {error:?}"));
+            let closing_digest = archive[96].digest();
+            let expiry = state.lease.expiry();
+            state
+                .lease
+                .terminalize_by_sweep([0x3e; 32], closing_digest, expiry)
+                .unwrap_or_else(|error| panic!("terminalize: {error:?}"));
+            state
+                .escrow
+                .finalize_refund(&state.lease, remaining, [0x3d; 32])
+                .unwrap_or_else(|error| panic!("refund: {error:?}"));
+            assert_eq!(
+                state.escrow.funded(),
+                state.escrow.spent() + state.escrow.refunded()
+            );
+            assert_eq!(state.escrow.refunded(), FUNDED - sum);
+        }
+
+        #[test]
+        fn refused_settlement_leaves_usage_escrow_and_ledger_exactly_as_committed() {
+            let image = writer();
+            let mut probe = priced_lease(&image, FUNDED);
+            let (outcome, _) = run(
+                &mut Storage::new(),
+                &probe.lease,
+                &image,
+                activity(1),
+                WRITE_BUDGET,
+                &[],
+            );
+            let (kind, metered) = classify(outcome);
+            let (charge, _) = settle(&mut probe, kind, metered, 3, activity(1), 0)
+                .unwrap_or_else(|error| panic!("probe settlement: {error:?}"));
+
+            let mut state = priced_lease(&image, charge.charged());
+            let mut storage = Storage::new();
+            let (outcome, _) = run(
+                &mut storage,
+                &state.lease,
+                &image,
+                activity(1),
+                WRITE_BUDGET,
+                &[],
+            );
+            let (kind, metered) = classify(outcome);
+            let occupied = storage
+                .namespace_persistent_bytes(
+                    LeaseCapabilities::derive(&state.lease)
+                        .unwrap_or_else(|error| panic!("capabilities: {error:?}"))
+                        .namespace(),
+                )
+                .unwrap_or_else(|error| panic!("occupancy: {error:?}"));
+            let (first, _) = settle(&mut state, kind, metered, 3, activity(1), occupied)
+                .unwrap_or_else(|error| panic!("exact settlement: {error:?}"));
+            assert_eq!(first.charged(), charge.charged());
+            assert_eq!(state.escrow.remaining(), Ok(0));
+            assert_eq!(committed_running_total(&state), first.charged());
+
+            let committed = state.clone();
+            let (outcome, _) = run(
+                &mut storage,
+                &state.lease,
+                &image,
+                activity(2),
+                WRITE_BUDGET,
+                &[],
+            );
+            let (kind, metered) = classify(outcome);
+            assert_eq!(
+                settle(&mut state, kind, metered, 4, activity(2), occupied),
+                Err(UsageRefusal::Lease(LeaseRefusal::MissingClosureActivity))
+            );
+            assert_eq!(state, committed);
+            assert_eq!(committed_running_total(&state), first.charged());
+        }
+    }
 }
