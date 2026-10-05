@@ -28906,7 +28906,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.24.5]
 title = "Reconcile persisted Human identity bindings during explicit rotation"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 6
 requires = ["0.2", "24.2"]
