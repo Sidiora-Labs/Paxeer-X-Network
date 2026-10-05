@@ -17,7 +17,8 @@ SOURCE_PATHS = (
     "programs",
     "tools/qualification/paxeer-x/programs_market_resolution.py",
 )
-MANIFEST = ["--locked", "--manifest-path", "programs/Cargo.toml"]
+PROGRAMS = ROOT / "programs"
+MANIFEST = ["--locked", "--manifest-path", "Cargo.toml"]
 SUITES = {
     "sdk": {
         "package": "layerx-program-sdk",
@@ -97,17 +98,17 @@ def main():
     commands = []
     results = {}
 
-    def execute(command, name, timeout, environment=None):
+    def execute(command, name, timeout, environment=None, cwd=ROOT):
         log = evidence / (name + ".log")
         env = dict(os.environ)
         env.update(environment or {})
         with log.open("w") as output:
             try:
-                result = subprocess.run(command, cwd=ROOT, stdin=subprocess.DEVNULL, stdout=output,
+                result = subprocess.run(command, cwd=cwd, stdin=subprocess.DEVNULL, stdout=output,
                                         stderr=subprocess.STDOUT, timeout=timeout, env=env)
             except subprocess.TimeoutExpired:
                 fail(name + " timed out; log=" + str(log))
-        commands.append({"name": name, "command": command, "exit": result.returncode,
+        commands.append({"name": name, "command": command, "cwd": str(cwd), "exit": result.returncode,
                          "log": str(log), "environment": environment or {}})
         print("exit=" + str(result.returncode) + " log=" + str(log), flush=True)
         if result.returncode:
@@ -115,10 +116,10 @@ def main():
         return log.read_text()
 
     execute(cargo + ["build", *MANIFEST, "-p", "layerx-programs-market",
-                     "--target", "wasm32-unknown-unknown", "--release"], "build-market-guest", 1500)
+                     "--target", "wasm32-unknown-unknown", "--release"], "build-market-guest", 1500, cwd=PROGRAMS)
     metadata = json.loads(subprocess.run(
         cargo + ["metadata", "--format-version", "1", "--no-deps", *MANIFEST],
-        cwd=ROOT, stdin=subprocess.DEVNULL, capture_output=True, text=True, check=True,
+        cwd=PROGRAMS, stdin=subprocess.DEVNULL, capture_output=True, text=True, check=True,
         timeout=300).stdout)
     guest = Path(metadata["target_directory"]) / "wasm32-unknown-unknown/release/layerx_programs_market.wasm"
     if guest.is_symlink() or not guest.is_file() or guest.read_bytes()[:4] != b"\0asm":
@@ -133,7 +134,7 @@ def main():
     total = 0
     for suite, spec in SUITES.items():
         built = execute(cargo + ["test", *MANIFEST, "-p", spec["package"], "--lib", "--no-run",
-                                 "--message-format=json"], "build-" + suite + "-tests", 2400)
+                                 "--message-format=json"], "build-" + suite + "-tests", 2400, cwd=PROGRAMS)
         executables = []
         for line in built.splitlines():
             if not line.startswith("{"):
