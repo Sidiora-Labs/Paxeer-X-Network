@@ -1,4 +1,24 @@
 //! Deterministic engine-neutral instrumentation of guest WebAssembly.
+//!
+//! Metering is a property of the validated artifact, not of the engine that runs
+//! it. Validation rewrites every defined function under the protocol-resolved
+//! [`FuelSchedule`]: a private `charge_i64` call opens the function body and the
+//! head of every loop, so each back edge pays before the next iteration, and
+//! `check_i64` guards operations whose cost depends on runtime operands. The
+//! schedule is the governed protocol-state record decoded by
+//! [`FuelSchedule::from_protocol_bytes`]; its version is bound into the
+//! compiled-module key and recorded in every execution receipt.
+//!
+//! The production engine runs with engine fuel disabled and only services the
+//! injected calls, so the charge is fixed by the module bytes and the schedule.
+//! The historical Wasmi internal-fuel tier is retained solely as the reference
+//! side of the differential gate, which must agree byte for byte on outputs,
+//! refusals and usage across the conformance corpus. That is what allows a
+//! faster execution strategy (an optimizing interpreter, an ahead-of-time or
+//! JIT tier) to be adopted later without changing what anything costs: it
+//! executes the same instrumented bytes and therefore observes the same charge
+//! points. The golden vectors below freeze those charge points so that the
+//! instrumentation itself cannot become a cross-platform divergence source.
 
 use core::fmt::{self, Display};
 
@@ -605,7 +625,8 @@ fn refuse_private_import_collision(module: &elements::Module) -> Result<(), Inje
 #[cfg(test)]
 mod golden_vectors {
     use super::{analyze_branch_costs, BranchCost, FuelSchedule, MeterInjection};
-    use wasm_instrument::parity_wasm::elements::{self, External, Instruction, Type};
+    use sha2::{Digest, Sha256};
+    use wasm_instrument::parity_wasm::elements::{self, BlockType, External, Instruction, Type};
 
     const EMPTY_FUNCTION_SOURCE: &[u8] = &[
         0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00, 0x01, 0x04, 0x01, 0x60, 0x00, 0x00, 0x03,
@@ -634,6 +655,101 @@ mod golden_vectors {
         0x00, 0x41, 0x00, 0x41, 0x00, 0x41, 0x00, 0x41, 0x00, 0x41, 0x00, 0x41, 0x00, 0x41, 0x00,
         0x41, 0x00, 0x41, 0x00, 0x0e, 0x00, 0x00, 0x0b,
     ];
+
+    // `run` stores 3 in its single i32 local, counts it down in a loop whose
+    // `br_if 0` is the back edge, and returns the local.
+    const LOOP_SOURCE: &[u8] = &[
+        0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00, 0x01, 0x05, 0x01, 0x60, 0x00, 0x01, 0x7f,
+        0x03, 0x02, 0x01, 0x00, 0x07, 0x07, 0x01, 0x03, 0x72, 0x75, 0x6e, 0x00, 0x00, 0x0a, 0x18,
+        0x01, 0x16, 0x01, 0x01, 0x7f, 0x41, 0x03, 0x21, 0x00, 0x03, 0x40, 0x20, 0x00, 0x41, 0x01,
+        0x6b, 0x22, 0x00, 0x0d, 0x00, 0x0b, 0x20, 0x00, 0x0b,
+    ];
+
+    // Function entry charges 5: entry base, i32.const, local.set, the post-loop
+    // local.get and the implicit-return base. The loop head charges 6 on every
+    // iteration, including each one reached through the back edge: loop-entry base,
+    // local.get, i32.const, i32.sub, local.tee and br_if. The export shifts past
+    // the two private imports.
+    const LOOP_INSTRUMENTED: &[u8] = &[
+        0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00, 0x01, 0x09, 0x02, 0x60, 0x00, 0x01, 0x7f,
+        0x60, 0x01, 0x7e, 0x00, 0x02, 0x50, 0x02, 0x1a, 0x6c, 0x61, 0x79, 0x65, 0x72, 0x78, 0x5f,
+        0x70, 0x72, 0x69, 0x76, 0x61, 0x74, 0x65, 0x5f, 0x6d, 0x65, 0x74, 0x65, 0x72, 0x69, 0x6e,
+        0x67, 0x2f, 0x76, 0x31, 0x0a, 0x63, 0x68, 0x61, 0x72, 0x67, 0x65, 0x5f, 0x69, 0x36, 0x34,
+        0x00, 0x01, 0x1a, 0x6c, 0x61, 0x79, 0x65, 0x72, 0x78, 0x5f, 0x70, 0x72, 0x69, 0x76, 0x61,
+        0x74, 0x65, 0x5f, 0x6d, 0x65, 0x74, 0x65, 0x72, 0x69, 0x6e, 0x67, 0x2f, 0x76, 0x31, 0x09,
+        0x63, 0x68, 0x65, 0x63, 0x6b, 0x5f, 0x69, 0x36, 0x34, 0x00, 0x01, 0x03, 0x02, 0x01, 0x00,
+        0x07, 0x07, 0x01, 0x03, 0x72, 0x75, 0x6e, 0x00, 0x02, 0x0a, 0x20, 0x01, 0x1e, 0x01, 0x01,
+        0x7f, 0x42, 0x05, 0x10, 0x00, 0x41, 0x03, 0x21, 0x00, 0x03, 0x40, 0x42, 0x06, 0x10, 0x00,
+        0x20, 0x00, 0x41, 0x01, 0x6b, 0x22, 0x00, 0x0d, 0x00, 0x0b, 0x20, 0x00, 0x0b,
+    ];
+
+    const LOOP_DIGEST: [u8; 32] = [
+        0xac, 0x56, 0xb7, 0xce, 0x54, 0x7f, 0xdf, 0xa8, 0x5b, 0xbf, 0x3b, 0xc0, 0xf5, 0x6b, 0xf1,
+        0xe4, 0x9c, 0xee, 0xdb, 0xb9, 0x82, 0xad, 0x86, 0x24, 0x52, 0xfe, 0x66, 0x48, 0x8d, 0xc9,
+        0x39, 0x70,
+    ];
+
+    fn instrument(source: &[u8]) -> MeterInjection {
+        MeterInjection::instrument(source, FuelSchedule::WASMI_0_31_2)
+            .unwrap_or_else(|error| panic!("golden instrumentation refused: {error}"))
+    }
+
+    #[test]
+    fn loop_charges_at_function_entry_and_every_back_edge_are_frozen() {
+        let injection = instrument(LOOP_SOURCE);
+        assert_eq!(injection.instrumented_wasm(), LOOP_INSTRUMENTED);
+        assert_eq!(injection.digest(), LOOP_DIGEST);
+        assert_eq!(
+            injection.original_code_hash(),
+            <[u8; 32]>::from(Sha256::digest(LOOP_SOURCE))
+        );
+        assert_eq!(injection.original_function_count(), 1);
+        assert_eq!(
+            injection.schedule().version(),
+            super::GENESIS_METERING_SCHEDULE_VERSION
+        );
+        let module = elements::deserialize_buffer::<elements::Module>(LOOP_INSTRUMENTED)
+            .unwrap_or_else(|error| panic!("instrumented loop golden decode: {error}"));
+        assert_eq!(
+            module
+                .code_section()
+                .unwrap_or_else(|| panic!("instrumented loop golden code absent"))
+                .bodies()[0]
+                .code()
+                .elements(),
+            &[
+                Instruction::I64Const(5),
+                Instruction::Call(0),
+                Instruction::I32Const(3),
+                Instruction::SetLocal(0),
+                Instruction::Loop(BlockType::NoResult),
+                Instruction::I64Const(6),
+                Instruction::Call(0),
+                Instruction::GetLocal(0),
+                Instruction::I32Const(1),
+                Instruction::I32Sub,
+                Instruction::TeeLocal(0),
+                Instruction::BrIf(0),
+                Instruction::End,
+                Instruction::GetLocal(0),
+                Instruction::End,
+            ]
+        );
+    }
+
+    #[test]
+    fn instrumentation_is_a_pure_function_of_module_and_schedule() {
+        for source in [EMPTY_FUNCTION_SOURCE, BR_TABLE_SELECTOR_SOURCE, LOOP_SOURCE] {
+            assert_eq!(instrument(source), instrument(source));
+        }
+    }
+
+    #[test]
+    fn loop_golden_charge_matches_the_reference_engine_fuel_tier() {
+        if let Err(mismatch) = crate::programs_differential_gate(LOOP_SOURCE, "run", &[]) {
+            panic!("injected and engine-fuel tiers diverged on the loop golden: {mismatch:?}");
+        }
+    }
 
     #[test]
     fn empty_function_has_frozen_executable_bytes() {
