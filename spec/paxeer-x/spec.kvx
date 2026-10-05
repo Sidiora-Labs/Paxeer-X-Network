@@ -29633,7 +29633,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.104.29.2]
 title = "Grant and enforce shared-namespace access through explicit capabilities"
-status = "in_progress"
+status = "done"
 mode = "QUALIFY"
 wave = 6
 requires = ["0.2", "104.29.1"]
@@ -29661,6 +29661,11 @@ completion_policy = "Existing implementation is preserved; current candidate qua
 planned_paths = ["tools/paxeer-x/gates/104.29.2.sh"]
 path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
 evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+completion_basis = "implementation"
+qualification_status = "PASS"
+build_exit_code = 0
+verify_exit_code = 0
+qualification_log = "/root/lx-ops/fleet-2026-10-05/results/104.29.2.json"
 
 [task.104.29.3]
 title = "Implement ordered iteration with a resumable cursor"
