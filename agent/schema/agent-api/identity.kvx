@@ -52,6 +52,13 @@ response = "AuthorityResponse<SessionRecords>"
 required = ["activity_types","counterparties","assets","amount_ceilings","rate_ceilings","purpose_constraints","expiry"]
 set_semantics = "Every set is explicitly supplied. An explicit empty set denies that dimension; omission is invalid and never means allow all."
 
+[type.NativeRegistrationCapability]
+activity_types = "Every capability in the native active chain lists Asset module 1 ordinal 1."
+assets = "Every capability lists the derived registered asset and an amount ceiling at least supply_cap for it, and the fee asset when a fee limit is set."
+counterparties = "Every capability lists the actor native fee principal account that holds the SupplyCap authorization."
+purpose_constraints = "Every capability lists the exact native-registration-v1 purpose commitment signed by the owner."
+principal = "Agent and human principals use the same authority path, fees and signatures; no principal kind is preferred."
+
 [operation.capability.create]
 required = ["tenant","agent_did","dimensions"]
 response = "AuthorityResponse<CapabilityRecord>"

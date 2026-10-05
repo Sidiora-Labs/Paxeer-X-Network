@@ -1175,7 +1175,13 @@ pub fn validate_mcp_native_request(
     let admitted = match operation {
         Operation::Prepare => matches!(
             variant,
-            Some("native_v1" | "native_effect_v1" | "native_send_v1" | "native_disclosure_v1")
+            Some(
+                "native_v1"
+                    | "native_effect_v1"
+                    | "native_registration_v1"
+                    | "native_send_v1"
+                    | "native_disclosure_v1"
+            )
         ),
         Operation::Submit => variant == Some("native_send_submit_v1"),
         _ => false,

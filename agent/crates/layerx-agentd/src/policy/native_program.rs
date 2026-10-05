@@ -435,6 +435,7 @@ impl NativeEffectIntent {
         prepared: &Prepared,
         fee_policy: &layerx_client::payments::CommittedSnapshot<layerx_client::payments::NativeFeePolicy>,
         purpose_commitment: [u8; 32],
+        profile: crate::capability::NativeAdmissionProfile,
     ) -> Result<Self, NativePolicyError> {
         crate::prepare::verify_disclosure_binding(prepared).map_err(|_| NativePolicyError::Disclosure)?;
         if prepared.envelope.activity_type().module() == ModuleId::Programs {
@@ -445,7 +446,16 @@ impl NativeEffectIntent {
         {
             return Err(NativePolicyError::Disclosure);
         }
-        let semantic = crate::capability::derive_native_effects(&prepared.disclosure, &VerifiedInputs::default())
+        if let crate::capability::NativeAdmissionProfile::Registration { fee_asset } = profile {
+            let commitment = crate::capability::native_registration_commitment(
+                &prepared.disclosure, prepared.envelope.protocol_version(), prepared.envelope.network_id(),
+                Sha256::digest(&prepared.canonical_bytes).into(), fee_asset,
+            ).map_err(|_| NativePolicyError::Effects)?;
+            if commitment != purpose_commitment || fee_asset != fee_policy.value.asset.asset_id {
+                return Err(NativePolicyError::Disclosure);
+            }
+        }
+        let semantic = crate::capability::derive_native_profile_effects(&prepared.disclosure, profile)
             .map_err(|_| NativePolicyError::Effects)?;
         if !semantic.program_spend_bounds().is_empty() { return Err(NativePolicyError::Effects); }
         let fee = crate::capability::binding::native_effect_fee(prepared, fee_policy, prepared.observed_head_sequence)

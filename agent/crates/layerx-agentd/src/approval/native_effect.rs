@@ -58,6 +58,8 @@ pub(crate) struct NativeEffectApprovalCarrier {
     terminal: Option<NativeEffectTerminal>,
     #[serde(default,skip_serializing_if="Option::is_none")]
     queued_submission: Option<RetainedQueuedSubmission>,
+    #[serde(default,skip_serializing_if="Option::is_none")]
+    admission_profile: Option<String>,
 }
 
 #[derive(Clone, Serialize, Deserialize, Eq, PartialEq)]
@@ -114,6 +116,7 @@ impl NativeEffectApprovalCarrier {
         clock: &dyn layerx_types::clock::Clock, policy: &NativeEffectPolicy,
         reservation: &ProgramBudgetReservation,
         fee: &layerx_client::payments::CommittedSnapshot<layerx_client::payments::NativeFeePolicy>,
+        profile: crate::capability::NativeAdmissionProfile,
     ) -> Result<Self,NativeEffectError> {
         crate::prepare::verify_disclosure_binding(prepared).map_err(|_|NativeEffectError::Binding)?;
         let tenant=human_tenant(peer)?;
@@ -125,7 +128,10 @@ impl NativeEffectApprovalCarrier {
             || reservation.core_deadline.is_none_or(|deadline|deadline.0!=prepared.envelope.timestamp_bound().not_after()) {
             return Err(NativeEffectError::Binding)
         }
-        let intent=NativeEffectIntent::from_prepared(prepared,fee,purpose_hash).map_err(|_|NativeEffectError::Policy)?;
+        if let crate::capability::NativeAdmissionProfile::Registration{fee_asset}=profile {
+            if fee_asset!=fee.value.asset.asset_id {return Err(NativeEffectError::Binding)}
+        }
+        let intent=NativeEffectIntent::from_prepared(prepared,fee,purpose_hash,profile).map_err(|_|NativeEffectError::Policy)?;
         let decision=policy.evaluate_local(&intent).map_err(|_|NativeEffectError::Policy)?;
         let reading=clock.sample(std::time::Duration::from_secs(1)).map_err(|_|NativeEffectError::Binding)?;
         if reading.generation==[0;16] || reading.unix_milliseconds>=prepared.envelope.timestamp_bound().not_after() {
@@ -137,7 +143,8 @@ impl NativeEffectApprovalCarrier {
             Some(DisclosedNativeOperation::BudgetRevoke(v))=>Some(v.context),_=>None,
         };
         let required=decision.outcome==NativeLocalOutcome::ApprovalRequired;
-        let result=Self {version:1,tenant:peer.tenant.clone(),principal:peer.principal.clone(),
+        let version=if profile.label().is_some(){2}else{1};
+        let result=Self {version,tenant:peer.tenant.clone(),principal:peer.principal.clone(),
             actor:prepared.envelope.actor_did().as_bytes().to_vec(),session:origin.session.session_id.0,generation:origin.generation,
             preparation:id,activity_module:prepared.envelope.activity_type().module() as u16,
             activity_ordinal:prepared.envelope.activity_type().ordinal(),canonical_bytes:prepared.canonical_bytes.clone(),
@@ -147,7 +154,8 @@ impl NativeEffectApprovalCarrier {
             created_at_sequence:prepared.observed_head_sequence,created_at_unix_seconds:reading.unix_seconds(),clock_generation:reading.generation,
             budget_expiry_sequence:reservation.expiry_sequence,envelope_not_after:prepared.envelope.timestamp_bound().not_after(),
             budget:reservation.encode().map_err(|_|NativeEffectError::Budget)?,policy_source:policy.source().to_vec(),requires_approval:required,
-            state:if required {NativeEffectApprovalState::Awaiting}else{NativeEffectApprovalState::NotRequired},terminal:None,queued_submission:None};
+            state:if required {NativeEffectApprovalState::Awaiting}else{NativeEffectApprovalState::NotRequired},terminal:None,queued_submission:None,
+            admission_profile:profile.label().map(str::to_owned)};
         result.validate()?;Ok(result)
     }
 
@@ -171,7 +179,7 @@ impl NativeEffectApprovalCarrier {
     fn validate(&self)->Result<(),NativeEffectError>{
         let tenant=TenantId::new(self.tenant.clone()).map_err(|_|NativeEffectError::Corrupt)?;
         let _=tenant;
-        if self.version!=1 || self.principal.is_empty() || self.principal.len()>255 || self.session==[0;32]
+        if !matches!((self.version,self.admission_profile.as_deref()),(1,None)|(2,Some(_))) || self.principal.is_empty() || self.principal.len()>255 || self.session==[0;32]
             || self.generation==0 || self.fee_asset==[0;32] || self.fee_state_root==[0;32] || self.fee_observed_sequence!=self.created_at_sequence || self.capability==[0;32] || self.purpose_hash==[0;32] || self.clock_generation==[0;16]
             || self.canonical_bytes.is_empty() || self.canonical_bytes.len()>MAX_CARRIER
             || self.preparation!=<[u8;32]>::from(Sha256::digest(&self.canonical_bytes))
@@ -183,6 +191,13 @@ impl NativeEffectApprovalCarrier {
         let decoded=layerx_wire::activity::decode_unsigned(&self.canonical_bytes,&self.registry()?).map_err(|_|NativeEffectError::Corrupt)?;
         if decoded.protocol_version()!=3 || self.authority.actual()?.as_bytes()!=decoded.authority()
             || disclosure.expiry.not_after!=self.envelope_not_after {return Err(NativeEffectError::Binding)}
+        if let crate::capability::NativeAdmissionProfile::Registration{fee_asset}=self.profile()? {
+            let commitment=crate::capability::native_registration_commitment(&disclosure,decoded.protocol_version(),
+                decoded.network_id(),self.preparation,fee_asset).map_err(|_|NativeEffectError::Binding)?;
+            crate::capability::derive_native_registration(&disclosure,fee_asset).map_err(|_|NativeEffectError::Binding)?;
+            if (self.activity_module,self.activity_ordinal)!=(ModuleId::Asset as u16,1) || self.budget_context.is_some()
+                || commitment!=self.purpose_hash {return Err(NativeEffectError::Binding)}
+        }
         let budget=self.budget()?;
         if budget.id!=self.preparation || budget.expiry_sequence!=self.budget_expiry_sequence
             || budget.core_deadline.is_none_or(|time|time.0!=self.envelope_not_after)
@@ -217,6 +232,13 @@ impl NativeEffectApprovalCarrier {
     pub(crate) fn preparation_id(&self)->[u8;32]{self.preparation}
     pub(crate) fn actor(&self)->&[u8]{&self.actor}
     pub(crate) fn fee_asset(&self)->[u8;32]{self.fee_asset}
+    pub(crate) fn profile(&self)->Result<crate::capability::NativeAdmissionProfile,NativeEffectError>{
+        match (self.version,self.admission_profile.as_deref()) {
+            (1,None)=>Ok(crate::capability::NativeAdmissionProfile::Effect),
+            (2,Some(crate::capability::NATIVE_REGISTRATION_PROFILE))=>Ok(crate::capability::NativeAdmissionProfile::Registration{fee_asset:self.fee_asset}),
+            _=>Err(NativeEffectError::Binding),
+        }
+    }
     pub(crate) fn principal(&self)->&str{&self.principal}
     pub(crate) fn session_id(&self)->[u8;32]{self.session}
     pub(crate) fn generation(&self)->u64{self.generation}

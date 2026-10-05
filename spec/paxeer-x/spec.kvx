@@ -27789,7 +27789,7 @@ lease_transfer_authority_9_3_composition = "Owner approved inactive lease reassi
 implementation_window = "START2026-10-04T12:26:17.142131+00:00 END2026-10-04T12:56:17.142131+00:00; authorized wiring first; new registration policy remains pending explicit owner approval. Entire implementation before one host/MCP build and one focused gate, max2scopedrepairs."
 owner_contract_proposal = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-9.2-owner-contract-proposal.md"
 source_status = "partial"
-qualification_status = "UNRUN"
+qualification_status = "OWNER_DECISION_PENDING"
 completion_basis = "honest incomplete source checkpoint; original criteria remain required"
 source_handoff = "/root/lx-ops/paxeer-x-integration-2026-10-03/task-9.2-source-handoff.json"
 retained_contract_paths_103_6_19 = ["agent/crates/layerx-agentd/src/agent_rpc.rs"]
@@ -27799,6 +27799,9 @@ owner_lease_authority_103_6_19 = "Explicit user approval of inactive lease reass
 retained_contract_paths_103_6_33 = ["agent/crates/layerx-mcp/src/catalogue.rs", "agent/crates/layerx-mcp/src/server.rs"]
 delegated_source_task_103_6_33 = "103.6.33"
 owner_lease_authority_103_6_33 = "Owner approved inactive lease reassignment; task9.2 remains partial with its original acceptance criteria and source intact. Only these two compiler repair paths are temporarily delegated."
+build_exit_code = 0
+verify_exit_code = 1
+qualification_log = "/root/lx-ops/fleet-2026-10-05/results/9.2.json"
 
 [task.10.1]
 title = "Plan and submit Human intents with authoritative attestor custody observations"

@@ -292,6 +292,7 @@ pub fn read_native_effect_budget_sources(
     caps: &VerifiedCaps,
     now: u64,
     fee_correlation_id: u64,
+    profile: crate::capability::NativeAdmissionProfile,
 ) -> Result<VerifiedResolvedProgramCharges, ProgramSourceError> {
     validate_prepared(prepared)?;
     if prepared.envelope.activity_type().module() == layerx_types::payload::ModuleId::Programs { return Err(ProgramSourceError::Unsupported); }
@@ -310,7 +311,7 @@ pub fn read_native_effect_budget_sources(
         || node.head().chain_sequence != prepared.observed_head_sequence
         || node.head().sealed_batch != header.batch_number()
     { return Err(ProgramSourceError::Snapshot); }
-    let plan = crate::capability::derive_native_effects(&prepared.disclosure, &VerifiedInputs::default())
+    let plan = crate::capability::derive_native_profile_effects(&prepared.disclosure, profile)
         .map_err(|_| ProgramSourceError::Preparation)?;
     let mut charges = Vec::new();
     let mut gross = BTreeMap::new();
@@ -342,6 +343,9 @@ pub fn read_native_effect_budget_sources(
             return Err(ProgramSourceError::Snapshot);
         }
         let asset = fee.value.asset.asset_id;
+        if matches!(profile, crate::capability::NativeAdmissionProfile::Registration { fee_asset } if fee_asset != asset) {
+            return Err(ProgramSourceError::Snapshot);
+        }
         let account = principal_source(caps.all_accounts(), prepared.envelope.actor_did(),
             prepared.envelope.protocol_version(), asset)?;
         charges.push(ResolvedProgramCharge { source: ResolvedProgramSource::Fee { account }, asset,

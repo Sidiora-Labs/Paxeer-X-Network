@@ -495,7 +495,26 @@ pub(crate) struct NativeEffectPrepareV1Wire {
 
 impl NativeEffectPrepareV1Wire {
     pub(crate) fn into_request(self, id: RequestId) -> Result<layerx_agent_api::identity::NativeEffectPrepareRequestV1, Rejection> {
-        if self.variant != "native_effect_v1" {
+        self.typed("native_effect_v1", id)
+    }
+
+    pub(crate) fn into_registration(
+        self,
+        id: RequestId,
+    ) -> Result<layerx_agent_api::identity::NativeRegistrationPrepareRequestV1, Rejection> {
+        layerx_agent_api::identity::NativeRegistrationPrepareRequestV1 {
+            request: self.typed("native_registration_v1", id)?,
+        }
+        .validate()
+        .map_err(contract(id))
+    }
+
+    fn typed(
+        self,
+        variant: &str,
+        id: RequestId,
+    ) -> Result<layerx_agent_api::identity::NativeEffectPrepareRequestV1, Rejection> {
+        if self.variant != variant {
             return Err(malformed(id));
         }
         if self.payload.len() > layerx_types::limits::MAX_PAYLOAD_BYTES * 2 {
@@ -542,6 +561,14 @@ impl Canonical for layerx_agent_api::identity::NativeEffectPrepareRequestV1 {
             "purpose": self.purpose.canonical(),
             "local_grant": self.local_grant.as_ref().map(Canonical::canonical),
         })
+    }
+}
+
+impl Canonical for layerx_agent_api::identity::NativeRegistrationPrepareRequestV1 {
+    fn canonical(&self) -> Value {
+        let mut value = self.request.canonical();
+        value["variant"] = Value::String("native_registration_v1".into());
+        value
     }
 }
 

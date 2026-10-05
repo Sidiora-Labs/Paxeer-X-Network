@@ -408,7 +408,7 @@ fn read_retained_native_effect_debit_settlement_inner(
     use crate::prepare::{DurablePreparation,LifecycleState};
     verify_disclosure_binding(prepared).map_err(|_|ProgramSettlementError::Preparation)?;
     let activity=layerx_wire::activity::decode_signed(submission.exact_bytes(),registry).map_err(|_|ProgramSettlementError::Preparation)?;
-    if activity.protocol_version()!=3||activity.activity_type().module()!=ModuleId::Asset||activity.activity_type().ordinal()!=5
+    if activity.protocol_version()!=3||activity.activity_type().module()!=ModuleId::Asset
         ||layerx_wire::activity::encode_unsigned(&activity).map_err(|_|ProgramSettlementError::Preparation)?!=prepared.canonical_bytes
         ||layerx_wire::hash::activity_id(&activity).map_err(|_|ProgramSettlementError::Preparation)?!=submission.activity_id(){return Err(ProgramSettlementError::UnsupportedOperation)}
     let id:[u8;32]=Sha256::digest(&prepared.canonical_bytes).into();
@@ -451,12 +451,25 @@ fn read_retained_native_effect_debit_settlement_inner(
             return Err(ProgramSettlementError::SourceSnapshot)
         }
     }
-    let plan=crate::capability::derive_native_effects(&prepared.disclosure,&crate::capability::VerifiedInputs::default()).map_err(|_|ProgramSettlementError::Preparation)?;
-    let [crate::capability::Effect::Transfer{from,to,asset,amount}]=plan.effects() else{return Err(ProgramSettlementError::UnsupportedOperation)};
+    let profile=carrier.profile().map_err(|_|ProgramSettlementError::Preparation)?;
+    let plan=crate::capability::derive_native_profile_effects(&prepared.disclosure,profile).map_err(|_|ProgramSettlementError::Preparation)?;
+    let ordinal=activity.activity_type().ordinal();
+    let transfer=match plan.effects() {
+        [crate::capability::Effect::Transfer{from,to,asset,amount}] if ordinal==5
+            &&profile==crate::capability::NativeAdmissionProfile::Effect=>Some((*from,*to,*asset,*amount)),
+        effects if !effects.is_empty()&&effects.iter().all(|effect|matches!(effect,crate::capability::Effect::Authorization{..}))
+            &&match profile {
+                crate::capability::NativeAdmissionProfile::Effect=>ordinal==7,
+                crate::capability::NativeAdmissionProfile::Registration{..}=>ordinal==1,
+            }=>None,
+        _=>return Err(ProgramSettlementError::UnsupportedOperation),
+    };
     let rows=reservation.allocations().ok_or(ProgramSettlementError::MissingAllocation)?;
-    let principal=rows.iter().find(|row|row.kind==ProgramChargeKind::Principal&&row.source==*from&&row.destination==Some(*to)&&row.asset==*asset)
-        .ok_or(ProgramSettlementError::Allocation)?;
-    if principal.maximum_amount!=*amount||rows.iter().filter(|row|row.kind!=ProgramChargeKind::Fee).count()!=1{return Err(ProgramSettlementError::Allocation)}
+    if let Some((from,to,asset,amount))=transfer {
+        let principal=rows.iter().find(|row|row.kind==ProgramChargeKind::Principal&&row.source==from&&row.destination==Some(to)&&row.asset==asset)
+            .ok_or(ProgramSettlementError::Allocation)?;
+        if principal.maximum_amount!=amount||rows.iter().filter(|row|row.kind!=ProgramChargeKind::Fee).count()!=1{return Err(ProgramSettlementError::Allocation)}
+    } else if rows.iter().any(|row|row.kind!=ProgramChargeKind::Fee) {return Err(ProgramSettlementError::Allocation)}
     if let Some(prestate) = prestate {
         reservation.validate().map_err(|_| ProgramSettlementError::Allocation)?;
         let actor = layerx_wire::hash::did_id_for_protocol(prepared.envelope.actor_did(), 3)
@@ -464,10 +477,13 @@ fn read_retained_native_effect_debit_settlement_inner(
         if reservation.id != id || reservation.allocation_actor() != Some(actor)
             || reservation.allocation_preparation_digest() != Some(id)
             || reservation.allocation_sequence() != Some(prepared.observed_head_sequence)
-            || super::program_sources::principal_source(prestate.all_accounts(),
-                prepared.envelope.actor_did(), 3, *asset)
-                .map_err(|_| ProgramSettlementError::SourceSnapshot)? != *from
         { return Err(ProgramSettlementError::SourceSnapshot); }
+        if let Some((from, _, asset, _)) = transfer {
+            if super::program_sources::principal_source(prestate.all_accounts(),
+                prepared.envelope.actor_did(), 3, asset)
+                .map_err(|_| ProgramSettlementError::SourceSnapshot)? != from
+            { return Err(ProgramSettlementError::SourceSnapshot); }
+        }
         let mut fees = rows.iter().filter(|row| row.kind == ProgramChargeKind::Fee);
         match (fees.next(), fees.next()) {
             (Some(fee), None) if prepared.envelope.fee_limit().value() != 0 => {
@@ -485,11 +501,11 @@ fn read_retained_native_effect_debit_settlement_inner(
         }
     }
     let mut debits=Vec::new();
-    if protocol.result_code()==0 {
-        if protocol.from()!=*from||protocol.to()!=*to||protocol.asset()!=*asset||protocol.amount()!=*amount{return Err(ProgramSettlementError::Terminal)}
+    if let (0,Some((from,to,asset,amount)))=(protocol.result_code(),transfer) {
+        if protocol.from()!=from||protocol.to()!=to||protocol.asset()!=asset||protocol.amount()!=amount{return Err(ProgramSettlementError::Terminal)}
         let mut leg=Vec::with_capacity(115);leg.push(0);leg.extend(from);leg.extend(to);leg.extend(asset);leg.extend(amount.to_be_bytes());leg.extend(1_u16.to_be_bytes());
         layerx_programs_runtime::transfer::verify_applied_kernel_legs(&leg,protocol.transfer_set_root()).map_err(|_|ProgramSettlementError::Terminal)?;
-        debits.push(ProgramExecutedDebit{kind:ProgramChargeKind::Principal,source:*from,asset:*asset,destination:Some(*to),actual_amount:*amount});
+        debits.push(ProgramExecutedDebit{kind:ProgramChargeKind::Principal,source:from,asset,destination:Some(to),actual_amount:amount});
     }else if protocol.transfer_set_root()!=[0;32]||protocol.effects().iter().any(|effect|effect.monetary()) {return Err(ProgramSettlementError::Terminal)}
     if protocol.fee_charged()>prepared.envelope.fee_limit().value(){return Err(ProgramSettlementError::FeeProvenance)}
     if protocol.fee_charged()!=0 {

@@ -238,6 +238,122 @@ pub fn derive_native_effects(
     Ok(plan)
 }
 
+pub const NATIVE_REGISTRATION_PROFILE: &str = "native-registration-v1";
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum NativeAdmissionProfile {
+    #[default]
+    Effect,
+    Registration { fee_asset: [u8; 32] },
+}
+
+impl NativeAdmissionProfile {
+    #[must_use]
+    pub const fn label(self) -> Option<&'static str> {
+        match self {
+            Self::Effect => None,
+            Self::Registration { .. } => Some(NATIVE_REGISTRATION_PROFILE),
+        }
+    }
+}
+
+/// # Errors
+/// Returns the refusal of the derivation selected by the verified admission profile.
+pub fn derive_native_profile_effects(
+    disclosure: &Disclosure,
+    profile: NativeAdmissionProfile,
+) -> Result<SemanticPlan, EffectsError> {
+    match profile {
+        NativeAdmissionProfile::Effect => derive_native_effects(disclosure, &VerifiedInputs::default()),
+        NativeAdmissionProfile::Registration { fee_asset } => {
+            derive_native_registration(disclosure, fee_asset)
+        }
+    }
+}
+
+fn native_registration_terms(
+    disclosure: &Disclosure,
+) -> Result<([u8; 32], &layerx_crypto::payments::Registration), EffectsError> {
+    use layerx_types::payload::ModuleId;
+    disclosure.reencode().map_err(|_| EffectsError::InvalidNativeDisclosure)?;
+    let Some(Payment::Register(registration)) = &disclosure.payment else {
+        return Err(EffectsError::Unsupported("Register"));
+    };
+    if (disclosure.activity_type.module(), disclosure.activity_type.ordinal()) != (ModuleId::Asset, 1)
+        || disclosure.native_operation.is_some()
+        || registration.issuer_kind != 1
+        || !registration.custody_ref.is_empty()
+        || registration.supply_cap == 0
+        || registration.supply_cap == u128::MAX
+        || disclosure.asset != registration.asset
+    {
+        return Err(EffectsError::Unsupported("Register"));
+    }
+    let actor = layerx_types::ids::Did::new(&disclosure.actor)
+        .map_err(|_| EffectsError::InvalidNativeDisclosure)?;
+    let issuer = layerx_wire::hash::did_id_for_protocol(&actor, 3)
+        .map_err(|_| EffectsError::InvalidNativeDisclosure)?;
+    if registration.asset != layerx_crypto::payments::asset_id(&issuer, &registration.salt) {
+        return Err(EffectsError::Unsupported("Register"));
+    }
+    Ok((issuer, registration))
+}
+
+/// Derives the supply-cap authorization of one ordinary-issuer registration admitted by the
+/// `native-registration-v1` profile. Registration issues no balance.
+///
+/// # Errors
+/// Returns `Unsupported("Register")` for any registration outside the profile.
+pub fn derive_native_registration(
+    disclosure: &Disclosure,
+    fee_asset: [u8; 32],
+) -> Result<SemanticPlan, EffectsError> {
+    let (_, registration) = native_registration_terms(disclosure)?;
+    if fee_asset == [0; 32] {
+        return Err(EffectsError::Unsupported("Register"));
+    }
+    let actor = core::str::from_utf8(&disclosure.actor)
+        .map_err(|_| EffectsError::InvalidNativeDisclosure)?;
+    let account = layerx_types::account::AccountId::for_asset(actor, fee_asset, fee_asset)
+        .map_err(|_| EffectsError::InvalidNativeDisclosure)?;
+    let principal = layerx_wire::hash::account_id_for_protocol(&account, 3)
+        .map_err(|_| EffectsError::InvalidNativeDisclosure)?;
+    let mut plan = SemanticPlan::write();
+    plan.authorize(
+        AuthorizationKind::SupplyCap,
+        principal,
+        Some(registration.asset),
+        registration.supply_cap,
+    );
+    Ok(plan)
+}
+
+/// # Errors
+/// Returns `Unsupported("Register")` for a registration outside the profile or a missing network,
+/// protocol or fee asset.
+pub fn native_registration_commitment(
+    disclosure: &Disclosure,
+    protocol_version: u16,
+    network_id: u32,
+    canonical_digest: [u8; 32],
+    fee_asset: [u8; 32],
+) -> Result<[u8; 32], EffectsError> {
+    use sha2::{Digest as _, Sha256};
+    let (issuer, registration) = native_registration_terms(disclosure)?;
+    if protocol_version != 3 || network_id == 0 || fee_asset == [0; 32] {
+        return Err(EffectsError::Unsupported("Register"));
+    }
+    let mut hasher = Sha256::new();
+    hasher.update(b"LayerX/native/asset-registration/v1\0");
+    hasher.update(protocol_version.to_be_bytes());
+    hasher.update(network_id.to_be_bytes());
+    hasher.update(canonical_digest);
+    hasher.update(issuer);
+    hasher.update(registration.asset);
+    hasher.update(fee_asset);
+    Ok(hasher.finalize().into())
+}
+
 const fn untyped_kind(disclosure: &Disclosure) -> &'static str {
     if disclosure.withdrawal.is_some() {
         "Withdrawal"
@@ -776,5 +892,144 @@ mod tests {
             plan(Some(&payment), None, &none()),
             Err(EffectsError::Unsupported("Register"))
         );
+
+        let fee_asset = [9; 32];
+        let ordinary = registration(1_000);
+        let asset = ordinary.asset;
+        let disclosure = registration_disclosure(ordinary);
+        assert_eq!(
+            derive_native_effects(&disclosure, &none()),
+            Err(EffectsError::Unsupported("Register"))
+        );
+        assert_eq!(
+            derive_native_profile_effects(&disclosure, NativeAdmissionProfile::Effect),
+            Err(EffectsError::Unsupported("Register"))
+        );
+        let account = must(layerx_types::account::AccountId::for_asset(
+            "did:layerx:alice",
+            fee_asset,
+            fee_asset,
+        ));
+        let principal = must(layerx_wire::hash::account_id_for_protocol(&account, 3));
+        let admitted = must(derive_native_profile_effects(
+            &disclosure,
+            NativeAdmissionProfile::Registration { fee_asset },
+        ));
+        assert_eq!(
+            admitted.effects(),
+            [Effect::Authorization {
+                kind: AuthorizationKind::SupplyCap,
+                account: principal,
+                asset: Some(asset),
+                amount: 1_000,
+            }]
+        );
+        assert!(admitted.gross_per_asset().is_empty());
+        assert_eq!(admitted.rate_actions(), 1);
+        assert_eq!(
+            derive_native_registration(&disclosure, [0; 32]),
+            Err(EffectsError::Unsupported("Register"))
+        );
+
+        for cap in [0, u128::MAX] {
+            assert_eq!(
+                derive_native_registration(&registration_disclosure(registration(cap)), fee_asset),
+                Err(EffectsError::Unsupported("Register"))
+            );
+        }
+        let custody = registration_disclosure(layerx_crypto::payments::Registration {
+            asset: ASSET,
+            issuer_kind: 2,
+            custody_ref: b"custody".to_vec(),
+            ..registration(1_000)
+        });
+        assert_eq!(
+            derive_native_registration(&custody, fee_asset),
+            Err(EffectsError::Unsupported("Register"))
+        );
+        let mut altered = disclosure.clone();
+        if let Some(Payment::Register(value)) = &mut altered.payment {
+            value.asset = ASSET;
+        }
+        assert_eq!(
+            derive_native_registration(&altered, fee_asset),
+            Err(EffectsError::InvalidNativeDisclosure)
+        );
+
+        let commitment = must(native_registration_commitment(&disclosure, 3, 17, [5; 32], fee_asset));
+        assert_ne!(
+            commitment,
+            must(native_registration_commitment(&disclosure, 3, 17, [5; 32], [8; 32]))
+        );
+        assert_ne!(
+            commitment,
+            must(native_registration_commitment(&disclosure, 3, 17, [6; 32], fee_asset))
+        );
+        for (protocol, network, fee) in [(2, 17, fee_asset), (3, 0, fee_asset), (3, 17, [0; 32])] {
+            assert_eq!(
+                native_registration_commitment(&disclosure, protocol, network, [5; 32], fee),
+                Err(EffectsError::Unsupported("Register"))
+            );
+        }
+    }
+
+    fn registration(supply_cap: u128) -> layerx_crypto::payments::Registration {
+        let actor = must(layerx_types::ids::Did::new(b"did:layerx:alice"));
+        let issuer = must(layerx_wire::hash::did_id_for_protocol(&actor, 3));
+        let salt = [22; 32];
+        layerx_crypto::payments::Registration {
+            asset: layerx_crypto::payments::asset_id(&issuer, &salt),
+            salt,
+            symbol: "LX".to_owned(),
+            name: "Layer".to_owned(),
+            decimals: 6,
+            supply_cap,
+            issuer_kind: 1,
+            custody_ref: Vec::new(),
+        }
+    }
+
+    fn registration_disclosure(registration: layerx_crypto::payments::Registration) -> Disclosure {
+        use layerx_types::payload::{ActivityType, ModuleId, ModuleRegistration, ModuleRegistry};
+        use layerx_wire::{encode::Encoder, hash::Domain};
+        use sha2::{Digest as _, Sha256};
+        let actor: &[u8] = b"did:layerx:alice";
+        let payload = must(Payment::Register(registration).encode(actor));
+        let kind = must(ActivityType::new(ModuleId::Asset, 1));
+        let registry = must(ModuleRegistry::new(&[must(ModuleRegistration::new(
+            ModuleId::Asset,
+            &[kind],
+        ))]));
+        let mut hasher = Sha256::new();
+        hasher.update(Domain::PayloadHash.tag());
+        hasher.update(&payload);
+        let digest: [u8; 32] = hasher.finalize().into();
+        let mut e = Encoder::new(65536);
+        must(e.structure_header_version(0x1001, 3));
+        must(e.u8(11));
+        must(e.tag(1, 12));
+        must(e.u16(3));
+        must(e.tag(2, 12));
+        must(e.u32(17));
+        must(e.tag(3, 12));
+        must(e.u32(kind.value()));
+        must(e.tag(4, 12));
+        must(e.bytes(actor, 255));
+        must(e.tag(5, 12));
+        must(e.bytes(&[9; 32], 524_288));
+        must(e.tag(6, 12));
+        must(e.u64(7));
+        must(e.tag(7, 12));
+        must(e.u64(10));
+        must(e.u64(100));
+        must(e.tag(8, 12));
+        must(e.bytes(&[0x71; 32], 32));
+        must(e.tag(9, 12));
+        must(e.u128(20));
+        must(e.tag(10, 12));
+        must(e.bytes(&digest, 32));
+        must(e.tag(11, 12));
+        must(e.bytes(&payload, 524_288));
+        must(layerx_crypto::disclosure::bind(&e.finish(), &registry))
     }
 }

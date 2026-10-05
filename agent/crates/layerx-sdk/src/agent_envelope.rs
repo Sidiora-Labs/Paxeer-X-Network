@@ -596,14 +596,38 @@ impl AgentEnvelopeTransport {
         credential: &EnvelopeCredential,
         registry: &layerx_types::payload::ModuleRegistry,
     ) -> Result<ApiSuccess<layerx_agent_api::identity::NativePrepareResultV1>, EnvelopeError> {
-        use sha2::{Digest, Sha256};
         let body = crate::native_effect::encode_native_effect_prepare(request)?;
+        self.prepare_native_effect_body(request_id, key, request, &body, credential, registry)
+    }
+
+    pub fn prepare_native_registration(
+        &self,
+        request_id: RequestId,
+        key: Key,
+        request: &layerx_agent_api::identity::NativeRegistrationPrepareRequestV1,
+        credential: &EnvelopeCredential,
+        registry: &layerx_types::payload::ModuleRegistry,
+    ) -> Result<ApiSuccess<layerx_agent_api::identity::NativePrepareResultV1>, EnvelopeError> {
+        let body = crate::native_effect::encode_native_registration_prepare(request)?;
+        self.prepare_native_effect_body(request_id, key, &request.request, &body, credential, registry)
+    }
+
+    fn prepare_native_effect_body(
+        &self,
+        request_id: RequestId,
+        key: Key,
+        request: &layerx_agent_api::identity::NativeEffectPrepareRequestV1,
+        body: &Value,
+        credential: &EnvelopeCredential,
+        registry: &layerx_types::payload::ModuleRegistry,
+    ) -> Result<ApiSuccess<layerx_agent_api::identity::NativePrepareResultV1>, EnvelopeError> {
+        use sha2::{Digest, Sha256};
         let purpose = &request.purpose.purpose;
         crate::native_effect::validate_request_binding(request, credential, key)?;
         let response = self.send_operation(
             Operation::Prepare,
             request_id,
-            &body,
+            body,
             Some(credential),
             Some(key),
         )?;

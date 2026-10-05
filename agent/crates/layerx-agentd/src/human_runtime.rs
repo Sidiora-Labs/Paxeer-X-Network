@@ -5995,16 +5995,26 @@ impl<A: HumanAuthorityBoundary> UnifiedAgentOwner<A> {
         &mut self,
         context: &crate::agent_rpc_peer::RpcOwnerContext<'_>,
         request: MutationEnvelope<layerx_agent_api::identity::NativeEffectPrepareRequestV1>,
+        registration: bool,
     ) -> Result<HumanResponse, HumanOperationError> {
         use crate::approval::native_effect::NativeEffectApprovalCarrier;
         use crate::approval::native_program::StagedNativeRateUse;
         use crate::capability::binding;
         use crate::session_control::SessionControlError;
         let refused = || SessionControlError::Human(HumanOperationError::Refused);
-        if crate::agent_rpc_dispatch::native_effect_prepare_digest(&request.operation)
-            .map_err(|_| HumanOperationError::Refused)?
-            != request.body_digest
-        {
+        let body_digest = if registration {
+            crate::agent_rpc_dispatch::native_registration_prepare_digest(
+                &layerx_agent_api::identity::NativeRegistrationPrepareRequestV1 {
+                    request: request.operation.clone(),
+                }
+                .validate()
+                .map_err(|_| HumanOperationError::Refused)?,
+            )
+        } else {
+            crate::agent_rpc_dispatch::native_effect_prepare_digest(&request.operation)
+        }
+        .map_err(|_| HumanOperationError::Refused)?;
+        if body_digest != request.body_digest {
             return Err(HumanOperationError::Refused);
         }
         let control = self.session_control.clone();
@@ -6130,6 +6140,13 @@ impl<A: HumanAuthorityBoundary> UnifiedAgentOwner<A> {
             }
             fee
         };
+        let profile = if registration {
+            crate::capability::NativeAdmissionProfile::Registration {
+                fee_asset: fee.value.asset.asset_id,
+            }
+        } else {
+            crate::capability::NativeAdmissionProfile::Effect
+        };
         let constraints = context
             .permit()
             .with_native_preparation(
@@ -6156,6 +6173,7 @@ impl<A: HumanAuthorityBoundary> UnifiedAgentOwner<A> {
                         snapshot.protocol_timestamp,
                         &fee,
                         snapshot.observed_head_sequence,
+                        profile,
                     )
                     .map_err(|_| refused())
                 },
@@ -6220,6 +6238,7 @@ impl<A: HumanAuthorityBoundary> UnifiedAgentOwner<A> {
                 &caps,
                 snapshot.protocol_timestamp,
                 boundary_correlation(context.peer(), &preparation_id, b"native-prepare-fee"),
+                profile,
             )
             .map_err(|_| HumanOperationError::Refused)?;
             if !resolved.matches_prepared(&prepared)
@@ -6255,6 +6274,7 @@ impl<A: HumanAuthorityBoundary> UnifiedAgentOwner<A> {
                         snapshot.protocol_timestamp,
                         &fee,
                         snapshot.observed_head_sequence,
+                        profile,
                     )
                     .map_err(|_| refused())?;
                     if current != constraints || current.binding() != purpose.binding() {
@@ -6276,12 +6296,16 @@ impl<A: HumanAuthorityBoundary> UnifiedAgentOwner<A> {
                         {
                             return Err(refused());
                         }
-                        return NativeEffectApprovalCarrier::read_id(
+                        let held = NativeEffectApprovalCarrier::read_id(
                             store,
                             context,
                             preparation_id,
                         )
-                        .map_err(|_| refused());
+                        .map_err(|_| refused())?;
+                        if held.profile().map_err(|_| refused())? != profile {
+                            return Err(refused());
+                        }
+                        return Ok(held);
                     }
                     if !matches!(
                         lifecycle.state(preparation_id),
@@ -6343,6 +6367,7 @@ impl<A: HumanAuthorityBoundary> UnifiedAgentOwner<A> {
                         &policy,
                         staged.record(),
                         &fee,
+                        profile,
                     )
                     .map_err(|_| refused())?;
                     let origin = context.permit().preparation_authorization();
@@ -6661,6 +6686,7 @@ impl<A: HumanAuthorityBoundary> UnifiedAgentOwner<A> {
                 &caps,
                 snapshot.protocol_timestamp,
                 boundary_correlation(context.peer(), &preparation_id, b"native-prepare-fee"),
+                crate::capability::NativeAdmissionProfile::Effect,
             )
             .map_err(|_| HumanOperationError::Refused)?;
             if !resolved.matches_prepared(&prepared)
@@ -6789,6 +6815,7 @@ impl<A: HumanAuthorityBoundary> UnifiedAgentOwner<A> {
                         &policy,
                         staged.record(),
                         &fee,
+                        crate::capability::NativeAdmissionProfile::Effect,
                     )
                     .map_err(|_| refused())?;
                     let origin = context.permit().preparation_authorization();
@@ -7678,6 +7705,7 @@ impl<A: HumanAuthorityBoundary> UnifiedAgentOwner<A> {
                         snapshot.protocol_timestamp,
                         &fee,
                         snapshot.observed_head_sequence,
+                        held.profile().map_err(|_| refuse())?,
                     )
                     .map_err(|_| refuse())?;
                     let budget = held.budget().map_err(|_| refuse())?;

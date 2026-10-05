@@ -685,6 +685,24 @@ impl NativeEffectPrepareRequestV1 {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub struct NativeRegistrationPrepareRequestV1 {
+    pub request: NativeEffectPrepareRequestV1,
+}
+
+impl NativeRegistrationPrepareRequestV1 {
+    pub const ADMISSION_PROFILE: &'static str = "native-registration-v1";
+
+    pub fn validate(self) -> Result<Self, ContractError> {
+        if self.request.activity != NativeActivity::new(1, 1)? {
+            return Err(ContractError::Mismatch("native_registration_prepare.activity"));
+        }
+        Ok(Self {
+            request: self.request.validate()?,
+        })
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct NativeSendPrepareRequestV1 {
     pub activity: NativeActivity,
     pub actor: AgentDid,

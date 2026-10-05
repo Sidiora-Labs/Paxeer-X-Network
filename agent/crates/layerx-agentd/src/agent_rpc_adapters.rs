@@ -736,9 +736,24 @@ pub(crate) fn prepare<A: HumanAuthorityBoundary>(
             body_digest: native_effect_prepare_digest(&typed).map_err(|_| malformed(id))?,
             operation: typed,
         };
-        let response = owner
-            .lock()
-            .and_then(|mut guard| guard.rpc_prepare_native_effect(context, envelope));
+        let response = owner.lock().and_then(|mut guard| {
+            guard.rpc_prepare_native_effect(context, envelope, false)
+        });
+        return dispatched_native(id, response, NativePrepareResultV1Wire::into_result);
+    }
+    if crate::agent_rpc_dispatch::native_registration_variant(request) {
+        use crate::agent_rpc_dispatch::{dispatched_native, malformed, native_registration_prepare_digest};
+        use crate::agent_rpc_wire::{decode_wire, NativePrepareResultV1Wire, NativeEffectPrepareV1Wire};
+        let typed = decode_wire::<NativeEffectPrepareV1Wire>(request, id)?.into_registration(id)?;
+        let envelope = crate::human::MutationEnvelope {
+            request_id: id.0,
+            key: mutation_key(ctx)?,
+            body_digest: native_registration_prepare_digest(&typed).map_err(|_| malformed(id))?,
+            operation: typed.request,
+        };
+        let response = owner.lock().and_then(|mut guard| {
+            guard.rpc_prepare_native_effect(context, envelope, true)
+        });
         return dispatched_native(id, response, NativePrepareResultV1Wire::into_result);
     }
     if crate::agent_rpc_dispatch::native_variant(request, id)? {

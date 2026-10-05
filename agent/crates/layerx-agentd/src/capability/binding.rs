@@ -2607,6 +2607,7 @@ pub fn inspect_native_effect_capability(
         layerx_client::payments::NativeFeePolicy,
     >,
     current_head: u64,
+    profile: super::NativeAdmissionProfile,
 ) -> Result<NativeCapabilityConstraintsV1, BindingError> {
     crate::prepare::verify_disclosure_binding(prepared).map_err(|_| BindingError::Corrupt)?;
     let digest: [u8; 32] = Sha256::digest(&prepared.canonical_bytes).into();
@@ -2621,11 +2622,29 @@ pub fn inspect_native_effect_capability(
         return Err(BindingError::Conflict);
     }
     let fee = native_effect_fee(prepared, fee_policy, current_head)?;
-    let plan = super::effects::derive_native_effects(
-        &prepared.disclosure,
-        &super::VerifiedInputs::default(),
-    )
-    .map_err(|_| BindingError::Restricted)?;
+    if let super::NativeAdmissionProfile::Registration { fee_asset } = profile {
+        let commitment = super::native_registration_commitment(
+            &prepared.disclosure,
+            prepared.envelope.protocol_version(),
+            prepared.envelope.network_id(),
+            binding.canonical_digest,
+            fee_asset,
+        )
+        .map_err(|_| BindingError::Restricted)?;
+        if fee_asset != fee_policy.value.asset.asset_id
+            || (
+                prepared.envelope.activity_type().module(),
+                prepared.envelope.activity_type().ordinal(),
+            ) != (layerx_types::payload::ModuleId::Asset, 1)
+        {
+            return Err(BindingError::Conflict);
+        }
+        if commitment != binding.purpose_commitment {
+            return Err(BindingError::Refused(Dimension::Purpose));
+        }
+    }
+    let plan = super::derive_native_profile_effects(&prepared.disclosure, profile)
+        .map_err(|_| BindingError::Restricted)?;
     if !plan.program_spend_bounds().is_empty() {
         return Err(BindingError::Restricted);
     }
@@ -3650,6 +3669,7 @@ pub fn inspect_native_send_capability(
         now_ms,
         fee_policy,
         current_head,
+        super::NativeAdmissionProfile::Effect,
     )
 }
 

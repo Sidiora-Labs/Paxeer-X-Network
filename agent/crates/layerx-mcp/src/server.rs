@@ -911,7 +911,7 @@ impl Server {
             let Some(ordinal) = catalogue::native_alias_ordinal(tool.name) else {
                 return true;
             };
-            if ordinal == 1 || !stage_permissions || environment.head_sequence == 0 {
+            if !stage_permissions || environment.head_sequence == 0 {
                 return false;
             }
             let profile = if ordinal == 5 {

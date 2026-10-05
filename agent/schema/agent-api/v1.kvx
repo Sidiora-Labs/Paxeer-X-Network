@@ -880,6 +880,21 @@ serving_status = "Source request and conversion contract only. Integration uses 
 [encoding.NativeEffectPrepareV1_request_digest]
 digest = "SHA-256 of bytes LXP/agent/native-effect-prepare/v1 followed by NUL and serde_json::to_vec of the validated NativeEffectPrepareRequestV1 canonical JSON value, including exact native_effect_v1 discriminator and explicit local_grant null or full object. Existing native prepare digest remains unchanged."
 
+[record.NativeRegistrationPrepareRequestV1]
+rust = "layerx_agent_api::identity::NativeRegistrationPrepareRequestV1"
+wire_type = "NativeEffectPrepareV1Wire"
+fields = ["variant:utf8","activity:NativeActivityV1","actor:utf8","authority:utf8","account_sequence:decimal_string","not_before:decimal_string","not_after:decimal_string","idempotency_key:hex32","fee_limit:decimal_string","payload:lowercase_hex","payload_hash:hex32","capability_id:hex32","purpose:SignedNativePreparationPurposeV1","local_grant:NativeLocalGrantConsentV1?"]
+variant = "Required exact string native_registration_v1 on the existing authenticated Agent prepare route; a native_effect_v1 request is never relabelled as registration."
+activity = "Exactly Asset module 1 ordinal 1 with protocol 3; the wrapped NativeEffectPrepareRequestV1 validation applies unchanged."
+admission_profile = "native-registration-v1: canonical Payment::Register with issuer_kind 1, empty custody_ref, asset equal to SHA256(LX:ASSET:v1 || actor_did_id32 || salt32) and 0 < supply_cap < u128::MAX. Custody-backed issuer_kind 2 stays unsupported for every principal."
+commitment = "Signed purpose commitment equals SHA256(LayerX/native/asset-registration/v1 NUL || u16be protocol_version || u32be network_id || canonical_unsigned_digest32 || actor_did_id32 || asset_id32 || fee_asset_id32) with the native fee asset of the verified fee-policy snapshot."
+effects = "One SupplyCap authorization on the actor's native fee principal for the registered asset and supply_cap plus one rate action; no issuance, transfer or initial mint. Native fees are the unchanged native_effect_fee."
+retention = "Version-2 NativeEffectApprovalCarrier with admission_profile native-registration-v1; version-1 carriers, the native_effect_v1 refusal of Register and the legacy Register refusal are unchanged."
+canonical_json = "The NativeEffectPrepareRequestV1 canonical JSON with variant native_registration_v1."
+
+[encoding.NativeRegistrationPrepareV1_request_digest]
+digest = "SHA-256 of bytes LXP/agent/native-registration-prepare/v1 followed by NUL and serde_json::to_vec of the validated NativeRegistrationPrepareRequestV1 canonical JSON value."
+
 
 [record.NativeSendPurposeV1]
 rust = "layerx_agent_api::identity::NativeSendPurposeV1"

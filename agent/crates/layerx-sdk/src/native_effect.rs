@@ -51,6 +51,31 @@ pub fn native_effect_prepare_digest(
     Ok(digest.finalize().into())
 }
 
+pub const REGISTRATION_PREPARE_DOMAIN: &[u8] = b"LXP/agent/native-registration-prepare/v1\0";
+
+pub fn encode_native_registration_prepare(
+    request: &layerx_agent_api::identity::NativeRegistrationPrepareRequestV1,
+) -> Result<Value, EnvelopeError> {
+    request
+        .clone()
+        .validate()
+        .map_err(|_| EnvelopeError::InvalidRequest)?;
+    let mut value = encode_native_effect_prepare(&request.request)?;
+    value["variant"] = json!("native_registration_v1");
+    Ok(value)
+}
+
+pub fn native_registration_prepare_digest(
+    request: &layerx_agent_api::identity::NativeRegistrationPrepareRequestV1,
+) -> Result<[u8; 32], EnvelopeError> {
+    let canonical = encode_native_registration_prepare(request)?;
+    let bytes = serde_json::to_vec(&canonical).map_err(|_| EnvelopeError::InvalidRequest)?;
+    let mut digest = Sha256::new();
+    digest.update(REGISTRATION_PREPARE_DOMAIN);
+    digest.update(bytes);
+    Ok(digest.finalize().into())
+}
+
 pub const SEND_PREPARE_DOMAIN: &[u8] = b"LXP/agent/native-send-prepare/v1\0";
 
 pub fn encode_native_send_prepare(
@@ -272,6 +297,43 @@ mod tests {
         if let Ok(path) = std::env::var("NATIVE_EFFECT_RUST_CANONICAL_OUTPUT") {
             std::fs::write(path, canonical).expect("private canonical codec artifact");
         }
+    }
+
+    #[test]
+    fn native_registration_codec_is_a_distinct_asset_one_variant() {
+        let send = request();
+        let refused = layerx_agent_api::identity::NativeRegistrationPrepareRequestV1 {
+            request: send.clone(),
+        };
+        assert!(encode_native_registration_prepare(&refused).is_err());
+        let registration = layerx_agent_api::identity::NativeRegistrationPrepareRequestV1 {
+            request: NativeEffectPrepareRequestV1 {
+                activity: NativeActivity::new(1, 1).expect("native Asset Register"),
+                ..send
+            },
+        };
+        let value = encode_native_registration_prepare(&registration).expect("registration codec");
+        assert_eq!(value["variant"], "native_registration_v1");
+        assert_eq!(
+            value["activity"],
+            json!({"version":"1","module":"1","ordinal":"1"})
+        );
+        let mut effect = encode_native_effect_prepare(&registration.request).expect("effect codec");
+        assert_eq!(effect["variant"], "native_effect_v1");
+        effect["variant"] = json!("native_registration_v1");
+        assert_eq!(effect, value);
+        let canonical = serde_json::to_vec(&value).expect("canonical json");
+        let mut actual = Sha256::new();
+        actual.update(REGISTRATION_PREPARE_DOMAIN);
+        actual.update(&canonical);
+        assert_eq!(
+            native_registration_prepare_digest(&registration).expect("registration digest"),
+            <[u8; 32]>::from(actual.finalize())
+        );
+        assert_ne!(
+            native_registration_prepare_digest(&registration).expect("registration digest"),
+            native_effect_prepare_digest(&registration.request).expect("effect digest")
+        );
     }
 
     #[test]
