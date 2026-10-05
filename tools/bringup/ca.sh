@@ -123,8 +123,9 @@ Environment:
                        a retained certificate under the same CA, default 30
 
 Exits 1 when the CA is missing, already present on init, a toml names no
-app, retained material is foreign or cannot be inventoried, or a Fly step
-fails; 2 on a usage error or an unknown service.
+app, retained material is foreign or cannot be inventoried, a Fly step
+fails, or a row of the service tables is malformed or listed twice; 2 on a
+usage error or an unknown service.
 EOF
 }
 
@@ -190,6 +191,54 @@ EOF
 # attestor_services: the rows the attestors' gateway CA signs, because the
 # attestors admit keys.generate and sign only from a client chaining to it.
 attestor_services="human-attestor-client"
+
+# table_check <table>: refuses the rows of the table on stdin unless each is
+# exactly one identity: seven fields, a service named once, a Fly toml,
+# process group and custody (or none and local custody for local_services),
+# one secret prefix per toml, a known extended key usage, a SAN list of
+# DNS, IP and URN entries named once, and a SAN list on every server identity.
+table_check() {
+	awk -v table="$1" '
+	function bad(why) {
+		printf "ca: %s row %d is malformed: %s\n", table, NR, why >"/dev/stderr"
+		failed = 1
+	}
+	{
+		if (NF != 7) {
+			bad("want 7 fields, got " NF)
+			next
+		}
+		if ($1 !~ /^[a-z0-9][a-z0-9-]*$/) bad("service " $1)
+		else if ($1 in seen) bad("service " $1 " listed twice")
+		seen[$1] = 1
+		if (table == "local_services") {
+			if ($2 != "-" || $3 != "-" || $4 != "local") bad("a local identity names no toml or process group and has local custody")
+		} else {
+			if ($2 !~ /^[a-z0-9][a-z0-9_\/.-]*\.toml$/) bad("toml " $2)
+			if ($3 != "-" && $3 !~ /^[a-z][a-z0-9-]*$/) bad("process group " $3)
+			if ($4 != "volume" && $4 !~ /^[A-Z][A-Z0-9_]*$/) bad("custody " $4)
+			else if ($4 != "volume" && (($2 " " $4) in prefixes)) bad("secret prefix " $4 " of " $2 " listed twice")
+			prefixes[$2 " " $4] = 1
+		}
+		if ($5 !~ /^[a-z][a-z0-9-]*$/) bad("common name " $5)
+		if ($6 != "serverAuth" && $6 != "clientAuth" && $6 != "serverAuth,clientAuth") bad("extended key usage " $6)
+		if ($7 == "-") {
+			if ($6 ~ /serverAuth/) bad("a server identity without a SAN list")
+		} else {
+			n = split($7, sans, ",")
+			delete names
+			for (i = 1; i <= n; i++) {
+				if (sans[i] !~ /^(DNS:[a-z0-9<>.-]+|IP:[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+|URI:urn:[a-z0-9:._-]+)$/) bad("SAN " sans[i])
+				else if (sans[i] in names) bad("SAN " sans[i] " listed twice")
+				names[sans[i]] = 1
+			}
+		}
+	}
+	END {
+		if (NR == 0) bad("no rows")
+		exit failed
+	}'
+}
 
 # The files every issued identity consists of, as <file>:<secret suffix>.
 # derive_cmd turns key.pem, cert.pem and ca.pem into the rest; it carries no
@@ -305,13 +354,13 @@ row_ca_dir() {
 }
 
 certificate_usage_matches() {
-	local service="$1" cert="$2" row_ca="$3" app="$4" roles cn eku sans want_cn want_eku
+	local service="$1" cert="$2" row_ca="$3" app="$4" roles cn eku sans want_cn want_eku want_sans
 	case "$service" in
 	human-kms | human-kms-client | human-kms-executor)
 		# Each Human KMS identity is exactly its own row: the server, the
 		# components' service client and movement's restricted executor never
 		# stand in for one another.
-		read -r _ _ _ _ want_cn want_eku _ <<<"$(service_row "$service")"
+		read -r _ _ _ _ want_cn want_eku want_sans <<<"$(service_row "$service")"
 		cn="$(openssl x509 -noout -subject -nameopt multiline <<<"$cert" 2>/dev/null | sed -n 's/^ *commonName *= //p')"
 		eku="$(openssl x509 -noout -ext extendedKeyUsage <<<"$cert" 2>/dev/null | tail -n +2 | sed 's/^ *//')"
 		sans="$(openssl x509 -noout -ext subjectAltName <<<"$cert" 2>/dev/null | tail -n +2 | sed 's/^ *//')"
@@ -320,6 +369,7 @@ certificate_usage_matches() {
 		serverAuth)
 			[ "$eku" = "TLS Web Server Authentication" ] &&
 				[[ ", $sans, " == *", DNS:layerx-human-kms, "* ]] &&
+				[ "$sans" = "$(printf '%s' "${want_sans//<app>/$app}" | sed 's/,/, /g; s/IP:/IP Address:/g')" ] &&
 				openssl verify -purpose sslserver -verify_hostname layerx-human-kms -verify_ip 127.0.0.1 \
 					-CAfile "$row_ca/ca.pem" <<<"$cert" >/dev/null 2>&1
 			;;
@@ -1020,6 +1070,11 @@ for tool in "${tools[@]}"; do
 		exit 2
 	fi
 done
+
+case "$mode" in
+services | inventory | issue) ca_services | table_check ca_services || exit 1 ;;
+local-services | issue-local) local_services | table_check local_services || exit 1 ;;
+esac
 
 case "$mode" in
 request-server) ca_request_server "$2" "$4" ;;

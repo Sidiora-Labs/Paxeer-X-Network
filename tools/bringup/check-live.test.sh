@@ -812,14 +812,22 @@ else
 	failures=$((failures + 1))
 fi
 
-want="$("$ca" services | wc -l)"
+expected_ca_services=(pending-core pending-core-admin receipt-authority agent-boundary agentd agentd-client
+	paxeer-boundary-loopback paxeer-boundary-public guarantor human human-event-client human-attestor-client
+	human-kms human-kms-client human-kms-executor relay-archive gateway-redis gateway-client identity
+	internal-kms internal-journeys internal-payments internal-approvals internal-programs internal-redis
+	registry registry-event-client indexer interop-client developer developer-client dashboard-client ramp-client)
+expected_ca_set="$(printf '%s\n' "${expected_ca_services[@]}" | sort)"
+want="${#expected_ca_services[@]}"
 LAYERX_CA_DIR="$work/attestor-ca" "$ca" init >/dev/null
 status=0
 output="$("$ca" services | while read -r service _; do
 	CHECK_LIVE_TIMEOUT=5 LAYERX_ATTESTOR_CA_DIR="$work/attestor-ca" "$ca" issue "$service" </dev/null || exit 1
 done 2>&1)" || status=$?
 attestor_client="$fly/$kernel/app/data/tls/human-attestor-client"
-if [ "$status" -eq 0 ] && [ "$(grep -c '^issued ' <<<"$output")" -eq "$want" ] && [ "$want" -eq 30 ] &&
+if [ "$status" -eq 0 ] && [ "$(grep -c '^issued ' <<<"$output")" -eq "$want" ] && [ "$(sort -u <<<"$expected_ca_set" | wc -l)" -eq "$want" ] &&
+	[ "$("$ca" services | awk '{print $1}' | sort)" = "$expected_ca_set" ] &&
+	[ "$(sed -n 's/^issued \([^ ]*\) .*/\1/p' <<<"$output" | sort)" = "$expected_ca_set" ] &&
 	openssl verify -CAfile "$work/attestor-ca/ca.pem" "$attestor_client/cert.pem" >/dev/null 2>&1 &&
 	! openssl verify -CAfile "$work/ca/ca.pem" "$attestor_client/cert.pem" >/dev/null 2>&1 &&
 	cmp -s "$attestor_client/ca.der" "$work/attestor-ca/ca.der" && [ -s "$attestor_client/key.der" ] && [ -s "$attestor_client/cert.der" ] &&

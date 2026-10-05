@@ -29571,7 +29571,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.24.7]
 title = "Verify the complete integrated CA identity roster exactly"
-status = "in_progress"
+status = "done"
 mode = "BUILD"
 wave = 9
 requires = ["0.2", "24.3"]
@@ -29592,6 +29592,11 @@ deployment_profile = "product"
 planned_paths = ["tools/bringup/tests/paxeer-x-runtime-contract.py"]
 path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
 evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+completion_basis = "implementation"
+qualification_status = "PASS"
+build_exit_code = null
+verify_exit_code = 0
+qualification_log = "/root/lx-ops/fleet-2026-10-05/results/24.7.json"
 
 [task.103.5.2]
 title = "Stand up the beta stack and run the beta-qualify runner gate"
