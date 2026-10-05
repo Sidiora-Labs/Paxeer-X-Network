@@ -139,3 +139,132 @@ impl PartialOrd for StorageNamespace {
         Some(self.cmp(other))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn program(byte: u8) -> ProgramId {
+        ProgramId::new([byte; 32]).unwrap_or_else(|error| panic!("program: {error}"))
+    }
+
+    fn principal(byte: u8) -> PrincipalId {
+        PrincipalId::new([byte; 32]).unwrap_or_else(|error| panic!("principal: {error}"))
+    }
+
+    fn every_variant() -> Vec<StorageNamespace> {
+        let mut namespaces = Vec::new();
+        for owner in [9, 1, 5] {
+            namespaces.push(StorageNamespace::shared(program(owner)));
+            for scope in [7, 2] {
+                namespaces.push(StorageNamespace::protocol_private(
+                    program(owner),
+                    [scope; 32],
+                ));
+            }
+            for actor in [8, 3, 6] {
+                namespaces.push(StorageNamespace::principal(
+                    program(owner),
+                    principal(actor),
+                ));
+            }
+        }
+        namespaces
+    }
+
+    #[test]
+    fn canonical_bytes_are_frozen_for_both_program_scopes() {
+        let owner = program(1);
+        let mut shared = owner.bytes().to_vec();
+        shared.push(1);
+        assert_eq!(StorageNamespace::shared(owner).canonical_bytes(), shared);
+        let mut scoped = owner.bytes().to_vec();
+        scoped.push(0);
+        scoped.extend_from_slice(&[2; 32]);
+        assert_eq!(
+            StorageNamespace::principal(owner, principal(2)).canonical_bytes(),
+            scoped
+        );
+        let mut private = owner.bytes().to_vec();
+        private.push(2);
+        private.extend_from_slice(&[3; 32]);
+        assert_eq!(
+            StorageNamespace::protocol_private(owner, [3; 32]).canonical_bytes(),
+            private
+        );
+        for namespace in every_variant() {
+            let mut written = [0; 65];
+            let length = namespace.write_canonical(&mut written);
+            assert_eq!(&written[..length], namespace.canonical_bytes().as_slice());
+        }
+    }
+
+    #[test]
+    fn ordering_matches_canonical_bytes_across_every_variant() {
+        let namespaces = every_variant();
+        for left in &namespaces {
+            for right in &namespaces {
+                assert_eq!(
+                    left.cmp(right),
+                    left.canonical_bytes().cmp(&right.canonical_bytes()),
+                    "{left:?} vs {right:?}"
+                );
+                assert_eq!(left.partial_cmp(right), Some(left.cmp(right)));
+                assert_eq!(
+                    left == right,
+                    left.canonical_bytes() == right.canonical_bytes()
+                );
+            }
+        }
+        let mut forward = namespaces.clone();
+        forward.sort();
+        let mut reverse = namespaces;
+        reverse.reverse();
+        reverse.sort();
+        assert_eq!(forward, reverse);
+        assert_eq!(
+            forward.first(),
+            Some(&StorageNamespace::principal(program(1), principal(3)))
+        );
+        assert_eq!(
+            forward.last(),
+            Some(&StorageNamespace::protocol_private(program(9), [7; 32]))
+        );
+    }
+
+    #[test]
+    fn every_namespace_names_exactly_its_owning_program_and_scope() {
+        let owner = program(4);
+        let actor = principal(5);
+        let scoped = StorageNamespace::principal(owner, actor);
+        let shared = StorageNamespace::shared(owner);
+        assert_eq!(
+            scoped,
+            StorageNamespace::PrincipalScoped {
+                program: owner,
+                principal: actor
+            }
+        );
+        assert_eq!(shared, StorageNamespace::ProgramShared { program: owner });
+        assert_eq!(
+            (scoped.program(), scoped.principal_scope()),
+            (owner, Some(actor))
+        );
+        assert_eq!((shared.program(), shared.principal_scope()), (owner, None));
+        let private = StorageNamespace::protocol_private(owner, [6; 32]);
+        assert_eq!(
+            (private.program(), private.principal_scope()),
+            (owner, None)
+        );
+        assert_ne!(scoped, shared);
+        assert_ne!(shared, StorageNamespace::shared(program(6)));
+        assert_ne!(scoped, StorageNamespace::principal(program(6), actor));
+        assert_ne!(scoped, StorageNamespace::principal(owner, principal(6)));
+        for namespace in every_variant() {
+            assert_eq!(
+                namespace.canonical_bytes()[..32],
+                namespace.program().bytes()
+            );
+        }
+    }
+}
