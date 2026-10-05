@@ -22,7 +22,8 @@ the canonical `LayerX` bounded-bytes envelope `[1, 0x20] || length:u32 ||
 payload`:
 
 - `add_liquidity` mints an exact share count. The caller supplies the share
-  recipient, the share count and the maximum it will pay in each token; the
+  recipient, which must be the share account the swap program derives for the
+  invoking principal, the share count and the maximum it will pay in each token; the
   program charges `ceil(shares * reserve / supply)` of each token and refuses
   when either charge exceeds the supplied maximum. The first deposit sets the
   initial price: it charges the share count in token A and the supplied maximum
@@ -34,9 +35,9 @@ payload`:
 - `swap_exact_in` charges the full input, keeps `FEE_BASIS_POINTS` of it in the
   pool and pays out
   `floor(reserve_out * net_in / (reserve_in + net_in))`, refusing below the
-  caller's `min_out`. Both products are evaluated at 256-bit width through the
-  `bigint_mul_256`, `bigint_div_256` and `bigint_rem_256` host functions, so
-  `x * y = k` never wraps.
+  caller's `min_out`. Every product is widened through the `bigint_mul_256`
+  host function and divided in the guest, and a product that does not fit in
+  256 bits is refused, so `x * y = k` never wraps.
 - `quote` runs the same output computation without moving value.
 - `reserves` returns `reserve_a || reserve_b || total_shares`.
 
@@ -46,14 +47,19 @@ sum of everything ever paid in minus everything ever paid out.
 Build:
 
 ```
-cargo build --manifest-path programs/sdk/rust/examples/swap-cpmm/Cargo.toml --target wasm32-unknown-unknown --release
+cd programs/sdk/rust/examples/swap-cpmm
+cargo build --locked --release --target wasm32-unknown-unknown
 ```
+
+Run Cargo from the example directory so `programs/.cargo/config.toml` (vendored
+sources and the `wasm32-unknown-unknown` code-generation flags) applies.
 
 `layerx-programs-registry::swap::reference_interface` binds the real module to
 all five exports and their exact capability masks. The registry example
 `swap_interface` writes the canonical interface and the registry state value for
-a supplied program id and prints its digest. The committed fixtures use program
-id `55` repeated 32 times, and `make programs-reference-fixtures` is the only
+a supplied program id and prints its digest. The committed fixtures in
+`programs/fixtures/pay5` use a program id of byte `0x55` repeated 32 times, and
+`make programs-reference-fixtures` is the only
 build path that writes them: the script behind it remaps the source paths, so no
 checkout path reaches the committed artifact, and it regenerates the interface
 and the registry state value from the artifact it just built.

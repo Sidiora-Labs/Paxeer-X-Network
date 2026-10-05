@@ -1,13 +1,15 @@
-# LayerX relay/archive node
+# Relay/archive node
 
-The relay/archive role lets an independent operator follow an existing LayerX
-network, retain its complete canonical byte history, serve public reads, and
+The relay/archive role lets an independent operator follow the LayerX kernel
+domain of a running Paxeer X Network deployment, retain its complete canonical byte history, serve public reads, and
 forward users' original signed activities. It does not order activities,
 execute state transitions, hold a sequencer key, or participate in a consensus
 or finality quorum.
 
 `layerxd --relay-archive CONFIG` replaces the native process with the installed
-Python standard-library runtime. The runtime verifies signed bootstrap and
+Python standard-library runtime (`python3 RUNTIME --config CONFIG`, where
+`RUNTIME` is `LAYERX_RELAY_ARCHIVE_RUNTIME` or, by default,
+`/opt/layerx/relay_archive/runtime.py`; see `cmd/layerxd/lxp_daemon_cli.c`). The runtime verifies signed bootstrap and
 batch material through `layerx-archive-codec`; Python does not reimplement or
 weaken the native codecs.
 
@@ -74,11 +76,11 @@ sudo platform/relay_archive/install.sh \
   --sequencer-id PINNED_SEQUENCER_ID \
   --sequencer-public-key PINNED_SEQUENCER_PUBLIC_KEY \
   --data-dir /var/lib/layerx/relay-archive \
-  --listen 0.0.0.0:9443 \
+  --listen "$LISTEN_ADDRESS" \
   --public-url https://relay.example.net \
   --upstream https://archive-1.example.net \
   --upstream https://archive-2.example.net \
-  --submission-upstream https://api-mainnet-beta.paxeer.network/v1/activities \
+  --submission-upstream https://gateway.example.net/v1/activities \
   --peer-seed https://relay-seed.example.net \
   --tls-cert /etc/layerx/tls/relay.crt \
   --tls-key /etc/layerx/tls/relay.key \
@@ -97,7 +99,7 @@ sudo platform/relay_archive/install.sh \
   --sequencer-id PINNED_SEQUENCER_ID \
   --sequencer-public-key PINNED_SEQUENCER_PUBLIC_KEY \
   --data-dir /var/lib/layerx/relay-archive \
-  --listen 0.0.0.0:9443 \
+  --listen "$LISTEN_ADDRESS" \
   --public-url https://relay.example.net \
   --upstream https://archive-1.example.net \
   --tls-cert /etc/layerx/tls/relay.crt \
@@ -118,7 +120,10 @@ enables `layerx-relay-archive.service`. Non-loopback listeners require a TLS
 certificate and key. Ensure that the service account can read operator-managed
 TLS files without making them world-readable.
 
-For a rootless installation or the real-process qualification path:
+`LISTEN_ADDRESS` is a `HOST:PORT` pair; [`config.example.json`](config.example.json)
+uses port 9443 on all interfaces.
+
+For a rootless installation:
 
 ```sh
 platform/relay_archive/install.sh \
@@ -135,7 +140,12 @@ LAYERX_RELAY_ARCHIVE_RUNTIME="$RUN_ROOT/install/runtime.py" \
 That form expects the named configuration to exist already. To have the
 rootless installer create it, add the same explicit pins, paths, listener,
 public URL, and upstream flags used by the service example. Local HTTP requires
-both a literal `127.0.0.1` or `::1` endpoint and `--allow-loopback-dev`.
+both a literal loopback address (IPv4 loopback or `::1`) and
+`--allow-loopback-dev`. `--config-only` renders a configuration for an
+already installed runtime and installs nothing. `install.sh --help` prints
+every flag of [`install.sh`](install.sh), including `--genesis-manifest` and
+`--genesis-snapshot`, `--source-log`, `--codec`, and `--listener plain` for a
+listener behind a TLS-terminating edge.
 
 ## Configuration
 
@@ -166,6 +176,7 @@ Public synchronization and archive reads do not accept credentials.
 | `GET /v1/sync/head` | JSON `{version, network_id, genesis_sha256, head_batch, head_batch_id, head_raw_sha256, next_batch}` from the durable head. |
 | `GET /v1/sync/batches/N` | Exact canonical bytes of batch `N`, only after native verification and durable commit. |
 | `GET /v1/peers` | A bounded, expiring compatible-peer advertisement described below. |
+| `GET /v1/sync/readiness` | JSON durable head plus `ready`, `recovered_current_process`, `sequencer_public_key` and `freshness`; HTTP 503 until synchronization is current within the freshness budget. |
 | `GET /healthz` | Process liveness only. |
 | `GET /readyz` | Ready only after pinned bootstrap and durable synchronization state are available. |
 
@@ -200,7 +211,7 @@ forwards `lx_sendActivity`. The relay never signs, decodes and rebuilds, or
 otherwise changes a user's activity. It durably binds idempotency to the exact
 bytes, retries the same bytes only after transport or availability failure,
 preserves a definitive upstream refusal, and reports an unresolved transport
-outcome as unknown. Incoming `Authorization` or `LayerX-Key` is forwarded only
+outcome as unknown. Incoming `Authorization`, `LayerX-Key` or `X-LayerX-Key` is forwarded only
 to configured submission endpoints; no credential is sent to a discovered
 read peer.
 
@@ -221,6 +232,13 @@ The peer document has exactly this versioned shape:
 }
 ```
 
+## Build and test from source
+
+From the repository root, `make relay-archive-build` builds `layerxd`,
+`layerx-genesis-build`, `layerx-archive-codec` and the test activity signer, and
+`make relay-archive-e2e` runs [`tests/relay-archive/e2e.py`](../../tests/relay-archive/e2e.py)
+against that build.
+
 ## Container deployment
 
 Build the image from the repository root so both native executables and the
@@ -239,3 +257,9 @@ provides a non-root Kubernetes Deployment, persistent volume, HTTPS Service and
 Ingress, and an egress policy that excludes common private and link-local
 networks. Replace every pin, hostname, certificate Secret, and image digest
 before applying it; the checked-in placeholders intentionally fail closed.
+
+The Dockerfile's `fly` target uses `install.sh --fly-start` as its entrypoint:
+it renders a new configuration from the `LAYERX_RELAY_ARCHIVE_*` environment
+listed by `install.sh --help` and then starts `layerxd --relay-archive`.
+[`fly.toml`](fly.toml) and [`deployment.yaml`](deployment.yaml) are the
+repository's own deployment descriptors for that image.

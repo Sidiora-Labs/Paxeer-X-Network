@@ -1,39 +1,42 @@
-# LayerX developer CLI
+# `layerx` developer CLI
 
-Binary `layerx` (`platform/cli`). The complete payment path is
-[`docs/wiki/PaymentsQuickstart.md`](../../docs/wiki/PaymentsQuickstart.md).
+`platform/cli` builds the `layerx` binary (package `layerx-platform-cli` in the
+[`platform`](../Cargo.toml) Cargo workspace), the developer command line for the
+LayerX kernel domain of Paxeer X Network. The complete payment walkthrough is
+[`docs/wiki/PaymentsQuickstart.md`](../../docs/wiki/PaymentsQuickstart.md); hosted
+documentation lives at [docs.paxeer.app](https://docs.paxeer.app/).
 
-The command groups in this tree are `wallet`, `token`, `new`, `workspace`,
-`environment`, `key`, `auth`, `account`, `payment`, `receipt`, `program`,
-`emulator`, `install`, `mcp`, and `a2a` (`platform/cli/src/main.rs:53-97`).
-The `wallet` and `token` groups carry the native key, account, transfer, token
-and receipt operations documented below; `account` and `payment` remain the
-hosted developer-account and hosted-move surface.
+The top-level commands are `wallet`, `token`, `new`, `workspace`, `environment`,
+`key`, `auth`, `account`, `register`, `faucet`, `payment`, `receipt`, `program`,
+`emulator`, `install`, `mcp` and `a2a` (`src/main.rs`). `wallet` and `token`
+carry the native key, account, transfer, token and receipt operations described
+below. `account` creates or reads a developer account, `register` registers a
+self-service identity principal for a local signing key, and `payment test`
+requests a move quote (`/v1/moves/quote`) and commits it (`/v1/moves`) with a
+caller-supplied idempotency key (`src/payment.rs`).
 
-`--json`, `--rpc` and `--gateway-credential` are the global flags
-(`platform/cli/src/main.rs:34-47`); `--gateway-credential` is additionally a
-required per-command argument on `mcp serve` and `a2a serve`
-(`platform/cli/src/main.rs:463-464, 482-483`). The signing arguments take
-`--fee-limit`, defaulting to `0` (`platform/cli/src/main.rs:309-310,
-1156-1157`).
+`--json`, `--rpc` and `--gateway-credential` are global flags. `--rpc` takes a
+public gateway JSON-RPC endpoint ending in `/rpc`; `--gateway-credential` names a
+stored gateway credential alias. `a2a serve` additionally requires its own
+`--gateway-credential` argument.
 
-`payment quote` and `payment commit` read the account sequence, sign the
-canonical activity, and record the activity id so an uncertain outcome can be
-recovered rather than retried blindly (`platform/cli/src/payment.rs:5-37`).
+## Build
+
+```bash
+cargo build --manifest-path platform/cli/Cargo.toml
+```
+
+The executable is `platform/target/debug/layerx`; put that directory on your PATH.
 
 ## Wallet quickstart
 
-Build with `cargo build --manifest-path platform/cli/Cargo.toml`. The executable
-is `platform/target/debug/layerx`; put that directory on your PATH.
-
-Wallet creation on the emulator, imports, listing, balance reads and verified
-RPC receipt waits are available. Send, token transfer, token creation, mint,
-burn and asset-account opening use shared disclosure and signing with separate
+Wallet creation runs against the local emulator. Imports, listing, balance
+reads and verified RPC receipt waits are available. Send, token transfer, token
+creation, mint, burn and asset-account opening disclose and sign with separate
 identity and source-account sequences. Public writes require `--rpc`, a trusted
-receipt policy and a fee limit. Funded public execution still requires a
-configured authenticated deployment; local fixture tests do not establish it.
-Public wallet registration and DID history are not published and return typed
-unavailable errors without signing or inventing history.
+receipt policy and a fee limit. On a public gateway, `wallet create` returns
+`wallet_registration_unavailable` without generating a key (use `layerx
+register` there), and DID history returns `wallet_history_unavailable`.
 
 ### Create a local wallet
 
@@ -48,10 +51,12 @@ layerx emulator provision
 layerx emulator up --sequencer-seed-file "$HOME/.config/layerx/emulator/sequencer.seed"
 ```
 
-In another terminal with the same configuration and credential-store settings:
+`emulator up` listens on loopback port 9402 with network ID 402 by default and
+refuses non-loopback listen addresses. In another terminal with the same
+configuration and credential-store settings:
 
 ```bash
-layerx environment use emulator --endpoint http://127.0.0.1:9402 \
+layerx environment use emulator --endpoint http://localhost:9402 \
   --network-id 402 \
   --sequencer-trust-anchor-file "$HOME/.config/layerx/emulator/sequencer.anchor"
 layerx wallet create alice
@@ -59,32 +64,26 @@ layerx wallet list
 layerx wallet balance
 ```
 
+`--endpoint`, `--network-id` and a sequencer trust anchor must be supplied
+together. Plain `http://` endpoints are accepted only for loopback hosts.
+
 Creation registers the local DID and opens its main account with zero units.
 If registration fails after key creation, the key is retained; retry using the
 same wallet name. Import an existing 32-byte hexadecimal seed with
 `layerx wallet import alice`, supplying the seed on stdin. Importing does not
-register or fund an identity.
+register or fund an identity. `layerx wallet derive` derives the EVM account and
+LayerX identity of a BIP-39 phrase read from stdin or a file.
 
-### Request beta funds
+### Beta funds
 
-Use the faucet address and CA certificate supplied with your beta access.
-Set `FAUCET_URL`, `BETA_CA_FILE`, `WALLET_DID`, and `WALLET_PUBLIC_KEY`
-to your endpoint and the public values from `layerx wallet list`.
-Choose a unique `FAUCET_REQUEST_ID` of 16–128 letters, digits, dashes, or
-underscores, and retain it for retries.
+The limited beta has not opened yet. The gateway API becomes available when it
+does. This is a mainnet beta on real value, so there is no faucet for general
+use; approved developers receive test allocations from the team.
 
-```bash
-jq -n --arg did "$WALLET_DID" --arg public_key "$WALLET_PUBLIC_KEY" \
-  '{did:$did, public_key:$public_key}' > faucet-request.json
-curl --fail --silent --show-error --cacert "$BETA_CA_FILE" \
-  --request POST "$FAUCET_URL/v1/faucet/claims" \
-  --header 'Content-Type: application/json' \
-  --header "Idempotency-Key: $FAUCET_REQUEST_ID" \
-  --data-binary @faucet-request.json > faucet-response.json
-jq -e '.funded == true and .funding_id != null' faucet-response.json
-```
-
-A failed or indeterminate claim is not funding confirmation.
+`layerx faucet [--key NAME]` sends the `lx_requestFunds` JSON-RPC call for the
+key's DID and public key to the active environment. A claim counts as funded
+only when the response reports `funded: true` with a hexadecimal
+`funding_id`; any refusal or missing field is an error.
 
 ### Send and create a token
 
@@ -93,15 +92,15 @@ hexadecimal identifier; `RECIPIENT_DID` is the recipient's DID.
 The recipient's account must already exist for that asset.
 
 Configure your beta environment with its network ID and store your gateway
-credential under the `beta` alias. Obtain a receipt policy
-from an independently trusted operator; do not derive trust pins from the RPC
-response being verified. The JSON file contains `protocol_version` (3),
-`network_id`, `sequencer_id` and `sequencer_key` (64 hexadecimal characters each),
-`first_batch` and `last_batch` (an inclusive authorized range), and
-`checkpoint_context_digest` (a SHA-256 hexadecimal digest, required for finality).
-Use `null` for the checkpoint digest when only execution or batch verification
-is needed. Set `RECEIPT_POLICY` to this file and `FEE_LIMIT` to your maximum fee
-in base units.
+credential under the `beta` alias. Obtain a receipt policy from an
+independently trusted operator; do not derive trust pins from the RPC response
+being verified. The JSON file contains exactly `protocol_version` (3),
+`network_id`, `sequencer_id` and `sequencer_key` (64 hexadecimal characters
+each), `first_batch` and `last_batch` (an inclusive authorized range), and
+`checkpoint_context_digest` (a SHA-256 hexadecimal digest, required for
+finality). Use `null` for the checkpoint digest when only execution or batch
+verification is needed. Set `RECEIPT_POLICY` to this file and `FEE_LIMIT` to
+your maximum fee in base units.
 
 ```bash
 layerx --rpc "$RPC_URL" --gateway-credential beta token create --symbol PAY --name 'Payment Token' \
@@ -122,11 +121,11 @@ signing. They submit canonical signed bytes and verify the receipt against the
 locally computed activity ID. A successful result reports the activity ID,
 receipt result and commitment reached. A failed native receipt exits nonzero.
 An acknowledgement alone never counts as success. `--timeout-seconds` accepts
-1–300 seconds and defaults to 60; pending outcomes retain the activity ID for
-later receipt retrieval. Do not blindly repeat a pending write: each invocation
-creates a new idempotency key.
+1–300 seconds and defaults to 60; `--wait` defaults to `executed`. Pending
+outcomes retain the activity ID for later receipt retrieval. Do not blindly
+repeat a pending write: each invocation creates a new idempotency key.
 
-The Send command syntax is:
+Send and transfer:
 
 ```bash
 layerx --rpc "$RPC_URL" --gateway-credential beta wallet send --to "$RECIPIENT_DID" \
@@ -140,12 +139,12 @@ layerx --rpc "$RPC_URL" --gateway-credential beta token transfer --to "$RECIPIEN
 Send reads the identity sequence using `lx_getSequence([did, "identity"])`
 and reads the source-account sequence independently. The source and DID
 destination accounts are selected from the authenticated `lx_getBalances`
-snapshot by exact asset ID, account name and recomputed `LX:ACCOUNT:v1` ID. This
-supports a deployment-specific native custody asset without treating it as a
-token account. The CLI discloses and signs the native debit authorization before
-disclosing and signing the shared envelope. An unavailable identity/account
-snapshot, ambiguous account, invalid signature or missing commitment evidence
-produces an error. Emulator Send remains unavailable.
+snapshot by exact asset ID, account name and recomputed account ID. The CLI
+discloses and signs the native debit authorization before disclosing and
+signing the shared envelope. An unavailable identity/account snapshot,
+ambiguous account, invalid signature or missing commitment evidence produces an
+error. Send against the emulator returns `identity_sequence_unavailable`
+without signing.
 
 | Commitment | Required evidence |
 | --- | --- |
@@ -160,13 +159,10 @@ layerx --rpc "$RPC_URL" --gateway-credential beta wallet receipt "$ACTIVITY_ID" 
   --receipt-policy "$RECEIPT_POLICY" --wait finalised
 ```
 
-Without `--rpc`, receipt retrieval retains the existing REST execution-signature
-verification using the configured sequencer key. Stronger commitments require
-RPC and the explicit receipt policy.
-
 ### Fee estimates and live notifications
 
-Estimate fees using already encoded canonical activity bytes:
+Estimate fees using already encoded canonical activity bytes, or read one live
+notification:
 
 ```bash
 layerx --rpc "$RPC_URL" --gateway-credential beta wallet estimate-fee "$CANONICAL_HEX"
@@ -176,41 +172,36 @@ layerx --rpc "$RPC_URL" --gateway-credential beta wallet watch account --account
 ```
 
 Fee estimation forwards to the native fee schedule and preserves unavailable
-errors. Each watch reads one notification over authenticated `/rpc/ws` and
-exits; `--timeout-seconds` is bounded to 1–300 seconds. Receipts require
-`receipt:read`; checkpoints and account topics require `state:read`.
-Notifications are marked `verified: false`; they establish no commitment.
-Use `wallet receipt` with your receipt policy to verify commitment. On timeout,
-closure or feed loss, reconcile using RPC reads before starting another watch.
-The stream provides no durable replay. Remote connections require validated TLS.
+errors. Each watch reads one notification over the authenticated WebSocket at
+`/rpc/ws` and exits; `--timeout-seconds` is bounded to 1–300 seconds and
+defaults to 60. Notifications are marked `verified: false`; they establish no
+commitment. Use `wallet receipt` with your receipt policy to verify commitment.
+On timeout, closure or feed loss, reconcile using RPC reads before starting
+another watch.
 
-### Public JSON-RPC
-
-Select a configured beta profile, then pass the complete RPC endpoint:
+### Public JSON-RPC reads
 
 ```bash
 layerx --rpc "$RPC_URL" --gateway-credential beta wallet balance --did "$WALLET_DID"
 layerx --rpc "$RPC_URL" --gateway-credential beta wallet balance --did "$WALLET_DID" --asset "$ASSET_ID"
 layerx --rpc "$RPC_URL" --gateway-credential beta wallet receipt "$ACTIVITY_ID" --receipt-policy "$RECEIPT_POLICY"
 layerx --rpc "$RPC_URL" --gateway-credential beta token info "$ASSET_ID"
-layerx --rpc "$RPC_URL" --gateway-credential beta token list
+layerx --rpc "$RPC_URL" --gateway-credential beta token list --limit 64
 ```
 
-`RPC_URL` must end in `/rpc`; remote endpoints require HTTPS. Requests use
-positional parameters from the public API contract. Unknown methods, malformed
-responses, and unavailable native evidence exit nonzero. DID enumeration,
-asset listing/detail and fee estimation consume authenticated native snapshots;
-they never invent an empty list or estimate when the upstream evidence is
-unavailable. Token info and list call `lx_getAsset` and `lx_listAssets`. DID
-listing errors retain the remote code, message and data.
+`RPC_URL` must end in `/rpc`; non-loopback endpoints require HTTPS. Unknown
+methods, malformed responses and unavailable native evidence exit nonzero.
+Token info and list call `lx_getAsset` and `lx_listAssets`; `token list` takes
+an optional `--cursor` and a `--limit` of 1–256 (the gateway applies 64 when it
+is absent).
 
 ## MCP payment surface
 
-The MCP payment tools currently expose `wallet.send`, `token.create`,
-`token.mint` and `token.transfer` through the daemon's ordinary signing and
-scope checks. MCP does not expose the CLI's burn, open-account, token info or
-token list operations through that payment surface. CLI and MCP command
-availability differ; installing MCP does not enable these missing tools.
+The MCP catalogue (`agent/crates/layerx-mcp`) exposes `wallet.send`,
+`token.create`, `token.mint` and `token.transfer` through the daemon's ordinary
+submission path. MCP does not expose the CLI's burn, open-account, token info or
+token list operations. `layerx install mcp` installs the daemon-bound MCP
+server; `layerx mcp serve --daemon-binding FILE` serves it on stdin and stdout.
 
 ## Headless credential storage
 
@@ -226,7 +217,7 @@ layerx --json key list
 layerx --json auth status
 ```
 
-Use a strong passphrase of 12–16384 bytes. In CI, supply
+Use a passphrase of 12–16384 bytes. In CI, supply
 `LAYERX_CREDENTIAL_PASSPHRASE` through the CI secret environment. Keep it
 available for subsequent CLI and MCP/A2A processes, and unset it when finished.
 Secret imports still read stdin; the passphrase does not consume that input.
@@ -235,13 +226,11 @@ store one with `layerx auth set` using the token on stdin.
 
 The store writes `credentials/vault` beside the resolved CLI config file
 (`LAYERX_CONFIG`, otherwise `$XDG_CONFIG_HOME/layerx/config.json`, otherwise
-`$HOME/.config/layerx/config.json`). It encrypts all keys, tokens and gateway
-credentials using AES-256-GCM and PBKDF2-HMAC-SHA256 with 600,000 iterations,
-a fresh 16-byte salt and a fresh 12-byte nonce on every update. Vault and lock
-files use mode 0600 inside a mode 0700 directory. Group/world-accessible files,
-symlinks, incorrect ownership, wrong passphrases and damaged vaults are refused.
-Updates use a process lock and atomic replacement. This backend currently
-requires Unix file permissions.
+`$HOME/.config/layerx/config.json`). It encrypts its contents using AES-256-GCM
+with a key from PBKDF2-HMAC-SHA256 at 600,000 iterations, a fresh 16-byte salt
+and a fresh 12-byte nonce on every update. Vault and lock files use mode 0600
+inside a mode 0700 directory. Updates hold a file lock and replace the vault
+atomically. This backend requires Unix file permissions.
 
 There is no automatic fallback or migration between stores. Unset
 `LAYERX_CREDENTIAL_STORE` (or set it to `os`) to use the OS keyring. Retain the

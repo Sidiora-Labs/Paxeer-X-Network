@@ -1,17 +1,28 @@
 # Hosted Human service
 
+This directory holds the Kubernetes manifests and provisioning scripts that run
+the Human services (API, components, identity/security/movement providers, KMS,
+owner and agentd) inside the LayerX kernel node pod, plus the separate
+`layerx-human-web` website Deployment ([`web-deployment.yaml`](web-deployment.yaml)).
+The service crates themselves live under [`human/crates`](../../../human/crates).
+Shell entry points are [`material.sh`](material.sh), [`provision.sh`](provision.sh)
+and [`onboarding_provision.sh`](onboarding_provision.sh); they are sourced by the
+cluster script. Python helpers ([`material.py`](material.py),
+[`provision.py`](provision.py) and the onboarding/owner modules) implement the
+checks, and `test_*.py` hold their tests.
+
 Cluster material, retained inventories, and evidence assembly are also
 summarized on [HostedHuman.md](../../../docs/wiki/HostedHuman.md). The
 owner Job consumes registry journal `pairs/` documented on
 [RegistryDeploymentJournal.md](../../../docs/wiki/RegistryDeploymentJournal.md).
 
-The API, components, identity/security/movement providers, KMS and Human owner run in the node pod. The service selects `layerx-node` and forwards HTTPS to port 9447. Provider binaries run as UID/GID 4020 and admit component UID 4020. Their sockets are `/run/layerx/human/{identity,security,movement}.sock`, in a 4020-owned 0750 directory. The Human owner runs as UID 4021/GID 4020, matching the native LNI admission policy, with its socket in the separately owned 0750 directory `/run/layerx/human/owner`. The shared process namespace preserves real peer PID checks. The pod is one trusted local boundary; same-UID processes are not isolated from each other.
+The API, components, identity/security/movement providers, KMS and Human owner run in the node pod. The `layerx-human` Service forwards HTTPS to the node pod. Provider binaries run as UID/GID 4020 and admit component UID 4020. Their sockets are `/run/layerx/human/{identity,security,movement}.sock`, in a 4020-owned 0750 directory. The Human owner runs as UID 4021/GID 4020, matching the native LNI admission policy, with its socket in the separately owned 0750 directory `/run/layerx/human/owner`. The shared process namespace preserves real peer PID checks. The pod is one trusted local boundary; same-UID processes are not isolated from each other.
 
 The retained `layerx-human-state` PVC is mounted by the node. The cluster script deletes the old standalone Human Deployment before applying the node workload and retains the PVC. Private state directories belong to each process; KMS uses UID 4026. The authority state directory belongs to UID 4021. Runtime containers drop all capabilities and use read-only root filesystems. The directory initializer has only CHOWN, FOWNER and DAC_OVERRIDE. It does not read credentials.
 
 Each runtime entrypoint stages its projected Secret material as regular 0600 files in a private memory volume. Identity receives its established recovery policy; security receives sequencer trust history; movement receives the cluster CA and a distinct KMS executor certificate/key. KMS pins that executor independently of the components certificate. The authority initializer stages the Human token, principal policy and the same module registry ConfigMap consumed by the gateway, as UID 4021. The Human token is absent from the legacy authority token list.
 
-Agentd explicitly uses `human-owner` mode and the cluster DER CA for both authority settings. Its authenticated health endpoint verifies the node LNI handshake and each peer's authority registry. This mode does not start the Programs reader. HTTPS hostname checks remain enabled. Movement uses both `paxeer-boundary` and `paxeer-observer-boundary` HTTPS Services with minimum agreement 2. Node egress permits the observer's actual container port 9444, as well as primary port 9443 and the co-resident authority port 9445. `test_material.py` exercises the real observer renderer and topology evaluator, including removal of observer egress.
+Agentd explicitly uses `human-owner` mode and the cluster DER CA for both authority settings. Its authenticated health endpoint verifies the node LNI handshake and each peer's authority registry. This mode does not start the Programs reader. HTTPS hostname checks remain enabled. Movement uses both `paxeer-boundary` and `paxeer-observer-boundary` HTTPS Services with minimum agreement 2. `test_material.py` exercises the real observer renderer and topology evaluator, including removal of observer egress.
 
 ## Material generation
 
@@ -22,7 +33,7 @@ Agentd explicitly uses `human-owner` mode and the cluster DER CA for both author
 - `components.json`: `AGENT_ACTOR`, `AGENT_AUTHORITY`, `AGENT_OWNER_ACCOUNT`, `AGENT_RECOVERY_ROOT` (unpadded base64url), `AGENT_RECOVERY_THRESHOLD`.
 - `agent.json`: `HUMAN_PEERS`, `HUMAN_LIMIT_SCOPE`, `HUMAN_LIMIT_SCOPE_ID`, `HUMAN_LIMIT_ID`, `HUMAN_LIMIT_NAME`, `HUMAN_LIMIT_CEILING`, `HUMAN_LIMIT_CONSUMED`. The single peer must exactly match `uid=4020;tenant=<tenant>;principal=<principal>` from the authority binding, in that field order. Tenant is 1–128 ASCII letters, digits, hyphens or underscores. Principal requires `did:<method>:<id>` with a nonempty lowercase ASCII letter/digit method and nonempty identifier, at most 255 UTF-8 bytes. Whitespace, control characters, commas, semicolons, extra or duplicate fields, positional entries and additional peers are refused.
 - `authority.json`: `tenant`, `principal`, `core-clock-horizon` (positive sequence horizon).
-- `principal-policy.json`: the authority README's complete principal-policy schema. It must contain the scoped tenant/principal.
+- `principal-policy.json`: the [receipt authority README](../authority/README.md)'s complete principal-policy schema. It must contain the scoped tenant/principal.
 - `recovery-policy.json`: the identity README's established recovery `root` (32-byte integer array), positive `threshold` and `delay_seconds`. Root and threshold must match components.
 - `purpose-catalog.json`: the real `PurposePresetCatalog` accepted by components.
 - `movement-policy.json`: `PAXEER_CHECKPOINT_AUTHORITY` and `CUSTODY_REFERENCE` (nonzero 0x-prefixed 32-byte values), positive `PAXEER_CONFIRMATIONS`, `CHECKPOINT_INTERVAL_SECONDS`, `PAXEER_BLOCK_SECONDS`, `REMINDER_INTERVAL_SECONDS`.
@@ -32,7 +43,7 @@ Contract fields are derived from `paxeer/deployment.json`: vault, checkpoint reg
 
 ## Integrated evidence production
 
-The cluster script generates the version-2 module registry and protected journal pair, prepares a fresh LXIP owner request and dedicated recovery guardians, and obtains the bootstrap custody profile before native genesis. After identity provisioning, `human_evidence_provision` creates the durable LXIP owner, admits that exact DID to native genesis, records the custody deposit, and runs the native Governance identity, rotation, recovery, custody, sequencer-receipt, and independent receipt-authority producer. Evidence assembly starts only after the generated owner registration and complete input set pass the protected-file validators. Registry and cluster execution still require the full gate; source integration alone is not readiness evidence.
+The cluster script generates the version-2 module registry and protected journal pair, prepares a fresh LXIP owner request and dedicated recovery guardians, and obtains the bootstrap custody profile before native genesis. After identity provisioning, `human_evidence_provision` creates the durable LXIP owner, admits that exact DID to native genesis, records the custody deposit, and runs the native Governance identity, rotation, recovery, custody, sequencer-receipt, and independent receipt-authority producer. Evidence assembly starts only after the generated owner registration and complete input set pass the protected-file validators.
 
 The image builds all real providers, components, service, KMS and agentd. API readiness requires the real component graph; provider probes use real binaries; KMS readiness is exercised through LXKP. `human/apps/web` remains a separate website and is not deployed by this pod.
 
@@ -48,7 +59,7 @@ Recovery receipt ingest verifies signed historical receipt inclusion; no operato
 
 The protocol registration producer must write `$WORK_DIR/human-evidence-input/owner-registration.json` before evidence assembly. It must be an absolute canonical path to an invoking-UID-owned regular file, mode 0600, one link, at most 1 MiB. Missing, malformed, duplicate-field or unprotected JSON refuses with that exact path; input values are never printed. Validate it with `python3 platform/hosted/human/provision.py --validate-owner-registration --work-dir "$WORK_DIR"`.
 
-The object has exactly `owner_account`, `authority`, and `identity`. `owner_account` is a nonzero lowercase 64-digit hexadecimal H32. `authority` is the producer's complete AuthorityRef string, passed through unchanged; the current AuthorityRef constructor only requires nonempty text. This input additionally refuses control characters. Do not invent an authority encoding or derive it from the LXIP principal. `identity` is the complete `identities[]` object documented in `platform/hosted/authority/README.md`: exactly `did`, `authorities`, `revocation_sequence`, `frozen`, `evidence`, `capabilities`, `rotation`, `recovery`, including every nested field. H32s use lowercase canonical text; capabilities use U16 activity types, U64 expiry, and a decimal U128 amount string. Nested unknown fields, duplicate capability bindings, unlisted capability authorities and invalid key delays refuse. `owner_registration` can additionally check evidence activity membership against the principal policy and DID equality against the LXIP result. Standalone validation does not verify receipt inclusion or establish live registration.
+The object has exactly `owner_account`, `authority`, and `identity`. `owner_account` is a nonzero lowercase 64-digit hexadecimal H32. `authority` is the producer's complete AuthorityRef string, passed through unchanged; the current AuthorityRef constructor only requires nonempty text. This input additionally refuses control characters. Do not invent an authority encoding or derive it from the LXIP principal. `identity` is the complete `identities[]` object documented in the [receipt authority README](../authority/README.md): exactly `did`, `authorities`, `revocation_sequence`, `frozen`, `evidence`, `capabilities`, `rotation`, `recovery`, including every nested field. H32s use lowercase canonical text; capabilities use U16 activity types, U64 expiry, and a decimal U128 amount string. Nested unknown fields, duplicate capability bindings, unlisted capability authorities and invalid key delays refuse. `owner_registration` can additionally check evidence activity membership against the principal policy and DID equality against the LXIP result. Standalone validation does not verify receipt inclusion or establish live registration.
 
 Recovery root, threshold and delay must be copied exactly from `provision-owner`; no operator key-set derivation is required or provided. The registration input supplies protocol account and authority policy independently of those LXIP fields.
 
@@ -60,7 +71,7 @@ The provisioning Job converts the exported treasury and sequencer DIDs through t
 
 Source `provision.sh` and invoke `human_owner_provision` in the cluster script's environment to stage the real `provision-owner-job.yaml`. Before any cluster mutation it validates protected `human-evidence-input/owner-request.json` and `human-evidence-input/recovery-policy.json`; the latter is the provider's established policy, not a derived operator key set. The request has exactly the four fields documented above. The function refuses existing result files, enabled Human runtime containers, multiple bootstrap pods and unscheduled bootstrap pods. It pins the Job to the bootstrap pod's node to use its ReadWriteOnce PVC and uses the runtime's identical `identity` subPath and state-root environment. The provider's exclusive state lock remains authoritative. Job retries are disabled. It waits for completion, captures the result privately, checks the exact five-field single-line result and recovery-policy equality, then publishes `$WORK_DIR/human-owner-result.json`. No Job logs or input values are printed. Failed or repeated attempts require explicit state reconciliation; the function does not delete a Job or overwrite a result.
 
-The Job requires the bootstrap initializer to have created the PVC identity directory. Its input Secret is `layerx-human-provision-owner-input`; its image comes from `image_ref layerx-human`. The established recovery policy is required before LXIP opens state. Kubernetes execution remains unqualified on the build server.
+The Job requires the bootstrap initializer to have created the PVC identity directory. Its input Secret is `layerx-human-provision-owner-input`; its image comes from `image_ref layerx-human`. The established recovery policy is required before LXIP opens state.
 
 `provision.py --preserve-binding --work-dir "$WORK_DIR" --request REQUEST --response RESPONSE --output OUTPUT` preserves the response tenant and matching sub only after checking both against the creation request. All files must be protected and output creation is exclusive.
 
@@ -115,7 +126,7 @@ custody, registration or first-batch evidence refuse without publishing a partia
 `human-evidence` directory. Existing sets are never overwritten. Publication uses
 a private sibling staging directory, fsync and one rename under an exclusive lock.
 
-Run local generated-set material integration only against a complete real input set:
+Check a complete generated input set locally with:
 
 ```sh
 python3 platform/hosted/human/provision.py --qualify-generated-set \
@@ -124,7 +135,4 @@ python3 platform/hosted/human/provision.py --qualify-generated-set \
 ```
 
 This runs the unchanged material assembler and reader on the generated set, followed
-by `test_material.py`. Absence is a failure, not a skipped test. The generated-catalog
-Rust test uses freshly generated Ed25519 keys, the real protocol derivation and the
-production module list with test-owned v2 registry metadata; it proves parser
-loadability, not deployed registry availability.
+by `test_material.py`. A missing input is a failure, not a skipped test.

@@ -1,4 +1,24 @@
-# Registry node build boundary
+# Program registry
+
+`layerx-platform-registry` builds the `layerx-program-registry` service, which
+builds and registers LayerX kernel programs inside an isolated, quota-backed
+build environment, and the `layerx-cgroup-exec` helper. The crate is a member of
+the [`platform`](../../Cargo.toml) Cargo workspace:
+
+```sh
+cargo build --locked --manifest-path platform/Cargo.toml -p layerx-platform-registry
+cargo test --locked --manifest-path platform/Cargo.toml -p layerx-platform-registry
+```
+
+The pinned builder environment is defined in
+[`builder-environment/`](builder-environment). Kubernetes manifests are
+[`deployment.yaml`](deployment.yaml) and [`journal-pvc.yaml`](journal-pvc.yaml).
+[`fly.toml`](fly.toml) deploys the same service on Fly.io from
+[`docker/platform-registry/Dockerfile`](../../../docker/platform-registry/Dockerfile),
+where `docker/platform-registry/init.sh` provisions the build boundary without
+systemd before starting the registry.
+
+## Registry node build boundary
 
 Install `node-provision-build-boundary.sh` at `/usr/libexec/layerx/` and
 `layerx-program-registry-boundary.service` at `/etc/systemd/system/`.
@@ -54,8 +74,9 @@ only; the deployment requires the node boundary label version v2.
 
 Once controllers are enabled in C, the kernel refuses new processes directly
 in C. Consequently `kubectl exec` into the registry container is refused by
-design. Readiness remains a `tcpSocket` probe; inspect cgroups and process
-identity from the host when diagnosing this boundary.
+design. Liveness is a `tcpSocket` probe and readiness is an HTTP GET of
+`/healthz` on the health port; inspect cgroups and process identity from the
+host when diagnosing this boundary.
 
 The listener verifies the immutable builder environment at startup and retains
 that builder and its configured digest. Isolated workers receive it through the
@@ -79,11 +100,13 @@ during verification. A failed or stalled monitor fails closed: readiness accepts
 only a successful check started less than two seconds ago. Detection is bounded
 by that freshness window; build-time byte verification remains independent.
 
-Run `tests/readiness.py` inside a disposable container with its own delegated
+## Readiness test
+
+Run [`tests/readiness.py`](tests/readiness.py) inside a disposable container with its own delegated
 cgroup, quota slots and registry state. It launches the real registry binary
 using an inherited real
 node, TLS and delegated quota/cgroup configuration and a temporary copy of the
-supplied rootfs. Supply the binary, rootfs, HTTPS URL, CA/client certificate/key,
+supplied rootfs. Supply the binary, rootfs, HTTPS URL, health URL, CA/client certificate/key,
 request token file, real registered program build route and source request body,
 and a process log path using its required arguments. It requires successful real
 build work overlapping health probes, enforces the existing one-second probe

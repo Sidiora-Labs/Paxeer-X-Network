@@ -1,6 +1,11 @@
-# LayerX developer documentation
+# Developer documentation site
 
-`build/build_site.py` renders `site.kvx` into a static site under `site/`. It has no dependencies beyond Python 3.
+This directory is the source of the static developer documentation site for
+the LayerX domain of Paxeer X Network (`site.kvx` names it "LayerX Developer
+Documentation"). The hosted Paxeer X Network documentation is at
+[docs.paxeer.app](https://docs.paxeer.app/).
+
+`build/build_site.py` renders `site.kvx` and the pages under `content/` into a static site under `site/`. It has no dependencies beyond Python 3. Run it from this directory:
 
 ```
 python3 build/build_site.py ../..
@@ -27,8 +32,10 @@ Every other page under `content/` is written by hand and must carry an `Enforced
 
 Public wiki pages for payments (wallet, faucet, send, token, 402), the
 OpenRPC method list, Asset encodings, and commitment levels live under
-[`docs/wiki/`](../../docs/wiki/Home.md). Payment surfaces that are not in this
-tree yet are named there.
+[`docs/wiki/`](../../docs/wiki/Home.md).
+
+`make platform-test-docs` from the repository root runs the documentation
+check together with the reference-application and sample checks.
 
 ## Samples
 
@@ -36,4 +43,4 @@ tree yet are named there.
 
 Each sample declares a `measured_region` and a `maximum_integration_lines` budget. The build counts the non-blank lines between that region's markers and fails when any sample exceeds its budget, writing the counts to `site/measurements.json`.
 
-Samples are real programs. They build and run against a LayerX environment - the local emulator by default - and each one names the environment it needs in `samples.kvx`.
+Samples are real programs. Each entry in `samples.kvx` declares its `run` command and, in `requires`, the toolchain and the `LAYERX_*` environment inputs it reads.

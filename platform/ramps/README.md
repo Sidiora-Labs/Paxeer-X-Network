@@ -1,10 +1,10 @@
-# LayerX market-maker ramp toolkit
+# Market-maker ramp toolkit
 
-This package is for an independent market maker operating ordinary LayerX agent accounts. It creates no protocol role, minting power, settlement authority, reserved vocabulary or LayerX custody claim. Every customer surface must display:
+This directory holds two crates of the `platform/` Cargo workspace: `layerx-ramp-toolkit` (`toolkit/`, the library plus the `ramp-verify-receipt` binary) and `layerx-reference-ramp` (`reference/`, the reference service). They are for an independent market maker operating ordinary agent accounts in the LayerX domain of Paxeer X Network. It creates no protocol role, minting power, settlement authority, reserved vocabulary or LayerX custody claim. Every customer surface must display:
 
 > External custody: this independent market maker controls the off-platform funds and payout.
 
-Paxeer remains the sole LayerX custody and guaranteed-withdrawal boundary. The reference service uses Paxeer only to rebalance the operator's configured inventory account; a customer order can never select that account, wallet, vault, signer or custody operation.
+The Paxeer X chain remains the sole custody and guaranteed-withdrawal boundary for the LayerX domain. The reference service uses the Paxeer X chain only to rebalance the operator's configured inventory account; a customer order can never select that account, wallet, vault, signer or custody operation.
 
 ## Order and money binding
 
@@ -27,7 +27,7 @@ All egress except the existing Paxeer JSON-RPC reader is pinned HTTPS with mutua
 - the production KMS signature boundary: `POST /v1/signatures` with the non-exporting `key_handle`, `algorithm: ed25519` and the standard-padded-base64 LayerX domain digest, returning only a standard-padded-base64 signature which is verified against the configured public key.
 - `layerx-ramp-paxeer-v1`: operator-only broadcast using the configured account, wallet, vault and non-exporting signer handle.
 
-The repository does not invent provider, compliance or Paxeer custody-owner wire coordinates. Deployments must supply the versioned paths and owner-published schemas described in `OPERATIONS.md` and must qualify those contracts against real sandboxes.
+The repository does not invent provider, compliance or Paxeer custody-owner wire coordinates. Deployments must supply the versioned paths and owner-published schemas described in [`OPERATIONS.md`](OPERATIONS.md) and must test those contracts against real sandboxes.
 
 ## Run
 

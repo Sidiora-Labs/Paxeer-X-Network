@@ -2,8 +2,10 @@
 
 This ABI-v2 guest stages one principal-funded deposit followed by two program
 account payouts. The kernel must commit all three 402 legs atomically. A refusal
-in either payout must abort the deposit too. This source is not evidence of a
-successful native settlement round trip.
+in either payout must abort the deposit too. Native activity, receipt and terminal
+fixtures for a deployment, the account registration and three calls are committed
+under `programs/fixtures/pay5/native-merchant`, beside the built
+`programs/fixtures/pay5/payments-merchant.wasm`.
 
 Before invoking, the deployment registration authority submits the payload from
 `PreparedProgramAccount::registration_payload()` for seed `payments-merchant`
@@ -28,9 +30,10 @@ The host must also refuse missing registration, wrong asset bindings, insufficie
 funds and invalid receipts. One seed binds one asset; deploy a separate instance
 for another asset.
 
-Build with `cargo build --manifest-path programs/sdk/rust/examples/payments-merchant/Cargo.toml --target wasm32-unknown-unknown --release`.
+Build from the example directory so `programs/.cargo/config.toml` (vendored
+sources and the `wasm32-unknown-unknown` code-generation flags) applies:
 
-The current native Programs source still equates the signer principal with the
-source and sequence account ID. Integration with DID-derived per-asset accounts
-requires the account-owner/identity sequence change recorded in `NEEDS.md` and
-the qualification ledger. Do not substitute a DID for a derived account ID.
+```
+cd programs/sdk/rust/examples/payments-merchant
+cargo build --locked --release --target wasm32-unknown-unknown
+```

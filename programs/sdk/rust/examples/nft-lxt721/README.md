@@ -26,7 +26,8 @@ carry a 16-byte big-endian u128, `token_uri` carries the base uri followed by
 32 lowercase hexadecimal digits, `metadata` carries `REFERENCE_METADATA`, and
 every mutation returns an empty payload. The guest refuses nested calls.
 
-Build:
+Build from the repository root (the script builds from the example directory so
+`programs/.cargo/config.toml` applies, then runs `layerx-program-lint` on the artifact):
 
 ```
 sh programs/sdk/rust/examples/nft-lxt721/build.sh
@@ -36,8 +37,10 @@ sh programs/sdk/rust/examples/nft-lxt721/build.sh
 all nine exports and declares nothing but the storage capabilities each export
 actually reaches. The registry example `lxt721_interface` writes the canonical
 interface and the registry state value for a supplied program id and prints its
-digest. The committed fixtures use program id `55` repeated 32 times, and
-`make programs-reference-fixtures` is the only build path that writes them: the
+digest. The committed fixtures in
+`programs/crates/layerx-programs-registry/tests/fixtures/lxt721` use a program id of
+byte `0x55` repeated 32 times, and `make programs-reference-fixtures` is the only
+build path that writes them: the
 script behind it remaps the source paths, so no checkout path reaches the
 committed artifact, and it regenerates the interface and the registry state value
 from the artifact it just built.

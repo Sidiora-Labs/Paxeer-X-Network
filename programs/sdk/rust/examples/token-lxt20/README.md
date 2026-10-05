@@ -30,14 +30,19 @@ nested calls. `transfer` and `transfer_from` require the caller's exact ProgramS
 grant for the owner program, owner seed, source account, backing asset, recipient
 and sufficient ceiling, in addition to the token's balance and allowance checks.
 The native transaction must commit or roll back the backing transfer and token
-storage together. Runtime-only execution tests inspect staged transfer effects;
-they do not establish native settlement.
+storage together. Native activity, receipt and terminal fixtures for deployment,
+account registration, initialization, approvals, transfers and queries are committed
+under `programs/fixtures/pay5/native-token`.
 
 Build:
 
 ```
-cargo build --manifest-path programs/sdk/rust/examples/token-lxt20/Cargo.toml --target wasm32-unknown-unknown --release
+cd programs/sdk/rust/examples/token-lxt20
+cargo build --locked --release --target wasm32-unknown-unknown
 ```
+
+Run Cargo from the example directory so `programs/.cargo/config.toml` (vendored
+sources and the `wasm32-unknown-unknown` code-generation flags) applies.
 
 `layerx-programs-registry::lxt20::reference_interface` binds the real module to all
 eight exports. The transfer entries declare caller-authorized dynamic-spend
@@ -45,4 +50,6 @@ descriptors, not destination grants. The registry example `lxt20_interface`
 writes the canonical interface and the registry state value for a supplied
 program id and prints its digest. Include the interface in the native deployment
 payload; generating a state value alone does not publish a deployment receipt.
-The committed fixtures use program id `55` repeated 32 times.
+The committed fixtures in `programs/fixtures/pay5` (`token-lxt20.wasm`,
+`token-lxt20.interface`, `token-lxt20.registry-value`) use a program id of byte
+`0x55` repeated 32 times.

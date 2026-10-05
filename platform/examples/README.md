@@ -1,4 +1,6 @@
-# LayerX reference applications
+# Reference applications
+
+Node.js reference applications for the LayerX domain of Paxeer X Network.
 
 The four applications in `reference-apps.json` are complete Node.js projects selected by a checked-in environment profile. Clone this repository, install the locked workspace once with `npm ci`, compile every workspace in dependency order with `npm run build`, then use one declared command.
 
@@ -19,7 +21,7 @@ Each `layerx.example.json` contains public endpoints, network names, and the nam
 
 The marketplace is a real no-std LayerX Program. Its shared listing state, receipt-read grant, receipt replay record, bounded transfer, deletion, and events execute in the Programs runtime. Its launch command builds deterministic WASM with the LayerX CLI, deploys it directly to the endpoint selected by the checked-in profile, resolves the returned receipt, and verifies it before reporting completion. List and buy commands are also declared in its package.
 
-The committed runner checks the four project declarations with `make platform-test-reference-apps`. The focused runtime qualification described below executes the four applications against real receipts.
+`make platform-test-reference-apps` (from the repository root) runs `node platform/examples/run-reference-apps.mjs --check`, which checks the four project declarations against their packages and profiles. The build-and-check flow described below executes the four applications against real receipts.
 
 ## Running the whole journey
 
@@ -45,10 +47,10 @@ Any of those variables that is already set in the environment is used verbatim, 
 Both scenarios run buyer payment, merchant checkout, and marketplace deploy, list, and buy. `--scenario beta` expects the `LAYERX_TESTNET_*` inputs, including the actual seller and merchant account references and advertised currency. `LAYERX_EXAMPLE_ENDPOINT` overrides the hosted endpoint every profile carries, so the same runner can be pointed at a beta cluster gateway URL.
 
 
-## Source-bound runtime qualification
+## Building and checking against real receipts
 
-Install the locked Node workspace with `npm ci`. From a clean published candidate, provide `PAXEER_X_REFERENCE_APP_ARTIFACTS` as an absolute manifest filename in an owner-only directory outside the checkout, then run `node platform/examples/build-reference-apps.mjs`. This one build compiles the actual SDK and three middleware packages, builds the CLI, and builds the marketplace guest through that CLI. The private manifest binds the candidate revision and hashes every compiled Node output, the CLI, and the guest.
+Install the locked Node workspace with `npm ci`. From a clean checkout, provide `PAXEER_X_REFERENCE_APP_ARTIFACTS` as an absolute manifest filename in an owner-only directory outside the checkout, then run `node platform/examples/build-reference-apps.mjs`. This one build compiles the actual SDK and three middleware packages, builds the CLI, and builds the marketplace guest through that CLI. The private manifest binds the checked-out revision and hashes every compiled Node output, the CLI, and the guest.
 
-Provide an owner-only external `PAXEER_X_EVIDENCE_DIR` and run `node platform/examples/qualify-reference-apps.mjs`. The default scenario is emulator; `PAXEER_X_REFERENCE_APPS_ENVIRONMENT=beta` selects the configured testnet and requires its authentic account and credential inputs. Qualification consumes the prebuilt artifacts, creates disposable service state under its evidence directory, and checks the actual released API resource, merchant order receipt, and separate marketplace deployment/listing/purchase receipts. Missing artifacts, authority, or successful receipts fail the gate. It reports the receipt verifier's actual `sequencer-signed` level.
+Provide an owner-only external `PAXEER_X_EVIDENCE_DIR` and run `node platform/examples/qualify-reference-apps.mjs`. The default scenario is emulator; `PAXEER_X_REFERENCE_APPS_ENVIRONMENT=beta` selects the configured testnet and requires its authentic account and credential inputs. The check consumes the prebuilt artifacts, creates disposable service state under its evidence directory, and checks the actual released API resource, merchant order receipt, and separate marketplace deployment/listing/purchase receipts. Missing artifacts, authority, or successful receipts fail the run. It reports the receipt verifier's actual `sequencer-signed` level.
 
 `LAYERX_EXAMPLE_STATE_ROOT` optionally places standalone seller and merchant retained state outside their project directories. Leaving it unset preserves the standalone applications' declared state paths.

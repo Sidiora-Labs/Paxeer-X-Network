@@ -41,6 +41,17 @@ Version 1.8 adds `caps_discovery` on the private native interface.
 The client verifies complete budget, grant and account trees before filtering
 records for the selected native DID. This selector does not authenticate a
 wallet principal; public callers require a separate authenticated adapter.
+Version 1.9 adds `execution_prestate`. `ExecutionPrestateRequest` (tag 44)
+selects one maintained Programs receipt by activity id and canonical unsigned
+receipt digest and pages, with the `caps_discovery` paging rules, an immutable
+object proving the complete state before that execution;
+`ExecutionPrestateResponse` (tag 45) returns it. A node advertises the
+capability only at negotiated minor 9 with ordered capture and protected
+durable retention enabled; clients built through minor 8 keep their original
+minor 0 request. The `[execution_prestate]` section of [`v1.kvx`](v1.kvx)
+holds the exact bodies, bounds and verification rules. The Rust client
+declaration in `agent/crates/layerx-client/src/lni/schema.rs` is at version
+1.9 with tags 1 through 45.
 
 ## Authenticated durable submission
 
@@ -122,6 +133,8 @@ authentication-and-durability guarantee only when
 | 41 | `ProgramHeadAttestResponse` | response | `program_head_attest` |
 | 42 | `CapsDiscoveryRequest` | request | `caps_discovery` |
 | 43 | `CapsDiscoveryResponse` | response | `caps_discovery` |
+| 44 | `ExecutionPrestateRequest` | request | `execution_prestate` |
+| 45 | `ExecutionPrestateResponse` | response | `execution_prestate` |
 
 AvailabilityFetchRequest carries only the canonical selector and empty proof material. AvailabilityChunk carries exact chunk bytes and inclusion metadata. AvailabilityEnd has empty canonical payload and empty proof material.
 

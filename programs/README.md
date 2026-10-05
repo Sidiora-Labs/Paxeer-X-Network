@@ -1,20 +1,19 @@
 # LayerX Programs
 
-**The programmable runtime for LayerX Network - deterministic guest execution with no balance-writing authority.**
+**Deterministic guest execution for the LayerX kernel domain of Paxeer X Network, with no balance-writing authority.**
 
-This workspace holds the LayerX programs surface: a deterministic WASM runtime, the
-registry that proves what a program deployed and what it holds, the C↔Rust bridge into
-the protocol kernel, developer SDKs, porting kits, and the adversarial test corpus.
+This workspace holds the programs surface of the LayerX kernel: a deterministic WASM
+runtime, the registry that proves what a program deployed and what it holds, the C↔Rust
+bridge into the kernel, reference programs, developer SDKs, porting kits, and the
+adversarial test corpus.
 
-Programs are a **first-class execution surface**, not one of the protocol's economic
-modules. The eight economic modules (`0x01`–`0x08`) are documented in
-[`src/modules`](../src/modules) and the project wiki; programs sit alongside them as the
-place where untrusted guest code runs. Guest execution is dispatched under the programs
-module inside the runtime module registry (`LXP_MODULE_PROGRAMS = 9` in
-[`include/layerx/lxp_module.h`](../include/layerx/lxp_module.h)), but a program is not a
-ninth economic module and writes no balances of its own. Every monetary effect a program
-produces compiles to an authenticated `402LXP` transfer set applied by the kernel - the
-same single money doorway every module uses.
+Programs are a **first-class execution surface**, not one of the kernel's economic
+modules. The kernel modules live in [`src/modules`](../src/modules) and are numbered in
+[`include/layerx/lxp_module.h`](../include/layerx/lxp_module.h). Guest execution is
+dispatched under the programs module (`LXP_MODULE_PROGRAMS = 9`), but a program is not a
+module of its own and writes no balances. Every monetary effect a program produces
+compiles to an authenticated `402LXP` transfer set applied by the kernel - the same
+single money doorway every module uses.
 
 Where the rest of the system fits:
 
@@ -22,45 +21,50 @@ Where the rest of the system fits:
   the authority of the activity that invoked it and can never widen it.
 - **`402LXP` is the sole balance writer.** Programs emit transfer sets; they do not call
   `set_balance` (no such function exists).
-- **Oracle prices** enter through the Crossverse adapter as signed activities, outside
-  execution. A state transition never dials out.
-- **Settlement** happens on Paxeer Network (EVM chain ID `125`). LayerX orders and
-  executes activity; periodic checkpoints settle on Paxeer. Since the monorepo
-  integration, the Paxeer settlement stack lives in this same repository under
-  the chain directories at the [repository root](..) - co-located, but with its own trust and build
-  boundary (see [`docs/MONOREPO.md`](../docs/MONOREPO.md) and the root
-  [`README.md`](../README.md)).
+- **Oracle prices** enter through the Crossverse adapter
+  ([`src/network/lx_oracle_adapter.c`](../src/network/lx_oracle_adapter.c)) as signed
+  activities, outside execution. A state transition never dials out.
+- **Settlement** happens on the Paxeer X chain (EVM chain ID `125`). LayerX orders and
+  executes activity; periodic checkpoints settle on the chain, which lives in this same
+  repository at the [repository root](..) with its own trust and build boundary (see
+  [`docs/MONOREPO.md`](../docs/MONOREPO.md) and the root [`README.md`](../README.md)).
 
-Normative behavior lives in [`spec/`](../spec) (KVX first). This document is the human
-read of the programs workspace and is not a substitute for the spec.
+Normative behavior lives in [`spec/paxeer-x/spec.kvx`](../spec/paxeer-x/spec.kvx). This
+document is the human read of the programs workspace and is not a substitute for the spec.
 
 ---
 
 ## Workspace layout
 
 The programs workspace is a Cargo workspace (`programs/Cargo.toml`) with a strict lint
-profile: `unsafe_code` is denied by default, and `unwrap_used`, `expect_used`, and float
-arithmetic are denied across the tree.
+profile: `unsafe_code` is denied by default, Clippy `all` and `pedantic` are denied, and
+`unwrap_used`, `expect_used`, and float arithmetic are denied across the tree.
 
 | Path | Purpose |
 | --- | --- |
-| `crates/layerx-programs-runtime` | Deterministic WASM runtime: validation, metering, the ABI/capability boundary, cross-program calls, transfers, occupancy accounting, and the FFI bridge into the C kernel |
-| `crates/layerx-programs-registry` | Receipt-bound registry: deployment journal, program value-account bindings, real-balance proofs, and wind-down/deprecation |
-| `crates/layerx-programs-protocol-adapter` | Thin C↔Rust adapter exposing receipt-verified program state reads to the rest of the protocol |
-| `sdk/rust`, `sdk/c`, `sdk/assemblyscript` | Guest program SDKs; Rust ships `escrow`, `naming`, `nft-lxt721`, `payments-merchant`, `swap-cpmm`, `token-lxt20`, and `vault`, while C and AssemblyScript ship `paid-counter` |
+| `crates/layerx-programs-runtime` | Deterministic WASM runtime: validation, metering, the ABI/capability boundary, cross-program calls, transfers, occupancy accounting, replay, and the FFI bridge into the C kernel |
+| `crates/layerx-programs-registry` | Receipt-bound registry: deployment journal, program interfaces, program value-account bindings, real-balance proofs, wind-down/deprecation, and the reference-program interface generators |
+| `crates/layerx-programs-protocol-adapter` | Thin C↔Rust adapter exposing receipt-verified program state reads to the rest of the kernel |
+| `crates/layerx-programs-interpreter` | A bounded deterministic scripting program: scripts are submitted as canonical bytes and fully validated before any effect is staged |
+| `crates/layerx-programs-market` | Compute-lease market program: usage claims with a challenge window, provider stake and slashing, attester policy, and on-chain bisection disputes |
+| `crates/layerx-programs-arbiter` | Verified replay of sandbox traces and the market-step verdict that judges the single step a dispute bisection collapses to |
+| `crates/layerx-programs-sandbox` | Protocol-state models for bounded, ephemeral program sandboxes |
+| `sdk/rust`, `sdk/c`, `sdk/assemblyscript` | Guest program SDKs; Rust ships `escrow`, `naming`, `nft-lxt721`, `payments-merchant`, `swap-cpmm`, `token-lxt20`, `vault`, and `web-reader` examples, while C and AssemblyScript ship `paid-counter` |
 | `porting/evm`, `porting/solana`, `porting/cosmwasm` | Migration crates and `MIGRATION.md` guides mapping Solidity / Anchor / CosmWasm vocabulary onto the programs ABI |
 | `fuzz` | Structure-aware fuzz target and corpus for the runtime |
+| `benches` | Interpreter benchmarks and their compiled ABI-v2 equivalents |
+| `fixtures` | Committed reference-program artifacts, interfaces, registry values, and native activity/receipt fixtures |
 | `../scripts/programs` | Dependency policy, immutable ABI-vector generation, and reference-fixture build scripts |
-| `../tests/programs` | Standalone ABI-drift and runtime module-boundary checks |
-| `tests` | Cross-implementation vectors, the hostile-program `gauntlet`, and calldata fixtures |
+| `../tests/programs` | Native C tests, ABI-drift and runtime module-boundary checks |
+| `tests` | Cross-implementation vectors, the hostile-program `gauntlet`, conservation and parallel-differential checks, and calldata fixtures |
 | `vendor` | Vendored, pinned dependencies for a hermetic build |
 
 Cargo promotes path dependencies below the workspace root into workspace members.
-Consequently `--workspace` gates exercise the vendored `parity-wasm`, `wasm-instrument`,
-and `wasmi` unit and documentation tests as well as every LayerX package. The vendored
+Consequently `--workspace` builds exercise the vendored `parity-wasm`, `wasm-instrument`,
+and `wasmi` unit and documentation tests as well as every programs package. The vendored
 crates also remain subject to `../scripts/programs/dependency-policy.sh`.
 
-### The three crates
+### The core crates
 
 **`layerx-programs-runtime`** is the deterministic WASM foundation for guest programs.
 It runs on a pinned `wasmi` interpreter with floating point and other nondeterminism
@@ -72,34 +76,36 @@ removed. The module map (see `src/lib.rs`) separates concerns deliberately:
   and per-execution resource metering (CPU fuel, memory, storage read/write, output).
 - `abi/` - the transaction boundary. `abi/capability.rs` owns capability grants, their
   canonical encoding, and downward-only narrowing; `abi/response.rs` owns response and
-  refusal transport; `abi/storage_ops.rs` owns namespaced storage.
+  refusal transport; `abi/storage_ops.rs` owns namespaced storage; `abi/codec.rs` owns
+  the canonical calldata encoding.
 - `accounts.rs` - deterministic derivation of program-owned accounts.
 - `transfer.rs`, `ffi_transfer.rs` - the sole monetary exit: typed `402LXP` requests
   bound to invocation authority and submitted as one atomic set to the kernel primitive.
 - `occupancy.rs` - deterministic, receipt-bound storage-occupancy accounting.
 - `calls.rs`, `engine.rs`, `execute.rs`, `entrypoint.rs`, `lifecycle.rs` - cross-program
   calls, execution, and program lifecycle.
-- `host/` - linker orchestration; each host-function family (storage, events, calls,
-  transfer) is registered in exactly one unit and reaches execution state only through
-  `RuntimeState`.
-- `ffi.rs`, `ffi_call.rs` - the FFI bridge the C protocol module calls into.
+- `host/` - linker orchestration; each host-function family is registered in its own
+  unit and reaches execution state only through `RuntimeState`.
+- `ffi.rs`, `ffi_call.rs`, `ffi_interface.rs` - the FFI bridge the C programs module calls
+  into.
 
 **`layerx-programs-registry`** (`#![forbid(unsafe_code)]`) turns protocol receipts into
-answers about programs: the append-only `DeploymentJournal`, `ProgramValueAccountBinding`
-records, and `VerifiedAccountSnapshot`/`ValueAccount` types that resolve a program's real
-balance from account-tree Merkle proofs rather than a declared bookkeeping column. It also
-owns deprecation and wind-down (`AuthorizedExit`, `ExitRoute`, `WindDownView`).
+answers about programs: the `DeploymentJournal`, `ProgramValueAccountBinding` records, and
+`VerifiedAccountSnapshot`/`ValueAccount` types that resolve a program's real balance from
+account-tree Merkle proofs rather than a declared bookkeeping column. It also owns
+deprecation and wind-down (`AuthorizedExit`, `ExitRoute`, `WindDownView`) and the
+`lxt20`, `lxt721`, `naming`, and `swap` reference interfaces.
 
 **`layerx-programs-protocol-adapter`** is the narrow read bridge: `read_program_state`
-exposes receipt-verified program state (`ProtocolProgramStateRead`) to the C protocol and
+exposes receipt-verified program state (`ProtocolProgramStateRead`) to the C kernel and
 the hosted read surfaces without granting any write authority.
 
 ---
 
-## Protocol surfaces
+## Kernel surfaces
 
-The surfaces below are described as implemented; the authoritative source is
-the code and [`spec/layerx-platform`](../spec/layerx-platform).
+The surfaces below are described as implemented; the authoritative sources are the code
+and [`spec/paxeer-x/spec.kvx`](../spec/paxeer-x/spec.kvx).
 
 ### Program-owned accounts
 
@@ -181,7 +187,7 @@ charged to its principal; a shared namespace is charged to the program owner.
 
 ### Protocol-backed program balances
 
-A program's balance is real protocol state, not a registry counter. Registry value
+A program's balance is real kernel state, not a registry counter. Registry value
 accounts are the same `LX_ACCOUNT_MODULE_VALUE` accounts that live in the kernel account
 tree; the registry reads a balance by verifying the account leaf through the account root,
 the universal subtree root, and the receipt state root before surfacing it. Wind-down
@@ -189,8 +195,8 @@ refuses to strand value: a deprecation cannot complete while a bound account sti
 a non-zero balance without an authorized exit route.
 
 The invariant that ties all of this together: **`402LXP` remains the sole balance
-writer.** Programs emit transfer sets - they never set a balance directly. As the platform
-spec puts it, *"No program ever receives balance-writing authority. Every monetary effect
+writer.** Programs emit transfer sets - they never set a balance directly. As the spec
+puts it, *"No program ever receives balance-writing authority. Every monetary effect
 a program produces is expressed as authenticated 402LXP transfers applied by the kernel
 transfer primitive… a balance change outside a 402LXP transfer aborts the transition."*
 
@@ -198,24 +204,29 @@ transfer primitive… a balance change outside a 402LXP transfer aborts the tran
 
 ## SDKs and porting kits
 
-ABI 3 is the current frozen guest ABI; ABI 1 and ABI 2 remain supported for existing programs.
-Guest program SDKs include:
+The runtime admits guest ABI versions 1 through 5, and the checksums of their frozen
+vectors (`tests/vectors/abi-v1.hex` to `abi-v5.hex`) are pinned in `abi-frozen.sha256`.
+The host imports of ABI 1 to 4 are listed in `sdk/abi-manifest.tsv`: ABI 2 adds scoped
+storage, responses and refusals, program-account transfers, context, balance, hash,
+signature and 256-bit integer host calls; ABI 3 adds `oracle_read`; ABI 4 adds
+`web_read`. ABI 5 adds `market_step_adjudicate` in the `layerx_v5` import module. Guest
+program SDKs include:
 
 - **`sdk/rust`** (`layerx-program-sdk`) - the Rust guest SDK.
-- **`sdk/c`** - a C guest SDK with headers, sources, and a toolchain manifest.
+- **`sdk/c`** - a C guest SDK with headers, sources, a determinism lint, and a toolchain
+  manifest.
 - **`sdk/assemblyscript`** - an AssemblyScript SDK (`abi`, `capability`, `transfer`,
   `storage`, `event`, `call`, `receipt` bindings) with a determinism lint.
 
-The Rust SDK ships `escrow`, `naming`, `nft-lxt721`, `payments-merchant`,
-`swap-cpmm`, `token-lxt20`, and `vault` examples; the C and AssemblyScript SDKs
-ship `paid-counter` examples.
-ProgramSpend (tag 9) and BalanceView (tag 10) are part of frozen ABI 2; the
-runtime crate defines their canonical encoding and amount-monotone narrowing
-rules. ABI 1 does not admit these grants.
+The Rust SDK ships `escrow`, `naming`, `nft-lxt721`, `payments-merchant`, `swap-cpmm`,
+`token-lxt20`, `vault`, and `web-reader` examples; the C and AssemblyScript SDKs ship
+`paid-counter` examples. ProgramSpend (tag 9) and BalanceView (tag 10) are admitted from
+ABI 2 on; the runtime crate defines their canonical encoding and amount-monotone
+narrowing rules. ABI 1 does not admit these grants.
 
-`sdk/rust` also ships the `lxt20` request codecs (`src/lxt20.rs`), program-account
-preparation and merchant-split helpers (`src/payments.rs`), and the
-`examples/token-lxt20` and `examples/payments-merchant` guests. See
+`sdk/rust` also ships the `lxt20` and `lxt721` request codecs (`src/lxt20.rs`,
+`src/lxt721.rs`) and program-account preparation and merchant-split helpers
+(`src/payments.rs`). See
 [`docs/wiki/PaymentsQuickstart.md`](../docs/wiki/PaymentsQuickstart.md)
 and [`docs/wiki/Assets.md`](../docs/wiki/Assets.md).
 
@@ -225,8 +236,8 @@ LXT20 is ABI-v2 guest state backed by one native Asset. Its interface has
 `[0x4c,0x58,0x14,method] || [1,0x20] || payload_len:u32_be || payload`.
 Recipients approve once, including zero, to register their derived account
 storage. The reference program has fixed supply and no mint, burn, permit, or
-nested-call surface. Program receipt reads consume the exact 116-byte frozen
-record: digest, signed result code, Asset, amount, and state root.
+nested-call surface. See
+[`sdk/rust/examples/token-lxt20`](sdk/rust/examples/token-lxt20/README.md).
 
 The porting kits map familiar contract vocabularies onto the programs ABI and are explicit
 about what does not carry over:
@@ -241,37 +252,50 @@ Each has a `MIGRATION.md` written for a developer who already knows the source c
 
 ## Fuzzing, tools, and tests
 
-- **`fuzz/`** - a structure-aware fuzz target (`src/main.rs`) with a checked-in corpus.
+- **`fuzz/`** - a structure-aware fuzz target (`src/main.rs`) with `validation`,
+  `instantiation`, and `execution` corpora.
 - **`../scripts/programs/dependency-policy.sh`** - enforces the vendored-dependency policy (`deny.toml`).
 - **`../tests/programs/runtime-module-boundaries.sh`** - enforces the runtime's module-boundary rules.
 - **`tests/gauntlet/`** - the hostile-program gauntlet (cross-program derivation, callee
   spend attempts, escalation across depth/fan-out/repeated visits) with an
   `attack-inventory.tsv`.
-- **`tests/vectors/`** - cross-implementation vectors, including calldata fixtures, that
-  keep the C and Rust surfaces byte-identical.
+- **`tests/vectors/`** - cross-implementation ABI vectors and
+  [calldata fixtures](tests/vectors/calldata/README.md) that keep the C and Rust surfaces
+  byte-identical.
 
 ---
 
-## Building and status
+## Building and testing
 
 The programs workspace builds with the pinned Rust toolchain declared in
-`programs/Cargo.toml` (`rust-version = 1.91.1`) against vendored dependencies. Runtime and
-kernel share golden vectors so the C and Rust implementations stay in lockstep. For the
-full qualification story - deterministic cross-architecture replay, fault injection,
-fuzzing, and settlement - see [`docs/QUALIFICATION.md`](../docs/QUALIFICATION.md).
+`programs/Cargo.toml` (`rust-version = 1.91.1`) against vendored dependencies.
+`programs/.cargo/config.toml` points Cargo at `vendor/`, keeps it offline, and sets the
+`wasm32-unknown-unknown` code-generation flags; Cargo reads it only when it runs from
+inside `programs/`. From the repository root:
 
-Project status is deliberately narrow:
+```sh
+make programs-build                # cargo build --workspace
+make programs-lint                 # module boundaries, clippy, dependency policy, cargo deny
+make programs-abi-drift            # ABI manifest drift and linker check
+make programs-test                 # the full programs test set
+make programs-fuzz-smoke           # replay the fuzz corpora
+make programs-reference-fixtures   # rebuild the committed reference-program fixtures
+```
 
-| Stage | Detail |
-| --- | --- |
-| Availability | The public network exposes a gateway API and a faucet. |
-| Source | Licensed under the Apache License, Version 2.0. |
-| Public endpoints | Gateway API and faucet on the public network. |
-| Settlement | Checkpoints settle on Paxeer Network (EVM chain ID `125`); custody and settlement live on Paxeer. The settlement stack is co-located at the repository root. |
+Runtime and kernel share golden vectors so the C and Rust implementations stay in
+lockstep. Deterministic cross-architecture replay and fault injection are described in
+[`docs/QUALIFICATION.md`](../docs/QUALIFICATION.md).
+
+## Status
+
+The limited beta has not opened yet. The gateway API becomes available when it does. This
+is a mainnet beta on real value, so there is no faucet for general use; approved developers
+receive test allocations from the team. Source is licensed under the Apache License,
+Version 2.0. Hosted documentation is at [docs.paxeer.app](https://docs.paxeer.app/).
 
 A successful local build is development evidence, not authorization to deploy, move
 custody, or handle real assets.
 
 ---
 
-LayerX is developed by [Sidiora Labs](https://github.com/Sidiora-Labs).
+Paxeer X Network is developed by [Sidiora Labs](https://github.com/Sidiora-Labs/Paxeer-X-Network).

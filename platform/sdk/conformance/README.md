@@ -1,96 +1,59 @@
-# LayerX SDK Conformance Suite
+# SDK conformance suite
 
-This conformance suite validates production-grade hardening across the generated LayerX SDKs,
-including Go, Java/Kotlin, Swift, and .NET plus the Agent SDK implementations.
+Shared vectors and tests that the Paxeer X Network SDKs for the LayerX kernel
+domain must pass: TypeScript, Python and Rust under [`agent/`](../../../agent),
+and Go, JVM, Swift and .NET under [`platform/sdk`](..).
 
-## Test Coverage
+## Contents
 
-### Native Programs lifecycle
+| Path | Purpose |
+| --- | --- |
+| `secret-hygiene.test.{ts,py,rs}` | Secret hygiene: `SecretBytes` key material and tokens stay out of logs, errors and serialized output; `IdempotencyKey` validation; integer-only `ProtocolAmount`. |
+| `streaming-resumability.test.{ts,py,rs}` | Resumable streaming: bounded opaque cursors and a no-gap, no-duplicate event chain across reconnection. |
+| `terminal-v4.test.py` | Python program-terminal and applied-leg verification against the `receipt-programs-*-v4.json` fixtures and `receipt-programs-executed-v3.json`. |
+| `operations.json` | The 128 agent-plane and human-plane operations with method, path, request and response types, idempotency and body flags; consumed by the SDK generator in [`../generators`](../generators). |
+| `mirror-v2.json` | Mirror archive framing, Ethereum getters, Solana manifest and chunk layout, finality rules and the required accept and refuse cases; consumed by the SDK generator. |
+| `run-go.sh`, `run-jvm.sh` | Go and JVM runners: generator drift check, then the SDK tests and conformance main. |
+| `fixtures/` | Receipt, refusal, native-program lifecycle, capability, account-derivation and intent-plan vectors, with their generators. |
 
-`native-program-deploy-v3.json`, `native-program-upgrade-v3.json`, and the four
-`native-program-wind-down-*-v3.json` fixtures contain payloads and signed
-protocol-3 activities produced by `tests/programs/test_call_activity.c`. SDK
-tests decode and re-encode the C bytes and bind the activity identifiers and
-idempotency keys. These are wire-layout vectors, not execution evidence;
-execution qualification uses the real-node lifecycle tests.
+## Running
 
-Regenerate with `make programs-native-lifecycle-fixtures`; check byte-for-byte
-drift with `make programs-check-native-lifecycle-fixtures`.
-
-### Secret Hygiene (`secret-hygiene.test.*`)
-
-Proves that SDKs enforce secret hygiene by construction:
-
-- **SecretBytes**: Key material and session tokens are never logged, never serialized into errors or JSON output, and zeroized where the language permits
-- **IdempotencyKey**: Construction validation with no key material leakage through error serialization
-- **ProtocolAmount**: Integer-only money representation with floating-point amounts structurally impossible
-- **Error Hygiene**: Error messages contain only safe machine codes, never request details or session tokens
-
-Required by: req.24.8 (secret hygiene)
-
-### Streaming Resumability (`streaming-resumability.test.*`)
-
-Proves that SDKs implement resumable streaming with stable cursors and no-gap-no-duplicate reconnection semantics:
-
-- **StreamCursor**: Bounded opaque cursor validation
-- **ResumableStream**: No-gap-no-duplicate event chain validation
-- **Cursor Chain Integrity**: Refuses gaps, duplicates, and mismatched cursors
-- **Reconnection**: Supports resumption after disconnection with stable cursor advancement
-
-Required by: req.24.9 (resumable streaming)
-
-### Operations Coverage (`operations.json`)
-
-Schema-driven validation that every agent-api and human-api operation is covered by all SDKs:
-
-- Complete operation enumeration from both schemas
-- Idempotency enforcement on mutations
-- Typed error taxonomy with stable machine codes
-- Retriability classification (never, safe, after, unknown-outcome)
-
-Required by: req.24.1, req.24.3 (operation coverage, error taxonomy)
-
-### Mirror parity (`mirror-v2.json`)
-
-Pins the archive framing, Ethereum contract calls, Solana account layout, source-selection policies, failure codes, freshness semantics, tamper cases and checkpoint-level refusal shared by all seven SDKs. Live evidence is acquired from the configured task-25.1 mirrors; no checked-in self-signed archive is accepted as a success vector.
-
-Required by: req.34.2, req.34.3 (mirror-only verification and honest freshness)
-
-## Running the Tests
-
-The conformance suite is executed as part of the platform test target:
+The whole suite runs from the repository root:
 
 ```bash
 make platform-test-sdks
 ```
 
-Individual SDK test suites:
+`platform-test-sdks` runs `platform-verify-sdks` (see
+[`platform/Makefile.inc`](../../Makefile.inc)). It first checks the native
+lifecycle, capability and executed-program fixtures for drift, then runs the
+Rust `layerx-sdk` tests, the TypeScript and Python conformance tests, the Go and
+JVM runners, and the Swift and .NET builds and tests. It needs `pytest`, `swift`
+and `dotnet` on the PATH.
+
+Individual pieces, from the repository root:
 
 ```bash
-# TypeScript
-cd agent/sdk/typescript && npm test
-
-# Python
-cd agent/sdk/python && pytest
-
-# Rust
-cd agent/crates/layerx-sdk && cargo test
-
-# JVM (JUnit, schema goldens, typed errors, streams, secrets, and local verification)
-sh platform/sdk/conformance/run-jvm.sh
+PYTHONPATH=agent/sdk/python python3 -m pytest --import-mode=importlib \
+  platform/sdk/conformance/secret-hygiene.test.py \
+  platform/sdk/conformance/streaming-resumability.test.py
+sh platform/sdk/conformance/run-go.sh "$PWD"
+sh platform/sdk/conformance/run-jvm.sh "$PWD"
 ```
 
-## Conformance Requirements
+## Native program lifecycle fixtures
 
-Every published SDK must:
+`native-program-deploy-v3.json`, `native-program-upgrade-v3.json`, and the four
+`native-program-wind-down-*-v3.json` fixtures contain payloads and signed
+protocol-3 activities produced by
+[`tests/programs/test_call_activity.c`](../../../tests/programs/test_call_activity.c).
+SDK tests decode and re-encode the C bytes and bind the activity identifiers and
+idempotency keys. These are wire-layout vectors, not execution evidence.
 
-1. **Secret Hygiene**: Pass all `secret-hygiene.test.*` tests proving no key material or session tokens in logs, errors, or serialized output
-2. **Resumable Streaming**: Pass all `streaming-resumability.test.*` tests proving stable cursors and no-gap-no-duplicate semantics
-3. **Integer-Only Money**: Enforce `ProtocolAmount` validation rejecting floating-point representation
-4. **Required Idempotency Keys**: Enforce idempotency key presence on mutations
-5. **Local Verification**: Ship receipt, batch-inclusion, and checkpoint verification paths requiring no trust in hosted surfaces
+Regenerate with `make programs-native-lifecycle-fixtures`; check byte-for-byte
+drift with `make programs-check-native-lifecycle-fixtures`.
 
-## Frozen ABI 2 Capability Fixture
+## Frozen ABI 2 capability fixture
 
 `fixtures/native-program-capabilities-v2.json` comes from the Rust runtime's
 `capability_fixture` example, not from an SDK encoder. Generate it with
@@ -104,48 +67,41 @@ a BalanceView receipt digest. Canonical order is `1,2,3,4,5,9,6,10,7,8`, not
 numeric tag order. ProgramSpend encodes its bounded seed length as `u16be`; the
 separate derived-account hash uses `u32be`. Neither layout changes with freezing.
 
-The historical `receipt-programs-positive-v3.json` remains a receipt-codec
-vector re-enveloped from v2. It must not be described as runtime execution
-evidence. `receipt-programs-executed-v3.json` instead comes from the real native
-CALL transition and Rust Wasm runtime. Run `make programs-executed-fixture` to
-generate it and `make programs-check-executed-fixture` to check drift. Its Python
-packager requires `cryptography`, verifies the original signed evidence, and
-does not re-sign or alter receipt fields. The fixture is deterministic local
-transition evidence, not external finality or checkpoint-inclusion evidence.
+## Program receipt fixtures
 
-## Adding New Conformance Tests
+`receipt-programs-positive-v3.json` is a receipt-codec vector re-enveloped from
+v2. It is not runtime execution evidence. `receipt-programs-executed-v3.json`
+comes from the native CALL transition and the Rust Wasm runtime. Run
+`make programs-executed-fixture` to generate it and
+`make programs-check-executed-fixture` to check drift. Its Python packager
+requires `cryptography`, verifies the original signed evidence, and does not
+re-sign or alter receipt fields. The fixture is deterministic local transition
+evidence, not external finality or checkpoint-inclusion evidence. The v4
+executed fixture has the matching `make programs-executed-v4-fixture` and
+`make programs-check-executed-v4-fixture` targets.
 
-When adding a new conformance requirement:
+## Conformance requirements
 
-1. Write the test in all three languages (`.test.ts`, `.test.py`, `.test.rs`)
-2. Ensure identical semantics across languages
-3. Update this README with the new test coverage
-4. Reference the requirement ID from `spec/layerx-platform/spec.kvx`
+Every published SDK must:
 
-## Language-Specific Notes
+1. **Secret hygiene**: pass the `secret-hygiene.test.*` checks.
+2. **Resumable streaming**: pass the `streaming-resumability.test.*` checks.
+3. **Integer-only money**: reject floating-point `ProtocolAmount` values.
+4. **Idempotency keys**: require an idempotency key on mutations.
+5. **Local verification**: ship receipt, batch-inclusion and checkpoint
+   verification that needs no trust in hosted surfaces.
 
-### TypeScript
+When adding a requirement, write the test for TypeScript, Python and Rust
+(`.test.ts`, `.test.py`, `.test.rs`) with identical semantics, wire it into
+`platform-verify-sdks`, and update this README.
 
-- Secret zeroization uses `Uint8Array.fill(0)`
-- Branded types for compile-time safety (`SecretBytes`, `IdempotencyKey`, `ProtocolAmount`)
-- All verification functions are async
+## Language notes
 
-### Python
-
-- Secret zeroization on `__del__` with explicit `bytearray` zeroing
-- `SecretBytes.__reduce__` raises `TypeError` to prevent pickle serialization
-- Dataclasses for structured types
-
-### Rust
-
-- Secret zeroization via `zeroize` crate on `Drop`
-- Newtype wrappers for type safety
-- `#[must_use]` attributes on verification functions
-- No `Clone` on `SecretBytes` to prevent accidental copying
-
-### JVM
-
-- Java-first schema operation/request/response/event types with Kotlin overloads in one Maven coordinate
-- `BigInteger` protocol amounts encoded only as canonical decimal strings
-- Virtual-thread streaming that fetches only under downstream demand and advances cursors atomically
-- Local receipt, batch-inclusion, Merkle, and checkpoint verification with built-in signature verification
+- **TypeScript**: `SecretBytes` is a class with a private byte field that is
+  zeroed with `Uint8Array.fill(0)`; batch-inclusion, Merkle and checkpoint
+  verification functions are async.
+- **Python**: `SecretBytes` redacts its representation, destroys its value in
+  `__del__`, and `__reduce__` raises `TypeError` so it cannot be pickled.
+- **Rust**: `SecretBytes` does not implement `Clone` and zeroizes on `Drop` via
+  the `zeroize` crate.
+- **JVM**: see [`../jvm/README.md`](../jvm/README.md).

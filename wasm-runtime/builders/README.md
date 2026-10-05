@@ -110,18 +110,15 @@ versions of the builder images.
 
 ## Usage
 
-Create a local docker image, capable of cross-compling linux and macos dynamic
-libs:
+From `wasm-runtime/`, build the local builder images `cosmwasm/go-ext-builder:0017-centos7`,
+`-cross` and `-alpine` (the tag is set in `builders/Makefile`):
 
 ```sh
 (cd builders && make docker-images)
 ```
 
-Then in the repo root, `make release-build` will use the above docker image and
-copy the generated `{so,dylib}` files into `internal/api` directory to be
-linked.
-
-## Future Work
-
-- Add support for cross-compiling to Windows as well.
-- Publish docker images when they are stable
+The `release-build-*` targets in `wasm-runtime/Makefile` do not use these local
+images. They run `cosmwasm/libwasmvm-builder:0103` images (`-alpine`, `-debian`,
+`-cross`; see `BUILDERS_PREFIX` in that Makefile) and copy the generated `.so`,
+`.dylib`, `.dll` and `.a` files into `internal/api` to be linked. Run them from
+`wasm-runtime/`, for example `make release-build`.
