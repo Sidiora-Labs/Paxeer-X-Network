@@ -27671,7 +27671,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.7.2]
 title = "Resolve compute disputes through authenticated arbiter outcomes and atomic settlement"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 4
 requires = ["0.2", "6.4", "104.35.2", "104.35.3"]
@@ -29340,7 +29340,7 @@ qualification_log = "/root/lx-ops/fleet-2026-10-05/results/104.33.5.json"
 
 [task.104.35.6]
 title = "Stake and slash providers through the ordinary monetary law"
-status = "pending"
+status = "in_progress"
 mode = "BUILD"
 wave = 5
 requires = ["0.2", "104.35.3", "104.35.5"]
