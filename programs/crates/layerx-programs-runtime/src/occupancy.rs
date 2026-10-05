@@ -2231,6 +2231,74 @@ mod tests {
         }
     }
 
+    #[test]
+    fn evidence_replays_identically_under_its_recorded_schedule() {
+        let payer = principal(3);
+        for bytes in [2u64, 10, 64] {
+            let ceiling = u128::from(bytes) * 64;
+            let (ledger, storage, namespace) = initialized_bytes(bytes, ceiling);
+            let stranger = StorageNamespace::principal(
+                crate::ProgramId::new([8; 32])
+                    .unwrap_or_else(|error| panic!("nonzero program: {error:?}")),
+                principal(5),
+            );
+            assert_eq!(
+                ledger
+                    .prepare_batch(2, &occupied_bytes(stranger, bytes), [], schedule(1, 2))
+                    .err(),
+                Some(OccupancyError::MissingResponsibility {
+                    namespace: stranger
+                })
+            );
+            let mut recorded_evidence = Vec::new();
+            for (version, price) in [(1u32, 1u64), (1, 2), (2, 2)] {
+                let recorded = schedule(version, price);
+                let first = ledger
+                    .prepare_batch(2, &storage, [], recorded)
+                    .unwrap_or_else(|error| panic!("recorded settlement: {error:?}"));
+                let again = ledger
+                    .prepare_batch(2, &storage, [], recorded)
+                    .unwrap_or_else(|error| panic!("repeated settlement: {error:?}"));
+                assert_eq!(first.settlement(), again.settlement());
+                let evidence = first.settlement().canonical_evidence();
+                assert_eq!(evidence, again.settlement().canonical_evidence());
+                assert_eq!(first.settlement().fee_schedule(), recorded);
+                assert_eq!(first.settlement().charges().len(), 1);
+                let charge = first.settlement().charges()[0];
+                assert_eq!(charge.namespace(), namespace);
+                assert_eq!(charge.payer(), payer);
+                assert_eq!((charge.start_batch(), charge.to_batch()), (1, 2));
+                assert_eq!(charge.byte_batches(), u128::from(bytes));
+                assert_eq!(charge.price(), price);
+                assert_eq!(charge.fee_units(), u128::from(bytes) * u128::from(price));
+                assert!(charge.paid());
+                assert_eq!(
+                    first.settlement().usage(),
+                    OccupancyUsage {
+                        byte_batches: u128::from(bytes),
+                        fee_units: u128::from(bytes) * u128::from(price),
+                        paid_fee_units: u128::from(bytes) * u128::from(price),
+                        arrears_fee_units: 0,
+                    }
+                );
+                assert_eq!(
+                    ledger.replay_evidence(&evidence, &storage, []),
+                    Ok(first.settlement().clone())
+                );
+                let repriced = OccupancySettlement {
+                    fee_schedule: schedule(version, price + 1),
+                    ..first.settlement().clone()
+                };
+                assert_eq!(
+                    ledger.replay_evidence(&repriced.canonical_evidence(), &storage, []),
+                    Err(OccupancyError::MalformedEvidence)
+                );
+                assert!(!recorded_evidence.contains(&evidence));
+                recorded_evidence.push(evidence);
+            }
+        }
+    }
+
     const SELLER_DID: &[u8] =
         b"did:layerx:c4420d73f7b2e56599e25f99790d680f84348adf420eed89b2484b2ece345e64";
 

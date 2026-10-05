@@ -2126,3 +2126,53 @@ mod replay_meter_tests {
         }
     }
 }
+
+#[cfg(test)]
+mod occupancy_class_tests {
+    use super::*;
+
+    #[test]
+    fn occupancy_is_its_own_class_outside_one_off_execution_charges() {
+        let kinds = [
+            ResourceKind::Cpu,
+            ResourceKind::Memory,
+            ResourceKind::StorageRead,
+            ResourceKind::StorageWrite,
+            ResourceKind::StorageOccupancy,
+            ResourceKind::Output,
+            ResourceKind::OutputBytes,
+        ];
+        for (index, kind) in kinds.iter().enumerate() {
+            assert_eq!(replay_resource(replay_resource_code(*kind)), Ok(*kind));
+            for other in &kinds[index + 1..] {
+                assert_ne!(replay_resource_code(*kind), replay_resource_code(*other));
+                assert_ne!(kind.to_string(), other.to_string());
+            }
+        }
+        assert_eq!(budget_resource(ResourceKind::StorageOccupancy), None);
+        let budget = ResourceBudget::new_complete(100, 131072, 100, 100, 8, 100, 2);
+        let mut usages = Vec::new();
+        for price in [1, 7, u64::MAX] {
+            let schedule = FeeSchedule::declared().with_occupancy_byte_batch_price(price);
+            let mut meter = Meter::new(budget, schedule);
+            meter
+                .charge_cpu(9)
+                .unwrap_or_else(|error| panic!("cpu: {error}"));
+            meter
+                .charge_storage_read(11)
+                .unwrap_or_else(|error| panic!("read: {error}"));
+            meter
+                .charge_storage_write(13)
+                .unwrap_or_else(|error| panic!("write: {error}"));
+            let usage = meter
+                .finish()
+                .unwrap_or_else(|error| panic!("finish: {error}"));
+            assert_eq!(usage.storage_read_bytes, 11);
+            assert_eq!(usage.storage_write_bytes, 13);
+            assert_eq!(usage.occupancy_byte_batches, 0);
+            assert_eq!(usage.occupancy_fee_units, 0);
+            usages.push(usage);
+        }
+        assert!(usages.windows(2).all(|pair| pair[0] == pair[1]));
+    }
+}
