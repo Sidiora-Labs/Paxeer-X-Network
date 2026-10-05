@@ -10,24 +10,24 @@ available when the beta opens.
 
 ## Endpoints
 
-| Node | HTTPS JSON-RPC | WebSocket |
-| --- | --- | --- |
-| 1 | `https://api1.mainnet-beta.paxeer.network` | `wss://api1.mainnet-beta.paxeer.network/ws` |
-| 2 | `https://api2.mainnet-beta.paxeer.network` | `wss://api2.mainnet-beta.paxeer.network/ws` |
-| 3 | `https://api3.mainnet-beta.paxeer.network` | `wss://api3.mainnet-beta.paxeer.network/ws` |
-| 4 | `https://api4.mainnet-beta.paxeer.network` | `wss://api4.mainnet-beta.paxeer.network/ws` |
-| 5 | `https://api5.mainnet-beta.paxeer.network` | `wss://api5.mainnet-beta.paxeer.network/ws` |
-| 6 | `https://api6.mainnet-beta.paxeer.network` | `wss://api6.mainnet-beta.paxeer.network/ws` |
-| 7 | `https://api7.mainnet-beta.paxeer.network` | `wss://api7.mainnet-beta.paxeer.network/ws` |
-| 8 | `https://api8.mainnet-beta.paxeer.network` | `wss://api8.mainnet-beta.paxeer.network/ws` |
-| 9 | `https://api9.mainnet-beta.paxeer.network` | `wss://api9.mainnet-beta.paxeer.network/ws` |
-| 10 | `https://api10.mainnet-beta.paxeer.network` | `wss://api10.mainnet-beta.paxeer.network/ws` |
-| 11 | `https://api11.mainnet-beta.paxeer.network` | `wss://api11.mainnet-beta.paxeer.network/ws` |
-| 12 | `https://api12.mainnet-beta.paxeer.network` | `wss://api12.mainnet-beta.paxeer.network/ws` |
-| 13 | `https://api13.mainnet-beta.paxeer.network` | `wss://api13.mainnet-beta.paxeer.network/ws` |
-| 14 | `https://api14.mainnet-beta.paxeer.network` | `wss://api14.mainnet-beta.paxeer.network/ws` |
-| 15 | `https://api15.mainnet-beta.paxeer.network` | `wss://api15.mainnet-beta.paxeer.network/ws` |
-| 16 | `https://api16.mainnet-beta.paxeer.network` | `wss://api16.mainnet-beta.paxeer.network/ws` |
+| Node | HTTPS JSON-RPC                              | WebSocket                                    |
+| ------| ---------------------------------------------| ----------------------------------------------|
+| 1    | `https://api1.mainnet-beta.paxeer.network`  | `wss://api1.mainnet-beta.paxeer.network/ws`  |
+| 2    | `https://api2.mainnet-beta.paxeer.network`  | `wss://api2.mainnet-beta.paxeer.network/ws`  |
+| 3    | `https://api3.mainnet-beta.paxeer.network`  | `wss://api3.mainnet-beta.paxeer.network/ws`  |
+| 4    | `https://api4.mainnet-beta.paxeer.network`  | `wss://api4.mainnet-beta.paxeer.network/ws`  |
+| 5    | `https://api5.mainnet-beta.paxeer.network`  | `wss://api5.mainnet-beta.paxeer.network/ws`  |
+| 6    | `https://api6.mainnet-beta.paxeer.network`  | `wss://api6.mainnet-beta.paxeer.network/ws`  |
+| 7    | `https://api7.mainnet-beta.paxeer.network`  | `wss://api7.mainnet-beta.paxeer.network/ws`  |
+| 8    | `https://api8.mainnet-beta.paxeer.network`  | `wss://api8.mainnet-beta.paxeer.network/ws`  |
+| 9    | `https://api9.mainnet-beta.paxeer.network`  | `wss://api9.mainnet-beta.paxeer.network/ws`  |
+| 10   | `https://api10.mainnet-beta.paxeer.network` | `wss://api10.mainnet-beta.paxeer.network/ws` |
+| 11   | `https://api11.mainnet-beta.paxeer.network` | `wss://api11.mainnet-beta.paxeer.network/ws` |
+| 12   | `https://api12.mainnet-beta.paxeer.network` | `wss://api12.mainnet-beta.paxeer.network/ws` |
+| 13   | `https://api13.mainnet-beta.paxeer.network` | `wss://api13.mainnet-beta.paxeer.network/ws` |
+| 14   | `https://api14.mainnet-beta.paxeer.network` | `wss://api14.mainnet-beta.paxeer.network/ws` |
+| 15   | `https://api15.mainnet-beta.paxeer.network` | `wss://api15.mainnet-beta.paxeer.network/ws` |
+| 16   | `https://api16.mainnet-beta.paxeer.network` | `wss://api16.mainnet-beta.paxeer.network/ws` |
 
 Endpoints are numbered, not ranked. Pick any one, and fall back to another if
 it stops answering. Nodes may briefly trail the chain tip; compare

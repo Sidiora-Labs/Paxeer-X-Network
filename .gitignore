@@ -151,3 +151,5 @@ coverage.out
 /storage/state_db/bench/cryptosim/logs/
 /storage/ledger_db/block/blocksim/bin/
 /storage/db_engine/litt/bin/
+.context/
+CONSTITUTION.md
