@@ -30138,7 +30138,7 @@ build_exit_code = 0
 verify_exit_code = 8
 qualification_log = "/root/lx-ops/fleet-2026-10-05/results/104.32.6.json"
 completion_basis = "implementation"
-qualification_note = "Code landed b27d3b036: scheduler partition/barrier/equivalence/atomicity tests 6/6, planner level assertions and speedup reporting, gate selector; ac_6 low-conflict parallelism unmet: every v2/v3 program call settles occupancy per call by receipt invariant (lxp_receipt.c outcome validation requires a per-call occupancy evidence digest) and same-level apply fails on the shared progocc ledger/head/accounts cells; batch-level settlement requires a new protocol version 4 with its own receipt encoding, a task series awaiting owner authorization"
+qualification_note = "Code landed 2c1a30fad: scheduler partition/barrier/equivalence/atomicity tests 6/6, planner level assertions and speedup reporting, gate selector; ac_6 low-conflict parallelism unmet: every v2/v3 program call settles occupancy per call by receipt invariant (lxp_receipt.c outcome validation requires a per-call occupancy evidence digest) and same-level apply fails on the shared progocc ledger/head/accounts cells; batch-level settlement requires a new protocol version 4 with its own receipt encoding, a task series awaiting owner authorization"
 
 [task.104.34.1]
 title = "Model the sandbox lease as protocol state"

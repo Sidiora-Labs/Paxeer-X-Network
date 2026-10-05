@@ -4077,7 +4077,7 @@ observed = "family isolation loop omits host/balance.rs and host/context.rs (con
 
 [gotcha.843]
 title = "programs/sdk/rust/response-fixture/Cargo.lock"
-observed = "make programs-sdk-rust / response-fixture/build.sh fails with 'lock file needs to be updated but --locked was passed' on main 8d98fc607 because the runtime gained a layerx-program-sdk dependency Do: cargo update --workspace --offline in the fixture dir adds only that edge; landed on this branch"
+observed = "make programs-sdk-rust / response-fixture/build.sh fails with 'lock file needs to be updated but --locked was passed' on main a98cfba8a because the runtime gained a layerx-program-sdk dependency Do: cargo update --workspace --offline in the fixture dir adds only that edge; landed on this branch"
 
 [gotcha.844]
 title = "git commit in fleet worktrees"
@@ -4088,7 +4088,7 @@ title = "programs/crates/layerx-programs-runtime/src/host/*.rs tests"
 observed = "tests/programs/runtime-module-boundaries.sh rejects the bare tokens Abi, Composition, Storage or Meter anywhere in a host family file, #[cfg(test)] modules included, so end-to-end tests there trip 'reaches state outside RuntimeState' Do: put end-to-end execution tests in the abi/ unit or tests/, not in host/{calls,storage,...}.rs"
 
 [gotcha.846]
-title = "tests/programs/runtime-module-boundaries.sh on main 2b2628d1a"
+title = "tests/programs/runtime-module-boundaries.sh on main b2697fb47"
 observed = "pre-existing failure: 'scan reaches state outside RuntimeState' because host/scan.rs tests import Abi, Storage and Meter; the 104.28.1 gate runs this lint Do: record only; fix belongs to a task that owns host/scan.rs"
 
 [gotcha.847]
@@ -4213,7 +4213,7 @@ observed = "the packet calls the hosted/emulator and explorer-route work remaini
 
 [gotcha.877]
 title = "cargo clippy on any programs crate depending on layerx-program-sdk"
-observed = "pre-existing on main 2efa56f7b: crate-scoped clippy with -D warnings fails in the sdk/rust build script (bindgen_*.rs pedantic + dead_code, 47 errors) and vendor/wasmi-0.31.2 (3 errors) before reaching the target crate; first verify run exited 8, log /root/lx-fleet/logs/104.34.1/verify-cycle0.log Do: gate clippy with --no-deps so only the task crate is linted; workspace programs-lint stays release scope and will hit this debt"
+observed = "pre-existing on main 084af792b: crate-scoped clippy with -D warnings fails in the sdk/rust build script (bindgen_*.rs pedantic + dead_code, 47 errors) and vendor/wasmi-0.31.2 (3 errors) before reaching the target crate; first verify run exited 8, log /root/lx-fleet/logs/104.34.1/verify-cycle0.log Do: gate clippy with --no-deps so only the task crate is linted; workspace programs-lint stays release scope and will hit this debt"
 
 [gotcha.878]
 title = "tools/paxeer-x/candidate.py"
@@ -4485,7 +4485,7 @@ observed = "beta-owner-policy.json is not packaged in the kernel image, so provi
 
 [gotcha.945]
 title = "tools/qualification/paxeer-x/human-movement-kms-assembly.py"
-observed = "The 12.2 gate's kms_prepare defines only human_kms_prepare, but since ece9c1c85 that function first calls identity_generation gate, so on main it fails with command not found and the 12.2 gate cannot pass (found by reading; not run) Do: Define identity_generation in that script and give it a complete isolated genesis plus sealed human_state/material, as the movement-kms case does"
+observed = "The 12.2 gate's kms_prepare defines only human_kms_prepare, but since 033fc440e that function first calls identity_generation gate, so on main it fails with command not found and the 12.2 gate cannot pass (found by reading; not run) Do: Define identity_generation in that script and give it a complete isolated genesis plus sealed human_state/material, as the movement-kms case does"
 
 [gotcha.946]
 title = "tools/bringup/ca.sh human-attestor-client row"
