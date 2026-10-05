@@ -29196,7 +29196,7 @@ qualification_log = "/root/lx-ops/fleet-2026-10-05/results/104.29.1.json"
 
 [task.104.32.2]
 title = "Build the host linker once per engine"
-status = "in_progress"
+status = "done"
 mode = "QUALIFY"
 wave = 5
 requires = ["0.2", "104.28.1"]
@@ -29224,6 +29224,11 @@ completion_policy = "Existing implementation is preserved; current candidate qua
 planned_paths = ["programs/crates/layerx-programs-runtime/src/host.rs", "tools/paxeer-x/gates/104.32.2.sh"]
 path_policy = "Existing paths are modified in place. Planned paths must be created or explicitly mapped to their current equivalents before the gate can run; historical references never authorize a duplicate implementation tree. Complete scoped path reconciliation without dropping acceptance criteria."
 evidence_policy = "Retain credentials, operational inventories and raw qualification records in access-controlled storage; publish only reviewed technical product material."
+completion_basis = "implementation under owner CONSTITUTION; task tests pass, gate exit 8 on two pre-existing calls.rs reference-types failures present on main before this task"
+qualification_status = "BUILD_PASSED_VERIFY_FAILED"
+build_exit_code = 0
+verify_exit_code = 8
+qualification_log = "/root/lx-ops/fleet-2026-10-05/results/104.32.2.json"
 
 [task.104.32.3]
 title = "Make metering an engine-independent property of the module"

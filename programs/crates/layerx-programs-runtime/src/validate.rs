@@ -1160,4 +1160,255 @@ mod linker_invariant_tests {
         assert_eq!(root.host_linker_construction_count(), 1);
         assert_eq!(resolved.host_linker_construction_count(), 1);
     }
+
+    const DEEP_FRAMES: u8 = 9;
+
+    fn push_i32(instructions: &mut Vec<u8>, value: i32) {
+        instructions.push(crate::test_support::OP_I32_CONST);
+        let mut value = i64::from(value);
+        loop {
+            let byte = u8::try_from(value & 0x7f)
+                .unwrap_or_else(|error| panic!("signed LEB byte refused: {error}"));
+            value >>= 7;
+            let done = (value == 0 && byte & 0x40 == 0) || (value == -1 && byte & 0x40 != 0);
+            instructions.push(if done { byte } else { byte | 0x80 });
+            if done {
+                return;
+            }
+        }
+    }
+
+    fn encoded_name(text: &str) -> Vec<u8> {
+        let mut encoded = crate::test_support::unsigned_leb(
+            u64::try_from(text.len()).unwrap_or_else(|error| panic!("name length: {error}")),
+        );
+        encoded.extend_from_slice(text.as_bytes());
+        encoded
+    }
+
+    fn deep_capabilities(calls: &[ProgramId]) -> crate::CapabilitySet {
+        crate::CapabilitySet::new(
+            core::iter::once(crate::Capability::EmitEvent).chain(
+                calls
+                    .iter()
+                    .map(|program| crate::Capability::Call { program: *program }),
+            ),
+        )
+        .unwrap_or_else(|error| panic!("deep composition capabilities refused: {error}"))
+    }
+
+    fn deep_frame(callee: Option<(ProgramId, &crate::CapabilitySet)>) -> Vec<u8> {
+        use crate::test_support::{
+            code_section, func_body, function_section, import_section, module, raw_section,
+            type_section, unsigned_leb, OP_CALL, OP_END, OP_I32_CONST, TYPE_I32,
+        };
+
+        let entry_type = [TYPE_I32, TYPE_I32];
+        let Some((callee, requested)) = callee else {
+            let mut exports = vec![1];
+            exports.extend(encoded_name(crate::CALL_ENTRY_EXPORT));
+            exports.extend([0, 0]);
+            return module(&[
+                type_section(&[(&entry_type, &[TYPE_I32])]),
+                function_section(&[0]),
+                raw_section(7, &exports),
+                code_section(&[func_body(&[], &[OP_I32_CONST, 0, OP_END])]),
+            ]);
+        };
+        let encoded = requested.canonical_encoding();
+        let mut entry = Vec::new();
+        for value in [
+            0,
+            32,
+            32,
+            0,
+            32,
+            i32::try_from(encoded.len())
+                .unwrap_or_else(|error| panic!("capability encoding length: {error}")),
+        ] {
+            push_i32(&mut entry, value);
+        }
+        entry.extend([OP_CALL, 0, OP_END]);
+        let mut exports = vec![2];
+        exports.extend(encoded_name(crate::CALL_ENTRY_EXPORT));
+        exports.extend([0, 1]);
+        exports.extend(encoded_name("memory"));
+        exports.extend([2, 0]);
+        let program = callee.bytes();
+        let mut data = vec![2];
+        for (offset, bytes) in [(0, program.as_slice()), (32, encoded.as_slice())] {
+            data.extend([0, OP_I32_CONST, offset, OP_END]);
+            data.extend(unsigned_leb(
+                u64::try_from(bytes.len()).unwrap_or_else(|error| panic!("data length: {error}")),
+            ));
+            data.extend_from_slice(bytes);
+        }
+        module(&[
+            type_section(&[(&[TYPE_I32; 6], &[TYPE_I32]), (&entry_type, &[TYPE_I32])]),
+            import_section(&[(crate::ABI_MODULE, "program_call", 0)]),
+            function_section(&[1]),
+            raw_section(5, &[1, 0, 1]),
+            raw_section(7, &exports),
+            code_section(&[func_body(&[], &entry)]),
+            raw_section(11, &data),
+        ])
+    }
+
+    struct DeepChain {
+        root_program: ProgramId,
+        root: ValidatedModule,
+        children: Vec<(ProgramId, Vec<u8>)>,
+        grants: crate::CapabilitySet,
+    }
+
+    fn deep_chain(engine: &WasmEngine) -> DeepChain {
+        let ids: Vec<ProgramId> = (1..=DEEP_FRAMES)
+            .map(|byte| {
+                ProgramId::new([0x60 + byte; 32])
+                    .unwrap_or_else(|error| panic!("deep program refused: {error}"))
+            })
+            .collect();
+        let frames: Vec<Vec<u8>> = (0..ids.len())
+            .map(|index| {
+                ids.get(index + 1).map_or_else(
+                    || deep_frame(None),
+                    |callee| {
+                        let requested = deep_capabilities(&ids[index + 2..]);
+                        deep_frame(Some((*callee, &requested)))
+                    },
+                )
+            })
+            .collect();
+        let root = engine
+            .validate(&frames[0])
+            .unwrap_or_else(|error| panic!("deep root validation refused: {error}"));
+        DeepChain {
+            root_program: ids[0],
+            root,
+            children: ids[1..]
+                .iter()
+                .copied()
+                .zip(frames[1..].iter().cloned())
+                .collect(),
+            grants: deep_capabilities(&ids[1..]),
+        }
+    }
+
+    fn execute_deep_chain(
+        engine: &WasmEngine,
+        chain: &DeepChain,
+    ) -> crate::AuthorizedExecutionRecord {
+        let mut catalog = ProgramCatalog::new();
+        for (program, wasm) in &chain.children {
+            let child = engine
+                .validate(wasm)
+                .unwrap_or_else(|error| panic!("deep child validation refused: {error}"));
+            assert!(catalog.insert(*program, child).is_none());
+        }
+        let payer = crate::PrincipalId::new([0x09; 32])
+            .unwrap_or_else(|error| panic!("deep payer refused: {error}"));
+        let mut storage = crate::Storage::new();
+        crate::Executor::declared()
+            .execute_authorized(
+                &mut storage,
+                crate::AuthorizedExecutionRequest {
+                    module: &chain.root,
+                    program: chain.root_program,
+                    authorization: crate::AuthorizationContext::new(payer, chain.grants.clone()),
+                    receipts: &crate::UnavailableReceiptOracle,
+                    entrypoint: crate::CALL_ENTRY_EXPORT,
+                    calldata: &[],
+                    composition: crate::CompositionContext::catalog(
+                        catalog,
+                        crate::CompositionRules::declared(),
+                    ),
+                    response_capacity: 0,
+                },
+            )
+            .unwrap_or_else(|error| panic!("deep composition refused: {error}"))
+    }
+
+    fn median_nanos(samples: usize, mut operation: impl FnMut()) -> u128 {
+        let mut timings: Vec<u128> = (0..samples)
+            .map(|_| {
+                let started = std::time::Instant::now();
+                operation();
+                started.elapsed().as_nanos()
+            })
+            .collect();
+        timings.sort_unstable();
+        timings[timings.len() / 2]
+    }
+
+    #[test]
+    fn nested_calls_reuse_the_engine_linker_without_constructing_one() {
+        let before = host::linker_constructions_on_current_thread();
+        let engine = WasmEngine::declared()
+            .unwrap_or_else(|error| panic!("declared engine refused: {error}"));
+        assert_eq!(host::linker_constructions_on_current_thread(), before + 1);
+        let chain = deep_chain(&engine);
+        let first = execute_deep_chain(&engine, &chain);
+        let second = execute_deep_chain(&engine, &chain);
+        assert_eq!(first.call_graph.edges().len(), usize::from(DEEP_FRAMES - 1));
+        assert_eq!(first.execution.outputs, vec![crate::WasmValue::I32(0)]);
+        assert_eq!(host::linker_constructions_on_current_thread(), before + 1);
+        assert_eq!(engine.host_linker_construction_count(), 1);
+        assert_eq!(first, second);
+
+        let independent = WasmEngine::declared()
+            .unwrap_or_else(|error| panic!("independent engine refused: {error}"));
+        assert_eq!(host::linker_constructions_on_current_thread(), before + 2);
+        let independent_chain = deep_chain(&independent);
+        assert!(!Arc::ptr_eq(
+            &chain.root.linker,
+            &independent_chain.root.linker
+        ));
+        assert_eq!(execute_deep_chain(&independent, &independent_chain), first);
+        assert_eq!(host::linker_constructions_on_current_thread(), before + 2);
+    }
+
+    #[test]
+    fn deep_composition_measures_the_avoided_per_frame_linker_rebuild() {
+        const SAMPLES: usize = 31;
+        let engine = WasmEngine::declared()
+            .unwrap_or_else(|error| panic!("declared engine refused: {error}"));
+        let chain = deep_chain(&engine);
+        let reference = execute_deep_chain(&engine, &chain);
+        let hoisted = median_nanos(SAMPLES, || {
+            assert_eq!(execute_deep_chain(&engine, &chain), reference);
+        });
+        let shared_instantiation = median_nanos(SAMPLES, || {
+            chain
+                .root
+                .instantiate_for_qualification()
+                .unwrap_or_else(|error| panic!("shared instantiation refused: {error}"));
+        });
+        let rebuilt_instantiation = median_nanos(SAMPLES, || {
+            let rebuilt = host::linker(engine.inner())
+                .unwrap_or_else(|error| panic!("linker rebuild refused: {error}"));
+            let mut store = wasmi::Store::new(
+                engine.inner(),
+                RuntimeState::isolated(crate::Meter::declared()),
+            );
+            store.limiter(|state| state.meter_mut() as &mut dyn wasmi::ResourceLimiter);
+            rebuilt
+                .instantiate(&mut store, &chain.root.module)
+                .unwrap_or_else(|error| panic!("rebuilt instantiation refused: {error}"))
+                .start(&mut store)
+                .unwrap_or_else(|error| panic!("rebuilt start refused: {error}"));
+        });
+        let frames = u128::from(DEEP_FRAMES);
+        let per_frame_rebuild = rebuilt_instantiation.saturating_sub(shared_instantiation);
+        let avoided = per_frame_rebuild * frames;
+        let per_call_rebuild = hoisted + avoided;
+        println!(
+            "linker-hoist deep-composition frames={frames} hoisted_ns={hoisted} \
+             shared_instantiation_ns={shared_instantiation} \
+             rebuilt_instantiation_ns={rebuilt_instantiation} avoided_ns={avoided} \
+             per_call_rebuild_ns={per_call_rebuild} speedup_permille={}",
+            per_call_rebuild * 1000 / hoisted.max(1)
+        );
+        assert!(rebuilt_instantiation > shared_instantiation);
+        assert!(per_call_rebuild > hoisted);
+    }
 }

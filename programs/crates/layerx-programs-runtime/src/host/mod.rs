@@ -94,6 +94,16 @@ pub(crate) struct HostLinker {
     registered_function_count: usize,
 }
 
+std::thread_local! {
+    static LINKER_CONSTRUCTIONS: core::cell::Cell<usize> = const { core::cell::Cell::new(0) };
+}
+
+/// Counts every host surface registration performed on the calling thread.
+#[cfg(test)]
+pub(crate) fn linker_constructions_on_current_thread() -> usize {
+    LINKER_CONSTRUCTIONS.with(core::cell::Cell::get)
+}
+
 impl HostLinker {
     pub(crate) fn instantiate(
         &self,
@@ -1136,6 +1146,7 @@ pub(crate) fn reconcile_reference_guest_cpu(
 
 #[allow(clippy::too_many_lines)]
 pub(crate) fn linker(engine: &Engine) -> Result<HostLinker, ExecutionFault> {
+    LINKER_CONSTRUCTIONS.with(|count| count.set(count.get().saturating_add(1)));
     let mut linker = Linker::new(engine);
     linker
         .func_wrap(
