@@ -237,6 +237,27 @@ pub fn account_id_for_protocol(account: &AccountId, protocol: u16) -> Result<[u8
     }
 }
 
+/// Derives the kernel issuance account of one asset: the module value account named
+/// `asset:<lowercase hex64>:issuance` under the protocol-three account domain.
+///
+/// # Errors
+/// Returns a hash failure when the digest cannot be produced.
+pub fn asset_issuance_account_id(asset: &[u8; 32]) -> Result<[u8; 32], WireError> {
+    const DIGITS: &[u8; 16] = b"0123456789abcdef";
+    let mut name = Vec::with_capacity(79);
+    name.extend_from_slice(b"asset:");
+    for byte in asset {
+        name.push(DIGITS[usize::from(byte >> 4)]);
+        name.push(DIGITS[usize::from(byte & 15)]);
+    }
+    name.extend_from_slice(b":issuance");
+    let mut input = Vec::with_capacity(17 + name.len());
+    input.extend_from_slice(b"LX:ACCOUNT:v1");
+    input.extend_from_slice(&79_u32.to_be_bytes());
+    input.extend_from_slice(&name);
+    sha256(&input)
+}
+
 /// Derives the exact core DID identifier from a bounded DID.
 ///
 /// # Errors
@@ -747,6 +768,12 @@ mod account_asset_tests {
         preimage.extend_from_slice(name.as_bytes());
         assert_eq!(account_id_for_protocol(&account, 3), sha256(&preimage));
         assert_eq!(account_id_for_protocol(&account, 1), account_id(&account));
+        let mut issuance = b"LX:ACCOUNT:v1".to_vec();
+        issuance.extend_from_slice(&79_u32.to_be_bytes());
+        issuance.extend_from_slice(format!("asset:{}:issuance", "ab".repeat(32)).as_bytes());
+        assert_eq!(issuance.len(), 13 + 4 + 79);
+        assert_eq!(asset_issuance_account_id(&[0xab; 32]), sha256(&issuance));
+        assert_ne!(asset_issuance_account_id(&[0xab; 32]), asset_issuance_account_id(&[0xac; 32]));
         assert!(account_id_for_protocol(&account, 4).is_err());
         for did in ["did:layerx:Alice", "did::alice", "did:alice/other"] {
             let account = AccountId::parse(&format!("agent:{did}:asset:{}", "ab".repeat(32)))

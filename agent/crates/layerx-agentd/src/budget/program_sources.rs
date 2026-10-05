@@ -319,10 +319,14 @@ pub fn read_native_effect_budget_sources(
         match effect {
             crate::capability::Effect::Transfer { from, to, asset, amount } => {
                 let account = principal_source(caps.all_accounts(), prepared.envelope.actor_did(), prepared.envelope.protocol_version(), *asset)?;
-                if account != *from || *to == [0; 32] || *amount == 0 { return Err(ProgramSourceError::SourceOwnership); }
+                if *to == [0; 32] || *amount == 0 { return Err(ProgramSourceError::SourceOwnership); }
                 let total = gross.entry(*asset).or_insert(0_u128);
                 *total = total.checked_add(*amount).ok_or(ProgramSourceError::Arithmetic)?;
-                charges.push(ResolvedProgramCharge { source: ResolvedProgramSource::Principal { account }, asset: *asset, destination: Some(*to), maximum_amount: *amount });
+                if account == *from {
+                    charges.push(ResolvedProgramCharge { source: ResolvedProgramSource::Principal { account }, asset: *asset, destination: Some(*to), maximum_amount: *amount });
+                } else if !crate::capability::native_grant_draw_covers(&prepared.disclosure, account, (*from, *to, *asset, *amount)) {
+                    return Err(ProgramSourceError::SourceOwnership);
+                }
             }
             crate::capability::Effect::Destruction { account, asset, amount } => {
                 let source = principal_source(caps.all_accounts(), prepared.envelope.actor_did(), prepared.envelope.protocol_version(), *asset)?;
@@ -331,7 +335,15 @@ pub fn read_native_effect_budget_sources(
                 *total = total.checked_add(*amount).ok_or(ProgramSourceError::Arithmetic)?;
                 charges.push(ResolvedProgramCharge { source: ResolvedProgramSource::Principal { account: source }, asset: *asset, destination: None, maximum_amount: *amount });
             }
-            crate::capability::Effect::Issuance { .. } => return Err(ProgramSourceError::Unsupported),
+            crate::capability::Effect::Issuance { account, asset, amount } => {
+                let issuance = caps.issuance(*asset).map_err(|_| ProgramSourceError::SourceOwnership)?;
+                if *account == [0; 32] || *account == issuance.account() || *amount == 0 || *amount > issuance.headroom()
+                { return Err(ProgramSourceError::SourceOwnership); }
+                let total = gross.entry(*asset).or_insert(0_u128);
+                *total = total.checked_add(*amount).ok_or(ProgramSourceError::Arithmetic)?;
+                charges.push(ResolvedProgramCharge { source: ResolvedProgramSource::Principal { account: issuance.account() },
+                    asset: *asset, destination: Some(*account), maximum_amount: *amount });
+            }
             crate::capability::Effect::Authorization { .. } => {}
         }
     }

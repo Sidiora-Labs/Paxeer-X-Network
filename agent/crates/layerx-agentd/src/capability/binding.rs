@@ -2686,7 +2686,18 @@ pub fn inspect_native_effect_capability(
             )
             .map_err(|_| BindingError::Corrupt)?;
             if source != principal {
-                return Err(BindingError::Refused(Dimension::Amount));
+                let covered = match effect {
+                    Effect::Transfer { from, to, .. } => super::native_grant_draw_covers(
+                        &prepared.disclosure,
+                        principal,
+                        (*from, *to, asset, amount),
+                    ),
+                    _ => false,
+                };
+                if !covered {
+                    return Err(BindingError::Refused(Dimension::Amount));
+                }
+                continue;
             }
             let total = principal_totals.entry(asset).or_default();
             *total = total

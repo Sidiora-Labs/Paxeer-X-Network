@@ -454,9 +454,19 @@ fn read_retained_native_effect_debit_settlement_inner(
     let profile=carrier.profile().map_err(|_|ProgramSettlementError::Preparation)?;
     let plan=crate::capability::derive_native_profile_effects(&prepared.disclosure,profile).map_err(|_|ProgramSettlementError::Preparation)?;
     let ordinal=activity.activity_type().ordinal();
+    #[derive(Clone,Copy,PartialEq,Eq)]
+    enum Leg{Send,Mint,Draw}
+    let effect=profile==crate::capability::NativeAdmissionProfile::Effect;
     let transfer=match plan.effects() {
         [crate::capability::Effect::Transfer{from,to,asset,amount}] if ordinal==5
-            &&profile==crate::capability::NativeAdmissionProfile::Effect=>Some((*from,*to,*asset,*amount)),
+            &&effect=>Some((Leg::Send,(*from,*to,*asset,*amount))),
+        [crate::capability::Effect::Issuance{account,asset,amount}] if ordinal==10&&effect=>{
+            let from=layerx_wire::hash::asset_issuance_account_id(asset).map_err(|_|ProgramSettlementError::Preparation)?;
+            Some((Leg::Mint,(from,*account,*asset,*amount)))
+        }
+        [crate::capability::Effect::Transfer{from,to,asset,amount},grants@..] if ordinal==6&&effect&&!grants.is_empty()
+            &&grants.iter().all(|effect|matches!(effect,crate::capability::Effect::Authorization{..}))
+            &&crate::capability::native_grant_draw_covers(&prepared.disclosure,*to,(*from,*to,*asset,*amount))=>Some((Leg::Draw,(*from,*to,*asset,*amount))),
         effects if !effects.is_empty()&&effects.iter().all(|effect|matches!(effect,crate::capability::Effect::Authorization{..}))
             &&match profile {
                 crate::capability::NativeAdmissionProfile::Effect=>ordinal==7,
@@ -465,7 +475,7 @@ fn read_retained_native_effect_debit_settlement_inner(
         _=>return Err(ProgramSettlementError::UnsupportedOperation),
     };
     let rows=reservation.allocations().ok_or(ProgramSettlementError::MissingAllocation)?;
-    if let Some((from,to,asset,amount))=transfer {
+    if let Some((Leg::Send|Leg::Mint,(from,to,asset,amount)))=transfer {
         let principal=rows.iter().find(|row|row.kind==ProgramChargeKind::Principal&&row.source==from&&row.destination==Some(to)&&row.asset==asset)
             .ok_or(ProgramSettlementError::Allocation)?;
         if principal.maximum_amount!=amount||rows.iter().filter(|row|row.kind!=ProgramChargeKind::Fee).count()!=1{return Err(ProgramSettlementError::Allocation)}
@@ -478,10 +488,10 @@ fn read_retained_native_effect_debit_settlement_inner(
             || reservation.allocation_preparation_digest() != Some(id)
             || reservation.allocation_sequence() != Some(prepared.observed_head_sequence)
         { return Err(ProgramSettlementError::SourceSnapshot); }
-        if let Some((from, _, asset, _)) = transfer {
-            if super::program_sources::principal_source(prestate.all_accounts(),
+        if let Some((leg, (from, to, asset, _))) = transfer {
+            if leg != Leg::Mint && super::program_sources::principal_source(prestate.all_accounts(),
                 prepared.envelope.actor_did(), 3, asset)
-                .map_err(|_| ProgramSettlementError::SourceSnapshot)? != from
+                .map_err(|_| ProgramSettlementError::SourceSnapshot)? != if leg == Leg::Draw { to } else { from }
             { return Err(ProgramSettlementError::SourceSnapshot); }
         }
         let mut fees = rows.iter().filter(|row| row.kind == ProgramChargeKind::Fee);
@@ -501,11 +511,11 @@ fn read_retained_native_effect_debit_settlement_inner(
         }
     }
     let mut debits=Vec::new();
-    if let (0,Some((from,to,asset,amount)))=(protocol.result_code(),transfer) {
+    if let (0,Some((shape,(from,to,asset,amount))))=(protocol.result_code(),transfer) {
         if protocol.from()!=from||protocol.to()!=to||protocol.asset()!=asset||protocol.amount()!=amount{return Err(ProgramSettlementError::Terminal)}
         let mut leg=Vec::with_capacity(115);leg.push(0);leg.extend(from);leg.extend(to);leg.extend(asset);leg.extend(amount.to_be_bytes());leg.extend(1_u16.to_be_bytes());
         layerx_programs_runtime::transfer::verify_applied_kernel_legs(&leg,protocol.transfer_set_root()).map_err(|_|ProgramSettlementError::Terminal)?;
-        debits.push(ProgramExecutedDebit{kind:ProgramChargeKind::Principal,source:from,asset,destination:Some(to),actual_amount:amount});
+        if shape!=Leg::Draw{debits.push(ProgramExecutedDebit{kind:ProgramChargeKind::Principal,source:from,asset,destination:Some(to),actual_amount:amount})}
     }else if protocol.transfer_set_root()!=[0;32]||protocol.effects().iter().any(|effect|effect.monetary()) {return Err(ProgramSettlementError::Terminal)}
     if protocol.fee_charged()>prepared.envelope.fee_limit().value(){return Err(ProgramSettlementError::FeeProvenance)}
     if protocol.fee_charged()!=0 {

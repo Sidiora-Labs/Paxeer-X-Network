@@ -92,6 +92,12 @@ impl VerifiedCaps {
             self.freshness,
         )
     }
+    pub fn issuance(
+        &self,
+        asset_id: [u8; 32],
+    ) -> Result<super::VerifiedIssuance, AssetEvidenceError> {
+        super::asset_record::issuance(self.effective_asset(asset_id)?, self.did)
+    }
 }
 
 pub fn verify_caps_object(

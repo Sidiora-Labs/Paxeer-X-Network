@@ -9,6 +9,9 @@ pub enum AssetEvidenceError {
     UnknownAsset,
     Encoding,
     Identity,
+    Issuer,
+    Paused,
+    Supply,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -71,6 +74,55 @@ impl VerifiedEffectiveAsset {
     pub fn canonical_bytes(&self) -> &[u8] {
         &self.canonical_bytes
     }
+}
+
+/// Issuer authority over one registered asset, as the kernel admits Asset/10 Mint: the actor is
+/// the recorded issuer, the asset is unpaused and the units leave its issuance account.
+#[derive(Clone, Debug)]
+pub struct VerifiedIssuance {
+    asset: VerifiedEffectiveAsset,
+    account: [u8; 32],
+    headroom: u128,
+}
+
+impl VerifiedIssuance {
+    pub const fn asset(&self) -> &VerifiedEffectiveAsset {
+        &self.asset
+    }
+    pub const fn account(&self) -> [u8; 32] {
+        self.account
+    }
+    pub const fn headroom(&self) -> u128 {
+        self.headroom
+    }
+}
+
+pub(super) fn issuance(
+    asset: VerifiedEffectiveAsset,
+    issuer: [u8; 32],
+) -> Result<VerifiedIssuance, AssetEvidenceError> {
+    let metadata = asset.metadata();
+    if metadata.issuer_did != issuer {
+        return Err(AssetEvidenceError::Issuer);
+    }
+    if metadata.paused {
+        return Err(AssetEvidenceError::Paused);
+    }
+    let ceiling = if metadata.supply_cap == 0 {
+        u128::MAX
+    } else {
+        metadata.supply_cap
+    };
+    let headroom = ceiling
+        .checked_sub(metadata.total_units)
+        .ok_or(AssetEvidenceError::Supply)?;
+    let account = layerx_wire::hash::asset_issuance_account_id(&metadata.asset_id)
+        .map_err(|_| AssetEvidenceError::Encoding)?;
+    Ok(VerifiedIssuance {
+        asset,
+        account,
+        headroom,
+    })
 }
 
 pub(super) fn resolve(

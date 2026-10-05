@@ -15,6 +15,7 @@ pub use arbiter_prestate::{
 };
 pub use asset_record::{
     AssetEvidenceError, AssetRecordMetadata, AssetSourceKind, VerifiedEffectiveAsset,
+    VerifiedIssuance,
 };
 pub use caps::{verify_caps_object, CapsEvidenceError, VerifiedCaps};
 pub use execution_prestate::{

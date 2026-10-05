@@ -238,6 +238,40 @@ pub fn derive_native_effects(
     Ok(plan)
 }
 
+/// Reports whether one Transfer leg is a grant draw (Asset/6 Receive) covered by the signed grant
+/// the disclosure carries: the drawer's own account receives, the grantor's account pays, and the
+/// amount stays inside the grant's per-draw maximum and allowance. No drawer source is debited.
+#[must_use]
+pub fn native_grant_draw_covers(
+    disclosure: &Disclosure,
+    drawer: [u8; 32],
+    (from, to, asset, amount): ([u8; 32], [u8; 32], [u8; 32], u128),
+) -> bool {
+    use layerx_types::payload::ModuleId;
+    let Some(Payment::Receive {
+        from: paid_from,
+        to: paid_to,
+        asset: paid_asset,
+        amount: paid_amount,
+        grant,
+        payer_grant,
+        ..
+    }) = &disclosure.payment
+    else {
+        return false;
+    };
+    (disclosure.activity_type.module(), disclosure.activity_type.ordinal()) == (ModuleId::Asset, 6)
+        && (*paid_from, *paid_to, *paid_asset, *paid_amount) == (from, to, asset, amount)
+        && to == drawer
+        && from != drawer
+        && from == payer_grant.from
+        && to == payer_grant.recipient
+        && asset == payer_grant.asset
+        && *grant == payer_grant.id
+        && amount <= payer_grant.per_draw_maximum
+        && amount <= payer_grant.allowance
+}
+
 pub const NATIVE_REGISTRATION_PROFILE: &str = "native-registration-v1";
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
