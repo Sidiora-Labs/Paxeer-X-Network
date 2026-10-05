@@ -440,6 +440,31 @@ impl<'a> RefusalReason<'a> {
         self.0
     }
 
+    /// Returns the length of the canonical `u32 length || bytes` encoding.
+    #[must_use]
+    pub const fn encoded_len(self) -> usize {
+        4 + self.0.len()
+    }
+
+    /// Writes the canonical `u32 length || bytes` encoding into `output`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when `output` is shorter than [`Self::encoded_len`].
+    pub fn encode_into(self, output: &mut [u8]) -> Result<usize, ProgramError> {
+        let length = u32::try_from(self.0.len())
+            .map_err(|_| ProgramError::value(Field::Buffer, Reason::TooLarge))?;
+        let (prefix, rest) = output
+            .split_first_chunk_mut::<4>()
+            .ok_or_else(|| ProgramError::value(Field::Buffer, Reason::TooSmall))?;
+        let body = rest
+            .get_mut(..self.0.len())
+            .ok_or_else(|| ProgramError::value(Field::Buffer, Reason::TooSmall))?;
+        *prefix = length.to_be_bytes();
+        body.copy_from_slice(self.0);
+        Ok(self.encoded_len())
+    }
+
     /// Decodes a canonical length-prefixed refusal reason.
     ///
     /// # Errors
@@ -518,11 +543,127 @@ impl<'a> ProgramRefusal<'a> {
     pub const fn reason(self) -> RefusalReason<'a> {
         self.reason
     }
+
+    /// Returns the length of the canonical `u32 class || reason` encoding.
+    #[must_use]
+    pub const fn encoded_len(self) -> usize {
+        4 + self.reason.encoded_len()
+    }
+
+    /// Writes the canonical `u32 class || reason` encoding into `output`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when `output` is shorter than [`Self::encoded_len`].
+    pub fn encode_into(self, output: &mut [u8]) -> Result<usize, ProgramError> {
+        let (class, rest) = output
+            .split_first_chunk_mut::<4>()
+            .ok_or_else(|| ProgramError::value(Field::Buffer, Reason::TooSmall))?;
+        let written = self.reason.encode_into(rest)?;
+        *class = self.class.code().to_be_bytes();
+        Ok(4 + written)
+    }
+}
+
+/// Width of the refusing program identifier inside a failure encoding.
+const FAILURE_PROGRAM_BYTES: usize = 32;
+
+/// Host-authenticated program failure as an activity receipt carries it.
+///
+/// The runtime names the frame that refused, never the frame that observed
+/// the refusal, so `program` is the actual cause of a nested failure.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ProgramFailure<'a> {
+    program: crate::ProgramId,
+    class: RefusalClass,
+    reason: RefusalReason<'a>,
+}
+
+impl<'a> ProgramFailure<'a> {
+    /// Constructs a canonical failure naming the refusing program.
+    ///
+    /// # Errors
+    ///
+    /// Host-only refusal classes require an empty reason.
+    pub const fn new(
+        program: crate::ProgramId,
+        class: RefusalClass,
+        reason: RefusalReason<'a>,
+    ) -> Result<Self, ProgramError> {
+        if !class.is_guest_publishable() && !reason.bytes().is_empty() {
+            return Err(ProgramError::value(Field::Buffer, Reason::Malformed));
+        }
+        Ok(Self {
+            program,
+            class,
+            reason,
+        })
+    }
+
+    /// Strictly decodes `program || u32 class || u32 length || reason`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error for a reserved program, an unknown class, a reason
+    /// past its bound, a host-only class carrying a reason, truncated input
+    /// or trailing input.
+    pub fn decode(encoded: &'a [u8]) -> Result<Self, ProgramError> {
+        let (program, rest) = encoded
+            .split_first_chunk::<FAILURE_PROGRAM_BYTES>()
+            .ok_or_else(|| ProgramError::value(Field::Buffer, Reason::Malformed))?;
+        let (class, rest) = rest
+            .split_first_chunk::<4>()
+            .ok_or_else(|| ProgramError::value(Field::Buffer, Reason::Malformed))?;
+        Self::new(
+            crate::ProgramId::new(*program)?,
+            RefusalClass::decode(u32::from_be_bytes(*class))?,
+            RefusalReason::decode(rest)?,
+        )
+    }
+
+    #[must_use]
+    pub const fn program(self) -> crate::ProgramId {
+        self.program
+    }
+
+    #[must_use]
+    pub const fn class(self) -> RefusalClass {
+        self.class
+    }
+
+    #[must_use]
+    pub const fn reason(self) -> RefusalReason<'a> {
+        self.reason
+    }
+
+    /// Returns the length of the canonical failure encoding.
+    #[must_use]
+    pub const fn encoded_len(self) -> usize {
+        FAILURE_PROGRAM_BYTES + 4 + self.reason.encoded_len()
+    }
+
+    /// Writes the canonical failure encoding into `output`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when `output` is shorter than [`Self::encoded_len`].
+    pub fn encode_into(self, output: &mut [u8]) -> Result<usize, ProgramError> {
+        let (program, rest) = output
+            .split_first_chunk_mut::<FAILURE_PROGRAM_BYTES>()
+            .ok_or_else(|| ProgramError::value(Field::Buffer, Reason::TooSmall))?;
+        let (class, rest) = rest
+            .split_first_chunk_mut::<4>()
+            .ok_or_else(|| ProgramError::value(Field::Buffer, Reason::TooSmall))?;
+        let written = self.reason.encode_into(rest)?;
+        *program = self.program.bytes();
+        *class = self.class.code().to_be_bytes();
+        Ok(FAILURE_PROGRAM_BYTES + 4 + written)
+    }
 }
 
 #[cfg(test)]
 mod candidate_refusal_tests {
-    use super::{ProgramRefusal, RefusalClass, RefusalReason};
+    use super::{ProgramFailure, ProgramRefusal, RefusalClass, RefusalReason};
 
     #[test]
     fn borrowed_reason_accepts_exact_bound_and_rejects_one_past() {
@@ -549,5 +690,112 @@ mod candidate_refusal_tests {
         assert!(ProgramRefusal::decode(&[0, 0, 0, 99, 0, 0, 0, 0]).is_err());
         assert!(ProgramRefusal::decode(&[0, 0, 0, 2, 0, 0, 0, 1]).is_err());
         assert!(ProgramRefusal::decode(&[0, 0, 0, 2, 0, 0, 0, 0, 7]).is_err());
+    }
+
+    #[test]
+    fn reason_and_refusal_encodings_round_trip_and_refuse_short_buffers() {
+        let maximum = std::vec![0x5a; crate::MAX_REFUSAL_REASON_BYTES];
+        for bytes in [&[][..], &[0, 0xff, 0x80][..], &maximum[..]] {
+            let reason =
+                RefusalReason::new(bytes).unwrap_or_else(|error| panic!("reason: {error}"));
+            let mut encoded = std::vec![0xee; reason.encoded_len()];
+            assert_eq!(
+                reason
+                    .encode_into(&mut encoded)
+                    .unwrap_or_else(|error| panic!("encode: {error}")),
+                bytes.len() + 4
+            );
+            assert_eq!(
+                RefusalReason::decode(&encoded)
+                    .unwrap_or_else(|error| panic!("decode: {error}"))
+                    .bytes(),
+                bytes
+            );
+            assert!(reason
+                .encode_into(&mut std::vec![0; reason.encoded_len() - 1])
+                .is_err());
+            let refusal = ProgramRefusal::new(RefusalClass::Unauthorized, reason)
+                .unwrap_or_else(|error| panic!("refusal: {error}"));
+            let mut encoded = std::vec![0; refusal.encoded_len()];
+            assert_eq!(
+                refusal
+                    .encode_into(&mut encoded)
+                    .unwrap_or_else(|error| panic!("encode refusal: {error}")),
+                bytes.len() + 8
+            );
+            assert_eq!(
+                ProgramRefusal::decode(&encoded)
+                    .unwrap_or_else(|error| panic!("decode refusal: {error}")),
+                refusal
+            );
+            assert!(refusal
+                .encode_into(&mut std::vec![0; refusal.encoded_len() - 1])
+                .is_err());
+        }
+    }
+
+    #[test]
+    fn program_failure_names_the_refusing_program_and_decodes_strictly() {
+        let program =
+            crate::ProgramId::new([9; 32]).unwrap_or_else(|error| panic!("program: {error}"));
+        let reason = RefusalReason::new(&[0x11, 0, 0xff]).unwrap_or_else(|error| panic!("{error}"));
+        let failure = ProgramFailure::new(program, RefusalClass::Conflict, reason)
+            .unwrap_or_else(|error| panic!("failure: {error}"));
+        let mut encoded = std::vec![0; failure.encoded_len()];
+        assert_eq!(
+            failure
+                .encode_into(&mut encoded)
+                .unwrap_or_else(|error| panic!("encode: {error}")),
+            43
+        );
+        let mut expected = std::vec![9; 32];
+        expected.extend_from_slice(&[0, 0, 0, 4, 0, 0, 0, 3, 0x11, 0, 0xff]);
+        assert_eq!(encoded, expected);
+        let decoded =
+            ProgramFailure::decode(&encoded).unwrap_or_else(|error| panic!("decode: {error}"));
+        assert_eq!(decoded, failure);
+        assert_eq!(decoded.program(), program);
+        assert_eq!(decoded.class(), RefusalClass::Conflict);
+        assert_eq!(decoded.reason().bytes(), [0x11, 0, 0xff]);
+        assert!(failure.encode_into(&mut std::vec![0; 42]).is_err());
+
+        for host_only in [RefusalClass::RuntimeFault, RefusalClass::Legacy] {
+            let empty = RefusalReason::new(&[]).unwrap_or_else(|error| panic!("{error}"));
+            let fault = ProgramFailure::new(program, host_only, empty)
+                .unwrap_or_else(|error| panic!("host failure: {error}"));
+            let mut bytes = std::vec![0; fault.encoded_len()];
+            fault
+                .encode_into(&mut bytes)
+                .unwrap_or_else(|error| panic!("encode host failure: {error}"));
+            assert_eq!(
+                ProgramFailure::decode(&bytes).unwrap_or_else(|error| panic!("{error}")),
+                fault
+            );
+            assert!(ProgramFailure::new(program, host_only, reason).is_err());
+            let mut forged = expected.clone();
+            forged[32..36].copy_from_slice(&host_only.code().to_be_bytes());
+            assert!(ProgramFailure::decode(&forged).is_err());
+        }
+
+        let mut zero_program = expected.clone();
+        zero_program[..32].fill(0);
+        assert!(ProgramFailure::decode(&zero_program).is_err());
+        let mut unknown_class = expected.clone();
+        unknown_class[35] = 6;
+        assert!(ProgramFailure::decode(&unknown_class).is_err());
+        assert!(ProgramFailure::decode(&expected[..expected.len() - 1]).is_err());
+        let mut trailing = expected.clone();
+        trailing.push(0);
+        assert!(ProgramFailure::decode(&trailing).is_err());
+        assert!(ProgramFailure::decode(&expected[..35]).is_err());
+        let mut oversized = std::vec![9; 32];
+        oversized.extend_from_slice(&[0, 0, 0, 1]);
+        oversized.extend_from_slice(
+            &u32::try_from(crate::MAX_REFUSAL_REASON_BYTES + 1)
+                .unwrap_or_else(|error| panic!("{error}"))
+                .to_be_bytes(),
+        );
+        oversized.extend(std::vec![0; crate::MAX_REFUSAL_REASON_BYTES + 1]);
+        assert!(ProgramFailure::decode(&oversized).is_err());
     }
 }

@@ -251,3 +251,97 @@ fn take<const N: usize>(encoded: &[u8], offset: usize) -> Result<[u8; N], Failur
     output.copy_from_slice(bytes);
     Ok(output)
 }
+
+#[cfg(test)]
+mod sdk_parity_tests {
+    use super::{
+        FailureEncodingError, ProgramFailure, RefusalClass, RefusalReason,
+        MAX_REFUSAL_REASON_BYTES, REFUSAL_CLASS_MANIFEST,
+    };
+    use crate::storage::ProgramId;
+    use layerx_program_sdk::error as sdk;
+
+    const CLASSES: [RefusalClass; 7] = [
+        RefusalClass::Rejected,
+        RefusalClass::InvalidInput,
+        RefusalClass::Unauthorized,
+        RefusalClass::Conflict,
+        RefusalClass::NotFound,
+        RefusalClass::RuntimeFault,
+        RefusalClass::Legacy,
+    ];
+
+    #[test]
+    fn vocabulary_and_bound_match_the_sdk() {
+        assert_eq!(REFUSAL_CLASS_MANIFEST, sdk::REFUSAL_CLASS_MANIFEST);
+        assert_eq!(
+            MAX_REFUSAL_REASON_BYTES,
+            layerx_program_sdk::MAX_REFUSAL_REASON_BYTES
+        );
+        for class in CLASSES {
+            let mirrored = sdk::RefusalClass::decode(class.code())
+                .unwrap_or_else(|error| panic!("sdk class {}: {error}", class.code()));
+            assert_eq!(mirrored.code(), class.code());
+            assert_eq!(
+                mirrored.is_guest_publishable(),
+                class.is_guest_publishable()
+            );
+        }
+        for code in [0, 6, 253, 256, u32::MAX] {
+            assert_eq!(
+                RefusalClass::decode(code),
+                Err(FailureEncodingError::UnknownClass)
+            );
+            assert!(sdk::RefusalClass::decode(code).is_err());
+        }
+    }
+
+    #[test]
+    fn runtime_failures_decode_in_the_sdk_and_sdk_encodings_decode_in_the_runtime() {
+        let program = ProgramId::new([0x3c; 32]).unwrap_or_else(|error| panic!("program: {error}"));
+        let maximum = vec![0xa5; MAX_REFUSAL_REASON_BYTES];
+        for class in CLASSES {
+            let reasons: Vec<&[u8]> = if class.is_guest_publishable() {
+                vec![&[][..], &[0, 0xff, 0x80][..], &maximum[..]]
+            } else {
+                vec![&[][..]]
+            };
+            for bytes in reasons {
+                let reason =
+                    RefusalReason::new(bytes).unwrap_or_else(|error| panic!("reason: {error}"));
+                let failure = ProgramFailure::new(program, class, reason)
+                    .unwrap_or_else(|error| panic!("failure: {error}"));
+                let encoded = failure.canonical_encode();
+                let decoded = sdk::ProgramFailure::decode(&encoded)
+                    .unwrap_or_else(|error| panic!("sdk decode: {error}"));
+                assert_eq!(decoded.program().bytes(), program.bytes());
+                assert_eq!(decoded.class().code(), class.code());
+                assert_eq!(decoded.reason().bytes(), bytes);
+                assert_eq!(decoded.encoded_len(), encoded.len());
+                let mut reencoded = vec![0; decoded.encoded_len()];
+                decoded
+                    .encode_into(&mut reencoded)
+                    .unwrap_or_else(|error| panic!("sdk encode: {error}"));
+                assert_eq!(reencoded, encoded);
+                assert_eq!(
+                    ProgramFailure::canonical_decode(&reencoded)
+                        .unwrap_or_else(|error| panic!("runtime decode: {error}")),
+                    failure
+                );
+                if class.is_guest_publishable() {
+                    let refusal = sdk::ProgramRefusal::new(
+                        decoded.class(),
+                        sdk::RefusalReason::new(bytes)
+                            .unwrap_or_else(|error| panic!("sdk reason: {error}")),
+                    )
+                    .unwrap_or_else(|error| panic!("sdk refusal: {error}"));
+                    let mut guest = vec![0; refusal.encoded_len()];
+                    refusal
+                        .encode_into(&mut guest)
+                        .unwrap_or_else(|error| panic!("sdk refusal encode: {error}"));
+                    assert_eq!(guest, encoded[32..]);
+                }
+            }
+        }
+    }
+}
