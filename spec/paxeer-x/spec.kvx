@@ -30224,7 +30224,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.104.34.2]
 title = "Escrow lease funds in a program-owned account"
-status = "pending"
+status = "in_progress"
 mode = "QUALIFY"
 wave = 8
 requires = ["0.2", "104.34.1", "104.30.4"]
@@ -30255,7 +30255,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.104.34.3]
 title = "Execute sandbox work under lease-scoped capabilities"
-status = "pending"
+status = "in_progress"
 mode = "QUALIFY"
 wave = 8
 requires = ["0.2", "104.34.1"]
@@ -30286,7 +30286,7 @@ evidence_policy = "Retain credentials, operational inventories and raw qualifica
 
 [task.104.34.6]
 title = "Snapshot and restore sandbox state under the renter's authority"
-status = "pending"
+status = "in_progress"
 mode = "QUALIFY"
 wave = 8
 requires = ["0.2", "104.34.1", "104.29.3"]
