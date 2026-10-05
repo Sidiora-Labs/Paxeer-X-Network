@@ -1631,9 +1631,537 @@ def policy_graph():
     return code
 
 
+class IdentityRotation(unittest.TestCase):
+    marker = 'find "$node_data" -mindepth 1 -delete'
+
+    @classmethod
+    def setUpClass(cls):
+        if os.geteuid() != 0:
+            raise RuntimeError('identity rotation requires root and private Linux namespaces')
+        for executable in ('unshare', 'mount', 'chroot', 'bash', 'python3', 'openssl', 'flock', 'git'):
+            if shutil.which(executable) is None:
+                raise RuntimeError('missing identity rotation prerequisite: ' + executable)
+        if command(['git', '-C', str(ROOT), 'status', '--porcelain']).stdout.strip():
+            raise RuntimeError('published clean candidate required')
+        tool = 'tools/bringup/kernel-genesis.sh'
+        cls.legacy = None
+        for revision in command(['git', '-C', str(ROOT), 'log', '--format=%H', '-S', cls.marker, '--', tool]).stdout.split():
+            if cls.marker not in command(['git', '-C', str(ROOT), 'show', revision + ':' + tool]).stdout:
+                cls.legacy = revision + '^'
+                break
+        if cls.legacy is None:
+            raise RuntimeError('the revision that retired the deleting rotation is not in history')
+        cls.legacy_tool = command(['git', '-C', str(ROOT), 'show', cls.legacy + ':' + tool]).stdout
+        cls.legacy_init = command(['git', '-C', str(ROOT), 'show', cls.legacy + ':docker/kernel/init.sh']).stdout
+        if cls.marker not in cls.legacy_tool or 'identity_generation' in cls.legacy_init:
+            raise RuntimeError('the legacy rotation and init are not the pre-reconciliation production paths')
+        cls.namespace = os.readlink('/proc/self/ns/mnt')
+        cls.pid_namespace = os.readlink('/proc/self/ns/pid')
+        print('identity rotation legacy=' + command(['git', '-C', str(ROOT), 'rev-parse', cls.legacy]).stdout.strip(), flush=True)
+
+    def namespace_case(self, scenario):
+        import shlex
+        with tempfile.TemporaryDirectory(prefix='paxeer-x-identity-rotation-') as temporary:
+            scratch = Path(temporary)
+            os.chmod(scratch, 0o700)
+            root = scratch / 'root'
+            root.mkdir()
+            fixture = scratch / 'fixture'
+            fixture.mkdir(mode=0o700)
+            (fixture / 'case.py').write_text(self.case_source)
+            (fixture / 'legacy-kernel-genesis.sh').write_text(self.legacy_tool)
+            (fixture / 'legacy-init.sh').write_text(self.legacy_init)
+            script = '''set -euo pipefail
+root=ROOT_PATH
+fixture=FIXTURE_PATH
+source=SOURCE_PATH
+[ "$(readlink /proc/self/ns/mnt)" != ORIGINAL_MOUNT ]
+[ "$(readlink /proc/self/ns/pid)" != ORIGINAL_PID ]
+mount --make-rprivate /
+mount -t tmpfs -o mode=0755,nosuid tmpfs "$root"
+for directory in usr bin sbin lib lib64; do
+    [ ! -d "/$directory" ] || {
+        mkdir -p "$root/$directory"
+        mount --bind "/$directory" "$root/$directory"
+        mount -o remount,bind,ro "$root/$directory"
+    }
+done
+mount -t tmpfs -o mode=0755,nosuid tmpfs "$root/usr/local/bin"
+mount -t tmpfs -o mode=0755,nosuid tmpfs "$root/usr/local/lib"
+mkdir -p "$root/usr/local/lib/python3.12" "$root/usr/local/lib/layerx-human" "$root/opt/layerx/paxeer" \
+    "$root/proc" "$root/dev" "$root/run" "$root/data" "$root/etc/ssl" "$root/fixture" "$root/source"
+mkdir -m1777 "$root/tmp"
+bind() {
+    [ -d "$1" ] || touch "$2"
+    mount --bind "$1" "$2"
+    mount -o remount,bind,ro "$2"
+}
+[ ! -d /usr/local/lib/python3.12 ] || bind /usr/local/lib/python3.12 "$root/usr/local/lib/python3.12"
+bind "$source/platform/hosted/human" "$root/usr/local/lib/layerx-human"
+bind "$source/docker/kernel/init.sh" "$root/usr/local/bin/kernel-init"
+bind "$source/tools/bringup/kernel-genesis.sh" "$root/usr/local/bin/kernel-genesis.sh"
+bind "$source/platform/hosted/node/checkpoint-authority.py" "$root/opt/layerx/checkpoint-authority.py"
+bind "$source/platform/hosted/paxeer/evm.py" "$root/opt/layerx/paxeer/evm.py"
+bind /etc/ssl "$root/etc/ssl"
+bind "$fixture" "$root/fixture"
+bind "$source" "$root/source"
+for device in null zero urandom full; do
+    touch "$root/dev/$device"
+    mount --bind "/dev/$device" "$root/dev/$device"
+done
+ln -s /proc/self/fd "$root/dev/fd"
+ln -s /proc/self/fd/0 "$root/dev/stdin"
+ln -s /proc/self/fd/1 "$root/dev/stdout"
+ln -s /proc/self/fd/2 "$root/dev/stderr"
+mount -t proc -o nosuid,nodev,noexec proc "$root/proc"
+mount -t tmpfs -o mode=0755,nosuid tmpfs "$root/data"
+mount -t tmpfs -o mode=0755,nosuid tmpfs "$root/run"
+exec chroot "$root" /usr/bin/python3 /fixture/case.py SCENARIO
+'''
+            for name, value in (('ROOT_PATH', str(root)), ('FIXTURE_PATH', str(fixture)),
+                                ('SOURCE_PATH', str(ROOT)), ('ORIGINAL_MOUNT', self.namespace),
+                                ('ORIGINAL_PID', self.pid_namespace), ('SCENARIO', scenario)):
+                script = script.replace(name, shlex.quote(value))
+            result = subprocess.run(
+                ['unshare', '--mount', '--pid', '--fork', '--kill-child=KILL', '--net',
+                 '--ipc', '--uts', '--propagation', 'private', '--mount-proc', '/bin/bash', '-se'],
+                input=script, capture_output=True, text=True, timeout=300,
+                env={'PATH': '/usr/sbin:/usr/bin:/sbin:/bin', 'LC_ALL': 'C'})
+            self.assertEqual(os.readlink('/proc/self/ns/mnt'), self.namespace)
+            self.assertEqual(os.readlink('/proc/self/ns/pid'), self.pid_namespace)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn('identity-rotation passed ' + scenario, result.stdout)
+
+    def test_01_compatible_legacy_volume_adopts_and_stays_idempotent(self):
+        self.namespace_case('compatible')
+
+    def test_02_plan_inventories_bindings_and_dispositions(self):
+        self.namespace_case('plan')
+
+    def test_03_inferred_old_genesis_bindings_refuse_until_authorized_migration(self):
+        self.namespace_case('inferred')
+
+    def test_04_rotation_retains_generation_and_migration_rebinds(self):
+        self.namespace_case('rotation')
+
+    def test_05_interrupted_rotation_and_migration_resume_to_one_generation(self):
+        self.namespace_case('interrupted')
+
+    def test_06_inconsistent_bindings_refuse_rotation_and_migration(self):
+        self.namespace_case('inconsistent')
+
+    case_source = r'''
+import hashlib
+import json
+import os
+from pathlib import Path
+import re
+import shutil
+import stat
+import subprocess
+import sys
+
+os.umask(0o077)
+scenario = sys.argv[1]
+ENV = {'PATH': '/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin', 'LC_ALL': 'C', 'LAYERX_NODE_NETWORK_ID': '7654321',
+       'LAYERX_KERNEL_PROFILE': 'full', 'PYTHONDONTWRITEBYTECODE': '1'}
+INIT = Path('/usr/local/bin/kernel-init').read_text()
+TOOL = '/usr/local/bin/kernel-genesis.sh'
+LEGACY_INIT = Path('/fixture/legacy-init.sh').read_text()
+LEGACY_TOOL = '/fixture/legacy-kernel-genesis.sh'
+MATERIAL = '/usr/local/lib/layerx-human/material.py'
+layerx = Path('/data/layerx')
+keys = layerx / 'keys'
+genesis = layerx / 'genesis'
+node = layerx / 'node'
+registry = layerx / 'registry-material'
+identity = layerx / 'identity'
+rotation_journal = identity / 'rotation.json'
+migration_journal = identity / 'migration.json'
+human = Path('/data/human-state')
+history = human / 'trust-history'
+projection = human / 'genesis-binding'
+material = human / 'material'
+DURABLE = [human / name for name in ('components', 'identity', 'security', 'movement', 'agent', 'authority', 'kms')]
+KEYS = [keys / 'sequencer.key', keys / 'checkpoint-authority' / 'key.pem',
+        keys / 'checkpoint-submitter' / 'deposit-authority.pem', keys / 'publication' / 'recipient.key']
+
+
+def require(condition, message):
+    if not condition:
+        raise SystemExit('identity-rotation ' + scenario + ': ' + message)
+
+
+def run(argv, expect=0):
+    result = subprocess.run(argv, stdin=subprocess.DEVNULL, capture_output=True, text=True, env=ENV, timeout=120)
+    if expect is not None:
+        require((result.returncode == 0) == (expect == 0),
+                ' '.join(argv[:2]) + ' exit ' + str(result.returncode) + ': ' + result.stdout + result.stderr)
+    return result
+
+
+def extract(source, *names):
+    text = ''
+    for name in names:
+        found = (re.search('^' + name + r'\(\) \{ [^\n]*\}\n', source, re.M)
+                 or re.search('^' + name + r'\(\) \{\n.*?^\}\n', source, re.M | re.S))
+        require(found is not None, 'production function absent: ' + name)
+        text += found.group(0)
+    return text
+
+
+PRELUDE = """set -euo pipefail
+umask 077
+layerx=/data/layerx
+node_data=$layerx/node
+keys=$layerx/keys
+genesis=$layerx/genesis
+human_state=/data/human-state
+trust_history_file=$human_state/trust-history
+run=/run/layerx
+kernel_registry_material=$layerx/registry-material
+network_id=$LAYERX_NODE_NETWORK_ID
+"""
+
+
+def init(source, body, expect=0):
+    names = ['log', 'missing', 'fresh', 'kernel_registry_identity', 'human_genesis_project']
+    if 'identity_generation() {' in source:
+        names.insert(0, 'identity_generation')
+    return run(['bash', '-c', PRELUDE + extract(source, *names) + body], expect)
+
+
+def tool(script, *arguments, expect=0):
+    return run(['bash', script, *arguments], expect)
+
+
+def gate(expect=0):
+    return run(['/usr/local/bin/kernel-init', '--identity-generation', 'gate'], expect)
+
+
+def bind(source=INIT, expect=0):
+    return init(source, 'kernel_registry_identity\nhuman_genesis_project\n', expect)
+
+
+def restart():
+    if os.path.lexists('/run/layerx'):
+        shutil.rmtree('/run/layerx')
+    run(['install', '-d', '-o', '4020', '-g', '4020', '-m', '0750', '/run/layerx', '/run/layerx/node'])
+
+
+def layout():
+    run(['bash', '-c', """set -euo pipefail
+install -d -o 0 -g 4020 -m 2775 /data/layerx /data/layerx/settlement
+install -d -o 0 -g 4020 -m 0750 /data/layerx/genesis /data/layerx/keys /data/layerx/keys/tokens
+chmod g-s /data/layerx/genesis
+install -d -o 0 -g 0 -m 0700 /data/layerx/keys/checkpoint-authority /data/layerx/keys/publication /data/layerx/keys/human-authority
+install -d -o 4021 -g 4020 -m 0750 /data/layerx/keys/checkpoint-submitter
+install -d -o 4020 -g 4020 -m 2770 /data/layerx/guarantor-submitter
+install -d -o 4020 -g 4020 -m 0750 /data/layerx/node
+install -d -o 4021 -g 4020 -m 0700 /data/layerx/core /data/layerx/agent-boundary /data/layerx/mirror
+install -d -o 0 -g 4020 -m 0750 /data/human-state
+install -d -o 4020 -g 4020 -m 0700 /data/human-state/components /data/human-state/identity /data/human-state/security /data/human-state/movement
+install -d -o 4021 -g 4020 -m 0700 /data/human-state/agent /data/human-state/authority
+install -d -o 4026 -g 4020 -m 0700 /data/human-state/kms
+"""])
+    init(INIT, 'fresh "$keys/treasury.key" 4020:4020 0400 openssl rand -hex 32\n'
+               'fresh "$keys/tokens/program-token" 4020:4020 0440 openssl rand -hex 32\n')
+    restart()
+
+
+def seed():
+    for directory, owner in ((human / 'components', 4020), (human / 'identity', 4020), (human / 'security', 4020),
+                             (human / 'movement', 4020), (human / 'agent', 4021), (human / 'authority', 4021),
+                             (human / 'kms', 4026)):
+        path = directory / 'state.db'
+        path.write_bytes(os.urandom(4096))
+        os.chown(path, owner, 4020)
+    (human / 'components' / 'custody').mkdir(mode=0o700)
+    (human / 'components' / 'custody' / 'balances.journal').write_bytes(os.urandom(2048))
+    (node / 'ledger').mkdir(mode=0o750)
+    (node / 'ledger' / '000001.log').write_bytes(os.urandom(8192))
+    (layerx / 'settlement' / 'checkpoint-settlement.json').write_bytes(os.urandom(512))
+
+
+GENESIS = extract(Path(TOOL).read_text(), 'hex_public', 'recipient_address', 'public_values', 'asset_id',
+                  'genesis_metadata', 'genesis_ids')
+
+
+def make_genesis():
+    run(['bash', '-c', PRELUDE + GENESIS + """treasury_public=$(hex_public "$(tr -d ' \\r\\n' <"$keys/treasury.key")")
+public_values
+records=()
+for record in PAX:6 SID:18 USDC:6 USDL:6; do
+    records+=("$(asset_id "${record%%:*}"):$record")
+done
+genesis_metadata "${records[@]}"
+genesis_ids "$(asset_id PAX)" "$replica_id"
+"""])
+
+
+def role_material():
+    run(['bash', '-c', """set -euo pipefail
+umask 077
+work=/data/human-state/material.new
+install -d -o 0 -g 0 -m 0700 "$work" "$work/human" "$work/human/identity"
+install -o 0 -g 0 -m 0600 /data/human-state/genesis-binding/replica-id "$work/receipt-authority-replica-id"
+python3 MATERIAL --genesis-binding /data/human-state/genesis-binding >"$work/genesis-binding"
+openssl rand -hex 32 >"$work/human/identity/custody-secret"
+python3 MATERIAL --seal-material "$work"
+mv "$work" /data/human-state/material
+""".replace('MATERIAL', MATERIAL)])
+
+
+def populate(legacy):
+    layout()
+    seed()
+    tool(LEGACY_TOOL if legacy else TOOL, 'keys')
+    make_genesis()
+    bind(LEGACY_INIT if legacy else INIT)
+    role_material()
+
+
+def digest(path):
+    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+
+
+def snap(root='/data', exclude=()):
+    result = {}
+    for directory, names, files in os.walk(root):
+        names[:] = [name for name in names if os.path.join(directory, name) not in exclude]
+        for name in sorted(names + files):
+            path = os.path.join(directory, name)
+            if path in exclude:
+                continue
+            info = os.lstat(path)
+            content = (os.readlink(path) if stat.S_ISLNK(info.st_mode)
+                       else digest(path) if stat.S_ISREG(info.st_mode) else None)
+            result[path] = (info.st_ino, info.st_uid, info.st_gid, info.st_mode, content)
+    return result
+
+
+def contents(root):
+    return {path[len(str(root)):]: value[1:] for path, value in snap(str(root)).items()}
+
+
+def plan():
+    result = tool(TOOL, 'plan')
+    lines = result.stdout.splitlines()
+    require(len(lines) == 2 and lines[1].startswith('plan_sha256='), 'plan output shape: ' + result.stdout)
+    sha = lines[1][len('plan_sha256='):]
+    require(hashlib.sha256(lines[0].encode()).hexdigest() == sha, 'plan_sha256 is not the digest of the plan')
+    return json.loads(lines[0]), sha
+
+
+def record():
+    return json.loads((identity / 'current.json').read_bytes())
+
+
+def registry_generation():
+    return json.loads((Path(os.path.realpath(registry / 'current')) / 'generation.json').read_bytes())['generation']
+
+
+def refused(result, *fragments):
+    for fragment in fragments:
+        require(fragment in result.stderr, 'refusal lacks ' + repr(fragment) + ': ' + result.stderr)
+
+
+def coherent(expected):
+    restart()
+    bind()
+    gate()
+    require(record()['generation'] == registry_generation() == expected, 'one coherent identity generation')
+    run(['python3', MATERIAL, '--verify-material', str(material)])
+    require(run(['python3', MATERIAL, '--genesis-binding', str(projection)]).stdout == (material / 'genesis-binding').read_text(),
+            'the role material is bound to the projected genesis')
+    require((material / 'receipt-authority-replica-id').read_bytes() == (genesis / 'replica-id').read_bytes(),
+            'the role material replica id is the genesis replica id')
+    value, _ = plan()
+    require(value['verdict'] == 'compatible', 'post-migration plan verdict ' + value['verdict'])
+    again = snap()
+    restart()
+    bind()
+    gate()
+    require(snap() == again, 'a compatible restart is idempotent')
+
+
+if scenario == 'compatible':
+    populate(True)
+    require(not os.path.lexists(identity), 'the legacy init records no identity generation')
+    before = snap()
+    gate()
+    require(record()['generation'] == registry_generation(), 'the recorded generation is the registry generation')
+    recorded = snap(str(identity))
+    restart()
+    bind()
+    gate()
+    require(snap(exclude={str(identity)}) == before, 'a compatible restart changed persisted state')
+    require(snap(str(identity)) == recorded, 'the identity record is idempotent')
+    refused(tool(TOOL, 'keys', expect=1), 'exists; pass rotate')
+    value, _ = plan()
+    require(value['verdict'] == 'compatible', 'legacy compatible verdict ' + value['verdict'])
+    require(snap(exclude={str(identity)}) == before and snap(str(identity)) == recorded, 'plan is read-only')
+elif scenario == 'plan':
+    populate(False)
+    before = snap()
+    value, sha = plan()
+    require(value['schema'] == 'layerx.kernel.identity-plan.v1' and value['verdict'] == 'compatible', 'plan verdict')
+    require(value['recorded']['generation'] == value['genesis']['generation'] == registry_generation(), 'plan generations')
+    for name, path in (('trust-history', history), ('registry-material', registry),
+                       ('receipt-authority-replica', projection), ('role-material', material)):
+        entry = value['bindings'][name]
+        require(entry['path'] == str(path) and entry['state'] == 'bound' and entry['compatible'], 'plan binding ' + name)
+    require(value['bindings']['trust-history']['claims']['history_sha256'] == digest(history), 'trust history inventory')
+    require(value['bindings']['authority-graph']['state'] == 'absent', 'absent authority graph')
+    require(set(value['durable']) == {str(path) for path in DURABLE}, 'durable inventory')
+    require(value['durable'][str(human / 'components')]['entries'] == 4
+            and value['durable'][str(human / 'components')]['bytes'] == 6144, 'durable summary')
+    rotation = value['disposition']['rotation']
+    for path in (*KEYS, genesis / 'metadata.lxgb', genesis / 'replica-id', registry):
+        require(str(path) in rotation['retire'], 'rotation retires ' + str(path))
+    require(str(node) + '/*' in rotation['retire'], 'rotation retires the node data')
+    for path in (keys / 'treasury.key', history, projection, material, *DURABLE, layerx / 'settlement'):
+        require(str(path) in rotation['retain'], 'rotation retains ' + str(path))
+    require(value['disposition']['migration']['archive'] == [] and value['disposition']['migration']['rebind'] == [],
+            'a compatible plan migrates nothing')
+    require(plan()[1] == sha and snap() == before, 'plan is stable and read-only')
+elif scenario == 'inferred':
+    populate(True)
+    old = {path: Path(path).read_bytes() for path in (history, projection / 'replica-id', material / 'receipt-authority-replica-id')}
+    secret = (material / 'human' / 'identity' / 'custody-secret').read_bytes()
+    old_generation = registry_generation()
+    old_material = contents(material)
+    durable = {path: snap(str(path)) for path in DURABLE}
+    tool(LEGACY_TOOL, 'keys', 'rotate')
+    require(os.listdir(node) == [], 'the legacy rotation deletes the node data')
+    require(all(os.path.lexists(path) for path in (history, projection, material, registry)),
+            'the legacy rotation leaves the old Human bindings in place')
+    make_genesis()
+    restart()
+    refused(bind(LEGACY_INIT, expect=1), 'differs')
+    refused(gate(expect=1), 'identity generation refused (inferred-mismatch)', 'inferred old-genesis binding: trust-history')
+    before = snap()
+    refused(bind(expect=1), 'inferred-mismatch')
+    refused(init(INIT, 'human_genesis_project\nidentity_generation gate\n', expect=1), 'retained projection bytes differ')
+    refused(tool(TOOL, 'keys', 'rotate', expect=1), 'rotation preflight refused (inferred-mismatch)')
+    value, sha = plan()
+    require(value['verdict'] == 'inferred-mismatch', 'inferred verdict ' + value['verdict'])
+    require(value['disposition']['migration']['archive'] == [str(history), str(registry), str(projection)]
+            and value['disposition']['migration']['rebind'] == [str(material)], 'inferred migration disposition')
+    refused(tool(TOOL, 'migrate', '0' * 64, expect=1), 'is not the current plan')
+    require(snap() == before, 'refusals change nothing')
+    tool(TOOL, 'migrate', sha)
+    archive = identity / 'generations' / old_generation
+    files = archive / 'files'
+    require((files / 'human-state' / 'trust-history').read_bytes() == old[history], 'old trust history retained byte for byte')
+    require((files / 'human-state' / 'genesis-binding' / 'replica-id').read_bytes() == old[projection / 'replica-id'], 'old projection retained')
+    require(contents(files / 'human-state' / 'material') == old_material, 'old role material retained')
+    require(json.loads((Path(os.path.realpath(files / 'layerx' / 'registry-material' / 'current')) / 'generation.json')
+                       .read_bytes())['generation'] == old_generation, 'old registry generation retained')
+    require((archive / ('migration-' + value['genesis']['generation'] + '.json')).exists(), 'migration record')
+    require(not os.path.lexists(migration_journal), 'migration journal closed')
+    coherent(value['genesis']['generation'])
+    require(history.read_bytes() != old[history], 'the new trust history is produced from the new genesis')
+    require((material / 'human' / 'identity' / 'custody-secret').read_bytes() == secret, 'custody material preserved')
+    require({path: snap(str(path)) for path in DURABLE} == durable, 'durable Human state untouched')
+    require(old_generation in plan()[0]['retained_generations'], 'retained generation listed')
+elif scenario == 'rotation':
+    populate(False)
+    old_generation = record()['generation']
+    old_keys = {path: path.read_bytes() for path in KEYS}
+    old_genesis = (genesis / 'metadata.lxgb').read_bytes()
+    old_history = history.read_bytes()
+    old_node = contents(node)
+    durable = {path: snap(str(path)) for path in DURABLE}
+    settlement = snap(str(layerx / 'settlement'))
+    tool(TOOL, 'keys', 'rotate')
+    archive = identity / 'generations' / old_generation
+    files = archive / 'files'
+    require(not os.path.lexists(rotation_journal), 'rotation journal closed')
+    require(json.loads((archive / 'rotation.json').read_bytes())['phase'] == 'complete', 'rotation record complete')
+    for path in KEYS:
+        require((files / path.relative_to('/data')).read_bytes() == old_keys[path], 'retired key retained: ' + str(path))
+        require(path.read_bytes() != old_keys[path], 'rotated key replaced: ' + str(path))
+    require((files / 'layerx' / 'genesis' / 'metadata.lxgb').read_bytes() == old_genesis, 'retired genesis retained')
+    require(os.listdir(node) == [] and contents(files / 'layerx' / 'node') == old_node, 'node data retained byte for byte')
+    require(not os.path.lexists(registry) and os.path.lexists(files / 'layerx' / 'registry-material'), 'registry retired')
+    require(history.read_bytes() == old_history and projection.is_dir() and material.is_dir(), 'Human bindings kept')
+    refused(gate(expect=1), 'identity generation refused (genesis-incomplete)')
+    make_genesis()
+    restart()
+    refused(gate(expect=1), 'identity generation refused (migration-required)', old_generation)
+    refused(bind(expect=1), 'migration-required')
+    value, sha = plan()
+    require(value['verdict'] == 'migration-required', 'rotation verdict ' + value['verdict'])
+    require(value['disposition']['migration']['archive'] == [str(history), str(projection)]
+            and value['disposition']['migration']['rebind'] == [str(material)], 'rotation migration disposition')
+    tool(TOOL, 'migrate', sha)
+    require((files / 'human-state' / 'trust-history').read_bytes() == old_history, 'trust history retained')
+    coherent(value['genesis']['generation'])
+    refused(tool(TOOL, 'migrate', sha, expect=1), 'is not the current plan')
+    refused(tool(TOOL, 'migrate', plan()[1], expect=1), 'no migration applies (compatible)')
+    require({path: snap(str(path)) for path in DURABLE} == durable, 'durable Human state untouched')
+    require(snap(str(layerx / 'settlement')) == settlement, 'settlement state untouched')
+elif scenario == 'interrupted':
+    populate(False)
+    old_generation = record()['generation']
+    old_sequencer = (keys / 'sequencer.key').read_bytes()
+    durable = {path: snap(str(path)) for path in DURABLE}
+    busy = node / 'zz-mount'
+    busy.mkdir()
+    run(['mount', '-t', 'tmpfs', '-o', 'mode=0700', 'tmpfs', str(busy)])
+    tool(TOOL, 'keys', 'rotate', expect=1)
+    require(json.loads(rotation_journal.read_bytes())['phase'] == 'retiring', 'interrupted rotation journal')
+    require(not os.path.lexists(keys / 'sequencer.key'), 'the interruption fell inside the retirement')
+    refused(gate(expect=1), 'identity generation refused (rotation-in-progress)')
+    refused(bind(expect=1), 'rotation-in-progress')
+    refused(tool(TOOL, 'keys', expect=1), 'identity rotation is pending')
+    refused(tool(TOOL, 'genesis', expect=1), 'identity rotation is pending')
+    require(plan()[0]['verdict'] == 'rotation-in-progress', 'plan names the pending rotation')
+    run(['umount', str(busy)])
+    tool(TOOL, 'keys', 'rotate')
+    archive = identity / 'generations' / old_generation
+    require(not os.path.lexists(rotation_journal), 'resumed rotation closed')
+    require((archive / 'files' / 'layerx' / 'keys' / 'sequencer.key').read_bytes() == old_sequencer, 'one retained generation')
+    require((archive / 'files' / 'layerx' / 'node' / 'zz-mount').is_dir() and os.listdir(node) == [], 'node data retired once')
+    for entry in json.loads((archive / 'manifest.json').read_bytes())['entries']:
+        require(os.path.lexists(entry['target']) and (Path(entry['source']).is_relative_to(keys) or not os.path.lexists(entry['source'])),
+                'manifest entry ' + entry['source'])
+    require(sorted(os.listdir(identity / 'generations')) == [old_generation], 'one retained generation directory')
+    make_genesis()
+    restart()
+    value, sha = plan()
+    require(value['verdict'] == 'migration-required', 'post-rotation verdict ' + value['verdict'])
+    run(['mount', '--bind', str(projection), str(projection)])
+    tool(TOOL, 'migrate', sha, expect=1)
+    require(os.path.lexists(migration_journal) and not os.path.lexists(history), 'interrupted migration journal')
+    refused(gate(expect=1), 'identity generation refused (migration-in-progress)')
+    refused(tool(TOOL, 'keys', 'rotate', expect=1), 'identity migration is pending')
+    refused(tool(TOOL, 'migrate', 'f' * 64, expect=1), 'pending migration was authorized by plan ' + sha)
+    run(['umount', str(projection)])
+    tool(TOOL, 'migrate', sha)
+    coherent(value['genesis']['generation'])
+    require({path: snap(str(path)) for path in DURABLE} == durable, 'durable Human state untouched')
+elif scenario == 'inconsistent':
+    populate(False)
+    (projection / 'replica-id').write_bytes(b'0' * 64 + b'\n')
+    before = snap()
+    value, sha = plan()
+    require(value['verdict'] == 'inconsistent', 'tampered verdict ' + value['verdict'])
+    require(any('receipt-authority-replica replica_sha256' in line for line in value['refusals']), 'precise inconsistency')
+    refused(gate(expect=1), 'identity generation refused (inconsistent)', 'receipt-authority-replica replica_sha256')
+    refused(tool(TOOL, 'keys', 'rotate', expect=1), 'rotation preflight refused (inconsistent)')
+    refused(tool(TOOL, 'migrate', sha, expect=1), 'no migration applies (inconsistent)')
+    require(snap() == before, 'refusals change nothing')
+else:
+    raise SystemExit('unknown identity-rotation scenario ' + scenario)
+print('identity-rotation passed ' + scenario, flush=True)
+'''
+
+
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--case', required=True, choices=['role-directories', 'role-directory-prerequisite', 'export-recovery', 'fixture-foundation', 'kms-service-prerequisite', 'registry-material', 'policy-graph'])
+    parser.add_argument('--case', required=True, choices=['role-directories', 'role-directory-prerequisite', 'export-recovery', 'fixture-foundation', 'kms-service-prerequisite', 'registry-material', 'policy-graph', 'identity-rotation'])
     arguments = parser.parse_args()
     os.umask(0o077)
     if arguments.case == 'policy-graph':
@@ -1653,6 +2181,8 @@ def main():
         suite = unittest.defaultTestLoader.loadTestsFromTestCase(RoleDirectories)
     elif arguments.case == 'role-directory-prerequisite':
         suite = unittest.defaultTestLoader.loadTestsFromTestCase(DirectoryPrerequisite)
+    elif arguments.case == 'identity-rotation':
+        suite = unittest.defaultTestLoader.loadTestsFromTestCase(IdentityRotation)
     else:
         suite = unittest.defaultTestLoader.loadTestsFromTestCase(ExportRecovery)
     result = unittest.TextTestRunner(verbosity=2).run(suite)

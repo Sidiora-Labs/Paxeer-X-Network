@@ -9,6 +9,20 @@
 #       deposit authority key and the publication recipient key under
 #       /data/layerx/keys and prints their public values, which the custody
 #       governance proposals of tools/bringup/custody-governance.sh carry.
+#       rotate first runs the identity preflight of kernel-init
+#       --identity-generation and retires the kernel keys, the genesis outputs,
+#       the registry material and the node data into
+#       /data/layerx/identity/generations/<generation>; an interrupted rotate
+#       resumes when run again.
+#   kernel-genesis.sh plan
+#       the compatibility plan of the persisted trust history, receipt-authority
+#       replica bindings and Human role material against the current genesis,
+#       and its plan_sha256.
+#   kernel-genesis.sh migrate PLAN_SHA256
+#       the migration that plan authorizes: the old bindings are retained beside
+#       the retired generation, the role material is rebound to the new genesis
+#       and the new identity generation is recorded; durable Human state is
+#       never touched.
 #   kernel-genesis.sh genesis COMET=HOST SID=POINTER USDC=POINTER USDL=POINTER [SYMBOL=POINTER...]
 #       step C, once governance has set the custody asset map and the deposit
 #       root authority: reads PAX from nativeAssetId() and every pointer from
@@ -27,8 +41,8 @@
 #       sha256("layerx-asset:125:<SYMBOL>"); the step B proposer chooses the id
 #       and this step refuses a registered id that differs from it.
 #
-# Nothing secret is printed. rotate discards the kernel keys, the genesis
-# outputs and the node data.
+# Nothing secret is printed. rotate retires the kernel keys, the genesis
+# outputs and the node data; nothing is deleted.
 set -euo pipefail
 umask 077
 
@@ -43,6 +57,10 @@ deposit_key=$keys/checkpoint-submitter/deposit-authority.pem
 key_files=("$keys/sequencer.key" "$keys/checkpoint-authority/key.pem" "$deposit_key" "$keys/publication/recipient.key")
 genesis_files=("$keys/publication/binding-policy.json" "$keys/publication/authorization.json"
 	"$genesis/metadata.lxgb" "$genesis/custody.profile" "$genesis/custody.registry" "$genesis/custody-assets.json" "$genesis/comet-url" "$genesis/asset-id" "$genesis/replica-id")
+kernel_init=/usr/local/bin/kernel-init
+retire_files=("${key_files[@]}" "$keys/checkpoint-authority/key.pem.lock" "${genesis_files[@]}"
+	"$layerx/guarantor-submitter/checkpoint-authority.pem" "$layerx/registry-material")
+rotation=$layerx/identity/rotation.json
 
 fail() {
 	printf 'kernel-genesis: %s\n' "$*" >&2
@@ -59,6 +77,11 @@ hex_public() {
 pem_public() { openssl pkey -in "$1" -pubout -outform DER | tail -c 32 | od -An -tx1 | tr -d ' \n'; }
 recipient_address() { python3 /opt/layerx/paxeer/evm.py address "$keys/publication/recipient.key" | tr 'A-F' 'a-f'; }
 
+identity() { "$kernel_init" --identity-generation "$@"; }
+rotation_pending() {
+	[ ! -e "$rotation" ] || fail "an identity rotation is pending at $rotation; run kernel-genesis.sh keys rotate to resume it"
+}
+
 treasury_public=$(hex_public "$(tr -d ' \r\n' <"$keys/treasury.key")")
 
 # public_values: the step A outputs, read back from the key files.
@@ -72,12 +95,11 @@ public_values() {
 keys_step() {
 	local file key
 	if [ "${1:-}" = rotate ]; then
-		rm -f "${key_files[@]}" "${genesis_files[@]}" "$keys/checkpoint-authority/key.pem.lock" \
-			"$layerx/guarantor-submitter/checkpoint-authority.pem"
-		find "$node_data" -mindepth 1 -delete 2>/dev/null || true
+		identity retire "${retire_files[@]}" || fail "identity rotation refused; see kernel-genesis.sh plan"
 	elif [ -n "${1:-}" ]; then
 		fail "usage: kernel-genesis.sh keys [rotate]"
 	else
+		rotation_pending
 		for file in "${key_files[@]}"; do
 			[ ! -e "$file" ] || fail "$file exists; pass rotate to replace the kernel keys"
 		done
@@ -98,6 +120,7 @@ keys_step() {
 	done
 	printf '%s' "$key" >"$keys/publication/recipient.key"
 	unset key
+	identity rotated "${key_files[@]}" || fail "identity rotation record refused"
 	public_values
 	echo "network_id=$network_id"
 	echo "sequencer_public_key=$sequencer_public"
@@ -152,10 +175,53 @@ asset_id() {
 	printf 'layerx-asset:125:%s' "$1" | sha256sum | cut -d' ' -f1
 }
 
+# The LXGB v2 metadata: the record layout bootstrap.sh writes for one asset,
+# one record per mapped asset, issued by the treasury identity, then the zero
+# fee schedule that bootstrap's --withdrawal-fee and --module-fees complete.
+genesis_metadata() {
+	python3 - "$genesis/metadata.lxgb" "$treasury_public" "$@" <<'PY'
+import hashlib
+import os
+import sys
+
+output, issuer_public = sys.argv[1], bytes.fromhex(sys.argv[2])
+did = ('did:layerx:' + issuer_public.hex()).encode()
+issuer = hashlib.sha256(b'LXP/v1/did-id\0' + len(did).to_bytes(2, 'big') + did).digest()
+body = b''
+for entry in sys.argv[3:]:
+    asset, symbol, decimals = entry.split(':')
+    asset, symbol, decimals = bytes.fromhex(asset), symbol.encode('ascii'), int(decimals)
+    if not 0 < len(symbol) <= 16 or not 0 <= decimals <= 38:
+        raise SystemExit('asset symbol must be 1 to 16 ASCII bytes and decimals 0..38')
+    reference = bytes(12) + asset[12:]
+    record = (b'\0\x03' + asset + len(symbol).to_bytes(1, 'big') + symbol + decimals.to_bytes(1, 'big')
+              + b'\x02' + len(reference).to_bytes(2, 'big') + reference
+              + b'\0\x0dCustody token' + bytes(16) + issuer + b'\x02' + bytes(16) + os.urandom(32))
+    body += len(record).to_bytes(2, 'big') + record
+schedule = b'\0\x02' + bytes(80) + (10000).to_bytes(4, 'big') + b'\x0a' + bytes(160)
+metadata = (len(sys.argv) - 3).to_bytes(2, 'big') + body + len(schedule).to_bytes(2, 'big') + schedule
+with os.fdopen(os.open(output, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600), 'wb') as handle:
+    handle.write(metadata)
+    handle.flush()
+    os.fsync(handle.fileno())
+PY
+	chown 4020:4020 "$genesis/metadata.lxgb"
+}
+
+# genesis_ids <asset-id> <replica-id>: the ids the init hands layerxd; written
+# last, so the init starts on a complete set.
+genesis_ids() {
+	printf '%s\n' "$1" >"$genesis/asset-id"
+	printf '%s\n' "$2" >"$genesis/replica-id"
+	chown 0:0 "$genesis/asset-id" "$genesis/replica-id"
+	chmod 0444 "$genesis/asset-id" "$genesis/replica-id"
+}
+
 genesis_step() {
 	local argument file symbol pointer id onchain decimals pax manifest record comet="" height
 	local -A pointers=()
 	local -a records=() approved_records=()
+	rotation_pending
 	for argument in "$@"; do
 		if [[ $argument =~ ^COMET=([a-z0-9.-]+)$ ]]; then
 			comet=https://${BASH_REMATCH[1]}/comet
@@ -275,41 +341,8 @@ with os.fdopen(os.open(output, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOL
     handle.write('\n')
 PY
 
-	# The LXGB v2 metadata: the record layout bootstrap.sh writes for one asset,
-	# one record per mapped asset, issued by the treasury identity, then the zero
-	# fee schedule that bootstrap's --withdrawal-fee and --module-fees complete.
-	python3 - "$genesis/metadata.lxgb" "$treasury_public" "${records[@]}" <<'PY'
-import hashlib
-import os
-import sys
-
-output, issuer_public = sys.argv[1], bytes.fromhex(sys.argv[2])
-did = ('did:layerx:' + issuer_public.hex()).encode()
-issuer = hashlib.sha256(b'LXP/v1/did-id\0' + len(did).to_bytes(2, 'big') + did).digest()
-body = b''
-for entry in sys.argv[3:]:
-    asset, symbol, decimals = entry.split(':')
-    asset, symbol, decimals = bytes.fromhex(asset), symbol.encode('ascii'), int(decimals)
-    if not 0 < len(symbol) <= 16 or not 0 <= decimals <= 38:
-        raise SystemExit('asset symbol must be 1 to 16 ASCII bytes and decimals 0..38')
-    reference = bytes(12) + asset[12:]
-    record = (b'\0\x03' + asset + len(symbol).to_bytes(1, 'big') + symbol + decimals.to_bytes(1, 'big')
-              + b'\x02' + len(reference).to_bytes(2, 'big') + reference
-              + b'\0\x0dCustody token' + bytes(16) + issuer + b'\x02' + bytes(16) + os.urandom(32))
-    body += len(record).to_bytes(2, 'big') + record
-schedule = b'\0\x02' + bytes(80) + (10000).to_bytes(4, 'big') + b'\x0a' + bytes(160)
-metadata = (len(sys.argv) - 3).to_bytes(2, 'big') + body + len(schedule).to_bytes(2, 'big') + schedule
-with os.fdopen(os.open(output, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600), 'wb') as handle:
-    handle.write(metadata)
-    handle.flush()
-    os.fsync(handle.fileno())
-PY
-	chown 4020:4020 "$genesis/metadata.lxgb"
-
-	# The ids the init hands layerxd; written last, so the init starts on a complete set.
-	printf '%s\n' "$pax" >"$genesis/asset-id"
-	printf '%s\n' "$replica_id" >"$genesis/replica-id"
-	chmod 0444 "$genesis/asset-id" "$genesis/replica-id"
+	genesis_metadata "${records[@]}"
+	genesis_ids "$pax" "$replica_id"
 
 	manifest=$node_data/genesis/genesis.manifest
 	for _ in $(seq 120); do
@@ -336,5 +369,13 @@ PY
 case "${1:-}" in
 keys) keys_step "${@:2}" ;;
 genesis) genesis_step "${@:2}" ;;
-*) fail "usage: kernel-genesis.sh keys [rotate] | genesis COMET=HOST SID=POINTER USDC=POINTER USDL=POINTER [SYMBOL=POINTER...]" ;;
+plan)
+	[ "$#" = 1 ] || fail "usage: kernel-genesis.sh plan"
+	identity plan "${retire_files[@]}"
+	;;
+migrate)
+	[ "$#" = 2 ] && [[ $2 =~ ^[0-9a-f]{64}$ ]] || fail "usage: kernel-genesis.sh migrate PLAN_SHA256"
+	identity migrate "$2" "${retire_files[@]}" || fail "identity migration refused"
+	;;
+*) fail "usage: kernel-genesis.sh keys [rotate] | genesis COMET=HOST SID=POINTER USDC=POINTER USDL=POINTER [SYMBOL=POINTER...] | plan | migrate PLAN_SHA256" ;;
 esac

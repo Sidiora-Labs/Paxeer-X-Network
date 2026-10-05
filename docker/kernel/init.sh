@@ -75,6 +75,594 @@ export LAYERX_NODE_ANCHOR_PRECOMPILE=0x0000000000000000000000000000000000001014
 
 log() { printf 'kernel-init: %s\n' "$*" >&2; }
 
+# identity_generation <mode> [arguments...]: the identity generation of the
+# volume's persisted bindings. The generation is the kernel registry
+# generation of the genesis (network, sequencer key, replica id, asset id,
+# genesis metadata), recorded in $layerx/identity/current.json once the
+# trust history, the receipt-authority replica bindings and the Human role
+# material agree with it. plan prints the compatibility plan and its sha256;
+# gate refuses Human consumers whose persisted bindings belong to another
+# generation and records the generation of a compatible volume; retire and
+# rotated are the journaled halves of kernel-genesis.sh keys rotate, which
+# moves the kernel identity material into $layerx/identity/generations/<id>;
+# migrate completes the migration the plan sha256 authorizes, retaining the
+# old bindings beside the retired generation and rebinding the role material.
+identity_generation() {
+	python3 - "$layerx" "$keys" "$genesis" "$node_data" "$human_state" "$trust_history_file" "$LAYERX_NODE_NETWORK_ID" "$@" <<'PY_IDENTITY'
+import contextlib
+import fcntl
+import hashlib
+import json
+import os
+from pathlib import Path
+import re
+import shutil
+import stat
+import struct
+import subprocess
+import sys
+
+layerx, keys, genesis, node_data, human_state, history_path = map(Path, sys.argv[1:7])
+network = int(sys.argv[7])
+mode, arguments = sys.argv[8], sys.argv[9:]
+volume = Path('/data')
+root = layerx / 'identity'
+record_path = root / 'current.json'
+rotation_path = root / 'rotation.json'
+migration_path = root / 'migration.json'
+MAGIC = b'LayerX/sequencer-trust-history/v1\0'
+RECORD_SCHEMA = 'layerx.kernel.identity-generation.v1'
+HUMAN_DURABLE = [human_state / name for name in ('components', 'identity', 'security', 'movement', 'agent', 'authority', 'kms')]
+KERNEL_DURABLE = [keys / 'treasury.key', keys / 'tokens'] + [layerx / name for name in (
+    'settlement', 'core', 'agent-boundary', 'mirror', 'guarantor-1', 'guarantor-2')]
+ARCHIVED = ('trust-history', 'registry-material', 'receipt-authority-replica', 'authority-graph')
+sys.path.insert(0, '/usr/local/lib/layerx-human')
+
+
+class Refused(Exception):
+    pass
+
+
+def digest(data):
+    return hashlib.sha256(data).hexdigest()
+
+
+def canonical(value):
+    return json.dumps(value, sort_keys=True, separators=(',', ':')).encode()
+
+
+def read(path, limit=1048576):
+    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    with os.fdopen(fd, 'rb') as source:
+        info = os.fstat(source.fileno())
+        if not stat.S_ISREG(info.st_mode) or not 0 < info.st_size <= limit:
+            raise Refused('protected bounded regular file required: ' + str(path))
+        return source.read(limit + 1)
+
+
+def sync(path):
+    fd = os.open(path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    try:
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+
+
+def write_atomic(path, data):
+    pending = path.with_name('.' + path.name + '.pending')
+    if os.path.lexists(pending):
+        os.unlink(pending)
+    fd = os.open(pending, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+    with os.fdopen(fd, 'wb') as output:
+        output.write(data)
+        output.flush()
+        os.fsync(output.fileno())
+    os.replace(pending, path)
+    sync(path.parent)
+
+
+def make_parents(path):
+    missing = []
+    while not os.path.lexists(path):
+        missing.append(path)
+        path = path.parent
+    for directory in reversed(missing):
+        os.mkdir(directory, 0o700)
+        os.chown(directory, 0, 0)
+        os.chmod(directory, 0o700)
+        sync(directory.parent)
+
+
+def file_digest(path):
+    value = hashlib.sha256()
+    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    with os.fdopen(fd, 'rb') as source:
+        for chunk in iter(lambda: source.read(1 << 20), b''):
+            value.update(chunk)
+    return value.hexdigest()
+
+
+def tree(path):
+    entries = {}
+    items = [path]
+    if path.is_dir() and not path.is_symlink():
+        for directory, names, files in os.walk(path):
+            items += [Path(directory) / name for name in sorted(names + files)]
+    for item in items:
+        info = item.lstat()
+        meta = [info.st_uid, info.st_gid, stat.S_IMODE(info.st_mode)]
+        name = str(item.relative_to(path))
+        if stat.S_ISLNK(info.st_mode):
+            entries[name] = ['link', *meta, os.readlink(item)]
+        elif stat.S_ISDIR(info.st_mode):
+            entries[name] = ['directory', *meta]
+        elif stat.S_ISREG(info.st_mode):
+            entries[name] = ['file', *meta, info.st_size, file_digest(item)]
+        else:
+            entries[name] = ['special', *meta, stat.S_IFMT(info.st_mode)]
+    return dict(sorted(entries.items()))
+
+
+def summary(path):
+    entries = tree(path)
+    return {'entries': len(entries), 'bytes': sum(e[4] for e in entries.values() if e[0] == 'file'),
+            'sha256': digest(canonical(entries))}
+
+
+def material_module():
+    import material
+    return material
+
+
+def public_of(seed_path):
+    seed = read(seed_path).decode('ascii', 'replace').rstrip('\n')
+    if not re.fullmatch('[0-9a-f]{64}', seed):
+        raise Refused('the sequencer seed is not 64 hex characters')
+    der = subprocess.run(['openssl', 'pkey', '-inform', 'DER', '-pubout', '-outform', 'DER'],
+                         input=bytes.fromhex('302e020100300506032b657004220420' + seed),
+                         stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, check=True, timeout=10).stdout
+    if len(der) != 44 or der[:12] != bytes.fromhex('302a300506032b6570032100'):
+        raise Refused('the sequencer public key derivation failed')
+    return der[12:].hex()
+
+
+def genesis_identity():
+    paths = (keys / 'sequencer.key', genesis / 'metadata.lxgb', genesis / 'asset-id', genesis / 'replica-id')
+    present = [os.path.lexists(path) for path in paths]
+    if not any(present):
+        return None
+    result = {'complete': all(present)}
+    if present[0]:
+        public = public_of(paths[0])
+        result.update(sequencer_public_key=public, sequencer_id=digest(('layerx-sequencer:' + public).encode()))
+    if not result['complete']:
+        return result
+    metadata, asset, replica = (read(path) for path in paths[1:])
+    if not re.fullmatch(b'[0-9a-f]{64}\n?', asset) or not re.fullmatch(b'[0-9a-f]{64}\n?', replica):
+        raise Refused('the genesis ids are not 64 hex characters')
+    if replica.decode().rstrip('\n') != digest(('layerx-authority-replica:' + public).encode()):
+        raise Refused('the genesis replica id is not derived from the sequencer key')
+    history = (MAGIC + struct.pack('>HH', 1, 0) + struct.pack('>HIQ', 3, network, 1)
+               + bytes.fromhex(result['sequencer_id']) + bytes.fromhex(public) + struct.pack('>QQBQ', 1, 1 << 40, 0, 0))
+    manifest = {'schema': 'layerx.kernel.registry-generation.v1', 'network_id': network,
+                'sequencer_id': result['sequencer_id'], 'sequencer_public_key': public,
+                'replica_id': replica.decode().rstrip('\n'), 'genesis_metadata_sha256': digest(metadata),
+                'asset_id': asset.decode().rstrip('\n'), 'history_sha256': digest(history), 'replica_sha256': digest(replica)}
+    result.update(manifest, generation=digest(canonical(manifest)), asset_sha256=digest(asset))
+    del result['schema']
+    return result
+
+
+def record_of(identity):
+    return {'schema': RECORD_SCHEMA, **{key: value for key, value in identity.items() if key != 'complete'}}
+
+
+def load_record():
+    if not os.path.lexists(record_path):
+        return None
+    value = json.loads(read(record_path))
+    if (type(value) is not dict or value.get('schema') != RECORD_SCHEMA
+            or not re.fullmatch('[0-9a-f]{64}', str(value.get('generation'))) or value.get('network_id') != network):
+        raise Refused('the recorded identity generation at ' + str(record_path) + ' is not a ' + RECORD_SCHEMA + ' record of network ' + str(network))
+    return value
+
+
+def trust_claims(path):
+    data = read(path)
+    size = len(MAGIC) + 4
+    if not data.startswith(MAGIC) or len(data) < size + 103:
+        raise Refused('trust history framing')
+    entry = data[size:size + 103]
+    return {'history_sha256': digest(data), 'network_id': struct.unpack('>I', entry[2:6])[0],
+            'sequencer_id': entry[14:46].hex(), 'sequencer_public_key': entry[46:78].hex()}
+
+
+def registry_claims(path):
+    if not (path / 'current').is_symlink():
+        return None
+    manifest = material_module().verify_registry_material(path)['manifest']
+    return {key: manifest[key] for key in ('generation', 'network_id', 'sequencer_id', 'sequencer_public_key', 'replica_id',
+                                           'asset_id', 'genesis_metadata_sha256', 'history_sha256', 'replica_sha256')}
+
+
+def projection_claims(path):
+    metadata, asset, replica = (read(path / name) for name in ('metadata.lxgb', 'asset-id', 'replica-id'))
+    return {'genesis_metadata_sha256': digest(metadata), 'asset_sha256': digest(asset), 'replica_sha256': digest(replica)}
+
+
+def material_claims(path):
+    material_module().verify_material(path)
+    replica = read(path / 'receipt-authority-replica-id')
+    files = {item['name']: item['sha256'] for item in json.loads(read(path / 'genesis-binding'))['files']}
+    if files.get('replica-id') != digest(replica):
+        raise Refused('the role material replica id differs from its own genesis binding')
+    return {'replica_sha256': digest(replica), 'asset_sha256': files['asset-id'], 'genesis_metadata_sha256': files['metadata.lxgb']}
+
+
+def authority_claims(path):
+    if not (path / 'current').is_symlink():
+        return None
+    return {'generation': material_module().verify_authority_material(path)['registry_generation']}
+
+
+BINDINGS = (('trust-history', history_path, trust_claims),
+            ('registry-material', layerx / 'registry-material', registry_claims),
+            ('receipt-authority-replica', human_state / 'genesis-binding', projection_claims),
+            ('role-material', human_state / 'material', material_claims),
+            ('authority-graph', human_state / 'authority-graph', authority_claims))
+
+
+def bindings():
+    found = {}
+    for name, path, reader in BINDINGS:
+        entry = {'path': str(path), 'state': 'absent'}
+        if os.path.lexists(path):
+            try:
+                claims = reader(path)
+            except (OSError, ValueError, KeyError, TypeError, Refused, subprocess.SubprocessError) as error:
+                entry.update(state='unreadable', reason=str(error) or type(error).__name__)
+            else:
+                if claims is not None:
+                    entry.update(state='bound', claims=claims)
+        found[name] = entry
+    return found
+
+
+def mismatches(found, target):
+    result = []
+    for name, entry in found.items():
+        for field, value in sorted(entry.get('claims', {}).items()):
+            if field in target and target[field] != value:
+                result.append(name + ' at ' + entry['path'] + ' is bound to ' + field + ' ' + str(value) + ', not ' + str(target[field]))
+    return result
+
+
+def conflicts(found):
+    seen, result = {}, []
+    for name, entry in found.items():
+        for field, value in sorted(entry.get('claims', {}).items()):
+            if field not in seen:
+                seen[field] = (name, value)
+            elif seen[field][1] != value:
+                result.append(name + ' ' + field + ' ' + str(value) + ' disagrees with ' + seen[field][0] + ' ' + field + ' ' + str(seen[field][1]))
+    return result, {field: value for field, (_, value) in seen.items()}
+
+
+def retire_paths(listed):
+    paths = []
+    for raw in listed:
+        path = Path(raw)
+        if not path.is_absolute() or path.relative_to(volume).parts[:2] == ('layerx', 'identity'):
+            raise Refused('retired path outside the kernel identity material: ' + raw)
+        paths.append(path)
+    if os.path.isdir(node_data) and not os.path.islink(node_data):
+        paths += sorted(node_data.iterdir())
+    return paths
+
+
+def survey(listed=None, durable=False):
+    value = {'schema': 'layerx.kernel.identity-plan.v1', 'network_id': network, 'refusals': []}
+    refusals = value['refusals']
+    errors = []
+    try:
+        current = genesis_identity()
+    except (OSError, Refused, subprocess.SubprocessError) as error:
+        current = None
+        errors.append('the kernel genesis is unreadable: ' + (str(error) or type(error).__name__))
+    try:
+        recorded = load_record()
+    except (OSError, ValueError, Refused) as error:
+        recorded = None
+        errors.append(str(error) or type(error).__name__)
+    found = bindings()
+    errors += [name + ' at ' + entry['path'] + ' is unreadable: ' + entry['reason']
+               for name, entry in found.items() if entry['state'] == 'unreadable']
+    value.update(genesis=current, recorded=recorded, bindings=found)
+    for name, path, _ in BINDINGS:
+        if name in found and found[name]['state'] == 'bound':
+            found[name]['compatible'] = current is not None and current.get('complete', False) and not mismatches({name: found[name]}, current)
+    conflicting, _ = conflicts(found)
+    if os.path.lexists(rotation_path):
+        verdict = 'rotation-in-progress'
+        refusals.append('an identity rotation is pending at ' + str(rotation_path) + '; kernel-genesis.sh keys rotate resumes it')
+    elif os.path.lexists(migration_path):
+        verdict = 'migration-in-progress'
+        refusals.append('an identity migration is pending at ' + str(migration_path) + '; kernel-genesis.sh migrate with its plan resumes it')
+    elif errors:
+        verdict = 'unreadable'
+        refusals += errors
+    elif conflicting:
+        verdict = 'inconsistent'
+        refusals += conflicting
+    elif current is None or not current['complete']:
+        verdict = 'genesis-incomplete'
+        refusals.append('the kernel genesis of this volume is incomplete')
+    elif recorded is not None and recorded['generation'] != current['generation']:
+        verdict = 'migration-required'
+        refusals.append('the volume identity generation ' + recorded['generation'] + ' differs from the genesis identity generation '
+                        + current['generation'] + '; Human consumers stay refused until kernel-genesis.sh migrate completes an authorized migration')
+    else:
+        different = mismatches(found, current)
+        if different and recorded is not None:
+            verdict = 'incompatible'
+            refusals += different
+        elif different:
+            verdict = 'inferred-mismatch'
+            refusals += ['inferred old-genesis binding: ' + line for line in different]
+        elif recorded is None and not any(entry['state'] == 'bound' for entry in found.values()):
+            verdict = 'fresh'
+        else:
+            verdict = 'compatible'
+    value['verdict'] = verdict
+    if durable:
+        value['durable'] = {str(path): summary(path) for path in HUMAN_DURABLE if os.path.lexists(path)}
+    if listed is not None:
+        retained = [str(path) for path in HUMAN_DURABLE + KERNEL_DURABLE if os.path.lexists(path)]
+        bound = [entry['path'] for entry in found.values() if entry['state'] == 'bound']
+        value['disposition'] = {
+            'rotation': {'retire': [str(path) for path in retire_paths(listed)[:len(listed)] if os.path.lexists(path)]
+                         + ([str(node_data) + '/*'] if os.path.isdir(node_data) else []),
+                         'retain': retained + [path for path in bound if path != str(layerx / 'registry-material')]},
+            'migration': {'archive': [found[name]['path'] for name in ARCHIVED
+                                      if found[name]['state'] == 'bound' and not found[name]['compatible']],
+                          'rebind': [found['role-material']['path']]
+                          if found['role-material']['state'] == 'bound' and not found['role-material']['compatible'] else [],
+                          'retain': retained}}
+        generations = root / 'generations'
+        value['retained_generations'] = sorted(path.name for path in generations.iterdir()) if generations.is_dir() else []
+    return value
+
+
+@contextlib.contextmanager
+def locked(*paths):
+    if not os.path.lexists(root):
+        make_parents(root)
+    info = os.lstat(root)
+    if not stat.S_ISDIR(info.st_mode) or (info.st_uid, stat.S_IMODE(info.st_mode)) != (0, 0o700):
+        raise Refused('the identity directory ' + str(root) + ' is not a root 0700 directory')
+    handles = []
+    try:
+        for path in (*paths, root / '.lock'):
+            handle = os.fdopen(os.open(path, os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600), 'r+b')
+            handles.append(handle)
+            fcntl.flock(handle, fcntl.LOCK_EX)
+        yield
+    finally:
+        for handle in reversed(handles):
+            handle.close()
+
+
+def move(source, target):
+    if os.path.lexists(source):
+        if os.path.lexists(target):
+            raise Refused('both ' + str(source) + ' and its retained copy ' + str(target) + ' exist')
+        make_parents(target.parent)
+        os.rename(source, target)
+        sync(source.parent)
+        sync(target.parent)
+    elif not os.path.lexists(target):
+        raise Refused('neither ' + str(source) + ' nor its retained copy ' + str(target) + ' exists')
+
+
+def retained(archive):
+    manifest = archive / 'manifest.json'
+    if not os.path.lexists(manifest):
+        return
+    for item in json.loads(read(manifest, 1 << 26))['entries']:
+        if not os.path.lexists(item['target']) or tree(Path(item['target'])) != item['tree']:
+            raise Refused('the retained generation at ' + str(archive) + ' no longer matches its manifest: ' + item['target'])
+
+
+def gate():
+    with locked():
+        value = survey()
+        if value['verdict'] not in ('fresh', 'compatible'):
+            raise Refused('identity generation refused (' + value['verdict'] + '): ' + '; '.join(value['refusals']))
+        if value['recorded'] is None:
+            write_atomic(record_path, canonical(record_of(value['genesis'])) + b'\n')
+            print('kernel-init: identity generation ' + value['genesis']['generation'] + ' recorded for this volume', file=sys.stderr)
+
+
+def retire():
+    with locked(layerx / 'registry-material.lock'):
+        if os.path.lexists(migration_path):
+            raise Refused('rotation refused: an identity migration is pending at ' + str(migration_path))
+        if os.path.lexists(rotation_path):
+            journal = json.loads(read(rotation_path, 1 << 24))
+        else:
+            value = survey()
+            verdict, current = value['verdict'], value['genesis']
+            bound = [name for name, entry in value['bindings'].items() if entry['state'] == 'bound']
+            if verdict not in ('fresh', 'compatible', 'migration-required', 'genesis-incomplete') or (verdict == 'genesis-incomplete' and bound):
+                reasons = value['refusals'] + (['Human bindings ' + ', '.join(bound) + ' exist while the genesis is incomplete'] if verdict == 'genesis-incomplete' else [])
+                raise Refused('rotation preflight refused (' + verdict + '): ' + '; '.join(reasons))
+            if verdict == 'compatible' and value['recorded'] is None:
+                write_atomic(record_path, canonical(record_of(current)) + b'\n')
+            sources = [path for path in retire_paths(arguments) if os.path.lexists(path)]
+            if not sources:
+                print(json.dumps({'retired': None}))
+                return
+            if current is not None and current['complete']:
+                name = current['generation']
+            elif current is not None and 'sequencer_public_key' in current:
+                name = 'keys-' + digest(current['sequencer_public_key'].encode())
+            else:
+                name = 'partial-' + digest(canonical(sorted(map(str, sources))))
+            archive = root / 'generations' / name
+            if os.path.lexists(archive):
+                raise Refused('rotation refused: a retained generation already exists at ' + str(archive))
+            journal = {'schema': 'layerx.kernel.identity-rotation.v1', 'phase': 'retiring', 'generation': name,
+                       'archive': str(archive), 'moves': [[str(path), str(archive / 'files' / path.relative_to(volume))] for path in sources]}
+            make_parents(root / 'generations')
+            write_atomic(rotation_path, canonical(journal) + b'\n')
+        archive = Path(journal['archive'])
+        if journal['phase'] == 'retiring':
+            for source, target in journal['moves']:
+                move(Path(source), Path(target))
+            manifest = {'schema': 'layerx.kernel.retained-generation.v1', 'generation': journal['generation'],
+                        'entries': [{'source': source, 'target': target, 'tree': tree(Path(target))} for source, target in journal['moves']]}
+            write_atomic(archive / 'manifest.json', canonical(manifest) + b'\n')
+            journal['phase'] = 'retired'
+            write_atomic(rotation_path, canonical(journal) + b'\n')
+        elif journal['phase'] == 'retired':
+            retained(archive)
+            for source, _ in journal['moves']:
+                path = Path(source)
+                if path.is_relative_to(keys) and os.path.lexists(path) and stat.S_ISREG(os.lstat(path).st_mode):
+                    os.unlink(path)
+                    sync(path.parent)
+        else:
+            raise Refused('rotation journal phase ' + str(journal['phase']))
+        print(json.dumps({'retired': journal['generation'], 'archive': journal['archive']}))
+
+
+def rotated():
+    with locked():
+        if not os.path.lexists(rotation_path):
+            return
+        journal = json.loads(read(rotation_path, 1 << 24))
+        if journal['phase'] != 'retired':
+            raise Refused('the rotation journal is in phase ' + str(journal['phase']) + ', not retired')
+        for raw in arguments:
+            if not os.path.isfile(raw) or os.path.getsize(raw) == 0:
+                raise Refused('the rotated key ' + raw + ' is absent')
+        journal['phase'] = 'complete'
+        write_atomic(Path(journal['archive']) / 'rotation.json', canonical(journal) + b'\n')
+        os.unlink(rotation_path)
+        sync(root)
+
+
+def rebind_material(journal):
+    module = material_module()
+    current, stage = human_state / 'material', human_state / '.material-migrating'
+    target = Path(journal['archive']) / 'files' / current.relative_to(volume)
+    if os.path.lexists(current) and not os.path.lexists(target):
+        if os.path.lexists(stage):
+            shutil.rmtree(stage)
+        shutil.copytree(current, stage, symlinks=True)
+        os.unlink(stage / 'material-manifest.json')
+        replica = read(genesis / 'replica-id')
+        binding = {'schema': 'layerx.human.genesis-binding.v1',
+                   'files': [module.entry(name, read(genesis / name)) for name in ('metadata.lxgb', 'asset-id', 'replica-id')]}
+        for name, data in (('receipt-authority-replica-id', replica), ('genesis-binding', (json.dumps(binding, sort_keys=True) + '\n').encode())):
+            os.unlink(stage / name)
+            module.write_bytes(stage / name, data)
+        module.seal_material(stage)
+        module.verify_material(stage)
+        make_parents(target.parent)
+        os.rename(current, target)
+        sync(current.parent)
+        sync(target.parent)
+    if not os.path.lexists(current):
+        if not os.path.lexists(stage) or not os.path.lexists(target):
+            raise Refused('the role material migration lost its staged or retained copy')
+        module.verify_material(stage)
+        os.rename(stage, current)
+        sync(current.parent)
+
+
+def migrate():
+    if len(arguments) < 1 or not re.fullmatch('[0-9a-f]{64}', arguments[0]):
+        raise Refused('usage: migrate PLAN_SHA256 RETIRED_PATH...')
+    authorization, listed = arguments[0], arguments[1:]
+    with locked(layerx / 'registry-material.lock'):
+        if os.path.lexists(rotation_path):
+            raise Refused('migration refused: an identity rotation is pending at ' + str(rotation_path))
+        if os.path.lexists(migration_path):
+            journal = json.loads(read(migration_path, 1 << 24))
+            if journal['plan_sha256'] != authorization:
+                raise Refused('migration refused: the pending migration was authorized by plan ' + journal['plan_sha256'])
+        else:
+            value = survey(listed, durable=True)
+            plan = digest(canonical(value))
+            if authorization != plan:
+                raise Refused('migration refused: the authorization ' + authorization + ' is not the current plan ' + plan
+                              + '; review kernel-genesis.sh plan and pass its plan_sha256')
+            verdict, current, recorded, found = value['verdict'], value['genesis'], value['recorded'], value['bindings']
+            if verdict not in ('migration-required', 'inferred-mismatch'):
+                raise Refused('migration refused: no migration applies (' + verdict + '): ' + '; '.join(value['refusals']))
+            stale = {name: entry for name, entry in found.items() if entry['state'] == 'bound' and mismatches({name: entry}, current)}
+            if recorded is not None:
+                third = mismatches(stale, recorded)
+                if third:
+                    raise Refused('migration refused: bindings belong to neither generation: ' + '; '.join(third))
+                old = recorded['generation']
+            else:
+                _, claims = conflicts(stale)
+                old = claims.get('generation') or 'inferred-' + digest(canonical(claims))
+            archive = root / 'generations' / old
+            retained(archive)
+            moves = [[found[name]['path'], str(archive / 'files' / Path(found[name]['path']).relative_to(volume))]
+                     for name in ARCHIVED if name in stale]
+            for _, target in moves:
+                if os.path.lexists(target):
+                    raise Refused('migration refused: a retained copy already exists at ' + target)
+            journal = {'schema': 'layerx.kernel.identity-migration.v1', 'plan_sha256': authorization, 'from': old,
+                       'to': current['generation'], 'archive': str(archive), 'moves': moves,
+                       'rebind': 'role-material' in stale, 'record': record_of(current),
+                       'retained': value.get('durable', {})}
+            make_parents(archive)
+            write_atomic(migration_path, canonical(journal) + b'\n')
+        for source, target in journal['moves']:
+            move(Path(source), Path(target))
+        if journal['rebind']:
+            rebind_material(journal)
+        for path, expected in journal['retained'].items():
+            if not os.path.lexists(path) or summary(Path(path)) != expected:
+                raise Refused('migration refused: durable Human state changed during migration: ' + path)
+        write_atomic(Path(journal['archive']) / ('migration-' + journal['to'] + '.json'), canonical(journal) + b'\n')
+        write_atomic(record_path, canonical(journal['record']) + b'\n')
+        os.unlink(migration_path)
+        sync(root)
+        print(json.dumps({'from': journal['from'], 'to': journal['to'], 'archive': journal['archive']}))
+
+
+try:
+    if mode == 'plan':
+        text = canonical(survey(arguments, durable=True))
+        print(text.decode())
+        print('plan_sha256=' + digest(text))
+    elif mode == 'gate':
+        gate()
+    elif mode == 'retire':
+        retire()
+    elif mode == 'rotated':
+        rotated()
+    elif mode == 'migrate':
+        migrate()
+    else:
+        raise Refused('usage: --identity-generation plan|gate|retire|rotated|migrate')
+except (OSError, ValueError, KeyError, TypeError, Refused, subprocess.SubprocessError) as error:
+    raise SystemExit('kernel-init: ' + (str(error) or type(error).__name__))
+PY_IDENTITY
+}
+
+if [ "${1:-}" = --identity-generation ]; then
+	shift
+	identity_generation "$@"
+	exit
+fi
+
 # fresh <file> <owner> <mode> <command...>: writes the command's output to the
 # file unless it holds something already.
 fresh() {
@@ -165,6 +753,7 @@ echo "$$" >"$status/pid"
 
 install -d -o 0 -g 4020 -m 2775 "$layerx" "$layerx/settlement"
 install -d -o 0 -g 4020 -m 0750 "$genesis"
+chmod g-s "$genesis"
 if [ "$kernel_profile" = native ]; then
     chmod 3775 "$layerx"
     if [ -L "$layerx/trust" ] || { [ -e "$layerx/trust" ] && [ ! -d "$layerx/trust" ]; }; then
@@ -499,7 +1088,8 @@ guarantor_prepare() {
 
 human_authority_ready() {
 	while missing "$keys/human-authority/authority-token" "$keys/human-authority/principal-policy.json" \
-		"$keys/human-authority/registry.json" "$keys/human-authority/authority.json" >/dev/null; do
+		"$keys/human-authority/registry.json" "$keys/human-authority/authority.json" >/dev/null ||
+		! identity_generation gate; do
 		sleep 5
 	done
 	human_authority_material
@@ -640,7 +1230,7 @@ core_boundary_prepare() {
 # derives it.
 kernel_registry_material=$layerx/registry-material
 kernel_registry_identity() {
-	{ flock 8 && python3 /usr/local/lib/layerx-human/material.py --kernel-registry-material-produce \
+	{ flock 8 && identity_generation gate && python3 /usr/local/lib/layerx-human/material.py --kernel-registry-material-produce \
 		"$genesis" "$keys/sequencer.key" "$kernel_registry_material" "$LAYERX_NODE_NETWORK_ID" "$trust_history_file"; } \
 		8>"$layerx/registry-material.lock" || return 1
 	python3 - "$kernel_registry_material" "$run/node/sequencer-public-key" "$trust_history_file" <<'PY_REGISTRY_IDENTITY'
@@ -857,6 +1447,10 @@ human_policy_bundle_install() {
 human_authority_publish() {
 	local status bundle=${human_policy%/*}
 	while :; do
+		if ! identity_generation gate; then
+			sleep 5
+			continue
+		fi
 		status=$(python3 /usr/local/lib/layerx-human/material.py --policy-graph-status "$bundle/inputs" "$bundle/journal" \
 			"$bundle/inputs/deployment.json" "$bundle/inputs/module-registry.json" "$bundle" "$kernel_registry_material" \
 			"$human_state/authority-graph" "$LAYERX_NODE_NETWORK_ID" "$LAYERX_NODE_PAXEER_CHAIN_ID") || return 1
@@ -1041,6 +1635,7 @@ human_material_generate() {
 human_project() {
 	local dir=$human_material/$1 uid=$2 pair source name
 	shift 2
+	identity_generation gate || return 1
 	{ flock 9 && human_material_generate; } 9>"$human_state/material.lock" || return 1
 	install -d -o "$uid" -g 4020 -m 0500 "$dir"
 	for pair in "$@"; do
@@ -1143,6 +1738,10 @@ human_security_prerequisite() {
 		printf '%s' "$absent"
 		return 0
 	fi
+	if ! identity_generation gate 2>/dev/null; then
+		printf '%s' 'identity generation refused'
+		return 0
+	fi
 	if ! human_genesis_project; then
 		printf '%s' 'genesis protected projection refused'
 		return 0
@@ -1205,6 +1804,7 @@ human_kms_source=${LAYERX_HUMAN_KMS_REGISTRY_SOURCE:-$keys/human-kms/module-regi
 human_kms_out=$human_state/kms-prerequisite/material
 human_kms_prepare() {
 	local directory=$human_material/human-kms name
+	identity_generation gate || return 1
 	if [ -e "$human_state/kms-prerequisite" ] || [ -L "$human_state/kms-prerequisite" ]; then
 		[ ! -L "$human_state/kms-prerequisite" ] && \
 			[ "$(stat -c '%u:%g:%a' "$human_state/kms-prerequisite")" = 0:0:700 ] || return 1
