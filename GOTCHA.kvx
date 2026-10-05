@@ -3982,3 +3982,579 @@ observed = "The strict source observer refuses tracked sensitive-looking names, 
 [gotcha.819]
 title = "Frozen source intake shape"
 observed = "Source intake requires complete status, worktree, base revision and a path/hash list. Normalize a worker map or complete-frozen label only from its explicit whole-source declaration and verified bytes before publication; metadata-shape failures do not count as compiler or test attempts."
+
+[gotcha.820]
+title = "tests/protocol terminal fixture"
+observed = "identity next_sequence starts at 0 while account next_sequence starts at 1 Do: set f->identity->next_sequence = f->actor->next_sequence before signing activities"
+
+[gotcha.821]
+title = "git"
+observed = "git commit in the fleet worktree takes over 120s Do: run git commit in background and wait"
+
+[gotcha.822]
+title = "tools/paxeer-x/tests/versioned_boundaries.py"
+observed = "rejects unknown 'VECTOR ' lines in terminal rejection output Do: emit new rows under a distinct prefix (TWO_CLASS_ROW)"
+
+[gotcha.823]
+title = "human-service tests/intent_submit.rs RealAgentLayer"
+observed = "agent submit refused with AuthorityMismatch: the fixture prepared under Authority::owner(authority label bytes) while verify_before_submit requires the owner key equal to the signer public key Do: prepare under the custody owner public key, as agentd human_runtime does"
+
+[gotcha.824]
+title = "router top-up"
+observed = "a top-up intent without signed allowances refuses TopUpNotAuthorized before shape classification Do: supply SignedAllowances scoped to each wallet-route leg to reach the UnsupportedShape refusal"
+
+[gotcha.825]
+title = "git in fleet worktrees"
+observed = "git commit --no-verify can exceed 120-300s (exit 124 from timeout) even though the commit lands Do: check git log after a timeout before retrying"
+
+[gotcha.826]
+title = "human/apps/web typecheck in fleet worktrees"
+observed = "tsc fails with 12 TS2307 errors, all in agent/sdk/typescript (@noble/*, @scure/*) because the worktree has no agent/sdk/typescript/node_modules; zero errors in web sources Do: install or link agent/sdk/typescript dependencies in the worktree before typechecking the web app"
+
+[gotcha.827]
+title = "qual-logs in human production gates"
+observed = "builders/104.13.1.py output_directory() and run-production-browser.sh create <root>/qual-logs, which is not gitignored, so verify-task sees an untracked path after the gate and records result=dirty Do: ignore /qual-logs/ in the root .gitignore (not in this task's touch list)"
+
+[gotcha.828]
+title = "tools/qualification/paxeer-x/human-approval-admission.py"
+observed = "exit 1 'genuine protected disposable mTLS/LNI native-effect admission fixture required' Do: provision PAXEER_X_HUMAN_APPROVAL_ADMISSION_FIXTURE (mode 0600, owned by fixture uid, source_hashes for all SOURCES) before dispatching any task whose verify_cmd is this gate"
+
+[gotcha.829]
+title = "spec 104.13.10 touch list"
+observed = "all four leased files are byte-identical to the 2026-10-04 retained-complete freeze; remaining do_1/do_3 work is in files leased to 104.13.26 Do: do not redispatch 104.13.10 for source work until 104.13.26 lands or the owner rules on the legacy u16/AgentDid binding"
+
+[gotcha.830]
+title = "agent/qualification human-approval-admission"
+observed = "Gate exits 1 straight away with 'genuine protected disposable mTLS/LNI native-effect admission fixture required' Do: Provision the protected fixture JSON (schema paxeer-x.human-approval-admission.v1, uid/gid owner, source_hashes for all 11 SOURCES) before you schedule this verify; it can't pass on a bare host"
+
+[gotcha.831]
+title = "agentd budget 104.13.13"
+observed = "All seven exclusive files at b810a57a1 already match the frozen handoff hashes, and the producer's remaining_source list is empty Do: Don't re-implement here; the remaining work is the 104.13.26 caller wiring plus an owner contract decision"
+
+[gotcha.832]
+title = "agentd native_effect_approval_budget (selector 56)"
+observed = "Before this change it presented authority /v1/agent/budget-state JSON. It passed through the authority's own verification byte and returned one row per allocation pair, and any pair whose asset differed from the budget asset was refused. Do: It now goes through verified_program_budget_proof and read_owned_native_effect_budget and returns one verified v4 row, the same way program v5 does. Any fixture or client expectation for this response must expect count=1."
+
+[gotcha.833]
+title = "human_runtime.rs rustfmt"
+observed = "rustfmt --check already reports drift in human_runtime.rs before this change (lines 168, 480 and others). Do: Only check that your own region is rustfmt-clean. Running rustfmt on the whole file rewrites code outside your task."
+
+[gotcha.834]
+title = "git commit in fleet worktrees"
+observed = "The shared post-commit hook (/root/Layerx-protocol/.git/hooks/post-commit, which runs cg git-sync) blocks git commit --no-verify for minutes, even though the commit itself has already been written. Do: Run the commit in the background or under timeout, then check git log."
+
+[gotcha.835]
+title = "verify-task candidate manifest"
+observed = "exit 6 'candidate manifest is invalid' because shared refs/heads/main moved between create and verify Do: run candidate.py create and verify-task.sh in the same command, back to back"
+
+[gotcha.836]
+title = "git commit in fleet worktrees"
+observed = "commit appears hung Do: post-commit cg sync/git-sync hook is slow; wait, the commit lands"
+
+[gotcha.837]
+title = "heavy.sh"
+observed = "command blocks with no output Do: all 4 slots busy, it waits on slot-1; expect queueing"
+
+[gotcha.838]
+title = "bash heredocs"
+observed = "nested heredoc with the same terminator executes the middle as shell Do: use distinct terminators (GATE, MCP_JOURNEY) for nested heredocs"
+
+[gotcha.839]
+title = "platform/cli real-credential tests"
+observed = "wallet_derive panics 'gnome-keyring-daemon must be installed' Do: install gnome-keyring on the qualification host before running the 104.17.6 gate"
+
+[gotcha.840]
+title = "tools/paxeer-x/verify-task.sh candidate manifest"
+observed = "exit 6 'candidate manifest is invalid or does not identify this checkout' when refs/heads/main moves after the manifest is created (mainline_revision baked in) Do: run candidate.py create immediately before verify-task.sh in the same command"
+
+[gotcha.841]
+title = "programs/crates/layerx-programs-runtime lib tests"
+observed = "src/market_tests.rs panics without LAYERX_MARKET_WASM, which nothing in the Makefile or scripts sets Do: scope lib runs with filters (gate uses abi:: host::); a full --lib run needs the compiled market guest"
+
+[gotcha.842]
+title = "tests/programs/runtime-module-boundaries.sh"
+observed = "family isolation loop omits host/balance.rs and host/context.rs (context.rs test module imports crate::Storage, which the direct-state regex would flag) Do: extend the family list and move or exempt the context test module in a task that owns tests/programs"
+
+[gotcha.843]
+title = "programs/sdk/rust/response-fixture/Cargo.lock"
+observed = "make programs-sdk-rust / response-fixture/build.sh fails with 'lock file needs to be updated but --locked was passed' on main 8d98fc607 because the runtime gained a layerx-program-sdk dependency Do: cargo update --workspace --offline in the fixture dir adds only that edge; landed on this branch"
+
+[gotcha.844]
+title = "git commit in fleet worktrees"
+observed = "git commit --no-verify still takes 1-3 minutes because /root/Layerx-protocol/.git/hooks/post-commit runs (--no-verify does not skip post-commit) Do: run commits with a long timeout or in the background"
+
+[gotcha.845]
+title = "programs/crates/layerx-programs-runtime/src/host/*.rs tests"
+observed = "tests/programs/runtime-module-boundaries.sh rejects the bare tokens Abi, Composition, Storage or Meter anywhere in a host family file, #[cfg(test)] modules included, so end-to-end tests there trip 'reaches state outside RuntimeState' Do: put end-to-end execution tests in the abi/ unit or tests/, not in host/{calls,storage,...}.rs"
+
+[gotcha.846]
+title = "tests/programs/runtime-module-boundaries.sh on main 2b2628d1a"
+observed = "pre-existing failure: 'scan reaches state outside RuntimeState' because host/scan.rs tests import Abi, Storage and Meter; the 104.28.1 gate runs this lint Do: record only; fix belongs to a task that owns host/scan.rs"
+
+[gotcha.847]
+title = "programs runtime calls.rs single-step conformance tests"
+observed = "pre-existing on main: two tests fail with 'reference types support is not enabled' Do: record only; the 104.28.3 gate filters to abi::response:: and does not run crate::calls tests"
+
+[gotcha.848]
+title = "programs/sdk/rust/src/ids.rs"
+observed = "IDENTIFIER_BYTES is private, so other SDK modules cannot name the 32-byte id width Do: use a local const or make it pub(crate) in a task that owns ids.rs"
+
+[gotcha.849]
+title = "git commit in fleet worktrees"
+observed = "commit takes over 2 minutes even with --no-verify because the shared post-commit hook at /root/Layerx-protocol/.git/hooks/post-commit runs anyway Do: run commits in the background or with a long timeout"
+
+[gotcha.850]
+title = "tools/paxeer-x/verify-task.sh candidate manifest"
+observed = "exit 6 even when candidate.py create and verify-task.sh run back to back, because the lead lands commits on refs/heads/main within seconds Do: pin the mainline: MAIN=$(git rev-parse refs/heads/main); candidate.py create --mainline $MAIN and run verify-task.sh with PAXEER_X_MAINLINE=$MAIN"
+
+[gotcha.851]
+title = "rustfmt on programs/crates/layerx-programs-runtime/src/meter.rs"
+observed = "rustfmt on meter.rs also walks its child module meter/inject.rs, which another worker owns Do: check git status after formatting and restore any child file outside your touch list"
+
+[gotcha.852]
+title = "git commit in fleet worktrees"
+observed = "git commit --no-verify still blocks for minutes because .git/hooks/post-commit (shared from /root/Layerx-protocol) runs and hangs; --no-verify does not skip post-commit Do: run the commit in the background or with a timeout and confirm with git log; the commit itself lands before the hook runs"
+
+[gotcha.853]
+title = "programs runtime qualification differential"
+observed = "programs_differential_gate runs over RuntimeState::isolated (abi None), so any storage host function only returns CapabilityDenied there and cannot prove storage determinism Do: for storage host functions, drive the legacy Wasmi internal-fuel tier with RuntimeState::sandbox(meter, abi) plus legacy_reference_fuel=true from a test inside the host module, and compare with ValidatedModule::instantiate_sandbox"
+
+[gotcha.854]
+title = "ProgramInstance linear memory"
+observed = "no crate-visible read of guest memory outside execute.rs, so host output bytes cannot be compared directly Do: have the guest fold the delivered bytes into a returned checksum and compare outputs"
+
+[gotcha.855]
+title = "spec task 104.29.4 do_6"
+observed = "refers to a 'declared cell ceiling' that no runtime constant declares Do: treat the 64-cell fixture as the boundary until a per-namespace cell ceiling is specified"
+
+[gotcha.856]
+title = "tools/paxeer-x/verify-task.sh"
+observed = "verify refuses without PAXEER_X_EVIDENCE_DIR and a candidate manifest Do: python3 tools/paxeer-x/candidate.py create --repo . --spec spec/paxeer-x/spec.kvx --output <0700 dir>/candidate.json right before verify, export PAXEER_X_CANDIDATE_MANIFEST and PAXEER_X_EVIDENCE_DIR"
+
+[gotcha.857]
+title = "tests/programs/test_reference_custody.c custody_deploy"
+observed = "fixture fails 'Reference custody line 98' on cargo-built wasm Do: the check st_nlink == 1 refuses cargo's hard-linked release outputs (nlink 2); pass a private copy (driver now copies to run/<guest>.wasm)"
+
+[gotcha.858]
+title = "reference escrow conditions"
+observed = "RELEASE/REFUND could never match a deploy receipt Do: use real LX_ASSET_SEND receipts as condition receipts; only ledger send receipts carry asset and amount in the verified receipt index"
+
+[gotcha.859]
+title = "kernel asset SEND in fixtures"
+observed = "SEND refused Do: register lx_asset_module_iface, bind lx_asset_runtime, require the account root, set authority_key on the source and recorded_module_version to the module abi_version"
+
+[gotcha.860]
+title = "reference-custody.py evidence dir"
+observed = "second --build fails EEXIST on task-104.30.7-build.json Do: use a fresh evidence dir per build/verify pair; manifests are written O_EXCL"
+
+[gotcha.861]
+title = "verify-task.sh candidate manifest"
+observed = "exit 6 even though candidate.py validate passed earlier Do: the main branch is shared across worktrees and moves; create the manifest right before verify"
+
+[gotcha.862]
+title = "native custody target"
+observed = "root Makefile has no rule for tests/programs_reference_custody Do: the driver writes a private .mk and passes it with make -f Makefile -f <rule>"
+
+[gotcha.863]
+title = "cargo test --nocapture parsing in gates"
+observed = "println output lands between 'test NAME ...' and 'ok', so '^test X ... ok$' misses the test Do: match '... <printed line>\\nok' or avoid --nocapture parsing"
+
+[gotcha.864]
+title = "programs/crates/layerx-programs-runtime calls.rs single_step_conformance"
+observed = "two vector tests fail validation with 'reference types support is not enabled' on the declared engine Do: owner of calls.rs/engine.rs must reconcile the vectors with wasm_reference_types(false); do not count calls:: unit scope as green"
+
+[gotcha.865]
+title = "git commit in fleet worktrees"
+observed = "git commit --no-verify can exceed 100-120 s on this host (lock contention with parallel workers) although the commit lands Do: run it in background and check git log afterwards"
+
+[gotcha.866]
+title = "programs/benches"
+observed = "no deep-composition benchmark exists yet (that is capability 104.32.7) Do: deep-composition measurement for 104.32.2 lives in validate::linker_invariant_tests and is printed by the gate"
+
+[gotcha.867]
+title = "git commit in fleet worktrees"
+observed = "git commit --no-verify still runs .git/hooks/post-commit (shared hooks dir), which can take over two minutes while other workers commit Do: run the commit in the background or with a long timeout and confirm with git log rather than retrying"
+
+[gotcha.868]
+title = "programs/crates/layerx-programs-runtime/src/execute.rs declaration admission"
+observed = "the two executor sites install the declaration and charge its cpu units in opposite orders Do: structural gate checks must only require pricing (.charge(&reachable)) before both, not a fixed order between install and charge"
+
+[gotcha.869]
+title = "program scheduling"
+observed = "dropping the call.c fee_treasury effect gives one planned level, but same-level apply fails -213 on kv progocc/l/v3/0000 Do: per-call occupancy settlement writes the global ledger, head and progocc/accounts/v1 (the account-registry root) on every v2 call; a level can only hold calls that publish no occupancy"
+
+[gotcha.870]
+title = "diagnosis"
+observed = "-213 does not say which before-state mismatched Do: temporarily wrap 'return LXP_ERR_CONTEXT_MISMATCH;' in lxp_module_ctx.c/lxp_kernel.c/lxp_journal.c with an fprintf of __LINE__, run make build/tests/programs_parallel_differential, then git checkout the files"
+
+[gotcha.871]
+title = "verify-task"
+observed = "candidate manifest goes stale as main moves Do: pin MAIN once and pass it to both candidate.py --mainline and PAXEER_X_MAINLINE"
+
+[gotcha.872]
+title = "pre-existing"
+observed = "two single-step conformance tests in programs runtime calls.rs fail with 'reference types support is not enabled' Do: recorded, not chased"
+
+[gotcha.873]
+title = "programs/benches/interpreter.rs"
+observed = "Observed interpreter fee multiplier is 1.0034x and time 1.95x against a published 12.00x ceiling; memory_bytes (2 MiB per call) dominates fee_units so cpu_fuel 4-8x barely moves price Do: Owner ruled: keep 12.00x as ceiling, publish observed values as measurements, no fee schedule change"
+
+[gotcha.874]
+title = "tools/paxeer-x/verify-task.sh"
+observed = "Fleet worktrees have no candidate manifest Do: Create one with tools/paxeer-x/candidate.py create --repo . --spec spec/paxeer-x/spec.kvx --mainline <HEAD> and pass PAXEER_X_MAINLINE=<HEAD>"
+
+[gotcha.875]
+title = "tools/paxeer-x/verify-task.sh"
+observed = "exit 5 when PAXEER_X_EVIDENCE_DIR is unset and exit 6 when no candidate manifest is supplied, so fleet workers cannot reach the gate body Do: lead supplies a per-revision candidate manifest and a private evidence dir before dispatching verify"
+
+[gotcha.876]
+title = "task 104.33.7 scope"
+observed = "the packet calls the hosted/emulator and explorer-route work remaining, but main b810a57a1 already has it Do: check the source before dispatch: the gateway serves the 12-route program set; the emulator serves the same 9 SDK program routes (call/simulate/deploy/upgrade/wind-down/registry/interface/receipts/activities); the explorer projection carries interface_digest and source status into program_json, and the app/explorer/programs/[programId] page renders them via programRecord/decodeProgramForIdentifier"
+
+[gotcha.877]
+title = "cargo clippy on any programs crate depending on layerx-program-sdk"
+observed = "pre-existing on main 2efa56f7b: crate-scoped clippy with -D warnings fails in the sdk/rust build script (bindgen_*.rs pedantic + dead_code, 47 errors) and vendor/wasmi-0.31.2 (3 errors) before reaching the target crate; first verify run exited 8, log /root/lx-fleet/logs/104.34.1/verify-cycle0.log Do: gate clippy with --no-deps so only the task crate is linted; workspace programs-lint stays release scope and will hit this debt"
+
+[gotcha.878]
+title = "tools/paxeer-x/candidate.py"
+observed = "subcommand is create, not make Do: python3 tools/paxeer-x/candidate.py create --repo . --spec spec/paxeer-x/spec.kvx --output <private dir>/candidate.json"
+
+[gotcha.879]
+title = "programs/target in a worktree"
+observed = "programs/target is not gitignored, so an in-tree build dirties the checkout and verify-task refuses (exit 7) Do: set CARGO_TARGET_DIR outside the worktree for build and verify"
+
+[gotcha.880]
+title = "programs runtime calls.rs single-step conformance tests"
+observed = "pre-existing on main: two tests fail with 'reference types support is not enabled' Do: record only; the 104.34.1 gate runs only layerx-programs-sandbox targets"
+
+[gotcha.881]
+title = "programs/crates/layerx-programs-sandbox/src/escrow.rs"
+observed = "Escrow::spend and escrow::settle take a KernelTransferPrimitive whose only production implementation is the C kernel (CKernel in runtime ffi_call.rs), so Rust unit tests cannot drive them without a fake kernel; production sandbox refund runs host_ffi destroy_host -> C layerx_programs_sandbox_destroy_refund -> Escrow::finalize_refund. Do: Exercise escrow ceiling, refund and conservation through funded_genesis, permits_execution, projected_spend (host-ffi only), projected_expiry_spend and finalize_refund; the C-kernel 402LXP leg itself is covered only by native kernel tests."
+
+[gotcha.882]
+title = "tools/paxeer-x/verify-task.sh"
+observed = "verify-task.sh refuses without PAXEER_X_EVIDENCE_DIR (0700, owned) and PAXEER_X_CANDIDATE_MANIFEST. Do: python3 tools/paxeer-x/candidate.py create --repo . --spec spec/paxeer-x/spec.kvx --output <logs>/candidate-<sha>.json on a clean HEAD right before the verify run."
+
+[gotcha.883]
+title = "programs/sandbox execute.rs"
+observed = "the lease-scoped execution function from 6765c4df1 had been deleted as dead code by a later lint pass Do: keep execute_in_lease public and gated by a named test so lint cleanup cannot remove it"
+
+[gotcha.884]
+title = "programs/runtime ValidatedModule"
+observed = "ValidatedModule is not Clone, so a module cannot be reused for both a catalog entry and a direct run Do: build a fresh module with the constructor helper for each use"
+
+[gotcha.885]
+title = "clippy pedantic in tests"
+observed = "too_many_lines (100) and similar_names fire on test functions and fail the gate even when every test passes (verify cycle 0 exit 8, log verify-cycle0.log) Do: keep each test under 100 lines with shared helpers and avoid name pairs like observer/observed"
+
+[gotcha.886]
+title = "layerx-programs-runtime BudgetedV1ActivityOutcome"
+observed = "E0004 non-exhaustive match: the enum is #[non_exhaustive] Do: add a panicking catch-all arm when matching it from the sandbox crate"
+
+[gotcha.887]
+title = "sandbox lease test fixtures"
+observed = "Lease::decode_state returns InvalidStateEncoding for leases built with request_with_schedule + apply_host_activity: history lacks the Request receipt (index 0 must be Request) Do: read published escrow/ledger state against the in-memory lease, or build the lease through a verified Request transition (tests/lease.rs verified())"
+
+[gotcha.888]
+title = "tools/paxeer-x/candidate.py create"
+observed = "refuses with 'invalid, unavailable, or unsafe input' when --output already exists Do: move the previous candidate.json aside (candidate-cycleN.json) before regenerating for a rerun"
+
+[gotcha.889]
+title = "git commit in fleet worktrees"
+observed = "git commit --no-verify can hang after the commit object is written (post-commit work), stalling && chains Do: check git log for the new head and run follow-up steps separately, or wrap the commit in timeout"
+
+[gotcha.890]
+title = "sandbox lease test fixtures"
+observed = "Lease::decode_state returns InvalidStateEncoding for leases built with request_with_schedule + apply_host_activity Do: compare published lease bytes by hash against the usage receipt's resulting_lease_digest instead of decoding"
+
+[gotcha.891]
+title = "programs/crates/layerx-programs-sandbox/tests/snapshot.rs"
+observed = "the end-to-end snapshot/destroy/restore/continue test lives outside the task touch list and compares memory, globals and continuation but not namespace cells Do: byte-identity of the restored namespace is now enforced in production restore (read-back compare, DigestMismatch on divergence) and exercised by that journey; a direct namespace-cell assertion would need the test file in scope"
+
+[gotcha.892]
+title = "calls.rs single_step_conformance"
+observed = "two retained vectors rejected by WasmEngine::declared(): reference types support is not enabled Do: engine-config owner reconciles; or move typed select/table ops to refusal coverage; until then gate 104.35.2 cannot pass"
+
+[gotcha.893]
+title = "git commit in fleet worktrees"
+observed = "post-commit hook in /root/Layerx-protocol/.git/hooks blocks for minutes even with --no-verify Do: run commits in background and wait"
+
+[gotcha.894]
+title = "calls.rs/tests rustfmt"
+observed = "files are not rustfmt-clean on main; whole-file format would rewrite unrelated code Do: keep new code in surrounding compact style; no whole-file rustfmt"
+
+[gotcha.895]
+title = "single-step gate env"
+observed = "verify-task.sh gate needs LAYERX_SINGLE_STEP_EVIDENCE pointing at the build evidence dir in addition to PAXEER_X_EVIDENCE_DIR and a fresh candidate manifest Do: export all three; manifest via tools/paxeer-x/candidate.py create --repo . --spec spec/paxeer-x/spec.kvx --mainline refs/heads/main --output <new private file>"
+
+[gotcha.896]
+title = "programs/arbiter"
+observed = "Market sandbox guest with a 64 KiB memory and one storage_write exhausts a 100k or 1M CPU budget during capture. Do: Per-boundary arbitration commitments charge fuel over linear memory; give capture fixtures with memory a budget around 10M CPU fuel."
+
+[gotcha.897]
+title = "programs/runtime"
+observed = "Trapping guest under call_market_sandbox_untrusted fails with EngineFault observer UnsupportedState instead of returning a terminal trap record. Do: Check the market sandbox trap capture path before scoping trap-dispute tests on the pure-runtime sandbox."
+
+[gotcha.898]
+title = "programs/arbiter"
+observed = "Step verifiers accept a non-trap final boundary whether or not execution actually returned. Do: Judge the terminal claim separately: trap leaf via the trap step, non-trap leaf only if its call_frames are empty."
+
+[gotcha.899]
+title = "verify-task candidate binding"
+observed = "verify-task.sh refuses without PAXEER_X_CANDIDATE_MANIFEST and a private PAXEER_X_EVIDENCE_DIR; a moving main ref invalidates the manifest Do: create the manifest with candidate.py create --mainline <exact base sha> after the last commit and pass the same sha as PAXEER_X_MAINLINE"
+
+[gotcha.900]
+title = "market settlement dispute resolution"
+observed = "settle::resolve is not wired to any wasm operation, so a frozen claim keeps its escrow and stake locked on-chain until an arbiter operation lands Do: wire resolution in the arbiter/slash task (104.35.6 or the ac_3/ac_5 owner); expiry correctly refuses a frozen claim"
+
+[gotcha.901]
+title = "programs/crates/layerx-programs-market rustfmt"
+observed = "rustfmt --check on lib.rs also walks child modules and reports pre-existing diffs in attest.rs Do: format only the touched module file (rustfmt --edition 2021 src/stake.rs)"
+
+[gotcha.902]
+title = "market settle::resolve"
+observed = "resolve and ArbiterResolution construction are cfg(any(test, wasm32)) / pub(crate), so a native-exported slash cannot call resolve Do: slash takes the resolved claim status plus the SettlementPlan from resolve and re-validates it against the verdict"
+
+[gotcha.903]
+title = "hpx node manager"
+observed = "After a failed hpx setup, /root/.paxeer/config/config.toml exists even though no downloaded configuration passed verification Do: paxd version (run by download_binary) writes default client/config/app.toml into its default home ~/.paxeer. Assert that tampered bytes or genesis are absent, not that config.toml is absent"
+
+[gotcha.904]
+title = "hpx gate clean host"
+observed = "curl URL | bash < /dev/null runs nothing Do: The redirect replaces the piped script. Leave stdin as the pipe; the hpx prompts take their defaults at EOF"
+
+[gotcha.905]
+title = "layerx-human-service lib tests"
+observed = "cargo test -p layerx-human-service --lib fails with E0308 PrincipalScope/PrincipalId mismatches in server/identity_dispatch.rs (two crate copies through layerx-human-test-support) Do: put new service tests in a bin or integration test target until the dev-dependency cycle is fixed"
+
+[gotcha.906]
+title = "layerx-human-kms tests/provider"
+observed = "native_setup.rs match on DisclosedNativeOperation is non-exhaustive after program operations were added; the whole LXKP contract suite fails to compile Do: add the program operation arms in the owner of native_setup.rs before relying on the retained LXKP suite"
+
+[gotcha.907]
+title = "candidate.py create"
+observed = "first create run refused with the generic message, an identical rerun seconds later succeeded Do: rerun once before treating the refusal as a blocker; call candidate.create directly to see the exception"
+
+[gotcha.908]
+title = "git in fleet worktrees"
+observed = "git commit takes about 10-20 minutes in this repository Do: run commits in the background and wait on the process"
+
+[gotcha.909]
+title = "platform/sdk/pipeline.kvx"
+observed = "hand-matched generated receipt files still fail sdkgen --check as 'stale or hand-edited' Do: relock with layerx-platform-sdkgen --write-program-contracts <root> (Go on PATH for gofmt); plain --write also rewrites unrelated stale operation catalogs"
+
+[gotcha.910]
+title = "platform/sdk/pipeline.kvx"
+observed = "the relock also refreshed the HttpProductionTransport.java digest, stale on main since 00032eea8 Do: keep it; the lock drift gate cannot pass without it"
+
+[gotcha.911]
+title = "agent/crates/layerx-sdk/src/receipt_generated.rs"
+observed = "cargo fmt reformats the generated file and causes drift Do: never rustfmt generated receipt files; revert them after formatting"
+
+[gotcha.912]
+title = "worktree"
+observed = "fleet worktrees have no node_modules and a bare node_modules symlink is not ignored Do: use a real node_modules/ directory of per-entry symlinks to main's node_modules (ignored by node_modules/)"
+
+[gotcha.913]
+title = "git"
+observed = "commits in the fleet worktree take more than 120s Do: run commits with a long timeout or in the background"
+
+[gotcha.914]
+title = "platform/sdk/pipeline.kvx"
+observed = "the lock now records generator revisions (platform/sdk/generators, agent/tools/sdk-gen, human/tools/api-gen) and [handwritten.<output>] declarations; any edit to a generator source or any new file in an explicit output root fails sdkgen --check Do: run make platform-sdk-generate after a generator edit; declare a new handwritten file under [handwritten.<output>] by hand before regenerating, because --write refuses unclassified files"
+
+[gotcha.915]
+title = "platform/sdk/generators classification"
+observed = "shipped files are listed with git ls-files --cached --others --exclude-standard, so sdkgen --check/--write now need a git work tree (drift fixtures run git init) Do: run the drift gate from a git checkout; ignored build output such as jvm/target or typescript/dist is not treated as shipped"
+
+[gotcha.916]
+title = "platform/sdk/generators/tests/drift.rs"
+observed = "fixture lacked type.ProgramGuestAbi, ProgramExecutionV4/V5, abi_policy.rs and terminal.rs, so every drift test failed Do: fixed in this branch; 19/19 drift tests pass"
+
+[gotcha.917]
+title = "docker/kernel/init.sh human-movement"
+observed = "movement STATE_ROOT /var/lib/layerx/human/movement was never created, so config.rs private_directory refused and movement could never start Do: human_movement_state creates it 4020:4020 0700 in human_movement_prepare"
+
+[gotcha.918]
+title = "tools/qualification gate namespaces"
+observed = "under the gate's umask 077, mkdir -p made /var/lib/layerx 0700 root and the role uid could not reach its state root (provider exits with its generic refusal) Do: create role mount points with install -d -m 0755 exactly as kernel init does"
+
+[gotcha.919]
+title = "gate --build manifest"
+observed = "manifest generation refuses while any qualified source is uncommitted, so editing during the build wastes it Do: commit first, then run --build immediately before verify"
+
+[gotcha.920]
+title = "docker/human-service/entrypoint.sh"
+observed = "tracked as mode 100644 and /root is 0700, so role uids cannot exec it or the target binaries in place Do: copy the entrypoint 0755 and bind-mount binaries into /usr/local/bin inside the role mount namespace"
+
+[gotcha.921]
+title = "layerx-human-movement-provider main"
+observed = "every startup failure prints the same generic refusal line without the error variant Do: bisect with 'movement validate-config' and by checking whether custody-profile.pin and journal.bin were written"
+
+[gotcha.922]
+title = "host prerequisites"
+observed = "movement-executor-readiness gate refused with 'prerequisite missing: socat', then 'prerequisite missing: anvil', until both were installed Do: install socat and Foundry anvil at /root/.foundry/bin/anvil on any qualification host before running movement-provider probe gates"
+
+[gotcha.923]
+title = "movement-provider tests"
+observed = "tests that start the real Human KMS fail with LAYERX_RUNTIME_CLOCK_* unset Do: run the test binaries through tools/runtime/run-with-clock.sh with LAYERX_RUNTIME_CLOCK_BIN set, with --test-threads=1"
+
+[gotcha.924]
+title = "movement-provider tests"
+observed = "the KMS fixture cannot find layerx-human-kms Do: build layerx-human-kms into the same target profile directory as the movement provider (the gate's --build does this)"
+
+[gotcha.925]
+title = "git in fleet worktrees"
+observed = "git commit takes minutes and outlives a 120 s tool timeout because of the shared slow post-commit hook Do: run commits with a long timeout or in the background, and confirm with git log"
+
+[gotcha.926]
+title = "tools/qualification/paxeer-x/wallet-ceremony-resume.py"
+observed = "verify_cmd exits 2 immediately with 'prerequisite: protected approved WALLET_CEREMONY_FIXTURE_BUNDLE' on any host without the sealed fixture bundle Do: Supply the private fixture bundle via WALLET_CEREMONY_FIXTURE_BUNDLE (dir mode 0700, files 0600, owned by the runner, no .env) before scheduling this gate; it cannot be qualified from source alone"
+
+[gotcha.927]
+title = "tools/bringup/check-live.test.sh"
+observed = "pins exact check_registry output lines and the failed-check count, so any new registry check line breaks it Do: update check-live.test.sh alongside check-live.sh registry changes and list it as touched outside scope"
+
+[gotcha.928]
+title = "registry /healthz"
+observed = "exec readiness probes are refused because the container root cgroup has controllers enabled Do: serve readiness from an in-process plain listener (LAYERX_REGISTRY_HEALTH_LISTEN) that reuses route_request for /healthz"
+
+[gotcha.929]
+title = "rustfmt on main.rs"
+observed = "rustfmt also rewraps a pre-existing format! line outside the task Do: revert unrelated rustfmt hunks before committing"
+
+[gotcha.930]
+title = "fleet heredoc edits"
+observed = "python <<'PY' scripts that themselves contain a PY or EOF line terminate early Do: use a unique delimiter such as ZZEND for edit scripts"
+
+[gotcha.931]
+title = "check-live tests"
+observed = "env VAR=... expect fails because expect is a shell function Do: use VAR=... prefixes or export before calling expect"
+
+[gotcha.932]
+title = "Fly private network"
+observed = ".internal names resolve to fdaa:: ULA, which relay_archive safe-address checks reject Do: set allow_fly_private_network (LAYERX_RELAY_ARCHIVE_ALLOW_FLY_PRIVATE_NETWORK=1) for 6PN origins; it admits fdaa::/16 only"
+
+[gotcha.933]
+title = "tools/qualification/paxeer-x/paid-web-contract.py"
+observed = "gdb is not installed on this host, so the existing Harness and KernelHarness crash-boundary cases refuse Do: The operational case starts the binary without gdb; install gdb before running the boundary cases"
+
+[gotcha.934]
+title = "tools/bringup/xweb-config.sh prices"
+observed = "prices now reads lx_getAsset from the gateway and exits 1 when it cannot reach it Do: Run it where the gateway is reachable; XWEB_PAX_USD_PRICE, if set, must equal 13.44"
+
+[gotcha.935]
+title = "gateway lx_getAccount"
+observed = "lx_getAccount takes an account id, not a DID Do: Use lx_getSequence [did, \"identity\"] to read back a DID and lx_getBalance [account] for funding"
+
+[gotcha.936]
+title = "shell formatting"
+observed = "shfmt is not installed, so the shell files were not formatted Do: Install shfmt if the repo starts requiring shell formatting"
+
+[gotcha.937]
+title = "tools/bringup/tests/paxeer-x-runtime-contract.py DirectoryPrerequisite"
+observed = "end_marker '\\n}\\n\\nprivate_runtime_directories\\n' no longer matches init.sh, so --case role-directory-prerequisite (24.10) fails at extraction on main Do: Record against 24.10; this task did not change it"
+
+[gotcha.938]
+title = "layerx-receipt-authority evidence token"
+observed = "protected::read keeps the trailing newline and the authority refuses whitespace, so a token minted with plain 'openssl rand -hex 32' is rejected at startup Do: Mint evidence-read tokens without a newline (printf %s \"$(openssl rand -hex 32)\")"
+
+[gotcha.939]
+title = "kernel volume setgid"
+observed = "$layerx is 2775, so $keys and $keys/human-authority inherit setgid and are 2750/2700, not 0750/0700 Do: Expect the setgid bit when checking key directory modes"
+
+[gotcha.940]
+title = "disposable chroot gates"
+observed = "bash process substitution fails because the chroot has no /dev/fd; the gate's os.umask(0o077) also masks mkdir(mode=0o755) Do: Use pipes instead of <(...) and chmod after mkdir"
+
+[gotcha.941]
+title = "git commit in fleet worktrees"
+observed = "git commit --no-verify can hang after the commit is written Do: Wrap it in timeout and confirm with git log"
+
+[gotcha.942]
+title = "pre-existing builds"
+observed = "layerx-human-kms provider tests E0004 at native_setup.rs:73/82; layerx-human-service identity_dispatch.rs E0308 Do: Recorded only, not chased"
+
+[gotcha.943]
+title = "git hooks"
+observed = "git commit --no-verify hangs in the main repo .git/hooks/post-commit although the commit is created Do: run the commit in the background and check git log; --no-verify does not skip post-commit"
+
+[gotcha.944]
+title = "kernel image"
+observed = "beta-owner-policy.json is not packaged in the kernel image, so provision.owner_policy() cannot run in-node Do: validate the owner-policy projection in the evidence (authority.json core-clock-horizon, agent.json HUMAN_LIMIT_*) inside the node"
+
+[gotcha.945]
+title = "tools/qualification/paxeer-x/human-movement-kms-assembly.py"
+observed = "The 12.2 gate's kms_prepare defines only human_kms_prepare, but since ece9c1c85 that function first calls identity_generation gate, so on main it fails with command not found and the 12.2 gate cannot pass (found by reading; not run) Do: Define identity_generation in that script and give it a complete isolated genesis plus sealed human_state/material, as the movement-kms case does"
+
+[gotcha.946]
+title = "tools/bringup/ca.sh human-attestor-client row"
+observed = "The xweb attestor client has the same CN and EKU as human-kms-client, so if both come from one CA the attestor certificate passes as a KMS service client Do: row_ca_dir now refuses an attestor CA that is the internal CA by path or by key; the KMS leaf pin is the second line of defense"
+
+[gotcha.947]
+title = "formatting"
+observed = "No shfmt, ruff or black is installed on this host, so touched files were not machine-formatted Do: Follow the existing tab and long-line style by hand"
+
+[gotcha.948]
+title = "docker/kernel/init.sh setgid parents"
+observed = "install -d -m 0700 under /run/layerx (2775) or /data/layerx (2775) yields 2700/2750/2500 directories, not the requested mode Do: pin role directory modes with the inherited set-group-ID bit (kernel_roster now does)"
+
+[gotcha.949]
+title = "tools/bringup/check-live.sh kernel-app"
+observed = "kernel-app now exits 3 when the only roles not running are permitted genesis waiters Do: treat exit 3 as pre-genesis bootstrap, never as operational or as a pass"
+
+[gotcha.950]
+title = "tools/bringup/check-live.sh sourcing"
+observed = "helpers defined after the [ BASH_SOURCE = $0 ] || return 0 guard are invisible to ca.sh and tests that source the file Do: define sourced helpers (kernel_roster, kernel_app_probe, kernel_app_verdict) before the guard"
+
+[gotcha.951]
+title = "service-roster namespace composition"
+observed = "genesis_files unbound under set -u when a waiting role is composed without the init's genesis_files line Do: carry every init variable a supervisor path reads, including genesis_files"
+
+[gotcha.952]
+title = "tools/bringup/tests chroot harnesses"
+observed = "kernel-genesis.sh keys loops forever: evm.py address /dev/stdin fails with ENOENT inside a tmpfs chroot Do: create /dev/fd, /dev/stdin, /dev/stdout, /dev/stderr symlinks to /proc/self/fd in the chroot"
+
+[gotcha.953]
+title = "docker/kernel/init.sh genesis layout"
+observed = "genesis dir under setgid $layerx (2775) inherits setgid: human_genesis_project refuses mode 2750 and the registry producer refuses asset-id/replica-id with gid 4020 ('kernel protected producer ownership') Do: init now runs chmod g-s on $genesis and genesis_ids chowns the ids 0:0; volumes already made with gid-4020 ids still need owner reconciliation"
+
+[gotcha.954]
+title = "tools/bringup/tests chroot python"
+observed = "cryptography lives in /usr/local/lib/python3.12/dist-packages, hidden by a tmpfs over /usr/local Do: tmpfs only /usr/local/bin and /usr/local/lib and re-bind /usr/local/lib/python3.12 read-only; bind /etc/ssl for openssl.cnf"
+
+[gotcha.955]
+title = "platform/hosted/human/material.py publish_registry_material"
+observed = "every producer run replaces registry-material/current with a new symlink inode even when the generation is unchanged, so inode-level restart idempotence fails Do: skip the os.replace when current already reads generations/<generation>"
+
+[gotcha.956]
+title = "bringup-ca"
+observed = "Local branches wave/paxeer-x-bringup/3.15-3.21, fleet/task-12.2, fleet/task-24.3, fleet/task-18.5 and claude/paxeer-x/task-17.1-* still show unmerged ca.sh commits. Do: Treat them as superseded: main's human-kms, human-kms-client and human-kms-executor rows (with <app>.internal and localhost SANs), relay-archive on human.toml and the producer URIs already carry them; the pinned ca-roster set is main's table."
+
+[gotcha.957]
+title = "bringup-ca"
+observed = "ca.sh services, inventory, issue, local-services and issue-local now exit 1 with 'row N is malformed' on a table row that is not exactly 7 fields, repeats a service, SAN entry or per-toml secret prefix, has an unknown EKU, or is a server identity without SANs. Do: Add a new ca.sh row in the table's exact form and add it to the pinned set in tools/bringup/tests/paxeer-x-runtime-contract.py ca_roster and to expected_ca_services in check-live.test.sh in the same change."
+
+[gotcha.958]
+title = "bringup-ca"
+observed = "certificate_usage_matches now refuses a human-kms server certificate whose SAN list is not exactly its row's list with <app> read as the app. Do: Pass the issuing app to certificate_usage_matches; a human-kms cert with extra names is incompatible."
+
+[gotcha.959]
+title = "bringup-ca"
+observed = "platform/hosted/interop/fly.toml mounts INTEROP_CLIENT_P12, _PASSWORD and _CA_DER but not INTEROP_CLIENT_CERT, so check-live ca against the real toml reports interop-client cert=unmounted. Do: Recorded only, outside this task's touch list; mount INTEROP_CLIENT_CERT in the interop toml if check-live ca must pass live."
+
+[gotcha.960]
+title = "programs/market"
+observed = "Task 7.2 asks the exported market entrypoint to admit an authenticated deterministic arbiter result, but the market guest has no host import that can re-execute or verify a sandbox step. Do: Before scoping on-chain dispute resolution, decide the arbiter host boundary (new ABI revision host call or native FFI path) and include SDK host.rs, runtime validate.rs/engine.rs/abi and module lookup in the task touch list."
+
+[gotcha.961]
+title = "task 9.2"
+observed = "git commit --no-verify can still hang on a post-commit hook past a 600s timeout; the commit lands, so chain the build separately"
+
+[gotcha.962]
+title = "task 9.2"
+observed = "a local named leg (115-byte kernel leg Vec) in program_settlement.rs shadows any outer binding of the same name"
+
+[gotcha.963]
+title = "task 9.2"
+observed = "issuer proof comes from the state-proven asset record in VerifiedCaps::effective_asset (written by registration, what the kernel checks), not from parsing the registration receipt"
